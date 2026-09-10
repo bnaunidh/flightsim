@@ -1,0 +1,1705 @@
+/* =========================================================================
+   Island Flight Simulator — interface styles.
+   System fonts only, so nothing is downloaded and text renders instantly.
+   ========================================================================= */
+
+:root {
+  --bg: #070c15;
+  --panel: rgba(12, 20, 34, 0.72);
+  --panel-solid: #0e1726;
+  --panel-line: rgba(140, 180, 230, 0.18);
+  --text: #eaf1fb;
+  --text-dim: #9fb2cc;
+  --accent: #58c6ff;
+  --accent-2: #7ee8b2;
+  --amber: #ffc247;
+  --red: #ff6a5a;
+  --good: #4fd684;
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  --radius: 16px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+#view {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+/* There is deliberately no vignette layer. A dark gradient over the whole
+   screen dims the view all the time for a look nobody asked for, and it is the
+   first thing anyone tries to delete. The 3D view is the picture. */
+
+.ui-root {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+.ui-root button,
+.ui-root a,
+.ui-root input,
+.ui-root select,
+.ui-root .screen,
+.ui-root .hud-panel,
+.ui-root .hud-buttons { pointer-events: auto; }
+
+/* ============================== Loading ================================= */
+
+.loading {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(1200px 700px at 50% 30%, #14263f 0%, #070c15 70%);
+  transition: opacity 0.5s ease;
+}
+/* Once it has faded it must not intercept clicks, even for the half second
+   before the [hidden] attribute lands. */
+.loading.is-done { opacity: 0; pointer-events: none; }
+/* The class-based `display: grid` above would otherwise beat the [hidden]
+   attribute and leave an invisible overlay swallowing every click. */
+.loading[hidden] { display: none; }
+.loading-inner { text-align: center; width: min(520px, 84vw); }
+.loading-mark { margin-bottom: 10px; }
+.loading h1 { font-size: 26px; font-weight: 650; letter-spacing: -0.01em; margin: 0 0 22px; }
+.loading-track {
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.loading-bar {
+  height: 100%;
+  width: 3%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.25s ease;
+}
+.loading-msg { color: var(--text-dim); font-size: 14px; margin: 14px 0 4px; }
+.loading-tip { color: rgba(159, 178, 204, 0.7); font-size: 13px; margin: 0; font-style: italic; }
+
+.fatal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(7, 12, 21, 0.96);
+  text-align: center;
+}
+/* Same trap as the loading screen: the class-based `display: grid` above beats
+   the [hidden] attribute, so without this the error panel sits over the entire
+   game as a near-black sheet, swallowing every click, at all times. */
+.fatal[hidden] { display: none; }
+.fatal h2 { margin: 0 0 10px; }
+.fatal pre {
+  text-align: left;
+  max-width: 720px;
+  max-height: 240px;
+  overflow: auto;
+  background: #0c1422;
+  border: 1px solid var(--panel-line);
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 12px;
+  color: #ffb0a5;
+}
+
+/* ================================ HUD =================================== */
+
+.hud { position: absolute; inset: 0; font-variant-numeric: tabular-nums; }
+.hud.is-large { font-size: 118%; }
+
+.hud-panel {
+  position: absolute;
+  background: var(--panel);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid var(--panel-line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+}
+
+.hud-left { left: 16px; top: 16px; min-width: 208px; }
+.hud-row {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  grid-template-rows: auto auto;
+  align-items: baseline;
+  column-gap: 8px;
+  padding: 5px 0;
+}
+.hud-row + .hud-row { border-top: 1px solid rgba(140, 180, 230, 0.1); }
+.hud-label { grid-row: 1; color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+.hud-valuewrap { grid-row: 1; display: flex; align-items: baseline; gap: 4px; }
+.hud-value { font-size: 27px; font-weight: 640; line-height: 1; letter-spacing: -0.02em; }
+.hud-value.is-warn { color: var(--amber); }
+.hud-unit { font-size: 11px; color: var(--text-dim); }
+.hud-word { grid-column: 1 / -1; grid-row: 2; font-size: 12px; color: var(--accent); }
+
+.hud-top {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, 52vw);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+.hud-objective {
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--panel-line);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  text-align: center;
+  box-shadow: var(--shadow);
+  width: 100%;
+}
+.hud-objective-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  margin-bottom: 3px;
+}
+.hud-objective-text { font-size: 15px; line-height: 1.34; }
+.hud-objective-text.is-flash { animation: flashIn 0.6s ease; }
+@keyframes flashIn {
+  0% { color: var(--amber); transform: scale(1.02); }
+  100% { color: var(--text); transform: scale(1); }
+}
+
+.hud-waypoint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(12, 20, 34, 0.6);
+  border: 1px solid var(--panel-line);
+  border-radius: 99px;
+  padding: 5px 14px 5px 8px;
+  font-size: 13px;
+  backdrop-filter: blur(10px);
+}
+.hud-arrow { color: var(--amber); font-size: 17px; line-height: 1; transition: transform 0.12s linear; }
+
+.hud-right { right: 16px; top: 16px; display: flex; gap: 12px; align-items: center; }
+.hud-windrose {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 1px solid rgba(140, 180, 230, 0.3);
+  background: radial-gradient(circle, rgba(88, 198, 255, 0.12), transparent 70%);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.hud-windneedle {
+  font-size: 26px;
+  line-height: 1;
+  color: var(--accent);
+  transition: transform 0.2s ease-out;
+}
+.hud-windrose-label {
+  position: absolute;
+  top: -2px;
+  font-size: 9px;
+  color: var(--text-dim);
+}
+.hud-windinfo { min-width: 150px; }
+.hud-windtext { font-size: 14px; font-weight: 600; }
+.hud-winddetail { font-size: 12px; color: var(--text-dim); font-family: var(--mono); }
+.hud-weather { font-size: 11px; color: var(--accent-2); margin-top: 3px; }
+
+.hud-bottom { left: 16px; bottom: 16px; min-width: 268px; }
+.hud-bar { display: grid; grid-template-columns: 52px 1fr 42px; align-items: center; gap: 8px; margin-bottom: 7px; }
+.hud-bar-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.hud-bar-track { height: 9px; border-radius: 99px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.hud-bar-fill { height: 100%; border-radius: 99px; transition: width 0.1s linear; }
+.hud-bar-fill.is-throttle { background: linear-gradient(90deg, #3ec96a, #9ae66e); }
+.hud-bar-fill.is-fuel { background: linear-gradient(90deg, #58c6ff, #7ee8b2); }
+.hud-bar-fill.is-low { background: linear-gradient(90deg, #ff6a5a, #ffc247); }
+.hud-bar-value { font-size: 12px; color: var(--text-dim); text-align: right; font-family: var(--mono); }
+
+.hud-keyhint {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  margin: 2px 0 6px;
+  letter-spacing: 0.01em;
+}
+.hud-keyhint kbd { font-size: 10px; padding: 0 4px; border-bottom-width: 1px; }
+
+.hud-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.hud-chip {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-dim);
+  border: 1px solid transparent;
+}
+.hud-chip.is-good { color: var(--good); border-color: rgba(79, 214, 132, 0.4); }
+.hud-chip.is-warn { color: var(--amber); border-color: rgba(255, 194, 71, 0.4); }
+.hud-chip.is-on { color: #fff; background: rgba(255, 106, 90, 0.35); border-color: rgba(255, 106, 90, 0.6); }
+
+.hud-buttons { position: absolute; right: 16px; bottom: 16px; display: flex; gap: 8px; }
+.hud-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-line);
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+.hud-btn:hover { background: rgba(88, 198, 255, 0.22); transform: translateY(-2px); }
+.hud-btn:active { transform: translateY(0); }
+.hud-btn.is-off { color: var(--red); }
+.hud-btn.is-on {
+  color: #0b1220;
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+.hud-chip-ap.is-on {
+  border-color: rgba(124, 199, 255, 0.7);
+  color: #cfeaff;
+  background: rgba(124, 199, 255, 0.16);
+}
+
+.hud-stall {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 9px 20px;
+  border-radius: 10px;
+  background: rgba(255, 194, 71, 0.2);
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-size: 14px;
+  animation: pulse 1s infinite;
+}
+.hud-stall.is-hard { background: rgba(255, 106, 90, 0.25); border-color: var(--red); color: #ffd9d3; }
+@keyframes pulse { 50% { opacity: 0.45; } }
+
+.hud-papi {
+  position: absolute;
+  bottom: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  border-radius: 99px;
+  font-size: 13px;
+  background: rgba(12, 20, 34, 0.7);
+  border: 1px solid var(--panel-line);
+  backdrop-filter: blur(10px);
+}
+.hud-papi.is-good { color: var(--good); border-color: rgba(79, 214, 132, 0.5); }
+.hud-papi.is-high, .hud-papi.is-slightlyHigh { color: var(--accent); }
+.hud-papi.is-low, .hud-papi.is-slightlyLow { color: var(--amber); }
+
+.hud-coach {
+  position: absolute;
+  bottom: 152px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 9px 20px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 560;
+  text-align: center;
+  background: rgba(88, 198, 255, 0.16);
+  border: 1px solid rgba(88, 198, 255, 0.55);
+  color: #dff1ff;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  max-width: min(560px, 78vw);
+}
+.hud-coach kbd {
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0 1px;
+}
+.hud.is-contrast .hud-coach { background: #000; border-color: #ffe95c; color: #fff; }
+
+.hud-toasts {
+  position: absolute;
+  left: 50%;
+  top: 96px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  width: min(520px, 60vw);
+}
+.hud-toast {
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  background: rgba(12, 20, 34, 0.82);
+  border: 1px solid var(--panel-line);
+  backdrop-filter: blur(10px);
+  animation: toastIn 0.3s ease;
+  text-align: center;
+}
+.hud-toast.is-out { opacity: 0; transform: translateY(-6px); transition: all 0.35s ease; }
+.hud-toast.is-good { border-color: rgba(79, 214, 132, 0.5); color: #c9ffdd; }
+.hud-toast.is-warn { border-color: rgba(255, 194, 71, 0.5); color: #ffe6b3; }
+.hud-toast.is-bad { border-color: rgba(255, 106, 90, 0.6); color: #ffcfc8; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-8px); } }
+
+.hud-subtitle {
+  position: absolute;
+  bottom: 118px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, 78vw);
+  text-align: center;
+  background: rgba(6, 10, 18, 0.82);
+  border: 1px solid var(--panel-line);
+  border-radius: 12px;
+  padding: 9px 18px;
+  backdrop-filter: blur(10px);
+}
+.hud-subtitle-who {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-2);
+  margin-bottom: 3px;
+}
+.hud-subtitle-text { font-size: 15px; line-height: 1.4; }
+
+.hud-banner {
+  position: absolute;
+  top: 34%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  padding: 16px 34px;
+  border-radius: 18px;
+  background: rgba(6, 10, 18, 0.8);
+  border: 1px solid var(--panel-line);
+  backdrop-filter: blur(14px);
+  animation: bannerIn 0.45s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+.hud-banner.is-good { border-color: rgba(79, 214, 132, 0.6); box-shadow: 0 0 40px rgba(79, 214, 132, 0.18); }
+.hud-banner.is-warn { border-color: rgba(255, 194, 71, 0.6); }
+.hud-banner.is-bad { border-color: rgba(255, 106, 90, 0.7); box-shadow: 0 0 40px rgba(255, 106, 90, 0.2); }
+.hud-banner-title { font-size: 26px; font-weight: 680; letter-spacing: -0.01em; }
+.hud-banner-sub { font-size: 14px; color: var(--text-dim); margin-top: 4px; }
+@keyframes bannerIn { from { opacity: 0; transform: translateX(-50%) scale(0.92); } }
+
+.hud-controls-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(860px, 92vw);
+  max-height: 84vh;
+  overflow: auto;
+  background: rgba(8, 14, 24, 0.94);
+  border: 1px solid var(--panel-line);
+  border-radius: 18px;
+  padding: 22px 26px;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+}
+.cc-head { font-size: 20px; font-weight: 650; margin-bottom: 14px; }
+.cc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px; }
+.cc-group h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+.cc-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 3px 0; }
+.cc-keys { color: var(--text-dim); }
+.cc-foot { margin-top: 16px; font-size: 12px; color: var(--text-dim); }
+kbd {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--panel-line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+
+/* ============================== Menus =================================== */
+
+/* Light scrim only — the island and sky stay visible behind the menus, which
+   looks far better than a near-black wash. */
+.menu-layer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, rgba(7, 12, 21, 0.42) 0%, rgba(7, 12, 21, 0.55) 55%, rgba(7, 12, 21, 0.7) 100%);
+  backdrop-filter: blur(3px) saturate(1.05);
+  -webkit-backdrop-filter: blur(3px) saturate(1.05);
+  pointer-events: auto;
+  overflow: auto;
+}
+.menu-layer[hidden] { display: none; }
+
+/* Screens must scroll. The Free Flight screen grew to 1,780 px tall in an
+   825 px window and simply ran off the bottom — everything below the fold was
+   unreachable, which reads as "I cannot select anything". */
+.screen {
+  width: min(1080px, 94vw);
+  padding: 28px 0 40px;
+  max-height: 100vh;
+  max-height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.screen[hidden] { display: none; }
+
+.brand { display: flex; align-items: center; gap: 18px; margin-bottom: 26px; color: var(--accent); }
+.brand h1 {
+  margin: 0;
+  font-size: clamp(26px, 4.6vw, 42px);
+  font-weight: 680;
+  letter-spacing: -0.025em;
+  color: var(--text);
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.7);
+}
+.tagline { margin: 4px 0 0; color: #cfdcec; font-size: 15px; text-shadow: 0 1px 10px rgba(0, 0, 0, 0.7); }
+
+.main-nav { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+.card-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--panel-line);
+  background: linear-gradient(160deg, rgba(20, 32, 52, 0.9), rgba(11, 18, 32, 0.9));
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.card-btn:hover {
+  transform: translateY(-3px);
+  border-color: rgba(88, 198, 255, 0.6);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
+}
+.card-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card-icon {
+  font-size: 22px;
+  color: var(--accent);
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(88, 198, 255, 0.14);
+  flex: none;
+}
+.card-body { display: flex; flex-direction: column; gap: 3px; }
+.card-body strong { font-size: 17px; font-weight: 620; }
+.card-body em { font-style: normal; font-size: 13px; color: var(--text-dim); }
+
+.main-foot { margin-top: 26px; }
+.stats { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; color: #c3d2e4; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8); }
+.stats b { color: var(--text); }
+.stats .ok { color: var(--good); }
+.foot-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.tiny { font-size: 12px; color: rgba(200, 214, 232, 0.85); margin-top: 12px; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8); }
+.ghost.is-live { border-color: rgba(126, 232, 178, 0.6); color: #b9f5d5; }
+
+button, .ghost {
+  font: inherit;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+/* Same trap again: `display: inline-block` below beats [hidden], which made
+   the Install button show on browsers that never offered an install prompt. */
+.ghost[hidden] { display: none; }
+.ghost {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--panel-line);
+  color: var(--text);
+  padding: 8px 14px;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 13px;
+}
+.ghost:hover { background: rgba(88, 198, 255, 0.16); border-color: rgba(88, 198, 255, 0.5); }
+button.primary {
+  background: linear-gradient(135deg, var(--accent), #3aa8e8);
+  border: none;
+  color: #05101c;
+  font-weight: 640;
+  padding: 10px 18px;
+}
+button.primary:hover { transform: translateY(-2px); }
+button.primary.big { width: 100%; padding: 14px; font-size: 16px; margin-top: 10px; }
+/*
+ * The default look for plain buttons on a list screen.
+ *
+ * The exclusions used to be written with :not(), and every :not() adds the
+ * specificity of what is inside it — five of them made this rule weigh
+ * (0,6,1), which beat every `.is-on` selected state in the file at (0,2,0).
+ * The result was buttons that took the class, updated the summary and fired
+ * their handler while looking completely untouched: you could select an
+ * aeroplane or a departure and nothing lit up. `:not(.preset)` is the fossil
+ * of the same bug being patched once, for presets only.
+ *
+ * :where() contributes no specificity at all, so this stays a (0,1,1) default
+ * that anything more specific can override — which is what a default should
+ * have been in the first place.
+ */
+.pause-actions button:where(:not(.primary)),
+.screen-list button:where(:not(.primary):not(.ghost):not(.tab):not(.keycap):not(.preset):not(.start-opt):not(.fleet-card)) {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--panel-line);
+  color: var(--text);
+  padding: 10px 16px;
+}
+
+.screen-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.screen-head h2 { margin: 0; font-size: 25px; font-weight: 650; text-shadow: 0 2px 14px rgba(0, 0, 0, 0.7); }
+
+.mission-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.mission-card {
+  background: linear-gradient(165deg, rgba(20, 32, 52, 0.92), rgba(11, 18, 32, 0.92));
+  border: 1px solid var(--panel-line);
+  border-radius: var(--radius);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mission-top { display: flex; gap: 14px; align-items: flex-start; }
+.mission-icon {
+  font-size: 20px;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: rgba(126, 232, 178, 0.14);
+  color: var(--accent-2);
+  flex: none;
+}
+.mission-card h3 { margin: 0 0 5px; font-size: 18px; }
+.mission-diff {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: 99px;
+  margin-right: 8px;
+}
+.diff-easy { background: rgba(79, 214, 132, 0.2); color: #9df3bd; }
+.diff-medium { background: rgba(255, 194, 71, 0.2); color: #ffdc9b; }
+.diff-hard { background: rgba(255, 106, 90, 0.2); color: #ffb7ac; }
+.mission-sub { font-size: 12px; color: var(--text-dim); }
+.mission-card p { margin: 0; font-size: 14px; line-height: 1.45; color: #d3dfef; }
+.mission-learn { font-size: 12.5px !important; color: var(--accent) !important; }
+.mission-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mission-best { font-size: 12px; color: var(--text-dim); }
+.mission-best .ok { color: var(--good); }
+
+/* ---- Map picker ---- */
+.map-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.map-card {
+  background: linear-gradient(165deg, rgba(20, 32, 52, 0.92), rgba(11, 18, 32, 0.92));
+  border: 1px solid var(--panel-line);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+.map-card.is-current { border-color: var(--accent); }
+.map-card:hover { transform: translateY(-2px); }
+.map-art { display: flex; justify-content: center; }
+.map-thumb {
+  width: 100%;
+  max-width: 190px;
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  border: 1px solid var(--panel-line);
+  image-rendering: auto;
+}
+.map-card h3 { margin: 0 0 4px; font-size: 18px; }
+.map-sub { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 6px; }
+.map-diff {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  padding: 2px 9px;
+  border-radius: 99px;
+  margin-bottom: 8px;
+  background: rgba(124, 199, 255, 0.16);
+  color: #bfe2ff;
+}
+.map-diff.diff-1 { background: rgba(79, 214, 132, 0.2); color: #9df3bd; }
+.map-diff.diff-2 { background: rgba(140, 214, 132, 0.2); color: #c6f3a8; }
+.map-diff.diff-3 { background: rgba(255, 194, 71, 0.2); color: #ffdc9b; }
+.map-diff.diff-4 { background: rgba(255, 149, 71, 0.22); color: #ffc79b; }
+.map-diff.diff-5 { background: rgba(255, 106, 90, 0.22); color: #ffb7ac; }
+.map-card p { margin: 0; font-size: 13.5px; line-height: 1.45; color: #d3dfef; }
+.map-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.map-current { font-size: 12px; color: var(--accent); }
+
+.free-body {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 22px;
+  background: rgba(9, 15, 26, 0.78);
+  border: 1px solid var(--panel-line);
+  border-radius: var(--radius);
+  padding: 22px;
+}
+.free-col h3 { margin: 0 0 12px; font-size: 15px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.08em; text-shadow: 0 1px 10px rgba(0, 0, 0, 0.8); }
+.preset-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.preset {
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-line);
+  background: rgba(16, 26, 43, 0.85);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.preset strong { font-size: 14px; }
+.preset em { font-style: normal; font-size: 12px; color: var(--text-dim); }
+.preset:hover { border-color: rgba(88, 198, 255, 0.5); }
+.preset.is-on { border-color: var(--accent); background: rgba(88, 198, 255, 0.14); }
+
+.field { display: block; margin-bottom: 14px; font-size: 13px; color: var(--text-dim); }
+.field span { display: block; margin-bottom: 6px; }
+.field b { color: var(--text); }
+.field select, .field input[type='range'] {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--panel-line);
+  border-radius: 10px;
+  padding: 9px 10px;
+}
+.field input[type='range'] { padding: 0; height: 26px; accent-color: var(--accent); }
+.check { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; font-size: 13.5px; }
+.check input { margin-top: 2px; accent-color: var(--accent); width: 17px; height: 17px; }
+.hint { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; margin: 4px 0 16px; }
+
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+.tab {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  padding: 8px 14px;
+  font-size: 13px;
+}
+.tab.is-on { background: rgba(88, 198, 255, 0.16); color: var(--text); border-color: rgba(88, 198, 255, 0.45); }
+.tab-body {
+  max-width: 760px;
+  background: rgba(9, 15, 26, 0.8);
+  border: 1px solid var(--panel-line);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+}
+.fps-box { font-size: 13px; color: var(--text-dim); margin-top: 10px; }
+
+.keymap { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin-bottom: 18px; }
+.keymap-group h4 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent); }
+.keymap-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; font-size: 13px; }
+.keycap {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--panel-line);
+  color: var(--text);
+  padding: 5px 10px;
+  min-width: 74px;
+}
+.keycap.is-listening { border-color: var(--amber); color: var(--amber); }
+
+.credits {
+  max-width: 900px;
+  font-size: 14px;
+  line-height: 1.55;
+  background: rgba(9, 15, 26, 0.82);
+  border: 1px solid var(--panel-line);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+}
+.credit-block { margin-bottom: 26px; }
+.credit-block h3 { font-size: 16px; margin: 0 0 10px; color: var(--accent); }
+.credit-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.credit-table th, .credit-table td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(140, 180, 230, 0.14);
+  vertical-align: top;
+}
+.credit-table th { color: var(--text-dim); font-weight: 600; text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.08em; }
+.credit-table a { color: var(--accent); }
+.credit-list { padding-left: 20px; font-size: 13px; }
+.credits code { font-family: var(--mono); font-size: 12px; background: rgba(255, 255, 255, 0.08); padding: 1px 5px; border-radius: 4px; }
+.note {
+  background: rgba(88, 198, 255, 0.08);
+  border-left: 3px solid var(--accent);
+  padding: 12px 14px;
+  border-radius: 0 10px 10px 0;
+  font-size: 13px;
+}
+
+.screen-pause { display: grid; place-items: center; }
+.pause-card {
+  width: min(560px, 92vw);
+  background: rgba(10, 17, 29, 0.95);
+  border: 1px solid var(--panel-line);
+  border-radius: 20px;
+  padding: 26px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.pause-card h2 { margin: 0 0 16px; font-size: 26px; }
+.pause-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+.pause-grid span { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.pause-grid b { font-size: 17px; color: var(--text); font-family: var(--mono); }
+.pause-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.debrief-card { text-align: center; }
+.debrief-title.is-good { color: var(--good); }
+.debrief-title.is-bad { color: var(--red); }
+.debrief-score { font-size: 54px; font-weight: 700; color: var(--accent); line-height: 1; margin-bottom: 12px; }
+.debrief-score span { font-size: 20px; color: var(--text-dim); }
+.debrief-list { list-style: none; padding: 0; margin: 0 0 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.debrief-list li { font-size: 13px; color: var(--text-dim); background: rgba(255, 255, 255, 0.05); border-radius: 10px; padding: 8px; }
+.debrief-list b { display: block; color: var(--text); font-size: 16px; margin-top: 2px; }
+.debrief-body p { font-size: 14px; color: #d3dfef; }
+.debrief-reason { color: var(--amber); font-weight: 600; }
+
+/* ===================== Accessibility variants =========================== */
+
+body.is-large { font-size: 18px; }
+.hud.is-contrast .hud-panel,
+.hud.is-contrast .hud-objective,
+.hud.is-contrast .hud-subtitle,
+.hud.is-contrast .hud-toast,
+.hud.is-contrast .hud-waypoint,
+.hud.is-contrast .hud-btn {
+  background: #000;
+  border-color: #fff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.hud.is-contrast .hud-word,
+.hud.is-contrast .hud-objective-title,
+.hud.is-contrast .hud-weather { color: #ffe95c; }
+.hud.is-contrast .hud-value,
+.hud.is-contrast .hud-objective-text,
+.hud.is-contrast .hud-subtitle-text { color: #fff; }
+.hud.is-contrast .hud-label,
+.hud.is-contrast .hud-bar-label,
+.hud.is-contrast .hud-winddetail { color: #fff; }
+.hud.is-large .hud-value { font-size: 32px; }
+.hud.is-large .hud-objective-text { font-size: 17px; }
+.hud.is-large .hud-subtitle-text { font-size: 18px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001s !important; transition-duration: 0.05s !important; }
+}
+
+/* ========================= Small screens ================================ */
+
+@media (max-width: 900px) {
+  .free-body { grid-template-columns: 1fr; }
+  .hud-top { width: min(420px, 70vw); }
+  .hud-left, .hud-right, .hud-bottom { padding: 9px 11px; }
+  .hud-value { font-size: 22px; }
+  .pause-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 620px) {
+  .hud-left { min-width: 150px; }
+  /* The coach line has to clear the touch controls, not sit under them. */
+  .hud-coach { bottom: auto; top: 108px; font-size: 14px; padding: 8px 14px; }
+  .hud-toasts { top: 130px; width: 84vw; }
+  .brand { flex-direction: column; align-items: flex-start; }
+}
+
+/* ---- Taxi strip ---------------------------------------------------------
+   Sits under the objective while you are taxiing out. The skip button is
+   deliberately large and always visible: nobody should be trapped taxiing.  */
+.hud-taxi {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--panel-line);
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius);
+  padding: 10px 12px 10px 14px;
+  box-shadow: var(--shadow);
+}
+.hud-taxi-words { flex: 1; min-width: 0; }
+.hud-taxi-text { font-size: 14px; line-height: 1.35; }
+.hud-taxi-hint { font-size: 12px; color: var(--text-dim); margin-top: 3px; }
+.hud-taxi-skip {
+  flex: none;
+  border: 1px solid rgba(255, 194, 71, 0.55);
+  background: rgba(255, 194, 71, 0.14);
+  color: var(--amber);
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 620;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+.hud-taxi-skip:hover { background: rgba(255, 194, 71, 0.26); }
+
+/* =========================================================================
+   Interface rework
+   =========================================================================
+   Three things drove this: nine quick buttons was too many to read at speed,
+   the icons were font glyphs that rendered differently on every machine, and
+   on a phone there was no way to fly at all.
+   ========================================================================= */
+
+/* ---- Icons -------------------------------------------------------------- */
+.icon { display: block; flex: none; }
+.hud-btn .icon { margin: 0 auto; }
+
+/* ---- Quick buttons and the overflow tray -------------------------------- */
+.hud-btn { display: grid; place-items: center; }
+.hud-btn.is-on .icon { color: #0b1220; }
+
+/* The attribute has to beat the class, or the tray is permanently open — the
+   same trap that once left a black sheet over the whole game. */
+.hud-tray[hidden] { display: none; }
+.hud-tray {
+  position: absolute;
+  right: 16px;
+  bottom: 66px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: auto;
+  animation: tray-in 0.16s ease-out;
+}
+@keyframes tray-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.hud-btn-wide {
+  width: auto;
+  height: 38px;
+  padding: 0 14px 0 11px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  font-weight: 560;
+  justify-content: flex-start;
+}
+.hud-tray .hud-btn-wide { min-width: 178px; }
+
+/* ---- Touch controls -----------------------------------------------------
+   Only built on a touch device. The left thumb flies (a stick that returns to
+   centre), the right thumb sets power on a vertical slider, and the four
+   things you reach for most sit between them as real buttons.               */
+.touch-layer {
+  position: absolute;
+  inset: 0;
+  display: none;
+  pointer-events: none;
+  touch-action: none;
+}
+.hud.is-touch .touch-layer { display: block; }
+
+.touch-stick {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  width: 148px;
+  height: 148px;
+  border-radius: 50%;
+  border: 1px solid var(--panel-line);
+  background: rgba(12, 20, 32, 0.34);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+.touch-stick::after {
+  /* Cross-hair, so it is obvious which way is which before you touch it. */
+  content: '';
+  position: absolute;
+  inset: 18px;
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+}
+.touch-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 58px;
+  height: 58px;
+  margin: -29px 0 0 -29px;
+  border-radius: 50%;
+  background: rgba(88, 198, 255, 0.3);
+  border: 1px solid rgba(124, 199, 255, 0.75);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  transition: background 0.12s ease;
+}
+.touch-stick.is-held .touch-knob { background: rgba(88, 198, 255, 0.52); }
+
+.touch-throttle {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  width: 62px;
+  height: 176px;
+  border-radius: 18px;
+  border: 1px solid var(--panel-line);
+  background: rgba(12, 20, 32, 0.34);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: auto;
+  overflow: hidden;
+}
+.touch-throttle-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0;
+  background: linear-gradient(180deg, rgba(88, 198, 255, 0.55), rgba(88, 198, 255, 0.22));
+  transition: height 0.06s linear;
+}
+.touch-throttle-label {
+  position: absolute;
+  inset: auto 0 8px 0;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 640;
+  color: #e8f4ff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.touch-throttle-ticks {
+  position: absolute;
+  inset: 10px 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.touch-pads {
+  position: absolute;
+  right: 96px;
+  bottom: 26px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  pointer-events: auto;
+}
+.touch-pad {
+  min-width: 62px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 620;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.touch-pad.is-on { background: var(--accent); border-color: var(--accent); color: #0b1220; }
+.touch-pad:active { transform: scale(0.96); }
+
+/* Rudder: a wide strip along the bottom middle, where a thumb can reach it. */
+.touch-rudder {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  width: min(230px, 34vw);
+  height: 46px;
+  border-radius: 14px;
+  border: 1px solid var(--panel-line);
+  background: rgba(12, 20, 32, 0.34);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: auto;
+  overflow: hidden;
+}
+.touch-rudder-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 40px;
+  margin-left: -20px;
+  border-radius: 12px;
+  background: rgba(88, 198, 255, 0.32);
+  border: 1px solid rgba(124, 199, 255, 0.6);
+}
+.touch-rudder-label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
+/* ---- Phone layout ------------------------------------------------------- */
+@media (max-width: 820px) {
+  .hud.is-touch .hud-bottom { display: none; }
+  .hud.is-touch .hud-right { top: 74px; right: 12px; }
+  .hud.is-touch .hud-buttons { right: 12px; bottom: auto; top: 12px; }
+  .hud.is-touch .hud-tray { right: 12px; top: 62px; bottom: auto; }
+  .hud.is-touch .hud-taxi-skip { padding: 12px 16px; font-size: 14px; }
+  .screen { padding: 16px 14px 28px; }
+  .card-btn { padding: 12px 14px; }
+  .fleet-grid, .preset-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 520px) {
+  .fleet-grid, .preset-grid { grid-template-columns: 1fr; }
+  .touch-stick { width: 124px; height: 124px; left: 14px; bottom: 14px; }
+  .touch-knob { width: 50px; height: 50px; margin: -25px 0 0 -25px; }
+  .touch-throttle { width: 54px; height: 150px; right: 14px; bottom: 14px; }
+  .touch-pads { right: 78px; bottom: 20px; }
+  .touch-pad { min-width: 54px; height: 40px; font-size: 11px; }
+  .touch-rudder { display: none; }
+}
+
+/* ---- The hangar --------------------------------------------------------- */
+.fleet-grid {
+  display: grid;
+  /* Wider now that each card carries a plan view of the aeroplane beside the
+     numbers — at 220px the picture and the text fought each other. */
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  gap: 10px;
+}
+
+/* The picture of the aeroplane, drawn from its own shape data. */
+.fleet-art-slot {
+  display: block;
+  float: right;
+  width: 132px;
+  margin: -2px -4px 4px 12px;
+  border-radius: 10px;
+  background: linear-gradient(160deg, rgba(120, 180, 240, 0.14), rgba(10, 16, 26, 0.5));
+  border: 1px solid rgba(140, 180, 230, 0.16);
+  overflow: hidden;
+}
+.fleet-art {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.fleet-card.is-on .fleet-art-slot {
+  border-color: rgba(88, 198, 255, 0.55);
+  background: linear-gradient(160deg, rgba(88, 198, 255, 0.22), rgba(10, 16, 26, 0.5));
+}
+@media (max-width: 560px) {
+  .fleet-art-slot { width: 104px; }
+}
+.fleet-card {
+  text-align: left;
+  padding: 13px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--panel-line);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+.fleet-card:hover { transform: translateY(-2px); border-color: rgba(124, 199, 255, 0.5); }
+.fleet-card.is-on { border-color: var(--accent); background: rgba(88, 198, 255, 0.13); }
+.fleet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.fleet-name { font-weight: 640; font-size: 15px; }
+.fleet-class {
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.fleet-blurb { font-size: 12.5px; color: var(--text-dim); margin: 6px 0 9px; line-height: 1.45; }
+.fleet-bars { display: grid; gap: 4px; }
+.fleet-bar { display: grid; grid-template-columns: 62px 1fr; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); }
+.fleet-pips { display: flex; gap: 3px; }
+.fleet-pip { width: 100%; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.13); }
+.fleet-pip.is-lit { background: var(--accent); }
+.fleet-numbers {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid var(--panel-line);
+  display: flex;
+  gap: 14px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.fleet-numbers b { color: var(--text); font-weight: 620; }
+
+/* ---- Start-position picker ---------------------------------------------
+   This is where the taxi lives now. It was a tick-box in Settings called
+   "Start on the parking stand", which is why nobody found it.              */
+.start-grid { display: grid; gap: 8px; }
+.start-opt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  padding: 11px 13px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-line);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.start-opt:hover { border-color: rgba(124, 199, 255, 0.5); }
+.start-opt.is-on { border-color: var(--accent); background: rgba(88, 198, 255, 0.13); }
+.start-opt .icon { color: var(--accent); }
+.start-opt strong { display: block; font-size: 14px; font-weight: 600; }
+.start-opt em { display: block; font-style: normal; font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+/* ---- Triggers panel ----------------------------------------------------- */
+.trigger-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(184px, 1fr)); gap: 8px; }
+.trigger-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.trigger-btn:hover { border-color: rgba(255, 106, 90, 0.55); background: rgba(255, 106, 90, 0.1); }
+.trigger-btn.is-on { border-color: var(--red); background: rgba(255, 106, 90, 0.18); color: #ffd9d3; }
+.trigger-btn .icon { color: var(--amber); flex: none; }
+.trigger-btn small { display: block; color: var(--text-dim); font-size: 11.5px; margin-top: 1px; }
+.trigger-note { font-size: 12px; color: var(--text-dim); margin: 2px 0 10px; }
+
+/* ---- Menu card icons ---------------------------------------------------- */
+.card-icon .icon { width: 24px; height: 24px; }
+.card-btn .card-icon { display: grid; place-items: center; color: var(--accent); }
+
+/* The Free Flight screen gained the hangar and the start picker, so it needs
+   three columns on a wide screen with the aircraft row across the top. */
+@media (min-width: 901px) {
+  .free-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .free-col-wide { grid-column: 1 / -1; }
+}
+.pause-sub {
+  margin: 18px 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.pause-actions button { display: inline-flex; align-items: center; gap: 8px; justify-content: center; }
+
+/* The realistic cockpit reads its instruments off the panel, so the overlay
+   that duplicates them gets out of the way. The objective, subtitles and
+   warnings stay — those are not instruments. */
+.hud.is-minimal .hud-left,
+.hud.is-minimal .hud-right,
+.hud.is-minimal .hud-bottom { opacity: 0; pointer-events: none; transition: opacity 0.25s ease; }
+
+/* ---- Free Flight: four tabs and a bar that never moves ------------------ */
+.screen-free { display: flex; flex-direction: column; padding-bottom: 0; }
+.screen-free .tabs { margin-bottom: 14px; }
+.free-panel {
+  background: rgba(9, 15, 26, 0.78);
+  border: 1px solid var(--panel-line);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 14px;
+}
+.free-panel[hidden] { display: none; }
+/* The action bar is sticky, so it floats over whatever is at the bottom of the
+   panel — which was the last aeroplane in the list. Leave room for it. */
+.free-panel { padding-bottom: 74px; }
+.free-panel h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.free-two { display: grid; grid-template-columns: 1.1fr 1fr; gap: 20px; }
+
+/* The action bar sticks to the bottom of the screen, so "Take off" is
+   reachable no matter how tall the panel above it gets. */
+.free-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  margin: 0 0 16px;
+  border-radius: var(--radius);
+  background: rgba(9, 15, 26, 0.94);
+  border: 1px solid var(--panel-line);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.45);
+}
+.free-summary { flex: 1; min-width: 0; font-size: 13.5px; color: var(--text-dim); }
+.free-summary strong { color: var(--text); font-weight: 640; }
+.sum-warn { color: var(--amber); font-weight: 600; }
+/* `button.primary.big` is width:100% everywhere else, which inside the action
+   bar squeezed the summary down to one word per line beside it. In the bar it
+   is sized by its own text. */
+.free-bar .primary,
+.free-bar button.primary.big {
+  flex: 0 0 auto;
+  width: auto;
+  margin-top: 0;
+  padding: 13px 34px;
+  white-space: nowrap;
+}
+.free-summary { line-height: 1.4; }
+
+/* Compact fleet cards: five of them have to fit without a scroll. */
+.fleet-card { padding: 11px 12px; }
+.fleet-blurb { margin: 5px 0 7px; font-size: 12px; }
+.fleet-numbers { margin-top: 7px; padding-top: 6px; gap: 11px; }
+
+/* ---- Armed failures ---------------------------------------------------- */
+.fail-list { display: grid; gap: 8px; }
+.fail-row {
+  border: 1px solid var(--panel-line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--panel);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.fail-row.is-armed { border-color: rgba(255, 194, 71, 0.55); background: rgba(255, 194, 71, 0.08); }
+.fail-head { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.fail-head input { margin-top: 3px; flex: none; }
+.fail-head strong { display: block; font-size: 14px; font-weight: 600; }
+.fail-head em { display: block; font-style: normal; font-size: 12px; color: var(--text-dim); margin-top: 1px; }
+.fail-sliders {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 18px;
+  margin: 10px 0 2px 26px;
+}
+.fail-sliders[hidden] { display: none; }
+.fail-sliders .field { margin: 0; }
+.fail-sliders .field span { font-size: 12px; }
+
+@media (max-width: 780px) {
+  .free-two, .fail-sliders { grid-template-columns: 1fr; }
+  .free-bar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .free-bar .primary { width: 100%; }
+}
+
+/* An armed trigger has to be obviously armed. */
+.trigger-btn { position: relative; }
+.trigger-state {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 720;
+  letter-spacing: 0.1em;
+  color: var(--red);
+  align-self: center;
+}
+.trigger-btn.is-on {
+  border-color: var(--red);
+  background: rgba(255, 106, 90, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(255, 106, 90, 0.35);
+}
+.trigger-btn.is-on .icon { color: var(--red); }
+
+.check-wide { align-items: flex-start; gap: 10px; margin-top: 12px; }
+.check-wide strong { display: block; font-size: 14px; font-weight: 600; }
+.check-wide em { display: block; font-style: normal; font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+/* The aeroplane you are flying, at the top of the flight-data panel. */
+.hud-acname {
+  font-size: 11.5px;
+  font-weight: 640;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 7px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--panel-line);
+}
+.hud-acname:empty { display: none; }
+
+/* A lightning strike knocks the electrics about: instruments dark, and the
+   warnings stay lit because those are on their own supply. */
+.hud.is-blackout .hud-left,
+.hud.is-blackout .hud-right,
+.hud.is-blackout .hud-bottom {
+  /*
+   * The readouts do not just go dark — they go red and blink.
+   *
+   * Fading them to 6% told you the panel had died but nothing about why, and
+   * a dead-black corner of the screen reads as "the game stopped drawing"
+   * rather than "your instruments have failed". Red, flickering at mains-ish
+   * speed, is unmistakably a fault: you can still make out where the numbers
+   * were, and it is obvious they are not to be trusted.
+   */
+  animation: instruments-dead 0.55s steps(2, end) infinite;
+  /* Steps, so it cuts out like a supply failing rather than dissolving. */
+  transition: opacity 0.1s steps(2), filter 0.1s;
+}
+@keyframes instruments-dead {
+  0%,
+  49% {
+    opacity: 0.42;
+    filter: grayscale(1) sepia(1) hue-rotate(-38deg) saturate(7) brightness(0.9);
+    text-shadow: 0 0 12px rgba(255, 50, 32, 0.75);
+  }
+  50%,
+  100% {
+    opacity: 0.09;
+    filter: grayscale(1) sepia(1) hue-rotate(-38deg) saturate(4) brightness(0.55);
+    text-shadow: none;
+  }
+}
+/* Coming back: a proper fade-in, as an instrument spinning up would. */
+.hud.is-recovering .hud-left,
+.hud.is-recovering .hud-right,
+.hud.is-recovering .hud-bottom {
+  animation: instruments-back 1.3s ease-out;
+}
+@keyframes instruments-back {
+  0% { opacity: 0.06; filter: grayscale(1); }
+  18% { opacity: 0.55; filter: grayscale(0.6); }
+  26% { opacity: 0.12; filter: grayscale(0.9); }
+  100% { opacity: 1; filter: none; }
+}
+
+.hud-blackout {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  padding: 10px 22px;
+  border: 2px solid var(--red);
+  border-radius: 10px;
+  color: #ffd9d3;
+  background: rgba(120, 20, 12, 0.32);
+  font-size: 15px;
+  font-weight: 720;
+  letter-spacing: 0.22em;
+  opacity: 0;
+  pointer-events: none;
+  display: none;
+}
+.hud-blackout.is-on { display: block; animation: blackout-pulse 1s steps(1, end) infinite; }
+@keyframes blackout-pulse {
+  0%, 49% { opacity: 0.95; box-shadow: 0 0 30px rgba(255, 60, 40, 0.55); }
+  50%, 100% { opacity: 0.25; box-shadow: none; }
+}
+.fail-heading {
+  margin: 20px 0 6px;
+  font-size: 13px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* The disasters list spans both weather columns. */
+.free-two { grid-template-areas: none; }
+.free-col-full { grid-column: 1 / -1; }
+
+
+/* ---- Pause menu, made small again -------------------------------------
+   It grew an autopilot section, a view section, eight triggers and seven
+   disasters, and became a wall. Now it is a compact card that scrolls, the
+   secondary sections are folded away behind summaries, and the buttons you
+   actually want are the ones you see first.                              */
+.pause-card {
+  max-height: 88vh;
+  max-height: 88dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px 22px;
+  width: min(680px, 94vw);
+}
+.pause-card h2 { margin: 0 0 10px; font-size: 22px; }
+.pause-grid { gap: 8px; margin-bottom: 12px; }
+.pause-sub { margin: 12px 0 6px; font-size: 11px; }
+.pause-card .tiny { margin-top: 12px; }
+
+/* Folded sections. <details> is the whole mechanism — no script needed. */
+.pause-fold { margin-top: 10px; border-top: 1px solid var(--panel-line); padding-top: 8px; }
+.pause-fold > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 12px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 5px 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pause-fold > summary::-webkit-details-marker { display: none; }
+.pause-fold > summary::after { content: '▾'; margin-left: auto; transition: transform 0.15s ease; }
+.pause-fold[open] > summary::after { transform: rotate(180deg); }
+.pause-fold > summary:hover { color: var(--text); }
+.pause-fold .trigger-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 6px; }
+.pause-fold .trigger-btn { padding: 7px 10px; font-size: 12px; }
+.pause-fold .trigger-btn small { font-size: 10.5px; }
+.pause-fold .start-opt { padding: 8px 10px; }
+.pause-fold .start-opt em { font-size: 11px; }
+.pause-fold .trigger-note { margin: 2px 0 8px; font-size: 11.5px; }
+
+/* Autopilot: which mode is actually flying, and the height selector. */
+.ap-state {
+  margin-left: auto;
+  align-self: center;
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: 0.12em;
+  color: #0b1220;
+}
+.start-opt.is-on .ap-state { color: #0b1220; }
+.ap-alt { margin-top: 10px; }
+.ap-alt span { font-size: 12px; }
+
+/* Where the tornado is. Sits under the objective, hard to miss on purpose. */
+.hud-hazard {
+  position: absolute;
+  top: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 106, 90, 0.7);
+  background: rgba(90, 22, 16, 0.55);
+  color: #ffd9d3;
+  font-size: 13px;
+  font-weight: 560;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.hud-hazard b { color: #fff; letter-spacing: 0.12em; margin-right: 4px; }
+
+/* A switch and a slider per sound source, on one line. */
+.sound-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.1fr) 1fr;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+.sound-row .check { margin: 0; }
+.sound-row .field { margin: 0; }
+.sound-row .field span { font-size: 12px; color: var(--text-dim); min-height: 0; }
+.sound-switch input:not(:checked) ~ span { color: var(--text-dim); }
+@media (max-width: 620px) {
+  .sound-row { grid-template-columns: 1fr; gap: 4px; }
+}
+
+/* ---- Key monitor -------------------------------------------------------- */
+/* A small keyboard that lights up as you fly. Off by default and toggled from
+   the tray — it is a diagnostic for "is this key even registering?", and for
+   noticing your own hands, not something to leave on. */
+.hud-keys {
+  position: absolute;
+  left: 14px;
+  bottom: 96px;
+  padding: 8px 9px 6px;
+  border-radius: 10px;
+  background: rgba(8, 13, 22, 0.72);
+  border: 1px solid rgba(140, 180, 230, 0.2);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  font-size: 11px;
+}
+.hud-keys-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+  justify-content: center;
+}
+.hud-key {
+  min-width: 34px;
+  padding: 5px 6px;
+  text-align: center;
+  border-radius: 5px;
+  border: 1px solid rgba(150, 180, 215, 0.28);
+  background: rgba(255, 255, 255, 0.05);
+  color: #9aa8bb;
+  font-weight: 640;
+  letter-spacing: 0.02em;
+  transition: background 0.06s linear, color 0.06s linear, border-color 0.06s linear;
+}
+.hud-key.is-down {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #08111d;
+  box-shadow: 0 0 12px rgba(88, 198, 255, 0.55);
+}
+.hud-keys-axes {
+  margin-top: 3px;
+  text-align: center;
+  color: #7f8ea3;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: -0.02em;
+}
+@media (max-width: 560px) {
+  .hud-keys { display: none; }
+}
+
+/* ---- Patient vitals ----------------------------------------------------- */
+/* Only shown by missions that carry someone. A real number and a beating
+   trace, because "there is a person in the back" should not read as a bar. */
+.hud-vital {
+  position: absolute;
+  right: 16px;
+  top: 190px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 8px;
+  border-radius: 10px;
+  background: rgba(8, 13, 22, 0.78);
+  border: 1px solid rgba(62, 201, 106, 0.35);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.hud-vital.is-warn { border-color: rgba(255, 176, 32, 0.6); }
+.hud-vital.is-bad {
+  border-color: rgba(255, 90, 60, 0.85);
+  box-shadow: 0 0 22px rgba(255, 70, 45, 0.35);
+  animation: vital-alarm 0.9s ease-in-out infinite;
+}
+@keyframes vital-alarm {
+  0%, 100% { box-shadow: 0 0 22px rgba(255, 70, 45, 0.30); }
+  50% { box-shadow: 0 0 30px rgba(255, 70, 45, 0.6); }
+}
+.hud-vital-trace { display: block; }
+.hud-vital-label {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: #7f8ea3;
+  font-weight: 640;
+}
+.hud-vital-value {
+  font-size: 21px;
+  font-weight: 680;
+  color: #e8eaee;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.hud-vital.is-warn .hud-vital-value { color: #ffc95e; }
+.hud-vital.is-bad .hud-vital-value { color: #ff7a5e; }
+.hud-vital-unit { font-size: 11px; color: #7f8ea3; margin-left: 3px; font-weight: 600; }
+@media (max-width: 560px) { .hud-vital { top: 150px; right: 10px; transform: scale(0.85); } }
+
+/* ---- Saved Free Flight setups ------------------------------------------- */
+.free-slots { margin-top: 14px; }
+.free-slots-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 640;
+  color: var(--text-dim);
+}
+.slot-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+.slot {
+  text-align: left;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px dashed rgba(140, 180, 230, 0.28);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-dim);
+  cursor: pointer;
+  min-height: 52px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.slot:hover { border-color: rgba(124, 199, 255, 0.55); }
+.slot strong { display: block; font-size: 12.5px; font-weight: 650; color: var(--text); }
+.slot em {
+  display: block;
+  font-style: normal;
+  font-size: 10.5px;
+  margin-top: 2px;
+  color: var(--text-dim);
+  line-height: 1.25;
+}
+.slot.is-filled {
+  border-style: solid;
+  border-color: rgba(140, 180, 230, 0.3);
+  background: var(--panel);
+}
+.slot.is-loaded { border-color: var(--accent); background: rgba(88, 198, 255, 0.13); }
+@media (max-width: 720px) { .slot-row { grid-template-columns: repeat(2, 1fr); } }
