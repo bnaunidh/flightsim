@@ -1498,8 +1498,21 @@ export class Menus {
               <span>Climb or descend to <b data-apalt-val>2,000</b> ft</span>
               <input type="range" min="500" max="12000" step="250" value="2000" data-apalt>
             </label>
-            <p class="hint tiny">The height for <b>hold</b> and <b>climb or descend</b>. Returning to
-            the field and lining up with the runway set their own heights.</p>
+            <label class="field ap-alt">
+              <span>Heading <b data-aphdg-val>090</b>°</span>
+              <input type="range" min="0" max="355" step="5" value="90" data-aphdg>
+            </label>
+            <label class="field ap-alt">
+              <span>Speed <b data-apspd-val>95</b> kt</span>
+              <input type="range" min="55" max="260" step="5" value="95" data-apspd>
+            </label>
+            <label class="field ap-alt">
+              <span>Climb and descend at <b data-apvs-val>900</b> ft/min</span>
+              <input type="range" min="200" max="2000" step="50" value="900" data-apvs>
+            </label>
+            <p class="hint tiny">All four can be changed while it is flying — it will not disconnect.
+            Heading only applies to <b>hold</b> and <b>climb or descend</b>; returning to the field and
+            lining up with the runway work out their own heading and height every moment.</p>
           </details>
 
           <details class="pause-fold">
@@ -1530,6 +1543,24 @@ export class Menus {
     `);
     // The height selector: tell it to climb or descend while it holds.
     s.addEventListener('input', (e) => {
+      if (e.target.matches('[data-aphdg]')) {
+        const v = Number(e.target.value);
+        s.querySelector('[data-aphdg-val]').textContent = String(v).padStart(3, '0');
+        this.hooks.onAutopilotHeading && this.hooks.onAutopilotHeading(v);
+        return;
+      }
+      if (e.target.matches('[data-apspd]')) {
+        const v = Number(e.target.value);
+        s.querySelector('[data-apspd-val]').textContent = v;
+        this.hooks.onAutopilotSpeed && this.hooks.onAutopilotSpeed(v);
+        return;
+      }
+      if (e.target.matches('[data-apvs]')) {
+        const v = Number(e.target.value);
+        s.querySelector('[data-apvs-val]').textContent = v.toLocaleString();
+        this.hooks.onAutopilotVs && this.hooks.onAutopilotVs(v);
+        return;
+      }
       if (!e.target.matches('[data-apalt]')) return;
       const ft = Number(e.target.value);
       s.querySelector('[data-apalt-val]').textContent = ft.toLocaleString();

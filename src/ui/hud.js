@@ -152,12 +152,18 @@ export class Hud {
     this.flapChip = el('div', 'hud-chip', 'FLAPS 0');
     this.brakeChip = el('div', 'hud-chip', 'BRAKES');
     this.modeChip = el('div', 'hud-chip', 'EASY MODE');
+    // Trim, shown only once it has been touched. A chip that always reads
+    // "TRIM 0" is clutter; one that appears when you wind the wheel is
+    // feedback.
+    this.trimChip = el('div', 'hud-chip', 'TRIM');
+    this.trimChip.style.display = 'none';
     this.apChip = el('div', 'hud-chip hud-chip-ap', 'AUTOPILOT');
     this.apChip.style.display = 'none';
     chips.appendChild(this.gearChip);
     chips.appendChild(this.flapChip);
     chips.appendChild(this.brakeChip);
     chips.appendChild(this.modeChip);
+    chips.appendChild(this.trimChip);
     chips.appendChild(this.apChip);
     bottom.appendChild(chips);
     wrap.appendChild(bottom);
@@ -783,6 +789,23 @@ export class Hud {
     if (this.lastValues.mode !== modeText) {
       this.modeChip.textContent = modeText;
       this.lastValues.mode = modeText;
+    }
+
+    /*
+     * Trim, shown only when it is set.
+     *
+     * A trim that is wound and invisible is worse than no trim at all: the
+     * aeroplane behaves differently and nothing on screen says why. Shown as
+     * nose-up / nose-down in units of the wheel rather than a raw number,
+     * because "UP 4" is a position you can return to and "0.37" is not.
+     */
+    const t = ac.controls.trim || 0;
+    const set = Math.abs(t) > 0.02;
+    this.trimChip.style.display = set ? '' : 'none';
+    if (set) {
+      const notches = Math.round(Math.abs(t) * 10);
+      this.trimChip.textContent = `TRIM ${t > 0 ? 'UP' : 'DOWN'} ${notches}`;
+      this.trimChip.classList.toggle('is-on', true);
     }
 
     // --- Stall + PAPI guidance ---

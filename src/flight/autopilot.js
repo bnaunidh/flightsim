@@ -63,6 +63,10 @@ export class Autopilot {
      * says rather than levelling off where you already were.
      */
     this.selectedAltFt = 2000;
+    /** Heading, speed and rate the pilot has dialled in, kept across modes. */
+    this.selectedHeadingDeg = 90;
+    this.selectedSpeedKts = 95;
+    this.selectedVsFpm = 900;
     /** Set once a level change has arrived, so the label can stop nagging. */
     this.levelOff = false;
     this.targetSpeedKts = 95;
@@ -82,6 +86,39 @@ export class Autopilot {
       this.levelOff = false;
     }
     return this.mode;
+  }
+
+  /**
+   * Dial in a heading while it is flying.
+   *
+   * Only meaningful in the two modes that hold what you give them. "Return to
+   * the field" and "line up with the runway" both work out their own heading
+   * every frame inside planFor(), so a heading set from outside would be
+   * overwritten before it was ever used — and a control that silently does
+   * nothing is worse than one that is not there. So this reports whether it
+   * took, and the caller says so.
+   */
+  setSelectedHeading(deg) {
+    const h = ((Math.round(deg) % 360) + 360) % 360;
+    this.selectedHeadingDeg = h;
+    if (this.mode === 'hold' || this.mode === 'level') {
+      this.holdHeadingDeg = h;
+      return { applied: true, heading: h };
+    }
+    return { applied: false, heading: h, why: this.mode };
+  }
+
+  /** Dial in a speed. Every mode honours this one. */
+  setSelectedSpeed(kts) {
+    this.targetSpeedKts = clamp(Math.round(kts), 55, 260);
+    this.selectedSpeedKts = this.targetSpeedKts;
+    return this.targetSpeedKts;
+  }
+
+  /** Dial in a climb or descent rate for the level change. */
+  setSelectedVs(fpm) {
+    this.selectedVsFpm = clamp(Math.round(fpm / 50) * 50, 200, 2000);
+    return this.selectedVsFpm;
   }
 
   /** Dial in a height. Takes effect immediately if it is flying a level change. */
@@ -303,9 +340,9 @@ export class Autopilot {
           ? -2000
           : -1150
         : this._brisk
-          ? -1200
+          ? -(this.selectedVsFpm || 1200)
           : -700;
-    const upLimit = this._brisk ? 1200 : 800;
+    const upLimit = this._brisk ? this.selectedVsFpm || 1200 : 800;
     const wantVsFpm = clamp(altErrFt * 1.6 + (this._ffFpm || 0), downLimit, upLimit);
     const vsErr = (wantVsFpm - r.vsFpm) / 1000;
     this._iAlt = clamp(this._iAlt + vsErr * dt * 0.35, -0.35, 0.35);

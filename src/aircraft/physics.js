@@ -70,7 +70,7 @@ export class Aircraft {
     this.quat = new THREE.Quaternion();
     this.omega = new THREE.Vector3(); // body-frame angular velocity (rad/s)
 
-    this.controls = { pitch: 0, roll: 0, yaw: 0, throttle: 0, brakes: 0 };
+    this.controls = { pitch: 0, roll: 0, yaw: 0, throttle: 0, brakes: 0, trim: 0 };
     this.gearDown = true;
     this.gearPos = 1; // 0 = up, 1 = down
     this.flaps = 0;
@@ -482,7 +482,24 @@ export class Aircraft {
     // hands-off; rather than adding another control to learn, a slow integrator
     // does it automatically whenever the stick is centred. Without this the
     // aeroplane always settles nose-down and gains speed.
-    if (!simple && !this.onGround && Math.abs(this.controls.pitch) < 0.05 && V > 20) {
+    /*
+     * Trim: the pilot's if they have set one, otherwise the assist's.
+     *
+     * A pilot who tested this pointed out that trim was not a control at all —
+     * the flight model had a trim value and wound it automatically, so the
+     * thing that makes precise flying possible was being done FOR you and
+     * could not be done BY you. Now `controls.trim` is a real axis wound by
+     * hand, and while it is set it owns the trim outright.
+     *
+     * The automatic integrator survives as what it always was — an assist —
+     * and only runs when the pilot has left trim alone. That way a beginner
+     * never has to know it exists, and someone who wants it gets a trim wheel
+     * that nothing fights them for.
+     */
+    const manualTrim = Math.abs(this.controls.trim || 0) > 0.001;
+    if (manualTrim) {
+      this.trim = clamp(this.controls.trim * 0.45, -0.45, 0.45);
+    } else if (!simple && !this.onGround && Math.abs(this.controls.pitch) < 0.05 && V > 20) {
       this.trim = clamp(this.trim + (-this.omega.x * 1.1 - this.vs * 0.006) * dt * 0.55, -0.45, 0.45);
     } else if (this.onGround || simple) {
       this.trim *= 1 - Math.min(1, dt * 0.8);

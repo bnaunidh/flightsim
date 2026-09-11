@@ -254,6 +254,27 @@ class Game {
           this.hud.notify(`Autopilot to ${ft.toLocaleString()} ft`, 'info', 2.4);
         }
       },
+      onAutopilotHeading: (deg) => {
+        const r = this.autopilot.setSelectedHeading(deg);
+        if (this.autopilot.engaged) {
+          this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget));
+          this.hud.notify(
+            r.applied
+              ? `Autopilot turning to ${String(r.heading).padStart(3, '0')}°`
+              : `Heading saved — it works out its own while ${r.why === 'field' ? 'returning to the field' : 'lining up'}`,
+            'info',
+            2.6
+          );
+        }
+      },
+      onAutopilotSpeed: (kt) => {
+        this.autopilot.setSelectedSpeed(kt);
+        if (this.autopilot.engaged) this.hud.notify(`Autopilot holding ${kt} kt`, 'info', 2.4);
+      },
+      onAutopilotVs: (fpm) => {
+        this.autopilot.setSelectedVs(fpm);
+        if (this.autopilot.engaged) this.hud.notify(`Climb and descent at ${fpm.toLocaleString()} ft/min`, 'info', 2.4);
+      },
       onAutopilotMode: (id) => {
         this.autopilot.setMode(id);
         // Choosing a job for it is also asking it to do the job.
@@ -1887,6 +1908,9 @@ class Game {
       ac.controls.yaw = yaw;
       ac.controls.throttle = throttle;
       ac.controls.brakes = ctrl.brakes;
+      // Trim is the pilot's, and the autopilot must not inherit it — it flies
+      // the elevator directly and would be fighting a bias it did not set.
+      ac.controls.trim = this.autopilot.engaged ? 0 : ctrl.trim || 0;
       // Test / debug hook: lets the self-test fly the aeroplane as if it were
       // holding the controls. Ignored entirely during normal play.
       if (this.override) {

@@ -44,6 +44,14 @@ export const ACTIONS = {
   // view keys and free on every layout that matters.
   minimap: { label: 'Show the map', group: 'Game', default: ['KeyJ'] },
   minimapRange: { label: 'Map range', group: 'Game', default: ['KeyK'] },
+  /*
+   * Trim. Comma and full stop, because they sit side by side like the wheel
+   * they represent and because every other sensible key was already taken.
+   * Held down they wind continuously, which is how a trim wheel works.
+   */
+  trimDown: { label: 'Trim nose down', group: 'Flying', default: ['Comma'] },
+  trimUp: { label: 'Trim nose up', group: 'Flying', default: ['Period'] },
+  trimReset: { label: 'Trim back to neutral', group: 'Flying', default: ['Slash'] },
 };
 
 const STORAGE_KEY = 'islandsim.bindings.v1';
@@ -96,7 +104,9 @@ export class Input {
     this._lookIdle = 0;
 
     // Smoothed control outputs.
-    this.out = { pitch: 0, roll: 0, yaw: 0, throttle: 0, brakes: 0 };
+    this.out = { pitch: 0, roll: 0, yaw: 0, throttle: 0, brakes: 0, trim: 0 };
+    /** Manual trim, -1 (nose down) to +1 (nose up). Does not spring back. */
+    this.trimInput = 0;
     this.throttleTarget = 0;
     /**
      * Set by the on-screen controls on a touch device. Left null when there is
@@ -259,6 +269,24 @@ export class Input {
   update(dt, { simple = true } = {}) {
     const rate = simple ? 3.1 : 2.3; // how fast the controls move
     const center = simple ? 4.4 : 2.4; // how fast they spring back
+
+    /*
+     * Trim, wound by hand.
+     *
+     * Unlike every other control this one does NOT spring back — that is the
+     * entire point of it. You set it and the aeroplane holds the attitude
+     * without you holding the stick, which is what makes long flights and
+     * precise approaches possible. It winds while the key is held, at a rate
+     * chosen so a full sweep takes about four seconds: fast enough not to be
+     * tedious, slow enough to stop on the value you wanted.
+     */
+    if (this.held('trimReset')) this.trimInput = 0;
+    else {
+      const tRate = 0.5;
+      if (this.held('trimUp')) this.trimInput = clamp((this.trimInput || 0) + tRate * dt, -1, 1);
+      if (this.held('trimDown')) this.trimInput = clamp((this.trimInput || 0) - tRate * dt, -1, 1);
+    }
+    this.out.trim = this.trimInput || 0;
 
     let pitchIn = 0;
     let rollIn = 0;
