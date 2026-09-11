@@ -70,7 +70,7 @@ const FPM = UNITS.FPM;
 
 /** Bumped whenever the game changes. Printed on boot so you can tell at a
  *  glance whether a browser is running a stale cached copy. */
-export const BUILD = 'v24 — glass panels, storm penetrator, seven missions, solid scenery';
+export const BUILD = 'v25 — helicopter, boat and car, airline liveries, military missions, real airports';
 
 const loadEl = document.getElementById('loading');
 const loadBar = document.getElementById('load-bar');
