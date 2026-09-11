@@ -225,3 +225,87 @@ The workshop, the manifest, the per-module docs, the dry-run installer and the
 render PNGs are all genuinely useful and made this evaluation take an hour
 instead of a day. The revision check refusing to patch edited files is correct
 behaviour. Keep all of it.
+
+---
+
+## 6. Added after a full adversarial audit of the integrated build
+
+Everything below was measured in the running game, not read off the code. Two
+claims that an audit pass raised did **not** reproduce and are recorded here so
+nobody "fixes" them: cycling all seven liveries left texture and geometry counts
+flat at 73 and 610 (there is no per-livery texture leak), and the models sit
+below the runway rather than floating above it.
+
+### 6.1 The pilot's eye is several metres too far aft (fixed on the game's side)
+
+`flightGeometry.eye` disagrees with the game's own eye point on every airframe,
+because the fleet aeroplanes are longer than the ones they replace:
+
+| | Skylark | Vanguard | Osprey | Nightjar | Tempest | Meridian |
+|---|---|---|---|---|---|---|
+| eye Z error | 0.86 m | 2.34 | 2.15 | 2.58 | 4.97 | **7.98** |
+
+In cockpit view on the Meridian you were sitting eight metres back, in the
+cabin, looking at the inside of the flight-deck wall. The game now reads
+`flightGeometry.eye` instead of its own figure. **Keep publishing that field** —
+it is the only reason this was fixable from outside.
+
+### 6.2 No lights at all (worked around on the game's side)
+
+Every fleet aircraft carries two always-on navigation lamps and nothing else:
+no strobes, no anti-collision beacon, no tail light, no landing light, and no
+response to `weather.isNight`, which the bridge passes and nothing reads.
+
+At night the aeroplane is a dark silhouette. The game now hangs its own lamps on
+the model afterwards, positioned from `flightGeometry.wingSpan` and `bounds`,
+which works but is guesswork — the pack knows where its own wingtips and nose
+gear are and should place them itself.
+
+**Wanted, on each aircraft:** red/green wingtip navigation lamps, a white tail
+light, white wingtip strobes (double-flash, about 1.4 s apart), a red
+anti-collision beacon on the belly, and a landing light that comes on with the
+gear and casts a real `SpotLight`. All of them scaled by night/daylight.
+
+### 6.3 A 130 ms freeze on the first frame of every crash
+
+Measured, on a fast Mac: a nose-first impact produced a single **130 ms** frame,
+against a 6–7 ms baseline. On a school Chromebook that will be closer to half a
+second, and crashing is the single most popular thing 10-year-olds do in this
+game.
+
+It is shader compilation happening inside the draw call — the impact effects
+build their materials at the moment of impact. **Wanted:** build them at model
+construction time, or expose a `warmUp(renderer)` the host can call during
+loading so the cost is paid where nobody notices it.
+
+### 6.4 Wheels are 8–49 cm from where the flight model lands (worked around)
+
+`flightGeometry.gearPoints` are correct — they are tyre contact points, not
+axles — but they disagree with the game's own gear points by 8 cm on the
+Skylark and **49 cm on the Nightjar**, which visibly hovered.
+
+The game now measures the tyre meshes and offsets the picture. It deliberately
+does **not** adopt the pack's gear points into `SPEC`, because `SPEC` is a live
+module binding the flight model, the taxi system and the crash detection all
+read — see 3.6 for the shape that would make that safe.
+
+### 6.5 Twin propellers no longer counter-rotate
+
+`counterRotate` is read in `aircraft-core.js` but no aircraft definition sets
+it, so the Tempest's two propellers turn the same way. The models they replaced
+counter-rotated, specifically because the flight model declines to apply torque
+roll to multi-engine types and the visual was the only thing saying why.
+
+### 6.6 Nose gear retracts the wrong way
+
+The mains fold inboard and match. The nose leg rotates opposite to the way the
+built-in model retracts it. Cosmetic, but it is the one that is directly in
+front of the chase camera on the climb-out.
+
+### 6.7 The rudder and the nose wheel disagree
+
+Both the pack and the built-in model swing the drawn rudder's trailing edge to
+port for a right-rudder input, while the nose wheel steers right. So on the
+ground the two surfaces visibly contradict each other. **This is the game's own
+long-standing bug, faithfully copied** — flagged so it gets fixed once, in the
+place it belongs, rather than twice in opposite directions.

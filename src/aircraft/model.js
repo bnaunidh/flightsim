@@ -111,7 +111,12 @@ function metalMaterial(map, { roughness = 0.42, metalness = 0.35, color = 0xffff
   });
 }
 
-function glowSprite(color, size) {
+/**
+ * One glowing lamp. Exported because the fleet models in `src/fleet/` have no
+ * lights of their own, and a night circuit with an unlit aeroplane is not a
+ * night circuit — see model-adapter.js.
+ */
+export function glowSprite(color, size) {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const ctx = c.getContext('2d');

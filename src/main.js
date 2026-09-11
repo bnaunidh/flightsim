@@ -24,8 +24,8 @@ import { CloudField } from './world/clouds.js';
 import { Rain } from './world/precip.js';
 
 import { Aircraft, EVENTS, UNITS, SPEC, applyAircraft } from './aircraft/physics.js';
-import { getAircraft } from './aircraft/types.js';
-import { createAircraftModel, syncAircraftModel, crashAircraftModel } from './aircraft/model-adapter.js';
+import { getAircraft, specFor } from './aircraft/types.js';
+import { createAircraftModel, syncAircraftModel, crashAircraftModel, eyeFor, groundOffsetFor } from './aircraft/model-adapter.js';
 import { createCockpit } from './aircraft/cockpit.js';
 import { TouchControls, isTouchDevice } from './ui/touch.js';
 
@@ -1295,21 +1295,35 @@ class Game {
     // instrument panel and the pilot is the same size in all five aeroplanes,
     // so it is counter-scaled back to life size.
     this.cockpit.scale.setScalar(1 / S.scale);
-    // ...and then moved so its own eye point lands where *this* aeroplane's
-    // pilot actually sits. Without this the panel stays bolted to the centre
-    // of gravity: fine in the trainer, where the two coincide, and three
-    // metres behind your head in the airliner.
+    /*
+     * ...and then moved so its own eye point lands where *this* aeroplane's
+     * pilot actually sits. Without this the panel stays bolted to the centre
+     * of gravity: fine in the trainer, where the two coincide, and three
+     * metres behind your head in the airliner.
+     *
+     * `eye` here is in FINAL metres. types.js stores it pre-scale, so the old
+     * figure is scaled up; a fleet model measures its own and needs no
+     * scaling. That distinction matters: the fleet aeroplanes are longer, and
+     * reusing the old eye put the pilot eight metres back in the Meridian's
+     * cabin, staring at the inside of the flight-deck wall.
+     */
+    const eye = eyeFor(this.model, [S.eye[0] * S.scale, S.eye[1] * S.scale, S.eye[2] * S.scale]);
     const TRAINER_EYE = [-0.24, 0.46, 0.06];
     this.cockpit.position.set(
-      S.eye[0] - TRAINER_EYE[0] / S.scale,
-      S.eye[1] - TRAINER_EYE[1] / S.scale,
-      S.eye[2] - TRAINER_EYE[2] / S.scale
+      eye[0] / S.scale - TRAINER_EYE[0] / S.scale,
+      eye[1] / S.scale - TRAINER_EYE[1] / S.scale,
+      eye[2] / S.scale - TRAINER_EYE[2] / S.scale
     );
     this.model.add(this.cockpit);
     this.cockpit.visible = false;
 
+    // How far the picture has to drop so the wheels meet the tarmac.
+    // specFor rebuilds the flight spec from the same shape the physics uses,
+    // so the gear points compared here are exactly the ones it lands on.
+    this.model.userData.groundOffsetY = groundOffsetFor(this.model, specFor(this.aircraftType.id));
+
     if (this.rig) {
-      this.rig.eye.set(S.eye[0] * S.scale, S.eye[1] * S.scale, S.eye[2] * S.scale);
+      this.rig.eye.set(eye[0], eye[1], eye[2]);
       this.rig.realisticCockpit = !!this.settings.realisticCockpit;
     }
     if (this.hud) this.hud.setAircraftName(this.aircraftType.name);
