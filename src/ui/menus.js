@@ -257,6 +257,7 @@ export class Menus {
     layer.appendChild(this.buildSettings());
     layer.appendChild(this.buildCredits());
     layer.appendChild(this.buildHangar());
+    layer.appendChild(this.buildMore());
     layer.appendChild(this.buildPause());
     layer.appendChild(this.buildDebrief());
 
@@ -298,13 +299,9 @@ export class Menus {
             <span class="card-icon">${icon('map', 24)}</span>
             <span class="card-body"><strong>Choose Map</strong><em data-map-blurb>Five places to fly, from flat grassland to a volcano</em></span>
           </button>
-          <button class="card-btn" data-act="hangar">
-            <span class="card-icon">${icon('hangar', 24)}</span>
-            <span class="card-body"><strong>Hangar &amp; Rank</strong><em data-rank-blurb>Your rank, your credits and the aeroplanes you have earned</em></span>
-          </button>
-          <button class="card-btn" data-act="settings">
-            <span class="card-icon">${icon('gear', 24)}</span>
-            <span class="card-body"><strong>Settings</strong><em>Controls, sound, graphics and accessibility</em></span>
+          <button class="card-btn" data-act="more">
+            <span class="card-icon">${icon('more', 24)}</span>
+            <span class="card-body"><strong>More</strong><em>Your rank and leaderboard, the hangar, the other vehicles, and settings</em></span>
           </button>
         </nav>
 
@@ -329,6 +326,7 @@ export class Menus {
       else if (act === 'missions') this.show('missions');
       else if (act === 'free') this.show('free');
       else if (act === 'maps') this.show('maps');
+      else if (act === 'more') this.show('more');
       else if (act === 'hangar') this.show('hangar');
       else if (act === 'settings') this.show('settings');
       else if (act === 'credits') this.show('credits');
@@ -1155,6 +1153,111 @@ export class Menus {
    * best flights is also the version people actually play, because a global
    * board is somebody else's score and this one is yours to beat.
    */
+  /**
+   * "More" — one page for everything that is not flying.
+   *
+   * The main menu had grown a button per feature, which is how a start screen
+   * turns into a filing cabinet. This gathers the four things you visit
+   * between flights — where you stand, what you have earned, what else you can
+   * drive, and the settings — behind one entry, with the leaderboard right
+   * there on the page rather than a click further in.
+   */
+  buildMore() {
+    const s = h(`
+      <section class="screen screen-list" data-screen="more" hidden>
+        <header class="screen-head">
+          <button class="ghost" data-back>← Back</button>
+          <h2>More</h2>
+          <span></span>
+        </header>
+
+        <div class="rank-card">
+          <div class="rank-badge" data-more-rank>Cadet</div>
+          <div class="rank-meat">
+            <div class="rank-line"><b data-more-credits>0</b> credits · <span data-more-earned>0</span> earned all-time</div>
+            <div class="rank-bar"><div class="rank-fill" data-more-fill></div></div>
+            <div class="hint tiny" data-more-next></div>
+          </div>
+        </div>
+
+        <h3 class="fail-heading">Leaderboard — your best flights</h3>
+        <div class="board" data-more-board></div>
+
+        <h3 class="fail-heading">Other things to drive</h3>
+        <p class="trigger-note">All of these are in the same world as the aeroplane — the same island, the
+        same sea, the same runway. You can fly to the coast and then take the boat out.</p>
+        <div class="games-grid" data-more-games></div>
+
+        <h3 class="fail-heading">Everything else</h3>
+        <div class="start-grid">
+          <button class="start-opt" data-goto="hangar">
+            ${icon('hangar', 22)}
+            <span><strong>Hangar</strong><em>Buy aeroplanes with your credits, and enter codes</em></span>
+          </button>
+          <button class="start-opt" data-goto="settings">
+            ${icon('gear', 22)}
+            <span><strong>Settings</strong><em>Controls, difficulty, liveries, sound and graphics</em></span>
+          </button>
+          <button class="start-opt" data-goto="credits">
+            ${icon('help', 22)}
+            <span><strong>Credits &amp; licences</strong><em>Who made what, and what you may do with it</em></span>
+          </button>
+        </div>
+      </section>
+    `);
+
+    const DRIVES = [
+      { name: 'Helicopter', blurb: 'Skyhook H-3 — it hovers. Pick it in the hangar.', pick: 'harrier' },
+      { name: 'Boat', blurb: 'Kestrel Launch — out of the bay', drive: 'boat' },
+      { name: 'Car', blurb: 'Airfield Runabout — round the apron', drive: 'car' },
+    ];
+    s.querySelector('[data-more-games]').innerHTML = DRIVES.map((g) => {
+      const attr = g.drive ? `data-drive="${g.drive}"` : `data-pick="${g.pick}"`;
+      return `<button class="game-card" ${attr}><strong>${g.name}</strong><em>${g.blurb}</em></button>`;
+    }).join('');
+
+    const render = () => {
+      const p = this.prog || Prog.load();
+      const rank = Prog.rankFor(p);
+      const next = Prog.nextRank(p);
+      s.querySelector('[data-more-rank]').textContent = rank.name;
+      s.querySelector('[data-more-credits]').textContent = p.credits.toLocaleString();
+      s.querySelector('[data-more-earned]').textContent = p.earned.toLocaleString();
+      s.querySelector('[data-more-fill]').style.width = next
+        ? `${Math.max(2, Math.min(100, (next.into / next.span) * 100))}%`
+        : '100%';
+      s.querySelector('[data-more-next]').textContent = next
+        ? `${next.need.toLocaleString()} more to ${next.rank.name} — ${next.rank.blurb}`
+        : rank.blurb;
+      const board = p.best || [];
+      s.querySelector('[data-more-board]').innerHTML = board.length
+        ? board.map((b, i) => `<div class="board-row"><span class="board-pos">${i + 1}</span><span class="board-name">${b.label}</span><span class="board-score">${b.score}</span><span class="board-date">${b.date}</span></div>`).join('')
+        : '<p class="hint tiny">Fly something and it will show up here.</p>';
+    };
+    this.syncMore = render;
+
+    s.addEventListener('click', (e) => {
+      if (e.target.closest('[data-back]')) return this.show('main');
+      const goto = e.target.closest('[data-goto]');
+      if (goto) return this.show(goto.dataset.goto);
+      const drive = e.target.closest('[data-drive]');
+      if (drive) {
+        this.hooks.startDrive && this.hooks.startDrive(drive.dataset.drive);
+        return;
+      }
+      const pick = e.target.closest('[data-pick]');
+      if (pick) {
+        this.show('hangar');
+        this.hooks.onLocked &&
+          this.hooks.onLocked('The Skyhook is in the hangar — unlock it, then pick it in Free Flight.');
+      }
+    });
+
+    render();
+    this.screens.more = s;
+    return s;
+  }
+
   buildHangar() {
     const s = h(`
       <section class="screen screen-list" data-screen="hangar" hidden>
@@ -1208,16 +1311,26 @@ export class Menus {
      * built rather than linked to a dead page. Anything with a `url` opens in
      * a new tab; anything without simply says so.
      */
+    /*
+     * The other games — in this world rather than three copies of it.
+     *
+     * A boat sim needs an ocean and islands; a car sim needs roads and ground;
+     * a helicopter sim needs terrain to hover over. All three already exist
+     * here, so building them as separate games would have meant duplicating
+     * the entire engine three times to end up somewhere less interesting than
+     * being able to fly to the coast and take the boat out.
+     */
     const GAMES = [
-      { name: "Flight Simulator", blurb: 'You are here', here: true },
-      { name: 'Boat Simulator', blurb: 'Not built yet' },
-      { name: 'Helicopter Simulator', blurb: 'Not built yet' },
-      { name: 'Car Simulator', blurb: 'Not built yet' },
+      { name: 'Flight Simulator', blurb: 'You are here', here: true },
+      { name: 'Helicopter', blurb: 'Skyhook H-3 — it hovers. In the hangar.', drive: null },
+      { name: 'Boat', blurb: 'Kestrel Launch — take her out of the bay', drive: 'boat' },
+      { name: 'Car', blurb: 'Airfield Runabout — around the apron', drive: 'car' },
     ];
     const games = s.querySelector('[data-games]');
     games.innerHTML = GAMES.map((g) => {
       const cls = g.here ? 'game-card is-here' : g.url ? 'game-card' : 'game-card is-soon';
       const inner = `<strong>${g.name}</strong><em>${g.blurb}</em>`;
+      if (g.drive) return `<button class="${cls}" data-drive="${g.drive}">${inner}</button>`;
       return g.url && !g.here
         ? `<a class="${cls}" href="${g.url}" target="_blank" rel="noopener">${inner}</a>`
         : `<div class="${cls}">${inner}</div>`;
@@ -1256,7 +1369,7 @@ export class Menus {
         ? board.map((b, i) => `<div class="board-row"><span class="board-pos">${i + 1}</span><span class="board-name">${b.label}</span><span class="board-score">${b.score}</span><span class="board-date">${b.date}</span></div>`).join('')
         : '<p class="hint tiny">Fly something and it will show up here.</p>';
     };
-    this.syncProgression = (p) => { if (p) this.prog = p; render(); };
+    this.syncProgression = (p) => { if (p) this.prog = p; render(); this.syncMore && this.syncMore(); };
 
     s.addEventListener('click', (e) => {
       if (e.target.closest('[data-back]')) return this.show('main');
@@ -1266,6 +1379,11 @@ export class Menus {
         const r = Prog.buy(p, buy.dataset.buy);
         s.querySelector('[data-code-msg]').textContent = r.ok ? 'Unlocked — it is in the hangar now.' : r.why;
         render();
+        return;
+      }
+      const drive = e.target.closest('[data-drive]');
+      if (drive) {
+        this.hooks.startDrive && this.hooks.startDrive(drive.dataset.drive);
         return;
       }
       if (e.target.closest('[data-mil-enter]')) {
@@ -1676,6 +1794,10 @@ export class Menus {
     for (const key in this.screens) this.screens[key].hidden = key !== name;
     this.current = name;
     if (name === 'settings') this.renderKeymap();
+    // Repaint the hub and the mission gate on open, so they are right whatever
+    // changed them — a code, a flight, a passcode entered somewhere else.
+    if (name === 'more') this.syncMore && this.syncMore();
+    if (name === 'missions') this.syncMissionLocks && this.syncMissionLocks();
     if (name === 'pause') this.syncFreeLook();
     if (name !== 'settings') this.settingsReturn = null;
     // Move focus for keyboard users.

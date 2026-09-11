@@ -547,6 +547,37 @@ export class Hud {
     g.stroke();
   }
 
+  /**
+   * Speed and heading for a boat or a car.
+   *
+   * The aeroplane's four readouts do not fit: a boat has no altitude and a car
+   * has no vertical speed, and showing "0 ft" beside them would be worse than
+   * showing nothing. So the same strip is reused with the two numbers that
+   * actually mean something, and the rest is hidden.
+   */
+  setVehicle(r, spec) {
+    this.wrap.classList.add('is-vehicle');
+    const kph = Math.round(r.speedKph);
+    const kt = Math.round(r.speedKts);
+    this.speedValue.textContent = spec.kind === 'boat' ? String(kt) : String(kph);
+    this.speedWord.textContent =
+      spec.kind === 'boat'
+        ? kt < 1 ? 'stopped' : kt < 8 ? 'idling along' : kt < 25 ? 'making way' : 'on the plane'
+        : kph < 1 ? 'stopped' : kph < 25 ? 'crawling' : kph < 70 ? 'moving' : 'quick';
+    const unit = this.speedValue.parentElement.querySelector('.hud-unit');
+    if (unit) unit.textContent = spec.kind === 'boat' ? 'kt' : 'km/h';
+    this.hdgValue.textContent = String(Math.round(r.heading)).padStart(3, '0');
+    const h = Math.round(r.heading);
+    this.hdgWord.textContent =
+      h > 315 || h <= 45 ? 'north' : h <= 135 ? 'east' : h <= 225 ? 'south' : 'west';
+    this.altValue.textContent = (r.distanceM / 1000).toFixed(1);
+    this.altWord.textContent = 'travelled';
+    const altUnit = this.altValue.parentElement.querySelector('.hud-unit');
+    if (altUnit) altUnit.textContent = 'km';
+    this.throttleBar.fill.style.width = `${Math.round(r.throttle * 100)}%`;
+    this.throttleBar.val.textContent = `${Math.round(r.throttle * 100)}%`;
+  }
+
   /** Name of the aeroplane, shown on the top strip. */
   setAircraftName(name) {
     if (this.acName) this.acName.textContent = name || '';

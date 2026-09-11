@@ -13,6 +13,8 @@ import { Weather } from './world/weather.js';
 import { SkyDome } from './world/sky.js';
 import { createTerrain, heightAt, AIRPORT, applyMap, MAP, clearObstacles, clearPlatforms } from './world/terrain.js';
 import { Carrier } from './world/carrier.js';
+import { SurfaceVehicle, VEHICLES } from './vehicles/surface.js';
+import { createBoat, createCar, updateVehicleModel } from './vehicles/models.js';
 import { Ocean } from './world/water.js';
 import { Airport, RUNWAY } from './world/airport.js';
 import { Scenery, DELIVERY_PAD } from './world/scenery.js';
@@ -242,6 +244,7 @@ class Game {
       onTrigger: (kind) => this.toggleFailure(kind),
       onNatural: (id) => this.triggerNatural(id),
       onLocked: (msg) => this.hud.notify(msg, 'warn', 5),
+      startDrive: (kind) => this.startDrive(kind),
       onAutopilotAlt: (ft) => {
         // Tell it to climb or descend. Used by "hold" and by the level change —
         // returning to the field and lining up both set their own heights.
@@ -1732,7 +1735,108 @@ class Game {
     if (input.pressed('mute')) this.hudAction('mute');
   }
 
+  /**
+   * Take the boat or the car out.
+   *
+   * The world is already here — the island, the sea, the runway, the town —
+   * so a boat sim and a car sim are not separate games needing separate
+   * worlds. They are a different thing to be, in the same place, which is a
+   * far better answer than three shallow copies of one engine.
+   */
+  startDrive(kind = 'boat') {
+    const spec = VEHICLES[kind] || VEHICLES.boat;
+    this.menus.hide();
+    this.hud.setVisible(true);
+    this.hud.clearTransient();
+    this.taxi.stop();
+    this.wreck.clear();
+    this.mode = 'drive';
+    this.state = 'flying';
+    this.runner.status = 'idle';
+
+    if (this.vehicleModel) {
+      this.scene.remove(this.vehicleModel);
+      this.vehicleModel = null;
+    }
+    this.vehicle = new SurfaceVehicle(kind);
+    this.vehicleModel = kind === 'boat' ? createBoat() : createCar();
+    this.scene.add(this.vehicleModel);
+
+    // Put the boat on the water off the beach, and the car on the apron.
+    const start =
+      kind === 'boat'
+        ? new THREE.Vector3(-3400, 0, 900)
+        : new THREE.Vector3(-430, 0, -95);
+    this.vehicle.reset({ pos: start, headingDeg: kind === 'boat' ? 250 : 90 });
+    this.model.visible = false;
+    this.hud.setAircraftName(spec.name);
+    this.hud.setObjective(spec.name, spec.blurb);
+    this.hud.notify(
+      kind === 'boat'
+        ? 'Throttle on Shift and Ctrl, steer with A and D. Watch the depth — she draws about a metre.'
+        : 'Throttle on Shift and Ctrl, steer with A and D, brakes on Space. Stay on the tarmac.',
+      'info',
+      7
+    );
+    return this.vehicle;
+  }
+
+  /** Back to the aeroplane. */
+  stopDrive() {
+    if (this.vehicleModel) {
+      this.scene.remove(this.vehicleModel);
+      this.vehicleModel = null;
+    }
+    this.vehicle = null;
+    this.model.visible = true;
+    this.mode = 'free';
+  }
+
+  updateDrive(dt) {
+    const v = this.vehicle;
+    if (!v) return;
+    const ctrl = this.input.update(dt, { simple: true });
+    v.update(dt, {
+      // Same keys as the aeroplane, so nothing has to be re-learned.
+      throttle: ctrl.throttle * 2 - (ctrl.throttle < 0.02 ? 0 : 0),
+      steer: ctrl.roll,
+      brake: ctrl.brakes,
+    });
+    this.vehicleModel.position.copy(v.pos);
+    this.vehicleModel.quaternion.copy(v.quat);
+    updateVehicleModel(this.vehicleModel, v, dt);
+
+    // A chase camera that sits behind and slightly above.
+    const r = (v.heading * Math.PI) / 180;
+    const back = v.isBoat ? 16 : 11;
+    const up = v.isBoat ? 6.5 : 4.5;
+    const want = new THREE.Vector3(
+      v.pos.x - Math.sin(r) * back,
+      v.pos.y + up,
+      v.pos.z + Math.cos(r) * back
+    );
+    this.camera.position.lerp(want, Math.min(1, dt * 3.2));
+    this.camera.lookAt(v.pos.x, v.pos.y + 1.2, v.pos.z);
+
+    if (v.crashed && !this._droveInto) {
+      this._droveInto = true;
+      this.hud.notify(v.crashReason + ' — press Esc to go back', 'warn', 8);
+    }
+    if (!v.crashed) this._droveInto = false;
+
+    this.hud.setVehicle(v.readouts(), v.spec);
+  }
+
   update(dt) {
+    if (this.mode === 'drive' && this.vehicle) {
+      this.updateDrive(dt);
+      // Match the real signatures — sky.update takes the weather alone, and
+      // ocean.update takes (dt, weather). Guessing them cost a thrown frame.
+      this.weather.update(dt);
+      if (this.ocean) this.ocean.update(dt, this.weather);
+      if (this.sky) this.sky.update(this.weather);
+      return;
+    }
     const ac = this.aircraft;
 
     if (this.state === 'flying') {

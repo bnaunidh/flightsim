@@ -753,6 +753,34 @@ export class Aircraft {
       fz -= drag * -u * inv;
     }
 
+    /*
+     * A rotor, for the helicopter.
+     *
+     * The trick is that it needs almost no new machinery. Rotor thrust acts
+     * along the body's own up axis, and the body frame rotates with the
+     * aircraft — so tilting the nose down tilts the thrust vector forward and
+     * the machine translates, which is exactly how a real helicopter moves.
+     * There is no separate "forward speed" term anywhere; cyclic is just the
+     * pitch and roll you already have, and the geometry does the rest.
+     *
+     * Collective is the throttle. Hover sits near the middle of its range, so
+     * the stick has somewhere to go in both directions — a helicopter that
+     * hovers at full power cannot climb.
+     */
+    if (SPEC.rotor) {
+      const collective = clamp(this.rpm, 0, 1);
+      // Sized so that hover lands near 50% collective at sea level.
+      const hoverThrust = SPEC.mass * G;
+      const rotor = collective * hoverThrust * 2.0 * (rho / RHO0) * rough;
+      // Translational lift: a rotor is measurably more efficient once it flies
+      // out of its own downwash, which is why a helicopter that will not lift
+      // vertically can often run along the ground and get away.
+      const ettl = 1 + clamp(V / 24, 0, 1) * 0.11;
+      fy += rotor * ettl;
+      // The disc drags as it is tilted into the airflow.
+      fz += clamp(V, 0, 60) * SPEC.rotorDrag * 0.5;
+    }
+
     this._f.set(fx, fy, fz).applyQuaternion(this.quat);
     this._f.y -= SPEC.mass * G;
 
@@ -801,6 +829,37 @@ export class Aircraft {
     // Torque about body axes: X = pitch, Y = yaw, Z = roll. Faded out with the
     // forward airflow for the same reason as the forces above.
     this._t.set(Cm * qS * c * aeroFade, Cn * qS * b * aeroFade, Cl * qS * b * aeroFade);
+
+    /*
+     * Cyclic and tail rotor — control that works when standing still.
+     *
+     * This is the piece that actually makes a helicopter a helicopter, and its
+     * absence is invisible until you try to hover. Every control moment above
+     * comes from dynamic pressure: elevator, aileron and rudder all scale with
+     * q = ½ρV², so at zero airspeed they produce nothing at all. On a wing
+     * that is exactly right. On a rotorcraft it means the machine hovers
+     * beautifully and cannot be pointed — measured, the stick held hard over
+     * for ten seconds in a hover moved the nose zero degrees.
+     *
+     * A rotor does not work that way. Cyclic tilts the disc and the thrust
+     * vector with it, so the moment it generates is proportional to how hard
+     * the rotor is pulling, not to how fast the machine is going through the
+     * air. The tail rotor is the same: it is a propeller in its own right and
+     * has full authority at a standstill, which is why a helicopter can spin
+     * on the spot.
+     */
+    if (SPEC.rotor) {
+      const collective = clamp(this.rpm, 0, 1);
+      // Enough authority to be crisp in the hover, without being twitchy.
+      const disc = (0.35 + collective * 0.65) * SPEC.mass * G;
+      this._t.x += elevator * disc * SPEC.rotorPitchArm;
+      this._t.z += aileron * disc * SPEC.rotorRollArm;
+      this._t.y += rudder * disc * SPEC.rotorYawArm;
+      // And damping, or it rings: a real rotor resists being rotated.
+      this._t.x -= this.omega.x * SPEC.Iyy * 0.9;
+      this._t.z -= this.omega.z * SPEC.Izz * 1.1;
+      this._t.y -= this.omega.y * SPEC.Ixx * 0.7;
+    }
 
     // Propeller torque and P-factor: the aeroplane pulls left at high power.
     // Deliberately mild — enough to notice and correct with rudder, not enough

@@ -660,6 +660,96 @@ export const AIRCRAFT = [
       vne: 235,
     },
   },
+
+  /* ------------------------------------------------------------------ *
+   * The helicopter.
+   *
+   * Asked for as its own game; built as an airframe instead, because the
+   * 6-DOF body was already right and the only thing genuinely missing was a
+   * thrust vector that points up out of the machine rather than forward out
+   * of the nose. Collective is the throttle, cyclic is the stick you already
+   * have, and the tail rotor is the rudder.
+   *
+   * The wing is deliberately tiny with almost no lift curve: this thing must
+   * not fly when the rotor stops, and a stub wing generating lift would let it
+   * glide, which is the one thing a helicopter must not do.
+   * ------------------------------------------------------------------ */
+  {
+    id: 'harrier',
+    name: 'Skyhook H-3',
+    class: 'Helicopter',
+    blurb:
+      'Hovers, which nothing else here does. Collective on Shift and Ctrl, cyclic on the stick, tail rotor '
+      + 'on the rudder. It will sit still in the air and it will not glide — those are the same fact.',
+    stats: { speed: 2, handling: 3, ease: 2 },
+    livery: '#2f4a63',
+    accent: '#f0a020',
+    callsign: 'Skyhook three',
+    shape: {
+      ...TRAINER_SHAPE,
+      scale: 1.25,
+      bodyLength: 1.15,
+      bodyRadius: 1.05,
+      // A stub wing, because the model needs something to hang the gear from.
+      halfSpan: 1.5,
+      rootChord: 1.0,
+      tipChord: 0.6,
+      sweep: 0.1,
+      dihedral: 0.05,
+      wingY: -0.2,
+      wingZ: 0.2,
+      struts: false,
+      retractable: false,
+      hSpan: 1.2,
+      hRootChord: 0.6,
+      hZ: 3.6,
+      finHeight: 1.3,
+      finRootChord: 0.9,
+      finSweep: 0.3,
+      finZ: 3.4,
+      main: { x: 1.15, y: -1.35, z: 0.55 },
+      nose: { x: 0, y: -1.3, z: -1.0 },
+      wheelR: { nose: 0.24, main: 0.28 },
+      gearStiffness: 1.1,
+      // `rotor` is what switches the flight model over.
+      power: { kind: 'prop', count: 1, rotor: true, propRadius: 4.2, z: 0.1, y: 1.6 },
+      canopy: 'cabin',
+      eye: [-0.22, 0.4, -0.9],
+    },
+    aero: {
+      ...TRAINER_AERO,
+      mass: 2200,
+      // A token wing area. It must not be able to glide.
+      wingArea: 3.0,
+      wingSpan: 3.6,
+      chord: 0.9,
+      Ixx: 4200,
+      Iyy: 6000,
+      Izz: 3000,
+      CL0: 0.0,
+      CLa: 0.6,
+      alphaStall: 0.6,
+      CD0: 0.09,
+      k: 0.09,
+      CYb: -0.36,
+      Cmalpha: -0.45,
+      Cmq: -12.0,
+      Cmde: -0.62,
+      Clb: -0.05,
+      Clp: -0.42,
+      Clda: 0.065,
+      Cnb: 0.045,
+      Cnr: -0.09,
+      Cndr: 0.022, // a tail rotor has a great deal of yaw authority
+      rotorDrag: 260,
+      thrustMax: 1,
+      fuelCapacity: 420,
+      fuelBurnMax: 0.035,
+      gearDragArea: 0.2,
+      maxGearSpeed: 200,
+      vne: 140,
+    },
+  },
 ];
 
 export const DEFAULT_AIRCRAFT_ID = 'skylark';
@@ -686,7 +776,20 @@ export function specFor(id) {
     // and the corkscrewing slipstream are all propeller effects — a turbofan
     // has none of them, and applying them anyway rolled the jets off on their
     // own with the stick centred.
-    propeller: t.shape.power.kind === 'prop',
+    propeller: t.shape.power.kind === 'prop' && !t.shape.power.rotor,
+    /*
+     * A rotor instead of a wing. The flight model reads this to add thrust
+     * along the body's up axis; everything else about the 6-DOF body is
+     * unchanged, which is why a helicopter costs one branch rather than a
+     * second physics engine.
+     */
+    rotor: !!t.shape.power.rotor,
+    rotorDrag: t.aero.rotorDrag || 0,
+    // How much moment the disc makes per unit of stick, as a fraction of the
+    // machine's own weight times a lever arm. Tuned by feel, then measured.
+    rotorPitchArm: t.aero.rotorPitchArm || 1.1,
+    rotorRollArm: t.aero.rotorRollArm || 0.85,
+    rotorYawArm: t.aero.rotorYawArm || 0.9,
     // A yaw damper, which is what a real swept-wing jet has and a light single
     // does not. Without one the fighter's Dutch roll sits at a damping ratio
     // of about 0.06 — it wallows from wingtip to wingtip and never settles.
