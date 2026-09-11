@@ -14,6 +14,7 @@ import { ACTIONS, keyLabel } from '../flight/input.js';
 import { CREDITS_HTML } from './credits.js';
 import { MAPS } from '../world/maps.js';
 import { loadFreePresets, saveFreePresets, MAX_FREE_PRESETS } from '../core/storage.js';
+import * as Prog from '../game/progression.js';
 
 function h(html) {
   const t = document.createElement('template');
@@ -223,6 +224,9 @@ export class Menus {
   constructor(root, hooks) {
     this.root = root;
     this.hooks = hooks;
+    // Read once here so the hangar can paint itself at build time; main.js
+    // owns the live copy and hands it back through syncProgression().
+    this.prog = Prog.load();
     this.current = null;
     this.screens = {};
     this.build();
@@ -238,6 +242,7 @@ export class Menus {
     layer.appendChild(this.buildFree());
     layer.appendChild(this.buildSettings());
     layer.appendChild(this.buildCredits());
+    layer.appendChild(this.buildHangar());
     layer.appendChild(this.buildPause());
     layer.appendChild(this.buildDebrief());
 
@@ -279,6 +284,10 @@ export class Menus {
             <span class="card-icon">${icon('map', 24)}</span>
             <span class="card-body"><strong>Choose Map</strong><em data-map-blurb>Five places to fly, from flat grassland to a volcano</em></span>
           </button>
+          <button class="card-btn" data-act="hangar">
+            <span class="card-icon">${icon('hangar', 24)}</span>
+            <span class="card-body"><strong>Hangar &amp; Rank</strong><em data-rank-blurb>Your rank, your credits and the aeroplanes you have earned</em></span>
+          </button>
           <button class="card-btn" data-act="settings">
             <span class="card-icon">${icon('gear', 24)}</span>
             <span class="card-body"><strong>Settings</strong><em>Controls, sound, graphics and accessibility</em></span>
@@ -306,6 +315,7 @@ export class Menus {
       else if (act === 'missions') this.show('missions');
       else if (act === 'free') this.show('free');
       else if (act === 'maps') this.show('maps');
+      else if (act === 'hangar') this.show('hangar');
       else if (act === 'settings') this.show('settings');
       else if (act === 'credits') this.show('credits');
       else if (act === 'install') this.hooks.install && this.hooks.install();
@@ -616,6 +626,24 @@ export class Menus {
       const host = s.querySelector(`[data-fleet-art="${a.id}"]`);
       if (host) host.appendChild(aircraftThumbnail(a));
     }
+    // Show which of the fleet you have actually earned.
+    this.syncFleetLocks = () => {
+      for (const a of AIRCRAFT) {
+        const card = s.querySelector(`[data-aircraft="${a.id}"]`);
+        if (!card) continue;
+        const locked = !Prog.isUnlocked(this.prog, a.id);
+        card.classList.toggle('is-locked', locked);
+        let tag = card.querySelector('.fleet-lock');
+        if (locked && !tag) {
+          tag = document.createElement('span');
+          tag.className = 'fleet-lock';
+          card.appendChild(tag);
+        }
+        if (tag) tag.textContent = locked ? `${Prog.costOf(a.id).toLocaleString()} credits` : '';
+        if (!locked && tag) tag.remove();
+      }
+    };
+    this.syncFleetLocks();
 
     this.freeControls = { wind, dir, time, cond };
     this.chosenAircraft = 'skylark';
@@ -828,7 +856,25 @@ export class Menus {
 
       const plane = e.target.closest('[data-aircraft]');
       if (plane) {
-        this.chosenAircraft = plane.dataset.aircraft;
+        /*
+         * Locked aeroplanes cannot be chosen, and say why.
+         *
+         * The alternative — letting you pick it and refusing at take-off — is
+         * the version that feels broken, because the game let you do a thing
+         * and then took it back.
+         */
+        const id = plane.dataset.aircraft;
+        if (!Prog.isUnlocked(this.prog, id)) {
+          const cost = Prog.costOf(id);
+          const short = cost - this.prog.credits;
+          this.hooks.onLocked && this.hooks.onLocked(
+            short > 0
+              ? `Locked — ${short.toLocaleString()} more credits needed. Fly missions to earn them.`
+              : `Locked — unlock it for ${cost.toLocaleString()} credits in the Hangar.`
+          );
+          return;
+        }
+        this.chosenAircraft = id;
         s.querySelectorAll('[data-aircraft]').forEach((n) => n.classList.toggle('is-on', n === plane));
         refresh();
         return;
@@ -1034,6 +1080,133 @@ export class Menus {
     });
 
     this.screens.settings = s;
+    return s;
+  }
+
+  /**
+   * Hangar: your rank, your credits, what you have earned and what is left to
+   * earn — plus the other games.
+   *
+   * All of it local. There is no account and no server, which is why the game
+   * opens instantly and keeps working with no wifi; a leaderboard of your own
+   * best flights is also the version people actually play, because a global
+   * board is somebody else's score and this one is yours to beat.
+   */
+  buildHangar() {
+    const s = h(`
+      <section class="screen screen-list" data-screen="hangar" hidden>
+        <header class="screen-head">
+          <button class="ghost" data-back>← Back</button>
+          <h2>Hangar &amp; Rank</h2>
+          <span></span>
+        </header>
+
+        <div class="rank-card">
+          <div class="rank-badge" data-rank-name>Cadet</div>
+          <div class="rank-meat">
+            <div class="rank-line"><b data-credits>0</b> credits · <span data-earned>0</span> earned all-time</div>
+            <div class="rank-bar"><div class="rank-fill" data-rank-fill></div></div>
+            <div class="hint tiny" data-rank-next></div>
+          </div>
+        </div>
+
+        <h3 class="fail-heading">Aeroplanes</h3>
+        <div class="unlock-grid" data-unlocks></div>
+
+        <h3 class="fail-heading">Your best flights</h3>
+        <div class="board" data-board></div>
+
+        <h3 class="fail-heading">Got a code?</h3>
+        <div class="code-row">
+          <input type="text" data-code placeholder="Ask the CEO" maxlength="20">
+          <button data-redeem>Redeem</button>
+        </div>
+        <p class="hint tiny" data-code-msg>Codes pay out once each.</p>
+
+        <h3 class="fail-heading">More games</h3>
+        <p class="trigger-note">Other things built by the same person. The ones marked
+        <em>not yet</em> do not exist — a link to nothing is worse than an honest gap.</p>
+        <div class="games-grid" data-games></div>
+      </section>
+    `);
+
+    /*
+     * The other games.
+     *
+     * A boat, a helicopter and a car sim were asked for; each is its own game
+     * rather than a feature of this one, so they are listed honestly as not
+     * built rather than linked to a dead page. Anything with a `url` opens in
+     * a new tab; anything without simply says so.
+     */
+    const GAMES = [
+      { name: "Flight Simulator", blurb: 'You are here', here: true },
+      { name: 'Boat Simulator', blurb: 'Not built yet' },
+      { name: 'Helicopter Simulator', blurb: 'Not built yet' },
+      { name: 'Car Simulator', blurb: 'Not built yet' },
+    ];
+    const games = s.querySelector('[data-games]');
+    games.innerHTML = GAMES.map((g) => {
+      const cls = g.here ? 'game-card is-here' : g.url ? 'game-card' : 'game-card is-soon';
+      const inner = `<strong>${g.name}</strong><em>${g.blurb}</em>`;
+      return g.url && !g.here
+        ? `<a class="${cls}" href="${g.url}" target="_blank" rel="noopener">${inner}</a>`
+        : `<div class="${cls}">${inner}</div>`;
+    }).join('');
+
+    const render = () => {
+      const p = this.prog || Prog.load();
+      const rank = Prog.rankFor(p);
+      const next = Prog.nextRank(p);
+      s.querySelector('[data-rank-name]').textContent = rank.name;
+      s.querySelector('[data-credits]').textContent = p.credits.toLocaleString();
+      s.querySelector('[data-earned]').textContent = p.earned.toLocaleString();
+      s.querySelector('[data-rank-fill]').style.width = next
+        ? `${Math.max(2, Math.min(100, (next.into / next.span) * 100))}%`
+        : '100%';
+      s.querySelector('[data-rank-next]').textContent = next
+        ? `${next.need.toLocaleString()} more to ${next.rank.name} — ${next.rank.blurb}`
+        : `${rank.blurb}`;
+
+      s.querySelector('[data-unlocks]').innerHTML = AIRCRAFT.map((a) => {
+        const owned = Prog.isUnlocked(p, a.id);
+        const cost = Prog.costOf(a.id);
+        const afford = p.credits >= cost;
+        return `<button class="unlock${owned ? ' is-owned' : afford ? ' can-buy' : ' is-locked'}" data-buy="${a.id}" ${owned ? 'disabled' : ''}>
+          <strong>${a.name}</strong>
+          <em>${owned ? 'Yours' : `${cost.toLocaleString()} credits`}</em>
+        </button>`;
+      }).join('');
+
+      const board = p.best || [];
+      s.querySelector('[data-board]').innerHTML = board.length
+        ? board.map((b, i) => `<div class="board-row"><span class="board-pos">${i + 1}</span><span class="board-name">${b.label}</span><span class="board-score">${b.score}</span><span class="board-date">${b.date}</span></div>`).join('')
+        : '<p class="hint tiny">Fly something and it will show up here.</p>';
+    };
+    this.syncProgression = (p) => { if (p) this.prog = p; render(); };
+
+    s.addEventListener('click', (e) => {
+      if (e.target.closest('[data-back]')) return this.show('main');
+      const buy = e.target.closest('[data-buy]');
+      if (buy) {
+        const p = this.prog || Prog.load();
+        const r = Prog.buy(p, buy.dataset.buy);
+        s.querySelector('[data-code-msg]').textContent = r.ok ? 'Unlocked — it is in the hangar now.' : r.why;
+        render();
+        return;
+      }
+      if (e.target.closest('[data-redeem]')) {
+        const p = this.prog || Prog.load();
+        const r = Prog.redeem(p, s.querySelector('[data-code]').value);
+        s.querySelector('[data-code-msg]').textContent = r.ok
+          ? `${r.note}${r.credits ? ` — ${r.credits} credits` : ''}${r.rank ? ` — you are now ${r.rank}` : ''}`
+          : r.why;
+        if (r.ok) s.querySelector('[data-code]').value = '';
+        render();
+      }
+    });
+
+    render();
+    this.screens.hangar = s;
     return s;
   }
 

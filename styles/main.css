@@ -1884,3 +1884,65 @@ body.is-large { font-size: 18px; }
   .minimap, .minimap-canvas { width: 96px; height: 96px; }
   .hud-left { left: 110px; }
 }
+
+/* ---- Hangar: rank, credits, unlocks, board ------------------------------ */
+.rank-card {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px; border-radius: var(--radius);
+  border: 1px solid var(--panel-line); background: var(--panel);
+}
+.rank-badge {
+  flex: 0 0 auto; padding: 10px 16px; border-radius: 10px;
+  background: linear-gradient(150deg, rgba(88,198,255,0.24), rgba(125,255,180,0.14));
+  border: 1px solid rgba(88,198,255,0.45);
+  font-size: 16px; font-weight: 700; color: var(--text);
+}
+.rank-meat { flex: 1 1 auto; min-width: 0; }
+.rank-line { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
+.rank-line b { color: var(--text); font-size: 15px; }
+.rank-bar { height: 7px; border-radius: 99px; background: rgba(255,255,255,0.09); overflow: hidden; }
+.rank-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #58c6ff, #7ee8b2); transition: width 0.4s ease; }
+
+.unlock-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.unlock {
+  text-align: left; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--panel-line); background: var(--panel); color: var(--text); cursor: pointer;
+}
+.unlock strong { display: block; font-size: 13px; font-weight: 640; }
+.unlock em { display: block; font-style: normal; font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.unlock.is-owned { border-color: rgba(125,255,180,0.5); background: rgba(125,255,180,0.10); cursor: default; }
+.unlock.can-buy { border-color: rgba(88,198,255,0.55); }
+.unlock.is-locked { opacity: 0.62; }
+
+.board { display: grid; gap: 4px; }
+.board-row {
+  display: grid; grid-template-columns: 26px 1fr auto auto; gap: 10px; align-items: baseline;
+  padding: 7px 10px; border-radius: 8px; background: rgba(255,255,255,0.04); font-size: 13px;
+}
+.board-pos { color: var(--accent); font-weight: 700; }
+.board-score { font-weight: 680; }
+.board-date { color: var(--text-dim); font-size: 11px; }
+
+.code-row { display: flex; gap: 8px; }
+.code-row input {
+  flex: 1 1 auto; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--panel-line); background: rgba(255,255,255,0.05);
+  color: var(--text); font: inherit; letter-spacing: 0.08em; text-transform: uppercase;
+}
+
+.games-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.game-card {
+  display: block; padding: 11px 13px; border-radius: 10px; text-decoration: none;
+  border: 1px solid var(--panel-line); background: var(--panel); color: var(--text);
+}
+.game-card strong { display: block; font-size: 13px; font-weight: 640; }
+.game-card em { display: block; font-style: normal; font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.game-card.is-here { border-color: rgba(88,198,255,0.55); background: rgba(88,198,255,0.12); }
+.game-card.is-soon { opacity: 0.55; border-style: dashed; }
+/* An aeroplane you have not earned yet. */
+.fleet-card.is-locked { opacity: 0.55; }
+.fleet-lock {
+  display: inline-block; margin-top: 6px; padding: 2px 8px; border-radius: 99px;
+  background: rgba(255, 176, 32, 0.16); border: 1px solid rgba(255, 176, 32, 0.45);
+  color: #ffc95e; font-size: 10.5px; font-weight: 640;
+}

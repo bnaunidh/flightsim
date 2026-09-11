@@ -42,6 +42,7 @@ import { CargoCrate } from './game/markers.js';
 import { NavGuide } from './game/navguide.js';
 import { Beacon } from './game/beacon.js';
 import { Minimap } from './ui/minimap.js';
+import * as Prog from './game/progression.js';
 import { TaxiRun } from './game/taxi.js';
 import { Wreck } from './game/wreck.js';
 import { Tornado } from './world/tornado.js';
@@ -186,6 +187,12 @@ class Game {
     this.navGuide = new NavGuide(this.scene);
     this.beacon = new Beacon(this.scene);
     this.minimap = new Minimap(document.getElementById('ui'));
+    this.prog = Prog.load();
+    if (this.menus) {
+      this.menus.prog = this.prog;
+      this.menus.syncProgression && this.menus.syncProgression(this.prog);
+      this.menus.syncFleetLocks && this.menus.syncFleetLocks();
+    }
     this.autopilot = new Autopilot();
     this.taxi = new TaxiRun(this);
     this.wreck = new Wreck(this.scene);
@@ -231,6 +238,7 @@ class Game {
       onPauseAction: (a) => this.pauseAction(a),
       onTrigger: (kind) => this.toggleFailure(kind),
       onNatural: (id) => this.triggerNatural(id),
+      onLocked: (msg) => this.hud.notify(msg, 'warn', 5),
       onAutopilotAlt: (ft) => {
         // Tell it to climb or descend. Used by "hold" and by the level change —
         // returning to the field and lining up both set their own heights.
@@ -550,6 +558,25 @@ class Game {
     } else if (result.id !== 'free') {
       this.progress = recordMission(this.progress, result.id, { score: result.score, time: result.time });
     }
+    /*
+     * Pay for the flight. Missions pay most, a free flight pays a little, and
+     * a crash pays nothing — but never takes anything away, because charging
+     * someone for crashing punishes exactly the person who most needs to keep
+     * trying.
+     */
+    const before = Prog.rankFor(this.prog).id;
+    const paid = Prog.award(this.prog, {
+      kind: result.id === 'free' ? 'free' : result.id === 'tutorial' ? 'tutorial' : 'mission',
+      score: result.score || 0,
+      crashed: !!result.crashed,
+      difficulty: this.settings.difficulty || 'normal',
+      label: result.name || result.id,
+    });
+    const after = Prog.rankFor(this.prog);
+    if (paid.credits > 0) this.hud.notify(`+${paid.credits} credits · ${paid.total} total`, 'good', 4);
+    if (after.id !== before) this.hud.notify(`Promoted — you are now a ${after.name}`, 'good', 6);
+    this.menus.syncProgression && this.menus.syncProgression(this.prog);
+
     this.menus.syncProgress(this.progress);
     this.audio.available && this.audio.alerts.success();
     const mins = Math.floor(result.time / 60);
