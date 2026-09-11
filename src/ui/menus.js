@@ -15,6 +15,7 @@ import { CREDITS_HTML } from './credits.js';
 import { MAPS } from '../world/maps.js';
 import { loadFreePresets, saveFreePresets, MAX_FREE_PRESETS } from '../core/storage.js';
 import * as Prog from '../game/progression.js';
+import { LIVERIES, schemeFor } from '../aircraft/liveries.js';
 
 function h(html) {
   const t = document.createElement('template');
@@ -94,7 +95,7 @@ function mapThumbnail(def) {
  * are about to fly, not an illustration of one. Span, chord, sweep, tail size,
  * engine count and their positions all come straight off `type.shape`.
  */
-function aircraftThumbnail(type) {
+function aircraftThumbnail(type, liveryId) {
   const W = 300;
   const H = 190;
   const c = document.createElement('canvas');
@@ -121,8 +122,14 @@ function aircraftThumbnail(type) {
     const mix = (v) => Math.round(v + (255 - v) * amount);
     return `rgb(${mix(r)},${mix(g2)},${mix(b)})`;
   };
-  const livery = lighten(type.livery || '#26323f', 0.66);
-  const accent = type.accent || '#e0a838';
+  /*
+   * The card has to show the paint you are actually flying, or the hangar is
+   * quietly lying about what is on the apron.
+   */
+  const sch = schemeFor(type, liveryId);
+  const livery = lighten(sch.base || type.livery || '#26323f', 0.66);
+  const accent = sch.accent || type.accent || '#e0a838';
+  const tailCol = sch.tail != null ? `#${sch.tail.toString(16).padStart(6, '0')}` : accent;
 
   // Fit the aeroplane into the frame: span across, length down.
   const span = S.halfSpan * 2 * S.scale;
@@ -172,7 +179,7 @@ function aircraftThumbnail(type) {
   g.moveTo(px(0), py(noseZ + 1));
   g.lineTo(px(0), py(tailZ - 0.4));
   g.stroke();
-  g.fillStyle = accent;
+  g.fillStyle = tailCol;
   g.beginPath();
   g.moveTo(px(0), py(S.finZ - S.finRootChord / 2));
   g.lineTo(px(0.12), py(S.finZ + S.finRootChord / 2));
@@ -224,8 +231,15 @@ export class Menus {
   constructor(root, hooks) {
     this.root = root;
     this.hooks = hooks;
-    // Read once here so the hangar can paint itself at build time; main.js
-    // owns the live copy and hands it back through syncProgression().
+    /*
+     * Read once here so the hangar can paint itself at build time. main.js
+     * owns the live copy and hands the SAME object back through
+     * syncProgression() — the two must never be separate objects, because the
+     * hangar's buttons mutate this one in place while main.js reads its own
+     * for gating. They diverged exactly that way once already: entering the
+     * passcode unlocked the menus' copy and left main.js's at false for the
+     * rest of the session.
+     */
     this.prog = Prog.load();
     this.current = null;
     this.screens = {};
@@ -420,10 +434,37 @@ export class Menus {
         <div class="mission-grid">${cards}</div>
       </section>
     `);
+    /*
+     * Hide the military missions until the passcode is entered.
+     *
+     * Every card is rendered and then hidden, rather than filtered out of
+     * MISSIONS at build time — build() runs exactly once from the constructor,
+     * so a filter applied while mapping could never bring them back when the
+     * passcode is entered mid-session.
+     *
+     * `this.prog` is read at call time, never captured: main.js owns the live
+     * object and swaps it in later.
+     */
+    this.syncMissionLocks = () => {
+      for (const m of MISSIONS) {
+        const card = s.querySelector(`[data-mission="${m.id}"]`);
+        if (card) card.hidden = Prog.needsPasscode(this.prog, m);
+      }
+    };
+    this.syncMissionLocks();
+
     s.addEventListener('click', (e) => {
       if (e.target.closest('[data-back]')) return this.show('main');
       const start = e.target.closest('[data-start]');
-      if (start) this.hooks.startMission(start.dataset.start);
+      if (!start) return;
+      // The UI filter is not a gate on the engine, so guard the click too.
+      const m = MISSIONS.find((x) => x.id === start.dataset.start);
+      if (m && Prog.needsPasscode(this.prog, m)) {
+        this.hooks.onLocked &&
+          this.hooks.onLocked('Military missions are behind a passcode — enter it in the Hangar.');
+        return;
+      }
+      this.hooks.startMission(start.dataset.start);
     });
     this.screens.missions = s;
     return s;
@@ -622,10 +663,15 @@ export class Menus {
     const time = s.querySelector('[data-time]');
     const cond = s.querySelector('[data-cond]');
     // A plan view on each card, drawn from that aeroplane's own shape data.
-    for (const a of AIRCRAFT) {
-      const host = s.querySelector(`[data-fleet-art="${a.id}"]`);
-      if (host) host.appendChild(aircraftThumbnail(a));
-    }
+    this.repaintFleetArt = (liveryId) => {
+      for (const a of AIRCRAFT) {
+        const host = s.querySelector(`[data-fleet-art="${a.id}"]`);
+        if (!host) continue;
+        host.innerHTML = '';
+        host.appendChild(aircraftThumbnail(a, liveryId));
+      }
+    };
+    this.repaintFleetArt(this.settingsRef ? this.settingsRef.livery : 'house');
     // Show which of the fleet you have actually earned.
     this.syncFleetLocks = () => {
       for (const a of AIRCRAFT) {
@@ -958,6 +1004,14 @@ export class Menus {
         </div>
 
         <div class="tab-body" data-panel="flight">
+          <label class="field"><span>Airline livery</span>
+            <select data-set="livery">
+              ${LIVERIES.map((l) => `<option value="${l.id}">${l.name} — ${l.blurb}</option>`).join('')}
+            </select>
+          </label>
+          <p class="hint">These are original airlines, styled after the real ones rather than copying
+          them. The tail is painted with its own material — a stripe drawn into the shared body texture
+          wraps around the fuselage as a ring instead, which is a property of how the mesh is unwrapped.</p>
           <label class="field"><span>Difficulty</span>
             <select data-set="difficulty">
               <option value="easy">Easy — for a first flight</option>
@@ -1223,6 +1277,10 @@ export class Menus {
         if (r.ok) s.querySelector('[data-mil-code]').value = '';
         render();
         this.syncFleetLocks && this.syncFleetLocks();
+        this.syncMissionLocks && this.syncMissionLocks();
+        // The start screen's "N missions" denominator excludes hidden ones, so
+        // it has to be recomputed too or it keeps advertising the old total.
+        this._lastProgress && this.syncProgress(this._lastProgress);
         return;
       }
       if (e.target.closest('[data-redeem]')) {
@@ -1541,11 +1599,12 @@ export class Menus {
   }
 
   syncProgress(progress) {
+    this._lastProgress = progress;
     const stats = this.screens.main.querySelector('[data-stats]');
     const done = Object.values(progress.missions).filter((m) => m.complete).length;
     const best = progress.bestLanding;
     stats.innerHTML = `
-      <span><b>${done}</b>/${MISSIONS.length} missions</span>
+      <span><b>${done}</b>/${MISSIONS.filter((m) => !Prog.needsPasscode(this.prog, m)).length} missions</span>
       <span><b>${progress.landings}</b> landings</span>
       ${best ? `<span>Best landing <b>${best.score}</b>/100</span>` : '<span>No landings yet</span>'}
       ${progress.tutorialComplete ? '<span class="ok">Flight school ✓</span>' : ''}

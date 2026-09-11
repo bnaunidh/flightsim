@@ -10,6 +10,13 @@
  *   6. Night Medevac — a pickup on Mango Cay, at night, in rain.
  *   7. Storm Chaser — three passes through a tornado's outer bands.
  *
+ * Four more sit behind the military passcode: a carrier qualification, an
+ * interception patrol, a night recon run and a scored practice range. Three of
+ * those four are flying problems rather than shooting ones, because that is
+ * genuinely the harder thing a fast jet does; the fourth is a marked range
+ * with an inert store and a score in metres, which is how air forces actually
+ * train and makes it a precision exercise with a number at the end.
+ *
  * The first three teach. The last four are the ones with teeth: each has a way
  * to lose that is not simply crashing — running out of height, running out of
  * time, landing short, or being pulled into the core — because a challenge you
@@ -46,6 +53,78 @@ const airborneOverRunway = (dist = 6500, alt = 460) => ({
   speed: 58,
   altAGL: alt,
 });
+
+/* ------------------------------------------------------------------ *
+ * Military mission fixtures.
+ * ------------------------------------------------------------------ */
+
+/** The three patrol contacts, at three bearings and three ranges. */
+const CONTACTS = [
+  new THREE.Vector3(7200, ELEV + 900, -2400),
+  new THREE.Vector3(-1800, ELEV + 700, 8200),
+  new THREE.Vector3(-8600, ELEV + 800, -3000),
+];
+
+/** Four points to photograph, spread so the route has to be planned. */
+const PHOTO_POINTS = [
+  new THREE.Vector3(2400, 0, -1500),
+  new THREE.Vector3(3100, 0, 2600),
+  new THREE.Vector3(-2200, 0, 2100),
+  new THREE.Vector3(-3100, 0, -3600),
+];
+
+/** The practice range bullseye, well clear of the town and the airfield. */
+const RANGE_TARGET = new THREE.Vector3(-6400, 0, -4200);
+
+/**
+ * Where the carrier is, read live rather than hard-coded.
+ *
+ * The ship registers itself as a landing platform when the world is built, so
+ * asking the platform list is the one way to be sure the mission and the
+ * actual steel agree. Hard-coding the position would silently drift the day
+ * anyone moves the ship.
+ */
+function carrierTarget(ctx) {
+  const c = ctx.sim.carrier;
+  if (!c) return null;
+  return new THREE.Vector3(c.pos.x, c.deckY || 24, c.pos.z);
+}
+
+/** True only when the wheels are on the deck, not on the sea or the island. */
+function onCarrierDeck(ctx) {
+  const c = ctx.sim.carrier;
+  if (!c) return false;
+  const p = ctx.ac.pos;
+  return (
+    Math.abs(p.x - c.pos.x) <= c.halfWidth &&
+    Math.abs(p.z - c.pos.z) <= c.halfDepth &&
+    Math.abs(p.y - (c.deckY || 24)) < 8
+  );
+}
+
+function nearestOf(ctx, list, done) {
+  let best = null;
+  let bestD = Infinity;
+  for (let i = 0; i < list.length; i++) {
+    if (done.includes(i)) continue;
+    const d = ctx.ac.pos.distanceTo(list[i]);
+    if (d < bestD) {
+      bestD = d;
+      best = list[i];
+    }
+  }
+  return best;
+}
+
+function nearestContact(ctx) {
+  return nearestOf(ctx, CONTACTS, ctx.data.seen || []);
+}
+
+function nearestPhoto(ctx) {
+  const p = nearestOf(ctx, PHOTO_POINTS, ctx.data.shot || []);
+  // The photo points sit on the ground, so lift the arrow to a flyable height.
+  return p ? new THREE.Vector3(p.x, heightAt(p.x, p.z) + 200, p.z) : null;
+}
 
 function landedAndStopped(ctx) {
   const ac = ctx.ac;
@@ -735,6 +814,295 @@ export const MISSIONS = [
     score: (ctx) => {
       const l = ctx.data.lastTouchdown;
       return Math.round(50 + (l ? l.score : 20) * 0.5);
+    },
+  },
+
+  /* ==================================================================== *
+   * Military missions. Hidden until the passcode is entered.
+   *
+   * Three of these are flying problems rather than shooting ones — a carrier
+   * qualification, an interception patrol and a low-level night recon — because
+   * they are genuinely the harder and more interesting things a fast jet does,
+   * and because the game already owns the carrier, the hook and the Nightjar.
+   *
+   * The fourth is a weapons range. It is a practice range with scored targets,
+   * which is how air forces actually train: inert stores, a marked bullseye,
+   * and a score in metres. That makes it a precision flying exercise with a
+   * number at the end rather than an abstract act of violence, and it reuses
+   * the cargo-release mechanic the delivery mission already has.
+   * ==================================================================== */
+  {
+    id: 'carrierqual',
+    name: 'Carrier Qualification',
+    short: 'Deck landing',
+    difficulty: 'Very hard',
+    icon: '⚓',
+    military: true,
+    blurb:
+      'Launch from the deck of the Resolute, fly a circuit, and put it back down on 72 metres of moving '
+      + 'steel. The hardest landing in the game, and the reason the Osprey has a hook.',
+    reward: 'Teaches precision approaches with no margin at all.',
+    aircraft: 'osprey',
+    weather: { time: 'day', condition: 'cloudy', windSpeedKts: 14, windDirDeg: 90 },
+    spawn: RUNWAY_START,
+    parTime: 420,
+    steps: [
+      {
+        id: 'depart',
+        text: 'Take off and head out to the carrier. She is west of the island.',
+        hint: 'The Osprey lands slowly on purpose — that is what makes the deck possible.',
+        atc: { text: 'Osprey two one, Resolute has you on radar, deck is green.', voice: 'tower' },
+        targetLabel: 'CV-11 Resolute',
+        target: (ctx) => carrierTarget(ctx),
+        check: (ctx) => {
+          const c = carrierTarget(ctx);
+          return !!c && ctx.ac.pos.distanceTo(c) < 2200 && ctx.ac.airborneTime > 6;
+        },
+      },
+      {
+        id: 'pattern',
+        text: 'Fly down the port side, then turn back onto the deck. Gear and full flap.',
+        hint: 'Come in slow and low. You are aiming at a strip the length of four tennis courts.',
+        targetLabel: 'The deck',
+        target: (ctx) => carrierTarget(ctx),
+        check: (ctx) => {
+          const c = carrierTarget(ctx);
+          return !!c && ctx.ac.pos.distanceTo(c) < 900 && ft(ctx.ac.agl) < 900;
+        },
+      },
+      {
+        id: 'trap',
+        text: 'Put it on the deck.',
+        hint: 'No flare. A carrier landing is a controlled arrival, not a gentle one.',
+        targetLabel: 'The deck',
+        target: (ctx) => carrierTarget(ctx),
+        check: (ctx) => onCarrierDeck(ctx) && ctx.ac.onGround && ctx.ac.groundSpeed < 4,
+      },
+    ],
+    onComplete: (ctx) => {
+      ctx.sim.speak('Osprey two one, that is a trap. Welcome aboard.', 'tower');
+    },
+    score: (ctx) => {
+      const l = ctx.data.lastTouchdown;
+      return Math.round(55 + (l ? l.score : 20) * 0.45);
+    },
+  },
+
+  {
+    id: 'patrol',
+    name: 'Island Patrol',
+    short: 'Protect the island',
+    difficulty: 'Hard',
+    icon: '🛡',
+    military: true,
+    blurb:
+      'Three unidentified contacts are approaching Kestrel from three directions. Get to each of them '
+      + 'inside six minutes. The Nightjar has the legs for it — you have to plan the order.',
+    reward: 'Teaches route planning and flying a fast jet with your head up.',
+    aircraft: 'nightjar',
+    weather: { time: 'day', condition: 'cloudy', windSpeedKts: 14, windDirDeg: 240 },
+    spawn: { pos: new THREE.Vector3(-3000, ELEV + 600, 0), headingDeg: 90, speed: 150, altAGL: 600 },
+    timeLimit: 360,
+    parTime: 280,
+    onStart: (ctx) => {
+      ctx.data.seen = [];
+    },
+    steps: [
+      {
+        id: 'brief',
+        text: 'Three contacts, three bearings, six minutes. Reach all three.',
+        hint: 'They are not all the same distance away. Think about the order before you turn.',
+        atc: { text: 'Nightjar zero two, three contacts inbound, intercept and identify.', voice: 'tower' },
+        check: (ctx) => ctx.elapsed > 3,
+      },
+      {
+        id: 'intercept',
+        text: 'Reach all three contacts. The arrow points at the nearest one you have not identified.',
+        hint: 'Flying past at speed counts — you do not have to slow down.',
+        targetLabel: 'Nearest contact',
+        target: (ctx) => nearestContact(ctx),
+        check: (ctx) => {
+          const seen = ctx.data.seen || [];
+          for (let i = 0; i < CONTACTS.length; i++) {
+            if (seen.includes(i)) continue;
+            if (ctx.ac.pos.distanceTo(CONTACTS[i]) < 700) {
+              seen.push(i);
+              ctx.data.seen = seen;
+              ctx.sim.hud.notify(`Contact ${seen.length} of 3 identified`, 'good', 3);
+            }
+          }
+          return seen.length >= 3;
+        },
+      },
+      {
+        id: 'rtb',
+        text: 'All three identified. Return to the field and land.',
+        hint: 'The Nightjar lands fast and flat. Start slowing down early.',
+        targetLabel: 'Runway 09',
+        target: () => RUNWAY.touchdown,
+        check: landedAndStopped,
+      },
+    ],
+    onComplete: (ctx) => {
+      ctx.sim.speak('Nightjar zero two, all three identified. Nicely planned.', 'tower');
+    },
+    score: (ctx) => {
+      const l = ctx.data.lastTouchdown;
+      const speed = Math.max(0, 1 - ctx.elapsed / 360);
+      return Math.round(speed * 55 + (l ? l.score : 25) * 0.45);
+    },
+  },
+
+  {
+    id: 'recon',
+    name: 'Low-Level Recon',
+    short: 'Night photo run',
+    difficulty: 'Very hard',
+    icon: '📷',
+    military: true,
+    blurb:
+      'Four points to overfly below 500 feet, at night, in the flying wing. The aeroplane with no tail, '
+      + 'in the dark, close to the ground. Hold it steady.',
+    reward: 'Teaches low-level flying and trusting the instruments.',
+    aircraft: 'nightjar',
+    weather: { time: 'night', condition: 'clear', windSpeedKts: 9, windDirDeg: 120 },
+    spawn: { pos: new THREE.Vector3(-4200, ELEV + 400, 600), headingDeg: 90, speed: 140, altAGL: 400 },
+    timeLimit: 480,
+    parTime: 360,
+    onStart: (ctx) => {
+      ctx.data.shot = [];
+    },
+    steps: [
+      {
+        id: 'brief',
+        text: 'Four photo points. Below 500 feet over each one, or it does not count.',
+        hint: 'It is dark. Fly the altimeter, not the window.',
+        atc: { text: 'Nightjar zero two, you are cleared low level. Nothing below you is lit.', voice: 'tower' },
+        check: (ctx) => ctx.elapsed > 3,
+      },
+      {
+        id: 'shoot',
+        text: 'Overfly each point below 500 feet.',
+        hint: 'Get low BEFORE you arrive. Diving at the point in the dark is how this goes wrong.',
+        targetLabel: 'Next photo point',
+        target: (ctx) => nearestPhoto(ctx),
+        check: (ctx) => {
+          const shot = ctx.data.shot || [];
+          for (let i = 0; i < PHOTO_POINTS.length; i++) {
+            if (shot.includes(i)) continue;
+            const p = PHOTO_POINTS[i];
+            const flat = Math.hypot(ctx.ac.pos.x - p.x, ctx.ac.pos.z - p.z);
+            if (flat < 420 && ft(ctx.ac.agl) < 500) {
+              shot.push(i);
+              ctx.data.shot = shot;
+              ctx.sim.hud.notify(`Point ${shot.length} of 4 photographed`, 'good', 3);
+            }
+          }
+          return shot.length >= 4;
+        },
+      },
+      {
+        id: 'home',
+        text: 'That is all four. Bring it home.',
+        hint: 'Climb away from the ground first, then worry about the runway.',
+        targetLabel: 'Runway 09',
+        target: () => RUNWAY.touchdown,
+        check: landedAndStopped,
+      },
+    ],
+    onComplete: (ctx) => {
+      ctx.sim.speak('Nightjar zero two, all four points. That was flown properly.', 'tower');
+    },
+    score: (ctx) => {
+      const l = ctx.data.lastTouchdown;
+      return Math.round(50 + (l ? l.score : 20) * 0.5);
+    },
+  },
+
+  {
+    id: 'range',
+    name: 'Weapons Range',
+    short: 'Scored practice drop',
+    difficulty: 'Hard',
+    icon: '◎',
+    military: true,
+    blurb:
+      'A marked practice range with a bullseye. Carry an inert practice store out to it, release on the '
+      + 'target, and you are scored in metres from the middle. Accuracy, not force.',
+    reward: 'Teaches release timing, wind allowance and flying an exact line.',
+    aircraft: 'nightjar',
+    weather: { time: 'day', condition: 'clear', windSpeedKts: 12, windDirDeg: 200 },
+    spawn: RUNWAY_START,
+    parTime: 400,
+    onStart: (ctx) => {
+      ctx.sim.hasCargo = true;
+      ctx.data.dropped = false;
+    },
+    steps: [
+      {
+        id: 'go',
+        text: 'One inert practice store aboard. Take off and head for the range.',
+        hint: 'It is a training round — it marks where it lands and nothing else.',
+        atc: { text: 'Nightjar zero two, range is cold and clear, you are cleared in.', voice: 'tower' },
+        targetLabel: 'The range',
+        target: () => RANGE_TARGET.clone(),
+        check: (ctx) => ctx.ac.airborneTime > 4 && ft(ctx.ac.agl) > 200,
+      },
+      {
+        id: 'run',
+        text: 'Run in on the target below 1,500 feet and line it up.',
+        hint: 'Steady wings well before you get there. A last-second correction throws the release off.',
+        targetLabel: 'Bullseye',
+        target: () => RANGE_TARGET.clone(),
+        check: (ctx) =>
+          ctx.ac.pos.distanceTo(RANGE_TARGET) < 900 && ft(ctx.ac.agl) < 1500,
+      },
+      {
+        id: 'release',
+        text: 'Press X to release over the bullseye.',
+        hint: 'It falls forward as well as down — release before you are on top of it.',
+        targetLabel: 'Bullseye',
+        target: () => RANGE_TARGET.clone(),
+        check: (ctx) => {
+          const crate = ctx.sim.crate;
+          if (!crate || !crate.landed) return false;
+          if (ctx.data.miss === undefined) {
+            ctx.data.miss = Math.hypot(
+              crate.mesh.position.x - RANGE_TARGET.x,
+              crate.mesh.position.z - RANGE_TARGET.z
+            );
+            ctx.sim.hud.notify(
+              ctx.data.miss < 40
+                ? `Direct hit — ${Math.round(ctx.data.miss)} m`
+                : `${Math.round(ctx.data.miss)} m from the middle`,
+              ctx.data.miss < 120 ? 'good' : 'warn',
+              5
+            );
+          }
+          return true;
+        },
+      },
+      {
+        id: 'rtb',
+        text: 'Scored. Head home and land.',
+        hint: 'Nothing left to carry — it will feel lighter.',
+        targetLabel: 'Runway 09',
+        target: () => RUNWAY.touchdown,
+        check: landedAndStopped,
+      },
+    ],
+    onComplete: (ctx) => {
+      const m = Math.round(ctx.data.miss ?? 999);
+      ctx.sim.speak(
+        m < 40 ? 'Nightjar zero two, shack. That is a direct hit.' : `Nightjar zero two, scored at ${m} metres.`,
+        'tower'
+      );
+    },
+    score: (ctx) => {
+      const l = ctx.data.lastTouchdown;
+      // Accuracy is most of it: dead centre is worth far more than a tidy landing.
+      const acc = Math.max(0, 1 - (ctx.data.miss ?? 400) / 300);
+      return Math.round(acc * 62 + (l ? l.score : 20) * 0.38);
     },
   },
 ];

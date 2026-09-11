@@ -540,7 +540,9 @@ export async function runPlaytest(sim, { verbose = false } = {}) {
   say('maps');
   await testMaps(sim, r);
   say('aircraft');
-  for (const id of ['skylark', 'courier', 'meridian', 'vanguard', 'osprey']) {
+  for (const id of (await import('../src/aircraft/types.js')).AIRCRAFT.map((a) => a.id) /* was a
+    five-id literal, already missing tempest and nightjar before either was
+    added — a hardcoded fleet list is stale the moment the fleet changes */) {
     await flyCircuit(sim, id, r);
   }
   say('failures');

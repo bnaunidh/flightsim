@@ -143,16 +143,41 @@ export function createAircraftModel(opts = {}) {
   // wing-strike points from, so what you see is what you fly.
   const type = opts.type || getAircraft(DEFAULT_AIRCRAFT_ID);
   const S = opts.shape || type.shape;
-  const livery = opts.livery || type.livery || '#eef1f5';
-  const accent = opts.accent || type.accent || '#c8102e';
+  /*
+   * Paint.
+   *
+   * `opts.livery` may be a scheme object from aircraft/liveries.js, or the
+   * old plain hex string. Both are accepted so nothing that already calls this
+   * has to change.
+   */
+  const scheme =
+    opts.livery && typeof opts.livery === 'object'
+      ? opts.livery
+      : { base: opts.livery || type.livery || '#eef1f5', accent: opts.accent || type.accent || '#c8102e' };
   const isJet = S.power.kind === 'jet';
 
   const root = new THREE.Group();
   root.name = 'aircraft';
 
-  const skin = airframeTexture(livery, accent);
+  const skin = airframeTexture(scheme);
   const bodyMat = metalMaterial(skin, { roughness: 0.36, metalness: 0.4 });
   const matteMat = metalMaterial(skin, { roughness: 0.62, metalness: 0.2 });
+  /*
+   * The tail gets its own material, and it has to.
+   *
+   * The fin is lofted with u running around the aerofoil section and v running
+   * spanwise, and it is handed the same square image as the fuselage — so any
+   * colour painted into that texture arrives on the fin as a band wrapped
+   * across it, never as a coloured tail. A tinted material is the only way to
+   * get the one marking that actually makes a scheme recognisable in the air.
+   * `null` leaves the fin in body colour, which is what the house schemes want.
+   */
+  const tailMat = scheme.tail
+    ? metalMaterial(skin, { roughness: 0.38, metalness: 0.35, color: scheme.tail })
+    : bodyMat;
+  const tailMatte = scheme.tail
+    ? metalMaterial(skin, { roughness: 0.62, metalness: 0.2, color: scheme.tail })
+    : matteMat;
   const glassMat = new THREE.MeshPhysicalMaterial({
     color: 0xa8c6d8,
     roughness: 0.05,
@@ -426,13 +451,13 @@ export function createAircraftModel(opts = {}) {
     ],
     tailProfile
   );
-  const fin = new THREE.Mesh(vStabGeo, bodyMat);
+  const fin = new THREE.Mesh(vStabGeo, tailMat);
   fin.rotation.z = Math.PI / 2; // span becomes vertical
   fin.position.set(0, 0.18, S.finZ);
   fin.castShadow = true;
   root.add(fin);
   // Dorsal fillet.
-  const fillet = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.42, S.finRootChord * 0.73), bodyMat);
+  const fillet = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.42, S.finRootChord * 0.73), tailMat);
   fillet.position.set(0, 0.42, S.finZ - S.finRootChord * 0.3);
   root.add(fillet);
 
@@ -441,7 +466,7 @@ export function createAircraftModel(opts = {}) {
     const c = S.finRootChord * 0.35;
     const g = new THREE.BoxGeometry(0.06, h, c);
     g.translate(0, h / 2, c / 2);
-    const m = new THREE.Mesh(g, matteMat);
+    const m = new THREE.Mesh(g, tailMatte);
     m.castShadow = true;
     const pivot = new THREE.Group();
     pivot.add(m);

@@ -44,6 +44,7 @@ import { NavGuide } from './game/navguide.js';
 import { Beacon } from './game/beacon.js';
 import { Minimap } from './ui/minimap.js';
 import * as Prog from './game/progression.js';
+import { schemeFor, findLivery } from './aircraft/liveries.js';
 import { TaxiRun } from './game/taxi.js';
 import { Wreck } from './game/wreck.js';
 import { Tornado } from './world/tornado.js';
@@ -176,7 +177,13 @@ class Game {
     this.aircraft.mode = this.settings.flightMode;
     this.aircraft.difficulty = this.settings.difficulty || 'normal';
     this.aircraft.realisticFuel = !!this.settings.realisticFuel;
-    this.model = createAircraftModel();
+    // Built with no options at all before, so it silently wore the skylark's
+    // colours whatever was saved. setAircraft rebuilds it a moment later, but
+    // one frame in the wrong paint is still one frame in the wrong paint.
+    this.model = createAircraftModel({
+      type: this.aircraftType,
+      livery: schemeFor(this.aircraftType, this.settings.livery),
+    });
     this.scene.add(this.model);
     this.cockpit = createCockpit({ highContrast: this.settings.highContrast, type: this.aircraftType });
     this.model.add(this.cockpit);
@@ -189,11 +196,6 @@ class Game {
     this.beacon = new Beacon(this.scene);
     this.minimap = new Minimap(document.getElementById('ui'));
     this.prog = Prog.load();
-    if (this.menus) {
-      this.menus.prog = this.prog;
-      this.menus.syncProgression && this.menus.syncProgression(this.prog);
-      this.menus.syncFleetLocks && this.menus.syncFleetLocks();
-    }
     this.autopilot = new Autopilot();
     this.taxi = new TaxiRun(this);
     this.wreck = new Wreck(this.scene);
@@ -278,6 +280,22 @@ class Game {
       },
       onClick: () => this.audio.available && this.audio.alerts.uiClick(),
     });
+
+    /*
+     * ONE progression object, shared with the menus.
+     *
+     * Menus reads its own copy at construction so the hangar can paint itself,
+     * and the hangar's buttons mutate that copy in place. If main.js kept a
+     * separate one, entering the passcode would unlock the menus' copy and
+     * leave main.js's at false for the rest of the session — which is exactly
+     * what happened. This has to run AFTER `new Menus(...)`; an earlier
+     * attempt sat above it and was dead code, because `this.menus` did not
+     * exist yet and the `if` simply never fired.
+     */
+    this.prog = this.menus.prog;
+    this.menus.syncProgression && this.menus.syncProgression(this.prog);
+    this.menus.syncFleetLocks && this.menus.syncFleetLocks();
+    this.menus.syncMissionLocks && this.menus.syncMissionLocks();
     this.menus.syncSettings(this.settings);
     this.menus.syncProgress(this.progress);
     this.menus.syncSound(this.settings.muted);
@@ -1118,6 +1136,20 @@ class Game {
         this.hud.notify('Cockpit view — press C to look from outside again', 'info', 3);
       }
       if (this.hud) this.hud.setMinimal(!!value && this.rig && this.rig.mode === 'cockpit');
+    } else if (path === 'livery') {
+      /*
+       * Repainting means rebuilding the model.
+       *
+       * setAircraft early-returns when the id is unchanged, so it cannot do
+       * this job — choosing a new scheme for the aeroplane you are already in
+       * would silently do nothing. Forcing the type to null makes the rebuild
+       * run for real.
+       */
+      const id = this.aircraftType.id;
+      this.aircraftType = null;
+      this.setAircraft(id);
+      this.menus.repaintFleetArt && this.menus.repaintFleetArt(value);
+      this.hud.notify(`Repainted — ${findLivery(value).name}`, 'info', 3);
     } else if (path === 'difficulty') {
       this.applyDifficulty(value);
     } else if (path === 'realisticFuel') {
@@ -1204,7 +1236,10 @@ class Game {
       });
     }
 
-    this.model = createAircraftModel({ type: this.aircraftType });
+    this.model = createAircraftModel({
+      type: this.aircraftType,
+      livery: schemeFor(this.aircraftType, this.settings.livery),
+    });
     this.scene.add(this.model);
     this.cockpit = createCockpit({ highContrast: this.settings.highContrast, type: this.aircraftType });
     // The airframe is scaled to size; the cockpit is not. There is one

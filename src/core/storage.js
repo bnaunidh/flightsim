@@ -58,6 +58,8 @@ export const DEFAULT_SETTINGS = {
   // instruments read off the panel instead of the overlay.
   realisticCockpit: false,
   aircraft: 'skylark',
+  /** Which airline paint scheme. 'house' means each type's own colours. */
+  livery: 'house',
   atcChatter: true,
   // 'radio' (synthesised, no TTS) | 'speech' (browser TTS) | 'recordings'
   atcVoice: 'radio',

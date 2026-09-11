@@ -19,6 +19,7 @@ import * as THREE from '../vendor/three.module.js';
 import { AIRPORT, addObstacleAt } from './terrain.js';
 import { buildingTexture, roofTexture, panelTexture, asphaltTexture } from '../render/textures.js';
 import { createAircraftModel } from '../aircraft/model.js';
+import { LIVERIES, schemeFor } from '../aircraft/liveries.js';
 import { getAircraft } from '../aircraft/types.js';
 
 const ELEV = AIRPORT.elev;
@@ -268,10 +269,20 @@ export class Apron {
 
   /** Aeroplanes on the stands, from the same fleet you fly. */
   buildParkedAircraft() {
-    for (const st of this.stands) {
-      if (!st.ac) continue;
+    this.stands.forEach((st, standIndex) => {
+      if (!st.ac) return;
       const type = getAircraft(st.ac);
-      const model = createAircraftModel({ type });
+      /*
+       * Park them in different airlines' colours.
+       *
+       * An apron where every aeroplane wears the same paint looks like a
+       * factory, not an airport. The scheme is picked from the stand index so
+       * it is stable across rebuilds rather than shuffling every time the
+       * world is built.
+       */
+      const painted = LIVERIES.filter((l) => !l.house);
+      const scheme = painted.length ? painted[standIndex % painted.length] : null;
+      const model = createAircraftModel({ type, livery: scheme || schemeFor(type, 'house') });
       // Nose in to the stand, which is why the air bridge reaches where it does.
       model.position.set(st.x, ELEV + 1.5 * type.shape.scale, st.z + 6);
       model.rotation.y = Math.PI; // facing the terminal
@@ -292,7 +303,7 @@ export class Apron {
         { isNight: false, cond: { cloud: 0 } }
       );
       this.group.add(model);
-    }
+    });
   }
 
   /* --------------------------------------------------- ground vehicles -- */

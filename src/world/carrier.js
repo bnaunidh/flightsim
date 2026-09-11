@@ -119,7 +119,15 @@ export class Carrier {
     const along = Math.abs(((at.headingDeg || 0) % 180)) < 45;
     const bw = along ? W : L;
     const bd = along ? L : W;
-    addPlatform(at.x, at.z, bw, bd, H + 0.8, this.name);
+    /*
+     * Publish the deck so missions can ask about it instead of hard-coding it.
+     * A mission that carries its own copy of these numbers is a mission that
+     * silently points at empty sea the day the ship moves.
+     */
+    this.deckY = H + 0.8;
+    this.halfWidth = bw / 2;
+    this.halfDepth = bd / 2;
+    addPlatform(at.x, at.z, bw, bd, this.deckY, this.name);
     // The superstructure is solid; the deck is not, because you land on it.
     addObstacleAt(
       at.x + (along ? W * 0.34 : 0),

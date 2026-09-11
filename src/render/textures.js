@@ -422,9 +422,31 @@ export function foamTexture() {
  * Aircraft
  * ------------------------------------------------------------------ */
 
-/** Painted aluminium: base coat, livery, panel lines, rivets, dirt streaks. */
-export function airframeTexture(baseColor = '#eef1f5', accent = '#c8102e') {
-  return get('airframe' + baseColor + accent, () => {
+/**
+ * Painted aluminium: base coat, livery, panel lines, rivets, dirt streaks.
+ *
+ * Takes a scheme rather than two colours, so the cheatline and the
+ * registration belong to the airline instead of being hard-coded onto every
+ * aeroplane in the fleet. The old signature still works — pass two strings and
+ * they are read as base and accent.
+ *
+ * The cache key is explicitly delimited. It used to be `'airframe' + base +
+ * accent`, a bare concatenation: ('#eef1f5', '#c8102e') and ('#eef1f5#c8',
+ * '102e') collide. Nothing in the fleet ever triggered it because every value
+ * was a tidy #rrggbb, but a scheme with five fields would have made it a real
+ * possibility rather than a theoretical one.
+ */
+export function airframeTexture(schemeOrBase = '#eef1f5', accentArg = '#c8102e') {
+  const scheme =
+    typeof schemeOrBase === 'string'
+      ? { base: schemeOrBase, accent: accentArg }
+      : schemeOrBase || {};
+  const baseColor = scheme.base || '#eef1f5';
+  const accent = scheme.accent || '#c8102e';
+  const cheatline = scheme.cheatline || 'rgba(30,44,74,0.85)';
+  const reg = scheme.reg || 'N172SK';
+  const key = ['airframe', baseColor, accent, cheatline, reg].join('|');
+  return get(key, () => {
     const S = 1024;
     const c = canvas(S);
     const ctx = c.getContext('2d');
@@ -443,7 +465,7 @@ export function airframeTexture(baseColor = '#eef1f5', accent = '#c8102e') {
     ctx.bezierCurveTo(S * 0.6, S * 0.68, S * 0.35, S * 0.56, 0, S * 0.62);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = 'rgba(30,44,74,0.85)';
+    ctx.fillStyle = cheatline;
     ctx.beginPath();
     ctx.moveTo(0, S * 0.64);
     ctx.bezierCurveTo(S * 0.35, S * 0.58, S * 0.6, S * 0.7, S, S * 0.62);
@@ -487,7 +509,7 @@ export function airframeTexture(baseColor = '#eef1f5', accent = '#c8102e') {
     // Registration marking.
     ctx.fillStyle = 'rgba(40,48,64,0.9)';
     ctx.font = 'bold 44px Arial, sans-serif';
-    ctx.fillText('N172SK', S * 0.06, S * 0.42);
+    ctx.fillText(reg, S * 0.06, S * 0.42);
 
     // Dirt streaks trailing back from panel gaps.
     const rnd = makeRandom(19);
