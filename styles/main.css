@@ -471,6 +471,10 @@ kbd {
   position: absolute;
   inset: 0;
   display: grid;
+  /* The bar takes the first row; whichever screen is visible takes the second.
+     Hidden screens are display:none and so are not grid items at all, which is
+     why one row is enough for eight of them. */
+  grid-template-rows: auto minmax(0, 1fr);
   place-items: center;
   background: linear-gradient(180deg, rgba(7, 12, 21, 0.42) 0%, rgba(7, 12, 21, 0.55) 55%, rgba(7, 12, 21, 0.7) 100%);
   backdrop-filter: blur(3px) saturate(1.05);
@@ -480,14 +484,83 @@ kbd {
 }
 .menu-layer[hidden] { display: none; }
 
+/* ---- The bar above every menu: which game, and what you are worth ---- */
+.menu-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px max(14px, env(safe-area-inset-left)) 10px max(14px, env(safe-area-inset-right));
+  padding-top: max(10px, env(safe-area-inset-top));
+  background: rgba(8, 13, 22, 0.55);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+}
+.switcher {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+/* :where() so the shared button rules in .screen-list cannot out-specify the
+   lit state. That exact collision hid the selected item on three screens. */
+.switcher button:where(.switch-btn) {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(233, 240, 250, 0.66);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 560;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+.switcher button:where(.switch-btn):hover { background: rgba(255, 255, 255, 0.08); color: #eef4fc; }
+.switcher button:where(.switch-btn).is-on {
+  background: var(--accent);
+  color: #0b1220;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+.switcher .icon { flex: 0 0 auto; }
+
+.credit-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 210, 120, 0.3);
+  background: rgba(255, 198, 92, 0.12);
+  color: #ffd98a;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 640;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.credit-pill:hover { background: rgba(255, 198, 92, 0.2); }
+
+/* The bar is the top row, so the screens no longer own the whole window. */
+.menu-layer > .screen { grid-row: 2; }
+
 /* Screens must scroll. The Free Flight screen grew to 1,780 px tall in an
    825 px window and simply ran off the bottom — everything below the fold was
    unreachable, which reads as "I cannot select anything". */
 .screen {
   width: min(1080px, 94vw);
   padding: 28px 0 40px;
-  max-height: 100vh;
-  max-height: 100dvh;
+  /* 100% of the row the bar left behind, not of the window — a screen sized to
+     the viewport would push its own last rows under the bottom edge. */
+  max-height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -1867,6 +1940,13 @@ body.is-large { font-size: 18px; }
   .hud-btn { min-width: 46px; min-height: 46px; }
 
   /* Menus: full width, bigger hit areas, no hover-only affordances. */
+  /* Four labels plus a balance do not fit across a 360 px phone, so the
+     switcher drops to icons only. The icons were drawn to be readable at this
+     size, which is why the rotor bar runs the full width of the helicopter. */
+  .switcher button:where(.switch-btn) { padding: 9px 11px; }
+  .switcher button:where(.switch-btn) span { display: none; }
+  .menu-bar { padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top)); }
+  .credit-pill { padding: 8px 11px; font-size: 13px; }
   .screen { padding: 12px 10px 84px; }
   .screen-head h2 { font-size: 20px; }
   .start-opt, .fleet-card { padding: 12px; }

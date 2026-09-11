@@ -41,7 +41,17 @@ export const UNLOCKS = [
   { aircraft: 'nightjar', cost: 3000, why: 'No tail, and it shows', military: true },
 ];
 
-const FREE = ['skylark', 'courier'];
+/*
+ * Yours from the start.
+ *
+ * The Skyhook is on this list because it is not really an aeroplane you buy —
+ * it is one of the four games in the switcher, alongside the boat and the car,
+ * and those are free. It also had to be: it is in no UNLOCKS row, so costOf()
+ * returned 0 and buy() answered "Not for sale" while the hub cheerfully told
+ * you to unlock it in the hangar. The helicopter the class asked for could not
+ * be reached by any route at all.
+ */
+const FREE = ['skylark', 'courier', 'harrier'];
 
 /**
  * Military aircraft sit behind a passcode.
@@ -51,8 +61,16 @@ const FREE = ['skylark', 'courier'];
  * It is not a security measure — anyone can read this file — it is a door, so
  * that flying the bomber is a thing you were let into rather than a thing you
  * wandered into. Whoever runs the game decides who gets told the word.
+ *
+ * Typed case-insensitively, so `mc1234` and `MC1234` are the same door.
+ *
+ * It opens ONCE. `militaryUnlocked` lives in the saved progression and is
+ * never cleared — not by finishing, not by crashing, not by "Reset
+ * everything", which only touches settings, keys and mission progress. Being
+ * let in is a thing that happened to you, not a score you can lose, so the
+ * game must never make a kid go and ask for the word a second time.
  */
-export const MILITARY_CODE = 'REDTAIL';
+export const MILITARY_CODE = 'MC1234';
 
 function blank() {
   return {
@@ -71,6 +89,9 @@ export function load() {
     const raw = localStorage.getItem(KEY);
     if (!raw) return blank();
     const p = JSON.parse(raw);
+    // JSON.parse('null') is null, which survives the spread and then throws on
+    // the next line — a silent total reset dressed up as a corrupt save.
+    if (!p || typeof p !== 'object') return blank();
     return { ...blank(), ...p, unlocked: [...new Set([...FREE, ...(p.unlocked || [])])] };
   } catch (e) {
     console.warn('Could not read your progress — starting fresh.', e);
@@ -150,7 +171,18 @@ export function enterPasscode(p, raw) {
     return { ok: false, why: 'That is not the word' };
   }
   p.militaryUnlocked = true;
-  save(p);
+  /*
+   * Only say it opened if it actually stayed open.
+   *
+   * save() swallows its own failure — a full quota, a private window, a
+   * locked-down school profile — and returns false. Reporting success anyway
+   * gave you a session that worked perfectly and an unlock that was gone next
+   * morning, which is precisely the "go and ask for the word again" this is
+   * supposed to prevent. It still works for this session; you are just told.
+   */
+  if (!save(p)) {
+    return { ok: true, warn: 'Open for now — this browser would not save it, so you may have to enter it again.' };
+  }
   return { ok: true };
 }
 
@@ -182,18 +214,21 @@ export function buy(p, aircraftId) {
  * Codes, named so the name says what it is worth.
  *
  * The convention is `<whoever><amount>`: doritofc1k is a thousand credits,
- * kestrel500 is five hundred. The amount is PARSED OUT OF THE NAME rather than
- * written beside it, so the two can never disagree — a code called 1k cannot
- * quietly be worth 500, which is exactly the sort of thing that goes unnoticed
- * for months and then makes someone feel cheated.
+ * doritofc1m is a million, doritofc1b is a billion, kestrel500 is five
+ * hundred. The amount is PARSED OUT OF THE NAME rather than written beside
+ * it, so the two can never disagree — a code called 1m cannot quietly be
+ * worth 1000, which is exactly the sort of thing that goes unnoticed for
+ * months and then makes someone feel cheated.
  *
  * Only codes on this list work. The suffix decides the amount; it does not
- * mint credits on its own, or anyone could type `me99k` and help themselves.
+ * mint credits on its own, or anyone could type `me99b` and help themselves.
  *
  * To add one: put the name on the list with a note. Nothing else.
  */
 const CREDIT_CODES = {
   doritofc1k: 'For Dorito',
+  doritofc1m: 'For Dorito, seriously',
+  doritofc1b: 'For Dorito, absurdly',
   firstsolo300: 'Your first solo',
   kestrel500: 'Island hopper',
   tornado800: 'You went and looked',
@@ -208,14 +243,47 @@ const RANK_CODES = {
 };
 
 /**
+ * How much a suffix multiplies by. Thousand, million, billion, and that is
+ * where it stops — there is nothing in the game that costs more than a
+ * billion credits, so a `t` would only be a number with no meaning behind it.
+ */
+const SCALES = { k: 1e3, m: 1e6, b: 1e9 };
+
+/**
  * Read the payout off the end of a code name.
- * `1k` / `2K` → thousands; a bare number → itself. Returns 0 if there is none.
+ *
+ * `1k` → a thousand, `1m` → a million, `1b` → a billion, `2500` → itself.
+ * Returns 0 if the name does not end in a number, which is how a rank code or
+ * a typo fails safely rather than paying out something arbitrary.
  */
 export function creditsInName(name) {
-  const m = String(name).toLowerCase().match(/(\d+)(k?)$/);
+  const m = String(name).toLowerCase().match(/(\d+)([kmb]?)$/);
   if (!m) return 0;
-  const n = Number(m[1]);
-  return m[2] === 'k' ? n * 1000 : n;
+  return Number(m[1]) * (SCALES[m[2]] || 1);
+}
+
+/**
+ * A credit balance short enough to sit in the nav bar.
+ *
+ * Full grouped numbers below ten thousand, because 2,450 is a number a
+ * ten-year-old reads at a glance and "2.5k" is one they have to decode.
+ * Above that the digits stop meaning anything individually, so it goes
+ * compact — and a billion-credit code would otherwise be thirteen characters
+ * wide and push the switcher off a phone screen.
+ */
+export function formatCredits(n) {
+  const v = Math.round(Number(n) || 0);
+  if (v < 10000) return v.toLocaleString();
+  const at = (scale, suffix) => {
+    const x = v / scale;
+    return `${x < 100 ? +x.toFixed(1) : Math.round(x)}${suffix}`;
+  };
+  // The boundaries are where the ROUNDED figure would tip over, not where the
+  // real one does — otherwise 999,999 credits show as "1000k", which is a
+  // million written the long way round.
+  if (v < 999500) return at(1e3, 'k');
+  if (v < 999500000) return at(1e6, 'M');
+  return at(1e9, 'B');
 }
 
 export function redeem(p, raw) {

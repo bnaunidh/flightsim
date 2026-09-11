@@ -9,7 +9,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v24';
+const CACHE_VERSION = 'island-flight-v25';
 
 const PRECACHE = [
   './',
@@ -37,7 +37,26 @@ const PRECACHE = [
 
   'src/aircraft/physics.js',
   'src/aircraft/model.js',
+  'src/aircraft/model-adapter.js',
   'src/aircraft/cockpit.js',
+  'src/aircraft/types.js',
+  'src/aircraft/liveries.js',
+
+  // The fleet models. Offline is the whole point of the service worker, and an
+  // aeroplane that only exists when the wifi is up is not an aeroplane.
+  'src/fleet/aircraft-game-bridge.js',
+  'src/fleet/aircraft-fleet.js',
+  'src/fleet/aircraft-core.js',
+  'src/fleet/aircraft-light.js',
+  'src/fleet/aircraft-transport.js',
+  'src/fleet/aircraft-combat.js',
+  'src/fleet/aircraft-impact.js',
+  'src/fleet/aircraft-textures.js',
+  'src/fleet/aircraft-upgrades.js',
+  'src/fleet/common.js',
+  'src/fleet/helicopter.js',
+  'src/fleet/physics.js',
+  'src/fleet/effects.js',
 
   'src/flight/input.js',
   'src/flight/autopilot.js',
@@ -62,6 +81,31 @@ const PRECACHE = [
   'src/ui/hud.js',
   'src/ui/menus.js',
   'src/ui/credits.js',
+
+
+  /*
+   * Seventeen modules were missing from this list — the credits and the
+   * military unlock, the minimap, the touch controls, the boat and the car,
+   * the disasters and the tornado. The runtime handler caches whatever the
+   * game asks for, so they arrived after one online play; install the game
+   * and go straight offline, though, and half of it was not there.
+   */
+  'src/audio/jet.js',
+  'src/game/beacon.js',
+  'src/game/campaign-b.js',
+  'src/game/campaign.js',
+  'src/game/disasters.js',
+  'src/game/progression.js',
+  'src/game/wreck.js',
+  'src/ui/icons.js',
+  'src/ui/minimap.js',
+  'src/ui/touch.js',
+  'src/vehicles/models.js',
+  'src/vehicles/surface.js',
+  'src/world/apron.js',
+  'src/world/carrier.js',
+  'src/world/features.js',
+  'src/world/tornado.js',
 
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',

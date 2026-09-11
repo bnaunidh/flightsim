@@ -154,11 +154,14 @@ function pointsFor(shape, aero) {
       {
         pos: new THREE.Vector3(0, -0.9 * s, noseZ),
         what: shape.power.kind === 'jet' ? 'The nose struck the ground' : 'The propeller struck the ground',
+        // Which section of the model took it. Named here, beside the point
+        // itself, so the two can never drift apart.
+        part: 'nose',
       },
-      { pos: new THREE.Vector3(-tipX, tipY, -0.5 * s), what: 'The left wing tip hit the ground' },
-      { pos: new THREE.Vector3(tipX, tipY, -0.5 * s), what: 'The right wing tip hit the ground' },
-      { pos: new THREE.Vector3(0, -0.12 * s, tailZ), what: 'The tail struck the ground' },
-      { pos: new THREE.Vector3(0, -0.82 * s, 0.3 * s), what: 'The belly hit the ground' },
+      { pos: new THREE.Vector3(-tipX, tipY, -0.5 * s), what: 'The left wing tip hit the ground', part: 'leftWing' },
+      { pos: new THREE.Vector3(tipX, tipY, -0.5 * s), what: 'The right wing tip hit the ground', part: 'rightWing' },
+      { pos: new THREE.Vector3(0, -0.12 * s, tailZ), what: 'The tail struck the ground', part: 'tail' },
+      { pos: new THREE.Vector3(0, -0.82 * s, 0.3 * s), what: 'The belly hit the ground', part: 'fuselage' },
     ],
   };
 }

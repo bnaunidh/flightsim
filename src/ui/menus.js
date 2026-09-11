@@ -24,6 +24,20 @@ function h(html) {
 }
 
 /**
+ * The four games, in the order they appear in the bar.
+ *
+ * They are four things to be in one world rather than four copies of the
+ * engine: the boat needs the sea, the car needs the apron and the helicopter
+ * needs terrain to hover over, and all three are already outside the window.
+ */
+export const GAMES = [
+  { id: 'flight', name: 'Flight', icon: 'plane', title: 'Fly an aeroplane' },
+  { id: 'heli', name: 'Heli', icon: 'heli', title: 'Skyhook H-3 — the one that hovers' },
+  { id: 'boat', name: 'Boat', icon: 'boat', title: 'Kestrel Launch — out of the bay' },
+  { id: 'car', name: 'Car', icon: 'car', title: 'Airfield Runabout — round the apron' },
+];
+
+/**
  * A small painted preview of a map, drawn from the same island list the
  * terrain generator uses — so the picture is genuinely the place you are
  * about to fly, not decoration.
@@ -242,6 +256,8 @@ export class Menus {
      */
     this.prog = Prog.load();
     this.current = null;
+    /** Which of the four the bar should show as lit. Set before build(). */
+    this.currentGame = 'flight';
     this.screens = {};
     this.build();
   }
@@ -249,6 +265,10 @@ export class Menus {
   build() {
     const layer = h('<div class="menu-layer" hidden></div>');
     this.layer = layer;
+
+    // The bar is a sibling of the screens, not part of any one of them, so it
+    // survives show() — which hides every screen but the named one.
+    layer.appendChild(this.buildBar());
 
     layer.appendChild(this.buildMain());
     layer.appendChild(this.buildMissions());
@@ -265,6 +285,66 @@ export class Menus {
   }
 
   /* ------------------------------------------------------------------ */
+
+  /**
+   * The bar that sits above every menu screen.
+   *
+   * Two things the class asked for, and they belong together: which game you
+   * are in, and how many credits you have. Both were previously buried — the
+   * other three vehicles were four clicks deep inside More, and your balance
+   * only existed on the two screens that spend it. A switcher you can see is
+   * the difference between "there is a boat somewhere" and "I will take the
+   * boat out", and a balance you can see is what makes earning one mean
+   * anything.
+   *
+   * It is built once and lives outside the screens, because show() hides every
+   * screen but one — anything inside a screen would vanish with it.
+   */
+  buildBar() {
+    const bar = h(`
+      <div class="menu-bar">
+        <div class="switcher" role="group" aria-label="Choose a game">
+          ${GAMES.map(
+            (g) => `<button class="switch-btn" data-game="${g.id}" title="${g.title}">
+              ${icon(g.icon, 19)}<span>${g.name}</span>
+            </button>`
+          ).join('')}
+        </div>
+        <button class="credit-pill" data-goto-bar="hangar" title="Your credits — spend them in the hangar">
+          ${icon('credit', 17)}<span data-bar-credits>0</span>
+        </button>
+      </div>
+    `);
+
+    bar.addEventListener('click', (e) => {
+      const g = e.target.closest('[data-game]');
+      if (g) {
+        // Re-picking the game you are already in should do nothing rather than
+        // restart it, which is what makes the bar safe to prod.
+        if (g.dataset.game === this.currentGame) return;
+        this.hooks.switchGame && this.hooks.switchGame(g.dataset.game);
+        return;
+      }
+      const to = e.target.closest('[data-goto-bar]');
+      if (to) this.show(to.dataset.gotoBar);
+    });
+
+    this.bar = bar;
+    /**
+     * Repaint the bar. Cheap enough to call from anywhere that touches
+     * credits, which is the point — there is no list of callers to keep up to
+     * date, only "call this after you change something".
+     */
+    this.syncBar = () => {
+      const p = this.prog || Prog.load();
+      bar.querySelector('[data-bar-credits]').textContent = Prog.formatCredits(p.credits);
+      for (const btn of bar.querySelectorAll('[data-game]')) {
+        btn.classList.toggle('is-on', btn.dataset.game === this.currentGame);
+      }
+    };
+    this.syncBar();
+    return bar;
+  }
 
   buildMain() {
     const s = h(`
@@ -980,6 +1060,10 @@ export class Menus {
       if (e.target.closest('[data-fly]')) this.hooks.startFree(collectSetup());
     });
 
+    // The bar's switcher needs the world you last set up — weather, wind, time
+    // — so hopping between the four does not reset the sky each time.
+    this.readFree = collectSetup;
+
     renderSlots();
     this.screens.free = s;
     return s;
@@ -1369,7 +1453,12 @@ export class Menus {
         ? board.map((b, i) => `<div class="board-row"><span class="board-pos">${i + 1}</span><span class="board-name">${b.label}</span><span class="board-score">${b.score}</span><span class="board-date">${b.date}</span></div>`).join('')
         : '<p class="hint tiny">Fly something and it will show up here.</p>';
     };
-    this.syncProgression = (p) => { if (p) this.prog = p; render(); this.syncMore && this.syncMore(); };
+    this.syncProgression = (p) => {
+      if (p) this.prog = p;
+      render();
+      this.syncMore && this.syncMore();
+      this.syncBar && this.syncBar();
+    };
 
     s.addEventListener('click', (e) => {
       if (e.target.closest('[data-back]')) return this.show('main');
@@ -1379,6 +1468,8 @@ export class Menus {
         const r = Prog.buy(p, buy.dataset.buy);
         s.querySelector('[data-code-msg]').textContent = r.ok ? 'Unlocked — it is in the hangar now.' : r.why;
         render();
+        this.syncBar();
+        this.syncFleetLocks && this.syncFleetLocks();
         return;
       }
       const drive = e.target.closest('[data-drive]');
@@ -1390,7 +1481,7 @@ export class Menus {
         const p = this.prog || Prog.load();
         const r = Prog.enterPasscode(p, s.querySelector('[data-mil-code]').value);
         s.querySelector('[data-code-msg]').textContent = r.ok
-          ? 'Access granted — the military hangar is open.'
+          ? r.warn || 'Access granted — the military hangar is open, and stays open.'
           : r.why;
         if (r.ok) s.querySelector('[data-mil-code]').value = '';
         render();
@@ -1409,6 +1500,8 @@ export class Menus {
           : r.why;
         if (r.ok) s.querySelector('[data-code]').value = '';
         render();
+        this.syncBar();
+        this.syncFleetLocks && this.syncFleetLocks();
       }
     });
 
@@ -1824,6 +1917,9 @@ export class Menus {
     this.layer.hidden = false;
     for (const key in this.screens) this.screens[key].hidden = key !== name;
     this.current = name;
+    // Credits and the lit game can both have changed since this screen was
+    // last open — a flight paid out, a code was redeemed, the boat went back.
+    this.syncBar && this.syncBar();
     if (name === 'settings') this.renderKeymap();
     // Repaint the hub and the mission gate on open, so they are right whatever
     // changed them — a code, a flight, a passcode entered somewhere else.
@@ -1854,6 +1950,12 @@ export class Menus {
   }
 
 
+
+  /** Tell the bar which of the four is running, so it lights the right one. */
+  setGame(id) {
+    this.currentGame = id;
+    this.syncBar && this.syncBar();
+  }
 
   hide() {
     this.layer.hidden = true;

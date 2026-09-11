@@ -18,7 +18,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { AIRPORT, addObstacleAt } from './terrain.js';
 import { buildingTexture, roofTexture, panelTexture, asphaltTexture } from '../render/textures.js';
-import { createAircraftModel } from '../aircraft/model.js';
+import { createAircraftModel } from '../aircraft/model-adapter.js';
 import { LIVERIES, schemeFor } from '../aircraft/liveries.js';
 import { getAircraft } from '../aircraft/types.js';
 

@@ -25,7 +25,7 @@ import { Rain } from './world/precip.js';
 
 import { Aircraft, EVENTS, UNITS, SPEC, applyAircraft } from './aircraft/physics.js';
 import { getAircraft } from './aircraft/types.js';
-import { createAircraftModel } from './aircraft/model.js';
+import { createAircraftModel, syncAircraftModel, crashAircraftModel } from './aircraft/model-adapter.js';
 import { createCockpit } from './aircraft/cockpit.js';
 import { TouchControls, isTouchDevice } from './ui/touch.js';
 
@@ -245,6 +245,7 @@ class Game {
       onNatural: (id) => this.triggerNatural(id),
       onLocked: (msg) => this.hud.notify(msg, 'warn', 5),
       startDrive: (kind) => this.startDrive(kind),
+      switchGame: (id) => this.switchGame(id),
       onAutopilotAlt: (ft) => {
         // Tell it to climb or descend. Used by "hold" and by the level change —
         // returning to the field and lining up both set their own heights.
@@ -560,6 +561,22 @@ class Game {
       // as having gone badly wrong.
       const inWater = heightAt(ac.pos.x, ac.pos.z) < 0 && ac.pos.y < 4;
       this.wreck.start(ac.pos, ac.vel, inWater);
+      // And, if this aeroplane is one that can come apart, let it.
+      crashAircraftModel(
+        this.model,
+        ac,
+        {
+          reason: c.reason,
+          // The part that actually touched, and how fast it was going before
+          // the physics damped the wreck to stop it sliding.
+          worldPoint: c.contact && c.contact.worldPoint,
+          partId: c.contact && c.contact.part,
+          worldVelocity: c.impactVel,
+          worldAngularVelocity: c.impactOmega,
+          surfaceKind: (c.contact && c.contact.surfaceKind) || (inWater ? 'water' : undefined),
+        },
+        { groundHeight: heightAt, camera: this.camera }
+      );
       this.hud.showBanner('Crashed', c.reason, 'bad', 6);
       setTimeout(() => {
         if (this.state === 'flying') this.showCrashDebrief(c.reason);
@@ -702,6 +719,10 @@ class Game {
 
   async startMode(mode, opts = {}) {
     await this.unlockAudio();
+    // Whatever you were driving, you are not driving it now. This is here
+    // rather than in the switcher because quitting the boat to the menu and
+    // picking Free Flight is the other way back, and it left the hull behind.
+    this.stopDrive();
     this.mode = mode;
     this.modeOpts = opts;
     this.menus.hide();
@@ -773,6 +794,10 @@ class Game {
       this.setAircraft(def.aircraft);
       this.hud.setAircraftName(this.aircraftType.name);
     }
+
+    // Light the right half of the switcher. The helicopter is an aircraft
+    // type rather than a mode, so the bar has to be told which one you are in.
+    this.menus.setGame(this.aircraftType.id === 'harrier' ? 'heli' : 'flight');
 
     // Weather.
     if (mode === 'free') {
@@ -1771,9 +1796,34 @@ class Game {
     this.hud.clearTransient();
     this.taxi.stop();
     this.wreck.clear();
+    /*
+     * Leave the aeroplane properly, not just stop drawing it.
+     *
+     * Taking the boat out used to leave the autopilot engaged, a tornado on
+     * the map and the mission runner's objective still on the HUD, because
+     * nothing here undid them — you got in a boat and the game carried on
+     * telling you to fly through a ring. Anything armed for the flight has to
+     * be stood down, or it is waiting for you when you come back.
+     */
+    this.autopilot.setEngaged(false, this.aircraft);
+    this.hud.setAutopilot(false);
+    this.hud.hideControls();
+    this.tornado.clear();
+    this.atc.reset();
+    this.removeCrate();
+    this.hasCargo = false;
+    this.armed = {};
+    this.armedEvents = {};
+    this.activeEvents = {};
+    this.randomDisasters = false;
+    // Rings belong to the flight you left. Setting the runner idle is not the
+    // same as taking them down, so they used to hang in the sky over the boat.
+    this.runner.clearGates && this.runner.clearGates();
     this.mode = 'drive';
+    this.modeOpts = { kind };
     this.state = 'flying';
     this.runner.status = 'idle';
+    this.menus.setGame(kind);
 
     if (this.vehicleModel) {
       this.scene.remove(this.vehicleModel);
@@ -1802,7 +1852,13 @@ class Game {
     return this.vehicle;
   }
 
-  /** Back to the aeroplane. */
+  /**
+   * Back to the aeroplane.
+   *
+   * This existed and was never called, which is why an abandoned boat sat off
+   * the beach for the rest of the session once you had taken it out: startMode
+   * made the aeroplane visible again but nothing ever removed the hull.
+   */
   stopDrive() {
     if (this.vehicleModel) {
       this.scene.remove(this.vehicleModel);
@@ -1810,7 +1866,52 @@ class Game {
     }
     this.vehicle = null;
     this.model.visible = true;
-    this.mode = 'free';
+    this.hud.clearVehicle();
+  }
+
+  /**
+   * The switcher in the menu bar.
+   *
+   * Four games, one world. Flight and Heli are the same engine with a
+   * different airframe — the Skyhook is an aircraft type, not a mode — so both
+   * go through startMode(); the boat and the car are a different thing to be
+   * and go through startDrive(). Whichever way it goes, the other side is torn
+   * down first, because the bug this replaces was a boat and an aeroplane
+   * existing at the same time.
+   */
+  switchGame(id) {
+    if (id === 'boat' || id === 'car') return this.startDrive(id);
+    this.stopDrive();
+    // Remember which aeroplane you were flying, so coming back from the boat
+    // does not silently demote you to the trainer.
+    if (id === 'heli') this.lastPlane = 'harrier';
+    else if (this.lastPlane === 'harrier') this.lastPlane = null;
+    const aircraft = id === 'heli'
+      ? 'harrier'
+      : this.lastPlane || this.menus.chosenAircraft || 'skylark';
+    this.lastPlane = aircraft;
+    return this.startMode('free', { ...this.freeOpts(), aircraft });
+  }
+
+  /**
+   * The world the Free Flight screen is currently set to — weather, wind, time
+   * of day, fuel — so hopping between the four games does not reset the sky
+   * underneath you each time.
+   *
+   * Deliberately the world and NOT the armed failures or disasters: those were
+   * set up for a particular flight, and having an engine quit on you two
+   * minutes after you picked the helicopter, because of a box you ticked for
+   * something else, is not a surprise anyone enjoys.
+   */
+  freeOpts() {
+    try {
+      const all = this.menus.readFree ? this.menus.readFree() : {};
+      const { fuel, time, condition, windSpeedKts, windDirDeg } = all;
+      return { fuel, time, condition, windSpeedKts, windDirDeg };
+    } catch (e) {
+      console.warn('Could not read the Free Flight settings; using defaults.', e);
+      return {};
+    }
   }
 
   updateDrive(dt) {
@@ -1851,6 +1952,7 @@ class Game {
   update(dt) {
     if (this.mode === 'drive' && this.vehicle) {
       this.updateDrive(dt);
+      this.audio.updateVehicle(dt, this.vehicle.readouts(), this.weather);
       // Match the real signatures — sky.update takes the weather alone, and
       // ocean.update takes (dt, weather). Guessing them cost a thrown frame.
       this.weather.update(dt);
@@ -2092,8 +2194,8 @@ class Game {
     this.papiHint = this.airport.updatePapi(ac.pos);
 
     // Aeroplane + cockpit.
-    this.model.position.copy(ac.pos);
-    this.model.quaternion.copy(ac.quat);
+    // A crashing fleet model drives its own transform — see model-adapter.js.
+    syncAircraftModel(this.model, ac);
     this.model.userData.update(dt, ac, this.weather);
     const inCockpit = this.rig.mode === 'cockpit';
     // Two cockpit views. The default is the clean one — no panel in the way,

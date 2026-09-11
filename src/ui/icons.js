@@ -57,6 +57,16 @@ const P = {
   // A speaking radio tower, for ATC.
   radio: '<path d="M12 21v-7"/><circle cx="12" cy="11.5" r="2.2"/><path d="M7.8 15.7a6 6 0 0 1 0-8.4M16.2 7.3a6 6 0 0 1 0 8.4"/><path d="M5.1 18.4a9.8 9.8 0 0 1 0-13.8M18.9 4.6a9.8 9.8 0 0 1 0 13.8"/>',
   fuel: '<path d="M4.5 20V5.5A1.5 1.5 0 0 1 6 4h6a1.5 1.5 0 0 1 1.5 1.5V20"/><path d="M3 20h12"/><path d="M6.8 8.4h4.4"/><path d="M13.5 9h3a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 0 3 0V8l-2.4-2.4"/>',
+
+  /* ---- the switcher ---- */
+  /* A helicopter is read from its rotor bar and its tail rotor, not its cabin,
+     which is why both are drawn full width even at 18 px. */
+  heli: '<path d="M3.5 6h17"/><path d="M12 6v2.6"/><path d="M7.5 8.6h6l2.5 3.4h4.5"/><path d="M7.5 8.6a3.4 3.4 0 0 0 0 6.8h6.5l2-3.4"/><path d="M19.5 10.2v3.6"/><path d="M6 18h9"/><path d="M8.5 15.4V18M13 15.4V18"/>',
+  boat: '<path d="M3.5 14.5h17L18 19.5H6Z"/><path d="M8.5 14.5V9.5h5.5l2.4 5"/><path d="M11.2 9.5V6.2"/>',
+  car: '<path d="M3.5 16v-2.6l2.2-4.2h8.6l3.6 4.2h2.6V16"/><path d="M3.5 16h1.6M18.9 16h1.6"/><circle cx="7.4" cy="16.4" r="2"/><circle cx="16.6" cy="16.4" r="2"/><path d="M9.4 16.4h5.2"/>',
+  /* A coin with a C on it. Credits are the thing on the bar most likely to be
+     glanced at rather than read, so it wants a silhouette, not a symbol. */
+  credit: '<circle cx="12" cy="12" r="8.4"/><path d="M14.9 9.4a3.7 3.7 0 1 0 0 5.2"/>',
 };
 
 /**

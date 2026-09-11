@@ -989,8 +989,13 @@ export class Aircraft {
         const pen = gh - world.y;
         if (pen <= 0) continue;
         if (extend < 0.85) {
-          // Gear-up contact: this is a belly landing.
-          this.crash('You landed with the wheels up');
+          // Gear-up contact: this is a belly landing, and the belly is where
+          // it hit — `world` is the leg's own position, which is close enough
+          // to the skin the aeroplane slid along.
+          this.crash('You landed with the wheels up', {
+            worldPoint: world.clone(),
+            part: 'fuselage',
+          });
           return;
         }
         this.contactCount++;
@@ -1096,14 +1101,18 @@ export class Aircraft {
       const overWater = gh < 0;
       const surface = overWater ? 0 : gh;
       if (world.y < surface) {
-        this.crash(overWater ? 'You flew into the sea' : hp.what);
+        this.crash(overWater ? 'You flew into the sea' : hp.what, {
+          worldPoint: world.clone(),
+          part: hp.part,
+          surfaceKind: overWater ? 'water' : undefined,
+        });
         return;
       }
       // Buildings are solid now. The tower and the terminal used to be scenery
       // you flew straight through, which rather undersold them.
       const hit = obstacleAt(world.x, world.y, world.z);
       if (hit) {
-        this.crash(hit.what);
+        this.crash(hit.what, { worldPoint: world.clone(), surfaceKind: 'concrete' });
         return;
       }
     }
@@ -1130,7 +1139,18 @@ export class Aircraft {
       this.lastTouchdown = grade;
       this.emit(EVENTS.TOUCHDOWN, grade);
       if (grade.crashed) {
-        this.crash(grade.reason);
+        /*
+         * A bad landing hits on the undercarriage, not on whatever happens to
+         * sit nearest the aeroplane's centre. Without a point here, every
+         * heavy landing tore the canopy off — the same wreck regardless of how
+         * you arrived, which is the opposite of what a landing grade is for.
+         */
+        const bellyPoint =
+          (SPEC.hardPoints || []).find((h) => /belly/i.test(h.what)) || null;
+        const belly = bellyPoint
+          ? this._tmp.copy(bellyPoint.pos).applyQuaternion(this.quat).add(this.pos).clone()
+          : this.pos.clone();
+        this.crash(grade.reason, { worldPoint: belly, part: 'fuselage' });
         return;
       }
     } else if (wasOnGround && !this.onGround && this.groundSpeed > 12) {
@@ -1292,14 +1312,30 @@ export class Aircraft {
     };
   }
 
-  crash(reason) {
+  /**
+   * @param {string} reason  what the player is told
+   * @param {object} [contact]  where and how it hit: { worldPoint, surfaceKind }
+   *
+   * The contact travels with the event because the model needs it and only
+   * this function knows it. It is the difference between an aeroplane that
+   * loses the wing tip that touched the ground and one that loses whichever
+   * part happens to sit nearest its own centre — which, tested, was the
+   * canopy, every single time, however you hit.
+   *
+   * The velocity is captured BEFORE the damping below, because that damping
+   * exists to stop the wreck sliding across the island and would otherwise
+   * hand the impact an aeroplane that was barely moving.
+   */
+  crash(reason, contact = null) {
     if (this.crashed) return;
     this.crashed = true;
     this.crashReason = reason;
     this.engineOn = false;
+    const impactVel = this.vel.clone();
+    const impactOmega = this.omega.clone();
     this.vel.multiplyScalar(0.12);
     this.omega.multiplyScalar(0.1);
-    this.emit(EVENTS.CRASH, { reason });
+    this.emit(EVENTS.CRASH, { reason, contact, impactVel, impactOmega });
   }
 
   /** Instrument-friendly snapshot. */

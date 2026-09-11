@@ -563,6 +563,7 @@ export class Hud {
    */
   setVehicle(r, spec) {
     this.wrap.classList.add('is-vehicle');
+    this.inVehicle = true;
     const kph = Math.round(r.speedKph);
     const kt = Math.round(r.speedKts);
     this.speedValue.textContent = spec.kind === 'boat' ? String(kt) : String(kph);
@@ -582,6 +583,26 @@ export class Hud {
     if (altUnit) altUnit.textContent = 'km';
     this.throttleBar.fill.style.width = `${Math.round(r.throttle * 100)}%`;
     this.throttleBar.val.textContent = `${Math.round(r.throttle * 100)}%`;
+  }
+
+  /**
+   * Put the strip back the way an aeroplane needs it.
+   *
+   * setVehicle rewrites the two unit labels in place — 'kt'/'km/h' on the
+   * speed, 'km' and the word "travelled" on the altitude — and update() only
+   * ever writes the numbers, never the units. So without this, one trip in the
+   * boat left the altimeter reading kilometres travelled for the rest of the
+   * session, on every flight, until you reloaded the page.
+   */
+  clearVehicle() {
+    if (!this.inVehicle) return;
+    this.inVehicle = false;
+    this.wrap.classList.remove('is-vehicle');
+    const speedUnit = this.speedValue.parentElement.querySelector('.hud-unit');
+    if (speedUnit) speedUnit.textContent = 'kt';
+    const altUnit = this.altValue.parentElement.querySelector('.hud-unit');
+    if (altUnit) altUnit.textContent = 'ft';
+    this.altWord.textContent = '';
   }
 
   /** Name of the aeroplane, shown on the top strip. */
