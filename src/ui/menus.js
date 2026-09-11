@@ -457,6 +457,17 @@ export class Menus {
       if (e.target.closest('[data-back]')) return this.show('main');
       const pick = e.target.closest('[data-choose-map]');
       if (pick) {
+        // The CSS filter is not a gate on the engine, so guard the click too —
+        // the same guard the mission list and the fleet list already have. For
+        // a while the military map was hidden by an attribute that did nothing
+        // and reachable by a button that checked nothing, which is no gate at
+        // all in either direction.
+        const m = MAPS.find((x) => x.id === pick.dataset.chooseMap);
+        if (m && Prog.needsPasscode(this.prog, m)) {
+          this.hooks.onLocked &&
+            this.hooks.onLocked('That field is behind a passcode — enter it in the Hangar.');
+          return;
+        }
         this.hooks.onClick && this.hooks.onClick('map');
         this.hooks.chooseMap && this.hooks.chooseMap(pick.dataset.chooseMap);
       }
@@ -1498,6 +1509,11 @@ export class Menus {
     s.addEventListener('change', (e) => {
       const box = e.target.closest('[data-dev-set]');
       if (!box) return;
+      // Same rule: the panel being invisible is not the gate, dev mode is.
+      if (!Prog.isDev(this.prog || Prog.load())) {
+        box.checked = false;
+        return;
+      }
       this.hooks.onSetting(box.dataset.devSet, box.checked);
     });
 

@@ -838,6 +838,8 @@ export const MISSIONS = [
     difficulty: 'Very hard',
     icon: '⚓',
     military: true,
+    // Pinned, so it cannot inherit whichever map the last mission left behind.
+    map: 'kestrel',
     blurb:
       'Launch from the deck of the Resolute, fly a circuit, and put it back down on 72 metres of moving '
       + 'steel. The hardest landing in the game, and the reason the Osprey has a hook.',
@@ -849,7 +851,7 @@ export const MISSIONS = [
     steps: [
       {
         id: 'depart',
-        text: 'Take off and head out to the carrier. She is west of the island.',
+        text: 'Take off and head out to the carrier. Follow the marker.',
         hint: 'The Osprey lands slowly on purpose — that is what makes the deck possible.',
         atc: { text: 'Osprey two one, Resolute has you on radar, deck is green.', voice: 'tower' },
         targetLabel: 'CV-11 Resolute',

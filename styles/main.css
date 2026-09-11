@@ -3,6 +3,23 @@
    System fonts only, so nothing is downloaded and text renders instantly.
    ========================================================================= */
 
+/*
+ * `hidden` means hidden. Once, globally, before anything else.
+ *
+ * The browser's own [hidden] rule is a user-agent rule, so ANY author rule
+ * that sets `display` beats it. Every card and panel in this file sets one, so
+ * every `el.hidden = true` in the JavaScript was quietly doing nothing — and
+ * this was found and patched one selector at a time, for .mission-card, and
+ * then hit again for .map-card (the passcode-gated military map was listed and
+ * playable on a brand-new profile) and .dev-panel (the unfinished-work
+ * workbench was open to every player).
+ *
+ * Patching the next selector was never going to end. This ends it.
+ */
+[hidden] {
+  display: none !important;
+}
+
 :root {
   --bg: #070c15;
   --panel: rgba(12, 20, 34, 0.72);

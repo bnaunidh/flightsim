@@ -19,7 +19,53 @@ import {
   panelTexture,
 } from '../render/textures.js';
 
-const ELEV = AIRPORT.elev;
+/*
+ * Field elevation.
+ *
+ * This was `const ELEV = AIRPORT.elev` — read once, at import, when AIRPORT is
+ * still Kestrel's. Every other map then built its airport at Kestrel's height:
+ * ten metres out at the three real fields, and 286 m out at the air base,
+ * where the runway paint, the tower and every mission's touchdown point sat
+ * underground while the aeroplane stood on the ground above them.
+ *
+ * `let`, refreshed by refreshRunways(), which main.js calls after applyMap().
+ */
+let ELEV = AIRPORT.elev;
+
+/**
+ * Re-read the field from whichever map is now loaded.
+ *
+ * RUNWAY and RUNWAY2 are mutated in place rather than replaced, because the
+ * missions and the ATC director hold references to them and to the Vector3s
+ * inside them — handing out new objects would leave every one of those
+ * pointing at the old field.
+ */
+export function refreshRunways() {
+  ELEV = AIRPORT.elev;
+
+  Object.assign(RUNWAY, AIRPORT.runway, { elev: ELEV, headingDeg: AIRPORT.headingDeg ?? 90 });
+  const halfLen = AIRPORT.runway.length / 2;
+  /*
+   * The aiming point, 200 m in from the westerly threshold.
+   *
+   * That is where it has always been on Kestrel (threshold -550, touchdown
+   * -350) and it is what the tutorial, the missions and the landing grade are
+   * all written around — so it is kept as a fixed distance from the threshold
+   * rather than a fraction of the runway, which would move it on every map
+   * with a different length.
+   */
+  RUNWAY.touchdown.set(AIRPORT.runway.cx - halfLen + 200, ELEV, AIRPORT.runway.cz);
+  RUNWAY.thresholdWest.set(AIRPORT.runway.cx - halfLen, ELEV, AIRPORT.runway.cz);
+  RUNWAY.thresholdEast.set(AIRPORT.runway.cx + halfLen, ELEV, AIRPORT.runway.cz);
+
+  const r2 = AIRPORT.runway2;
+  if (r2) {
+    Object.assign(RUNWAY2, r2, { elev: ELEV });
+    RUNWAY2.thresholdNorth.set(r2.cx, ELEV, r2.cz - r2.length / 2);
+    RUNWAY2.thresholdSouth.set(r2.cx, ELEV, r2.cz + r2.length / 2);
+  }
+  return ELEV;
+}
 /** The crosswind runway, 18/36. */
 export const RUNWAY2 = {
   ...AIRPORT.runway2,

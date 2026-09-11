@@ -16,10 +16,10 @@ import { Carrier } from './world/carrier.js';
 import { SurfaceVehicle, VEHICLES } from './vehicles/surface.js';
 import { createBoat, createCar, updateVehicleModel } from './vehicles/models.js';
 import { Ocean } from './world/water.js';
-import { Airport, RUNWAY } from './world/airport.js';
+import { Airport, RUNWAY, refreshRunways } from './world/airport.js';
 import { Scenery, DELIVERY_PAD } from './world/scenery.js';
 import { MapFeatures } from './world/features.js';
-import { Apron } from './world/apron.js';
+import { Apron, refreshApronElevation } from './world/apron.js';
 import { CloudField } from './world/clouds.js';
 import { Rain } from './world/precip.js';
 
@@ -173,6 +173,9 @@ class Game {
     };
     // Pick the saved map before anything reads the height field.
     applyMap(this.settings.map || 'kestrel');
+    // The field moved. Tell the modules that cached its height.
+    refreshRunways();
+    refreshApronElevation();
     this.buildWorld(this.settings.quality);
 
     setLoad(0.82, 'Rolling out the aeroplane…');
@@ -488,8 +491,9 @@ class Game {
      * than a ship that happens to point north.
      */
     this.carrier = t('carrier', () => {
+      const at = this.carrierBerth();
       const c = new Carrier(this.scene, {
-        x: -5200, z: 3400, headingDeg: 0, name: 'CV-11 Resolute',
+        x: at.x, z: at.z, headingDeg: 0, name: 'CV-11 Resolute',
       });
       // Something on the deck to measure the ship against.
       c.parkAircraft(createAircraftModel, getAircraft('osprey'), schemeFor(getAircraft('osprey'), 'house'));
@@ -592,8 +596,19 @@ class Game {
         { groundHeight: heightAt, camera: this.camera }
       );
       this.hud.showBanner('Crashed', c.reason, 'bad', 6);
-      setTimeout(() => {
-        if (this.state === 'flying') this.showCrashDebrief(c.reason);
+      /*
+       * The debrief is deliberately late, so the wreck is worth watching
+       * first. But restarting inside those 2.2 seconds used to drop the crash
+       * debrief on top of the new flight — the timer had no idea it had been
+       * overtaken. It is tracked and cancelled now, and it checks that the
+       * flight it fires into is still the crashed one.
+       */
+      clearTimeout(this._crashDebriefT);
+      const crashedFlight = this.progress.flights;
+      this._crashDebriefT = setTimeout(() => {
+        if (this.state === 'flying' && this.aircraft.crashed && this.progress.flights === crashedFlight) {
+          this.showCrashDebrief(c.reason);
+        }
       }, 2200);
     });
 
@@ -739,6 +754,7 @@ class Game {
 
   async startMode(mode, opts = {}) {
     await this.unlockAudio();
+    this.wakeAudio();
     // Whatever you were driving, you are not driving it now. This is here
     // rather than in the switcher because quitting the boat to the menu and
     // picking Free Flight is the other way back, and it left the hull behind.
@@ -760,6 +776,8 @@ class Game {
     this.hasCargo = false;
     this.progress.flights++;
     saveProgress(this.progress);
+    // Nothing from the last flight is allowed to arrive during this one.
+    clearTimeout(this._crashDebriefT);
 
     let def = FREE_FLIGHT;
     if (mode === 'tutorial') def = TUTORIAL;
@@ -805,6 +823,9 @@ class Game {
      */
     if (def.map && this.settings.map !== def.map) {
       applyMap(def.map);
+      // The field moved. Tell the modules that cached its height.
+      refreshRunways();
+      refreshApronElevation();
       this.settings.map = def.map;
       saveSettings(this.settings);
       this.menus.syncMap(def.map);
@@ -966,7 +987,19 @@ class Game {
     this.hud.setVisible(true);
     this.state = 'flying';
     this.clock.getDelta();
-    this.audio.available && this.audio.mixer.resume();
+    this.wakeAudio();
+  }
+
+  /**
+   * Un-suspend the mixer.
+   *
+   * pause() suspends it and only resume() ever brought it back, so leaving the
+   * pause screen by Restart, Return to airport or Quit left the game silent
+   * for the rest of the session — including every flight after it, with no way
+   * back short of reloading the page.
+   */
+  wakeAudio() {
+    if (this.audio.available) this.audio.mixer.resume();
   }
 
   pauseAction(a) {
@@ -982,6 +1015,8 @@ class Game {
       this.menus.syncRealisticCockpit(on);
       return;
     }
+    // Every way out of the pause screen, not just Resume.
+    this.wakeAudio();
     if (a === 'resume') this.resume();
     else if (a === 'restart') {
       this.menus.hide();
@@ -1578,6 +1613,9 @@ class Game {
 
   setMap(id) {
     const def = applyMap(id);
+    // The field moved. Tell the modules that cached its height.
+    refreshRunways();
+    refreshApronElevation();
     this.settings.map = def.id;
     saveSettings(this.settings);
     this.menus.syncMap(def.id);
@@ -1859,8 +1897,47 @@ class Game {
    * worlds. They are a different thing to be, in the same place, which is a
    * far better answer than three shallow copies of one engine.
    */
+  /**
+   * Somewhere to put the ship.
+   *
+   * It was hardcoded at (-5200, 3400) on every map, which is open sea on six
+   * of the nine and dry land on the other three: 43 m up a field on the
+   * grassland, 25 m up the peninsula at San Francisco, and 632 m up a
+   * mountain at the air base. A carrier aground on a hillside is not a thing
+   * anyone should have to see, let alone try to land on.
+   *
+   * A map may name its own berth. Otherwise the default is tried first and, if
+   * that is not water, a ring is walked outward until somewhere deep enough
+   * for the whole deck footprint turns up.
+   */
+  carrierBerth() {
+    const wetEnough = (x, z) => {
+      // Sampled across the deck, not at one point — a ship needs all of it wet.
+      for (const [dx, dz] of [[0, 0], [0, -160], [0, 160], [-40, 0], [40, 0]]) {
+        if (heightAt(x + dx, z + dz) > -12) return false;
+      }
+      return true;
+    };
+    if (MAP.carrier && wetEnough(MAP.carrier.x, MAP.carrier.z)) return MAP.carrier;
+    if (wetEnough(-5200, 3400)) return { x: -5200, z: 3400 };
+
+    for (let r = 4000; r <= 14000; r += 1200) {
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        const x = Math.cos(a) * r;
+        const z = Math.sin(a) * r;
+        if (wetEnough(x, z)) return { x: Math.round(x), z: Math.round(z) };
+      }
+    }
+    // Nowhere wet enough. Put it where it always was and say so, rather than
+    // silently beaching it.
+    console.warn('No water deep enough for the carrier on this map.');
+    return { x: -5200, z: 3400 };
+  }
+
   startDrive(kind = 'boat') {
     const spec = VEHICLES[kind] || VEHICLES.boat;
+    this.wakeAudio();
     this.menus.hide();
     this.hud.setVisible(true);
     this.hud.clearTransient();
@@ -2028,13 +2105,35 @@ class Game {
 
   update(dt) {
     if (this.mode === 'drive' && this.vehicle) {
-      this.updateDrive(dt);
-      this.audio.updateVehicle(dt, this.vehicle.readouts(), this.weather);
-      // Match the real signatures — sky.update takes the weather alone, and
-      // ocean.update takes (dt, weather). Guessing them cost a thrown frame.
-      this.weather.update(dt);
-      if (this.ocean) this.ocean.update(dt, this.weather);
-      if (this.sky) this.sky.update(this.weather);
+      /*
+       * Driving used to return from here before the key handling and before
+       * input.endFrame(), which had two consequences: Esc did nothing, so
+       * there was no way to pause or quit out of the boat at all; and every
+       * key pressed while driving stayed in the pressed-this-frame set and
+       * fired, all at once, on the next flight.
+       */
+      const input = this.input;
+      if (input.pressed('pause')) {
+        if (this.state === 'flying') this.pause();
+        else if (this.state === 'paused') this.resume();
+      }
+      if (this.state === 'flying') {
+        if (input.pressed('camera')) {
+          this.hud.notify(`View: ${VIEW_LABELS[this.rig.cycle()]}`, 'info', 1.8);
+        }
+        if (input.pressed('minimap')) this.hudAction('minimap');
+        if (input.pressed('help')) this.hud.toggleControls(this.input.bindings, keyLabel, ACTIONS);
+        // Paused means paused. The boat used to carry on out to sea while the
+        // menu was up, so you came back to it somewhere else entirely.
+        this.updateDrive(dt);
+        this.audio.updateVehicle(dt, this.vehicle.readouts(), this.weather);
+        // Match the real signatures — sky.update takes the weather alone, and
+        // ocean.update takes (dt, weather). Guessing them cost a thrown frame.
+        this.weather.update(dt);
+        if (this.ocean) this.ocean.update(dt, this.weather);
+        if (this.sky) this.sky.update(this.weather);
+      }
+      input.endFrame();
       return;
     }
     const ac = this.aircraft;

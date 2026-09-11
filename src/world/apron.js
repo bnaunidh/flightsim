@@ -22,7 +22,18 @@ import { createAircraftModel } from '../aircraft/model-adapter.js';
 import { LIVERIES, schemeFor } from '../aircraft/liveries.js';
 import { getAircraft } from '../aircraft/types.js';
 
-const ELEV = AIRPORT.elev;
+/*
+ * Field elevation, read once at import — which was Kestrel's, on every map.
+ * The terminal, the air bridges, the parked aeroplanes and the service
+ * vehicles all built themselves at the wrong height everywhere else.
+ */
+let ELEV = AIRPORT.elev;
+
+/** Called from main.js after applyMap(), before the world is rebuilt. */
+export function refreshApronElevation() {
+  ELEV = AIRPORT.elev;
+  return ELEV;
+}
 
 /* ------------------------------------------------------------------ */
 /* Small parts                                                         */
