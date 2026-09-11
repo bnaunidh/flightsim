@@ -178,28 +178,69 @@ export function buy(p, aircraftId) {
  * lovely idea and costs nothing to honour: these are just words that pay out
  * once each, and whoever runs the game decides who is told about them.
  */
-const CODES = {
-  FIRSTSOLO: { credits: 300, note: 'Your first solo' },
-  KESTREL: { credits: 500, note: 'Island hopper' },
-  TORNADO: { credits: 800, note: 'You went and looked' },
-  CLASSOF29: { credits: 1500, note: 'For the class that tested it' },
+/**
+ * Codes, named so the name says what it is worth.
+ *
+ * The convention is `<whoever><amount>`: doritofc1k is a thousand credits,
+ * kestrel500 is five hundred. The amount is PARSED OUT OF THE NAME rather than
+ * written beside it, so the two can never disagree — a code called 1k cannot
+ * quietly be worth 500, which is exactly the sort of thing that goes unnoticed
+ * for months and then makes someone feel cheated.
+ *
+ * Only codes on this list work. The suffix decides the amount; it does not
+ * mint credits on its own, or anyone could type `me99k` and help themselves.
+ *
+ * To add one: put the name on the list with a note. Nothing else.
+ */
+const CREDIT_CODES = {
+  doritofc1k: 'For Dorito',
+  firstsolo300: 'Your first solo',
+  kestrel500: 'Island hopper',
+  tornado800: 'You went and looked',
+  classof29_1500: 'For the class that tested it',
+};
+
+/** Rank grants, which are appointed rather than earned. */
+const RANK_CODES = {
   FOUNDER: { rank: 'founder', note: 'There is one' },
   ADMIN: { rank: 'admin', note: 'Appointed' },
   MOD: { rank: 'mod', note: 'Appointed' },
 };
 
+/**
+ * Read the payout off the end of a code name.
+ * `1k` / `2K` → thousands; a bare number → itself. Returns 0 if there is none.
+ */
+export function creditsInName(name) {
+  const m = String(name).toLowerCase().match(/(\d+)(k?)$/);
+  if (!m) return 0;
+  const n = Number(m[1]);
+  return m[2] === 'k' ? n * 1000 : n;
+}
+
 export function redeem(p, raw) {
-  const code = String(raw || '').trim().toUpperCase();
-  if (!code) return { ok: false, why: 'Type a code first' };
-  const c = CODES[code];
-  if (!c) return { ok: false, why: 'That code does not work' };
-  if (p.redeemed.includes(code)) return { ok: false, why: 'You have already used that one' };
-  p.redeemed.push(code);
-  if (c.credits) {
-    p.credits += c.credits;
-    p.earned += c.credits;
+  // Case-insensitive, because nobody types a code the way it was written down.
+  const typed = String(raw || '').trim();
+  if (!typed) return { ok: false, why: 'Type a code first' };
+  const key = typed.toLowerCase();
+  const upper = typed.toUpperCase();
+
+  const creditNote = Object.keys(CREDIT_CODES).find((k) => k.toLowerCase() === key);
+  const rankCode = RANK_CODES[upper];
+  if (!creditNote && !rankCode) return { ok: false, why: 'That code does not work' };
+
+  const stamp = creditNote ? creditNote.toLowerCase() : upper;
+  if (p.redeemed.includes(stamp)) return { ok: false, why: 'You have already used that one' };
+  p.redeemed.push(stamp);
+
+  if (creditNote) {
+    const amount = creditsInName(creditNote);
+    p.credits += amount;
+    p.earned += amount;
+    save(p);
+    return { ok: true, credits: amount, rank: null, note: CREDIT_CODES[creditNote] };
   }
-  if (c.rank) p.grantedRank = c.rank;
+  p.grantedRank = rankCode.rank;
   save(p);
-  return { ok: true, credits: c.credits || 0, rank: c.rank || null, note: c.note };
+  return { ok: true, credits: 0, rank: rankCode.rank, note: rankCode.note };
 }
