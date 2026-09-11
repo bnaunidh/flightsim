@@ -11,6 +11,14 @@
  */
 
 import * as THREE from '../vendor/three.module.js';
+
+/** The pack's carrier, if it loads. The ship is a picture; the deck is not. */
+let packCarrier = null;
+try {
+  ({ createCarrier: packCarrier } = await import('../fleet/maritime.js'));
+} catch (e) {
+  console.warn('The pack carrier is unavailable; using the built-in ship.', e);
+}
 import { addPlatform, addObstacleAt } from './terrain.js';
 
 /** Deck dimensions, in metres. A real Nimitz deck is 333 x 77. */
@@ -60,6 +68,28 @@ export class Carrier {
     this.pos = { x: at.x, z: at.z };
     this.name = at.name || 'CV-11 Resolute';
 
+    /*
+     * The ship itself comes from the model pack, which draws a far better one
+     * than this file did: a real angled deck at 9 degrees, a glazed island
+     * with a bridge and Pri-Fly, catapult tracks, arrester wires on sheaves
+     * and a radar that turns. Its deck sits at 20.8 m, which is exactly where
+     * this file already put it, so the landing surface does not move.
+     *
+     * What stays here is everything the game relies on: the deck registered
+     * as a platform you can actually land on, the island registered as
+     * something solid, and the published numbers the carrier missions read.
+     * A prettier ship is not worth a deck you fall through.
+     */
+    if (packCarrier) {
+      try {
+        this.ship = packCarrier({ name: this.name });
+        this.group.add(this.ship);
+      } catch (e) {
+        console.warn('The pack carrier could not be built; using the built-in one.', e);
+        this.ship = null;
+      }
+    }
+
     const hullMat = new THREE.MeshStandardMaterial({ color: 0x3b434c, roughness: 0.85, metalness: 0.25 });
     const deckMat = new THREE.MeshStandardMaterial({ map: deckTexture(), roughness: 0.92, metalness: 0.1 });
     const islandMat = new THREE.MeshStandardMaterial({ color: 0x4a525b, roughness: 0.8, metalness: 0.2 });
@@ -68,6 +98,18 @@ export class Carrier {
     const W = DECK.width;
     const H = DECK.height;
 
+    // The original ship, kept as the fallback. Everything below is skipped
+    // when the pack built one.
+    if (!this.ship) this.buildFallback(hullMat, deckMat, islandMat, L, W, H);
+
+    this.group.position.set(at.x, 0, at.z);
+    this.group.rotation.y = THREE.MathUtils.degToRad(-(at.headingDeg || 0));
+    scene.add(this.group);
+    this.register(at, L, W, H);
+  }
+
+  /** The slab-and-cone carrier this file used to draw. */
+  buildFallback(hullMat, deckMat, islandMat, L, W, H) {
     // Hull: a slab that tapers to a bow, sitting in the water.
     const hull = new THREE.Mesh(new THREE.BoxGeometry(W * 0.78, H, L * 0.94), hullMat);
     hull.position.y = H / 2 - 4;
@@ -104,10 +146,9 @@ export class Carrier {
       this.group.add(w);
     }
 
-    this.group.position.set(at.x, 0, at.z);
-    this.group.rotation.y = THREE.MathUtils.degToRad(-(at.headingDeg || 0));
-    scene.add(this.group);
+  }
 
+  register(at, L, W, H) {
     /*
      * Register the deck.
      *
@@ -138,6 +179,59 @@ export class Carrier {
       34,
       `You flew into ${this.name}`
     );
+  }
+
+  /**
+   * Park a few aeroplanes on the deck.
+   *
+   * The ship is 300 m long — a real Nimitz is 333 — and it still read as small
+   * from the air, because an empty grey rectangle on an empty grey sea has
+   * nothing in it to measure against. Six aeroplanes on the deck fix that
+   * instantly: you know how big an aeroplane is, so now you know how big the
+   * ship is.
+   *
+   * They are parked clear of the angled landing area, so nothing is in the way
+   * of the thing you came here to do.
+   */
+  parkAircraft(makeModel, type, scheme) {
+    if (!makeModel || !type) return;
+    const W = DECK.width;
+    const L = DECK.length;
+    const spots = [
+      [W * 0.30, -L * 0.30, 0.5],
+      [W * 0.31, -L * 0.20, 0.5],
+      [W * 0.30, -L * 0.10, 0.5],
+      [-W * 0.34, L * 0.36, 2.4],
+      [-W * 0.22, L * 0.40, 2.4],
+      [W * 0.16, L * 0.42, 2.6],
+    ];
+    for (const [x, z, rot] of spots) {
+      let m;
+      try {
+        m = makeModel({ type, livery: scheme });
+      } catch (e) {
+        console.warn('Could not park an aeroplane on the deck.', e);
+        return;
+      }
+      m.position.set(x, this.deckY - DECK.height + DECK.height, z);
+      m.position.y = this.deckY;
+      m.rotation.y = rot;
+      // Wings folded is beyond the models, so they simply sit still: engine
+      // off, wheels down, nothing turning.
+      if (m.userData.update) {
+        try {
+          m.userData.update(0.016, {
+            controls: { pitch: 0, roll: 0, yaw: 0, throttle: 0, brakes: 1 },
+            rpm: 0, flaps: 0, gearPos: 1, gearDown: true, onGround: true,
+            groundSpeed: 0, agl: 0, alt: this.deckY, engineOn: false,
+            vel: new THREE.Vector3(), pos: m.position, quat: m.quaternion,
+          }, { isNight: false, cond: { cloud: 0 } });
+        } catch (e) {
+          /* a model that will not animate parked is still fine to look at */
+        }
+      }
+      this.group.add(m);
+    }
   }
 
   dispose(scene) {

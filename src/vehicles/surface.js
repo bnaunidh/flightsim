@@ -122,6 +122,9 @@ export class SurfaceVehicle {
       this.throttle = clamp(controls.throttle ?? 0, -1, 1);
       this.steer = clamp(controls.steer ?? 0, -1, 1);
       const brake = clamp(controls.brake ?? 0, 0, 1);
+      // Kept so the model can light the brake lights — it is the only place
+      // that knows you are braking.
+      this.brakes = brake;
 
       // Drag grows with the square of speed, which gives each vehicle its own
       // natural top speed rather than an arbitrary cap.

@@ -487,9 +487,14 @@ class Game {
      * the picture, and falling through a deck you were aiming at is far worse
      * than a ship that happens to point north.
      */
-    this.carrier = t('carrier', () => new Carrier(this.scene, {
-      x: -5200, z: 3400, headingDeg: 0, name: 'CV-11 Resolute',
-    }));
+    this.carrier = t('carrier', () => {
+      const c = new Carrier(this.scene, {
+        x: -5200, z: 3400, headingDeg: 0, name: 'CV-11 Resolute',
+      });
+      // Something on the deck to measure the ship against.
+      c.parkAircraft(createAircraftModel, getAircraft('osprey'), schemeFor(getAircraft('osprey'), 'house'));
+      return c;
+    });
     // Whatever makes this particular map the place it says it is: lava, reef,
     // farmland, waterfalls, the aurora.
     this.features = t('features', () => new MapFeatures(this.scene, quality));
@@ -1984,6 +1989,13 @@ class Game {
       brake: ctrl.brakes,
     });
     this.vehicleModel.position.copy(v.pos);
+    // The pack's launch is drawn with its keel 0.53 m below its origin, and the
+    // vehicle rides at 0.18 — so it sat on the sea rather than in it, with the
+    // bottom of the hull showing all the way round. The game's own text says
+    // she draws about a metre; this is that metre.
+    if (this.vehicleModel.userData.fromPack && v.spec.kind === 'boat') {
+      this.vehicleModel.position.y -= 0.42;
+    }
     this.vehicleModel.quaternion.copy(v.quat);
     updateVehicleModel(this.vehicleModel, v, dt);
 

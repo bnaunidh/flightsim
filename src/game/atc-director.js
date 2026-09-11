@@ -9,7 +9,7 @@
  */
 
 import { RUNWAY } from '../world/airport.js';
-import { isOnAnyRunway } from '../world/terrain.js';
+import { isOnAnyRunway, MAP, AIRPORT } from '../world/terrain.js';
 import { UNITS } from '../aircraft/physics.js';
 
 const ft = (m) => m * UNITS.FT;
@@ -24,6 +24,37 @@ export class AtcDirector {
   constructor(sim) {
     this.sim = sim;
     this.reset();
+  }
+
+  /**
+   * Who the controller is talking to.
+   *
+   * Every aeroplane in types.js has carried a `callsign` since the day it was
+   * written, and nothing has ever read it: the tower called you "Skylark one
+   * seven two" in fifteen places whether you were in the trainer, the airliner
+   * or the bomber. Reading it at call time rather than caching it means
+   * changing aeroplane mid-session changes what you are called, which is the
+   * bug the class actually noticed.
+   */
+  get callsign() {
+    const t = this.sim.aircraftType;
+    return (t && t.callsign) || `${this.callsign}`;
+  }
+
+  /**
+   * Which field. "${this.field} Tower" on the volcano, on the air base and at San
+   * Francisco was the same class of mistake as the callsign.
+   */
+  get field() {
+    return (MAP && MAP.name ? String(MAP.name).split(' ')[0] : 'Kestrel');
+  }
+
+  /** "zero nine", "two seven", from the runway this map actually has. */
+  get runwayCall() {
+    const deg = (AIRPORT && AIRPORT.headingDeg) || 90;
+    const n = Math.round(((deg % 360) + 360) % 360 / 10) || 36;
+    const words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+    return String(n).padStart(2, '0').split('').map((d) => words[Number(d)]).join(' ');
   }
 
   reset() {
@@ -59,7 +90,7 @@ export class AtcDirector {
     if (ac.crashed) {
       if (this.once('crash')) {
         this.say(
-          'Skylark one seven two, Kestrel Tower, we have lost sight of you. Emergency services are rolling. Stand by.',
+          `${this.callsign}, ${this.field} Tower, we have lost sight of you. Emergency services are rolling. Stand by.`,
           'tower',
           1
         );
@@ -70,7 +101,7 @@ export class AtcDirector {
     // Engine start on the apron.
     if (ac.engineOn && this.once('start') && ac.onGround) {
       this.say(
-        `Skylark one seven two, Kestrel Ground, runway zero nine, ${windCall(w)}. Taxi and hold.`,
+        `${this.callsign}, ${this.field} Ground, runway ${this.runwayCall}, ${windCall(w)}. Taxi and hold.`,
         'ground'
       );
     }
@@ -92,7 +123,7 @@ export class AtcDirector {
       Math.abs(((ac.readouts().heading - RUNWAY.headingDeg + 540) % 360) - 180) < 25;
     if (ac.onGround && lined && ac.controls.throttle > 0.6 && this.once('clearance')) {
       this.say(
-        `Skylark one seven two, Kestrel Tower, ${windCall(w)}, runway zero nine, cleared for take-off.`,
+        `${this.callsign}, ${this.field} Tower, ${windCall(w)}, runway ${this.runwayCall}, cleared for take-off.`,
         'tower'
       );
     }
@@ -100,7 +131,7 @@ export class AtcDirector {
     // Airborne.
     if (!ac.onGround && ac.airborneTime > 4 && this.once('airborne')) {
       this.say(
-        'Skylark one seven two, radar contact, climb at your discretion and report your intentions.',
+        `${this.callsign}, radar contact, climb at your discretion and report your intentions.`,
         'approach'
       );
     }
@@ -118,7 +149,7 @@ export class AtcDirector {
       this.once('final')
     ) {
       this.say(
-        `Skylark one seven two, cleared to land runway zero nine, ${windCall(w)}.`,
+        `${this.callsign}, cleared to land runway ${this.runwayCall}, ${windCall(w)}.`,
         'tower'
       );
       this.landingCall = 25;
@@ -129,8 +160,8 @@ export class AtcDirector {
       const cross = w.windDescription(90);
       this.say(
         cross.cross > 8
-          ? `Skylark one seven two, ${windCall(w)}, crosswind from the ${cross.side}. Runway zero nine, continue.`
-          : 'Skylark one seven two, runway zero nine, continue. Looking good.',
+          ? `${this.callsign}, ${windCall(w)}, crosswind from the ${cross.side}. Runway ${this.runwayCall}, continue.`
+          : `${this.callsign}, runway ${this.runwayCall}, continue. Looking good.`,
         'tower'
       );
     }
@@ -138,10 +169,10 @@ export class AtcDirector {
     // Weather changes.
     if (this.lastCondition && this.lastCondition !== w.condition && this.weatherCall <= 0) {
       const lines = {
-        stormy: 'All aircraft, Kestrel Tower. Thunderstorm over the field, severe turbulence and wind shear. Use extreme caution.',
-        rainy: 'All aircraft, Kestrel Tower. Rain moving through, the runway is wet and braking may be poor.',
-        cloudy: 'All aircraft, Kestrel Tower. Cloud base is coming down, visibility reducing.',
-        clear: 'All aircraft, Kestrel Tower. Weather is clearing nicely, visibility good.',
+        stormy: `All aircraft, ${this.field} Tower. Thunderstorm over the field, severe turbulence and wind shear. Use extreme caution.`,
+        rainy: `All aircraft, ${this.field} Tower. Rain moving through, the runway is wet and braking may be poor.`,
+        cloudy: `All aircraft, ${this.field} Tower. Cloud base is coming down, visibility reducing.`,
+        clear: `All aircraft, ${this.field} Tower. Weather is clearing nicely, visibility good.`,
       };
       this.say(lines[w.condition] || lines.clear, 'tower', w.condition === 'stormy' ? 1 : 0);
       this.weatherCall = 30;
@@ -151,7 +182,7 @@ export class AtcDirector {
     // Flying into cloud.
     if (sim.cloudImmersion > 0.55 && this.once('incloud')) {
       this.say(
-        'Skylark one seven two, you are entering cloud. Trust your instruments, keep the wings level.',
+        `${this.callsign}, you are entering cloud. Trust your instruments, keep the wings level.`,
         'approach'
       );
     }
@@ -159,7 +190,7 @@ export class AtcDirector {
     // Low fuel.
     if (ac.fuel / 160 < 0.12 && !ac.onGround && this.once('fuel')) {
       this.say(
-        'Skylark one seven two, say your fuel state. If you are low, we can give you a direct approach to runway zero nine.',
+        `${this.callsign}, say your fuel state. If you are low, we can give you a direct approach to runway ${this.runwayCall}.`,
         'tower',
         1
       );
@@ -173,7 +204,7 @@ export class AtcDirector {
       ac.vs < -3 &&
       this.once('lowalt')
     ) {
-      this.say('Skylark one seven two, low altitude alert. Check your altitude immediately.', 'approach', 1);
+      this.say(`${this.callsign}, low altitude alert. Check your altitude immediately.`, 'approach', 1);
       // Allow this one to repeat after a while.
       setTimeout(() => (this.said.lowalt = false), 45000);
     }
@@ -184,15 +215,15 @@ export class AtcDirector {
     if (grade.crashed) return;
     let line;
     if (!grade.onRunway) {
-      line = 'Skylark one seven two, that was off the runway. Are you able to taxi? Say your condition.';
+      line = `${this.callsign}, that was off the runway. Are you able to taxi? Say your condition.`;
     } else if (grade.quality === 'perfect') {
-      line = 'Skylark one seven two, beautiful landing. Welcome back to Kestrel, taxi to the apron.';
+      line = `${this.callsign}, beautiful landing. Welcome back to ${this.field}, taxi to the apron.`;
     } else if (grade.quality === 'good') {
-      line = 'Skylark one seven two, nice landing. Taxi to the apron when you are ready.';
+      line = `${this.callsign}, nice landing. Taxi to the apron when you are ready.`;
     } else if (grade.quality === 'firm') {
-      line = 'Skylark one seven two, down safely. Firm one, but the wheels are round. Taxi to the apron.';
+      line = `${this.callsign}, down safely. Firm one, but the wheels are round. Taxi to the apron.`;
     } else {
-      line = 'Skylark one seven two, that woke everyone up. You are down safely, taxi to the apron.';
+      line = `${this.callsign}, that woke everyone up. You are down safely, taxi to the apron.`;
     }
     this.cool = 0;
     this.say(line, 'tower');

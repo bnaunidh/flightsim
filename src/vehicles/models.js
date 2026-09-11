@@ -8,6 +8,29 @@
  */
 
 import * as THREE from '../vendor/three.module.js';
+import { clamp } from '../core/noise.js';
+
+/*
+ * The boat and the car come from the model pack.
+ *
+ * What was here was eight untextured boxes each — a white box hull with a dark
+ * box on it, and the car the same idea with wheels on sticks. Two of the four
+ * games looked like placeholder art, because they were.
+ *
+ * The pack draws a chined planing hull with a helm, a windscreen, rails and a
+ * steerable outboard, and a van with recessed wheel arches, glass you can see
+ * through, mirrors, doors and a roof beacon. Both are kept behind a try, and
+ * the boxes below stay as the fallback: a game that will not start is worse
+ * than one that looks plain.
+ */
+let packBoat = null;
+let packCar = null;
+try {
+  ({ createPlayerBoat: packBoat } = await import('../fleet/maritime.js'));
+  ({ createAirfieldRunabout: packCar } = await import('../fleet/ground.js'));
+} catch (e) {
+  console.warn('The pack vehicles are unavailable; using the built-in ones.', e);
+}
 
 function mat(color, { rough = 0.7, metal = 0.1 } = {}) {
   return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
@@ -15,6 +38,15 @@ function mat(color, { rough = 0.7, metal = 0.1 } = {}) {
 
 /** A small planing launch: hull, cabin, screen, and a wake behind it. */
 export function createBoat() {
+  if (packBoat) {
+    try {
+      const b = packBoat();
+      b.userData.fromPack = true;
+      return b;
+    } catch (e) {
+      console.warn('The pack boat could not be built; using the built-in one.', e);
+    }
+  }
   const g = new THREE.Group();
   g.name = 'boat';
 
@@ -81,6 +113,15 @@ export function createBoat() {
 
 /** A small airside van, with wheels that steer and roll. */
 export function createCar() {
+  if (packCar) {
+    try {
+      const c = packCar();
+      c.userData.fromPack = true;
+      return c;
+    } catch (e) {
+      console.warn('The pack car could not be built; using the built-in one.', e);
+    }
+  }
   const g = new THREE.Group();
   g.name = 'car';
 
@@ -134,6 +175,33 @@ export function createCar() {
 /** Per-frame dressing: wake opacity, wheel spin and steering. */
 export function updateVehicleModel(model, vehicle, dt) {
   if (!model) return;
+
+  /*
+   * The pack's vehicles animate themselves from a state object. Everything it
+   * wants, the SurfaceVehicle already knows — it just calls the fields
+   * something else, which is the whole job of this block.
+   */
+  if (model.userData.fromPack && model.userData.update) {
+    const r = vehicle.readouts();
+    const boat = vehicle.spec.kind === 'boat';
+    model.userData.update(dt, {
+      speed: vehicle.speed,
+      speedMps: Math.abs(vehicle.speed),
+      steer: vehicle.steer,
+      steering: vehicle.steer,
+      braking: (vehicle.brakes || 0) > 0.05,
+      // No suspension model on a 3-DOF vehicle, so the body squats with
+      // acceleration instead — which is the part you actually see.
+      suspension: boat ? 0 : clamp(Math.abs(vehicle.throttle || 0) * 0.05, 0, 0.16),
+      headlights: true,
+      beacon: !boat,
+      lights: true,
+      hazard: false,
+      doorOpen: 0,
+    });
+    return;
+  }
+
   if (model.userData.wakeMat) {
     const v = Math.abs(vehicle.speed) / vehicle.spec.topSpeed;
     model.userData.wakeMat.opacity = Math.min(0.55, v * 0.7);
