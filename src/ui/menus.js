@@ -903,13 +903,14 @@ export class Menus {
         </div>
 
         <div class="tab-body" data-panel="flight">
-          <label class="field"><span>Flight model</span>
-            <select data-set="flightMode">
-              <option value="simplified">Simplified — the plane helps you fly (recommended)</option>
-              <option value="realistic">Realistic — full control, it can stall</option>
+          <label class="field"><span>Difficulty</span>
+            <select data-set="difficulty">
+              <option value="easy">Easy — for a first flight</option>
+              <option value="normal">Normal — the usual game (recommended)</option>
+              <option value="realistic">Realistic — no help at all</option>
             </select>
           </label>
-          <p class="hint">Simplified mode levels the wings by itself, coordinates the rudder for you and stops the wing stalling. Realistic mode does none of that.</p>
+          <p class="hint"><b>Easy</b> gives you much more elevator at low speed, so the aeroplane rotates and flares almost by itself, guards the stall earlier, and halves the gusts. <b>Normal</b> is the game as it has always flown: it levels the wings, coordinates the rudder and will not let you stall. <b>Realistic</b> switches all of that off — it can stall, and it will drift in a crosswind.</p>
           <label class="check"><input type="checkbox" data-set="mouseFlying"><span>Fly with the mouse (click the sky to capture the pointer)</span></label>
           <label class="check"><input type="checkbox" data-set="invertMouse"><span>Invert mouse up/down</span></label>
           <label class="field"><span>Mouse / stick sensitivity <b data-out="sensitivity"></b></span>

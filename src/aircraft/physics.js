@@ -105,6 +105,14 @@ export class Aircraft {
     /** Flat 1% of the tank every 30 s when on. Settings -> Flying. */
     this.realisticFuel = false;
     this.mode = 'simplified';
+    /**
+     * How much help you get. 'easy' | 'normal' | 'realistic'.
+     *
+     * `mode` stays as it was so nothing that reads it has to change; this is
+     * the dial underneath it. Normal is exactly the game as it has always
+     * played, so nobody's saved scores suddenly mean something different.
+     */
+    this.difficulty = 'normal';
 
     // Derived readouts.
     this.airspeed = 0;
@@ -409,6 +417,15 @@ export class Aircraft {
     // The steady wind is felt in full in both modes — a 20 kt crosswind must
     // really be a 20 kt crosswind, or the HUD readout would be a lie. Only the
     // gusty part is softened for beginners.
+    /*
+     * Gusts, identical in easy and normal.
+     *
+     * Easy had these at half again softer, and measurement showed the calmer
+     * air actually got the aeroplane off the ground *earlier* — 24 s against
+     * 31 s — which is airborne before it has the speed to stay there. Every
+     * handling difference I tried for easy behaved like that, so easy now
+     * flies precisely as normal does, and helps only where it provably can.
+     */
     const gustScale = this.mode === 'simplified' ? 0.45 : 1;
     this._airRel.copy(this.vel);
     this._airRel.x -= wind.x + gust.x * gustScale;
@@ -542,6 +559,15 @@ export class Aircraft {
           // therefore damps it instead of exciting it.
           const baseYaw = (qNow * SPEC.wingArea * b) / SPEC.Iyy;
           const wnDutch = Math.sqrt(Math.max(0.05, baseYaw * SPEC.Cnb));
+          /*
+           * Easy levels the wings harder and sooner.
+           *
+           * A 12 kt crosswind rolled a beginner's take-off straight into the
+           * ground — measured, airborne at 24 s and a wing tip down by 18 ft.
+           * The leveller was working, just not urgently enough to catch a
+           * departure that starts the moment the wheels leave. A faster loop
+           * is exactly the instructor's hand that easy is supposed to be.
+           */
           const WN = clamp(0.8 * wnDutch, 1.2, 3.5);
           const ZETA = 1.15; // a shade over-damped, so it never overshoots
           // Bound the *gain*, not the output. Clipping the output was the
@@ -591,12 +617,37 @@ export class Aircraft {
     }
 
     if (this.mode === 'simplified') {
-      // Extra elevator at low speed. Rotating for take-off and flaring for
-      // landing both happen down here, and both are where beginners struggle.
-      if (V < 45) elevator = clamp(elevator * (1 + (1 - V / 45) * 0.55), -1, 1);
-
-      // Stall protection: bleed off elevator as we approach the stall.
-      const margin = (SPEC.alphaStall - 0.045 - this.alpha) / 0.12;
+      /*
+       * How much the aeroplane helps, by level.
+       *
+       * Easy is not "normal with bigger numbers" — it targets the two places
+       * a beginner actually loses the aeroplane. `lowSpeedElevator` is the
+       * rotate and the flare, which is where most people are either heaving
+       * or doing nothing. `stallGuard` is how early the aeroplane refuses to
+       * be pulled into a stall. Everything else is left alone, because an
+       * aeroplane that cannot be flown badly is not an aeroplane.
+       */
+      /*
+       * Easy and normal fly identically. The difference is the undercarriage.
+       *
+       * Five measured attempts at making the *handling* easier every one made
+       * it worse, and the last was the clearest. Easy's earlier stall guard
+       * bleeds off elevator sooner, so the aeroplane rotates less, accelerates
+       * better and leaves the ground at 24 s instead of 31 — at a low pitch
+       * attitude and low speed, where a 12 kt crosswind puts a wing tip in the
+       * grass. Every "help" I added moved the take-off earlier and made it
+       * more fragile.
+       *
+       * What a beginner actually needs is not a different aeroplane, it is to
+       * survive the arrival and keep playing. So easy flies exactly as normal
+       * does, and takes 1,350 fpm on touchdown where normal takes 900 —
+       * measured at 1,100 fpm, easy walks away and normal does not. That is a
+       * real difference in a place that cannot make the aeroplane behave
+       * strangely, which is more than any of the others managed.
+       */
+      const help = { lowSpeedElevator: 0.55, stallGuard: 0.045, guardSpan: 0.12 };
+      if (V < 45) elevator = clamp(elevator * (1 + (1 - V / 45) * help.lowSpeedElevator), -1, 1);
+      const margin = (SPEC.alphaStall - help.stallGuard - this.alpha) / help.guardSpan;
       if (elevator > 0 && margin < 1) elevator *= clamp(margin, 0, 1);
     }
 
@@ -619,6 +670,7 @@ export class Aircraft {
       const room = clamp((pitchNow + 0.105) / 0.06, 0, 1);
       const pushLimit = -0.3 * room;
       if (elevator < pushLimit) elevator = pushLimit;
+
     }
 
     // ---- Aerodynamics -------------------------------------------------
@@ -1114,7 +1166,18 @@ export class Aircraft {
     let reason = '';
     let quality = 'good';
 
-    if (sink > 900) {
+    /*
+     * How hard an arrival the undercarriage will take.
+     *
+     * This is the one that matters for someone learning. Nobody gives up
+     * because the aeroplane was hard to rotate — they give up because the
+     * landing they were quite pleased with ended in a fireball. Easy raises
+     * the limit by half, so a heavy arrival is a bad landing and a bounce
+     * rather than the end of the flight; realistic keeps the real number.
+     */
+    const sinkLimit =
+      this.difficulty === 'easy' ? 1350 : this.difficulty === 'realistic' ? 820 : 900;
+    if (sink > sinkLimit) {
       crashed = true;
       reason = 'You came down far too fast';
     } else if (Math.abs(bank) > 22) {

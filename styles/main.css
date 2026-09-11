@@ -1106,6 +1106,50 @@ body.is-large { font-size: 18px; }
   .hud.is-touch .hud-bottom { display: none; }
   .hud.is-touch .hud-right { top: 74px; right: 12px; }
   .hud.is-touch .hud-buttons { right: 12px; bottom: auto; top: 12px; }
+  /*
+   * The buttons live top-right on a touch device, so the instrument strip has
+   * to stop before them. It used to run to the right edge and the two sat on
+   * top of each other — measured, .hud-left 233x113 @134,8 against
+   * .hud-buttons 154x46 @209,12, a straight overlap over the tray.
+   *
+   * The minimap takes the top-left corner, so the strip starts after it too.
+   */
+  /* min-width:150px was holding the strip wider than `right` asked for, so it
+     still ran under the tray. Overriding it is what actually makes room. */
+  /*
+   * The instruments go *below* the tray, not beside it.
+   *
+   * Squeezing them into the gap left 67px of width — enough for a box, not
+   * enough for a number, which is worse than useless when the whole point is
+   * a glance. The buttons occupy y12-58 top-right; the map owns the top-left
+   * corner; so the strip starts under the buttons and runs to the edge, and
+   * the four readings sit in one row of large figures.
+   */
+  .hud.is-touch .hud-left {
+    left: 134px;
+    right: 8px;
+    top: 66px;
+    min-width: 0;
+    width: auto;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0 6px;
+    padding: 5px 8px;
+  }
+  .hud.is-touch .hud-left .hud-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+  .hud.is-touch .hud-left .hud-label { font-size: 8px; min-width: 0; letter-spacing: 0.04em; }
+  .hud.is-touch .hud-left .hud-value { font-size: 19px; line-height: 1.05; }
+  .hud.is-touch .hud-left .hud-unit { font-size: 8px; }
+  .hud.is-touch .hud-acname { display: none; }
+  /* The pads sat one pixel inside the stick — a thumb does not miss by one
+     pixel, it presses the wrong thing. Measured stick 14-150, pads 149-291. */
+  .hud.is-touch .touch-pads { right: 82px; bottom: 22px; }
+  .hud.is-touch .minimap { top: 8px; left: 8px; right: auto; bottom: auto; }
   .hud.is-touch .hud-tray { right: 12px; top: 62px; bottom: auto; }
   .hud.is-touch .hud-taxi-skip { padding: 12px 16px; font-size: 14px; }
   .screen { padding: 16px 14px 28px; }
@@ -1703,3 +1747,140 @@ body.is-large { font-size: 18px; }
 }
 .slot.is-loaded { border-color: var(--accent); background: rgba(88, 198, 255, 0.13); }
 @media (max-width: 720px) { .slot-row { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---- Minimap ------------------------------------------------------------ */
+/* North is always up: a map that spins with you is easier to follow and much
+   harder to learn, because the place never looks the same twice. */
+.minimap {
+  position: absolute;
+  right: 16px;
+  bottom: 108px;
+  width: 190px;
+  height: 190px;
+  border-radius: 50%;
+  background: rgba(8, 13, 22, 0.82);
+  border: 2px solid rgba(140, 180, 230, 0.3);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  overflow: hidden;
+}
+.minimap.is-alert {
+  border-color: rgba(255, 80, 55, 0.9);
+  animation: minimap-alert 0.7s ease-in-out infinite;
+}
+@keyframes minimap-alert {
+  0%, 100% { box-shadow: 0 8px 28px rgba(0,0,0,0.45), 0 0 16px rgba(255,70,45,0.35); }
+  50% { box-shadow: 0 8px 28px rgba(0,0,0,0.45), 0 0 30px rgba(255,70,45,0.75); }
+}
+.minimap-canvas { display: block; width: 190px; height: 190px; }
+.minimap-warn {
+  position: absolute;
+  left: 50%;
+  bottom: 34px;
+  transform: translateX(-50%);
+  padding: 3px 9px;
+  border-radius: 5px;
+  background: rgba(200, 40, 25, 0.92);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 720;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+.minimap-scale {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: #8fa2b4;
+  font-weight: 620;
+}
+@media (max-width: 560px) { .minimap { width: 132px; height: 132px; bottom: 92px; } .minimap-canvas { width: 132px; height: 132px; } }
+
+/* Inside 125 m the waypoint readout goes green — that is the part of the
+   approach where the number actually matters. */
+.hud-waypoint.is-near .hud-waypoint-text { color: #7dffb4; font-weight: 680; }
+.hud-waypoint.is-near .hud-arrow { color: #7dffb4; }
+
+/* ---- Mobile ------------------------------------------------------------- *
+ *
+ * A phone is not a small desktop. The readouts that sit comfortably at the
+ * corners of a laptop cover most of a handset, the touch targets that a mouse
+ * hits exactly need a thumb's worth of room, and anything the thumbs rest on
+ * must not have something else stacked on top of it.
+ *
+ * Measured rather than guessed: the minimap at right:10 bottom:92 (132 square)
+ * overlapped the touch throttle at right:14 bottom:14 (54x150) — it sat
+ * directly on the control you hold down for the whole flight.
+ */
+@media (max-width: 760px), (pointer: coarse) {
+  /* The minimap moves to the top-left, clear of both thumbs. */
+  .minimap {
+    top: 8px;
+    left: 8px;
+    right: auto;
+    bottom: auto;
+    width: 118px;
+    height: 118px;
+  }
+  .minimap-canvas { width: 118px; height: 118px; }
+  .minimap-scale { bottom: 6px; font-size: 9px; }
+  .minimap-warn { bottom: 22px; font-size: 9px; padding: 2px 6px; }
+
+  /* Instruments: a single compact strip rather than three floating panels. */
+  .hud-left {
+    top: 8px;
+    left: 134px;
+    right: 8px;
+    padding: 6px 9px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 2px 10px;
+  }
+  .hud-left .hud-row { display: flex; align-items: baseline; gap: 6px; }
+  .hud-left .hud-label { font-size: 9px; min-width: 58px; }
+  .hud-left .hud-value { font-size: 17px; }
+  /* The plain-English word under each number is lovely on a laptop and simply
+     will not fit next to a thumb. The numbers keep their units. */
+  .hud-left .hud-word { display: none; }
+  .hud-acname { font-size: 10px; }
+
+  /* Weather goes away; the wind is on the map and in the briefing. */
+  .hud-right { display: none; }
+
+  .hud-bottom { left: 8px; right: 8px; bottom: 176px; padding: 6px 9px; }
+  .hud-keyhint { display: none; }
+  .hud-chips { gap: 4px; }
+  .hud-chip { font-size: 9px; padding: 2px 6px; }
+
+  /* Thumb-sized targets. 44px is the documented minimum and the minimum is
+     not a target — these are the controls you fly with. */
+  .touch-pad { min-width: 66px; height: 52px; font-size: 12px; }
+  .touch-pads { right: 84px; bottom: 22px; gap: 10px; }
+  .touch-stick { width: 136px; height: 136px; left: 14px; bottom: 14px; }
+  .touch-knob { width: 56px; height: 56px; margin: -28px 0 0 -28px; }
+  .touch-throttle { width: 58px; height: 164px; right: 14px; bottom: 14px; }
+
+  /* The tray buttons are the only way to reach half the game on a phone. */
+  .hud-btn { min-width: 46px; min-height: 46px; }
+
+  /* Menus: full width, bigger hit areas, no hover-only affordances. */
+  .screen { padding: 12px 10px 84px; }
+  .screen-head h2 { font-size: 20px; }
+  .start-opt, .fleet-card { padding: 12px; }
+  .fleet-art-slot { width: 92px; }
+  button.primary.big { padding: 16px; font-size: 17px; }
+  .free-bar { padding: 8px 10px; }
+  .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tab { flex: 0 0 auto; }
+}
+
+/* Landscape phones are short, not narrow — the vertical budget is what runs
+   out first, so the bottom strip folds away entirely. */
+@media (pointer: coarse) and (max-height: 460px) {
+  .hud-bottom { display: none; }
+  .minimap, .minimap-canvas { width: 96px; height: 96px; }
+  .hud-left { left: 110px; }
+}

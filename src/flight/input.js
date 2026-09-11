@@ -40,6 +40,10 @@ export const ACTIONS = {
   lookLeft: { label: 'Look left (free look on)', group: 'View', default: ['ArrowLeft'] },
   lookRight: { label: 'Look right (free look on)', group: 'View', default: ['ArrowRight'] },
   mute: { label: 'Mute sound', group: 'Game', default: ['KeyM'] },
+  // M was already the mute key, so the map gets J — next to the other
+  // view keys and free on every layout that matters.
+  minimap: { label: 'Show the map', group: 'Game', default: ['KeyJ'] },
+  minimapRange: { label: 'Map range', group: 'Game', default: ['KeyK'] },
 };
 
 const STORAGE_KEY = 'islandsim.bindings.v1';

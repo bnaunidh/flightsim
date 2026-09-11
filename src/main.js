@@ -41,6 +41,7 @@ import { AtcDirector } from './game/atc-director.js';
 import { CargoCrate } from './game/markers.js';
 import { NavGuide } from './game/navguide.js';
 import { Beacon } from './game/beacon.js';
+import { Minimap } from './ui/minimap.js';
 import { TaxiRun } from './game/taxi.js';
 import { Wreck } from './game/wreck.js';
 import { Tornado } from './world/tornado.js';
@@ -171,6 +172,7 @@ class Game {
     await this.frame();
     this.aircraft = new Aircraft();
     this.aircraft.mode = this.settings.flightMode;
+    this.aircraft.difficulty = this.settings.difficulty || 'normal';
     this.aircraft.realisticFuel = !!this.settings.realisticFuel;
     this.model = createAircraftModel();
     this.scene.add(this.model);
@@ -183,6 +185,7 @@ class Game {
 
     this.navGuide = new NavGuide(this.scene);
     this.beacon = new Beacon(this.scene);
+    this.minimap = new Minimap(document.getElementById('ui'));
     this.autopilot = new Autopilot();
     this.taxi = new TaxiRun(this);
     this.wreck = new Wreck(this.scene);
@@ -731,6 +734,7 @@ class Game {
       }
     }
     this.aircraft.mode = this.settings.flightMode;
+    this.aircraft.difficulty = this.settings.difficulty || 'normal';
     this.input.out.throttle = this.aircraft.controls.throttle;
 
     // Camera: cockpit for the tutorial (you learn the instruments), chase otherwise.
@@ -908,6 +912,16 @@ class Game {
       case 'help':
         this.hud.toggleControls(this.input.bindings, keyLabel, ACTIONS);
         break;
+      case 'minimap': {
+        const on = this.minimap.toggle();
+        this.hud.notify(on ? 'Minimap on — K changes the range' : 'Minimap off', 'info', 2.2);
+        break;
+      }
+      case 'minimapRange': {
+        const span = this.minimap.cycleRange();
+        this.hud.notify(`Minimap range ${span >= 1000 ? span / 1000 + ' km' : span + ' m'}`, 'info', 1.8);
+        break;
+      }
       case 'keys': {
         const on = this.hud.toggleKeyMonitor();
         this.hud.notify(
@@ -1061,6 +1075,8 @@ class Game {
         this.hud.notify('Cockpit view — press C to look from outside again', 'info', 3);
       }
       if (this.hud) this.hud.setMinimal(!!value && this.rig && this.rig.mode === 'cockpit');
+    } else if (path === 'difficulty') {
+      this.applyDifficulty(value);
     } else if (path === 'realisticFuel') {
       this.aircraft.realisticFuel = value;
       this.hud.notify(
@@ -1198,6 +1214,36 @@ class Game {
    * The clock only runs once you are airborne — "after five minutes" should
    * not tick away while you are still on the stand.
    */
+  /**
+   * Set how much the aeroplane helps.
+   *
+   * Easy and normal both fly the simplified model — the difference is how much
+   * it does for you. Realistic is the assists off entirely, which is what the
+   * old 'realistic' flight mode always was, so the two settings are folded
+   * into one dial rather than being two overlapping switches.
+   */
+  applyDifficulty(level) {
+    const lv = ['easy', 'normal', 'realistic'].includes(level) ? level : 'normal';
+    this.settings.difficulty = lv;
+    this.settings.flightMode = lv === 'realistic' ? 'realistic' : 'simplified';
+    this.aircraft.mode = this.settings.flightMode;
+    this.aircraft.difficulty = this.settings.difficulty || 'normal';
+    this.aircraft.difficulty = lv;
+    saveSettings(this.settings);
+    if (this.hud) {
+      this.hud.notify(
+        lv === 'easy'
+          ? 'Easy — the aeroplane helps you rotate, flare and stay out of a stall'
+          : lv === 'realistic'
+            ? 'Realistic — no assistance at all. It can stall and it will drift.'
+            : 'Normal — gentle help, the way the game has always flown',
+        'info',
+        4
+      );
+    }
+    return lv;
+  }
+
   updateArmedFailures(dt) {
     const ac = this.aircraft;
     // Two clocks. The flight clock only runs once you are actually airborne,
@@ -1602,6 +1648,8 @@ class Game {
     if (input.pressed('help')) this.hud.toggleControls(this.input.bindings, keyLabel, ACTIONS);
     if (input.pressed('guide')) this.toggleGuide();
     if (input.pressed('autopilot')) this.toggleAutopilot();
+    if (input.pressed('minimap')) this.hudAction('minimap');
+    if (input.pressed('minimapRange')) this.hudAction('minimapRange');
     if (input.pressed('hideUi')) this.toggleHideUi();
     if (input.pressed('mute')) this.hudAction('mute');
   }
@@ -1900,6 +1948,7 @@ class Game {
         ac.quat,
         this.camera.position
       );
+      if (this.minimap) this.minimap.update(dt, this);
       if (this.beacon) {
         const wantBeacon = this.state === 'flying' && style !== 'arrow' && this.navGuide.enabled;
         this.beacon.setTarget(wantBeacon ? guideTarget : null);

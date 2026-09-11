@@ -174,7 +174,16 @@ export class Airport {
     // Raised from 26 m. Beside a 22 m airliner the old tower barely cleared
     // the tail, and a control tower that an aeroplane can look level at does
     // not read as a control tower.
-    const TOWER_H = 42;
+    /*
+     * Tower height.
+     *
+     * 42 m put the cab barely above the terminal roof, which is the wrong way
+     * round — a control tower has to see over everything on the field, and
+     * from the air it read as just another building. Real regional towers run
+     * 50-70 m; 64 puts the cab well clear of the 28 m terminal and makes it
+     * the landmark you actually navigate by.
+     */
+    const TOWER_H = 64;
     const shaft = new THREE.Mesh(new THREE.CylinderGeometry(4.6, 6.4, TOWER_H, 20), shaftMat);
     shaft.position.set(TX, ELEV + TOWER_H / 2, TZ);
     shaft.castShadow = shaft.receiveShadow = true;
@@ -195,7 +204,7 @@ export class Airport {
     base.receiveShadow = true;
     this.group.add(base);
     // Solid, all the way up to the cab.
-    addObstacleAt(TX, TZ, 15, 15, ELEV, TOWER_H + 9, 'You flew into the control tower');
+    addObstacleAt(TX, TZ, 16, 16, ELEV, TOWER_H + 11, 'You flew into the control tower');
 
     // The gallery the cab sits on, with a railing round it.
     const steelMat = new THREE.MeshStandardMaterial({ color: 0xa8b0b8, roughness: 0.4, metalness: 0.7 });

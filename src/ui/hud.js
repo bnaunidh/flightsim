@@ -212,6 +212,7 @@ export class Hud {
     this.btnMute = mkBtn('soundOn', 'mute', 'Mute sound (M)', tray, 'Sound');
     this.btnHelp = mkBtn('help', 'help', 'Show controls (H)', tray, 'Controls');
     this.btnKeys = mkBtn('help', 'keys', 'Show which keys you are pressing', tray, 'Key monitor');
+    this.btnMap = mkBtn('map', 'minimap', 'Show the map (M)', tray, 'Minimap');
 
     this.tray = tray;
     this.trayOpen = false;
@@ -788,8 +789,24 @@ export class Hud {
       // zero means "dead ahead" — so it needs a quarter turn taken off, or the
       // arrow sends you 90 degrees off every single time.
       this.waypointArrow.style.transform = `rotate(${relB - 90}deg)`;
-      const distText = dist > 1200 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist / 10) * 10} m`;
-      const txt = `${target.label} · ${distText}`;
+      /*
+       * Distance, at the precision that is useful at that distance.
+       *
+       * Rounding to the nearest 10 m is fine at two kilometres and useless on
+       * short final, where the difference between 120 m and 40 m is the
+       * difference between "aim" and "flare". Inside 125 m it counts in fives
+       * and says so plainly, because that is the part of the approach where
+       * you most want to be told.
+       */
+      const near = dist <= 125;
+      const distText =
+        dist > 1200
+          ? `${(dist / 1000).toFixed(1)} km`
+          : near
+            ? `${Math.round(dist / 5) * 5} m`
+            : `${Math.round(dist / 10) * 10} m`;
+      const txt = near ? `${target.label} · ${distText} — almost there` : `${target.label} · ${distText}`;
+      this.waypoint.classList.toggle('is-near', near);
       if (this.lastValues.wp !== txt) {
         this.waypointText.textContent = txt;
         this.lastValues.wp = txt;

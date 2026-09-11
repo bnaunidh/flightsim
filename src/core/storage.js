@@ -11,6 +11,13 @@ export const DEFAULT_SETTINGS = {
   // Which of the five places you are flying. See world/maps.js.
   map: 'kestrel',
   flightMode: 'simplified',
+  /**
+   * 'easy' | 'normal' | 'realistic'. Normal is the game exactly as it has
+   * always played, so it stays the default and nobody's scores change meaning.
+   * Easy is for someone who has never flown anything; realistic switches the
+   * assists off entirely and is the old 'realistic' flight mode.
+   */
+  difficulty: 'normal',
   volumes: { master: 0.85, engine: 0.8, environment: 0.7, atc: 0.85, alerts: 0.9, music: 0.35 },
   /**
    * On/off per source, separate from the volumes. Turning the ATC slider to
