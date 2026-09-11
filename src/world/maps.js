@@ -308,6 +308,199 @@ export const MAPS = [
       ],
     },
   },
+
+  /* ==================================================================== *
+   * Three real airports.
+   *
+   * The runway numbers, headings, lengths and field elevations below are the
+   * real ones. What is *not* real is everything around them: there is no city,
+   * no bay and no terminal complex, because this game builds its world out of
+   * noise and primitives rather than survey data, and a half-drawn San
+   * Francisco would be worse than none.
+   *
+   * Two runways are modelled at each field. SFO and LAX both have four, and
+   * the pair chosen is the pair that matters — the long one you land on and
+   * the one you use when the wind is wrong.
+   *
+   * And one more simplification, stated rather than hidden: the runways are
+   * laid out along the game's axes, not on their true compass headings. The
+   * whole world — the paved-area test, the flattened pad, the taxiways, the
+   * approach corridors — assumes the main runway runs east-west, and bending
+   * all of that to a real 284 degrees is a much larger change than this. So
+   * what is faithful here is the part that decides how a field flies: the real
+   * runway *lengths*, the real field elevation, and the real relationship
+   * between the two strips. SFO's cross each other, LAX's run parallel, OAK
+   * has one long one and a little one. That is why those three airports feel
+   * different from one another, and it survives intact. The compass numbers
+   * would not, so they are not painted on.
+   * ==================================================================== */
+  {
+    id: 'sfo',
+    name: 'San Francisco',
+    subtitle: 'Real field · two intersecting pairs',
+    blurb:
+      'Flat, low and open to the water, with two runways crossing at almost a right angle. The long ' +
+      '28s take the traffic; the 19s are there for when the wind says otherwise.',
+    difficulty: 2,
+    difficultyLabel: 'Open',
+    seaFloor: -28,
+    // Field elevation 13 ft. The real 10L/28R is 3,618 m; 01L/19R is 2,332 m.
+    airport: {
+      elev: 4,
+      headingDeg: 90,
+      // 10L/28R is 3,618 m in reality. The crossing pair sits at 90 degrees to
+      // it, which is what SFO actually gives you: a real choice in a crosswind.
+      runway: { cx: 0, cz: 0, length: 3618, halfWidth: 30 },
+      runway2: { cx: 700, cz: -200, length: 2332, halfWidth: 27, headingDeg: 180 },
+      pad: { x0: -2100, x1: 2100, z0: -420, z1: 380, blend: 340 },
+      pad2: { x0: 560, x1: 840, z0: -1500, z1: 1100, blend: 300 },
+    },
+    islands: [
+      { name: 'The Peninsula', cx: 0, cz: 400, radius: 6200, peak: 60, seed: 61, profile: 'hills' },
+      { name: 'San Bruno Hill', cx: -3200, cz: 2600, radius: 1500, peak: 240, seed: 67, profile: 'hills' },
+    ],
+    chunks: [
+      { cx: 0, cz: 0, size: 16000, segments: 256 },
+      { cx: -3200, cz: 2600, size: 4200, segments: 96 },
+    ],
+    palette: {
+      grass: [0.92, 0.95, 0.82],
+      sand: [0.95, 0.92, 0.86],
+      rock: [0.86, 0.84, 0.82],
+      deepWater: 0x123a4e,
+      swell: 0x2e6c86,
+      // Cold, green-grey bay water rather than a tropical reef.
+      shallow: [0.34, 0.58, 0.60],
+      nightSky: 0x8fa6c4,
+    },
+    scenery: {
+      coastTrees: 260,
+      coastTreeHeight: 9,
+      hillTrees: 420,
+      hillTreeHeight: 11,
+      hillCentre: [-3200, 2600],
+      hillRadius: 1400,
+      hillBand: [60, 220],
+      town: { cx: -1800, cz: 1800, radius: 900, count: 90, minH: 14, maxH: 150 },
+      lighthouse: [-5200, -2600],
+      deliveryPad: [6200, -5200],
+      padTrees: 60,
+      boats: 5,
+    },
+    weather: { time: 'day', cond: 'cloudy', windSpeedKts: 16, windDirDeg: 290 },
+  },
+
+  {
+    id: 'oak',
+    name: 'Oakland',
+    subtitle: 'Real field · one long runway',
+    blurb:
+      'One long runway across the water from San Francisco, and a short field beside it. Quieter, ' +
+      'simpler, and a good place to take something heavy.',
+    difficulty: 2,
+    difficultyLabel: 'Open',
+    seaFloor: -22,
+    // Field elevation 9 ft. 12/30 is 3,207 m; the North Field 10R/28L is 1,921 m.
+    airport: {
+      elev: 3,
+      headingDeg: 90,
+      // 12/30 is 3,207 m; the North Field strip is 1,921 m and much narrower.
+      runway: { cx: 0, cz: 0, length: 3207, halfWidth: 30 },
+      runway2: { cx: -700, cz: -900, length: 1921, halfWidth: 23, headingDeg: 180 },
+      pad: { x0: -1900, x1: 1900, z0: -380, z1: 340, blend: 320 },
+      pad2: { x0: -1900, x1: 100, z0: -840, z1: -560, blend: 240 },
+    },
+    islands: [
+      { name: 'East Bay', cx: 600, cz: 900, radius: 5600, peak: 40, seed: 71, profile: 'hills' },
+      { name: 'Oakland Hills', cx: 3400, cz: 3200, radius: 2200, peak: 380, seed: 73, profile: 'hills' },
+    ],
+    chunks: [
+      { cx: 0, cz: 0, size: 15000, segments: 256 },
+      { cx: 3400, cz: 3200, size: 5200, segments: 112 },
+    ],
+    palette: {
+      grass: [0.95, 0.94, 0.78],
+      sand: [0.93, 0.9, 0.84],
+      rock: [0.84, 0.82, 0.78],
+      deepWater: 0x14415a,
+      swell: 0x316f8a,
+      shallow: [0.36, 0.60, 0.62],
+      nightSky: 0x93aac8,
+    },
+    scenery: {
+      coastTrees: 220,
+      coastTreeHeight: 9,
+      hillTrees: 700,
+      hillTreeHeight: 13,
+      hillCentre: [3400, 3200],
+      hillRadius: 2000,
+      hillBand: [80, 340],
+      town: { cx: 1600, cz: 1500, radius: 800, count: 70, minH: 12, maxH: 90 },
+      lighthouse: [-4200, 2400],
+      deliveryPad: [6200, -5200],
+      padTrees: 60,
+      boats: 4,
+    },
+    weather: { time: 'day', cond: 'clear', windSpeedKts: 11, windDirDeg: 290 },
+  },
+
+  {
+    id: 'lax',
+    name: 'Los Angeles',
+    subtitle: 'Real field · four parallels, two flown',
+    blurb:
+      'Four parallel runways all pointing the same way, which makes it the easiest big airport to ' +
+      'line up with and the busiest to share. The 25s are the long pair on the south side.',
+    difficulty: 2,
+    difficultyLabel: 'Open',
+    seaFloor: -30,
+    // Field elevation 125 ft. 07L/25R is 3,939 m; 06R/24L is 3,318 m.
+    airport: {
+      elev: 38,
+      headingDeg: 90,
+      // 07L/25R is 3,939 m, 06R/24L is 3,318 m. They are PARALLEL, not
+      // crossing — that is the thing that makes LAX feel like LAX, and it is
+      // the one piece of its geometry worth keeping above all others.
+      runway: { cx: 0, cz: 0, length: 3939, halfWidth: 30 },
+      runway2: { cx: -120, cz: -1050, length: 3318, halfWidth: 30, headingDeg: 90 },
+      pad: { x0: -2300, x1: 2300, z0: -1400, z1: 420, blend: 360 },
+      pad2: { x0: -2300, x1: 2300, z0: -1400, z1: -700, blend: 300 },
+    },
+    islands: [
+      { name: 'The Basin', cx: 1200, cz: 600, radius: 7000, peak: 80, seed: 83, profile: 'hills' },
+      { name: 'Palos Verdes', cx: -1800, cz: 5200, radius: 1900, peak: 420, seed: 89, profile: 'hills' },
+    ],
+    chunks: [
+      { cx: 0, cz: 0, size: 18000, segments: 256 },
+      { cx: -1800, cz: 5200, size: 4800, segments: 104 },
+    ],
+    palette: {
+      grass: [0.96, 0.9, 0.72],
+      sand: [1.0, 0.96, 0.86],
+      rock: [0.9, 0.86, 0.78],
+      deepWater: 0x10486a,
+      swell: 0x3b83a4,
+      // Warmer and bluer going south.
+      shallow: [0.33, 0.70, 0.76],
+      nightSky: 0xa2b4cf,
+    },
+    scenery: {
+      coastTrees: 300,
+      coastTreeHeight: 11,
+      hillTrees: 520,
+      hillTreeHeight: 12,
+      hillCentre: [-1800, 5200],
+      hillRadius: 1700,
+      hillBand: [90, 380],
+      town: { cx: 2600, cz: 1400, radius: 1200, count: 130, minH: 14, maxH: 170 },
+      lighthouse: [-3600, 6400],
+      deliveryPad: [6200, -5200],
+      padTrees: 70,
+      boats: 4,
+    },
+    weather: { time: 'day', cond: 'clear', windSpeedKts: 10, windDirDeg: 260 },
+  },
+
 ];
 
 export const DEFAULT_MAP_ID = 'kestrel';

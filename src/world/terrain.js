@@ -27,7 +27,7 @@ import {
  * elevation. That is what lets the tutorial, all the missions and the landing
  * scoring work unchanged wherever you choose to fly.
  */
-export const AIRPORT = {
+const KESTREL_AIRPORT = {
   elev: 14,
   headingDeg: 90,
   runway: { cx: 0, cz: 0, length: 1100, halfWidth: 17 },
@@ -64,6 +64,19 @@ export const CORRIDOR2 = { halfWidth: 300, blend: 260, fadeFrom: 2600, length: 4
  * binding — so swapping the map really does swap the world underneath.
  * Call `applyMap()` and then rebuild the terrain, ocean and scenery.
  */
+/**
+ * The airfield you are flying from.
+ *
+ * This was a `const`, which quietly meant every map in the game had the same
+ * runway in the same place — fine while every map was an island with one strip,
+ * and wrong the moment a real airport with four parallel runways turns up. It
+ * is now a live binding like MAP and ISLANDS, so a map may bring its own.
+ *
+ * A map that does not specify one gets Kestrel's, so nothing that existed
+ * before has to change.
+ */
+export let AIRPORT = KESTREL_AIRPORT;
+
 export let MAP = getMap(DEFAULT_MAP_ID);
 export let SEA_FLOOR = MAP.seaFloor;
 export let ISLANDS = MAP.islands;
@@ -73,6 +86,7 @@ export function applyMap(idOrDef) {
   MAP = typeof idOrDef === 'string' ? getMap(idOrDef) : idOrDef;
   SEA_FLOOR = MAP.seaFloor;
   ISLANDS = MAP.islands;
+  AIRPORT = MAP.airport || KESTREL_AIRPORT;
   PALETTE = MAP.palette;
   return MAP;
 }
@@ -365,9 +379,25 @@ export function isOnRunway(x, z, margin = 0) {
   );
 }
 
-/** The crosswind runway. Runs along Z, so the tests are the other way round. */
+/**
+ * The second runway.
+ *
+ * It used to be assumed north-south, because on Kestrel it is. At a real field
+ * the second strip may well be parallel to the first — that is exactly what
+ * makes Los Angeles feel like Los Angeles — so it now reads its own heading
+ * and tests along whichever axis it actually lies on. Assuming was fine while
+ * there was one airport; it is a silent bug the moment there are four.
+ */
 export function isOnRunway2(x, z, margin = 0) {
   const r = AIRPORT.runway2;
+  if (!r) return false;
+  const alongX = Math.abs((((r.headingDeg ?? 180) % 180) - 90)) < 45;
+  if (alongX) {
+    return (
+      Math.abs(z - r.cz) <= r.halfWidth + margin &&
+      Math.abs(x - r.cx) <= r.length / 2 + margin
+    );
+  }
   return (
     Math.abs(x - r.cx) <= r.halfWidth + margin &&
     Math.abs(z - r.cz) <= r.length / 2 + margin
