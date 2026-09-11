@@ -334,6 +334,84 @@ export const MAPS = [
    * different from one another, and it survives intact. The compass numbers
    * would not, so they are not painted on.
    * ==================================================================== */
+  /**
+   * Ironhead Air Base.
+   *
+   * The class asked for military aircraft to have somewhere military to fly
+   * from, and they were right: taking a bomber off the same palm-fringed
+   * tropical strip the trainer uses rather undercuts it.
+   *
+   * Dry, flat, and much bigger than it needs to be, which is what a real air
+   * base feels like — a great deal of concrete and not much else. Behind the
+   * same passcode as the military aircraft themselves.
+   */
+  {
+    id: 'airbase',
+    name: 'Ironhead Air Base',
+    subtitle: 'Military · long concrete, high desert',
+    blurb:
+      'Three kilometres of runway in the middle of a dry plain, with hardened shelters, revetments '
+      + 'and a radar that turns. Nothing to look at and nowhere to hide, which is rather the idea.',
+    difficulty: 3,
+    difficultyLabel: 'Exposed',
+    military: true,
+    seaFloor: -40,
+    airport: {
+      elev: 300,
+      headingDeg: 90,
+      runway: { cx: 0, cz: 0, length: 3200, halfWidth: 34 },
+      // A crosswind strip, because a base this exposed needs one — and
+      // because every code path in the game expects a second runway to exist.
+      runway2: { cx: 900, cz: -300, length: 1800, halfWidth: 26, headingDeg: 180 },
+      pad: { x0: -2000, x1: 2000, z0: -900, z1: 900, blend: 500 },
+      pad2: { x0: 760, x1: 1040, z0: -1300, z1: 700, blend: 320 },
+    },
+    islands: [
+      // A plain, not hills: a big flat pan with the ridge kept well out at the
+      // edge. An air base wants somewhere with nothing in the way.
+      { name: 'Ironhead Plain', cx: 0, cz: 0, radius: 7600, peak: 360, seed: 91, profile: 'hills' },
+      { name: 'The Anvil', cx: -5600, cz: 4600, radius: 1500, peak: 720, seed: 97, profile: 'hills' },
+    ],
+    chunks: [
+      { cx: 0, cz: 0, size: 18000, segments: 256 },
+      { cx: -5200, cz: 4200, size: 5000, segments: 96 },
+    ],
+    palette: {
+      /*
+       * Dry scrub over pale rock.
+       *
+       * These are multipliers on the shared green grass texture, so pulling
+       * the numbers DOWN just makes a darker green — it took a look at the
+       * map to notice that. Red has to go above 1 and blue well below it
+       * before the ground stops being a field and starts being a plain.
+       */
+      grass: [1.55, 1.18, 0.52],
+      sand: [1.1, 1.0, 0.78],
+      rock: [1.12, 1.0, 0.82],
+      deepWater: 0x14323f,
+      swell: 0x2b5f70,
+      shallow: [0.42, 0.62, 0.58],
+      nightSky: 0x7d8ba8,
+    },
+    scenery: {
+      coastTrees: 90,
+      coastTreeHeight: 6,
+      hillTrees: 140,
+      hillTreeHeight: 7,
+      hillCentre: [-5600, 4600],
+      hillRadius: 1400,
+      hillBand: [380, 700],
+      town: { cx: 2600, cz: 2200, radius: 380, count: 22, minH: 290, maxH: 340 },
+      lighthouse: [-7000, -5200],
+      deliveryPad: [5200, -4200],
+      padTrees: 10,
+      boats: 0,
+      // The base itself: shelters, revetments, blast walls and the radar.
+      base: { cx: 0, cz: 0, shelters: 8, revetments: 6, walls: 14, spread: 620, radarOffset: 900 },
+    },
+    weather: { time: 'day', cond: 'clear', windSpeedKts: 10, windDirDeg: 270 },
+  },
+
   {
     id: 'sfo',
     name: 'San Francisco',

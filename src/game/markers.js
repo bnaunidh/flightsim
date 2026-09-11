@@ -203,3 +203,131 @@ export class CargoCrate {
     this.scene.remove(this.group);
   }
 }
+
+/**
+ * A practice bomb.
+ *
+ * The weapons range used to drop a cargo crate under an orange parachute,
+ * which is a supply drop, not a bombing run — and the class noticed
+ * immediately. A bomb is a different problem to solve: it keeps the
+ * aeroplane's forward speed all the way down, so you have to release *before*
+ * the target and judge how far ahead, which is the whole skill.
+ *
+ * It is an inert practice store. It marks where it lands with dust and a
+ * scorch, and does nothing else.
+ */
+export class PracticeBomb {
+  constructor(scene, pos, vel) {
+    this.group = new THREE.Group();
+
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2f6fb5, roughness: 0.5, metalness: 0.25 });
+    const finMat = new THREE.MeshStandardMaterial({ color: 0x243a52, roughness: 0.6, metalness: 0.3 });
+
+    // The store itself, lying along its own -Z, so pointing it along its
+    // velocity is a lookAt and nothing more.
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.15, 12), bodyMat);
+    body.rotation.x = Math.PI / 2;
+    body.castShadow = true;
+    this.group.add(body);
+
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), bodyMat);
+    nose.rotation.x = -Math.PI / 2;
+    nose.position.z = -0.575;
+    this.group.add(nose);
+
+    const tailCone = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.07, 0.3, 12), bodyMat);
+    tailCone.rotation.x = Math.PI / 2;
+    tailCone.position.z = 0.72;
+    this.group.add(tailCone);
+
+    // Four swept fins at the tail. They are what makes a shape at this size
+    // read as a bomb rather than as a pipe.
+    for (let i = 0; i < 4; i++) {
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.26, 0.34), finMat);
+      fin.position.z = 0.66;
+      fin.rotation.z = (i / 4) * Math.PI * 2;
+      fin.position.y = Math.cos((i / 4) * Math.PI * 2) * 0.17;
+      fin.position.x = Math.sin((i / 4) * Math.PI * 2) * 0.17;
+      fin.castShadow = true;
+      this.group.add(fin);
+    }
+
+    // The dust it throws up on impact, made now and hidden, so nothing is
+    // allocated at the moment it matters.
+    this.dust = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 10, 8),
+      new THREE.MeshStandardMaterial({ color: 0xb9a983, roughness: 1, transparent: true, opacity: 0 })
+    );
+    this.dust.visible = false;
+    scene.add(this.dust);
+
+    this.scorch = new THREE.Mesh(
+      new THREE.CircleGeometry(2.6, 20),
+      new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: 1, transparent: true, opacity: 0 })
+    );
+    this.scorch.rotation.x = -Math.PI / 2;
+    this.scorch.visible = false;
+    scene.add(this.scorch);
+
+    this.group.position.copy(pos);
+    // It leaves with the aeroplane's velocity, all of it. That is the point.
+    this.vel = vel.clone();
+    this.landed = false;
+    this.t = 0;
+    this.settle = 0;
+    this.scene = scene;
+    scene.add(this.group);
+    this.mesh = this.group; // the missions read `crate.mesh.position`
+  }
+
+  update(dt, heightAt, wind) {
+    this.t += dt;
+    if (this.landed) {
+      // Dust blooms and fades; the scorch stays.
+      this.settle += dt;
+      const k = clamp(this.settle / 2.6, 0, 1);
+      this.dust.scale.setScalar(1.4 + k * 5.5);
+      this.dust.material.opacity = (1 - k) * 0.5;
+      this.dust.position.y += dt * 1.4;
+      this.dust.visible = k < 1;
+      this.scorch.material.opacity = 0.55;
+      return;
+    }
+
+    // Gravity, and a little drag. A real store slows very slightly and the
+    // wind pushes it about, which is why the range mission has a crosswind.
+    this.vel.y -= 9.81 * dt;
+    const drag = clamp(dt * 0.09, 0, 1);
+    this.vel.x += (wind.x * 0.5 - this.vel.x) * drag;
+    this.vel.z += (wind.z * 0.5 - this.vel.z) * drag;
+    this.group.position.addScaledVector(this.vel, dt);
+
+    // Point it where it is going. A bomb that falls flat looks like litter.
+    if (this.vel.lengthSq() > 1) {
+      this.group.lookAt(
+        this.group.position.x + this.vel.x,
+        this.group.position.y + this.vel.y,
+        this.group.position.z + this.vel.z
+      );
+      this.group.rotateY(Math.PI); // the model points along -Z
+    }
+
+    const gh = heightAt(this.group.position.x, this.group.position.z);
+    if (this.group.position.y <= gh + 0.15) {
+      this.group.position.y = gh + 0.1;
+      this.landed = true;
+      this.group.visible = false;
+      const p = this.group.position;
+      this.dust.position.set(p.x, gh + 1.2, p.z);
+      this.dust.visible = true;
+      this.scorch.position.set(p.x, gh + 0.09, p.z);
+      this.scorch.visible = true;
+    }
+  }
+
+  dispose() {
+    this.scene.remove(this.group);
+    this.scene.remove(this.dust);
+    this.scene.remove(this.scorch);
+  }
+}

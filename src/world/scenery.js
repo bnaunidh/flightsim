@@ -291,6 +291,122 @@ function buildBoats(group, count) {
   return boats;
 }
 
+/**
+ * A military air base: shelters, revetments, blast walls and a radar.
+ *
+ * The class asked for military aircraft to have somewhere military to fly
+ * from, and they were right to — flying a bomber off the same palm-fringed
+ * tropical strip the trainer uses rather undercuts it.
+ *
+ * Everything here is instanced and solid, so the base costs a handful of draw
+ * calls and you cannot fly through a blast wall.
+ */
+function addAirBase(group, base) {
+  if (!base) return;
+  const { cx = 0, cz = 0 } = base;
+  const concrete = new THREE.MeshStandardMaterial({ color: 0x9a9a92, roughness: 0.94, metalness: 0.02 });
+  const earth = new THREE.MeshStandardMaterial({ color: 0x7d7355, roughness: 1 });
+  const steel = new THREE.MeshStandardMaterial({ color: 0x5c6168, roughness: 0.6, metalness: 0.45 });
+
+  /*
+   * Hardened aircraft shelters, in a row off the taxiway.
+   *
+   * A half-cylinder laid on its side is what a HAS actually is, and it reads
+   * as one instantly — which matters more than any amount of detail on it.
+   */
+  const count = base.shelters ?? 8;
+  const archGeo = new THREE.CylinderGeometry(13, 13, 30, 14, 1, false, 0, Math.PI);
+  archGeo.rotateZ(Math.PI / 2);
+  archGeo.rotateY(Math.PI / 2);
+  const shelters = new THREE.InstancedMesh(archGeo, concrete, count);
+  shelters.castShadow = shelters.receiveShadow = true;
+  const d = new THREE.Object3D();
+  for (let i = 0; i < count; i++) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const along = (Math.floor(i / 2) - (count / 4 - 0.5)) * 150;
+    const x = cx + along;
+    const z = cz + side * (base.spread ?? 620);
+    const y = heightAt(x, z);
+    d.position.set(x, y, z);
+    d.rotation.set(0, side > 0 ? 0 : Math.PI, 0);
+    d.scale.setScalar(1);
+    d.updateMatrix();
+    shelters.setMatrixAt(i, d.matrix);
+    addObstacleAt(x, z, 30, 26, y - 1, 13, 'You flew into a hardened shelter');
+  }
+  shelters.instanceMatrix.needsUpdate = true;
+  group.add(shelters);
+
+  // Earth revetments: open-ended U-shaped banks for the aircraft that live
+  // outside. Three boxes each, which is exactly what a revetment looks like.
+  const revs = base.revetments ?? 6;
+  const wallGeo = new THREE.BoxGeometry(1, 1, 1);
+  const banks = new THREE.InstancedMesh(wallGeo, earth, revs * 3);
+  banks.castShadow = banks.receiveShadow = true;
+  let n = 0;
+  for (let i = 0; i < revs; i++) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const along = (Math.floor(i / 2) - (revs / 4 - 0.5)) * 170 + 80;
+    const bx = cx + along;
+    const bz = cz + side * ((base.spread ?? 620) + 210);
+    const by = heightAt(bx, bz);
+    const pieces = [
+      [0, -18, 44, 4],   // back wall, across
+      [-20, 0, 4, 36],   // left
+      [20, 0, 4, 36],    // right
+    ];
+    for (const [ox, oz, w, dep] of pieces) {
+      d.position.set(bx + ox, by + 3, bz + oz * side);
+      d.rotation.set(0, 0, 0);
+      d.scale.set(w, 6, dep);
+      d.updateMatrix();
+      banks.setMatrixAt(n++, d.matrix);
+      addObstacleAt(bx + ox, bz + oz * side, w, dep, by, 6.6, 'You flew into a revetment');
+    }
+  }
+  banks.instanceMatrix.needsUpdate = true;
+  group.add(banks);
+
+  // Blast walls along the apron edge.
+  const walls = base.walls ?? 14;
+  const blast = new THREE.InstancedMesh(wallGeo, concrete, walls);
+  blast.castShadow = blast.receiveShadow = true;
+  for (let i = 0; i < walls; i++) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const along = (Math.floor(i / 2) - (walls / 4 - 0.5)) * 96;
+    const wx = cx + along;
+    const wz = cz + side * (base.spread ?? 620) * 0.62;
+    const wy = heightAt(wx, wz);
+    d.position.set(wx, wy + 2.6, wz);
+    d.rotation.set(0, 0, 0);
+    d.scale.set(60, 5.2, 2.2);
+    d.updateMatrix();
+    blast.setMatrixAt(i, d.matrix);
+    addObstacleAt(wx, wz, 60, 2.2, wy, 5.6, 'You flew into a blast wall');
+  }
+  blast.instanceMatrix.needsUpdate = true;
+  group.add(blast);
+
+  // A radar, which turns. It is the one thing on a base that moves, so it is
+  // what tells you the place is alive.
+  const rx = cx - (base.radarOffset ?? 900);
+  const rz = cz + (base.spread ?? 620) * 1.5;
+  const ry = heightAt(rx, rz);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.4, 26, 8), steel);
+  mast.position.set(rx, ry + 13, rz);
+  mast.castShadow = true;
+  group.add(mast);
+  const dish = new THREE.Group();
+  const face = new THREE.Mesh(new THREE.BoxGeometry(16, 5, 1.1), steel);
+  face.castShadow = true;
+  dish.add(face);
+  dish.position.set(rx, ry + 27, rz);
+  group.add(dish);
+  addObstacleAt(rx, rz, 6, 6, ry, 29, 'You flew into the radar');
+
+  return { dish };
+}
+
 export class Scenery {
   constructor(scene, quality = 'high') {
     this.group = new THREE.Group();
@@ -335,6 +451,9 @@ export class Scenery {
     // High ground: conifer and broadleaf, which is what actually grows up there.
     addTrees(this.group, upland, cfg.hillTreeHeight, [0.06, 0.36, 0.46, 0.12]);
 
+    // A military base, on the maps that have one.
+    this.base = addAirBase(this.group, cfg.base);
+
     // The town, in whatever flat land this map has near the field.
     const town = scatter({
       cx: cfg.town.cx,
@@ -372,6 +491,9 @@ export class Scenery {
 
   update(dt, weather) {
     this.t += dt;
+    // The base radar turns. It is the only moving thing on an air base, which
+    // is what stops the place reading as a model of a base.
+    if (this.base && this.base.dish) this.base.dish.rotation.y += dt * 0.55;
     // Lighthouse sweeps.
     const on = weather.isNight || weather.cond.cloud > 0.75;
     this.lighthouseLamp.material.emissiveIntensity = on

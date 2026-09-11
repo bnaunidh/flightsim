@@ -461,6 +461,20 @@ export class Menus {
         this.hooks.chooseMap && this.hooks.chooseMap(pick.dataset.chooseMap);
       }
     });
+    /*
+     * Military maps are hidden until the passcode is in, the same as the
+     * aircraft and the missions. Hidden rather than filtered out, because a
+     * card that was never built cannot come back when the code is entered
+     * mid-session — which is exactly how the fleet list broke once already.
+     */
+    this.syncMapLocks = () => {
+      for (const m of MAPS) {
+        const card = s.querySelector(`[data-map-card="${m.id}"]`);
+        if (card) card.hidden = Prog.needsPasscode(this.prog, m);
+      }
+    };
+    this.syncMapLocks();
+
     this.screens.maps = s;
     return s;
   }
@@ -1380,6 +1394,18 @@ export class Menus {
         </div>
         <p class="hint tiny" data-code-msg>Codes pay out once each.</p>
 
+        <h3 class="fail-heading">Dev mode</h3>
+        <p class="trigger-note" data-dev-note>Things that are built but not finished. Behind a passcode, because they are not ready for everybody yet.</p>
+        <div class="code-row" data-dev-entry>
+          <input type="text" data-dev-code placeholder="Passcode" maxlength="20">
+          <button data-dev-enter>Enter</button>
+        </div>
+        <div class="dev-panel" data-dev-panel hidden>
+          <label class="check"><input type="checkbox" data-dev-set="fleetModels"><span><strong>New aeroplane models</strong> — seven redrawn airframes with breakaway crashes. More detail, but flatter shapes: the wings have no thickness and the cabin is a wedge, so side by side the originals still read better.</span></label>
+          <p class="hint tiny">Changes take effect straight away. Everything here is a work in progress and may look wrong.</p>
+          <button class="ghost" data-dev-leave>Leave dev mode</button>
+        </div>
+
         <h3 class="fail-heading">More games</h3>
         <p class="trigger-note">Other things built by the same person. The ones marked
         <em>not yet</em> do not exist — a link to nothing is worse than an honest gap.</p>
@@ -1434,6 +1460,15 @@ export class Menus {
         ? `${next.need.toLocaleString()} more to ${next.rank.name} — ${next.rank.blurb}`
         : `${rank.blurb}`;
 
+      const dev = Prog.isDev(p);
+      s.querySelector('[data-dev-panel]').hidden = !dev;
+      s.querySelector('[data-dev-entry]').hidden = dev;
+      s.querySelector('[data-dev-note]').textContent = dev
+        ? 'The workbench is open. Everything here is unfinished on purpose.'
+        : 'Things that are built but not finished. Behind a passcode, because they are not ready for everybody yet.';
+      const fleetBox = s.querySelector('[data-dev-set="fleetModels"]');
+      if (fleetBox) fleetBox.checked = !!(this.settingsRef && this.settingsRef.fleetModels);
+
       const milOpen = !!p.militaryUnlocked;
       s.querySelector('[data-mil-note]').textContent = milOpen
         ? 'Access granted. The military hangar is open.'
@@ -1460,6 +1495,12 @@ export class Menus {
       this.syncBar && this.syncBar();
     };
 
+    s.addEventListener('change', (e) => {
+      const box = e.target.closest('[data-dev-set]');
+      if (!box) return;
+      this.hooks.onSetting(box.dataset.devSet, box.checked);
+    });
+
     s.addEventListener('click', (e) => {
       if (e.target.closest('[data-back]')) return this.show('main');
       const buy = e.target.closest('[data-buy]');
@@ -1477,6 +1518,23 @@ export class Menus {
         this.hooks.startDrive && this.hooks.startDrive(drive.dataset.drive);
         return;
       }
+      if (e.target.closest('[data-dev-enter]')) {
+        const p = this.prog || Prog.load();
+        const r = Prog.enterDevCode(p, s.querySelector('[data-dev-code]').value);
+        s.querySelector('[data-code-msg]').textContent = r.ok
+          ? r.warn || 'Dev mode on — the workbench is at the bottom of this page.'
+          : r.why;
+        if (r.ok) s.querySelector('[data-dev-code]').value = '';
+        render();
+        return;
+      }
+      if (e.target.closest('[data-dev-leave]')) {
+        const p = this.prog || Prog.load();
+        Prog.leaveDev(p);
+        s.querySelector('[data-code-msg]').textContent = 'Dev mode off.';
+        render();
+        return;
+      }
       if (e.target.closest('[data-mil-enter]')) {
         const p = this.prog || Prog.load();
         const r = Prog.enterPasscode(p, s.querySelector('[data-mil-code]').value);
@@ -1487,6 +1545,7 @@ export class Menus {
         render();
         this.syncFleetLocks && this.syncFleetLocks();
         this.syncMissionLocks && this.syncMissionLocks();
+        this.syncMapLocks && this.syncMapLocks();
         // The start screen's "N missions" denominator excludes hidden ones, so
         // it has to be recomputed too or it keeps advertising the old total.
         this._lastProgress && this.syncProgress(this._lastProgress);

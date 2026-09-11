@@ -25,7 +25,7 @@ import { Rain } from './world/precip.js';
 
 import { Aircraft, EVENTS, UNITS, SPEC, applyAircraft } from './aircraft/physics.js';
 import { getAircraft, specFor } from './aircraft/types.js';
-import { createAircraftModel, syncAircraftModel, crashAircraftModel, eyeFor, groundOffsetFor } from './aircraft/model-adapter.js';
+import { createAircraftModel, syncAircraftModel, crashAircraftModel, eyeFor, groundOffsetFor, setFleetModels } from './aircraft/model-adapter.js';
 import { createCockpit } from './aircraft/cockpit.js';
 import { TouchControls, isTouchDevice } from './ui/touch.js';
 
@@ -41,7 +41,7 @@ import { MissionRunner, STATUS } from './game/runner.js';
 import { MISSIONS, findMission, FREE_FLIGHT, RUNWAY_START } from './game/missions.js';
 import { TUTORIAL } from './game/tutorial.js';
 import { AtcDirector } from './game/atc-director.js';
-import { CargoCrate } from './game/markers.js';
+import { CargoCrate, PracticeBomb } from './game/markers.js';
 import { NavGuide } from './game/navguide.js';
 import { Beacon } from './game/beacon.js';
 import { Minimap } from './ui/minimap.js';
@@ -106,6 +106,8 @@ function fatal(message, detail) {
 class Game {
   constructor() {
     this.settings = loadSettings();
+    // Before anything builds an aeroplane, say which set of models to use.
+    setFleetModels(this.settings.fleetModels);
     this.progress = loadProgress();
     this.state = 'loading';
     this.mode = null;
@@ -317,6 +319,13 @@ class Game {
      * attempt sat above it and was dead code, because `this.menus` did not
      * exist yet and the `if` simply never fired.
      */
+    /*
+     * The menus read live settings for the things they paint: the fleet card
+     * liveries, and the dev-mode switches. This was never assigned, so
+     * `settingsRef` was permanently undefined and the fleet art always painted
+     * house colours however the aeroplane was actually painted.
+     */
+    this.menus.settingsRef = this.settings;
     this.prog = this.menus.prog;
     this.menus.syncProgression && this.menus.syncProgression(this.prog);
     this.menus.syncFleetLocks && this.menus.syncFleetLocks();
@@ -1169,6 +1178,23 @@ class Game {
         'info',
         3.4
       );
+    } else if (path === 'fleetModels') {
+      // Rebuild the aeroplane so the change is visible now rather than at the
+      // next flight — a model option that does not change the model is broken
+      // in exactly the way the cockpit option used to be.
+      setFleetModels(value);
+      // Only rebuild if there is something to rebuild: the switch lives in the
+      // menus, and from the main screen no aeroplane has been chosen yet.
+      if (this.aircraftType) {
+        const id = this.aircraftType.id;
+        this.aircraftType = null;
+        this.setAircraft(id);
+      }
+      this.hud.notify(
+        value ? 'Using the new aeroplane models' : 'Back to the original aeroplane models',
+        'info',
+        3
+      );
     } else if (path === 'realisticCockpit') {
       if (this.rig) this.rig.realisticCockpit = !!value;
       /*
@@ -1721,12 +1747,31 @@ class Game {
     this.hud.notify(text, kind);
   }
 
+  /**
+   * X: let go of whatever is aboard.
+   *
+   * On a transport that is a crate under a parachute. On a military aeroplane
+   * it is a bomb, which is a different problem entirely: it keeps all of the
+   * aeroplane's forward speed, so you have to release well before the target
+   * and judge how far ahead. The range mission was dropping a supply crate,
+   * which is why it never felt like a bombing run.
+   */
   dropCargo() {
     if (!this.hasCargo || this.crate) return false;
-    const offset = new THREE.Vector3(0, -1.6, 0).applyQuaternion(this.aircraft.quat).add(this.aircraft.pos);
-    this.crate = new CargoCrate(this.scene, offset, this.aircraft.vel);
+    const military = !!(this.aircraftType && this.aircraftType.military);
+    // Out of the bay on a bomber, off the belly on everything else.
+    const offset = new THREE.Vector3(0, military ? -1.1 : -1.6, military ? 0.4 : 0)
+      .applyQuaternion(this.aircraft.quat)
+      .add(this.aircraft.pos);
+    this.crate = military
+      ? new PracticeBomb(this.scene, offset, this.aircraft.vel)
+      : new CargoCrate(this.scene, offset, this.aircraft.vel);
     this.hasCargo = false;
-    this.hud.notify('Crate released — parachute out!', 'good', 3);
+    this.hud.notify(
+      military ? 'Store away — watch it run on ahead of you' : 'Crate released — parachute out!',
+      'good',
+      3
+    );
     this.audio.available && this.audio.ambience.playFlaps();
     return true;
   }

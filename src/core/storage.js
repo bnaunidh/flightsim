@@ -57,6 +57,15 @@ export const DEFAULT_SETTINGS = {
   // The pilot's-eye cockpit view: narrower field of view, and the flight
   // instruments read off the panel instead of the overlay.
   realisticCockpit: false,
+  /*
+   * The alternative aircraft models in src/fleet/.
+   *
+   * Off, because the built-in ones read better side by side — see
+   * model-adapter.js. Here as a switch rather than deleted so the two can be
+   * compared without a rebuild, and so it can become the default the moment
+   * the new shapes have some volume in them.
+   */
+  fleetModels: false,
   aircraft: 'skylark',
   /** Which airline paint scheme. 'house' means each type's own colours. */
   livery: 'house',

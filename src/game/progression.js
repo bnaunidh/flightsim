@@ -72,11 +72,27 @@ const FREE = ['skylark', 'courier', 'harrier'];
  */
 export const MILITARY_CODE = 'MC1234';
 
+/**
+ * Dev mode.
+ *
+ * A door for things that are built but not finished — a new set of aeroplane
+ * models, a half-drawn boat, whatever is being tried this week. Everyone else
+ * gets the game as it is meant to be; behind this code you get the workbench.
+ *
+ * It exists because the alternative is shipping half-finished work to a
+ * classroom of twenty-nine and hoping nobody notices, or not being able to see
+ * the work in the real game at all. Neither is any good.
+ *
+ * Same rules as the military code: case-insensitive, opens once, stays open.
+ */
+export const DEV_CODE = 'DEV1234';
+
 function blank() {
   return {
     credits: 0,
     earned: 0, // lifetime, which is what the rank is based on
     militaryUnlocked: false,
+    devUnlocked: false,
     unlocked: [...FREE],
     grantedRank: null,
     best: [], // the leaderboard: your own best flights
@@ -184,6 +200,27 @@ export function enterPasscode(p, raw) {
     return { ok: true, warn: 'Open for now — this browser would not save it, so you may have to enter it again.' };
   }
   return { ok: true };
+}
+
+/** Is the workbench open? */
+export function isDev(p) {
+  return !!(p && p.devUnlocked);
+}
+
+export function enterDevCode(p, raw) {
+  if (String(raw || '').trim().toUpperCase() !== DEV_CODE) {
+    return { ok: false, why: 'That is not the word' };
+  }
+  p.devUnlocked = true;
+  if (!save(p)) {
+    return { ok: true, warn: 'Open for now — this browser would not save it, so you may have to enter it again.' };
+  }
+  return { ok: true };
+}
+
+export function leaveDev(p) {
+  p.devUnlocked = false;
+  save(p);
 }
 
 export function costOf(aircraftId) {

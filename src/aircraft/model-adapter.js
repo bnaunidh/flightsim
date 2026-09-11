@@ -44,9 +44,33 @@ try {
   console.warn('The fleet models could not be loaded; using the built-in ones.', e);
 }
 
+/*
+ * Off by default.
+ *
+ * Side by side on the runway, the built-in models read better: their wings
+ * have visible thickness, the cabin is a rounded greenhouse and the fuselage
+ * is moulded rather than slab-sided. The fleet models spent their triangle
+ * budget on small details — pitot masts, boarding steps, antennas — and left
+ * the primary shapes flat, so from any distance they look cut from card.
+ *
+ * That is a fixable thing and the pack is otherwise good, so it stays wired in
+ * and switchable from Settings rather than being deleted. When the shapes come
+ * back with some volume in them, this becomes the default.
+ */
+let useFleet = false;
+
+/** Turn the pack on or off. Takes effect the next time a model is built. */
+export function setFleetModels(on) {
+  useFleet = !!on;
+}
+
+export function fleetModelsOn() {
+  return useFleet;
+}
+
 /** Which ids the pack can actually build. Everything else goes to model.js. */
 export function fleetCovers(id) {
-  return !!fleet && fleetIds.has(id);
+  return useFleet && !!fleet && fleetIds.has(id);
 }
 
 /** For the tests and the console: what the pack brought, and what is missing. */

@@ -114,6 +114,9 @@ function islandField(x, z, isl) {
 
 /** Weight of the flattened airport plateau at this point (0..1). */
 function regionWeight(p, x, z) {
+  // A map with only one runway has no second pad, and reading x0 off nothing
+  // threw on the first height sample — before a single frame had been drawn.
+  if (!p) return 0;
   if (x < p.x0 - p.blend || x > p.x1 + p.blend || z < p.z0 - p.blend || z > p.z1 + p.blend) return 0;
   const inX = smoothstep(p.x0 - p.blend, p.x0, x) * (1 - smoothstep(p.x1, p.x1 + p.blend, x));
   const inZ = smoothstep(p.z0 - p.blend, p.z0, z) * (1 - smoothstep(p.z1, p.z1 + p.blend, z));

@@ -895,6 +895,8 @@ export const MISSIONS = [
     difficulty: 'Hard',
     icon: '🛡',
     military: true,
+    // Military missions fly from the military field, not the tropical one.
+    map: 'airbase',
     blurb:
       'Three unidentified contacts are approaching Kestrel from three directions. Get to each of them '
       + 'inside six minutes. The Nightjar has the legs for it — you have to plan the order.',
@@ -960,6 +962,8 @@ export const MISSIONS = [
     difficulty: 'Very hard',
     icon: '📷',
     military: true,
+    // Military missions fly from the military field, not the tropical one.
+    map: 'airbase',
     blurb:
       'Four points to overfly below 500 feet, at night, in the flying wing. The aeroplane with no tail, '
       + 'in the dark, close to the ground. Hold it steady.',
@@ -1026,6 +1030,8 @@ export const MISSIONS = [
     difficulty: 'Hard',
     icon: '◎',
     military: true,
+    // Military missions fly from the military field, not the tropical one.
+    map: 'airbase',
     blurb:
       'A marked practice range with a bullseye. Carry an inert practice store out to it, release on the '
       + 'target, and you are scored in metres from the middle. Accuracy, not force.',
@@ -1042,7 +1048,7 @@ export const MISSIONS = [
       {
         id: 'go',
         text: 'One inert practice store aboard. Take off and head for the range.',
-        hint: 'It is a training round — it marks where it lands and nothing else.',
+        hint: 'It is an inert practice store — it marks where it lands and nothing else.',
         atc: { text: 'Nightjar zero two, range is cold and clear, you are cleared in.', voice: 'tower' },
         targetLabel: 'The range',
         target: () => RANGE_TARGET.clone(),
@@ -1059,7 +1065,7 @@ export const MISSIONS = [
       },
       {
         id: 'release',
-        text: 'Press X to release over the bullseye.',
+        text: 'Press X to release. It keeps your speed, so let go BEFORE the bullseye.',
         hint: 'It falls forward as well as down — release before you are on top of it.',
         targetLabel: 'Bullseye',
         target: () => RANGE_TARGET.clone(),

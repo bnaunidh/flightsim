@@ -2032,3 +2032,18 @@ body.is-large { font-size: 18px; }
    rule — so `card.hidden = true` would set the attribute and change nothing at
    all. The fleet gate works only because .fleet-card never sets display. */
 .mission-card[hidden] { display: none !important; }
+
+/* ---- Dev mode: the workbench behind a passcode ---- */
+.dev-panel {
+  margin: 10px 0 4px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 198, 92, 0.42);
+  background: rgba(255, 198, 92, 0.07);
+  display: grid;
+  gap: 10px;
+}
+.dev-panel .check { align-items: flex-start; }
+.dev-panel .check span { line-height: 1.45; }
+.dev-panel .check strong { color: #ffd98a; }
+.dev-panel button.ghost { justify-self: start; }
