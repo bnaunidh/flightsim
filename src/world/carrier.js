@@ -168,7 +168,25 @@ export class Carrier {
     this.deckY = H + 0.8;
     this.halfWidth = bw / 2;
     this.halfDepth = bd / 2;
-    addPlatform(at.x, at.z, bw, bd, this.deckY, this.name);
+    /*
+     * The wires.
+     *
+     * Landing on a carrier without them is not hard, it is impossible: you get
+     * 300 metres of deck, of which the last 90 are where you are allowed to
+     * touch down, and no aeroplane in this game stops in 90 metres on wheel
+     * brakes. Everyone who tried it ran off the bow.
+     *
+     * The band is deliberately generous — 70 m rather than the four wires'
+     * real 14 m spacing — because the lesson worth teaching here is the
+     * approach, not the inch.
+     */
+    this.wires = along
+      ? { z0: at.z + 40, z1: at.z + 112 }
+      : { x0: at.x + 40, x1: at.x + 112 };
+    addPlatform(at.x, at.z, bw, bd, this.deckY, this.name, {
+      ...this.wires,
+      along,
+    });
     // The superstructure is solid; the deck is not, because you land on it.
     addObstacleAt(
       at.x + (along ? W * 0.34 : 0),

@@ -25,7 +25,7 @@ import { Rain } from './world/precip.js';
 
 import { Aircraft, EVENTS, UNITS, SPEC, applyAircraft } from './aircraft/physics.js';
 import { getAircraft, specFor } from './aircraft/types.js';
-import { createAircraftModel, syncAircraftModel, crashAircraftModel, eyeFor, groundOffsetFor, setFleetModels } from './aircraft/model-adapter.js';
+import { createAircraftModel, syncAircraftModel, crashAircraftModel, clampSinking, eyeFor, groundOffsetFor, setFleetModels } from './aircraft/model-adapter.js';
 import { createCockpit } from './aircraft/cockpit.js';
 import { TouchControls, isTouchDevice } from './ui/touch.js';
 
@@ -595,6 +595,12 @@ class Game {
       setTimeout(() => {
         if (this.state === 'flying') this.showCrashDebrief(c.reason);
       }, 2200);
+    });
+
+    ac.on(EVENTS.ARRESTED, (d) => {
+      this.hud.showBanner('Trapped!', `Caught a wire at ${Math.round(d.speedKts)} knots.`, 'good', 3);
+      this.rig.kick(0.9);
+      this.audio.available && this.audio.ambience.playGear(true);
     });
 
     ac.on(EVENTS.GEAR, (d) => {
@@ -2268,6 +2274,9 @@ class Game {
     // A crashing fleet model drives its own transform — see model-adapter.js.
     syncAircraftModel(this.model, ac);
     this.model.userData.update(dt, ac, this.weather);
+    // The model's own update is what drives a sinking wreck, so the floor has
+    // to be applied after it — clamping before it is undone in the same frame.
+    clampSinking(this.model, ac);
     const inCockpit = this.rig.mode === 'cockpit';
     // Two cockpit views. The default is the clean one — no panel in the way,
     // wide field of view, instruments on the overlay. "Realistic cockpit" in

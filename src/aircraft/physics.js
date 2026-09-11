@@ -19,7 +19,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { getAircraft, specFor, DEFAULT_AIRCRAFT_ID } from './types.js';
 import { clamp, lerp } from '../core/noise.js';
-import { heightAt, isPaved, isOnRunway, obstacleAt } from '../world/terrain.js';
+import { heightAt, isPaved, isOnRunway, obstacleAt, platformAt } from '../world/terrain.js';
 
 const RHO0 = 1.225;
 const G = 9.80665;
@@ -61,6 +61,7 @@ export const EVENTS = {
   OVERSPEED: 'overspeed',
   FUEL_LOW: 'fuelLow',
   BOUNCE: 'bounce',
+  ARRESTED: 'arrested',
 };
 
 export class Aircraft {
@@ -97,6 +98,7 @@ export class Aircraft {
       tyre: false, // a burst main tyre, which drags to one side
     };
     this._jammedPitch = null;
+    this.arrested = 0;
     /** Seconds the tanks last once a leak starts. */
     this.fuelLeakSeconds = 260;
     this.starting = 0;
@@ -203,6 +205,7 @@ export class Aircraft {
     this.engineOn = engineOn;
     for (const k in this.failures) this.failures[k] = false;
     this._jammedPitch = null;
+    this.arrested = 0;
     this.rpm = engineOn ? 0.18 : 0;
     this.fuel = SPEC.fuelCapacity * fuel;
     this.crashed = false;
@@ -1117,6 +1120,27 @@ export class Aircraft {
       }
     }
 
+    /*
+     * The wire pulling.
+     *
+     * A real arrestor gear is a constant-force hydraulic ram: it takes the
+     * same load whatever you weigh, which is why it stops a heavy aeroplane in
+     * the same distance as a light one. Scaling with mass here does the same
+     * job and keeps every aeroplane in the game stoppable on the same deck.
+     */
+    if (this.arrested > 0) {
+      this.arrested -= dt;
+      const v = Math.hypot(this.vel.x, this.vel.z);
+      if (v < 0.6 || !this.onGround) {
+        this.arrested = 0;
+      } else {
+        // About 2.2 g, which brings 130 kt to a stop in roughly 90 metres.
+        const pull = Math.min(v / Math.max(dt, 1 / 240), 2.2 * G);
+        this.vel.x -= (this.vel.x / v) * pull * dt;
+        this.vel.z -= (this.vel.z / v) * pull * dt;
+      }
+    }
+
     this.onGround = this.contactCount > 0;
     this.wheelsRolling = this.onGround && this.groundSpeed > 0.4;
 
@@ -1132,6 +1156,23 @@ export class Aircraft {
 
     // Touchdown / lift-off detection with real quality grading.
     if (!wasOnGround && this.onGround) {
+      /*
+       * Caught a wire?
+       *
+       * Checked on touchdown only, the way a real hook is: catching one on the
+       * roll-out because you wandered back over the band would be absurd.
+       */
+      const deck = platformAt(this.pos.x, this.pos.z);
+      const wires = deck && deck.arrest;
+      if (wires && this.groundSpeed > 18) {
+        const inBand = wires.along
+          ? this.pos.z >= wires.z0 && this.pos.z <= wires.z1
+          : this.pos.x >= wires.x0 && this.pos.x <= wires.x1;
+        if (inBand) {
+          this.arrested = 2.6; // seconds of wire, which is about what it takes
+          this.emit(EVENTS.ARRESTED, { speedKts: this.ias * KTS });
+        }
+      }
       const vsFpm = -this.vs * FPM;
       const bank = this.bankAngleDeg();
       const centreline = Math.abs(this.pos.z - 0);

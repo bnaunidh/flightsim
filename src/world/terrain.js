@@ -216,8 +216,12 @@ export function clearPlatforms() {
  * @param {number} y  deck height above sea level
  * @param {string} name
  */
-export function addPlatform(cx, cz, w, d, y, name) {
-  PLATFORMS.push({ cx, cz, hw: w / 2, hd: d / 2, y, name });
+/**
+ * @param {object} [arrest] world-space {z0, z1} band where the wires are, if
+ *   this deck has any. A deck without it is just somewhere to land.
+ */
+export function addPlatform(cx, cz, w, d, y, name, arrest = null) {
+  PLATFORMS.push({ cx, cz, hw: w / 2, hd: d / 2, y, name, arrest });
 }
 
 /** The deck under this point, or null. */

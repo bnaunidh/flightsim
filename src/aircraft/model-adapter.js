@@ -145,12 +145,38 @@ export function createAircraftModel(opts = {}) {
  * still in one piece. So the bridge owns the transform while a crash is
  * running, and gives it back when you restart.
  */
+/** How far a wreck is allowed to sink before it stops, in metres. */
+const SINK_FLOOR = -7;
+
+/**
+ * Stop the wreck at the bottom.
+ *
+ * A crash in the sea hands the aeroplane to the pack's sinking effect, which
+ * sinks it for eighteen seconds and has no floor — so you went down through
+ * the water, past the sea bed and out of the world, with the camera following
+ * you into the dark. That reads exactly like falling through the map, because
+ * that is what it is.
+ *
+ * Seven metres is enough to be under and out of sight, and shallow enough that
+ * the debrief arrives while there is still something to look at. Call this
+ * AFTER the model's own update, which is the thing doing the sinking.
+ */
+export function clampSinking(model, ac) {
+  const crash = model && model.userData && model.userData.gameCrash;
+  if (!crash || !crash.water || !ac || !ac.pos) return;
+  if (ac.pos.y >= SINK_FLOOR) return;
+  ac.pos.y = SINK_FLOOR;
+  if (ac.vel) ac.vel.set(0, 0, 0);
+  model.position.y = SINK_FLOOR;
+}
+
 export function syncAircraftModel(model, ac) {
   if (fleet && model.userData.fleetBridge) {
     fleet.synchronizeGameAircraft(model, ac);
-    // The bridge owns the transform once a crash is running; leave it alone.
-    if (!model.userData.gameCrash) {
+    const crash = model.userData.gameCrash;
+    if (!crash) {
       model.position.y += model.userData.groundOffsetY || 0;
+      return;
     }
     return;
   }
