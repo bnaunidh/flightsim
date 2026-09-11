@@ -61,6 +61,9 @@ export class CameraRig {
     this.t = 0;
     this._tmp = new THREE.Vector3();
     this._tmp2 = new THREE.Vector3();
+    // A third, because two were already spoken for in the chase branch and
+    // sharing one is precisely how the look-behind aim went wrong.
+    this._tmp3 = new THREE.Vector3();
     this._q = new THREE.Quaternion();
     this._targetQ = new THREE.Quaternion();
     this.initialised = false;
@@ -157,7 +160,16 @@ export class CameraRig {
       cam.position.x += sx * 0.35;
       cam.position.y += sy * 0.35;
       this.lookAt.lerp(pos, clamp(dt * 8, 0, 1));
-      const aim = this._tmp.copy(this.lookAt);
+      /*
+       * A separate scratch vector.
+       *
+       * `back` is also this._tmp, so `aim.copy(pos)` overwrote it — and the
+       * next line then added sixty times the aeroplane's POSITION to its
+       * position. Looking behind aimed the camera at sixty-one times wherever
+       * you happened to be, which at the far end of the map is several hundred
+       * kilometres into the sky.
+       */
+      const aim = this._tmp3.copy(this.lookAt);
       if (lookBehind) aim.copy(pos).addScaledVector(back, 60);
       cam.lookAt(aim);
       if (lookYaw || lookPitch) {

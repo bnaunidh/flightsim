@@ -393,6 +393,15 @@ export const MAPS = [
       shallow: [0.42, 0.62, 0.58],
       nightSky: 0x7d8ba8,
     },
+    /*
+     * The outlying strip.
+     *
+     * Without this the pad is not flattened, and this map had no outpost at
+     * all while reusing Kestrel's pad coordinate — which here is open sea,
+     * twenty-odd metres under it. Delivery and Night Medevac both end at
+     * that pad, so both were unflyable.
+     */
+    outpost: { cx: 5100, cz: 0, elev: 181, halfLen: 210, halfWidth: 55, blend: 150 },
     scenery: {
       coastTrees: 90,
       coastTreeHeight: 6,
@@ -403,7 +412,7 @@ export const MAPS = [
       hillBand: [380, 700],
       town: { cx: 2600, cz: 2200, radius: 380, count: 22, minH: 290, maxH: 340 },
       lighthouse: [-7000, -5200],
-      deliveryPad: [5200, -4200],
+      deliveryPad: [5100, 0],
       padTrees: 10,
       boats: 0,
       // The base itself: shelters, revetments, blast walls and the radar.
@@ -451,6 +460,15 @@ export const MAPS = [
       shallow: [0.34, 0.58, 0.60],
       nightSky: 0x8fa6c4,
     },
+    /*
+     * The outlying strip.
+     *
+     * Without this the pad is not flattened, and this map had no outpost at
+     * all while reusing Kestrel's pad coordinate — which here is open sea,
+     * twenty-odd metres under it. Delivery and Night Medevac both end at
+     * that pad, so both were unflyable.
+     */
+    outpost: { cx: 1722, cz: 4157, elev: 52, halfLen: 210, halfWidth: 55, blend: 150 },
     scenery: {
       coastTrees: 260,
       coastTreeHeight: 9,
@@ -461,7 +479,7 @@ export const MAPS = [
       hillBand: [60, 220],
       town: { cx: -1800, cz: 1800, radius: 900, count: 90, minH: 14, maxH: 150 },
       lighthouse: [-5200, -2600],
-      deliveryPad: [6200, -5200],
+      deliveryPad: [1722, 4157],
       padTrees: 60,
       boats: 5,
     },
@@ -505,6 +523,15 @@ export const MAPS = [
       shallow: [0.36, 0.60, 0.62],
       nightSky: 0x93aac8,
     },
+    /*
+     * The outlying strip.
+     *
+     * Without this the pad is not flattened, and this map had no outpost at
+     * all while reusing Kestrel's pad coordinate — which here is open sea,
+     * twenty-odd metres under it. Delivery and Night Medevac both end at
+     * that pad, so both were unflyable.
+     */
+    outpost: { cx: -1165, cz: 4347, elev: 54, halfLen: 210, halfWidth: 55, blend: 150 },
     scenery: {
       coastTrees: 220,
       coastTreeHeight: 9,
@@ -515,7 +542,7 @@ export const MAPS = [
       hillBand: [80, 340],
       town: { cx: 1600, cz: 1500, radius: 800, count: 70, minH: 12, maxH: 90 },
       lighthouse: [-4200, 2400],
-      deliveryPad: [6200, -5200],
+      deliveryPad: [-1165, 4347],
       padTrees: 60,
       boats: 4,
     },
@@ -562,6 +589,15 @@ export const MAPS = [
       shallow: [0.33, 0.70, 0.76],
       nightSky: 0xa2b4cf,
     },
+    /*
+     * The outlying strip.
+     *
+     * Without this the pad is not flattened, and this map had no outpost at
+     * all while reusing Kestrel's pad coordinate — which here is open sea,
+     * twenty-odd metres under it. Delivery and Night Medevac both end at
+     * that pad, so both were unflyable.
+     */
+    outpost: { cx: 3570, cz: -2739, elev: 74, halfLen: 210, halfWidth: 55, blend: 150 },
     scenery: {
       coastTrees: 300,
       coastTreeHeight: 11,
@@ -572,7 +608,7 @@ export const MAPS = [
       hillBand: [90, 380],
       town: { cx: 2600, cz: 1400, radius: 1200, count: 130, minH: 14, maxH: 170 },
       lighthouse: [-3600, 6400],
-      deliveryPad: [6200, -5200],
+      deliveryPad: [3570, -2739],
       padTrees: 70,
       boats: 4,
     },

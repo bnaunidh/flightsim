@@ -92,6 +92,7 @@ export class Tornado {
     this.pos = new THREE.Vector3();
     this.drift = new THREE.Vector3();
     this.strength = 0;
+    this.girth = this.girth || 1;
 
     const tex = dustTexture();
     this.tex = tex;
@@ -233,9 +234,16 @@ export class Tornado {
     this.coreR = band.coreR;
     this.reach = band.reach;
     this.debrisCount = band.debris;
-    // The funnel gets visibly fatter and taller with the rating — an EF5 is
-    // not a thin rope, and you should be able to tell what is coming.
-    this.group.scale.z = this.group.scale.x = band.girth;
+    /*
+     * The funnel gets visibly fatter with the rating — an EF5 is not a thin
+     * rope, and you should be able to tell what is coming.
+     *
+     * Kept as its own number rather than written straight onto the group,
+     * because update() does scale.setScalar() every frame for the spin-up,
+     * which is all three axes — so the girth was wiped one frame after it was
+     * set and every rating looked identical.
+     */
+    this.girth = band.girth;
     return this.ef;
   }
 
@@ -328,7 +336,10 @@ export class Tornado {
     this.pos.addScaledVector(this.drift, dt);
     const ground = heightAt(this.pos.x, this.pos.z);
     this.group.position.set(this.pos.x, Math.max(0, ground), this.pos.z);
-    this.group.scale.setScalar(0.55 + this.strength * 0.45);
+    // Spin-up on all three axes, girth on the two horizontal ones.
+    const grow = 0.55 + this.strength * 0.45;
+    const girth = this.girth || 1;
+    this.group.scale.set(girth * grow, grow, girth * grow);
 
     for (const s of this.shells) {
       s.mesh.rotation.y += s.spin * dt;

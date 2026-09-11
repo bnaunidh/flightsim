@@ -1191,11 +1191,22 @@ body.is-large { font-size: 18px; }
   pointer-events: none;
 }
 
+/*
+ * Touch layout, by class rather than by width.
+ *
+ * These rules moved the button tray out of the bottom-right corner — where the
+ * on-screen throttle lives — but they sat inside `@media (max-width: 820px)`,
+ * while the throttle is built on ANY device with a touch pointer. So on an
+ * iPad in landscape, or any touchscreen laptop, the throttle was drawn over
+ * the tray (it is appended later, so it paints on top) and the tray could not
+ * be pressed at all. `.is-touch` is exactly the condition; the width is not.
+ */
+.hud.is-touch .hud-bottom { display: none; }
+.hud.is-touch .hud-right { top: 74px; right: 12px; }
+.hud.is-touch .hud-buttons { right: 12px; bottom: auto; top: 12px; }
+
 /* ---- Phone layout ------------------------------------------------------- */
 @media (max-width: 820px) {
-  .hud.is-touch .hud-bottom { display: none; }
-  .hud.is-touch .hud-right { top: 74px; right: 12px; }
-  .hud.is-touch .hud-buttons { right: 12px; bottom: auto; top: 12px; }
   /*
    * The buttons live top-right on a touch device, so the instrument strip has
    * to stop before them. It used to run to the right edge and the two sat on
@@ -2064,3 +2075,15 @@ body.is-large { font-size: 18px; }
 .dev-panel .check span { line-height: 1.45; }
 .dev-panel .check strong { color: #ffd98a; }
 .dev-panel button.ghost { justify-self: start; }
+
+/* The mission clock, beside the objective title. */
+.hud-objective-clock {
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+.hud-objective-clock.is-warn { color: var(--amber); }
+.hud-objective-clock.is-bad { color: var(--red); }

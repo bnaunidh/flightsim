@@ -521,7 +521,10 @@ export const MISSIONS = [
          * fly round, each a real place on the terrain, against the clock.
          */
         id: 'lap',
-        text: 'One lap of Mount Ember, anticlockwise, and land. Watch the ash over the summit.',
+        // North, east, south, west — which, with north up, is clockwise, and
+        // puts the mountain on your right. The brief used to say the opposite
+        // of the route it then made you fly.
+        text: 'One lap of Mount Ember, clockwise, and land. Watch the ash over the summit.',
         hint: 'Stay wide of the crater — the ash will choke the engine. The arrow shows the next point.',
         targetLabel: 'North flank',
         target: () => new THREE.Vector3(2500, ELEV + 900, -4600),
@@ -530,7 +533,7 @@ export const MISSIONS = [
       {
         id: 'lap2',
         text: 'Round the far side.',
-        hint: 'Keep the mountain on your left and do not cut across the top of it.',
+        hint: 'Keep the mountain on your right and do not cut across the top of it.',
         targetLabel: 'East flank',
         target: () => new THREE.Vector3(4700, ELEV + 1000, -2300),
         check: (ctx) => ctx.ac.pos.x > 4000 && ctx.ac.pos.z > -3400,
@@ -777,7 +780,28 @@ export const MISSIONS = [
         },
         check: (ctx) => {
           const t = ctx.sim.tornado;
-          if (!t.active) return false;
+          /*
+           * A tornado lives 150 seconds and this mission runs for 420, so it
+           * used to dissipate with a pass or two still to go and leave you
+           * orbiting empty sky until the clock ran out — no tornado, no
+           * marker, no explanation, and nothing you could do about it.
+           *
+           * Real ones do die, and another drops out of the same storm. So
+           * when this one goes, a new one forms.
+           */
+          if (!t.active) {
+            if (!ctx.data.reformAt) {
+              ctx.data.reformAt = ctx.elapsed + 12;
+              ctx.sim.hud.notify('That one has lifted — the storm is still there. Stand by.', 'warn', 5);
+            } else if (ctx.elapsed >= ctx.data.reformAt) {
+              ctx.data.reformAt = 0;
+              ctx.sim.tornadoEF = 2;
+              ctx.sim.triggerNatural('tornado');
+              ctx.sim.hud.notify('Another one is on the ground. Go again.', 'warn', 5);
+            }
+            return false;
+          }
+          ctx.data.reformAt = 0;
           const near = t.proximity(ctx.ac.pos);
           // A pass is entering the band and coming out the other side alive.
           if (!ctx.data.inBand && near > 0.55) ctx.data.inBand = true;

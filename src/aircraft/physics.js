@@ -1202,8 +1202,15 @@ export class Aircraft {
     const accel = this._f.divideScalar(SPEC.mass);
     // Load factor for the g-meter (before gravity is removed).
     const upV = this.up(this._tmp2);
-    this.gLoad = 1 + (accel.dot(upV) + G * upV.y) / G - 1 + 0;
-    this.gLoad = clamp((accel.y + G) / G, -3, 6);
+    /*
+     * Load factor: the specific force along the aeroplane's OWN up axis.
+     *
+     * This was computed correctly and then overwritten on the next line by a
+     * world-vertical version, which reads 1 g in a 60-degree bank that is
+     * actually pulling 2, and +1 inverted. The G-meter has been lying in every
+     * turn since it was added.
+     */
+    this.gLoad = clamp((accel.dot(upV) + G * upV.y) / G, -3, 6);
 
     this.vel.addScaledVector(accel, dt);
     this.pos.addScaledVector(this.vel, dt);
@@ -1367,6 +1374,11 @@ export class Aircraft {
    * exists to stop the wreck sliding across the island and would otherwise
    * hand the impact an aeroplane that was barely moving.
    */
+  /** How full the tank is, 0..1. */
+  fuelFraction() {
+    return SPEC.fuelCapacity > 0 ? clamp(this.fuel / SPEC.fuelCapacity, 0, 1) : 1;
+  }
+
   crash(reason, contact = null) {
     if (this.crashed) return;
     this.crashed = true;

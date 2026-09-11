@@ -1412,12 +1412,22 @@ class Game {
      * lying around for the next mission that changes aeroplane mid-flight.
      */
     if (this.aircraft && this.aircraft.onGround && !this.aircraft.crashed) {
+      /*
+       * reset() clears every failure and fills the tank, which is right when a
+       * flight begins and quite wrong here: repainting the aeroplane on the
+       * stand silently refuelled you and cancelled the engine failure you had
+       * armed. So both are carried across.
+       */
+      const keptFailures = { ...this.aircraft.failures };
+      const keptFuel = this.aircraft.fuelFraction();
       this.aircraft.reset({
         pos: this.aircraft.pos.clone(),
         headingDeg: this.aircraft.readouts().heading,
         speed: this.aircraft.groundSpeed,
         engineOn: this.aircraft.engineOn,
+        fuel: keptFuel,
       });
+      Object.assign(this.aircraft.failures, keptFailures);
     }
     return this.aircraftType;
   }
@@ -2446,6 +2456,11 @@ class Game {
     this.audio.update(dt, ac, this.weather, this.cloudImmersion);
     if (this.state === 'flying') {
       this.hud.setCoach(this.coachHint(ac));
+      // The mission clock, if this one has a limit.
+      const def = this.runner.status === 'running' ? this.runner.def : null;
+      this.hud.setMissionClock(
+        def && def.timeLimit ? def.timeLimit - this.runner.elapsed : null
+      );
       this.hud.update(dt, this);
     }
     this.input.endFrame();

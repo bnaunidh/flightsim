@@ -44,11 +44,21 @@ export class TouchControls {
       pitch: 0,
       roll: 0,
       yaw: 0,
-      throttle: 0,
+      /*
+       * null means "the on-screen throttle is not being touched, so the
+       * keyboard owns it". It used to sit at 0 forever, and input.js copies
+       * this value into throttleTarget every frame — so on any touch-capable
+       * machine the keyboard could raise the throttle by exactly one frame's
+       * ramp before it was zeroed again. Measured: three seconds of holding
+       * the throttle key moved it from 0 to 0.01.
+       */
+      throttle: null,
       brakes: false,
       stickHeld: false,
       rudderHeld: false,
+      dragging: false,
     };
+    this._shown = 0;
     if (input) input.touch = this.state;
 
     this.layer = el('div', 'touch-layer');
@@ -129,17 +139,22 @@ export class TouchControls {
     this.throttleLabel = label;
 
     let id = null;
+    const paint = (v) => {
+      fill.style.height = `${v * 100}%`;
+      label.textContent = `${Math.round(v * 100)}%`;
+    };
+    this.paintThrottle = paint;
     const set = (e) => {
       const r = t.getBoundingClientRect();
       // Top of the slider is full power.
       const v = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height));
       this.state.throttle = v;
-      fill.style.height = `${v * 100}%`;
-      label.textContent = `${Math.round(v * 100)}%`;
+      paint(v);
     };
     t.addEventListener('pointerdown', (e) => {
       id = e.pointerId;
       t.setPointerCapture(id);
+      this.state.dragging = true;
       set(e);
       e.preventDefault();
     });
@@ -149,7 +164,12 @@ export class TouchControls {
       e.preventDefault();
     });
     const release = (e) => {
-      if (e.pointerId === id) id = null;
+      if (e.pointerId !== id) return;
+      id = null;
+      // Hand it back to the keyboard. The lever stays where it is on screen;
+      // it just stops insisting on that value every frame.
+      this.state.dragging = false;
+      this.state.throttle = null;
     };
     t.addEventListener('pointerup', release);
     t.addEventListener('pointercancel', release);
@@ -241,13 +261,19 @@ export class TouchControls {
       this.flapPad.textContent = step ? `FLAPS ${step}` : 'FLAPS';
       this.flapPad.classList.toggle('is-on', step > 0);
     }
-    // The throttle slider can be moved by the keyboard too; keep it honest.
-    if (this.input && this.input.out && !this.state.dragging) {
+    /*
+     * The lever shows the real throttle whenever a finger is not on it.
+     *
+     * Only the picture is updated — writing it back into state.throttle is
+     * what created the deadlock, because that value is then forced onto the
+     * game next frame. The keyboard, the gamepad and the autopilot can all
+     * move the throttle now, and the lever follows them.
+     */
+    if (this.input && !this.state.dragging && this.paintThrottle) {
       const v = this.input.throttleTarget;
-      if (Math.abs(v - this.state.throttle) > 0.02) {
-        this.state.throttle = v;
-        this.throttleFill.style.height = `${v * 100}%`;
-        this.throttleLabel.textContent = `${Math.round(v * 100)}%`;
+      if (Math.abs(v - this._shown) > 0.005) {
+        this._shown = v;
+        this.paintThrottle(v);
       }
     }
   }

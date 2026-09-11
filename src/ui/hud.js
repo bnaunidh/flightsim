@@ -77,7 +77,16 @@ export class Hud {
     this.objective = el('div', 'hud-objective');
     this.objectiveTitle = el('div', 'hud-objective-title', 'Free Flight');
     this.objectiveText = el('div', 'hud-objective-text', 'Fly wherever you like. Have fun!');
+    /*
+     * The mission clock.
+     *
+     * Five missions fail on a time limit and none of them ever showed it, so
+     * "Ran out of time" arrived out of nowhere on a run that felt fine.
+     */
+    this.objectiveClock = el('div', 'hud-objective-clock', '');
+    this.objectiveClock.hidden = true;
     this.objective.appendChild(this.objectiveTitle);
+    this.objective.appendChild(this.objectiveClock);
     this.objective.appendChild(this.objectiveText);
 
     // Taxi instructions, shown only while taxiing out.
@@ -430,6 +439,29 @@ export class Hud {
     this.papiHint.style.display = 'none';
     this.stallWarn.style.display = 'none';
     this.lastValues = {};
+  }
+
+  /**
+   * Seconds left, or null to hide it. Turns amber under a minute and red
+   * under fifteen seconds, because a number you have to read is no warning.
+   */
+  setMissionClock(secondsLeft) {
+    const el2 = this.objectiveClock;
+    if (!el2) return;
+    if (secondsLeft == null) {
+      el2.hidden = true;
+      this.lastValues.clock = null;
+      return;
+    }
+    const left = Math.max(0, Math.ceil(secondsLeft));
+    if (this.lastValues.clock === left) return;
+    this.lastValues.clock = left;
+    el2.hidden = false;
+    const m = Math.floor(left / 60);
+    const sec = String(left % 60).padStart(2, '0');
+    el2.textContent = `${m}:${sec} left`;
+    el2.classList.toggle('is-warn', left <= 60 && left > 15);
+    el2.classList.toggle('is-bad', left <= 15);
   }
 
   setObjective(title, text) {

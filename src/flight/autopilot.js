@@ -248,7 +248,16 @@ export class Autopilot {
             this.selectedAltFt
           : clamp(Math.max(Math.round(r.altFt / 50) * 50, groundFt + 1000), 400, 12000);
       if (this.mode === 'level') this.levelOff = false;
-      this.targetSpeedKts = clamp(Math.round(r.iasKts / 5) * 5, 70, 120);
+      /*
+       * Hold what you had, which is what a real autopilot does on engagement.
+       *
+       * The clamp used to be 70-120 kt — the trainer's range — so engaging it
+       * in the airliner at 220 kt threw the target down to 120 and it pitched
+       * up hard trying to wash off a hundred knots. It also silently discarded
+       * whatever the speed slider was set to, which offers 55-260.
+       */
+      this.targetSpeedKts = clamp(Math.round(r.iasKts / 5) * 5, 55, 260);
+      this.selectedSpeedKts = this.targetSpeedKts;
       this.holdHeadingDeg = r.heading;
       this._iAlt = 0;
       this._iSpd = 0;
