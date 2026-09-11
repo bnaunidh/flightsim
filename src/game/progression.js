@@ -38,14 +38,27 @@ export const UNLOCKS = [
   { aircraft: 'vanguard', cost: 1400, why: 'Enormous thrust, no forgiveness' },
   { aircraft: 'osprey', cost: 1000, why: 'Built for a moving deck' },
   { aircraft: 'tempest', cost: 2200, why: 'A tornado cannot break it' },
+  { aircraft: 'nightjar', cost: 3000, why: 'No tail, and it shows', military: true },
 ];
 
 const FREE = ['skylark', 'courier'];
+
+/**
+ * Military aircraft sit behind a passcode.
+ *
+ * This was the class's own idea, and it is a good one: they wanted the
+ * military side gated so it is not simply there for anyone who opens the game.
+ * It is not a security measure — anyone can read this file — it is a door, so
+ * that flying the bomber is a thing you were let into rather than a thing you
+ * wandered into. Whoever runs the game decides who gets told the word.
+ */
+export const MILITARY_CODE = 'REDTAIL';
 
 function blank() {
   return {
     credits: 0,
     earned: 0, // lifetime, which is what the rank is based on
+    militaryUnlocked: false,
     unlocked: [...FREE],
     grantedRank: null,
     best: [], // the leaderboard: your own best flights
@@ -125,6 +138,20 @@ export function award(p, { kind, score = 0, crashed = false, difficulty = 'norma
 
 export function isUnlocked(p, aircraftId) {
   return p.unlocked.includes(aircraftId);
+}
+
+/** True if this aeroplane needs the passcode and has not been let through. */
+export function needsPasscode(p, type) {
+  return !!(type && type.military) && !p.militaryUnlocked;
+}
+
+export function enterPasscode(p, raw) {
+  if (String(raw || '').trim().toUpperCase() !== MILITARY_CODE) {
+    return { ok: false, why: 'That is not the word' };
+  }
+  p.militaryUnlocked = true;
+  save(p);
+  return { ok: true };
 }
 
 export function costOf(aircraftId) {

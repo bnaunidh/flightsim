@@ -11,7 +11,8 @@ import * as THREE from './vendor/three.module.js';
 import { warmTextures } from './render/textures.js';
 import { Weather } from './world/weather.js';
 import { SkyDome } from './world/sky.js';
-import { createTerrain, heightAt, AIRPORT, applyMap, MAP, clearObstacles } from './world/terrain.js';
+import { createTerrain, heightAt, AIRPORT, applyMap, MAP, clearObstacles, clearPlatforms } from './world/terrain.js';
+import { Carrier } from './world/carrier.js';
 import { Ocean } from './world/water.js';
 import { Airport, RUNWAY } from './world/airport.js';
 import { Scenery, DELIVERY_PAD } from './world/scenery.js';
@@ -411,6 +412,9 @@ class Game {
     // has to start empty or a rebuild would leave ghost buildings behind to
     // crash into.
     clearObstacles();
+    // Decks you can land on are registered the same way, and for the same
+    // reason: a stale one would be a steel floor hanging over empty sea.
+    clearPlatforms();
     this.sky = t('sky', () =>
       new SkyDome(this.scene, {
         shadows: quality !== 'low',
@@ -423,6 +427,17 @@ class Game {
     // The terminal, the air bridges, the parked aeroplanes and the vehicles.
     this.apron = t('apron', () => new Apron(this.scene, quality));
     this.scenery = t('scenery', () => new Scenery(this.scene, quality));
+    /*
+     * The carrier, parked off the coast.
+     *
+     * Placed on a cardinal heading on purpose — the landing surface is an
+     * axis-aligned box, so an angled ship would have a deck that did not match
+     * the picture, and falling through a deck you were aiming at is far worse
+     * than a ship that happens to point north.
+     */
+    this.carrier = t('carrier', () => new Carrier(this.scene, {
+      x: -5200, z: 3400, headingDeg: 0, name: 'CV-11 Resolute',
+    }));
     // Whatever makes this particular map the place it says it is: lava, reef,
     // farmland, waterfalls, the aurora.
     this.features = t('features', () => new MapFeatures(this.scene, quality));
@@ -443,6 +458,7 @@ class Game {
       this.airport.group,
       this.apron.group,
       this.scenery.group,
+      this.carrier.group,
       this.features.group,
       this.clouds.group,
       this.rain.mesh,

@@ -576,6 +576,90 @@ export const AIRCRAFT = [
       vne: 175,
     },
   },
+
+  /* ------------------------------------------------------------------ *
+   * The flying wing.
+   *
+   * Asked for as "the B2". It is deliberately not one: an original stealth
+   * bomber shape rather than a copy of an aircraft in current service, which
+   * keeps this game's everything-here-is-ours licence intact. What makes it
+   * interesting to fly is the same thing that makes the real ones interesting
+   * — no tail at all. Directional stability comes from the wing alone, so Cnb
+   * is tiny and it hunts in yaw unless the damper is doing its job.
+   * ------------------------------------------------------------------ */
+  {
+    id: 'nightjar',
+    name: 'Nightjar B-2',
+    class: 'Fighter',
+    blurb:
+      'A flying wing with no tail at all. Enormous range, almost no directional stability, and a yaw '
+      + 'damper working quietly the whole time. Smooth hands, or it will wander.',
+    stats: { speed: 4, handling: 2, ease: 2 },
+    livery: '#2b2f35',
+    accent: '#6f7681',
+    callsign: 'Nightjar zero two',
+    military: true,
+    shape: {
+      ...TRAINER_SHAPE,
+      scale: 1.95,
+      bodyLength: 0.72,
+      bodyRadius: 0.78,
+      halfSpan: 8.6,
+      rootChord: 4.4,
+      tipChord: 0.9,
+      sweep: 3.6,
+      dihedral: 0.05,
+      wingY: -0.05,
+      wingZ: 0.1,
+      struts: false,
+      retractable: true,
+      hSpan: 0.2,
+      hRootChord: 0.2,
+      hZ: 2.2,
+      finHeight: 0.05,
+      finRootChord: 0.1,
+      finSweep: 0.02,
+      finZ: 2.0,
+      main: { x: 1.5, y: -1.15, z: 0.7 },
+      nose: { x: 0, y: -1.1, z: -1.4 },
+      wheelR: { nose: 0.26, main: 0.34 },
+      gearStiffness: 1.4,
+      power: { kind: 'jet', count: 2, x: 2.2, y: -0.2, z: -0.4, radius: 0.5, length: 1.0 },
+      canopy: 'fighter',
+      eye: [-0.2, 0.34, -1.0],
+    },
+    aero: {
+      ...TRAINER_AERO,
+      mass: 9800,
+      wingArea: 96,
+      wingSpan: 33.5,
+      chord: 3.4,
+      Ixx: 120000,
+      Iyy: 180000,
+      Izz: 260000,
+      CL0: 0.14,
+      CLa: 4.4,
+      alphaStall: 0.24,
+      CD0: 0.015,
+      k: 0.036,
+      CYb: -0.18,
+      Cmalpha: -0.7,
+      Cmq: -14.0,
+      Cmde: -0.7,
+      Clb: -0.06,
+      Clp: -0.5,
+      Clda: 0.055,
+      Cnb: 0.022,
+      Cnr: -0.05,
+      Cndr: 0.006,
+      thrustMax: 40000,
+      fuelCapacity: 6200,
+      fuelBurnMax: 0.4,
+      gearDragArea: 1.6,
+      maxGearSpeed: 130,
+      vne: 235,
+    },
+  },
 ];
 
 export const DEFAULT_AIRCRAFT_ID = 'skylark';

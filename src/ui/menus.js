@@ -631,7 +631,9 @@ export class Menus {
       for (const a of AIRCRAFT) {
         const card = s.querySelector(`[data-aircraft="${a.id}"]`);
         if (!card) continue;
-        const locked = !Prog.isUnlocked(this.prog, a.id);
+        const gated = Prog.needsPasscode(this.prog, a);
+        card.hidden = gated;
+        const locked = gated || !Prog.isUnlocked(this.prog, a.id);
         card.classList.toggle('is-locked', locked);
         let tag = card.querySelector('.fleet-lock');
         if (locked && !tag) {
@@ -864,6 +866,13 @@ export class Menus {
          * and then took it back.
          */
         const id = plane.dataset.aircraft;
+        const type = AIRCRAFT.find((a) => a.id === id);
+        if (Prog.needsPasscode(this.prog, type)) {
+          this.hooks.onLocked && this.hooks.onLocked(
+            'Military aircraft are behind a passcode — enter it in the Hangar.'
+          );
+          return;
+        }
         if (!Prog.isUnlocked(this.prog, id)) {
           const cost = Prog.costOf(id);
           const short = cost - this.prog.credits;
@@ -1116,6 +1125,13 @@ export class Menus {
         <h3 class="fail-heading">Your best flights</h3>
         <div class="board" data-board></div>
 
+        <h3 class="fail-heading">Military access</h3>
+        <p class="trigger-note" data-mil-note>Military aircraft are behind a passcode. Ask whoever runs the game.</p>
+        <div class="code-row">
+          <input type="text" data-mil-code placeholder="Passcode" maxlength="20">
+          <button data-mil-enter>Enter</button>
+        </div>
+
         <h3 class="fail-heading">Got a code?</h3>
         <div class="code-row">
           <input type="text" data-code placeholder="Ask the CEO" maxlength="20">
@@ -1167,7 +1183,11 @@ export class Menus {
         ? `${next.need.toLocaleString()} more to ${next.rank.name} — ${next.rank.blurb}`
         : `${rank.blurb}`;
 
-      s.querySelector('[data-unlocks]').innerHTML = AIRCRAFT.map((a) => {
+      const milOpen = !!p.militaryUnlocked;
+      s.querySelector('[data-mil-note]').textContent = milOpen
+        ? 'Access granted. The military hangar is open.'
+        : 'Military aircraft are behind a passcode. Ask whoever runs the game.';
+      s.querySelector('[data-unlocks]').innerHTML = AIRCRAFT.filter((a) => milOpen || !a.military).map((a) => {
         const owned = Prog.isUnlocked(p, a.id);
         const cost = Prog.costOf(a.id);
         const afford = p.credits >= cost;
@@ -1192,6 +1212,17 @@ export class Menus {
         const r = Prog.buy(p, buy.dataset.buy);
         s.querySelector('[data-code-msg]').textContent = r.ok ? 'Unlocked — it is in the hangar now.' : r.why;
         render();
+        return;
+      }
+      if (e.target.closest('[data-mil-enter]')) {
+        const p = this.prog || Prog.load();
+        const r = Prog.enterPasscode(p, s.querySelector('[data-mil-code]').value);
+        s.querySelector('[data-code-msg]').textContent = r.ok
+          ? 'Access granted — the military hangar is open.'
+          : r.why;
+        if (r.ok) s.querySelector('[data-mil-code]').value = '';
+        render();
+        this.syncFleetLocks && this.syncFleetLocks();
         return;
       }
       if (e.target.closest('[data-redeem]')) {

@@ -177,7 +177,47 @@ export function obstacleAt(x, y, z) {
 }
 
 /** Terrain height in metres above sea level (sea level is y = 0). */
+/**
+ * Flat surfaces standing above the world: the carrier deck, and anything else
+ * you are meant to be able to land on that is not the ground.
+ *
+ * Kept as a list the world can register into, rather than special-cased inside
+ * heightAt, so adding a second ship — or an oil rig, or a rooftop pad — costs
+ * one push and nothing else has to know.
+ */
+export const PLATFORMS = [];
+
+export function clearPlatforms() {
+  PLATFORMS.length = 0;
+}
+
+/**
+ * @param {number} cx centre
+ * @param {number} cz centre
+ * @param {number} w  full width  (across)
+ * @param {number} d  full depth  (along)
+ * @param {number} y  deck height above sea level
+ * @param {string} name
+ */
+export function addPlatform(cx, cz, w, d, y, name) {
+  PLATFORMS.push({ cx, cz, hw: w / 2, hd: d / 2, y, name });
+}
+
+/** The deck under this point, or null. */
+export function platformAt(x, z) {
+  for (let i = 0; i < PLATFORMS.length; i++) {
+    const p = PLATFORMS[i];
+    if (Math.abs(x - p.cx) <= p.hw && Math.abs(z - p.cz) <= p.hd) return p;
+  }
+  return null;
+}
+
 export function heightAt(x, z) {
+  // A deck wins over whatever is underneath it — that is the point of a deck.
+  if (PLATFORMS.length) {
+    const p = platformAt(x, z);
+    if (p) return p.y;
+  }
   // Ground operations happen almost entirely on the airfield, so short-circuit
   // the whole noise stack when we are well inside the flattened plateau.
   const padW = padWeight(x, z);
@@ -365,6 +405,8 @@ export function bestRunway(windDirDeg, windKts) {
 
 /** True when the point is paved (runway, taxiway or apron). */
 export function isPaved(x, z) {
+  // A steel deck is as paved as it gets.
+  if (PLATFORMS.length && platformAt(x, z)) return true;
   if (isOnRunway(x, z, 2)) return true;
   // The crosswind runway.
   if (isOnRunway2(x, z, 2)) return true;
