@@ -536,10 +536,18 @@ export const AIRCRAFT = [
       nose: { x: 0, y: -1.3, z: -1.6 },
       wheelR: { nose: 0.28, main: 0.38 },
       gearStiffness: 1.6,
-      // Two propellers, wing-mounted. The model draws one or two and nothing
-      // else, so asking for four would have silently rendered a single engine
-      // in the nose while the description promised four — better to be a twin
-      // that looks like a twin.
+      /*
+       * Two propellers, wing-mounted, in nacelles at x = 2.6.
+       *
+       * The note that used to sit here claimed the model "draws one or two",
+       * and it was wrong: `power.count` was read only by the JET branch, so
+       * this twin rendered as a single propeller on the nose and the nacelle
+       * fields below were dead data. The claim was checked against jets and
+       * generalised to propellers without being tested — which is worse than
+       * saying nothing, because it made the bug look like a considered
+       * decision. The propeller branch reads `count` now, and this really is
+       * a twin.
+       */
       power: { kind: 'prop', count: 2, propRadius: 1.45, z: -2.2, x: 2.6, radius: 0.5, length: 1.1 },
       canopy: 'cabin',
       eye: [-0.28, 0.42, -1.1],

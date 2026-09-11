@@ -70,7 +70,7 @@ const FPM = UNITS.FPM;
 
 /** Bumped whenever the game changes. Printed on boot so you can tell at a
  *  glance whether a browser is running a stale cached copy. */
-export const BUILD = 'v25 — helicopter, boat and car, airline liveries, military missions, real airports';
+export const BUILD = 'v26 — trim, autopilot heading and speed, the Tempest is a twin at last';
 
 const loadEl = document.getElementById('loading');
 const loadBar = document.getElementById('load-bar');

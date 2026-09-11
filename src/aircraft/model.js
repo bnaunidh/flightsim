@@ -654,16 +654,51 @@ export function createAircraftModel(opts = {}) {
     }
   }
 
+  /*
+   * Propellers — one on the nose, or one per wing.
+   *
+   * `power.count` was read only inside the JET branch, so a type declaring two
+   * propellers got exactly one, on the centreline, and its `x` nacelle offset
+   * was dead data. The Tempest is a twin-turboprop and rendered as a single —
+   * and the comment on its own power block asserted that the model "draws one
+   * or two", which was true of jets and false of propellers, so the bug was
+   * hidden behind a statement that made it look checked.
+   */
   const propGroup = new THREE.Group();
   propGroup.visible = !isJet;
-  propGroup.position.set(0, 0.02, S.power.z);
-  const spinner = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.55, 16), metalMaterial(skin, { roughness: 0.2, metalness: 0.7 }));
-  spinner.rotation.x = -Math.PI / 2;
-  spinner.position.z = -0.2;
-  spinner.castShadow = true;
-  propGroup.add(spinner);
+  const propCount = isJet ? 0 : S.power.count || 1;
+  const propSides = propCount >= 2 ? [-1, 1] : [0];
+  propGroup.position.set(0, 0.02, propCount >= 2 ? 0 : S.power.z);
+  const spinMat = metalMaterial(skin, { roughness: 0.2, metalness: 0.7 });
+  const nacelleMatProp = metalMaterial(skin, { roughness: 0.34, metalness: 0.5 });
+  /** One spinner, blades and blur disc, at a given wing station. */
+  const propUnit = (sx) => {
+    const unit = new THREE.Group();
+    unit.position.set(sx * (propCount >= 2 ? S.power.x || 2.6 : 0), 0, propCount >= 2 ? S.power.z : 0);
+    // A twin carries its engines in nacelles; a single has its cowl already.
+    if (propCount >= 2) {
+      const nac = new THREE.Mesh(
+        new THREE.CylinderGeometry(S.power.radius || 0.5, (S.power.radius || 0.5) * 0.82, S.power.length ? S.power.length * 2.2 : 2.4, 14),
+        nacelleMatProp
+      );
+      nac.rotation.x = Math.PI / 2;
+      nac.position.z = 0.9;
+      nac.castShadow = true;
+      unit.add(nac);
+    }
+    const spinner = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.55, 16), spinMat);
+    spinner.rotation.x = -Math.PI / 2;
+    spinner.position.z = -0.2;
+    spinner.castShadow = true;
+    unit.add(spinner);
+    return unit;
+  };
 
   const bladeMat = new THREE.MeshStandardMaterial({ map: propTexture(), roughness: 0.5, metalness: 0.3 });
+  /** The spinning parts, so update() can turn every propeller on the aircraft. */
+  const spinners = [];
+  for (const sx of propSides) {
+  const unit = propUnit(sx);
   const blades = new THREE.Group();
   for (let i = 0; i < 2; i++) {
     // Blade length matches the blur disc it fades into (radius ~1.05 m, so a
@@ -678,7 +713,7 @@ export function createAircraftModel(opts = {}) {
     bl.castShadow = true;
     blades.add(bl);
   }
-  propGroup.add(blades);
+  unit.add(blades);
 
   const disc = new THREE.Mesh(
     new THREE.PlaneGeometry(S.power.propRadius * 2, S.power.propRadius * 2),
@@ -691,7 +726,10 @@ export function createAircraftModel(opts = {}) {
     })
   );
   disc.position.z = -0.05;
-  propGroup.add(disc);
+  unit.add(disc);
+  propGroup.add(unit);
+  spinners.push({ blades, disc });
+  }
   root.add(propGroup);
 
   /* ---------------- Lights ---------------- */
@@ -744,8 +782,11 @@ export function createAircraftModel(opts = {}) {
     gear,
     lights,
     landingSpot,
-    disc,
-    blades,
+    // Every propeller, so a twin turns both. `disc`/`blades` are kept as the
+    // first unit so anything outside that still reaches for them works.
+    spinners,
+    disc: spinners[0] ? spinners[0].disc : null,
+    blades: spinners[0] ? spinners[0].blades : null,
     propGroup,
     glassMat,
     nozzles,
@@ -782,10 +823,16 @@ export function createAircraftModel(opts = {}) {
       // Propeller: spin, and fade in the blur disc as it speeds up.
       const rpmHz = ac.rpm * 42;
       state.propAngle += rpmHz * dt * Math.PI * 2;
-      state.blades.rotation.z = state.propAngle;
       const blur = clamp((ac.rpm - 0.22) / 0.45, 0, 1);
-      state.disc.material.opacity = blur * 0.5;
-      state.blades.visible = blur < 0.98;
+      // Every propeller on the aircraft, not just the one on the centreline.
+      for (let i = 0; i < state.spinners.length; i++) {
+        const sp = state.spinners[i];
+        // Counter-rotating on a twin, which is what stops the torque roll the
+        // flight model already declines to apply to multi-engine types.
+        sp.blades.rotation.z = state.spinners.length > 1 && i === 1 ? -state.propAngle : state.propAngle;
+        sp.disc.material.opacity = blur * 0.5;
+        sp.blades.visible = blur < 0.98;
+      }
     }
 
     // Control surfaces.
