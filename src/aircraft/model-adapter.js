@@ -45,19 +45,16 @@ try {
 }
 
 /*
- * Off by default.
+ * On by default.
  *
- * Side by side on the runway, the built-in models read better: their wings
- * have visible thickness, the cabin is a rounded greenhouse and the fuselage
- * is moulded rather than slab-sided. The fleet models spent their triangle
- * budget on small details — pitot masts, boarding steps, antennas — and left
- * the primary shapes flat, so from any distance they look cut from card.
- *
- * That is a fixable thing and the pack is otherwise good, so it stays wired in
- * and switchable from Settings rather than being deleted. When the shapes come
- * back with some volume in them, this becomes the default.
+ * The built-in models still read better side by side — the fleet's wings are
+ * flat plates and its cabin is a wedge — and that feedback has gone back to
+ * whoever draws them. But they are the newer aeroplanes, they are the ones
+ * with breakaway crashes, and they are what everyone wants to fly. Both sets
+ * stay in the game and Settings switches between them, which is the arrangement
+ * that lets the next pack be compared honestly rather than argued about.
  */
-let useFleet = false;
+let useFleet = true;
 
 /** Turn the pack on or off. Takes effect the next time a model is built. */
 export function setFleetModels(on) {

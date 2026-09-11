@@ -227,7 +227,9 @@ export class Hud {
     this.btnMute = mkBtn('soundOn', 'mute', 'Mute sound (M)', tray, 'Sound');
     this.btnHelp = mkBtn('help', 'help', 'Show controls (H)', tray, 'Controls');
     this.btnKeys = mkBtn('help', 'keys', 'Show which keys you are pressing', tray, 'Key monitor');
-    this.btnMap = mkBtn('map', 'minimap', 'Show the map (M)', tray, 'Minimap');
+    // J, not M. M is mute — anyone who followed this tooltip silenced the game
+    // and wondered why no map appeared.
+    this.btnMap = mkBtn('map', 'minimap', 'Show the map (J)', tray, 'Minimap');
 
     this.tray = tray;
     this.trayOpen = false;

@@ -202,6 +202,8 @@ class Game {
     this.navGuide = new NavGuide(this.scene);
     this.beacon = new Beacon(this.scene);
     this.minimap = new Minimap(document.getElementById('ui'));
+    this.minimap.toggle(this.settings.minimap !== false);
+    // The class is applied once the HUD exists — it is built a few lines down.
     this.prog = Prog.load();
     this.autopilot = new Autopilot();
     this.taxi = new TaxiRun(this);
@@ -217,6 +219,7 @@ class Game {
 
     this.input = new Input(canvas);
     this.hud = new Hud(document.getElementById('ui'), { onAction: (a) => this.hudAction(a) });
+    this.syncMinimapClass();
     // On-screen controls, only where there is no keyboard to speak of.
     if (isTouchDevice()) {
       this.touch = new TouchControls(this.hud.wrap, {
@@ -1079,6 +1082,12 @@ class Game {
         break;
       case 'minimap': {
         const on = this.minimap.toggle();
+        // Remember it, so turning it off stays off and turning it on stays on.
+        this.settings.minimap = on;
+        saveSettings(this.settings);
+        this.syncMinimapClass();
+        // So the box in Settings matches what the J key just did.
+        this.menus.syncSettings(this.settings);
         this.hud.notify(on ? 'Minimap on — K changes the range' : 'Minimap off', 'info', 2.2);
         break;
       }
@@ -1224,6 +1233,9 @@ class Game {
         'info',
         3.4
       );
+    } else if (path === 'minimap') {
+      this.minimap.toggle(!!value);
+      this.syncMinimapClass();
     } else if (path === 'fleetModels') {
       // Rebuild the aeroplane so the change is visible now rather than at the
       // next flight — a model option that does not change the model is broken
@@ -1943,6 +1955,21 @@ class Game {
     // silently beaching it.
     console.warn('No water deep enough for the carrier on this map.');
     return { x: -5200, z: 3400 };
+  }
+
+  /**
+   * Tell the HUD the minimap is there.
+   *
+   * On a narrow screen the minimap sits in the top-left corner, and the
+   * objective panel is centred and wide enough to run straight under it — the
+   * instrument strip had already been moved out of the way, the objective had
+   * not. The class is what lets the panel step aside only when there is
+   * something to step aside for.
+   */
+  syncMinimapClass() {
+    if (this.hud && this.hud.wrap) {
+      this.hud.wrap.classList.toggle('has-minimap', !!(this.minimap && this.minimap.visible));
+    }
   }
 
   startDrive(kind = 'boat') {

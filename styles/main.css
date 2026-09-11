@@ -1251,6 +1251,9 @@ body.is-large { font-size: 18px; }
      pixel, it presses the wrong thing. Measured stick 14-150, pads 149-291. */
   .hud.is-touch .touch-pads { right: 82px; bottom: 22px; }
   .hud.is-touch .minimap { top: 8px; left: 8px; right: auto; bottom: auto; }
+  /* And the objective panel steps aside for it, the way the instrument strip
+     already does — it is centred and wide, and ran straight under the map. */
+  .hud.has-minimap .hud-top { padding-left: 138px; }
   .hud.is-touch .hud-tray { right: 12px; top: 62px; bottom: auto; }
   .hud.is-touch .hud-taxi-skip { padding: 12px 16px; font-size: 14px; }
   .screen { padding: 16px 14px 28px; }

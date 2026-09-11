@@ -1143,6 +1143,8 @@ export class Menus {
           <label class="check"><input type="checkbox" data-set="startAtGate"><span>Start on the parking stand and taxi out (Free Flight)</span></label>
           <label class="check"><input type="checkbox" data-set="realisticFuel"><span>Realistic fuel — the tank drains 1% every 30 seconds, so you have to plan</span></label>
           <label class="check"><input type="checkbox" data-set="randomWinds"><span>Random winds — the wind wanders and gusts blow through</span></label>
+          <label class="check"><input type="checkbox" data-set="minimap"><span>Minimap — the little round map, with a warning if you are heading at a hill (J)</span></label>
+          <label class="check"><input type="checkbox" data-set="fleetModels"><span>New aeroplane models — seven redrawn airframes that come apart when you crash. Turn off for the original ones.</span></label>
           <p class="hint">With random winds on, the wind drifts around the speed and direction you chose and a gust rolls
           through every half minute or so. It makes landings much more interesting. Leave it off while you are learning.</p>
         </div>
@@ -1412,8 +1414,7 @@ export class Menus {
           <button data-dev-enter>Enter</button>
         </div>
         <div class="dev-panel" data-dev-panel hidden>
-          <label class="check"><input type="checkbox" data-dev-set="fleetModels"><span><strong>New aeroplane models</strong> — seven redrawn airframes with breakaway crashes. More detail, but flatter shapes: the wings have no thickness and the cabin is a wedge, so side by side the originals still read better.</span></label>
-          <p class="hint tiny">Changes take effect straight away. Everything here is a work in progress and may look wrong.</p>
+          <p class="hint tiny">Nothing is being tried out at the moment. The aeroplane-model switch moved to Settings, where everyone can reach it.</p>
           <button class="ghost" data-dev-leave>Leave dev mode</button>
         </div>
 
@@ -1477,9 +1478,6 @@ export class Menus {
       s.querySelector('[data-dev-note]').textContent = dev
         ? 'The workbench is open. Everything here is unfinished on purpose.'
         : 'Things that are built but not finished. Behind a passcode, because they are not ready for everybody yet.';
-      const fleetBox = s.querySelector('[data-dev-set="fleetModels"]');
-      if (fleetBox) fleetBox.checked = !!(this.settingsRef && this.settingsRef.fleetModels);
-
       const milOpen = !!p.militaryUnlocked;
       s.querySelector('[data-mil-note]').textContent = milOpen
         ? 'Access granted. The military hangar is open.'

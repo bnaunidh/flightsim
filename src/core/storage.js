@@ -65,7 +65,15 @@ export const DEFAULT_SETTINGS = {
    * compared without a rebuild, and so it can become the default the moment
    * the new shapes have some volume in them.
    */
-  fleetModels: false,
+  fleetModels: true,
+  /*
+   * The minimap, on by default.
+   *
+   * It was off, toggled by a key nobody is told about, behind a button in the
+   * overflow tray whose tooltip named the wrong key. It was asked for
+   * specifically; it should be on screen.
+   */
+  minimap: true,
   aircraft: 'skylark',
   /** Which airline paint scheme. 'house' means each type's own colours. */
   livery: 'house',
