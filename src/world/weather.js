@@ -172,6 +172,14 @@ export class Weather {
   }
 
   /** Swap the sky for a while, then put it back the way it was. */
+  /**
+   * The weather that is actually in force: a temporary condition if one is
+   * running, otherwise the base. Anything asking "is it stormy" wants this.
+   */
+  get effectiveCondition() {
+    return this._tempCond ? this._tempCond.id : this.condition;
+  }
+
   temporaryCondition(id, seconds, overrides = null) {
     if (!CONDITIONS[id]) return;
     this._tempCond = { id, left: seconds, overrides };
@@ -271,8 +279,15 @@ export class Weather {
         this._front = null;
       }
     }
-    // Lightning during storms.
-    if (this.condition === 'stormy') {
+    /*
+     * Lightning during storms — including the ones a disaster brings.
+     *
+     * This read `this.condition`, the BASE weather, while Storm cell and
+     * Typhoon both work by setting a temporary condition over the top of it.
+     * So the two disasters in the game whose whole point is a thunderstorm
+     * were the two that never produced a single flash.
+     */
+    if (this.effectiveCondition === 'stormy') {
       this._nextLightning -= dt;
       if (this._nextLightning <= 0) {
         this.lightningFlash = 1;

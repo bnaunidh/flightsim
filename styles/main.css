@@ -2165,3 +2165,37 @@ body.is-large { font-size: 18px; }
   transition: opacity 700ms ease;
 }
 .hud.is-bracing .hud-damage { opacity: 1; }
+
+/* ---- Saved-flight slots: a clear button a finger can hit --------------- */
+.slot { position: relative; }
+.slot-clear {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 26px;
+  height: 26px;
+  line-height: 24px;
+  text-align: center;
+  border-radius: 8px;
+  font-size: 17px;
+  color: var(--text-dim);
+  background: rgba(10, 16, 26, 0.55);
+  border: 1px solid var(--panel-line);
+}
+.slot-clear:hover { color: var(--red); border-color: rgba(255, 106, 90, 0.6); }
+/* A brief flash so a long-press that overwrote something says that it did. */
+.slot.is-saved { outline: 2px solid var(--good); outline-offset: -2px; }
+/*
+ * A finger is about 44 px. 26 is fine for a mouse and far too small for the
+ * iPads this is played on — and this button is the ONLY way to clear a slot
+ * on a touchscreen, so missing it means the feature is still unreachable.
+ */
+@media (pointer: coarse) {
+  .slot-clear { width: 44px; height: 44px; line-height: 42px; font-size: 22px; }
+}
+html.is-touch-device .slot-clear {
+  width: 44px;
+  height: 44px;
+  line-height: 42px;
+  font-size: 22px;
+}

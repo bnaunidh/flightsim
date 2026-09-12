@@ -228,6 +228,13 @@ class Game {
         onAction: (a) => this.hudAction(a),
       });
       this.hud.wrap.classList.add('is-touch');
+      /*
+       * Also on the root, so the MENUS can size their touch targets.
+       * `is-touch` lives on the HUD wrapper, which is not an ancestor of the
+       * menu layer, and `@media (pointer: coarse)` is not a reliable stand-in:
+       * it is false on plenty of machines that have a touchscreen.
+       */
+      document.documentElement.classList.add('is-touch-device');
     }
     this.hud.setSubtitlesEnabled(this.settings.subtitles);
     this.hud.setHighContrast(this.settings.highContrast);
@@ -883,12 +890,24 @@ class Game {
      * aeroplane is the right one by the time it is put down on it.
      */
     if (def.map && this.settings.map !== def.map) {
+      /*
+       * A mission borrows the map; it does not get to keep it.
+       *
+       * This used to write the mission's map into settings and save it, so
+       * flying one military mission moved your saved map to the air base
+       * permanently — every Free Flight afterwards started there, and so did
+       * every other mission that does not name a map of its own. Nobody chose
+       * that and nothing told them it had happened.
+       *
+       * The choice you made is remembered here and put back when the flight
+       * ends.
+       */
+      this.mapBeforeMission = this.settings.map;
       applyMap(def.map);
       // The field moved. Tell the modules that cached its height.
       refreshRunways();
       refreshApronElevation();
       this.settings.map = def.map;
-      saveSettings(this.settings);
       this.menus.syncMap(def.map);
       this.buildWorld(this.settings.quality);
     }
@@ -997,6 +1016,7 @@ class Game {
 
   quitToMenu(screen = 'main') {
     this.clearPursuer();
+    this.restoreChosenMap();
     this.state = 'menu';
     this.mode = null;
     this.runner.status = STATUS.IDLE;
@@ -1218,8 +1238,12 @@ class Game {
       this.hud.notify('Autopilot off — you have control', 'info', 2.4);
     }
     this.audio.available && this.audio.alerts.uiClick();
+    // Before the return, not after it. This line sat below `return on;` where
+    // it could never run, so pressing an autopilot button in the pause menu
+    // changed the autopilot and left every button in the menu looking exactly
+    // as it had — no FLYING tag, no highlight, nothing.
+    this.menus.syncAutopilot(this.autopilot.engaged, this.autopilot.mode);
     return on;
-      this.menus.syncAutopilot(this.autopilot.engaged, this.autopilot.mode);
   }
 
   /* ------------------------------------------------------------------ */
@@ -2028,6 +2052,24 @@ class Game {
     // silently beaching it.
     console.warn('No water deep enough for the carrier on this map.');
     return { x: -5200, z: 3400 };
+  }
+
+  /**
+   * Put back the map the player actually chose.
+   *
+   * Called when a flight ends. Silent when no mission borrowed one.
+   */
+  restoreChosenMap() {
+    const want = this.mapBeforeMission;
+    this.mapBeforeMission = null;
+    if (!want || want === this.settings.map) return;
+    applyMap(want);
+    refreshRunways();
+    refreshApronElevation();
+    this.settings.map = want;
+    saveSettings(this.settings);
+    this.menus.syncMap(want);
+    this.buildWorld(this.settings.quality);
   }
 
   /**

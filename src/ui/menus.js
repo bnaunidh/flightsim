@@ -749,7 +749,7 @@ export class Menus {
         <div class="free-slots">
           <div class="free-slots-head">
             <span>Saved flights</span>
-            <span class="hint tiny">Click to load · Shift-click or hold to overwrite · long-press to clear</span>
+            <span class="hint tiny">Tap to load · hold to overwrite · × to clear</span>
           </div>
           <div class="slot-row" data-slots></div>
         </div>
@@ -976,11 +976,68 @@ export class Menus {
         b.dataset.slot = String(i);
         b.innerHTML = p
           ? `<strong>${p.label}</strong><em>${p.summary}</em>`
+              + `<span class="slot-clear" data-slot-clear="${i}" role="button" aria-label="Clear slot ${i + 1}">\u00d7</span>`
           : `<strong>Slot ${i + 1}</strong><em>empty — save this setup here</em>`;
         host.appendChild(b);
       }
     };
     this.renderFreeSlots = renderSlots;
+
+    /*
+     * Long-press to overwrite, on anything with a pointer.
+     *
+     * Overwriting used to need shift-click and clearing needed alt-click, and
+     * the hint underneath cheerfully promised "hold" and "long-press" — neither
+     * of which was implemented anywhere. On an iPad a filled slot could only
+     * ever be loaded: there was no way to overwrite it and no way to empty it,
+     * for the entire life of the feature.
+     *
+     * 600 ms, the press is marked so the click that follows knows to do
+     * nothing, and it is cancelled if the finger moves — otherwise scrolling
+     * the panel saves over a slot.
+     */
+    let holdT = null;
+    let heldSlot = null;
+    const cancelHold = () => {
+      if (holdT) clearTimeout(holdT);
+      holdT = null;
+    };
+    s.addEventListener('pointerdown', (e) => {
+      const slot = e.target.closest('[data-slot]');
+      if (!slot || e.target.closest('[data-slot-clear]')) return;
+      const i = Number(slot.dataset.slot);
+      if (!loadFreePresets()[i]) return; // an empty slot already saves on tap
+      heldSlot = slot;
+      cancelHold();
+      holdT = setTimeout(() => {
+        holdT = null;
+        slot.dataset.held = '1';
+        saveIntoSlot(i);
+        slot.classList.add('is-saved');
+        setTimeout(() => slot.classList.remove('is-saved'), 600);
+      }, 600);
+    });
+    s.addEventListener('pointerup', cancelHold);
+    s.addEventListener('pointercancel', cancelHold);
+    s.addEventListener('pointermove', (e) => {
+      if (heldSlot && holdT) cancelHold();
+    });
+
+    /** Write the current setup into a slot. Shared by tap, hold and shift. */
+    const saveIntoSlot = (i) => {
+      const saved = loadFreePresets();
+      const cfg = collectSetup();
+      const ac = AIRCRAFT.find((a) => a.id === cfg.aircraft);
+      saved[i] = {
+        ...cfg,
+        label: `${ac ? ac.name : cfg.aircraft}`,
+        summary:
+          `${CONDITIONS[cfg.condition].label.toLowerCase()}, ${cfg.windSpeedKts} kt`
+          + `${startWords[this.chosenStart] ? ' · ' + startWords[this.chosenStart] : ''}`,
+      };
+      saveFreePresets(saved);
+      renderSlots();
+    };
 
     s.addEventListener('click', (e) => {
       if (e.target.closest('[data-back]')) return this.show('main');
@@ -1046,8 +1103,23 @@ export class Menus {
         return;
       }
 
+      const clear = e.target.closest('[data-slot-clear]');
+      if (clear) {
+        // A visible button, because a modifier key is not a thing a finger has.
+        const saved = loadFreePresets();
+        saved[Number(clear.dataset.slotClear)] = null;
+        saveFreePresets(saved);
+        renderSlots();
+        return;
+      }
+
       const slot = e.target.closest('[data-slot]');
       if (slot) {
+        // The click that follows a long press is the press, not a tap.
+        if (slot.dataset.held) {
+          delete slot.dataset.held;
+          return;
+        }
         const i = Number(slot.dataset.slot);
         const saved = loadFreePresets();
         /*
