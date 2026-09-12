@@ -22,7 +22,20 @@ try {
 import { addPlatform, addObstacleAt } from './terrain.js';
 
 /** Deck dimensions, in metres. A real Nimitz deck is 333 x 77. */
-export const DECK = { length: 300, width: 72, height: 20 };
+/*
+ * Five times a real carrier.
+ *
+ * A Nimitz is 333 m and this was 300, which is right and reads as nothing
+ * from a thousand feet up — "way too small" was the verdict, and adding
+ * parked aircraft for scale only went so far. At 1,500 m it is longer than
+ * the runway and unmistakable from anywhere on the map, and the deck is wide
+ * enough that landing on it is a thing a ten-year-old can actually do.
+ *
+ * Everything else is derived from these three numbers — the hull, the island,
+ * the wires, the landing platform, the solid obstacle and the parked
+ * aeroplanes — so this is the only place the size lives.
+ */
+export const DECK = { length: 1500, width: 360, height: 20 };
 
 function deckTexture() {
   const S = 512;
@@ -83,6 +96,15 @@ export class Carrier {
     if (packCarrier) {
       try {
         this.ship = packCarrier({ name: this.name });
+        /*
+         * The pack builds its ship at a real carrier's 300 m whatever DECK
+         * says, so it is scaled to match. Scaling the picture rather than
+         * rebuilding it keeps every detail — the angled deck markings, the
+         * island, the wires — in proportion, and DECK stays the one place the
+         * size is decided.
+         */
+        const k = DECK.length / 300;
+        if (Math.abs(k - 1) > 0.001) this.ship.scale.setScalar(k);
         this.group.add(this.ship);
       } catch (e) {
         console.warn('The pack carrier could not be built; using the built-in one.', e);
@@ -180,9 +202,18 @@ export class Carrier {
      * real 14 m spacing — because the lesson worth teaching here is the
      * approach, not the inch.
      */
+    /*
+     * Proportional to the deck, not a fixed 72 metres.
+     *
+     * These were absolute offsets measured on a 300 m ship, so when the deck
+     * grew five times they stayed a short band near the middle of an enormous
+     * one — you would have flown the whole length looking for them.
+     */
+    const wireFrom = DECK.length * 0.133;
+    const wireTo = DECK.length * 0.373;
     this.wires = along
-      ? { z0: at.z + 40, z1: at.z + 112 }
-      : { x0: at.x + 40, x1: at.x + 112 };
+      ? { z0: at.z + wireFrom, z1: at.z + wireTo }
+      : { x0: at.x + wireFrom, x1: at.x + wireTo };
     addPlatform(at.x, at.z, bw, bd, this.deckY, this.name, {
       ...this.wires,
       along,
