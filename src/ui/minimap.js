@@ -25,6 +25,9 @@ export class Minimap {
     this.el = document.createElement('div');
     this.el.className = 'minimap';
     this.el.style.display = 'none';
+    this._want = false;
+    this._suppressed = false;
+    this._faulty = false;
 
     this.canvas = document.createElement('canvas');
     this.canvas.width = SIZE * 2;
@@ -55,9 +58,33 @@ export class Minimap {
     return this.el.style.display !== 'none';
   }
 
+  /**
+   * Hidden along with the rest of the interface.
+   *
+   * Kept separate from `toggle`, so pressing U for a clean shot and then
+   * pressing it again gives you back exactly the map state you had rather
+   * than silently turning the map off for good.
+   */
+  setSuppressed(on) {
+    this._suppressed = !!on;
+    this.el.style.display = this._suppressed || !this._want ? 'none' : '';
+  }
+
+  /**
+   * The map runs off the same instruments as everything else, so when they
+   * are out it flashes rather than quietly lying to you with a position it
+   * cannot actually know.
+   */
+  setFaulty(on) {
+    if (this._faulty === !!on) return;
+    this._faulty = !!on;
+    this.el.classList.toggle('is-faulty', this._faulty);
+  }
+
   toggle(force) {
-    const on = force === undefined ? !this.visible : !!force;
-    this.el.style.display = on ? '' : 'none';
+    const on = force === undefined ? !this._want : !!force;
+    this._want = on;
+    this.el.style.display = on && !this._suppressed ? '' : 'none';
     return on;
   }
 

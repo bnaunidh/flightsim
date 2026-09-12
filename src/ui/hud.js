@@ -525,18 +525,6 @@ export class Hud {
     if (worst > 0.06 && p.hidden) p.hidden = false;
   }
 
-  /**
-   * The cinematic frame that says "this is the bit that matters".
-   *
-   * Bars top and bottom, the readouts faded back, and the world left alone in
-   * the middle. It is doing the same job the silence does in a film: telling
-   * you to stop reading instruments and watch the aeroplane.
-   */
-  setBracing(on) {
-    if (!this.wrap) return;
-    this.wrap.classList.toggle('is-bracing', !!on);
-  }
-
   setObjective(title, text) {
     if (this.lastValues.objTitle !== title) {
       this.objectiveTitle.textContent = title;

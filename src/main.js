@@ -113,6 +113,7 @@ class Game {
     this.state = 'loading';
     this.mode = null;
     this.clock = new THREE.Clock();
+    this._tmpV = new THREE.Vector3();
     this.acc = 0;
     this.fpsFrames = 0;
     this.fpsTime = 0;
@@ -587,9 +588,8 @@ class Game {
        * Judged on the state at the moment of impact, not on where you ended
        * up, because holding it off to the last second is the skill.
        */
-      if (this.bracing && this.braceSurvivable()) {
-        this.braceSaved = true;
-      }
+      // A mayday owns its own ending — see resolveBrace().
+      if (this.bracing || this.braceRescueT) this.braceOwnsEnding = true;
       this.progress.crashes++;
       saveProgress(this.progress);
       if (this.audio.available) {
@@ -620,7 +620,12 @@ class Game {
         },
         { groundHeight: heightAt, camera: this.camera }
       );
-      this.hud.showBanner('Crashed', c.reason, 'bad', 6);
+      // A mayday writes its own words. "Crashed" is not one of them: you
+      // declared an emergency, the aeroplane came down and people came for
+      // you, and calling that a crash reads as being told off for it.
+      if (!this.bracing && !this.braceRescueT) {
+        this.hud.showBanner('Crashed', c.reason, 'bad', 6);
+      }
       /*
        * The debrief is deliberately late, so the wreck is worth watching
        * first. But restarting inside those 2.2 seconds used to drop the crash
@@ -776,10 +781,14 @@ class Game {
   }
 
   showCrashDebrief(reason) {
+    // The mayday sequence is already writing an ending; do not talk over it.
+    if (this.braceOwnsEnding) {
+      this.braceOwnsEnding = false;
+      return;
+    }
     if (this.braceSaved) {
       this.braceSaved = false;
       this.bracing = false;
-      this.hud.setBracing(false);
       this.state = 'debrief';
       this.hud.setVisible(false);
       this.menus.showDebrief({
@@ -842,7 +851,12 @@ class Game {
     this.aircraft.survivableStrikes = !!this.settings.damageModel;
     this.hud.setDamage(null);
     this.bracing = false;
-    this.hud.setBracing(false);
+    this.braceOwnsEnding = false;
+    clearTimeout(this.braceRescueT);
+    this.braceRescueT = null;
+    this.braceRescue = [];
+    this.clearRescue();
+    this.clearChute();
     this.clearPursuer();
     // Nothing from the last flight is allowed to arrive during this one.
     clearTimeout(this._crashDebriefT);
@@ -860,7 +874,16 @@ class Game {
     /** Natural events currently running, with the seconds left on each. */
     this.activeEvents = {};
     this.lightningStorm = null;
+    /*
+     * Clear the panel failure, and tell the HUD.
+     *
+     * Setting the counter to 0 was not enough: the tick below only calls
+     * setBlackout when the counter is ABOVE zero, so the class stayed on the
+     * HUD and every flight after a blackout — or after a mayday — started
+     * with dead instruments for no reason anybody could see.
+     */
     this.instrumentBlackout = 0;
+    this.hud.setBlackout(false);
     this._armedT = 0;
     this._hasFlown = false;
     // Randomised disasters: things break on their own, and worse weather makes
@@ -1191,9 +1214,19 @@ class Game {
   }
 
   /** Hide the whole interface for a clean shot. U is the way back. */
+  /** The minimap follows the interface: hidden with it, faulty with it. */
+  syncMinimapChrome() {
+    if (!this.minimap) return;
+    this.minimap.setSuppressed(!!this.hud.hidden);
+    this.minimap.setFaulty(this.instrumentBlackout > 0);
+  }
+
   toggleHideUi() {
     const hidden = this.hud.toggleHidden();
     if (!hidden) this.hud.notify('Interface back on', 'info', 1.6);
+    // Before the return. The minimap is not inside the HUD wrapper, so hiding
+    // the interface left it sitting on screen on its own.
+    this.syncMinimapChrome();
     return hidden;
   }
 
@@ -1996,6 +2029,7 @@ class Game {
       if (ac.engineOn) ac.stopEngine('shutdown');
       else ac.startEngine();
     }
+    if (input.pressed('brace')) this.braceForImpact();
     if (input.pressed('drop') || (pad && pad.drop)) {
       if (!this.dropCargo()) this.hud.notify('Nothing to drop right now', 'info', 2);
     }
@@ -2115,58 +2149,314 @@ class Game {
   }
 
   /**
-   * Shut everything down and brace.
+   * Mayday.
    *
-   * The last thing you do when it is not going to be a landing. Engine off,
-   * fuel off, electrics off — a real crew does this so there is no fire and
-   * nothing live when it stops — then hold the wings level and fly it all the
-   * way down.
+   * Not a shutdown-and-hit-the-ground drill — that version was wrong. You
+   * hand the aeroplane to the autopilot, it flies a circuit over the field,
+   * two aircraft come up to be with you, and the tower talks to you the whole
+   * way. Then the weather decides.
    *
-   * It is deliberately NOT a death animation. It is a procedure, and a good
-   * one saves everybody: wings level, nose up, slow, and over something flat
-   * is walk-away territory. Doing it badly is still a crash. That is the
-   * honest version and it is also the one worth being good at.
+   * The interface stays on screen. Taking it all away made the one moment
+   * where you most want to see what is happening the one moment you could
+   * not.
    */
   braceForImpact() {
     if (this.state !== 'flying' || this.bracing) return;
     const ac = this.aircraft;
     if (ac.crashed) return;
     if (ac.onGround && ac.groundSpeed < 4) {
-      this.hud.notify('You are already stopped', 'info', 2.4);
+      this.hud.notify('You are already on the ground', 'info', 2.4);
       return;
     }
 
+    /*
+     * Ask twice. It takes the aeroplane out of your hands and cannot be
+     * undone, so one stray keypress should not do it.
+     */
+    /*
+     * A countdown that is ticked in the update loop, rather than a timestamp.
+     *
+     * This read `clock.elapsedTime`, which is only advanced by getDelta() and
+     * so can legitimately be 0 — and `!this._braceArmedAt` is then true on the
+     * second press as well, so it armed over and over and never committed.
+     */
+    if (!(this._braceArm > 0)) {
+      this._braceArm = 4;
+      this.hud.showBanner(
+        'Declare an emergency?',
+        'Press it again to commit. The aeroplane will fly itself from there.',
+        'warn',
+        4
+      );
+      return;
+    }
+    this._braceArm = 0;
+
     this.bracing = true;
-    this.braceAt = this.progress ? this.progress.flights : 0;
+    this.braceT = 0;
+    this.braceLine = 0;
+    this.braceOdds = this.survivalOdds();
+    this.braceRescue = [];
 
-    // Everything off.
-    ac.stopEngine('brace');
-    ac.fuel = 0;
-    ac.controls.throttle = 0;
-    this.input.throttleTarget = 0;
-    this.autopilot.setEngaged(false, ac);
-    // The panel goes dark with the electrics, which is the part that makes it
-    // land. You fly the rest of it by looking outside.
-    this.instrumentBlackout = Math.max(this.instrumentBlackout, 999);
-
-    // The call. Synthesised radio, like every other transmission in the game —
-    // no TTS, ever.
-    this.speak(
-      `${this.atc.field} Tower, ${this.atc.callsign}. Shutting down and bracing. Thank you for everything. Out.`,
-      'tower'
-    );
-    this.hud.showBanner(
-      'Brace, brace',
-      'Wings level. Nose up. Hold it off as long as you can.',
-      'bad',
-      6
-    );
-    this.hud.setBracing(true);
-    // Pull the camera out and watch it go down.
-    this.rig.setMode('orbit');
-    this.rig.orbitDist = 44;
-    this.rig.orbitHeight = 9;
+    /*
+     * Most of the instruments go.
+     *
+     * The panel is dead but the interface is still there — that is the
+     * difference between "the aeroplane is broken" and "the game has taken
+     * the screen away from you", and the first version got it wrong by doing
+     * the second. The autopilot keeps flying regardless, which is why it is
+     * engaged before this.
+     */
+    /*
+     * Order matters: the autopilot first, THEN the panel goes dark.
+     *
+     * The game refuses to engage the autopilot while the instruments are out —
+     * sensible, and exactly backwards here, where the aeroplane flying itself
+     * is the entire point. Blacking the panel out first meant it quietly never
+     * engaged and the aeroplane just carried on wherever it was pointed.
+     */
+    this.autopilot.setMode('field');
+    this.autopilot.setEngaged(true, ac);
+    this.instrumentBlackout = 70;
+    this.hud.setBlackout(true);
+    this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget));
+    this.hud.showBanner('Mayday declared', 'The aeroplane is flying itself. Help is coming.', 'bad', 5);
     this.audio.available && this.audio.alerts.caution && this.audio.alerts.caution();
+  }
+
+  /**
+   * How likely this ends well, from the weather you are in.
+   *
+   * Half of it is luck, and the rest is what you are flying through: clear
+   * and calm is survivable, a storm at night is much less so. Rolled once,
+   * when the mayday is declared, so nothing you do afterwards silently moves
+   * it and the number the tower is working with never changes underneath you.
+   */
+  survivalOdds() {
+    const w = this.weather;
+    const cond = w.effectiveCondition || w.condition;
+    let odds = 0.5;
+    if (cond === 'clear') odds += 0.2;
+    else if (cond === 'rainy') odds -= 0.1;
+    else if (cond === 'stormy') odds -= 0.2;
+    if (w.isNight) odds -= 0.1;
+    if (w.windSpeedKts > 22) odds -= 0.1;
+    return Math.max(0.15, Math.min(0.85, odds));
+  }
+
+  /**
+   * The recovery parachute.
+   *
+   * A real thing on real light aircraft — a canopy for the whole aeroplane,
+   * fired before it reaches the ground — and the reason the bad ending is
+   * survivable at all. It is also the part that makes the sequence make
+   * sense to watch: something visibly happens instead of the aeroplane
+   * simply running out of sky.
+   */
+  deployChute() {
+    if (this.chute) return;
+    const canopy = new THREE.Mesh(
+      new THREE.SphereGeometry(9, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.55),
+      new THREE.MeshStandardMaterial({
+        color: 0xff7a3c,
+        roughness: 0.85,
+        side: THREE.DoubleSide,
+      })
+    );
+    canopy.castShadow = true;
+    const rig = new THREE.Group();
+    rig.add(canopy);
+    canopy.position.y = 13;
+    // Four lines back down to the aeroplane.
+    const lineMat = new THREE.MeshStandardMaterial({ color: 0x2a2f36, roughness: 0.7 });
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2;
+      const l = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 13, 4), lineMat);
+      l.position.set(Math.cos(a) * 2.2, 6.5, Math.sin(a) * 2.2);
+      rig.add(l);
+    }
+    rig.scale.setScalar(0.01);
+    this.scene.add(rig);
+    this.chute = { rig, t: 0 };
+    // Under a canopy it stops flying and starts descending.
+    this.autopilot.setEngaged(false, this.aircraft);
+    this.aircraft.stopEngine('chute');
+    this.audio.available && this.audio.ambience.playFlaps && this.audio.ambience.playFlaps();
+  }
+
+  clearChute() {
+    if (this.chute) this.scene.remove(this.chute.rig);
+    this.chute = null;
+  }
+
+  /** The aircraft that come up to sit with you. */
+  spawnRescue() {
+    const type = getAircraft('courier') || this.aircraftType;
+    for (const side of [-1, 1]) {
+      let m = null;
+      try {
+        m = createAircraftModel({ type });
+      } catch (e) {
+        return;
+      }
+      this.scene.add(m);
+      this.braceRescue.push({ model: m, side, t: 0 });
+    }
+    this.traffic = this.braceRescue.map((r) => ({ pos: r.model.position }));
+  }
+
+  /**
+   * The whole sequence: what is said, when, and how it ends.
+   *
+   * Written as a list of times rather than nested timers so the order is
+   * readable in one go and nothing can fire out of sequence.
+   */
+  updateBrace(dt) {
+    if (this._braceArm > 0) this._braceArm -= dt;
+    if (!this.bracing) return;
+    const ac = this.aircraft;
+    this.braceT += dt;
+    const t = this.braceT;
+    const call = this.atc ? this.atc.callsign : 'Skylark one seven two';
+    const field = this.atc ? this.atc.field : 'Kestrel';
+
+    const SCRIPT = [
+      [0.5, () => this.speak(`Mayday, mayday, mayday. ${call}. I need help.`, 'pilot', 1)],
+      [4.5, () => this.speak(`${call}, ${field} Tower. We have you. We are staying with you.`, 'tower', 1)],
+      [11, () => this.speak('Everything else on the field is holding. The sky is yours.', 'tower')],
+      [18, () => {
+        this.spawnRescue();
+        this.speak('Two aircraft are coming up to you now. You will not be on your own.', 'tower');
+      }],
+      [27, () => this.speak(`${call}, Rescue One. I have you in sight. Keep the turn going — we will go round with you.`, 'approach')],
+      [36, () => this.speak('Everything down here is ready. We have been ready since you called.', 'tower')],
+      [45, () => this.speak('Whatever happens next — you flew it well. All of us saw it.', 'tower', 1)],
+      [49, () => {
+        this.deployChute();
+        this.speak('Parachute out. Hands off, let it come down.', 'approach', 1);
+        this.hud.showBanner('Parachute out', 'Nothing left to do but hold on.', 'warn', 5);
+      }],
+      [58, () => this.resolveBrace()],
+    ];
+    while (this.braceLine < SCRIPT.length && t >= SCRIPT[this.braceLine][0]) {
+      SCRIPT[this.braceLine][1]();
+      this.braceLine++;
+    }
+
+    /*
+     * Under the canopy: it blossoms over a second, sits above the aeroplane,
+     * and the descent settles to about five metres a second — which is what a
+     * recovery parachute actually gives you, and slow enough to be survivable.
+     */
+    if (this.chute) {
+      this.chute.t += dt;
+      const open = Math.min(1, this.chute.t * 1.4);
+      this.chute.rig.scale.setScalar(open);
+      this.chute.rig.position.copy(ac.pos);
+      ac.vel.y += (-5 - ac.vel.y) * Math.min(1, dt * 1.6 * open);
+      ac.vel.x *= 1 - Math.min(1, dt * 0.8 * open);
+      ac.vel.z *= 1 - Math.min(1, dt * 0.8 * open);
+      // Wings level under the canopy, because the canopy is holding it.
+      ac.omega.multiplyScalar(1 - Math.min(1, dt * 3));
+    }
+
+    // The rescue pair, tucked in either side of you.
+    for (const r of this.braceRescue) {
+      const off = new THREE.Vector3(r.side * 34, -4, 26).applyQuaternion(ac.quat);
+      r.model.position.lerp(this._tmpV.copy(ac.pos).add(off), Math.min(1, dt * 1.4));
+      r.model.quaternion.slerp(ac.quat, Math.min(1, dt * 2));
+      if (r.model.userData.update) {
+        r.model.userData.update(dt, {
+          controls: { pitch: 0, roll: 0, yaw: 0, throttle: 0.7, brakes: 0 },
+          rpm: 0.7, flaps: 0, gearPos: 0, gearDown: false, onGround: false,
+          groundSpeed: 0, engineOn: true, agl: 500, alt: r.model.position.y,
+          vel: ac.vel, pos: r.model.position, quat: r.model.quaternion,
+        }, { isNight: !!this.weather.isNight, cond: { cloud: 0 } });
+      }
+    }
+  }
+
+  /**
+   * The moment it is decided.
+   *
+   * Nobody is ever lost. The weather decides whether it goes well or badly,
+   * and badly means the aeroplane is wrecked and the emergency services get
+   * you out of it — which is what actually happens, and is a far better thing
+   * for a ten-year-old to take away than a coin flip on whether they died.
+   *
+   * What is at stake is the aeroplane and how hard it was, not the crew.
+   */
+  resolveBrace() {
+    const made = Math.random() < this.braceOdds;
+    const call = this.atc ? this.atc.callsign : 'Skylark one seven two';
+    const field = this.atc ? this.atc.field : 'Kestrel';
+    const pct = Math.round(this.braceOdds * 100);
+    this.bracing = false;
+    this.autopilot.setEngaged(false, this.aircraft);
+
+    if (made) {
+      this.clearRescue();
+      this.clearChute();
+      this.speak(`${call}, you are down. Everybody is out and everybody is fine.`, 'tower', 1);
+      this.showBraceDebrief({
+        title: 'Everyone walked away',
+        kind: 'good',
+        lead: 'You called it early, you let the aeroplane fly itself, and the two who came up brought you home.',
+        body: 'The aeroplane is a write-off. Nobody is hurt. That is the whole job.',
+        pct,
+      });
+      return;
+    }
+
+    /*
+     * It went badly — and then the fire crews reach you.
+     *
+     * The aeroplane is put down hard rather than the flight simply being
+     * declared over, so what you see matches what you are told.
+     */
+    this.speak(`${call}, ${field} Tower. Brace, brace, brace.`, 'tower', 1);
+    this.aircraft.crash('The aeroplane came down short', {
+      worldPoint: this.aircraft.pos.clone(),
+      part: 'fuselage',
+    });
+    this.hud.showBanner('It is down — help is already moving', 'Stay with it.', 'warn', 4);
+    this.braceRescueT = setTimeout(() => {
+      this.speak('They have reached you. You are out and you are safe.', 'tower', 1);
+      this.clearRescue();
+      this.clearChute();
+      this.showBraceDebrief({
+        title: 'They got you out',
+        kind: 'warn',
+        lead: 'It came down hard and the emergency services were there inside a minute.',
+        body:
+          'The aeroplane is gone. You are not. Clear weather and daylight give you a far better '
+          + 'chance of the other ending — that is why the weather is the first thing a pilot looks at.',
+        pct,
+      });
+    }, 4200);
+  }
+
+  /** One debrief for both endings, so they cannot drift apart. */
+  showBraceDebrief({ title, kind, lead, body, pct }) {
+    this.state = 'debrief';
+    this.hud.setVisible(false);
+    this.menus.showDebrief({
+      title,
+      kind,
+      body:
+        `<p class="debrief-reason">${lead}</p><p>${body}</p>`
+        + `<p class="hint tiny">Today's weather gave you about a ${pct}% chance of walking away from it.</p>`,
+      actions: [
+        { label: 'Fly again', onClick: () => this.restart(), primary: true },
+        { label: 'Main menu', onClick: () => this.quitToMenu('main') },
+      ],
+    });
+  }
+
+  clearRescue() {
+    for (const r of this.braceRescue || []) this.scene.remove(r.model);
+    this.braceRescue = [];
+    this.traffic = [];
   }
 
   /**
@@ -2462,6 +2752,7 @@ class Game {
         this.acc -= STEP;
         steps++;
       }
+      this.updateBrace(dt);
       this.runner.update(dt);
       this.atc.update(dt);
       this.activeTarget = this.runner.activeTarget();
@@ -2476,8 +2767,17 @@ class Game {
     this.airport.update(dt, this.weather);
     this.apron.update(dt, this.weather);
     this.updateArmedFailures(dt);
+    /*
+     * Outside the branch below, deliberately.
+     *
+     * Inside it, the minimap's fault light only ever turned ON — the branch
+     * stops running the moment the counter reaches zero, so it never got told
+     * the instruments had come back and flashed for the rest of the flight.
+     */
+    if (this.minimap) this.minimap.setFaulty(this.instrumentBlackout > 0);
     if (this.instrumentBlackout > 0) {
       this.instrumentBlackout = Math.max(0, this.instrumentBlackout - dt);
+      // Called on the way down to zero as well, so the panel comes back.
       this.hud.setBlackout(this.instrumentBlackout > 0);
       // A dead panel beeps. Once a second, not continuously — a solid tone is
       // just noise, and the gap is what makes it read as an alarm.
@@ -2842,3 +3142,8 @@ game.boot().catch((err) => {
 });
 
 export default game;
+
+/** The field name, without reaching through the ATC director twice. */
+function field2(game) {
+  return game.atc ? game.atc.field : 'Kestrel';
+}

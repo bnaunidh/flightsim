@@ -2133,38 +2133,17 @@ body.is-large { font-size: 18px; }
 .hud.is-touch .hud-damage { top: 196px; right: 12px; width: 76px; }
 .hud.is-touch .hud-damage svg { width: 54px; height: 54px; }
 
-/* ---- Brace for impact ------------------------------------------------- */
+/* ---- Mayday ----------------------------------------------------------- */
 .hud-btn.is-brace { color: var(--red); }
 .hud-btn.is-brace svg { stroke: var(--red); }
 
 /*
- * The cinematic frame. Bars top and bottom, the readouts faded back, and the
- * world left alone in the middle — the same job silence does in a film.
- * Pointer-events stay off so the bars can never eat a control.
+ * There is deliberately NO letterbox and nothing is faded out.
+ *
+ * The first version dimmed every readout and put black bars over the view,
+ * and it made the one moment where you most want to see what is happening the
+ * one moment you could not. The interface stays.
  */
-.hud.is-bracing::before,
-.hud.is-bracing::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 11vh;
-  background: #05080e;
-  pointer-events: none;
-  z-index: 6;
-  animation: braceBars 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-.hud.is-bracing::before { top: 0; }
-.hud.is-bracing::after { bottom: 0; }
-@keyframes braceBars { from { height: 0; } }
-.hud.is-bracing .hud-left,
-.hud.is-bracing .hud-right,
-.hud.is-bracing .hud-bottom,
-.hud.is-bracing .minimap {
-  opacity: 0.18;
-  transition: opacity 700ms ease;
-}
-.hud.is-bracing .hud-damage { opacity: 1; }
 
 /* ---- Saved-flight slots: a clear button a finger can hit --------------- */
 .slot { position: relative; }
@@ -2198,4 +2177,17 @@ html.is-touch-device .slot-clear {
   height: 44px;
   line-height: 42px;
   font-size: 22px;
+}
+
+/*
+ * The minimap runs off the same instruments as everything else. When they are
+ * out it flashes rather than quietly showing a position it cannot know.
+ */
+.minimap.is-faulty {
+  border-color: rgba(255, 106, 90, 0.9);
+  animation: minimapFault 1s steps(1, end) infinite;
+}
+.minimap.is-faulty .minimap-canvas { opacity: 0.35; }
+@keyframes minimapFault {
+  50% { border-color: rgba(255, 106, 90, 0.25); }
 }

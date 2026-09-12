@@ -26,6 +26,9 @@ export const ACTIONS = {
   flapsUp: { label: 'Flaps up', group: 'Ground', default: ['KeyV'] },
   camera: { label: 'Change camera view', group: 'View', default: ['KeyC'] },
   lookBehind: { label: 'Look behind (hold)', group: 'View', default: ['KeyB'] },
+  // L, because it is nowhere near the flight controls. Pressing it by
+  // accident would shut the engine off, so it asks twice — see main.js.
+  brace: { label: 'Brace for impact (press twice)', group: 'Missions', default: ['KeyL'] },
   drop: { label: 'Release cargo', group: 'Missions', default: ['KeyX'] },
   pause: { label: 'Pause / menu', group: 'Game', default: ['Escape'] },
   help: { label: 'Show controls', group: 'Game', default: ['KeyH'] },
