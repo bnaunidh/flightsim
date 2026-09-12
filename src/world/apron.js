@@ -165,14 +165,35 @@ export class Apron {
     addObstacleAt(cx, cz, W, D, ELEV, H + 4, 'You flew into the terminal');
     addObstacleAt(cx, cz - D * 0.42, W * 0.86, D * 0.5, ELEV, H + 9, 'You flew into the terminal');
 
-    // Roof: a shallow barrel, not a slab.
+    /*
+     * Roof: a shallow barrel, and this time actually shallow.
+     *
+     * It was a drum of radius 0.62 x depth — 23.6 m — sitting with its centre
+     * at roof height, so its crown stood twenty-one metres above a
+     * twenty-four metre building and its ends, which were capped, drew a pie
+     * slice from that centre out to the full radius. That is the dark slab
+     * hanging off the end of the terminal at an angle: not a bug in the arc,
+     * a cylinder cap seen from outside.
+     *
+     * Built from the two numbers that actually describe a barrel vault
+     * instead: how far apart the eaves are, and how far it rises between
+     * them. The radius follows from those, the springing points land on the
+     * long walls, and the crown sits a few metres above the parapet — which
+     * is what a terminal roof looks like. Open-ended, because the caps were
+     * the whole problem.
+     */
+    const rise = 3.6;
+    const halfD = D / 2;
+    const R = (halfD * halfD + rise * rise) / (2 * rise);
+    const halfArc = Math.asin(Math.min(1, halfD / R));
     const roof = new THREE.Mesh(
-      new THREE.CylinderGeometry(D * 0.62, D * 0.62, W + 2, 20, 1, false, Math.PI * 0.16, Math.PI * 0.68),
+      new THREE.CylinderGeometry(R, R, W + 1.2, 32, 1, true, Math.PI / 2 - halfArc, halfArc * 2),
       M.roof
     );
     roof.rotation.z = Math.PI / 2;
-    roof.position.set(cx, ELEV + H - 2.4, cz);
-    roof.castShadow = true;
+    // Centre placed so the eaves sit on the walls and the crown `rise` above.
+    roof.position.set(cx, ELEV + H - R + rise, cz);
+    roof.castShadow = roof.receiveShadow = true;
     this.group.add(roof);
 
     // Kerbside canopy on the landside, held up by columns.

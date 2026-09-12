@@ -423,6 +423,26 @@ html, body {
 }
 .hud-subtitle-text { font-size: 15px; line-height: 1.4; }
 
+/*
+ * The subtitle and the minimap were drawn on top of each other.
+ *
+ * The subtitle is centred and up to 720 px wide; the minimap is 190 px in the
+ * bottom-right corner. On a wide screen they never meet, which is why this
+ * went unnoticed — but below about 1180 px the subtitle's right-hand end runs
+ * straight across the map, and a radio call printed over the minimap makes
+ * both of them unreadable at once.
+ *
+ * Narrow: keep it centred and make it stop short of the map. Narrower still,
+ * where stopping short would leave it too thin to read a sentence in, lift it
+ * above the map instead and keep the full width.
+ */
+@media (max-width: 1180px) {
+  .hud.has-minimap .hud-subtitle { width: min(720px, calc(100vw - 440px)); }
+}
+@media (max-width: 900px) {
+  .hud.has-minimap .hud-subtitle { width: min(720px, 78vw); bottom: 312px; }
+}
+
 .hud-banner {
   position: absolute;
   top: 34%;
