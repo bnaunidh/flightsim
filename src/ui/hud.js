@@ -525,6 +525,33 @@ export class Hud {
     if (worst > 0.06 && p.hidden) p.hidden = false;
   }
 
+  /**
+   * The one decision left, put plainly in the middle of the screen.
+   *
+   * Deliberately not in the tray and not a menu: at this moment the player
+   * has seconds and one question, so it is two lines and two keys, and it
+   * goes away the instant it is answered.
+   */
+  setEmergencyChoice(options) {
+    if (!this.emergencyChoice) {
+      this.emergencyChoice = el('div', 'hud-choice');
+      this.emergencyChoice.hidden = true;
+      this.wrap.appendChild(this.emergencyChoice);
+    }
+    if (!options || !options.length) {
+      this.emergencyChoice.hidden = true;
+      return;
+    }
+    this.emergencyChoice.innerHTML = options
+      .map(
+        (o) =>
+          `<div class="hud-choice-row"><kbd>${o.key}</kbd>`
+          + `<span><strong>${o.label}</strong><em>${o.hint}</em></span></div>`
+      )
+      .join('');
+    this.emergencyChoice.hidden = false;
+  }
+
   setObjective(title, text) {
     if (this.lastValues.objTitle !== title) {
       this.objectiveTitle.textContent = title;

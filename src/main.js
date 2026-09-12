@@ -855,6 +855,8 @@ class Game {
     clearTimeout(this.braceRescueT);
     this.braceRescueT = null;
     this.braceRescue = [];
+    this.braceChoice = null;
+    this.hud.setEmergencyChoice(null);
     this.clearRescue();
     this.clearChute();
     this.clearPursuer();
@@ -2030,6 +2032,10 @@ class Game {
       else ac.startEngine();
     }
     if (input.pressed('brace')) this.braceForImpact();
+    if (this.bracing && !this.braceChoice) {
+      if (input.pressed('emergencyLand')) this.chooseBrace('land');
+      else if (input.pressed('emergencyCircle')) this.chooseBrace('circle');
+    }
     if (input.pressed('drop') || (pad && pad.drop)) {
       if (!this.dropCargo()) this.hud.notify('Nothing to drop right now', 'info', 2);
     }
@@ -2174,17 +2180,26 @@ class Game {
      * undone, so one stray keypress should not do it.
      */
     /*
-     * A countdown that is ticked in the update loop, rather than a timestamp.
+     * Two presses normally. One when you are already in trouble.
      *
-     * This read `clock.elapsedTime`, which is only advanced by getDelta() and
-     * so can legitimately be 0 — and `!this._braceArmedAt` is then true on the
-     * second press as well, so it armed over and over and never committed.
+     * The confirm is there so a stray key cannot take the aeroplane off you —
+     * but "I mostly crash first, then brace" is the whole problem with it:
+     * by the time you have decided, pressed, read the prompt and pressed
+     * again, the ground has arrived. So when the aeroplane is visibly in an
+     * emergency already — low, coming down fast, engine dead, or something
+     * broken — the first press is the decision, because at that point there
+     * is nothing to protect you from.
      */
-    if (!(this._braceArm > 0)) {
+    const ac2 = this.aircraft;
+    const anyFailure = Object.values(ac2.failures || {}).some(Boolean);
+    const inTrouble =
+      ac2.agl < 400 || -ac2.vel.y > 12 || !ac2.engineOn || anyFailure || ac2.worstDamage > 0.3;
+
+    if (!inTrouble && !(this._braceArm > 0)) {
       this._braceArm = 4;
       this.hud.showBanner(
         'Declare an emergency?',
-        'Press it again to commit. The aeroplane will fly itself from there.',
+        'Press it again to commit. In a real emergency one press is enough.',
         'warn',
         4
       );
@@ -2220,8 +2235,37 @@ class Game {
     this.instrumentBlackout = 70;
     this.hud.setBlackout(true);
     this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget));
-    this.hud.showBanner('Mayday declared', 'The aeroplane is flying itself. Help is coming.', 'bad', 5);
+    this.braceChoice = null;
+    this.hud.setEmergencyChoice([
+      { key: '1', label: 'Attempt to land', hint: 'Line up with the runway and fly it down' },
+      { key: '2', label: 'Circle the airport', hint: 'Hold overhead and wait for help' },
+    ]);
+    this.hud.showBanner('Mayday declared', 'Choose: 1 to attempt a landing, 2 to circle.', 'bad', 6);
     this.audio.available && this.audio.alerts.caution && this.audio.alerts.caution();
+  }
+
+  /**
+   * Land it, or go round and wait.
+   *
+   * Asked rather than decided, because it is the one decision left and it is
+   * a real one: an approach gets you down sooner and needs the aeroplane to
+   * still be flyable, holding overhead buys time for the people coming to
+   * you. Both are correct answers to different situations.
+   */
+  chooseBrace(which) {
+    if (!this.bracing || this.braceChoice) return;
+    this.braceChoice = which;
+    this.hud.setEmergencyChoice(null);
+    if (which === 'land') {
+      this.autopilot.setMode('approach');
+      this.speak('We are going to try for the runway.', 'pilot', 1);
+      this.hud.showBanner('Attempting a landing', 'Lined up for the runway.', 'warn', 4);
+    } else {
+      this.autopilot.setMode('field');
+      this.speak('We will hold overhead and wait for you.', 'pilot', 1);
+      this.hud.showBanner('Holding overhead', 'Circling the field until help arrives.', 'warn', 4);
+    }
+    this.autopilot.setEngaged(true, this.aircraft);
   }
 
   /**
@@ -2801,7 +2845,14 @@ class Game {
       // The autopilot flies on the instruments. With the panel dead it has
       // nothing to fly on, so it drops out — which is the point of a lightning
       // strike: it hands you an aeroplane in cloud with no help.
-      if (this.autopilot.engaged) {
+      /*
+       * ...except during a mayday, where the whole point is that the
+       * aeroplane keeps flying itself on the emergency system. This dropped
+       * it out every frame with "Autopilot dropped out — no instruments",
+       * which is exactly right after a lightning strike and exactly wrong
+       * here, and it is why the aeroplane never circled.
+       */
+      if (this.autopilot.engaged && !this.bracing) {
         this.toggleAutopilot(false);
         this.hud.notify('Autopilot dropped out — no instruments', 'warn', 4);
       }
