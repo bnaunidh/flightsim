@@ -1,2 +1,10 @@
 .DS_Store
-download/
+
+# The download folder is build output and stays out of git — EXCEPT the one
+# file in it that the game actually links to.
+#
+# `download/` was ignored wholesale, so the source zip was never committed and
+# never deployed: the "Download source ZIP" button on the live site had been a
+# 404 the entire time it has existed. The file sat on one laptop.
+download/*
+!download/island-flight-sim-source.zip
