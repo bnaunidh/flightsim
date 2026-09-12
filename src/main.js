@@ -8,7 +8,7 @@
 
 import * as THREE from './vendor/three.module.js';
 
-import { warmTextures } from './render/textures.js';
+import { warmTextures, setTextureAnisotropy } from './render/textures.js';
 import { Weather } from './world/weather.js';
 import { SkyDome } from './world/sky.js';
 import { createTerrain, heightAt, AIRPORT, applyMap, MAP, clearObstacles, clearPlatforms } from './world/terrain.js';
@@ -121,6 +121,8 @@ class Game {
     this.papiHint = null;
     this.cloudImmersion = 0;
     this.activeTarget = null;
+    this._armed = false;
+    this._storesLeft = 0;
     this.hasCargo = false;
     this.crate = null;
     this.qualityBuilt = null;
@@ -145,13 +147,34 @@ class Game {
       fatal('This browser could not start WebGL, which the simulator needs to draw 3D graphics.', err);
       return;
     }
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.settings.quality === 'high' ? 2 : 1.25));
+    /*
+     * Ultra.
+     *
+     * Everything that was capped for the sake of a school laptop, uncapped:
+     * the full device pixel ratio rather than two, four-thousand-pixel
+     * shadows, denser terrain, more trees, more cloud, more rain, and the
+     * highest anisotropy the card will give — which is what actually stops a
+     * runway turning to mush at a shallow angle, and is free on anything made
+     * this decade.
+     *
+     * It is not the default and never will be: the class flies this on iPads.
+     */
+    const q = this.settings.quality;
+    this.renderer.setPixelRatio(
+      Math.min(window.devicePixelRatio || 1, q === 'ultra' ? 3 : q === 'high' ? 2 : 1.25)
+    );
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.12;
     this.renderer.shadowMap.enabled = this.settings.quality !== 'low';
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Only the renderer knows what the card will give. See setTextureAnisotropy.
+    try {
+      setTextureAnisotropy(q === 'ultra' ? this.renderer.capabilities.getMaxAnisotropy() : 4);
+    } catch (e) {
+      /* a card that will not answer keeps the safe default */
+    }
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 60000);
@@ -485,7 +508,7 @@ class Game {
     this.sky = t('sky', () =>
       new SkyDome(this.scene, {
         shadows: quality !== 'low',
-        shadowMapSize: quality === 'high' ? 2048 : 1024,
+        shadowMapSize: quality === 'ultra' ? 4096 : quality === 'high' ? 2048 : 1024,
       })
     );
     this.terrain = t('terrain', () => createTerrain(this.scene, quality));
@@ -493,7 +516,12 @@ class Game {
     this.airport = t('airport', () => new Airport(this.scene));
     // The terminal, the air bridges, the parked aeroplanes and the vehicles.
     this.apron = t('apron', () => new Apron(this.scene, quality));
-    this.scenery = t('scenery', () => new Scenery(this.scene, quality));
+    this.scenery = t('scenery', () => {
+      const sc = new Scenery(this.scene, quality);
+      // Something on the apron to measure the base against — see parkJets().
+      sc.parkJets(createAircraftModel, getAircraft('nightjar'), schemeFor(getAircraft('nightjar'), 'house'));
+      return sc;
+    });
     /*
      * The carrier, parked off the coast.
      *
@@ -852,6 +880,7 @@ class Game {
     this.hud.setDamage(null);
     this.bracing = false;
     this.braceOwnsEnding = false;
+    this.abandonedMission = null;
     clearTimeout(this.braceRescueT);
     this.braceRescueT = null;
     this.braceRescue = [];
@@ -1460,7 +1489,22 @@ class Game {
     this.afterPaint(() => {
       this.buildWorld(quality);
       this.renderer.shadowMap.enabled = quality !== 'low';
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality === 'high' ? 2 : 1.25));
+      this.renderer.setPixelRatio(
+        Math.min(window.devicePixelRatio || 1, quality === 'ultra' ? 3 : quality === 'high' ? 2 : 1.25)
+      );
+      /*
+       * And the textures with it.
+       *
+       * Switching to Ultra from inside the game used to drop the pixel ratio
+       * to 1.25 — 'ultra' is not 'high', so the old test took the low branch
+       * and the best setting in the game rendered at less than half the
+       * resolution of the one below it.
+       */
+      try {
+        setTextureAnisotropy(quality === 'ultra' ? this.renderer.capabilities.getMaxAnisotropy() : 4);
+      } catch (e) {
+        /* a card that will not answer keeps the safe default */
+      }
       this.sky.update(this.weather);
     });
   }
@@ -1951,6 +1995,45 @@ class Game {
   }
 
   /**
+   * What is aboard, and how much of it.
+   *
+   * `hasCargo` used to be one boolean: you were given one store, you dropped
+   * it, and that was the sortie. One run at the range means one chance to
+   * judge a release, which is not how anybody learns to judge a release — and
+   * a supply run that ends after a single crate is a strange kind of supply
+   * run.
+   *
+   * So the aeroplane carries what its type says it carries, and the next one
+   * comes off the rack once the last has arrived. `hasCargo` still means
+   * exactly what it meant — is there one ready right now — so every mission
+   * that sets it keeps working, and setting it loads the aeroplane up.
+   */
+  get hasCargo() {
+    return this._armed;
+  }
+
+  set hasCargo(v) {
+    this._armed = !!v;
+    // Loading arms a full rack; unloading empties it. Dropping one is neither,
+    // and goes through dropCargo() rather than through here.
+    if (v) {
+      if (this._storesLeft <= 0) this._storesLeft = this.storeCapacity();
+    } else {
+      this._storesLeft = 0;
+    }
+  }
+
+  /** How many an aeroplane of this type carries. */
+  storeCapacity() {
+    return (this.aircraftType && this.aircraftType.stores) || 1;
+  }
+
+  /** How many are left, the one already gone not counted. */
+  get storesLeft() {
+    return Math.max(0, this._storesLeft);
+  }
+
+  /**
    * X: let go of whatever is aboard.
    *
    * On a transport that is a crate under a parachute. On a military aeroplane
@@ -1969,9 +2052,12 @@ class Game {
     this.crate = military
       ? new PracticeBomb(this.scene, offset, this.aircraft.vel)
       : new CargoCrate(this.scene, offset, this.aircraft.vel);
-    this.hasCargo = false;
+    this._armed = false;
+    this._storesLeft = Math.max(0, this._storesLeft - 1);
+    const left = this._storesLeft;
     this.hud.notify(
-      military ? 'Store away — watch it run on ahead of you' : 'Crate released — parachute out!',
+      (military ? 'Store away — watch it run on ahead of you' : 'Crate released — parachute out!')
+        + (left > 0 ? ` · ${left} left` : ' · last one'),
       'good',
       3
     );
@@ -1980,6 +2066,7 @@ class Game {
   }
 
   removeCrate() {
+    this.crateClear = 0;
     if (this.crate) {
       this.crate.dispose();
       this.crate = null;
@@ -2247,6 +2334,27 @@ class Game {
     this.braceLine = 0;
     this.braceOdds = this.survivalOdds();
     this.braceRescue = [];
+
+    /*
+     * A mayday ends the mission — quietly.
+     *
+     * Two scripts were driving the same aeroplane: the mission still counting
+     * down, still moving the marker, still advancing its steps and still
+     * talking on the radio, across sixty seconds of emergency you do not
+     * control. Whatever you were sent to do, you are not doing it now.
+     *
+     * It is stood down rather than failed, because `fail()` puts a "mission
+     * not completed" screen in front of you on the spot — in the middle of
+     * the mayday, before the aeroplane is anywhere. The mayday owns the
+     * ending and says so in its own debrief.
+     */
+    this.abandonedMission = this.runner.standDown();
+    if (this.abandonedMission) {
+      this.activeTarget = null;
+      this.hud.setMissionClock(null);
+      this.hud.setObjective('Emergency', 'The mission is over. Fly the aeroplane.');
+      this.hud.notify(`${this.abandonedMission} is over — fly the aeroplane`, 'warn', 4);
+    }
 
     /*
      * Most of the instruments go.
@@ -2536,12 +2644,20 @@ class Game {
   showBraceDebrief({ title, kind, lead, body, pct }) {
     this.state = 'debrief';
     this.hud.setVisible(false);
+    // If a mayday ended a mission, the debrief is the place that says so —
+    // nothing interrupts the emergency itself to announce it.
+    const abandoned = this.abandonedMission
+      ? `<p class="hint tiny">${this.abandonedMission} was abandoned when you declared the emergency. `
+        + 'Declaring one is never the wrong call; the mission will still be there.</p>'
+      : '';
+    this.abandonedMission = null;
     this.menus.showDebrief({
       title,
       kind,
       body:
         `<p class="debrief-reason">${lead}</p><p>${body}</p>`
-        + `<p class="hint tiny">Today's weather gave you about a ${pct}% chance of walking away from it.</p>`,
+        + `<p class="hint tiny">Today's weather gave you about a ${pct}% chance of walking away from it.</p>`
+        + abandoned,
       actions: [
         { label: 'Fly again', onClick: () => this.restart(), primary: true },
         { label: 'Main menu', onClick: () => this.quitToMenu('main') },
@@ -2852,7 +2968,36 @@ class Game {
       this.runner.update(dt);
       this.atc.update(dt);
       this.activeTarget = this.runner.activeTarget();
-      if (this.crate) this.crate.update(dt, heightAt, this.weather.windVector());
+      if (this.crate) {
+        this.crate.update(dt, heightAt, this.weather.windVector());
+        /*
+         * The bang belongs to whoever owns the audio, not to the bomb — the
+         * marker has no idea a mixer exists. `playThunder` close-to is a deep
+         * crack with a rolling tail, which is what a bomb sounds like from a
+         * couple of kilometres up.
+         */
+        if (this.crate.justExploded) {
+          this.crate.justExploded = false;
+          this.audio.available && this.audio.ambience.playThunder(0.1);
+        }
+        /*
+         * Reload once it is down. Waiting for it to land rather than arming
+         * straight away is deliberate: you watch your last one all the way in,
+         * which is the part you learn from, and you cannot have two in the air
+         * at once confusing which is which.
+         */
+        if (this.crate.landed) {
+          this.crateClear = (this.crateClear || 0) + dt;
+          if (this.crateClear > 3 && this._storesLeft > 0 && !this._armed) {
+            this.crateClear = 0;
+            this.removeCrate();
+            this.hasCargo = true;
+            this.hud.notify(`Reloaded — ${this._storesLeft} left`, 'info', 2.6);
+          }
+        } else {
+          this.crateClear = 0;
+        }
+      }
     }
 
     // World.

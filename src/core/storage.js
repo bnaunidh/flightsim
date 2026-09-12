@@ -65,7 +65,17 @@ export const DEFAULT_SETTINGS = {
    * compared without a rebuild, and so it can become the default the moment
    * the new shapes have some volume in them.
    */
-  fleetModels: true,
+  fleetModels: false,
+  /*
+   * Which way that switch was last set *by the game* rather than by a person.
+   *
+   * Settings that are already saved beat the defaults, which is right for
+   * everything somebody chose and wrong for a default the game has since
+   * changed its mind about: the pack was on, and everyone who has played
+   * would have gone on flying it forever. Bumping this hands the choice back
+   * once. Flip the switch yourself afterwards and it stays flipped.
+   */
+  modelSetRev: 2,
   /*
    * The minimap, on by default.
    *
@@ -134,8 +144,33 @@ function write(key, value) {
   }
 }
 
+/** What is actually in the save, with no defaults merged into it. */
+function readRaw(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 export function loadSettings() {
-  return read(SETTINGS_KEY, DEFAULT_SETTINGS);
+  const s = read(SETTINGS_KEY, DEFAULT_SETTINGS);
+  /*
+   * See modelSetRev above: re-apply the model default once, then never again.
+   *
+   * Asked of the *save*, not of the loaded settings. `read` merges the
+   * defaults in for every key a save has never carried, so the merged object
+   * always claims to be at the current revision and the migration could never
+   * once fire — it shipped dead and the switch never moved.
+   */
+  const saved = readRaw(SETTINGS_KEY);
+  if (saved && saved.modelSetRev !== DEFAULT_SETTINGS.modelSetRev) {
+    s.fleetModels = DEFAULT_SETTINGS.fleetModels;
+    s.modelSetRev = DEFAULT_SETTINGS.modelSetRev;
+    write(SETTINGS_KEY, s);
+  }
+  return s;
 }
 
 export function saveSettings(s) {

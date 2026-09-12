@@ -193,6 +193,8 @@ export const AIRCRAFT = [
     livery: '#1d2b3a',
     accent: '#e0a838',
     callsign: 'Courier eight papa',
+    // A courier carries a load, not a parcel: three crates a sortie.
+    stores: 3,
     shape: {
       ...TRAINER_SHAPE,
       scale: 1.08,
@@ -319,6 +321,8 @@ export const AIRCRAFT = [
     livery: '#6d7480',
     accent: '#22303f',
     callsign: 'Vanguard zero one',
+    // A fighter is not a bomb truck. Two, and make them count.
+    stores: 2,
     shape: {
       ...TRAINER_SHAPE,
       scale: 1.22,
@@ -417,6 +421,7 @@ export const AIRCRAFT = [
     livery: '#3a4854',
     accent: '#d8d2c4',
     callsign: 'Osprey two one',
+    stores: 2,
     shape: {
       ...TRAINER_SHAPE,
       scale: 1.28,
@@ -512,6 +517,7 @@ export const AIRCRAFT = [
     livery: '#243a4e',
     accent: '#ff7a1a',
     callsign: 'Tempest research one',
+    stores: 2,
     /** The airframe does not fail from tornado loads. Nothing else changes. */
     stormProof: true,
     shape: {
@@ -610,18 +616,42 @@ export const AIRCRAFT = [
     accent: '#6f7681',
     callsign: 'Nightjar zero two',
     military: true,
+    /*
+     * How many stores it carries. A bomber's whole point is that it does not
+     * come all this way to drop one thing: three runs at the range is three
+     * goes at judging a release, which is how the skill is actually learned.
+     */
+    stores: 3,
     shape: {
       ...TRAINER_SHAPE,
       scale: 1.95,
+      /*
+       * Built as a flying wing rather than as a body with wings on it — see
+       * flyingWingPlanform() in model.js. These five numbers are the whole
+       * shape: how far the apex is ahead of the origin, how far the centre
+       * trailing edge is behind it, the tangent of the leading-edge sweep,
+       * the chord left at the tip, and how deep the centre section is.
+       *
+       * 33 degrees of sweep and a length about four tenths of the span, which
+       * is a B-2 to within a few per cent.
+       */
+      flyingWing: true,
+      fwNose: 4.3,
+      fwTail: 2.6,
+      fwSweep: 0.649,
+      fwTipChord: 1.35,
+      fwThick: 1.5,
       bodyLength: 0.72,
       bodyRadius: 0.78,
       halfSpan: 8.6,
       rootChord: 4.4,
       tipChord: 0.9,
       sweep: 3.6,
-      dihedral: 0.05,
-      wingY: -0.05,
-      wingZ: 0.1,
+      // No dihedral, and the wing is the aeroplane: it sits on the datum.
+      dihedral: 0,
+      wingRootX: 0,
+      wingY: 0,
+      wingZ: 0,
       struts: false,
       retractable: true,
       hSpan: 0.2,
@@ -631,13 +661,24 @@ export const AIRCRAFT = [
       finRootChord: 0.1,
       finSweep: 0.02,
       finZ: 2.0,
-      main: { x: 1.5, y: -1.15, z: 0.7 },
-      nose: { x: 0, y: -1.1, z: -1.4 },
+      /*
+       * It has to stand on its wheels.
+       *
+       * Shortening these to suit a wing that is only two and a half metres
+       * thick left the airframe's own nose point lower than the nose wheel,
+       * so the aeroplane pitched onto its face the instant it was put on the
+       * runway: the Weapons Range mission failed at one and a half
+       * thousandths of a second, every time, before anyone touched anything.
+       * Long legs and a wide track, which is what a B-2 has anyway.
+       */
+      main: { x: 2.2, y: -1.3, z: 0.9 },
+      nose: { x: 0, y: -1.3, z: -2.6 },
       wheelR: { nose: 0.26, main: 0.34 },
       gearStiffness: 1.4,
       power: { kind: 'jet', count: 2, x: 2.2, y: -0.2, z: -0.4, radius: 0.5, length: 1.0 },
-      canopy: 'fighter',
-      eye: [-0.2, 0.34, -1.0],
+      canopy: 'wing',
+      // You sit almost on the leading edge of a flying wing, not amidships.
+      eye: [-0.2, 0.46, -2.5],
     },
     aero: {
       ...TRAINER_AERO,
@@ -696,6 +737,8 @@ export const AIRCRAFT = [
     livery: '#2f4a63',
     accent: '#f0a020',
     callsign: 'Skyhook three',
+    // A helicopter can hold still over the spot, so it gets plenty.
+    stores: 4,
     shape: {
       ...TRAINER_SHAPE,
       scale: 1.25,

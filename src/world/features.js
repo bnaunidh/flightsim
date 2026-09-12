@@ -289,7 +289,7 @@ export class MapFeatures {
     this.reefMats = [];
 
     const f = MAP.features || {};
-    const density = quality === 'low' ? 0.35 : quality === 'medium' ? 0.7 : 1;
+    const density = quality === 'low' ? 0.35 : quality === 'medium' ? 0.7 : quality === 'ultra' ? 1.7 : 1;
 
     if (f.reef) this.buildReef(f.reef);
     if (f.fields) this.buildFields(f.fields, density);

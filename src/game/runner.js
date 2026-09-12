@@ -133,6 +133,24 @@ export class MissionRunner {
     if (this.onComplete) this.onComplete(result);
   }
 
+  /**
+   * Stop, with no verdict and no screen.
+   *
+   * `fail()` is a result: it ends the flight and puts "mission not completed"
+   * in front of you. This is for when something else has taken the aeroplane
+   * over and the mission is simply no longer happening — a mayday. The clock
+   * stops, the rings go, the steps stop advancing and the radio goes quiet,
+   * and nothing is announced, because whatever took over is mid-sentence and
+   * owns the ending.
+   */
+  standDown() {
+    if (this.status !== STATUS.RUNNING) return null;
+    const name = this.def ? this.def.name : null;
+    this.status = STATUS.IDLE;
+    this.clearGates();
+    return name;
+  }
+
   fail(reason) {
     if (this.status !== STATUS.RUNNING) return;
     this.status = STATUS.FAILED;
@@ -150,6 +168,16 @@ export class MissionRunner {
 
   /** Current thing the HUD should point at. */
   activeTarget() {
+    /*
+     * Nothing to aim at once the mission is over.
+     *
+     * `step` survives the end of a mission — it is just an index into the
+     * list — so without this the marker and the wingtip rails went on
+     * pointing at an objective that had been stood down or failed. During a
+     * mayday that is the whole problem: the aeroplane is flying itself back
+     * to the field and the guidance is still insisting you go to the outpost.
+     */
+    if (this.status !== STATUS.RUNNING) return null;
     const step = this.step;
     if (!step) return null;
     if (this.gates.length) {

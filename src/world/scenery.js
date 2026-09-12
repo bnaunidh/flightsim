@@ -314,6 +314,7 @@ function addAirBase(group, base) {
    * A half-cylinder laid on its side is what a HAS actually is, and it reads
    * as one instantly — which matters more than any amount of detail on it.
    */
+  const parkSpots = [];
   const count = base.shelters ?? 8;
   const archGeo = new THREE.CylinderGeometry(13, 13, 30, 14, 1, false, 0, Math.PI);
   archGeo.rotateZ(Math.PI / 2);
@@ -333,6 +334,8 @@ function addAirBase(group, base) {
     d.updateMatrix();
     shelters.setMatrixAt(i, d.matrix);
     addObstacleAt(x, z, 30, 26, y - 1, 13, 'You flew into a hardened shelter');
+    // The apron in front of the shelter, facing out. parkJets() uses these.
+    parkSpots.push({ x, y, z: z - side * 26, heading: side > 0 ? Math.PI : 0 });
   }
   shelters.instanceMatrix.needsUpdate = true;
   group.add(shelters);
@@ -404,7 +407,171 @@ function addAirBase(group, base) {
   group.add(dish);
   addObstacleAt(rx, rz, 6, 6, ry, 29, 'You flew into the radar');
 
-  return { dish };
+  /*
+   * A fuel farm.
+   *
+   * Three tanks and a bund. It is here because a base made only of things
+   * that hide aeroplanes reads as a diagram of a base — you need one or two
+   * pieces of ordinary infrastructure before the place looks like somewhere
+   * people work. Tanks are the cheapest such piece: everyone knows what they
+   * are from any distance and any angle.
+   */
+  const fx = cx + (base.radarOffset ?? 900) * 1.15;
+  const fz = cz - (base.spread ?? 620) * 1.35;
+  const tankMat = new THREE.MeshStandardMaterial({ color: 0xb8bcb4, roughness: 0.72, metalness: 0.28 });
+  for (let i = 0; i < 3; i++) {
+    const tx = fx + (i - 1) * 46;
+    const ty = heightAt(tx, fz);
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(15, 15, 13, 20), tankMat);
+    tank.position.set(tx, ty + 6.5, fz);
+    tank.castShadow = tank.receiveShadow = true;
+    group.add(tank);
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(15.4, 15.4, 0.7, 20), steel);
+    lid.position.set(tx, ty + 13.2, fz);
+    group.add(lid);
+    addObstacleAt(tx, fz, 30, 30, ty, 14, 'You flew into the fuel farm');
+  }
+  // The bund wall around them — a low earth bank, which is what a real one is.
+  const bundGeo = new THREE.BoxGeometry(1, 1, 1);
+  const bund = new THREE.InstancedMesh(bundGeo, earth, 4);
+  const bd = new THREE.Object3D();
+  const by = heightAt(fx, fz);
+  const sides = [
+    [0, -34, 172, 3],
+    [0, 34, 172, 3],
+    [-86, 0, 3, 71],
+    [86, 0, 3, 71],
+  ];
+  sides.forEach(([ox, oz, w, dep], i) => {
+    bd.position.set(fx + ox, by + 1.6, fz + oz);
+    bd.rotation.set(0, 0, 0);
+    bd.scale.set(w, 3.2, dep);
+    bd.updateMatrix();
+    bund.setMatrixAt(i, bd.matrix);
+  });
+  bund.instanceMatrix.needsUpdate = true;
+  bund.castShadow = bund.receiveShadow = true;
+  group.add(bund);
+
+  return { dish, parkSpots };
+}
+
+
+/**
+ * A weapons range you can actually see.
+ *
+ * The mission has always said "a marked practice range with a bullseye", and
+ * there was never anything there. The target was a bare coordinate in
+ * missions.js, and on this map that coordinate fell fifty metres off the end
+ * of the plain — you flew seven kilometres to an unmarked patch of open sea
+ * and dropped a practice bomb into it. Nothing marked the middle, so "twelve
+ * metres from the middle" was a number about a place you could not see.
+ *
+ * So: painted rings, corner markers, three wrecked hulks to aim at and a
+ * scoring tower off to the side. The rings are displaced onto the ground
+ * rather than laid on a flat disc, because nothing out here is flat, and a
+ * bullseye floating over a slope would be worse than none.
+ *
+ * The range publishes where its middle is, and the mission asks — the same
+ * arrangement as the carrier, and for the same reason: a mission carrying its
+ * own copy of a coordinate is a mission that silently points at empty ground
+ * the day anything moves.
+ */
+function addWeaponsRange(group, cfg) {
+  if (!cfg) return null;
+  const { cx, cz } = cfg;
+  const R = cfg.radius ?? 130;
+  const paint = (color, emissive = 0) =>
+    new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.98,
+      metalness: 0,
+      emissive,
+      // Sit on the ground rather than fighting it for the same pixels.
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+      polygonOffsetUnits: -3,
+    });
+  const white = paint(0xe8e6dc);
+  const red = paint(0xb2342c);
+  const rust = new THREE.MeshStandardMaterial({ color: 0x6b5344, roughness: 1, metalness: 0.05 });
+  const steel = new THREE.MeshStandardMaterial({ color: 0x5c6168, roughness: 0.6, metalness: 0.45 });
+
+  /** Lay a flat ring on the ground, following it. */
+  const band = (inner, outer, mat) => {
+    const geo =
+      inner > 0
+        ? new THREE.RingGeometry(inner, outer, 64, 1)
+        : new THREE.CircleGeometry(outer, 64);
+    geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      pos.setY(i, heightAt(cx + pos.getX(i), cz + pos.getZ(i)) + 0.14);
+    }
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(cx, 0, cz);
+    m.receiveShadow = true;
+    group.add(m);
+  };
+  band(R * 0.72, R, white);
+  band(R * 0.46, R * 0.6, red);
+  band(R * 0.24, R * 0.34, white);
+  band(0, R * 0.12, red);
+
+  // Corner markers, so the range reads as a marked place from any height.
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const mx = cx + sx * R * 1.12;
+    const mz = cz + sz * R * 1.12;
+    const my = heightAt(mx, mz);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(2.4, 7, 2.4), white);
+    post.position.set(mx, my + 3.5, mz);
+    post.castShadow = true;
+    group.add(post);
+  }
+
+  /*
+   * Three hulks in the middle: something to aim at rather than a patch of
+   * paint. Deliberately not solid — they are what you are trying to hit, and
+   * a ten-year-old flying a low pass over the range should not be killed by
+   * the scenery for doing exactly what they were asked to do.
+   */
+  const hulks = [
+    [-22, 14, 0.6],
+    [18, -9, 2.2],
+    [6, 26, 3.9],
+  ];
+  for (const [ox, oz, rot] of hulks) {
+    const hx = cx + ox;
+    const hz = cz + oz;
+    const hy = heightAt(hx, hz);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(7.2, 2.4, 3.6), rust);
+    body.position.set(hx, hy + 1.2, hz);
+    body.rotation.y = rot;
+    body.castShadow = body.receiveShadow = true;
+    group.add(body);
+    const turret = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.7, 1.3, 8), rust);
+    turret.position.set(hx, hy + 3, hz);
+    turret.castShadow = true;
+    group.add(turret);
+  }
+
+  // The scoring tower, well clear of the pattern.
+  const tx = cx + R * 2.1;
+  const tz = cz - R * 1.6;
+  const ty = heightAt(tx, tz);
+  for (const [lx, lz] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 11, 6), steel);
+    leg.position.set(tx + lx, ty + 5.5, tz + lz);
+    group.add(leg);
+  }
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(9, 3.4, 9), steel);
+  cab.position.set(tx, ty + 12.7, tz);
+  cab.castShadow = true;
+  group.add(cab);
+  addObstacleAt(tx, tz, 9, 9, ty, 15, 'You flew into the range tower');
+
+  return { pos: new THREE.Vector3(cx, heightAt(cx, cz), cz) };
 }
 
 export class Scenery {
@@ -413,7 +580,7 @@ export class Scenery {
     this.group.name = 'scenery';
     this.t = 0;
 
-    const density = quality === 'low' ? 0.35 : quality === 'medium' ? 0.65 : 1;
+    const density = quality === 'low' ? 0.35 : quality === 'medium' ? 0.65 : quality === 'ultra' ? 1.8 : 1;
     // Everything planted here is described by the active map: how many trees,
     // how tall, where the town goes, where the lighthouse stands.
     const cfg = MAP.scenery;
@@ -453,6 +620,8 @@ export class Scenery {
 
     // A military base, on the maps that have one.
     this.base = addAirBase(this.group, cfg.base);
+    // And the range it practises on.
+    this.range = addWeaponsRange(this.group, cfg.range);
 
     // The town, in whatever flat land this map has near the field.
     const town = scatter({
@@ -487,6 +656,48 @@ export class Scenery {
     this.boats = buildBoats(this.group, cfg.boats);
 
     scene.add(this.group);
+  }
+
+  /**
+   * Park a few aeroplanes on the base.
+   *
+   * Same reasoning as the carrier deck: an empty apron reads as a model of an
+   * air base, and you cannot tell how big any of it is until there is
+   * something on it whose size you already know. Six shelters with nothing in
+   * front of them is a diagram; two Nightjars and a Vanguard sitting out is a
+   * place.
+   *
+   * The model factory is passed in rather than imported, so the world does not
+   * have to know anything about aeroplanes — main.js owns that seam already.
+   */
+  parkJets(makeModel, type, scheme) {
+    if (!makeModel || !type || !this.base || !this.base.parkSpots) return;
+    const spots = this.base.parkSpots.slice(0, 4);
+    for (const spot of spots) {
+      let m;
+      try {
+        m = makeModel({ type, livery: scheme });
+      } catch (e) {
+        console.warn('Could not park an aeroplane on the base.', e);
+        return;
+      }
+      m.position.set(spot.x, spot.y, spot.z);
+      m.rotation.y = spot.heading;
+      // Parked: engine off, wheels down, nothing turning.
+      if (m.userData.update) {
+        try {
+          m.userData.update(0.016, {
+            controls: { pitch: 0, roll: 0, yaw: 0, throttle: 0, brakes: 1 },
+            rpm: 0, flaps: 0, gearPos: 1, gearDown: true, onGround: true,
+            groundSpeed: 0, agl: 0, alt: spot.y, engineOn: false,
+            vel: new THREE.Vector3(), pos: m.position, quat: m.quaternion,
+          }, { isNight: false, cond: { cloud: 0 } });
+        } catch (e) {
+          /* a model that will not animate parked is still fine to look at */
+        }
+      }
+      this.group.add(m);
+    }
   }
 
   update(dt, weather) {

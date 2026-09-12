@@ -644,7 +644,7 @@ function makeTerrainMaterial() {
 export function createTerrain(scene, quality = 'high') {
   const group = new THREE.Group();
   group.name = 'terrain';
-  const detail = quality === 'low' ? 0.55 : quality === 'medium' ? 0.78 : 1;
+  const detail = quality === 'low' ? 0.55 : quality === 'medium' ? 0.78 : quality === 'ultra' ? 1.4 : 1;
   const mat = makeTerrainMaterial();
   const factory = () => mat;
 

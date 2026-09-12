@@ -44,7 +44,7 @@ const BOX = 90;
 
 export class Rain {
   constructor(scene, quality = 'high') {
-    this.count = quality === 'low' ? 900 : quality === 'medium' ? 1800 : 3200;
+    this.count = quality === 'low' ? 900 : quality === 'medium' ? 1800 : quality === 'ultra' ? 5600 : 3200;
     const base = new THREE.PlaneGeometry(1, 1);
     const geo = new THREE.InstancedBufferGeometry();
     geo.index = base.index;

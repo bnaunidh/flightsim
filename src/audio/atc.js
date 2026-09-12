@@ -39,6 +39,31 @@ const VOWELS = [
  * `tts` supplies pitch and rate for the optional browser-speech mode, so the
  * same characters stay recognisable either way.
  */
+/*
+ * Which field the tower belongs to.
+ *
+ * The labels below name Kestrel, and the words the director puts in their
+ * mouths name whichever map you are on — so at Ironhead the subtitle read
+ * "KESTREL GROUND" over the line "Nightjar zero two, Ironhead Ground, runway
+ * zero nine". Two names for one voice in one sentence.
+ */
+let radioField = 'Kestrel';
+export function setRadioField(name) {
+  radioField = name || 'Kestrel';
+}
+/**
+ * What to put above the subtitle for this voice.
+ *
+ * Takes either the key or the voice object, because `transmit` has the key and
+ * the two helpers it hands off to have only the object.
+ */
+export function voiceLabel(voice) {
+  const v = typeof voice === 'string' ? VOICES[voice] : voice;
+  if (v === VOICES.tower) return `${radioField} Tower`;
+  if (v === VOICES.ground) return `${radioField} Ground`;
+  return (v && v.label) || 'Radio';
+}
+
 export const VOICES = {
   tower: { f0: 98, spread: 9, radio: 1.0, rate: 0.92, label: 'Kestrel Tower', tts: { pitch: 0.75, rate: 0.95 } },
   ground: { f0: 88, spread: 7, radio: 1.08, rate: 0.86, label: 'Kestrel Ground', tts: { pitch: 0.65, rate: 0.88 } },
@@ -328,7 +353,7 @@ export class Radio {
     const m = this.mixer;
     if (!m.ctx) {
       // Audio not started yet: still surface the subtitle.
-      if (subtitle && this.onSubtitle) this.onSubtitle({ text, voice, duration: 3.2 });
+      if (subtitle && this.onSubtitle) this.onSubtitle({ text, voice: voiceLabel(voice), duration: 3.2 });
       return 3.2;
     }
     if (!this.built) this.build();
@@ -418,7 +443,7 @@ export class Radio {
     this.amDepth.gain.setValueAtTime(0.02 + this.rnd() * 0.06 * v.radio, start);
 
     if (subtitle && this.onSubtitle) {
-      this.onSubtitle({ text, voice: v.label, duration: duration + 0.4, urgency });
+      this.onSubtitle({ text, voice: voiceLabel(v), duration: duration + 0.4, urgency });
     }
     return duration;
   }
@@ -466,7 +491,7 @@ export class Radio {
 
     this.busyUntil = start + est + 0.3;
     if (subtitle && this.onSubtitle) {
-      this.onSubtitle({ text, voice: v.label, duration: est + 0.4, urgency });
+      this.onSubtitle({ text, voice: voiceLabel(v), duration: est + 0.4, urgency });
     }
     return est;
   }
@@ -506,7 +531,7 @@ export class Radio {
     this.click(start + duration + 0.16, 0.1 * level);
     this.busyUntil = start + duration + 0.3;
     if (subtitle && this.onSubtitle) {
-      this.onSubtitle({ text, voice: v.label, duration: duration + 0.4, urgency });
+      this.onSubtitle({ text, voice: voiceLabel(v), duration: duration + 0.4, urgency });
     }
     return duration;
   }

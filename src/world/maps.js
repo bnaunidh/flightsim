@@ -385,9 +385,20 @@ export const MAPS = [
        * map to notice that. Red has to go above 1 and blue well below it
        * before the ground stops being a field and starts being a plain.
        */
-      grass: [1.55, 1.18, 0.52],
-      sand: [1.1, 1.0, 0.78],
-      rock: [1.12, 1.0, 0.82],
+      /*
+       * Further still, and then further again.
+       *
+       * These are multipliers on a green grass texture, so warming them is
+       * not enough on its own: the texture's own green channel starts higher
+       * than its red, and until red is pushed nearly twice as hard the result
+       * is still a green field, only a brighter one. Measured that way rather
+       * than guessed — red 2.45 against green 1.26 is where the ground stops
+       * being a lawn and becomes dry scrub over pale rock, which is what
+       * "the military map is sad" was actually about.
+       */
+      grass: [2.45, 1.26, 0.4],
+      sand: [1.22, 1.08, 0.74],
+      rock: [1.2, 1.06, 0.8],
       deepWater: 0x14323f,
       swell: 0x2b5f70,
       shallow: [0.42, 0.62, 0.58],
@@ -403,9 +414,11 @@ export const MAPS = [
      */
     outpost: { cx: 5100, cz: 0, elev: 181, halfLen: 210, halfWidth: 55, blend: 150 },
     scenery: {
-      coastTrees: 90,
-      coastTreeHeight: 6,
-      hillTrees: 140,
+      // Scrub, and plenty of it: an empty pan reads as unfinished rather than
+      // as empty, and there is nothing else out here to give it any scale.
+      coastTrees: 240,
+      coastTreeHeight: 5,
+      hillTrees: 300,
       hillTreeHeight: 7,
       hillCentre: [-5600, 4600],
       hillRadius: 1400,
@@ -417,6 +430,15 @@ export const MAPS = [
       boats: 0,
       // The base itself: shelters, revetments, blast walls and the radar.
       base: { cx: 0, cz: 0, shelters: 8, revetments: 6, walls: 14, spread: 620, radarOffset: 900 },
+      /*
+       * The practice range: four and a half kilometres out, on a flat shelf
+       * that stands a hundred metres above the ground around it. Flat so the
+       * pattern is not painted down a hillside, and high so you can see it on
+       * the run-in — a bullseye you only find when you are on top of it is no
+       * use to anyone. The Weapons Range mission aims at whatever is drawn
+       * here rather than at a number of its own.
+       */
+      range: { cx: -4000, cz: -1750, radius: 130 },
     },
     weather: { time: 'day', cond: 'clear', windSpeedKts: 10, windDirDeg: 270 },
   },

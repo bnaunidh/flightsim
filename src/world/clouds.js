@@ -123,7 +123,7 @@ const RANGE = 9000;
 
 export class CloudField {
   constructor(scene, quality = 'high') {
-    const maxPerBatch = quality === 'low' ? 90 : quality === 'medium' ? 170 : 280;
+    const maxPerBatch = quality === 'low' ? 90 : quality === 'medium' ? 170 : quality === 'ultra' ? 460 : 280;
     this.batches = [1, 2, 3].map((seed) => new PuffBatch(cloudTexture(seed), maxPerBatch));
     this.group = new THREE.Group();
     this.group.name = 'clouds';

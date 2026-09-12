@@ -11,6 +11,7 @@
 import { RUNWAY } from '../world/airport.js';
 import { isOnAnyRunway, MAP, AIRPORT } from '../world/terrain.js';
 import { UNITS } from '../aircraft/physics.js';
+import { setRadioField } from '../audio/atc.js';
 
 const ft = (m) => m * UNITS.FT;
 
@@ -80,6 +81,19 @@ export class AtcDirector {
   }
 
   update(dt) {
+    /*
+     * Keep the name over the subtitle in step with the name in the sentence.
+     *
+     * The voice labels are static strings that say Kestrel, so at Ironhead the
+     * subtitle read "KESTREL GROUND" above the words "Nightjar zero two,
+     * Ironhead Ground, runway zero nine" — two different fields in one call.
+     * Set here because this is the one object that already knows which field
+     * it is speaking for, and it is asked every frame anyway.
+     */
+    if (this._radioField !== this.field) {
+      this._radioField = this.field;
+      setRadioField(this._radioField);
+    }
     const sim = this.sim;
     const ac = sim.aircraft;
     const w = sim.weather;

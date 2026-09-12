@@ -545,6 +545,31 @@ export async function runSelfTest(sim, opts = {}) {
    * ---------------------------------------------------------------- */
   say('ATC');
   sim.hud.setSubtitlesEnabled(true);
+  /*
+   * Clear the radio first.
+   *
+   * These checks used to run against whatever happened to be on screen. That
+   * was fine while the landing checks above were failing and saying nothing —
+   * once landing actually worked, its own ATC calls were still up when this
+   * ran, and the check failed reading "You are down off the runway". A test
+   * that only passes because an earlier test is broken is worth nothing.
+   */
+  sim.audio?.radio?.cancel?.();
+  sim.atc?.reset?.();
+  /*
+   * And stop the controller talking over the test.
+   *
+   * Cancelling the radio was not enough: ChatGPT's tree has a busier ATC
+   * director that carries on making ground and taxi calls, so the subtitle
+   * under test was replaced by "Kestrel Island Ground..." before the
+   * assertion read it. The director is silenced for these two checks and put
+   * straight back, so what is being tested is the one thing this check is
+   * about — that a spoken call reaches the subtitle.
+   */
+  const atcUpdate = sim.atc && sim.atc.update;
+  if (atcUpdate) sim.atc.update = () => {};
+  sim.hud.setSubtitle('', 'tower', 0);
+  sim.step(0.1);
   sim.speak('Skylark one seven two, Kestrel Tower, runway zero nine, cleared for take-off.', 'tower');
   sim.step(0.2);
   r.ok(
@@ -553,6 +578,8 @@ export async function runSelfTest(sim, opts = {}) {
     sim.hud.subtitleText.textContent.slice(0, 40)
   );
   const before = sim.hud.subtitleText.textContent;
+  // The director has to be running again for it to react to anything.
+  if (atcUpdate) sim.atc.update = atcUpdate;
   sim.atc.reset();
   sim.aircraft.controls.throttle = 0.6;
   sim.step(1.2);
@@ -690,7 +717,126 @@ export async function runSelfTest(sim, opts = {}) {
   r.ok('storm flight is survivable for 6 s hands-off', !sim.aircraft.crashed, sim.aircraft.crashReason);
 
   /* ---------------------------------------------------------------- *
-   * 14. Pause, restart, persistence
+   * 14. The carrier
+   * ---------------------------------------------------------------- *
+   * The deck is the one landing surface in the game that one file draws and
+   * another file lands on, so the two can disagree without anything throwing
+   * and without anything looking wrong from the air.
+   *
+   * They did disagree. The ship was scaled up five times and the landing
+   * surface was not, so there were eighty-three metres of open air between
+   * the painted steel and the deck the wheels actually found: you flew
+   * through the picture and stopped, invisibly, inside the hull. The suite
+   * had nothing to say about it, because the suite had never been to the
+   * carrier. It goes now.
+   * ---------------------------------------------------------------- */
+  say('carrier');
+  const carrier = sim.carrier;
+  r.ok('the carrier is in the world', !!carrier, carrier ? carrier.name : 'missing');
+  if (carrier) {
+    const THREE = await import('../src/vendor/three.module.js');
+    const terrain = await import('../src/world/terrain.js');
+
+    // Where the steel is drawn.
+    let deckMesh = null;
+    carrier.group.traverse((o) => {
+      if (o.name === 'angledFlightDeck' || o.name === 'flightDeck') deckMesh = o;
+    });
+    const painted = deckMesh ? new THREE.Box3().setFromObject(deckMesh) : null;
+    const paintedY = painted ? painted.max.y : null;
+    r.ok(
+      'the painted deck is the deck you land on',
+      painted !== null && Math.abs(paintedY - carrier.deckY) < 0.5,
+      painted ? `picture ${paintedY.toFixed(1)} m, landing surface ${carrier.deckY.toFixed(1)} m` : 'no deck mesh'
+    );
+    r.ok(
+      'the landing surface covers the ship and no more',
+      painted !== null
+        && Math.abs((painted.max.x - painted.min.x) / 2 - carrier.halfWidth) < 3
+        && Math.abs((painted.max.z - painted.min.z) / 2 - carrier.halfDepth) < 3,
+      painted ? `${(painted.max.z - painted.min.z).toFixed(0)} x ${(painted.max.x - painted.min.x).toFixed(0)} m` : ''
+    );
+    r.ok(
+      'the deck is what heightAt returns over the ship',
+      terrain.heightAt(carrier.pos.x, carrier.pos.z) === carrier.deckY,
+      `${terrain.heightAt(carrier.pos.x, carrier.pos.z).toFixed(1)} m`
+    );
+
+    // The island is solid; the strip you land on is not.
+    let island = null;
+    carrier.group.traverse((o) => { if (o.name === 'carrierIsland') island = o; });
+    const isleBox = island ? new THREE.Box3().setFromObject(island) : null;
+    const isleHit = isleBox
+      ? terrain.obstacleAt((isleBox.min.x + isleBox.max.x) / 2, carrier.deckY + 30, (isleBox.min.z + isleBox.max.z) / 2)
+      : null;
+    r.ok(
+      'the island is solid where the island is',
+      !!isleHit,
+      isleHit ? isleHit.what : 'nothing there'
+    );
+    r.ok(
+      'the deck itself is clear to land on',
+      !terrain.obstacleAt(carrier.pos.x, carrier.deckY + 30, carrier.pos.z),
+      'centreline'
+    );
+
+    /*
+     * And a trap: dropped onto the wires at a carrier arrival speed, wings
+     * level, no flare — which is what a deck landing is. It has to touch the
+     * deck, catch, and stop on the ship.
+     */
+    await sim.startMode('free', {
+      aircraft: 'osprey', time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 0,
+    });
+    const cac = sim.aircraft;
+    const aimZ = (carrier.wires.z0 + carrier.wires.z1) / 2;
+    cac.reset({
+      pos: new THREE.Vector3(carrier.pos.x, 0, aimZ + 120),
+      headingDeg: 0, speed: 62, gearDown: true,
+    });
+    cac.pos.y = carrier.deckY + 6;
+    cac.vel.y = -3.2;
+    let caught = false;
+    let touchdownY = null;
+    let touchdownZ = null;
+    for (let i = 0; i < 2400; i++) {
+      sim.override = { pitch: 0, roll: 0, yaw: 0 };
+      const was = cac.onGround;
+      sim.step(1 / 60, 1 / 60);
+      if (cac.arrested > 0) caught = true;
+      if (!was && cac.onGround && touchdownY === null) {
+        touchdownY = cac.pos.y;
+        touchdownZ = cac.pos.z;
+      }
+      if (cac.crashed) break;
+      if (cac.onGround && cac.groundSpeed < 2 && cac.groundTime > 1.2) break;
+      if (cac.onGround && cac.groundTime > 0.15) {
+        sim.input.throttleTarget = 0;
+        sim.key('Space', true);
+      }
+    }
+    sim.key('Space', false);
+    sim.override = null;
+    r.ok(
+      'the wheels land on the deck, not through it',
+      touchdownY !== null && Math.abs(touchdownY - carrier.deckY) < 6 && !cac.crashed,
+      touchdownY === null
+        ? `never touched down${cac.crashed ? ': ' + cac.crashReason : ''}`
+        : `${touchdownY.toFixed(1)} m, deck at ${carrier.deckY.toFixed(1)} m`
+    );
+    r.ok('a wire catches it', caught, touchdownZ === null ? '' : `${Math.round(touchdownZ - cac.pos.z)} m of roll-out`);
+    r.ok(
+      'it stops on the ship',
+      Math.abs(cac.pos.x - carrier.pos.x) <= carrier.halfWidth
+        && Math.abs(cac.pos.z - carrier.pos.z) <= carrier.halfDepth
+        && Math.abs(cac.pos.y - carrier.deckY) < 8
+        && cac.groundSpeed < 4,
+      `${(cac.groundSpeed * UNIT.KTS).toFixed(0)} kt at ${cac.pos.y.toFixed(1)} m`
+    );
+  }
+
+  /* ---------------------------------------------------------------- *
+   * 15. Pause, restart, persistence
    * ---------------------------------------------------------------- */
   say('game flow');
   sim.pause();
@@ -708,7 +854,7 @@ export async function runSelfTest(sim, opts = {}) {
   r.ok('progress is saved locally', prog && typeof prog.landings === 'number', `${prog.landings} landings recorded`);
 
   /* ---------------------------------------------------------------- *
-   * 15. Offline / PWA plumbing
+   * 16. Offline / PWA plumbing
    * ---------------------------------------------------------------- */
   say('offline');
   r.ok('service worker is supported', 'serviceWorker' in navigator);
@@ -726,7 +872,18 @@ export async function runSelfTest(sim, opts = {}) {
     const swres = await fetch('sw.js');
     const swtext = await swres.text();
     // Every module in the app must be in the precache list or offline breaks.
-    const listed = (swtext.match(/'([^']+\.(?:js|css|html|png|webmanifest))'/g) || []).map((s) => s.replace(/'/g, ''));
+    /*
+     * Either quoting style.
+     *
+     * This looked only for single-quoted paths, which is right for a
+     * hand-written list and wrong for a generated JSON manifest — against
+     * ChatGPT's tree the parser matched nothing and cheerfully reported the
+     * whole app missing from the offline cache, when every file was in fact
+     * there with a sha256 beside it. The check is about the files being
+     * listed, not about quotation marks.
+     */
+    const listed = (swtext.match(/['"]([^'"]+\.(?:js|css|html|png|webmanifest))['"]/g) || [])
+      .map((s) => s.replace(/['"]/g, ''));
     const wanted = [
       'src/main.js',
       'src/vendor/three.module.js',

@@ -68,6 +68,29 @@ export class Pursuer {
     this.shotCool = 3;
     this.tracer = null;
     this.tracerT = 0;
+    /*
+     * Nobody shoots for the first quarter of a minute.
+     *
+     * They are not there to destroy you — the ending is an escort home — and
+     * opening fire before you have found the camera button is a mission you
+     * lose while you are still reading the brief. Fourteen seconds is enough
+     * to look behind, understand what is happening and start doing something
+     * about it.
+     */
+    this.armDelay = 14;
+    /*
+     * How long he has held a tracking solution, and how long you have been
+     * warned about it.
+     *
+     * Shots used to be a dice roll the instant the cone test passed, so there
+     * was no such thing as dodging: nothing you did between one burst and the
+     * next changed anything. Now he has to hold you in the cone for a second
+     * and a half before he fires, and pulling g breaks it. That second and a
+     * half is the whole of the dodge — and the game can warn you inside it,
+     * because it knows the shot is coming before it comes.
+     */
+    this.lockT = 0;
+    this.locking = false;
 
     // How long you have been out of sight, and how long he has been close.
     this.breakT = 0;
@@ -169,6 +192,19 @@ export class Pursuer {
      */
     this.closeT = range < 140 && this.contact ? this.closeT + dt : 0;
 
+    /*
+     * He cannot sit on your tail forever.
+     *
+     * He is faster than you, and a faster aeroplane parked at a hundred metres
+     * astern is not a chase, it is a countdown: the caught clock ran whatever
+     * you did, so breaking felt like it achieved nothing. A real interceptor
+     * closing that fast runs out of room and has to go past. After five
+     * seconds inside knife range he does, which resets the clock, puts him
+     * out in front where you can see him, and gives you the few seconds that
+     * make the difference between a chase and a cutscene.
+     */
+    if (this.closeT > 5 && !this.escorting) this.tryOvershoot();
+
     // --- steering ---------------------------------------------------------
     this.overshootCool = Math.max(0, this.overshootCool - dt);
     if (this.overshootFor > 0) {
@@ -176,7 +212,26 @@ export class Pursuer {
       // overshoot looks like and what makes breaking hard worth doing.
       this.overshootFor -= dt;
     } else {
-      const wantHeading = this.bearingTo(ac.pos);
+      let wantHeading = this.bearingTo(ac.pos);
+      /*
+       * Do not fly through the player.
+       *
+       * He steers straight at your position, which inside a hundred metres
+       * means straight at you: measured at eleven metres of separation, which
+       * is one aeroplane occupying another. Nobody is trying to ram anybody —
+       * the ending of this mission is an escort home — and a jet that flies
+       * through your cockpit is the single most obviously fake thing that can
+       * happen in a chase.
+       *
+       * So inside ninety metres he stops aiming at you and starts aiming past
+       * you, further off to whichever side he is already on. It reads as a
+       * fighter pilot keeping his separation, which is what it is.
+       */
+      if (this._range < 90) {
+        const bias = (1 - this._range / 90) * 30;
+        const side = this.sideOf(ac) >= 0 ? 1 : -1;
+        wantHeading = (wantHeading + side * bias + 360) % 360;
+      }
       const maxTurn = (9.81 * Math.sqrt(TURN_G * TURN_G - 1)) / Math.max(this.speed, 40);
       const turn = THREE.MathUtils.radToDeg(maxTurn) * dt;
       this.heading = approachAngle(this.heading, wantHeading, turn);
@@ -258,9 +313,20 @@ export class Pursuer {
    */
   tryShot(ac, dt) {
     this.shotCool -= dt;
-    if (this.shotCool > 0 || !this.contact || this.escorting) return null;
+    if (this.armDelay > 0) {
+      this.armDelay -= dt;
+      this.lockT = 0;
+      this.locking = false;
+      return null;
+    }
+    const decay = () => {
+      this.lockT = Math.max(0, this.lockT - dt * 2.5);
+      this.locking = false;
+      return null;
+    };
+    if (!this.contact || this.escorting) return decay();
     const range = this._range;
-    if (range > 700 || range < 60) return null;
+    if (range > 700 || range < 60) return decay();
 
     /*
      * Is he actually pointing at you? A jet cannot shoot sideways.
@@ -273,15 +339,32 @@ export class Pursuer {
      */
     const toYou = this._shotA.copy(ac.pos).sub(this.pos).normalize();
     const nose = this._shotB.copy(this.vel).setY(0);
-    if (nose.lengthSq() < 1) return null;
+    if (nose.lengthSq() < 1) return decay();
     nose.normalize();
-    if (nose.dot(toYou) < 0.94) return null;
+    if (nose.dot(toYou) < 0.94) return decay();
 
-    this.shotCool = 3.5 + Math.random() * 2.5;
+    /*
+     * Holding the solution.
+     *
+     * Manoeuvring hard spoils his aim, which is the answer the mission was
+     * missing: pulling into him, rolling away or simply flying anything other
+     * than a straight line costs him the shot he had almost lined up. A
+     * gentle turn does not — you have to actually pull.
+     */
+    const g = Math.abs((ac.gLoad ?? 1) - 1);
+    const jinking = g > 1.2 || Math.abs(ac.bankAngleDeg()) > 42;
+    this.lockT += dt * (jinking ? -1.6 : 1);
+    this.lockT = clamp(this.lockT, 0, 3);
+    this.locking = this.lockT > 0.45;
+    if (this.lockT < 1.5 || this.shotCool > 0) return null;
+
+    this.lockT = 0;
+    this.locking = false;
+    this.shotCool = 4.5 + Math.random() * 2.5;
     this.fireTracer(ac);
 
     // Most bursts miss. The closer he is, the likelier one lands.
-    const odds = clamp(1 - (range - 60) / 640, 0.12, 0.62);
+    const odds = clamp(1 - (range - 60) / 640, 0.1, 0.5);
     if (Math.random() > odds) return null;
 
     /*
@@ -349,6 +432,15 @@ export class Pursuer {
   /** Formate on the player's wing. The end of the chase, not a kill. */
   beginEscort() {
     this.escorting = true;
+  }
+
+  /** Which side of the player he is on: +1 to their right, -1 to their left. */
+  sideOf(ac) {
+    const dx = this.pos.x - ac.pos.x;
+    const dz = this.pos.z - ac.pos.z;
+    // The player's right, in world terms, is (cos h, 0, sin h).
+    const h = THREE.MathUtils.degToRad(ac.heading);
+    return dx * Math.cos(h) + dz * Math.sin(h) >= 0 ? 1 : -1;
   }
 
   /** Inverse of the same convention: forward is (+sin h, 0, -cos h). */

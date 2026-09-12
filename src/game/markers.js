@@ -213,8 +213,12 @@ export class CargoCrate {
  * aeroplane's forward speed all the way down, so you have to release *before*
  * the target and judge how far ahead, which is the whole skill.
  *
- * It is an inert practice store. It marks where it lands with dust and a
- * scorch, and does nothing else.
+ * It is an inert practice store — but it goes off when it arrives. It used to
+ * land and raise a little dust, which after a four-kilometre run-in and a
+ * release judged to the second is an anticlimax and, worse, hard to see: you
+ * could not tell from the cockpit whether you had hit anything. A fireball, a
+ * shockwave ring going out across the ground and a proper bang tell you where
+ * it went from any height and any angle.
  */
 export class PracticeBomb {
   constructor(scene, pos, vel) {
@@ -269,6 +273,44 @@ export class PracticeBomb {
     this.scorch.visible = false;
     scene.add(this.scorch);
 
+    /*
+     * The bang, built now and hidden.
+     *
+     * A fireball that swells and dies in about a second, and a ring running
+     * out across the ground under it. Both are additive and neither writes
+     * depth, so they read as light rather than as objects — and both are made
+     * here rather than at the moment of impact, because allocating geometry
+     * on the frame something explodes is how you get a stutter exactly when
+     * the player is looking.
+     */
+    this.fire = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 14, 10),
+      new THREE.MeshBasicMaterial({
+        color: 0xffb257,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      })
+    );
+    this.fire.visible = false;
+    scene.add(this.fire);
+
+    this.ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.6, 1, 40),
+      new THREE.MeshBasicMaterial({
+        color: 0xffd9a8,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+      })
+    );
+    this.ring.rotation.x = -Math.PI / 2;
+    this.ring.visible = false;
+    scene.add(this.ring);
+
     this.group.position.copy(pos);
     // It leaves with the aeroplane's velocity, all of it. That is the point.
     this.vel = vel.clone();
@@ -283,14 +325,30 @@ export class PracticeBomb {
   update(dt, heightAt, wind) {
     this.t += dt;
     if (this.landed) {
-      // Dust blooms and fades; the scorch stays.
       this.settle += dt;
+      // The fireball: up fast, out and gone inside a second.
+      const f = clamp(this.settle / 0.95, 0, 1);
+      this.fire.visible = f < 1;
+      if (f < 1) {
+        this.fire.scale.setScalar(2.2 + f * 9);
+        this.fire.material.opacity = (1 - f) * (1 - f) * 0.9;
+        this.fire.material.color.setHSL(0.09 - f * 0.06, 0.95, 0.62 - f * 0.3);
+        this.fire.position.y += dt * 5.5 * (1 - f);
+      }
+      // The shockwave, running out across the ground.
+      const r = clamp(this.settle / 1.5, 0, 1);
+      this.ring.visible = r < 1;
+      if (r < 1) {
+        this.ring.scale.setScalar(3 + r * 42);
+        this.ring.material.opacity = (1 - r) * 0.55;
+      }
+      // Dust blooms and fades behind it; the scorch stays.
       const k = clamp(this.settle / 2.6, 0, 1);
-      this.dust.scale.setScalar(1.4 + k * 5.5);
-      this.dust.material.opacity = (1 - k) * 0.5;
-      this.dust.position.y += dt * 1.4;
+      this.dust.scale.setScalar(2.2 + k * 8);
+      this.dust.material.opacity = (1 - k) * 0.55;
+      this.dust.position.y += dt * 1.8;
       this.dust.visible = k < 1;
-      this.scorch.material.opacity = 0.55;
+      this.scorch.material.opacity = 0.6;
       return;
     }
 
@@ -322,6 +380,13 @@ export class PracticeBomb {
       this.dust.visible = true;
       this.scorch.position.set(p.x, gh + 0.09, p.z);
       this.scorch.visible = true;
+      this.fire.position.set(p.x, gh + 2.2, p.z);
+      this.fire.visible = true;
+      this.ring.position.set(p.x, gh + 0.4, p.z);
+      this.ring.visible = true;
+      // Read by the game on the frame it happens, so the bang can be played
+      // by whoever owns the audio rather than by the bomb.
+      this.justExploded = true;
     }
   }
 
@@ -329,5 +394,7 @@ export class PracticeBomb {
     this.scene.remove(this.group);
     this.scene.remove(this.dust);
     this.scene.remove(this.scorch);
+    this.scene.remove(this.fire);
+    this.scene.remove(this.ring);
   }
 }

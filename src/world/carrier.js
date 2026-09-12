@@ -31,11 +31,36 @@ import { addPlatform, addObstacleAt } from './terrain.js';
  * the runway and unmistakable from anywhere on the map, and the deck is wide
  * enough that landing on it is a thing a ten-year-old can actually do.
  *
- * Everything else is derived from these three numbers — the hull, the island,
- * the wires, the landing platform, the solid obstacle and the parked
- * aeroplanes — so this is the only place the size lives.
+ * Everything else is derived from these numbers — the hull, the island, the
+ * wires, the landing platform, the solid obstacle and the parked aeroplanes —
+ * so this is the only place the size lives.
  */
-export const DECK = { length: 1500, width: 360, height: 20 };
+
+/** What the pack builds, in metres: a real carrier, deck surface at 20.8. */
+const REAL = { length: 300, width: 72, deckY: 20.8 };
+
+/** How many times a real carrier this one is. */
+export const SCALE = 5;
+
+/*
+ * The island, measured off the pack's own ship in its own units so that it
+ * grows with the rest of it: a third of the width to starboard, a little aft
+ * of midships, and tall enough to take in the radar mast.
+ */
+const ISLAND = { x: 24.4, z: 23, width: 13.4, depth: 29, height: 32 };
+
+export const DECK = {
+  length: REAL.length * SCALE,
+  width: REAL.width * SCALE,
+  /** Freeboard. The deck slab sits on this, and its top is 0.8 m higher. */
+  height: REAL.deckY * SCALE - 0.8,
+  /*
+   * The landing surface: what the wheels touch, what `heightAt` returns over
+   * the ship, and the one number that has to agree with the picture. Scaling
+   * the model without scaling this is how you get a deck you fall through.
+   */
+  y: REAL.deckY * SCALE,
+};
 
 function deckTexture() {
   const S = 512;
@@ -103,8 +128,7 @@ export class Carrier {
          * island, the wires — in proportion, and DECK stays the one place the
          * size is decided.
          */
-        const k = DECK.length / 300;
-        if (Math.abs(k - 1) > 0.001) this.ship.scale.setScalar(k);
+        if (Math.abs(SCALE - 1) > 0.001) this.ship.scale.setScalar(SCALE);
         this.group.add(this.ship);
       } catch (e) {
         console.warn('The pack carrier could not be built; using the built-in one.', e);
@@ -146,17 +170,27 @@ export class Carrier {
 
     // The flight deck itself.
     const deck = new THREE.Mesh(new THREE.BoxGeometry(W, 1.6, L), deckMat);
+    // Named so the self-test can measure the painted deck against the one the
+    // wheels land on, whichever ship is on the water.
+    deck.name = 'flightDeck';
     deck.position.y = H;
     deck.receiveShadow = true;
     this.group.add(deck);
 
-    // The island — the superstructure, always to starboard.
-    const isle = new THREE.Mesh(new THREE.BoxGeometry(11, 22, 34), islandMat);
-    isle.position.set(W * 0.34, H + 11, L * 0.08);
+    // The island — the superstructure, always to starboard. Same place and
+    // same size as the obstacle registered for it, and scaled with the ship.
+    const iw = ISLAND.width * SCALE;
+    const ih = ISLAND.height * SCALE * 0.6;
+    const id = ISLAND.depth * SCALE;
+    const isle = new THREE.Mesh(new THREE.BoxGeometry(iw, ih, id), islandMat);
+    isle.position.set(ISLAND.x * SCALE, H + ih / 2, ISLAND.z * SCALE);
     isle.castShadow = true;
     this.group.add(isle);
-    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 16, 8), islandMat);
-    mast.position.set(W * 0.34, H + 30, L * 0.08);
+    const mast = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.5 * SCALE, 0.7 * SCALE, ISLAND.height * SCALE * 0.4, 8),
+      islandMat
+    );
+    mast.position.set(ISLAND.x * SCALE, H + ih + ISLAND.height * SCALE * 0.2, ISLAND.z * SCALE);
     this.group.add(mast);
 
     // Arrester wires, across the landing area aft.
@@ -164,7 +198,7 @@ export class Carrier {
     for (let i = 0; i < 4; i++) {
       const w = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, W * 0.62, 6), wireMat);
       w.rotation.z = Math.PI / 2;
-      w.position.set(-W * 0.04, H + 1.1, L * 0.18 + i * 14);
+      w.position.set(-W * 0.04, H + 1.1, L * 0.192 + i * 12 * SCALE);
       this.group.add(w);
     }
 
@@ -187,7 +221,12 @@ export class Carrier {
      * A mission that carries its own copy of these numbers is a mission that
      * silently points at empty sea the day the ship moves.
      */
-    this.deckY = H + 0.8;
+    /*
+     * The top of the deck slab — H + 0.8 by construction, but taken from DECK
+     * so that the number the game lands on and the number the model is built
+     * to can never drift apart again.
+     */
+    this.deckY = DECK.y;
     this.halfWidth = bw / 2;
     this.halfDepth = bd / 2;
     /*
@@ -218,14 +257,24 @@ export class Carrier {
       ...this.wires,
       along,
     });
-    // The superstructure is solid; the deck is not, because you land on it.
+    /*
+     * The superstructure is solid; the deck is not, because you land on it.
+     *
+     * The box is the island the ship actually has, scaled with the ship and
+     * standing on the deck. It used to be an 11 x 34 m box on the centreline
+     * at hull height: the right hitbox for a ship five times smaller, a
+     * hundred metres from the island and eighty below it.
+     */
+    const yaw = THREE.MathUtils.degToRad(-(at.headingDeg || 0));
+    const ox = ISLAND.x * SCALE;
+    const oz = ISLAND.z * SCALE;
     addObstacleAt(
-      at.x + (along ? W * 0.34 : 0),
-      at.z + (along ? 0 : W * 0.34),
-      along ? 11 : 34,
-      along ? 34 : 11,
-      H,
-      34,
+      at.x + ox * Math.cos(yaw) + oz * Math.sin(yaw),
+      at.z - ox * Math.sin(yaw) + oz * Math.cos(yaw),
+      (along ? ISLAND.width : ISLAND.depth) * SCALE,
+      (along ? ISLAND.depth : ISLAND.width) * SCALE,
+      this.deckY,
+      ISLAND.height * SCALE,
       `You flew into ${this.name}`
     );
   }
@@ -252,7 +301,7 @@ export class Carrier {
       [W * 0.30, -L * 0.10, 0.5],
       [-W * 0.34, L * 0.36, 2.4],
       [-W * 0.22, L * 0.40, 2.4],
-      [W * 0.16, L * 0.42, 2.6],
+      [W * 0.30, L * 0.42, 2.6],
     ];
     for (const [x, z, rot] of spots) {
       let m;
@@ -262,8 +311,7 @@ export class Carrier {
         console.warn('Could not park an aeroplane on the deck.', e);
         return;
       }
-      m.position.set(x, this.deckY - DECK.height + DECK.height, z);
-      m.position.y = this.deckY;
+      m.position.set(x, this.deckY, z);
       m.rotation.y = rot;
       // Wings folded is beyond the models, so they simply sit still: engine
       // off, wheels down, nothing turning.

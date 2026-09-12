@@ -75,7 +75,19 @@ const PHOTO_POINTS = [
 ];
 
 /** The practice range bullseye, well clear of the town and the airfield. */
-const RANGE_TARGET = new THREE.Vector3(-6400, 0, -4200);
+/*
+ * Where the practice range is, read off the range that is actually drawn.
+ *
+ * This was a hard-coded (-6400, 0, -4200), which on the air base map is fifty
+ * metres beyond the edge of the plain: the bullseye was open sea, and nothing
+ * was drawn there in any case. The range is scenery now — see
+ * addWeaponsRange() — and it publishes its middle, so the two cannot disagree.
+ */
+const RANGE_FALLBACK = new THREE.Vector3(-3800, 300, -3400);
+function rangeTarget(ctx) {
+  const drawn = ctx && ctx.sim && ctx.sim.scenery && ctx.sim.scenery.range;
+  return (drawn ? drawn.pos : RANGE_FALLBACK).clone();
+}
 
 /**
  * Where the carrier is, read live rather than hard-coded.
@@ -866,8 +878,8 @@ export const MISSIONS = [
     // Pinned, so it cannot inherit whichever map the last mission left behind.
     map: 'kestrel',
     blurb:
-      'Launch from the deck of the Resolute, fly a circuit, and put it back down on 72 metres of moving '
-      + 'steel. The hardest landing in the game, and the reason the Osprey has a hook.',
+      'Fly out to the Resolute and put it down on a kilometre and a half of moving steel — inside a '
+      + 'band of deck 360 m long, where the wires are. The reason the Osprey has a hook.',
     reward: 'Teaches precision approaches with no margin at all.',
     aircraft: 'osprey',
     weather: { time: 'day', condition: 'cloudy', windSpeedKts: 14, windDirDeg: 90 },
@@ -889,7 +901,7 @@ export const MISSIONS = [
       {
         id: 'pattern',
         text: 'Fly down the port side, then turn back onto the deck. Gear and full flap.',
-        hint: 'Come in slow and low. You are aiming at a strip the length of four tennis courts.',
+        hint: 'Come in slow and low. Aim a third of the way up the deck, where the wires are.',
         targetLabel: 'The deck',
         target: (ctx) => carrierTarget(ctx),
         check: (ctx) => {
@@ -925,13 +937,21 @@ export const MISSIONS = [
     // Military missions fly from the military field, not the tropical one.
     map: 'airbase',
     blurb:
-      'Three unidentified contacts are approaching Kestrel from three directions. Get to each of them '
-      + 'inside six minutes. The Nightjar has the legs for it — you have to plan the order.',
+      'Three unidentified contacts are approaching Ironhead from three directions. Get to each of them '
+      + 'inside ten minutes. The Nightjar has the legs for it — you have to plan the order.',
     reward: 'Teaches route planning and flying a fast jet with your head up.',
     aircraft: 'nightjar',
     weather: { time: 'day', condition: 'cloudy', windSpeedKts: 14, windDirDeg: 240 },
     spawn: { pos: new THREE.Vector3(-3000, ELEV + 600, 0), headingDeg: 90, speed: 150, altAGL: 600 },
-    timeLimit: 360,
+    /*
+     * Ten minutes, not six.
+     *
+     * Three contacts spread right across the map with long legs between them:
+     * six meant flying it perfectly, in the right order, first time, with no
+     * room to look at anything. It is a route-planning exercise, and you
+     * cannot plan a route you have not been given time to fly.
+     */
+    timeLimit: 600,
     parTime: 280,
     onStart: (ctx) => {
       ctx.data.seen = [];
@@ -1078,7 +1098,7 @@ export const MISSIONS = [
         hint: 'It is an inert practice store — it marks where it lands and nothing else.',
         atc: { text: 'Nightjar zero two, range is cold and clear, you are cleared in.', voice: 'tower' },
         targetLabel: 'The range',
-        target: () => RANGE_TARGET.clone(),
+        target: (ctx) => rangeTarget(ctx),
         check: (ctx) => ctx.ac.airborneTime > 4 && ft(ctx.ac.agl) > 200,
       },
       {
@@ -1086,23 +1106,24 @@ export const MISSIONS = [
         text: 'Run in on the target below 1,500 feet and line it up.',
         hint: 'Steady wings well before you get there. A last-second correction throws the release off.',
         targetLabel: 'Bullseye',
-        target: () => RANGE_TARGET.clone(),
+        target: (ctx) => rangeTarget(ctx),
         check: (ctx) =>
-          ctx.ac.pos.distanceTo(RANGE_TARGET) < 900 && ft(ctx.ac.agl) < 1500,
+          ctx.ac.pos.distanceTo(rangeTarget(ctx)) < 900 && ft(ctx.ac.agl) < 1500,
       },
       {
         id: 'release',
         text: 'Press X to release. It keeps your speed, so let go BEFORE the bullseye.',
         hint: 'It falls forward as well as down — release before you are on top of it.',
         targetLabel: 'Bullseye',
-        target: () => RANGE_TARGET.clone(),
+        target: (ctx) => rangeTarget(ctx),
         check: (ctx) => {
           const crate = ctx.sim.crate;
           if (!crate || !crate.landed) return false;
           if (ctx.data.miss === undefined) {
+            const bull = rangeTarget(ctx);
             ctx.data.miss = Math.hypot(
-              crate.mesh.position.x - RANGE_TARGET.x,
-              crate.mesh.position.z - RANGE_TARGET.z
+              crate.mesh.position.x - bull.x,
+              crate.mesh.position.z - bull.z
             );
             ctx.sim.hud.notify(
               ctx.data.miss < 40
@@ -1188,6 +1209,7 @@ export const MISSIONS = [
       ctx.data.warned = false;
       ctx.data.bankHeld = 0;
       ctx.data.escortT = 0;
+      ctx.data.locked = false;
       // Being shot has to be visible even with the Dev-mode damage switch off —
       // the panel only appears once something is wrong, so this costs nothing
       // to anyone who never gets hit.
@@ -1227,13 +1249,32 @@ export const MISSIONS = [
        */
       // Any of the three can be the one that gets a shot off.
       let shot = null;
+      let anyLocking = false;
       for (const j of flight) {
-        shot = j.tryShot(ctx.ac, dt);
-        if (shot) break;
+        const s = j.tryShot(ctx.ac, dt);
+        if (j.locking) anyLocking = true;
+        if (s && !shot) shot = s;
       }
       if (shot) {
         ctx.ac.takeHit(shot.part, shot.severity, 'Hit by Ironhead One');
         ctx.sim.rig.kick(1.1);
+      }
+      /*
+       * Tell them it is coming.
+       *
+       * One of them holding you in his sights for a second and a half is the
+       * only thing that produces a burst, and that second and a half exists
+       * so you can do something about it. It is no use as a warning nobody
+       * can see, so it is said out loud — and it clears itself the moment
+       * somebody pulls hard enough to spoil his aim, which teaches the answer
+       * better than any hint would.
+       */
+      if (anyLocking && !ctx.data.locked) {
+        ctx.data.locked = true;
+        ctx.sim.hud.showBanner('One of them is lining up', 'Break — pull hard, either way.', 'bad', 2.2);
+        ctx.sim.audio.available && ctx.sim.audio.alerts.caution && ctx.sim.audio.alerts.caution();
+      } else if (!anyLocking && ctx.data.locked) {
+        ctx.data.locked = false;
       }
 
       // Break hard inside knife range and he goes past. He out-turns you, so
@@ -1253,7 +1294,16 @@ export const MISSIONS = [
         ctx.sim.hud.showBanner('He is about to take you', 'Climb. Break. Anything.', 'bad', 4);
       }
       if (p.closeT <= 0 && ctx.data.warned) ctx.data.warned = false;
-      if (p.closeT > 7) ctx.data.caught = true;
+      /*
+       * Twelve seconds inside knife range, not seven.
+       *
+       * They arrive at 240 m and close to under 140 in a few seconds, so the
+       * old seven was very nearly a fixed timer from the start of the mission:
+       * caught in twenty seconds whatever you flew. He overshoots at five now,
+       * so twelve is roughly two full passes — enough that getting caught is
+       * something you did rather than something that happened.
+       */
+      if (p.closeT > 12) ctx.data.caught = true;
 
       if (p.breakT >= 15) ctx.data.escaped = true;
     },
@@ -1272,7 +1322,7 @@ export const MISSIONS = [
         text: 'Three of them, right behind you. Look back.',
         hint: 'Press C to change view. They are already inside a kilometre.',
         atc: {
-          text: 'Vanguard zero one, three contacts on your tail and closing. They are faster than you. Use the weather.',
+          text: 'Vanguard zero one, three contacts astern and closing. They are faster than you. Use the weather.',
           voice: 'tower',
         },
         check: (ctx) => ctx.elapsed > 5,

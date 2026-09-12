@@ -28,11 +28,43 @@ function canvas(w, h = w) {
   return c;
 }
 
+/*
+ * How hard the card is allowed to work on textures seen edge-on.
+ *
+ * Four is a safe number that costs nothing anywhere. On Ultra the renderer
+ * raises it to whatever the card will actually give — usually sixteen — which
+ * is the single biggest difference you can make to a flight simulator: the
+ * runway, the taxiways and the sea all stretch away from you at a very
+ * shallow angle, and that is exactly the case low anisotropy turns to mush.
+ *
+ * Set by main.js once the renderer exists, since only the renderer knows what
+ * the card supports. Textures already built keep what they had — everything
+ * here is built on the first world load, and the level is set before that.
+ */
+let anisoCap = 4;
+export function setTextureAnisotropy(n) {
+  anisoCap = Math.max(1, n | 0);
+  /*
+   * Including the ones already made.
+   *
+   * Every texture in the game is built once and cached for the life of the
+   * page, so raising the cap on its own only affected textures that did not
+   * exist yet — which, by the time anybody opens Settings, is none of them.
+   * Turning Ultra on changed nothing at all on screen for that reason.
+   */
+  for (const tex of cache.values()) {
+    if (!tex || typeof tex.anisotropy !== 'number') continue;
+    if (tex.anisotropy === anisoCap) continue;
+    tex.anisotropy = anisoCap;
+    tex.needsUpdate = true;
+  }
+}
+
 function finish(c, { repeat = [1, 1], srgb = true, aniso = 4 } = {}) {
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(repeat[0], repeat[1]);
-  tex.anisotropy = aniso;
+  tex.anisotropy = Math.max(aniso, anisoCap);
   if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
   return tex;

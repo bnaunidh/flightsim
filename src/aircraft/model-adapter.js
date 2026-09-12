@@ -45,16 +45,25 @@ try {
 }
 
 /*
- * On by default.
+ * Off by default — except for the military aeroplanes, which the pack draws
+ * better than anything here does.
  *
- * The built-in models still read better side by side — the fleet's wings are
- * flat plates and its cabin is a wedge — and that feedback has gone back to
- * whoever draws them. But they are the newer aeroplanes, they are the ones
- * with breakaway crashes, and they are what everyone wants to fly. Both sets
- * stay in the game and Settings switches between them, which is the arrangement
- * that lets the next pack be compared honestly rather than argued about.
+ * That split is the verdict after flying both sets side by side, and it is
+ * consistent: the pack is very good at hard-edged military shapes and much
+ * less good at civil ones. Its trainer's wings are flat plates and its
+ * airliner cabin is a wedge, and at any distance where you can read the shape
+ * at all, that is what you read. Its fighter, its carrier aeroplane and its
+ * flying wing are the best in the game.
+ *
+ * So each aeroplane gets whichever factory draws it better, and the Settings
+ * switch still forces the whole pack on for anyone who wants to compare. That
+ * this is decided per type rather than by one global flag is the point —
+ * arguing about which set is "better" was always the wrong question.
+ *
+ * Nothing here touches the pack's ship, its boats or its ground vehicles:
+ * those have no built-in rival and are not in question.
  */
-let useFleet = true;
+let useFleet = false;
 
 /** Turn the pack on or off. Takes effect the next time a model is built. */
 export function setFleetModels(on) {
@@ -65,9 +74,21 @@ export function fleetModelsOn() {
   return useFleet;
 }
 
+/**
+ * The three the pack draws better, listed rather than derived.
+ *
+ * `type.military` would have been the tidy test, and it is the wrong one: it
+ * is what the hangar's passcode gate reads, so flagging the Vanguard and the
+ * Osprey to pick a model would have locked both aeroplanes behind the military
+ * code as a side effect. Which aeroplane looks better is not the same question
+ * as who is allowed to fly it, and the two should not share a flag.
+ */
+const PACK_DRAWS_BETTER = new Set(['vanguard', 'osprey', 'nightjar']);
+
 /** Which ids the pack can actually build. Everything else goes to model.js. */
 export function fleetCovers(id) {
-  return useFleet && !!fleet && fleetIds.has(id);
+  if (!fleet || !fleetIds.has(id)) return false;
+  return useFleet || PACK_DRAWS_BETTER.has(id);
 }
 
 /** For the tests and the console: what the pack brought, and what is missing. */

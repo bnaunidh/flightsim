@@ -41,8 +41,13 @@ function aerofoil(steps = 18, thickness = 0.13, camber = 0.022) {
 
 /**
  * Loft a wing/stabiliser from section definitions:
- *   { y, chord, offsetX, offsetY, twist }
+ *   { y, chord, offsetX, offsetY, twist, thick }
  * where y is the spanwise station (along local +X of the returned geometry).
+ *
+ * `thick` scales the section's thickness on top of the chord, and exists for
+ * the flying wing: its centre section has to be deep enough to be an aeroplane
+ * — crew, undercarriage, engines and fuel all live in it — while its tips stay
+ * as thin as any other wing. One profile scaled by chord alone cannot do both.
  */
 function loft(sections, profile) {
   const n = profile.length;
@@ -56,7 +61,7 @@ function loft(sections, profile) {
       const cos = Math.cos(s.twist || 0);
       const sin = Math.sin(s.twist || 0);
       const px = p.x * s.chord;
-      const py = p.y * s.chord;
+      const py = p.y * s.chord * (s.thick ?? 1);
       const rx = px * cos - py * sin;
       const ry = px * sin + py * cos;
       // local: X = span, Y = up, Z = chordwise (aft positive)
@@ -140,6 +145,69 @@ export function glowSprite(color, size) {
   );
   s.scale.setScalar(size);
   return s;
+}
+
+/**
+ * A flying wing, which is not a fuselage with wings on it.
+ *
+ * The Nightjar is a B-2: no body, no fin, no tailplane — one lifting shape
+ * from tip to tip, deep in the middle and thin at the ends, with a sawtooth
+ * trailing edge. Every other aeroplane in this game is a lathed tube with a
+ * wing lofted through it, and asking that factory for a flying wing gave the
+ * only honest answer it had: a stubby body with a very large wing bolted to
+ * it, which is a plank with a bulge on it.
+ *
+ * So the planform is described properly here — leading edge, trailing edge and
+ * thickness as functions of how far out the span you are — and the skin, the
+ * elevons and the centre-body details are all built from the same three
+ * functions. Nothing is placed by eye, which is why the control surfaces sit
+ * on the trailing edge rather than near it.
+ */
+/** How far the upper surface stands above the datum at this station. */
+function aerofoilDepth(plan, S, f) {
+  // The aerofoil used for the skin peaks at about 5.5% of chord above the
+  // datum once thickness and chord are both taken in.
+  const thick = lerp(S.fwThick, 0.72, Math.pow(f, 0.7));
+  return plan.chordAt(f) * 0.105 * thick * 0.62 + S.dihedral * f;
+}
+
+function flyingWingPlanform(S) {
+  const H = S.halfSpan;
+  // Aft is +Z. The apex sits fwNose ahead of the origin.
+  const leAt = (f) => -S.fwNose + S.fwSweep * H * f;
+  const rootChord = S.fwNose + S.fwTail;
+  /*
+   * The sawtooth.
+   *
+   * Chord shortens towards the tip the way any wing's does, and then the
+   * trailing edge steps forward twice on each side. That zigzag is the single
+   * feature that makes the shape read as a B-2 from any angle, and it is
+   * cheap: a table of chord deltas, with a loft station at every corner so
+   * the creases stay sharp.
+   */
+  const NOTCH = [[0, 0], [0.2, -0.6], [0.38, 0], [0.58, -0.54], [0.76, -0.08], [1, -0.16]];
+  const notchAt = (f) => {
+    for (let i = 1; i < NOTCH.length; i++) {
+      if (f <= NOTCH[i][0]) {
+        const [f0, v0] = NOTCH[i - 1];
+        const [f1, v1] = NOTCH[i];
+        return lerp(v0, v1, (f - f0) / (f1 - f0 || 1));
+      }
+    }
+    return NOTCH[NOTCH.length - 1][1];
+  };
+  const chordAt = (f) =>
+    Math.max(0.35, lerp(rootChord, S.fwTipChord, Math.pow(f, 0.78)) + notchAt(f) * (1 - f * 0.35));
+  const teAt = (f) => leAt(f) + chordAt(f);
+  // Deep at the centre, ordinary wing at the tip.
+  const thickAt = (f) => lerp(S.fwThick, 0.72, Math.pow(f, 0.7));
+  // A station at every corner of the sawtooth, and enough between them that
+  // the leading edge stays smooth.
+  const stations = [];
+  for (const f of [0, 0.07, 0.14, 0.2, 0.29, 0.38, 0.48, 0.58, 0.67, 0.76, 0.85, 0.93, 0.97, 1]) {
+    stations.push({ y: f * H, chord: chordAt(f), offsetX: leAt(f), offsetY: S.dihedral * f, thick: thickAt(f) });
+  }
+  return { leAt, teAt, chordAt, stations, H };
 }
 
 export function createAircraftModel(opts = {}) {
@@ -238,7 +306,8 @@ export function createAircraftModel(opts = {}) {
   fuseGeo.rotateX(Math.PI / 2); // lathe axis Y → Z, nose toward -Z
   const fuselage = new THREE.Mesh(fuseGeo, bodyMat);
   fuselage.castShadow = fuselage.receiveShadow = true;
-  root.add(fuselage);
+  // A flying wing has no body to add: the wing is the body — see below.
+  if (!S.flyingWing) root.add(fuselage);
 
   // Cabin roof blister so the greenhouse is not a bare tube.
   // A fast jet has a bubble canopy instead, and an airliner a row of windows.
@@ -261,7 +330,9 @@ export function createAircraftModel(opts = {}) {
   windshield.scale.set(0.96, 0.7, 1.15);
   windshield.position.set(0, 0.22, -0.62);
   windshield.rotation.x = -0.3;
-  root.add(windshield);
+  // The flying wing has its own glass, flush in the centre section, and this
+  // one would sit in the middle of the wing like a dome on a runway.
+  if (!S.flyingWing) root.add(windshield);
 
   if (S.canopy === 'cabin') {
     for (const side of [-1, 1]) {
@@ -343,6 +414,8 @@ export function createAircraftModel(opts = {}) {
   }
 
   /* ---------------- Wings ---------------- */
+  // Set by the flying wing's centre body, and read by the powerplant below.
+  let fwExhaustMat = null;
   // Thin, sharp sections for anything fast; thick and cambered for the ones
   // that have to fly slowly.
   const fast = S.sweep > 1.4;
@@ -360,7 +433,10 @@ export function createAircraftModel(opts = {}) {
   }));
   const chordAt = (f) => lerp(S.rootChord, S.tipChord, Math.pow(f, 1.25));
   const sweepAt = (f) => S.sweep * Math.pow(f, 1.1);
-  const wingGeo = loft(wingSections, wingProfile);
+  const plan = S.flyingWing ? flyingWingPlanform(S) : null;
+  const wingGeo = plan
+    ? loft(plan.stations, aerofoil(20, 0.105, 0.014))
+    : loft(wingSections, wingProfile);
 
   const wings = new THREE.Group();
   for (const side of [-1, 1]) {
@@ -404,6 +480,17 @@ export function createAircraftModel(opts = {}) {
   // The moving surfaces ride on the wing's trailing edge, wherever the shape
   // description happens to have put it.
   const hinge = (f, chordFrac) => {
+    if (plan) {
+      // Elevons, on the real trailing edge — which on this shape steps
+      // forward twice, so "near enough" would hang them in the air.
+      const c = plan.chordAt(f) * chordFrac;
+      return {
+        x: S.wingRootX + f * plan.H,
+        y: S.wingY + S.dihedral * f + 0.02,
+        z: S.wingZ + plan.teAt(f) - c * 0.94,
+        chord: c,
+      };
+    }
     const c = chordAt(f) * chordFrac;
     return {
       x: S.wingRootX + f * halfSpan,
@@ -412,10 +499,10 @@ export function createAircraftModel(opts = {}) {
       chord: c,
     };
   };
-  const ailAt = hinge(0.78, 0.26);
-  const flapAt = hinge(0.4, 0.27);
-  const ailWidth = halfSpan * 0.32;
-  const flapWidth = halfSpan * 0.36;
+  const ailAt = hinge(plan ? 0.86 : 0.78, plan ? 0.3 : 0.26);
+  const flapAt = hinge(plan ? 0.66 : 0.4, plan ? 0.28 : 0.27);
+  const ailWidth = halfSpan * (plan ? 0.22 : 0.32);
+  const flapWidth = halfSpan * (plan ? 0.2 : 0.36);
   surfaces.aileronL = hingedSurface(ailWidth, ailAt.chord);
   surfaces.aileronL.position.set(-ailAt.x, ailAt.y, ailAt.z);
   surfaces.aileronR = hingedSurface(ailWidth, ailAt.chord);
@@ -425,6 +512,75 @@ export function createAircraftModel(opts = {}) {
   surfaces.flapR = hingedSurface(flapWidth, flapAt.chord);
   surfaces.flapR.position.set(flapAt.x, flapAt.y, flapAt.z);
   root.add(surfaces.aileronL, surfaces.aileronR, surfaces.flapL, surfaces.flapR);
+
+  /*
+   * The centre body.
+   *
+   * What is left once you accept there is no fuselage: somewhere to sit,
+   * somewhere for the air to go in, and somewhere for it to come out. All
+   * three are placed off the planform rather than by eye, so they stay on the
+   * aeroplane if any of its numbers change.
+   */
+  if (plan) {
+    const dark = new THREE.MeshStandardMaterial({ color: 0x0d1014, roughness: 0.9, metalness: 0.1 });
+    const deep = (f) => aerofoilDepth(plan, S, f);
+
+    // Cockpit: a low blister a fifth of the way back, with glass wrapped over
+    // the front of it. A B-2's crew sit almost on the leading edge.
+    const cz = plan.leAt(0) + plan.chordAt(0) * 0.2;
+    const cy = deep(0) * 0.92;
+    const blister = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), bodyMat);
+    blister.scale.set(0.62, 0.3, 1.35);
+    blister.position.set(0, cy - 0.04, cz);
+    blister.castShadow = true;
+    root.add(blister);
+    for (const side of [-1, 1]) {
+      const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.3), glassMat);
+      pane.position.set(side * 0.25, cy + 0.14, cz - 0.66);
+      pane.rotation.set(-0.95, side * 0.32, 0);
+      root.add(pane);
+      const side2 = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.24), glassMat);
+      side2.position.set(side * 0.44, cy + 0.1, cz - 0.18);
+      side2.rotation.set(-0.55, side * 1.0, 0);
+      root.add(side2);
+    }
+
+    // Intakes: boxy, on top of the wing, aft of the cockpit. On top because
+    // that is what hides them from anything looking up at you.
+    for (const side of [-1, 1]) {
+      const ix = side * plan.H * 0.2;
+      const iz = plan.leAt(0.2) + plan.chordAt(0.2) * 0.3;
+      const iy = deep(0.2) * 0.88;
+      const duct = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.4, 1.7), bodyMat);
+      duct.position.set(ix, iy + 0.1, iz);
+      duct.rotation.y = side * 0.06;
+      duct.castShadow = true;
+      root.add(duct);
+      const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.3, 0.12), dark);
+      mouth.position.set(ix, iy + 0.12, iz - 0.86);
+      mouth.rotation.y = side * 0.06;
+      root.add(mouth);
+    }
+
+    // Exhausts: shallow trenches let into the upper surface, well forward of
+    // the trailing edge — the reason a B-2 has that shape at the back. These
+    // are what glows under power, since there is no nozzle hanging anywhere.
+    fwExhaustMat = new THREE.MeshStandardMaterial({
+      color: 0x15181c,
+      emissive: 0xff7020,
+      emissiveIntensity: 0,
+      roughness: 0.6,
+      metalness: 0.3,
+    });
+    for (const side of [-1, 1]) {
+      const ex = side * plan.H * 0.26;
+      const ez = plan.teAt(0.26) - plan.chordAt(0.26) * 0.22;
+      const ey = deep(0.26) * 0.82;
+      const trench = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.1, 1.5), fwExhaustMat);
+      trench.position.set(ex, ey, ez);
+      root.add(trench);
+    }
+  }
 
   /* ---------------- Tail ---------------- */
   const tailProfile = aerofoil(12, 0.1, 0);
@@ -583,7 +739,17 @@ export function createAircraftModel(opts = {}) {
       roughness: 0.55,
       metalness: 0.4,
     });
-    const sides = P.count === 2 ? [-1, 1] : [0];
+    /*
+     * A flying wing's engines are buried in it.
+     *
+     * Hanging two nacelles off the front of a B-2 is most of what made it
+     * look wrong — they are the most visible thing on the aeroplane and they
+     * are the one thing it does not have. The intakes on top and the trenches
+     * behind them are the whole installation, and the trenches take over the
+     * nozzle's job of glowing when you open the throttle.
+     */
+    const sides = S.flyingWing ? [] : P.count === 2 ? [-1, 1] : [0];
+    if (S.flyingWing && fwExhaustMat) nozzles.push(fwExhaustMat);
     for (const side of sides) {
       const g = new THREE.Group();
       // Barrel, tapering slightly to the back.
@@ -672,7 +838,17 @@ export function createAircraftModel(opts = {}) {
   const propGroup = new THREE.Group();
   propGroup.visible = !isJet;
   const propCount = isJet ? 0 : S.power.count || 1;
-  const propSides = propCount >= 2 ? [-1, 1] : [0];
+  /*
+   * No propeller at all on a jet.
+   *
+   * This was `propCount >= 2 ? [-1, 1] : [0]`, so every jet in the game built
+   * one anyway: two blades and a blur disc sized from `power.propRadius`,
+   * which a jet's power block does not have. Three geometries full of NaN per
+   * jet, three warnings from Three on every spawn, and nothing visible to show
+   * for it because the whole group is hidden on a jet. It was invisible in
+   * both senses.
+   */
+  const propSides = propCount >= 2 ? [-1, 1] : propCount === 1 ? [0] : [];
   propGroup.position.set(0, 0.02, propCount >= 2 ? 0 : S.power.z);
   const spinMat = metalMaterial(skin, { roughness: 0.2, metalness: 0.7 });
   const nacelleMatProp = metalMaterial(skin, { roughness: 0.34, metalness: 0.5 });

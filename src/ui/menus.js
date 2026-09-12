@@ -1216,7 +1216,7 @@ export class Menus {
           <label class="check"><input type="checkbox" data-set="realisticFuel"><span>Realistic fuel — the tank drains 1% every 30 seconds, so you have to plan</span></label>
           <label class="check"><input type="checkbox" data-set="randomWinds"><span>Random winds — the wind wanders and gusts blow through</span></label>
           <label class="check"><input type="checkbox" data-set="minimap"><span>Minimap — the little round map, with a warning if you are heading at a hill (J)</span></label>
-          <label class="check"><input type="checkbox" data-set="fleetModels"><span>New aeroplane models — seven redrawn airframes that come apart when you crash. Turn off for the original ones.</span></label>
+          <label class="check"><input type="checkbox" data-set="fleetModels"><span>Use the alternative models for every aeroplane — the redrawn airframes that come apart when you crash. Off by default, the military aeroplanes use them anyway and the civil ones use the built-in shapes.</span></label>
           <p class="hint">With random winds on, the wind drifts around the speed and direction you chose and a gust rolls
           through every half minute or so. It makes landings much more interesting. Leave it off while you are learning.</p>
         </div>
@@ -1271,6 +1271,7 @@ export class Menus {
               <option value="low">Low — fastest, for older laptops</option>
               <option value="medium">Medium</option>
               <option value="high">High — best looking</option>
+              <option value="ultra">Ultra — everything uncapped, for a fast computer</option>
             </select>
           </label>
           <p class="hint">Changing the detail level rebuilds the island, which takes a couple of seconds.</p>
