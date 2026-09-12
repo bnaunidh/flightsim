@@ -37,6 +37,7 @@ import { RUNWAY } from '../world/airport.js';
 import { DELIVERY_PAD } from '../world/scenery.js';
 import { heightAt } from '../world/terrain.js';
 import { UNITS } from '../aircraft/physics.js';
+import { Pursuer } from './pursuer.js';
 
 const ELEV = RUNWAY.elev;
 const ft = (m) => m * UNITS.FT;
@@ -1135,6 +1136,141 @@ export const MISSIONS = [
       // Accuracy is most of it: dead centre is worth far more than a tidy landing.
       const acc = Math.max(0, 1 - (ctx.data.miss ?? 400) / 300);
       return Math.round(acc * 62 + (l ? l.score : 20) * 0.38);
+    },
+  },
+
+  /*
+   * Shake the Tail.
+   *
+   * The first mission in the game with another aeroplane in it. Somebody is
+   * on your tail and will not go away, and the answer is not to outrun him —
+   * measured, he is 8.5% faster than you and out-turns you at every bank you
+   * can hold. The answer is the weather. Get into the cloud and stay ahead of
+   * him and he loses you.
+   *
+   * Deliberately NOT military and NOT behind the passcode: it is the most fun
+   * thing in the game to a ten-year-old and gating it behind a code most of
+   * them do not have would be perverse.
+   *
+   * If he does catch you he formates on your wing and escorts you home.
+   * Nobody is shot down. That is the tone the whole thing is written in.
+   */
+  {
+    id: 'tail',
+    name: 'Shake the Tail',
+    short: 'Lose the jet behind you',
+    difficulty: 'Medium',
+    icon: '\u{1F6A8}',
+    map: 'kestrel',
+    aircraft: 'vanguard',
+    blurb:
+      'There is a jet on your tail and he is faster than you are. You will not outrun him and you '
+      + 'cannot out-turn him. What you can do is climb into the cloud and disappear.',
+    reward: 'Teaches you that the weather is a place you can hide, and how to fly on instruments once you are in it.',
+    weather: { time: 'day', condition: 'rainy', windSpeedKts: 10, windDirDeg: 250 },
+    spawn: { pos: new THREE.Vector3(-3400, ELEV + 620, 2600), headingDeg: 300, speed: 150, altAGL: 620 },
+    // No time limit on purpose. A clock AND a pursuer means losing to
+    // whichever one you were not watching.
+    parTime: 200,
+    onStart: (ctx) => {
+      ctx.data.escaped = false;
+      ctx.data.caught = false;
+      ctx.data.warned = false;
+      ctx.data.bankHeld = 0;
+      ctx.data.escortT = 0;
+      ctx.sim.spawnPursuer();
+    },
+    /*
+     * Everything that moves lives here. `tick` runs every frame while the
+     * mission is running, before the fail checks, so what is written here is
+     * visible to failIf and to the step checks on the same frame.
+     */
+    tick: (ctx, dt) => {
+      const p = ctx.sim.pursuer;
+      if (!p || !p.alive) return;
+      p.update(dt, ctx.ac, ctx.sim);
+
+      // Break hard inside knife range and he goes past. He out-turns you, so
+      // without this there is no answer to him at all except the cloud.
+      const banked = Math.abs(ctx.ac.bankAngleDeg()) > 45;
+      ctx.data.bankHeld = banked ? ctx.data.bankHeld + dt : 0;
+      if (ctx.data.bankHeld > 1 && p.rangeTo < 1500 && p.tryOvershoot()) {
+        ctx.sim.hud.notify('He has overshot — go the other way, now', 'good', 3.5);
+        ctx.sim.audio.available && ctx.sim.audio.alerts.checkpoint && ctx.sim.audio.alerts.checkpoint();
+      }
+
+      // Two graces before he takes you, because being caught with no warning
+      // is the thing that makes a ten-year-old put the iPad down.
+      if (p.closeT > 5 && !ctx.data.warned) {
+        ctx.data.warned = true;
+        ctx.sim.hud.showBanner('He is about to take you', 'Climb. Break. Anything.', 'bad', 4);
+      }
+      if (p.closeT <= 0 && ctx.data.warned) ctx.data.warned = false;
+      if (p.closeT > 7) ctx.data.caught = true;
+
+      if (p.breakT >= 15) ctx.data.escaped = true;
+    },
+    failIf: (ctx) => {
+      if (!ctx.data.caught) return null;
+      const p = ctx.sim.pursuer;
+      if (p && !p.escorting) {
+        p.beginEscort();
+        ctx.sim.speak('Ironhead One has you. Formate on my left wing and follow me home.', 'tower');
+      }
+      return 'Ironhead One formed up on your wing and escorted you home. Nobody is in trouble — go again.';
+    },
+    steps: [
+      {
+        id: 'spotted',
+        text: 'There is a jet on your tail. Look behind you.',
+        hint: 'Press C to change view. He is the one getting bigger.',
+        atc: {
+          text: 'Vanguard zero one, you have company. He is faster than you. Use the weather.',
+          voice: 'tower',
+        },
+        check: (ctx) => ctx.elapsed > 5,
+      },
+      {
+        id: 'climb',
+        text: 'Climb to 3,200 feet and get into the cloud.',
+        hint: 'The cloud is between 2,400 and 4,000 feet on the altimeter. Get in, then EASE OFF — a hard climb throws you straight out of the top.',
+        targetLabel: 'The cloud',
+        target: (ctx) => {
+          const a = ctx.ac.pos;
+          return new THREE.Vector3(a.x, 975, a.z);
+        },
+        check: (ctx) => (ctx.sim.cloudImmersion || 0) > 0.45,
+      },
+      {
+        id: 'lose',
+        text: 'You are in it. Now stay in it, and keep him more than 900 metres behind you.',
+        hint: 'Fly the attitude, not the window. Wings level, nose on the horizon, and keep the power up.',
+        targetLabel: 'Keep going',
+        target: (ctx) => {
+          const a = ctx.ac.pos;
+          const f = new THREE.Vector3(0, 0, -1).applyQuaternion(ctx.ac.quat).setY(0).normalize();
+          return a.clone().addScaledVector(f, 3000);
+        },
+        check: (ctx) => ctx.data.escaped,
+      },
+      {
+        id: 'home',
+        text: 'He has lost you. Get back on the ground at Kestrel.',
+        hint: 'Come down out of the cloud before you look for the runway.',
+        atc: { text: 'Vanguard zero one, contact lost on him. Cleared straight in.', voice: 'tower' },
+        targetLabel: 'Runway 09',
+        target: () => RUNWAY.touchdown,
+        check: landedAndStopped,
+      },
+    ],
+    onComplete: (ctx) => {
+      ctx.sim.speak('Vanguard zero one, nicely flown. He never saw where you went.', 'tower');
+    },
+    score: (ctx) => {
+      const l = ctx.data.lastTouchdown;
+      // Most of it is getting away at all; the landing still counts.
+      const quick = Math.max(0, 1 - Math.max(0, ctx.runner.elapsed - 140) / 220);
+      return Math.round(quick * 58 + (l ? l.score : 20) * 0.42);
     },
   },
 ];

@@ -62,6 +62,7 @@ export const EVENTS = {
   FUEL_LOW: 'fuelLow',
   BOUNCE: 'bounce',
   ARRESTED: 'arrested',
+  DAMAGE: 'damage',
 };
 
 export class Aircraft {
@@ -98,6 +99,22 @@ export class Aircraft {
       tyre: false, // a burst main tyre, which drags to one side
     };
     this._jammedPitch = null;
+    /*
+     * Battle damage, 0..1 per part.
+     *
+     * Separate from `failures`, which are switches a player arms on purpose.
+     * This is what happens TO you: clipping a tree, taking a hit. A damaged
+     * aeroplane still flies — that is the whole point of it — it just flies
+     * worse, and in a way that tells you which part is hurt.
+     */
+    this.damage = { leftWing: 0, rightWing: 0, nose: 0, tail: 0, fuselage: 0, gear: 0 };
+    /*
+     * Off unless the game turns it on — it is behind Dev mode for now, and a
+     * flight model that silently changed how crashing works would invalidate
+     * every score anybody has already set.
+     */
+    this.survivableStrikes = false;
+    this._hitCool = 0;
     this.arrested = 0;
     /** Seconds the tanks last once a leak starts. */
     this.fuelLeakSeconds = 260;
@@ -152,6 +169,14 @@ export class Aircraft {
     this._t = new THREE.Vector3();
     this._tmp = new THREE.Vector3();
     this._tmp2 = new THREE.Vector3();
+    /*
+     * The strike test gets its own two scratch vectors rather than borrowing
+     * _tmp2, which is already spoken for by the gust and the wheel maths. The
+     * camera's look-behind bug was exactly this: two names for one vector, and
+     * the second write silently destroyed the first.
+     */
+    this._hitR = new THREE.Vector3();
+    this._hitV = new THREE.Vector3();
     this._q = new THREE.Quaternion();
     this._m = new THREE.Matrix4();
     this._airRel = new THREE.Vector3();
@@ -206,6 +231,8 @@ export class Aircraft {
     for (const k in this.failures) this.failures[k] = false;
     this._jammedPitch = null;
     this.arrested = 0;
+    for (const k in this.damage) this.damage[k] = 0;
+    this._hitCool = 0;
     this.rpm = engineOn ? 0.18 : 0;
     this.fuel = SPEC.fuelCapacity * fuel;
     this.crashed = false;
@@ -741,8 +768,18 @@ export class Aircraft {
     const CD =
       SPEC.CD0 + (this.failures.icing ? 0.022 : 0) + flapCD + SPEC.k * CL * CL + gearDrag + Math.abs(this.beta) * 0.36;
 
-    const lift = qS * CL * aeroFade;
-    const drag = qS * CD;
+    /*
+     * What the damage does to the wing.
+     *
+     * A hurt wing makes less lift and more drag. Both wings hurt equally and
+     * the aeroplane simply sinks; one wing worse than the other and it rolls
+     * towards the bad side, which is the part you can feel and fly against.
+     */
+    const dmg = this.damage;
+    const wingHurt = (dmg.leftWing + dmg.rightWing) / 2;
+    const wingAsym = dmg.leftWing - dmg.rightWing;
+    const lift = qS * CL * aeroFade * (1 - wingHurt * 0.34);
+    const drag = qS * (CD + wingHurt * 0.05 + dmg.nose * 0.03 + dmg.tail * 0.02 + dmg.fuselage * 0.04);
     const sideForce = qS * SPEC.CYb * this.beta * aeroFade;
 
     // Thrust falls off with forward speed like a fixed-pitch propeller.
@@ -751,7 +788,10 @@ export class Aircraft {
     // far more interesting problem than one that has stopped: you can still
     // fly, you just have to decide where you are going to get to.
     const rough = this.failures.roughEngine ? 0.45 : 1;
-    const thrust = this.rpm * SPEC.thrustMax * (rho / RHO0) * propEff * rough * (simple ? 1.12 : 1);
+    // A hit up front costs you power, and at the top end costs you the engine.
+    const noseHurt = 1 - dmg.nose * 0.55;
+    const thrust =
+      this.rpm * SPEC.thrustMax * (rho / RHO0) * propEff * rough * noseHurt * (simple ? 1.12 : 1);
 
     // Body-frame aerodynamic force.
     //
@@ -845,6 +885,32 @@ export class Aircraft {
       Cl += Math.sin(this.pos.x * 0.3 + this.pos.z * 0.17) * 0.05 * clamp((aAbs - aStall) * 4, 0, 1);
       Cm -= 0.12 * clamp((aAbs - aStall) * 3, 0, 1); // nose drops
     }
+
+    /*
+     * A damaged tail stops doing as it is told, and a lopsided wing rolls you.
+     *
+     * The roll is written as a coefficient rather than a torque so it scales
+     * with dynamic pressure like every other aerodynamic term — which means
+     * it bites hardest when you are fast, and you can fly slower to tame it.
+     * That is a real decision for the player, not just a penalty.
+     */
+    const tailAuth = 1 - dmg.tail * 0.62;
+    Cm *= tailAuth;
+    Cn *= tailAuth;
+    /*
+     * A lopsided wing rolls you towards the damaged side.
+     *
+     * Sign and size were both settled by measurement, at one known state, one
+     * step at a time — flying it for a few seconds and watching the bank was
+     * useless, because the propeller torque roll swamps this and the bank
+     * angle wraps past 180 and lies to you.
+     *
+     * Measured: full aileron is about 6 rad/s² of roll. A completely destroyed
+     * wing is set to about 80% of that, so the worst possible damage is a
+     * handful you can still fly against with the stick, and half-damage is a
+     * nuisance you can trim out with a little aileron held in.
+     */
+    Cl += wingAsym * 0.025;
 
     // Torque about body axes: X = pitch, Y = yaw, Z = roll. Faded out with the
     // forward airflow for the same reason as the forces above.
@@ -1104,6 +1170,8 @@ export class Aircraft {
       const overWater = gh < 0;
       const surface = overWater ? 0 : gh;
       if (world.y < surface) {
+        // The sea is not survivable. Everything else might be.
+        if (!overWater && this.glancingBlow(hp, world, surface)) continue;
         this.crash(overWater ? 'You flew into the sea' : hp.what, {
           worldPoint: world.clone(),
           part: hp.part,
@@ -1115,6 +1183,7 @@ export class Aircraft {
       // you flew straight through, which rather undersold them.
       const hit = obstacleAt(world.x, world.y, world.z);
       if (hit) {
+        if (this.glancingBlow(hp, world, world.y, hit.what)) continue;
         this.crash(hit.what, { worldPoint: world.clone(), surfaceKind: 'concrete' });
         return;
       }
@@ -1128,6 +1197,8 @@ export class Aircraft {
      * the same distance as a light one. Scaling with mass here does the same
      * job and keeps every aeroplane in the game stoppable on the same deck.
      */
+    if (this._hitCool > 0) this._hitCool -= dt;
+
     if (this.arrested > 0) {
       this.arrested -= dt;
       const v = Math.hypot(this.vel.x, this.vel.z);
@@ -1374,6 +1445,100 @@ export class Aircraft {
    * exists to stop the wreck sliding across the island and would otherwise
    * hand the impact an aeroplane that was barely moving.
    */
+  /**
+   * Hurt a part. The one way anything damages this aeroplane.
+   *
+   * `severity` is 0..1. Damage accumulates rather than replacing, so three
+   * small hits on the same wing add up to a big one, and it saturates at 1 —
+   * a wing cannot be more than completely wrecked.
+   *
+   * Returns the part's new damage level so the caller can react to it.
+   */
+  takeHit(part, severity, reason = '') {
+    if (!(part in this.damage)) return 0;
+    const add = clamp(severity, 0, 1);
+    if (add <= 0) return this.damage[part];
+    const before = this.damage[part];
+    this.damage[part] = clamp(before + add, 0, 1);
+    this.emit(EVENTS.DAMAGE, {
+      part,
+      severity: add,
+      level: this.damage[part],
+      reason,
+      worsened: this.damage[part] > before + 0.001,
+    });
+    return this.damage[part];
+  }
+
+  /**
+   * Did that hit break the aeroplane, or just hurt it?
+   *
+   * Clipping a treetop at taxi speed should not be the same event as flying a
+   * wing into a hillside at two hundred knots, and until now it was: any
+   * contact at all, anywhere, ended the flight.
+   *
+   * How hard you hit is the closing speed of the part that touched — not the
+   * aeroplane's speed, because a wingtip coming down in a roll can be moving
+   * far faster than the aeroplane is. Below `SOFT` it is always survivable,
+   * above `HARD` never, and in between it is a weighted coin: the harder you
+   * hit, the likelier it ends badly. That is the "chance based on how strong
+   * it was" the game wants, and it means two identical-looking scrapes can go
+   * differently, which is what makes the near miss worth talking about.
+   *
+   * A survivable blow pushes the aeroplane clear, takes a big bite out of its
+   * energy, and damages the part that touched.
+   */
+  glancingBlow(hp, world, surface, what = '') {
+    if (!this.survivableStrikes) return false;
+    if (this._hitCool > 0) return true; // already dealt with this contact
+    if (!(hp.part in this.damage)) return false;
+
+    // Velocity of this particular point, which is the aeroplane's velocity
+    // plus whatever the rotation is doing to a point that far out.
+    const r = this._hitR.copy(hp.pos).applyQuaternion(this.quat);
+    const pv = this._hitV.copy(this.omega).cross(r).add(this.vel);
+    const closing = Math.max(-pv.y, 0);
+    const speed = pv.length();
+
+    // Easy mode forgives more, because the class it was built for needs it to.
+    const forgiving = this.difficulty === 'easy' ? 1.45 : this.difficulty === 'realistic' ? 0.75 : 1;
+    const SOFT = 4 * forgiving;
+    const HARD = 16 * forgiving;
+    /*
+     * How hard it was is mostly how fast you were going DOWN into it.
+     *
+     * Forward speed counts for something — scraping along at 45 m/s is worse
+     * than at 10 — but only a little. Weighting it as heavily as the closing
+     * speed made every contact at normal flying speed a near-certain crash,
+     * which is the behaviour this was meant to replace.
+     */
+    const blow = closing + speed * 0.08;
+    if (blow > HARD) return false;
+    if (blow > SOFT) {
+      const oddsItEnds = (blow - SOFT) / (HARD - SOFT);
+      if (Math.random() < oddsItEnds) return false;
+    }
+
+    const severity = clamp(blow / HARD, 0.08, 0.75);
+    this.takeHit(hp.part, severity, what || hp.what);
+
+    // Out of the ground, and a great deal slower for having hit it.
+    const lift = surface - world.y + 0.05;
+    if (lift > 0) this.pos.y += lift;
+    if (this.vel.y < 0) this.vel.y *= -0.2;
+    this.vel.multiplyScalar(1 - 0.28 * severity);
+    this.omega.multiplyScalar(0.55);
+    this._hitCool = 0.5;
+    return true;
+  }
+
+  /** Worst single part, 0..1 — what the HUD shows as "how bad is it". */
+  get worstDamage() {
+    let w = 0;
+    for (const k in this.damage) w = Math.max(w, this.damage[k]);
+    return w;
+  }
+
   /** How full the tank is, 0..1. */
   fuelFraction() {
     return SPEC.fuelCapacity > 0 ? clamp(this.fuel / SPEC.fuelCapacity, 0, 1) : 1;

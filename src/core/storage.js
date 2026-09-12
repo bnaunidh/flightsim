@@ -74,6 +74,13 @@ export const DEFAULT_SETTINGS = {
    * specifically; it should be on screen.
    */
   minimap: true,
+  /*
+   * Battle damage: clipping something, or being hit, hurts the part that took
+   * it instead of always ending the flight. Off by default and behind Dev
+   * mode, because it changes what crashing means and every score already set
+   * was set under the old rule.
+   */
+  damageModel: false,
   aircraft: 'skylark',
   /** Which airline paint scheme. 'house' means each type's own colours. */
   livery: 'house',

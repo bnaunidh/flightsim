@@ -83,6 +83,32 @@ export class Hud {
      * Five missions fail on a time limit and none of them ever showed it, so
      * "Ran out of time" arrived out of nowhere on a run that felt fine.
      */
+    /*
+     * The damage panel: a little plan view of an aeroplane with five zones
+     * that light up where you have been hit.
+     *
+     * A number would not do. "Left wing 40%" means nothing at a glance to a
+     * ten-year-old halfway through a chase; a wing going orange means
+     * something instantly, and it is on the side the aeroplane is rolling
+     * towards, which is the connection worth teaching.
+     */
+    this.damagePanel = el('div', 'hud-damage');
+    this.damagePanel.hidden = true;
+    this.damagePanel.innerHTML = `
+      <svg viewBox="0 0 80 80" aria-hidden="true">
+        <path data-zone="leftWing"  d="M38 34 L6 44 L6 50 L38 46 Z"/>
+        <path data-zone="rightWing" d="M42 34 L74 44 L74 50 L42 46 Z"/>
+        <path data-zone="nose"      d="M40 6 L45 20 L35 20 Z"/>
+        <path data-zone="fuselage"  d="M35 20 L45 20 L45 58 L35 58 Z"/>
+        <path data-zone="tail"      d="M33 58 L47 58 L47 64 L41 68 L39 68 L33 64 Z"/>
+      </svg>
+      <span class="hud-damage-label">DAMAGE</span>
+    `;
+    this.damageZones = {};
+    this.damagePanel.querySelectorAll('[data-zone]').forEach((z) => {
+      this.damageZones[z.dataset.zone] = z;
+    });
+
     this.objectiveClock = el('div', 'hud-objective-clock', '');
     this.objectiveClock.hidden = true;
     this.objective.appendChild(this.objectiveTitle);
@@ -134,6 +160,9 @@ export class Hud {
     right.appendChild(this.windRose);
     right.appendChild(windInfo);
     wrap.appendChild(right);
+    // Under the wind, which is the quietest corner of the screen until
+    // something is actually wrong with the aeroplane.
+    wrap.appendChild(this.damagePanel);
 
     /* ---- Engine strip, bottom left ---- */
     const bottom = el('div', 'hud-panel hud-bottom');
@@ -230,6 +259,8 @@ export class Hud {
     // J, not M. M is mute — anyone who followed this tooltip silenced the game
     // and wondered why no map appeared.
     this.btnMap = mkBtn('map', 'minimap', 'Show the map (J)', tray, 'Minimap');
+    this.btnBrace = mkBtn('warning', 'brace', 'Shut everything down and brace for impact', tray, 'Brace for impact');
+    this.btnBrace.classList.add('is-brace');
 
     this.tray = tray;
     this.trayOpen = false;
@@ -464,6 +495,46 @@ export class Hud {
     el2.textContent = `${m}:${sec} left`;
     el2.classList.toggle('is-warn', left <= 60 && left > 15);
     el2.classList.toggle('is-bad', left <= 15);
+  }
+
+  /**
+   * Show where the aeroplane is hurt. Pass null to hide the panel entirely.
+   *
+   * Only repaints a zone whose band has actually changed — the HUD is redrawn
+   * every frame and writing the same class sixty times a second is how a
+   * panel like this ends up costing more than the scene behind it.
+   */
+  setDamage(damage) {
+    const p = this.damagePanel;
+    if (!p) return;
+    if (!damage) {
+      if (!p.hidden) p.hidden = true;
+      return;
+    }
+    let worst = 0;
+    for (const k in this.damageZones) {
+      const v = damage[k] || 0;
+      if (v > worst) worst = v;
+      const band = v < 0.06 ? 0 : v < 0.35 ? 1 : v < 0.7 ? 2 : 3;
+      const z = this.damageZones[k];
+      if (z.dataset.band === String(band)) continue;
+      z.dataset.band = String(band);
+      z.setAttribute('class', band === 0 ? '' : band === 1 ? 'is-light' : band === 2 ? 'is-hurt' : 'is-bad');
+    }
+    // The panel appears the moment anything is wrong and stays for the flight.
+    if (worst > 0.06 && p.hidden) p.hidden = false;
+  }
+
+  /**
+   * The cinematic frame that says "this is the bit that matters".
+   *
+   * Bars top and bottom, the readouts faded back, and the world left alone in
+   * the middle. It is doing the same job the silence does in a film: telling
+   * you to stop reading instruments and watch the aeroplane.
+   */
+  setBracing(on) {
+    if (!this.wrap) return;
+    this.wrap.classList.toggle('is-bracing', !!on);
   }
 
   setObjective(title, text) {

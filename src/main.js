@@ -45,6 +45,7 @@ import { CargoCrate, PracticeBomb } from './game/markers.js';
 import { NavGuide } from './game/navguide.js';
 import { Beacon } from './game/beacon.js';
 import { Minimap } from './ui/minimap.js';
+import { Pursuer } from './game/pursuer.js';
 import * as Prog from './game/progression.js';
 import { schemeFor, findLivery } from './aircraft/liveries.js';
 import { TaxiRun } from './game/taxi.js';
@@ -568,6 +569,20 @@ class Game {
     });
 
     ac.on(EVENTS.CRASH, (c) => {
+      /*
+       * Did the brace work?
+       *
+       * If you shut everything down and then flew it properly — wings level,
+       * slow, and settling rather than diving — the aeroplane is wrecked and
+       * everybody is fine. That is what the procedure is FOR, and it is what
+       * actually happens in the real ditchings people remember.
+       *
+       * Judged on the state at the moment of impact, not on where you ended
+       * up, because holding it off to the last second is the skill.
+       */
+      if (this.bracing && this.braceSurvivable()) {
+        this.braceSaved = true;
+      }
       this.progress.crashes++;
       saveProgress(this.progress);
       if (this.audio.available) {
@@ -613,6 +628,23 @@ class Game {
           this.showCrashDebrief(c.reason);
         }
       }, 2200);
+    });
+
+    ac.on(EVENTS.DAMAGE, (d) => {
+      if (!d.worsened) return;
+      const WORDS = {
+        leftWing: 'Left wing',
+        rightWing: 'Right wing',
+        nose: 'Nose',
+        tail: 'Tail',
+        fuselage: 'Fuselage',
+        gear: 'Undercarriage',
+      };
+      const how = d.level > 0.7 ? 'badly damaged' : d.level > 0.35 ? 'damaged' : 'scraped';
+      this.hud.notify(`${WORDS[d.part] || d.part} ${how} — keep flying`, 'warn', 4.5);
+      this.hud.setDamage(ac.damage);
+      this.rig.kick(0.5 + d.severity);
+      this.audio.available && this.audio.alerts.caution && this.audio.alerts.caution();
     });
 
     ac.on(EVENTS.ARRESTED, (d) => {
@@ -737,6 +769,25 @@ class Game {
   }
 
   showCrashDebrief(reason) {
+    if (this.braceSaved) {
+      this.braceSaved = false;
+      this.bracing = false;
+      this.hud.setBracing(false);
+      this.state = 'debrief';
+      this.hud.setVisible(false);
+      this.menus.showDebrief({
+        title: 'Everyone walked away',
+        kind: 'good',
+        body:
+          '<p class="debrief-reason">You shut it down, kept the wings level and held it off.</p>'
+          + '<p>The aeroplane is a write-off. Nobody is hurt. That is the whole job.</p>',
+        actions: [
+          { label: 'Reset on the runway', onClick: () => this.restart(), primary: true },
+          { label: 'Main menu', onClick: () => this.quitToMenu('main') },
+        ],
+      });
+      return;
+    }
     if (this.runner.status === STATUS.RUNNING || this.runner.status === STATUS.FAILED) return;
     this.state = 'debrief';
     this.hud.setVisible(false);
@@ -779,6 +830,13 @@ class Game {
     this.hasCargo = false;
     this.progress.flights++;
     saveProgress(this.progress);
+    // The flight model has to be told before the first frame, and told again
+    // each flight — reset() clears the damage but not the rule.
+    this.aircraft.survivableStrikes = !!this.settings.damageModel;
+    this.hud.setDamage(null);
+    this.bracing = false;
+    this.hud.setBracing(false);
+    this.clearPursuer();
     // Nothing from the last flight is allowed to arrive during this one.
     clearTimeout(this._crashDebriefT);
 
@@ -938,6 +996,7 @@ class Game {
   }
 
   quitToMenu(screen = 'main') {
+    this.clearPursuer();
     this.state = 'menu';
     this.mode = null;
     this.runner.status = STATUS.IDLE;
@@ -1079,6 +1138,9 @@ class Game {
         break;
       case 'help':
         this.hud.toggleControls(this.input.bindings, keyLabel, ACTIONS);
+        break;
+      case 'brace':
+        this.braceForImpact();
         break;
       case 'minimap': {
         const on = this.minimap.toggle();
@@ -1230,6 +1292,17 @@ class Game {
         value
           ? 'Free look on — move the mouse or use the arrow keys to look around'
           : 'Free look off — the arrow keys are the throttle again',
+        'info',
+        3.4
+      );
+    } else if (path === 'damageModel') {
+      this.aircraft.survivableStrikes = !!value;
+      if (!value) for (const k in this.aircraft.damage) this.aircraft.damage[k] = 0;
+      this.hud.setDamage(value ? this.aircraft.damage : null);
+      this.hud.notify(
+        value
+          ? 'Damage on — a knock may not end the flight now'
+          : 'Damage off — any contact ends the flight again',
         'info',
         3.4
       );
@@ -1955,6 +2028,103 @@ class Game {
     // silently beaching it.
     console.warn('No water deep enough for the carrier on this map.');
     return { x: -5200, z: 3400 };
+  }
+
+  /**
+   * Put a jet on the player's tail.
+   *
+   * Owned by the game rather than by the mission, so it is disposed on every
+   * path that ends a flight — a pursuer left in the scene would carry on
+   * hunting somebody who has gone back to the menu.
+   */
+  spawnPursuer(typeId = 'nightjar') {
+    this.clearPursuer();
+    const type = getAircraft(typeId);
+    if (!type) return null;
+    this.pursuer = new Pursuer(this.scene, createAircraftModel, type);
+    this.pursuer.placeBehind(this.aircraft, 2200);
+    // The minimap already draws whatever is in sim.traffic, and has done since
+    // before there was any traffic to draw.
+    this.traffic = [this.pursuer];
+    return this.pursuer;
+  }
+
+  clearPursuer() {
+    if (this.pursuer) this.pursuer.dispose();
+    this.pursuer = null;
+    this.traffic = [];
+  }
+
+  /**
+   * Was that a survivable arrival?
+   *
+   * Three things, and all three are the ones a pilot is taught: wings level,
+   * coming down gently, and not too fast. Over water counts as flat ground —
+   * a ditching into calm sea is the textbook case.
+   */
+  braceSurvivable() {
+    const ac = this.aircraft;
+    const wingsLevel = Math.abs(ac.bankAngleDeg()) < 14;
+    // vel.y, not `vs` — `vs` is a copy taken once per physics step, so at the
+    // moment the crash fires it can still be last frame's number.
+    const gentle = -ac.vel.y < 6.5;
+    const notDiving = ac.pitchAngleDeg() > -12;
+    return wingsLevel && gentle && notDiving;
+  }
+
+  /**
+   * Shut everything down and brace.
+   *
+   * The last thing you do when it is not going to be a landing. Engine off,
+   * fuel off, electrics off — a real crew does this so there is no fire and
+   * nothing live when it stops — then hold the wings level and fly it all the
+   * way down.
+   *
+   * It is deliberately NOT a death animation. It is a procedure, and a good
+   * one saves everybody: wings level, nose up, slow, and over something flat
+   * is walk-away territory. Doing it badly is still a crash. That is the
+   * honest version and it is also the one worth being good at.
+   */
+  braceForImpact() {
+    if (this.state !== 'flying' || this.bracing) return;
+    const ac = this.aircraft;
+    if (ac.crashed) return;
+    if (ac.onGround && ac.groundSpeed < 4) {
+      this.hud.notify('You are already stopped', 'info', 2.4);
+      return;
+    }
+
+    this.bracing = true;
+    this.braceAt = this.progress ? this.progress.flights : 0;
+
+    // Everything off.
+    ac.stopEngine('brace');
+    ac.fuel = 0;
+    ac.controls.throttle = 0;
+    this.input.throttleTarget = 0;
+    this.autopilot.setEngaged(false, ac);
+    // The panel goes dark with the electrics, which is the part that makes it
+    // land. You fly the rest of it by looking outside.
+    this.instrumentBlackout = Math.max(this.instrumentBlackout, 999);
+
+    // The call. Synthesised radio, like every other transmission in the game —
+    // no TTS, ever.
+    this.speak(
+      `${this.atc.field} Tower, ${this.atc.callsign}. Shutting down and bracing. Thank you for everything. Out.`,
+      'tower'
+    );
+    this.hud.showBanner(
+      'Brace, brace',
+      'Wings level. Nose up. Hold it off as long as you can.',
+      'bad',
+      6
+    );
+    this.hud.setBracing(true);
+    // Pull the camera out and watch it go down.
+    this.rig.setMode('orbit');
+    this.rig.orbitDist = 44;
+    this.rig.orbitHeight = 9;
+    this.audio.available && this.audio.alerts.caution && this.audio.alerts.caution();
   }
 
   /**

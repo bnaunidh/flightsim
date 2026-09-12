@@ -1414,7 +1414,8 @@ export class Menus {
           <button data-dev-enter>Enter</button>
         </div>
         <div class="dev-panel" data-dev-panel hidden>
-          <p class="hint tiny">Nothing is being tried out at the moment. The aeroplane-model switch moved to Settings, where everyone can reach it.</p>
+          <label class="check"><input type="checkbox" data-dev-set="damageModel"><span><strong>Damage instead of crashes</strong> — clip something and there is a chance, based on how hard you hit it, that you keep flying with that part damaged. A hurt wing rolls you towards it, a hurt tail goes soft, a hurt nose loses power. The panel on the right shows where you were hit.</span></label>
+          <p class="hint tiny">Work in progress. It changes what crashing means, so scores set with it on are not comparable with the rest.</p>
           <button class="ghost" data-dev-leave>Leave dev mode</button>
         </div>
 
@@ -1473,6 +1474,8 @@ export class Menus {
         : `${rank.blurb}`;
 
       const dev = Prog.isDev(p);
+      const dmgBox = s.querySelector('[data-dev-set="damageModel"]');
+      if (dmgBox) dmgBox.checked = !!(this.settingsRef && this.settingsRef.damageModel);
       s.querySelector('[data-dev-panel]').hidden = !dev;
       s.querySelector('[data-dev-entry]').hidden = dev;
       s.querySelector('[data-dev-note]').textContent = dev
