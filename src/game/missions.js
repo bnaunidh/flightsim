@@ -1178,6 +1178,10 @@ export const MISSIONS = [
       ctx.data.warned = false;
       ctx.data.bankHeld = 0;
       ctx.data.escortT = 0;
+      // Being shot has to be visible even with the Dev-mode damage switch off —
+      // the panel only appears once something is wrong, so this costs nothing
+      // to anyone who never gets hit.
+      ctx.sim.hud.setDamage(ctx.ac.damage);
       ctx.sim.spawnPursuer();
     },
     /*
@@ -1189,6 +1193,24 @@ export const MISSIONS = [
       const p = ctx.sim.pursuer;
       if (!p || !p.alive) return;
       p.update(dt, ctx.ac, ctx.sim);
+
+      /*
+       * He shoots.
+       *
+       * Warning bursts, from behind and close in, and most of them miss. What
+       * lands damages the part that was actually facing him — from dead astern
+       * that is the tail, from off to one side it is that wing — and you feel
+       * it immediately, because a hurt wing rolls you towards it.
+       *
+       * The aeroplane is never destroyed by this. The worst it does is make
+       * flying hard enough that he catches you, and being caught is an escort
+       * home.
+       */
+      const shot = p.tryShot(ctx.ac, dt);
+      if (shot) {
+        ctx.ac.takeHit(shot.part, shot.severity, 'Hit by Ironhead One');
+        ctx.sim.rig.kick(1.1);
+      }
 
       // Break hard inside knife range and he goes past. He out-turns you, so
       // without this there is no answer to him at all except the cloud.

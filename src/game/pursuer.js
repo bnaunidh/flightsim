@@ -62,6 +62,13 @@ export class Pursuer {
     this.joinUpFor = 0;
     this.escorting = false;
 
+    // Gunnery. He fires warning bursts that can clip you — he is trying to
+    // make you land, not to destroy you, which is the same tone the escort
+    // ending is written in.
+    this.shotCool = 3;
+    this.tracer = null;
+    this.tracerT = 0;
+
     // How long you have been out of sight, and how long he has been close.
     this.breakT = 0;
     this.closeT = 0;
@@ -81,6 +88,11 @@ export class Pursuer {
     }
     this._q = new THREE.Quaternion();
     this._tmp = new THREE.Vector3();
+    // Gunnery gets its own scratch, because _tmp and _q are both already in
+    // use by the model sync running in the same frame.
+    this._shotA = new THREE.Vector3();
+    this._shotB = new THREE.Vector3();
+    this._shotQ = new THREE.Quaternion();
   }
 
   /** Put him somewhere, usually dead astern of the player. */
@@ -202,7 +214,98 @@ export class Pursuer {
     this.vel.y = clamp((wantY - this.pos.y) * 0.6, -55, 55);
     this.pos.addScaledVector(this.vel, dt);
 
+    if (this.tracer) {
+      this.tracerT = Math.max(0, this.tracerT - dt);
+      this.tracer.material.opacity = this.tracerT > 0 ? this.tracerT / 0.12 : 0;
+      this.tracer.visible = this.tracerT > 0;
+    }
+
     this.syncModel(dt);
+  }
+
+  /**
+   * Take a shot, if he has one.
+   *
+   * Only from behind and only from close in — he has to be inside 700 m, have
+   * you in sight, and be pointing roughly at you. Returns the part he hit, or
+   * null, so the caller decides what that means.
+   *
+   * Deliberately sparse: a burst every few seconds at worst, and most of them
+   * miss. Being hit should be an event you remember, not a drizzle.
+   */
+  tryShot(ac, dt) {
+    this.shotCool -= dt;
+    if (this.shotCool > 0 || !this.contact || this.escorting) return null;
+    const range = this._range;
+    if (range > 700 || range < 60) return null;
+
+    /*
+     * Is he actually pointing at you? A jet cannot shoot sideways.
+     *
+     * The nose direction is taken from the velocity he is ALREADY flying,
+     * rather than rebuilt from his heading. Rebuilding it got the sign of X
+     * wrong and pointed him backwards — the dot product came out at -0.54 with
+     * both aeroplanes on the same heading, so he never fired once. Reading the
+     * vector he is actually using cannot disagree with itself.
+     */
+    const toYou = this._shotA.copy(ac.pos).sub(this.pos).normalize();
+    const nose = this._shotB.copy(this.vel).setY(0);
+    if (nose.lengthSq() < 1) return null;
+    nose.normalize();
+    if (nose.dot(toYou) < 0.94) return null;
+
+    this.shotCool = 3.5 + Math.random() * 2.5;
+    this.fireTracer(ac);
+
+    // Most bursts miss. The closer he is, the likelier one lands.
+    const odds = clamp(1 - (range - 60) / 640, 0.12, 0.62);
+    if (Math.random() > odds) return null;
+
+    /*
+     * Where it lands: from dead astern he is hitting the tail; from off to one
+     * side he is hitting that wing. Worked out from HIS position in YOUR
+     * frame, so the part named is the part actually facing him.
+     */
+    const local = this._shotA.copy(this.pos).sub(ac.pos).applyQuaternion(
+      this._shotQ.copy(ac.quat).invert()
+    );
+    const behind = local.z > 0;
+    let part;
+    if (Math.abs(local.x) > Math.abs(local.z) * 0.55) part = local.x < 0 ? 'leftWing' : 'rightWing';
+    else part = behind ? 'tail' : 'nose';
+    return { part, severity: 0.16 + Math.random() * 0.2 };
+  }
+
+  /** A line of light going past the canopy. Built once, reused. */
+  fireTracer(ac) {
+    if (!this.scene) return;
+    if (!this.tracer) {
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(),
+        new THREE.Vector3(),
+      ]);
+      const mat = new THREE.LineBasicMaterial({
+        color: 0xffd66b,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      this.tracer = new THREE.Line(geo, mat);
+      this.tracer.frustumCulled = false;
+      this.scene.add(this.tracer);
+    }
+    const pts = this.tracer.geometry.attributes.position;
+    // From his nose to just past your shoulder, so it reads as going by you
+    // rather than into you.
+    const miss = new THREE.Vector3(
+      (Math.random() - 0.5) * 26,
+      (Math.random() - 0.5) * 14,
+      0
+    ).applyQuaternion(ac.quat);
+    pts.setXYZ(0, this.pos.x, this.pos.y, this.pos.z);
+    pts.setXYZ(1, ac.pos.x + miss.x, ac.pos.y + miss.y, ac.pos.z + miss.z);
+    pts.needsUpdate = true;
+    this.tracerT = 0.12;
   }
 
   /**
@@ -263,6 +366,12 @@ export class Pursuer {
   dispose() {
     this.alive = false;
     if (this.model) this.scene.remove(this.model);
+    if (this.tracer) {
+      this.scene.remove(this.tracer);
+      this.tracer.geometry.dispose();
+      this.tracer.material.dispose();
+    }
+    this.tracer = null;
     this.model = null;
   }
 }
