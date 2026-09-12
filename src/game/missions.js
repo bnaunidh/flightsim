@@ -1164,11 +1164,21 @@ export const MISSIONS = [
     map: 'kestrel',
     aircraft: 'vanguard',
     blurb:
-      'There is a jet on your tail and he is faster than you are. You will not outrun him and you '
-      + 'cannot out-turn him. What you can do is climb into the cloud and disappear.',
+      'A bomber and two fighters are on your tail and all three are faster than you are. You will '
+      + 'not outrun them and you cannot out-turn them. What you can do is climb into the cloud and disappear.',
     reward: 'Teaches you that the weather is a place you can hide, and how to fly on instruments once you are in it.',
-    weather: { time: 'day', condition: 'rainy', windSpeedKts: 10, windDirDeg: 250 },
-    spawn: { pos: new THREE.Vector3(-3400, ELEV + 620, 2600), headingDeg: 300, speed: 150, altAGL: 620 },
+    /*
+     * Cloudy, not rainy, and lower.
+     *
+     * Rain was chosen because it gives the thickest cloud to hide in — and it
+     * also meant you could not see the three aeroplanes chasing you from a
+     * kilometre away, which is most of the mission. Photographed: grey murk
+     * and nothing in it. Cloudy has a higher, thinner deck with less than half
+     * the fog, so you start in clear air with them plainly behind you and the
+     * cloud is something you climb up into.
+     */
+    weather: { time: 'day', condition: 'cloudy', windSpeedKts: 10, windDirDeg: 250 },
+    spawn: { pos: new THREE.Vector3(-3400, ELEV + 430, 2600), headingDeg: 300, speed: 150, altAGL: 430 },
     // No time limit on purpose. A clock AND a pursuer means losing to
     // whichever one you were not watching.
     parTime: 200,
@@ -1183,6 +1193,12 @@ export const MISSIONS = [
       // to anyone who never gets hit.
       ctx.sim.hud.setDamage(ctx.ac.damage);
       ctx.sim.spawnPursuer();
+      /*
+       * A cloudy deck tops out at about 0.51 immersion against rain's 0.88, so
+       * the threshold for losing them comes down to match. Without this the
+       * cloud simply never counts as cloud and the mission cannot be won.
+       */
+      for (const j of ctx.sim.pursuers || []) j.cloudHides = 0.38;
     },
     /*
      * Everything that moves lives here. `tick` runs every frame while the
@@ -1190,9 +1206,12 @@ export const MISSIONS = [
      * visible to failIf and to the step checks on the same frame.
      */
     tick: (ctx, dt) => {
-      const p = ctx.sim.pursuer;
+      const flight = ctx.sim.pursuers || [];
+      if (!flight.length) return;
+      for (const j of flight) j.update(dt, ctx.ac, ctx.sim);
+      // The nearest one is the one that matters for being seen and caught.
+      const p = flight.reduce((a, b) => (b.rangeTo < a.rangeTo ? b : a), flight[0]);
       if (!p || !p.alive) return;
-      p.update(dt, ctx.ac, ctx.sim);
 
       /*
        * He shoots.
@@ -1206,7 +1225,12 @@ export const MISSIONS = [
        * flying hard enough that he catches you, and being caught is an escort
        * home.
        */
-      const shot = p.tryShot(ctx.ac, dt);
+      // Any of the three can be the one that gets a shot off.
+      let shot = null;
+      for (const j of flight) {
+        shot = j.tryShot(ctx.ac, dt);
+        if (shot) break;
+      }
       if (shot) {
         ctx.ac.takeHit(shot.part, shot.severity, 'Hit by Ironhead One');
         ctx.sim.rig.kick(1.1);
@@ -1217,6 +1241,7 @@ export const MISSIONS = [
       const banked = Math.abs(ctx.ac.bankAngleDeg()) > 45;
       ctx.data.bankHeld = banked ? ctx.data.bankHeld + dt : 0;
       if (ctx.data.bankHeld > 1 && p.rangeTo < 1500 && p.tryOvershoot()) {
+        for (const j of flight) if (j !== p) j.tryOvershoot();
         ctx.sim.hud.notify('He has overshot — go the other way, now', 'good', 3.5);
         ctx.sim.audio.available && ctx.sim.audio.alerts.checkpoint && ctx.sim.audio.alerts.checkpoint();
       }
@@ -1244,24 +1269,24 @@ export const MISSIONS = [
     steps: [
       {
         id: 'spotted',
-        text: 'There is a jet on your tail. Look behind you.',
-        hint: 'Press C to change view. He is the one getting bigger.',
+        text: 'Three of them, right behind you. Look back.',
+        hint: 'Press C to change view. They are already inside a kilometre.',
         atc: {
-          text: 'Vanguard zero one, you have company. He is faster than you. Use the weather.',
+          text: 'Vanguard zero one, three contacts on your tail and closing. They are faster than you. Use the weather.',
           voice: 'tower',
         },
         check: (ctx) => ctx.elapsed > 5,
       },
       {
         id: 'climb',
-        text: 'Climb to 3,200 feet and get into the cloud.',
-        hint: 'The cloud is between 2,400 and 4,000 feet on the altimeter. Get in, then EASE OFF — a hard climb throws you straight out of the top.',
+        text: 'Climb into the cloud — about 4,200 feet.',
+        hint: 'The deck starts around 3,400 feet. Get into it, then EASE OFF — a hard climb throws you straight out of the top.',
         targetLabel: 'The cloud',
         target: (ctx) => {
           const a = ctx.ac.pos;
-          return new THREE.Vector3(a.x, 975, a.z);
+          return new THREE.Vector3(a.x, 1280, a.z);
         },
-        check: (ctx) => (ctx.sim.cloudImmersion || 0) > 0.45,
+        check: (ctx) => (ctx.sim.cloudImmersion || 0) > 0.38,
       },
       {
         id: 'lose',

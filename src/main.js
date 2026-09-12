@@ -2119,20 +2119,55 @@ class Game {
    * path that ends a flight — a pursuer left in the scene would carry on
    * hunting somebody who has gone back to the menu.
    */
-  spawnPursuer(typeId = 'nightjar') {
+  /**
+   * A flight of three, close enough to see.
+   *
+   * One aeroplane at 2,200 m was the whole problem: at that range a jet is a
+   * few pixels, so "there is a jet on your tail" was a line of text about
+   * something you could not make out. Three of them, starting inside a
+   * kilometre and spread across your tail, is the difference between being
+   * told you are being chased and being chased.
+   *
+   * The leader is the bomber and the wingmen are fighters, which is also why
+   * the fighters sit wider — they are the ones who will cut you off.
+   */
+  spawnPursuer() {
     this.clearPursuer();
-    const type = getAircraft(typeId);
-    if (!type) return null;
-    this.pursuer = new Pursuer(this.scene, createAircraftModel, type);
-    this.pursuer.placeBehind(this.aircraft, 2200);
-    // The minimap already draws whatever is in sim.traffic, and has done since
-    // before there was any traffic to draw.
-    this.traffic = [this.pursuer];
+    /*
+     * Close. Much closer than feels reasonable on paper.
+     *
+     * Photographed at a kilometre in clear air: a fifteen-metre jet is about
+     * a pixel and a half, and three of them are three pixels. "There is a jet
+     * on your tail" was a caption over an empty sky. At two to three hundred
+     * metres they read as aeroplanes, you can tell a bomber from a fighter,
+     * and looking back actually means something.
+     */
+    const flight = [
+      { id: 'nightjar', at: 240, side: 0, name: 'Ironhead One' },
+      { id: 'vanguard', at: 330, side: -1, name: 'Ironhead Two' },
+      { id: 'vanguard', at: 330, side: 1, name: 'Ironhead Three' },
+    ];
+    this.pursuers = [];
+    for (const f of flight) {
+      const type = getAircraft(f.id);
+      if (!type) continue;
+      const p = new Pursuer(this.scene, createAircraftModel, type, { name: f.name });
+      p.placeBehind(this.aircraft, f.at);
+      // Spread them across your tail rather than stacking them in a line.
+      const across = new THREE.Vector3(f.side * 90, f.side === 0 ? 18 : -14, 0)
+        .applyQuaternion(this.aircraft.quat);
+      p.pos.add(across);
+      this.pursuers.push(p);
+    }
+    // The leader is the one the mission talks about and scores against.
+    this.pursuer = this.pursuers[0] || null;
+    this.traffic = this.pursuers;
     return this.pursuer;
   }
 
   clearPursuer() {
-    if (this.pursuer) this.pursuer.dispose();
+    for (const p of this.pursuers || []) p.dispose();
+    this.pursuers = [];
     this.pursuer = null;
     this.traffic = [];
   }

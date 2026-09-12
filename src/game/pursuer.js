@@ -73,6 +73,8 @@ export class Pursuer {
     this.breakT = 0;
     this.closeT = 0;
     this.contact = true;
+    /** How much cloud it takes to lose them. Set per mission. */
+    this.cloudHides = 0.45;
 
     // The line-of-sight raymarch is the one genuinely costly thing here, so it
     // runs at 10 Hz and the answer is remembered in between.
@@ -121,7 +123,7 @@ export class Pursuer {
   hasContact(ac, sim, dt) {
     const range = this._range;
     if (range > 4600) return false;
-    const inCloud = (sim.cloudImmersion || 0) > 0.45;
+    const inCloud = (sim.cloudImmersion || 0) > (this.cloudHides ?? 0.45);
     if (inCloud && range > 900) return false;
 
     // Terrain masking, at 10 Hz.
@@ -157,7 +159,15 @@ export class Pursuer {
     if (this.contact) this.breakT = Math.max(0, this.breakT - dt * 1.2);
     else this.breakT += dt;
 
-    this.closeT = range < 250 && this.contact ? this.closeT + dt : 0;
+    /*
+     * 140 m, not 250.
+     *
+     * They now start at 240 m, which under the old radius meant the caught
+     * clock began ticking before the first word of the brief. Knife range has
+     * to be closer than the range they arrive at, or the mission is lost
+     * before it starts.
+     */
+    this.closeT = range < 140 && this.contact ? this.closeT + dt : 0;
 
     // --- steering ---------------------------------------------------------
     this.overshootCool = Math.max(0, this.overshootCool - dt);
@@ -207,8 +217,21 @@ export class Pursuer {
     this.speed += clamp(want - this.speed, -ACCEL * dt, ACCEL * dt);
 
     // --- move -------------------------------------------------------------
+    /*
+     * Heading to direction, the way the rest of the game does it.
+     *
+     * physics.js reset() rotates (0,0,-1) by -heading about Y, which gives
+     * forward = (+sin h, 0, -cos h). This had -sin, so every pursuer flew off
+     * on a mirrored track the instant it spawned: matched speed, matched
+     * heading, and 225 metres of separation opening every second. From the
+     * cockpit that is "there is no jet".
+     *
+     * The gunnery already reads its nose from `vel` rather than rebuilding it,
+     * which is why the sign error survived there unnoticed — it was wrong in
+     * exactly one place and consistently wrong with itself everywhere else.
+     */
     const rad = THREE.MathUtils.degToRad(this.heading);
-    this.vel.set(-Math.sin(rad) * this.speed, 0, -Math.cos(rad) * this.speed);
+    this.vel.set(Math.sin(rad) * this.speed, 0, -Math.cos(rad) * this.speed);
     // Match your height, but never fly into the ground doing it.
     const wantY = Math.max(ac.pos.y, heightAt(this.pos.x, this.pos.z) + FLOOR_AGL);
     this.vel.y = clamp((wantY - this.pos.y) * 0.6, -55, 55);
@@ -328,10 +351,11 @@ export class Pursuer {
     this.escorting = true;
   }
 
+  /** Inverse of the same convention: forward is (+sin h, 0, -cos h). */
   bearingTo(p) {
     const dx = p.x - this.pos.x;
     const dz = p.z - this.pos.z;
-    return (THREE.MathUtils.radToDeg(Math.atan2(-dx, -dz)) + 360) % 360;
+    return (THREE.MathUtils.radToDeg(Math.atan2(dx, -dz)) + 360) % 360;
   }
 
   syncModel(dt) {
