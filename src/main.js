@@ -2315,6 +2315,23 @@ class Game {
     if (this._braceArm > 0) this._braceArm -= dt;
     if (!this.bracing) return;
     const ac = this.aircraft;
+
+    /*
+     * If the ground got there first, the sequence is over.
+     *
+     * It kept playing across a crash it had not caused — so you hit
+     * something, and then the tower carried on calmly telling you help was
+     * coming while the wreck sat there. The ending belongs to whichever
+     * happened first, and here that is the crash.
+     */
+    if (ac.crashed && !this.braceRescueT) {
+      this.bracing = false;
+      this.braceOwnsEnding = false;
+      this.clearRescue();
+      this.clearChute();
+      this.autopilot.setEngaged(false, ac);
+      return;
+    }
     this.braceT += dt;
     const t = this.braceT;
     const call = this.atc ? this.atc.callsign : 'Skylark one seven two';
