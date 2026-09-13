@@ -262,6 +262,36 @@ export function installGameUi(menus, hooks = {}) {
         // The measured line — "31 km of road, a coast loop, a 240 m climb".
         // Written by whoever measured it; empty means say nothing rather than
         // invent something.
+        /*
+         * Say when a map is being borrowed.
+         *
+         * The nine flight maps are offered to the boat and the helicopter too,
+         * and that is right — every one of them has a real harbour now, and a
+         * child who has learned to fly should be able to sail into the one
+         * they landed at. But the card still read "Long runway, soft sea
+         * breeze and a wide valley off both ends", which is an aeroplane
+         * talking, on a screen headed "Choose your water".
+         */
+        const own = (m.game || 'flight') === game;
+        card.classList.toggle('is-borrowed', ok && !own);
+        let badge = card.querySelector('[data-borrowed]');
+        if (ok && !own) {
+          if (!badge) {
+            badge = document.createElement('p');
+            badge.className = 'map-borrowed';
+            badge.setAttribute('data-borrowed', '');
+            const text = card.querySelector('.map-text');
+            if (text) text.appendChild(badge);
+          }
+          badge.textContent = game === 'boat'
+            ? 'A flying map — it has a harbour, and you can take her out of it.'
+            : game === 'car'
+              ? 'A flying map — there is a road on it, but it was not built for driving.'
+              : 'A flying map — somewhere to set down, but no pads of its own.';
+          badge.hidden = false;
+        } else if (badge) {
+          badge.hidden = true;
+        }
         const note = allowed && (allowed.find((a) => a.id === m.id) || {}).note;
         let noteEl = card.querySelector('[data-map-note]');
         if (note) {
@@ -278,6 +308,26 @@ export function installGameUi(menus, hooks = {}) {
           noteEl.hidden = true;
         }
       }
+      /*
+       * And the game's own maps first.
+       *
+       * The cards sit in MAPS order, which is the order they were written —
+       * the original nine at the top. So the boat's picker opened on four
+       * borrowed aeroplane islands and you had to scroll past them to reach
+       * the ones built for a boat. Moving them is one appendChild each; the
+       * browser treats that as a re-order, not a rebuild, so nothing is lost.
+       */
+      const grid = maps.querySelector('.map-grid') || (maps.querySelector('[data-map-card]') || {}).parentElement;
+      if (grid) {
+        const own = [];
+        const rest = [];
+        for (const card of grid.querySelectorAll('[data-map-card]')) {
+          const def = MAPS.find((x) => x.id === card.dataset.mapCard);
+          ((def && (def.game || 'flight') === game) ? own : rest).push(card);
+        }
+        for (const card of own.concat(rest)) grid.appendChild(card);
+      }
+
       const btnWord = game === 'car' ? 'Drive here' : game === 'boat' ? 'Sail here' : 'Fly here';
       for (const b of maps.querySelectorAll('[data-choose-map]')) b.textContent = btnWord;
       const hint = maps.querySelector('.hint');

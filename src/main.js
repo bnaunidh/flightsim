@@ -3517,7 +3517,24 @@ class Game {
 
     const r = v.readouts();
     if (v.isBoat && this.boatHud) {
-      this.boatHud.update(dt, r, { sim: this, audio: this.audio });
+      /*
+       * The sounder needs somewhere to sound.
+       *
+       * BoatHud.update takes a context with `pos` or `depth` on it and falls
+       * back to 99 when it has neither — and it was being handed neither, so
+       * the depth under the keel, which is the single instrument the whole
+       * boat game is steered by, read ninety-nine metres everywhere including
+       * alongside the quay. The echo-sounder ping is gated on the same number,
+       * so that never sounded either.
+       */
+      this.boatHud.update(dt, r, {
+        sim: this,
+        audio: this.audio,
+        pos: v.pos,
+        depth: v.depth,
+        aground: v.aground,
+        weather: this.weather,
+      });
     } else if (this.driveHud) {
       /*
        * The drive HUD takes a STATE, not the readouts.

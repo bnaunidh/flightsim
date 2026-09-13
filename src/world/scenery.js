@@ -807,6 +807,35 @@ export function addHarbour(group, cfg) {
 }
 
 /**
+ * The nearest dry ground to a point, or null within `reach`.
+ *
+ * Nine of the thirty-two maps put their lighthouse in open water — three of
+ * them original maps, one of them forty metres under — and four put their town
+ * centre on a hilltop outside the town's own declared height band, so the
+ * scatter found nowhere to stand a building and the town was silently empty.
+ * Both are the same mistake: a coordinate chosen by eye against a coastline
+ * that is made of noise. Rather than hand-correct twelve coordinates that will
+ * drift again the next time somebody retunes an island, the builders ask.
+ */
+function nearestLand(x, z, minH = 2, reach = 3200) {
+  if (heightAt(x, z) >= minH) return { x, z };
+  for (let r = 80; r <= reach; r += 80) {
+    let best = null;
+    for (let a = 0; a < 24; a++) {
+      const ang = (a * Math.PI) / 12;
+      const px = x + Math.sin(ang) * r;
+      const pz = z - Math.cos(ang) * r;
+      const h = heightAt(px, pz);
+      if (h >= minH && (!best || h < best.h)) best = { x: px, z: pz, h };
+    }
+    // The LOWEST land that qualifies, at the smallest radius that has any —
+    // which is the shoreline, and a lighthouse belongs on the shoreline.
+    if (best) return { x: best.x, z: best.z };
+  }
+  return null;
+}
+
+/**
  * A weapons range you can actually see.
  *
  * The mission has always said "a marked practice range with a bullseye", and
@@ -1001,18 +1030,96 @@ export class Scenery {
     this.range = addWeaponsRange(this.group, cfg.range);
 
     // The town, in whatever flat land this map has near the field.
-    const town = cfg.town
-      ? scatter({
-      cx: cfg.town.cx,
-      cz: cfg.town.cz,
-      radius: cfg.town.radius,
-      count: Math.round(cfg.town.count * (density > 0.5 ? 1 : 0.7)),
+    /*
+     * A town whose ground is outside its own declared height band.
+     *
+     * `scatter` refuses every point outside [minH, maxH], and four maps put
+     * the town centre a hundred to three hundred metres up while declaring a
+     * band that stops at ninety — so the scatter found nowhere at all to stand
+     * a building and the town was silently, completely empty. Nothing threw
+     * and nothing warned; the place named on the map simply was not there.
+     *
+     * The band is widened to whatever the ground round the centre actually is,
+     * rather than the town being moved: the author chose where the town goes,
+     * and the band is a filter that was written for a different island.
+     */
+    const townCfg = cfg.town ? { ...cfg.town } : null;
+    if (townCfg) {
+      const hs = [];
+      for (let a = 0; a < 16; a++) {
+        for (const f of [0.25, 0.55, 0.85]) {
+          const ang = (a * Math.PI) / 8;
+          hs.push(heightAt(townCfg.cx + Math.sin(ang) * townCfg.radius * f,
+            townCfg.cz - Math.cos(ang) * townCfg.radius * f));
+        }
+      }
+      const dry = hs.filter((h) => h > 1).sort((a, b) => a - b);
+      const inBand = hs.filter((h) => h >= (townCfg.minH ?? 0) && h <= (townCfg.maxH ?? 1e9));
+      if (!inBand.length && dry.length) {
+        townCfg.minH = Math.max(1, dry[0] - 2);
+        townCfg.maxH = dry[dry.length - 1] + 2;
+      }
+    }
+    const townSpots = (c) => scatter({
+      cx: c.cx,
+      cz: c.cz,
+      radius: c.radius,
+      count: Math.round(c.count * (density > 0.5 ? 1 : 0.7)),
       seed: 9,
-      minH: cfg.town.minH,
-      maxH: cfg.town.maxH,
-      maxSlope: 0.16,
-    })
-      : [];
+      minH: c.minH,
+      maxH: c.maxH,
+      maxSlope: c.maxSlope ?? 0.16,
+    });
+    let town = townCfg ? townSpots(townCfg) : [];
+    if (townCfg && !town.length) {
+      /*
+       * Still nowhere. Three maps put the town centre in open water or on
+       * ground too steep for a house — a sea-stack map, a harbour and a
+       * mountain pass. Move it to the nearest land and let it climb: a town on
+       * the wrong hillside is a place, and an empty one is a hole in the map
+       * with a name on it.
+       */
+      const land = nearestLand(townCfg.cx, townCfg.cz, 2);
+      if (land) {
+        townCfg.cx = land.x;
+        townCfg.cz = land.z;
+      }
+      townCfg.minH = 1;
+      townCfg.maxH = 1e9;
+      /*
+       * And flat enough to stand on. Saddleback's village is written onto a
+       * seventy-one-per-cent mountainside — dry, in band, and far too steep
+       * for `scatter`'s slope test at any sane setting. So the last resort
+       * looks for the flattest ground within a few hundred metres and eases
+       * the slope limit until something stands, rather than shipping a named
+       * place with nothing in it.
+       */
+      let flat = null;
+      for (let r = 0; r <= 700 && !flat; r += 140) {
+        for (let a = 0; a < 16; a++) {
+          const ang = (a * Math.PI) / 8;
+          const px = townCfg.cx + (r ? Math.sin(ang) * r : 0);
+          const pz = townCfg.cz - (r ? Math.cos(ang) * r : 0);
+          const e = 25;
+          const h = heightAt(px, pz);
+          if (h < 2) continue;
+          const g = Math.max(
+            Math.abs(heightAt(px + e, pz) - heightAt(px - e, pz)),
+            Math.abs(heightAt(px, pz + e) - heightAt(px, pz - e))
+          ) / (2 * e);
+          if (g < 0.18) { flat = { x: px, z: pz }; break; }
+        }
+      }
+      if (flat) {
+        townCfg.cx = flat.x;
+        townCfg.cz = flat.z;
+      }
+      for (const limit of [0.3, 0.45, 0.7]) {
+        townCfg.maxSlope = limit;
+        town = townSpots(townCfg);
+        if (town.length) break;
+      }
+    }
     addTown(this.group, town);
 
     // Greenery around the outlying delivery strip.
@@ -1030,7 +1137,19 @@ export class Scenery {
     // Round the delivery pad, and NOT solid — landing there is the mission.
     addTrees(this.group, padTrees, cfg.coastTreeHeight, [0.6, 0.18, 0.02, 0.2], false);
 
-    this.lighthouseLamp = buildLighthouse(this.group, cfg.lighthouse[0], cfg.lighthouse[1]);
+    /*
+     * On land, wherever the map meant.
+     *
+     * Measured across the thirty-two: nine lighthouses stood in open water,
+     * three of them on maps that shipped a year ago — Ironhead's is forty
+     * metres under. A tower built at a negative height is either invisible or
+     * a spire with no base, apparently floating.
+     */
+    const lh = nearestLand(cfg.lighthouse[0], cfg.lighthouse[1], 2) || {
+      x: cfg.lighthouse[0],
+      z: cfg.lighthouse[1],
+    };
+    this.lighthouseLamp = buildLighthouse(this.group, lh.x, lh.z);
     buildDeliveryPad(this.group);
     this.harbour = cfg.harbour ? addHarbour(this.group, cfg.harbour) : null;
     this.boats = buildBoats(this.group, cfg.boats, cfg.boatHome);
