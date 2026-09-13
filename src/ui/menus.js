@@ -93,13 +93,37 @@ function mapThumbnail(def) {
     }
   }
 
-  // The runway, in the same place on every map.
+  /*
+   * The runway — this map's runway, where this map actually put it.
+   *
+   * It was drawn from (-550, 0) to (550, 0) on every card, because for the
+   * first nine maps that is where the runway is. Twenty-three more have
+   * arrived since and most of them put the strip somewhere else entirely, so
+   * every one of their cards drew a white line through the middle of the
+   * island with nothing underneath it. A boat map drew one too.
+   */
+  const rw = def.airport && def.airport.runway;
+  const half = rw ? rw.length / 2 : 550;
+  const rcx = rw ? rw.cx : 0;
+  const rcz = rw ? rw.cz : 0;
+  const along = ((def.airport && def.airport.headingDeg) ?? 90) * (Math.PI / 180);
   g.strokeStyle = '#f2f5f8';
   g.lineWidth = 3;
   g.beginPath();
-  g.moveTo(px(-550), pz(0));
-  g.lineTo(px(550), pz(0));
+  g.moveTo(px(rcx - Math.sin(along) * half), pz(rcz + Math.cos(along) * half));
+  g.lineTo(px(rcx + Math.sin(along) * half), pz(rcz - Math.cos(along) * half));
   g.stroke();
+  /*
+   * And a harbour, where the map has one, because a boat map's landmark is not
+   * its airstrip.
+   */
+  const H = def.waters && def.waters.harbour;
+  if (H && H.cx !== undefined) {
+    g.fillStyle = '#7ee8b2';
+    g.beginPath();
+    g.arc(px(H.cx), pz(H.cz), 4, 0, Math.PI * 2);
+    g.fill();
+  }
   return c;
 }
 
@@ -2091,6 +2115,8 @@ export class Menus {
     // changed them — a code, a flight, a passcode entered somewhere else.
     if (name === 'more') this.syncMore && this.syncMore();
     if (name === 'missions') this.syncMissionLocks && this.syncMissionLocks();
+    // Whoever opened it may want to repaint it for the island we are on.
+    if (this.hooks.onScreen) this.hooks.onScreen(name);
     if (name === 'pause') this.syncFreeLook();
     if (name !== 'settings') this.settingsReturn = null;
     // Move focus for keyboard users.

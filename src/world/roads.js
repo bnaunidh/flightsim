@@ -520,3 +520,45 @@ export function roadRibbon(THREE, roads, { lift = 0.08, tex = null, nrm = null }
 export function roadSurfaceProbe(roads) {
   return (x, z) => (onRoad(roads, x, z) ? { kind: 'tarmac' } : null);
 }
+
+/**
+ * The nearest point on the network, and the way the road runs there.
+ *
+ * A van put down at an address that is not on a road starts on grass, doing
+ * 40 km/h, wondering why. The depot on a map that authored its own network but
+ * named no places falls back to the airfield apron, which is exactly such a
+ * spot. Snapping is better than moving the address: the address is where the
+ * job is, and the van simply parks on the road outside it.
+ */
+export function nearestRoadPoint(roads, x, z) {
+  if (!roads || !roads.length) return null;
+  let best = Infinity;
+  let out = null;
+  for (const rd of roads) {
+    const p = rd.path;
+    for (let k = 1; k < p.length; k++) {
+      const ax = p[k - 1][0];
+      const az = p[k - 1][1];
+      const ex = p[k][0] - ax;
+      const ez = p[k][1] - az;
+      const l2 = ex * ex + ez * ez;
+      let t = l2 > 0 ? ((x - ax) * ex + (z - az) * ez) / l2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const qx = ax + ex * t;
+      const qz = az + ez * t;
+      const d2 = (qx - x) * (qx - x) + (qz - z) * (qz - z);
+      if (d2 < best) {
+        best = d2;
+        out = {
+          x: qx,
+          z: qz,
+          y: (p[k - 1][2] ?? 0) + ((p[k][2] ?? 0) - (p[k - 1][2] ?? 0)) * t,
+          // Along the road, so the van is parked facing the way it will drive.
+          headingDeg: (Math.atan2(ex, -ez) * 180) / Math.PI,
+          dist: Math.sqrt(d2),
+        };
+      }
+    }
+  }
+  return out;
+}

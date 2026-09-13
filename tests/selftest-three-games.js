@@ -255,9 +255,14 @@ export async function threeGameChecks(sim, r, say = () => {}, opts = {}) {
   );
 
   // And the helicopter's hover strip, which is drawn by a third file again.
-  // switchGame goes through startMode, which is async. Without the await this
-  // read the aeroplane it had not finished putting away.
+  /*
+   * switchGame takes you to the game's FRONT PAGE now — it does not start it.
+   * That is the point of it: pressing Boat used to drop you mid-water with a
+   * mission already running and no way out but quitting. So the test has to do
+   * what a child does: choose the game, then choose to fly.
+   */
   await sim.switchGame('heli');
+  await sim.startMode('free', {});
   await new Promise((res) => setTimeout(res, 300));
   sim.step(1.2);
   const heliIsRotor = sim.hud.wrap.classList.contains('is-rotor');

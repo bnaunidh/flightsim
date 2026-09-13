@@ -932,8 +932,36 @@ export class Scenery {
     const density = quality === 'low' ? 0.35 : quality === 'medium' ? 0.65 : quality === 'ultra' ? 1.8 : 1;
     // Everything planted here is described by the active map: how many trees,
     // how tall, where the town goes, where the lighthouse stands.
-    const cfg = MAP.scenery;
     const main = ISLANDS[0];
+    /*
+     * A map may leave a key out, and leaving one out must not be fatal.
+     *
+     * This read `cfg.town.cx`, `cfg.hillBand[0]` and `cfg.deliveryPad[0]`
+     * unconditionally, because for the first nine maps every one of them was
+     * always there. Two of the maps that arrived today are a road network and
+     * an airfield with no town — and `new Scenery()` threw before a frame was
+     * drawn, from the one call site every game goes through, so those maps did
+     * not merely look wrong: they did not load at all.
+     *
+     * The defaults below are placed off the main island's own geometry, so a
+     * map that says nothing gets something sensible rather than Kestrel's
+     * coordinates, which is the other way this has gone wrong before.
+     */
+    const cfg = {
+      coastTrees: 0,
+      coastTreeHeight: 10,
+      hillTrees: 0,
+      hillTreeHeight: 11,
+      padTrees: 0,
+      boats: 0,
+      ...MAP.scenery,
+    };
+    if (!cfg.deliveryPad) cfg.deliveryPad = [main.cx + main.radius * 0.55, main.cz];
+    if (!cfg.hillCentre) cfg.hillCentre = [main.cx, main.cz];
+    if (!cfg.hillBand) cfg.hillBand = [40, Math.max(80, main.peak * 0.7)];
+    if (!cfg.lighthouse) cfg.lighthouse = [main.cx - main.radius * 0.8, main.cz];
+    // No town key means no town — not a town of zero houses at the origin.
+    this.hasTown = !!cfg.town;
 
     // The delivery pad moves with the map, but it stays the same object so
     // anything already holding a reference to it stays correct.
@@ -973,7 +1001,8 @@ export class Scenery {
     this.range = addWeaponsRange(this.group, cfg.range);
 
     // The town, in whatever flat land this map has near the field.
-    const town = scatter({
+    const town = cfg.town
+      ? scatter({
       cx: cfg.town.cx,
       cz: cfg.town.cz,
       radius: cfg.town.radius,
@@ -982,7 +1011,8 @@ export class Scenery {
       minH: cfg.town.minH,
       maxH: cfg.town.maxH,
       maxSlope: 0.16,
-    });
+    })
+      : [];
     addTown(this.group, town);
 
     // Greenery around the outlying delivery strip.

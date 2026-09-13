@@ -3253,3 +3253,21 @@ html.is-touch-device .slot-clear {
   .touch-pedal.is-stop { height: 58px; }
   .touch-pedal { width: 92px; }
 }
+
+/*
+ * A job the island cannot offer.
+ *
+ * Greyed and unclickable with the reason under it, rather than hidden — a
+ * child who read about Coast Road on Kestrel and cannot find it anywhere is
+ * worse off than one who can see it and is told the lighthouse is across open
+ * water. The reason is the map talking about itself.
+ */
+.mission-card.is-unavailable { opacity: 0.55; }
+.mission-card.is-unavailable .primary { cursor: not-allowed; filter: grayscale(1); }
+.mission-why {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-dim);
+}
+.mission-card.is-unavailable .mission-why { color: var(--amber); }

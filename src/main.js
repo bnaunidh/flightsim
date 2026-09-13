@@ -15,7 +15,7 @@ import { createTerrain, heightAt, AIRPORT, applyMap, MAP, clearObstacles, clearP
 import { SeaMarks } from './world/seamarks.js';
 import { MAPS, getMap, mapsForGame } from './world/maps.js';
 import { clearPads, nearestPad, PADS } from './world/pads.js';
-import { buildRoads, onRoad, roadRibbon, roadSurfaceProbe } from './world/roads.js';
+import { buildRoads, onRoad, roadRibbon, roadSurfaceProbe, nearestRoadPoint } from './world/roads.js';
 import { Carrier } from './world/carrier.js';
 import { SurfaceVehicle, VEHICLES, setTerrainProbes } from './vehicles/surface.js';
 import { DriveInput, DriveCamera, DRIVE_VIEW_LABELS, installDriveTouch } from './vehicles/driving.js';
@@ -370,6 +370,9 @@ class Game {
         resetAll();
         location.reload();
       },
+      onScreen: (name) => {
+        if (name === 'missions' && this.game === 'car' && this.refreshJobBoard) this.refreshJobBoard();
+      },
       chooseMap: (id) => {
         // Remembered per game. The four games have different places and a child
         // who picks Sennen for the lifeboat should not find the aeroplane there
@@ -416,6 +419,42 @@ class Game {
     for (const g of ['flight', 'boat', 'car', 'heli']) {
       this.menus.registerMissions(g, missionsFor(g));
     }
+    /*
+     * And the courier's board tells the truth about this island.
+     *
+     * jobs.js works out, per map, which of the six can actually be done — the
+     * lighthouse job needs a lighthouse you can drive to, the summit job needs
+     * a hill with a road up it — and hands back a reason for each refusal. None
+     * of that ever reached a player: the board built a clickable card for all
+     * six on every map, so a child could take Coast Road on an island whose
+     * lighthouse is across open water and drive until the clock ran out.
+     */
+    this.refreshJobBoard = () => {
+      const screen = this.menus.screens.missions;
+      if (!screen) return;
+      let entries;
+      try {
+        entries = jobsFor(this);
+      } catch (err) {
+        return; // a board that cannot be graded is better than no board
+      }
+      for (const e of entries) {
+        const card = screen.querySelector(`[data-mission="${e.job.id}"]`);
+        if (!card) continue;
+        card.classList.toggle('is-unavailable', !e.available);
+        const btn = card.querySelector('[data-start]');
+        if (btn) btn.disabled = !e.available;
+        let why = card.querySelector('[data-job-why]');
+        if (!why) {
+          why = document.createElement('p');
+          why.className = 'mission-why';
+          why.setAttribute('data-job-why', '');
+          card.appendChild(why);
+        }
+        why.textContent = e.available ? e.note || '' : e.why || 'Not on this island';
+        why.hidden = !why.textContent;
+      }
+    };
 
     /*
      * ONE progression object, shared with the menus.
@@ -3109,6 +3148,38 @@ class Game {
       } else {
         start = new THREE.Vector3(-430, 0, -95);
       }
+      /*
+       * And on the road, not beside it.
+       *
+       * An address that is not itself on tarmac starts the van on grass, at
+       * half the speed, with no explanation. On the two maps that authored a
+       * road network but named no places the depot falls back to the airfield
+       * apron, which is such a spot. Measured on Fenwick and Cormorant Coast:
+       * "surf grass" at the start of every job. Snapping parks it on the road
+       * outside the address rather than moving the address.
+       */
+      if (this.roads && this.roads.list.length && !this.onRoad(start.x, start.z)) {
+        /*
+         * A map that authored its own roads and named no places has no depot
+         * to fall back to, so `resolveSpawn` hands back the airfield apron —
+         * which on Saddleback Pass is nearly four kilometres from the nearest
+         * tarmac. On those maps the road IS the map, so the van starts on it,
+         * in the middle of the longest one, however far that is. Where the map
+         * does name places the depot is real and the snap is only a short hop
+         * onto the road outside it.
+         */
+        const named = !!(MAP.courier && MAP.courier.places && MAP.courier.places.length);
+        let near = nearestRoadPoint(this.roads.list, start.x, start.z);
+        if (!named) {
+          const longest = this.roads.list.reduce((a, b) => (b.path.length > a.path.length ? b : a));
+          const mid = longest.path[Math.floor(longest.path.length / 2)];
+          near = nearestRoadPoint(this.roads.list, mid[0], mid[1]);
+        }
+        if (near && (!named || near.dist < 900)) {
+          start = new THREE.Vector3(near.x, 0, near.z);
+          headingDeg = near.headingDeg;
+        }
+      }
     }
     this.vehicle.reset({ pos: start, headingDeg });
     this.model.visible = false;
@@ -3140,6 +3211,22 @@ class Game {
     // A mission or a job rides the same runner the aeroplane's do.
     if (def) {
       this.runner.start(def);
+      /*
+       * And the turn arrow gets its route.
+       *
+       * First Run's own text says "Follow the arrow to the town" and its hint
+       * says "The big arrow at the bottom of the screen is the next turn". The
+       * tracker that draws that arrow was built and never given a route, so
+       * there was no arrow — the game told a ten-year-old to follow something
+       * that was not there, on the first job of the first game they play.
+       */
+      if (this.driveHud && this.driveHud.tracker && typeof def.route === 'function') {
+        try {
+          this.driveHud.tracker.setRoute(def.route(this));
+        } catch (err) {
+          console.warn('This job could not work out its route:', err);
+        }
+      }
       this.islandRoads = null;
     } else if (kind === 'car') {
       this.islandRoads = new IslandRoads(this);
@@ -3429,9 +3516,43 @@ class Game {
     if (!v.crashed) this._droveInto = false;
 
     const r = v.readouts();
-    if (v.isBoat && this.boatHud) this.boatHud.update(dt, r, { sim: this, audio: this.audio });
-    else if (this.driveHud) this.driveHud.update(dt, r);
-    else this.hud.setVehicle(r, v.spec);
+    if (v.isBoat && this.boatHud) {
+      this.boatHud.update(dt, r, { sim: this, audio: this.audio });
+    } else if (this.driveHud) {
+      /*
+       * The drive HUD takes a STATE, not the readouts.
+       *
+       * It reads `s.readouts`, `s.surface`, `s.job`, `s.clock`, `s.cargo` and
+       * `s.turn` off one object. Handing it the readouts directly meant
+       * `s.readouts` was the readouts function itself, `r.speedKph` was
+       * undefined, and every number on the courier's panel sat at whatever it
+       * was built with — a frozen speed, a frozen surface word, no clock and
+       * no load. The job ran; the instruments did not.
+       */
+      const step = this.runner.status === 'running' ? this.runner.step : null;
+      const def = this.runner.def;
+      const data = this.runner.data || {};
+      this.driveHud.update(dt, {
+        readouts: r,
+        surface: v.surface,
+        isBoat: false,
+        job: step
+          ? { title: (def && def.name) || 'Island Roads', text: step.text || '' }
+          : { title: 'Island Roads', text: 'No clock. Drive where you like.' },
+        clock:
+          def && def.parTime && this.runner.status === 'running'
+            ? Math.max(0, def.parTime - this.runner.elapsed)
+            : null,
+        cargo: data.cargo
+          ? { pips: data.cargo.pips, max: data.cargo.max || 5, label: data.cargo.name || 'LOAD' }
+          : null,
+        turn: this.driveHud.tracker
+          ? this.driveHud.tracker.next(v.pos, v.heading)
+          : null,
+      });
+    } else {
+      this.hud.setVehicle(r, v.spec);
+    }
   }
 
   /**

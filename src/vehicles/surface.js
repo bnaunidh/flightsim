@@ -878,6 +878,18 @@ export class SurfaceVehicle {
           this.pos.z = g.z;
           this.heading = g.heading;
         }
+        /*
+         * And pointing away from the water.
+         *
+         * Being set down facing the sea you have just been pulled out of is an
+         * invitation to drive into it again, and the heading was copied
+         * unchanged from the moment before the dunking — which is by
+         * definition the way you were going when you went in.
+         */
+        const r0 = this.heading * DEG;
+        if (groundAt(this.pos.x + Math.sin(r0) * 18, this.pos.z - Math.cos(r0) * 18) < 1) {
+          this.heading = (this.heading + 180) % 360;
+        }
         this.pos.y = Math.max(SEA, groundAt(this.pos.x, this.pos.z)) + S.rideHeight;
         this.speed = 0;
         this.swamped = false;
@@ -1110,9 +1122,25 @@ export class SurfaceVehicle {
      * kept every frame so that reversing into the sea does not record the sea.
      */
     this._goodT += dt;
-    if (this._goodT > 0.5 && !this.air && v > 1 && this.surface.grip >= 0.55 && centreH > 1.5) {
-      this._goodT = 0;
-      this.lastGood = { x: this.pos.x, z: this.pos.z, heading: this.heading };
+    /*
+     * And it has to be FLAT, not merely dry.
+     *
+     * The test was grip and height only, so the last good place could be a
+     * thirty-per-cent beach slope four metres from the water, with the van
+     * still facing the sea. The recovery truck put you back exactly there and
+     * gravity — which beats the "parked is parked" clamp on that grade — rolled
+     * you straight back in. Measured: nought to 3.66 m/s and in the water again
+     * 4.9 seconds after being rescued, with the engine off and nobody touching
+     * anything. Hold the accelerator and it is an endless loop.
+     */
+    if (this._goodT > 0.5 && !this.air && v > 1 && this.surface.grip >= 0.55 && centreH > 3) {
+      const ahead = groundAt(this.pos.x + Math.sin(radNow) * 12, this.pos.z - Math.cos(radNow) * 12);
+      const side = groundAt(this.pos.x + Math.cos(radNow) * 12, this.pos.z + Math.sin(radNow) * 12);
+      const level = Math.max(Math.abs(ahead - centreH), Math.abs(side - centreH)) < 1.4;
+      if (level && ahead > 2) {
+        this._goodT = 0;
+        this.lastGood = { x: this.pos.x, z: this.pos.z, heading: this.heading };
+      }
     }
 
     this.applyAttitude(dt, radNow, groundPitch, groundRoll);
