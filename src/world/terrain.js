@@ -88,6 +88,8 @@ export function applyMap(idOrDef) {
   ISLANDS = MAP.islands;
   AIRPORT = MAP.airport || KESTREL_AIRPORT;
   PALETTE = MAP.palette;
+  // Shoal bounding boxes, once, rather than per sample. See resolveWaters.
+  resolveWaters(MAP);
   return MAP;
 }
 
@@ -233,6 +235,171 @@ export function platformAt(x, z) {
   return null;
 }
 
+/* ==================================================================== *
+ * Waters: what is under the sea.
+ *
+ * Run this height function out to sea on any map in the game and it returns
+ * exactly `seaFloor` — the same number, every sample, everywhere outside an
+ * island's own radius. The sea is a flat plate. From an aeroplane at three
+ * thousand feet that is invisible and entirely fine; for the boat it is the
+ * whole problem. There is nothing out there to steer round, nothing worth
+ * reading a chart for, and nowhere that is different from anywhere else. A
+ * child presses Boat, drives in a straight line, and presses Flight.
+ *
+ * A shoal is the smallest thing that fixes that: a patch of sea floor that
+ * comes up near the surface. It gives the water a shape, it gives the boat
+ * something to avoid, and it is the piece every other part of the boat game
+ * has to be placed around — so it goes in first and on its own.
+ *
+ * Shaped like `outpostWeight` below: a bounding-box reject that returns
+ * immediately for essentially every sample, and only then any real work. That
+ * reject is not optional. heightAt runs a few hundred times a frame for hull
+ * contact and about ninety thousand times while the terrain mesh is built.
+ * ==================================================================== */
+
+/**
+ * Work out once per map load what the per-sample term would otherwise
+ * recompute millions of times: the box that contains every shoal.
+ */
+export function resolveWaters(map) {
+  const w = map && map.waters;
+  if (!w || w._ready) return;
+  const S = w.shoals;
+  if (S && S.length) {
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let z0 = Infinity;
+    let z1 = -Infinity;
+    for (const sh of S) {
+      x0 = Math.min(x0, sh.cx - sh.r);
+      x1 = Math.max(x1, sh.cx + sh.r);
+      z0 = Math.min(z0, sh.cz - sh.r);
+      z1 = Math.max(z1, sh.cz + sh.r);
+    }
+    w._sx0 = x0;
+    w._sx1 = x1;
+    w._sz0 = z0;
+    w._sz1 = z1;
+  }
+  // Same for each road: one box test rejects nearly every sample.
+  for (const rd of w.roads || []) {
+    const pad = (rd.halfWidth || 26) + (rd.blend || 55);
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let z0 = Infinity;
+    let z1 = -Infinity;
+    for (const pt of rd.path) {
+      x0 = Math.min(x0, pt[0]);
+      x1 = Math.max(x1, pt[0]);
+      z0 = Math.min(z0, pt[1]);
+      z1 = Math.max(z1, pt[1]);
+    }
+    rd._x0 = x0 - pad;
+    rd._x1 = x1 + pad;
+    rd._z0 = z0 - pad;
+    rd._z1 = z1 + pad;
+  }
+  w._ready = true;
+}
+
+/**
+ * Shoals: patches where the floor comes up.
+ *
+ * Only ever raises the ground, never lowers it, so a shoal placed over an
+ * island does nothing rather than digging a hole in it.
+ */
+function shoalHeight(h, x, z) {
+  const w = MAP.waters;
+  const S = w && w.shoals;
+  if (!S || !S.length) return h;
+  if (x < w._sx0 || x > w._sx1 || z < w._sz0 || z > w._sz1) return h;
+  for (let i = 0; i < S.length; i++) {
+    const sh = S[i];
+    const dx = x - sh.cx;
+    const dz = z - sh.cz;
+    if (dx < -sh.r || dx > sh.r || dz < -sh.r || dz > sh.r) continue;
+    if (sh.top <= h) continue;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d >= sh.r) continue;
+    let t = 1 - smoothstep(0, sh.r, d);
+    if (sh.pow) t = Math.pow(t, sh.pow);
+    h = lerp(h, sh.top, t);
+  }
+  return h;
+}
+
+/**
+ * A road: a corridor of ground levelled along a path.
+ *
+ * Not a ribbon laid on top of the terrain — a cut through it, the same way
+ * the runway pad and the approach corridors already work, because a ribbon
+ * drawn on this mesh cannot be seen. The terrain is 30 to 70 metres per quad
+ * (39 on Kestrel), so the narrowest feature the geometry can actually hold is
+ * about three quads, 70 to 120 m. A 10 m road is a quarter of one quad: it
+ * would float over every rise and sink into every dip between two vertices,
+ * and no amount of care in the road's own mesh would fix that, because the
+ * error is in the ground underneath it.
+ *
+ * So the corridor is deliberately wide and blended wider still. What the
+ * player reads as "a road" is the strip of tarmac drawn down the middle of
+ * it; what makes the strip sit flat is that the land around it was levelled
+ * to meet it.
+ */
+function roadHeight(h, x, z) {
+  const R = MAP.waters && MAP.waters.roads;
+  if (!R || !R.length) return h;
+  /*
+   * Never inside the airfield.
+   *
+   * A road corridor levels the ground it crosses, and a road that passes near
+   * runway zero nine would happily level the runway to its own height and dig
+   * a trench across it. The pad is already flat and already correct, so the
+   * road simply has no say there — the same rule the approach corridors above
+   * follow, for the same reason.
+   */
+  if (padWeight(x, z) > 0.02) return h;
+  for (let i = 0; i < R.length; i++) {
+    const rd = R[i];
+    if (x < rd._x0 || x > rd._x1 || z < rd._z0 || z > rd._z1) continue;
+    const hw = rd.halfWidth || 26;
+    const blend = rd.blend || 55;
+    const p = rd.path;
+    let best = Infinity;
+    let bestY = h;
+    for (let k = 1; k < p.length; k++) {
+      const ax = p[k - 1][0];
+      const az = p[k - 1][1];
+      const ex = p[k][0] - ax;
+      const ez = p[k][1] - az;
+      const len2 = ex * ex + ez * ez;
+      let t = len2 > 0 ? ((x - ax) * ex + (z - az) * ez) / len2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const qx = ax + ex * t - x;
+      const qz = az + ez * t - z;
+      const d2 = qx * qx + qz * qz;
+      if (d2 < best) {
+        best = d2;
+        // The road's own height at the nearest point: the natural ground
+        // along the centreline, so it follows the land rather than ignoring it.
+        bestY = lerp(p[k - 1][2] ?? h, p[k][2] ?? h, t);
+      }
+    }
+    const d = Math.sqrt(best);
+    if (d > hw + blend) continue;
+    const w = 1 - smoothstep(hw, hw + blend, d);
+    h = lerp(h, bestY, w);
+  }
+  return h;
+}
+
+/**
+ * How much water is under a boat drawing `draughtM` metres. Negative means
+ * aground. This is what the boat's instruments and its missions ask.
+ */
+export function depthUnderKeel(x, z, draughtM = 1.0) {
+  return -heightAt(x, z) - draughtM;
+}
+
 export function heightAt(x, z) {
   // A deck wins over whatever is underneath it — that is the point of a deck.
   if (PLATFORMS.length) {
@@ -373,6 +540,16 @@ export function heightAt(x, z) {
     const w = lateral * longitudinal;
     const ceiling = AIRPORT.elev + 10;
     if (h > ceiling) h = lerp(h, ceiling, w);
+  }
+
+  /*
+   * Last, so a shoal can raise the sea floor without fighting the island
+   * field or the approach corridors — and so that a map with no `waters`
+   * block pays one property read and nothing else.
+   */
+  if (MAP.waters) {
+    h = shoalHeight(h, x, z);
+    h = roadHeight(h, x, z);
   }
 
   return h;

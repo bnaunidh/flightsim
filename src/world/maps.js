@@ -41,6 +41,61 @@ export const MAPS = [
       { cx: 6200, cz: -5200, size: 4600, segments: 128 },
       { cx: -3100, cz: -3600, size: 2200, segments: 72 },
     ],
+    /*
+     * What is under the water.
+     *
+     * Outside the beaches this map's sea floor was a flat -34 everywhere, so
+     * the boat had nothing to steer round and no reason to look where it was
+     * going. These are banks and drying rocks: `top` is how close the floor
+     * comes to the surface, so anything above about -1 will stop a hull and
+     * anything near -3 is a place to be careful. They sit between the island
+     * and Mango Cay, which is where the boat actually goes, and clear of the
+     * carrier's water off to the south-west.
+     */
+    waters: {
+      /*
+       * The island road.
+       *
+       * Kestrel is a mountain with one flat band cut through its waist, and
+       * that band is the only drivable ground on it: measured, a route along
+       * it needs a 0.9% grade and 4.6 m of cut, while any route that leaves
+       * it — the obvious one, up to the town — needs 27% grades and a 104 m
+       * embankment, because the land goes from 50 m to 230 m in two hundred
+       * metres. So the road runs the length of the waist, coast to coast, and
+       * the car game's real maps will be built flat on purpose rather than
+       * carved out of this one.
+       *
+       * The corridor is 26 m wide and blended over 55, which sounds enormous
+       * for a road and is not: the terrain mesh here is 39 m per quad, so the
+       * narrowest thing the ground can actually hold is about three quads.
+       * The tarmac a player sees is drawn down the middle of it.
+       */
+      roads: [
+        {
+          halfWidth: 26,
+          blend: 55,
+          path: [
+            [-1950, -40, 24], [-1600, -80, 22.8], [-1200, -120, 21.4],
+            [-800, -150, 19.4], [-400, -160, 16.9], [-80, -150, 14],
+            [300, -120, 16.9], [700, -80, 19.4], [1100, -40, 21.4],
+            [1500, 0, 22.8], [1900, 40, 24],
+          ],
+        },
+      ],
+      shoals: [
+        // A long bank guarding the run north-east towards Mango Cay.
+        { cx: 2600, cz: -2100, r: 760, top: -1.2 },
+        { cx: 3400, cz: -2750, r: 520, top: -0.4 },
+        // Drying rocks off Needle Rock — steep-to, which is what makes them
+        // dangerous: deep water right up to the edge.
+        { cx: -2650, cz: -3050, r: 300, top: 0.6, pow: 2.2 },
+        { cx: -3500, cz: -2950, r: 240, top: -0.3, pow: 2 },
+        // A shallow spit running off the island's north shore.
+        { cx: -500, cz: -2850, r: 640, top: -2.4 },
+        // A bank to the east, far enough out to be a surprise.
+        { cx: 4200, cz: 900, r: 900, top: -2.9 },
+      ],
+    },
     palette: {
       grass: [1.0, 1.0, 1.0],
       sand: [1.0, 1.0, 1.0],

@@ -387,7 +387,61 @@ export class Aircraft {
     if (this.fuel <= 0 && this.engineOn) this.stopEngine('fuel');
     if (this.failures.engine && this.engineOn) this.stopEngine('failure');
 
-    const targetRpm = this.engineOn ? 0.18 + this.controls.throttle * 0.82 : 0;
+    /*
+     * The collective, for a beginner, commands a RATE OF CLIMB — not power.
+     *
+     * Hovering on the shipped control was not possible, and it is worth being
+     * precise about why rather than calling it "hard". Shift and Ctrl move
+     * `throttleTarget` at 0.62 a second, so collective is a rate control; the
+     * engine then spools towards it with lag. That puts two integrators
+     * between the key and the thrust, and a hover asks you to hold one exact
+     * power setting with neither of them settled.
+     *
+     * Measured, with a control pattern better than any ten-year-old could
+     * manage — always the correct direction, a quarter-second reaction — the
+     * machine wandered 214 metres up and down and hit the ground inside a
+     * minute. That is not a difficulty curve, it is a wall.
+     *
+     * So in simplified mode the lever means "go up", "go down" or, in the
+     * middle, "stay where you are", and an inner loop works out the power.
+     * Centre it and the machine holds its height. That is what a collective
+     * feels like to fly even though it is not what a collective does, and it
+     * is the difference between the helicopter being playable and not.
+     * Realistic mode keeps the real lever, untouched.
+     */
+    if (SPEC.rotor && this.mode === 'simplified' && this.engineOn && !this.onGround) {
+      const demand = (clamp(this.controls.throttle, 0, 1) - 0.5) * 2;
+      const centred = Math.abs(demand) < 0.06;
+      /*
+       * Centred means "stay at this height", and that needs the height in the
+       * loop — not just the rate of climb.
+       *
+       * Holding vertical speed at zero sounds like the same thing and is not:
+       * with no altitude term any small steady error simply integrates, and
+       * measured it climbed 117 m in a minute with nobody touching anything.
+       * So the moment the lever comes to the middle the machine remembers
+       * where it is, and flies back to it.
+       */
+      if (centred) {
+        if (this._holdAlt === null || this._holdAlt === undefined) this._holdAlt = this.pos.y;
+      } else {
+        this._holdAlt = null;
+      }
+      const wantVs = centred
+        ? clamp((this._holdAlt - this.pos.y) * 0.45, -3.5, 3.5)
+        : demand * 4.5;
+      const err = wantVs - this.vs;
+      this._rotorTrim = clamp(
+        (this._rotorTrim ?? this.controls.throttle) + (err * 0.55 - this.vs * 0.05) * dt,
+        0,
+        1
+      );
+    } else {
+      this._rotorTrim = null;
+      this._holdAlt = null;
+    }
+    const collective = this._rotorTrim ?? this.controls.throttle;
+    const targetRpm = this.engineOn ? 0.18 + collective * 0.82 : 0;
     // Engines spool with lag; spin-down is slower than spin-up.
     const spool = targetRpm > this.rpm ? 2.4 : 1.1;
     this.rpm += (targetRpm - this.rpm) * Math.min(1, dt * spool);
