@@ -46,6 +46,7 @@
  */
 
 import { clamp } from '../core/noise.js';
+import { VEHICLE_SCENES, CAR_PHASES } from './vehicles.js';
 
 /* ------------------------------------------------------------------ *
  * Musical tables
@@ -342,6 +343,14 @@ const SCENES = {
     peak: { pad: 0, bass: 0, bell: 0, pulse: 0, air: 0 },
   },
 };
+
+// The boat, car and helicopter games. Their ids are mission ids, because
+// main.js names the scene with `def.id`; without these every one of them falls
+// through to SCENES.free, which is an aeroplane scene driven off an `ac` a boat
+// does not have.
+Object.assign(SCENES, VEHICLE_SCENES);
+// Six car jobs, one scene, and until now no phases for it to look up.
+SCENES.car.phases = CAR_PHASES;
 
 /* ------------------------------------------------------------------ *
  * Ducking

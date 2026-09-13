@@ -235,6 +235,24 @@ export class Input {
     this.captureNext = null;
   }
 
+  /**
+   * Wind the throttle lever by a small amount, in lever units per call.
+   *
+   * The hover assist's height hold produces a steady collective correction,
+   * and if it simply holds that correction for ever it is a hidden integrator
+   * that runs to its stop and then drops the machine with no warning. So it
+   * hands the correction back to the lever, which is exactly what a real
+   * force-trim does, and the lever on screen moves to where the hover is.
+   *
+   * A finger on the touch slider owns the lever outright while it is down;
+   * the assist does not fight a thumb.
+   */
+  nudgeThrottle(d) {
+    if (!d) return;
+    if (this.touch && this.touch.dragging) return;
+    this.throttleTarget = Math.max(0, Math.min(1, this.throttleTarget + d));
+  }
+
   held(action) {
     const codes = this.bindings[action];
     if (!codes) return false;

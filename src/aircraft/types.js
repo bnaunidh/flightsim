@@ -795,6 +795,25 @@ export const AIRCRAFT = [
       Cnb: 0.045,
       Cnr: -0.09,
       Cndr: 0.022, // a tail rotor has a great deal of yaw authority
+      /*
+       * The three rotor arms, solved backwards from the rates the machine is
+       * meant to fly at rather than guessed.
+       *
+       * They were 1.1 / 0.85 / 0.9 (the defaults in specFor below) and they
+       * were three to four times too large. Measured on the unmodified build,
+       * full deflection held for three seconds in a hover: 206 deg/s of roll,
+       * 165 deg/s of pitch, 197 deg/s of yaw. A real light helicopter does
+       * about 70, 45 and 65. On a keyboard, where the input is bang-bang, a
+       * 0.2 s tap of the roll key bought FORTY-THREE degrees of bank, which
+       * is not a hover, it is a crash with a delay on it.
+       *
+       * arm = rate * damping * axis inertia / (0.675 * m * g), with the
+       * damping constants from rotor-assist.js. Change a number there and
+       * describeRotorFeel() will tell you what these now produce.
+       */
+      rotorPitchArm: 0.33, // 45 deg/s
+      rotorRollArm: 0.45, // 69 deg/s
+      rotorYawArm: 0.79, // 65 deg/s
       rotorDrag: 260,
       thrustMax: 1,
       fuelCapacity: 420,
@@ -844,6 +863,14 @@ export function specFor(id) {
     rotorPitchArm: t.aero.rotorPitchArm || 1.1,
     rotorRollArm: t.aero.rotorRollArm || 0.85,
     rotorYawArm: t.aero.rotorYawArm || 0.9,
+    /*
+     * The disc, as a drag plate.
+     *
+     * Needed because a rotor going straight up or straight down is a fifty-
+     * square-metre board and nothing modelled that. The model drew its radius
+     * from here already; the flight model never asked for it.
+     */
+    rotorRadius: (t.shape && t.shape.power && t.shape.power.propRadius) || 4.2,
     // A yaw damper, which is what a real swept-wing jet has and a light single
     // does not. Without one the fighter's Dutch roll sits at a damping ratio
     // of about 0.06 — it wallows from wingtip to wingtip and never settles.

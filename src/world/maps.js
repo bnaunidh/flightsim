@@ -53,6 +53,7 @@ export const MAPS = [
      * carrier's water off to the south-west.
      */
     waters: {
+      harbour: { island: 0, bearingDeg: 200, length: 250, width: 190, mouthWidth: 70, depth: 6, wallW: 26, quayW: 32, blend: 150 },
       /*
        * The island road.
        *
@@ -107,6 +108,12 @@ export const MAPS = [
     },
     outpost: { cx: 6200, cz: -5200, elev: 118, halfLen: 210, halfWidth: 55, blend: 150 },
     scenery: {
+      pads: [
+        { id: 'hospital', name: 'Kestrel Cottage Hospital', x: 760, z: 560, kind: 'roof', above: 30, r: 11 },
+        { id: 'needle', name: 'Needle Rock', x: -2890, z: -3810, kind: 'stack', r: 9 },
+        { id: 'mango', name: 'Mango Cay Village', x: 6350, z: -5200, kind: 'ground', r: 12 },
+        { id: 'field', name: 'Kestrel Airfield Pad', x: -520, z: -150, kind: 'ground', r: 11 },
+      ],
       coastTrees: 900,
       coastTreeHeight: 10,
       hillTrees: 600,
@@ -127,6 +134,7 @@ export const MAPS = [
 
   {
     id: 'meadow',
+    waters: { harbour: { island: 0, bearingDeg: 250, length: 250, width: 190, mouthWidth: 70, depth: 6, wallW: 26, quayW: 32, blend: 150 } },
     name: 'Harrier Flats',
     subtitle: 'Grassland · almost no hills',
     blurb:
@@ -154,6 +162,12 @@ export const MAPS = [
     },
     outpost: { cx: -5100, cz: 3500, elev: 43, halfLen: 210, halfWidth: 55, blend: 150 },
     scenery: {
+      pads: [
+        { id: 'hospital', name: 'Flats Community Hospital', x: 1560, z: 840, kind: 'roof', above: 26, r: 11 },
+        { id: 'point', name: 'Willow Point Light', x: -5820, z: 4140, kind: 'stack', r: 9 },
+        { id: 'bank', name: 'Willow Bank Strip', x: -4950, z: 3500, kind: 'ground', r: 12 },
+        { id: 'field', name: 'Harrier Flats Pad', x: -520, z: -150, kind: 'ground', r: 11 },
+      ],
       coastTrees: 1100,
       coastTreeHeight: 12,
       hillTrees: 700,
@@ -177,6 +191,7 @@ export const MAPS = [
 
   {
     id: 'atoll',
+    waters: { harbour: { island: 0, bearingDeg: 150, length: 240, width: 180, mouthWidth: 68, depth: 5, wallW: 24, quayW: 30, blend: 150, shelfTop: -6 } },
     name: 'Coral Atoll',
     subtitle: 'Reef chain · long water crossings',
     blurb:
@@ -210,6 +225,12 @@ export const MAPS = [
     },
     outpost: { cx: 4600, cz: 2600, elev: 16, halfLen: 210, halfWidth: 55, blend: 150 },
     scenery: {
+      pads: [
+        { id: 'hospital', name: 'Long Cay Clinic', x: 960, z: 740, kind: 'roof', above: 22, r: 11 },
+        { id: 'pelican', name: 'Pelican Cay Light', x: -4120, z: -3320, kind: 'stack', r: 9 },
+        { id: 'turtle', name: 'Turtle Cay Strip', x: 4750, z: 2600, kind: 'ground', r: 12 },
+        { id: 'field', name: 'Long Cay Pad', x: -520, z: -150, kind: 'ground', r: 11 },
+      ],
       coastTrees: 700,
       coastTreeHeight: 11,
       hillTrees: 180,
@@ -233,6 +254,7 @@ export const MAPS = [
 
   {
     id: 'fjord',
+    waters: { harbour: { island: 0, bearingDeg: 250, length: 240, width: 180, mouthWidth: 64, depth: 6, wallW: 26, quayW: 30, blend: 160, shelfTop: -9 } },
     name: 'Aurora Fjords',
     subtitle: 'Cold · steep ridges and narrow water',
     blurb:
@@ -265,6 +287,12 @@ export const MAPS = [
     },
     outpost: { cx: -4300, cz: -800, elev: 190, halfLen: 200, halfWidth: 50, blend: 130 },
     scenery: {
+      pads: [
+        { id: 'hospital', name: 'Aurora Sjukhus', x: -840, z: 540, kind: 'roof', above: 30, r: 11 },
+        { id: 'skerryLight', name: 'Skerry Light', x: -4470, z: -1000, kind: 'stack', r: 9 },
+        { id: 'skerry', name: 'Skerry Strip', x: -4150, z: -800, kind: 'ground', r: 12 },
+        { id: 'field', name: 'Aurora Field Pad', x: -520, z: -150, kind: 'ground', r: 11 },
+      ],
       coastTrees: 520,
       coastTreeHeight: 12,
       hillTrees: 900,
@@ -288,6 +316,7 @@ export const MAPS = [
 
   {
     id: 'ember',
+    waters: { harbour: { island: 0, bearingDeg: 240, length: 240, width: 180, mouthWidth: 66, depth: 6, wallW: 26, quayW: 30, blend: 160 } },
     name: 'Ember Isle',
     subtitle: 'Volcanic · a mountain on your doorstep',
     blurb:
@@ -340,6 +369,12 @@ export const MAPS = [
     },
     outpost: { cx: -3800, cz: 2900, elev: 322, halfLen: 200, halfWidth: 50, blend: 140 },
     scenery: {
+      pads: [
+        { id: 'hospital', name: 'Ember Isle Hospital', x: -1040, z: 640, kind: 'roof', above: 28, r: 11 },
+        { id: 'ashLight', name: 'Ash Point Light', x: -4270, z: 3270, kind: 'stack', r: 9 },
+        { id: 'cinder', name: 'Cinder Cone Post', x: -3650, z: 2900, kind: 'ground', r: 12 },
+        { id: 'field', name: 'Ember Field Pad', x: -520, z: -150, kind: 'ground', r: 11 },
+      ],
       coastTrees: 420,
       coastTreeHeight: 9,
       hillTrees: 260,
@@ -402,6 +437,7 @@ export const MAPS = [
    */
   {
     id: 'airbase',
+    waters: { harbour: { island: 0, bearingDeg: 300, length: 260, width: 200, mouthWidth: 72, depth: 6, wallW: 28, quayW: 34, blend: 160 } },
     name: 'Ironhead Air Base',
     subtitle: 'Military · long concrete, high desert',
     blurb:
@@ -469,6 +505,12 @@ export const MAPS = [
      */
     outpost: { cx: 5100, cz: 0, elev: 181, halfLen: 210, halfWidth: 55, blend: 150 },
     scenery: {
+      pads: [
+        { id: 'hospital', name: 'Base Medical', x: 2600, z: 2200, kind: 'roof', above: 24, r: 11 },
+        { id: 'range', name: 'Range Control', x: -3800, z: -1750, kind: 'ground', r: 12 },
+        { id: 'strip', name: 'Ironhead Outstation', x: 5250, z: 0, kind: 'ground', r: 12 },
+        { id: 'field', name: 'Ironhead Base Pad', x: -520, z: -150, kind: 'ground', r: 11 },
+      ],
       // Scrub, and plenty of it: an empty pan reads as unfinished rather than
       // as empty, and there is nothing else out here to give it any scale.
       coastTrees: 240,
@@ -500,6 +542,7 @@ export const MAPS = [
 
   {
     id: 'sfo',
+    waters: { harbour: { island: 0, bearingDeg: 280, length: 280, width: 210, mouthWidth: 76, depth: 7, wallW: 28, quayW: 36, blend: 160 } },
     name: 'San Francisco',
     subtitle: 'Real field · two intersecting pairs',
     blurb:
@@ -547,6 +590,12 @@ export const MAPS = [
      */
     outpost: { cx: 1722, cz: 4157, elev: 52, halfLen: 210, halfWidth: 55, blend: 150 },
     scenery: {
+      pads: [
+        { id: 'hospital', name: 'Peninsula General', x: -1800, z: 1800, kind: 'roof', above: 34, r: 11 },
+        { id: 'bruno', name: 'San Bruno Mast', x: -3400, z: 2700, kind: 'stack', r: 9 },
+        { id: 'strip', name: 'Bayshore Strip', x: 1872, z: 4157, kind: 'ground', r: 12 },
+        { id: 'field', name: 'Field Pad', x: -520, z: -150, kind: 'ground', r: 11 },
+      ],
       coastTrees: 260,
       coastTreeHeight: 9,
       hillTrees: 420,
@@ -565,6 +614,7 @@ export const MAPS = [
 
   {
     id: 'oak',
+    waters: { harbour: { island: 0, bearingDeg: 270, length: 280, width: 210, mouthWidth: 76, depth: 7, wallW: 28, quayW: 36, blend: 160 } },
     name: 'Oakland',
     subtitle: 'Real field · one long runway',
     blurb:
@@ -619,6 +669,12 @@ export const MAPS = [
      */
     outpost: { cx: -1165, cz: 4347, elev: 54, halfLen: 210, halfWidth: 55, blend: 150 },
     scenery: {
+      pads: [
+        { id: 'hospital', name: 'East Bay General', x: 1600, z: 1500, kind: 'roof', above: 34, r: 11 },
+        { id: 'hills', name: 'Oakland Hills Post', x: 3400, z: 3200, kind: 'roof', above: 20, r: 10 },
+        { id: 'strip', name: 'Estuary Strip', x: -1015, z: 4347, kind: 'ground', r: 12 },
+        { id: 'field', name: 'Field Pad', x: -520, z: -150, kind: 'ground', r: 11 },
+      ],
       coastTrees: 220,
       coastTreeHeight: 9,
       hillTrees: 700,
@@ -637,6 +693,7 @@ export const MAPS = [
 
   {
     id: 'lax',
+    waters: { harbour: { island: 0, bearingDeg: 250, length: 280, width: 210, mouthWidth: 76, depth: 7, wallW: 28, quayW: 36, blend: 160 } },
     name: 'Los Angeles',
     subtitle: 'Real field · four parallels, two flown',
     blurb:
@@ -685,6 +742,12 @@ export const MAPS = [
      */
     outpost: { cx: 3570, cz: -2739, elev: 74, halfLen: 210, halfWidth: 55, blend: 150 },
     scenery: {
+      pads: [
+        { id: 'hospital', name: 'Basin Medical Center', x: 2600, z: 1400, kind: 'roof', above: 38, r: 11 },
+        { id: 'verdes', name: 'Palos Verdes Post', x: -1800, z: 5200, kind: 'roof', above: 20, r: 10 },
+        { id: 'strip', name: 'Harbour Strip', x: 3720, z: -2739, kind: 'ground', r: 12 },
+        { id: 'field', name: 'Field Pad', x: -520, z: -150, kind: 'ground', r: 11 },
+      ],
       coastTrees: 300,
       coastTreeHeight: 11,
       hillTrees: 520,
@@ -701,10 +764,1029 @@ export const MAPS = [
     weather: { time: 'day', cond: 'clear', windSpeedKts: 10, windDirDeg: 260 },
   },
 
+  /* ==================================================================== *
+   * THE BOAT MAPS.
+   *
+   * A harbour is not an airfield, and these are not flight maps with a boat
+   * on them. Each is built round a harbour, at the scale a boat actually
+   * moves at: everything that matters is inside two kilometres of the quay.
+   *
+   * They still carry an airfield, out at the edge, for two reasons. One is
+   * that heightAt reads AIRPORT for its pad and its approach corridors and
+   * falls back to Kestrel's if a map brings none — which would quarry a
+   * fourteen-metre plateau through the middle of the harbour. The other is
+   * that a child who has learned to fly should be able to fly to Sennen and
+   * see the harbour they took the lifeboat out of, which is the whole
+   * argument for one world. Each strip is small, grass, and sited so its
+   * approach corridor runs out to sea instead of flattening a headland.
+   * ==================================================================== */
+
+  {
+    id: 'sennen',
+    name: 'Sennen Cove',
+    subtitle: 'Home water · a stone harbour under a headland',
+    blurb:
+      'A proper harbour cut into the foot of a headland, a buoyed channel a kilometre out to the '
+      + 'fairway buoy, and deep, quiet water either side of it. Two rocks, both well clear of the '
+      + 'channel, both on the chart. This is where everyone learns.',
+    difficulty: 1,
+    difficultyLabel: 'Gentle',
+    game: 'boat',
+    seaFloor: -16,
+    // The chart's default reach is twelve kilometres, which puts one pixel
+    // every fifty-six metres — at that scale this whole harbour is five pixels
+    // and the channel is two. See the minimap patch in the notes.
+    chartReach: 3400,
+    airport: {
+      elev: 22,
+      headingDeg: 90,
+      runway: { cx: -5600, cz: 2400, length: 900, halfWidth: 14 },
+      runway2: { cx: -5350, cz: 2560, length: 520, halfWidth: 11, headingDeg: 180 },
+      pad: { x0: -6100, x1: -5100, z0: 2260, z1: 2540, blend: 170 },
+      pad2: { x0: -5420, x1: -5280, z0: 2300, z1: 2820, blend: 150 },
+    },
+    islands: [
+      { name: 'Sennen Head', cx: 0, cz: -2400, radius: 2300, peak: 150, seed: 3, profile: 'hills' },
+      { name: 'Gull Island', cx: 2250, cz: 780, radius: 560, peak: 46, seed: 23, profile: 'hills' },
+      { name: 'Carn Point', cx: -2500, cz: 250, radius: 480, peak: 62, seed: 41, profile: 'hills' },
+      { name: 'Wester Isle', cx: -5600, cz: 2400, radius: 1700, peak: 90, seed: 47, profile: 'plains' },
+    ],
+    /*
+     * Chunks, and why there is no fine one over the harbour.
+     *
+     * Planes may not overlap, so local refinement would mean a nine-cell grid
+     * round the basin, nine extra draw calls, and a hole cut in the island
+     * chunk. It buys nothing: the sea is opaque, so the basin under it is
+     * never seen, and the breakwaters and the quay edge are geometry from
+     * harbour.js standing on top of this. Ninety-one thousand height samples
+     * against Kestrel's eighty-six.
+     */
+    chunks: [
+      { cx: 0, cz: -1400, size: 6400, segments: 256 },
+      { cx: 0, cz: -6400, size: 3600, segments: 96 },
+      { cx: -5600, cz: 2400, size: 4400, segments: 128 },
+    ],
+    palette: {
+      grass: [0.86, 0.98, 0.78],
+      sand: [0.98, 0.96, 0.9],
+      rock: [0.88, 0.9, 0.92],
+      deepWater: 0x11364f,
+      swell: 0x336d8c,
+      shallow: [0.3, 0.62, 0.66],
+      nightSky: 0x93abc8,
+    },
+    outpost: { cx: -5600, cz: 2400, elev: 22, halfLen: 210, halfWidth: 55, blend: 150 },
+    /*
+     * The harbour. Basin 270 × 200 at six metres, mouth facing due south, the
+     * quay along the landward end where the ground comes down to meet it.
+     * Measured: the ground behind the quay is +3.2 at the wall, +26 eighty
+     * metres back and +118 at four hundred. It is a cliff-backed harbour, and
+     * that is deliberate — it is the thing you can see from two miles out.
+     *
+     * The channel is marked but NOT dredged: the approach shelf is nine
+     * metres, the boat draws one, and there is nothing to dig. Buoys here mean
+     * "this is the way home", not "outside this line you stop".
+     *
+     * Channel: 1,095 m. 100 seconds at Half, 50 at Full.
+     */
+    waters: {
+      harbour: {
+        cx: 0, cz: -70, length: 270, width: 200, mouthDeg: 180, mouthWidth: 74,
+        depth: 6, wallW: 26, quayW: 34, wallY: 4.2, quayY: 3.2, blend: 150,
+      },
+      channel: { halfWidth: 55, blend: 40, path: [[0, 60], [0, 430], [-60, 780], [-60, 1150]] },
+      shoals: [
+        // The shelf goes first: everything after it stands on it.
+        { name: 'The Bar', cx: 0, cz: 100, r: 3000, top: -9, pow: 0.75 },
+        // Dries nearly a metre and breaks white — you can see this one.
+        { name: 'Cormorant Rock', cx: 470, cz: 540, r: 140, top: 0.9, pow: 1.7 },
+        // And this one you cannot. 0.4 m under the keel, 570 m clear of the
+        // channel, and on the chart. It is the only trap on the map and it is
+        // where Man Overboard sends you.
+        { name: 'The Gribbin', cx: -570, cz: 320, r: 125, top: -1.4, pow: 1.3 },
+        { name: 'Gull Ledge', cx: 1560, cz: 560, r: 240, top: -0.9, pow: 1.2 },
+      ],
+    },
+    scenery: {
+      coastTrees: 420,
+      coastTreeHeight: 9,
+      hillTrees: 380,
+      hillTreeHeight: 12,
+      hillCentre: [200, -2000],
+      hillRadius: 1600,
+      hillBand: [40, 150],
+      // The village, up the hill behind the harbour, where a village goes.
+      town: { cx: 150, cz: -900, radius: 520, count: 44, minH: 14, maxH: 120 },
+      // On the head of the west breakwater arm, not on a hill three miles
+      // away. The sweep at night is the boat's only reference in Night Shout,
+      // and the code that turns it is already written.
+      lighthouse: [-113, 55],
+      deliveryPad: [-5600, 2400],
+      padTrees: 140,
+      boats: 2,
+    },
+    weather: { time: 'day', cond: 'clear', windSpeedKts: 8, windDirDeg: 240 },
+  },
+
+  {
+    id: 'skerries',
+    name: 'The Skerries',
+    subtitle: 'Hard · rock, and one lane through it',
+    blurb:
+      'Stacks standing out of the water, a field of rock that mostly does not, and a single dredged '
+      + 'lane winding through the middle of it. Most of the chart is amber. Read it before you go.',
+    difficulty: 4,
+    difficultyLabel: 'Hard',
+    game: 'boat',
+    seaFloor: -20,
+    chartReach: 3200,
+    airport: {
+      elev: 30,
+      headingDeg: 90,
+      runway: { cx: 5200, cz: -3400, length: 820, halfWidth: 13 },
+      runway2: { cx: 5420, cz: -3260, length: 480, halfWidth: 10, headingDeg: 180 },
+      pad: { x0: 4740, x1: 5660, z0: -3540, z1: -3260, blend: 170 },
+      pad2: { x0: 5350, x1: 5490, z0: -3520, z1: -3000, blend: 150 },
+    },
+    islands: [
+      { name: 'Skerry Head', cx: -1700, cz: -1900, radius: 1500, peak: 230, seed: 211, profile: 'ridge' },
+      { name: 'Muckle Stack', cx: 1750, cz: 1450, radius: 430, peak: 120, seed: 233, profile: 'ridge' },
+      { name: 'Outer Holm', cx: 5200, cz: -3400, radius: 1500, peak: 80, seed: 239, profile: 'plains' },
+    ],
+    chunks: [
+      { cx: 0, cz: -400, size: 6400, segments: 256 },
+      { cx: 5200, cz: -3400, size: 4000, segments: 112 },
+    ],
+    palette: {
+      grass: [0.7, 0.84, 0.72],
+      sand: [0.8, 0.82, 0.84],
+      rock: [0.84, 0.88, 0.94],
+      deepWater: 0x0c2839,
+      swell: 0x2a5a72,
+      shallow: [0.22, 0.52, 0.58],
+      nightSky: 0x8aa2bf,
+    },
+    outpost: { cx: 5200, cz: -3400, elev: 30, halfLen: 200, halfWidth: 50, blend: 140 },
+    /*
+     * The shelf is four and a half metres over most of the map, which is what
+     * makes the dredged lane worth anything: eight and a half in the lane,
+     * three and a half beside it, and nothing at all over a dozen of the
+     * rocks. Measured along the whole lane, the least water under the keel is
+     * 7.5 m — you cannot touch inside the marks, and you very easily can
+     * outside them. That is the map in one sentence.
+     *
+     * Channel: 1,992 m. 181 seconds at Half. The longest transit in the boat
+     * game, and the only one over three minutes — and it is three minutes of
+     * steering, not three minutes of holding a key.
+     *
+     * Wren Reef, at the seaward end, is where the fishing boat goes aground:
+     * 0.6 m under the keel at the edge and drying in the middle, 600 m off
+     * the lane, which is exactly far enough that you have to leave the lane
+     * to do the job.
+     */
+    waters: {
+      harbour: {
+        cx: -1180, cz: -620, length: 240, width: 180, mouthDeg: 135, mouthWidth: 64,
+        depth: 6, wallW: 24, quayW: 30, wallY: 4.4, quayY: 3.2, blend: 140,
+      },
+      channel: {
+        halfWidth: 50, depth: 8.5, blend: 45,
+        path: [[-1050, -490], [-780, -210], [-470, 90], [-360, 470], [-520, 820], [-430, 1200]],
+      },
+      shoals: [
+        { name: 'The Shelf', cx: -200, cz: 200, r: 3100, top: -4.6, pow: 0.7 },
+        { cx: -760, cz: 120, r: 130, top: 1.8, pow: 1.8 },
+        { cx: -140, cz: 210, r: 150, top: -1.1, pow: 1.3 },
+        { cx: -700, cz: 560, r: 140, top: 2.4, pow: 1.9 },
+        { cx: -170, cz: 700, r: 160, top: -0.7, pow: 1.2 },
+        { cx: -790, cz: 1080, r: 150, top: -1.3, pow: 1.4 },
+        { cx: -120, cz: 1180, r: 175, top: 1.2, pow: 1.6 },
+        { cx: 260, cz: 880, r: 190, top: -0.5, pow: 1.1 },
+        { cx: 340, cz: 1440, r: 165, top: 2.9, pow: 2.0 },
+        { cx: -1000, cz: 1620, r: 210, top: -0.8, pow: 1.2 },
+        { cx: 60, cz: 1900, r: 180, top: -1.6, pow: 1.3 },
+        { cx: 700, cz: 320, r: 155, top: -1.0, pow: 1.3 },
+        { cx: 980, cz: 900, r: 200, top: 1.6, pow: 1.7 },
+        { name: 'Wren Reef', cx: 640, cz: 1760, r: 170, top: -0.4, pow: 1.2 },
+        { cx: -1380, cz: 640, r: 145, top: -1.9, pow: 1.2 },
+        { cx: 1420, cz: 300, r: 175, top: -1.2, pow: 1.2 },
+      ],
+    },
+    scenery: {
+      coastTrees: 120,
+      coastTreeHeight: 6,
+      hillTrees: 220,
+      hillTreeHeight: 9,
+      hillCentre: [-1700, -2100],
+      hillRadius: 1300,
+      hillBand: [40, 220],
+      town: { cx: -1500, cz: -1200, radius: 360, count: 20, minH: 14, maxH: 90 },
+      lighthouse: [-1035, -475],
+      deliveryPad: [5200, -3400],
+      padTrees: 60,
+      boats: 2,
+    },
+    weather: { time: 'day', cond: 'cloudy', windSpeedKts: 18, windDirDeg: 290 },
+    features: { waterfalls: 3 },
+  },
+
+  {
+    id: 'longbank',
+    name: 'Longbank Sands',
+    subtitle: 'Navigation · one thin channel across a great shallow bank',
+    blurb:
+      'From the wheel it looks like open sea in every direction. On the chart it is one blue thread '
+      + 'across four kilometres of sand, and the sand has patches that dry. Nothing here is steep. '
+      + 'Everything here is shallow.',
+    difficulty: 3,
+    difficultyLabel: 'Medium',
+    game: 'boat',
+    seaFloor: -13,
+    chartReach: 3600,
+    airport: {
+      elev: 14,
+      headingDeg: 90,
+      runway: { cx: 0, cz: -5200, length: 1000, halfWidth: 15 },
+      runway2: { cx: 260, cz: -5040, length: 560, halfWidth: 12, headingDeg: 180 },
+      pad: { x0: -560, x1: 560, z0: -5350, z1: -5050, blend: 180 },
+      pad2: { x0: 190, x1: 330, z0: -5340, z1: -4740, blend: 150 },
+    },
+    islands: [
+      { name: 'Stryke Island', cx: -300, cz: -2500, radius: 1200, peak: 34, seed: 307, profile: 'flat' },
+      { name: 'The Ness', cx: -400, cz: -5200, radius: 2400, peak: 70, seed: 311, profile: 'plains' },
+    ],
+    chunks: [
+      { cx: 0, cz: -200, size: 7000, segments: 256 },
+      { cx: -400, cz: -6200, size: 5000, segments: 128 },
+    ],
+    palette: {
+      grass: [0.92, 1.0, 0.8],
+      sand: [1.08, 1.02, 0.88],
+      rock: [0.96, 0.94, 0.9],
+      deepWater: 0x16455e,
+      swell: 0x4585a0,
+      // Pale green-grey: sand under three metres of water, not a coral lagoon.
+      shallow: [0.42, 0.68, 0.66],
+      nightSky: 0x9db4cd,
+    },
+    outpost: { cx: 0, cz: -5200, elev: 14, halfLen: 210, halfWidth: 55, blend: 150 },
+    /*
+     * The bank is one shoal four kilometres across, lifting a thirteen-metre
+     * sea floor to four and a half — so there is real deep water at the edges
+     * of the map, which is what makes the bank read as a bank rather than as
+     * "the sea is shallow here". Nine drying patches sit on top of it, four of
+     * them within 200 m of the channel.
+     *
+     * Channel: 2,669 m end to end. 243 seconds at Half — that is the map's
+     * free-patrol length, not a mission leg. In the Gale the casualty drifts
+     * at about 1.4 km down it, which is 127 seconds at Half and rather longer
+     * when you cannot hold Half into it.
+     */
+    waters: {
+      harbour: {
+        cx: -300, cz: -1230, length: 250, width: 190, mouthDeg: 170, mouthWidth: 70,
+        depth: 6, wallW: 26, quayW: 32, wallY: 4.2, quayY: 3.2, blend: 150,
+      },
+      channel: {
+        halfWidth: 60, depth: 9, blend: 55,
+        path: [
+          [-280, -1100], [-230, -700], [-420, -180], [-300, 420], [120, 820], [520, 1180],
+        ],
+      },
+      shoals: [
+        { name: 'Longbank', cx: 260, cz: 700, r: 4000, top: -4.6, pow: 0.55 },
+        { cx: -820, cz: -260, r: 260, top: -0.2, pow: 1.1 },
+        { cx: 240, cz: -140, r: 300, top: 0.3, pow: 1.0 },
+        { cx: -120, cz: 900, r: 280, top: -0.4, pow: 1.1 },
+        { cx: 900, cz: 640, r: 320, top: 0.2, pow: 1.0 },
+        { cx: 160, cz: 1560, r: 300, top: -0.3, pow: 1.1 },
+        { cx: 1040, cz: 1620, r: 340, top: 0.4, pow: 1.0 },
+        { cx: -640, cz: 1420, r: 290, top: -0.5, pow: 1.1 },
+        { cx: 820, cz: 2260, r: 310, top: -0.2, pow: 1.0 },
+        { cx: -300, cz: 2000, r: 260, top: 0.1, pow: 1.1 },
+      ],
+    },
+    scenery: {
+      coastTrees: 260,
+      coastTreeHeight: 7,
+      hillTrees: 300,
+      hillTreeHeight: 10,
+      hillCentre: [-400, -5000],
+      hillRadius: 2000,
+      hillBand: [16, 70],
+      town: { cx: -420, cz: -1900, radius: 420, count: 26, minH: 8, maxH: 32 },
+      lighthouse: [-411, -1105],
+      deliveryPad: [0, -5200],
+      padTrees: 120,
+      boats: 3,
+    },
+    weather: { time: 'day', cond: 'cloudy', windSpeedKts: 22, windDirDeg: 250 },
+  },
+
+
+  /* ==================================================================== *
+   * THE DRIVING MAPS.
+   *
+   * Built flat on purpose. The terrain is 30 to 70 metres per quad, so a road
+   * is not a thing you draw on the ground — it is a thing the ground is
+   * levelled for. Every coordinate in these three was probed against the real
+   * height function rather than chosen.
+   * ==================================================================== */
+
+  /**
+   * Drover's Flat — the courier tutorial island.
+   *
+   * Low farmland, nothing above 84 m, seven places joined by about twelve
+   * kilometres of road. Chosen to be the flattest map in the game on purpose:
+   * on ground this gentle a cut road barely deforms the terrain at all, so it
+   * is the one place where the road ribbon and the terrain mesh cannot
+   * disagree, and therefore the right island to get the roads working on
+   * before anybody tries Cape Vessel.
+   *
+   * Measured: shoreline 1,680-2,100 m from the island centre against a
+   * nominal 2,100, so everything inland sits within 1,500 m of it.
+   */
+  {
+    id: 'drovers',
+    game: 'car',
+    name: "Drover's Flat",
+    subtitle: 'Farmland · villages, a relay and a ferry quay',
+    blurb:
+      'Low green farmland with a village at every turning and a ferry quay on the south-west shore. '
+      + 'Nothing here is steep and everything here is somewhere, which is what you want the first time '
+      + 'you take the van out. The airstrip sits in the middle of it all.',
+    difficulty: 1,
+    difficultyLabel: 'Gentle',
+    games: ['car', 'flight', 'boat'],
+    seaFloor: -26,
+    airport: {
+      elev: 12,
+      headingDeg: 90,
+      // A short strip, but not shorter than 900 m: airport.js draws an 880 m
+      // taxiway at fixed coordinates, so a strip much under that gets a
+      // taxiway sticking out past both ends of it.
+      runway: { cx: 0, cz: 0, length: 1000, halfWidth: 18 },
+      runway2: { cx: 240, cz: -60, length: 760, halfWidth: 14, headingDeg: 180 },
+      pad: { x0: -620, x1: 620, z0: -230, z1: 190, blend: 180 },
+      pad2: { x0: 160, x1: 320, z0: -500, z1: 380, blend: 160 },
+    },
+    // The default corridor is a 5.4 km trench 760 m wide. On an island 4 km
+    // across that is most of the driving.
+    corridor: { halfWidth: 300, blend: 260, fadeFrom: 1600, length: 3400 },
+    corridor2: { halfWidth: 240, blend: 200, fadeFrom: 1200, length: 2600 },
+    islands: [
+      { name: "Drover's Flat", cx: 400, cz: 200, radius: 2100, peak: 95, seed: 401, profile: 'plains' },
+      { name: 'Cobb Rock', cx: -4200, cz: -2600, radius: 300, peak: 70, seed: 409, profile: 'hills' },
+    ],
+    chunks: [
+      // 23.6 m per quad against Kestrel's 39.1, for 84k vertices against 66k.
+      { cx: 300, cz: 150, size: 6800, segments: 288 },
+      // Far enough out that it does not overlap the main chunk at all. Kestrel
+      // tolerates an overlap because its is over open sea; better not to have
+      // one.
+      { cx: -4200, cz: -2600, size: 1600, segments: 56 },
+    ],
+    palette: {
+      grass: [0.93, 1.05, 0.82],
+      sand: [1.05, 1.0, 0.86],
+      rock: [0.98, 0.97, 0.94],
+      deepWater: 0x13405c,
+      swell: 0x3f86a4,
+      shallow: [0.35, 0.8, 0.72],
+      nightSky: 0x9fb8d8,
+    },
+    outpost: { cx: 1180, cz: -680, elev: 'auto', minElev: 6, halfLen: 200, halfWidth: 50, blend: 150 },
+    flats: [
+      // Measured natural ground at each, after resolveFlats: 22, 4.5 (given),
+      // 67, 47, 72 m. Worst skirt grade 32%, which is the quay's mole dropping
+      // to the seabed and is therefore underwater.
+      { id: 'depot', name: 'Drover Depot', kind: 'depot', x0: 840, x1: 1060, z0: -295, z1: -125, elev: 'auto', blend: 100, surface: 'tarmac' },
+      // A shore flat straddles the coast, so it gets a NUMBER: 'auto' would
+      // average the land and the seabed. The seaward end becomes the mole.
+      { id: 'quay', name: 'Ferry Hard', kind: 'harbour', x0: -1780, x1: -1360, z0: -700, z1: -520, elev: 4.5, blend: 95, surface: 'tarmac' },
+      { id: 'town', name: 'Drover', kind: 'town', x0: 1130, x1: 1770, z0: 570, z1: 1130, elev: 'auto', blend: 150, surface: 'grass' },
+      { id: 'holt', name: 'Holt', kind: 'village', x0: -580, x1: -100, z0: 680, z1: 1080, elev: 'auto', blend: 140, surface: 'grass' },
+      { id: 'relay', name: 'Drover Relay', kind: 'relay', x0: 1270, x1: 1450, z0: 1200, z1: 1380, elev: 'auto', blend: 110, surface: 'gravel' },
+    ],
+    /*
+     * Where the van starts and what the road router should join up.
+     *
+     * `depot` replaces the hardcoded (-430, 0, -95) in main.js's startDrive,
+     * which is Kestrel's taxiway and is a field on Los Angeles and open sea on
+     * Coral Atoll. `boatOnly` marks a place no road can reach, so the router
+     * does not spend an A* search trying to bridge to an offshore rock.
+     */
+    courier: {
+      depot: { x: 950, z: -210, headingDeg: 270 },
+      places: [
+        { id: 'depot', name: 'Drover Depot', x: 950, z: -210, kind: 'depot' },
+        { id: 'apron', name: 'The Airfield', x: -80, z: -148, kind: 'apron' },
+        { id: 'town', name: 'Drover', x: 1450, z: 850, kind: 'town' },
+        { id: 'holt', name: 'Holt', x: -340, z: 880, kind: 'village' },
+        { id: 'quay', name: 'Ferry Hard', x: -1570, z: -610, kind: 'harbour' },
+        { id: 'relay', name: 'Drover Relay', x: 1360, z: 1290, kind: 'relay' },
+        { id: 'outpost', name: 'Weather Station', x: 1180, z: -680, kind: 'outpost' },
+        { id: 'light', name: 'Cobb Light', x: -4200, z: -2600, kind: 'lighthouse', boatOnly: true },
+      ],
+    },
+    scenery: {
+      coastTrees: 800, coastTreeHeight: 11,
+      hillTrees: 420, hillTreeHeight: 13,
+      hillCentre: [1360, 1290], hillRadius: 900, hillBand: [40, 85],
+      town: { cx: 1450, cz: 850, radius: 300, count: 48, minH: 30, maxH: 80 },
+      lighthouse: [-4200, -2600],
+      deliveryPad: [1180, -680],
+      padTrees: 220,
+      boats: 3,
+      harbour: { flat: 'quay', cranes: 1, containers: 16, moored: 2, sheds: 2 },
+    },
+    weather: { time: 'day', cond: 'clear', windSpeedKts: 5, windDirDeg: 240 },
+    features: {
+      fields: { cx: 700, cz: 400, radius: 1500, count: 48 },
+      reef: { islands: [0], colour: 0x4fc4a8, width: 0.14 },
+    },
+  },
+
+  /**
+   * Cape Vessel — land shaped for a car rather than land with a runway on it.
+   *
+   * Seven kilometres long and under two wide, which the island system cannot
+   * express in one entry because an island is a radial blob. So it is a CHAIN
+   * of five overlapping circles strung along the x axis; max() blending fuses
+   * them into one continuous cape and the coastline wobble makes the joins
+   * invisible. Spacing is 1,150 m against radii of about 850, which was chosen
+   * so that at most TWO circles are ever evaluated at any point — a third
+   * would be a third set of fbm calls on every height sample in the overlap,
+   * and this function runs 200,000 times per terrain build.
+   *
+   * Measured after halving the ridge peaks: 315 m at the top, the pass at 177,
+   * the relay bench at 298. A road climbing 300 m within a 14% gradient clamp
+   * needs about 2.1 km of length, and there is 1.7 km of cape width to wind it
+   * in — which is precisely how the router ends up inventing its own hairpins.
+   *
+   * Stated plainly because it is a real cost: the corridor is cut right back,
+   * so taking off eastbound out of Vessel Field means climbing at a ridge that
+   * starts 1.1 km away. That is deliberate. This is a car map.
+   */
+  {
+    id: 'cape',
+    game: 'car',
+    name: 'Cape Vessel',
+    subtitle: 'Peninsula · one road over the spine',
+    blurb:
+      'Seven kilometres of cape with a ridge down the middle of it, a quay on the eastern point and a '
+      + 'short strip on the low western end. There is one way across the spine and it is not straight. '
+      + 'Wonderful to drive; a hard place to fly out of eastbound, which is on purpose.',
+    difficulty: 3,
+    difficultyLabel: 'Testing',
+    games: ['car', 'boat', 'flight'],
+    seaFloor: -38,
+    airport: {
+      elev: 16,
+      headingDeg: 90,
+      runway: { cx: 0, cz: 0, length: 900, halfWidth: 16 },
+      runway2: { cx: 230, cz: -70, length: 640, halfWidth: 13, headingDeg: 180 },
+      pad: { x0: -560, x1: 560, z0: -220, z1: 180, blend: 170 },
+      pad2: { x0: 150, x1: 310, z0: -440, z1: 300, blend: 150 },
+    },
+    // Short and narrow. At the default 5,400 m this would hold the whole spine
+    // down to 26 m and there would be no map.
+    corridor: { halfWidth: 210, blend: 190, fadeFrom: 600, length: 1500 },
+    corridor2: { halfWidth: 170, blend: 150, fadeFrom: 500, length: 1200 },
+    islands: [
+      { name: 'West Head', cx: -1150, cz: 60, radius: 820, peak: 70, seed: 503, profile: 'hills' },
+      { name: 'Vessel Field', cx: 0, cz: 0, radius: 880, peak: 55, seed: 509, profile: 'plains' },
+      // These two read 'ridge', which overshoots: peaks of 430 and 520 measured
+      // 660 m on the ground, an alpine pass on a seven-kilometre cape. Halved.
+      { name: 'The Spine', cx: 1150, cz: -90, radius: 840, peak: 190, seed: 521, profile: 'ridge' },
+      { name: 'High Vessel', cx: 2300, cz: 40, radius: 860, peak: 230, seed: 523, profile: 'ridge' },
+      // The eastern point is 'plains' and low so that the quay works: on
+      // 'hills' at peak 210 its flank reached 237 m and a quay at 5 m would
+      // have cut a hundred-metre hole in it.
+      { name: 'Vessel Point', cx: 3450, cz: -120, radius: 800, peak: 90, seed: 541, profile: 'plains' },
+    ],
+    // One chunk, 25.0 m per quad, 93k vertices. Half of it is sea, which costs
+    // almost nothing: islandField rejects on a squared distance.
+    chunks: [{ cx: 1150, cz: -20, size: 7600, segments: 304 }],
+    palette: {
+      grass: [0.86, 0.97, 0.78],
+      sand: [0.94, 0.92, 0.84],
+      rock: [0.9, 0.92, 0.95],
+      deepWater: 0x0f3450,
+      swell: 0x336f92,
+      shallow: [0.3, 0.66, 0.68],
+      nightSky: 0x93aac6,
+    },
+    outpost: { cx: 3690, cz: 190, elev: 'auto', minElev: 8, halfLen: 190, halfWidth: 55, blend: 140 },
+    flats: [
+      // The depot is up on West Head at 97 m, eighty metres above the field it
+      // serves. That is not an accident of the noise, it is the map: every job
+      // on Cape Vessel starts by coming down the hill.
+      { id: 'depot', name: 'Vessel Depot', kind: 'depot', x0: -1000, x1: -800, z0: -480, z1: -320, elev: 'auto', blend: 100, surface: 'tarmac' },
+      { id: 'quay', name: 'Vessel Quay', kind: 'harbour', x0: 4180, x1: 4750, z0: -240, z1: -100, elev: 5, blend: 110, surface: 'tarmac' },
+      // The saddle the road has to find. 177 m, and the ground rolls only 9 m
+      // across the whole bench, so it is a genuine pass rather than a cut.
+      { id: 'pass', name: 'The Pass', kind: 'layby', x0: 1520, x1: 1660, z0: -450, z1: -310, elev: 'auto', blend: 130, surface: 'gravel' },
+      { id: 'relay', name: 'Vessel Relay', kind: 'relay', x0: 1720, x1: 1880, z0: -60, z1: 100, elev: 'auto', blend: 120, surface: 'gravel' },
+      { id: 'kerrow', name: 'Kerrow', kind: 'village', x0: -1160, x1: -820, z0: 340, z1: 660, elev: 'auto', blend: 140, surface: 'grass' },
+    ],
+    courier: {
+      depot: { x: -900, z: -400, headingDeg: 90 },
+      places: [
+        { id: 'depot', name: 'Vessel Depot', x: -900, z: -400, kind: 'depot' },
+        { id: 'apron', name: 'Vessel Field', x: -80, z: -148, kind: 'apron' },
+        { id: 'kerrow', name: 'Kerrow', x: -990, z: 500, kind: 'village' },
+        { id: 'pass', name: 'The Pass', x: 1590, z: -380, kind: 'layby' },
+        { id: 'relay', name: 'Vessel Relay', x: 1800, z: 20, kind: 'relay' },
+        { id: 'outpost', name: 'Point Station', x: 3690, z: 190, kind: 'outpost' },
+        { id: 'quay', name: 'Vessel Quay', x: 4465, z: -170, kind: 'harbour' },
+      ],
+    },
+    scenery: {
+      coastTrees: 640, coastTreeHeight: 10,
+      hillTrees: 520, hillTreeHeight: 14,
+      hillCentre: [1750, -100], hillRadius: 1300, hillBand: [90, 310],
+      town: { cx: -990, cz: 500, radius: 300, count: 34, minH: 60, maxH: 130 },
+      // On the harbour mole, which is authored flat ground, so the lighthouse
+      // stands on the quay instead of in the sea.
+      lighthouse: [4600, -170],
+      deliveryPad: [3690, 190],
+      padTrees: 180,
+      boats: 3,
+      harbour: { flat: 'quay', cranes: 1, containers: 20, moored: 2, sheds: 2 },
+    },
+    weather: { time: 'day', cond: 'cloudy', windSpeedKts: 14, windDirDeg: 250 },
+    features: {
+      waterfalls: 3,
+      reef: { islands: [1, 4], colour: 0x46c6b4, width: 0.16 },
+    },
+  },
+
+  /**
+   * Cullen Sands — the one genuinely new driving idea in the set.
+   *
+   * Two islands with 900 m of shallow water between them and a causeway across
+   * it, and the causeway is the only way over. That is a place the flight maps
+   * cannot supply, because from the air a causeway is a line and from a van it
+   * is a minute of committed driving with water either side. It is also what
+   * the Low Tide job is for.
+   *
+   * The causeway is 120 metres wide, which is wider than a causeway should be
+   * and is not negotiable: the terrain mesh here is 23.6 m per quad, so
+   * anything narrower than about three quads simply is not in the geometry the
+   * player sees. Read as a sand bar with a road down it, not a viaduct.
+   *
+   * Measured: Cullen's coast runs 980-1,720 m against a nominal 1,300, the gap
+   * runs x 680 to 1,580, Sker Holm tops out at 185 m. The climb from the
+   * eastern landfall to the quarry is 12% direct over 1,253 m and to the
+   * outpost 18% over 642, so the router will have to switchback on Sker Holm.
+   * That is intended and it is the first thing to test.
+   */
+  {
+    id: 'cullen',
+    game: 'car',
+    name: 'Cullen Sands',
+    subtitle: 'Two islands · one causeway',
+    blurb:
+      'A farming island, a quarry island, and a mile of causeway across the sands between them. The '
+      + 'crossing is gravel, it is the only way over, and the tide does not care what you are carrying. '
+      + 'Everything else here is easy.',
+    difficulty: 2,
+    difficultyLabel: 'Steady',
+    games: ['car', 'boat', 'flight'],
+    // Shallow on purpose: the crossing should read as sand banks, not as a
+    // bridge over deep water.
+    seaFloor: -14,
+    airport: {
+      elev: 11,
+      headingDeg: 90,
+      runway: { cx: 0, cz: 0, length: 980, halfWidth: 18 },
+      runway2: { cx: 250, cz: -60, length: 720, halfWidth: 14, headingDeg: 180 },
+      pad: { x0: -600, x1: 600, z0: -230, z1: 190, blend: 180 },
+      pad2: { x0: 170, x1: 330, z0: -480, z1: 360, blend: 160 },
+    },
+    corridor: { halfWidth: 260, blend: 220, fadeFrom: 1400, length: 3000 },
+    corridor2: { halfWidth: 210, blend: 180, fadeFrom: 900, length: 2100 },
+    islands: [
+      { name: 'Cullen', cx: -1000, cz: 200, radius: 1300, peak: 90, seed: 601, profile: 'plains' },
+      // Peak 230 measured 286 m over an 860 m island — a flank too steep for a
+      // van to have any road at all. 140 gives 185 m and a climb the router can
+      // wind up.
+      { name: 'Sker Holm', cx: 2400, cz: -250, radius: 950, peak: 140, seed: 607, profile: 'hills' },
+      { name: 'Gull Skerry', cx: -2500, cz: -2200, radius: 260, peak: 40, seed: 613, profile: 'flat' },
+    ],
+    chunks: [{ cx: 450, cz: -50, size: 6800, segments: 288 }],
+    palette: {
+      grass: [0.9, 1.02, 0.8],
+      sand: [1.14, 1.08, 0.92],
+      rock: [1.0, 0.98, 0.94],
+      deepWater: 0x1a5a76,
+      swell: 0x4ea4b4,
+      shallow: [0.4, 0.86, 0.8],
+      nightSky: 0xa4bdd6,
+    },
+    outpost: { cx: 2150, cz: -510, elev: 'auto', minElev: 8, halfLen: 190, halfWidth: 55, blend: 140 },
+    flats: [
+      // x 620 and x 1640 are just inside each shoreline, measured. A number,
+      // not 'auto', because the middle of it is over water.
+      { id: 'causeway', name: 'The Sands Causeway', kind: 'causeway', x0: 620, x1: 1640, z0: -180, z1: -60, elev: 5.5, blend: 95, surface: 'gravel' },
+      { id: 'depot', name: 'Cullen Depot', kind: 'depot', x0: -1300, x1: -1100, z0: -250, z1: -90, elev: 'auto', blend: 100, surface: 'tarmac' },
+      { id: 'quay', name: 'Cullen Quay', kind: 'harbour', x0: -2700, x1: -2100, z0: 500, z1: 680, elev: 4, blend: 95, surface: 'tarmac' },
+      { id: 'town', name: 'Cullen', kind: 'town', x0: -1440, x1: -920, z0: 790, z1: 1230, elev: 'auto', blend: 150, surface: 'grass' },
+      { id: 'quarry', name: 'Sker Quarry', kind: 'quarry', x0: 2740, x1: 2940, z0: 140, z1: 340, elev: 'auto', blend: 130, surface: 'gravel' },
+    ],
+    courier: {
+      depot: { x: -1200, z: -170, headingDeg: 90 },
+      places: [
+        { id: 'depot', name: 'Cullen Depot', x: -1200, z: -170, kind: 'depot' },
+        { id: 'apron', name: 'Cullen Strip', x: -80, z: -148, kind: 'apron' },
+        { id: 'town', name: 'Cullen', x: -1180, z: 1010, kind: 'town' },
+        { id: 'quay', name: 'Cullen Quay', x: -2325, z: 590, kind: 'harbour' },
+        // `tidal` is the hook the Low Tide job wants: the one node on the
+        // network that a job is allowed to close.
+        { id: 'causeway', name: 'The Causeway', x: 1130, z: -120, kind: 'causeway', tidal: true },
+        { id: 'quarry', name: 'Sker Quarry', x: 2840, z: 240, kind: 'quarry' },
+        { id: 'outpost', name: 'Sker Station', x: 2150, z: -510, kind: 'outpost' },
+        { id: 'light', name: 'Gull Light', x: -2500, z: -2200, kind: 'lighthouse', boatOnly: true },
+      ],
+    },
+    scenery: {
+      coastTrees: 560, coastTreeHeight: 10,
+      hillTrees: 300, hillTreeHeight: 12,
+      hillCentre: [2600, 0], hillRadius: 850, hillBand: [50, 180],
+      town: { cx: -1180, cz: 1010, radius: 280, count: 38, minH: 30, maxH: 80 },
+      lighthouse: [-2500, -2200],
+      deliveryPad: [2150, -510],
+      padTrees: 160,
+      boats: 4,
+      harbour: { flat: 'quay', cranes: 1, containers: 12, moored: 3, sheds: 1 },
+    },
+    weather: { time: 'day', cond: 'clear', windSpeedKts: 12, windDirDeg: 280 },
+    features: {
+      reef: { islands: [0, 1], colour: 0x58d2bc, width: 0.3, bright: 0.7 },
+    },
+  },
+
+  /* ==================================================================== *
+   * Three places for the helicopter.
+   *
+   * The rule the lead set — "a harbour is not an airfield" — is right, and
+   * the cheap way to honour it is to notice that a map here is PURE DATA.
+   * Not one of these three adds a terrain profile, a shader, a texture or a
+   * model: they are new arrangements of the five profiles that already exist,
+   * and between them they weigh about 180 lines and no bytes at all.
+   *
+   * Every pad coordinate below was MEASURED against heightAt rather than
+   * guessed, which is how the shipped maps came to have lighthouses standing
+   * in forty metres of open water (San Francisco, Los Angeles and the air
+   * base all still do). Anything with a number attached to it in these three
+   * has been read off the height field.
+   * ==================================================================== */
+
+  /**
+   * Port Kestrel.
+   *
+   * The same island as Kestrel — the same three land masses, the same three
+   * chunks, copied unchanged — seen from the working harbour on its north-west
+   * shore instead of from the airfield. The cheapest possible new map: no new
+   * terrain is generated anywhere, and the difference is entirely where the
+   * town, the quay and the pads are.
+   *
+   * The airstrip still exists, because it is the same island. That is not an
+   * oversight: a rescue flight operating out of a harbour town that happens to
+   * have an airstrip on the other side of the hill is truer than pretending
+   * runways stopped existing the moment you climbed into a helicopter, and it
+   * gives the first tutorial somewhere obvious to go wrong safely.
+   *
+   * THE HARBOUR IS A CUT PLATFORM, AND IT HAS TO BE. Kestrel Island has no
+   * natural flat ground anywhere outside the airfield — measured, not
+   * assumed: sweeping the whole island for anywhere under 3 m of fall per 10 m
+   * of run, below 40 m elevation, returns the approach corridor and nothing
+   * else, and every crossing of the coastline is at about 29 degrees. So the
+   * quay is an `outpost` plateau, which is the existing one-line tool for
+   * exactly this and costs no new terrain code at all.
+   */
+  {
+    id: 'kestrel-port',
+    game: 'heli',
+    name: 'Port Kestrel',
+    subtitle: 'Harbour town · the same island, the other side of the hill',
+    blurb:
+      'A working quay cut into the headland, a hospital on the ridge above the town and a light on '
+      + 'Needle Rock eight minutes out. The airstrip is still over the hill if you want it.',
+    difficulty: 1,
+    difficultyLabel: 'Gentle',
+    heli: true,
+    seaFloor: -34,
+    // Identical to Kestrel Island, deliberately and exactly. Copied rather
+    // than shared so that tuning one map can never quietly change the other.
+    islands: [
+      { name: 'Kestrel Island', cx: 0, cz: 0, radius: 2450, peak: 300, seed: 3, profile: 'hills' },
+      { name: 'Mango Cay', cx: 6200, cz: -5200, radius: 980, peak: 150, seed: 17, profile: 'hills' },
+      { name: 'Needle Rock', cx: -3100, cz: -3600, radius: 380, peak: 210, seed: 29, profile: 'hills' },
+    ],
+    chunks: [
+      { cx: 0, cz: 0, size: 10000, segments: 256 },
+      { cx: 6200, cz: -5200, size: 4600, segments: 128 },
+      { cx: -3100, cz: -3600, size: 2200, segments: 72 },
+    ],
+    palette: {
+      grass: [1.0, 1.0, 1.0],
+      sand: [1.0, 1.0, 1.0],
+      rock: [1.0, 1.0, 1.0],
+      deepWater: 0x123a5e,
+      swell: 0x3a7ba8,
+      shallow: [0.31, 0.84, 0.78],
+      nightSky: 0x9fb8d8,
+    },
+    /*
+     * The quay. 270 m by 144 m of level ground at 15 m, cut into a shore that
+     * falls at 29 degrees — so there is a real cut face behind it, which is
+     * what a harbour on a coast like this looks like.
+     *
+     * halfLen is 135 and not less, because `buildDeliveryPad` paints a strip
+     * 240 m long and it has to fit on the flat or it hangs off the edge.
+     */
+    outpost: { cx: -1672, cz: -1672, elev: 15, halfLen: 135, halfWidth: 72, blend: 120 },
+    scenery: {
+      coastTrees: 900,
+      coastTreeHeight: 10,
+      hillTrees: 600,
+      hillTreeHeight: 13,
+      hillCentre: [200, 500],
+      hillRadius: 1700,
+      hillBand: [60, 260],
+      // A bigger town than Kestrel's: this is the place people live, and the
+      // hospital pad has to look like it belongs to something.
+      town: { cx: 700, cz: 620, radius: 520, count: 64, minH: 16, maxH: 200 },
+      lighthouse: [-3100, -3600],
+      deliveryPad: [-1672, -1672],
+      padTrees: 200,
+      // The fishing fleet, out in the bay off the quay.
+      boats: 6,
+      boatHome: [-2600, -2600],
+      pads: [
+        { id: 'harbour', name: 'Harbour Head Quay', x: -1672, z: -1620, kind: 'ground', r: 12 },
+        { id: 'hospital', name: 'St Brendan Hospital', x: 760, z: 560, kind: 'roof', above: 30, r: 11 },
+        { id: 'needle', name: 'Needle Rock Light', x: -2890, z: -3810, kind: 'stack', r: 9 },
+        { id: 'field', name: 'Kestrel Airfield Pad', x: -520, z: -150, kind: 'ground', r: 11 },
+      ],
+    },
+    weather: { time: 'day', cond: 'clear', windSpeedKts: 8, windDirDeg: 250 },
+    features: { reef: { islands: [0, 1], colour: 0x49d6c0, width: 0.22 } },
+  },
+
+  /**
+   * The Stacks.
+   *
+   * The map an aeroplane is simply the wrong machine for, and a ten-year-old
+   * will work that out without being told.
+   *
+   * Nine sea stacks with 170 to 255 m of rock on top of them — those are
+   * measured summits, not the `peak` parameter, which the ridge profile
+   * overshoots by about half — and no flat land anywhere except the 420 m of
+   * grass on Flat Rock at the origin. Every other landing site in the
+   * archipelago is a pad on a summit.
+   *
+   * THE AIRSTRIP EXISTS BECAUSE THE ENGINE REQUIRES IT, and it is honest to
+   * say so: `heightAt` cuts an approach corridor along the main runway on
+   * every map whether anyone asked for one, `isOnRunway2` reads
+   * `AIRPORT.runway2.headingDeg` without checking whether runway2 exists, and
+   * the PAPI, the ATC and the landing score all assume a field. So there is a
+   * field: 420 m of it, which is nobody's idea of a runway, on the only piece
+   * of level rock for four kilometres. No child will ever use it and nothing
+   * crashes.
+   *
+   * The stacks are all placed clear of the two approach corridors (|z| > 900,
+   * and clear of x = 60 ± 600) because the corridor planes anything inside it
+   * down to 32 m, and a sea stack sheared off flat is not a sea stack.
+   */
+  {
+    id: 'stacks',
+    game: 'heli',
+    name: 'The Stacks',
+    subtitle: 'Sea stacks · nowhere to land but the tops',
+    blurb:
+      'Nine columns of rock out of deep water, most of them two hundred metres tall, and a pad on '
+      + 'each summit. Bring the machine that does not need a runway.',
+    difficulty: 4,
+    difficultyLabel: 'Hard',
+    heli: true,
+    seaFloor: -48,
+    airport: {
+      elev: 22,
+      headingDeg: 90,
+      runway: { cx: 0, cz: 0, length: 420, halfWidth: 12 },
+      runway2: { cx: 70, cz: -40, length: 300, halfWidth: 10, headingDeg: 180 },
+      pad: { x0: -250, x1: 250, z0: -90, z1: 80, blend: 130 },
+      pad2: { x0: 30, x1: 110, z0: -200, z1: 120, blend: 110 },
+    },
+    islands: [
+      { name: 'Flat Rock', cx: 0, cz: 0, radius: 460, peak: 30, seed: 401, profile: 'flat' },
+      { name: 'Gannet Stack', cx: -3400, cz: -2600, radius: 300, peak: 150, seed: 409, profile: 'ridge' },
+      { name: 'The Sisters', cx: -1900, cz: -4300, radius: 260, peak: 120, seed: 419, profile: 'ridge' },
+      { name: 'Cormorant', cx: 1500, cz: -3600, radius: 340, peak: 175, seed: 421, profile: 'ridge' },
+      { name: 'Black Stack', cx: 3600, cz: -2200, radius: 280, peak: 230, seed: 431, profile: 'ridge' },
+      { name: 'Skua Rock', cx: 4100, cz: 1800, radius: 320, peak: 265, seed: 433, profile: 'ridge' },
+      { name: 'Puffin Stack', cx: 2200, cz: 3900, radius: 300, peak: 210, seed: 439, profile: 'ridge' },
+      { name: 'The Chimney', cx: -1600, cz: 3600, radius: 260, peak: 125, seed: 443, profile: 'ridge' },
+      { name: 'The Anvil', cx: -4000, cz: 1500, radius: 380, peak: 215, seed: 449, profile: 'ridge' },
+    ],
+    /*
+     * One chunk for Flat Rock and one per stack.
+     *
+     * Chunks are drawn, not merged — two that overlap are two coincident
+     * surfaces that z-fight — so these tile without touching: the middle
+     * chunk reaches 2,600 m and every stack chunk is clear of it on at least
+     * one axis. The gaps between them are open sea, where the height field is
+     * the sea floor and the ocean covers everything anyway.
+     *
+     * A 220 m stack inside one 10 km chunk would be five vertices across and
+     * would read as a bump. At 1,400 m and 88 segments it is sixteen metres a
+     * vertex, which is what makes it a column of rock. Total is about 91,000
+     * vertices against Kestrel's 85,000 — the small chunks are cheap
+     * because they are small.
+     */
+    chunks: [
+      { cx: 0, cz: 0, size: 5200, segments: 160 },
+      { cx: -3400, cz: -2600, size: 1400, segments: 88 },
+      { cx: -1900, cz: -4300, size: 1400, segments: 88 },
+      { cx: 1500, cz: -3600, size: 1400, segments: 88 },
+      { cx: 3600, cz: -2200, size: 1400, segments: 88 },
+      { cx: 4100, cz: 1800, size: 1400, segments: 88 },
+      { cx: 2200, cz: 3900, size: 1400, segments: 88 },
+      { cx: -1600, cz: 3600, size: 1400, segments: 88 },
+      { cx: -4000, cz: 1500, size: 1600, segments: 96 },
+    ],
+    palette: {
+      // Cold, wet rock with almost nothing growing on it.
+      grass: [0.68, 0.78, 0.66],
+      sand: [0.78, 0.79, 0.8],
+      rock: [0.9, 0.92, 0.96],
+      deepWater: 0x0d2a42,
+      swell: 0x2a5c7e,
+      shallow: [0.24, 0.55, 0.62],
+      nightSky: 0x8ea6c4,
+    },
+    // The one flat apron, beside the strip on Flat Rock — NOT on a stack.
+    // Quarrying a 280 m plateau out of a summit would have destroyed the one
+    // thing this map is about.
+    outpost: { cx: 0, cz: 300, elev: 20, halfLen: 140, halfWidth: 75, blend: 110 },
+    scenery: {
+      coastTrees: 60,
+      coastTreeHeight: 4,
+      hillTrees: 40,
+      hillTreeHeight: 5,
+      hillCentre: [0, 0],
+      hillRadius: 520,
+      hillBand: [8, 26],
+      town: { cx: 120, cz: 250, radius: 260, count: 9, minH: 10, maxH: 26 },
+      // A light on a sea stack, which is where lights like this actually go.
+      lighthouse: [-1856, -4156],
+      deliveryPad: [0, 300],
+      padTrees: 20,
+      boats: 3,
+      /*
+       * Ten pads, eight of them summits. The summit coordinates are the
+       * measured high points of each stack and not the island centres — the
+       * ridge profile puts the top a hundred metres or so off centre, which
+       * is why they look like sea stacks rather than cones.
+       */
+      pads: [
+        { id: 'hospital', name: 'Flat Rock Rescue', x: -60, z: 300, kind: 'ground', r: 12 },
+        { id: 'gannet', name: 'Gannet Stack', x: -3502, z: -2822, kind: 'stack', r: 9 },
+        { id: 'sisters', name: 'The Sisters', x: -1834, z: -4138, kind: 'stack', r: 8 },
+        { id: 'cormorant', name: 'Cormorant', x: 1686, z: -3822, kind: 'stack', r: 9 },
+        { id: 'black', name: 'Black Stack', x: 3432, z: -2344, kind: 'stack', r: 8 },
+        { id: 'skua', name: 'Skua Rock', x: 3836, z: 1836, kind: 'stack', r: 9 },
+        { id: 'puffin', name: 'Puffin Stack', x: 2410, z: 3906, kind: 'stack', r: 8 },
+        { id: 'chimney', name: 'The Chimney', x: -1666, z: 3474, kind: 'stack', r: 8 },
+        { id: 'anvil', name: 'The Anvil', x: -4054, z: 1674, kind: 'stack', r: 10 },
+        { id: 'field', name: 'Flat Rock Strip', x: -175, z: -62, kind: 'ground', r: 11 },
+      ],
+    },
+    weather: { time: 'day', cond: 'cloudy', windSpeedKts: 18, windDirDeg: 280 },
+    features: { waterfalls: 3 },
+  },
+
+  /**
+   * Ironhead Deep.
+   *
+   * Named after the same headland as Ironhead Air Base and nothing else is
+   * shared: that one is a dry plain with three kilometres of concrete, this is
+   * sixty metres of cold water with eight platforms standing in it. (If two
+   * Ironheads is one too many, this is the one to rename — the id is `rigs`
+   * and nothing outside this entry and the heli mission list refers to it.)
+   *
+   * The cheapest map in the game to build, by a distance. One shore island,
+   * one skerry, two terrain chunks and about 39,000 vertices against Kestrel's
+   * 85,000 — because seven of its ten landing sites are platforms over open
+   * water, and a platform is four instanced legs and a disc rather than any
+   * terrain at all. Night and weather cost nothing extra here and suit it, so
+   * this is where the mission that needs them lives.
+   */
+  {
+    id: 'rigs',
+    game: 'heli',
+    name: 'Ironhead Deep',
+    subtitle: 'Open water · eight decks and one shore',
+    blurb:
+      'Deep cold water, a rocky head with a shore base on it, and a field of platforms out in the '
+      + 'dark. Everything you can land on out here was put there on purpose.',
+    difficulty: 3,
+    difficultyLabel: 'Exposed',
+    heli: true,
+    seaFloor: -60,
+    islands: [
+      { name: 'Ironhead Head', cx: 0, cz: 0, radius: 1500, peak: 120, seed: 503, profile: 'hills' },
+      { name: 'Sheer Skerry', cx: -3400, cz: 2400, radius: 300, peak: 150, seed: 509, profile: 'ridge' },
+    ],
+    chunks: [
+      { cx: 0, cz: 0, size: 5200, segments: 176 },
+      { cx: -3400, cz: 2400, size: 1400, segments: 88 },
+    ],
+    palette: {
+      grass: [0.7, 0.8, 0.68],
+      sand: [0.8, 0.8, 0.82],
+      rock: [0.84, 0.88, 0.94],
+      deepWater: 0x0b1f31,
+      swell: 0x24506b,
+      shallow: [0.2, 0.46, 0.55],
+      nightSky: 0x7e93b2,
+    },
+    outpost: { cx: -900, cz: 900, elev: 26, halfLen: 140, halfWidth: 75, blend: 110 },
+    scenery: {
+      coastTrees: 180,
+      coastTreeHeight: 6,
+      hillTrees: 120,
+      hillTreeHeight: 8,
+      hillCentre: [-300, 900],
+      hillRadius: 900,
+      hillBand: [30, 150],
+      town: { cx: -700, cz: 700, radius: 280, count: 20, minH: 12, maxH: 80 },
+      lighthouse: [-3502, 2622],
+      deliveryPad: [-900, 900],
+      padTrees: 60,
+      boats: 4,
+      /*
+       * Eight decks and two on shore. The deck heights run from 19 to 34 m
+       * on purpose: a fixed height would let a child learn one radar-altimeter
+       * number and stop reading the instrument, which is the opposite of what
+       * this game is for.
+       */
+      pads: [
+        { id: 'hospital', name: 'Ironhead Infirmary', x: -900, z: 1010, kind: 'roof', above: 26, r: 11 },
+        { id: 'alpha', name: 'Ironhead Alpha', x: 2600, z: -1800, kind: 'deck', elev: 24, r: 12 },
+        { id: 'bravo', name: 'Ironhead Bravo', x: 4200, z: 900, kind: 'deck', elev: 30, r: 11 },
+        { id: 'charlie', name: 'Ironhead Charlie', x: -2200, z: -3600, kind: 'deck', elev: 21, r: 12 },
+        { id: 'delta', name: 'Ironhead Delta', x: 5200, z: -3000, kind: 'deck', elev: 34, r: 11 },
+        { id: 'echo', name: 'Ironhead Echo', x: 3400, z: 3600, kind: 'deck', elev: 27, r: 12 },
+        { id: 'foxtrot', name: 'Ironhead Foxtrot', x: -1400, z: 4400, kind: 'deck', elev: 19, r: 11 },
+        { id: 'flotel', name: 'Deep Flotel', x: -5000, z: -1200, kind: 'deck', elev: 32, r: 13 },
+        { id: 'skerry', name: 'Sheer Skerry Light', x: -3502, z: 2622, kind: 'stack', r: 9 },
+        { id: 'field', name: 'Ironhead Shore Base', x: -520, z: -150, kind: 'ground', r: 11 },
+      ],
+    },
+    weather: { time: 'sunset', cond: 'cloudy', windSpeedKts: 18, windDirDeg: 240 },
+  },
 ];
 
 export const DEFAULT_MAP_ID = 'kestrel';
 
 export function getMap(id) {
   return MAPS.find((m) => m.id === id) || MAPS[0];
+}
+
+
+/**
+ * The maps a given game should offer.
+ *
+ * The map picker showed all twelve to everybody, which would put Longbank
+ * Sands — four kilometres of sand with a nine-hundred-metre grass strip on it
+ * — in front of a child choosing somewhere to fly a jet, and Ironhead Air Base
+ * in front of a child choosing somewhere to take a lifeboat. A map says which
+ * game it was built for; anything that does not say is a flight map, which is
+ * what all nine of the existing ones are.
+ */
+export function mapsForGame(game = 'flight') {
+  if (game === 'flight') return MAPS.filter((m) => !m.game || m.game === 'flight');
+  const own = MAPS.filter((m) => m.game === game);
+  const suits = (m) => {
+    if (m.game) return false;
+    const w = m.waters;
+    if (game === 'boat') return !!(w && w.harbour);
+    if (game === 'car') return !!(w && w.roads && w.roads.length);
+    return true; // a helicopter can land almost anywhere
+  };
+  return own.concat(MAPS.filter(suits));
+}
+
+/** The boat maps proper — the three built round a harbour rather than a runway. */
+export function boatMaps() {
+  return MAPS.filter((m) => m.game === 'boat');
+}
+
+/** The maps built round a road network rather than a runway. */
+export function carMaps() {
+  return MAPS.filter((m) => m.game === 'car');
 }

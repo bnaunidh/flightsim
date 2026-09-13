@@ -31,6 +31,18 @@ export class MissionRunner {
     this.hintTimer = 0;
   }
 
+  /**
+   * Whose position and state the mission is about.
+   *
+   * The runner was written when there was only one thing to fly, so it read
+   * sim.aircraft in five places. A boat mission and a car job ride exactly the
+   * same runner — same steps, same checks, same score — and the only thing
+   * they need is for "where am I" to mean the boat.
+   */
+  subject() {
+    return this.sim.vehicle || this.sim.aircraft;
+  }
+
   bindAircraft() {
     if (this._bound) return;
     const ac = this.sim.aircraft;
@@ -48,6 +60,14 @@ export class MissionRunner {
       this.data.lastTouchdown = g;
     });
     ac.on(EVENTS.CRASH, (c) => {
+      /*
+       * The aeroplane is parked while you are in the boat, and a parked
+       * aeroplane can still raise a crash — it sits on the ground with its
+       * engine off and the sinking clamp nudging it. Failing a boat mission
+       * because the aeroplane you are not in reported a hard landing is the
+       * kind of bug nobody would ever guess at from the message.
+       */
+      if (this.def && this.def.vehicle) return;
       if (this.status === STATUS.RUNNING && this.def && this.def.failOnCrash !== false) {
         this.fail(c.reason || 'You crashed');
       }
@@ -71,6 +91,10 @@ export class MissionRunner {
     return {
       sim: this.sim,
       ac: this.sim.aircraft,
+      // The vehicle, when there is one, and whichever of the two this mission
+      // is actually about. A flight mission never reads either.
+      veh: this.sim.vehicle || null,
+      subject: this.subject(),
       weather: this.sim.weather,
       audio: this.sim.audio,
       data: this.data,
@@ -228,7 +252,7 @@ export class MissionRunner {
     if (this.def.tick) this.def.tick(ctx, dt);
 
     // Rings.
-    const pos = this.sim.aircraft.pos;
+    const pos = this.subject().pos;
     for (const g of this.gates) g.update(dt, this.sim.camera.position);
     const nextGate = this.gates.find((g) => !g.passed);
     if (nextGate && nextGate.test(pos)) {

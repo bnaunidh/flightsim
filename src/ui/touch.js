@@ -53,6 +53,8 @@ export class TouchControls {
        * the throttle key moved it from 0 to 0.01.
        */
       throttle: null,
+      /** Which engine detent a finger is holding, or null for "not mine". */
+      lever: null,
       brakes: false,
       stickHeld: false,
       rudderHeld: false,
@@ -94,8 +96,19 @@ export class TouchControls {
       const ny = (dy / len) * f;
       knob.style.transform = `translate(${nx * R}px, ${ny * R}px)`;
       this.state.roll = nx;
-      // Drag down to climb.
-      this.state.pitch = ny;
+      /*
+       * A boat has no pitch axis, and a child will find the axis that does
+       * nothing and push it for a minute before deciding the game is broken.
+       * In boat mode the knob only moves sideways and the pitch value is
+       * forced to zero, so nothing downstream can pick up a stale number.
+       */
+      if (this._boatMode) {
+        knob.style.transform = `translate(${nx * R}px, 0px)`;
+        this.state.pitch = 0;
+      } else {
+        // Drag down to climb.
+        this.state.pitch = ny;
+      }
     };
 
     stick.addEventListener('pointerdown', (e) => {
@@ -135,6 +148,7 @@ export class TouchControls {
     t.appendChild(el('div', 'touch-throttle-ticks'));
     t.appendChild(label);
     this.layer.appendChild(t);
+    this.throttleEl = t;
     this.throttleFill = fill;
     this.throttleLabel = label;
 
@@ -313,6 +327,106 @@ export class TouchControls {
       if (Math.abs(v - this._shown) > 0.005) {
         this._shown = v;
         this.paintThrottle(v);
+      }
+    }
+  }
+
+  /* --------------------------------------------------------- boat mode -- */
+
+  /**
+   * Turn the aeroplane controls into boat controls.
+   *
+   * Two things are wrong with the plane's layer in a boat and both of them
+   * are the kind of thing twenty-nine ten-year-olds find in the first minute:
+   *
+   * 1. The stick is two axes and one of them does nothing. A boat has no
+   *    pitch control. A child will find the axis that does nothing and push
+   *    it for a minute before deciding the game is broken. So the dial
+   *    collapses to a horizontal wheel: same element, same finger, one axis,
+   *    and the pitch value is forced to zero so nothing downstream can pick
+   *    up a stale number.
+   * 2. The throttle is a continuous slider reading a percentage, which is the
+   *    aeroplane idea of power. A boat is driven with a handle that has named
+   *    positions, and on a touchscreen named positions are far better than a
+   *    slider anyway: you can hit ASTERN with a thumb without looking, and
+   *    you cannot do that with a percentage.
+   *
+   * Reversible, because the same layer flies the aeroplane five seconds later.
+   */
+  setBoatMode(on) {
+    const want = !!on;
+    if (want === this._boatMode) return;
+    this._boatMode = want;
+    this.layer.classList.toggle('is-boat', want);
+    if (this.stick) this.stick.classList.toggle('is-wheel', want);
+    if (!this.leverEl) this.buildLever();
+    this.leverEl.hidden = !want;
+    if (this.throttleEl) this.throttleEl.hidden = want;
+    // Pads that mean nothing on a boat. The brake pad stays but changes what
+    // it says, because on a boat the emergency is the same gesture with a
+    // different name.
+    for (const p of [this.gearPad, this.flapPad, this.enginePad]) if (p) p.hidden = want;
+    if (this.brakePad) this.brakePad.textContent = want ? 'CRASH STOP' : 'BRAKES';
+    // Leaving a stale axis behind is how a boat ends up in a permanent turn.
+    this.state.pitch = 0;
+    this.state.lever = want ? this.state.lever ?? 1 : null;
+  }
+
+  /**
+   * The engine lever: five stacked detents, FULL at the top where a real one
+   * is. 46 px each, which clears the 44 px that a ten-year-old's thumb on a
+   * moving boat actually needs — the slider it replaces was 62 px wide and
+   * asked for precision within about four pixels.
+   */
+  buildLever() {
+    const wrap = el('div', 'touch-lever');
+    this.leverEl = wrap;
+    this.leverButtons = [];
+    // Top of the panel is ahead, bottom is astern, which is which way the
+    // handle moves on the real thing.
+    const rows = [
+      { i: 4, label: 'FULL' },
+      { i: 3, label: 'HALF' },
+      { i: 2, label: 'SLOW' },
+      { i: 1, label: 'STOP' },
+      { i: 0, label: 'ASTERN' },
+    ];
+    for (const row of rows) {
+      const b = el('button', 'touch-detent', row.label);
+      b.dataset.i = String(row.i);
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        this.setLever(row.i);
+      });
+      wrap.appendChild(b);
+      this.leverButtons[row.i] = b;
+    }
+    wrap.hidden = true;
+    this.layer.appendChild(wrap);
+    this.setLever(this.state.lever ?? 1);
+  }
+
+  setLever(i) {
+    this.state.lever = i;
+    for (let k = 0; k < this.leverButtons.length; k++) {
+      const b = this.leverButtons[k];
+      if (b) b.classList.toggle('is-on', k === i);
+    }
+  }
+
+  /**
+   * Follow the boat's own lever, so the keyboard and the crash-stop pad move
+   * the picture too. Read-only in that direction — writing back into
+   * state.lever is what deadlocked the throttle slider when it was first
+   * written, and the comment explaining that is still on buildThrottle.
+   */
+  updateBoat(vehicle) {
+    if (!this._boatMode || !vehicle || !this.leverButtons) return;
+    if (vehicle.lever !== this.state.lever) {
+      this.state.lever = vehicle.lever;
+      for (let k = 0; k < this.leverButtons.length; k++) {
+        const b = this.leverButtons[k];
+        if (b) b.classList.toggle('is-on', k === vehicle.lever);
       }
     }
   }

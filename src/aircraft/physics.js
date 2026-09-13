@@ -19,6 +19,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { getAircraft, specFor, DEFAULT_AIRCRAFT_ID } from './types.js';
 import { clamp, lerp } from '../core/noise.js';
+import { rotorAssist, ROTOR_TUNE } from './rotor-assist.js';
 import { heightAt, isPaved, isOnRunway, isOnAnyRunway, obstacleAt, platformAt, AIRPORT } from '../world/terrain.js';
 
 const RHO0 = 1.225;
@@ -78,6 +79,16 @@ export class Aircraft {
     this.flaps = 0;
     this.flapsTarget = 0;
     this.trim = 0;
+    /*
+     * What the winch has picked up, kilograms.
+     *
+     * SPEC.mass is per aircraft TYPE, not per instance, so this is the only
+     * honest place to put a load. It is the correct WEIGHT and the wrong
+     * INERTIA: Ixx/Iyy/Izz do not change, so a loaded machine still turns as
+     * crisply as an empty one — a deliberate decision at this size, not an
+     * oversight.
+     */
+    this.extraMass = 0;
     // Holds the aeroplane still while you read the briefing; releases itself as
     // soon as you add power.
     this.parkingBrake = true;
@@ -387,60 +398,7 @@ export class Aircraft {
     if (this.fuel <= 0 && this.engineOn) this.stopEngine('fuel');
     if (this.failures.engine && this.engineOn) this.stopEngine('failure');
 
-    /*
-     * The collective, for a beginner, commands a RATE OF CLIMB — not power.
-     *
-     * Hovering on the shipped control was not possible, and it is worth being
-     * precise about why rather than calling it "hard". Shift and Ctrl move
-     * `throttleTarget` at 0.62 a second, so collective is a rate control; the
-     * engine then spools towards it with lag. That puts two integrators
-     * between the key and the thrust, and a hover asks you to hold one exact
-     * power setting with neither of them settled.
-     *
-     * Measured, with a control pattern better than any ten-year-old could
-     * manage — always the correct direction, a quarter-second reaction — the
-     * machine wandered 214 metres up and down and hit the ground inside a
-     * minute. That is not a difficulty curve, it is a wall.
-     *
-     * So in simplified mode the lever means "go up", "go down" or, in the
-     * middle, "stay where you are", and an inner loop works out the power.
-     * Centre it and the machine holds its height. That is what a collective
-     * feels like to fly even though it is not what a collective does, and it
-     * is the difference between the helicopter being playable and not.
-     * Realistic mode keeps the real lever, untouched.
-     */
-    if (SPEC.rotor && this.mode === 'simplified' && this.engineOn && !this.onGround) {
-      const demand = (clamp(this.controls.throttle, 0, 1) - 0.5) * 2;
-      const centred = Math.abs(demand) < 0.06;
-      /*
-       * Centred means "stay at this height", and that needs the height in the
-       * loop — not just the rate of climb.
-       *
-       * Holding vertical speed at zero sounds like the same thing and is not:
-       * with no altitude term any small steady error simply integrates, and
-       * measured it climbed 117 m in a minute with nobody touching anything.
-       * So the moment the lever comes to the middle the machine remembers
-       * where it is, and flies back to it.
-       */
-      if (centred) {
-        if (this._holdAlt === null || this._holdAlt === undefined) this._holdAlt = this.pos.y;
-      } else {
-        this._holdAlt = null;
-      }
-      const wantVs = centred
-        ? clamp((this._holdAlt - this.pos.y) * 0.45, -3.5, 3.5)
-        : demand * 4.5;
-      const err = wantVs - this.vs;
-      this._rotorTrim = clamp(
-        (this._rotorTrim ?? this.controls.throttle) + (err * 0.55 - this.vs * 0.05) * dt,
-        0,
-        1
-      );
-    } else {
-      this._rotorTrim = null;
-      this._holdAlt = null;
-    }
-    const collective = this._rotorTrim ?? this.controls.throttle;
+    const collective = clamp(this.controls.throttle, 0, 1);
     const targetRpm = this.engineOn ? 0.18 + collective * 0.82 : 0;
     // Engines spool with lag; spin-down is slower than spin-up.
     const spool = targetRpm > this.rpm ? 2.4 : 1.1;
@@ -562,6 +520,30 @@ export class Aircraft {
     let rudder = clamp(this.controls.yaw, -1, 1);
     const simple = this.mode === 'simplified';
 
+    /*
+     * Hover assist.
+     *
+     * It runs in BOTH flight modes because it is equipment, not a beginner's
+     * aid — every search-and-rescue helicopter flying has height hold, drift
+     * damping and heading hold, and the HUD says so out loud. `hoverAssist`
+     * turns it off for anybody who wants the machine raw.
+     *
+     * It moves the CONTROLS, never the machine, so everything downstream —
+     * the rate limits, the damage model, the wind — still applies exactly as
+     * it does to a human's input. The same discipline the wing leveller uses.
+     */
+    let hoverAuth = 0;
+    if (SPEC.rotor) {
+      const a = rotorAssist(this, SPEC, dt);
+      hoverAuth = this.rotor.hoverAuth;
+      elevator = clamp(elevator + a.cyclicPitch, -1, 1);
+      aileron = clamp(aileron + a.cyclicRoll, -1, 1);
+      rudder = clamp(rudder + a.pedal, -1, 1);
+      this._collectiveAssist = a.collective;
+    } else {
+      this._collectiveAssist = 0;
+    }
+
     // Trim assist. A real aeroplane is trimmed with a wheel so it flies
     // hands-off; rather than adding another control to learn, a slow integrator
     // does it automatically whenever the stick is centred. Without this the
@@ -602,7 +584,9 @@ export class Aircraft {
       // On the ground, hold the wings level. A real pilot rolls aileron into a
       // crosswind during the take-off roll and the roll-out; without it the
       // upwind wing lifts and the downwind tip eventually finds the tarmac.
-      if (this.onGround && V > 6 && Math.abs(this.controls.roll) < 0.06) {
+      // A helicopter does not do a take-off roll, and in a 20 kt wind V > 6
+      // is true while it sits on the pad.
+      if (!SPEC.rotor && this.onGround && V > 6 && Math.abs(this.controls.roll) < 0.06) {
         // Aileron into the wind (the beta term) plus wings-level feedback.
         aileron = clamp(
           aileron + this.beta * 0.9 - this.bankAngleRad() * 4.5 - this.omega.z * 0.8,
@@ -615,7 +599,7 @@ export class Aircraft {
       // gentle back pressure every pilot is taught to hold, and it is what
       // stops brake torque and crosswind roll from walking the nose down until
       // the propeller reaches the tarmac.
-      if (this.onGround && V > 6 && Math.abs(this.controls.pitch) < 0.06) {
+      if (!SPEC.rotor && this.onGround && V > 6 && Math.abs(this.controls.pitch) < 0.06) {
         const pitchAngle = Math.asin(clamp(this.forward(this._tmp).y, -1, 1));
         const hold = (-0.045 - pitchAngle) * 5.5 - this.omega.x * 0.9;
         elevator = clamp(elevator + Math.max(0, hold), -1, 1);
@@ -625,7 +609,17 @@ export class Aircraft {
       // aeroplane, so they scale with airspeed exactly like a real pilot's
       // inputs — a raw torque would be far too weak at cruise and far too
       // strong on the approach.
-      if (!this.onGround && V > 14) {
+      /*
+       * The wing leveller and the hover assist must not both be flying it.
+       *
+       * This block engages on AIRSPEED above 14 m/s, which in a 30 kt wind is
+       * true while the helicopter is sitting still over a casualty. The hover
+       * assist owns that regime and this one owns the cruise, so each is
+       * scaled by the other's share and they hand over between 20 and 45 kt
+       * of ground speed rather than arguing across the whole band.
+       */
+      const wingShare = 1 - hoverAuth;
+      if (!this.onGround && V > 14 && wingShare > 0.001) {
         if (Math.abs(this.controls.roll) < 0.06) {
           // Wings level.
           //
@@ -699,7 +693,7 @@ export class Aircraft {
           // properly damped rather than merely quiet.
           const kp = (WN * WN) / A;
           const kd = Math.max(0, (2 * ZETA * WN - D) / A);
-          aileron = clamp(aileron - bank * kp - this.omega.z * kd, -1, 1);
+          aileron = clamp(aileron - (bank * kp + this.omega.z * kd) * wingShare, -1, 1);
         }
         if (Math.abs(this.controls.pitch) < 0.06) {
           /*
@@ -722,7 +716,7 @@ export class Aircraft {
             pitchAuth = wingAcc / (wingAcc + rotorAcc);
           }
           elevator = clamp(
-            elevator - (this.vs * 0.085 + this.omega.x * 0.38) * pitchAuth,
+            elevator - (this.vs * 0.085 + this.omega.x * 0.38) * pitchAuth * wingShare,
             -1,
             1
           );
@@ -935,10 +929,32 @@ export class Aircraft {
      * hovers at full power cannot climb.
      */
     if (SPEC.rotor) {
-      const collective = clamp(this.rpm, 0, 1);
+      // The assist's contribution is added here rather than to `rpm` itself,
+      // so the lever the pilot is holding stays the lever the pilot is holding
+      // and the HUD can show both numbers honestly.
+      const collective = clamp(this.rpm + (this._collectiveAssist || 0), 0, 1);
       // Sized so that hover lands near 50% collective at sea level.
       const hoverThrust = SPEC.mass * G;
-      const rotor = collective * hoverThrust * 2.0 * (rho / RHO0) * rough;
+      /*
+       * How much more than its own weight the rotor can pull.
+       *
+       * This was `collective * 2.0`, so full lever made twice the machine's
+       * weight: a full second of the collective key gave one g of net upward
+       * acceleration and nothing anywhere bounded it. Measured, from a settled
+       * hover: one second of the key and then hands off climbed to 717 m and
+       * was still accelerating at 101 m/s — twenty thousand feet a minute.
+       * Children find that in the first two minutes, and it is the fastest way
+       * to cross any map in the game, which makes every mission about the bug
+       * instead of about the flying.
+       *
+       * The cap keeps hover at exactly half lever — the map is still linear
+       * below that, so nothing about the hover point changes — and gives the
+       * excess thrust a light helicopter actually has. It is also what turns
+       * the winch load into a real decision: nothing else in this game has a
+       * number that moves because of what you are carrying.
+       */
+      const rotor =
+        Math.min(collective * 2.0, ROTOR_TUNE.maxLift) * hoverThrust * (rho / RHO0) * rough;
       // Translational lift: a rotor is measurably more efficient once it flies
       // out of its own downwash, which is why a helicopter that will not lift
       // vertically can often run along the ground and get away.
@@ -957,7 +973,22 @@ export class Aircraft {
        * upwind. The aerodynamic drag a few lines above is written correctly
        * as a vector along the relative wind; this one simply was not.
        */
-      const rd = clamp(V, 0, 60) * SPEC.rotorDrag * 0.5;
+      /*
+       * Retreating blade stall, which is what actually limits a helicopter.
+       *
+       * Rotor drag rose linearly with speed and stopped rising at 60 m/s, so
+       * nothing bounded the Skyhook except the drag of a 3 m² token wing.
+       * Measured: 20 degrees nose down at 75% collective settled at 174 kt,
+       * which is faster than two of the aeroplanes and 34 kt past this
+       * airframe's own vne. A helicopter does not do that, and a child who
+       * finds it stops using the aeroplanes.
+       *
+       * Nothing below 46 m/s (89 kt) changes at all, so every cruise the
+       * missions actually fly is untouched; above it the machine runs out of
+       * speed near 105 kt instead of running away.
+       */
+      const bladeStall = 1 + clamp((V - 46) / 22, 0, 1) * 2.4;
+      const rd = clamp(V, 0, 60) * SPEC.rotorDrag * 0.5 * bladeStall;
       if (V > 0.15) {
         // Same body-frame airflow direction the drag above uses: (v, w, -u).
         const inv = 1 / V;
@@ -968,7 +999,29 @@ export class Aircraft {
     }
 
     this._f.set(fx, fy, fz).applyQuaternion(this.quat);
-    this._f.y -= SPEC.mass * G;
+    // Weight, including whatever the winch is carrying. See `extraMass`.
+    this._f.y -= (SPEC.mass + this.extraMass) * G;
+
+    /*
+     * The disc, going straight up and straight down.
+     *
+     * The aerodynamic drag above is written along the relative wind, which is
+     * correct, and the rotor drag beside it is too — but both are sized by the
+     * wing and the disc tilt, and neither of them is the fifty-five square
+     * metres of rotor a helicopter presents to the air when it climbs or
+     * descends vertically. Without this, full collective accelerated upwards
+     * for ever and flat pitch fell just as hard, and both were unbounded.
+     *
+     * Quadratic, like every other drag in this file, so it is nothing at all
+     * in a hover and decisive at speed. Applied here, in world axes beside the
+     * weight, because "straight up" means straight up and not "up as far as
+     * the machine is concerned".
+     */
+    if (SPEC.rotor) {
+      const vsAir = this.vel.y;
+      const discArea = Math.PI * SPEC.rotorRadius * SPEC.rotorRadius;
+      this._f.y -= 0.5 * rho * vsAir * Math.abs(vsAir) * discArea * ROTOR_TUNE.discCD;
+    }
 
     // ---- Moments ------------------------------------------------------
     const p = this.omega.z; // roll rate (about Z)
@@ -1061,16 +1114,42 @@ export class Aircraft {
      * on the spot.
      */
     if (SPEC.rotor) {
-      const collective = clamp(this.rpm, 0, 1);
+      const collective = clamp(this.rpm + (this._collectiveAssist || 0), 0, 1);
       // Enough authority to be crisp in the hover, without being twitchy.
       const disc = (0.35 + collective * 0.65) * SPEC.mass * G;
+      /*
+       * Two bugs lived in these six lines, and both were invisible in a
+       * straight-line hover, which is the only way anybody ever tested it.
+       *
+       * THE SIGN. The wing writes `Cl = ... - Clda * aileron` with the comment
+       * "positive aileron input rolls right", and +Z torque is left wing down.
+       * The rotor ADDED, so positive aileron rolled it LEFT. Measured,
+       * realistic mode, hovering: "roll right" held for one second banked it
+       * 85.4 degrees to the LEFT. The pedal was the same fault against
+       * `Cn = ... - Cndr * rudder`: "yaw right" turned it 144 degrees to the
+       * LEFT. Pitch was always correct, which is exactly why this survived —
+       * take off, climb, hover, all fine; the first turn kills you. It is also
+       * what made the simplified wing leveller positive feedback on this
+       * airframe: released from 2 degrees of bank at 60 kt it hit the ground
+       * at 24.6 s.
+       *
+       * THE INERTIAS. The damping lines paired pitch with Iyy and yaw with
+       * Ixx, but the integrator is (tx/Ixx, ty/Iyy, tz/Izz) and this file's own
+       * convention is X = pitch, Y = yaw, Z = roll. So pitch was damped 43% too
+       * hard and yaw 30% too softly, which is why it felt sticky in pitch and
+       * loose in yaw at the same time.
+       *
+       * The damping constants live in rotor-assist.js because the assist solves
+       * its derivative gains for whatever damping the airframe has. Two copies
+       * in two files would drift apart within a month and the assist would
+       * quietly become badly damped.
+       */
       this._t.x += elevator * disc * SPEC.rotorPitchArm;
-      this._t.z += aileron * disc * SPEC.rotorRollArm;
-      this._t.y += rudder * disc * SPEC.rotorYawArm;
-      // And damping, or it rings: a real rotor resists being rotated.
-      this._t.x -= this.omega.x * SPEC.Iyy * 0.9;
-      this._t.z -= this.omega.z * SPEC.Izz * 1.1;
-      this._t.y -= this.omega.y * SPEC.Ixx * 0.7;
+      this._t.z -= aileron * disc * SPEC.rotorRollArm;
+      this._t.y -= rudder * disc * SPEC.rotorYawArm;
+      this._t.x -= this.omega.x * SPEC.Ixx * ROTOR_TUNE.dampPitch;
+      this._t.z -= this.omega.z * SPEC.Izz * ROTOR_TUNE.dampRoll;
+      this._t.y -= this.omega.y * SPEC.Iyy * ROTOR_TUNE.dampYaw;
     }
 
     // Propeller torque and P-factor: the aeroplane pulls left at high power.
@@ -1460,7 +1539,14 @@ export class Aircraft {
     this.agl = this.pos.y - heightAt(this.pos.x, this.pos.z);
     this.turnRate = THREE.MathUtils.radToDeg(-this.omega.y);
     this.slipBall = clamp(this.beta * 3.2, -1, 1);
-    this.propBlur = clamp((this.rpm - 0.25) / 0.5, 0, 1);
+    /*
+     * A rotor turns at a constant speed whatever the collective is doing, so
+     * blurring the disc by collective made the blades appear to stop every
+     * time the lever came down — including during every descent to a hover.
+     */
+    this.propBlur = SPEC.rotor
+      ? (this.engineOn ? 1 : clamp(this.rpm * 2, 0, 1))
+      : clamp((this.rpm - 0.25) / 0.5, 0, 1);
 
     if (this.ias > SPEC.vne) {
       this._overspeedWarned += dt;

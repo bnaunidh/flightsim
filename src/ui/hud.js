@@ -10,6 +10,8 @@
 import { UNITS } from '../aircraft/physics.js';
 import { icon } from './icons.js';
 import { clamp } from '../core/noise.js';
+import { installRotorHud, rotorSpeedWord } from './hud-rotor.js';
+import { SPEC } from '../aircraft/physics.js';
 
 const KTS = UNITS.KTS;
 const FT = UNITS.FT;
@@ -482,6 +484,15 @@ export class Hud {
      * never flown the medevac.
      */
     if (this.vital) this.vital.style.display = 'none';
+    /*
+     * And the helicopter's panel, for exactly the reason clearVehicle()
+     * documents: the mode swap rewrites unit labels and update() only ever
+     * writes numbers, so a label left rewritten stays rewritten for the rest
+     * of the session. clearTransient() runs from startMode(), which is every
+     * way into a flight, so this is the one call that cannot be forgotten.
+     * It costs nothing when there is nothing to undo.
+     */
+    this.clearRotor();
     this.lastValues = {};
   }
 
@@ -693,6 +704,9 @@ export class Hud {
    * actually mean something, and the rest is hidden.
    */
   setVehicle(r, spec) {
+    // Stepping straight from the helicopter into the boat does not go through
+    // startMode(), so the hover strip would still be drawn over the launch.
+    this.clearRotor();
     this.wrap.classList.add('is-vehicle');
     this.inVehicle = true;
     const kph = Math.round(r.speedKph);
@@ -843,21 +857,46 @@ export class Hud {
     const r = ac.readouts();
     const w = sim.weather;
     this.updateKeyMonitor(sim.input, ac);
+    /*
+     * The helicopter's panel, if this is a helicopter. It swaps the four
+     * cruise rows for the hover strip below about 30 kt over the ground and
+     * swaps them back above 45 — two thresholds and not one, so it cannot
+     * flicker at the boundary. The cruise code below keeps running while the
+     * hover strip is up: every number in it is change-gated, so it costs
+     * almost nothing, and it means the cruise rows are right the instant they
+     * come back rather than one frame later.
+     */
+    const rotor = !!SPEC.rotor;
+    this.updateRotor(dt, sim, r);
 
     // --- Numbers with plain-language captions ---
-    const ias = Math.round(r.iasKts);
+    /*
+     * Indicated airspeed is a wing's number: it says how close the wing is to
+     * stopping flying. The Skyhook's wing is a stub that exists to hang the
+     * gear from, so on a rotorcraft this row shows GROUNDSPEED instead — the
+     * number the fuel, the arrival time and the winch all actually depend on.
+     * setRotorUnits() relabels the row to match, so the label and the figure
+     * can never disagree.
+     */
+    const ias = Math.round(rotor ? r.groundKts : r.iasKts);
     if (this.lastValues.ias !== ias) {
       this.speedValue.textContent = fmt(ias);
       this.lastValues.ias = ias;
-      let word = 'stopped';
-      if (ias > 150) word = 'very fast';
-      else if (ias > 110) word = 'fast';
-      else if (ias > 70) word = 'good cruising speed';
-      else if (ias > 52) word = 'flying speed';
-      else if (ias > 30) word = 'too slow to fly';
-      else if (ias > 3) word = 'rolling';
+      let word;
+      if (rotor) word = rotorSpeedWord(ias);
+      else {
+        word = 'stopped';
+        if (ias > 150) word = 'very fast';
+        else if (ias > 110) word = 'fast';
+        else if (ias > 70) word = 'good cruising speed';
+        else if (ias > 52) word = 'flying speed';
+        else if (ias > 30) word = 'too slow to fly';
+        else if (ias > 3) word = 'rolling';
+      }
       this.speedWord.textContent = word;
-      this.speedValue.classList.toggle('is-warn', ias > 0 && ias < 52 && !r.onGround);
+      // Never amber on a helicopter: 40 kt is an ordinary way for this machine
+      // to cross a bay, not an emergency.
+      this.speedValue.classList.toggle('is-warn', !rotor && ias > 0 && ias < 52 && !r.onGround);
     }
 
     const alt = Math.round(r.altFt / 10) * 10;
@@ -974,8 +1013,17 @@ export class Hud {
     }
 
     // --- Stall + PAPI guidance ---
-    const stallSoon = !r.onGround && r.iasKts < 56 && r.iasKts > 3;
-    const showStall = ac.stalled || stallSoon;
+    /*
+     * A stall is a wing's problem and this warning is a wing's warning.
+     *
+     * On the Skyhook it fired CONTINUOUSLY in a hover: airspeed sits at a few
+     * knots, onGround is false, so "TOO SLOW — add power (Shift)" was printed
+     * across the middle of the screen for the whole of every hover, telling a
+     * child to do the one thing that would ruin it. A rotorcraft does not
+     * stall from lack of airspeed and must not be told that it is about to.
+     */
+    const stallSoon = !rotor && !r.onGround && r.iasKts < 56 && r.iasKts > 3;
+    const showStall = (ac.stalled && !rotor) || stallSoon;
     this.stallWarn.style.display = showStall ? '' : 'none';
     if (showStall) {
       this.stallWarn.textContent = ac.stalled
@@ -1054,3 +1102,13 @@ export class Hud {
     }
   }
 }
+
+/*
+ * The helicopter's rows, mixed into the prototype rather than written inline.
+ *
+ * hud.js is a thousand lines of aeroplane already, and the hover strip is a
+ * different instrument panel that happens to live in the same corner. Doing it
+ * this way means the aeroplane's update() is unchanged apart from two words,
+ * and the rotor panel can be read on its own.
+ */
+installRotorHud(Hud);

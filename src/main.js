@@ -8,12 +8,16 @@
 
 import * as THREE from './vendor/three.module.js';
 
-import { warmTextures, setTextureAnisotropy } from './render/textures.js';
+import { warmTextures, setTextureAnisotropy, asphaltTexture, asphaltNormal } from './render/textures.js';
 import { Weather } from './world/weather.js';
 import { SkyDome } from './world/sky.js';
-import { createTerrain, heightAt, AIRPORT, applyMap, MAP, clearObstacles, clearPlatforms } from './world/terrain.js';
+import { createTerrain, heightAt, AIRPORT, applyMap, MAP, clearObstacles, clearPlatforms, harbourBerth, harbourMouth } from './world/terrain.js';
+import { SeaMarks } from './world/seamarks.js';
+import { clearPads, nearestPad, PADS } from './world/pads.js';
+import { buildRoads, onRoad, roadRibbon, roadSurfaceProbe } from './world/roads.js';
 import { Carrier } from './world/carrier.js';
-import { SurfaceVehicle, VEHICLES } from './vehicles/surface.js';
+import { SurfaceVehicle, VEHICLES, setTerrainProbes } from './vehicles/surface.js';
+import { DriveInput, DriveCamera, DRIVE_VIEW_LABELS, installDriveTouch } from './vehicles/driving.js';
 import { createBoat, createCar, updateVehicleModel } from './vehicles/models.js';
 import { Ocean } from './world/water.js';
 import { Airport, RUNWAY, refreshRunways } from './world/airport.js';
@@ -35,10 +39,17 @@ import { CameraRig, VIEW_LABELS } from './flight/camera.js';
 import { GameAudio } from './audio/index.js';
 
 import { Hud } from './ui/hud.js';
+import { BoatHud } from './ui/hud-boat.js';
+import { DriveHud } from './ui/hud-drive.js';
+import { installRotorHud } from './ui/hud-rotor.js';
 import { Menus } from './ui/menus.js';
+import { installGameUi } from './ui/game-ui.js';
 
 import { MissionRunner, STATUS } from './game/runner.js';
-import { MISSIONS, findMission, FREE_FLIGHT, RUNWAY_START } from './game/missions.js';
+import { MISSIONS, findMission, FREE_FLIGHT, RUNWAY_START, missionsFor, gameOf, FREE_FOR } from './game/missions.js';
+import { BOAT_MISSIONS, BOAT_PATROL, findBoatMission, boatSpawnFor, clearBoatProps } from './game/missions-boat.js';
+import { CAR_JOBS, findJob, jobsFor, lengthNote, ISLAND_ROADS, IslandRoads, resolveSpawn } from './game/jobs.js';
+import { clearHeliProps } from './game/missions-heli.js';
 import { TUTORIAL } from './game/tutorial.js';
 import { AtcDirector } from './game/atc-director.js';
 import { CargoCrate, PracticeBomb } from './game/markers.js';
@@ -198,6 +209,7 @@ class Game {
     };
     // Pick the saved map before anything reads the height field.
     applyMap(this.settings.map || 'kestrel');
+    this.layRoads();
     // The field moved. Tell the modules that cached its height.
     refreshRunways();
     refreshApronElevation();
@@ -347,6 +359,41 @@ class Game {
     });
 
     /*
+     * Four games, one menu.
+     *
+     * Every screen in here was written for an aeroplane: the map cards say how
+     * long the runway is, the mission grid is twelve aeroplane missions and the
+     * hangar picks aircraft. This fits the same screens to whichever game is
+     * selected — its own missions, its own maps, its own words — rather than
+     * building four menus that would drift apart by the end of the week.
+     *
+     * `mapQualifies` is injected rather than decided inside the menu because
+     * only the thing that builds the world knows the answer: the car's test is
+     * "has this map got roads", and that is a question for the map data.
+     */
+    installGameUi(this.menus, {
+      onFreeDrive: (gameId) => {
+        if (gameId === 'boat' || gameId === 'car') return this.startDrive(gameId);
+        return this.switchGame(gameId);
+      },
+      startMission: (id) => {
+        const def = findMission(id);
+        if (def && def.vehicle) return this.startDrive(def.vehicle, def.vehicle === 'boat' ? { mission: id } : { job: id });
+        return this.startMode('mission', { id });
+      },
+      mapQualifies: (gameId, m) => {
+        if (!m) return false;
+        if (m.game) return m.game === gameId;
+        if (gameId === 'boat') return !!(m.waters && m.waters.harbour);
+        if (gameId === 'car') return !!(m.waters && m.waters.roads && m.waters.roads.length);
+        return true;
+      },
+    });
+    for (const g of ['flight', 'boat', 'car', 'heli']) {
+      this.menus.registerMissions(g, missionsFor(g));
+    }
+
+    /*
      * ONE progression object, shared with the menus.
      *
      * Menus reads its own copy at construction so the hangar can paint itself,
@@ -447,6 +494,85 @@ class Game {
   }
 
   /**
+   * Lay the roads, once per map.
+   *
+   * A road is a cut through the terrain, so it has to exist before the terrain
+   * mesh is built or the mesh and the ground the car drives on disagree. And
+   * it has to be worked out AFTER applyMap, because the router reads the
+   * height field it is about to change.
+   *
+   * Only maps that name places get roads. The nine flight maps have no road
+   * network and are not supposed to: driving there is the free drive it has
+   * always been, on the apron and the grass.
+   */
+  layRoads() {
+    const map = MAP;
+    this.roads = null;
+    if (!map || !map.courier) return;
+    try {
+      const t0 = performance.now();
+      const { roads, notes } = buildRoads(map);
+      map.waters = map.waters || {};
+      map.waters.roads = roads;
+      // The bounding boxes and the harbour siting are resolved once and cached
+      // on the waters block; a new road list has to invalidate that.
+      delete map.waters._ready;
+      applyMap(map);
+      /*
+       * The shape jobs.js asks for.
+       *
+       * It looks for `sim.roads.place(name)` and falls back to "the apron is
+       * the depot" when there is not one — a placeholder its own comment says
+       * to replace the day a road network exists. This is that day: the places
+       * come from the map, and every delivery now has a real address on a real
+       * road instead of six jobs that all start and end on the same apron.
+       */
+      /*
+       * And tell the car. surface.js deliberately takes its road knowledge by
+       * injection rather than importing world/ — a vehicle that imports the
+       * terrain is a vehicle that cannot be tested without one. Without this
+       * the van drives on a tarmac road that reads as grass, at 40 km/h.
+       */
+      setTerrainProbes({ surfaceAt: roadSurfaceProbe(roads) });
+      const places = (map.courier && map.courier.places) || [];
+      this.roads = {
+        list: roads,
+        // The chart asks for `.roads`; the jobs ask for `.place()`; the tyres
+        // ask for a plain list. One object, three names, no copies.
+        roads,
+        notes,
+        place(name) {
+          const p = places.find((q) => q.id === name || q.kind === name);
+          return p ? { x: p.x, z: p.z } : null;
+        },
+        places,
+      };
+      const km = roads.reduce((a, r) => {
+        let l = 0;
+        for (let i = 1; i < r.path.length; i++) {
+          l += Math.hypot(r.path[i][0] - r.path[i - 1][0], r.path[i][1] - r.path[i - 1][1]);
+        }
+        return a + l;
+      }, 0) / 1000;
+      console.debug(
+        `[roads] ${map.id}: ${roads.length} roads, ${km.toFixed(1)} km in ` +
+          `${(performance.now() - t0).toFixed(0)} ms`,
+        notes.length ? notes : ''
+      );
+    } catch (err) {
+      // A map with no drivable ground is a map with no roads, not a black
+      // screen. The car can still be driven on it; it just has nowhere to go.
+      console.warn('Could not lay the roads on this map:', err);
+      this.roads = null;
+    }
+  }
+
+  /** Is this point on made road? What the tyres and the chart ask. */
+  onRoad(x, z, margin = 0) {
+    return onRoad(this.roads && this.roads.list, x, z, margin);
+  }
+
+  /**
    * Tear the old world down properly. Removing a group from the scene only
    * unhooks it — the geometry, materials and textures stay resident on the
    * GPU. That is fine once, but the world is rebuilt every time the graphics
@@ -505,6 +631,11 @@ class Game {
     // Decks you can land on are registered the same way, and for the same
     // reason: a stale one would be a steel floor hanging over empty sea.
     clearPlatforms();
+    // Pads are cleared by buildPads itself, but a map with no pads at all
+    // would otherwise inherit the previous map's list if Scenery ever failed
+    // to construct. One line, and the failure mode it removes is "a pad
+    // hanging in the air over a different island".
+    clearPads();
     this.sky = t('sky', () =>
       new SkyDome(this.scene, {
         shadows: quality !== 'low',
@@ -541,7 +672,25 @@ class Game {
     });
     // Whatever makes this particular map the place it says it is: lava, reef,
     // farmland, waterfalls, the aurora.
+    /*
+     * The tarmac. The corridor under it was cut at map load; this is the
+     * surface on top. One mesh for the whole network.
+     */
+    if (this.roadMesh) {
+      this.scene.remove(this.roadMesh);
+      this.roadMesh.geometry.dispose();
+      this.roadMesh = null;
+    }
+    if (this.roads && this.roads.list.length) {
+      this.roadMesh = t('roads', () =>
+        roadRibbon(THREE, this.roads.list, { tex: asphaltTexture(), nrm: asphaltNormal() })
+      );
+      if (this.roadMesh) this.scene.add(this.roadMesh);
+    }
     this.features = t('features', () => new MapFeatures(this.scene, quality));
+    // Broken water over the drying shoals. Builds nothing on a map with none,
+    // which is every map that has not been given shoals of its own.
+    this.seamarks = t('seamarks', () => new SeaMarks(this.scene, quality));
     this.clouds = t('clouds', () => new CloudField(this.scene, quality));
     this.rain = t('rain', () => new Rain(this.scene, quality));
     // Image-based lighting from the sky. Do this after the world exists so the
@@ -561,9 +710,11 @@ class Game {
       this.scenery.group,
       this.carrier.group,
       this.features.group,
+      this.seamarks.group,
       this.clouds.group,
       this.rain.mesh,
     ];
+    if (this.roadMesh) this.worldGroups.push(this.roadMesh);
     this.qualityBuilt = quality;
     console.debug('[world] build complete');
   }
@@ -963,6 +1114,7 @@ class Game {
        */
       this.mapBeforeMission = this.settings.map;
       applyMap(def.map);
+      this.layRoads();
       // The field moved. Tell the modules that cached its height.
       refreshRunways();
       refreshApronElevation();
@@ -1619,7 +1771,9 @@ class Game {
       this.rig.realisticCockpit = !!this.settings.realisticCockpit;
     }
     if (this.hud) this.hud.setAircraftName(this.aircraftType.name);
-    if (this.audio) this.audio.setEngineKind(S.power.kind);
+    // A rotor is not a piston engine. Without this the helicopter keeps the
+    // four-cylinder synth and the blade slap is never reached.
+    if (this.audio) this.audio.setEngineKind(S.power.rotor ? 'rotor' : S.power.kind);
 
     /*
      * Re-seat the aeroplane if it is sitting on the ground.
@@ -1843,6 +1997,7 @@ class Game {
 
   setMap(id) {
     const def = applyMap(id);
+    this.layRoads();
     // The field moved. Tell the modules that cached its height.
     refreshRunways();
     refreshApronElevation();
@@ -2223,6 +2378,7 @@ class Game {
     this.mapBeforeMission = null;
     if (!want || want === this.settings.map) return;
     applyMap(want);
+    this.layRoads();
     refreshRunways();
     refreshApronElevation();
     this.settings.map = want;
@@ -2718,7 +2874,7 @@ class Game {
     }
   }
 
-  startDrive(kind = 'boat') {
+  startDrive(kind = 'boat', opts = {}) {
     const spec = VEHICLES[kind] || VEHICLES.boat;
     this.wakeAudio();
     this.menus.hide();
@@ -2750,7 +2906,8 @@ class Game {
     // same as taking them down, so they used to hang in the sky over the boat.
     this.runner.clearGates && this.runner.clearGates();
     this.mode = 'drive';
-    this.modeOpts = { kind };
+    this.modeOpts = { kind, ...opts };
+    this.game = kind;
     this.state = 'flying';
     this.runner.status = 'idle';
     this.menus.setGame(kind);
@@ -2763,21 +2920,105 @@ class Game {
     this.vehicleModel = kind === 'boat' ? createBoat() : createCar();
     this.scene.add(this.vehicleModel);
 
-    // Put the boat on the water off the beach, and the car on the apron.
-    const start =
-      kind === 'boat'
-        ? new THREE.Vector3(-3400, 0, 900)
-        : new THREE.Vector3(-430, 0, -95);
-    this.vehicle.reset({ pos: start, headingDeg: kind === 'boat' ? 250 : 90 });
+    /*
+     * Driving gets its own pedals and its own camera.
+     *
+     * Both are rebuilt per trip rather than kept on the sim, so that stepping
+     * out of the van and back in never leaves a latched pedal, a camera half
+     * way across the island or a reverse gear you did not select.
+     */
+    this.driveInput = kind === 'car' ? new DriveInput(this.input) : null;
+    this.driveCam = kind === 'car' ? new DriveCamera() : null;
+    if (this.touch) {
+      installDriveTouch(this.touch);
+      if (this.touch.setMode) this.touch.setMode(kind === 'car' ? 'drive' : 'fly');
+      if (this.touch.setBoatMode) this.touch.setBoatMode(kind === 'boat');
+    }
+    // The two things the boat says once per outing, not once per frame.
+    this._slamSaid = false;
+    this._waySaid = false;
+    this._swampSaid = false;
+    this._droveInto = false;
+
+    /*
+     * Where the trip starts.
+     *
+     * It used to be two hard-coded points that were right for Kestrel and
+     * wrong everywhere else: the boat spawned in open water off a beach that
+     * on Longbank Sands is two kilometres out on a drying bank, and the car on
+     * an apron that only exists because every map happens to have one. Now a
+     * mission says where it begins; failing that the boat starts at the quay
+     * and the van at the depot, both of which the map itself declares.
+     */
+    const def = opts.mission ? findBoatMission(opts.mission) : opts.job ? findJob(opts.job) : null;
+    let start = null;
+    let headingDeg = kind === 'boat' ? 250 : 90;
+    if (kind === 'boat') {
+      const sp = def ? boatSpawnFor(def) : boatSpawnFor(BOAT_PATROL);
+      if (sp && sp.pos) {
+        start = sp.pos;
+        headingDeg = sp.headingDeg ?? headingDeg;
+      } else {
+        const berth = harbourBerth();
+        start = berth ? new THREE.Vector3(berth.x, 0, berth.z) : new THREE.Vector3(-3400, 0, 900);
+        const mouth = harbourMouth();
+        if (berth && mouth) {
+          headingDeg = (Math.atan2(mouth.x - berth.x, -(mouth.z - berth.z)) * 180) / Math.PI;
+        }
+      }
+    } else {
+      const sp = resolveSpawn(this, def || ISLAND_ROADS);
+      if (sp && sp.pos) {
+        start = sp.pos;
+        headingDeg = sp.headingDeg ?? headingDeg;
+      } else {
+        start = new THREE.Vector3(-430, 0, -95);
+      }
+    }
+    this.vehicle.reset({ pos: start, headingDeg });
     this.model.visible = false;
     this.hud.setAircraftName(spec.name);
     this.hud.setObjective(spec.name, spec.blurb);
+
+    // The panel for whichever of the two this is. Built lazily and shown here;
+    // the aeroplane's rows are hidden rather than relabelled, which is what the
+    // altimeter-reading-kilometres bug was.
+    /*
+     * And take the other game's panel down first.
+     *
+     * Switching straight from the boat to the van never goes through
+     * stopDrive — switchGame calls startDrive again — so without this the HUD
+     * ends up wearing `is-boat` and `is-drive-car` at once, with a depth
+     * sounder over the top of a delivery clock. Measured, not imagined: that
+     * is exactly what the classList read after one switch.
+     */
+    if (kind === 'boat') {
+      if (this.driveHud) this.driveHud.exit();
+      this.boatHud = this.boatHud || new BoatHud(this.hud);
+      this.boatHud.enter(spec);
+    } else {
+      if (this.boatHud) this.boatHud.leave();
+      this.driveHud = this.driveHud || new DriveHud(this.hud);
+      this.driveHud.enter(spec, { audio: this.audio });
+    }
+
+    // A mission or a job rides the same runner the aeroplane's do.
+    if (def) {
+      this.runner.start(def);
+      this.islandRoads = null;
+    } else if (kind === 'car') {
+      this.islandRoads = new IslandRoads(this);
+    } else {
+      this.islandRoads = null;
+      this.runner.start(BOAT_PATROL);
+    }
+
     this.hud.notify(
       kind === 'boat'
-        ? 'Throttle on Shift and Ctrl, steer with A and D. Watch the depth — she draws about a metre.'
-        : 'Throttle on Shift and Ctrl, steer with A and D, brakes on Space. Stay on the tarmac.',
+        ? 'Shift and Ctrl move the engine lever: Astern, Stop, Slow, Half, Full. A and D steer. Space is a crash stop. She does not stop when you do — watch the depth.'
+        : 'Shift to go, Ctrl to brake — hold Ctrl once you have stopped and it reverses. A and D steer, Space is the handbrake, C changes the view.',
       'info',
-      7
+      8
     );
     return this.vehicle;
   }
@@ -2797,6 +3038,27 @@ class Game {
     this.vehicle = null;
     this.model.visible = true;
     this.hud.clearVehicle();
+    if (this.boatHud) this.boatHud.leave();
+    if (this.driveHud) this.driveHud.exit();
+    clearBoatProps(this);
+    this.islandRoads = null;
+    /*
+     * Put the camera back exactly as it was found.
+     *
+     * The driving camera opens the field of view out to 80 degrees at speed,
+     * and it writes camera.fov every frame. Nothing else in the game ever
+     * writes it back — which is the same shape of bug as the altimeter that
+     * read kilometres for the rest of the session after one trip in the boat.
+     * Without this line, one fast delivery leaves every subsequent flight
+     * looking through a fisheye.
+     */
+    if (this.driveCam) this.driveCam.restore(this.camera);
+    this.driveCam = null;
+    this.driveInput = null;
+    if (this.touch) {
+      if (this.touch.setMode) this.touch.setMode('fly');
+      if (this.touch.setBoatMode) this.touch.setBoatMode(false);
+    }
   }
 
   /**
@@ -2844,16 +3106,66 @@ class Game {
     }
   }
 
+  /**
+   * One frame of the surface games.
+   *
+   * What this replaces, and why each piece had to go:
+   *
+   *   `throttle: ctrl.throttle * 2` — the aeroplane's throttle LEVER, doubled
+   *   and then clamped to 1 inside the vehicle. So the top half of the lever
+   *   did nothing, the bottom half was twice as sensitive as the on-screen
+   *   slider claimed, and the demand could never go below zero: ASTERN, which
+   *   is written in the physics and commented and clamped for, could not be
+   *   asked for by any input device the game has. The one manoeuvre that
+   *   actually stops a boat was unreachable.
+   *
+   *   `steer: ctrl.roll` — the aileron spring, which recentres at a fixed rate
+   *   regardless of speed. A car needs the wheel to wind on more slowly the
+   *   faster it goes, or a child taps a key at 90 km/h and is in the sea.
+   *
+   *   one camera for both: fixed distance, looking at the vehicle rather than
+   *   where it is going, and ignoring the sea entirely.
+   */
   updateDrive(dt) {
     const v = this.vehicle;
     if (!v) return;
     const ctrl = this.input.update(dt, { simple: true });
-    v.update(dt, {
-      // Same keys as the aeroplane, so nothing has to be re-learned.
-      throttle: ctrl.throttle * 2 - (ctrl.throttle < 0.02 ? 0 : 0),
-      steer: ctrl.roll,
-      brake: ctrl.brakes,
-    });
+
+    if (v.isBoat) {
+      const touch = this.input.touch;
+      v.update(dt, {
+        steer: ctrl.roll,
+        // held(), not pressed(): the vehicle does its own edge detection and
+        // its own hold-to-repeat, so one tap is one detent and holding the
+        // key walks the lever at four detents a second.
+        lever: { up: this.input.held('throttleUp'), down: this.input.held('throttleDown') },
+        // The on-screen lever names a detent outright; it wins while a finger
+        // is on it, exactly as the touch throttle already does for the plane.
+        leverIndex: touch && touch.lever != null ? touch.lever : null,
+        crashStop: this.input.held('brakes') || !!(touch && touch.brakes),
+        // The sea is only as big as the weather says it is. Passing the whole
+        // object rather than a number keeps surface.js out of the weather
+        // model and means gusts and temporary storms are felt without another
+        // line here.
+        weather: this.weather,
+      });
+      this.boatFeedback(v);
+      if (this.touch && this.touch.updateBoat) this.touch.updateBoat(v);
+    } else {
+      /*
+       * Rain takes away grip, and it takes it away from cornering and braking
+       * rather than from acceleration. One number, read from the weather that
+       * is already being simulated. Full storm costs 22% of the grip.
+       */
+      const rain = (this.weather && this.weather.cond && this.weather.cond.rain) || 0;
+      v.wet = 1 - 0.22 * Math.min(1, rain);
+      const c = this.driveInput
+        ? this.driveInput.update(dt, v.speed)
+        : { throttle: 0, brake: 0, steer: 0, handbrake: false };
+      v.update(dt, c);
+      if (this.islandRoads) this.islandRoads.update();
+    }
+
     this.vehicleModel.position.copy(v.pos);
     // The pack's launch is drawn with its keel 0.53 m below its origin, and the
     // vehicle rides at 0.18 — so it sat on the sea rather than in it, with the
@@ -2864,26 +3176,107 @@ class Game {
     }
     this.vehicleModel.quaternion.copy(v.quat);
     updateVehicleModel(this.vehicleModel, v, dt);
+    // Hide the van while the recovery truck has it, rather than drawing it
+    // bobbing in the surf for two and a half seconds.
+    this.vehicleModel.visible = !(v.swamped && v.recoverT < 2.1);
 
-    // A chase camera that sits behind and slightly above.
-    const r = (v.heading * Math.PI) / 180;
-    const back = v.isBoat ? 16 : 11;
-    const up = v.isBoat ? 6.5 : 4.5;
-    const want = new THREE.Vector3(
-      v.pos.x - Math.sin(r) * back,
-      v.pos.y + up,
-      v.pos.z + Math.cos(r) * back
-    );
-    this.camera.position.lerp(want, Math.min(1, dt * 3.2));
-    this.camera.lookAt(v.pos.x, v.pos.y + 1.2, v.pos.z);
+    /* ---- the chase camera ---- */
+    if (!v.isBoat && this.driveCam) {
+      this.driveCam.update(this.camera, v, dt);
+    } else {
+      const r = (v.heading * Math.PI) / 180;
+      const sp = Math.abs(v.speed);
+      // Stand off further the faster she goes: close enough alongside the quay
+      // to judge a metre, far enough at speed to see what you are steering at.
+      const back = 11 + sp * 0.5;
+      const up = 5 + sp * 0.12;
+      // Ride some of the swell. All of it is seasickness, none of it is a
+      // photograph of a boat pasted on a moving sea.
+      const heave = (v.heave || 0) * 0.55;
+      const want = new THREE.Vector3(
+        v.pos.x - Math.sin(r) * back,
+        v.pos.y + up + heave,
+        v.pos.z + Math.cos(r) * back
+      );
+      // A knock when she hits something or falls off a wave. Small, brief, and
+      // it uses the vehicle's own decaying jolt so there is no timer here.
+      const j = v.jolt || 0;
+      if (j > 0.01) {
+        want.x += Math.sin(v.t * 47) * j * 0.5;
+        want.y += Math.sin(v.t * 53 + 1.7) * j * 0.42;
+      }
+      this.camera.position.lerp(want, Math.min(1, dt * 3.2));
+      // Look AHEAD of her, not at her. Where a boat is going is the only thing
+      // you actually need to see, and at three knots it is eight metres away.
+      const lead = 8 + sp * 0.6;
+      this.camera.lookAt(
+        v.pos.x + Math.sin(r) * lead,
+        v.pos.y + 1.2,
+        v.pos.z - Math.cos(r) * lead
+      );
+    }
 
+    /*
+     * Going in the water is a delay, not an ending.
+     *
+     * The old car called crash() and printed "press Esc to go back", which for
+     * a delivery game means a child who clips a beach at speed is sent to a
+     * menu. Now a truck pulls you out where you last were, and the only thing
+     * you have actually lost is the time — which is what the clock is for.
+     */
+    if (v.swamped && !this._swampSaid) {
+      this._swampSaid = true;
+      this.hud.notify('In the water. Hold on — a truck is pulling you out.', 'warn', 3);
+    }
+    if (!v.swamped) this._swampSaid = false;
+
+    // Bumping a building is a bump. Only the boat can still properly crash.
+    if (v.lastBump) {
+      this.hud.notify(`You clipped ${v.lastBump}.`, 'warn', 2.5);
+      v.lastBump = null;
+    }
     if (v.crashed && !this._droveInto) {
       this._droveInto = true;
       this.hud.notify(v.crashReason + ' — press Esc to go back', 'warn', 8);
     }
     if (!v.crashed) this._droveInto = false;
 
-    this.hud.setVehicle(v.readouts(), v.spec);
+    const r = v.readouts();
+    if (v.isBoat && this.boatHud) this.boatHud.update(dt, r, { sim: this, audio: this.audio });
+    else if (this.driveHud) this.driveHud.update(dt, r);
+    else this.hud.setVehicle(r, v.spec);
+  }
+
+  /**
+   * The boat talking back: bangs, slams, and saying the word "aground".
+   *
+   * Kept out of updateDrive because it is all one-shot reaction to events the
+   * physics raised. The important line is the one about carrying her way. A
+   * ten-year-old who puts the lever to STOP and watches the boat keep going
+   * concludes the game has stopped listening. Telling them, once, in words,
+   * that it is the boat and not the controls is the difference between a
+   * mechanic they learn and a bug they report.
+   */
+  boatFeedback(v) {
+    const events = v.takeEvents();
+    if (events) {
+      for (const e of events) {
+        if (e.kind === 'bang' || e.kind === 'wreck') {
+          if (this.audio.available) this.audio.alerts.terrain();
+          this.hud.notify(v.agroundMessage || "You're on the putty — astern, gently", 'warn', 6);
+        } else if (e.kind === 'afloat') {
+          this.hud.notify('Afloat again. Mind where she draws.', 'info', 3);
+        } else if (e.kind === 'slam' && !this._slamSaid) {
+          this._slamSaid = true;
+          this.hud.notify('She is slamming — ease her back to Half.', 'info', 4);
+        }
+      }
+    }
+    // Said once per outing, the first time she is genuinely running on.
+    if (!this._waySaid && v.speed > 3 && v.demand <= 0 && !v.aground) {
+      this._waySaid = true;
+      this.hud.notify('Engine stopped and she is still going — that is her carrying her way.', 'info', 5);
+    }
   }
 
   update(dt) {
@@ -2902,13 +3295,33 @@ class Game {
       }
       if (this.state === 'flying') {
         if (input.pressed('camera')) {
-          this.hud.notify(`View: ${VIEW_LABELS[this.rig.cycle()]}`, 'info', 1.8);
+          // The rig is the aeroplane's camera and does nothing while driving,
+          // so C was a key that printed a label and changed no pixels. The van
+          // has its own three views, and the bonnet one is the reason the
+          // bonnet view exists: it is how you place the van at a loading bay.
+          if (this.driveCam && this.vehicle.spec.kind === 'car') {
+            this.hud.notify(`View: ${DRIVE_VIEW_LABELS[this.driveCam.cycle()]}`, 'info', 1.8);
+          } else {
+            this.hud.notify(`View: ${VIEW_LABELS[this.rig.cycle()]}`, 'info', 1.8);
+          }
         }
         if (input.pressed('minimap')) this.hudAction('minimap');
         if (input.pressed('help')) this.hud.toggleControls(this.input.bindings, keyLabel, ACTIONS);
         // Paused means paused. The boat used to carry on out to sea while the
         // menu was up, so you came back to it somewhere else entirely.
         this.updateDrive(dt);
+        /*
+         * And the chart. This branch returns long before the flight code that
+         * ticks it, so the minimap froze the moment you got in the boat — it
+         * showed the aeroplane's last position on the apron, for the whole
+         * trip, which for a game about reading the water is the one instrument
+         * that had to work.
+         */
+        if (this.minimap) this.minimap.update(dt, this);
+        // The runner, which this branch used to return before ever reaching —
+        // which is why there has never been such a thing as a boat mission or
+        // a car job, however many were written.
+        this.runner.update(dt);
         this.audio.updateVehicle(dt, this.vehicle.readouts(), this.weather);
         // Match the real signatures — sky.update takes the weather alone, and
         // ocean.update takes (dt, weather). Guessing them cost a thrown frame.
@@ -2993,6 +3406,16 @@ class Game {
       let steps = 0;
       while (this.acc >= STEP && steps < 12) {
         ac.update(STEP, this.weather);
+        /*
+         * Hover assist trim follow-up. The flight model asks, the input layer
+         * answers; neither reaches into the other. Inside the fixed-step loop
+         * so the trim rate is the same on a 60 Hz Chromebook and a 120 Hz
+         * iPad. Not while the autopilot is flying — it sets throttleTarget
+         * itself and the two would fight.
+         */
+        if (ac.rotor && ac.rotor.trimRequest && !this.autopilot.engaged) {
+          this.input.nudgeThrottle(ac.rotor.trimRequest * STEP);
+        }
         this.acc -= STEP;
         steps++;
       }
@@ -3192,6 +3615,7 @@ class Game {
     this._hadTornado = this.tornado.active;
     if (this.touch) this.touch.update(this.aircraft.readouts(), this);
     this.scenery.update(dt, this.weather);
+    if (this.seamarks) this.seamarks.update(dt, this.weather);
     this.features.update(dt, this.weather);
     this.clouds.update(dt, this.weather, ac.pos);
     this.rain.update(dt, this.weather, this.camera.position, ac.vel);

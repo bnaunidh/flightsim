@@ -7,8 +7,11 @@
  */
 
 import * as THREE from '../vendor/three.module.js';
-import { heightAt, scatter, MAP, ISLANDS, addObstacleAt } from './terrain.js';
-import { buildingTexture, roofTexture, foamTexture } from '../render/textures.js';
+import { heightAt, scatter, MAP, ISLANDS, addObstacleAt, getFlat } from './terrain.js';
+import { buildingTexture, roofTexture, foamTexture, asphaltTexture, asphaltNormal } from '../render/textures.js';
+import { createFishingBoat } from '../fleet/maritime.js';
+import { makeRandom } from '../core/noise.js';
+import { buildPads, updatePads } from './pads.js';
 
 export const DELIVERY_PAD = new THREE.Vector3(6200, 0, -5200);
 
@@ -347,7 +350,7 @@ function buildDeliveryPad(group) {
   return pad;
 }
 
-function buildBoats(group, count) {
+function buildBoats(group, count, home = null) {
   const boats = [];
   const hullMat = new THREE.MeshStandardMaterial({ color: 0xe8e4d8, roughness: 0.6 });
   const deckMat = new THREE.MeshStandardMaterial({ color: 0x2b6ea8, roughness: 0.5 });
@@ -373,8 +376,12 @@ function buildBoats(group, count) {
     g.add(wake);
     // Start them in open water. Maps differ, so walk outwards from the nominal
     // spot until the sea floor is genuinely below us.
-    let bx = -1400 - i * 900;
-    let bz = 1800 + i * 1400;
+    //
+    // `boatHome` is where a map wants its fleet. A working harbour with its
+    // boats strung three kilometres across the middle of the map is not a
+    // fleet, it is three boats that happen to be floating.
+    let bx = home ? home[0] - i * 120 : -1400 - i * 900;
+    let bz = home ? home[1] + i * 160 : 1800 + i * 1400;
     for (let tries = 0; tries < 40 && heightAt(bx, bz) > -6; tries++) {
       bx -= 260;
       bz += 190;
@@ -552,6 +559,252 @@ function addAirBase(group, base) {
   return { dish, parkSpots };
 }
 
+
+/**
+ * A working harbour, built on whichever authored flat the map points at.
+ *
+ * Every other named place in this game is made by scattering objects on a
+ * lawn, which is why the town reads as a field of sheds and the delivery pad
+ * reads as a target painted on a hillside. A harbour cannot be made that way.
+ * A quay is a level edge where the land stops, and the entire point of it is
+ * that you can drive along it — so this builder scatters nothing. It reads one
+ * rectangle out of MAP.flats, works out which end of it the water is at, and
+ * lays the harbour out relative to that: deck, stone lip, bollards, container
+ * stacks, a gantry, sheds, and the boats moored along the outer face.
+ *
+ * That is also why it carries no coordinates of its own and works on any map
+ * at any elevation — it builds on whatever height resolveFlats decided the
+ * ground actually was. About six draw calls, all primitives, nothing
+ * downloaded.
+ */
+export function addHarbour(group, cfg) {
+  if (!cfg) return null;
+  const f = getFlat(cfg.flat || 'quay');
+  if (!f) {
+    // A warning rather than a silent nothing: a harbour whose flat has been
+    // renamed is a one-word mistake in the map data, and an empty coastline
+    // looks like a rendering bug rather than a typo.
+    console.warn(`addHarbour: no flat called "${cfg.flat || 'quay'}" on this map.`);
+    return null;
+  }
+
+  const rnd = makeRandom(cfg.seed || 808);
+  const y = f.y;
+  const wide = f.x1 - f.x0 > f.z1 - f.z0;
+  const len = wide ? f.x1 - f.x0 : f.z1 - f.z0;
+  const wid = wide ? f.z1 - f.z0 : f.x1 - f.x0;
+
+  /*
+   * Which way is the sea?
+   *
+   * A shore flat is authored as a rectangle straddling the coast: one end is
+   * on the island, the other hangs over the water. Rather than make the map
+   * author state which, sample the natural ground a little past each end and
+   * take the lower. That keeps the map data to one rectangle and it stays
+   * right if somebody nudges the rectangle later.
+   */
+  const probe = 180;
+  const aX = wide ? f.x0 - probe : f.cx;
+  const aZ = wide ? f.cz : f.z0 - probe;
+  const bX = wide ? f.x1 + probe : f.cx;
+  const bZ = wide ? f.cz : f.z1 + probe;
+  const sign = heightAt(bX, bZ) < heightAt(aX, aZ) ? 1 : -1;
+  /** Quay-local to world: `u` runs along the quay (+ is seaward), `v` across. */
+  const P = (u, v) => (wide
+    ? new THREE.Vector3(f.cx + u * sign, y, f.cz + v)
+    : new THREE.Vector3(f.cx + v, y, f.cz + u * sign));
+  const headingSeaward = wide ? (sign > 0 ? 90 : 270) : (sign > 0 ? 180 : 0);
+
+  /* ------------------------------------------------------------- deck -- */
+
+  const deckTex = asphaltTexture().clone();
+  deckTex.needsUpdate = true;
+  deckTex.wrapS = deckTex.wrapT = THREE.RepeatWrapping;
+  deckTex.repeat.set(len / 24, wid / 24);
+  const deckNrm = asphaltNormal().clone();
+  deckNrm.needsUpdate = true;
+  deckNrm.wrapS = deckNrm.wrapT = THREE.RepeatWrapping;
+  deckNrm.repeat.set(len / 24, wid / 24);
+  const deckGeo = new THREE.PlaneGeometry(wide ? len : wid, wide ? wid : len);
+  deckGeo.rotateX(-Math.PI / 2);
+  const deck = new THREE.Mesh(deckGeo, new THREE.MeshStandardMaterial({
+    map: deckTex,
+    normalMap: deckNrm,
+    normalScale: new THREE.Vector2(0.6, 0.6),
+    roughness: 0.94,
+    metalness: 0.02,
+  }));
+  // Six centimetres proud, the trick the runway and the apron already use: the
+  // ground under it is level but its triangles are not exactly at f.y.
+  deck.position.set(f.cx, y + 0.06, f.cz);
+  deck.receiveShadow = true;
+  group.add(deck);
+
+  /* ---------------------------------------------------------- the edge -- */
+
+  // A stone lip round three sides, so the quay stops at something rather than
+  // fading into the water.
+  const stone = new THREE.MeshStandardMaterial({ color: 0x9a978e, roughness: 0.95 });
+  const lip = (cx, cz, w, d) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, 1.8, d), stone);
+    m.position.set(cx, y + 0.24, cz);
+    m.castShadow = m.receiveShadow = true;
+    group.add(m);
+  };
+  const end = P(len / 2, 0);
+  lip(end.x, end.z, wide ? 3 : wid, wide ? wid : 3);
+  const sideA = P(0, wid / 2);
+  const sideB = P(0, -wid / 2);
+  lip(sideA.x, sideA.z, wide ? len : 3, wide ? 3 : len);
+  lip(sideB.x, sideB.z, wide ? len : 3, wide ? 3 : len);
+
+  const bollards = Math.max(4, Math.round(len / 34));
+  const bMesh = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.42, 0.55, 1.1, 8),
+    new THREE.MeshStandardMaterial({ color: 0x2f3438, roughness: 0.7, metalness: 0.3 }),
+    bollards * 2
+  );
+  bMesh.castShadow = true;
+  const d3 = new THREE.Object3D();
+  let bi = 0;
+  for (let i = 0; i < bollards; i++) {
+    const u = len / 2 - 14 - (i * (len - 40)) / Math.max(1, bollards - 1);
+    for (const v of [wid / 2 - 3.2, -wid / 2 + 3.2]) {
+      const p = P(u, v);
+      d3.position.set(p.x, y + 0.55, p.z);
+      d3.rotation.set(0, 0, 0);
+      d3.scale.set(1, 1, 1);
+      d3.updateMatrix();
+      bMesh.setMatrixAt(bi++, d3.matrix);
+    }
+  }
+  bMesh.count = bi;
+  bMesh.instanceMatrix.needsUpdate = true;
+  group.add(bMesh);
+
+  /* ------------------------------------------------------- containers -- */
+
+  const nBoxes = cfg.containers || 14;
+  const boxes = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(6.1, 2.6, 2.44),
+    new THREE.MeshStandardMaterial({ roughness: 0.72, metalness: 0.18 }),
+    nBoxes
+  );
+  boxes.castShadow = boxes.receiveShadow = true;
+  const tints = [0xb4432c, 0x2f6ea8, 0x3f7a4a, 0xc9973a, 0x6a5f7e, 0xa8a49a];
+  const col = new THREE.Color();
+  let ci = 0;
+  // Stacked down the landward half, which is where a real yard puts them: the
+  // seaward half has to stay clear for the crane and the boats. Only the
+  // bottom box of each stack registers an obstacle, covering the full stack
+  // height — one box per stack rather than one per container.
+  for (let row = 0; ci < nBoxes && row < 8; row++) {
+    for (let lane = -1; lane <= 1 && ci < nBoxes; lane++) {
+      const high = 1 + ((rnd() * 2.4) | 0);
+      for (let k = 0; k < high && ci < nBoxes; k++) {
+        const u = -len / 2 + 26 + row * 9.2;
+        const v = lane * (wid / 3.2);
+        const p = P(u, v);
+        d3.position.set(p.x, y + 1.35 + k * 2.68, p.z);
+        d3.rotation.set(0, wide ? 0 : Math.PI / 2, 0);
+        d3.scale.set(1, 1, 1);
+        d3.updateMatrix();
+        boxes.setMatrixAt(ci, d3.matrix);
+        boxes.setColorAt(ci, col.setHex(tints[(rnd() * tints.length) | 0]));
+        ci++;
+        if (k === 0) {
+          addObstacleAt(p.x, p.z, wide ? 6.4 : 2.8, wide ? 2.8 : 6.4, y, 2.7 * high,
+            'You hit a shipping container');
+        }
+      }
+    }
+  }
+  boxes.count = ci;
+  boxes.instanceMatrix.needsUpdate = true;
+  if (boxes.instanceColor) boxes.instanceColor.needsUpdate = true;
+  if (ci) group.add(boxes);
+
+  /* ------------------------------------------------------------ crane -- */
+
+  const steel = new THREE.MeshStandardMaterial({ color: 0xd8892c, roughness: 0.6, metalness: 0.35 });
+  for (let c = 0; c < (cfg.cranes ?? 1); c++) {
+    const u = len / 2 - 40 - c * 70;
+    const beamY = y + 17;
+    for (const v of [wid / 2 - 5, -wid / 2 + 5]) {
+      const p = P(u, v);
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(1.6, 17, 1.6), steel);
+      leg.position.set(p.x, y + 8.5, p.z);
+      leg.castShadow = true;
+      group.add(leg);
+      addObstacleAt(p.x, p.z, 2.2, 2.2, y, 17, 'You hit the crane');
+    }
+    const mid = P(u, 0);
+    const beam = new THREE.Mesh(
+      new THREE.BoxGeometry(wide ? 2.2 : wid + 14, 2.2, wide ? wid + 14 : 2.2), steel);
+    beam.position.set(mid.x, beamY, mid.z);
+    beam.castShadow = true;
+    group.add(beam);
+    const trolley = new THREE.Mesh(
+      new THREE.BoxGeometry(3, 2.4, 3),
+      new THREE.MeshStandardMaterial({ color: 0x39404a, roughness: 0.7 })
+    );
+    const tp = P(u, wid * 0.18);
+    trolley.position.set(tp.x, beamY - 2.4, tp.z);
+    trolley.castShadow = true;
+    group.add(trolley);
+  }
+
+  /* ------------------------------------------------------------ sheds -- */
+
+  const shedMat = new THREE.MeshStandardMaterial({ map: buildingTexture(3), roughness: 0.86 });
+  const harbourRoof = new THREE.MeshStandardMaterial({ map: roofTexture(), roughness: 0.9 });
+  for (let i = 0; i < (cfg.sheds ?? 2); i++) {
+    const u = -len / 2 + 14;
+    const v = (i % 2 ? 1 : -1) * (wid / 2 - 11);
+    const p = P(u + i * 2, v);
+    const w = wide ? 26 : 15;
+    const dp = wide ? 15 : 26;
+    const hgt = 8.5;
+    const shed = new THREE.Mesh(new THREE.BoxGeometry(w, hgt, dp), shedMat);
+    shed.position.set(p.x, y + hgt / 2, p.z);
+    shed.castShadow = shed.receiveShadow = true;
+    group.add(shed);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 1.4, 0.9, dp + 1.4), harbourRoof);
+    roof.position.set(p.x, y + hgt + 0.45, p.z);
+    roof.castShadow = true;
+    group.add(roof);
+    addObstacleAt(p.x, p.z, w, dp, y, hgt + 1.2, 'You hit the harbour shed');
+  }
+
+  /* ------------------------------------------------------------ boats -- */
+
+  // createFishingBoat has been in the fleet since the maritime models landed
+  // and was imported by absolutely nothing. A harbour is what it was for.
+  const moored = [];
+  for (let i = 0; i < (cfg.moored ?? 2); i++) {
+    let boat;
+    try {
+      boat = createFishingBoat({ color: i % 2 ? '#5d6860' : '#7d6a52' });
+    } catch (e) {
+      console.warn('Could not build a fishing boat for the harbour.', e);
+      break;
+    }
+    const p = P(len / 2 - 24 - i * 16, (wid / 2 + 6) * (i % 2 ? -1 : 1));
+    boat.position.set(p.x, 0, p.z);
+    boat.rotation.y = ((headingSeaward + 90) * Math.PI) / 180;
+    group.add(boat);
+    moored.push(boat);
+  }
+
+  return {
+    flat: f,
+    deck,
+    moored,
+    /** Where the van is loaded: the middle of the landward half. */
+    loadPoint: P(-len / 4, 0),
+    headingSeaward,
+  };
+}
 
 /**
  * A weapons range you can actually see.
@@ -749,7 +1002,19 @@ export class Scenery {
 
     this.lighthouseLamp = buildLighthouse(this.group, cfg.lighthouse[0], cfg.lighthouse[1]);
     buildDeliveryPad(this.group);
-    this.boats = buildBoats(this.group, cfg.boats);
+    this.harbour = cfg.harbour ? addHarbour(this.group, cfg.harbour) : null;
+    this.boats = buildBoats(this.group, cfg.boats, cfg.boatHome);
+
+    /*
+     * Helipads, last of everything.
+     *
+     * Order matters and it is not obvious. `heightAt` returns platform height
+     * over a registered platform, so anything that samples the ground —
+     * scatter for the trees, buildBoats looking for open water, the terrain
+     * mesh itself — has to have finished before the pads register theirs, or
+     * a rig deck reads as a hillside and the boats sail round it.
+     */
+    this.pads = buildPads(this.group);
 
     scene.add(this.group);
   }
@@ -801,6 +1066,7 @@ export class Scenery {
     // The base radar turns. It is the only moving thing on an air base, which
     // is what stops the place reading as a model of a base.
     if (this.base && this.base.dish) this.base.dish.rotation.y += dt * 0.55;
+    updatePads(this.pads, this.t, weather.isNight);
     // Lighthouse sweeps.
     const on = weather.isNight || weather.cond.cloud > 0.75;
     this.lighthouseLamp.material.emissiveIntensity = on

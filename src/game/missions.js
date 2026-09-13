@@ -38,6 +38,9 @@ import { DELIVERY_PAD } from '../world/scenery.js';
 import { heightAt, isOnRunway2 } from '../world/terrain.js';
 import { UNITS } from '../aircraft/physics.js';
 import { Pursuer } from './pursuer.js';
+import { HELI_MISSIONS, HELI_FREE } from './missions-heli.js';
+import { BOAT_MISSIONS, BOAT_PATROL } from './missions-boat.js';
+import { CAR_JOBS, ISLAND_ROADS } from './jobs.js';
 
 const ELEV = RUNWAY.elev;
 const ft = (m) => m * UNITS.FT;
@@ -1431,7 +1434,38 @@ export const MISSIONS = [
       return Math.round(quick * 58 + (l ? l.score : 20) * 0.42);
     },
   },
+
+  /*
+   * The other three games' missions, each kept in its own file.
+   *
+   * They are the same shape as everything above — steps, checks, targets, a
+   * tick and a score — and they ride this runner with no engine change. They
+   * live next door because this file is fourteen hundred lines of aeroplane
+   * and nobody should have to scroll past a tornado to find the winch.
+   */
+  ...HELI_MISSIONS,
+  ...BOAT_MISSIONS,
+  ...CAR_JOBS,
 ];
+
+/**
+ * Which game a mission belongs to.
+ *
+ * Absent means 'flight', so all twelve existing missions keep working
+ * untouched and nothing had to be edited to add the other three games'. This
+ * is the one field that makes the switcher at the top of the menu actually
+ * change the screen behind it.
+ */
+export const gameOf = (m) => m.game || (m.vehicle === 'boat' ? 'boat' : m.vehicle === 'car' ? 'car' : 'flight');
+export const missionsFor = (game) => MISSIONS.filter((m) => gameOf(m) === (game || 'flight'));
+
+/** The no-clock mode for each game: free flight, the patrol, the roads, the hops. */
+export const FREE_FOR = {
+  flight: null, // filled in below, once FREE_FLIGHT exists
+  boat: BOAT_PATROL,
+  car: ISLAND_ROADS,
+  heli: HELI_FREE,
+};
 
 export function findMission(id) {
   return MISSIONS.find((m) => m.id === id) || null;
@@ -1444,3 +1478,4 @@ export const FREE_FLIGHT = {
   steps: [],
   failOnCrash: false,
 };
+FREE_FOR.flight = FREE_FLIGHT;

@@ -2444,3 +2444,781 @@ html.is-touch-device .slot-clear {
   .hud.is-touch .hud-damage svg { width: 44px; height: 44px; }
   .hud.is-touch .hud-damage-label { font-size: 8px; }
 }
+
+/* ======================================================================
+ * THREE MORE GAMES.
+ *
+ * The boat's panel, the courier's strip, the helicopter's hover rows and
+ * the driving pedals. Each block was written by the person who wrote the
+ * panel above it; they are appended in the order the games were added.
+ * ====================================================================== */
+
+
+/* ===================== Vehicle HUD: the boat and the car ================= */
+/*
+ * `is-vehicle` has been going on the HUD wrapper since the boat went in, and
+ * until now this stylesheet had not one rule for it. That is why taking the
+ * boat out still showed a GEAR DOWN chip, a FLAPS 0 chip, an EASY MODE chip, a
+ * fuel bar stopped dead at whatever the last flight left it on, an autopilot
+ * button that did nothing and a little damage diagram of an aeroplane. It was
+ * never the missing missions that made the boat read as a toy inside the
+ * flight sim. It was the gear chip.
+ *
+ * Everything aeroplane-only is tagged .is-air in hud.js build(); this is the
+ * rule that takes it away, and it keeps working for whatever gets added next.
+ */
+.hud.is-vehicle .is-air,
+.hud.is-vehicle .hud-damage,
+.hud.is-vehicle .hud-vital,
+.hud.is-vehicle .hud-papi,
+.hud.is-vehicle .hud-stall { display: none !important; }
+
+/* A car has brakes and a boat does not, so this one is boat-only. */
+.hud.is-boat .is-wheels { display: none !important; }
+
+/* The aeroplane's instrument strip steps aside for the boat's own panel.
+   Matched on :not(.hud-boatpanel) because the boat panel wears .hud-left too,
+   so that every responsive and touch rule written for the strip applies to it
+   without being written twice. */
+.hud.is-boat .hud-left:not(.hud-boatpanel) { display: none !important; }
+.hud-boatpanel { display: none; }
+.hud.is-boat .hud-boatpanel { display: block; }
+
+/* ---- Depth under the keel: the boat's altimeter ---- */
+.hud-boatpanel .hud-row.is-depth .hud-value { font-size: 34px; }
+.hud-boatpanel.is-shoal .hud-row.is-depth .hud-value,
+.hud-boatpanel.is-shoal .hud-row.is-depth .hud-word { color: var(--amber); }
+.hud-boatpanel.is-shallow .hud-row.is-depth .hud-value,
+.hud-boatpanel.is-shallow .hud-row.is-depth .hud-word { color: var(--red); }
+.hud-boatpanel.is-shallow .hud-row.is-depth .hud-word {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+/* The whole panel takes the warning, not just the number. You are not reading
+   the panel when this matters — you are looking out of the window — and the
+   edge of a box changing colour is something you catch without reading. */
+.hud-boatpanel.is-shallow { border-color: rgba(255, 106, 90, 0.55); }
+.hud-boatpanel .hud-value.is-aground { font-size: 19px; color: var(--red); }
+
+/* ---- The engine lever ---- */
+.hud-lever { padding: 7px 0 2px; border-top: 1px solid rgba(140, 180, 230, 0.1); }
+.hud-lever-detents { display: flex; gap: 3px; margin-top: 5px; }
+.hud-lever-detent {
+  flex: 1 1 0;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 5px 2px;
+  border-radius: 6px;
+  color: var(--text-dim);
+  background: rgba(140, 180, 230, 0.07);
+  border: 1px solid transparent;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.hud-lever-detent.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #06121f;
+}
+/* Astern is amber, not red. Going astern is a normal thing you do coming
+   alongside, and colouring it like a failure teaches the child to avoid the
+   one control that gets them off the putty. */
+.hud-lever-detent.is-on.is-astern { background: var(--amber); border-color: var(--amber); }
+
+/* ---- Who is aboard ---- */
+/* The [hidden] rule is not optional: display:flex beats the attribute, the
+   same trap the .fatal[hidden] comment further up this file describes. */
+.hud-aboard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(140, 180, 230, 0.1);
+}
+.hud-aboard[hidden] { display: none; }
+.hud-aboard-pips { display: flex; gap: 5px; }
+.hud-pip { display: inline-block; }
+.hud-pip svg { width: 13px; height: 19px; display: block; }
+.hud-pip svg circle, .hud-pip svg path { fill: rgba(159, 178, 204, 0.22); }
+.hud-pip.is-on svg circle, .hud-pip.is-on svg path { fill: var(--accent-2); }
+.hud-pip.is-on { animation: pipIn 0.45s ease; }
+@keyframes pipIn {
+  0% { transform: scale(0.4); opacity: 0; }
+  60% { transform: scale(1.18); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ---- The compass ribbon ---- */
+.hud-ribbon {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(460px, 46vw);
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 9px;
+  background: rgba(12, 20, 34, 0.55);
+  border: 1px solid var(--panel-line);
+  border-radius: 8px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+.hud-ribbon-canvas { flex: 1 1 auto; min-width: 0; height: 26px; }
+.hud-ribbon-value {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--accent-2);
+}
+/* The objective panel drops below the tape. Without this the shout and the
+   compass sit on top of each other at the top of the screen. */
+.hud.is-boat .hud-top { top: 46px; }
+
+/* ---- Sea state, under the wind ---- */
+.hud-sea { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.hud-sea.is-rough { color: var(--amber); }
+.hud-sea.is-gale { color: var(--red); font-weight: 700; }
+
+/* ---- On the putty ---- */
+.hud-aground {
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  transform: translate(-50%, -50%);
+  max-width: min(420px, 80vw);
+  padding: 13px 22px;
+  text-align: center;
+  border-radius: 14px;
+  background: rgba(28, 21, 10, 0.88);
+  border: 1px solid rgba(255, 194, 71, 0.55);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.hud-aground strong { display: block; font-size: 18px; color: var(--amber); }
+.hud-aground em {
+  display: block;
+  font-style: normal;
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 5px;
+}
+
+/* ---- Small screens: the tape goes, the number stays ----
+   A 120-degree compass card needs about 300 px to be readable and an iPad in
+   portrait does not have it to spare at the top of the screen. Losing the tape
+   and keeping the bearing is much better than keeping an unreadable tape. */
+@media (max-width: 760px) {
+  .hud-ribbon { width: auto; padding: 0 10px; height: 26px; }
+  .hud-ribbon-canvas { display: none; }
+  .hud.is-boat .hud-top { top: 40px; }
+  .hud-boatpanel .hud-row.is-depth .hud-value { font-size: 27px; }
+  .hud-lever-detent { font-size: 8px; padding: 4px 1px; }
+}
+
+
+
+/* =====================================================================
+ * DRIVING — Island Courier
+ *
+ * Appended to styles/main.css. Everything here is inside .hud.is-drive or
+ * [data-game="car"], so not one rule can reach an aeroplane.
+ *
+ * Two of these rules are not decoration and must not be "tidied away":
+ * the [hidden] pair at the top. Elements the JavaScript hides with .hidden =
+ * true carry no inline style, and the browser's own [hidden] { display: none }
+ * is a plain attribute selector — so a class rule that sets display, such as
+ * .hud-row { display: grid }, wins and the element stays on screen. The
+ * vertical-speed row and the fuel bar are both in that position: hidden in
+ * script, visible on screen, which looks exactly like the hide never ran.
+ * ===================================================================== */
+
+.hud-row[hidden],
+.hud-bar[hidden] { display: none !important; }
+
+/* -- the left strip ------------------------------------------------- */
+
+/* Speed is the number you steer by, so it gets the room the altimeter had. */
+.hud.is-drive .hud-left .hud-value { font-size: 30px; }
+.hud.is-drive .hud-word { color: var(--text-dim); text-transform: lowercase; }
+
+/*
+ * The surface under the wheels, in one word, under the speed.
+ *
+ * Colour does the work a sentence would: tarmac is calm, gravel and sand are
+ * warm, water is wrong. This is the entire explanation a child gets of why the
+ * van just slid wide on the hairpin, and it is one text node.
+ */
+.hud.is-drive .hud-word[data-surface="tarmac"],
+.hud.is-drive .hud-word[data-surface="road"],
+.hud.is-drive .hud-word[data-surface="apron"],
+.hud.is-drive .hud-word[data-surface="runway"] { color: var(--accent); }
+.hud.is-drive .hud-word[data-surface="gravel"],
+.hud.is-drive .hud-word[data-surface="track"] { color: var(--amber); }
+.hud.is-drive .hud-word[data-surface="grass"] { color: var(--good); }
+.hud.is-drive .hud-word[data-surface="sand"] { color: #e8c37a; }
+.hud.is-drive .hud-word[data-surface="water"] { color: var(--red); }
+
+/* -- the clock, top centre ------------------------------------------ */
+
+/*
+ * Shared with the flight missions' clock, deliberately: one clock element in
+ * the game rather than two that can disagree. In driving it is bigger and in
+ * the mono face, because it is read at a glance at speed rather than studied.
+ */
+.hud.is-drive .hud-objective {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 14px;
+  row-gap: 2px;
+  text-align: left;
+}
+.hud.is-drive .hud-objective-title { grid-column: 1 / -1; margin-bottom: 0; }
+.hud.is-drive .hud-objective-clock {
+  grid-column: 1;
+  font-family: var(--mono);
+  font-size: 30px;
+  font-weight: 620;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.hud.is-drive .hud-objective-clock.is-bad { animation: courierPulse 1s ease-in-out infinite; }
+.hud.is-drive .hud-objective-text { grid-column: 1 / -1; font-size: 14px; }
+@keyframes courierPulse { 50% { opacity: 0.45; } }
+
+/* -- the load -------------------------------------------------------- */
+
+/*
+ * Five pips, beside the clock. This is the whole design in one instrument:
+ * the clock says go faster and the pips say do not. A load delivered at full
+ * condition pays double, so flooring it everywhere is a legal strategy that
+ * earns badly — which is the thing a ten-year-old should work out for
+ * themselves, and no text on this screen ever says it.
+ */
+.hud-cargo { grid-column: 2; display: flex; flex-direction: column; gap: 4px; }
+.hud-cargo-label {
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.hud-cargo.is-care .hud-cargo-label { color: var(--amber); }
+.hud-cargo.is-ruined .hud-cargo-label { color: var(--red); }
+.hud-cargo-pips { display: flex; gap: 5px; }
+.hud-cargo-pip {
+  width: 20px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--good);
+  box-shadow: 0 0 8px rgba(79, 214, 132, 0.45);
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+}
+.hud-cargo.is-care .hud-cargo-pip { background: var(--amber); box-shadow: 0 0 8px rgba(255, 194, 71, 0.45); }
+.hud-cargo-pip.is-out { background: rgba(255, 255, 255, 0.14); box-shadow: none; }
+/* A knock you can see out of the corner of your eye, once, briefly. */
+.hud-cargo.is-hit { animation: cargoKnock 0.36s ease; }
+@keyframes cargoKnock {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  60% { transform: translateX(2px); }
+}
+
+/* -- the next turn --------------------------------------------------- */
+
+/*
+ * The single most important element on the driving screen.
+ *
+ * Ten-year-olds cannot read a minimap and steer at the same time; they can read
+ * one arrow. Bottom centre, above the thumbs on a tablet, and nothing else is
+ * allowed to live there.
+ */
+.hud-chevron {
+  position: absolute;
+  left: 50%;
+  bottom: 104px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px 10px 16px;
+  border-radius: 18px;
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: transform 0.16s ease, border-color 0.2s ease;
+}
+.hud-chevron-arrow { font-size: 40px; line-height: 0.9; color: var(--accent); }
+.hud-chevron-words { display: flex; flex-direction: column; gap: 2px; }
+.hud-chevron-what {
+  font-size: 19px;
+  font-weight: 680;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.hud-chevron-dist { font-size: 13px; color: var(--text-dim); font-family: var(--mono); }
+.hud-chevron[data-dir="arrive"] .hud-chevron-arrow,
+.hud-chevron[data-dir="uturn"] .hud-chevron-arrow { color: var(--amber); }
+/* Close enough to act on: it grows and warms. Distance, not time, so it reads
+   the same whether you are creeping up to it or arriving at 90. */
+.hud-chevron.is-near {
+  transform: translateX(-50%) scale(1.1);
+  border-color: rgba(255, 194, 71, 0.55);
+}
+.hud-chevron.is-near .hud-chevron-arrow { color: var(--amber); }
+
+/* Hidden with the rest of the interface, and dark in a blackout, exactly like
+   every other panel — otherwise the one element the player is actually reading
+   is the one that ignores both. */
+.hud.is-minimal .hud-chevron { opacity: 0; pointer-events: none; transition: opacity 0.25s ease; }
+.hud.is-blackout .hud-chevron { opacity: 0.12; }
+
+/* -- small screens and tablets --------------------------------------- */
+
+@media (max-width: 900px) {
+  .hud.is-drive .hud-objective-clock { font-size: 24px; }
+  .hud-chevron { bottom: 88px; padding: 8px 16px 8px 12px; }
+  .hud-chevron-arrow { font-size: 32px; }
+  .hud-chevron-what { font-size: 16px; }
+  .hud-cargo-pip { width: 16px; height: 7px; }
+}
+/* On a tablet the thumbs own the bottom corners, so the chevron sits above
+   them rather than under a hand. */
+.hud.is-touch .hud-chevron { bottom: 210px; }
+@media (max-height: 560px) {
+  .hud.is-touch .hud-chevron { bottom: 168px; }
+}
+
+/* -- the menu, per game ---------------------------------------------- */
+
+/*
+ * One attribute on the menu root, set by setGame(). The courier is warmer than
+ * the flight school: road amber rather than sky blue, and it is two lines of
+ * CSS rather than a second stylesheet.
+ */
+.menu-layer { --game-accent: var(--accent); }
+[data-game="car"] .menu-layer { --game-accent: var(--amber); }
+[data-game="boat"] .menu-layer { --game-accent: var(--accent-2); }
+[data-game="car"] .screen-main .brand-mark,
+[data-game="boat"] .screen-main .brand-mark { color: var(--game-accent); }
+[data-game="car"] .screen-main .tagline,
+[data-game="boat"] .screen-main .tagline { color: var(--game-accent); }
+
+/* The measured line under a map card — "31 km of road, a coast loop, a 240 m
+   climb to the relay". Written only when something has actually measured it. */
+.map-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--amber);
+  font-family: var(--mono);
+  letter-spacing: 0.01em;
+}
+
+/* -- touch, driving --------------------------------------------------- */
+
+/*
+ * The flight stick is wrong for a van: it is a two-axis dial and a car has one
+ * axis. In drive mode it becomes a wide, short steering slider under the left
+ * thumb, the rudder strip goes (there is nothing to yaw), and the pads that
+ * belong to an aeroplane go with it.
+ */
+.touch-layer.is-drive .touch-rudder { display: none; }
+.touch-layer.is-drive .touch-stick {
+  width: min(280px, 46vw);
+  height: 92px;
+  border-radius: 46px;
+}
+/* The dashed guide inside the dial is a ::after that is already there; it is
+   reshaped into a pill rather than given new content, because overriding half
+   of somebody else's pseudo-element is how you end up with a dashed circle
+   round a word. */
+.touch-layer.is-drive .touch-stick::after { inset: 10px 14px; border-radius: 40px; }
+.touch-layer.is-drive .touch-throttle-label::after { content: ' GO'; }
+
+/* ===================== The helicopter's hover strip ======================
+ *
+ * The aeroplane's four readings and this panel are never on screen together:
+ * `is-rotorhover` swaps one for the other, and the swap is driven by
+ * groundspeed with hysteresis so it cannot flicker while you slow down.
+ *
+ * Nothing in here is loaded, animated or laid out until a rotorcraft is
+ * actually flown — the JavaScript builds the nodes on first use, so a child
+ * who only flies the trainer pays nothing for any of it.
+ * ===================================================================== */
+
+/* Hidden by default; the class on the wrapper is the only thing that shows it.
+   Written as display so it costs no compositing while an aeroplane is flying. */
+.hud-rotor { display: none; left: 16px; top: 16px; width: 246px; }
+.hud.is-rotorhover .hud-rotor { display: block; }
+.hud.is-rotorhover .hud-left { display: none; }
+
+.hud-rotor-head {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--accent-2);
+  margin-bottom: 8px;
+}
+
+.hud-rotor-top { display: flex; gap: 10px; align-items: stretch; }
+
+/* ---- The drift cross ---------------------------------------------------
+ *
+ * A dot in a box. Centre it. That is the whole instrument, and it is the
+ * biggest thing on the panel because it is the thing the game is about.
+ */
+.hud-drift { position: relative; width: 112px; height: 112px; flex: 0 0 auto; }
+
+/* The hold arc rings the box rather than living somewhere else on the panel,
+   so "centre the dot" and "watch it fill" are one glance and not two. */
+.hud-drift-arc { position: absolute; inset: -6px; width: calc(100% + 12px); height: calc(100% + 12px); }
+.hud-drift-arc circle {
+  fill: none;
+  stroke-width: 5;
+  /* Starts at the top and fills clockwise, which is how a clock does it and
+     therefore the only direction that needs no explaining. */
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+.hud-drift-arc-bg { stroke: rgba(140, 180, 230, 0.16); }
+.hud-drift-arc-fill {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.12s linear;
+}
+.hud-drift-arc-fill.is-full { stroke: var(--good); }
+
+.hud-drift-box {
+  position: absolute;
+  inset: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-line);
+  background: rgba(6, 12, 22, 0.55);
+  overflow: hidden;
+}
+.hud-drift-box.is-good { border-color: rgba(79, 214, 132, 0.75); background: rgba(12, 40, 26, 0.5); }
+
+/* The tolerance ring: inside it the winch is happy. Sized from the constants
+   in hud-rotor.js at build time, so the picture cannot disagree with the rule. */
+.hud-drift-tol {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px dashed rgba(126, 232, 178, 0.5);
+}
+/* A faint cross, so "centred" is a place and not a guess. */
+.hud-drift-cross {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to right, transparent calc(50% - 0.5px), rgba(140, 180, 230, 0.22) calc(50% - 0.5px), rgba(140, 180, 230, 0.22) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(50% - 0.5px), rgba(140, 180, 230, 0.22) calc(50% - 0.5px), rgba(140, 180, 230, 0.22) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+}
+
+/* The layer that moves. See the long comment in hud-rotor.js: percentages in
+   a transform are percentages of the element's own box, so the thing that
+   moves has to be the size of the box or the instrument does nothing. */
+.hud-drift-slide { position: absolute; inset: 0; will-change: transform; }
+.hud-drift-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(88, 198, 255, 0.8);
+}
+.hud-drift-box.is-good .hud-drift-dot { background: var(--good); box-shadow: 0 0 12px rgba(79, 214, 132, 0.9); }
+/* Off the scale: the dot squares off, so "pegged" does not read as "steady at
+   the edge". */
+.hud-drift-dot.is-pegged { border-radius: 3px; background: var(--amber); box-shadow: 0 0 10px rgba(255, 194, 71, 0.9); }
+
+.hud-drift-info { margin-top: 8px; }
+.hud-drift-cap { font-size: 10px; letter-spacing: 0.1em; color: var(--text-dim); }
+.hud-drift-read { font-size: 24px; font-weight: 640; line-height: 1.05; }
+.hud-drift-read span { font-size: 11px; color: var(--text-dim); font-weight: 400; }
+.hud-rotor .hud-word.is-warn { color: var(--amber); }
+
+/* ---- Vertical speed, up the side of the box ----------------------------
+ *
+ * Up on the screen is up in the air. A number that changes every frame cannot
+ * be read; a bar that is above or below the middle can be read without
+ * reading, which is the whole point of having it at all.
+ */
+.hud-vsbar { width: 18px; flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; }
+.hud-vsbar-track {
+  position: relative;
+  width: 9px;
+  height: 112px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+/* The middle line is zero. */
+.hud-vsbar-track::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; top: 50%;
+  height: 1px;
+  background: rgba(234, 241, 251, 0.45);
+}
+.hud-vsbar-fill {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: 50%;
+  height: 0;
+  background: var(--accent-2);
+  transition: height 0.08s linear, bottom 0.08s linear;
+}
+.hud-vsbar-fill.is-bad { background: var(--red); }
+.hud-vsbar-cap { font-size: 9px; letter-spacing: 0.08em; color: var(--text-dim); margin-top: 4px; }
+
+/* ---- Radar altimeter and wind, in the column beside the box ------------ */
+.hud-rotor-side { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+
+.hud-ra-line { display: flex; align-items: baseline; gap: 4px; }
+.hud-ra-value { font-size: 30px; font-weight: 640; line-height: 1; letter-spacing: -0.02em; }
+.hud-ra-value.is-good { color: var(--good); }
+.hud-ra-value.is-warn { color: var(--amber); }
+
+/* Shown only when the winch has asked for a height. The track zooms to the
+   band rather than running from zero, so the marker moves a useful distance
+   for the height changes that actually matter. */
+.hud-ra-band {
+  position: relative;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+.hud-ra-band-good { position: absolute; top: 0; bottom: 0; background: rgba(79, 214, 132, 0.42); }
+.hud-ra-band-mark {
+  position: absolute;
+  top: -2px; bottom: -2px;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--text);
+  transition: left 0.1s linear;
+}
+
+.hud-rwind-body { display: flex; align-items: center; gap: 6px; }
+.hud-rwind-arrow { display: inline-block; font-size: 17px; line-height: 1; color: var(--accent); }
+.hud-rwind-text { font-size: 13px; font-family: var(--mono); color: var(--text-dim); }
+
+/* ---- Power, with the hover point marked --------------------------------
+ *
+ * The gap between the fill and the mark is the margin, and the margin is the
+ * one thing in this game you spend by being heavy. A percentage on its own
+ * does not show a margin; a gap does, and it visibly closes when you pick
+ * somebody up.
+ */
+.hud-power { margin-top: 10px; }
+.hud-power-track {
+  position: relative;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.hud-power-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #3ec96a, #9ae66e);
+  transition: width 0.1s linear;
+}
+.hud-power-fill.is-short { background: linear-gradient(90deg, #ff6a5a, #ffc247); }
+.hud-power-mark {
+  position: absolute;
+  top: -3px; bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text);
+  opacity: 0.85;
+}
+.hud-power-read { margin-top: 4px; font-size: 11px; font-family: var(--mono); color: var(--text-dim); }
+
+/* ---- The three conditions ----------------------------------------------
+ *
+ * Three separate answers, not one score. When the arc stops filling the pilot
+ * needs to know WHICH of the three they lost; a single amber "not quite"
+ * tells a ten-year-old nothing they can act on.
+ */
+.hud-hold { margin-top: 10px; border-top: 1px solid rgba(140, 180, 230, 0.14); padding-top: 8px; }
+.hud-hold-lights { display: flex; gap: 5px; }
+.hud-hold-lt {
+  flex: 1 1 0;
+  text-align: center;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  padding: 4px 0;
+  border-radius: 6px;
+  border: 1px solid var(--panel-line);
+  color: var(--text-dim);
+}
+.hud-hold-lt.is-on { border-color: rgba(79, 214, 132, 0.7); background: rgba(79, 214, 132, 0.16); color: #d6ffe6; }
+.hud-hold-text { margin-top: 6px; font-size: 12px; color: var(--accent); }
+.hud-hold-text.is-good { color: var(--good); }
+
+/* Lives aboard and lives safe, on the objective panel — the only number this
+   game keeps. Hidden until there is somebody to count. */
+.hud-rescue { margin-top: 4px; font-size: 12px; font-family: var(--mono); color: var(--accent-2); }
+
+/* Hover assist, said out loud rather than hidden. A child who finds out later
+   that the machine was holding its own height has been cheated of the thing
+   they were proud of. */
+.hud-chip-assist.is-on { border-color: rgba(126, 232, 178, 0.6); color: #cdffe6; }
+
+/* ---- The three display modes the rest of the HUD already has ------------ */
+
+/* The realistic cockpit has its own instruments, so the overlay stands down.
+   Matches the existing rule for .hud-left / .hud-right / .hud-bottom. */
+.hud.is-minimal .hud-rotor { opacity: 0; pointer-events: none; transition: opacity 0.25s ease; }
+
+.hud.is-contrast .hud-drift-read,
+.hud.is-contrast .hud-ra-value { color: #fff; }
+.hud.is-contrast .hud-rotor-head,
+.hud.is-contrast .hud-drift-cap,
+.hud.is-contrast .hud-power-read,
+.hud.is-contrast .hud-rwind-text { color: #fff; }
+.hud.is-contrast .hud-hold-text { color: #ffe95c; }
+.hud.is-contrast .hud-drift-box { background: #000; border-color: #fff; }
+
+.hud.is-large .hud-drift-read { font-size: 28px; }
+.hud.is-large .hud-ra-value { font-size: 35px; }
+.hud.is-large .hud-hold-text { font-size: 14px; }
+
+/* ---- Touch ------------------------------------------------------------
+ *
+ * Same reasoning as the aeroplane strip above: the buttons own the top right,
+ * the map owns the top left, so the instruments run along underneath in one
+ * band. The difference is that this panel has a picture in it, and the picture
+ * is the primary instrument — so the box keeps its size and everything else
+ * lays out along the row beside it rather than the box shrinking to fit.
+ */
+.hud.is-touch .hud-rotor {
+  left: 206px;
+  right: 8px;
+  top: 66px;
+  width: auto;
+  padding: 6px 10px;
+}
+.hud.is-touch.is-rotorhover .hud-rotor {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hud.is-touch .hud-rotor-head { display: none; }
+.hud.is-touch .hud-drift { width: 84px; height: 84px; }
+.hud.is-touch .hud-vsbar-track { height: 84px; }
+.hud.is-touch .hud-drift-cap { display: none; }
+.hud.is-touch .hud-drift-info { margin-top: 0; width: 104px; flex: 0 0 auto; }
+.hud.is-touch .hud-drift-read { font-size: 17px; }
+.hud.is-touch .hud-rotor .hud-word { font-size: 10px; }
+.hud.is-touch .hud-ra-value { font-size: 22px; }
+.hud.is-touch .hud-power,
+.hud.is-touch .hud-hold { margin-top: 0; border-top: 0; padding-top: 0; }
+.hud.is-touch .hud-power { width: 108px; }
+.hud.is-touch .hud-hold { width: 150px; }
+.hud.is-touch .hud-hold-text { font-size: 10px; }
+
+ *  van is steered with one thumb held against a strip, not placed on a dial,
+ *  and both pedals have to be hittable without looking. 44 px is the minimum
+ *  anybody should ship; GO is 96 because it is the one held for whole minutes.
+ * ======================================================================== */
+
+.touch-wheel {
+  position: absolute;
+  left: 16px;
+  bottom: 18px;
+  width: min(46vw, 340px);
+  height: 92px;
+  border-radius: 16px;
+  border: 1px solid var(--panel-line);
+  background: rgba(12, 20, 32, 0.34);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: auto;
+  display: none;
+}
+.touch-wheel-centre {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  bottom: 12px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.16);
+}
+.touch-wheel-mark {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  bottom: 8px;
+  width: 54px;
+  margin-left: -27px;
+  border-radius: 12px;
+  background: rgba(88, 198, 255, 0.3);
+  border: 1px solid rgba(124, 199, 255, 0.75);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+.touch-wheel.is-held .touch-wheel-mark { background: rgba(88, 198, 255, 0.52); }
+.touch-wheel-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -16px;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.touch-pedals {
+  position: absolute;
+  right: 16px;
+  bottom: 18px;
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: auto;
+}
+.touch-pedal {
+  width: 110px;
+  border-radius: 16px;
+  border: 1px solid var(--panel-line);
+  background: rgba(12, 20, 32, 0.4);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #eaf2ff;
+  font: 600 15px/1 inherit;
+  letter-spacing: 0.1em;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.touch-pedal.is-go { height: 96px; }
+.touch-pedal.is-stop { height: 72px; }
+.touch-pedal.is-go.is-on { background: rgba(92, 214, 140, 0.42); border-color: rgba(120, 235, 170, 0.8); }
+.touch-pedal.is-stop.is-on { background: rgba(232, 96, 96, 0.42); border-color: rgba(255, 140, 140, 0.8); }
+
+/* A phone in landscape has no room for a 92 px strip and a 96 px pedal. */
+@media (max-height: 460px) {
+  .touch-wheel { height: 68px; bottom: 12px; }
+  .touch-pedal.is-go { height: 74px; }
+  .touch-pedal.is-stop { height: 58px; }
+  .touch-pedal { width: 92px; }
+}
