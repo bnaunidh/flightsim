@@ -23,7 +23,6 @@ import * as THREE from '../vendor/three.module.js';
 import { heightAt, OBSTACLES } from './terrain.js';
 import { fbm, clamp } from '../core/noise.js';
 
-/** How far out the wind is affected at all. */
 /**
  * The Enhanced Fujita scale.
  *
@@ -47,6 +46,7 @@ function weightedRating() {
   return r < 0.3 ? 0 : r < 0.58 ? 1 : r < 0.8 ? 2 : r < 0.93 ? 3 : r < 0.985 ? 4 : 5;
 }
 
+/** How far out the wind is affected at all. */
 const REACH = 1400;
 /** Radius of the core, where the wind is strongest. */
 const CORE = 130;

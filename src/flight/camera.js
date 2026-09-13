@@ -39,6 +39,27 @@ const EYE = new THREE.Vector3(-0.24, 0.46, 0.06);
 const REALISTIC_FOV = 56;
 const REALISTIC_OFFSET = new THREE.Vector3(0, -0.02, 0.16);
 
+/**
+ * Chase-camera working vectors, made once instead of three times a frame.
+ *
+ * At sixty frames a second the chase view was building a fresh Vector3 for the
+ * desired position, another for the spring acceleration and a third for the
+ * fixed upward bias — a hundred and eighty throwaway objects a second, all of
+ * them dead by the end of update(), which is exactly the litter that makes the
+ * garbage collector stutter the picture on a school Chromebook.
+ *
+ * These two are genuinely separate objects, and they have to stay that way:
+ * _desired is still being read on the line that fills _accel (subVectors reads
+ * both), so sharing one between them would compute the spring against itself.
+ * That is the same mistake as the look-behind bug below, and the reason the
+ * rig already carries three numbered scratch vectors rather than two. UP_BIAS
+ * is a constant, never written to — .add() reads its argument and leaves it
+ * alone — so it cannot collide with anything.
+ */
+const _desired = new THREE.Vector3();
+const _accel = new THREE.Vector3();
+const UP_BIAS = new THREE.Vector3(0, 0.65, 0);
+
 export class CameraRig {
   constructor(camera, aircraft) {
     this.camera = camera;
@@ -133,9 +154,9 @@ export class CameraRig {
       // Behind and above, blended between body-axis and velocity-axis so the
       // camera does not spin wildly during aerobatics.
       const back = this._tmp.set(0, 0, 1).applyQuaternion(ac.quat);
-      const upV = this._tmp2.set(0, 1, 0).applyQuaternion(ac.quat).multiplyScalar(0.35).add(new THREE.Vector3(0, 0.65, 0));
+      const upV = this._tmp2.set(0, 1, 0).applyQuaternion(ac.quat).multiplyScalar(0.35).add(UP_BIAS);
       const dist = 17 + clamp(ac.airspeed / 12, 0, 9);
-      const desired = new THREE.Vector3()
+      const desired = _desired
         .copy(pos)
         .addScaledVector(back, dist)
         .addScaledVector(upV.normalize(), 5.2 + ac.airspeed * 0.02);
@@ -146,7 +167,7 @@ export class CameraRig {
       // Critically-damped spring.
       const k = 42;
       const c = 2 * Math.sqrt(k);
-      const accel = new THREE.Vector3().subVectors(desired, this.chasePos).multiplyScalar(k);
+      const accel = _accel.subVectors(desired, this.chasePos).multiplyScalar(k);
       accel.addScaledVector(this.chaseVel, -c);
       this.chaseVel.addScaledVector(accel, Math.min(dt, 0.05));
       this.chasePos.addScaledVector(this.chaseVel, Math.min(dt, 0.05));

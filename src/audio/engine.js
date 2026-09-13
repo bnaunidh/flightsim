@@ -96,15 +96,32 @@ export class EngineSound {
     this.propGain = ctx.createGain();
     this.propGain.gain.value = 0;
     this.propSrc.connect(this.propFilter);
-    this.propFilter.connect(this.propGain);
+
+    /*
+     * The blade-rate chop is a stage of its own, ahead of the level control.
+     *
+     * The LFO used to be connected to propGain.gain, where 0.7 of modulation
+     * was summed on to a level whose own maximum is 0.32. An AudioParam adds
+     * what is connected to it to its intrinsic value, so for most of every
+     * cycle the prop gain went negative — a polarity flip, not a tremolo — and
+     * with the engine stopped the prop never fell silent because the LFO kept
+     * swinging about zero. Chopping a stage in front of propGain multiplies
+     * instead of adding, which leaves propGain as the one thing that decides
+     * whether the propeller is heard at all.
+     */
+    this.propChop = ctx.createGain();
+    this.propChop.gain.value = 1;
+    this.propFilter.connect(this.propChop);
+    this.propChop.connect(this.propGain);
     this.propGain.connect(this.out);
 
     this.bladeLfo = ctx.createOscillator();
     this.bladeLfo.type = 'triangle';
     this.bladeLfoGain = ctx.createGain();
-    this.bladeLfoGain.gain.value = 0.7;
+    // Depth is set from load every frame in update(); this is the idle value.
+    this.bladeLfoGain.gain.value = 0.18;
     this.bladeLfo.connect(this.bladeLfoGain);
-    this.bladeLfoGain.connect(this.propGain.gain);
+    this.bladeLfoGain.connect(this.propChop.gain);
 
     // --- Starter motor (only audible during start-up) ---
     this.starter = ctx.createOscillator();
@@ -141,9 +158,17 @@ export class EngineSound {
     this.starter.frequency.linearRampToValueAtTime(34, t + 1.3);
     this.starterGain.gain.setValueAtTime(0.16, t + 1.25);
     this.starterGain.gain.exponentialRampToValueAtTime(0.0001, t + 1.75);
-    // Uneven catches as the cylinders come alive.
+    /*
+     * Uneven catches as the cylinders come alive.
+     *
+     * The offsets in this list used to be read into `d` and then never used,
+     * because noiseBurst had no way to be told when to fire, so all three
+     * catches landed on the same tick and sounded like one thump. They are now
+     * scheduled on the audio clock against the same `t` the starter ramp uses,
+     * which keeps them lined up with the whirr however busy the frame is.
+     */
     for (const d of [1.15, 1.34, 1.52]) {
-      this.mixer.noiseBurst({ bus: 'engine', duration: 0.12, gain: 0.22, freq: 220, q: 1.2, attack: 0.004 });
+      this.mixer.noiseBurst({ bus: 'engine', when: t + d, duration: 0.12, gain: 0.22, freq: 220, q: 1.2, attack: 0.004 });
     }
   }
 
@@ -172,6 +197,10 @@ export class EngineSound {
     this.hissGain.gain.setTargetAtTime(running ? 0.05 + load * 0.2 : 0, t, 0.15);
     this.hissFilter.frequency.setTargetAtTime(600 + load * 1800, t, 0.2);
     this.propGain.gain.setTargetAtTime(running ? 0.06 + load * 0.26 : 0, t, 0.15);
+    // Deeper blade slap with more power: the chop is the cue that tells a
+    // ten-year-old the engine is actually pulling. Stays below 1 so the chop
+    // stage never inverts.
+    this.bladeLfoGain.gain.setTargetAtTime(0.18 + load * 0.45, t, 0.15);
     this.propFilter.frequency.setTargetAtTime(220 + load * 420 + speedFactor * 160, t, 0.2);
     this.tone.frequency.setTargetAtTime(
       (this.interior ? 1250 : 2400) + load * (this.interior ? 900 : 2200),

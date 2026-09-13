@@ -349,9 +349,20 @@ html, body {
 .hud-papi.is-high, .hud-papi.is-slightlyHigh { color: var(--accent); }
 .hud-papi.is-low, .hud-papi.is-slightlyLow { color: var(--amber); }
 
+/*
+ * Clear of the radio.
+ *
+ * The coach line sat at 152 and the subtitle at 118, and the subtitle is 54 px
+ * tall for one line and more for two — so an ATC call was printed across the
+ * one line on screen that tells you which key to press next, at every window
+ * size, on every device. There is a rule at 620 px that lifts it; there was
+ * never one for anything wider.
+ *
+ * 224 clears a three-line call, which is the longest the director writes.
+ */
 .hud-coach {
   position: absolute;
-  bottom: 152px;
+  bottom: 224px;
   left: 50%;
   transform: translateX(-50%);
   padding: 9px 20px;
@@ -972,6 +983,16 @@ body.is-large { font-size: 18px; }
 }
 @media (max-width: 620px) {
   .hud-left { min-width: 150px; }
+  /*
+   * On a phone there is no room beside the map for four readings — 161 px for
+   * four columns is a box each and no number in any of them. So the map
+   * shrinks to 130 and the strip goes underneath it, full width, which is the
+   * one arrangement where both are legible.
+   */
+  .minimap { width: 130px; height: 130px; }
+  .minimap-canvas { width: 130px; height: 130px; }
+  .hud.is-touch .hud-left { left: 8px; right: 8px; top: 146px; }
+  .hud.is-touch .hud-top { top: 232px; }
   /* The coach line has to clear the touch controls, not sit under them. */
   .hud-coach { bottom: auto; top: 108px; font-size: 14px; padding: 8px 14px; }
   .hud-toasts { top: 130px; width: 84vw; }
@@ -1225,57 +1246,108 @@ body.is-large { font-size: 18px; }
 .hud.is-touch .hud-right { top: 74px; right: 12px; }
 .hud.is-touch .hud-buttons { right: 12px; bottom: auto; top: 12px; }
 
-/* ---- Phone layout ------------------------------------------------------- */
+/*
+ * Touch layout, continued — and this is the half that was still wrong.
+ *
+ * Every rule below is written `.hud.is-touch`, so it was already scoped to a
+ * touch device by class. It was then ALSO gated inside `@media (max-width:
+ * 820px)`, which is the thing the comment above says not to do — and an iPad
+ * in landscape is 1024 or 1366 CSS pixels wide, so not one of them applied on
+ * the device this game is actually played on.
+ *
+ * What that looked like on an iPad: the instrument strip stayed where the
+ * desktop puts it and ran underneath the button dock, which HAD been moved to
+ * the top right by the rule above — so vertical speed and heading were drawn
+ * behind three buttons. The overflow tray stayed in the bottom-right corner
+ * with the on-screen throttle painted over it, unpressable, which is the
+ * exact bug the comment above describes having fixed. The map stayed in that
+ * same corner. The thumb pads stayed a pixel inside the stick.
+ *
+ * The three rules that genuinely are about a narrow window — the menu
+ * screens, the buttons on them and the card grids — stay in the media query
+ * underneath. Nothing else in here was ever about width.
+ */
+/*
+ * The buttons live top-right on a touch device, so the instrument strip has
+ * to stop before them. It used to run to the right edge and the two sat on
+ * top of each other — measured, .hud-left 233x113 @134,8 against
+ * .hud-buttons 154x46 @209,12, a straight overlap over the tray.
+ *
+ * The minimap takes the top-left corner, so the strip starts after it too.
+ */
+/* min-width:150px was holding the strip wider than `right` asked for, so it
+   still ran under the tray. Overriding it is what actually makes room. */
+/*
+ * The instruments go *below* the tray, not beside it.
+ *
+ * Squeezing them into the gap left 67px of width — enough for a box, not
+ * enough for a number, which is worse than useless when the whole point is
+ * a glance. The buttons occupy y12-58 top-right; the map owns the top-left
+ * corner; so the strip starts under the buttons and runs to the edge, and
+ * the four readings sit in one row of large figures.
+ */
+/*
+ * Clear of the map, which is 190 px wide and not 130.
+ *
+ * `left: 134px` was measured against a smaller minimap; the map has grown
+ * since and now runs to x198, so the first of the four readings was drawn on
+ * top of it. Its own left edge is at 8, so 206 is the first free pixel.
+ */
+.hud.is-touch .hud-left {
+  left: 206px;
+  right: 8px;
+  top: 66px;
+  min-width: 0;
+  width: auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0 6px;
+  padding: 5px 8px;
+}
+.hud.is-touch .hud-left .hud-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+.hud.is-touch .hud-left .hud-label { font-size: 8px; min-width: 0; letter-spacing: 0.04em; }
+.hud.is-touch .hud-left .hud-value { font-size: 19px; line-height: 1.05; }
+.hud.is-touch .hud-left .hud-unit { font-size: 8px; }
+.hud.is-touch .hud-acname { display: none; }
+/*
+ * And the objective drops below the strip.
+ *
+ * The strip runs the full width under the buttons at y66, and the objective
+ * panel is centred at y16 and 78 px tall, so the two shared 28 px of screen —
+ * the instruction you are meant to be following, printed across the airspeed
+ * you are meant to be watching. The strip is the thing you glance at every few
+ * seconds, so it keeps the better position.
+ */
+.hud.is-touch .hud-top { top: 140px; }
+/* The pads sat one pixel inside the stick — a thumb does not miss by one
+   pixel, it presses the wrong thing. Measured stick 14-150, pads 149-291. */
+.hud.is-touch .touch-pads { right: 82px; bottom: 22px; }
+/*
+ * The map moves to the top-left corner on a touch device — and it never did.
+ *
+ * This was written `.hud.is-touch .minimap`, and the minimap is not inside the
+ * HUD: it and `.hud` are both children of `#ui`, so that is a descendant
+ * selector that has never matched anything, on a tablet or on a phone. The map
+ * stayed in the bottom-right corner with the throttle drawn over it the whole
+ * time.
+ *
+ * `html.is-touch-device` is the class the game already sets on the root for
+ * exactly this reason — the menus hit the same wall and solved it this way.
+ */
+html.is-touch-device .minimap { top: 8px; left: 8px; right: auto; bottom: auto; }
+/* And the objective panel steps aside for it, the way the instrument strip
+   already does — it is centred and wide, and ran straight under the map. */
+.hud.is-touch.has-minimap .hud-top { padding-left: 138px; }
+.hud.is-touch .hud-tray { right: 12px; top: 62px; bottom: auto; }
+.hud.is-touch .hud-taxi-skip { padding: 12px 16px; font-size: 14px; }
+
+/* ---- Narrow windows: the menu screens, which really are about width ------ */
 @media (max-width: 820px) {
-  /*
-   * The buttons live top-right on a touch device, so the instrument strip has
-   * to stop before them. It used to run to the right edge and the two sat on
-   * top of each other — measured, .hud-left 233x113 @134,8 against
-   * .hud-buttons 154x46 @209,12, a straight overlap over the tray.
-   *
-   * The minimap takes the top-left corner, so the strip starts after it too.
-   */
-  /* min-width:150px was holding the strip wider than `right` asked for, so it
-     still ran under the tray. Overriding it is what actually makes room. */
-  /*
-   * The instruments go *below* the tray, not beside it.
-   *
-   * Squeezing them into the gap left 67px of width — enough for a box, not
-   * enough for a number, which is worse than useless when the whole point is
-   * a glance. The buttons occupy y12-58 top-right; the map owns the top-left
-   * corner; so the strip starts under the buttons and runs to the edge, and
-   * the four readings sit in one row of large figures.
-   */
-  .hud.is-touch .hud-left {
-    left: 134px;
-    right: 8px;
-    top: 66px;
-    min-width: 0;
-    width: auto;
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 0 6px;
-    padding: 5px 8px;
-  }
-  .hud.is-touch .hud-left .hud-row {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0;
-  }
-  .hud.is-touch .hud-left .hud-label { font-size: 8px; min-width: 0; letter-spacing: 0.04em; }
-  .hud.is-touch .hud-left .hud-value { font-size: 19px; line-height: 1.05; }
-  .hud.is-touch .hud-left .hud-unit { font-size: 8px; }
-  .hud.is-touch .hud-acname { display: none; }
-  /* The pads sat one pixel inside the stick — a thumb does not miss by one
-     pixel, it presses the wrong thing. Measured stick 14-150, pads 149-291. */
-  .hud.is-touch .touch-pads { right: 82px; bottom: 22px; }
-  .hud.is-touch .minimap { top: 8px; left: 8px; right: auto; bottom: auto; }
-  /* And the objective panel steps aside for it, the way the instrument strip
-     already does — it is centred and wide, and ran straight under the map. */
-  .hud.has-minimap .hud-top { padding-left: 138px; }
-  .hud.is-touch .hud-tray { right: 12px; top: 62px; bottom: auto; }
-  .hud.is-touch .hud-taxi-skip { padding: 12px 16px; font-size: 14px; }
   .screen { padding: 16px 14px 28px; }
   .card-btn { padding: 12px 14px; }
   .fleet-grid, .preset-grid { grid-template-columns: 1fr 1fr; }

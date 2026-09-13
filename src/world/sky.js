@@ -61,9 +61,19 @@ const fragmentShader = /* glsl */ `
     col += uSunColor * glow * (1.0 - uOvercast * 0.8);
     col += uSunColor * disc * 6.0 * (1.0 - uOvercast);
 
-    // The moon, opposite the sun at night.
+    /*
+     * The moon, opposite the sun at night — so that when the sun is under the
+     * horizon the moon is up above it.
+     *
+     * This direction used to be -uSunDir * vec3(1.0, -1.0, 1.0). Negating
+     * the sun direction already mirrors its elevation, which is the whole
+     * point of putting the moon opposite; flipping y a second time put the y
+     * component straight back where it started, so the moon sat at exactly
+     * the sun's own height. At night that is below the horizon, and the moon
+     * was drawn down in the dark water where nobody ever saw it.
+     */
     if (uStars > 0.001) {
-      float md = max(dot(dir, normalize(-uSunDir * vec3(1.0, -1.0, 1.0))), 0.0);
+      float md = max(dot(dir, normalize(-uSunDir)), 0.0);
       col += vec3(0.85, 0.88, 1.0) * smoothstep(0.9990, 0.9997, md) * 2.2 * uStars;
       col += vec3(0.5, 0.55, 0.7) * pow(md, 300.0) * 0.5 * uStars;
     }
@@ -213,8 +223,17 @@ export class SkyDome {
       this.envMap = rt.texture;
       this.targetScene.environment = this.envMap;
       if (old) old.dispose();
-      // The environment now supplies ambient light, so dial the fill back down
-      // to avoid washing everything out.
+      /*
+       * Image-based lighting is live from here on.
+       *
+       * The note that used to sit here said this dialled the fill light back
+       * down, which is not what happens: `fill` is the flat AmbientLight and
+       * its intensity is decided by time of day alone, down at the bottom of
+       * update(). What this flag actually does is tell update() to take the
+       * HEMISPHERE light to 0.62 of its normal strength, because the sky is
+       * now lighting the scene through the environment map as well and
+       * without that everything washes out.
+       */
       this.envReady = true;
     } catch (err) {
       console.warn('Environment map unavailable:', err);

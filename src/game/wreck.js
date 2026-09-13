@@ -278,11 +278,18 @@ export class Wreck {
       s.vel.set((Math.random() - 0.5) * 3.4, 4 + Math.random() * 4.5, (Math.random() - 0.5) * 3.4);
       this.smoke.geo.attributes.position.setXYZ(i, pos.x, pos.y + 1.4, pos.z);
     }
-    // The flash. Bright, orange, and gone in a moment — the light decays in
-    // update() like the land fire's does.
+    /*
+     * The flash colour, and only the colour.
+     *
+     * Setting `light.intensity` here was wasted: update() recomputes it from
+     * the flash-and-burn curve further down the very same frame, so the value
+     * written here was never once drawn. `this.flash = 1` was the same story
+     * with nobody reading it at all — update() works out its own local `flash`
+     * from `this.t` and `this.blastAt`. The brightness of the blast lives in
+     * that formula; what belongs here is the colour, which update() does not
+     * touch.
+     */
     this.light.color.setHex(0xff8a2a);
-    this.light.intensity = 22 + speed * 0.25;
-    this.flash = 1;
     // A burning slick spreading where the aeroplane went in.
     this.mark.material.color.setHex(0x1a1410);
     this.mark.material.opacity = 0.6;

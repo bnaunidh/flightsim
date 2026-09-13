@@ -717,6 +717,11 @@ class Game {
   }
 
   onMissionStep(step, i, total) {
+    // Every mission gets an intensity curve for free: the music is told which
+    // step began and shapes itself from the scene's own table. See music.js.
+    if (this.audio.available && this.settings.music && step && step.id) {
+      this.audio.music.setPhase(step.id);
+    }
     const title = this.runner.def.name + (total > 1 ? ` · step ${i + 1} of ${total}` : '');
     this.hud.setObjective(title, step.text);
     if (i > 0) this.audio.available && this.audio.alerts.checkpoint();
@@ -1026,7 +1031,20 @@ class Game {
     this.rig.setMode(mode === 'tutorial' ? 'chase' : 'chase');
     this.rig.reducedMotion = this.settings.reducedMotion;
 
-    if (this.audio.available && this.settings.music) this.audio.music.stop();
+    /*
+     * The music follows the flight now, instead of stopping when one starts.
+     *
+     * It used to be a menu-only pad: this line killed it the moment anybody
+     * flew anywhere, so the twenty minutes a child actually spends in the
+     * game had no music at all. music.js has a scene for every mission, the
+     * tutorial, free flight and each of the other vehicles; all this has to
+     * do is name the one we are about to fly and keep it playing.
+     */
+    if (this.audio.available && this.settings.music) {
+      const scene = mode === 'mission' ? (def && def.id) || 'free' : mode === 'tutorial' ? 'tutorial' : 'free';
+      this.audio.music.setScene(scene);
+      this.audio.music.start();
+    }
 
     if (def.steps && def.steps.length) {
       this.runner.start(def);
@@ -1190,6 +1208,20 @@ class Game {
         break;
       case 'skipTaxi':
         this.taxi.skip();
+        break;
+      /*
+       * Starting the engine and letting go of a store had no on-screen route
+       * at all — both were bound to a key and nothing else. That made the
+       * tutorial's second step unreachable on an iPad, and Mango Cay Delivery
+       * and the Weapons Range unfinishable. Same behaviour as the keys, so
+       * there is one rule for what these do and not two.
+       */
+      case 'starter':
+        if (this.aircraft.engineOn) this.aircraft.stopEngine('shutdown');
+        else this.aircraft.startEngine();
+        break;
+      case 'drop':
+        if (!this.dropCargo()) this.hud.notify('Nothing to drop right now', 'info', 2);
         break;
       case 'gear':
         if (!this.aircraft.toggleGear()) {
@@ -3158,7 +3190,7 @@ class Game {
       this.hud.setHazard(null);
     }
     this._hadTornado = this.tornado.active;
-    if (this.touch) this.touch.update(this.aircraft.readouts());
+    if (this.touch) this.touch.update(this.aircraft.readouts(), this);
     this.scenery.update(dt, this.weather);
     this.features.update(dt, this.weather);
     this.clouds.update(dt, this.weather, ac.pos);

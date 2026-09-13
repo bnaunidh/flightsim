@@ -229,8 +229,23 @@ export class CloudField {
       const slot = perBatchActive[puff.batch];
 
       if (!active) {
-        // Park unused instances with zero alpha (cheaper than resizing buffers).
+        /*
+         * Park unused instances (cheaper than resizing buffers), but park them
+         * by collapsing the quad, not only by zeroing the alpha.
+         *
+         * geo.instanceCount is set once in the PuffBatch constructor, at the
+         * full size of the batch, and never moves — so every parked instance is
+         * still drawn. Alpha zero does not save the fill: the quad keeps
+         * whatever scale it was last given, up to a couple of kilometres
+         * across, and goes on being rasterised, sampled and blended every frame
+         * for a result of nothing. Once the weather clears, most of the field
+         * is in that state, and on a school Chromebook that is a great many
+         * wasted screenfuls a frame. A zero scale collapses the quad to no area
+         * at all, which is the one thing the rasteriser can skip cheaply.
+         */
         b.alphas[puff.index] = 0;
+        b.scales[puff.index * 2] = 0;
+        b.scales[puff.index * 2 + 1] = 0;
         continue;
       }
       perBatchActive[puff.batch] = slot + 1;

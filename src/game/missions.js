@@ -35,7 +35,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { RUNWAY } from '../world/airport.js';
 import { DELIVERY_PAD } from '../world/scenery.js';
-import { heightAt } from '../world/terrain.js';
+import { heightAt, isOnRunway2 } from '../world/terrain.js';
 import { UNITS } from '../aircraft/physics.js';
 import { Pursuer } from './pursuer.js';
 
@@ -139,15 +139,46 @@ function nearestPhoto(ctx) {
   return p ? new THREE.Vector3(p.x, heightAt(p.x, p.z) + 200, p.z) : null;
 }
 
+/**
+ * Down, stopped, and on the runway you were sent to.
+ *
+ * The last term is new and it is the whole point of the function. This asked
+ * only whether you had touched down without crashing and come to a stop, with
+ * no position term at all — so eight missions that say "land on runway zero
+ * nine", clear you to land and put an arrow on the touchdown zone completed
+ * identically if you bellied it onto a beach a kilometre away. Dead Stick's
+ * own comment says that is not the intention, and only guarded the case of
+ * landing short.
+ *
+ * `onRunway` was there for the taking the whole time: gradeTouchdown works it
+ * out on every touchdown and returns it, and the score already halves without
+ * it. The check simply never looked.
+ *
+ * Landing somewhere else is still a perfectly good outcome — you saved the
+ * aeroplane — so it is not a failure, it just is not this step. The message
+ * says which, once, because a child who has stopped safely and seen nothing
+ * happen has no way of knowing what the game is waiting for.
+ */
 function landedAndStopped(ctx) {
   const ac = ctx.ac;
-  return (
-    !!ctx.data.lastTouchdown &&
-    !ctx.data.lastTouchdown.crashed &&
-    ac.onGround &&
-    ac.groundSpeed < 2.5 &&
-    ac.groundTime > 1.2
-  );
+  const t = ctx.data.lastTouchdown;
+  const stopped = !!t && !t.crashed && ac.onGround && ac.groundSpeed < 2.5 && ac.groundTime > 1.2;
+  if (!stopped) return false;
+  /*
+   * Either runway counts.
+   *
+   * `onRunway` on the grade is computed from the main strip alone, and the
+   * crosswind runway is a real runway that these maps all have — landing on
+   * it is the correct answer in a strong crosswind, which is precisely what
+   * the Storm Approach mission is about. Refusing it would have replaced one
+   * wrong answer with another.
+   */
+  if (t.onRunway || isOnRunway2(ac.pos.x, ac.pos.z, 8)) return true;
+  if (!ctx.data.saidOffRunway) {
+    ctx.data.saidOffRunway = true;
+    ctx.sim.hud.notify('Safely down — but not on the runway. Take off and come round again.', 'warn', 6);
+  }
+  return false;
 }
 
 export const MISSIONS = [
@@ -267,7 +298,7 @@ export const MISSIONS = [
     difficulty: 'Medium',
     icon: '▣',
     blurb:
-      'The village on Mango Cay needs medical supplies. Fly the crate 8 km south-east, drop it on the yellow target, then fly home and land.',
+      'The village on Mango Cay needs medical supplies. Fly the crate 8 km north-east, drop it on the yellow target, then fly home and land.',
     reward: 'Teaches navigation, descending and flying accurately.',
     weather: { time: 'day', condition: 'cloudy', windSpeedKts: 11, windDirDeg: 140 },
     spawn: RUNWAY_START,
@@ -279,8 +310,8 @@ export const MISSIONS = [
     steps: [
       {
         id: 'load',
-        text: 'The supply crate is loaded. Take off from runway 09 and turn south-east toward Mango Cay.',
-        hint: 'Full power with Shift, pull back at 55 knots, then turn right with D.',
+        text: 'The supply crate is loaded. Take off from runway 09 and turn north-east toward Mango Cay.',
+        hint: 'Full power with Shift, pull back at 55 knots, then turn left with A.',
         atc: {
           text: 'Skylark one seven two, Kestrel Tower, cleared for take-off runway zero nine. Mango Cay is waiting on you.',
           voice: 'tower',
@@ -335,7 +366,7 @@ export const MISSIONS = [
       {
         id: 'home',
         text: 'Great drop! Now fly home to Kestrel Island and land on runway 09.',
-        hint: 'Turn back to the north-west and follow the arrow home.',
+        hint: 'Turn back to the south-west and follow the arrow home.',
         atc: {
           text: 'Sea Bird, supplies received, thank you! Safe flight home.',
           voice: 'village',
@@ -460,10 +491,40 @@ export const MISSIONS = [
         atc: { text: 'Mayday, mayday — Skylark one seven two, engine failure, gliding to runway zero nine.', voice: 'pilot' },
         targetLabel: 'Best glide, 65 kt',
         enter: (ctx) => {
-          // The failure is the mission. Arm it the moment the step begins.
+          /*
+           * The failure is the mission — but only in the air.
+           *
+           * "Back to the airfield" re-parks you on the runway and then
+           * restarts the mission from step one, which ran this and killed the
+           * engine while stationary. The step then wants 52 to 78 knots, the
+           * starter refuses to turn while the failure is armed, the mission
+           * has no time limit and its failIf cannot fire at that end of the
+           * runway — so it sat there forever on "hold 65 knots" with no way
+           * out but Restart. Arm it only when there is a flight to fail.
+           */
+          if (ctx.ac.onGround || ctx.ac.airborneTime < 1) return;
           if (!ctx.ac.failures.engine) ctx.sim.toggleFailure('engine');
         },
-        check: (ctx) => ctx.ac.ias * UNITS.KTS < 78 && ctx.ac.ias * UNITS.KTS > 52 && ctx.elapsed > 6,
+        /*
+         * The check arms it, because the check is the only thing here that
+         * runs every frame — the runner calls a mission-level tick, not a
+         * per-step one. If the step began on the ground (which is exactly
+         * what "Back to the airfield" does, since it re-parks you and
+         * restarts the mission from the top) the failure waits until there is
+         * air under the wheels. Otherwise the player would be handed a
+         * dead-stick mission with a perfectly good engine.
+         */
+        check: (ctx) => {
+          if (!ctx.ac.failures.engine && !ctx.ac.onGround && ctx.ac.airborneTime > 2) {
+            ctx.sim.toggleFailure('engine');
+          }
+          return (
+            ctx.ac.failures.engine
+            && ctx.ac.ias * UNITS.KTS < 78
+            && ctx.ac.ias * UNITS.KTS > 52
+            && ctx.elapsed > 6
+          );
+        },
       },
       {
         id: 'glide',
@@ -959,7 +1020,7 @@ export const MISSIONS = [
     steps: [
       {
         id: 'brief',
-        text: 'Three contacts, three bearings, six minutes. Reach all three.',
+        text: 'Three contacts, three bearings, ten minutes. Reach all three.',
         hint: 'They are not all the same distance away. Think about the order before you turn.',
         atc: { text: 'Nightjar zero two, three contacts inbound, intercept and identify.', voice: 'tower' },
         check: (ctx) => ctx.elapsed > 3,

@@ -154,16 +154,29 @@ export class Airport {
     this.group.add(slab(RUNWAY.length + 40, 62, 0, 0, ELEV + 0.02, shoulderMat));
 
     // --- The crosswind runway, 18/36 ---
-    // Same texture, turned ninety degrees, so its painted centreline and
-    // threshold bars run the right way.
+    /*
+     * Same texture. The plane comes out of PlaneGeometry lying length-along-Z,
+     * which is heading 180 — 18/36's own heading, and the reason this looked
+     * right for as long as every second runway was north-south.
+     *
+     * It was never turned, though. The main runway above gets a rotation.y and
+     * this one got none at all, so at Los Angeles, where the second runway is
+     * parallel to the first rather than across it, the painted centreline, the
+     * numbers and the threshold bars were all laid at right angles to the
+     * tarmac they belong to. Turn it by its own heading, the same way round as
+     * the main runway does.
+     */
     const r2 = RUNWAY2;
     const r2geo = new THREE.PlaneGeometry(r2.halfWidth * 2, r2.length);
     r2geo.rotateX(-Math.PI / 2);
+    const r2rot = THREE.MathUtils.degToRad(180 - (r2.headingDeg ?? 180));
     const runway2 = new THREE.Mesh(r2geo, rwMat);
+    runway2.rotation.y = r2rot;
     runway2.position.set(r2.cx, ELEV + 0.055, r2.cz);
     runway2.receiveShadow = true;
     this.group.add(runway2);
-    this.group.add(slab(56, r2.length + 40, r2.cx, r2.cz, ELEV + 0.02, shoulderMat));
+    // The shoulder has to follow it round, or it lies across the runway.
+    this.group.add(slab(56, r2.length + 40, r2.cx, r2.cz, ELEV + 0.02, shoulderMat, r2rot));
 
     const taxiMat = pavementMaterial(40, 3);
     this.group.add(slab(880, 24, 0, -95, ELEV + 0.05, taxiMat));
@@ -501,22 +514,37 @@ export class Airport {
     this.glowGroup.visible = false;
     this.group.add(this.glowGroup);
 
-    // PAPI: four lights on the left of runway 09, 350 m in from the threshold.
+    /*
+     * PAPI: four lights abreast the aiming point, out on the grass to the left
+     * of runway 09.
+     *
+     * Both coordinates used to be written out as numbers — x -350 and z -32 —
+     * and both of those are Kestrel's: its touchdown point 200 m in from the
+     * threshold, and its 17 m half-width plus 15 m of grass. Ironhead's runway
+     * is 3,200 m long and 68 m wide, so on that map -350 is more than a
+     * kilometre past the threshold and -32 is still inside the edge: four
+     * light boxes standing in the middle of the landing surface, well down the
+     * roll-out from where its real aiming point is. updatePapi() measures the
+     * glide angle to RUNWAY.touchdown, so the lights have to be measured off
+     * the same runway rather than off Kestrel's.
+     */
     this.papi = [];
+    const papiX = RUNWAY.touchdown.x;
+    const papiZ = RUNWAY.cz - RUNWAY.halfWidth - 15;
     const papiGroup = new THREE.Group();
     for (let i = 0; i < 4; i++) {
       const box = new THREE.Mesh(
         new THREE.BoxGeometry(2.4, 1.5, 1.6),
         new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.6 })
       );
-      box.position.set(-350, ELEV + 0.75, -32 - i * 6);
+      box.position.set(papiX, ELEV + 0.75, papiZ - i * 6);
       box.castShadow = true;
       papiGroup.add(box);
       const lens = new THREE.Mesh(
         new THREE.CircleGeometry(0.62, 12),
         new THREE.MeshBasicMaterial({ color: 0xffffff })
       );
-      lens.position.set(-351.3, ELEV + 0.85, -32 - i * 6);
+      lens.position.set(papiX - 1.3, ELEV + 0.85, papiZ - i * 6);
       lens.rotation.y = -Math.PI / 2;
       papiGroup.add(lens);
       const glow = new THREE.Sprite(glowMat.clone());

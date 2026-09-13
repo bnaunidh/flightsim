@@ -346,6 +346,23 @@ export class Menus {
     return bar;
   }
 
+  /**
+   * The start screen.
+   *
+   * The Missions card used to promise "three challenges: rings, a delivery and
+   * a storm". MISSIONS holds twelve, and the rings went the day every
+   * navigation objective became a real place on the island — so the card was
+   * advertising a smaller, older game than the one behind the button, and one
+   * of the three things it named no longer existed.
+   *
+   * It says eight rather than twelve on purpose: four are military and stay
+   * hidden until the passcode is entered, so a child who counted the cards
+   * after being promised twelve would think four had gone missing. That is the
+   * same count the stats line under the nav uses. The three named are real
+   * ones — Mango Cay Delivery, Storm Approach and Dead Stick — and the
+   * sentence is kept to the length of its neighbours so the card does not grow
+   * half again as tall as every other card in the row.
+   */
   buildMain() {
     const s = h(`
       <section class="screen screen-main" data-screen="main" hidden>
@@ -369,7 +386,7 @@ export class Menus {
           </button>
           <button class="card-btn" data-act="missions">
             <span class="card-icon">${icon('target', 24)}</span>
-            <span class="card-body"><strong>Missions</strong><em>Three challenges: rings, a delivery and a storm</em></span>
+            <span class="card-body"><strong>Missions</strong><em>Eight challenges — a delivery, a storm landing, a landing with no engine</em></span>
           </button>
           <button class="card-btn" data-act="free">
             <span class="card-icon">${icon('cloud', 24)}</span>
@@ -1216,6 +1233,7 @@ export class Menus {
           <label class="check"><input type="checkbox" data-set="realisticFuel"><span>Realistic fuel — the tank drains 1% every 30 seconds, so you have to plan</span></label>
           <label class="check"><input type="checkbox" data-set="randomWinds"><span>Random winds — the wind wanders and gusts blow through</span></label>
           <label class="check"><input type="checkbox" data-set="minimap"><span>Minimap — the little round map, with a warning if you are heading at a hill (J)</span></label>
+          <label class="check"><input type="checkbox" data-set="damageModel"><span>Damage instead of crashes — clip something and, depending on how hard you hit it, you may keep flying with that part damaged. A hurt wing rolls you towards it, a hurt tail goes soft, a hurt nose loses power, and the panel shows where you were hit.</span></label>
           <label class="check"><input type="checkbox" data-set="fleetModels"><span>Use the alternative models for every aeroplane — the redrawn airframes that come apart when you crash. Off by default, the military aeroplanes use them anyway and the civil ones use the built-in shapes.</span></label>
           <p class="hint">With random winds on, the wind drifts around the speed and direction you chose and a gust rolls
           through every half minute or so. It makes landings much more interesting. Leave it off while you are learning.</p>
@@ -1487,7 +1505,6 @@ export class Menus {
           <button data-dev-enter>Enter</button>
         </div>
         <div class="dev-panel" data-dev-panel hidden>
-          <label class="check"><input type="checkbox" data-dev-set="damageModel"><span><strong>Damage instead of crashes</strong> — clip something and there is a chance, based on how hard you hit it, that you keep flying with that part damaged. A hurt wing rolls you towards it, a hurt tail goes soft, a hurt nose loses power. The panel on the right shows where you were hit.</span></label>
           <p class="hint tiny">Work in progress. It changes what crashing means, so scores set with it on are not comparable with the rest.</p>
           <button class="ghost" data-dev-leave>Leave dev mode</button>
         </div>
@@ -1547,8 +1564,8 @@ export class Menus {
         : `${rank.blurb}`;
 
       const dev = Prog.isDev(p);
-      const dmgBox = s.querySelector('[data-dev-set="damageModel"]');
-      if (dmgBox) dmgBox.checked = !!(this.settingsRef && this.settingsRef.damageModel);
+      // The damage switch used to live in here. It is an ordinary setting now,
+      // on by default, and the normal settings sync handles it.
       s.querySelector('[data-dev-panel]').hidden = !dev;
       s.querySelector('[data-dev-entry]').hidden = dev;
       s.querySelector('[data-dev-note]').textContent = dev

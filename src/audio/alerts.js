@@ -29,6 +29,26 @@ export class Alerts {
     this.stallGain.gain.value = 0;
     this.stallGain.connect(m.bus('alerts'));
 
+    /*
+     * The tremolo gets a stage of its own, in front of the gate.
+     *
+     * It used to be connected straight into stallGain.gain, and an AudioParam's
+     * value is its intrinsic value plus everything connected to it. So the gate
+     * could never reach silence: with the horn switched off the gain still
+     * swung between plus and minus 0.35, and an 812 Hz reed sounded from the
+     * first click, on the menu, before an aeroplane had moved. Worse, when the
+     * wing really was stalling the intrinsic value only climbed to about 0.19
+     * against that 0.35 of modulation, so the warning barely rose above the
+     * drone it was hiding in.
+     *
+     * Modulating a node ahead of the gate multiplies the horn instead of being
+     * added to it, so setStall(false) is genuinely silent and setStall(true) is
+     * an unmistakable horn.
+     */
+    this.stallTremStage = ctx.createGain();
+    this.stallTremStage.gain.value = 1;
+    this.stallTremStage.connect(this.stallGain);
+
     this.stallOsc = ctx.createOscillator();
     this.stallOsc.type = 'square';
     this.stallOsc.frequency.value = 812;
@@ -37,7 +57,7 @@ export class Alerts {
     sf.frequency.value = 900;
     sf.Q.value = 2.2;
     this.stallOsc.connect(sf);
-    sf.connect(this.stallGain);
+    sf.connect(this.stallTremStage);
 
     this.stallOsc2 = ctx.createOscillator();
     this.stallOsc2.type = 'sawtooth';
@@ -45,15 +65,17 @@ export class Alerts {
     const sg2 = ctx.createGain();
     sg2.gain.value = 0.25;
     this.stallOsc2.connect(sg2);
-    sg2.connect(this.stallGain);
+    sg2.connect(this.stallTremStage);
 
     this.stallTrem = ctx.createOscillator();
     this.stallTrem.type = 'sine';
     this.stallTrem.frequency.value = 7.5;
     this.stallTremGain = ctx.createGain();
-    this.stallTremGain.gain.value = 0.35;
+    // Depth of 0.3 about an intrinsic 1.0: the horn pulses between 0.7 and 1.3
+    // of its level and never inverts.
+    this.stallTremGain.gain.value = 0.3;
     this.stallTrem.connect(this.stallTremGain);
-    this.stallTremGain.connect(this.stallGain.gain);
+    this.stallTremGain.connect(this.stallTremStage.gain);
 
     /* Gear warning: softer, lower, intermittent. */
     this.gearGain = ctx.createGain();

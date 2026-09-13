@@ -247,14 +247,53 @@ export class TouchControls {
       pads.appendChild(b);
       return b;
     };
+    /*
+     * The starter, which had no on-screen control at all.
+     *
+     * The tutorial spawns with the engine off and its second step will not
+     * pass until it is running. Starting it was bound to the I key and to
+     * nothing else — no pad here, no case in hudAction — so on an iPad the
+     * second instruction in the game was unreachable, and the objective sat
+     * there repeating "Press I to start the engine" at a child holding a
+     * device with no keys. The self-test never caught it because it presses
+     * KeyI directly; the touch path had never been walked.
+     *
+     * First of the pads, because it is the first thing you do.
+     */
+    this.enginePad = tap('ENGINE', 'starter');
     this.gearPad = tap('GEAR', 'gear');
     this.flapPad = tap('FLAPS', 'flaps');
+    /*
+     * And the release, for the same reason: X was the only way to let go of a
+     * crate or a bomb, so Mango Cay Delivery and Weapons Range were both
+     * unfinishable on a touch device — each with a step that says "Press X to
+     * release" and no X to press.
+     *
+     * Hidden until there is something aboard, so it is not a dead button on
+     * every other flight.
+     */
+    this.dropPad = tap('DROP', 'drop');
+    this.dropPad.hidden = true;
     tap(icon('camera', 18), 'camera');
   }
 
   /** Reflect the aeroplane's state back onto the pads. */
-  update(ac) {
+  update(ac, sim) {
     if (!ac) return;
+    /*
+     * The engine pad says what pressing it will do, the way GEAR already
+     * reflects the undercarriage — "START" on a dead engine, "STOP" on a
+     * running one. A button that does two opposite things without saying
+     * which is worse than two buttons.
+     */
+    if (this.enginePad) {
+      const running = !!ac.engineOn;
+      const label = running ? 'STOP' : 'START';
+      if (this.enginePad.textContent !== label) this.enginePad.textContent = label;
+      this.enginePad.classList.toggle('is-on', running);
+    }
+    // Only offered when there is something to drop.
+    if (this.dropPad) this.dropPad.hidden = !(sim && sim.hasCargo);
     if (this.gearPad) this.gearPad.classList.toggle('is-on', ac.gearDown);
     if (this.flapPad) {
       const step = ac.flapStep || 0;

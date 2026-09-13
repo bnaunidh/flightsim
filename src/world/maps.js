@@ -526,7 +526,16 @@ export const MAPS = [
       runway: { cx: 0, cz: 0, length: 3207, halfWidth: 30 },
       runway2: { cx: -700, cz: -900, length: 1921, halfWidth: 23, headingDeg: 180 },
       pad: { x0: -1900, x1: 1900, z0: -380, z1: 340, blend: 320 },
-      pad2: { x0: -1900, x1: 100, z0: -840, z1: -560, blend: 240 },
+      /*
+       * The two coordinate pairs in here were the wrong way round: 1,900 m of
+       * flattening across x and only 280 m along z, which is the shape you cut
+       * for an east-west strip. The North Field runway above is on heading 180
+       * and 1,921 m long, so all but a couple of hundred metres of it ran off
+       * the flattened ground and over whatever the height field happened to be
+       * doing. Narrow in x and centred on cx, long in z and centred on cz —
+       * the way round the air base and San Francisco already had it.
+       */
+      pad2: { x0: -840, x1: -560, z0: -1900, z1: 100, blend: 240 },
     },
     islands: [
       { name: 'East Bay', cx: 600, cz: 900, radius: 5600, peak: 40, seed: 71, profile: 'hills' },

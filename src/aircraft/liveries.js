@@ -88,6 +88,37 @@ export const LIVERIES = [
   },
 ];
 
+/**
+ * The registration each type wears in its own house colours.
+ *
+ * Every aeroplane in the fleet used to be stamped N172SK — the Skylark's tail
+ * number — because the house scheme hard-coded it and the airframe texture
+ * fell back to the same string. The airliner, the fighter, the flying wing and
+ * the helicopter all flew around wearing the trainer's registration, which is
+ * the aviation equivalent of every car on the road having one number plate.
+ *
+ * A registration is paint, so it lives in the paint module beside the airline
+ * ones the schemes already carry, and it is keyed by type id rather than by
+ * position so adding an aeroplane cannot silently shift them all along. The
+ * numbers match what the radio already calls each aeroplane — the Meridian
+ * answers to "Meridian four two zero" and now carries 420 on its side. The
+ * three types that fly for a service get a tail code instead of a civil
+ * N-number, because that is what a military aeroplane has.
+ *
+ * A type that is not listed gets no registration at all, and nothing is
+ * painted: a blank fuselage is honest, and someone else's number is not.
+ */
+const HOUSE_REGS = {
+  skylark: 'N172SK',
+  courier: 'N8PK',
+  meridian: 'N420MD',
+  tempest: 'N4WR',
+  harrier: 'N3SH',
+  vanguard: 'VG-01',
+  osprey: 'CV-21',
+  nightjar: 'NJ-02',
+};
+
 export function findLivery(id) {
   return LIVERIES.find((l) => l.id === id) || LIVERIES[0];
 }
@@ -109,7 +140,7 @@ export function schemeFor(type, liveryId) {
       accent: (type && type.accent) || '#c8102e',
       cheatline: 'rgba(30,44,74,0.85)',
       tail: null, // null means "leave the fin in the body colour"
-      reg: 'N172SK',
+      reg: (type && HOUSE_REGS[type.id]) || null, // null means "paint no number"
     };
   }
   return l;

@@ -179,7 +179,10 @@ export class InstrumentPanel {
     this.texture.anisotropy = 8;
     this.acc = 0;
     if (this.layout === 'glass') this.drawStaticGlass();
-    else this.drawStatic();
+    else {
+      this.drawStatic();
+      this.drawGlassLayer();
+    }
     // Smoothed instrument values — real needles have inertia.
     this.smooth = { ias: 0, alt: 0, vs: 0, hdg: 90, rpm: 0, pitch: 0, bank: 0, slip: 0, fuel: 1 };
   }
@@ -676,6 +679,25 @@ export class InstrumentPanel {
     ctx.textBaseline = 'middle';
     ctx.fillText(String(Math.max(0, Math.round(value))), x + w / 2 - 4, mid);
     label(ctx, x + w / 2, y + h + 22, lab, 13, DIM);
+  }
+
+  /**
+   * The reflections in all eight dial glasses, drawn once into their own layer.
+   *
+   * The reflection has to go on last, over the needles, so it cannot live in
+   * the static layer — but it was being rebuilt from scratch thirty times a
+   * second: eight clips, eight linear gradients and eight full-bezel fills for
+   * a picture whose pixels never change, because the gauges do not move. On a
+   * school Chromebook that is real time spent every frame for no difference on
+   * screen. It is the same compositing step either way: translucent white over
+   * whatever the needles left behind.
+   */
+  drawGlassLayer() {
+    this.glassLayer = document.createElement('canvas');
+    this.glassLayer.width = CW;
+    this.glassLayer.height = CH;
+    const ctx = this.glassLayer.getContext('2d');
+    for (const k in GAUGE) glassOver(ctx, GAUGE[k].x, GAUGE[k].y, GAUGE[k].r);
   }
 
   drawStatic() {
@@ -1224,8 +1246,9 @@ export class InstrumentPanel {
       bar(x0 + 420, 70, r.gearPos, r.gearPos > 0.95 ? '#3ec96a' : '#ffb020');
     }
 
-    // Glass last, over the needles — that is where the glass is.
-    for (const k in GAUGE) glassOver(ctx, GAUGE[k].x, GAUGE[k].y, GAUGE[k].r);
+    // Glass last, over the needles — that is where the glass is. Pre-drawn in
+    // drawGlassLayer(), because none of it changes from one frame to the next.
+    ctx.drawImage(this.glassLayer, 0, 0);
 
     this.texture.needsUpdate = true;
   }
@@ -1650,9 +1673,22 @@ export function createCockpit({ highContrast = false, type = null } = {}) {
     // Warning lights. Steady for the thing that is wrong, and a flashing
     // master caution so it catches your eye even if you are looking outside.
     const f = ac.failures || {};
+    /*
+     * Low fuel is a fraction of the tank, not a number of litres.
+     *
+     * The FUEL lamp lit below a flat twelve litres, which is seven and a half
+     * per cent of the trainer's 160 litre tank and a rounding error in the
+     * fighter's 5,200. So on every aeroplane but the Skylark the lamp sat dark
+     * right up to the point where the tanks ran dry and the ENGINE lamp took
+     * over — no warning at all, in the aeroplanes that burn fuel fastest.
+     * fuelFraction() reads against the capacity of the type actually being
+     * flown, and 0.075 is the old twelve litres expressed as what it always
+     * meant.
+     */
+    const lowFuel = ac.fuel > 0 && ac.fuelFraction() < 0.075;
     let anyLit = false;
     for (const l of lamps) {
-      const on = !!f[l.key] || (l.key === 'fuelLeak' && ac.fuel > 0 && ac.fuel < 12);
+      const on = !!f[l.key] || (l.key === 'fuelLeak' && lowFuel);
       if (on) anyLit = true;
       l.mat.emissiveIntensity = on ? 2.4 : 0;
     }

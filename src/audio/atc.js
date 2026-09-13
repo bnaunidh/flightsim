@@ -198,6 +198,31 @@ export class Radio {
     this.compress.connect(this.amGain);
     this.amGain.connect(m.bus('atc'));
 
+    /*
+     * --- The dry path: the part of a near voice that never went on the air ---
+     *
+     * Every voice used to be wired straight into chainIn, so `radio` in VOICES
+     * decided how loud the squelch and the hiss were and nothing else. The
+     * instructor, who is documented as sitting in the right-hand seat and
+     * carries radio: 0.28, came out hard-clipped and band-limited to 300-2800 Hz
+     * exactly like the Cessna three miles away — which is the opposite of the
+     * point. Voices now split between the chain and this path in proportion to
+     * their `radio` amount, so the person teaching you sounds like a person in
+     * the aeroplane and everyone else still sounds like a radio.
+     *
+     * The gentle roll-off keeps a close voice from being harsh without pulling
+     * it down to radio bandwidth, and the slight lift makes up for the presence
+     * peak and the compression the chain gives the wet path.
+     */
+    this.dryIn = ctx.createGain();
+    this.dryIn.gain.value = 1.2;
+    const dryLp = ctx.createBiquadFilter();
+    dryLp.type = 'lowpass';
+    dryLp.frequency.value = 6200;
+    dryLp.Q.value = 0.7;
+    this.dryIn.connect(dryLp);
+    dryLp.connect(m.bus('atc'));
+
     // --- Static bed, opened by the squelch while a transmission is live ---
     this.staticSrc = m.noiseSource(false);
     const sbp = ctx.createBiquadFilter();
@@ -211,6 +236,31 @@ export class Radio {
     this.staticGain.connect(m.bus('atc'));
 
     this.built = true;
+  }
+
+  /**
+   * A place to plug one syllable in, split between the radio chain and the dry
+   * path according to how much of this voice is actually on the air.
+   *
+   * Anything at 1.0 or above — tower, ground, traffic, the village — is all
+   * radio and gets exactly the chain it always had. Only the instructor, at
+   * 0.28, keeps most of itself out of it.
+   */
+  voicePath(radioAmount = 1) {
+    const ctx = this.ctx;
+    const node = ctx.createGain();
+    const wet = clamp(radioAmount == null ? 1 : radioAmount, 0, 1);
+    const wetGain = ctx.createGain();
+    wetGain.gain.value = wet;
+    node.connect(wetGain);
+    wetGain.connect(this.chainIn);
+    if (wet < 0.999) {
+      const dryGain = ctx.createGain();
+      dryGain.gain.value = 1 - wet;
+      node.connect(dryGain);
+      dryGain.connect(this.dryIn);
+    }
+    return node;
   }
 
   /** Relay click — the little clack a real PTT switch makes. */
@@ -275,9 +325,21 @@ export class Radio {
    * Voiced syllables use a pulse train through three resonators; the onset gets
    * a short noise burst so consonants have some bite.
    */
-  syllable(when, dur, f0, vowelIdx, stressed, radioAmount) {
+  syllable(when, dur, f0, vowelIdx, stressed, radioAmount, spread = 12) {
     const ctx = this.ctx;
     const vowel = VOWELS[vowelIdx % VOWELS.length];
+    // Where this voice goes: through the radio, or partly straight into the
+    // cockpit. Before this, radioAmount was accepted and then never read, so
+    // every speaker on the frequency got the identical treatment.
+    const path = this.voicePath(radioAmount);
+    /*
+     * `spread` is how much a speaker's pitch and formants wander. It was
+     * declared on all six voices and read nowhere in the tree, which is why the
+     * slow low tower and the quick clipped approach controller shared one
+     * perfectly steady vibrato. Scaled about the old value of 12, so a voice
+     * with spread: 12 sounds exactly as it did.
+     */
+    const wander = clamp(spread / 12, 0.5, 1.6);
 
     const osc = ctx.createOscillator();
     // A sawtooth is a decent glottal pulse once the formants shape it.
@@ -288,9 +350,9 @@ export class Radio {
     osc.frequency.linearRampToValueAtTime(pitch * 0.94, when + dur);
     // Vibrato keeps it from sounding like a synthesiser tone.
     const vib = ctx.createOscillator();
-    vib.frequency.value = 4.6 + this.rnd() * 1.8;
+    vib.frequency.value = 4.6 + this.rnd() * 1.8 * wander;
     const vibGain = ctx.createGain();
-    vibGain.gain.value = pitch * 0.012;
+    vibGain.gain.value = pitch * 0.012 * wander;
     vib.connect(vibGain);
     vibGain.connect(osc.frequency);
     vib.start(when);
@@ -309,9 +371,9 @@ export class Radio {
     vowel.forEach((f, i) => {
       const bp = ctx.createBiquadFilter();
       bp.type = 'bandpass';
-      bp.frequency.setValueAtTime(f * (0.94 + this.rnd() * 0.12), when);
+      bp.frequency.setValueAtTime(f * (1 + (this.rnd() - 0.5) * 0.12 * wander), when);
       // Formants glide during the syllable, which is what makes speech move.
-      bp.frequency.linearRampToValueAtTime(f * (0.9 + this.rnd() * 0.2), when + dur);
+      bp.frequency.linearRampToValueAtTime(f * (1 + (this.rnd() - 0.5) * 0.2 * wander), when + dur);
       bp.Q.value = 7 + i * 3;
       const g = ctx.createGain();
       g.gain.value = gains[i];
@@ -319,7 +381,7 @@ export class Radio {
       bp.connect(g);
       g.connect(mix);
     });
-    mix.connect(this.chainIn);
+    mix.connect(path);
 
     osc.start(when);
     osc.stop(when + dur + 0.05);
@@ -339,7 +401,7 @@ export class Radio {
       g.gain.exponentialRampToValueAtTime(0.0001, when + cd);
       src.connect(hp);
       hp.connect(g);
-      g.connect(this.chainIn);
+      g.connect(path);
       src.start(when);
       src.stop(when + cd + 0.03);
     }
@@ -390,7 +452,7 @@ export class Radio {
       // Declarative pitch fall across the phrase, with a lift on stress.
       const progress = i / Math.max(1, syl.length - 1);
       const contour = 1 - progress * 0.14 + (s.stressed ? 0.05 : 0);
-      this.syllable(t, dur, f0 * contour, s.vowel, s.stressed, v.radio);
+      this.syllable(t, dur, f0 * contour, s.vowel, s.stressed, v.radio, v.spread);
       t += dur;
       if (s.wordEnd) t += 0.035 + this.rnd() * 0.03;
       if (s.punct === ',') t += 0.12;
@@ -520,10 +582,11 @@ export class Radio {
     src.buffer = buf;
     const g = this.ctx.createGain();
     g.gain.value = level;
-    // Straight through the same radio chain the synthesised voice uses, so a
-    // real recording sits in the same acoustic space as everything else.
+    // Split the same way the synthesised voice is, so a recording sits in the
+    // same acoustic space as everything else: full radio for anyone on the
+    // frequency, mostly dry for the instructor beside you.
     src.connect(g);
-    g.connect(this.chainIn);
+    g.connect(this.voicePath(v.radio));
     src.start(start + 0.12);
 
     const duration = buf.duration + 0.12;

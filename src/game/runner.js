@@ -34,12 +34,18 @@ export class MissionRunner {
   bindAircraft() {
     if (this._bound) return;
     const ac = this.sim.aircraft;
+    /*
+     * The last touchdown is the only thing worth remembering here.
+     *
+     * This also recorded `landedAt` and `tookOff`, and nothing in the game ever
+     * asked for either: no mission step, no debrief, no scoring. Two facts kept
+     * up to date for no reader is worse than none, because the next person to
+     * come along reads them as a contract and writes a step that depends on
+     * them. `lastTouchdown` is real — the missions test it for a landing that
+     * was not a crash, and the debrief grades it.
+     */
     ac.on(EVENTS.TOUCHDOWN, (g) => {
       this.data.lastTouchdown = g;
-      this.data.landedAt = this.elapsed;
-    });
-    ac.on(EVENTS.LIFTOFF, () => {
-      this.data.tookOff = true;
     });
     ac.on(EVENTS.CRASH, (c) => {
       if (this.status === STATUS.RUNNING && this.def && this.def.failOnCrash !== false) {
@@ -115,7 +121,11 @@ export class MissionRunner {
   }
 
   skipStep() {
-    // Used by the tutorial's "skip" button.
+    // Not a button. The tutorial has no "skip" control and never had one — the
+    // only Skip on screen is the taxi one, which teleports you to the threshold
+    // and goes nowhere near the objective list. This is here for the self-test,
+    // which winds a mission forward to the step it wants to examine without
+    // flying the legs in between.
     if (this.status === STATUS.RUNNING) this.advance();
   }
 

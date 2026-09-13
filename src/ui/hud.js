@@ -471,6 +471,17 @@ export class Hud {
     this.setTaxi(null);
     this.papiHint.style.display = 'none';
     this.stallWarn.style.display = 'none';
+    /*
+     * The patient's heart trace goes too.
+     *
+     * setVital() builds the panel once and then only ever shows or hides it, so
+     * a medevac left it on screen and nothing in the next flight ever asked for
+     * it again — you took off for a sightseeing lap with a stranger's pulse
+     * still beating in the corner. Hidden directly rather than through
+     * setVital(null), which would build the canvas for every pilot who has
+     * never flown the medevac.
+     */
+    if (this.vital) this.vital.style.display = 'none';
     this.lastValues = {};
   }
 
@@ -886,7 +897,20 @@ export class Hud {
     }
 
     // --- Wind ---
-    const desc = w.windDescription(90);
+    /*
+     * Which way the wind is pushing YOU, not which way it crosses runway 09.
+     *
+     * This asked for the description against a fixed heading of 90°, which is
+     * runway 09. Pointing down the runway the two agree, and the moment you
+     * turn off it they do not: fly west with the wind out of the north and the
+     * strip said "wind pushing from the left" while north was over your right
+     * shoulder — exactly backwards, and it stayed backwards for the whole
+     * flight. Turn far enough and it would even call a headwind a tailwind.
+     * This sentence is the only explanation of the wind a child gets, so it has
+     * to be about the aeroplane. The tower's crosswind call in atc-director.js
+     * still asks against 90, and should: that one really is about the runway.
+     */
+    const desc = w.windDescription(r.heading);
     if (this.lastValues.windText !== desc.text) {
       this.windText.textContent = desc.text;
       this.lastValues.windText = desc.text;

@@ -476,7 +476,18 @@ export function airframeTexture(schemeOrBase = '#eef1f5', accentArg = '#c8102e')
   const baseColor = scheme.base || '#eef1f5';
   const accent = scheme.accent || '#c8102e';
   const cheatline = scheme.cheatline || 'rgba(30,44,74,0.85)';
-  const reg = scheme.reg || 'N172SK';
+  /*
+   * No registration means no registration painted.
+   *
+   * This fell back to 'N172SK' when the scheme did not name one, so the
+   * Skylark's tail number ended up on the fighter, the airliner and every
+   * other aeroplane that reached here without a registration of its own. The
+   * house schemes now say which number each type wears (liveries.js), and an
+   * empty string here means the fuselage is left blank rather than borrowing
+   * somebody else's identity. It stays in the cache key: with and without a
+   * marking are different pictures.
+   */
+  const reg = scheme.reg || '';
   const key = ['airframe', baseColor, accent, cheatline, reg].join('|');
   return get(key, () => {
     const S = 1024;
@@ -538,10 +549,12 @@ export function airframeTexture(schemeOrBase = '#eef1f5', accentArg = '#c8102e')
         ctx.fill();
       }
 
-    // Registration marking.
-    ctx.fillStyle = 'rgba(40,48,64,0.9)';
-    ctx.font = 'bold 44px Arial, sans-serif';
-    ctx.fillText(reg, S * 0.06, S * 0.42);
+    // Registration marking, for the schemes that have one.
+    if (reg) {
+      ctx.fillStyle = 'rgba(40,48,64,0.9)';
+      ctx.font = 'bold 44px Arial, sans-serif';
+      ctx.fillText(reg, S * 0.06, S * 0.42);
+    }
 
     // Dirt streaks trailing back from panel gaps.
     const rnd = makeRandom(19);
@@ -873,101 +886,6 @@ export function dropletTexture() {
   });
 }
 
-/**
- * The tree species.
- *
- * There used to be exactly one palm, repeated across every island on every
- * map, which is what made the coastline read as wallpaper — a thousand copies
- * of one shape is a texture, not a forest. Four now, each drawn differently
- * enough to be told apart from the air, and each with its own trunk colour and
- * canopy so a mixed grove has some depth to it.
- *
- * `kind`: 0 palm · 1 broadleaf · 2 conifer · 3 scrubby bush
- */
-export function treeTexture(kind = 0) {
-  return get(`tree${kind}`, () => {
-    const S = 128;
-    const c = canvas(S);
-    const ctx = c.getContext('2d');
-    ctx.clearRect(0, 0, S, S);
-    const rnd = makeRandom(91 + kind * 37);
-
-    const trunk = (w, top, colour, lean = 0) => {
-      ctx.strokeStyle = colour;
-      ctx.lineWidth = S * w;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(S * 0.5, S);
-      ctx.quadraticCurveTo(S * (0.5 + lean * 0.4), S * (top + 0.2), S * (0.5 + lean), S * top);
-      ctx.stroke();
-    };
-
-    if (kind === 0) {
-      // Palm: a leaning trunk and a crown of drooping fronds.
-      trunk(0.055, 0.5, '#5b432c', 0.06);
-      for (let i = 0; i < 9; i++) {
-        const a = -Math.PI / 2 + (i / 8 - 0.5) * 2.6;
-        ctx.strokeStyle = `rgb(${30 + rnd() * 30},${90 + rnd() * 50},${35 + rnd() * 25})`;
-        ctx.lineWidth = 5 + rnd() * 4;
-        ctx.beginPath();
-        ctx.moveTo(S * 0.56, S * 0.5);
-        ctx.quadraticCurveTo(
-          S * 0.56 + Math.cos(a) * S * 0.3,
-          S * 0.5 + Math.sin(a) * S * 0.3,
-          S * 0.56 + Math.cos(a) * S * 0.46,
-          S * 0.5 + Math.sin(a) * S * 0.42 + S * 0.08
-        );
-        ctx.stroke();
-      }
-    } else if (kind === 1) {
-      // Broadleaf: a short trunk under a big round canopy of blobs.
-      trunk(0.07, 0.62, '#4d3a26');
-      for (let i = 0; i < 26; i++) {
-        const a = rnd() * Math.PI * 2;
-        const rr = Math.pow(rnd(), 0.6) * S * 0.31;
-        const x = S * 0.5 + Math.cos(a) * rr;
-        const y = S * 0.36 + Math.sin(a) * rr * 0.78;
-        ctx.fillStyle = `rgb(${28 + rnd() * 26},${78 + rnd() * 58},${30 + rnd() * 24})`;
-        ctx.beginPath();
-        ctx.arc(x, y, S * (0.07 + rnd() * 0.06), 0, Math.PI * 2);
-        ctx.fill();
-      }
-    } else if (kind === 2) {
-      // Conifer: a straight bole and stacked triangular tiers.
-      trunk(0.045, 0.86, '#4a3722');
-      for (let tier = 0; tier < 4; tier++) {
-        const t = tier / 3;
-        const half = S * (0.30 - t * 0.155);
-        const yTop = S * (0.06 + t * 0.22);
-        const yBot = S * (0.40 + t * 0.19);
-        ctx.fillStyle = `rgb(${20 + rnd() * 18},${62 + rnd() * 40},${34 + rnd() * 20})`;
-        ctx.beginPath();
-        ctx.moveTo(S * 0.5, yTop);
-        ctx.lineTo(S * 0.5 + half, yBot);
-        ctx.lineTo(S * 0.5 - half, yBot);
-        ctx.closePath();
-        ctx.fill();
-      }
-    } else {
-      // Scrub: no real trunk, just a low tangle. Reads as undergrowth.
-      for (let i = 0; i < 22; i++) {
-        const a = rnd() * Math.PI * 2;
-        const rr = Math.pow(rnd(), 0.5) * S * 0.34;
-        const x = S * 0.5 + Math.cos(a) * rr;
-        const y = S * 0.72 + Math.sin(a) * rr * 0.45;
-        ctx.fillStyle = `rgb(${46 + rnd() * 34},${76 + rnd() * 46},${34 + rnd() * 22})`;
-        ctx.beginPath();
-        ctx.arc(x, y, S * (0.05 + rnd() * 0.05), 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-    return finish(c);
-  });
-}
-
-/** How many species there are, so callers do not have to know. */
-export const TREE_KINDS = 4;
-
 /** Build everything up-front so there are no hitches mid-flight. */
 export async function warmTextures(onProgress = () => {}) {
   const steps = [
@@ -991,7 +909,7 @@ export async function warmTextures(onProgress = () => {}) {
     ['Hangar cladding', hangarTexture],
     ['Rooftops', roofTexture],
     ['Clouds', () => { cloudTexture(1); cloudTexture(2); cloudTexture(3); }],
-    ['Rain', () => { rainStreakTexture(); dropletTexture(); treeTexture(); }],
+    ['Rain', () => { rainStreakTexture(); dropletTexture(); }],
   ];
   for (let i = 0; i < steps.length; i++) {
     const [label, fn] = steps[i];

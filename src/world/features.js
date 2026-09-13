@@ -467,10 +467,24 @@ export class MapFeatures {
       const w = 12 + rnd() * 16;
       const drop = top;
       const geo = new THREE.PlaneGeometry(w, drop);
+      /*
+       * Tile the falling water down the drop instead of stretching one copy of
+       * it over the whole face. This repeat was worked out and then parked in
+       * `mesh.userData.uvRepeat`, which nothing in the game has ever read — so
+       * a 500 m fjord fall and a 100 m one both wore a single smeared copy of
+       * a 128-pixel texture, and the taller the fall the more obviously the
+       * streaks were the wrong size. Every fall shares one material, so the
+       * tiling cannot live on the texture's own repeat; it has to be baked
+       * into this mesh's V coordinates. The scroll in update() is an offset,
+       * which still works over scaled Vs.
+       */
+      const uvRepeat = drop / 90;
+      const uv = geo.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setY(i, uv.getY(i) * uvRepeat);
+      uv.needsUpdate = true;
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(x + dx * 12, drop / 2, z + dz * 12);
       mesh.rotation.y = Math.atan2(dx, dz);
-      mesh.userData.uvRepeat = drop / 90;
       this.group.add(mesh);
 
       // Spray where it hits the water.

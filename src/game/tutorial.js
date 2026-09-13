@@ -112,9 +112,26 @@ export const TUTORIAL = {
         text: 'Let us try a turn. Gentle bank to the left, and roll out heading north.',
         voice: 'instructor',
       },
+      /*
+       * North, which is what the step actually asks for.
+       *
+       * `diff` is the shortest angular distance from north, so the old
+       * `diff > 168` passed only between 168 and 192 degrees — due SOUTH. A
+       * child who did exactly what the instructor said rolled out on 360 and
+       * the step never completed; the only way through the second lesson in
+       * the game was to disobey it and keep turning another half circle. It
+       * then spoiled the two steps after it, because the circuit is laid out
+       * so that downwind is one more left turn from north.
+       *
+       * Every other heading check in this file is written the other way round
+       * — `diff < 45`, `< 60`, `< 40` — which is what this one was meant to
+       * be. Twenty degrees, because holding a heading to twelve degrees and
+       * the wings level to twelve at the same time is a lot to ask of someone
+       * on their first turn.
+       */
       check: (ctx) => {
         const diff = Math.abs(((ctx.ac.heading - 360 + 540) % 360) - 180);
-        return diff > 168 && Math.abs(ctx.ac.bankAngleDeg()) < 12;
+        return diff < 20 && Math.abs(ctx.ac.bankAngleDeg()) < 12;
       },
     },
     {

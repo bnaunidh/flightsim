@@ -8,37 +8,125 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { heightAt, scatter, MAP, ISLANDS, addObstacleAt } from './terrain.js';
-import { treeTexture, buildingTexture, roofTexture, foamTexture } from '../render/textures.js';
+import { buildingTexture, roofTexture, foamTexture } from '../render/textures.js';
 
 export const DELIVERY_PAD = new THREE.Vector3(6200, 0, -5200);
 
-function treeGeometry() {
-  // Two crossed quads: reads as a 3D tree from any angle, costs 4 triangles.
-  const g1 = new THREE.PlaneGeometry(1, 1);
-  g1.translate(0, 0.5, 0);
-  const g2 = g1.clone();
-  g2.rotateY(Math.PI / 2);
-  const merged = new THREE.BufferGeometry();
+/**
+ * Merge a few small geometries into one, keeping vertex colours.
+ *
+ * Everything planted in this file is instanced, which means one geometry and
+ * one material per species — so a tree made of a trunk and three canopy
+ * pieces has to arrive as a single buffer with the colours baked into the
+ * vertices. That is cheaper than it sounds and it is what lets a wood of six
+ * hundred trees cost four draw calls.
+ */
+function mergeParts(parts) {
   const pos = [];
-  const uv = [];
   const norm = [];
+  const col = [];
   const idx = [];
   let offset = 0;
-  for (const g of [g1, g2]) {
+  for (const { geo, color } of parts) {
+    const g = geo.index ? geo.toNonIndexed() : geo;
     const p = g.attributes.position.array;
-    const u = g.attributes.uv.array;
     const n = g.attributes.normal.array;
-    pos.push(...p);
-    uv.push(...u);
-    norm.push(...n);
-    for (const i of g.index.array) idx.push(i + offset);
+    for (let i = 0; i < p.length; i++) pos.push(p[i]);
+    for (let i = 0; i < n.length; i++) norm.push(n[i]);
+    for (let i = 0; i < g.attributes.position.count; i++) {
+      col.push(color[0], color[1], color[2]);
+      idx.push(offset + i);
+    }
     offset += g.attributes.position.count;
   }
-  merged.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  merged.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  merged.setAttribute('normal', new THREE.Float32BufferAttribute(norm, 3));
-  merged.setIndex(idx);
-  return merged;
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(norm, 3));
+  out.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  out.setIndex(idx);
+  return out;
+}
+
+/**
+ * A tree, as geometry rather than as a picture of one.
+ *
+ * These were two crossed quads with a painted tree on them — four triangles,
+ * which is the right answer for a forest seen from a mile up and the wrong
+ * one for the tree you are about to land next to. From the air the crossed
+ * pair reads as two flat cards that turn edge-on and vanish as you bank, and
+ * on the ground it has no trunk you can walk round.
+ *
+ * So each species is built: a trunk, and a canopy made of the shape that
+ * species actually is. Still one instanced draw call per species, and still
+ * about forty triangles a tree, which is nothing.
+ *
+ * Built to a height of exactly 1 so the planting code can scale it to
+ * whatever it wants, and to its own natural width at that height — a conifer
+ * is narrow, a palm is wide — so scaling stays uniform and nothing is
+ * stretched.
+ */
+const BARK = [0.29, 0.21, 0.14];
+const PALM_BARK = [0.42, 0.34, 0.23];
+function treeGeometry(kind = 0) {
+  const parts = [];
+  const trunk = (topR, botR, h, y, lean = 0) => {
+    const g = new THREE.CylinderGeometry(topR, botR, h, 7);
+    if (lean) g.rotateZ(lean);
+    g.translate(lean ? Math.sin(lean) * h * -0.5 : 0, y, 0);
+    return g;
+  };
+  if (kind === 0) {
+    /* Palm: a bare leaning trunk with a crown of fronds on top of it. */
+    parts.push({ geo: trunk(0.022, 0.045, 0.82, 0.41, 0.06), color: PALM_BARK });
+    const green = [0.22, 0.44, 0.2];
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      const frond = new THREE.BoxGeometry(0.42, 0.018, 0.1);
+      frond.translate(0.2, 0, 0);
+      frond.rotateZ(-0.5);
+      frond.rotateY(a);
+      frond.translate(-0.05, 0.84, 0);
+      parts.push({ geo: frond, color: green });
+    }
+    parts.push({ geo: new THREE.SphereGeometry(0.05, 6, 5).translate(-0.05, 0.85, 0), color: green });
+  } else if (kind === 1) {
+    /* Broadleaf: a short trunk under two overlapping crowns. */
+    parts.push({ geo: trunk(0.035, 0.06, 0.46, 0.23), color: BARK });
+    const leaf = [0.2, 0.38, 0.17];
+    const leaf2 = [0.25, 0.45, 0.2];
+    const a = new THREE.SphereGeometry(0.3, 9, 7);
+    a.scale(1, 0.82, 1);
+    a.translate(0, 0.62, 0);
+    parts.push({ geo: a, color: leaf });
+    const b = new THREE.SphereGeometry(0.22, 8, 6);
+    b.translate(0.13, 0.8, -0.06);
+    parts.push({ geo: b, color: leaf2 });
+    const c = new THREE.SphereGeometry(0.2, 8, 6);
+    c.translate(-0.14, 0.74, 0.08);
+    parts.push({ geo: c, color: leaf2 });
+  } else if (kind === 2) {
+    /* Conifer: three stacked skirts on a straight trunk. */
+    parts.push({ geo: trunk(0.028, 0.05, 1, 0.5), color: BARK });
+    const dark = [0.14, 0.3, 0.18];
+    const mid = [0.17, 0.35, 0.21];
+    parts.push({ geo: new THREE.ConeGeometry(0.3, 0.44, 9).translate(0, 0.36, 0), color: dark });
+    parts.push({ geo: new THREE.ConeGeometry(0.24, 0.4, 9).translate(0, 0.62, 0), color: mid });
+    parts.push({ geo: new THREE.ConeGeometry(0.16, 0.34, 9).translate(0, 0.86, 0), color: dark });
+  } else {
+    /* Scrub: low, wide, no trunk worth speaking of. */
+    const bush = [0.28, 0.36, 0.19];
+    const a = new THREE.SphereGeometry(0.38, 8, 6);
+    a.scale(1, 0.62, 1);
+    a.translate(0, 0.26, 0);
+    parts.push({ geo: a, color: bush });
+    const b = new THREE.SphereGeometry(0.26, 7, 5);
+    b.scale(1, 0.6, 1);
+    b.translate(0.24, 0.18, 0.1);
+    parts.push({ geo: b, color: [0.24, 0.32, 0.17] });
+  }
+  const g = mergeParts(parts);
+  g.computeVertexNormals();
+  return g;
 }
 
 /**
@@ -77,17 +165,23 @@ function addTrees(group, spots, height = 9, mix = [0.7, 0.15, 0.05, 0.1], solid 
   const d = new THREE.Object3D();
   buckets.forEach((list, kind) => {
     if (!list.length) return;
+    /*
+     * Vertex colours, no texture, no alpha test.
+     *
+     * The trunk and the canopy are one geometry, so their colours are baked
+     * into the vertices — which is also why the leaves no longer need an
+     * alpha-tested cut-out, and why they no longer flicker along their edges
+     * at distance the way a cut-out does.
+     */
     const mat = new THREE.MeshStandardMaterial({
-      map: treeTexture(kind),
-      transparent: false,
-      alphaTest: 0.42,
-      roughness: 0.85,
-      side: THREE.DoubleSide,
+      vertexColors: true,
+      roughness: 0.92,
+      metalness: 0,
     });
-    const inst = new THREE.InstancedMesh(treeGeometry(), mat, list.length);
+    const inst = new THREE.InstancedMesh(treeGeometry(kind), mat, list.length);
     inst.castShadow = true;
     inst.receiveShadow = false;
-    // The scrub is low and wide; the conifer is tall and narrow.
+    // How tall this species is relative to the grove's nominal height.
     const shape = [
       { w: 0.8, h: 1.0 },
       { w: 0.95, h: 0.9 },
@@ -98,7 +192,9 @@ function addTrees(group, spots, height = 9, mix = [0.7, 0.15, 0.05, 0.1], solid 
       d.position.set(s.x, s.y - 0.4, s.z);
       d.rotation.set(0, s.rot, 0);
       const h = height * s.scale * shape.h;
-      d.scale.set(h * shape.w, h, h * shape.w);
+      // Uniform: the species' proportions are built into its geometry now,
+      // and squashing that by a separate width factor undid the point of it.
+      d.scale.set(h, h, h);
       d.updateMatrix();
       inst.setMatrixAt(i, d.matrix);
       // Anything over four metres is worth hitting. The trunk box is a

@@ -837,6 +837,44 @@ export function createAircraftModel(opts = {}) {
    */
   const propGroup = new THREE.Group();
   propGroup.visible = !isJet;
+  /*
+   * The mast and the tail rotor.
+   *
+   * A horizontal disc on its own still does not read as a helicopter: what
+   * says helicopter at a glance is a shaft holding the disc above the cabin,
+   * and a small disc on the end of the tail. The machine had neither, and no
+   * tail rotor at all — it wore a fixed-wing fin and elevator like everything
+   * else in the hangar.
+   */
+  if (!isJet && S.power.rotor) {
+    const mastMat = metalMaterial(skin, { roughness: 0.35, metalness: 0.6 });
+    const mastH = (S.power.y ?? 1.6) - 0.35;
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.17, mastH, 10), mastMat);
+    mast.position.set(0, (S.power.y ?? 1.6) - mastH / 2, S.power.z || 0);
+    mast.castShadow = true;
+    root.add(mast);
+    // The gearbox fairing the mast comes out of.
+    const hub = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.4, 0.9), mastMat);
+    hub.position.set(0, (S.power.y ?? 1.6) - mastH - 0.12, S.power.z || 0);
+    hub.castShadow = true;
+    root.add(hub);
+    // Tail rotor: a small disc on the fin, turning about the lateral axis.
+    const tailR = (S.power.propRadius || 4.2) * 0.22;
+    const trGroup = new THREE.Group();
+    trGroup.position.set(0.18, S.finHeight ? S.finHeight * 0.6 : 0.9, S.finZ ?? 3.2);
+    for (let i = 0; i < 2; i++) {
+      const bl = new THREE.Mesh(new THREE.BoxGeometry(0.06, tailR, 0.16), mastMat);
+      bl.geometry.translate(0, tailR / 2, 0);
+      bl.rotation.z = i * Math.PI;
+      trGroup.add(bl);
+    }
+    const trHub = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.14, 8), mastMat);
+    trHub.rotation.z = Math.PI / 2;
+    trGroup.add(trHub);
+    trGroup.rotation.y = Math.PI / 2;
+    root.add(trGroup);
+    root.userData.tailRotor = trGroup;
+  }
   const propCount = isJet ? 0 : S.power.count || 1;
   /*
    * No propeller at all on a jet.
@@ -849,7 +887,29 @@ export function createAircraftModel(opts = {}) {
    * both senses.
    */
   const propSides = propCount >= 2 ? [-1, 1] : propCount === 1 ? [0] : [];
-  propGroup.position.set(0, 0.02, propCount >= 2 ? 0 : S.power.z);
+  /*
+   * Read power.y — which until now only the jet branch did.
+   *
+   * This was pinned at 0.02 for every propeller aeroplane, so two shapes that
+   * had been asking for something else were quietly ignored for as long as
+   * they have existed. The helicopter declares `y: 1.6` to put its rotor on a
+   * mast above the cabin and got a nose propeller at belly height instead —
+   * which is the whole of why it has never looked like a helicopter. The
+   * Tempest is a high-wing twin whose nacelles were drawn a metre below the
+   * wing they are supposed to hang from, with no pylon between them.
+   */
+  const isRotor = !!S.power.rotor;
+  const propY = S.power.y ?? (propCount >= 2 ? S.wingY ?? 0.02 : 0.02);
+  propGroup.position.set(0, propY, propCount >= 2 ? 0 : S.power.z);
+  /*
+   * A rotor turns about the vertical, not about the nose.
+   *
+   * Everything below builds a disc in the XY plane spinning about Z, because
+   * that is what a propeller is. Laying the whole group on its back turns the
+   * same geometry into a rotor without duplicating any of it — and update()
+   * goes on spinning it about its own Z, which is now the world's vertical.
+   */
+  if (isRotor) propGroup.rotation.x = -Math.PI / 2;
   const spinMat = metalMaterial(skin, { roughness: 0.2, metalness: 0.7 });
   const nacelleMatProp = metalMaterial(skin, { roughness: 0.34, metalness: 0.5 });
   /** One spinner, blades and blur disc, at a given wing station. */

@@ -77,6 +77,15 @@ export const DEFAULT_SETTINGS = {
    */
   modelSetRev: 2,
   /*
+   * See MIGRATIONS: bumping this hands the damage default back once.
+   *
+   * Bumped to 2 because rev 1 briefly shipped with damage ON, and a saved
+   * setting beats a default — so anybody who loaded that build would have
+   * kept the landing regression forever, which is exactly the trap this
+   * mechanism exists to get out of.
+   */
+  damageRev: 2,
+  /*
    * The minimap, on by default.
    *
    * It was off, toggled by a key nobody is told about, behind a button in the
@@ -85,10 +94,27 @@ export const DEFAULT_SETTINGS = {
    */
   minimap: true,
   /*
-   * Battle damage: clipping something, or being hit, hurts the part that took
-   * it instead of always ending the flight. Off by default and behind Dev
-   * mode, because it changes what crashing means and every score already set
-   * was set under the old rule.
+   * Battle damage, on by default and out of Dev mode.
+   *
+   * Clipping something, or being shot, hurts the part that took it instead of
+   * always ending the flight: a hurt wing rolls you towards it, a hurt tail
+   * goes soft, a hurt nose loses power, and the panel shows where you were
+   * hit. It is out of Dev mode and in the ordinary settings now, so anybody
+   * can switch it on — but it is not the default yet, and here is exactly
+   * why, measured rather than guessed.
+   *
+   * With it on, the suite's own approach turned a greased 444 ft/min arrival
+   * into a 1,842 ft/min crash. Instrumenting the landing showed the cause:
+   * the NOSE hard point touches the runway during a normal, wheels-down,
+   * gear-fully-extended landing — `glancingBlow` is called for it every
+   * frame at 1 m AGL with a closing speed of 0.09 m/s — so the aeroplane
+   * takes a nose hit every half second simply for landing properly, and a
+   * hurt nose costs power on short final.
+   *
+   * That is a hard-point geometry problem, not a threshold to tune, and it
+   * has to be fixed before this can be the default. Shipping it on would
+   * have handed every child in the class a worse landing than they had
+   * yesterday.
    */
   damageModel: false,
   aircraft: 'skylark',
@@ -154,22 +180,39 @@ function readRaw(key) {
   }
 }
 
+/**
+ * Defaults the game has since changed its mind about.
+ *
+ * A saved setting beats a default, which is right for everything somebody
+ * chose and wrong for a default that has moved: whoever has already played
+ * would keep the old value forever and never see the change. Each entry here
+ * hands that one setting back, once, and then never again — flip the switch
+ * yourself afterwards and it stays flipped.
+ *
+ * The revision is asked of the SAVE, not of the loaded settings. `read` merges
+ * the defaults in for every key a save has never carried, so the merged object
+ * always claims to be at the current revision — the first version of this
+ * shipped dead for exactly that reason and the switch never once moved.
+ */
+const MIGRATIONS = [
+  // The aeroplane models: the pack for the military three, built-in for the rest.
+  { rev: 'modelSetRev', keys: ['fleetModels'] },
+  // Battle damage, brought out of Dev mode and turned on.
+  { rev: 'damageRev', keys: ['damageModel'] },
+];
+
 export function loadSettings() {
   const s = read(SETTINGS_KEY, DEFAULT_SETTINGS);
-  /*
-   * See modelSetRev above: re-apply the model default once, then never again.
-   *
-   * Asked of the *save*, not of the loaded settings. `read` merges the
-   * defaults in for every key a save has never carried, so the merged object
-   * always claims to be at the current revision and the migration could never
-   * once fire — it shipped dead and the switch never moved.
-   */
   const saved = readRaw(SETTINGS_KEY);
-  if (saved && saved.modelSetRev !== DEFAULT_SETTINGS.modelSetRev) {
-    s.fleetModels = DEFAULT_SETTINGS.fleetModels;
-    s.modelSetRev = DEFAULT_SETTINGS.modelSetRev;
-    write(SETTINGS_KEY, s);
+  if (!saved) return s;
+  let changed = false;
+  for (const m of MIGRATIONS) {
+    if (saved[m.rev] === DEFAULT_SETTINGS[m.rev]) continue;
+    for (const k of m.keys) s[k] = DEFAULT_SETTINGS[k];
+    s[m.rev] = DEFAULT_SETTINGS[m.rev];
+    changed = true;
   }
+  if (changed) write(SETTINGS_KEY, s);
   return s;
 }
 

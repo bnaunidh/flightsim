@@ -140,17 +140,36 @@ export class AudioMixer {
     return this._pink;
   }
 
-  /** Looping noise source, already started. */
+  /**
+   * Looping noise source, already started.
+   *
+   * Every layer in the game — slipstream, rain, tyres, cabin, prop, jet core,
+   * radio static — draws on the same two cached buffers, and they all used to
+   * start at offset zero in the same tick. That put the whole world in
+   * lockstep: the identical two- and three-second stretch of noise played in
+   * every layer at once, which the ear hears as a loop rather than as weather.
+   * Starting each source at a random point in the buffer decorrelates them, and
+   * costs nothing.
+   */
   noiseSource(pink = false) {
     const src = this.ctx.createBufferSource();
     src.buffer = pink ? this.pinkBuffer() : this.noiseBuffer();
     src.loop = true;
-    src.start();
+    src.start(this.time, Math.random() * src.buffer.duration);
     return src;
   }
 
-  /** One-shot noise burst with an envelope; returns the gain node. */
-  noiseBurst({ bus = 'environment', duration = 0.3, gain = 0.5, type = 'bandpass', freq = 1200, q = 1, attack = 0.005, pink = false } = {}) {
+  /**
+   * One-shot noise burst with an envelope; returns the gain node.
+   *
+   * `when` is an absolute time on the audio clock. It exists because callers
+   * that want a run of bursts a fixed distance apart — the starter catching,
+   * for one — had no way to say so and ended up firing everything on the same
+   * tick. Left out, the burst plays now, as it always did. Times already in
+   * the past are pulled up to now, since the Web Audio clock will not accept a
+   * ramp scheduled behind itself.
+   */
+  noiseBurst({ bus = 'environment', duration = 0.3, gain = 0.5, type = 'bandpass', freq = 1200, q = 1, attack = 0.005, pink = false, when = null } = {}) {
     if (!this.ctx) return null;
     const src = this.ctx.createBufferSource();
     src.buffer = pink ? this.pinkBuffer() : this.noiseBuffer();
@@ -160,14 +179,17 @@ export class AudioMixer {
     filter.frequency.value = freq;
     filter.Q.value = q;
     const g = this.ctx.createGain();
-    const t = this.time;
+    const t = when == null ? this.time : Math.max(when, this.time);
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), t + attack);
     g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
     src.connect(filter);
     filter.connect(g);
     g.connect(this.bus(bus));
-    src.start(t);
+    // Same decorrelation as noiseSource: without an offset, every burst is the
+    // identical slice of the cached buffer and repeated hits sound like one
+    // sample being retriggered.
+    src.start(t, Math.random() * src.buffer.duration);
     src.stop(t + duration + 0.05);
     return { gain: g, filter, src };
   }

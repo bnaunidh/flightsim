@@ -19,7 +19,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { getAircraft, specFor, DEFAULT_AIRCRAFT_ID } from './types.js';
 import { clamp, lerp } from '../core/noise.js';
-import { heightAt, isPaved, isOnRunway, obstacleAt, platformAt } from '../world/terrain.js';
+import { heightAt, isPaved, isOnRunway, isOnAnyRunway, obstacleAt, platformAt, AIRPORT } from '../world/terrain.js';
 
 const RHO0 = 1.225;
 const G = 9.80665;
@@ -594,7 +594,25 @@ export class Aircraft {
           const qNow = 0.5 * this.density * V * V;
           const b = SPEC.wingSpan;
           const base = (qNow * SPEC.wingArea * b) / SPEC.Izz;
-          const A = Math.max(0.5, base * SPEC.Clda); // roll accel per unit aileron
+          /*
+           * On a helicopter the roll comes from the cyclic, not the aileron.
+           *
+           * This sized the leveller's gain from aileron authority alone. On
+           * the Skyhook the real roll moment comes from the rotor block
+           * further down, and it is about nine times stronger — so the loop
+           * ran at nine times the gain it thought it had and was violently
+           * unstable in simplified mode, which is the default and the setting
+           * a struggling child picks. Measured hands-off from straight and
+           * level: 2 degrees of bank became 7, then 36, then 105 in four
+           * seconds, and the machine hit the ground at 22.8 s. With the
+           * assists off, in realistic mode, it did not roll at all.
+           */
+          let A = Math.max(0.5, base * SPEC.Clda); // roll accel per unit aileron
+          if (SPEC.rotor) {
+            const coll = clamp(this.rpm, 0, 1);
+            // Same expression the cyclic block below uses for the roll moment.
+            A += ((0.35 + coll * 0.65) * SPEC.mass * G * SPEC.rotorRollArm) / SPEC.Izz;
+          }
           const D = Math.abs(base * SPEC.Clp * (b / (2 * V))); // natural damping
           // How brisk the leveller is allowed to be.
           //
@@ -630,8 +648,30 @@ export class Aircraft {
           aileron = clamp(aileron - bank * kp - this.omega.z * kd, -1, 1);
         }
         if (Math.abs(this.controls.pitch) < 0.06) {
-          // Hold height: pull when sinking, push when climbing.
-          elevator = clamp(elevator - this.vs * 0.085 - this.omega.x * 0.38, -1, 1);
+          /*
+           * Hold height: pull when sinking, push when climbing.
+           *
+           * The two gains below are fixed numbers tuned against a wing's
+           * elevator. A rotor's pitch moment comes from the cyclic instead
+           * and is roughly twenty-seven times stronger at low speed, so the
+           * same numbers drove the helicopter into a pitch oscillation it
+           * could not damp — it wandered off in bank and height and, with the
+           * roll loop over-gained too, flew itself into the ground in under
+           * half a minute. Scaling the demand by how much more authority the
+           * rotor actually has keeps the loop where it was designed.
+           */
+          let pitchAuth = 1;
+          if (SPEC.rotor) {
+            const coll = clamp(this.rpm, 0, 1);
+            const rotorAcc = ((0.35 + coll * 0.65) * SPEC.mass * G * SPEC.rotorPitchArm) / SPEC.Iyy;
+            const wingAcc = Math.max(0.05, (0.5 * this.density * V * V * SPEC.wingArea * SPEC.chord * Math.abs(SPEC.Cmde)) / SPEC.Iyy);
+            pitchAuth = wingAcc / (wingAcc + rotorAcc);
+          }
+          elevator = clamp(
+            elevator - (this.vs * 0.085 + this.omega.x * 0.38) * pitchAuth,
+            -1,
+            1
+          );
         }
         // Turn coordination was tried here and taken out again: feeding rudder
         // in proportion to sideslip acts like a bigger fin, which raises the
@@ -739,7 +779,20 @@ export class Aircraft {
     } else {
       // Post-stall: lift falls away, and keeps falling if you hold it in.
       const over = aAbs - aStall;
-      const peak = (SPEC.CL0 + flapCL) * sign + SPEC.CLa * aStall * sign;
+      /*
+       * Only the angle-of-attack term changes sign, not the camber.
+       *
+       * This read `(SPEC.CL0 + flapCL) * sign + ...`, which flipped the
+       * camber the wing carries at zero alpha as well — and a wing does not
+       * lose its camber because you pushed the nose down. The effect was that
+       * passing the negative stalling angle did not break the lift, it
+       * STEPPED it, the wrong way: measured across the fleet at full flap,
+       * CL jumped from -0.46 to -2.14 on the trainer and from -0.16 to -1.68
+       * on the flying wing, four to ten times over, inside a single frame.
+       * Push over hard in the Osprey on approach and the wing that was
+       * supposed to be giving up hit you with an extra 1.4 g downwards.
+       */
+      const peak = SPEC.CL0 + flapCL + SPEC.CLa * aStall * sign;
       CL = peak * Math.max(0.28, 1 - over * 2.1);
     }
     /*
@@ -838,7 +891,26 @@ export class Aircraft {
       const ettl = 1 + clamp(V / 24, 0, 1) * 0.11;
       fy += rotor * ettl;
       // The disc drags as it is tilted into the airflow.
-      fz += clamp(V, 0, 60) * SPEC.rotorDrag * 0.5;
+      /*
+       * Rotor drag opposes the way you are actually going.
+       *
+       * This was `fz += ...`: a force along body +Z, aft, sized by the total
+       * airspeed and pointed the same way whatever the machine was doing. So
+       * a vertical climb — where V is the climb rate and nothing is moving
+       * forward at all — shoved it backwards at 1,820 N. Measured: climbing
+       * straight up in still air, it accelerated to 42 m/s rearwards and
+       * ended 295 m from where it started. Hovering in a tailwind it crept
+       * upwind. The aerodynamic drag a few lines above is written correctly
+       * as a vector along the relative wind; this one simply was not.
+       */
+      const rd = clamp(V, 0, 60) * SPEC.rotorDrag * 0.5;
+      if (V > 0.15) {
+        // Same body-frame airflow direction the drag above uses: (v, w, -u).
+        const inv = 1 / V;
+        fx -= rd * v * inv;
+        fy -= rd * w * inv;
+        fz -= rd * -u * inv;
+      }
     }
 
     this._f.set(fx, fy, fz).applyQuaternion(this.quat);
@@ -1246,7 +1318,16 @@ export class Aircraft {
       }
       const vsFpm = -this.vs * FPM;
       const bank = this.bankAngleDeg();
-      const centreline = Math.abs(this.pos.z - 0);
+      /*
+       * How far off the centreline, measured against whichever surface you
+       * actually landed on.
+       *
+       * This was a flat `|z - 0|` — the axis of runway one and nothing else —
+       * which is meaningless on a north-south strip and meaningless on a
+       * carrier. It read as hundreds of metres off centre for a landing that
+       * was dead on the paint.
+       */
+      const centreline = this.centrelineError();
       const grade = this.gradeTouchdown(vsFpm, bank, centreline);
       this.lastTouchdown = grade;
       this.emit(EVENTS.TOUCHDOWN, grade);
@@ -1373,8 +1454,49 @@ export class Aircraft {
     return THREE.MathUtils.radToDeg(Math.asin(clamp(f.y, -1, 1)));
   }
 
+  /**
+   * Distance from the middle of whatever you landed on.
+   *
+   * A deck first, because a platform is unambiguous. Then the runway whose
+   * own axis you are nearest, measured across that axis rather than across
+   * the world. Falls back to runway one's centreline, which is what the whole
+   * game used to assume.
+   */
+  centrelineError() {
+    const deck = platformAt(this.pos.x, this.pos.z);
+    if (deck) {
+      // The deck box is axis-aligned and `along` says which way it runs.
+      const across = deck.arrest && deck.arrest.along === false
+        ? this.pos.z - deck.cz
+        : this.pos.x - deck.cx;
+      return Math.abs(across);
+    }
+    /*
+     * Read off AIRPORT rather than the airport module's RUNWAY objects:
+     * terrain.js is already imported here, and importing airport.js would
+     * close a cycle (airport imports terrain).
+     */
+    const a = AIRPORT || {};
+    const r1 = a.runway ? Math.abs(this.pos.z - a.runway.cz) : Math.abs(this.pos.z);
+    const r2 = a.runway2 ? Math.abs(this.pos.x - a.runway2.cx) : Infinity;
+    return Math.min(r1, r2);
+  }
+
   gradeTouchdown(vsFpm, bank, centreline) {
-    const onRunway = isOnRunway(this.pos.x, this.pos.z, 6);
+    /*
+     * Either runway, and the deck.
+     *
+     * This asked `isOnRunway`, which is runway one alone — while terrain.js
+     * exports `isOnAnyRunway` with a comment saying in as many words that it
+     * is what landing scoring should ask. So a textbook arrival on the
+     * crosswind strip, or a carrier trap, was graded as an arrival in a
+     * field: `centred` collapsed to 0.25 and the whole score was halved, the
+     * banner said "not on the runway" and the tower asked whether you were
+     * able to taxi. A deck landing is the hardest thing in the game and it
+     * scored about forty.
+     */
+    const onRunway =
+      isOnAnyRunway(this.pos.x, this.pos.z, 6) || !!platformAt(this.pos.x, this.pos.z);
     const paved = isPaved(this.pos.x, this.pos.z);
     const sink = Math.abs(vsFpm);
     let crashed = false;
@@ -1522,12 +1644,42 @@ export class Aircraft {
     const severity = clamp(blow / HARD, 0.08, 0.75);
     this.takeHit(hp.part, severity, what || hp.what);
 
-    // Out of the ground, and a great deal slower for having hit it.
-    const lift = surface - world.y + 0.05;
-    if (lift > 0) this.pos.y += lift;
-    if (this.vel.y < 0) this.vel.y *= -0.2;
-    this.vel.multiplyScalar(1 - 0.28 * severity);
-    this.omega.multiplyScalar(0.55);
+    /*
+     * Scraping on landing is not the same event as flying into a hillside.
+     *
+     * What follows pushes the aeroplane back out of whatever it hit and
+     * reverses its descent — which is right when you have clipped scenery and
+     * badly wrong on a runway. A nose or a wingtip brushing the tarmac during
+     * a normal landing was being bounced back into the air: measured with the
+     * suite's own approach, the aeroplane touched, ballooned to thirty feet,
+     * and came back down at 1,842 ft/min with the autopilot chasing it — a
+     * greased 444 ft/min arrival turned into a crash by the act of turning
+     * damage on. A child would have felt exactly that.
+     *
+     * So on the ground, with the wheels down, a soft scrape costs you the
+     * damage and nothing else. The aeroplane stays where it is and the
+     * undercarriage goes on doing its job.
+     */
+    /*
+     * `onGround` is no use here: it is recomputed from the contact count
+     * further down the frame, so at the instant of the first touch it is
+     * still false and a guard written on it never fires. What IS true at that
+     * instant is that the wheels are down, the aeroplane is coming down
+     * slowly, and there is a made surface underneath.
+     */
+    const scraping =
+      this.gearDown
+      && this.gearPos > 0.5
+      && closing < SOFT
+      && isPaved(this.pos.x, this.pos.z);
+    if (!scraping) {
+      // Out of the ground, and a great deal slower for having hit it.
+      const lift = surface - world.y + 0.05;
+      if (lift > 0) this.pos.y += lift;
+      if (this.vel.y < 0) this.vel.y *= -0.2;
+    }
+    this.vel.multiplyScalar(1 - 0.28 * severity * (scraping ? 0.35 : 1));
+    this.omega.multiplyScalar(scraping ? 0.85 : 0.55);
     this._hitCool = 0.5;
     return true;
   }

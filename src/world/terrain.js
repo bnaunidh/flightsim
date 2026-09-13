@@ -352,10 +352,21 @@ export function heightAt(x, z) {
     if (h > ceiling) h = lerp(h, ceiling, w);
   }
 
-  // And the same the other way, for 18/36. A second runway you cannot approach
-  // is not a second runway.
-  const along2 = Math.abs(z - AIRPORT.runway2.cz);
-  const across2 = Math.abs(x - AIRPORT.runway2.cx);
+  /*
+   * And the same the other way, for 18/36. A second runway you cannot approach
+   * is not a second runway.
+   *
+   * Which way "the other way" runs has to be read off the runway rather than
+   * assumed. This measured `along` up the z axis and `across` up x whatever
+   * the map said, which is right for a strip on heading 180 and wrong at Los
+   * Angeles, where the second runway is parallel to the first: there the
+   * canyon was cut sideways across the runway and off into the ground either
+   * side of it, while the approach it exists to clear was left alone.
+   */
+  const r2 = AIRPORT.runway2;
+  const r2AlongX = Math.abs((((r2.headingDeg ?? 180) % 180) - 90)) < 45;
+  const along2 = r2AlongX ? Math.abs(x - r2.cx) : Math.abs(z - r2.cz);
+  const across2 = r2AlongX ? Math.abs(z - r2.cz) : Math.abs(x - r2.cx);
   if (along2 < CORRIDOR2.length && across2 < CORRIDOR2.halfWidth + CORRIDOR2.blend) {
     const lateral = 1 - smoothstep(CORRIDOR2.halfWidth, CORRIDOR2.halfWidth + CORRIDOR2.blend, across2);
     const longitudinal = 1 - smoothstep(CORRIDOR2.fadeFrom, CORRIDOR2.length, along2);
@@ -675,7 +686,17 @@ export function scatter({ cx, cz, radius, count, seed = 1, minH = 3, maxH = 400,
       Math.hypot(heightAt(x + e, z) - heightAt(x - e, z), heightAt(x, z + e) - heightAt(x, z - e)) /
       (2 * e);
     if (slope > maxSlope) continue;
-    if (avoidAirport && Math.abs(x) < 900 && z > -420 && z < 380) continue;
+    /*
+     * Nothing on the airfield itself. This test was the box `Math.abs(x) < 900
+     * && z > -420 && z < 380`, which is Kestrel's pad plus its blend skirt
+     * written out by hand — so on every other map the exclusion was the wrong
+     * size and in the wrong place. Los Angeles puts its second runway a
+     * kilometre south of the first, well outside that little box, and got a
+     * solid stand of trees planted the length of it. padWeight() already knows
+     * both pads of whichever map is loaded, blend included, and is what the
+     * height field itself flattens by.
+     */
+    if (avoidAirport && padWeight(x, z) > 0) continue;
     // Nothing tall in the approach corridor.
     if (avoidAirport && Math.abs(x) < CORRIDOR.length && Math.abs(z) < CORRIDOR.halfWidth) continue;
     out.push({ x, z, y: h, rot: rnd() * Math.PI * 2, scale: 0.75 + rnd() * 0.6 });
