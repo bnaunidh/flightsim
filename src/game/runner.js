@@ -163,6 +163,17 @@ export class MissionRunner {
       score: this.computeScore(),
       landing: this.data.lastTouchdown || null,
     };
+    /*
+     * And on the data, where anything that looks at the mission after it ended
+     * can find it.
+     *
+     * The score was computed here, handed to onComplete and then thrown away —
+     * so a job's own onComplete could pay you, but nothing that looked at the
+     * runner afterwards could tell whether you had scored 70 or nothing at all.
+     * The car jobs read it; so does anybody writing a debrief.
+     */
+    this.data.score = result.score;
+    this.data.completedAt = this.elapsed;
     if (this.def.onComplete) this.def.onComplete(this.ctx(), result);
     if (this.onComplete) this.onComplete(result);
   }

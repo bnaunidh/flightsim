@@ -508,12 +508,55 @@ class Game {
   layRoads() {
     const map = MAP;
     this.roads = null;
-    if (!map || !map.courier) return;
+    /*
+     * And publish the harbour, which is the boat's equivalent of the runway.
+     *
+     * missions-boat.js asks for `sim.harbour` and, not finding one, falls back
+     * to walking out from the origin until it reaches open water — and then
+     * CACHES that answer on the sim for the rest of the session. So every boat
+     * mission started at the same invented anchorage two kilometres out,
+     * whatever map it had just loaded and wherever that map's quay actually
+     * was. terrain.js has known the answer since the harbours landed; nothing
+     * was handing it over.
+     */
+    const berth = harbourBerth();
+    const mouth = harbourMouth();
+    this.harbour = berth && mouth
+      ? {
+          berth: new THREE.Vector3(berth.x, 0, berth.z),
+          mouth: new THREE.Vector3(mouth.x, 0, mouth.z),
+          name: (map && map.waters && map.waters.harbour && map.waters.harbour.name) || 'the harbour',
+        }
+      : null;
+    // And drop the stale fallback, or the cache outlives the map it was for.
+    this._boatFallbackHarbour = null;
+    if (!map || !map.courier) {
+      /*
+       * A map may have authored its own network — several of the driving maps
+       * did, a street grid among them — and an authored road is better than a
+       * generated one because somebody decided where it should go. Publish it
+       * so the tyres and the chart can see it, and generate nothing.
+       */
+      const authored = map && map.waters && map.waters.roads;
+      if (authored && authored.length) {
+        this.roads = { list: authored, roads: authored, notes: [], place: () => null, places: [] };
+        setTerrainProbes({ surfaceAt: roadSurfaceProbe(authored) });
+      }
+      return;
+    }
     try {
       const t0 = performance.now();
-      const { roads, notes } = buildRoads(map);
+      /*
+       * Generate only where nothing was authored. Two of the driving maps
+       * carry both a place list and their own roads; regenerating over the top
+       * of those would throw away a network somebody drew on purpose.
+       */
+      const authored = map.waters && map.waters.roads;
+      const already = authored && authored.length && !map.waters._generated;
+      const { roads, notes } = already ? { roads: authored, notes: ['authored'] } : buildRoads(map);
       map.waters = map.waters || {};
       map.waters.roads = roads;
+      if (!already) map.waters._generated = true;
       // The bounding boxes and the harbour siting are resolved once and cached
       // on the waters block; a new road list has to invalidate that.
       delete map.waters._ready;
@@ -2951,10 +2994,43 @@ class Game {
      * and the van at the depot, both of which the map itself declares.
      */
     const def = opts.mission ? findBoatMission(opts.mission) : opts.job ? findJob(opts.job) : null;
+
+    /*
+     * A mission's own map, loaded before the vehicle is put down on it.
+     *
+     * startMode has done this for the aeroplane since the beginning; startDrive
+     * never did. A boat mission that says `map: 'sennen'` started on whatever
+     * map you happened to be on, and boatSpawnFor read THAT map's harbour — so
+     * the first shout began two kilometres out in the wrong bay, and the quay
+     * it was about to send you back to was on a different island.
+     *
+     * Borrowed, not kept: the map you chose is put back when you step out of
+     * the boat, exactly as it is for a flight.
+     */
+    if (def && def.map && this.settings.map !== def.map) {
+      this.mapBeforeMission = this.settings.map;
+      applyMap(def.map);
+      this.layRoads();
+      refreshRunways();
+      refreshApronElevation();
+      this.settings.map = def.map;
+      this.menus.syncMap(def.map);
+      this.buildWorld(this.settings.quality);
+    }
+
     let start = null;
     let headingDeg = kind === 'boat' ? 250 : 90;
     if (kind === 'boat') {
-      const sp = def ? boatSpawnFor(def) : boatSpawnFor(BOAT_PATROL);
+      /*
+       * boatSpawnFor takes the SIM, not the mission.
+       *
+       * It reads the harbour out of the loaded map and puts her alongside the
+       * quay pointing at the mouth. Handing it a mission definition instead
+       * silently gave the wrong answer rather than throwing: the launch started
+       * 557 m out in the bay, which for a game whose first lesson is leaving a
+       * berth is most of the lesson gone.
+       */
+      const sp = boatSpawnFor(this);
       if (sp && sp.pos) {
         start = sp.pos;
         headingDeg = sp.headingDeg ?? headingDeg;

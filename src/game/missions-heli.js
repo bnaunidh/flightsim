@@ -554,7 +554,7 @@ export const HELI_MISSIONS = [
     short: 'Your first hover',
     difficulty: 'Easy',
     icon: '⇧',
-    map: 'kestrelport',
+    map: 'kestrel-port',
     aircraft: 'harrier',
     blurb:
       'Lift the skids off the harbour pad, hold twenty feet, turn on the spot with the pedals, and put '
@@ -641,7 +641,7 @@ export const HELI_MISSIONS = [
     short: 'Beach pickup',
     difficulty: 'Easy',
     icon: '⌒',
-    map: 'kestrelport',
+    map: 'kestrel-port',
     aircraft: 'harrier',
     blurb:
       'A walker on Cormorant Cove has gone over on her ankle. There is sand enough to land on, just. '
@@ -736,7 +736,7 @@ export const HELI_MISSIONS = [
     short: 'The winch',
     difficulty: 'Medium',
     icon: '≋',
-    map: 'kestrelport',
+    map: 'kestrel-port',
     aircraft: 'harrier',
     blurb:
       'A crewman is in the water sixty metres astern of the Kestrel fishing boat. There is nowhere to '
@@ -943,7 +943,7 @@ export const HELI_MISSIONS = [
     short: 'Deck landing, night, rain',
     difficulty: 'Hard',
     icon: '⬢',
-    map: 'ironhead',
+    map: 'rigs',
     aircraft: 'harrier',
     blurb:
       'A crewman has been hurt out in open water, on a deck, at night, in rain, with twenty knots of '
@@ -1048,7 +1048,7 @@ export const HELI_MISSIONS = [
     short: 'Two calls, one evening',
     difficulty: 'Very hard',
     icon: '◑',
-    map: 'kestrelport',
+    map: 'kestrel-port',
     aircraft: 'harrier',
     blurb:
       'Two calls at once, at opposite ends of the island, and forty minutes of daylight left. Both if '
@@ -1238,7 +1238,7 @@ export const HELI_MISSIONS = [
     short: 'Free patrol',
     difficulty: 'Easy',
     icon: '◍',
-    map: 'kestrelport',
+    map: 'kestrel-port',
     aircraft: 'harrier',
     blurb:
       'No mission and no clock. Sit on the hospital pad and wait. When a call comes in, go and get them. '

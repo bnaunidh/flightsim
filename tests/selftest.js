@@ -899,6 +899,22 @@ export async function runSelfTest(sim, opts = {}) {
     r.ok('service worker precaches the whole app', false, err.message);
   }
 
+  /*
+   * The other three games.
+   *
+   * Sixty more checks, kept in their own file for the same reason the boat's
+   * missions are: this one is nine hundred lines of aeroplane. Loaded
+   * dynamically and wrapped, because a static import of a name that does not
+   * exist takes the whole game down and not just the test — this project has
+   * paid for that once.
+   */
+  try {
+    const tg = await import('./selftest-three-games.js');
+    await tg.threeGameChecks(sim, r, say);
+  } catch (err) {
+    r.ok('the other three games can be tested at all', false, String(err && err.message));
+  }
+
   // Restore what we changed.
   sim.autoPauseOnHide = origAutoPause;
   sim.settings.flightMode = origMode;
