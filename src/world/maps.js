@@ -2530,7 +2530,7 @@ export const MAPS = [
       padTrees: 90,
       boats: 5,
     },
-    weather: { time: 'day', cond: 'hazy', windSpeedKts: 8, windDirDeg: 190 },
+    weather: { time: 'day', cond: 'cloudy', windSpeedKts: 8, windDirDeg: 190 },
   },
 
   /* desertrun — desertrun.map.js */

@@ -376,6 +376,25 @@ export class Weather {
   }
 
   load(data = {}) {
+    /*
+     * A name this file does not know used to be dropped in silence.
+     *
+     * Two shipped that way: a car job asking for 'rain' when the condition is
+     * called 'rainy', and a map asking for 'hazy', which is not a condition at
+     * all. Both simply inherited whatever weather was already in force, so the
+     * night call-out was written as a wet night and played as a dry one, and
+     * nothing anywhere said so. Saying it out loud costs one line and is the
+     * only way the next one gets found.
+     */
+    if (data.time && !TIMES[data.time]) {
+      console.warn(`[weather] no time of day called "${data.time}" — keeping ${this.time}`);
+    }
+    if (data.condition && !CONDITIONS[data.condition]) {
+      console.warn(
+        `[weather] no condition called "${data.condition}" — keeping ${this.condition}. `
+          + `Known: ${Object.keys(CONDITIONS).join(', ')}`
+      );
+    }
     if (data.time && TIMES[data.time]) this.time = data.time;
     if (data.condition && CONDITIONS[data.condition]) this.condition = data.condition;
     if (typeof data.windSpeedKts === 'number') this.windSpeedKts = clamp(data.windSpeedKts, 0, 40);

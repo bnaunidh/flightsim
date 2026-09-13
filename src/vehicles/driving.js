@@ -78,6 +78,19 @@ export class DriveInput {
     }
 
     /*
+     * Both pedals at once: the brake wins.
+     *
+     * A ten-year-old holds every key. With Shift and Ctrl both down, both
+     * pedals ramped to full and stayed there — the van fought itself, and the
+     * reverse latch could never engage because it is cleared on any throttle
+     * at all, so holding both was a van that would not go and would not back
+     * out either. Every car ever built does it this way: the brake overrides
+     * the accelerator, and the child feels the thing they expect, which is
+     * that the brake works.
+     */
+    if (stop > 0.02 && go > 0.02) go = 0;
+
+    /*
      * Pedals move fast but not instantly. 0.18 s to the floor means a tap is a
      * tap and a stab of brake is a stab of brake, while still being smooth
      * enough that the engine note and the body pitch do not snap.

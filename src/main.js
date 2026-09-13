@@ -11,7 +11,7 @@ import * as THREE from './vendor/three.module.js';
 import { warmTextures, setTextureAnisotropy, asphaltTexture, asphaltNormal } from './render/textures.js';
 import { Weather } from './world/weather.js';
 import { SkyDome } from './world/sky.js';
-import { createTerrain, heightAt, AIRPORT, applyMap, MAP, clearObstacles, clearPlatforms, harbourBerth, harbourMouth } from './world/terrain.js';
+import { createTerrain, heightAt, AIRPORT, applyMap, MAP, clearObstacles, clearPlatforms, harbourBerth, harbourMouth, flatSurfaceAt } from './world/terrain.js';
 import { SeaMarks } from './world/seamarks.js';
 import { MAPS, getMap, mapsForGame } from './world/maps.js';
 import { clearPads, nearestPad, PADS } from './world/pads.js';
@@ -557,6 +557,27 @@ class Game {
   }
 
   /**
+   * What the tyres are told they are on.
+   *
+   * The road wins where there is a road, and where there is not, the map's own
+   * authored ground does — a quay is tarmac, a causeway is gravel, a village
+   * green is grass. `flatSurfaceAt` has read that field since the flats landed
+   * and was never once passed to the vehicle, so a stretch a map's own blurb
+   * calls gravel drove as tarmac where a road crossed it and as grass
+   * everywhere else. Measured on the Sands Causeway: eleven samples, six
+   * tarmac, five grass, gravel at none of them.
+   */
+  surfaceProbe(roads) {
+    const onRoads = roadSurfaceProbe(roads);
+    return (x, z) => {
+      const r = onRoads(x, z);
+      if (r) return r;
+      const kind = flatSurfaceAt(x, z);
+      return kind ? { kind } : null;
+    };
+  }
+
+  /**
    * The map this game should be played on.
    *
    * A car job with no map of its own used to start wherever you happened to be
@@ -601,6 +622,14 @@ class Game {
      * was. terrain.js has known the answer since the harbours landed; nothing
      * was handing it over.
      */
+    /*
+     * The tyres hear about the ground on EVERY map, not only the ones with
+     * roads. The probe used to be installed inside the road branches, so on a
+     * map with no network the quay, the causeway and the village green all
+     * came back as whatever the height-based guess said.
+     */
+    setTerrainProbes({ surfaceAt: this.surfaceProbe(null) });
+
     const berth = harbourBerth();
     const mouth = harbourMouth();
     this.harbour = berth && mouth
@@ -622,7 +651,7 @@ class Game {
       const authored = map && map.waters && map.waters.roads;
       if (authored && authored.length) {
         this.roads = { list: authored, roads: authored, notes: [], place: () => null, places: [] };
-        setTerrainProbes({ surfaceAt: roadSurfaceProbe(authored) });
+        setTerrainProbes({ surfaceAt: this.surfaceProbe(authored) });
       }
       return;
     }
@@ -658,7 +687,7 @@ class Game {
        * terrain is a vehicle that cannot be tested without one. Without this
        * the van drives on a tarmac road that reads as grass, at 40 km/h.
        */
-      setTerrainProbes({ surfaceAt: roadSurfaceProbe(roads) });
+      setTerrainProbes({ surfaceAt: this.surfaceProbe(roads) });
       const places = (map.courier && map.courier.places) || [];
       this.roads = {
         list: roads,

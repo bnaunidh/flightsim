@@ -932,7 +932,35 @@ export function harbourMouth() {
  * marks are lying — which is worse than having none.
  */
 export function channelMarks(spacing = 260) {
-  const C = MAP.waters && MAP.waters.channel;
+  let C = MAP.waters && MAP.waters.channel;
+  /*
+   * A harbour with no authored channel gets one anyway.
+   *
+   * Only four of the seventeen boat-capable maps declare a `channel`, so on
+   * the other thirteen the chart was a blank blue rectangle where the buoyage
+   * should be — and buoyage is how a child learns which water is safe. The
+   * harbour already knows where the quay is and which way the mouth faces, and
+   * a channel is a line from one out through the other: berth, mouth, and
+   * eight hundred metres of approach on the same bearing. Authored beats
+   * derived, so an authored one always wins.
+   */
+  if (!C || !C.path || C.path.length < 2) {
+    const b = harbourBerth();
+    const m = harbourMouth();
+    if (b && m) {
+      const dx = m.x - b.x;
+      const dz = m.z - b.z;
+      const l = Math.hypot(dx, dz) || 1;
+      C = {
+        halfWidth: (MAP.waters.harbour && MAP.waters.harbour.mouthWidth / 2) || 55,
+        path: [
+          [b.x, b.z],
+          [m.x, m.z],
+          [m.x + (dx / l) * 800, m.z + (dz / l) * 800],
+        ],
+      };
+    }
+  }
   if (!C || !C.path || C.path.length < 2) return [];
   const hw = (C.halfWidth || 55) + 14;
   const out = [];
@@ -968,7 +996,16 @@ export function channelMarks(spacing = 260) {
   }
   const end = C.path[C.path.length - 1];
   out.push({ x: end[0], z: end[1], kind: 'fairway', colour: 0xd44b3c, topmark: 'sphere' });
-  return out;
+  /*
+   * And a buoy that came out ashore is not a buoy.
+   *
+   * The marks are offset from the centreline by half the channel width, so
+   * where the channel runs close to a headland one side of the pair lands on
+   * the headland. Measured across the seventeen: three of them. A missing
+   * mark is a gap in the buoyage; a mark standing in a field is the chart
+   * lying about where the water is, which is worse.
+   */
+  return out.filter((k) => heightAt(k.x, k.z) < -0.3);
 }
 
 /**

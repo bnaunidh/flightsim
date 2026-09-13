@@ -1327,7 +1327,7 @@ export const CAR_JOBS = [
       'Two in the morning, raining, and the outpost needs the doctor. Headlights, a wet road and a map — ' +
       'and a passenger who would rather you did not throw her about.',
     reward: 'Teaches night driving, wet grip, and reading the minimap.',
-    weather: { time: 'night', condition: 'rain', windSpeedKts: 16, windDirDeg: 210 },
+    weather: { time: 'night', condition: 'rainy', windSpeedKts: 16, windDirDeg: 210 },
     parTime: 360,
     // A person. The most fragile load in the game, and the only one that
     // complains.

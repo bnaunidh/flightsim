@@ -771,6 +771,19 @@ function watchSeabed(ctx, dt) {
  * from one function because the child should never have to work out which of
  * the two the game means.
  */
+/*
+ * FOUR of the six shouts pointed their "take her home" step straight at the
+ * berth instead of calling this.
+ *
+ * The berth is inside the breakwater, so the arrow ran through the harbour
+ * wall — and a child steering at the arrow drives into the wall. Measured on
+ * two maps by driving exactly at the arrow every frame: the launch reached the
+ * mouth and then ground, went astern, came ahead and ground again, for a
+ * hundred and sixty-five seconds without ever getting into the basin. Those
+ * missions were finishable only by somebody who already knew to ignore the
+ * arrow and aim off. First Shout was the one that called this, and it is the
+ * one that worked.
+ */
 function wayHome(ctx) {
   const f = F(ctx);
   const b = boatOf(ctx);
@@ -1129,7 +1142,7 @@ export const BOAT_MISSIONS = [
         text: 'He is aboard and he is cold. Take him home and come alongside the quay.',
         hint: 'There is an ambulance waiting on the quay. Straight home now.',
         targetLabel: 'Lifeboat berth',
-        target: (ctx) => F(ctx).berth.clone(),
+        target: wayHome,
         check: (ctx, dt) => alongsideAtHome(ctx, dt),
       },
     ],
@@ -1229,7 +1242,7 @@ export const BOAT_MISSIONS = [
         text: 'All three aboard. Get yourself off this shoal and take them home.',
         hint: 'Go back out the way you came in. The chart still applies on the way home.',
         targetLabel: 'Lifeboat berth',
-        target: (ctx) => F(ctx).berth.clone(),
+        target: wayHome,
         check: (ctx, dt) => alongsideAtHome(ctx, dt),
       },
     ],
@@ -1305,7 +1318,7 @@ export const BOAT_MISSIONS = [
         text: 'Both aboard. Follow the lit buoys home — red ones on your left — and come alongside.',
         hint: 'The lighthouse sweep is behind you now. Head for the two lights on the breakwater heads.',
         targetLabel: 'Lifeboat berth',
-        target: (ctx) => F(ctx).berth.clone(),
+        target: wayHome,
         check: (ctx, dt) => alongsideAtHome(ctx, dt),
       },
     ],
@@ -1419,7 +1432,7 @@ export const BOAT_MISSIONS = [
         text: 'Both aboard. Turn and run home with the sea behind you — she will want to slew, so steer ahead of her.',
         hint: 'Running downwind she steers less and surfs more. Ease the lever back.',
         targetLabel: 'Lifeboat berth',
-        target: (ctx) => F(ctx).berth.clone(),
+        target: wayHome,
         check: (ctx, dt) => alongsideAtHome(ctx, dt),
       },
     ],
