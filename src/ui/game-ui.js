@@ -166,7 +166,22 @@ export function installGameUi(menus, hooks = {}) {
     const grid = menus.screens.missions && menus.screens.missions.querySelector('.mission-grid');
     if (!grid || !defs || !defs.length) return;
     for (const m of defs) {
-      if (grid.querySelector(`[data-mission="${m.id}"]`)) continue;
+      /*
+       * A card that already exists gets TAGGED, not skipped.
+       *
+       * menus.js builds a card for every entry in MISSIONS, and the boat's,
+       * the car's and the helicopter's are all in MISSIONS now — so by the time
+       * this runs, every card exists and this loop did nothing at all. None of
+       * them carried a data-game, applyGameToCards treats an untagged card as
+       * an aeroplane mission, and so on the car's Jobs screen all thirty-one
+       * were hidden and the screen was blank. That is "my jobs in car doesn't
+       * work": the jobs were fine, the board was empty.
+       */
+      const found = grid.querySelector(`[data-mission="${m.id}"]`);
+      if (found) {
+        found.dataset.game = gameId;
+        continue;
+      }
       const card = document.createElement('article');
       card.className = 'mission-card';
       card.dataset.mission = m.id;
@@ -199,8 +214,17 @@ export function installGameUi(menus, hooks = {}) {
       for (const card of missions.querySelectorAll('[data-mission]')) {
         // A card with no data-game is an aeroplane mission: they were all built
         // before games existed and there are twelve of them to not re-tag.
-        const belongs = (card.dataset.game || 'flight') === game
-          || (game === 'heli' && (card.dataset.game || 'flight') === 'flight');
+        /*
+         * Four games, four mission lists.
+         *
+         * This used to give the helicopter the aeroplane's missions as well,
+         * on the grounds that the lessons carry over. The lessons do; the
+         * missions do not. Dead Stick is an aeroplane gliding to a runway with
+         * no engine, and a helicopter does not glide — it autorotates, which
+         * is a different thing done a different way. Offering it on the Rotors
+         * page is offering a mission that cannot be flown as described.
+         */
+        const belongs = (card.dataset.game || 'flight') === game;
         // Never un-hide something the passcode hid. The lock sync has already
         // run by the time this does, so hidden-true is respected and only
         // hidden-false is narrowed.
@@ -210,6 +234,17 @@ export function installGameUi(menus, hooks = {}) {
       }
       const head = missions.querySelector('.screen-head h2');
       if (head) head.textContent = game === 'car' ? 'Jobs' : game === 'boat' ? 'Runs' : 'Missions';
+      /*
+       * And the button. menus.js writes "Fly this mission" on every card it
+       * builds, which on the courier's job board is the wrong verb for the
+       * wrong vehicle — you do not fly a van to a delivery.
+       */
+      const verb = game === 'car' ? 'Take this job'
+        : game === 'boat' ? 'Take this run'
+          : game === 'heli' ? 'Fly this mission' : 'Fly this mission';
+      for (const b of missions.querySelectorAll('[data-start]')) {
+        if (b.textContent !== verb) b.textContent = verb;
+      }
     }
 
     const maps = menus.screens.maps;

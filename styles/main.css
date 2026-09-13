@@ -2808,10 +2808,41 @@ html.is-touch-device .slot-clear {
 .menu-layer { --game-accent: var(--accent); }
 [data-game="car"] .menu-layer { --game-accent: var(--amber); }
 [data-game="boat"] .menu-layer { --game-accent: var(--accent-2); }
-[data-game="car"] .screen-main .brand-mark,
-[data-game="boat"] .screen-main .brand-mark { color: var(--game-accent); }
-[data-game="car"] .screen-main .tagline,
-[data-game="boat"] .screen-main .tagline { color: var(--game-accent); }
+[data-game="heli"] .menu-layer { --game-accent: #ff9d6a; }
+
+/*
+ * And enough of it to feel like somewhere else.
+ *
+ * The first version tinted the brand mark and the tagline and nothing else, so
+ * the four games were the same grey screen with a different sentence at the
+ * top. A child arriving at the boat should be able to tell, without reading
+ * anything, that this is not where they were. The accent is one variable and
+ * these are the places it shows: the mark, the strapline, the icon on every
+ * card, the frame of the card under a finger, and a wash behind the whole
+ * page. Nothing here reaches a screen that is not the front page of a game.
+ */
+.screen-main .brand-mark,
+.screen-main .tagline { color: var(--game-accent); }
+.screen-main .card-btn .card-icon { color: var(--game-accent); }
+.screen-main .card-btn:hover,
+.screen-main .card-btn:focus-visible {
+  border-color: color-mix(in srgb, var(--game-accent) 55%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--game-accent) 30%, transparent) inset;
+}
+/*
+ * The wash. Deliberately weak — 7% at the top corner, gone by the middle of
+ * the page — because the thing it must not do is fight the text over it on a
+ * school laptop with the brightness turned down.
+ */
+.screen-main::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 12% -10%, color-mix(in srgb, var(--game-accent) 7%, transparent), transparent 60%);
+}
+.screen-main { position: relative; }
 
 /* The measured line under a map card — "31 km of road, a coast loop, a 240 m
    climb to the relay". Written only when something has actually measured it. */

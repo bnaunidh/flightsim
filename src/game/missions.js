@@ -45,10 +45,39 @@ import { CAR_JOBS, ISLAND_ROADS } from './jobs.js';
 const ELEV = RUNWAY.elev;
 const ft = (m) => m * UNITS.FT;
 
-/** Start-of-runway spawn, ready to go. */
+/**
+ * Start-of-runway spawn, ready to go — on WHICHEVER runway is loaded.
+ *
+ * This was a fixed point: (-470, 14, 0), which is eighty metres in from
+ * Kestrel's westerly threshold and is the right answer on Kestrel and on the
+ * eight other original maps, because every one of them keeps the runway at the
+ * origin. It is the wrong answer on any map that does not.
+ *
+ * Fourteen maps arrived today that do not. On Fenwick the strip is at
+ * (0, 1838); the aeroplane was put down at (-470, 0) regardless, which on that
+ * map is a hundred and sixty-six metre hillside — so every one of the new maps
+ * started you inside a hill and crashed you before you had touched a key.
+ * That is what "the maps are completely broken" was.
+ *
+ * A getter rather than a value, because `refreshRunways()` updates RUNWAY in
+ * place on every map load and anything computed at import time is frozen to
+ * whatever map happened to be loaded first. Spreading this object — which is
+ * how main.js uses it — evaluates the getters, so every reader gets the live
+ * answer without changing a single call site.
+ */
 export const RUNWAY_START = {
-  pos: new THREE.Vector3(-470, ELEV, 0),
-  headingDeg: 90,
+  get pos() {
+    const r = (RUNWAY.headingDeg ?? 90) * (Math.PI / 180);
+    // Eighty metres in from the threshold, along the runway.
+    return new THREE.Vector3(
+      RUNWAY.thresholdWest.x + Math.sin(r) * 80,
+      RUNWAY.elev,
+      RUNWAY.thresholdWest.z - Math.cos(r) * 80
+    );
+  },
+  get headingDeg() {
+    return RUNWAY.headingDeg ?? 90;
+  },
 };
 
 const airborneOverRunway = (dist = 6500, alt = 460) => ({

@@ -13,6 +13,7 @@ import { Weather } from './world/weather.js';
 import { SkyDome } from './world/sky.js';
 import { createTerrain, heightAt, AIRPORT, applyMap, MAP, clearObstacles, clearPlatforms, harbourBerth, harbourMouth } from './world/terrain.js';
 import { SeaMarks } from './world/seamarks.js';
+import { MAPS, getMap, mapsForGame } from './world/maps.js';
 import { clearPads, nearestPad, PADS } from './world/pads.js';
 import { buildRoads, onRoad, roadRibbon, roadSurfaceProbe } from './world/roads.js';
 import { Carrier } from './world/carrier.js';
@@ -44,6 +45,9 @@ import { DriveHud } from './ui/hud-drive.js';
 import { installRotorHud } from './ui/hud-rotor.js';
 import { Menus } from './ui/menus.js';
 import { installGameUi } from './ui/game-ui.js';
+
+/** The four games, in the order the switcher shows them. */
+const GAME_IDS = ['flight', 'boat', 'car', 'heli'];
 
 import { MissionRunner, STATUS } from './game/runner.js';
 import { MISSIONS, findMission, FREE_FLIGHT, RUNWAY_START, missionsFor, gameOf, FREE_FOR } from './game/missions.js';
@@ -287,9 +291,27 @@ class Game {
     this.atc = new AtcDirector(this);
     this.bindAircraftEvents();
 
+    /** Which of the four games the menus are showing. */
+    this.game = 'flight';
+    /*
+     * The map each game was last played on.
+     *
+     * Four games with different places: the lifeboat's island is not the
+     * courier's and neither is the aeroplane's. One shared `settings.map` sent
+     * you back to whichever you used last, whatever you were about to do.
+     */
+    this.gameMap = {};
     this.menus = new Menus(document.getElementById('ui'), {
       startTutorial: () => this.startMode('tutorial'),
-      startMission: (id) => this.startMode('mission', { id }),
+      /*
+       * One door for all four games.
+       *
+       * The mission cards call this hook, and it sent everything to
+       * startMode() — which flies an aeroplane. A boat mission or a car job
+       * clicked from the grid would have started an aeroplane on the boat's
+       * map with the boat's objective on the HUD.
+       */
+      startMission: (id) => this.startAnyMission(id),
       startFree: (opts) => this.startMode('free', opts),
       onSetting: (path, value) => this.applySetting(path, value),
       onPauseAction: (a) => this.pauseAction(a),
@@ -348,7 +370,13 @@ class Game {
         resetAll();
         location.reload();
       },
-      chooseMap: (id) => this.setMap(id),
+      chooseMap: (id) => {
+        // Remembered per game. The four games have different places and a child
+        // who picks Sennen for the lifeboat should not find the aeroplane there
+        // next time, nor the van sent back to Kestrel when they take a job.
+        this.gameMap[this.game || 'flight'] = id;
+        return this.setMap(id);
+      },
       install: () => this.promptInstall(),
       toggleSound: () => {
         this.hudAction('mute');
@@ -376,11 +404,7 @@ class Game {
         if (gameId === 'boat' || gameId === 'car') return this.startDrive(gameId);
         return this.switchGame(gameId);
       },
-      startMission: (id) => {
-        const def = findMission(id);
-        if (def && def.vehicle) return this.startDrive(def.vehicle, def.vehicle === 'boat' ? { mission: id } : { job: id });
-        return this.startMode('mission', { id });
-      },
+      startMission: (id) => this.startAnyMission(id),
       mapQualifies: (gameId, m) => {
         if (!m) return false;
         if (m.game) return m.game === gameId;
@@ -491,6 +515,25 @@ class Game {
     };
     requestAnimationFrame(go);
     setTimeout(go, 120);
+  }
+
+  /**
+   * The map this game should be played on.
+   *
+   * A car job with no map of its own used to start wherever you happened to be
+   * — which after one flight is Kestrel, an island with one road along its
+   * waist and nothing for a courier to do. The boat had the same problem in
+   * reverse. So: the map you last chose for THIS game, or the first one built
+   * for it, and only fall back to where you are if the game has nowhere of its
+   * own.
+   */
+  mapForGame(game) {
+    const chosen = this.gameMap[game];
+    if (chosen && getMap(chosen).id === chosen) return chosen;
+    const own = MAPS.filter((m) => m.game === game);
+    if (own.length) return own[0].id;
+    const offered = mapsForGame(game);
+    return offered.length ? offered[0].id : this.settings.map;
   }
 
   /**
@@ -1165,14 +1208,29 @@ class Game {
       this.menus.syncMap(def.map);
       this.buildWorld(this.settings.quality);
     }
-    if (def.aircraft && this.aircraftType.id !== def.aircraft) {
-      this.setAircraft(def.aircraft);
+    /*
+     * Which aeroplane, in order of who has the strongest claim: the mission
+     * names one, or the caller asked for one, or the switcher left the
+     * helicopter selected, or you keep what you had.
+     *
+     * `aircraftType` is undefined until the first flight of the session — the
+     * front page has not chosen an aeroplane — so every read of it here has to
+     * allow for that. It did not, and pressing Heli from a cold start threw
+     * before a single frame was drawn.
+     */
+    const wantAc =
+      def.aircraft
+      || opts.aircraft
+      || (this.game === 'heli' ? 'harrier' : null)
+      || (this.aircraftType && this.aircraftType.id);
+    if (wantAc && (!this.aircraftType || this.aircraftType.id !== wantAc)) {
+      this.setAircraft(wantAc);
       this.hud.setAircraftName(this.aircraftType.name);
     }
 
     // Light the right half of the switcher. The helicopter is an aircraft
     // type rather than a mode, so the bar has to be told which one you are in.
-    this.menus.setGame(this.aircraftType.id === 'harrier' ? 'heli' : 'flight');
+    this.menus.setGame(this.aircraftType && this.aircraftType.id === 'harrier' ? 'heli' : 'flight');
 
     // Weather.
     if (mode === 'free') {
@@ -3007,14 +3065,15 @@ class Game {
      * Borrowed, not kept: the map you chose is put back when you step out of
      * the boat, exactly as it is for a flight.
      */
-    if (def && def.map && this.settings.map !== def.map) {
+    const wantMap = (def && def.map) || this.mapForGame(kind);
+    if (wantMap && this.settings.map !== wantMap) {
       this.mapBeforeMission = this.settings.map;
-      applyMap(def.map);
+      applyMap(wantMap);
       this.layRoads();
       refreshRunways();
       refreshApronElevation();
-      this.settings.map = def.map;
-      this.menus.syncMap(def.map);
+      this.settings.map = wantMap;
+      this.menus.syncMap(wantMap);
       this.buildWorld(this.settings.quality);
     }
 
@@ -3138,6 +3197,21 @@ class Game {
   }
 
   /**
+   * Start whatever kind of thing this mission is.
+   *
+   * Twelve of the thirty-one are aeroplane missions and go through startMode;
+   * six are boat shouts, six are courier jobs and seven are helicopter
+   * missions. The helicopter's are still flights — the Skyhook is an aircraft
+   * type, not a mode — so only the boat's and the car's take the other door.
+   */
+  startAnyMission(id) {
+    const def = findMission(id);
+    if (def && def.vehicle === 'boat') return this.startDrive('boat', { mission: id });
+    if (def && def.vehicle === 'car') return this.startDrive('car', { job: id });
+    return this.startMode('mission', { id });
+  }
+
+  /**
    * The switcher in the menu bar.
    *
    * Four games, one world. Flight and Heli are the same engine with a
@@ -3148,17 +3222,54 @@ class Game {
    * existing at the same time.
    */
   switchGame(id) {
-    if (id === 'boat' || id === 'car') return this.startDrive(id);
+    if (!GAME_IDS.includes(id)) id = 'flight';
+
+    /*
+     * Switching games goes to that game's FRONT PAGE. It does not start it.
+     *
+     * It used to drop you straight in: press Boat and you were suddenly
+     * afloat, mid-water, with a mission already running and no way back except
+     * Esc and a quit. That is not a switcher, it is a trapdoor — and the whole
+     * point of four games is that each one is its own place with its own
+     * missions, its own maps and its own way in. You arrive at the door, not
+     * in the middle of the room.
+     *
+     * So: put away whatever is running, then show that game's home screen and
+     * let the player choose from it.
+     */
     this.stopDrive();
-    // Remember which aeroplane you were flying, so coming back from the boat
-    // does not silently demote you to the trainer.
-    if (id === 'heli') this.lastPlane = 'harrier';
-    else if (this.lastPlane === 'harrier') this.lastPlane = null;
-    const aircraft = id === 'heli'
-      ? 'harrier'
-      : this.lastPlane || this.menus.chosenAircraft || 'skylark';
-    this.lastPlane = aircraft;
-    return this.startMode('free', { ...this.freeOpts(), aircraft });
+    this.game = id;
+
+    /*
+     * The vehicle the game is about, chosen now rather than at the moment you
+     * press Go — because the screens behind this one say what you are about to
+     * fly. Pressing Free Flight on the Rotors page and getting a Skylark is
+     * the same bug as the map cards saying how long the runway is on a map
+     * with no runway.
+     */
+    if (id === 'heli') {
+      this.lastPlane = 'harrier';
+    } else if (id === 'flight' && this.lastPlane === 'harrier') {
+      // Coming back from the helicopter must not silently leave you in it.
+      this.lastPlane = this.menus.chosenAircraft || 'skylark';
+    }
+    /*
+     * Remembered, not built.
+     *
+     * setAircraft() builds a model, and from the front page there is no
+     * aeroplane yet — `this.aircraftType` is undefined until a flight starts,
+     * which is deliberate and documented at the fleet-models option. So the
+     * choice is recorded here and startMode() picks it up when something
+     * actually begins. Calling setAircraft from a menu button threw on the
+     * first press of Heli from a cold start.
+     */
+
+    // And out to the front page. quitToMenu puts back a borrowed map, stands
+    // the runner down and hides the HUD, which is everything a flight leaves
+    // lying about.
+    this.quitToMenu('main');
+    this.menus.setGame(id);
+    return null;
   }
 
   /**
