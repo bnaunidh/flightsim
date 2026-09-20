@@ -26,19 +26,43 @@ const HERE = new URL('../src/', import.meta.url).href;
 const THREE = await import(HERE + 'vendor/three.module.js');
 const { aircraftDefinitions } = await import(HERE + 'fleet/aircraft-fleet.js');
 const { buildAircraft } = await import(HERE + 'fleet/aircraft-core.js');
+/*
+ * The adapter, not the pack.
+ *
+ * Only three of the aeroplanes are drawn by src/fleet — the adapter's
+ * PACK_DRAWS_BETTER list — and everything else comes from
+ * src/aircraft/model.js. Asking the pack for a Skylark gets you a Skylark
+ * the game never shows, which is exactly the trap that made the Nightjar
+ * take two days: the shape being measured was not the shape being drawn.
+ * So this goes through the same call main.js makes.
+ */
+const { createAircraftModel } = await import(HERE + 'aircraft/model-adapter.js');
+const { AIRCRAFT, getAircraft } = await import(HERE + 'aircraft/types.js');
 
 /** Every triangle of the built model, in the aircraft's own frame. */
 export function trianglesOf(id) {
+  const type = AIRCRAFT.find((t) => t.id === id);
   const config = aircraftDefinitions.find((c) => c.id === id);
-  if (!config) throw new Error(`no aircraft "${id}" — try: ${aircraftDefinitions.map((c) => c.id).join(' ')}`);
-  const built = buildAircraft(config, {});
-  const root = built.group || built.object || built;
+  if (!type && !config) {
+    throw new Error(`no aircraft "${id}" — try: ${AIRCRAFT.map((t) => t.id).join(' ')}`);
+  }
+  const built = type ? createAircraftModel({ type: getAircraft(id) }) : buildAircraft(config, {});
+  const root = built.group || built.object || built.root || built;
   root.updateMatrixWorld(true);
 
   const tris = [];
   let meshes = 0;
   root.traverse((o) => {
     if (!o.isMesh || !o.geometry) return;
+    /*
+     * Not the invisible ones. The Harrier carries an 8.4 m square decal at
+     * y=0 for its downwash, transparent and at zero opacity until it hovers,
+     * and drawn flat it filled the whole plan view with a black slab — the
+     * aeroplane looked broken and was not. A silhouette is what you can see.
+     */
+    if (!o.visible) return;
+    const mat = Array.isArray(o.material) ? o.material[0] : o.material;
+    if (mat && mat.transparent && mat.opacity <= 0.02) return;
     const g = o.geometry;
     const pos = g.attributes && g.attributes.position;
     if (!pos) return;
@@ -57,14 +81,16 @@ export function trianglesOf(id) {
       tris.push([take(a), take(b), take(c)]);
     }
   });
-  return { id, name: config.name || id, meshes, tris };
+  return { id, name: (type && type.name) || (config && config.name) || id, meshes, tris };
 }
 
 const args = process.argv.slice(2);
 if (args[0] === '--all') {
   const dir = args[1] || '.';
   mkdirSync(dir, { recursive: true });
-  for (const c of aircraftDefinitions) {
+  const ids = [...new Set([...AIRCRAFT.map((t) => t.id), ...aircraftDefinitions.map((c) => c.id)])];
+  for (const aircraftId of ids) {
+    const c = { id: aircraftId };
     try {
       const out = trianglesOf(c.id);
       writeFileSync(`${dir}/${c.id}.json`, JSON.stringify(out));
@@ -76,5 +102,5 @@ if (args[0] === '--all') {
 } else if (args[0]) {
   console.log(JSON.stringify(trianglesOf(args[0])));
 } else {
-  console.log(aircraftDefinitions.map((c) => c.id).join(' '));
+  console.log([...new Set([...AIRCRAFT.map((t) => t.id), ...aircraftDefinitions.map((c) => c.id)])].join(' '));
 }

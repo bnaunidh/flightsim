@@ -17,6 +17,7 @@ import {
 } from '../render/textures.js';
 import { clamp, lerp } from '../core/noise.js';
 import { getAircraft, DEFAULT_AIRCRAFT_ID } from './types.js';
+import { installSkylarkDetails } from './models/skylark.js';
 
 /** NACA-style aerofoil outline, chord along +X, thickness along +Y. */
 function aerofoil(steps = 18, thickness = 0.13, camber = 0.022) {
@@ -448,21 +449,20 @@ export function createAircraftModel(opts = {}) {
   }
   root.add(wings);
 
-  // Wing struts (the classic high-wing braces).
-  if (S.struts) for (const side of [-1, 1]) {
-    for (const [ax, az, bx, bz] of [
-      [side * 0.66, -0.42, side * 3.1, -0.75],
-      [side * 0.66, -0.42, side * 3.0, 0.15],
-    ]) {
-      const a = new THREE.Vector3(ax, -0.35, az);
-      const b = new THREE.Vector3(bx, 0.66, bz);
-      const dir = new THREE.Vector3().subVectors(b, a);
-      const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, dir.length(), 8), strutMat);
-      strut.position.copy(a).addScaledVector(dir, 0.5);
-      strut.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
-      strut.castShadow = true;
-      root.add(strut);
-    }
+  /*
+   * Wing struts, root fairings, rounded tips and the greenhouse cabin.
+   *
+   * The struts used to be two cylinders between four fixed points, and the
+   * fixed points were not on the wing: the upper end was written as a
+   * constant while the wing's own position comes out of chordAt/sweepAt, so
+   * the brace stopped short of the thing it braces. models/skylark.js works
+   * both ends off the same formula. It is a no-op for every aeroplane but
+   * the trainer, which is the one the class flies.
+   */
+  if (S.struts || S.canopy === 'greenhouse') {
+    installSkylarkDetails({
+      THREE, root, S, type, bodyMat, glassMat, matteMat, strutMat, chordAt, sweepAt,
+    });
   }
 
   // Ailerons and flaps on hinges, so they visibly deflect.
@@ -1006,13 +1006,30 @@ export function createAircraftModel(opts = {}) {
 
   /* ---------------- Cabin interior (seen through the glass) ---------- */
   const seatMat = new THREE.MeshStandardMaterial({ map: leatherTexture('#2b2119'), roughness: 0.8 });
-  if (S.canopy === 'cabin') for (const side of [-1, 1]) {
+  /*
+   * Seats — and the greenhouse gets them too.
+   *
+   * This read `=== 'cabin'` only, so the moment the Skylark's canopy became
+   * a greenhouse its cabin emptied: a bigger, clearer roof over four seats
+   * that had stopped being drawn. Found by diffing the mesh list before and
+   * after, not by the triangle count, which went up either way.
+   */
+  if (S.canopy === 'cabin' || S.canopy === 'greenhouse') for (const side of [-1, 1]) {
     const seat = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.1, 0.44), seatMat);
     seat.position.set(side * 0.3, -0.22, 0.1);
     root.add(seat);
     const back = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.5, 0.1), seatMat);
     back.position.set(side * 0.3, 0.02, 0.34);
     root.add(back);
+    // The rear bench, which the longer roof now shows.
+    if (S.canopy === 'greenhouse') {
+      const rear = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.42), seatMat);
+      rear.position.set(side * 0.32, -0.22, 0.95);
+      root.add(rear);
+      const rearBack = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.44, 0.1), seatMat);
+      rearBack.position.set(side * 0.32, 0.0, 1.17);
+      root.add(rearBack);
+    }
   }
 
   const state = {

@@ -178,7 +178,13 @@ export const AIRCRAFT = [
     livery: '#eef1f5',
     accent: '#c8102e',
     callsign: 'Skylark one seven two',
-    shape: { ...TRAINER_SHAPE },
+    /*
+     * A glasshouse, not a blister — and only here. TRAINER_SHAPE is spread
+     * by the Courier too, and the Courier is a freighter with a small cabin
+     * window, so the canopy is overridden on the aeroplane rather than
+     * changed underneath both of them.
+     */
+    shape: { ...TRAINER_SHAPE, canopy: 'greenhouse' },
     aero: { ...TRAINER_AERO },
   },
 

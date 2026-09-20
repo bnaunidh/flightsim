@@ -11,6 +11,17 @@
  *   const { runSelfTest } = await import('./tests/selftest.js');
  *   const results = await runSelfTest(window.__sim);
  *   console.table(results.checks);
+ *
+ * IF THE WINDOW IS NOT ON SCREEN, STUB THE RENDERER FIRST:
+ *
+ *   window.__sim.renderer.render = () => {};
+ *
+ * `sim.step()` renders a frame per step, and a tab that is not compositing
+ * — minimised, in a hidden pane, in a headless harness — does not finish
+ * one. The suite then appears to hang: it took over an hour and stopped
+ * at "landing, calm" three times running before that was understood, and
+ * it was not a hang at all, it was 2,700 stalled swaps. The suite never
+ * reads a pixel, so the stub costs nothing and the run takes 40 seconds.
  */
 
 const UNIT = { KTS: 1.94384, FT: 3.28084, FPM: 196.85 };
