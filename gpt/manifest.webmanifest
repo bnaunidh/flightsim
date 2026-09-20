@@ -1,0 +1,24 @@
+{
+  "name": "Island Flight Simulator",
+  "short_name": "Island Flight",
+  "description": "Learn to fly a light aeroplane over Kestrel Island: tutorial, three missions, real weather and a full glass cockpit. Installs and plays completely offline.",
+  "id": "island-flight-simulator",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#070c15",
+  "theme_color": "#0b1220",
+  "categories": ["games", "education", "simulation"],
+  "lang": "en-GB",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Free Flight", "url": ".?mode=free", "description": "Fly anywhere in any weather" },
+    { "name": "Tutorial", "url": ".?mode=tutorial", "description": "Learn to fly from the beginning" }
+  ]
+}

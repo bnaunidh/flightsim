@@ -2164,10 +2164,7 @@ html.is-touch-device .minimap { top: 8px; left: 8px; right: auto; bottom: auto; 
 .dev-panel .check { align-items: flex-start; }
 .dev-panel .check span { line-height: 1.45; }
 .dev-panel .check strong { color: #ffd98a; }
-.dev-panel button.ghost,
-/* The link to the comparison build wants to look like the button beside it. */
-.dev-panel a.ghost { justify-self: start; }
-.dev-panel a.ghost { text-decoration: none; display: inline-block; }
+.dev-panel button.ghost { justify-self: start; }
 
 /* The mission clock, beside the objective title. */
 .hud-objective-clock {

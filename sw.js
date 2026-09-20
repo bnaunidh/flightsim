@@ -196,6 +196,16 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.includes('/download/')) return;
 
   /*
+   * And never cache /gpt/, which is a whole second copy of the game.
+   *
+   * It is the build ChatGPT delivered on 20 September, kept beside this one
+   * behind Dev mode so the two can be compared. Four megabytes of modules
+   * that nobody plays offline, on the same origin as the game that does, is
+   * exactly what the cache should not fill up with.
+   */
+  if (url.pathname.includes('/gpt/')) return;
+
+  /*
    * Code goes to the network first; everything else comes from the cache first.
    *
    * The whole app used to be cache-first with a background refresh, which

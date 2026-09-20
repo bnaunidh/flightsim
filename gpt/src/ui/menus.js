@@ -1530,21 +1530,6 @@ export class Menus {
         </div>
         <div class="dev-panel" data-dev-panel hidden>
           <p class="hint tiny">Work in progress. It changes what crashing means, so scores set with it on are not comparable with the rest.</p>
-          <!--
-            The other build.
-            ChatGPT delivered a whole rebuilt tree on 20 September. Most of it
-            was taken into this one, but two things were not — its Kestrel,
-            where the approach cut was removed by removing the island, and its
-            Fenwick street heights, which disagreed at the crossings. Rather
-            than describe the difference, keep the build and let it be flown.
-            It is behind the passcode because it is a comparison, not a game
-            anybody should be given by accident, and it has no service worker
-            of its own so it cannot touch what is stored for this one.
-          -->
-          <p class="hint tiny">ChatGPT's build of 20 September, complete and unaltered apart from its
-          service worker. Its Kestrel is flat and its town streets step at the crossings; everything
-          else in it is in this game already.</p>
-          <a class="ghost" data-dev-gpt href="gpt/index.html" target="_blank" rel="noopener">Open ChatGPT's build</a>
           <button class="ghost" data-dev-leave>Leave dev mode</button>
         </div>
 
