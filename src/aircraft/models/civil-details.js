@@ -48,8 +48,22 @@ function radiusAt(id, z) {
 export function civilCabin(id, S) {
   if (!PROFILES[id]) return null;
   const z0 = -1.7, z1 = id === 'meridian' ? -.3 : 1.15;
+  /*
+   * The roof sits ON the fuselage line, not above it.
+   *
+   * It was a constant — .9, .94, .98 — while the skin it closes is a lathe
+   * whose top varies with station, so the cabin roof stood proud of the body
+   * by 4 to 14 cm in shape units (13.5 cm on the Meridian, 17.5 on the
+   * Skyhook) and the join read as a shed bolted to the hull. The two corners
+   * take their height from the same profile the fuselage is turned from, so
+   * the roofline is continuous by construction, plus 2 cm so the panel sits
+   * just proud of the skin rather than z-fighting with it.
+   */
+  const zFront = z0 + (z1 - z0)*.24, zRear = z1 - (z1 - z0)*.18;
   return { z0: z0*S.bodyLength, z1: z1*S.bodyLength,
-    roofY: id==='harrier'?.98:id==='meridian'?.94:.9, baseY:0,
+    roofY: radiusAt(id, zFront)*S.bodyRadius + .02,
+    roofRearY: radiusAt(id, zRear)*S.bodyRadius + .02,
+    baseY:0,
     frontW: radiusAt(id, z0)*S.bodyRadius, rearW: radiusAt(id, z1)*S.bodyRadius };
 }
 /** Remove upper skin triangles between complete lathe stations, so the glass
@@ -75,9 +89,10 @@ export function installCivilDetails(ctx) {
   const panel=(name,pts,mat)=>{const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pts.flat(),3));g.setIndex([0,1,2,0,2,3]);g.computeVertexNormals();return mesh(name,g,mat);};
   const tube=(name,a,b,r,mat=matteMat)=>{const va=new THREE.Vector3(...a),vb=new THREE.Vector3(...b),dir=vb.clone().sub(va);const m=mesh(name,new THREE.CylinderGeometry(r,r,dir.length(),5),mat);m.position.copy(va).add(vb).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.normalize());return m;};
   const {z0,z1,roofY,frontW,rearW}=cabin;
+  const roofRearY = cabin.roofRearY ?? roofY*.94;
   const zFront=z0+(z1-z0)*.24,zRear=z1-(z1-z0)*.18;
   const bl=[-frontW,0,z0],br=[frontW,0,z0],tl=[-frontW*.88,roofY,zFront],tr=[frontW*.88,roofY,zFront];
-  const rl=[-rearW*.88,roofY*.94,zRear],rr=[rearW*.88,roofY*.94,zRear],el=[-rearW,0,z1],er=[rearW,0,z1];
+  const rl=[-rearW*.88,roofRearY,zRear],rr=[rearW*.88,roofRearY,zRear],el=[-rearW,0,z1],er=[rearW,0,z1];
   panel('Port windscreen',[bl,[0,0,z0],[0,roofY,zFront],tl],glassMat);
   panel('Starboard windscreen',[[0,0,z0],br,tr,[0,roofY,zFront]],glassMat);
   panel('Port cabin glazing',[bl,tl,rl,el],glassMat);
