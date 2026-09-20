@@ -18,6 +18,27 @@
  *   flat    a low sandy cay barely out of the water
  *   ridge   steep craggy ridges with narrow inlets between them
  *   cone    a volcano: one big cone with a crater in the top
+ *
+ * A ROAD PATH POINT IS [x, z, y] — the two map coordinates first, the
+ * elevation last. Not three.js order, and worth knowing before you edit one:
+ * `[0, 300, 24]` is a point three hundred metres up the map at twenty-four
+ * metres above the sea, not a point twenty-four metres along at three hundred
+ * metres up. Both readings parse, nothing throws, and the wrong one quietly
+ * moves the road and cuts a trench along it. roads.js emits the same order.
+ *
+ * AND THESE ARRAYS ARE LIVE, not a stale bake left behind by the generator.
+ * Six maps carry one — kestrel, airfieldperimeter, town, coastroad, desertrun
+ * and mountainpass — and main.js `layRoads()` keeps every one of them:
+ * a map with no `courier` block returns early and publishes the authored list
+ * untouched, and a map with one takes the `already` branch because an authored
+ * road is a road somebody decided the line of. `buildRoads()` is never called
+ * on any of the six. What is written here is what the terrain is cut to, what
+ * the tarmac ribbon is drawn along, what the tyres read as tarmac and what the
+ * chart shows. Measured 2026-09-19, over all 222 points of all six networks:
+ * `heightAt(p[0], p[1])` comes back within 2.05 m of `p[2]`, and the residual
+ * is the airfield pad and the strongest-road-wins rule, both deliberate. Read
+ * the same points as [x, y, z] and the best any of them manages is 16 m out
+ * and the worst is 4 km, which is what a transposed path looks like.
  */
 
 export const MAPS = [

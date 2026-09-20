@@ -80,7 +80,18 @@ function easeProfile(ys, maxStep, locked) {
  * loud when it refuses one.
  */
 export function roadBetween(a, b, opts = {}) {
-  const halfWidth = opts.halfWidth || 13;
+  /*
+   * Eighteen metres, not thirteen.
+   *
+   * A real island road is three metres a side. This one is driven by a
+   * ten-year-old with two keys, and a key is bang-bang: you are either at full
+   * lock or straightening up, with nothing in between. Measured on Drover's
+   * Flat at fifty km/h, following the centreline as closely as the keys allow,
+   * the van wanders 24 m either side — so on a 26 m road it is off the tarmac
+   * about half the time, through no fault of the child's. The road is the
+   * thing that should give.
+   */
+  const halfWidth = opts.halfWidth || 18;
   const blend = opts.blend || 60;
   /*
    * `opts.via` is the routed line — the one that goes round the hill rather
@@ -143,6 +154,18 @@ export function roadBetween(a, b, opts = {}) {
     else fill = Math.max(fill, d);
     if (i) worst = Math.max(worst, Math.abs(ys[i] - ys[i - 1]) / (len / n));
   }
+  /*
+   * A path point is [x, z, y] — GROUND PLANE FIRST, ELEVATION LAST.
+   *
+   * Not three.js order, and the one thing about this data that is worth
+   * saying out loud: every reader of it — `roadHeight`, `onRoad`,
+   * `roadRibbon`, `nearestRoadPoint`, the chart — takes [0] and [1] as the
+   * two map coordinates and [2] as the height, and a path written the other
+   * way round is self-consistent enough that nothing throws. It just puts
+   * the road somewhere else and cuts a trench along it. The hand-authored
+   * networks in maps.js use this same order; tests/selftest-three-games.js
+   * measures it.
+   */
   const path = [];
   for (let i = 0; i <= n; i++) path.push([Math.round(xs[i]), Math.round(zs[i]), +ys[i].toFixed(2)]);
   return { road: { name: opts.name || '', halfWidth, blend, path }, cut, fill, worst, len };
@@ -171,8 +194,18 @@ export function roadBetween(a, b, opts = {}) {
 
 /** Metres per cell. Three quads on a Kestrel-sized chunk; fine enough for a pass. */
 const CELL = 90;
-/** Steeper than this is not a road at any price. */
-const HARD_MAX = 0.3;
+/**
+ * Steeper than this is not a road at any price.
+ *
+ * This gates which CELLS the router may cross, not the finished grade — the
+ * profile easing holds that at 8% whatever line it picks, and the cut and fill
+ * limits decide whether the price is worth paying. So it can afford to be
+ * generous: at 0.30 Cullen Sands lost two of its places the moment the
+ * approach corridors stopped flattening half the island, because the only
+ * lines to them cross a short steep shoulder that the easing would have
+ * handled perfectly well.
+ */
+const HARD_MAX = 0.38;
 /** How hard the cost punishes a slope, relative to MAX_GRADE. */
 const GRADE_PENALTY = 9;
 
@@ -302,7 +335,39 @@ export function routeBetween(g, a, b) {
   pts.reverse();
   pts[0] = { x: a.x, z: a.z };
   pts[pts.length - 1] = { x: b.x, z: b.z };
-  return simplify(pts, g.cell * 0.7);
+  return smooth(simplify(pts, g.cell * 0.7));
+}
+
+/**
+ * Round the corners off, because a road is a curve.
+ *
+ * The router works on a grid, so its line is a staircase of 90 m steps and
+ * every join is a corner. Simplifying removes the redundant points but keeps
+ * the kinks, and a kink is a corner with no radius at all — measured, a van
+ * following such a line as closely as two keys allow wandered 27 m either side
+ * of it, because at fifty km/h there is no steering input that takes a corner
+ * of zero radius. The child gets the blame for a line no vehicle could drive.
+ *
+ * Chaikin's corner cutting, twice: each pass replaces every corner with two
+ * points a quarter and three quarters along, which is a quadratic B-spline in
+ * the limit and, after two passes, a curve with a radius of roughly a third of
+ * the segment length. The ends are pinned, because they are the places the
+ * road is actually going.
+ */
+function smooth(pts, passes = 2) {
+  let out = pts;
+  for (let p = 0; p < passes && out.length > 2; p++) {
+    const next = [out[0]];
+    for (let i = 0; i < out.length - 1; i++) {
+      const a = out[i];
+      const b = out[i + 1];
+      next.push({ x: a.x * 0.75 + b.x * 0.25, z: a.z * 0.75 + b.z * 0.25 });
+      next.push({ x: a.x * 0.25 + b.x * 0.75, z: a.z * 0.25 + b.z * 0.75 });
+    }
+    next.push(out[out.length - 1]);
+    out = next;
+  }
+  return out;
 }
 
 /** Drop the points that lie on the line their neighbours already describe. */
@@ -421,7 +486,7 @@ export function onRoad(roads, x, z, margin = 0) {
   if (padWeight(x, z) > 0.9) return false;
   for (const rd of roads) {
     if (x < rd._x0 || x > rd._x1 || z < rd._z0 || z > rd._z1) continue;
-    const w = (rd.halfWidth || 13) + margin;
+    const w = (rd.halfWidth || 18) + margin;
     const p = rd.path;
     for (let k = 1; k < p.length; k++) {
       const ax = p[k - 1][0];
@@ -466,7 +531,7 @@ export function roadRibbon(THREE, roads, { lift = 0.08, tex = null, nrm = null }
   let base = 0;
   for (const rd of roads) {
     const p = rd.path;
-    const w = (rd.halfWidth || 13) * 0.62; // the tarmac, not the whole corridor
+    const w = (rd.halfWidth || 18) * 0.78; // the tarmac, not the whole corridor
     let run = 0;
     for (let k = 0; k < p.length; k++) {
       // The direction here is the average of the two segments that meet at this

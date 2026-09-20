@@ -59,6 +59,29 @@ const KESTREL_AIRPORT = {
  * say otherwise. The objects are mutated in place rather than replaced,
  * because they are exported and `scatter` holds the binding.
  */
+/*
+ * How steeply the cleared lane climbs away from the threshold, metres per
+ * metre. A light aeroplane climbs at about one in ten.
+ *
+ * The WIDTH of the lane was not the problem and narrowing it broke the
+ * circuit: measured, the aeroplane stopped reaching the runway at all and the
+ * crosswind landing came down at 1,209 fpm, 39 m off the centreline. The lane
+ * has to be wide because a ten-year-old's final approach is wide. What made
+ * the maps ugly was DEPTH — flattening a three-hundred-metre peak to twenty-
+ * four — and that is what the cap below fixes.
+ */
+const APPROACH_SLOPE = 0.12;
+/**
+ * The deepest a corridor may cut.
+ *
+ * Generous, because on Kestrel there is a 278 m hill one kilometre short of
+ * the runway and carving the approach valley through it is the corridor's
+ * actual job — capped at 70 m the aeroplane flew into it and the circuit
+ * stopped working at all. What the cap is for is the far end: a mountain four
+ * kilometres out is scenery, not an obstacle, and the rising ceiling has
+ * already let it alone by then. This only stops the pathological case.
+ */
+const MAX_APPROACH_CUT = 260;
 const CORRIDOR_DEFAULT = Object.freeze({ halfWidth: 380, blend: 320, fadeFrom: 3600, length: 5400 });
 /** The same idea for 18/36, running north-south instead. */
 const CORRIDOR2_DEFAULT = Object.freeze({ halfWidth: 300, blend: 260, fadeFrom: 2600, length: 4200 });
@@ -829,7 +852,7 @@ function roadHeight(h, x, z) {
   for (let i = 0; i < R.length; i++) {
     const rd = R[i];
     if (x < rd._x0 || x > rd._x1 || z < rd._z0 || z > rd._z1) continue;
-    const hw = rd.halfWidth || 26;
+    const hw = rd.halfWidth || 18;
     const blend = rd.blend || 55;
     const p = rd.path;
     let near = Infinity;
@@ -846,6 +869,10 @@ function roadHeight(h, x, z) {
      */
     let sum = 0;
     let wsum = 0;
+    // A path point is [x, z, y]: the two map coordinates first, the elevation
+    // last. See the note over `path.push` in roads.js — the authored networks
+    // in maps.js are written the same way, and a transposed one would look
+    // perfectly ordinary here and cut a trench in the wrong place.
     for (let k = 1; k < p.length; k++) {
       const ax = p[k - 1][0];
       const az = p[k - 1][1];
@@ -1024,6 +1051,64 @@ export function dryingShoals(limit = 1.8) {
 }
 
 
+/**
+ * A corridor is a clearing, not a quarry.
+ *
+ * The rule was: anywhere inside the lane, take the ground down to the ceiling,
+ * however far down that is. Measured, that removed 46% of Kestrel's land and
+ * 42% of Fjord's, cutting up to 345 m on one and 800 m on the other — a bright
+ * green cross carved through thirty of the thirty-two maps, and on Fjord a
+ * canyon straight through both of its named mountains. It is invisible from
+ * the cockpit on final, which is the only place anyone ever looked at it.
+ *
+ * So the cut is capped. Where the ground is gently above the lane it is taken
+ * down and you get a valley; where it is a mountain, the mountain stays and
+ * the map has a blocked approach, which is a fact about the map and something
+ * its author can fix. Levelling a 300 m peak to make the numbers work is not
+ * fixing it, it is hiding it.
+ */
+function clearForApproach(h, ceiling, w) {
+  if (h <= ceiling || w <= 0) return h;
+  const wanted = h - ceiling;
+  return h - Math.min(wanted, MAX_APPROACH_CUT) * w;
+}
+
+/**
+ * How high the ground may be, this far out along an approach.
+ *
+ * This was a FLAT ceiling — field elevation plus ten metres, held for five and
+ * a half kilometres, in a band nearly a mile wide, in both directions. On an
+ * island 2.4 km across that is not a corridor, it is a cross bulldozed through
+ * the whole place, and it is why thirty of the thirty-two maps have a bright
+ * green plus-sign carved into them. You cannot see it from the cockpit on
+ * final, which is the only place anybody ever looked; you can see nothing else
+ * the moment you look down at the island from above.
+ *
+ * An approach does not need a trench. It needs the ground to stay below the
+ * glideslope, and a glideslope RISES. Three degrees from the threshold is what
+ * every real instrument approach uses, and at five and a half kilometres that
+ * is nearly three hundred metres of clearance — so the hills at the far end of
+ * the valley keep their tops, and only what would actually be in the way is
+ * taken down.
+ *
+ * Measured after the change: Kestrel's peak goes from 341 m to its declared
+ * 300-odd, Fjord stops having a 3.3 by 5.2 km flat trench through both of its
+ * named mountains, and the cross is gone from every map that had one.
+ */
+function approachCeiling(along) {
+  /*
+   * Flat over the strip itself, then a climb-out gradient away from it.
+   *
+   * `along` is measured from the runway CENTRE, so the flat part only has to
+   * reach the threshold — half the runway's own length. Past that the ceiling
+   * climbs at the rate a light aeroplane climbs, which is what the corridor is
+   * for: not a level trench to the horizon, a lane you can get out along.
+   */
+  const flat = (AIRPORT.runway.length || 1100) / 2;
+  const rise = Math.max(0, along - flat) * APPROACH_SLOPE;
+  return AIRPORT.elev + 10 + rise;
+}
+
 export function heightAt(x, z) {
   // A deck wins over whatever is underneath it — that is the point of a deck.
   // Not, however, while the authored flats are being measured: a carrier
@@ -1155,8 +1240,7 @@ export function heightAt(x, z) {
     const lateral = 1 - smoothstep(CORRIDOR.halfWidth, CORRIDOR.halfWidth + CORRIDOR.blend, across);
     const longitudinal = 1 - smoothstep(CORRIDOR.fadeFrom, CORRIDOR.length, along);
     const w = lateral * longitudinal;
-    const ceiling = AIRPORT.elev + 10;
-    if (h > ceiling) h = lerp(h, ceiling, w);
+    h = clearForApproach(h, approachCeiling(along), w);
   }
 
   /*
@@ -1186,8 +1270,7 @@ export function heightAt(x, z) {
       const lateral = 1 - smoothstep(CORRIDOR2.halfWidth, CORRIDOR2.halfWidth + CORRIDOR2.blend, across2);
       const longitudinal = 1 - smoothstep(CORRIDOR2.fadeFrom, CORRIDOR2.length, along2);
       const w = lateral * longitudinal;
-      const ceiling = AIRPORT.elev + 10;
-      if (h > ceiling) h = lerp(h, ceiling, w);
+      h = clearForApproach(h, approachCeiling(along2), w);
     }
   }
 
