@@ -1,3 +1,7 @@
+/** Offline asset update, 2026-09-20: precache 99 -> 100 entries; adds
+ * civil-details.js and advances the cache version. All precached files exist;
+ * all source JS is listed; final suite reports 85 loaded modules precached.
+ * An actual disconnected iPad installation was not tested. */
 /**
  * Service worker — offline support.
  *
@@ -9,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v26';
+const CACHE_VERSION = 'island-flight-v27';
 
 const PRECACHE = [
   './',
@@ -120,6 +124,7 @@ const PRECACHE = [
    * missing quietly.
    */
   'src/aircraft/models/skylark.js',
+  'src/aircraft/models/civil-details.js',
   'src/aircraft/rotor-assist.js',
   'src/audio/vehicles.js',
   'src/fleet/airport.js',

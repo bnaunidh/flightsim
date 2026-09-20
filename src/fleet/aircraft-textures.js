@@ -1,3 +1,7 @@
+/** Cockpit glazing, 2026-09-20: opacity .94 -> .42, keeping the existing
+ * reflection, lighting and depth-write settings. No added geometry; Nightjar
+ * stays at 1128 instance-aware triangles and span:length 2.563.
+ * Final suite: 146/146. Target-device transparency performance not checked. */
 import * as THREE from '../vendor/three.module.js';
 import { helicopterReflectionEnvironment } from './helicopter.js';
 
@@ -222,7 +226,7 @@ export function createAircraftMaterials(model,config={}) {
     rubber:own(new THREE.MeshStandardMaterial({name:'Aircraft_tire_rubber',color:0x191d1d,metalness:0,roughness:.92})),
     glass:own(new THREE.MeshPhysicalMaterial({name:'Aircraft_reflective_glazing',color:0x173340,metalness:.13,roughness:.09,
       roughnessMap:glazingRoughness(false),clearcoat:1,clearcoatRoughness:.06,ior:1.48,reflectivity:.5,
-      transparent:true,opacity:.94,depthWrite:false,envMap:environment,envMapIntensity:config.glassReflectionIntensity??1.3,
+      transparent:true,opacity:.42,depthWrite:false,envMap:environment,envMapIntensity:config.glassReflectionIntensity??1.3,
       side:THREE.DoubleSide,forceSinglePass:true})),
     interior:own(new THREE.MeshStandardMaterial({name:'Aircraft_cockpit_interior',color:0x333b3a,metalness:.04,roughness:.88})),
     light:own(new THREE.MeshStandardMaterial({name:'Aircraft_navigation_lamp',color:0xf9edc7,emissive:0xffefbd,emissiveIntensity:1.2,roughness:.2})),

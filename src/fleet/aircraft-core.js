@@ -1,3 +1,7 @@
+/** Cockpit details, 2026-09-20: displays, control sticks and headrests.
+ * Adapter triangles: Vanguard 1526 -> 1570, Osprey 1698 -> 1742.
+ * Span:length remains .707 and 1.037. No animation/physics changes.
+ * Final suite: 146/146. Device frame rates not measured. */
 /** Full-size, type-specific procedural aircraft. All surfaces derive from stock Three geometries. */
 import * as THREE from '../vendor/three.module.js';
 import {makeModel,finishModel,addBox,addCylinder,addSphere,addInstanced,tubeBetween,makeMaterial} from './common.js';
@@ -55,6 +59,11 @@ export function buildAircraft(config,options={}) {
    for(const[a,b]of[[bl,tl],[br,tr],[tl,tr],[tl,rl],[tr,rr],[rl,bkl],[rr,bkr],[bkl,bkr],[bl,br],[[0,base,q.z0],[0,yt,zf]]])tube('Cockpit frame',a,b,.024,materials.skin,g);
   }
   box('Instrument coaming',[w*1.55,.11,.26],[0,base-.07,q.z0+len*.3],materials.dark,g);
+  for(const side of(q.kind==='bubble'?[0]:[-1,1])){
+   box('Instrument display',[w*.36,.12,.025],[side*w*.4,base+.035,q.z0+len*.3+.14],materials.metal,g);
+   tube('Control stick',[side*w*.4,base-.25,mid],[side*w*.4,base+.04,mid-.12],.024,materials.dark,g,5);
+   box('Seat headrest',[.23,.15,.09],[side*w*.4,base+.18,mid+.24],materials.interior,g);
+  }
  }
  if(c.passengerWindows){const p=c.passengerWindows;for(const side of[-1,1]){const mats=[];for(let i=0;i<p.count;i++){const z=mix(p.z0,p.z1,p.count===1?.5:i/(p.count-1)),[rx,ry,cy]=profile(z),dy=clamp((p.y-cy)/ry,-.8,.8),x=(rx*Math.sqrt(1-dy*dy)+.018)*side;const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,side*Math.PI/2,0));mats.push(new THREE.Matrix4().compose(new THREE.Vector3(x,p.y,z),q,new THREE.Vector3(p.width,p.height,1)));}const glass=addInstanced(model,fuselage,side<0?'Port cabin window row':'Starboard cabin window row',new THREE.PlaneGeometry(1,1),materials.glass,mats);glass.castShadow=false;}}
  // Landing gear pivots, shock travel and true rolling radius.

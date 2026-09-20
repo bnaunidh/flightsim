@@ -1,3 +1,7 @@
+/** Export correction: includes every instance and respects hidden ancestors.
+ * Before: one passenger window/tyre per batch; after: all placed instances.
+ * Exact per-aircraft counts are in ../../verification/measurements.json.
+ * This is geometry inspection, not a device frame-rate measurement. */
 /**
  * Look at an aeroplane.
  *
@@ -60,7 +64,7 @@ export function trianglesOf(id) {
      * and drawn flat it filled the whole plan view with a black slab — the
      * aeroplane looked broken and was not. A silhouette is what you can see.
      */
-    if (!o.visible) return;
+    for (let parent = o; parent; parent = parent.parent) if (!parent.visible) return;
     const mat = Array.isArray(o.material) ? o.material[0] : o.material;
     if (mat && mat.transparent && mat.opacity <= 0.02) return;
     const g = o.geometry;
@@ -70,15 +74,23 @@ export function trianglesOf(id) {
     const idx = g.index ? g.index.array : null;
     const n = idx ? idx.length : pos.count;
     const v = new THREE.Vector3();
+    const transform = new THREE.Matrix4();
+    const instance = new THREE.Matrix4();
     const take = (k) => {
-      v.fromBufferAttribute(pos, k).applyMatrix4(o.matrixWorld);
+      v.fromBufferAttribute(pos, k).applyMatrix4(transform);
       return [Math.round(v.x * 1000) / 1000, Math.round(v.y * 1000) / 1000, Math.round(v.z * 1000) / 1000];
     };
+    for (let copy = 0; copy < (o.isInstancedMesh ? o.count : 1); copy++) {
+      if (o.isInstancedMesh) {
+        o.getMatrixAt(copy, instance);
+        transform.multiplyMatrices(o.matrixWorld, instance);
+      } else transform.copy(o.matrixWorld);
     for (let i = 0; i + 2 < n; i += 3) {
       const a = idx ? idx[i] : i;
       const b = idx ? idx[i + 1] : i + 1;
       const c = idx ? idx[i + 2] : i + 2;
       tris.push([take(a), take(b), take(c)]);
+    }
     }
   });
   return { id, name: (type && type.name) || (config && config.name) || id, meshes, tris };

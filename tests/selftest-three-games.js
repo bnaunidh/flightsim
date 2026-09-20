@@ -440,6 +440,25 @@ export async function threeGameChecks(sim, r, say = () => {}, opts = {}) {
         const h = Terrain.heightAt(s.cx, s.cz);
         if (h <= -1.8) shoalFaults.push(`${m.id}/${s.name || 'a shoal'}: ${h.toFixed(1)} m`);
       }
+      /*
+       * And the other way round, which this only ever checked one half of.
+       *
+       * It faulted a shoal marked as drying that turned out to be deep, and
+       * said nothing at all about a shoal that declares water over it and is
+       * standing out of the sea. A repositioned bank on the Delta came to
+       * sit 2.4 m up a river bank while its data said 1.8 m of water, and
+       * nothing here noticed: dryingShoals() filters `top > -1.8`, and that
+       * shoal's top is exactly -1.8, so it was not even in the list.
+       */
+      for (const s of ((m.waters && m.waters.shoals) || [])) {
+        if (s.top > 0) continue;
+        const h = Terrain.heightAt(s.cx, s.cz);
+        if (h > 0.5) {
+          shoalFaults.push(
+            `${m.id}/${s.name || 'a shoal'} says ${(-s.top).toFixed(1)} m of water and stands ${h.toFixed(1)} m out of it`
+          );
+        }
+      }
 
       // Pad data: every pad needs an id, a name and a position that is on this
       // map rather than left over from the one it was copied from.

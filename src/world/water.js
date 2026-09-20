@@ -96,6 +96,20 @@ export class Ocean {
     this.foamMats = [];
     this.shallowMats = [];
     for (const isl of ISLANDS) {
+      /*
+       * Only the ones that have a coast.
+       *
+       * traceCoast bisects for the height-zero crossing between 0.2 and 1.9
+       * island radii, and an island that is entirely inland — a hill placed
+       * on top of a bigger island, which is how Kestrel's relief is built —
+       * has no crossing at all, so every ray runs to the far limit and the
+       * result is a perfect 1.9R ring of surf and turquoise shallows drawn
+       * at sea level underneath the grass. It is buried and nobody has ever
+       * seen it, which is exactly why it went unnoticed: two extra meshes
+       * and 128 more coastline bisections per inland hill, for a ring inside
+       * a hill.
+       */
+      if (!this.hasCoast(isl)) continue;
       // Shallows first (wider, underneath), then the foam line on top.
       this.group.add(this.buildShallows(isl));
       this.group.add(this.buildFoam(isl));
@@ -108,6 +122,15 @@ export class Ocean {
    * Trace the coastline once and return inner/outer rings offset from it.
    * Used for both the foam line and the shallow lagoon band.
    */
+  /** Does any ray off this island's centre actually reach the sea? */
+  hasCoast(isl) {
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      if (heightAt(isl.cx + Math.cos(a) * isl.radius * 1.9, isl.cz + Math.sin(a) * isl.radius * 1.9) <= 0) return true;
+    }
+    return false;
+  }
+
   traceCoast(isl, innerOffset, outerOffset, innerY = 0.5, outerY = 0.35, SEG = 128) {
     const inner = [];
     const outer = [];

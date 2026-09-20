@@ -1,3 +1,9 @@
+/** Civil model refinement, 2026-09-20. Visible triangles through the adapter:
+ * Courier 3912 -> 3360; Meridian 5018 -> 4596; Tempest 4080 -> 3512;
+ * Skyhook 4356 -> 3648. Custom profiles, open cabins and batched details
+ * replace generic upper shells. Glass opacity .38 -> .28. Gear, eye points,
+ * shape scales and physics unchanged. Final suite: 146/146.
+ * Drawings and browser previews checked; target-device FPS not checked. */
 /**
  * The aeroplane: a high-wing four-seat trainer, built entirely from lofted
  * geometry so there is no model file to download.
@@ -18,6 +24,7 @@ import {
 import { clamp, lerp } from '../core/noise.js';
 import { getAircraft, DEFAULT_AIRCRAFT_ID } from './types.js';
 import { installSkylarkDetails } from './models/skylark.js';
+import { civilProfile, civilCabin, openCivilCabin, installCivilDetails } from './models/civil-details.js';
 
 /** NACA-style aerofoil outline, chord along +X, thickness along +Y. */
 function aerofoil(steps = 18, thickness = 0.13, camber = 0.022) {
@@ -257,7 +264,8 @@ export function createAircraftModel(opts = {}) {
     roughness: 0.05,
     metalness: 0,
     transparent: true,
-    opacity: 0.38,
+    opacity: 0.28,
+    depthWrite: false,
     transmission: 0,
     side: THREE.DoubleSide,
   });
@@ -265,7 +273,8 @@ export function createAircraftModel(opts = {}) {
   const strutMat = new THREE.MeshStandardMaterial({ color: 0xb9bec4, roughness: 0.35, metalness: 0.75 });
 
   /* ---------------- Fuselage ---------------- */
-  const profile = [
+  const cabin = civilCabin(type.id, S);
+  const profile = (civilProfile(type.id) || [
     [0.05, -2.55],
     [0.30, -2.42],
     [0.50, -2.15],
@@ -279,7 +288,7 @@ export function createAircraftModel(opts = {}) {
     [0.34, 3.35],
     [0.18, 3.85],
     [0.05, 3.95],
-  ].map(([r, z]) => new THREE.Vector2(r * S.bodyRadius, z * S.bodyLength));
+  ]).map(([r, z]) => new THREE.Vector2(r * S.bodyRadius, z * S.bodyLength));
   /**
    * Fuselage radius at a station, straight off the same profile the body is
    * lathed from. Anything that has to sit on the skin — windows, pylons —
@@ -305,6 +314,7 @@ export function createAircraftModel(opts = {}) {
 
   const fuseGeo = new THREE.LatheGeometry(profile, 26);
   fuseGeo.rotateX(Math.PI / 2); // lathe axis Y → Z, nose toward -Z
+  openCivilCabin(fuseGeo, cabin);
   const fuselage = new THREE.Mesh(fuseGeo, bodyMat);
   fuselage.castShadow = fuselage.receiveShadow = true;
   // A flying wing has no body to add: the wing is the body — see below.
@@ -312,7 +322,7 @@ export function createAircraftModel(opts = {}) {
 
   // Cabin roof blister so the greenhouse is not a bare tube.
   // A fast jet has a bubble canopy instead, and an airliner a row of windows.
-  if (S.canopy === 'cabin') {
+  if (S.canopy === 'cabin' && !cabin) {
   const roof = new THREE.Mesh(
     new THREE.SphereGeometry(0.82, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.5),
     bodyMat
@@ -333,9 +343,9 @@ export function createAircraftModel(opts = {}) {
   windshield.rotation.x = -0.3;
   // The flying wing has its own glass, flush in the centre section, and this
   // one would sit in the middle of the wing like a dome on a runway.
-  if (!S.flyingWing) root.add(windshield);
+  if (!S.flyingWing && !cabin) root.add(windshield);
 
-  if (S.canopy === 'cabin') {
+  if (S.canopy === 'cabin' && !cabin) {
     for (const side of [-1, 1]) {
       const w = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.62), glassMat);
       w.position.set(side * 0.75, 0.28, -0.1);
@@ -362,7 +372,7 @@ export function createAircraftModel(opts = {}) {
     fd.scale.set(0.95, 0.62, 1.05);
     fd.position.set(0, 0.26, -1.72);
     fd.rotation.x = -0.34;
-    root.add(fd);
+    if (!cabin) root.add(fd);
     // The cabin window line. It used to be a fixed distance out from the
     // centreline, so from about the wing aft — where the body starts tapering
     // into the tail cone — the windows hung in the air beside the aeroplane.
@@ -401,7 +411,7 @@ export function createAircraftModel(opts = {}) {
   // Engine cowling with a slightly different sheen, plus air intakes.
   // Slightly slimmer and lower than the fuselage line, so that from the cockpit
   // it sits below the horizon instead of hiding it.
-  if (!isJet) {
+  if (!isJet && !S.power.rotor && S.power.count === 1) {
     const cowl = new THREE.Mesh(new THREE.CylinderGeometry(0.54, 0.46, 0.9, 20), matteMat);
     cowl.rotation.x = Math.PI / 2;
     cowl.position.set(0, -0.06, -2.05 * S.bodyLength);
@@ -464,6 +474,8 @@ export function createAircraftModel(opts = {}) {
       THREE, root, S, type, bodyMat, glassMat, matteMat, strutMat, chordAt, sweepAt,
     });
   }
+
+  installCivilDetails({ THREE, root, S, type, bodyMat, matteMat, glassMat, strutMat, rubber, cabin });
 
   // Ailerons and flaps on hinges, so they visibly deflect.
   const surfaces = {};
@@ -1014,7 +1026,7 @@ export function createAircraftModel(opts = {}) {
    * that had stopped being drawn. Found by diffing the mesh list before and
    * after, not by the triangle count, which went up either way.
    */
-  if (S.canopy === 'cabin' || S.canopy === 'greenhouse') for (const side of [-1, 1]) {
+  if (!cabin && (S.canopy === 'cabin' || S.canopy === 'greenhouse')) for (const side of [-1, 1]) {
     const seat = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.1, 0.44), seatMat);
     seat.position.set(side * 0.3, -0.22, 0.1);
     root.add(seat);

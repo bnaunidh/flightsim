@@ -86,7 +86,7 @@ const FPM = UNITS.FPM;
 
 /** Bumped whenever the game changes. Printed on boot so you can tell at a
  *  glance whether a browser is running a stale cached copy. */
-export const BUILD = 'v26 — trim, autopilot heading and speed, the Tempest is a twin at last';
+export const BUILD = 'v27 — a Kestrel with no cross through it, and four civil aeroplanes that look like themselves';
 
 const loadEl = document.getElementById('loading');
 const loadBar = document.getElementById('load-bar');

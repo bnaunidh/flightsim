@@ -594,19 +594,27 @@ export function resolveWaters(map) {
           { turn: -0.74 - n * 0.3, out: 640 + n * 260, r: R0 * 0.82, top: T0 - 2.6 },
           { turn: 0.16 - n * 0.4, out: 1420 + n * 320, r: R0 * 0.62, top: T0 - 6.5 },
         ];
-        const arr = w.shoals || (w.shoals = []);
-        for (let i = lobes.length - 1; i >= 0; i--) {
-          const L = lobes[i];
+        /*
+         * Held until the harbour's own axis is resolved, a few lines below.
+         *
+         * They cannot be placed here. heightAt runs the harbour term on
+         * every sample, and that term reads H._du, H._dv and H._reach —
+         * which are assigned AFTER this block. Ask it a question now and
+         * the bbox reject compares against undefined, the arithmetic goes
+         * to NaN, and a test like `height > -1` is false for NaN, so a lobe
+         * on a hillside passes as a lobe in the sea. Seven of them did.
+         */
+        H._pendingLobes = lobes.map((L, i) => {
           const a = a2 + L.turn;
-          arr.unshift({
+          return {
             name: i ? 'approach bank' : 'approach shelf',
             cx: Math.round(H.cx + Math.sin(a) * L.out),
             cz: Math.round(H.cz - Math.cos(a) * L.out),
             r: Math.round(L.r),
             top: Math.round(L.top * 10) / 10,
             pow: 0.7,
-          });
-        }
+          };
+        });
       }
     }
     const rad = (H.mouthDeg * Math.PI) / 180;
@@ -614,6 +622,27 @@ export function resolveWaters(map) {
     H._dv = -Math.cos(rad);
     H._reach =
       Math.hypot(H.length / 2, H.width / 2) + (H.wallW || 26) * 1.7 + (H.blend || 150);
+
+    /*
+     * And now the approach bank, where there is sea to put it in.
+     *
+     * The lobes are swung off the harbour's mouth bearing, and on a coast
+     * that curves away one of them lands inland — measured, seven of them,
+     * on Meadow, Fjord, Sennen, the Skerries and the Archipelago, one at
+     * +295 m. A bank on a hillside does nothing to the ground (shoalHeight
+     * will not lower terrain it finds above the shoal's top) but it is a
+     * bank on a hillside as far as the chart, and any audit of the data,
+     * is concerned.
+     */
+    if (H._pendingLobes) {
+      const arr = w.shoals || (w.shoals = []);
+      for (let i = H._pendingLobes.length - 1; i >= 0; i--) {
+        const L = H._pendingLobes[i];
+        if (!(heightAt(L.cx, L.cz) <= -1)) continue;
+        arr.unshift(L);
+      }
+      H._pendingLobes = null;
+    }
   }
 
   const C = w.channel;

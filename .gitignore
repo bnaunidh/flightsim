@@ -11,3 +11,5 @@ download/*
 
 # Python leaves these beside the tools; they are not the tools.
 __pycache__/
+
+PROMPT-MAPS-AND-MODELS.md
