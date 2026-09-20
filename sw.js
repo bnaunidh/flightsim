@@ -9,7 +9,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v25';
+const CACHE_VERSION = 'island-flight-v26';
 
 const PRECACHE = [
   './',
@@ -106,6 +106,40 @@ const PRECACHE = [
   'src/world/carrier.js',
   'src/world/features.js',
   'src/world/tornado.js',
+
+  /*
+   * And twenty-one more, which is the second time this list has fallen
+   * behind the game. Between them they are the boat, the car, the
+   * helicopter and the four-game menu — every HUD but the aeroplane's, the
+   * job board, the boat and helicopter missions, the roads, the pads, the
+   * seamarks, the vehicle engines and the game switcher itself. Install the
+   * game, go offline, pick anything but Flight, and it was not there.
+   *
+   * The check in tests/selftest.js compares this list against every module
+   * the running game actually loaded, so the next twenty-one cannot go
+   * missing quietly.
+   */
+  'src/aircraft/models/skylark.js',
+  'src/aircraft/rotor-assist.js',
+  'src/audio/vehicles.js',
+  'src/fleet/airport.js',
+  'src/fleet/atc.js',
+  'src/fleet/ground.js',
+  'src/fleet/maritime.js',
+  'src/fleet/scenery.js',
+  'src/game/jobs.js',
+  'src/game/missions-boat.js',
+  'src/game/missions-heli.js',
+  'src/game/pursuer.js',
+  'src/ui/briefing.js',
+  'src/ui/game-ui.js',
+  'src/ui/hud-boat.js',
+  'src/ui/hud-drive.js',
+  'src/ui/hud-rotor.js',
+  'src/vehicles/driving.js',
+  'src/world/pads.js',
+  'src/world/roads.js',
+  'src/world/seamarks.js',
 
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',

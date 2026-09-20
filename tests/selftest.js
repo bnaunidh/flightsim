@@ -879,6 +879,7 @@ export async function runSelfTest(sim, opts = {}) {
   } catch (err) {
     r.ok('manifest parses and has icons', false, err.message);
   }
+  let precached = null;
   try {
     const swres = await fetch('sw.js');
     const swtext = await swres.text();
@@ -906,6 +907,8 @@ export async function runSelfTest(sim, opts = {}) {
     ];
     const missing = wanted.filter((w) => !listed.includes(w));
     r.ok('service worker precaches the whole app', missing.length === 0, missing.join(', ') || `${listed.length} files listed`);
+    // Kept for the check below, which runs once everything has loaded.
+    precached = listed;
   } catch (err) {
     r.ok('service worker precaches the whole app', false, err.message);
   }
@@ -924,6 +927,35 @@ export async function runSelfTest(sim, opts = {}) {
     await tg.threeGameChecks(sim, r, say);
   } catch (err) {
     r.ok('the other three games can be tested at all', false, String(err && err.message));
+  }
+
+  /*
+   * Every module the game actually loaded is in the offline cache.
+   *
+   * The check above compares the precache list against seven names somebody
+   * typed out, and it passed the whole time twenty-one modules were missing
+   * — the boat's HUD, the car's HUD, the helicopter's HUD, the job board,
+   * the boat and helicopter missions, the roads, the pads, the seamarks, the
+   * vehicle engines and the game switcher. Install the game, go offline,
+   * pick anything other than Flight, and it was not there.
+   *
+   * A list somebody maintains by hand falls behind; the browser already
+   * knows exactly which modules it fetched. This runs last, after all four
+   * games have been driven, so what it has seen is the whole app.
+   */
+  if (precached) {
+    const loaded = performance
+      .getEntriesByType('resource')
+      .map((e) => e.name)
+      .filter((u) => u.startsWith(location.origin))
+      .map((u) => new URL(u).pathname.replace(/^\/+/, ''))
+      .filter((p) => p.startsWith('src/') && p.endsWith('.js'));
+    const uncached = [...new Set(loaded)].filter((p) => !precached.includes(p)).sort();
+    r.ok(
+      'every module the game loaded is in the offline cache',
+      uncached.length === 0,
+      uncached.slice(0, 6).join(', ') || `${new Set(loaded).size} modules loaded, all precached`
+    );
   }
 
   // Restore what we changed.
