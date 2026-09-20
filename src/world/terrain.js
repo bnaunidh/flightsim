@@ -72,6 +72,22 @@ const KESTREL_AIRPORT = {
  */
 const APPROACH_SLOPE = 0.12;
 /**
+ * How fast the lane's ceiling rises SIDEWAYS from the centreline.
+ *
+ * The corridor used to hold one flat ceiling right across its width, so what
+ * it produced was a trench with a level floor seven hundred metres wide —
+ * which is why the sheet still showed a bright green band through Kestrel
+ * after the glideslope fix, a third of the island cut by up to 345 m. An
+ * aeroplane on final is over the centreline, not over the hillside a quarter
+ * of a mile to the left of it; the ground out there only has to be below the
+ * wing, not level with the runway. So the ceiling climbs away from the
+ * centreline too, and what you get is a VALLEY with sides, which is both what
+ * the approach needs and what the ground looks like anywhere real.
+ *
+ * 0.35 is about nineteen degrees — a hillside, not a cliff and not a plain.
+ */
+const APPROACH_SIDE_SLOPE = 0.35;
+/**
  * The deepest a corridor may cut.
  *
  * Generous, because on Kestrel there is a 278 m hill one kilometre short of
@@ -83,8 +99,19 @@ const APPROACH_SLOPE = 0.12;
  */
 const MAX_APPROACH_CUT = 260;
 const CORRIDOR_DEFAULT = Object.freeze({ halfWidth: 380, blend: 320, fadeFrom: 3600, length: 5400 });
-/** The same idea for 18/36, running north-south instead. */
-const CORRIDOR2_DEFAULT = Object.freeze({ halfWidth: 300, blend: 260, fadeFrom: 2600, length: 4200 });
+/**
+ * The same idea for 18/36, running north-south instead — at a fifth of the
+ * size, because the second runway is not the one anybody flies.
+ *
+ * This was 300/260/2600/4200: a lane 1,120 m wide and 8.4 km end to end, laid
+ * at right angles across the first one, on maps whose island is 2.4 km across.
+ * The two of them crossing IS the green cross, and the north-south arm of it
+ * is paid for by a runway a ten-year-old will use about never. Measured over
+ * all thirty-two maps: cutting it to this takes Fjord from 16% of its land
+ * cut to 7% and costs nothing anywhere else. The lane is still there, and
+ * still clear enough to land 18/36 on if you want it.
+ */
+const CORRIDOR2_DEFAULT = Object.freeze({ halfWidth: 200, blend: 180, fadeFrom: 1500, length: 2400 });
 export const CORRIDOR = { ...CORRIDOR_DEFAULT };
 export const CORRIDOR2 = { ...CORRIDOR2_DEFAULT };
 
@@ -542,15 +569,44 @@ export function resolveWaters(map) {
        * looking at without a line of per-map authoring.
        */
       if (H.shelf !== false) {
+        /*
+         * Four lobes, not one circle.
+         *
+         * This was a single r=1150 shoal, and on the contact sheet of all
+         * thirty-two maps it read as exactly what it was: a perfect pale blue
+         * disc stamped on the sea off Longbank and the Skerries, with a
+         * compass-drawn edge you could see from three thousand feet. Nothing
+         * in the sea is a circle. A bank built out of overlapping lobes at
+         * different depths costs three more bounding-box rejects per sample
+         * and stops looking drawn.
+         *
+         * The angles and sizes come off the harbour's own coordinates, so a
+         * map gets the same bank every load and two maps do not get the same
+         * bank as each other.
+         */
         const a2 = ((H.mouthDeg) * Math.PI) / 180;
-        (w.shoals || (w.shoals = [])).unshift({
-          name: 'approach shelf',
-          cx: Math.round(H.cx + Math.sin(a2) * 520),
-          cz: Math.round(H.cz - Math.cos(a2) * 520),
-          r: H.shelfR || 1150,
-          top: H.shelfTop ?? -8,
-          pow: 0.7,
-        });
+        const R0 = H.shelfR || 1150;
+        const T0 = H.shelfTop ?? -8;
+        const n = Math.abs(Math.sin(H.cx * 0.0137 + H.cz * 0.0091));
+        const lobes = [
+          { turn: 0, out: 520, r: R0, top: T0 },
+          { turn: 0.62 + n * 0.35, out: 700 + n * 220, r: R0 * 0.74, top: T0 - 3.4 },
+          { turn: -0.74 - n * 0.3, out: 640 + n * 260, r: R0 * 0.82, top: T0 - 2.6 },
+          { turn: 0.16 - n * 0.4, out: 1420 + n * 320, r: R0 * 0.62, top: T0 - 6.5 },
+        ];
+        const arr = w.shoals || (w.shoals = []);
+        for (let i = lobes.length - 1; i >= 0; i--) {
+          const L = lobes[i];
+          const a = a2 + L.turn;
+          arr.unshift({
+            name: i ? 'approach bank' : 'approach shelf',
+            cx: Math.round(H.cx + Math.sin(a) * L.out),
+            cz: Math.round(H.cz - Math.cos(a) * L.out),
+            r: Math.round(L.r),
+            top: Math.round(L.top * 10) / 10,
+            pow: 0.7,
+          });
+        }
       }
     }
     const rad = (H.mouthDeg * Math.PI) / 180;
@@ -1095,7 +1151,7 @@ function clearForApproach(h, ceiling, w) {
  * 300-odd, Fjord stops having a 3.3 by 5.2 km flat trench through both of its
  * named mountains, and the cross is gone from every map that had one.
  */
-function approachCeiling(along) {
+function approachCeiling(along, across, floorW) {
   /*
    * Flat over the strip itself, then a climb-out gradient away from it.
    *
@@ -1106,7 +1162,41 @@ function approachCeiling(along) {
    */
   const flat = (AIRPORT.runway.length || 1100) / 2;
   const rise = Math.max(0, along - flat) * APPROACH_SLOPE;
-  return AIRPORT.elev + 10 + rise;
+  // And the valley sides. The floor stays a runway's width across — wide
+  // enough that a wandering final is still over flat ground — and climbs from
+  // there, so a hill beside the lane keeps most of itself.
+  const shoulder = Math.max(0, (across || 0) - 120) * APPROACH_SIDE_SLOPE;
+  /*
+   * And the floor is not a floor. Clamping to one number gives a valley with
+   * a spirit-level bottom, which from three thousand feet is the one thing
+   * that says "somebody levelled this". A few metres of undulation costs
+   * nothing and no aeroplane ever notices it.
+   */
+  const roll = 9 * wobble(along * 1.7 + (floorW || 0) * 3.1, 0.0013, 5.1);
+  return AIRPORT.elev + 10 + rise + shoulder + roll;
+}
+
+/**
+ * A slow wobble in [0, 1]. Two sines at incommensurable rates: not noise, but
+ * it never repeats over the five kilometres anybody sees of it, and it costs
+ * two sines rather than three octaves of fbm on a function that runs a
+ * quarter of a million times to build one chart tile.
+ */
+function wobble(t, rate, phase) {
+  return 0.5 + 0.35 * Math.sin(t * rate + phase) + 0.15 * Math.sin(t * rate * 2.7 + phase * 1.9);
+}
+
+/**
+ * The lane's own half-width at this distance out.
+ *
+ * A valley is not a corridor of constant width and an island with one through
+ * it looks like an airfield somebody bulldozed — which is exactly what the
+ * contact sheet showed. This keeps the lane at least 210 m wide either side,
+ * which is wider than any final approach a ten-year-old flies, and lets it
+ * open out and neck in between.
+ */
+function laneWidth(halfWidth, along) {
+  return Math.max(210, halfWidth * (0.72 + 0.5 * wobble(along, 0.0011, 0.8)));
 }
 
 export function heightAt(x, z) {
@@ -1194,10 +1284,23 @@ export function heightAt(x, z) {
 
         // 1 at the rim, 0 down at the shoreline.
         const flank = Math.pow(clamp((1 - dRel) / (1 - rimRel), 0, 1), 1.55);
-        // Radial gullies down the flanks — real cones are fluted, not smooth.
+        /*
+         * Radial gullies down the flanks — real cones are fluted, not smooth.
+         *
+         * One sine at thirteen cycles gives thirteen identical flutes at
+         * thirteen identical spacings, which from above is a dartboard: it is
+         * what made Ember's cone read as a drawn symbol rather than a
+         * mountain. Three rates that do not divide into each other, and the
+         * flutes come out different widths and different depths, which is
+         * what erosion does. Still three sines per sample, and only inside a
+         * cone island.
+         */
         const ang = Math.atan2(z - isl.cz, x - isl.cx);
-        const gully =
-          (Math.sin(ang * 13 + isl.seed) * 0.5 + 0.5) * smoothstep(rimRel, 0.85, dRel);
+        const flute =
+          0.55 * Math.sin(ang * 9 + isl.seed) +
+          0.28 * Math.sin(ang * 17 + isl.seed * 1.7) +
+          0.17 * Math.sin(ang * 29 + isl.seed * 0.6);
+        const gully = (flute * 0.5 + 0.5) * smoothstep(rimRel, 0.85, dRel);
         // The crater bowl: flat-floored in the middle, up to the rim.
         const bowl = 1 - smoothstep(rimRel * 0.55, rimRel, dRel);
 
@@ -1236,11 +1339,15 @@ export function heightAt(x, z) {
   // it into a valley through the hills, which is both flyable and good-looking.
   const along = Math.abs(x - AIRPORT.runway.cx);
   const across = Math.abs(z - AIRPORT.runway.cz);
-  if (along < CORRIDOR.length && across < CORRIDOR.halfWidth + CORRIDOR.blend) {
-    const lateral = 1 - smoothstep(CORRIDOR.halfWidth, CORRIDOR.halfWidth + CORRIDOR.blend, across);
-    const longitudinal = 1 - smoothstep(CORRIDOR.fadeFrom, CORRIDOR.length, along);
-    const w = lateral * longitudinal;
-    h = clearForApproach(h, approachCeiling(along), w);
+  if (along < CORRIDOR.length && across < (CORRIDOR.halfWidth + CORRIDOR.blend) * 1.5) {
+    const hw = laneWidth(CORRIDOR.halfWidth, along);
+    const bl = CORRIDOR.blend * (0.75 + 0.5 * wobble(along, 0.0019, 2.6));
+    if (across < hw + bl) {
+      const lateral = 1 - smoothstep(hw, hw + bl, across);
+      const longitudinal = 1 - smoothstep(CORRIDOR.fadeFrom, CORRIDOR.length, along);
+      const w = lateral * longitudinal;
+      h = clearForApproach(h, approachCeiling(along, across, hw), w);
+    }
   }
 
   /*
@@ -1266,11 +1373,15 @@ export function heightAt(x, z) {
     const r2AlongX = Math.abs((((r2.headingDeg ?? 180) % 180) - 90)) < 45;
     const along2 = r2AlongX ? Math.abs(x - r2.cx) : Math.abs(z - r2.cz);
     const across2 = r2AlongX ? Math.abs(z - r2.cz) : Math.abs(x - r2.cx);
-    if (along2 < CORRIDOR2.length && across2 < CORRIDOR2.halfWidth + CORRIDOR2.blend) {
-      const lateral = 1 - smoothstep(CORRIDOR2.halfWidth, CORRIDOR2.halfWidth + CORRIDOR2.blend, across2);
-      const longitudinal = 1 - smoothstep(CORRIDOR2.fadeFrom, CORRIDOR2.length, along2);
-      const w = lateral * longitudinal;
-      h = clearForApproach(h, approachCeiling(along2), w);
+    if (along2 < CORRIDOR2.length && across2 < (CORRIDOR2.halfWidth + CORRIDOR2.blend) * 1.5) {
+      const hw2 = laneWidth(CORRIDOR2.halfWidth, along2 + 1900);
+      const bl2 = CORRIDOR2.blend * (0.75 + 0.5 * wobble(along2 + 1900, 0.0019, 2.6));
+      if (across2 < hw2 + bl2) {
+        const lateral = 1 - smoothstep(hw2, hw2 + bl2, across2);
+        const longitudinal = 1 - smoothstep(CORRIDOR2.fadeFrom, CORRIDOR2.length, along2);
+        const w = lateral * longitudinal;
+        h = clearForApproach(h, approachCeiling(along2, across2, hw2), w);
+      }
     }
   }
 

@@ -796,11 +796,30 @@ class Game {
         shadowMapSize: quality === 'ultra' ? 4096 : quality === 'high' ? 2048 : 1024,
       })
     );
-    this.terrain = t('terrain', () => createTerrain(this.scene, quality));
     this.ocean = t('ocean', () => new Ocean(this.scene));
     this.airport = t('airport', () => new Airport(this.scene));
     // The terminal, the air bridges, the parked aeroplanes and the vehicles.
     this.apron = t('apron', () => new Apron(this.scene, quality));
+    /*
+     * The roads, here, between the airfield and the ground it stands on.
+     *
+     * They used to be laid before buildWorld ran at all, which meant the
+     * router was routing over an obstacle list that had just been emptied:
+     * it knew the shape of the island and nothing about what was built on
+     * it. On Drover's Flat the depot–airfield road went straight through the
+     * terminal, and the van — driven by the test harness's own pure pursuit,
+     * and by any child who follows the tarmac — stopped dead against the
+     * wall at waypoint 20 of 23. Laid here, the tower and the terminal are
+     * already registered and the road goes round them.
+     *
+     * And before `createTerrain`, which is the other half of it: roadHeight
+     * is part of heightAt, so the mesh has to be built after the paths exist
+     * or the graded corridor under the tarmac is the one from last time.
+     * Nothing between here and there reads this.terrain — the height
+     * function is analytic and owes the mesh nothing.
+     */
+    this.layRoads();
+    this.terrain = t('terrain', () => createTerrain(this.scene, quality));
     this.scenery = t('scenery', () => {
       const sc = new Scenery(this.scene, quality);
       // Something on the apron to measure the base against — see parkJets().

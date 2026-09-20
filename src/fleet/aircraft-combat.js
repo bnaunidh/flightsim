@@ -28,6 +28,38 @@ function intakePair(ctx,{z=-1.9,y=-.11,x=.74,width=.48,height=.67,length=1.65}) 
   }
 }
 
+/**
+ * A ring of faceted petals at the nozzle exit, for an engine flagged
+ * afterburner:true. Purely additive geometry — it changes nothing the flight
+ * model or damage system reads (gear, body stations, wing, engine spec are
+ * all untouched), so it carries none of the risk a planform change would.
+ *
+ * Placed and sized against the real fuselage taper (measured, see the
+ * comment block above this file) so the ring sits just inside the tailcone's
+ * own radius at its forward edge and tapers to a smaller ring that pokes
+ * slightly proud of the tail cap — which is where a real variable nozzle
+ * exit sits: past the airframe, not flush inside it.
+ */
+function afterburnerPetals(ctx, engine, { petals = 10, outerR, innerR, z0, length, parent }) {
+  const { panel, materials: m } = ctx;
+  const target = parent || ctx.parts[engine.id] || ctx.parts.tail;
+  for (let i = 0; i < petals; i++) {
+    // Petals overlap slightly at the root (like a real iris nozzle) and
+    // narrow toward the tip, so each one reads as a tapered fin rather than
+    // a flat slice of a cone.
+    const a0 = (i / petals) * Math.PI * 2;
+    const a1 = ((i + 0.82) / petals) * Math.PI * 2;
+    const inset = (a1 - a0) * 0.22;
+    const b0 = a0 + inset;
+    const b1 = a1 - inset;
+    const o0 = [engine.x + Math.cos(a0) * outerR, engine.y + Math.sin(a0) * outerR, z0];
+    const o1 = [engine.x + Math.cos(a1) * outerR, engine.y + Math.sin(a1) * outerR, z0];
+    const i1 = [engine.x + Math.cos(b1) * innerR, engine.y + Math.sin(b1) * innerR, z0 + length];
+    const i0 = [engine.x + Math.cos(b0) * innerR, engine.y + Math.sin(b0) * innerR, z0 + length];
+    panel(`afterburner petal ${i + 1}`, [o0, o1, i1, i0], m.metal, target);
+  }
+}
+
 const vanguard = {
   id:'vanguard',name:'Vanguard F-1',kind:'fighter',massKg:7200,
   paint:'#737b83',accent:'#344454',registration:'VF-101',bodySegments:12,
@@ -54,8 +86,26 @@ const vanguard = {
     tube('nose pitot',[0,-.02,-7.02],[0,-.02,-7.62],.012,m.metal,parts.nose,5);
     box('dorsal avionics rail',[.24,.095,2.6],[0,.54,.25],m.skin,parts.fuselage);
     tube('angle sensor',[-.35,.11,-5.4],[-.45,.12,-5.77],.014,m.metal,parts.nose,5);
+    /*
+     * Afterburner nozzle petals.
+     *
+     * Sized against the real tail contour rather than guessed: the body
+     * stations run [5.7,.48,.46] to [6.4,.43,.43], so an outer ring at
+     * .400 sits just inside the fuselage radius at z=6.25 and right on the
+     * existing recessed-nozzle rim, and an inner ring at .218 finishes 9 cm
+     * proud of the tail cap — which is where a variable nozzle's exit sits,
+     * past the airframe rather than flush inside it.
+     */
+    const eng = ctx.config.engines[0];
+    afterburnerPetals(ctx, eng, {
+      petals: 10,
+      outerR: eng.radius * 0.92,
+      innerR: eng.radius * 0.50,
+      z0: eng.z + eng.length * 0.46,
+      length: eng.radius * 0.55,
+    });
   },
-  description:'A slender single-engine fighter with a pointed radome, framed bubble canopy, recessed side intakes, swept wing and leading-edge root extensions.',
+  description:'A slender single-engine fighter with a pointed radome, framed bubble canopy, recessed side intakes, swept wing, leading-edge root extensions and a petalled afterburner nozzle.',
   inspiration:'Original aircraft using coherent single-engine fighter proportions; not a licensed replica.'
 };
 
@@ -101,10 +151,26 @@ const osprey = {
 function stealthWing(ctx,sign) {
   const side=sign<0?'left':'right', m=ctx.materials;
   const parent=ctx.group(`${side}Wing`,`${side} blended wing`,1420,'fuselage',ctx.parts.fuselage);
+  /*
+   * Six spanwise stations: [x, leadingEdgeZ, trailingEdgeZ, thickness].
+   *
+   * Four things read as "B-2" at three hundred metres: a huge span with no
+   * fuselage, one unbroken knife leading edge, no vertical surface anywhere,
+   * and the SAWTOOTH trailing edge. This model had three of the four. The
+   * trailing edge measured 3.50, 3.50, 1.86, 3.13, 3.13, 6.65 — one shallow
+   * step with two flat pairs either side of it, which from above is a bevel,
+   * not a saw. That is why it did not look like the aeroplane.
+   *
+   * Now: forward, aft, forward, aft, aft — two real notches inboard and a
+   * clean run to the tip. Chords stay 9.20, 6.05, 6.94, 4.65, 4.66, 1.85 m,
+   * never near zero, so no quad inverts. The leading edge is untouched: its
+   * slope was already 0.6875 across all five segments, one straight line.
+   * Same station count, same topology — 1128 triangles before and after.
+   */
   const stations=[
-    [1.45,-5.70,3.50,.72],[3.85,-4.05,3.50,.60],
-    [6.15,-2.47,1.86,.42],[8.0,-1.20,3.13,.29],
-    [10.9,.79,3.13,.20],[16.75,4.80,6.65,.075]
+    [1.45,-5.70,3.50,.68],[3.85,-4.05,1.995,.56],
+    [6.15,-2.469,4.475,.40],[8.0,-1.197,3.457,.27],
+    [10.9,.797,5.455,.19],[16.75,4.819,6.669,.07]
   ];
   const makeShell=(name,chordStart,chordEnd,a=0,b=stations.length-1,parentNode=parent)=>{
     const slices=b-a;

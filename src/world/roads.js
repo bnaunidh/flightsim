@@ -32,12 +32,24 @@
  * height field is a real algorithm and this is not it.
  */
 
-import { heightAt, padWeight, AIRPORT } from './terrain.js';
+import { heightAt, padWeight, AIRPORT, OBSTACLES } from './terrain.js';
 
 /** Metres between profile samples. Three of these is about one terrain quad. */
 const STEP = 55;
 /** The steepest a finished road may be. 8% is a hard but drivable hill. */
-const MAX_GRADE = 0.08;
+/*
+ * Ten per cent, not eight.
+ *
+ * Eight was a motorway's number on maps that are headlands and island chains.
+ * What it actually did was refuse roads: the easing cannot take a profile
+ * down into a dip and back out at 8%, so it bridges the dip instead and the
+ * result is a fifty-metre embankment, which `buildRoads` then — rightly —
+ * refuses. Cullen Quay had no road to it for that reason alone: every one of
+ * the six candidate links came back "34 to 59 m embankment". At ten per cent
+ * the same six links build, and ten per cent is an ordinary island road; the
+ * steep lane out of a Cornish cove is nearer twenty.
+ */
+const MAX_GRADE = 0.10;
 
 /**
  * Flatten a height profile until no step exceeds the maximum grade.
@@ -230,17 +242,56 @@ function mapBounds(mapDef) {
  * Building it is the expensive part — about twenty-four thousand heightAt
  * calls — and doing it per road would be doing it six times for no reason.
  */
-export function roadGrid(mapDef) {
+export function roadGrid(mapDef, cell = CELL) {
   const b = mapBounds(mapDef);
-  const nx = Math.max(4, Math.ceil((b.x1 - b.x0) / CELL));
-  const nz = Math.max(4, Math.ceil((b.z1 - b.z0) / CELL));
+  const nx = Math.max(4, Math.ceil((b.x1 - b.x0) / cell));
+  const nz = Math.max(4, Math.ceil((b.z1 - b.z0) / cell));
   const h = new Float32Array(nx * nz);
+  /*
+   * And what is standing on it.
+   *
+   * The Drover's Flat road from the depot to the airfield went straight
+   * through the terminal: driven with the harness's own pure pursuit the van
+   * reached waypoint 20 of 23 and stopped dead against the building, which
+   * is why the car job could never be finished and why "it gets to the far
+   * end" had been failing. The router knew the shape of the ground and
+   * nothing at all about what had been built on it.
+   *
+   * Buildings are already registered as boxes for the aeroplane to fly into,
+   * so the road can read the same list. Padded by half a cell plus the road's
+   * own half-width, so the tarmac goes round the wall rather than up to it.
+   */
+  const blocked = new Uint8Array(nx * nz);
+  const pad = cell * 0.5 + 20;
+  // Only the boxes that are over this map at all, so the per-cell test is a
+  // handful of compares rather than the whole list.
+  const near = OBSTACLES.filter(
+    (o) => o.x1 + pad > b.x0 && o.x0 - pad < b.x1 && o.z1 + pad > b.z0 && o.z0 - pad < b.z1
+  );
   for (let j = 0; j < nz; j++) {
+    const z = b.z0 + j * cell;
     for (let i = 0; i < nx; i++) {
-      h[j * nx + i] = heightAt(b.x0 + i * CELL, b.z0 + j * CELL);
+      const x = b.x0 + i * cell;
+      const y = heightAt(x, z);
+      h[j * nx + i] = y;
+      for (let k = 0; k < near.length; k++) {
+        const o = near[k];
+        if (x <= o.x0 - pad || x >= o.x1 + pad || z <= o.z0 - pad || z >= o.z1 + pad) continue;
+        /*
+         * A thing blocks a road when it is standing ON the ground the road
+         * would run over. The height test is not fussiness: OBSTACLES is the
+         * live world's list, and an audit that walks all thirty-two maps
+         * without rebuilding the scenery each time is looking at the boxes of
+         * whichever map happens to be built. Those land either buried in the
+         * hillside or floating above it, and neither is in the way.
+         */
+        if (o.y1 < y + 1.5 || o.y0 > y + 4) continue;
+        blocked[j * nx + i] = 1;
+        break;
+      }
     }
   }
-  return { ...b, nx, nz, h, cell: CELL };
+  return { ...b, nx, nz, h, blocked, cell };
 }
 
 /** A tiny binary heap. Dijkstra with a sorted array is quadratic and it shows. */
@@ -287,7 +338,7 @@ class Heap {
  * real length rather than one, which is what stops the result looking like a
  * staircase.
  */
-export function routeBetween(g, a, b) {
+export function routeBetween(g, a, b, hardMax = HARD_MAX) {
   const ix = (p) => Math.min(g.nx - 1, Math.max(0, Math.round((p.x - g.x0) / g.cell)));
   const iz = (p) => Math.min(g.nz - 1, Math.max(0, Math.round((p.z - g.z0) / g.cell)));
   const start = iz(a) * g.nx + ix(a);
@@ -314,12 +365,13 @@ export function routeBetween(g, a, b) {
       if (vi < 0 || vi >= g.nx || vj < 0 || vj >= g.nz) continue;
       const v = vj * g.nx + vi;
       if (done[v]) continue;
+      if (g.blocked && g.blocked[v] && v !== goal && v !== start) continue;
       const hv = g.h[v];
       // A road does not go into the sea, and it does not start in it either.
       if (hv < 1 && v !== goal && v !== start) continue;
       const len = g.cell * (dx && dz ? Math.SQRT2 : 1);
       const grade = Math.abs(hv - hu) / len;
-      if (grade > HARD_MAX) continue;
+      if (grade > hardMax) continue;
       const step = len * (1 + GRADE_PENALTY * (grade / MAX_GRADE) * (grade / MAX_GRADE));
       const nd = d + step;
       if (nd < dist[v]) { dist[v] = nd; prev[v] = u; q.push(nd, v); }
@@ -422,6 +474,8 @@ export function buildRoads(mapDef, { maxFill = 30, maxCut = 45, quiet = true } =
    */
   const refused = new Set();
   const grid = roadGrid(mapDef);
+  // Built only if a link is about to be refused; most maps never need it.
+  let fineGrid = null;
   while (out.length) {
     let best = null;
     for (const i of inTree) {
@@ -437,7 +491,21 @@ export function buildRoads(mapDef, { maxFill = 30, maxCut = 45, quiet = true } =
     }
     const a = nodes[best.i];
     const b = nodes[best.j];
-    const via = routeBetween(grid, a, b);
+    /*
+     * "No line exists at all" was usually a sampling accident.
+     *
+     * The grid is 90 m and its origin is wherever the map's chunks put it, so
+     * an isthmus 60 m across falls between two samples and the router is told
+     * the island chain is five islands with water between them. Cape Vessel
+     * is exactly that: flood-filling the same rules on a grid offset by half
+     * a cell reaches the relay the router swore was unreachable. Half the
+     * cell and look again before believing it.
+     */
+    let via = routeBetween(grid, a, b);
+    if (!via) {
+      if (!fineGrid) fineGrid = roadGrid(mapDef, CELL / 2);
+      via = routeBetween(fineGrid, a, b);
+    }
     if (!via) {
       notes.push(`${a.name} – ${b.name}: no line exists at all`);
       refused.add(best.i + ':' + best.j);
@@ -451,20 +519,53 @@ export function buildRoads(mapDef, { maxFill = 30, maxCut = 45, quiet = true } =
      * the only thing in the file that makes a judgement, and it is the one
      * judgement that has to be made somewhere.
      */
+    /*
+     * A refusal is worth one more try, on a road that climbs.
+     *
+     * Cape Vessel stranded three of its seven places for a fortnight and the
+     * reason was not that no line exists: it is that the router is allowed to
+     * cross a 38% cell, then `roadBetween` eases the finished profile to 8%,
+     * and easing a straight 300 m climb into an 8% road needs an embankment a
+     * hundred metres high. The line was never wrong — it was too STRAIGHT.
+     *
+     * A road up a hill switches back, and a switchback is what you get if you
+     * forbid the steep cells and give the router cells fine enough to weave
+     * between the ones that are left. That is all this is: same Dijkstra,
+     * half the cell, a third of the grade gate, and it only runs for the pair
+     * that was about to be refused, so the flat maps pay nothing for it.
+     */
+    let finished = r;
     if (r.fill > maxFill || r.cut > maxCut) {
+      if (!fineGrid) fineGrid = roadGrid(mapDef, CELL / 2);
+      const zig = routeBetween(fineGrid, a, b, 0.13);
+      if (zig) {
+        const r2 = roadBetween(a, b, { name: `${a.name} – ${b.name}`, via: zig });
+        if (r2.fill <= maxFill && r2.cut <= maxCut) {
+          finished = r2;
+          notes.push(
+            `${a.name} – ${b.name}: switchbacks, ${(r2.len / 1000).toFixed(2)} km ` +
+              `instead of ${(r.len / 1000).toFixed(2)} km, cut ${r2.cut.toFixed(0)} m, fill ${r2.fill.toFixed(0)} m`
+          );
+        }
+      }
+    }
+    if (finished.fill > maxFill || finished.cut > maxCut) {
       notes.push(
         `${a.name} – ${b.name}: refused, ` +
-          (r.fill > maxFill ? `${r.fill.toFixed(0)} m embankment` : `${r.cut.toFixed(0)} m cutting`)
+          (finished.fill > maxFill
+            ? `${finished.fill.toFixed(0)} m embankment`
+            : `${finished.cut.toFixed(0)} m cutting`)
       );
       refused.add(best.i + ':' + best.j);
       continue;
     }
+    const rr = finished;
     {
-      roads.push(r.road);
+      roads.push(rr.road);
       if (!quiet) {
         notes.push(
-          `${a.name} – ${b.name}: ${(r.len / 1000).toFixed(2)} km, ` +
-            `${(r.worst * 100).toFixed(1)}% max, cut ${r.cut.toFixed(0)} m, fill ${r.fill.toFixed(0)} m`
+          `${a.name} – ${b.name}: ${(rr.len / 1000).toFixed(2)} km, ` +
+            `${(rr.worst * 100).toFixed(1)}% max, cut ${rr.cut.toFixed(0)} m, fill ${rr.fill.toFixed(0)} m`
         );
       }
     }

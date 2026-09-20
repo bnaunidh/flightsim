@@ -8,3 +8,6 @@
 # 404 the entire time it has existed. The file sat on one laptop.
 download/*
 !download/island-flight-sim-source.zip
+
+# Python leaves these beside the tools; they are not the tools.
+__pycache__/

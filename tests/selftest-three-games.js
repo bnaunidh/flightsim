@@ -671,8 +671,13 @@ export async function threeGameChecks(sim, r, say = () => {}, opts = {}) {
       const authored = (carMap.waters && carMap.waters.roads) || [];
       return authored.length > 0;
     })(),
-    'nothing calls buildRoads(MAP) — MAP.waters.roads is empty on all three car maps, '
-      + 'so roadHeight() levels nothing and the tarmac is drawn over raw noise'
+    (() => {
+      const authored = ((Maps.getMap('drovers').waters || {}).roads) || [];
+      return authored.length
+        ? `${authored.length} roads on MAP.waters.roads, so roadHeight() has something to level`
+        : 'nothing calls buildRoads(MAP) — MAP.waters.roads is empty on all three car maps, '
+          + 'so roadHeight() levels nothing and the tarmac is drawn over raw noise';
+    })()
   );
   const tyreRead = (() => {
     // The probe is module-private, so ask it the only way it can be asked:
@@ -965,7 +970,13 @@ export async function threeGameChecks(sim, r, say = () => {}, opts = {}) {
   say('the van');
   dropKeys();
   await goToMap('drovers');
-  sim.startDrive('car');
+  /*
+   * Awaited. startDrive rebuilds the world and lays the roads, and reading
+   * sim.roads before it has finished gives you the PREVIOUS map's network —
+   * which is how the van came to be driven down a 31-point road that does
+   * not exist on Drover's Flat, and why it never reached the far end.
+   */
+  await sim.startDrive('car');
   sim.step(0.5);
   const van = sim.vehicle;
   r.ok('the van is a van', !!van && van.isBoat === false && van.spec.kind === 'car', van && van.spec.name);
@@ -975,8 +986,21 @@ export async function threeGameChecks(sim, r, say = () => {}, opts = {}) {
   // with a pure-pursuit steering loop, the worst lateral offset from the
   // centreline was 8.5 m and the mean was 0.2 m, inside a 13 m half-width.
   let roadResult = null;
-  if (Roads && Roads.buildRoads) {
-    const built = Roads.buildRoads(Maps.getMap('drovers'));
+  /*
+   * Drive the road the GAME laid, not a fresh one.
+   *
+   * This called buildRoads() itself and drove the result, which is a
+   * different network from the one the world was built with — the router
+   * reads the live obstacle list and the live terrain, so a second call
+   * returns a second answer. The van was then driven down a line that
+   * roadHeight() had never levelled, over raw noise, and it stopped dead
+   * against a bank: waypoint 9 of 30 in 420 s, 425 m covered. Driving
+   * sim.roads.list — the tarmac that is actually on the island — the same
+   * loop covers 2,959 m in 150 s without once dropping below walking pace.
+   */
+  const laid = (sim.roads && (sim.roads.list || sim.roads.roads)) || null;
+  if (laid || (Roads && Roads.buildRoads)) {
+    const built = laid ? { roads: laid } : Roads.buildRoads(Maps.getMap('drovers'));
     const rd = built.roads.find((x) => /Depot . The Airfield/.test(x.name || '')) || built.roads[0];
     if (rd) {
       const p0 = rd.path[0];
@@ -1051,9 +1075,19 @@ export async function threeGameChecks(sim, r, say = () => {}, opts = {}) {
         const want = (Math.atan2(tgt[0] - van.pos.x, -(tgt[1] - van.pos.z)) * 180) / Math.PI;
         const err = ((want - van.heading + 540) % 360) - 180;
         const v = Math.abs(van.speed);
-        // Drive it with the same keys a child has: Shift, Ctrl, A and D.
-        sim.key('ShiftLeft', v < 12);
-        sim.key('ControlLeft', v > 16);
+        /*
+         * Drive it with the same keys a child has: Shift, Ctrl, A and D —
+         * and with a child's right foot, which is not a governor stuck at
+         * fifty km/h. The harness used to hold 12-16 m/s everywhere,
+         * corners included, and ran out of its 420 s at waypoint 29 of 36:
+         * not because the road was undriveable but because nobody drives a
+         * straight at the speed they take a bend. Open it up when the
+         * steering is near centre, back off when it is not.
+         */
+        const straight = Math.abs(err) < 8;
+        const targetSpeed = straight ? 22 : 12;
+        sim.key('ShiftLeft', v < targetSpeed);
+        sim.key('ControlLeft', v > targetSpeed + 4);
         sim.key('KeyD', err > 3);
         sim.key('KeyA', err < -3);
         sim.step(1 / 30, 1 / 30);
@@ -1076,7 +1110,7 @@ export async function threeGameChecks(sim, r, say = () => {}, opts = {}) {
         }
       }
       dropKeys();
-      roadResult = { worst, t: drivenT, wp, total: rd.path.length, bad, hw: rd.halfWidth || 13, drove: van.distance };
+      roadResult = { worst, t: drivenT, wp, total: rd.path.length, bad, hw: rd.halfWidth || 13, drove: van.distance, name: rd.name || '(unnamed)' };
     }
   }
   /*
@@ -1102,7 +1136,10 @@ export async function threeGameChecks(sim, r, say = () => {}, opts = {}) {
   r.ok(
     'and it gets to the far end',
     !!roadResult && roadResult.wp >= roadResult.total,
-    roadResult ? `waypoint ${roadResult.wp} of ${roadResult.total} in ${roadResult.t.toFixed(0)} s` : ''
+    roadResult
+      ? `waypoint ${roadResult.wp} of ${roadResult.total} in ${roadResult.t.toFixed(0)} s `
+        + `on ${roadResult.name}, ${roadResult.drove.toFixed(0)} m driven`
+      : ''
   );
 
   // ---- going in the water is a delay, not an ending ----

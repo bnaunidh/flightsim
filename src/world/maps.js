@@ -878,7 +878,11 @@ export const MAPS = [
       channel: { halfWidth: 55, blend: 40, path: [[0, 60], [0, 430], [-60, 780], [-60, 1150]] },
       shoals: [
         // The shelf goes first: everything after it stands on it.
-        { name: 'The Bar', cx: 0, cz: 100, r: 3000, top: -9, pow: 0.75 },
+        { name: 'The Bar', cx: 0, cz: 100, r: 2400, top: -9, pow: 0.75 },
+        { name: 'The Bar', cx: -853, cz: -1027, r: 2272, top: -11.8, pow: 0.93 },
+        { name: 'The Bar', cx: 273, cz: 1837, r: 2018, top: -13.1, pow: 0.58 },
+        { name: 'The Bar', cx: 1583, cz: 466, r: 2307, top: -13.7, pow: 0.73 },
+        { name: 'The Bar', cx: -1079, cz: -899, r: 1357, top: -10.7, pow: 0.59 },
         // Dries nearly a metre and breaks white — you can see this one.
         { name: 'Cormorant Rock', cx: 470, cz: 540, r: 140, top: 0.9, pow: 1.7 },
         // And this one you cannot. 0.4 m under the keel, 570 m clear of the
@@ -975,7 +979,11 @@ export const MAPS = [
         path: [[-1050, -490], [-780, -210], [-470, 90], [-360, 470], [-520, 820], [-430, 1200]],
       },
       shoals: [
-        { name: 'The Shelf', cx: -200, cz: 200, r: 3100, top: -4.6, pow: 0.7 },
+        { name: 'The Shelf', cx: -200, cz: 200, r: 2480, top: -4.6, pow: 0.7 },
+        { name: 'The Shelf', cx: -977, cz: 1004, r: 2342, top: -8.6, pow: 0.93 },
+        { name: 'The Shelf', cx: 899, cz: 228, r: 1832, top: -7.9, pow: 0.61 },
+        { name: 'The Shelf', cx: -344, cz: -1105, r: 1383, top: -6.7, pow: 0.74 },
+        { name: 'The Shelf', cx: -1425, cz: -1132, r: 1409, top: -6.1, pow: 0.76 },
         { cx: -760, cz: 120, r: 130, top: 1.8, pow: 1.8 },
         { cx: -140, cz: 210, r: 150, top: -1.1, pow: 1.3 },
         { cx: -700, cz: 560, r: 140, top: 2.4, pow: 1.9 },
@@ -1075,7 +1083,11 @@ export const MAPS = [
         ],
       },
       shoals: [
-        { name: 'Longbank', cx: 260, cz: 700, r: 4000, top: -4.6, pow: 0.55 },
+        { name: 'Longbank', cx: 260, cz: 700, r: 3200, top: -4.6, pow: 0.55 },
+        { name: 'Longbank', cx: -1172, cz: 540, r: 1896, top: -5.6, pow: 0.67 },
+        { name: 'Longbank', cx: -437, cz: 2771, r: 2195, top: -9.3, pow: 0.75 },
+        { name: 'Longbank', cx: 76, cz: 2369, r: 1815, top: -7.9, pow: 0.54 },
+        { name: 'Longbank', cx: 1330, cz: -166, r: 2514, top: -9.1, pow: 0.6 },
         { cx: -820, cz: -260, r: 260, top: -0.2, pow: 1.1 },
         { cx: 240, cz: -140, r: 300, top: 0.3, pow: 1.0 },
         { cx: -120, cz: 900, r: 280, top: -0.4, pow: 1.1 },
@@ -1277,14 +1289,37 @@ export const MAPS = [
     islands: [
       { name: 'West Head', cx: -1150, cz: 60, radius: 820, peak: 70, seed: 503, profile: 'hills' },
       { name: 'Vessel Field', cx: 0, cz: 0, radius: 880, peak: 55, seed: 509, profile: 'plains' },
-      // These two read 'ridge', which overshoots: peaks of 430 and 520 measured
-      // 660 m on the ground, an alpine pass on a seven-kilometre cape. Halved.
-      { name: 'The Spine', cx: 1150, cz: -90, radius: 840, peak: 190, seed: 521, profile: 'ridge' },
-      { name: 'High Vessel', cx: 2300, cz: 40, radius: 860, peak: 230, seed: 523, profile: 'ridge' },
-      // The eastern point is 'plains' and low so that the quay works: on
-      // 'hills' at peak 210 its flank reached 237 m and a quay at 5 m would
-      // have cut a hundred-metre hole in it.
-      { name: 'Vessel Point', cx: 3450, cz: -120, radius: 800, peak: 90, seed: 541, profile: 'plains' },
+      /*
+       * 'hills', not 'ridge', and this is the second time these two have been
+       * cut down. They were 430 and 520, which measured 660 m on the ground —
+       * an alpine pass on a seven-kilometre cape — and were halved to 190 and
+       * 230, which still measured 303 m.
+       *
+       * The number that matters on a DRIVING map is not the peak, it is the
+       * flank. Flood-filling the router's own rules from the depot, the ridge
+       * profile walls the road in at x=1760: Vessel Relay, Point Station and
+       * Vessel Quay were unreachable, and the map has been shipping three
+       * undeliverable addresses out of seven. It takes a 65% gate — a
+       * thirty-three degree slope — to reach them, and that is not a road.
+       * On 'hills' at 150 and 180 the cape tops out at 198 m and every one of
+       * the seven places is reachable at the 38% the router allows.
+       */
+      { name: 'The Spine', cx: 1150, cz: -90, radius: 840, peak: 150, seed: 521, profile: 'hills' },
+      { name: 'High Vessel', cx: 2300, cz: 40, radius: 860, peak: 140, seed: 523, profile: 'hills' },
+      /*
+       * The eastern point is 'plains' and low so that the quay works: on
+       * 'hills' at peak 210 its flank reached 237 m and a quay at 5 m would
+       * have cut a hundred-metre hole in it.
+       *
+       * 110, not 90, and High Vessel above cut to 140 with it — because where
+       * two island fields overlap the higher one wins and then falls off over
+       * about a hundred and forty metres, so a tall neighbour beside a low
+       * one is not a saddle, it is a cliff. Measured: the ground fell 118 m
+       * to 53 m in one step at x≈2960, the road came down at its 10% and
+       * floated 54 m over the drop, and the link was refused. Point Station
+       * and Vessel Quay had no road to them because of that one step.
+       */
+      { name: 'Vessel Point', cx: 3450, cz: -120, radius: 800, peak: 110, seed: 541, profile: 'plains' },
     ],
     // One chunk, 25.0 m per quad, 93k vertices. Half of it is sea, which costs
     // almost nothing: islandField rejects on a squared distance.
@@ -1917,7 +1952,16 @@ export const MAPS = [
       depot: { x: -1400, z: 0, headingDeg: 90 },
       places: [
         { id: 'fuel', name: 'Fuel Farm', x: -1400, z: 0, kind: 'depot' },
-        { id: 'apron', name: 'Perimeter Field', x: -80, z: -148, kind: 'apron' },
+        /*
+         * On this map's OWN apron. (-80, -148) is Kestrel's, copied in with
+         * the rest of the block; every other courier map puts its strip at
+         * the origin so it happened to land on the pad, and this one sites
+         * its 450 m strip at (-582, 801), a kilometre away in open country.
+         * The address had no road to it and no road could be built to it,
+         * and "no courier place is left with no road to it" had been naming
+         * it for a fortnight.
+         */
+        { id: 'apron', name: 'Perimeter Field', x: -582, z: 711, kind: 'apron' },
         { id: 'gate', name: 'Perimeter Gate', x: 1300, z: 0, kind: 'depot' },
         { id: 'cargo', name: 'Cargo Apron', x: 300, z: 900, kind: 'apron' },
       ],
@@ -2036,15 +2080,14 @@ export const MAPS = [
         { cx: 2090, cz: 984, r: 500, top: 0.9, pow: 1.8 },
         { cx: 4910, cz: -2058, r: 550, top: -0.5, pow: 2.2 },
         { cx: -2071, cz: -5026, r: 420, top: -0.3, pow: 2.5 },
-        { cx: -4314, cz: -3651, r: 600, top: 1, pow: 1 },
-        { cx: -4440, cz: -3431, r: 600, top: 1, pow: 1 },
-        { cx: -4566, cz: -3210, r: 600, top: 1, pow: 1 },
-        { cx: -4692, cz: -2990, r: 600, top: 1, pow: 1 },
-        { cx: -4817, cz: -2769, r: 600, top: 1, pow: 1 },
-        { cx: -4943, cz: -2549, r: 600, top: 1, pow: 1 },
-        { cx: -5069, cz: -2329, r: 600, top: 1, pow: 1 },
-        { cx: -5195, cz: -2108, r: 600, top: 1, pow: 1 },
-        { cx: -5321, cz: -1888, r: 600, top: 1, pow: 1 },
+        { cx: -4755, cz: -3591, r: 366, top: -0.19, pow: 1.56 },
+        { cx: -4639, cz: -3188, r: 234, top: -2.9, pow: 1.87 },
+        { cx: -4967, cz: -3231, r: 317, top: -2.35, pow: 1.21 },
+        { cx: -5110, cz: -3002, r: 388, top: -0.66, pow: 1.63 },
+        { cx: -4920, cz: -2552, r: 543, top: 0.25, pow: 1.38 },
+        { cx: -5156, cz: -2396, r: 548, top: -0.2, pow: 1.65 },
+        { cx: -5194, cz: -2256, r: 410, top: -2.79, pow: 1.25 },
+        { cx: -4850, cz: -1871, r: 591, top: -0.74, pow: 1.56 },
         { cx: -1293, cz: 4802, r: 480, top: -1.5, pow: 1 },
       ],
     },
@@ -2574,7 +2617,17 @@ export const MAPS = [
       pad2: { x0: 170, x1: 330, z0: -500, z1: 400, blend: 160 },
     },
     islands: [
-      { name: 'Redrock Flats', cx: 0, cz: 0, radius: 5800, peak: 14, seed: 701, profile: 'plains' },
+      /*
+       * 60, not 14. "Flats" is the name, not an instruction to make it a
+       * table: measured over the island, peak 14 gives a standard deviation
+       * of 3.8 m across five and a half kilometres, which is a billiard
+       * cloth, and the longest drive in the game was over it. At 60 the
+       * deviation is 9.7 m — a rise of about one per cent, so it is still
+       * flat country and still the easy map, but there are swells to come
+       * over and the road has something to run through. Measured after:
+       * same four roads, nothing stranded, no link refused.
+       */
+      { name: 'Redrock Flats', cx: 0, cz: 0, radius: 5800, peak: 60, seed: 701, profile: 'plains' },
       {
         name: 'Vermilion Mesa',
         cx: -6800,
@@ -3033,74 +3086,74 @@ export const MAPS = [
       },
       channel: { halfWidth: 70, blend: 50, path: [[2323, 3318], [2019, 2883], [1749, 2498], [2367, 1986]] },
       shoals: [
-        { cx: 1589, cz: 3006, r: 150, top: 0.7, pow: 1.6 },
-        { cx: 1319, cz: 3134, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 1040, cz: 3237, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 753, cz: 3316, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 460, cz: 3369, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 163, cz: 3396, r: 150, top: 0.7, pow: 1.6 },
-        { cx: -135, cz: 3397, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -432, cz: 3372, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -725, cz: 3322, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -1013, cz: 3246, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -1293, cz: 3144, r: 150, top: 0.7, pow: 1.6 },
-        { cx: -1564, cz: 3019, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -1822, cz: 2871, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -2066, cz: 2700, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -2295, cz: 2509, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -2505, cz: 2298, r: 150, top: 0.7, pow: 1.6 },
-        { cx: -2697, cz: 2070, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -2868, cz: 1826, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -3017, cz: 1568, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -3142, cz: 1298, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -3244, cz: 1018, r: 150, top: 0.7, pow: 1.6 },
-        { cx: -3321, cz: 730, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -3372, cz: 437, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -3397, cz: 140, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -3396, cz: -158, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -3369, cz: -455, r: 150, top: 0.7, pow: 1.6 },
-        { cx: -3317, cz: -748, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -3239, cz: -1035, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -3136, cz: -1315, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -3008, cz: -1584, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -2858, cz: -1841, r: 150, top: 0.7, pow: 1.6 },
-        { cx: -2686, cz: -2084, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -2493, cz: -2312, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -2281, cz: -2521, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -1589, cz: -3006, r: 150, top: 0.7, pow: 1.6 },
-        { cx: -1319, cz: -3134, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -1040, cz: -3237, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -753, cz: -3316, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -460, cz: -3369, r: 150, top: 0.35, pow: 1.6 },
-        { cx: -163, cz: -3396, r: 150, top: 0.7, pow: 1.6 },
-        { cx: 135, cz: -3397, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 432, cz: -3372, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 725, cz: -3322, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 1013, cz: -3246, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 1293, cz: -3144, r: 150, top: 0.7, pow: 1.6 },
-        { cx: 1564, cz: -3019, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 1822, cz: -2871, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 2066, cz: -2700, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 2295, cz: -2509, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 2505, cz: -2298, r: 150, top: 0.7, pow: 1.6 },
-        { cx: 2697, cz: -2070, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 2868, cz: -1826, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 3017, cz: -1568, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 3142, cz: -1298, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 3244, cz: -1018, r: 150, top: 0.7, pow: 1.6 },
-        { cx: 3321, cz: -730, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 3372, cz: -437, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 3397, cz: -140, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 3396, cz: 158, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 3369, cz: 455, r: 150, top: 0.7, pow: 1.6 },
-        { cx: 3317, cz: 748, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 3239, cz: 1035, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 3136, cz: 1315, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 3008, cz: 1584, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 2858, cz: 1841, r: 150, top: 0.7, pow: 1.6 },
-        { cx: 2686, cz: 2084, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 2493, cz: 2312, r: 150, top: 0.35, pow: 1.6 },
-        { cx: 2281, cz: 2521, r: 150, top: 0.35, pow: 1.6 },
+        { cx: 3640, cz: 313, r: 164, top: 1.2, pow: 1.98 },
+        { cx: 3719, cz: 633, r: 98, top: -1.38, pow: 1.86 },
+        { cx: 3600, cz: 876, r: 176, top: -1.84, pow: 1.35 },
+        { cx: 3321, cz: 1065, r: 158, top: -0.52, pow: 1.5 },
+        { cx: 3413, cz: 1480, r: 239, top: -0.95, pow: 1.43 },
+        { cx: 3204, cz: 1713, r: 232, top: -1.41, pow: 1.27 },
+        { cx: 2922, cz: 1782, r: 142, top: -2.55, pow: 1.38 },
+        { cx: 2592, cz: 2078, r: 238, top: -1.16, pow: 1.7 },
+        { cx: 1195, cz: 3076, r: 225, top: -0.59, pow: 1.47 },
+        { cx: 873, cz: 3082, r: 208, top: -0.19, pow: 1.77 },
+        { cx: 471, cz: 2722, r: 122, top: 0.93, pow: 1.82 },
+        { cx: 142, cz: 3229, r: 211, top: -2.35, pow: 1.67 },
+        { cx: -62, cz: 3015, r: 181, top: 0.62, pow: 1.91 },
+        { cx: -533, cz: 3553, r: 207, top: 0.86, pow: 1.96 },
+        { cx: -899, cz: 3548, r: 97, top: -1.08, pow: 1.61 },
+        { cx: -1278, cz: 3343, r: 89, top: 1.15, pow: 1.99 },
+        { cx: -1589, cz: 3444, r: 207, top: 0.15, pow: 1.77 },
+        { cx: -2011, cz: 3361, r: 221, top: 1.0, pow: 1.66 },
+        { cx: -2226, cz: 3046, r: 217, top: -0.82, pow: 1.45 },
+        { cx: -2318, cz: 2751, r: 102, top: 0.99, pow: 1.86 },
+        { cx: -2633, cz: 2437, r: 134, top: 1.08, pow: 1.68 },
+        { cx: -2864, cz: 2139, r: 128, top: -0.53, pow: 1.94 },
+        { cx: -2786, cz: 1836, r: 102, top: -1.66, pow: 2.01 },
+        { cx: -3372, cz: 1645, r: 164, top: -0.48, pow: 1.99 },
+        { cx: -3588, cz: 1245, r: 209, top: -0.23, pow: 1.47 },
+        { cx: -3372, cz: 956, r: 104, top: -1.28, pow: 1.86 },
+        { cx: -3210, cz: 717, r: 140, top: 0.81, pow: 1.64 },
+        { cx: -3187, cz: 471, r: 226, top: 0.18, pow: 1.91 },
+        { cx: -3012, cz: 244, r: 134, top: -0.31, pow: 1.8 },
+        { cx: -2969, cz: 18, r: 119, top: -1.8, pow: 1.82 },
+        { cx: -2908, cz: -323, r: 99, top: -0.59, pow: 1.27 },
+        { cx: -2921, cz: -711, r: 235, top: -2.05, pow: 1.38 },
+        { cx: -2754, cz: -977, r: 122, top: 0.82, pow: 1.82 },
+        { cx: -2868, cz: -1394, r: 134, top: 0.19, pow: 1.69 },
+        { cx: -2673, cz: -1681, r: 232, top: 1.02, pow: 2.03 },
+        { cx: -2807, cz: -2214, r: 183, top: -0.47, pow: 1.61 },
+        { cx: -1521, cz: -2894, r: 121, top: -0.9, pow: 1.75 },
+        { cx: -1233, cz: -3147, r: 150, top: 0.07, pow: 1.74 },
+        { cx: -1073, cz: -3409, r: 144, top: -2.53, pow: 1.87 },
+        { cx: -880, cz: -3886, r: 157, top: 0.97, pow: 1.79 },
+        { cx: -479, cz: -3833, r: 129, top: 1.07, pow: 1.27 },
+        { cx: -152, cz: -3680, r: 143, top: -2.18, pow: 1.69 },
+        { cx: 79, cz: -3555, r: 93, top: 0.16, pow: 1.57 },
+        { cx: 404, cz: -3574, r: 138, top: -2.59, pow: 1.59 },
+        { cx: 679, cz: -3233, r: 91, top: 1.19, pow: 1.69 },
+        { cx: 955, cz: -3095, r: 183, top: -1.83, pow: 1.68 },
+        { cx: 1284, cz: -3061, r: 88, top: 0.96, pow: 2.01 },
+        { cx: 1550, cz: -2760, r: 191, top: -0.54, pow: 1.57 },
+        { cx: 1682, cz: -2616, r: 210, top: 0.18, pow: 1.37 },
+        { cx: 1924, cz: -2455, r: 110, top: 0.14, pow: 2.09 },
+        { cx: 2231, cz: -2453, r: 150, top: -2.56, pow: 2.09 },
+        { cx: 2360, cz: -2178, r: 164, top: -1.61, pow: 1.39 },
+        { cx: 2701, cz: -1974, r: 211, top: 0.51, pow: 1.83 },
+        { cx: 2894, cz: -1762, r: 213, top: 0.1, pow: 1.25 },
+        { cx: 2818, cz: -1318, r: 193, top: -0.06, pow: 1.45 },
+        { cx: 2824, cz: -1050, r: 93, top: -1.43, pow: 1.54 },
+        { cx: 3280, cz: -951, r: 89, top: -1.08, pow: 1.48 },
+        { cx: 3341, cz: -621, r: 222, top: -0.17, pow: 1.7 },
+        { cx: 3440, cz: -315, r: 117, top: -1.42, pow: 1.31 },
+        { cx: -2373, cz: -1598, r: 108, top: -1.75, pow: 1.92 },
+        { cx: -2336, cz: -1513, r: 61, top: -1.2, pow: 1.52 },
+        { cx: -193, cz: 2859, r: 93, top: -2.84, pow: 1.81 },
+        { cx: 1393, cz: -1961, r: 78, top: -2.74, pow: 1.9 },
+        { cx: -388, cz: 2531, r: 68, top: -1.33, pow: 1.53 },
+        { cx: 3127, cz: -347, r: 86, top: -1.56, pow: 1.43 },
+        { cx: -2379, cz: -1915, r: 98, top: -0.86, pow: 1.66 },
+        { cx: 2238, cz: -738, r: 72, top: -1.48, pow: 1.33 },
+        { cx: -1122, cz: -2875, r: 89, top: -0.84, pow: 1.45 },
       ],
     },
     outpost: { cx: 2666, cz: 2237, elev: 12, halfLen: 90, halfWidth: 40, blend: 90 },
