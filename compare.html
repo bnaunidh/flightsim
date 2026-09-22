@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Side by side — this build and ChatGPT's</title>
+<!--
+  Two copies of the game, one page, one set of controls.
+
+  The 20 September delivery was mostly taken into this game, but not all of
+  it: its Kestrel removed the approach cut by removing the island, and its
+  Fenwick street heights disagreed at the crossings. Arguing about that from
+  a table of standard deviations is a poor way to decide. This flies both.
+
+  HOW IT STAYS IN STEP. Not by mirroring one aeroplane onto the other —
+  that fights two physics loops against each other and jitters. Both frames
+  are given the same map, the same aeroplane, the same weather and the same
+  starting state, and then every key you press is forwarded to BOTH through
+  their own `window.__sim.key()`. Same inputs, same physics, same start: they
+  fly the same line, and the only thing different is the world under them.
+  A slow tick corrects any drift, because floating point is floating point.
+
+  The frames take no pointer events, so clicking never moves focus into one
+  of them and leaves the other deaf. Everything is driven from up here.
+
+  This is a dev tool and it is honest about the cost: two full three.js
+  scenes, two terrains, two skies, on one page. It is for a Mac with the fans
+  on, not for a Chromebook.
+-->
+<style>
+  :root {
+    --bg: #0d1016;
+    --panel: #151a23;
+    --line: #26303f;
+    --ink: #dfe6f0;
+    --dim: #8b97a8;
+    --mine: #6fd3a0;
+    --theirs: #e8b26a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 14px/1.45 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  header {
+    flex: none; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  h1 { font-size: 14px; font-weight: 600; margin: 0 8px 0 0; letter-spacing: .01em; }
+  label { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; }
+  select, button {
+    font: inherit; font-size: 13px; color: var(--ink);
+    background: #1d2531; border: 1px solid var(--line); border-radius: 7px;
+    padding: 5px 9px;
+  }
+  button { cursor: pointer; }
+  button:hover { background: #253040; }
+  button[disabled] { opacity: .45; cursor: default; }
+  .spacer { flex: 1; }
+  .hint { color: var(--dim); font-size: 12px; }
+  kbd {
+    font: inherit; font-size: 11px; background: #1d2531; border: 1px solid var(--line);
+    border-bottom-width: 2px; border-radius: 4px; padding: 0 4px;
+  }
+
+  main { flex: 1; display: flex; min-height: 0; position: relative; }
+  .side { position: relative; min-width: 120px; overflow: hidden; }
+  .side.mine { flex: 1 1 50%; }
+  .side.theirs { flex: 1 1 50%; }
+  iframe { width: 100%; height: 100%; border: 0; display: block; pointer-events: none; }
+  .tag {
+    position: absolute; top: 10px; left: 10px; z-index: 2;
+    padding: 4px 9px; border-radius: 6px; font-size: 12px; font-weight: 600;
+    background: rgba(8, 11, 16, .72); border: 1px solid var(--line);
+  }
+  .side.mine .tag { color: var(--mine); }
+  .side.theirs .tag { color: var(--theirs); }
+  .sub { font-weight: 400; color: var(--dim); }
+
+  /* The divider. Drag it; the two frames are the same scene, so being able
+     to give one of them more of the screen is most of the comparison. */
+  .grip {
+    flex: none; width: 8px; cursor: col-resize; background: var(--line);
+    position: relative;
+  }
+  .grip::after {
+    content: ''; position: absolute; inset: 0 2px; border-radius: 2px;
+    background: #3a4b60;
+  }
+  .grip:hover::after { background: #4d668a; }
+
+  /* Under a thousand pixels the two frames are too narrow to read, and over
+     and under is still a side-by-side. The divider becomes a horizontal one. */
+  @media (max-width: 1000px) {
+    main { flex-direction: column; }
+    .grip { width: auto; height: 8px; cursor: row-resize; }
+    .side.mine, .side.theirs { flex: 1 1 50%; }
+  }
+
+  .status {
+    position: absolute; bottom: 0; left: 0; right: 0; z-index: 3;
+    padding: 5px 12px; font-size: 12px; color: var(--dim);
+    background: linear-gradient(transparent, rgba(8, 11, 16, .82) 45%);
+    pointer-events: none;
+  }
+  .diff { color: #ffd479; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Side by side</h1>
+
+  <label>Map
+    <select id="map"></select>
+  </label>
+  <label>Aeroplane
+    <select id="ac">
+      <option value="skylark">Skylark 172</option>
+      <option value="courier">Kestrel Courier</option>
+      <option value="meridian">Meridian 220</option>
+      <option value="tempest">Tempest WR-4</option>
+      <option value="vanguard">Vanguard F-1</option>
+      <option value="osprey">Osprey CV</option>
+      <option value="nightjar">Nightjar B-2</option>
+      <option value="harrier">Skyhook H-3</option>
+    </select>
+  </label>
+  <label>Start
+    <select id="where">
+      <option value="air">In the air, on final</option>
+      <option value="ground">On the runway</option>
+    </select>
+  </label>
+  <label>Light
+    <select id="time">
+      <option value="day">Day</option>
+      <option value="golden">Golden</option>
+      <option value="dusk">Dusk</option>
+      <option value="night">Night</option>
+    </select>
+  </label>
+
+  <button id="go">Fly both</button>
+  <button id="look" disabled title="Put both aeroplanes over the sea, four kilometres out, looking at the island">Look at the island</button>
+  <button id="resync" disabled>Re-sync</button>
+  <button id="swap">Swap sides</button>
+
+  <span class="spacer"></span>
+  <span class="hint">Keys go to both: <kbd>W</kbd><kbd>S</kbd><kbd>A</kbd><kbd>D</kbd> fly,
+    <kbd>Shift</kbd>/<kbd>Ctrl</kbd> throttle, <kbd>C</kbd> view, <kbd>G</kbd> gear.</span>
+</header>
+
+<main id="main">
+  <div class="side mine" id="sideA">
+    <span class="tag">This build <span class="sub">— shipped</span></span>
+    <iframe id="a" src="index.html?compare=1" title="This build"></iframe>
+  </div>
+  <div class="grip" id="grip"></div>
+  <div class="side theirs" id="sideB">
+    <span class="tag">ChatGPT's build <span class="sub">— 20 September, as delivered</span></span>
+    <iframe id="b" src="gpt/index.html?compare=1" title="ChatGPT's build"></iframe>
+  </div>
+  <div class="status" id="status">Booting both copies…</div>
+</main>
+
+<script type="module">
+/*
+ * The maps that actually differ between the two trees, so the picker can say
+ * so rather than making you hunt. Everything else is byte-identical map data
+ * and the two sides will look the same — which is itself worth being able to
+ * confirm.
+ */
+const DIFFERS = new Set([
+  'kestrel', 'kestrel-port',      // the island itself: theirs is flat
+  'town',                          // street heights at the crossings
+  'delta', 'stacks',               // shoals, and Flat Rock
+  'ravencrag', 'meridian', 'airfieldperimeter', // relief
+  'airbase', 'sfo', 'lax', 'skerries', 'longbank', 'mountainpass', // lighthouses
+  'sennen', 'lagoon',              // shoals dropped from this build
+]);
+
+const $ = (id) => document.getElementById(id);
+const frames = { a: $('a'), b: $('b') };
+const status = $('status');
+let sims = null;
+
+function say(text, diff) {
+  status.innerHTML = diff ? `${text} <span class="diff">${diff}</span>` : text;
+}
+
+/** The game object inside a frame, once it has finished booting. */
+function simOf(frame) {
+  try { return frame.contentWindow.__sim || null; } catch (err) { return null; }
+}
+
+async function waitForBoot() {
+  const t0 = Date.now();
+  while (Date.now() - t0 < 45000) {
+    const a = simOf(frames.a);
+    const b = simOf(frames.b);
+    if (a && b) return { a, b };
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Setting both to the same thing                                      */
+/* ------------------------------------------------------------------ */
+
+async function setMapOn(sim, id) {
+  if (sim.settings.map === id) return;
+  sim.setMap(id);
+  // setMap rebuilds the world and drops to the menu; it has to settle before
+  // anything flies. Same wait the self-test uses.
+  for (let i = 0; i < 300 && sim.settings.map !== id; i++) await new Promise((r) => setTimeout(r, 10));
+  await new Promise((r) => setTimeout(r, 150));
+}
+
+async function flyBoth() {
+  if (!sims) return;
+  const map = $('map').value;
+  const ac = $('ac').value;
+  const airborne = $('where').value === 'air';
+  const time = $('time').value;
+  $('go').disabled = true;
+  say('Loading ' + map + ' on both sides…');
+
+  for (const sim of [sims.a, sims.b]) {
+    try {
+      sim.setAircraft(ac);
+      sim.settings.aircraft = ac;
+    } catch (err) { /* an id one tree has and the other does not */ }
+  }
+  await Promise.all([setMapOn(sims.a, map), setMapOn(sims.b, map)]);
+
+  const opts = { time, condition: 'clear', windSpeedKts: 5, windDirDeg: 100, airborne };
+  await Promise.all([sims.a.startMode('free', opts), sims.b.startMode('free', opts)]);
+  // Both were given the same start, but "the same start" is computed from each
+  // tree's own runway, so copy one onto the other and be certain.
+  resync();
+
+  $('go').disabled = false;
+  $('resync').disabled = false;
+  $('look').disabled = false;
+  const note = DIFFERS.has(map) ? '— this map differs between the two' : '— identical map data on both sides';
+  say('Flying ' + map + '. Your keys go to both.', note);
+}
+
+/**
+ * Both aeroplanes four kilometres off the field at 1,500 m, pointing at it.
+ *
+ * On final you are over the airfield, and the airfield is the one part of
+ * these two builds that is the same — which is why the first look at this
+ * page showed two identical pictures and proved nothing. The difference is
+ * the island, and you have to be far enough out and high enough up to see
+ * the whole of it.
+ */
+function lookAtIt() {
+  if (!sims) return;
+  for (const sim of [sims.a, sims.b]) {
+    const ac = sim.aircraft;
+    if (!ac) continue;
+    const rw = (sim.airport && sim.airport.runway) || { cx: 0, cz: 0 };
+    ac.reset({
+      pos: new ac.pos.constructor(rw.cx || 0, 1500, (rw.cz || 0) + 4200),
+      headingDeg: 0, speed: 60, altAGL: 1500, engineOn: true, gearDown: false,
+    });
+  }
+  say('Four kilometres out at 1,500 m, both pointing at the field.');
+}
+
+/**
+ * Put the right-hand aeroplane exactly where the left-hand one is.
+ *
+ * Identical inputs into identical physics stay together for a long time, but
+ * not for ever, and a comparison that has quietly drifted a hundred metres
+ * apart is worse than no comparison. This is the correction, and it is also
+ * what the button does.
+ */
+function resync() {
+  if (!sims) return;
+  const from = sims.a.aircraft;
+  const to = sims.b.aircraft;
+  if (!from || !to) return;
+  try {
+    to.reset({
+      pos: new to.pos.constructor(from.pos.x, from.pos.y, from.pos.z),
+      headingDeg: from.heading,
+      speed: from.speed !== undefined ? from.speed : from.ias,
+      altAGL: from.agl,
+      engineOn: from.engineOn,
+      gearDown: from.gearDown,
+    });
+  } catch (err) {
+    say('Could not re-sync: ' + err.message);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* One keyboard, two aeroplanes                                        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Forwarded by CODE, not by character, because that is what the game binds
+ * and it is what `sim.key()` dispatches. Keys the page itself needs — tab,
+ * the function keys, anything with a modifier that is not shift or control —
+ * are left alone so the browser still works.
+ */
+const PASS_THROUGH = /^(Key[A-Z]|Digit[0-9]|Arrow(Up|Down|Left|Right)|Space|Shift(Left|Right)|Control(Left|Right)|Alt(Left|Right)|Comma|Period|Minus|Equal|BracketLeft|BracketRight)$/;
+
+function forward(e, down) {
+  if (!sims) return;
+  if (e.metaKey || e.repeat) return;
+  if (!PASS_THROUGH.test(e.code)) return;
+  if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  e.preventDefault();
+  for (const sim of [sims.a, sims.b]) {
+    try { sim.key(e.code, down); } catch (err) { /* a frame that has gone away */ }
+  }
+}
+window.addEventListener('keydown', (e) => forward(e, true));
+window.addEventListener('keyup', (e) => forward(e, false));
+
+/* ------------------------------------------------------------------ */
+/* The divider                                                         */
+/* ------------------------------------------------------------------ */
+
+(() => {
+  const grip = $('grip');
+  const main = $('main');
+  let dragging = false;
+  grip.addEventListener('mousedown', (e) => { dragging = true; e.preventDefault(); });
+  window.addEventListener('mouseup', () => { dragging = false; });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const r = main.getBoundingClientRect();
+    const f = Math.min(0.92, Math.max(0.08, (e.clientX - r.left) / r.width));
+    $('sideA').style.flex = `1 1 ${f * 100}%`;
+    $('sideB').style.flex = `1 1 ${(1 - f) * 100}%`;
+  });
+})();
+
+$('swap').addEventListener('click', () => {
+  const main = $('main');
+  const a = $('sideA');
+  const b = $('sideB');
+  if (a.nextElementSibling === $('grip')) main.appendChild(a); else main.insertBefore(a, $('grip'));
+});
+
+/* ------------------------------------------------------------------ */
+/* Boot                                                                */
+/* ------------------------------------------------------------------ */
+
+(async () => {
+  const ready = await waitForBoot();
+  if (!ready) { say('One of the two copies did not boot. Open each on its own and look at the console.'); return; }
+  sims = ready;
+
+  // The map list comes from the game itself rather than being typed out here,
+  // so a map added later shows up without anyone remembering this file.
+  const sel = $('map');
+  let maps = [];
+  try {
+    const mod = await import('./src/world/maps.js');
+    maps = mod.MAPS.map((m) => ({ id: m.id, name: m.name, game: m.game || 'flight' }));
+  } catch (err) {
+    maps = [{ id: 'kestrel', name: 'Kestrel Island', game: 'flight' }];
+  }
+  maps.sort((m, n) => (DIFFERS.has(n.id) ? 1 : 0) - (DIFFERS.has(m.id) ? 1 : 0) || m.name.localeCompare(n.name));
+  for (const m of maps) {
+    const o = document.createElement('option');
+    o.value = m.id;
+    o.textContent = (DIFFERS.has(m.id) ? '• ' : '   ') + m.name + '  (' + m.game + ')';
+    sel.appendChild(o);
+  }
+  sel.value = 'kestrel';
+
+  say('Both copies are up. Pick a map and press "Fly both". The dots mark the maps that differ.');
+  $('go').addEventListener('click', flyBoth);
+  $('look').addEventListener('click', lookAtIt);
+  $('resync').addEventListener('click', () => { resync(); say('Re-synced.'); });
+
+  // A slow correction, so a long flight does not quietly come apart.
+  setInterval(() => {
+    if (!sims || !sims.a.aircraft || !sims.b.aircraft) return;
+    if (sims.a.state !== 'flying' || sims.b.state !== 'flying') return;
+    const p = sims.a.aircraft.pos;
+    const q = sims.b.aircraft.pos;
+    const apart = Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
+    if (apart > 25) resync();
+  }, 4000);
+})();
+</script>
+</body>
+</html>

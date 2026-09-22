@@ -204,6 +204,8 @@ self.addEventListener('fetch', (event) => {
    * exactly what the cache should not fill up with.
    */
   if (url.pathname.includes('/gpt/')) return;
+  // The side-by-side page loads both copies; it is a tool, not the game.
+  if (url.pathname.endsWith('/compare.html')) return;
 
   /*
    * Code goes to the network first; everything else comes from the cache first.

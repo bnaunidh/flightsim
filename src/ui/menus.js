@@ -1544,7 +1544,8 @@ export class Menus {
           <p class="hint tiny">ChatGPT's build of 20 September, complete and unaltered apart from its
           service worker. Its Kestrel is flat and its town streets step at the crossings; everything
           else in it is in this game already.</p>
-          <a class="ghost" data-dev-gpt href="gpt/index.html" target="_blank" rel="noopener">Open ChatGPT's build</a>
+          <a class="ghost" data-dev-compare href="compare.html" target="_blank" rel="noopener">Fly both side by side</a>
+          <a class="ghost" data-dev-gpt href="gpt/index.html" target="_blank" rel="noopener">Open ChatGPT's build on its own</a>
           <button class="ghost" data-dev-leave>Leave dev mode</button>
         </div>
 
