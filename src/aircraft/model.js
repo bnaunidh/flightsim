@@ -1,12 +1,15 @@
-/** Civil model refinement, 2026-09-20. Visible triangles through the adapter:
- * Courier 3912 -> 3360; Meridian 5018 -> 4596; Tempest 4080 -> 3512;
- * Skyhook 4356 -> 3648. Custom profiles, open cabins and batched details
- * replace generic upper shells. Glass opacity .38 -> .28. Gear, eye points,
- * shape scales and physics unchanged. Final suite: 146/146.
- * Drawings and browser previews checked; target-device FPS not checked. */
 /**
- * The aeroplane: a high-wing four-seat trainer, built entirely from lofted
+ * The aeroplanes the fleet pack does not draw, built entirely from lofted
  * geometry so there is no model file to download.
+ *
+ * The five civil types — Skylark, Courier, Meridian, Tempest and Skyhook —
+ * each have their own airframe in ./models/ (see CIVIL below), built on a
+ * superellipse hull and a wing loft with its control surfaces cut out of it.
+ * They used to come out of the generic factory further down, a lathe and a
+ * wing with slabs laid on top of it, and rendered from outside they looked
+ * like it. The generic factory stays for everything else (and for the three
+ * military types if the pack ever fails to load), and it is the fallback if
+ * a civil build throws.
  *
  * Everything that moves on a real aeroplane moves here too — ailerons,
  * elevator, rudder, flaps, propeller, spinning wheels, retracting gear,
@@ -23,8 +26,37 @@ import {
 } from '../render/textures.js';
 import { clamp, lerp } from '../core/noise.js';
 import { getAircraft, DEFAULT_AIRCRAFT_ID } from './types.js';
-import { installSkylarkDetails } from './models/skylark.js';
-import { civilProfile, civilCabin, openCivilCabin, installCivilDetails } from './models/civil-details.js';
+import { Builder, glowSprite } from './models/civil-build.js';
+import { buildSkylark } from './models/skylark.js';
+import { buildCourier } from './models/courier.js';
+import { buildMeridian } from './models/meridian.js';
+import { buildTempest } from './models/tempest.js';
+import { buildSkyhook } from './models/skyhook.js';
+
+/**
+ * The civil types with an airframe of their own, by type id. ('harrier' is
+ * the Skyhook helicopter; the id predates its name.)
+ */
+const CIVIL = {
+  skylark: buildSkylark,
+  courier: buildCourier,
+  meridian: buildMeridian,
+  tempest: buildTempest,
+  harrier: buildSkyhook,
+};
+
+/**
+ * `opts.landingLight === false` builds it without the SpotLight. Every lit
+ * material in the scene pays for every light in it, per pixel, whether its
+ * intensity is 0 or not — so an aeroplane that is only ever parked (the
+ * apron's, anything a traffic or airport feature stands on a ramp) should
+ * not bring one. The player's aeroplane is built with it, as always.
+ */
+function buildCivil(type, S, scheme, build, opts = {}) {
+  const b = new Builder(type, S, scheme);
+  const out = build(b) || {};
+  return b.finish({ spot: out.spot, landingLight: opts.landingLight !== false });
+}
 
 /** NACA-style aerofoil outline, chord along +X, thickness along +Y. */
 function aerofoil(steps = 18, thickness = 0.13, camber = 0.022) {
@@ -127,33 +159,11 @@ function metalMaterial(map, { roughness = 0.42, metalness = 0.35, color = 0xffff
 /**
  * One glowing lamp. Exported because the fleet models in `src/fleet/` have no
  * lights of their own, and a night circuit with an unlit aeroplane is not a
- * night circuit — see model-adapter.js.
+ * night circuit — see model-adapter.js. It lives with the civil builder now,
+ * which shares one texture between every lamp instead of painting a canvas
+ * per lamp.
  */
-export function glowSprite(color, size) {
-  const c = document.createElement('canvas');
-  c.width = c.height = 64;
-  const ctx = c.getContext('2d');
-  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-  g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.3, 'rgba(255,255,255,0.5)');
-  g.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 64, 64);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(
-    new THREE.SpriteMaterial({
-      map: tex,
-      color,
-      blending: THREE.AdditiveBlending,
-      transparent: true,
-      opacity: 0.9,
-      depthWrite: false,
-    })
-  );
-  s.scale.setScalar(size);
-  return s;
-}
+export { glowSprite };
 
 /**
  * A flying wing, which is not a fuselage with wings on it.
@@ -237,6 +247,16 @@ export function createAircraftModel(opts = {}) {
       : { base: opts.livery || type.livery || '#eef1f5', accent: opts.accent || type.accent || '#c8102e' };
   const isJet = S.power.kind === 'jet';
 
+  // The civil five draw themselves. If one ever throws, the aeroplane still
+  // appears — in the generic factory's clothes — rather than not at all.
+  if (CIVIL[type.id] && !S.flyingWing) {
+    try {
+      return buildCivil(type, S, scheme, CIVIL[type.id], opts);
+    } catch (e) {
+      console.warn(`The ${type.id} airframe failed to build; drawing the generic one.`, e);
+    }
+  }
+
   const root = new THREE.Group();
   root.name = 'aircraft';
 
@@ -273,8 +293,7 @@ export function createAircraftModel(opts = {}) {
   const strutMat = new THREE.MeshStandardMaterial({ color: 0xb9bec4, roughness: 0.35, metalness: 0.75 });
 
   /* ---------------- Fuselage ---------------- */
-  const cabin = civilCabin(type.id, S);
-  const profile = (civilProfile(type.id) || [
+  const profile = ([
     [0.05, -2.55],
     [0.30, -2.42],
     [0.50, -2.15],
@@ -314,7 +333,6 @@ export function createAircraftModel(opts = {}) {
 
   const fuseGeo = new THREE.LatheGeometry(profile, 26);
   fuseGeo.rotateX(Math.PI / 2); // lathe axis Y → Z, nose toward -Z
-  openCivilCabin(fuseGeo, cabin);
   const fuselage = new THREE.Mesh(fuseGeo, bodyMat);
   fuselage.castShadow = fuselage.receiveShadow = true;
   // A flying wing has no body to add: the wing is the body — see below.
@@ -322,7 +340,7 @@ export function createAircraftModel(opts = {}) {
 
   // Cabin roof blister so the greenhouse is not a bare tube.
   // A fast jet has a bubble canopy instead, and an airliner a row of windows.
-  if (S.canopy === 'cabin' && !cabin) {
+  if (S.canopy === 'cabin') {
   const roof = new THREE.Mesh(
     new THREE.SphereGeometry(0.82, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.5),
     bodyMat
@@ -343,9 +361,9 @@ export function createAircraftModel(opts = {}) {
   windshield.rotation.x = -0.3;
   // The flying wing has its own glass, flush in the centre section, and this
   // one would sit in the middle of the wing like a dome on a runway.
-  if (!S.flyingWing && !cabin) root.add(windshield);
+  if (!S.flyingWing) root.add(windshield);
 
-  if (S.canopy === 'cabin' && !cabin) {
+  if (S.canopy === 'cabin') {
     for (const side of [-1, 1]) {
       const w = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.62), glassMat);
       w.position.set(side * 0.75, 0.28, -0.1);
@@ -372,7 +390,7 @@ export function createAircraftModel(opts = {}) {
     fd.scale.set(0.95, 0.62, 1.05);
     fd.position.set(0, 0.26, -1.72);
     fd.rotation.x = -0.34;
-    if (!cabin) root.add(fd);
+    root.add(fd);
     // The cabin window line. It used to be a fixed distance out from the
     // centreline, so from about the wing aft — where the body starts tapering
     // into the tail cone — the windows hung in the air beside the aeroplane.
@@ -459,23 +477,8 @@ export function createAircraftModel(opts = {}) {
   }
   root.add(wings);
 
-  /*
-   * Wing struts, root fairings, rounded tips and the greenhouse cabin.
-   *
-   * The struts used to be two cylinders between four fixed points, and the
-   * fixed points were not on the wing: the upper end was written as a
-   * constant while the wing's own position comes out of chordAt/sweepAt, so
-   * the brace stopped short of the thing it braces. models/skylark.js works
-   * both ends off the same formula. It is a no-op for every aeroplane but
-   * the trainer, which is the one the class flies.
-   */
-  if (S.struts || S.canopy === 'greenhouse') {
-    installSkylarkDetails({
-      THREE, root, S, type, bodyMat, glassMat, matteMat, strutMat, chordAt, sweepAt,
-    });
-  }
-
-  installCivilDetails({ THREE, root, S, type, bodyMat, matteMat, glassMat, strutMat, rubber, cabin });
+  // Struts, fairings and cabins for the civil types now belong to their own
+  // airframes in ./models/; nothing that reaches this factory has struts.
 
   // Ailerons and flaps on hinges, so they visibly deflect.
   const surfaces = {};
@@ -1026,7 +1029,7 @@ export function createAircraftModel(opts = {}) {
    * that had stopped being drawn. Found by diffing the mesh list before and
    * after, not by the triangle count, which went up either way.
    */
-  if (!cabin && (S.canopy === 'cabin' || S.canopy === 'greenhouse')) for (const side of [-1, 1]) {
+  if (S.canopy === 'cabin' || S.canopy === 'greenhouse') for (const side of [-1, 1]) {
     const seat = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.1, 0.44), seatMat);
     seat.position.set(side * 0.3, -0.22, 0.1);
     root.add(seat);

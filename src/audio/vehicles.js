@@ -1040,9 +1040,26 @@ export class CarSound {
     if (slide - this._lastSlide > 0.22 && kph > 6) this.playChirp(clamp(slide, 0, 1));
     this._lastSlide = slide;
 
+    // A knock — a tree, a wall, a hard landing — is a thud. surface.js sets
+    // shockFlash to 1 on every knock and lets it decay, so a jump in it is
+    // the moment of impact. Without this the van stopped dead against a tree
+    // in silence, which reads as the game freezing rather than as a bump.
+    const shock = r.shockFlash || 0;
+    if (shock - (this._lastShock || 0) > 0.3) this.playThud(clamp(0.35 + kph / 60, 0.35, 1));
+    this._lastShock = shock;
+
     /* ---- Grit ---- */
     this.budget.tick(dt);
     this._grit(t, speedN, surf, rolling);
+  }
+
+  /** A dull body thump, 0..1. Low and short: a knock, not a crash. */
+  playThud(strength = 0.6) {
+    if (!this.built) return;
+    const s = clamp(strength, 0.2, 1);
+    const m = this.mixer;
+    m.noiseBurst({ bus: 'environment', duration: 0.18 + s * 0.12, gain: 0.1 + s * 0.14, freq: 150, q: 0.9, pink: true, attack: 0.003 });
+    m.tone({ bus: 'environment', freq: 95, sweepTo: 55, duration: 0.16, gain: 0.05 + s * 0.06, type: 'sine' });
   }
 
   /** Stones off the arches. Rate rises with speed; only loose surfaces have any. */

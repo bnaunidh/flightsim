@@ -51,6 +51,20 @@ function materials(m, opts = {}, label = 'AIRFIELD') {
   return { body, steel, dark, rubber, glass, red, amber, white };
 }
 
+/*
+ * Scratch for wheels().update. It ran every frame for the Airfield Runabout —
+ * the car you drive — and made two quaternions, four vectors and a matrix
+ * per wheel per frame to do it: 28 objects a frame for four wheels, for the
+ * garbage collector to stop the game for later.
+ */
+const W_UP = new THREE.Vector3(0, 1, 0);
+const W_AXLE = new THREE.Vector3(1, 0, 0);
+const W_Q = new THREE.Quaternion();
+const W_Q2 = new THREE.Quaternion();
+const W_P = new THREE.Vector3();
+const W_S = new THREE.Vector3(1, 1, 1);
+const W_M = new THREE.Matrix4();
+
 function wheels(m, parent, mat, { x = .91, front = -1.22, rear = 1.22, radius = .34, width = .24, y = radius, name = 'wheels', segments = 8 } = {}) {
   const geo = new THREE.CylinderGeometry(radius, radius, width, segments, 1);
   geo.rotateZ(Math.PI / 2);
@@ -60,12 +74,15 @@ function wheels(m, parent, mat, { x = .91, front = -1.22, rear = 1.22, radius = 
   function update(dt, speed = 0, steering = 0, compression = 0) {
     if (!mesh.visible) return;
     spin = (spin + speed * dt / radius) % TAU;
-    placements.forEach((p, i) => {
+    for (let i = 0; i < placements.length; i++) {
+      const p = placements[i];
       const s = Array.isArray(compression) ? compression[i] || 0 : compression;
-      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), i < 2 ? steering : 0);
-      q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), spin));
-      mesh.setMatrixAt(i, matrix([p[0], p[1] + clamp(s, -.1, .18), p[2]], [1, 1, 1], q));
-    }); mesh.instanceMatrix.needsUpdate = true;
+      W_Q.setFromAxisAngle(W_UP, i < 2 ? steering : 0);
+      W_Q.multiply(W_Q2.setFromAxisAngle(W_AXLE, spin));
+      W_P.set(p[0], p[1] + clamp(s, -.1, .18), p[2]);
+      mesh.setMatrixAt(i, W_M.compose(W_P, W_Q, W_S));
+    }
+    mesh.instanceMatrix.needsUpdate = true;
   }
   return { mesh, radius, update, reset() { spin = 0; update(0); } };
 }

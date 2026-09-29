@@ -14,6 +14,9 @@
  *   fields      farmland patchwork, so "grassland" reads as grassland
  *   waterfalls  meltwater off the fjord walls into the sea
  *   aurora      the northern lights, at night
+ *   bridge      a suspension bridge across a strait, high enough to fly
+ *               under (Gateway International)
+ *   birds       a flock of gulls wheeling over a cliff (Condor Rock)
  *
  * (The fjord snow line is not here — it is two lines in the terrain shader,
  * because snow is a property of the ground rather than an object on it.)
@@ -23,8 +26,23 @@
  */
 
 import * as THREE from '../vendor/three.module.js';
-import { heightAt, MAP, ISLANDS } from './terrain.js';
+import { heightAt, MAP, ISLANDS, addObstacleAt, padWeight, flatAt } from './terrain.js';
 import { fbm, makeRandom, clamp, smoothstep, lerp } from '../core/noise.js';
+
+/** Scratch transform for the birds' per-frame matrices, so the loop allocates nothing. */
+const _bird = new THREE.Object3D();
+
+/**
+ * An sRGB colour (as written, as in CSS) to the linear value a vertex colour
+ * holds. Vertex colours are the one colour path three.js does not convert,
+ * and writing sRGB straight in pales every mid-tone — see linearRGB in
+ * scenery.js for what that did to the trees and to Meadow's farmland.
+ */
+const _lin = new THREE.Color();
+function linear(c) {
+  _lin.setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace);
+  return [_lin.r, _lin.g, _lin.b];
+}
 
 /* ------------------------------------------------------------------ */
 /* Textures                                                            */
@@ -185,6 +203,21 @@ function reefTexture() {
   return asTexture(c);
 }
 
+/**
+ * Drill rows: soft light and dark stripes, a multiplier on a field's own
+ * colour. Only its u coordinate is read, so one tiny canvas does every field.
+ */
+function furrowTexture() {
+  const { c, g } = canvas(32, 4);
+  for (let x = 0; x < 32; x++) {
+    const k = 0.5 + 0.5 * Math.cos((x / 32) * Math.PI * 2);
+    const v = Math.round(255 * (0.86 + 0.14 * k));
+    g.fillStyle = `rgb(${v},${v},${v})`;
+    g.fillRect(x, 0, 1, 4);
+  }
+  return asTexture(c);
+}
+
 /** Falling water: vertical streaks that scroll downwards. */
 function waterfallTexture() {
   const W = 64;
@@ -273,6 +306,8 @@ function bandGeometry(cx, cz, inner, outer, y, uRepeat = 12) {
 
 /* ------------------------------------------------------------------ */
 
+const _wind = new THREE.Vector3();
+
 export class MapFeatures {
   constructor(scene, quality = 'high') {
     this.group = new THREE.Group();
@@ -287,6 +322,12 @@ export class MapFeatures {
     this.auroraMats = [];
     this.fallMaps = [];
     this.reefMats = [];
+    /** Night lamps on anything built here (the bridge), one material each. */
+    this.lampMats = [];
+    /** Flocks: { mesh, state Float32Array, n } — see buildBirds. */
+    this.flocks = [];
+    /** What the bridge builder measured, for the tests and the console. */
+    this.bridge = null;
 
     const f = MAP.features || {};
     const density = quality === 'low' ? 0.35 : quality === 'medium' ? 0.7 : quality === 'ultra' ? 1.7 : 1;
@@ -296,8 +337,326 @@ export class MapFeatures {
     if (f.waterfalls) this.buildWaterfalls(f.waterfalls);
     if (f.aurora) this.buildAurora(f.aurora);
     for (const v of f.volcano || []) this.buildVolcano(v, density);
+    if (f.bridge) this.bridge = this.buildBridge(f.bridge);
+    for (const b of [].concat(f.birds || [])) this.buildBirds(b, density);
 
     scene.add(this.group);
+  }
+
+  /* ------------------------------------------------------------ bridge -- */
+
+  /**
+   * A suspension bridge across a strait, running north-south along x = cfg.x
+   * from cfg.from to cfg.to (both on land).
+   *
+   * The builder measures the water itself rather than being told: it walks
+   * the line, finds where the sea starts and stops, stands a tower a little
+   * way into the water off each shore, and hangs the cables between them. So
+   * the island can be retuned and the bridge still lands on both sides.
+   *
+   * Axis-aligned on purpose, for the same reason the carrier points north:
+   * the obstacle boxes are axis-aligned, so a bridge along an axis is solid
+   * exactly where it is drawn. What is solid: the deck and its ramps, the
+   * tower legs and their portal beams. What is not: the cables and hangers,
+   * so a child who threads the gap between deck and cable is not killed by
+   * a wire they could barely see. The gap UNDER the deck is the point — the
+   * deck is 56 m up and a Skylark's wing is eleven metres across.
+   *
+   * Eight draw calls: deck, towers, two main cables, hangers, piers,
+   * anchorages and lamps.
+   */
+  buildBridge(cfg) {
+    const x = cfg.x;
+    const zA = Math.min(cfg.from, cfg.to);
+    const zB = Math.max(cfg.from, cfg.to);
+    const deckY = cfg.deckY ?? 56;
+    const towerH = cfg.towerH ?? 150;
+    const halfW = 13;
+    let w0 = null;
+    let w1 = null;
+    for (let z = zA; z <= zB; z += 10) {
+      if (heightAt(x, z) < 0) {
+        if (w0 === null) w0 = z;
+        w1 = z;
+      }
+    }
+    if (w0 === null || w1 - w0 < 200) return null;
+    const inset = Math.min(160, (w1 - w0) * 0.14);
+    const tA = w0 + inset;
+    const tB = w1 - inset;
+    // The anchorages sit on land a little back from each shore; the deck is
+    // level between them and ramps down to the ground beyond.
+    const aA = Math.max(zA + 60, w0 - 130);
+    const aB = Math.min(zB - 60, w1 + 130);
+
+    const orange = new THREE.MeshStandardMaterial({ color: 0xc2462c, roughness: 0.55, metalness: 0.35 });
+    const concrete = new THREE.MeshStandardMaterial({ color: 0xb8b6ae, roughness: 0.9 });
+
+    /* ---- the deck: a profiled strip, level in the middle, ramped at the ends ---- */
+    const step = 20;
+    const stations = [];
+    for (let z = zA; z <= zB + 0.1; z += step) {
+      const g = heightAt(x, z);
+      let y = deckY;
+      if (z < aA) y = lerp(Math.max(g, 0) + 0.6, deckY, smoothstep(zA, aA, z));
+      else if (z > aB) y = lerp(deckY, Math.max(g, 0) + 0.6, smoothstep(aB, zB, z));
+      stations.push({ z, y: Math.max(y, g + 0.6) });
+    }
+    const pos = [];
+    const col = [];
+    const idx = [];
+    const road = linear([0.26, 0.27, 0.29]);
+    // The same red as the towers (0xc2462c), which it was meant to be and
+    // was not while it went in unconverted.
+    const side = linear([0.76, 0.27, 0.17]);
+    const under = linear([0.42, 0.18, 0.12]);
+    const T = 3.4;
+    // Four corners per station: top-left, top-right, bottom-right, bottom-left.
+    for (const s of stations) {
+      pos.push(x - halfW, s.y, s.z, x + halfW, s.y, s.z, x + halfW, s.y - T, s.z, x - halfW, s.y - T, s.z);
+    }
+    // Faces are unshared so each side can carry its own colour.
+    const quad = (a, b, c, d, colour) => {
+      const base = pos.length / 3;
+      for (const k of [a, b, c, d]) pos.push(pos[k * 3], pos[k * 3 + 1], pos[k * 3 + 2]);
+      for (let i = 0; i < 4; i++) col.push(...colour);
+      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    };
+    for (let i = 1; i < stations.length; i++) {
+      const p = (i - 1) * 4;
+      const q = i * 4;
+      quad(p + 0, q + 0, q + 1, p + 1, road);   // top
+      quad(p + 1, q + 1, q + 2, p + 2, side);   // east face
+      quad(p + 3, q + 3, q + 0, p + 0, side);   // west face
+      quad(p + 2, q + 2, q + 3, p + 3, under);  // soffit
+    }
+    const nStation = stations.length * 4;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos.slice(nStation * 3), 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geo.setIndex(idx.map((k) => k - nStation));
+    geo.computeVertexNormals();
+    const deck = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0.1, side: THREE.DoubleSide }));
+    deck.castShadow = deck.receiveShadow = true;
+    deck.name = 'bridge-deck';
+    this.group.add(deck);
+    // Solid: the level span as one box, each ramp as short steps under its
+    // own profile.
+    addObstacleAt(x, (aA + aB) / 2, halfW * 2 + 2, aB - aA, deckY - T - 0.5, T + 2.2, 'You flew into the bridge');
+    for (let i = 1; i < stations.length; i++) {
+      const a = stations[i - 1];
+      const b = stations[i];
+      if (a.z >= aA && b.z <= aB) continue;
+      const lo = Math.min(a.y, b.y);
+      const hi = Math.max(a.y, b.y);
+      addObstacleAt(x, (a.z + b.z) / 2, halfW * 2 + 2, step, lo - T - 0.5, hi - lo + T + 2.2, 'You flew into the bridge');
+    }
+
+    /* ---- the towers: two legs and three portal beams each ---- */
+    const unit = new THREE.BoxGeometry(1, 1, 1);
+    const towerParts = [];
+    for (const tz of [tA, tB]) {
+      for (const sx of [-1, 1]) {
+        towerParts.push([x + sx * (halfW + 3), towerH / 2 - 4, tz, 6.5, towerH + 8, 8]);
+        addObstacleAt(x + sx * (halfW + 3), tz, 7.5, 9, -8, towerH + 4, 'You flew into the bridge tower');
+      }
+      for (const by of [deckY - T - 3, towerH * 0.6, towerH - 5]) {
+        towerParts.push([x, by, tz, (halfW + 3) * 2 + 6, 5, 6.5]);
+        addObstacleAt(x, tz, (halfW + 3) * 2 + 7, 8, by - 3, 6, 'You flew into the bridge tower');
+      }
+      // A footing in the water, so the legs do not stand on the surface.
+      towerParts.push([x, -2, tz, (halfW + 3) * 2 + 14, 8, 20]);
+    }
+    const towers = new THREE.InstancedMesh(unit, orange, towerParts.length);
+    const d = new THREE.Object3D();
+    towerParts.forEach(([px, py, pz, sx, sy, sz], i) => {
+      d.position.set(px, py, pz);
+      d.rotation.set(0, 0, 0);
+      d.scale.set(sx, sy, sz);
+      d.updateMatrix();
+      towers.setMatrixAt(i, d.matrix);
+    });
+    towers.instanceMatrix.needsUpdate = true;
+    towers.castShadow = towers.receiveShadow = true;
+    this.group.add(towers);
+
+    /* ---- the main cables, and the hangers from them ---- */
+    const topY = towerH - 3;
+    const sagY = deckY + 5;
+    const mid = (tA + tB) / 2;
+    const half = (tB - tA) / 2;
+    const cableY = (z) => {
+      if (z >= tA && z <= tB) return sagY + (topY - sagY) * ((z - mid) / half) ** 2;
+      // Side spans: a shallow sag from the tower top down to the anchorage.
+      const [z0, z1] = z < tA ? [aA, tA] : [tB, aB];
+      const t = (z - z0) / (z1 - z0);
+      const y0 = z < tA ? deckY + 2 : topY;
+      const y1 = z < tA ? topY : deckY + 2;
+      return lerp(y0, y1, t) - Math.sin(t * Math.PI) * 6;
+    };
+    const hangers = [];
+    for (const sx of [-1, 1]) {
+      const cx = x + sx * (halfW + 3);
+      const pts = [];
+      for (let z = aA; z <= aB + 0.1; z += 15) pts.push(new THREE.Vector3(cx, cableY(Math.min(z, aB)), Math.min(z, aB)));
+      const curve = new THREE.CatmullRomCurve3(pts);
+      const cable = new THREE.Mesh(new THREE.TubeGeometry(curve, pts.length * 2, 0.9, 6, false), orange);
+      cable.castShadow = true;
+      this.group.add(cable);
+      for (let z = aA + 18; z < aB - 10; z += 18) {
+        if (Math.abs(z - tA) < 8 || Math.abs(z - tB) < 8) continue;
+        const top = cableY(z);
+        if (top - deckY < 2.5) continue;
+        hangers.push([cx, (top + deckY) / 2, z, top - deckY]);
+      }
+    }
+    const hang = new THREE.InstancedMesh(unit, orange, hangers.length);
+    hangers.forEach(([px, py, pz, h], i) => {
+      d.position.set(px, py, pz);
+      d.scale.set(0.35, h, 0.35);
+      d.updateMatrix();
+      hang.setMatrixAt(i, d.matrix);
+    });
+    hang.instanceMatrix.needsUpdate = true;
+    this.group.add(hang);
+
+    /* ---- piers under the ramps, and the anchorage blocks ---- */
+    const piers = [];
+    for (const s of stations) {
+      if (s.z > w0 - 20 && s.z < w1 + 20) continue;
+      if (Math.round(s.z / step) % 3) continue;
+      const g = heightAt(x, s.z);
+      const top = s.y - T;
+      if (top - g < 3) continue;
+      piers.push([x, (top + g - 2) / 2, s.z, 9, top - g + 2, 5]);
+    }
+    for (const az of [aA, aB]) {
+      const g = heightAt(x, az);
+      piers.push([x, (g + deckY + 4) / 2 - 3, az, (halfW + 3) * 2 + 16, deckY + 10 - g, 26]);
+      addObstacleAt(x, az, (halfW + 3) * 2 + 16, 26, g - 4, deckY + 8 - g, 'You flew into the bridge');
+    }
+    if (piers.length) {
+      const pm = new THREE.InstancedMesh(unit, concrete, piers.length);
+      piers.forEach(([px, py, pz, sx, sy, sz], i) => {
+        d.position.set(px, py, pz);
+        d.scale.set(sx, sy, sz);
+        d.updateMatrix();
+        pm.setMatrixAt(i, d.matrix);
+      });
+      pm.instanceMatrix.needsUpdate = true;
+      pm.castShadow = pm.receiveShadow = true;
+      this.group.add(pm);
+    }
+
+    /* ---- lamps along the parapets, and red lights on the tower tops ---- */
+    const lampMat = new THREE.MeshStandardMaterial({ color: 0xfff0c8, emissive: 0xffd89a, emissiveIntensity: 0.3, roughness: 0.4 });
+    const lamps = [];
+    for (const s of stations) {
+      if (Math.round(s.z / step) % 2) continue;
+      lamps.push([x - halfW + 0.6, s.y + 1.4, s.z], [x + halfW - 0.6, s.y + 1.4, s.z]);
+    }
+    for (const tz of [tA, tB]) for (const sx of [-1, 1]) lamps.push([x + sx * (halfW + 3), towerH + 0.8, tz]);
+    const lm = new THREE.InstancedMesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), lampMat, lamps.length);
+    lamps.forEach(([px, py, pz], i) => {
+      d.position.set(px, py, pz);
+      d.scale.set(1, 1, 1);
+      d.updateMatrix();
+      lm.setMatrixAt(i, d.matrix);
+    });
+    lm.instanceMatrix.needsUpdate = true;
+    this.group.add(lm);
+    this.lampMats.push(lampMat);
+
+    return {
+      name: cfg.name || 'the bridge',
+      x, water: [w0, w1], towers: [tA, tB], anchorages: [aA, aB],
+      mainSpan: tB - tA, deckY, towerH,
+      // The clearance a pilot actually has: sea to the underside of the deck.
+      clearance: deckY - T,
+    };
+  }
+
+  /* ------------------------------------------------------------- birds -- */
+
+  /**
+   * Gulls, wheeling.
+   *
+   * A cliff with nothing moving on it is a picture of a cliff. A few dozen
+   * birds turning slow circles over it — each on its own circle, height,
+   * speed and wingbeat, some clockwise and some not — is the cheapest thing
+   * in the game that makes a place feel alive: one instanced mesh of
+   * four-triangle chevrons, and a per-frame loop that writes their matrices
+   * from a flat Float32Array without allocating anything.
+   *
+   * Drawn a little larger than life (a 2.6 m span against a real gull's
+   * 1.4 m), because at the distance a pilot sees them from, life size is
+   * one pixel.
+   */
+  buildBirds(cfg, density) {
+    const n = Math.max(4, Math.round((cfg.count || 30) * Math.min(1, density + 0.3)));
+    const rnd = makeRandom(cfg.seed || 7331);
+    // Nose along +X, wings swept back and up a little; scaling y at run time
+    // changes the dihedral, which reads as a wingbeat.
+    const v = [
+      0.7, 0, 0, -0.35, 0.35, -1.3, -0.1, 0, 0,
+      0.7, 0, 0, -0.1, 0, 0, -0.35, 0.35, 1.3,
+      -0.1, 0, 0, -0.55, 0.05, -0.12, -0.55, 0.05, 0.12,
+      0.7, 0, 0, -0.1, -0.08, 0, -0.1, 0, 0,
+    ];
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ color: 0xeef0f0, roughness: 0.8, side: THREE.DoubleSide });
+    const mesh = new THREE.InstancedMesh(geo, mat, n);
+    mesh.frustumCulled = false;
+    mesh.name = 'birds';
+    // Per bird: centre x, centre z, radius, height, angle, angular speed,
+    // flap phase, flap rate.
+    const S = new Float32Array(n * 8);
+    for (let i = 0; i < n; i++) {
+      const a = rnd() * Math.PI * 2;
+      const r = Math.sqrt(rnd()) * (cfg.radius || 600);
+      const ox = cfg.cx + Math.cos(a) * r;
+      const oz = cfg.cz + Math.sin(a) * r;
+      const rad = 50 + rnd() * 170;
+      // Never below the ground anywhere on its circle.
+      let floor = 0;
+      for (let k = 0; k < 8; k++) {
+        const b = (k / 8) * Math.PI * 2;
+        floor = Math.max(floor, heightAt(ox + Math.cos(b) * rad, oz + Math.sin(b) * rad));
+      }
+      const h = Math.max((cfg.height || 120) + (rnd() - 0.5) * 80, floor + 25);
+      const dir = rnd() < 0.5 ? -1 : 1;
+      S.set([ox, oz, rad, h, rnd() * Math.PI * 2, dir * (8 + rnd() * 6) / rad, rnd() * 6.28, 5 + rnd() * 3], i * 8);
+    }
+    this.group.add(mesh);
+    this.flocks.push({ mesh, S, n });
+    this.updateBirds(0);
+  }
+
+  updateBirds(dt) {
+    const d = _bird;
+    for (const f of this.flocks) {
+      const { S, n, mesh } = f;
+      for (let i = 0; i < n; i++) {
+        const o = i * 8;
+        S[o + 4] += S[o + 5] * dt;
+        const a = S[o + 4];
+        const x = S[o] + Math.cos(a) * S[o + 2];
+        const z = S[o + 1] + Math.sin(a) * S[o + 2];
+        // Mostly gliding, with bursts of flapping.
+        const beat = Math.sin(this.t * S[o + 7] + S[o + 6]);
+        const burst = Math.sin(this.t * 0.35 + S[o + 6]) > 0.2 ? 1 : 0.15;
+        d.position.set(x, S[o + 3] + Math.sin(this.t * 0.4 + S[o + 6]) * 4, z);
+        // Face along the circle, whichever way round it goes, banked into
+        // the turn (positive roll about the nose is right wing down).
+        d.rotation.set(S[o + 5] > 0 ? 0.35 : -0.35, S[o + 5] > 0 ? -a - Math.PI / 2 : -a + Math.PI / 2, 0, 'YXZ');
+        d.scale.set(1, 0.35 + burst * 0.65 * Math.abs(beat) + (1 - burst) * 0.5, 1);
+        d.updateMatrix();
+        mesh.setMatrixAt(i, d.matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    }
   }
 
   /* -------------------------------------------------------------- reef -- */
@@ -334,68 +693,155 @@ export class MapFeatures {
   /* ------------------------------------------------------------ fields -- */
 
   /**
-   * Farmland. One merged mesh with per-vertex colour: a few dozen crop patches
-   * lying on the ground, which is the difference between "a green plain" and
-   * somewhere people actually live.
+   * Farmland: a patchwork of fields with lanes and hedgerows between them.
+   *
+   * It was up to ninety rectangles dropped at random, overlapping each other
+   * wherever they fell, in colours written as sRGB and read as linear — so
+   * Meadow's "patchwork" came out as pale paper squares, near white from the
+   * circuit, z-fighting where two overlapped. Now:
+   *
+   *   the layout  rows of fields on one grid turned to the map's own angle,
+   *               each row its own depth and each field its own width, the
+   *               rows staggered — which is how enclosures actually lie — so
+   *               fields share edges instead of overlapping, with a lane of
+   *               grass between neighbours
+   *   the colour  six crops, converted to linear, and a stripe texture of
+   *               drill rows that runs one way or the other per field
+   *   hedgerows   along the lanes, with a tree standing in them every so
+   *               often and a gap for a gate now and then
+   *
+   * Nothing is planted on a runway pad, a flat (yard, quay, green), a town,
+   * a road, the beach or a slope over 12%. The patchwork is taken nearest
+   * the centre first, so it is one farm country rather than a scatter.
+   * Three draw calls: fields, hedges, hedgerow trees. Hedges are not solid —
+   * two metres of hawthorn should not end a flight — so they register no
+   * obstacle.
    */
   buildFields(cfg, density) {
-    const rnd = makeRandom(4242);
-    const crops = [
-      [0.62, 0.66, 0.34], // pasture
-      [0.78, 0.72, 0.32], // ripe barley
-      [0.52, 0.58, 0.28], // dark green
-      [0.46, 0.38, 0.27], // ploughed earth
-      [0.84, 0.79, 0.46], // stubble
+    const rnd = makeRandom(cfg.seed || 4242);
+    const R = cfg.radius || 1500;
+    const rot = cfg.angleDeg != null ? (cfg.angleDeg * Math.PI) / 180 : rnd() * Math.PI;
+    const ca = Math.cos(rot);
+    const sa = Math.sin(rot);
+    const W = (u, v) => [cfg.cx + u * ca - v * sa, cfg.cz + u * sa + v * ca];
+    const want = Math.round((cfg.count || 60) * density);
+    const LANE = 5;
+
+    const town = MAP.scenery && MAP.scenery.town;
+    const townR2 = town ? (town.radius + 80) ** 2 : 0;
+    // Nor over the warehouses and car parks round a big airport.
+    const estate = MAP.scenery && MAP.scenery.estate;
+    const estateR2 = estate ? (estate.radius || 520) ** 2 : 0;
+    // Roads as segments, not as their points: a road passes between its
+    // points, and a field corner 30 m from the nearest one can be on it.
+    const roadSegs = [];
+    for (const r of (MAP.waters && MAP.waters.roads) || []) {
+      for (let i = 1; i < r.path.length; i++) {
+        const a = r.path[i - 1];
+        const b = r.path[i];
+        roadSegs.push([a[0], a[1], b[0], b[1], (r.halfWidth || 18) + 8]);
+      }
+    }
+    const nearRoad = (x, z, pad = 0) => roadSegs.some(([ax, az, bx, bz, hw]) => {
+      const dx = bx - ax;
+      const dz = bz - az;
+      const L2 = dx * dx + dz * dz;
+      let t = L2 > 0 ? ((x - ax) * dx + (z - az) * dz) / L2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      return (ax + dx * t - x) ** 2 + (az + dz * t - z) ** 2 < (hw + pad) ** 2;
+    });
+
+    // The grid: rows (v) of fields (u), each row staggered.
+    const cells = [];
+    for (let v = -R; v < R;) {
+      const depth = 150 + rnd() * 190;
+      for (let u = -R - rnd() * 260; u < R;) {
+        const width = 170 + rnd() * 280;
+        cells.push({ u0: u, u1: u + width, v0: v, v1: v + depth, r: rnd(), r2: rnd(), r3: rnd() });
+        u += width;
+      }
+      v += depth;
+    }
+    // Nearest the centre first, validated only until there are enough: the
+    // far cells of a 3.4 km farm were all being sampled and then thrown away.
+    for (const c of cells) {
+      c.uc = (c.u0 + c.u1) / 2;
+      c.vc = (c.v0 + c.v1) / 2;
+      c.dist = Math.hypot(c.uc, c.vc);
+    }
+    cells.sort((a, b) => a.dist - b.dist);
+    const good = [];
+    for (const c of cells) {
+      if (good.length >= want) break;
+      if (c.dist > R) break;
+      const { uc, vc } = c;
+      const [x, z] = W(uc, vc);
+      if (town && (x - town.cx) ** 2 + (z - town.cz) ** 2 < townR2) continue;
+      if (estate && (x - estate.cx) ** 2 + (z - estate.cz) ** 2 < estateR2) continue;
+      const h0 = heightAt(x, z);
+      if (h0 < 6) continue;
+      let ok = true;
+      let steep = 0;
+      // Ground, pads and flats on a 3 x 3; roads, which are narrow and can
+      // clip a corner, on a 5 x 5 — and only on a map that has any.
+      const fracs = roadSegs.length ? [0.01, 0.25, 0.5, 0.75, 0.99] : [0.01, 0.5, 0.99];
+      for (const fu of fracs) {
+        for (const fv of fracs) {
+          const u = c.u0 + (c.u1 - c.u0) * fu;
+          const v = c.v0 + (c.v1 - c.v0) * fv;
+          const [px, pz] = W(u, v);
+          if (roadSegs.length && nearRoad(px, pz)) { ok = false; break; }
+          const h = heightAt(px, pz);
+          if (h < 4 || padWeight(px, pz) > 0 || flatAt(px, pz)) { ok = false; break; }
+          const d = Math.hypot(u - uc, v - vc);
+          if (d > 1) steep = Math.max(steep, Math.abs(h - h0) / d);
+        }
+        if (!ok) break;
+      }
+      if (!ok || steep > 0.12) continue;
+      good.push(c);
+    }
+    const fields = good.slice(0, want);
+    if (!fields.length) return;
+
+    // Crops, as sRGB — pasture, barley, kale, ploughed, stubble, rapeseed —
+    // and which of them a climate grows.
+    const CROPS = [
+      [0.42, 0.56, 0.24], [0.8, 0.7, 0.36], [0.3, 0.45, 0.2],
+      [0.46, 0.35, 0.24], [0.74, 0.66, 0.42], [0.88, 0.8, 0.24],
     ];
+    const flora = MAP.scenery && MAP.scenery.flora;
+    const pick = flora === 'boreal' ? [0, 0, 0, 2, 4, 3] : flora === 'arid' ? [4, 4, 1, 3, 0, 1] : [0, 0, 1, 2, 3, 4, 1, 5];
+
     const pos = [];
     const col = [];
+    const uv = [];
     const idx = [];
     let base = 0;
-    const want = Math.round((cfg.count || 60) * density);
-
-    for (let guard = 0, made = 0; guard < want * 12 && made < want; guard++) {
-      const a = rnd() * Math.PI * 2;
-      const r = Math.sqrt(rnd()) * cfg.radius;
-      const cx = cfg.cx + Math.cos(a) * r;
-      const cz = cfg.cz + Math.sin(a) * r;
-      const w = 180 + rnd() * 420;
-      const d = 180 + rnd() * 420;
-      const rot = rnd() * Math.PI;
-      // Not on the airfield, not in the sea, not on a slope no tractor would
-      // climb, and not in the approach corridor where it would look odd.
-      if (Math.abs(cx) < 1100 && cz > -560 && cz < 520) continue;
-      const h0 = heightAt(cx, cz);
-      if (h0 < 6) continue;
-      const e = 60;
-      const slope =
-        Math.hypot(heightAt(cx + e, cz) - heightAt(cx - e, cz), heightAt(cx, cz + e) - heightAt(cx, cz - e)) /
-        (2 * e);
-      if (slope > 0.10) continue;
-
-      const crop = crops[(rnd() * crops.length) | 0];
-      const shade = 0.9 + rnd() * 0.22;
-      const N = 5;
-      const ca = Math.cos(rot);
-      const sa = Math.sin(rot);
-      let drowned = false;
-      const verts = [];
-      for (let iy = 0; iy <= N && !drowned; iy++) {
+    const tint = new THREE.Color();
+    for (const c of fields) {
+      const crop = CROPS[pick[Math.floor(c.r * pick.length)]];
+      const shade = 0.9 + c.r2 * 0.18;
+      tint.setRGB(crop[0] * shade, crop[1] * shade, crop[2] * shade, THREE.SRGBColorSpace);
+      const u0 = c.u0 + LANE;
+      const u1 = c.u1 - LANE;
+      const v0 = c.v0 + LANE;
+      const v1 = c.v1 - LANE;
+      // Finer than the terrain mesh's own quads (39-51 m), so the field follows
+      // the ground closely enough that the ground does not poke through it.
+      const N = Math.max(4, Math.min(12, Math.round(Math.max(u1 - u0, v1 - v0) / 30)));
+      const along = c.r3 < 0.5;
+      for (let iy = 0; iy <= N; iy++) {
         for (let ix = 0; ix <= N; ix++) {
-          const lx = (ix / N - 0.5) * w;
-          const lz = (iy / N - 0.5) * d;
-          const x = cx + lx * ca - lz * sa;
-          const z = cz + lx * sa + lz * ca;
-          const y = heightAt(x, z);
-          if (y < 4) {
-            drowned = true;
-            break;
-          }
-          verts.push(x, y + 0.35, z);
+          const u = u0 + ((u1 - u0) * ix) / N;
+          const v = v0 + ((v1 - v0) * iy) / N;
+          const [x, z] = W(u, v);
+          pos.push(x, heightAt(x, z) + 0.55, z);
+          col.push(tint.r, tint.g, tint.b);
+          // Drill rows every 9 m, one way or the other.
+          uv.push(along ? u / 9 : v / 9, 0.5);
         }
       }
-      if (drowned) continue;
-      pos.push(...verts);
-      for (let i = 0; i < (N + 1) * (N + 1); i++) col.push(crop[0] * shade, crop[1] * shade, crop[2] * shade);
       for (let iy = 0; iy < N; iy++) {
         for (let ix = 0; ix < N; ix++) {
           const a0 = base + iy * (N + 1) + ix;
@@ -403,30 +849,110 @@ export class MapFeatures {
         }
       }
       base += (N + 1) * (N + 1);
-      made++;
     }
-
-    if (!pos.length) return;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     geo.setIndex(idx);
     geo.computeVertexNormals();
     const mesh = new THREE.Mesh(
       geo,
       new THREE.MeshStandardMaterial({
         vertexColors: true,
+        map: furrowTexture(),
         roughness: 0.95,
         metalness: 0,
+        envMapIntensity: 0.35,
         // The patches sit a few centimetres over the terrain; the offset stops
         // them shimmering against it at a distance.
         polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -2,
+        polygonOffsetFactor: -4,
+        polygonOffsetUnits: -4,
       })
     );
     mesh.receiveShadow = true;
+    mesh.name = 'fields';
     this.group.add(mesh);
+    this.fields = { count: fields.length };
+
+    /* ---- hedgerows, down the lanes: the u0 and v0 edge of every field ---- */
+    const segs = [];
+    const oaks = [];
+    const SEG = 26;
+    const edge = (ua, va, ub, vb, seed) => {
+      const L = Math.hypot(ub - ua, vb - va);
+      const n = Math.max(1, Math.round(L / SEG));
+      for (let i = 0; i < n; i++) {
+        const k = ((Math.sin(seed * 12.9 + i * 78.2) * 43758.5) % 1 + 1) % 1;
+        if (k < 0.12) continue; // a gate
+        const t0 = i / n;
+        const t1 = (i + 1) / n;
+        const [x0, z0] = W(ua + (ub - ua) * t0, va + (vb - va) * t0);
+        const [x1, z1] = W(ua + (ub - ua) * t1, va + (vb - va) * t1);
+        const y0 = heightAt(x0, z0);
+        const y1 = heightAt(x1, z1);
+        const mx = (x0 + x1) / 2;
+        const mz = (z0 + z1) / 2;
+        if (Math.min(y0, y1) < 3 || padWeight(mx, mz) > 0 || flatAt(mx, mz) || nearRoad(mx, mz)) continue;
+        segs.push([mx, (y0 + y1) / 2, mz, Math.atan2(-(z1 - z0), x1 - x0), Math.atan2(y1 - y0, Math.hypot(x1 - x0, z1 - z0)), Math.hypot(x1 - x0, z1 - z0) + 1, k]);
+        if (k > 0.86) oaks.push([mx, (y0 + y1) / 2, mz, k]);
+      }
+    };
+    fields.forEach((c, i) => {
+      edge(c.u0, c.v0, c.u1, c.v0, i * 2 + 1);
+      edge(c.u0, c.v0, c.u0, c.v1, i * 2 + 2);
+    });
+    if (segs.length) {
+      // A five-sided prism lying along x: a hedge with a rounded top.
+      const hg = new THREE.CylinderGeometry(0.5, 0.5, 1, 5, 1, false);
+      hg.rotateZ(Math.PI / 2);
+      hg.translate(0, 0.5, 0);
+      const hedges = new THREE.InstancedMesh(
+        hg,
+        new THREE.MeshStandardMaterial({ color: 0x3d5a2c, roughness: 1, flatShading: true, envMapIntensity: 0.35 }),
+        segs.length
+      );
+      const d = new THREE.Object3D();
+      const c = new THREE.Color();
+      segs.forEach(([x, y, z, yaw, pitch, len, k], i) => {
+        d.position.set(x, y - 0.6, z);
+        d.rotation.set(0, yaw, pitch, 'YXZ');
+        d.scale.set(len, 2.2 + k * 1.2, 2.6 + k);
+        d.updateMatrix();
+        hedges.setMatrixAt(i, d.matrix);
+        hedges.setColorAt(i, c.setScalar(0.85 + k * 0.3));
+      });
+      hedges.instanceMatrix.needsUpdate = true;
+      if (hedges.instanceColor) hedges.instanceColor.needsUpdate = true;
+      hedges.castShadow = true;
+      hedges.receiveShadow = true;
+      hedges.name = 'hedges';
+      this.group.add(hedges);
+      this.fields.hedges = segs.length;
+    }
+    if (oaks.length) {
+      const og = new THREE.DodecahedronGeometry(1, 0);
+      const trees = new THREE.InstancedMesh(
+        og,
+        new THREE.MeshStandardMaterial({ color: 0x35532a, roughness: 1, flatShading: true, envMapIntensity: 0.35 }),
+        oaks.length
+      );
+      const d = new THREE.Object3D();
+      oaks.forEach(([x, y, z, k], i) => {
+        const s = 4.5 + (k - 0.86) * 20;
+        d.position.set(x, y + s * 0.9, z);
+        d.rotation.set(0, k * 40, 0);
+        d.scale.set(s, s * 0.8, s);
+        d.updateMatrix();
+        trees.setMatrixAt(i, d.matrix);
+      });
+      trees.instanceMatrix.needsUpdate = true;
+      trees.castShadow = true;
+      trees.name = 'hedgerow-trees';
+      this.group.add(trees);
+      this.fields.trees = oaks.length;
+    }
   }
 
   /* -------------------------------------------------------- waterfalls -- */
@@ -842,10 +1368,15 @@ export class MapFeatures {
     }
 
     if (this.plumes.length) this.updatePlumes(dt, weather);
+    if (this.flocks.length) this.updateBirds(dt);
+    for (const m of this.lampMats) m.emissiveIntensity = night ? 2.4 : dark ? 1.2 : 0.3;
   }
 
   updatePlumes(dt, weather) {
-    const wind = weather ? weather.windVector(new THREE.Vector3()) : new THREE.Vector3();
+    // One scratch vector for the life of the module: this runs every frame
+    // on Ember and allocated two Vector3s a frame to read the wind.
+    const wind = _wind.set(0, 0, 0);
+    if (weather) weather.windVector(wind);
     for (const p of this.plumes) {
       const pos = p.geo.attributes.position.array;
       const size = p.geo.attributes.aSize.array;

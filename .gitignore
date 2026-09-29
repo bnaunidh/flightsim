@@ -13,3 +13,6 @@ download/*
 __pycache__/
 
 PROMPT-MAPS-AND-MODELS.md
+
+# Worktrees the parallel builders run in. Their work lives on branches.
+.claude/

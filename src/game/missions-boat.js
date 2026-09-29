@@ -49,6 +49,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { heightAt } from '../world/terrain.js';
 import { clamp } from '../core/noise.js';
+import { VOICES } from '../audio/atc.js';
 
 /*
  * The fishing boat comes from the model pack, behind a try.
@@ -121,6 +122,9 @@ const TOUCH_DEPTH = 0.12;
  * ------------------------------------------------------------------ */
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+/** Scratch vectors for the per-frame parts (the tow, the drift). */
+const _towWant = new THREE.Vector3();
+const _drift = new THREE.Vector3();
 
 /**
  * What is under the keel.
@@ -655,9 +659,12 @@ function takeOffPeople(ctx, dt, prop, total, maxSpeed = ALONGSIDE_SPEED) {
 function updateTow(ctx, dt, prop) {
   const b = boatOf(ctx);
   const d = ctx.data;
+  // The weight on the line, for the boat's own drag (surface.js, towDragK).
+  if (b) b.towLoad = prop && prop.towed ? 1 : 0;
   if (!b || !prop || !prop.towed) return;
   const rad = (b.heading * Math.PI) / 180;
-  const want = V(b.pos.x - Math.sin(rad) * TOW_LENGTH, 0, b.pos.z + Math.cos(rad) * TOW_LENGTH);
+  // A scratch vector: this runs every frame of every tow.
+  const want = _towWant.set(b.pos.x - Math.sin(rad) * TOW_LENGTH, 0, b.pos.z + Math.cos(rad) * TOW_LENGTH);
   const m = prop.model;
   const k = clamp(dt * 1.6, 0, 1);
   m.position.x += (want.x - m.position.x) * k;
@@ -727,8 +734,41 @@ function updateTow(ctx, dt, prop) {
   if (d.towStrain >= 1) partTheLine(ctx, prop);
 }
 
+/**
+ * Whether the tow line is off, for the step labels that read it. Module
+ * state because the runner reads `step.targetLabel` with no context, and
+ * only one shout runs at a time.
+ */
+const lineState = { parted: false };
+
+/**
+ * Get another line on her: alongside, slowly, for three seconds.
+ *
+ * partTheLine has always said "Go back, get alongside slowly and pass
+ * another", and only the Long Tow had a step that let you — anywhere else
+ * the words sent a child back to a boat that could never be taken in tow
+ * again.
+ */
+function repassLine(ctx, dt, prop, words) {
+  if (!prop || prop.towed) {
+    lineState.parted = false;
+    return;
+  }
+  lineState.parted = true;
+  const held = holdStation(ctx, dt, prop.model.position, 'repass');
+  if (held > 3) {
+    prop.towed = true;
+    ctx.data.towStrain = 0;
+    ctx.data.repass = 0;
+    lineState.parted = false;
+    ctx.sim.hud.notify(words, 'good', 6);
+  }
+}
+
 function partTheLine(ctx, prop) {
   prop.towed = false;
+  const b = boatOf(ctx);
+  if (b) b.towLoad = 0;
   ctx.data.towStrain = 0;
   ctx.data.hold = 0;
   ctx.data.towsParted = (ctx.data.towsParted || 0) + 1;
@@ -753,11 +793,22 @@ function watchSeabed(ctx, dt) {
   if (!b) return;
   const depth = depthAt(b.pos.x, b.pos.z);
   d.leastDepth = Math.min(d.leastDepth ?? 99, depth);
-  if (depth < TOUCH_DEPTH && !d._onTheBottom) {
+  /*
+   * A touch is the boat saying so, as well as the water under her middle.
+   *
+   * The bow probe in surface.js stops her a boat's length SHORT of the bank,
+   * so the water under her own keel is still a couple of metres deep when she
+   * bumps. Measured playing the Long Tow at base: seven bumps, one counted
+   * touch, so the debrief said the bottom had been touched once. The
+   * vehicle's own `aground` edge is the bump.
+   */
+  const touching = depth < TOUCH_DEPTH || !!b.aground;
+  if (touching && !d._onTheBottom) {
     d._onTheBottom = true;
     d.touches = (d.touches || 0) + 1;
-    ctx.sim.hud.notify("You're on the putty — astern, gently.", 'warn', 5);
-  } else if (depth > 0.9) {
+    // The boat's own message is already on the screen when she bumps.
+    if (!b.aground) ctx.sim.hud.notify("You're on the putty — astern, gently.", 'warn', 5);
+  } else if (!touching && depth > 0.9) {
     d._onTheBottom = false;
   }
 }
@@ -784,10 +835,24 @@ function watchSeabed(ctx, dt) {
  * arrow and aim off. First Shout was the one that called this, and it is the
  * one that worked.
  */
+/*
+ * AND IT FLIPPED BACK AT THE QUAY. "Within 220 m of the mouth, aim at the
+ * berth" — but on Sennen the berth is 258 m from the mouth, so a launch that
+ * had come in and was lying at the berth was 222 m from the mouth, and the
+ * arrow swung round and pointed back out to sea. Followed, it took her back
+ * towards the mouth until she was inside 220 m, when it swung round again.
+ * Measured by playing Man Overboard by the arrow: a figure of eight in the
+ * basin between the berth and the mouth from 330 s to the end of a 700 s run.
+ * Night Shout ends the same way and was stranded the same way; with this
+ * change both finish. Once she is as close to the berth as the mouth is, the
+ * berth is home.
+ */
 function wayHome(ctx) {
   const f = F(ctx);
   const b = boatOf(ctx);
-  if (b && flatDist(b.pos, f.mouth) < 220) return f.berth.clone();
+  if (!b) return f.mouth.clone();
+  const mouthToBerth = flatDist(f.mouth, f.berth);
+  if (flatDist(b.pos, f.mouth) < 220 || flatDist(b.pos, f.berth) < mouthToBerth + 60) return f.berth.clone();
   return f.mouth.clone();
 }
 
@@ -808,10 +873,29 @@ function alongsideAtHome(ctx, dt) {
  * would be better; naming them here means that when somebody does add them,
  * one line changes and every call in this file follows.
  * ------------------------------------------------------------------ */
+/*
+ * And now they are three real entries, added from here rather than by editing
+ * atc.js, in the same way the plug-in layer adds vehicles to VEHICLES.
+ *
+ * Borrowing the tower's voice borrowed its NAME: the subtitle over every
+ * Coastguard call read "Kestrel Tower", and the casualty's read "Mango Cay".
+ * Measured on the first frame of First Shout — the first words of the boat
+ * game were credited to an airport tower on an island the shout is not on.
+ * Each is the same synthesised voice as before (a copy of its settings) with
+ * its own label, so it sounds exactly as it did and says who it is.
+ */
+const BOAT_VOICES = [
+  ['coastguard', 'tower', 'Coastguard'],
+  ['boathouse', 'ground', 'Boathouse'],
+  ['casualty', 'village', 'Casualty'],
+];
+for (const [key, from, label] of BOAT_VOICES) {
+  if (VOICES && VOICES[from] && !VOICES[key]) VOICES[key] = { ...VOICES[from], label };
+}
 const VOICE = {
-  coastguard: 'tower',
-  boathouse: 'ground',
-  casualty: 'village',
+  coastguard: VOICES && VOICES.coastguard ? 'coastguard' : 'tower',
+  boathouse: VOICES && VOICES.boathouse ? 'boathouse' : 'ground',
+  casualty: VOICES && VOICES.casualty ? 'casualty' : 'village',
 };
 
 /* ------------------------------------------------------------------ *
@@ -933,8 +1017,25 @@ export const BOAT_MISSIONS = [
         people: 2,
         heading: Math.random() * 6.28,
       });
+      lineState.parted = false;
     },
-    tick: shoutTick,
+    /*
+     * The tow, which First Shout talked about and never did.
+     *
+     * The alongside step sets the dinghy `towed`, and a towed prop stops
+     * bobbing because "position is the tow's business" — but only The Long
+     * Tow ever called updateTow, so here nothing moved her: the dinghy stayed
+     * where she was found while the launch went home "towing" her, and "pull
+     * too hard and the line will part" could never happen. Now she follows on
+     * the line, the line can part, and the next thing the arrow asks is to go
+     * back for her.
+     */
+    tick: (ctx, dt) => {
+      shoutTick(ctx, dt);
+      const c = ctx.data.casualty;
+      updateTow(ctx, dt, c);
+      if (ctx.data.lineOut) repassLine(ctx, dt, c, 'Line made fast again. Home, gently — Half ahead at most.');
+    },
     steps: [
       {
         id: 'slip',
@@ -988,24 +1089,31 @@ export const BOAT_MISSIONS = [
            * not there would teach the child that the pips mean nothing.
            */
           ctx.data.towedHome = 2;
-          ctx.sim.hud.notify('Line made fast. Take her home gently — under twelve knots.', 'good', 6);
+          ctx.data.lineOut = true;
+          ctx.sim.hud.notify('Line made fast. Take her home gently — Half ahead at most, under twelve knots.', 'good', 6);
         },
       },
       {
         id: 'home',
         text: 'Bring her home. Gently: pull too hard and the line will part.',
         hint: 'Keep the red buoys on your left as you come in. Half ahead at most.',
-        targetLabel: 'Home',
-        target: wayHome,
-        check: (ctx) => flatDist(boatOf(ctx).pos, F(ctx).berth) < 260,
+        // Home — unless the line has parted, and then it is back to her.
+        get targetLabel() {
+          return lineState.parted ? 'Dinghy — pass another line' : 'Home';
+        },
+        target: (ctx) => (ctx.data.casualty.towed ? wayHome(ctx) : ctx.data.casualty.model.position.clone()),
+        // Arriving without her is not arriving: see the same rule in the Long Tow.
+        check: (ctx) => ctx.data.casualty.towed && flatDist(boatOf(ctx).pos, F(ctx).berth) < 260,
       },
       {
         id: 'berth',
-        text: 'Inside the breakwater. Come alongside the quay and stop.',
+        text: 'Inside the breakwater. Come alongside the yellow jetty and stop.',
         hint: 'Astern takes the way off her. Do not come in fast — there is nothing to stop you but the wall.',
-        targetLabel: 'Lifeboat berth',
-        target: (ctx) => F(ctx).berth.clone(),
-        check: (ctx, dt) => alongsideAtHome(ctx, dt),
+        get targetLabel() {
+          return lineState.parted ? 'Dinghy — pass another line' : 'Lifeboat berth';
+        },
+        target: (ctx) => (ctx.data.casualty.towed ? F(ctx).berth.clone() : ctx.data.casualty.model.position.clone()),
+        check: (ctx, dt) => ctx.data.casualty.towed && alongsideAtHome(ctx, dt),
       },
     ],
     onComplete: (ctx, result) =>
@@ -1139,7 +1247,7 @@ export const BOAT_MISSIONS = [
       },
       {
         id: 'home',
-        text: 'He is aboard and he is cold. Take him home and come alongside the quay.',
+        text: 'He is aboard and he is cold. Take him home and stop alongside the yellow jetty.',
         hint: 'There is an ambulance waiting on the quay. Straight home now.',
         targetLabel: 'Lifeboat berth',
         target: wayHome,
@@ -1239,8 +1347,14 @@ export const BOAT_MISSIONS = [
       },
       {
         id: 'home',
-        text: 'All three aboard. Get yourself off this shoal and take them home.',
-        hint: 'Go back out the way you came in. The chart still applies on the way home.',
+        /*
+         * The check is alongsideAtHome — stopped within 22 m of the berth —
+         * and the words never said so: "take them home" and nothing about
+         * the quay. Played by the words alone, the launch arrived at the
+         * berth at Half and circled it for five minutes.
+         */
+        text: 'All three aboard. Get yourself off this shoal, take them home, and stop alongside the yellow jetty.',
+        hint: 'Go back out the way you came in. The chart still applies on the way home. Slow, then Stop, at the jetty.',
         targetLabel: 'Lifeboat berth',
         target: wayHome,
         check: (ctx, dt) => alongsideAtHome(ctx, dt),
@@ -1315,7 +1429,7 @@ export const BOAT_MISSIONS = [
       },
       {
         id: 'home',
-        text: 'Both aboard. Follow the lit buoys home — red ones on your left — and come alongside.',
+        text: 'Both aboard. Follow the lit buoys home — red ones on your left — and stop alongside the jetty lights.',
         hint: 'The lighthouse sweep is behind you now. Head for the two lights on the breakwater heads.',
         targetLabel: 'Lifeboat berth',
         target: wayHome,
@@ -1381,7 +1495,7 @@ export const BOAT_MISSIONS = [
       // last few metres however well you drove.
       const b = boatOf(ctx);
       if (b && flatDist(b.pos, c.model.position) < 45) return;
-      const w = ctx.sim.weather.windVector().clone().multiplyScalar(0.08);
+      const w = ctx.sim.weather.windVector(_drift).multiplyScalar(0.08);
       const m = c.model;
       const nx = m.position.x + w.x * dt;
       const nz = m.position.z + w.z * dt;
@@ -1429,8 +1543,10 @@ export const BOAT_MISSIONS = [
       },
       {
         id: 'home',
-        text: 'Both aboard. Turn and run home with the sea behind you — she will want to slew, so steer ahead of her.',
-        hint: 'Running downwind she steers less and surfs more. Ease the lever back.',
+        // The same missing half-sentence as the Wren's: the check wants her
+        // stopped at the quay, and the words did not say so.
+        text: 'Both aboard. Run home with the sea behind you — she will want to slew, so steer ahead of her — and stop alongside the yellow jetty.',
+        hint: 'Running downwind she steers less and surfs more. Ease the lever back, and Stop at the jetty.',
         targetLabel: 'Lifeboat berth',
         target: wayHome,
         check: (ctx, dt) => alongsideAtHome(ctx, dt),
@@ -1468,10 +1584,21 @@ export const BOAT_MISSIONS = [
         people: 2,
         heading: Math.random() * 6.28,
       });
+      lineState.parted = false;
     },
+    /*
+     * And the line can be passed again wherever it parts.
+     *
+     * The 'tow' step points you back at her once the line has gone, but its
+     * check needs the line on, and the only step that could put it back on
+     * ('repass') comes AFTER it — so a line parted on the way in could never
+     * be replaced and the shout could not be finished. Measured by playing
+     * it: parted once in the lane, then unfinished at twenty minutes.
+     */
     tick: (ctx, dt) => {
       shoutTick(ctx, dt);
       updateTow(ctx, dt, ctx.data.casualty);
+      if (ctx.data.lineOut) repassLine(ctx, dt, ctx.data.casualty, 'Line aboard again. Take the weight slowly — Slow, then Half.');
     },
     steps: [
       {
@@ -1498,6 +1625,7 @@ export const BOAT_MISSIONS = [
         onDone: (ctx) => {
           ctx.data.casualty.towed = true;
           ctx.data.towStrain = 0;
+          ctx.data.lineOut = true;
           ctx.sim.hud.notify('Line aboard. Take the weight slowly — Slow ahead, then Half.', 'good', 7);
         },
       },
@@ -1505,7 +1633,9 @@ export const BOAT_MISSIONS = [
         id: 'tow',
         text: 'Tow her home through the lane. Build the speed up gently and keep it there.',
         hint: 'If the line parts, go back, get alongside slowly and pass another. It costs you time, not the job.',
-        targetLabel: 'Harbour mouth',
+        get targetLabel() {
+          return lineState.parted ? 'Fishing boat — pass another line' : 'Harbour mouth';
+        },
         // Lose the line and the next place you have to be is back beside her,
         // so that is where the arrow goes. An arrow that keeps pointing home
         // while the boat you were sent for is a mile behind you is
@@ -1555,10 +1685,12 @@ export const BOAT_MISSIONS = [
       },
       {
         id: 'berth',
-        text: 'In through the mouth with her behind you, and stop at the quay.',
+        text: 'In through the mouth with her behind you, and stop at the yellow jetty.',
         hint: 'She will keep coming when you stop. Leave yourself room.',
-        targetLabel: 'Lifeboat berth',
-        target: (ctx) => F(ctx).berth.clone(),
+        get targetLabel() {
+          return lineState.parted ? 'Fishing boat — pass another line' : 'Lifeboat berth';
+        },
+        target: (ctx) => (ctx.data.casualty.towed ? F(ctx).berth.clone() : ctx.data.casualty.model.position.clone()),
         check: (ctx, dt) => ctx.data.casualty.towed && alongsideAtHome(ctx, dt),
       },
     ],
@@ -1741,6 +1873,403 @@ export const BOAT_PATROL = {
     },
   ],
 };
+
+/* ------------------------------------------------------------------ *
+ * THE WAY THERE: an arrow that keeps her afloat.
+ *
+ * Every step's `target` is a place — the dinghy, the harbour mouth, the
+ * berth — and the arrow used to point straight at it. A straight line from
+ * the berth to anything outside runs through the breakwater, and on the
+ * Skerries a straight line to the Wren runs over half a dozen rocks. The
+ * step text says "follow the arrow"; a child who does exactly that should
+ * not be put on the putty for it.
+ *
+ * So the arrow points at the next corner of a route that stays in water
+ * she floats in, found on a coarse depth grid: 20 m cells (the harbour mouth
+ * is three and a half of them), a cell is water if there are 1.4 m under the
+ * keel, and water under 4 m costs a little more so the route keeps to the
+ * lane and the channel where there is one. A* over it, then pulled tight: the
+ * arrow points at the FURTHEST point on the route she can steer straight
+ * at without crossing anything shallow, so on open water it is simply the
+ * target and it only bends where it has to.
+ *
+ * Cost, measured in the browser on Sennen: the grid for a First Shout area
+ * (about 2.6 km square) is 17 thousand heightAt calls, once per mission,
+ * and a plan is a few milliseconds. Plans are redone every three seconds,
+ * or at once when the target moves or she leaves the route — never per
+ * frame.
+ * ------------------------------------------------------------------ */
+
+const ROUTE_CELL = 20;
+const ROUTE_WATER = 1.4;
+const ROUTE_MAX_CELLS = 260;
+
+let routeGridCache = null;
+let routePlan = null;
+/** How often the expensive parts ran, for the playtest to keep an eye on. */
+export const boatRouteStats = { grids: 0, plans: 0, cells: 0 };
+
+/** Forget the grid: a new map has a new sea floor. */
+export function resetBoatRoute() {
+  routeGridCache = null;
+  routePlan = null;
+}
+
+/**
+ * Build the grid for the water round this harbour now, at the start of the
+ * trip, rather than on the frame the first route is asked for. Measured on
+ * a desktop: 9 to 11 ms for a first plan, which on a 2019 Chromebook is two
+ * or three dropped frames in the middle of a shout; at the start it hides
+ * inside the map load that is happening anyway. Every shout in the game is
+ * inside 1.6 km of its harbour mouth, so that is the square it covers.
+ */
+export function warmBoatRoute(sim) {
+  const f = frameOf(sim);
+  const R = 1600;
+  routeGrid(
+    Math.min(f.mouth.x, f.berth.x) - R,
+    Math.min(f.mouth.z, f.berth.z) - R,
+    Math.max(f.mouth.x, f.berth.x) + R,
+    Math.max(f.mouth.z, f.berth.z) + R
+  );
+}
+
+function routeGrid(x0, z0, x1, z1) {
+  const mapKey = `${heightAt(137, -91).toFixed(3)}|${heightAt(-911, 733).toFixed(3)}`;
+  const g = routeGridCache;
+  if (g && g.mapKey === mapKey && x0 >= g.x0 && z0 >= g.z0 && x1 <= g.x0 + g.nx * ROUTE_CELL && z1 <= g.z0 + g.nz * ROUTE_CELL) {
+    return g;
+  }
+  // Grow to cover the old one as well, so hopping between two places does
+  // not rebuild it every time.
+  if (g && g.mapKey === mapKey) {
+    x0 = Math.min(x0, g.x0);
+    z0 = Math.min(z0, g.z0);
+    x1 = Math.max(x1, g.x0 + g.nx * ROUTE_CELL);
+    z1 = Math.max(z1, g.z0 + g.nz * ROUTE_CELL);
+  }
+  let nx = Math.ceil((x1 - x0) / ROUTE_CELL) + 1;
+  let nz = Math.ceil((z1 - z0) / ROUTE_CELL) + 1;
+  // Never bigger than 260 cells a side (5.2 km): past that, centre on the
+  // middle of what was asked for and let the far ends go straight.
+  if (nx > ROUTE_MAX_CELLS) {
+    x0 = (x0 + x1) / 2 - (ROUTE_MAX_CELLS * ROUTE_CELL) / 2;
+    nx = ROUTE_MAX_CELLS;
+  }
+  if (nz > ROUTE_MAX_CELLS) {
+    z0 = (z0 + z1) / 2 - (ROUTE_MAX_CELLS * ROUTE_CELL) / 2;
+    nz = ROUTE_MAX_CELLS;
+  }
+  const depth = new Float32Array(nx * nz);
+  boatRouteStats.grids++;
+  boatRouteStats.cells = nx * nz;
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      depth[j * nx + i] = depthAt(x0 + i * ROUTE_CELL, z0 + j * ROUTE_CELL);
+    }
+  }
+  routeGridCache = { x0, z0, nx, nz, depth, mapKey, came: new Int32Array(nx * nz), cost: new Float32Array(nx * nz), heap: new Int32Array(nx * nz * 4), fsc: new Float32Array(nx * nz * 4) };
+  return routeGridCache;
+}
+
+function cellOf(g, x, z) {
+  const i = Math.round((x - g.x0) / ROUTE_CELL);
+  const j = Math.round((z - g.z0) / ROUTE_CELL);
+  if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return -1;
+  return j * g.nx + i;
+}
+
+/** The nearest water cell to `c`, spiralling out up to `reach` cells. */
+function nearestWater(g, c, reach) {
+  if (c < 0) return -1;
+  if (g.depth[c] >= ROUTE_WATER) return c;
+  const ci = c % g.nx;
+  const cj = (c / g.nx) | 0;
+  for (let r = 1; r <= reach; r++) {
+    let best = -1;
+    let bestD = -1;
+    for (let dj = -r; dj <= r; dj++) {
+      for (let di = -r; di <= r; di++) {
+        if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+        const i = ci + di;
+        const j = cj + dj;
+        if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) continue;
+        const k = j * g.nx + i;
+        if (g.depth[k] >= ROUTE_WATER && g.depth[k] > bestD) {
+          best = k;
+          bestD = g.depth[k];
+        }
+      }
+    }
+    if (best >= 0) return best;
+  }
+  return -1;
+}
+
+/**
+ * Is the straight run from (ax, az) to (bx, bz) good water, with room either
+ * side of her? Sampled every 8 m down the middle and 6 m out each side.
+ *
+ * It read the middle line only, against 1.0 m, and in the Gale that led the
+ * launch into Longbank's harbour mouth close along a breakwater head: with
+ * 0.7 m/s of leeway on her she bumped it six times in forty seconds. Two
+ * metres down the middle and one either side keeps her a boat's width off.
+ */
+function clearRun(g, ax, az, bx, bz) {
+  const d = Math.hypot(bx - ax, bz - az);
+  const n = Math.max(1, Math.ceil(d / 8));
+  const nx = d > 0 ? (-(bz - az) / d) * 6 : 0;
+  const nz = d > 0 ? ((bx - ax) / d) * 6 : 0;
+  for (let k = 1; k <= n; k++) {
+    const t = k / n;
+    const x = ax + (bx - ax) * t;
+    const z = az + (bz - az) * t;
+    // The height field itself, not the grid: a 20 m cell can hide the corner
+    // of a breakwater.
+    if (depthAt(x, z) < 2) return false;
+    if (depthAt(x + nx, z + nz) < 1 || depthAt(x - nx, z - nz) < 1) return false;
+  }
+  return true;
+}
+
+function planRoute(g, from, to) {
+  const start = nearestWater(g, cellOf(g, from.x, from.z), 6);
+  const goal = nearestWater(g, cellOf(g, to.x, to.z), 18);
+  if (start < 0 || goal < 0) return null;
+  const { nx, nz, depth, came, cost, heap, fsc } = g;
+  cost.fill(Infinity);
+  came.fill(-1);
+  const gi = goal % nx;
+  const gj = (goal / nx) | 0;
+  const h = (k) => {
+    const di = Math.abs((k % nx) - gi);
+    const dj = Math.abs(((k / nx) | 0) - gj);
+    return Math.max(di, dj) + 0.414 * Math.min(di, dj);
+  };
+  // A binary heap in two typed arrays: no objects, nothing to collect.
+  let size = 0;
+  const push = (k, f) => {
+    if (size >= heap.length) return;
+    let i = size++;
+    heap[i] = k;
+    fsc[i] = f;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (fsc[p] <= fsc[i]) break;
+      const tk = heap[p]; heap[p] = heap[i]; heap[i] = tk;
+      const tf = fsc[p]; fsc[p] = fsc[i]; fsc[i] = tf;
+      i = p;
+    }
+  };
+  const pop = () => {
+    const top = heap[0];
+    size--;
+    heap[0] = heap[size];
+    fsc[0] = fsc[size];
+    let i = 0;
+    for (;;) {
+      const l = i * 2 + 1;
+      const r = l + 1;
+      let m = i;
+      if (l < size && fsc[l] < fsc[m]) m = l;
+      if (r < size && fsc[r] < fsc[m]) m = r;
+      if (m === i) break;
+      const tk = heap[m]; heap[m] = heap[i]; heap[i] = tk;
+      const tf = fsc[m]; fsc[m] = fsc[i]; fsc[i] = tf;
+      i = m;
+    }
+    return top;
+  };
+  cost[start] = 0;
+  push(start, h(start));
+  let found = false;
+  let guard = 0;
+  while (size > 0 && guard++ < nx * nz * 2) {
+    const k = pop();
+    if (k === goal) {
+      found = true;
+      break;
+    }
+    const ki = k % nx;
+    const kj = (k / nx) | 0;
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        const i = ki + di;
+        const j = kj + dj;
+        if (i < 0 || j < 0 || i >= nx || j >= nz) continue;
+        const n = j * nx + i;
+        const dn = depth[n];
+        if (dn < ROUTE_WATER) continue;
+        // No cutting a corner between two shallow cells.
+        if (di && dj && (depth[kj * nx + i] < ROUTE_WATER || depth[j * nx + ki] < ROUTE_WATER)) continue;
+        const step = di && dj ? 1.414 : 1;
+        // Water beside a wall or a rock costs three times as much, so the
+        // route runs down the middle of a gap rather than along one side of it.
+        let edge = 0;
+        if (i > 0 && depth[n - 1] < ROUTE_WATER) edge = 1;
+        else if (i < nx - 1 && depth[n + 1] < ROUTE_WATER) edge = 1;
+        else if (j > 0 && depth[n - nx] < ROUTE_WATER) edge = 1;
+        else if (j < nz - 1 && depth[n + nx] < ROUTE_WATER) edge = 1;
+        const c = cost[k] + step * (1 + Math.max(0, 4 - dn) * 0.3 + edge * 2);
+        if (c < cost[n]) {
+          cost[n] = c;
+          came[n] = k;
+          push(n, c + h(n));
+        }
+      }
+    }
+  }
+  if (!found) return null;
+  const path = [];
+  for (let k = goal; k >= 0; k = came[k]) {
+    path.push(g.x0 + (k % nx) * ROUTE_CELL, g.z0 + ((k / nx) | 0) * ROUTE_CELL);
+    if (k === start) break;
+  }
+  // Stored start-first, as a flat [x0, z0, x1, z1, ...].
+  const flat = new Float32Array(path.length);
+  for (let i = 0, n = path.length / 2; i < n; i++) {
+    flat[i * 2] = path[(n - 1 - i) * 2];
+    flat[i * 2 + 1] = path[(n - 1 - i) * 2 + 1];
+  }
+  return flat;
+}
+
+/**
+ * Where the arrow should point: the next corner of a route that keeps her
+ * afloat, on the way to `to`.
+ *
+ * Writes into and returns `out` ({ x, z, routed, legs }), so the caller owns
+ * the object and nothing is allocated per call. `routed` is false when the
+ * answer is simply the target itself (open water, or no route found — in
+ * which case pointing at the target is the honest fallback).
+ */
+export function boatRoute(sim, from, to, out = { x: 0, z: 0, routed: false, legs: 0 }) {
+  out.x = to.x;
+  out.z = to.z;
+  out.routed = false;
+  out.legs = 0;
+  if (!from || !to) return out;
+  // Close in, or a clear run: just go there.
+  const direct = Math.hypot(to.x - from.x, to.z - from.z);
+  if (direct < 60 || clearRun(null, from.x, from.z, to.x, to.z)) {
+    routePlan = null;
+    return out;
+  }
+  const t = sim && sim.vehicle ? sim.vehicle.t : 0;
+  const p = routePlan;
+  const stale =
+    !p ||
+    Math.hypot(p.tx - to.x, p.tz - to.z) > 30 ||
+    t - p.at > 3 ||
+    t < p.at;
+  if (stale) {
+    const f = frameOf(sim);
+    const pad = 500;
+    const x0 = Math.min(from.x, to.x, f.berth.x, f.mouth.x) - pad;
+    const z0 = Math.min(from.z, to.z, f.berth.z, f.mouth.z) - pad;
+    const x1 = Math.max(from.x, to.x, f.berth.x, f.mouth.x) + pad;
+    const z1 = Math.max(from.z, to.z, f.berth.z, f.mouth.z) + pad;
+    const g = routeGrid(x0, z0, x1, z1);
+    boatRouteStats.plans++;
+    routePlan = { tx: to.x, tz: to.z, at: t, path: planRoute(g, from, to) };
+  }
+  const path = routePlan && routePlan.path;
+  if (!path || path.length < 4) return out;
+  // Pull the string tight: the furthest route point she can run straight at.
+  let best = -1;
+  let nearest = Infinity;
+  let nearestI = 0;
+  const n = path.length / 2;
+  for (let i = 0; i < n; i++) {
+    const d = Math.hypot(path[i * 2] - from.x, path[i * 2 + 1] - from.z);
+    if (d < nearest) {
+      nearest = d;
+      nearestI = i;
+    }
+  }
+  // Wandered well off it: plan again next time.
+  if (nearest > 90 && routePlan) routePlan.at = -1e9;
+  // At most ten straight-line tests, far to near, so a long route costs the
+  // same as a short one: about a thousand heightAt calls at the very worst.
+  const span = n - 1 - nearestI;
+  const stride = Math.max(1, Math.ceil(span / 10));
+  for (let i = n - 1; i > nearestI; i -= stride) {
+    const x = path[i * 2];
+    const z = path[i * 2 + 1];
+    if (Math.hypot(x - from.x, z - from.z) > 700) continue;
+    if (clearRun(null, from.x, from.z, x, z)) {
+      best = i;
+      break;
+    }
+  }
+  if (best < 0) best = Math.min(n - 1, nearestI + 1);
+  // The last corner is the water cell nearest the target; from there, the
+  // target itself, even if it is in the shallows (the Wren is on a rock).
+  if (best === n - 1 && clearRun(null, path[best * 2], path[best * 2 + 1], to.x, to.z)) {
+    return out;
+  }
+  out.x = path[best * 2];
+  out.z = path[best * 2 + 1];
+  out.routed = true;
+  out.legs = n - best;
+  return out;
+}
+
+/**
+ * An airfield that is not where the map says it is.
+ *
+ * world/apron.js lays the terminal, the air bridges, the stands and the
+ * apron vehicles out at Kestrel's coordinates — round the world origin — at
+ * whatever the map's airfield elevation is. Sennen Cove's airfield is on
+ * Wester Isle, 5.6 km away, and its harbour is AT the origin: measured from
+ * the berth, a jet bridge, a set of aircraft steps and a baggage train hang
+ * 22 to 27 m in the air forty to sixty metres from the chase camera, with a
+ * row of orange markers floating over the harbour mouth. That is the first thing a child sees in
+ * the boat game.
+ *
+ * Fixing where apron.js puts things is its owner's job. What this does, for
+ * the length of a boat trip only, is hide any top-level piece of the apron or
+ * airport that is floating: its bottom more than eight metres above the
+ * ground under it, within three kilometres of the harbour — on Longbank the
+ * same terminal stands in the sea 1.3 km off the quay, on the horizon of the
+ * whole Gale shout. A real airfield is never caught by this: the ground under
+ * it is levelled to its own elevation, so nothing on it floats. It returns
+ * what it hid so leave() can put it all back exactly as it was.
+ */
+export function hideStrayAirfield(sim) {
+  const hidden = [];
+  if (!sim) return hidden;
+  const h = harbourOf(sim);
+  if (!h) return hidden;
+  const box = new THREE.Box3();
+  const c = new THREE.Vector3();
+  for (const owner of [sim.apron, sim.airport]) {
+    const g = owner && owner.group;
+    if (!g) continue;
+    g.updateMatrixWorld(true);
+    for (const o of g.children) {
+      if (!o.visible) continue;
+      box.setFromObject(o);
+      if (box.isEmpty()) continue;
+      box.getCenter(c);
+      if (Math.hypot(c.x - h.berth.x, c.z - h.berth.z) > 3000) continue;
+      const ground = Math.max(0, heightAt(c.x, c.z));
+      if (box.min.y - ground > 8) {
+        o.visible = false;
+        hidden.push(o);
+      }
+    }
+  }
+  return hidden;
+}
+
+/** Put back what hideStrayAirfield() hid. */
+export function restoreStrayAirfield(hidden) {
+  if (!hidden) return;
+  for (const o of hidden) o.visible = true;
+  hidden.length = 0;
+}
 
 /* ------------------------------------------------------------------ */
 

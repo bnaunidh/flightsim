@@ -68,6 +68,13 @@ import * as Terrain from '../world/terrain.js';
 import * as Prog from './progression.js';
 import { heightAt, MAP, ISLANDS } from '../world/terrain.js';
 import { RUNWAY } from '../world/airport.js';
+import { routeOnRoads, routeLengthM, distanceToRoads, nearestRoadPoint, roadDistancesFrom, roadGraph, PAVED_HALF } from '../world/roads.js';
+// The island made ready for a van (IslandRoads.van, at the end of this file).
+import { clearRoadsOfScenery, clearRoadsOfFields, drawnGroundSampler, terrainBlendSampler, fieldPatchSampler } from '../world/roads.js';
+// The ground the van rides, for putting the drop-off marker on the tarmac.
+import { groundHeight, setGroundMesh } from '../vehicles/surface.js';
+// For giving a job's sky back when the menu is reached without stopDrive.
+import { registerExtension } from './extensions.js';
 
 /* ------------------------------------------------------------------ *
  * Small shared numbers, all in metres and metres per second.
@@ -313,15 +320,254 @@ export function placeOf(sim, name) {
  */
 function computePlace(sim, name) {
   const roads = sim && sim.roads;
-  if (roads && typeof roads.place === 'function') {
+  const net = networkOf(sim);
+  if (net) {
+    const p = networkPlace(sim, name);
+    if (p) return onGround(p.x, p.z);
+  } else if (roads && typeof roads.place === 'function') {
     const p = roads.place(name);
     if (p) return onGround(p.x, p.z);
   }
+  // The foot of the summit climb is the town wherever nothing better is known.
+  if (name === 'foot') return computePlace(sim, 'town');
+  const found = terrainPlace(sim, name);
+  if (!net) return found;
+  /*
+   * And on the road. A map with a network but no place of this kind — no
+   * lighthouse, no summit — gets the terrain's answer, which is a point in a
+   * field; the job then ends eighty metres off the tarmac with a child
+   * driving circles round a meadow looking for it. Park it on the road
+   * outside instead, the way a courier would.
+   */
+  /*
+   * ...unless that is the depot. On Cormorant Coast the scenery's town and
+   * the airfield are beside each other, both park on the same bit of the one
+   * road, and First Run — "from the depot to the town" — measured 5 m long:
+   * it opened on ARRIVING with the van already there, and waited for a
+   * child to drive away from the place it was telling them to stop at.
+   */
+  const depotAt = name === 'depot' || name === 'apron' ? null : computePlace(sim, 'depot');
+  const clear = (p) => !depotAt || Math.hypot(p.x - depotAt.x, p.z - depotAt.z) > 400;
+  const near = nearestRoadPoint(net, found.x, found.z);
+  if (near && near.dist < 600 && clear(near)) return onGround(near.x, near.z);
+  /*
+   * And on a map whose road is the whole map — a single authored pass or
+   * coast road, no addresses — the scenery's idea of "the town" can be
+   * kilometres from it. Measured headless on Saddleback Pass and Cormorant
+   * Coast: every one of the six jobs had a stop more than 600 m from the only
+   * road, so every job was either impossible (before) or off the board
+   * (once the board learned to check). There the places are laid out along
+   * the road itself instead — see alongTheRoad().
+   */
+  const along = alongTheRoad(net, name);
+  if (along && clear(along)) return onGround(along.x, along.z);
+  // Still on top of the depot: the first of a few points along the longest
+  // road that is a proper drive from it.
+  if (depotAt) {
+    const longest = net.reduce((a, b) => (roadLen(b) > roadLen(a) ? b : a));
+    const L = roadLen(longest);
+    for (const f of [0.55, 0.3, 0.8, 0.15, 0.95]) {
+      const p = pointAlongPath(longest.path, L * f);
+      if (clear(p)) return onGround(p.x, p.z);
+    }
+  }
+  return along ? onGround(along.x, along.z) : found;
+}
 
+/**
+ * Places for a network that names none: points along its longest road, and
+ * its highest and lowest ground, so each job still has somewhere distinct to
+ * go and a road all the way there. Cached per network.
+ */
+const ALONG_CACHE = new WeakMap();
+function alongTheRoad(net, name) {
+  let spots = ALONG_CACHE.get(net);
+  if (!spots) {
+    const longest = net.reduce((a, b) => (roadLen(b) > roadLen(a) ? b : a));
+    const L = roadLen(longest);
+    const at = (f) => pointAlongPath(longest.path, L * f);
+    let hi = null;
+    let lo = null;
+    for (const rd of net) {
+      for (const q of rd.path) {
+        const h = q[2] != null ? q[2] : heightAt(q[0], q[1]);
+        if (!hi || h > hi.h) hi = { x: q[0], z: q[1], h };
+        if (h > 2 && (!lo || h < lo.h)) lo = { x: q[0], z: q[1], h };
+      }
+    }
+    spots = {
+      depot: at(0.06),
+      apron: at(0.3),
+      town: at(0.55),
+      outpost: at(0.94),
+      lighthouse: at(0.97),
+      summit: hi,
+      harbour: lo,
+    };
+    ALONG_CACHE.set(net, spots);
+  }
+  return spots[name] || null;
+}
+
+function roadLen(rd) {
+  let m = 0;
+  for (let k = 1; k < rd.path.length; k++) m += Math.hypot(rd.path[k][0] - rd.path[k - 1][0], rd.path[k][1] - rd.path[k - 1][1]);
+  return m;
+}
+
+function pointAlongPath(p, m) {
+  let left = m;
+  for (let k = 1; k < p.length; k++) {
+    const len = Math.hypot(p[k][0] - p[k - 1][0], p[k][1] - p[k - 1][1]);
+    if (len >= left || k === p.length - 1) {
+      const f = len > 0 ? Math.min(1, left / len) : 0;
+      return { x: p[k - 1][0] + (p[k][0] - p[k - 1][0]) * f, z: p[k - 1][1] + (p[k][1] - p[k - 1][1]) * f };
+    }
+    left -= len;
+  }
+  return { x: p[0][0], z: p[0][1] };
+}
+
+/**
+ * The words a map uses for a place, in the order a job would accept them.
+ *
+ * `sim.roads.place(name)` matched a courier place by id or kind, and nothing
+ * else — so on Drover's Flat "summit" found nothing (the hill-top there is
+ * called the relay), fell through to the terrain survey, and picked a grassy
+ * knoll 261 m from the depot. Free drive paid "Found the summit relay" for it
+ * within twelve seconds of pulling away, in a field. It also matched places
+ * marked `boatOnly`, so "lighthouse" on Drover's Flat was Cobb Light, on a
+ * rock four kilometres out to sea.
+ */
+const PLACE_KINDS = {
+  depot: ['depot'],
+  apron: ['apron'],
+  town: ['town', 'village'],
+  harbour: ['harbour'],
+  lighthouse: ['lighthouse'],
+  outpost: ['outpost', 'relay', 'quarry', 'layby'],
+};
+
+/** The road network the van can actually drive, or null. */
+function networkOf(sim) {
+  const list = sim && sim.roads && (sim.roads.list || sim.roads.roads);
+  return list && list.length ? list : null;
+}
+
+/** A courier place of this kind that a van can reach, or null. */
+function networkPlace(sim, name) {
+  const net = networkOf(sim);
+  if (!net) return null;
+  if (name === 'summit') return networkSummit(sim, net);
+  if (name === 'foot') {
+    const c = networkClimb(sim, net);
+    return c ? c.foot : networkPlace(sim, 'town');
+  }
+  const places = (sim.roads && sim.roads.places && sim.roads.places.length ? sim.roads.places : null)
+    || (MAP && MAP.courier && MAP.courier.places) || [];
+  for (const want of PLACE_KINDS[name] || [name]) {
+    for (const p of places) {
+      if (p.boatOnly) continue;
+      if (p.id !== want && p.kind !== want) continue;
+      if (distanceToRoads(net, p.x, p.z, 200) > 150) continue;
+      const near = nearestRoadPoint(net, p.x, p.z);
+      return near ? { x: near.x, z: near.z, name: p.name || name } : { x: p.x, z: p.z, name: p.name || name };
+    }
+  }
+  return null;
+}
+
+/** The top of the Summit Relay's climb on an island with roads, or null. */
+function networkSummit(sim, net) {
+  const c = networkClimb(sim, net);
+  return c ? c.top : null;
+}
+
+/**
+ * The Summit Relay's climb, on an island with roads: a foot and a top.
+ *
+ * The job was written as "from the TOWN up to the relay and back", and
+ * asked for a relay 60 m above the town. Measured across all eight car maps
+ * after the relay learned to look along the roads: offered on none of them.
+ * Drover's Flat is flat; on Cape Vessel the relay is 43 m above Kerrow; and
+ * on Saddleback Pass — the map whose own card says "Climb a real mountain",
+ * a road from 18 m up to 225 m and back down — the stand-in town is laid out
+ * 55% of the way along the only road, which is 211 m up on the shoulder, so
+ * the relay 14 m above it was "not got the ground for it". The one job about
+ * a mountain was never offered on the one map that is a mountain.
+ *
+ * So the climb starts wherever the climb is. The town when the town
+ * qualifies, which is the job as written; failing that, whichever named
+ * place (or, on a road with no names, whichever end of it) has the most
+ * road above it within a job's length — a relay the road reaches if there is
+ * one high enough, else the highest tarmac. The foot is where the van starts
+ * and where the empties go back to. Worked out once per network.
+ */
+const CLIMB_BY_NET = new WeakMap();
+function networkClimb(sim, net) {
+  if (CLIMB_BY_NET.has(net)) return CLIMB_BY_NET.get(net);
+  CLIMB_BY_NET.set(net, null);
+  const job = CAR_JOBS.find((j) => j.id === 'summit');
+  // Up and back inside the job's cap, at the pace the menu quotes.
+  const reach = job && job.plan ? ((job.maxSeconds - job.plan.allow) * job.plan.speed * PACE) / 2 : 4000;
+  const places = ((sim.roads && sim.roads.places && sim.roads.places.length ? sim.roads.places : null)
+    || (MAP && MAP.courier && MAP.courier.places) || [])
+    .filter((p) => !p.boatOnly && distanceToRoads(net, p.x, p.z, 200) <= 150)
+    .map((p) => {
+      const near = nearestRoadPoint(net, p.x, p.z);
+      return { x: near.x, z: near.z, name: p.name || p.id, kind: p.kind, id: p.id };
+    });
+  const feet = [];
+  const town = networkPlace(sim, 'town');
+  if (town) feet.push({ x: town.x, z: town.z, name: 'the town', town: true });
+  for (const p of places) if (p.kind !== 'relay' && p.kind !== 'summit') feet.push(p);
+  if (!places.length) {
+    for (const rd of net) {
+      const a = rd.path[0];
+      const b = rd.path[rd.path.length - 1];
+      feet.push({ x: a[0], z: a[1], name: null }, { x: b[0], z: b[1], name: null });
+    }
+  }
+  const relay = places.find((p) => p.kind === 'relay' || p.id === 'relay' || p.kind === 'summit');
+  let best = null;
+  for (const f of feet) {
+    const fy = heightAt(f.x, f.z);
+    const nodes = roadDistancesFrom(net, f) || [];
+    let top = null;
+    if (relay && heightAt(relay.x, relay.z) - fy > 60) {
+      const leg = routeOnRoads(net, f, relay);
+      if (leg && routeLengthM(leg) <= reach) top = { x: relay.x, z: relay.z, y: heightAt(relay.x, relay.z), name: relay.name };
+    }
+    if (!top) {
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i];
+        if (!(n.d <= reach)) continue;
+        const y = heightAt(n.x, n.z);
+        if (!top || y > top.y) top = { x: n.x, z: n.z, y, name: 'the summit relay' };
+      }
+    }
+    if (!top || top.y - fy <= 60) continue;
+    const score = (f.town ? 1e4 : 0) + (top.y - fy);
+    if (!best || score > best.score) {
+      best = {
+        score,
+        top: { x: top.x, z: top.z, name: top.name || 'the summit relay' },
+        foot: { x: f.x, z: f.z, name: f.name || 'the bottom of the lane' },
+      };
+    }
+  }
+  CLIMB_BY_NET.set(net, best);
+  return best;
+}
+
+/** The terrain's answer, for a map that names no such place. */
+function terrainPlace(sim, name) {
   const cfg = (MAP && MAP.scenery) || {};
   const main = (ISLANDS && ISLANDS[0]) || { cx: 0, cz: 0, radius: 2000 };
 
   switch (name) {
+    // Where the aeroplane parks, which on a map without a depot is the depot.
+    case 'apron':
     case 'depot': {
       /*
        * The apron is the depot in version one.
@@ -400,6 +646,44 @@ export function resolveSpawn(sim, job) {
   const pos = placeOf(sim, name).clone();
   pos.y = Math.max(0, heightAt(pos.x, pos.z));
   let headingDeg = (job && job.spawn && job.spawn.headingDeg);
+  const net = networkOf(sim);
+  if (net && headingDeg == null) {
+    /*
+     * On the road, pointing ALONG it, towards where the job goes first.
+     *
+     * The van used to face the first place in a straight line. On Drover's
+     * Flat that is heading 155 from the depot, which is between two of the
+     * three roads that meet there: holding Shift for twelve seconds drove it
+     * 190 m, off the road after the first four, and the first thing a child
+     * did in the game was leave the road. Now it faces the way the ROUTE leaves, and it is put
+     * down fourteen metres along it — clear of the junction, in the right-hand
+     * lane — so the first frame is a van on a road with the road ahead of it.
+     *
+     * A map that authored its own roads and named no places has no depot, and
+     * the terrain's guess (the airfield apron) can be kilometres from any
+     * tarmac — nearly four on Saddleback Pass. There the road IS the map, so
+     * the van starts in the middle of the longest one.
+     */
+    let near = nearestRoadPoint(net, pos.x, pos.z);
+    if (!near || near.dist > 600) {
+      const longest = net.reduce((a, b) => (b.path.length > a.path.length ? b : a));
+      const mid = longest.path[Math.floor(longest.path.length / 2)];
+      near = nearestRoadPoint(net, mid[0], mid[1]);
+    }
+    const from = { x: near.x, z: near.z };
+    const goal = firstGoal(sim, job, from);
+    const route = goal ? routeOnRoads(net, from, goal) : null;
+    const at = route ? alongRoute(route, 14) : null;
+    if (at) {
+      const r = at.headingDeg * DEG;
+      pos.set(at.x + Math.cos(r) * LANE, 0, at.z + Math.sin(r) * LANE);
+      headingDeg = at.headingDeg;
+    } else {
+      pos.set(near.x, 0, near.z);
+      headingDeg = near.headingDeg;
+    }
+    pos.y = Math.max(0, heightAt(pos.x, pos.z));
+  }
   if (headingDeg == null) {
     // Face the first place the job sends you to, so nobody's first action is a
     // three-point turn.
@@ -408,6 +692,60 @@ export function resolveSpawn(sim, job) {
     headingDeg = (Math.atan2(t.x - pos.x, -(t.z - pos.z)) * 180) / Math.PI;
   }
   return { pos, headingDeg: (headingDeg + 360) % 360 };
+}
+
+const DEG = Math.PI / 180;
+/** The van keeps to the right: half a lane off the centre line. */
+const LANE = PAVED_HALF * 0.45;
+/** Free drive's next place: one behind the van counts as this much further
+ *  away by road than it is — see IslandRoads.pickNext. */
+const TURN_ROUND_M = 1500;
+
+/**
+ * Where a job goes first: the first step that names a target somewhere
+ * other than where the van already is, else the place it says to face.
+ *
+ * "Somewhere other": on a map with no airfield place the Shuttle's crate
+ * is at the depot, the van is loaded where it stands, and the real first
+ * leg is the run into town. Faced along the route to the crate — a route
+ * of no length — the van was parked along whichever road was nearest, and
+ * on Fenwick that was backwards: the first thing the arrow said was TURN
+ * AROUND.
+ */
+function firstGoal(sim, job, from = null) {
+  if (job && Array.isArray(job.steps)) {
+    const ctx = { sim, veh: null, data: { _places: {} }, elapsed: 0, runner: { def: job } };
+    for (const step of job.steps) {
+      if (typeof step.target !== 'function') continue;
+      try {
+        const t = step.target(ctx);
+        if (t && !(from && flatDist(from, t) < 60)) return t;
+      } catch (e) {
+        // A target that needs onStart's data (the coast road's headlands) is
+        // not available yet; the place the job faces will do.
+        break;
+      }
+    }
+  }
+  return placeOf(sim, (job && job.faceTowards) || 'town');
+}
+
+/** The point `m` metres along a route, and the way the route runs there. */
+function alongRoute(route, m) {
+  let left = m;
+  for (let i = 1; i < route.length; i++) {
+    const a = route[i - 1];
+    const b = route[i];
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    if (len < 0.5) continue;
+    const hdg = (Math.atan2(b.x - a.x, -(b.z - a.z)) * 180) / Math.PI;
+    if (len >= left || i === route.length - 1) {
+      const f = Math.min(1, left / len);
+      return { x: a.x + (b.x - a.x) * f, z: a.z + (b.z - a.z) * f, headingDeg: (hdg + 360) % 360 };
+    }
+    left -= len;
+  }
+  return null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -439,6 +777,21 @@ export function resolveSpawn(sim, job) {
  */
 function routeLength(sim, pts) {
   const roads = sim && sim.roads;
+  const net = networkOf(sim);
+  if (net) {
+    // Along the tarmac, leg by leg: the same route the arrow will follow.
+    let total = 0;
+    let ok = true;
+    for (let i = 1; i < pts.length; i++) {
+      const leg = routeOnRoads(net, pts[i - 1], pts[i]);
+      if (!leg) {
+        ok = false;
+        break;
+      }
+      total += routeLengthM(leg);
+    }
+    if (ok && total > 0) return total;
+  }
   if (roads && typeof roads.route === 'function') {
     let total = 0;
     let ok = true;
@@ -560,6 +913,11 @@ export class CargoLoad {
      */
     const f = Math.max(0.0001, this.fragility);
     this.joltLimit = 58 / f;
+    /** Closing speed with the ground on a landing that knocks the load, m/s:
+     *  4 for ordinary freight — the same line surface.js calls a hard landing
+     *  — and 3.2 for the vaccine and the doctor. */
+    this.landLimit = 4 / Math.sqrt(f);
+    this._landings = null;
     this.brakeLimit = 7.5 / Math.sqrt(f);
     this.kerbSpeed = KERB_SPEED / Math.sqrt(f);
     this.max = 5;
@@ -647,7 +1005,20 @@ export class CargoLoad {
     // Acceleration rather than a height change, because a height change per
     // frame is a different number at 30 fps and at 60, and half this audience
     // is on an iPad.
-    if (this._y != null) {
+    //
+    // A van that reports its own landings is asked directly. The frame-to-
+    // frame detector below cannot tell falling from driving downhill: a
+    // steady 10% descent at 90 km/h is a vertical speed of -2.5 m/s, which
+    // is "falling", and the bottom of the hill stops it in a few frames,
+    // which is a "landing". Measured on Drover's Flat, following the arrow
+    // at a child's pace on the roads: "Hard landing" knocked the load on
+    // three of the five jobs, for driving down a hill.
+    if (typeof veh.landings === 'number') {
+      if (this._landings != null && veh.landings !== this._landings && veh.lastLanding > this.landLimit && speed > 6) {
+        this.knock('Hard landing', sim);
+      }
+      this._landings = veh.landings;
+    } else if (this._y != null) {
       const vy = (veh.pos.y - this._y) / dt;
       const wasFalling = this._vy < -2.2;
       const accel = Math.abs(vy - this._vy) / dt;
@@ -670,9 +1041,15 @@ export class CargoLoad {
      * no road to leave, there is no such thing as leaving the road.
      */
     if (sim && sim.roads) {
-      const surf = surfaceKind(veh.pos.x, veh.pos.z);
+      // What the van's own tyres say first. surfaceKind() asks
+      // Terrain.surfaceAt, which was never written, and falls back to the
+      // airfield's isPaved — so on every made road the load thought it was on
+      // grass and "off the road at speed" could never happen.
+      const surf = (veh.surface && veh.surface.kind) || surfaceKind(veh.pos.x, veh.pos.z);
       if (surf !== this._surface) {
-        const leftTheHard = this._surface === 'tarmac' && surf !== 'tarmac';
+        // Off the made road — tarmac or its gravel verge — onto the land.
+        const hard = (k) => k === 'tarmac' || k === 'gravel';
+        const leftTheHard = hard(this._surface) && !hard(surf);
         if (leftTheHard && speed > this.kerbSpeed) this.knock('Off the road at speed', sim);
         this._surface = surf;
       }
@@ -774,6 +1151,16 @@ function pushHud(ctx, dt) {
   if (typeof hud.setCargo === 'function') hud.setCargo(cargo.pips, cargo.max, cargo.name);
   if (typeof hud.setJobClock === 'function') hud.setJobClock(left, par);
 
+  /*
+   * The drive HUD is up: it draws the pips and the clock itself, from the
+   * state main.js hands it every frame. The fallback below went on writing
+   * "BOX OF SPANNERS ●●●●●" over the objective title once a second anyway,
+   * so the van showed its load twice — once as the drive HUD's pips, once
+   * as text in the title — and the job's name and step number, which
+   * onMissionStep had just put there, never stayed on screen.
+   */
+  if (sim.driveHud && sim.driveHud.active) return;
+
   // The fallback line. Throttled, because setObjective touches the DOM.
   if (typeof hud.setCargo === 'function' && typeof hud.setJobClock === 'function') return;
   ctx.data._hudT = (ctx.data._hudT || 0) + dt;
@@ -844,8 +1231,16 @@ function passed(ctx, target, r = 90) {
  * conditionFactor is simply pips/5, which makes a perfect load worth double a
  * half-wrecked one and a wrecked one worth nothing at all. That is the lesson
  * and it wants to be blunt.
+ *
+ * A clean run on the clock is 100 on every job, so `base` is at least 100.
+ * First Run was 70, the Shuttle 86 and the Coast Road 96, and none of them
+ * has a bonus: a flawless First Run (no clock, a load that cannot break)
+ * scored 70/100 under "Try it again for a better score", on a job where
+ * there is no better score to be had. A ten-year-old reads 70 as a fail.
+ * The harder jobs are still the harder 100s, because their clocks are
+ * tighter and their loads break.
  */
-function payFor(ctx, base = 88) {
+function payFor(ctx, base = 100) {
   const cargo = ctx.data.cargo;
   const cond = cargo ? cargo.condition : 1;
   const par = parOf(ctx);
@@ -858,8 +1253,14 @@ function payFor(ctx, base = 88) {
   /*
    * Clamped to 100, because the debrief screen renders the number as
    * "<score>/100" in big type and a 116 out of 100 is the kind of detail a
-   * ten-year-old notices immediately and never lets go of. The bonuses are
-   * still worth having: they are what lets a clean run reach 100 at all.
+   * ten-year-old notices immediately and never lets go of.
+   *
+   * `ctx.data.bonus` is set by three jobs' onComplete, and the runner calls
+   * onComplete AFTER it has worked out the score (runner.complete), so a
+   * bonus has never reached one: it is 0 here on every job. It no longer
+   * has to: with `base` at 100 or more a clean run on the clock is 100
+   * without it, which is what "they are what lets a clean run reach 100 at
+   * all" was hoping for.
    */
   return Math.max(0, Math.min(100, Math.round(base * timeFactor * cond + extra)));
 }
@@ -935,8 +1336,8 @@ export const CAR_JOBS = [
     steps: [
       {
         id: 'pickup',
-        text: 'The spanners are in the back. Hold Shift to pull away, and steer with A and D.',
-        hint: 'Shift goes, Ctrl slows down, Space is the brake. Take your time.',
+        text: 'The spanners are in the back. Hold W (or Shift) to pull away, and steer with A and D.',
+        hint: 'Shift goes. Ctrl is the brake — keep holding it once you stop and you back up. Take your time.',
         targetLabel: 'the town',
         target: (ctx) => place(ctx, 'town'),
         check: (ctx) => {
@@ -955,7 +1356,7 @@ export const CAR_JOBS = [
       {
         id: 'drop',
         text: 'Nearly there. Pull up next to the yard and stop.',
-        hint: 'Ease off with Ctrl and use Space to stop. You have to be stopped for it to count.',
+        hint: 'Brake with Ctrl, or pull the handbrake with Space. You have to be stopped for it to count.',
         targetLabel: 'the town yard',
         target: (ctx) => place(ctx, 'town'),
         check: (ctx) => arrived(ctx, place(ctx, 'town')),
@@ -965,7 +1366,7 @@ export const CAR_JOBS = [
       handedOver(ctx, 'the town yard', 'The spanners');
       ctx.sim.notify('That is the job. Every one after this has a clock on it.', 'info');
     },
-    score: (ctx) => payFor(ctx, 70),
+    score: (ctx) => payFor(ctx, 100),
   },
 
   {
@@ -995,9 +1396,19 @@ export const CAR_JOBS = [
     cargo: { name: 'AIR FREIGHT', fragility: 1 },
     spawn: { place: 'depot' },
     faceTowards: 'town',
-    route: (sim) => [placeOf(sim, 'depot'), placeOf(sim, 'town')],
+    /*
+     * Depot, apron, town — the job its own blurb describes.
+     *
+     * The crate step used to target the DEPOT, which is where the van starts,
+     * so "drive over to the aeroplane and stop beside the crate" completed on
+     * the first frame without anybody touching a key, and the apron the text
+     * talks about was never visited. On a map with an airfield place the crate
+     * is now on the apron; on one without, the apron IS the depot and it
+     * behaves exactly as it did.
+     */
+    route: (sim) => [placeOf(sim, 'depot'), placeOf(sim, 'apron'), placeOf(sim, 'town')],
     // Flat link road, all tarmac: the fastest average in the game.
-    plan: { legs: ['depot', 'town'], speed: 19, allow: 40 },
+    plan: { legs: ['depot', 'apron', 'town'], speed: 19, allow: 40 },
     maxSeconds: 480,
     onStart: (ctx) => {
       loadUp(ctx);
@@ -1010,8 +1421,9 @@ export const CAR_JOBS = [
         text: 'The crate is on the apron by the aeroplane. Drive over and stop beside it.',
         hint: 'It is the yellow crate on the tarmac. Stop next to it to load up.',
         targetLabel: 'the crate',
-        target: (ctx) => place(ctx, 'depot'),
-        check: (ctx) => arrived(ctx, place(ctx, 'depot'), 46),
+        marker: 'crate',
+        target: (ctx) => place(ctx, 'apron'),
+        check: (ctx) => arrived(ctx, place(ctx, 'apron'), 46),
         onDone: (ctx) => {
           ctx.sim.notify('Loaded. The town shop is expecting it — clock is running.', 'info');
         },
@@ -1027,14 +1439,14 @@ export const CAR_JOBS = [
       {
         id: 'deliver',
         text: 'Pull up at the shop and stop.',
-        hint: 'Stopped, within a few metres. Space is the brake.',
+        hint: 'Stopped, within a few metres. Ctrl is the brake.',
         targetLabel: 'the shop',
         target: (ctx) => place(ctx, 'town'),
         check: (ctx) => arrived(ctx, place(ctx, 'town')),
       },
     ],
     onComplete: (ctx) => handedOver(ctx, 'the shop', 'The air freight'),
-    score: (ctx) => payFor(ctx, 86),
+    score: (ctx) => payFor(ctx, 100),
   },
 
   {
@@ -1073,6 +1485,10 @@ export const CAR_JOBS = [
       const chain = coastChain(ctx.sim);
       ctx.data.splits = [];
       ctx.data.headlands = chain.headlands;
+      ctx.data.coastEnd = chain.lighthouse;
+      COAST_WORDS.end = chain.endLabel || 'the lighthouse';
+      COAST_WORDS.End = COAST_WORDS.end.charAt(0).toUpperCase() + COAST_WORDS.end.slice(1);
+      COAST_WORDS.lighthouse = !chain.endLabel;
       setPar(ctx);
     },
     tick: driveTick,
@@ -1082,8 +1498,8 @@ export const CAR_JOBS = [
         text: 'Crew and supper aboard. Out of town and onto the coast road.',
         hint: 'Follow the arrow — the coast road runs right round the island.',
         targetLabel: 'first headland',
-        target: (ctx) => ctx.data.headlands[0],
-        check: (ctx) => passed(ctx, ctx.data.headlands[0], 140),
+        target: (ctx) => headland(ctx, 0),
+        check: (ctx) => passed(ctx, headland(ctx, 0), 140),
         onDone: (ctx) => {
           ctx.data.splits.push(ctx.elapsed);
           ctx.sim.notify(`First headland · ${Math.round(ctx.elapsed)}s`, 'good');
@@ -1094,8 +1510,8 @@ export const CAR_JOBS = [
         text: 'Good. Keep the sea on one side and carry your speed through the bends.',
         hint: 'Braking for every corner loses more time than one slide costs you.',
         targetLabel: 'second headland',
-        target: (ctx) => ctx.data.headlands[1],
-        check: (ctx) => passed(ctx, ctx.data.headlands[1], 140),
+        target: (ctx) => headland(ctx, 1),
+        check: (ctx) => passed(ctx, headland(ctx, 1), 140),
         onDone: (ctx) => {
           ctx.data.splits.push(ctx.elapsed);
           ctx.sim.notify(`Second headland · ${Math.round(ctx.elapsed)}s`, 'good');
@@ -1103,11 +1519,17 @@ export const CAR_JOBS = [
       },
       {
         id: 'far',
-        text: 'Two down. Round the far side and on towards the light.',
-        hint: 'The lighthouse is the white tower on the point. The arrow knows.',
+        get text() {
+          return `Two down. Round the far side and on towards ${COAST_WORDS.end}.`;
+        },
+        get hint() {
+          return COAST_WORDS.lighthouse
+            ? 'The lighthouse is the white tower on the point. The arrow knows.'
+            : `${COAST_WORDS.End} is at the far end of the road. The arrow knows.`;
+        },
         targetLabel: 'third headland',
-        target: (ctx) => ctx.data.headlands[2],
-        check: (ctx) => passed(ctx, ctx.data.headlands[2], 140),
+        target: (ctx) => headland(ctx, 2),
+        check: (ctx) => passed(ctx, headland(ctx, 2), 140),
         onDone: (ctx) => {
           ctx.data.splits.push(ctx.elapsed);
           ctx.sim.notify(`Third headland · ${Math.round(ctx.elapsed)}s`, 'good');
@@ -1115,15 +1537,19 @@ export const CAR_JOBS = [
       },
       {
         id: 'light',
-        text: 'Last leg — up to the lighthouse and stop at the door.',
+        get text() {
+          return `Last leg — up to ${COAST_WORDS.end} and stop at the door.`;
+        },
         hint: 'Slow down early. The last hundred metres are usually gravel.',
-        targetLabel: 'the lighthouse',
-        target: (ctx) => place(ctx, 'lighthouse'),
-        check: (ctx) => arrived(ctx, place(ctx, 'lighthouse'), 44),
+        get targetLabel() {
+          return COAST_WORDS.end;
+        },
+        target: (ctx) => coastEnd(ctx),
+        check: (ctx) => arrived(ctx, coastEnd(ctx), 44),
       },
     ],
     onComplete: (ctx) => {
-      handedOver(ctx, 'the lighthouse crew', 'Supper');
+      handedOver(ctx, COAST_WORDS.lighthouse ? 'the lighthouse crew' : `the crew at ${COAST_WORDS.end}`, 'Supper');
       const s = ctx.data.splits || [];
       if (s.length === 3) {
         ctx.sim.notify(
@@ -1132,7 +1558,7 @@ export const CAR_JOBS = [
         );
       }
     },
-    score: (ctx) => payFor(ctx, 96),
+    score: (ctx) => payFor(ctx, 100),
   },
 
   {
@@ -1151,11 +1577,13 @@ export const CAR_JOBS = [
     parTime: 420,
     // The fragile one. This is the job the hairpins were generated for.
     cargo: { name: 'CHILLED VACCINE', fragility: 1.6 },
-    spawn: { place: 'town' },
+    // 'foot' is the town wherever the town is at the bottom of a climb, and
+    // the bottom of the climb wherever it is not — see networkClimb().
+    spawn: { place: 'foot' },
     faceTowards: 'summit',
-    route: (sim) => [placeOf(sim, 'town'), placeOf(sim, 'summit'), placeOf(sim, 'town')],
+    route: (sim) => [placeOf(sim, 'foot'), placeOf(sim, 'summit'), placeOf(sim, 'foot')],
     // Up and back down, at hairpin speed with glass in the back.
-    plan: { legs: ['town', 'summit', 'town'], speed: 12.5, allow: 50 },
+    plan: { legs: ['foot', 'summit', 'foot'], speed: 12.5, allow: 50 },
     maxSeconds: 660,
     /*
      * There has to be a mountain.
@@ -1167,9 +1595,12 @@ export const CAR_JOBS = [
      * steep is a wonderful version of this job. Long and flat is not a version
      * of it at all.
      */
-    availableOn: (sim) => placeOf(sim, 'summit').y - placeOf(sim, 'town').y > 60,
+    availableOn: (sim) => placeOf(sim, 'summit').y - placeOf(sim, 'foot').y > 60,
     onStart: (ctx) => {
       loadUp(ctx);
+      const net = networkOf(ctx.sim);
+      const c = net ? networkClimb(ctx.sim, net) : null;
+      SUMMIT_WORDS.foot = c && c.foot.name ? c.foot.name : 'the town';
       ctx.data.climbed = false;
       setPar(ctx);
       ctx.sim.notify('Glass vials. Five pips, and they are not coming back.', 'warn');
@@ -1210,15 +1641,22 @@ export const CAR_JOBS = [
       },
       {
         id: 'descend',
-        text: 'Empty crates back down to the town. Careful — the road is steeper than it looked.',
+        get text() {
+          return `Empty crates back down to ${SUMMIT_WORDS.foot}. Careful — the road is steeper than it looked.`;
+        },
         hint: 'Let the engine hold you back. Braking hard on a slope is what loses pips.',
-        targetLabel: 'the town',
-        target: (ctx) => place(ctx, 'town'),
-        check: (ctx) => arrived(ctx, place(ctx, 'town')),
+        get targetLabel() {
+          return SUMMIT_WORDS.foot;
+        },
+        target: (ctx) => place(ctx, 'foot'),
+        check: (ctx) => arrived(ctx, place(ctx, 'foot')),
       },
     ],
     onComplete: (ctx) => {
-      handedOver(ctx, 'the depot', 'The empties');
+      // Where the empties actually went: the foot of the climb, which the
+      // text has called the town (or the bottom of the lane) all the way down.
+      // "Delivered to the depot" was a place this job never goes.
+      handedOver(ctx, SUMMIT_WORDS.foot, 'The empties');
       const c = ctx.data.cargo;
       if (c && c.pips === 5) {
         ctx.data.bonus = 12;
@@ -1402,10 +1840,337 @@ export const CAR_JOBS = [
   },
 ];
 
+/*
+ * The drop-off marker goes when the job does.
+ *
+ * It is drawn and moved by updateDrive, and updateDrive stops running the
+ * moment the runner completes (the game goes to the debrief) — so the green
+ * beam stood behind "Job done!" on every job, pointing at a delivery that
+ * had been made. Car jobs never fail (see the top of this file), so the
+ * completion is the only way one ends; every job's own handover runs after
+ * the marker is put away.
+ */
+for (const job of CAR_JOBS) {
+  const handover = job.onComplete;
+  job.onComplete = (ctx, result) => {
+    const m = ctx && ctx.sim && ctx.sim.courierMarker;
+    if (m) m.hide();
+    if (handover) handover(ctx, result);
+    /*
+     * What the debrief needs to be the van's (see vanDebrief): which job this
+     * was, so "Drive again" can start it again, and what happened to the load.
+     * The game's onComplete runs straight after this and builds the debrief
+     * through menus.showDebrief, which the courier plug-in (below) reads this
+     * from. Left for it rather than pushed at the screen afterwards.
+     */
+    const sim = ctx && ctx.sim;
+    if (!sim) return;
+    const cargo = ctx.data && ctx.data.cargo;
+    const par = parOf(ctx);
+    sim._vanDone = {
+      id: job.id,
+      name: job.name,
+      score: result && result.score,
+      time: result && result.time != null ? result.time : ctx.elapsed,
+      pips: cargo ? cargo.pips : null,
+      max: cargo ? cargo.max : 5,
+      knocks: cargo ? cargo.knocks.slice() : [],
+      over: par ? Math.max(0, ctx.elapsed - par) : 0,
+    };
+  };
+}
+
+/*
+ * THE DEBRIEF, IN THE VAN'S WORDS, WITH THE VAN'S BUTTONS.
+ *
+ * There is one debrief for every mission, the aeroplane's (onMissionComplete
+ * in main.js): "Mission complete!", "Try it again for a better score" under a
+ * 100/100, and a "Fly again" button. The first pass changed those words on
+ * the screen a microtask after it was built, and only the words — so "Drive
+ * again" was still the aeroplane's button: restart() -> startMode('drive'),
+ * and startMode has no drive branch. The reviewer measured it: Car, Jobs,
+ * First Run to 100/100, "Drive again" -> a Skylark on Drover's Flat runway
+ * 09, "Free Flight · Hold Shift for full power", no van, no job. Low Tide the
+ * same.
+ *
+ * So the debrief a car job gets is built here, whole, from what the job
+ * recorded (sim._vanDone above), and handed to menus.showDebrief in place of
+ * the aeroplane's: the title, the score and time, what happened to the load
+ * and why, and three buttons that do van things — "Drive again" starts THIS
+ * job again through startDrive, "Jobs" is the board, "Main menu" the front
+ * page. It depends on nothing in the aeroplane's markup or wording, and if
+ * the game ever stops calling showDebrief this simply never runs.
+ */
+const KNOCK_TIPS = [
+  [/off the road/i, 'Lift off W when the arrow says SLOW DOWN, and the van stays on the road.'],
+  [/landing/i, 'Take the crests gently — the load does not like leaving the ground.'],
+  [/braking/i, 'Brake earlier and softer, and the load stays put.'],
+  // Before /water/: Low Tide's two knocks are the tide and "Water through
+  // the pump housing", and the sea was never the van's fault — the clock was.
+  [/tide/i, 'Beat the clock and you beat the tide.'],
+  [/water/i, 'Keep it out of the sea!'],
+];
+
+export function vanDebrief(sim, done, shown) {
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const score = Math.round(done.score || 0);
+  // Whole seconds first: rounding the remainder read 119.6 s as "1m 60s".
+  const t = Math.round(Math.max(0, done.time || 0));
+  const mins = Math.floor(t / 60);
+  const secs = t % 60;
+  const rows = [`<li>Time <b>${mins}m ${String(secs).padStart(2, '0')}s</b></li>`];
+  if (done.pips != null) {
+    rows.push(`<li>Load <b>${done.pips} of ${done.max || 5}</b>${done.pips === 0 ? ' (wrecked)' : ''}</li>`);
+  }
+  // What knocked it, counted, most often first: "Off the road at speed ×3".
+  const count = new Map();
+  for (const k of done.knocks || []) count.set(k, (count.get(k) || 0) + 1);
+  const knocks = [...count].sort((a, b) => b[1] - a[1]);
+  if (knocks.length) {
+    rows.push(`<li>Knocks <b>${knocks.map(([k, n]) => esc(k) + (n > 1 ? ` ×${n}` : '')).join(', ')}</b></li>`);
+  }
+  if (done.over > 1) rows.push(`<li>Over the clock by <b>${Math.round(done.over)} s</b></li>`);
+  // One thing to do better, the one that cost the most.
+  let tip = '';
+  for (const [k] of knocks) {
+    const hit = KNOCK_TIPS.find(([re]) => re.test(k));
+    if (hit) { tip = hit[1]; break; }
+  }
+  if (!tip && done.over > 1) tip = 'Beat the clock and it pays full rate.';
+  const words = score >= 100
+    ? 'Full marks. Take another job from the board, or drive this one again.'
+    : `${tip ? tip + ' ' : ''}Drive it again for a better score, or take another job from the board.`;
+  const id = done.id;
+  return {
+    title: score >= 100 ? 'Delivered!' : done.pips === 0 ? 'Delivered — but the load is wrecked' : 'Delivered!',
+    kind: (shown && shown.kind) || 'good',
+    body: `
+      <div class="debrief-score">${score}<span>/100</span></div>
+      <ul class="debrief-list">${rows.join('')}</ul>
+      <p>${esc(words)}</p>
+    `,
+    actions: [
+      // The job itself, again: the van, at the start, with a fresh load.
+      { label: 'Drive again', onClick: () => sim.startDrive('car', { job: id }), primary: true },
+      { label: 'Jobs', onClick: () => sim.quitToMenu('missions') },
+      { label: 'Main menu', onClick: () => sim.quitToMenu('main') },
+    ],
+  };
+}
+
 /** Find a job by id, the same way findMission() works for the aeroplane. */
 export function findJob(id) {
   return CAR_JOBS.find((j) => j.id === id) || null;
 }
+
+/*
+ * THE JOB'S SKY, BORROWED AND GIVEN BACK.
+ *
+ * Night Call-out's card says two in the morning and raining; startDrive loads
+ * that, and has to put the sky it found back afterwards. stopDrive did. But
+ * the pause menu's "Main menu" and the debrief's "Jobs" go through
+ * quitToMenu, which never calls stopDrive — measured: quit Night Call-out
+ * half way and the front page stayed night and rain until the next drive
+ * happened to start. quitToMenu does call every plug-in's stop hook, so the
+ * sky is given back from there as well as from stopDrive and startDrive; it
+ * is given back once, whichever gets there first.
+ */
+export function borrowJobSky(sim, def) {
+  if (!sim || !sim.weather || !def || !def.weather) return;
+  if (sim._weatherBeforeJob == null) sim._weatherBeforeJob = sim.weather.serialize();
+  sim.weather.load(def.weather);
+}
+
+export function giveBackJobSky(sim) {
+  if (!sim || sim._weatherBeforeJob == null || !sim.weather) return;
+  sim.weather.load(sim._weatherBeforeJob);
+  sim._weatherBeforeJob = null;
+}
+
+// No `return` from the hook: a stop hook that returns true stops the others.
+registerExtension({
+  id: 'courier-sky',
+  /*
+   * The boat started straight from the van, without stopDrive (startDrive
+   * calls straight through): the van's marker, arrow and sky go, as
+   * stopDrive's car branch would have done. main.js used to do this at the
+   * top of every startDrive, boat included.
+   */
+  startMode(sim, mode) {
+    if (mode === 'drive' && sim.vehicle && sim.vehicle.isBoat && sim.courierGuide) IslandRoads.van.stop(sim);
+  },
+  // The menu (quitToMenu) is reached without stopDrive: the beam behind the
+  // front page, and the night sky on it.
+  stop(sim) {
+    giveBackJobSky(sim);
+    if (sim.courierMarker) sim.courierMarker.hide();
+  },
+});
+
+/*
+ * EVERY WAY OF STARTING THE VAN AGAIN STARTS THE VAN.
+ *
+ * Three buttons a child presses in the van went to the aeroplane:
+ *
+ *   - the debrief's "Drive again" (fixed at the source: vanDebrief above);
+ *   - the pause menu's Restart, which is main.js restart() ->
+ *     startMode(this.mode, this.modeOpts) = startMode('drive', { kind: 'car',
+ *     job }). startMode has no drive branch, so it set up a Free Flight in
+ *     the Skylark on the runway — measured by the reviewer mid-job, and
+ *     measured again here before this: mode 'drive', no vehicle, runner
+ *     idle, "Free Flight" on the HUD;
+ *   - the pause menu's "Return to the airfield", which is returnToAirport():
+ *     the aeroplane put back on runway 09, "Back on runway 09, ready to go
+ *     again." on the HUD, and the job started again from its first step with
+ *     the van left wherever it was parked.
+ *
+ * restart(), startMode() and returnToAirport() are not the car's to edit, so
+ * the fix is here. The pause card's two buttons are caught before main.js
+ * sees them (install, below). Any other way to them lands in the two hooks
+ * they already call: startMode ends by
+ * calling every plug-in's startMode, and returnToAirport starts by calling
+ * every plug-in's stop('airport'). Either one, while the courier van is what
+ * is being driven, puts the van back where the job (or free drive) starts,
+ * through startDrive — which hides the menu, clears the HUD's toasts and
+ * starts the job afresh. It runs on a microtask, after the hook that asked
+ * for it and before the next frame, so nothing of the aeroplane is ever drawn
+ * and the other plug-ins' hooks are not called twice over in the middle of
+ * one another. Only the courier van: a tug the airport plug-in started from
+ * on foot has its own idea of what Restart means.
+ *
+ * And the debrief itself is swapped for the van's (see vanDebrief), by
+ * wrapping menus.showDebrief once at install. A debrief that is not for a
+ * car job that has just been delivered is passed through untouched. The
+ * pause card's numbers the same way (vanPauseInfo), and its two aeroplane
+ * button labels from the van's HUD (DriveHud.pauseWords).
+ *
+ * Measured with this in place, pressed the way a child presses them: "Drive
+ * again" after First Run, Restart mid-job and "Back to the start" mid-job
+ * each put the van back at the depot (947, -196), heading 182, First Run
+ * running from its first step, the aeroplane never drawn. The proper home
+ * for all three is restart() and returnToAirport() knowing about the van;
+ * until main.js's owner does that, this is what makes them right.
+ */
+/** The pause card in the van: what a driver would want to know, in km/h. */
+function vanPauseInfo(sim, v) {
+  const h = Math.round(((v.heading % 360) + 360) % 360);
+  const running = sim.runner && sim.runner.status === 'running' ? sim.runner : null;
+  const cargo = running && running.data && running.data.cargo;
+  const t = running ? Math.max(0, running.elapsed || 0) : 0;
+  const time = `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+  return `
+      <div class="pause-grid">
+        <span>Speed<b>${Math.round(Math.abs(v.speed) * 3.6)} km/h</b></span>
+        <span>Heading<b>${String(h).padStart(3, '0')}°</b></span>
+        <span>Job<b>${running && running.def ? running.def.name : 'Free drive'}</b></span>
+        ${cargo ? `<span>Load<b>${cargo.pips} of ${cargo.max || 5}</b></span>` : ''}
+        ${running ? `<span>Time<b>${time}</b></span>` : `<span>Trip<b>${((v.distance || 0) / 1000).toFixed(1)} km</b></span>`}
+      </div>
+    `;
+}
+
+/** The courier van (not the boat, not the airport's tug) is what is being driven. */
+function courierVanOut(sim) {
+  return sim.mode === 'drive' && !!sim.vehicle && !sim.vehicle.isBoat && !!sim.modeOpts && sim.modeOpts.kind === 'car';
+}
+
+function driveAgainOpts(opts) {
+  const o = { ...(opts || {}) };
+  delete o.kind;
+  return o;
+}
+
+registerExtension({
+  id: 'courier-van',
+  install(sim) {
+    const menus = sim && sim.menus;
+    if (!menus || typeof menus.showDebrief !== 'function' || menus._vanDebrief) return;
+    const shown = menus.showDebrief;
+    menus._vanDebrief = true;
+    menus.showDebrief = function (d) {
+      const done = sim._vanDone;
+      sim._vanDone = null;
+      const ours = done && sim.mode === 'drive' && sim.runner && sim.runner.def && sim.runner.def.id === done.id
+        && sim.runner.status === 'complete';
+      return shown.call(this, ours ? vanDebrief(sim, done, d) : d);
+    };
+    /*
+     * And the pause card's numbers. main.js pause() writes the aeroplane's
+     * whatever is being driven: measured in the van mid-job, "Speed 0 kt,
+     * Height 51 ft, Heading 090°, Fuel 100%" — the parked Skylark's, while
+     * the van stood at 54 km/h heading 182. In a van (anything driven that
+     * is not the boat) the card says the van's instead.
+     */
+    /*
+     * The pause card's Restart and "Back to the start", pressed in the courier
+     * van, go straight to startDrive: caught on the way down to the button
+     * (the capture phase on the pause screen), before menus.js hands them to
+     * main.js. Otherwise Restart first set up a whole Free Flight
+     * (restart() -> startMode, which also counts it as a flight) and the
+     * other one first put the aeroplane on runway 09 and said "Back on runway
+     * 09, ready to go again." — the van only came back a microtask later,
+     * through the hooks below, which stay for any other way those two are
+     * reached (the HUD's own buttons).
+     */
+    const pause = menus.screens && menus.screens.pause;
+    if (pause && !pause._vanClicks) {
+      pause._vanClicks = true;
+      pause.addEventListener('click', (e) => {
+        const b = e.target && e.target.closest ? e.target.closest('[data-act="restart"], [data-act="airport"]') : null;
+        if (!b || !courierVanOut(sim)) return;
+        e.stopPropagation();
+        e.preventDefault();
+        sim.startDrive('car', driveAgainOpts(sim.modeOpts));
+      }, true);
+    }
+    /*
+     * The same two in the HUD's ⋯ tray (Restart, and the airfield button the
+     * van's HUD calls "Back to the start"): caught on the tray, before the
+     * button's own handler, so they too go straight to the van rather than
+     * through a Free Flight or runway 09 and back.
+     */
+    const hud = sim.hud;
+    const tray = hud && hud.tray;
+    if (tray && !tray._vanClicks) {
+      tray._vanClicks = true;
+      tray.addEventListener('click', (e) => {
+        const b = e.target && e.target.closest ? e.target.closest('button') : null;
+        if (!b || (b !== hud.btnRestart && b !== hud.btnAirport) || !courierVanOut(sim)) return;
+        e.stopPropagation();
+        e.preventDefault();
+        b.blur();
+        if (typeof hud.setTrayOpen === 'function') hud.setTrayOpen(false);
+        sim.startDrive('car', driveAgainOpts(sim.modeOpts));
+      }, true);
+    }
+    if (typeof menus.setPauseInfo === 'function' && !menus._vanPause) {
+      const info = menus.setPauseInfo;
+      menus._vanPause = true;
+      menus.setPauseInfo = function (html) {
+        const v = sim.mode === 'drive' ? sim.vehicle : null;
+        return info.call(this, v && !v.isBoat ? vanPauseInfo(sim, v) : html);
+      };
+    }
+  },
+  startMode(sim, mode, opts) {
+    // Only startMode's own call arrives with no vehicle: startDrive builds the
+    // van before it calls the hooks.
+    if (mode !== 'drive' || sim.vehicle || !opts || opts.kind !== 'car') return;
+    const again = driveAgainOpts(opts);
+    queueMicrotask(() => {
+      if (sim.mode === 'drive' && !sim.vehicle) sim.startDrive('car', again);
+    });
+  },
+  stop(sim, why) {
+    if (why !== 'airport' || sim.mode !== 'drive' || !sim.vehicle) return;
+    const opts = sim.modeOpts || {};
+    if (opts.kind !== 'car') return;
+    const again = driveAgainOpts(opts);
+    queueMicrotask(() => {
+      if (sim.mode === 'drive') sim.startDrive('car', again);
+    });
+  },
+});
 
 /**
  * Town, three headlands and the light — the coast run, as a list of points.
@@ -1415,6 +2180,91 @@ export function findJob(id) {
  * Two copies of this would be two different coast roads.
  */
 function coastChain(sim) {
+  const net = networkOf(sim);
+  if (net) {
+    let hit = COAST_BY_NET.get(net);
+    if (hit === undefined) {
+      hit = coastChainOnRoads(sim, net);
+      COAST_BY_NET.set(net, hit);
+    }
+    if (hit) return hit;
+  }
+  return coastChainOverLand(sim);
+}
+
+/** The coast road's words for where it ends, for the step text. One job runs
+ *  at a time, so one set of words is enough; onStart writes them. */
+const COAST_WORDS = { end: 'the lighthouse', End: 'The lighthouse', lighthouse: true };
+/** The same for the Summit Relay: where the empties go back down to. */
+const SUMMIT_WORDS = { foot: 'the town' };
+const COAST_BY_NET = new WeakMap();
+
+/** A headland's point, from this run's data, or worked out if the run has
+ *  not started yet (the spawn asks the first step where it is going). */
+function headland(ctx, i) {
+  const h = ctx.data.headlands || coastChain(ctx.sim).headlands;
+  return h[i];
+}
+function coastEnd(ctx) {
+  return ctx.data.coastEnd || coastChain(ctx.sim).lighthouse;
+}
+
+/**
+ * The coast run on an island with roads: from the town to the far end of the
+ * network, by road, with the three split points a quarter, a half and three
+ * quarters of the way along it.
+ *
+ * The version below this marches to the coastline from the island's middle,
+ * which puts the three headlands wherever the shore happens to be — in a
+ * field, across a bay, on a beach no road goes near — and the lighthouse on
+ * Drover's Flat is Cobb Light, on its own rock four kilometres out to sea.
+ * The job was offered, the arrow pointed across the water, and it could not
+ * be finished. Here the end is a lighthouse the van can reach if there is
+ * one, and otherwise the place farthest from the town by road; the splits are
+ * on the tarmac by construction.
+ */
+function coastChainOnRoads(sim, net) {
+  const town = placeOf(sim, 'town');
+  let end = networkPlace(sim, 'lighthouse');
+  let label = null;
+  if (!end) {
+    const places = (sim.roads && sim.roads.places && sim.roads.places.length ? sim.roads.places : null)
+      || (MAP && MAP.courier && MAP.courier.places) || [];
+    let best = null;
+    for (const p of places) {
+      if (p.boatOnly) continue;
+      if (distanceToRoads(net, p.x, p.z, 200) > 150) continue;
+      const r = routeOnRoads(net, town, p);
+      if (!r) continue;
+      const L = routeLengthM(r);
+      if (!best || L > best.L) best = { p, L };
+    }
+    if (best) {
+      const near = nearestRoadPoint(net, best.p.x, best.p.z);
+      end = { x: near.x, z: near.z, name: best.p.name };
+      label = best.p.name || null;
+    } else {
+      // A network with no addresses: the far end of its own road, which on a
+      // coast road is exactly where a lighthouse would be.
+      const lh = placeOf(sim, 'lighthouse');
+      if (distanceToRoads(net, lh.x, lh.z, 200) > 150) return null;
+      end = { x: lh.x, z: lh.z, name: null };
+    }
+  }
+  const route = routeOnRoads(net, town, end);
+  if (!route) return null;
+  const L = routeLengthM(route);
+  if (L < 1200) return null;
+  const headlands = [0.25, 0.5, 0.75].map((f) => {
+    const a = alongRoute(route, L * f);
+    return onGround(a.x, a.z);
+  });
+  const lh = onGround(end.x, end.z);
+  return { town, headlands, lighthouse: lh, endLabel: label, points: [town, ...headlands, lh] };
+}
+
+/** The coast run on an island without roads: the original, over the land. */
+function coastChainOverLand(sim) {
   const main = (ISLANDS && ISLANDS[0]) || { cx: 0, cz: 0 };
   const town = placeOf(sim, 'town');
   const lh = placeOf(sim, 'lighthouse');
@@ -1448,8 +2298,43 @@ function coastChain(sim) {
  * build time can never come back, and a child who saw six jobs on Kestrel and
  * five on the fjords with no explanation assumes something is broken. Grey it
  * out and say why.
+ *
+ * GRADED ON THE ISLAND THE VAN WILL DRIVE, NOT THE ONE THAT IS LOADED.
+ *
+ * The board is opened from the menu, and the menu's island is the
+ * aeroplane's: Kestrel, unless you picked one. "Take this job" drives on
+ * sim.mapForGame('car') — Drover's Flat unless you picked one — and only
+ * loads it when you press it. Grading against whatever was loaded, the
+ * default Car board said Summit Relay was "Not on this island — it has not
+ * got the ground for it", because Kestrel has not; on Drover's Flat it is
+ * a 311 s job the arrow bot delivers with 5 pips. And the lengths were
+ * Kestrel's: Shuttle "about 1 minute" (164-190 s on Drover's Flat), Low
+ * Tide "about 3 minutes" (26-33 s). After a drive, quitToMenu puts Kestrel
+ * back, so it was wrong again every time the board was reopened.
+ *
+ * So a board is only graded while the van's own island is the one loaded —
+ * which is every time a drive starts (startDrive asks for one) — and
+ * remembered per island. Opened from the menu with some other island
+ * loaded, it shows what was last measured on the van's island; before
+ * anything has been, every job is open and the only note is the one that
+ * does not depend on an island ("No clock"), which is what the base game
+ * offered and is the truth on Drover's Flat.
  */
+const BOARDS = new Map();
 export function jobsFor(sim) {
+  const here = (MAP && MAP.id) || null;
+  const vans = sim && typeof sim.mapForGame === 'function' ? sim.mapForGame('car') : here;
+  if (vans && here && vans !== here) {
+    const known = BOARDS.get(vans);
+    if (known) return known;
+    return CAR_JOBS.map((job) => ({ job, available: true, note: job.plan ? '' : 'No clock', why: '' }));
+  }
+  const board = gradeBoard(sim);
+  if (here) BOARDS.set(here, board);
+  return board;
+}
+
+function gradeBoard(sim) {
   return CAR_JOBS.map((job) => {
     const secs = estimateSeconds(sim, job);
     /*
@@ -1467,17 +2352,44 @@ export function jobsFor(sim) {
     const suits = job.availableOn ? !!job.availableOn(sim) : true;
     const cap = job.maxSeconds || 900;
     const short = !secs || secs <= cap;
+    const road = suits ? byRoad(sim, job) : true;
     return {
       job,
-      available: suits && short,
+      available: suits && short && road,
       note: lengthNote(sim, job),
       why: !suits
         ? 'Not on this island — it has not got the ground for it'
-        : !short
-          ? `Too far on this island — ${Math.round(secs / 60)} minutes of driving`
-          : '',
+        : !road
+          ? 'Not on this island — no road goes there'
+          : !short
+            ? `Too far on this island — ${Math.round(secs / 60)} minutes of driving`
+            : '',
     };
   });
+}
+
+/**
+ * Can every stop on this job be reached by road?
+ *
+ * The third reason a job is off the board, and the one the board did not
+ * know about: on Drover's Flat the coast road's lighthouse is on a rock out
+ * at sea, so the job was offered, priced by the straight line to it, and
+ * impossible. Only asked on a map with a network; without one there is
+ * nothing to be off.
+ */
+function byRoad(sim, job) {
+  const net = networkOf(sim);
+  if (!net) return true;
+  let pts = null;
+  try {
+    pts = job.plan ? planPoints(sim, job) : typeof job.route === 'function' ? job.route(sim) : null;
+  } catch (e) {
+    return false;
+  }
+  if (!pts || pts.length < 2) return true;
+  for (const p of pts) if (distanceToRoads(net, p.x, p.z, 200) > 150) return false;
+  for (let i = 1; i < pts.length; i++) if (!routeOnRoads(net, pts[i - 1], pts[i])) return false;
+  return true;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1545,23 +2457,77 @@ export class IslandRoads {
    */
   constructor(sim) {
     this.sim = sim;
-    this.places = PLACE_NAMES.map((name) => ({
-      name,
-      label: PLACE_LABELS[name],
-      pos: placeOf(sim, name),
-      found: false,
-    }));
+    const net = networkOf(sim);
+    const depot = placeOf(sim, 'depot');
+    /*
+     * Only places a van can get to, and each spot only once.
+     *
+     * All six names used to go on the list whatever they resolved to, so on
+     * Drover's Flat the list had a lighthouse on a rock out at sea (never
+     * findable) and a "summit" that was a knoll 261 m from the depot — found
+     * by accident twelve seconds into the first drive, before the child had
+     * found the road. A place is on the list now if the road reaches it (or,
+     * on a map without roads, if it is on the same island as the depot), and
+     * two names that land on the same spot count once.
+     */
+    /*
+     * And only places that are really there.
+     *
+     * The list above still went through placeOf(), which never says no: a
+     * name the map does not have is worked out from the terrain and parked on
+     * the nearest road. On Drover's Flat "summit" came out as a bit of the
+     * depot road 260 m south of the van and eight metres higher, and "Found
+     * the summit relay · +30 credits" popped up nine seconds into the first
+     * drive, holding Shift, on the road out of the yard. So on a map that
+     * names its places, the list is those places — every one the road
+     * reaches, by the map's own name for it (Drover's Flat: the Airfield,
+     * Drover, Holt, Ferry Hard, Drover Relay, the Weather Station) — and
+     * nothing is on it that is less than a street away from where you start.
+     */
+    this.places = [];
+    const named = net
+      ? ((sim.roads && sim.roads.places && sim.roads.places.length ? sim.roads.places : null)
+        || (MAP && MAP.courier && MAP.courier.places) || []).filter((p) => !p.boatOnly)
+      : [];
+    const add = (name, label, pos) => {
+      if (this.places.some((p) => flatDist(p.pos, pos) < 150)) return;
+      this.places.push({ name, label, pos, found: false });
+    };
+    if (named.length) {
+      const home = named.find((p) => p.id === 'depot' || p.kind === 'depot');
+      add('depot', PLACE_LABELS.depot, depot);
+      for (const p of named) {
+        if (p === home || distanceToRoads(net, p.x, p.z, 200) > 150) continue;
+        const near = nearestRoadPoint(net, p.x, p.z);
+        const pos = near ? onGround(near.x, near.z) : onGround(p.x, p.z);
+        if (flatDist(pos, depot) < 400) continue;
+        add(p.id || p.kind, p.name || PLACE_LABELS[p.kind] || p.id, pos);
+      }
+    } else {
+      for (const name of PLACE_NAMES) {
+        // No "summit relay" on a road with no climb on it: the Summit job
+        // is off this island's board for exactly that reason.
+        if (net && name === 'summit' && !networkSummit(sim, net)) continue;
+        const pos = placeOf(sim, name);
+        if (net ? distanceToRoads(net, pos.x, pos.z, 200) > 150 : !(heightAt(pos.x, pos.z) > 1 && sameLandmass(depot, pos))) continue;
+        if (name !== 'depot' && flatDist(pos, depot) < 400) continue;
+        add(name, PLACE_LABELS[name], pos);
+      }
+    }
     /** Jobs on the board, in the order they are offered. The first two are the
      *  easy ones, because the board is also where a child who skipped the jobs
      *  screen meets the game. */
     this.board = jobsFor(sim).filter((e) => e.available).map((e) => e.job.id);
     this.foundCount = 0;
     // The depot is where you are standing; it does not count as a discovery.
-    const depot = this.places.find((p) => p.name === 'depot');
-    if (depot) {
-      depot.found = true;
+    const home = this.places.find((p) => p.name === 'depot');
+    if (home) {
+      home.found = true;
       this.foundCount = 1;
     }
+    this._next = null;
+    /** The one object target() hands back, refilled rather than re-made. */
+    this._target = { pos: null, label: '' };
   }
 
   /** Everything the minimap needs to write names on itself. Handed over rather
@@ -1579,6 +2545,64 @@ export class IslandRoads {
   }
 
   /**
+   * Where free drive points you next: the nearest place you have not found.
+   *
+   * "idk what to do" is the failure mode this whole mode exists to avoid, and
+   * a board of places with no arrow to any of them is that failure with a
+   * list attached. So free drive has an arrow too, to somewhere new.
+   */
+  target() {
+    const veh = this.sim.vehicle;
+    if (!veh) return null;
+    if (!this._next || this._next.found) {
+      this._next = this.pickNext(veh);
+      // Say where the arrow now goes, once, in the objective panel.
+      if (this.sim.hud && this.sim.hud.setObjective) this.sim.hud.setObjective('Island Roads', this.objective());
+    }
+    if (!this._next) return null;
+    this._target.pos = this._next.pos;
+    this._target.label = this._next.label;
+    return this._target;
+  }
+
+  /**
+   * The next place to send the van: the nearest BY ROAD, and one the road
+   * ahead leads to before one behind it.
+   *
+   * It was the nearest in a straight line. The van is parked facing along
+   * the road to the town (resolveSpawn), and on Drover's Flat and Cullen
+   * Sands the nearest place as the crow flies was back the other way, so the
+   * very first thing free drive ever said was TURN AROUND, 0 m — measured on
+   * both, on frame one. A place whose road leaves behind the van now counts
+   * as TURN_ROUND_M further away, so the arrow points up the road the van is
+   * already on unless nothing at all lies that way. Worked out only when the
+   * last place is found: a handful of routes, not one a frame.
+   */
+  pickNext(veh) {
+    const net = networkOf(this.sim);
+    let best = null;
+    let bestCost = Infinity;
+    for (const p of this.places) {
+      if (p.found) continue;
+      let cost = flatDist(veh.pos, p.pos);
+      const route = net ? routeOnRoads(net, veh.pos, p.pos) : null;
+      if (route) {
+        cost = routeLengthM(route);
+        const lead = alongRoute(route, Math.min(25, cost * 0.5));
+        if (lead) {
+          const off = Math.abs(((lead.headingDeg - veh.heading + 540) % 360) - 180);
+          if (off > 100) cost += TURN_ROUND_M;
+        }
+      }
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  /**
    * Per frame. Cheap: six distance checks, and nothing else at all unless you
    * have just arrived somewhere new.
    */
@@ -1590,6 +2614,7 @@ export class IslandRoads {
       if (flatDist(veh.pos, p.pos) > 120) continue;
       p.found = true;
       this.foundCount++;
+      this._next = null;
       const bounty = 20 + this.foundCount * 5;
       payCredits(this.sim, bounty, `Found ${p.label}`);
       if (this.sim.minimap && this.sim.minimap.setLabels) this.sim.minimap.setLabels(this.labels());
@@ -1605,8 +2630,976 @@ export class IslandRoads {
   /** The line the HUD shows when there is no job on. */
   objective() {
     const left = this.places.length - this.foundCount;
-    return left > 0
-      ? `No job on. ${left} place${left === 1 ? '' : 's'} on this island you have not been yet — go and find one.`
+    const t = this._next && !this._next.found ? this._next : null;
+    // Asked every frame by the HUD; worked out only when it changes.
+    if (this._objFor === t && this._objLeft === left && this._obj) return this._obj;
+    this._objFor = t;
+    this._objLeft = left;
+    this._obj = left > 0 && t
+      ? `No job on. Follow the arrow to ${t.label} — ${left} place${left === 1 ? '' : 's'} on this island you have not been yet.`
       : 'No job on. You have been everywhere on this island — take a job from the depot, or just drive.';
+    return this._obj;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * THE ARROW AND THE MARKER.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Keeps the turn arrow on a road route to wherever the job wants you now.
+ *
+ * The arrow's route used to be set once, when the job started, from
+ * `def.route(sim)` — two or three places joined by straight lines. So the
+ * arrow said STRAIGHT ON across the fields, never changed when the step did,
+ * and never noticed the van had gone a different way. This asks the road
+ * network for a route from where the van IS to where the current step
+ * wants it, and asks again when the step changes or when the van has been
+ * off that route for a second and a half.
+ */
+export class CourierGuide {
+  constructor(sim) {
+    this.sim = sim;
+    this.route = null;
+    this._gx = NaN;
+    this._gz = NaN;
+    this._off = 0;
+  }
+
+  /**
+   * @param {number} dt
+   * @param {object} veh     the van
+   * @param {{x:number,z:number}|null} goal
+   * @param {object} tracker the HUD's RouteTracker
+   */
+  update(dt, veh, goal, tracker) {
+    if (!veh || !tracker) return null;
+    if (!goal) {
+      if (this.route) {
+        this.route = null;
+        this._gx = NaN;
+        tracker.setRoute([]);
+      }
+      return null;
+    }
+    // A number compare, not a string key: this runs every frame.
+    let again = Math.abs(goal.x - this._gx) > 1 || Math.abs(goal.z - this._gz) > 1 || this._gx !== this._gx;
+    // And afresh from wherever the van is once it is no longer pinned against
+    // something: the route it had led into the thing (see aroundObstacles).
+    if ((veh.blockedT || 0) > 1) this._pinned = true;
+    else if (this._pinned) {
+      this._pinned = false;
+      again = true;
+    }
+    if (!again && tracker.offM != null && tracker.offM > PAVED_HALF + 22) {
+      this._off += dt;
+      if (this._off > 1.5) again = true;
+    } else {
+      this._off = 0;
+    }
+    if (again) {
+      this._gx = goal.x;
+      this._gz = goal.z;
+      this._off = 0;
+      const net = networkOf(this.sim);
+      const route = net ? routeOnRoads(net, veh.pos, goal) : null;
+      this.route = route || [{ x: veh.pos.x, z: veh.pos.z }, { x: goal.x, z: goal.z }];
+      // Off the road, the way back to it round whatever is in the way: on
+      // the grid first (wayBackToRoad), the corners of one box if that finds
+      // nothing.
+      if (!wayBackToRoad(this.route, veh.pos, goal, net)) aroundObstacles(this.route, veh.pos);
+      tracker.setRoute(this.route);
+    }
+    // Where the stop is and how big the zone around it is, for ARRIVING
+    // (RouteTracker.nearTheDrop): the job's own target and its smallest
+    // zone, not the end of the route, which past the drop-off is behind.
+    tracker.goalX = goal.x;
+    tracker.goalZ = goal.z;
+    tracker.arriveR = ARRIVE_R;
+    return this.route;
+  }
+}
+
+/*
+ * OFF THE ROAD, THE ARROW GOES ROUND THINGS.
+ *
+ * A route from a van on the grass starts with a straight line from the van
+ * to the nearest bit of road (routeOnRoads), and a straight line goes
+ * through whatever is in the way. The reviewer's arrow-following kid
+ * overshot a junction on Drover's Flat, crossed the grass into a building
+ * and sat against it for 140 s under "STRAIGHT ON 1.6 km"; measured again
+ * here from the grass behind six Drover's Flat buildings, the arrow pointed
+ * through the wall every time (LEFT, RIGHT or STRAIGHT ON, into it).
+ *
+ * So that first leg is checked against the collision boxes (grown by LEG_CLEAR, the van's half
+ * width and some room to wander), and where it crosses one the route goes round the
+ * box's nearer side: by one corner of it grown by ROUND_M, or two if one
+ * will not do. The legs that makes are checked again, a few times over, for
+ * a building behind a building. Only when the route is worked out — when
+ * the step changes, or the van has been off it for a second and a half — and
+ * only against the boxes near that leg.
+ */
+const LEG_CLEAR = 2;
+const ROUND_M = 5;
+
+/** Where along a→b (0..1) it enters the box grown by g, or -1. */
+function legEnters(ax, az, bx, bz, o, g) {
+  let t0 = 0;
+  let t1 = 1;
+  const dx = bx - ax;
+  const dz = bz - az;
+  const x0 = o.x0 - g;
+  const x1 = o.x1 + g;
+  const z0 = o.z0 - g;
+  const z1 = o.z1 + g;
+  if (Math.abs(dx) < 1e-9) {
+    if (ax < x0 || ax > x1) return -1;
+  } else {
+    let u0 = (x0 - ax) / dx;
+    let u1 = (x1 - ax) / dx;
+    if (u0 > u1) [u0, u1] = [u1, u0];
+    t0 = Math.max(t0, u0);
+    t1 = Math.min(t1, u1);
+    if (t0 > t1) return -1;
+  }
+  if (Math.abs(dz) < 1e-9) {
+    if (az < z0 || az > z1) return -1;
+  } else {
+    let u0 = (z0 - az) / dz;
+    let u1 = (z1 - az) / dz;
+    if (u0 > u1) [u0, u1] = [u1, u0];
+    t0 = Math.max(t0, u0);
+    t1 = Math.min(t1, u1);
+    if (t0 > t1) return -1;
+  }
+  return t0;
+}
+
+/** How far (x, z) is from box o, 0 inside it. */
+function boxDist(x, z, o) {
+  return Math.hypot(Math.max(o.x0 - x, 0, x - o.x1), Math.max(o.z0 - z, 0, z - o.z1));
+}
+
+/**
+ * The room a leg from (x, z) is given past box o: LEG_CLEAR, or less when
+ * the van is already nearer than that (backed off a wall it was pinned
+ * against, say) — so the way round it still counts as clear, and the way
+ * through it still does not. Measured: planned from 0.75 m off a Drover's
+ * Flat wall with the full 2 m, the van was "inside" the box and the arrow
+ * went through it.
+ */
+function roomFrom(x, z, o) {
+  return Math.min(LEG_CLEAR, Math.max(0, boxDist(x, z, o) - 0.05));
+}
+
+/** The first box a van driving a→b would hit, or null. Not one it starts in. */
+function firstInTheWay(ax, az, bx, bz) {
+  const list = Terrain.OBSTACLES || [];
+  const lx0 = Math.min(ax, bx) - 8;
+  const lx1 = Math.max(ax, bx) + 8;
+  const lz0 = Math.min(az, bz) - 8;
+  const lz1 = Math.max(az, bz) + 8;
+  let best = null;
+  let bestT = Infinity;
+  for (let i = 0; i < list.length; i++) {
+    const o = list[i];
+    if (o.x1 < lx0 || o.x0 > lx1 || o.z1 < lz0 || o.z0 > lz1) continue;
+    // At a van's bonnet height where it stands: not a bridge overhead.
+    const h = heightAt((o.x0 + o.x1) / 2, (o.z0 + o.z1) / 2);
+    if (o.y0 > h + 1.5 || o.y1 < h + 0.6) continue;
+    // Starting inside it, there is no going round it from here.
+    if (boxDist(ax, az, o) <= 0) continue;
+    const t = legEnters(ax, az, bx, bz, o, roomFrom(ax, az, o));
+    if (t >= 0 && t < bestT) {
+      bestT = t;
+      best = o;
+    }
+  }
+  return best;
+}
+
+/** Corners, a→(corners)→b, that go round box o; the shortest, or null. */
+function roundBox(ax, az, bx, bz, o) {
+  // `round`: the HUD's tracker aims AT these rather than cutting past them
+  // (see RouteTracker.next), or the arrow points across the building's corner.
+  const cs = [
+    { x: o.x0 - ROUND_M, z: o.z0 - ROUND_M, round: true, grass: true },
+    { x: o.x1 + ROUND_M, z: o.z0 - ROUND_M, round: true, grass: true },
+    { x: o.x1 + ROUND_M, z: o.z1 + ROUND_M, round: true, grass: true },
+    { x: o.x0 - ROUND_M, z: o.z1 + ROUND_M, round: true, grass: true },
+  ];
+  const clear = (px, pz, qx, qz) => legEnters(px, pz, qx, qz, o, roomFrom(px, pz, o)) < 0;
+  const len = (px, pz, qx, qz) => Math.hypot(qx - px, qz - pz);
+  let best = null;
+  let bestL = Infinity;
+  for (let i = 0; i < 4; i++) {
+    const c = cs[i];
+    if (clear(ax, az, c.x, c.z) && clear(c.x, c.z, bx, bz)) {
+      const L = len(ax, az, c.x, c.z) + len(c.x, c.z, bx, bz);
+      if (L < bestL) {
+        bestL = L;
+        best = [c];
+      }
+    }
+  }
+  if (best) return best;
+  // Round two corners: the far side of the box from where the van is.
+  for (let i = 0; i < 4; i++) {
+    for (const j of [(i + 1) % 4, (i + 3) % 4]) {
+      const c = cs[i];
+      const d = cs[j];
+      if (clear(ax, az, c.x, c.z) && clear(d.x, d.z, bx, bz)) {
+        const L = len(ax, az, c.x, c.z) + len(c.x, c.z, d.x, d.z) + len(d.x, d.z, bx, bz);
+        if (L < bestL) {
+          bestL = L;
+          best = [c, d];
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/** Points to put between a and b so that a van driving them misses things. */
+function detour(ax, az, bx, bz, depth) {
+  if (depth > 3) return [];
+  const o = firstInTheWay(ax, az, bx, bz);
+  if (!o) return [];
+  const via = roundBox(ax, az, bx, bz, o);
+  if (!via) return [];
+  const out = [];
+  let px = ax;
+  let pz = az;
+  for (const c of via) {
+    out.push(...detour(px, pz, c.x, c.z, depth + 1), c);
+    px = c.x;
+    pz = c.z;
+  }
+  out.push(...detour(px, pz, bx, bz, depth + 1));
+  return out;
+}
+
+/**
+ * The route's first leg, when it starts on the grass (from the van, not
+ * from the road), round what is in the way. In place. The legs along the
+ * roads are left alone: the tarmac is cleared of scenery
+ * (clearRoadsOfScenery), and a detour there would take the arrow off a road
+ * that was fine. Every goal is on the road (the markers, and free drive's
+ * places, are put on it), so the last leg is never on the grass.
+ */
+export function aroundObstacles(route, from) {
+  if (!route || route.length < 2 || !from) return route;
+  if (route[0].x !== from.x || route[0].z !== from.z) return route;
+  // The leg across the grass (the HUD's arrow leans on it rather than
+  // saying TURN AROUND): not a van on the tarmac a few metres off the middle.
+  if (Math.hypot(route[1].x - from.x, route[1].z - from.z) > PAVED_HALF) route[0].grass = true;
+  const via = detour(route[0].x, route[0].z, route[1].x, route[1].z, 0);
+  if (via.length) route.splice(1, 0, ...via);
+  return route;
+}
+
+/*
+ * OFF THE ROAD IN A TOWN: THE WAY BACK, ON A GRID.
+ *
+ * roundBox goes round ONE box, by a corner five metres out from it, and
+ * checks that corner against that box alone. That was enough for the
+ * scattered houses the town used to be. The town is now laid along its
+ * streets (scenery.js layTown): houses shoulder to shoulder down both sides,
+ * 1.5 to 6 m apart, each turned square to the street and each registering
+ * the axis-aligned box round it, so on a street that is not north-south the
+ * boxes of neighbours all but touch. Behind a row of them on Drover's Flat
+ * the corner picked round one house was INSIDE the next one (measured
+ * behind the house at 1414,853: the arrow led to 1403,864, in the house at
+ * 1397-1411 x 861-874), the van was pinned, and the re-plan from there said
+ * TURN AROUND with the arrow straight up; the kid who drives by the arrow
+ * drove off across the island. Five of six such starts never got back to
+ * the road in a minute, and 7 of 36 stops round First Run's yard never
+ * delivered.
+ *
+ * So when the straight line to the road is blocked, the way back is
+ * searched on a 1.5 m grid round the van and the road it is making for:
+ * every box at bonnet height, grown by the van's half-width and some, is
+ * solid (a gap under 3.2 m between two houses is shut: a child cannot
+ * thread one); nearer than 3.2 m to one it costs three times as much, so
+ * the way keeps off walls where it can. The search ends on whichever bit of
+ * road is cheapest counting the drive ALONG the road to the goal afterwards,
+ * so it does not come out on a street that then has to be driven back the
+ * other way. The path is pulled straight between the corners it really has
+ * to turn at, and each of those is a `round` corner (the HUD aims at it
+ * rather than cutting it). Only when the route is worked out, as before.
+ */
+const GRID_M = 1.5;
+const GRID_PAD = 60;
+const GRID_MAX = 300;
+/** Nearer a box than this and the cell is solid: the van's half-width and some. */
+const HARD_M = 1.6;
+/** Nearer than this and it costs SOFT_COST times as much. */
+const SOFT_M = 3.2;
+const SOFT_COST = 3;
+
+/** A binary heap of (key, value) pairs in two growable typed arrays. */
+class GridHeap {
+  constructor(cap = 4096) {
+    this.k = new Float64Array(cap);
+    this.v = new Int32Array(cap);
+    this.size = 0;
+    this.top = 0;
+  }
+  push(key, val) {
+    if (this.size === this.k.length) {
+      const k = new Float64Array(this.size * 2);
+      const v = new Int32Array(this.size * 2);
+      k.set(this.k);
+      v.set(this.v);
+      this.k = k;
+      this.v = v;
+    }
+    const K = this.k;
+    const V = this.v;
+    let i = this.size++;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (K[p] <= key) break;
+      K[i] = K[p];
+      V[i] = V[p];
+      i = p;
+    }
+    K[i] = key;
+    V[i] = val;
+  }
+  /** Pops the smallest value; its key is left in `this.top`. */
+  pop() {
+    const K = this.k;
+    const V = this.v;
+    const out = V[0];
+    this.top = K[0];
+    const n = --this.size;
+    if (n > 0) {
+      const key = K[n];
+      const val = V[n];
+      let i = 0;
+      for (;;) {
+        const l = i * 2 + 1;
+        if (l >= n) break;
+        const r = l + 1;
+        const m = r < n && K[r] < K[l] ? r : l;
+        if (K[m] >= key) break;
+        K[i] = K[m];
+        V[i] = V[m];
+        i = m;
+      }
+      K[i] = key;
+      V[i] = val;
+    }
+    return out;
+  }
+}
+
+/** Road distance to the goal from every node of the network, remembered per goal. */
+let _toGoal = null;
+function roadToGoal(net, goal) {
+  const c = _toGoal;
+  if (c && c.net === net && c.x === goal.x && c.z === goal.z) return c.nodes;
+  const nodes = roadDistancesFrom(net, goal);
+  _toGoal = { net, x: goal.x, z: goal.z, nodes };
+  return nodes;
+}
+
+/**
+ * The way from `from` (off the road) back onto it, round everything in the
+ * way, for a van making for `goal`: { via, end } — the corners to drive
+ * through, and the point on the tarmac it comes out on — or null if the
+ * grid finds none. `entry` is the road point nearest the van, which the
+ * grid is laid round.
+ */
+function gridWayToRoad(net, from, goal, entry) {
+  const g = roadGraph(net);
+  const toGoal = g && roadToGoal(net, goal);
+  if (!g || !toGoal || toGoal.length !== g.nodes.length) return null;
+  const span = Math.min(GRID_MAX, Math.max(Math.abs(entry.x - from.x), Math.abs(entry.z - from.z)) + 2 * GRID_PAD);
+  const n = Math.ceil(span / GRID_M);
+  const half = (n * GRID_M) / 2;
+  const clampTo = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const cx = clampTo((from.x + entry.x) / 2, from.x - half + 20, from.x + half - 20);
+  const cz = clampTo((from.z + entry.z) / 2, from.z - half + 20, from.z + half - 20);
+  const x0 = cx - half;
+  const z0 = cz - half;
+  const X1 = x0 + n * GRID_M;
+  const Z1 = z0 + n * GRID_M;
+  const N = n * n;
+
+  // 0 open, 1 near a wall, 2 solid.
+  const block = new Uint8Array(N);
+  const list = Terrain.OBSTACLES || [];
+  for (let q = 0; q < list.length; q++) {
+    const o = list[q];
+    if (o.x1 < x0 - SOFT_M || o.x0 > X1 + SOFT_M || o.z1 < z0 - SOFT_M || o.z0 > Z1 + SOFT_M) continue;
+    // At a van's bonnet height where it stands, as firstInTheWay asks.
+    const h = heightAt((o.x0 + o.x1) / 2, (o.z0 + o.z1) / 2);
+    if (o.y0 > h + 1.5 || o.y1 < h + 0.6) continue;
+    for (let pass = 0; pass < 2; pass++) {
+      const grow = pass ? HARD_M : SOFT_M;
+      const val = pass ? 2 : 1;
+      const i0 = Math.max(0, Math.ceil((o.x0 - grow - x0) / GRID_M - 0.5));
+      const i1 = Math.min(n - 1, Math.floor((o.x1 + grow - x0) / GRID_M - 0.5));
+      const j0 = Math.max(0, Math.ceil((o.z0 - grow - z0) / GRID_M - 0.5));
+      const j1 = Math.min(n - 1, Math.floor((o.z1 + grow - z0) / GRID_M - 0.5));
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const k = j * n + i;
+          if (block[k] < val) block[k] = val;
+        }
+      }
+    }
+  }
+
+  // Where the road is, and how far along it the goal is from there.
+  const goalCost = new Float64Array(N).fill(Infinity);
+  let roadCells = 0;
+  const R = PAVED_HALF - 1.5;
+  const rc = Math.ceil(R / GRID_M);
+  for (let e = 0; e < g.edges.length; e++) {
+    const E = g.edges[e];
+    const A = g.nodes[E.a];
+    const B = g.nodes[E.b];
+    if (Math.max(A.x, B.x) < x0 - R || Math.min(A.x, B.x) > X1 + R || Math.max(A.z, B.z) < z0 - R || Math.min(A.z, B.z) > Z1 + R) continue;
+    const dA = toGoal[E.a].d;
+    const dB = toGoal[E.b].d;
+    if (!(dA < Infinity) && !(dB < Infinity)) continue;
+    const steps = Math.max(1, Math.ceil(E.len / GRID_M));
+    for (let st = 0; st <= steps; st++) {
+      const t = st / steps;
+      const px = A.x + (B.x - A.x) * t;
+      const pz = A.z + (B.z - A.z) * t;
+      const dv = Math.min(dA + t * E.len, dB + (1 - t) * E.len);
+      const ci = Math.floor((px - x0) / GRID_M);
+      const cj = Math.floor((pz - z0) / GRID_M);
+      for (let j = cj - rc; j <= cj + rc; j++) {
+        if (j < 0 || j >= n) continue;
+        for (let i = ci - rc; i <= ci + rc; i++) {
+          if (i < 0 || i >= n) continue;
+          const qx = x0 + (i + 0.5) * GRID_M - px;
+          const qz = z0 + (j + 0.5) * GRID_M - pz;
+          if (qx * qx + qz * qz > R * R) continue;
+          const k = j * n + i;
+          if (block[k] >= 2) continue;
+          if (goalCost[k] === Infinity) roadCells++;
+          if (dv < goalCost[k]) goalCost[k] = dv;
+        }
+      }
+    }
+  }
+  if (!roadCells) return null;
+
+  const si = Math.floor((from.x - x0) / GRID_M);
+  const sj = Math.floor((from.z - z0) / GRID_M);
+  if (si < 0 || sj < 0 || si >= n || sj >= n) return null;
+  const start = sj * n + si;
+  const dist = new Float64Array(N).fill(Infinity);
+  const prev = new Int32Array(N).fill(-1);
+  const heap = new GridHeap();
+  dist[start] = 0;
+  heap.push(0, start);
+  const DI = [1, -1, 0, 0, 1, 1, -1, -1];
+  const DJ = [0, 0, 1, -1, 1, -1, 1, -1];
+  let end = -1;
+  while (heap.size) {
+    const v = heap.pop();
+    const d = heap.top;
+    // A finish: the road reached, with the rest of the way along it added.
+    if (v < 0) {
+      end = -v - 1;
+      break;
+    }
+    if (d > dist[v]) continue;
+    if (goalCost[v] < Infinity) heap.push(d + goalCost[v], -v - 1);
+    const i = v % n;
+    const j = (v - i) / n;
+    const here = block[v];
+    for (let m = 0; m < 8; m++) {
+      const ii = i + DI[m];
+      const jj = j + DJ[m];
+      if (ii < 0 || jj < 0 || ii >= n || jj >= n) continue;
+      const w = jj * n + ii;
+      const b = block[w];
+      // Never INTO a wall; out of one (a van pinned against it) at a price.
+      if (b >= 2 && here < 2) continue;
+      // No squeezing diagonally between two walls' corners.
+      if (m >= 4 && here < 2 && (block[j * n + ii] >= 2 || block[jj * n + i] >= 2)) continue;
+      const step = (m >= 4 ? Math.SQRT2 : 1) * GRID_M * (b >= 2 ? 8 : b ? SOFT_COST : 1);
+      const nd = d + step;
+      if (nd < dist[w]) {
+        dist[w] = nd;
+        prev[w] = v;
+        heap.push(nd, w);
+      }
+    }
+  }
+  if (end < 0) return null;
+
+  // The cells, van to road...
+  const path = [];
+  for (let c = end; c !== -1; c = prev[c]) path.push(c);
+  path.reverse();
+  const at = (c) => ({ x: x0 + ((c % n) + 0.5) * GRID_M, z: z0 + (Math.floor(c / n) + 0.5) * GRID_M });
+  // ...pulled straight: from each corner, as far along as can be seen
+  // without crossing anything worse than the path itself crossed there.
+  const worst = (a, b) => {
+    let w = 0;
+    for (let q = a; q <= b; q++) if (block[path[q]] > w) w = block[path[q]];
+    return w;
+  };
+  const seen = (p, qc, allow) => {
+    const L = Math.hypot(qc.x - p.x, qc.z - p.z);
+    const steps = Math.max(1, Math.ceil(L / (GRID_M * 0.5)));
+    for (let s2 = 1; s2 < steps; s2++) {
+      const x = p.x + ((qc.x - p.x) * s2) / steps;
+      const z = p.z + ((qc.z - p.z) * s2) / steps;
+      const ci = Math.floor((x - x0) / GRID_M);
+      const cj = Math.floor((z - z0) / GRID_M);
+      if (ci < 0 || cj < 0 || ci >= n || cj >= n) return false;
+      if (block[cj * n + ci] > allow) return false;
+    }
+    return true;
+  };
+  const via = [];
+  let a = 0;
+  let pa = { x: from.x, z: from.z };
+  while (a < path.length - 1) {
+    let b = a + 1;
+    while (b + 1 < path.length && seen(pa, at(path[b + 1]), worst(a, b + 1))) b++;
+    const pt = at(path[b]);
+    if (b < path.length - 1) via.push({ x: pt.x, z: pt.z, round: true, grass: true });
+    pa = pt;
+    a = b;
+  }
+  return { via, end: at(path[path.length - 1]) };
+}
+
+/**
+ * The route's first leg, when it starts off the road and something stands
+ * between the van and the road, replaced by the way round it on the grid
+ * (gridWayToRoad) and the road from where that comes out. In place; true
+ * when the route needs nothing more (the way is clear, or it was re-planned),
+ * false to fall back to aroundObstacles.
+ */
+function wayBackToRoad(route, from, goal, net) {
+  if (!net || !route || route.length < 2 || !from || !goal) return false;
+  if (route[0].x !== from.x || route[0].z !== from.z) return false;
+  if (Math.hypot(route[1].x - from.x, route[1].z - from.z) > PAVED_HALF) route[0].grass = true;
+  if (!firstInTheWay(route[0].x, route[0].z, route[1].x, route[1].z)) return true;
+  const way = gridWayToRoad(net, from, goal, route[1]);
+  if (!way) return false;
+  const rest = routeOnRoads(net, way.end, goal) || [way.end, { x: goal.x, z: goal.z }];
+  const out = [{ x: from.x, z: from.z, grass: true }, ...way.via, ...rest];
+  route.length = 0;
+  for (const p of out) {
+    const last = route[route.length - 1];
+    if (!last || Math.hypot(p.x - last.x, p.z - last.z) > 0.5) route.push(p);
+  }
+  if (route.length < 2) route.push({ x: goal.x, z: goal.z });
+  return true;
+}
+
+/**
+ * The place you are driving to, drawn where it is: a ring on the road, a
+ * short column of light and a bobbing arrow over it. Yellow to pick up,
+ * green to drop off, blue for a split you drive through.
+ *
+ * The aeroplane's beacon is 1,400 m tall, stands at sea level whatever the
+ * ground height, and is not updated while driving at all — so the car had
+ * either nothing, or the aeroplane's guidance rails frozen wherever the last
+ * flight left them. This one is the size of a delivery bay and is put on the
+ * ground at the target every frame it moves.
+ */
+export class DropMarker {
+  constructor(scene) {
+    this.scene = scene;
+    this.group = new THREE.Group();
+    this.group.name = 'courier-drop';
+    this.group.visible = false;
+    this.t = 0;
+    this.kind = '';
+    this.at = { x: NaN, z: NaN };
+
+    this.colour = new THREE.Color(0x5be38a);
+    const ringGeo = new THREE.RingGeometry(5.2, 6.4, 40);
+    ringGeo.rotateX(-Math.PI / 2);
+    this.ringMat = new THREE.MeshBasicMaterial({ color: this.colour, transparent: true, opacity: 0.8, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
+    this.ring = new THREE.Mesh(ringGeo, this.ringMat);
+    this.ring.position.y = 0.2;
+    this.group.add(this.ring);
+
+    const beamGeo = new THREE.CylinderGeometry(1.1, 1.6, 16, 14, 1, true);
+    beamGeo.translate(0, 8, 0);
+    this.beamMat = new THREE.MeshBasicMaterial({ color: this.colour, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+    this.group.add(new THREE.Mesh(beamGeo, this.beamMat));
+
+    const arrowGeo = new THREE.ConeGeometry(1.6, 3, 4);
+    arrowGeo.rotateX(Math.PI);
+    this.arrowMat = new THREE.MeshStandardMaterial({ color: this.colour, emissive: this.colour, emissiveIntensity: 0.6, roughness: 0.5 });
+    this.arrow = new THREE.Mesh(arrowGeo, this.arrowMat);
+    this.arrow.position.y = 10;
+    this.group.add(this.arrow);
+
+    // The crate the shuttle's text talks about.
+    this.crate = new THREE.Mesh(
+      new THREE.BoxGeometry(1.3, 1.1, 1.3),
+      new THREE.MeshStandardMaterial({ color: 0xe0a82e, roughness: 0.8 })
+    );
+    this.crate.position.y = 0.55;
+    this.crate.castShadow = true;
+    this.crate.visible = false;
+    this.group.add(this.crate);
+
+    scene.add(this.group);
+  }
+
+  /** @param {{x:number,z:number}|null} pos   @param {string} kind 'pickup'|'drop'|'pass'|'crate' */
+  set(pos, kind = 'drop') {
+    if (!pos) {
+      this.group.visible = false;
+      return;
+    }
+    this.group.visible = true;
+    if (pos.x !== this.at.x || pos.z !== this.at.z) {
+      this.at.x = pos.x;
+      this.at.z = pos.z;
+      this.group.position.set(pos.x, Math.max(0, groundHeight(pos.x, pos.z)), pos.z);
+    }
+    if (kind !== this.kind) {
+      this.kind = kind;
+      const hex = kind === 'pass' ? 0x62c8ff : kind === 'drop' ? 0x5be38a : 0xffc53d;
+      this.colour.setHex(hex);
+      this.ringMat.color.setHex(hex);
+      this.beamMat.color.setHex(hex);
+      this.arrowMat.color.setHex(hex);
+      this.arrowMat.emissive.setHex(hex);
+      this.crate.visible = kind === 'crate';
+    }
+  }
+
+  update(dt) {
+    if (!this.group.visible) return;
+    this.t += dt;
+    this.arrow.position.y = 10 + Math.sin(this.t * 2.2) * 0.8;
+    this.arrow.rotation.y += dt * 1.4;
+    this.ringMat.opacity = 0.62 + Math.sin(this.t * 3) * 0.18;
+  }
+
+  hide() {
+    this.group.visible = false;
+  }
+}
+
+/** What kind of marker a step wants: split points are driven through. */
+export function markerKind(step) {
+  if (!step) return 'drop';
+  if (step.marker) return step.marker;
+  return PASS_WORDS.test(step.targetLabel || '') ? 'pass' : 'drop';
+}
+// Hoisted: a regex literal inside markerKind is a new RegExp every frame.
+const PASS_WORDS = /headland|split/i;
+
+/* ------------------------------------------------------------------ *
+ * THE VAN'S SHARE OF startDrive, updateDrive AND stopDrive.
+ * ------------------------------------------------------------------ */
+
+/*
+ * main.js's car branches, kept here and reached as IslandRoads.van.
+ *
+ * The first pass wrote all of this into main.js and widened three import
+ * lines there to reach it (roads.js, surface.js and this file's), and put
+ * some of it in startDrive, updateDrive and stopDrive where it ran for the
+ * boat as well. The reviewer blocked those as edits outside the car
+ * branches: the import lines are shared with every other team (the boat's
+ * owns half of surface.js), and a line the boat runs is the boat's too.
+ * IslandRoads is what main.js has always imported from here, so the car
+ * branches call through it and main.js's imports are as they were. Each
+ * function says which branch calls it.
+ */
+const VAN_M = { lift: 0, model: null };
+const _vanBox = new THREE.Box3();
+
+/**
+ * The island made ready for a van, once per world: trees and the odd house
+ * that the scatter planted on the tarmac taken off it, the crop patches
+ * drawn over it taken off, and the road ribbon moved onto the terrain
+ * triangles actually built at this quality setting. Both no-ops the second
+ * time round. Then the wheels ride the ground that is drawn, not the one
+ * behind it: the tarmac where the tarmac is, the grass everywhere else.
+ *
+ * Again whenever the world is rebuilt under a van that is still driving —
+ * Graphics quality from the pause menu does exactly that, and then the new
+ * trees are back on the road, the ribbon is laid for the old mesh and the
+ * wheels are riding a terrain that is no longer drawn (see world()).
+ */
+function readyVanWorld(sim) {
+  sim._vanWorld = sim.terrain;
+  const list = sim.roads && sim.roads.list;
+  if (list && list.length) {
+    clearRoadsOfScenery(THREE, sim.scenery && sim.scenery.group, list);
+    clearRoadsOfFields(sim.features && sim.features.group, list);
+    if (sim.roadMesh && sim.roadMesh.userData.conform) sim.roadMesh.userData.conform(sim.terrain);
+  }
+  // (With the ribbon, so the wheels ride the tarmac as it is drawn: ribbonSampler.)
+  setGroundMesh(drawnGroundSampler(sim.terrain, list, sim.roadMesh));
+  // And what is drawn where, for the word under the speed (drawnLooks).
+  sim._vanFields = fieldPatchSampler(sim.features && sim.features.group);
+  sim._vanPaint = terrainBlendSampler(sim.terrain);
+}
+
+/**
+ * What the ground under the van LOOKS like, for the word on its panel, when
+ * the physics calls it grass (the grip stays grass's): 'field' on a crop
+ * patch that is not green, 'sand' or 'dirt' where the terrain shader paints
+ * more sand or more rock than grass, and null (grass) where it is green.
+ *
+ * The reviewer: "the surface word says 'grass' on the pale sand-coloured
+ * town ground". The first try at this called ground under 16 m sand (the
+ * shader's sand weight, 1 - smoothstep(2, 30, h), passes a half there), and
+ * missed the place the reviewer was looking at: First Run's town yard on
+ * Drover's Flat is 62.6 m up, and the panel still said "grass" over pale
+ * beige ground 51 m past it, (202, 189, 164) on screen against (112, 155,
+ * 65) for the grass by the depot. Measured there: the terrain is painted
+ * grass (all 558 off-road spots 50-150 m from the yard); what is drawn over
+ * it is a crop patch, stubble, (0.84, 0.79, 0.46), 35 cm up (features.js).
+ *
+ * So the word reads what is drawn: the patch first (fieldPatchSampler,
+ * roads.js), redder than it is green is a field; then the terrain shader's
+ * own weights (terrainBlendSampler), whichever it paints most of — sand, or
+ * rock, which in daylight looks like bare earth, so dirt.
+ */
+const _paint = new Float64Array(3);
+function drawnLooks(sim, x, z) {
+  const crop = sim._vanFields ? sim._vanFields(x, z) : null;
+  if (crop) return crop[0] > crop[1] ? 'field' : null;
+  const f = sim._vanPaint;
+  if (!f || !f(x, z, _paint)) return null;
+  const sand = _paint[0];
+  const grass = _paint[1];
+  const rock = _paint[2];
+  if (grass >= sand && grass >= rock) return null;
+  return sand >= rock ? 'sand' : 'dirt';
+}
+
+/** The state object the van's panel is filled from, one per sim, refilled. */
+function vanHudState(sim) {
+  return sim._vanHud || (sim._vanHud = {
+    readouts: null, surface: null, isBoat: false, handbrake: false, clock: null, turn: null, blocked: false, looks: null,
+    job: { title: '', text: '', toGoM: null, name: '' },
+    cargo: null,
+    load: { pips: 0, max: 5, label: 'LOAD' },
+    forStep: undefined,
+  });
+}
+
+/**
+ * Where the job wants the van now — the current step's target, or in free
+ * drive the nearest place not yet found — with a road route to it for the
+ * arrow (CourierGuide) and the marker standing on it.
+ */
+function vanGoal(sim) {
+  const running = sim.runner && sim.runner.status === 'running';
+  return running ? sim.runner.activeTarget() : sim.islandRoads ? sim.islandRoads.target() : null;
+}
+
+IslandRoads.van = {
+  /**
+   * startDrive, car branch, after the vehicle is built and reset: the
+   * island made ready, the van put down on the ground as drawn, the
+   * aeroplane's guidance taken down and the van's marker and arrow put up,
+   * and the job's own sky.
+   */
+  start(sim, { kind, def, start, headingDeg }) {
+    readyVanWorld(sim);
+    sim.vehicle.reset({ pos: start, headingDeg });
+    // The aeroplane's guidance is not updated while driving, so whatever it
+    // last showed stays drawn: the menu flight's rails were hanging over the
+    // depot on every drive.
+    if (sim.navGuide) sim.navGuide.group.visible = false;
+    if (sim.beacon) sim.beacon.setTarget(null);
+    sim.courierMarker = sim.courierMarker || new DropMarker(sim.scene);
+    sim.courierMarker.hide();
+    sim.courierGuide = new CourierGuide(sim);
+    /*
+     * The job's own weather, which startMode has always loaded for a flight
+     * and startDrive never did: Night Call-out's card says two in the
+     * morning and raining, and it was driven at whatever time the menu sky
+     * happened to be, dry. Borrowed like the map; anything the last van job
+     * borrowed goes back first ("Drive again" goes van to van), and it is
+     * given back in stop() or by the menu (the courier-sky plug-in).
+     */
+    giveBackJobSky(sim);
+    borrowJobSky(sim, def);
+    /*
+     * And the job board measured here, on the van's own island, while it is
+     * the one loaded: the menu is back on the aeroplane's island by the time
+     * the board is next opened, and it shows what was measured now (see
+     * jobsFor). 2.4 ms on Drover's Flat, once per drive.
+     */
+    if (kind === 'car') {
+      try {
+        jobsFor(sim);
+      } catch (err) {
+        /* a board that cannot be graded is graded next time */
+      }
+    }
+    // Facing the right way on the very first frame, model and all.
+    sim.vehicle.applyAttitude(0, (headingDeg * Math.PI) / 180, 0, 0);
+    if (sim.vehicleModel) {
+      sim.vehicleModel.position.copy(sim.vehicle.pos);
+      sim.vehicleModel.quaternion.copy(sim.vehicle.quat);
+    }
+  },
+
+  /**
+   * startDrive, car branch, last thing before the plug-ins: the camera
+   * behind the van, the arrow on its road route and the panel and the map
+   * drawn, before the first frame. Until the first update they showed what
+   * was there before: the reviewer read HEADING 090 over a van facing 182,
+   * the aeroplane's arrow on the minimap, and the menu's view over the sea.
+   */
+  firstFrame(sim) {
+    const v = sim.vehicle;
+    if (!v) return;
+    if (sim.driveCam) sim.driveCam.snap(sim.camera, v);
+    const goal = vanGoal(sim);
+    if (sim.courierGuide && sim.driveHud) sim.courierGuide.update(0, v, goal ? goal.pos : null, sim.driveHud.tracker);
+    if (sim.driveHud) this.panel(sim, 0, v, v.readouts());
+    if (sim.minimap) sim.minimap.update(0, sim);
+  },
+
+  /** updateDrive, car branch, before the van moves: a world rebuilt under it. */
+  world(sim) {
+    if (sim._vanWorld !== sim.terrain) readyVanWorld(sim);
+  },
+
+  /** updateDrive, car branch, after the van has moved: the arrow and the marker. */
+  frame(sim, dt, v) {
+    const goal = vanGoal(sim);
+    if (sim.courierGuide && sim.driveHud) sim.courierGuide.update(dt, v, goal ? goal.pos : null, sim.driveHud.tracker);
+    if (sim.courierMarker) {
+      const running = sim.runner && sim.runner.status === 'running';
+      sim.courierMarker.set(goal ? goal.pos : null, running ? markerKind(sim.runner.step) : 'drop');
+      sim.courierMarker.update(dt);
+    }
+  },
+
+  /**
+   * updateDrive, the car's HUD branch: the model set down on its tyres,
+   * then the van's panel.
+   *
+   * THE MODEL. The physics carries the body `rideHeight` (6 cm) over the
+   * ground, and the model was put exactly there whatever it was driving on.
+   * Six centimetres is how far the made surfaces are DRAWN above the ground
+   * — the road ribbon's lift, and the apron's ELEV + 0.05 — so on tarmac
+   * the tyres touched it; on grass, which is drawn on the ground, they hung
+   * 6 cm clear of it. And it assumed the model's tyres reach down to its
+   * origin, which is true of the pack's van (its axles are at the tyre
+   * radius: a fresh one measures y 0 to 0.68 across the wheels) and of the
+   * fallback createCar(), and is only a convention the Blender replacement
+   * may or may not keep. So: the model's own lowest point, measured once
+   * whenever the model changes (the airport vehicles swap theirs in after
+   * startDrive), set down on the ground, plus the lift of whatever surface
+   * it is on (SurfaceVehicle.drawnLift, eased as it crosses the kerb).
+   * updateDrive has copied the van's position onto the model by the time
+   * this runs; this adds to it (not on the first frame, which is not one).
+   */
+  panel(sim, dt, v, r) {
+    const m = sim.vehicleModel;
+    if (m && !v.isBoat) {
+      if (VAN_M.model !== m) {
+        VAN_M.model = m;
+        const px = m.position.x, py = m.position.y, pz = m.position.z;
+        const q = m.quaternion;
+        const qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+        m.position.set(0, 0, 0);
+        q.identity();
+        m.updateMatrixWorld(true);
+        const low = _vanBox.setFromObject(m).min.y;
+        m.position.set(px, py, pz);
+        q.set(qx, qy, qz, qw);
+        VAN_M.lift = Number.isFinite(low) ? -low - (v.spec.rideHeight || 0) : 0;
+      }
+      if (dt > 0) m.position.y += VAN_M.lift + (v.drawnLift || 0);
+    }
+    const hud = sim.driveHud;
+    if (!hud) return;
+    /*
+     * THE PANEL. One state object for the van, refilled every frame rather
+     * than four new ones (the state, the job, the load and the turn) sixty
+     * times a second.
+     *
+     * The clock is the one the job is judged by. It read the card's
+     * `parTime` — 210 s for the Shuttle on every island — while the pay was
+     * worked out against the par the job sets from THIS island's roads
+     * (ctx.data.par): on Drover's Flat the clock ran out with the Shuttle
+     * still paying full rate. And "To go" is the distance left to the
+     * drop-off along the arrow's route, which the HUD had a row for and was
+     * never given.
+     */
+    const runner = sim.runner;
+    const step = runner && runner.status === 'running' ? runner.step : null;
+    const def = runner && runner.def;
+    const data = (runner && runner.data) || {};
+    const st = vanHudState(sim);
+    const tracker = hud.tracker;
+    // With the speed and today's grip, for SLOW DOWN (RouteTracker.slowFor),
+    // and whether the end of the route is a stop: a split you drive through
+    // (the blue marker) and free drive's places are not.
+    if (tracker) tracker.stopAtEnd = step != null && markerKind(step) !== 'pass';
+    const turn = tracker ? tracker.next(v.pos, v.heading, 30, 1600, v.speed, v.wet) : null;
+    st.readouts = r;
+    st.surface = v.surface;
+    st.looks = v.surface && v.surface.kind === 'grass' ? drawnLooks(sim, v.pos.x, v.pos.z) : null;
+    st.handbrake = !!(sim.driveInput && sim.driveInput.handbrake);
+    // Pinned against something for a second with the go key down: BLOCKED.
+    st.blocked = (v.blockedT || 0) > 1;
+    st.turn = turn;
+    if (step) {
+      st.job.title = (def && def.name) || 'Island Roads';
+      st.job.text = step.text || '';
+    } else if (sim.islandRoads) {
+      st.job.title = 'Island Roads';
+      st.job.text = sim.islandRoads.objective();
+    } else {
+      st.job.title = v.spec.name;
+      st.job.text = 'No clock. Drive where you like.';
+    }
+    st.job.toGoM = step && turn ? turn.remainingM : null;
+    if (st.forStep !== step) {
+      st.forStep = step;
+      st.job.name = step && step.targetLabel ? 'to ' + step.targetLabel : '';
+    }
+    const par = data.par || (def && def.parTime) || 0;
+    st.clock = par && step ? Math.max(0, par - runner.elapsed) : null;
+    // Only while a job is on: the runner keeps the last job's data after it
+    // ends, and free drive after First Run showed BOX OF SPANNERS.
+    if (step && data.cargo) {
+      st.load.pips = data.cargo.pips;
+      st.load.max = data.cargo.max || 5;
+      st.load.label = data.cargo.name || 'LOAD';
+      st.cargo = st.load;
+    } else {
+      st.cargo = null;
+    }
+    hud.update(dt, st);
+  },
+
+  /**
+   * stopDrive, car branch (only after a van drive), and the boat started
+   * straight from the van: the drop-off marker and the arrow belong to the
+   * van, the sky a courier job borrowed goes back, and the drawn-ground
+   * sampler is let go.
+   */
+  stop(sim) {
+    if (sim.courierMarker) sim.courierMarker.hide();
+    sim.courierGuide = null;
+    giveBackJobSky(sim);
+    setGroundMesh(null);
+    // (They hold the world's arrays; the next van start reads them afresh.)
+    sim._vanPaint = null;
+    sim._vanFields = null;
+  },
+};

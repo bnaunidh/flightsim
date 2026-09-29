@@ -9,6 +9,8 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { clamp } from '../core/noise.js';
+// BLENDER MODELS: the van and the launch from tools/blender/, when they loaded.
+import { blenderBoat, blenderCar, animateBlenderVehicle, blenderDriveState } from './blender-models.js';
 
 /*
  * The boat and the car come from the model pack.
@@ -36,12 +38,50 @@ function mat(color, { rough = 0.7, metal = 0.1 } = {}) {
   return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
 }
 
-/** A small planing launch: hull, cabin, screen, and a wake behind it. */
+/**
+ * A small planing launch: hull, cabin, screen, and a wake behind it.
+ *
+ * Both hulls are drawn with their WATERLINE at the model's origin: the pack's
+ * keel is 0.53 m below it and its deck edge 0.35 m above at the stern (0.63
+ * at the bow), the fallback's box hull 0.3 m below and 0.7 m above. Measured
+ * with the model at the origin: the whole pack launch spans -0.53 to +1.65 m,
+ * the lowest thing on her the outboard leg at -0.44. main.js puts the origin
+ * on the vehicle's position, which rides the sea, so this is where she floats.
+ *
+ * FOR WHOEVER REPLACES THIS MODEL: draw her with the waterline at y = 0, bow
+ * towards -Z, or set `userData.waterline` to the waterline's height above
+ * your origin and main.js lowers her by that much. Keep `userData.update`
+ * (dt, state) if the model animates itself — updateVehicleModel calls it with
+ * speed, steer and lights every frame — and `userData.wake` (with a `count`
+ * of the wash patches on the water) / `bowWave` (with `visible` and a
+ * `material.opacity`) if you want them drawn over the near-sea ripples; the
+ * boat playtest reads them there.
+ *
+ * Do NOT pose her in the model. Where she sits on the sea is surface.js's
+ * (drawnRise, freeboardLift); if your hull's deck edge, bottom or planing
+ * lift differ from the pack launch's, say so in `userData.hullFit` (see
+ * SurfaceVehicle.fitHull) and main.js hands it over. The Blender launch
+ * does (blender-models.js blenderHullFit); with `hullFit` set, the playtest
+ * measures her keel on the part called `hull` and her deck edge at
+ * `hullFit.deck`.
+ */
 export function createBoat() {
+  // BLENDER MODELS: null when not loaded, and the pack and the boxes follow.
+  const blender = blenderBoat();
+  if (blender) return blender;
   if (packBoat) {
     try {
       const b = packBoat();
       b.userData.fromPack = true;
+      b.userData.waterline = 0;
+      /*
+       * The wake and the bow wave are drawn after the near-sea ripple layer
+       * (water.js, renderOrder 0.5) so the ripples never dim them: they are
+       * the only thing that tells a child she is moving when there is
+       * nothing near to move past.
+       */
+      if (b.userData.wake) b.userData.wake.renderOrder = 3;
+      if (b.userData.bowWave) b.userData.bowWave.renderOrder = 3;
       return b;
     } catch (e) {
       console.warn('The pack boat could not be built; using the built-in one.', e);
@@ -102,17 +142,23 @@ export function createBoat() {
     const geo = new THREE.PlaneGeometry(6, 1.6);
     geo.rotateX(-Math.PI / 2);
     const m = new THREE.Mesh(geo, wakeMat);
-    m.position.set(side * 1.7, -0.18, 2.6);
+    // Just above the water, not 0.18 m under it: the sea plane is opaque
+    // and writes depth, so a wake under it was never drawn at all.
+    m.position.set(side * 1.7, 0.14, 2.6);
     m.rotation.y = side * 0.22;
     wake.add(m);
   }
   g.add(wake);
   g.userData.wakeMat = wakeMat;
+  g.userData.waterline = 0;
   return g;
 }
 
 /** A small airside van, with wheels that steer and roll. */
 export function createCar() {
+  // BLENDER MODELS: null when not loaded, and the pack and the boxes follow.
+  const blender = blenderCar();
+  if (blender) return blender;
   if (packCar) {
     try {
       const c = packCar();
@@ -175,6 +221,11 @@ export function createCar() {
 /** Per-frame dressing: wake opacity, wheel spin and steering. */
 export function updateVehicleModel(model, vehicle, dt) {
   if (!model) return;
+  // BLENDER MODELS: wheels, props, steering, lamps, and the launch's pose and wake.
+  if (model.userData.blender) {
+    animateBlenderVehicle(model, blenderDriveState(model, vehicle, dt), dt);
+    return;
+  }
 
   /*
    * The pack's vehicles animate themselves from a state object. Everything it

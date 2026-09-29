@@ -1180,7 +1180,7 @@ function clearForApproach(h, ceiling, w) {
  * 300-odd, Fjord stops having a 3.3 by 5.2 km flat trench through both of its
  * named mountains, and the cross is gone from every map that had one.
  */
-function approachCeiling(along, across, floorW) {
+function approachCeiling(along, across, floorW, runwayLength, glidePath = true) {
   /*
    * Flat over the strip itself, then a climb-out gradient away from it.
    *
@@ -1189,7 +1189,7 @@ function approachCeiling(along, across, floorW) {
    * climbs at the rate a light aeroplane climbs, which is what the corridor is
    * for: not a level trench to the horizon, a lane you can get out along.
    */
-  const flat = (AIRPORT.runway.length || 1100) / 2;
+  const flat = (runwayLength || AIRPORT.runway.length || 1100) / 2;
   const rise = Math.max(0, along - flat) * APPROACH_SLOPE;
   // And the valley sides. The floor stays a runway's width across — wide
   // enough that a wandering final is still over flat ground — and climbs from
@@ -1202,7 +1202,288 @@ function approachCeiling(along, across, floorW) {
    * nothing and no aeroplane ever notices it.
    */
   const roll = 9 * wobble(along * 1.7 + (floorW || 0) * 3.1, 0.0013, 5.1);
-  return AIRPORT.elev + 10 + rise + shoulder + roll;
+  const climbOut = AIRPORT.elev + 10 + rise + shoulder + roll;
+  /*
+   * And under the path you actually LAND on.
+   *
+   * The ceiling above rises at APPROACH_SLOPE, 0.12, which is 6.8 degrees —
+   * a climb-out gradient — from the threshold, plus 10 m, plus up to 9 m of
+   * roll. The PAPI's path is three degrees to the touchdown point, 200 m
+   * inside the threshold. Measured over all 32 maps before this: the
+   * three-degree path went INTO the ground on 19 of them, on at least one
+   * end — 3.6 m on Kestrel 09 (a 44 m ridge 500 m short), 115 m on
+   * Firewatch. A child following the lights flew into the hill, and the
+   * TERRAIN warning was right to shout about it.
+   *
+   * So the ground also stays GLIDE_MARGIN under the three-degree surface to
+   * touchdown (never lower than GLIDE_FLOOR above the field, so the ends of
+   * the runway are an overrun, not a ditch), with the same valley sides and
+   * no roll. The steeper climb-out ceiling still decides everywhere the
+   * glide surface is higher, which is almost everywhere past a kilometre.
+   */
+  if (!glidePath) return climbOut;
+  const toTouchdown = Math.max(0, along - (flat - TOUCHDOWN_INSET));
+  // Its own, narrower valley: an aeroplane on final is over the centreline,
+  // and a lane the full corridor wide under a three-degree ceiling is the
+  // bulldozed cross again (it was, on Rigs, before this was narrowed).
+  const glideSide = Math.max(0, (across || 0) - GLIDE_HALF_LANE) * GLIDE_SIDE_SLOPE;
+  const glide = AIRPORT.elev + Math.max(GLIDE_FLOOR, toTouchdown * GLIDE_TAN - GLIDE_MARGIN) + glideSide;
+  return Math.min(climbOut, glide);
+}
+
+/** The PAPI's touchdown point, this far inside each threshold (see RUNWAY in airport.js). */
+const TOUCHDOWN_INSET = 200;
+/** Three degrees: what the PAPI shows and every real instrument approach flies. */
+const GLIDE_TAN = Math.tan((3 * Math.PI) / 180);
+/** How far below that path the ground must stay. */
+const GLIDE_MARGIN = 12;
+/** The least the ground under the approach may sit above the field. */
+const GLIDE_FLOOR = 3;
+/** Half-width of the lane held under the glide surface, m, and how steeply its sides rise. */
+const GLIDE_HALF_LANE = 90;
+const GLIDE_SIDE_SLOPE = 0.5;
+
+/** Level ground past each end of 09/27, m: ICAO's minimum runway end safety area. */
+const RESA_LEVEL = 90;
+/** ...then this far to hand over to the approach valley (240 m in all: ICAO's recommendation). */
+const RESA_BLEND = 150;
+/** Level either side of the centreline past the runway's own half-width, m. */
+const RESA_MARGIN = 45;
+/** And the skirt, sideways and back along the runway, over which it fades out. */
+const RESA_SIDE = 60;
+/** The deepest it cuts, m, and where past the level ground that limit fades out (from, to). */
+const RESA_MAX_CUT = 8;
+const RESA_FADE_FROM = 50;
+const RESA_FADE = 170;
+/**
+ * Where something applied after it holds the ground (see cutBesideLater):
+ * from this much of that thing's own blend weight the cut starts to fade,
+ * and from this much it is gone; and the corner where a cut hill meets that
+ * thing's height is rounded over this many metres.
+ */
+const RESA_KEEP_FROM = 0.3;
+const RESA_KEEP = 0.8;
+const RESA_ROUND = 4;
+
+/**
+ * Runway end safety areas: level, clear ground off both ends of the main
+ * runway, on every map.
+ *
+ * A real runway has one at each end, so an aeroplane that lands long or stops
+ * late rolls out onto flat grass. Here it rolled into a bank. The pad holds
+ * the field level for 130 m past Kestrel's thresholds and then lets the hill
+ * back in over its 190 m blend until the glide surface above clamps it, so
+ * measured along the centreline: nothing for 130 m, then 9 m of climb by
+ * 200 m out at up to 22% (35% on Fjord and Ember, 40% on Rigs), and a crest
+ * where the clamp takes over (x 741 on Kestrel) sharp enough to lift a wheel
+ * off at 11 m/s, 22 kt. The self-test's long landing rolled into it, hopped,
+ * and was scored as a 34 kt touchdown on the grass. Where the pad is short
+ * (Sennen, Skerries, Longbank, Firewatch) the ground was already 3-5 m above
+ * the runway 90 m past its end. Over all 64 ends of 09/27, 45 had a crest
+ * within 300 m that lifts a wheel under 30 m/s.
+ *
+ * So: level with the runway for RESA_LEVEL, or for as long as the pad already
+ * holds it level if that is longer, then a ceiling that rises over RESA_BLEND
+ * into the approach valley and meets it with the valley's own slope. It only
+ * ever lowers ground, never below the field (so never below the sea). A
+ * road, a harbour or authored flat ground still wins over it, because they
+ * are applied after it, and the cut gives way in front of them rather than
+ * steepen the bank up to them: see cutBesideLater. Three things keep it
+ * from being a trench:
+ *
+ *   - The rise starts where the pad's blend starts, not at 90 m. Measured the
+ *     other way, the pad's own steep climb crossed the new ceiling from below
+ *     150-190 m out and left a crest there: 25-30 m/s on Kestrel, Fjord and
+ *     Rigs, where it is 54 now.
+ *   - Where the ground meets the ceiling the corner is rounded (a smooth
+ *     minimum over `k`), which is what took Meridian's 27 end — a natural
+ *     hump the ceiling runs up into — from 28 m/s to 43.
+ *   - The cut is capped at RESA_MAX_CUT and the cap fades out. Firewatch's
+ *     runway ends in a 50% hillside that no corridor clears; uncapped, this
+ *     dug a slot 58 m deep into it and left a cliff where it stopped. Capped,
+ *     it is a level bench and a cut face, 8 m at most, gone 260 m past the
+ *     threshold, the steepest grade there 59% where the hill's own was 53%.
+ *
+ * Measured after, on lines every 5 m out to 125 m either side of the
+ * centreline, 0-400 m past each threshold (convex curvature over 4 m): 2115
+ * of the 3264 lines had a crest that lifts a wheel under 30 m/s, 1163 now.
+ * On the centrelines alone 43 of 64 ends, 13 now, all of them ends this
+ * does not touch (a coast dropping to the sea off the pad, or ground below
+ * the ceiling 220-300 m out). Kestrel's centreline lifts a wheel only above
+ * 55 m/s (09) and 57 m/s (27); 15 m south of it on 27, 35.6 m/s where it
+ * was 18.1; no line on Kestrel is 0.2 m/s worse. Worse than before:
+ * Meridian 27, where the ceiling hands over at the top of a natural hump
+ * (45-66 m/s from 50 m south of the centreline to 40 m north, to 38-44;
+ * 45, 50 and 55 m north 48.5 to 34.7, 31.5 to 27.9 and 28.3 to 26.0),
+ * Carrier Group (27: 42-51 to 34-49; and 0.4 m/s on three lines, both
+ * ends, that were already under 31) and Airfield Perimeter 09's south side
+ * (61-75 to 45-59). Land lowered by more than 1 m: 0.09% of all 32 maps,
+ * 8 m deepest (Firewatch), 6 m anywhere else. The approach clearance is
+ * unchanged, and heightAt over a whole map costs the same.
+ *
+ * What it does NOT fix is the landing gear, and until that is fixed this
+ * turns some overruns that ended in a hop into crashes. Rolling off Kestrel
+ * at idle, stick centred, from 50 m short of the threshold (62 runs, 10-30
+ * m/s, both ends, six types): before, the wheels left the ground in 45 runs
+ * and 5 crashed; now they leave it in 1 and 14 crash. Skylark 1 to 3 of 12,
+ * Courier 1 to 5 of 10, A320 0 to 2, 747 3 to 4, Tempest and Meridian none
+ * either way. A Skylark or Courier at 20-30 m/s used to hop the crest and
+ * roll on (2 of those 14 runs crashed); now it rolls up the 12-13% rise into
+ * the approach valley, pitches nose-down where the rise eases 200-300 m out
+ * (one Courier 440 m out) and strikes its propeller (8 of 14). That ground is
+ * smooth (a wheel stays down below 55 m/s), and the A320's two and the 747's
+ * one are 500-800 m out, on ground this does not touch: what changed is
+ * where and how fast they arrive; the pitch-over is the gear's.
+ * Sequencing after settleOnGear's rewrite does not help: the Skylark,
+ * Courier and A320 runs with this on integrate/wishlist at 497b4d8 crash the
+ * same 10 of 32 times, each within a metre of where they crash here.
+ *
+ * `x` is the world x, `d` metres past the nearer threshold (negative back
+ * along the runway), `along` and `across` from the runway centre, as for
+ * approachCeiling.
+ */
+function clearForOverrun(h, x, z, d, along, across, flat, flatW) {
+  // Never below the field, and so never below the sea.
+  const floor = Math.max(AIRPORT.elev, 0.5);
+  if (h <= floor) return h;
+  const rw = AIRPORT.runway;
+  const p = AIRPORT.pad;
+  // Where the pad stops holding this end level. The rise starts there, and
+  // never before RESA_LEVEL.
+  const padLevel = p ? (x > rw.cx ? p.x1 - (rw.cx + rw.length / 2) : rw.cx - rw.length / 2 - p.x0) : 0;
+  const d0 = Math.max(RESA_LEVEL, padLevel);
+  if (d >= d0 + RESA_FADE) return h;
+  const halfW = rw.halfWidth + RESA_MARGIN;
+  const w = (1 - smoothstep(halfW, halfW + RESA_SIDE, across)) * smoothstep(-RESA_SIDE, 0, d);
+  if (w <= 0) return h;
+  const t = smoothstep(d0, d0 + RESA_BLEND, d);
+  const valley = t > 0 ? approachCeiling(along, across, laneWidth(CORRIDOR.halfWidth, along)) : floor;
+  const ceiling = floor + (valley - floor) * t;
+  const k = Math.min(ceiling - floor, (ceiling - floor) * (1 - t) + 0.9 * t * Math.max(0, valley - h));
+  if (h <= ceiling - k) return h;
+  let g = Math.min(h, ceiling);
+  const gap = Math.abs(h - ceiling);
+  if (gap < k) g -= (k / 4) * (1 - gap / k) * (1 - gap / k);
+  const cut = Math.min(h - g, RESA_MAX_CUT * (1 - smoothstep(d0 + RESA_FADE_FROM, d0 + RESA_FADE, d))) * w;
+  if (cut <= 0) return h;
+  return cutBesideLater(h, h - cut, x, z, flat, flatW);
+}
+
+/**
+ * What the cut leaves, given what is applied after the safety area: a road,
+ * an authored flat, the harbour, the channel or a shoal.
+ *
+ * Those win, and should: the safety area cannot take away a road. But it can
+ * still cut the ground in front of one, and that is worse than leaving it. On
+ * Kestrel's 27 end the island road runs 50-80 m south of the centreline,
+ * 5.5 m above the field, and the pad holds it off until its blend lets go
+ * 150-170 m out, so its bank rises along the runway. The cut took the ground
+ * at the foot of that bank from 1.2 m to 0.4 m and left the top where the
+ * road put it: 30-65 m south of the centreline the crest there went from
+ * lifting a wheel at 20.7-26.3 m/s to 16.5-20.6 (convex curvature over 4 m),
+ * and a Skylark rolling off 50 m south at 25 m/s hopped 0.72 s instead of
+ * 0.23 s and struck its propeller.
+ *
+ * Holding the cut off wherever the road's blend reaches was worse. That
+ * blend reaches to within 5 m of the centreline, and 10-30 m south of it
+ * the hill between the road and the runway stood 7-8 m high beside a
+ * centreline cut to 3.5-4 m: a ridge 3.1 m above the centreline within
+ * 15 m of it. A Meridian rolling off 27 at 20-30 m/s put its right wing tip
+ * into it 195 m out, three runs in ten, where it had rolled on before.
+ *
+ * So each of them is read for its own blend weight `wt` (a road's from its
+ * lateral blend, NOT the pad's fade that switches it off, because that fade
+ * is exactly the "in front of" that went wrong) and its own height `y`:
+ *
+ *   - the cut may take the ground down to `y` and no lower, in proportion to
+ *     `wt`. Ground below the road is the foot of its bank, and stays; a hill
+ *     above it comes down to it, and leaves no ridge;
+ *   - from RESA_KEEP_FROM of `wt` to RESA_KEEP, the cut fades out
+ *     altogether. There the thing decides the ground, and all the cut could
+ *     do is show through the pad's fade in front of it. Faded from 0.5 to 1,
+ *     30 m south of Kestrel 27's centreline (where the road's weight is 0.65
+ *     at the crest) the cut still showed through: that crest went from
+ *     lifting a wheel at 26.3 m/s to 24.8 (4 m curvature), and 33 m south
+ *     24.6 to 24.2. From 0.3 to 0.8 every line 1 m apart from 125 m south
+ *     of that centreline to 125 m north is within 0.16 m/s of before or
+ *     better. What it leaves is a slope up to the road beside the level
+ *     centreline: 176 m out the ground 15 m south stands 1.5 m above the
+ *     centreline and 32 m south 3.6 m, where before the cut both were level
+ *     with it (held off across the whole blend, 3.1 m within 15 m; cut
+ *     through regardless, as at first, 1.0 and 2.6 m but with the crest
+ *     above);
+ *   - the corner where the hill comes down to `y` is rounded over
+ *     RESA_ROUND, or a bank running up into it gains a crest of its own.
+ *
+ * The flat's weight is its blend. The harbour, channel and shoals are asked
+ * rather than re-derived: each is a lerp towards its own height, so what they
+ * make of the ground cut and uncut gives back both. (None of the 32 maps has
+ * water or a quay inside a safety area; a road overlaps one on Kestrel and
+ * Airfield Perimeter, a flat at 0.3 weight on Drovers 27.)
+ */
+function cutBesideLater(h, cutTo, x, z, flat, flatW) {
+  let g = cutTo;
+  let keep = 0;
+  if (flat && flatW > 0) {
+    g = Math.max(g, heldTo(h, cutTo, flatW, flat.y));
+    keep = smoothstep(RESA_KEEP_FROM, RESA_KEEP, flatW);
+  }
+  const W = MAP.waters;
+  if (W) {
+    // Under a millimetre h - cutTo can round to zero, and 0 / 0 is a NaN height.
+    if (h - cutTo > 0.001) {
+      const a = harbourHeight(channelHeight(shoalHeight(h, x, z), x, z), x, z);
+      const b = harbourHeight(channelHeight(shoalHeight(cutTo, x, z), x, z), x, z);
+      const wt = 1 - clamp((a - b) / (h - cutTo), 0, 1);
+      if (wt > 0.001) {
+        g = Math.max(g, heldTo(h, cutTo, wt, (a - h * (1 - wt)) / wt));
+        keep = Math.max(keep, smoothstep(RESA_KEEP_FROM, RESA_KEEP, wt));
+      }
+    }
+    const R = W.roads;
+    for (let i = 0; R && i < R.length; i++) {
+      const rd = R[i];
+      if (x < rd._x0 || x > rd._x1 || z < rd._z0 || z > rd._z1) continue;
+      const hw = rd.halfWidth || 18;
+      const reach = hw + (rd.blend || 55);
+      const p = rd.path;
+      let near = Infinity;
+      let sum = 0;
+      let wsum = 0;
+      // The road's distance and its own height, exactly as roadHeight finds them.
+      for (let k = 1; k < p.length; k++) {
+        const ax = p[k - 1][0];
+        const az = p[k - 1][1];
+        const ex = p[k][0] - ax;
+        const ez = p[k][1] - az;
+        const len2 = ex * ex + ez * ez;
+        let t = len2 > 0 ? ((x - ax) * ex + (z - az) * ez) / len2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const qx = ax + ex * t - x;
+        const qz = az + ez * t - z;
+        const d2 = qx * qx + qz * qz;
+        if (d2 < near) near = d2;
+        if (d2 < 40000) {
+          const wk = 1 / (d2 + 400);
+          sum += lerp(p[k - 1][2] ?? h, p[k][2] ?? h, t) * wk;
+          wsum += wk;
+        }
+      }
+      if (near >= reach * reach || wsum <= 0) continue;
+      const wt = 1 - smoothstep(hw, reach, Math.sqrt(near));
+      g = Math.max(g, heldTo(h, cutTo, wt, sum / wsum));
+      keep = Math.max(keep, smoothstep(RESA_KEEP_FROM, RESA_KEEP, wt));
+    }
+  }
+  return g + (h - g) * keep;
+}
+
+/** How low the cut may take `h` beside something of blend weight `wt` at height `y`: see cutBesideLater. */
+function heldTo(h, cutTo, wt, y) {
+  let to = Math.min(h, y);
+  const gap = Math.abs(h - y);
+  if (gap < RESA_ROUND) to -= (RESA_ROUND / 4) * (1 - gap / RESA_ROUND) * (1 - gap / RESA_ROUND);
+  return to > cutTo ? cutTo + (to - cutTo) * wt : cutTo;
 }
 
 /**
@@ -1379,6 +1660,12 @@ export function heightAt(x, z) {
     }
   }
 
+  // And level ground off both ends of it: see clearForOverrun.
+  const resaD = along - AIRPORT.runway.length / 2;
+  if (resaD > -RESA_SIDE && across < AIRPORT.runway.halfWidth + RESA_MARGIN + RESA_SIDE) {
+    h = clearForOverrun(h, x, z, resaD, along, across, flat, flatW);
+  }
+
   /*
    * And the same the other way, for 18/36. A second runway you cannot approach
    * is not a second runway.
@@ -1409,7 +1696,8 @@ export function heightAt(x, z) {
         const lateral = 1 - smoothstep(hw2, hw2 + bl2, across2);
         const longitudinal = 1 - smoothstep(CORRIDOR2.fadeFrom, CORRIDOR2.length, along2);
         const w = lateral * longitudinal;
-        h = clearForApproach(h, approachCeiling(along2, across2, hw2), w);
+        // 18/36 keeps its climb-out ceiling only: see the glide surface note.
+        h = clearForApproach(h, approachCeiling(along2, across2, hw2, r2.length, false), w);
       }
     }
   }
@@ -1526,7 +1814,28 @@ export function isPaved(x, z) {
   // The apron runs right up to the taxiway edge. It used to stop 3 m short,
   // leaving a strip of grass between them that you had to taxi across.
   if (x >= -260 && x <= 100 && z >= -190 && z <= -106) return true;
+  /*
+   * Everything else the airport layout paved.
+   *
+   * The rectangles above are Kestrel's and only Kestrel's. The airport now
+   * lays out taxiways, aprons and hangar lead-ins per map, and on 26 of the 32
+   * maps those were grass as far as the wheels were concerned: the aeroplane
+   * rolled on painted tarmac with grass friction. The layout registers its own
+   * test here on every world build (src/world/airport.js).
+   */
+  if (pavedExtra && pavedExtra(x, z)) return true;
   return false;
+}
+
+let pavedExtra = null;
+
+/**
+ * Made ground the airport layout knows on every map: taxiways, aprons, hangar
+ * lead-ins. Called on every world build. The test runs in the wheel-contact
+ * loop, so it must reject on a bounding box first and allocate nothing.
+ */
+export function setPavedExtra(fn) {
+  pavedExtra = typeof fn === 'function' ? fn : null;
 }
 
 function buildChunk(centerX, centerZ, size, segments, materialFactory) {

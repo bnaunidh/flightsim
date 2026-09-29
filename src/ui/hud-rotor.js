@@ -90,6 +90,141 @@ const el = (tag, cls, html) => {
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
+/*
+ * The helicopter card's own stylesheet. styles/main.css is somebody else's
+ * file this week, so the card brings its rules with it, once, on first use.
+ */
+const HELI_CSS = `
+.hud-heli { width: 218px; margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(140, 180, 230, 0.14); }
+.hud-heli[hidden] { display: none; }
+/* On a touch screen the instruments are one band across the top, so the card
+   hangs under the right-hand end of it, clear of the thumbs. It was in the
+   bottom strip, which a touch screen hides: an iPad never saw it at all. */
+.hud.is-touch .hud-heli {
+  position: absolute; top: calc(100% + 8px); right: 0; width: 236px; margin: 0;
+  padding: 8px 10px; border: 1px solid var(--panel-line); border-radius: var(--radius);
+  background: var(--panel); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+@media (pointer: coarse) and (max-height: 460px) {
+  .hud.is-touch .hud-heli-say, .hud.is-touch .hud-heli-lift { display: none; }
+}
+/* And the objective under the hover band, not behind it. Measured on an
+   emulated 1024 x 768 iPad, hovering: the band runs from y66 to y179 and the
+   objective panel starts at y140, so its first line was under the band.
+   (A phone, under 621 px, already puts the objective at y232.) */
+@media (min-width: 621px) {
+  .hud.is-touch.is-rotorhover .hud-top { top: 188px; }
+}
+.hud-heli-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.hud-heli-state { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: var(--accent); }
+.hud-heli-state.is-good { color: var(--good); }
+.hud-heli-state.is-warn { color: var(--amber); }
+.hud-heli-h { display: flex; align-items: baseline; gap: 4px; }
+.hud-heli-hv { font-size: 24px; font-weight: 660; line-height: 1; letter-spacing: -0.02em; }
+.hud-heli-hu { font-size: 11px; color: var(--text-dim); }
+.hud-heli-vs { font-size: 12px; color: var(--text-dim); font-family: var(--mono); margin-top: 2px; text-align: right; }
+.hud-heli-say { font-size: 12px; line-height: 1.3; margin-top: 4px; color: #e4edf8; }
+.hud-heli-lift { display: flex; gap: 5px; margin-top: 6px; }
+.hud-heli-lift[hidden] { display: none; }
+.hud-heli-lift span {
+  flex: 1 1 0; text-align: center; font-size: 10px; letter-spacing: 0.06em; padding: 3px 0;
+  border: 1px solid rgba(140, 180, 230, 0.22); border-radius: 6px; color: var(--text-dim);
+}
+.hud-heli-lift span.is-on { color: #fff; border-color: rgba(88, 198, 255, 0.8); background: rgba(88, 198, 255, 0.2); }
+.hud-heli-land { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; }
+.hud-heli-land[hidden] { display: none; }
+.hud-heli-land b { font-size: 10px; letter-spacing: 0.1em; color: var(--text-dim); font-weight: 600; }
+.hud-heli-land i { display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: rgba(255, 255, 255, 0.12); }
+.hud-heli-land.is-good i { background: var(--good); box-shadow: 0 0 10px rgba(79, 214, 132, 0.8); }
+.hud-heli-land.is-warn i { background: var(--amber); box-shadow: 0 0 10px rgba(255, 194, 71, 0.8); }
+.hud-heli-land.is-bad i { background: var(--red); box-shadow: 0 0 10px rgba(255, 106, 90, 0.9); }
+.hud-heli-land.is-good span { color: var(--good); }
+.hud-heli-land.is-warn span { color: var(--amber); }
+.hud-heli-land.is-bad span { color: var(--red); }
+.hud-bar[hidden] { display: none; }
+/* The PAPI is a runway's glide path. Measured: hovering by Kestrel's pad the
+   panel said "Too high — ease off and descend" at a helicopter sitting still. */
+.hud.is-rotor .hud-papi { display: none !important; }
+@media (max-width: 620px) {
+  .hud-heli-hv { font-size: 19px; }
+  .hud-heli-say { font-size: 11px; }
+}
+`;
+
+function injectHeliCss() {
+  if (typeof document === 'undefined' || document.getElementById('hud-heli-css')) return;
+  const st = document.createElement('style');
+  st.id = 'hud-heli-css';
+  st.textContent = HELI_CSS;
+  document.head.appendChild(st);
+}
+
+/*
+ * What the card says, per state. Kid mode is the flight computer's states;
+ * the realistic ones are what the hover assist is actually doing, because the
+ * old chip said HOVER ASSIST the whole time — measured on the unmodified
+ * build, it said so through a 12 m/s climb to 228 m with the height hold
+ * refusing to engage, which is the panel lying at the one moment it matters.
+ */
+const KID_WORDS = {
+  off: ['ENGINE OFF', 'Press I to start the engine.', 'warn'],
+  ground: ['ON THE GROUND', 'Hold Shift to lift off.', ''],
+  lifting: ['LIFTING OFF', 'Keep holding Shift. Let go and it stops and hovers.', ''],
+  climbing: ['GOING UP', 'Let go of Shift to stop and hover at this height.', ''],
+  hover: ['HOVERING', 'Holding this height and this spot. Hands off is fine.', 'good'],
+  holding: ['HOLDING HEIGHT', 'Let go of W A S D and it stops over the ground.', 'good'],
+  descending: ['COMING DOWN', 'Let go of Ctrl to stop. It slows by itself near the ground.', ''],
+  landing: ['LANDING', 'Keep holding Ctrl until the skids touch.', ''],
+  terrain: ['CLIMBING OVER HIGH GROUND', 'The ground ahead is higher, so it is climbing over it for you.', 'warn'],
+  tooclose: ['CAN\u2019T LAND HERE', 'Something under you is too high or not flat. Move over open ground or the middle of an H.', 'warn'],
+  // The same when the thing is a tree, which a child can see and move off.
+  tree: ['CAN\u2019T LAND HERE', 'A tree is in the way. Move over open ground with W A S D, then hold Ctrl.', 'warn'],
+  // The same refusal when the thing in the way is the hillside itself.
+  // Measured: on 9.8 degrees of grass it lands facing across or down the
+  // hill and not up it, so the useful words are "turn round" — but only
+  // where some way round does land, and which key is the shorter turn to it.
+  // The review of the second kid build found the card saying "turn with Q
+  // or E" on 64-degree cliffs, where no heading lands and turning swung the
+  // tail into the rock. The flight computer now asks sixteen headings (the
+  // ring in rotor-assist.js) and says one of these three. 'hill' is kept for
+  // anything still asking for it.
+  hill: ['TOO STEEP THIS WAY', 'The hill is in the way. Turn with Q or E to face down the hill, or find flatter ground.', 'warn'],
+  hille: ['TOO STEEP THIS WAY', 'Keep holding Ctrl and turn with E. It stops turning where it can land.', 'warn'],
+  hillq: ['TOO STEEP THIS WAY', 'Keep holding Ctrl and turn with Q. It stops turning where it can land.', 'warn'],
+  steep: ['TOO STEEP HERE', 'No way round lands on this slope. Fly with W A S D to flatter ground.', 'warn'],
+  // A turn beside a hill: it goes up first, so the tail does not swing into it.
+  turnroom: ['MAKING ROOM TO TURN', 'The ground is close, so it goes up a little before it turns.', 'warn'],
+  // Any key beside steep rock: up first, then it moves (roomR in rotor-assist.js).
+  room: ['MAKING ROOM', 'The rock is close, so it goes up before it moves.', 'warn'],
+  // Stopped short of rock beside it with a key pushing at it (THE WALL in
+  // rotor-assist.js): it will not go closer, and any other way is open.
+  wall: ['ROCK IN THE WAY', 'It stops before it touches. Fly another way, or go up with Shift.', 'warn'],
+  // Holding its height over ground that rises or falls under it: the V/S
+  // row is not level, and the card must not say it is holding still.
+  following: ['FOLLOWING THE GROUND', 'Staying the same height over the ground below. Let go of W A S D to stop.', 'good'],
+  gate: ['LET GO TO LAND', 'Let go of W A S D. It comes down the last bit once it has stopped.', 'warn'],
+  settle: ['STOPPING TO LAND', 'It comes down the last bit once it has stopped moving.', ''],
+  water: ['CAN\u2019T LAND ON WATER', 'Stopped above the waves. Find an H or dry ground to land on.', 'warn'],
+  // I pressed in the air: see stopEngine in rotor-assist.js, hookAircraft().
+  engine: ['ENGINE STAYS ON', 'Not while you are flying! Land first, then press I to switch it off.', 'warn'],
+};
+/*
+ * The states in which the flight computer will not put it down here. The
+ * landing light said "steady" in green under TOO STEEP HERE (measured
+ * 2026-09-26, headless Chrome, Kestrel, Ctrl held beside the 64-degree rock
+ * at (1128, 942): card TOO STEEP HERE, light "steady · 25 ft", green). A
+ * child reads the green light, not the grey words; under these it is amber,
+ * "not here".
+ */
+const KID_REFUSES = new Set(['tooclose', 'tree', 'hill', 'hille', 'hillq', 'steep', 'water']);
+const REAL_WORDS = {
+  off: ['ASSIST OFF', 'No help at all. The lever and the stick are all yours.', 'warn'],
+  ground: ['ON THE GROUND', 'Raise the collective with Shift until she lifts.', ''],
+  height: ['HEIGHT HOLD', 'The assist is holding this height. Move the lever and it is yours.', 'good'],
+  drift: ['DRIFT DAMPING', 'The assist is steadying the drift. The height is yours.', ''],
+  standby: ['ASSIST STANDBY', 'Too fast for the hover assist, so you are flying it.', ''],
+};
+
 /** Everything below is mixed into Hud.prototype by installRotorHud(). */
 const ROTOR = {
   /* ------------------------------------------------------------------ */
@@ -265,6 +400,63 @@ const ROTOR = {
     this.rescueLine = el('div', 'hud-rescue', '');
     this.rescueLine.hidden = true;
     this.objective.appendChild(this.rescueLine);
+
+    /* ---- The helicopter card, under the instruments, top left ----
+     *
+     * What the machine is doing and what to press next, the height over
+     * whatever is underneath, and the landing light.
+     *
+     * It was in the engine strip, bottom left, and the tower's subtitle
+     * (bottom 118 px, centred, up to 720 px wide) was printed across the
+     * lower half of it — the SHIFT / HOLD / CTRL row and the landing light —
+     * whenever the tower spoke, which is the first seconds of every flight
+     * and every touchdown. Measured at 1280 x 800: the strip was 430 px wide
+     * and the subtitle's left edge is at 280. It now hangs at the foot of
+     * whichever top-left panel is showing — the hover strip, or the cruise
+     * rows — 218 px wide, which is clear of that subtitle at 1280 px and
+     * wider, and clear of it vertically at any width. See _placeHeliCard().
+     */
+    injectHeliCss();
+    const card = el('div', 'hud-heli');
+    card.innerHTML = `
+      <div class="hud-heli-top">
+        <div class="hud-heli-state">ON THE GROUND</div>
+        <div class="hud-heli-h"><span class="hud-heli-hv">0</span><span class="hud-heli-hu">ft up</span></div>
+      </div>
+      <div class="hud-heli-vs">level</div>
+      <div class="hud-heli-say"></div>
+      <div class="hud-heli-lift">
+        <span data-l="1">SHIFT &#9650; UP</span><span data-l="0">HOLD</span><span data-l="-1">CTRL &#9660; DOWN</span>
+      </div>
+      <div class="hud-heli-land" hidden><b>LANDING</b><i></i><span></span></div>`;
+    this.heliCard = card;
+    this.heliState = card.querySelector('.hud-heli-state');
+    this.heliH = card.querySelector('.hud-heli-hv');
+    this.heliVs = card.querySelector('.hud-heli-vs');
+    this.heliSay = card.querySelector('.hud-heli-say');
+    this.heliLift = card.querySelector('.hud-heli-lift');
+    this.heliLiftKeys = {
+      1: card.querySelector('[data-l="1"]'),
+      0: card.querySelector('[data-l="0"]'),
+      '-1': card.querySelector('[data-l="-1"]'),
+    };
+    this.heliLand = card.querySelector('.hud-heli-land');
+    this.heliLandText = card.querySelector('.hud-heli-land span');
+    card.hidden = true;
+    this._placeHeliCard();
+  },
+
+  /**
+   * Hang the card at the foot of the top-left panel that is on screen: the
+   * hover strip in the hover, the cruise rows in the cruise. Called when the
+   * mode changes (with hysteresis, so a few times a flight), never per frame.
+   */
+  _placeHeliCard() {
+    const card = this.heliCard;
+    if (!card) return;
+    const cruise = this.speedValue && this.speedValue.closest ? this.speedValue.closest('.hud-left') : null;
+    const host = this._hoverMode || !cruise ? this.rotorPanel : cruise;
+    if (host && card.parentElement !== host) host.appendChild(card);
   },
 
   /* ------------------------------------------------------------------ */
@@ -326,6 +518,178 @@ const ROTOR = {
 
     if (!want && this.rescueLine) this.rescueLine.hidden = true;
     if (!want && this.holdPanel) this.holdPanel.hidden = true;
+    if (this.heliCard) this.heliCard.hidden = !want;
+    if (!want && this.throttleBar) this.throttleBar.root.hidden = false;
+    if (!want) this.wrap.classList.remove('is-rotorkid');
+    // Re-decide the kid/lever words on the next frame.
+    this._kidShown = undefined;
+  },
+
+  /**
+   * Kid mode or a lever. Changes the key hint, the collective bar and the
+   * card's lift row — once, when it changes, not sixty times a second.
+   */
+  setRotorKid(kid) {
+    if (kid === this._kidShown) return;
+    this._kidShown = kid;
+    this.wrap.classList.toggle('is-rotorkid', kid);
+    if (this.throttleBar) this.throttleBar.root.hidden = kid;
+    if (this.heliLift) this.heliLift.hidden = !kid;
+    const hint = this.wrap.querySelector('.hud-keyhint');
+    if (hint) {
+      hint.innerHTML = kid
+        ? 'Up: <kbd>Shift</kbd> · Down: <kbd>Ctrl</kbd> · Let go to hover '
+          + '· Fly: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · Turn: <kbd>Q</kbd>/<kbd>E</kbd>'
+        : 'Collective: <kbd>Shift</kbd>/<kbd>↑</kbd> up · <kbd>Ctrl</kbd>/<kbd>↓</kbd> down '
+          + '· Cyclic: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · Tail rotor: <kbd>Q</kbd>/<kbd>E</kbd>';
+    }
+    if (this.throttleBar) {
+      this.throttleBar.root.title = kid
+        ? 'Shift climbs, Ctrl comes down, let go and it holds the height.'
+        : 'Shift or ↑ to lift, Ctrl or ↓ to sink. The hover is at about 40% of the lever.';
+    }
+  },
+
+  /**
+   * The card: state, height, vertical speed, the next thing to press, and
+   * the landing light. Every write is change-gated.
+   */
+  _paintHeliCard(sim, r) {
+    if (!this.heliCard) return;
+    const ac = sim.aircraft;
+    /*
+     * Crashed: the card goes. The review of the second kid build has a
+     * screenshot of TOO STEEP THIS WAY and a green "gentle" landing light
+     * still up behind "The tail struck the ground".
+     */
+    const crashed = !!ac.crashed;
+    if (crashed !== this._heliCrashShown) {
+      this._heliCrashShown = crashed;
+      this.heliCard.hidden = crashed || !this._rotorActive;
+    }
+    if (crashed) return;
+    const R = ac.rotor || {};
+    const kid = !!R.kid;
+    this.setRotorKid(kid);
+
+    let key;
+    let words;
+    if (kid) {
+      key = R.kidState || 'ground';
+      if (key === 'holding' && R.holdingSpot) key = 'hover';
+      words = KID_WORDS[key] || KID_WORDS.holding;
+    } else {
+      key = ac.hoverAssist === false
+        ? 'off'
+        : r.onGround
+          ? 'ground'
+          : R.holdingHeight
+            ? 'height'
+            : (R.hoverAuth || 0) > 0.01
+              ? 'drift'
+              : 'standby';
+      words = REAL_WORDS[key];
+    }
+    if (key !== this._heliKey || kid !== this._heliKeyKid) {
+      this._heliKey = key;
+      this._heliKeyKid = kid;
+      this.heliState.textContent = words[0];
+      this.heliState.classList.toggle('is-good', words[2] === 'good');
+      this.heliState.classList.toggle('is-warn', words[2] === 'warn');
+      this.heliSay.textContent = words[1];
+    }
+
+    // Height above whatever is underneath — sea, rock, roof or deck. The same
+    // number the winch band is judged on (missions-heli.js surfaceAt), so the
+    // card, the radar altimeter and the HEIGHT light cannot disagree.
+    const hFt = Math.max(0, Math.round(this._heightAboveSurface(ac) * M_TO_FT));
+    if (hFt !== this._heliHShown) {
+      this._heliHShown = hFt;
+      this.heliH.textContent = String(hFt);
+    }
+    const vs = Math.round(r.vsFpm / 20) * 20;
+    if (vs !== this._heliVsShown) {
+      this._heliVsShown = vs;
+      this.heliVs.textContent = vs > 60 ? `\u25B2 up ${vs} ft/min` : vs < -60 ? `\u25BC down ${-vs} ft/min` : 'level';
+    }
+    if (kid) {
+      const lift = R.lift || 0;
+      if (lift !== this._heliLiftShown) {
+        this._heliLiftShown = lift;
+        this.heliLiftKeys[1].classList.toggle('is-on', lift === 1);
+        this.heliLiftKeys[0].classList.toggle('is-on', lift === 0);
+        this.heliLiftKeys[-1].classList.toggle('is-on', lift === -1);
+      }
+    }
+
+    /* ---- The landing light ----
+     * On whenever the skids are within eight metres of something, or on it.
+     * Green is a landing the undercarriage will not notice, amber is firm,
+     * red is the one that hurts.
+     *
+     * It judged the sink rate alone — red over 500 ft/min at any height —
+     * and so it told a child doing exactly what it said to be in trouble.
+     * Measured on the first kid build: holding Ctrl, the computer comes down
+     * at 3 m/s and eases off from 7 m, and the light was red "too fast, keep
+     * holding Ctrl" from 19 ft to 16 ft, amber to 9 ft, and the touchdown was
+     * 86 ft/min, "perfect". So it now judges the ARRIVAL: the braking it
+     * would take to be down to a gentle 0.6 m/s by the time the skids get
+     * there. Up to 1.2 m/s^2 is green (the kid computer's own profile needs
+     * under 0.8), up to 2.6 amber, more than that red. In the last 40 cm it
+     * is the sink rate itself, against the touchdown grading's numbers: under
+     * 320 ft/min is "good", over 560 is "rough".
+     */
+    const skids = R.heightAbove != null ? R.heightAbove : 99;
+    // Worked out as a number first and only turned into words when it
+    // changes: this runs every frame and a string built every frame is a
+    // string the collector has to sweep up on a school Chromebook.
+    let word = 0; // 0 off, 1 on the skids, 2 steady, 3 gentle, 4 a bit fast, 5 too fast, 6 not here
+    let ft = 0;
+    if (r.onGround) word = 1;
+    else if (skids < 8 && kid && KID_REFUSES.has(R.kidState)) {
+      // The card says it will not land here: the light must not say "steady"
+      // in green under it (see KID_REFUSES).
+      word = 6;
+      ft = Math.max(0, Math.round(skids * M_TO_FT));
+    } else if (skids < 8) {
+      const sink = Math.max(0, -r.vsFpm) / M_TO_FT / 60; // m/s, downwards
+      if (sink < 0.2) word = 2;
+      else if (skids < 0.4) word = sink < 1.63 ? 3 : sink < 2.85 ? 4 : 5;
+      else {
+        const brake = (sink * sink - 0.36) / (2 * (skids - 0.3));
+        word = brake <= 1.2 ? 3 : brake <= 2.6 ? 4 : 5;
+      }
+      ft = Math.max(0, Math.round(skids * M_TO_FT));
+    }
+    const landKey = word * 1000 + ft + (kid ? 0.5 : 0);
+    if (landKey !== this._heliLandShown) {
+      this._heliLandShown = landKey;
+      const land = word === 0 ? '' : word <= 3 ? 'good' : word === 4 || word === 6 ? 'warn' : 'bad';
+      const say = ['', 'on the skids', 'steady', 'gentle', 'a bit fast',
+        kid ? 'too fast, hold Shift' : 'too fast, raise the collective', 'not here'][word];
+      this.heliLand.hidden = !land;
+      this.heliLand.classList.toggle('is-good', land === 'good');
+      this.heliLand.classList.toggle('is-warn', land === 'warn');
+      this.heliLand.classList.toggle('is-bad', land === 'bad');
+      this.heliLandText.textContent = word >= 2 ? `${say} · ${ft} ft` : say;
+    }
+  },
+
+  /**
+   * Metres from the SKIDS to the surface under them: sea, ground or deck.
+   *
+   * This was measured from the machine's centre, so sitting on the pad the
+   * card said "5 ft up" and the radar altimeter 5 ft — measured, Free Flight,
+   * on Kestrel Airfield Pad before the engine had done anything. On the
+   * ground is zero. rotor-assist.js works the number out every step
+   * (rotor.heightAbove) and the winch band in missions-heli.js is judged on
+   * the same one, so the card, the altimeter and the HEIGHT light agree.
+   */
+  _heightAboveSurface(ac) {
+    const R = ac.rotor;
+    if (R && Number.isFinite(R.heightAbove)) return Math.max(0, R.heightAbove);
+    const ground = ac.pos.y - ac.agl; // heightAt() under the machine
+    return Math.max(0, ac.pos.y - Math.max(0, ground) - 1.69);
   },
 
   /**
@@ -338,6 +702,7 @@ const ROTOR = {
     if (want === !!this._hoverMode) return;
     this._hoverMode = want;
     this.wrap.classList.toggle('is-rotorhover', want);
+    this._placeHeliCard();
     /*
      * Same trap clearVehicle() is written to document: update() writes numbers
      * and never units, so a unit label rewritten on a mode change stays
@@ -388,6 +753,31 @@ const ROTOR = {
     this._holdFallback = 0;
   },
 
+  /**
+   * Kid mode has just handed the autopilot back (main.js, the trimRequest
+   * block): say why, in the toast that said "Autopilot on" a moment ago
+   * rather than in a second one under it.
+   *
+   * Measured on the first kid build: P in a 13 m hover engaged the
+   * aeroplane autopilot, which captures 1,000 ft above the ground and 55 kt
+   * on engagement. Its throttle became a climb command and its elevator a
+   * tilt, so the Skyhook went forward at 25 m/s and up at 4.5 m/s, 13 m to
+   * 222 m in 40 s, with the card saying GOING UP and nobody on the keys.
+   * Hands off, the kid computer already holds the height and the spot, which
+   * is all an autopilot could promise here.
+   */
+  heliNoAutopilot() {
+    const text = 'No autopilot in kid mode: let go of every key and the Skyhook holds itself still.';
+    const last = this.toasts && this.toasts[this.toasts.length - 1];
+    if (last && last.node && /^Autopilot on/.test(last.node.textContent || '')) {
+      last.node.textContent = text;
+      last.node.className = 'hud-toast is-info';
+      last.life = Math.max(last.life, 4.5);
+    } else {
+      this.notify(text, 'info', 4.5);
+    }
+  },
+
   /* ------------------------------------------------------------------ */
   /* Per-frame                                                           */
   /* ------------------------------------------------------------------ */
@@ -407,17 +797,31 @@ const ROTOR = {
 
     this.setRotorMode(r.groundKts);
     this._paintRescue(sim);
+    this._paintHeliCard(sim, r);
     if (this.assistChip) {
-      // undefined counts as on: the lead's decision is that it ships on, and a
-      // settings object that predates the toggle must not silently turn it off.
-      // Change-gated like everything else here — this panel is repainted sixty
-      // times a second and writing the same word into the DOM sixty times a
-      // second is how an overlay ends up costing more than the island does.
-      const on = !(sim.settings && sim.settings.hoverAssist === false);
-      if (on !== this._assistShown) {
-        this._assistShown = on;
-        this.assistChip.classList.toggle('is-on', on);
-        this.assistChip.textContent = on ? 'HOVER ASSIST' : 'ASSIST OFF';
+      /*
+       * What the equipment is DOING, not whether it is fitted. This read
+       * `sim.settings.hoverAssist`, which nothing ever writes, so the chip
+       * said HOVER ASSIST through everything — including a 12 m/s climb the
+       * height hold had refused to touch. Change-gated like everything else
+       * here — this panel is repainted sixty times a second and writing the
+       * same word into the DOM sixty times a second is how an overlay ends up
+       * costing more than the island does.
+       */
+      const R = sim.aircraft.rotor || {};
+      const txt = R.kid
+        ? 'KID MODE'
+        : sim.aircraft.hoverAssist === false
+          ? 'ASSIST OFF'
+          : R.holdingHeight
+            ? 'HEIGHT HOLD'
+            : (R.hoverAuth || 0) > 0.01 && !r.onGround
+              ? 'DRIFT DAMPING'
+              : 'ASSIST STANDBY';
+      if (txt !== this._assistShown) {
+        this._assistShown = txt;
+        this.assistChip.classList.toggle('is-on', txt === 'KID MODE' || txt === 'HEIGHT HOLD');
+        this.assistChip.textContent = txt;
       }
     }
     if (!this._hoverMode) return false;
@@ -493,8 +897,14 @@ const ROTOR = {
       this.vsBarFill.classList.toggle('is-bad', sinking);
     }
 
-    /* ---- Radar altimeter ---- */
-    const aglFt = Math.max(0, Math.round(r.aglFt));
+    /* ---- Radar altimeter ----
+     * Over the SURFACE, not r.aglFt. ac.agl is measured to heightAt(), and
+     * out at sea heightAt() is the sea floor: over the swimmer in Man
+     * Overboard this read 170 ft with the skids 50 ft above the waves, and the
+     * band the winch is judged on is measured to the surface
+     * (missions-heli.js surfaceAt). Two opinions about one height.
+     */
+    const aglFt = Math.max(0, Math.round(this._heightAboveSurface(ac) * M_TO_FT));
     if (aglFt !== this._aglShown) {
       this._aglShown = aglFt;
       this.raValue.textContent = String(aglFt);
@@ -531,9 +941,20 @@ const ROTOR = {
      * here, because a hover mark that drifts about for reasons a child cannot
      * see teaches nothing. The bar is a teaching aid; physics.js is the truth.
      */
+    /*
+     * CORRECTION, measured 2026-09-23: the bar showed the LEVER (r.throttle)
+     * against a mark in COLLECTIVE units, and those are different scales —
+     * the lever idles at 0.18 of collective, so a steady hover read "39% ·
+     * hover 50%" and looked like it was falling. In kid mode the lever is not
+     * a lever at all. Both numbers now come from rotor-assist.js on the same
+     * scale: the collective the blades actually get, and where the hover is.
+     */
+    const R = ac.rotor || {};
     const extra = (ac && ac.extraMass) || 0;
-    const hoverPt = clamp(0.5 * ((SPEC.mass + extra) / SPEC.mass), 0.05, 0.95);
-    const coll = clamp(r.throttle, 0, 1);
+    const hoverPt = R.hoverPoint != null
+      ? clamp(R.hoverPoint, 0.05, 0.95)
+      : clamp(0.5 * ((SPEC.mass + extra) / SPEC.mass), 0.05, 0.95);
+    const coll = clamp(R.collective != null ? R.collective : r.throttle, 0, 1);
     this.powerFill.style.width = `${Math.round(coll * 100)}%`;
     const markPct = Math.round(hoverPt * 100);
     if (markPct !== this._hoverPtShown) {
@@ -711,4 +1132,37 @@ export function rotorSpeedWord(kts) {
 /** Mix the helicopter panel into the Hud class. Call once, at import time. */
 export function installRotorHud(Hud) {
   Object.assign(Hud.prototype, ROTOR);
+  /*
+   * The coach line is an aeroplane instructor. Measured on the Skyhook, Free
+   * Flight: on the pad it said "Hold Shift for full power", and in a steady
+   * hover "Too slow! Add power with Shift and lower the nose with W" — the
+   * two things that turn a hover into a crash. In the helicopter the card
+   * says what to press, so the coach keeps only its two lines that are true
+   * of anything: the restart after a crash and the engine start.
+   */
+  /*
+   * And the banners main.js writes for every aircraft: "Lift-off at 0
+   * knots — well flown", "Smooth and on the centreline", "· not on the
+   * runway". Measured on the Skyhook after a 90 ft/min landing on grass. The
+   * words are swapped for helicopter ones here, on the way to the screen.
+   */
+  if (Hud.prototype.showBanner && !Hud.prototype._aeroplaneBanner) {
+    Hud.prototype._aeroplaneBanner = Hud.prototype.showBanner;
+    Hud.prototype.showBanner = function showBanner(title, sub, ...rest) {
+      if (this._rotorActive && typeof sub === 'string') {
+        sub = sub
+          .replace(/^Lift-off at \d+ knots — well flown\.$/, 'Off the ground — well flown.')
+          .replace('Smooth and on the centreline.', 'Smooth and level.')
+          .replace(' · not on the runway', ' · not on an H');
+      }
+      return this._aeroplaneBanner(title, sub, ...rest);
+    };
+  }
+  if (Hud.prototype.setCoach && !Hud.prototype._aeroplaneCoach) {
+    Hud.prototype._aeroplaneCoach = Hud.prototype.setCoach;
+    Hud.prototype.setCoach = function setCoach(text) {
+      if (this._rotorActive && text && !/Restart|start the engine/.test(text)) text = null;
+      return this._aeroplaneCoach(text);
+    };
+  }
 }

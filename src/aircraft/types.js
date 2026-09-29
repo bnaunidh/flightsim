@@ -20,6 +20,7 @@
  */
 
 import * as THREE from '../vendor/three.module.js';
+import { extraAircraft } from './extra/index.js';
 
 /**
  * The trainer's aero numbers, which every other aeroplane is described as a
@@ -170,6 +171,10 @@ export const AIRCRAFT = [
   {
     id: 'skylark',
     name: 'Skylark 172',
+    // The drawn aeroplane from above, metres, for the airfield's stand fitting
+    // (airport-layout.js typeSize). Measured off the civil team's redrawn
+    // model; tests/features/airport.mjs holds it to the drawing.
+    plan: { nose: -2.8, tail: 4.62, span: 12.28 },
     class: 'Trainer',
     blurb:
       'The one everything else is measured against. Slow, steady and almost impossible to frighten — ' +
@@ -184,13 +189,37 @@ export const AIRCRAFT = [
      * window, so the canopy is overridden on the aeroplane rather than
      * changed underneath both of them.
      */
-    shape: { ...TRAINER_SHAPE, canopy: 'greenhouse' },
+    shape: {
+      ...TRAINER_SHAPE,
+      canopy: 'greenhouse',
+      /*
+       * Where the wing and tail are DRAWN (models/skylark.js). The flight
+       * model reads none of these — its wing-strike points come from the
+       * span, height and dihedral above, which are unchanged. The wing sat
+       * 1.1 m ahead of the pilot's eye, so the windscreen was under the
+       * middle of the chord and the cowl was half a metre long; a 172's
+       * windscreen meets the wing root's leading edge. The fin was 3.2 m off
+       * the ground (a 172 is 2.7) and the tail arm 0.6 m short.
+       */
+      wingZ: -0.6,
+      hZ: 3.55,
+      hRootChord: 1.05,
+      finZ: 3.2,
+      finRootChord: 1.35,
+      finHeight: 0.95,
+      finSweep: 0.62,
+      wheelR: { nose: 0.2, main: 0.235 },
+    },
     aero: { ...TRAINER_AERO },
   },
 
   {
     id: 'courier',
     name: 'Kestrel Courier',
+    // The drawn aeroplane from above, metres, for the airfield's stand fitting
+    // (airport-layout.js typeSize). Measured off the civil team's redrawn
+    // model; tests/features/airport.mjs holds it to the drawing.
+    plan: { nose: -3.07, tail: 5.13, span: 12.79 },
     class: 'Tourer',
     blurb:
       'A quick low-wing single with the wheels tucked away. Twice the range and half again the speed ' +
@@ -217,6 +246,18 @@ export const AIRCRAFT = [
       main: { x: 1.5, y: -1.5, z: 0.5 },
       power: { kind: 'prop', count: 1, propRadius: 1.15, z: -2.7 },
       eye: [-0.24, 0.44, -0.05],
+      /*
+       * Drawing only (models/courier.js); the flight model reads none of
+       * these. The tail was the trainer's, 0.9 m further forward than the
+       * body now ends, and the tyres were the trainer's 0.62 m ones.
+       */
+      hZ: 3.8,
+      hRootChord: 0.95,
+      finZ: 3.35,
+      finRootChord: 1.3,
+      finHeight: 0.85,
+      finSweep: 0.7,
+      wheelR: { nose: 0.19, main: 0.23 },
     },
     aero: {
       ...TRAINER_AERO,
@@ -244,6 +285,10 @@ export const AIRCRAFT = [
   {
     id: 'meridian',
     name: 'Meridian 220',
+    // The drawn aeroplane from above, metres, for the airfield's stand fitting
+    // (airport-layout.js typeSize). Measured off the civil team's redrawn
+    // model; tests/features/airport.mjs holds it to the drawing.
+    plan: { nose: -7.71, tail: 14.44, span: 29.24 },
     class: 'Airliner',
     blurb:
       'Forty seats, two engines and a lot of momentum. Think three miles ahead of it, start everything ' +
@@ -260,26 +305,38 @@ export const AIRCRAFT = [
       halfSpan: 6.4,
       rootChord: 2.1,
       tipChord: 0.72,
-      sweep: 2.1, // swept wing
+      sweep: 2.55, // swept wing: 22 degrees at the leading edge
       dihedral: 0.5,
       wingY: -0.5,
       wingZ: -0.2,
       struts: false,
       retractable: true,
+      /*
+       * The tail, wheels and engines below are drawing-only (models/
+       * meridian.js); the flight model reads none of them.
+       *
+       * The engines were y -1.5, radius 0.6: the bottom of each nacelle
+       * 0.6 shape units BELOW the main wheels' contact point, 1.36 m under
+       * the runway at this scale. They now hang 0.82 m clear of it, and a
+       * banked touchdown scrapes the wing tip (14.8 degrees) before the
+       * nacelle (15.4) — the order the wing-strike check assumes.
+       *
+       * The fin and tailplane sit 0.55 further aft than that commit put
+       * them, on the end of a body that is slimmer and so longer before
+       * its belly meets the tail-strike line (see models/meridian.js).
+       */
       hSpan: 2.3,
       hRootChord: 1.15,
-      hZ: 3.5,
-      finHeight: 2.3,
+      hZ: 5.4,
+      finHeight: 2.2,
       finRootChord: 1.9,
-      finSweep: 1.5,
-      finZ: 2.6,
+      finSweep: 1.45,
+      finZ: 4.7,
       main: { x: 1.35, y: -1.5, z: 0.9 },
       nose: { x: 0, y: -1.42, z: -1.7 },
-      wheelR: { nose: 0.3, main: 0.4 },
+      wheelR: { nose: 0.17, main: 0.26 },
       gearStiffness: 1.7,
-      // Outboard, and low enough that the top of the nacelle clears the
-      // underside of the wing with a pylon in between.
-      power: { kind: 'jet', count: 2, x: 3.4, y: -1.5, z: -1.0, radius: 0.6, length: 1.15 },
+      power: { kind: 'jet', count: 2, x: 2.8, y: -0.76, z: 0.1, radius: 0.34, length: 0.75 },
       canopy: 'airliner',
       eye: [-0.3, 0.3, -1.5],
     },
@@ -329,6 +386,9 @@ export const AIRCRAFT = [
     callsign: 'Vanguard zero one',
     // A fighter is not a bomb truck. Two, and make them count.
     stores: 2,
+    // The drawn aeroplane from above, for the airfield (see extra/index.js):
+    // the shape's proportions put its nose 3 m inside the drawn one.
+    plan: { nose: -7.62, tail: 6.49, span: 9.9 },
     shape: {
       ...TRAINER_SHAPE,
       scale: 1.22,
@@ -428,6 +488,7 @@ export const AIRCRAFT = [
     accent: '#d8d2c4',
     callsign: 'Osprey two one',
     stores: 2,
+    plan: { nose: -6.9, tail: 5.91, span: 13.2 },
     shape: {
       ...TRAINER_SHAPE,
       scale: 1.28,
@@ -514,6 +575,10 @@ export const AIRCRAFT = [
   {
     id: 'tempest',
     name: 'Tempest WR-4',
+    // The drawn aeroplane from above, metres, for the airfield's stand fitting
+    // (airport-layout.js typeSize). Measured off the civil team's redrawn
+    // model; tests/features/airport.mjs holds it to the drawing.
+    plan: { nose: -7.63, tail: 11.99, span: 25.97 },
     class: 'Tourer',
     blurb:
       'A twin-turboprop weather-research aeroplane with a reinforced spar, flown on purpose into the ' +
@@ -540,16 +605,27 @@ export const AIRCRAFT = [
       wingZ: -0.6,
       struts: false,
       retractable: true,
-      hSpan: 2.4,
-      hRootChord: 1.2,
-      hZ: 3.4,
-      finHeight: 2.2,
-      finRootChord: 1.8,
-      finSweep: 1.0,
-      finZ: 2.6,
+      /*
+       * Tail, tyres and propellers below are drawing-only (models/
+       * tempest.js). The tail sat 2.4 m further forward than the body now
+       * ends; the tyres were 1.3 m across; the propellers 5.1 m, which is
+       * a Q400's size on an aeroplane two-thirds as long. 4.55 m now, four
+       * blades, hub slung under the wing at y 0.5: 0.93 m clear of the
+       * runway and 1.17 m of the cabin side.
+       *
+       * The fin and tailplane are 0.6 further aft than that, on a body that
+       * now runs to the tail-strike line's limit (models/tempest.js).
+       */
+      hSpan: 2.5,
+      hRootChord: 1.15,
+      hZ: 5.4,
+      finHeight: 1.65,
+      finRootChord: 1.55,
+      finSweep: 0.8,
+      finZ: 4.95,
       main: { x: 1.2, y: -1.35, z: 0.8 },
       nose: { x: 0, y: -1.3, z: -1.6 },
-      wheelR: { nose: 0.28, main: 0.38 },
+      wheelR: { nose: 0.2, main: 0.27 },
       gearStiffness: 1.6,
       /*
        * Two propellers, wing-mounted, in nacelles at x = 2.6.
@@ -563,7 +639,10 @@ export const AIRCRAFT = [
        * decision. The propeller branch reads `count` now, and this really is
        * a twin.
        */
-      power: { kind: 'prop', count: 2, propRadius: 1.45, z: -2.2, x: 2.6, radius: 0.5, length: 1.1 },
+      // propRadius stays: specFor() copies it into rotorRadius for every
+      // type, and the flight spec is kept byte-identical. drawRadius is the
+      // propeller models/tempest.js actually draws.
+      power: { kind: 'prop', count: 2, propRadius: 1.45, drawRadius: 1.3, z: -2.2, x: 2.6, y: 0.5, radius: 0.36, length: 1.1 },
       canopy: 'cabin',
       eye: [-0.28, 0.42, -1.1],
     },
@@ -628,6 +707,7 @@ export const AIRCRAFT = [
      * goes at judging a release, which is how the skill is actually learned.
      */
     stores: 3,
+    plan: { nose: -6.4, tail: 6.67, span: 33.5 },
     shape: {
       ...TRAINER_SHAPE,
       scale: 1.95,
@@ -737,14 +817,17 @@ export const AIRCRAFT = [
     name: 'Skyhook H-3',
     class: 'Helicopter',
     blurb:
-      'Hovers, which nothing else here does. Collective on Shift and Ctrl, cyclic on the stick, tail rotor '
-      + 'on the rudder. It will sit still in the air and it will not glide — those are the same fact.',
+      'Hovers, which nothing else here does. Shift goes up, Ctrl comes down, and let go and it holds itself '
+      + 'still; W A S D tilt it, Q and E turn it. Realistic gives you the real collective lever. It will not '
+      + 'glide — that and the hover are the same fact.',
     stats: { speed: 2, handling: 3, ease: 2 },
     livery: '#2f4a63',
     accent: '#f0a020',
     callsign: 'Skyhook three',
     // A helicopter can hold still over the spot, so it gets plenty.
     stores: 4,
+    // The rotor disc, not the stub wing the shape's span is.
+    plan: { nose: -5.12, tail: 6.72, span: 10.49 }, // civil redraw: tail 1.0 m longer
     shape: {
       ...TRAINER_SHAPE,
       scale: 1.25,
@@ -771,8 +854,11 @@ export const AIRCRAFT = [
       nose: { x: 0, y: -1.3, z: -1.0 },
       wheelR: { nose: 0.24, main: 0.28 },
       gearStiffness: 1.1,
-      // `rotor` is what switches the flight model over.
-      power: { kind: 'prop', count: 1, rotor: true, propRadius: 4.2, z: 0.1, y: 1.6 },
+      // `rotor` is what switches the flight model over. `propRadius` is the
+      // flight model's rotorRadius; `y` is only where the hub is drawn
+      // (models/skyhook.js) — it was 1.6, which stood the hub 3.7 m off
+      // the ground on a 2.9 m class of machine.
+      power: { kind: 'prop', count: 1, rotor: true, propRadius: 4.2, z: 0.1, y: 1.28 },
       canopy: 'cabin',
       eye: [-0.22, 0.4, -0.9],
     },
@@ -830,6 +916,13 @@ export const AIRCRAFT = [
     },
   },
 ];
+
+/*
+ * And the ones added since, from ./extra/. Appended here rather than written
+ * into the array above so that adding an aeroplane is a new file, not an
+ * edit to this one.
+ */
+AIRCRAFT.push(...extraAircraft({ TRAINER_SHAPE, TRAINER_AERO }));
 
 export const DEFAULT_AIRCRAFT_ID = 'skylark';
 

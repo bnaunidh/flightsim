@@ -1,0 +1,6 @@
+# What a build leaves beside its script. Only assets/models/*.glb ship.
+*.blend
+*.blend1
+*.glb
+renders/
+kestrel-launch/kestrel_launch.js

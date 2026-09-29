@@ -114,6 +114,19 @@ export class Input {
     this.trimInput = 0;
     this.throttleTarget = 0;
     /**
+     * What Shift and Ctrl mean. null is a lever that stays where you leave it
+     * (every aeroplane, and the helicopter in realistic mode). 'command' is the
+     * helicopter's kid mode: a spring-centred lift command, 0.5 = hold this
+     * height, 1 = climb, 0 = come down. Set every physics step by main.js from
+     * `aircraft.rotor.kid`; this module still does not know a flight model
+     * exists.
+     */
+    this.rotorCollective = null;
+    /** Right trigger minus left, kept for the lift command. */
+    this._padLift = 0;
+    /** What the lift command last put in throttleTarget; null when it is not flying. */
+    this._liftWrote = null;
+    /**
      * Set by the on-screen controls on a touch device. Left null when there is
      * no touch layer, so a keyboard flight never pays for this.
      */
@@ -249,6 +262,8 @@ export class Input {
    */
   nudgeThrottle(d) {
     if (!d) return;
+    // A lift command has no hover point to trim towards: it springs to hold.
+    if (this.rotorCollective === 'command') return;
     if (this.touch && this.touch.dragging) return;
     this.throttleTarget = Math.max(0, Math.min(1, this.throttleTarget + d));
   }
@@ -388,6 +403,7 @@ export class Input {
       const rt = pad.buttons[7] ? pad.buttons[7].value : 0;
       const lt = pad.buttons[6] ? pad.buttons[6].value : 0;
       if (rt > 0.02 || lt > 0.02) padThrottle = clamp(this.throttleTarget + (rt - lt) * dt * 1.2, 0, 1);
+      this._padLift = rt - lt;
       this.padButtons = this.padButtons || {};
       const edge = (i) => {
         const now = pad.buttons[i] && pad.buttons[i].pressed;
@@ -404,6 +420,7 @@ export class Input {
       };
     } else {
       this.padEdges = null;
+      this._padLift = 0;
     }
 
     // Move the smoothed controls toward the input.
@@ -419,6 +436,21 @@ export class Input {
     }
 
     // Throttle: held keys ramp it, gamepad triggers set it.
+    /*
+     * The helicopter's lift command gives the lever back the moment anybody
+     * else sets it. main.js only says 'command' after a physics step, so for
+     * the first frame of the NEXT flight the flag is still the helicopter's —
+     * and in the menu it is never cleared at all. Measured: a kid-mode
+     * helicopter flight, then Free Flight in the Skylark, and the aeroplane
+     * sat on the runway at 50% throttle and rolled off at 3.3 m/s in three
+     * seconds, because the lift command's "hold" (0.5) was still in
+     * throttleTarget and startMode()'s 0 was overwritten by it. So a write
+     * from outside (startMode, the autopilot, a test) ends the command until
+     * the flight model asks for it again.
+     */
+    if (this.rotorCollective === 'command' && this._liftWrote !== null && this.throttleTarget !== this._liftWrote) {
+      this.rotorCollective = null;
+    }
     if (padThrottle !== null) this.throttleTarget = padThrottle;
     if (this.touch && this.touch.throttle !== null && this.touch.throttle !== undefined) {
       this.throttleTarget = this.touch.throttle;
@@ -434,9 +466,34 @@ export class Input {
       return false;
     };
     const arrowsFree = !this.freeLook;
-    if (throttleKey('throttleUp', arrowsFree)) this.throttleTarget = clamp(this.throttleTarget + dt * 0.62, 0, 1);
-    if (throttleKey('throttleDown', arrowsFree)) this.throttleTarget = clamp(this.throttleTarget - dt * 0.62, 0, 1);
-    this.out.throttle = lerp(this.out.throttle, this.throttleTarget, clamp(dt * 6, 0, 1));
+    if (this.rotorCollective === 'command') {
+      /*
+       * The helicopter's kid mode: Shift and Ctrl are a lift COMMAND.
+       *
+       * As a lever they were a trap. Measured on the unmodified build, easy
+       * mode: Shift held four seconds ran the lever to 100% and on release it
+       * stayed at 100%, so the machine went on climbing at 12 m/s to 228 m —
+       * the height hold refuses to capture above 3 m/s, so nothing caught it.
+       * Here the keys say what the child means: held is "go up" or "go down",
+       * let go is "stay here", and the flight computer turns that into a
+       * collective. A finger on the touch slider sets it directly and it
+       * springs back to hold when the finger lifts, like the keys.
+       */
+      let lift = this._padLift || 0;
+      if (throttleKey('throttleUp', arrowsFree)) lift += 1;
+      if (throttleKey('throttleDown', arrowsFree)) lift -= 1;
+      this.throttleTarget = 0.5 + 0.5 * clamp(lift, -1, 1);
+      if (this.touch && this.touch.throttle !== null && this.touch.throttle !== undefined) {
+        this.throttleTarget = this.touch.throttle;
+      }
+      this.out.throttle = lerp(this.out.throttle, this.throttleTarget, clamp(dt * 12, 0, 1));
+      this._liftWrote = this.throttleTarget;
+    } else {
+      this._liftWrote = null;
+      if (throttleKey('throttleUp', arrowsFree)) this.throttleTarget = clamp(this.throttleTarget + dt * 0.62, 0, 1);
+      if (throttleKey('throttleDown', arrowsFree)) this.throttleTarget = clamp(this.throttleTarget - dt * 0.62, 0, 1);
+      this.out.throttle = lerp(this.out.throttle, this.throttleTarget, clamp(dt * 6, 0, 1));
+    }
 
     const braking =
       this.held('brakes') ||

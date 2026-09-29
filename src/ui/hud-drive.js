@@ -44,6 +44,38 @@
  * it. That is the rule the rest of hud.js already follows.
  */
 
+/**
+ * The van's own few rules, injected once. styles/main.css is shared by every
+ * game and is not this file's to edit; these only ever match nodes this
+ * module creates.
+ */
+function injectStyle() {
+  if (typeof document === 'undefined' || document.getElementById('hud-drive-car-style')) return;
+  const st = document.createElement('style');
+  st.id = 'hud-drive-car-style';
+  st.textContent = `
+.hud-drive-gear { display: none; align-items: center; gap: 6px; margin-bottom: 8px; }
+.hud.is-drive-car .hud-drive-gear { display: flex; }
+.hud-drive-gear b {
+  width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px;
+  font-size: 15px; font-weight: 700; color: rgba(255,255,255,0.32); background: rgba(255,255,255,0.07);
+}
+.hud-drive-gear b.is-on { color: #0c1420; background: var(--accent, #5ec8ff); }
+.hud-drive-gear b.is-on[data-g="R"] { background: var(--amber, #ffc247); }
+.hud-drive-gear span { margin-left: 6px; font-size: 12px; color: var(--text-dim, #a9b4c4); }
+.hud-drive-gear span.is-hand { color: var(--amber, #ffc247); font-weight: 700; }
+.hud-chevron-arrow { transform-origin: 50% 55%; transition: transform 0.12s linear; }
+.hud-chevron.is-slow { border-color: rgba(255, 194, 71, 0.8); background: rgba(70, 48, 8, 0.78); }
+.hud-chevron.is-slow .hud-chevron-what { color: var(--amber, #ffc247); }
+.hud-chevron.is-brake, .hud-chevron[data-dir="blocked"] { border-color: rgba(255, 107, 91, 0.85); background: rgba(80, 20, 16, 0.8); }
+.hud-chevron.is-brake .hud-chevron-what, .hud-chevron[data-dir="blocked"] .hud-chevron-what,
+.hud-chevron[data-dir="blocked"] .hud-chevron-arrow { color: #ff8a7a; }
+.hud.is-drive .hud-word[data-surface="dirt"] { color: #d8bf98; }
+.hud.is-drive .hud-word[data-surface="field"] { color: #e6d58f; }
+`;
+  document.head.appendChild(st);
+}
+
 const el = (tag, cls, html) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -95,22 +127,41 @@ export class RouteTracker {
 
   setRoute(route) {
     this.route = Array.isArray(route) ? route : [];
+    // Whoever gives the route says where the stop is (see nearTheDrop);
+    // until they do, it is the route's own end.
+    this.goalX = NaN;
+    this.goalZ = NaN;
     this.reset();
   }
 
   reset() {
     this.i = 0;
     this.searchAll = true;
+    this._steer = false;
+    this.slow = false;
+    this.brakeNow = false;
+    this.slowKph = 0;
+    this.slowIn = 0;
+    this.slowWhat = '';
   }
 
   /**
    * @param {{x:number,z:number}} pos    where the car is
    * @param {number} headingDeg          where it is pointing, compass degrees
-   * @returns {{dir:string,label:string,distanceM:number,angleDeg:number,remainingM:number}|null}
+   * @param {number} [turnDeg]           how much swing in 60 m is a turn
+   * @param {number} [lookaheadM]        how far ahead to look for one
+   * @param {number} [speed]             m/s, for the SLOW call (see slowFor)
+   * @param {number} [grip]              the tyres' grip today, 1 = dry tarmac
+   * @returns {{dir:string,label:string,distanceM:number,angleDeg:number,remainingM:number,slow:boolean,brake:boolean}|null}
    */
-  next(pos, headingDeg, { turnDeg = 25, lookaheadM = 1600 } = {}) {
+  next(pos, headingDeg, turnDeg = 30, lookaheadM = 1600, speed = 0, grip = 1) {
     const r = this.route;
-    if (!r || r.length < 2) return null;
+    if (!r || r.length < 2) {
+      this.offM = null;
+      this.slow = false;
+      this.brakeNow = false;
+      return null;
+    }
 
     /*
      * Find the segment we are on. After the first frame this only looks a
@@ -136,44 +187,407 @@ export class RouteTracker {
     }
     this.i = best;
     this.searchAll = false;
+    /** How far the van is from the route, for whoever re-plans it. */
+    this.offM = Math.sqrt(bestD);
 
     // Distance from here to the far end of the segment we are on, then whole
-    // segments after it.
-    const seg = (k) => Math.hypot(r[k + 1].x - r[k].x, r[k + 1].z - r[k].z);
-    const bearing = (k) =>
-      (Math.atan2(r[k + 1].x - r[k].x, -(r[k + 1].z - r[k].z)) * 180) / Math.PI;
+    // segments after it. (segLen and segBearing are module functions, not
+    // closures made per call: this runs every frame.)
 
-    let walked = seg(best) * (1 - bestT);
+    let walked = segLen(r, best) * (1 - bestT);
     let remaining = walked;
-    for (let k = best + 1; k < r.length - 1; k++) remaining += seg(k);
+    for (let k = best + 1; k < r.length - 1; k++) remaining += segLen(r, k);
 
-    // Arriving: close enough that the next instruction is "stop", not "turn".
-    if (remaining < 45) {
-      return { dir: 'arrive', label: 'ARRIVING', distanceM: remaining, angleDeg: 0, remainingM: remaining };
+    /*
+     * Which way to steer RIGHT NOW: the bearing to a point 35 m further along
+     * the route, relative to the nose.
+     *
+     * The arrow used to be a fixed glyph per instruction — an upward arrow for
+     * "straight on" whatever the van was doing — so a van parked facing the
+     * wrong way was told STRAIGHT ON, and followed it. The arrow now turns to
+     * point at the road ahead, which is the one instruction a child can follow
+     * without reading anything; and if the road ahead is behind you, it says so.
+     */
+    let need = 35;
+    let ak = best;
+    let at = bestT;
+    let aimX = r[r.length - 1].x;
+    let aimZ = r[r.length - 1].z;
+    while (ak < r.length - 1) {
+      const len = segLen(r, ak);
+      const rest = len * (1 - at);
+      if (rest >= need) {
+        const u = at + need / Math.max(len, 1e-6);
+        aimX = r[ak].x + (r[ak + 1].x - r[ak].x) * u;
+        aimZ = r[ak].z + (r[ak + 1].z - r[ak].z) * u;
+        break;
+      }
+      /*
+       * A corner the route goes round to miss a building (off the road, see
+       * aroundObstacles in jobs.js) is aimed at until the van is on it, not
+       * cut: 35 m on round a corner is a line across the building's own
+       * corner, and a child steering at it drove into the wall.
+       */
+      if (r[ak + 1].round && 35 - need + rest > 4) {
+        aimX = r[ak + 1].x;
+        aimZ = r[ak + 1].z;
+        break;
+      }
+      need -= rest;
+      ak++;
+      at = 0;
+    }
+    const aimBearing = (Math.atan2(aimX - pos.x, -(aimZ - pos.z)) * 180) / Math.PI;
+    const pointDeg = ((aimBearing - headingDeg + 540) % 360) - 180;
+    // Facing the wrong way along the road — the road where the van IS, not
+    // the aim point, which on a hairpin can be behind you legitimately.
+    const facing = ((segBearing(r, best) - headingDeg + 540) % 360) - 180;
+    this.slowFor(best, bestT, speed, grip, facing);
+
+    /*
+     * ARRIVING only where stopping counts.
+     *
+     * It said ARRIVING, "drop it here", with 45 m of ROUTE left — and the
+     * job only takes a stop within 34 m of the drop-off in a straight line
+     * (jobs.js ARRIVE_R; 44-48 m on some steps, never less). The reviewer's
+     * careful kid, never above 30 or 40 km/h, stopping the moment it said
+     * ARRIVING and waiting, stalled 36.8-40.3 m out on First Run and the
+     * Shuttle in four runs of six, under TO GO 0.0 km, for good. And past
+     * the end of the route the distance left is nought wherever the van
+     * is, so a van that coasted 37 m beyond the town on Night Call-out sat
+     * under ARRIVING for 760 s with no way-back arrow at all.
+     *
+     * So near a drop-off the chevron is worked out from the drop-off itself
+     * (goalX/goalZ and arriveR, which the courier guide sets from the job):
+     * ARRIVING only inside the zone, and only if braking now still stops the
+     * van in it; NEARLY THERE and how many metres more on the way in; BACK
+     * UP, hold S, when it is behind the van and near — S brakes and then
+     * reverses, so it is the one key whatever the van is doing. A split you
+     * drive through, and free drive's places, are not stops (stopAtEnd).
+     */
+    const gx = this.goalX === this.goalX && this.goalX != null ? this.goalX : r[r.length - 1].x;
+    const gz = this.goalZ === this.goalZ && this.goalZ != null ? this.goalZ : r[r.length - 1].z;
+    const dGoal = Math.hypot(gx - pos.x, gz - pos.z);
+    // Past the end of the route the route has nothing left; the drop-off
+    // is still where it was.
+    const toGo = Math.max(remaining, dGoal);
+    if (this.stopAtEnd !== false) {
+      /*
+       * Going round something to get there: off the road, with a corner of
+       * the way round still ahead (jobs.js: the guide's way back to the
+       * road, round the houses). Then the drop-off behind the van is not
+       * straight back — BACK UP reversed a van stopped 55 m out on the far
+       * side of a house from First Run's yard into that house, and the kid
+       * holding S sat against it for the rest of the minute.
+       */
+      let rounding = false;
+      if (r[best].grass) for (let k = best + 1; k < r.length && !rounding; k++) rounding = !!r[k].round;
+      const near = this.nearTheDrop(pos, headingDeg, speed, grip, gx, gz, dGoal, toGo, pointDeg, rounding);
+      if (near) return near;
+    } else if (toGo < 45) {
+      return this.answer('arrive', 'ARRIVING', toGo, 0, toGo, pointDeg);
+    }
+    remaining = toGo;
+    // Facing the wrong way along the road; or gone past the end of the
+    // route with where it leads behind you (the route's last bit points the
+    // way the van went, so "facing" alone said STEER RIGHT, 0 m, there).
+    const pastEnd = best >= r.length - 2 && bestT > 0.999;
+    /*
+     * Off the road — on the leg the guide lays from the van across the
+     * grass (jobs.js marks its points `grass`) — there is no road to be
+     * facing the wrong way along, and TURN AROUND's arrow does not lean: a
+     * van re-planned from where it stood pinned against a house was told
+     * TURN AROUND with the arrow straight up, and the kid who steers by the
+     * arrow drove off across the island (measured behind four Drover's Flat
+     * houses). There the arrow leans the way to turn, and the words agree.
+     */
+    if (r[best].grass && Math.abs(pointDeg) > 90) {
+      this._steer = true;
+      return this.steerAnswer(pointDeg, toGo);
+    }
+    if ((Math.abs(facing) > 115 || pastEnd) && Math.abs(pointDeg) > 90) {
+      return this.answer('uturn', 'TURN AROUND', 0, pointDeg, toGo, pointDeg);
     }
 
-    let prev = bearing(best);
-    for (let k = best + 1; k < r.length - 1 && walked < lookaheadM; k++) {
-      const b = bearing(k);
-      const turn = ((b - prev + 540) % 360) - 180;
-      if (Math.abs(turn) >= turnDeg) {
-        const dir = Math.abs(turn) > 150 ? 'uturn' : turn > 0 ? 'right' : 'left';
-        return {
-          dir,
-          label: dir === 'uturn' ? 'TURN AROUND' : dir.toUpperCase(),
-          distanceM: walked,
-          angleDeg: turn,
-          remainingM: remaining,
-        };
+    /*
+     * The next real turn.
+     *
+     * Consecutive segments were compared, and a turn was a change of 25
+     * degrees between two of them. That was right for a route of two or three
+     * straight lines and is wrong for a road: the roads are written every 16 m
+     * and round their corners, so a bend made of several small swings was
+     * invisible to it and the arrow said STRAIGHT ON all the way round. A turn
+     * is now how far the road swings within any 60 m stretch of it, which is
+     * what a driver means by one.
+     */
+    const WINDOW = 60;
+    let dk = -bestT * segLen(r, best); // from here to the START of segment k
+    let k0 = best;
+    let d0 = dk; // ...and to the start of the window's tail, k0
+    for (let k = best; k < r.length - 1 && dk < lookaheadM; k++) {
+      const len = segLen(r, k);
+      if (len < 0.5) { dk += len; continue; }
+      // Move the window's tail up until it is no more than WINDOW behind k.
+      while (k0 < k && dk - d0 > WINDOW) {
+        d0 += segLen(r, k0);
+        k0++;
       }
-      prev = b;
-      walked += seg(k);
+      const turn = ((segBearing(r, k) - segBearing(r, k0) + 540) % 360) - 180;
+      if (Math.abs(turn) >= turnDeg) {
+        const dist = Math.max(0, d0 + segLen(r, k0));
+        const sharp = Math.abs(turn) > 115;
+        const side = turn > 0 ? 'right' : 'left';
+        const words = turn > 0 ? (sharp ? 'HAIRPIN RIGHT' : 'RIGHT') : sharp ? 'HAIRPIN LEFT' : 'LEFT';
+        // Coming up, and the way the arrow already points: the turn is the
+        // instruction. Otherwise the arrow is saying something more urgent.
+        if (!this.steering(pointDeg, dist < 90 && Math.sign(turn) === Math.sign(pointDeg))) {
+          return this.answer(side, words, dist, turn, remaining, pointDeg);
+        }
+        return this.steerAnswer(pointDeg, remaining);
+      }
+      dk += len;
     }
 
     // Nothing to do for a while. Say how far the straight runs, because "1.4 km
     // of nothing" is itself information: it is when you use the throttle.
-    return { dir: 'straight', label: 'STRAIGHT ON', distanceM: Math.min(walked, remaining), angleDeg: 0, remainingM: remaining };
+    if (this.steering(pointDeg, false)) return this.steerAnswer(pointDeg, remaining);
+    return this.answer('straight', 'STRAIGHT ON', Math.min(Math.max(dk, walked), remaining), 0, remaining, pointDeg);
   }
+
+  /**
+   * The last stretch to a stop, or null when the van is not on it yet.
+   *
+   * `inside`: where the van would come to a halt (under 4.2 m/s, which is
+   * what the job calls stopped) if S went down now — a third of a second to
+   * get a finger there, then 4 m/s² times today's grip, which is well under
+   * what the brake does (7 m/s²) so the answer is never too hopeful — is
+   * still 1.5 m inside the zone.
+   *
+   * @returns {object|null}
+   */
+  nearTheDrop(pos, headingDeg, speed, grip, gx, gz, dGoal, toGo, pointDeg, rounding = false) {
+    const R = this.arriveR > 0 ? this.arriveR : ARRIVE_M;
+    const goalDeg = ((((Math.atan2(gx - pos.x, -(gz - pos.z)) * 180) / Math.PI - headingDeg) + 540) % 360) - 180;
+    const behind = Math.abs(goalDeg) > 110;
+    if (dGoal <= R) {
+      const v = Math.abs(speed || 0);
+      const a = 4 * Math.max(0.3, grip || 1);
+      const s = v * 0.35 + (v > STOPPED_V ? (v * v - STOPPED_V * STOPPED_V) / (2 * a) : 0);
+      const dir = (((speed || 0) < 0 ? headingDeg + 180 : headingDeg) * Math.PI) / 180;
+      const px = pos.x + Math.sin(dir) * s;
+      const pz = pos.z - Math.cos(dir) * s;
+      if (Math.hypot(px - gx, pz - gz) <= R - 1.5) {
+        return this.answer('arrive', 'ARRIVING', 0, 0, toGo, goalDeg);
+      }
+      // Going too fast to stop in it: towards it, brake now; away from it,
+      // it is behind you.
+      if (!behind || (speed || 0) < 0) {
+        const o = this.answer('arrive', 'ARRIVING', 0, 0, toGo, goalDeg);
+        o.brake = true;
+        return o;
+      }
+      return this.answer('back', 'BACK UP', 0, goalDeg, toGo, goalDeg);
+    }
+    // Just past it, behind the van: back up, not a U-turn in the road —
+    // unless the way there goes round something (see next()).
+    if (behind && dGoal <= R + 45 && !rounding) {
+      return this.answer('back', 'BACK UP', dGoal - R, goalDeg, toGo, goalDeg);
+    }
+    // On the way in: how much further to where stopping counts.
+    if (!behind && toGo < R + 60) {
+      if (this.steering(pointDeg, false)) return this.steerAnswer(pointDeg, toGo);
+      return this.answer('near', 'NEARLY THERE', dGoal - R, 0, toGo, pointDeg);
+    }
+    return null;
+  }
+
+  /*
+   * STEER LEFT / STEER RIGHT: when the arrow is well off the nose, the words
+   * say what the arrow says.
+   *
+   * "Words say what is coming; the arrow says what to do about it" was the
+   * rule, and it read as two instructions at once. Measured on Drover's Flat
+   * holding W with no steering: the van runs off where the road curves
+   * gently left at 10-11 s, the arrow swings to -45° and the words go on
+   * saying STRAIGHT ON 1190 m. A child reads the words. So past 35° the
+   * words agree with the arrow, until it is back under 20° (the gap stops it
+   * flickering on a wobbly line); a turn coming up within 90 m the way the
+   * arrow already points keeps its own words, because they agree.
+   */
+  steering(pointDeg, turnAgrees) {
+    const off = Math.abs(pointDeg);
+    this._steer = turnAgrees ? false : this._steer ? off > 20 : off >= 35;
+    return this._steer;
+  }
+
+  steerAnswer(pointDeg, remaining) {
+    const left = pointDeg < 0;
+    return this.answer(left ? 'left' : 'right', left ? 'STEER LEFT' : 'STEER RIGHT', 0, pointDeg, remaining, pointDeg, true);
+  }
+
+  /*
+   * SLOW DOWN: is the van going faster than it can stop down to for the bends
+   * (and the drop-off) coming up on this route?
+   *
+   * The reviewer drove every job as a ten-year-old does — W held the whole
+   * way, steering by the arrow, stamping on S at ARRIVING — and the hard jobs
+   * scored nothing: Coast Road 274 s for 0/100, Summit Relay 377 s for 0/100,
+   * five "Off the road at speed" knocks each. Measured again at the start of
+   * this repair, and it is always the same thing: the van arrives at a
+   * junction or a hairpin at 90-112 km/h, the turn was called 4-24 m before it
+   * ("LEFT 4 m" at 105 km/h, "HAIRPIN LEFT 20 m" at 112), nothing on the
+   * screen said slow down, and at 105 km/h the tightest the van can turn on
+   * dry tarmac is a 98 m circle. So the bend runs out onto the grass.
+   *
+   * This is the missing call. For every corner on the route ahead within
+   * stopping range it works out how fast that bit of road can be taken — the
+   * turn within 16 m either side of it, as a radius (so one kink in a road
+   * written every 16 m is not a bend, and a junction corner is), at 0.65 of
+   * the van's cornering grip — and how fast the van can be going HERE and
+   * still get down to that by rolling off the accelerator alone (1.8 m/s²,
+   * about the least the engine, the tyres and the air take off it at any
+   * speed). Faster than that for any of them, and it is SLOW DOWN. Faster
+   * than even a firm brake (5 m/s²) gets it down to in the room left, and it
+   * is BRAKE. The drop-off counts as a bend taken at 25 km/h, so the van
+   * comes in to it at a speed the brake finishes in a few metres.
+   *
+   * Only while the van is going along the route (within 50 degrees of it and
+   * 14 m of it): a child driving somewhere else on purpose is not told to
+   * slow down for a road they are not on. And it stays on until the van is
+   * 1.5 m/s under the line, so it does not flicker on and off along a curve.
+   *
+   * The first version of this (never shown on screen) forgot both halves of
+   * that: `worst` started at 0, so the margin could never hold it on, and the
+   * drop-off was looked for from the wrong segment whenever a short segment
+   * had been skipped.
+   *
+   * No allocation: this runs every frame. Up to 48 corners ahead.
+   */
+  slowFor(best, bestT, speed, grip, facing) {
+    const r = this.route;
+    const v = Math.abs(speed || 0);
+    if (!(v > 3) || Math.abs(facing) > 50 || !(this.offM < 14)) {
+      this.slow = false;
+      this.brakeNow = false;
+      return;
+    }
+    const A_LAT = 8.6 * 0.65 * Math.max(0.3, grip || 1);
+    const A_ROLL = 1.8;
+    const A_BRAKE = 5;
+    const V_DROP = 7;
+    const V_MIN = 6;
+    const horizon = Math.min(320, (v * v) / (2 * A_ROLL) + 30);
+    const D = SLOW_D;
+    const T = SLOW_T;
+    // The route's corners ahead: distance to each, and how far it turns there.
+    let n = 0;
+    let d = segLen(r, best) * (1 - bestT);
+    let k = best + 1;
+    let prevB = segBearing(r, best);
+    for (; k < r.length - 1 && d - 16 < horizon; k++) {
+      const len = segLen(r, k);
+      if (len < 0.5) continue;
+      const b = segBearing(r, k);
+      if (n < D.length) {
+        D[n] = d;
+        T[n] = Math.abs(((b - prevB + 540) % 360) - 180) * (Math.PI / 180);
+        n++;
+      }
+      prevB = b;
+      d += len;
+    }
+    // Most over the line, bend or drop: v minus the speed that still makes it.
+    let over = -Infinity;
+    let overBrake = -Infinity;
+    let kph = 0;
+    let dist = 0;
+    let what = '';
+    for (let i = 0; i < n; i++) {
+      if (D[i] > horizon) break;
+      let th = 0;
+      for (let j = i; j >= 0 && D[i] - D[j] <= 16; j--) th += T[j];
+      for (let j = i + 1; j < n && D[j] - D[i] <= 16; j++) th += T[j];
+      if (th < 0.12) continue;
+      const vs = Math.max(V_MIN, Math.sqrt(A_LAT * (32 / th)));
+      const room = Math.max(0, D[i]);
+      const may = Math.sqrt(vs * vs + 2 * A_ROLL * room);
+      if (v - may > over) {
+        over = v - may;
+        kph = vs * 3.6;
+        dist = room;
+        what = 'bend';
+      }
+      overBrake = Math.max(overBrake, v - Math.sqrt(vs * vs + 2 * A_BRAKE * room));
+    }
+    // And the drop-off at the end of the route, if it is in range: the rest
+    // of the segments from where the corner walk stopped. Only where the van
+    // has to stop (stopAtEnd, set by whoever gives the route): the first
+    // version slowed a child to 25 km/h for every split on the Coast Road,
+    // which is a blue ring you drive through — measured, "SLOW DOWN
+    // drop-off in 220 m" at 103 km/h on the way to the first headland.
+    let toEnd = d;
+    for (; k < r.length - 1 && toEnd <= horizon; k++) toEnd += segLen(r, k);
+    if (this.stopAtEnd !== false && toEnd <= horizon) {
+      const may = Math.sqrt(V_DROP * V_DROP + 2 * A_ROLL * toEnd);
+      if (v - may > over) {
+        over = v - may;
+        kph = V_DROP * 3.6;
+        dist = toEnd;
+        what = 'drop';
+      }
+      overBrake = Math.max(overBrake, v - Math.sqrt(V_DROP * V_DROP + 2 * A_BRAKE * toEnd));
+    }
+    this.slow = over > 0 || (this.slow && over > -1.5);
+    this.brakeNow = overBrake > 0 || (this.brakeNow && overBrake > -1);
+    if (this.slow) {
+      this.slowKph = kph;
+      this.slowIn = dist;
+      this.slowWhat = what;
+    }
+  }
+
+  /**
+   * The answer, in one object per tracker refilled every frame: next() runs
+   * sixty times a second, and the HUD reads the answer and lets it go.
+   */
+  answer(dir, label, distanceM, angleDeg, remainingM, pointDeg, steer = false) {
+    const o = this._out || (this._out = {});
+    o.dir = dir;
+    o.label = label;
+    o.distanceM = distanceM;
+    o.angleDeg = angleDeg;
+    o.remainingM = remainingM;
+    o.pointDeg = pointDeg;
+    // STEER has no distance: it is now. The HUD words its second line.
+    o.steer = steer;
+    // And whether to come off the power first (see slowFor).
+    o.slow = this.slow;
+    o.brake = this.brakeNow;
+    o.slowIn = this.slowIn;
+    o.slowWhat = this.slowWhat;
+    return o;
+  }
+}
+
+
+/**
+ * The drop-off zone when nobody has said how big it is: jobs.js's ARRIVE_R,
+ * the smallest any job step stops in (some are 44-48 m). And what the job
+ * calls stopped, its ARRIVE_SPEED, in m/s.
+ */
+const ARRIVE_M = 34;
+const STOPPED_V = 4.2;
+
+/** The corners slowFor() looks at, reused every frame. */
+const SLOW_D = new Float64Array(48);
+const SLOW_T = new Float64Array(48);
+
+/** Length of route segment k, and its compass bearing. */
+function segLen(r, k) {
+  return Math.hypot(r[k + 1].x - r[k].x, r[k + 1].z - r[k].z);
+}
+function segBearing(r, k) {
+  return (Math.atan2(r[k + 1].x - r[k].x, -(r[k + 1].z - r[k].z)) * 180) / Math.PI;
 }
 
 /* -------------------------------------------------------------- the mode */
@@ -266,6 +680,131 @@ export class DriveHud {
     this.chev.appendChild(this.chevArrow);
     this.chev.appendChild(this.chevWords);
     wrap.appendChild(this.chev);
+
+    /*
+     * The gear: D, N or R, lit. Reverse is "hold Ctrl once you have stopped",
+     * and a child who has just started going backwards wants to see why.
+     * It goes where the aeroplane's POWER bar was, in the same panel.
+     */
+    injectStyle();
+    this.gearBox = el('div', 'hud-drive-gear');
+    this.gearCells = {};
+    for (const g of ['R', 'N', 'D']) {
+      const b = el('b', '', g);
+      b.dataset.g = g;
+      this.gearCells[g] = b;
+      this.gearBox.appendChild(b);
+    }
+    this.gearWord = el('span', '', '');
+    this.gearBox.appendChild(this.gearWord);
+    const bottom = hud.throttleBar && hud.throttleBar.root ? hud.throttleBar.root.parentElement : null;
+    if (bottom) bottom.insertBefore(this.gearBox, bottom.firstChild);
+    this._saved = null;
+  }
+
+  /**
+   * Take down every aeroplane row, remembering exactly how each was, so that
+   * putting them back restores what hud.js had rather than what this guesses.
+   *
+   * Measured in the van before this: POWER 0%, BRAKES, EASY MODE, the wind
+   * rose saying "wind on the nose", and a key hint telling a child that Space
+   * is the brake (it is the handbrake; Ctrl is the brake). The fuel bar was
+   * set `hidden`, which loses to the `.hud-bar { display: grid }` rule, so
+   * that one was never actually hidden at all. Inline display wins over both.
+   */
+  hideAero(hide) {
+    const hud = this.hud;
+    if (hide) {
+      if (this._saved) return;
+      this._saved = new Map();
+      const nodes = [
+        hud.throttleBar && hud.throttleBar.root,
+        hud.fuelBar && hud.fuelBar.root,
+        hud.brakeChip,
+        hud.modeChip,
+        hud.gearChip,
+        hud.flapChip,
+        hud.trimChip,
+        hud.apChip,
+        hud.windRose ? hud.windRose.closest('.hud-right') || hud.windRose : null,
+        hud.damagePanel,
+        hud.waypoint,
+        hud.stallWarn,
+        hud.papiHint,
+        hud.coach,
+        /*
+         * And three of the aeroplane's buttons in the ⋯ tray, which nothing
+         * took away: opened in the van it offered Guidance (the flight's
+         * rails), Autopilot (the parked aeroplane's, with its toast) and
+         * "Brace for impact" ("You are already on the ground").
+         */
+        hud.btnGuide,
+        hud.btnAuto,
+        hud.btnBrace,
+      ];
+      for (const n of nodes) {
+        if (!n || this._saved.has(n)) continue;
+        this._saved.set(n, n.style.display);
+        n.style.display = 'none';
+      }
+      /*
+       * And H, "show controls", which in the van listed the aeroplane's:
+       * pitch, roll, rudder, flaps, gear, the starter and the autopilot —
+       * two dozen keys, four of which do anything in a van. The card is
+       * hud.js's; what goes on it while driving is the van's.
+       */
+      if (!this.isBoat && hud.showControls && !Object.prototype.hasOwnProperty.call(hud, 'showControls')) {
+        hud.showControls = (bindings, keyLabel) => this.showVanControls(bindings, keyLabel);
+        this._ownCard = true;
+      }
+    } else if (this._saved) {
+      for (const [n, was] of this._saved) n.style.display = was;
+      this._saved = null;
+      if (this._ownCard) {
+        // Back to the prototype's, which lists the aeroplane's keys.
+        delete hud.showControls;
+        this._ownCard = false;
+        if (hud.hideControls) hud.hideControls();
+      }
+    }
+  }
+
+  /**
+   * The controls card, for the van: the keys that do something in it, read
+   * from the player's own bindings so a re-bound key shows as re-bound.
+   */
+  showVanControls(bindings = {}, keyLabel = (k) => k) {
+    const keys = (...actions) => {
+      const seen = new Set();
+      const out = [];
+      for (const a of actions) {
+        for (const k of bindings[a] || []) {
+          const label = keyLabel(k);
+          if (seen.has(label)) continue;
+          seen.add(label);
+          out.push(`<kbd>${label}</kbd>`);
+        }
+      }
+      return out.join(' ');
+    };
+    const row = (what, ...actions) => `<div class="cc-row"><span>${what}</span><span class="cc-keys">${keys(...actions)}</span></div>`;
+    const card = this.hud.controlsCard;
+    if (!card) return;
+    card.innerHTML =
+      '<div class="cc-head">Driving the van</div><div class="cc-grid">'
+      + '<div class="cc-group"><h4>Pedals</h4>'
+      + row('Go', 'throttleUp', 'pitchDown')
+      + row('Brake — hold it once stopped to reverse', 'throttleDown', 'pitchUp')
+      + row('Handbrake', 'brakes')
+      + '</div><div class="cc-group"><h4>Steering</h4>'
+      + row('Steer left', 'rollLeft', 'lookLeft')
+      + row('Steer right', 'rollRight', 'lookRight')
+      + '</div><div class="cc-group"><h4>Game</h4>'
+      + row('Change the view', 'camera')
+      + row('Map', 'minimap')
+      + row('Pause / menu', 'pause')
+      + '</div></div><div class="cc-foot">Press H to close · follow the big arrow at the bottom</div>';
+    card.style.display = '';
   }
 
   /* ---------------------------------------------------------------- enter */
@@ -284,6 +823,7 @@ export class DriveHud {
     this.spec = spec || { kind: 'car' };
     this.isBoat = this.spec.kind === 'boat';
     this.last = {};
+    this.blocked = false;
     this.tracker.reset();
 
     /*
@@ -302,19 +842,12 @@ export class DriveHud {
     if (this.distLabel) this.distLabel.textContent = 'Trip';
     if (this.distUnit) this.distUnit.textContent = 'km';
     if (this.vsRow) this.vsRow.hidden = true;          // a van has no vertical speed
-    if (hud.fuelBar) hud.fuelBar.root.hidden = true;   // and no fuel gauge worth reading
-    if (hud.gearChip) hud.gearChip.style.display = 'none';
-    if (hud.flapChip) hud.flapChip.style.display = 'none';
-    if (hud.trimChip) hud.trimChip.style.display = 'none';
-    if (hud.apChip) hud.apChip.style.display = 'none';
-    if (hud.damagePanel) hud.damagePanel.hidden = true;
-    if (hud.waypoint) hud.waypoint.style.display = 'none';
-    if (hud.stallWarn) hud.stallWarn.style.display = 'none';
-    if (hud.papiHint) hud.papiHint.style.display = 'none';
+    // Every other aeroplane row, remembered and put back on exit().
+    this.hideAero(true);
     if (this.keyhint) {
       this.keyhint.innerHTML = this.isBoat
         ? 'Throttle: <kbd>Shift</kbd>/<kbd>&uarr;</kbd> · Steer: <kbd>A</kbd><kbd>D</kbd> · Slow: <kbd>Ctrl</kbd>/<kbd>&darr;</kbd>'
-        : 'Go: <kbd>Shift</kbd>/<kbd>&uarr;</kbd> · Steer: <kbd>A</kbd><kbd>D</kbd> · Brake: <kbd>Space</kbd> · Map: <kbd>J</kbd>';
+        : 'Go <kbd>W</kbd>/<kbd>&uarr;</kbd>/<kbd>Shift</kbd> · Brake, then reverse <kbd>S</kbd>/<kbd>&darr;</kbd>/<kbd>Ctrl</kbd> · Steer <kbd>A</kbd><kbd>D</kbd> · Handbrake <kbd>Space</kbd> · Keys <kbd>H</kbd>';
     }
     /*
      * The clock element is shared with flying, and both sides cache the last
@@ -326,6 +859,70 @@ export class DriveHud {
     this.setClock(null);
     this.setCargo(null);
     this.setTurn(null);
+    this.pauseWords(!this.isBoat);
+  }
+
+  /**
+   * The pause menu, in the van's words while the van is out.
+   *
+   * Measured at the start of this repair: Esc in the van offered "Resume
+   * flight" and "Return to the airfield". The menu is menus.js's; the two
+   * labels are found by the actions they carry (data-act), remembered, and
+   * put back on exit(), the same way the aeroplane rows are. "Back to the
+   * start" only for the courier van itself: in it that button starts the job
+   * (or free drive) again from the depot (see the courier-van plug-in in
+   * jobs.js). A tug on the apron keeps whatever its own game says.
+   */
+  pauseWords(on) {
+    const pause = typeof document !== 'undefined' ? document.querySelector('[data-screen="pause"]') : null;
+    if (on) {
+      if (!pause || this._pauseSaved) return;
+      this._pauseSaved = [];
+      const say = (act, words) => {
+        const span = pause.querySelector(`[data-act="${act}"] span`);
+        if (!span) return;
+        this._pauseSaved.push([span, span.textContent]);
+        span.textContent = words;
+      };
+      say('resume', 'Resume driving');
+      if (this.spec && this.spec.id === 'car') {
+        say('airport', 'Back to the start');
+        // The ⋯ tray's copy of the same button, words and tooltip.
+        const b = this.hud && this.hud.btnAirport;
+        const span = b && b.querySelector('span');
+        if (span) {
+          this._pauseSaved.push([span, span.textContent]);
+          span.textContent = 'Back to the start';
+          this._trayTitle = [b, b.title, b.getAttribute('aria-label')];
+          b.title = 'Start again from the depot';
+          b.setAttribute('aria-label', b.title);
+        }
+      }
+      // And the Autopilot fold, which a van has not got (seen on the card
+      // in the van: "AUTOPILOT" under the van's own buttons). And the View
+      // fold: "Free look" and "Realistic cockpit" are the aeroplane's camera
+      // rig's, and neither does anything to the van's camera (C does) —
+      // measured, both still on the van's card after the first repair.
+      this._pauseFolds = [];
+      for (const sel of ['[data-apmode]', '[data-freelook]']) {
+        const n = pause.querySelector(sel);
+        const fold = n && n.closest ? n.closest('details') : null;
+        if (!fold) continue;
+        this._pauseFolds.push([fold, fold.style.display]);
+        fold.style.display = 'none';
+      }
+    } else if (this._pauseSaved) {
+      for (const [span, was] of this._pauseSaved) span.textContent = was;
+      this._pauseSaved = null;
+      if (this._trayTitle) {
+        const [b, title, aria] = this._trayTitle;
+        b.title = title;
+        if (aria != null) b.setAttribute('aria-label', aria);
+        this._trayTitle = null;
+      }
+      for (const [fold, was] of this._pauseFolds || []) fold.style.display = was;
+      this._pauseFolds = null;
+    }
   }
 
   /* ----------------------------------------------------------------- exit */
@@ -343,15 +940,25 @@ export class DriveHud {
     if (this.speedLabel) this.speedLabel.textContent = this.speedLabelFlight;
     if (this.distLabel) this.distLabel.textContent = this.distLabelFlight;
     if (this.vsRow) this.vsRow.hidden = false;
-    if (hud.fuelBar) hud.fuelBar.root.hidden = false;
-    if (hud.gearChip) hud.gearChip.style.display = '';
-    if (hud.flapChip) hud.flapChip.style.display = '';
-    if (hud.apChip) hud.apChip.style.display = '';
+    this.hideAero(false);
     if (this.keyhint) this.keyhint.innerHTML = this.keyhintFlight;
+    this.blocked = false;
     this.setClock(null);
     this.setCargo(null);
     this.setTurn(null);
-    hud.lastValues.clock = null;
+    this.pauseWords(false);
+    /*
+     * And the van's numbers off the aeroplane's rows. The next flight frame
+     * writes its own, but until it does the rows read what the van left:
+     * measured, starting a flight straight after the van read "AIRSPEED 99 kt
+     * tarmac" over Drover's Flat. Blank, and the aeroplane's cache cleared so
+     * that frame writes every one of them.
+     */
+    for (const n of [hud.speedValue, hud.speedWord, hud.altValue, hud.altWord, hud.hdgValue, hud.hdgWord]) {
+      if (n) n.textContent = '';
+    }
+    if (hud.speedWord && hud.speedWord.dataset) delete hud.speedWord.dataset.surface;
+    hud.lastValues = {};
     hud.clearVehicle();
   }
 
@@ -462,6 +1069,51 @@ export class DriveHud {
    * @param {{dir:string,label:string,distanceM:number,angleDeg:number}|null} turn
    */
   setTurn(turn) {
+    /*
+     * Up against something and not getting anywhere: that is the instruction,
+     * whatever the route says. The reviewer's arrow-following kid overshot a
+     * junction on Drover's Flat, crossed the grass into a building at 76 km/h
+     * and sat there holding W for 140 s under "STRAIGHT ON 1.6 km" — the
+     * route was re-planned from where the van was, and its first leg went
+     * through the wall.
+     */
+    /*
+     * And which way out, pointed at like any other turn. The first version
+     * said "back up with S, or steer round it" under a down arrow, and a
+     * child who steered the wrong way round got nowhere: from the grass
+     * behind three of six Drover's Flat buildings the van touched the wall
+     * with one front corner, could only turn away from it, and the kid
+     * holding the other key sat there 85 s. The van works out which way is
+     * free (SurfaceVehicle.pinWay); where either is, the side the route is
+     * on. Neither: back up.
+     */
+    if (this.blocked) {
+      const L = this.last;
+      /*
+       * Once it has said a side, it keeps saying it while the van is still
+       * pinned, until that side is the one blocked: turned a little towards
+       * it, both sides are free, and going back to the route's side there
+       * sent the van straight back into the wall — measured, LEFT and RIGHT
+       * swapping every half second for eight seconds.
+       */
+      let w = this.blockedWay;
+      if (w === 2) w = this._blockSide || (turn && turn.pointDeg < 0 ? -1 : 1);
+      if (w) this._blockSide = w;
+      const key = `blocked${w}`;
+      if (L.turn === key) return;
+      L.turn = key;
+      L.turnLabel = null;
+      L.rot = w ? w * 70 : 0;
+      this.chevArrow.style.transform = w ? `rotate(${w * 70}deg)` : '';
+      this.chev.hidden = false;
+      this.chevArrow.innerHTML = w ? '&#8593;' : '&#8595;';
+      this.chevWhat.textContent = 'BLOCKED';
+      this.chevDist.textContent = w < 0 ? 'steer left and go' : w > 0 ? 'steer right and go' : 'back up with S';
+      this.chev.dataset.dir = 'blocked';
+      this.chev.classList.add('is-near');
+      this.chev.classList.remove('is-slow', 'is-brake');
+      return;
+    }
     if (!turn) {
       if (!this.chev.hidden) this.chev.hidden = true;
       this.last.turn = null;
@@ -470,31 +1122,83 @@ export class DriveHud {
     const d = turn.distanceM || 0;
     // Round the way the number is useful: to the nearest 10 m when it is far
     // enough away to plan, to the nearest 5 m when you are about to do it.
-    const distText =
-      turn.dir === 'arrive'
-        ? `${Math.round(d / 5) * 5} m`
-        : d > 1200
-          ? `${(d / 1000).toFixed(1)} km`
-          : d > 150
-            ? `${Math.round(d / 10) * 10} m`
-            : `${Math.round(d / 5) * 5} m`;
-    const key = `${turn.dir}|${turn.label}|${distText}`;
-    if (this.last.turn === key) return;
-    this.last.turn = key;
+    // As a number first, and words only when the number changes: this runs
+    // every frame, and building the string and a key out of it every frame
+    // was two new strings sixty times a second.
+    const far = !turn.steer && turn.dir !== 'arrive' && d > 1200;
+    // STEER's second line is off the road or not, so that is all its key is.
+    // (By what is under the wheels, not by distance from the route: the
+    // guide re-plans from wherever the van is, so the route always starts
+    // under it.)
+    // NEARLY THERE counts UP to the next five metres, never down to 0 m: a
+    // child who stops when it reads "0 m more" is still outside the zone.
+    const q = turn.steer ? (this.offRoad ? 1 : 0)
+      : turn.dir === 'near' ? Math.max(5, Math.ceil(d / 5) * 5)
+        : turn.dir === 'arrive' ? (turn.brake ? 1 : 0)
+          : far ? Math.round(d / 100) * 100 : d > 150 ? Math.round(d / 10) * 10 : Math.round(d / 5) * 5;
+    /*
+     * SLOW DOWN, or BRAKE, over the top of the turn it is for (see slowFor in
+     * the tracker): the first line is what to do with your right foot, the
+     * second what is coming. Keyed on its own rounded distance, so it counts
+     * down in tens like everything else here.
+     */
+    const pace = turn.dir === 'arrive' || turn.dir === 'back' ? '' : turn.brake ? 'brake' : turn.slow ? 'slow' : '';
+    const qs = pace ? Math.round((turn.slowIn || 0) / 10) * 10 : 0;
+    /*
+     * The arrow points where to steer now (see RouteTracker.next), in five
+     * degree steps so it does not rewrite the style sixty times a second.
+     * Words say what is coming; the arrow says what to do about it.
+     */
+    const pointing = turn.dir !== 'arrive' && turn.dir !== 'uturn' && turn.dir !== 'back' && typeof turn.pointDeg === 'number';
+    const rot = pointing ? Math.max(-80, Math.min(80, Math.round(turn.pointDeg / 5) * 5)) : 0;
+    if (this.last.rot !== rot) {
+      this.last.rot = rot;
+      this.chevArrow.style.transform = rot ? `rotate(${rot}deg)` : '';
+    }
+    const L = this.last;
+    if (L.turn === turn.dir && L.turnLabel === turn.label && L.turnQ === q && L.turnFar === far && L.pace === pace && L.paceQ === qs) return;
+    L.turn = turn.dir;
+    L.turnLabel = turn.label;
+    L.turnQ = q;
+    L.turnFar = far;
+    L.pace = pace;
+    L.paceQ = qs;
+    const distText = far ? `${(q / 1000).toFixed(1)} km` : `${q} m`;
     this.chev.hidden = false;
     const glyph =
-      turn.dir === 'left' ? '&#8624;'
-        : turn.dir === 'right' ? '&#8625;'
-          : turn.dir === 'uturn' ? '&#8634;'
-            : turn.dir === 'arrive' ? '&#9679;'
-              : '&#8593;';
+      turn.dir === 'uturn' ? '&#8634;'
+        : turn.dir === 'arrive' ? '&#9679;'
+          : turn.dir === 'back' ? '&#8595;'
+            : '&#8593;';
     if (this.chevArrow.innerHTML !== glyph) this.chevArrow.innerHTML = glyph;
-    this.chevWhat.textContent = turn.label || '';
-    this.chevDist.textContent = turn.dir === 'arrive' ? 'drop it here' : distText;
+    if (pace) {
+      this.chevWhat.textContent = pace === 'brake' ? 'BRAKE!' : 'SLOW DOWN';
+      this.chevDist.textContent = turn.steer
+        ? (turn.pointDeg < 0 ? 'steer left' : 'steer right')
+        : turn.slowWhat === 'drop' ? `drop-off in ${qs} m`
+          : turn.dir === 'left' || turn.dir === 'right' ? `${turn.label} ${distText}`
+            : `bend in ${qs} m`;
+    } else {
+      this.chevWhat.textContent = turn.label || '';
+      /*
+       * The second line says what to do, not "0 m": TURN AROUND read "0 m"
+       * under it, and ARRIVING said "drop it here" wherever it was shown.
+       * ARRIVING is now only shown where a stop counts (RouteTracker
+       * .nearTheDrop), or where it will if the brake goes on now.
+       */
+      this.chevDist.textContent = turn.dir === 'arrive'
+        ? (this.tracker.stopAtEnd === false ? 'you are there' : turn.brake ? 'brake now' : 'stop here')
+        : turn.dir === 'near' ? `${q} m more`
+          : turn.dir === 'back' ? 'hold S'
+            : turn.dir === 'uturn' ? 'it is behind you'
+              : turn.steer ? (q ? 'back to the road' : 'round the bend') : distText;
+    }
     this.chev.dataset.dir = turn.dir;
+    this.chev.classList.toggle('is-slow', pace === 'slow');
+    this.chev.classList.toggle('is-brake', pace === 'brake' || (turn.dir === 'arrive' && !!turn.brake));
     // Close now: the chevron gets bigger and warms up. Distance, not time, so
     // it reads the same whether you are creeping or flying.
-    this.chev.classList.toggle('is-near', d < 90 || turn.dir === 'arrive');
+    this.chev.classList.toggle('is-near', !!pace || turn.steer || d < 90 || turn.dir === 'arrive' || turn.dir === 'back' || turn.dir === 'near');
   }
 
   /* --------------------------------------------------------------- frame */
@@ -529,13 +1233,20 @@ export class DriveHud {
       hud.speedValue.textContent = String(fast);
     }
     const surfKind = (s.surface && s.surface.kind) || null;
+    const onMade = SURFACE_WORDS[surfKind] === 'tarmac' || SURFACE_WORDS[surfKind] === 'gravel';
+    this.offRoad = !this.isBoat && !onMade;
+    // Grass drawn as something else (s.looks, from jobs.js: 'field' on a
+    // crop patch that is not green, else 'sand' or 'dirt', whichever the
+    // terrain shader paints most of there) is called what it looks like, in
+    // that colour.
+    const looks = !this.isBoat && surfKind === 'grass' && s.looks ? s.looks : null;
     const word = this.isBoat
       ? (fast < 1 ? 'stopped' : fast < 8 ? 'idling along' : fast < 25 ? 'making way' : 'on the plane')
-      : (SURFACE_WORDS[surfKind] || (fast < 1 ? 'stopped' : 'off road'));
+      : looks || SURFACE_WORDS[surfKind] || (fast < 1 ? 'stopped' : 'off road');
     if (this.last.word !== word) {
       this.last.word = word;
       hud.speedWord.textContent = word;
-      hud.speedWord.dataset.surface = surfKind || '';
+      hud.speedWord.dataset.surface = looks || surfKind || '';
     }
 
     /* -- the second row: how far there is left to go -------------------
@@ -554,10 +1265,21 @@ export class DriveHud {
     }
     const metres = toGo != null ? toGo : (r.distanceM || 0);
     const km = metres / 1000;
-    const shown = km < 10 ? km.toFixed(1) : String(Math.round(km));
+    /*
+     * The last kilometre to a drop-off in metres, to the nearest ten: "0.0
+     * km" read TO GO with the van 40 m short of the zone, which is exactly
+     * the distance a child needs to see.
+     */
+    const inM = toGo != null && metres < 995;
+    const shown = inM ? String(Math.max(0, Math.round(metres / 10) * 10)) : km < 10 ? km.toFixed(1) : String(Math.round(km));
     if (this.last.dist !== shown) {
       this.last.dist = shown;
       hud.altValue.textContent = shown;
+    }
+    const unit = inM ? 'm' : 'km';
+    if (this.last.distUnit !== unit) {
+      this.last.distUnit = unit;
+      if (this.distUnit) this.distUnit.textContent = unit;
     }
     const dWord = toGo != null ? (job.name || 'to the drop') : 'travelled';
     if (this.last.distWord !== dWord) {
@@ -574,19 +1296,37 @@ export class DriveHud {
       hud.hdgWord.textContent = dirs[Math.round(h / 45) % 8];
     }
 
-    /* -- throttle bar and the brake chip, both already on screen ------- */
-    const thr = Math.round((r.throttle || 0) * 100);
-    if (this.last.thr !== thr) {
-      this.last.thr = thr;
-      hud.throttleBar.fill.style.width = `${thr}%`;
-      hud.throttleBar.val.textContent = `${thr}%`;
+    /* -- the gear, where the POWER bar was ------------------------------ */
+    if (!this.isBoat) {
+      const g = r.gear || 'N';
+      if (this.last.gear !== g) {
+        this.last.gear = g;
+        for (const k in this.gearCells) this.gearCells[k].classList.toggle('is-on', k === g);
+      }
+      const word = s.handbrake ? 'HANDBRAKE' : g === 'R' ? 'reversing' : g === 'D' ? 'drive' : 'stopped';
+      if (this.last.gearWord !== word) {
+        this.last.gearWord = word;
+        this.gearWord.textContent = word;
+        this.gearWord.classList.toggle('is-hand', word === 'HANDBRAKE');
+      }
+    } else {
+      const thr = Math.round((r.throttle || 0) * 100);
+      if (this.last.thr !== thr) {
+        this.last.thr = thr;
+        hud.throttleBar.fill.style.width = `${thr}%`;
+        hud.throttleBar.val.textContent = `${thr}%`;
+      }
     }
-    if (hud.brakeChip) hud.brakeChip.classList.toggle('is-on', (r.brakes || 0) > 0.4);
 
     /* -- the three courier instruments --------------------------------- */
     this.setClock(s.clock == null ? null : s.clock);
     if (s.cargo) this.setCargo(s.cargo.pips, s.cargo.max || 5, s.cargo.label || 'LOAD');
     else this.setCargo(null);
+    // Pinned against a wall or a tree with the go key held (SurfaceVehicle
+    // .blockedT): the chevron says so, over whatever the route says.
+    this.blocked = !this.isBoat && !!s.blocked;
+    this.blockedWay = s.readouts && s.readouts.blockedWay != null ? s.readouts.blockedWay : 2;
+    if (!this.blocked) this._blockSide = 0;
     this.setTurn(s.turn || null);
 
     this.tickOverlays(dt);

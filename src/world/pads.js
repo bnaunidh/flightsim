@@ -43,10 +43,13 @@
  * rock — or buried in it — is the sort of thing nobody notices until a child
  * lands on thin air.
  *
- * WHAT THIS COSTS TO DRAW: five instanced meshes, whatever the pad count.
- * Every disc in the world is one draw call, every leg is one, every block is
- * one, every light is one. Eight rigs on Ironhead Deep cost the same number
- * of draw calls as one pad on Kestrel.
+ * WHAT THIS COSTS TO DRAW: a fixed handful of draw calls, whatever the pad
+ * count — the discs (one per marking), the legs, the rigs' plant modules,
+ * the lights, and for roof pads the buildings (walls + roofs, per facade)
+ * and the hospital signs. Eight rigs on Ironhead Deep cost the same number
+ * of draw calls as one. Measured by building them in node, 2026-09-26:
+ * Kestrel 7 draws / 734 triangles, Meridian 9 / 1,726 (a hospital and two
+ * office roofs), Ironhead Deep 8 / 2,358.
  */
 
 import * as THREE from '../vendor/three.module.js';
@@ -163,6 +166,163 @@ function padTexture(role) {
 }
 
 /* ------------------------------------------------------------------ */
+/* The building under a roof pad                                       */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A roof pad stood on a blank grey box: no windows, no door, no sign. On
+ * every map the hospital is the tallest thing in the village and the place
+ * the rescue missions send you, and from the circuit it was the one
+ * building that did not look like a building — a concrete plinth with a
+ * helipad on it. Now it has floors of windows, a teal band on each floor, a
+ * glazed ground floor, a red cross on every face that stays bright after
+ * dark, and its windows lit at night. Non-hospital roofs (a city spire, a
+ * midrise, a row of shops) get an office front instead.
+ *
+ * One tile of the facade is FACADE_W x FACADE_H metres of wall — four bays,
+ * two floors — and the walls are UV'd in metres, so a 22 m cottage
+ * hospital and Meridian's 150 m spire both come out with 3.5 m floors
+ * rather than one texture stretched over whatever height the block is.
+ */
+const FACADE_W = 14;
+const FACADE_H = 7;
+
+function facadeTexture(kind, night = false) {
+  const W = 128;
+  const H = 64;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d');
+  // Fixed pattern, so the lit panes at night are panes by day.
+  let s = kind === 'hospital' ? 11 : 23;
+  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  const hospital = kind === 'hospital';
+  g.fillStyle = night ? '#000000' : hospital ? '#eef0ea' : '#cdc6b6';
+  g.fillRect(0, 0, W, H);
+  const bays = 4;
+  const floors = 2;
+  const bw = W / bays;
+  const fh = H / floors;
+  for (let f = 0; f < floors; f++) {
+    const y0 = f * fh;
+    if (!night && hospital) {
+      // The teal band under each row of windows.
+      g.fillStyle = '#6fb3a6';
+      g.fillRect(0, y0 + fh - 5, W, 3);
+    }
+    for (let b = 0; b < bays; b++) {
+      const x0 = b * bw;
+      const q = rnd();
+      const wx = x0 + (hospital ? 3 : 7);
+      const ww = bw - (hospital ? 6 : 14);
+      const wy = y0 + 5;
+      const wh = fh - (hospital ? 13 : 12);
+      if (night) {
+        // Half the wards lit, a third of the offices: all of them lit read
+        // as a white box in the dark, measured off a night screenshot.
+        if (q < (hospital ? 0.5 : 0.34)) {
+          g.fillStyle = q < 0.2 ? '#f6e6c0' : q < 0.36 ? '#d8e4f2' : '#f0cc90';
+          g.fillRect(wx, wy, ww, wh);
+        }
+        continue;
+      }
+      const shade = 60 + q * 36;
+      g.fillStyle = `rgb(${(shade * 0.8) | 0},${(shade * 0.98) | 0},${(shade * 1.14) | 0})`;
+      g.fillRect(wx, wy, ww, wh);
+      // A mullion down the middle, and a sill.
+      g.fillStyle = hospital ? '#dfe4e0' : '#9a9486';
+      g.fillRect(wx + ww / 2 - 1, wy, 2, wh);
+      g.fillRect(wx - 1, wy + wh, ww + 2, 2);
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  return t;
+}
+
+/**
+ * Every roof-pad building on the map as ONE geometry: walls in group 0
+ * (UV'd in facade tiles), roofs in group 1. Two draw calls for all of
+ * them, whatever the count. No undersides: the ground is under them.
+ */
+function blockGeometry(list) {
+  const pos = [];
+  const nrm = [];
+  const uv = [];
+  const wallIdx = [];
+  const roofIdx = [];
+  let n = 0;
+  const quad = (a, b, c2, d, nx, ny, nz, uvs, into) => {
+    for (const p of [a, b, c2, d]) pos.push(p[0], p[1], p[2]);
+    for (let i = 0; i < 4; i++) nrm.push(nx, ny, nz);
+    uv.push(...uvs);
+    into.push(n, n + 1, n + 2, n, n + 2, n + 3);
+    n += 4;
+  };
+  for (const b of list) {
+    const h = Math.max(2, b.y1 - b.y0);
+    const x0 = b.x - b.w;
+    const x1 = b.x + b.w;
+    const z0 = b.z - b.w;
+    const z1 = b.z + b.w;
+    const y0 = b.y0;
+    const y1 = b.y0 + h;
+    const u = (2 * b.w) / FACADE_W;
+    // Floors counted from the building's own ground line, where the door is.
+    const v0 = 0;
+    const v1 = h / FACADE_H;
+    const wall = [0, v0, u, v0, u, v1, 0, v1];
+    // Four walls, each wound counter-clockwise seen from outside.
+    quad([x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], 0, 0, 1, wall, wallIdx);
+    quad([x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0], 0, 0, -1, wall, wallIdx);
+    quad([x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], 1, 0, 0, wall, wallIdx);
+    quad([x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], -1, 0, 0, wall, wallIdx);
+    const flat = [0, 0, 1, 0, 1, 1, 0, 1];
+    quad([x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0], 0, 1, 0, flat, roofIdx);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(wallIdx.concat(roofIdx));
+  g.addGroup(0, wallIdx.length, 0);
+  g.addGroup(wallIdx.length, roofIdx.length, 1);
+  g.computeBoundingSphere();
+  return g;
+}
+
+/**
+ * The red cross on a white board, one per wall of every hospital, as one
+ * instanced mesh. Unlit (MeshBasicMaterial), so it reads the same at noon
+ * and at midnight — which is what a lit hospital sign is for. Colours are
+ * written linear, the way the renderer reads vertex colours.
+ */
+function crossSignGeometry() {
+  const pos = [];
+  const col = [];
+  const white = new THREE.Color(0xf6f7f4);
+  const red = new THREE.Color(0xd0231c);
+  const rect = (x0, y0, x1, y1, z, c) => {
+    const v = [[x0, y0], [x1, y0], [x1, y1], [x0, y0], [x1, y1], [x0, y1]];
+    for (const [x, y] of v) {
+      pos.push(x, y, z);
+      col.push(c.r, c.g, c.b);
+    }
+  };
+  // A 5 m board, the cross three-fifths of it, standing 0.12 m proud.
+  rect(-2.5, -2.5, 2.5, 2.5, 0, white);
+  rect(-1.6, -0.5, 1.6, 0.5, 0.15, red);
+  rect(-0.5, -1.6, 0.5, 1.6, 0.15, red);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return g;
+}
+
+/* ------------------------------------------------------------------ */
 /* Building                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -227,8 +387,14 @@ export function buildPads(parent) {
       for (const [ox, oz] of [[-d, -d], [d, -d], [-d, d], [d, d]]) {
         legs.push({ x: def.x + ox, z: def.z + oz, y0: heightAt(def.x + ox, def.z + oz) - 1, y1: y, r: 0.9 });
       }
-      blocks.push({ x: def.x, z: def.z, y0: groundMin(def.x, def.z, r) - 1, y1: y - 1.4, w: r * 1.25 });
-      addObstacleAt(def.x, def.z, r * 1.25, r * 1.25, ground - 1, Math.max(2, y - 1.6 - ground), `You flew into ${def.name}`);
+      blocks.push({
+        x: def.x, z: def.z, y0: groundMin(def.x, def.z, r) - 1, y1: y - 1.4, w: r * 1.25,
+        roof: true, hospital: (def.role || (def.id === 'hospital' ? 'hospital' : 'pad')) === 'hospital',
+      });
+      // Solid across the whole of what is drawn. addObstacleAt takes the FULL
+      // width, and this passed the half-width drawn below (w = 1.25 r, drawn
+      // 2w across), so the outer 6.9 m of every hospital was air.
+      addObstacleAt(def.x, def.z, r * 2.5, r * 2.5, ground - 1, Math.max(2, y - 1.6 - ground), `You flew into ${def.name}`);
     } else if (kind === 'deck') {
       y = def.elev != null ? def.elev : 24;
       const d = r * 0.78;
@@ -239,7 +405,8 @@ export function buildPads(parent) {
       }
       // The plant: the module block a helideck is always cantilevered off.
       blocks.push({ x: def.x, z: def.z + r * 1.1, y0: y - 11, y1: y - 1.4, w: r * 1.1 });
-      addObstacleAt(def.x, def.z + r * 1.1, r * 1.1, r * 1.1, y - 11, 9.4, `You flew into ${def.name}`);
+      // Full width again (the module is drawn 2.2 r across; this was 1.1 r).
+      addObstacleAt(def.x, def.z + r * 1.1, r * 2.2, r * 2.2, y - 11, 9.4, `You flew into ${def.name}`);
     } else if (kind === 'stack') {
       // The pad goes on the highest rock inside its own footprint. Anything
       // else and half the deck is inside the hill.
@@ -325,19 +492,76 @@ export function buildPads(parent) {
     group.add(inst);
   }
 
-  if (blocks.length) {
-    const blockMat = new THREE.MeshStandardMaterial({ color: 0xb9bcb4, roughness: 0.9 });
-    const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), blockMat, blocks.length);
+  /*
+   * The buildings. Roof-pad buildings are one merged mesh with a facade
+   * (see blockGeometry); a rig's plant module stays an instanced box, now
+   * painted the way rig modules are — yellow, white, safety orange, grey —
+   * rather than all the same concrete.
+   */
+  const roofs = blocks.filter((b) => b.roof);
+  const plant = blocks.filter((b) => !b.roof);
+  const facadeMats = [];
+  if (roofs.length) {
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x8e918c, roughness: 0.95 });
+    for (const kind of ['hospital', 'office']) {
+      const list = roofs.filter((b) => (kind === 'hospital') === b.hospital);
+      if (!list.length) continue;
+      const wall = new THREE.MeshStandardMaterial({
+        map: facadeTexture(kind),
+        roughness: 0.82,
+        metalness: 0.04,
+        envMapIntensity: 0.7,
+        emissive: 0xffffff,
+        emissiveMap: facadeTexture(kind, true),
+        emissiveIntensity: 0,
+      });
+      facadeMats.push(wall);
+      const mesh = new THREE.Mesh(blockGeometry(list), [wall, roofMat]);
+      mesh.castShadow = mesh.receiveShadow = true;
+      group.add(mesh);
+    }
+    const hosp = roofs.filter((b) => b.hospital);
+    if (hosp.length) {
+      const signs = new THREE.InstancedMesh(
+        crossSignGeometry(),
+        new THREE.MeshBasicMaterial({ vertexColors: true }),
+        hosp.length * 4
+      );
+      let k = 0;
+      for (const b of hosp) {
+        const h = Math.max(2, b.y1 - b.y0);
+        // High on each wall, under the parapet: the thing you see first.
+        const sy = b.y0 + h - 4;
+        for (let f = 0; f < 4; f++) {
+          const a = (f * Math.PI) / 2;
+          _m.position.set(b.x + Math.sin(a) * (b.w + 0.2), sy, b.z + Math.cos(a) * (b.w + 0.2));
+          _m.rotation.set(0, a, 0);
+          _m.scale.set(1, 1, 1);
+          _m.updateMatrix();
+          signs.setMatrixAt(k++, _m.matrix);
+        }
+      }
+      signs.instanceMatrix.needsUpdate = true;
+      group.add(signs);
+    }
+  }
+  if (plant.length) {
+    const blockMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0.1 });
+    const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), blockMat, plant.length);
     inst.castShadow = inst.receiveShadow = true;
-    blocks.forEach((b, i) => {
+    const paint = [0xd9ad3c, 0xe8e6de, 0xd8662e, 0x9aa0a4, 0xc9c24a];
+    const col = new THREE.Color();
+    plant.forEach((b, i) => {
       const h = Math.max(2, b.y1 - b.y0);
       _m.position.set(b.x, b.y0 + h / 2, b.z);
       _m.rotation.set(0, 0, 0);
       _m.scale.set(b.w * 2, h, b.w * 2);
       _m.updateMatrix();
       inst.setMatrixAt(i, _m.matrix);
+      inst.setColorAt(i, col.setHex(paint[Math.abs(Math.round(b.x * 0.37 + b.z * 0.11)) % paint.length]));
     });
     inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
     group.add(inst);
   }
 
@@ -370,7 +594,7 @@ export function buildPads(parent) {
   group.add(lamps);
 
   parent.add(group);
-  return { group, marks, lampMat };
+  return { group, marks, lampMat, facadeMats, lit: -1 };
 }
 
 /**
@@ -380,4 +604,10 @@ export function buildPads(parent) {
 export function updatePads(built, t, isNight) {
   if (!built || !built.lampMat) return;
   built.lampMat.emissiveIntensity = isNight ? 1.8 + Math.sin(t * 2.2) * 0.35 : 0.2;
+  // The buildings' windows: written only when day turns to night or back.
+  const want = isNight ? 0.85 : 0;
+  if (built.facadeMats && want !== built.lit) {
+    built.lit = want;
+    for (const m of built.facadeMats) m.emissiveIntensity = want;
+  }
 }

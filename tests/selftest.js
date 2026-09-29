@@ -48,8 +48,19 @@ function allUp(sim) {
 }
 
 /** Simple autopilot used by the landing tests: holds a glide path and flares. */
+/*
+ * The first time the wheels meet the ground on the last flyApproach() — the
+ * landing — as opposed to aircraft.lastTouchdown, which is whatever touched
+ * last. The scripted approach lands long (about 60 m from the far end on
+ * Kestrel) and rolls off into the overrun, and a hop over a crest out there
+ * replaced the landing with a 34 kt "touchdown" on the grass: the landing
+ * checks then failed a landing that had been made on the runway at 65 kt.
+ */
+let approachTouchdown = null;
+
 function flyApproach(sim, seconds = 60) {
   const ac = sim.aircraft;
+  approachTouchdown = null;
   const target = sim.airport ? { x: -350, z: 0 } : { x: -350, z: 0 };
   let t = 0;
   const dt = 1 / 30;
@@ -89,6 +100,7 @@ function flyApproach(sim, seconds = 60) {
 
     sim.step(dt, dt);
     t += dt;
+    if (!approachTouchdown && ac.onGround && ac.lastTouchdown) approachTouchdown = ac.lastTouchdown;
     if (ac.crashed) break;
     if (ac.onGround && ac.groundSpeed < 3 && ac.groundTime > 1) break;
     // Once on the ground, brake and centre the controls.
@@ -513,7 +525,7 @@ export async function runSelfTest(sim, opts = {}) {
   say('landing, calm');
   setUpApproach(4, 90);
   flyApproach(sim, 90);
-  const calmLanding = sim.aircraft.lastTouchdown;
+  const calmLanding = approachTouchdown || sim.aircraft.lastTouchdown;
   r.ok('lands the aeroplane in calm air', !!calmLanding && !calmLanding.crashed, calmLanding ? `${calmLanding.vsFpm} fpm, score ${calmLanding.score}` : 'no touchdown');
   r.ok('touches down on the runway', !!calmLanding && calmLanding.onRunway);
   r.ok('landing is graded', !!calmLanding && typeof calmLanding.score === 'number' && calmLanding.score > 0, calmLanding && calmLanding.quality);
@@ -521,7 +533,7 @@ export async function runSelfTest(sim, opts = {}) {
   say('landing, crosswind + rain');
   setUpApproach(18, 350, 'rainy');
   flyApproach(sim, 90);
-  const xwindLanding = sim.aircraft.lastTouchdown;
+  const xwindLanding = approachTouchdown || sim.aircraft.lastTouchdown;
   r.ok(
     'lands in an 18 kt crosswind with rain',
     !!xwindLanding && !xwindLanding.crashed,
@@ -927,6 +939,37 @@ export async function runSelfTest(sim, opts = {}) {
     await tg.threeGameChecks(sim, r, say);
   } catch (err) {
     r.ok('the other three games can be tested at all', false, String(err && err.message));
+  }
+
+  /*
+   * The plug-in features' own checks — see tests/features/index.js. Run
+   * before the offline-cache check below so that any module a feature loads
+   * lazily is loaded by the time that check asks what the game fetched.
+   */
+  try {
+    const fx = await import('./features/index.js');
+    for (const c of fx.CHECKS) {
+      try {
+        /*
+         * Each feature check starts where the suite does: Kestrel, the
+         * Skylark, the test settings. A check that leaves the game on another
+         * map must not decide what the next one flies over — it did: the boat's
+         * playtest ends in a harbour, and the instruments' "flying level at a
+         * hill" then found no hill and "the approach lands" flew an approach
+         * to somebody else's runway.
+         */
+        // ...and from the menu: the on-foot check ends mid-shift, driving a
+        // tug, and on the same map useTestSettings changes nothing.
+        if (sim.state !== 'menu' && typeof sim.quitToMenu === 'function') sim.quitToMenu();
+        await useTestSettings(sim);
+        say(`feature: ${c.id || 'unnamed'}`);
+        await c.check(sim, r, say);
+      } catch (err) {
+        r.ok(`feature ${c.id || 'unnamed'} can be checked at all`, false, String(err && err.message));
+      }
+    }
+  } catch (err) {
+    r.ok('the feature checks can be loaded at all', false, String(err && err.message));
   }
 
   /*

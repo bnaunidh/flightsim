@@ -2,6 +2,7 @@
  * Construction is intentionally free of global flight-SPEC mutations. */
 import * as THREE from '../vendor/three.module.js';
 import { createFleetAircraft, aircraftIds } from './aircraft-fleet.js';
+export { EXTRA_DRAWS } from './extra/index.js';
 import { createSinkingEffect } from './effects.js';
 const SUPPORTED = new Set(aircraftIds);
 const eyeReference = new THREE.Vector3(-.24, .46, .06);

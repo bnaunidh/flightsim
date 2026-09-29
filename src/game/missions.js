@@ -41,6 +41,7 @@ import { Pursuer } from './pursuer.js';
 import { HELI_MISSIONS, HELI_FREE } from './missions-heli.js';
 import { BOAT_MISSIONS, BOAT_PATROL } from './missions-boat.js';
 import { CAR_JOBS, ISLAND_ROADS } from './jobs.js';
+import { EXTRA_MISSIONS } from './extra/index.js';
 
 const ELEV = RUNWAY.elev;
 const ft = (m) => m * UNITS.FT;
@@ -1173,7 +1174,7 @@ export const MISSIONS = [
     // Military missions fly from the military field, not the tropical one.
     map: 'airbase',
     blurb:
-      'A marked practice range with a bullseye. Carry an inert practice store out to it, release on the '
+      'A marked practice range with a bullseye. Carry a practice bomb out to it, release on the '
       + 'target, and you are scored in metres from the middle. Accuracy, not force.',
     reward: 'Teaches release timing, wind allowance and flying an exact line.',
     aircraft: 'nightjar',
@@ -1187,8 +1188,8 @@ export const MISSIONS = [
     steps: [
       {
         id: 'go',
-        text: 'One inert practice store aboard. Take off and head for the range.',
-        hint: 'It is an inert practice store — it marks where it lands and nothing else.',
+        text: 'One practice bomb aboard. Take off and head for the range.',
+        hint: 'It is a practice bomb: a big bang and a puff of smoke on an empty range, and a score in metres.',
         atc: { text: 'Nightjar zero two, range is cold and clear, you are cleared in.', voice: 'tower' },
         targetLabel: 'The range',
         target: (ctx) => rangeTarget(ctx),
@@ -1475,6 +1476,8 @@ export const MISSIONS = [
   ...HELI_MISSIONS,
   ...BOAT_MISSIONS,
   ...CAR_JOBS,
+  // Added since: goofy missions, flight events, meteor mode. See ./extra/.
+  ...EXTRA_MISSIONS,
 ];
 
 /**

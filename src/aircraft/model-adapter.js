@@ -24,6 +24,8 @@
 import * as THREE from '../vendor/three.module.js';
 import { createAircraftModel as createLegacyModel, glowSprite } from './model.js';
 import { getAircraft, DEFAULT_AIRCRAFT_ID } from './types.js';
+// BLENDER MODELS: the Skyhook from tools/blender/, when it loaded.
+import { blenderAircraftModel } from '../vehicles/blender-models.js';
 
 /**
  * The pack is loaded eagerly at module scope so there is no first-frame stall
@@ -84,11 +86,21 @@ export function fleetModelsOn() {
  * as who is allowed to fly it, and the two should not share a flag.
  */
 const PACK_DRAWS_BETTER = new Set(['vanguard', 'osprey', 'nightjar']);
+/*
+ * Plus whatever the added aeroplanes say the pack should draw. Read lazily,
+ * from the pack's own module once it has loaded, so this file never has to
+ * be edited to add one.
+ */
+function packDraws(id) {
+  if (PACK_DRAWS_BETTER.has(id)) return true;
+  const extra = fleet && fleet.EXTRA_DRAWS;
+  return !!(extra && extra.includes(id));
+}
 
 /** Which ids the pack can actually build. Everything else goes to model.js. */
 export function fleetCovers(id) {
   if (!fleet || !fleetIds.has(id)) return false;
-  return useFleet || PACK_DRAWS_BETTER.has(id);
+  return useFleet || packDraws(id);
 }
 
 /** For the tests and the console: what the pack brought, and what is missing. */
@@ -129,6 +141,10 @@ export function createAircraftModel(opts = {}) {
   // The same default the original factory applies. main.js builds a placeholder
   // aeroplane before it knows which one you picked, and passes no type at all.
   const type = opts.type || getAircraft(DEFAULT_AIRCRAFT_ID);
+  // BLENDER MODELS: the helicopter (harrier) drawn by the Blender model, its
+  // rotor spun from the rotor speed; null (not loaded) falls through to the old one.
+  const blender = blenderAircraftModel(type, opts);
+  if (blender) return blender;
   if (!fleetCovers(type.id)) return createLegacyModel(opts);
 
   try {

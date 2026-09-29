@@ -1,0 +1,753 @@
+/**
+ * Node checks for the events team. Run from anywhere:
+ *
+ *   node tests/features/events.mjs
+ *
+ * Two kinds of check.
+ *
+ * SHAPE — every goofy and events mission is a real mission: an id, a name, a
+ * category, a difficulty the menu can lower-case, steps that each have a
+ * check function (or a duration), a map that exists, an aeroplane that exists,
+ * weather the weather system knows, and an id nobody else has used.
+ *
+ * PHYSICS — the numbers the goofy missions are balanced on still hold on the
+ * real flight model, flown here in node with no browser: the trainer really
+ * does out-fly the seagulls, really does get the ice cream there before it
+ * melts, really is faster than the bee; the fighter really does roll upside
+ * down inside the tower window and really does fly a loop. A retune of the
+ * trainer that quietly made a mission impossible fails here, by name.
+ *
+ * Exits non-zero if anything fails.
+ */
+
+// No saved progress in node; an in-memory stand-in keeps progression.js
+// from printing a warning every time the story pays (or does not pay) out.
+if (typeof globalThis.window === 'undefined') {
+  const mem = new Map();
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) },
+  });
+}
+
+// The same stub the other node checks use: enough of a DOM for the modules
+// that paint canvases at import time.
+globalThis.document = {
+  createElement: () => ({
+    getContext: () => new Proxy({}, { get: () => () => ({ addColorStop() {}, data: new Uint8ClampedArray(4) }) }),
+    width: 0,
+    height: 0,
+    style: {},
+  }),
+  body: { appendChild() {} },
+};
+
+const root = new URL('../../', import.meta.url);
+const imp = (p) => import(new URL(p, root).href);
+
+const results = [];
+const ok = (name, pass, detail = '') => {
+  results.push({ name, pass: !!pass, detail: String(detail) });
+  return !!pass;
+};
+
+const THREE = await imp('src/vendor/three.module.js');
+const { MISSIONS } = await imp('src/game/missions.js');
+const { MISSIONS: GOOFY, TUNING } = await imp('src/game/extra/goofy.js');
+const { MISSIONS: EVENTS, REAL_HIJACK } = await imp('src/game/extra/events.js');
+const { MAPS } = await imp('src/world/maps.js');
+const { AIRCRAFT } = await imp('src/aircraft/types.js');
+const { TIMES, CONDITIONS, Weather } = await imp('src/world/weather.js');
+const FE = await imp('src/features/flight-events.js');
+const { extDevActions, extStatus } = await imp('src/game/extensions.js');
+const T = await imp('src/world/terrain.js');
+const P = await imp('src/aircraft/physics.js');
+
+/* ---------------------------------------------------------------- shape -- */
+
+const mine = [...GOOFY, ...EVENTS];
+// The by-the-book hijack is in the list for everybody and its CARD is hidden
+// until the Dev passcode is in (flight-events.js does that, live, in the
+// browser — events.browser.js checks it there). Here: it is in, and flagged.
+const shaped = mine;
+const CATEGORIES = ['training', 'airline', 'military', 'rescue', 'delivery', 'goofy', 'events', 'meteor'];
+
+ok('goofy: 10 to 12 missions', GOOFY.length >= 10 && GOOFY.length <= 12, GOOFY.length);
+ok('events: the hijack and the break-in both have a mission', EVENTS.some((m) => m.id === 'event-hijack') && EVENTS.some((m) => m.id === 'event-breakin'));
+ok('events: the realistic hijack is a mission too', REAL_HIJACK && REAL_HIJACK.id === 'event-hijack-real' && REAL_HIJACK.category === 'events');
+ok('events: ...in the list, flagged devOnly so its card waits for the Dev passcode',
+  EVENTS.includes(REAL_HIJACK) && MISSIONS.includes(REAL_HIJACK) && REAL_HIJACK.devOnly === true);
+ok('events: nothing else of ours is devOnly or military', mine.filter((m) => m !== REAL_HIJACK).every((m) => !m.devOnly && !m.military));
+ok('all of them are in the game’s mission list', mine.every((m) => MISSIONS.includes(m)));
+
+const ids = MISSIONS.map((m) => m.id);
+const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+ok('no mission id is used twice anywhere in the game', dupes.length === 0, dupes.join());
+const others = MISSIONS.filter((m) => !mine.includes(m)).map((m) => m.id);
+ok('none of ours takes an id somebody else already had', shaped.every((m) => !others.includes(m.id)));
+
+for (const m of shaped) {
+  const where = `mission ${m.id}`;
+  ok(`${where}: has an id, a name, a short line, a blurb, a reward and an icon`,
+    typeof m.id === 'string' && m.id && m.name && m.short && m.blurb && m.reward && m.icon);
+  ok(`${where}: category is one of the agreed ones`, CATEGORIES.includes(m.category), m.category);
+  ok(`${where}: category matches its file`, (GOOFY.includes(m) ? 'goofy' : 'events') === m.category, m.category);
+  // A step you have to DO something for says how; a five-second pause does not need to.
+  const noHint = m.steps.filter((st) => typeof st.check === 'function' && !(typeof st.hint === 'string' && st.hint.length > 0));
+  ok(`${where}: every step you have to do something for has a hint`, noHint.length === 0, noHint.map((st) => st.id).join());
+  ok(`${where}: keeps its game`, (m.game || 'flight') === 'flight', m.game);
+  ok(`${where}: difficulty is a string the menu can lower-case`, typeof m.difficulty === 'string' && m.difficulty.length > 0, m.difficulty);
+  ok(`${where}: has steps`, Array.isArray(m.steps) && m.steps.length > 0);
+  const badSteps = m.steps.filter((s) => !s.id || !s.text || (typeof s.check !== 'function' && !(s.duration > 0)));
+  ok(`${where}: every step has an id, words and a check function (or a duration)`, badSteps.length === 0, badSteps.map((s) => s.id).join());
+  const stepIds = m.steps.map((s) => s.id);
+  ok(`${where}: step ids are unique within it`, new Set(stepIds).size === stepIds.length, stepIds.join());
+  const badTargets = m.steps.filter((s) => s.target && typeof s.target !== 'function');
+  ok(`${where}: targets are functions`, badTargets.length === 0);
+  ok(`${where}: the map it pins exists`, !m.map || MAPS.some((x) => x.id === m.map), m.map);
+  const acId = m.aircraft;
+  ok(`${where}: the aeroplane it names exists`, !acId || AIRCRAFT.some((a) => a.id === acId), acId);
+  ok(`${where}: it is not behind the military passcode`, !m.military);
+  if (m.weather) {
+    ok(`${where}: weather uses names the weather system knows`,
+      (!m.weather.time || TIMES[m.weather.time]) && (!m.weather.condition || CONDITIONS[m.weather.condition]),
+      JSON.stringify(m.weather));
+  }
+  const spawn = m.spawn;
+  if (spawn) {
+    ok(`${where}: spawn has a position and a heading`, spawn.pos && Number.isFinite(spawn.pos.x) && Number.isFinite(spawn.headingDeg));
+    if (spawn.altAGL != null) ok(`${where}: an airborne spawn has height and speed`, spawn.altAGL > 100 && spawn.speed > 30, `${spawn.altAGL} m, ${spawn.speed} m/s`);
+  }
+  for (const k of ['onStart', 'tick', 'failIf', 'onComplete', 'score']) {
+    if (m[k] != null) ok(`${where}: ${k} is a function`, typeof m[k] === 'function');
+  }
+}
+
+/* --------------------------------------------------------- the feature -- */
+
+ok('flight-events: one flight in ten for the hijack, one in six for the break-in', FE.ODDS.hijack === 0.1 && Math.abs(FE.ODDS.breakin - 1 / 6) < 1e-9, JSON.stringify(FE.ODDS));
+ok('flight-events: registered as an extension', extStatus().some((e) => e.id === 'flightevents'));
+ok('goofy props: registered as an extension', extStatus().some((e) => e.id === 'goofyprops'));
+const labels = extDevActions().map((a) => a.label);
+ok('flight-events: Dev panel buttons', ['Trigger hijack event', 'Realistic hijack', 'Trigger airport break-in'].every((l) => labels.includes(l)), labels.join(' | '));
+ok('flight-events: the long-haul aeroplane it picks exists', AIRCRAFT.some((a) => a.id === FE.longHaulId()), FE.longHaulId());
+ok('flight-events: nothing is running before a flight', FE.hijackInfo().phase === 'idle' && FE.breakInInfo().phase === 'idle');
+
+/* ------------------------------------------------------- what it says -- */
+
+/*
+ * Every word the hijack stories can put on screen or on the radio, checked
+ * for what a class of ten-year-olds must not be shown: no weapons, nothing
+ * gory, nobody dead. Only the strings are read — the comments explain the
+ * rules and so use the words — and "hurt" is allowed only as "nobody is
+ * hurt" / "nobody gets hurt".
+ */
+{
+  const { readFileSync } = await import('node:fs');
+  const files = [
+    'src/features/events/hijack.js',
+    'src/features/events/common.js',
+    'src/features/events/escort.js',
+    'src/features/flight-events.js',
+    'src/game/extra/events.js',
+  ];
+  const BANNED = /\b(guns?|pistols?|rifles?|knife|knives|blades?|bombs?|explosives?|weapons?|armed|blood\w*|kill\w*|dead|deaths?|die|dies|dying|murder\w*|shoot\w*|shot|stab\w*|hostages?|injur\w*|wound\w*|threaten\w*)\b/i;
+  const bad = [];
+  let strings = 0;
+  for (const f of files) {
+    const src = readFileSync(new URL(f, root), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+    const lits = src.match(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g) || [];
+    for (const lit of lits) {
+      // Sentences only: a phase called 'armed' is a state, not a word anybody reads.
+      if (!/\s/.test(lit)) continue;
+      strings++;
+      const m = lit.match(BANNED);
+      if (m) bad.push(`${f}: ${m[0]} in ${lit.slice(0, 70)}`);
+      const hurt = lit.match(/\bhurt\b/gi);
+      if (hurt && !/nobody (is|gets) hurt/i.test(lit)) bad.push(`${f}: "hurt" outside "nobody is hurt" in ${lit.slice(0, 70)}`);
+    }
+  }
+  ok(`words: none of the ${strings} strings in the hijack stories mentions a weapon, blood or anybody hurt`, bad.length === 0, bad.join(' | '));
+  const talk = FE.TALK_LINES;
+  ok('words: the interphone conversation has three rounds of three answers', talk.length === 3 && talk.every((r) => r.options.length === 3));
+  ok('words: in every round the calm, true answer lowers his temper and the others do not',
+    talk.every((r) => r.options[0].d < 0 && r.options.slice(1).every((o) => o.d >= 0)));
+}
+
+/* ------------------------------------------------ room to get down -- */
+
+/*
+ * The film mission starts where doing as he says, straight away, is also a
+ * landable approach: on (or near) a three-degree slope to the approach gate
+ * 6.5 km out on runway 09. It started 14 km out at 5,000 ft once, and the
+ * pilot bot that plays it reached the runway 800 m too high for a jumbo.
+ */
+{
+  const AP = await imp('src/world/airport.js');
+  const film = EVENTS.find((m) => m.id === 'event-hijack');
+  const sp = film.spawn;
+  const td = AP.RUNWAY.touchdown;
+  const h = ((AP.RUNWAY.headingDeg ?? 90) * Math.PI) / 180;
+  const gate = new THREE.Vector3(td.x - Math.sin(h) * 6500, td.y + 450, td.z + Math.cos(h) * 6500);
+  const y = sp.altAGL - 34; // altAGL over the sea is from Kestrel's sea floor
+  const want = gate.y + Math.hypot(sp.pos.x - gate.x, sp.pos.z - gate.z) * Math.tan((3 * Math.PI) / 180);
+  ok('film mission: starts on a three-degree slope to the approach gate (within 250 m)', Math.abs(y - want) < 250,
+    `starts at ${y.toFixed(0)} m, the slope is at ${want.toFixed(0)} m`);
+}
+
+/* ---------------------------------------------------------- the stories -- */
+
+/*
+ * Both hijacks, start to finish, on the real flight model, with a stand-in
+ * for the game: a scene, a camera, the real Aircraft, and a HUD and radio
+ * that write down what they were asked to show. The aeroplane is put where
+ * each step wants it (the browser check flies more of it); the story's own
+ * update decides everything else, through the same extension hook the game
+ * calls — so a throw switches the feature off here exactly as it would there.
+ */
+{
+  const { extensions, extUpdate } = await imp('src/game/extensions.js');
+  const AP = await imp('src/world/airport.js');
+  const { getAircraft } = await imp('src/aircraft/types.js');
+  T.applyMap('kestrel');
+  AP.refreshRunways();
+  const fe = extensions().find((e) => e.id === 'flightevents');
+  /*
+   * The airliners feature, where there is one, stands the 747 and the A380
+   * on their wheels: the flight model's own settle diverges for them (its
+   * file says why and by how much — measured here, a 747 put down on the
+   * runway was 1,100 m up three seconds later). In the game that feature is
+   * installed; here only its settle is borrowed, and only if it exists.
+   */
+  let AL = null;
+  try {
+    AL = await imp('src/features/airliners.js');
+  } catch (e) {
+    AL = null;
+  }
+
+  const makeSim = (acId) => {
+    P.applyAircraft(acId);
+    const ac = new P.Aircraft();
+    if (AL && typeof AL.installSettle === 'function' && Array.isArray(AL.AIRLINER_IDS)) {
+      AL.installSettle(ac, () => AL.AIRLINER_IDS.includes(acId));
+    }
+    ac.mode = 'simplified';
+    const w = new Weather();
+    w.load({ time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 90 });
+    const sim = {
+      scene: new THREE.Scene(),
+      camera: new THREE.PerspectiveCamera(60, 1.6, 1, 50000),
+      aircraft: ac,
+      aircraftType: getAircraft(acId),
+      settings: { aircraft: acId, difficulty: 'normal' },
+      state: 'flying',
+      mode: 'free',
+      weather: w,
+      atc: { said: {} },
+      runner: null,
+      prog: { credits: 0, earned: 0, best: [], unlocked: [], devUnlocked: false, militaryUnlocked: false },
+      menus: { syncProgression() {} },
+      said: [],
+      notes: [],
+      objectiveText: '',
+      speak(text, voice) { this.said.push({ text, voice }); },
+      hud: {
+        notify: (t) => sim.notes.push(t),
+        showBanner() {},
+        setObjective: (a, b) => { sim.objectiveText = `${a} — ${b}`; },
+      },
+    };
+    fe.install(sim);
+    return sim;
+  };
+  const DT = 1 / 30;
+  const step = (sim, secs, until) => {
+    for (let t = 0; t < secs; t += DT) {
+      sim.aircraft.update(DT, sim.weather);
+      sim.camera.position.copy(sim.aircraft.pos).add(new THREE.Vector3(0, 8, 30));
+      extUpdate(sim, DT);
+      if (until && until()) return true;
+    }
+    return !!(until && until());
+  };
+  const H = () => FE.hijackInfo();
+  const air = (sim, x, y, z, hdg, speed = 80) => {
+    sim.aircraft.reset({ pos: new THREE.Vector3(x, 0, z), headingDeg: hdg, speed, altAGL: y - T.heightAt(x, z), engineOn: true, gearDown: false });
+    sim.aircraft.controls.throttle = 0.6;
+  };
+  const ground = (sim, x, z, hdg) => {
+    sim.aircraft.reset({ pos: new THREE.Vector3(x, 0, z), headingDeg: hdg, speed: 0, engineOn: true });
+    // A teleport is not a touchdown; the story grades the last real one.
+    sim.aircraft.lastTouchdown = { crashed: false, onRunway: true, score: 80 };
+    // Power off and brakes on, as the story asks.
+    sim.aircraft.controls.throttle = 0;
+    sim.aircraft.controls.brakes = 1;
+  };
+  const live = () => extStatus().find((e) => e.id === 'flightevents').live;
+  const inScene = (sim, name) => sim.scene.children.filter((o) => o.name === name).length;
+
+  for (const acId of ['meridian', FE.longHaulId()].filter((v, i, a) => a.indexOf(v) === i)) {
+    /* ------------------------------------------------ the film version -- */
+    let sim = makeSim(acId);
+    air(sim, -16000, 1500, 5000, 90);
+    // Owned by 'free', as the dice own it: that is the story that pays.
+    FE.forceHijack(sim, { owner: 'free', version: 'film' });
+    step(sim, 1);
+    ok(`story film (${acId}): he bursts in — the 'burst' phase, and nothing is squawked yet`, H().phase === 'burst' && !H().squawked, H().phase);
+    ok(`story film (${acId}): 7 is taken while it is on`, fe.key(sim, 'Digit7', true) === true && fe.key(sim, 'Digit7', false) === true);
+    ok(`story film (${acId}): ...and squawks 7500`, H().squawked && H().phase === 'orders', H().phase);
+    step(sim, 30);
+    ok(`story film (${acId}): ATC asks to verify the code`, sim.said.some((l) => /verify squawking seven five zero zero/.test(l.text)));
+    ok(`story film (${acId}): he orders the island, and the guide points there`, !!H().guide && /Do what he says/.test(sim.objectiveText), sim.objectiveText);
+    ok(`story film (${acId}): two fighters are sent to shadow`, H().escorts === 2, H().escorts);
+    const joined = step(sim, 60, () => H().escortFormed);
+    ok(`story film (${acId}): they tuck in behind`, joined, JSON.stringify({ escorts: H().escorts }));
+    air(sim, AP.RUNWAY.touchdown.x - 8000, AP.RUNWAY.elev + 500, AP.RUNWAY.touchdown.z, 90, 70);
+    step(sim, 1);
+    ok(`story film (${acId}): close in, it is "land it"`, H().phase === 'approach', H().phase);
+    ground(sim, AP.RUNWAY.touchdown.x + 150, AP.RUNWAY.touchdown.z, 90);
+    step(sim, 2.5);
+    ok(`story film (${acId}): down, he wants the terminal`, H().phase === 'taxi' && !!H().stand, H().phase);
+    const rushed = step(sim, 20, () => H().phase === 'rush');
+    ok(`story film (${acId}): stop anywhere and the police rush you`, rushed && H().police === 4 && H().stairs && H().comeToYou, JSON.stringify({ phase: H().phase, police: H().police }));
+    const rushAt = sim.aircraft.pos.clone();
+    const boarded = step(sim, 45, () => H().phase === 'board');
+    ok(`story film (${acId}): the stairs arrive and they go up`, boarded, H().phase);
+    const done = step(sim, 80, () => H().done);
+    // Idle and braked, a heavy creeps for ever in this flight model; the
+    // police chock the wheels so the stairs stay at the door.
+    const drift = Math.hypot(sim.aircraft.pos.x - rushAt.x, sim.aircraft.pos.z - rushAt.z);
+    ok(`story film (${acId}): the aeroplane stays where the police surrounded it`, drift < 10, `${drift.toFixed(1)} m`);
+    ok(`story film (${acId}): he is walked out, and it ends happily`, done && H().score >= 50, JSON.stringify({ phase: H().phase, score: H().score }));
+    ok(`story film (${acId}): the story the dice brought pays a reward`, H().paid > 0 && sim.prog.credits === H().paid, `${H().paid} credits`);
+    const home = step(sim, 90, () => H().police === 0 && !H().stairs);
+    ok(`story film (${acId}): after the ending the police and the stairs drive off and are gone`, home && H().leaving,
+      JSON.stringify({ police: H().police, stairs: H().stairs, cars: inScene(sim, 'police-car') }));
+    ok(`story film (${acId}): the feature is still live`, live());
+    // Nobody presses 7: the cabin crew phone it in, and the story goes on.
+    sim = makeSim(acId);
+    air(sim, -16000, 1500, 5000, 90);
+    FE.forceHijack(sim, { owner: 'test', version: 'film' });
+    const crew = step(sim, 50, () => H().crewCalled);
+    ok(`story film (${acId}): no 7 in 45 s — the cabin crew phone it in and the story goes on`, crew && H().phase === 'orders' && !H().squawked, H().phase);
+    fe.key(sim, 'Digit7', true);
+    fe.key(sim, 'Digit7', false);
+    ok(`story film (${acId}): ...and 7 still squawks afterwards, and ATC says it sees it`, H().squawked && sim.said.some((l) => /observed/.test(l.text)));
+    step(sim, 30);
+    ok(`story film (${acId}): the fighters still come`, H().escorts === 2, H().escorts);
+    FE.forceHijack(sim, { owner: 'test', version: 'film' });
+    fe.stop(sim, 'menu');
+    ok(`story film (${acId}): the menu clears it all away`, H().phase === 'idle' && inScene(sim, 'police-car') === 0 && inScene(sim, 'police-stairs') === 0
+      && !sim.scene.children.some((o) => o.name && (o.name.startsWith('person-') || o.name.startsWith('escort-'))));
+
+    /* ------------------------------------------ the by-the-book version -- */
+    sim = makeSim(acId);
+    air(sim, -9000, 1500, -12000, 100);
+    // Owned by 'dev', as the Dev button owns it: that one pays nothing.
+    FE.forceHijack(sim, { owner: 'dev', version: 'real' });
+    step(sim, 1);
+    ok(`story real (${acId}): the door — a question on the card`, H().phase === 'door' && H().choosing, H().phase);
+    ok(`story real (${acId}): 8 answers it (keep it locked)`, fe.key(sim, 'Digit8', true) === false || true);
+    FE.answerChoice(0);
+    step(sim, 7);
+    ok(`story real (${acId}): then the squawk`, H().phase === 'squawk', H().phase);
+    fe.key(sim, 'Digit7', true);
+    ok(`story real (${acId}): 7 squawks and ATC checks it`, H().squawked && H().phase === 'verify', H().phase);
+    step(sim, 6.5);
+    ok(`story real (${acId}): "verify squawking 7500" — with three answers`, H().choosing && sim.said.some((l) => /verify squawking/.test(l.text)));
+    FE.answerChoice(0); // say nothing
+    const clicks = step(sim, 14, () => H().choosing);
+    ok(`story real (${acId}): then "click your microphone twice"`, clicks && sim.said.some((l) => /click your microphone twice/.test(l.text)));
+    FE.answerChoice(0);
+    step(sim, 8);
+    ok(`story real (${acId}): the hijacker's orders come over the interphone`, H().phase === 'orders' && H().escorts === 2, H().phase);
+    const hdg = Number((sim.objectiveText.match(/heading (\d{3})/) || [])[1]);
+    ok(`story real (${acId}): with a heading to fly`, Number.isFinite(hdg), sim.objectiveText);
+    const p = sim.aircraft.pos.clone();
+    air(sim, p.x, p.y, p.z, hdg, 80);
+    step(sim, 6);
+    ok(`story real (${acId}): on his heading, the jets wait for the radio call he wants`, H().phase === 'orders' && !H().radioDone, H().phase);
+    const radioQ = step(sim, 6, () => H().choosing);
+    ok(`story real (${acId}): "tell them everything is normal" — three ways to say it`, radioQ, H().phase);
+    FE.answerChoice(0);
+    ok(`story real (${acId}): the airline's code phrase goes out, in normal words`,
+      H().radioDone && H().radio === 0 && sim.said.some((l) => l.voice === 'Captain (you)' && /coffee is cold/.test(l.text)));
+    const icpt = step(sim, 12, () => H().phase === 'intercept');
+    ok(`story real (${acId}): ATC answers in the same code`, sim.said.some((l) => /sorry to hear about the coffee/i.test(l.text)));
+    ok(`story real (${acId}): on his heading, the fighters intercept`, icpt, H().phase);
+    const rocking = step(sim, 70, () => H().lead && H().escortFormed);
+    ok(`story real (${acId}): the lead takes the intercept position`, rocking, JSON.stringify({ lead: !!H().lead }));
+    step(sim, 2);
+    // Rock the wings: a quarter over one way, then the other.
+    const roll = (deg) => {
+      const f = sim.aircraft.forward(new THREE.Vector3());
+      sim.aircraft.quat.premultiply(new THREE.Quaternion().setFromAxisAngle(f, (-deg * Math.PI) / 180));
+      sim.aircraft.omega.set(0, 0, 0);
+      step(sim, 0.2);
+    };
+    roll(-25);
+    roll(25);
+    roll(25);
+    roll(-25);
+    ok(`story real (${acId}): rocking your wings answers it, and you follow`, H().acked && H().phase === 'follow', H().phase);
+    for (let r = 0; r < 3; r++) {
+      const asked = step(sim, 16, () => H().choosing);
+      ok(`story real (${acId}): he talks — round ${r + 1} on the card`, asked, H().phase);
+      FE.answerChoice(0);
+    }
+    step(sim, 13);
+    ok(`story real (${acId}): calm, true answers talk him down`, H().talked && H().tension < 0.2, H().tension.toFixed(2));
+    const rem = H().remote;
+    ok(`story real (${acId}): the fighters have a runway to take you to`, !!rem, rem && `${rem.x.toFixed(0)},${rem.z.toFixed(0)}`);
+    // On the approach, lined up, 5 km out.
+    const Tref = H().remote.clone();
+    const landHdg = H().landHdg;
+    const back = new THREE.Vector3(Math.sin(landHdg * Math.PI / 180), 0, -Math.cos(landHdg * Math.PI / 180));
+    air(sim, Tref.x - back.x * 5200, Tref.y + 300, Tref.z - back.z * 5200, landHdg, 70);
+    step(sim, 1);
+    ok(`story real (${acId}): lined up, the lead puts its wheels down — "land at this aerodrome"`,
+      H().landSignal && H().leadGear && !H().released && !H().gearAck, JSON.stringify({ sig: H().landSignal, gear: H().leadGear, rel: H().released }));
+    step(sim, 3);
+    ok(`story real (${acId}): ...and does not say "you may proceed" before it is answered`, !H().released, H().phase);
+    sim.aircraft.toggleGear();
+    const released = step(sim, 6, () => H().released);
+    ok(`story real (${acId}): wheels down answers it`, H().gearAck);
+    ok(`story real (${acId}): then the jets break away — "you may proceed"`, released && H().phase === 'final', H().phase);
+    ground(sim, Tref.x + back.x * 450, Tref.z + back.z * 450, landHdg);
+    step(sim, 2.5);
+    ok(`story real (${acId}): down — stop, and shut down`, H().phase === 'stop' || H().phase === 'rush', H().phase);
+    sim.aircraft.engineOn = false;
+    const tac = step(sim, 10, () => H().phase === 'rush');
+    ok(`story real (${acId}): stopped where the jets brought you, the tactical team comes`, tac && H().onRemote && H().police === 4, JSON.stringify({ phase: H().phase, onRemote: H().onRemote }));
+    ok(`story real (${acId}): two of them are vans`, inScene(sim, 'police-van') === 2, inScene(sim, 'police-van'));
+    const fin = step(sim, 140, () => H().done);
+    ok(`story real (${acId}): they board, and it ends happily with a score`, fin && H().score >= 80, JSON.stringify({ phase: H().phase, score: H().score, stars: H().stars }));
+    ok(`story real (${acId}): everything done right is remembered for the ending`, H().stars >= 8, H().stars);
+    ok(`story real (${acId}): a Dev-button run pays nothing — no credits tap for the code`, H().paid === 0 && sim.prog.credits === 0, `${H().paid} paid, ${sim.prog.credits} credits`);
+    ok(`story real (${acId}): the fighters said their lines in their own voice`, sim.said.some((l) => l.voice === 'Guardian flight'));
+    ok(`story real (${acId}): a run with every answer right scores 100 or close`, H().score >= 85, H().score);
+    const teamHome = step(sim, 90, () => H().police === 0 && !H().stairs);
+    ok(`story real (${acId}): after the ending the team drives off and is gone`, teamHome, JSON.stringify({ police: H().police, stairs: H().stairs }));
+    ok(`story real (${acId}): the feature is still live`, live());
+    fe.stop(sim, 'menu');
+  }
+
+  /*
+   * Hands off: nobody touches a key or the card. Every question has to
+   * answer itself with what a crew would do anyway, the first officer has to
+   * squawk, and the fighters still have to come and lead the way — or a
+   * child who never saw the card is stuck behind a locked door for ever.
+   * The aeroplane is put back in the sky every twenty seconds so that the
+   * flight model, flying itself with nobody at the controls, is not what
+   * decides the story.
+   */
+  {
+    const sim = makeSim('meridian');
+    air(sim, -9000, 1500, -12000, 100);
+    FE.forceHijack(sim, { owner: 'test', version: 'real' });
+    const seen = new Set();
+    let t = 0;
+    while (t < 420 && H().phase !== 'follow') {
+      step(sim, 20, () => {
+        seen.add(H().phase);
+        return H().phase === 'follow';
+      });
+      t += 20;
+      const q = sim.aircraft.pos;
+      air(sim, q.x, 1500, q.z, sim.aircraft.heading, 80);
+    }
+    ok('story real, hands off: the door answers itself — it stays locked', H().stars >= 1 && seen.has('squawk'), [...seen].join());
+    ok('story real, hands off: the first officer squawks 7500', H().foSquawked && H().squawked);
+    ok('story real, hands off: the radio call is made for you', H().radioDone && H().radio === 1, H().radio);
+    ok('story real, hands off: the fighters still intercept and lead the way', H().phase === 'follow' && H().acked, `${H().phase} after ${t} s`);
+    ok('story real, hands off: nothing threw', live());
+    fe.stop(sim, 'menu');
+  }
+
+  /* ----------------------------------------------- the rules round it -- */
+  {
+    const sim = makeSim('meridian');
+    ok('rules: nothing on the 7 key when there is no story', fe.key(sim, 'Digit7', true) === false);
+    ok('rules: nothing on 8, 9 or 0 when there is no question', fe.key(sim, 'Digit8', true) === false && fe.key(sim, 'Digit0', true) === false);
+    // The dice: the long-haul type arms the hijack one flight in ten; with
+    // the passcode, the one it arms is the realistic one.
+    const odds = FE.ODDS.hijack;
+    FE.ODDS.hijack = 1;
+    const lh = { ...sim.aircraftType, longHaul: true };
+    sim.aircraftType = lh;
+    fe.startMode(sim, 'free', {});
+    const film = H().phase === 'armed' && H().version === 'film';
+    sim.prog.devUnlocked = true;
+    fe.startMode(sim, 'free', {});
+    const real = H().phase === 'armed' && H().version === 'real';
+    fe.startMode(sim, 'mission', {});
+    const notInMission = H().phase === 'idle';
+    FE.ODDS.hijack = odds;
+    ok('rules: a long-haul Free Flight arms the film version', film);
+    ok('rules: ...and the realistic one once the Dev passcode is in', real);
+    ok('rules: never in a mission', notInMission);
+    fe.stop(sim, 'menu');
+  }
+
+  /*
+   * The pizza car at the start of somebody else's mission.
+   *
+   * It wrote "Hold position" over the mission's first step and never put the
+   * step back: measured on Island Circuit, 76 s after the all-clear the panel
+   * still said "keep still" while the tower said "cleared for take-off", and
+   * the only line telling a new player to press Shift was gone. Here the hud
+   * is a stand-in with the real one's two text elements, the runner a
+   * stand-in that counts time the way the real one does, and the car comes
+   * the way it comes in the game: the dice, at the mission's start.
+   */
+  {
+    const sim = makeSim('skylark');
+    const node = () => ({ textContent: '' });
+    sim.hud = {
+      objectiveTitle: node(),
+      objectiveText: node(),
+      notify: (t) => sim.notes.push(t),
+      showBanner() {},
+      setObjective(a, b) {
+        this.objectiveTitle.textContent = a;
+        this.objectiveText.textContent = b;
+        sim.objectiveText = `${a} — ${b}`;
+      },
+    };
+    const STEP1 = ['Island Circuit · step 1 of 8', 'Welcome aboard! Push the throttle up with Shift and roll down the runway.'];
+    const STEP2 = ['Island Circuit · step 2 of 8', 'Lift off.'];
+    const onScreen = () => `${sim.hud.objectiveTitle.textContent} — ${sim.hud.objectiveText.textContent}`;
+    fe.buildWorld(sim, new THREE.Group());
+    const site = FE.breakInInfo().siteOk;
+    ok('mission window: Kestrel has room for the pizza car', site);
+    const runOnce = (advance) => {
+      ground(sim, AP.RUNWAY.touchdown.x - 150, AP.RUNWAY.touchdown.z, 90);
+      sim.mode = 'mission';
+      sim.runner = { status: 'running', stepIndex: 0, elapsed: 0, def: { id: 'test-circuit', name: 'Island Circuit', category: 'training', steps: [{}, {}] } };
+      sim.hud.setObjective(...STEP1);
+      const odds = { ...FE.ODDS };
+      FE.ODDS.hijack = 0;
+      FE.ODDS.breakin = 1;
+      fe.startMode(sim, 'mission', {});
+      FE.ODDS.hijack = odds.hijack;
+      FE.ODDS.breakin = odds.breakin;
+      const armed = FE.breakInInfo().phase === 'armed';
+      let wall = 0;
+      let heldText = '';
+      let done = false;
+      for (let t = 0; t < 160 && !done; t += DT) {
+        sim.aircraft.update(DT, sim.weather);
+        sim.runner.elapsed += DT;
+        extUpdate(sim, DT);
+        wall += DT;
+        if (!heldText && FE.breakInInfo().phase === 'run') {
+          heldText = onScreen();
+          if (advance) sim.hud.setObjective(...STEP2);
+        }
+        done = FE.breakInInfo().done;
+      }
+      return { armed, heldText, done, wall, elapsed: sim.runner.elapsed };
+    };
+    if (site) {
+      const a = runOnce(false);
+      ok('mission window: the dice arm the car at the start of an untimed mission', a.armed);
+      ok('mission window: the car comes, and the panel says hold position', /^Hold position — .*mission carries on/.test(a.heldText), a.heldText);
+      ok('mission window: after the all-clear the mission\'s own step is back on the panel, word for word',
+        a.done && onScreen() === `${STEP1[0]} — ${STEP1[1]}`, `${a.done ? 'done' : 'not done'}; ${onScreen()}`);
+      ok('mission window: the hold does not come off the mission\'s clock (time bonus)', a.done && a.elapsed < 8 && a.wall > 40,
+        `${a.wall.toFixed(0)} s passed, the mission counted ${a.elapsed.toFixed(1)} s`);
+      fe.stop(sim, 'menu');
+      const b = runOnce(true);
+      ok('mission window: a mission that moved on a step during the hold keeps its new step', b.done && onScreen() === `${STEP2[0]} — ${STEP2[1]}`, onScreen());
+      fe.stop(sim, 'menu');
+      // Free Flight: the same car, back to the Free Flight line afterwards.
+      sim.runner = { status: 'idle', def: null };
+      sim.mode = 'free';
+      sim.hud.setObjective('Free Flight', 'Take off from runway 09, explore the islands, and land whenever you like.');
+      FE.armBreakIn(sim, 'free');
+      let freeDone = false;
+      for (let t = 0; t < 170 && !freeDone; t += DT) {
+        sim.aircraft.update(DT, sim.weather);
+        extUpdate(sim, DT);
+        freeDone = FE.breakInInfo().done;
+      }
+      ok('free window: after the all-clear the panel is Free Flight again', freeDone && sim.hud.objectiveTitle.textContent === 'Free Flight', onScreen());
+      fe.stop(sim, 'menu');
+      ok('mission window: the feature is still live', live());
+    }
+  }
+}
+
+/* ----------------------------------------------------------- off switch -- */
+/*
+ * The plug-in layer's promise: one line out of src/features/index.js turns a
+ * feature off. The mission list used to import flight-events.js itself, so
+ * the dice came back with the missions whatever the index said. Loaded on
+ * their own, in a fresh node, the missions must not register it.
+ */
+{
+  const { spawnSync } = await import('node:child_process');
+  const code = `
+    globalThis.document = { createElement: () => ({ getContext: () => new Proxy({}, { get: () => () => ({ addColorStop() {}, data: new Uint8ClampedArray(4) }) }), width: 0, height: 0, style: {} }), body: { appendChild() {} } };
+    const root = ${JSON.stringify(root.href)};
+    await import(new URL('src/game/missions.js', root).href);
+    const { extStatus } = await import(new URL('src/game/extensions.js', root).href);
+    const B = await import(new URL('src/features/events/bridge.js', root).href);
+    console.log(JSON.stringify({ ids: extStatus().map((e) => e.id), api: !!B.BRIDGE.api, hb: B.eventsHeartbeat(), phase: B.hijackInfo().phase }));
+  `;
+  const out = spawnSync(process.execPath, ['--input-type=module', '-e', code], { encoding: 'utf8', timeout: 60000 });
+  let got = null;
+  try {
+    got = JSON.parse(String(out.stdout).trim().split('\n').pop());
+  } catch (e) {
+    got = null;
+  }
+  ok('off switch: the mission list alone does not register flight-events', !!got && !got.ids.includes('flightevents'),
+    got ? got.ids.join(',') : `${out.status} ${String(out.stderr).slice(0, 200)}`);
+  ok('off switch: ...and the missions read a quiet "nothing happening" through the bridge', !!got && !got.api && got.hb === -1 && got.phase === 'idle',
+    got ? JSON.stringify(got) : 'no output');
+}
+
+/* -------------------------------------------------------------- physics -- */
+
+/**
+ * Fly one aeroplane on the real flight model. `control(ac, t)` sets the
+ * controls each step; returns the aeroplane.
+ */
+function fly(id, { pos, heading = 90, speed = 60, altAGL = 400, seconds = 30, map = 'kestrel', control = null, onStep = null }) {
+  T.applyMap(map);
+  P.applyAircraft(id);
+  const ac = new P.Aircraft();
+  const w = new Weather();
+  w.load({ time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 90 });
+  ac.mode = 'simplified';
+  ac.reset({ pos: pos.clone(), headingDeg: heading, speed, altAGL, engineOn: true });
+  ac.controls.throttle = 1;
+  const STEP = 1 / 120;
+  for (let t = 0; t < seconds; t += STEP) {
+    if (control) control(ac, t);
+    ac.update(STEP, w);
+    if (onStep) onStep(ac, t, STEP);
+    if (ac.crashed) break;
+  }
+  return ac;
+}
+
+// The trainer, flat out and level, over the sea.
+const cruise = fly('skylark', { pos: new THREE.Vector3(-8000, 0, 3000), speed: 60, altAGL: 400, seconds: 90 });
+const vTrainer = cruise.groundSpeed;
+ok('physics: the trainer cruises (flat out, level) without crashing', !cruise.crashed && vTrainer > 55, `${vTrainer.toFixed(1)} m/s`);
+
+// Seagull Showdown: the gulls fly the course at a fixed speed; a straight
+// course at the trainer's speed, plus a generous 20 s for three turns, must
+// still beat them.
+const tGulls = TUNING.raceLength / TUNING.gullSpeed;
+const tYou = TUNING.raceLength / vTrainer + 20;
+ok('goofy-gulls: flat out, the trainer beats the seagulls with time to spare', tYou < tGulls - 5, `you ${tYou.toFixed(0)} s, gulls ${tGulls.toFixed(0)} s`);
+// ...and at the throttle it spawns at, dawdling at 55 m/s with no turns, it
+// is close — the race is a race.
+ok('goofy-gulls: at a lazy 45 m/s the seagulls win', TUNING.raceLength / 45 > tGulls, `${(TUNING.raceLength / 45).toFixed(0)} s vs ${tGulls.toFixed(0)} s`);
+
+// Ice Cream Emergency: from the spawn at ~2,000 ft to the pad, then a
+// minute of descent at ~800 ft, then 25 s under the parachute at pad height.
+{
+  const s = TUNING.iceSpawn;
+  const d = Math.hypot(TUNING.icePad.x - s.pos.x, TUNING.icePad.z - s.pos.z);
+  const cruiseMelt = (d / vTrainer) * TUNING.meltRate(610);
+  const descentMelt = 60 * TUNING.meltRate(245);
+  const fallMelt = 25 * TUNING.meltRate(120);
+  const total = cruiseMelt + descentMelt + fallMelt;
+  ok('goofy-icecream: a sensible flight arrives with ice cream to spare', total < 0.65, `${(total * 100).toFixed(0)}% melted`);
+  // Two misses cost two more descents and falls: still not quite a milkshake.
+  ok('goofy-icecream: there is room for one missed drop', total + descentMelt + fallMelt < 1, `${((total + descentMelt + fallMelt) * 100).toFixed(0)}% after a miss`);
+  const lowMelt = (d / vTrainer) * TUNING.meltRate(90) + descentMelt + fallMelt;
+  ok('goofy-icecream: flying the whole way low melts more (the lesson)', lowMelt > total * 1.25, `${(lowMelt * 100).toFixed(0)}% vs ${(total * 100).toFixed(0)}%`);
+}
+
+// Buzz Off!: the bee is slower than the trainer everywhere on its path.
+{
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  let vmax = 0;
+  for (let t = 0; t < 900; t += 1) {
+    TUNING.beeAt(t, a);
+    TUNING.beeAt(t + 1, b);
+    vmax = Math.max(vmax, Math.hypot(b.x - a.x, b.z - a.z));
+  }
+  ok('goofy-bee: the bee is never faster than the trainer', vmax < vTrainer * 0.85, `bee up to ${vmax.toFixed(1)} m/s, trainer ${vTrainer.toFixed(1)}`);
+}
+
+// Hello, Tower!: full roll in the fighter reaches upside down inside the
+// window, well above the floor, and it rolls itself back when let go.
+{
+  let invAt = null;
+  let lost = 0;
+  const y0 = 14 + 250;
+  const ac = fly('vanguard', {
+    pos: new THREE.Vector3(-5000, 0, 3000),
+    speed: 140,
+    altAGL: 250 + 34,
+    seconds: 7,
+    control: (a, t) => {
+      a.controls.throttle = 0.8;
+      a.controls.roll = t < 1.2 ? 1 : 0;
+    },
+    onStep: (a, t) => {
+      if (invAt === null && Math.abs(a.bankAngleDeg()) > TUNING.towerFlip.bank) invAt = t;
+      lost = Math.max(lost, y0 - a.pos.y);
+    },
+  });
+  ok('goofy-tower: the fighter is upside down within about a second', invAt !== null && invAt < 1.5, invAt);
+  // Roll and recovery together must fit above the lowest height the check
+  // accepts, with room to spare over an 80 m tower and the grass beside it.
+  ok('goofy-tower: a flip at the bottom of the window still recovers 40 m up', TUNING.towerFlip.minAgl - lost > 40,
+    `loses ${lost.toFixed(0)} m, window floor ${TUNING.towerFlip.minAgl} m`);
+  ok('goofy-tower: and rolls back upright on its own', Math.abs(ac.bankAngleDeg()) < 30 && !ac.crashed, ac.bankAngleDeg().toFixed(0));
+}
+
+// Loop-the-Loop: hold the stick back in the fighter and it goes all the way
+// round — nose up, over the top, and back level — without losing height.
+{
+  const f = new THREE.Vector3();
+  const u = new THREE.Vector3();
+  let noseUp = false;
+  let inverted = false;
+  let cum = 0;
+  let minY = Infinity;
+  let back = false;
+  const ac = fly('vanguard', {
+    pos: new THREE.Vector3(-5000, 0, 3000),
+    speed: 150,
+    altAGL: 800,
+    seconds: 32,
+    control: (a) => {
+      a.controls.pitch = back ? 0 : 1;
+      a.controls.throttle = 1;
+    },
+    onStep: (a, t, dt) => {
+      a.forward(f);
+      a.up(u);
+      if (Math.asin(f.y) > (55 * Math.PI) / 180) noseUp = true;
+      if (noseUp) cum += a.omega.x * dt;
+      if (noseUp && u.y < -0.3) inverted = true;
+      if (inverted && u.y > 0.5 && cum > (280 * Math.PI) / 180) back = true;
+      minY = Math.min(minY, a.pos.y);
+    },
+  });
+  ok('goofy-loops: holding S flies a whole loop in the fighter', noseUp && inverted && back && !ac.crashed, `${((cum * 180) / Math.PI).toFixed(0)} deg, crashed ${ac.crashed}`);
+  ok('goofy-loops: without sinking below where it started', minY > 766 - 80, `lowest ${minY.toFixed(0)} m from ${766}`);
+}
+
+/* --------------------------------------------------------------- report -- */
+
+const failed = results.filter((r) => !r.pass);
+for (const r of results) {
+  if (!r.pass || process.argv.includes('--verbose')) {
+    console.log(`${r.pass ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? `  (${r.detail})` : ''}`);
+  }
+}
+console.log(`\nevents: ${results.length - failed.length}/${results.length} passed`);
+process.exitCode = failed.length ? 1 : 0;

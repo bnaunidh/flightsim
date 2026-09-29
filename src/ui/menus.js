@@ -13,6 +13,7 @@ import { PRESETS, TIMES, CONDITIONS } from '../world/weather.js';
 import { ACTIONS, keyLabel } from '../flight/input.js';
 import { CREDITS_HTML } from './credits.js';
 import { MAPS } from '../world/maps.js';
+import { extDevActions } from '../game/extensions.js';
 import { loadFreePresets, saveFreePresets, MAX_FREE_PRESETS } from '../core/storage.js';
 import * as Prog from '../game/progression.js';
 import { LIVERIES, schemeFor } from '../aircraft/liveries.js';
@@ -21,6 +22,361 @@ function h(html) {
   const t = document.createElement('template');
   t.innerHTML = html.trim();
   return t.content.firstElementChild;
+}
+
+/* ====================================================================== */
+/*
+ * CATEGORIES — "Add categorys for missions and planes".
+ *
+ * That is the wishlist, in the owner's hand. What it was about: the flight
+ * mission board was twelve cards in the order they were written, so Island
+ * Circuit (the first lesson) sat beside Carrier Qualification (the hardest
+ * thing in the game) and a tornado, and the aeroplane picker was one run in
+ * the order the types were typed in, which put the Tempest, a propeller
+ * tourer, between a carrier jet and the helicopter. Seven more aeroplanes and
+ * three more kinds of mission are being built alongside this, so an unsorted
+ * list was about to double.
+ *
+ * Everything below is data plus two functions, aircraftCategory() and
+ * missionCategory(). Nothing is ever written back onto a roster entry or a
+ * mission: other code owns those objects, and a menu that quietly adds a
+ * field to them is how two teams end up disagreeing about what it means.
+ *
+ * A type or mission that names its own `category` goes where it says. One that
+ * does not is placed from what it is — the aeroplane's `class`, the mission's
+ * id, or failing that the words in its name — so anything added later lands
+ * under a heading without anyone having to come back here.
+ */
+
+/* Heading icons, drawn on the same 24-unit grid and 1.7 stroke as icons.js so
+   they sit beside the rest of the set. Kept here because icons.js belongs to
+   the whole interface and these are only ever used by the headings. */
+const CAT_ICONS = {
+  light: '<path d="M12 3.6v15.2"/><path d="M3.4 10.2h17.2"/><path d="M8.6 18.6h6.8"/><path d="M9.4 3.4h5.2"/>',
+  airliner: '<path d="M12 2.6c1.5 0 2.1 2.4 2.2 5.4l6.6 4.1v2.3l-6.6-2v3.9l2.3 1.7v1.7L12 19l-4.5.7v-1.7l2.3-1.7v-3.9l-6.6 2v-2.3L9.8 8c.1-3 .7-5.4 2.2-5.4Z"/>',
+  jet: '<path d="M12 2.8 13.9 9l6.6 8.3-.3 1.3-6.3-2.3-.7 2.6 2.2 1.6v.9L12 20.8l-3.4.6v-.9l2.2-1.6-.7-2.6-6.3 2.3-.3-1.3L10.1 9Z"/>',
+  heli: '<path d="M3.5 6h17"/><path d="M12 6v2.6"/><path d="M7.5 8.6h6l2.5 3.4h4.5"/><path d="M7.5 8.6a3.4 3.4 0 0 0 0 6.8h6.5l2-3.4"/><path d="M19.5 10.2v3.6"/><path d="M6 18h9"/><path d="M8.5 15.4V18M13 15.4V18"/>',
+  special: '<path d="M12 3.4 13.9 10.1 20.6 12l-6.7 1.9L12 20.6l-1.9-6.7L3.4 12l6.7-1.9Z"/>',
+  training: '<path d="M2.6 9.4 12 5l9.4 4.4L12 13.8Z"/><path d="M6.4 11.4v4.3c3.2 2.3 8 2.3 11.2 0v-4.3"/><path d="M21.4 9.4v5.2"/>',
+  airline: '<rect x="3.5" y="7.5" width="17" height="11.5" rx="2"/><path d="M9 7.5V5.8a1.3 1.3 0 0 1 1.3-1.3h3.4A1.3 1.3 0 0 1 15 5.8v1.7"/><path d="M3.5 12.4h17"/>',
+  delivery: '<path d="M12 3.2 20.5 7.6v8.8L12 20.8 3.5 16.4V7.6Z"/><path d="M3.5 7.6 12 12l8.5-4.4"/><path d="M12 12v8.8"/><path d="m7.8 5.4 8.5 4.4"/>',
+  rescue: '<circle cx="12" cy="12" r="8.4"/><circle cx="12" cy="12" r="3.6"/><path d="m6.1 6.1 3.4 3.4M17.9 6.1l-3.4 3.4M6.1 17.9l3.4-3.4M17.9 17.9l-3.4-3.4"/>',
+  challenge: '<path d="M7.5 4.5h9v4a4.5 4.5 0 0 1-9 0Z"/><path d="M7.5 6.3H4.6a3 3 0 0 0 3.1 4M16.5 6.3h2.9a3 3 0 0 1-3.1 4"/><path d="M12 13v3.4"/><path d="M8.6 19.6h6.8l-1-3.2H9.6Z"/>',
+  events: '<path d="M6.6 17v-4.8a5.4 5.4 0 0 1 10.8 0V17"/><path d="M4.6 17h14.8v2.6H4.6Z"/><path d="M12 3v2M4.4 6.1l1.4 1.4M19.6 6.1l-1.4 1.4"/>',
+  goofy: '<circle cx="12" cy="12" r="8.4"/><path d="M8.3 14a4.4 4.4 0 0 0 7.4 0"/><circle cx="9.2" cy="9.9" r="0.9" fill="currentColor" stroke="none"/><circle cx="14.8" cy="9.9" r="0.9" fill="currentColor" stroke="none"/>',
+  meteor: '<circle cx="15.4" cy="8.6" r="3.8"/><path d="M12.6 11.4 3.8 20.2M10.9 8.4 5.4 13.9M15.6 13 10.1 18.5"/>',
+  fire: '<path d="M12 20.8c-3.8 0-6.4-2.5-6.4-6 0-3.2 2.2-5 3.5-7.6.4 1.8 1.3 2.9 2.6 3.5.3-3.2 1.7-5.6 4-7.5-.3 2.9.8 4.7 2 6.5.9 1.4 1.5 2.9 1.5 5.1 0 3.5-2.9 6-7.2 6Z"/><path d="M12 20.8c-1.6 0-2.7-1.1-2.7-2.7 0-1.6 1.2-2.5 2-3.8.8 1.2 3.4 2.1 3.4 4 0 1.4-1.1 2.5-2.7 2.5Z"/>',
+  military: '<path d="M12 3.2 19.5 6v5.6c0 4.3-3.1 7.7-7.5 9.2-4.4-1.5-7.5-4.9-7.5-9.2V6Z"/><path d="m12 8.3 1.2 2.5 2.7.3-2 1.8.6 2.7-2.5-1.4-2.5 1.4.6-2.7-2-1.8 2.7-.3Z"/>',
+  other: '<circle cx="12" cy="12" r="8.4"/><circle cx="12" cy="12" r="4.4"/><circle cx="12" cy="12" r="0.9" fill="currentColor" stroke="none"/>',
+  search: '<circle cx="10.6" cy="10.6" r="6.2"/><path d="m15.2 15.2 5 5"/>',
+};
+
+function catIcon(name, size = 20) {
+  const body = CAT_ICONS[name] || CAT_ICONS.other;
+  return (
+    `<svg class="icon" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" ` +
+    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" ' +
+    `aria-hidden="true" focusable="false">${body}</svg>`
+  );
+}
+
+/*
+ * The five aircraft headings, in the order a child meets them: the ones you
+ * learn in first, the big ones, the fast ones, the one that hovers.
+ */
+export const AIRCRAFT_CATEGORIES = [
+  { id: 'light', label: 'Light aircraft', blurb: 'Small, slow and friendly — the ones to learn in', colour: '#7ee8b2', icon: 'light' },
+  { id: 'airliner', label: 'Airliners', blurb: 'Lots of seats and a lot of momentum', colour: '#58c6ff', icon: 'airliner' },
+  { id: 'military', label: 'Military jets', blurb: 'Very fast, and very twitchy', colour: '#b9cf8f', icon: 'jet' },
+  { id: 'helicopter', label: 'Helicopters', blurb: 'They hover — nothing else here does', colour: '#ff9d6a', icon: 'heli' },
+  { id: 'special', label: 'Special', blurb: 'The odd ones out', colour: '#c39bff', icon: 'special' },
+];
+
+/*
+ * The mission headings. Eight are the contract every mission team builds
+ * against; "Challenges" is the ninth, for the three flight missions that are
+ * none of those things — a timed lap of an erupting volcano, three passes
+ * through a tornado, and losing the jets on your tail in cloud. Putting them
+ * under Training or Emergencies would have been a heading that lies about
+ * what is under it, and a ten-year-old reads the heading, not the card.
+ *
+ * Military is last so the passcode gate never leaves a hole in the middle of
+ * the list: before the code it is simply not there.
+ *
+ * "Firefighting" came after: the wishlist asked for forest fires to put out
+ * in the aeroplane and the helicopter, and those missions have a slot of their
+ * own (game/extra/fire.js) being filled in parallel. Without a heading here a
+ * category of 'fire' still got one, but as a grey "Fire" with the plain ring
+ * icon, and 'firefighting' or 'wildfire' would each have got another — so it
+ * is listed, with the words a team is likely to type mapped onto it below.
+ * If the fire missions say `rescue` instead, this heading never appears.
+ */
+export const MISSION_CATEGORIES = [
+  { id: 'training', label: 'Training', blurb: 'Start here — one new thing at a time', colour: '#7ee8b2', icon: 'training' },
+  { id: 'airline', label: 'Passengers & cargo', blurb: 'Big aeroplanes, people on board and a timetable', colour: '#58c6ff', icon: 'airline' },
+  { id: 'delivery', label: 'Deliveries', blurb: 'Get it there on time, and in one piece', colour: '#ffd166', icon: 'delivery' },
+  { id: 'rescue', label: 'Rescue', blurb: 'Somebody needs help. Go and get them', colour: '#ff7f78', icon: 'rescue' },
+  { id: 'fire', label: 'Firefighting', blurb: 'The forest is on fire — scoop up water and put it out', colour: '#ff6a2b', icon: 'fire' },
+  { id: 'challenge', label: 'Challenges', blurb: 'Against the clock, the weather or the ground', colour: '#c39bff', icon: 'challenge' },
+  { id: 'events', label: 'Emergencies', blurb: 'Something goes wrong — stay calm and get it down', colour: '#ffa24d', icon: 'events' },
+  { id: 'goofy', label: 'Random & goofy', blurb: 'Silly ones, just for fun', colour: '#ff8fd6', icon: 'goofy' },
+  { id: 'meteor', label: 'Meteor mode', blurb: 'Things falling out of space — keep out of the way', colour: '#8fa6ff', icon: 'meteor' },
+  { id: 'military', label: 'Military', blurb: 'Fast jets, the carrier and the range', colour: '#b9cf8f', icon: 'military' },
+];
+
+/*
+ * What the forty-odd missions that already existed are, read one by one.
+ *
+ * A table rather than a guess because the words mislead: "Man Overboard" is a
+ * rescue in both the boat and the helicopter, but "The Airport Shuttle" is a
+ * crate in a van, not passengers, and "First Shout" is a real tow, not a
+ * lesson. Anything not in here is placed by missionCategory() below.
+ */
+const MISSION_CATEGORY_OF = {
+  // Flight.
+  circuit: 'training',
+  storm: 'training', // "Teaches crosswind landings" — a lesson in bad weather, not an emergency
+  delivery: 'delivery',
+  medevac: 'rescue',
+  deadstick: 'events', // the engine quits: the original emergency
+  emberrun: 'challenge',
+  chaser: 'challenge',
+  tail: 'challenge', // in the Vanguard, which is not behind the passcode
+  carrierqual: 'military',
+  patrol: 'military',
+  recon: 'military',
+  range: 'military',
+  // Helicopter: one lesson, and then everything is somebody to fetch.
+  firstlight: 'training',
+  covepickup: 'rescue',
+  overboard: 'rescue',
+  stackrescue: 'rescue',
+  nightdeck: 'rescue',
+  lastlight: 'rescue',
+  oncall: 'rescue',
+  // Boat: it is a lifeboat. All six are shouts.
+  'first-shout': 'rescue',
+  'man-overboard': 'rescue',
+  'wren-aground': 'rescue',
+  'night-shout': 'rescue',
+  'in-the-gale': 'rescue',
+  'long-tow': 'rescue',
+  // Car: the courier. First Run is "learn where the pedals are".
+  firstrun: 'training',
+  shuttle: 'delivery',
+  coastroad: 'delivery',
+  summit: 'delivery',
+  lowtide: 'delivery',
+  nightcall: 'rescue', // the doctor to the outpost at two in the morning
+};
+
+/*
+ * Words people will actually type into a `category` field, mapped to the ids.
+ * Two tables, because the same word means different things: 'airliner' is an
+ * aircraft heading, while on a mission it can only mean passengers.
+ */
+const MISSION_CATEGORY_WORDS = {
+  training: 'training', train: 'training', lesson: 'training', lessons: 'training', tutorial: 'training',
+  airline: 'airline', airlines: 'airline', airliner: 'airline', passengers: 'airline', 'passengers & cargo': 'airline', cargo: 'airline',
+  delivery: 'delivery', deliveries: 'delivery',
+  rescue: 'rescue', rescues: 'rescue',
+  fire: 'fire', fires: 'fire', firefighting: 'fire', 'fire fighting': 'fire', firefighter: 'fire',
+  wildfire: 'fire', wildfires: 'fire', 'forest fire': 'fire', 'forest fires': 'fire', 'water bombing': 'fire',
+  challenge: 'challenge', challenges: 'challenge',
+  events: 'events', event: 'events', emergency: 'events', emergencies: 'events',
+  goofy: 'goofy', random: 'goofy', silly: 'goofy', 'random & goofy': 'goofy',
+  meteor: 'meteor', meteors: 'meteor', 'meteor mode': 'meteor',
+  military: 'military',
+};
+const AIRCRAFT_CATEGORY_WORDS = {
+  light: 'light', 'light aircraft': 'light',
+  airliner: 'airliner', airliners: 'airliner',
+  military: 'military', 'military jets': 'military',
+  helicopter: 'helicopter', helicopters: 'helicopter', heli: 'helicopter',
+  special: 'special',
+};
+
+function slug(v) {
+  return String(v == null ? '' : v).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/** A `category` field, read generously: 'Emergencies', 'emergency' and 'events' are one heading. */
+function readCategory(raw, words) {
+  const s = String(raw == null ? '' : raw).toLowerCase().trim();
+  if (!s) return '';
+  return words[s] || words[s.replace(/[-_]/g, ' ')] || slug(s);
+}
+
+/**
+ * Which heading an aeroplane goes under. Always exactly one of the five.
+ *
+ * `category` if it names one of the five; otherwise the passcode flag (a
+ * gated type is a military one whatever it is called); otherwise its class,
+ * read by keyword so that "Stealth fighter" and "Wide-body airliner" land
+ * where a person would put them; otherwise Special.
+ */
+export function aircraftCategory(type) {
+  if (!type) return 'special';
+  const own = readCategory(type.category, AIRCRAFT_CATEGORY_WORDS);
+  if (AIRCRAFT_CATEGORIES.some((c) => c.id === own)) return own;
+  if (type.military) return 'military';
+  const cls = String(type.class || '').toLowerCase();
+  if (/heli|rotor/.test(cls)) return 'helicopter';
+  if (/fighter|bomber|carrier|attack|strike|military|interceptor|stealth/.test(cls)) return 'military';
+  if (/airliner|jumbo|wide-?body|narrow-?body|jetliner|regional|transport/.test(cls)) return 'airliner';
+  if (/trainer|tourer|touring|light|utility|bush|sport|single/.test(cls)) return 'light';
+  return 'special';
+}
+
+/* The order keywords are tried in matters: "Medevac delivery" is a rescue. */
+const MISSION_WORDS = [
+  [/meteor|asteroid|comet|space ?rock/, 'meteor'],
+  // A fire on the ground, not on board: that one is an emergency, below.
+  [/wild ?fire|forest ?fire|bush ?fire|grass ?fire|water ?bomb|fire ?fight|put (?:it|them|the fires?) out/, 'fire'],
+  [/hijack|7500|7700|mayday|emergenc|engine (?:fire|out|fail)|bird ?strike|fire on board|failure|dead ?stick/, 'events'],
+  [/rescue|medevac|overboard|winch|casualty|stranded|call-?out|lifeboat|ambulance|search/, 'rescue'],
+  [/passenger|airline|charter|cargo|freight|long ?haul|jumbo|holiday|boarding/, 'airline'],
+  [/deliver|parcel|courier|supplies|supply|relay|mail|post run|pizza/, 'delivery'],
+  [/goofy|silly|random|banana|rubber duck|chicken|cow|upside ?down|bouncy|wobbl/, 'goofy'],
+  [/first|lesson|training|practice|circuit|learn|basics/, 'training'],
+];
+
+/**
+ * Which heading a mission goes under. Always exactly one.
+ *
+ * Its own `category` first, and an unfamiliar one is kept rather than
+ * refused — a team that invents "stunts" gets a Stunts heading, not a mission
+ * silently filed under something else. Then the table above; then the
+ * passcode (a gated mission, or one flown in a gated aeroplane, is military);
+ * then the words in its name; and anything still unplaced is a Challenge.
+ */
+export function missionCategory(m) {
+  if (!m) return 'challenge';
+  const own = readCategory(m.category, MISSION_CATEGORY_WORDS);
+  if (own) return own;
+  if (MISSION_CATEGORY_OF[m.id]) return MISSION_CATEGORY_OF[m.id];
+  if (m.military) return 'military';
+  const ac = m.aircraft ? AIRCRAFT.find((a) => a.id === m.aircraft) : null;
+  if (ac && ac.military) return 'military';
+  const words = `${m.id || ''} ${m.name || ''} ${m.short || ''}`.toLowerCase();
+  for (const [re, cat] of MISSION_WORDS) if (re.test(words)) return cat;
+  return 'challenge';
+}
+
+/** The heading for a category id; one nobody listed gets a plain heading of its own. */
+export function categoryDef(kind, id) {
+  const list = kind === 'aircraft' || kind === 'fleet' ? AIRCRAFT_CATEGORIES : MISSION_CATEGORIES;
+  const known = list.find((c) => c.id === id);
+  if (known) return known;
+  const words = String(id || 'other').replace(/-/g, ' ');
+  return {
+    id,
+    label: words.charAt(0).toUpperCase() + words.slice(1),
+    blurb: '',
+    colour: '#9fb2cc',
+    icon: 'other',
+    extra: true,
+  };
+}
+
+/*
+ * Sort order. A heading nobody listed goes after every listed one but before
+ * Military, so the passcode section stays at the bottom.
+ */
+function categoryRank(kind, id) {
+  const list = kind === 'aircraft' || kind === 'fleet' ? AIRCRAFT_CATEGORIES : MISSION_CATEGORIES;
+  const i = list.findIndex((c) => c.id === id);
+  if (i >= 0) return i * 10;
+  const mil = list.findIndex((c) => c.id === 'military');
+  return mil >= 0 ? mil * 10 - 5 : list.length * 10;
+}
+
+/**
+ * Split a list into headed groups, in heading order, keeping each group's
+ * items in the order they came. Groups with nothing in them are left out.
+ */
+export function groupByCategory(kind, items, catOf) {
+  const groups = new Map();
+  for (const it of items) {
+    const id = catOf(it);
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(it);
+  }
+  return [...groups.keys()]
+    .sort((a, b) => categoryRank(kind, a) - categoryRank(kind, b))
+    .map((id) => ({ def: categoryDef(kind, id), items: groups.get(id) }));
+}
+
+/** '#58c6ff' → 'rgba(88,198,255,0.16)'. color-mix() is too new for a 2019 Chromebook. */
+function soft(hex, a) {
+  const n = parseInt(String(hex).replace('#', ''), 16) || 0;
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+function catStyle(def) {
+  return `--cat:${def.colour};--cat-soft:${soft(def.colour, 0.16)};--cat-line:${soft(def.colour, 0.42)}`;
+}
+
+/** Lower-case, accents off, one space between words: what the search box compares. */
+function fold(s) {
+  return String(s == null ? '' : s)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function attr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+/**
+ * The attributes a card needs to live under a heading: which heading, and the
+ * words the search box looks through. For cards built outside this file —
+ * game-ui.js adds mission cards after build — so they are found the same way.
+ */
+export function categoryItemData(kind, obj) {
+  const isFleet = kind === 'aircraft' || kind === 'fleet';
+  const cat = isFleet ? aircraftCategory(obj) : missionCategory(obj);
+  const label = categoryDef(kind, cat).label;
+  const find = isFleet
+    ? fold(`${obj.name} ${obj.id} ${obj.class || ''} ${obj.blurb || ''} ${label}`)
+    : fold(`${obj.name} ${obj.short || ''} ${obj.blurb || ''} ${label}`);
+  return { cat, find };
+}
+
+/** One heading and the grid under it. `inner` is the cards, already HTML. */
+function catGroupHtml(kind, def, inner, gridClass) {
+  return `
+    <section class="cat-group" data-cat-group="${attr(def.id)}" data-cat-kind="${kind}" style="${catStyle(def)}">
+      <header class="cat-head">
+        <span class="cat-badge">${catIcon(def.icon, 22)}</span>
+        <span class="cat-words">
+          <h3 class="cat-title">${def.label}</h3>
+          ${def.blurb ? `<span class="cat-blurb">${def.blurb}</span>` : ''}
+        </span>
+        <span class="cat-count" data-cat-count title="How many are in this group"></span>
+      </header>
+      <div class="${gridClass}" data-cat-grid>${inner}</div>
+    </section>`;
+}
+
+/** The chips and the search box above a grouped list. */
+function catBarHtml(kind, noun) {
+  return `
+    <div class="cat-bar" data-cat-bar="${kind}">
+      <div class="cat-chips" data-cat-chips role="group" aria-label="Show one group of ${noun}"></div>
+      <label class="cat-search" data-cat-search-wrap>
+        ${catIcon('search', 17)}
+        <input type="search" data-cat-search placeholder="Find ${noun === 'aeroplanes' ? 'an aeroplane' : 'a mission'}"
+          aria-label="Find ${noun}" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+      </label>
+    </div>
+    <p class="cat-empty" data-cat-empty="${kind}" hidden>
+      <span data-cat-empty-text></span>
+      <button class="ghost" data-cat-clear>Show them all</button>
+    </p>`;
 }
 
 /**
@@ -169,12 +525,16 @@ function aircraftThumbnail(type, liveryId) {
   const accent = sch.accent || type.accent || '#e0a838';
   const tailCol = sch.tail != null ? `#${sch.tail.toString(16).padStart(6, '0')}` : accent;
 
-  // Fit the aeroplane into the frame: span across, length down.
+  // Fit the aeroplane into the frame: span across, length down. A type that
+  // carries its real planform (S.plan, the airliners) is fitted nose to tail.
+  const PL = S.plan || null;
   const span = S.halfSpan * 2 * S.scale;
-  const len = (S.hZ + S.hRootChord + 3.4) * S.scale * S.bodyLength;
+  const len = (PL ? PL.tailZ - PL.noseZ : S.hZ + S.hRootChord + 3.4) * S.scale * S.bodyLength;
   const k = Math.min((W * 0.86) / span, (H * 0.84) / len);
   const cx = W / 2;
-  const cz = H / 2;
+  // Centre the drawn length, not the centre of gravity, when the plan says
+  // where the ends are: an airliner's CG is well aft of its middle.
+  const cz = H / 2 - (PL ? ((PL.noseZ + PL.tailZ) / 2) * S.scale * S.bodyLength * k : 0);
   // Model space: -Z is forward, so screen-up is -Z.
   const px = (x) => cx + x * S.scale * k;
   const py = (z) => cz + z * S.scale * S.bodyLength * k;
@@ -197,9 +557,11 @@ function aircraftThumbnail(type, liveryId) {
   wing(S.hSpan, S.hRootChord, S.hRootChord * 0.62, 0.28, S.hZ, livery);
 
   // Fuselage: a rounded spindle down the middle.
-  const noseZ = -(2.9 + (S.power.kind === 'prop' ? 0.5 : 0)) ;
-  const tailZ = S.hZ + S.hRootChord * 0.7;
-  const bw = 0.42 * (S.bodyRadius || 1);
+  const noseZ = PL ? PL.noseZ : -(2.9 + (S.power.kind === 'prop' ? 0.5 : 0));
+  const tailZ = PL ? PL.tailZ : S.hZ + S.hRootChord * 0.7;
+  // The real fuselage half-width when the plan has it: the 0.42 guess drew
+  // the 747 at half its width, a needle with wings.
+  const bw = PL && PL.halfWidth ? PL.halfWidth : 0.42 * (S.bodyRadius || 1);
   g.fillStyle = livery;
   g.beginPath();
   g.moveTo(px(0), py(noseZ));
@@ -239,16 +601,19 @@ function aircraftThumbnail(type, liveryId) {
       g.stroke();
     }
   } else {
-    const spots =
-      P.count >= 2 ? [-S.halfSpan * 0.46, S.halfSpan * 0.46] : [0];
-    for (const sx of spots) {
+    // Every engine where it really hangs when the plan knows (four on the
+    // 747 and the A380); otherwise one mirrored pair, as before.
+    const spots = PL && PL.engines
+      ? PL.engines
+      : (P.count >= 2 ? [-S.halfSpan * 0.46, S.halfSpan * 0.46] : [0]).map((x) => ({ x, z: S.wingZ }));
+    for (const e of spots) {
       g.fillStyle = '#2a3340';
       const nw = 0.34 * S.scale * k;
       const nl = 1.5 * S.scale * k;
       g.beginPath();
       g.roundRect
-        ? g.roundRect(px(sx) - nw, py(S.wingZ) - nl / 2, nw * 2, nl, nw)
-        : g.rect(px(sx) - nw, py(S.wingZ) - nl / 2, nw * 2, nl);
+        ? g.roundRect(px(e.x) - nw, py(e.z) - nl / 2, nw * 2, nl, nw)
+        : g.rect(px(e.x) - nw, py(e.z) - nl / 2, nw * 2, nl);
       g.fill();
     }
   }
@@ -256,7 +621,9 @@ function aircraftThumbnail(type, liveryId) {
   // Canopy / flight-deck glazing, so the nose end is obvious.
   g.fillStyle = 'rgba(150,205,240,0.75)';
   g.beginPath();
-  g.ellipse(px(0), py(S.wingZ - 1.5), bw * 0.62 * S.scale * k, 0.9 * S.scale * k, 0, 0, Math.PI * 2);
+  // Just behind the nose when the plan knows where the nose is.
+  const glazeZ = PL ? PL.noseZ + 0.9 : S.wingZ - 1.5;
+  g.ellipse(px(0), py(glazeZ), bw * 0.62 * S.scale * k, 0.9 * S.scale * k, 0, 0, Math.PI * 2);
   g.fill();
   return c;
 }
@@ -386,6 +753,13 @@ export class Menus {
    * ones — Mango Cay Delivery, Storm Approach and Dead Stick — and the
    * sentence is kept to the length of its neighbours so the card does not grow
    * half again as tall as every other card in the row.
+   *
+   * Then a meteor mode, a goofy list and an emergencies list were built in
+   * parallel, and "eight" was about to be wrong again the day they landed. So
+   * the line is now counted, not written: game-ui.js's refreshMissionsLine()
+   * rewrites it from MISSIONS on every visit to this screen, as "N missions —"
+   * and the first few headings you will find behind the button. The text
+   * below is only what shows for the instant before that runs.
    */
   buildMain() {
     const s = h(`
@@ -410,11 +784,15 @@ export class Menus {
           </button>
           <button class="card-btn" data-act="missions">
             <span class="card-icon">${icon('target', 24)}</span>
-            <span class="card-body"><strong>Missions</strong><em>Eight challenges — a delivery, a storm landing, a landing with no engine</em></span>
+            <span class="card-body"><strong>Missions</strong><em data-missions-line>Training, rescues, deliveries and emergencies — sorted into groups</em></span>
           </button>
           <button class="card-btn" data-act="free">
             <span class="card-icon">${icon('cloud', 24)}</span>
             <span class="card-body"><strong>Free Flight</strong><em>Any weather, any time of day, no rules</em></span>
+          </button>
+          <button class="card-btn" data-act="multiplayer">
+            <span class="card-icon">${icon('players', 24)}</span>
+            <span class="card-body"><strong>Multiplayer</strong><em>Fly with your friends — five lobbies on your Wi-Fi, eight in each, or a friend by code</em></span>
           </button>
           <button class="card-btn" data-act="maps">
             <span class="card-icon">${icon('map', 24)}</span>
@@ -447,6 +825,7 @@ export class Menus {
       else if (act === 'missions') this.show('missions');
       else if (act === 'free') this.show('free');
       else if (act === 'maps') this.show('maps');
+      else if (act === 'multiplayer') this.hooks.openMultiplayer && this.hooks.openMultiplayer();
       else if (act === 'more') this.show('more');
       else if (act === 'hangar') this.show('hangar');
       else if (act === 'settings') this.show('settings');
@@ -548,25 +927,33 @@ export class Menus {
   }
 
   buildMissions() {
-    const cards = MISSIONS.map(
-      (m) => `
-      <article class="mission-card" data-mission="${m.id}">
+    /*
+     * Grouped under headings (see CATEGORIES at the top of this file). Every
+     * card is still built, once, whatever game or passcode it belongs to —
+     * the headings only decide where it sits. A heading with nothing visible
+     * under it hides itself in syncCategories(), so the car's board never
+     * shows an empty "Military" and the locked missions leave no gap.
+     */
+    const card = (m, c = categoryItemData('missions', m)) => `
+      <article class="mission-card" data-mission="${m.id}" data-cat-item data-cat="${attr(c.cat)}" data-find="${attr(c.find)}">
         <div class="mission-top">
-          <span class="mission-icon">${m.icon}</span>
+          <span class="mission-icon">${m.icon || '◎'}</span>
           <div>
             <h3>${m.name}</h3>
-            <span class="mission-diff diff-${m.difficulty.toLowerCase()}">${m.difficulty}</span>
-            <span class="mission-sub">${m.short}</span>
+            <span class="mission-diff diff-${slug(m.difficulty || 'medium')}">${m.difficulty || 'Medium'}</span>
+            <span class="mission-sub">${m.short || ''}</span>
           </div>
         </div>
-        <p>${m.blurb}</p>
-        <p class="mission-learn">${m.reward}</p>
+        <p>${m.blurb || ''}</p>
+        <p class="mission-learn">${m.reward || ''}</p>
         <div class="mission-foot">
           <span class="mission-best" data-best="${m.id}"></span>
           <button class="primary" data-start="${m.id}">Fly this mission</button>
         </div>
-      </article>`
-    ).join('');
+      </article>`;
+    const groups = groupByCategory('missions', MISSIONS, missionCategory)
+      .map((g) => catGroupHtml('missions', g.def, g.items.map((m) => card(m)).join(''), 'mission-grid'))
+      .join('');
 
     const s = h(`
       <section class="screen screen-list" data-screen="missions" hidden>
@@ -575,7 +962,8 @@ export class Menus {
           <h2>Missions</h2>
           <span></span>
         </header>
-        <div class="mission-grid">${cards}</div>
+        ${catBarHtml('missions', 'missions')}
+        <div class="cat-list" data-cat-list="missions">${groups}</div>
       </section>
     `);
     /*
@@ -594,7 +982,11 @@ export class Menus {
         const card = s.querySelector(`[data-mission="${m.id}"]`);
         if (card) card.hidden = Prog.needsPasscode(this.prog, m);
       }
+      // game-ui.js wraps this and re-syncs after its own game filter; without
+      // it installed, the headings still have to follow the passcode.
+      this.syncCategories('missions');
     };
+    this.bindCategoryBar(s, 'missions');
     this.syncMissionLocks();
 
     s.addEventListener('click', (e) => {
@@ -630,28 +1022,54 @@ export class Menus {
   buildFree() {
     const pips = (n) =>
       Array.from({ length: 5 }, (_, i) => `<i class="fleet-pip${i < n ? ' is-lit' : ''}"></i>`).join('');
-    const fleet = AIRCRAFT.map((a) => {
-      const perf = performanceFor(a.id);
+    /*
+     * The numbers on a card are worked out from the flight model. This runs
+     * inside the constructor, so a roster entry that is missing a field the
+     * sum needs would throw here and take every menu with it — seven new
+     * aeroplanes are arriving from two other teams. One that cannot be worked
+     * out shows dashes instead.
+     */
+    const perfOf = (a) => {
+      try {
+        return performanceFor(a.id);
+      } catch (err) {
+        console.warn(`[menus] no performance figures for ${a.id}:`, err);
+        return null;
+      }
+    };
+    const num = (v, unit) => (Number.isFinite(v) ? `${v} ${unit}` : '—');
+    const fleetCard = (a) => {
+      const perf = perfOf(a) || {};
+      const c = categoryItemData('fleet', a);
       return `
-        <button class="fleet-card${a.id === 'skylark' ? ' is-on' : ''}" data-aircraft="${a.id}">
+        <button class="fleet-card${a.id === 'skylark' ? ' is-on' : ''}" data-aircraft="${a.id}" data-cat-item
+          data-cat="${attr(c.cat)}" data-find="${attr(c.find)}">
           <span class="fleet-art-slot" data-fleet-art="${a.id}"></span>
           <span class="fleet-head">
             <span class="fleet-name">${a.name}</span>
-            <span class="fleet-class">${a.class}</span>
+            <span class="fleet-class">${a.class || ''}</span>
           </span>
-          <span class="fleet-blurb">${a.blurb}</span>
+          <span class="fleet-blurb">${a.blurb || ''}</span>
           <span class="fleet-bars">
-            <span class="fleet-bar"><span>Speed</span><span class="fleet-pips">${pips(a.stats.speed)}</span></span>
-            <span class="fleet-bar"><span>Agility</span><span class="fleet-pips">${pips(a.stats.handling)}</span></span>
-            <span class="fleet-bar"><span>Forgiving</span><span class="fleet-pips">${pips(a.stats.ease)}</span></span>
+            <span class="fleet-bar"><span>Speed</span><span class="fleet-pips">${pips((a.stats || {}).speed || 0)}</span></span>
+            <span class="fleet-bar"><span>Agility</span><span class="fleet-pips">${pips((a.stats || {}).handling || 0)}</span></span>
+            <span class="fleet-bar"><span>Forgiving</span><span class="fleet-pips">${pips((a.stats || {}).ease || 0)}</span></span>
           </span>
           <span class="fleet-numbers">
-            <span>Approach <b>${perf.stallLanding} kt</b></span>
-            <span>Top <b>${perf.vne} kt</b></span>
-            <span>Endurance <b>${perf.enduranceMin} min</b></span>
+            <span>Approach <b>${num(perf.stallLanding, 'kt')}</b></span>
+            <span>Top <b>${num(perf.vne, 'kt')}</b></span>
+            <span>Endurance <b>${num(perf.enduranceMin, 'min')}</b></span>
           </span>
         </button>`;
-    }).join('');
+    };
+    /*
+     * The hangar floor, sorted: light aircraft, airliners, military jets,
+     * helicopters, special. Fifteen aeroplanes in one unsorted run is a list
+     * you scroll past; five short headed rows is one you can find a 747 in.
+     */
+    const fleet = groupByCategory('fleet', AIRCRAFT, aircraftCategory)
+      .map((g) => catGroupHtml('fleet', g.def, g.items.map(fleetCard).join(''), 'fleet-grid'))
+      .join('');
 
     const presets = PRESETS.map(
       (p) => `<button class="preset" data-preset="${p.id}"><strong>${p.name}</strong><em>${p.hint}</em></button>`
@@ -721,7 +1139,8 @@ export class Menus {
         </div>
 
         <div class="free-panel" data-fpanel="aircraft">
-          <div class="fleet-grid">${fleet}</div>
+          ${catBarHtml('fleet', 'aeroplanes')}
+          <div class="cat-list" data-cat-list="fleet">${fleet}</div>
         </div>
 
         <div class="free-panel" data-fpanel="departure" hidden>
@@ -812,7 +1231,13 @@ export class Menus {
         const host = s.querySelector(`[data-fleet-art="${a.id}"]`);
         if (!host) continue;
         host.innerHTML = '';
-        host.appendChild(aircraftThumbnail(a, liveryId));
+        // Same reason as the numbers: one shape that cannot be drawn is an
+        // empty frame on one card, not a menu that never finished building.
+        try {
+          host.appendChild(aircraftThumbnail(a, liveryId));
+        } catch (err) {
+          console.warn(`[menus] could not draw ${a.id}:`, err);
+        }
       }
     };
     this.repaintFleetArt(this.settingsRef ? this.settingsRef.livery : 'house');
@@ -831,10 +1256,19 @@ export class Menus {
           tag.className = 'fleet-lock';
           card.appendChild(tag);
         }
-        if (tag) tag.textContent = locked ? `${Prog.costOf(a.id).toLocaleString()} credits` : '';
+        /*
+         * No price means not for sale — Prog.buy() answers "Not for sale" —
+         * and "0 credits" on the card read as free. An aeroplane nobody has
+         * added to progression.js's UNLOCKS lands here.
+         */
+        const cost = Prog.costOf(a.id);
+        if (tag) tag.textContent = locked ? (cost ? `${cost.toLocaleString()} credits` : 'Not in the shop yet') : '';
         if (!locked && tag) tag.remove();
       }
+      // The passcode adds cards to Military jets, so its count and chip change.
+      this.syncCategories('fleet');
     };
+    this.bindCategoryBar(s, 'fleet');
     this.syncFleetLocks();
 
     this.freeControls = { wind, dir, time, cond };
@@ -1124,9 +1558,11 @@ export class Menus {
           const cost = Prog.costOf(id);
           const short = cost - this.prog.credits;
           this.hooks.onLocked && this.hooks.onLocked(
-            short > 0
-              ? `Locked — ${short.toLocaleString()} more credits needed. Fly missions to earn them.`
-              : `Locked — unlock it for ${cost.toLocaleString()} credits in the Hangar.`
+            !cost
+              ? 'Not in the shop yet, so it cannot be flown for now.'
+              : short > 0
+                ? `Locked — ${short.toLocaleString()} more credits needed. Fly missions to earn them.`
+                : `Locked — unlock it for ${cost.toLocaleString()} credits in the Hangar.`
           );
           return;
         }
@@ -1503,7 +1939,7 @@ export class Menus {
         </div>
 
         <h3 class="fail-heading">Aeroplanes</h3>
-        <div class="unlock-grid" data-unlocks></div>
+        <div class="unlock-groups" data-unlocks></div>
 
         <h3 class="fail-heading">Your best flights</h3>
         <div class="board" data-board></div>
@@ -1544,6 +1980,7 @@ export class Menus {
           <p class="hint tiny">ChatGPT's build of 20 September, complete and unaltered apart from its
           service worker. Its Kestrel is flat and its town streets step at the crossings; everything
           else in it is in this game already.</p>
+          <div class="dev-ext" data-dev-ext></div>
           <a class="ghost" data-dev-compare href="compare.html" target="_blank" rel="noopener">Fly both side by side</a>
           <a class="ghost" data-dev-gpt href="gpt/index.html" target="_blank" rel="noopener">Open ChatGPT's build on its own</a>
           <button class="ghost" data-dev-leave>Leave dev mode</button>
@@ -1607,6 +2044,18 @@ export class Menus {
       // The damage switch used to live in here. It is an ordinary setting now,
       // on by default, and the normal settings sync handles it.
       s.querySelector('[data-dev-panel]').hidden = !dev;
+      /*
+       * Buttons the plug-in features offer, listed here rather than written
+       * into this file so that adding one never means editing the menus.
+       */
+      const extBox = s.querySelector('[data-dev-ext]');
+      if (extBox) {
+        const acts = dev ? extDevActions() : [];
+        extBox.innerHTML = acts.map((a, i) =>
+          `<button class="ghost" data-dev-ext-run="${i}" title="${(a.hint || '').replace(/"/g, '&quot;')}">${a.label}</button>`
+        ).join('');
+        this._devExt = acts;
+      }
       s.querySelector('[data-dev-entry]').hidden = dev;
       s.querySelector('[data-dev-note]').textContent = dev
         ? 'The workbench is open. Everything here is unfinished on purpose.'
@@ -1615,14 +2064,31 @@ export class Menus {
       s.querySelector('[data-mil-note]').textContent = milOpen
         ? 'Access granted. The military hangar is open.'
         : 'Military aircraft are behind a passcode. Ask whoever runs the game.';
-      s.querySelector('[data-unlocks]').innerHTML = AIRCRAFT.filter((a) => milOpen || !a.military).map((a) => {
-        const owned = Prog.isUnlocked(p, a.id);
-        const cost = Prog.costOf(a.id);
-        const afford = p.credits >= cost;
-        return `<button class="unlock${owned ? ' is-owned' : afford ? ' can-buy' : ' is-locked'}" data-buy="${a.id}" ${owned ? 'disabled' : ''}>
+      /*
+       * The same five headings as the Free Flight picker, so an aeroplane is
+       * in the same place on both screens. Each heading says how many of its
+       * row are already yours — "1 of 3" is the reason to fly another mission.
+       */
+      const shown = AIRCRAFT.filter((a) => milOpen || !a.military);
+      s.querySelector('[data-unlocks]').innerHTML = groupByCategory('aircraft', shown, aircraftCategory).map((g) => {
+        const mine = g.items.filter((a) => Prog.isUnlocked(p, a.id)).length;
+        const buttons = g.items.map((a) => {
+          const owned = Prog.isUnlocked(p, a.id);
+          const cost = Prog.costOf(a.id);
+          // Unpriced is not free: a 0-credit aeroplane was lit "can buy" and
+          // then refused with "Not for sale" when pressed.
+          const afford = !!cost && p.credits >= cost;
+          return `<button class="unlock${owned ? ' is-owned' : afford ? ' can-buy' : ' is-locked'}" data-buy="${a.id}" data-cat-item data-cat="${g.def.id}" ${owned ? 'disabled' : ''}>
           <strong>${a.name}</strong>
-          <em>${owned ? 'Yours' : `${cost.toLocaleString()} credits`}</em>
+          <em>${owned ? 'Yours' : cost ? `${cost.toLocaleString()} credits` : 'Not in the shop yet'}</em>
         </button>`;
+        }).join('');
+        return `<div class="unlock-group" data-cat-group="${attr(g.def.id)}" data-cat-kind="hangar" style="${catStyle(g.def)}">
+          <h4 class="unlock-head"><span class="cat-badge is-small">${catIcon(g.def.icon, 16)}</span>
+            <span class="unlock-title">${g.def.label}</span>
+            <span class="unlock-tally${mine === g.items.length ? ' is-all' : ''}">${mine} of ${g.items.length} yours</span></h4>
+          <div class="unlock-grid">${buttons}</div>
+        </div>`;
       }).join('');
 
       const board = p.best || [];
@@ -1673,6 +2139,12 @@ export class Menus {
           : r.why;
         if (r.ok) s.querySelector('[data-dev-code]').value = '';
         render();
+        return;
+      }
+      const extRun = e.target.closest('[data-dev-ext-run]');
+      if (extRun) {
+        const a = (this._devExt || [])[+extRun.dataset.devExtRun];
+        if (a && this.hooks.runDevAction) this.hooks.runDevAction(a);
         return;
       }
       if (e.target.closest('[data-dev-leave]')) {
@@ -2119,6 +2591,174 @@ export class Menus {
     this.show('debrief');
   }
 
+  /* ---------------------------------------------------------------- */
+  /* Category headings, chips and search, for the missions and the fleet. */
+
+  /** What each grouped list is filtered to: a chip ('all' or an id) and the search text. */
+  catState(kind) {
+    if (!this._catStates) this._catStates = {};
+    if (!this._catStates[kind]) this._catStates[kind] = { cat: 'all', q: '' };
+    return this._catStates[kind];
+  }
+
+  catHost(kind) {
+    return kind === 'fleet' ? this.screens.free : this.screens.missions;
+  }
+
+  /**
+   * The grid under one heading, creating the heading if this is the first
+   * thing to go under it. For cards added after build — game-ui.js's
+   * registerMissions() — so a mission nobody wrote into MISSIONS still gets
+   * a heading of its own rather than being dropped at the bottom of another.
+   */
+  catGridFor(kind, id) {
+    const host = this.catHost(kind);
+    const list = host && host.querySelector(`[data-cat-list="${kind}"]`);
+    if (!list) return null;
+    let group = [...list.children].find((g) => g.dataset.catGroup === id);
+    if (!group) {
+      group = h(catGroupHtml(kind, categoryDef(kind, id), '', kind === 'fleet' ? 'fleet-grid' : 'mission-grid'));
+      const rank = categoryRank(kind, id);
+      const next = [...list.children].find((g) => categoryRank(kind, g.dataset.catGroup) > rank);
+      list.insertBefore(group, next || null);
+    }
+    return group.querySelector('[data-cat-grid]');
+  }
+
+  /** Wire the chips, the search box and "Show them all" on one screen. */
+  bindCategoryBar(screen, kind) {
+    const bar = screen.querySelector(`[data-cat-bar="${kind}"]`);
+    if (!bar) return;
+    const st = this.catState(kind);
+    const input = bar.querySelector('[data-cat-search]');
+    if (input) {
+      input.addEventListener('input', () => {
+        st.q = input.value;
+        this.syncCategories(kind);
+      });
+      // Esc in the box empties it, and goes no further — it is not "back".
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && input.value) {
+          e.stopPropagation();
+          input.value = '';
+          st.q = '';
+          this.syncCategories(kind);
+        }
+      });
+    }
+    screen.addEventListener('click', (e) => {
+      const chip = e.target.closest('[data-cat-chip]');
+      if (chip && bar.contains(chip)) {
+        st.cat = chip.dataset.catChip;
+        this.syncCategories(kind);
+        this.hooks.onClick && this.hooks.onClick('category');
+        return;
+      }
+      const clear = e.target.closest('[data-cat-clear]');
+      if (clear && clear.closest(`[data-cat-empty="${kind}"]`)) this.resetCategoryFilter(kind);
+    });
+  }
+
+  /** Back to every heading and an empty search box. */
+  resetCategoryFilter(kind) {
+    const st = this.catState(kind);
+    st.cat = 'all';
+    st.q = '';
+    const host = this.catHost(kind);
+    const input = host && host.querySelector(`[data-cat-bar="${kind}"] [data-cat-search]`);
+    if (input) input.value = '';
+    this.syncCategories(kind);
+  }
+
+  /**
+   * Repaint one grouped list: which headings show, their counts, the chips,
+   * and the "nothing called that" line.
+   *
+   * Everything that hides a card — the passcode, the game filter in
+   * game-ui.js, the car's job board — sets `card.hidden` and nothing else,
+   * and this reads it afterwards. The search never touches `hidden`: it uses
+   * a class of its own, so clearing the search box can never un-hide a
+   * military mission the passcode hid. That separation is the whole design:
+   * the passcode, the game and the search each have one lever, and none of
+   * them can undo what another one did.
+   *
+   * A heading is shown when at least one card under it is. Counts are what
+   * you can see, so "Rescue 6" on the boat means six cards on the screen.
+   */
+  syncCategories(kind) {
+    const host = this.catHost(kind);
+    const list = host && host.querySelector(`[data-cat-list="${kind}"]`);
+    if (!list) return;
+    const st = this.catState(kind);
+    const words = fold(st.q).split(' ').filter(Boolean);
+    const groups = [...list.querySelectorAll(':scope > [data-cat-group]')];
+    const present = [];
+    let total = 0;
+    let totalAll = 0;
+    for (const group of groups) {
+      let shown = 0;
+      let all = 0;
+      for (const item of group.querySelectorAll('[data-cat-item]')) {
+        const find = item.dataset.find || '';
+        const miss = words.length > 0 && !words.every((w) => find.includes(w));
+        item.classList.toggle('is-filtered', miss);
+        if (item.hidden) continue;
+        all++;
+        if (!miss) shown++;
+      }
+      group.dataset.catShown = String(shown);
+      const count = group.querySelector('[data-cat-count]');
+      if (count) count.textContent = String(shown);
+      if (all) present.push({ def: categoryDef(kind, group.dataset.catGroup), shown });
+      total += shown;
+      totalAll += all;
+    }
+    // A chip for a heading this game does not have (the boat has no Military)
+    // falls back to All rather than leaving an empty screen.
+    if (st.cat !== 'all' && !present.some((p) => p.def.id === st.cat)) st.cat = 'all';
+    for (const group of groups) {
+      const shown = Number(group.dataset.catShown) || 0;
+      group.hidden = shown === 0 || (st.cat !== 'all' && st.cat !== group.dataset.catGroup);
+    }
+    const visible = st.cat === 'all' ? total : (present.find((p) => p.def.id === st.cat) || { shown: 0 }).shown;
+
+    const bar = host.querySelector(`[data-cat-bar="${kind}"]`);
+    if (bar) {
+      const chips = bar.querySelector('[data-cat-chips]');
+      if (chips) {
+        const hadFocus = chips.contains(document.activeElement) ? document.activeElement.dataset.catChip : null;
+        const scroll = chips.scrollLeft;
+        const chip = (id, label, n, style) =>
+          `<button type="button" class="cat-chip${st.cat === id ? ' is-on' : ''}" data-cat-chip="${attr(id)}" ` +
+          `aria-pressed="${st.cat === id ? 'true' : 'false'}"${style ? ` style="${style}"` : ''}>` +
+          `${id === 'all' ? '' : '<i class="cat-dot" aria-hidden="true"></i>'}<span>${label}</span><b>${n}</b></button>`;
+        chips.innerHTML =
+          chip('all', 'All', total) + present.map((p) => chip(p.def.id, p.def.label, p.shown, catStyle(p.def))).join('');
+        chips.scrollLeft = scroll;
+        // One heading needs no chips: "All 6 · Rescue 6" is two ways of saying the same thing.
+        chips.hidden = present.length < 2;
+        if (hadFocus) {
+          const again = chips.querySelector(`[data-cat-chip="${hadFocus}"]`);
+          if (again) again.focus({ preventScroll: true });
+        }
+      }
+      // Search only earns its space on a list long enough to lose something in.
+      const wrap = bar.querySelector('[data-cat-search-wrap]');
+      if (wrap) wrap.hidden = totalAll <= 6 && !st.q;
+      bar.hidden = (!chips || chips.hidden) && (!wrap || wrap.hidden);
+    }
+
+    const empty = host.querySelector(`[data-cat-empty="${kind}"]`);
+    if (empty) {
+      empty.hidden = visible > 0 || totalAll === 0;
+      const text = empty.querySelector('[data-cat-empty-text]');
+      if (text && visible === 0) {
+        const where = st.cat !== 'all' ? ` under ${categoryDef(kind, st.cat).label}` : '';
+        text.textContent = st.q ? `Nothing called “${st.q.trim()}”${where}.` : `Nothing${where} here.`;
+      }
+    }
+  }
+
   show(name) {
     this.layer.hidden = false;
     for (const key in this.screens) this.screens[key].hidden = key !== name;
@@ -2131,6 +2771,8 @@ export class Menus {
     // changed them — a code, a flight, a passcode entered somewhere else.
     if (name === 'more') this.syncMore && this.syncMore();
     if (name === 'missions') this.syncMissionLocks && this.syncMissionLocks();
+    // The Missions card counts what you can fly, which a passcode changes.
+    if (name === 'main') this.refreshMissionsLine && this.refreshMissionsLine();
     // Whoever opened it may want to repaint it for the island we are on.
     if (this.hooks.onScreen) this.hooks.onScreen(name);
     if (name === 'pause') this.syncFreeLook();

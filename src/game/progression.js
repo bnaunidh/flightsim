@@ -39,6 +39,13 @@ export const UNLOCKS = [
   { aircraft: 'osprey', cost: 1000, why: 'Built for a moving deck' },
   { aircraft: 'tempest', cost: 2200, why: 'A tornado cannot break it' },
   { aircraft: 'nightjar', cost: 3000, why: 'No tail, and it shows', military: true },
+  { aircraft: 'a320', cost: 600, why: 'The airliner you have probably flown on' },
+  { aircraft: 'b747', cost: 1200, why: 'The Jumbo, hump and all' },
+  { aircraft: 'a380', cost: 1600, why: 'Two decks, four engines, twenty-two wheels' },
+  { aircraft: 'fa18', cost: 1800, why: 'Built for the carrier', military: true },
+  { aircraft: 'f35b', cost: 2600, why: 'It can stop in mid-air', military: true },
+  { aircraft: 'f22', cost: 3400, why: 'The quickest of the real jets', military: true },
+  { aircraft: 'massimo', cost: 3600, why: 'The fastest thing in the game' },
 ];
 
 /*

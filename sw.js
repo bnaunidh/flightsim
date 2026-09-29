@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v27';
+const CACHE_VERSION = 'island-flight-v38';
 
 const PRECACHE = [
   './',
@@ -146,8 +146,104 @@ const PRECACHE = [
   'src/world/roads.js',
   'src/world/seamarks.js',
 
+  // The plug-in layer and its slots — see src/game/extensions.js.
+  'src/aircraft/extra/airliners.js',
+  'src/aircraft/extra/fighters.js',
+  'src/aircraft/extra/index.js',
+  'src/features/index.js',
+  'src/fleet/extra/airliners.js',
+  'src/fleet/extra/fighters.js',
+  'src/fleet/extra/index.js',
+  'src/game/extensions.js',
+  'src/game/extra/events.js',
+  'src/game/extra/goofy.js',
+  'src/game/extra/index.js',
+  'src/game/extra/fire.js',
+  'src/game/extra/meteor.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/airliners.js',
+  'src/features/airport-services.js',
+  'src/features/stovl.js',
+  'src/features/warnings-rules.js',
+  'src/features/warnings.js',
+  'src/world/airport-kit.js',
+  'src/world/airport-layout.js',
+  'src/world/airport-vehicles.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/explosions.js',
+  'src/features/meteor.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/wildfire.js',
+  'src/features/wildfire/audio.js',
+  'src/features/wildfire/fx.js',
+  'src/features/wildfire/grid.js',
+  'src/features/wildfire/ground.js',
+  'src/features/wildfire/hud.js',
+  'src/features/wildfire/scenario.js',
+  'src/features/wildfire/surface.js',
+  'src/features/wildfire/tank.js',
+  'src/features/wildfire/textures.js',
+  'src/features/wildfire/woods.js',
+  // Added by tools/sync-precache.mjs.
+  'src/aircraft/models/civil-build.js',
+  'src/aircraft/models/civil-kit.js',
+  'src/aircraft/models/courier.js',
+  'src/aircraft/models/meridian.js',
+  'src/aircraft/models/skyhook.js',
+  'src/aircraft/models/tempest.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/onfoot.js',
+  'src/features/staff.js',
+  'src/features/staff/jobs.js',
+  'src/features/staff/models.js',
+  'src/features/staff/person.js',
+  'src/features/staff/ui.js',
+  'src/features/staff/vehicles.js',
+  'src/features/staff/walk.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/maps-retired.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/events/bridge.js',
+  'src/features/events/common.js',
+  'src/features/events/escort.js',
+  'src/features/events/goofy-props.js',
+  'src/features/events/hijack.js',
+  'src/features/events/props.js',
+  'src/features/events/sfx.js',
+  'src/features/events/ui.js',
+  'src/features/events/vehicles.js',
+  'src/features/flight-events.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/multiplayer.js',
+  'src/features/multiplayer/interp.js',
+  'src/features/multiplayer/link.js',
+  'src/features/multiplayer/protocol.js',
+  'src/features/multiplayer/remotes.js',
+  'src/features/multiplayer/session.js',
+  'src/features/multiplayer/signaling.js',
+  'src/features/multiplayer/ui.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/traffic.js',
+  'src/features/traffic/field.js',
+  'src/features/traffic/lod.js',
+  'src/features/traffic/path.js',
+  'src/features/traffic/planner.js',
+  'src/features/traffic/rules.js',
+  'src/features/traffic/sound.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/multiplayer/lobby.js',
+  'src/features/multiplayer/lobbyui.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
+
+  // BLENDER MODELS: the helicopter, van and launch (tools/blender/), and
+  // the reader that draws them. 2.1 MB, the game's only model files.
+  'src/vehicles/glb.js',
+  'src/vehicles/blender-models.js',
+  'src/vehicles/blender-boat-water.js',
+  'assets/models/skyhook.glb',
+  'assets/models/courier-van.glb',
+  'assets/models/kestrel-launch.glb',
 ];
 
 // Files that are useful but not required for the game to run. If one of these

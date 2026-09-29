@@ -20,6 +20,8 @@ import { Carrier } from './world/carrier.js';
 import { SurfaceVehicle, VEHICLES, setTerrainProbes } from './vehicles/surface.js';
 import { DriveInput, DriveCamera, DRIVE_VIEW_LABELS, installDriveTouch } from './vehicles/driving.js';
 import { createBoat, createCar, updateVehicleModel } from './vehicles/models.js';
+// BLENDER MODELS: the helicopter, van and launch from tools/blender/.
+import { preloadVehicleModels } from './vehicles/blender-models.js';
 import { Ocean } from './world/water.js';
 import { Airport, RUNWAY, refreshRunways } from './world/airport.js';
 import { Scenery, DELIVERY_PAD } from './world/scenery.js';
@@ -35,7 +37,7 @@ import { createCockpit } from './aircraft/cockpit.js';
 import { TouchControls, isTouchDevice } from './ui/touch.js';
 
 import { Input, ACTIONS, keyLabel } from './flight/input.js';
-import { CameraRig, VIEW_LABELS } from './flight/camera.js';
+import { CameraRig, VIEW_LABELS, CHASE_BACK, CHASE_UP, chaseScaleFor } from './flight/camera.js';
 
 import { GameAudio } from './audio/index.js';
 
@@ -53,7 +55,7 @@ import { MissionRunner, STATUS } from './game/runner.js';
 import { MISSIONS, findMission, FREE_FLIGHT, RUNWAY_START, missionsFor, gameOf, FREE_FOR } from './game/missions.js';
 import { BOAT_MISSIONS, BOAT_PATROL, findBoatMission, boatSpawnFor, clearBoatProps } from './game/missions-boat.js';
 import { CAR_JOBS, findJob, jobsFor, lengthNote, ISLAND_ROADS, IslandRoads, resolveSpawn } from './game/jobs.js';
-import { clearHeliProps } from './game/missions-heli.js';
+import { clearHeliProps, heliFreeStart } from './game/missions-heli.js';
 import { TUTORIAL } from './game/tutorial.js';
 import { AtcDirector } from './game/atc-director.js';
 import { CargoCrate, PracticeBomb } from './game/markers.js';
@@ -79,6 +81,10 @@ import {
   resetAll,
 } from './core/storage.js';
 import { clamp } from './core/noise.js';
+import { extInstall, extBuildWorld, extUpdate, extCamera, extStartMode, extStop, extensions } from './game/extensions.js';
+// Every plug-in feature registers itself on import. See ./features/index.js.
+import './features/index.js';
+import { viewScale as airlinerViewScale } from './features/airliners.js';
 
 const KTS = UNITS.KTS;
 const FT = UNITS.FT;
@@ -86,7 +92,7 @@ const FPM = UNITS.FPM;
 
 /** Bumped whenever the game changes. Printed on boot so you can tell at a
  *  glance whether a browser is running a stale cached copy. */
-export const BUILD = 'v27 — a Kestrel with no cross through it, and four civil aeroplanes that look like themselves';
+export const BUILD = 'v28 — a plug-in layer, so the wishlist can be built in parallel';
 
 const loadEl = document.getElementById('loading');
 const loadBar = document.getElementById('load-bar');
@@ -194,6 +200,9 @@ class Game {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 60000);
 
+    // BLENDER MODELS: fetched and parsed while the textures paint. Never
+    // rejects; a vehicle whose file fails keeps the model it had before.
+    const blenderModels = preloadVehicleModels();
     setLoad(0.04, 'Painting textures…');
     await warmTextures((p, label) => setLoad(0.04 + p * 0.5, `Painting ${label.toLowerCase()}…`));
 
@@ -217,6 +226,9 @@ class Game {
     // The field moved. Tell the modules that cached its height.
     refreshRunways();
     refreshApronElevation();
+    // BLENDER MODELS: in before the world (the apron) and the first aircraft
+    // are built, but a slow disk holds the menu up 1.5 s at most.
+    await Promise.race([blenderModels, new Promise((r) => setTimeout(r, 1500))]);
     this.buildWorld(this.settings.quality);
 
     setLoad(0.82, 'Rolling out the aeroplane…');
@@ -302,7 +314,8 @@ class Game {
      */
     this.gameMap = {};
     this.menus = new Menus(document.getElementById('ui'), {
-      startTutorial: () => this.startMode('tutorial'),
+      // The Rotors page's Tutorial is the helicopter's first lesson, not the aeroplane school.
+      startTutorial: () => (this.game === 'heli' ? this.startAnyMission('firstlight') : this.startMode('tutorial')),
       /*
        * One door for all four games.
        *
@@ -319,6 +332,16 @@ class Game {
       onNatural: (id) => this.triggerNatural(id),
       onLocked: (msg) => this.hud.notify(msg, 'warn', 5),
       startDrive: (kind) => this.startDrive(kind),
+      // The multiplayer feature cannot put a button on the main menu itself;
+      // this is the door it exports (src/features/multiplayer.js).
+      openMultiplayer: () => import('./features/multiplayer.js')
+        .then((m) => m.openMultiplayer(this))
+        .catch((err) => { console.error('[multiplayer] could not open', err); this.hud.notify('Multiplayer could not open — see the console', 'warn', 4); }),
+      // A Dev-mode button a plug-in feature offered. It runs with the game in
+      // hand; whatever it starts, it starts from the menu like anything else.
+      runDevAction: (a) => {
+        try { a.run(this); } catch (err) { console.error(`[ext] ${a.ext}: ${a.label} failed`, err); this.hud.notify(`${a.label} failed — see the console`, 'warn', 4); }
+      },
       switchGame: (id) => this.switchGame(id),
       onAutopilotAlt: (ft) => {
         // Tell it to climb or descend. Used by "hold" and by the level change —
@@ -512,6 +535,9 @@ class Game {
     this.menus.show('main');
     this.setupPwa();
     this.aircraft.reset({ ...RUNWAY_START, engineOn: true });
+    // The plug-in features. Each is fenced off from the others and from the
+    // game: one that throws is switched off, never allowed to stop the loop.
+    extInstall(this);
     this.loop();
 
     console.info(`[island-flight] build ${BUILD}`);
@@ -888,6 +914,7 @@ class Game {
       this.rain.mesh,
     ];
     if (this.roadMesh) this.worldGroups.push(this.roadMesh);
+    this.worldGroups.push(...extBuildWorld(this, THREE));
     this.qualityBuilt = quality;
     console.debug('[world] build complete');
   }
@@ -1331,7 +1358,9 @@ class Game {
     // Spawn.
     // Starting on the stand is opt-in, so the tutorial, the missions and every
     // existing test still begin lined up on the runway.
-    const wantsTaxi = mode === 'free' && (opts.taxi ?? this.settings.startAtGate);
+    // A helicopter does not taxi from a gate; it starts on a pad (below).
+    const heliStart = !!SPEC.rotor;
+    const wantsTaxi = mode === 'free' && !heliStart && (opts.taxi ?? this.settings.startAtGate);
     const spawn = def.spawn || RUNWAY_START;
     const airborne = mode === 'free' ? !!opts.airborne : spawn.altAGL != null;
     if (mode === 'free' && airborne) {
@@ -1363,6 +1392,78 @@ class Game {
         this.input.throttleTarget = 0;
       }
     }
+    /*
+     * The helicopter starts on a helipad, and hears helicopter words.
+     *
+     * Measured on the unmodified build: Heli, then Free Flight, put the
+     * Skyhook on the numbers of runway 09 with "Take off from runway 09" on
+     * the panel and the tower saying "Taxi and hold". Every map has a pad by
+     * the airfield — `field`, in the map data — so that is where it goes,
+     * nose into the wind, which is how a helicopter is parked to lift... */
+    let heliPad = null;
+    if (heliStart && mode === 'free' && !airborne) {
+      /*
+       * ...when it is fit to stand on and there is room: no road drawn over
+       * it, and nothing taller than the deck near a hard point. Otherwise the
+       * next pad, or the heading with the most room. See heliFreeStart() in
+       * missions-heli.js, which has the measurements. The missions name their
+       * own pads and keep them.
+       */
+      const start = heliFreeStart(this, RUNWAY_START.pos.x, RUNWAY_START.pos.z);
+      heliPad = start ? start.pad : nearestPad(RUNWAY_START.pos.x, RUNWAY_START.pos.z);
+      if (heliPad) {
+        this.aircraft.reset({
+          pos: heliPad.pos.clone(),
+          headingDeg: start ? start.headingDeg : 90,
+          speed: 0,
+          altAGL: null,
+          engineOn: true,
+          fuel: opts.fuel != null ? Math.max(0.05, Math.min(1, opts.fuel)) : 1,
+        });
+        this.input.throttleTarget = 0;
+      }
+    }
+    if (heliStart) {
+      // The tower's runway calls — taxi and hold, cleared for take-off, final,
+      // short final, and the low-altitude alert that a helicopter setting down
+      // on a hillside pad sets off every time — are for aeroplanes.
+      for (const k of ['start', 'clearance', 'final', 'shortfinal', 'lowalt']) this.atc.said[k] = true;
+      /*
+       * And its touchdown call. Measured: every helicopter landing, perfect
+       * or not, on an H or not, was answered "that was off the runway. Are
+       * you able to taxi? Say your condition." Installed once, from here;
+       * an aeroplane still gets the tower's own line.
+       */
+      if (!this.atc._heliTouchdown) {
+        const atc = this.atc;
+        const aeroplane = atc.onTouchdown.bind(atc);
+        atc._heliTouchdown = true;
+        atc.onTouchdown = (g) => {
+          if (!SPEC.rotor) return aeroplane(g);
+          if (g.crashed) return;
+          atc.cool = 0;
+          atc.say(
+            g.quality === 'firm' || g.quality === 'rough'
+              ? `${atc.callsign}, down safely. Firm one — everybody all right in the back?`
+              : `${atc.callsign}, down safely${g.onRunway ? ' on the pad' : ''}. Nicely flown.`,
+            'tower'
+          );
+          atc.said.airborne = false;
+        };
+      }
+      if (mode === 'free') {
+        const w = this.weather;
+        const dir = String(Math.round(w.windDirDeg / 10) * 10).padStart(3, '0').split('').join(' ');
+        // "Wind 2 5 0 at 0" was the tower describing a calm (measured, the
+        // kid playtest's calm start).
+        const kts = Math.round(w.windSpeedKts);
+        this.atc.say(
+          `${this.atc.callsign}, ${this.atc.field} Tower, ${kts < 1 ? 'wind calm' : `wind ${dir} at ${kts}`}. `
+            + 'Lift when you are ready and keep clear of the runway. Call us if you are going anywhere.',
+          'tower'
+        );
+      }
+    }
     this.aircraft.mode = this.settings.flightMode;
     this.aircraft.difficulty = this.settings.difficulty || 'normal';
     this.input.out.throttle = this.aircraft.controls.throttle;
@@ -1392,17 +1493,26 @@ class Game {
       this.runner.status = STATUS.IDLE;
       this.runner.def = null;
       this.runner.clearGates();
+      const kidHeli = this.aircraft.mode === 'simplified' && this.aircraft.hoverAssist !== false;
+      const padName = heliPad ? heliPad.name : 'the pad';
       this.hud.setObjective(
         'Free Flight',
-        airborne
-          ? 'You are already flying. Explore the islands, then land back on runway 09 when you like.'
-          : 'Take off from runway 09, explore the islands, and land whenever you like.'
+        heliStart
+          ? airborne
+            ? 'You are already flying. Explore the islands, then set down on any H you like.'
+            : kidHeli
+              ? `You are on ${padName}. Hold Shift to lift off, and let go to hover. W A S D fly, Q and E turn, and Ctrl brings you down onto any H.`
+              : `You are on ${padName}. Raise the collective with Shift until she lifts. Set down on any H you like.`
+          : airborne
+            ? 'You are already flying. Explore the islands, then land back on runway 09 when you like.'
+            : 'Take off from runway 09, explore the islands, and land whenever you like.'
       );
     }
 
     this.state = 'flying';
     if (wantsTaxi) this.taxi.start();
     this.clock.getDelta();
+    extStartMode(this, mode, opts);
   }
 
   restart() {
@@ -1411,6 +1521,7 @@ class Game {
   }
 
   returnToAirport() {
+    extStop(this, 'airport');
     this.aircraft.reset({ ...RUNWAY_START, engineOn: true });
     this.input.throttleTarget = 0;
     this.atc.reset();
@@ -1421,12 +1532,46 @@ class Game {
       // Restart the current mission from the top: fairer than resuming mid-step.
       this.runner.start(this.runner.def);
     }
+    this.restoreTakeoffConfig();
     this.state = 'flying';
     this.menus.hide();
     this.hud.setVisible(true);
   }
 
+  /**
+   * Put back the take-off configuration a flight starts in.
+   *
+   * startMode() hands each new flight to the features, and the airliners
+   * feature sets take-off flap there (10 degrees on the A320, 20 on the 747
+   * and the A380), because the jumbos cannot clear the Kestrel strip without
+   * it. 'Back to runway' (returnToAirport above) and 'Skip to runway'
+   * (taxi.skip) put the aeroplane down again with aircraft.reset(), which
+   * zeroes the flaps, and nothing set them again. Flown with the playtest's
+   * take-off after either (the inputs of tests/features/airliners.browser.js),
+   * the 747 and the A380 were not 15 m up until 1,398 and 1,369 m from brake
+   * release — 378 and 349 m past the end of the runway, where a reviewer's
+   * run hit the ground — and the A320 at 1,040. With this: 800, 776 and 850,
+   * against 806, 781 and 842 from a fresh start.
+   *
+   * So both ask the airliners' own startMode hook again — the same code, so
+   * the same flap, the same stance and the same "pull back at N knots" line.
+   * Only that one hook: the others begin things in startMode (a meteor
+   * shower, a loaded bomb rack) that going back to the runway must not begin
+   * a second time. extensions() leaves out a feature that has been switched
+   * off for throwing, and the call is fenced the way extensions.js fences it.
+   */
+  restoreTakeoffConfig() {
+    const ext = extensions().find((e) => e.id === 'airliners');
+    if (!ext || typeof ext.startMode !== 'function') return;
+    try {
+      ext.startMode(this, this.mode, this.modeOpts || {});
+    } catch (e) {
+      console.warn('[airliners] could not set take-off flap again', e);
+    }
+  }
+
   quitToMenu(screen = 'main') {
+    extStop(this, 'menu');
     this.clearPursuer();
     this.restoreChosenMap();
     this.state = 'menu';
@@ -1924,9 +2069,19 @@ class Game {
     this.scene.add(this.model);
     this.cockpit = createCockpit({ highContrast: this.settings.highContrast, type: this.aircraftType });
     // The airframe is scaled to size; the cockpit is not. There is one
-    // instrument panel and the pilot is the same size in all five aeroplanes,
+    // instrument panel and the pilot is the same size in every aeroplane,
     // so it is counter-scaled back to life size.
-    this.cockpit.scale.setScalar(1 / S.scale);
+    /*
+     * ...by what the model it hangs on is actually scaled by. model.js (and
+     * the Blender helicopter) scale their root by shape.scale; the fleet pack
+     * builds its aeroplanes in metres at scale 1. Dividing by shape.scale
+     * regardless shrank the panel in every fleet-drawn aeroplane — measured in
+     * the realistic cockpit view: Vanguard 0.82 of life size, Osprey 0.78,
+     * Nightjar 0.51 with its face 1.5 m BEHIND the pilot's eye, and the three
+     * airliners 0.40 / 0.25 / 0.20 until features/airliners.js reseated them.
+     */
+    const k = this.model.userData.fleetBridge ? 1 : S.scale;
+    this.cockpit.scale.setScalar(1 / k);
     /*
      * ...and then moved so its own eye point lands where *this* aeroplane's
      * pilot actually sits. Without this the panel stays bolted to the centre
@@ -1942,9 +2097,9 @@ class Game {
     const eye = eyeFor(this.model, [S.eye[0] * S.scale, S.eye[1] * S.scale, S.eye[2] * S.scale]);
     const TRAINER_EYE = [-0.24, 0.46, 0.06];
     this.cockpit.position.set(
-      eye[0] / S.scale - TRAINER_EYE[0] / S.scale,
-      eye[1] / S.scale - TRAINER_EYE[1] / S.scale,
-      eye[2] / S.scale - TRAINER_EYE[2] / S.scale
+      eye[0] / k - TRAINER_EYE[0] / k,
+      eye[1] / k - TRAINER_EYE[1] / k,
+      eye[2] / k - TRAINER_EYE[2] / k
     );
     this.model.add(this.cockpit);
     this.cockpit.visible = false;
@@ -1955,8 +2110,49 @@ class Game {
     this.model.userData.groundOffsetY = groundOffsetFor(this.model, specFor(this.aircraftType.id));
 
     if (this.rig) {
-      this.rig.eye.set(eye[0], eye[1], eye[2]);
+      /*
+       * A fleet model is drawn groundOffsetY above or below the aeroplane
+       * (syncAircraftModel), and so is the seat its eye point was measured
+       * from — and the panel, which hangs on the model. The camera was not
+       * moved with them. Raycast from where it sat: 0.79 m above the
+       * Nightjar's seat, clear of the airframe with nothing above it or ahead
+       * of it and the panel 0.79 m lower than it should be; 0.02 m under the
+       * Vanguard's canopy, inside the 0.08 m near plane. Everything else the
+       * pack draws is within 0.15 m of it (the airliners 0.02, the jets 0).
+       * Exact wings level. syncAircraftModel adds the offset straight up in
+       * the world, not along the aeroplane's own up, so banked the drawn seat
+       * and this eye part by 2 x offset x sin(bank / 2) — 0.41 m in the
+       * Nightjar at 30 degrees, against the 0.79 m it was always off by.
+       */
+      const drawnY = this.model.userData.fleetBridge ? this.model.userData.groundOffsetY || 0 : 0;
+      this.rig.eye.set(eye[0], eye[1] + drawnY, eye[2]);
       this.rig.realisticCockpit = !!this.settings.realisticCockpit;
+      /*
+       * The follow view's standoff, fitted to the aeroplane just drawn (see
+       * chaseScaleFor): 1 for the Skylark and the jets, 1.64 for the Meridian,
+       * whose fin the camera used to sit in.
+       *
+       * The three airliners are fitted THROUGH the stretch features/airliners.js
+       * puts on their follow view afterwards (length / 24, and the height a
+       * further 1.4 — the number in its stretchView()), so this is only the
+       * rig's share of it. Fitting them bare, as if nothing stretched them,
+       * multiplied the two: the 747 186 m behind and 80 m above itself on the
+       * runway. Leaving them at 1 left the stretch alone to do it, and it is
+       * not enough on the runway: measured at rest at 16:10, the tailplane and
+       * aft fuselage of the A320 and 747 ran off the bottom of the picture
+       * (y -1.17) and the A380's wing tips touched both sides (x +/-1.00).
+       * Fitted through it the rig's share is 1.20, 1.21 and 1.40, and at rest
+       * at 16:10 the three fill +/-0.75, 0.72 and 0.65 of the picture (0.78
+       * each at 4:3), the lens 12, 22 and 35 m behind the tail. In 250 kt
+       * cruise it is 80, 144 and 159 m from them, where it was 89, 162 and 170.
+       * chaseAlone is the bare fit, for if the stretch never happens.
+       */
+      const stretch = airlinerViewScale(this.aircraftType.id);
+      const fit = stretch > 1 ? chaseScaleFor(this.model, stretch, 1.4) : chaseScaleFor(this.model);
+      this.rig.chaseBack = CHASE_BACK * fit;
+      this.rig.chaseUp = CHASE_UP * fit;
+      const alone = stretch > 1 ? chaseScaleFor(this.model) : 0;
+      this.rig.chaseAlone = alone ? { back: CHASE_BACK * alone, up: CHASE_UP * alone } : null;
     }
     if (this.hud) this.hud.setAircraftName(this.aircraftType.name);
     // A rotor is not a piston engine. Without this the helicopter keeps the
@@ -3106,6 +3302,10 @@ class Game {
     }
     this.vehicle = new SurfaceVehicle(kind);
     this.vehicleModel = kind === 'boat' ? createBoat() : createCar();
+    // Her pose is surface.js's; the hull that draws her says where its deck
+    // edge and bottom are and how far it lifts onto the plane (the Blender
+    // launch does; the pack launch leaves the spec's numbers, which are its).
+    if (kind === 'boat') this.vehicle.fitHull(this.vehicleModel.userData.hullFit || null);
     this.scene.add(this.vehicleModel);
 
     /*
@@ -3115,11 +3315,18 @@ class Game {
      * out of the van and back in never leaves a latched pedal, a camera half
      * way across the island or a reverse gear you did not select.
      */
-    this.driveInput = kind === 'car' ? new DriveInput(this.input) : null;
-    this.driveCam = kind === 'car' ? new DriveCamera() : null;
+    /*
+     * By what the spec IS, not by its name: anything built as a copy of the
+     * van's spec drives as the van does. Asked for by name, a tug copied
+     * from the van got no pedals and no camera — measured, four seconds of
+     * Shift moved it 6 cm, and the camera stayed wherever the walk left it.
+     */
+    const carLike = kind !== 'boat' && spec.kind === 'car';
+    this.driveInput = carLike ? new DriveInput(this.input) : null;
+    this.driveCam = carLike ? new DriveCamera() : null;
     if (this.touch) {
       installDriveTouch(this.touch);
-      if (this.touch.setMode) this.touch.setMode(kind === 'car' ? 'drive' : 'fly');
+      if (this.touch.setMode) this.touch.setMode(carLike ? 'drive' : 'fly');
       if (this.touch.setBoatMode) this.touch.setBoatMode(kind === 'boat');
     }
     // The two things the boat says once per outing, not once per frame.
@@ -3168,6 +3375,25 @@ class Game {
     let headingDeg = kind === 'boat' ? 250 : 90;
     if (kind === 'boat') {
       /*
+       * The shout's own weather.
+       *
+       * Every boat mission names a sky — First Shout a clear day with 7 kt
+       * from 240, Night Shout two in the morning, In the Gale 28 kt and a
+       * storm — and nothing ever loaded it: startMode does it for the
+       * aeroplane and this function never did. Measured: First Shout's HUD
+       * read "0 kt from 090°", and Night Shout and In the Gale simply ran in
+       * whatever sky the last thing had left up.
+       */
+      // Borrowed, like the map: BoatHud.leave() puts the player's own weather
+      // back, so a Night Shout does not leave the next flight in the dark.
+      if (def && def.weather) {
+        if (!this._weatherBeforeBoat) this._weatherBeforeBoat = this.weather.serialize();
+        this.weather.load(def.weather);
+      } else if (this._weatherBeforeBoat) {
+        this.weather.load(this._weatherBeforeBoat);
+        this._weatherBeforeBoat = null;
+      }
+      /*
        * boatSpawnFor takes the SIM, not the mission.
        *
        * It reads the harbour out of the loaded map and puts her alongside the
@@ -3189,6 +3415,12 @@ class Game {
         }
       }
     } else {
+      /*
+       * resolveSpawn puts the van ON the road, facing along the route to the
+       * first place the job goes (see its note in jobs.js). The snapping that
+       * used to be here faced it along whichever road segment was nearest,
+       * which at a junction is any of them.
+       */
       const sp = resolveSpawn(this, def || ISLAND_ROADS);
       if (sp && sp.pos) {
         start = sp.pos;
@@ -3196,40 +3428,11 @@ class Game {
       } else {
         start = new THREE.Vector3(-430, 0, -95);
       }
-      /*
-       * And on the road, not beside it.
-       *
-       * An address that is not itself on tarmac starts the van on grass, at
-       * half the speed, with no explanation. On the two maps that authored a
-       * road network but named no places the depot falls back to the airfield
-       * apron, which is such a spot. Measured on Fenwick and Cormorant Coast:
-       * "surf grass" at the start of every job. Snapping parks it on the road
-       * outside the address rather than moving the address.
-       */
-      if (this.roads && this.roads.list.length && !this.onRoad(start.x, start.z)) {
-        /*
-         * A map that authored its own roads and named no places has no depot
-         * to fall back to, so `resolveSpawn` hands back the airfield apron —
-         * which on Saddleback Pass is nearly four kilometres from the nearest
-         * tarmac. On those maps the road IS the map, so the van starts on it,
-         * in the middle of the longest one, however far that is. Where the map
-         * does name places the depot is real and the snap is only a short hop
-         * onto the road outside it.
-         */
-        const named = !!(MAP.courier && MAP.courier.places && MAP.courier.places.length);
-        let near = nearestRoadPoint(this.roads.list, start.x, start.z);
-        if (!named) {
-          const longest = this.roads.list.reduce((a, b) => (b.path.length > a.path.length ? b : a));
-          const mid = longest.path[Math.floor(longest.path.length / 2)];
-          near = nearestRoadPoint(this.roads.list, mid[0], mid[1]);
-        }
-        if (near && (!named || near.dist < 900)) {
-          start = new THREE.Vector3(near.x, 0, near.z);
-          headingDeg = near.headingDeg;
-        }
-      }
     }
     this.vehicle.reset({ pos: start, headingDeg });
+    // The island made ready for the van and the van put down on it, its
+    // marker, arrow and sky (IslandRoads.van.start in jobs.js).
+    if (carLike) IslandRoads.van.start(this, { kind, def, start, headingDeg });
     this.model.visible = false;
     this.hud.setAircraftName(spec.name);
     this.hud.setObjective(spec.name, spec.blurb);
@@ -3249,7 +3452,21 @@ class Game {
     if (kind === 'boat') {
       if (this.driveHud) this.driveHud.exit();
       this.boatHud = this.boatHud || new BoatHud(this.hud);
-      this.boatHud.enter(spec);
+      this.boatHud.enter(spec, this);
+      /*
+       * What the aeroplane left standing in the sky.
+       *
+       * The flight's guidance is ticked only by the flight loop, so the beacon
+       * and the rails stayed wherever the last flight had them — over a
+       * runway five kilometres away, pointing the wrong way, for the whole of
+       * the boat trip. The boat has its own arrow.
+       */
+      if (this.beacon) this.beacon.setTarget(null);
+      if (this.navGuide) this.navGuide.update(0, null, this.aircraft.pos, this.aircraft.quat, this.camera.position);
+      this.activeTarget = null;
+      // Put the camera straight on her; see the boat camera in updateDrive.
+      this._boatCamSnap = true;
+      this._boatArrowSteer = 0;
     } else {
       if (this.boatHud) this.boatHud.leave();
       this.driveHud = this.driveHud || new DriveHud(this.hud);
@@ -3276,20 +3493,36 @@ class Game {
         }
       }
       this.islandRoads = null;
-    } else if (kind === 'car') {
-      this.islandRoads = new IslandRoads(this);
+    } else if (carLike) {
+      // Free drive's places to find are the courier's. A tug on the apron is
+      // not out finding the island, and it must not fall through to the
+      // boat's patrol below, which it used to.
+      this.islandRoads = kind === 'car' ? new IslandRoads(this) : null;
     } else {
       this.islandRoads = null;
-      this.runner.start(BOAT_PATROL);
+      /*
+       * Only a boat goes on the lifeboat patrol. Anything else that gets
+       * here drives like the van — the airport's tug and baggage tractor,
+       * started as startDrive('tug') by the plug-in layer with a spec copied
+       * from VEHICLES.car — and this bare `else` started the PATROL for it:
+       * a Coastguard "Out you go" and a casualty in the sea somewhere, for a
+       * pushback tug. It gets no mission of ours; whoever started it owns
+       * what it is for.
+       */
+      if (this.vehicle.isBoat) this.runner.start(BOAT_PATROL);
     }
 
     this.hud.notify(
       kind === 'boat'
-        ? 'Shift and Ctrl move the engine lever: Astern, Stop, Slow, Half, Full. A and D steer. Space is a crash stop. She does not stop when you do — watch the depth.'
-        : 'Shift to go, Ctrl to brake — hold Ctrl once you have stopped and it reverses. A and D steer, Space is the handbrake, C changes the view.',
+        ? 'Tap W or Shift to go faster, S or Ctrl to slow down — the lever has five steps, Astern to Full. A and D steer. Follow the arrow. She keeps going when you slow down, so ease off early.'
+        : 'W, Up or Shift to go. S, Down or Ctrl to brake — keep holding it once you have stopped and you reverse. A and D (or the arrows) steer, Space is the handbrake, C changes the view.',
       'info',
       8
     );
+    // The camera behind the van, the arrow on its road and the panel and map
+    // drawn before the first frame (IslandRoads.van.firstFrame).
+    if (carLike) IslandRoads.van.firstFrame(this);
+    extStartMode(this, 'drive', { kind, ...opts });
     return this.vehicle;
   }
 
@@ -3308,7 +3541,9 @@ class Game {
     this.vehicle = null;
     this.model.visible = true;
     this.hud.clearVehicle();
+    // leave() also puts back anything the boat trip hid (see BoatHud.enter).
     if (this.boatHud) this.boatHud.leave();
+    this._boatCamSnap = false;
     if (this.driveHud) this.driveHud.exit();
     clearBoatProps(this);
     this.islandRoads = null;
@@ -3329,6 +3564,8 @@ class Game {
       if (this.touch.setMode) this.touch.setMode('fly');
       if (this.touch.setBoatMode) this.touch.setBoatMode(false);
     }
+    // After a van: its marker, its arrow and the sky its job borrowed.
+    if (this.courierGuide) IslandRoads.van.stop(this);
   }
 
   /**
@@ -3383,10 +3620,10 @@ class Game {
      * with no runway.
      */
     if (id === 'heli') {
-      this.lastPlane = 'harrier';
-    } else if (id === 'flight' && this.lastPlane === 'harrier') {
+      this.menus.chosenAircraft = 'harrier';
+    } else if (id === 'flight' && this.menus.chosenAircraft === 'harrier') {
       // Coming back from the helicopter must not silently leave you in it.
-      this.lastPlane = this.menus.chosenAircraft || 'skylark';
+      this.menus.chosenAircraft = 'skylark';
     }
     /*
      * Remembered, not built.
@@ -3455,24 +3692,85 @@ class Game {
 
     if (v.isBoat) {
       const touch = this.input.touch;
-      v.update(dt, {
-        steer: ctrl.roll,
-        // held(), not pressed(): the vehicle does its own edge detection and
-        // its own hold-to-repeat, so one tap is one detent and holding the
-        // key walks the lever at four detents a second.
-        lever: { up: this.input.held('throttleUp'), down: this.input.held('throttleDown') },
-        // The on-screen lever names a detent outright; it wins while a finger
-        // is on it, exactly as the touch throttle already does for the plane.
-        leverIndex: touch && touch.lever != null ? touch.lever : null,
-        crashStop: this.input.held('brakes') || !!(touch && touch.brakes),
-        // The sea is only as big as the weather says it is. Passing the whole
-        // object rather than a number keeps surface.js out of the weather
-        // model and means gusts and temporary storms are felt without another
-        // line here.
-        weather: this.weather,
-      });
+      /*
+       * The arrow keys steer her too.
+       *
+       * Up and Down already work the lever (they are bound with Shift and
+       * Ctrl), so a child who finds the arrows first gets her going with Up
+       * and then presses Left and Right — which were bound only to free look,
+       * off by default, so they did nothing at all. Measured: ten seconds of
+       * ArrowRight at Half turned her 0 degrees. With free look off they are
+       * a rudder, wound on and let back at the rates input.js uses for A and
+       * D (4.3 and 4.4 a second: full rudder in a quarter of a second); with
+       * free look on they stay the camera's.
+       */
+      const inp = this.input;
+      const arrows = inp.freeLook ? 0 : (inp.held('lookRight') ? 1 : 0) - (inp.held('lookLeft') ? 1 : 0);
+      const a0 = this._boatArrowSteer || 0;
+      this._boatArrowSteer = arrows
+        ? clamp(a0 + arrows * dt * 4.3, -1, 1)
+        : Math.abs(a0) < dt * 4.4 ? 0 : a0 - Math.sign(a0) * dt * 4.4;
+      /*
+       * One controls object for the whole trip. This built two new objects a
+       * frame (the controls and the lever keys inside them) for as long as
+       * she was afloat; surface.js reads every field on the frame it is given
+       * them and keeps none of them.
+       */
+      const bc = this._boatControls || (this._boatControls = { steer: 0, lever: { up: false, down: false }, leverIndex: null, crashStop: false, weather: null });
+      bc.steer = clamp(ctrl.roll + this._boatArrowSteer, -1, 1);
+      // held(), not pressed(): the vehicle does its own edge detection and
+      // its own hold-to-repeat, so one tap is one detent and holding the
+      // key walks the lever at four detents a second.
+      /*
+       * And W and S work the lever too. W is "go" in every other game a
+       * ten-year-old has played, and it is "go" in the van; in the boat it
+       * was bound to the aeroplane's elevator and did nothing at all.
+       * Measured: ten seconds of W from the berth, lever STOP, 0 m moved.
+       * W is faster, S is slower, exactly as Shift and Ctrl are.
+       */
+      bc.lever.up = inp.held('throttleUp') || inp.held('pitchDown');
+      bc.lever.down = inp.held('throttleDown') || inp.held('pitchUp');
+      // The on-screen lever names a detent outright; it wins while a finger
+      // is on it, exactly as the touch throttle already does for the plane.
+      bc.leverIndex = touch && touch.lever != null ? touch.lever : null;
+      bc.crashStop = inp.held('brakes') || !!(touch && touch.brakes);
+      // The sea is only as big as the weather says it is. Passing the whole
+      // object rather than a number keeps surface.js out of the weather
+      // model and means gusts and temporary storms are felt without another
+      // line here.
+      bc.weather = this.weather;
+      v.update(dt, bc);
       this.boatFeedback(v);
       if (this.touch && this.touch.updateBoat) this.touch.updateBoat(v);
+      /*
+       * The world around her, which only the flight loop ever ticked.
+       *
+       * The sea followed the parked aeroplane, the broken water over the
+       * shoals stood still, the lighthouse never swept (Night Shout's last
+       * instruction is to steer by it), and the rain and cloud of In the Gale
+       * were frozen wherever the last flight left them.
+       */
+      if (this.ocean) {
+        this.ocean.follow(v.pos);
+        if (this.ocean.boatView) this.ocean.boatView(v.pos);
+      }
+      if (this.seamarks) this.seamarks.update(dt, this.weather);
+      if (this.scenery) this.scenery.update(dt, this.weather);
+      if (this.clouds) this.clouds.update(dt, this.weather, this.camera.position);
+      if (this.rain) this.rain.update(dt, this.weather, this.camera.position, v.vel);
+      /*
+       * Where the shout is, for the arrow and the chart.
+       *
+       * The minimap draws `activeTarget`, and only the flight loop set it, so
+       * in the boat the chart had no mark on it and the HUD arrow the step
+       * text talks about did not exist. Ten times a second, not sixty: a
+       * target step allocates, and a casualty does not move that fast.
+       */
+      this._boatTargetT = (this._boatTargetT || 0) - dt;
+      if (this._boatTargetT <= 0) {
+        this._boatTargetT = 0.1;
+        this.activeTarget = this.runner.activeTarget();
+      }
     } else {
       /*
        * Rain takes away grip, and it takes it away from cornering and braking
@@ -3481,21 +3779,42 @@ class Game {
        */
       const rain = (this.weather && this.weather.cond && this.weather.cond.rain) || 0;
       v.wet = 1 - 0.22 * Math.min(1, rain);
+      // A world rebuilt under the van (Graphics quality, from the pause menu).
+      IslandRoads.van.world(this);
       const c = this.driveInput
         ? this.driveInput.update(dt, v.speed)
         : { throttle: 0, brake: 0, steer: 0, handbrake: false };
       v.update(dt, c);
       if (this.islandRoads) this.islandRoads.update();
+      // The arrow's road route and the drop-off marker, to wherever the job
+      // wants the van now.
+      IslandRoads.van.frame(this, dt, v);
     }
 
     this.vehicleModel.position.copy(v.pos);
-    // The pack's launch is drawn with its keel 0.53 m below its origin, and the
-    // vehicle rides at 0.18 — so it sat on the sea rather than in it, with the
-    // bottom of the hull showing all the way round. The game's own text says
-    // she draws about a metre; this is that metre.
-    if (this.vehicleModel.userData.fromPack && v.spec.kind === 'boat') {
-      this.vehicleModel.position.y -= 0.42;
-    }
+    /*
+     * The launch's origin IS her waterline: the pack draws her keel 0.53 m
+     * below it and her deck 0.39 m above, which is a planing launch floating
+     * right. There used to be a further 0.42 m taken off here, from a time
+     * when the vehicle rode 0.18 m up. Measured over five seconds at the
+     * berth with it (boat-playtest P3): keel 0.73 to 1.24 m down and the deck
+     * edge as much as 0.35 m UNDER the opaque sea plane, so only the console
+     * showed — "she looks sunk". Nothing is taken off now; see heaveShown in
+     * surface.js.
+     *
+     * The Blender launch (tools/blender/kestrel-launch) is also drawn with
+     * its origin on the design waterline, so it takes nothing off either.
+     * Her whole pose — the heave she shows, her lift onto the plane, trim,
+     * heel and the keep-dry lift — is the vehicle's, from her own hull's
+     * numbers (fitHull, in startDrive); nothing after this line moves her.
+     *
+     * A model that is NOT drawn with its waterline at its origin says where
+     * it is instead, as `userData.waterline` — the height of the waterline
+     * above the model's origin, in metres (createBoat sets 0). A hull from
+     * Blender with its origin on the keel and 0.5 m of draught sets 0.5 and
+     * floats right with no change here.
+     */
+    if (v.isBoat) this.vehicleModel.position.y -= this.vehicleModel.userData.waterline || 0;
     this.vehicleModel.quaternion.copy(v.quat);
     updateVehicleModel(this.vehicleModel, v, dt);
     // Hide the van while the recovery truck has it, rather than drawing it
@@ -3503,21 +3822,38 @@ class Game {
     this.vehicleModel.visible = !(v.swamped && v.recoverT < 2.1);
 
     /* ---- the chase camera ---- */
-    if (!v.isBoat && this.driveCam) {
+    if (extCamera(this, dt)) {
+      // A feature has the camera this frame — walking about on the apron, say.
+    } else if (!v.isBoat && this.driveCam) {
       this.driveCam.update(this.camera, v, dt);
     } else {
       const r = (v.heading * Math.PI) / 180;
       const sp = Math.abs(v.speed);
       // Stand off further the faster she goes: close enough alongside the quay
       // to judge a metre, far enough at speed to see what you are steering at.
-      const back = 11 + sp * 0.5;
-      const up = 5 + sp * 0.12;
+      /*
+       * And low enough that she sits in the clear band of the screen. From
+       * 11 m back and 5 m up, looking at a point 1.2 m up and 8 m ahead of
+       * her, the launch sat at 35% below the middle of the 62-degree frame,
+       * hull reaching to 74% — measured at 1280x800, the radio subtitle
+       * (518-594 px) was drawn across her stern for every call, and the
+       * top HUD (to 270 px) leaves nothing above her for her to sit in
+       * anyway. 12.5 m back and 4.4 m up, looking 0.8 m up and 9 m ahead,
+       * puts her middle about a quarter of the way down from the centre,
+       * above the subtitle, with the horizon still under the objective
+       * panel; a lower eye is also a flatter look along the water, which is
+       * what makes the swell read as a swell from a boat.
+       */
+      const back = 12.5 + sp * 0.5;
+      const up = 4.4 + sp * 0.12;
       // Ride some of the swell. All of it is seasickness, none of it is a
       // photograph of a boat pasted on a moving sea.
       const heave = (v.heave || 0) * 0.55;
-      const want = new THREE.Vector3(
+      // One vector for the life of the sim: this ran a `new` every frame.
+      const want = this._boatCamWant || (this._boatCamWant = new THREE.Vector3());
+      want.set(
         v.pos.x - Math.sin(r) * back,
-        v.pos.y + up + heave,
+        Math.max(v.pos.y + up + heave, 2),
         v.pos.z + Math.cos(r) * back
       );
       // A knock when she hits something or falls off a wave. Small, brief, and
@@ -3527,13 +3863,28 @@ class Game {
         want.x += Math.sin(v.t * 47) * j * 0.5;
         want.y += Math.sin(v.t * 53 + 1.7) * j * 0.42;
       }
-      this.camera.position.lerp(want, Math.min(1, dt * 3.2));
+      /*
+       * On the boat at once, not a second later.
+       *
+       * The camera eased in from wherever the aeroplane's had been — on a new
+       * map, a different island — so the first second of every shout was a
+       * sweep across somewhere else — measured on the first frame of First
+       * Shout, the camera was 175 m from the boat. The first frame of a
+       * trip, and any frame where the camera is somehow a long way off (a map
+       * rebuild, a teleport by a test), it goes straight there.
+       */
+      if (this._boatCamSnap || this.camera.position.distanceToSquared(want) > 80 * 80) {
+        this._boatCamSnap = false;
+        this.camera.position.copy(want);
+      } else {
+        this.camera.position.lerp(want, Math.min(1, dt * 3.2));
+      }
       // Look AHEAD of her, not at her. Where a boat is going is the only thing
       // you actually need to see, and at three knots it is eight metres away.
-      const lead = 8 + sp * 0.6;
+      const lead = 9 + sp * 0.6;
       this.camera.lookAt(
         v.pos.x + Math.sin(r) * lead,
-        v.pos.y + 1.2,
+        v.pos.y + 0.8,
         v.pos.z - Math.cos(r) * lead
       );
     }
@@ -3575,13 +3926,23 @@ class Game {
        * alongside the quay. The echo-sounder ping is gated on the same number,
        * so that never sounded either.
        */
+      /*
+       * And it has to sound the water under the keel as the keel moves.
+       * `v.depth` is the chart depth at her position, which inside Sennen's
+       * basin is 5.0 m from the quay to the mouth — measured, the gauge read
+       * "5.0" and never changed while she moved, which reads as a dead
+       * instrument. `v.sounding` is the same water with the swell's lift on
+       * the hull in it, which is what a real sounder shows.
+       */
       this.boatHud.update(dt, r, {
         sim: this,
         audio: this.audio,
         pos: v.pos,
-        depth: v.depth,
+        depth: v.sounding ?? v.depth,
         aground: v.aground,
         weather: this.weather,
+        boat: v,
+        target: this.activeTarget,
       });
     } else if (this.driveHud) {
       /*
@@ -3594,27 +3955,12 @@ class Game {
        * was built with — a frozen speed, a frozen surface word, no clock and
        * no load. The job ran; the instruments did not.
        */
-      const step = this.runner.status === 'running' ? this.runner.step : null;
-      const def = this.runner.def;
-      const data = this.runner.data || {};
-      this.driveHud.update(dt, {
-        readouts: r,
-        surface: v.surface,
-        isBoat: false,
-        job: step
-          ? { title: (def && def.name) || 'Island Roads', text: step.text || '' }
-          : { title: 'Island Roads', text: 'No clock. Drive where you like.' },
-        clock:
-          def && def.parTime && this.runner.status === 'running'
-            ? Math.max(0, def.parTime - this.runner.elapsed)
-            : null,
-        cargo: data.cargo
-          ? { pips: data.cargo.pips, max: data.cargo.max || 5, label: data.cargo.name || 'LOAD' }
-          : null,
-        turn: this.driveHud.tracker
-          ? this.driveHud.tracker.next(v.pos, v.heading)
-          : null,
-      });
+      /*
+       * Now one state object, refilled every frame, with the clock the job
+       * is judged by and the distance to the drop-off; and the model set
+       * down on its tyres first (IslandRoads.van.panel in jobs.js).
+       */
+      IslandRoads.van.panel(this, dt, v, r);
     } else {
       this.hud.setVehicle(r, v.spec);
     }
@@ -3695,6 +4041,13 @@ class Game {
         // which is why there has never been such a thing as a boat mission or
         // a car job, however many were written.
         this.runner.update(dt);
+        // And what it is aiming at. Only the boat set this (ten times a
+        // second, in updateDrive), so in the van it kept whatever the last
+        // flight left — null after Free Flight, a mission's last target
+        // after a mission. Measured on First Run with a flight's target left
+        // behind: sim.activeTarget kept it for the whole job while the runner
+        // said "the town". The call costs 0.15 microseconds.
+        this.activeTarget = this.runner.activeTarget();
         this.audio.updateVehicle(dt, this.vehicle.readouts(), this.weather);
         // Match the real signatures — sky.update takes the weather alone, and
         // ocean.update takes (dt, weather). Guessing them cost a thrown frame.
@@ -3702,6 +4055,7 @@ class Game {
         if (this.ocean) this.ocean.update(dt, this.weather);
         if (this.sky) this.sky.update(this.weather);
       }
+      if (this.state === 'flying') extUpdate(this, dt);
       input.endFrame();
       return;
     }
@@ -3786,8 +4140,25 @@ class Game {
          * iPad. Not while the autopilot is flying — it sets throttleTarget
          * itself and the two would fight.
          */
-        if (ac.rotor && ac.rotor.trimRequest && !this.autopilot.engaged) {
-          this.input.nudgeThrottle(ac.rotor.trimRequest * STEP);
+        if (ac.rotor) {
+          if (ac.rotor.trimRequest && !this.autopilot.engaged) {
+            this.input.nudgeThrottle(ac.rotor.trimRequest * STEP);
+          }
+          // And what Shift and Ctrl mean: a lever, or the kid computer's lift
+          // command. Same rule — the flight model says, the input layer
+          // listens. `ac.rotor` exists from the first helicopter step on, and
+          // physics.js sets rotor.kid false on every aeroplane step after, so
+          // this also hands the lever back when the next flight is a plane.
+          this.input.rotorCollective = ac.rotor.kid ? 'command' : null;
+          // The aeroplane autopilot and the kid computer are two pilots on
+          // one set of keys: handed straight back, before it flies a frame.
+          // See heliNoAutopilot() in hud-rotor.js for what it did when not.
+          if (ac.rotor.kid && this.autopilot.engaged) {
+            this.autopilot.setEngaged(false, ac);
+            this.hud.setAutopilot(false);
+            this.menus.syncAutopilot(false, this.autopilot.mode);
+            if (this.hud.heliNoAutopilot) this.hud.heliNoAutopilot();
+          }
         }
         this.acc -= STEP;
         steps++;
@@ -4024,7 +4395,11 @@ class Game {
     if (inCockpit) this.cockpit.userData.update(dt, ac, this.weather);
     this.audio.setInterior(inCockpit);
 
-    this.rig.update(dt, ac, this.input, this.weather);
+    if (!extCamera(this, dt)) {
+      this.rig.update(dt, ac, this.input, this.weather);
+      // Did anything stretch the airliner's follow view? See checkStretch().
+      this.rig.checkStretch();
+    }
 
     // Extra fog inside cloud gives a genuine whiteout.
     if (this.cloudImmersion > 0.01) {
@@ -4078,6 +4453,7 @@ class Game {
         def && def.timeLimit ? def.timeLimit - this.runner.elapsed : null
       );
       this.hud.update(dt, this);
+      extUpdate(this, dt);
     }
     this.input.endFrame();
   }
@@ -4160,7 +4536,13 @@ class Game {
     }
 
     // Airborne.
-    if (kts > 150) return 'Far too fast — ease the power right off with <kbd>Ctrl</kbd> and level the wings';
+    // "Far too fast" was 150 kt for everything: the Skylark's number (0.94 of
+    // its 159 kt never-exceed) and nobody else's. Measured in level flight,
+    // the F-22 at 305 kt, Massimo at 317 kt and the 747 at 232 kt were all
+    // told to pull the power right off, each a long way under its own
+    // never-exceed (603, 700 and 369 kt). Now it is 80% of the type's own
+    // never-exceed, never under 150, so the Skylark (80% = 128) keeps its 150.
+    if (kts > Math.max(150, 0.8 * SPEC.vne * KTS)) return 'Far too fast — ease the power right off with <kbd>Ctrl</kbd> and level the wings';
     if (kts < 52) return 'Too slow! Add power with <kbd>Shift</kbd> and lower the nose with <kbd>W</kbd>';
     if (ac.stalled) return 'Push the nose down with <kbd>W</kbd> and add power';
     if (ac.airborneTime < 8) return 'Climbing — keep the nose just above the horizon';

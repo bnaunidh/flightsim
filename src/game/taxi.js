@@ -163,6 +163,9 @@ export class TaxiRun {
       engineOn: true,
     });
     this.finish(true);
+    // reset() zeroed the take-off flap the flight started with, and the 747
+    // and the A380 cannot clear the runway without it. See main.js.
+    if (typeof this.sim.restoreTakeoffConfig === 'function') this.sim.restoreTakeoffConfig();
     return true;
   }
 

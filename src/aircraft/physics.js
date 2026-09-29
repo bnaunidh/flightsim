@@ -295,44 +295,265 @@ export class Aircraft {
    * eight centimetres high, and gravity immediately rocks it forward onto the
    * nose leg. In calm air that is only a wobble; in a crosswind it combines with
    * the roll and drives the propeller into the runway a second after you spawn.
-   * A short relaxation solves for the height and pitch that balance the forces.
+   *
+   * This was a fixed-gain relaxation (y += netF × 1.5e-6, pitch += netM ×
+   * 3e-7), which converges only while Σk × 1.5e-6 and Σ(k·z²) × 3e-7 are both
+   * under 2, and spring rates scale with mass. Measured at spawn in calm air,
+   * 3 s hands off: the Meridian (3.6 / 4.2) dropped 40 cm and rocked 8.2°, the
+   * Nightjar (1.8 / 3.3) rocked 3.7°, the Tempest dropped 11 cm, and the three
+   * airliners (up to 256) diverged outright until features/airliners.js
+   * replaced this for them. At the other end the trainers' pitch gain is 0.01,
+   * so two hundred steps left 13% of the error in: the Skylark rocked 2.9° in
+   * realistic mode.
+   *
+   * Now it is solved, height and pitch together, with the same piecewise
+   * springs update() uses (linear to `travel`, then the stop, capped at 160 kN
+   * a leg), each wheel against the ground under that wheel. At any trial pitch
+   * the height that carries the weight is found exactly (the leg force only
+   * falls as the aeroplane rises, so it can be bracketed); what is left is the
+   * moment, which Newton drives to zero inside a bracket. From the all-wheels-
+   * down linear answer that takes one to three pitch steps for every type in
+   * the roster, both modes, to under a newton-metre. Engine off, the pose it
+   * gives then moves 0.00 cm and 0.000° in 3 s hands off, for every type.
+   *
+   * The springs are not all that holds an aeroplane at rest, so these are
+   * balanced too, at the values update() gives them on the first step:
+   *  - the idle thrust, held by the tyres at ground level: a nose-down moment
+   *    worth 1.7° on the Skylark (realistic), 1.1° on the Vanguard, 0.3° on
+   *    the fighters, 0.01-0.03° on the airliners;
+   *  - in simplified mode, the ground attitude hold that stands in for the nose
+   *    strut: 1.0° on the Skylark and the Courier, 0.5° on the Skyhook;
+   *  - on a rotor, the lift at the collective it spawns with, 0.36 of its
+   *    weight at idle: the Skyhook stands 4 cm higher and 0.56° nose-up.
+   * If any of those change in update(), change them here: tests/features/
+   * settle.mjs spawns every type both ways and measures the difference.
+   *
+   * Two things move it after spawning that no pose can take out. The parking
+   * brake is a viscous tyre force (3000 N·s/m a wheel below its grip), which
+   * holds nothing at zero speed, so the idle thrust rolls the aeroplane until
+   * that force builds up to match it (over m / 9000 s) and it creeps on
+   * (the Vanguard at 1.7 m/s): the pitch wanders while the tyres take up the
+   * thrust, 0.93° at most on the Vanguard and 0.5° or less on the rest,
+   * before it ends where this put it. With a brake that holds (tried in a
+   * copy of the tyre code) every aeroplane stays within 0.07°. And on the
+   * Skyhook the hover assist's cyclic levels it by a further 0.46°; that is
+   * rotor-assist.js's to decide, not modelled here.
    */
   settleOnGear() {
-    const W = SPEC.mass * G;
-    const ground = heightAt(this.pos.x, this.pos.z);
-    let pitch = 0;
-    const point = new THREE.Vector3();
+    this._spawnOnGround = false;
+    const legs = SPEC.gearPoints;
+    if (!legs || !legs.length) return null;
+    // Keep the heading; replace any pitch or roll, so calling this twice gives
+    // the same answer as calling it once.
+    const yaw = new THREE.Euler().setFromQuaternion(this.quat, 'YXZ').y;
+    const cyaw = Math.cos(yaw);
+    const syaw = Math.sin(yaw);
+    const groundCg = heightAt(this.pos.x, this.pos.z);
+    if (!Number.isFinite(groundCg)) return null;
 
-    for (let iter = 0; iter < 200; iter++) {
-      let netF = -W;
-      let netM = 0;
-      for (const gp of SPEC.gearPoints) {
-        // Rotate the contact point by the trial pitch (about the lateral axis).
-        const cy = Math.cos(pitch);
-        const sy = Math.sin(pitch);
-        point.set(gp.pos.x, gp.pos.y * cy - gp.pos.z * sy, gp.pos.y * sy + gp.pos.z * cy);
-        const pen = ground - (this.pos.y + point.y);
+    const W = (SPEC.mass + (this.extraMass || 0)) * G;
+    const rhoRatio = this.density / RHO0;
+    const simple = this.mode === 'simplified';
+    // Along body -Z at the CG; update()'s thrust at u = 0 with nothing broken.
+    const thrust = this.rpm * SPEC.thrustMax * rhoRatio * (simple ? 1.12 : 1) || 0;
+    // Along body +Y; the hover assist adds no collective on the ground.
+    const lift = SPEC.rotor
+      ? Math.min(clamp(this.rpm, 0, 1) * 2.0, ROTOR_TUNE.maxLift) * SPEC.mass * G * rhoRatio
+      : 0;
+    const LEG_CAP = 160000; // update() clamps each leg's force to this
+    let lever = 1;
+    let reach = 1;
+    for (const gp of legs) {
+      lever = Math.max(lever, Math.abs(gp.pos.z));
+      reach = Math.max(reach, gp.pos.length());
+    }
+
+    // Where each wheel is at pitch p, and the ground under it. Pitch is about
+    // the lateral axis, applied after the heading, so a contact at body
+    // (x, y, z) sits py = y·cos − z·sin above the CG and pz = y·sin + z·cos
+    // aft of it.
+    const n = legs.length;
+    const PY = new Float64Array(n);
+    const PZ = new Float64Array(n);
+    const GR = new Float64Array(n);
+    let placed = NaN;
+    const place = (p) => {
+      if (p === placed) return;
+      placed = p;
+      const c = Math.cos(p);
+      const s = Math.sin(p);
+      for (let i = 0; i < n; i++) {
+        const gp = legs[i].pos;
+        PY[i] = gp.y * c - gp.z * s;
+        PZ[i] = gp.y * s + gp.z * c;
+        const g = heightAt(this.pos.x + gp.x * cyaw + PZ[i] * syaw, this.pos.z - gp.x * syaw + PZ[i] * cyaw);
+        GR[i] = Number.isFinite(g) ? g : groundCg;
+      }
+    };
+
+    // Net upward force F and nose-up moment M at height y and pitch p, with
+    // their partial derivatives.
+    const r = { F: 0, M: 0, Fy: 0, Fp: 0, My: 0, Mp: 0 };
+    const residual = (y, p) => {
+      place(p);
+      const c = Math.cos(p);
+      const s = Math.sin(p);
+      r.F = -W + lift * c + thrust * s;
+      r.Fp = -lift * s + thrust * c;
+      r.M = r.Fy = r.My = r.Mp = 0;
+      let touching = 0;
+      let pySum = 0;
+      let pzSum = 0;
+      for (let i = 0; i < n; i++) {
+        const gp = legs[i];
+        const py = PY[i];
+        const pz = PZ[i];
+        const pen = GR[i] - (y + py);
         if (pen <= 0) continue;
-        const N =
-          pen <= gp.travel
-            ? gp.k * pen
-            : gp.k * gp.travel + gp.k * gp.stopRate * (pen - gp.travel);
-        netF += N;
+        let N = pen <= gp.travel ? gp.k * pen : gp.k * gp.travel + gp.k * gp.stopRate * (pen - gp.travel);
+        let k = pen <= gp.travel ? gp.k : gp.k * gp.stopRate;
+        if (N > LEG_CAP) {
+          N = LEG_CAP;
+          k = 0;
+        }
         // Pitching moment about the lateral axis is r x F, so an upward force
         // at local z contributes -z*N. A load AFT of the centre of gravity
         // therefore pitches the nose DOWN. Getting this backwards parks the
         // aeroplane nose-high, which in any wind at all makes it fly itself off
         // the ground the instant you spawn.
-        netM -= N * point.z;
+        r.F += N;
+        r.M -= N * pz;
+        // d(pen)/dy = -1, d(pen)/dpitch = pz, d(pz)/dpitch = py.
+        r.Fy -= k;
+        r.Fp += k * pz;
+        r.My += k * pz;
+        r.Mp -= k * pz * pz + N * py;
+        touching++;
+        pySum += py;
+        pzSum += pz;
       }
-      this.pos.y += netF * 1.5e-6;
-      pitch += netM * 3e-7;
-      if (Math.abs(netF) < 2 && Math.abs(netM) < 2) break;
-    }
+      if (touching) {
+        // What the tyres push back with to stop the thrust (and the tilted
+        // rotor) moving it, shared equally the way the low-speed tyre model
+        // shares it, at the wheels' height below the CG: a nose-down moment.
+        const aft = thrust * c - lift * s;
+        const arm = pySum / touching;
+        r.M += aft * arm;
+        r.Mp += (-thrust * s - lift * c) * arm - aft * (pzSum / touching);
+      }
+      if (simple) {
+        // update()'s ground attitude hold with no airflow: aims at 0.05 rad
+        // nose down, stiffer against nose-down than nose-up.
+        const err = -0.05 - p;
+        const kh = err > 0 ? 90000 : 25000;
+        r.M += err * kh;
+        r.Mp -= kh;
+      }
+      return r;
+    };
 
-    // Apply the settled pitch on top of the heading rotation.
-    this.quat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch));
-    this._spawnOnGround = false;
+    // The height that carries the weight at pitch p. F only ever falls as y
+    // rises, so once it is bracketed — nothing touching above, more than the
+    // weight below — Newton's step, or a halving where that step would leave
+    // the bracket, cannot miss it. NaN if the legs cannot carry it at all
+    // (more than their 160 kN caps).
+    let kSum = 0;
+    for (const gp of legs) kSum += gp.k;
+    const balance = (p) => {
+      place(p);
+      let hi = -Infinity;
+      for (let i = 0; i < n; i++) hi = Math.max(hi, GR[i] - PY[i]);
+      const floor = hi - reach;
+      let lo = hi;
+      let step = Math.max(1e-3, (W - lift) / Math.max(1, kSum));
+      while (residual(lo, p).F <= 0) {
+        if (lo <= floor) return NaN;
+        lo = Math.max(floor, lo - step);
+        step *= 2;
+      }
+      let y = lo;
+      for (let i = 0; i < 60; i++) {
+        residual(y, p);
+        if (Math.abs(r.F) < 1e-9 * W) return y;
+        if (r.F > 0) lo = y;
+        else hi = y;
+        let next = r.Fy < 0 ? y - r.F / r.Fy : NaN;
+        if (!(next > lo && next < hi)) next = (lo + hi) / 2;
+        y = next;
+      }
+      return y;
+    };
+
+    // Start from every wheel down and on its linear spring, small angles: two
+    // linear equations, solved exactly. For a tricycle this is within a few
+    // hundredths of a degree; the stops, the angle and the extra loads are
+    // the iteration's job.
+    let A = 0, B = 0, C = 0, D = 0, E = 0;
+    for (const gp of legs) {
+      A += gp.k;
+      B += gp.k * gp.pos.z;
+      C += gp.k * gp.pos.z * gp.pos.z;
+      D += gp.k * (groundCg - gp.pos.y);
+      E += gp.k * gp.pos.z * (groundCg - gp.pos.y);
+    }
+    const det0 = A * C - B * B;
+    let p = det0 > 1e-9 * A * C ? clamp((-A * E - B * (W - lift - D)) / det0, -0.5, 0.5) : 0;
+    if (!Number.isFinite(p)) p = 0;
+
+    /*
+     * Then the pitch. With the height balanced at every trial pitch, what is
+     * left is one equation: the moment m(p) must vanish. A stable stance is
+     * one where m falls through zero (nose up makes it nose down), so Newton's
+     * step on m, kept inside a bracket [m > 0, m < 0] once there is one and
+     * halved where it would leave it. Two things this rules out that a plain
+     * two-unknown Newton does not: the false balance on the main wheels alone,
+     * with the mains straight under the CG (31° nose up on the Meridian, and
+     * where the airliners' own solve wandered off to), because m rises
+     * through that one; and wandering off into the stops, because the height
+     * is never a guess.
+     */
+    let y = balance(p);
+    let m = 0;
+    let dm = 0;
+    const measure = () => {
+      if (!Number.isFinite(y)) return false;
+      residual(y, p);
+      m = r.M;
+      // The moment's slope along F = 0: the height follows the pitch.
+      dm = r.Fy < 0 ? r.Mp - (r.My * r.Fp) / r.Fy : r.Mp;
+      return true;
+    };
+    if (!measure()) return null;
+    let left = null; // a pitch with m > 0: the answer is nose-up of it
+    let right = null; // a pitch with m < 0: the answer is nose-down of it
+    let iterations = 0;
+    for (; iterations < 40; iterations++) {
+      if (Math.abs(m) < 1e-6 * W * lever) break;
+      if (m > 0) {
+        left = p;
+        if (right !== null && right <= left) right = null;
+      } else {
+        right = p;
+        if (left !== null && left >= right) left = null;
+      }
+      let next = dm < 0 ? p - m / dm : p + Math.sign(m) * 0.05;
+      next = clamp(next, p - 0.15, p + 0.15);
+      if (left !== null && right !== null && !(next > left && next < right)) next = (left + right) / 2;
+      if (!(Math.abs(next) < 0.6)) return null;
+      p = next;
+      y = balance(p);
+      if (!measure()) return null;
+    }
+    // No balance to be had: more weight than the legs' 160 kN caps carry, or
+    // nothing within 34° of level. Leave it where reset() put it, lowest
+    // wheel on the ground and level.
+    if (!(Math.abs(m) < 0.01 * W * lever)) return null;
+
+    this.pos.y = y;
+    this.quat
+      .setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw)
+      .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), p));
+    return { y, pitch: p, iterations, residualN: Math.abs(r.F), residualNm: Math.abs(m) };
   }
 
   forward(out = new THREE.Vector3()) {
@@ -536,12 +757,44 @@ export class Aircraft {
     if (SPEC.rotor) {
       const a = rotorAssist(this, SPEC, dt);
       hoverAuth = this.rotor.hoverAuth;
-      elevator = clamp(elevator + a.cyclicPitch, -1, 1);
-      aileron = clamp(aileron + a.cyclicRoll, -1, 1);
-      rudder = clamp(rudder + a.pedal, -1, 1);
+      if (a.kidOn) {
+        /*
+         * Kid mode: the flight computer's cyclic and pedal ARE the controls.
+         * They are not added to the keys, because in kid mode the keys mean
+         * "tilt to eighteen degrees" and "climb at 4.5 m/s", not "deflect the
+         * stick", and the computer has already turned the one into the other.
+         * The wing leveller below stands down (hoverAuth 1 gives it no share)
+         * — two loops flying one airframe is the argument the fade between
+         * them was written to stop.
+         */
+        elevator = a.cyclicPitch;
+        aileron = a.cyclicRoll;
+        rudder = a.pedal;
+        hoverAuth = 1;
+      } else {
+        elevator = clamp(elevator + a.cyclicPitch, -1, 1);
+        aileron = clamp(aileron + a.cyclicRoll, -1, 1);
+        rudder = clamp(rudder + a.pedal, -1, 1);
+      }
       this._collectiveAssist = a.collective;
+      // What the blades get: lever and assist, or the kid computer. The rotor
+      // force and moment blocks below read this and never `rpm`. `lift` is
+      // rotorLiftRatio() of it, worked out where the collective is.
+      this._rotorColl = a.coll;
+      this._rotorLift = a.lift;
+      this._kidCyclic = a.kidOn ? a : null;
     } else {
       this._collectiveAssist = 0;
+      this._kidCyclic = null;
+      // Readouts from the last helicopter flight must not outlive it: a stale
+      // trimRequest here was still winding the aeroplane's throttle.
+      if (this.rotor) {
+        this.rotor.kid = false;
+        this.rotor.trimRequest = 0;
+      }
+      // Nor the helicopter's touchdown rules and engine rule (rotor-assist.js,
+      // hookAircraft), which ask this flag whether they apply.
+      if (this._rotorAssist) this._rotorAssist.rotor = false;
     }
 
     // Trim assist. A real aeroplane is trimmed with a wheel so it flies
@@ -657,7 +910,7 @@ export class Aircraft {
            */
           let A = Math.max(0.5, base * SPEC.Clda); // roll accel per unit aileron
           if (SPEC.rotor) {
-            const coll = clamp(this.rpm, 0, 1);
+            const coll = clamp(this._rotorColl || 0, 0, 1);
             // Same expression the cyclic block below uses for the roll moment.
             A += ((0.35 + coll * 0.65) * SPEC.mass * G * SPEC.rotorRollArm) / SPEC.Izz;
           }
@@ -710,7 +963,7 @@ export class Aircraft {
            */
           let pitchAuth = 1;
           if (SPEC.rotor) {
-            const coll = clamp(this.rpm, 0, 1);
+            const coll = clamp(this._rotorColl || 0, 0, 1);
             const rotorAcc = ((0.35 + coll * 0.65) * SPEC.mass * G * SPEC.rotorPitchArm) / SPEC.Iyy;
             const wingAcc = Math.max(0.05, (0.5 * this.density * V * V * SPEC.wingArea * SPEC.chord * Math.abs(SPEC.Cmde)) / SPEC.Iyy);
             pitchAuth = wingAcc / (wingAcc + rotorAcc);
@@ -932,7 +1185,14 @@ export class Aircraft {
       // The assist's contribution is added here rather than to `rpm` itself,
       // so the lever the pilot is holding stays the lever the pilot is holding
       // and the HUD can show both numbers honestly.
-      const collective = clamp(this.rpm + (this._collectiveAssist || 0), 0, 1);
+      /*
+       * And the lever is no longer `rpm`. rpm is the aeroplane engine's
+       * spool, 2.4/s up and 1.1/s down, and taking the collective from it
+       * put a piston's lag between the Ctrl key and the blades: measured,
+       * 1.5 s of Ctrl before the vertical speed moved at all. rotorAssist()
+       * now spools the lever at the rotor's own rate and hands the total
+       * over as `_rotorColl`. See ROTOR_TUNE.collSpool.
+       */
       // Sized so that hover lands near 50% collective at sea level.
       const hoverThrust = SPEC.mass * G;
       /*
@@ -953,8 +1213,16 @@ export class Aircraft {
        * the winch load into a real decision: nothing else in this game has a
        * number that moves because of what you are carrying.
        */
-      const rotor =
-        Math.min(collective * 2.0, ROTOR_TUNE.maxLift) * hoverThrust * (rho / RHO0) * rough;
+      /*
+       * Measured 2026-09-23: `min(collective * 2, maxLift)` reached its cap
+       * at 65% of lever and was flat above it, so from 90% down to 65% the
+       * lever did nothing at all. rotorLiftRatio() is the same hover point
+       * and the same best climb with no dead band — see ROTOR_TUNE.maxLift.
+       * rotorAssist() applies it to `_rotorColl` and hands it over as
+       * `_rotorLift`, so the kid computer that inverts it and the force here
+       * are one function.
+       */
+      const rotor = (this._rotorLift || 0) * hoverThrust * (rho / RHO0) * rough;
       // Translational lift: a rotor is measurably more efficient once it flies
       // out of its own downwash, which is why a helicopter that will not lift
       // vertically can often run along the ground and get away.
@@ -987,8 +1255,11 @@ export class Aircraft {
        * missions actually fly is untouched; above it the machine runs out of
        * speed near 105 kt instead of running away.
        */
-      const bladeStall = 1 + clamp((V - 46) / 22, 0, 1) * 2.4;
-      const rd = clamp(V, 0, 60) * SPEC.rotorDrag * 0.5 * bladeStall;
+      // Kid mode's own two numbers; see ROTOR_TUNE.kid.dragScale.
+      const kidAir = !!this._kidCyclic;
+      const stallAt = kidAir ? ROTOR_TUNE.kid.stallAt : 46;
+      const bladeStall = 1 + clamp((V - stallAt) / 22, 0, 1) * 2.4;
+      const rd = clamp(V, 0, 60) * SPEC.rotorDrag * 0.5 * bladeStall * (kidAir ? ROTOR_TUNE.kid.dragScale : 1);
       if (V > 0.15) {
         // Same body-frame airflow direction the drag above uses: (v, w, -u).
         const inv = 1 / V;
@@ -1021,6 +1292,41 @@ export class Aircraft {
       const vsAir = this.vel.y;
       const discArea = Math.PI * SPEC.rotorRadius * SPEC.rotorRadius;
       this._f.y -= 0.5 * rho * vsAir * Math.abs(vsAir) * discArea * ROTOR_TUNE.discCD;
+      /*
+       * Skids do not roll. The Skyhook's gear points are the trainer's
+       * wheels with a rotor on top, and the tyre friction in the contact code
+       * below lets a wheel roll fore and aft on 2.2-7.5% of its load.
+       * Measured 2026-09-25, Night Deck, 20 kt and rain: set down on the rig
+       * and left alone for the ten seconds of loading, it rolled downwind at
+       * 1.4 m/s and off the edge of the deck. So while it stands on its skids
+       * it also gets a skid's scrub along its length — see
+       * ROTOR_TUNE.skidScrub — at the centre, from the load the skids took
+       * last step. Proportional near zero and never more than stops it in one
+       * step, the two rules the tyre friction keeps, so it cannot chatter or
+       * push back. It lives here, and not in the contact code, because that
+       * code is the aeroplanes'. Measured with it: Night Deck flown by the key
+       * pilot in tests/features/heli-missions, the ten seconds of loading on
+       * the rig in 20 kt and rain held, and the mission completed.
+       */
+      if (this.onGround && this.wheelLoad > 0) {
+        const q = this.quat;
+        // The nose, flattened: (0, 0, -1) turned by the attitude.
+        let hx = -2 * (q.x * q.z + q.w * q.y);
+        let hz = -(1 - 2 * (q.x * q.x + q.y * q.y));
+        const hl = Math.hypot(hx, hz);
+        if (hl > 1e-4) {
+          hx /= hl;
+          hz /= hl;
+          const vRoll = this.vel.x * hx + this.vel.z * hz;
+          const cap = Math.min(
+            this.wheelLoad * ROTOR_TUNE.skidScrub,
+            (Math.abs(vRoll) * SPEC.mass * 0.6) / Math.max(dt, 1 / 240)
+          );
+          const scrub = clamp(-vRoll * 9000, -cap, cap);
+          this._f.x += scrub * hx;
+          this._f.z += scrub * hz;
+        }
+      }
     }
 
     // ---- Moments ------------------------------------------------------
@@ -1114,9 +1420,21 @@ export class Aircraft {
      * on the spot.
      */
     if (SPEC.rotor) {
-      const collective = clamp(this.rpm + (this._collectiveAssist || 0), 0, 1);
+      const collective = clamp(this._rotorColl || 0, 0, 1);
       // Enough authority to be crisp in the hover, without being twitchy.
       const disc = (0.35 + collective * 0.65) * SPEC.mass * G;
+      /*
+       * In kid mode the computer's cyclic goes to the rotor as it is. The
+       * `elevator` above has been through simplified mode's low-speed
+       * elevator boost (up to x1.55), the stall guard and the trim, all of
+       * which are the aeroplane's and none of which the computer asked for.
+       */
+      const kc = this._kidCyclic;
+      if (kc) {
+        elevator = kc.cyclicPitch;
+        aileron = kc.cyclicRoll;
+        rudder = kc.pedal;
+      }
       /*
        * Two bugs lived in these six lines, and both were invisible in a
        * straight-line hover, which is the only way anybody ever tested it.

@@ -63,6 +63,7 @@ const P = {
      which is why both are drawn full width even at 18 px. */
   heli: '<path d="M3.5 6h17"/><path d="M12 6v2.6"/><path d="M7.5 8.6h6l2.5 3.4h4.5"/><path d="M7.5 8.6a3.4 3.4 0 0 0 0 6.8h6.5l2-3.4"/><path d="M19.5 10.2v3.6"/><path d="M6 18h9"/><path d="M8.5 15.4V18M13 15.4V18"/>',
   boat: '<path d="M3.5 14.5h17L18 19.5H6Z"/><path d="M8.5 14.5V9.5h5.5l2.4 5"/><path d="M11.2 9.5V6.2"/>',
+  players: '<circle cx="9" cy="8.6" r="3"/><path d="M3.6 19.2a5.4 5.4 0 0 1 10.8 0"/><circle cx="16.6" cy="9.6" r="2.4"/><path d="M15.4 14.1a4.4 4.4 0 0 1 5 5.1"/>',
   car: '<path d="M3.5 16v-2.6l2.2-4.2h8.6l3.6 4.2h2.6V16"/><path d="M3.5 16h1.6M18.9 16h1.6"/><circle cx="7.4" cy="16.4" r="2"/><circle cx="16.6" cy="16.4" r="2"/><path d="M9.4 16.4h5.2"/>',
   /* A coin with a C on it. Credits are the thing on the bar most likely to be
      glanced at rather than read, so it wants a silhouette, not a symbol. */

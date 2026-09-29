@@ -19,10 +19,10 @@
  * So driving gets its own pedals, built from the SAME key bindings — no new
  * actions, nothing for anyone to re-learn or re-bind:
  *
- *   Shift / Up      accelerator
- *   Ctrl  / Down    brake, and reverse once you are stopped
- *   A / D           steer
- *   Space           handbrake
+ *   Shift / Up / W      accelerator
+ *   Ctrl  / Down / S    brake, and reverse once you are stopped
+ *   A / D, Left / Right steer
+ *   Space               handbrake
  *   C               change view
  *
  * None of this touches input.js or touch.js. The touch widgets write into the
@@ -31,8 +31,11 @@
  */
 
 import * as THREE from '../vendor/three.module.js';
-import { heightAt } from '../world/terrain.js';
+// The ground the van drives on and the child sees: the drawn terrain mesh
+// where there is one, never below heightAt. See groundHeight in surface.js.
+import { groundHeight as heightAt } from './surface.js';
 import { clamp, lerp } from '../core/noise.js';
+import { registerExtension } from '../game/extensions.js';
 
 /* ========================================================== the pedals == */
 
@@ -64,8 +67,15 @@ export class DriveInput {
 
     /* ---- accelerator and brake, as pedals ------------------------------ */
 
-    let go = I.held('throttleUp') ? 1 : 0;
-    let stop = I.held('throttleDown') ? 1 : 0;
+    /*
+     * And W and S, which is how a child who has played anything on a
+     * keyboard drives: W forwards, S back. They are the aeroplane's pitch
+     * keys (W nose down, S nose up) and did nothing at all in the van, so a
+     * WASD child pressed W, watched nothing happen and assumed the van was
+     * broken. Read through the bindings, so a re-bound pitch key follows.
+     */
+    let go = I.held('throttleUp') || I.held('pitchDown') ? 1 : 0;
+    let stop = I.held('throttleDown') || I.held('pitchUp') ? 1 : 0;
     if (touch) {
       if (touch.driveGo) go = Math.max(go, touch.driveGo);
       if (touch.driveStop) stop = Math.max(stop, touch.driveStop);
@@ -118,9 +128,15 @@ export class DriveInput {
 
     /* ---- steering ------------------------------------------------------ */
 
+    /*
+     * A and D, and the left and right arrows. Up and Down were already the
+     * pedals (they are bound to the throttle), but Left and Right are the
+     * free-look keys, which the van's camera does not use — so an arrow-key
+     * driver could go and stop and not steer. Same reading of the bindings.
+     */
     let want = 0;
-    if (I.held('rollRight')) want += 1;
-    if (I.held('rollLeft')) want -= 1;
+    if (I.held('rollRight') || I.held('lookRight')) want += 1;
+    if (I.held('rollLeft') || I.held('lookLeft')) want -= 1;
     if (touch && typeof touch.driveSteer === 'number' && touch.driveSteer !== 0) {
       want = clamp(want + touch.driveSteer, -1, 1);
     }
@@ -161,6 +177,132 @@ export class DriveInput {
     };
   }
 }
+
+/* ===================================================== the headlights == */
+
+/**
+ * The light the van throws on the road at night.
+ *
+ * Night Call-out's step says "headlights on, and mind the wet", and the van
+ * had none: at two in the morning the road ahead was as dark as the fields.
+ * A real spot light is the honest way, and adding one makes every material on
+ * the island recompile its shader, on a 2019 Chromebook, at the moment a job
+ * starts — then costs every lit pixel one more light for the rest of it. So
+ * it is drawn instead: a pool of warm light on the road ahead, 2.5 to 30 m
+ * from the van's middle and widening as it goes, blended additively (it
+ * brightens what it falls on) and laid over the ground as drawn every frame
+ * (groundHeight: the tarmac on the road, the mesh off it), so it lies on a
+ * crest or a bend instead of floating off it. 35 ground samples a frame, and
+ * only while it is on; nothing is allocated after it is built.
+ *
+ * It belongs to the drive, not to the van's model, so a replacement model
+ * (the Blender van, the airport's tug) keeps it without doing anything.
+ */
+const LIGHT_COLS = 5;
+const LIGHT_ROWS = 7;
+export class Headlights {
+  constructor(scene) {
+    const n = LIGHT_COLS * LIGHT_ROWS;
+    this.pos = new Float32Array(n * 3);
+    const col = new Float32Array(n * 3);
+    for (let i = 0; i < LIGHT_ROWS; i++) {
+      const a = i / (LIGHT_ROWS - 1);
+      for (let j = 0; j < LIGHT_COLS; j++) {
+        const u = (j / (LIGHT_COLS - 1)) * 2 - 1;
+        // Brightest just ahead of the bonnet, gone at the far end and the
+        // edges. (Looked at from the chase camera on Night Call-out: at 0.5
+        // with 15% left at the edges it was a hard white trapezoid.)
+        const k = 0.36 * (1 - a * a) * (1 - u * u) * (a < 0.08 ? a / 0.08 : 1);
+        const o = (i * LIGHT_COLS + j) * 3;
+        col[o] = k;
+        col[o + 1] = k * 0.93;
+        col[o + 2] = k * 0.74;
+      }
+    }
+    const idx = [];
+    for (let i = 0; i < LIGHT_ROWS - 1; i++) {
+      for (let j = 0; j < LIGHT_COLS - 1; j++) {
+        const a = i * LIGHT_COLS + j;
+        idx.push(a, a + LIGHT_COLS, a + 1, a + 1, a + LIGHT_COLS, a + LIGHT_COLS + 1);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    this.attr = new THREE.BufferAttribute(this.pos, 3);
+    this.attr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('position', this.attr);
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setIndex(idx);
+    this.mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -4,
+    }));
+    this.mesh.name = 'van-headlights';
+    this.mesh.frustumCulled = false;
+    this.mesh.visible = false;
+    this.mesh.renderOrder = 2;
+    scene.add(this.mesh);
+  }
+
+  /** @param {object} v the van  @param {boolean} on  night, or not */
+  update(v, on) {
+    if (!on || !v || v.isBoat || v.swamped) {
+      this.mesh.visible = false;
+      return;
+    }
+    this.mesh.visible = true;
+    const h = (v.heading * Math.PI) / 180;
+    const fx = Math.sin(h);
+    const fz = -Math.cos(h);
+    const p = this.pos;
+    for (let i = 0; i < LIGHT_ROWS; i++) {
+      const a = i / (LIGHT_ROWS - 1);
+      const along = 2.5 + a * 27.5;
+      const half = 1.4 + a * 5.2;
+      for (let j = 0; j < LIGHT_COLS; j++) {
+        const u = ((j / (LIGHT_COLS - 1)) * 2 - 1) * half;
+        const x = v.pos.x + fx * along - fz * u;
+        const z = v.pos.z + fz * along + fx * u;
+        const o = (i * LIGHT_COLS + j) * 3;
+        p[o] = x;
+        p[o + 1] = Math.max(0, heightAt(x, z)) + 0.1;
+        p[o + 2] = z;
+      }
+    }
+    this.attr.needsUpdate = true;
+  }
+
+  hide() {
+    this.mesh.visible = false;
+  }
+}
+
+/*
+ * Switched on through the plug-in hooks main.js already calls, so the drive
+ * needs no new line in main.js: built with every world (and thrown away with
+ * it), placed every frame something with wheels is being driven at night,
+ * hidden the moment it is not.
+ */
+let headlights = null;
+registerExtension({
+  id: 'van-headlights',
+  buildWorld(sim, group) {
+    headlights = new Headlights(group);
+  },
+  update(sim) {
+    if (!headlights) return;
+    const v = sim.mode === 'drive' ? sim.vehicle : null;
+    headlights.update(v, !!(v && sim.weather && sim.weather.isNight));
+  },
+  stop() {
+    if (headlights) headlights.hide();
+  },
+});
 
 /* ========================================================== the camera == */
 
@@ -204,6 +346,21 @@ export class DriveCamera {
     /** Whatever the camera's field of view was before driving started. */
     this.savedFov = null;
     this._shake = 0;
+  }
+
+  /**
+   * Put the camera behind the van NOW, before the first frame is drawn.
+   *
+   * It was only ever placed by update(), and startDrive() never called that:
+   * so the first frame of every drive was drawn from wherever the camera had
+   * been left — measured, 237 m from the van, facing away from it, at the
+   * menu's view over the sea, with the airfield's traffic cones hanging in
+   * the sky. One call with no time step fixes the position and the yaw
+   * exactly where the chase view wants them.
+   */
+  snap(camera, v) {
+    this.started = false;
+    this.update(camera, v, 0);
   }
 
   cycle() {
@@ -250,7 +407,7 @@ export class DriveCamera {
        * place it accurately in a gateway or alongside a loading bay.
        */
       const e = S.eye || [0, 1.45, -1.15];
-      const off = new THREE.Vector3(e[0], e[1], e[2]).applyQuaternion(v.quat);
+      const off = _eye.set(e[0], e[1], e[2]).applyQuaternion(v.quat);
       this.pos.set(v.pos.x + off.x, v.pos.y + off.y, v.pos.z + off.z);
       const nose = v.heading * (Math.PI / 180);
       this.look.set(
@@ -281,17 +438,50 @@ export class DriveCamera {
       let wy = v.pos.y + up;
       // Never inside the hill. The old camera did exactly this on the fjords.
       wy = Math.max(wy, heightAt(wx, wz) + 2.2);
+      /*
+       * And never with a hill between it and the van. Standing above the
+       * ground at the camera is not enough going over a crest: the brow of
+       * the hill sits between the two and the child sees grass. Two samples
+       * along the boom; if the ground there is above the sight line, lift the
+       * camera until it is not.
+       */
+      for (const f of BOOM) {
+        const bx = v.pos.x + (wx - v.pos.x) * f;
+        const bz = v.pos.z + (wz - v.pos.z) * f;
+        const line = v.pos.y + 1.4 + (wy - v.pos.y - 1.4) * f;
+        const over = heightAt(bx, bz) + 1.0 - line;
+        if (over > 0) wy += over / f;
+      }
+      /*
+       * Nor with a tree or a building between it and the van. The reviewer
+       * pressed C twice for the Wide view after a key mash and a pine filled
+       * the whole screen, the van behind it: the boom is 22 m long there and
+       * nothing but the ground was ever asked. The camera comes in along the
+       * boom to just short of whatever is in the way (see boomClear).
+       */
+      let wxc = wx;
+      let wzc = wz;
+      const f = boomClear(v, v.pos.x, v.pos.y + 1.4, v.pos.z, wx, wy, wz);
+      if (f < 1) {
+        const k = Math.max(MIN_BOOM / back, f - 1.2 / back);
+        wxc = v.pos.x + (wx - v.pos.x) * k;
+        wzc = v.pos.z + (wz - v.pos.z) * k;
+        wy = v.pos.y + 1.4 + (wy - v.pos.y - 1.4) * k;
+        wy = Math.max(wy, heightAt(wxc, wzc) + 1.6);
+      }
 
       if (!this.started) {
-        this.pos.set(wx, wy, wz);
+        this.pos.set(wxc, wy, wzc);
         this.started = true;
       } else {
         // Position is smoothed as well as the yaw, but much less, or the van
         // swims around inside the frame over bumps.
         const k = clamp(dt * 9, 0, 1);
-        this.pos.x = lerp(this.pos.x, wx, k);
+        this.pos.x = lerp(this.pos.x, wxc, k);
         this.pos.y = lerp(this.pos.y, wy, clamp(dt * 5, 0, 1));
-        this.pos.z = lerp(this.pos.z, wz, k);
+        this.pos.z = lerp(this.pos.z, wzc, k);
+        // The height lags on purpose, but not into the ground it is over.
+        this.pos.y = Math.max(this.pos.y, heightAt(this.pos.x, this.pos.z) + 1.6);
       }
 
       this.look.set(v.pos.x + ts * ahead, v.pos.y + 1.1, v.pos.z - tc * ahead);
@@ -318,6 +508,62 @@ export class DriveCamera {
       camera.updateProjectionMatrix();
     }
   }
+}
+
+const _eye = new THREE.Vector3();
+/** Where along the boom (van = 0, camera = 1) the sight line is checked. */
+const BOOM = [0.4, 0.75];
+/** The closest the camera is brought in behind the van, metres. */
+const MIN_BOOM = 4;
+
+/**
+ * How far along the line from the van's roof (0) to where the camera wants
+ * to be (1) the first collision box in the way starts; 1 if none is.
+ *
+ * The van's own list of boxes within 40 m (SurfaceVehicle.nearObstacles),
+ * which it keeps for its bumper anyway: a slab test per box, no allocation.
+ * A tree's box is its trunk, a quarter of the canopy's width (scenery.js),
+ * so a tree is grown by one and a half times the trunk's width all round
+ * and above — about the canopy. A building by 30 cm.
+ */
+function boomClear(v, x0, y0, z0, x1, y1, z1) {
+  const list = v && typeof v.nearObstacles === 'function' ? v.nearObstacles() : null;
+  if (!list || !list.length) return 1;
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const dz = z1 - z0;
+  let best = 1;
+  for (let i = 0; i < list.length; i++) {
+    const o = list[i];
+    const tree = typeof o.what === 'string' && o.what.indexOf('tree') >= 0;
+    const g = tree ? (o.x1 - o.x0) * 1.5 : 0.3;
+    let t0 = 0;
+    let t1 = best;
+    // x, z and y slabs in turn; the segment is inside the box between t0 and t1.
+    for (let a = 0; a < 3 && t0 <= t1; a++) {
+      const p = a === 0 ? x0 : a === 1 ? z0 : y0;
+      const d = a === 0 ? dx : a === 1 ? dz : dy;
+      const lo = a === 0 ? o.x0 - g : a === 1 ? o.z0 - g : o.y0;
+      const hi = a === 0 ? o.x1 + g : a === 1 ? o.z1 + g : o.y1 + (tree ? g : 0);
+      if (Math.abs(d) < 1e-9) {
+        if (p < lo || p > hi) t0 = 2;
+        continue;
+      }
+      let ta = (lo - p) / d;
+      let tb = (hi - p) / d;
+      if (ta > tb) {
+        const t = ta;
+        ta = tb;
+        tb = t;
+      }
+      if (ta > t0) t0 = ta;
+      if (tb < t1) t1 = tb;
+    }
+    // Only a box the line runs into from outside: one the van is already
+    // standing in (a tree it is nosed into) is not in front of the lens.
+    if (t0 <= t1 && t0 > 0.02 && t0 < best) best = t0;
+  }
+  return best;
 }
 
 /** Shortest-way-round interpolation, so the camera never spins the long way. */

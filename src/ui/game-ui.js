@@ -29,10 +29,48 @@
  * constructor, so a card filtered out at build time can never come back). The
  * game filter follows the same rule, and it wraps the existing lock syncs
  * instead of replacing them, so a card needs BOTH its passcode and its game.
+ *
+ * AND UNDER A HEADING
+ * The board is grouped by category (menus.js, CATEGORIES). Each card sits in
+ * its heading's grid from the start; this file only hides and shows, and then
+ * asks menus.syncCategories() which headings still have anything under them.
+ * The chips and the search box never write `hidden` — see syncCategories().
  */
 
 import { MAPS } from '../world/maps.js';
 import { icon } from './icons.js';
+import { MISSIONS, gameOf } from '../game/missions.js';
+import * as Prog from '../game/progression.js';
+import { categoryItemData, groupByCategory, missionCategory } from './menus.js';
+
+const NUMBER_WORDS = [
+  'No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+  'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen',
+  'Nineteen', 'Twenty',
+];
+
+/**
+ * "Eight missions — training, deliveries, rescue and more", counted.
+ *
+ * Only what this player can fly is counted (the passcode hides the military
+ * ones), and the headings are named in the order the missions screen shows
+ * them, so the card and the screen behind it cannot disagree. Empty string if
+ * there is nothing to count, so the caller keeps its hand-written line.
+ */
+export function missionsLine(game, prog, noun = 'missions') {
+  const list = MISSIONS.filter((m) => gameOf(m) === game && !Prog.needsPasscode(prog || {}, m));
+  if (!list.length) return '';
+  const heads = groupByCategory('missions', list, missionCategory).map((g) => g.def.label.toLowerCase());
+  const n = list.length;
+  const count = n < NUMBER_WORDS.length ? NUMBER_WORDS[n] : String(n);
+  const one = noun.replace(/s$/, '');
+  const named = heads.length > 3
+    ? `${heads.slice(0, 3).join(', ')} and more`
+    : heads.length > 1
+      ? `${heads.slice(0, -1).join(', ')} and ${heads[heads.length - 1]}`
+      : heads[0];
+  return `${count} ${n === 1 ? one : noun} — ${named}`;
+}
 
 /**
  * What each game's start screen says it is.
@@ -48,9 +86,15 @@ export const GAME_UI = {
     line: 'Learn to fly a real aeroplane',
     cards: [
       { to: 'tutorial', icon: 'learn', title: 'Tutorial', sub: 'Start here — learn take-off, turning and landing' },
-      { to: 'missions', icon: 'target', title: 'Missions', sub: 'Eight challenges — a delivery, a storm landing, a landing with no engine' },
+      /*
+       * `counted`: the line is rewritten from MISSIONS by refreshMissionsLine(),
+       * because three teams are adding flight missions and a number typed
+       * here is wrong the day the first of them lands.
+       */
+      { to: 'missions', icon: 'target', title: 'Missions', sub: 'Training, rescues, deliveries and emergencies — sorted into groups', counted: true },
       { to: 'free', icon: 'cloud', title: 'Free Flight', sub: 'Any weather, any time of day, no rules' },
       { to: 'maps', icon: 'map', title: 'Choose Map', sub: 'Six places to fly, from flat grassland to a volcano' },
+      { to: 'multiplayer', icon: 'players', title: 'Multiplayer', sub: 'Fly with your friends — five lobbies on your Wi-Fi, eight in each, or a friend by code' },
       { to: 'more', icon: 'more', title: 'More', sub: 'Your rank and leaderboard, the hangar, and settings' },
     ],
   },
@@ -58,10 +102,11 @@ export const GAME_UI = {
     hero: 'Island Rotors',
     line: 'The Skyhook H-3 — the one that hovers',
     cards: [
-      { to: 'tutorial', icon: 'learn', title: 'Tutorial', sub: 'Start here — the aeroplane lessons still apply' },
+      { to: 'tutorial', icon: 'learn', title: 'Tutorial', sub: 'Start here — your first hover' },
       { to: 'missions', icon: 'target', title: 'Missions', sub: 'Winch work, mountain pads and places with no runway' },
       { to: 'free', icon: 'cloud', title: 'Free Flight', sub: 'Any weather, any time of day, no rules' },
       { to: 'maps', icon: 'map', title: 'Choose Map', sub: 'Anywhere with somewhere flat to set down' },
+      { to: 'multiplayer', icon: 'players', title: 'Multiplayer', sub: 'Fly with your friends — five lobbies on your Wi-Fi, eight in each, or a friend by code' },
       { to: 'more', icon: 'more', title: 'More', sub: 'Your rank and leaderboard, the hangar, and settings' },
     ],
   },
@@ -72,6 +117,7 @@ export const GAME_UI = {
       { to: 'missions', icon: 'target', title: 'Runs', sub: 'Jobs on the water, on whichever island you pick' },
       { to: 'drive', icon: 'boat', title: 'Open Water', sub: 'No clock. Just take her out' },
       { to: 'maps', icon: 'map', title: 'Choose your water', sub: 'Every island has a different coast' },
+      { to: 'multiplayer', icon: 'players', title: 'Multiplayer', sub: 'Sail with your friends — five lobbies on your Wi-Fi, eight in each, or a friend by code' },
       { to: 'more', icon: 'more', title: 'More', sub: 'Your rank and leaderboard, the hangar, and settings' },
     ],
   },
@@ -89,6 +135,7 @@ export const GAME_UI = {
       { to: 'missions', icon: 'target', title: 'Jobs', sub: 'Six runs, on whichever island you pick' },
       { to: 'drive', icon: 'car', title: 'Island Roads', sub: 'No clock. Take a job at the depot, or just drive' },
       { to: 'maps', icon: 'map', title: 'Choose your island', sub: 'Every one has a different road network' },
+      { to: 'multiplayer', icon: 'players', title: 'Multiplayer', sub: 'Drive with your friends — five lobbies on your Wi-Fi, eight in each, or a friend by code' },
       { to: 'more', icon: 'more', title: 'More', sub: 'Your rank and leaderboard, the hangar, and settings' },
     ],
   },
@@ -163,8 +210,14 @@ export function installGameUi(menus, hooks = {}) {
    * job, not the menu's.
    */
   menus.registerMissions = function (gameId, defs) {
-    const grid = menus.screens.missions && menus.screens.missions.querySelector('.mission-grid');
-    if (!grid || !defs || !defs.length) return;
+    /*
+     * The board is grouped under headings now, one grid per heading, so the
+     * whole screen is searched for an existing card — `.mission-grid` alone
+     * would be the first heading's grid, and every card under any other
+     * heading would have looked missing and been built a second time.
+     */
+    const board = menus.screens.missions;
+    if (!board || !defs || !defs.length) return;
     for (const m of defs) {
       /*
        * A card that already exists gets TAGGED, not skipped.
@@ -177,21 +230,30 @@ export function installGameUi(menus, hooks = {}) {
        * were hidden and the screen was blank. That is "my jobs in car doesn't
        * work": the jobs were fine, the board was empty.
        */
-      const found = grid.querySelector(`[data-mission="${m.id}"]`);
+      const found = board.querySelector(`[data-mission="${m.id}"]`);
       if (found) {
         found.dataset.game = gameId;
         continue;
       }
+      // A mission nobody put in MISSIONS: under its own heading, like the rest.
+      const { cat, find } = categoryItemData('missions', m);
+      const grid = menus.catGridFor ? menus.catGridFor('missions', cat) : board.querySelector('.mission-grid');
+      if (!grid) continue;
       const card = document.createElement('article');
       card.className = 'mission-card';
       card.dataset.mission = m.id;
       card.dataset.game = gameId;
+      card.dataset.catItem = '';
+      card.dataset.cat = cat;
+      card.dataset.find = find;
+      menus._extraMissions = menus._extraMissions || {};
+      menus._extraMissions[m.id] = m;
       card.innerHTML = `
         <div class="mission-top">
           <span class="mission-icon">${m.icon || '▣'}</span>
           <div>
             <h3>${m.name}</h3>
-            <span class="mission-diff diff-${String(m.difficulty || 'easy').toLowerCase()}">${m.difficulty || 'Easy'}</span>
+            <span class="mission-diff diff-${String(m.difficulty || 'easy').toLowerCase().replace(/[^a-z0-9]+/g, '-')}">${m.difficulty || 'Easy'}</span>
             <span class="mission-sub">${m.short || ''}</span>
           </div>
         </div>
@@ -225,15 +287,31 @@ export function installGameUi(menus, hooks = {}) {
          * page is offering a mission that cannot be flown as described.
          */
         const belongs = (card.dataset.game || 'flight') === game;
-        // Never un-hide something the passcode hid. The lock sync has already
-        // run by the time this does, so hidden-true is respected and only
-        // hidden-false is narrowed.
-        if (!card.hidden && !belongs) card.hidden = true;
-        else if (belongs && card.dataset.gameHidden === '1') card.hidden = false;
+        /*
+         * Passcode AND game, both asked here, every time.
+         *
+         * This used to trust that the lock sync had run just before it, and
+         * only narrowed: "a card the game filter hid comes back when its game
+         * does". But setGame() calls this without the lock sync. Measured on
+         * the base build, on a profile with no passcode: setGame('car') then
+         * setGame('flight') left all four military cards with hidden = false,
+         * until something next opened the screen through show(). With the
+         * headings counting visible cards, that would have been a Military
+         * heading with four missions under it.
+         */
+        const def = MISSIONS.find((x) => x.id === card.dataset.mission) || (menus._extraMissions || {})[card.dataset.mission];
+        const locked = !!def && Prog.needsPasscode(menus.prog || {}, def);
+        card.hidden = locked || !belongs;
         card.dataset.gameHidden = !belongs ? '1' : '0';
       }
       const head = missions.querySelector('.screen-head h2');
       if (head) head.textContent = game === 'car' ? 'Jobs' : game === 'boat' ? 'Runs' : 'Missions';
+      const find = missions.querySelector('[data-cat-search]');
+      if (find) {
+        const word = game === 'car' ? 'Find a job' : game === 'boat' ? 'Find a run' : 'Find a mission';
+        find.placeholder = word;
+        find.setAttribute('aria-label', word);
+      }
       /*
        * And the button. menus.js writes "Fly this mission" on every card it
        * builds, which on the courier's job board is the wrong verb for the
@@ -245,6 +323,9 @@ export function installGameUi(menus, hooks = {}) {
       for (const b of missions.querySelectorAll('[data-start]')) {
         if (b.textContent !== verb) b.textContent = verb;
       }
+      // Last, once every card's hidden is settled: which headings have
+      // anything under them, and the chips that go with them.
+      menus.syncCategories && menus.syncCategories('missions');
     }
 
     const maps = menus.screens.maps;
@@ -374,11 +455,25 @@ export function installGameUi(menus, hooks = {}) {
         .map(
           (c) => `<button class="card-btn" data-act="${c.to}">
             <span class="card-icon">${icon(c.icon, 24)}</span>
-            <span class="card-body"><strong>${c.title}</strong><em>${c.sub}</em></span>
+            <span class="card-body"><strong>${c.title}</strong><em${c.counted ? ' data-missions-line' : ''}>${c.sub}</em></span>
           </button>`
         )
         .join('');
     }
+    menus.refreshMissionsLine();
+  };
+
+  /**
+   * Rewrite a counted Missions line from what is actually behind the button.
+   * menus.js calls this on every show('main'), because entering the passcode
+   * in the hangar adds four missions and nothing else repaints this card.
+   */
+  menus.refreshMissionsLine = function () {
+    const main = menus.screens.main;
+    const el = main && main.querySelector('[data-missions-line]');
+    if (!el) return;
+    const text = missionsLine(menus.currentGame || 'flight', menus.prog);
+    if (text && el.textContent !== text) el.textContent = text;
   };
 
   /*
@@ -404,9 +499,12 @@ export function installGameUi(menus, hooks = {}) {
    */
   menus.setGame = function (id) {
     if (!GAME_UI[id]) id = 'flight';
+    const changed = menus.currentGame !== id;
     menus.currentGame = id;
     // One attribute, off which the whole menu can be themed in CSS.
     if (menus.root) menus.root.dataset.game = id;
+    // A chip or a search typed for the aeroplanes means nothing on the boat.
+    if (changed && menus.resetCategoryFilter) menus.resetCategoryFilter('missions');
     menus.applyGameUi();
     menus.applyGameToCards();
     menus.syncBar && menus.syncBar();

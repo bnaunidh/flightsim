@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vehicle model viewer</title>
+<!--
+  A dev page for the three Blender vehicles (tools/blender/).
+
+  It reads each .glb through src/vehicles/glb.js — the same reader the game
+  uses, not GLTFLoader — dresses it with src/vehicles/blender-models.js, and
+  lights it with the game's own SkyDome and Weather (src/world/sky.js,
+  weather.js): the same sun, hemisphere, fill and sky environment map, ACES at
+  exposure 1.12. What you see here is what the game draws, minus the world.
+
+  Serve the repo root (python3 serve.py) and open /tools/model-viewer.html.
+  Drag to orbit, wheel or pinch to zoom, right-drag or shift-drag to pan.
+-->
+<style>
+  :root { color-scheme: dark; --panel: rgba(18, 24, 32, 0.86); --line: rgba(255, 255, 255, 0.12); --ink: #e8edf2; --dim: #9aa7b4; --accent: #f0a020; }
+  html, body { margin: 0; height: 100%; background: #0e1318; color: var(--ink); font: 13px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  #panel { position: absolute; top: 12px; left: 12px; width: 250px; max-height: calc(100% - 24px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; box-sizing: border-box; }
+  h1 { font-size: 14px; margin: 0 0 8px; }
+  label { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; color: var(--dim); }
+  label > span { color: var(--ink); }
+  select, input[type=range] { width: 130px; }
+  select { background: #1c2530; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+  fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 10px 0 0; padding: 4px 10px 8px; }
+  legend { color: var(--dim); padding: 0 4px; }
+  .stats { font-variant-numeric: tabular-nums; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--dim); white-space: pre-line; }
+  .stats b { color: var(--ink); font-weight: 600; }
+  button { background: #1c2530; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; cursor: pointer; margin: 6px 4px 0 0; }
+  button:hover { border-color: var(--accent); }
+  .only { display: none; }
+  body[data-kind=heli] .heli, body[data-kind=car] .car, body[data-kind=boat] .boat { display: block; }
+  @media (max-width: 560px) { #panel { width: calc(100% - 24px); max-height: 45%; } }
+</style>
+</head>
+<body data-kind="heli">
+<canvas id="c"></canvas>
+<div id="panel">
+  <h1>Vehicle model viewer</h1>
+  <label>Model
+    <select id="kind">
+      <option value="heli">Skyhook H-3 (helicopter)</option>
+      <option value="car">Island Courier van</option>
+      <option value="boat">Kestrel launch</option>
+    </select>
+  </label>
+  <label>Time <select id="time"><option value="day">Midday</option><option value="sunset">Sunset</option><option value="night">Night</option></select></label>
+  <label>Sky <select id="cond"><option value="clear">Clear</option><option value="cloudy">Cloudy</option><option value="rainy">Rainy</option><option value="stormy">Stormy</option></select></label>
+  <label>Animate <input type="checkbox" id="animate" checked></label>
+  <label>Speed <input type="range" id="speed" min="-4" max="28" step="0.5" value="6"></label>
+  <label>Steer <input type="range" id="steer" min="-1" max="1" step="0.05" value="0"></label>
+  <label>Lights <input type="checkbox" id="lights" checked></label>
+
+  <fieldset class="only heli"><legend>Helicopter</legend>
+    <label>Rotor (NR) <input type="range" id="rotor" min="0" max="1" step="0.01" value="1"></label>
+    <label>Cyclic pitch <input type="range" id="cpitch" min="-1" max="1" step="0.05" value="0"></label>
+    <label>Cyclic roll <input type="range" id="croll" min="-1" max="1" step="0.05" value="0"></label>
+    <label>Searchlight <input type="checkbox" id="search"></label>
+    <label>Winch (m) <input type="range" id="winch" min="0.5" max="20" step="0.5" value="0.5"></label>
+  </fieldset>
+  <fieldset class="only car"><legend>Van</legend>
+    <label>Braking <input type="checkbox" id="brake"></label>
+    <label>Reverse <input type="checkbox" id="reverse"></label>
+    <label>Hazards <input type="checkbox" id="hazard"></label>
+    <label>Beacon <input type="checkbox" id="beacon" checked></label>
+    <label>Body roll <input type="range" id="roll" min="-0.16" max="0.16" step="0.01" value="0"></label>
+  </fieldset>
+  <fieldset class="only boat"><legend>Launch</legend>
+    <label>Pose on the sea <input type="checkbox" id="pose" checked></label>
+    <label>Wake <input type="checkbox" id="wake" checked></label>
+    <label>Show sea <input type="checkbox" id="sea" checked></label>
+  </fieldset>
+  <button id="chase">Game chase camera</button><button id="front">Front 3/4</button><button id="top">Top</button>
+  <div class="stats" id="stats">Loading…</div>
+</div>
+<script type="module">
+import * as THREE from '../src/vendor/three.module.js';
+import { SkyDome } from '../src/world/sky.js';
+import { Weather } from '../src/world/weather.js';
+import { drawStats } from '../src/vehicles/glb.js';
+import { SurfaceVehicle } from '../src/vehicles/surface.js';
+import {
+  preloadVehicleModels, blenderHeli, blenderCar, blenderBoat, animateBlenderVehicle, blenderModelStatus,
+} from '../src/vehicles/blender-models.js';
+
+const $ = (id) => document.getElementById(id);
+const canvas = $('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+// The game's renderer settings (main.js boot).
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 60000);
+const weather = new Weather();
+const sky = new SkyDome(scene, { shadows: true, shadowMapSize: 2048 });
+sky.update(weather);
+sky.buildEnvironment(renderer, scene);
+
+// Something to stand on: tarmac for the helicopter and the van, sea for the launch.
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(60, 48).rotateX(-Math.PI / 2),
+  new THREE.MeshStandardMaterial({ color: 0x5b6068, roughness: 0.92 })
+);
+ground.receiveShadow = true;
+scene.add(ground);
+const sea = new THREE.Mesh(
+  new THREE.CircleGeometry(80, 48).rotateX(-Math.PI / 2),
+  new THREE.MeshStandardMaterial({ color: 0x1d5570, roughness: 0.18, metalness: 0.1, transparent: true, opacity: 0.82, depthWrite: false })
+);
+sea.receiveShadow = true;
+scene.add(sea);
+
+/* ---- orbit controls, by hand ---- */
+const orbit = { target: new THREE.Vector3(0, 0.8, 0), az: 0.8, el: 0.28, dist: 12 };
+function placeCamera() {
+  orbit.el = Math.max(-0.2, Math.min(1.5, orbit.el));
+  orbit.dist = Math.max(1.2, Math.min(120, orbit.dist));
+  const c = Math.cos(orbit.el);
+  camera.position.set(
+    orbit.target.x + orbit.dist * c * Math.sin(orbit.az),
+    orbit.target.y + orbit.dist * Math.sin(orbit.el),
+    orbit.target.z + orbit.dist * c * Math.cos(orbit.az)
+  );
+  camera.lookAt(orbit.target);
+}
+const pointers = new Map();
+let pinch = 0;
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('pointerdown', (e) => {
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey });
+});
+canvas.addEventListener('pointerup', (e) => { pointers.delete(e.pointerId); pinch = 0; });
+canvas.addEventListener('pointercancel', (e) => { pointers.delete(e.pointerId); pinch = 0; });
+canvas.addEventListener('pointermove', (e) => {
+  const p = pointers.get(e.pointerId);
+  if (!p) return;
+  const dx = e.clientX - p.x;
+  const dy = e.clientY - p.y;
+  p.x = e.clientX;
+  p.y = e.clientY;
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinch) orbit.dist *= pinch / d;
+    pinch = d;
+  } else if (p.pan) {
+    const k = orbit.dist * 0.0016;
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+    orbit.target.addScaledVector(right, -dx * k).addScaledVector(up, dy * k);
+  } else {
+    orbit.az -= dx * 0.006;
+    orbit.el += dy * 0.005;
+  }
+  placeCamera();
+});
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  orbit.dist *= Math.exp(e.deltaY * 0.0012);
+  placeCamera();
+}, { passive: false });
+
+/* ---- the models ---- */
+const views = {
+  // front: [azimuth, elevation, distance], the modeller's hero angle (ahead,
+  // to starboard); chase: the game's own chase framing; ground: where the
+  // model's wheels or skids meet the ground, from the fit numbers.
+  heli: { target: 0.4, front: [2.4, 0.18, 13], chase: { back: 21, up: 5.2, fov: 62 }, ground: -1.6875 },
+  car: { target: 0.9, front: [2.4, 0.2, 8], chase: { back: 8, up: 3.2, fov: 64 }, ground: -0.06 },
+  boat: { target: 0.9, front: [2.4, 0.18, 14], chase: { back: 14, up: 5.6, fov: 68 }, ground: null },
+};
+let kind = 'heli';
+let model = null;
+
+function build() {
+  if (model) scene.remove(model);
+  model = kind === 'heli' ? blenderHeli() : kind === 'car' ? blenderCar() : blenderBoat();
+  document.body.dataset.kind = kind;
+  if (!model) {
+    $('stats').textContent = `The ${kind} did not load: ${blenderModelStatus().errors[kind] || 'unknown'}`;
+    return;
+  }
+  scene.add(model);
+  const v = views[kind];
+  ground.visible = v.ground !== null;
+  if (v.ground !== null) ground.position.y = v.ground;
+  sea.visible = kind === 'boat' && $('sea').checked;
+  setView('front');
+  statT = 0; // the counts on screen are this model's from the next frame
+}
+
+function setView(which) {
+  const v = views[kind];
+  orbit.target.set(0, v.target, 0);
+  camera.fov = 62;
+  if (which === 'front') [orbit.az, orbit.el, orbit.dist] = [v.front[0], v.front[1], v.front[2]];
+  else if (which === 'top') [orbit.az, orbit.el, orbit.dist] = [0, 1.5, v.front[2] * 1.3];
+  else {
+    // camera.js / driving.js: behind and above, looking at the vehicle.
+    camera.fov = v.chase.fov;
+    orbit.az = 0;
+    orbit.dist = Math.hypot(v.chase.back, v.chase.up);
+    orbit.el = Math.atan2(v.chase.up - v.target, v.chase.back);
+  }
+  camera.updateProjectionMatrix();
+  placeCamera();
+}
+
+/* ---- the state the game would pass ---- */
+function state() {
+  const speed = +$('speed').value;
+  const steer = +$('steer').value;
+  const lights = $('lights').checked;
+  const dark = weather.isNight ? 1 : weather.cond.cloud > 0.75 ? 0.55 : 0.18;
+  if (kind === 'heli') {
+    return {
+      rotor: +$('rotor').value, cyclicPitch: +$('cpitch').value, cyclicRoll: +$('croll').value,
+      lights, dark, searchlight: $('search').checked ? 1 : 0, searchTilt: 0.5, winch: +$('winch').value,
+    };
+  }
+  if (kind === 'car') {
+    return {
+      speed, steer, steerAngle: steer * 0.52, braking: $('brake').checked, reverse: $('reverse').checked,
+      hazard: $('hazard').checked, beacon: $('beacon').checked, headlights: lights, bodyRoll: +$('roll').value,
+    };
+  }
+  return { speed: Math.min(14, speed), steer, lights, sea: 0, wake: $('wake').checked };
+}
+
+for (const id of ['time', 'cond']) {
+  $(id).addEventListener('change', () => {
+    weather.time = $('time').value;
+    weather.condition = $('cond').value;
+    sky.update(weather);
+    sky.refreshEnvironment(true);
+  });
+}
+$('kind').addEventListener('change', () => { kind = $('kind').value; build(); });
+$('sea').addEventListener('change', () => { sea.visible = kind === 'boat' && $('sea').checked; });
+$('chase').addEventListener('click', () => setView('chase'));
+$('front').addEventListener('click', () => setView('front'));
+$('top').addEventListener('click', () => setView('top'));
+
+function resize() {
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / Math.max(1, h);
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+
+let boatPose = null;
+let last = performance.now();
+let statT = 0;
+function frame(t) {
+  const wall = (t - last) / 1000;
+  const dt = Math.min(0.1, wall);
+  last = t;
+  if (model) {
+    const s = state();
+    /*
+     * The boat is posed where the game poses her: surface.js, with this
+     * hull's numbers (userData.hullFit), in a flat calm at a steady speed and
+     * helm — her trim, her heel into the turn, her lift onto the plane and
+     * the keep-dry lift. Unticked, she sits level on her design waterline.
+     */
+    if (kind === 'boat') {
+      model.position.set(0, 0, 0);
+      model.quaternion.identity();
+      if ($('pose').checked) {
+        const v = (boatPose ||= new SurfaceVehicle('boat')).fitHull(model.userData.hullFit);
+        const S = v.spec;
+        v.speed = s.speed;
+        v.steer = s.steer;
+        v.pitch = Math.min(1, Math.abs(s.speed) / S.topSpeed) * (S.planeTrim ?? 0.14);
+        v.bank = -s.steer * S.bankInTurn * Math.min(1, Math.abs(s.speed) / 8);
+        model.position.y = v.drawnRise(0);
+        model.quaternion.setFromEuler(new THREE.Euler(v.pitch, 0, v.bank, 'YXZ'));
+      }
+    }
+    if (kind === 'car') model.quaternion.setFromEuler(new THREE.Euler(0, 0, s.bodyRoll, 'YXZ'));
+    animateBlenderVehicle(model, $('animate').checked ? s : { ...s, speed: 0, rotor: 0 }, dt);
+  }
+  sky.followTarget(orbit.target);
+  sky.update(weather);
+  renderer.render(scene, camera);
+  statT -= wall;
+  if (model && statT <= 0) {
+    statT = 0.5;
+    const d = drawStats(model);
+    const st = blenderModelStatus();
+    $('stats').innerHTML =
+      `<b>${d.triangles.toLocaleString()}</b> triangles, <b>${d.drawCalls}</b> draw calls (model)\n` +
+      `<b>${renderer.info.render.triangles.toLocaleString()}</b> triangles, <b>${renderer.info.render.calls}</b> calls (frame, with shadows and sky)\n` +
+      `loaded in ${st.ms[kind] ?? '?'} ms`;
+  }
+  requestAnimationFrame(frame);
+}
+
+resize();
+placeCamera();
+await preloadVehicleModels();
+build();
+requestAnimationFrame(frame);
+window.__viewer = { scene, camera, renderer, get model() { return model; }, setKind: (k) => { kind = k; $('kind').value = k; build(); }, setView, weather, sky };
+</script>
+</body>
+</html>

@@ -54,11 +54,17 @@
  *                gameOf() and missionsFor().
  *   menus.js     one clause in syncMissionLocks, one call in setGame.
  *   main.js      call clearHeliProps(this) beside this.clearPursuer().
+ * That last one is no longer needed: this file clears its own props through
+ * the plug-in hooks (see HELI_PROPS_HOOK below), so main.js is not touched
+ * outside the helicopter's own branches.
  */
 
 import * as THREE from '../vendor/three.module.js';
-import { heightAt, platformAt } from '../world/terrain.js';
-import { UNITS } from '../aircraft/physics.js';
+import { registerExtension } from './extensions.js';
+import { heightAt, platformAt, MAP } from '../world/terrain.js';
+import { PADS } from '../world/pads.js';
+import { UNITS, SPEC } from '../aircraft/physics.js';
+import { isKidMode, parkingClearance, chaseViewClear } from '../aircraft/rotor-assist.js';
 import { createFishingBoat } from '../fleet/maritime.js';
 
 const clamp = THREE.MathUtils.clamp;
@@ -79,6 +85,19 @@ export function surfaceAt(x, z) {
   return Math.max(0, heightAt(x, z));
 }
 
+/**
+ * Metres of air under the SKIDS. The band used to be judged from the
+ * machine's centre, 1.7 m higher, while the card and the altimeter now read
+ * the skids — sitting on a pad is zero on the panel, and it is zero here.
+ * rotor-assist.js works it out every physics step; the fallback is the same
+ * sum for a machine that has not flown a step yet.
+ */
+export function skidHeight(ac) {
+  const R = ac.rotor;
+  if (R && Number.isFinite(R.heightAbove)) return R.heightAbove;
+  return ac.pos.y - surfaceAt(ac.pos.x, ac.pos.z) - 1.69;
+}
+
 /* ------------------------------------------------------------------ *
  * Places.
  *
@@ -95,48 +114,93 @@ export function surfaceAt(x, z) {
 const SITES = {
   hospital: { name: 'St Brendan Hospital', x: 520, z: 760, r: 12 },
   harbour: { name: 'Harbour Head', x: -2050, z: 200, r: 13 },
-  cove: { name: 'Cormorant Cove', x: -230, z: 2260, r: 14 },
+  /*
+   * Moved, measured 2026-09-23 on Port Kestrel's own height field. (-230,
+   * 2260) was the sand itself, and the sand falls eight metres across the
+   * twelve-metre landing circle — a 19 degree slope, which no helicopter
+   * lands on. There is no level ground on this shore at all; the nearest
+   * is the grass above the cove at (-400, 2000), 32 m up, 4 degrees across
+   * thirty metres.
+   */
+  cove: { name: 'Cormorant Cove', x: -400, z: 2000, r: 14 },
   ledge: { name: 'Needle Rock ledge', x: -3280, z: -3660, r: 9 },
   eastshore: { name: 'Gannet Point', x: 2060, z: 60, r: 13 },
-  swimmer: { name: 'The swimmer', x: -2950, z: 1250, r: 12 },
+  /*
+   * Moved to where the words say he is. The briefing puts the boat north-west
+   * of the harbour, which is where Port Kestrel's fishing fleet works
+   * (boatHome -2600, -2600); (-2950, 1250) was three kilometres SOUTH-west
+   * of the real quay pad. This is 1.6 km north-west of it, in open water.
+   */
+  swimmer: { name: 'The swimmer', x: -2900, z: -2650, r: 12 },
 };
+
+/*
+ * Which pad a site means on a map that calls it something else. The Stacks
+ * has no Needle Rock: its climber is on Gannet Stack, which is the same four
+ * kilometres north-west of the rescue pad that the briefing always said.
+ */
+const SITE_ALIASES = {
+  stacks: { ledge: 'gannet' },
+};
+
+function padFor(key) {
+  const alias = MAP && SITE_ALIASES[MAP.id] && SITE_ALIASES[MAP.id][key];
+  const id = alias || key;
+  for (let i = 0; i < PADS.length; i++) if (PADS[i].id === id) return PADS[i];
+  return null;
+}
 
 /**
  * Where a site actually is this flight.
  *
- * Order matters: the live pad list wins, then the map data, then the measured
- * fallback. The y is read from the world every time rather than stored, so a
- * pad that moves onto a roof or a rig deck brings the mission's arrow, its
- * beacon and its landing check up onto the deck with it and nothing here has
- * to be told.
+ * Order matters: the live pad list wins, then the measured fallback. The y is
+ * read from the world every time rather than stored, so a pad that moves onto
+ * a roof or a rig deck brings the mission's arrow, its beacon and its landing
+ * check up onto the deck with it and nothing here has to be told.
+ *
+ * MEASURED 2026-09-23: this used to look for `sim.pads` and
+ * `sim.map.scenery.pads`, and neither has ever existed — the pad list is
+ * PADS in world/pads.js. So every mission flew to the fallback numbers,
+ * which were sampled on the OLD Kestrel map. On Port Kestrel the "harbour
+ * pad" was a slope 2 km from the real quay pad; on The Stacks the spawn
+ * point (520, 760) is open sea 48 m deep, so The Ledge put the helicopter
+ * underwater on the first frame; on Ironhead Deep it is a 20-degree
+ * hillside.
  */
 export function siteAt(ctx, key) {
+  const p = padFor(key);
+  if (p) return new THREE.Vector3(p.pos.x, surfaceAt(p.pos.x, p.pos.z), p.pos.z);
   const fb = SITES[key] || SITES.hospital;
-  const pads =
-    (ctx.sim && ctx.sim.pads) ||
-    (ctx.sim && ctx.sim.map && ctx.sim.map.scenery && ctx.sim.map.scenery.pads) ||
-    null;
-  let x = fb.x;
-  let z = fb.z;
-  if (pads) {
-    const p = pads.find && pads.find((q) => q.id === key);
-    if (p) {
-      x = p.x;
-      z = p.z;
-    }
-  }
-  return new THREE.Vector3(x, surfaceAt(x, z), z);
+  return new THREE.Vector3(fb.x, surfaceAt(fb.x, fb.z), fb.z);
 }
 
 function siteName(ctx, key) {
-  const pads = (ctx.sim && ctx.sim.pads) || null;
-  const p = pads && pads.find ? pads.find((q) => q.id === key) : null;
+  const p = padFor(key);
   return (p && p.name) || (SITES[key] && SITES[key].name) || 'the pad';
 }
 
 function siteRadius(key) {
-  return (SITES[key] && SITES[key].r) || 12;
+  const p = padFor(key);
+  return (p && p.r) || (SITES[key] && SITES[key].r) || 12;
 }
+
+/**
+ * A mission's start, on a pad, resolved when the flight starts — after the
+ * map is built — rather than when this file is loaded. The same getter trick
+ * missions.js uses for RUNWAY_START.
+ */
+function padSpawn(key, headingDeg) {
+  return {
+    get pos() {
+      return siteAt(null, key);
+    },
+    headingDeg,
+  };
+}
+
+/** Is a child flying this with the kid computer, or a pilot with a lever? */
+let KID = true;
+const kidWords = (kid, lever) => (KID ? kid : lever);
 
 /**
  * Down, stopped, not broken, and in the right place.
@@ -203,6 +267,26 @@ export class HoverTask {
     this._remote = false;
     this._said = {};
     this._peak = 0;
+    /*
+     * What the HUD's hold gauge reads. hud-rotor.js has been drawing its arc,
+     * its three lights and its height band from `sim.hoverBox` since it was
+     * written, and nothing ever set one — setHoverBox() does not exist — so
+     * the gauge never appeared in a single winch. One object, made once,
+     * updated in place.
+     */
+    this.box = {
+      pos: this.pos,
+      radius: this.spec.radius,
+      minAgl: this.spec.aglMin,
+      maxAgl: this.spec.aglMax,
+      need: this.spec.seconds,
+      held: 0,
+      label: this.spec.label,
+      driftOk: false,
+      inCircle: false,
+      aglOk: false,
+      agl: 0,
+    };
   }
 
   /** Hand it to the real hover box if there is one; keep the arithmetic if not. */
@@ -215,6 +299,8 @@ export class HoverTask {
     if (ctx.sim && typeof ctx.sim.setHoverBox === 'function') {
       ctx.sim.setHoverBox({ ...this.spec });
       this._remote = true;
+    } else if (ctx.sim) {
+      ctx.sim.hoverBox = this.box;
     }
     return this;
   }
@@ -251,7 +337,7 @@ export class HoverTask {
 
     const ac = ctx.ac;
     this.drift = ac.groundSpeed;
-    this.agl = ac.pos.y - surfaceAt(ac.pos.x, ac.pos.z);
+    this.agl = skidHeight(ac);
     this.inside = dist2D(ac.pos, this.pos) <= this.spec.radius;
     this.driftOk = this.drift <= this.spec.driftMax;
     this.aglOk = this.agl >= this.spec.aglMin && this.agl <= this.spec.aglMax;
@@ -260,6 +346,13 @@ export class HoverTask {
     const before = this.held;
     this.held = clamp(this.held + (ok ? dt : -dt * this.spec.drain), 0, this.spec.seconds);
     this._peak = Math.max(this._peak, this.held);
+    const b = this.box;
+    b.held = this.held;
+    b.driftOk = this.driftOk;
+    b.inCircle = this.inside;
+    b.aglOk = this.aglOk;
+    b.agl = this.agl;
+    if (ctx.sim && ctx.sim.hoverBox !== b && !this.done) ctx.sim.hoverBox = b;
 
     /*
      * Without the HUD arc the player has no idea the cable is running, so say
@@ -294,9 +387,9 @@ export class HoverTask {
           ? 'You are drifting off the circle.'
           : !this.aglOk
             ? this.agl < this.spec.aglMin
-              ? 'Too low for the winch — a little more collective.'
-              : 'Too high for the winch — ease the collective down.'
-            : 'Moving too fast over the ground. Stop it, then hold it.',
+              ? kidWords('Too low for the winch — tap Shift to go up a little.', 'Too low for the winch — a little more collective.')
+              : kidWords('Too high for the winch — tap Ctrl to come down a little.', 'Too high for the winch — ease the collective down.')
+            : kidWords('Moving too fast over the ground. Let go of W A S D and it will stop.', 'Moving too fast over the ground. Stop it, then hold it.'),
         'warn',
         3.4
       );
@@ -310,6 +403,7 @@ export class HoverTask {
     if (this._remote && ctx.sim && typeof ctx.sim.clearHoverBox === 'function') {
       ctx.sim.clearHoverBox();
     }
+    if (ctx.sim && ctx.sim.hoverBox === this.box) ctx.sim.hoverBox = null;
   }
 }
 
@@ -336,6 +430,9 @@ const PROPS = [];
 
 export function clearHeliProps(sim) {
   const scene = sim && sim.scene;
+  // A winch that was running when the last flight ended must not leave its
+  // gauge on the next flight's HUD.
+  if (sim) sim.hoverBox = null;
   for (const p of PROPS) {
     if (scene && p.group) scene.remove(p.group);
     if (p.dispose) {
@@ -348,6 +445,30 @@ export function clearHeliProps(sim) {
   }
   PROPS.length = 0;
 }
+
+/*
+ * HELI_PROPS_HOOK. Who calls clearHeliProps(). Every helicopter mission clears
+ * them at its own top (begin()), and the flight that has to clear them
+ * otherwise is the one AFTER a helicopter mission — which may be an
+ * aeroplane, a boat or the car. The first repair did that with a call at the
+ * top of main.js's startMode(), for every flight, which the review of
+ * 30a4007 listed as an edit outside the helicopter's own branches. So it is
+ * done from here, through the plug-in layer's hooks: back to the menu or the
+ * runway (stop), and at the start of any flight or drive that is not a
+ * helicopter mission (startMode — a helicopter mission's own begin() has
+ * already run by then, from runner.start(), and made the props it needs).
+ */
+const HELI_IDS = new Set();
+registerExtension({
+  id: 'heli-mission-props',
+  stop(sim) {
+    clearHeliProps(sim);
+  },
+  startMode(sim) {
+    const def = sim && sim.runner && sim.runner.def;
+    if (!def || !HELI_IDS.has(def.id)) clearHeliProps(sim);
+  },
+});
 
 /**
  * The place, drawn in the world: a lit ring on the ground and a strobe.
@@ -479,8 +600,13 @@ class RescueBoat {
 function winchStep({ id, text, hint, atc, label, at, spec = {}, onPicked }) {
   return {
     id,
-    text,
-    hint,
+    // Either words, or a function choosing words for kid mode or the lever.
+    get text() {
+      return typeof text === 'function' ? text() : text;
+    },
+    get hint() {
+      return typeof hint === 'function' ? hint() : hint;
+    },
     atc,
     targetLabel: label,
     /*
@@ -507,6 +633,7 @@ function winchStep({ id, text, hint, atc, label, at, spec = {}, onPicked }) {
 
 /** Every winch mission ticks its hover and whatever is moving underneath it. */
 function heliTick(ctx, dt) {
+  KID = isKidMode(ctx.ac);
   if (ctx.data.hover) ctx.data.hover.update(dt, ctx);
   if (ctx.data.boat) ctx.data.boat.update(dt);
   for (const p of PROPS) if (p.update) p.update(dt);
@@ -533,6 +660,18 @@ function load(ctx, kg) {
 
 function unload(ctx) {
   ctx.ac.extraMass = 0;
+}
+
+/**
+ * The top of every helicopter mission: last flight's props and gauge gone,
+ * the cabin empty, and which words to use. main.js never did call
+ * clearHeliProps() at the top of a flight, so a failed Man Overboard left its
+ * boat and its strobe in the sea for whatever was flown next.
+ */
+function begin(ctx) {
+  clearHeliProps(ctx.sim);
+  unload(ctx);
+  KID = isKidMode(ctx.ac);
 }
 
 /* ================================================================== *
@@ -563,16 +702,31 @@ export const HELI_MISSIONS = [
     weather: { time: 'day', condition: 'clear', windSpeedKts: 4, windDirDeg: 250 },
     parTime: 200,
     onStart: (ctx) => {
-      unload(ctx);
+      begin(ctx);
       ctx.data.turned = 0;
       siteMarker(ctx, siteAt(ctx, 'harbour'));
     },
-    spawn: { pos: new THREE.Vector3(SITES.harbour.x, 0, SITES.harbour.z), headingDeg: 250 },
+    spawn: padSpawn('harbour', 250),
     steps: [
       {
         id: 'lift',
-        text: 'Hold Shift to raise the collective until the skids come off the pad.',
-        hint: 'Shift lifts, Ctrl lowers. It will take about half of the range before it flies at all.',
+        get text() {
+          return kidWords(
+            'Hold Shift to lift off the pad. Let go when you are a little way up — it holds that height by itself.',
+            'Hold Shift to raise the collective until the skids come off the pad.'
+          );
+        },
+        /*
+         * "About half of the range" was never true. The lever's idle is 0.18
+         * of collective, so the hover sits at 39% of lever travel — and in kid
+         * mode there is no range at all, Shift simply means up.
+         */
+        get hint() {
+          return kidWords(
+            'Shift goes up, Ctrl comes down, and letting go of both holds the height.',
+            'Shift lifts, Ctrl lowers. It takes about 40% of the lever before it flies at all.'
+          );
+        },
         atc: {
           text: 'Skyhook three, Kestrel Rescue. Pad is yours, wind two five zero at four. Take your time.',
           voice: 'tower',
@@ -581,8 +735,16 @@ export const HELI_MISSIONS = [
       },
       winchStep({
         id: 'hold',
-        text: 'Now hold twenty feet for five seconds. Do not chase it — tiny taps of Shift and Ctrl.',
-        hint: 'If it climbs, let go of Shift and wait. The machine takes a second to answer. Wait for it.',
+        text: () =>
+          kidWords(
+            'Now hold it at about twenty feet over the pad for five seconds. Let go of everything — it holds itself.',
+            'Now hold twenty feet for five seconds. Do not chase it — tiny taps of Shift and Ctrl.'
+          ),
+        hint: () =>
+          kidWords(
+            'The HEIGHT light goes green in the band. Too high? Tap Ctrl. Too low? Tap Shift.',
+            'If it climbs, let go of Shift and wait. The machine takes a second to answer. Wait for it.'
+          ),
         label: 'The pad',
         at: (ctx) => siteAt(ctx, 'harbour'),
         /*
@@ -610,7 +772,12 @@ export const HELI_MISSIONS = [
       {
         id: 'down',
         text: 'Come back down onto the H and set her down gently.',
-        hint: 'Ease the collective off a little at a time. Aim for the middle and let it settle.',
+        get hint() {
+          return kidWords(
+            'Hold Ctrl. It slows down by itself just above the ground, so keep holding until the skids touch.',
+            'Ease the collective off a little at a time. Aim for the middle and let it settle.'
+          );
+        },
         targetLabel: 'Harbour Head',
         target: (ctx) => siteAt(ctx, 'harbour'),
         check: (ctx) => landedAt(ctx, siteAt(ctx, 'harbour'), siteRadius('harbour')),
@@ -644,21 +811,26 @@ export const HELI_MISSIONS = [
     map: 'kestrel-port',
     aircraft: 'harrier',
     blurb:
-      'A walker on Cormorant Cove has gone over on her ankle. There is sand enough to land on, just. '
+      'A walker above Cormorant Cove has gone over on her ankle. There is level grass enough to land on, just. '
       + 'Put it down beside her, wait while she is loaded, and take her to the hospital pad.',
     reward: 'Teaches approaching a spot rather than a runway, and that a loaded machine flies differently.',
     weather: { time: 'day', condition: 'clear', windSpeedKts: 7, windDirDeg: 200 },
     parTime: 330,
     onStart: (ctx) => {
-      unload(ctx);
+      begin(ctx);
       siteMarker(ctx, siteAt(ctx, 'cove'), 0xffb347);
     },
-    spawn: { pos: new THREE.Vector3(SITES.harbour.x, 0, SITES.harbour.z), headingDeg: 120 },
+    spawn: padSpawn('harbour', 120),
     steps: [
       {
         id: 'out',
         text: 'Lift off and fly round the south of the island to Cormorant Cove.',
-        hint: 'Nose down a little with W to go forwards. It flies like an aeroplane once it is moving.',
+        get hint() {
+          return kidWords(
+            'Hold W to fly forwards and A or D to steer. Let go and it stops by itself.',
+            'Nose down a little with W to go forwards. It flies like an aeroplane once it is moving.'
+          );
+        },
         atc: {
           text: 'Skyhook three, Rescue Coordination. Walker with a broken ankle on Cormorant Cove, she is not going anywhere. No rush, fly it properly.',
           voice: 'approach',
@@ -669,8 +841,13 @@ export const HELI_MISSIONS = [
       },
       {
         id: 'land',
-        text: 'Come to a stop over the cove, then let it down onto the sand beside her.',
-        hint: 'Stop first, THEN descend. Trying to do both at once is what puts helicopters in the sea.',
+        text: 'Come to a stop over the orange ring above the cove, then let it down onto the grass beside her.',
+        get hint() {
+          return kidWords(
+            'Let go of W over the ring so it stops, THEN hold Ctrl. It slows down by itself near the ground.',
+            'Stop first, THEN descend. Trying to do both at once is what puts helicopters in the sea.'
+          );
+        },
         targetLabel: 'Cormorant Cove',
         target: (ctx) => siteAt(ctx, 'cove'),
         check: (ctx) => landedAt(ctx, siteAt(ctx, 'cove'), siteRadius('cove')),
@@ -685,7 +862,9 @@ export const HELI_MISSIONS = [
          * something they felt happen rather than a number in a briefing.
          */
         text: 'Keep her steady on the ground while they load the stretcher.',
-        hint: 'Stay put. Collective down, feet still.',
+        get hint() {
+          return kidWords('Stay put. Hands off everything — it sits on its skids.', 'Stay put. Collective down, feet still.');
+        },
         enter: (ctx) => {
           ctx.sim.hud.notify('Loading — hold it still.', 'info', 4);
         },
@@ -704,7 +883,12 @@ export const HELI_MISSIONS = [
       {
         id: 'home',
         text: 'Take her to the hospital pad. She is aboard, so fly it gently.',
-        hint: 'It will want more collective than it did on the way out. That is the extra weight.',
+        get hint() {
+          return kidWords(
+            'The hospital pad is on the roof. Come in above it, stop over the H, then hold Ctrl.',
+            'It will want more collective than it did on the way out. That is the extra weight.'
+          );
+        },
         atc: { text: 'Skyhook three lifting, one aboard, routing to St Brendan.', voice: 'pilot' },
         targetLabel: 'St Brendan Hospital',
         target: (ctx) => siteAt(ctx, 'hospital'),
@@ -745,16 +929,16 @@ export const HELI_MISSIONS = [
     weather: { time: 'day', condition: 'cloudy', windSpeedKts: 9, windDirDeg: 250 },
     parTime: 420,
     onStart: (ctx) => {
-      unload(ctx);
+      begin(ctx);
       const swimmer = siteAt(ctx, 'swimmer');
       ctx.data.boat = new RescueBoat(ctx, swimmer);
       ctx.data.marker = siteMarker(ctx, ctx.data.boat.swimmer, 0xff6a4d);
     },
-    spawn: { pos: new THREE.Vector3(SITES.harbour.x, 0, SITES.harbour.z), headingDeg: 300 },
+    spawn: padSpawn('harbour', 300),
     steps: [
       {
         id: 'out',
-        text: 'Lift off and head out over the bay. The boat is about a mile and a half north-west.',
+        text: 'Lift off and head out over the bay. The boat is about a mile north-west.',
         hint: 'Follow the beacon. The orange strobe in the water is your man.',
         atc: {
           text: 'Skyhook three, Rescue Coordination. Man in the water off the Kestrel fishing boat. Launch, launch, launch.',
@@ -769,7 +953,11 @@ export const HELI_MISSIONS = [
       winchStep({
         id: 'winch',
         text: 'Come to a hover over the swimmer at about sixty feet and hold it steady. The winchman does the rest.',
-        hint: 'Watch the drift, not the sea. Stop the machine first, then hold the height. Ten seconds.',
+        hint: () =>
+          kidWords(
+            'Let go of W A S D over the strobe and it stops and holds the spot. Shift or Ctrl until HEIGHT is green.',
+            'Watch the drift, not the sea. Stop the machine first, then hold the height. Ten seconds.'
+          ),
         atc: {
           text: 'Skyhook three, Rescue Coordination. Swimmer is sixty metres off her stern, you are cleared to winch.',
           voice: 'approach',
@@ -835,36 +1023,45 @@ export const HELI_MISSIONS = [
     map: 'stacks',
     aircraft: 'harrier',
     blurb:
-      'A climber is stuck on a ledge on Needle Rock with a broken wrist. There is no flat ground within '
-      + 'two kilometres and there is wind spilling over the top of the rock. The winch is the only way.',
+      'A climber is stuck on top of Gannet Stack with a broken wrist, and their kit is all over the little '
+      + 'pad up there. There is wind spilling over the rock and nowhere to land. The winch is the only way.',
     reward: 'Teaches holding a hover when the air will not hold still and there is no second option.',
     weather: { time: 'day', condition: 'cloudy', windSpeedKts: 18, windDirDeg: 300 },
     timeLimit: 600,
     parTime: 400,
     onStart: (ctx) => {
-      unload(ctx);
+      begin(ctx);
       ctx.data.gaveUp = false;
       siteMarker(ctx, siteAt(ctx, 'ledge'), 0xff6a4d);
     },
-    spawn: { pos: new THREE.Vector3(SITES.hospital.x, 0, SITES.hospital.z), headingDeg: 300 },
+    spawn: padSpawn('hospital', 300),
     steps: [
       {
         id: 'out',
-        text: 'Lift off and fly out to Needle Rock. It is about four kilometres north-west.',
-        hint: 'Get some height on the way. Arriving low at a cliff is arriving with no options.',
+        text: 'Lift off and fly out to Gannet Stack. It is about four and a half kilometres north-west.',
+        get hint() {
+          return kidWords(
+            'The top of the stack is two hundred metres up. Hold Shift on the way — the helicopter climbs over the rock if you are low.',
+            'Get some height on the way. Arriving low at a cliff is arriving with no options.'
+          );
+        },
         atc: {
-          text: 'Skyhook three, Rescue Coordination. Climber on the west face of Needle Rock, winch job, there is nowhere to put you down. Wind is eighteen over the top.',
+          text: 'Skyhook three, Rescue Coordination. Climber on top of Gannet Stack, winch job, the pad up there is covered in their kit so there is nowhere to put you down. Wind is eighteen over the top.',
           voice: 'approach',
           urgency: 1,
         },
-        targetLabel: 'Needle Rock',
+        targetLabel: 'Gannet Stack',
         target: (ctx) => siteAt(ctx, 'ledge'),
         check: (ctx) => dist2D(ctx.ac.pos, siteAt(ctx, 'ledge')) < 600 && ctx.ac.airborneTime > 10,
       },
       winchStep({
         id: 'winch',
-        text: 'Hold a hover over the ledge at sixty feet for twelve seconds while they get him into the strop.',
-        hint: 'The wind is pushing you off the rock. Hold a little into it and keep correcting — small, steady, early.',
+        text: 'Hold a hover over the climber at sixty feet for twelve seconds while they get him into the strop.',
+        hint: () =>
+          kidWords(
+            'Let go of W A S D over the strobe — the helicopter leans into the wind by itself. Shift or Ctrl until HEIGHT is green.',
+            'The wind is pushing you off the rock. Hold a little into it and keep correcting — small, steady, early.'
+          ),
         label: 'The ledge',
         at: (ctx) => siteAt(ctx, 'ledge'),
         /*
@@ -953,9 +1150,9 @@ export const HELI_MISSIONS = [
     timeLimit: 780,
     parTime: 540,
     onStart: (ctx) => {
-      unload(ctx);
+      begin(ctx);
     },
-    spawn: { pos: new THREE.Vector3(SITES.hospital.x, 0, SITES.hospital.z), headingDeg: 270 },
+    spawn: padSpawn('hospital', 270),
     steps: [
       {
         id: 'out',
@@ -976,7 +1173,12 @@ export const HELI_MISSIONS = [
       {
         id: 'land',
         text: 'Come to a stop over the deck, then put it down on the middle of it.',
-        hint: 'Stop over the deck FIRST. If you are still sliding when you touch, you slide off the edge.',
+        get hint() {
+          return kidWords(
+            'Let go of W over the deck so it stops, then hold Ctrl all the way down.',
+            'Stop over the deck FIRST. If you are still sliding when you touch, you slide off the edge.'
+          );
+        },
         targetLabel: 'The deck',
         target: (ctx) => deckTarget(ctx),
         check: (ctx) => {
@@ -991,7 +1193,9 @@ export const HELI_MISSIONS = [
       {
         id: 'wait',
         text: 'Hold it on the deck while they carry him aboard.',
-        hint: 'Stay put and keep the collective down. Ten seconds.',
+        get hint() {
+          return kidWords('Stay put, hands off. Ten seconds.', 'Stay put and keep the collective down. Ten seconds.');
+        },
         check: (ctx) => ctx.ac.onGround && ctx.runner.stepElapsed > 10,
         onDone: (ctx) => {
           load(ctx, CASUALTY_KG);
@@ -1001,7 +1205,12 @@ export const HELI_MISSIONS = [
       {
         id: 'home',
         text: 'Lift off the deck and take him to the hospital pad.',
-        hint: 'Off the side of the deck and let it fall away a little — that is how you get flying speed.',
+        get hint() {
+          return kidWords(
+            'Shift to lift off the deck, then W towards the hospital beacon.',
+            'Off the side of the deck and let it fall away a little — that is how you get flying speed.'
+          );
+        },
         atc: { text: 'Skyhook three off the deck, one aboard, inbound St Brendan.', voice: 'pilot' },
         targetLabel: 'St Brendan Hospital',
         target: (ctx) => siteAt(ctx, 'hospital'),
@@ -1062,13 +1271,13 @@ export const HELI_MISSIONS = [
     timeLimit: 600,
     parTime: 480,
     onStart: (ctx) => {
-      unload(ctx);
+      begin(ctx);
       ctx.data.saved = 0;
       siteMarker(ctx, siteAt(ctx, 'ledge'), 0xff6a4d);
       siteMarker(ctx, siteAt(ctx, 'eastshore'), 0xffb347);
-      ctx.sim.hud.notify('Two calls. Needle Rock is four kilometres out; Gannet Point is close.', 'warn', 8);
+      ctx.sim.hud.notify('Two calls. Needle Rock is six kilometres out; Gannet Point is close.', 'warn', 8);
     },
-    spawn: { pos: new THREE.Vector3(SITES.hospital.x, 0, SITES.hospital.z), headingDeg: 90 },
+    spawn: padSpawn('hospital', 90),
     steps: [
       {
         id: 'choose',
@@ -1247,9 +1456,9 @@ export const HELI_MISSIONS = [
     weather: { time: 'day', condition: 'clear', windSpeedKts: 8, windDirDeg: 250 },
     failOnCrash: false,
     parTime: 600,
-    spawn: { pos: new THREE.Vector3(SITES.hospital.x, 0, SITES.hospital.z), headingDeg: 270 },
+    spawn: padSpawn('hospital', 270),
     onStart: (ctx) => {
-      unload(ctx);
+      begin(ctx);
       ctx.data.saved = 0;
       ctx.data.phase = 'wait';
       /*
@@ -1269,13 +1478,22 @@ export const HELI_MISSIONS = [
         text: 'You are on call. Wait on the pad — the radio will tell you where to go.',
         hint: 'Nothing to do until a call comes in. Sit on the pad, or go for a look round.',
         targetLabel: 'Call',
-        target: (ctx) => (ctx.data.call ? ctx.data.call.pos.clone() : siteAt(ctx, 'hospital')),
+        /*
+         * Home is the hospital. This pointed at the call until the call was
+         * cleared, and the call is cleared on LANDING — so with them aboard
+         * and the panel saying "Land on the hospital pad", the arrow and the
+         * beacon still stood over the empty sea where they had been picked
+         * up. Measured: the only way to find the hospital was to know it.
+         */
+        target: (ctx) =>
+          ctx.data.call && ctx.data.phase !== 'home' ? ctx.data.call.pos.clone() : siteAt(ctx, 'hospital'),
         // Never true. The mode ends when the player quits, which is the point.
         check: () => false,
       },
     ],
     tick: (ctx, dt) => {
       const d = ctx.data;
+      KID = isKidMode(ctx.ac);
       if (d.hover) d.hover.update(dt, ctx);
       for (const p of PROPS) if (p.update) p.update(dt);
 
@@ -1347,6 +1565,7 @@ export const HELI_MISSIONS = [
     score: (ctx) => Math.min(100, (ctx.data.saved || 0) * 20),
   },
 ];
+for (const m of HELI_MISSIONS) HELI_IDS.add(m.id);
 
 /* ------------------------------------------------------------------ *
  * Helpers the missions above use.
@@ -1361,9 +1580,25 @@ export const HELI_MISSIONS = [
  * platformAt() confirms you are actually on the steel.
  */
 function deckTarget(ctx) {
-  const pads = (ctx.sim && ctx.sim.pads) || null;
-  const rig = pads && pads.find ? pads.find((p) => p.kind === 'deck') : null;
-  if (rig) return new THREE.Vector3(rig.x, rig.elev != null ? rig.elev : surfaceAt(rig.x, rig.z), rig.z);
+  /*
+   * The deck NEAREST the hospital, from the real pad list — see the note on
+   * siteAt(). Ironhead Deep has seven; the nearest, Foxtrot, is 3.4 km out,
+   * which is the "get out there" the briefing describes. PADS carries the
+   * resolved deck height in pos.y, so there is no elev to look up.
+   */
+  const home = siteAt(ctx, 'hospital');
+  let rig = null;
+  let best = Infinity;
+  for (let i = 0; i < PADS.length; i++) {
+    const p = PADS[i];
+    if (p.kind !== 'deck') continue;
+    const d = (p.pos.x - home.x) ** 2 + (p.pos.z - home.z) ** 2;
+    if (d < best) {
+      best = d;
+      rig = p;
+    }
+  }
+  if (rig) return new THREE.Vector3(rig.pos.x, rig.pos.y, rig.pos.z);
   const c = ctx.sim && ctx.sim.carrier;
   if (c) return new THREE.Vector3(c.pos.x, c.deckY || 24, c.pos.z);
   return null;
@@ -1436,3 +1671,115 @@ export const HELI_FREE = {
   failOnCrash: false,
   aircraft: 'harrier',
 };
+
+/* ------------------------------------------------------------------ *
+ * WHERE FREE FLIGHT PUTS IT.
+ *
+ * A helicopter starts on a pad, not on the numbers of runway 09. Every map
+ * has one by the airfield (`field`), and that is the first choice — but only
+ * if it is fit to stand on:
+ *
+ *   - no road drawn over it. Measured in headless Chrome on Kestrel, the
+ *     default Free Flight map: the airfield access road runs 7 m from the
+ *     field pad's middle, 20 m wide and 3.7 m ABOVE the pad (17.7 m against
+ *     14.0 m), so the start was a screenful of tarmac with the Skyhook buried
+ *     under it until it had climbed out;
+ *   - nothing taller than the deck close enough to put a hard point near it,
+ *     whichever way round it is parked. Measured 2026-09-25: the next choice
+ *     on Kestrel, the Cottage Hospital's roof pad, has a town block 7 m above
+ *     the deck 5.9 m from the H's middle. Parked nose east (the calm-day
+ *     heading) the tail boom ended 0.2 m from that wall, and a child who
+ *     lifted straight up and held Ctrl hovered 6.5 m over the pad saying
+ *     CAN'T LAND HERE;
+ *   - a heading the Follow camera can see it from. The pad and heading
+ *     chosen for room alone put the camera on the next block's roof, and
+ *     the start was a grey slab with no helicopter in it (see parkOn and
+ *     chaseViewClear in rotor-assist.js).
+ *
+ * Otherwise the fit pad nearest the runway, a roof counting 300 m further
+ * than it is, a deck 1 km and a stack 3 km, so a child starts on a hospital
+ * roof rather than on a sea stack. Nose into the wind when that is clear,
+ * else whichever way round leaves the most room. The map data is not this
+ * file's; the choice of pad and heading is.
+ * ------------------------------------------------------------------ */
+const START_ROOM = 5; // m from a hard point to anything taller: into wind if this clear
+const START_MIN = 2.5; // m: less than this at every heading and the pad is not used
+
+function roadOver(sim, p) {
+  const roadList = (sim && sim.roads && sim.roads.list) || [];
+  for (const rd of roadList) {
+    const pts = rd.path || [];
+    const reach = (rd.halfWidth || 18) * 0.78 + (p.r || 11);
+    for (let k = 1; k < pts.length; k++) {
+      const ax = pts[k - 1][0];
+      const az = pts[k - 1][1];
+      const ex = pts[k][0] - ax;
+      const ez = pts[k][1] - az;
+      const l2 = ex * ex + ez * ez;
+      const t = l2 > 0 ? clamp(((p.pos.x - ax) * ex + (p.pos.z - az) * ez) / l2, 0, 1) : 0;
+      if (Math.hypot(ax + ex * t - p.pos.x, az + ez * t - p.pos.z) > reach) continue;
+      if (pts[k - 1][2] + (pts[k][2] - pts[k - 1][2]) * t > p.pos.y + 0.5) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The heading with the most room on this pad, preferring into the wind —
+ * among the headings the Follow camera can see the machine from.
+ *
+ * Measured 2026-09-25 (review of the first pass): on Kestrel's Cottage
+ * Hospital roof the most-room headings were 22.5 and 157.5, equally far off
+ * the calm-day 90, and the loop met 157.5 first. From there the camera stood
+ * on the next block's roof and saw only that roof — 5 of 5 sight lines
+ * blocked in three winds out of seven. So a heading the camera cannot see
+ * from is not a choice at all, whatever its room; `view` says whether any
+ * heading here was.
+ */
+function parkOn(p, windHdg) {
+  let best = null;
+  for (let i = 0; i < 16; i++) {
+    const hdg = (windHdg + i * 22.5) % 360;
+    const view = chaseViewClear(p.pos.x, p.pos.y, p.pos.z, hdg);
+    const room = Math.min(START_ROOM, parkingClearance(SPEC, p.pos.x, p.pos.y, p.pos.z, hdg));
+    // i runs outwards from the wind only one way round; the tie-break on
+    // how far off the wind keeps "closest to into-wind" honest both ways.
+    const off = Math.abs(((hdg - windHdg + 540) % 360) - 180);
+    if (
+      !best
+      || (view && !best.view)
+      || (view === best.view
+        && (room > best.room + 0.05 || (Math.abs(room - best.room) <= 0.05 && off < best.off)))
+    ) {
+      best = { hdg, room, off, view };
+    }
+  }
+  return best;
+}
+
+/**
+ * The pad and heading Free Flight starts the Skyhook on, or null for a map
+ * with no pads. `fromX/fromZ` is the runway start, which "nearest" means.
+ */
+export function heliFreeStart(sim, fromX, fromZ) {
+  const w = sim && sim.weather;
+  const windHdg = w && w.windSpeedKts > 3 ? Math.round(w.windDirDeg) : 90;
+  const kindCost = { ground: 0, roof: 300, deck: 1000, stack: 3000 };
+  const cost = (p) => Math.hypot(p.pos.x - fromX, p.pos.z - fromZ) + (kindCost[p.kind] ?? 3000);
+  const field = PADS.find((p) => p.id === 'field');
+  const order = PADS.slice().sort((a, b) => (a === field ? -1 : b === field ? 1 : cost(a) - cost(b)));
+  // A pad with room but no heading the camera can see from is kept as a
+  // second choice, ahead of the old fallback, rather than never used.
+  let unseen = null;
+  for (const p of order) {
+    if (roadOver(sim, p)) continue;
+    const park = parkOn(p, windHdg);
+    if (park.room < START_MIN) continue;
+    if (park.view) return { pad: p, headingDeg: park.hdg, room: park.room, view: true };
+    if (!unseen) unseen = { pad: p, headingDeg: park.hdg, room: park.room, view: false };
+  }
+  if (unseen) return unseen;
+  // Nothing fit: the field pad, or the nearest, as it always was.
+  const p = field || order[0] || null;
+  return p ? { pad: p, headingDeg: windHdg, room: 0, view: false } : null;
+}

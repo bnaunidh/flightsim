@@ -37,6 +37,141 @@
 
 import { heightAt } from '../world/terrain.js';
 import { clamp } from '../core/noise.js';
+import { boatRoute, resetBoatRoute, warmBoatRoute, hideStrayAirfield, restoreStrayAirfield } from '../game/missions-boat.js';
+
+/*
+ * What the boat hides of the aeroplane's HUD, and what it adds of its own.
+ *
+ * The stylesheet already hid the aeroplane's instrument strip in the boat
+ * (.hud-left:not(.hud-boatpanel)), and nothing else. Measured in First Shout:
+ * POWER 0%, FUEL 0%, GEAR DOWN, FLAPS 0, BRAKES, EASY MODE and "Power: Shift
+ * up · Ctrl down · Space brakes" were all on screen under the boat panel —
+ * six aeroplane words and two dead bars, none of which a boat has. The
+ * aeroplane's waypoint arrow, coach line, stall slab and PAPI hint are also
+ * aeroplane-only and are only ever updated by the flight loop, so in the boat
+ * they showed whatever the last flight left in them.
+ *
+ * styles/main.css belongs to the HUD owner, so these rules live here and are
+ * injected once. Every one is scoped to `.hud.is-boat`, which leave() takes
+ * off, so leaving the boat by any route puts the aeroplane's HUD back exactly
+ * as it was — nothing is rewritten, only not shown.
+ */
+const BOAT_CSS = `
+.hud.is-boat .hud-bottom,
+.hud.is-boat .hud-waypoint,
+.hud.is-boat .hud-coach,
+.hud.is-boat .hud-stall,
+.hud.is-boat .hud-papi,
+.hud.is-boat .hud-taxi,
+.hud.is-boat .hud-damage { display: none !important; }
+.hud-boatarrow { display: none; }
+.hud.is-boat .hud-boatarrow {
+  display: flex; align-items: center; gap: 10px; justify-content: center;
+  margin: 6px auto 0; padding: 5px 14px 5px 8px; width: max-content; max-width: 92vw;
+  background: rgba(10, 18, 30, 0.62); border: 1px solid rgba(140, 180, 230, 0.22);
+  border-radius: 999px; color: #eaf2ff; font-weight: 600; font-size: 14px;
+  pointer-events: none;
+}
+.hud-boatarrow-glyph {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  font-size: 26px; line-height: 1; color: #ffc247; will-change: transform;
+}
+.hud-boatarrow.is-near .hud-boatarrow-glyph { color: #7dffb4; }
+.hud-boatarrow-text small { display: block; font-size: 11px; font-weight: 500; opacity: 0.72; }
+.hud-boatkeys { display: none; }
+.hud.is-boat .hud-boatkeys {
+  display: block; position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  padding: 6px 12px; border-radius: 10px; background: rgba(10, 18, 30, 0.55);
+  color: #cfe0f5; font-size: 12px; white-space: nowrap; pointer-events: none;
+}
+.hud.is-boat .hud-boatkeys kbd { font-size: 11px; padding: 0 5px; }
+.hud.is-touch.is-boat .hud-boatkeys { display: none; }
+.hud-shoalwarn { display: none; }
+.hud.is-boat .hud-shoalwarn.is-on {
+  display: block; position: absolute; left: 50%; top: 38%; transform: translateX(-50%);
+  padding: 8px 16px; border-radius: 12px; background: rgba(60, 36, 0, 0.72);
+  border: 1px solid rgba(255, 194, 71, 0.7); color: #ffd37a; font-weight: 700;
+  font-size: 17px; text-align: center; pointer-events: none;
+}
+/*
+ * The toasts open at 96 px, which in the boat — where the objective sits
+ * lower to clear the heading ribbon — is exactly where the arrow is: the
+ * "Tap Shift to go faster" notice at the start of every trip covered it.
+ * Measured at 1280x800: arrow 138-184 px, and at 190 the first toast still
+ * began at 182. At 206 they clear it.
+ */
+@media (min-width: 621px) {
+  .hud.is-boat .hud-toasts { top: 206px; }
+}
+/*
+ * The radio line. It sits 118 px up to clear the aeroplane's bottom strip,
+ * which the boat hides; there it was drawn across the launch's stern for
+ * every call — measured at 1280x713 with the chase camera on her at the
+ * berth, 36% of her on-screen box under the subtitle (hull 390-591 px down,
+ * subtitle 518-595). In the boat it drops to just above the keys line.
+ * Not on a touch screen, where the lever and the wheel are down there, and
+ * not on a narrow screen with the chart up, where main.css lifts it clear of
+ * the chart.
+ */
+@media (min-width: 901px) {
+  .hud.is-boat:not(.is-touch) .hud-subtitle { bottom: 52px; }
+}
+@media (max-width: 720px) {
+  .hud.is-boat .hud-boatkeys { display: none; }
+  .hud.is-boat .hud-boatarrow { font-size: 12px; }
+}
+/*
+ * The wind box and the shout. The objective is centred and min(560px, 52vw)
+ * wide and the wind box is pinned top right, and in the boat the objective
+ * sits 30 px lower to clear the compass tape, level with the wind box.
+ * Measured at 1024x768: objective 246-778 px across, wind box from 689 —
+ * the rose was drawn over the end of the first line of every instruction.
+ * At 1180 they still overlapped by 25 px; from 1280 up they do not. Below
+ * that the wind box drops under the shout, and the toasts under it.
+ */
+@media (max-width: 1260px) {
+  .hud.is-boat:not(.is-touch) .hud-right { top: 130px; }
+  .hud.is-boat:not(.is-touch) .hud-toasts { top: 226px; }
+}
+/*
+ * On an iPad. On a touch screen .hud-left is a four-column strip across the
+ * top under the buttons, and the boat panel wears .hud-left — but the boat's
+ * own display:block rule came later in the stylesheet and won, so the panel
+ * was a full-width box of stacked rows 181 px tall (measured 66-247 at
+ * 1180x820), and the boat rule that lifts the objective to 46 px put the
+ * shout underneath it. Here it is one row — depth, speed, the lever — and
+ * the objective goes back below it.
+ */
+.hud.is-touch.is-boat .hud-boatpanel {
+  display: grid; grid-template-columns: 1fr 1fr 2.6fr auto; align-items: center;
+  gap: 0 10px; padding: 5px 10px;
+}
+.hud.is-touch.is-boat .hud-boatpanel .hud-row,
+.hud.is-touch.is-boat .hud-boatpanel .hud-lever { border-top: 0; padding: 0; }
+.hud.is-touch.is-boat .hud-boatpanel .hud-row.is-depth .hud-value { font-size: 22px; }
+.hud.is-touch.is-boat .hud-boatpanel .hud-word { font-size: 9px; }
+.hud.is-touch.is-boat .hud-boatpanel .hud-lever-detents { margin-top: 2px; }
+.hud.is-touch.is-boat .hud-top { top: 140px; }
+/*
+ * And on a touch screen the wind box sits at y74, which is now the strip:
+ * measured 849-1168 x 74-162, across the lever and the end of the shout.
+ * On a phone the stylesheet already hides it; on a tablet in the boat it
+ * goes too (the Gale's words say which way the wind is), and the toasts
+ * open under the arrow instead of on it (arrow 232-278, toasts from 206).
+ */
+.hud.is-touch.is-boat .hud-right { display: none; }
+.hud.is-touch.is-boat .hud-toasts { top: 290px; }
+`;
+
+let cssInjected = false;
+function injectCss() {
+  if (cssInjected || typeof document === 'undefined') return;
+  cssInjected = true;
+  const st = document.createElement('style');
+  st.id = 'hud-boat-css';
+  st.textContent = BOAT_CSS;
+  document.head.appendChild(st);
+}
 
 function el(tag, cls, html) {
   const e = document.createElement(tag);
@@ -53,6 +188,9 @@ function el(tag, cls, html) {
  * cannot aim at 34%. You can put the lever on SLOW.
  */
 export const LEVERS = ['ASTERN', 'STOP', 'SLOW', 'HALF', 'FULL'];
+
+const TURN_WORDS = ['straight on', 'turn right (D)', 'turn left (A)'];
+const CLEAR_WORDS = 'Clear of the bottom — engine on STOP';
 
 /**
  * Which detent the lever is in.
@@ -221,14 +359,50 @@ export class BoatHud {
     this.aground = el('div', 'hud-aground', '');
     this.aground.style.display = 'none';
     wrap.appendChild(this.aground);
+
+    /* ---- The arrow, under the objective ---- */
+    /*
+     * Every shout's text says "the arrow at the top of the screen points at
+     * them", and in the boat there was no arrow: the aeroplane's waypoint
+     * arrow is only ever updated by the flight loop, so it was either hidden
+     * or frozen pointing wherever the last flight had been going. This one is
+     * the boat's. It points at the next corner of a route that keeps her
+     * afloat (see boatRoute in missions-boat.js), and says how far the
+     * target itself is.
+     */
+    this.arrow = el('div', 'hud-boatarrow');
+    this.arrowGlyph = el('div', 'hud-boatarrow-glyph', '\u2191');
+    this.arrowText = el('div', 'hud-boatarrow-text', '');
+    this.arrow.appendChild(this.arrowGlyph);
+    this.arrow.appendChild(this.arrowText);
+    const top = wrap.querySelector('.hud-top');
+    (top || wrap).appendChild(this.arrow);
+
+    /* ---- The keys, bottom centre, where the aeroplane's strip was ---- */
+    this.keys = el(
+      'div',
+      'hud-boatkeys',
+      '<kbd>W</kbd> or <kbd>Shift</kbd> faster · <kbd>S</kbd> or <kbd>Ctrl</kbd> slower · '
+        + '<kbd>A</kbd> <kbd>D</kbd> or <kbd>←</kbd> <kbd>→</kbd> steer · <kbd>Space</kbd> stop · <kbd>J</kbd> chart'
+    );
+    wrap.appendChild(this.keys);
+
+    /* ---- Shallow water ahead: said before the bump, not after ---- */
+    this.shoalWarn = el('div', 'hud-shoalwarn', '');
+    wrap.appendChild(this.shoalWarn);
+    this.route = { x: 0, z: 0, routed: false, legs: 0 };
+    this.routeT = 0;
+    this.hidden = [];
   }
 
   /* ------------------------------------------------------ enter/leave -- */
 
   /** Boat mode on: build if needed, show the boat panel, hide the aeroplane's. */
-  enter(spec) {
+  enter(spec, sim) {
+    injectCss();
     this.build();
     this.active = true;
+    this.sim = sim || null;
     this.hud.wrap.classList.add('is-boat');
     this.panel.style.display = '';
     this.ribbon.style.display = '';
@@ -237,14 +411,26 @@ export class BoatHud {
     this.last = {};
     this.setAboard(0, 0);
     this.setAground(false);
-    // The hint strip under the throttle bar is aeroplane words. Swapping it is
-    // the cheapest single thing on this list: the keys are the same keys, and
-    // the only reason a child does not find them is that the strip is talking
-    // about power and brakes, neither of which is a thing on a boat.
-    if (this.hud.keyHint) {
-      this.hud.keyHint.innerHTML =
-        'Engine: <kbd>Shift</kbd>/<kbd>↑</kbd> ahead · <kbd>Ctrl</kbd>/<kbd>↓</kbd> back · '
-        + '<kbd>A</kbd><kbd>D</kbd> wheel · <kbd>J</kbd> chart';
+    this.shoalWarn.classList.remove('is-on');
+    this.arrowText.textContent = '';
+    this.routeT = 0;
+    this.clearT = 0;
+    this.windT = 0;
+    // A new trip can be a new map, and a new map is a new sea floor.
+    resetBoatRoute();
+    try {
+      if (sim) warmBoatRoute(sim);
+    } catch (e) {
+      console.warn('No route grid for this harbour yet; the arrow will point straight.', e);
+    }
+    // Anything of the airfield hanging in the air over this harbour, for the
+    // length of the trip. See hideStrayAirfield.
+    restoreStrayAirfield(this.hidden);
+    try {
+      this.hidden = hideStrayAirfield(sim);
+    } catch (e) {
+      console.warn('Could not tidy the airfield out of the harbour:', e);
+      this.hidden = [];
     }
   }
 
@@ -257,7 +443,18 @@ export class BoatHud {
     this.ribbon.style.display = 'none';
     if (this.sea) this.sea.style.display = 'none';
     this.aground.style.display = 'none';
+    this.shoalWarn.classList.remove('is-on');
     this.pingTimer = 0;
+    restoreStrayAirfield(this.hidden);
+    if (this.hud.setMissionClock) this.hud.setMissionClock(null);
+    // The player's own weather, if a shout borrowed the sky (main.js,
+    // startDrive). leave() is the one door out of the boat that every route
+    // takes — stopDrive, and straight into the van.
+    const sim = this.sim;
+    if (sim && sim._weatherBeforeBoat && sim.weather) {
+      sim.weather.load(sim._weatherBeforeBoat);
+      sim._weatherBeforeBoat = null;
+    }
   }
 
   /* ------------------------------------------------------------ depth -- */
@@ -289,6 +486,7 @@ export class BoatHud {
    */
   update(dt, r, ctx = {}) {
     if (!this.active) return;
+    this.tickHudTimers(dt);
     const pos = ctx.pos;
     const depth = typeof ctx.depth === 'number'
       ? ctx.depth
@@ -359,12 +557,236 @@ export class BoatHud {
     }
 
     /* ---- Sea state ---- */
-    const sea = seaStateWord(ctx.weather);
+    /*
+     * The boat's own word for the sea she is in, which knows about the
+     * breakwater (surface.js, harbourShelter). This used to work its own word
+     * out from the weather, with different edges from the boat's: at the
+     * berth in First Shout the panel said "Sea: choppy" while the boat was
+     * being moved by a calm, under "Air is calm".
+     */
+    const sea = r.seaWord || seaStateWord(ctx.weather);
     if (this.last.sea !== sea) {
       this.last.sea = sea;
       this.sea.textContent = `Sea: ${sea}`;
       this.sea.classList.toggle('is-rough', sea === 'rough');
       this.sea.classList.toggle('is-gale', sea === 'gale');
+    }
+
+    const sim = ctx.sim || this.sim;
+    const boat = ctx.boat || (sim && sim.vehicle) || null;
+
+    /* ---- The wind box ---- */
+    this.updateWind(dt, r, ctx.weather);
+
+    /* ---- Who is aboard ---- */
+    // missions-boat.js has published `sim.boatAboard` since it was written,
+    // and nothing read it, so the row of little figures never lit.
+    const ab = sim && sim.boatAboard;
+    const abN = ab ? ab.aboard * 100 + ab.total : -1;
+    if (this.last.abN !== abN) {
+      this.last.abN = abN;
+      this.setAboard(ab ? ab.aboard : 0, ab ? ab.total : 0);
+    }
+
+    /* ---- On the bottom: what happened and what she is doing about it ---- */
+    const agr = !!(boat && boat.aground);
+    const agrText = agr ? boat.agroundMessage || '' : '';
+    /*
+     * And what happens once she is off. surface.js hands the helm back with
+     * the lever on STOP and ignores a key that was held through the bump
+     * until it is pressed again — so a child still holding Shift sat there
+     * with nothing happening and nothing on screen to say why. For four
+     * seconds after she comes off, the caption says what to press.
+     */
+    if (this.last.agr && !agr) this.clearT = 4;
+    this.clearT = Math.max(0, (this.clearT || 0) - dt);
+    const cap = agr ? agrText : this.clearT > 0 ? CLEAR_WORDS : '';
+    if (this.last.agrCap !== cap) {
+      this.last.agrCap = cap;
+      if (agr) this.setAground(true, agrText);
+      else if (cap) this.setClear();
+      else this.setAground(false);
+    }
+    this.last.agr = agr;
+
+    /* ---- Shallow water ahead ---- */
+    const ahead = !agr && !cap && boat ? boat.shoalAhead || 0 : 0;
+    const aheadKey = ahead ? (ahead < 20 ? 1 : 2) : 0;
+    if (this.last.ahead !== aheadKey) {
+      this.last.ahead = aheadKey;
+      this.shoalWarn.classList.toggle('is-on', !!aheadKey);
+      this.shoalWarn.textContent = aheadKey
+        ? 'SHALLOW WATER AHEAD — turn away, or S / Ctrl to slow down'
+        : '';
+    }
+
+    /* ---- The mission clock, if this shout has one ---- */
+    const runner = sim && sim.runner;
+    const def = runner && runner.status === 'running' ? runner.def : null;
+    if (this.hud.setMissionClock) {
+      const left = def && def.timeLimit ? Math.ceil(def.timeLimit - runner.elapsed) : null;
+      if (this.last.clock !== left) {
+        this.last.clock = left;
+        this.hud.setMissionClock(left);
+      }
+    }
+
+    this.updateArrow(dt, r, ctx.target || (sim && sim.activeTarget) || null, boat, sim);
+  }
+
+  /* ----------------------------------------------------------- timers -- */
+
+  /**
+   * Let the radio line, the banner and the toasts run out.
+   *
+   * Their clocks are counted down at the end of Hud.update(), and Hud.update
+   * is only ever called by the flight loop — so in the boat nothing that was
+   * put on the screen ever came off it. Measured in First Shout, twenty
+   * seconds in: the Coastguard's opening call (a few seconds of subtitle)
+   * and the 8-second "Tap Shift to go faster" notice were both still up, and the
+   * subtitle sat across the bottom of the picture over the launch's stern
+   * for the whole trip; the toast stack only ever emptied by being pushed
+   * past four. This is that same countdown, on the same fields, in the same
+   * way, so a line said in the boat lasts exactly as long as one said in
+   * the air. hud.js is not this file's to change; it is only read and
+   * counted down here, and only while the boat is up.
+   */
+  tickHudTimers(dt) {
+    const h = this.hud;
+    if (h.subtitleTimer > 0) {
+      h.subtitleTimer -= dt;
+      if (h.subtitleTimer <= 0 && h.subtitle) h.subtitle.style.display = 'none';
+    }
+    if (h.bannerTimer > 0) {
+      h.bannerTimer -= dt;
+      if (h.bannerTimer <= 0 && h.banner) h.banner.style.display = 'none';
+    }
+    const list = h.toasts;
+    if (!list) return;
+    for (let i = list.length - 1; i >= 0; i--) {
+      list[i].life -= dt;
+      if (list[i].life <= 0) {
+        const node = list[i].node;
+        node.classList.add('is-out');
+        setTimeout(() => node.remove(), 400);
+        list.splice(i, 1);
+      }
+    }
+  }
+
+  /* ------------------------------------------------------------ arrow -- */
+
+  /**
+   * The arrow.
+   *
+   * The route is asked for four times a second (see boatRoute: it is a few
+   * hundred heightAt calls at most), the arrow is turned every frame from
+   * the answer, and the words change only when the rounded distance does.
+   */
+  updateArrow(dt, r, target, boat, sim) {
+    if (!target || !target.pos || !boat) {
+      if (this.last.arrowOn !== false) {
+        this.last.arrowOn = false;
+        this.arrow.style.visibility = 'hidden';
+      }
+      return;
+    }
+    if (this.last.arrowOn !== true) {
+      this.last.arrowOn = true;
+      this.arrow.style.visibility = '';
+    }
+    this.routeT -= dt;
+    if (this.routeT <= 0 || this.last.targetLabel !== target.label) {
+      this.routeT = 0.25;
+      try {
+        boatRoute(sim, boat.pos, target.pos, this.route);
+      } catch (e) {
+        this.route.x = target.pos.x;
+        this.route.z = target.pos.z;
+        this.route.routed = false;
+      }
+    }
+    const dx = this.route.x - boat.pos.x;
+    const dz = this.route.z - boat.pos.z;
+    const brg = (Math.atan2(dx, -dz) * 180) / Math.PI;
+    const rel = ((brg - (r.heading || 0) + 540) % 360) - 180;
+    /** The relative bearing the arrow shows, for tests and for the curious. */
+    this.arrowRel = rel;
+    const rounded = Math.round(rel);
+    if (this.last.rel !== rounded) {
+      this.last.rel = rounded;
+      this.arrowGlyph.style.transform = `rotate(${rounded}deg)`;
+      this.arrow.dataset.rel = String(rounded);
+    }
+    const dist = Math.hypot(target.pos.x - boat.pos.x, target.pos.z - boat.pos.z);
+    const near = dist < 120;
+    // Compared as numbers, and the words built only when one changes: this
+    // runs every frame and a template string is a new object each time.
+    const distQ = dist > 1200 ? -Math.round(dist / 100) : Math.round(dist / (near ? 5 : 10)) * (near ? 5 : 10);
+    const turnI = Math.abs(rel) < 12 ? 0 : rel > 0 ? 1 : 2;
+    const routed = this.route.routed ? 1 : 0;
+    if (
+      this.last.distQ !== distQ || this.last.turnI !== turnI || this.last.routed !== routed
+      || this.last.targetLabel !== target.label
+    ) {
+      this.last.distQ = distQ;
+      this.last.turnI = turnI;
+      this.last.routed = routed;
+      this.last.targetLabel = target.label;
+      const distText = distQ < 0 ? `${(-distQ / 10).toFixed(1)} km` : `${distQ} m`;
+      const turn = TURN_WORDS[turnI];
+      const hint = routed ? `${turn} · going round the shallows` : turn;
+      this.arrowText.innerHTML = `${target.label || 'Target'} · ${distText}<small>${hint}</small>`;
+      this.arrow.classList.toggle('is-near', near);
+    }
+  }
+
+  /* ------------------------------------------------------------- wind -- */
+
+  /**
+   * The wind box, top right.
+   *
+   * It belongs to hud.js and is written by Hud.update(), which only the
+   * flight loop calls, so in the boat it showed whatever the last flight or
+   * the menu had left in it. Measured at the start of First Shout: "Air is
+   * calm · 0 kt from 090°" while the shout's own weather — loaded, and
+   * pushing her — was 7 kt from 240. In the Gale it said the same thing in
+   * 28 kt. This writes it the way Hud.update does, through the same
+   * `lastValues` cache, so the flight loop picks up exactly where this left
+   * off; five times a second, because the wind does not change faster than
+   * that and windDescription() builds an object.
+   */
+  updateWind(dt, r, w) {
+    const h = this.hud;
+    if (!w || !h.windText || !h.lastValues || typeof w.windDescription !== 'function') return;
+    this.windT = (this.windT || 0) - dt;
+    if (this.windT > 0) return;
+    this.windT = 0.2;
+    const lv = h.lastValues;
+    const heading = r.heading || 0;
+    const desc = w.windDescription(heading);
+    if (lv.windText !== desc.text) {
+      h.windText.textContent = desc.text;
+      lv.windText = desc.text;
+    }
+    const detail = `${Math.round(w.windSpeedKts)} kt from ${String(Math.round(w.windDirDeg)).padStart(3, '0')}°`;
+    if (lv.windDetail !== detail) {
+      h.windDetail.textContent = detail;
+      lv.windDetail = detail;
+    }
+    if (h.windNeedle) {
+      const rel = Math.round(((w.windDirDeg - heading + 540) % 360) - 180);
+      if (this.last.windRel !== rel) {
+        this.last.windRel = rel;
+        h.windNeedle.style.transform = `rotate(${rel}deg)`;
+      }
+    }
+    if (h.weatherText && w.cond && w.timeInfo) {
+      const wx = `${w.cond.label} · ${w.timeInfo.label}`;
+      if (lv.wx !== wx) {
+        h.weatherText.textContent = wx;
+        lv.wx = wx;
+      }
     }
   }
 
@@ -512,9 +934,19 @@ export class BoatHud {
       this.aground.style.display = 'none';
       return;
     }
+    // She backs herself off now (surface.js, takeTheGround), so the second
+    // line says what happens next rather than asking for a key she is
+    // already obeying.
     this.aground.innerHTML =
       `<strong>${text || "You're on the putty"}</strong>`
-      + '<em>Astern, gently — <kbd>Ctrl</kbd> or <kbd>↓</kbd> to back off</em>';
+      + '<em>Backing off to deep water — then steer for the arrow</em>';
+    this.aground.style.display = '';
+  }
+
+  /** Off the bottom again, and what to press now. See update(). */
+  setClear() {
+    this.build();
+    this.aground.innerHTML = `<strong>${CLEAR_WORDS}</strong><em>Tap W or Shift to go, and steer for the arrow</em>`;
     this.aground.style.display = '';
   }
 
