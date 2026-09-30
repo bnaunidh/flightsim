@@ -372,8 +372,16 @@ export async function detectLanServer({ fetchImpl = globalThis.fetch, base = nul
   const loc = globalThis.location;
   const wsProto = loc && loc.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = loc && loc.host ? loc.host : 'localhost';
+  const backend = { id: 'lan', url: `${wsProto}//${host}/peerjs`, key: 'peerjs', label: String(info.name || 'this computer').slice(0, 40) };
   return {
-    backend: { id: 'lan', url: `${wsProto}//${host}/peerjs`, key: 'peerjs', label: String(info.name || 'this computer').slice(0, 40) },
+    backend,
     hash: info.net,
+    /*
+     * List 3: a LAN server started with --local (a test run on one computer)
+     * or --world stands in for the public matchmaking server for the world
+     * lobbies too, so a test never touches 0.peerjs.com. Otherwise the world
+     * lobbies are on the public server, as they are everywhere else.
+     */
+    world: info.world === true ? { ...backend, id: 'lan-world' } : null,
   };
 }

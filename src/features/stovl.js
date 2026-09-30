@@ -94,17 +94,26 @@ export const STOVL_TUNE = {
   stopDecel: 2.5, // m/s² it is assumed to stop a climb or sink with, for the capture
 
   /* --- translation --- */
-  fwdSpeed: 16, // m/s over the ground at full forward stick (31 kt)...
-  departSpeed: 40, // ...unless the stick is hard forward: then it goes, and
+  /*
+   * "Able to move while hovering" was on the owner's list, and on a keyboard
+   * it could not really be done: W is always full stick, full stick was
+   * "depart", and holding W to go forward took the jet past 60 kt in eleven
+   * seconds and switched the hover OFF. Now full stick moves you at a brisk
+   * hover-taxi and the hover stays on; you fly away with full stick AND the
+   * lift lever up (W + Shift) — or with T, as ever. Measured in
+   * tests/features/aircrew.browser.js through the real keys.
+   */
+  fwdSpeed: 18, // m/s over the ground at full forward stick (35 kt)...
+  departSpeed: 40, // ...unless the lever is up as well: then it goes, and
   departStick: 0.9, // leaving 60 kt switches the hover off
-  backSpeed: 6,
-  sideSpeed: 8,
+  backSpeed: 8,
+  sideSpeed: 10,
   transGain: 0.7, // 1/s
   // 1/s²: wind trim, as the Skyhook's hover has — learned only while the
   // stick is centred. Learned while the pilot was asking for 8 m/s it wound
   // up and carried the jet 51 m past where a two-second nudge was let go.
   transInt: 0.15,
-  transMax: 3.0, // m/s², about a third of a g of vectored thrust
+  transMax: 4.0, // m/s², about 0.4 g of vectored thrust: it answers the keys at once
   convertDecel: 2.2, // m/s² the conversion slows the jet by
 
   /* --- attitude (reaction control) --- */
@@ -276,7 +285,7 @@ export class StovlController {
       if (!ac.onGround) this.leverRequest = 0.5;
       this.note(ac.onGround
         ? 'Nozzle down. Throttle UP to lift off, middle to hover.'
-        : 'Hovering. Throttle up / down to climb or sink, stick to move, T to fly away.', 'good', 4.5);
+        : 'Hovering! Stick (W A S D) slides you about, rudder (Q E) turns you, throttle is up and down. T to fly away.', 'good', 5.5);
       return 'hover';
     }
     // On: stow it.
@@ -456,7 +465,7 @@ export class StovlController {
     if (this.mode === 'convert') {
       if (kt <= T.hoverKt) {
         this.mode = 'hover';
-        this.note('Hovering. Throttle up / down to climb or sink, stick to move.', 'good', 4.5);
+        this.note('Hovering! Stick (W A S D) slides you about, rudder (Q E) turns you, throttle is up and down.', 'good', 5.5);
       } else if (kt > this._entryKt + 15) {
         this._startExit('Speeding up — hover cancelled, nozzle aft, full power.');
       }
@@ -615,9 +624,10 @@ export class StovlController {
         aF = -T.convertDecel * this.nozzleFloor() * clamp(vF / 20, 0, 1);
       } else if (this.mode === 'hover' && auth > 0) {
         const sp = p.pitch;
+        const departing = -sp >= T.departStick && clamp(ac.controls.throttle, 0, 1) > T.holdHi;
         const cmdF = -sp <= -0.02
           ? -sp * T.backSpeed
-          : -sp >= T.departStick ? T.departSpeed : -sp * T.fwdSpeed;
+          : departing ? T.departSpeed : Math.min(1, -sp) * T.fwdSpeed;
         const cmdR = p.roll * T.sideSpeed;
         if (Math.abs(sp) < 0.05 && Math.abs(p.roll) < 0.05) {
           this._iF = clamp(this._iF + (cmdF - vF) * T.transInt * dt, -1.2, 1.2);
@@ -832,6 +842,9 @@ const CSS = `
 .stovl-speed.is-high i { background: var(--amber, #ffc247); }
 .stovl-hint { margin-top: 8px; font-size: 10.5px; font-weight: 600; color: var(--text-dim, #9fb2cc); text-align: center; }
 .stovl-hint.is-warn { color: #ffe6b3; }
+.stovl-move { display: none; margin-top: 6px; font-size: 10.5px; font-weight: 700; color: #c9ffdd; text-align: center; line-height: 1.35; }
+.stovl-panel.is-live .stovl-move.is-on { display: block; }
+.stovl-move kbd { font: 700 9.5px/1 var(--font, system-ui, sans-serif); padding: 0 3px; border-radius: 3px; background: rgba(255,255,255,.14); }
 @media (max-width: 700px) { .stovl-panel { right: 8px; width: 116px; } .stovl-lever { height: 92px; } }
 /* A short landscape phone: centred, the panel would sit on the touch
    throttle (bottom right, 196 px tall), so it goes up under the wind box. */
@@ -863,7 +876,8 @@ function buildUi(sim) {
         <div><span>SPEED</span><b class="stovl-kt">0 kt</b><div class="stovl-speed"><i></i></div></div>
       </div>
     </div>
-    <div class="stovl-hint"></div>`;
+    <div class="stovl-hint"></div>
+    <div class="stovl-move"></div>`;
   extLayer().appendChild(panel);
   const q = (s) => panel.querySelector(s);
   const btn = q('.stovl-btn');
@@ -877,10 +891,13 @@ function buildUi(sim) {
   band.style.height = `${(STOVL_TUNE.holdHi - STOVL_TUNE.holdLo) * 100}%`;
   ui = {
     panel, btn, state: q('.stovl-state'), knob: q('.stovl-knob'), agl: q('.stovl-agl'), vs: q('.stovl-vs'),
-    kt: q('.stovl-kt'), speed: q('.stovl-speed'), speedFill: q('.stovl-speed i'), hint: q('.stovl-hint'),
+    kt: q('.stovl-kt'), speed: q('.stovl-speed'), speedFill: q('.stovl-speed i'), hint: q('.stovl-hint'), move: q('.stovl-move'),
     touch: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches,
   };
   if (ui.touch) ui.btn.querySelector('small').textContent = 'tap';
+  ui.move.innerHTML = ui.touch
+    ? 'Stick: slide about<br>Rudder: turn'
+    : '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> slide · <kbd>Q</kbd><kbd>E</kbd> turn<br><kbd>W</kbd>+<kbd>Shift</kbd> fly away';
   return ui;
 }
 
@@ -1042,6 +1059,7 @@ function updateUi(sim) {
   else hint = 'Holding height';
   ui.hint.textContent = hint;
   ui.hint.classList.toggle('is-warn', warn);
+  ui.move.classList.toggle('is-on', ctl.mode === 'hover' && !ac.onGround);
 }
 
 function off(sim) {

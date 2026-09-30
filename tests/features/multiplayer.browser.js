@@ -43,6 +43,49 @@ export async function check(sim, r, say = () => {}) {
   r.ok('multiplayer: registered with the plug-in layer and live', status && status.live, JSON.stringify(status));
   r.ok('multiplayer: Dev mode offers the lobbies and the older server list', ['Multiplayer lobbies', 'Multiplayer servers'].every((label) => ext.extDevActions().some((a) => a.ext === 'multiplayer' && a.label === label)));
   r.ok('multiplayer: openMultiplayer is exported for the main menu', typeof mpMod.openMultiplayer === 'function' && typeof mpMod.openServerList === 'function' && typeof mpMod.openLobbies === 'function');
+  // Part 3b: the hangar's code box offers a code to multiplayer first (the admin code); any other code is the hangar's, as before.
+  {
+    const A = await import('../../src/features/multiplayer/admin.js');
+    const box = sim.menus && sim.menus.screens && sim.menus.screens.hangar;
+    const input = box && box.querySelector('[data-code]');
+    const msg = box && box.querySelector('[data-code-msg]');
+    let said = null;
+    if (input && msg) {
+      const was = msg.textContent;
+      input.value = 'not-an-admin-code-or-any-code';
+      box.querySelector('[data-redeem]').click();
+      for (let i = 0; i < 100 && msg.textContent === was; i++) await new Promise((res) => setTimeout(res, 20));
+      said = msg.textContent;
+      msg.textContent = was;
+      input.value = '';
+    }
+    r.ok('multiplayer: a wrong code in the hangar’s box is not admin, and is answered as any wrong code is',
+      said === 'That code does not work' && !mp.isAdmin && A.adminKeys().length === 1 && A.adminCrypto() && Number(input && input.maxLength) >= 64, said);
+    // A made-up flag: the owner's public x and y (in admin.js) with a random d. Not an admin when the game starts, and forgotten.
+    // Whatever this browser kept before is put back, so a real admin running the self-test stays one.
+    const KEEP = 'islandsim.admin.v1';
+    let before = null;
+    let seen = null;
+    try {
+      before = localStorage.getItem(KEEP);
+      const d = new Uint8Array(32);
+      crypto.getRandomValues(d);
+      const owner = A.adminKeys()[0];
+      localStorage.setItem(KEEP, JSON.stringify({ on: 1, x: owner.x, y: owner.y, d: A.b64url(d) }));
+      const t0 = performance.now();
+      const k = A.AdminKey.load();
+      seen = { refused: k === null, forgotten: localStorage.getItem(KEEP) === null, ms: performance.now() - t0 };
+    } catch (e) {
+      seen = null; // no localStorage here: nothing can be kept, so nothing to fake
+    } finally {
+      try {
+        if (before === null) localStorage.removeItem(KEEP);
+        else localStorage.setItem(KEEP, before);
+      } catch (e) { /* no localStorage */ }
+    }
+    r.ok('multiplayer: a made-up admin flag in localStorage (the owner’s public key, any d) is not an admin, and is forgotten',
+      !seen || (seen.refused && seen.forgotten), seen ? `${seen.ms.toFixed(1)} ms to check it` : 'no localStorage');
+  }
 
   if (typeof RTCPeerConnection !== 'function') {
     r.ok('multiplayer: this browser has WebRTC', false, 'no RTCPeerConnection');
@@ -315,7 +358,8 @@ export async function check(sim, r, say = () => {}) {
       {
         // The badge a joiner flies with: a code a modified host slipped past the session is still not shown on it.
         const was = { role: mp.role, client: mp.client, server: mp.server, meId: mp.meId };
-        const badgeText = () => (mp.hud.el.querySelector('[data-mp-badge-text]') || {}).textContent || '';
+        // The whole badge: since list 2 the code has a line of its own under the name and head-count.
+        const badgeText = () => [...mp.hud.el.querySelectorAll('[data-mp-badge-text], [data-mp-badge-code]')].filter((x) => !x.hidden).map((x) => x.textContent).join(' · ');
         const seen = [];
         try {
           mp.role = 'client';
@@ -329,7 +373,7 @@ export async function check(sim, r, say = () => {}) {
         } finally {
           Object.assign(mp, was);
         }
-        r.ok('multiplayer: a joiner’s badge shows a code only if it is two list words and a number', !/code/.test(seen[0]) && !/code/.test(seen[1]) && /code maple-kite-42/.test(seen[2]), seen.join(' | '));
+        r.ok('multiplayer: a joiner’s badge shows a code only if it is two list words and a number', !/code/i.test(seen[0]) && !/code/i.test(seen[1]) && /Code maple-kite-42/.test(seen[2]), seen.join(' | '));
       }
       mp.hud.pauseList(sim, true, players, opts);
       const fold = document.querySelector('.mp-pausefold');
@@ -418,7 +462,8 @@ export async function check(sim, r, say = () => {}) {
       mpMod.openMultiplayer(sim);
       const le = document.querySelector('[data-screen="lobbies"]');
       r.ok('lobbies: the main menu’s Multiplayer opens the five lobbies', mpMod.LOBBIES_ON_MAIN_MENU === true && !!le && !le.hidden && (!sim.menus || sim.menus.current === 'lobbies'));
-      const cardsReady = await until(() => le.querySelectorAll('.mp-lobby.is-empty').length === 5, 6000);
+      // The Wi-Fi row's five (list 3 added a World row below it, with cards of its own).
+      const cardsReady = await until(() => le.querySelectorAll('[data-mp-lobby].is-empty').length === 5, 6000);
       const cards = [...le.querySelectorAll('[data-mp-lobby]')];
       const pick = le.querySelector('[data-mp-userpick]');
       r.ok('lobbies: five lobbies listed with their own names and 0/8; the first visit asks for a username, and Join waits for it',
@@ -464,7 +509,7 @@ export async function check(sim, r, say = () => {}) {
       le.querySelector('[data-mp-user-done]').click();
       const enabled = await until(() => [...le.querySelectorAll('[data-mp-lobby-join]')].every((b) => !b.disabled), 4000);
       r.ok('lobbies: "That’s me" keeps it, folds the pickers away, and the lobbies can be joined', mp.profile.chosen && pick.hidden && !le.querySelector('[data-mp-user-change]').hidden && !!enabled
-        && /You’ll join as Swift Falcon\./.test(le.textContent));
+        && /You’ll join as Swift Falcon[.,]/.test(le.textContent));
 
       // Somebody else hosts lobby 4 as Swift Falcon: a tab of our own, through the same fake server.
       const lsig = makeSig();
@@ -495,6 +540,12 @@ export async function check(sim, r, say = () => {}) {
       r.ok('lobbies: in a lobby nobody has Kick or Lock and nobody is called the host — each other player has Mute',
         !list.querySelector('[data-mp-kick]') && !list.querySelector('[data-mp-lock]') && !!list.querySelector('[data-mp-mute="Swift Falcon"]') && !/host/.test(list.textContent)
         && /Lobby 4 · Maple Runway · 2\/8/.test(badge) && other.kick(1) === false && other.setLocked(true) === false, badge);
+      // Part 3b: the lobby's owner — whoever hosts it — wears the crown, in the list and over their aeroplane; nobody here is an admin.
+      const ownerRow = [...list.querySelectorAll('.mp-prow')].find((row) => /Swift Falcon(?! 2)/.test(row.textContent));
+      const ownerTag = mp.remotes.players.get(0);
+      r.ok('lobbies: the lobby’s owner (its host) has the crown, in the list and on their tag — and only them',
+        !!(ownerRow && ownerRow.querySelector('.mp-crown')) && list.querySelectorAll('.mp-crown').length === 1 && !!(ownerTag && ownerTag.host)
+        && !list.querySelector('.mp-admintag') && !list.querySelector('[data-mp-adm-open]'), `${list.querySelectorAll('.mp-crown').length} crown(s)`);
       const toasts = [];
       const notify = sim.hud && sim.hud.notify;
       if (sim.hud) sim.hud.notify = (html, kind, secs) => { toasts.push(String(html)); return notify && notify.call(sim.hud, html, kind, secs); };

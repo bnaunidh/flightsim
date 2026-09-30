@@ -16,6 +16,7 @@
  */
 
 import * as THREE from '../../vendor/three.module.js';
+import { createPerson as rigPerson, posePerson, disposePerson } from '../staff/person.js';
 import { heightAt } from '../../world/terrain.js';
 
 let G = null; // shared geometry
@@ -297,33 +298,30 @@ export function createStairs(height = 4) {
  * the GPU has not already got.
  */
 export function createPerson(kind = 'police') {
-  const { G: g2, M: m } = shared();
-  const g = new THREE.Group();
+  /*
+   * The same jointed person as everybody else on the airfield
+   * (staff/person.js), in its police, tactical or hoodie outfit — lite, five
+   * draw calls — so they walk with their legs (hijack.js poses them) rather
+   * than sliding across the apron as three boxes with a hop.
+   */
+  const outfit = kind === 'tactical' || kind === 'hijacker' ? kind : 'police';
+  const g = rigPerson({ outfit, lite: true, seed: 101 + 17 * (personSeed++ % 23) });
   g.name = `person-${kind}`;
-  const top = kind === 'tactical' ? m.tactical : kind === 'hijacker' ? m.hoodie : m.hiVis;
-  const bottom = kind === 'hijacker' ? m.jeans : kind === 'tactical' ? m.tactical : m.uniform;
-  const legs = new THREE.Mesh(g2.legs, bottom);
-  legs.position.y = 0.41;
-  const torso = new THREE.Mesh(g2.torso, top);
-  torso.position.y = 1.18;
-  const head = new THREE.Mesh(g2.head, kind === 'tactical' ? m.tactical : m.skin);
-  head.position.y = 1.66;
-  if (kind === 'tactical') head.scale.set(1.2, 1.12, 1.2);
-  g.add(legs, torso, head);
-  if (kind === 'police') {
-    const cap = new THREE.Mesh(g2.cap, m.uniform);
-    cap.position.y = 1.8;
-    g.add(cap);
-  }
-  if (kind === 'hijacker') {
-    // The hood, up.
-    const hood = new THREE.Mesh(g2.head, m.hoodie);
-    hood.position.set(0, 1.7, 0.05);
-    hood.scale.set(1.18, 1.1, 1.18);
-    g.add(hood);
-  }
-  for (const c of g.children) c.castShadow = true;
   return g;
+}
+
+let personSeed = 0;
+
+/** Pose one of them for this frame: walking at `speed` m/s, or standing. */
+export function posePersonAt(obj, dt, speed) {
+  POSE.speed = speed;
+  posePerson(obj, dt, POSE);
+}
+const POSE = { speed: 0, air: false, wave: null };
+
+/** Free one of them (its geometry is its own). */
+export function disposeEventPerson(obj) {
+  disposePerson(obj);
 }
 
 /** Flash every light bar. `t` is seconds; the pattern is double-flash, alternate sides. */

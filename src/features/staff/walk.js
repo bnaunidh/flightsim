@@ -9,12 +9,15 @@
  * is a grid of triangles sampled from it every 39 m (71 m at low detail), and
  * on a hillside the two disagree by a metre or more. Standing on heightAt put
  * the feet inside the drawn slope on every concave bit of hill and floating
- * over every convex one. So on sloping ground the walker stands on the drawn
- * triangle, read straight out of the terrain mesh's own vertex array — the
- * same three numbers the GPU draws — and on flat ground (the airfield, a
- * quay, a deck) it stands on heightAt, because that is where the pavement and
- * the decks are drawn. Where heightAt stands well above the triangles, as on
- * a quay wall the grid is too coarse to show, heightAt wins too.
+ * over every convex one. So the walker stands on the drawn triangle, read
+ * straight out of the terrain mesh's own vertex array — the same three numbers
+ * the GPU draws — except where something is built on heightAt itself: the
+ * airfield's tarmac, a deck, a pad, a quay, a harbour wall. See groundAt.
+ *
+ * THE FLOOR. What a shoe stands on is sometimes a few centimetres over that
+ * ground: the runway is laid 6 cm up, the taxiways and aprons 5, a road's
+ * ribbon 6 cm over its bed, a pad's painted disc on its deck. floorAt() is
+ * the ground plus that, and it is where the walker's feet go.
  *
  * SOLID THINGS. terrain.js's OBSTACLES are world axis-aligned boxes: the
  * terminal, the tower, hangars, houses, even tree trunks — thousands of them
@@ -30,7 +33,7 @@
  */
 
 import * as THREE from '../../vendor/three.module.js';
-import { heightAt, OBSTACLES } from '../../world/terrain.js';
+import { heightAt, OBSTACLES, isPaved, platformAt, flatAt, MAP } from '../../world/terrain.js';
 
 export const WALK = {
   /** m/s. A brisk walk and a proper run — a ten-year-old's run, fast. */
@@ -127,18 +130,146 @@ export function drawnHeight(x, z) {
   return null;
 }
 
-/** Where a foot goes down at (x, z). See the note at the top. */
+/*
+ * What is drawn over the ground, handed in by onfoot.js once per world (and
+ * again if the road ribbon is re-laid): roads.js's drawn-ground sampler, the
+ * same one the van rides, its ribbon on its own, and the pads.
+ */
+const DRAWN = { ground: null, ribbon: null, lift: 0, pads: [] };
+
+/**
+ * The world's drawn surfaces for groundAt and floorAt.
+ *   ground(x, z)  the van's ground as drawn (roads.js drawnGroundSampler), or null
+ *   ribbon(x, z)  the road's tarmac, less its lift (roads.js ribbonSampler), or null
+ *   lift          how far the ribbon is drawn over that
+ *   pads          [{ x, z, r, y, top }]: a pad's platform height and its disc's
+ */
+export function setDrawn({ ground = null, ribbon = null, lift = 0, pads = [] } = {}) {
+  DRAWN.ground = typeof ground === 'function' ? ground : null;
+  DRAWN.ribbon = typeof ribbon === 'function' ? ribbon : null;
+  DRAWN.lift = lift || 0;
+  DRAWN.pads = Array.isArray(pads) ? pads : [];
+}
+
+/** The runway is laid 6 cm over heightAt, the taxiways and aprons 5 (airport.js). */
+export const PAVE_LIFT = 0.055;
+
+/*
+ * On the harbour's quay deck: the one authored flat that has a deck built on
+ * it (scenery.js addHarbour, same test). The other flats — a depot, a town
+ * square — are drawn by the terrain mesh like any other ground, and standing
+ * on heightAt there left the walker 80 cm up in the air along the edge of
+ * Drover's Flat depot.
+ */
+function onQuayDeck(x, z) {
+  const hc = MAP && MAP.scenery && MAP.scenery.harbour;
+  if (!hc) return false;
+  const dressed = !!(hc.breakwater || hc.moorings || hc.fishingFleet || hc.fuelJetty);
+  if (!hc.flat && dressed) return false;
+  const f = flatAt(x, z);
+  return !!f && f.id === (hc.flat || 'quay') && x >= f.x0 && x <= f.x1 && z >= f.z0 && z <= f.z1;
+}
+
+/** Near a harbour: its walls and breakwaters are geometry laid on heightAt. */
+function nearHarbour(x, z) {
+  const H = MAP && MAP.waters && MAP.waters.harbour;
+  if (!H || H._pending || !(H._reach > 0)) return false;
+  return Math.abs(x - H.cx) < H._reach && Math.abs(z - H.cz) < H._reach;
+}
+
+/** The pad whose disc is under (x, z) at about height h, or null. */
+function padAt(x, z, h) {
+  const list = DRAWN.pads;
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i];
+    const dx = x - p.x;
+    const dz = z - p.z;
+    if (dx * dx + dz * dz < p.r * p.r && Math.abs(h - p.y) < 0.6) return p;
+  }
+  return null;
+}
+
+/**
+ * The ground at (x, z). See the note at the top.
+ *
+ * It used to be heightAt wherever heightAt was flat, on the grounds that flat
+ * is built ground. But heightAt is flat along every road corridor cut into a
+ * hillside, and the grid draws that cut as a smooth slope: measured on
+ * Kestrel at (-1170, -104), heightAt 21.3 and the grass drawn at 23.2 — the
+ * walker was two metres under the hill — and twenty metres on, where the cut
+ * bank is steeper than the grid, heightAt won for being 1.2 m over it and
+ * the walker stood three metres up in the air. Now the drawn ground is the
+ * rule, and heightAt only where something is really built on it.
+ */
 export function groundAt(x, z) {
+  return ground(x, z);
+}
+
+/** What ground() last stood on: 0 terrain / built on heightAt, 1 tarmac, 2 road, 3 pad. */
+let KIND = 0;
+let PAD = null;
+
+function ground(x, z) {
+  KIND = 0;
+  PAD = null;
   const h = heightAt(x, z);
   if (!CHUNKS.length) return h;
-  // Flat is built ground (apron, quay, deck, road): stand on the definition.
-  const e = 1.5;
-  const flat =
-    Math.abs(heightAt(x + e, z) - heightAt(x - e, z)) + Math.abs(heightAt(x, z + e) - heightAt(x, z - e));
-  if (flat < 0.03) return h;
+  // Decks, pads and the harbour's quay are built on heightAt.
+  const pad = padAt(x, z, h);
+  if (pad) {
+    KIND = 3;
+    PAD = pad;
+    return h;
+  }
+  if (platformAt(x, z) || onQuayDeck(x, z)) return h;
   const m = drawnHeight(x, z);
-  if (m === null || h > m + 1.2) return h;
+  /*
+   * The airfield's tarmac is laid on heightAt where the airfield flattened
+   * it, which is where the mesh draws it flat too. Where the two part, the
+   * paved test has run past what is drawn (measured on Sennen: "paved"
+   * ground drawn as grass 33 cm under heightAt), and the grass is the floor.
+   */
+  const harbour = nearHarbour(x, z);
+  if (!harbour && isPaved(x, z) && (m === null || Math.abs(h - m) < 0.15)) {
+    KIND = 1;
+    return h;
+  }
+  // Roads and the ground round them, as the van rides them.
+  if (DRAWN.ground && !harbour) {
+    const d = DRAWN.ground(x, z);
+    if (d > -Infinity) {
+      if (DRAWN.ribbon) {
+        const t = DRAWN.ribbon(x, z);
+        if (t > -Infinity && Math.abs(t - d) < 0.05) KIND = 2;
+      }
+      return d;
+    }
+  }
+  if (m === null) return h;
+  // A harbour wall the 25 m grid is too coarse to show, and its quays.
+  if (harbour && (h > m + 1.2 || flatHere(x, z, h))) return h;
   return m;
+}
+
+function flatHere(x, z, h) {
+  const e = 1.5;
+  return Math.abs(heightAt(x + e, z) - h) + Math.abs(heightAt(x - e, z) - h) + Math.abs(heightAt(x, z + e) - h) + Math.abs(heightAt(x, z - e) - h) < 0.03;
+}
+
+/**
+ * Where a shoe goes down at (x, z): the ground, plus whatever is laid on it
+ * there — tarmac, a road's ribbon, a pad's disc. 5 to 14 cm, and it is the
+ * difference between a pilot standing on the apron and one standing in it
+ * up to the laces (measured at the Skylark's door: the runway drawn 6 cm
+ * over the walker's soles; the pad at the Skyhook's door 14; the road by
+ * the van 14.6).
+ */
+export function floorAt(x, z) {
+  const g = ground(x, z);
+  if (KIND === 1) return g + PAVE_LIFT;
+  if (KIND === 2) return g + DRAWN.lift;
+  if (KIND === 3) return PAD.top;
+  return g;
 }
 
 /* ------------------------------------------------------------------ */
@@ -594,7 +725,7 @@ export class Walker {
   place(x, z, headingDeg = 0) {
     this.x = x;
     this.z = z;
-    this.y = groundAt(x, z);
+    this.y = floorAt(x, z);
     this.heading = headingDeg;
     this.vx = 0;
     this.vz = 0;
@@ -656,10 +787,29 @@ export class Walker {
     const dist = Math.hypot(this.vx, this.vz) * dt;
     const n = Math.min(8, Math.max(1, Math.ceil(dist / WALK.maxStep)));
     const sdt = dt / n;
+    const x0 = this.x;
+    const z0 = this.z;
     for (let i = 0; i < n; i++) this.move(sdt, solids);
 
+    /*
+     * Blocked, the legs stop. The velocity was what the keys asked for, not
+     * what happened: walking into the terminal, a wing or the sea kept it at
+     * 1.8 m/s (5.2 running) and the walker ran on the spot against the wall
+     * with the footsteps going. Measured before: pressed against the terminal
+     * for a second, speed 1.8 m/s and the stride animation fully on. Now it
+     * is what the walker actually moved — the part along a wall stays, so
+     * sliding along one still walks. Only ever slower: a baggage cart
+     * nudging the walker along does not make the legs run.
+     */
+    const ax = (this.x - x0) / dt;
+    const az = (this.z - z0) / dt;
+    if (Math.hypot(ax, az) < Math.hypot(this.vx, this.vz) - 0.02) {
+      this.vx = ax;
+      this.vz = az;
+    }
+
     // Up and down.
-    const g = groundAt(this.x, this.z);
+    const g = floorAt(this.x, this.z);
     if (this.air) {
       this.vy -= WALK.gravity * dt;
       this.y += this.vy * dt;
@@ -764,7 +914,7 @@ export class Walker {
       const dx = nx - ox;
       const dz = nz - oz;
       const d = Math.hypot(dx, dz);
-      const rise = groundAt(ox + (dx / d) * 0.6, oz + (dz / d) * 0.6) - this.y;
+      const rise = floorAt(ox + (dx / d) * 0.6, oz + (dz / d) * 0.6) - this.y;
       if (rise > 0.35 && rise > 0.6 * WALK.maxRise) {
         this.lastBlock = 'too steep';
         return false;

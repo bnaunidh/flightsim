@@ -383,6 +383,21 @@ const _m = new THREE.Object3D();
  * carrier has always been built after the terrain for exactly this reason;
  * nobody wrote it down, so it is written down here.
  */
+/**
+ * How far above the pad's own height its painted disc is drawn.
+ *
+ * A pad on the ground lies over terrain the mesh draws a little off
+ * heightAt, so its disc is lifted clear of it. A deck — roof, rig, sea stack
+ * — has nothing under it but its platform, which is exactly where the
+ * helicopter's skids rest; lifted 14 cm there too, the disc swallowed the
+ * skids whole on every roof pad (the Skyhook's first pad at Kestrel is one),
+ * and the walker's shoes with them. There it is the deck itself: nothing else
+ * is drawn at that height for it to fight with.
+ */
+export function padDiscLift(p) {
+  return p && p.kind && p.kind !== 'ground' ? 0 : 0.14;
+}
+
 export function buildPads(parent) {
   clearPads();
   const defs = padsOf(MAP);
@@ -493,7 +508,7 @@ export function buildPads(parent) {
     const inst = new THREE.InstancedMesh(disc, mat, list.length);
     inst.receiveShadow = true;
     list.forEach((p, i) => {
-      _m.position.set(p.pos.x, p.pos.y + 0.14, p.pos.z);
+      _m.position.set(p.pos.x, p.pos.y + padDiscLift(p), p.pos.z);
       _m.rotation.set(0, 0, 0);
       _m.scale.set(p.r, 1, p.r);
       _m.updateMatrix();
@@ -612,7 +627,8 @@ export function buildPads(parent) {
   for (const p of PADS) {
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2;
-      _m.position.set(p.pos.x + Math.cos(a) * p.r * 0.97, p.pos.y + 0.4, p.pos.z + Math.sin(a) * p.r * 0.97);
+      // Standing on the disc (0.45 m tall), not hovering over it.
+      _m.position.set(p.pos.x + Math.cos(a) * p.r * 0.97, p.pos.y + padDiscLift(p) + 0.225, p.pos.z + Math.sin(a) * p.r * 0.97);
       _m.rotation.set(0, 0, 0);
       _m.scale.set(1, 1, 1);
       _m.updateMatrix();

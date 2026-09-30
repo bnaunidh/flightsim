@@ -141,6 +141,16 @@ export function createAircraftModel(opts = {}) {
   // The same default the original factory applies. main.js builds a placeholder
   // aeroplane before it knows which one you picked, and passes no type at all.
   const type = opts.type || getAircraft(DEFAULT_AIRCRAFT_ID);
+  // An aeroplane that draws itself (T-Pose Harrison: extra/tpose.js). If it
+  // throws, the generic factory still puts something on the runway.
+  if (typeof type.buildModel === 'function') {
+    try {
+      return type.buildModel({ ...opts, type });
+    } catch (e) {
+      console.warn(`The ${type.id} model failed to build; drawing the generic one.`, e);
+      return createLegacyModel(opts);
+    }
+  }
   // BLENDER MODELS: the helicopter (harrier) drawn by the Blender model, its
   // rotor spun from the rotor speed; null (not loaded) falls through to the old one.
   const blender = blenderAircraftModel(type, opts);

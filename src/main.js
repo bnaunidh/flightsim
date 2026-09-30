@@ -2346,7 +2346,9 @@ class Game {
   triggerNatural(id) {
     const ev = findEvent(id);
     if (!ev) return;
-    ev.apply(this);
+    // False = it could not happen here (a wildfire with nothing to burn): no
+    // warning for something that is not there.
+    if (ev.apply(this) === false) return;
     // Remember it is running so the pause menu can show which ones are live.
     this.activeEvents = this.activeEvents || {};
     this.activeEvents[id] = ev.duration || 8;

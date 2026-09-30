@@ -12,6 +12,16 @@
  * the Players and Chat buttons), the player list while Tab is held, the
  * quick-chat menu, and coloured dots over the minimap. Nothing here touches
  * the HUD's elements; everything sits in the plug-in layer above them.
+ *
+ * List 2 ("the multiplayer UI is weird"), looked at with eight players at
+ * 1366x768 and 1024x768: the badge was a wide bar that re-measured the HUD
+ * once a second to stay out of its way — and counted the "joined" toasts as
+ * HUD, so each time somebody joined it dropped to the middle of the right
+ * side of the view, on top of the nametags, and went back up when the toast
+ * did. Now it is two short lines docked to the minimap (above it where the
+ * minimap is at the bottom, below it where it is at the top), where the
+ * coloured dots of the same players are, with the chat menu opening away
+ * from it; and the player list sits above the other features' prompts.
  */
 
 import {
@@ -91,17 +101,27 @@ const CSS = `
 @media (max-width: 480px) { .mp-slots { grid-template-columns: 1fr; } .mp-slot { min-height: 0; } }
 
 /* ---- in flight ---- */
-.mp-hud { position: absolute; inset: 0; pointer-events: none; font-family: var(--font); color: var(--text); }
+.mp-hud { position: absolute; inset: 0; pointer-events: none; font-family: var(--font); color: var(--text); z-index: 4; }
 .mp-hud[hidden] { display: none !important; }
 .mp-badge {
-  position: absolute; right: 16px; top: 16px; max-width: min(420px, 60vw);
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
-  padding: 7px 10px 7px 12px; border-radius: 12px; font-size: 12.5px;
+  position: absolute; right: 16px; top: 16px; width: max-content; max-width: min(250px, 44vw);
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 7px 9px 7px 11px; border-radius: 12px; font-size: 12.5px;
   background: var(--panel); border: 1px solid var(--panel-line);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: var(--shadow);
 }
+.mp-badge .mp-brow { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.mp-badge .mp-brow [data-mp-badge-text] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-badge .mp-bcode { font-size: 11.5px; color: var(--text-dim); line-height: 1.35; }
+.mp-badge .mp-bcode b { white-space: nowrap; }
+.mp-badge .mp-bcode b { font-family: var(--mono); color: var(--text); letter-spacing: 0.04em; }
+.mp-badge .mp-bcode[hidden] { display: none; }
+.mp-badge .mp-bact { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+/* List 2, part 2: the chips other features put here — PvP, Summon, Race (../pvp.js, ../mpworld.js, ../race.js). */
+.mp-badge .mp-bext { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; position: relative; }
+.mp-badge .mp-bext[hidden] { display: none; }
 .mp-badge b { font-weight: 650; }
-.mp-badge .mp-keys { color: var(--text-dim); font-size: 11.5px; }
+.mp-badge .mp-keys { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 .mp-badge kbd { font-family: var(--mono); font-size: 10.5px; padding: 1px 5px; border-radius: 5px; border: 1px solid var(--panel-line); background: rgba(255,255,255,0.07); }
 .mp-hud button {
   pointer-events: auto; font: inherit; font-size: 12.5px; cursor: pointer; color: var(--text);
@@ -112,8 +132,10 @@ const CSS = `
 .is-touch-device .mp-hud .mp-touch-only { display: inline-block; }
 .is-touch-device .mp-hud .mp-keys { display: none; }
 .is-touch-device .mp-hud button { padding: 9px 14px; font-size: 14px; }
+.is-touch-device .mp-badge .mp-bact { justify-content: flex-start; }
 .mp-list {
-  position: absolute; left: 50%; top: 18%; transform: translateX(-50%); width: min(440px, 92vw);
+  position: absolute; left: 50%; top: 18%; transform: translateX(-50%); width: min(440px, 92vw); z-index: 2;
+  max-height: 70vh; overflow-y: auto;
   pointer-events: auto; padding: 14px 16px; border-radius: var(--radius);
   background: rgba(10, 17, 30, 0.9); border: 1px solid var(--panel-line); box-shadow: var(--shadow);
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
@@ -131,7 +153,7 @@ const CSS = `
 .mp-pausefold h4 { display: none; }
 .mp-pausefold button { font: inherit; font-size: 12.5px; padding: 5px 10px; border-radius: 9px; }
 .mp-chatmenu {
-  position: absolute; right: 16px; top: 64px; width: min(300px, 80vw); pointer-events: auto;
+  position: absolute; right: 16px; top: 64px; width: min(300px, 80vw); pointer-events: auto; z-index: 1;
   display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px; border-radius: 14px;
   background: rgba(10, 17, 30, 0.9); border: 1px solid var(--panel-line); box-shadow: var(--shadow);
 }
@@ -140,7 +162,33 @@ const CSS = `
 .mp-chatmenu kbd { font-family: var(--mono); font-size: 10.5px; color: var(--text-dim); margin-right: 5px; }
 .mp-mini { position: absolute; pointer-events: none; }
 .mp-again { font-style: normal; color: #ffe6b3; }
+/* Part 3b: the crown, the ADMIN badge, and the admin menu. */
+.mp-crown { display: inline-block; width: 17px; height: 13px; margin-right: 5px; vertical-align: -1px; }
+.mp-admintag { display: inline-block; margin-left: 6px; padding: 1px 5px; border-radius: 5px; background: #ff5a4f; color: #fff;
+  font-size: 10px; font-weight: 800; letter-spacing: 0.06em; vertical-align: 1px; }
+.mp-badge .mp-admintag { margin-left: 0; }
+.mp-frozen { color: #bfe6ff; font-weight: 650; }
+.mp-prow .mp-acts { display: inline-flex; gap: 5px; justify-content: flex-end; }
+.mp-admrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 2px 0 9px 24px; font-size: 12.5px; color: var(--text-dim); }
+.mp-admrow .mp-sure { color: var(--text); font-weight: 600; }
+.mp-hud .mp-admrow button.mp-yes, .mp-pausefold .mp-admrow button.mp-yes { background: rgba(255, 90, 79, 0.28); border-color: rgba(255, 90, 79, 0.7); }
+.mp-hud button.mp-admbtn, .mp-pausefold button.mp-admbtn { border-color: rgba(255, 90, 79, 0.55); }
 `;
+
+/** The owner's crown, for the player list (the tags draw their own: remotes.js). */
+export const CROWN_SVG = '<svg class="mp-crown" viewBox="0 0 24 18" role="img" aria-label="Owner"><title>Owner</title>'
+  + '<path d="M2 16.5h20V5.5l-5.5 5L12 1.5l-4.5 9L2 5.5z" fill="#ffd23f" stroke="#6b4e00" stroke-width="1.4" stroke-linejoin="round"/>'
+  + '<rect x="3" y="13" width="18" height="2.4" fill="#e0a800"/></svg>';
+
+/** What each admin action is called on its button, and what its "are you sure" says. */
+const ADMIN_WORDS = {
+  kick: ['Kick', (n) => `Take ${n} out of this game?`],
+  mute: ['Mute chat', (n) => `Mute ${n}’s chat for everybody?`],
+  unmute: ['Unmute chat', (n) => `Let ${n} chat again?`],
+  freeze: ['Freeze 30 s', (n) => `Freeze ${n} for 30 seconds?`],
+  unfreeze: ['Unfreeze', (n) => `Let ${n} move again?`],
+  close: ['Close server', () => 'Close this game for everybody? They all go back to the lobby list.'],
+};
 
 export function injectStyle() {
   if (typeof document === 'undefined' || !document.head || document.getElementById(STYLE_ID)) return;
@@ -182,7 +230,7 @@ export function buildScreen(ctrl) {
         <h2>Multiplayer</h2>
         <span></span>
       </header>
-      <p class="hint">Fly with up to four friends. Everybody sees everybody — no crashing into each other, and chat is quick messages only.</p>
+      <p class="hint">Fly with up to four friends. Everybody sees everybody — you bump into each other gently (a real crash only if you both have PvP on), and chat is quick messages only.</p>
 
       <div class="mp-card">
         <h3>You</h3>
@@ -231,7 +279,7 @@ export function buildScreen(ctrl) {
         </div>
         <div class="mp-card">
           <h3>Join with a code</h3>
-          <p class="hint">For a friend who is not on your Wi-Fi. Every server has a code: two words and a number, like ${CODE_EXAMPLE}.</p>
+          <p class="hint">Works with friends who aren’t on your Wi-Fi. Every server has a code: two words and a number, like ${CODE_EXAMPLE}.</p>
           <div class="mp-row">
             <input class="mp-input mp-code" data-mp-code maxlength="${CODE_TYPED_MAX}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${CODE_EXAMPLE}" aria-label="Join code">
             <button class="primary" data-mp-join-code>Join</button>
@@ -426,33 +474,62 @@ export function buildScreen(ctrl) {
  * Leave that did nothing, about one time in several.
  */
 function paintRoster(box, players, {
-  meId, isHost, code: rawCode, server, locked, closeButton = false, lobby = false, muted = null, max = MAX_PLAYERS, reconnecting = false,
+  meId, isHost, code: rawCode, server, locked, closeButton = false, lobby = false, muted = null, max = MAX_PLAYERS, reconnecting = false, place = '', priv = false,
+  world = false,
+  admin = false, adm = null,
 }) {
   if (!box) return;
   // Checked again here, the last step before the screen: a code is shown only if it is exactly one the game could make.
   const code = shownCode(rawCode);
-  let shape = `${meId}|${isHost}|${code}|${server}|${locked}|${closeButton}|${lobby}|${max}|${reconnecting}`;
-  for (const p of players) shape += `#${p.id}|${p.name}|${p.colour}|${p.host ? 1 : 0}|${muted && muted.has(p.name) ? 1 : 0}`;
+  // Part 3b: which row's admin menu is open, and which action is waiting for "yes" (buildHud keeps both).
+  const open = admin && adm ? adm.open : null;
+  const armed = admin && adm ? adm.armed : null;
+  let shape = `${meId}|${isHost}|${code}|${server}|${locked}|${closeButton}|${lobby}|${max}|${reconnecting}|${place}|${priv}|${world}|${admin}|${open}|${armed ? `${armed.op}:${armed.id}` : ''}`;
+  for (const p of players) shape += `#${p.id}|${p.name}|${p.colour}|${p.host ? 1 : 0}|${muted && muted.has(p.name) ? 1 : 0}|${p.admin ? 1 : 0}${p.muted ? 1 : 0}${p.frozen ? 1 : 0}`;
   if (shape !== box._shape) {
     box._shape = shape;
     const rows = players.map((p) => {
       const you = p.id === meId;
       const hush = !!(muted && muted.has(p.name));
-      // In a lobby the host is only whoever came first, so nobody is labelled it.
-      const tags = [p.host && !lobby ? 'host' : '', you ? 'you' : '', hush ? 'muted' : ''].filter(Boolean).join(', ');
-      let act = '<span></span>';
+      const name = escapeHtml(p.name);
+      // Part 3b: the crown is whoever hosts — a lobby's owner too, now; the word "host" only where the host made the game.
+      const tags = [p.host && !lobby ? 'host' : '', you ? 'you' : '', hush ? 'muted' : '', p.muted ? 'chat muted by an admin' : '', p.frozen ? 'frozen' : ''].filter(Boolean).join(', ');
+      const acts = [];
       if (lobby && !you) {
-        act = `<button data-mp-mute="${escapeHtml(p.name)}" title="${hush ? 'Show' : 'Hide'} ${escapeHtml(p.name)}’s quick chat — only on your screen">${hush ? 'Unmute' : 'Mute'}</button>`;
-      } else if (!lobby && isHost && !p.host) act = `<button data-mp-kick="${p.id}" title="Remove ${escapeHtml(p.name)} from the server">Kick</button>`;
-      return `<div class="mp-prow"><i style="background:${safeCss(p.colour)}"></i><span>${escapeHtml(p.name)}${tags ? `<span class="mp-tagline">${tags}</span>` : ''}</span><span class="mp-ping" data-mp-ping="${p.id}"></span>${act}</div>`;
+        acts.push(`<button data-mp-mute="${name}" title="${hush ? 'Show' : 'Hide'} ${name}’s quick chat — only on your screen">${hush ? 'Unmute' : 'Mute'}</button>`);
+      } else if (!lobby && isHost && !p.host && !p.admin) acts.push(`<button data-mp-kick="${p.id}" title="Remove ${name} from the server">Kick</button>`);
+      // The admin menu: for anybody here who is not an admin themselves.
+      if (admin && !you && !p.admin) acts.push(`<button class="mp-admbtn" data-mp-adm-open="${p.id}" aria-expanded="${open === p.id}" title="Admin: kick, mute or freeze ${name}">Admin</button>`);
+      let sub = '';
+      if (admin && open === p.id && !you && !p.admin) {
+        if (armed && armed.id === p.id) {
+          sub = `<div class="mp-admrow" data-mp-admrow="${p.id}"><span class="mp-sure">${escapeHtml(ADMIN_WORDS[armed.op][1](p.name))}</span>`
+            + '<button class="mp-yes" data-mp-adm-yes>Yes</button><button data-mp-adm-no>No</button></div>';
+        } else {
+          const ops = [];
+          // A match the host made: taking its host out would end it, which is Close server.
+          if (!(p.host && !lobby)) ops.push('kick');
+          ops.push(p.muted ? 'unmute' : 'mute', p.frozen ? 'unfreeze' : 'freeze');
+          sub = `<div class="mp-admrow" data-mp-admrow="${p.id}">${ops.map((op) => `<button data-mp-adm="${op}:${p.id}">${ADMIN_WORDS[op][0]}</button>`).join('')}</div>`;
+        }
+      }
+      return `<div class="mp-prow"><i style="background:${safeCss(p.colour)}"></i><span>${p.host ? CROWN_SVG : ''}${name}${p.admin ? '<b class="mp-admintag">ADMIN</b>' : ''}${tags ? `<span class="mp-tagline">${tags}</span>` : ''}</span><span class="mp-ping" data-mp-ping="${p.id}"></span><span class="mp-acts">${acts.join('')}</span></div>${sub}`;
     });
     const lockBtn = isHost && !lobby ? `<button data-mp-lock="${locked ? 'off' : 'on'}" title="${locked ? 'Let new players join again' : 'Stop anybody new from joining'}">${locked ? 'Unlock' : 'Lock'}</button> ` : '';
-    const note = reconnecting ? '<span class="mp-again">Reconnecting… keep flying</span>' : '';
+    // A world lobby (list 3) says so: the others in it can be anybody, anywhere — usernames from the lists and quick chat only, as everywhere.
+    const note = reconnecting ? '<span class="mp-again">Reconnecting… keep flying</span>'
+      : world ? '<small>World lobby — players from anywhere. Quick chat only; Mute hides someone’s.</small>' : '';
+    // An admin can close the game for everybody — asked first.
+    const closing = admin && armed && armed.op === 'close';
+    const adminClose = !admin ? '' : closing
+      ? `<div class="mp-admrow" data-mp-admrow="close"><span class="mp-sure">${escapeHtml(ADMIN_WORDS.close[1]())}</span><button class="mp-yes" data-mp-adm-yes>Yes, close it</button><button data-mp-adm-no>No</button></div>`
+      : '<div class="mp-admrow" data-mp-admrow="close"><b class="mp-admintag">ADMIN</b><button class="mp-admbtn" data-mp-adm="close:-1">Close server for everybody</button></div>';
     box.innerHTML = `
-      <h4>Players <span>${players.length}/${max} · ${escapeHtml(server || '')}${locked ? ' · locked' : ''}</span></h4>
+      <h4>Players <span>${players.length}/${max} · ${escapeHtml(server || '')}${place ? ` · ${escapeHtml(place)}` : ''}${locked ? ' · locked' : ''}</span></h4>
       ${rows.join('')}
+      ${adminClose}
       <div class="mp-foot">
-        <span>${code ? `Code <b>${escapeHtml(code)}</b>` : note}</span>
+        <span>${code ? `Code <b>${escapeHtml(code)}</b>${priv ? '<br><small>Works with friends who aren’t on your Wi-Fi.</small>' : ''}` : note}</span>
         <span>${closeButton ? '<button class="mp-touch-only" data-mp-close-list>Close</button> ' : ''}${lockBtn}<button data-mp-leave>${lobby ? 'Leave lobby' : isHost ? 'Close server' : 'Leave'}</button></span>
       </div>`;
     box._pings = new Map();
@@ -472,11 +549,14 @@ export function buildHud(ctrl, layer) {
   const el = h(`
     <div class="mp-hud" hidden>
       <div class="mp-badge">
-        <span class="mp-dot"></span>
-        <span data-mp-badge-text></span>
-        <span class="mp-keys"><kbd>Tab</kbd> players · <kbd>3</kbd>–<kbd>6</kbd> chat</span>
-        <button class="mp-touch-only" data-mp-players>Players</button>
-        <button data-mp-chat title="Quick chat">Chat</button>
+        <div class="mp-brow"><span class="mp-dot"></span><span data-mp-badge-text></span></div>
+        <div class="mp-bcode" data-mp-badge-code hidden></div>
+        <div class="mp-bact">
+          <span class="mp-keys"><kbd>Tab</kbd> players · <kbd>3</kbd>–<kbd>6</kbd> chat</span>
+          <button class="mp-touch-only" data-mp-players>Players</button>
+          <button data-mp-chat title="Quick chat">Chat</button>
+        </div>
+        <div class="mp-bext" data-mp-badge-ext hidden></div>
       </div>
       <div class="mp-list" data-mp-list hidden></div>
       <div class="mp-chatmenu" data-mp-chatmenu hidden>
@@ -491,7 +571,10 @@ export function buildHud(ctrl, layer) {
   const mini = el.querySelector('[data-mp-mini]');
   const badge = el.querySelector('.mp-badge');
   const badgeText = el.querySelector('[data-mp-badge-text]');
+  const badgeCode = el.querySelector('[data-mp-badge-code]');
+  const ext = el.querySelector('[data-mp-badge-ext]');
   let badgeHtml = null;
+  let codeHtml = null;
   let placedAt = -Infinity;
   let hudNodes = [];
   let hudNodesAt = -Infinity;
@@ -500,7 +583,42 @@ export function buildHud(ctrl, layer) {
   let listHeld = false;
 
   let pause = null;
+  // Part 3b: the admin menu's state — whose row is open, and the one action waiting for "yes". One at a time.
+  const adm = { open: null, armed: null };
+  let lastRoster = null;
+  const repaint = () => {
+    if (lastRoster) hud.roster(lastRoster.players, lastRoster.opts);
+  };
   const onClick = (e) => {
+    const admOpen = e.target.closest('[data-mp-adm-open]');
+    if (admOpen) {
+      const id = Number(admOpen.dataset.mpAdmOpen);
+      adm.open = adm.open === id ? null : id;
+      adm.armed = null;
+      repaint();
+      return;
+    }
+    const admBtn = e.target.closest('[data-mp-adm]');
+    if (admBtn) {
+      const [op, id] = admBtn.dataset.mpAdm.split(':');
+      adm.armed = { op, id: Number(id) };
+      if (op === 'close') adm.open = null;
+      repaint();
+      return;
+    }
+    if (e.target.closest('[data-mp-adm-yes]')) {
+      const a = adm.armed;
+      adm.armed = null;
+      adm.open = null;
+      if (a) ctrl.adminAct(a.op, a.id);
+      repaint();
+      return;
+    }
+    if (e.target.closest('[data-mp-adm-no]')) {
+      adm.armed = null;
+      repaint();
+      return;
+    }
     if (e.target.closest('[data-mp-players]')) {
       listPinned = !listPinned;
       hud.syncList();
@@ -544,6 +662,10 @@ export function buildHud(ctrl, layer) {
 
   const hud = {
     el,
+    /** Where other features put their chips on the badge (list 2, part 2); shown once something is in it. */
+    ext,
+    /** True when the badge sits over the minimap, so a feature's menu opens upwards. */
+    menuUp: false,
     show(on) {
       el.hidden = !on;
       if (!on) {
@@ -553,10 +675,17 @@ export function buildHud(ctrl, layer) {
       }
     },
     // Once a second from the idle loop; written only when it changed, which is rarely.
-    badge(text) {
-      if (badgeHtml === text) return;
-      badgeHtml = text;
-      badgeText.innerHTML = text;
+    badge(text, code = '') {
+      if (badgeHtml !== text) {
+        badgeHtml = text;
+        badgeText.innerHTML = text;
+      }
+      if (codeHtml !== code) {
+        codeHtml = code;
+        badgeCode.innerHTML = code;
+        badgeCode.hidden = !code;
+        placedAt = -Infinity;
+      }
     },
     hold(on) {
       listHeld = !!on;
@@ -569,8 +698,19 @@ export function buildHud(ctrl, layer) {
       return !list.hidden;
     },
     roster(players, opts) {
-      paintRoster(list, players, { ...opts, closeButton: true });
-      if (pause && !pause.hidden) paintRoster(pause.querySelector('[data-mp-pauselist]'), players, opts);
+      lastRoster = { players, opts };
+      // An admin menu for somebody who has gone, or who is now an admin: closed. And none at all for a player who is not an admin here.
+      if (adm.open != null && !players.some((p) => p.id === adm.open && !p.admin)) {
+        adm.open = null;
+        if (adm.armed && adm.armed.op !== 'close') adm.armed = null;
+      }
+      if (!(opts && opts.admin)) adm.open = adm.armed = null;
+      paintRoster(list, players, { ...opts, closeButton: true, adm });
+      if (pause && !pause.hidden) paintRoster(pause.querySelector('[data-mp-pauselist]'), players, { ...opts, adm });
+    },
+    /** For the tests: the admin menu's state. */
+    get adminMenu() {
+      return { open: adm.open, armed: adm.armed };
     },
     /**
      * The same list in the pause menu, as one of its folds. Paused is where
@@ -594,69 +734,99 @@ export function buildHud(ctrl, layer) {
       if (pause.hidden === !!on) pause.hidden = !on;
       if (on) {
         setText(pause.querySelector('[data-mp-pausehead]'), `${players.length}/${(opts && opts.max) || MAX_PLAYERS} players`);
-        paintRoster(pause.querySelector('[data-mp-pauselist]'), players, opts);
+        paintRoster(pause.querySelector('[data-mp-pauselist]'), players, { ...opts, adm });
       }
     },
     /**
-     * Keep the badge clear of the game's own HUD.
-     *
-     * It was pinned at the top right, 16 px in, which is exactly where the
-     * wind rose lives: the playtest screenshot had the wind covered and the
-     * end of the objective line ("…and land whenever you") cut off under it.
-     * The four games put different things in that corner, and the damage
-     * panel appears under the wind when something breaks, so rather than a
-     * fixed spot it drops below whatever is there, re-measured once a second.
-     * Review found it searching the whole document for HUD pieces twice a
-     * second; which pieces exist changes far less often than where they are,
-     * so the search is every five seconds and the measuring once a second.
+     * Where the badge goes: docked to the minimap, where the same players'
+     * dots are — above it when the minimap is at the bottom (a computer),
+     * below it when it is at the top (a tablet) — with the chat menu
+     * opening away from it. Without a minimap (hidden with M), the top right
+     * corner, below whatever of the game's own HUD is there: re-measured once
+     * a second, and never counting the toasts, which come and go and used to
+     * push it into the middle of the view.
      */
-    place() {
+    place(sim) {
       const t = typeof performance !== 'undefined' ? performance.now() : 0;
       if (t - placedAt < 1000 || el.hidden || typeof document === 'undefined') return;
       placedAt = t;
-      if (t - hudNodesAt > 5000) {
-        hudNodesAt = t;
-        hudNodes = [];
-        for (const n of document.querySelectorAll('[class*="hud-"]')) if (!el.contains(n)) hudNodes.push(n);
-      }
       const W = window.innerWidth;
       const H = window.innerHeight;
-      const bw = badge.offsetWidth || 300;
-      const bh = badge.offsetHeight || 40;
-      const left = W - 16 - bw;
-      boxes.length = 0;
-      for (const n of hudNodes) {
-        if (!n.isConnected) continue;
-        const r = n.getBoundingClientRect();
-        // In the right-hand column and the top half; not a full-screen wrapper.
-        if (!r.width || !r.height || r.right <= left || r.left >= W || r.top > H * 0.55) continue;
-        if (r.width > W * 0.6 || r.height > H * 0.6) continue;
-        const cs = getComputedStyle(n);
-        if (cs.visibility === 'hidden' || Number(cs.opacity) < 0.05) continue;
-        boxes.push(r);
-      }
-      let y = 16;
-      for (let k = 0, moved = true; moved && k < 12; k++) {
-        moved = false;
-        for (const r of boxes) {
-          if (r.top < y + bh && r.bottom > y) {
-            y = Math.ceil(r.bottom) + 8;
-            moved = true;
+      const bw = badge.offsetWidth || 200;
+      const bh = badge.offsetHeight || 60;
+      const mm = sim && sim.minimap;
+      const canvas = mm && mm.visible && mm.canvas;
+      const r = canvas && canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : null;
+      let pos;
+      if (r && r.width > 20 && r.height > 20) {
+        const bottomHalf = r.top + r.height / 2 > H / 2;
+        const rightHalf = r.left + r.width / 2 > W / 2;
+        const top = bottomHalf ? Math.max(8, r.top - 8 - bh) : Math.min(H - bh - 8, r.bottom + 8);
+        pos = rightHalf ? { right: Math.max(8, W - r.right), top } : { left: Math.max(8, r.left), top };
+        pos.menuUp = bottomHalf;
+        // The wildfire's panel grows down that side to meet it (a laptop, 1366x768: its last lines were under the
+        // badge): the badge steps to the left of the panel rather than cover it.
+        if (rightHalf) {
+          const bx1 = W - pos.right;
+          let edge = Infinity;
+          for (const n of document.querySelectorAll('.wf-panel')) {
+            const b = n.getBoundingClientRect();
+            if (b.width && b.height && b.left < bx1 && b.right > bx1 - bw && b.top < top + bh && b.bottom > top) edge = Math.min(edge, b.left);
+          }
+          if (edge < Infinity && edge - 8 - bw > 8) pos.right = Math.round(W - edge + 8);
+        }
+      } else {
+        if (t - hudNodesAt > 5000) {
+          hudNodesAt = t;
+          hudNodes = [];
+          for (const n of document.querySelectorAll('[class*="hud-"]')) if (!el.contains(n) && !/hud-toast/.test(n.className)) hudNodes.push(n);
+        }
+        const left = W - 16 - bw;
+        boxes.length = 0;
+        for (const n of hudNodes) {
+          if (!n.isConnected) continue;
+          const b = n.getBoundingClientRect();
+          if (!b.width || !b.height || b.right <= left || b.left >= W || b.top > H * 0.55) continue;
+          if (b.width > W * 0.6 || b.height > H * 0.6) continue;
+          const cs = getComputedStyle(n);
+          if (cs.visibility === 'hidden' || Number(cs.opacity) < 0.05) continue;
+          boxes.push(b);
+        }
+        let y = 16;
+        for (let k = 0, moved = true; moved && k < 12; k++) {
+          moved = false;
+          for (const b of boxes) {
+            if (b.top < y + bh && b.bottom > y) {
+              y = Math.ceil(b.bottom) + 8;
+              moved = true;
+            }
           }
         }
+        pos = { right: 16, top: Math.min(y, Math.max(16, H * 0.55)), menuUp: false };
       }
-      y = Math.min(y, Math.max(16, H * 0.55));
-      if (badge._top !== y) {
-        badge._top = y;
-        badge.style.top = `${y}px`;
-        menu.style.top = `${y + bh + 8}px`;
+      const key = `${pos.left}|${pos.right}|${pos.top}|${pos.menuUp}|${bh}`;
+      hud.menuUp = !!pos.menuUp;
+      if (badge._pos === key) return;
+      badge._pos = key;
+      badge.style.left = pos.left != null ? `${pos.left}px` : 'auto';
+      badge.style.right = pos.right != null ? `${pos.right}px` : 'auto';
+      badge.style.top = `${pos.top}px`;
+      menu.style.left = pos.left != null ? `${pos.left}px` : 'auto';
+      menu.style.right = pos.right != null ? `${pos.right}px` : 'auto';
+      if (pos.menuUp) {
+        menu.style.top = 'auto';
+        menu.style.bottom = `${H - pos.top + 8}px`;
+      } else {
+        menu.style.bottom = 'auto';
+        menu.style.top = `${pos.top + bh + 8}px`;
       }
     },
     /** Coloured dots over the game's minimap, drawn on our own canvas so minimap.js is untouched. */
-    minimap(sim, dots) {
+    minimap(sim, dots, extras = null) {
       const mm = sim && sim.minimap;
       const canvas = mm && mm.canvas;
-      const visible = !!(mm && mm.visible && canvas && canvas.getBoundingClientRect && !el.hidden && dots.length);
+      const more = !!(extras && extras.length);
+      const visible = !!(mm && mm.visible && canvas && canvas.getBoundingClientRect && !el.hidden && (dots.length || more));
       if (!visible) {
         if (mini.style.display !== 'none') mini.style.display = 'none';
         return;
@@ -726,6 +896,34 @@ export function buildHud(ctrl, layer) {
         g.stroke();
         g.fill();
         g.restore();
+      }
+      /*
+       * List 2, part 2: whatever else the game shares — a crash somebody had,
+       * the race's gates, the host's AI aeroplanes. Each gets a way to turn a
+       * place into a point on this canvas: [x, y, off] with `off` for a place
+       * past the rim, pinned to it.
+       */
+      if (more) {
+        const toXY = (wx, wz) => {
+          let x = c + (wx - me.x) * k;
+          let y = c + (wz - me.z) * k;
+          const dx = x - c;
+          const dy = y - c;
+          const rr = Math.hypot(dx, dy);
+          const edge = c - 12;
+          if (rr > edge) return [c + (dx / rr) * edge, c + (dy / rr) * edge, true];
+          return [x, y, false];
+        };
+        for (const fn of extras) {
+          try {
+            g.save();
+            fn(g, toXY, sim);
+          } catch (e) {
+            /* one feature's marks are not worth the others' */
+          } finally {
+            g.restore();
+          }
+        }
       }
       g.restore();
     },

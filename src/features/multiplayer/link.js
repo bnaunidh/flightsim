@@ -30,18 +30,67 @@
  *          path needs the public address. The public IPv4 is sent (it is
  *          the address every website this tab visits already sees, and it
  *          goes only to someone who has the code); the per-device IPv6 one
- *          and any public host address are not.
+ *          and any public host address are not. The WORLD lobbies (list 3)
+ *          are the same kind of path: the public IPv4 goes to that lobby's
+ *          host, and the host's to each player in it — as any online game's
+ *          server sees its players' addresses. Never the IPv6 one.
  *
- * No TURN: nobody is paying for a relay, so two networks that both refuse a
- * direct path cannot play together, and the game says so rather than hanging.
+ * RANGE (list 2: "the range is bad, for non LAN servers"). Measured from
+ * this Mac on 2026-09-29 (headless Chrome, the game's own settings): a join
+ * by code gathers mDNS host candidates, one public IPv4 srflx — the SAME port
+ * from Google's and Cloudflare's STUN servers, so this network's NAT maps
+ * one port to every destination and a direct path to another network can
+ * work — and an IPv6 srflx, which is not sent (see 'v4'). What breaks a
+ * join between two towns is a network that maps each destination to a new
+ * port (a "symmetric" NAT: phone hotspots, carrier-grade NAT, some schools),
+ * on both ends or on one end with a strict firewall on the other: then only
+ * a relay (TURN) gets through, and with no relay the ICE checks fail — the
+ * game used to give up after 15 s with "the two networks won't connect".
+ *
+ * RELAYS. There is no free public TURN server that works without an
+ * account: measured the same day, Open Relay's published credentials
+ * (openrelay.metered.ca, user "openrelayproject") are refused ("400 TURN
+ * allocate error") and freeturn.net / freeturn.tel do not resolve. So
+ * RELAY_SERVERS is empty and the game falls back gracefully; anyone who
+ * gets relay credentials (Metered, Cloudflare, Twilio, or their own coturn)
+ * puts them in RELAY_SERVERS below, and code joins then try a relay-only
+ * path when the direct one fails. A relay sees both players' public
+ * addresses and how much they send, never what: WebRTC data channels are
+ * encrypted end to end (DTLS), so names, chat and positions stay private.
+ *
+ * What joins by code do instead, measured in the list-2 checks and the node
+ * tests with simulated failures: two STUN servers (either can be blocked); a
+ * 25 s window rather than 15 for a path between networks; a second, fresh
+ * attempt (relay-only when a relay is configured) when the first cannot
+ * connect; signaling opened again, with a pause, when the matchmaking server
+ * refuses or drops (0.peerjs.com rate-limits a busy address); and words a
+ * child can act on when it still fails.
  */
 
 import { offerPayload, answerPayload } from './signaling.js';
 import { PROTO, readEvent, writeEvent } from './protocol.js';
 
-export const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+/** STUN, for a join by code: Google's and Cloudflare's, either of which a school may block. One entry, so one list of addresses to ask. */
+export const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
 
-const isCodeId = (id) => /^ifs-code-/.test(String(id || ''));
+/**
+ * TURN relays for a join by code: [{ urls, username, credential }]. Empty —
+ * see RELAYS at the top of this file. Only ever used for a game joined by
+ * code, never on the Wi-Fi.
+ */
+export const RELAY_SERVERS = [];
+
+/** How long a join by code may take to connect: a path between two networks can take a while to find. */
+export const CODE_CONNECT_MS = 25000;
+
+/**
+ * Ids reached across networks: a private match's code, the world lobbies
+ * (list 3, "beyond LAN") and a private match's admin directory id (protocol.js,
+ * pdirId). All use the 'v4' policy, both STUN servers, the longer window and,
+ * if configured, a relay.
+ */
+export const isWideId = (id) => /^ifs-(code|world|pdir)-/.test(String(id || ''));
+const isCodeId = isWideId;
 
 /** mDNS names, private and link-local IPv4, link-local and unique-local IPv6, loopback. */
 export function isLocalAddress(a) {
@@ -61,14 +110,24 @@ export function isLocalAddress(a) {
  * May this ICE candidate go through the signaling server under `share`?
  * Anything that does not parse as a candidate is kept back: a candidate that
  * goes unsent costs a path, one sent by mistake cannot be taken back.
+ *
+ * A relay candidate (list 2) is the relay's own address, so it may go for a
+ * join by code — unless it names, as the address it was reached from, one
+ * of ours that may not (an IPv6 one).
  */
 export function candidateAllowed(candidate, share = 'lan') {
-  const f = String(candidate || '').replace(/^a=/, '').replace(/^candidate:/, '').trim().split(/\s+/);
+  const text = String(candidate || '');
+  const f = text.replace(/^a=/, '').replace(/^candidate:/, '').trim().split(/\s+/);
   if (f.length < 8 || f[6] !== 'typ') return false;
   const addr = f[4];
   const type = f[7];
+  const v4 = (a) => /^\d{1,3}(\.\d{1,3}){3}$/.test(a);
   if (type === 'host') return isLocalAddress(addr);
-  if (type === 'srflx') return share === 'v4' && /^\d{1,3}(\.\d{1,3}){3}$/.test(addr);
+  if (type === 'srflx') return share === 'v4' && v4(addr);
+  if (type === 'relay') {
+    const raddr = / raddr (\S+)/.exec(text);
+    return share === 'v4' && v4(addr) && (!raddr || v4(raddr[1]) || raddr[1] === '::' || isLocalAddress(raddr[1]));
+  }
   return false;
 }
 
@@ -102,14 +161,19 @@ export class Link {
      * by the id it arrived at — a host's code socket answers friends from
      * other networks, its slot socket answers the Wi-Fi.
      */
-    this.share = isCodeId(this.initiator ? peer : net.sig && net.sig.id) ? 'v4' : 'lan';
+    this.share = isWideId(this.initiator ? peer : net.sig && net.sig.id) ? 'v4' : 'lan';
     this.candidates = { sent: 0, kept: 0 };
+    /** A second try at a join by code, through a relay only (RELAY_SERVERS). */
+    this.relayOnly = !!(meta && meta.relayOnly);
   }
 
   _setup() {
     const RTC = this.net.RTC;
     // A same-Wi-Fi link asks no STUN server: it needs no public address, so it does not look one up.
-    this.pc = new RTC({ iceServers: this.share === 'v4' ? this.net.iceServers : [] });
+    const relays = this.share === 'v4' ? this.net.relayServers : [];
+    const cfg = { iceServers: this.share === 'v4' ? [...this.net.iceServers, ...relays] : [] };
+    if (this.relayOnly && relays.length) cfg.iceTransportPolicy = 'relay';
+    this.pc = new RTC(cfg);
     const pc = this.pc;
     this.ev = pc.createDataChannel('ev', { negotiated: true, id: 0, ordered: true });
     this.st = pc.createDataChannel('st', { negotiated: true, id: 1, ordered: false, maxRetransmits: 0 });
@@ -155,10 +219,10 @@ export class Link {
     };
     pc.onconnectionstatechange = watch;
     pc.oniceconnectionstatechange = watch;
-    // Not open in fifteen seconds is not going to open.
+    // Not open in fifteen seconds is not going to open — or in twenty-five, between two networks.
     this._timer = setTimeout(() => {
       if (this.state !== 'open') this.close('timeout');
-    }, this.net.connectTimeoutMs);
+    }, this.share === 'v4' ? Math.max(this.net.connectTimeoutMs, this.net.codeConnectMs) : this.net.connectTimeoutMs);
   }
 
   async start() {
@@ -332,7 +396,10 @@ export class Net {
     this.sig = sig;
     this.RTC = opts.RTC || globalThis.RTCPeerConnection;
     this.iceServers = opts.iceServers || ICE_SERVERS;
+    this.relayServers = opts.relayServers || RELAY_SERVERS;
     this.connectTimeoutMs = opts.connectTimeoutMs || 15000;
+    // A test that wants a quick answer passes a short connectTimeoutMs and gets it for codes too.
+    this.codeConnectMs = opts.codeConnectMs || (opts.connectTimeoutMs ? opts.connectTimeoutMs : CODE_CONNECT_MS);
     this.now = opts.now || (() => (globalThis.performance ? performance.now() : Date.now()));
     this.links = new Map();
     this.pings = new Map();
@@ -352,6 +419,7 @@ export class Net {
 
   connect(peer, kind = 'join', meta) {
     const link = new Link(this, { peer, initiator: true, kind, meta });
+    link.relayOnly = !!(meta && meta.relayOnly);
     this.links.set(link.connectionId, link);
     link.start();
     return link;

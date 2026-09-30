@@ -19,8 +19,12 @@
 
 import { MAPS } from '../../world/maps.js';
 
-/** Bumped when the wire format changes. A mismatched pair refuses politely. 2: lobbies, eight players, ranks. */
-export const PROTO = 2;
+/**
+ * Bumped when the wire format changes. A mismatched pair refuses politely.
+ * 2: lobbies, eight players, ranks. 3: bundled snapshots from the host, game
+ * events and shared state (events.js), private matches.
+ */
+export const PROTO = 3;
 
 /** The five server slots on one network. Minecraft's LAN list, but capped. */
 export const SLOT_COUNT = 5;
@@ -44,9 +48,58 @@ export const CODE_GAME_MAX = 8;
 /** Player numbers are 0 to 7: nobody's game has more than eight in it. */
 export const PLAYER_IDS = 8;
 export const LOBBY_NAMES = Object.freeze(['Sunny Airfield', 'Coral Cove', 'Cloud Base', 'Maple Runway', 'Harbour Hangar']);
+/*
+ * List 3 ("different lobbies have different maps"): every lobby is on its
+ * own island, always the same one, and joining takes you there. An empty
+ * lobby no longer starts on whatever island its first player had picked on
+ * the menu — so the card can say where it is before anybody is in it. Five
+ * islands with room for a crowd and something to fly round: the home
+ * island (which also has a helipad, a harbour and roads, so all four rides
+ * fit), the reef chain, the fjord, the volcano and the big airport.
+ */
+export const LOBBY_MAPS = Object.freeze(['kestrel', 'atoll', 'fjord', 'ember', 'gateway']);
+
+/*
+ * WORLD LOBBIES (list 3: "make the multiplayer go BEYOND lan", "palo alto
+ * to berkeley"): five more, the same for everybody on the internet — not
+ * derived from the network's address, so a player in one town and a player
+ * in another find the same five. Everything else is a Wi-Fi lobby's: eight
+ * at most, usernames from the lists, quick chat only, nobody hosts on
+ * purpose, the next in line takes over. They are found through the public
+ * matchmaking server and connect the way a join by code does (link.js,
+ * 'v4'). Their ids carry the wire version, so a stale copy of the game
+ * somewhere in the world holds its own five and never locks a newer one out.
+ */
+export const WORLD_COUNT = 5;
+export const WORLD_NAMES = Object.freeze(['Kestrel Skyport', 'Meadow Airstrip', 'Skyline Airport', 'Summit Lookout', 'Glacier Station']);
+export const WORLD_MAPS = Object.freeze(['kestrel', 'meadow', 'gateway', 'condor', 'fjord']);
 
 /** Snapshots per second each player sends. */
 export const STATE_HZ = 15;
+
+/*
+ * List 2, part 2: bumping into each other is a rule for the whole game, shown
+ * on the lobby card before anybody joins. A number on the wire, words from
+ * this copy's own list on the screen.
+ *
+ *   0 'off'     ghosts — fly straight through each other (how it always was)
+ *   1 'gentle'  gentle bumps: you bounce off each other, nobody crashes
+ *   2 'pvp'     gentle bumps, and a real crash between two players who both
+ *               have PvP switched ON — the default for the five lobbies
+ */
+export const BUMP_RULES = Object.freeze(['off', 'gentle', 'pvp']);
+export const BUMP_DEFAULT = 2;
+export const BUMP_LABEL = Object.freeze({
+  off: 'No bumping — fly through each other',
+  gentle: 'Gentle bumps — nobody crashes',
+  pvp: 'Gentle bumps · crash in PvP',
+});
+export const BUMP_SHORT = Object.freeze({ off: 'No bumping', gentle: 'Gentle bumps', pvp: 'Bumps · PvP crash' });
+/** A rule off the wire: its index, or the default for anything else. */
+export function bumpRule(v) {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 && n < BUMP_RULES.length ? n : BUMP_DEFAULT;
+}
 
 /* ------------------------------------------------------------------ */
 /* Peer ids                                                            */
@@ -70,6 +123,27 @@ export function lobbyId(netHash, n) {
   return `ifs-${netHash}-lobby-${n}`;
 }
 
+/*
+ * Part 3b: the private matches' directory, for admins only. A private match
+ * is on no list — its code is the only way in — but its host also holds one
+ * of these ids, so an admin can find it and join without the code. Anybody
+ * may ping them and learn what a lobby's pong says (numbers: how many, the
+ * most, which island); nobody who is not an admin gets in through one
+ * (HostSession, 'private'), and no code is ever in what they answer.
+ */
+export const PDIR_COUNT = 12;
+
+export function pdirId(n) {
+  return `ifs-pdir-${n}`;
+}
+
+/** Which directory place, if any, an id is. */
+export function pdirOf(id) {
+  const m = /^ifs-pdir-([1-9][0-9]?)$/.exec(String(id || ''));
+  const n = m ? Number(m[1]) : 0;
+  return n >= 1 && n <= PDIR_COUNT ? n : 0;
+}
+
 /** Which lobby, if any, an id is. */
 export function lobbyOf(netHash, id) {
   const m = /^ifs-([0-9a-f]{12})-lobby-([1-9])$/.exec(String(id || ''));
@@ -81,6 +155,37 @@ export function lobbyOf(netHash, id) {
 /** "Lobby 3 · Cloud Base" — from this copy's own list, never from anything sent. */
 export function lobbyName(n) {
   return Number.isInteger(n) && n >= 1 && n <= LOBBY_COUNT ? LOBBY_NAMES[n - 1] : 'A lobby';
+}
+
+/** The island lobby n is always on. */
+export function lobbyMap(n) {
+  return Number.isInteger(n) && n >= 1 && n <= LOBBY_COUNT ? LOBBY_MAPS[n - 1] : LOBBY_MAPS[0];
+}
+
+/** World lobby n: one id for everybody on the internet, and this version of the game's own. */
+export function worldId(n) {
+  return `ifs-world-${PROTO}-${n}`;
+}
+
+/** Which world lobby, if any, an id is — this version's only. */
+export function worldOf(id) {
+  const m = /^ifs-world-(\d{1,3})-([1-9])$/.exec(String(id || ''));
+  if (!m || Number(m[1]) !== PROTO) return 0;
+  const n = Number(m[2]);
+  return n >= 1 && n <= WORLD_COUNT ? n : 0;
+}
+
+export function worldName(n) {
+  return Number.isInteger(n) && n >= 1 && n <= WORLD_COUNT ? WORLD_NAMES[n - 1] : 'A world lobby';
+}
+
+export function worldMap(n) {
+  return Number.isInteger(n) && n >= 1 && n <= WORLD_COUNT ? WORLD_MAPS[n - 1] : WORLD_MAPS[0];
+}
+
+/** "Lobby 3" or "World 3": what the screen and the badge call one. */
+export function lobbyLabel(n, world = false) {
+  return `${world ? 'World' : 'Lobby'} ${n}`;
 }
 
 /** A per-tab token a player sends with their hello, so a host can tell a player coming back from a new one. */
@@ -745,7 +850,7 @@ export const GAME_LABEL = { flight: 'Flight', heli: 'Heli', boat: 'Boat', car: '
  *   20  i16  qx, qy, qz, qw             × 32767
  *   28  i16  vx, vy, vz                 × 20 (0.05 m/s, ±1,638 m/s)
  *   34  u8   game (0 flight, 1 heli, 2 boat, 3 car)
- *   35  u8   flags: gear down, lights, engine, on ground, crashed, brakes
+ *   35  u8   flags: gear down, lights, engine, on ground, crashed, brakes, ghost, pvp
  *   36  u8   gear position               0..255
  *   37  u8   flaps                       0..255
  *   38  u8   throttle                    0..255
@@ -761,7 +866,13 @@ export const STATE_MAGIC = 0x53;
 export const STATE_HEAD = 45;
 const TYPE_MAX = 24;
 
-const FLAG = { gearDown: 1, lights: 2, engineOn: 4, onGround: 8, crashed: 16, brakes: 32 };
+/*
+ * ghost and pvp are list 2, part 2: a player nobody can bump into or hit
+ * right now (just arrived, tagged out and coming back, on the ground, racing)
+ * and a player with PvP switched on. Two spare bits, so an older copy reads
+ * the rest of the snapshot exactly as before.
+ */
+const FLAG = { gearDown: 1, lights: 2, engineOn: 4, onGround: 8, crashed: 16, brakes: 32, ghost: 64, pvp: 128 };
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const num = (v, d = 0) => (Number.isFinite(v) ? v : d);
@@ -862,6 +973,76 @@ export function stampStateId(buf, id) {
   return buf;
 }
 
+/*
+ * A bundle: the host's way of sending one player everybody else's newest
+ * snapshots in ONE packet.
+ *
+ *    0  u8   'B' (0x42)
+ *    1  u8   how many (1 to 8)
+ *    2  then each: u8 length, and that many bytes of one snapshot as above
+ *
+ * It used to relay every snapshot the moment it arrived: in a lobby of
+ * eight that is the host sending 7 × 15 of its own plus 7 × 6 × 15 relayed
+ * — 735 small packets a second from one Chromebook, on the same access
+ * point as the other 39 in the class, and every packet on Wi-Fi costs its
+ * airtime however small it is. Bundled every 50 ms or so, it is about 20 a
+ * second to each player. Only ever host → player; a player's own snapshot
+ * to the host is a plain one.
+ */
+export const BUNDLE_MAGIC = 0x42;
+
+export function encodeBundle(bufs) {
+  const list = bufs.slice(0, PLAYER_IDS);
+  let len = 2;
+  for (const b of list) len += 1 + b.byteLength;
+  const out = new Uint8Array(len);
+  out[0] = BUNDLE_MAGIC;
+  out[1] = list.length;
+  let at = 2;
+  for (const b of list) {
+    out[at++] = b.byteLength;
+    out.set(new Uint8Array(b), at);
+    at += b.byteLength;
+  }
+  return out.buffer;
+}
+
+/** The snapshots in a bundle, as byte views — or null for anything that is not a well-formed bundle. */
+export function decodeBundle(buf) {
+  if (!buf || typeof buf.byteLength !== 'number' || buf.byteLength < 2 || buf.byteLength > 2 + PLAYER_IDS * (1 + STATE_HEAD + TYPE_MAX)) return null;
+  const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf.buffer || buf, buf.byteOffset || 0, buf.byteLength);
+  if (u8[0] !== BUNDLE_MAGIC) return null;
+  const n = u8[1];
+  if (n < 1 || n > PLAYER_IDS) return null;
+  const parts = [];
+  let at = 2;
+  for (let i = 0; i < n; i++) {
+    const len = u8[at];
+    if (len === undefined || len < STATE_HEAD || at + 1 + len > u8.byteLength) return null;
+    parts.push(u8.subarray(at + 1, at + 1 + len));
+    at += 1 + len;
+  }
+  return at === u8.byteLength ? parts : null;
+}
+
+/** Every snapshot in whatever the state channel carried — a plain snapshot or a bundle — decoded; the malformed ones left out. */
+export function decodeStates(buf) {
+  if (!buf || typeof buf.byteLength !== 'number' || buf.byteLength < 1) return [];
+  const first = new Uint8Array(buf.buffer || buf, buf.byteOffset || 0, 1)[0];
+  if (first === BUNDLE_MAGIC) {
+    const parts = decodeBundle(buf);
+    if (!parts) return [];
+    const out = [];
+    for (const p of parts) {
+      const s = decodeState(p);
+      if (s) out.push(s);
+    }
+    return out;
+  }
+  const s = decodeState(buf);
+  return s ? [s] : [];
+}
+
 /* ------------------------------------------------------------------ */
 /* Reliable events                                                     */
 /* ------------------------------------------------------------------ */
@@ -876,6 +1057,10 @@ export function stampStateId(buf, id) {
 export const EVENT_MAX_BYTES = 4096;
 const EVENTS = new Set([
   'hello', 'welcome', 'deny', 'join', 'leave', 'roster', 'chat', 'kick', 'close', 'move', 'bye', 'ping', 'pong', 'info?', 'info',
+  // Game events and shared state, for other features (events.js).
+  'gev', 'gst',
+  // Admin (admin.js): the host's question, the admin's signed answer, and an admin's request to the host.
+  'chal', 'prove', 'adm',
 ]);
 
 export function writeEvent(ev) {
@@ -908,6 +1093,10 @@ export function readPlayer(p) {
     ping: Number.isFinite(p.ping) ? clamp(Math.round(p.ping), 0, 9999) : null,
     // The order they joined in, which is who hosts next if the host goes (lobby.js). A number, nothing shown.
     rank: Number.isInteger(rank) && rank >= 0 && rank < 1e9 ? rank : 1e9 + id,
+    // Part 3b: what the host says about them, as flags — an admin (it checked their signature), muted or frozen by one.
+    admin: p.adm === 1,
+    muted: p.mu === 1,
+    frozen: p.fz === 1,
   };
 }
 
@@ -942,7 +1131,23 @@ export function readLobbyCount(meta) {
     mapName: map ? mapNameFor(map) : 'An island',
     game: Number.isInteger(g) && GAMES[g] ? GAMES[g] : 'flight',
     v: Number(meta.v) | 0,
+    // The bumping rule (BUMP_RULES), as a number; a host that does not say has the default.
+    bump: BUMP_RULES[bumpRule(meta.b)],
   };
+}
+
+/**
+ * A private match's pong, for the card a friend sees when they type its
+ * code: how many are in it, the most there can be, its island and game —
+ * numbers only, as a lobby's — and whether its host has locked it. Null
+ * for a pong that is not one.
+ */
+export function readPrivateCount(meta) {
+  const c = readLobbyCount(meta);
+  if (!c) return null;
+  const max = clamp(Number(meta.max) | 0, 1, CODE_GAME_MAX);
+  const players = clamp(c.players, 0, max);
+  return { ...c, players, max, full: players >= max, locked: !!meta.lk, map: meta.m === undefined ? null : c.map };
 }
 
 /**

@@ -23,7 +23,8 @@
  */
 import { TYPES as FIGHTERS } from './fighters.js';
 import { TYPES as AIRLINERS } from './airliners.js';
+import { TYPES as TPOSE } from './tpose.js';
 
 export function extraAircraft(base) {
-  return [...FIGHTERS(base), ...AIRLINERS(base)];
+  return [...FIGHTERS(base), ...AIRLINERS(base), ...TPOSE(base)];
 }

@@ -341,6 +341,19 @@ async function testDisasters(sim, r) {
       sim.override = null;
       continue;
     }
+    // A wildfire is on the ground ahead, not in the air around you: what it
+    // does is burn, and it lasts until it is put out rather than on a clock.
+    if (ev.id === 'wildfire') {
+      const wf = await import('../src/features/wildfire.js');
+      const st = wf.fireStatus(sim);
+      during.fireLive = st.live;
+      during.burningCells = st.burning;
+      during.inPauseMenu = !!(sim.activeEvents && sim.activeEvents.wildfire > 0);
+      if (!st.live || !st.burning) r.fault('disasters', 'wildfire lit nothing', JSON.stringify(during));
+      r.fact(`disaster.${ev.id}`, during);
+      sim.override = null;
+      continue;
+    }
 
     const did =
       during.weatherChanged ||

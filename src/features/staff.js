@@ -56,7 +56,7 @@ import { onFoot } from './onfoot.js';
 import { STAFF_IDS } from './staff/vehicles.js';
 import { BUILDERS, createCart, setLift, beaconMaterial } from './staff/models.js';
 import { createPerson, posePerson, disposePerson, part, mergeParts } from './staff/person.js';
-import { groundAt, solidAt, propAt, forgetObstacles, tickProps } from './staff/walk.js';
+import { groundAt, floorAt, solidAt, propAt, forgetObstacles, tickProps } from './staff/walk.js';
 import * as J from './staff/jobs.js';
 import * as UI from './staff/ui.js';
 
@@ -1407,11 +1407,12 @@ function spawnPassenger(d, i) {
   add(info.reach - 0.2, 0, g0 + sill, 1.0);
   add(2.2, 0, g0 + sill, 0.9);
   add(-3.0, 0, g0 + info.deck + 0.05, 1.3);
-  add(-4.4, (i % 2 ? 0.6 : -0.6), g0, 1.3);
+  // Down on the apron: on its tarmac, not in it (floorAt: 5 cm over the ground).
+  add(-4.4, (i % 2 ? 0.6 : -0.6), floorAt(pose.x, pose.z), 1.3);
   // Then off toward the terminal, ahead of the aeroplane's nose.
   const st = ST.stand;
   const end = J.offset(st.x, st.z, st.heading, ST.prof.nose + 26, -6 + i * 2.4);
-  pts.push({ x: end.x, y: groundAt(end.x, end.z), z: end.z, speed: 1.3 });
+  pts.push({ x: end.x, y: floorAt(end.x, end.z), z: end.z, speed: 1.3 });
   const m = createPerson({ outfit: 'passenger', lite: true, suitcase: i % 2 === 0, seed: ST.round * 17 + i * 5 + 3 });
   if (ST.group) ST.group.add(m);
   ST.passengers.push({ model: m, pts, seg: 0, t: 0, x: pts[0].x, y: pts[0].y, z: pts[0].z, heading: 0, done: false, waveT: 0 });

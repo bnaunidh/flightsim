@@ -6,6 +6,7 @@ Island Flight Simulator — a LAN server, for multiplayer with no internet.
     python3 tools/lan-server.py 9000       # a different port
     python3 tools/lan-server.py --local    # this computer only (for testing)
     python3 tools/lan-server.py --name="Room 12"   # what the game calls this server
+    python3 tools/lan-server.py --world    # stand in for the public server's world lobbies too
 
 Multiplayer normally finds other players through the free public PeerJS
 server on the internet. A classroom with Wi-Fi but no internet cannot reach
@@ -64,6 +65,10 @@ IDLE_TIMEOUT = 30
 
 # Stable for this computer and port, so a reloaded tab lands on the same five slots.
 NET = hashlib.sha256(f'island-flight-lan:lan:{socket.gethostname()}:{PORT}'.encode()).hexdigest()[:12]
+# The World lobbies (anyone, anywhere) normally go through the public server on
+# the internet. With --world, or --local (a test run on this computer), this
+# server stands in for it, so a test never touches the public one.
+WORLD = '--world' in sys.argv[1:] or '--local' in sys.argv[1:]
 # What the Multiplayer screen says it is on ("On the LAN server"). It used to be
 # the Mac's own computer name: "On MossyLog", to every child on the Wi-Fi.
 NAME = ''.join(ch for ch in OPTS.get('name', '') if ch.isalnum() or ch in " '-.")[:40].strip() or 'the LAN server'
@@ -241,7 +246,10 @@ class Handler(SimpleHTTPRequestHandler):
         super().do_HEAD()
 
     def lan_info(self):
-        body = json.dumps({'lan': True, 'net': NET, 'name': NAME, 'version': 1}).encode()
+        info = {'lan': True, 'net': NET, 'name': NAME, 'version': 1}
+        if WORLD:
+            info['world'] = True
+        body = json.dumps(info).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
@@ -380,6 +388,8 @@ def main():
         print('  (Could not find this computer\'s Wi-Fi address — check it is connected to the Wi-Fi.)')
     print(f'  The game calls it "{NAME}" (change it with --name="Room 12").')
     print('  Multiplayer uses this computer for matchmaking, so it works with no internet.')
+    if WORLD:
+        print('  The World lobbies use this computer too (--world/--local), not the public server.')
     print('  Everyone must open the address above (not the website) to see each other.')
     print('  Press Ctrl+C to stop.')
     sys.stdout.flush()

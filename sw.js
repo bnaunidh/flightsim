@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v39';
+const CACHE_VERSION = 'island-flight-v47';
 
 const PRECACHE = [
   './',
@@ -233,6 +233,63 @@ const PRECACHE = [
   // Added by tools/sync-precache.mjs.
   'src/features/multiplayer/lobby.js',
   'src/features/multiplayer/lobbyui.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/crashes.js',
+  'src/features/crashes/fx.js',
+  'src/features/crashes/kinds.js',
+  'src/features/crashes/marks.js',
+  'src/features/crashes/motion.js',
+  'src/features/wildfire-disaster.js',
+  'src/game/happenings.js',
+  // Added by tools/sync-precache.mjs.
+  'src/aircraft/extra/tpose.js',
+  'src/aircraft/models/tpose-harrison.js',
+  'src/features/eject.js',
+  'src/features/eject/chute.js',
+  'src/features/eject/dragchute.js',
+  'src/features/eject/profiles.js',
+  'src/features/eject/ui.js',
+  'src/features/runaway.js',
+  'src/features/tpose.js',
+  'src/features/uniforms.js',
+  'src/features/wasted.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/fun.js',
+  'src/features/fun/fx.js',
+  'src/features/fun/save.js',
+  'src/features/fun/stars.js',
+  'src/features/fun/stickers.js',
+  'src/features/fun/stunts.js',
+  'src/features/fun/ui.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/rocket.js',
+  'src/features/rocket/audio.js',
+  'src/features/rocket/camera.js',
+  'src/features/rocket/flights.js',
+  'src/features/rocket/hud.js',
+  'src/features/rocket/menu.js',
+  'src/features/rocket/models.js',
+  'src/features/rocket/physics.js',
+  'src/features/rocket/site.js',
+  'src/features/rocket/space.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/multiplayer/events.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/multiplayer/admin.js',
+  'src/features/multiplayer/p256.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/bump.js',
+  'src/features/mpplay/shared.js',
+  'src/features/mpplay/sights.js',
+  'src/features/mpworld.js',
+  'src/features/pvp.js',
+  'src/features/pvp/rules.js',
+  'src/features/race.js',
+  'src/features/race/rules.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/race/courses.js',
+  'src/features/race/draw.js',
+  'src/features/race/hub.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

@@ -182,3 +182,17 @@ export function poolForMap(map) {
 
 /** The events a player may arm before a flight. Eruptions are not among them. */
 export const SELECTABLE_EVENTS = NATURAL_EVENTS.filter((e) => !e.hidden);
+
+/**
+ * A disaster that lives in a feature of its own — the wildfire is the first
+ * (src/features/wildfire-disaster.js). Same shape as the ones above; call it
+ * when the feature's module loads, before the menus are built, and it shows
+ * up everywhere these do: armed before departure, the pause menu's Disasters
+ * buttons and the randomiser. An id already in the list is left alone.
+ */
+export function registerNaturalEvent(ev) {
+  if (!ev || !ev.id || typeof ev.apply !== 'function' || findEvent(ev.id)) return false;
+  NATURAL_EVENTS.push(ev);
+  if (!ev.hidden) SELECTABLE_EVENTS.push(ev);
+  return true;
+}

@@ -20,10 +20,11 @@
 import {
   PROTO, MAX_PLAYERS, SLOT_COUNT, QUICK_CHAT, LOBBY_COUNT, LOBBY_MAX, CODE_GAME_MAX, PLAYER_IDS, GAMES,
   slotId, codeId, codeOfId, makeCode, shownCode, safeName, safeServerName, callSignForId, serverNameFor, mapNameFor, safeColour, uniqueName,
-  parseCallSign, lobbyName, mapIndex, randomToken,
-  decodeState, stampStateId, readPlayer, readInfo, readCount, readSpawn, readWeather,
+  parseCallSign, lobbyName, worldName, worldOf, WORLD_COUNT, mapIndex, randomToken, pdirId, PDIR_COUNT, bumpRule,
+  decodeState, decodeStates, encodeBundle, stampStateId, readPlayer, readInfo, readCount, readSpawn, readWeather,
 } from './protocol.js';
 import { SignalError } from './signaling.js';
+import { nonce, proofText, verifyProof, adminCrypto } from './admin.js';
 
 const nowMs = () => (globalThis.performance ? performance.now() : Date.now());
 
@@ -72,6 +73,25 @@ const GONE_PROBE_EVERY_MS = 2000;
 /** Server lists a host reads its details to at once. Each takes well under a second. */
 export const INFO_AT_ONCE = 12;
 const GONE_PING_MS = 1500;
+/*
+ * The host sends each player at most one state packet this often, holding
+ * everybody's newest snapshot for them meanwhile (protocol.js, bundles).
+ * It flushes on the next thing to happen after this long — another
+ * snapshot arriving, which in a lobby of eight is every 10 ms, or its own
+ * frame — so a bundle waits 25 ms on average, which predict() (interp.js)
+ * draws past. 0 relays each snapshot the moment it arrives, as before.
+ */
+export const BUNDLE_MS = 50;
+
+/*
+ * Part 3b, admins (admin.js). An admin's freeze holds a player still this
+ * long, then lets go by itself; an admin can let go sooner. How long a host
+ * waits for an admin's signed answer before letting them in as anybody else.
+ */
+export const FREEZE_MS = 30000;
+const PROVE_WAIT_MS = 5000;
+/** What an admin may ask a host to do. */
+export const ADMIN_OPS = Object.freeze(['kick', 'mute', 'unmute', 'freeze', 'unfreeze', 'close']);
 
 /**
  * Whether it is time to ask if a quiet link's other end has gone: at most
@@ -176,6 +196,28 @@ export async function claimCode({ makeSig, rand = Math.random, tries = 6 }) {
   throw new SignalError('taken', 'Could not find a free code');
 }
 
+/**
+ * Part 3b: a place in the admins' directory of private matches (protocol.js,
+ * pdirId), and the socket holding it — a few tries from a random place, then
+ * none: a private match that finds the directory full is still a private
+ * match, only one an admin cannot find. Null rather than an error, always.
+ */
+export async function claimPdir({ makeSig, rand = Math.random, tries = 4 }) {
+  const start = Math.floor(rand() * PDIR_COUNT);
+  for (let i = 0; i < tries; i++) {
+    const n = ((start + i) % PDIR_COUNT) + 1;
+    const sig = makeSig();
+    try {
+      await sig.open(pdirId(n));
+      return { n, sig };
+    } catch (err) {
+      sig.close();
+      if (!(err && err.code === 'taken')) return null;
+    }
+  }
+  return null;
+}
+
 /* ------------------------------------------------------------------ */
 /* The host                                                            */
 /* ------------------------------------------------------------------ */
@@ -192,15 +234,24 @@ export class HostSession {
    *                  'code'  a game for a friend on another network, joined by code: eight, the same
    *                          username rule, and lock and kick, since the host made it.
    */
-  constructor({ profile, server, spawnInfo, weather, onEvent, now = nowMs, mode = 'slot', max = 0 }) {
+  constructor({ profile, server, spawnInfo, weather, onEvent, now = nowMs, mode = 'slot', max = 0, admin = false }) {
     this.now = now;
     this.mode = mode === 'lobby' || mode === 'code' ? mode : 'slot';
     this.max = Math.min(PLAYER_IDS, max || (this.mode === 'lobby' ? LOBBY_MAX : this.mode === 'code' ? CODE_GAME_MAX : MAX_PLAYERS));
-    const lobby = this.mode === 'lobby' && Number.isInteger(server.lobby) && server.lobby >= 1 && server.lobby <= LOBBY_COUNT ? server.lobby : 0;
+    // A world lobby (list 3): one of the five that are the same for everybody on the internet.
+    const world = this.mode === 'lobby' && server.world === true;
+    const lobby = this.mode === 'lobby' && Number.isInteger(server.lobby) && server.lobby >= 1 && server.lobby <= (world ? WORLD_COUNT : LOBBY_COUNT) ? server.lobby : 0;
     // Checked here too, whoever built them: everything the host sends out is list words. A lobby's name is the lobby's own.
-    const name = lobby ? lobbyName(lobby) : safeServerName(server.name, serverNameFor(profile.key));
-    this.server = { ...server, name, mapName: mapNameFor(server.map), lobby, max: this.max };
-    this.me = { id: 0, name: safeName(profile.name, callSignForId(0)), colour: safeColour(profile.colour), host: true, key: profile.key, ping: 0, rank: 0 };
+    const name = lobby ? (world ? worldName(lobby) : lobbyName(lobby)) : safeServerName(server.name, serverNameFor(profile.key));
+    // A game made to be joined by code only (the lobby screen's private match): on no list anywhere.
+    this.server = { ...server, name, mapName: mapNameFor(server.map), lobby, world: !!(world && lobby), max: this.max, priv: this.mode === 'code' };
+    // `admin`: this device has an admin key (admin.js). The host is its own server, so it takes its own word for it.
+    this.me = {
+      id: 0, name: safeName(profile.name, callSignForId(0)), colour: safeColour(profile.colour), host: true, key: profile.key, ping: 0, rank: 0,
+      admin: !!admin, muted: false, frozenUntil: 0,
+    };
+    this.freezeMs = FREEZE_MS;
+    this.proveWaitMs = PROVE_WAIT_MS;
     this._rank = 0;
     /** Random, in a lobby's pong: how this host tells its own answer from another tab's (lobby.js, split brain). */
     this.token = randomToken().slice(0, 12);
@@ -228,15 +279,20 @@ export class HostSession {
     this.loadingTimeoutMs = LOADING_TIMEOUT_MS;
     this.goneQuietMs = HOST_GONE_QUIET_MS;
     this.locked = false;
+    this.bundleMs = BUNDLE_MS;
   }
 
   attach(net) {
     this.nets.push(net);
     net.answersPings = true;
     // The head-count, for the server lists' pings: numbers only, never a name. A lobby adds its map and game, as numbers.
+    // A private match adds its map and game too, as numbers, for the card a friend sees when they type its code (lobbyui.js).
+    // List 2, part 2: and the bumping rule, a number (protocol.js BUMP_RULES), for the lobby card.
     net.pongMeta = () => (this.mode === 'lobby'
-      ? { n: this.count, max: this.max, m: mapIndex(this.server.map), g: Math.max(0, GAMES.indexOf(this.server.game)), h: this.token }
-      : { n: this.count, max: this.max, lk: this.locked ? 1 : 0 });
+      ? { n: this.count, max: this.max, m: mapIndex(this.server.map), g: Math.max(0, GAMES.indexOf(this.server.game)), h: this.token, b: bumpRule(this.server.bump) }
+      : this.mode === 'code'
+        ? { n: this.count, max: this.max, lk: this.locked ? 1 : 0, m: mapIndex(this.server.map), g: Math.max(0, GAMES.indexOf(this.server.game)), b: bumpRule(this.server.bump) }
+        : { n: this.count, max: this.max, lk: this.locked ? 1 : 0 });
     net.onOffer = (link, meta) => this._offer(link, meta);
   }
 
@@ -276,12 +332,19 @@ export class HostSession {
   }
 
   roster() {
-    const pub = (p) => ({ id: p.id, name: p.name, colour: p.colour, host: !!p.host, ping: p.ping == null ? null : Math.round(p.ping), rank: p.rank });
+    const now = this.now();
+    // Part 3b: an admin (the host checked their signature), and who an admin has muted or frozen — flags, nothing else.
+    const pub = (p) => ({
+      id: p.id, name: p.name, colour: p.colour, host: !!p.host, ping: p.ping == null ? null : Math.round(p.ping), rank: p.rank,
+      adm: p.admin ? 1 : undefined, mu: p.muted ? 1 : undefined, fz: p.frozenUntil > now ? 1 : undefined,
+    });
     return [pub(this.me), ...[...this.players.values()].sort((a, b) => a.id - b.id).map(pub)];
   }
 
   _offer(link, meta) {
     if (this.closed) return false;
+    // An admin's way into a private match (the directory, protocol.js pdirId): joining only, and only for an admin.
+    if (link.net && link.net.dirOnly && link.kind !== 'join') return false;
     if (link.kind === 'info') {
       /*
        * Somebody's server list asking what this is. Twelve at a time, and a
@@ -309,13 +372,46 @@ export class HostSession {
     };
     link.onevent = (ev) => {
       if (ev.t === 'hello') this._hello(link, ev);
+      else if (ev.t === 'prove') this._prove(link, ev);
       else if (ev.t === 'ping') link.send({ t: 'pong', ts: ev.ts });
     };
     link.onclose = () => {
       clearTimeout(link._hello);
+      clearTimeout(link._proveTimer);
       this.pending.delete(link);
     };
     return true;
+  }
+
+  /*
+   * Part 3b: somebody says they are an admin. They are asked — a fresh random
+   * nonce, for this line only — and their hello waits for the answer. Only a
+   * signature by an admin key over that nonce, this host's id and the id they
+   * came from makes them one (admin.js); anything else, or nothing within
+   * five seconds, and they come in as anybody would.
+   */
+  _ask(link, ev) {
+    if (link._chal) return;
+    link._chal = nonce();
+    link._helloEv = ev;
+    link.send({ t: 'chal', n: link._chal });
+    link._proveTimer = setTimeout(() => this._proved(link, false), this.proveWaitMs);
+  }
+
+  _prove(link, ev) {
+    if (!link._chal || link._proving || link._proof != null) return;
+    link._proving = true;
+    const hostId = link.net && link.net.sig ? link.net.sig.id : null;
+    const text = proofText(link._chal, hostId, link.peer);
+    verifyProof(text, ev.s).then((yes) => this._proved(link, !!(yes && hostId)), () => this._proved(link, false));
+  }
+
+  _proved(link, yes) {
+    if (link._proof != null) return;
+    clearTimeout(link._proveTimer);
+    link._proof = !!yes;
+    if (this.closed || link.state === 'closed' || !this.pending.has(link)) return;
+    this._hello(link, link._helloEv);
   }
 
   _deny(link, why, extra = null) {
@@ -330,6 +426,11 @@ export class HostSession {
     clearTimeout(link._hello);
     if (this.closed) return this._deny(link, 'closing');
     if (Number(ev.v) !== PROTO) return this._deny(link, 'version');
+    // "I am an admin": asked first (see _ask). A host that cannot check (no WebCrypto) lets them in as anybody.
+    if (ev.adm === 1 && link._proof == null && adminCrypto()) return this._ask(link, ev);
+    const admin = link._proof === true;
+    // Through the directory, a private match lets in admins only; everybody else needs its code.
+    if (link.net && link.net.dirOnly && !admin) return this._deny(link, 'private');
     // A client that sends no key is kept out by the id it connected under instead.
     const key = typeof ev.key === 'string' && /^[\x21-\x7e]{1,40}$/.test(ev.key) ? ev.key : `peer:${link.peer}`;
     if (this.banned.has(key)) return this._deny(link, 'kicked');
@@ -342,7 +443,8 @@ export class HostSession {
     const seat = typeof ev.seat === 'string' && /^[a-z0-9]{8,24}$/.test(ev.seat) ? ev.seat : null;
     if (seat) for (const old of this.players.values()) if (old.seat === seat) this._gone(old, 'left', 'came back');
     if (this.full) return this._deny(link, 'full');
-    if (this.locked) return this._deny(link, 'locked');
+    // An admin comes in whether or not the host has locked the door.
+    if (this.locked && !admin) return this._deny(link, 'locked');
     let id = 1;
     while (this.players.has(id)) id++;
     if (id >= this.max) return this._deny(link, 'full');
@@ -374,6 +476,9 @@ export class HostSession {
       last: null,
       lastSnap: null,
       rank: ++this._rank,
+      admin,
+      muted: false,
+      frozenUntil: 0,
     };
     this.players.set(id, p);
     link.onevent = (e) => this._event(p, e);
@@ -390,9 +495,9 @@ export class HostSession {
       at: this.spawnInfo(),
       weather: this.weather(),
     });
-    this._broadcast({ t: 'join', p: { id, name: p.name, colour: p.colour, host: false, rank: p.rank } }, p.id);
+    this._broadcast({ t: 'join', p: { id, name: p.name, colour: p.colour, host: false, rank: p.rank, adm: admin ? 1 : undefined } }, p.id);
     this._rosterDirty = true;
-    this.emit('join', { id, name: p.name, colour: p.colour });
+    this.emit('join', { id, name: p.name, colour: p.colour, admin });
   }
 
   _event(p, ev) {
@@ -406,6 +511,8 @@ export class HostSession {
       case 'chat': {
         const m = Number(ev.m);
         if (!Number.isInteger(m) || !QUICK_CHAT[m]) return;
+        // Muted by an admin: said to nobody.
+        if (p.muted) return;
         const now = this.now();
         if (now - p.chatAt < CHAT_GAP_MS) return; // one at a time, please
         p.chatAt = now;
@@ -416,20 +523,78 @@ export class HostSession {
       case 'bye':
         this._gone(p, 'left');
         break;
+      case 'adm':
+        // An admin's request. Only from a player this host checked the signature of; from anybody else, nothing.
+        if (p.admin) this.adminAct(ev.op, Number(ev.id), p);
+        break;
+      case 'gev':
+        // A game event (events.js): checked, relayed or kept by the controller's GameEvents, which knows the kinds.
+        if (typeof ev.k === 'string') this.emit('gev', { id: p.id, name: p.name, colour: p.colour, host: false }, { k: ev.k, d: ev.d, h: ev.h ? 1 : 0 });
+        break;
       default:
         break;
     }
   }
 
+  /* Game events and shared state out (events.js). The host is always player 0. */
+  sendGame(ev, except = -1) {
+    if (this.closed) return false;
+    this._broadcast({ t: 'gev', k: ev.k, d: ev.d, f: Number.isInteger(ev.f) ? ev.f : 0 }, except);
+    return true;
+  }
+
+  sendGameTo(id, ev) {
+    const p = this.players.get(id);
+    return !!(p && !this.closed && p.link.send({ t: 'gev', k: ev.k, d: ev.d, f: Number.isInteger(ev.f) ? ev.f : 0 }));
+  }
+
+  sendGameState(ev) {
+    if (this.closed) return false;
+    this._broadcast({ t: 'gst', k: ev.k, d: ev.d });
+    return true;
+  }
+
+  sendGameStateTo(id, ev) {
+    const p = this.players.get(id);
+    return !!(p && !this.closed && p.link.send({ t: 'gst', k: ev.k, d: ev.d }));
+  }
+
   _state(p, buf) {
-    const snap = decodeState(buf);
+    let snap = decodeState(buf);
     if (!snap) return;
     // Whatever number they put on it, it is theirs now.
     stampStateId(buf, p.id);
     snap.id = p.id;
+    if (p.frozenUntil > this.now()) {
+      // Frozen by an admin: wherever their own game says they are, everybody sees them where they were frozen, still.
+      if (!p.frozenBuf) p.frozenBuf = buf.slice(0);
+      const u = new Uint8Array(buf);
+      u.set(new Uint8Array(p.frozenBuf, 8, 20), 8);
+      u.fill(0, 28, 34);
+      snap = decodeState(buf) || snap;
+    } else p.lastBuf = buf;
     p.lastSnap = snap;
-    for (const q of this.players.values()) if (q !== p) q.link.sendState(buf);
+    const now = this.now();
+    for (const q of this.players.values()) if (q !== p) this._queue(q, p.id, buf, now);
     this.emit('state', snap);
+  }
+
+  /** Hold `buf` (player `id`'s newest) for player q, and send q's packet if it is due. */
+  _queue(q, id, buf, now) {
+    if (!q.out) q.out = new Map();
+    q.out.set(id, buf);
+    if (now - (q.outAt ?? -Infinity) >= this.bundleMs) this._flush(q, now);
+  }
+
+  _flush(q, now) {
+    const out = q.out;
+    if (!out || !out.size) return;
+    q.outAt = now;
+    let sent;
+    if (out.size === 1) sent = q.link.sendState(out.values().next().value);
+    else sent = q.link.sendState(encodeBundle([...out.values()]));
+    this.sentPackets = (this.sentPackets || 0) + (sent ? 1 : 0);
+    out.clear();
   }
 
   _gone(p, why, detail = why) {
@@ -448,13 +613,15 @@ export class HostSession {
     for (const q of this.players.values()) if (q.id !== except) q.link.send(ev);
   }
 
-  kick(id) {
-    // Nobody hosts a lobby on purpose, so nobody in one can remove anybody.
-    if (this.mode === 'lobby') return false;
+  kick(id, byAdmin = false) {
+    // Nobody hosts a lobby on purpose, so nobody in one can remove anybody — except an admin (part 3b).
+    if (this.mode === 'lobby' && !byAdmin) return false;
     const p = this.players.get(id);
     if (!p) return false;
+    // An admin is not removed by anybody.
+    if (p.admin) return false;
     this.banned.add(p.key);
-    p.link.send({ t: 'kick' });
+    p.link.send(byAdmin ? { t: 'kick', a: 1 } : { t: 'kick' });
     const link = p.link;
     // Out of the list now; the line itself goes once the message has had time to land.
     link.onclose = null;
@@ -467,7 +634,7 @@ export class HostSession {
   }
 
   chat(m) {
-    if (!QUICK_CHAT[m] || this.closed) return false;
+    if (!QUICK_CHAT[m] || this.closed || this.me.muted) return false;
     const now = this.now();
     if (now - (this.me.chatAt || -Infinity) < CHAT_GAP_MS) return false;
     this.me.chatAt = now;
@@ -475,13 +642,86 @@ export class HostSession {
     return true;
   }
 
+  /**
+   * Part 3b: what an admin asks for, done by the host — `by` is the admin (a
+   * player whose signature this host checked, or the host itself if this
+   * device is an admin). Returns true if it was done.
+   *
+   *   kick      out, and kept out of this host's game; in a lobby the host
+   *             itself goes, and the lobby re-forms round the next in line
+   *   mute      their quick chat goes to nobody, until unmute
+   *   freeze    they cannot move for FREEZE_MS, or until unfreeze: their own
+   *             game holds them, and the host relays them where they were
+   *   close     everybody back to the lobby list, kindly
+   *
+   * Nobody does any of it to an admin. Everybody sees who is muted or frozen
+   * (the list), and admins wear a badge: nothing an admin does is hidden.
+   */
+  adminAct(op, id, by = this.me) {
+    if (this.closed || !by || !by.admin || !ADMIN_OPS.includes(op)) return false;
+    if (op === 'close') return this.adminClose(by);
+    const self = id === 0;
+    const p = self ? this.me : this.players.get(id);
+    if (!p || p.admin || p === by) return false;
+    const now = this.now();
+    let done = false;
+    if (op === 'kick') {
+      if (self) {
+        // The host itself: out of a lobby, which re-forms; in a match the host made, the match is over — that is Close.
+        if (this.mode !== 'lobby') return false;
+        this.emit('admin', { op, id, by: by.name, name: p.name });
+        this.emit('removed', 'kicked');
+        return true;
+      }
+      done = this.kick(id, true);
+    } else if (op === 'mute' || op === 'unmute') {
+      done = p.muted !== (op === 'mute');
+      p.muted = op === 'mute';
+    } else if (op === 'freeze') {
+      p.frozenUntil = now + this.freezeMs;
+      p.frozenBuf = !self && p.lastBuf ? p.lastBuf.slice(0) : null;
+      done = true;
+    } else if (op === 'unfreeze') {
+      done = p.frozenUntil > now;
+      p.frozenUntil = 0;
+      p.frozenBuf = null;
+    }
+    if (!done) return false;
+    this._rosterDirty = true;
+    this.emit('admin', { op, id, by: by.name, name: p.name });
+    return true;
+  }
+
+  /** An admin closes the game: everybody is told kindly (a: 1, "an admin closed it") and goes back to the list. */
+  adminClose(by = this.me) {
+    if (this.closed || !by || !by.admin) return false;
+    this.emit('admin', { op: 'close', id: -1, by: by.name, name: '' });
+    this.close(true);
+    this.emit('removed', 'shut');
+    return true;
+  }
+
   /** Once a frame or so. `stateBuf` is the host's own snapshot, if it is time to send one. */
   tick(now = this.now(), stateBuf = null) {
     if (this.closed) return;
+    // An admin's freeze lets go by itself.
+    if (this.me.frozenUntil && this.me.frozenUntil <= now) {
+      this.me.frozenUntil = 0;
+      this._rosterDirty = true;
+    }
+    for (const p of this.players.values()) {
+      if (p.frozenUntil && p.frozenUntil <= now) {
+        p.frozenUntil = 0;
+        p.frozenBuf = null;
+        this._rosterDirty = true;
+      }
+    }
     if (stateBuf) {
       stampStateId(stateBuf, 0);
-      for (const p of this.players.values()) p.link.sendState(stateBuf);
+      for (const p of this.players.values()) this._queue(p, 0, stateBuf, now);
     }
+    // Whatever is still held for somebody goes once it is due, even if nothing new arrives to carry it.
+    for (const p of this.players.values()) if (p.out && p.out.size && now - (p.outAt ?? -Infinity) >= this.bundleMs) this._flush(p, now);
     if (now - this._pingT >= PING_EVERY_MS) {
       this._pingT = now;
       for (const p of this.players.values()) p.link.send({ t: 'ping', ts: now });
@@ -520,11 +760,11 @@ export class HostSession {
     this.close();
   }
 
-  /** The host is leaving. Everybody is told, then every line is closed. */
-  close() {
+  /** The host is leaving. Everybody is told, then every line is closed. `byAdmin`: an admin closed it (part 3b). */
+  close(byAdmin = false) {
     if (this.closed) return;
     this.closed = true;
-    this._broadcast({ t: 'close' });
+    this._broadcast(byAdmin === true ? { t: 'close', a: 1 } : { t: 'close' });
     const links = [...[...this.players.values()].map((p) => p.link), ...this.info, ...this.pending];
     for (const p of this.players.values()) p.link.onclose = null;
     this.players.clear();
@@ -546,12 +786,15 @@ const DENY = {
   kicked: 'The host has taken you out of that server for now. You can join a different one, or fly on your own.',
   closing: 'That server is closing.',
   locked: 'That server is locked — the host isn’t letting anybody new in.',
+  private: 'That match is private — you need its code to join.',
 };
 
 export class ClientSession {
-  constructor({ net, target, profile, onEvent, now = nowMs, seat = null }) {
+  constructor({ net, target, profile, onEvent, now = nowMs, seat = null, relayOnly = false, admin = null }) {
     this.net = net;
     this.target = target;
+    /** A second try at a join by code, through a relay only (link.js, RELAY_SERVERS). */
+    this.relayOnly = !!relayOnly;
     this.profile = profile;
     this.seat = seat;
     this.rank = null;
@@ -567,6 +810,12 @@ export class ClientSession {
     this.ping = null;
     this.timeoutMs = TIMEOUT_MS;
     this.goneQuietMs = GONE_QUIET_MS;
+    /** The host's shared state as it last said it (events.js), key → value, unchecked: GameEvents checks it. */
+    this.gstate = new Map();
+    /** Part 3b: this device's admin key (admin.js), to answer a host's question with; null for everybody else. */
+    this.admin = admin && typeof admin.sign === 'function' ? admin : null;
+    /** What the host says about this player: an admin, muted or frozen by one. */
+    this.self = { admin: false, muted: false, frozen: false };
   }
 
   /** Resolves with the welcome; rejects with an Error whose `code` says why. */
@@ -574,15 +823,20 @@ export class ClientSession {
     return new Promise((resolve, reject) => {
       this._resolve = resolve;
       this._reject = reject;
-      const link = this.net.connect(this.target, 'join');
+      const link = this.net.connect(this.target, 'join', this.relayOnly ? { relayOnly: true } : undefined);
       this.link = link;
       link.onopen = () => {
-        link.send({ t: 'hello', v: PROTO, name: this.profile.name, colour: this.profile.colour, key: this.profile.key, seat: this.seat || undefined });
+        link.send({
+          t: 'hello', v: PROTO, name: this.profile.name, colour: this.profile.colour, key: this.profile.key, seat: this.seat || undefined,
+          // An admin says so, and is asked to prove it (HostSession._ask).
+          adm: this.admin ? 1 : undefined,
+        });
       };
       link.onevent = (ev) => this._event(ev);
       link.onstate = (buf) => {
-        const snap = decodeState(buf);
-        if (snap && snap.id !== this.id && this.welcomed) this.emit('state', snap);
+        if (!this.welcomed) return;
+        // One snapshot, or the host's bundle of everybody's.
+        for (const snap of decodeStates(buf)) if (snap.id !== this.id) this.emit('state', snap);
       };
       link.onclose = (reason) => this._closed(reason);
     });
@@ -623,11 +877,24 @@ export class ClientSession {
           code: codeOfId(this.target) || shownCode(s.code),
           slot: Number.isInteger(s.slot) && s.slot >= 1 && s.slot <= SLOT_COUNT ? s.slot : 0,
           lobby: Number.isInteger(s.lobby) && s.lobby >= 1 && s.lobby <= LOBBY_COUNT ? s.lobby : 0,
+          // A world lobby is known by the id this player asked for, not by anything the host says (list 3).
+          world: false,
           h: typeof s.h === 'string' && /^[a-z0-9]{1,16}$/.test(s.h) ? s.h : null,
           max: Number.isInteger(s.max) && s.max >= 2 && s.max <= PLAYER_IDS ? s.max : MAX_PLAYERS,
+          priv: s.priv === true,
+          // The game's bumping rule (protocol.js BUMP_RULES), a number.
+          bump: bumpRule(s.bump),
         };
+        const wn = worldOf(this.target);
+        if (wn) {
+          this.server.lobby = wn;
+          this.server.world = true;
+          this.server.slot = 0;
+          this.server.code = null;
+        }
+        if (this.server.slot || this.server.lobby) this.server.priv = false;
         // A lobby is called what this copy calls it, whatever the host said.
-        if (this.server.lobby) this.server.name = lobbyName(this.server.lobby);
+        if (this.server.lobby) this.server.name = wn ? worldName(wn) : lobbyName(this.server.lobby);
         this.name = safeName(ev.name, safeName(this.profile.name, callSignForId(you)));
         this._roster(ev.players);
         const w = { you, name: this.name, server: this.server, players: [...this.players.values()], at: readSpawn(ev.at), weather: readWeather(ev.weather) };
@@ -678,19 +945,58 @@ export class ClientSession {
       case 'pong':
         if (Number.isFinite(ev.ts)) this.ping = Math.max(0, this.now() - ev.ts);
         break;
+      case 'chal':
+        // The host's question for an admin: signed with this device's key, over the host's id and ours (admin.js).
+        if (this.admin && !this._answered && !this.welcomed && typeof ev.n === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(ev.n)) {
+          this._answered = true;
+          const link = this.link;
+          this.admin.sign(proofText(ev.n, this.target, this.net.sig ? this.net.sig.id : null))
+            .then((sig) => link.send({ t: 'prove', s: sig }))
+            .catch(() => link.send({ t: 'prove', s: '' }));
+        }
+        break;
       case 'kick':
-        this._end('kicked');
+        this._end('kicked', ev.a === 1 ? 'admin' : 'host');
         break;
       case 'close':
-        this._end('closed');
+        // Closed by an admin: back to the lobby list (part 3b), not the lobby re-forming as it does when a host leaves.
+        this._end(ev.a === 1 ? 'shut' : 'closed');
         break;
       case 'move':
         // The lobby's real host is somebody else; go and join them (lobby.js).
         this._end('moved');
         break;
+      case 'gev': {
+        // From the host's relay: who it says sent it, as this copy knows them (the host is player 0).
+        if (!this.welcomed || typeof ev.k !== 'string') return;
+        const f = Number(ev.f);
+        const p = f === 0 ? this.players.get(0) || { id: 0, name: '', colour: '', host: true } : this.players.get(f);
+        if (!p || f === this.id) return;
+        this.emit('gev', { id: p.id, name: p.name, colour: p.colour, host: f === 0 }, { k: ev.k, d: ev.d });
+        break;
+      }
+      case 'gst':
+        if (!this.welcomed || typeof ev.k !== 'string' || ev.k.length > 32) return;
+        // Kept here as well, so a value that lands before the game has hooked up events.js is not lost.
+        if (ev.d === null) this.gstate.delete(ev.k);
+        else if (this.gstate.has(ev.k) || this.gstate.size < 64) this.gstate.set(ev.k, ev.d);
+        this.emit('gst', { k: ev.k, d: ev.d });
+        break;
       default:
         break;
     }
+  }
+
+  /** Part 3b: an admin's request to the host. The host does it only if it checked this player's signature. */
+  adminAct(op, id) {
+    if (!this.welcomed || this.ended || !ADMIN_OPS.includes(op)) return false;
+    return this.link.send({ t: 'adm', op, id: Number.isInteger(id) ? id : -1 });
+  }
+
+  /** A game event to the host (events.js): for everybody, or with h for the host alone. */
+  sendGame(ev) {
+    if (!this.welcomed || this.ended) return false;
+    return this.link.send(ev.h ? { t: 'gev', k: ev.k, d: ev.d, h: 1 } : { t: 'gev', k: ev.k, d: ev.d });
   }
 
   /** The host's list is the list: anybody missing from it has gone. */
@@ -704,6 +1010,7 @@ export class ClientSession {
       if (p.id === this.id) {
         this.name = p.name;
         this.rank = p.rank;
+        this.self = { admin: p.admin, muted: p.muted, frozen: p.frozen };
         continue;
       }
       const had = this.players.get(p.id);
@@ -721,11 +1028,15 @@ export class ClientSession {
        * address — is the other way in. A code that fails is two networks
        * that will not connect directly.
        */
-      const unreachable = /^ifs-code-/.test(String(this.target))
-        ? 'Couldn’t reach the other planes — the two networks won’t connect directly. Try from the same Wi-Fi.'
-        : 'Couldn’t reach the other planes over this Wi-Fi — ask the host for their join code and join with that.';
+      const byCode = /^ifs-code-/.test(String(this.target));
+      const byWorld = !!worldOf(this.target);
+      // List 2: words a child can do something with — the friend's internet, or the code.
+      const unreachable = byCode
+        ? 'Couldn’t reach your friend’s game — ask them to check their internet, and check the code is right.'
+        : byWorld ? 'Couldn’t reach that world lobby’s host over the internet — try again, or try another world lobby.'
+          : 'Couldn’t reach the other planes over this Wi-Fi — ask the host for their join code and join with that.';
       const why = {
-        gone: ['gone', 'Nobody is hosting there any more.'],
+        gone: ['gone', byCode ? 'No game has that code right now — check the code with your friend.' : 'Nobody is hosting there any more.'],
         timeout: ['timeout', unreachable],
         ice: ['ice', unreachable],
         signaling: ['signaling', 'Lost the connection to the matchmaking server.'],

@@ -54,10 +54,14 @@ import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extStatus } from '../game/extensions.js';
 import { heightAt, isPaved } from '../world/terrain.js';
 import { createPerson, posePerson, setWands, disposePerson } from './staff/person.js';
-import { Walker, WALK, groundAt, setTerrainMeshes, forgetObstacles, setProps, solidBox, solidAt } from './staff/walk.js';
+import { Walker, WALK, groundAt, setTerrainMeshes, forgetObstacles, setProps, solidBox, solidAt, setDrawn } from './staff/walk.js';
+import { drawnGroundSampler, ribbonSampler } from '../world/roads.js';
+import { PADS, padDiscLift } from '../world/pads.js';
 import { planeProfile, offset, local, angleDiff } from './staff/jobs.js';
 import * as UI from './staff/ui.js';
 import * as TYPES from '../aircraft/types.js';
+// Uniforms based on planes: what the pilot wears depends on what they flew.
+import { uniformFor, createUniformPerson } from './uniforms.js';
 
 const D2R = Math.PI / 180;
 
@@ -89,6 +93,11 @@ function passes(sim, code) {
 }
 
 const VIEWS = ['chase', 'wide', 'eyes'];
+/** Thumb-stick travel (0..1) for a full walk, and for a full run. */
+const STICK_WALK = 0.6;
+const STICK_RUN = 0.95;
+/** Points along the camera's line tested for a wall: finer steps, smaller jumps. */
+const CAM_PROBES = 12;
 const VIEW_LABEL = { chase: 'Behind', wide: 'Wide', eyes: 'Your eyes' };
 
 const S = {
@@ -106,6 +115,8 @@ const S = {
   view: 'chase',
   lookIdle: 9,
   camPos: new THREE.Vector3(),
+  /** How far behind the walker the camera is, eased back out after a wall. */
+  camDist: 4.4,
   camStarted: false,
   savedFov: null,
   touchHidden: false,
@@ -135,6 +146,15 @@ const S = {
   /** The game switched this feature off and the watchdog has tidied up. */
   retired: false,
   staffGone: false,
+  /** Which world, and which lay of the road ribbon, the drawn floor was read from. */
+  worldGen: 0,
+  drawn: { gen: -1, mesh: null, ver: -1, list: null },
+  /**
+   * Another feature's say in getting out of an aeroplane (runaway.js: a light
+   * aeroplane left with the power on goes without you). null = park it, as
+   * ever. See onFoot.setExitRule().
+   */
+  exitRule: null,
 };
 
 const _v = new THREE.Vector3();
@@ -175,6 +195,16 @@ function isTouch(sim) {
 }
 
 /**
+ * What you climbed out of, in words. The Skyhook is the same kind of thing to
+ * this feature as an aeroplane, and it used to say so: standing on the pad
+ * beside a helicopter, "Press O to get in the aeroplane".
+ */
+function craftWord(sim) {
+  const t = sim && sim.aircraftType;
+  return t && t.shape && t.shape.power && t.shape.power.rotor ? 'the helicopter' : 'the aeroplane';
+}
+
+/**
  * One footstep: a short burst of filtered noise through the game's own
  * mixer, on the environment bus so the player's volume and mute apply. Crisp
  * on tarmac, dull on grass, a splash in the shallows. Quiet: a step is
@@ -198,6 +228,39 @@ function footstep(sim, w, landing) {
   } catch (e) {
     /* sound is a nicety */
   }
+}
+
+/*
+ * The floor as drawn (walk.js setDrawn): the road ribbon and the ground the
+ * van rides beside it, and the pads' discs. Read when somebody first needs
+ * it in a world, not at every world build — most flights nobody gets out —
+ * and read again if the ribbon is re-laid (the car jobs conform it to the
+ * terrain when a shift starts, after the world was built).
+ */
+function ensureDrawn(sim) {
+  if (!sim) return;
+  const rm = sim.roadMesh || null;
+  const pos = rm && rm.geometry && rm.geometry.attributes && rm.geometry.attributes.position;
+  const list = sim.roads && Array.isArray(sim.roads.list) ? sim.roads.list : null;
+  const D = S.drawn;
+  const ver = pos ? pos.version : -1;
+  if (D.gen === S.worldGen && D.mesh === rm && D.ver === ver && D.list === list) return;
+  D.gen = S.worldGen;
+  D.mesh = rm;
+  D.ver = ver;
+  D.list = list;
+  let ground = null;
+  let ribbon = null;
+  try {
+    if (list && list.length && sim.terrain) ground = drawnGroundSampler(sim.terrain, list, rm);
+    if (rm) ribbon = ribbonSampler(rm);
+  } catch (e) {
+    console.warn('[onfoot] could not read the roads as drawn; walking on the terrain', e);
+    ground = null;
+    ribbon = null;
+  }
+  const pads = PADS.map((p) => ({ x: p.pos.x, z: p.pos.z, r: p.r, y: p.pos.y, top: p.pos.y + padDiscLift(p) }));
+  setDrawn({ ground, ribbon, lift: (rm && rm.userData && rm.userData.lift) || 0, pads });
 }
 
 function driving(sim) {
@@ -244,8 +307,12 @@ function aircraftSolids(sim) {
   if (!f || f.type !== 'aircraft' || !sim.aircraft) return;
   const p = f.prof;
   const ac = sim.aircraft;
+  // Left running (runaway.js): moving or in the air it is not a wall — it is
+  // something that can hit you, which runaway.js looks after — and when it
+  // stops it is wherever it stopped, not where you left it.
+  if (f.runaway && (!ac.onGround || (ac.groundSpeed || 0) > 0.5)) return;
   const h = acHeading(sim, f);
-  const g = f.groundY;
+  const g = f.runaway ? groundAt(ac.pos.x, ac.pos.z) : f.groundY;
   const mid = (p.nose + p.tail) / 2;
   const c = offset(ac.pos.x, ac.pos.z, h, mid, 0, _oa);
   addSolid(c.x, c.z, h, (p.nose - p.tail) / 2, p.halfWidth, g - 1, Math.max(g + 1, g + p.top), 'the aeroplane');
@@ -346,8 +413,32 @@ export function cannotGetOut(sim) {
    * old limit of 1 m/s a 747 or an F-35B could only be left by holding the
    * brakes and pressing O at the same time.
    */
-  if ((ac.groundSpeed || 0) > CREEP) return 'Stop the aeroplane first (hold Space to brake), then press O';
+  if ((ac.groundSpeed || 0) > Math.max(CREEP, ruleSpeed(sim))) {
+    return craftWord(sim) === 'the helicopter' ? 'Sit still on the ground first, then press O' : 'Stop the aeroplane first (hold Space to brake), then press O';
+  }
   return null;
+}
+
+/** How fast the exit rule lets you hop out (runaway.js), m/s; 0 without one. */
+function ruleSpeed(sim) {
+  try {
+    const r = S.exitRule;
+    const v = r && typeof r.maxSpeed === 'function' ? r.maxSpeed(sim) : 0;
+    return Number.isFinite(v) ? v : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+/** The exit rule's decision: null (park it), { why } (not yet, and why) or { leave: true }. */
+function ruleDecides(sim) {
+  try {
+    const r = S.exitRule;
+    return r && typeof r.decide === 'function' ? r.decide(sim) || null : null;
+  } catch (e) {
+    console.warn('[onfoot] the exit rule failed; parking the aeroplane as usual', e);
+    return null;
+  }
 }
 
 /** Ground speed, m/s, an aeroplane is parked from when you get out: a brisk walk. */
@@ -399,6 +490,18 @@ function exitAircraft(sim) {
     S.from = null;
     return 'There is nowhere to stand here';
   }
+  const rule = ruleDecides(sim);
+  if (rule && rule.why) {
+    S.from = null;
+    return rule.why;
+  }
+  if (rule && rule.leave) {
+    // Left running: no brakes, no engine off. runaway.js flies it from here.
+    S.from.runaway = true;
+    if (sim.autopilot && sim.autopilot.engaged && sim.toggleAutopilot) sim.toggleAutopilot(false);
+    begin(sim, spot.x, spot.z, spot.heading, S.outfitOverride || uniformFor(sim.aircraftType), true);
+    return null;
+  }
   // Park it. The engine goes off; it comes back on when you get back in.
   if (ac.engineOn && ac.stopEngine) ac.stopEngine('shutdown');
   if (ac.starting > 0) ac.starting = 0;
@@ -412,7 +515,7 @@ function exitAircraft(sim) {
   if (ac.omega && ac.omega.isVector3) ac.omega.y = 0;
   if (sim.input) sim.input.throttleTarget = 0;
   if (sim.autopilot && sim.autopilot.engaged && sim.toggleAutopilot) sim.toggleAutopilot(false);
-  begin(sim, spot.x, spot.z, spot.heading, S.outfitOverride || 'pilot', true);
+  begin(sim, spot.x, spot.z, spot.heading, S.outfitOverride || uniformFor(sim.aircraftType), true);
   return null;
 }
 
@@ -471,6 +574,7 @@ function exitVehicle(sim) {
 export function getOut(sim) {
   const why = cannotGetOut(sim);
   if (why) return why;
+  ensureDrawn(sim);
   return driving(sim) ? exitVehicle(sim) : exitAircraft(sim);
 }
 
@@ -486,7 +590,7 @@ function begin(sim, x, z, headingDeg, outfit, fromVehicle) {
   }
   S.outfit = outfit;
   if (!S.model) {
-    S.model = createPerson({ outfit, seed: outfit === 'passenger' ? 11 : 5 });
+    S.model = createUniformPerson(outfit, { seed: 5 }) || createPerson({ outfit, seed: outfit === 'passenger' ? 11 : 5 });
     S.model.name = 'onfoot:walker';
   }
   if (sim.scene && S.model.parent !== sim.scene) sim.scene.add(S.model);
@@ -592,7 +696,7 @@ function gatherEnterables(sim) {
   out.length = 0;
   const w = S.walker;
   const f = S.from;
-  if (f && f.type === 'aircraft' && sim.aircraft) {
+  if (f && f.type === 'aircraft' && sim.aircraft && !sim.aircraft.crashed) {
     const ac = sim.aircraft;
     const l = local(ac.pos.x, ac.pos.z, acHeading(sim, f), w.x, w.z, _la);
     const p = f.prof;
@@ -601,7 +705,7 @@ function gatherEnterables(sim) {
     const da = Math.max(0, l.along - p.nose, p.tail - l.along);
     const ds = Math.max(0, Math.abs(l.side) - p.halfWidth);
     const d = Math.hypot(da, ds);
-    if (d < 2.6) addEntry('the aeroplane', d, getBackIn);
+    if (d < 2.6) addEntry(craftWord(sim), d, getBackIn);
   } else if (f && f.type === 'vehicle' && !f.staff && driving(sim)) {
     const v = sim.vehicle;
     const d = Math.hypot(v.pos.x - w.x, v.pos.z - w.z);
@@ -642,7 +746,7 @@ function pressO(sim) {
       return true;
     }
     const f = S.from;
-    notify(sim, f && f.type === 'aircraft' ? 'Walk up to the aeroplane to get back in' : 'Walk up to something to get in', 'info', 2.4);
+    notify(sim, f && f.type === 'aircraft' ? `Walk up to ${craftWord(sim)} to get back in` : 'Walk up to something to get in', 'info', 2.4);
     return false;
   }
   const why = getOut(sim);
@@ -666,7 +770,7 @@ function cycleView(sim) {
 
 function holdVehicle(sim) {
   const f = S.from;
-  if (f && f.type === 'aircraft') {
+  if (f && f.type === 'aircraft' && !f.runaway) {
     if (sim.override !== PARK) sim.override = PARK;
     if (sim.input) sim.input.throttleTarget = 0;
   }
@@ -739,7 +843,24 @@ function walkFrame(sim, dt) {
     mx /= ml;
     mz /= ml;
   }
-  const run = !!(K.ShiftLeft || K.ShiftRight || T.run || S.runToggle);
+  let run = !!(K.ShiftLeft || K.ShiftRight || T.run || S.runToggle);
+  /*
+   * A thumb-stick is a throttle, not a switch. It used to walk at the
+   * stick's fraction of walking pace and then jump to a full run in the last
+   * 8% of its travel: pushed most of the way (85%), 1.5 m/s; a hair further,
+   * 5.2. Now it reaches a full walk at 60% and runs up smoothly to the rim.
+   */
+  const tm = Math.hypot(T.x, T.y);
+  const keysMove = K.KeyW || K.KeyA || K.KeyS || K.KeyD;
+  if (tm > 0.02 && !keysMove && !locked && !S.runToggle) {
+    const want = tm <= STICK_WALK
+      ? (tm / STICK_WALK) * WALK.walk
+      : WALK.walk + Math.min(1, (tm - STICK_WALK) / (STICK_RUN - STICK_WALK)) * (WALK.run - WALK.walk);
+    const k = want / WALK.run / (Math.hypot(mx, mz) || 1);
+    mx *= k;
+    mz *= k;
+    run = true;
+  }
 
   S.solids.length = 0;
   S.poolUsed = 0;
@@ -899,20 +1020,30 @@ function placeCamera(sim, dt) {
      * a person standing there, a high wing two metres up counted as a wall,
      * and walking under a Skylark's wing put the camera in the pilot's face.
      */
-    for (let k = 1; k <= 6; k++) {
-      const t = (D * k) / 6;
+    for (let k = 1; k <= CAM_PROBES; k++) {
+      const t = (D * k) / CAM_PROBES;
       const px = tx - lx * t;
       const py = ty - pl * t;
       const pz = tz - lz * t;
       if (solidAt(px, pz, py - 0.3, 0.2, S.solids, 0.6) || py < groundAt(px, pz) + 0.15) {
-        d = Math.max(0.7, t - D / 6);
+        d = Math.max(0.7, t - D / CAM_PROBES);
         break;
       }
     }
-    _v.set(tx - lx * d, ty - pl * d, tz - lz * d);
+    /*
+     * In at once (never a frame looking through the wall), back out gently.
+     * The distance used to be whatever this frame's test said, in steps of
+     * D/6: walking away from a wall or a wing the camera jumped 0.73 m in one
+     * frame, three or four times over (measured: 0.73 m of jerk in a frame
+     * stepping away from the Skylark).
+     */
+    if (!S.camStarted || d < S.camDist) S.camDist = d;
+    else S.camDist += (d - S.camDist) * Math.min(1, dt * 2.5);
+    const cd = S.camDist;
+    _v.set(tx - lx * cd, ty - pl * cd, tz - lz * cd);
     const floor = groundAt(_v.x, _v.z) + 0.35;
     if (_v.y < floor) _v.y = floor;
-    if (!S.camStarted || d < D) {
+    if (!S.camStarted || cd < D - 0.05) {
       S.camPos.copy(_v);
       S.camStarted = true;
     } else {
@@ -962,12 +1093,23 @@ function idleFrame(sim, dt) {
   // On a keyboard it is a hint that comes and goes; on a touch screen it is
   // the only door there is, so it stays.
   const show = S.stoppedT > 1.5 && (isTouch(sim) || S.stoppedT < 9 || staffDrive);
-  if (show) {
+  const rulePrompt = show && !driving(sim) && S.exitRule && typeof S.exitRule.prompt === 'function' ? safePrompt(sim) : '';
+  if (rulePrompt) {
+    UI.setPrompt(rulePrompt, pressOFromPrompt);
+  } else if (show) {
     UI.setPrompt(isTouch(sim) ? 'Tap here to get out' : 'Press <kbd>O</kbd> to get out', pressOFromPrompt);
   } else if (S.hint && staffDrive) {
     UI.setPrompt(S.hint);
   } else {
     UI.setPrompt('');
+  }
+}
+
+function safePrompt(sim) {
+  try {
+    return S.exitRule.prompt(sim) || '';
+  } catch (e) {
+    return '';
   }
 }
 
@@ -1003,6 +1145,7 @@ export const onFoot = {
     // Switched off by the game: nothing would move a walker put down now.
     if (S.retired) return false;
     if (S.active) finish(sim);
+    ensureDrawn(sim);
     S.from = { type: 'none' };
     if (moorVehicle && driving(sim)) {
       const v = sim.vehicle;
@@ -1045,6 +1188,16 @@ export const onFoot = {
   },
   setOutfit(o) {
     S.outfitOverride = o || null;
+  },
+  /**
+   * A say in getting out of an aeroplane, for another feature:
+   *   { maxSpeed(sim) -> m/s it may still be rolling at,
+   *     decide(sim) -> null (park it) | { why } (not now) | { leave: true },
+   *     prompt(sim) -> html for the "get out" prompt, or '' for the usual }
+   * runaway.js uses it. null takes it away.
+   */
+  setExitRule(r) {
+    S.exitRule = r || null;
   },
   setHint(html) {
     S.hint = html || '';
@@ -1142,6 +1295,8 @@ registerExtension({
     // New terrain, new buildings: re-read the one and forget the other.
     setTerrainMeshes(sim.terrain);
     forgetObstacles();
+    S.worldGen++;
+    setDrawn({});
     // The apron's and the airfield's own things, which OBSTACLES does not list.
     // The carrier's too: its island and the aeroplane parked on its deck.
     // Aeroplanes the apron parks as instances are boxed by their type's shape.
@@ -1170,6 +1325,7 @@ registerExtension({
         finish(sim);
         return;
       }
+      ensureDrawn(sim);
       walkFrame(sim, dt);
     } else {
       idleFrame(sim, dt);

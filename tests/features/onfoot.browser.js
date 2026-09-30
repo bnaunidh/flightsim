@@ -127,7 +127,9 @@ export async function check(sim, r, say = () => {}) {
   r.ok('onfoot: W walks you ten metres', walked >= 10, `${walked.toFixed(1)} m in 7 s`);
   r.ok('onfoot: W went to the walker, never to the aeroplane', !wHeld);
   r.ok('onfoot: the parked aeroplane did not move while you walked', ac.pos.distanceTo(parked) < 0.3, `${ac.pos.distanceTo(parked).toFixed(2)} m`);
-  r.ok('onfoot: feet on the ground', Math.abs(s1.y - W.groundAt(s1.x, s1.z)) < 0.06, `${(s1.y - W.groundAt(s1.x, s1.z)).toFixed(3)} m`);
+  // On the floor as drawn: the tarmac is laid a few centimetres over the ground (walk.js floorAt).
+  const floorY = (W.floorAt || W.groundAt)(s1.x, s1.z);
+  r.ok('onfoot: feet on the ground', Math.abs(s1.y - floorY) < 0.02, `${(s1.y - floorY).toFixed(3)} m`);
   const camD = Math.hypot(sim.camera.position.x - s1.x, sim.camera.position.z - s1.z);
   r.ok('onfoot: the camera follows the walker', camD < 8, `${camD.toFixed(1)} m away`);
 

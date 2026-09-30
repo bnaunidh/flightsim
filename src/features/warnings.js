@@ -1268,6 +1268,17 @@ function resetAll(sim) {
 
 function tick(sim, dt) {
   W.sim = sim;
+  // Ejected (eject.js sets sim.walking.ejected): the warning computer is in
+  // the empty aeroplane diving away, not with the pilot under the parachute.
+  // "PULL UP" at someone hanging from a canopy is wrong. Quiet, once.
+  if (sim.walking && sim.walking.ejected) {
+    if (!W.ejectedWas) {
+      W.ejectedWas = true;
+      resetAll(sim);
+    }
+    return;
+  }
+  W.ejectedWas = false;
   const kind = kindOf(sim);
   W.kind = kind;
   const alerts = sim.audio && sim.audio.alerts;

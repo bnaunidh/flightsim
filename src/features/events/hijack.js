@@ -56,7 +56,7 @@ import { heightAt, isOnRunway2, obstacleAt } from '../../world/terrain.js';
 import * as AP from '../../world/airport.js';
 import * as Prog from '../../game/progression.js';
 import { Escort, escortType } from './escort.js';
-import { createPoliceCar, createVan, createStairs, createPerson, createPillar, pulsePillar } from './vehicles.js';
+import { createPoliceCar, createVan, createStairs, createPerson, createPillar, pulsePillar, posePersonAt, disposeEventPerson } from './vehicles.js';
 import * as SFX from './sfx.js';
 import * as UI from './ui.js';
 import {
@@ -334,7 +334,7 @@ export function resetHijack(sim) {
   for (const e of H.escorts) e.dispose();
   if (sim) removePolice(sim, H.police);
   if (H.stairs && H.stairs.obj && H.stairs.obj.parent) H.stairs.obj.parent.remove(H.stairs.obj);
-  for (const w of H.walkers) if (w.obj && w.obj.parent) w.obj.parent.remove(w.obj);
+  for (const w of H.walkers) if (w.obj) disposeEventPerson(w.obj);
   if (H.pillar && H.pillar.parent) H.pillar.parent.remove(H.pillar);
   for (const l of [H.siren, H.drone, H.jet]) if (l) l.stop();
   const wasShowing = H.phase !== 'idle' && H.phase !== 'armed';
@@ -2084,8 +2084,9 @@ function updateWalkers(dt) {
       continue;
     }
     w.obj.position.lerpVectors(a, b, w.k);
-    w.obj.position.y += Math.abs(Math.sin(w.k * len * 3.2)) * 0.06;
     w.obj.rotation.y = Math.atan2(-(b.x - a.x), -(b.z - a.z));
+    // The legs walk now (the rig bobs itself); they used to hop along.
+    posePersonAt(w.obj, dt, w.speed);
   }
 }
 

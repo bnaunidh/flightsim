@@ -346,33 +346,96 @@ function windowRows(ctx, stations, rows, parent) {
   return mesh;
 }
 
-/** Door outlines: a dark frame with the paint inside it and a porthole. */
+/**
+ * Door outlines: a thin dark seam laid ON the skin, and a porthole.
+ *
+ * They were a flat white card on a dark card, tangent to the fuselage at the
+ * door's middle: a 1.9 m door on a 4 m tube, so the card stood off the skin
+ * by its middle and sank into it at the top and bottom, and its flat paint lit
+ * brighter than the curved skin round it and cut the cheatline in two. Seen
+ * from the apron — which is where the walker and the ramp crew see them — a
+ * row of white stickers. Now the seam is a strip that follows the skin, the
+ * skin and its cheatline show through inside it, and nothing is painted over.
+ */
 function doors(ctx, stations, list, parent) {
-  const frames = [];
-  const panels = [];
+  const SEAM = 0.045;
+  const OFF = 0.012;
+  const pos = [];
+  const idx = [];
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const vert = (st, side, z, y) => {
+    const { x } = atHeight(st, z, y, OFF);
+    pos.push(side * x, y, z);
+    return pos.length / 3 - 1;
+  };
+  // A strip from (z0, y0) to (z1, y1), SEAM wide toward the door's middle.
+  const strip = (st, side, z0, y0, z1, y1, iz, iy, n) => {
+    const base = pos.length / 3;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const z = z0 + (z1 - z0) * t;
+      const y = y0 + (y1 - y0) * t;
+      vert(st, side, z, y);
+      vert(st, side, z + iz * SEAM, y + iy * SEAM);
+    }
+    for (let i = 0; i < n; i++) {
+      const o = base + i * 2;
+      for (const [p, q, r] of [[o, o + 2, o + 1], [o + 1, o + 2, o + 3]]) {
+        // Wound to face out of the fuselage on either side.
+        a.fromArray(pos, p * 3);
+        b.fromArray(pos, q * 3).sub(a);
+        c.fromArray(pos, r * 3).sub(a);
+        if (b.cross(c).x * side >= 0) idx.push(p, q, r);
+        else idx.push(p, r, q);
+      }
+    }
+  };
   const ports = [];
   const up = new THREE.Vector3(0, 1, 0);
   const look = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   for (const d of list) {
-    const { x, n } = atHeight(d.st || stations, d.z, d.y, 0.02);
+    const st = d.st || stations;
+    const hz = d.w / 2;
+    /*
+     * Never below the skin's own belly or over its crown: where the tail cone
+     * rises under the last door (the A380's aft door hangs 0.2 m below it),
+     * a seam that follows the skin would wrap round under the fuselage.
+     */
+    let lo = d.y - d.h / 2;
+    let hi = d.y + d.h / 2;
+    for (const z of [d.z - hz, d.z + hz]) {
+      const [, ry, cy] = profile(st, z);
+      lo = Math.max(lo, cy - ry * 0.9);
+      hi = Math.min(hi, cy + ry * 0.9);
+    }
+    const hy = Math.max(0.2, (hi - lo) / 2);
+    const dy = (hi + lo) / 2;
     for (const side of [-1, 1]) {
-      const pos = new THREE.Vector3(side * x, d.y, d.z);
-      const out = new THREE.Vector3(side * n[0], n[1], 0);
-      look.lookAt(pos.clone().add(out), pos, up);
+      strip(st, side, d.z - hz, dy - hy, d.z - hz, dy + hy, 1, 0, 8); // fore edge
+      strip(st, side, d.z + hz, dy - hy, d.z + hz, dy + hy, -1, 0, 8); // aft edge
+      strip(st, side, d.z - hz, dy + hy, d.z + hz, dy + hy, 0, -1, 2); // top
+      strip(st, side, d.z - hz, dy - hy, d.z + hz, dy - hy, 0, 1, 2); // sill
+      // The porthole, on the skin at its own height.
+      const py = dy + hy * 0.44;
+      const { x, n } = atHeight(st, d.z, py, 0.02);
+      const p = new THREE.Vector3(side * x, py, d.z);
+      look.lookAt(p.clone().add(new THREE.Vector3(side * n[0], n[1], 0)), p, up);
       q.setFromRotationMatrix(look);
-      frames.push(new THREE.Matrix4().compose(pos.clone().addScaledVector(out, 0.005), q, new THREE.Vector3(d.w, d.h, 1)));
-      panels.push(new THREE.Matrix4().compose(pos.clone().addScaledVector(out, 0.012), q, new THREE.Vector3(d.w - 0.07, d.h - 0.07, 1)));
-      ports.push(new THREE.Matrix4().compose(pos.clone().addScaledVector(out, 0.02).add(new THREE.Vector3(0, d.h * 0.22, 0)), q, new THREE.Vector3(0.2, 0.28, 1)));
+      ports.push(new THREE.Matrix4().compose(p, q, new THREE.Vector3(0.2, 0.28, 1)));
     }
   }
-  const paint = makeMaterial(ctx.model, { color: ctx.config.paint, roughness: 0.5, metalness: 0.12 });
-  const plane = () => new THREE.PlaneGeometry(1, 1);
-  for (const [name, mats, mat] of [['Door seams', frames, ctx.materials.dark], ['Doors', panels, paint], ['Door windows', ports, ctx.materials.dark]]) {
-    const m = addInstanced(ctx.model, parent, name, plane(), mat, mats);
-    m.castShadow = false;
-    m.computeBoundingSphere();
-  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const seams = meshOf(ctx, 'Door seams', geo, ctx.materials.dark, parent);
+  seams.castShadow = false;
+  const m = addInstanced(ctx.model, parent, 'Door windows', new THREE.PlaneGeometry(1, 1), ctx.materials.dark, ports);
+  m.castShadow = false;
+  m.computeBoundingSphere();
 }
 
 /**

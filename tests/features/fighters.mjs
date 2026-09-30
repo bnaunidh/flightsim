@@ -16,7 +16,9 @@
  *   - Air Massimo is the fastest aeroplane in the game: highest vne, highest
  *     hangar "Top", and the highest speed actually reached flying level flat
  *     out — every aeroplane in the roster raced, whoever else has added
- *     theirs by the time this runs;
+ *     theirs by the time this runs — except T-Pose Harrison, who is exactly
+ *     1 km/h faster than Massimo at both their true top speeds (the owner's
+ *     own rule: "1KM faster than Air Massimo");
  *   - the F-35B hovers: a vertical take-off, a height hold, a pad landing, a
  *     conversion from 150 kt, and the hover switching itself off above 60 kt
  *     with a note, without dropping the jet.
@@ -260,13 +262,13 @@ for (const id of IDS) {
 }
 
 /* -------------------------------------------------- the fastest plane --- */
-function topSpeed(id) {
+function topSpeed(id, seconds = 300) {
   const { ac, w } = fly(id);
   const alt = 2500;
   ac.reset({ pos: new THREE.Vector3(-3000, 0, 0), headingDeg: 90, engineOn: true, gearDown: false, speed: 90, altAGL: alt });
   ac.pos.y = alt;
   ac.rpm = 1;
-  for (let t = 0; t < 300 && !ac.crashed; t += STEP) {
+  for (let t = 0; t < seconds && !ac.crashed; t += STEP) {
     ac.controls.throttle = 1;
     const hdgErr = ((ac.heading - 90 + 540) % 360) - 180;
     ac.controls.roll = clamp((clamp(-hdgErr * 0.9, -14, 14) - ac.bankAngleDeg()) / 16, -0.7, 0.7);
@@ -284,11 +286,30 @@ for (const t of AIRCRAFT) {
 }
 race.sort((a, b) => b.kt - a.kt);
 console.log('      level top speed at 2,500 m, true airspeed: ' + race.map((r) => `${r.id} ${Math.round(r.kt)}`).join(', '));
+/*
+ * T-Pose Harrison (extra/tpose.js) is the one exception, on purpose: the
+ * owner asked for him to be exactly 1 km/h faster than Massimo. Everything
+ * else must still be 15% behind Massimo; Harrison is held to his one km/h
+ * below, at both aeroplanes' TRUE top speed.
+ */
+const FASTER = new Set(['massimo', 'tpose']);
 const m = race.find((r) => r.id === 'massimo');
-const rest = race.filter((r) => r.id !== 'massimo');
-ok('massimo reaches the highest level top speed of every aeroplane in the game, by 15% or more',
+const rest = race.filter((r) => !FASTER.has(r.id));
+ok('massimo reaches the highest level top speed of every aeroplane in the game (but T-Pose Harrison), by 15% or more',
   m && !m.crashed && rest.every((r) => m.kt > r.kt * 1.15), `${Math.round(m.kt)} kt against ${rest[0].id} ${Math.round(rest[0].kt)} kt`);
-const others = AIRCRAFT.filter((a) => a.id !== 'massimo');
+{
+  // Flown until the speed stops rising: at the race's 300 s both are still
+  // accelerating (Massimo 881 km/h there, 941.5 at the top).
+  const mt = topSpeed('massimo', 1800);
+  const ht = topSpeed('tpose', 1800);
+  const d = (ht.kt - mt.kt) / KT * 3.6;
+  ok('T-Pose Harrison is 1 km/h faster than Air Massimo at top speed (measured, ± 0.25)',
+    !mt.crashed && !ht.crashed && Math.abs(d - 1) <= 0.25,
+    `Massimo ${(mt.kt / KT * 3.6).toFixed(2)} km/h, Harrison ${(ht.kt / KT * 3.6).toFixed(2)} km/h: ${d >= 0 ? '+' : ''}${d.toFixed(3)} km/h`);
+  ok('T-Pose Harrison is not military (no passcode) and has a higher red line than Massimo',
+    !getAircraft('tpose').military && getAircraft('tpose').aero.vne > getAircraft('massimo').aero.vne);
+}
+const others = AIRCRAFT.filter((a) => !FASTER.has(a.id));
 ok('massimo has the highest vne in the roster', others.every((a) => getAircraft('massimo').aero.vne > a.aero.vne),
   `${getAircraft('massimo').aero.vne} m/s against ${Math.max(...others.map((a) => a.aero.vne))}`);
 ok('massimo shows the highest "Top" in the hangar', others.every((a) => performanceFor('massimo').vne > performanceFor(a.id).vne),
@@ -375,18 +396,21 @@ for (const [mode, wind, cond] of [['simplified', 0, 'clear'], ['simplified', 20,
     `hover after ${reached === null ? '—' : reached.toFixed(1)} s, lowest ${low.toFixed(1)} m of 180`);
   hoverStep(ac, ctl, w, 10);
   ctl.notes.length = 0;
-  // Full forward stick, and kept there three seconds after the hover lets
-  // go — the worst thing a child holding W can do.
+  // Full forward stick with the lever up (W + Shift: fly away), and the
+  // stick kept there three seconds after the hover lets go — the worst thing
+  // a child holding W can do. (W alone now hover-taxis: aircrew.browser.js.)
   const y0 = ac.pos.y;
-  let offKt = null, exitT = null;
+  let offKt = null, exitT = null, yOff = y0;
   low = ac.pos.y;
   for (let t = 0; t < 40 && !ac.crashed; t += 1 / 120) {
     if (ctl.mode === 'hover') ac.controls.pitch = -1;
     else {
-      if (exitT === null) { exitT = t; offKt = ac.ias * KT; }
-      if (t < exitT + 3) ac.controls.pitch = -1; else hold(y0);
+      // Held level where the hover let go: the lever just above the hold
+      // band climbs it gently on the way there.
+      if (exitT === null) { exitT = t; offKt = ac.ias * KT; yOff = ac.pos.y; }
+      if (t < exitT + 3) ac.controls.pitch = -1; else hold(yOff);
     }
-    ac.controls.throttle = ctl.mode === 'hover' ? 0.5 : 1;
+    ac.controls.throttle = ctl.mode === 'hover' ? 0.7 : 1;
     hoverStep(ac, ctl, w, 1 / 120);
     low = Math.min(low, ac.pos.y);
   }
@@ -490,6 +514,8 @@ for (const mode of ['simplified', 'realistic']) {
   const g = gameHover({ H: 25, mode });
   const { ac } = g;
   const ctl = Stovl.stovlState();
+  // W + Shift: stick forward with the lever up is how a hover flies away.
+  g.sim.input.throttleTarget = 1;
   let offAt = null, lowHeld = 1e9;
   for (let i = 0; i < 70 * 60 && !ac.crashed; i++) {
     g.frame(-1);
@@ -501,6 +527,18 @@ for (const mode of ['simplified', 'realistic']) {
   for (let i = 0; i < 30 * 60 && !ac.crashed; i++) { g.frame(0); if (hand === null && ctl.mode === 'off') hand = i / 60; }
   ok(`f35b: W held through the switch-off is not handed back as a dive; let go and it flies away (${mode})`, !ac.crashed && offAt !== null && waiting && lowHeld > 40 && hand !== null,
     `${g.crash || 'no crash'}, hover off at ${offAt === null ? '—' : offAt.toFixed(1)} s, still waiting for the stick at 70 s: ${waiting}, lowest ${lowHeld === 1e9 ? '—' : lowHeld.toFixed(0)} m over the ground while held, handed over ${hand === null ? '—' : hand.toFixed(1) + ' s'} after letting go, ${Math.round(aboveSurface(ac))} m up`);
+}
+{
+  // "Able to move while hovering": W alone, held 20 s at the hover's lever,
+  // slides the jet forward at a hover-taxi and the hover stays on.
+  const g = gameHover({ H: 25, mode: 'simplified' });
+  const { ac } = g;
+  const ctl = Stovl.stovlState();
+  const x0 = ac.pos.x;
+  let maxKt = 0;
+  for (let i = 0; i < 20 * 60 && !ac.crashed; i++) { g.frame(-1); maxKt = Math.max(maxKt, ac.ias * KT); }
+  ok('f35b: W alone in a hover slides forward and stays in the hover (no drop-out)', !ac.crashed && ctl.mode === 'hover' && ac.pos.x - x0 > 150 && maxKt < 50,
+    `${Math.round(ac.pos.x - x0)} m forward in 20 s, fastest ${maxKt.toFixed(0)} kt, mode ${ctl.mode}`);
 }
 {
   // A finger holding the touch slider at 20% after T: not enough to fly

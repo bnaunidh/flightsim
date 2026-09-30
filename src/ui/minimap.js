@@ -1643,6 +1643,8 @@ export class Minimap {
 
     // Everybody else in the sky, and on the water.
     this.drawTraffic(g);
+    // Pins other features put down (runaway.js: "YOU", on foot).
+    this.drawPins(g);
 
     // The objective. One symbol in all four games, because it is one idea:
     // the place the game is currently asking you to get to.
@@ -1794,6 +1796,40 @@ export class Minimap {
    * Anything on the ground is a small grey dot, and only when zoomed in: a
    * full apron of parked airliners is not traffic.
    */
+  /**
+   * `sim.mapPins`: [{ x, z, label, colour }] — a dot and a word, from any
+   * feature, with no knowledge of the map needed. One off the chart sits on
+   * its edge, pointing the way. A bad entry is skipped, never thrown.
+   */
+  drawPins(g) {
+    const pins = g.sim && g.sim.mapPins;
+    if (!pins || !pins.length) return;
+    const { ctx, mx, my, ts, edge, cx, cy } = g;
+    for (let i = 0; i < pins.length; i++) {
+      const p = pins[i];
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
+      let x = mx(p.x);
+      let y = my(p.z);
+      const dx = x - cx;
+      const dy = y - cy;
+      const d = Math.hypot(dx, dy);
+      const lim = edge - 6 * ts;
+      if (d > lim && d > 0) {
+        x = cx + (dx / d) * lim;
+        y = cy + (dy / d) * lim;
+      }
+      const col = p.colour || '#58c6ff';
+      ctx.fillStyle = col;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.4 * ts;
+      ctx.beginPath();
+      ctx.arc(x, y, 3.6 * ts, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      if (p.label) label(ctx, String(p.label), x, y - 6 * ts, col, ts);
+    }
+  }
+
   drawTraffic(g) {
     const { ctx, mx, my, craft, sim, ts, edge, cx, cy, span } = g;
     const list = sim.traffic;

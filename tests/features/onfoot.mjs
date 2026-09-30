@@ -344,7 +344,10 @@ if (J) {
   for (const t of TYPES.AIRCRAFT) {
     try {
       const p = J.planeProfile(t, MA.createAircraftModel({ type: t }));
-      if (!(p.len > 4 && p.nose > 0 && p.tail < 0 && p.halfWidth >= 0.35 && p.halfWidth < 4 && p.halfSpan > p.halfWidth)) {
+      // T-Pose Harrison is a man on a 3 m board, not an aeroplane: he is
+      // held to being more than a metre and a half long instead.
+      const minLen = t.shape && t.shape.tpose ? 1.5 : 4;
+      if (!(p.len > minLen && p.nose > 0 && p.tail < 0 && p.halfWidth >= 0.35 && p.halfWidth < 4 && p.halfSpan > p.halfWidth)) {
         odd.push(`${t.id} len ${p.len.toFixed(1)} nose ${p.nose.toFixed(1)} tail ${p.tail.toFixed(1)} hw ${p.halfWidth.toFixed(2)}`);
       }
     } catch (e) {

@@ -41,6 +41,14 @@ function prims() {
     box: new THREE.BoxGeometry(1, 1, 1),
     cyl: new THREE.CylinderGeometry(1, 1, 1, 12),
     cyl6: new THREE.CylinderGeometry(1, 1, 1, 6),
+    /*
+     * Wheels are the one round thing you look at from a metre away when you
+     * walk up to these: at 12 sides with a six-sided hub they read as nuts,
+     * not tyres. Twenty sides and a twelve-sided hub, a few hundred triangles
+     * across the whole ramp.
+     */
+    tyre: new THREE.CylinderGeometry(1, 1, 1, 20),
+    hub: new THREE.CylinderGeometry(1, 1, 1, 12),
   };
   return PRIM;
 }
@@ -81,8 +89,11 @@ class Kit {
   }
   /** A wheel lying on its side, on the ground. */
   wheel(r, width, x, z) {
-    this.parts.push(part(this.P.cyl, TYRE, x, r, z, 0, 0, Math.PI / 2, r, width, r));
-    this.parts.push(part(this.P.cyl6, HUB, x + Math.sign(x || 1) * (width / 2 + 0.005), r, z, 0, 0, Math.PI / 2, r * 0.45, 0.02, r * 0.45));
+    const out = Math.sign(x || 1);
+    this.parts.push(part(this.P.tyre, TYRE, x, r, z, 0, 0, Math.PI / 2, r, width, r));
+    this.parts.push(part(this.P.hub, HUB, x + out * (width / 2 + 0.005), r, z, 0, 0, Math.PI / 2, r * 0.55, 0.02, r * 0.55));
+    // A dark nut in the middle of the hub.
+    this.parts.push(part(this.P.hub, DARK, x + out * (width / 2 + 0.0135), r, z, 0, 0, Math.PI / 2, r * 0.16, 0.005, r * 0.16));
     return this;
   }
   wheels(r, width, halfTrack, zs) {

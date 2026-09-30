@@ -7,9 +7,10 @@
  * two — painted in their colour, with a name tag that stays readable at any
  * distance and shows how far away they are.
  *
- * They are GHOSTS. Nothing here registers an obstacle, a platform or a
- * contact: you can fly straight through a friend, which in a class of
- * ten-year-olds is the only safe way to do formation flying.
+ * Nothing here registers an obstacle, a platform or a contact. Bumping into
+ * a friend (list 2, part 2) is ../../bump.js: each game pushes only its own
+ * ride off where it draws the others, under the game's bumping rule, and
+ * never on the ground, at spawn or when two start inside each other.
  *
  * Models live in the group the world hands this feature, so a world rebuild
  * (a map change, a graphics change) disposes them with everything else; the
@@ -23,7 +24,7 @@ import { createAircraftModel, syncAircraftModel, groundOffsetFor } from '../../a
 import { getAircraft, specFor } from '../../aircraft/types.js';
 import { createBoat, createCar, updateVehicleModel } from '../../vehicles/models.js';
 import { VEHICLES } from '../../vehicles/surface.js';
-import { Track, Smoother } from './interp.js';
+import { Track, Smoother, RotSmoother } from './interp.js';
 import { QUICK_CHAT } from './protocol.js';
 
 const tmpV = new THREE.Vector3();
@@ -126,30 +127,81 @@ function tintVehicle(model, colour) {
 /* Name tags                                                           */
 /* ------------------------------------------------------------------ */
 
-const TAG_W = 320;
-const TAG_H = 112;
-const TAG_SCALE = 0.1;
+/*
+ * List 2: "the nametags are weird". Looked at with eight in a lobby at
+ * 1366x768 and 1024x768: every tag was the same size at every distance, so
+ * the friends two and five kilometres off — a few pixels of aeroplane —
+ * wore labels as big as the one ten metres away and piled into one
+ * unreadable heap on the horizon, half of it under the badge and the "joined"
+ * toasts. So now:
+ *
+ *   - one line, "● Swift Falcon  230 m", in a pill; the distance only past
+ *     150 m, where it helps you find them;
+ *   - the pill is about 3 % of the screen's height up close and shrinks to
+ *     2 % by a kilometre and a half — readable, never a banner;
+ *   - no two tags overlap: nearest first, a tag that would land on another
+ *     steps up above it (twice at most), and one that still does not fit
+ *     becomes a small dot in the player's colour, as does anybody past
+ *     8 km — they are still there, and on the minimap;
+ *   - a chat bubble sits over its own pill, and a player talking goes first.
+ *
+ * Part 3b: whoever hosts the game — a lobby's owner — has a small gold crown
+ * on top of their pill (moved to the pill's corner while a chat bubble is
+ * up), and an admin an ADMIN badge in it, after the name. The crown is about
+ * two-thirds of the pill's height, so it reads as a crown as far off as the
+ * name does, and it follows the host when the lobby re-forms (the roster).
+ */
+const TAG_W = 384;
+const TAG_H = 96;
+const PILL_Y = 50;
+const PILL_H = 40;
+const BUBBLE_H = 40;
+/** How tall the pill is on screen, as a fraction of the viewport's height: close to, and from FAR_M on. */
+const PILL_NEAR = 0.03;
+const PILL_FAR = 0.02;
+const NEAR_M = 60;
+const FAR_M = 1500;
+const TAG_MAX_M = 8000;
+const PIP_FRAC = 0.012;
+export const TAG_LAYOUT = { TAG_W, TAG_H, PILL_Y, PILL_H, BUBBLE_H, PILL_NEAR, PILL_FAR, NEAR_M, FAR_M, TAG_MAX_M };
+
+function spriteOf(canvas, name) {
+  const tex = new THREE.CanvasTexture(canvas);
+  if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.renderOrder = 998;
+  sprite.frustumCulled = false;
+  sprite.name = name;
+  return { sprite, tex };
+}
 
 function makeTag() {
   const canvas = document.createElement('canvas');
   canvas.width = TAG_W;
   canvas.height = TAG_H;
-  const tex = new THREE.CanvasTexture(canvas);
-  if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false });
-  const sprite = new THREE.Sprite(mat);
+  const { sprite, tex } = spriteOf(canvas, 'mp-tag');
   sprite.center.set(0.5, 0);
-  /*
-   * Constant size on screen. At 0.057 the whole tag was 35 px of a 713 px
-   * window and the name in it 9 px — measured on the playtest screenshot,
-   * "Hana" over a Skylark twenty metres away was a smudge. At 0.1 the name
-   * is about 15 px, the size of the HUD's own labels.
-   */
-  sprite.scale.set(TAG_SCALE * (TAG_W / TAG_H), TAG_SCALE, 1);
-  sprite.renderOrder = 998;
-  sprite.frustumCulled = false;
-  sprite.name = 'mp-tag';
-  return { sprite, canvas, tex, key: '' };
+  // Sized every frame (Remotes.update): a fraction of the screen, smaller with distance.
+  sprite.scale.set(0.1 * (TAG_W / TAG_H), 0.1, 1);
+  const pc = document.createElement('canvas');
+  pc.width = pc.height = 32;
+  const pip = spriteOf(pc, 'mp-pip');
+  pip.sprite.center.set(0.5, 0.5);
+  // Under the tags: a dot that lands behind somebody's pill is covered by it, not printed on their name.
+  pip.sprite.renderOrder = 997;
+  pip.sprite.visible = false;
+  return { sprite, canvas, tex, key: '', pillW: TAG_W, chat: false, pip: pip.sprite, pipCanvas: pc, pipTex: pip.tex, pipKey: '' };
+}
+
+function disposeTag(tag) {
+  if (!tag) return;
+  for (const sp of [tag.sprite, tag.pip]) {
+    if (!sp) continue;
+    sp.removeFromParent();
+    if (sp.material.map) sp.material.map.dispose();
+    sp.material.dispose();
+  }
 }
 
 function roundRect(g, x, y, w, h, r) {
@@ -162,56 +214,153 @@ function roundRect(g, x, y, w, h, r) {
   g.closePath();
 }
 
-function drawTag(tag, name, colour, line2, chat) {
-  const key = `${name}|${colour}|${line2}|${chat || ''}`;
+/** A small gold crown, its base on `baseY`, centred on `cx`, `w` wide. */
+function drawCrown(g, cx, baseY, w) {
+  const h = w * 0.72;
+  const x0 = cx - w / 2;
+  const top = baseY - h;
+  g.beginPath();
+  g.moveTo(x0, baseY);
+  g.lineTo(x0 + w, baseY);
+  g.lineTo(x0 + w, top + h * 0.22);
+  g.lineTo(x0 + w * 0.74, top + h * 0.55);
+  g.lineTo(cx, top);
+  g.lineTo(x0 + w * 0.26, top + h * 0.55);
+  g.lineTo(x0, top + h * 0.22);
+  g.closePath();
+  g.lineJoin = 'round';
+  g.lineWidth = 4;
+  g.strokeStyle = 'rgba(8, 13, 22, 0.9)';
+  g.stroke();
+  g.fillStyle = '#ffd23f';
+  g.fill();
+  // A band and three jewels, so it is a crown and not a zigzag.
+  g.fillStyle = '#e0a800';
+  g.fillRect(x0 + 2, baseY - h * 0.2, w - 4, h * 0.2 - 1);
+  g.fillStyle = '#ff5a4f';
+  for (const fx of [0.2, 0.5, 0.8]) {
+    g.beginPath();
+    g.arc(x0 + w * fx, baseY - h * 0.1, Math.max(1.5, w * 0.05), 0, Math.PI * 2);
+    g.fill();
+  }
+}
+
+export const TAG_CROWN_W = 40;
+
+function drawTag(tag, name, colour, dist, chat, host = false, admin = false) {
+  const key = `${name}|${colour}|${dist}|${chat || ''}|${host ? 'h' : ''}${admin ? 'a' : ''}`;
   if (tag.key === key) return;
   tag.key = key;
+  tag.chat = !!chat;
   const g = tag.canvas.getContext('2d');
   if (!g || typeof g.fillText !== 'function') return;
   g.clearRect(0, 0, TAG_W, TAG_H);
   const font = '"Helvetica Neue", Arial, sans-serif';
+  g.textBaseline = 'middle';
   // Chat bubble on top, when there is one.
   if (chat) {
-    g.font = `700 26px ${font}`;
+    g.font = `700 25px ${font}`;
     const w = Math.min(TAG_W - 8, g.measureText(chat).width + 28);
-    g.fillStyle = 'rgba(255,255,255,0.94)';
-    roundRect(g, (TAG_W - w) / 2, 2, w, 40, 16);
+    g.fillStyle = 'rgba(255,255,255,0.95)';
+    roundRect(g, (TAG_W - w) / 2, 4, w, BUBBLE_H - 4, 16);
     g.fill();
     g.fillStyle = '#0b1220';
     g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillText(chat, TAG_W / 2, 23, TAG_W - 30);
+    g.fillText(chat, TAG_W / 2, 4 + (BUBBLE_H - 4) / 2 + 1, TAG_W - 30);
   }
-  // Name pill.
-  g.font = `700 28px ${font}`;
-  const nw = Math.min(TAG_W - 8, g.measureText(name).width + 44);
-  const y = 48;
-  g.fillStyle = 'rgba(8, 13, 22, 0.72)';
-  roundRect(g, (TAG_W - nw) / 2, y, nw, 38, 12);
+  // The pill: a dot in their colour, the name, and how far.
+  g.font = `700 26px ${font}`;
+  const nameW = g.measureText(name).width;
+  g.font = `600 20px ${font}`;
+  const distW = dist ? g.measureText(dist).width + 12 : 0;
+  g.font = `800 16px ${font}`;
+  const adminW = admin ? g.measureText('ADMIN').width + 14 + 10 : 0;
+  const nw = Math.min(TAG_W - 4, 12 + 16 + 8 + nameW + adminW + distW + 14);
+  tag.pillW = nw;
+  const x0 = (TAG_W - nw) / 2;
+  const y = PILL_Y;
+  g.fillStyle = 'rgba(8, 13, 22, 0.74)';
+  roundRect(g, x0, y, nw, PILL_H, PILL_H / 2);
   g.fill();
   g.fillStyle = colour;
   g.beginPath();
-  g.arc((TAG_W - nw) / 2 + 17, y + 19, 7, 0, Math.PI * 2);
+  g.arc(x0 + 12 + 8, y + PILL_H / 2, 8, 0, Math.PI * 2);
   g.fill();
+  g.textAlign = 'left';
+  g.font = `700 26px ${font}`;
   g.fillStyle = '#ffffff';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText(name, TAG_W / 2 + 9, y + 20, nw - 36);
-  if (line2) {
-    g.font = `600 20px ${font}`;
-    g.fillStyle = 'rgba(234, 241, 251, 0.95)';
-    g.shadowColor = 'rgba(0,0,0,0.8)';
-    g.shadowBlur = 4;
-    g.fillText(line2, TAG_W / 2, y + 52);
-    g.shadowBlur = 0;
+  const tx = x0 + 12 + 16 + 8;
+  const room = nw - (tx - x0) - distW - adminW - 10;
+  g.fillText(name, tx, y + PILL_H / 2 + 1, room);
+  let after = tx + Math.min(nameW, room);
+  if (admin) {
+    // ADMIN, in a badge of its own: an admin is always seen to be one.
+    const bw = adminW - 10;
+    g.fillStyle = '#ff5a4f';
+    roundRect(g, after + 10, y + 8, bw, PILL_H - 16, 6);
+    g.fill();
+    g.fillStyle = '#ffffff';
+    g.font = `800 16px ${font}`;
+    g.fillText('ADMIN', after + 10 + 7, y + PILL_H / 2 + 1);
+    after += adminW;
   }
+  if (dist) {
+    g.font = `600 20px ${font}`;
+    g.fillStyle = 'rgba(200, 216, 236, 0.9)';
+    g.fillText(dist, after + 12, y + PILL_H / 2 + 1);
+  }
+  if (host) {
+    // The crown: on top of the pill, in the middle; at its corner while a chat bubble has the middle.
+    if (chat) drawCrown(g, x0 + 20, y + 3, TAG_CROWN_W * 0.8);
+    else drawCrown(g, TAG_W / 2, y + 3, TAG_CROWN_W);
+  }
+  tag.host = !!host;
+  tag.admin = !!admin;
   tag.tex.needsUpdate = true;
 }
 
+/** One tag's canvas, painted as it is over an aeroplane — for the tests and a look at the crown. */
+export function paintTag(name, colour, { dist = '', chat = null, host = false, admin = false } = {}) {
+  const canvas = document.createElement('canvas');
+  canvas.width = TAG_W;
+  canvas.height = TAG_H;
+  const tag = { canvas, tex: {}, key: '', pillW: TAG_W, chat: false };
+  drawTag(tag, name, colour, dist, chat, host, admin);
+  return { canvas, pillW: tag.pillW, key: tag.key };
+}
+
+function drawPip(tag, colour) {
+  if (tag.pipKey === colour) return;
+  tag.pipKey = colour;
+  const g = tag.pipCanvas.getContext('2d');
+  if (!g || typeof g.arc !== 'function') return;
+  g.clearRect(0, 0, 32, 32);
+  g.fillStyle = 'rgba(8, 13, 22, 0.85)';
+  g.beginPath();
+  g.arc(16, 16, 14, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = colour;
+  g.beginPath();
+  g.arc(16, 16, 10, 0, Math.PI * 2);
+  g.fill();
+  tag.pipTex.needsUpdate = true;
+}
+
 function fmtDist(m) {
-  if (m < 1000) return `${Math.max(10, Math.round(m / 10) * 10)} m`;
+  if (m < 150) return '';
+  if (m < 1000) return `${Math.round(m / 10) * 10} m`;
   return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`;
 }
+
+/** The pill's height on screen, as a fraction of the viewport, at distance d: 3 % close to, 2 % from 1.5 km, between on a log scale. */
+export function pillFraction(d) {
+  if (!(d > NEAR_M)) return PILL_NEAR;
+  if (d >= FAR_M) return PILL_FAR;
+  const k = Math.log(d / NEAR_M) / Math.log(FAR_M / NEAR_M);
+  return PILL_NEAR + (PILL_FAR - PILL_NEAR) * k;
+}
+
+const tmpP = new THREE.Vector3();
 
 /* ------------------------------------------------------------------ */
 
@@ -233,6 +382,20 @@ export class Remotes {
     this._out = [];
     this._dots = new Map();
     this._veh = new Map();
+    /*
+     * 'predict' (now) or 'sample' (the older 100-350 ms in the past), for
+     * the lobby playtest to measure both on the same real tabs. The game
+     * never changes it.
+     */
+    this.drawMode = 'predict';
+    /*
+     * List 2, part 2, set by other features: hidden(id) is true while a
+     * player is not to be drawn at all — tagged out in PvP, between the puff
+     * and coming back (../../pvp.js); note(id) is a few characters for their
+     * tag, before the distance — their hearts, in PvP.
+     */
+    this.hidden = null;
+    this.note = null;
   }
 
   /**
@@ -247,9 +410,7 @@ export class Remotes {
       p.model = null;
       p.modelKey = '';
       if (p.tag) {
-        p.tag.sprite.removeFromParent();
-        p.tag.sprite.material.map.dispose();
-        p.tag.sprite.material.dispose();
+        disposeTag(p.tag);
         p.tag = null;
       }
     }
@@ -272,13 +433,16 @@ export class Remotes {
     return this.own;
   }
 
-  add(id, { name, colour }) {
+  add(id, { name, colour, host = false, admin = false }) {
     let p = this.players.get(id);
     if (!p) {
-      p = { id, name, colour, track: new Track(), smooth: new Smoother(), drawn: null, model: null, modelKey: '', tag: null, chat: null, chatUntil: 0, sample: null, dist: 0, visible: false };
+      p = { id, name, colour, track: new Track(), smooth: new Smoother({ snapSecs: 0.6, noBack: true }), rot: new RotSmoother(), drawn: null, quat: null, model: null, modelKey: '', tag: null, chat: null, chatUntil: 0, sample: null, dist: 0, visible: false, host: false, admin: false };
       this.players.set(id, p);
     }
     p.name = name;
+    // Part 3b: the crown (whoever hosts right now) and the ADMIN badge, redrawn on the tag's next paint.
+    p.host = !!host;
+    p.admin = !!admin;
     if (p.colour !== colour) {
       p.colour = colour;
       this._release(p);
@@ -290,11 +454,8 @@ export class Remotes {
     const p = this.players.get(id);
     if (!p) return;
     this._release(p);
-    if (p.tag) {
-      p.tag.sprite.removeFromParent();
-      p.tag.sprite.material.map.dispose();
-      p.tag.sprite.material.dispose();
-    }
+    if (p.tag) disposeTag(p.tag);
+    p.tag = null;
     this.players.delete(id);
     this._acs.delete(id);
     this._dots.delete(id);
@@ -388,6 +549,7 @@ export class Remotes {
     }
     model.name = `mp-player-${p.id}`;
     if (model.userData.mpTop === undefined) model.userData.mpTop = topOf(model);
+    if (model.userData.mpRadius === undefined) model.userData.mpRadius = radiusOf(model);
     root.add(model);
     p.model = model;
     p.modelKey = key;
@@ -415,30 +577,68 @@ export class Remotes {
     const out = this._out;
     out.length = 0;
     const me = sim && (sim.mode === 'drive' && sim.vehicle ? sim.vehicle.pos : sim.aircraft && sim.aircraft.pos);
+    /*
+     * When anything last came in for anybody else: a friend gone quiet while
+     * the others keep arriving has hitched, and is coasted to a stop; everybody
+     * quiet at once is this player's own Wi-Fi, and they fly on (interp.js).
+     */
+    let first = -Infinity;
+    let second = -Infinity;
     for (const p of this.players.values()) {
-      const s = p.track.sample(now, p.sample || undefined);
+      const a = p.track.lastArrival;
+      if (a > first) {
+        second = first;
+        first = a;
+      } else if (a > second) second = a;
+    }
+    for (const p of this.players.values()) {
+      const others = p.track.lastArrival === first ? second : first;
+      // Where they are now, not a tenth of a second ago (interp.js, predict).
+      const s = this.drawMode === 'sample' ? p.track.sample(now, p.sample || undefined)
+        : p.track.predict(now, p.sample || undefined, Number.isFinite(others) ? others : null);
       if (s) p.sample = s;
       const stale = !s || p.track.stale(now);
       if (stale) {
         if (p.model) p.model.visible = false;
-        if (p.tag) p.tag.sprite.visible = false;
+        if (p.tag) p.tag.sprite.visible = p.tag.pip.visible = false;
         p.visible = false;
         p.smooth.reset();
+        p.rot.reset();
         continue;
       }
       const snap = s.snap;
-      // Where to draw them: the sample, with its seams smoothed over (see Smoother).
+      // Where to draw them: the guess, with its seams smoothed over (see Smoother and RotSmoother).
       const at = p.smooth.step(s.pos, s.vel, dt);
+      const q = p.rot.step(s.quat, this.drawMode === 'sample' ? null : s.omega, dt);
       p.drawn = at;
+      p.quat = q;
       const model = this._ensureModel(p, snap, sim);
       if (!model) continue;
-      model.visible = true;
+      /*
+       * Too far to be more than a couple of pixels — a Skylark past about
+       * four kilometres, an airliner past twenty — the model is not drawn at
+       * all: seven remote aircraft were measured at 201 draw calls, about
+       * 29 each (tests/features/multiplayer-list2.browser.js), which is a
+       * lot to spend on specks on a school Chromebook. The tag or the dot
+       * still shows where they are.
+       */
+      const dm = me ? Math.hypot(at.x - me.x, at.y - me.y, at.z - me.z) : 0;
+      model.visible = dm < Math.max(MODEL_MIN_M, (model.userData.mpRadius || 6) * MODEL_PX_K);
       p.visible = true;
       const kind = model.userData.mpKind;
-      if (kind === 'air') {
+      let gone = false;
+      try {
+        gone = !!(this.hidden && this.hidden(p.id));
+      } catch (e) {
+        gone = false;
+      }
+      if (gone) model.visible = false;
+      if (!model.visible) {
+        // Too far to draw: nothing to pose or animate either.
+      } else if (kind === 'air') {
         const ac = this._fakeAc(p);
         ac.pos.set(at.x, at.y, at.z);
-        ac.quat.set(s.quat.x, s.quat.y, s.quat.z, s.quat.w);
+        ac.quat.set(q.x, q.y, q.z, q.w);
         ac.vel.set(s.vel.x, s.vel.y, s.vel.z);
         ac.controls.pitch = snap.pitch;
         ac.controls.roll = snap.roll;
@@ -465,7 +665,7 @@ export class Remotes {
         model.position.set(at.x, at.y, at.z);
         // The same draught correction main.js gives the player's own launch.
         if (kind === 'boat' && model.userData.fromPack) model.position.y -= 0.42;
-        model.quaternion.set(s.quat.x, s.quat.y, s.quat.z, s.quat.w);
+        model.quaternion.set(q.x, q.y, q.z, q.w);
         const speed = Math.hypot(s.vel.x, s.vel.z);
         const fwd = tmpV.set(0, 0, -1).applyQuaternion(model.quaternion);
         const signed = fwd.x * s.vel.x + fwd.z * s.vel.z >= 0 ? speed : -speed;
@@ -488,17 +688,22 @@ export class Remotes {
       }
 
       // The tag.
+      const root = this._root(sim);
       if (!p.tag) {
         p.tag = makeTag();
         p.tagAt = -Infinity;
-        this._root(sim) && this._root(sim).add(p.tag.sprite);
-      } else if (!p.tag.sprite.parent) {
-        const r = this._root(sim);
-        if (r) r.add(p.tag.sprite);
       }
+      if (root && !p.tag.sprite.parent) root.add(p.tag.sprite);
+      if (root && !p.tag.pip.parent) root.add(p.tag.pip);
       const d = me ? Math.hypot(at.x - me.x, at.y - me.y, at.z - me.z) : 0;
       p.dist = d;
       const chat = p.chatUntil > now ? p.chat : null;
+      let note = '';
+      try {
+        note = this.note ? String(this.note(p.id) || '') : '';
+      } catch (e) {
+        note = '';
+      }
       /*
        * Redrawing the tag is a canvas paint and a texture upload. Every frame,
        * for four friends, that was half a megabyte a frame to the GPU on a
@@ -507,12 +712,15 @@ export class Remotes {
        */
       // ...unless it is suddenly a different number: a joiner dropped beside the host read "560 m" for half a second.
       const jumped = p.tagDist != null && Math.abs(d - p.tagDist) > Math.max(20, 0.25 * p.tagDist);
-      if (chat !== p.tagChat || jumped || !(now - (p.tagAt || -Infinity) < 500)) {
+      if (chat !== p.tagChat || note !== p.tagNote || jumped || !(now - (p.tagAt || -Infinity) < 500)) {
         p.tagAt = now;
         p.tagChat = chat;
+        p.tagNote = note;
         p.tagDist = d;
-        drawTag(p.tag, p.name, p.colour, fmtDist(d), chat);
+        // List 2, part 2: their PvP hearts (this.note) before the distance; part 3b: the host's crown and an admin's badge.
+        drawTag(p.tag, p.name, p.colour, note ? `${note}  ${fmtDist(d)}` : fmtDist(d), chat, p.host, p.admin);
       }
+      drawPip(p.tag, p.colour);
       /*
        * A fixed five metres over the aeroplane's middle floated the tag a
        * wingspan clear of a Skylark — ten metres off in the playtest it sat
@@ -525,9 +733,9 @@ export class Remotes {
       const top = (model.userData.mpTop || 2) + (kind === 'air' && model.userData.fleetBridge ? model.userData.groundOffsetY || 0 : 0);
       const lift = top + 1.3 + Math.min(kind === 'air' ? 30 : 20, d * 0.004);
       p.tag.sprite.position.set(at.x, at.y, at.z).addScaledVector(UP, lift);
-      // Past eight kilometres a tag is clutter, and a friend that far off is on the minimap.
-      // Hidden with the rest of the interface (U), for a clean shot.
-      p.tag.sprite.visible = tags && d < 8000 && d > 4;
+      p.tag.pip.position.set(at.x, at.y, at.z).addScaledVector(UP, top + 1);
+      // Hidden with the rest of the interface (U), for a clean shot; placed, sized and decluttered in _layoutTags.
+      p.tagOn = tags && d > 4 && !gone;
       let dot = this._dots.get(p.id);
       if (!dot) {
         dot = { id: p.id, name: '', colour: '', x: 0, z: 0, heading: 0, dist: 0 };
@@ -537,11 +745,94 @@ export class Remotes {
       dot.colour = p.colour;
       dot.x = at.x;
       dot.z = at.z;
-      dot.heading = headingOf(s.quat);
+      dot.heading = headingOf(q);
       dot.dist = d;
       out.push(dot);
     }
+    this._layoutTags(sim);
     return out;
+  }
+
+  /**
+   * Size every tag for its distance and keep them off each other: nearest
+   * (or talking) first; a tag that would land on one already placed steps up
+   * above it, at most twice; one that still does not fit — and anybody past
+   * 8 km — is a dot in their colour instead. A few projections a frame.
+   */
+  _layoutTags(sim) {
+    const cam = sim && sim.camera;
+    const list = this._tagList || (this._tagList = []);
+    list.length = 0;
+    for (const p of this.players.values()) if (p.tag) list.push(p);
+    if (!list.length) return;
+    const W = (typeof window !== 'undefined' && window.innerWidth) || 1280;
+    const H = (typeof window !== 'undefined' && window.innerHeight) || 720;
+    const P11 = cam && cam.projectionMatrix ? cam.projectionMatrix.elements[5] || 1.73 : 1.73;
+    list.sort((a, b) => (b.tag.chat - a.tag.chat) || (a.dist - b.dist));
+    const placed = this._placed || (this._placed = []);
+    placed.length = 0;
+    const pipH = (2 * PIP_FRAC) / P11;
+    for (const p of list) {
+      const tag = p.tag;
+      const sp = tag.sprite;
+      tag.pip.scale.set(pipH, pipH, 1);
+      if (!p.visible || !p.tagOn) {
+        sp.visible = tag.pip.visible = false;
+        continue;
+      }
+      if (p.dist >= TAG_MAX_M || !cam) {
+        sp.visible = false;
+        tag.pip.visible = !!cam;
+        continue;
+      }
+      const frac = pillFraction(p.dist);
+      const sy = (2 * frac * (TAG_H / PILL_H)) / P11;
+      sp.scale.set(sy * (TAG_W / TAG_H), sy, 1);
+      // On screen: where the anchor is, and the pill (with its bubble) above it.
+      tmpP.copy(sp.position).project(cam);
+      if (tmpP.z > 1 || tmpP.z < -1) {
+        sp.visible = tag.pip.visible = false;
+        continue;
+      }
+      const ax = ((tmpP.x + 1) / 2) * W;
+      const ay = ((1 - tmpP.y) / 2) * H;
+      const hPx = (frac * TAG_H / PILL_H) * H;
+      const pillW = (tag.pillW / TAG_W) * hPx * (TAG_W / TAG_H);
+      const bottom = ay - ((TAG_H - PILL_Y - PILL_H) / TAG_H) * hPx;
+      const tall = ((tag.chat ? PILL_H + BUBBLE_H + 6 : PILL_H) / TAG_H) * hPx;
+      const step = ((PILL_H + 6) / TAG_H) * hPx;
+      let at = -1;
+      for (let k = 0; k < 3 && at < 0; k++) {
+        const r = { l: ax - pillW / 2 - 2, r: ax + pillW / 2 + 2, b: bottom - k * step + 2, t: bottom - k * step - tall - 2 };
+        if (!placed.some((q) => r.l < q.r && r.r > q.l && r.t < q.b && r.b > q.t)) {
+          at = k;
+          placed.push(r);
+        }
+      }
+      if (at < 0) {
+        sp.visible = false;
+        tag.pip.visible = true;
+        continue;
+      }
+      sp.center.y = -at * ((PILL_H + 6) / TAG_H);
+      sp.visible = true;
+      tag.pip.visible = false;
+    }
+  }
+}
+
+/** A model is drawn out to this far, or its radius times MODEL_PX_K (about two pixels on a 700 px screen), whichever is further. */
+const MODEL_MIN_M = 2500;
+const MODEL_PX_K = 700;
+
+/** Half the diagonal of a model's box: how big it is, for how far away it is still worth drawing. */
+function radiusOf(model) {
+  try {
+    const box = new THREE.Box3().setFromObject(model);
+    const r = box.min.distanceTo(box.max) / 2;
+    return Number.isFinite(r) && r > 0 && r < 200 ? r : 6;
+  } catch (err) {
+    return 6;
   }
 }
 

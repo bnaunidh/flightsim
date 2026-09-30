@@ -26,13 +26,29 @@
  * always the host. A player whose username turns out to be taken in the lobby
  * they are moving into is refused like anybody else, and flies on alone.
  *
+ * List 3. Every lobby is on its own island (LOBBY_MAPS): an empty one is
+ * started there, not on its first player's island, and the list says where
+ * each is before anybody is in it. And WORLD LOBBIES — the same five-and-
+ * eight, the same line to host, the same giving way — under ids that are
+ * the same for everybody on the internet (worldId), found through the public
+ * matchmaking server and connected across networks the way a join by code
+ * is. That server is shared by everybody who uses it and turns away an
+ * address that asks too much, so a world lobby asks it less: its list is
+ * looked at every eight seconds, not two and a half, spread out, not at all
+ * while the tab is hidden, and from a copy kept for a few seconds when the
+ * screen is opened again; a host checks it holds its lobby every six
+ * seconds, not three; and re-forming waits twice as long between questions.
+ *
  * No DOM, no three.js: the node tests run eight of these against the fake
  * signaling server and count who hosts.
  */
 
-import { LOBBY_COUNT, LOBBY_MAX, PROTO, lobbyId, lobbyName, readLobbyCount, mapNameFor, seatToken } from './protocol.js';
+import {
+  LOBBY_COUNT, LOBBY_MAX, WORLD_COUNT, PROTO, PDIR_COUNT, BUMP_DEFAULT, lobbyId, lobbyName, lobbyMap, worldId, worldName, worldMap, pdirId,
+  readLobbyCount, readPrivateCount, mapNameFor, seatToken,
+} from './protocol.js';
 import { HostSession, ClientSession } from './session.js';
-import { Net } from './link.js';
+import { Net, RELAY_SERVERS } from './link.js';
 
 const nowMs = () => (globalThis.performance ? performance.now() : Date.now());
 const pause = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
@@ -41,6 +57,12 @@ const pause = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
 export const SUCCESSION_STEP_MS = 1200;
 /** A first join that has found nobody to join and could not claim either gives up after this. */
 export const ENTER_GIVE_UP_MS = 20000;
+/**
+ * A world lobby's first join: long enough for two tries at a path between
+ * two networks (link.js gives each 25 s), the second through a relay if one
+ * is configured — as a join by code gets.
+ */
+export const WORLD_ENTER_GIVE_UP_MS = 55000;
 /**
  * Re-forming gives up after this. It is long on purpose: a host whose Wi-Fi
  * went holds the lobby's id until the signaling server notices — 15 s on the
@@ -52,6 +74,14 @@ export const REFORM_GIVE_UP_MS = 75000;
 const MOVE_CLAIM_MS = 4000;
 /** How long a lobby's host may be silent before a player asks whether it has gone (see _join). */
 export const LOBBY_GONE_QUIET_MS = 600;
+/** The same across the internet, where a quiet half second is only the network. */
+export const WORLD_GONE_QUIET_MS = 1500;
+/** How often a world lobby's list entry is looked at, per lobby (a Wi-Fi one: every 2.5 s). */
+export const WORLD_EVERY_MS = 8000;
+/** A world list looked at this recently is shown as it was, and not asked again until it is due. */
+export const WORLD_FRESH_MS = 8000;
+/** How often a world lobby's host checks it still holds the lobby (a Wi-Fi one: every 3 s). */
+export const WORLD_VERIFY_MS = 6000;
 
 /** Coded errors, for the screen to put into words. */
 function coded(code, message, extra) {
@@ -91,14 +121,22 @@ export function successionOrder(players, goneHostId = 0) {
 export class LobbyMember {
   constructor({
     n, hash, net, makeSig, profile, place, spawnInfo, weather, onEvent, now = nowMs, netOpts = {},
-    stepMs = SUCCESSION_STEP_MS, enterGiveUpMs = ENTER_GIVE_UP_MS, reformGiveUpMs = REFORM_GIVE_UP_MS, pingMs = 1500,
-    seat = seatToken(), verifyEveryMs = 3000,
+    stepMs = SUCCESSION_STEP_MS, enterGiveUpMs = 0, reformGiveUpMs = REFORM_GIVE_UP_MS, pingMs = 1500,
+    seat = seatToken(), verifyEveryMs = 0, world = false, admin = null,
   }) {
-    this.verifyEveryMs = verifyEveryMs;
+    /** Part 3b: this device's admin key (admin.js), or a function for it — asked again at every join, so a code typed meanwhile counts. */
+    this.getAdmin = typeof admin === 'function' ? admin : () => admin;
+    /** A world lobby (list 3): the same five for everybody on the internet. */
+    this.world = !!world;
+    this.verifyEveryMs = verifyEveryMs || (this.world ? WORLD_VERIFY_MS : 3000);
+    /** Waits between questions to the matchmaking server, times this: the public one is shared by everybody. */
+    this.pace = this.world ? 2 : 1;
     this._verifyTimer = null;
     this.n = n;
     this.hash = hash;
-    this.id = lobbyId(hash, n);
+    this.id = this.world ? worldId(n) : lobbyId(hash, n);
+    /** The island this lobby is always on. */
+    this.home = this.world ? worldMap(n) : lobbyMap(n);
     // The connection this player looks and joins with — or a function for it, so a dropped one can be opened again.
     this.getNet = typeof net === 'function' ? net : () => net;
     this.makeSig = makeSig;
@@ -110,7 +148,9 @@ export class LobbyMember {
     this.now = now;
     this.netOpts = netOpts;
     this.stepMs = stepMs;
-    this.enterGiveUpMs = enterGiveUpMs;
+    this.enterGiveUpMs = enterGiveUpMs || (world ? WORLD_ENTER_GIVE_UP_MS : ENTER_GIVE_UP_MS);
+    /** Tries at a world lobby's host that could not find a path (list 3): the next goes through a relay, if there is one. */
+    this.pathFails = 0;
     this.reformGiveUpMs = reformGiveUpMs;
     this.pingMs = pingMs;
     this.seat = seat;
@@ -193,13 +233,13 @@ export class LobbyMember {
       if (r === 'offline') {
         // The matchmaking server is out of reach for a moment; keep trying until the deadline.
         last = coded('signaling', 'Lost the connection to the matchmaking server.');
-        await pause(1000);
+        await pause(1000 * this.pace);
         continue;
       }
       if (r === 'empty') {
         const wait = claimAt - this.now();
         if (wait > 0) {
-          await pause(Math.min(wait, 300));
+          await pause(Math.min(wait, 300 * this.pace));
           continue;
         }
         const host = await this._claim();
@@ -212,14 +252,19 @@ export class LobbyMember {
           return { role: 'client', session: client, welcome };
         } catch (err) {
           if (['name', 'full', 'version', 'cancelled', 'kicked'].includes(err && err.code)) throw err;
+          // Across networks, no path is the likeliest reason: the next try goes through a relay, if one is configured.
+          if (this.world && err && ['ice', 'timeout'].includes(err.code)) {
+            this.pathFails++;
+            this.emit('trying', err.code, this.pathFails);
+          }
           // Gone, closing, busy, timed out: the lobby is changing hands. Ask again.
           last = err;
-          await pause(250);
+          await pause(250 * this.pace);
           continue;
         }
       }
       // No answer: an id held by a socket that does not reply — a host whose tab froze or whose Wi-Fi went.
-      await pause(400);
+      await pause(400 * this.pace);
     }
   }
 
@@ -237,15 +282,23 @@ export class LobbyMember {
       sig.close();
       throw coded('cancelled', 'Stopped joining.');
     }
-    // An empty lobby takes this player's island; one that is re-forming keeps the island it was on.
+    /*
+     * An empty lobby starts on its own island (list 3: it used to take its
+     * first player's). One that is re-forming keeps the island it was on —
+     * which is its own, unless an older copy of the game started it — so
+     * re-forming never moves anybody.
+     */
     const here = this.place();
-    const map = this.server && this.server.map ? this.server.map : here.map;
+    const map = this.server && this.server.map ? this.server.map : this.home;
     const game = here.game;
     const host = new HostSession({
       mode: 'lobby',
       max: LOBBY_MAX,
+      admin: !!this.getAdmin(),
       profile: this.profile,
-      server: { name: lobbyName(this.n), map, mapName: mapNameFor(map), game, code: null, slot: 0, lobby: this.n },
+      server: {
+        name: this.world ? worldName(this.n) : lobbyName(this.n), map, mapName: mapNameFor(map), game, code: null, slot: 0, lobby: this.n, world: this.world, bump: BUMP_DEFAULT,
+      },
       spawnInfo: this.spawnInfo,
       weather: this.weather,
       now: this.now,
@@ -337,7 +390,7 @@ export class LobbyMember {
         this._giveWay(host);
         return;
       }
-      if (tries < 40) setTimeout(() => this._reclaim(host, token, tries + 1), tries < 3 ? 500 : 2000);
+      if (tries < 40) setTimeout(() => this._reclaim(host, token, tries + 1), (tries < 3 ? 500 : 2000) * this.pace);
       return;
     }
     if (this.session !== host || host.closed || this.left) {
@@ -366,7 +419,9 @@ export class LobbyMember {
       target: this.id,
       profile: this.profile,
       seat: this.seat,
+      relayOnly: this.world && this.pathFails > 0 && RELAY_SERVERS.length > 0,
       now: this.now,
+      admin: this.getAdmin() || null,
       onEvent: (type, ...args) => {
         if (this.session !== client) return;
         if (type === 'ended') this._hostGone(client, args[0], args[1]);
@@ -382,7 +437,7 @@ export class LobbyMember {
      * the signaling server to say nobody holds the lobby, which a host that
      * is merely busy for a moment does.
      */
-    client.goneQuietMs = LOBBY_GONE_QUIET_MS;
+    client.goneQuietMs = this.world ? WORLD_GONE_QUIET_MS : LOBBY_GONE_QUIET_MS;
     this._pending = client;
     return client.start().then(
       (welcome) => {
@@ -403,6 +458,19 @@ export class LobbyMember {
   /** Our connection to the host ended. In a lobby that is not the end of the game: re-form it. */
   _hostGone(client, why, detail) {
     if (this.left) return;
+    /*
+     * Part 3b: taken out by an admin, or the lobby closed by one — out, not
+     * re-forming: re-forming is for a host who went, and would only walk the
+     * player straight back in.
+     */
+    if (why === 'kicked' || why === 'shut') {
+      this.left = true;
+      this.session = null;
+      this.role = null;
+      this.history.push({ why, at: this.now() });
+      this.emit('out', why, null);
+      return;
+    }
     const players = [...client.players.values()];
     if (client.id != null) players.push({ id: client.id, rank: client.rank ?? 1e9, host: false });
     this._reform(why === 'moved' ? 'moved' : why, players, client.id, why === 'moved' ? MOVE_CLAIM_MS : null, detail);
@@ -441,32 +509,83 @@ export class LobbyMember {
 }
 
 /**
+ * What a world list said, and when, kept for the page's life: the lobby
+ * screen opened again a moment after it was shut shows it at once and asks
+ * the public matchmaking server nothing until each entry is due. Keyed by
+ * where the lobbies are ('world', or a Wi-Fi's hash).
+ */
+const LIST_CACHE = new Map();
+
+/** For the tests: forget every list seen. */
+export function forgetLobbyLists() {
+  LIST_CACHE.clear();
+}
+
+/**
  * The list of the five lobbies, kept up to date while the screen is open: a
  * ping to each lobby's id every couple of seconds. An empty lobby answers at
  * once (the signaling server's EXPIRE); a hosted one answers with its
  * head-count and its map and game, as numbers. No connection is opened to
  * anybody for this, and no name goes anywhere.
  *
+ * `world` (list 3): the five world lobbies instead, through the public
+ * matchmaking server — asked every WORLD_EVERY_MS per lobby, the five spread
+ * across that time, not while `active()` says the tab is hidden, backing off
+ * while the server is out of reach, and starting from what was seen in the
+ * last WORLD_FRESH_MS (LIST_CACHE). A Wi-Fi list, which is on the public
+ * server too unless the LAN server served the page, also starts from what it
+ * saw in its last round, so Back and Multiplayer again asks nothing extra.
+ *
  *   state   'looking' | 'empty' | 'open' | 'full' | 'old' | 'quiet'
+ *   home    the island the lobby is always on; `map` is the one its host says
  */
 export class LobbyWatch {
-  constructor({ net, hash, onChange, everyMs = 2500, pingMs = 2500 }) {
+  constructor({ net, hash, world = false, onChange, everyMs = 0, pingMs = 2500, active = () => true, freshMs = 0, now = nowMs }) {
     this.net = net;
     this.hash = hash;
+    this.world = !!world;
     this.onChange = onChange || (() => {});
-    this.everyMs = everyMs;
+    this.everyMs = everyMs || (this.world ? WORLD_EVERY_MS : 2500);
+    // A list opened again within one round of questions starts from the last answers (Wi-Fi too: it may be on the public server).
+    this.freshMs = freshMs || (this.world ? WORLD_FRESH_MS : this.everyMs);
     this.pingMs = pingMs;
+    this.active = active;
+    this.now = now;
     this.running = false;
+    /** Pings sent, for the tests and the playtest's count of what the public server was asked. */
+    this.asked = 0;
     this.lobbies = [];
-    for (let n = 1; n <= LOBBY_COUNT; n++) {
-      this.lobbies.push({ n, id: lobbyId(hash, n), name: lobbyName(n), state: 'looking', players: 0, max: LOBBY_MAX, map: null, mapName: '', game: 'flight', timer: null, quiet: 0 });
+    const count = this.world ? WORLD_COUNT : LOBBY_COUNT;
+    for (let n = 1; n <= count; n++) {
+      const home = this.world ? worldMap(n) : lobbyMap(n);
+      this.lobbies.push({
+        n, world: this.world, id: this.world ? worldId(n) : lobbyId(hash, n), name: this.world ? worldName(n) : lobbyName(n),
+        state: 'looking', players: 0, max: LOBBY_MAX, home, map: home, mapName: mapNameFor(home), game: 'flight', bump: 'pvp', timer: null, quiet: 0, backoff: 1, at: -Infinity,
+      });
     }
+  }
+
+  get cacheKey() {
+    return this.world ? 'world' : `wifi:${this.hash}`;
   }
 
   start() {
     if (this.running) return;
     this.running = true;
-    for (const l of this.lobbies) this._ask(l);
+    const kept = this.freshMs ? LIST_CACHE.get(this.cacheKey) : null;
+    const t = this.now();
+    const spread = this.world ? this.everyMs / this.lobbies.length : 0;
+    let changed = false;
+    this.lobbies.forEach((l, i) => {
+      const k = kept && kept[l.n - 1];
+      if (k && t - k.at < this.freshMs) {
+        // Seen a moment ago: shown as it was, and asked again when it is due.
+        Object.assign(l, { state: k.state, players: k.players, max: k.max, map: k.map, mapName: k.mapName, game: k.game, at: k.at });
+        changed = true;
+        this._later(l, k.at + this.everyMs - t);
+      } else this._later(l, i * spread);
+    });
+    if (changed) this.onChange(this.lobbies, null);
   }
 
   stop() {
@@ -483,16 +602,38 @@ export class LobbyWatch {
     return open[0];
   }
 
+  _later(l, ms) {
+    clearTimeout(l.timer);
+    if (!this.running) return;
+    if (ms <= 0) {
+      this._ask(l);
+      return;
+    }
+    l.timer = setTimeout(() => this._ask(l), ms);
+  }
+
   async _ask(l) {
     if (!this.running) return;
+    // A hidden tab asks nothing; it looks again when it is due and shown.
+    let on = true;
+    try {
+      on = this.active() !== false;
+    } catch (err) {
+      on = true;
+    }
+    if (!on) {
+      this._later(l, this.everyMs);
+      return;
+    }
+    this.asked++;
     const { r, meta } = await this.net.pingInfo(l.id, this.pingMs);
     if (!this.running) return;
     const was = `${l.state}|${l.players}|${l.map}`;
     if (r === 'empty') {
       l.state = 'empty';
       l.players = 0;
-      l.map = null;
-      l.mapName = '';
+      l.map = l.home;
+      l.mapName = mapNameFor(l.home);
       l.quiet = 0;
     } else if (r === 'here') {
       const c = readLobbyCount(meta);
@@ -501,14 +642,86 @@ export class LobbyWatch {
       else {
         l.players = c.players;
         l.max = c.max;
-        l.map = c.map;
-        l.mapName = c.mapName;
+        l.map = c.map || l.home;
+        l.mapName = mapNameFor(l.map);
         l.game = c.game;
+        l.bump = c.bump;
         l.state = c.v !== PROTO ? 'old' : c.full ? 'full' : 'open';
       }
     } else if (++l.quiet >= 2) l.state = 'quiet'; // somebody holds it and does not answer — a host going
+    // Out of reach of the matchmaking server: ask less and less often, up to eight times as far apart.
+    l.backoff = r === 'offline' ? Math.min(8, l.backoff * 2) : 1;
+    if (r === 'empty' || r === 'here') {
+      l.at = this.now();
+      if (this.freshMs) {
+        const kept = LIST_CACHE.get(this.cacheKey) || [];
+        kept[l.n - 1] = { state: l.state, players: l.players, max: l.max, map: l.map, mapName: l.mapName, game: l.game, at: l.at };
+        LIST_CACHE.set(this.cacheKey, kept);
+      }
+    }
     if (`${l.state}|${l.players}|${l.map}` !== was) this.onChange(this.lobbies, l);
-    clearTimeout(l.timer);
-    if (this.running) l.timer = setTimeout(() => this._ask(l), this.everyMs);
+    this._later(l, this.everyMs * l.backoff);
+  }
+}
+
+/**
+ * Part 3b, for admins only: the private matches' directory (protocol.js,
+ * pdirId). A ping to each of its ids every few seconds while an admin's
+ * lobby screen is open — an empty one answers at once, a private match's
+ * host with numbers (how many, the most, which island). No code, no name.
+ *
+ *   places  [{ n, id, state: 'looking' | 'empty' | 'here', players, max, mapName, full, bump }]
+ */
+export class PrivateWatch {
+  constructor({ net, onChange, everyMs = 3000, pingMs = 2500 }) {
+    this.net = net;
+    this.onChange = onChange || (() => {});
+    this.everyMs = everyMs;
+    this.pingMs = pingMs;
+    this.running = false;
+    this.places = [];
+    for (let n = 1; n <= PDIR_COUNT; n++) this.places.push({ n, id: pdirId(n), state: 'looking', players: 0, max: 8, mapName: '', full: false, timer: null });
+  }
+
+  start() {
+    if (this.running) return;
+    this.running = true;
+    for (const p of this.places) this._ask(p);
+  }
+
+  stop() {
+    this.running = false;
+    for (const p of this.places) clearTimeout(p.timer);
+  }
+
+  /** The private matches found, in directory order. */
+  get found() {
+    return this.places.filter((p) => p.state === 'here');
+  }
+
+  async _ask(p) {
+    if (!this.running) return;
+    const { r, meta } = await this.net.pingInfo(p.id, this.pingMs);
+    if (!this.running) return;
+    const was = `${p.state}|${p.players}|${p.mapName}`;
+    if (r === 'empty') {
+      p.state = 'empty';
+      p.players = 0;
+      p.mapName = '';
+    } else if (r === 'here') {
+      const c = readPrivateCount(meta);
+      if (c && c.v === PROTO) {
+        p.state = 'here';
+        p.players = c.players;
+        p.max = c.max;
+        p.full = c.full;
+        p.mapName = c.map ? c.mapName : 'An island';
+        // List 2, part 2: its bumping rule (protocol.js BUMP_RULES), for the admin's card.
+        p.bump = c.bump;
+      } else p.state = 'empty';
+    }
+    if (`${p.state}|${p.players}|${p.mapName}` !== was) this.onChange(this.places, p);
+    clearTimeout(p.timer);
+    if (this.running) p.timer = setTimeout(() => this._ask(p), this.everyMs);
   }
 }

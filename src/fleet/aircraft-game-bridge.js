@@ -33,7 +33,14 @@ export function createGameAircraft(options = {}, legacyFactory) {
       onGround: !!ac.onGround, groundSpeed: ac.groundSpeed ?? 0, brakes: control.brakes ?? 0,
       suspension: compression ? [compression.nose ?? 0, compression.left ?? 0, compression.right ?? 0] : ac.suspension ?? 0,
       night: !!weather.isNight, lights: ac.engineOn !== false || ac.rpm > .05,
-      worldVelocity: ac.vel ?? { x: 0, y: 0, z: 0 }, camera: model.userData.gameCamera };
+      worldVelocity: ac.vel ?? { x: 0, y: 0, z: 0 }, camera: model.userData.gameCamera,
+      /*
+       * The arrestor hook comes down for the approach, gear down in the air,
+       * and is stowed on the ground. The pack lowered it with the gear, so the
+       * Osprey sat on every runway and apron with its hook dragging on the
+       * tarmac behind it like something had broken off.
+       */
+      hook: (ac.gearPos ?? ac.gear ?? 1) > 0.5 && ac.onGround === false };
     const crash = model.userData.gameCrash;
     const previousPosition = crash && ac.pos ? ac.pos.clone() : null;
     const previousVelocity = crash && ac.vel ? ac.vel.clone() : null;

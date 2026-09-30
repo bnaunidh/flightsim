@@ -18,7 +18,9 @@
  * else with a code of two words and a number. Everybody flies (or sails, or
  * drives) their own aeroplane in their own colour with their name over it,
  * sees everybody else, and can send a handful of preset messages. No
- * free-text chat and no collisions: this is played by a class of ten-year-olds.
+ * free-text chat: this is played by a class of ten-year-olds. (Bumping into
+ * each other came with list 2, part 2 — gentle unless both have PvP on, and a
+ * rule on every lobby card: ./bump.js.)
  *
  * How, in one paragraph: a browser cannot listen on a port, so the HOST'S TAB
  * is the server and every other player holds one WebRTC connection to it
@@ -43,6 +45,76 @@
  * Wired in through src/game/extensions.js only. The one thing a plug-in cannot
  * do is put a button on the main menu; `openMultiplayer(sim)` is exported for
  * that, and until it is wired there is a "Multiplayer" button in Dev mode.
+ *
+ * LIST 2 ("less lag", "able to create private matches", "the same planes"):
+ *
+ *   - friends are drawn where they are NOW, not 100-350 ms ago (interp.js,
+ *     predict), the host bundles what it relays (session.js, BUNDLE_MS) and
+ *     every game sends a steady 15 Hz; measured in tests/features/multiplayer.lag.mjs;
+ *   - a PRIVATE MATCH beside the five lobbies: a code of two words and a
+ *     number, only friends with it can join, eight at most, one username to
+ *     one player — on no list anywhere (HostSession mode 'code');
+ *   - YOUR RIDE, on the lobby screen of every game: any aeroplane you have,
+ *     the helicopter, the boat or the car. A lobby can hold all four at once
+ *     and everybody sees everybody's real vehicle (remotes.js). An island
+ *     without water or roads puts you in the nearest thing it does have.
+ *
+ * PART 3b, CROWN AND ADMIN ("the owner of each lobby has a crown on their
+ * head"; "if i put in the code in the hangar it gives me admin in every
+ * server"):
+ *
+ *   - whoever hosts a game right now — a lobby's owner, a private match's
+ *     maker — wears a small gold crown over their name tag and in the player
+ *     list (remotes.js, ui.js); it moves when the lobby re-forms round a new
+ *     host;
+ *   - the admin code, typed in the hangar's code box, makes this device an
+ *     admin (./multiplayer/admin.js, whose header says why the code is in no
+ *     file of the game). An admin proves it to every host by signing the
+ *     host's fresh question; the host checks, and then does what the admin
+ *     asks — kick, mute, freeze, close — and lets them into locked games and,
+ *     from the admin's list of private matches, into private matches without
+ *     their code. Admins wear an ADMIN badge on their tag and in the list.
+ *
+ * LIST 2, PART 2 — built on the events channel below, each its own plug-in:
+ *   ./pvp.js      PvP, a per-player switch (OFF until turned on); Space or FIRE;
+ *                 five hearts, a cartoon tag, back in three seconds in a shield;
+ *                 the host judges every hit (./pvp/rules.js)
+ *   ./bump.js     bumping into each other under the game's rule (protocol.js
+ *                 BUMP_RULES, on every lobby card), safe on the ground and at spawn
+ *   ./race.js     the Ring Rally on Coral Atoll: grid, countdown, rings, results
+ *   ./mpworld.js  the host's weather and AI aeroplanes, disasters anybody
+ *                 summons (the wildfire too), crash marks on everybody's minimap
+ *   Every snapshot now carries two more bits: ghost (nobody may bump into or hit
+ *   this player now) and pvp (this.extraFlags, set by those features).
+ *
+ * FOR OTHER FEATURES — `multiplayer.events` (./multiplayer/events.js, whose
+ * header is the full reference): typed game events and host-owned shared
+ * state, checked and relayed by the host, for PvP, racing and world sync.
+ *
+ *   import { multiplayer } from './multiplayer.js';
+ *   const ch = multiplayer.events;
+ *   ch.define('race:gate', { validate, from: 'anyone' | 'host', rate });
+ *   ch.on('race:gate', (data, from, meta) => {});    ch.onState('race', (value) => {});
+ *   ch.send(kind, data, { self })   ch.toHost(kind, data)   ch.sendTo(id, kind, data)   (host)
+ *   ch.setState(key, value) (host)   ch.getState(key)   ch.players()   ch.active / isHost / me
+ *   local: 'mp:start', 'mp:end', 'mp:join', 'mp:leave', 'mp:host'
+ *
+ * LIST 3 ("different lobbies have different maps", "go BEYOND lan", "palo
+ * alto to berkeley"):
+ *
+ *   - every lobby is on its own island, always (protocol.js LOBBY_MAPS),
+ *     shown on its card before anybody is in it; joining takes you there;
+ *   - WORLD LOBBIES, a second row: five more that are the same for
+ *     everybody on the internet (lobby.js, world), found through the public
+ *     matchmaking server (worldBackend) and connected the way a join by code
+ *     is (link.js, 'v4') — with the same eight, the same username lists, the
+ *     same quick chat and the same next-in-line hosting as a Wi-Fi lobby.
+ *     The public server is shared by everybody and turns away an address
+ *     that asks too much, so the world list asks it gently (lobby.js), a
+ *     page served by the LAN server opens a second socket only while the
+ *     lobby screen is up or a world lobby needs it, and a server out of
+ *     reach is asked again later and later, not in a storm. A LAN server
+ *     started with --local or --world stands in for it (tests, no internet).
  */
 
 import * as THREE from '../vendor/three.module.js';
@@ -51,22 +123,25 @@ import { applyMap, heightAt } from '../world/terrain.js';
 import { refreshRunways } from '../world/airport.js';
 import { refreshApronElevation } from '../world/apron.js';
 import { getMap, mapsForGame } from '../world/maps.js';
-import { getAircraft, performanceFor } from '../aircraft/types.js';
+import { AIRCRAFT, getAircraft, performanceFor } from '../aircraft/types.js';
+import { VEHICLES } from '../vehicles/surface.js';
 import * as Prog from '../game/progression.js';
 import { saveSettings } from '../core/storage.js';
 import { icon } from '../ui/icons.js';
 import {
-  PROTO, MAX_PLAYERS, STATE_HZ, QUICK_CHAT, COLOURS, GAMES, LOBBY_MAX, CODE_GAME_MAX,
-  slotId, codeId, normaliseCode, shownCode, playerPeerId, randomToken, CODE_EXAMPLE, seatToken, lobbyName,
+  PROTO, MAX_PLAYERS, STATE_HZ, QUICK_CHAT, COLOURS, GAMES, LOBBY_MAX, CODE_GAME_MAX, BUMP_DEFAULT, BUMP_RULES, BUMP_SHORT, bumpRule,
+  slotId, codeId, normaliseCode, shownCode, playerPeerId, randomToken, CODE_EXAMPLE, seatToken, lobbyName, worldName, lobbyLabel, readPrivateCount, pdirId, pdirOf, readPlayer,
   cleanName, parseServerName, randomCallSign, randomServerName, serverNameFor, mapNameFor,
   escapeHtml, encodeState, chatIndexForKey, safeColour,
 } from './multiplayer/protocol.js';
 import { Signaling, PUBLIC_BACKEND, LAN_UNKNOWN, findNetHash, detectLanServer } from './multiplayer/signaling.js';
-import { Net } from './multiplayer/link.js';
-import { HostSession, ClientSession, Prober, claimSlot, claimCode } from './multiplayer/session.js';
-import { LobbyMember, LobbyWatch } from './multiplayer/lobby.js';
+import { Net, RELAY_SERVERS } from './multiplayer/link.js';
+import { HostSession, ClientSession, Prober, claimSlot, claimCode, claimPdir, FREEZE_MS } from './multiplayer/session.js';
+import { LobbyMember, LobbyWatch, PrivateWatch } from './multiplayer/lobby.js';
+import { AdminKey, adminCrypto } from './multiplayer/admin.js';
 import { Remotes } from './multiplayer/remotes.js';
-import { injectStyle, buildScreen, buildHud } from './multiplayer/ui.js';
+import { GameEvents } from './multiplayer/events.js';
+import { injectStyle, buildScreen, buildHud, CROWN_SVG } from './multiplayer/ui.js';
 import { buildLobbyScreen } from './multiplayer/lobbyui.js';
 
 /*
@@ -80,6 +155,8 @@ import { buildLobbyScreen } from './multiplayer/lobbyui.js';
 export const LOBBIES_ON_MAIN_MENU = true;
 
 const PROFILE_KEY = 'islandsim.multiplayer.v1';
+/** How long the lobby screen's sockets stay open after it is shut, in case it is opened again (lingerSockets). */
+export const SOCKET_LINGER_MS = 10000;
 const now = () => (globalThis.performance ? performance.now() : Date.now());
 
 function loadProfile() {
@@ -100,12 +177,16 @@ function loadProfile() {
     colour: safeColour(p && p.colour ? p.colour : COLOURS[Math.floor(Math.random() * COLOURS.length)]),
     key,
     server: p && parseServerName(p.server) ? p.server : serverNameFor(key),
+    // What they bring into a game (rides()): checked against what they can fly when it is used, not here.
+    ride: p && p.ride && GAMES.includes(p.ride.game) && typeof p.ride.type === 'string' && /^[a-z0-9_-]{1,24}$/.test(p.ride.type) ? { game: p.ride.game, type: p.ride.type } : null,
+    // List 2, part 2: PvP, the player's own switch — OFF until they turn it on (../pvp.js).
+    pvp: !!(p && p.pvp === true),
   };
 }
 
 function saveProfile(p) {
   try {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify({ name: p.name, chosen: !!p.chosen, colour: p.colour, key: p.key, server: p.server }));
+    localStorage.setItem(PROFILE_KEY, JSON.stringify({ name: p.name, chosen: !!p.chosen, colour: p.colour, key: p.key, server: p.server, ride: p.ride || null, pvp: !!p.pvp }));
   } catch (e) {
     /* private mode: remembered for this visit only */
   }
@@ -113,6 +194,23 @@ function saveProfile(p) {
 
 const say = (text) => escapeHtml(text);
 const NO_DOTS = Object.freeze([]);
+/**
+ * The gate an admin's freeze puts on an aeroplane's (or vehicle's) own step
+ * (see holdStill): installed once per object, the first time it is frozen,
+ * and left in place — while `_mpHeld` is set the step does nothing, after
+ * that it is the step it was. Other features wrap the same step (stovl.js
+ * wraps every aeroplane's), before or after: a gate in the chain works
+ * either way, and nothing ever has to be unwrapped.
+ */
+function gateStep(v) {
+  if (v._mpGate) return;
+  const inner = v.update;
+  Object.defineProperty(v, '_mpGate', { value: true, enumerable: false });
+  v.update = function mpFreezeGate(...args) {
+    if (v._mpHeld) return undefined;
+    return inner.apply(this, args);
+  };
+}
 
 class Multiplayer {
   constructor() {
@@ -142,6 +240,7 @@ class Multiplayer {
     this.busy = false;
     this._seq = 0;
     this._lastSend = -Infinity;
+    this._nextSend = -Infinity;
     this._lastTick = -Infinity;
     this._timer = null;
     this._screenHiddenAt = null;
@@ -155,11 +254,44 @@ class Multiplayer {
     this.lobbyWatch = null;
     this.lobbyScreen = null;
     this._lobbyLooking = false;
+    /* World lobbies (list 3): their own list, and their own socket when they are on another server. */
+    this.worldWatch = null;
+    this._worldLooking = false;
+    /** The LAN server's stand-in for the public server's world lobbies, if it offers one (signaling.js). */
+    this.worldLan = null;
+    this.worldSig = null;
+    this.worldNet = null;
+    this._worldOpening = null;
+    /** Tries at the world lobbies' server that failed in a row: the next is put off longer each time. */
+    this._worldFails = 0;
+    this._watchRetry = null;
     /** One per tab: a host tells this tab coming back from a new player (session.js). */
     this.seat = seatToken();
     this.reconnecting = false;
     /** Usernames whose quick chat this player has hidden, for themselves only. */
     this.muted = new Set();
+    /** The channel other features play together through (./multiplayer/events.js). */
+    this.events = new GameEvents();
+    this.events.roster = () => this.eventPlayers();
+    /* Part 3b. This device's admin key, if the admin code was typed in the hangar (admin.js). */
+    this.adminKey = null;
+    /** The admin's list of private matches, while their lobby screen is open. */
+    this.privateWatch = null;
+    /** What the host says about this player right now: an admin here, muted or frozen by one. */
+    this.me = { admin: false, muted: false, frozen: false };
+    this._frozeAt = 0;
+    /** A lobby an admin took this player out of: not straight back in (the lobby's next host would not know). */
+    this._barred = null;
+    /*
+     * List 2, part 2. Two bits every snapshot carries, set by the features
+     * each frame: `ghost` — nobody can bump into or hit this player right now
+     * (../bump.js, ../pvp.js) — and `pvp`, switched on (../pvp.js).
+     */
+    this.extraFlags = { ghost: false, pvp: false };
+    /** Things other features draw on the minimap overlay: fn(g, toXY, sim), toXY(x, z) → [x, y] or null. */
+    this.minimapExtras = [];
+    /** The bumping rule a private match is made with (protocol.js BUMP_RULES), picked on the lobby screen. */
+    this.bumpPick = BUMP_DEFAULT;
   }
 
   /**
@@ -176,7 +308,12 @@ class Multiplayer {
     this._backendAsk = null;
     this._hashAsk = null;
     this._hashAt = o ? now() : -Infinity;
+    this.worldLan = null;
+    this._worldFails = 0;
+    clearTimeout(this._lingerTimer);
+    this._lingerTimer = null;
     this.closeLookSocket();
+    this.closeWorldSocket();
   }
 
   makeSig(token = null) {
@@ -184,6 +321,29 @@ class Multiplayer {
     if (this.override && this.override.WebSocketImpl) opts.WebSocketImpl = this.override.WebSocketImpl;
     if (token) opts.token = token;
     return new Signaling(this.backend, opts);
+  }
+
+  /**
+   * Where the world lobbies are found (list 3): the public matchmaking
+   * server — or, in the tests, `configure({ world })` or the override's own
+   * server; or a LAN server that offers to stand in for it (--local, --world).
+   */
+  worldBackend() {
+    if (this.override) return this.override.world || this.override.backend || PUBLIC_BACKEND;
+    return this.worldLan || PUBLIC_BACKEND;
+  }
+
+  makeWorldSig(token = null) {
+    const opts = {};
+    if (this.override && this.override.WebSocketImpl) opts.WebSocketImpl = this.override.WebSocketImpl;
+    if (token) opts.token = token;
+    return new Signaling(this.worldBackend(), opts);
+  }
+
+  /** The world lobbies are on the same server as the Wi-Fi ones — then one socket does both. */
+  worldOnLookServer() {
+    const w = this.worldBackend();
+    return w.url === this.backend.url && (w.key || 'peerjs') === (this.backend.key || 'peerjs');
   }
 
   /* ---------------------------------------------------------------- */
@@ -195,6 +355,7 @@ class Multiplayer {
     this.sim = sim;
     this.installed = true;
     this.profile = loadProfile();
+    this.adminKey = AdminKey.load();
     injectStyle();
     this.hud = buildHud(this, extLayer());
     this.keepMenuCard();
@@ -245,7 +406,7 @@ class Multiplayer {
       b.className = 'card-btn';
       b.dataset.act = 'multiplayer';
       b.innerHTML = `<span class="card-icon">${icon('players', 24)}</span>`
-        + '<span class="card-body"><strong>Multiplayer</strong><em>Fly with your friends — five lobbies on your Wi-Fi, eight in each, or a friend by code</em></span>';
+        + '<span class="card-body"><strong>Multiplayer</strong><em>Fly with friends — Wi-Fi and World lobbies, or a private match with a code</em></span>';
       const after = nav.querySelector('[data-act="free"], [data-act="drive"]');
       if (after && after.nextSibling) nav.insertBefore(b, after.nextSibling);
       else nav.appendChild(b);
@@ -291,7 +452,7 @@ class Multiplayer {
 
   sleepIfIdle() {
     if (!this._timer || this.role || this.lobby || this.busy || this.prober || this._looking || this.screenOpen) return;
-    if (this.lobbyWatch || this._lobbyLooking) return;
+    if (this.lobbyWatch || this._lobbyLooking || this.worldWatch || this._worldLooking) return;
     if (this._pauseShown || this._mouseFreed || this._screenHiddenAt !== null) return;
     clearInterval(this._timer);
     this._timer = null;
@@ -372,12 +533,20 @@ class Multiplayer {
       ui.wrap.hidden = false;
       ui.el.hidden = false;
     }
-    if (this.lobby) ui.status(`You are in Lobby ${this.lobby.n}. Leave it from the player list (Tab) first.`, 'warn');
+    if (this.lobby) ui.status(`You are in ${lobbyLabel(this.lobby.n, this.lobby.world)}. Leave it from the player list (Tab) first.`, 'warn');
     else if (this.role) ui.status('You are in a game. Leave it from the player list (Tab) first.', 'warn');
     this.watchLobbies();
+    if (this.isAdmin) this.watchPrivates();
   }
 
-  async watchLobbies() {
+  /** Both rows of lobbies: the Wi-Fi's and the world's. Each starts only if it is not already going. */
+  watchLobbies() {
+    const a = this.watchWifiLobbies();
+    const b = this.watchWorldLobbies();
+    return Promise.all([a, b]);
+  }
+
+  async watchWifiLobbies() {
     const ui = this.lobbyScreen;
     if (this.lobbyWatch || this._lobbyLooking) return;
     this._lobbyLooking = true;
@@ -405,13 +574,16 @@ class Multiplayer {
         }
       }
       if (!net) {
+        this._wifiFails = (this._wifiFails || 0) + 1;
         if (this.lobbyScreenOpen) {
           ui.net('Can’t reach the matchmaking server', true);
           ui.status('Couldn’t reach the other planes — check the internet is working. You can still fly on your own.', 'bad');
+          this.retryLobbyWatch();
         }
         return;
       }
-      if (!this.lobbyScreenOpen) return;
+      this._wifiFails = 0;
+      if (!this.lobbyScreenOpen || this.lobbyWatch) return;
       this.lobbyWatch = new LobbyWatch({ net, hash, onChange: (list) => this.lobbyScreen && this.lobbyScreen.lobbies(list) });
       ui.lobbies(this.lobbyWatch.lobbies);
       this.lobbyWatch.start();
@@ -420,61 +592,242 @@ class Multiplayer {
     }
   }
 
+  /**
+   * The world lobbies' row (list 3). They do not need to know which Wi-Fi
+   * this is — only a way to the public matchmaking server (or whatever
+   * stands in for it) — so the row works on a network the Wi-Fi row cannot
+   * tell apart, and says so plainly when there is no internet.
+   */
+  async watchWorldLobbies() {
+    const ui = this.lobbyScreen;
+    if (this.worldWatch || this._worldLooking) return;
+    this._worldLooking = true;
+    try {
+      ui.worldNet('Looking for the world lobbies…');
+      await this.ensureBackend();
+      if (typeof RTCPeerConnection !== 'function') {
+        ui.worldNet('This browser can’t do multiplayer', true);
+        ui.worlds(null);
+        return;
+      }
+      let net = null;
+      for (let attempt = 0; attempt < 2 && !net; attempt++) {
+        try {
+          net = await this.ensureWorldSocket();
+        } catch (err) {
+          if (!(err && err.code === 'closed' && this.lobbyScreenOpen)) break;
+        }
+      }
+      if (!net) {
+        this._worldFails++;
+        if (this.lobbyScreenOpen) {
+          ui.worldNet('Can’t reach the world lobbies — they need the internet', true);
+          ui.worlds(null);
+          this.retryLobbyWatch();
+        }
+        return;
+      }
+      this._worldFails = 0;
+      if (!this.lobbyScreenOpen || this.worldWatch) return;
+      const w = this.worldBackend();
+      // On the public server: "Over the internet". On a LAN server standing in for it (--local, --world): which one.
+      ui.worldNet(w.id === 'public' ? 'Over the internet' : `On ${w.label || 'a test server'}, not the internet`, false);
+      this.worldWatch = new LobbyWatch({
+        net,
+        world: true,
+        onChange: (list) => this.lobbyScreen && this.lobbyScreen.worlds(list),
+        // A hidden tab asks the public server nothing.
+        active: () => typeof document === 'undefined' || document.visibilityState !== 'hidden',
+      });
+      ui.worlds(this.worldWatch.lobbies);
+      this.worldWatch.start();
+    } finally {
+      this._worldLooking = false;
+    }
+  }
+
+  /**
+   * A row that could not reach its matchmaking server looks again later —
+   * 3 s, then 6, 12, 24, up to a minute — while the screen is up, never in
+   * a loop that keeps knocking.
+   */
+  retryLobbyWatch() {
+    if (this._watchRetry) return;
+    const fails = Math.max(this._worldFails, this._wifiFails || 0);
+    const wait = Math.min(60000, 3000 * 2 ** Math.min(5, Math.max(0, fails - 1)));
+    this._watchRetry = setTimeout(() => {
+      this._watchRetry = null;
+      if (this.lobbyScreenOpen && !this.lobby && !this.role) this.watchLobbies();
+    }, wait);
+  }
+
   stopWatchingLobbies() {
     if (this.lobbyWatch) this.lobbyWatch.stop();
     this.lobbyWatch = null;
+    if (this.worldWatch) this.worldWatch.stop();
+    this.worldWatch = null;
+    clearTimeout(this._watchRetry);
+    this._watchRetry = null;
     if (this.role || this.lobby || this.busy || this.prober) return;
-    this.closeLookSocket();
+    this.lingerSockets();
   }
 
-  /** The game a player joins a lobby's island in: their own if the island allows it, else one it does. */
-  gameFor(mapId, lobbyGame) {
+  /*
+   * The lobby screen's sockets stay open a little after it is shut, and go
+   * then if nothing has wanted them again (list 3). A child who goes Back
+   * and opens Multiplayer again straight away — which children do — used to
+   * open a new connection to the matchmaking server every time; the public
+   * one is shared by everybody and turns away an address that connects too
+   * often, and a whole school is one address.
+   */
+  lingerSockets(ms = SOCKET_LINGER_MS) {
+    clearTimeout(this._lingerTimer);
+    this._lingerTimer = setTimeout(() => {
+      this._lingerTimer = null;
+      if (this.role || this.lobby || this.busy || this.prober || this.lobbyWatch || this.worldWatch || this.screenOpen) return;
+      if (this._looking || this._lobbyLooking || this._worldLooking || this._lookOpening || this._worldOpening) return;
+      this.closeLookSocket();
+      this.closeWorldSocket();
+    }, ms);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Your ride: the same aeroplanes from every game                     */
+  /* ---------------------------------------------------------------- */
+
+  /*
+   * "the same planes": whichever of the four games a player opens
+   * Multiplayer from, they can bring any aeroplane they can fly, the
+   * helicopter, the boat or the car — and in a lobby everybody sees
+   * everybody's real one (remotes.js builds each from the snapshot's game
+   * and type). The main menu's own choice is only where it starts: the
+   * aeroplane picked in the Hangar, or the helicopter from Rotors, the boat
+   * from the Boat page, the van from the Car page.
+   */
+
+  /** Everything this player can bring: every aeroplane they can fly, the helicopter, the boat and the car. */
+  rides() {
+    const sim = this.sim;
+    const prog = sim && (sim.prog || (sim.menus && sim.menus.prog));
+    const canFly = (t) => t.id === 'skylark' || !prog || (!Prog.needsPasscode(prog, t) && !(Array.isArray(prog.unlocked) && !Prog.isUnlocked(prog, t.id)));
+    const planes = AIRCRAFT.filter((t) => t.id !== 'harrier' && canFly(t)).map((t) => ({ game: 'flight', type: t.id, name: t.name, kind: 'plane' }));
+    return [
+      ...planes,
+      { game: 'heli', type: 'harrier', name: `${getAircraft('harrier').name} helicopter`, kind: 'heli' },
+      { game: 'boat', type: 'boat', name: VEHICLES.boat.name, kind: 'boat' },
+      { game: 'car', type: 'car', name: VEHICLES.car.name, kind: 'car' },
+    ];
+  }
+
+  /** The ride a game's own menu is about. */
+  rideFor(game) {
+    if (game === 'heli') return { game: 'heli', type: 'harrier' };
+    if (game === 'boat' || game === 'car') return { game, type: game };
+    const r = this.profile && this.profile.ride;
+    return { game: 'flight', type: r && r.game === 'flight' && this.rides().some((x) => x.type === r.type) ? r.type : this.myAircraft() };
+  }
+
+  /** The ride picked on the lobby screen — or, until one is, the one the game you came from is about. */
+  ride() {
+    const want = this.profile && this.profile.ride;
+    if (want && this.rides().some((r) => r.game === want.game && r.type === want.type)) return { game: want.game, type: want.type };
+    return this.rideFor(this.currentGame());
+  }
+
+  setRide(r) {
+    if (!r || !this.rides().some((x) => x.game === r.game && x.type === r.type)) return false;
+    this.profile.ride = { game: r.game, type: r.type };
+    saveProfile(this.profile);
+    return true;
+  }
+
+  rideName(r) {
+    const x = r && this.rides().find((y) => y.game === r.game && y.type === r.type);
+    return x ? x.name : r && r.game === 'flight' ? getAircraft(r.type).name : 'your plane';
+  }
+
+  /**
+   * The ride on island `mapId`: the one picked, if the island has room for it
+   * — Kestrel Island takes all four — or the nearest thing it does have:
+   * an aeroplane on a helicopter island flies the helicopter, anything on a
+   * harbour island without roads sails, and so on. { ride, swapped }.
+   */
+  rideOn(mapId, lobbyGame) {
     const allows = (g) => mapsForGame(g).some((m) => m.id === mapId);
-    const mine = this.currentGame();
-    if (GAMES.includes(mine) && allows(mine)) return mine;
-    if (GAMES.includes(lobbyGame) && allows(lobbyGame)) return lobbyGame;
-    return GAMES.find(allows) || 'flight';
+    const want = this.ride();
+    if (allows(want.game)) return { ride: want, swapped: false };
+    const order = want.game === 'flight' ? ['heli', lobbyGame, 'boat', 'car'] : [lobbyGame, 'flight', 'heli', 'boat', 'car'];
+    const g = order.find((x) => GAMES.includes(x) && allows(x)) || GAMES.find(allows) || 'flight';
+    return { ride: this.rideFor(g), swapped: true };
   }
 
-  /** Where this player is, for a lobby they are about to host: in the world, where they are; on the menu, the map they picked. */
+  /**
+   * Where this player is, for a lobby they are about to host: in the world, where they are; on the menu, their ride's island.
+   * Since list 3 a lobby takes only the game from this: its island is its own (lobby.js).
+   */
   lobbyPlace() {
     const sim = this.sim;
     if (this.server && this.server.map) {
       const game = sim.mode === 'drive' && sim.vehicle ? (sim.vehicle.spec && sim.vehicle.spec.kind === 'car' ? 'car' : 'boat') : sim.game || 'flight';
       return { map: this.server.map, game: GAMES.includes(game) ? game : 'flight' };
     }
-    const game = this.currentGame();
-    return { map: this.defaultMap(game), game: GAMES.includes(game) ? game : 'flight' };
+    const game = this.ride().game;
+    return { map: this.defaultMap(game), game };
   }
 
-  /** Into lobby n: host it if it is empty, join whoever hosts it if not. */
-  async joinLobby(n) {
+  /** Into the world on `server`'s island in this player's ride, saying so if the island had no room for the one they picked. */
+  async enterWithRide(server, at, weather) {
+    const { ride, swapped } = this.rideOn(server.map, server.game);
+    await this.enterWorld({ ...server, game: ride.game }, at, weather, ride);
+    if (swapped) {
+      const want = this.ride();
+      const what = { flight: 'runway', heli: 'helipad', boat: 'harbour', car: 'roads' }[want.game] || 'room';
+      this.toast(`${mapNameFor(server.map)} has no ${what} for the ${this.rideName(want)} — you’re in the ${this.rideName(ride)}`, 'info', 6);
+    }
+    return ride;
+  }
+
+  /**
+   * Into lobby n: host it if it is empty, join whoever hosts it if not.
+   * `world` (list 3): world lobby n instead — the same for everybody on the
+   * internet, through the world lobbies' own server; it needs no Wi-Fi hash.
+   */
+  async joinLobby(n, world = false) {
     const ui = this.lobbyScreen;
+    world = !!world;
+    const label = lobbyLabel(n, world);
     if (this.role || this.busy || this.lobby) return ui && ui.status('You are already in a game.', 'warn');
     if (!this.profile.chosen) return ui && ui.status('Pick your username first — then you can join.', 'warn');
+    if (this._barred && this._barred.n === n && now() < this._barred.until) {
+      return ui && ui.status(`An admin took you out of Lobby ${n} a moment ago — try another lobby for now.`, 'warn');
+    }
     this.busy = true;
     this.wake();
     ui.busy(true);
     ui.offer(null);
-    ui.status(`Joining Lobby ${n}…`);
+    ui.status(`Joining ${label}…`);
     const attempt = this.newAttempt();
     const wanted = () => this._attempt === attempt;
     let member = null;
     try {
-      const hash = await this.ensureNetwork();
+      const hash = world ? (await this.ensureBackend(), this.hash) : await this.ensureNetwork();
       if (!wanted()) return;
       if (typeof RTCPeerConnection !== 'function') return ui.status('This browser has no WebRTC, which multiplayer needs.', 'bad');
-      if (!hash) return ui.status('Couldn’t tell which Wi-Fi you are on, so the lobbies can’t be found. A friend’s code still works.', 'bad');
-      let net;
-      try {
-        net = await this.ensureLookSocket();
-      } catch (err) {
-        if (wanted()) ui.status('Couldn’t reach the matchmaking server — check the internet is working. You can still fly on your own.', 'bad');
+      if (!world && !hash) return ui.status('Couldn’t tell which Wi-Fi you are on, so the lobbies can’t be found. The World lobbies and a friend’s code still work.', 'bad');
+      const net = world ? await this.worldSocketWithRetry(2, ui, wanted) : await this.lookSocketWithRetry(1, null, wanted);
+      if (!wanted()) return;
+      if (!net) {
+        ui.status(world
+          ? 'Couldn’t reach the world lobbies — they need the internet. The Wi-Fi lobbies still work.'
+          : 'Couldn’t reach the matchmaking server — check the internet is working. You can still fly on your own.', 'bad');
         return;
       }
-      if (!wanted()) return;
       member = new LobbyMember({
-        n, hash, net: () => this.ensureLookSocket(), makeSig: (token) => this.makeSig(token), profile: this.profile, seat: this.seat,
+        n, hash, world,
+        net: () => (world ? this.ensureWorldSocket() : this.ensureLookSocket()),
+        makeSig: (token) => (world ? this.makeWorldSig(token) : this.makeSig(token)),
+        profile: this.profile, seat: this.seat,
+        admin: () => this.adminNow(),
         place: () => this.lobbyPlace(),
         spawnInfo: () => this.whereAmI(),
         weather: () => (this.sim.weather && this.sim.weather.serialize ? this.sim.weather.serialize() : null),
@@ -482,6 +835,10 @@ class Multiplayer {
       });
       this.lobby = member;
       this._cancelLobby = () => member.leave();
+      // Across the internet a first connection can take a while: after a few seconds, say it is still going.
+      const slow = world ? setTimeout(() => {
+        if (wanted() && this.lobby === member && !this.role) ui.status(`Still joining ${label} — reaching its host over the internet can take a few seconds…`);
+      }, 6000) : null;
       let r;
       try {
         r = await member.start();
@@ -491,9 +848,10 @@ class Multiplayer {
           ui.status('');
           return;
         }
-        this.lobbyRefused(n, err);
+        this.lobbyRefused(n, err, world);
         return;
       } finally {
+        clearTimeout(slow);
         this._cancelLobby = null;
       }
       if (!wanted()) {
@@ -503,17 +861,23 @@ class Multiplayer {
       }
       if (this.lobbyWatch) this.lobbyWatch.stop();
       this.lobbyWatch = null;
+      if (this.worldWatch) this.worldWatch.stop();
+      this.worldWatch = null;
+      // In a lobby, only its own server's socket is needed; the other row's goes, if it is a different one.
+      if (!this.worldOnLookServer()) {
+        if (world) this.closeLookSocket();
+        else this.closeWorldSocket();
+      }
       this.takeLobbySession(r.role, r.session, r.welcome);
       const server = member.server;
       this.server = { ...server };
       ui.status('');
-      await this.enterWorld({ ...server, game: r.role === 'host' ? server.game : this.gameFor(server.map, server.game) },
-        r.welcome ? r.welcome.at : null, r.welcome ? r.welcome.weather : null);
+      await this.enterWithRide(server, r.welcome ? r.welcome.at : null, r.welcome ? r.welcome.weather : null);
       if (this.lobby !== member) return;
       this.ready = true;
       this.showHud();
-      this.note(`in lobby ${n} (${server.map}) as ${r.role === 'host' ? 'its host' : `player ${this.meId}`}`);
-      this.toast(`You’re in Lobby ${n} · ${lobbyName(n)} — on ${mapNameFor(server.map)}`, 'good', 5);
+      this.note(`in ${world ? 'world lobby' : 'lobby'} ${n} (${server.map}) as ${r.role === 'host' ? 'its host' : `player ${this.meId}`}`);
+      this.toast(`You’re in ${label} · ${world ? worldName(n) : lobbyName(n)} — on ${mapNameFor(server.map)}`, 'good', 5);
     } finally {
       this.afterAttempt(attempt);
     }
@@ -527,26 +891,31 @@ class Multiplayer {
     this.meId = role === 'host' ? 0 : welcome.you;
     this.remotes.dropPlayers();
     if (welcome) for (const p of welcome.players) if (p.id !== this.meId) this.remotes.add(p.id, p);
+    this.events.attach(session, role, this.meId);
+    this.syncSelf();
   }
 
   /** Said on the lobby screen when a lobby would not have us, with the one tap that fixes it. */
-  lobbyRefused(n, err) {
+  lobbyRefused(n, err, world = false) {
     const ui = this.lobbyScreen;
     const code = err && err.code;
+    const label = lobbyLabel(n, world);
     if (code === 'name') {
-      ui.status(`Someone in Lobby ${n} is already called ${this.profile.name} — change your number or pick another name.`, 'warn');
-      if (err.suggest) ui.offer({ kind: 'name', n, name: err.suggest });
+      ui.status(`Someone in ${label} is already called ${this.profile.name} — change your number or pick another name.`, 'warn');
+      if (err.suggest) ui.offer({ kind: 'name', n, world, name: err.suggest });
       return;
     }
     if (code === 'full') {
-      const other = this.lobbyWatch && this.lobbyWatch.emptiest(n);
-      ui.status(`Lobby ${n} is full — eight players is the most.${other ? ` Lobby ${other.n} has room.` : ''}`, 'warn');
-      if (other) ui.offer({ kind: 'lobby', n: other.n, players: other.players, max: other.max });
+      const watch = world ? this.worldWatch : this.lobbyWatch;
+      const other = watch && watch.emptiest(n);
+      ui.status(`${label} is full — eight players is the most.${other ? ` ${lobbyLabel(other.n, world)} has room.` : ''}`, 'warn');
+      if (other) ui.offer({ kind: 'lobby', n: other.n, world, players: other.players, max: other.max });
       return;
     }
     if (code === 'version') return ui.status('That lobby is running a different version of the game. Reload the page on both computers.', 'bad');
     if (code === 'signaling') return ui.status('Lost the connection to the matchmaking server — try again in a moment.', 'bad');
-    ui.status(`Couldn’t get into Lobby ${n} — try again, or try another lobby.`, 'bad');
+    ui.status(world ? `Couldn’t get into ${label} over the internet — try again, or try another world lobby.`
+      : `Couldn’t get into ${label} — try again, or try another lobby.`, 'bad');
   }
 
   /** What a lobby says while we are in it. */
@@ -558,7 +927,9 @@ class Multiplayer {
         this.host = null;
         this.client = null;
         this.remotes.dropPlayers();
-        this.note(`lobby ${member.n}: ${args[0] === 'moved' ? 'moving to the lobby’s real host' : `the host went (${args[0]}${args[1] && args[1] !== args[0] ? `, ${args[1]}` : ''})`} — re-forming`);
+        // Between hosts: the shared state is kept, for whoever hosts next (events.js).
+        this.events.detach({ keepState: true });
+        this.note(`${member.world ? 'world lobby' : 'lobby'} ${member.n}: ${args[0] === 'moved' ? 'moving to the lobby’s real host' : `the host went (${args[0]}${args[1] && args[1] !== args[0] ? `, ${args[1]}` : ''})`} — re-forming`);
         this.syncRoster();
         break;
       }
@@ -568,11 +939,11 @@ class Multiplayer {
         this.takeLobbySession(role, session, info.welcome);
         const was = this.server && this.server.map;
         this.server = { ...info.server };
-        this.note(`lobby ${member.n} re-formed in ${Math.round(info.ms)} ms; ${role === 'host' ? 'this tab hosts it now' : `player ${this.meId}`}`);
+        this.note(`${member.world ? 'world lobby' : 'lobby'} ${member.n} re-formed in ${Math.round(info.ms)} ms; ${role === 'host' ? 'this tab hosts it now' : `player ${this.meId}`}`);
         // Only a merge with a lobby on another island moves anybody: re-forming in place changes nothing on screen.
         if (was && info.server.map !== was) {
           this.ready = false;
-          this.enterWorld({ ...info.server, game: this.gameFor(info.server.map, info.server.game) }, info.welcome ? info.welcome.at : null, null)
+          this.enterWithRide(info.server, info.welcome ? info.welcome.at : null, null)
             .then(() => {
               if (this.lobby === member) this.ready = true;
             });
@@ -580,15 +951,34 @@ class Multiplayer {
         this.syncRoster();
         break;
       }
+      case 'trying': {
+        // A world lobby's host could not be reached on the first path (list 3): say so while it tries again.
+        this.note(`world lobby ${member.n}: no path to its host (${args[0]}); trying again${RELAY_SERVERS.length ? ' through a relay' : ''}`);
+        if (this.busy && this.lobbyScreen) this.lobbyScreen.status(`Still reaching ${lobbyLabel(member.n, true)} over the internet — this can take a few seconds…`);
+        break;
+      }
       case 'out': {
         const [why] = args;
         const n = member.n;
-        this.note(`out of lobby ${n}: ${why}`);
+        const label = lobbyLabel(n, member.world);
+        this.note(`out of ${member.world ? 'world lobby' : 'lobby'} ${n}: ${why}`);
         this.lobby = null;
         this.cleanup();
+        // Part 3b: an admin took this player out, or closed the lobby.
+        if (why === 'kicked') {
+          this._barred = { n, until: now() + 120000 };
+          const said = `An admin took you out of Lobby ${n} — you can keep flying on your own, or join another lobby.`;
+          this.toast(said, 'warn', 7);
+          if (this.lobbyScreen) this.lobbyScreen.status(said, 'warn');
+          break;
+        }
+        if (why === 'shut') {
+          this.backToLobbies(`An admin closed Lobby ${n} for now — everybody is back here. Pick a lobby to fly again.`);
+          break;
+        }
         const words = why === 'name'
-          ? `Someone in Lobby ${n} is already called ${this.profile.name} — flying on your own. Open Multiplayer to pick another name.`
-          : why === 'full' ? `Lobby ${n} filled up while it re-formed — flying on your own now.`
+          ? `Someone in ${label} is already called ${this.profile.name} — flying on your own. Open Multiplayer to pick another name.`
+          : why === 'full' ? `${label} filled up while it re-formed — flying on your own now.`
             : 'Lost the lobby — flying on your own now.';
         this.toast(words, 'warn', 7);
         if (this.lobbyScreen) this.lobbyScreen.status(words, 'warn');
@@ -597,6 +987,32 @@ class Multiplayer {
       default:
         this.onSessionEvent(type, ...args);
     }
+  }
+
+  /**
+   * "Swift Falcon joined", said once for everybody who joined in the same
+   * moment. Seven joining at once was four toasts stacked down the middle
+   * of the view (the HUD keeps four), over the nametags of the very people
+   * joining: now it is one line — "Swift Falcon, Sunny Puffin and 5 more
+   * joined" — gathered while they keep arriving, three seconds at most.
+   */
+  comeAndGo(what, name) {
+    const q = this._cag || (this._cag = new Map());
+    if (!q.has(what)) q.set(what, []);
+    q.get(what).push(name);
+    // Gathered until a second passes with nobody new — three at the most, so it is still said promptly.
+    const t = now();
+    if (!this._cagTimer) this._cagFirst = t;
+    clearTimeout(this._cagTimer);
+    this._cagTimer = setTimeout(() => {
+      this._cagTimer = null;
+      const all = [...q.entries()];
+      q.clear();
+      for (const [w, names] of all) {
+        const who = names.length === 1 ? names[0] : names.length === 2 ? `${names[0]} and ${names[1]}` : `${names[0]}, ${names[1]} and ${names.length - 2} more`;
+        this.toast(`${who} ${w}`, w === 'joined' ? 'good' : 'info');
+      }
+    }, Math.max(0, Math.min(1000, this._cagFirst + 3000 - t)));
   }
 
   /** Hide one player's quick chat — for this player only; nobody else is told. By username, which survives the lobby re-forming. */
@@ -634,6 +1050,38 @@ class Multiplayer {
   }
 
   /** The dice. */
+  /**
+   * List 2, part 2: the player's own PvP switch, remembered on this device.
+   * What it does in a game — the three seconds before it counts, the host
+   * saying so to everybody — is ../pvp.js, which listens here.
+   */
+  setPvp(on) {
+    const want = !!on;
+    if (!this.profile || this.profile.pvp === want) return want;
+    this.profile.pvp = want;
+    saveProfile(this.profile);
+    for (const fn of [...(this._pvpListeners || [])]) {
+      try {
+        fn(want);
+      } catch (e) {
+        /* a listener's problem, not the switch's */
+      }
+    }
+    if (this.lobbyScreenOpen && this.lobbyScreen) this.lobbyScreen.refresh();
+    return want;
+  }
+
+  onPvpChange(fn) {
+    if (!this._pvpListeners) this._pvpListeners = new Set();
+    this._pvpListeners.add(fn);
+    return () => this._pvpListeners.delete(fn);
+  }
+
+  /** The bumping rule of the game this player is in (protocol.js BUMP_RULES): 'off', 'gentle' or 'pvp'. */
+  bumpRuleNow() {
+    return BUMP_RULES[bumpRule(this.server ? this.server.bump : undefined)];
+  }
+
   rollName() {
     let name = this.profile.name;
     for (let i = 0; i < 5 && name === this.profile.name; i++) name = randomCallSign();
@@ -668,7 +1116,21 @@ class Multiplayer {
     const prog = this.sim.prog || this.sim.menus && this.sim.menus.prog;
     return mapsForGame(game)
       .filter((m) => !(prog && Prog.needsPasscode(prog, m)))
-      .map((m) => ({ id: m.id, name: m.name }));
+      .map((m) => ({ id: m.id, name: m.name, subtitle: m.subtitle || '' }));
+  }
+
+  /** Where a private match starts out: the island you are on, if the game has it; else the one the menu picked for that game. */
+  privateDefault(game) {
+    const sim = this.sim;
+    const here = sim && sim.settings && sim.settings.map;
+    return this.mapsFor(game).some((m) => m.id === here) ? here : this.defaultMap(game);
+  }
+
+  /** The Maps screen's painted picture of an island (menus.js draws one per map at boot), or null. */
+  mapPicture(id) {
+    const maps = this.sim && this.sim.menus && this.sim.menus.screens && this.sim.menus.screens.maps;
+    const c = maps && maps.querySelector ? maps.querySelector(`[data-map-art="${String(id).replace(/[^a-z0-9_-]/gi, '')}"] canvas`) : null;
+    return c || null;
   }
 
   /** A map's name from this copy of the game, which knows it — never what the host said. */
@@ -715,9 +1177,12 @@ class Multiplayer {
         this._backendAsk = null;
       } else if (lan) {
         const moved = this.backend.id !== 'lan';
+        const worldWas = this.worldBackend().url;
         this.backend = lan.backend;
         this.hash = lan.hash;
         this.hashVia = 'lan';
+        // A LAN server started with --local or --world stands in for the public server's world lobbies (list 3).
+        this.worldLan = lan.world || null;
         // An earlier "don't know" left a socket open on the public server; the next one goes to the LAN.
         if (moved && !this.role && !this.lobby) {
           if (this.prober) this.prober.stop();
@@ -725,6 +1190,11 @@ class Multiplayer {
           if (this.lobbyWatch) this.lobbyWatch.stop();
           this.lobbyWatch = null;
           this.closeLookSocket();
+          if (this.worldBackend().url !== worldWas) {
+            if (this.worldWatch) this.worldWatch.stop();
+            this.worldWatch = null;
+            this.closeWorldSocket();
+          }
         }
       }
       return this.backend;
@@ -811,12 +1281,102 @@ class Multiplayer {
       if (this.prober) this.prober.stop();
       this.prober = null;
       this.closeLookSocket();
-      if (this.screenOpen) {
+      if (this.legacyScreenOpen) {
         this.screen.net('Lost the matchmaking server — trying again', true);
         setTimeout(() => this.screenOpen && !this.role && this.startLooking(), 3000);
       }
+      // The lobby screen's rows were looking through this socket: look again, a little later (list 3).
+      if (this.lobbyScreenOpen) {
+        if (this.lobbyWatch) this.lobbyWatch.stop();
+        this.lobbyWatch = null;
+        if (this.worldOnLookServer() && this.worldWatch) {
+          this.worldWatch.stop();
+          this.worldWatch = null;
+        }
+        this.lobbyScreen.net('Lost the matchmaking server — trying again', true);
+        this.retryLobbyWatch();
+      }
     };
     return this.lookNet;
+  }
+
+  /*
+   * The world lobbies' socket (list 3). On the same server as the Wi-Fi
+   * lobbies — the public one, for nearly everybody — it IS the look socket,
+   * and nothing extra is opened. On a page served by the LAN server it is a
+   * second socket, to the public server, open only while the lobby screen is
+   * up or a world lobby is riding on it.
+   */
+  ensureWorldSocket() {
+    if (this.worldOnLookServer()) return this.ensureLookSocket();
+    if (this.worldSig && this.worldSig.isOpen && this.worldNet) return Promise.resolve(this.worldNet);
+    if (!this._worldOpening) {
+      const p = this.openWorldSocket().finally(() => {
+        if (this._worldOpening === p) this._worldOpening = null;
+      });
+      this._worldOpening = p;
+    }
+    return this._worldOpening;
+  }
+
+  async openWorldSocket() {
+    if (this.worldNet) this.worldNet.destroy();
+    if (this.worldSig) this.worldSig.close();
+    const sig = this.makeWorldSig();
+    this.worldSig = sig;
+    this.worldNet = null;
+    try {
+      await sig.open(playerPeerId());
+    } catch (err) {
+      sig.close();
+      if (this.worldSig === sig) this.worldSig = null;
+      throw err;
+    }
+    if (this.worldSig !== sig) {
+      sig.close();
+      throw Object.assign(new Error('closed while opening'), { code: 'closed' });
+    }
+    this.worldNet = new Net(sig);
+    this.worldNet.onsigclose = () => {
+      // In a world lobby: let it go without closing what rides on it; lobby.js asks for a fresh one when it needs one.
+      if (this.worldSig === sig) {
+        this.worldSig = null;
+        this.worldNet = null;
+      }
+      if (this.lobby || this.role === 'client' || this.busy) return;
+      if (this.worldWatch) this.worldWatch.stop();
+      this.worldWatch = null;
+      if (this.lobbyScreenOpen) {
+        this.lobbyScreen.worldNet('Lost the world lobbies — trying again', true);
+        this.retryLobbyWatch();
+      }
+    };
+    return this.worldNet;
+  }
+
+  closeWorldSocket() {
+    if (this.worldNet) this.worldNet.destroy();
+    if (this.worldSig) this.worldSig.close();
+    this.worldNet = null;
+    this.worldSig = null;
+    this._worldOpening = null;
+  }
+
+  /** The world lobbies' socket, tried again after a pause if the server turns this address away (it rate-limits). */
+  async worldSocketWithRetry(tries, ui, wanted = () => true) {
+    const pauses = [2000, 5000, 10000];
+    for (let i = 0; i < tries; i++) {
+      try {
+        return await this.ensureWorldSocket();
+      } catch (err) {
+        if (!wanted() || i === tries - 1) return null;
+        this.note(`world lobbies' server: ${err && err.code ? err.code : 'no answer'}; trying again`);
+        if (ui) ui.status('The world lobbies’ server is busy — trying again…');
+        await new Promise((r) => setTimeout(r, pauses[i] || 10000));
+        if (!wanted()) return null;
+      }
+    }
+    return null;
   }
 
   async startLooking() {
@@ -868,6 +1428,8 @@ class Multiplayer {
     if (this.prober) this.prober.stop();
     this.prober = null;
     if (this.role === 'client' || this.busy || this.lobby || this.lobbyWatch) return;
+    // The world row may be looking through this same socket (list 3).
+    if (this.worldWatch && this.worldOnLookServer()) return;
     this.closeLookSocket();
   }
 
@@ -922,11 +1484,14 @@ class Multiplayer {
    * another Wi-Fi": no slot on the list, only a code, eight players, and one
    * username to one player, like a lobby.
    */
-  async hostServer({ serverName, map, game, privateGame = false }) {
+  async hostServer({ serverName, map, game, privateGame = false, ride = null, bump = BUMP_DEFAULT }) {
     const ui = privateGame ? this.lobbyScreen : this.screen;
-    if (this.role || this.busy) return ui && ui.status('You are already in a game.', 'warn');
+    if (this.role || this.busy || this.lobby) return ui && ui.status('You are already in a game.', 'warn');
     const name = parseServerName(serverName) ? serverName : this.serverName();
+    if (ride) game = ride.game;
     if (!['flight', 'heli', 'boat', 'car'].includes(game)) game = 'flight';
+    // An island this game has, and one this player may use (the menu's own passcode rules).
+    if (!this.mapsFor(game).some((m) => m.id === map)) map = this.defaultMap(game);
     const mapDef = getMap(map);
     this.busy = true;
     this.wake();
@@ -951,18 +1516,37 @@ class Multiplayer {
         sockets.push({ id: slotId(hash, slot), sig: claim.sig, what: 'slot' });
         attempt.check();
       }
-      const code = await claimCode({ makeSig });
+      // The matchmaking server can turn a busy address away for a moment (list 2, range): twice more, after a pause.
+      let code = null;
+      for (let i = 0; !code; i++) {
+        try {
+          code = await claimCode({ makeSig });
+        } catch (err) {
+          if (i >= 2 || (err && err.code === 'taken')) throw err;
+          this.note(`claiming a code: ${err && err.code ? err.code : 'no answer'}; trying again`);
+          ui.status('The matchmaking server is busy — trying again…');
+          await new Promise((r) => setTimeout(r, [1500, 4000][i]));
+          attempt.check();
+        }
+      }
       sockets.push({ id: codeId(code.code), sig: code.sig, what: 'code' });
       attempt.check();
+      // Part 3b: a private match is also in the admins' directory — no code there, and nobody but an admin gets in through it.
+      if (privateGame) {
+        const dir = await claimPdir({ makeSig }).catch(() => null);
+        if (dir) sockets.push({ id: pdirId(dir.n), sig: dir.sig, what: 'pdir' });
+        attempt.check();
+      }
 
       // The host needs its slot and code sockets, not the one it was looking with.
       if (this.prober) this.prober.stop();
       this.prober = null;
       this.closeLookSocket();
       this.stopWatchingLobbies();
-      this.server = { name, map: mapDef.id, mapName: mapDef.name, game, code: code.code, slot, max: privateGame ? CODE_GAME_MAX : MAX_PLAYERS };
+      this.server = { name, map: mapDef.id, mapName: mapDef.name, game, code: code.code, slot, max: privateGame ? CODE_GAME_MAX : MAX_PLAYERS, priv: !!privateGame, bump: bumpRule(bump) };
       this.host = new HostSession({
         mode: privateGame ? 'code' : 'slot',
+        admin: !!this.adminNow(),
         profile: this.profile,
         server: this.server,
         spawnInfo: () => this.whereAmI(),
@@ -974,14 +1558,17 @@ class Multiplayer {
       this.role = 'host';
       this.wake();
       this.meId = 0;
+      this.events.attach(this.host, 'host', 0);
+      this.syncSelf();
       this.ready = false;
       this.remotes.clear();
       ui.status('');
-      await this.enterWorld(this.server, null, null);
+      await this.enterWorld(this.server, null, null, ride);
       this.ready = true;
       this.showHud();
-      this.note(`hosting "${name}" (${game}, ${mapDef.id}) in slot ${slot || "none"}, code ${code.code}`);
-      this.toast(slot ? `Your server is up — slot ${slot}, code ${code.code}` : `Your server is up — code ${code.code}`, 'good', 6);
+      this.note(`hosting "${name}" (${game}, ${mapDef.id}) in slot ${slot || 'none'}, code ${code.code}${privateGame ? ', private' : ''}`);
+      this.toast(privateGame ? `Your private match on ${mapDef.name} is ready — tell your friends the code: ${code.code}. It works with friends who aren’t on your Wi-Fi.`
+        : slot ? `Your server is up — slot ${slot}, code ${code.code}` : `Your server is up — code ${code.code}`, 'good', 8);
     } catch (err) {
       for (const s of sockets) s.sig.close();
       this.role = null;
@@ -1004,6 +1591,8 @@ class Multiplayer {
   watchHostSocket(entry) {
     const net = new Net(entry.sig);
     entry.net = net;
+    // The admins' directory: joining only, admins only (HostSession).
+    if (entry.what === 'pdir') net.dirOnly = true;
     this.host.attach(net);
     net.onsigclose = (why) => {
       if (!this.host || this.host.closed || why === 'takeover') return;
@@ -1019,7 +1608,8 @@ class Multiplayer {
     } catch (err) {
       sig.close();
       if (err && err.code === 'taken') {
-        this.toast(entry.what === 'slot' ? 'Your server lost its slot on the list — friends can still join with the code' : 'Your join code stopped working', 'warn', 6);
+        if (entry.what === 'pdir') this.note('lost its place in the admins’ directory of private matches');
+        else this.toast(entry.what === 'slot' ? 'Your server lost its slot on the list — friends can still join with the code' : 'Your join code stopped working', 'warn', 6);
         return;
       }
       if (tries < 20) setTimeout(() => this.reclaim(entry, tries + 1), 3000);
@@ -1041,6 +1631,22 @@ class Multiplayer {
     if (!this.hash) return;
     if (this.prober) this.prober.release(n);
     return this.join(slotId(this.hash, n));
+  }
+
+  /**
+   * A private match by its code, for its card on the lobby screen: one ping
+   * to the matchmaking server, answered with numbers (how many, the most,
+   * which island and game) — never a name. { state: 'here' | 'empty' |
+   * 'offline' | 'bad', code, count }.
+   */
+  async lookupCode(raw) {
+    const code = normaliseCode(raw);
+    if (!code) return { state: 'bad', code: null, count: null };
+    await this.ensureBackend();
+    const net = await this.lookSocketWithRetry(1, null);
+    if (!net) return { state: 'offline', code, count: null };
+    const { r, meta } = await net.pingInfo(codeId(code), 2500);
+    return { state: r === 'here' ? 'here' : r === 'empty' ? 'empty' : 'offline', code, count: r === 'here' ? readPrivateCount(meta) : null };
   }
 
   joinCode(raw) {
@@ -1066,31 +1672,45 @@ class Multiplayer {
         ui.status('This browser has no WebRTC, which multiplayer needs.', 'bad');
         return;
       }
-      let net;
-      try {
-        net = await this.ensureLookSocket();
-      } catch (err) {
-        if (wanted()) ui.status('Couldn’t reach the matchmaking server — check the internet is working. You can still fly on your own.', 'bad');
-        return;
-      }
+      // A code, or an admin joining a private match from the directory: both reach across networks.
+      const byCode = /^ifs-(code|pdir)-/.test(String(target));
+      let net = await this.lookSocketWithRetry(byCode ? 3 : 1, ui, wanted);
       if (!wanted()) return;
-      const client = new ClientSession({ net, target, profile: this.profile, seat: this.seat, onEvent: (type, ...args) => this.onSessionEvent(type, ...args) });
-      this.client = client;
-      let welcome;
-      try {
-        welcome = await client.start();
-      } catch (err) {
-        if (this.client === client) this.client = null;
-        if (err && err.code === 'left') {
-          this.note('stopped joining');
-          ui.status('');
-        } else if (err && err.code === 'name') {
-          // A game joined by code keeps one username to one player too; the host says which one is free.
-          ui.status(`Someone in that game is already called ${this.profile.name} — change your number or pick another name.`, 'warn');
-          if (err.suggest && ui.offer) ui.offer({ kind: 'name', target, name: err.suggest });
-        } else ui.status(err && err.message ? err.message : 'Couldn’t join that server.', 'bad');
+      if (!net) {
+        ui.status('Couldn’t reach the matchmaking server — check the internet is working. You can still fly on your own.', 'bad');
         return;
       }
+      /*
+       * List 2, range: a join by code that cannot connect gets a second,
+       * fresh try — through a relay only, if one is configured (link.js,
+       * RELAY_SERVERS) — before the child is told. A path between two
+       * networks is what most often needs it; the first try's candidates
+       * can also simply have crossed badly, or the matchmaking server blipped.
+       */
+      let client = null;
+      let welcome = null;
+      for (let tryNo = 0; tryNo < 2 && !welcome; tryNo++) {
+        client = new ClientSession({
+          net, target, profile: this.profile, seat: this.seat, relayOnly: tryNo > 0 && RELAY_SERVERS.length > 0, admin: this.adminNow(),
+          onEvent: (type, ...args) => this.onSessionEvent(type, ...args),
+        });
+        this.client = client;
+        try {
+          welcome = await client.start();
+        } catch (err) {
+          if (this.client === client) this.client = null;
+          if (byCode && tryNo === 0 && wanted() && err && ['ice', 'timeout', 'signaling', 'dropped'].includes(err.code)) {
+            this.note(`join by code: the first try failed (${err.code}); trying again${RELAY_SERVERS.length ? ' through a relay' : ''}`);
+            ui.status('Still trying to reach your friend’s game — this can take a few seconds…');
+            if (!(net.sig && net.sig.isOpen)) net = await this.lookSocketWithRetry(3, ui, wanted);
+            if (!wanted()) return;
+            if (net) continue;
+          }
+          this.joinFailed(err, target, ui);
+          return;
+        }
+      }
+      if (!welcome) return;
       if (!wanted()) {
         // Welcomed a moment after Back was pressed: say goodbye rather than arrive.
         client.leave();
@@ -1108,20 +1728,60 @@ class Multiplayer {
       this.wake();
       this.meId = welcome.you;
       this.server = welcome.server;
+      this.events.attach(client, 'client', welcome.you);
+      this.syncSelf();
       this.ready = false;
       this.remotes.clear();
       for (const p of welcome.players) if (p.id !== this.meId) this.remotes.add(p.id, p);
       ui.status('');
-      await this.enterWorld(welcome.server, welcome.at, welcome.weather);
+      // A private match: in this player's own ride, as in a lobby. A server from the older list: its game.
+      if (welcome.server.priv) await this.enterWithRide(welcome.server, welcome.at, welcome.weather);
+      else await this.enterWorld(welcome.server, welcome.at, welcome.weather);
       // The client may have been dropped while the world was loading.
       if (this.role !== 'client') return;
       this.ready = true;
       this.showHud();
-      this.note(`joined "${welcome.server.name}" as player ${welcome.you}`);
-      this.toast(`Joined ${welcome.server.name}${welcome.name !== this.profile.name ? ` as ${welcome.name}` : ''}`, 'good', 5);
+      this.note(`joined "${welcome.server.name}" as player ${welcome.you}${welcome.server.priv ? `, private, on ${welcome.server.map}` : ''}`);
+      this.toast(welcome.server.priv
+        ? `You’re in the private match — on ${mapNameFor(welcome.server.map)}${welcome.name !== this.profile.name ? `, as ${welcome.name}` : ''}`
+        : `Joined ${welcome.server.name}${welcome.name !== this.profile.name ? ` as ${welcome.name}` : ''}`, 'good', 5);
     } finally {
       this.afterAttempt(attempt);
     }
+  }
+
+  /** What a join that did not work says: a username to change (with the one-tap fix), or the join's own words. */
+  joinFailed(err, target, ui) {
+    if (err && err.code === 'left') {
+      this.note('stopped joining');
+      ui.status('');
+    } else if (err && err.code === 'name') {
+      // A game joined by code keeps one username to one player too; the host says which one is free.
+      ui.status(`Someone in that game is already called ${this.profile.name} — change your number or pick another name.`, 'warn');
+      if (err.suggest && ui.offer) ui.offer({ kind: 'name', target, name: err.suggest });
+    } else ui.status(err && err.message ? err.message : 'Couldn’t join that server.', 'bad');
+  }
+
+  /**
+   * The look socket, opened again after a pause when the matchmaking server
+   * refuses or drops it — 0.peerjs.com turns away an address that opens too
+   * many at once, and a school's connection blips. `tries` in all; null if
+   * none worked, or the join was cancelled meanwhile.
+   */
+  async lookSocketWithRetry(tries, ui, wanted = () => true) {
+    const pauses = [1500, 4000, 8000];
+    for (let i = 0; i < tries; i++) {
+      try {
+        return await this.ensureLookSocket();
+      } catch (err) {
+        if (!wanted() || i === tries - 1) return null;
+        this.note(`matchmaking server: ${err && err.code ? err.code : 'no answer'}; trying again`);
+        if (ui) ui.status('The matchmaking server is busy — trying again…');
+        await new Promise((r) => setTimeout(r, pauses[i] || 8000));
+        if (!wanted()) return null;
+      }
+    }
+    return null;
   }
 
   /* ---------------------------------------------------------------- */
@@ -1137,7 +1797,7 @@ class Multiplayer {
    * Skyhook; the boat and car servers go through startDrive with the map set
    * for that game.
    */
-  async enterWorld(server, at, weather) {
+  async enterWorld(server, at, weather, ride = null) {
     const sim = this.sim;
     this.transition = true;
     this.pendingSpawn = { at, game: server.game };
@@ -1158,7 +1818,14 @@ class Multiplayer {
         } catch (e) {
           base = {};
         }
-        await sim.startMode('free', { ...base, aircraft: server.game === 'heli' ? 'harrier' : this.myAircraft(), airborne: false, taxi: false });
+        const aircraft = server.game === 'heli' ? 'harrier' : ride && ride.game === 'flight' ? ride.type : this.myAircraft();
+        /*
+         * The AI aeroplanes are the host's (list 2, "the same planes"): the host
+         * runs them — in Dev mode only, as in single player — and everybody else
+         * draws the host's (../mpworld.js). Nobody but the host starts their own.
+         */
+        const traffic = this.role === 'host' ? {} : { traffic: false };
+        await sim.startMode('free', { ...base, aircraft, airborne: false, taxi: false, ...traffic });
         this.keepOwnMapSaved();
       }
       if (weather && sim.weather && sim.weather.load) sim.weather.load(weather);
@@ -1362,16 +2029,19 @@ class Multiplayer {
         break;
       case 'join':
         this.remotes.add(a.id, a);
+        this.events.joined({ id: a.id, name: a.name, colour: a.colour });
         this.note(`${a.name} joined as player ${a.id}`);
-        this.toast(`${a.name} joined`, 'good');
+        // An admin arriving is said to be one: nothing an admin does is hidden from the others (part 3b).
+        this.comeAndGo('joined', a.admin ? `${a.name} (an admin)` : a.name);
         this.syncRoster();
         break;
       case 'leave': {
         this.remotes.remove(a.id);
+        this.events.left({ id: a.id, name: a.name, colour: a.colour });
         this.note(`${a.name} left: ${b}${detail && detail !== b ? ` (${detail})` : ''}`);
         // Only the host is told somebody was removed; everybody else sees them leave, and nobody is made an example of.
-        const words = { kicked: this.role === 'host' ? `${a.name} was removed` : `${a.name} left`, dropped: `${a.name} lost connection` }[b] || `${a.name} left`;
-        this.toast(words, 'info');
+        if (b === 'kicked' && this.role === 'host') this.toast(`${a.name} was removed`, 'info');
+        else this.comeAndGo(b === 'dropped' ? 'lost connection' : 'left', a.name);
         this.syncRoster();
         break;
       }
@@ -1382,15 +2052,77 @@ class Multiplayer {
         this.toast(`${a.name}: ${QUICK_CHAT[b].text}`, 'info', 4);
         break;
       case 'roster':
-        if (this.role === 'client') for (const p of a) this.remotes.add(p.id, p);
+        // Everybody's tag, with who hosts (the crown) and who is an admin — the host's list is the list.
+        for (const raw of a) {
+          const p = this.role === 'host' ? readPlayer(raw) : raw;
+          // A player: everybody in the list. The host: its players are added as they join; this only brings their flags up to date.
+          if (p && p.id !== this.meId && (this.role === 'client' || this.remotes.players.has(p.id))) this.remotes.add(p.id, p);
+        }
+        this.syncSelf();
         this.syncRoster();
         break;
       case 'ended':
         this.ended(a, b);
         break;
+      case 'admin':
+        // Part 3b, on the host's screen: what an admin just did here, said plainly.
+        this.adminSaid(a);
+        break;
+      case 'removed':
+        // Part 3b: an admin took this host out of its lobby ('kicked'), or closed the game ('shut').
+        this.removedByAdmin(a);
+        break;
+      case 'gev':
+        this.events.fromWire(a, b);
+        break;
+      case 'gst':
+        this.events.stateFromWire(a);
+        break;
       default:
         break;
     }
+  }
+
+  /**
+   * Everybody in the game for events.players(): who they are, what they are
+   * in, and where THIS player sees them — the drawn position, which is what
+   * a hit test from this player's point of view has to use.
+   */
+  eventPlayers() {
+    if (!this.role) return [];
+    const sim = this.sim;
+    const plain = (v) => (v ? { x: v.x, y: v.y, z: v.z } : null);
+    return this.roster().map((p) => {
+      // Part 3b's `frozen` too: a player an admin froze shoots nobody (../pvp.js).
+      const base = { id: p.id, name: p.name, colour: p.colour, host: !!p.host, frozen: !!p.frozen };
+      if (p.id === this.meId) {
+        const v = sim && (sim.mode === 'drive' && sim.vehicle ? sim.vehicle : sim.aircraft);
+        const q = v && v.quat;
+        return {
+          ...base, me: true, ride: this.rideNow(), pos: plain(v && v.pos), quat: q ? { x: q.x, y: q.y, z: q.z, w: q.w } : null, vel: plain(v && v.vel), visible: true,
+          ghost: !!this.extraFlags.ghost, pvp: !!this.extraFlags.pvp, onGround: sim.mode === 'drive' ? true : !!(v && v.onGround),
+        };
+      }
+      const r = this.remotes.players.get(p.id);
+      const snap = r && r.sample && r.sample.snap;
+      return {
+        ...base, me: false, ride: snap ? { game: snap.game, type: snap.type } : null,
+        pos: plain(r && r.drawn), quat: r && r.quat ? { x: r.quat.x, y: r.quat.y, z: r.quat.z, w: r.quat.w } : null,
+        vel: plain(r && r.sample && r.sample.vel), visible: !!(r && r.visible),
+        // List 2, part 2: what their snapshot says (protocol.js flags), and how big what is drawn is.
+        ghost: !!(snap && snap.ghost), pvp: !!(snap && snap.pvp), onGround: !!(snap && snap.onGround),
+        radius: r && r.model && r.model.userData ? r.model.userData.mpRadius || 0 : 0,
+      };
+    });
+  }
+
+  /** What this player is in right now: { game, type }. */
+  rideNow() {
+    const sim = this.sim;
+    if (!sim) return null;
+    if (sim.mode === 'drive' && sim.vehicle) return { game: sim.vehicle.spec && sim.vehicle.spec.kind === 'car' ? 'car' : 'boat', type: sim.vehicle.spec && sim.vehicle.spec.kind === 'car' ? 'car' : 'boat' };
+    const type = sim.aircraftType ? sim.aircraftType.id : 'skylark';
+    return { game: type === 'harrier' ? 'heli' : 'flight', type };
   }
 
   /**
@@ -1436,9 +2168,16 @@ class Multiplayer {
   ended(why, detail) {
     if (this.role !== 'client') return;
     this.note(`game ended: ${why}${detail && detail !== why ? ` (${detail})` : ''}`);
+    if (why === 'shut') {
+      this.cleanup();
+      this.backToLobbies('An admin closed that game for now — everybody is back here. Pick a lobby to fly again.');
+      return;
+    }
     const words = {
       closed: 'The host closed the server',
-      kicked: 'The host took you out of this game — you can keep flying on your own, or join another server',
+      kicked: detail === 'admin'
+        ? 'An admin took you out of this game — you can keep flying on your own, or join another one'
+        : 'The host took you out of this game — you can keep flying on your own, or join another server',
       dropped: 'Lost the connection to the server — flying on your own now',
     }[why] || 'The multiplayer game ended';
     this.cleanup();
@@ -1450,10 +2189,10 @@ class Multiplayer {
     if (this.lobby) {
       const m = this.lobby;
       this.lobby = null;
-      this.note(`left lobby ${m.n} (${why})`);
+      this.note(`left ${m.world ? 'world lobby' : 'lobby'} ${m.n} (${why})`);
       // A host hands the lobby on by leaving it: the next in line claims it (lobby.js).
       m.leave(why === 'tab closed');
-      if (why !== 'menu' && why !== 'tab closed') this.toast(`You left Lobby ${m.n}`, 'info');
+      if (why !== 'menu' && why !== 'tab closed') this.toast(`You left ${lobbyLabel(m.n, m.world)}`, 'info');
       this.cleanup();
       return;
     }
@@ -1480,6 +2219,9 @@ class Multiplayer {
   }
 
   cleanup() {
+    this.holdStill(false);
+    this.me = { admin: false, muted: false, frozen: false };
+    this.events.detach();
     this.role = null;
     this.host = null;
     this.lobby = null;
@@ -1498,6 +2240,8 @@ class Multiplayer {
       else delete this.sim.gameMap[r.game];
     }
     if (!this.screenOpen) this.stopLooking();
+    // Out of a world lobby: its own socket to the public server goes too, unless the lobby screen is looking through it.
+    if (!this.lobbyScreenOpen && !this.worldWatch && !this.worldOnLookServer()) this.closeWorldSocket();
   }
 
   kick(id) {
@@ -1508,6 +2252,10 @@ class Multiplayer {
   chat(m) {
     const s = this.session;
     if (!s || !QUICK_CHAT[m]) return;
+    if (this.me.muted) {
+      this.toast('An admin has muted your chat for now', 'warn', 3);
+      return;
+    }
     const sent = s.chat(m);
     if (sent) this.toast(`You: ${QUICK_CHAT[m].text}`, 'info', 2.5);
   }
@@ -1517,9 +2265,14 @@ class Multiplayer {
       // Re-forming: only ourselves, until the lobby is back.
       return [{ id: this.meId ?? 0, name: this.profile.name, colour: this.profile.colour, host: false, ping: null }];
     }
-    if (this.role === 'host' && this.host) return this.host.roster();
+    // Read the same way on both sides (protocol.js readPlayer): host, admin, muted and frozen as flags.
+    if (this.role === 'host' && this.host) return this.host.roster().map((p) => readPlayer(p)).filter(Boolean);
     if (this.role === 'client' && this.client) {
-      const me = { id: this.meId, name: this.client.name || this.profile.name, colour: this.profile.colour, host: false, ping: this.client.ping == null ? null : Math.round(this.client.ping) };
+      const self = this.client.self || {};
+      const me = {
+        id: this.meId, name: this.client.name || this.profile.name, colour: this.profile.colour, host: false, ping: this.client.ping == null ? null : Math.round(this.client.ping),
+        admin: !!self.admin, muted: !!self.muted, frozen: !!self.frozen,
+      };
       return [me, ...this.client.players.values()].sort((a, b) => a.id - b.id);
     }
     return [];
@@ -1529,25 +2282,42 @@ class Multiplayer {
     if (!this.hud || !this.role) return;
     const list = this.roster();
     const lobby = this.lobby ? this.lobby.n : 0;
+    const world = !!(this.lobby && this.lobby.world);
     const locked = !!(!lobby && this.role === 'host' && this.host && this.host.locked);
     // The join code is on everybody's screen for the whole game: shown only if it is exactly one the game could make.
     const shown = lobby ? null : shownCode(this.server && this.server.code);
     const max = lobby ? LOBBY_MAX : (this.server && this.server.max) || MAX_PLAYERS;
-    const title = lobby ? `Lobby ${lobby} · ${lobbyName(lobby)}` : this.server ? this.server.name : '';
+    const priv = !lobby && !!(this.server && this.server.priv);
+    const title = lobby ? `${lobbyLabel(lobby, world)} · ${world ? worldName(lobby) : lobbyName(lobby)}` : priv ? 'Private match' : this.server ? this.server.name : '';
     /*
      * In a lobby nobody is the host on purpose, so nobody gets Kick or Lock
      * and nobody is labelled host; what everybody gets is Mute, which hides
      * one player's quick chat for themselves.
      */
+    // Which island, from this copy's own list of maps: the lobby's or the private match's.
+    const place = this.server && this.server.map ? mapNameFor(this.server.map) : '';
     const opts = {
       meId: this.meId, isHost: !lobby && this.role === 'host', lobby: !!lobby, muted: this.muted, max, reconnecting: this.reconnecting,
-      code: shown, server: title, locked,
+      code: shown, server: title, locked, place, priv, world,
+      // Part 3b: this player is an admin here (the host checked), so the list has the admin menu.
+      admin: !!this.me.admin && !this.reconnecting,
     };
     this.hud.roster(list, opts);
     if (this.sim && this.sim.state === 'paused') this.hud.pauseList(this.sim, true, list, opts);
-    const code = shown ? ` · code <b>${say(shown)}</b>` : '';
+    // Two short lines: where you are and how many; and, in a game joined by code, the code — the host is told to share it.
     const again = this.reconnecting ? ' · <em class="mp-again">reconnecting…</em>' : '';
-    this.hud.badge(`<b>${say(title)}</b> · ${list.length}/${max}${locked ? ' · locked' : ''}${code}${again}`);
+    const codeLine = shown ? `Code <b>${say(shown)}</b>${priv && this.role === 'host' ? ' — tell your friends' : ''}` : '';
+    // List 2, part 2: and the game's bumping rule, as its lobby card said it.
+    const rule = BUMP_SHORT[this.bumpRuleNow()] || '';
+    const placeLine = place ? `On ${say(place)}${rule ? ` · ${say(rule)}` : ''}` : '';
+    // Part 3b: an admin sees that they are one; a player an admin muted or froze is told, here as well as in a toast.
+    const left = this.me.frozen ? Math.max(1, Math.ceil((this._frozeAt + FREEZE_MS - now()) / 1000)) : 0;
+    const adminLine = this.me.frozen ? `<b class="mp-frozen">Frozen by an admin</b>${left <= 30 ? ` — ${left} s` : ''}`
+      : this.me.muted ? '<b class="mp-frozen">Your chat is muted by an admin</b>' : '';
+    const tag = this.me.admin ? ' · <b class="mp-admintag">ADMIN</b>' : '';
+    // The crown on your own badge while this game is yours (you host it): everybody else sees it over your aeroplane.
+    const crown = this.role === 'host' && !this.reconnecting ? CROWN_SVG : '';
+    this.hud.badge(`${crown}<b>${say(title)}</b> · ${list.length}/${max}${locked ? ' · locked' : ''}${tag}${again}`, [adminLine, placeLine, codeLine].filter(Boolean).join('<br>'));
   }
 
   /** The host stops (or starts again) letting new players in. */
@@ -1581,6 +2351,7 @@ class Multiplayer {
         id: this.meId, seq: this._seq, t, pos: v.pos, quat: v.quat, vel: v.vel, game: kind, type: kind,
         throttle: Math.abs(v.throttle || 0), steer: v.steer || 0, brakes: (v.brakes || 0) > 0.05,
         onGround: true, engineOn: true, lights: true, gearDown: true, gearPos: 1,
+        ghost: !!this.extraFlags.ghost, pvp: !!this.extraFlags.pvp,
       });
     }
     const ac = sim.aircraft;
@@ -1592,16 +2363,216 @@ class Multiplayer {
       gearDown: ac.gearDown, gearPos: ac.gearPos, flaps: ac.flaps, throttle: c.throttle, rpm: ac.rpm,
       pitch: c.pitch, roll: c.roll, yaw: c.yaw, brakes: (c.brakes || 0) > 0.1,
       onGround: ac.onGround, engineOn: ac.engineOn, crashed: ac.crashed, lights: ac.engineOn || ac.rpm > 0.05,
+      ghost: !!this.extraFlags.ghost, pvp: !!this.extraFlags.pvp,
     });
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Part 3b: admin                                                     */
+  /* ---------------------------------------------------------------- */
+
+  /** This device's admin key, if it has one the game accepts — asked afresh each time. */
+  adminNow() {
+    return this.adminKey && this.adminKey.valid ? this.adminKey : null;
+  }
+
+  get isAdmin() {
+    return !!this.adminNow();
+  }
+
+  /**
+   * The hangar's code box (menus.js, through extensions.js' code hook). An
+   * admin code makes this device an admin, and says so; anything else is not
+   * this feature's (null), and the ordinary codes answer it — the same
+   * answer for every wrong code.
+   */
+  async tryCode(typed) {
+    const key = await AdminKey.fromCode(typed);
+    if (!key) return null;
+    this.adminKey = key;
+    key.save();
+    this.note('this device is an admin now');
+    // Hosting right now: the host is its own server, so it is an admin here at once. A player is checked from the next game.
+    if (this.role === 'host' && this.host && !this.host.closed) {
+      this.host.me.admin = true;
+      this.host._rosterDirty = true;
+      this.syncSelf();
+      return { ok: true, note: 'Admin is on for this device — open the player list (Tab) for the admin menu.' };
+    }
+    const inGame = this.role || this.lobby;
+    return {
+      ok: true,
+      note: inGame
+        ? 'Admin is on for this device — it works from the next game you join.'
+        : 'Admin is on for this device. In any game, open the player list (Tab) for the admin menu.',
+    };
+  }
+
+  /** Admin off on this device. */
+  adminOff() {
+    AdminKey.forget();
+    this.adminKey = null;
+    this.stopWatchingPrivates();
+    this.note('admin turned off on this device');
+    if (this.lobbyScreen) this.lobbyScreen.refresh();
+  }
+
+  /** What the host says about this player right now, and what this device does about it: freeze and unfreeze. */
+  syncSelf() {
+    let me = { admin: false, muted: false, frozen: false };
+    if (this.role === 'host' && this.host) {
+      const m = this.host.me;
+      me = { admin: !!m.admin, muted: !!m.muted, frozen: m.frozenUntil > now() };
+    } else if (this.role === 'client' && this.client && this.client.self) me = { ...this.client.self };
+    const was = this.me;
+    this.me = me;
+    if (me.frozen && !was.frozen) {
+      this._frozeAt = now();
+      this.toast(`An admin has frozen you for ${Math.round(FREEZE_MS / 1000)} seconds — hang on, you’ll be let go`, 'warn', 5);
+    } else if (!me.frozen && was.frozen) {
+      this.holdStill(false);
+      this.toast('You can move again', 'good', 3);
+    }
+    if (me.muted && !was.muted) this.toast('An admin has muted your chat for now', 'warn', 5);
+    else if (!me.muted && was.muted) this.toast('Your chat is back on', 'good', 3);
+    if (me.admin && !was.admin) this.note('the host checked this device’s admin key');
+  }
+
+  /**
+   * Held still, or let go. The aeroplane's (and the boat's or car's) own
+   * step does nothing while held (gateStep), so the world goes on around a
+   * player who is simply not moving — not crashed, not paused, and carrying
+   * on at the same speed when let go.
+   */
+  holdStill(on) {
+    const sim = this.sim;
+    if (!this._held) this._held = new Set();
+    if (on && sim) {
+      for (const v of [sim.aircraft, sim.vehicle]) {
+        if (!v || typeof v !== 'object' || typeof v.update !== 'function') continue;
+        gateStep(v);
+        v._mpHeld = true;
+        this._held.add(v);
+      }
+      return;
+    }
+    if (!on) {
+      for (const v of this._held) v._mpHeld = false;
+      this._held.clear();
+    }
+  }
+
+  /** An admin's request: done by this tab if it hosts, or asked of the host. The host checks either way. */
+  adminAct(op, id) {
+    if (!this.me.admin) return false;
+    const done = this.role === 'host' && this.host ? this.host.adminAct(op, id) : this.role === 'client' && this.client ? this.client.adminAct(op, id) : false;
+    this.note(`admin: ${op} ${id}${done ? '' : ' (not done)'}`);
+    return done;
+  }
+
+  /** On the host's screen: what an admin did here, for everybody's sake said as it is. */
+  adminSaid(a) {
+    if (!a) return;
+    this.note(`admin ${a.by}: ${a.op} ${a.name || ''}`);
+    const who = a.name || 'somebody';
+    const words = {
+      kick: `${who} was taken out by an admin`, mute: `An admin muted ${who}’s chat`, unmute: `${who}’s chat is back on`,
+      freeze: `An admin froze ${who} for ${Math.round(FREEZE_MS / 1000)} s`, unfreeze: `${who} can move again`,
+    }[a.op];
+    if (words && a.id !== 0) this.toast(words, 'info', 4);
+    this.syncSelf();
+  }
+
+  /** This tab hosted, and an admin took it out of the lobby, or closed the game. */
+  removedByAdmin(why) {
+    if (this.lobby) {
+      const m = this.lobby;
+      const n = m.n;
+      this.lobby = null;
+      m.leave();
+      this.cleanup();
+      if (why === 'shut') this.backToLobbies(`An admin closed Lobby ${n} for now — everybody is back here. Pick a lobby to fly again.`);
+      else {
+        this._barred = { n, until: now() + 120000 };
+        const said = `An admin took you out of Lobby ${n} — you can keep flying on your own, or join another lobby.`;
+        this.toast(said, 'warn', 7);
+        if (this.lobbyScreen) this.lobbyScreen.status(said, 'warn');
+      }
+      return;
+    }
+    if (this.role !== 'host') return;
+    const sockets = this.hostSockets;
+    setTimeout(() => {
+      for (const x of sockets) x.sig.close();
+    }, 400);
+    this.cleanup();
+    this.backToLobbies('An admin closed your game for now — pick a lobby to fly again.');
+  }
+
+  /** Back to the lobby list, with a kind word on it — where an admin closing a game sends everybody. */
+  backToLobbies(words) {
+    const sim = this.sim;
+    this.note(`back to the lobby list: ${words}`);
+    this.toast(words, 'info', 7);
+    try {
+      if (sim && (sim.state === 'flying' || sim.state === 'paused') && typeof sim.quitToMenu === 'function') sim.quitToMenu('main');
+    } catch (err) {
+      console.warn('[mp] back to the menu', err);
+    }
+    this.openLobbies();
+    if (this.lobbyScreen) this.lobbyScreen.status(words, 'warn');
+  }
+
+  /** The admin's list of private matches on the lobby screen, kept up to date while it is open. */
+  async watchPrivates() {
+    if (!this.isAdmin || this.privateWatch || this._privLooking) return;
+    this._privLooking = true;
+    try {
+      await this.ensureBackend();
+      const net = await this.ensureLookSocket().catch(() => null);
+      if (!net || !this.lobbyScreenOpen || !this.isAdmin || this.privateWatch) return;
+      this.privateWatch = new PrivateWatch({ net, onChange: (places) => this.lobbyScreen && this.lobbyScreen.privates(places) });
+      this.lobbyScreen.privates(this.privateWatch.places);
+      this.privateWatch.start();
+    } finally {
+      this._privLooking = false;
+    }
+  }
+
+  stopWatchingPrivates() {
+    if (this.privateWatch) this.privateWatch.stop();
+    this.privateWatch = null;
+    if (this.lobbyScreen) this.lobbyScreen.privates(null);
+  }
+
+  /** An admin joins private match n of the directory, without its code. */
+  joinPrivate(n) {
+    const ui = this.lobbyScreen;
+    if (!this.isAdmin) return ui && ui.status('Only an admin can join a private match without its code.', 'warn');
+    if (!pdirOf(pdirId(n))) return undefined;
+    if (!this.profile.chosen) return ui && ui.status('Pick your username first — then you can join.', 'warn');
+    return this.join(pdirId(n));
   }
 
   /** Every frame the game is running. */
   frame(dt) {
     const t = now();
     const s = this.session;
+    // Frozen by an admin: the aeroplane (or boat, or car) is held where it is — its own step does nothing until let go.
+    if (this.me.frozen) this.holdStill(true);
     if (s) {
       let buf = null;
-      if (this.ready && !this.transition && t - this._lastSend >= 1000 / STATE_HZ - 4) {
+      /*
+       * Fifteen a second on a clock of its own, not "66 ms since the last
+       * one": that rule sent every other frame at 30 fps but every THIRD at
+       * 20-29 fps — 10 Hz on a school Chromebook, measured 13.4 Hz with
+       * frame jitter in the lag bench (tests/features/multiplayer.lag.mjs),
+       * 14.8 Hz this way. After a stall it starts again rather than burst.
+       */
+      const period = 1000 / STATE_HZ;
+      if (this.ready && !this.transition && t >= this._nextSend) {
+        this._nextSend += period;
+        if (this._nextSend < t - period) this._nextSend = t + period;
         this._lastSend = t;
         buf = this.myState(t);
       }
@@ -1611,8 +2582,8 @@ class Multiplayer {
     this._dots = this.remotes.players.size ? this.remotes.update(dt, t, this.sim, !(this.sim.hud && this.sim.hud.hidden)) : NO_DOTS;
     if (this.hud) {
       this.hud.el.style.visibility = this.sim.hud && this.sim.hud.hidden ? 'hidden' : '';
-      this.hud.place();
-      this.hud.minimap(this.sim, this._dots);
+      this.hud.place(this.sim);
+      this.hud.minimap(this.sim, this._dots, this.minimapExtras);
     }
   }
 
@@ -1659,8 +2630,15 @@ class Multiplayer {
         this.stopLooking();
       }
     } else this._screenHiddenAt = null;
-    // And the lobby list the same way.
-    if (this.lobbyWatch && !this.lobbyScreenOpen) {
+    // An admin's list of private matches: while the lobby screen is open.
+    if (this.privateWatch && !this.lobbyScreenOpen) this.stopWatchingPrivates();
+    // A freeze the host has not been heard to let go of (a host gone mid-freeze): let go after the most it can be.
+    if (this.me.frozen && now() - this._frozeAt > FREEZE_MS + 5000) {
+      this.me = { ...this.me, frozen: false };
+      this.holdStill(false);
+    }
+    // And the lobby lists the same way.
+    if ((this.lobbyWatch || this.worldWatch) && !this.lobbyScreenOpen) {
       if (this._lobbyHiddenAt == null) this._lobbyHiddenAt = t;
       else if (t - this._lobbyHiddenAt > 1500) {
         this._lobbyHiddenAt = null;
@@ -1723,6 +2701,11 @@ registerExtension({
     if (!multiplayer.installed) return;
     multiplayer.frame(dt);
   },
+  // Part 3b: the hangar's code box. An admin code is this feature's; anything else, null, and the ordinary codes answer.
+  code(sim, typed) {
+    if (!multiplayer.installed || !adminCrypto()) return null;
+    return multiplayer.tryCode(typed);
+  },
   key(sim, code, down, e) {
     // Tab let go after the game was left with it held down (Leave, in the list): the mouse still has to come back.
     if (code === 'Tab' && !down && multiplayer._mouseFreed && !multiplayer.role) {
@@ -1745,7 +2728,7 @@ registerExtension({
   devActions: [
     {
       label: 'Multiplayer lobbies',
-      hint: 'Five public lobbies, eight each, and choosing your username',
+      hint: 'Five Wi-Fi lobbies and five World lobbies, eight each, and choosing your username',
       run: (sim) => openLobbies(sim),
     },
     {

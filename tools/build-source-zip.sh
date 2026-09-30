@@ -21,7 +21,10 @@ mkdir -p "$DEST"
 # Everything needed to run the game, plus the docs that explain it.
 # NOT the download folder itself — a zip containing last week's zip is how the
 # thing ends up 4 MB of its own history.
+# NOT .claude either: the builders' tools, their worktrees and the admin keys
+# (multiplayer part 3b) live there, and none of it is the game's to publish.
 rsync -a \
+  --exclude '.claude' \
   --exclude '.git' \
   --exclude '.github' \
   --exclude 'node_modules' \
@@ -44,7 +47,9 @@ echo "  $FILES files, $SIZE"
 # The listing is captured once rather than piped per-check: `grep -q` exits on
 # the first match, `unzip` takes SIGPIPE, and under `pipefail` that reads as a
 # failed pipeline — so every file "went missing" the moment it was found.
-LISTING="$(unzip -l "$OUT")"
+# Names only (-Z1): `unzip -l` starts with "Archive: <path of the zip>", and when the
+# tree itself lives under a .claude/ folder that header tripped the leak check below.
+LISTING="$(unzip -Z1 "$OUT")"
 for need in index.html sw.js src/main.js src/vendor/three.module.js styles/main.css; do
   case "$LISTING" in
     *"island-flight-sim/$need"*) ;;
@@ -52,3 +57,6 @@ for need in index.html sw.js src/main.js src/vendor/three.module.js styles/main.
   esac
 done
 echo "  boot files present"
+case "$LISTING" in
+  *"island-flight-sim/.claude/"*) echo "LEAK: .claude/ is in the zip" >&2; exit 1 ;;
+esac

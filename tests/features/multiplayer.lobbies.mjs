@@ -10,6 +10,8 @@
  *     refused idioms refused, and every pair read against the old word filter
  *     as a mechanical second pass (ROOTS and WHOLE come from multiplayer.mjs);
  *   - the lobby list: five lobbies, counts and maps, no connection needed;
+ *   - list 3: every lobby on its own island — an empty one starts there,
+ *     whatever island its first player had picked;
  *   - eight in a lobby, a ninth told it is full and shown another;
  *   - a username already in the lobby refused with a free one to take, also
  *     when two ask at once;
@@ -133,23 +135,26 @@ export async function lobbyTests(ctx) {
   await untilT(() => watch.lobbies.every((l) => l.state === 'empty'));
   ok('the lobby list: five lobbies, all empty, with their own names', watch.lobbies.every((l) => l.state === 'empty') && watch.lobbies.map((l) => l.name).join('|') === P.LOBBY_NAMES.join('|'),
     watch.lobbies.map((l) => `${l.n}:${l.state}`).join(' '));
+  const isles = watch.lobbies.map((l) => l.mapName);
+  ok('list 3: and each on its own island, known before anybody is in it — five different ones', watch.lobbies.every((l, i) => l.map === P.LOBBY_MAPS[i] && l.home === P.LOBBY_MAPS[i])
+    && new Set(isles).size === 5 && isles.join('|') === 'Kestrel Island|Coral Atoll|Aurora Fjords|Ember Isle|Gateway International', isles.join(', '));
 
-  // The first player into lobby 3 hosts it, on their own map.
+  // The first player into lobby 3 hosts it — on the lobby's island (Aurora Fjords), not the one they had picked (list 3).
   const names = ['Swift Falcon', 'Brave Otter', 'Sunny Puffin', 'Jolly Penguin', 'Clever Koala', 'Mighty Moose', 'Gentle Lark', 'Happy Hedgehog', 'Plucky Puffin'];
   const a = await member(3, names[0], { map: 'atoll', game: 'flight' });
   const ra = await enter(a);
-  ok('the first player into an empty lobby hosts it, on their island', ra.r && ra.r.role === 'host' && a.server.map === 'atoll' && a.server.name === 'Cloud Base' && a.server.lobby === 3,
-    ra.err ? ra.err.code : `${ra.r.role} ${a.server.name} ${a.server.map}`);
+  ok('the first player into an empty lobby hosts it — on the lobby’s own island, not the one they had picked', ra.r && ra.r.role === 'host' && a.server.map === 'fjord' && a.server.name === 'Cloud Base' && a.server.lobby === 3,
+    ra.err ? ra.err.code : `${ra.r.role} ${a.server.name} ${a.server.map} (picked atoll)`);
   await untilT(() => watch.lobbies[2].state === 'open');
   const l3 = watch.lobbies[2];
-  ok('and the list shows it: 1/8, on Coral Atoll, with no connection opened to find out', l3.state === 'open' && l3.players === 1 && l3.max === 8 && l3.mapName === 'Coral Atoll',
+  ok('and the list shows it: 1/8, on Aurora Fjords, with no connection opened to find out', l3.state === 'open' && l3.players === 1 && l3.max === 8 && l3.mapName === 'Aurora Fjords',
     `${l3.state} ${l3.players}/${l3.max} ${l3.mapName}`);
 
   // Six more.
   const crew = [];
   for (const name of names.slice(1, 7)) crew.push(await member(3, name, { map: 'kestrel', game: 'boat' }));
   const rs = await Promise.all(crew.map(enter));
-  ok('six more join lobby 3, each told the lobby’s map, not their own', rs.every((x) => x.r && x.r.role === 'client' && x.r.welcome.server.map === 'atoll' && x.r.welcome.server.max === 8),
+  ok('six more join lobby 3, each told the lobby’s map, not their own', rs.every((x) => x.r && x.r.role === 'client' && x.r.welcome.server.map === 'fjord' && x.r.welcome.server.max === 8),
     rs.map((x) => (x.err ? x.err.code : x.r.role)).join(','));
 
   // A username already there: refused, with one that is free.
@@ -195,8 +200,8 @@ export async function lobbyTests(ctx) {
   const c1 = await member(4, 'Trusty Toucan', { map: 'meadow', game: 'flight' });
   const c2 = await member(4, 'Lucky Llama', { map: 'fjord', game: 'flight' });
   const claims = await Promise.all([enter(c1), enter(c2)]);
-  ok('two arriving at an empty lobby together: one hosts, the other joins them', claims.every((x) => x.r) && hostsOf(4).length === 1 && inLobby(4).length === 2
-    && c1.server.map === c2.server.map, claims.map((x) => (x.err ? x.err.code : x.r.role)).join(','));
+  ok('two arriving at an empty lobby together: one hosts, the other joins them — on Ember Isle, whichever claimed it', claims.every((x) => x.r) && hostsOf(4).length === 1 && inLobby(4).length === 2
+    && c1.server.map === 'ember' && c2.server.map === 'ember', claims.map((x) => (x.err ? x.err.code : x.r.role)).join(','));
 
   await untilT(() => watch.lobbies[1].players === 2 && watch.lobbies[3].players === 2);
   const shown = watch.lobbies.map((l) => `${l.n}:${l.players}`).join(' ');
@@ -213,7 +218,7 @@ export async function lobbyTests(ctx) {
   ok('the host leaves: the lobby re-forms by itself, round the player who joined next', h3.length === 1 && h3[0] === next && inLobby(3).length === 7 && h3[0].session.count === 7,
     `${Math.round(reform1)} ms; host ${h3.map((m) => m.profile.name).join(',')} (next in line: ${next.profile.name}); ${h3[0] && h3[0].session.count} in`);
   ok('everybody was told "reconnecting" and nobody was put out', stay.every((m) => m.events.some((e) => e[0] === 'reconnecting')) && !stay.some((m) => m.events.some((e) => e[0] === 'out')));
-  ok('the lobby kept its map', stay.every((m) => m.server && m.server.map === 'atoll'));
+  ok('the lobby kept its map', stay.every((m) => m.server && m.server.map === 'fjord'));
   const reNames = h3[0].session.roster().map((p) => p.name);
   ok('and every username in it is still one of a kind', new Set(reNames).size === reNames.length && reNames.length === 7, reNames.join(', '));
   await untilT(() => stay.every((m) => m.session && (m.isHost ? m.session.count === 7 : m.session.players.size === 6)));

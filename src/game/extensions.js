@@ -34,6 +34,9 @@
  *     key(sim, code, down, e) {},     // raw keys while flying; return true to
  *                                     //   consume them so the aeroplane never sees them
  *     devActions: [{ label, hint, run(sim) }],   // buttons in the Dev mode panel
+ *     code(sim, typed) {},            // a code typed in the hangar's "Got a code?" box:
+ *                                     //   null if it is not this feature's, or a promise
+ *                                     //   of null or { ok, note } (multiplayer's admin code)
  *   });
  *
  * Every field is optional except `id`.
@@ -137,6 +140,27 @@ export function extUpdate(sim, dt) {
 /** True if a feature placed the camera itself this frame. */
 export function extCamera(sim, dt) {
   return each('camera', (e) => e.camera(sim, dt, sim.camera));
+}
+
+/**
+ * A code typed in the hangar's "Got a code?" box, offered to the features
+ * before the hangar's own codes (menus.js). The first feature whose code()
+ * answers { ok: true, note } has it; null from all of them — and a feature
+ * that throws counts as null, and is switched off as anywhere else — and
+ * the hangar's own codes answer, the same as before.
+ */
+export async function extCode(sim, typed) {
+  for (const e of EXTENSIONS) {
+    if (broken.has(e.id) || typeof e.code !== 'function') continue;
+    try {
+      const r = await e.code(sim, typed);
+      if (r && r.ok) return r;
+    } catch (err) {
+      broken.add(e.id);
+      console.error(`[ext] "${e.id}" threw in code() and has been switched off for this session:`, err);
+    }
+  }
+  return null;
 }
 
 /** Every Dev-mode action any feature offers, for the settings panel. */

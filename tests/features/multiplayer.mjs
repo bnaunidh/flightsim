@@ -686,6 +686,94 @@ const diceFor = (codes) => {
   ok('a jump of hundreds of metres is a respawn, and is drawn at once', Math.abs(r.x - (x + 500)) < 1e-9);
 }
 
+/* ---- predict: drawn where they are now (list 2, "less lag") ------------ */
+{
+  const I = await import('../../src/features/multiplayer/interp.js');
+  // A Skylark in a steady 30° turn: 55 m/s, turning at g·tan30/v.
+  const w = (9.81 * Math.tan(Math.PI / 6)) / 55;
+  const at = (tMs) => {
+    const s = tMs / 1000;
+    const psi = w * s;
+    const R = 55 / w;
+    return {
+      pos: { x: R * Math.sin(psi), y: 400, z: -R * (1 - Math.cos(psi)) + 0 },
+      vel: { x: 55 * Math.cos(psi), y: 0, z: -55 * Math.sin(psi) },
+      quat: { x: 0, y: Math.sin(-psi / 2 + Math.PI / 4), z: 0, w: Math.cos(-psi / 2 + Math.PI / 4) },
+    };
+  };
+  const tr = new I.Track();
+  const clock = 7000;
+  for (let t = 0; t <= 2000; t += 1000 / 15) tr.push({ t, ...at(t) }, t + clock + 8);
+  // 90 ms after the last snapshot was sent — what a receiver sees just before the next one lands.
+  const last = Math.floor(2000 / (1000 / 15)) * (1000 / 15);
+  const now = last + clock + 8 + 90;
+  const p = tr.predict(now);
+  const truth = at(last + 90);
+  const err = Math.hypot(p.pos.x - truth.pos.x, p.pos.y - truth.pos.y, p.pos.z - truth.pos.z);
+  const old = tr.sample(now);
+  const oldErr = Math.hypot(old.pos.x - truth.pos.x, old.pos.z - truth.pos.z);
+  ok('predict: a Skylark in a 30° turn, guessed 90 ms past its last snapshot, is within 5 cm of where it is', err < 0.05, `${(err * 100).toFixed(1)} cm (sample(), 100 ms in the past: ${oldErr.toFixed(1)} m)`);
+  const ang = (I.quatAngle(p.quat, truth.quat) * 180) / Math.PI;
+  ok('and it is pointing the right way: the turn carried on', ang < 0.5, `${ang.toFixed(2)}° off`);
+  const far = tr.predict(last + clock + 8 + 5000);
+  const hold = tr.predict(last + clock + 8 + 9000);
+  const lastSnap = tr.snaps[tr.snaps.length - 1];
+  const ran = Math.hypot(far.pos.x - lastSnap.pos.x, far.pos.z - lastSnap.pos.z);
+  ok('predict: a stream that stops coasts a little way to a stop, and is held there',
+    Math.abs(far.pos.x - hold.pos.x) < 1e-6 && far.vel.x === 0 && ran > 5 && ran < 25, `${ran.toFixed(1)} m past the last snapshot, at 55 m/s`);
+
+  // The rotation smoother: a 4° disagreement at a seam is eased over, a respawn is not.
+  const rs = new I.RotSmoother();
+  const q0 = { x: 0, y: 0, z: 0, w: 1 };
+  rs.step(q0, { x: 0, y: 0, z: 0 }, 1 / 30);
+  const q4 = { x: 0, y: Math.sin((4 * Math.PI) / 360), z: 0, w: Math.cos((4 * Math.PI) / 360) };
+  const first = rs.step(q4, { x: 0, y: 0, z: 0 }, 1 / 30);
+  const firstDeg = (I.quatAngle(first, q0) * 180) / Math.PI;
+  let o = first;
+  for (let i = 0; i < 20; i++) o = rs.step(q4, { x: 0, y: 0, z: 0 }, 1 / 30);
+  ok('a 4° seam in attitude is turned through over a few frames, not in one', firstDeg < 1.5 && I.quatAngle(o, q4) < 0.02, `${firstDeg.toFixed(2)}° in the first frame`);
+  const q90 = { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 };
+  const snapped = rs.step(q90, { x: 0, y: 0, z: 0 }, 1 / 30);
+  ok('and a respawn facing another way is gone to at once', I.quatAngle(snapped, q90) < 1e-6);
+}
+
+/* ---- the host's bundles ------------------------------------------------ */
+{
+  const snaps = [1, 2, 5].map((id) => P.encodeState({ id, t: 100 * id, pos: { x: id, y: 2, z: 3 }, quat: { w: 1 }, vel: {}, game: 'flight', type: id === 5 ? 'harrier' : 'skylark' }));
+  const b = P.encodeBundle(snaps);
+  const back = P.decodeStates(b);
+  ok('a bundle carries three snapshots and gives back three', back.length === 3 && back.map((s) => s.id).join() === '1,2,5' && back[2].type === 'harrier', back.map((s) => s.id).join());
+  const u = new Uint8Array(b);
+  const junk = [u.slice(0, u.length - 1), Uint8Array.of(0x42, 0), Uint8Array.of(0x42, 9, 1, 2), (() => { const x = u.slice(); x[2] = 200; return x; })(), Uint8Array.from([...u, 7])];
+  ok('a malformed bundle is nothing, not a crash', junk.every((j) => P.decodeBundle(j.buffer) === null && P.decodeStates(j.buffer).length === 0));
+  ok('and a plain snapshot still reads as one', P.decodeStates(snaps[0]).length === 1);
+
+  // Eight in a lobby, each sending 15 a second for 2 s; count the host's packets with bundling off (as before) and on.
+  const run = (bundleMs) => {
+    let t = 0;
+    const host = new S.HostSession({ profile: { name: 'Brave Otter', colour: P.COLOURS[0], key: 'h' }, server: { map: 'kestrel', game: 'flight' }, mode: 'lobby', now: () => t });
+    host.bundleMs = bundleMs;
+    const got = new Map();
+    for (let id = 1; id <= 7; id++) {
+      got.set(id, { packets: 0, snaps: 0, latest: new Map() });
+      host.players.set(id, { id, name: `P${id}`, link: { sendState: (buf) => { const g = got.get(id); g.packets++; for (const s of P.decodeStates(buf)) { g.snaps++; g.latest.set(s.id, s.t); } return true; }, send() { return true; }, lastHeard: 0, state: 'open' } });
+    }
+    const phase = [0, 9, 17, 23, 31, 44, 52, 61];
+    for (t = 0; t < 2000; t += 1) {
+      for (let id = 1; id <= 7; id++) if ((t - phase[id]) % 67 === 0 && t >= phase[id]) host._state(host.players.get(id), P.encodeState({ id, t, pos: { x: id }, quat: { w: 1 }, vel: {}, game: 'flight', type: 'skylark' }));
+      // The host's own frames at 30 fps, its own snapshot on every other one.
+      if (t % 33 === 0) host.tick(t, t % 66 === 0 ? P.encodeState({ id: 0, t, pos: { x: 0 }, quat: { w: 1 }, vel: {}, game: 'flight', type: 'skylark' }) : null);
+    }
+    const all = [...got.values()];
+    return { perSec: all.reduce((a, g) => a + g.packets, 0) / 2, perPlayer: all.map((g) => g.packets / 2), fresh: all.every((g) => g.latest.size === 7 && [...g.latest.values()].every((x) => x > 1850)) };
+  };
+  const before = run(0);
+  const after = run(S.BUNDLE_MS);
+  ok('eight in a lobby: the host sends a fraction of the packets it did, and every player still hears all seven others',
+    after.perSec < before.perSec / 4 && after.fresh && before.fresh && Math.max(...after.perPlayer) <= 21,
+    `${before.perSec} packets/s from the host relaying each → ${after.perSec}/s bundled (${Math.min(...after.perPlayer)}-${Math.max(...after.perPlayer)} per player)`);
+}
+
 /* ---- the signaling server --------------------------------------------- */
 /*
  * `--real` runs everything below against the public PeerJS server instead of
@@ -886,7 +974,11 @@ async function makeClient(target, name, key = `${name}-key`, rtc = RTC, connectT
 
   // The host's own snapshot reaches everybody as player 0.
   H.host.tick(performance.now(), P.encodeState({ id: 4, t: 2000, pos: { x: 9, y: 9, z: 9 }, quat: { w: 1 }, vel: {}, game: 'flight', type: 'courier' }));
-  await untilT(() => clients.every((c) => c.events.some((e) => e[0] === 'state' && e[1].id === 0)));
+  // The host's frames go on: a snapshot held for a player (bundling, session.js) goes out on the next one that is due.
+  await untilT(() => {
+    H.host.tick(performance.now());
+    return clients.every((c) => c.events.some((e) => e[0] === 'state' && e[1].id === 0));
+  });
   ok("the host's snapshot reaches all four as player 0", clients.every((c) => c.events.some((e) => e[0] === 'state' && e[1].id === 0 && e[1].type === 'courier')));
 
   // Quick chat.
@@ -1286,11 +1378,169 @@ if (!REAL || LAN) {
   const stuck = await makeClient(P.slotId(hash, H2.claim.n), 'Eli', 'eli', blocked, 800);
   ok('failed ICE gives the kind message, not a hang — and points at the code', stuck.error && /over this Wi-Fi.*code/.test(stuck.error.message) && Date.now() - t0 < 3000, stuck.error && stuck.error.message);
   const stuck2 = await makeClient(P.codeId(H2.code.code), 'Eli', 'eli', blocked, 800);
-  ok('by code, it says the two networks will not connect', stuck2.error && /two networks/.test(stuck2.error.message), stuck2.error && stuck2.error.message);
+  ok('by code, it says so in words a child can act on: the friend’s internet, and the code', stuck2.error && /Couldn’t reach your friend’s game — ask them to check their internet/.test(stuck2.error.message), stuck2.error && stuck2.error.message);
   H.host.close();
   H2.host.close();
   await sleep(300);
   for (const s of [H.claim.sig, H.code.sig, H2.claim.sig, H2.code.sig]) s.close();
+}
+
+/* ---- range: joins by code across networks (list 2) ---------------------- */
+{
+  const L = await import('../../src/features/multiplayer/link.js');
+  const C = (t, extra = '') => `candidate:1 1 udp 1 ${t} ${extra}`.trim();
+  ok('range: a relay candidate may go for a join by code, never on the Wi-Fi',
+    L.candidateAllowed(C('198.51.100.9 3478 typ relay raddr 203.0.113.77 rport 5000'), 'v4')
+    && !L.candidateAllowed(C('198.51.100.9 3478 typ relay raddr 203.0.113.77 rport 5000'), 'lan')
+    && L.candidateAllowed(C('198.51.100.9 3478 typ relay raddr 0.0.0.0 rport 0'), 'v4'));
+  ok('range: but not one that names this device’s IPv6 address as where it came from, nor an IPv6 srflx',
+    !L.candidateAllowed(C('198.51.100.9 3478 typ relay raddr 2001:db8:77::1 rport 5000'), 'v4')
+    && !L.candidateAllowed(C('2001:db8:77::1 9 typ srflx raddr :: rport 0'), 'v4'));
+  ok('range: two STUN servers in one entry, and no relay until somebody configures one', L.ICE_SERVERS.length === 1 && L.ICE_SERVERS[0].urls.length === 2 && L.RELAY_SERVERS.length === 0 && L.CODE_CONNECT_MS === 25000);
+  // A configured relay: offered with the STUN servers for a join by code, alone (relay only) on the second try, and never on the Wi-Fi.
+  const relay = [{ urls: 'turn:relay.test:3478', username: 'u', credential: 'c' }];
+  const sig = makeSig();
+  await sig.open(P.playerPeerId());
+  const net = new Net(sig, { RTC, relayServers: relay });
+  const first = net.connect(P.codeId('maple-kite-42'), 'join');
+  const second = net.connect(P.codeId('maple-kite-42'), 'join', { relayOnly: true });
+  const lan = net.connect(P.slotId(hash, 1), 'info');
+  await sleep(20);
+  ok('range: a configured relay is offered for a join by code, forced on the second try, and never used on the Wi-Fi',
+    first.pc.cfg.iceServers.length === 2 && !first.pc.cfg.iceTransportPolicy && second.pc.cfg.iceTransportPolicy === 'relay' && lan.pc.cfg.iceServers.length === 0,
+    JSON.stringify([first.pc.cfg, second.pc.cfg.iceTransportPolicy, lan.pc.cfg.iceServers.length]));
+  ok('range: a join by code has 25 s to connect, a join on the Wi-Fi 15 s', new Net(sig, { RTC }).codeConnectMs === 25000 && new Net(sig, { RTC }).connectTimeoutMs === 15000);
+  for (const l of [first, second, lan]) l.close();
+  net.destroy();
+  sig.close();
+  // Nobody holding the code: the words say to check it.
+  const gone = await makeClient(P.codeId('maple-kite-43'), 'Sam', 'samgonekeysamgonekey');
+  ok('range: a code nobody is using says to check it with the friend', gone.error && gone.error.code === 'gone' && /No game has that code right now/.test(gone.error.message), gone.error && gone.error.message);
+  gone.sig.close();
+  // What a private match's pong carries now: head-count, most, map and game, as numbers — for the card a friend sees.
+  const pc = P.readPrivateCount({ k: 'pong', n: 3, max: 8, lk: 0, m: 0, g: 0 });
+  ok('range: a private match answers a ping with numbers a card can show — 3/8 on the first island, not locked',
+    pc && pc.players === 3 && pc.max === 8 && pc.map === P.mapAtIndex(0) && !pc.locked && P.readPrivateCount({ k: 'pong', n: 1, max: 8 }).map === null);
+}
+
+/* ---- a private match, and the game-events channel (events.js) ---------- */
+{
+  const E = await import('../../src/features/multiplayer/events.js');
+  const defs = (ev) => ev
+    .define('race:gate', { validate: (d) => (d && Number.isInteger(d.gate) && d.gate >= 0 && d.gate < 40 ? { gate: d.gate } : null), rate: 5 })
+    .define('race:start', { from: 'host' })
+    .define('free')
+    .define('race', { from: 'host', validate: (d) => (d && Number.isInteger(d.lap) && d.lap >= 0 && d.lap < 10 ? { lap: d.lap } : null) });
+  const code = await S.claimCode({ makeSig });
+  const hostEv = defs(new E.GameEvents());
+  const host = new S.HostSession({
+    mode: 'code',
+    profile: { name: 'Brave Otter', colour: P.COLOURS[0], key: 'hostkeyhostkeyhostke' },
+    server: { name: 'Cloud Base', map: 'kestrel', mapName: 'Kestrel Island', game: 'flight', code: code.code, slot: 0 },
+    onEvent: (t, a, b) => {
+      if (t === 'gev') hostEv.fromWire(a, b);
+      if (t === 'join') hostEv.joined(a);
+    },
+  });
+  host.attach(new Net(code.sig, { RTC }));
+  hostEv.attach(host, 'host', 0);
+  const locals = [];
+  hostEv.on('mp:join', (p) => locals.push(p.name));
+  const got = (ev, kind) => {
+    const list = [];
+    ev.on(kind, (d, from, meta) => list.push({ d, from: from && from.id, host: from && from.host, toHost: !!(meta && meta.toHost) }));
+    return list;
+  };
+  const hGate = got(hostEv, 'race:gate');
+  const join = async (name, key) => {
+    const sig = makeSig();
+    await sig.open(P.playerPeerId());
+    const ev = defs(new E.GameEvents());
+    const c = new S.ClientSession({
+      net: new Net(sig, { RTC }), target: P.codeId(code.code), profile: { name, colour: P.COLOURS[2], key },
+      onEvent: (t, a, b) => {
+        if (t === 'gev') ev.fromWire(a, b);
+        if (t === 'gst') ev.stateFromWire(a);
+      },
+    });
+    let welcome = null;
+    let error = null;
+    try {
+      welcome = await c.start();
+      ev.attach(c, 'client', welcome.you);
+    } catch (err) {
+      error = err;
+    }
+    return { c, ev, welcome, error, sig };
+  };
+  const A = await join('Swift Falcon', 'akeyakeyakeyakeyakey');
+  const B = await join('Sunny Puffin', 'bkeybkeybkeybkeybkey');
+  ok('a private match: friends with the code get in, told it is private and that eight is the most',
+    A.welcome && B.welcome && A.welcome.server.priv === true && A.welcome.server.max === 8 && A.welcome.server.code === code.code && !A.welcome.server.slot
+    // ...and the island it was made on, which is where they are taken.
+    && A.welcome.server.map === 'kestrel' && B.welcome.server.mapName === 'Kestrel Island',
+    A.welcome ? JSON.stringify({ priv: A.welcome.server.priv, max: A.welcome.server.max, slot: A.welcome.server.slot }) : A.error && A.error.message);
+  const dupe = await join('Swift Falcon', 'ckeyckeyckeyckeyckey');
+  ok('and one username to one player there too, with a free one offered', dupe.error && dupe.error.code === 'name' && /^Swift Falcon \d+$/.test(dupe.error.suggest || ''), dupe.error && `${dupe.error.code} ${dupe.error.suggest}`);
+  dupe.sig.close();
+  await untilT(() => A.c.players.size === 2 && B.c.players.size === 2);
+
+  const aGate = got(A.ev, 'race:gate');
+  const bGate = got(B.ev, 'race:gate');
+  const bStart = got(B.ev, 'race:start');
+  const aStart = got(A.ev, 'race:start');
+  ok('events: a player sends a defined kind; it passes its own validate() on the way out', A.ev.send('race:gate', { gate: 3 }) && !A.ev.send('race:gate', { gate: 'three' }) && !A.ev.send('nobody-defined-this', {}));
+  await untilT(() => bGate.length && hGate.length);
+  ok('events: the host hears it and relays it, stamped with who sent it; the sender does not hear itself',
+    bGate.length === 1 && bGate[0].d.gate === 3 && bGate[0].from === A.welcome.you && hGate[0].from === A.welcome.you && aGate.length === 0, JSON.stringify({ b: bGate, h: hGate }));
+  // A modified player: speaks for somebody else, sends a host-only kind, a kind nobody defined, and junk data.
+  A.c.link.send({ t: 'gev', k: 'race:gate', d: { gate: 7 }, f: B.welcome.you });
+  A.c.link.send({ t: 'gev', k: 'race:start', d: null });
+  A.c.link.send({ t: 'gev', k: 'not-a-kind', d: null });
+  A.c.link.send({ t: 'gev', k: 'race:gate', d: { gate: 1e9 } });
+  await sleep(150);
+  ok('events: a modified player cannot speak for another, send a host-only kind, an undefined kind or junk',
+    bGate.length === 2 && bGate[1].from === A.welcome.you && bStart.length === 0 && hostEv.dropped.some((x) => /not the host/.test(x)) && hostEv.dropped.some((x) => /not-a-kind/.test(x)) && hostEv.dropped.some((x) => /validate/.test(x)),
+    hostEv.dropped.join(' | '));
+  ok('events: a host-only kind cannot even be sent by a player', !A.ev.send('race:start'));
+  A.ev.toHost('race:gate', { gate: 9 });
+  await untilT(() => hGate.some((g) => g.toHost));
+  await sleep(100);
+  ok('events: toHost() is heard by the host alone, marked as a claim', hGate.some((g) => g.toHost && g.d.gate === 9) && !bGate.some((g) => g.d.gate === 9));
+  ok('events: the host sends a host-only kind to everybody', hostEv.send('race:start'));
+  await untilT(() => bStart.length && aStart.length);
+  ok('events: and both players get it, from the host', bStart[0] && bStart[0].host === true && aStart[0] && aStart[0].from === 0);
+  // No free text without a validate(): ids and numbers only.
+  ok('events: without a validate(), no words — ids, numbers, booleans only', !A.ev.send('free', { say: 'hello there' }) && !A.ev.send('free', { say: 'x'.repeat(30) }) && A.ev.send('free', { n: 3, id: 'gate-7', on: true, list: [1, 2] }));
+  // Rate: five a second, bursts of ten.
+  const before = bGate.length;
+  for (let i = 0; i < 40; i++) A.c.link.send({ t: 'gev', k: 'race:gate', d: { gate: i % 40 } });
+  await sleep(250);
+  const through = bGate.length - before;
+  ok('events: a player sending forty at once gets its burst through and no more', through >= 5 && through <= 11, `${through} of 40 relayed`);
+  // Shared state, host-authoritative.
+  const aRace = [];
+  A.ev.onState('race', (v) => aRace.push(v));
+  ok('state: only the host sets it', hostEv.setState('race', { lap: 2 }) && !A.ev.setState('race', { lap: 5 }) && !hostEv.setState('race', { lap: 99 }));
+  await untilT(() => A.ev.getState('race') && B.ev.getState('race'));
+  ok('state: everybody sees the host’s value', A.ev.getState('race').lap === 2 && B.ev.getState('race').lap === 2 && aRace.length === 1);
+  const C = await join('Jolly Penguin', 'dkeydkeydkeydkeydkey');
+  await untilT(() => C.ev.getState('race'));
+  ok('state: and somebody who joins later has it straight away', C.ev.getState('race') && C.ev.getState('race').lap === 2 && locals.includes('Jolly Penguin'));
+  hostEv.setState('race', null);
+  await untilT(() => A.ev.getState('race') === undefined && C.ev.getState('race') === undefined);
+  ok('state: cleared for everybody', A.ev.getState('race') === undefined && aRace[aRace.length - 1] === undefined);
+  // Out of a game: nothing is sent, nothing throws.
+  const solo = defs(new E.GameEvents());
+  ok('events: outside a game, send() is false and nothing throws', solo.send('race:gate', { gate: 1 }) === false && solo.toHost('race:gate', { gate: 1 }) === false && solo.players().length === 0 && !solo.active);
+  // A ninth player: full.
+  const more = [];
+  for (let i = 0; i < 5; i++) more.push(await join(['Clever Koala', 'Mighty Moose', 'Gentle Lark', 'Happy Hedgehog', 'Plucky Puffin'][i], `m${i}keym${i}keym${i}keym${i}ke`));
+  ok('a private match holds eight; the ninth is told it is full', more.slice(0, 4).every((m) => m.welcome) && more[4].error && more[4].error.code === 'full', more.map((m) => (m.welcome ? 'in' : m.error.code)).join(','));
+  host.close();
+  await sleep(300);
+  for (const x of [A, B, C, ...more]) x.sig.close();
+  code.sig.close();
 }
 
 /* ---- lobbies and usernames (multiplayer.lobbies.mjs) ------------------ */
@@ -1305,6 +1555,29 @@ if (!REAL || LAN) {
   ok('no username went through the signaling server in any of the lobby tests', sent.length > before && !sent.slice(before).some((m) => lobbyNamed.test(m)),
     `${sent.length - before} messages`);
   console.log(`lobby numbers: ${JSON.stringify(ctx.lobbyNumbers)}`);
+}
+
+/* ---- list 3: lobby islands and the world lobbies (multiplayer.worlds.mjs) ---- */
+{
+  const L = await import('../../src/features/multiplayer/lobby.js');
+  const { worldTests } = await import('./multiplayer.worlds.mjs');
+  const ctx = { P, S, L, Signaling, Net, backend, WS: LogWS, RTC, makeFakeRTC, ok, sleep, until, REAL, server };
+  const before = sent.length;
+  await worldTests(ctx);
+  const worldNamed = /Swift Falcon|Brave Otter|Sunny Puffin|Kind Koala|Lucky Llama|Zany Zebra|Lucky Lark|Plucky Puffin/;
+  ok('no username went through the signaling server in any of the world lobby tests', sent.length > before && !sent.slice(before).some((m) => worldNamed.test(m)),
+    `${sent.length - before} messages`);
+}
+
+/* ---- part 3b: the crown and admins (multiplayer.admin.mjs) ------------ */
+{
+  const L = await import('../../src/features/multiplayer/lobby.js');
+  const { adminTests } = await import('./multiplayer.admin.mjs');
+  const before = sent.length;
+  await adminTests({ P, S, L, Signaling, Net, backend, WS: LogWS, RTC, ok, sleep, until, REAL, server });
+  // An admin's proof and requests go player to host, never through the signaling server.
+  ok('no admin proof, request or username went through the signaling server', sent.length > before && !sent.slice(before).some((m) => /"prove"|"chal"|"adm"|Swift Falcon|Sunny Puffin/.test(m)),
+    `${sent.length - before} messages`);
 }
 
 const failed = results.filter((r) => !r.pass);

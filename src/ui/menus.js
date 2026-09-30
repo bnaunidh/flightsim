@@ -13,7 +13,7 @@ import { PRESETS, TIMES, CONDITIONS } from '../world/weather.js';
 import { ACTIONS, keyLabel } from '../flight/input.js';
 import { CREDITS_HTML } from './credits.js';
 import { MAPS } from '../world/maps.js';
-import { extDevActions } from '../game/extensions.js';
+import { extDevActions, extCode } from '../game/extensions.js';
 import { loadFreePresets, saveFreePresets, MAX_FREE_PRESETS } from '../core/storage.js';
 import * as Prog from '../game/progression.js';
 import { LIVERIES, schemeFor } from '../aircraft/liveries.js';
@@ -792,7 +792,7 @@ export class Menus {
           </button>
           <button class="card-btn" data-act="multiplayer">
             <span class="card-icon">${icon('players', 24)}</span>
-            <span class="card-body"><strong>Multiplayer</strong><em>Fly with your friends — five lobbies on your Wi-Fi, eight in each, or a friend by code</em></span>
+            <span class="card-body"><strong>Multiplayer</strong><em>Fly with friends — five open lobbies, or a private match with a code</em></span>
           </button>
           <button class="card-btn" data-act="maps">
             <span class="card-icon">${icon('map', 24)}</span>
@@ -1953,7 +1953,7 @@ export class Menus {
 
         <h3 class="fail-heading">Got a code?</h3>
         <div class="code-row">
-          <input type="text" data-code placeholder="Ask the CEO" maxlength="20">
+          <input type="text" data-code placeholder="Ask the CEO" maxlength="80" autocomplete="off" autocapitalize="off" spellcheck="false">
           <button data-redeem>Redeem</button>
         </div>
         <p class="hint tiny" data-code-msg>Codes pay out once each.</p>
@@ -2171,15 +2171,27 @@ export class Menus {
         return;
       }
       if (e.target.closest('[data-redeem]')) {
-        const p = this.prog || Prog.load();
-        const r = Prog.redeem(p, s.querySelector('[data-code]').value);
-        s.querySelector('[data-code-msg]').textContent = r.ok
-          ? `${r.note}${r.credits ? ` — ${r.credits} credits` : ''}${r.rank ? ` — you are now ${r.rank}` : ''}`
-          : r.why;
-        if (r.ok) s.querySelector('[data-code]').value = '';
-        render();
-        this.syncBar();
-        this.syncFleetLocks && this.syncFleetLocks();
+        const box = s.querySelector('[data-code]');
+        const msg = s.querySelector('[data-code-msg]');
+        const typed = box.value;
+        const here = () => {
+          const p = this.prog || Prog.load();
+          const r = Prog.redeem(p, typed);
+          msg.textContent = r.ok
+            ? `${r.note}${r.credits ? ` — ${r.credits} credits` : ''}${r.rank ? ` — you are now ${r.rank}` : ''}`
+            : r.why;
+          if (r.ok && box.value === typed) box.value = '';
+          render();
+          this.syncBar();
+          this.syncFleetLocks && this.syncFleetLocks();
+        };
+        // A feature's code first — multiplayer's admin code (extensions.js extCode) — then the hangar's own.
+        extCode(null, typed).then((r) => {
+          if (!r) return here();
+          msg.textContent = r.note;
+          if (box.value === typed) box.value = '';
+          return undefined;
+        }, here);
       }
     });
 

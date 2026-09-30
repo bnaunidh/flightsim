@@ -31,7 +31,20 @@ export const OUTFITS = {
   pilot: { shirt: 0xf4f6f8, trousers: 0x1f2a3a, shoes: 0x16181c, cap: 0x1f2a3a, band: 0xe0b53a, tie: 0x1f2a3a },
   /** Ramp crew: navy overalls, hi-vis vest, ear defenders. */
   staff: { shirt: 0x24324a, trousers: 0x24324a, shoes: 0x2a2a2a, vest: 0xd2f51c, stripe: 0xdfe6ea, muffs: 0xf07a1c },
+  /*
+   * The people in the airport's stories (events/hijack.js): a police officer
+   * in a hi-vis vest and a peaked cap, the team in dark kit and a helmet, and
+   * the man in the hoodie. They were a box for legs, a box for a body and a
+   * ball for a head, slid along the apron with a hop; now they are people
+   * like everybody else and walk.
+   */
+  police: { shirt: 0x1f2d4a, trousers: 0x1b2438, shoes: 0x141414, vest: 0xd2f51c, stripe: 0xdfe6ea, cap: 0x1b2438, band: 0xf4f6f8 },
+  tactical: { shirt: 0x30353d, trousers: 0x2a2f36, shoes: 0x141414, vest: 0x3d444d, helmet: 0x262b31 },
+  hijacker: { shirt: 0x7d838c, trousers: 0x3b5f8a, shoes: 0xe8e8e8 },
 };
+
+/** Outfits with long sleeves: the forearm is the shirt, not skin. */
+const LONG_SLEEVES = new Set(['pilot', 'police', 'tactical', 'hijacker']);
 
 /* ------------------------------------------------------------------ */
 /* Merging parts into one vertex-coloured geometry                      */
@@ -163,6 +176,13 @@ const THIGH = 0.42;
 const SHIN = 0.42;
 const UPPER_ARM = 0.28;
 const FOREARM = 0.26;
+/** Knee pivot to the bottom of the shoe: the shin and the shoe's own depth. */
+const SOLE = HIP_Y - THIGH;
+/** The shoe's heel and toe, behind and ahead of the shin (see the legs below). */
+const HEEL = 0.08;
+const TOE = 0.17;
+const TAU = Math.PI * 2;
+const HALF_PI = Math.PI / 2;
 
 /**
  * @param {object} opts
@@ -176,7 +196,8 @@ export function createPerson(opts = {}) {
   const rnd = rng(opts.seed || 7);
   const outfit = opts.outfit || 'passenger';
   const skin = opts.skin ?? pick(SKIN_TONES, rnd);
-  const hair = opts.hair ?? pick(HAIR, rnd);
+  // A pilot's hair is one of the darker browns: the captain you play is not grey.
+  const hair = opts.hair ?? pick(outfit === 'pilot' ? HAIR.slice(0, 3) : HAIR, rnd);
   let shirt;
   let trousers;
   let shoes = 0x1c1c1c;
@@ -184,6 +205,8 @@ export function createPerson(opts = {}) {
     ({ shirt, trousers, shoes } = OUTFITS.pilot);
   } else if (outfit === 'staff') {
     ({ shirt, trousers, shoes } = OUTFITS.staff);
+  } else if (OUTFITS[outfit]) {
+    ({ shirt, trousers, shoes } = OUTFITS[outfit]);
   } else {
     shirt = opts.shirt ?? pick(SHIRTS, rnd);
     trousers = opts.trousers ?? pick(TROUSERS, rnd);
@@ -212,10 +235,17 @@ export function createPerson(opts = {}) {
     // Tie and two gold epaulettes.
     chestParts.push(part(P.box, OUTFITS.pilot.tie, 0, 0.3, -0.125, 0, 0, 0, 0.05, 0.28, 0.02));
     for (const sx of [-1, 1]) chestParts.push(part(P.box, OUTFITS.pilot.band, sx * 0.16, 0.47, 0, 0, 0, 0, 0.1, 0.02, 0.07));
-  } else if (outfit === 'staff') {
+  } else if (outfit === 'staff' || outfit === 'police') {
     // The vest, a shell just outside the overalls, and its two reflective bands.
-    chestParts.push(part(P.torso, OUTFITS.staff.vest, 0, 0.25, 0, 0, 0, 0, 0.212, 0.42, 0.14));
-    for (const y of [0.13, 0.3]) chestParts.push(part(P.torso, OUTFITS.staff.stripe, 0, y, 0, 0, 0, 0, 0.216, 0.035, 0.145));
+    const o = OUTFITS[outfit];
+    chestParts.push(part(P.torso, o.vest, 0, 0.25, 0, 0, 0, 0, 0.212, 0.42, 0.14));
+    for (const y of [0.13, 0.3]) chestParts.push(part(P.torso, o.stripe, 0, y, 0, 0, 0, 0, 0.216, 0.035, 0.145));
+  } else if (outfit === 'tactical') {
+    // A padded vest over the kit.
+    chestParts.push(part(P.torso, OUTFITS.tactical.vest, 0, 0.27, 0, 0, 0, 0, 0.22, 0.36, 0.15));
+  } else if (outfit === 'hijacker') {
+    // The hoodie's front pocket.
+    chestParts.push(part(P.box, 0x6d737c, 0, 0.1, -0.125, 0, 0, 0, 0.22, 0.12, 0.02));
   }
 
   const head = new THREE.Group();
@@ -228,10 +258,31 @@ export function createPerson(opts = {}) {
     part(P.smile, 0x8a3a2a, 0, -0.035, -0.142, Math.PI, 0, 0, 1, 1, 1),
   ];
   if (outfit === 'pilot') {
+    /*
+     * Hair under the cap. Without it the back of the pilot's head was bare
+     * skin up to the cap band — from the chase camera, which is behind the
+     * pilot nearly all the time, a bald head with a hat on.
+     */
+    headParts.push(part(P.head, hair, 0, 0.035, 0.03, 0, 0, 0, 0.157, 0.125, 0.15));
     headParts.push(part(P.disc, OUTFITS.pilot.cap, 0, 0.12, 0.005, 0, 0, 0, 0.158, 0.09, 0.158));
     headParts.push(part(P.disc, 0xf4f6f8, 0, 0.17, 0.0, 0, 0, 0, 0.172, 0.035, 0.172));
     headParts.push(part(P.disc, OUTFITS.pilot.band, 0, 0.1, 0.005, 0, 0, 0, 0.162, 0.025, 0.162));
     headParts.push(part(P.box, 0x111111, 0, 0.085, -0.15, 0.25, 0, 0, 0.2, 0.015, 0.1));
+  } else if (outfit === 'police') {
+    // Hair under a peaked cap with a white band.
+    const o = OUTFITS.police;
+    headParts.push(part(P.head, hair, 0, 0.035, 0.03, 0, 0, 0, 0.157, 0.125, 0.15));
+    headParts.push(part(P.disc, o.cap, 0, 0.12, 0.005, 0, 0, 0, 0.158, 0.09, 0.158));
+    headParts.push(part(P.disc, o.cap, 0, 0.17, 0.0, 0, 0, 0, 0.172, 0.035, 0.172));
+    headParts.push(part(P.disc, o.band, 0, 0.1, 0.005, 0, 0, 0, 0.162, 0.03, 0.162));
+    headParts.push(part(P.box, 0x111111, 0, 0.085, -0.15, 0.25, 0, 0, 0.2, 0.015, 0.1));
+  } else if (outfit === 'tactical') {
+    // A round helmet down over the ears.
+    headParts.push(part(P.head, OUTFITS.tactical.helmet, 0, 0.055, 0.01, 0, 0, 0, 0.168, 0.14, 0.168));
+    headParts.push(part(P.torso, OUTFITS.tactical.helmet, 0, 0.0, 0.0, 0, 0, 0, 0.17, 0.05, 0.168));
+  } else if (outfit === 'hijacker') {
+    // The hood up: a shell round the back and top of the head, the face clear.
+    headParts.push(part(P.head, OUTFITS.hijacker.shirt, 0, 0.02, 0.05, 0, 0, 0, 0.172, 0.18, 0.168));
   } else if (outfit === 'staff') {
     // Short hair under ear defenders: a headband and two orange cups.
     headParts.push(part(P.head, hair, 0, 0.05, 0.012, 0, 0, 0, 0.153, 0.13, 0.15));
@@ -254,12 +305,12 @@ export function createPerson(opts = {}) {
     elbow.position.y = -UPPER_ARM;
     arm.add(elbow);
     const upper = [part(P.limb, outfit === 'passenger' && rnd() < 0.4 ? skin : shirt, 0, 0, 0, 0, 0, 0, 0.055, UPPER_ARM, 0.055)];
-    if (outfit === 'staff') upper.push(part(P.limb, OUTFITS.staff.vest, 0, 0, 0, 0, 0, 0, 0.062, 0.09, 0.062));
+    if (outfit === 'staff' || outfit === 'police') upper.push(part(P.limb, OUTFITS[outfit].vest, 0, 0, 0, 0, 0, 0, 0.062, 0.09, 0.062));
     const fore = [
       part(P.limb, skin, 0, 0, 0, 0, 0, 0, 0.045, FOREARM, 0.045),
       part(P.ball, skin, 0, -FOREARM - 0.03, 0, 0, 0, 0, 0.05, 0.06, 0.05),
     ];
-    if (outfit === 'pilot') fore[0] = part(P.limb, shirt, 0, 0, 0, 0, 0, 0, 0.047, FOREARM, 0.047);
+    if (LONG_SLEEVES.has(outfit)) fore[0] = part(P.limb, shirt, 0, 0, 0, 0, 0, 0, 0.047, FOREARM, 0.047);
     if (opts.suitcase && side === 1) {
       // A case, held by its handle, hanging beside the leg.
       fore.push(part(P.box, pick([0x2f5d8a, 0xb23a3a, 0x3a3a3a, 0xe0a030], rnd), 0.04, -FOREARM - 0.26, 0, 0, 0, 0, 0.12, 0.4, 0.3));
@@ -327,7 +378,7 @@ export function createPerson(opts = {}) {
     }
   }
 
-  root.userData.rig = { body, chest, head, arms, legs, wands };
+  root.userData.rig = { body, chest, head, arms, legs, wands, lite };
   root.userData.anim = {
     phase: 0, t: rnd() * 10, walk: 0, run: 0, air: 0, wave: 0, stop: 0, look: 0,
     pointL: 0, pointR: 0, hello: 0,
@@ -375,21 +426,59 @@ export function posePerson(person, dt, s) {
   A.pointR += ((s.wave === 'right' ? 1 : 0) - A.pointR) * k;
   A.hello += ((s.wave === 'hello' ? 1 : 0) - A.hello) * k;
 
-  // Stride: a walking step is ~0.7 m, a running one ~1.1 m; a cycle is two.
-  const stride = 1.4 + A.run * 0.8;
+  /*
+   * Stride: a walking step is ~0.7 m, a running one ~1.1 m; a cycle is two.
+   * Shorter at a shuffle (a thumb-stick pushed half way), so small steps are
+   * small rather than big steps in slow motion.
+   */
+  const stride = speed < 1.2 ? 0.7 + speed * 0.583 : 1.4 + A.run * 0.8;
   A.phase = (A.phase + (speed / stride) * Math.PI * 2 * dt) % (Math.PI * 2);
   const ph = A.phase;
   const sw = Math.sin(ph);
   const w = A.walk * (1 - A.air);
   const swing = (0.5 + A.run * 0.35) * w;
 
-  // Hips and knees. +x swings a limb forward (the character faces -Z).
+  /*
+   * Hips and knees. +x swings a limb forward (the character faces -Z).
+   *
+   * PLANTED FEET. The leg used to swing as a sine, so the foot on the ground
+   * moved backwards fastest in the middle of the step — 3.4 m/s against the
+   * body's 1.8 at a walk — and the walker skated. Now the foot on the ground
+   * goes back in a straight line at exactly the walking speed (it stays put
+   * on the ground while the body goes over it), and only the foot in the air
+   * eases forward. Half a cycle each: the foot travels half a stride under
+   * the hip, so the leg reaches a quarter stride either side of it.
+   */
+  const reach = (stride / 4) * w;
+  const lite = !!rig.lite;
+  let hipY = 0;
   for (const L of rig.legs) {
-    const s1 = L.side < 0 ? sw : -sw;
-    const c1 = L.side < 0 ? Math.cos(ph) : -Math.cos(ph);
-    L.leg.rotation.x = s1 * swing + A.air * 0.55;
+    // This leg's phase: the right is half a cycle behind the left.
+    let q = L.side < 0 ? ph : ph + Math.PI;
+    q = ((q % TAU) + TAU) % TAU;
+    let u;
+    let fold = 0;
+    if (q >= HALF_PI && q <= 3 * HALF_PI) {
+      // On the ground: from a quarter stride ahead to a quarter behind, evenly.
+      u = reach * (1 - (2 * (q - HALF_PI)) / Math.PI);
+    } else {
+      // In the air: back to front, easing in and out, knee folded.
+      const t = (q < HALF_PI ? q + HALF_PI : q - 3 * HALF_PI) / Math.PI;
+      u = -reach * Math.cos(Math.PI * t);
+      fold = Math.sin(Math.PI * t);
+    }
+    const a = Math.asin(Math.max(-0.9, Math.min(0.9, u / HIP_Y)));
+    L.leg.rotation.x = a + A.air * 0.55;
     // The knee folds while the leg swings through, and a little at contact.
-    L.knee.rotation.x = -(Math.max(0, c1) * (0.35 + A.run * 0.75) * w + 0.06 * w) - A.air * 0.95;
+    const knee = -(fold * (0.55 + A.run * 0.6) * w + 0.06 * w) - A.air * 0.95;
+    L.knee.rotation.x = knee;
+    // How far below the hip this sole is (a lite passenger's leg is one piece).
+    // The shoe tips with the shin: heel down with the leg in front, toe down
+    // with it behind.
+    const k = lite ? 0 : knee;
+    const f = a + k;
+    const drop = THIGH * Math.cos(a) + SOLE * Math.cos(f) + (f > 0 ? HEEL : -TOE) * Math.sin(f);
+    if (drop > hipY) hipY = drop;
   }
 
   // Arms: opposite to the legs, elbows bent more when running.
@@ -441,7 +530,15 @@ export function posePerson(person, dt, s) {
   }
 
   // Body: a bob twice per stride, a lean into a run, breathing at rest.
-  rig.body.position.y = HIP_Y - Math.abs(Math.cos(ph)) * 0.035 * w + 0.01 * w + A.air * 0.05;
+  /*
+   * The hips ride on whichever foot is on the ground: as high as that leg
+   * reaches, so the sole touches the floor all through the step — highest
+   * over the foot, lowest as the weight changes feet, which is the bob a
+   * walk has. They used to bob by a fixed amount whatever the legs did, and
+   * mid-run both shoes were up to 21 cm clear of the ground (measured over
+   * two seconds at 5.2 m/s: 66 frames in 120 with no foot down).
+   */
+  rig.body.position.y = hipY * (1 - A.air) + (HIP_Y + 0.05) * A.air;
   rig.chest.rotation.x = -0.05 * w - 0.2 * A.run * w;
   rig.chest.rotation.y = sw * 0.08 * w;
   rig.chest.scale.y = 1 + Math.sin(A.t * 2.1) * 0.012 * (1 - A.walk);

@@ -21,7 +21,14 @@
  *   - the host's TAB CLOSED: how long until the lobby has re-formed round
  *     the next in line, and that nobody's flight stopped meanwhile (the
  *     game's own update ran on, the aeroplane kept moving, no map reload);
- *   - the cost of a frame with seven remote aircraft, drawn for real.
+ *   - the cost of a frame with seven remote aircraft, drawn for real;
+ *   - list 2, a private match: the ninth tab picks an island on the picker
+ *     and makes one; another tab types its code and is taken to that island,
+ *     and each sees the other;
+ *   - list 2, "less lag": how far from where each friend REALLY is (their own
+ *     tab's position at that moment, on the shared clock) every tab draws
+ *     them — the older way (100-350 ms in the past, the host relaying each
+ *     snapshot) and the new one (now, the host bundling), four seconds each.
  *
  * Holds one of the shared headless-Chrome slots (the same lock as
  * .claude/devtools/cdp.mjs) for the one Chrome all nine tabs live in, with
@@ -215,6 +222,8 @@ if (!window.__pt) {
     const me = s.mode === 'drive' && s.vehicle ? s.vehicle.pos : s.aircraft && s.aircraft.pos;
     if (me && s.state === 'flying') pt.own.push({ e: now(), x: me.x, y: me.y, z: me.z, st: s.state });
     while (pt.own.length > 3000) pt.own.shift();
+    // Where this tab draws everybody else, while the lag is being measured.
+    if (pt.recDrawn) for (const p of pt.mp.remotes.players.values()) if (p.drawn && p.visible) pt.drawn.push([now(), p.name, p.drawn.x, p.drawn.y, p.drawn.z]);
     pt.ticks++;
   }, 33);
   const mp = pt.mp;
@@ -288,10 +297,14 @@ try {
   const opened = await Promise.all(pages.map((p) => p.eval(`
     const viaMenu = sim.state === 'menu' && pt.click('[data-act="multiplayer"]');
     if (!viaMenu) pt.mpMod.openMultiplayer(sim);
-    const r = await pt.until(() => document.querySelectorAll('.mp-lobby.is-empty, .mp-lobby.is-open, .mp-lobby.is-full').length === 5, 30000);
-    return { viaMenu, screen: !!document.querySelector('[data-screen="lobbies"]:not([hidden])'), ms: r.ms, list: [...document.querySelectorAll('.mp-lobby')].map((c) => c.className.replace('mp-lobby is-', '')) };`, 60)));
+    // The Wi-Fi row's five cards (list 3 put a World row under them, with its own).
+    const r = await pt.until(() => document.querySelectorAll('[data-mp-lobby].is-empty, [data-mp-lobby].is-open, [data-mp-lobby].is-full').length === 5, 30000);
+    return { viaMenu, screen: !!document.querySelector('[data-screen="lobbies"]:not([hidden])'), ms: r.ms, priv: (document.querySelector('[data-mp-private-card]') || {}).hidden === false ? 'shown' : 'hidden', list: [...document.querySelectorAll('[data-mp-lobby]')].map((c) => c.className.replace('mp-lobby is-', '')) };`, 60)));
   ok('the main menu’s Multiplayer card opens the lobby screen in every tab, with five lobbies listed', opened.every((o) => o.viaMenu && o.screen && o.list.length === 5),
     opened.map((o) => `${o.viaMenu ? 'menu' : 'dev'}:${o.list.join('/')}`)[0]);
+
+  // (The five lobby cards: since list 2 a private match can share the list as a sixth card, hidden until there is one.)
+  ok('and no private match card is shown until a code is typed or a match is made', opened.every((o) => o.priv === 'hidden'), opened.map((o) => o.priv).join(','));
 
   // A starts lobby 3 on its own island.
   const join = (p, n) => p.eval(`
@@ -353,6 +366,69 @@ try {
   // Everybody airborne, spread out, flying straight.
   await Promise.all(eight.map((p, i) => p.eval(`pt.airborne(${-600 + i * 150}, ${i % 2 ? 200 : -200}, 90); return true;`)));
   await sleep(4000);
+
+  // List 2, "less lag": drawn vs really there, on the same eight real tabs, the older way and the new —
+  // taken turn about, two seconds at a time, three times, so a Mac whose load swings lands on both.
+  const lagWindow = async (mode, bundleMs, acc) => {
+    await Promise.all(eight.map((p) => p.eval(`mp.remotes.drawMode = '${mode}'; if (mp.role === 'host' && mp.host) mp.host.bundleMs = ${bundleMs}; return true;`)));
+    await sleep(1200);
+    const tA = Date.now();
+    await Promise.all(eight.map((p) => p.eval('pt.drawn = []; pt.recDrawn = true; pt.gapMark = pt.gaps.length; return true;')));
+    await sleep(2000);
+    const data = await Promise.all(eight.map((p) => p.eval(`pt.recDrawn = false; return { me: mp.profile.name, drawn: pt.drawn, gaps: pt.gaps.length - pt.gapMark, own: pt.own.filter((o) => o.e > ${tA - 3000}).map((o) => [o.e, o.x, o.y, o.z]) };`, 60)));
+    const ownBy = new Map(data.map((d) => [d.me, d.own]));
+    for (const d of data) {
+      acc.gaps += d.gaps;
+      const last = new Map();
+      for (const [e, n, x, y, z] of d.drawn) {
+        // Everybody flies east: a friend drawn moving west for a frame has been pulled backwards.
+        if (last.has(n)) {
+          acc.pairs++;
+          if (x - last.get(n) < -0.05) acc.back++;
+        }
+        last.set(n, x);
+        const own = ownBy.get(n);
+        if (!own) continue;
+        const i = own.findIndex((o) => o[0] >= e);
+        if (i <= 0) continue;
+        const a = own[i - 1];
+        const b = own[i];
+        if (b[0] - a[0] > 250) continue;
+        const k = (e - a[0]) / (b[0] - a[0] || 1);
+        acc.errs.push(Math.hypot(x - (a[1] + (b[1] - a[1]) * k), y - (a[2] + (b[2] - a[2]) * k), z - (a[3] + (b[3] - a[3]) * k)));
+      }
+    }
+  };
+  const summary = (acc) => {
+    const e = acc.errs.slice().sort((a, b) => a - b);
+    const q = (f) => +(e[Math.min(e.length - 1, Math.floor(e.length * f))] || 0).toFixed(2);
+    return {
+      samples: e.length, mean: +(e.reduce((a, x) => a + x, 0) / (e.length || 1)).toFixed(2), p50: q(0.5), p95: q(0.95), max: q(1),
+      backwardsPct: +((100 * acc.back) / (acc.pairs || 1)).toFixed(2), pauses: acc.gaps,
+    };
+  };
+  const accOld = { errs: [], back: 0, pairs: 0, gaps: 0 };
+  const accNew = { errs: [], back: 0, pairs: 0, gaps: 0 };
+  for (let round = 0; round < 3; round++) {
+    await lagWindow('sample', 0, accOld);
+    await lagWindow('predict', 50, accNew);
+  }
+  M.lagBefore = summary(accOld);
+  M.lagAfter = summary(accNew);
+  // Eight games in one Chrome hitch far more than eight Chromebooks would; the pauses over 250 ms in the tabs are counted alongside.
+  // When the Mac is so busy that the tabs themselves keep stopping (more than two dozen pauses over 250 ms across the
+  // eight tabs in the twelve seconds measured), "where they really are" stops too, and no drawing can be far better
+  // than another: then nearer is asked for, not much nearer. Measured both ways on this Mac: quiet, median 5.87 -> 0.13 m (0 pauses); busy, 7.36 -> 5.41 m
+  // (88 and 95 pauses). tests/features/multiplayer.lag.mjs models an overloaded lobby deterministically.
+  const busyMac = M.lagBefore.pauses + M.lagAfter.pauses > 24;
+  M.lagBusyMac = busyMac;
+  ok(`less lag, eight real tabs: every friend is drawn ${busyMac ? 'nearer (the Mac was too busy to ask for much nearer)' : 'much nearer'} where they really are than the older way`,
+    M.lagAfter.samples > 300 && M.lagBefore.samples > 300 && (busyMac
+      ? M.lagAfter.mean < M.lagBefore.mean && M.lagAfter.p50 < M.lagBefore.p50 && M.lagAfter.p95 <= M.lagBefore.p95 * 1.1 && M.lagAfter.backwardsPct <= M.lagBefore.backwardsPct + 0.5
+      : M.lagAfter.mean < M.lagBefore.mean * 0.6 && M.lagAfter.p50 < M.lagBefore.p50 * 0.5),
+    `metres from where they really were, at 55 m/s — older way (100-350 ms back, relayed each): median ${M.lagBefore.p50}, mean ${M.lagBefore.mean}, p95 ${M.lagBefore.p95}, max ${M.lagBefore.max}, drawn going backwards ${M.lagBefore.backwardsPct} % of frames; `
+    + `new (now, bundled): median ${M.lagAfter.p50}, mean ${M.lagAfter.mean}, p95 ${M.lagAfter.p95}, max ${M.lagAfter.max}, backwards ${M.lagAfter.backwardsPct} % (${M.lagAfter.samples} samples; `
+    + `the tabs paused over 250 ms ${M.lagBefore.pauses} and ${M.lagAfter.pauses} times while measuring)`);
 
   // A ninth: the list says full, joining says full, and another lobby is offered.
   const nine = await I.eval(`
@@ -499,6 +575,37 @@ try {
   ok('the next host’s tab vanishes without a goodbye: the lobby re-forms again, round the next in line',
     after2.every((s) => s.n === 3 && !s.reconnecting && s.count === rest2.length) && after2.filter((s) => s.role === 'host').length === 1,
     `${rest2.length} players back ${Math.max(...M.vanish.backMs.filter((x) => x != null))} ms after; heard ${M.vanish.heardMs.join('/')} ms (${M.vanish.why.join('/')})`);
+
+  // List 2: a private match, made on an island picked first, joined by its code from another tab.
+  const priv = await I.eval(`
+    pt.click('[data-mp-private-map="meadow"]');
+    const button = pt.text('[data-mp-private]');
+    const tiles = document.querySelectorAll('[data-mp-private-map]').length;
+    pt.click('[data-mp-private]');
+    const r = await pt.until(() => mp.role === 'host' && mp.ready && sim.state === 'flying', 60000);
+    await new Promise((res) => setTimeout(res, 1200));
+    return { ok: !!r.v, ms: r.ms, button, tiles, code: mp.server && mp.server.code, map: sim.settings.map, badge: pt.text('.mp-badge') };`, 90);
+  ok('a private match is made on the island picked first — the button says which, the badge shows it and the code',
+    priv.ok && priv.map === 'meadow' && priv.button === 'Make it on Harrier Flats' && priv.tiles > 3 && /Private match/.test(priv.badge) && /On Harrier Flats/.test(priv.badge) && priv.badge.includes(priv.code),
+    `${priv.ms} ms; ${priv.tiles} islands; “${priv.button}”; ${priv.badge}`);
+  const friend = await mover.eval(`
+    mp.leave('left');
+    await new Promise((res) => setTimeout(res, 500));
+    pt.mpMod.openMultiplayer(sim);
+    const box = document.querySelector('[data-mp-code]');
+    box.value = ${JSON.stringify(String(priv.code || '').replace(/-/g, ' '))};
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    const t0 = performance.now();
+    pt.click('[data-mp-join-code]');
+    const r = await pt.until(() => mp.role === 'client' && mp.ready && sim.state === 'flying', 60000);
+    const seen = await pt.until(() => [...mp.remotes.players.values()].some((p) => p.visible && p.model), 20000);
+    await new Promise((res) => setTimeout(res, 1200));
+    return { ok: !!r.v, ms: Math.round(performance.now() - t0), map: sim.settings.map, priv: !!(mp.server && mp.server.priv), seen: !!seen.v, badge: pt.text('.mp-badge'), toasts: pt.toasts.map((t) => t.text).slice(-3) };`, 120);
+  const hostSees = await I.eval(`const r = await pt.until(() => [...mp.remotes.players.values()].some((p) => p.visible && p.model), 20000); return { seen: !!r.v, n: mp.host ? mp.host.count : 0 };`, 60);
+  ok('a friend types that code on another computer and is taken to the same island — and each sees the other',
+    friend.ok && friend.priv && friend.map === 'meadow' && friend.seen && hostSees.seen && hostSees.n === 2 && /On Harrier Flats/.test(friend.badge) && friend.toasts.some((t) => /private match — on Harrier Flats/.test(t)),
+    `${friend.ms} ms; on ${friend.map}; ${friend.badge}; ${friend.toasts.join(' | ')}`);
+  M.privateMatch = { makeMs: priv.ms, joinMs: friend.ms, map: friend.map };
 
   // Names on the matchmaking server: none, from any tab.
   const named = await Promise.all(pages.filter((p) => p !== hostTab).map((p) => p.eval('return { sent: pt.sig.length, named: pt.sig.filter((m) => m.named).length };')));

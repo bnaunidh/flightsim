@@ -115,6 +115,8 @@ const W = {
   watch: null,
   flameDirty: true,
   menuNote: null,
+  /** This fire is the Wildfire disaster (game/disasters.js), not a mission's. */
+  disaster: false,
 };
 
 const STATUS = {
@@ -295,6 +297,7 @@ function clearAll(sim) {
   if (W.tank && sim && sim.aircraft) W.tank.removeMass(sim.aircraft);
   W.tank = null;
   W.live = false;
+  W.disaster = false;
   W.spec = null;
   W.data = null;
   W.fill = null;
@@ -417,7 +420,9 @@ export function setupFire(ctxOrSim, spec = {}) {
   retintTrees();
   retarget();
   warmSmoke(sim);
-  if (W.hud) W.hud.setVisible(true);
+  // Lit from the pause menu, the panel waits for Resume (update() shows it)
+  // rather than popping up over the menu.
+  if (W.hud) W.hud.setVisible(sim.state !== 'paused');
   return lit > 0;
 }
 
@@ -1008,6 +1013,8 @@ function update(sim, dt) {
     }
   }
 
+  updateDisaster(sim);
+
   // The water.
   const t = W.tank;
   if (W.live && t && ac && !ac.crashed) {
@@ -1323,6 +1330,82 @@ export function startDevFire(sim) {
 }
 
 /* ------------------------------------------------------------------ *
+ * The Wildfire disaster: "wildfires should be new disaster".
+ *
+ * game/disasters.js lists it beside the tornado and the typhoon, so it can
+ * be armed on the Free Flight screen, set off from the pause menu, or come
+ * round on its own with Randomised disasters. What it calls is this. Unlike
+ * the Dev button it never waits for a later flight — a disaster is now or
+ * not at all — and it is a little bigger, with embers, so there is
+ * something to fight. Returns false when there is nothing to fight it with
+ * (not in a flight, in the boat or the car) or nothing to burn in reach, and
+ * disasters.js then says nothing at all.
+ * ------------------------------------------------------------------ */
+
+export function startWildfireDisaster(sim) {
+  // 'paused' too: the pause menu's Wildfire button is pressed with the game
+  // paused (pause() only ever comes from 'flying', so it is still a flight).
+  // The fire is lit now and starts spreading when you press Resume.
+  const inFlight = sim && (sim.state === 'flying' || sim.state === 'paused');
+  if (!inFlight || !sim.aircraft || sim.mode === 'drive' || !W.group) return false;
+  const p = findBurnableAhead(sim);
+  if (!p) {
+    notify(sim, 'No wildfire here after all — nothing near you can burn.', 'info', 3);
+    return false;
+  }
+  const g = W.grid;
+  if (W.live && g && g.burning && g.inside(p.x, p.z) && Math.hypot(p.x - g.cx, p.z - g.cz) < 2600) {
+    // One is already burning in this window: a second start joins it.
+    g.ignite(p.x, p.z, 60);
+    W.flameDirty = true;
+  } else if (
+    // Not `dev`: the crews finish a fire somebody is fighting, so the water
+    // has to land on it at least once (scenario.js, THE CREWS).
+    !setupFire(sim, {
+      centre: p,
+      ignite: [{ x: p.x, z: p.z, r: 60 }],
+      preburn: 30,
+      spot: 0.6,
+      protect: 'town',
+      mopUp: 0.85,
+      mopText: 'The ground crews have it from here — you saved the island, firefighter!',
+    })
+  ) {
+    clearAll(sim);
+    return false;
+  }
+  W.disaster = true;
+  const d = Math.hypot(p.x - sim.aircraft.pos.x, p.z - sim.aircraft.pos.z);
+  notify(
+    sim,
+    `Wildfire ${d >= 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d)} m`} ahead — the orange on your map. Blue drop = where to fill up.`,
+    'warn',
+    6
+  );
+  return true;
+}
+
+/**
+ * While the disaster fire burns, keep it lit in the pause menu (2 s or less
+ * reads "ON" there, not a countdown), and say so when it is out.
+ */
+function updateDisaster(sim) {
+  if (!W.disaster) return;
+  const g = W.grid;
+  const burning = W.live && g ? g.burning : 0;
+  if (burning > 0) {
+    if (sim.activeEvents) sim.activeEvents.wildfire = 2;
+    return;
+  }
+  W.disaster = false;
+  if (sim.activeEvents) delete sim.activeEvents.wildfire;
+  if (sim.hud && sim.hud.showBanner) {
+    if (W.hits > 0) sim.hud.showBanner('WILDFIRE OUT!', 'Great firefighting — the island is safe', 'good', 4);
+    else sim.hud.showBanner('The wildfire burned out', 'Next time: fill up at the sea and drop water on it with X', 'warn', 4);
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * The plug-in.
  * ------------------------------------------------------------------ */
 
@@ -1332,6 +1415,8 @@ registerExtension({
   install(sim) {
     W.sim = sim;
     W.hud = new FireHud(sim, { onDrop: () => dropWater(sim) });
+    // The Wildfire disaster (game/disasters.js) starts its fire through this.
+    sim.startWildfire = () => startWildfireDisaster(sim);
     /*
      * Hide the panel whenever the game is not flying. The update hook is
      * only called while flying, so it cannot do this itself when a menu
@@ -1439,4 +1524,4 @@ function armTankVisuals() {
 }
 
 /* For tests: node can drive the logic without a page. */
-export const __test = { W, setupFire, fireStatus, dropWater, clearAll, update, BUDGET };
+export const __test = { W, setupFire, fireStatus, dropWater, clearAll, update, BUDGET, startWildfireDisaster };
