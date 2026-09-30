@@ -1609,7 +1609,7 @@ class Game {
     this.menus.setPauseInfo(`
       <div class="pause-grid">
         <span>Speed<b>${Math.round(r.iasKts)} kt</b></span>
-        <span>Height<b>${Math.round(r.altFt).toLocaleString('en-GB')} ft</b></span>
+        <span>Height<b>${(r.onGround ? 0 : Math.round(r.altFt) || 0).toLocaleString('en-GB')} ft</b></span>
         <span>Heading<b>${String(Math.round(r.heading)).padStart(3, '0')}°</b></span>
         <span>Fuel<b>${Math.round(r.fuelPct * 100)}%</b></span>
         <span>Wind<b>${Math.round(this.weather.windSpeedKts)} kt</b></span>

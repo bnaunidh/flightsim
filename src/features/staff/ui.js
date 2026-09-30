@@ -32,7 +32,11 @@ const CSS = `
 .of-prompt.act:active { transform: translateX(-50%) scale(0.97); }
 .of-prompt kbd {
   display: inline-block; min-width: 1.4em; padding: 1px 7px; margin: 0 2px;
-  border-radius: 6px; background: #f2c53d; color: #1a1d20; font: 800 14px/1.3 inherit;
+  border-radius: 6px; background: #f2c53d; color: #1a1d20;
+  /* Longhands: "font: 800 14px/1.3 inherit" is not valid CSS, so the whole
+     line was dropped and the key fell back to the 11 px monospace kbd, where
+     "Press O to get out" read as "Press 0". */
+  font-family: inherit; font-weight: 800; font-size: 14px; line-height: 1.3;
 }
 .of-prompt b { color: #ffd166; }
 .of-card {

@@ -1340,27 +1340,12 @@ export class DriveHud {
    * driving never expires. Take the boat out, run aground, and "You ran aground
    * — press Esc to go back" stays welded to the screen for the rest of the
    * session, including through every flight afterwards. Ticking them here is
-   * the smallest fix that does not need an edit inside hud.js; if that method
-   * ever grows a public `updateOverlays(dt)`, this should call it instead of
-   * repeating it.
+   * the smallest fix that does not need an edit inside hud.js. That method
+   * has since grown a public `updateOverlays(dt)` — which also fades the
+   * radio line and folds the objective into its chip — so this calls it
+   * instead of repeating it.
    */
   tickOverlays(dt) {
-    const hud = this.hud;
-    if (hud.subtitleTimer > 0) {
-      hud.subtitleTimer -= dt;
-      if (hud.subtitleTimer <= 0) hud.subtitle.style.display = 'none';
-    }
-    if (hud.bannerTimer > 0) {
-      hud.bannerTimer -= dt;
-      if (hud.bannerTimer <= 0) hud.banner.style.display = 'none';
-    }
-    for (let i = hud.toasts.length - 1; i >= 0; i--) {
-      hud.toasts[i].life -= dt;
-      if (hud.toasts[i].life > 0) continue;
-      const node = hud.toasts[i].node;
-      node.classList.add('is-out');
-      setTimeout(() => node.remove(), 400);
-      hud.toasts.splice(i, 1);
-    }
+    if (this.hud.updateOverlays) this.hud.updateOverlays(dt);
   }
 }

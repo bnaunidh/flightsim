@@ -185,6 +185,23 @@ function plinth(batch, x0, x1, z0, z1, color = 0xb4b6b0) {
  *  is the same look at 20 m a tile, laid by world position instead. */
 const PAVE_TILE = 20;
 
+/*
+ * The office-window texture (buildingTexture) is six bays by seven storeys.
+ * Laid at 5-6 m a tile, as it was on the towers' base blocks and the fire
+ * station, a storey was 0.7-0.9 m — windows a child could not stand at —
+ * and at 12 m on the terminal's landside, 1.7 m. 22 m a tile is 3.7 m bays
+ * and 3.1 m storeys, next to aeroplanes and people alike. The storeys are
+ * counted from the field (see officeFloors), not from sea level.
+ */
+export const OFFICE_TILE = 22;
+/** Shift an office-textured mesh's wall UVs so its first floor line is at `floorY`. */
+export function officeFloors(mesh, floorY) {
+  if (!mesh) return;
+  const uv = mesh.geometry.attributes.uv;
+  const n = mesh.geometry.attributes.normal;
+  for (let i = 0; i < uv.count; i++) if (Math.abs(n.getY(i)) < 0.5) uv.setY(i, uv.getY(i) - floorY / OFFICE_TILE);
+}
+
 /* ------------------------------------------------------------------ */
 /* Sign faces                                                          */
 /* ------------------------------------------------------------------ */
@@ -205,6 +222,7 @@ function signAtlas(signs) {
     location: ['#15171a', '#f2c200'],
     direction: ['#f2c200', '#15171a'],
     plate: ['#e9ecee', '#1d2a36'],
+    number: ['#e9ecee', '#1d2a36'],
   };
   const arrow = (x, y, dir, col) => {
     ctx.fillStyle = col;
@@ -230,16 +248,86 @@ function signAtlas(signs) {
       ctx.strokeRect(cx + 6, cy + 6, 244, 52);
     }
     ctx.fillStyle = fg;
-    ctx.font = 'bold 40px Arial, Helvetica, sans-serif';
+    // A hangar's number fills the square in the middle of its cell.
+    ctx.font = s.kind === 'number' ? 'bold 58px Arial, Helvetica, sans-serif' : 'bold 40px Arial, Helvetica, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const tx = s.arrow ? cx + 150 : cx + 128;
-    ctx.fillText(s.text, tx, cy + 34, 200);
+    ctx.fillText(s.text, tx, cy + 35, s.kind === 'number' ? 60 : 200);
     if (s.arrow) arrow(cx + 44, cy + 32, s.arrow, fg);
-    cells.push({ u0: cx / W, u1: (cx + 256) / W, v0: 1 - (cy + 64) / H, v1: 1 - cy / H });
+    const sq = s.kind === 'number';
+    cells.push({ u0: (cx + (sq ? 96 : 0)) / W, u1: (cx + (sq ? 160 : 256)) / W, v0: 1 - (cy + 64) / H, v1: 1 - cy / H });
   });
   const tex = canvasTexture(c);
   return { tex, cells };
+}
+
+/* ------------------------------------------------------------------ */
+/* Runway designators                                                  */
+/* ------------------------------------------------------------------ */
+
+/** "09" for 90 degrees, "36" for 0 or 360: the number painted on the runway. */
+export function designatorFor(headingDeg) {
+  const n = Math.round((((headingDeg % 360) + 360) % 360) / 10);
+  return String(n === 0 ? 36 : n).padStart(2, '0');
+}
+
+/**
+ * The runway numbers on this map: one per runway end, where it is painted,
+ * which way it is read, and how big it is.
+ *
+ *   [{ text, x, z, headingDeg, len, wid }]
+ *
+ * `headingDeg` is the heading of an aeroplane LANDING over that number, and
+ * the top of the digits points that way — so they read the right way up from
+ * the approach, the only place anybody reads them from. The digits are the
+ * real size (18 m long, 6 m wide each, the ICAO/FAA marking), laid just past
+ * the threshold bars, and smaller only on a strip too short to fit them in
+ * front of its aiming blocks.
+ */
+export function runwayDesignators() {
+  const out = [];
+  const add = (cx, cz, length, halfWidth, headingDeg) => {
+    const fx = Math.sin((headingDeg * Math.PI) / 180);
+    const fz = -Math.cos((headingDeg * Math.PI) / 180);
+    // The runway texture's threshold bars end 6.3% of the length in from each
+    // end and its aiming blocks start at 11.5%.
+    const len = Math.max(9, Math.min(18, 0.052 * length - 6));
+    const wid = Math.min(len * 0.83, halfWidth * 2 * 0.6);
+    for (const [dir, hdg] of [[1, headingDeg], [-1, (headingDeg + 180) % 360]]) {
+      // From the threshold you land over, in along the runway.
+      const s = length / 2 - (0.063 * length + 4 + len / 2);
+      out.push({ text: designatorFor(hdg), x: cx - dir * fx * s, z: cz - dir * fz * s, headingDeg: hdg, len, wid });
+    }
+  };
+  const r = AIRPORT.runway;
+  add(r.cx, r.cz, r.length, r.halfWidth, AIRPORT.headingDeg ?? 90);
+  if (AIRPORT.runway2) {
+    const r2 = AIRPORT.runway2;
+    add(r2.cx, r2.cz, r2.length, r2.halfWidth, r2.headingDeg ?? 180);
+  }
+  return out;
+}
+
+/** One cell per designator, digits drawn tall and narrow the way runway digits are. */
+function designatorAtlas(texts) {
+  const cw = 256;
+  const ch = 320;
+  const c = canvas(cw * texts.length, ch);
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, c.width, c.height);
+  texts.forEach((t, i) => {
+    ctx.save();
+    ctx.translate(i * cw + cw / 2, ch / 2);
+    ctx.scale(1, 2.1);
+    ctx.fillStyle = 'rgba(240,240,234,0.95)';
+    ctx.font = 'bold 132px Arial, Helvetica, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(t, 0, 4, cw - 16);
+    ctx.restore();
+  });
+  return canvasTexture(c);
 }
 
 /* ------------------------------------------------------------------ */
@@ -403,6 +491,7 @@ export class Airport {
       sh.geometry.deleteAttribute('color');
       this.group.add(sh);
     }
+    this.buildDesignators();
 
     // Taxiways, connectors, apron, hangar lead-ins, the fire station's
     // driveway: every piece of made ground in the layout, as one mesh.
@@ -446,6 +535,35 @@ export class Airport {
     // The stand lead-ins, numbers and stop bars are drawn by apron.js.
   }
 
+  /**
+   * The runway numbers, as decals on the paint layer: one quad per runway
+   * end, one texture and one draw call for all of them. The quad's top edge
+   * (v = 1) is the top of the digits, and it is turned to point down the
+   * runway the way the aeroplane landing over it is going.
+   */
+  buildDesignators() {
+    const list = runwayDesignators();
+    const texts = [...new Set(list.map((d) => d.text))];
+    const tex = designatorAtlas(texts);
+    const b = new Batch();
+    for (const d of list) {
+      const g = new THREE.PlaneGeometry(d.wid, d.len);
+      g.rotateX(-Math.PI / 2);
+      const k = texts.indexOf(d.text);
+      const uv = g.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setX(i, (k + uv.getX(i)) / texts.length);
+      b.add(g, trs(d.x, ELEV + 0.078, d.z, yawOf(d.headingDeg)), 0xffffff);
+      g.dispose();
+    }
+    const mat = layer(new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.45, roughness: 0.85, metalness: 0.02 }), 'paint');
+    const m = b.mesh(mat, { cast: false, name: 'runway-numbers' });
+    if (!m) return;
+    m.geometry.deleteAttribute('color');
+    // What each quad says, in order, for anyone checking them.
+    m.userData.quads = list.map((d) => d.text);
+    this.group.add(m);
+  }
+
   /* ------------------------------------------------------------- tower -- */
 
   /**
@@ -470,7 +588,7 @@ export class Airport {
     if (T.kind === 'small') {
       const s = T.size;
       const H = T.H;
-      this.b.wallWarm.box(s, H - 4, s, TX, ELEV + (H - 4) / 2, TZ, 0xffffff, 0, 6);
+      this.b.wallWarm.box(s, H - 4, s, TX, ELEV + (H - 4) / 2, TZ, 0xffffff, 0, OFFICE_TILE);
       plinth(vc, TX - s / 2, TX + s / 2, TZ - s / 2, TZ + s / 2);
       vc.box(s + 0.6, 0.4, s + 0.6, TX, ELEV + H - 3.8, TZ, CONC);
       // The cab: glass all round, a flat roof with a lip.
@@ -479,6 +597,16 @@ export class Airport {
       for (let i = 0; i < 12; i++) {
         const a = (i / 12) * Math.PI * 2;
         metal.box(0.08, 1.0, 0.08, TX + Math.cos(a) * (s / 2 + 0.2), ELEV + H - 3.1, TZ + Math.sin(a) * (s / 2 + 0.2), STEEL);
+      }
+      // Frames on the cab glass: a mullion at each corner and two down each side.
+      const g2 = (s - 1) / 2;
+      for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        for (let k = 0; k < 3; k++) {
+          const along = -g2 + (k * (s - 1)) / 3;
+          const mx = ax ? TX + ax * (g2 + 0.05) : TX + along;
+          const mz = az ? TZ + az * (g2 + 0.05) : TZ + along;
+          metal.box(ax ? 0.1 : 0.16, 3.2, ax ? 0.16 : 0.1, mx, ELEV + H - 2, mz, 0x4f565e);
+        }
       }
       metal.cyl(0.05, 0.08, 4, TX, ELEV + H + 0.3, TZ, STEEL, 6);
       addObstacleAt(TX, TZ, s + 1, s + 1, ELEV, H + 4, 'You flew into the control tower');
@@ -505,7 +633,9 @@ export class Airport {
     // The stair core up its back, away from the runway.
     const back = lay.side; // +1: further from the runway is +side in z
     const coreZ = TZ + back * 6.2 * k;
-    vc.box(3.6 * k, TOWER_H, 3.6 * k, TX, ELEV + TOWER_H / 2, coreZ, 0xc9ccce);
+    // From the base block's roof up: from the ground, its face lay in the
+    // block's own front wall and the two flickered (27 m2).
+    vc.box(3.6 * k, TOWER_H - 7.5, 3.6 * k, TX, ELEV + 7.5 + (TOWER_H - 7.5) / 2, coreZ, 0xc9ccce);
     // Its glass slot, on the face away from the runway, lighting the stair.
     vc.box(1.1 * k, TOWER_H - 14, 0.12, TX, ELEV + 9 + (TOWER_H - 14) / 2, coreZ + back * (1.8 * k + 0.05), 0x2c3b48);
     /*
@@ -531,7 +661,7 @@ export class Airport {
      * moves nothing else on the field.
      */
     const s = T.size;
-    this.b.wall.box(s, podH, s, TX, ELEV + podH / 2, TZ, 0xffffff, 0, 6);
+    this.b.wall.box(s, podH, s, TX, ELEV + podH / 2, TZ, 0xffffff, 0, OFFICE_TILE);
     vc.box(s + 0.8, 0.5, s + 0.8, TX, ELEV + podH + 0.25, TZ, CONC);
     vc.box(s * 0.35, 3, 0.4, TX, ELEV + 1.5, TZ - back * (s / 2 + 0.1), 0x2c3b48);
     vc.box(s * 0.45, 0.35, 2.4, TX, ELEV + 3.3, TZ - back * (s / 2 + 1.2), CONC);
@@ -578,6 +708,17 @@ export class Airport {
         STEEL
       );
     }
+    /*
+     * The cab's frame: a sill ring the glass stands on, a head ring under the
+     * brow and a transom two-thirds of the way up, so the mullions are posts
+     * in a frame and the cab reads as a glazed room rather than a lampshade.
+     */
+    const cabR = (y) => 7.6 * k + (1.8 * k * y) / 7;
+    metal.cyl(cabR(0.4) + 0.12, cabR(0) + 0.12, 0.6, TX, ELEV + TOWER_H - 0.15, TZ, 0x4f565e, 24);
+    metal.cyl(cabR(7) + 0.1, cabR(6.4) + 0.1, 0.5, TX, ELEV + TOWER_H + 6.3, TZ, 0x4f565e, 24);
+    const transom = new THREE.TorusGeometry(cabR(4.6) + 0.05, 0.07, 5, 40);
+    metal.add(transom, trse(TX, ELEV + TOWER_H + 4.5, TZ, Math.PI / 2, 0, 0), 0x4f565e);
+    transom.dispose();
     // The lit room inside, so there is obviously somebody up there at night.
     const roomMat = new THREE.MeshBasicMaterial({ color: 0x9fd0a8, transparent: true, opacity: 0.12 });
     const room = new THREE.Mesh(new THREE.CylinderGeometry(7.4 * k, 6.6 * k, 6.4, 16), roomMat);
@@ -670,17 +811,23 @@ export class Airport {
       // Side walls and back wall.
       clad.box(t, H, D, r.x0 + t / 2, ELEV + H / 2, zMid, 0xffffff, 0, 6);
       clad.box(t, H, D, r.x1 - t / 2, ELEV + H / 2, zMid, 0xffffff, 0, 6);
-      clad.box(W, H, t, cx, ELEV + H / 2, zBack - (dz * t) / 2, 0xffffff, 0, 6);
+      // The back wall and the header span BETWEEN the side walls. Laid across
+      // the full width, their ends lay in the side walls' outer faces and the
+      // two fought over those strips at every corner (108 m2 on Kestrel).
+      clad.box(W - 2 * t, H, t, cx, ELEV + H / 2, zBack - (dz * t) / 2, 0xffffff, 0, 6);
       // Header above the doors.
-      clad.box(W, H - doorH, t, cx, ELEV + doorH + (H - doorH) / 2, zFront + (dz * t) / 2, 0xffffff, 0, 6);
+      clad.box(W - 2 * t, H - doorH, t, cx, ELEV + doorH + (H - doorH) / 2, zFront + (dz * t) / 2, 0xffffff, 0, 6);
       // Gables and a pitched roof, as two tilted slabs.
       const half = W / 2;
       const slope = Math.atan2(rise, half);
       const len = Math.hypot(half, rise) + 0.6;
+      // Each slab stops at the ridge (the cap covers the join) and oversails
+      // the eave by 0.3 m; running 0.3 m past the ridge, the two overlapped
+      // there face to face.
       for (const s of [-1, 1]) {
         this.b.roof.add(
-          new THREE.BoxGeometry(len, 0.3, D + 1.2),
-          trse(cx + (s * half) / 2, ELEV + H + rise / 2, zMid, 0, 0, -s * slope),
+          new THREE.BoxGeometry(len - 0.3, 0.3, D + 1.2),
+          trse(cx + (s * half) / 2 + s * 0.15 * Math.cos(slope), ELEV + H + rise / 2 - 0.15 * Math.sin(slope), zMid, 0, 0, -s * slope),
           0xffffff,
           8
         );
@@ -695,6 +842,44 @@ export class Airport {
         clad.add(gable, new THREE.Matrix4(), 0xffffff, 6);
         gable.dispose();
       }
+      /*
+       * The roof, finished: a capped ridge, a gutter along each eave, white
+       * barge boards up both gables, and rooflight strips down each slope.
+       * The walls: a band of high windows down each side, a steel post at
+       * every corner and a door for people beside the big ones. It was a box
+       * of cladding with a lid on — nothing on it said "hangar" from the
+       * circuit but its size.
+       */
+      const trim = this.b.metal;
+      trim.box(0.9, 0.45, D + 1.4, cx, ELEV + H + rise + 0.18, zMid, 0x6d757d);
+      const slopeUp = (s, d) => [s * d * Math.sin(slope), d * Math.cos(slope)];
+      for (const s of [-1, 1]) {
+        trim.box(0.45, 0.4, D + 1.3, cx + s * (half + 0.35), ELEV + H - 0.2, zMid, 0x6d757d);
+        const [ox, oy] = slopeUp(s, 0.22);
+        for (let i = 0; i < 3; i++) {
+          const g = new THREE.BoxGeometry(len * 0.55, 0.12, Math.min(3, D * 0.08));
+          vc.add(g, trse(cx + (s * half) / 2 + ox, ELEV + H + rise / 2 + oy, zMid + (i - 1) * D * 0.3, 0, 0, -s * slope), 0xdde7ee);
+          g.dispose();
+        }
+        // Stopping short of the ridge (its cap covers the join), so the two
+        // boards of a gable do not overlap in one plane at the top.
+        for (const zz of [zFront - dz * 0.62, zBack + dz * 0.62]) {
+          const g = new THREE.BoxGeometry(len - 0.6, 0.7, 0.2);
+          vc.add(g, trse(cx + (s * half) / 2 + s * 0.3 * Math.cos(slope), ELEV + H + rise / 2 - 0.12 - 0.3 * Math.sin(slope), zz, 0, 0, -s * slope), 0xe8ecef);
+          g.dispose();
+        }
+        // High windows down the side, and the corner posts.
+        const hw = Math.min(2.4, H * 0.12);
+        vc.box(0.1, hw, D * 0.8, (s < 0 ? r.x0 : r.x1) + s * 0.05, ELEV + H * 0.78, zMid, 0x2c3b48);
+        for (const zz of [zFront + dz * 0.2, zBack - dz * 0.2]) {
+          trim.box(0.9, H - 0.3, 0.9, (s < 0 ? r.x0 : r.x1) - s * 0.2, ELEV + (H - 0.3) / 2, zz, 0x8d949c);
+        }
+      }
+      vc.box(0.2, 2.3, 1.2, r.x1 + 0.1, ELEV + 1.15, zFront + dz * 4, 0x2c3b48);
+      // The number, big, on the gable over the doors.
+      const ns = Math.min(rise * 0.7, 8);
+      this.addPlate(String(h.number), cx, ELEV + H + ns / 2 + 0.3, zFront - dz * 0.05, dz < 0 ? 180 : 0, ns, ns, 'number');
+
       // The floor inside, and a painted parking box.
       vc.slab(r.x0 + t, r.x1 - t, ELEV + 0.02, ELEV + 0.1, Math.min(zFront, zBack) + 0.2, Math.max(zFront, zBack) - 0.2, 0x9c9fa3);
       plinth(vc, r.x0, r.x1, r.z0, r.z1);
@@ -813,8 +998,8 @@ export class Airport {
    * A name plate on a wall, its face looking toward heading `facingDeg`.
    * Drawn with the taxiway signs, from the same texture, in buildSigns().
    */
-  addPlate(text, x, y, z, facingDeg, w, h) {
-    (this.plates || (this.plates = [])).push({ kind: 'plate', text, x, y, z, facingDeg, w, h });
+  addPlate(text, x, y, z, facingDeg, w, h, kind = 'plate') {
+    (this.plates || (this.plates = [])).push({ kind, text, x, y, z, facingDeg, w, h });
   }
 
   /* -------------------------------------------------------- fire station -- */
@@ -833,7 +1018,7 @@ export class Airport {
     const H = f.H;
     const vc = this.b.vc;
     // Walls: warm brick-ish texture, flat roof with a parapet.
-    this.b.wallWarm.box(W, H, f.depth, cx, ELEV + H / 2, zMid, 0xffffff, 0, 5);
+    this.b.wallWarm.box(W, H, f.depth, cx, ELEV + H / 2, zMid, 0xffffff, 0, OFFICE_TILE);
     plinth(vc, r.x0, r.x1, r.z0, r.z1);
     this.b.roof.box(W + 0.6, 0.4, f.depth + 0.6, cx, ELEV + H + 0.2, zMid, 0xffffff, 0, 8);
     // The bays, facing the runway: red doors, one of them open.
@@ -846,7 +1031,7 @@ export class Airport {
       if (!open) for (let k = 1; k < 5; k++) vc.box(bw - 1.3, 0.08, 0.32, bx, ELEV + (H * 0.62 * k) / 5, zFront - dz * 0.12, 0xa82620);
     }
     // Hose-drying tower at one end.
-    this.b.wallWarm.box(4, H + 7, 4, r.x1 - 2.5, ELEV + (H + 7) / 2, zBack - dz * 2.5, 0xffffff, 0, 5);
+    this.b.wallWarm.box(4, H + 7, 4, r.x1 - 2.5, ELEV + (H + 7) / 2, zBack - dz * 2.5, 0xffffff, 0, OFFICE_TILE);
     vc.box(4.6, 0.4, 4.6, r.x1 - 2.5, ELEV + H + 7.2, zBack - dz * 2.5, 0x8d949c);
     this.addPlate('FIRE STATION', cx, ELEV + H * 0.82, zFront - dz * 0.05, dz < 0 ? 180 : 0, Math.min(W * 0.6, 16), 1.8);
     addObstacleAt(cx, zMid, W, f.depth, ELEV, H + 1, 'You flew into the fire station');
@@ -884,10 +1069,13 @@ export class Airport {
     const D = r.z1 - r.z0;
     // The bund: a low concrete wall round the tanks, which is what holds a leak.
     const bh = 1.4;
-    vc.slab(r.x0, r.x1, ELEV, ELEV + 0.15, r.z0, r.z1, 0x9a9d98);
+    // The floor inside the walls, and the end walls between the long ones:
+    // laid edge to edge over each other, their faces were coplanar all round
+    // the bund and at every corner (59 m2 of flicker at Ironhead).
+    vc.slab(r.x0 + 0.4, r.x1 - 0.4, ELEV, ELEV + 0.15, r.z0 + 0.4, r.z1 - 0.4, 0x9a9d98);
     plinth(vc, r.x0, r.x1, r.z0, r.z1);
-    vc.slab(r.x0, r.x0 + 0.4, ELEV, ELEV + bh, r.z0, r.z1, 0xb4b6b0);
-    vc.slab(r.x1 - 0.4, r.x1, ELEV, ELEV + bh, r.z0, r.z1, 0xb4b6b0);
+    vc.slab(r.x0, r.x0 + 0.4, ELEV, ELEV + bh, r.z0 + 0.4, r.z1 - 0.4, 0xb4b6b0);
+    vc.slab(r.x1 - 0.4, r.x1, ELEV, ELEV + bh, r.z0 + 0.4, r.z1 - 0.4, 0xb4b6b0);
     vc.slab(r.x0, r.x1, ELEV, ELEV + bh, r.z0, r.z0 + 0.4, 0xb4b6b0);
     vc.slab(r.x0, r.x1, ELEV, ELEV + bh, r.z1 - 0.4, r.z1, 0xb4b6b0);
     // Upright tanks, white with a red band and a domed lid.
@@ -1048,7 +1236,7 @@ export class Airport {
     };
     all.forEach((s, i) => {
       if (!cells[i]) return;
-      if (s.kind === 'plate') {
+      if (s.kind === 'plate' || s.kind === 'number') {
         const g = new THREE.PlaneGeometry(s.w, s.h);
         cellUV(g, cells[i]);
         // A plane looks down +Z; this turns it to look toward s.facingDeg.
@@ -1075,7 +1263,8 @@ export class Airport {
         // A plane faces +Z, and turning it by `yaw` points it back down the
         // reader's heading — at the reader. The second face looks the other way.
         const ry = yaw + (back ? Math.PI : 0);
-        const off = back ? -0.16 : 0.16;
+        // Clear of the frame's 0.15 m face by 3 cm: at 1 cm the two fought.
+        const off = back ? -0.18 : 0.18;
         faces.add(g, trs(s.x + Math.sin(yaw) * off, y, s.z + Math.cos(yaw) * off, ry), 0xffffff);
         g.dispose();
       }
@@ -1318,6 +1507,7 @@ export class Airport {
     for (const [k, mat] of [['wall', M.wall], ['wallWarm', M.wallWarm], ['clad', M.clad], ['roof', M.roof]]) {
       const m = add(this.b[k], mat, { name: k });
       if (m) m.geometry.deleteAttribute('color');
+      if (k === 'wall' || k === 'wallWarm') officeFloors(m, ELEV + 0.2);
     }
     this.b = null;
   }

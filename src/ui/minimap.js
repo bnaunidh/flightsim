@@ -2628,7 +2628,8 @@ export class Minimap {
     const { ctx, craft, mode, ts } = g;
     let text = '';
     if (mode === 'boat') {
-      const u = depthUnderKeel(craft.x, craft.z, craft.draught);
+      // Floored at 0: a touch under it printed "UNDER KEEL -0.0 m".
+      const u = Math.max(0, depthUnderKeel(craft.x, craft.z, craft.draught));
       text = craft.aground ? 'AGROUND' : `UNDER KEEL ${u < 10 ? u.toFixed(1) : Math.round(u)} m`;
     } else if (mode === 'car') {
       /*

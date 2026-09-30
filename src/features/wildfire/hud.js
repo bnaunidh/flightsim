@@ -259,7 +259,7 @@ export class FireHud {
     this._set('tankw', this.tankFill, 'width', `${Math.round(f * 100)}%`);
     this._set('tankc', this.tank, 'class', m.filling ? 'wf-tank is-filling' : 'wf-tank');
     this._set('tankl', this.tankLbl, 'text', m.kind === 'bucket' ? 'BUCKET' : 'TANK');
-    this._set('lit', this.lit, 'text', `${Math.round(m.litres).toLocaleString('en-GB')} L`);
+    this._set('lit', this.lit, 'text', `${Math.max(0, Math.round(m.litres)).toLocaleString('en-GB')} L`);
     if (m.next) {
       const km = m.next.dist >= 1000 ? `${(m.next.dist / 1000).toFixed(1)} km` : `${Math.round(m.next.dist / 10) * 10} m`;
       const word = m.next.kind === 'fill' ? 'FILL UP' : 'DROP';

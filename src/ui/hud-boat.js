@@ -496,7 +496,9 @@ export class BoatHud {
     // Rounded to a tenth under 10 m and to the metre above it: the difference
     // between 1.4 m and 1.1 m is the whole game, and the difference between
     // 41 m and 44 m is nothing at all.
-    const shown = depth < 10 ? Math.round(depth * 10) / 10 : Math.round(depth);
+    // Never below nothing: between touching (0) and AGROUND (-0.3) the swell
+    // lifting the hull read "-0.1" and "-0.0", which is not a depth.
+    const shown = depth < 10 ? Math.max(0, Math.round(depth * 10) / 10) : Math.round(depth);
     if (this.last.depth !== shown) {
       this.last.depth = shown;
       this.depthValue.textContent =
@@ -646,32 +648,13 @@ export class BoatHud {
    * and the 8-second "Tap Shift to go faster" notice were both still up, and the
    * subtitle sat across the bottom of the picture over the launch's stern
    * for the whole trip; the toast stack only ever emptied by being pushed
-   * past four. This is that same countdown, on the same fields, in the same
-   * way, so a line said in the boat lasts exactly as long as one said in
-   * the air. hud.js is not this file's to change; it is only read and
-   * counted down here, and only while the boat is up.
+   * past four. Hud.updateOverlays() is that same countdown — the radio
+   * line's fade and the objective folding to its chip included — so a line
+   * said in the boat lasts exactly as long as one said in the air. Called
+   * here, and only while the boat is up.
    */
   tickHudTimers(dt) {
-    const h = this.hud;
-    if (h.subtitleTimer > 0) {
-      h.subtitleTimer -= dt;
-      if (h.subtitleTimer <= 0 && h.subtitle) h.subtitle.style.display = 'none';
-    }
-    if (h.bannerTimer > 0) {
-      h.bannerTimer -= dt;
-      if (h.bannerTimer <= 0 && h.banner) h.banner.style.display = 'none';
-    }
-    const list = h.toasts;
-    if (!list) return;
-    for (let i = list.length - 1; i >= 0; i--) {
-      list[i].life -= dt;
-      if (list[i].life <= 0) {
-        const node = list[i].node;
-        node.classList.add('is-out');
-        setTimeout(() => node.remove(), 400);
-        list.splice(i, 1);
-      }
-    }
+    if (this.hud.updateOverlays) this.hud.updateOverlays(dt);
   }
 
   /* ------------------------------------------------------------ arrow -- */

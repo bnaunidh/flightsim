@@ -127,7 +127,9 @@ const HELI_CSS = `
 .hud-heli-lift { display: flex; gap: 5px; margin-top: 6px; }
 .hud-heli-lift[hidden] { display: none; }
 .hud-heli-lift span {
-  flex: 1 1 0; text-align: center; font-size: 10px; letter-spacing: 0.06em; padding: 3px 0;
+  /* Sized by their words, on one line each: at equal thirds "CTRL ▼ DOWN"
+     wrapped to two lines and stood taller than the other two keys. */
+  flex: 1 1 auto; white-space: nowrap; text-align: center; font-size: 10px; letter-spacing: 0.04em; padding: 3px 4px;
   border: 1px solid rgba(140, 180, 230, 0.22); border-radius: 6px; color: var(--text-dim);
 }
 .hud-heli-lift span.is-on { color: #fff; border-color: rgba(88, 198, 255, 0.8); background: rgba(88, 198, 255, 0.2); }

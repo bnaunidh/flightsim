@@ -24,15 +24,43 @@ function el(tag, cls, html) {
   return e;
 }
 
+/*
+ * Never "-0".
+ *
+ * A vertical speed of -3 ft/min rounds to minus nothing, and toLocaleString
+ * keeps the sign: sitting still on the runway the panel read "-0 ft/min".
+ * Rounding here first and folding -0 (and NaN) into a plain 0 means no number
+ * this formatter prints can ever carry a sign it has not earned.
+ */
 function fmt(n, digits = 0) {
-  return Number(n).toLocaleString('en-GB', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  const f = 10 ** digits;
+  const v = Math.round(Number(n) * f) / f || 0;
+  return v.toLocaleString('en-GB', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
+
+/*
+ * How long a line takes a ten-year-old to read, in seconds: a second to find
+ * it, then about three words a second. Used as the floor for the radio line
+ * and for how long the objective stays open before folding into its chip.
+ */
+function readSeconds(text) {
+  const words = String(text || '').split(/\s+/).filter(Boolean).length;
+  return 1 + words / 3;
+}
+
+// The objective folds to a one-line chip once it has been up this long (at
+// least), and stays open while the pointer is over it.
+const OBJECTIVE_OPEN_MIN = 6;
+const OBJECTIVE_OPEN_MAX = 14;
+// A radio line fades out over this long rather than blinking off.
+const SUBTITLE_FADE = 0.45;
 
 export class Hud {
   constructor(root, { onAction } = {}) {
     this.root = root;
     this.onAction = onAction || (() => {});
     this.subtitleTimer = 0;
+    this.subtitleFade = 0;
     this.toasts = [];
     this.lastValues = {};
     this.build();
@@ -58,7 +86,9 @@ export class Hud {
       r.appendChild(el('div', 'hud-label', label));
       const v = el('div', 'hud-valuewrap');
       v.appendChild(value);
-      if (unit) v.appendChild(el('span', 'hud-unit', unit));
+      // A degree sign is not a unit word: set small on the baseline it read
+      // "090 ∘", so it gets its own class and sits up by the figure.
+      if (unit) v.appendChild(el('span', unit === '°' ? 'hud-unit is-deg' : 'hud-unit', unit));
       r.appendChild(v);
       r.appendChild(word);
       return r;
@@ -116,6 +146,37 @@ export class Hud {
     this.objective.appendChild(this.objectiveTitle);
     this.objective.appendChild(this.objectiveClock);
     this.objective.appendChild(this.objectiveText);
+    /*
+     * The objective folds itself away.
+     *
+     * At the start of every flight the banner, the coach line, the tower's
+     * clearance and four panels were all on screen at once. The banner is read
+     * once and then only glanced at, so after it has been up long enough to
+     * read it shrinks to a one-line chip at the top: title, clock if there is
+     * one, and as much of the sentence as fits. It opens again by itself when
+     * the objective changes, while the pointer is over it, when it is tapped,
+     * and when H (help) is pressed. Nothing is removed from the page, so every
+     * check that reads the objective's text still reads all of it.
+     */
+    this.objectiveOpen = true;
+    this.objectiveT = OBJECTIVE_OPEN_MIN;
+    this.objectiveHover = false;
+    this.objective.addEventListener('pointerenter', (e) => {
+      if (e.pointerType !== 'mouse') return;
+      this.objectiveHover = true;
+      this.showObjective(2.5);
+    });
+    this.objective.addEventListener('pointerleave', (e) => {
+      if (e.pointerType !== 'mouse') return;
+      this.objectiveHover = false;
+      this.objectiveT = Math.min(this.objectiveT, 2.5);
+    });
+    this.objective.addEventListener('click', (e) => {
+      e.preventDefault();
+      // A tap on the chip opens it; a tap on the open banner puts it away.
+      if (this.objectiveOpen && !this.objectiveHover) this.foldObjective();
+      else this.showObjective();
+    });
 
     // Taxi instructions, shown only while taxiing out.
     this.taxi = el('div', 'hud-taxi');
@@ -417,6 +478,9 @@ export class Hud {
     html += '</div><div class="cc-foot">Press H to close · change any key in Settings</div>';
     this.controlsCard.innerHTML = html;
     this.controlsCard.style.display = '';
+    // Help is "what do I press" and "what am I doing": the folded objective
+    // opens with the keys.
+    this.showObjective();
   }
 
   hideControls() {
@@ -466,7 +530,13 @@ export class Hud {
     this.banner.style.display = 'none';
     this.bannerTimer = 0;
     this.subtitle.style.display = 'none';
+    this.subtitle.classList.remove('is-out');
     this.subtitleTimer = 0;
+    this.subtitleFade = 0;
+    // A new flight starts with its objective open, however the last one ended.
+    this.objectiveHover = false;
+    this.objectiveOpen = false;
+    this.showObjective();
     for (const t of this.toasts) t.node.remove();
     this.toasts.length = 0;
     this.setCoach(null);
@@ -575,9 +645,11 @@ export class Hud {
   }
 
   setObjective(title, text) {
+    let changed = false;
     if (this.lastValues.objTitle !== title) {
       this.objectiveTitle.textContent = title;
       this.lastValues.objTitle = title;
+      changed = true;
     }
     if (this.lastValues.objText !== text) {
       this.objectiveText.textContent = text;
@@ -586,6 +658,72 @@ export class Hud {
       void this.objectiveText.offsetWidth;
       this.objectiveText.classList.add('is-flash');
       this.lastValues.objText = text;
+      changed = true;
+    }
+    // Something new to read: open up again, for as long as it takes to read.
+    if (changed) this.showObjective();
+  }
+
+  /**
+   * Open the objective banner for `seconds` (by default, long enough to read
+   * what it says), after which it folds back into its chip.
+   */
+  showObjective(seconds) {
+    const read = readSeconds(`${this.objectiveTitle.textContent} ${this.objectiveText.textContent}`) + 1;
+    const want = seconds ?? Math.min(OBJECTIVE_OPEN_MAX, Math.max(OBJECTIVE_OPEN_MIN, read));
+    this.objectiveT = Math.max(this.objectiveOpen ? this.objectiveT : 0, want);
+    if (this.objectiveOpen) return;
+    this.objectiveOpen = true;
+    this.objective.classList.remove('is-chip');
+    this.objective.removeAttribute('title');
+  }
+
+  /** Fold the objective into its one-line chip now. */
+  foldObjective() {
+    this.objectiveT = 0;
+    if (!this.objectiveOpen) return;
+    this.objectiveOpen = false;
+    this.objective.classList.add('is-chip');
+    this.objective.title = 'Tap, or press H, to read the whole objective';
+  }
+
+  /**
+   * Count down everything on the screen that is only there for a while: the
+   * radio line, the banner, the toasts, and how long the objective stays
+   * open. One method, so the boat and the car — whose loops never reach
+   * update() — run exactly the same clocks as the aeroplane.
+   */
+  updateOverlays(dt) {
+    if (this.subtitleTimer > 0) {
+      this.subtitleTimer -= dt;
+      if (this.subtitleTimer <= 0) {
+        // Fade, then go: a line that blinks off mid-glance reads as a glitch.
+        this.subtitle.classList.add('is-out');
+        this.subtitleFade = SUBTITLE_FADE;
+      }
+    } else if (this.subtitleFade > 0) {
+      this.subtitleFade -= dt;
+      if (this.subtitleFade <= 0) {
+        this.subtitle.style.display = 'none';
+        this.subtitle.classList.remove('is-out');
+      }
+    }
+    if (this.bannerTimer > 0) {
+      this.bannerTimer -= dt;
+      if (this.bannerTimer <= 0) this.banner.style.display = 'none';
+    }
+    for (let i = this.toasts.length - 1; i >= 0; i--) {
+      this.toasts[i].life -= dt;
+      if (this.toasts[i].life <= 0) {
+        this.toasts[i].node.classList.add('is-out');
+        const node = this.toasts[i].node;
+        setTimeout(() => node.remove(), 400);
+        this.toasts.splice(i, 1);
+      }
+    }
+    if (this.objectiveOpen && !this.objectiveHover) {
+      this.objectiveT -= dt;
+      if (this.objectiveT <= 0) this.foldObjective();
     }
   }
 
@@ -612,7 +750,12 @@ export class Hud {
     this.subtitleWho.textContent = who || '';
     this.subtitleText.textContent = text;
     this.subtitle.style.display = '';
-    this.subtitleTimer = Math.max(2.4, duration || 3.5);
+    this.subtitle.classList.remove('is-out');
+    this.subtitleFade = 0;
+    // Up for as long as it is spoken, and never for less time than it takes
+    // to read — the fallback timings (no audio yet) are a flat 3 to 4 s,
+    // which is not long enough for a two-line clearance.
+    this.subtitleTimer = Math.max(2.4, duration || 3.5, text ? readSeconds(text) : 0);
   }
 
   /**
@@ -899,13 +1042,30 @@ export class Hud {
       this.speedValue.classList.toggle('is-warn', !rotor && ias > 0 && ias < 52 && !r.onGround);
     }
 
-    const alt = Math.round(r.altFt / 10) * 10;
-    if (this.lastValues.alt !== alt) {
+    /*
+     * On the ground the altimeter reads 0, with the field's own height beside
+     * the words.
+     *
+     * In the air this is height above the sea, the same number the cockpit
+     * altimeter shows and the tutorial's "climb to 1,000 feet" is checked
+     * against, and that is unchanged. But sitting on Kestrel's runway it read
+     * "50 ft · on the ground", which to a ten-year-old is simply wrong — you
+     * are not fifty feet up, you are on the tarmac — and at the air base it
+     * was "940 ft". So on the ground the big number is how high you are (0)
+     * and the small line says where the sea-level count starts from, which is
+     * also why the number picks up at the field's height the moment the
+     * wheels leave it.
+     */
+    const onGround = !!r.onGround;
+    const fieldFt = Math.max(0, Math.round((r.altFt - r.aglFt) / 10) * 10);
+    const alt = onGround ? 0 : Math.round(r.altFt / 10) * 10;
+    const altKey = onGround ? `ground ${fieldFt}` : alt;
+    if (this.lastValues.alt !== altKey) {
       this.altValue.textContent = fmt(alt);
-      this.lastValues.alt = alt;
+      this.lastValues.alt = altKey;
       const agl = r.aglFt;
       let word;
-      if (r.onGround) word = 'on the ground';
+      if (onGround) word = fieldFt >= 10 ? `on the ground · field ${fmt(fieldFt)} ft` : 'on the ground';
       else if (agl < 60) word = 'just off the ground';
       else if (agl < 400) word = 'low — be careful';
       else if (agl < 1500) word = 'a nice safe height';
@@ -1083,23 +1243,7 @@ export class Hud {
     }
 
     // --- Timers ---
-    if (this.subtitleTimer > 0) {
-      this.subtitleTimer -= dt;
-      if (this.subtitleTimer <= 0) this.subtitle.style.display = 'none';
-    }
-    if (this.bannerTimer > 0) {
-      this.bannerTimer -= dt;
-      if (this.bannerTimer <= 0) this.banner.style.display = 'none';
-    }
-    for (let i = this.toasts.length - 1; i >= 0; i--) {
-      this.toasts[i].life -= dt;
-      if (this.toasts[i].life <= 0) {
-        this.toasts[i].node.classList.add('is-out');
-        const node = this.toasts[i].node;
-        setTimeout(() => node.remove(), 400);
-        this.toasts.splice(i, 1);
-      }
-    }
+    this.updateOverlays(dt);
   }
 }
 

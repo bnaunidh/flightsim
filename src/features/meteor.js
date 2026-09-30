@@ -1326,7 +1326,9 @@ const CSS = `
 #meteor-ui .mt-keys kbd { font:inherit; font-weight:700; padding:0 5px; border-radius:4px; border:1px solid rgba(255,255,255,0.35); }
 #meteor-ui .mt-zap { position:absolute; right:18px; bottom:232px; width:74px; height:74px; border-radius:50%;
   pointer-events:auto; touch-action:none; -webkit-user-select:none; user-select:none; cursor:pointer;
-  border:2px solid rgba(150,232,255,0.9); color:#fff; font:750 15px/1 inherit; letter-spacing:0.08em;
+  border:2px solid rgba(150,232,255,0.9); color:#fff; letter-spacing:0.08em;
+  /* longhands: "font:750 15px/1 inherit" is invalid CSS and was dropped whole */
+  font-family:inherit; font-weight:750; font-size:15px; line-height:1;
   background:radial-gradient(circle at 50% 40%, rgba(140,228,255,0.62), rgba(26,84,132,0.66));
   box-shadow:0 0 18px rgba(120,220,255,0.45); }
 #meteor-ui .mt-zap[hidden] { display:none; }

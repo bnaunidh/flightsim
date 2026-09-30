@@ -271,15 +271,20 @@ function blockGeometry(list) {
     const y0 = b.y0;
     const y1 = b.y0 + h;
     const u = (2 * b.w) / FACADE_W;
-    // Floors counted from the building's own ground line, where the door is.
-    const v0 = 0;
-    const v1 = h / FACADE_H;
-    const wall = [0, v0, u, v0, u, v1, 0, v1];
+    // Floors counted from the building's own ground floor: the highest
+    // ground along its walls (a rig module has none, and starts at its foot).
+    // Below that, down the slope, a plinth of plain wall (the strip under
+    // the texture's lower row of windows), so no window meets the ground.
+    const vb = Math.min(y1 - 3.5, b.floor ?? b.y0);
+    const v1 = (y1 - vb) / FACADE_H;
+    const bands = vb > y0 + 0.05 ? [[y0, vb, [0, 0.005, u, 0.005, u, 0.03, 0, 0.03]], [vb, y1, [0, 0, u, 0, u, v1, 0, v1]]] : [[y0, y1, [0, (y0 - vb) / FACADE_H, u, (y0 - vb) / FACADE_H, u, v1, 0, v1]]];
     // Four walls, each wound counter-clockwise seen from outside.
-    quad([x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], 0, 0, 1, wall, wallIdx);
-    quad([x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0], 0, 0, -1, wall, wallIdx);
-    quad([x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], 1, 0, 0, wall, wallIdx);
-    quad([x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], -1, 0, 0, wall, wallIdx);
+    for (const [ya, yb, wall] of bands) {
+      quad([x0, ya, z1], [x1, ya, z1], [x1, yb, z1], [x0, yb, z1], 0, 0, 1, wall, wallIdx);
+      quad([x1, ya, z0], [x0, ya, z0], [x0, yb, z0], [x1, yb, z0], 0, 0, -1, wall, wallIdx);
+      quad([x1, ya, z1], [x1, ya, z0], [x1, yb, z0], [x1, yb, z1], 1, 0, 0, wall, wallIdx);
+      quad([x0, ya, z0], [x0, ya, z1], [x0, yb, z1], [x0, yb, z0], -1, 0, 0, wall, wallIdx);
+    }
     const flat = [0, 0, 1, 0, 1, 1, 0, 1];
     quad([x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0], 0, 1, 0, flat, roofIdx);
   }
@@ -338,6 +343,21 @@ function groundMax(x, z, r) {
   return hi;
 }
 
+/** The lowest and highest ground along the four walls of a square 2 half wide. */
+function wallGround(x, z, half) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let k = 0; k <= 8; k++) {
+    const t = -half + (2 * half * k) / 8;
+    for (const [px, pz] of [[x + t, z - half], [x + t, z + half], [x - half, z + t], [x + half, z + t]]) {
+      const h = heightAt(px, pz);
+      if (h < lo) lo = h;
+      if (h > hi) hi = h;
+    }
+  }
+  return [lo, hi];
+}
+
 /** …and the lowest, which is what tells you whether a spot is really level. */
 function groundMin(x, z, r) {
   let lo = Infinity;
@@ -387,8 +407,17 @@ export function buildPads(parent) {
       for (const [ox, oz] of [[-d, -d], [d, -d], [-d, d], [d, d]]) {
         legs.push({ x: def.x + ox, z: def.z + oz, y0: heightAt(def.x + ox, def.z + oz) - 1, y1: y, r: 0.9 });
       }
+      /*
+       * Down to the lowest ground along its walls, which stand 1.25 r out:
+       * measured inside 0.8 r, the corners of a hospital on a hillside hung
+       * up to 5 m in the air. And its floors counted from the HIGHEST ground
+       * along them, so the ground-floor windows are above the ground on
+       * every side; from 1 m under the lowest, they were 0.45 m into it on
+       * level ground and deeper up the slope.
+       */
+      const [gLo, gHi] = wallGround(def.x, def.z, r * 1.25);
       blocks.push({
-        x: def.x, z: def.z, y0: groundMin(def.x, def.z, r) - 1, y1: y - 1.4, w: r * 1.25,
+        x: def.x, z: def.z, y0: gLo - 1, y1: y - 1.4, w: r * 1.25, floor: gHi + 0.1,
         roof: true, hospital: (def.role || (def.id === 'hospital' ? 'hospital' : 'pad')) === 'hospital',
       });
       // Solid across the whole of what is drawn. addObstacleAt takes the FULL

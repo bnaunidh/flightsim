@@ -366,7 +366,9 @@ export class TouchControls {
     // it says, because on a boat the emergency is the same gesture with a
     // different name.
     for (const p of [this.gearPad, this.flapPad, this.enginePad]) if (p) p.hidden = want;
-    if (this.brakePad) this.brakePad.textContent = want ? 'CRASH STOP' : 'BRAKES';
+    // main.js calls this straight after setMode('drive') (driving.js), so the
+    // van's 'HAND' has to survive it, or the van's pad read BRAKES.
+    if (this.brakePad) this.brakePad.textContent = want ? 'CRASH STOP' : this.mode === 'drive' ? 'HAND' : 'BRAKES';
     // Leaving a stale axis behind is how a boat ends up in a permanent turn.
     this.state.pitch = 0;
     this.state.lever = want ? this.state.lever ?? 1 : null;

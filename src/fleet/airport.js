@@ -264,7 +264,8 @@ export function runwayTexture({ near = '18', far = '36' } = {}) {
     for (const y of [H * .115, H - H * .15]) {
       ctx.fillRect(W * .26, y, 26, H * .035); ctx.fillRect(W * .74 - 26, y, 26, H * .035);
     }
-    for (const [text, y, flip] of [[near, H * .085, false], [far, H * .915, true]]) {
+    // Read from the approach: the top of each number points down the runway, away from its own end.
+    for (const [text, y, flip] of [[near, H * .085, true], [far, H * .915, false]]) {
       ctx.save(); ctx.translate(W / 2, y); if (flip) ctx.rotate(Math.PI);
       ctx.fillStyle = paint; ctx.font = 'bold 150px "Arial Black", Arial, sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 0, 0, 340); ctx.restore();

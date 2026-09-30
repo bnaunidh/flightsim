@@ -12,6 +12,7 @@ import { buildingTexture, roofTexture, foamTexture, asphaltTexture, asphaltNorma
 import { createFishingBoat } from '../fleet/maritime.js';
 import { makeRandom } from '../core/noise.js';
 import { buildPads, updatePads, padsOf } from './pads.js';
+import { Batch } from './airport-kit.js';
 
 export const DELIVERY_PAD = new THREE.Vector3(6200, 0, -5200);
 
@@ -581,6 +582,108 @@ function houseNightTexture(c, g, variant) {
   return t;
 }
 
+/**
+ * The town's walls, one storey of one bay at a time: a 4 x 4 atlas of
+ * 128 px cells, each 3 m of wall by 2.9 m (one storey).
+ *
+ *   row 0  four window designs, dark at night
+ *   row 1  the same four, lit at night (the day picture is identical)
+ *   row 2  plain render (the door's bay, the gables), and a stone plinth
+ *
+ * Drawn light, so a house's vertex colour tints it. Nothing in it is red.
+ * The houses used to wear ONE picture of a whole house front — two floors
+ * of windows and a door — stretched over each wall whatever its size, so a
+ * long wall had windows twice as wide as they were tall, every wall of every
+ * house had a front door, and on a slope the uphill door was underground.
+ * Now a wall is cut into bays and storeys that fit it, and the door is a
+ * door (see addTown).
+ */
+function townAtlas(night = false) {
+  const S = 128;
+  const c = document.createElement('canvas');
+  c.width = S * 4;
+  c.height = S * 4;
+  const g = c.getContext('2d');
+  const rnd = makeRandom(9051);
+  g.fillStyle = night ? '#000000' : '#f4f1ea';
+  g.fillRect(0, 0, S * 4, S * 4);
+  const render = (x0, y0) => {
+    if (night) return;
+    for (let i = 0; i < 70; i++) {
+      const v = (216 + rnd() * 36) | 0;
+      g.fillStyle = `rgba(${v},${v - 4},${v - 10},0.35)`;
+      g.fillRect(x0 + rnd() * S, y0 + rnd() * S, 2 + rnd() * 5, 1 + rnd() * 3);
+    }
+  };
+  const shutters = ['#58785a', '#44668a', null, '#5d6b78'];
+  const warm = ['#ffd08a', '#ffe0a8', '#f6c27a', '#ffe9c0'];
+  for (let row = 0; row < 2; row++) {
+    for (let k = 0; k < 4; k++) {
+      const x0 = k * S;
+      const y0 = row * S;
+      render(x0, y0);
+      const french = k === 3;
+      // 44 px to the metre: a 1.05 x 1.35 m window, its sill 0.85 m up; the
+      // fourth design a 1.1 x 2.0 m French window with a rail across it.
+      const ww = french ? 48 : 46;
+      const wh = french ? 88 : 60;
+      const wx = x0 + (S - ww) / 2;
+      const wy = y0 + S - (french ? 11 : 37) - wh;
+      if (night) {
+        if (row === 1) {
+          g.fillStyle = warm[k];
+          g.fillRect(wx + 3, wy + 3, ww - 6, wh - 6);
+        }
+        continue;
+      }
+      // Frame, glass, glazing bars, sill.
+      g.fillStyle = '#fbfaf6';
+      g.fillRect(wx - 4, wy - 4, ww + 8, wh + 8);
+      const gr = g.createLinearGradient(wx, wy, wx + ww, wy + wh);
+      gr.addColorStop(0, '#2b3946');
+      gr.addColorStop(0.55, '#5c6f81');
+      gr.addColorStop(1, '#2e3c49');
+      g.fillStyle = gr;
+      g.fillRect(wx, wy, ww, wh);
+      g.fillStyle = '#fbfaf6';
+      g.fillRect(wx + ww / 2 - 1.5, wy, 3, wh);
+      g.fillRect(wx, wy + wh * (french ? 0.3 : 0.45), ww, 3);
+      g.fillStyle = '#cfc8bb';
+      g.fillRect(wx - 6, wy + wh + 3, ww + 12, 5);
+      if (shutters[k] && !french) {
+        g.fillStyle = shutters[k];
+        g.fillRect(wx - 5 - ww * 0.42, wy - 3, ww * 0.4, wh + 6);
+        g.fillRect(wx + ww + 5, wy - 3, ww * 0.4, wh + 6);
+        g.fillStyle = 'rgba(0,0,0,0.18)';
+        for (let i = 1; i < 6; i++) {
+          g.fillRect(wx - 5 - ww * 0.42, wy - 3 + (i * (wh + 6)) / 6, ww * 0.4, 1.5);
+          g.fillRect(wx + ww + 5, wy - 3 + (i * (wh + 6)) / 6, ww * 0.4, 1.5);
+        }
+      }
+      if (french) {
+        g.fillStyle = shutters[k];
+        g.fillRect(wx - 8, wy + wh - 40, ww + 16, 3);
+        for (let i = 0; i <= 8; i++) g.fillRect(wx - 8 + (i * (ww + 14)) / 8, wy + wh - 40, 2, 38);
+      }
+    }
+  }
+  // Row 2: plain render, then a stone plinth.
+  render(0, 2 * S);
+  if (!night) {
+    g.fillStyle = '#b8b0a3';
+    g.fillRect(S, 2 * S, S, S);
+    g.fillStyle = 'rgba(80,72,62,0.35)';
+    for (let r = 0; r < 4; r++) {
+      g.fillRect(S, 2 * S + r * 32, S, 2);
+      for (let q = 0; q < 3; q++) g.fillRect(S + ((q * 48 + (r % 2) * 24) % S), 2 * S + r * 32, 2, 32);
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
 /** Axis-aligned half-extents of a w × d rectangle turned by `rot`. */
 function turnedHalf(w, d, rot) {
   const c = Math.abs(Math.cos(rot));
@@ -608,26 +711,32 @@ const TOWER_TINTS = [0x9fb6c8, 0x93b4b2, 0xc0ab8c, 0xc4ccd2, 0x8ea5bf];
  * window grid. Now planTown() lays the town out along streets and decides
  * what each building is; this draws them:
  *
- *   houses  — lime-washed in eight colours, a house front (shuttered
- *             windows and a door) in two variants, a pitched roof in one of
- *             seven colours with its ridge along the long side, and a
- *             chimney on about half of them
- *   blocks  — taller, stone and concrete, the office texture, a flat roof
- *             with a plant room
+ *   houses  — lime-washed in eight colours, walls cut into 3 m bays and
+ *             2.9 m storeys (four window designs, some lit after dark), a
+ *             stone plinth, ONE front door facing the street with a step
+ *             and a hood, a gabled or hipped roof in one of seven colours
+ *             with its ridge along the long side, and a chimney on about
+ *             half of them
+ *   blocks  — taller, stone and concrete, the office texture laid in metres,
+ *             a glazed door to the street, a roof slab with a plant room
  *   towers  — only where a map asks (`town.towers`): glass, with a set-back
  *             crown and a red light on top that blinks
  *
- * Draw calls: two house-wall meshes, two block-wall meshes, roofs, chimneys,
- * roof caps, plant rooms, and three for towers when there are any — twelve
- * at the most whatever the building count.
+ * Draw calls: one mesh of house walls, two of block walls, one of roofs,
+ * doors and everything else, and three for towers when there are any —
+ * seven at the most whatever the building count (it was twelve).
  *
  * Every building registers an obstacle — the axis-aligned box that contains
- * its turned footprint — and stands on the LOWEST corner of its footprint,
- * sunk 0.3 m below it, so the downhill side of a house on a slope has a
- * taller wall rather than a gap under it.
+ * its turned footprint — and its walls go down to the LOWEST ground along
+ * any of them, sunk 0.3 m below it, so the downhill side of a house on a
+ * slope has a taller plinth rather than a gap under it; on the uphill side
+ * a storey whose windows would be in the ground is stone wall instead.
  */
 export function addTown(group, spots, opts = {}) {
   if (!spots.length) return { houses: 0, blocks: 0, towers: 0, tallest: 0, lampMat: null, nightMats: [] };
+  // `solid: false` for buildings you are meant to land among (the delivery
+  // pad's huts); `roofTints` for thatch; `meshName` prefixes the meshes.
+  const { solid = true, roofTints = ROOF_TINTS, meshName: name = 'town' } = opts;
   // Materials whose windows light up after dark; Scenery.update switches them.
   const nightMats = [];
   const plan = spots.map((s, i) => {
@@ -649,123 +758,332 @@ export function addTown(group, spots, opts = {}) {
   // ground, so a row of houses along a street keeps a line.
   const top = (b) => b.s.y + b.h;
 
-  /* ---- walls: two house fronts, two block textures ---- */
-  const houseTex = [houseTexture(0), houseTexture(1)];
-  const houseNight = [houseTexture(0, true), houseTexture(1, true)];
-  for (const kind of ['house', 'block']) {
-    for (let v = 0; v < 2; v++) {
-      const list = plan.filter((b) => b.kind === kind && b.v === v);
-      if (!list.length) continue;
-      const mat = new THREE.MeshStandardMaterial({
-        map: kind === 'house' ? houseTex[v] : buildingTexture(v ? 3 : 0),
-        roughness: 0.85,
-        metalness: 0.02,
-        envMapIntensity: 0.6,
-      });
-      if (kind === 'house') {
-        mat.emissive.setHex(0xffffff);
-        mat.emissiveMap = houseNight[v];
-        mat.emissiveIntensity = 0;
-        nightMats.push(mat);
-      }
-      const inst = new THREE.InstancedMesh(unit, mat, list.length);
-      inst.castShadow = inst.receiveShadow = true;
-      list.forEach((b, i) => {
-        const { s } = b;
-        const hh = top(b) - b.base;
-        d.position.set(s.x, b.base + hh / 2, s.z);
-        d.rotation.set(0, s.rot, 0);
-        d.scale.set(b.w, hh, b.d);
-        d.updateMatrix();
-        inst.setMatrixAt(i, d.matrix);
-        const tints = kind === 'house' ? WALL_TINTS : BLOCK_TINTS;
-        inst.setColorAt(i, col.setHex(tints[Math.floor(b.q * tints.length) % tints.length]));
-        const [hx, hz] = turnedHalf(b.w, b.d, s.rot);
-        // A roof is at most half its span high (see below), and the span is
-        // always the short side.
-        addObstacleAt(s.x, s.z, hx * 2, hz * 2, b.base, top(b) - b.base + (kind === 'house' ? Math.min(b.w, b.d) * 0.5 + 0.5 : 1.3),
-          'You flew into a building');
-      });
-      inst.instanceMatrix.needsUpdate = true;
-      if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
-      group.add(inst);
-    }
-  }
+  /*
+   * Houses and blocks, all of them in four meshes.
+   *
+   *   walls     every house wall: plinth, storeys cut into 3 m bays from the
+   *             atlas (townAtlas), and the gable ends
+   *   blocks    the taller blocks' walls, two textures, UVs in metres so a
+   *             window is the same size on a 13 m block as on a 22 m one
+   *   trims     everything else, coloured per vertex: roofs (gabled or
+   *             hipped), chimneys, doors with their frames, steps and hoods,
+   *             the blocks' roof slabs and plant rooms
+   *
+   * It was eight meshes: two of house walls and two of block walls (unit
+   * boxes wearing one stretched picture each), roofs, chimneys, caps and
+   * plant rooms. Every house had a door on all four walls, the door on the
+   * uphill wall was underground, and there was one roof shape.
+   */
+  const walls = new Batch();
+  const blockWalls = [new Batch(), new Batch()];
+  const trims = new Batch();
+  const facts = { doors: 0, doorGap: Infinity, bays: 0, buriedBays: 0, stretch: 1, hipped: 0, gabled: 0, openBays: 0, blankBays: 0 };
+  const cellUV = (c, r, m = 0) => [(c + m) / 4, 1 - (r + 1 - m) / 4, (c + 1 - m) / 4, 1 - (r + m) / 4];
+  const PLAIN = cellUV(0, 2, 0.15);
+  const STONE = cellUV(1, 2, 0.1);
+  const hash = (a, b, c) => {
+    const v = Math.sin(a * 12.9898 + b * 78.233 + c * 37.719) * 43758.5453;
+    return v - Math.floor(v);
+  };
+  const DOORS = [0x3f5a4a, 0x2f4a63, 0x5a4332, 0x3a3f46, 0x4d6f78];
+  // A quad whose winding is checked against the way it should face.
+  const _a = new THREE.Vector3();
+  const _b = new THREE.Vector3();
+  const faceQuad = (batch, a, b2, c, dd, uv, colr, want) => {
+    _a.set(b2[0] - a[0], b2[1] - a[1], b2[2] - a[2]);
+    _b.set(c[0] - a[0], c[1] - a[1], c[2] - a[2]);
+    _a.cross(_b);
+    if (_a.x * want[0] + _a.y * want[1] + _a.z * want[2] >= 0) batch.quad(a, b2, c, dd, uv, colr);
+    else batch.quad(b2, a, dd, c, [uv[2], uv[1], uv[0], uv[3]], colr);
+  };
+  const faceTri = (batch, a, b2, c, colr, want) => {
+    _a.set(b2[0] - a[0], b2[1] - a[1], b2[2] - a[2]);
+    _b.set(c[0] - a[0], c[1] - a[1], c[2] - a[2]);
+    _a.cross(_b);
+    const t = [[0.5, 0.5], [0.5, 0.5], [0.5, 0.5]];
+    if (_a.x * want[0] + _a.y * want[1] + _a.z * want[2] >= 0) batch.tri(a, b2, c, ...t, colr);
+    else batch.tri(b2, a, c, ...t, colr);
+  };
 
-  /* ---- pitched roofs and chimneys on the houses ---- */
-  const houses = plan.filter((b) => b.kind === 'house');
-  if (houses.length) {
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.86, metalness: 0.02, flatShading: true, envMapIntensity: 0.6 });
-    const inst = new THREE.InstancedMesh(gableGeometry(), mat, houses.length);
-    inst.castShadow = true;
-    inst.receiveShadow = true;
-    const withChimney = houses.filter((b) => b.q2 > 0.45);
-    const chim = withChimney.length
-      ? new THREE.InstancedMesh(unit, new THREE.MeshStandardMaterial({ color: 0x8a5040, roughness: 0.9 }), withChimney.length)
-      : null;
-    let ci = 0;
-    houses.forEach((b, i) => {
-      const { s } = b;
-      // Ridge along the long side, the way a roof is actually framed.
+  plan.forEach((b, bi) => {
+    if (b.kind !== 'house' && b.kind !== 'block') return;
+    const { s } = b;
+    const cr = Math.cos(s.rot);
+    const sr = Math.sin(s.rot);
+    // Local (x along the street, z across it) to world, as Object3D.rotation.y = rot does it.
+    const P = (lx, lz, y) => [s.x + cr * lx + sr * lz, y, s.z - sr * lx + cr * lz];
+    const dirW = (nx, nz) => [cr * nx + sr * nz, 0, -sr * nx + cr * nz];
+    const hw = b.w / 2;
+    const hd = b.d / 2;
+    let T = top(b);
+    // Each wall from its left end to its right end, as seen from outside.
+    const faces = [
+      { a: [-hw, hd], b: [hw, hd], n: [0, 1], len: b.w },
+      { a: [hw, -hd], b: [-hw, -hd], n: [0, -1], len: b.w },
+      { a: [hw, hd], b: [hw, -hd], n: [1, 0], len: b.d },
+      { a: [-hw, -hd], b: [-hw, hd], n: [-1, 0], len: b.d },
+    ];
+    const at = (f, t, y, out = 0) => P(f.a[0] + (f.b[0] - f.a[0]) * t + f.n[0] * out, f.a[1] + (f.b[1] - f.a[1]) * t + f.n[1] * out, y);
+    const ground = (f, t0, t1, out, pick = Math.max) => {
+      let g = pick === Math.max ? -Infinity : Infinity;
+      for (let i = 0; i <= 6; i++) {
+        const p = at(f, t0 + ((t1 - t0) * i) / 6, 0, out);
+        g = pick(g, heightAt(p[0], p[2]));
+      }
+      return g;
+    };
+    // The walls reach below the lowest ground along any of them, not just
+    // below the lowest corner: a dip between two corners showed daylight
+    // (10 cm of it, under one house in Fenwick).
+    let low = b.base + 0.3;
+    for (const f of faces) low = Math.min(low, ground(f, 0, 1, 0, Math.min));
+    const base = low - 0.3;
+    b.base = base;
+    const front = faces[(s.front || 1) > 0 ? 0 : 1];
+    const want = (f) => dirW(f.n[0], f.n[1]);
+
+    if (b.kind === 'house') {
+      const design = Math.floor(b.q2 * 4) % 4;
+      const tint = WALL_TINTS[Math.floor(b.q * WALL_TINTS.length) % WALL_TINTS.length];
+      // The front door: in the middle bay of the front wall (left of middle
+      // on half of them), its sill on the ground in front of it.
+      const nbF = Math.max(1, Math.round(front.len / 3));
+      const doorBay = b.v ? Math.floor(nbF / 2) : Math.floor((nbF - 1) / 2);
+      const gDoor = ground(front, doorBay / nbF, (doorBay + 1) / nbF, 0.7);
+      const floor0 = Math.max(s.y, gDoor) + 0.18;
+      // Never less than one storey above the door, whatever the slope.
+      if (T < floor0 + 2.5) T = floor0 + 2.5;
+      const n = Math.max(1, Math.round((T - floor0) / 2.9));
+      const sh = (T - floor0) / n;
+      for (const f of faces) {
+        const nb = Math.max(1, Math.round(f.len / 3));
+        const bw = f.len / nb;
+        facts.stretch = Math.max(facts.stretch, bw / 3, 3 / bw, sh / 2.9, 2.9 / sh);
+        const w0 = want(f);
+        for (let j = 0; j < nb; j++) {
+          const gBay = ground(f, j / nb, (j + 1) / nb, 0.3);
+          const gLow = ground(f, j / nb, (j + 1) / nb, 0.3, Math.min);
+          /*
+           * The lowest storey with its sill clear of the ground under this
+           * bay: below the ground floor (a basement with windows, down the
+           * slope), or above it (the uphill wall, where the ground floor's
+           * windows would be in the hill). Stone below that, to the foot.
+           */
+          // (The second term only ever allows basements: on flat ground,
+          // floor0 - gLow - 0.4 is a little below zero, and unclamped its
+          // floor made the ground floor blank stone.)
+          let kLow = Math.ceil((gBay + 0.05 - 0.85 - floor0) / sh - 1e-9);
+          kLow = Math.max(kLow, -Math.floor(Math.max(0, floor0 - gLow - 0.4) / sh), -3);
+          if (f === front && j === doorBay) kLow = Math.max(kLow, 0);
+          kLow = Math.min(kLow, n);
+          // A bay whose ground-floor windows would clear the ground, and then
+          // whether it has them (a storey of blank stone on flat ground was
+          // 68% of all house bays at 9f0ce59: the basement term went +1).
+          if (!(f === front && j === doorBay) && Math.ceil((gBay + 0.05 - 0.85 - floor0) / sh - 1e-9) <= 0) {
+            facts.openBays++;
+            if (kLow > 0) facts.blankBays++;
+          }
+          const yStone = floor0 + kLow * sh;
+          if (yStone > base + 0.01) faceQuad(walls, at(f, j / nb, base), at(f, (j + 1) / nb, base), at(f, (j + 1) / nb, yStone), at(f, j / nb, yStone), STONE, 0xffffff, w0);
+          for (let k = kLow; k < n; k++) {
+            const y0 = floor0 + k * sh;
+            const y1 = y0 + sh;
+            const door = f === front && k === 0 && j === doorBay;
+            const lit = hash(bi, j + 7 * k, f.n[0] * 3 + f.n[1] * 5) < 0.35;
+            faceQuad(walls, at(f, j / nb, y0), at(f, (j + 1) / nb, y0), at(f, (j + 1) / nb, y1), at(f, j / nb, y1), door ? PLAIN : cellUV(design, lit ? 1 : 0), tint, w0);
+            if (!door) {
+              facts.bays++;
+              if (y0 + 0.85 < gBay) facts.buriedBays++;
+            }
+          }
+        }
+      }
+
+      /* The roof: gabled, or hipped on about a third of them. */
       const along = b.d >= b.w;
       const span = along ? b.w : b.d;
       const len = along ? b.d : b.w;
       const pitch = span * (0.34 + b.q * 0.16);
-      d.position.set(s.x, top(b) - 0.05, s.z);
-      d.rotation.set(0, s.rot + (along ? 0 : Math.PI / 2), 0);
-      d.scale.set(span + 1.4, pitch, len + 1.2);
-      d.updateMatrix();
-      inst.setMatrixAt(i, d.matrix);
-      inst.setColorAt(i, col.setHex(ROOF_TINTS[Math.floor(((b.q * 7.31) % 1) * ROOF_TINTS.length)]));
-      if (chim && b.q2 > 0.45) {
-        // On the ridge line, a third of the way along, poking through.
-        const t = (b.q2 - 0.5) * len * 0.6;
-        const a = s.rot + (along ? 0 : Math.PI / 2);
-        d.position.set(s.x + Math.sin(a) * t, top(b) + pitch * 0.72 + 0.6, s.z + Math.cos(a) * t);
-        d.rotation.set(0, s.rot, 0);
-        d.scale.set(1.1, 2.2, 1.1);
-        d.updateMatrix();
-        chim.setMatrixAt(ci++, d.matrix);
+      const hip = hash(bi, 3, 11) < 0.36;
+      const roofCol = roofTints[Math.floor(((b.q * 7.31) % 1) * roofTints.length)];
+      // Roof coordinates: x across the ridge, y along it.
+      const R = (xa, yr, y) => (along ? P(xa, yr, y) : P(yr, xa, y));
+      const up = [0, 1, 0];
+      const oe = 0.5;
+      const E = span / 2 + oe;
+      const th = 0.18;
+      const slope = pitch / (span / 2);
+      if (!hip) {
+        facts.gabled++;
+        // The gable ends are wall: a triangle of render on each end wall.
+        for (const f of faces) {
+          const gableEnd = along ? f.n[1] !== 0 : f.n[0] !== 0;
+          if (!gableEnd) continue;
+          const a = at(f, 0, T);
+          const c2 = at(f, 1, T);
+          const m = at(f, 0.5, T + pitch);
+          walls.tri(a, c2, m, [PLAIN[0], PLAIN[1]], [PLAIN[2], PLAIN[1]], [(PLAIN[0] + PLAIN[2]) / 2, PLAIN[3]], tint);
+        }
+        // Two slabs, 18 cm thick, oversailing the walls by half a metre at
+        // the eaves and 45 cm at the gables.
+        const L = len / 2 + 0.45;
+        const yU = (xa) => T + pitch - slope * Math.abs(xa);
+        for (const sg of [-1, 1]) {
+          const x1 = sg * E;
+          const r0 = R(0, -L, yU(0) + th), r1 = R(0, L, yU(0) + th);
+          const e0 = R(x1, -L, yU(x1) + th), e1 = R(x1, L, yU(x1) + th);
+          const u0 = R(0, -L, yU(0)), u1 = R(0, L, yU(0));
+          const s0 = R(x1, -L, yU(x1)), s1 = R(x1, L, yU(x1));
+          const outX = along ? dirW(sg, 0) : dirW(0, sg);
+          const outY = along ? dirW(0, 1) : dirW(1, 0);
+          faceQuad(trims, r0, e0, e1, r1, [0, 0, 1, 1], roofCol, [outX[0] * slope, 1, outX[2] * slope]);
+          faceQuad(trims, u0, s0, s1, u1, [0, 0, 1, 1], 0xe8e2d6, [0, -1, 0]);
+          faceQuad(trims, s0, s1, e1, e0, [0, 0, 1, 1], 0xf0ede6, outX);
+          faceQuad(trims, u0, s0, e0, r0, [0, 0, 1, 1], 0xf0ede6, [-outY[0], 0, -outY[2]]);
+          faceQuad(trims, u1, s1, e1, r1, [0, 0, 1, 1], 0xf0ede6, outY);
+        }
+      } else {
+        facts.hipped++;
+        const rl = Math.max(0, len / 2 - span / 2);
+        const Ly = len / 2 + oe;
+        const ye = T - slope * oe;
+        const yr = T + pitch;
+        const c = (xa, yy, y) => R(xa, yy, y);
+        const outX = (sg) => (along ? dirW(sg, 0) : dirW(0, sg));
+        const outY = (sg) => (along ? dirW(0, sg) : dirW(sg, 0));
+        for (const sg of [-1, 1]) {
+          const o = outX(sg);
+          faceQuad(trims, c(sg * E, -Ly, ye + th), c(sg * E, Ly, ye + th), c(0, rl, yr + th), c(0, -rl, yr + th), [0, 0, 1, 1], roofCol, [o[0] * slope, 1, o[2] * slope]);
+          const oy = outY(sg);
+          faceTri(trims, c(-E, sg * Ly, ye + th), c(E, sg * Ly, ye + th), c(0, sg * rl, yr + th), roofCol, [oy[0] * slope, 1, oy[2] * slope]);
+          // The fascia round the eaves.
+          faceQuad(trims, c(sg * E, -Ly, ye), c(sg * E, Ly, ye), c(sg * E, Ly, ye + th), c(sg * E, -Ly, ye + th), [0, 0, 1, 1], 0xf0ede6, o);
+          faceQuad(trims, c(-E, sg * Ly, ye), c(E, sg * Ly, ye), c(E, sg * Ly, ye + th), c(-E, sg * Ly, ye + th), [0, 0, 1, 1], 0xf0ede6, oy);
+        }
+        faceQuad(trims, c(-E, -Ly, ye), c(E, -Ly, ye), c(E, Ly, ye), c(-E, Ly, ye), [0, 0, 1, 1], 0xe8e2d6, [0, -1, 0]);
       }
-    });
-    inst.instanceMatrix.needsUpdate = true;
-    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
-    group.add(inst);
-    if (chim) {
-      chim.instanceMatrix.needsUpdate = true;
-      chim.castShadow = true;
-      group.add(chim);
-    }
-  }
+      // A chimney on the ridge of about half of them.
+      if (b.q2 > 0.45) {
+        const lim = hip ? Math.max(0, len / 2 - span / 2) : len / 2 - 1;
+        const t = Math.max(-lim, Math.min(lim, (b.q2 - 0.5) * len * 0.6));
+        const p = R(0, t, 0);
+        const ry = s.rot + (along ? 0 : Math.PI / 2);
+        trims.box(1.1, 2.3, 1.1, p[0], T + pitch + 0.25, p[2], 0x7a5a48, ry);
+        trims.box(1.35, 0.16, 1.35, p[0], T + pitch + 1.45, p[2], 0x6b5446, ry);
+      }
 
-  /* ---- flat roofs and plant rooms on the blocks ---- */
-  const blocks = plan.filter((b) => b.kind === 'block');
-  if (blocks.length) {
-    const roofMat = new THREE.MeshStandardMaterial({ map: roofTexture(), roughness: 0.9 });
-    const caps = new THREE.InstancedMesh(unit, roofMat, blocks.length);
-    const plant = new THREE.InstancedMesh(unit, new THREE.MeshStandardMaterial({ color: 0x8d9296, roughness: 0.7, metalness: 0.2 }), blocks.length);
-    caps.castShadow = plant.castShadow = true;
-    blocks.forEach((b, i) => {
-      const { s } = b;
-      d.position.set(s.x, top(b) + 0.4, s.z);
-      d.rotation.set(0, s.rot, 0);
-      d.scale.set(b.w + 1.0, 0.9, b.d + 1.0);
-      d.updateMatrix();
-      caps.setMatrixAt(i, d.matrix);
-      // Off-centre, so the roofs are not all the same from above.
+      /* The door, in its frame, with a step up to it and a hood over it. */
+      const tD = (doorBay + 0.5) / nbF;
+      const nW = want(front);
+      const ry = Math.atan2(nW[0], nW[2]);
+      const pd = (out) => at(front, tD, 0, out);
+      const colD = DOORS[Math.floor(hash(bi, 1, 2) * DOORS.length)];
+      // Their backs are sunk into the wall, so nothing lies flat against it.
+      let p = pd(0.03);
+      trims.box(1.1, 2.2, 0.2, p[0], floor0 + 1.1, p[2], colD, ry);
+      p = pd(0.0);
+      trims.box(1.45, 2.46, 0.1, p[0], floor0 + 1.21, p[2], 0xf6f4ee, ry);
+      const gStep = ground(front, tD - 0.9 / front.len, tD + 0.9 / front.len, 0.9, Math.min);
+      const stepH = floor0 - gStep + 0.3;
+      p = pd(0.46);
+      trims.box(1.7, stepH, 0.9, p[0], floor0 - stepH / 2, p[2], 0xb3ab9e, ry);
+      p = pd(0.38);
+      trims.box(1.75, 0.12, 0.76, p[0], floor0 + 2.62, p[2], 0xf6f4ee, ry);
+      facts.doors++;
+      facts.doorGap = Math.min(facts.doorGap, floor0 - gDoor);
+    } else {
+      /* A block: walls in metres, a door at the front, a roof slab and a plant room. */
+      const tex = blockWalls[b.v];
+      const tint = BLOCK_TINTS[Math.floor(b.q * BLOCK_TINTS.length) % BLOCK_TINTS.length];
+      const gF = ground(front, 0.35, 0.65, 0.8);
+      const floor0 = Math.max(s.y, gF) + 0.12;
+      const n = Math.max(1, Math.round((T - floor0) / 3.3));
+      const sh = (T - floor0) / n;
+      // buildingTexture is six bays by seven storeys, laid a bay at a time.
+      let doorAt = null;
+      for (const f of faces) {
+        const nb = Math.max(1, Math.round(f.len / 3.5));
+        const w0 = want(f);
+        for (let j = 0; j < nb; j++) {
+          const gB = ground(f, j / nb, (j + 1) / nb, 0.3);
+          const gBl = ground(f, j / nb, (j + 1) / nb, 0.3, Math.min);
+          // The lowest storey whose windows clear the ground under this bay:
+          // above the ground floor up a slope, a basement or two down one.
+          const k0 = Math.min(n, Math.max(Math.ceil((gB - floor0 - 0.9) / sh - 1e-9), -Math.floor(Math.max(0, floor0 - gBl - 0.4) / sh), -3));
+          if (Math.ceil((gB - floor0 - 0.9) / sh - 1e-9) <= 0) {
+            facts.openBays++;
+            if (k0 > 0) facts.blankBays++;
+          }
+          const y0 = floor0 + k0 * sh;
+          const t0 = j / nb;
+          const t1 = (j + 1) / nb;
+          // Below it, a stone plinth to the foot of the wall.
+          if (y0 > base + 0.01) faceQuad(trims, at(f, t0, base), at(f, t1, base), at(f, t1, y0), at(f, t0, y0), [0, 0, 1, 1], 0xaaa396, w0);
+          if (y0 < T - 0.01) faceQuad(tex, at(f, t0, y0), at(f, t1, y0), at(f, t1, T), at(f, t0, T), [j / 6, k0 / 7, (j + 1) / 6, n / 7], tint, w0);
+        }
+        facts.stretch = Math.max(facts.stretch, f.len / nb / 3.5, 3.5 / (f.len / nb), sh / 3.3, 3.3 / sh);
+        if (f === front) doorAt = (Math.floor(nb / 2) + 0.5) / nb;
+      }
+      const nW = want(front);
+      const ry = Math.atan2(nW[0], nW[2]);
+      let p = at(front, doorAt, 0, 0.03);
+      trims.box(2.6, 2.7, 0.2, p[0], floor0 + 1.35, p[2], 0x24323d, ry);
+      p = at(front, doorAt, 0, 0.0);
+      trims.box(3.0, 2.99, 0.1, p[0], floor0 + 1.47, p[2], 0xc9ced3, ry);
+      p = at(front, doorAt, 0, 0.7);
+      trims.box(3.6, 0.2, 1.4, p[0], floor0 + 3.05, p[2], 0xc9ced3, ry);
+      // The roof slab, and the plant room off-centre on it.
+      trims.box(b.w + 1.0, 0.9, b.d + 1.0, s.x, T + 0.4, s.z, 0x767b80, s.rot);
       const ox = (b.q - 0.5) * b.w * 0.4;
-      d.position.set(s.x + Math.cos(s.rot) * ox, top(b) + 2.2, s.z - Math.sin(s.rot) * ox);
-      d.scale.set(b.w * 0.3, 2.8, b.d * 0.34);
-      d.updateMatrix();
-      plant.setMatrixAt(i, d.matrix);
-    });
-    caps.instanceMatrix.needsUpdate = true;
-    plant.instanceMatrix.needsUpdate = true;
-    group.add(caps, plant);
-  }
+      trims.box(b.w * 0.3, 2.8, b.d * 0.34, s.x + cr * ox, T + 2.2, s.z - sr * ox, 0x8d9296, s.rot);
+      facts.doors++;
+    }
+
+    const [hx, hz] = turnedHalf(b.w, b.d, s.rot);
+    // A roof is at most half its span high, and the span is always the short side.
+    if (solid) addObstacleAt(s.x, s.z, hx * 2, hz * 2, base, T - base + (b.kind === 'house' ? Math.min(b.w, b.d) * 0.5 + 0.5 : 1.3), 'You flew into a building');
+  });
+
+  const atlas = townAtlas();
+  const atlasNight = townAtlas(true);
+  const houseMat = new THREE.MeshStandardMaterial({
+    map: atlas,
+    vertexColors: true,
+    roughness: 0.85,
+    metalness: 0.02,
+    envMapIntensity: 0.6,
+    emissive: new THREE.Color(0xffffff),
+    emissiveMap: atlasNight,
+    emissiveIntensity: 0,
+  });
+  nightMats.push(houseMat);
+  const hw = walls.mesh(houseMat, { name: `${name}-house-walls` });
+  if (hw) group.add(hw);
+  blockWalls.forEach((bb, v) => {
+    const m = bb.mesh(new THREE.MeshStandardMaterial({ map: buildingTexture(v ? 3 : 0), vertexColors: true, roughness: 0.85, metalness: 0.02, envMapIntensity: 0.6 }), { name: `${name}-block-walls` });
+    if (m) group.add(m);
+  });
+  const tm = trims.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0.02, flatShading: true, envMapIntensity: 0.6 }), { name: `${name}-roofs` });
+  if (tm) group.add(tm);
+  const houses = plan.filter((b) => b.kind === 'house');
+  const blocks = plan.filter((b) => b.kind === 'block');
 
   /* ---- towers ---- */
   const towers = plan.filter((b) => b.kind === 'tower');
+  // Down to the lowest ground along any wall, like the houses, so a dip
+  // between two corners shows no daylight under a 30 m tower either.
+  for (const b of towers) {
+    const { s } = b;
+    const cr = Math.cos(s.rot);
+    const sr = Math.sin(s.rot);
+    for (const [ax, az, bx, bz] of [[-1, -1, 1, -1], [1, -1, 1, 1], [1, 1, -1, 1], [-1, 1, -1, -1]]) {
+      for (let i = 0; i <= 8; i++) {
+        const lx = ((ax + ((bx - ax) * i) / 8) * b.w) / 2;
+        const lz = ((az + ((bz - az) * i) / 8) * b.d) / 2;
+        b.base = Math.min(b.base, heightAt(s.x + cr * lx + sr * lz, s.z - sr * lx + cr * lz) - 0.3);
+      }
+    }
+  }
   let lights = null;
   if (towers.length) {
     const tex = towerFacadeTexture();
@@ -817,6 +1135,7 @@ export function addTown(group, spots, opts = {}) {
     tallest: towers.reduce((m, b) => Math.max(m, b.h), 0),
     lampMat: lights ? lights.material : null,
     nightMats,
+    facts,
   };
 }
 
@@ -927,8 +1246,25 @@ function buildLighthouse(group, x, z) {
     if (hh > bestH) { bestH = hh; best = [ox, oz]; }
   }
   const face = Math.atan2(best[0], best[1]);
-  const door = add(new THREE.BoxGeometry(1.6, 2.6, 0.5), iron, Math.sin(face) * 3.8, 1.3, Math.cos(face) * 3.8, false);
+  /*
+   * The door is on the plinth, not in it. The plinth's top is 3 m up and
+   * the door was at the foot of the tower, 0-2.6 m: inside the stone, on
+   * every map. It stands on the plinth now, with steps down its landward
+   * side to the ground.
+   */
+  const door = add(new THREE.BoxGeometry(1.6, 2.6, 0.5), iron, Math.sin(face) * 3.72, 3 + 1.3, Math.cos(face) * 3.72, false);
   door.rotation.y = face;
+  const steps = new Batch();
+  for (let k = 0; k < 6; k++) {
+    const r = 6.55 + k * 0.9;
+    const stepTop = 3 - 0.6 * (k + 1);
+    const gr = heightAt(x + Math.sin(face) * r, z + Math.cos(face) * r) - top;
+    if (stepTop < gr - 0.05) break;
+    const hS = stepTop - (gr - 0.6);
+    steps.box(2.2, hS, 0.9, Math.sin(face) * r, stepTop - hS / 2, Math.cos(face) * r, 0xffffff, face);
+  }
+  const stair = steps.mesh(stone, { cast: false, name: 'lighthouse-steps' });
+  if (stair) g.add(stair);
   for (let i = 0; i < 3; i++) {
     const r = 3.6 - i * 0.32;
     const win = add(new THREE.BoxGeometry(0.9, 1.3, 0.4), iron, Math.sin(face) * r, 8 + i * 7, Math.cos(face) * r, false);
@@ -987,22 +1323,21 @@ function buildLighthouse(group, x, z) {
   // harbour wall is worse than none.
   const [cx, cz] = best;
   const cy = bestH - top;
-  const cottage = new THREE.Group();
-  cottage.visible = bestH > 1.5 && Math.abs(cy) < 5;
-  cottage.position.set(cx, cy, cz);
-  cottage.rotation.y = face;
-  const walls = new THREE.Mesh(new THREE.BoxGeometry(11, 7, 7), white);
-  walls.position.y = 1.5;
-  walls.castShadow = walls.receiveShadow = true;
-  const roof = new THREE.Mesh(gableGeometry(), new THREE.MeshStandardMaterial({ color: 0x4f565e, roughness: 0.85, flatShading: true }));
-  roof.position.y = 5;
-  roof.rotation.y = Math.PI / 2;
-  roof.scale.set(8, 3.2, 12.4);
-  roof.castShadow = true;
-  const chimney = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2.6, 1.1), stone);
-  chimney.position.set(3.8, 7.4, 0);
-  cottage.add(walls, roof, chimney);
-  g.add(cottage);
+  /*
+   * Built like the town's houses — it was a plain white box with a roof on,
+   * no door and no windows, sunk 2 m. Its door faces the tower. Not solid,
+   * as it never was: the courier's van is sent to this coordinate.
+   */
+  let cottage = null;
+  if (bestH > 1.5 && Math.abs(cy) < 5) {
+    const w = 11;
+    const d = 7;
+    const cc = Math.cos(face);
+    const sc = Math.sin(face);
+    let lo = bestH;
+    for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) lo = Math.min(lo, heightAt(x + cx + (cc * lx * w + sc * lz * d) / 2, z + cz + (-sc * lx * w + cc * lz * d) / 2));
+    cottage = addTown(group, [{ x: x + cx, z: z + cz, y: bestH, lo, rot: face, kind: 'house', w, d, h: 5, front: -1 }], { solid: false, meshName: 'cottage' });
+  }
 
   /*
    * The beams. Two long, faint cones back to back from the lamp, turning.
@@ -1038,7 +1373,7 @@ function buildLighthouse(group, x, z) {
   group.add(g);
   // Solid, up to the top of the cap. It never was.
   addObstacleAt(x, z, 8, 8, y - 1, top - y + H + 8, 'You flew into the lighthouse');
-  return { lamp, beam, beamMat };
+  return { lamp, beam, beamMat, nightMats: cottage ? cottage.nightMats : [] };
 }
 
 /**
@@ -1102,33 +1437,42 @@ function buildDeliveryPad(group) {
     if (Math.abs(hz - DELIVERY_PAD.z) < 30 && Math.abs(hx - DELIVERY_PAD.x) < 130) continue;
     const hy = heightAt(hx, hz);
     if (hy < 2) continue;
-    huts.push({ x: hx, y: hy, z: hz, s: 0.8 + rnd() * 0.5, rot: rnd() * Math.PI });
+    const sz = 0.8 + rnd() * 0.5;
+    const rot = rnd() * Math.PI;
+    // Not on top of another hut: two of them stood in each other.
+    if (huts.some((o) => Math.hypot(o.x - hx, o.z - hz) < (o.s + sz) * 7.5)) continue;
+    // Nor on a slope steeper than a house can be built on: on Task Force
+    // Resolute's hills one hut's front door was higher than its own eaves.
+    let lo = hy;
+    let hi = hy;
+    for (const [ox, oz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const g = heightAt(hx + ox * 5 * sz, hz + oz * 5 * sz);
+      lo = Math.min(lo, g);
+      hi = Math.max(hi, g);
+    }
+    if (hi - lo > 2.2 * sz) continue;
+    huts.push({ x: hx, y: hy, z: hz, s: sz, rot });
   }
   if (huts.length) {
-    // The house front, not the office block: these are huts.
-    const hutMat = new THREE.MeshStandardMaterial({ map: houseTexture(1), roughness: 0.85 });
-    const thatchMat = new THREE.MeshStandardMaterial({ color: 0x8d6b3f, roughness: 0.95, flatShading: true });
-    const walls = new THREE.InstancedMesh(new THREE.BoxGeometry(8, 7, 8), hutMat, huts.length);
-    const roofs = new THREE.InstancedMesh(gableGeometry(), thatchMat, huts.length);
-    walls.castShadow = walls.receiveShadow = roofs.castShadow = true;
-    const d = new THREE.Object3D();
-    const tint = new THREE.Color();
-    huts.forEach((h, i) => {
-      d.position.set(h.x, h.y + 1.5 * h.s, h.z);
-      d.rotation.set(0, h.rot, 0);
-      d.scale.set(h.s, h.s, h.s);
-      d.updateMatrix();
-      walls.setMatrixAt(i, d.matrix);
-      walls.setColorAt(i, tint.setHex(WALL_TINTS[i % WALL_TINTS.length]));
-      d.position.set(h.x, h.y + 5 * h.s, h.z);
-      d.scale.set(9.4 * h.s, 4.2 * h.s, 9.4 * h.s);
-      d.updateMatrix();
-      roofs.setMatrixAt(i, d.matrix);
+    /*
+     * Built like the town's houses. They were unit boxes wearing the old
+     * house-front picture, sunk 2 m into the ground so no corner floated —
+     * which put the bottom 2 m of the picture underground: every hut had a
+     * front door on all four walls, and every one of them was buried to the
+     * handle. Still not solid: landing among them is the mission.
+     */
+    const spots = huts.map((h) => {
+      const w = 8 * h.s;
+      const c = Math.cos(h.rot);
+      const sn = Math.sin(h.rot);
+      let lo = h.y;
+      for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) lo = Math.min(lo, heightAt(h.x + (c * lx + sn * lz) * w / 2, h.z + (-sn * lx + c * lz) * w / 2));
+      // Front door toward the pad.
+      const front = Math.sin(h.rot) * (DELIVERY_PAD.x - h.x) + Math.cos(h.rot) * (DELIVERY_PAD.z - h.z) >= 0 ? 1 : -1;
+      return { x: h.x, z: h.z, y: h.y, lo, rot: h.rot, kind: 'house', w, d: w * 1.1, h: 5 * h.s, front };
     });
-    walls.instanceMatrix.needsUpdate = true;
-    roofs.instanceMatrix.needsUpdate = true;
-    if (walls.instanceColor) walls.instanceColor.needsUpdate = true;
-    group.add(walls, roofs);
+    const built = addTown(group, spots, { solid: false, roofTints: [0x8d6b3f, 0x7d5f38, 0x9a7a4a], meshName: 'huts' });
+    pad.userData.nightMats = built.nightMats;
   }
   return pad;
 }
@@ -1272,6 +1616,23 @@ function buildBoats(group, count, home = null, fleet = null) {
  * Everything here is instanced and solid, so the base costs a handful of draw
  * calls and you cannot fly through a blast wall.
  */
+/**
+ * The lowest and highest ground under an axis-aligned w x d footprint:
+ * a 5 x 5 grid of samples, corners included.
+ */
+function groundSpan(x, z, w, d) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i <= 4; i++) {
+    for (let j = 0; j <= 4; j++) {
+      const h = heightAt(x - w / 2 + (w * i) / 4, z - d / 2 + (d * j) / 4);
+      if (h < lo) lo = h;
+      if (h > hi) hi = h;
+    }
+  }
+  return [lo, hi];
+}
+
 function addAirBase(group, base) {
   if (!base) return;
   const { cx = 0, cz = 0 } = base;
@@ -1293,22 +1654,33 @@ function addAirBase(group, base) {
   const shelters = new THREE.InstancedMesh(archGeo, concrete, count);
   shelters.castShadow = shelters.receiveShadow = true;
   const d = new THREE.Object3D();
+  /*
+   * Each on a level concrete pad, at the highest ground under it, rather
+   * than at the ground under its middle: on a slope that would put one side
+   * in the hill and daylight under the other. Both bases so far stand on
+   * the levelled airfield, where this changes nothing; the next one might
+   * not. The pads are drawn with the blast walls.
+   */
+  const pads = [];
   for (let i = 0; i < count; i++) {
     const side = i % 2 === 0 ? -1 : 1;
     const along = (Math.floor(i / 2) - (count / 4 - 0.5)) * 150;
     const x = cx + along;
     const z = cz + side * (base.spread ?? 620);
-    const y = heightAt(x, z);
+    const [glo, ghi] = groundSpan(x, z, 30, 26);
+    const y = ghi + 0.15;
+    pads.push([x, z, glo - 0.4, y, 31, 27]);
     d.position.set(x, y, z);
     d.rotation.set(0, side > 0 ? 0 : Math.PI, 0);
     d.scale.setScalar(1);
     d.updateMatrix();
     shelters.setMatrixAt(i, d.matrix);
-    addObstacleAt(x, z, 30, 26, y - 1, 13, 'You flew into a hardened shelter');
+    addObstacleAt(x, z, 30, 26, glo - 0.4, y - glo + 13.4, 'You flew into a hardened shelter');
     // The apron in front of the shelter, facing out. parkJets() uses these.
     parkSpots.push({ x, y, z: z - side * 26, heading: side > 0 ? Math.PI : 0 });
   }
   shelters.instanceMatrix.needsUpdate = true;
+  shelters.name = 'airbase-shelters';
   group.add(shelters);
 
   // Earth revetments: open-ended U-shaped banks for the aircraft that live
@@ -1324,41 +1696,61 @@ function addAirBase(group, base) {
     const bx = cx + along;
     const bz = cz + side * ((base.spread ?? 620) + 210);
     const by = heightAt(bx, bz);
+    void by;
+    // The side banks run from the back bank's inner face: laid over its ends,
+    // the two shared faces at every corner (144 m2 of flicker at Ironhead).
     const pieces = [
       [0, -18, 44, 4],   // back wall, across
-      [-20, 0, 4, 36],   // left
-      [20, 0, 4, 36],    // right
+      [-20, 1, 4, 34],   // left
+      [20, 1, 4, 34],    // right
     ];
     for (const [ox, oz, w, dep] of pieces) {
-      d.position.set(bx + ox, by + 3, bz + oz * side);
+      // Each bank from under the lowest ground along it to 6 m over the highest.
+      const [glo, ghi] = groundSpan(bx + ox, bz + oz * side, w, dep);
+      const y0 = glo - 0.3;
+      const y1 = ghi + 6;
+      d.position.set(bx + ox, (y0 + y1) / 2, bz + oz * side);
       d.rotation.set(0, 0, 0);
-      d.scale.set(w, 6, dep);
+      d.scale.set(w, y1 - y0, dep);
       d.updateMatrix();
       banks.setMatrixAt(n++, d.matrix);
-      addObstacleAt(bx + ox, bz + oz * side, w, dep, by, 6.6, 'You flew into a revetment');
+      addObstacleAt(bx + ox, bz + oz * side, w, dep, y0, y1 - y0 + 0.6, 'You flew into a revetment');
     }
   }
   banks.instanceMatrix.needsUpdate = true;
+  banks.name = 'airbase-revetments';
   group.add(banks);
 
   // Blast walls along the apron edge.
   const walls = base.walls ?? 14;
-  const blast = new THREE.InstancedMesh(wallGeo, concrete, walls);
+  const blast = new THREE.InstancedMesh(wallGeo, concrete, walls + pads.length);
   blast.castShadow = blast.receiveShadow = true;
   for (let i = 0; i < walls; i++) {
     const side = i % 2 === 0 ? -1 : 1;
     const along = (Math.floor(i / 2) - (walls / 4 - 0.5)) * 96;
     const wx = cx + along;
     const wz = cz + side * (base.spread ?? 620) * 0.62;
-    const wy = heightAt(wx, wz);
-    d.position.set(wx, wy + 2.6, wz);
+    // 60 m long: from under its lowest ground to 5.2 m over its highest, so
+    // on a slope neither end is in the air or the hill.
+    const [glo, ghi] = groundSpan(wx, wz, 60, 2.2);
+    const y0 = glo - 0.3;
+    const y1 = ghi + 5.2;
+    d.position.set(wx, (y0 + y1) / 2, wz);
     d.rotation.set(0, 0, 0);
-    d.scale.set(60, 5.2, 2.2);
+    d.scale.set(60, y1 - y0, 2.2);
     d.updateMatrix();
     blast.setMatrixAt(i, d.matrix);
-    addObstacleAt(wx, wz, 60, 2.2, wy, 5.6, 'You flew into a blast wall');
+    addObstacleAt(wx, wz, 60, 2.2, y0, y1 - y0 + 0.4, 'You flew into a blast wall');
   }
+  pads.forEach(([x, z, y0, y1, w, dep], k) => {
+    d.position.set(x, (y0 + y1) / 2, z);
+    d.rotation.set(0, 0, 0);
+    d.scale.set(w, y1 - y0, dep);
+    d.updateMatrix();
+    blast.setMatrixAt(walls + k, d.matrix);
+  });
   blast.instanceMatrix.needsUpdate = true;
+  blast.name = 'airbase-walls';
   group.add(blast);
 
   // A radar, which turns. It is the one thing on a base that moves, so it is
@@ -1366,8 +1758,8 @@ function addAirBase(group, base) {
   const rx = cx - (base.radarOffset ?? 900);
   const rz = cz + (base.spread ?? 620) * 1.5;
   const ry = heightAt(rx, rz);
-  const mast = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.4, 26, 8), steel);
-  mast.position.set(rx, ry + 13, rz);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.4, 27.5, 8), steel);
+  mast.position.set(rx, ry + 12.25, rz);
   mast.castShadow = true;
   group.add(mast);
   const dish = new THREE.Group();
@@ -1393,8 +1785,10 @@ function addAirBase(group, base) {
   for (let i = 0; i < 3; i++) {
     const tx = fx + (i - 1) * 46;
     const ty = heightAt(tx, fz);
-    const tank = new THREE.Mesh(new THREE.CylinderGeometry(15, 15, 13, 20), tankMat);
-    tank.position.set(tx, ty + 6.5, fz);
+    // Down to the lowest ground under its 30 m footprint, the top where it was.
+    const glo = groundSpan(tx, fz, 26, 26)[0] - 0.3;
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(15, 15, ty + 13 - glo, 20), tankMat);
+    tank.position.set(tx, (glo + ty + 13) / 2, fz);
     tank.castShadow = tank.receiveShadow = true;
     group.add(tank);
     const lid = new THREE.Mesh(new THREE.CylinderGeometry(15.4, 15.4, 0.7, 20), steel);
@@ -1407,21 +1801,26 @@ function addAirBase(group, base) {
   const bund = new THREE.InstancedMesh(bundGeo, earth, 4);
   const bd = new THREE.Object3D();
   const by = heightAt(fx, fz);
+  void by;
+  // The ends fit between the long sides: laid over them, the corners shared
+  // their tops and faces. And each side follows its own ground.
   const sides = [
     [0, -34, 172, 3],
     [0, 34, 172, 3],
-    [-86, 0, 3, 71],
-    [86, 0, 3, 71],
+    [-86, 0, 3, 65],
+    [86, 0, 3, 65],
   ];
   sides.forEach(([ox, oz, w, dep], i) => {
-    bd.position.set(fx + ox, by + 1.6, fz + oz);
+    const [glo, ghi] = groundSpan(fx + ox, fz + oz, w, dep);
+    bd.position.set(fx + ox, (glo - 0.3 + ghi + 3.2) / 2, fz + oz);
     bd.rotation.set(0, 0, 0);
-    bd.scale.set(w, 3.2, dep);
+    bd.scale.set(w, ghi + 3.2 - (glo - 0.3), dep);
     bd.updateMatrix();
     bund.setMatrixAt(i, bd.matrix);
   });
   bund.instanceMatrix.needsUpdate = true;
   bund.castShadow = bund.receiveShadow = true;
+  bund.name = 'airbase-bund';
   group.add(bund);
 
   return { dish, parkSpots };
@@ -1647,7 +2046,16 @@ export function addHarbour(group, cfg) {
       roughness: 0.7,
       metalness: 0.25,
     });
-    const shed = new THREE.Mesh(new THREE.BoxGeometry(w, hgt + 1, dp), shedMat);
+    // Cladding in metres, 6 m a tile as on the hangars: one tile a face
+    // stretched the ribs four times as wide on the long walls.
+    const shedGeo = new THREE.BoxGeometry(w, hgt + 1, dp);
+    const suv = shedGeo.attributes.uv;
+    const faceSize = [[dp, hgt + 1], [dp, hgt + 1], [w, dp], [w, dp], [w, hgt + 1], [w, hgt + 1]];
+    for (let k = 0; k < suv.count; k++) {
+      const [fu, fv] = faceSize[Math.floor(k / 4)];
+      suv.setXY(k, (suv.getX(k) * fu) / 6, (suv.getY(k) * fv) / 6);
+    }
+    const shed = new THREE.Mesh(shedGeo, shedMat);
     shed.position.set(p.x, y + (hgt - 1) / 2, p.z);
     shed.castShadow = shed.receiveShadow = true;
     group.add(shed);
@@ -2008,16 +2416,21 @@ function addWeaponsRange(group, cfg) {
   const tx = cx + R * 2.1;
   const tz = cz - R * 1.6;
   const ty = heightAt(tx, tz);
+  // Each leg down to the ground under it: stood on the ground under the
+  // middle, the downhill legs were in the air (the ground under Ironhead's
+  // tower falls 1.4 m across it).
   for (const [lx, lz] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 11, 6), steel);
-    leg.position.set(tx + lx, ty + 5.5, tz + lz);
+    const gy = heightAt(tx + lx, tz + lz) - 0.5;
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, ty + 11 - gy, 6), steel);
+    leg.position.set(tx + lx, (gy + ty + 11) / 2, tz + lz);
     group.add(leg);
   }
   const cab = new THREE.Mesh(new THREE.BoxGeometry(9, 3.4, 9), steel);
   cab.position.set(tx, ty + 12.7, tz);
   cab.castShadow = true;
   group.add(cab);
-  addObstacleAt(tx, tz, 9, 9, ty, 15, 'You flew into the range tower');
+  const tLo = groundSpan(tx, tz, 9, 9)[0];
+  addObstacleAt(tx, tz, 9, 9, tLo, ty - tLo + 15, 'You flew into the range tower');
 
   return { pos: new THREE.Vector3(cx, heightAt(cx, cz), cz) };
 }
@@ -2476,6 +2889,36 @@ function layTown(cfg, count, pool) {
     }
     kept.push(st);
   }
+  /*
+   * Which way each building fronts: toward its nearest street or road, on
+   * its own local z axis (+1 or -1), which is where addTown puts the door.
+   * Every building here is squared to a street, so the street is across z.
+   */
+  // Only the streets that are drawn (as trimmed) and the roads: a street
+  // nobody lives on is gone by now, and a door must not face where it was.
+  const fronting = roadSegs.map((q) => q.slice(0, 4));
+  for (const st of kept) for (let i = 1; i < st.pts.length; i++) fronting.push([st.pts[i - 1][0], st.pts[i - 1][1], st.pts[i][0], st.pts[i][1]]);
+  for (const p of placed) {
+    let best = Infinity;
+    let fx = 0;
+    let fz = 0;
+    for (const [ax, az, bx, bz] of fronting) {
+      const dx = bx - ax;
+      const dz = bz - az;
+      const L2 = dx * dx + dz * dz;
+      let t = L2 > 0 ? ((p.x - ax) * dx + (p.z - az) * dz) / L2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const qx = ax + dx * t - p.x;
+      const qz = az + dz * t - p.z;
+      if (qx * qx + qz * qz < best) {
+        best = qx * qx + qz * qz;
+        fx = qx;
+        fz = qz;
+      }
+    }
+    p.front = Math.sin(p.rot) * fx + Math.cos(p.rot) * fz >= 0 ? 1 : -1;
+  }
+
   return { spots: placed, streets: kept, cx, cz };
 }
 
@@ -2645,6 +3088,25 @@ function carParkTexture() {
  * Sheds and hotels are solid; the car parks and the cars are not — a car
  * park is somewhere a helicopter should be able to put down.
  */
+/**
+ * The four walls of a turned box into a Batch, UV'd in metres: one texture
+ * tile is `tu` metres wide and `tv` tall, the bottom of the tile at `yv`.
+ * A unit box scaled to a building wears one tile per wall whatever its size,
+ * which on a 60 m hotel made every window ten metres wide.
+ */
+function wallsInMetres(batch, x, z, rot, w, d, y0, y1, tu, tv, yv, color) {
+  const c = Math.cos(rot);
+  const sn = Math.sin(rot);
+  const P = (lx, lz, y) => [x + c * lx + sn * lz, y, z - sn * lx + c * lz];
+  const hw = w / 2;
+  const hd = d / 2;
+  const v0 = (y0 - yv) / tv;
+  const v1 = (y1 - yv) / tv;
+  for (const [ax, az, bx, bz, len] of [[-hw, hd, hw, hd, w], [hw, -hd, -hw, -hd, w], [hw, hd, hw, -hd, d], [-hw, -hd, -hw, hd, d]]) {
+    batch.quad(P(ax, az, y0), P(bx, bz, y0), P(bx, bz, y1), P(ax, az, y1), [0, v0, len / tu, v1], color);
+  }
+}
+
 function addEstate(group, cfg) {
   if (!cfg) return null;
   const rot = ((cfg.angleDeg || 0) * Math.PI) / 180;
@@ -2719,17 +3181,13 @@ function addEstate(group, cfg) {
     if (s) sheds.push({ ...s, w, d: dd, h: 10 + rnd() * 6 });
   }
   if (sheds.length) {
-    const wall = new THREE.InstancedMesh(unit, new THREE.MeshStandardMaterial({ map: hangarTexture(), roughness: 0.6, metalness: 0.3, envMapIntensity: 0.7 }), sheds.length);
+    // The cladding in metres (6 m a tile, as on the hangars), not one tile
+    // stretched over a 76 m wall.
+    const wallB = new Batch();
     const roof = new THREE.InstancedMesh(gableGeometry(), new THREE.MeshStandardMaterial({ color: 0x8c949b, roughness: 0.55, metalness: 0.35, flatShading: true }), sheds.length);
     const tints = [0xd9dde0, 0xc8d4dc, 0xe2dccf, 0xb9c6b8, 0xd8c7b5];
     sheds.forEach((b, i) => {
-      const hh = b.y + b.h - (b.lo - 0.3);
-      d.position.set(b.x, b.lo - 0.3 + hh / 2, b.z);
-      d.rotation.set(0, rot, 0);
-      d.scale.set(b.w, hh, b.d);
-      d.updateMatrix();
-      wall.setMatrixAt(i, d.matrix);
-      wall.setColorAt(i, col.setHex(tints[i % tints.length]));
+      wallsInMetres(wallB, b.x, b.z, rot, b.w, b.d, b.lo - 0.3, b.y + b.h, 6, 6, b.lo - 0.3, tints[i % tints.length]);
       // Ridge along the long side (v), low pitch.
       d.position.set(b.x, b.y + b.h - 0.05, b.z);
       d.rotation.set(0, rot, 0);
@@ -2739,10 +3197,9 @@ function addEstate(group, cfg) {
       const [hx, hz] = turnedHalf(b.w, b.d, rot);
       addObstacleAt(b.x, b.z, hx * 2, hz * 2, b.lo - 0.3, b.y + b.h - b.lo + b.w * 0.12 + 0.6, 'You flew into a warehouse');
     });
-    wall.instanceMatrix.needsUpdate = true;
-    if (wall.instanceColor) wall.instanceColor.needsUpdate = true;
+    const wall = wallB.mesh(new THREE.MeshStandardMaterial({ map: hangarTexture(), vertexColors: true, roughness: 0.6, metalness: 0.3, envMapIntensity: 0.7 }), { name: 'estate-sheds' });
     roof.instanceMatrix.needsUpdate = true;
-    wall.castShadow = wall.receiveShadow = roof.castShadow = true;
+    roof.castShadow = true;
     group.add(wall, roof);
     out.sheds = sheds.length;
   }
@@ -2808,17 +3265,14 @@ function addEstate(group, cfg) {
     if (s) hotels.push({ ...s, w, d: dd, h: 28 + rnd() * 20 });
   }
   if (hotels.length) {
-    const walls = new THREE.InstancedMesh(unit, new THREE.MeshStandardMaterial({ map: buildingTexture(2), roughness: 0.5, metalness: 0.2 }), hotels.length);
+    // The office texture in metres: six 3.5 m bays and seven 3.3 m storeys a tile.
+    const wallB = new Batch();
     const caps = new THREE.InstancedMesh(unit, new THREE.MeshStandardMaterial({ color: 0xd9d6ce, roughness: 0.8 }), hotels.length);
     // A red sign on the roof, lit at night like the tower lights.
     const sign = new THREE.InstancedMesh(unit, new THREE.MeshStandardMaterial({ color: 0x7a1410, emissive: 0xff3322, emissiveIntensity: 0.6 }), hotels.length);
     hotels.forEach((b, i) => {
-      const hh = b.y + b.h - (b.lo - 0.3);
-      d.position.set(b.x, b.lo - 0.3 + hh / 2, b.z);
+      wallsInMetres(wallB, b.x, b.z, rot, b.w, b.d, b.lo - 0.3, b.y + b.h, 21, 23.1, b.y + 0.2, 0xffffff);
       d.rotation.set(0, rot, 0);
-      d.scale.set(b.w, hh, b.d);
-      d.updateMatrix();
-      walls.setMatrixAt(i, d.matrix);
       d.position.set(b.x, b.y + b.h + 0.5, b.z);
       d.scale.set(b.w + 1, 1, b.d + 1);
       d.updateMatrix();
@@ -2830,10 +3284,10 @@ function addEstate(group, cfg) {
       const [hx, hz] = turnedHalf(b.w, b.d, rot);
       addObstacleAt(b.x, b.z, hx * 2, hz * 2, b.lo - 0.3, b.y + b.h - b.lo + 6, 'You flew into a hotel');
     });
-    walls.instanceMatrix.needsUpdate = true;
+    const walls = wallB.mesh(new THREE.MeshStandardMaterial({ map: buildingTexture(2), vertexColors: true, roughness: 0.5, metalness: 0.2 }), { name: 'estate-hotels' });
     caps.instanceMatrix.needsUpdate = true;
     sign.instanceMatrix.needsUpdate = true;
-    walls.castShadow = walls.receiveShadow = caps.castShadow = true;
+    caps.castShadow = true;
     group.add(walls, caps, sign);
     out.hotels = hotels.length;
     out.signMat = sign.material;
@@ -2965,10 +3419,13 @@ export class Scenery {
     };
     this.lighthouseAt = lh;
     this.lighthouse = buildLighthouse(this.group, lh.x, lh.z);
+    if (this.town) this.town.nightMats.push(...this.lighthouse.nightMats);
     // The lamp mesh, under the name the rest of the game has always read.
     this.lighthouseLamp = this.lighthouse.lamp;
     this.beamOn = 0;
-    buildDeliveryPad(this.group);
+    // The huts' windows light up with the town's.
+    const dpad = buildDeliveryPad(this.group);
+    if (dpad && dpad.userData.nightMats && this.town) this.town.nightMats.push(...dpad.userData.nightMats);
     // Two kinds of harbour block: a quay built on a flat (the car maps), and
     // one described point by point (Cutter Bay). The second used to be handed
     // to the first, which found no flat and built nothing.

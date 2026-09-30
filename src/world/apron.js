@@ -34,6 +34,7 @@ import { createAircraftModel } from '../aircraft/model-adapter.js';
 import { LIVERIES, schemeFor } from '../aircraft/liveries.js';
 import { AIRCRAFT, specFor } from '../aircraft/types.js';
 import { airportLayout, NOSE_STOP } from './airport-layout.js';
+import { OFFICE_TILE, officeFloors } from './airport.js';
 import { Batch, vcMaterial, instanced, glowPoints, canvas, canvasTexture, trs, trse, yawOf, bakeModel, layer } from './airport-kit.js';
 import * as V from './airport-vehicles.js';
 
@@ -280,16 +281,19 @@ function numberAtlas(n) {
   return { tex, cells };
 }
 
-function nameBoard(text, bg = '#1d2a36', fg = '#ffffff') {
-  const c = canvas(1024, 128);
+/** Several name boards in one texture, a 1024 x 128 row each, top to bottom. */
+function nameBoards(texts, bg = '#1d2a36', fg = '#ffffff') {
+  const c = canvas(1024, 128 * texts.length);
   const ctx = c.getContext('2d');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, 1024, 128);
-  ctx.fillStyle = fg;
-  ctx.font = 'bold 76px Arial, Helvetica, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, 512, 68, 980);
+  texts.forEach((text, i) => {
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, i * 128, 1024, 128);
+    ctx.fillStyle = fg;
+    ctx.font = 'bold 76px Arial, Helvetica, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 512, i * 128 + 68, 980);
+  });
   return canvasTexture(c);
 }
 
@@ -460,7 +464,9 @@ export class Apron {
       vehicle: vcMaterial({ roughness: 0.55, metalness: 0.25 }),
       hose: new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.8 }),
       wall: new THREE.MeshStandardMaterial({ map: buildingTexture(0), roughness: 0.82, metalness: 0.05 }),
-      roof: new THREE.MeshStandardMaterial({ map: roofTexture(), roughness: 0.9 }),
+      // Both sides: the vault overhangs the glass, and from the apron you
+      // look up at its underside.
+      roof: new THREE.MeshStandardMaterial({ map: roofTexture(), roughness: 0.9, side: THREE.DoubleSide }),
     };
     this.b = { vc: new Batch(), paint: new Batch(), wall: new Batch(), roof: new Batch() };
 
@@ -504,18 +510,37 @@ export class Apron {
     const kind = lay.military ? 'ops' : lay.shape === 'strip' ? 'club' : 'terminal';
     const WHITE = 0xe8ecef;
     const STEEL = 0xa8b0b8;
+    const FIN = 0xc9ced3;
 
-    // The hall: textured walls all round (the glass goes over the front).
-    this.b.wall.box(W, H, D, cx, ELEV + H / 2, zMid, 0xffffff, 0, 12);
+    // The hall: textured walls (the offices, landside); the glass goes over
+    // the front and, on the terminal and the clubhouse, round both ends.
+    this.b.wall.box(W, H, D, cx, ELEV + H / 2, zMid, 0xffffff, 0, OFFICE_TILE);
     // On a concrete plinth 1.5 m into the ground, so a footprint on ground a
     // little below field level shows no daylight under it.
     vc.slab(r.x0 - 0.2, r.x1 + 0.2, ELEV - 1.5, ELEV + 0.02, r.z0 - 0.2, r.z1 + 0.2, 0xb4b6b0);
     addObstacleAt(cx, zMid, W, D, ELEV, H + (kind === 'terminal' ? 4 : 1.5), kind === 'terminal' ? 'You flew into the terminal' : 'You flew into a building');
 
-    // Curtain wall facing the aeroplanes.
+    // The stands whose boards, gate signs and bridge links are on the glass:
+    // no fin is stood in front of any of them.
+    const busyX = [];
+    for (const st of lay.stands) {
+      if (!st.bridge) continue;
+      busyX.push(F.x(st.u), F.x(st.u + lay.side * (st.size === 'heavy' ? 16 : 9)));
+    }
+
+    /*
+     * Curtain wall: the front, facing the aeroplanes, and both ends.
+     *
+     * Only the front used to be glass. The ends wore the office-window
+     * texture of the landside wall and the vault stopped flush with them, so
+     * from the runway the building looked cut off with a knife — a glass box
+     * with a slice of a block of flats stuck on the end. It wraps round now,
+     * with fins every bay, a post at each corner, and one mesh for all of it.
+     */
     if (kind !== 'ops') {
       const gh = H - (kind === 'club' ? 2.2 : 4.6);
-      const gy = ELEV + (kind === 'club' ? 1.0 : 2.6) + gh / 2;
+      const g0 = ELEV + (kind === 'club' ? 1.0 : 2.6);
+      const gy = g0 + gh / 2;
       const tex = glazingTextures();
       const mat = new THREE.MeshStandardMaterial({
         map: tex.day,
@@ -525,88 +550,242 @@ export class Apron {
         roughness: 0.15,
         metalness: 0.35,
       });
-      const g = new THREE.PlaneGeometry(W - 0.4, gh);
-      const uv = g.attributes.uv;
-      for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * (W - 0.4)) / 6, (uv.getY(i) * gh) / 9);
-      const m = new THREE.Mesh(g, mat);
-      m.position.set(cx, gy, zFront - dz * 0.06);
-      // A plane looks down +Z. The glass looks away from the building, -dz.
-      m.rotation.y = dz < 0 ? 0 : Math.PI;
-      this.group.add(m);
+      const panes = new Batch();
+      const pane = (len, x, z, ry) => {
+        const g = new THREE.PlaneGeometry(len, gh);
+        const uv = g.attributes.uv;
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * len) / 6, (uv.getY(i) * gh) / 9);
+        panes.add(g, trs(x, gy, z, ry), 0xffffff);
+        g.dispose();
+      };
+      // A plane looks down +Z. The front glass looks away from the building (-dz); the ends look out along X.
+      pane(W - 0.4, cx, zFront - dz * 0.1, dz < 0 ? 0 : Math.PI);
+      pane(D - 0.4, r.x0 - 0.1, zMid, -Math.PI / 2);
+      pane(D - 0.4, r.x1 + 0.1, zMid, Math.PI / 2);
+      const glass = panes.mesh(mat, { cast: false, name: 'terminal-glass' });
+      glass.geometry.deleteAttribute('color');
+      this.group.add(glass);
       this.glassMat = mat;
-      // Spandrel under the glass, fascia over it.
-      if (kind === 'terminal') vc.box(W, 2.6, 0.7, cx, ELEV + 1.3, zFront - dz * 0.1, WHITE);
-      vc.box(W + 1.2, kind === 'club' ? 1.0 : 2.0, 1.2, cx, ELEV + H - (kind === 'club' ? 0.5 : 0.6), zFront - dz * 0.2, WHITE);
+
+      // Spandrel under the glass and fascia over it, both wrapped round the
+      // ends. The end pieces start behind the front ones and stop short of the
+      // back wall, so no two faces lie in one plane.
+      const band = (h, y, t) => {
+        vc.box(W + 2 * t, h, t, cx, y, zFront - dz * (t / 2 - 0.25), WHITE);
+        for (const [ex, s] of [[r.x0, -1], [r.x1, 1]]) {
+          vc.box(t, h, D - 0.5, ex + s * (t / 2 - 0.25), y, zMid, WHITE);
+        }
+      };
+      if (kind === 'terminal') band(2.6, ELEV + 1.3, 0.7);
+      band(kind === 'club' ? 1.0 : 2.0, ELEV + H - (kind === 'club' ? 0.5 : 0.6), 1.2);
+
+      // Fins: a steel mullion every bay, standing proud of the glass.
+      if (kind === 'terminal') {
+        const finD = 0.7;
+        // On the glazing's own bay lines, which start 0.2 m in from each corner.
+        for (let x = r.x0 + 6.2; x < r.x1 - 3; x += 6) {
+          if (busyX.some((bx) => Math.abs(bx - x) < 2.8)) continue;
+          vc.box(0.28, gh - 0.2, finD, x, gy, zFront - dz * (finD / 2 + 0.11), FIN);
+        }
+        for (const [ex, s] of [[r.x0, -1], [r.x1, 1]]) {
+          for (let w = 6.2; w < D - 3; w += 6) vc.box(finD, gh - 0.2, 0.28, ex + s * (finD / 2 + 0.11), gy, zFront + dz * w, FIN);
+        }
+      }
+      // Corner posts, where the front glass turns the corner.
+      for (const [ex, s] of [[r.x0, -1], [r.x1, 1]]) {
+        vc.box(1.0, gh + 0.4, 1.0, ex + s * 0.3, gy, zFront - dz * 0.3, WHITE);
+      }
     } else {
       // Operations block: a band of windows, a flat roof and an antenna farm.
       vc.box(W + 0.4, 1.4, D + 0.4, cx, ELEV + H + 0.2, zMid, 0x9aa1a8);
       for (let i = 0; i < 4; i++) this.b.vc.cyl(0.08, 0.1, 7, r.x0 + 6 + i * 5, ELEV + H + 0.9, zMid, STEEL, 6);
     }
 
+    // Where the name goes: on the roof's edge, over the glass and over the kerb.
+    let signFront = { z: zFront - dz * 0.9, y: ELEV + H + 0.2 };
+    let signBack = { z: zBack + dz * 0.1, y: ELEV + H + 0.2 };
+
     if (kind === 'terminal') {
       /*
        * Roof: a shallow barrel vault, built from the two numbers that
        * describe one — how far apart the eaves are and how far it rises
-       * between them. (A drum of radius 0.62 x depth, centred at roof height,
-       * is what stood 21 m proud of this building before, capped with a pie
-       * slice at each end.) Open-ended, with the ends filled by flat gables.
+       * between them.
+       *
+       * It overhangs now: 4-5 m over the glass on the airside (the canopy
+       * that shades a real departures hall, and the shadow line that makes
+       * the front read as a front), 1.5 m over the kerb, and 3 m past each
+       * end, with a white fascia round its edge. It stopped flush with the
+       * walls before, capped with a flat white gable at each end, which is
+       * the other half of why the building looked sliced.
        */
-      const rise = Math.min(4.2, D * 0.1);
-      const halfD = D / 2;
-      const R = (halfD * halfD + rise * rise) / (2 * rise);
-      const halfArc = Math.asin(Math.min(1, halfD / R));
-      const vault = new THREE.CylinderGeometry(R, R, W + 1.2, 32, 1, true, Math.PI / 2 - halfArc, halfArc * 2);
-      this.b.roof.add(vault, trse(cx, ELEV + H - R + rise, zMid, 0, 0, Math.PI / 2), 0xffffff, 10);
+      const oF = Math.min(6, Math.max(3, H * 0.18));
+      const oB = 1.5;
+      const oE = Math.min(4, 1.5 + W * 0.01);
+      const span = D + oF + oB;
+      const zC = zMid + (dz * (oB - oF)) / 2;
+      const rise = Math.min(5, span * 0.1);
+      const half = span / 2;
+      const R = (half * half + rise * rise) / (2 * rise);
+      const halfArc = Math.asin(Math.min(1, half / R));
+      const eave = ELEV + H + 0.4;
+      const yC = eave + rise - R;
+      const len = W + 2 * oE;
+      const vault = new THREE.CylinderGeometry(R, R, len, 40, 1, true, Math.PI / 2 - halfArc, halfArc * 2);
+      this.b.roof.add(vault, trse(cx, yC, zC, 0, 0, Math.PI / 2), 0xffffff, 10);
       vault.dispose();
-      const seg = 16;
-      for (const ex of [r.x0 - 0.6, r.x1 + 0.6]) {
-        const pts = [];
-        for (let i = 0; i <= seg; i++) {
-          const a = -halfArc + (2 * halfArc * i) / seg;
-          pts.push([zMid + Math.sin(a) * R, ELEV + H - R + rise + Math.cos(a) * R]);
-        }
+      const roofAt = (z) => yC + Math.sqrt(Math.max(0, R * R - (z - zC) * (z - zC)));
+      // The fascia: along both eaves, and following the curve at both ends.
+      const zE = [zC - dz * half, zC + dz * half];
+      // (Ending inside the curved end pieces, so no end face lies in theirs.)
+      for (const ze of zE) vc.box(len, 1.1, 0.4, cx, eave - 0.35, ze - Math.sign(ze - zC) * 0.1, WHITE);
+      // At each end, the fascia follows the curve: one bent slab, 1.1 m deep
+      // and 0.4 m thick, from just over the roof's skin inward.
+      const seg = 20;
+      for (const ex of [cx - len / 2, cx + len / 2]) {
         const pos = [];
+        const ring = (a, d) => [zC + Math.sin(a) * (R - d), yC + Math.cos(a) * (R - d)];
+        const quad = (p, q, r2, t) => pos.push(...p, ...q, ...r2, ...p, ...r2, ...t);
         for (let i = 0; i < seg; i++) {
-          pos.push(ex, ELEV + H, pts[i][0], ex, pts[i][1], pts[i][0], ex, pts[i + 1][1], pts[i + 1][0]);
-          pos.push(ex, ELEV + H, pts[i][0], ex, pts[i + 1][1], pts[i + 1][0], ex, ELEV + H, pts[i + 1][0]);
+          const a0 = -halfArc + (2 * halfArc * i) / seg;
+          const a1 = -halfArc + (2 * halfArc * (i + 1)) / seg;
+          const [zo0, yo0] = ring(a0, -0.05);
+          const [zo1, yo1] = ring(a1, -0.05);
+          const [zi0, yi0] = ring(a0, 1.05);
+          const [zi1, yi1] = ring(a1, 1.05);
+          for (const xs of [ex - 0.2, ex + 0.2]) quad([xs, yo0, zo0], [xs, yo1, zo1], [xs, yi1, zi1], [xs, yi0, zi0]);
+          quad([ex - 0.2, yo0, zo0], [ex + 0.2, yo0, zo0], [ex + 0.2, yo1, zo1], [ex - 0.2, yo1, zo1]);
+          quad([ex - 0.2, yi0, zi0], [ex - 0.2, yi1, zi1], [ex + 0.2, yi1, zi1], [ex + 0.2, yi0, zi0]);
         }
+        // Every face both ways round is cheaper than getting each winding
+        // right by hand, and a slab 0.4 m thick hides the inside faces.
+        const n = pos.length / 3;
+        const idx = [];
+        for (let i = 0; i < n; i += 3) idx.push(i, i + 1, i + 2, i, i + 2, i + 1);
         const gg = new THREE.BufferGeometry();
         gg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        gg.computeVertexNormals();
-        vc.add(gg, new THREE.Matrix4(), WHITE);
-        // And the other way round, so it is solid from both sides.
-        const idx = [];
-        for (let i = 0; i < pos.length / 3; i += 3) idx.push(i, i + 2, i + 1);
         gg.setIndex(idx);
         gg.computeVertexNormals();
         vc.add(gg, new THREE.Matrix4(), WHITE);
         gg.dispose();
       }
-      // Plant on the roof, so the skyline is not a smooth line.
-      for (let x = r.x0 + 14; x < r.x1 - 10; x += 34) vc.box(7, 2.4, 5, x, ELEV + H + rise * 0.7, zMid + dz * D * 0.12, 0x8d949c);
+      // The end walls under the vault, above the glass: the curve filled in,
+      // in the wall's own colour, set back behind the glass line.
+      for (const ex of [r.x0 + 0.02, r.x1 - 0.02]) {
+        const pos = [];
+        const n = 16;
+        const za0 = zFront;
+        const zb0 = zBack;
+        for (let i = 0; i < n; i++) {
+          const z0 = za0 + ((zb0 - za0) * i) / n;
+          const z1 = za0 + ((zb0 - za0) * (i + 1)) / n;
+          pos.push(ex, ELEV + H, z0, ex, roofAt(z0) - 0.05, z0, ex, roofAt(z1) - 0.05, z1);
+          pos.push(ex, ELEV + H, z0, ex, roofAt(z1) - 0.05, z1, ex, ELEV + H, z1);
+        }
+        const gg = new THREE.BufferGeometry();
+        gg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        // Wound to face out of the building at this end.
+        const out = ex < cx ? -1 : 1;
+        gg.computeVertexNormals();
+        if (gg.attributes.normal.getX(0) * out < 0) {
+          const idx = [];
+          for (let i = 0; i < pos.length / 3; i += 3) idx.push(i, i + 2, i + 1);
+          gg.setIndex(idx);
+          gg.computeVertexNormals();
+        }
+        vc.add(gg, new THREE.Matrix4(), 0xd6dce1);
+        gg.dispose();
+      }
+      // A strip of rooflights along the crown, and plant set back behind it.
+      vc.box(len * 0.82, 0.2, Math.min(4, span * 0.08), cx, roofAt(zC) + 0.02, zC, 0x9fb6c8);
+      const zp = zC + dz * span * 0.2;
+      for (let x = r.x0 + 14; x < r.x1 - 10; x += 34) vc.box(7, 2.4, 5, x, roofAt(zp) + 0.9, zp, 0x8d949c);
+      // Solid out to the edge of the overhangs, from well above the ground (the
+      // road router and anyone on foot only care what starts under 4 m).
+      addObstacleAt(cx, zC, len, span, ELEV + H - 1, rise + 1.6, 'You flew into the terminal');
+      signFront = { z: zE[0] - dz * 0.35, y: eave + 0.15 };
+      // The kerb gets its name on the canopy, between DEPARTURES and
+      // ARRIVALS, rather than a second big board on the roof: on the compact
+      // terminals that one stood right behind the airside board.
+      signBack = null;
+
       // Kerbside canopy on the landside, on columns.
       vc.box(W * 0.7, 0.5, 5, cx, ELEV + 6.4, zBack + dz * 2.6, WHITE);
-      for (let x = cx - W * 0.33; x <= cx + W * 0.33 + 0.1; x += W / 9) vc.box(0.5, 6.2, 0.5, x, ELEV + 3.1, zBack + dz * 4.6, STEEL);
+      for (let k = -3; k <= 3; k++) vc.box(0.5, 6.2, 0.5, cx + (k * W) / 9, ELEV + 3.1, zBack + dz * 4.6, STEEL);
+      /*
+       * The way in: two glazed entrances under the canopy, each in a white
+       * frame, with DEPARTURES and ARRIVALS over them on the canopy's edge.
+       * The kerb was a blank wall of office windows.
+       */
+      // Between the canopy's columns (every W/9), clear of all of them.
+      const doors = [-W / 6, W / 6];
+      this.entrances = [];
+      for (const ox of doors) {
+        const x = cx + ox;
+        vc.box(8, 4.6, 0.3, x, ELEV + 2.3, zBack + dz * 0.12, 0x24323d);
+        vc.box(9.2, 0.8, 1.2, x, ELEV + 5.0, zBack + dz * 0.5, WHITE);
+        for (const s of [-1, 1]) vc.box(0.6, 4.6, 1.2, x + s * 4.3, ELEV + 2.3, zBack + dz * 0.5, WHITE);
+        // The door leaves: two pairs, the frames between them.
+        for (const s of [-2, -1, 0, 1, 2]) vc.box(0.12, 4.4, 0.34, x + s * 1.9, ELEV + 2.3, zBack + dz * 0.16, 0xc9ced3);
+        this.entrances.push({ x, z: zBack + dz * 0.2 });
+      }
+      this.kerbSigns = [
+        { row: 1, x: cx - W / 6, z: zBack + dz * 5.2, y: ELEV + 7.35 },
+        { row: 2, x: cx + W / 6, z: zBack + dz * 5.2, y: ELEV + 7.35 },
+      ];
     } else if (kind === 'club') {
-      vc.box(W + 0.6, 0.35, D + 0.6, cx, ELEV + H + 0.15, zMid, 0x8d949c);
+      /*
+       * A flat roof that oversails the walls by a metre and a half all round,
+       * with a white fascia: the clubhouse's roof was a slab barely wider than
+       * the building, so its ends read as cut off as the terminal's did.
+       */
+      vc.box(W + 3, 0.6, D + 3, cx, ELEV + H + 0.3, zMid, WHITE);
+      vc.box(W + 2.4, 0.12, D + 2.4, cx, ELEV + H + 0.66, zMid, 0x8d949c);
+      addObstacleAt(cx, zMid, W + 3, D + 3, ELEV + H - 0.2, 1.2, 'You flew into a building');
       // A veranda on the airside, where people watch the aeroplanes.
       vc.box(W, 0.25, 4.5, cx, ELEV + 3.2, zFront - dz * 2.4, WHITE);
       for (let x = r.x0 + 1; x <= r.x1 - 0.9; x += W / 5) vc.box(0.25, 3.2, 0.25, x, ELEV + 1.6, zFront - dz * 4.4, STEEL);
+      // And a door on the kerb.
+      vc.box(2.4, 2.6, 0.3, cx, ELEV + 1.3, zBack + dz * 0.12, 0x24323d);
+      vc.box(3.4, 0.4, 1.6, cx, ELEV + 2.9, zBack + dz * 0.8, WHITE);
+      signFront = { z: zFront - dz * 1.75, y: ELEV + H + 0.72 };
+      signBack = { z: zBack + dz * 1.75, y: ELEV + H + 0.72 };
+    } else {
+      signFront = { z: zFront - dz * 0.45, y: ELEV + H + 0.95 };
+      signBack = { z: zBack + dz * 0.45, y: ELEV + H + 0.95 };
     }
 
-    // The name, over the glass and over the kerb.
+    /*
+     * The name, over the glass and over the kerb: a lit board in a dark
+     * frame, standing on the roof's edge. One texture holds it and, on the
+     * terminal, DEPARTURES and ARRIVALS for the kerb; one mesh draws them all.
+     */
     const name = (MAP && MAP.name ? MAP.name : 'Airport').toUpperCase();
     const label = kind === 'ops' ? `${name} — BASE OPERATIONS` : kind === 'club' ? `${name} FLYING CLUB` : name;
-    const tex = nameBoard(label);
+    const tex = nameBoards([label, 'DEPARTURES', 'ARRIVALS']);
     const bw = Math.min(W * 0.7, kind === 'terminal' ? 60 : 30);
     const bh = bw / 8;
     const mat = new THREE.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.2, roughness: 0.5 });
-    for (const [zz, face] of [[zFront - dz * 0.9, dz < 0 ? 0 : Math.PI], [zBack + dz * 0.1, dz < 0 ? Math.PI : 0]]) {
-      const b = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), mat);
-      b.position.set(cx, ELEV + H + bh / 2 + 0.2, zz);
-      b.rotation.y = face;
-      this.group.add(b);
-    }
+    const boards = new Batch();
+    const board = (row, w, h, x, y, z, ry, frameOut) => {
+      const g = new THREE.PlaneGeometry(w, h);
+      const uv = g.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setY(i, (2 - row + uv.getY(i)) / 3);
+      boards.add(g, trs(x, y, z, ry), 0xffffff);
+      g.dispose();
+      // The frame: a dark box behind the face, 3 cm clear of it.
+      vc.box(w + 0.5, h + 0.5, 0.5, x - Math.sin(ry) * 0.28 * frameOut, y, z - Math.cos(ry) * 0.28 * frameOut, 0x1d2a36, ry);
+    };
+    // A plane looks down +Z; each board looks away from the building.
+    const faceFront = dz < 0 ? 0 : Math.PI;
+    const faceBack = dz < 0 ? Math.PI : 0;
+    board(0, bw, bh, cx, signFront.y + bh / 2 + 0.25, signFront.z, faceFront, 1);
+    if (signBack) board(0, bw, bh, cx, signBack.y + bh / 2 + 0.25, signBack.z, faceBack, 1);
+    else board(0, 12.8, 1.6, cx, ELEV + 7.6, zBack + dz * 5.2, faceBack, 1);
+    for (const k of this.kerbSigns || []) board(k.row, 9, 1.125, k.x, k.y, k.z, faceBack, 1);
+    this.kerbSigns = null;
+    const bm = boards.mesh(mat, { cast: false, name: 'terminal-signs' });
+    bm.geometry.deleteAttribute('color');
+    this.group.add(bm);
     this.boardMat = mat;
   }
 
@@ -1581,6 +1760,7 @@ export class Apron {
     add(this.b.paint, this.mats.paint, { cast: false, name: 'apron-paint' });
     const w = add(this.b.wall, this.mats.wall, { name: 'terminal-walls' });
     if (w) w.geometry.deleteAttribute('color');
+    officeFloors(w, ELEV + 0.2);
     const r = add(this.b.roof, this.mats.roof, { name: 'terminal-roof' });
     if (r) r.geometry.deleteAttribute('color');
     this.b = null;

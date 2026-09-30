@@ -111,6 +111,31 @@ export class Batch {
     return this;
   }
 
+  /**
+   * One flat triangle, points [x, y, z] wound counter-clockwise seen from the
+   * side it faces, with its own UVs ([u, v] each) and colour.
+   */
+  tri(a, b, c, uva, uvb, uvc, color = 0xffffff) {
+    _c.set(color);
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+    const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    _n.set(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx).normalize();
+    for (const [p, t] of [[a, uva], [b, uvb], [c, uvc]]) {
+      this.pos.push(p[0], p[1], p[2]);
+      this.nrm.push(_n.x, _n.y, _n.z);
+      this.uv.push(t[0], t[1]);
+      this.col.push(_c.r, _c.g, _c.b);
+    }
+    return this;
+  }
+
+  /** A flat quad a-b-c-d, counter-clockwise seen from the front; UVs [u0, v0, u1, v1] from a (bottom left) to c (top right). */
+  quad(a, b, c, d, uvRect = [0, 0, 1, 1], color = 0xffffff) {
+    const [u0, v0, u1, v1] = uvRect;
+    this.tri(a, b, c, [u0, v0], [u1, v0], [u1, v1], color);
+    return this.tri(a, c, d, [u0, v0], [u1, v1], [u0, v1], color);
+  }
+
   /** A box of w x h x d centred at (x, y, z), turned `ry` about Y. */
   box(w, h, d, x, y, z, color, ry = 0, uvTile = 0) {
     const g = new THREE.BoxGeometry(w, h, d);

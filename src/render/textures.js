@@ -335,20 +335,15 @@ export function runwayTexture() {
       ctx.fillRect(W * 0.74 - 26, y, 26, H * 0.035);
     }
 
-    // Runway designators: 09 at the west end, 27 at the east end.
-    const number = (text, y, flip) => {
-      ctx.save();
-      ctx.translate(W / 2, y);
-      if (flip) ctx.rotate(Math.PI);
-      ctx.fillStyle = paint;
-      ctx.font = 'bold 150px "Arial Black", Arial, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(text, 0, 0);
-      ctx.restore();
-    };
-    number('09', H * 0.085, false);
-    number('27', H * 0.915, true);
+    /*
+     * No runway numbers in here. They were painted into this texture — 09 at
+     * the west end, 27 at the east — and that had three things wrong with it:
+     * both were upside down from the aeroplane landing on them (09 read "60"
+     * from the threshold of 09), the crosswind runway wears this same texture
+     * so 18/36 said 09/27, and the texture is stretched over the whole
+     * runway, so a digit came out 65-215 m long instead of the 18 m a real
+     * one is. airport.js lays them now as their own decals, runwayDesignators().
+     */
 
     // Weather the paint so it does not look like a decal.
     ctx.globalCompositeOperation = 'destination-out';

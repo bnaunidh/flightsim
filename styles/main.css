@@ -159,22 +159,36 @@ html, body {
   padding: 12px 14px;
 }
 
-.hud-left { left: 16px; top: 16px; min-width: 208px; }
+/*
+ * The instrument panel, slimmed.
+ *
+ * Same four readings, same words, same place — it just stopped taking a fifth
+ * of the windscreen: 208x275 at 1280x720, now 184x240. Tighter rows,
+ * a slightly smaller figure (24 px is still the biggest text on the screen),
+ * and a 10 px label that fits its column instead of pushing the panel wider.
+ *
+ * The panels are a little darker than they were (0.78, not 0.72): lined up on
+ * the runway they sit over white paint, and the small grey key hints under
+ * them dropped to about 3.4:1 there.
+ */
+.hud-panel { background: rgba(12, 20, 34, 0.78); }
+.hud-left { left: 16px; top: 16px; min-width: 184px; padding: 9px 12px; }
 .hud-row {
   display: grid;
-  grid-template-columns: 62px 1fr;
+  grid-template-columns: 58px 1fr;
   grid-template-rows: auto auto;
   align-items: baseline;
   column-gap: 8px;
-  padding: 5px 0;
+  padding: 3px 0;
 }
 .hud-row + .hud-row { border-top: 1px solid rgba(140, 180, 230, 0.1); }
-.hud-label { grid-row: 1; color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+.hud-label { grid-row: 1; color: var(--text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; line-height: 1.2; }
 .hud-valuewrap { grid-row: 1; display: flex; align-items: baseline; gap: 4px; }
-.hud-value { font-size: 27px; font-weight: 640; line-height: 1; letter-spacing: -0.02em; }
+.hud-value { font-size: 24px; font-weight: 640; line-height: 1; letter-spacing: -0.02em; }
 .hud-value.is-warn { color: var(--amber); }
-.hud-unit { font-size: 11px; color: var(--text-dim); }
-.hud-word { grid-column: 1 / -1; grid-row: 2; font-size: 12px; color: var(--accent); }
+.hud-unit { font-size: 10.5px; color: var(--text-dim); }
+.hud-unit.is-deg { align-self: flex-start; font-size: 15px; line-height: 1; margin-left: -3px; }
+.hud-word { grid-column: 1 / -1; grid-row: 2; font-size: 11.5px; line-height: 1.3; margin-top: 1px; color: var(--accent); }
 
 .hud-top {
   position: absolute;
@@ -207,6 +221,43 @@ html, body {
 }
 .hud-objective-text { font-size: 15px; line-height: 1.34; }
 .hud-objective-text.is-flash { animation: flashIn 0.6s ease; }
+
+/*
+ * The objective, folded into a chip once it has been read (hud.js adds
+ * .is-chip). One line: the title, the mission clock if there is one — never
+ * hidden, a mission needs it — and as much of the sentence as fits, with a
+ * small arrow that says there is more. Hover, a tap, H, or a new objective
+ * opens it again. It takes clicks so that it can be tapped open.
+ */
+.hud-objective { pointer-events: auto; cursor: pointer; }
+.hud-objective.is-chip {
+  width: auto;
+  max-width: min(100%, 460px);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 14px 5px 16px;
+  border-radius: 99px;
+  animation: objChipIn 0.25s ease;
+}
+.hud-objective.is-chip .hud-objective-title { flex: none; margin: 0; font-size: 10px; }
+.hud-objective.is-chip .hud-objective-clock { flex: none; margin: 0; }
+/* The heli's "2 aboard · 1 safe" (hud-rotor.js) is mission state like the
+   clock: kept whole on the chip's row, never squeezed into a wrapped column. */
+.hud-objective.is-chip .hud-rescue { flex: none; margin: 0; white-space: nowrap; }
+.hud-objective.is-chip .hud-objective-text {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #d6e2f2;
+}
+.hud:not(.is-drive) .hud-objective.is-chip::after { content: '\25BE'; flex: none; font-size: 11px; color: var(--text-dim); }
+@keyframes objChipIn { from { opacity: 0.35; transform: translateY(-4px); } }
 @keyframes flashIn {
   0% { color: var(--amber); transform: scale(1.02); }
   100% { color: var(--text); transform: scale(1); }
@@ -254,32 +305,39 @@ html, body {
 .hud-winddetail { font-size: 12px; color: var(--text-dim); font-family: var(--mono); }
 .hud-weather { font-size: 11px; color: var(--accent-2); margin-top: 3px; }
 
-.hud-bottom { left: 16px; bottom: 16px; min-width: 268px; }
-.hud-bar { display: grid; grid-template-columns: 52px 1fr 42px; align-items: center; gap: 8px; margin-bottom: 7px; }
-.hud-bar-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
-.hud-bar-track { height: 9px; border-radius: 99px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+/*
+ * The power and fuel strip, slimmed the same way: 340x108 at 1280x720 on the
+ * runway, now 309x90. Every bar, hint and chip is still there; the gaps
+ * between them, the bar thickness and the chip padding are what went. The
+ * small text is a shade lighter than --text-dim, which over the runway paint
+ * was too faint to read at this size.
+ */
+.hud-bottom { left: 16px; bottom: 16px; min-width: 236px; padding: 9px 12px; }
+.hud-bar { display: grid; grid-template-columns: 44px 1fr 36px; align-items: center; gap: 7px; margin-bottom: 4px; }
+.hud-bar-label { font-size: 10px; color: #b3c3d8; text-transform: uppercase; letter-spacing: 0.06em; }
+.hud-bar-track { height: 7px; border-radius: 99px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
 .hud-bar-fill { height: 100%; border-radius: 99px; transition: width 0.1s linear; }
 .hud-bar-fill.is-throttle { background: linear-gradient(90deg, #3ec96a, #9ae66e); }
 .hud-bar-fill.is-fuel { background: linear-gradient(90deg, #58c6ff, #7ee8b2); }
 .hud-bar-fill.is-low { background: linear-gradient(90deg, #ff6a5a, #ffc247); }
-.hud-bar-value { font-size: 12px; color: var(--text-dim); text-align: right; font-family: var(--mono); }
+.hud-bar-value { font-size: 11px; color: #b3c3d8; text-align: right; font-family: var(--mono); }
 
 .hud-keyhint {
-  font-size: 10.5px;
-  color: var(--text-dim);
-  margin: 2px 0 6px;
+  font-size: 10px;
+  color: #b3c3d8;
+  margin: 1px 0 5px;
   letter-spacing: 0.01em;
 }
-.hud-keyhint kbd { font-size: 10px; padding: 0 4px; border-bottom-width: 1px; }
+.hud-keyhint kbd { font-size: 9.5px; padding: 0 3px; border-bottom-width: 1px; }
 
-.hud-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.hud-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 .hud-chip {
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  padding: 4px 8px;
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  padding: 3px 7px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.07);
-  color: var(--text-dim);
+  color: #b3c3d8;
   border: 1px solid transparent;
 }
 .hud-chip.is-good { color: var(--good); border-color: rgba(79, 214, 132, 0.4); }
@@ -426,7 +484,10 @@ html, body {
   border-radius: 12px;
   padding: 9px 18px;
   backdrop-filter: blur(10px);
+  transition: opacity 0.45s ease;
 }
+/* Once it has been up long enough to read, it fades rather than blinking off. */
+.hud-subtitle.is-out { opacity: 0; }
 .hud-subtitle-who {
   font-size: 10px;
   letter-spacing: 0.14em;
@@ -454,6 +515,16 @@ html, body {
 }
 @media (max-width: 900px) {
   .hud.has-minimap .hud-subtitle { width: min(720px, 78vw); bottom: 312px; }
+}
+/*
+ * And on a tablet it stops short of the thumb pads. At 1024x768 the radio line
+ * ran 220-804 px and BRAKES/GEAR start at 800, so the right end of every call
+ * sat on the pads. The pads and the throttle take about 224 px on the right,
+ * the stick about 150 on the left; centred, 480 px less than the screen
+ * clears both. Below 900 px the rule above lifts it over them instead.
+ */
+@media (min-width: 901px) {
+  .hud.is-touch .hud-subtitle { width: min(720px, calc(100vw - 480px)); }
 }
 
 .hud-banner {
@@ -1329,6 +1400,18 @@ body.is-large { font-size: 18px; }
 /* The pads sat one pixel inside the stick — a thumb does not miss by one
    pixel, it presses the wrong thing. Measured stick 14-150, pads 149-291. */
 .hud.is-touch .touch-pads { right: 82px; bottom: 22px; }
+/* right: 82 clears the aeroplane's throttle, not the van's 110 px pedals or
+   the boat's engine lever. Measured on an iPad (1024x768): the camera pad sat
+   44x52 px under the van's STOP pedal and 27x46 under the boat's ASTERN.
+   (Phones get their own placement further down.) */
+.hud.is-touch.is-drive-car .touch-pads,
+.hud.is-touch.is-boat .touch-pads { right: 136px; }
+/* A phone on its side (844x390) leaves 198 px between the boat's centred
+   rudder bar and its lever, and her two pads need 196 plus a gap: the bar
+   steps left to sit beside the wheel instead (232-462, the wheel ends at 222). */
+@media (max-height: 460px) {
+  .hud.is-touch.is-boat .touch-rudder { left: 232px; transform: none; }
+}
 /*
  * The map moves to the top-left corner on a touch device — and it never did.
  *
@@ -1612,13 +1695,13 @@ html.is-touch-device .minimap { top: 8px; left: 8px; right: auto; bottom: auto; 
 
 /* The aeroplane you are flying, at the top of the flight-data panel. */
 .hud-acname {
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 640;
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--accent);
-  margin-bottom: 7px;
-  padding-bottom: 6px;
+  margin-bottom: 3px;
+  padding-bottom: 5px;
   border-bottom: 1px solid var(--panel-line);
 }
 .hud-acname:empty { display: none; }
@@ -2357,9 +2440,30 @@ html.is-touch-device .slot-clear {
     min-width: 0; width: auto;
     display: flex; gap: 6px; justify-content: center; padding: 6px 8px;
   }
-  .hud.is-touch .hud-left .hud-readout { flex: 1 1 0; min-width: 0; }
-  .hud.is-touch .hud-readout-value { font-size: 18px; }
-  .hud.is-touch .hud-readout-label { font-size: 8px; letter-spacing: 0.05em; }
+  /*
+   * Two by two, inside the gap.
+   *
+   * These rules were written for `.hud-readout` cells that this build does not
+   * have, so the four real rows sat in a centred flex line four times wider
+   * than the 128 px between the map and the buttons and spilled out of both
+   * ends: AIRSPEED under the map, HEADING under the pause button. A 2x2 grid
+   * fits the same four readings in the same gap, no taller than the map.
+   */
+  /* Not the boat's panel: it shares .hud-left but lays out its own grid, and
+     min-width 0 squeezed its depth and speed onto each other ("500"). */
+  .hud.is-touch .hud-left:not(.hud-boatpanel) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3px 8px; }
+  /* A long vertical speed clips its unit rather than run into HEADING. */
+  .hud.is-touch .hud-left:not(.hud-boatpanel) .hud-row { min-width: 0; overflow: hidden; }
+  .hud.is-touch .hud-left:not(.hud-boatpanel) .hud-label {
+    font-size: 7.5px; letter-spacing: 0.04em; max-width: 100%;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .hud.is-touch .hud-left:not(.hud-boatpanel) .hud-value { font-size: 16px; }
+  /* The van's 30 px speed (.hud.is-drive .hud-left .hud-value, further down,
+     same weight, so it won) made its strip 112 px tall on a phone and put
+     HEADING under the objective. Still the biggest number, inside the band. */
+  .hud.is-touch.is-drive .hud-left .hud-value { font-size: 18px; }
+  .hud.is-touch .hud-left:not(.hud-boatpanel) .hud-unit { font-size: 7.5px; }
   .hud.is-touch .hud-right { display: none; }
 
   /* --- objective: one line, under the band, and inside the screen -------- */
@@ -2395,8 +2499,24 @@ html.is-touch-device .slot-clear {
   }
   .hud.is-touch .hud-subtitle {
     bottom: 216px; left: 8px; right: 8px;
+    /* width: auto, or the 78vw from the wider rules kept it 304 px wide and
+       pinned left, stopping 70 px short of the coach line above it. */
+    width: auto;
     transform: none; max-width: none; font-size: 13px;
   }
+  /*
+   * The folded chip, held inside the screen. `.hud-top` is a centred flex
+   * column, so a chip left at `max-width: none` (the rule above wins on
+   * specificity) grew to the whole sentence and ran off BOTH edges of a
+   * 390 px phone: "LIGHT" for the title, the heli's line across the screen
+   * behind its card. And the two-line clamp above replaced the chip's
+   * `display: block`, so the ellipsis never came. One line, inside the band.
+   */
+  .hud.is-touch .hud-objective.is-chip { max-width: 100%; padding: 5px 10px; }
+  .hud.is-touch .hud-objective.is-chip .hud-objective-text { display: block; }
+  /* Under the band the objective is already clear of the map, so it does not
+     need to step aside for it too: that left it 240 px wide and off-centre. */
+  .hud.is-touch.has-minimap .hud-top { padding-left: 0; }
   /* The strip starts after the map with a real gap, not against it. */
   .hud.is-touch .hud-left { left: 100px; }
   .hud.is-touch .hud-bottom { display: none; }
@@ -2433,6 +2553,22 @@ html.is-touch-device .slot-clear {
     transform: none;
   }
   .touch-rudder-label { font-size: 8px; }
+
+  /*
+   * The van and the boat, on a phone. The rules above place the aeroplane's
+   * pads and rudder between ITS stick and throttle; the van's steering strip
+   * (left, 46vw) and GO/STOP pedals, and the boat's engine lever (right), are
+   * wider. Measured at 390x844: in the van a RUDDER bar lay under the wheel
+   * and the pedals (the !important above beat the inline display:none
+   * driving.js hides it with) and the brake and camera pads sat under the
+   * steering strip; in the boat the lever covered the right-hand pad and the
+   * end of the rudder bar. Same controls, moved clear: the van's two pads go
+   * above its strip and its rudder goes; the boat's stop short of the lever.
+   */
+  .hud.is-touch.is-drive-car .touch-rudder { display: none !important; }
+  .hud.is-touch.is-drive-car .touch-pads { left: 16px; right: auto; width: min(46vw, 340px); bottom: 124px; }
+  .hud.is-touch.is-boat .touch-pads,
+  .hud.is-touch.is-boat .touch-rudder { right: 124px; }
 
   /*
    * The approach-slope call. It sits at bottom:84 by default, which on a
@@ -2696,6 +2832,15 @@ html.is-touch-device .slot-clear {
 }
 .hud.is-drive .hud-objective-clock.is-bad { animation: courierPulse 1s ease-in-out infinite; }
 .hud.is-drive .hud-objective-text { grid-column: 1 / -1; font-size: 14px; }
+/* Folded (see .hud-objective.is-chip): the same pieces on one row — title,
+   clock, load, then as much of the sentence as fits. The clock and the load
+   keep their size; they are what a job is played against. */
+.hud.is-drive .hud-objective.is-chip { grid-template-columns: auto auto auto minmax(0, 1fr); row-gap: 0; column-gap: 10px; }
+.hud.is-drive .hud-objective.is-chip > * { grid-row: 1; }
+.hud.is-drive .hud-objective.is-chip .hud-objective-title { grid-column: 1; }
+.hud.is-drive .hud-objective.is-chip .hud-objective-clock { grid-column: 2; }
+.hud.is-drive .hud-objective.is-chip .hud-cargo { grid-column: 3; }
+.hud.is-drive .hud-objective.is-chip .hud-objective-text { grid-column: 4; }
 @keyframes courierPulse { 50% { opacity: 0.45; } }
 
 /* -- the load -------------------------------------------------------- */
@@ -3173,6 +3318,13 @@ html.is-touch-device .slot-clear {
 .hud.is-touch .hud-hold-text { font-size: 10px; }
 /* The hover strip runs to about 179 px, so what used to sit under the buttons moves below it. */
 .hud.is-touch.is-rotorhover .hud-top { top: 186px; }
+/* On a phone the heli's ON THE GROUND card (hud-rotor.js) hangs under this
+   band at 186-304 px, right-aligned and 236 wide: that is the objective's
+   whole row, so the objective sat behind it, open or folded. It goes under
+   the card instead. Tablets keep 188 (hud-rotor.js): the two sit side by side. */
+@media (max-width: 560px) {
+  .hud.is-touch.is-rotorhover .hud-top { top: 312px; }
+}
 
 /* ========================================================================
  *  Driving on a touch screen.
