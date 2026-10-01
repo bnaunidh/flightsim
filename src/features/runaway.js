@@ -42,6 +42,7 @@ import { local } from './staff/jobs.js';
 import { WALK } from './staff/walk.js';
 import { profileFor } from './eject/profiles.js';
 import { showWasted, wasted } from './wasted.js';
+import { saveSettings } from '../core/storage.js';
 
 const KT = 1.94384;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -125,13 +126,21 @@ function powerOn(sim) {
   return !!(ac && ac.controls && ac.controls.throttle > RUNAWAY.idle);
 }
 
+/**
+ * The owner's switch (pause menu → Getting out): "Runaway plane & WASTED".
+ * On unless the kid turned it off; off, getting out parks her as ever.
+ */
+export function runawayOn(sim) {
+  return !(sim && sim.settings && sim.settings.runawayPlane === false);
+}
+
 /** What onfoot.js asks before it parks the aeroplane (onFoot.setExitRule). */
 const RULE = {
   maxSpeed(sim) {
-    return eligible(sim) && powerOn(sim) ? RUNAWAY.hopSpeed : 0;
+    return runawayOn(sim) && eligible(sim) && powerOn(sim) ? RUNAWAY.hopSpeed : 0;
   },
   decide(sim) {
-    if (!eligible(sim) || !powerOn(sim)) return null;
+    if (!runawayOn(sim) || !eligible(sim) || !powerOn(sim)) return null;
     if (R.armedT <= 0) {
       R.armedT = RUNAWAY.armSeconds;
       return {
@@ -319,6 +328,7 @@ function hitCheck(sim, dt) {
     R.lastWasted = { t: R.t, speedKt: Math.round(speed * KT) };
     const prof = from.prof;
     showWasted(sim, 'plane', {
+      own: true,
       push: { x: ac.vel.x, z: ac.vel.z },
       words: 'Run over by your own plane. Up you get!',
       avoid: (x, z) => inside(ac, prof, x, z, 0),
@@ -346,6 +356,7 @@ function bindAircraft(sim) {
       if (onFoot.active && Math.hypot(ac.pos.x - w.x, ac.pos.z - w.z) < RUNAWAY.crashKnock && !wasted.active) {
         R.lastWasted = { t: R.t, crash: true };
         showWasted(sim, 'crash', {
+          own: true,
           push: { x: w.x - ac.pos.x, z: w.z - ac.pos.z },
           words: 'Your plane crashed right on top of you. Up you get!',
         });
@@ -412,12 +423,53 @@ function updatePins(sim) {
   R.maxDist = Math.max(R.maxDist, Math.hypot(ac.pos.x - R.exitAt.x, ac.pos.z - R.exitAt.z));
 }
 
+/* ------------------------------------------------------------------ */
+/* The pause-menu switch                                                */
+/* ------------------------------------------------------------------ */
+
+function toggleLabel(sim) {
+  return `Runaway plane & WASTED: ${runawayOn(sim) ? 'on' : 'off'}`;
+}
+
+/** A "Getting out" fold in the pause menu with one switch, put there by this feature (menus.js need not know). */
+export function paintPauseSwitch(sim) {
+  const pause = sim && sim.menus && sim.menus.screens && sim.menus.screens.pause;
+  if (!pause || typeof pause.querySelector !== 'function') return false;
+  let btn = pause.querySelector('[data-runaway-toggle]');
+  if (!btn) {
+    const fold = document.createElement('details');
+    fold.className = 'pause-fold';
+    fold.dataset.runawayFold = '';
+    fold.innerHTML = '<summary>🛫 Getting out</summary>'
+      + '<div class="pause-actions"><button data-runaway-toggle></button></div>'
+      + '<p class="hint tiny">On: get out of a small plane with the power on and she takes off without you — '
+      + 'stand in her way and you get WASTED. Off: she stays parked, like before.</p>';
+    const view = pause.querySelector('[data-freelook]');
+    const after = view && view.closest('.pause-fold');
+    if (after && after.parentNode) after.parentNode.insertBefore(fold, after.nextSibling);
+    else (pause.querySelector('.pause-card') || pause).appendChild(fold);
+    btn = fold.querySelector('[data-runaway-toggle]');
+    btn.addEventListener('click', () => {
+      sim.settings = sim.settings || {};
+      sim.settings.runawayPlane = !runawayOn(sim);
+      try { saveSettings(sim.settings); } catch (e) { /* private window: this flight only */ }
+      paintPauseSwitch(sim);
+    });
+  }
+  const on = runawayOn(sim);
+  btn.textContent = toggleLabel(sim);
+  btn.classList.toggle('is-on', on);
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  return true;
+}
+
 registerExtension({
   id: 'runaway',
 
   install(sim) {
     R.sim = sim;
     onFoot.setExitRule(RULE);
+    paintPauseSwitch(sim);
     bindAircraft(sim);
     // Her crash is not the end of your flight: you were not in it.
     if (typeof sim.showCrashDebrief === 'function' && !sim._runawayDebrief) {
@@ -441,6 +493,7 @@ registerExtension({
   },
 
   startMode(sim) {
+    paintPauseSwitch(sim);
     end(sim, 'start');
     R.armedT = 0;
     bindAircraft(sim);

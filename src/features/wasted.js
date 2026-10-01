@@ -7,10 +7,13 @@
  * fall flat, you get up. Nothing else.
  *
  *   showWasted(sim, cause, opts)   ->  true if it started, false if one is
- *                                      already running or the game is not on
+ *                                      already running, the game is not on,
+ *                                      the pause-menu switch is off, or it
+ *                                      was not your own plane (opts.own)
  *
  *     cause   a word for the tests and the log: 'plane', 'crash', ...
- *     opts    { push: {x, z}   which way (and how hard, m/s) to fling you,
+ *     opts    { own: true      required: it was YOUR OWN plane (the owner's rule)
+ *               push: {x, z}   which way (and how hard, m/s) to fling you,
  *               words: 'string' the small line under WASTED }
  *
  * GENERIC ON PURPOSE. runaway.js calls it when your own runaway plane runs you
@@ -148,6 +151,12 @@ function safeSpotNear(x, z, avoid) {
 export function showWasted(sim, cause = 'plane', opts = {}) {
   sim = sim || S.sim;
   if (!sim || S.active || sim.state !== 'flying') return false;
+  // The pause menu's "Runaway plane & WASTED" switch, off: no WASTED moment.
+  if (sim.settings && sim.settings.runawayPlane === false) return false;
+  // The owner's rule: WASTED only when YOUR OWN plane gets you (runaway.js says
+  // so with own: true). Anybody else's plane — another player's, an AI one —
+  // is not a WASTED moment.
+  if (!opts || opts.own !== true) return false;
   S.sim = sim;
   build();
   S.active = true;

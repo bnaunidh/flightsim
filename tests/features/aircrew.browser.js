@@ -392,13 +392,39 @@ export async function check(sim, r, say = () => {}) {
   r.ok('WASTED: you get back up and can walk again', !WS.active && WS.gotUp && foot.active && !(foot.control && foot.control.locked));
   // The generic hook, for other teams: callable on its own.
   const c1 = WS.count;
-  const started = WSm.showWasted(sim, 'test');
+  r.ok('WASTED: only your own plane — a call without own: true does nothing', WSm.showWasted(sim, 'test') === false);
+  const started = WSm.showWasted(sim, 'test', { own: true });
   run(0.2);
-  r.ok('WASTED: showWasted(sim, cause) is a hook anybody can call', started && WS.count === c1 + 1 && WS.cause === 'test' && WS.active);
+  r.ok('WASTED: showWasted(sim, cause, { own: true }) starts it', started && WS.count === c1 + 1 && WS.cause === 'test' && WS.active);
   run(5, () => !WS.active);
   sim.tap('Enter');
   for (let i = 0; i < 40 && (foot.active || RW.active); i++) await new Promise((res) => setTimeout(res, 50));
   run(0.3);
   r.ok('runaway: Enter flies again — back in the seat, nothing left running', !foot.active && !RW.active && sim.override !== RW.ghost && !sim.mapPins, `walking ${foot.active}, runaway ${RW.active}`);
+  /* ================================================================ */
+  say('aircrew: the runaway switch in the pause menu');
+  {
+    const sw = sim.menus.screens.pause.querySelector('[data-runaway-toggle]');
+    r.ok('runaway switch: "Getting out" in the pause menu says Runaway plane & WASTED', !!sw && /Runaway plane & WASTED: (on|off)/.test(sw.textContent), sw ? sw.textContent : 'missing');
+    const was = sim.settings.runawayPlane;
+    if (sw && /: on/.test(sw.textContent)) sw.click();
+    r.ok('runaway switch: off is saved in the settings', sim.settings.runawayPlane === false);
+    // One O: with the switch off it gets you straight out, as it always did (hopOut's second O would put you back in).
+    await sim.startMode('free', { aircraft: 'skylark', taxi: false, time: 'day', condition: 'clear', windSpeedKts: 0, traffic: false });
+    run(0.5);
+    sim.key('Space', true);
+    sim.input.throttleTarget = 1;
+    run(2.5);
+    sim.tap('KeyO');
+    run(0.3);
+    sim.key('Space', false);
+    r.ok('runaway switch: off, getting out with the power on parks her as before', foot.active && !RW.active && !sim.aircraft.engineOn, `walking ${foot.active}, runaway ${RW.active}, engine ${sim.aircraft.engineOn}`);
+    r.ok('runaway switch: off, no WASTED moment even from your own plane', WSm.showWasted(sim, 'plane', { own: true }) === false);
+    if (foot.active) { sim.tap('KeyO'); run(0.3); }
+    if (sw && /: off/.test(sw.textContent)) sw.click();
+    r.ok('runaway switch: back on', sim.settings.runawayPlane !== false && /: on/.test(sw.textContent));
+    if (was === false && sw) sw.click();
+  }
+
   return r;
 }
