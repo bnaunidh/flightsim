@@ -60,6 +60,7 @@
  */
 
 import { SPEC } from '../aircraft/physics.js';
+import { rekey } from '../flight/input.js';
 
 /* Groundspeed, in knots, at which the panel swaps.
  *
@@ -598,7 +599,7 @@ const ROTOR = {
       this.heliState.textContent = words[0];
       this.heliState.classList.toggle('is-good', words[2] === 'good');
       this.heliState.classList.toggle('is-warn', words[2] === 'warn');
-      this.heliSay.textContent = words[1];
+      this.heliSay.textContent = rekey(words[1], 'heli');
     }
 
     // Height above whatever is underneath — sea, rock, roof or deck. The same

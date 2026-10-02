@@ -31,6 +31,16 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extLayer } from '../game/extensions.js';
+import { registerActions, isKey, keyName, live as liveText } from '../flight/input.js';
+
+/*
+ * The trigger, in the one registry: Settings → Controls → Multiplayer & PvP.
+ * Space by default, which it shares by design with the brakes, the van's
+ * handbrake and the boat's crash stop — PvP takes it only in the air.
+ */
+registerActions({
+  pvpFire: { label: 'PvP: shoot paint pellets', group: 'Multiplayer & PvP', ctx: ['plane', 'heli', 'boat', 'car'], default: ['Space'] },
+});
 import { heightAt } from '../world/terrain.js';
 import { performanceFor } from '../aircraft/types.js';
 import * as R from './pvp/rules.js';
@@ -266,13 +276,14 @@ function sayWhatSpaceDoes(sim, me) {
   if (P.saidSpace.has(k)) return;
   P.saidSpace.add(k);
   const touch = typeof document !== 'undefined' && document.documentElement.classList.contains('is-touch-device');
+  const f = keyName('pvpFire', sim);
   const line = touch
     ? 'PvP is on: tap the red FIRE button to shoot paint pellets'
-    : k === 'car'
-      ? 'PvP is on: Space shoots paint pellets now — brake with S (Space is the handbrake again with PvP off)'
+    : liveText(k === 'car'
+      ? `PvP is on: ${f} shoots paint pellets now — brake with ${keyName('carBrake', sim)} (${keyName('carHandbrake', sim)} is the handbrake again with PvP off)`
       : k === 'boat'
-        ? 'PvP is on: Space shoots paint pellets now — slow her down with S'
-        : 'PvP is on: Space or FIRE shoots paint pellets in the air — on the ground Space is still the brakes';
+        ? `PvP is on: ${f} shoots paint pellets now — slow her down with ${keyName('boatSlower', sim)}`
+        : `PvP is on: ${f} or FIRE shoots paint pellets in the air — on the ground ${keyName('brakes', sim)} is still the brakes`);
   P.stats.spaceLines++;
   if (sim.hud && typeof sim.hud.notify === 'function') sim.hud.notify(line, 'info', 6);
 }
@@ -540,7 +551,7 @@ function els() {
   fire.className = 'pvp-fire';
   fire.hidden = true;
   fire.setAttribute('aria-label', 'Fire');
-  fire.innerHTML = 'FIRE<small>or Space</small>';
+  fire.innerHTML = `FIRE<small>or ${keyName('pvpFire')}</small>`;
   const press = (on) => (e) => {
     if (e && e.cancelable) e.preventDefault();
     P.fireBtn = on;
@@ -702,7 +713,7 @@ function paintChip() {
   if (b._html !== html) {
     b._html = html;
     b.innerHTML = html;
-    b.title = want ? 'PvP is ON: tag players who have it on too — Space or FIRE. Click to switch it OFF.' : 'PvP is OFF: nobody can tag you. Click to switch it ON.';
+    b.title = want ? `PvP is ON: tag players who have it on too — ${keyName('pvpFire')} or FIRE. Click to switch it OFF.` : 'PvP is OFF: nobody can tag you. Click to switch it ON.';
   }
   if (b.className !== cls) b.className = cls;
 }
@@ -807,7 +818,7 @@ registerExtension({
     const me = ride(sim);
     if (live(r) && me && !P.down) sayWhatSpaceDoes(sim, me);
     // Touching down with Space still held (it was the trigger in the air): it is the brakes again, at once.
-    if (P.fireKey && me && me.kind === 'air' && me.onGround && !P.down && sim.input && sim.input.keys && !sim.input.keys.has('Space')) sim.input.keys.add('Space');
+    if (P.fireKey && P.fireCode && me && me.kind === 'air' && me.onGround && !P.down && sim.input && sim.input.keys && !sim.input.keys.has(P.fireCode)) sim.input.keys.add(P.fireCode);
     // Not on the ground in an aeroplane (Space is the brakes there), and not while racing.
     // ...and not while an admin has frozen this player (part 3b).
     const canFire = live(r) && !P.down && !!me && !(me.kind === 'air' && me.onGround) && !ghostReasons().includes('race') && !(mp.me && mp.me.frozen);
@@ -853,7 +864,7 @@ registerExtension({
     return true;
   },
   key(sim, code, down, e) {
-    if (code !== 'Space') return false;
+    if (!isKey(sim, 'pvpFire', code)) return false;
     /*
      * A key-up is never swallowed. The game's own input may have seen this
      * Space go down — the brakes on the runway, a press while tagged out or
@@ -872,14 +883,16 @@ registerExtension({
     // (the keyboard repeating a held Space) waits for the comeback, and never reaches the brakes.
     if (r && r.on && (P.down || r.down)) {
       P.fireKey = true;
+      P.fireCode = code;
       return true;
     }
     const me = ride(sim);
     // On the ground in an aeroplane, Space is the brakes, as ever.
     if (!live(r) || !me || (me.kind === 'air' && me.onGround)) return false;
     P.fireKey = true;
+    P.fireCode = code;
     // Space is the trigger now: if the game saw it go down before (the brakes, on the runway), it lets go of it.
-    if (sim.input && sim.input.keys && typeof sim.input.keys.delete === 'function') sim.input.keys.delete('Space');
+    if (sim.input && sim.input.keys && typeof sim.input.keys.delete === 'function') sim.input.keys.delete(code);
     return true;
   },
 });

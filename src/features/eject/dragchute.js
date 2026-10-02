@@ -1,23 +1,26 @@
 /**
- * Drag parachutes, for the fast jets' landing roll.
+ * Drag parachutes, for the goofy planes' landing roll.
  *
- * "Drag parachutes on landing for fast planes": touch down, brake, and a
- * parachute blooms out behind the tail and hauls you back. The planes that
- * get one are the ones that land fast and roll a long way (profiles.js:
- * Air Massimo, T-Pose Harrison, the F-22, the Vanguard, the Nightjar B-2).
+ * The owner: "only do chute if you deploy it, and only on goofy planes". So
+ * the planes that carry one are Air Massimo and T-Pose Harrison
+ * (profiles.js) — not the real military jets: the F-22, the Vanguard and the
+ * Nightjar B-2 stop on their wheel brakes. And it comes out ONLY when you
+ * pull it: the "Drag chute" key (input.js ACTIONS.dragChute, ; by default,
+ * movable in Settings) or the orange CHUTE button that shows on a touch
+ * screen during the landing roll. The brakes never pop it any more.
  *
- * THE KEY IS THE BRAKES. Every child already brakes after landing — Space,
- * or the BRAKE pad — so that is what pops it, on the landing roll above
- * 40 knots. On a touch screen a CHUTE button shows on the roll as well. No
- * new key to learn, and the chute is seen on the very first landing.
+ * WHEN it will come out is one rule, chuteBlocker() below, which the key,
+ * the button, the hint and the node tests all ask: on the ground, rolling
+ * faster than POP_ABOVE (40 kt), the power back below POP_THROTTLE, and not
+ * already used this landing. Anything else gets a short, kind reason.
  *
  * THE FORCE is a real drag: 0.5 · rho · V² · CdA, pulling back along the
  * ground track. CdA is sized to the aeroplane's mass (CDA_PER_KG), so a
- * 9.8 t Nightjar gets a bigger chute than a 5.2 t racer and they slow alike:
- * 30 m² for Massimo, about a 9 m round canopy, which is a fighter's. At 70
- * knots that is nearly half a g on top of the brakes, and it fades as you
- * slow — which is why real jets drop it at taxi speed. Measured in
- * tests/features/aircrew.mjs: it shortens the landing roll.
+ * heavier plane gets a bigger chute and they slow alike: 30 m² for Massimo,
+ * about a 9 m round canopy, which is a fighter's. At 70 knots that is nearly
+ * half a g on top of the brakes, and it fades as you slow — which is why real
+ * jets drop it at taxi speed. Measured in tests/features/aircrew.mjs: it
+ * shortens the landing roll by a third or more.
  *
  * It is let go (cut) below CUT_BELOW m/s, or if the throttle goes up for a
  * go-around, and lies on the runway behind you for a few seconds.
@@ -27,12 +30,61 @@ import * as THREE from '../../vendor/three.module.js';
 
 export const DRAG_CHUTE = {
   CDA_PER_KG: 30 / 5200, // m² of drag area per kg of aeroplane
-  POP_ABOVE: 40 / 1.94384, // m/s: the brakes pop it on the roll above 40 kt
+  POP_ABOVE: 40 / 1.94384, // m/s: it comes out on the roll above 40 kt
+  POP_THROTTLE: 0.4, // ...with the power back (a takeoff roll is not a landing)
   CUT_BELOW: 5, // m/s: let go at a walk
   CUT_THROTTLE: 0.7, // a go-around cuts it
   FILL: 0.45, // seconds to fill
   RHO: 1.225,
 };
+
+/** The key it is on unless the player has moved it (input.js ACTIONS.dragChute). */
+export const CHUTE_DEFAULT_KEY = 'Semicolon';
+
+/**
+ * Why the drag chute cannot come out right now, or null when it can.
+ *
+ *   st = { has, onGround, crashed, groundSpeed (m/s), throttle (0..1), state }
+ *
+ * `state` is the chute's own: 'stowed' (packed, ready), 'out', 'cut' (lying
+ * on the runway) or 'used'. There is deliberately no "brakes" in here: the
+ * brakes are the brakes, and the chute is yours to pull.
+ *
+ * Returns 'none' (this plane has no chute), 'crashed', 'out', 'used', 'air',
+ * 'slow' or 'power'. Pure, so the node tests ask it too.
+ */
+export function chuteBlocker(st) {
+  if (!st || !st.has) return 'none';
+  if (st.crashed) return 'crashed';
+  if (st.state === 'out') return 'out';
+  if (st.state !== 'stowed') return 'used';
+  if (!st.onGround) return 'air';
+  if (!(st.groundSpeed > DRAG_CHUTE.POP_ABOVE)) return 'slow';
+  if ((st.throttle || 0) >= DRAG_CHUTE.POP_THROTTLE) return 'power';
+  return null;
+}
+
+/**
+ * What to say when the chute is asked for and cannot come out. `key` is the
+ * key's name as HTML (<kbd>;</kbd>), or '' on a touch screen. Empty for the
+ * cases with nothing worth saying (it is already out; the plane has crashed).
+ */
+export function chuteWords(why, key = '') {
+  switch (why) {
+    case 'none':
+      return 'No drag chute on this plane — only Air Massimo and T-Pose Harrison carry one.';
+    case 'air':
+      return `The drag chute is for the landing roll — touch down first${key ? `, then press ${key}` : ''}.`;
+    case 'slow':
+      return 'Too slow for the drag chute — it works on the fast part of the landing roll.';
+    case 'power':
+      return 'Power back to idle first, then pull the drag chute!';
+    case 'used':
+      return 'Your drag chute is used up — the ground crew pack a new one for your next flight.';
+    default:
+      return '';
+  }
+}
 
 /** Metres per second squared of deceleration the chute makes at `speed`. */
 export function chuteDecel(speed, massKg, fill = 1) {

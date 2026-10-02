@@ -31,6 +31,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extLayer } from '../game/extensions.js';
+import { isKey, keyName } from '../flight/input.js';
 import { MAP } from '../world/terrain.js';
 import { FireGrid, FUEL, STATE, CELL } from './wildfire/grid.js';
 import { FireScenario, findWater } from './wildfire/scenario.js';
@@ -902,7 +903,7 @@ function hudModel(sim) {
   let tip = '';
   let good = false;
   const hFt = Math.round(heightOver(ac) * FT);
-  const key = m.touch ? 'tap DROP WATER' : 'press X';
+  const key = m.touch ? 'tap DROP WATER' : `press ${keyName('drop', sim)}`;
   if (!m.burning) {
     tip = 'The fire is out!';
     good = true;
@@ -1475,8 +1476,8 @@ registerExtension({
 
   key(sim, code, down, e) {
     if (!W.live || !W.tank || sim.mode === 'drive') return false;
-    const codes = (sim.input && sim.input.bindings && sim.input.bindings.drop) || ['KeyX'];
-    if (codes.indexOf(code) < 0) return false;
+    // The game's own Release cargo key (Settings → Controls), wherever it is.
+    if (!isKey(sim, 'drop', code)) return false;
     if (down && !(e && e.repeat)) dropWater(sim);
     return true;
   },

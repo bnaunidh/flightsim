@@ -41,7 +41,7 @@ import { MAPS } from '../world/maps.js';
 import { icon } from './icons.js';
 import { MISSIONS, gameOf } from '../game/missions.js';
 import * as Prog from '../game/progression.js';
-import { categoryItemData, groupByCategory, missionCategory } from './menus.js';
+import { categoryItemData, groupByCategory, missionCategory, payLineHtml } from './menus.js';
 
 const NUMBER_WORDS = [
   'No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
@@ -93,9 +93,15 @@ export const GAME_UI = {
        */
       { to: 'missions', icon: 'target', title: 'Missions', sub: 'Training, rescues, deliveries and emergencies — sorted into groups', counted: true },
       { to: 'free', icon: 'cloud', title: 'Free Flight', sub: 'Any weather, any time of day, no rules' },
+      /*
+       * The hangar, out of More and onto the front page: "move hangar to the
+       * main area, not in other" — the owner. It is where you pick and buy an
+       * aeroplane, on a turning podium, so it sits beside Free Flight.
+       */
+      { to: 'hangar', icon: 'hangar', title: 'Hangar', sub: 'Every aircraft on a spinning podium — pick one, or unlock it' },
       { to: 'maps', icon: 'map', title: 'Choose Map', sub: 'Six places to fly, from flat grassland to a volcano' },
       { to: 'multiplayer', icon: 'players', title: 'Multiplayer', sub: 'Fly with friends — five open lobbies, or a private match with a code' },
-      { to: 'more', icon: 'more', title: 'More', sub: 'Your rank and leaderboard, the hangar, and settings' },
+      { to: 'more', icon: 'more', title: 'More', sub: 'Your rank and leaderboard, settings and the other vehicles' },
     ],
   },
   heli: {
@@ -105,9 +111,10 @@ export const GAME_UI = {
       { to: 'tutorial', icon: 'learn', title: 'Tutorial', sub: 'Start here — your first hover' },
       { to: 'missions', icon: 'target', title: 'Missions', sub: 'Winch work, mountain pads and places with no runway' },
       { to: 'free', icon: 'cloud', title: 'Free Flight', sub: 'Any weather, any time of day, no rules' },
+      { to: 'hangar', icon: 'hangar', title: 'Hangar', sub: 'The Skyhook on the podium — and every aeroplane beside it' },
       { to: 'maps', icon: 'map', title: 'Choose Map', sub: 'Anywhere with somewhere flat to set down' },
       { to: 'multiplayer', icon: 'players', title: 'Multiplayer', sub: 'Fly with friends — five open lobbies, or a private match with a code' },
-      { to: 'more', icon: 'more', title: 'More', sub: 'Your rank and leaderboard, the hangar, and settings' },
+      { to: 'more', icon: 'more', title: 'More', sub: 'Your rank and leaderboard, settings and the other vehicles' },
     ],
   },
   boat: {
@@ -255,6 +262,7 @@ export function installGameUi(menus, hooks = {}) {
             <h3>${m.name}</h3>
             <span class="mission-diff diff-${String(m.difficulty || 'easy').toLowerCase().replace(/[^a-z0-9]+/g, '-')}">${m.difficulty || 'Easy'}</span>
             <span class="mission-sub">${m.short || ''}</span>
+            ${payLineHtml({ ...m, game: m.game || gameId }, menus.settingsRef && menus.settingsRef.difficulty)}
           </div>
         </div>
         <p>${m.blurb || ''}</p>
@@ -266,6 +274,7 @@ export function installGameUi(menus, hooks = {}) {
       grid.appendChild(card);
     }
     menus.applyGameToCards();
+    menus.syncPayLines && menus.syncPayLines();
   };
 
   /** Show only the cards that belong to the game the menu is currently about. */

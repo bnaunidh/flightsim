@@ -22,9 +22,10 @@ import { MAPS } from '../../world/maps.js';
 /**
  * Bumped when the wire format changes. A mismatched pair refuses politely.
  * 2: lobbies, eight players, ranks. 3: bundled snapshots from the host, game
- * events and shared state (events.js), private matches.
+ * events and shared state (events.js), private matches. 4: the walking pilot
+ * rides on the snapshot (a 19-byte tail while you are out on foot, below).
  */
-export const PROTO = 3;
+export const PROTO = 4;
 
 /** The five server slots on one network. Minecraft's LAN list, but capped. */
 export const SLOT_COUNT = 5;
@@ -861,10 +862,36 @@ export const GAME_LABEL = { flight: 'Flight', heli: 'Heli', boat: 'Boat', car: '
  * About fifty bytes, fifteen times a second. Positions stay floats: at twenty
  * kilometres from the origin a float32 is still good to two millimetres, and
  * quantising them to save six bytes is not worth the edge cases.
+ *
+ * THE WALKING PILOT (PROTO 4): "people on other computers should see you,
+ * the human". While a player is out on foot their snapshot carries the
+ * vehicle as ever (parked, or a runaway plane flying itself) and then, after
+ * the type id, a tail of nineteen bytes:
+ *
+ *    0  u8   'W' (0x57)
+ *    1  f32  x, y, z                    the walker's feet, metres
+ *   13  u16  heading                    × 65536 / 360
+ *   15  u8   speed                      × 20 (0.05 m/s, to 12.75)
+ *   16  u8   flags: in the air, knocked down, waving, paddling
+ *   17  u8   outfit                     an index into WALK_OUTFITS
+ *   18  u8   knock-down count           (mod 256: which fall this is)
+ *
+ * About 285 bytes a second, and only while walking. The fall itself — the
+ * ragdoll — is one reliable event, 'pilot:down' (../pilot-mp.js), and every
+ * game that sees it simulates the same fall from the same pose: no limbs
+ * cross the network.
  */
 export const STATE_MAGIC = 0x53;
 export const STATE_HEAD = 45;
 const TYPE_MAX = 24;
+export const WALK_MAGIC = 0x57;
+export const WALK_TAIL = 19;
+/** What a walker may be wearing, by index: person.js's outfits, then uniforms.js's. Nothing else is drawn. */
+export const WALK_OUTFITS = Object.freeze([
+  'pilot', 'passenger', 'staff', 'police', 'tactical', 'hijacker',
+  'captain', 'fighter', 'heli', 'casual', 'racer', 'harrison',
+]);
+const WALK_FLAG = { air: 1, down: 2, wave: 4, wading: 8 };
 
 /*
  * ghost and pvp are list 2, part 2: a player nobody can bump into or hit
@@ -879,7 +906,8 @@ const num = (v, d = 0) => (Number.isFinite(v) ? v : d);
 
 export function encodeState(s) {
   const type = String(s.type || '').replace(/[^a-z0-9_-]/gi, '').slice(0, TYPE_MAX);
-  const buf = new ArrayBuffer(STATE_HEAD + type.length);
+  const w = s.walk && typeof s.walk === 'object' ? s.walk : null;
+  const buf = new ArrayBuffer(STATE_HEAD + type.length + (w ? WALK_TAIL : 0));
   const dv = new DataView(buf);
   dv.setUint8(0, STATE_MAGIC);
   dv.setUint8(1, clamp(s.id | 0, 0, 255));
@@ -913,16 +941,62 @@ export function encodeState(s) {
   dv.setInt8(43, clamp(Math.round(num(s.steer) * 127), -127, 127));
   dv.setUint8(44, type.length);
   for (let i = 0; i < type.length; i++) dv.setUint8(STATE_HEAD + i, type.charCodeAt(i));
+  if (w) writeWalk(dv, STATE_HEAD + type.length, w);
   return buf;
+}
+
+function writeWalk(dv, o, w) {
+  dv.setUint8(o, WALK_MAGIC);
+  dv.setFloat32(o + 1, num(w.x), true);
+  dv.setFloat32(o + 5, num(w.y), true);
+  dv.setFloat32(o + 9, num(w.z), true);
+  const h = ((num(w.heading) % 360) + 360) % 360;
+  dv.setUint16(o + 13, Math.round((h / 360) * 65536) & 0xffff, true);
+  dv.setUint8(o + 15, clamp(Math.round(num(w.speed) * 20), 0, 255));
+  let f = 0;
+  for (const k in WALK_FLAG) if (w[k]) f |= WALK_FLAG[k];
+  dv.setUint8(o + 16, f);
+  const oi = WALK_OUTFITS.indexOf(w.outfit);
+  dv.setUint8(o + 17, oi < 0 ? 0 : oi);
+  dv.setUint8(o + 18, (num(w.knock) | 0) & 0xff);
+}
+
+/** A walker's tail, checked: null for anything that is not one. */
+function readWalk(dv, o) {
+  if (dv.getUint8(o) !== WALK_MAGIC) return null;
+  const x = dv.getFloat32(o + 1, true);
+  const y = dv.getFloat32(o + 5, true);
+  const z = dv.getFloat32(o + 9, true);
+  if (![x, y, z].every((n) => Number.isFinite(n) && Math.abs(n) < 1e5)) return null;
+  const f = dv.getUint8(o + 16);
+  const oi = dv.getUint8(o + 17);
+  return {
+    x, y, z,
+    heading: (dv.getUint16(o + 13, true) / 65536) * 360,
+    speed: dv.getUint8(o + 15) / 20,
+    air: !!(f & WALK_FLAG.air),
+    down: !!(f & WALK_FLAG.down),
+    wave: !!(f & WALK_FLAG.wave),
+    wading: !!(f & WALK_FLAG.wading),
+    outfit: WALK_OUTFITS[oi] || 'pilot',
+    knock: dv.getUint8(o + 18),
+  };
 }
 
 /** Decode, or null for anything that is not a well-formed snapshot. */
 export function decodeState(buf) {
-  if (!buf || typeof buf.byteLength !== 'number' || buf.byteLength < STATE_HEAD || buf.byteLength > STATE_HEAD + TYPE_MAX) return null;
+  if (!buf || typeof buf.byteLength !== 'number' || buf.byteLength < STATE_HEAD || buf.byteLength > STATE_HEAD + TYPE_MAX + WALK_TAIL) return null;
   const dv = buf instanceof DataView ? buf : new DataView(buf.buffer || buf, buf.byteOffset || 0, buf.byteLength);
   if (dv.getUint8(0) !== STATE_MAGIC) return null;
   const len = dv.getUint8(44);
   if (len > TYPE_MAX || STATE_HEAD + len > dv.byteLength) return null;
+  // After the type: nothing, or exactly one walker's tail.
+  const rest = dv.byteLength - STATE_HEAD - len;
+  let walk = null;
+  if (rest === WALK_TAIL) {
+    walk = readWalk(dv, STATE_HEAD + len);
+    if (!walk) return null;
+  } else if (rest !== 0) return null;
   let type = '';
   for (let i = 0; i < len; i++) {
     const c = dv.getUint8(STATE_HEAD + i);
@@ -963,6 +1037,8 @@ export function decodeState(buf) {
     yaw: dv.getInt8(42) / 127,
     steer: dv.getInt8(43) / 127,
     type,
+    // PROTO 4: out on foot, where the pilot is (null in the seat).
+    walk,
   };
 }
 

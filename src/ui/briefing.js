@@ -24,6 +24,7 @@
 
 import { TIMES, CONDITIONS } from '../world/weather.js';
 import { RUNWAY } from '../world/airport.js';
+import { maxPayout, payLine } from '../game/progression.js';
 
 function h(html) {
   const t = document.createElement('template');
@@ -478,10 +479,10 @@ export class BriefingScreen {
     return !this.layer.hidden;
   }
 
-  show(mission, career, { onStart, onBack } = {}) {
+  show(mission, career, { onStart, onBack, settings } = {}) {
     this.hooks = { onStart, onBack };
     this.layer.innerHTML = '';
-    const section = this.build(mission || {}, career);
+    const section = this.build(mission || {}, career, settings);
     this.layer.appendChild(section);
     this.layer.hidden = false;
     document.addEventListener('keydown', this.onKey, true);
@@ -514,7 +515,7 @@ export class BriefingScreen {
     }
   }
 
-  build(mission, career) {
+  build(mission, career, settings = 'normal') {
     const w = weatherOf(mission);
     const wind = windReport(w);
     const lines = briefingLines(mission);
@@ -596,6 +597,7 @@ export class BriefingScreen {
                 <h3>${esc(mission.name || 'Mission')}</h3>
                 <span class="brief-diff" data-diff="${esc(diff.toLowerCase())}">${esc(diff)}</span>
                 <span class="brief-short">${esc(mission.short || 'Campaign flight')}</span>
+                <span class="mission-pay brief-credits" data-pay-line="${esc(mission.id || '')}">${esc(payLine(maxPayout(mission, { settings })))}</span>
               </div>
             </div>
 

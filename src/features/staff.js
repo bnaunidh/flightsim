@@ -43,6 +43,19 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension } from '../game/extensions.js';
+import { registerActions, isKey, keyName, live, bindingsVersion } from '../flight/input.js';
+
+/*
+ * The marshaller's wands, in the one registry (Settings → Controls → On
+ * foot). They sit on the walking keys by default — you walk to the spot and
+ * the same W waves the aeroplane on — which is a share by design, not a clash.
+ */
+registerActions({
+  marshalCome: { label: 'Wands: wave it on (hold)', group: 'On foot', ctx: ['foot'], default: ['KeyW', 'ArrowUp'] },
+  marshalLeft: { label: 'Wands: turn it left', group: 'On foot', ctx: ['foot'], default: ['KeyA', 'ArrowLeft'] },
+  marshalRight: { label: 'Wands: turn it right', group: 'On foot', ctx: ['foot'], default: ['KeyD', 'ArrowRight'] },
+  marshalStop: { label: 'Wands: STOP', group: 'On foot', ctx: ['foot'], default: ['Space', 'KeyS', 'ArrowDown'] },
+});
 import * as TERR from '../world/terrain.js';
 import * as AP from '../world/airport.js';
 import * as APRON from '../world/apron.js';
@@ -1219,7 +1232,32 @@ function guide(sim) {
  */
 const TOUCH_WORDS = new Map();
 function maybeTouch(sim, text) {
-  return sim && sim.touch ? touchWords(text) : text;
+  return sim && sim.touch ? touchWords(text) : keyWords(sim, text);
+}
+
+/*
+ * ...and on a keyboard, the player's keys. The instructions are written with
+ * the defaults (O, E, W, A / D, Space); this puts in whatever Settings has
+ * them on now, once per sentence per change of keys. Marked live() so the
+ * objective panel does not try to re-key them as the aeroplane's.
+ */
+const KEY_WORDS = new Map();
+function keyWords(sim, text) {
+  const v = bindingsVersion();
+  const hit = KEY_WORDS.get(text);
+  if (hit && hit.v === v) return hit.t;
+  const k = (a) => keyName(a, sim);
+  const t = live(String(text)
+    .replace(/\bpress O\b/g, `press ${k('getOut')}`)
+    .replace(/\(O\)/g, `(${k('getOut')})`)
+    .replace(/\(E\)/g, `(${k('wave')})`)
+    .replace(/\b([Hh])old W\b/g, (m, h) => `${h}old ${k('marshalCome')}`)
+    .replace(/\bA \/ D\b/g, `${k('marshalLeft')} / ${k('marshalRight')}`)
+    .replace(/\bSpace to STOP\b/g, `${k('marshalStop')} to STOP`)
+    .replace(/ with A\.$/, ` with ${k('marshalLeft')}.`)
+    .replace(/ with D\.$/, ` with ${k('marshalRight')}.`));
+  KEY_WORDS.set(text, { v, t });
+  return t;
 }
 function touchWords(text) {
   let t = TOUCH_WORDS.get(text);
@@ -1782,10 +1820,10 @@ const MARSHAL = {
   buttons: MARSHAL_BUTTONS,
   key(sim, code, down) {
     const s = ST.sig;
-    if (code === 'KeyW' || code === 'ArrowUp') s.come = down;
-    else if (code === 'KeyA' || code === 'ArrowLeft') s.left = down;
-    else if (code === 'KeyD' || code === 'ArrowRight') s.right = down;
-    else if (code === 'Space' || code === 'KeyS' || code === 'ArrowDown') s.stop = down;
+    if (isKey(sim, 'marshalCome', code)) s.come = down;
+    else if (isKey(sim, 'marshalLeft', code)) s.left = down;
+    else if (isKey(sim, 'marshalRight', code)) s.right = down;
+    else if (isKey(sim, 'marshalStop', code)) s.stop = down;
     else return false;
     return true;
   },
@@ -1861,11 +1899,11 @@ function stepMarshal(sim, dt) {
       // aeroplane is close enough to matter.
       MARSHAL.prompt = sim.touch
         ? 'Hold <b>Come on</b> to wave it in · <b>Left</b> / <b>Right</b> to turn it · <b>STOP</b> on the red line'
-        : 'Hold <kbd>W</kbd> to wave it in · <kbd>A</kbd> <kbd>D</kbd> to turn it · <kbd>Space</kbd> STOP on the red line';
+        : `Hold <kbd>${keyName('marshalCome', sim)}</kbd> to wave it in · <kbd>${keyName('marshalLeft', sim)}</kbd> <kbd>${keyName('marshalRight', sim)}</kbd> to turn it · <kbd>${keyName('marshalStop', sim)}</kbd> STOP on the red line`;
       onFoot.setCamera(MARSHAL.camYaw, -9);
       onFoot.setView('chase');
       onFoot.setControl(MARSHAL);
-      notify(sim, sim.touch ? 'Wands out! Hold Come on to wave it in.' : 'Wands out! Hold W to wave it in. (O puts them away.)', 'good', 3.5);
+      notify(sim, sim.touch ? 'Wands out! Hold Come on to wave it in.' : live(`Wands out! Hold ${keyName('marshalCome', sim)} to wave it in. (${keyName('getOut', sim)} puts them away.)`), 'good', 3.5);
     }
     return;
   }

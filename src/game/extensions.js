@@ -32,7 +32,14 @@
  *     update(sim, dt) {},             // every frame the game is running
  *     camera(sim, dt, camera) {},     // return true to own the camera this frame
  *     key(sim, code, down, e) {},     // raw keys while flying; return true to
- *                                     //   consume them so the aeroplane never sees them
+ *                                     //   consume them so the aeroplane never sees them.
+ *                                     //   NEVER compare `code` with 'KeyO': declare the key in
+ *                                     //   `actions` and ask isKey(sim, 'getOut', code), so the
+ *                                     //   player can move it in Settings (tests/features/keybinds.mjs)
+ *     actions: { getOut: { label, group, ctx, default: ['KeyO'] } },
+ *                                     // the feature's keys, in the one registry (flight/input.js)
+ *     keyContext(sim) {},             // 'foot' | 'chute' | 'rocket' while this feature has the
+ *                                     //   keys, else null — which game's keys the hints name
  *     devActions: [{ label, hint, run(sim) }],   // buttons in the Dev mode panel
  *     code(sim, typed) {},            // a code typed in the hangar's "Got a code?" box:
  *                                     //   null if it is not this feature's, or a promise
@@ -41,6 +48,11 @@
  *
  * Every field is optional except `id`.
  */
+
+import { registerActions } from '../flight/input.js';
+
+/** A feature's keys, for one that wants to declare them before (or without) registering. */
+export { registerActions };
 
 const EXTENSIONS = [];
 const broken = new Set();
@@ -52,7 +64,23 @@ export function registerExtension(ext) {
     console.warn(`[ext] ${ext.id} registered twice; keeping the first`);
     return;
   }
+  if (ext.actions) registerActions(ext.actions);
   EXTENSIONS.push(ext);
+}
+
+/** Which game's keys a feature has taken over ('foot', 'chute', 'rocket'), or null. */
+export function extKeyContext(sim) {
+  for (const e of EXTENSIONS) {
+    if (broken.has(e.id) || typeof e.keyContext !== 'function') continue;
+    try {
+      const c = e.keyContext(sim);
+      if (c) return c;
+    } catch (err) {
+      broken.add(e.id);
+      console.error(`[ext] "${e.id}" threw in keyContext() and has been switched off for this session:`, err);
+    }
+  }
+  return null;
 }
 
 export function extensions() {
@@ -106,6 +134,16 @@ export function extInstall(sim) {
     if (consumed) {
       ev.preventDefault();
       ev.stopImmediatePropagation();
+      /*
+       * A key dispatched on window itself (the tests' keyboard) runs window's
+       * listeners in the order they were added, so the game's input may have
+       * heard it before this listener could stop it: a single P on T-Pose
+       * Harrison flipped the autopilot. Take it back off the game's input.
+       */
+      const inp = sim.input;
+      if (inp && down && inp.pressedThisFrame) {
+        inp.pressedThisFrame.delete(ev.code);
+      }
     }
   };
   window.addEventListener('keydown', onKey(true), true);

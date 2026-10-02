@@ -19,6 +19,8 @@ import './eject.js';
 import './tpose.js';
 // After onfoot and eject: wasted is the GTA moment, runaway the plane that goes without you.
 import './wasted.js';
+// After wasted: anything that moves can knock you down now (a ragdoll), and WASTED shows it.
+import './knockdown.js';
 import './runaway.js';
 import './staff.js';
 import './maps-retired.js';
@@ -32,3 +34,9 @@ import './pvp.js';
 import './bump.js';
 import './race.js';
 import './mpworld.js';
+// The walking pilot in multiplayer: seen by everybody, knocked down by anybody, and everybody sees the fall.
+import './pilot-mp.js';
+// Carrier ops: the hook, the wires, the meatball, the catapults, and military flights starting on the ship.
+import './carrier-ops.js';
+// Seats: fly some missions from another aircraft in the story (the lead fighter in the hijacks).
+import './roles.js';

@@ -2279,12 +2279,15 @@ function finishStory(sim) {
   if (H.owner === 'free') {
     try {
       const p = sim.prog || Prog.load();
+      // Priced as the two hijack missions are (game/extra/events.js): the
+      // by-the-book one Hard, the film one Medium, both Emergencies.
       const paid = Prog.award(p, {
         kind: 'mission',
         score: H.score,
         crashed: false,
         difficulty: (sim.settings && sim.settings.difficulty) || 'normal',
         label: real ? 'Hijack, by the book' : 'Hijacked! Everyone safe',
+        mission: { difficulty: real ? 'Hard' : 'Medium', category: 'events' },
       });
       H.paid = paid.credits;
       if (sim.menus && sim.menus.syncProgression) sim.menus.syncProgression(p);

@@ -11,24 +11,37 @@
  *                  does the same as Enter.
  *   CREW FIRST     the Nightjar B-2: the first Enter sends the crew, the second
  *                  sends you.
- *   SELF-DESTRUCT  T-Pose Harrison: cover, countdown, cancel; again, and the
- *                  seat (his jump) fires by itself before the boom.
- *   DRAG CHUTE     Air Massimo rolling at 80 kt: the brakes pop it, and it stops
- *                  in far less runway than braking alone.
+ *   SELF-DESTRUCT  Air Massimo: cover, countdown, cancel; again, and the
+ *                  seat fires by itself before the boom. (Not T-Pose
+ *                  Harrison: a person has no self-destruct — tpose.browser.js.)
+ *   DRAG CHUTE     only when you pull it, only on the goofy planes: Massimo and
+ *                  Harrison rolling at 80 kt on the brakes alone never get it;
+ *                  ; pulls it and they stop in far less runway; the F-22,
+ *                  Vanguard and Nightjar have none (the key says so); not in
+ *                  the air or too slow; the touch CHUTE button shows on the
+ *                  goofy planes' roll only and pulls it; the H card lists it
+ *                  and a key moved in Settings works.
  *   T-POSE         Harrison is in the shop at 3,601 credits and has his own
- *                  card; on foot he is himself, arms out.
+ *                  card; floating, flapping, spinning, boosting, getting out
+ *                  and his parachute: tpose.browser.js, run from here.
  *   UNIFORMS       out of an A320 with O: the airline captain.
  *   F-35B          in the hover: W slides forward and the hover stays on, A
  *                  slides left, Q turns — through the real keys.
  *   RUNAWAY        a Skylark left with the power on: the first O warns, the
  *                  second leaves her running; she takes off, comes down on the
- *                  map, no Crashed screen; she can run you over (WASTED) and
- *                  you get up; idle, or a fast jet, is parked as ever.
+ *                  map, no Crashed screen; she can run you over (knocked down,
+ *                  a ragdoll, WASTED) and you get up; idle, or a fast jet, is
+ *                  parked as ever. Since the pilot brief, ANYTHING can knock
+ *                  you down (not only your own plane: tests/features/
+ *                  pilot.browser.js has the rest) and the pause switch hides
+ *                  only the WASTED screen, never the knock.
  *
  *   const { check } = await import('./tests/features/aircrew.browser.js');
  *   const r = { checks: [], ok(n, p, d) { this.checks.push({ n, p: !!p, d }); } };
  *   await check(window.__sim, r, console.log); console.table(r.checks);
  */
+
+import { checkHarrison } from './tpose.browser.js';
 
 async function load(path) {
   try {
@@ -88,7 +101,9 @@ export async function check(sim, r, say = () => {}) {
   run(0.3);
   sim.tap('Enter');
   run(0.1);
-  r.ok('eject: the helicopter has none either (the rotor is in the way)', E.phase === 'idle' && /rotor/i.test(lastToast()), lastToast());
+  // No seat (the rotor is in the way) — but in Free Flight the owner wanted a
+  // way out, so the first Enter arms a jump from the side door (eject-ff).
+  r.ok('eject: the helicopter has no seat, but in Free Flight the first Enter arms a jump from the door', E.phase === 'idle' && /bail out|jump/i.test(lastToast()), lastToast());
 
   /* ================================================================ */
   say('aircrew: eject from an F-22');
@@ -178,8 +193,8 @@ export async function check(sim, r, say = () => {}) {
     `phase ${E.phase}, crew open ${E.crew.map((c) => c.flight.open.toFixed(1)).join(',')}`);
 
   /* ================================================================ */
-  say('aircrew: self-destruct in T-Pose Harrison');
-  await sim.startMode('free', { aircraft: 'tpose', airborne: true, taxi: false });
+  say('aircrew: self-destruct in Air Massimo');
+  await sim.startMode('free', { aircraft: 'massimo', airborne: true, taxi: false });
   run(1);
   const sd = E.selfDestruct;
   sim.tap('Backspace');
@@ -201,14 +216,17 @@ export async function check(sim, r, say = () => {}) {
     return sd.state === 'boom';
   });
   run(0.3);
-  r.ok('self-destruct: nobody goes up with it — Harrison jumps by himself before the end', autoOut && E.lastEject.kind === 'jump', JSON.stringify(E.lastEject));
+  r.ok('self-destruct: nobody goes up with it — the seat fires by itself before the end', autoOut && E.lastEject.kind === 'seat', JSON.stringify(E.lastEject));
   r.ok('self-destruct: a big boom, the plane is gone, and no Crashed screen', sd.state === 'boom' && sim.aircraft.crashed && !sim.model.visible && sim.state === 'flying' && !debriefUp(),
     `${sim.aircraft.crashReason}, model visible ${sim.model.visible}`);
   sim.key('KeyS', true);
   run(70, () => E.phase === 'walking');
   sim.key('KeyS', false);
   const hs = foot.snapshot();
-  r.ok('T-Pose Harrison: on foot he is himself, arms out in the T-pose', hs.active && hs.outfit === 'harrison' && !!(foot.model && foot.model.userData.tpose), hs.outfit);
+  r.ok('self-destruct: down safely, on foot in a racing suit', hs.active && hs.outfit === 'racer', hs.outfit);
+
+  /* ================================================================ */
+  await checkHarrison(sim, r, say);
 
   /* ================================================================ */
   say('aircrew: Harrison in the shop and on his card');
@@ -230,31 +248,136 @@ export async function check(sim, r, say = () => {}) {
   run(0.4);
 
   /* ================================================================ */
-  say('aircrew: drag chute on Air Massimo');
+  /*
+   * "Only do chute if you deploy it, and only on goofy planes." Each goofy
+   * plane rolls out twice from 80 kt with Space (the brakes) held all the
+   * way: once never touching the chute key — it must NOT come out — and once
+   * pressing it half a second in. Then the real jets, the touch button, the
+   * H card and a moved key.
+   */
+  say('aircrew: drag chute — only when you pull it, only Massimo and Harrison');
+  const INP = await load('../../src/flight/input.js');
   const RUNWAY_X = -500;
-  const rollStop = async (withChute) => {
-    await sim.startMode('free', { aircraft: 'massimo', taxi: false });
+  const chuteKey = () => (sim.input.bindings.dragChute || [])[0];
+  const onRoll = async (id, kt = 80) => {
+    await sim.startMode('free', { aircraft: id, taxi: false, traffic: false, windSpeedKts: 0 });
     run(0.3);
     const a = sim.aircraft;
-    a.reset({ pos: a.pos.clone().set(RUNWAY_X, 0, 0), headingDeg: 90, speed: 41, engineOn: true, gearDown: true });
+    a.reset({ pos: a.pos.clone().set(RUNWAY_X, 0, 0), headingDeg: 90, speed: kt / 1.94384, engineOn: true, gearDown: true });
     sim.input.throttleTarget = 0;
     E.drag.armed = true; // just landed
-    if (!withChute) E.drag.state = 'used';
+    return a;
+  };
+  const rollStop = async (id, pullAt) => {
+    const a = await onRoll(id);
     const x0 = a.pos.x;
     sim.key('Space', true);
     let popped = false;
-    run(40, () => {
+    let pulled = false;
+    let hint = '';
+    run(40, (t) => {
+      if (!hint && /Drag chute ready|Tap CHUTE/.test(lastToast())) hint = lastToast();
+      if (pullAt !== null && !pulled && t >= pullAt) {
+        pulled = true;
+        sim.tap(chuteKey());
+      }
       if (E.drag.state === 'out') popped = true;
       return a.groundSpeed < 2.5;
     });
     sim.key('Space', false);
-    return { roll: a.pos.x - x0, popped, crashed: a.crashed };
+    return { roll: a.pos.x - x0, popped, hint, crashed: a.crashed, line: UIline() };
   };
-  const plain = await rollStop(false);
-  const chute = await rollStop(true);
-  r.ok('drag chute: the brakes pop it on the landing roll', chute.popped && !plain.popped);
-  r.ok('drag chute: it really shortens the landing roll (by a third or more)', !chute.crashed && chute.roll > 0 && plain.roll > 0 && chute.roll < plain.roll * 0.67,
-    `${Math.round(plain.roll)} m braking alone from 80 kt, ${Math.round(chute.roll)} m with the chute`);
+  const UIline = () => ((document.querySelector('.hud-keyhint') || {}).textContent || '');
+  r.ok('drag chute: a named action on ; by default (free), in the bindings', chuteKey() === 'Semicolon' && !!(INP.ACTIONS && INP.ACTIONS.dragChute), chuteKey());
+  const ROLL = {};
+  for (const id of ['massimo', 'tpose']) {
+    const plain = await rollStop(id, null);
+    const chute = await rollStop(id, 0.5);
+    ROLL[id] = { plain: Math.round(plain.roll), chute: Math.round(chute.roll) };
+    r.ok(`drag chute (${id}): braking alone the whole roll, it never comes out by itself`, !plain.popped && !plain.crashed && plain.roll > 0,
+      `${Math.round(plain.roll)} m from 80 kt on the brakes alone`);
+    r.ok(`drag chute (${id}): the hint says which key pulls it`, /press ; to pull it/.test(plain.hint), plain.hint);
+    r.ok(`drag chute (${id}): the controls line names the key`, /; drag chute/.test(plain.line), plain.line);
+    r.ok(`drag chute (${id}): pressing ; pulls it, and it shortens the roll by a third or more`, chute.popped && !chute.crashed && chute.roll > 0 && chute.roll < plain.roll * 0.67,
+      `${Math.round(plain.roll)} m braking alone from 80 kt, ${Math.round(chute.roll)} m with the chute (${Math.round((1 - chute.roll / plain.roll) * 100)}% shorter)`);
+  }
+  for (const id of ['f22', 'vanguard', 'nightjar']) {
+    await onRoll(id);
+    sim.key('Space', true);
+    run(0.4);
+    sim.tap(chuteKey());
+    run(0.4);
+    sim.key('Space', false);
+    const said = lastToast();
+    r.ok(`drag chute: none on the ${id} — the key does nothing but say so`, E.drag.state === 'stowed' && !E.profile.dragChute && /No drag chute on this plane/.test(said)
+      && !/drag chute/.test(UIline()), said);
+  }
+  // In the air, too slow, under power: not out, and it says why.
+  await sim.startMode('free', { aircraft: 'massimo', airborne: true, taxi: false });
+  run(0.5);
+  sim.tap(chuteKey());
+  run(0.2);
+  r.ok('drag chute: in the air it stays packed — "touch down first, then press ;"', E.drag.state === 'stowed' && /touch down first, then press ;/.test(lastToast()), lastToast());
+  {
+    const a = await onRoll('massimo', 30);
+    run(0.2);
+    sim.tap(chuteKey());
+    run(0.2);
+    r.ok('drag chute: at 30 kt it is too slow to bother (and says so)', E.drag.state === 'stowed' && /Too slow/.test(lastToast()) && !a.crashed, lastToast());
+  }
+  // The touch screen: the CHUTE button shows on the landing roll of a goofy
+  // plane only, and pulls it. (A stand-in for the touch layer: this desktop
+  // Chrome has no touch screen, and only "is there one" is asked here.)
+  {
+    const real = sim.touch;
+    const stub = { stickHeld: false, rudderHeld: false, throttle: null, brakes: false, dragging: false,
+      setVisible() {}, setMode() {}, setBoatMode() {}, update() {}, updateBoat() {} };
+    let seenF22 = null;
+    let seenMassimo = null;
+    let pulled = null;
+    let after = null;
+    let hint = '';
+    try {
+      await onRoll('f22');
+      sim.touch = stub;
+      run(0.3);
+      seenF22 = E.ui.snapshot().chute;
+      sim.touch = real;
+      await onRoll('massimo');
+      sim.touch = stub;
+      run(0.3);
+      hint = lastToast();
+      seenMassimo = E.ui.snapshot().chute;
+      E.ui.press('chute');
+      run(0.3);
+      pulled = E.drag.state;
+      after = E.ui.snapshot().chute;
+    } finally {
+      sim.touch = real;
+    }
+    r.ok('drag chute (touch): the CHUTE button shows on Massimo\'s landing roll, not on the F-22\'s', seenMassimo === true && seenF22 === false, `massimo ${seenMassimo}, f22 ${seenF22}`);
+    r.ok('drag chute (touch): the hint says tap CHUTE; tapping it pulls the chute and the button goes', /Tap CHUTE/.test(hint) && pulled === 'out' && after === false, `${hint} → ${pulled}, button ${after}`);
+  }
+  // The H card lists it (from the one table of keys), and Settings can move it.
+  {
+    sim.hud.showControls(sim.input.bindings, INP.keyLabel, INP.ACTIONS);
+    const card = sim.hud.controlsCard.textContent;
+    sim.hud.hideControls();
+    r.ok('drag chute: the H card lists "Drag chute" on ;', /Drag chute \(Air Massimo, T-Pose Harrison: on the landing roll\);/.test(card), (card.match(/Drag chute[^;]*;/) || [''])[0]);
+    const was = sim.input.bindings.dragChute;
+    sim.input.bindings.dragChute = ['Quote'];
+    await onRoll('tpose');
+    run(0.3);
+    sim.tap('Semicolon');
+    run(0.2);
+    const oldKey = E.drag.state;
+    sim.tap('Quote');
+    run(0.2);
+    const newKey = E.drag.state;
+    sim.input.bindings.dragChute = was;
+    r.ok('drag chute: moved to \' in Settings, \' pulls it and ; no longer does', oldKey === 'stowed' && newKey === 'out', `; → ${oldKey}, ' → ${newKey}`);
+  }
+  window.__chuteRolls = ROLL;
 
   /* ================================================================ */
   say('aircrew: F-35B moves while hovering');
@@ -298,12 +421,14 @@ export async function check(sim, r, say = () => {}) {
   say('aircrew: the runaway plane');
   const RWm = await load('../../src/features/runaway.js');
   const WSm = await load('../../src/features/wasted.js');
-  if (!(RWm && RWm.runaway && WSm && WSm.wasted && WSm.showWasted)) {
-    r.ok('runaway: its modules load', false, [RWm, WSm].map((m) => m && m.__error).filter(Boolean).join(' | '));
+  const KDm = await load('../../src/features/knockdown.js');
+  if (!(RWm && RWm.runaway && WSm && WSm.wasted && WSm.showWasted && KDm && KDm.knockdown)) {
+    r.ok('runaway: its modules load', false, [RWm, WSm, KDm].map((m) => m && m.__error).filter(Boolean).join(' | '));
     return r;
   }
   const RW = RWm.runaway;
   const WS = WSm.wasted;
+  const KD = KDm.knockdown;
   const hopOut = async (thr) => {
     // Calm air and no AI traffic: an empty plane at full power should take off, not be blown or bumped off the runway.
     await sim.startMode('free', { aircraft: 'skylark', taxi: false, time: 'day', condition: 'clear', windSpeedKts: 0, traffic: false });
@@ -377,25 +502,28 @@ export async function check(sim, r, say = () => {}) {
   const hh = (sim.aircraft.heading * Math.PI) / 180;
   foot.place(sim.aircraft.pos.x + Math.sin(hh) * 25, sim.aircraft.pos.z - Math.cos(hh) * 25, sim.aircraft.heading + 180);
   const c0 = WS.count;
+  const k0 = KD.count;
   run(10, () => WS.count > c0);
-  const hit = WS.count > c0 && WS.cause === 'plane';
+  const hit = WS.count > c0 && WS.cause === 'plane' && KD.count === k0 + 1 && KD.down;
   let word = false;
   let grey = false;
   let slow = 1;
-  run(6, () => {
+  let lay = 9;
+  run(10, () => {
     word = word || WS.wordShown;
     grey = grey || WS.grey;
     slow = Math.min(slow, WS.scale);
-    return !WS.active;
+    if (KD.down) lay = Math.min(lay, KD.ragdoll.height());
+    return !WS.active && !KD.down;
   });
-  r.ok('runaway: she can run you over — WASTED, grey, slow motion', hit && word && grey && slow < 0.5, `hit ${hit}, word ${word}, grey ${grey}, slowest ${slow}`);
-  r.ok('WASTED: you get back up and can walk again', !WS.active && WS.gotUp && foot.active && !(foot.control && foot.control.locked));
-  // The generic hook, for other teams: callable on its own.
+  r.ok('runaway: she can run you over — knocked down (a ragdoll on the ground), WASTED, grey, slow motion', hit && word && grey && slow < 0.5 && lay < 0.5,
+    `hit ${hit}, word ${word}, grey ${grey}, slowest ${slow}, lowest the body lay ${lay.toFixed(2)} m, "${KD.words}"`);
+  r.ok('WASTED: you get back up and can walk again', !WS.active && KD.gotUp && foot.active && !(foot.control && foot.control.locked));
+  // The generic hook, for other teams: callable on its own — and no longer only for your own plane (the pilot brief).
   const c1 = WS.count;
-  r.ok('WASTED: only your own plane — a call without own: true does nothing', WSm.showWasted(sim, 'test') === false);
-  const started = WSm.showWasted(sim, 'test', { own: true });
+  const started = WSm.showWasted(sim, 'test', { words: 'Hit by a test.' });
   run(0.2);
-  r.ok('WASTED: showWasted(sim, cause, { own: true }) starts it', started && WS.count === c1 + 1 && WS.cause === 'test' && WS.active);
+  r.ok('WASTED: anything can be the cause now — showWasted(sim, cause) starts it without v48’s own-plane rule', started && WS.count === c1 + 1 && WS.cause === 'test' && WS.active && WS.words === 'Hit by a test.');
   run(5, () => !WS.active);
   sim.tap('Enter');
   for (let i = 0; i < 40 && (foot.active || RW.active); i++) await new Promise((res) => setTimeout(res, 50));
@@ -419,7 +547,17 @@ export async function check(sim, r, say = () => {}) {
     run(0.3);
     sim.key('Space', false);
     r.ok('runaway switch: off, getting out with the power on parks her as before', foot.active && !RW.active && !sim.aircraft.engineOn, `walking ${foot.active}, runaway ${RW.active}, engine ${sim.aircraft.engineOn}`);
-    r.ok('runaway switch: off, no WASTED moment even from your own plane', WSm.showWasted(sim, 'plane', { own: true }) === false);
+    r.ok('runaway switch: off, no WASTED screen for anything', WSm.showWasted(sim, 'plane') === false);
+    // ...but you are still knocked over: the switch hides the screen, not the knock (the pilot brief).
+    if (foot.active) {
+      const kc = KD.count;
+      const wc = WS.count;
+      const h = (foot.walker.heading * Math.PI) / 180;
+      const fell = KDm.knockDown(sim, { cause: 'test', vel: { x: Math.sin(h) * 7, y: 0, z: -Math.cos(h) * 7 }, hitY: 0.7, words: 'Hit by a test.', force: true });
+      run(0.5);
+      r.ok('runaway switch: off, a knock still knocks you down — just no WASTED screen', fell && KD.down && KD.count === kc + 1 && WS.count === wc && !WS.active && !WS.grey);
+      run(9, () => !KD.down);
+    }
     if (foot.active) { sim.tap('KeyO'); run(0.3); }
     if (sw && /: off/.test(sw.textContent)) sw.click();
     r.ok('runaway switch: back on', sim.settings.runawayPlane !== false && /: on/.test(sw.textContent));

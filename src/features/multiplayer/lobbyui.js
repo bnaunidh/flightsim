@@ -52,6 +52,7 @@ import {
   parseCallSign, formatCallSign, randomCallSign, mapNameFor, escapeHtml, lobbyName, lobbyMap, worldName, worldMap, lobbyLabel, normaliseCode, shownCode,
 } from './protocol.js';
 import { icon } from '../../ui/icons.js';
+import { keyName } from '../../flight/input.js';
 
 const STYLE_ID = 'ifs-mp-lobby-style';
 const CSS = `
@@ -308,7 +309,7 @@ export function buildLobbyScreen(ctrl) {
 
       <div class="mp-adminbox" data-mp-adminbox hidden>
         <h3 class="fail-heading mp-lanhead mp-privhead">Admin <b class="mp-admintag">ADMIN</b></h3>
-        <p class="hint">This device is an admin. In any game, the player list (<kbd>Tab</kbd>) has the admin menu — and everybody sees an ADMIN badge on you. Private matches going on now; join one without its code:</p>
+        <p class="hint">This device is an admin. In any game, the player list (<kbd>${escapeHtml(keyName('mpPlayers'))}</kbd>) has the admin menu — and everybody sees an ADMIN badge on you. Private matches going on now; join one without its code:</p>
         <div class="mp-lobbylist" data-mp-privlist></div>
         <p class="hint tiny mp-privnone" data-mp-privnone>Looking for private matches…</p>
         <button class="ghost" data-mp-admin-off>Turn admin off on this device</button>
@@ -379,7 +380,7 @@ export function buildLobbyScreen(ctrl) {
       b.setAttribute('aria-checked', me ? 'true' : 'false');
     }
     setText(pvpHint, on
-      ? 'ON: press Space (or FIRE) to tag players who have PvP on too — and they can tag you. Tagged? You’re back in the air in three seconds.'
+      ? `ON: press ${keyName('pvpFire')} (or FIRE) to tag players who have PvP on too — and they can tag you. Tagged? You’re back in the air in three seconds.`
       : 'OFF: nobody can tag you and you can’t tag anybody. You can switch it on in the game, too.');
   };
   const filter = (kind) => {

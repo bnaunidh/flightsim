@@ -29,6 +29,12 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extLayer, extStatus } from '../game/extensions.js';
+import { registerActions, isKey, keyName } from '../flight/input.js';
+
+/* Y, in the one registry: Settings → Controls → Missions & events. */
+registerActions({
+  services: { label: 'Ground crew: call them / push back / stop (on a stand)', group: 'Missions & events', ctx: ['plane', 'foot'], default: ['KeyY'] },
+});
 import { airportLayout, standAt, standApproach, standTaken, standFits, pavedIn, NOSE_STOP } from '../world/airport-layout.js';
 import { estimateInfo } from '../world/apron.js';
 import { measureModel, yawOf } from '../world/airport-kit.js';
@@ -822,7 +828,7 @@ function tick(sim, dt) {
         S.state = 'onStand';
         S.t = 0;
         S.promptKey = -1;
-        setPrompt(`Parked on stand ${st.number}. Press <kbd>Y</kbd> or tap here for the ground crew.`, () => callCrew(sim));
+        setPrompt(`Parked on stand ${st.number}. Press <kbd>${keyName('services', sim)}</kbd> or tap here for the ground crew.`, () => callCrew(sim));
         break;
       }
       if (d && sim.apron && sim.apron.spare) {
@@ -858,7 +864,7 @@ function tick(sim, dt) {
         S.state = 'serviced';
         S.t = 0;
         S.fuelFrom = ac.fuel;
-        setPrompt('Fuelling and loading… press <kbd>Y</kbd> or tap here when you are ready to push back.', () => startPush(sim));
+        setPrompt(`Fuelling and loading… press <kbd>${keyName('services', sim)}</kbd> or tap here when you are ready to push back.`, () => startPush(sim));
       }
       break;
     }
@@ -920,7 +926,7 @@ function startPush(sim) {
   S.state = 'pushback';
   if (sim.apron && sim.apron.showDocking) sim.apron.showDocking(null);
   if (sim.apron && sim.apron.clearForPushback) sim.apron.clearForPushback();
-  setPrompt(`Pushing back to face ${S.push.faces}… press <kbd>Y</kbd> or tap here to stop.`, () => stopPush(sim));
+  setPrompt(`Pushing back to face ${S.push.faces}… press <kbd>${keyName('services', sim)}</kbd> or tap here to stop.`, () => stopPush(sim));
   radio(sim, `Pushback approved${S.push.toTaxiway ? ' onto the taxiway' : ''}, facing ${S.push.faces}.`);
   return true;
 }
@@ -1004,7 +1010,7 @@ registerExtension({
   },
 
   key(sim, code, down) {
-    if (code !== 'KeyY') return false;
+    if (!isKey(sim, 'services', code)) return false;
     const st = S.state;
     if (st !== 'onStand' && st !== 'calling' && st !== 'serviced' && st !== 'pushback') return false;
     if (!down) return true;

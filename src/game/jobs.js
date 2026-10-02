@@ -1930,6 +1930,9 @@ export function vanDebrief(sim, done, shown) {
     rows.push(`<li>Knocks <b>${knocks.map(([k, n]) => esc(k) + (n > 1 ? ` ×${n}` : '')).join(', ')}</b></li>`);
   }
   if (done.over > 1) rows.push(`<li>Over the clock by <b>${Math.round(done.over)} s</b></li>`);
+  // What the job paid, which main.js hands over with the debrief it built.
+  const pay = Prog.debriefPayRow(shown && shown.paid);
+  if (pay) rows.push(pay);
   // One thing to do better, the one that cost the most.
   let tip = '';
   for (const [k] of knocks) {

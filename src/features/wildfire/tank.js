@@ -42,6 +42,7 @@
 import * as THREE from '../../vendor/three.module.js';
 import { heightAt } from '../../world/terrain.js';
 import { performanceFor } from '../../aircraft/types.js';
+import { keyName } from '../../flight/input.js';
 
 export const BUCKET_LINE = 18;
 const DRAG = 0.7;
@@ -200,7 +201,7 @@ export class WaterTank {
       return false;
     }
     if ((ac.flapStep ? ac.flapStep() : 0) < 1) {
-      this.fillWhy = 'Flaps out — press F';
+      this.fillWhy = `Flaps out — press ${keyName('flapsDown')}`;
       return false;
     }
     if (kts < this.vmin) {

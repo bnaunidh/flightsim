@@ -17,6 +17,7 @@ import { MAPS, getMap, mapsForGame } from './world/maps.js';
 import { clearPads, nearestPad, PADS } from './world/pads.js';
 import { buildRoads, onRoad, roadRibbon, roadSurfaceProbe, nearestRoadPoint } from './world/roads.js';
 import { Carrier } from './world/carrier.js';
+import { chooseBerth as chooseCarrierBerth } from './world/carrier-berth.js';
 import { SurfaceVehicle, VEHICLES, setTerrainProbes } from './vehicles/surface.js';
 import { DriveInput, DriveCamera, DRIVE_VIEW_LABELS, installDriveTouch } from './vehicles/driving.js';
 import { createBoat, createCar, updateVehicleModel } from './vehicles/models.js';
@@ -36,7 +37,7 @@ import { createAircraftModel, syncAircraftModel, crashAircraftModel, clampSinkin
 import { createCockpit } from './aircraft/cockpit.js';
 import { TouchControls, isTouchDevice } from './ui/touch.js';
 
-import { Input, ACTIONS, keyLabel } from './flight/input.js';
+import { Input, keyLabel, HELI_MAP, BOAT_MAP, actionsFor, CONTEXT_GROUP } from './flight/input.js';
 import { CameraRig, VIEW_LABELS, CHASE_BACK, CHASE_UP, chaseScaleFor } from './flight/camera.js';
 
 import { GameAudio } from './audio/index.js';
@@ -52,7 +53,8 @@ import { installGameUi } from './ui/game-ui.js';
 const GAME_IDS = ['flight', 'boat', 'car', 'heli'];
 
 import { MissionRunner, STATUS } from './game/runner.js';
-import { MISSIONS, findMission, FREE_FLIGHT, RUNWAY_START, missionsFor, gameOf, FREE_FOR } from './game/missions.js';
+import { MISSIONS, findMission, FREE_FLIGHT, RUNWAY_START, missionsFor, gameOf, FREE_FOR, missionStartFuel } from './game/missions.js';
+import { withRole, currentRole } from './game/roles/roles.js';
 import { BOAT_MISSIONS, BOAT_PATROL, findBoatMission, boatSpawnFor, clearBoatProps } from './game/missions-boat.js';
 import { CAR_JOBS, findJob, jobsFor, lengthNote, ISLAND_ROADS, IslandRoads, resolveSpawn } from './game/jobs.js';
 import { clearHeliProps, heliFreeStart } from './game/missions-heli.js';
@@ -81,7 +83,7 @@ import {
   resetAll,
 } from './core/storage.js';
 import { clamp } from './core/noise.js';
-import { extInstall, extBuildWorld, extUpdate, extCamera, extStartMode, extStop, extensions } from './game/extensions.js';
+import { extInstall, extBuildWorld, extUpdate, extCamera, extStartMode, extStop, extensions, extKeyContext } from './game/extensions.js';
 // Every plug-in feature registers itself on import. See ./features/index.js.
 import './features/index.js';
 import { viewScale as airlinerViewScale } from './features/airliners.js';
@@ -388,7 +390,15 @@ class Game {
       },
       getBindings: () => this.input.bindings,
       captureKey: (action, done) => this.input.capture(action, done),
-      resetKeys: () => this.input.resetBindings(),
+      // Settings → Controls: the next key (null for Esc), who else has it,
+      // put it on, every clash there is, and which game's group goes first.
+      listenKey: (done) => this.input.listen(done),
+      cancelListen: () => this.input.cancelCapture(),
+      keyClashes: (action, code) => this.input.clashes(action, code),
+      bindKey: (action, code, opts) => this.input.bind(action, code, opts),
+      keyConflicts: () => this.input.conflicts(),
+      keyGroup: () => this.keyGroup(),
+      resetKeys: (group) => this.input.resetBindings(group),
       resetAll: () => {
         resetAll();
         location.reload();
@@ -1106,12 +1116,21 @@ class Game {
      * trying.
      */
     const before = Prog.rankFor(this.prog).id;
+    /*
+     * The mission that was flown decides the most it can pay — its difficulty
+     * and its heading (progression.js, "WHAT A MISSION PAYS"). The runner's
+     * def is that mission; findMission() is the fallback for one that has
+     * already been swapped out.
+     */
+    const flown = this.runner.def && this.runner.def.id === result.id ? this.runner.def : findMission(result.id);
     const paid = Prog.award(this.prog, {
       kind: result.id === 'free' ? 'free' : result.id === 'tutorial' ? 'tutorial' : 'mission',
       score: result.score || 0,
       crashed: !!result.crashed,
       difficulty: this.settings.difficulty || 'normal',
       label: result.name || result.id,
+      mission: flown,
+      game: flown ? gameOf(flown) : undefined,
     });
     const after = Prog.rankFor(this.prog);
     if (paid.credits > 0) this.hud.notify(`+${paid.credits} credits · ${paid.total} total`, 'good', 4);
@@ -1130,6 +1149,7 @@ class Game {
         ${l ? `<li>Touchdown <b>${Math.abs(l.vsFpm)} ft/min</b> (${l.quality})</li>` : ''}
         ${l ? `<li>Landing score <b>${l.score}/100</b></li>` : ''}
         ${l && l.onRunway ? `<li>Distance from centreline <b>${l.centreline} m</b></li>` : ''}
+        ${Prog.debriefPayRow(paid)}
       </ul>
       <p>${isTutorial ? 'You have finished flight school — you are cleared for solo flight!' : 'Mission complete. Try it again for a better score, or take on another one.'}</p>
     `;
@@ -1145,6 +1165,9 @@ class Game {
       kind: 'good',
       body,
       actions,
+      // For a debrief that rebuilds the body in its own words (the van's,
+      // jobs.js) and still has to say what the run paid.
+      paid,
     });
   }
 
@@ -1250,7 +1273,8 @@ class Game {
 
     let def = FREE_FLIGHT;
     if (mode === 'tutorial') def = TUTORIAL;
-    else if (mode === 'mission') def = findMission(opts.id) || FREE_FLIGHT;
+    // The seat: a mission with `roles` may be flown from another aircraft in its story (src/game/roles/roles.js).
+    else if (mode === 'mission') def = withRole(findMission(opts.id), opts.role ?? currentRole(opts.id)) || FREE_FLIGHT;
 
     // Failures armed on the Free Flight screen. They wait until you are
     // actually flying and then the clock starts, so you get to be somewhere
@@ -1381,9 +1405,13 @@ class Game {
         speed: spawn.speed || 0,
         altAGL: spawn.altAGL ?? null,
         engineOn: spawn.engineOn !== false,
-        // How much fuel you asked for. Free Flight only; the tutorial and the
-        // missions always start with full tanks.
-        fuel: mode === 'free' && opts.fuel != null ? Math.max(0.05, Math.min(1, opts.fuel)) : 1,
+        // Free Flight: how much fuel you asked for. A mission (and the
+        // tutorial): full tanks on the ground, AIRBORNE_START_FUEL when it
+        // starts you in the sky, or the spawn's own `fuel`. A retry comes
+        // back through here, so it starts the way the first go did.
+        fuel: mode === 'free'
+          ? (opts.fuel != null ? Math.max(0.05, Math.min(1, opts.fuel)) : 1)
+          : missionStartFuel(spawn),
       });
       if (spawn.speed) {
         this.aircraft.controls.throttle = 0.65;
@@ -1578,6 +1606,8 @@ class Game {
     this.mode = null;
     this.runner.status = STATUS.IDLE;
     this.runner.clearGates();
+    // No flight, no reason to hide it; the next flight's first frame decides.
+    if (this.hud.btnBrace) this.hud.btnBrace.hidden = false;
     this.removeCrate();
     this.hud.setVisible(false);
     this.hud.hideControls();
@@ -1728,7 +1758,7 @@ class Game {
         this.toggleHideUi();
         break;
       case 'help':
-        this.hud.toggleControls(this.input.bindings, keyLabel, ACTIONS);
+        this.hud.toggleControls(this.input.bindings, keyLabel, this.helpActions());
         break;
       case 'brace':
         this.braceForImpact();
@@ -1956,9 +1986,13 @@ class Game {
        * would silently do nothing. Forcing the type to null makes the rebuild
        * run for real.
        */
-      const id = this.aircraftType.id;
-      this.aircraftType = null;
-      this.setAircraft(id);
+      // Before the first flight there is no aeroplane built to repaint (the
+      // hangar's paint swatches are pressed from a cold start) — this threw.
+      if (this.aircraftType) {
+        const id = this.aircraftType.id;
+        this.aircraftType = null;
+        this.setAircraft(id);
+      }
       this.menus.repaintFleetArt && this.menus.repaintFleetArt(value);
       this.hud.notify(`Repainted — ${findLivery(value).name}`, 'info', 3);
     } else if (path === 'difficulty') {
@@ -2699,7 +2733,7 @@ class Game {
     if (input.pressed('drop') || (pad && pad.drop)) {
       if (!this.dropCargo()) this.hud.notify('Nothing to drop right now', 'info', 2);
     }
-    if (input.pressed('help')) this.hud.toggleControls(this.input.bindings, keyLabel, ACTIONS);
+    if (input.pressed('help')) this.hud.toggleControls(this.input.bindings, keyLabel, this.helpActions());
     if (input.pressed('guide')) this.toggleGuide();
     if (input.pressed('autopilot')) this.toggleAutopilot();
     if (input.pressed('minimap')) this.hudAction('minimap');
@@ -2730,28 +2764,14 @@ class Game {
    * for the whole deck footprint turns up.
    */
   carrierBerth() {
-    const wetEnough = (x, z) => {
-      // Sampled across the deck, not at one point — a ship needs all of it wet.
-      for (const [dx, dz] of [[0, 0], [0, -160], [0, 160], [-40, 0], [40, 0]]) {
-        if (heightAt(x + dx, z + dz) > -12) return false;
-      }
-      return true;
-    };
-    if (MAP.carrier && wetEnough(MAP.carrier.x, MAP.carrier.z)) return MAP.carrier;
-    if (wetEnough(-5200, 3400)) return { x: -5200, z: 3400 };
-
-    for (let r = 4000; r <= 14000; r += 1200) {
-      for (let i = 0; i < 16; i++) {
-        const a = (i / 16) * Math.PI * 2;
-        const x = Math.cos(a) * r;
-        const z = Math.sin(a) * r;
-        if (wetEnough(x, z)) return { x: Math.round(x), z: Math.round(z) };
-      }
-    }
-    // Nowhere wet enough. Put it where it always was and say so, rather than
-    // silently beaching it.
-    console.warn('No water deep enough for the carrier on this map.');
-    return { x: -5200, z: 3400 };
+    /*
+     * A map's own berth if it is wet; otherwise one in deep water, clear of
+     * every runway's approach lanes and in sight of the island — see
+     * world/carrier-berth.js, which scores it.
+     */
+    const b = chooseCarrierBerth({ map: MAP, airport: AIRPORT, heightAt });
+    if (b.why === 'none') console.warn('No water deep enough for the carrier on this map.');
+    return MAP.carrier && b.why === 'map' ? MAP.carrier : { x: b.x, z: b.z };
   }
 
   /**
@@ -2851,6 +2871,53 @@ class Game {
   }
 
   /**
+   * Is something actually wrong with the aeroplane right now?
+   *
+   * Not "low" and not "coming down" — on a mission that is ordinary flying
+   * (every approach is both). A dead engine in the air, a failure, or heavy
+   * damage.
+   */
+  braceEmergency() {
+    const ac = this.aircraft;
+    if (!ac || ac.crashed) return false;
+    const anyFailure = Object.values(ac.failures || {}).some(Boolean);
+    const engineDead = !ac.engineOn && !(ac.starting > 0) && !ac.onGround;
+    return anyFailure || engineDead || ac.worstDamage > 0.3;
+  }
+
+  /**
+   * Is "Brace for impact" on offer at all?
+   *
+   * Free Flight: always, as it always was. On a mission: only when the
+   * mission is about an emergency (`allowBrace: true` on its def) or one is
+   * really happening. A kid flying a normal mission low pressed it once and
+   * the mayday took the plane and ended the mission (owner, 2026-09-30).
+   * When this is false the tray button is hidden, the key does nothing and
+   * the H card does not list it.
+   */
+  braceAvailable() {
+    if (this.bracing) return true;
+    if (this.mode === 'free') return true;
+    if (this.vehicle) return false;
+    const r = this.runner;
+    if (r && r.def && r.def.allowBrace && r.status === STATUS.RUNNING) return true;
+    return this.braceEmergency();
+  }
+
+  /** The controls list for the H card, without the mayday keys when there is no mayday on offer. */
+  helpActions() {
+    // What the H card lists: this vehicle's keys (keybinds), minus brace when
+    // this mission has no use for it.
+    const base = actionsFor(this.input.context);
+    if (this.braceAvailable()) return base;
+    const out = { ...base };
+    delete out.brace;
+    delete out.emergencyLand;
+    delete out.emergencyCircle;
+    return out;
+  }
+
+  /**
    * Mayday.
    *
    * Not a shutdown-and-hit-the-ground drill — that version was wrong. You
@@ -2864,6 +2931,9 @@ class Game {
    */
   braceForImpact() {
     if (this.state !== 'flying' || this.bracing) return;
+    // Not on offer (an ordinary mission, nothing wrong): the key does nothing
+    // at all — no banner, no "press again".
+    if (!this.braceAvailable()) return;
     const ac = this.aircraft;
     if (ac.crashed) return;
     if (ac.onGround && ac.groundSpeed < 4) {
@@ -2888,8 +2958,12 @@ class Game {
      */
     const ac2 = this.aircraft;
     const anyFailure = Object.values(ac2.failures || {}).some(Boolean);
+    // On a mission, low and descending is just flying: only a real emergency
+    // skips the confirm there. Free Flight keeps its old, looser rule.
     const inTrouble =
-      ac2.agl < 400 || -ac2.vel.y > 12 || !ac2.engineOn || anyFailure || ac2.worstDamage > 0.3;
+      this.mode === 'free'
+        ? ac2.agl < 400 || -ac2.vel.y > 12 || !ac2.engineOn || anyFailure || ac2.worstDamage > 0.3
+        : this.braceEmergency();
 
     if (!inTrouble && !(this._braceArm > 0)) {
       this._braceArm = 4;
@@ -3074,6 +3148,10 @@ class Game {
    */
   updateBrace(dt) {
     if (this._braceArm > 0) this._braceArm -= dt;
+    // Hidden, not greyed out, whenever it is not on offer (braceAvailable).
+    // Written only on a change: it runs every frame.
+    const offer = this.braceAvailable();
+    if (this.hud.btnBrace && this.hud.btnBrace.hidden === offer) this.hud.btnBrace.hidden = !offer;
     if (!this.bracing) return;
     const ac = this.aircraft;
 
@@ -3690,7 +3768,9 @@ class Game {
   updateDrive(dt) {
     const v = this.vehicle;
     if (!v) return;
-    const ctrl = this.input.update(dt, { simple: true });
+    // The boat steers with her own keys (Settings → Boat), through the same
+    // springs the aeroplane's roll uses; the van reads its own in driving.js.
+    const ctrl = this.input.update(dt, { simple: true, map: v.isBoat ? BOAT_MAP : null });
 
     if (v.isBoat) {
       const touch = this.input.touch;
@@ -3701,17 +3781,13 @@ class Game {
        * Ctrl), so a child who finds the arrows first gets her going with Up
        * and then presses Left and Right — which were bound only to free look,
        * off by default, so they did nothing at all. Measured: ten seconds of
-       * ArrowRight at Half turned her 0 degrees. With free look off they are
-       * a rudder, wound on and let back at the rates input.js uses for A and
-       * D (4.3 and 4.4 a second: full rudder in a quarter of a second); with
-       * free look on they stay the camera's.
+       * ArrowRight at Half turned her 0 degrees. They are now among the
+       * boat's own Steer left / Steer right keys, wound on and let back by
+       * input.js exactly as A and D are; with free look on they stay the
+       * camera's (Input.update leaves a look key alone while it is).
        */
       const inp = this.input;
-      const arrows = inp.freeLook ? 0 : (inp.held('lookRight') ? 1 : 0) - (inp.held('lookLeft') ? 1 : 0);
-      const a0 = this._boatArrowSteer || 0;
-      this._boatArrowSteer = arrows
-        ? clamp(a0 + arrows * dt * 4.3, -1, 1)
-        : Math.abs(a0) < dt * 4.4 ? 0 : a0 - Math.sign(a0) * dt * 4.4;
+      this._boatArrowSteer = 0;
       /*
        * One controls object for the whole trip. This built two new objects a
        * frame (the controls and the lever keys inside them) for as long as
@@ -3719,7 +3795,7 @@ class Game {
        * them and keeps none of them.
        */
       const bc = this._boatControls || (this._boatControls = { steer: 0, lever: { up: false, down: false }, leverIndex: null, crashStop: false, weather: null });
-      bc.steer = clamp(ctrl.roll + this._boatArrowSteer, -1, 1);
+      bc.steer = clamp(ctrl.roll, -1, 1);
       // held(), not pressed(): the vehicle does its own edge detection and
       // its own hold-to-repeat, so one tap is one detent and holding the
       // key walks the lever at four detents a second.
@@ -3730,12 +3806,12 @@ class Game {
        * Measured: ten seconds of W from the berth, lever STOP, 0 m moved.
        * W is faster, S is slower, exactly as Shift and Ctrl are.
        */
-      bc.lever.up = inp.held('throttleUp') || inp.held('pitchDown');
-      bc.lever.down = inp.held('throttleDown') || inp.held('pitchUp');
+      bc.lever.up = inp.held('boatFaster');
+      bc.lever.down = inp.held('boatSlower');
       // The on-screen lever names a detent outright; it wins while a finger
       // is on it, exactly as the touch throttle already does for the plane.
       bc.leverIndex = touch && touch.lever != null ? touch.lever : null;
-      bc.crashStop = inp.held('brakes') || !!(touch && touch.brakes);
+      bc.crashStop = inp.held('boatStop') || !!(touch && touch.brakes);
       // The sea is only as big as the weather says it is. Passing the whole
       // object rather than a number keeps surface.js out of the weather
       // model and means gusts and temporary storms are felt without another
@@ -4000,7 +4076,30 @@ class Game {
     }
   }
 
+  /**
+   * Which game the keys are in right now — the plug-ins first (walking,
+   * hanging under a parachute, a rocket), then the vehicle. The hints and
+   * the H card use it to name the right game's keys; Settings opens that
+   * game's group first.
+   */
+  keyContext() {
+    const ext = this.state === 'flying' || this.state === 'paused' ? extKeyContext(this) : null;
+    if (ext) return ext;
+    if (this.state === 'menu') {
+      const g = this.game;
+      return g === 'heli' ? 'heli' : g === 'boat' ? 'boat' : g === 'car' ? 'car' : 'plane';
+    }
+    if (this.mode === 'drive') return (this.vehicle && this.vehicle.isBoat) || this.game === 'boat' ? 'boat' : 'car';
+    return SPEC.rotor ? 'heli' : 'plane';
+  }
+
+  /** The Settings group for the game being played (or chosen, in the menus). */
+  keyGroup() {
+    return CONTEXT_GROUP[this.keyContext()] || 'Flying';
+  }
+
   update(dt) {
+    this.input.context = this.keyContext();
     if (this.mode === 'drive' && this.vehicle) {
       /*
        * Driving used to return from here before the key handling and before
@@ -4027,7 +4126,7 @@ class Game {
           }
         }
         if (input.pressed('minimap')) this.hudAction('minimap');
-        if (input.pressed('help')) this.hud.toggleControls(this.input.bindings, keyLabel, ACTIONS);
+        if (input.pressed('help')) this.hud.toggleControls(this.input.bindings, keyLabel, this.helpActions());
         // Paused means paused. The boat used to carry on out to sea while the
         // menu was up, so you came back to it somewhere else entirely.
         this.updateDrive(dt);
@@ -4065,7 +4164,7 @@ class Game {
 
     if (this.state === 'flying') {
       if (this.taxi.active) this.taxi.update(dt);
-      const ctrl = this.input.update(dt, { simple: ac.mode === 'simplified' });
+      const ctrl = this.input.update(dt, { simple: ac.mode === 'simplified', map: SPEC.rotor ? HELI_MAP : null });
       let pitch = ctrl.pitch;
       let roll = ctrl.roll;
       let yaw = ctrl.yaw;
@@ -4574,7 +4673,10 @@ class Game {
       if (dt > 0.25) dt = 0.25; // after a tab switch, do not jump
       try {
         this.update(dt);
-        this.renderer.render(this.scene, this.camera);
+        // The hangar's podium is drawn INSTEAD of the island while it is open
+        // (ui/hangar-showcase.js): it covers the window, so the world behind
+        // it would be a whole frame drawn for nobody.
+        if (!this.menus.drawView || !this.menus.drawView(this.renderer, dt)) this.renderer.render(this.scene, this.camera);
       } catch (err) {
         console.error(err);
         if (!this._errored) {

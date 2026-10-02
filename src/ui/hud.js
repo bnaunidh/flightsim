@@ -12,6 +12,7 @@ import { icon } from './icons.js';
 import { clamp } from '../core/noise.js';
 import { installRotorHud, rotorSpeedWord } from './hud-rotor.js';
 import { SPEC } from '../aircraft/physics.js';
+import { rekey, keyName, shortKey, bindingsVersion, HELI_MAP } from '../flight/input.js';
 
 const KTS = UNITS.KTS;
 const FT = UNITS.FT;
@@ -246,7 +247,10 @@ export class Hud {
     bottom.appendChild(this.throttleBar.root);
     bottom.appendChild(this.fuelBar.root);
 
-    bottom.appendChild(el('div', 'hud-keyhint', 'Power: <kbd>Shift</kbd>/<kbd>↑</kbd> up · <kbd>Ctrl</kbd>/<kbd>↓</kbd> down · <kbd>Space</kbd> brakes'));
+    // Written with the default keys, like every hint; syncKeyHint() puts the
+    // player's own in (whoever last wrote it: this, the helicopter, the van).
+    this.keyHintEl = el('div', 'hud-keyhint', 'Power: <kbd>Shift</kbd>/<kbd>↑</kbd> up · <kbd>Ctrl</kbd>/<kbd>↓</kbd> down · <kbd>Space</kbd> brakes');
+    bottom.appendChild(this.keyHintEl);
 
     const chips = el('div', 'hud-chips');
     this.gearChip = el('div', 'hud-chip', 'GEAR DOWN');
@@ -388,33 +392,25 @@ export class Hud {
     this.keyMon = el('div', 'hud-keys');
     this.keyMon.style.display = 'none';
     this.keyCells = {};
+    /*
+     * One cell per ACTION, not per key: it lights when the action is held
+     * on whichever keys it is bound to, and shows those keys — so a pilot
+     * who moved pitch to the arrow keys sees the arrows light, not a W that
+     * never will. (The helicopter's cells are its own actions.)
+     */
     const KEY_ROWS = [
-      [
-        ['KeyQ', 'Q'],
-        ['KeyW', 'W'],
-        ['KeyE', 'E'],
-      ],
-      [
-        ['KeyA', 'A'],
-        ['KeyS', 'S'],
-        ['KeyD', 'D'],
-      ],
-      [
-        ['ShiftLeft', '⇧ pwr'],
-        ['Space', '␣ brk'],
-        ['ControlLeft', '⌃ pwr'],
-      ],
-      [
-        ['KeyF', 'F'],
-        ['KeyV', 'V'],
-        ['KeyG', 'G'],
-      ],
+      [['yawLeft', ''], ['pitchDown', ''], ['yawRight', '']],
+      [['rollLeft', ''], ['pitchUp', ''], ['rollRight', '']],
+      [['throttleUp', ' pwr'], ['brakes', ' brk'], ['throttleDown', ' pwr']],
+      [['flapsDown', ''], ['flapsUp', ''], ['gear', '']],
     ];
+    this.keyCellTags = {};
     for (const row of KEY_ROWS) {
       const r = el('div', 'hud-keys-row');
-      for (const [code, label] of row) {
-        const cell = el('div', 'hud-key', label);
-        this.keyCells[code] = cell;
+      for (const [action, tag] of row) {
+        const cell = el('div', 'hud-key', '');
+        this.keyCells[action] = cell;
+        this.keyCellTags[action] = tag;
         r.appendChild(cell);
       }
       this.keyMon.appendChild(r);
@@ -475,7 +471,7 @@ export class Hud {
       }
       html += '</div>';
     }
-    html += '</div><div class="cc-foot">Press H to close · change any key in Settings</div>';
+    html += `</div><div class="cc-foot">Press ${keyName('help')} to close · change any key in Settings → Controls</div>`;
     this.controlsCard.innerHTML = html;
     this.controlsCard.style.display = '';
     // Help is "what do I press" and "what am I doing": the folded objective
@@ -502,6 +498,9 @@ export class Hud {
       this.taxi.style.display = 'none';
       return;
     }
+    // The player's keys, not the defaults the instructions were written with.
+    text = rekey(text);
+    hint = rekey(hint);
     this.taxi.style.display = '';
     if (this.taxiText.textContent !== text) this.taxiText.textContent = text;
     this.taxiHint.textContent = hint || '';
@@ -514,6 +513,8 @@ export class Hud {
       this.lastValues.coach = null;
       return;
     }
+    // "Press <kbd>I</kbd> to start the engine" names the key you have now.
+    text = rekey(text);
     if (this.lastValues.coach !== text) {
       this.coach.innerHTML = text;
       this.lastValues.coach = text;
@@ -645,6 +646,8 @@ export class Hud {
   }
 
   setObjective(title, text) {
+    // "Press X to release the crate", with the player's X.
+    text = rekey(text);
     let changed = false;
     if (this.lastValues.objTitle !== title) {
       this.objectiveTitle.textContent = title;
@@ -725,10 +728,39 @@ export class Hud {
       this.objectiveT -= dt;
       if (this.objectiveT <= 0) this.foldObjective();
     }
+    this._keyHintT = (this._keyHintT || 0) - dt;
+    if (this._keyHintT <= 0) {
+      this._keyHintT = 0.25;
+      this.syncKeyHint();
+    }
+  }
+
+  /**
+   * The key line at the bottom names the player's keys. The aeroplane, the
+   * helicopter (hud-rotor.js) and the van and boat (hud-drive.js) each write
+   * it in their own words with the default keys; this notices a new line, or
+   * a key moved in Settings, and puts the live keys in. A few times a second
+   * — from updateOverlays, which every game runs.
+   */
+  syncKeyHint() {
+    const h = this.keyHintEl;
+    if (!h) return;
+    /*
+     * Key by key, in place: the line has other people's elements in it (the
+     * eject feature's span), which rewriting the whole of it would detach.
+     * A bare <kbd> remembers the word it was written with; a feature's live
+     * one (class="k") is already right and is left alone.
+     */
+    for (const k of h.querySelectorAll('kbd:not([class])')) {
+      if (k.dataset.k0 === undefined) k.dataset.k0 = k.textContent;
+      const out = rekey(`<kbd>${k.dataset.k0}</kbd>`);
+      const word = out.startsWith('<kbd>') ? out.slice(5, -6).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>') : k.dataset.k0;
+      if (k.textContent !== word) k.textContent = word;
+    }
   }
 
   notify(text, kind = 'info', duration = 4.2) {
-    const t = el('div', `hud-toast is-${kind}`, text);
+    const t = el('div', `hud-toast is-${kind}`, rekey(text));
     this.toastLayer.appendChild(t);
     this.toasts.push({ node: t, life: duration });
     // Keep the stack short.
@@ -973,12 +1005,18 @@ export class Hud {
   /** Light up whichever keys are down, and show where the stick actually is. */
   updateKeyMonitor(input, ac) {
     if (this.keyMon.style.display === 'none' || !input) return;
-    for (const code in this.keyCells) {
-      // Arrow keys double for power, so treat them as the same cell.
-      const alt =
-        code === 'ShiftLeft' ? 'ArrowUp' : code === 'ControlLeft' ? 'ArrowDown' : null;
-      const down = input.keys.has(code) || (alt && input.keys.has(alt));
-      this.keyCells[code].classList.toggle('is-down', !!down);
+    const heli = input.context === 'heli';
+    const stamp = `${bindingsVersion()}|${heli}`;
+    const relabel = this._keyMonStamp !== stamp;
+    this._keyMonStamp = stamp;
+    for (const action in this.keyCells) {
+      const id = (heli && HELI_MAP[action]) || action;
+      if (relabel) {
+        const codes = (input.bindings && input.bindings[id]) || [];
+        this.keyCells[action].textContent = `${codes.length ? shortKey(codes[0]) : '—'}${this.keyCellTags[action] || ''}`;
+      }
+      const down = typeof input.held === 'function' ? input.held(id) : false;
+      this.keyCells[action].classList.toggle('is-down', !!down);
     }
     /*
      * The live control positions live on the aeroplane, not on the input —

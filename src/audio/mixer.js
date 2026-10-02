@@ -11,6 +11,38 @@
 
 export const BUSES = ['engine', 'environment', 'atc', 'alerts', 'music'];
 
+/*
+ * One glide per parameter per instant.
+ *
+ * Every voice glides its gains and filters to a new target each frame with
+ * setTargetAtTime(value, now, tau). While the audio clock runs that is one
+ * event per param per frame and the old ones retire as time passes. When the
+ * clock stalls and the game does not — a browser that suspends audio (an iPad
+ * on a call, a tab coming back), or the self-test stepping the game far faster
+ * than real time — every frame stacks another event at the SAME instant, the
+ * param's timeline grows without end and each new call costs more than the
+ * last: measured, the boat's frame time climbed from 0.2 ms to over 1 ms in
+ * forty seconds of sim and kept going. A second target at the same instant
+ * now replaces the first instead of queueing behind it.
+ */
+if (typeof AudioParam !== 'undefined' && AudioParam.prototype && !AudioParam.prototype.__oneGlidePerInstant) {
+  const P = AudioParam.prototype;
+  const glide = P.setTargetAtTime;
+  const lastAt = new WeakMap();
+  P.setTargetAtTime = function (value, startTime, tau) {
+    if (lastAt.get(this) === startTime) {
+      try {
+        this.cancelScheduledValues(startTime);
+      } catch (e) {
+        /* a param that refuses is left as it was */
+      }
+    }
+    lastAt.set(this, startTime);
+    return glide.call(this, value, startTime, tau);
+  };
+  P.__oneGlidePerInstant = true;
+}
+
 export class AudioMixer {
   constructor() {
     this.ctx = null;

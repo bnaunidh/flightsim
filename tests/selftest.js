@@ -819,6 +819,9 @@ export async function runSelfTest(sim, opts = {}) {
     });
     cac.pos.y = carrier.deckY + 6;
     cac.vel.y = -3.2;
+    // A real trap needs the tail hook down (carrier-ops): down and travelled now.
+    if (sim.carrierOps && typeof sim.carrierOps.hookNow === 'function') sim.carrierOps.hookNow();
+    const trapBefore = sim.carrierOps ? sim.carrierOps.lastTrap : null;
     let caught = false;
     let touchdownY = null;
     let touchdownZ = null;
@@ -840,6 +843,8 @@ export async function runSelfTest(sim, opts = {}) {
     }
     sim.key('Space', false);
     sim.override = null;
+    // The realistic carrier (carrier-ops) keeps its own record of a trap.
+    if (!caught && sim.carrierOps && sim.carrierOps.lastTrap && sim.carrierOps.lastTrap !== trapBefore) caught = true;
     r.ok(
       'the wheels land on the deck, not through it',
       touchdownY !== null && Math.abs(touchdownY - carrier.deckY) < 6 && !cac.crashed,

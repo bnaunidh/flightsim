@@ -81,6 +81,29 @@ export const RUNWAY_START = {
   },
 };
 
+/**
+ * How full the tanks are when a mission starts you already flying.
+ *
+ * The owner: "on a mission, if you're in the sky you should join with like
+ * 80 percent fuel so it's more realistic". An aeroplane found at 2,000 ft
+ * over the sea flew there, and burned some getting there. Missions that start
+ * on a runway, a stand or a pad still get full tanks — they are about to fly
+ * all of it. A mission can name its own with `spawn.fuel`, a fraction of a
+ * full tank. Free Flight has its own picker and never comes through here.
+ *
+ * Measured against every airborne mission's clock (tests/features/
+ * air-fuel.mjs): the tightest is realistic fuel ON, a flat 1% every thirty
+ * seconds whatever the throttle, so 80% is forty minutes in every type; the
+ * longest airborne mission asks for about twenty.
+ */
+export const AIRBORNE_START_FUEL = 0.8;
+
+/** The fraction of a full tank a mission's spawn starts with. */
+export function missionStartFuel(spawn) {
+  if (spawn && spawn.fuel != null) return Math.max(0.05, Math.min(1, spawn.fuel));
+  return spawn && spawn.altAGL != null ? AIRBORNE_START_FUEL : 1;
+}
+
 const airborneOverRunway = (dist = 6500, alt = 460) => ({
   pos: new THREE.Vector3(-dist, ELEV + alt, 40),
   headingDeg: 90,
@@ -501,6 +524,9 @@ export const MISSIONS = [
       'Your engine quits at 3,000 feet over the sea. You have one glide and one attempt at the runway. ' +
       'No power, no going around.',
     reward: 'Teaches gliding, energy management and committing to a decision.',
+    // The engine failure IS the mission, so "Brace for impact" stays on offer
+    // (main.js braceAvailable). Ordinary missions only get it in a real emergency.
+    allowBrace: true,
     weather: { time: 'day', condition: 'clear', windSpeedKts: 7, windDirDeg: 90 },
     /*
      * Where this starts is the whole difficulty, and it was wrong.

@@ -7,8 +7,10 @@
  * the game is paused, in a menu or has its interface hidden — the same gate
  * the walker's controls use (staff/ui.js), read four times a second.
  *
- * The buttons are only built on a touch screen; a keyboard gets the keys on
- * the controls line and in the H card instead.
+ * The buttons show on a touch screen; a keyboard gets the keys on the
+ * controls line and in the H card — and, in Free Flight, the EJECT button as
+ * well, smaller and with "Enter" on it (eject.js showEject), because the
+ * controls line alone was a way out nobody found.
  */
 
 import { extLayer } from '../../game/extensions.js';
@@ -25,6 +27,10 @@ const CSS = `
 .ej-btn small { font-size: 9.5px; font-weight: 700; opacity: .85; letter-spacing: 0; }
 .ej-eject { background: repeating-linear-gradient(135deg, #d8262c 0 10px, #b51d22 10px 20px); border-color: #ffd23f; }
 .ej-eject.is-armed { animation: ej-pulse .5s ease-in-out infinite alternate; }
+/* A laptop's: the same handle, smaller, with its key on it. */
+.ej-desk .ej-eject { min-width: 0; height: 32px; padding: 0 9px 0 11px; border-radius: 9px; font-size: 12px; border-width: 1.5px; }
+.ej-eject kbd { font: 700 10px/1 var(--font, system-ui, sans-serif); letter-spacing: 0; padding: 3px 5px; border-radius: 4px;
+  background: rgba(0,0,0,.38); border: 0; color: #ffe9a8; }
 .ej-sd { background: #3a3f48; border-color: #8a93a0; }
 .ej-sd.is-open { background: #b51d22; border-color: #ffd23f; }
 .ej-sd.is-count { background: #1f6f3b; border-color: #9ff0bf; }
@@ -76,13 +82,15 @@ function btn(cls, html, id, hold) {
   b.className = `ej-btn ${cls}`;
   b.innerHTML = html;
   b.dataset.id = id;
+  // Never the keyboard's focus: Enter and Space belong to the aeroplane.
+  b.tabIndex = -1;
   b.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     e.stopPropagation();
     if (hold) {
       UI.held[id] = true;
       b.classList.add('is-held');
-    } else if (UI.onPress) UI.onPress(id);
+    } else if (UI.onPress) UI.onPress(id, e.pointerType || '');
   });
   if (hold) {
     const up = () => {
@@ -148,12 +156,15 @@ export function setGate(off) {
 export function setButtons(want) {
   if (!UI.root) return;
   const b = UI.buttons;
-  const key = `${!!want.eject}${!!want.armed}${!!want.sd}${want.sdState}${!!want.chute}`;
+  const key = `${!!want.eject}${!!want.armed}${!!want.sd}${want.sdState}${!!want.chute}${!!want.desk}`;
   if (key === UI.key) return;
   UI.key = key;
+  // A laptop's EJECT is smaller, and names its key: the button teaches Enter.
+  UI.root.classList.toggle('ej-desk', !!want.desk);
   b.eject.classList.toggle('is-on', !!want.eject);
   b.eject.classList.toggle('is-armed', !!want.armed);
-  b.eject.innerHTML = want.armed ? 'EJECT <small>again!</small>' : 'EJECT';
+  b.eject.innerHTML = want.armed ? 'EJECT <small>again!</small>' : want.desk ? 'EJECT <kbd>Enter</kbd>' : 'EJECT';
+  b.eject.title = want.desk ? 'Eject — click twice, or press Enter twice' : '';
   b.sd.classList.toggle('is-on', !!want.sd);
   b.sd.classList.toggle('is-open', want.sdState === 'open');
   b.sd.classList.toggle('is-count', want.sdState === 'count');
@@ -224,7 +235,9 @@ export function snapshot() {
     built: !!UI.root,
     off: !!(UI.root && UI.root.classList.contains('ej-off')),
     eject: on(UI.buttons.eject),
-    armed: !!(UI.buttons.eject && UI.buttons.eject.classList.contains('is-armed')),
+    ejectText: UI.buttons.eject ? UI.buttons.eject.textContent : '',
+    desk: !!(UI.root && UI.root.classList.contains('ej-desk')),
+    armed:!!(UI.buttons.eject && UI.buttons.eject.classList.contains('is-armed')),
     sd: on(UI.buttons.sd),
     sdText: UI.buttons.sd ? UI.buttons.sd.textContent : '',
     chute: on(UI.buttons.chute),
@@ -235,8 +248,8 @@ export function snapshot() {
   };
 }
 
-/** For the tests: press a button the way a finger does. */
-export function press(id) {
+/** For the tests: press a button the way a finger (or, with 'mouse', a click) does. */
+export function press(id, pointerType = 'touch') {
   const b = UI.buttons[id];
-  if (b) b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+  if (b) b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType }));
 }

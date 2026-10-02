@@ -770,8 +770,9 @@ export class DriveHud {
   }
 
   /**
-   * The controls card, for the van: the keys that do something in it, read
-   * from the player's own bindings so a re-bound key shows as re-bound.
+   * The controls card, for the van: the keys that do something in it — the
+   * van's own (Settings → Car) — read from the player's bindings so a
+   * re-bound key shows as re-bound.
    */
   showVanControls(bindings = {}, keyLabel = (k) => k) {
     const keys = (...actions) => {
@@ -793,17 +794,17 @@ export class DriveHud {
     card.innerHTML =
       '<div class="cc-head">Driving the van</div><div class="cc-grid">'
       + '<div class="cc-group"><h4>Pedals</h4>'
-      + row('Go', 'throttleUp', 'pitchDown')
-      + row('Brake — hold it once stopped to reverse', 'throttleDown', 'pitchUp')
-      + row('Handbrake', 'brakes')
+      + row('Go', 'carGo')
+      + row('Brake — hold it once stopped to reverse', 'carBrake')
+      + row('Handbrake', 'carHandbrake')
       + '</div><div class="cc-group"><h4>Steering</h4>'
-      + row('Steer left', 'rollLeft', 'lookLeft')
-      + row('Steer right', 'rollRight', 'lookRight')
+      + row('Steer left', 'carLeft')
+      + row('Steer right', 'carRight')
       + '</div><div class="cc-group"><h4>Game</h4>'
       + row('Change the view', 'camera')
       + row('Map', 'minimap')
       + row('Pause / menu', 'pause')
-      + '</div></div><div class="cc-foot">Press H to close · follow the big arrow at the bottom</div>';
+      + `</div></div><div class="cc-foot">Press ${keys('help').replace(/<\/?kbd>/g, '') || 'H'} to close · follow the big arrow at the bottom · change keys in Settings → Controls → Car</div>`;
     card.style.display = '';
   }
 

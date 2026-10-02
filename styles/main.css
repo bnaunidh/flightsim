@@ -836,6 +836,11 @@ button.primary.big { width: 100%; padding: 14px; font-size: 16px; margin-top: 10
 .mission-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .mission-best { font-size: 12px; color: var(--text-dim); }
 .mission-best .ok { color: var(--good); }
+/* "Up to 380 credits": the most a mission pays, in the credit pill's gold. */
+.mission-pay { display: flex; align-items: center; gap: 5px; margin-top: 6px; font-size: 12px; font-weight: 600; color: #ffd98a; }
+.mission-pay .icon { flex: none; }
+.debrief-list .debrief-pay b { color: #ffd98a; }
+.debrief-pay-of { display: block; font-size: 11.5px; margin-top: 1px; }
 
 /* ---- Map picker ---- */
 .map-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
@@ -957,6 +962,26 @@ button.primary.big { width: 100%; padding: 14px; font-size: 16px; margin-top: 10
   min-width: 74px;
 }
 .keycap.is-listening { border-color: var(--amber); color: var(--amber); }
+/* Settings → Controls: a fold per game, the one you are playing open and first. */
+.keymap { align-items: start; }
+details.keymap-group { border: 1px solid var(--panel-line); border-radius: 10px; padding: 8px 12px; background: rgba(255, 255, 255, 0.03); }
+details.keymap-group > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent); font-weight: 700; }
+details.keymap-group > summary::-webkit-details-marker { display: none; }
+details.keymap-group > summary::before { content: '▸'; color: var(--text-dim); transition: transform 0.15s; }
+details.keymap-group[open] > summary::before { transform: rotate(90deg); }
+.keymap-now { font-size: 10px; letter-spacing: 0.06em; color: var(--accent-2); border: 1px solid currentColor; border-radius: 999px; padding: 1px 7px; text-transform: none; }
+.keymap-warn { margin-left: auto; font-size: 10px; letter-spacing: 0.04em; color: var(--panel-solid); background: var(--amber); border-radius: 999px; padding: 2px 8px; text-transform: none; }
+.keymap-rows { padding: 4px 0 6px; }
+.keymap-row span { display: flex; flex-direction: column; }
+.keymap-row.is-clash .keycap { border-color: var(--amber); color: var(--amber); background: rgba(255, 194, 71, 0.12); }
+.keymap-also { font-style: normal; font-size: 11px; color: var(--amber); margin-top: 2px; }
+.keymap-reset { font-size: 12px; padding: 5px 10px; margin-top: 2px; }
+.keymap-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--panel-line); background: rgba(88, 198, 255, 0.08); font-size: 14px; }
+.keymap-ask[hidden] { display: none; }
+.keymap-ask > span { flex: 1 1 260px; }
+.keymap-ask.is-warn { border-color: var(--amber); background: rgba(255, 194, 71, 0.12); }
+.keymap-ask.is-good { border-color: var(--accent-2); background: rgba(126, 232, 178, 0.1); }
+.keymap-swapnote { color: var(--text-dim); font-size: 12px; }
 
 .credits {
   max-width: 900px;
@@ -3781,3 +3806,344 @@ html.is-touch-device .slot-clear {
  * keeps the bar off an iPhone's home indicator.
  */
 .screen.screen-free { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* ============================ The hangar showroom ============================
+ * "make it so you can select planes in a cool fashion, the planes are on a
+ * podium spinning" — the owner. The podium itself is 3D, drawn on the game's
+ * own canvas behind this screen (src/ui/hangar-showcase.js); everything here is
+ * what sits over it. No backdrop blur anywhere on it: a blur over a canvas that
+ * redraws every frame is paid for every frame, and the panels are near-opaque
+ * anyway.
+ */
+.menu-layer.is-showcase {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.screen.screen-hangar {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.screen-hangar > * { flex-shrink: 0; }
+.screen-hangar > .screen-head {
+  width: min(1240px, 100%);
+  margin: 0 auto 4px;
+  padding: 12px max(16px, env(safe-area-inset-left)) 4px;
+}
+.hs-host {
+  width: min(1240px, 100%);
+  height: calc(100% - 62px);
+  min-height: 470px;
+  margin: 0 auto;
+  padding: 0 16px 10px;
+}
+.hs {
+  --hs-accent: #58c6ff;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+/* The category tabs — the same five headings as the picker. */
+.hs-tabs {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 4px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.hs-tabs::-webkit-scrollbar { display: none; }
+.screen-hangar .hs-tab {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 15px 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  background: rgba(9, 15, 26, 0.78);
+  color: #dbe6f4;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 620;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.screen-hangar .hs-tab b { font-size: 12px; font-weight: 650; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.hs-tab-icon { display: grid; color: var(--cat); }
+.screen-hangar .hs-tab:hover { border-color: var(--cat-line); }
+.screen-hangar .hs-tab.is-on {
+  background: var(--cat);
+  border-color: transparent;
+  color: #07101b;
+  box-shadow: 0 6px 22px var(--cat-soft);
+}
+.screen-hangar .hs-tab.is-on .hs-tab-icon,
+.screen-hangar .hs-tab.is-on b { color: #07101b; }
+
+/* The stage: an empty box the podium is framed in, and the controls over it. */
+.hs-main {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 370px);
+  gap: 16px;
+}
+.hs-stage {
+  position: relative;
+  min-height: 0;
+  border-radius: 22px;
+  touch-action: pan-y;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.hs-stage.is-dragging { cursor: grabbing; }
+.screen-hangar .hs-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(8, 13, 22, 0.66);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.screen-hangar .hs-arrow:hover { background: rgba(20, 32, 52, 0.9); border-color: var(--hs-accent); }
+.screen-hangar .hs-arrow:active { transform: translateY(-50%) scale(0.93); }
+.screen-hangar .hs-arrow.is-prev { left: 4px; }
+.screen-hangar .hs-arrow.is-next { right: 4px; }
+.hs-under {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.hs-dots { display: flex; gap: 8px; pointer-events: auto; }
+.screen-hangar .hs-dot {
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.36);
+  cursor: pointer;
+  transition: width 0.2s ease, background 0.2s ease;
+}
+.screen-hangar .hs-dot.is-locked { background: rgba(255, 255, 255, 0.12); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.34); }
+.screen-hangar .hs-dot.is-on { width: 28px; background: var(--hs-accent); box-shadow: none; }
+.hs-hint { margin: 0; font-size: 12px; color: rgba(214, 226, 242, 0.72); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9); }
+.hs-lock {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 15px;
+  border-radius: 999px;
+  background: rgba(8, 12, 20, 0.8);
+  border: 1px solid rgba(255, 198, 92, 0.5);
+  color: #ffd98a;
+  font-size: 14px;
+  font-weight: 650;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.hs-lock[hidden], .hs-fallback[hidden], .hs-msg:empty { display: none; }
+.hs-fallback { position: absolute; inset: 12% 10%; display: grid; place-items: center; pointer-events: none; }
+.hs-fallback canvas { width: 100%; max-width: 560px; height: auto; }
+.hs-fallback canvas.is-locked { filter: brightness(0.18) saturate(0); }
+
+/* The card: name, one line, the bars, the paint, and the button. */
+.hs-card {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 20px 18px;
+  border-radius: 22px;
+  background: linear-gradient(165deg, rgba(17, 27, 45, 0.93), rgba(7, 12, 21, 0.95));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 3px solid var(--hs-accent);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+.hs-card > * { flex-shrink: 0; }
+.hs-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.hs-cat { display: inline-flex; align-items: center; gap: 5px; color: var(--hs-accent); }
+.hs-count { margin-left: auto; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.hs-name { margin: 0; font-size: clamp(26px, 2.6vw, 34px); line-height: 1.05; font-weight: 760; letter-spacing: -0.02em; }
+.hs-line { margin: -4px 0 0; font-size: 15px; line-height: 1.4; color: #c9d7ea; }
+.hs-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.hs-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d6e2f2;
+  font-size: 12px;
+  font-weight: 650;
+}
+.hs-pill .icon { width: 14px; height: 14px; }
+.hs-pill.is-yours { background: rgba(79, 214, 132, 0.16); color: #a3f2c3; }
+.hs-pill.is-locked { background: rgba(255, 198, 92, 0.15); color: #ffd98a; }
+.hs-pill.is-chosen { background: rgba(88, 198, 255, 0.18); color: #c4e9ff; }
+.hs-actions { display: grid; gap: 8px; }
+.screen-hangar .hs-actions .primary.big {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 15px;
+  border-radius: 14px;
+  font-size: 18px;
+  font-weight: 720;
+}
+.screen-hangar .hs-fly {
+  background: linear-gradient(135deg, var(--hs-accent), #3aa8e8);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+}
+.screen-hangar .hs-buy { background: linear-gradient(135deg, #ffd166, #ff9f43); color: #2a1600; }
+.screen-hangar .hs-buy:disabled {
+  background: rgba(255, 255, 255, 0.07);
+  color: #ffd98a;
+  border: 1px solid rgba(255, 198, 92, 0.35);
+  cursor: not-allowed;
+  transform: none;
+}
+.screen-hangar .hs-choose { text-align: center; padding: 10px 14px; font-size: 14px; }
+.hs-msg { margin: -2px 0 0; font-size: 13px; line-height: 1.4; color: #c3d2e4; }
+.hs-stats { display: grid; gap: 9px; }
+.hs-stat { display: grid; grid-template-columns: 62px minmax(0, 1fr); align-items: center; gap: 2px 10px; }
+.hs-stat-label { font-size: 13px; font-weight: 650; }
+.hs-stat-track { height: 9px; border-radius: 6px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.hs-stat-fill {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--hs-accent), #eaf6ff);
+  transform-origin: left center;
+  animation: hs-grow 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes hs-grow { from { transform: scaleX(0); } }
+.hs-stat-text { grid-column: 2; font-size: 12px; color: var(--text-dim); }
+.hs-paint { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 12px; }
+.hs-label { font-size: 13px; font-weight: 650; }
+.hs-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.screen-hangar .hs-swatch {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: conic-gradient(from 200deg, var(--sw-a) 0 55%, var(--sw-b) 55% 80%, var(--sw-c) 80% 100%);
+  cursor: pointer;
+}
+.screen-hangar .hs-swatch:hover { border-color: rgba(255, 255, 255, 0.6); }
+.screen-hangar .hs-swatch.is-on { border-color: #fff; box-shadow: 0 0 0 3px var(--hs-accent); }
+.hs-paint-name { grid-column: 2; font-size: 12px; color: var(--text-dim); }
+.screen-hangar .hs-more {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(8, 13, 22, 0.7);
+  color: #dbe6f4;
+  font-size: 13px;
+  cursor: pointer;
+}
+.hs-more .icon { transform: rotate(90deg); }
+
+/* Everything the hangar had before, a scroll below: on its own panel, because
+   the room behind it is now a picture rather than a blur. */
+.hangar-rest {
+  width: min(1080px, calc(100% - 24px));
+  margin: 22px auto 40px;
+  padding: 22px 22px 28px;
+  border-radius: 22px;
+  background: rgba(8, 13, 22, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.screen-hangar .unlock.is-owned { cursor: pointer; }
+
+/* Free Flight's door into the showroom. */
+.screen-list button.hs-door {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 14px;
+  padding: 13px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(88, 198, 255, 0.45);
+  background: linear-gradient(120deg, rgba(88, 198, 255, 0.22), rgba(16, 26, 44, 0.9));
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.screen-list button.hs-door:hover { border-color: rgba(88, 198, 255, 0.8); }
+.hs-door-icon {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(88, 198, 255, 0.18);
+  color: var(--accent);
+}
+.hs-door strong { display: block; font-size: 16px; font-weight: 650; }
+.hs-door em { display: block; font-style: normal; font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+.hs-door > .icon:last-child { margin-left: auto; flex: none; color: var(--accent); }
+
+/* Narrow: the podium on top, the card underneath, the whole screen scrolls. */
+@media (max-width: 760px) {
+  .screen-hangar > .screen-head { padding: 10px 12px 2px; }
+  .screen-hangar > .screen-head h2 { font-size: 21px; }
+  .hs-host { height: auto; min-height: 0; padding: 0 10px 8px; }
+  .hs { height: auto; }
+  .hs-main { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .hs-stage { height: 44vh; min-height: 250px; max-height: 420px; }
+  .hs-card { overflow: visible; padding: 16px 16px 14px; }
+  .screen-hangar .hs-arrow { width: 48px; height: 48px; }
+  .hs-hint { display: none; }
+  .hangar-rest { padding: 16px 12px 22px; }
+}

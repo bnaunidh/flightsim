@@ -48,6 +48,12 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extLayer } from '../game/extensions.js';
+import { registerActions, isKey, codesFor, keyName, playerClaimed } from '../flight/input.js';
+
+/* Z, in the one registry: Settings → Controls → Fun Stuff. */
+registerActions({
+  zap: { label: 'Meteor mode: zap the meteor ahead', group: 'Fun Stuff', ctx: ['plane', 'heli'], default: ['KeyZ'] },
+});
 import * as FX from './explosions.js';
 import * as Terrain from '../world/terrain.js';
 
@@ -1622,9 +1628,10 @@ function updatePanelText(sim, st, ac) {
   if (UI.zap.hidden === showBtn) UI.zap.hidden = !showBtn;
   const zapCls = touch ? 'mt-zap' : 'mt-zap is-desk';
   if (UI.zap.className !== zapCls) UI.zap.className = zapCls;
-  const how = touch ? 'Tap <b>ZAP</b>' : zFree ? 'Press <kbd>Z</kbd>' : 'Click <b>ZAP</b>';
+  const zk = keyName('zap', sim);
+  const how = touch ? 'Tap <b>ZAP</b>' : zFree ? `Press <kbd>${zk}</kbd>` : 'Click <b>ZAP</b>';
   // The lock reticle said "Z ZAP" on an iPad too, which has no Z.
-  UI.zapLabel = touch || !zFree ? 'ZAP' : 'Z  ZAP';
+  UI.zapLabel = touch || !zFree ? 'ZAP' : `${zk}  ZAP`;
   if (UI.cache.keys !== how) {
     UI.cache.keys = how;
     UI.keys.innerHTML = `${how} to zap the meteor your nose is pointing at`;
@@ -1639,10 +1646,14 @@ function isTouch() {
   }
 }
 
-/** Z is the zapper's only while nobody has bound it to anything in the controls screen. */
+/**
+ * The zap key is the zapper's only while the player has not put one of the
+ * game's own actions on it in Settings (then the ZAP button is clicked).
+ */
 function zKeyFree(sim) {
   try {
-    return !(sim && sim.input && sim.input.isGameKey && sim.input.isGameKey('KeyZ'));
+    const codes = codesFor('zap', sim);
+    return codes.length > 0 && !codes.every((c) => playerClaimed(sim, c, 'zap'));
   } catch (e) {
     return true;
   }
@@ -1886,7 +1897,7 @@ registerExtension({
     updateMeteorMode(sim, dt);
   },
   key(sim, code, down, e) {
-    if (code !== 'KeyZ' || !S.active || !S.cfg || !S.cfg.zapper || !zKeyFree(sim)) return false;
+    if (!isKey(sim, 'zap', code) || !S.active || !S.cfg || !S.cfg.zapper || playerClaimed(sim, code, 'zap')) return false;
     if (down && !(e && e.repeat)) zap(sim);
     return true;
   },

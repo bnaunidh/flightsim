@@ -9,6 +9,19 @@
  */
 
 import { extLayer } from '../../game/extensions.js';
+import { keyName, bindingsVersion } from '../../flight/input.js';
+
+/*
+ * The stunt and sticker lines name keys ("hold A or D"); these put the
+ * player's own in (Settings → Controls), the aeroplane's roll and pitch and
+ * the helicopter's turn.
+ */
+export function withKeys(text) {
+  return String(text)
+    .replace(/\bhold A or D\b/g, () => `hold ${keyName('rollLeft')} or ${keyName('rollRight')}`)
+    .replace(/\bhold S\b/g, () => `hold ${keyName('pitchUp')}`)
+    .replace(/\bhold Q or E\b/g, () => `hold ${keyName('heliTurnLeft')} or ${keyName('heliTurnRight')}`);
+}
 import { STICKERS, SMOKE_COLOURS, colourUnlocked, colourNeeds, stickerCount } from './stickers.js';
 import { STUNTS } from './stunts.js';
 
@@ -166,7 +179,7 @@ export class FunHud {
       'fun-chip',
       `<span class="fun-part" data-fun-stars>⭐ <b data-n>0</b>/<span data-of>10</span></span>
        <span class="fun-part" data-fun-score hidden>🎪 <b data-pts>0</b></span>
-       <button class="fun-smoke" type="button" data-fun-smoke aria-pressed="false" title="Smoke trail — press T">💨<small>T</small></button>`
+       <button class="fun-smoke" type="button" data-fun-smoke aria-pressed="false" title="Smoke trail — press ${keyName('smoke')}">💨<small>${keyName('smoke')}</small></button>`
     );
     this.chip.hidden = true;
     this.pops = el('div', 'fun-pops');
@@ -203,9 +216,14 @@ export class FunHud {
 
   /** n/of stars (of = 0 hides the star part), stunt points, smoke state. */
   set({ n, of, pts, smokeOk, smokeOn }) {
-    const key = `${n}|${of}|${pts}|${smokeOk}|${smokeOn}`;
+    const key = `${n}|${of}|${pts}|${smokeOk}|${smokeOn}|${bindingsVersion()}`;
     if (key === this.last) return;
     this.last = key;
+    // The smoke key, as the player has it now (Settings → Controls → Fun Stuff).
+    const sk = keyName('smoke');
+    const small = this.$smoke.querySelector('small');
+    if (small && small.textContent !== sk) small.textContent = sk;
+    this.$smoke.title = `Smoke trail — press ${sk}`;
     this.$stars.hidden = !of;
     this.$n.textContent = String(n);
     this.$of.textContent = String(of);
@@ -296,7 +314,7 @@ export class FunHud {
   sticker(s, extra = '') {
     // In the same column as the pop-ups, under them: the top of the screen
     // is where the game's own messages stack.
-    const t = el('div', 'fun-sticker-toast', `<span class="emoji">${s.emoji}</span><span>New sticker: ${s.name}!<em>${s.how}</em>${extra ? `<em>${extra}</em>` : ''}</span>`);
+    const t = el('div', 'fun-sticker-toast', `<span class="emoji">${s.emoji}</span><span>New sticker: ${s.name}!<em>${withKeys(s.how)}</em>${extra ? `<em>${extra}</em>` : ''}</span>`);
     this.side.appendChild(t);
     this.trimSide();
     setTimeout(() => t.remove(), 3500);
@@ -376,7 +394,7 @@ export function buildFunScreen(menus, { model, onColour }) {
     const d = m.data;
     const gw = GAME_WORDS[m.game] || GAME_WORDS.flight;
     const stuntRows = m.stunts
-      .map((id) => `<li><b>${STUNTS[id].name.replace(/!$/, '')}</b> — ${STUNT_HOW[id]}</li>`)
+      .map((id) => `<li><b>${STUNTS[id].name.replace(/!$/, '')}</b> — ${withKeys(STUNT_HOW[id])}</li>`)
       .join('');
     const best = d.stunts.best || {};
     const bestRows = Object.keys(GAME_WORDS)
@@ -408,7 +426,7 @@ export function buildFunScreen(menus, { model, onColour }) {
       </article>
       <article class="fun-card">
         <h3>💨 Smoke trails</h3>
-        <p>While flying, press <b>T</b> (or the 💨 button) to leave a smoke trail. Pick a colour:</p>
+        <p>While flying, press <b>${keyName('smoke')}</b> (or the 💨 button) to leave a smoke trail. Pick a colour:</p>
         <div class="fun-swatches">${swatches}</div>
       </article>
       <article class="fun-card">
@@ -423,7 +441,7 @@ export function buildFunScreen(menus, { model, onColour }) {
       return `<div class="fun-sticker${when ? ' is-got' : ''}" data-sticker="${k.id}">
         <span class="emoji" aria-hidden="true">${k.emoji}</span>
         <strong>${k.name}${when && m.fresh && m.fresh.has(k.id) ? '<span class="fun-new">NEW</span>' : ''}</strong>
-        <em>${k.how}</em></div>`;
+        <em>${withKeys(k.how)}</em></div>`;
     }).join('');
   };
   s.render = render;

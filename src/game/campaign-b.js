@@ -563,6 +563,7 @@ const lowFuel = {
   blurb:
     'You are coming back from Mango Cay when the fuel gauge starts falling far too quickly. There is a leak. Fly straight home, use as little fuel as you can, and land.',
   reward: 'Teaches fuel management: less power goes further, and the straight-in approach beats the pretty one.',
+  allowBrace: true, // an emergency story: brace stays on offer (main.js braceAvailable)
   briefing: [
     { speaker: 'Dispatch', text: 'Skylark one seven two, your fuel gauge is dropping about four times faster than it should. You have a leak somewhere behind the engine.' },
     { speaker: 'Chief Pilot', text: 'Do not panic. Turn towards the island now and pull the power back to about sixty per cent — a slower aeroplane burns far less and still gets there.' },
@@ -818,6 +819,7 @@ const deadStick = {
   blurb:
     'Somewhere over the water west of the island, the engine is going to stop. You will have plenty of height and the runway straight ahead. Glide it home and land — no engine, no second go.',
   reward: 'Teaches the forced landing: hold 70 knots, trade height for distance, and leave the flaps alone until the runway is certain.',
+  allowBrace: true, // an emergency story: brace stays on offer (main.js braceAvailable)
   briefing: [
     { speaker: 'Chief Pilot', text: 'Today we practise the one nobody wants: the engine stopping. You will be at 2,600 feet, three miles west, with the runway dead ahead.' },
     { speaker: 'Chief Pilot', text: 'When it goes quiet, do not touch anything for a moment. Lower the nose until the speed reads seventy knots. That is the speed that glides furthest.' },

@@ -36,6 +36,21 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extStatus } from '../game/extensions.js';
+import { registerActions, isKey } from '../flight/input.js';
+
+/*
+ * The events' keys, in the one registry: Settings → Controls → Missions &
+ * events. The answers on a question card, the hijack's secret squawk, and
+ * skipping a cut-scene (C, the camera key, which it shares by design: the
+ * camera is not yours while a cut-scene is playing).
+ */
+registerActions({
+  eventSquawk: { label: 'Hijack: squawk 7500 secretly', group: 'Missions & events', ctx: ['plane', 'heli'], default: ['Digit7', 'Numpad7'] },
+  eventChoice1: { label: 'Question card: first answer', group: 'Missions & events', ctx: ['plane', 'heli'], default: ['Digit8', 'Numpad8'] },
+  eventChoice2: { label: 'Question card: second answer', group: 'Missions & events', ctx: ['plane', 'heli'], default: ['Digit9', 'Numpad9'] },
+  eventChoice3: { label: 'Question card: third answer', group: 'Missions & events', ctx: ['plane', 'heli'], default: ['Digit0', 'Numpad0'] },
+  eventSkip: { label: 'Skip the cut-scene', group: 'Missions & events', ctx: ['plane'], default: ['KeyC'] },
+});
 import { heightAt } from '../world/terrain.js';
 import { createPizzaCar, flashPolice, buildFence } from './events/vehicles.js';
 import * as SFX from './events/sfx.js';
@@ -671,7 +686,7 @@ function devHijack(sim, version) {
   }).catch((e) => console.error('[events] could not start the hijack flight', e));
 }
 
-const CHOICE_CODES = new Set(['Digit8', 'Digit9', 'Digit0', 'Numpad8', 'Numpad9', 'Numpad0']);
+const CHOICE_ACTIONS = ['eventChoice1', 'eventChoice2', 'eventChoice3'];
 
 /*
  * "The more realistic one is behind a code."
@@ -835,16 +850,16 @@ registerExtension({
   },
 
   key(sim, code, down) {
-    if (code === 'Digit7' || code === 'Numpad7') {
+    if (isKey(sim, 'eventSquawk', code)) {
       if (!HJ.hijackActive()) return false;
       if (down) HJ.squawk(sim);
       return true;
     }
-    if (CHOICE_CODES.has(code)) {
+    if (CHOICE_ACTIONS.some((a) => isKey(sim, a, code))) {
       if (down) return UI.chooseByCode(code);
       return UI.isChoiceCode(code);
     }
-    if (code === 'KeyC' && HJ.cinematicOn()) {
+    if (isKey(sim, 'eventSkip', code) && HJ.cinematicOn()) {
       if (down) HJ.skipCinematic();
       return true;
     }

@@ -21,7 +21,9 @@
  * push the parked aeroplane's nose down — except the ones that are about the
  * game rather than the aeroplane: Esc, the map, mute, help, hide-interface
  * (wherever the player has moved them in Settings), and the keys other
- * features reserved (R, T, Y, 7). Key-UPS always go through, so a key that
+ * features reserved (hush the warnings, smoke, ground crew, squawk — on
+ * whatever keys they are now). Every key here is a named action in the one
+ * registry (Settings → Controls → On foot). Key-UPS always go through, so a key that
  * was held when you climbed out is released properly rather than stuck down
  * for the next flight.
  *
@@ -52,6 +54,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extStatus } from '../game/extensions.js';
+import { registerActions, isKey, heldKey, keyName, live } from '../flight/input.js';
 import { heightAt, isPaved } from '../world/terrain.js';
 import { createPerson, posePerson, setWands, disposePerson } from './staff/person.js';
 import { Walker, WALK, groundAt, setTerrainMeshes, forgetObstacles, setProps, solidBox, solidAt, setDrawn } from './staff/walk.js';
@@ -68,28 +71,55 @@ const D2R = Math.PI / 180;
 /** What the parked aeroplane is held at while you are out of it. */
 const PARK = { throttle: 0, brakes: 1, pitch: 0, roll: 0, yaw: 0 };
 
-/** Keys that are about the game, not the vehicle: always left for the game. */
-const PASS = new Set([
-  'Escape', 'KeyJ', 'KeyK', 'KeyM', 'KeyU', 'KeyN', 'KeyH', 'Tab',
-  'KeyR', 'KeyT', 'KeyY', 'Digit7',
-  'MetaLeft', 'MetaRight', 'AltLeft', 'AltRight',
-]);
+/*
+ * The walker's keys, in the one registry: Settings → Controls → On foot.
+ * Get out / get in works from every vehicle too, so it lists them all.
+ */
+const FOOT = ['foot'];
+registerActions({
+  getOut: { label: 'Get out / get in', group: 'On foot', ctx: ['plane', 'heli', 'boat', 'car', 'foot'], default: ['KeyO'] },
+  walkForward: { label: 'Walk forward', group: 'On foot', ctx: FOOT, default: ['KeyW'] },
+  walkBack: { label: 'Walk back', group: 'On foot', ctx: FOOT, default: ['KeyS'] },
+  walkLeft: { label: 'Walk left', group: 'On foot', ctx: FOOT, default: ['KeyA'] },
+  walkRight: { label: 'Walk right', group: 'On foot', ctx: FOOT, default: ['KeyD'] },
+  run: { label: 'Run (hold)', group: 'On foot', ctx: FOOT, default: ['ShiftLeft', 'ShiftRight'] },
+  jump: { label: 'Jump', group: 'On foot', ctx: FOOT, default: ['Space'] },
+  wave: { label: 'Wave', group: 'On foot', ctx: FOOT, default: ['KeyE'] },
+  footView: { label: 'Change the view', group: 'On foot', ctx: FOOT, default: ['KeyC'] },
+  footLookLeft: { label: 'Look left', group: 'On foot', ctx: FOOT, default: ['ArrowLeft'] },
+  footLookRight: { label: 'Look right', group: 'On foot', ctx: FOOT, default: ['ArrowRight'] },
+  footLookUp: { label: 'Look up', group: 'On foot', ctx: FOOT, default: ['ArrowUp'] },
+  footLookDown: { label: 'Look down', group: 'On foot', ctx: FOOT, default: ['ArrowDown'] },
+});
+const WALK_KEYS = ['walkForward', 'walkBack', 'walkLeft', 'walkRight', 'run', 'jump', 'wave', 'footView',
+  'footLookLeft', 'footLookRight', 'footLookUp', 'footLookDown'];
+
+/** Keys that are not anybody's action and are always left for the browser and the game. */
+const PASS = new Set(['Escape', 'Tab', 'MetaLeft', 'MetaRight', 'AltLeft', 'AltRight']);
 
 /*
- * ...and whatever keys the player has moved those game actions to. Bindings
- * can be changed in Settings; a player who put Pause on P could not pause
- * while walking, because P is not in the list above and walking takes it.
+ * ...and the actions that are about the game, not the vehicle, on whatever
+ * keys the player has them now — a player who put Pause on P must still be
+ * able to pause while walking — and the keys other features keep while you
+ * walk (hushing the warnings, smoke, calling the ground crew, the squawk).
+ * A walking key wins over them, so moving smoke onto W cannot stop you
+ * walking forwards.
  */
-const GAME_ACTIONS = ['pause', 'help', 'hideUi', 'guide', 'mute', 'minimap', 'minimapRange'];
+const GAME_ACTIONS = ['pause', 'help', 'hideUi', 'guide', 'mute', 'minimap', 'minimapRange',
+  'ackWarnings', 'smoke', 'stovlHover', 'services', 'eventSquawk'];
 function passes(sim, code) {
   if (PASS.has(code) || /^F\d+$/.test(code)) return true;
-  const b = sim && sim.input && sim.input.bindings;
-  if (!b) return false;
   for (let i = 0; i < GAME_ACTIONS.length; i++) {
-    const codes = b[GAME_ACTIONS[i]];
-    if (codes && codes.indexOf(code) >= 0) return true;
+    if (!isKey(sim, GAME_ACTIONS[i], code)) continue;
+    // The core game keys always pass; a feature's only when no walking key is on it.
+    if (i < 7 || !WALK_KEYS.some((a) => isKey(sim, a, code))) return true;
   }
   return false;
+}
+
+/** Is a walking action held, in the walker's own table of keys? */
+function walkHeld(action) {
+  return heldKey(S.sim, action, S.keys);
 }
 
 const VIEWS = ['chase', 'wide', 'eyes'];
@@ -397,14 +427,14 @@ export function cannotGetOut(sim) {
   if (!sim || sim.state !== 'flying' || S.retired) return 'Not now';
   if (driving(sim)) {
     const v = sim.vehicle;
-    if (v.crashed) return 'Not after that — press Esc to go back';
+    if (v.crashed) return live(`Not after that — press ${keyName('pause', sim)} to go back`);
     if (v.swamped) return 'Hold on — the truck is pulling you out';
-    if (Math.abs(v.speed || 0) > (v.isBoat ? 0.6 : 0.8)) return 'Stop first, then press O to get out';
+    if (Math.abs(v.speed || 0) > (v.isBoat ? 0.6 : 0.8)) return live(`Stop first, then press ${keyName('getOut', sim)} to get out`);
     return null;
   }
   const ac = sim.aircraft;
   if (!ac) return 'Not now';
-  if (ac.crashed) return 'Not after that — press Esc and choose Restart';
+  if (ac.crashed) return live(`Not after that — press ${keyName('pause', sim)} and choose Restart`);
   if (!ac.onGround) return 'You cannot get out in the air!';
   /*
    * Walking pace or less, and it is parked for you. A jet at idle on the
@@ -414,7 +444,8 @@ export function cannotGetOut(sim) {
    * brakes and pressing O at the same time.
    */
   if ((ac.groundSpeed || 0) > Math.max(CREEP, ruleSpeed(sim))) {
-    return craftWord(sim) === 'the helicopter' ? 'Sit still on the ground first, then press O' : 'Stop the aeroplane first (hold Space to brake), then press O';
+    const o = keyName('getOut', sim);
+    return live(craftWord(sim) === 'the helicopter' ? `Sit still on the ground first, then press ${o}` : `Stop the aeroplane first (hold ${keyName('brakes', sim)} to brake), then press ${o}`);
   }
   return null;
 }
@@ -793,15 +824,14 @@ function walkFrame(sim, dt) {
   S.since += dt;
   holdVehicle(sim);
 
-  const K = S.keys;
   const T = UI.touch;
   const ctl = S.control;
   const locked = !!(ctl && ctl.locked);
 
   // Look: arrows, the mouse (in the pointer handlers) and the touch pad.
   let looked = false;
-  const turn = (K.ArrowRight ? 1 : 0) - (K.ArrowLeft ? 1 : 0);
-  const tilt = (K.ArrowUp ? 1 : 0) - (K.ArrowDown ? 1 : 0);
+  const turn = (walkHeld('footLookRight') ? 1 : 0) - (walkHeld('footLookLeft') ? 1 : 0);
+  const tilt = (walkHeld('footLookUp') ? 1 : 0) - (walkHeld('footLookDown') ? 1 : 0);
   if (turn) {
     S.camYaw += turn * 110 * dt;
     looked = true;
@@ -827,8 +857,12 @@ function walkFrame(sim, dt) {
   S.lookIdle = looked ? 0 : S.lookIdle + dt;
 
   // Move, relative to where the camera looks.
-  let ix = (K.KeyD ? 1 : 0) - (K.KeyA ? 1 : 0) + T.x;
-  let iy = (K.KeyW ? 1 : 0) - (K.KeyS ? 1 : 0) + T.y;
+  const kf = walkHeld('walkForward');
+  const kb = walkHeld('walkBack');
+  const kl = walkHeld('walkLeft');
+  const kr = walkHeld('walkRight');
+  let ix = (kr ? 1 : 0) - (kl ? 1 : 0) + T.x;
+  let iy = (kf ? 1 : 0) - (kb ? 1 : 0) + T.y;
   if (locked) {
     ix = 0;
     iy = 0;
@@ -843,7 +877,7 @@ function walkFrame(sim, dt) {
     mx /= ml;
     mz /= ml;
   }
-  let run = !!(K.ShiftLeft || K.ShiftRight || T.run || S.runToggle);
+  let run = !!(walkHeld('run') || T.run || S.runToggle);
   /*
    * A thumb-stick is a throttle, not a switch. It used to walk at the
    * stick's fraction of walking pace and then jump to a full run in the last
@@ -851,7 +885,7 @@ function walkFrame(sim, dt) {
    * 5.2. Now it reaches a full walk at 60% and runs up smoothly to the rim.
    */
   const tm = Math.hypot(T.x, T.y);
-  const keysMove = K.KeyW || K.KeyA || K.KeyS || K.KeyD;
+  const keysMove = kf || kl || kb || kr;
   if (tm > 0.02 && !keysMove && !locked && !S.runToggle) {
     const want = tm <= STICK_WALK
       ? (tm / STICK_WALK) * WALK.walk
@@ -926,7 +960,7 @@ function walkFrame(sim, dt) {
     UI.setPrompt(
       isTouch(sim)
         ? 'Use the stick to walk — push it right out to run'
-        : '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk · <kbd>Shift</kbd> run · <kbd>C</kbd> view · <kbd>E</kbd> wave'
+        : walkLine(sim)
     );
   } else {
     UI.setPrompt('');
@@ -982,15 +1016,22 @@ function enter(sim, fn) {
   }
 }
 
-/** "Press O to get in the tug", built once per label rather than per frame. */
+/** "Press O to get in the tug", built once per label (and key) rather than per frame. */
 function promptFor(sim, label) {
-  const key = (isTouch(sim) ? 't:' : 'k:') + label;
+  const o = keyName('getOut', sim);
+  const key = (isTouch(sim) ? 't:' : `k${o}:`) + label;
   let html = S.promptCache.get(key);
   if (!html) {
-    html = isTouch(sim) ? `Tap here to get in ${label}` : `Press <kbd>O</kbd> to get in ${label}`;
+    html = isTouch(sim) ? `Tap here to get in ${label}` : `Press <kbd>${o}</kbd> to get in ${label}`;
     S.promptCache.set(key, html);
   }
   return html;
+}
+
+/** The walking keys, as the player has them: "W A S D walk · Shift run · C view · E wave". */
+function walkLine(sim) {
+  const k = (a) => `<kbd>${keyName(a, sim)}</kbd>`;
+  return `${k('walkForward')}${k('walkLeft')}${k('walkBack')}${k('walkRight')} walk · ${k('run')} run · ${k('footView')} view · ${k('wave')} wave`;
 }
 
 function placeCamera(sim, dt) {
@@ -1097,7 +1138,7 @@ function idleFrame(sim, dt) {
   if (rulePrompt) {
     UI.setPrompt(rulePrompt, pressOFromPrompt);
   } else if (show) {
-    UI.setPrompt(isTouch(sim) ? 'Tap here to get out' : 'Press <kbd>O</kbd> to get out', pressOFromPrompt);
+    UI.setPrompt(isTouch(sim) ? 'Tap here to get out' : `Press <kbd>${keyName('getOut', sim)}</kbd> to get out`, pressOFromPrompt);
   } else if (S.hint && staffDrive) {
     UI.setPrompt(S.hint);
   } else {
@@ -1336,8 +1377,13 @@ registerExtension({
     return S.active;
   },
 
+  /** Walking, the keys are the walker's: the hints and the H card name the On foot ones. */
+  keyContext() {
+    return S.active ? 'foot' : null;
+  },
+
   key(sim, code, down, e) {
-    if (code === 'KeyO') {
+    if (isKey(sim, 'getOut', code)) {
       if (down) unsee(sim, code);
       if (down && !(e && e.repeat)) pressO(sim);
       return true;
@@ -1366,9 +1412,9 @@ registerExtension({
     S.keys[code] = down;
     if (down) unsee(sim, code);
     if (down && !(e && e.repeat)) {
-      if (code === 'KeyC') cycleView(sim);
-      else if (code === 'Space') S.jump = true;
-      else if (code === 'KeyE') S.helloT = 2.2;
+      if (isKey(sim, 'footView', code)) cycleView(sim);
+      else if (isKey(sim, 'jump', code)) S.jump = true;
+      else if (isKey(sim, 'wave', code)) S.helloT = 2.2;
     }
     // Take the press; let the release through so nothing the game saw go down
     // before you climbed out is left held.

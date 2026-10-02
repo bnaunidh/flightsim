@@ -10,7 +10,8 @@
  * off, and with enough power takes off, climbs, wanders round in a big lazy
  * circle back over where you left her, runs out of puff after a while and
  * comes down — landing or crashing, the flight model decides. On the ground
- * she can run you over: WASTED (wasted.js), and you get back up.
+ * she can run you over — knocked down, a ragdoll, WASTED (knockdown.js,
+ * which she is one of the movers of), and you get back up.
  *
  * FAIR:
  *   - Engine off, or the power at idle: she is parked, exactly as before.
@@ -35,13 +36,21 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension } from '../game/extensions.js';
+import { registerActions, isKey, kbd, keyName, live } from '../flight/input.js';
+
+/*
+ * "Start again" is the same key as eject.js's "fly again" — one action, in
+ * Settings → Controls → On foot. Declared here too so this works on its own
+ * (registering it twice keeps the first, which is the same thing).
+ */
+registerActions({
+  flyAgain: { label: 'Fly again (after ejecting, or a runaway)', group: 'On foot', ctx: ['foot'], default: ['Enter', 'NumpadEnter'] },
+});
 import { EVENTS } from '../aircraft/physics.js';
 import { performanceFor } from '../aircraft/types.js';
 import { onFoot } from './onfoot.js';
-import { local } from './staff/jobs.js';
-import { WALK } from './staff/walk.js';
 import { profileFor } from './eject/profiles.js';
-import { showWasted, wasted } from './wasted.js';
+import { knockdown, knockDown, addMoverSource, onKnock } from './knockdown.js';
 import { saveSettings } from '../core/storage.js';
 
 const KT = 1.94384;
@@ -52,7 +61,6 @@ export const RUNAWAY = {
   hopSpeed: 8, // m/s: with the power on you may hop out while she rolls
   armSeconds: 3, // the second O must come within this
   grace: 1.2, // seconds after you hop out before she can hit you
-  hitSpeed: 1.5, // m/s: slower than this she only nudges
   puffAfter: 45, // seconds of running before the engine runs out of puff
   airPuffAfter: 28, // seconds in the air before it does
   climbTo: 70, // metres over the ground she climbs to
@@ -75,9 +83,7 @@ const R = {
   /** Her heading when you got out: on the ground she holds it, down the runway. */
   exitHdg: 0,
   agl0: 0,
-  wasInside: false,
   grace: 0,
-  hitCool: 0,
   hits: 0,
   boundAc: null,
   control: null,
@@ -146,7 +152,7 @@ const RULE = {
       return {
         why: isTouch(sim)
           ? 'Power’s still on — she’ll go without you! Tap again to hop out anyway, or pull the power back first.'
-          : 'Power’s still on — she’ll go without you! Press <kbd>O</kbd> again to hop out anyway, or pull the power back first.',
+          : live(`Power’s still on — she’ll go without you! Press ${kbd('getOut', sim)} again to hop out anyway, or pull the power back first.`),
       };
     }
     R.armedT = 0;
@@ -157,7 +163,7 @@ const RULE = {
     if (!eligible(sim) || !powerOn(sim)) return '';
     return isTouch(sim)
       ? '<b>Power’s still on</b> — she’ll go without you! Tap to hop out'
-      : '<b>Power’s still on</b> — she’ll go without you! <kbd>O</kbd> to hop out';
+      : `<b>Power’s still on</b> — she’ll go without you! <kbd>${keyName('getOut', sim)}</kbd> to hop out`;
   },
 };
 
@@ -179,9 +185,7 @@ function start(sim) {
   R.exitAt.copy(ac.pos);
   R.exitHdg = ac.heading;
   R.agl0 = ac.agl;
-  R.wasInside = true; // standing beside her as you hop out is not being hit
   R.grace = RUNAWAY.grace;
-  R.hitCool = 0;
   R.maxDist = 0;
   const g = R.ghost;
   g.throttle = R.throttle;
@@ -200,7 +204,7 @@ function start(sim) {
   bindAircraft(sim);
   banner(sim, 'Runaway plane!', isTouch(sim)
     ? 'She’s going without you! Catch her and tap to hop back in — or keep out of her way.'
-    : 'She’s going without you! Catch her and press <kbd>O</kbd> to hop back in — or keep out of her way.', 'warn', 5);
+    : `She’s going without you! Catch her and press ${kbd('getOut', sim)} to hop back in — or keep out of her way.`, 'warn', 5);
 }
 
 /** Put everything back: you got back in, flew again, or went to the menu. */
@@ -266,7 +270,7 @@ function fly(sim, dt) {
       if (!R.said.stopped) {
         R.said.stopped = true;
         const d = Math.round(Math.hypot(ac.pos.x - onFoot.walker.x, ac.pos.z - onFoot.walker.z));
-        notify(sim, `Your plane stopped ${d} m away — she’s in the middle of the map. Walk over and press O.`, 'good', 5);
+        notify(sim, live(`Your plane stopped ${d} m away — she’s in the middle of the map. Walk over and press ${keyName('getOut', sim)}.`), 'good', 5);
       }
     }
     return;
@@ -300,42 +304,36 @@ function fly(sim, dt) {
 /* Getting run over                                                     */
 /* ------------------------------------------------------------------ */
 
-/** Is (x, z) inside her, where a walker would be hit? Low enough, too. */
-function inside(ac, prof, x, z, lift) {
-  const l = local(ac.pos.x, ac.pos.z, ac.heading, x, z, {});
-  const inBody = l.along < prof.nose + 0.3 && l.along > prof.tail - 0.2 && Math.abs(l.side) < prof.halfWidth + 0.35 && lift < 1.6;
-  const inWing = prof.wingH + lift < WALK.height + 0.2
-    && l.along < prof.wingFront + 0.2 && l.along > prof.wingBack - 0.2 && Math.abs(l.side) < (prof.wingSpan || prof.halfSpan) + 0.2;
-  return inBody || inWing;
-}
-
-function hitCheck(sim, dt) {
-  R.grace -= dt;
-  R.hitCool -= dt;
+/*
+ * She is one of the things that can knock you down (knockdown.js): listed
+ * as a mover while she is loose, with the box the walker's own solids give
+ * her and how high off the ground she is. A moment's grace as you hop out —
+ * standing beside her door is not being run over.
+ */
+const ME = { x: 0, y: 0, z: 0, heading: 0, vx: 0, vy: 0, vz: 0, lift: 0, prof: null, hl: 0, hw: 0, height: 0, kind: 'plane', label: '', words: 'Run over by your own plane.', by: -1 };
+function moverSource(sim, add) {
+  if (!R.active || R.grace > 0) return;
   const ac = sim.aircraft;
   const from = onFoot.from;
-  if (!onFoot.active || !from || !from.prof || ac.crashed) {
-    R.wasInside = false;
-    return;
-  }
-  const w = onFoot.walker;
-  const lift = Math.max(0, ac.agl - R.agl0);
-  const inn = inside(ac, from.prof, w.x, w.z, lift) && !w.air;
-  const speed = Math.hypot(ac.vel.x, ac.vel.z);
-  if (inn && !R.wasInside && R.grace <= 0 && R.hitCool <= 0 && speed > RUNAWAY.hitSpeed && !wasted.active) {
-    R.hits++;
-    R.hitCool = 6;
-    R.lastWasted = { t: R.t, speedKt: Math.round(speed * KT) };
-    const prof = from.prof;
-    showWasted(sim, 'plane', {
-      own: true,
-      push: { x: ac.vel.x, z: ac.vel.z },
-      words: 'Run over by your own plane. Up you get!',
-      avoid: (x, z) => inside(ac, prof, x, z, 0),
-    });
-  }
-  R.wasInside = inn;
+  if (!ac || ac.crashed || !from || !from.prof || !from.runaway) return;
+  ME.x = ac.pos.x;
+  ME.y = ac.pos.y;
+  ME.z = ac.pos.z;
+  ME.heading = ac.heading;
+  ME.vx = ac.vel.x;
+  ME.vy = ac.vel.y;
+  ME.vz = ac.vel.z;
+  ME.lift = Math.max(0, ac.agl - R.agl0);
+  ME.prof = from.prof;
+  add(ME);
 }
+addMoverSource(moverSource);
+
+onKnock((k) => {
+  if (!R.active || (k.cause !== 'plane' && k.cause !== 'crash')) return;
+  R.hits++;
+  R.lastWasted = { t: R.t, speedKt: k.speedKt, crash: k.cause === 'crash' };
+});
 
 /* ------------------------------------------------------------------ */
 /* Her crash                                                            */
@@ -351,14 +349,17 @@ function bindAircraft(sim) {
       R.phase = 'crashed';
       banner(sim, 'Your runaway plane crashed!', isTouch(sim)
         ? 'Nobody was in it. She’s in the middle of the map — or tap Fly again.'
-        : 'Nobody was in it. She’s in the middle of the map — or press <kbd>Enter</kbd> to fly again.', 'good', 5);
+        : `Nobody was in it. She’s in the middle of the map — or press ${kbd('flyAgain', sim)} to fly again.`, 'good', 5);
       const w = onFoot.walker;
-      if (onFoot.active && Math.hypot(ac.pos.x - w.x, ac.pos.z - w.z) < RUNAWAY.crashKnock && !wasted.active) {
-        R.lastWasted = { t: R.t, crash: true };
-        showWasted(sim, 'crash', {
-          own: true,
-          push: { x: w.x - ac.pos.x, z: w.z - ac.pos.z },
-          words: 'Your plane crashed right on top of you. Up you get!',
+      const d = Math.hypot(ac.pos.x - w.x, ac.pos.z - w.z);
+      if (onFoot.active && d < RUNAWAY.crashKnock && !knockdown.down) {
+        // Thrown away from it, harder the nearer.
+        const k = (6 * (1 - d / RUNAWAY.crashKnock) + 2) / Math.max(0.5, d);
+        knockDown(sim, {
+          cause: 'crash',
+          vel: { x: (w.x - ac.pos.x) * k, y: 1, z: (w.z - ac.pos.z) * k },
+          hitY: 1,
+          words: 'Your plane crashed right beside you.',
         });
       }
     } catch (e) {
@@ -394,12 +395,12 @@ function walkControl(sim) {
     get prompt() {
       const touch = isTouch(sim);
       if (R.phase === 'crashed') {
-        return touch ? 'Your plane crashed without you! Tap here to fly again' : 'Your plane crashed without you! <kbd>Enter</kbd> fly again';
+        return touch ? 'Your plane crashed without you! Tap here to fly again' : `Your plane crashed without you! <kbd>${keyName('flyAgain', sim)}</kbd> fly again`;
       }
       if (R.phase === 'stopped') {
-        return touch ? 'She stopped! Walk to her (middle of the map) · tap here to start again' : 'She stopped! Walk to her (middle of the map) · <kbd>Enter</kbd> start again';
+        return touch ? 'She stopped! Walk to her (middle of the map) · tap here to start again' : `She stopped! Walk to her (middle of the map) · <kbd>${keyName('flyAgain', sim)}</kbd> start again`;
       }
-      return touch ? 'Runaway! Chase her — or tap here to start again' : 'Runaway! Chase her and press <kbd>O</kbd> · <kbd>Enter</kbd> start again';
+      return touch ? 'Runaway! Chase her — or tap here to start again' : `Runaway! Chase her and press <kbd>${keyName('getOut', sim)}</kbd> · <kbd>${keyName('flyAgain', sim)}</kbd> start again`;
     },
     promptAction: again,
     buttons: WALK_BUTTONS,
@@ -407,7 +408,7 @@ function walkControl(sim) {
       if (id === 'again') again();
     },
     key: (s, code, down) => {
-      if (code !== 'Enter' && code !== 'NumpadEnter') return false;
+      if (!isKey(s, 'flyAgain', code)) return false;
       if (down) again();
       return true;
     },
@@ -443,7 +444,8 @@ export function paintPauseSwitch(sim) {
     fold.innerHTML = '<summary>🛫 Getting out</summary>'
       + '<div class="pause-actions"><button data-runaway-toggle></button></div>'
       + '<p class="hint tiny">On: get out of a small plane with the power on and she takes off without you — '
-      + 'stand in her way and you get WASTED. Off: she stays parked, like before.</p>';
+      + 'stand in her way and you get WASTED. Off: she stays parked, like before, and being knocked over '
+      + 'on foot shows no WASTED screen.</p>';
     const view = pause.querySelector('[data-freelook]');
     const after = view && view.closest('.pause-fold');
     if (after && after.parentNode) after.parentNode.insertBefore(fold, after.nextSibling);
@@ -514,11 +516,11 @@ registerExtension({
       return;
     }
     R.t += dt;
+    R.grace -= dt;
     fly(sim, dt);
-    hitCheck(sim, dt);
     updatePins(sim);
     // Our prompt and the fly-again key, unless somebody else has the walker.
-    if (!wasted.active && onFoot.control !== R.control && (!onFoot.control || onFoot.control.runaway)) onFoot.setControl(R.control);
+    if (!knockdown.down && onFoot.control !== R.control && (!onFoot.control || onFoot.control.runaway)) onFoot.setControl(R.control);
   },
 
   devActions: [

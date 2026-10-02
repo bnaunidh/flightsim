@@ -10,13 +10,15 @@ import { NATURAL_EVENTS, SELECTABLE_EVENTS } from '../game/disasters.js';
 import { EF_SCALE } from '../world/tornado.js';
 import { AP_MODES } from '../flight/autopilot.js';
 import { PRESETS, TIMES, CONDITIONS } from '../world/weather.js';
-import { ACTIONS, keyLabel } from '../flight/input.js';
+import { ACTIONS, keyLabel, groupedActions } from '../flight/input.js';
 import { CREDITS_HTML } from './credits.js';
 import { MAPS } from '../world/maps.js';
 import { extDevActions, extCode } from '../game/extensions.js';
 import { loadFreePresets, saveFreePresets, MAX_FREE_PRESETS } from '../core/storage.js';
 import * as Prog from '../game/progression.js';
 import { LIVERIES, schemeFor } from '../aircraft/liveries.js';
+// The hangar's showroom: tabs, arrows, the card, the podium (hangar-showcase-ui.js).
+import { installHangarShowcase } from './hangar-showcase-ui.js';
 
 function h(html) {
   const t = document.createElement('template');
@@ -263,6 +265,13 @@ export function missionCategory(m) {
   return 'challenge';
 }
 
+/*
+ * The credits a mission pays depend on the heading it is under, and this is
+ * the function that decides the heading — so progression.js is handed it,
+ * once, rather than keeping a second opinion of its own.
+ */
+Prog.setCategoryResolver(missionCategory);
+
 /** The heading for a category id; one nobody listed gets a plain heading of its own. */
 export function categoryDef(kind, id) {
   const list = kind === 'aircraft' || kind === 'fleet' ? AIRCRAFT_CATEGORIES : MISSION_CATEGORIES;
@@ -344,6 +353,15 @@ export function categoryItemData(kind, obj) {
     ? fold(`${obj.name} ${obj.id} ${obj.class || ''} ${obj.blurb || ''} ${label}`)
     : fold(`${obj.name} ${obj.short || ''} ${obj.blurb || ''} ${label}`);
   return { cat, find };
+}
+
+/**
+ * The small "Up to 380 credits" line on a mission card: the most it can pay
+ * (progression.js, maxPayout). Exported for cards built outside this file.
+ */
+export function payLineHtml(m, settings = 'normal') {
+  const max = Prog.maxPayout(m, { settings: settings || 'normal' });
+  return `<span class="mission-pay" data-pay-line="${attr(m.id)}" title="The most this pays. Fly it well to get all of it">${icon('credit', 13)}<span data-pay-words>${Prog.payLine(max)}</span></span>`;
 }
 
 /** One heading and the grid under it. `inner` is the cards, already HTML. */
@@ -942,6 +960,7 @@ export class Menus {
             <h3>${m.name}</h3>
             <span class="mission-diff diff-${slug(m.difficulty || 'medium')}">${m.difficulty || 'Medium'}</span>
             <span class="mission-sub">${m.short || ''}</span>
+            ${payLineHtml(m, this.settingsRef && this.settingsRef.difficulty)}
           </div>
         </div>
         <p>${m.blurb || ''}</p>
@@ -988,6 +1007,23 @@ export class Menus {
     };
     this.bindCategoryBar(s, 'missions');
     this.syncMissionLocks();
+    /*
+     * "Up to 380 credits" on every card, for the settings difficulty as it is
+     * NOW — Easy pays less and Realistic more, and that can change between
+     * one visit to the board and the next. Cards added later (game-ui.js's
+     * registerMissions) are found the same way.
+     */
+    this.syncPayLines = () => {
+      const settings = (this.settingsRef && this.settingsRef.difficulty) || 'normal';
+      for (const node of s.querySelectorAll('[data-pay-line]')) {
+        const id = node.dataset.payLine;
+        const def = MISSIONS.find((x) => x.id === id) || (this._extraMissions || {})[id];
+        if (!def) continue;
+        const text = Prog.payLine(Prog.maxPayout(def, { settings }));
+        const words = node.querySelector('[data-pay-words]');
+        if (words && words.textContent !== text) words.textContent = text;
+      }
+    };
 
     s.addEventListener('click', (e) => {
       if (e.target.closest('[data-back]')) return this.show('main');
@@ -1139,6 +1175,11 @@ export class Menus {
         </div>
 
         <div class="free-panel" data-fpanel="aircraft">
+          <button class="hs-door" data-open-hangar>
+            <span class="hs-door-icon">${icon('hangar', 26)}</span>
+            <span><strong>See them in the Hangar</strong><em>Every aircraft on a spinning podium — pick one there, or unlock it</em></span>
+            ${icon('chevronRight', 20)}
+          </button>
           ${catBarHtml('fleet', 'aeroplanes')}
           <div class="cat-list" data-cat-list="fleet">${fleet}</div>
         </div>
@@ -1314,6 +1355,12 @@ export class Menus {
         `${CONDITIONS[cond.value].label.toLowerCase()}, ${wind.value} kt` +
         (fuelPct < 100 ? ` · <span class="sum-warn">${mins} min of fuel</span>` : '') +
         (armed ? ` · <span class="sum-warn">${armed} failure${armed > 1 ? 's' : ''} armed</span>` : '');
+    };
+    /** Pick an aeroplane from outside this screen (the hangar's podium). */
+    this.pickFreeAircraft = (id) => {
+      this.chosenAircraft = id;
+      s.querySelectorAll('[data-aircraft]').forEach((n) => n.classList.toggle('is-on', n.dataset.aircraft === id));
+      refresh();
     };
     wind.addEventListener('input', refresh);
     dir.addEventListener('input', refresh);
@@ -1516,6 +1563,7 @@ export class Menus {
 
     s.addEventListener('click', (e) => {
       if (e.target.closest('[data-back]')) return this.show('main');
+      if (e.target.closest('[data-open-hangar]')) return this.show('hangar');
 
       const tab = e.target.closest('[data-ftab]');
       if (tab) {
@@ -1757,9 +1805,10 @@ export class Menus {
         </div>
 
         <div class="tab-body" data-panel="controls" hidden>
-          <p class="hint">Click a key, then press the new key you want to use.</p>
+          <p class="hint">Click a key, then press the new key you want to use. <kbd>Esc</kbd> cancels.</p>
+          <div class="keymap-ask" data-keymap-ask hidden></div>
           <div class="keymap" data-keymap></div>
-          <button class="ghost" data-reset-keys>Reset keys to default</button>
+          <button class="ghost" data-reset-keys>Reset all keys</button>
         </div>
 
         <div class="tab-body" data-panel="access" hidden>
@@ -1780,7 +1829,9 @@ export class Menus {
         return;
       }
       if (e.target.closest('[data-reset-keys]')) {
+        if (this.hooks.cancelListen) this.hooks.cancelListen();
         this.hooks.resetKeys();
+        this.askKey('Every key is back to how it started.', null, 'good');
         this.renderKeymap();
         return;
       }
@@ -1910,8 +1961,9 @@ export class Menus {
       const pick = e.target.closest('[data-pick]');
       if (pick) {
         this.show('hangar');
-        this.hooks.onLocked &&
-          this.hooks.onLocked('The Skyhook is in the hangar — unlock it, then pick it in Free Flight.');
+        // Straight onto the podium, where "Fly this" is.
+        if (this.showcaseUi) this.showcaseUi.select(pick.dataset.pick, 0);
+        else if (this.hooks.onLocked) this.hooks.onLocked('The Skyhook is in the hangar — unlock it, then pick it in Free Flight.');
       }
     });
 
@@ -1922,13 +1974,16 @@ export class Menus {
 
   buildHangar() {
     const s = h(`
-      <section class="screen screen-list" data-screen="hangar" hidden>
+      <section class="screen screen-list screen-hangar" data-screen="hangar" hidden>
         <header class="screen-head">
           <button class="ghost" data-back>← Back</button>
-          <h2>Hangar &amp; Rank</h2>
-          <span></span>
+          <h2>Hangar</h2>
+          <button class="ghost" data-hs-codes>Got a code?</button>
         </header>
+        <!-- The podium, the tabs and the card: hangar-showcase-ui.js. -->
+        <div class="hs-host" data-showcase-host></div>
 
+        <div class="hangar-rest" data-hangar-rest>
         <div class="rank-card">
           <div class="rank-badge" data-rank-name>Cadet</div>
           <div class="rank-meat">
@@ -1990,6 +2045,7 @@ export class Menus {
         <p class="trigger-note">Other things built by the same person. The ones marked
         <em>not yet</em> do not exist — a link to nothing is worse than an honest gap.</p>
         <div class="games-grid" data-games></div>
+        </div>
       </section>
     `);
 
@@ -2078,7 +2134,7 @@ export class Menus {
           // Unpriced is not free: a 0-credit aeroplane was lit "can buy" and
           // then refused with "Not for sale" when pressed.
           const afford = !!cost && p.credits >= cost;
-          return `<button class="unlock${owned ? ' is-owned' : afford ? ' can-buy' : ' is-locked'}" data-buy="${a.id}" data-cat-item data-cat="${g.def.id}" ${owned ? 'disabled' : ''}>
+          return `<button class="unlock${owned ? ' is-owned' : afford ? ' can-buy' : ' is-locked'}" data-buy="${a.id}" data-cat-item data-cat="${g.def.id}">
           <strong>${a.name}</strong>
           <em>${owned ? 'Yours' : cost ? `${cost.toLocaleString()} credits` : 'Not in the shop yet'}</em>
         </button>`;
@@ -2101,6 +2157,7 @@ export class Menus {
       render();
       this.syncMore && this.syncMore();
       this.syncBar && this.syncBar();
+      this.showcaseUi && this.showcaseUi.sync();
     };
 
     s.addEventListener('change', (e) => {
@@ -2115,8 +2172,24 @@ export class Menus {
     });
 
     s.addEventListener('click', (e) => {
-      if (e.target.closest('[data-back]')) return this.show('main');
+      // Back to wherever the hangar was opened from: the front page, More,
+      // Free Flight's picker or the pause card.
+      if (e.target.closest('[data-back]')) return this.show(this.showcaseUi ? this.showcaseUi.backTo() : 'main');
+      if (e.target.closest('[data-hs-codes]')) {
+        const box = s.querySelector('[data-code]');
+        if (box) {
+          box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          setTimeout(() => box.focus({ preventScroll: true }), 350);
+        }
+        return;
+      }
       const buy = e.target.closest('[data-buy]');
+      // In the full list, a press puts it on the podium, where it can be
+      // looked at before it is bought — and bought there, with its price.
+      if (buy && this.showcaseUi && buy.closest('[data-unlocks]')) {
+        this.showcaseUi.view(buy.dataset.buy);
+        return;
+      }
       if (buy) {
         const p = this.prog || Prog.load();
         const r = Prog.buy(p, buy.dataset.buy);
@@ -2197,6 +2270,7 @@ export class Menus {
 
     render();
     this.screens.hangar = s;
+    installHangarShowcase(this, s, { catIcon, catStyle, aircraftCategory, groupByCategory, aircraftThumbnail });
     return s;
   }
 
@@ -2472,44 +2546,155 @@ export class Menus {
 
   /* ------------------------------------------------------------------ */
 
+  /*
+   * The key map: every action in every game, one group per game (the one you
+   * are playing first, and open), each with its own Reset. Click a key cap,
+   * press the new key — Esc cancels. A key that already does something else
+   * in the same game asks "swap them?" instead of quietly stealing it; a
+   * clash that is there anyway (from an old save) is marked on both rows.
+   */
   renderKeymap() {
-    const host = this.screens.settings.querySelector('[data-keymap]');
-    const bindings = this.hooks.getBindings();
-    const groups = {};
-    for (const key in ACTIONS) {
-      const a = ACTIONS[key];
-      groups[a.group] = groups[a.group] || [];
-      groups[a.group].push({ key, ...a });
+    const host = this.screens.settings && this.screens.settings.querySelector('[data-keymap]');
+    if (!host) return;
+    const h = this.hooks;
+    const bindings = h.getBindings();
+    const clashes = h.keyConflicts ? h.keyConflicts() : {};
+    const first = h.keyGroup ? h.keyGroup() : null;
+    const groups = groupedActions();
+    if (first) groups.sort((a, b) => (a.id === first ? -1 : b.id === first ? 1 : 0));
+    if (!this._keymapOpen || this._keymapFirst !== first) {
+      this._keymapOpen = new Set(first ? [first] : [groups[0] && groups[0].id]);
+      this._keymapFirst = first;
     }
-    host.innerHTML = Object.entries(groups)
-      .map(
-        ([g, items]) => `
-        <div class="keymap-group"><h4>${g}</h4>
-          ${items
-            .map(
-              (i) => `<div class="keymap-row"><span>${i.label}</span>
-                <button class="keycap" data-bind="${i.key}">${(bindings[i.key] || [])
-                  .map(keyLabel)
-                  .join(' / ') || '—'}</button></div>`
-            )
-            .join('')}
-        </div>`
-      )
+    const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const caps = (id) => (bindings[id] || []).map(keyLabel).join(' / ') || '—';
+    host.innerHTML = groups
+      .map((g) => {
+        const n = g.items.filter((i) => clashes[i.key]).length;
+        const rows = g.items
+          .map((i) => {
+            const c = clashes[i.key];
+            const also = c
+              ? `<em class="keymap-also">${c.map((x) => `${esc(keyLabel(x.code))} also does: ${x.with.map((w) => esc(w.label)).join(', ')}`).join(' · ')}</em>`
+              : '';
+            return `<div class="keymap-row${c ? ' is-clash' : ''}"><span>${esc(i.label)}${also}</span>
+                <button class="keycap" data-bind="${i.key}" title="Click, then press the new key">${esc(caps(i.key))}</button></div>`;
+          })
+          .join('');
+        return `<details class="keymap-group" data-keygroup="${esc(g.id)}"${this._keymapOpen.has(g.id) ? ' open' : ''}>
+          <summary><span class="keymap-gname">${esc(g.id)}</span>${g.id === first ? '<small class="keymap-now">playing now</small>' : ''}${
+            n ? `<b class="keymap-warn">${n} clash${n === 1 ? '' : 'es'}</b>` : ''}</summary>
+          <div class="keymap-rows">${rows}</div>
+          <button class="ghost keymap-reset" data-reset-group="${esc(g.id)}">Reset ${esc(g.id)} keys</button>
+        </details>`;
+      })
       .join('');
 
-    host.querySelectorAll('[data-bind]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        btn.textContent = 'press a key…';
-        btn.classList.add('is-listening');
-        this.hooks.captureKey(btn.dataset.bind, () => {
-          btn.classList.remove('is-listening');
-          this.renderKeymap();
-        });
+    host.querySelectorAll('details[data-keygroup]').forEach((d) => {
+      d.addEventListener('toggle', () => {
+        if (d.open) this._keymapOpen.add(d.dataset.keygroup);
+        else this._keymapOpen.delete(d.dataset.keygroup);
       });
+    });
+    host.querySelectorAll('[data-reset-group]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (h.cancelListen) h.cancelListen();
+        this.askKey(null);
+        h.resetKeys(btn.dataset.resetGroup);
+        this.renderKeymap();
+      });
+    });
+    host.querySelectorAll('[data-bind]').forEach((btn) => {
+      btn.addEventListener('click', () => this.listenForKey(btn));
+    });
+  }
+
+  /** "Press a key…" on one key cap; what happens with the key it gets. */
+  listenForKey(btn) {
+    const h = this.hooks;
+    const action = btn.dataset.bind;
+    this.askKey(null);
+    const host = this.screens.settings.querySelector('[data-keymap]');
+    host.querySelectorAll('.keycap.is-listening').forEach((b) => {
+      b.classList.remove('is-listening');
+      b.textContent = (h.getBindings()[b.dataset.bind] || []).map(keyLabel).join(' / ') || '—';
+    });
+    btn.textContent = 'press a key…';
+    btn.classList.add('is-listening');
+    // Short names for the question: "Self-destruct", not its whole how-to in brackets.
+    const short = (t) => String(t).replace(/\s*\([^)]*\)/g, '').trim();
+    const label = short((ACTIONS[action] && ACTIONS[action].label) || action);
+    const done = (code) => {
+      if (!code) {
+        // Esc: nothing changes.
+        this.renderKeymap();
+        return;
+      }
+      const now = h.getBindings()[action] || [];
+      if (now.length === 1 && now[0] === code) {
+        this.renderKeymap();
+        return;
+      }
+      const clash = h.keyClashes ? h.keyClashes(action, code) : [];
+      if (!clash.length) {
+        h.bindKey(action, code);
+        this.renderKeymap();
+        this.askKey(`<b>${keyLabel(code)}</b> is now <b>${label}</b>.`, null, 'good');
+        return;
+      }
+      // Kid-simple: one question, two buttons.
+      const what = clash.map((c) => `<b>${short(c.label)}</b>${c.group !== ACTIONS[action].group ? ` (${c.group})` : ''}`).join(' and ');
+      // What the other one(s) would get — worked out first, nothing changed yet.
+      const plan = h.bindKey(action, code, { swap: true, dryRun: true }) || [];
+      const gets = (p) => (p.gets ? `<b>${short(p.label)}</b> will get <b>${keyLabel(p.gets)}</b>` : `<b>${short(p.label)}</b> will have no key — click it after to give it one`);
+      this.renderKeymap();
+      const listening = host.querySelector(`[data-bind="${action}"]`);
+      if (listening) {
+        listening.textContent = keyLabel(code);
+        listening.classList.add('is-listening');
+      }
+      this.askKey(
+        `This key already does ${what} — swap them? <span class="keymap-swapnote">(<b>${keyLabel(code)}</b> will be <b>${label}</b>; ${plan.map(gets).join('; ')})</span>`,
+        [
+          {
+            label: 'Swap them',
+            primary: true,
+            run: () => {
+              const did = h.bindKey(action, code, { swap: true }) || [];
+              this.renderKeymap();
+              const lost = did.filter((p) => !p.gets);
+              this.askKey(`Swapped: <b>${label}</b> is on <b>${keyLabel(code)}</b> now${did.filter((p) => p.gets).map((p) => `, <b>${short(p.label)}</b> on <b>${keyLabel(p.gets)}</b>`).join('')}.${
+                lost.length ? ` ${lost.map((p) => `<b>${short(p.label)}</b>`).join(' and ')} ha${lost.length === 1 ? 's' : 've'} no key now — click ${lost.length === 1 ? 'it' : 'them'} to pick one.` : ''}`, null, lost.length ? 'warn' : 'good');
+            },
+          },
+          { label: 'Cancel', run: () => { this.askKey(null); this.renderKeymap(); } },
+        ],
+        'warn'
+      );
+    };
+    h.listenKey(done);
+  }
+
+  /** The question (or the "done") line above the key map. null hides it. */
+  askKey(html, buttons = null, tone = 'info') {
+    const el = this.screens.settings && this.screens.settings.querySelector('[data-keymap-ask]');
+    if (!el) return;
+    if (!html) {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    el.hidden = false;
+    el.className = `keymap-ask is-${tone}`;
+    el.innerHTML = `<span>${html}</span>${(buttons || []).map((b, i) => `<button class="${b.primary ? 'primary' : 'ghost'}" data-ask="${i}">${b.label}</button>`).join('')}`;
+    el.querySelectorAll('[data-ask]').forEach((b) => {
+      b.addEventListener('click', () => buttons[Number(b.dataset.ask)].run());
     });
   }
 
   syncSettings(settings) {
+    // The settings difficulty changes what every mission pays.
+    this.syncPayLines && this.syncPayLines();
     const s = this.screens.settings;
     const get = (path) => path.split('.').reduce((o, k) => (o ? o[k] : undefined), settings);
     s.querySelectorAll('[data-set]').forEach((node) => {
@@ -2772,17 +2957,27 @@ export class Menus {
   }
 
   show(name) {
+    const prev = this.current;
     this.layer.hidden = false;
     for (const key in this.screens) this.screens[key].hidden = key !== name;
     this.current = name;
+    // The hangar's podium starts and stops with its screen.
+    if (this.showcaseUi) this.showcaseUi.onScreen(name, prev);
     // Credits and the lit game can both have changed since this screen was
     // last open — a flight paid out, a code was redeemed, the boat went back.
     this.syncBar && this.syncBar();
-    if (name === 'settings') this.renderKeymap();
+    if (name === 'settings') {
+      this.askKey(null);
+      this.renderKeymap();
+    } else if (this.hooks.cancelListen) {
+      // Left Settings with a key cap still waiting: the next key is the game's again.
+      this.hooks.cancelListen();
+    }
     // Repaint the hub and the mission gate on open, so they are right whatever
     // changed them — a code, a flight, a passcode entered somewhere else.
     if (name === 'more') this.syncMore && this.syncMore();
     if (name === 'missions') this.syncMissionLocks && this.syncMissionLocks();
+    if (name === 'missions') this.syncPayLines && this.syncPayLines();
     // The Missions card counts what you can fly, which a passcode changes.
     if (name === 'main') this.refreshMissionsLine && this.refreshMissionsLine();
     // Whoever opened it may want to repaint it for the island we are on.
@@ -2820,8 +3015,10 @@ export class Menus {
   }
 
   hide() {
+    const prev = this.current;
     this.layer.hidden = true;
     this.current = null;
+    if (this.showcaseUi) this.showcaseUi.onScreen(null, prev);
     for (const key in this.screens) this.screens[key].hidden = true;
     // Hand the keyboard back to the aeroplane. A slider or dropdown that keeps
     // focus after the menu closes swallows key presses meant for flying.
@@ -2831,5 +3028,13 @@ export class Menus {
 
   get isOpen() {
     return !this.layer.hidden;
+  }
+
+  /**
+   * main.js loop(): draw the hangar's podium instead of the world, while the
+   * hangar is open. True means "drawn — do not draw the island as well".
+   */
+  drawView(renderer, dt) {
+    return !!(this.showcaseUi && this.showcaseUi.draw(renderer, dt));
   }
 }

@@ -106,9 +106,78 @@ const WHITE = 0xf1f4f7;
 const VISOR = 0x18202c;
 const BOOT = 0x1b1d22;
 
+/** Harrison's arm, shoulder to fingertip (person units, x 1.9 when he flies). */
+export const FLIGHT_ARM = { upper: 0.28, fore: 0.26, hand: 0.15 };
+
+/*
+ * Harrison in the air (opts.flight). His arms are the wing, so they are real
+ * arms again: the rig's own shoulder and elbow, rebuilt as a short green
+ * T-shirt sleeve over a bare arm, plus a WRIST joint with a flat open hand
+ * (fingers together, palm down when he flies) so a wing-beat can follow
+ * through shoulder, elbow and wrist. The feet point back along the legs, toes
+ * first and soles to the sky, the way anyone flying head-first holds them.
+ *
+ * Each rebuilt piece REPLACES the mesh on its joint (the plain person's
+ * forearm carries a round fist, and its upper arm is bare or sleeved at
+ * random), so there are two more draw calls than on foot: the hands.
+ */
+function flightLimbs(rig, U, skin) {
+  const P = prims();
+  const A = FLIGHT_ARM;
+  const swap = (group, parts) => {
+    const m = meshOn(group);
+    if (!m) return null;
+    m.geometry.dispose();
+    m.geometry = mergeParts(parts);
+    return m;
+  };
+  for (const a of rig.arms) {
+    const s = a.side;
+    swap(a.arm, [
+      part(P.limb, U.shirt, 0, 0.012, 0, 0, 0, 0, 0.066, 0.135, 0.066), // the sleeve
+      part(P.limb, skin, 0, 0, 0, 0, 0, 0, 0.051, A.upper, 0.051),
+      part(P.ball, skin, 0, -A.upper, 0, 0, 0, 0, 0.047, 0.047, 0.047), // the elbow, so a bent one has no gap
+    ]);
+    const fore = swap(a.elbow, [part(P.limb, skin, 0, 0, 0, 0, 0, 0, 0.045, A.fore, 0.045)]);
+    const wrist = new THREE.Group();
+    wrist.name = 'wrist';
+    wrist.position.y = -A.fore;
+    a.elbow.add(wrist);
+    // Flat in the wing's plane: wide along the body (local x), thin through it (local z).
+    const hand = new THREE.Mesh(mergeParts([
+      part(P.ball, skin, 0, -0.01, 0, 0, 0, 0, 0.042, 0.042, 0.03), // the wrist
+      part(P.ball, skin, 0, -0.055, 0, 0, 0, 0, 0.052, 0.06, 0.026), // the palm
+      part(P.box, skin, 0, -0.112, 0, 0, 0, 0, 0.085, 0.075, 0.02), // four fingers, together
+      part(P.ball, skin, s * 0.05, -0.05, -0.008, 0, 0, s * 0.5, 0.016, 0.045, 0.016), // the thumb, towards his head
+    ]), fore ? fore.material : undefined);
+    hand.name = 'hand';
+    hand.castShadow = true;
+    wrist.add(hand);
+    a.wrist = wrist;
+    a.arm.visible = true;
+  }
+  // No marshalling wands in a flyer's hands.
+  for (const w of rig.wands || []) {
+    if (w.parent) w.parent.remove(w);
+  }
+  if (rig.wands) rig.wands.length = 0;
+  for (const L of rig.legs) {
+    swap(L.knee, [
+      part(P.limb, U.trousers, 0, 0, 0, 0, 0, 0, 0.066, 0.37, 0.066),
+      // Red trainers, pointed: heel at the ankle, toes on down the line of the
+      // leg, laces to the front, the white sole on the back.
+      part(P.box, 0xe0302b, 0, -0.475, -0.004, 0, 0, 0, 0.115, 0.26, 0.088),
+      part(P.box, WHITE, 0, -0.478, 0.044, 0, 0, 0, 0.12, 0.262, 0.022),
+    ]);
+  }
+}
+
 /**
  * A person dressed for `id`, or null if `id` is not a uniform (the caller
  * then builds the plain person it always did).
+ *
+ * opts.flight (Harrison only): the flying T-Pose Harrison — jointed arms with
+ * wrists and pointed feet (see flightLimbs). On foot he keeps his stiff T.
  */
 export function createUniformPerson(id, opts = {}) {
   const U = UNIFORMS[id];
@@ -246,19 +315,24 @@ export function createUniformPerson(id, opts = {}) {
     }
     head.push(part(P.cone, U.hair, 0, 0.2, 0.02, 0, 0, 0, 0.055, 0.13, 0.055));
     shades(0x0b0b0b);
-    // Red trainers with white soles.
-    for (let i = 0; i < 2; i++) {
-      shin[i].push(part(P.box, 0xe0302b, 0, -0.372, -0.05, 0, 0, 0, 0.12, 0.08, 0.27));
-      shin[i].push(part(P.box, WHITE, 0, -0.412, -0.05, 0, 0, 0, 0.125, 0.025, 0.275));
-    }
-    // The T-pose: straight arms merged into the chest, the rig's own hidden.
-    for (const a of rig.arms) {
-      const s = a.side;
-      const sx = s * 0.235;
-      chest.push(part(P.limb, U.shirt, sx, 0.42, 0, 0, 0, s * Math.PI / 2, 0.064, 0.15, 0.064)); // sleeve
-      chest.push(part(P.limb, skin, sx + s * 0.13, 0.42, 0, 0, 0, s * Math.PI / 2, 0.05, 0.43, 0.05));
-      chest.push(part(P.ball, skin, sx + s * 0.58, 0.42, 0, 0, 0, 0, 0.055, 0.05, 0.06));
-      a.arm.visible = false;
+    if (opts.flight) {
+      // Flying: arms that move (they are his wings) and feet pointed back.
+      flightLimbs(rig, U, skin);
+    } else {
+      // Red trainers with white soles.
+      for (let i = 0; i < 2; i++) {
+        shin[i].push(part(P.box, 0xe0302b, 0, -0.372, -0.05, 0, 0, 0, 0.12, 0.08, 0.27));
+        shin[i].push(part(P.box, WHITE, 0, -0.412, -0.05, 0, 0, 0, 0.125, 0.025, 0.275));
+      }
+      // The T-pose: straight arms merged into the chest, the rig's own hidden.
+      for (const a of rig.arms) {
+        const s = a.side;
+        const sx = s * 0.235;
+        chest.push(part(P.limb, U.shirt, sx, 0.42, 0, 0, 0, s * Math.PI / 2, 0.064, 0.15, 0.064)); // sleeve
+        chest.push(part(P.limb, skin, sx + s * 0.13, 0.42, 0, 0, 0, s * Math.PI / 2, 0.05, 0.43, 0.05));
+        chest.push(part(P.ball, skin, sx + s * 0.58, 0.42, 0, 0, 0, 0, 0.055, 0.05, 0.06));
+        a.arm.visible = false;
+      }
     }
     person.userData.tpose = true;
   }

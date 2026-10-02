@@ -8,18 +8,28 @@
  *   escape      'seat'  a rocket ejection seat (the fast jets): out in one go,
  *                       at any height, parachute opens by itself
  *               'bail'  a light aeroplane: open the door and jump; needs a
- *                       little height for the parachute to open
- *               'jump'  T-Pose Harrison: he simply steps off his rocket board
- *               'none'  no way out in the air (airliners, the helicopter) —
- *                       and `noneWhy` says so kindly
+ *                       little height for the parachute to open (`bailFrom`
+ *                       metres). The helicopter too, from its side door, in
+ *                       Free Flight only (`freeOnly`, see profileIn)
+ *               'jump'  T-Pose Harrison: there is no seat and no door — he IS the
+ *                       aeroplane — so he opens his own parachute where he is
+ *               'none'  no way out in the air (airliners; the helicopter in a
+ *                       mission) — and `noneWhy` says so kindly
  *   crew        how many OTHER people ride along with ejection seats of their
  *               own. They go first: "Crew out first — press again".
- *   selfDestruct  the special planes' guarded button
- *   dragChute   pops on the landing roll when you brake (fast jets)
+ *   selfDestruct  the special planes' guarded button (never on a person)
+ *   dragChute   a landing drag chute that comes out only when YOU pull it
+ *               (the Drag chute key, or CHUTE on a touch screen) — and only
+ *               the goofy planes carry one: Air Massimo and T-Pose Harrison.
+ *               The real military jets stop on their wheel brakes.
  *   uniform     what the pilot wears on foot (see ../uniforms.js)
  *   runaway     a small plane: get out with the power on and it goes without
  *               you (../runaway.js). Every light aeroplane that bails out,
  *               unless it says otherwise.
+ *   ends        nothing is left flying when the pilot leaves (T-Pose Harrison:
+ *               the man is the whole aeroplane). Out in the air, the flight
+ *               simply ends — no empty aeroplane flies on and crashes — and on
+ *               the ground he stands up where he was hovering.
  *
  * Anything not listed is read off its roster entry (class, category,
  * military), so an aeroplane another team adds tomorrow still gets a sensible
@@ -27,6 +37,15 @@
  *
  * Pure data and functions: no DOM, no THREE, so the node tests read it.
  */
+
+/*
+ * A helicopter, any helicopter: out of the side door with a parachute — in
+ * Free Flight. A hover gives the canopy no airflow to open with, so it wants
+ * more height than an aeroplane's door (100 m, not 60); the empty helicopter
+ * does not fly on without you (no runaway). `freeOnly`: in a mission it is
+ * the old answer — no way out, "land it, then press O".
+ */
+const HELI = { escape: 'bail', uniform: 'heli', why: 'heli', runaway: false, bailFrom: 100, freeOnly: true };
 
 /** Ejection seats, crews and specials, by type id. */
 const BY_ID = {
@@ -40,19 +59,23 @@ const BY_ID = {
   a320: { escape: 'none', uniform: 'captain' },
   b747: { escape: 'none', uniform: 'captain' },
   a380: { escape: 'none', uniform: 'captain' },
-  // The helicopter: the rotor is in the way.
-  harrier: { escape: 'none', uniform: 'heli', why: 'heli' },
-  // Fast jets. The Vanguard is the game's own fighter and lands hot.
-  vanguard: { escape: 'seat', uniform: 'fighter', dragChute: true },
-  f22: { escape: 'seat', uniform: 'fighter', selfDestruct: true, dragChute: true },
+  // The helicopter: no seat (the rotor is in the way), but in Free Flight you
+  // jump from the side door with a parachute, as people really do from
+  // helicopters (missions keep 'none'; see HELI below).
+  harrier: HELI,
+  // Fast jets. No drag chutes on the real military jets (the owner: "only on
+  // goofy planes") — they stop on their wheel brakes.
+  vanguard: { escape: 'seat', uniform: 'fighter' },
+  f22: { escape: 'seat', uniform: 'fighter', selfDestruct: true },
   f35b: { escape: 'seat', uniform: 'fighter', selfDestruct: true },
   fa18: { escape: 'seat', uniform: 'fighter' },
   // Two-seaters and multi-crew: the others go first.
   osprey: { escape: 'seat', uniform: 'fighter', crew: 1 },
-  nightjar: { escape: 'seat', uniform: 'fighter', crew: 1, selfDestruct: true, dragChute: true },
-  // The specials.
+  nightjar: { escape: 'seat', uniform: 'fighter', crew: 1, selfDestruct: true },
+  // The specials — the goofy planes, and the only two with a drag chute.
   massimo: { escape: 'seat', uniform: 'racer', selfDestruct: true, dragChute: true },
-  tpose: { escape: 'jump', uniform: 'harrison', selfDestruct: true, dragChute: true },
+  // A person, not a machine: no self-destruct, and nothing flies on without him.
+  tpose: { escape: 'jump', uniform: 'harrison', dragChute: true, ends: true },
 };
 
 /** The words for a type that has no way out, kind and short. */
@@ -70,7 +93,7 @@ export function profileFor(type) {
   const cls = String(t.class || '').toLowerCase();
   const cat = String(t.category || '').toLowerCase();
   const rotor = !!(t.shape && t.shape.power && t.shape.power.rotor);
-  if (rotor || /heli|rotor/.test(cls)) return fill(t, { escape: 'none', uniform: 'heli', why: 'heli' });
+  if (rotor || /heli|rotor/.test(cls)) return fill(t, HELI);
   if (cat === 'airliner' || /airliner|jumbo|transport/.test(cls)) return fill(t, { escape: 'none', uniform: 'captain' });
   if (t.military || /fighter|bomber|carrier/.test(cls)) return fill(t, { escape: 'seat', uniform: 'fighter' });
   const jet = !!(t.shape && t.shape.power && t.shape.power.kind === 'jet');
@@ -87,8 +110,22 @@ function fill(t, p) {
     dragChute: !!p.dragChute,
     uniform: p.uniform || 'pilot',
     runaway: p.runaway != null ? !!p.runaway : escape === 'bail',
-    noneWhy: escape === 'none' ? NONE_WHY[p.why || 'airliner'] : '',
+    ends: !!p.ends,
+    // Metres above the ground a door bail-out needs for the canopy to open.
+    bailFrom: escape === 'bail' ? p.bailFrom || 60 : 0,
+    freeOnly: !!p.freeOnly,
+    noneWhy: escape === 'none' || p.freeOnly ? NONE_WHY[p.why || 'airliner'] : '',
   };
+}
+
+/**
+ * The profile for a flight in a given mode ('free', 'mission', …): a
+ * `freeOnly` way out (the helicopter's door) is Free Flight's alone, and
+ * anywhere else it is the old answer — no way out, and the kind words.
+ */
+export function profileIn(type, mode) {
+  const p = profileFor(type);
+  return p.freeOnly && mode !== 'free' ? { ...p, escape: 'none', bailFrom: 0, runaway: false } : p;
 }
 
 /** The ids of every listed type with a given flag, for the tests and the help card. */

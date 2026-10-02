@@ -27,6 +27,107 @@
 
 export const id = 'menus';
 
+/**
+ * "move hangar to the main area, not in other, and make it so you can select
+ * planes in a cool fashion, the planes are on a podium spinning etc."
+ *
+ *   - a Hangar card on the front page of the aeroplane game and of Rotors,
+ *     and a door to it from Free Flight's picker;
+ *   - the showroom opens on the podium, and browsing round the whole fleet
+ *     twice puts every aeroplane you may see on it, each the one the card
+ *     names, locked ones as silhouettes;
+ *   - the model cache stays small and everything is let go when it closes;
+ *   - unlocking from the podium spends the credits and lights it up — the
+ *     profile is put back exactly as it was afterwards;
+ *   - the code box is still on the hangar screen.
+ */
+async function hangarShowroom(sim, menus, r, Prog) {
+  const ui = menus.showcaseUi;
+  if (!ui) {
+    r.ok('menus: the hangar has its showroom', false, 'menus.showcaseUi missing');
+    return;
+  }
+  const cards = {};
+  for (const g of ['flight', 'heli']) {
+    menus.setGame(g);
+    menus.show('main');
+    cards[g] = !!menus.screens.main.querySelector('.main-nav [data-act="hangar"]');
+  }
+  const door = !!menus.screens.free.querySelector('[data-open-hangar]');
+  r.ok('menus: a Hangar card on the aeroplane and Rotors front pages, and a door from Free Flight',
+    cards.flight && cards.heli && door, JSON.stringify({ ...cards, freeFlightDoor: door }));
+
+  menus.setGame('flight');
+  menus.show('hangar');
+  if (ui.loading) await ui.loading.catch(() => {});
+  for (let i = 0; i < 100 && !ui.showcase && !ui.failed; i++) await new Promise((res) => setTimeout(res, 50));
+  const sc = ui.showcase;
+  if (!sc) {
+    r.ok('menus: the showroom loads its podium', false, ui.failed ? 'fell back to the plan view' : 'never loaded');
+    return;
+  }
+  const pump = (n) => {
+    for (let i = 0; i < n; i++) menus.drawView(sim.renderer, 1 / 30);
+  };
+  pump(4);
+  const p = menus.prog;
+  const seen = new Set();
+  const wrong = [];
+  let maxCache = 0;
+  const n = ui.order.length;
+  for (let i = 0; i < n * 2; i++) {
+    ui.step(1);
+    pump(24);
+    const st = sc.stats();
+    seen.add(ui.id);
+    maxCache = Math.max(maxCache, st.cached.length);
+    if (st.current !== ui.id) wrong.push(`${ui.id}: podium has ${st.current}`);
+    else if (st.locked !== !Prog.isUnlocked(p, ui.id)) wrong.push(`${ui.id}: ${st.locked ? 'silhouette but yours' : 'lit but locked'}`);
+    const name = menus.screens.hangar.querySelector('[data-hs-name]');
+    const type = (await import('../../src/aircraft/types.js')).getAircraft(ui.id);
+    if (!name || name.textContent !== type.name) wrong.push(`${ui.id}: card says ${name && name.textContent}`);
+  }
+  const visible = ui.order.filter((id) => seen.has(id)).length;
+  r.ok('menus: browsing the fleet twice puts every aeroplane on the podium, locked ones as silhouettes',
+    visible === n && wrong.length === 0 && maxCache <= 5,
+    wrong.slice(0, 3).join('; ') || `${visible}/${n} shown, cache at most ${maxCache}, built ${sc.stats().built}`);
+
+  // Unlock one from the podium, then put the profile back exactly.
+  const target = ui.order.find((id) => !Prog.isUnlocked(p, id) && Prog.costOf(id) > 0);
+  if (target) {
+    const keep = { credits: p.credits, unlocked: [...p.unlocked] };
+    try {
+      p.credits = Prog.costOf(target);
+      ui.select(target, 0);
+      pump(30);
+      const btn = menus.screens.hangar.querySelector(`[data-hs-buy="${target}"]`);
+      if (btn) btn.click();
+      pump(30);
+      const got = Prog.isUnlocked(p, target);
+      const st = sc.stats();
+      r.ok('menus: Unlock on the podium spends the credits and lights the silhouette up',
+        !!btn && got && p.credits === 0 && st.current === target && st.locked === false
+          && !!menus.screens.hangar.querySelector('[data-hs-fly]'),
+        `${target}: button ${!!btn}, owned ${got}, credits left ${p.credits}, silhouette ${st.locked}`);
+    } finally {
+      p.credits = keep.credits;
+      p.unlocked = keep.unlocked;
+      Prog.save(p);
+      menus.syncProgression && menus.syncProgression();
+      menus.syncFleetLocks && menus.syncFleetLocks();
+    }
+  }
+
+  const box = menus.screens.hangar.querySelector('[data-code]');
+  const redeem = menus.screens.hangar.querySelector('[data-redeem]');
+  menus.show('main');
+  pump(1);
+  const after = sc.stats();
+  r.ok('menus: the code box is still in the hangar, and closing it lets every model go',
+    !!box && !!redeem && after.cached.length === 0 && after.built === after.disposed,
+    `code box ${!!box}, cached ${after.cached.length}, built ${after.built}, disposed ${after.disposed}`);
+}
+
 const GAMES = ['flight', 'heli', 'boat', 'car'];
 
 export async function check(sim, r, say) {
@@ -367,6 +468,9 @@ export async function check(sim, r, say) {
           : `4 tabs; bar ${scrolls ? `${gap} px off the bottom` : 'after the content (screen fits)'} at ${window.innerWidth}x${window.innerHeight}`
       );
     }
+
+    /* ---- 12. The hangar showroom ------------------------------------ */
+    await hangarShowroom(sim, menus, r, Prog);
   } catch (err) {
     r.ok('menus: category checks ran to the end', false, String(err && err.stack || err));
   } finally {

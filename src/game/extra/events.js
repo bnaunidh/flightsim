@@ -32,6 +32,8 @@ import { heightAt, isOnRunway2 } from '../../world/terrain.js';
 import { forceHijack, hijackInfo, forceBreakIn, breakInInfo, eventsHeartbeat } from '../../features/events/bridge.js';
 import { cruiseSpeed, longHaulId } from '../../features/events/common.js';
 import * as Prog from '../../game/progression.js';
+// The other seat in each hijack: fly the lead fighter (src/game/roles/hijack-lead.js).
+import { HIJACK_FILM_ROLES, HIJACK_REAL_ROLES } from '../roles/hijack-lead.js';
 
 const FT = 3.28084;
 const T1 = new THREE.Vector3();
@@ -133,6 +135,7 @@ const hijack = {
   difficulty: 'Medium',
   icon: '🚨',
   map: 'kestrel',
+  roles: HIJACK_FILM_ROLES,
   /*
    * A getter, because which airliners exist is only known once every
    * roster file has loaded — and startMode reads this at the moment you
@@ -243,6 +246,7 @@ const hijackReal = {
   icon: '🛡️',
   map: 'kestrel',
   devOnly: true,
+  roles: HIJACK_REAL_ROLES,
   get aircraft() {
     return longHaulId();
   },

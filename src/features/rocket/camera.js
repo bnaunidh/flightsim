@@ -79,7 +79,9 @@ export class RocketCamera {
    * @param {number} dt
    * @param {object} f  the frame: bottom (world), nose, up, along, side
    *   (unit vectors), height, radius, speed, alt, space (0..1 how far into
-   *   space), pad (world, for the ground camera), flat (bool)
+   *   space), pad (world, for the ground camera), flat (bool),
+   *   padK (0..1: still on the launch pad — frame the rocket and its tower),
+   *   towerU (metres along the flight line to the tower), shake (metres)
    */
   update(dt, f) {
     const c = this.camera;
@@ -104,6 +106,15 @@ export class RocketCamera {
       const k = smooth(Math.max(0, Math.min(1, (f.alt - 15000) / 60000)));
       let d = (Math.max(f.close ? 14 : 34, Math.min(95, f.height * 2.3)) + Math.min(70, f.speed * 0.015)) * (1 + k * 1.2) * (1 + mk * 2.2);
       let el = Math.min(76, 7 + 43 * k + 24 * mk);
+      if (f.padK > 0) {
+        // On the pad: a little closer and lower, panned towards the tower so
+        // the rocket and the tower that holds it are both in the shot — and
+        // eased out as it climbs away, so the camera follows it up.
+        const pk = smooth(Math.min(1, f.padK));
+        d = d * (1 - pk) + pk * Math.max(30, f.height * 1.45 + 6);
+        el = el * (1 - pk) + pk * 4;
+        mid.addScaledVector(f.along, (f.towerU || 0) * 0.35 * pk);
+      }
       if (f.landing) {
         // Landing: from above and to the side, looking down past the booster
         // at the pad or the ship — the thing being steered for has to be on
@@ -152,6 +163,14 @@ export class RocketCamera {
     }
     c.position.copy(mid).add(this.offset);
     if (view === 'onboard') c.position.copy(f.bottom).add(this.offset);
+    if (f.shake > 0 && view !== 'onboard') {
+      // The ground shakes while the engines roar close by.
+      this.shakeT = (this.shakeT || 0) + dt;
+      const t = this.shakeT;
+      c.position.x += f.shake * (Math.sin(t * 43.1) + Math.sin(t * 27.7)) * 0.5;
+      c.position.y += f.shake * (Math.sin(t * 38.3) + Math.sin(t * 21.9)) * 0.5;
+      c.position.z += f.shake * (Math.sin(t * 31.7) + Math.sin(t * 47.3)) * 0.5;
+    }
     c.up.copy(wantUp);
     if (lookTo && lookBlend > 0) {
       // Between two directions, not two points: the pad may be a kilometre

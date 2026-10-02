@@ -28,6 +28,16 @@ import {
   COLOURS, COLOUR_NAMES, QUICK_CHAT, GAME_LABEL, CODE_EXAMPLE, CODE_TYPED_MAX, escapeHtml, MAX_PLAYERS, SLOT_COUNT, shownCode, pingLabel,
   CALLSIGN_ADJECTIVES, CALLSIGN_NOUNS, CALLSIGN_NUMBERS, parseCallSign, formatCallSign,
 } from './protocol.js';
+import { keyName, bindingsVersion } from '../../flight/input.js';
+
+/** The player-list and quick-chat keys, as the player has them (Settings → Controls → Multiplayer & PvP). */
+function keysLine() {
+  const chat = QUICK_CHAT.map((c, i) => (c.key ? keyName(`mpChat${i + 1}`) : null)).filter(Boolean);
+  const digits = chat.every((k) => /^\d$/.test(k)) && chat.length > 1 && chat.every((k, i) => i === 0 || Number(k) === Number(chat[i - 1]) + 1);
+  const chatKeys = digits ? `<kbd>${chat[0]}</kbd>–<kbd>${chat[chat.length - 1]}</kbd>` : chat.map((k) => `<kbd>${escapeHtml(k)}</kbd>`).join('');
+  return `<kbd>${escapeHtml(keyName('mpPlayers'))}</kbd> players · ${chatKeys} chat`;
+}
+const chatKbd = (c, i) => (c.key ? `<kbd>${escapeHtml(keyName(`mpChat${i + 1}`))}</kbd>` : '');
 
 const STYLE_ID = 'ifs-mp-style';
 
@@ -258,7 +268,7 @@ export function buildScreen(ctrl) {
         <span class="mp-net" data-mp-net><span class="mp-dot"></span><span data-mp-net-text>Finding your Wi-Fi…</span></span>
       </h3>
       <p class="hint">Servers on this Wi-Fi. Five slots, and five players in each. <span data-mp-lan-note></span></p>
-      <p class="hint mp-share-note">Everybody on the same internet connection sees this list — at a big school, other classes can too. Once your friends are in, lock your server from the player list (<kbd>Tab</kbd>).</p>
+      <p class="hint mp-share-note">Everybody on the same internet connection sees this list — at a big school, other classes can too. Once your friends are in, lock your server from the player list (<kbd>${escapeHtml(keyName('mpPlayers'))}</kbd>).</p>
       <div class="mp-slots" data-mp-slots></div>
 
       <div class="mp-grid" style="margin-top:18px">
@@ -552,7 +562,7 @@ export function buildHud(ctrl, layer) {
         <div class="mp-brow"><span class="mp-dot"></span><span data-mp-badge-text></span></div>
         <div class="mp-bcode" data-mp-badge-code hidden></div>
         <div class="mp-bact">
-          <span class="mp-keys"><kbd>Tab</kbd> players · <kbd>3</kbd>–<kbd>6</kbd> chat</span>
+          <span class="mp-keys">${keysLine()}</span>
           <button class="mp-touch-only" data-mp-players>Players</button>
           <button data-mp-chat title="Quick chat">Chat</button>
         </div>
@@ -560,7 +570,7 @@ export function buildHud(ctrl, layer) {
       </div>
       <div class="mp-list" data-mp-list hidden></div>
       <div class="mp-chatmenu" data-mp-chatmenu hidden>
-        ${QUICK_CHAT.map((c, i) => `<button data-mp-say="${i}">${c.key ? `<kbd>${c.key.slice(-1)}</kbd>` : ''}${escapeHtml(c.text)}</button>`).join('')}
+        ${QUICK_CHAT.map((c, i) => `<button data-mp-say="${i}">${chatKbd(c, i)}${escapeHtml(c.text)}</button>`).join('')}
       </div>
       <canvas class="mp-mini" data-mp-mini width="380" height="380"></canvas>
     </div>
@@ -575,6 +585,7 @@ export function buildHud(ctrl, layer) {
   const ext = el.querySelector('[data-mp-badge-ext]');
   let badgeHtml = null;
   let codeHtml = null;
+  let keysVer = bindingsVersion();
   let placedAt = -Infinity;
   let hudNodes = [];
   let hudNodesAt = -Infinity;
@@ -676,6 +687,17 @@ export function buildHud(ctrl, layer) {
     },
     // Once a second from the idle loop; written only when it changed, which is rarely.
     badge(text, code = '') {
+      // A key moved in Settings: the key line and the chat menu say so.
+      if (keysVer !== bindingsVersion()) {
+        keysVer = bindingsVersion();
+        const line = el.querySelector('.mp-keys');
+        if (line) line.innerHTML = keysLine();
+        menu.querySelectorAll('[data-mp-say]').forEach((b) => {
+          const i = Number(b.dataset.mpSay);
+          const c = QUICK_CHAT[i];
+          if (c) b.innerHTML = `${chatKbd(c, i)}${escapeHtml(c.text)}`;
+        });
+      }
       if (badgeHtml !== text) {
         badgeHtml = text;
         badgeText.innerHTML = text;

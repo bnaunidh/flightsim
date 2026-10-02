@@ -104,6 +104,8 @@ export class Carrier {
     this.group = new THREE.Group();
     this.group.name = 'carrier';
     this.pos = { x: at.x, z: at.z };
+    /** Compass heading the bow points (0 = north). The deck box is axis-aligned, so it is cardinal. */
+    this.headingDeg = at.headingDeg || 0;
     this.name = at.name || 'CV-11 Resolute';
 
     /*
@@ -253,10 +255,17 @@ export class Carrier {
     this.wires = along
       ? { z0: at.z + wireFrom, z1: at.z + wireTo }
       : { x0: at.x + wireFrom, x1: at.x + wireTo };
-    addPlatform(at.x, at.z, bw, bd, this.deckY, this.name, {
-      ...this.wires,
-      along,
-    });
+    /*
+     * The deck no longer hands the flight model that band.
+     *
+     * Any wheels touching down anywhere in it used to be stopped, hook or no
+     * hook — a 360 m "wire". Carrier ops (src/features/carrier-ops.js) now
+     * lays four real wires across the angled deck and catches the one the
+     * hook actually touches, so the platform says only which way it runs.
+     * `this.wires` stays published, as the band the wires lie in, for the
+     * missions and tests that aim at it.
+     */
+    addPlatform(at.x, at.z, bw, bd, this.deckY, this.name, { along, wires: 'carrier-ops' });
     /*
      * The superstructure is solid; the deck is not, because you land on it.
      *

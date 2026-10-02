@@ -40,15 +40,34 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension } from '../game/extensions.js';
+import { registerActions, isKey, heldKey } from '../flight/input.js';
+
+/*
+ * The rocket's keys, in the one registry: Settings → Controls → Rocket.
+ * SPACE is both "do the next thing" (launch, drop the booster, let the
+ * satellite go) and, held, the engine — a share by design.
+ */
+registerActions({
+  rocketAction: { label: 'Launch · drop the booster · let the satellite go', group: 'Rocket', ctx: ['rocket'], default: ['Space', 'Enter', 'NumpadEnter'] },
+  rocketBurn: { label: 'Fire the engine (hold)', group: 'Rocket', ctx: ['rocket'], default: ['Space', 'ArrowUp', 'KeyW'] },
+  rocketLeanLeft: { label: 'Lean left', group: 'Rocket', ctx: ['rocket'], default: ['ArrowLeft', 'KeyA'] },
+  rocketLeanRight: { label: 'Lean right', group: 'Rocket', ctx: ['rocket'], default: ['ArrowRight', 'KeyD'] },
+  rocketView: { label: 'Change the camera', group: 'Rocket', ctx: ['rocket'], default: ['KeyC', 'KeyV'] },
+  rocketWarp: { label: 'Faster time', group: 'Rocket', ctx: ['rocket'], default: ['KeyF', 'Period'] },
+});
+
+/** Keys that are not anybody's action and always go through: the browser's own. */
+const PASS = new Set(['Escape']);
 import { heightAt, MAP, OBSTACLES, isOnAnyRunway, isPaved, harbourBerth } from '../world/terrain.js';
 import { PADS } from '../world/pads.js';
 import { DELIVERY_PAD } from '../world/scenery.js';
 import * as Prog from '../game/progression.js';
 import { recordMission } from '../core/storage.js';
 import { ROCKETS, PLANET, orbitOf, circularSpeed, pressureRatio, DEG } from './rocket/physics.js';
-import { Flight, GOALS, findRocketMission, ROCKET_MISSIONS, robotInput, km } from './rocket/flights.js';
-import { findLaunchSite, surfaceFor } from './rocket/site.js';
-import { Kit, buildRocket, setLegs, setFins, buildPlume, updatePlume, Smoke, buildSite } from './rocket/models.js';
+import { Flight, GOALS, findRocketMission, ROCKET_MISSIONS, robotInput, km, COUNTDOWN } from './rocket/flights.js';
+import { findLaunchSite, surfaceFor, planSpaceport, padToWorld, PAD_TOP, PAD_HALF } from './rocket/site.js';
+import { Kit, buildRocket, setLegs, setFins, buildPlume, updatePlume, Smoke } from './rocket/models.js';
+import { buildSpaceport, animateSpaceport, clearFootprints } from './rocket/spaceport.js';
 import { SpaceView, IslandPainter, blendFor } from './rocket/space.js';
 import { RocketCamera, VIEW_NAMES } from './rocket/camera.js';
 import { RocketHud } from './rocket/hud.js';
@@ -102,10 +121,9 @@ function saveHelper(on) {
  */
 function passKey(sim, ev) {
   const code = ev.code;
-  if (code === 'Escape' || /^F\d+$/.test(code) || ev.metaKey || ev.ctrlKey || ev.altKey) return true;
-  const b = sim && sim.input && sim.input.bindings;
-  const pause = b && b.pause;
-  return !!(pause && pause.indexOf(code) >= 0 && code !== 'Space');
+  if (PASS.has(code) || /^F\d+$/.test(code) || ev.metaKey || ev.ctrlKey || ev.altKey) return true;
+  // Pause, wherever the player has put it — unless it is also one of the rocket's own keys.
+  return isKey(sim, 'pause', code) && !['rocketAction', 'rocketBurn'].some((a) => isKey(sim, a, code));
 }
 
 function onKey(down) {
@@ -124,10 +142,10 @@ function onKey(down) {
     const code = ev.code;
     R.keys[code] = true;
     if (!ev.repeat) {
-      if (code === 'Space' || code === 'Enter' || code === 'NumpadEnter') R.pendingAction = true;
-      else if (code === 'KeyC' || code === 'KeyV') cycleView();
-      else if (code === 'KeyF' || code === 'Period') cycleWarp();
-      else if (code === 'KeyM') sim.hudAction && sim.hudAction('mute');
+      if (isKey(sim, 'rocketAction', code)) R.pendingAction = true;
+      else if (isKey(sim, 'rocketView', code)) cycleView();
+      else if (isKey(sim, 'rocketWarp', code)) cycleWarp();
+      else if (isKey(sim, 'mute', code)) sim.hudAction && sim.hudAction('mute');
     }
     ev.preventDefault();
     ev.stopImmediatePropagation();
@@ -160,8 +178,8 @@ function cycleWarp() {
 /* The launch site                                                     */
 /* ------------------------------------------------------------------ */
 
-function siteFor(sim) {
-  const blocked = (x, z, r) => {
+function blockedFor(sim) {
+  return (x, z, r) => {
     if (isOnAnyRunway(x, z, r + 160)) return true;
     for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) {
       if (isPaved(x + dx, z + dz)) return true;
@@ -181,6 +199,10 @@ function siteFor(sim) {
     if (hb && Math.hypot(hb.x - x, hb.z - z) < r + 450) return true;
     return false;
   };
+}
+
+function siteFor(sim) {
+  const blocked = blockedFor(sim);
   const site = findLaunchSite({ heightAt, islands: MAP.islands, blocked });
   site.mapId = MAP.id;
   R.lastSite = site;
@@ -278,7 +300,7 @@ function startFlight(sim, opts) {
     goal,
     helper,
     mission: mission ? mission.id : null,
-    site: { padY: site.pad.y + 1.2, surface, lzS: site.lzS, bargeS: site.bargeS },
+    site: { padY: site.pad.y + PAD_TOP, surface, lzS: site.lzS, bargeS: site.bargeS },
   });
   // "Try the landing again": the same flight, put back to the moment the
   // child took the booster over — not the whole climb again.
@@ -290,7 +312,15 @@ function startFlight(sim, opts) {
   root.name = 'rocket:root';
   const built = buildRocket(kit, def);
   const tallest = def.stages.reduce((a, s) => a + s.height, 0) + (built.heights.payload || 0);
-  const ground = buildSite(kit, site, heightAt, tallest, MAP.name);
+  // The spaceport round the pad, laid out for this island.
+  const plan = planSpaceport(site, heightAt, blockedFor(sim));
+  const r0 = def.stages[0].radius;
+  const payH = built.heights.payload || 0;
+  const arms = [{ y: tallest - payH * 0.5 - 1.0, room: !!(def.payload && def.payload.kind === 'capsule'), r: def.fairing ? r0 * 1.18 : r0 }];
+  if (def.stages.length > 1) arms.push({ y: def.stages[0].height + def.stages[1].height * 0.5 }, { y: def.stages[0].height * 0.62 });
+  else arms.push({ y: def.stages[0].height * 0.55 });
+  const quality = sim.settings && sim.settings.quality;
+  const ground = buildSpaceport(kit, site, plan, heightAt, { tallest, mount: built.mount, arms, islandName: MAP.name, accent: def.colour, quality });
   root.add(ground);
   const vehicles = new THREE.Group();
   vehicles.name = 'rocket:vehicles';
@@ -299,9 +329,16 @@ function startFlight(sim, opts) {
   const deep = MAP.palette && MAP.palette.deepWater;
   const space = new SpaceView(kit, { pad: site.pad, painter, oceanColor: deep || 0x1b4f7c });
   root.add(space.group);
-  const smoke = new Smoke(kit, sim.settings && sim.settings.quality === 'low' ? 120 : 220);
+  const smoke = new Smoke(kit, quality === 'low' ? 320 : 700);
   root.add(smoke.points);
   sim.scene.add(root);
+  // The island's trees, out of the spaceport's way until the flight ends.
+  let unclear = () => {};
+  try {
+    unclear = clearFootprints(sim.scenery && sim.scenery.group, site, plan.zones);
+  } catch (e) {
+    console.warn('[rocket] could not clear the trees off the spaceport', e);
+  }
 
   const cam = new RocketCamera(sim.camera);
   const touch = document.documentElement.classList.contains('is-touch-device');
@@ -328,6 +365,9 @@ function startFlight(sim, opts) {
     def,
     flight,
     site,
+    plan,
+    unclear,
+    yaw: -Math.atan2(site.az.z, site.az.x),
     kit,
     root,
     ground,
@@ -357,7 +397,7 @@ function startFlight(sim, opts) {
     az: new THREE.Vector3(site.az.x, 0, site.az.z),
     axis: new THREE.Vector3(site.az.z, 0, -site.az.x),
     side: new THREE.Vector3(-site.az.z, 0, site.az.x),
-    padWorld: new THREE.Vector3(site.pad.x, site.pad.y + 1.2, site.pad.z),
+    padWorld: new THREE.Vector3(site.pad.x, site.pad.y + PAD_TOP, site.pad.z),
     worldOk: new Set(),
   };
   R.session = S;
@@ -381,6 +421,7 @@ function end(sim) {
   try { S.audio.stop(); } catch (e) { /* already quiet */ }
   try { S.space.setWorldHidden(sim, S.keep, false); } catch (e) { console.warn('[rocket] putting the world back', e); }
   if (S.root.parent) S.root.parent.remove(S.root);
+  try { S.unclear(); } catch (e) { console.warn('[rocket] putting the trees back', e); }
   S.kit.dispose();
   S.cam.restore();
   S.hud.destroy();
@@ -434,7 +475,7 @@ function viewFor(S, b) {
   let v = S.views.get(b);
   const key = `${b.role}:${b.stages.map((s) => s.id).join(',')}:${b.payload ? 'p' : ''}:${b.fairing ? 'f' : ''}`;
   if (!v) {
-    v = { group: new THREE.Group(), key: '', plume: null };
+    v = { group: new THREE.Group(), key: '', plume: null, born: S.t, exitR: 1 };
     v.group.name = `rocket:body:${b.role}`;
     S.vehicles.add(v.group);
     S.views.set(b, v);
@@ -444,9 +485,11 @@ function viewFor(S, b) {
     const P = S.built.parts;
     let y = 0;
     if (b.role === 'fairing') {
-      const half = S.built.fairing && S.built.fairing[b.side < 0 ? 0 : 1];
+      // Half 0 is the downrange half, and flies off forwards (side +1).
+      const half = S.built.fairing && S.built.fairing[b.side > 0 ? 0 : 1];
       if (half) {
         half.position.set(0, S.built.heights.upper || 0, 0);
+        half.rotation.y = S.yaw;
         v.group.add(half);
       }
     } else {
@@ -454,21 +497,31 @@ function viewFor(S, b) {
         const part = P[s.id];
         if (!part) continue;
         part.position.set(0, y, 0);
+        // Built facing +X; turned so its front faces the launch direction
+        // and its name faces the camera's side.
+        part.rotation.y = S.yaw;
         v.group.add(part);
         y += S.built.heights[s.id] || 0;
       }
       if (b.payload && P.payload) {
         P.payload.position.set(0, y, 0);
+        P.payload.rotation.y = S.yaw;
         v.group.add(P.payload);
         if (b.fairing && S.built.fairing) {
           for (const half of S.built.fairing) {
             half.position.set(0, y, 0);
+            half.rotation.y = S.yaw;
+            if (half.userData.hinge) half.userData.hinge.rotation.z = 0;
             v.group.add(half);
           }
         }
       }
       if (b.stages.length && !v.plume) {
-        v.plume = buildPlume(S.kit, b.stages[0].radius);
+        // The flame comes out of the engines: the whole cluster under a
+        // booster, the big vacuum bell under an upper stage.
+        const ex = (S.built.exits && S.built.exits[b.stages[0].id]) || { y: 0, r: b.stages[0].radius };
+        v.plume = buildPlume(S.kit, ex.r, ex.y);
+        v.exitR = ex.r;
         v.group.add(v.plume);
       }
     }
@@ -506,9 +559,9 @@ function frame(sim, dt) {
       if (S.robot) {
         robotInput(flight);
       } else {
-        const lean = (R.keys.ArrowRight || R.keys.KeyD || R.touchLean.r ? 1 : 0) - (R.keys.ArrowLeft || R.keys.KeyA || R.touchLean.l ? 1 : 0);
+        const lean = (heldKey(sim, 'rocketLeanRight', R.keys) || R.touchLean.r ? 1 : 0) - (heldKey(sim, 'rocketLeanLeft', R.keys) || R.touchLean.l ? 1 : 0);
         flight.input.lean = lean;
-        flight.input.burn = !!(R.keys.Space || R.keys.ArrowUp || R.keys.KeyW || R.touchBurn);
+        flight.input.burn = !!(heldKey(sim, 'rocketBurn', R.keys) || R.touchBurn);
         if (R.pendingAction) {
           flight.input.action = true;
           R.pendingAction = false;
@@ -550,9 +603,14 @@ function frame(sim, dt) {
     v.group.visible = true;
     if (v.plume) {
       const power = b.engineOn && b.throttle > 0 ? b.throttle : 0;
-      updatePlume(v.plume, S.t, power, 1 - pressureRatio(b.alt), b.stages[0] ? b.stages[0].radius : 1);
+      updatePlume(v.plume, S.t, power, 1 - pressureRatio(b.alt), v.exitR);
     }
-    if (b.role === 'fairing') v.group.quaternion.multiply(TMP.q.setFromAxisAngle(UP, S.t * 0.8));
+    if (b.role === 'fairing') {
+      // Clamshell: each half swings open on its hinge, then tumbles away.
+      const half = v.group.children[0];
+      const hinge = half && half.userData.hinge;
+      if (hinge) hinge.rotation.z = -half.userData.side * Math.min(1.5, (S.t - v.born) * 1.2);
+    }
   }
   for (const v of S.views.values()) {
     if (!live.has(v)) v.group.visible = false;
@@ -567,6 +625,8 @@ function frame(sim, dt) {
     S.finsK += (finWant - S.finsK) * Math.min(1, dt * 3);
     setFins(S.built.fins, S.finsK);
   }
+  // The tower's arms swing away during the countdown; the ship rides the swell.
+  if (!S.spaceMode) animateSpaceport(S.ground, S.t, armProgress(flight));
   if (flight.satellite && S.built.sat) {
     const since = S.t - (S.releasedAt || S.t);
     const u = Math.min(1, Math.max(0.08, since / 3));
@@ -580,8 +640,11 @@ function frame(sim, dt) {
   worldPos(S, focus, 0, flatPos);
   updateWorld(sim, S, dt, fpos, flatPos, focus);
 
-  // Smoke, low down.
-  if (!S.spaceMode) emitSmoke(sim, S, dt);
+  // Smoke, low down, and the pad's steam and water.
+  if (!S.spaceMode) {
+    emitSmoke(sim, S, dt);
+    emitPad(sim, S, dt);
+  }
   S.smoke.update(dt, window.innerHeight || 720);
 
   // The camera, looking from the side the rocket flies to the right of —
@@ -610,6 +673,7 @@ function frame(sim, dt) {
     alt: Math.max(0, camBody.alt),
     flat: !S.spaceMode,
     pad: S.padWorld,
+    ...padFraming(S, flight, camBody),
   });
   S.hud.setView(VIEW_NAMES[viewUsed]);
 
@@ -675,14 +739,6 @@ function updateWorld(sim, S, dt, fpos, flatPos, focus) {
       safe('apron', () => sim.apron && sim.apron.update(dt, w));
       safe('seamarks', () => sim.seamarks && sim.seamarks.update(dt, w));
     }
-    // The ship rides the swell.
-    const ship = S.ground.userData.ship;
-    if (ship) {
-      ship.position.y = Math.sin(S.t * 0.8) * 0.25;
-      ship.rotation.z = Math.sin(S.t * 0.6) * 0.012;
-    }
-    const lamp = S.ground.userData.lamp;
-    if (lamp) lamp.visible = Math.sin(S.t * 5) > -0.2;
   }
 }
 
@@ -720,16 +776,19 @@ function emitSmoke(sim, S, dt) {
     const above = b.alt - deck;
     if (b.alt > 14000) continue;
     const pw = power || 0.6;
+    const onPad = b === flight.stack && Math.abs(b.downrange) < PAD_HALF;
     if (above < 70) {
       // On (or near) the ground: the exhaust hits the concrete and rolls out
-      // sideways. A billow at lift-off; a light dusting for a landing, which
-      // must not hide the booster the child is trying to set down.
+      // sideways. A billow at lift-off (the pad's own steam is emitPad's);
+      // a light dusting for a landing, which must not hide the booster the
+      // child is trying to set down.
       const landing = b.role === 'booster';
-      const count = Math.round((landing ? 10 + 12 * pw : 50 + 60 * pw) * dt * rate + Math.random() * (landing ? 0.4 : 1));
+      const per = landing ? 10 + 12 * pw : onPad ? (above > 4 ? 18 + 26 * pw : 0) : 50 + 60 * pw;
+      const count = Math.round(per * dt * rate + Math.random() * (landing ? 0.4 : per ? 1 : 0));
       for (let i = 0; i < count; i++) {
         const a = Math.random() * Math.PI * 2;
         const sp = 18 + Math.random() * 26;
-        sm.emit(p.x, deck + 1.5, p.z, Math.cos(a) * sp, 2 + Math.random() * 5, Math.sin(a) * sp, 8 + Math.random() * 6, 6 + Math.random() * 4, 10);
+        sm.emit(p.x, deck + 1.5, p.z, Math.cos(a) * sp, 2 + Math.random() * 5, Math.sin(a) * sp, 8 + Math.random() * 6, 6 + Math.random() * 4, 10, landing ? 1 : 0.9);
       }
     }
     // A trail behind it on the way up. Not under a booster coming down to
@@ -743,6 +802,88 @@ function emitSmoke(sim, S, dt) {
       }
     }
   }
+}
+
+/**
+ * The launch pad at ignition: steam roaring out of the flame trench and
+ * billowing up out of the hole round the rocket, and the deluge — water
+ * sprayed over the deck from the rainbirds — from just before the engines
+ * light until the rocket is well clear.
+ */
+function emitPad(sim, S, dt) {
+  const flight = S.flight;
+  const st = flight.stack;
+  if (!st || st.gone || !flight.bodies.includes(st)) return;
+  const ud = S.ground.userData;
+  if (!ud.trench) return;
+  const sm = S.smoke;
+  const site = S.site;
+  const rate = sim.settings && sim.settings.quality === 'low' ? 0.5 : 1;
+  const above = st.alt - (site.pad.y + PAD_TOP);
+  const phase = flight.phase;
+  // How hard the exhaust is hitting the pad.
+  const hit = st.engineOn ? (st.throttle || 0) * Math.max(0, 1 - above / 140) : 0;
+  const deluge = (phase === 'countdown' && flight.countdown < 3.2) || (phase !== 'pad' && phase !== 'countdown' && above < 400 && flight.met < 10);
+  const az = site.az;
+  const wv = (vu, vv) => [az.x * vu - az.z * vv, az.z * vu + az.x * vv];
+  const R = Math.random;
+  if (hit > 0.01) {
+    // Out of the trench's mouth, towards the sea.
+    let n = Math.round(42 * hit * rate * dt + R() * 0.8);
+    for (let i = 0; i < n; i++) {
+      const w = padToWorld(site, ud.trench.u + R() * 6, (R() - 0.5) * 2 * ud.trench.w);
+      const [vx, vz] = wv(20 + R() * 22, (R() - 0.5) * 16);
+      sm.emit(w.x, site.pad.y + ud.trench.y + R() * 1.5, w.z, vx, 2 + R() * 5, vz, 9 + R() * 6, 7 + R() * 4, 9 + R() * 4, 1.05, 1.4, 0.55, 0.62);
+    }
+    // Up out of the hole, round the rocket's feet.
+    n = Math.round(24 * hit * rate * dt + R() * 0.6);
+    for (let i = 0; i < n; i++) {
+      const a = R() * Math.PI * 2;
+      const r = 2.5 + R() * 2;
+      const w = padToWorld(site, Math.cos(a) * r, Math.sin(a) * r);
+      const sp = 4 + R() * 8;
+      const [vx, vz] = wv(Math.cos(a) * sp, Math.sin(a) * sp);
+      sm.emit(w.x, site.pad.y + PAD_TOP + 0.5, w.z, vx, 7 + R() * 9, vz, 7 + R() * 5, 6 + R() * 3, 7 + R() * 3, 1.05, 1.2, 0.6, 0.6);
+    }
+  }
+  if (deluge && ud.rainbirds) {
+    // Water: arcs from the nozzles in towards the hole, falling as it goes.
+    for (const rb of ud.rainbirds) {
+      const n = Math.round(16 * rate * dt + R() * 0.5);
+      for (let i = 0; i < n; i++) {
+        const w = padToWorld(site, rb.u, rb.v);
+        const l = Math.hypot(rb.u, rb.v) || 1;
+        const sp = 7 + R() * 5;
+        const [vx, vz] = wv((-rb.u / l) * sp + (R() - 0.5) * 3, (-rb.v / l) * sp + (R() - 0.5) * 3);
+        sm.emit(w.x, site.pad.y + rb.y, w.z, vx, 6 + R() * 4, vz, 1.8 + R() * 1.4, 1.1 + R() * 0.5, 2.6, 1.12, -9.8, 0.3, 0.42);
+      }
+    }
+  }
+}
+
+/** The tower's arms: [top, middle, low], 0 against the rocket … 1 swung away. */
+function armProgress(flight) {
+  if (flight.phase === 'pad') return [0, 0, 0];
+  if (flight.phase === 'countdown') {
+    const e = COUNTDOWN - flight.countdown;
+    return [(e - 0.2) / 1.5, (e - 0.9) / 1.5, (e - 1.6) / 1.5];
+  }
+  return [1, 1, 1];
+}
+
+/**
+ * What the camera needs to frame the pad: how much of the pad shot to use
+ * (1 on the pad, fading as it climbs), the tower's side, and a shake while
+ * the engines roar close by.
+ */
+function padFraming(S, flight, camBody) {
+  const st = flight.stack;
+  if (S.spaceMode || !st || camBody !== st || !flight.bodies.includes(st)) return { padK: 0, shake: 0 };
+  const above = st.alt - (S.site.pad.y + PAD_TOP);
+  const padK = Math.max(0, Math.min(1, 1 - above / 90));
+  const shake = st.engineOn ? (st.throttle || 0) * 0.12 * Math.max(0, 1 - above / 350) : 0;
+  const tw = S.ground.userData.tower;
+  return { padK, shake, towerU: tw ? tw.u : 0 };
 }
 
 function puff(S, b, kind) {
@@ -939,12 +1080,18 @@ function showResult(sim, S) {
   let credits = '';
   if (r.success) {
     try {
+      // Under the Space heading on the board (rocket/menu.js), so priced as
+      // Space; the rocket does not read the settings difficulty, so neither
+      // does its pay (progression.js, SETTINGS_FREE_GAMES).
       const paid = Prog.award(sim.prog || sim.menus.prog, {
         kind: mission ? 'mission' : 'free',
         score: r.score,
         label: mission ? mission.name : `${S.def.name}: ${goal.name}`,
+        mission,
+        category: 'space',
+        game: 'rocket',
       });
-      if (paid && paid.credits > 0) credits = `<li>Credits <b>+${paid.credits}</b></li>`;
+      credits = Prog.debriefPayRow(paid);
       if (mission) sim.progress = recordMission(sim.progress, mission.id, { score: r.score, time: Math.round(r.time) });
       sim.menus.syncProgression && sim.menus.syncProgression(sim.prog || sim.menus.prog);
       sim.menus.syncProgress && sim.menus.syncProgress(sim.progress);
@@ -1088,6 +1235,10 @@ function install(sim) {
 
 registerExtension({
   id: 'rocket',
+  /** A rocket on the pad or in the sky has every key: the hints and Settings name the Rocket ones. */
+  keyContext() {
+    return R.session ? 'rocket' : null;
+  },
   install,
   stop(sim) {
     if (R.session) end(sim);

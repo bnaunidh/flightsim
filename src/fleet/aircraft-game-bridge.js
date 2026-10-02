@@ -40,7 +40,9 @@ export function createGameAircraft(options = {}, legacyFactory) {
        * Osprey sat on every runway and apron with its hook dragging on the
        * tarmac behind it like something had broken off.
        */
-      hook: (ac.gearPos ?? ac.gear ?? 1) > 0.5 && ac.onGround === false };
+      hook: typeof ac.hookDown === 'boolean' ? ac.hookDown : (ac.gearPos ?? ac.gear ?? 1) > 0.5 && ac.onGround === false,
+      // The pilot's own hook handle (src/features/carrier-ops.js), when this aeroplane has one.
+      hookSet: typeof ac.hookDown === 'boolean' };
     const crash = model.userData.gameCrash;
     const previousPosition = crash && ac.pos ? ac.pos.clone() : null;
     const previousVelocity = crash && ac.vel ? ac.vel.clone() : null;

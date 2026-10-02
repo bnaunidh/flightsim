@@ -59,6 +59,17 @@
  */
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extLayer } from '../game/extensions.js';
+import { registerActions, isKey, keyName, bindingsVersion } from '../flight/input.js';
+
+/*
+ * T, in the one registry: Settings → Controls → Flying. It shares T with the
+ * smoke trail by design (fun.js): in the F-35B T is the hover, in everything
+ * else it is smoke. The hover's moves are the aeroplane's own pitch, roll,
+ * rudder and power keys, so they follow those.
+ */
+registerActions({
+  stovlHover: { label: 'F-35B: hover on / off', group: 'Flying', ctx: ['plane'], default: ['KeyT'] },
+});
 import { SPEC } from '../aircraft/physics.js';
 
 const G = 9.80665;
@@ -867,7 +878,7 @@ function buildUi(sim) {
   const panel = document.createElement('div');
   panel.className = 'stovl-panel';
   panel.innerHTML = `
-    <button class="stovl-btn" type="button" aria-label="Hover on or off"><span class="stovl-state">HOVER</span><small>press T</small></button>
+    <button class="stovl-btn" type="button" aria-label="Hover on or off"><span class="stovl-state">HOVER</span><small>press ${keyName('stovlHover', sim)}</small></button>
     <div class="stovl-body">
       <div class="stovl-lever"><div class="stovl-band"></div><div class="stovl-knob"></div></div>
       <div class="stovl-read">
@@ -895,10 +906,19 @@ function buildUi(sim) {
     touch: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches,
   };
   if (ui.touch) ui.btn.querySelector('small').textContent = 'tap';
+  syncKeys(sim);
+  return ui;
+}
+
+/** The hover's key lines, as the player has the keys; again whenever they move one. */
+function syncKeys(sim) {
+  if (!ui || ui.keysVer === bindingsVersion()) return;
+  ui.keysVer = bindingsVersion();
+  const k = (a) => `<kbd>${keyName(a, sim)}</kbd>`;
+  if (!ui.touch) ui.btn.querySelector('small').textContent = `press ${keyName('stovlHover', sim)}`;
   ui.move.innerHTML = ui.touch
     ? 'Stick: slide about<br>Rudder: turn'
-    : '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> slide · <kbd>Q</kbd><kbd>E</kbd> turn<br><kbd>W</kbd>+<kbd>Shift</kbd> fly away';
-  return ui;
+    : `${k('pitchDown')}${k('rollLeft')}${k('pitchUp')}${k('rollRight')} slide · ${k('yawLeft')}${k('yawRight')} turn<br>${k('pitchDown')}+${k('throttleUp')} fly away`;
 }
 
 function press(sim) {
@@ -1020,6 +1040,7 @@ function updateUi(sim) {
   ui.panel.classList.toggle('is-shown', show);
   setQuietWing(show && !ctl.broken && ctl.mode !== 'off');
   if (!show) return;
+  syncKeys(sim);
   const ac = sim.aircraft;
   const mode = ctl.broken ? 'broken' : ctl.mode;
   if (mode !== lastUiMode) {
@@ -1047,7 +1068,7 @@ function updateUi(sim) {
   ui.speed.classList.toggle('is-high', kt > STOVL_TUNE.hoverKt * 0.8);
   let hint = '';
   let warn = false;
-  if (!ac.gearDown && agl < 40) { hint = 'Gear is up — press G'; warn = true; }
+  if (!ac.gearDown && agl < 40) { hint = `Gear is up — press ${keyName('gear', sim)}`; warn = true; }
   else if (ctl.mode === 'convert') hint = 'Slowing down to hover…';
   else if (ctl.mode === 'exit') {
     if (ctl.waitingForStick) { hint = 'Let go of the stick'; warn = true; }
@@ -1090,7 +1111,9 @@ registerExtension({
   update(sim) {
     if (!isStovl(sim)) {
       if (ctl.active || quietWing) off(sim);
-      if (ui) ui.panel.classList.remove('is-shown');
+      // Only if it is showing: a remove() of a class that is not there still
+      // rewrites the attribute, every frame, in every other aeroplane.
+      if (ui && ui.panel.classList.contains('is-shown')) ui.panel.classList.remove('is-shown');
       return;
     }
     wrap(sim);
@@ -1105,7 +1128,7 @@ registerExtension({
     quietHorn(sim);
   },
   key(sim, code, down, e) {
-    if (code !== 'KeyT' || !isStovl(sim)) return false;
+    if (!isKey(sim, 'stovlHover', code) || !isStovl(sim)) return false;
     if (down && !(e && e.repeat)) press(sim);
     return true;
   },

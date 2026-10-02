@@ -72,10 +72,12 @@ export class DriveInput {
      * keyboard drives: W forwards, S back. They are the aeroplane's pitch
      * keys (W nose down, S nose up) and did nothing at all in the van, so a
      * WASD child pressed W, watched nothing happen and assumed the van was
-     * broken. Read through the bindings, so a re-bound pitch key follows.
+     * broken. They are the van's own keys now (Settings → Car: Go, Brake),
+     * W and S among them by default, so moving the aeroplane's W leaves the
+     * van alone and moving the van's moves only the van.
      */
-    let go = I.held('throttleUp') || I.held('pitchDown') ? 1 : 0;
-    let stop = I.held('throttleDown') || I.held('pitchUp') ? 1 : 0;
+    let go = I.held('carGo') ? 1 : 0;
+    let stop = I.held('carBrake') ? 1 : 0;
     if (touch) {
       if (touch.driveGo) go = Math.max(go, touch.driveGo);
       if (touch.driveStop) stop = Math.max(stop, touch.driveStop);
@@ -132,11 +134,12 @@ export class DriveInput {
      * A and D, and the left and right arrows. Up and Down were already the
      * pedals (they are bound to the throttle), but Left and Right are the
      * free-look keys, which the van's camera does not use — so an arrow-key
-     * driver could go and stop and not steer. Same reading of the bindings.
+     * driver could go and stop and not steer. Steer left / Steer right have
+     * both by default.
      */
     let want = 0;
-    if (I.held('rollRight') || I.held('lookRight')) want += 1;
-    if (I.held('rollLeft') || I.held('lookLeft')) want -= 1;
+    if (I.held('carRight')) want += 1;
+    if (I.held('carLeft')) want -= 1;
     if (touch && typeof touch.driveSteer === 'number' && touch.driveSteer !== 0) {
       want = clamp(want + touch.driveSteer, -1, 1);
     }
@@ -165,7 +168,7 @@ export class DriveInput {
     }
 
     this.handbrake =
-      I.held('brakes') ||
+      I.held('carHandbrake') ||
       !!(touch && touch.brakes) ||
       !!(pad && pad.buttons[0] && pad.buttons[0].pressed);
 

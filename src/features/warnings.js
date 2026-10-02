@@ -73,7 +73,12 @@ import { registerExtension, extLayer } from '../game/extensions.js';
 import { SPEC, TYPE, EVENTS } from '../aircraft/physics.js';
 import { performanceFor } from '../aircraft/types.js';
 import { stallWarning } from '../audio/alerts.js';
-import { keyLabel } from '../flight/input.js';
+import { keyLabel, registerActions, isKey, codesFor, keyName, playerClaimed } from '../flight/input.js';
+
+/* R, in the one registry: Settings → Controls → Flying. */
+registerActions({
+  ackWarnings: { label: 'Hush the warnings (and pull the fire handle)', group: 'Flying', ctx: ['plane', 'heli', 'boat'], default: ['KeyR'] },
+});
 import { aircraftLookahead, shoalConflict } from '../ui/minimap.js';
 import { platformAt } from '../world/terrain.js';
 import * as R from './warnings-rules.js';
@@ -985,12 +990,14 @@ function keyFor(sim, action) {
   return b && b[0] ? keyLabel(b[0]) : '?';
 }
 
-/** Has the player bound R to one of their own actions? Then R is theirs. */
+/**
+ * Has the player put one of the game's own actions on the hush key (R, or
+ * wherever it is now)? Then that key is theirs, and the lights are clicked.
+ */
 function rTaken(sim) {
-  const b = sim && sim.input && sim.input.bindings;
-  if (!b) return false;
-  for (const a in b) if (Array.isArray(b[a]) && b[a].includes('KeyR')) return true;
-  return false;
+  const codes = codesFor('ackWarnings', sim);
+  if (!codes.length) return true;
+  return codes.every((c) => playerClaimed(sim, c, 'ackWarnings'));
 }
 
 /**
@@ -998,7 +1005,7 @@ function rTaken(sim) {
  * a keyboard, and a click on the light if R has been given to something else.
  */
 function ackWords(sim, sentence) {
-  const w = isTouch() ? 'tap the red light' : rTaken(sim) ? 'click the red light' : 'press R';
+  const w = isTouch() ? 'tap the red light' : rTaken(sim) ? 'click the red light' : `press ${keyName('ackWarnings', sim)}`;
   return sentence ? w[0].toUpperCase() + w.slice(1) : w;
 }
 
@@ -1132,7 +1139,7 @@ function drawUi(sim, show) {
   if (more !== ui.moreN || wantAck !== ui.footAck) {
     ui.moreN = more;
     ui.footAck = wantAck;
-    const ack = wantAck ? (isTouch() ? 'tap a light to silence' : rTaken(sim) ? 'click a light to silence' : 'press R to silence') : '';
+    const ack = wantAck ? (isTouch() ? 'tap a light to silence' : rTaken(sim) ? 'click a light to silence' : `press ${keyName('ackWarnings', sim)} to silence`) : '';
     ui.foot.textContent = more > 0 ? `+${more} more${ack ? ' · ' + ack : ''}` : ack;
     setHidden(ui.foot, !(more > 0 || wantAck));
   }
@@ -1425,14 +1432,14 @@ registerExtension({
   },
 
   key(sim, code, down, e) {
-    if (code !== 'KeyR') return false;
+    if (!isKey(sim, 'ackWarnings', code)) return false;
     const k = kindOf(sim);
     if (k !== 'plane' && k !== 'heli' && k !== 'boat') return false;
     // R is ours by the contract; but a player who has bound R to something of
     // their own keeps it — all of it. This used to acknowledge first and ask
     // second, so their R silenced the warnings as well as doing their thing.
     // They silence them with a tap on the light instead, and the panel says so.
-    if (rTaken(sim)) return false;
+    if (playerClaimed(sim, code, 'ackWarnings')) return false;
     if (down && !(e && e.repeat)) acknowledge();
     return true;
   },

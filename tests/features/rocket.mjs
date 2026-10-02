@@ -282,7 +282,7 @@ function flyWith(f, drive) {
 {
   T.applyMap('kestrel');
   const ks = SITE.findLaunchSite({ heightAt: T.heightAt, islands: T.MAP.islands, blocked: (x, z, r) => T.isOnAnyRunway(x, z, r + 160) });
-  const kestrel = { padY: ks.pad.y + 1.2, surface: SITE.surfaceFor(ks, T.heightAt), lzS: ks.lzS, bargeS: ks.bargeS };
+  const kestrel = { padY: ks.pad.y + SITE.PAD_TOP, surface: SITE.surfaceFor(ks, T.heightAt), lzS: ks.lzS, bargeS: ks.bargeS };
   const styles = [
     { name: 'holds the way the card points', o: {} },
     { name: 'holds SPACE all the way down', o: { space: 'always' } },
@@ -407,9 +407,162 @@ function flyWith(f, drive) {
   const site = SITE.findLaunchSite({ heightAt: T.heightAt, islands: T.MAP.islands, blocked: (x, z, r) => T.isOnAnyRunway(x, z, r + 160) });
   const surface = SITE.surfaceFor(site, T.heightAt);
   for (const m of [byId['rocket-space'], byId['rocket-barge']]) {
-    const r = fly(m, {}, { padY: site.pad.y + 1.2, surface, lzS: site.lzS, bargeS: site.bargeS });
+    const r = fly(m, {}, { padY: site.pad.y + SITE.PAD_TOP, surface, lzS: site.lzS, bargeS: site.bargeS });
     ok(`${m.name} from Kestrel's own pad`, r.f.result && r.f.result.success, r.f.result && `${r.f.result.title}: ${r.f.result.reason}`);
   }
+  // …and the other two, so every mission is flown from the raised pad.
+  for (const m of [byId['rocket-home'], byId['rocket-satellite']]) {
+    const r = fly(m, {}, { padY: site.pad.y + SITE.PAD_TOP, surface, lzS: site.lzS, bargeS: site.bargeS });
+    ok(`${m.name} from Kestrel's own pad`, r.f.result && r.f.result.success, r.f.result && `${r.f.result.title}: ${r.f.result.reason}`);
+  }
+  ok('the rocket stands on the deck the surface says is there', Math.abs(surface(0).y - (site.pad.y + SITE.PAD_TOP)) < 1e-9 && surface(0).kind === 'pad', `${surface(0).y.toFixed(2)} vs ${(site.pad.y + SITE.PAD_TOP).toFixed(2)}`);
+}
+
+/* 6. The spaceport round the pad, on every map ------------------------- */
+{
+  // Everything stands on dry ground, on a foundation from below its lowest
+  // ground to above its highest — nothing floats, nothing is half buried —
+  // and nothing is on a runway, on another structure, or on the line the
+  // booster flies home along.
+  const bad = [];
+  let full = 0;
+  let landMaps = 0;
+  for (const m of MAPS) {
+    T.applyMap(m.id);
+    const blocked = (x, z, r) => T.isOnAnyRunway(x, z, r + 160) || T.isPaved(x, z);
+    const site = SITE.findLaunchSite({ heightAt: T.heightAt, islands: T.MAP.islands, blocked });
+    const plan = SITE.planSpaceport(site, T.heightAt, blocked);
+    if (site.offshore) {
+      if (plan.items.length || plan.path) bad.push(`${m.id}: buildings ashore for a pad at sea`);
+      continue;
+    }
+    landMaps++;
+    const ids = plan.items.map((i) => i.id);
+    if (['vab', 'lcc', 'water', 'lox', 'fuel'].every((x) => ids.includes(x)) && plan.path) full++;
+    for (const it of plan.items) {
+      const g = SITE.groundUnder(site, T.heightAt, it.u, it.v, it.hu, it.hv, 8);
+      if (g.lo < 0.9) bad.push(`${m.id}/${it.id}: over water (${g.lo.toFixed(1)} m)`);
+      if (g.lo < it.lo - 1.4) bad.push(`${m.id}/${it.id}: ground dips ${(it.lo - g.lo).toFixed(1)} m below its foundation`);
+      if (g.hi > it.hi + 0.25) bad.push(`${m.id}/${it.id}: ground pokes ${(g.hi - it.hi).toFixed(1)} m above its floor`);
+      if (blocked(it.x, it.z, 2)) bad.push(`${m.id}/${it.id}: on a runway`);
+      if (Math.abs(it.u) < SITE.PAD_HALF + 6 && Math.abs(it.v) < SITE.PAD_HALF + 6) bad.push(`${m.id}/${it.id}: on the pad`);
+      if (Math.abs(it.u - site.lzS) < SITE.LZ_R + it.hu + 4 && Math.abs(it.v) < SITE.LZ_R + it.hv + 4) bad.push(`${m.id}/${it.id}: on the landing pad`);
+      if ((it.id === 'vab' || it.id === 'lcc') && Math.abs(it.v) < it.hv + 20) bad.push(`${m.id}/${it.id}: on the flight line`);
+      for (const o of plan.items) {
+        if (o !== it && Math.abs(o.u - it.u) < o.hu + it.hu && Math.abs(o.v - it.v) < o.hv + it.hv) bad.push(`${m.id}: ${it.id} overlaps ${o.id}`);
+      }
+    }
+    if (plan.path) {
+      for (let i = 1; i < plan.path.length; i++) {
+        const a = plan.path[i - 1];
+        const b = plan.path[i];
+        for (let t = 0; t <= 1; t += 0.05) {
+          const w = SITE.padToWorld(site, a.u + (b.u - a.u) * t, a.v + (b.v - a.v) * t);
+          if (T.heightAt(w.x, w.z) < 0.5) bad.push(`${m.id}: crawler road in the water`);
+        }
+      }
+    }
+  }
+  ok('the spaceport stands on dry ground on every map, off runways, the pads and the flight line', bad.length === 0, bad.slice(0, 4).join('; ') || `${landMaps} maps with land`);
+  ok('most land maps get the whole spaceport: hangar, control, crawler road, water tower, tanks', full >= Math.floor(landMaps * 0.8), `${full} of ${landMaps}`);
+  T.applyMap('kestrel');
+  const blocked = (x, z, r) => T.isOnAnyRunway(x, z, r + 160) || T.isPaved(x, z);
+  const ks = SITE.findLaunchSite({ heightAt: T.heightAt, islands: T.MAP.islands, blocked });
+  const kp = SITE.planSpaceport(ks, T.heightAt, blocked);
+  const kIds = kp.items.map((i) => i.id);
+  ok('Kestrel gets the whole spaceport', ['vab', 'lcc', 'crawler', 'water', 'lox', 'fuel', 'mast1', 'mast2', 'sign'].every((x) => kIds.includes(x)) && !!kp.path && !!kp.fence, kIds.join(' '));
+}
+
+/* 7. The models -------------------------------------------------------- */
+{
+  const THREE = await imp('vendor/three.module.js');
+  const MO = await imp('features/rocket/models.js');
+  const SP = await imp('features/rocket/spaceport.js');
+  const count = (obj) => {
+    let calls = 0;
+    let tris = 0;
+    obj.traverse((o) => {
+      if (!o.visible || !(o.isMesh || o.isLine)) return;
+      calls++;
+      const n = o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count;
+      tris += (n / 3) * (o.isInstancedMesh ? o.count : 1);
+    });
+    return { calls, tris: Math.round(tris) };
+  };
+  const lowest = (mesh, i) => {
+    // The true lowest point of one instance (not an AABB of an AABB).
+    const m = new THREE.Matrix4();
+    mesh.getMatrixAt(i, m);
+    const p = mesh.geometry.attributes.position;
+    const v = new THREE.Vector3();
+    let lo = Infinity;
+    for (let k = 0; k < p.count; k++) lo = Math.min(lo, v.fromBufferAttribute(p, k).applyMatrix4(m).y);
+    return lo;
+  };
+  for (const id of P.ROCKET_IDS) {
+    const def = ROCKETS[id];
+    const kit = new MO.Kit();
+    const b = MO.buildRocket(kit, def);
+    const g = new THREE.Group();
+    for (const k of Object.keys(b.parts)) g.add(b.parts[k]);
+    if (b.fairing) g.add(...b.fairing);
+    const c = count(g);
+    const why = [];
+    for (const s of def.stages) if (b.heights[s.id] !== s.height) why.push(`${s.id} drawn ${b.heights[s.id]} m, flies ${s.height} m`);
+    for (const s of def.stages) if (!b.exits[s.id] || !(b.exits[s.id].r > 0)) why.push(`no flame exit for ${s.id}`);
+    if (def.stages.length > 1) {
+      const up = b.exits[def.stages[1].id];
+      // The upper stage's bell hides inside the booster's interstage.
+      if (up.y > 0 || -up.y > b.inter || up.r > def.stages[0].radius * 0.98) why.push(`upper bell (${up.y}, ${up.r}) does not fit the ${b.inter} m interstage`);
+    }
+    if (b.legs.length) {
+      MO.setLegs(b.legs, 1);
+      const feet = [0, 1, 2, 3].map((i) => lowest(b.legs.rig.legs, i));
+      if (feet.some((y) => Math.abs(y) > 0.12)) why.push(`deployed feet at ${feet.map((y) => y.toFixed(2)).join(', ')} m, not level with the engines`);
+      MO.setLegs(b.legs, 0);
+      const m = new THREE.Matrix4();
+      b.legs.rig.legs.getMatrixAt(0, m);
+      const tip = new THREE.Vector3(0.2, b.legs.rig.legLen, 0).applyMatrix4(m);
+      if (Math.hypot(tip.x, tip.z) > def.stages[0].radius + 0.6) why.push('a stowed leg sticks out');
+      if (b.fins.length !== 4 || b.legs.length !== 4) why.push('not four legs and four grid fins');
+    }
+    if (def.fairing && (!b.fairing || b.fairing.length !== 2 || !b.fairing.every((h) => h.userData.hinge))) why.push('the fairing does not split in two on hinges');
+    if (c.calls > 18 || c.tris > 24000) why.push(`${c.calls} draw calls, ${c.tris} triangles`);
+    ok(`${def.name}: a proper model — engines, interstage, legs and fins that move, cheap to draw`, why.length === 0, why.join('; ') || `${c.calls} draw calls, ${c.tris.toLocaleString('en-GB')} triangles`);
+    kit.dispose();
+  }
+  // The spaceport, built on Kestrel.
+  T.applyMap('kestrel');
+  const blocked = (x, z, r) => T.isOnAnyRunway(x, z, r + 160) || T.isPaved(x, z);
+  const site = SITE.findLaunchSite({ heightAt: T.heightAt, islands: T.MAP.islands, blocked });
+  const plan = SITE.planSpaceport(site, T.heightAt, blocked);
+  const kit = new MO.Kit();
+  const root = SP.buildSpaceport(kit, site, plan, T.heightAt, { tallest: 34.2, mount: { r: 0.95, base: 0.4 }, arms: [{ y: 31.6, room: true }, { y: 27.5 }, { y: 14.9 }], islandName: 'Kestrel Island' });
+  const c = count(root);
+  ok('the spaceport is cheap to draw: about thirty draw calls', c.calls <= 40 && c.tris < 60000, `${c.calls} draw calls, ${c.tris.toLocaleString('en-GB')} triangles`);
+  const arms = root.userData.arms;
+  SP.animateSpaceport(root, 0, [0, 0, 0]);
+  const shut = arms.map((a) => a.rotation.y);
+  SP.animateSpaceport(root, 0, [1, 1, 1]);
+  ok('the tower has its arms, against the rocket and then swung away', arms.length === 3 && shut.every((r) => r === 0) && arms.every((a) => a.rotation.y > 1.5), arms.map((a) => a.rotation.y.toFixed(2)).join(', '));
+  ok('the pad has its deluge nozzles and a trench for the steam', root.userData.rainbirds.length >= 4 && root.userData.trench.u > SITE.PAD_HALF, `${root.userData.rainbirds.length} rainbirds, trench mouth at ${root.userData.trench.u} m`);
+  const lods = [];
+  root.traverse((o) => { if (o.isLOD) lods.push(o); });
+  ok('the small things are in an LOD that drops them far away', lods.length >= 1 && lods.every((l) => l.levels.length === 2 && l.levels[1].distance >= 400), lods.map((l) => l.levels.map((x) => x.distance).join('/')).join(' '));
+  kit.dispose();
+  // Trees are moved out of the spaceport's way, and put back exactly.
+  const trees = new THREE.Group();
+  const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial(), 3);
+  const vab = plan.items.find((i) => i.id === 'vab');
+  const spots = [SITE.padToWorld(site, 10, 10), SITE.padToWorld(site, vab.u, vab.v), SITE.padToWorld(site, 3000, 3000)];
+  spots.forEach((p, i) => inst.setMatrixAt(i, new THREE.Matrix4().makeTranslation(p.x, 5, p.z)));
+  trees.add(inst);
+  const before = Array.from(inst.instanceMatrix.array);
+  const restore = SP.clearFootprints(trees, site, plan.zones);
+  const gone = SP.countCleared(trees);
+  restore();
+  const same = Array.from(inst.instanceMatrix.array).every((x, i) => x === before[i]);
+  ok('trees in the spaceport are moved out of its way, and put back exactly after', gone === 2 && same, `${gone} moved, restored ${same}`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

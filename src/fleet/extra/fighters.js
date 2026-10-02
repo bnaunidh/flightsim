@@ -535,7 +535,8 @@ const fa18 = {
        */
       let down = 0;
       ctx.registerAnimation((dt, state) => {
-        const want = (state.gear || 0) > 0.5 && !state.onGround ? 1 : 0;
+        // The hook handle when the pilot has one (carrier ops); otherwise down with the gear in the air.
+        const want = state.hookSet ? (state.hook ? 1 : 0) : (state.gear || 0) > 0.5 && !state.onGround ? 1 : 0;
         down += (want - down) * Math.min(1, dt * 3);
         hook.rotation.x = -1.1 * (1 - down);
       });

@@ -28,6 +28,14 @@ export const LZ_R = 30;
 export const BARGE_HALF = 35;
 export const BARGE_HALF_W = 23;
 export const BARGE_DECK = 3;
+/**
+ * How high the launch deck stands above the ground at the pad's middle:
+ * a raised hardstand, so there is room under the rocket for the flame
+ * trench. The rocket's feet (and the physics' padY) are at pad.y + PAD_TOP.
+ */
+export const PAD_TOP = 4;
+/** The fence round the launch complex: a square this far out from the pad. */
+export const FENCE_HALF = 92;
 
 const TAU = Math.PI * 2;
 
@@ -195,7 +203,7 @@ function fallbackSite({ heightAt, isl }) {
  * launch pad along the launch direction (negative is behind it).
  */
 export function surfaceFor(site, heightAt) {
-  const padTop = site.pad.y + 1.2;
+  const padTop = site.pad.y + PAD_TOP;
   const lzTop = site.lz.y + 0.5;
   return (s) => {
     if (Math.abs(s) < PAD_HALF) return { y: padTop, kind: 'pad' };
@@ -206,4 +214,186 @@ export function surfaceFor(site, heightAt) {
     if (h <= 0.3) return { y: 0, kind: 'sea' };
     return { y: h, kind: 'land' };
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* The spaceport round the pad                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Pad-local coordinates → world. `u` is metres along the launch direction
+ * (towards the sea), `v` metres to its left — the side the camera watches
+ * from — so (0, 0) is the middle of the launch pad.
+ */
+export function padToWorld(site, u, v) {
+  return { x: site.pad.x + site.az.x * u - site.az.z * v, z: site.pad.z + site.az.z * u + site.az.x * v };
+}
+
+export function worldToPad(site, x, z) {
+  const dx = x - site.pad.x;
+  const dz = z - site.pad.z;
+  return { u: dx * site.az.x + dz * site.az.z, v: -dx * site.az.z + dz * site.az.x };
+}
+
+/** The lowest and highest ground under a pad-aligned rectangle. */
+export function groundUnder(site, heightAt, u, v, hu, hv, n = 4) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i <= n; i++) {
+    for (let j = 0; j <= n; j++) {
+      const p = padToWorld(site, u + hu * ((2 * i) / n - 1), v + hv * ((2 * j) / n - 1));
+      const h = heightAt(p.x, p.z);
+      if (h < lo) lo = h;
+      if (h > hi) hi = h;
+    }
+  }
+  return { lo, hi };
+}
+
+/*
+ * What goes where, as pad-local spots to try in order — the first that is
+ * dry, flat enough and not on anything already there wins, and if none is,
+ * that piece is left out rather than built floating or half buried.
+ *
+ * The pad complex sits mostly BEHIND the rocket as the camera sees it (−v),
+ * so the water tower, the tank farm and the lightning masts are the backdrop
+ * of the launch, and the trench throws its steam out towards the sea (+u).
+ */
+const PAD_ITEMS = [
+  { id: 'water', hu: 7, hv: 7, spread: 4, spots: [[30, -54], [-30, -60], [30, 54]] },
+  { id: 'lox', hu: 9, hv: 9, spread: 4, spots: [[-46, -56], [-50, 52], [52, -64]] },
+  { id: 'fuel', hu: 10, hv: 8, spread: 4, spots: [[64, -40], [-66, -30], [64, 40]] },
+  { id: 'mast1', hu: 2, hv: 2, spread: 6, spots: [[-40, -40], [-40, 40]] },
+  { id: 'mast2', hu: 2, hv: 2, spread: 6, spots: [[40, -38], [40, 40]] },
+  { id: 'shed', hu: 8, hv: 5, spread: 3, spots: [[-62, 34], [-62, -78], [10, 70]] },
+  { id: 'light1', hu: 1.5, hv: 1.5, spread: 6, spots: [[-44, 34]] },
+  { id: 'light2', hu: 1.5, hv: 1.5, spread: 6, spots: [[44, 34]] },
+  { id: 'light3', hu: 1.5, hv: 1.5, spread: 6, spots: [[-52, -22], [-52, 22]] },
+  { id: 'light4', hu: 1.5, hv: 1.5, spread: 6, spots: [[46, -18]] },
+  { id: 'sign', hu: 9, hv: 1.5, spread: 4, spots: [[-36, 46], [-36, -46]] },
+];
+
+/** The hangar the rockets are put together in, and the building they are flown from. */
+const VAB = { id: 'vab', hu: 30, hv: 24, spread: 8 };
+const LCC = { id: 'lcc', hu: 18, hv: 11, spread: 5 };
+
+function overlaps(a, b, gap) {
+  return Math.abs(a.u - b.u) < a.hu + b.hu + gap && Math.abs(a.v - b.v) < a.hv + b.hv + gap;
+}
+
+/**
+ * Lay out the launch complex for a site: every structure on dry ground, on
+ * a foundation that goes down below the lowest ground under it and up to
+ * the highest, so nothing floats and nothing is half buried; nothing on a
+ * runway, a road or a building (`blocked`); nothing on the flight line
+ * between the pad and the landing pad, where the booster comes home.
+ *
+ * Pure numbers, so the node test can lay it out on every map. An offshore
+ * pad gets no buildings ashore: it is a platform at sea.
+ *
+ * @returns {{offshore:boolean, pad:{lo,hi}, items:Array<{id,u,v,hu,hv,lo,hi,x,z}>,
+ *   path:Array<{u,v}>|null, gate:{u,v0,v1}|null, fence:{half}|null,
+ *   zones:Array<{u,v,hu,hv}>}}
+ */
+export function planSpaceport(site, heightAt, blocked = () => false) {
+  const pad = groundUnder(site, heightAt, 0, 0, PAD_HALF + 8, PAD_HALF + 8);
+  const out = { offshore: !!site.offshore, pad, items: [], path: null, gate: null, fence: null, zones: [] };
+  if (site.offshore) return out;
+  const placed = [{ id: 'pad', u: 0, v: 0, hu: PAD_HALF + 8, hv: PAD_HALF + 8 }, { id: 'lz', u: site.lzS, v: 0, hu: LZ_R + 14, hv: LZ_R + 14 }];
+  const tryPlace = (spec, spots, extra = () => true) => {
+    for (const [u, v] of spots) {
+      const it = { id: spec.id, u, v, hu: spec.hu, hv: spec.hv };
+      if (placed.some((p) => overlaps(it, p, 4))) continue;
+      const g = groundUnder(site, heightAt, u, v, spec.hu, spec.hv);
+      if (g.lo < 1 || g.hi - g.lo > spec.spread) continue;
+      const w = padToWorld(site, u, v);
+      if (blocked(w.x, w.z, Math.hypot(spec.hu, spec.hv) + 4)) continue;
+      if (!extra(it)) continue;
+      Object.assign(it, g, w);
+      placed.push(it);
+      out.items.push(it);
+      return it;
+    }
+    return null;
+  };
+
+  // The hangar: off to one side, clear of the fence and the flight line.
+  const vabSpots = [];
+  for (const u of [-200, -150, -250, -120, -300]) for (const v of [-120, 120, -150, 150]) vabSpots.push([u, v]);
+  const offLine = (it) => Math.abs(it.v) >= it.hv + 30 && (Math.abs(it.u) > FENCE_HALF + it.hu + 6 || Math.abs(it.v) > FENCE_HALF + it.hv + 6);
+  const vab = tryPlace(VAB, vabSpots, offLine);
+  if (vab) {
+    // The crawler road: out of the hangar's door, a straight run, then a
+    // long diagonal up to the ramp on the back of the pad.
+    const door = { u: vab.u + vab.hu, v: vab.v };
+    const pts = [door, { u: door.u + 26, v: door.v }, { u: -PAD_HALF - 40, v: 0 }, { u: -PAD_HALF - 22, v: 0 }];
+    let ok = pts[1].u < pts[2].u - 10;
+    for (let i = 1; ok && i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const len = Math.hypot(b.u - a.u, b.v - a.v);
+      for (let s = 0; ok && s <= len; s += 8) {
+        const u = a.u + ((b.u - a.u) * s) / len;
+        const v = a.v + ((b.v - a.v) * s) / len;
+        const w = padToWorld(site, u, v);
+        if (heightAt(w.x, w.z) < 0.8 || (u < -PAD_HALF - 30 && blocked(w.x, w.z, 9))) ok = false;
+        else if (Math.hypot(u - site.lzS, v) < LZ_R + 20) ok = false;
+        else {
+          for (const p of placed) {
+            if (p.id === 'vab' || p.id === 'pad') continue;
+            if (Math.abs(u - p.u) < p.hu + 12 && Math.abs(v - p.v) < p.hv + 12) { ok = false; break; }
+          }
+        }
+      }
+    }
+    if (ok) {
+      out.path = pts;
+      // The crawler itself, parked outside the door.
+      tryPlace({ id: 'crawler', hu: 12, hv: 10, spread: 4 }, [[door.u + 18, door.v], [door.u + 24, door.v]]);
+      // The road is kept clear of everything placed after it.
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1];
+        const b = pts[i];
+        const len = Math.hypot(b.u - a.u, b.v - a.v);
+        for (let s = 0; s <= len; s += 10) placed.push({ id: 'road', u: a.u + ((b.u - a.u) * s) / len, v: a.v + ((b.v - a.v) * s) / len, hu: 10, hv: 10 });
+      }
+    }
+    // The control centre: beside the hangar.
+    const sgn = Math.sign(vab.v) || 1;
+    tryPlace(LCC, [
+      [vab.u - 6, vab.v - sgn * (vab.hv + LCC.hv + 14)],
+      [vab.u - vab.hu - LCC.hu - 14, vab.v],
+      [vab.u + 8, vab.v + sgn * (vab.hv + LCC.hv + 14)],
+    ], offLine);
+  }
+
+  // The pad complex, round whatever the road left room for.
+  for (const spec of PAD_ITEMS) tryPlace(spec, spec.spots);
+
+  // The fence round the pad complex, with a gate where the crawler road runs in.
+  out.fence = { half: FENCE_HALF };
+  let gv = 0;
+  if (out.path) {
+    const a = out.path[1];
+    const b = out.path[2];
+    const t = (-FENCE_HALF - a.u) / (b.u - a.u);
+    if (t >= 0 && t <= 1) gv = a.v + (b.v - a.v) * t;
+  }
+  out.gate = { u: -FENCE_HALF, v0: gv - 14, v1: gv + 14 };
+
+  // Where the island's trees have to go while the spaceport stands.
+  out.zones.push({ u: 0, v: 0, hu: FENCE_HALF + 4, hv: FENCE_HALF + 4 });
+  out.zones.push({ u: site.lzS, v: 0, hu: LZ_R + 12, hv: LZ_R + 12 });
+  for (const it of out.items) out.zones.push({ u: it.u, v: it.v, hu: it.hu + 10, hv: it.hv + 10 });
+  if (out.path) {
+    for (let i = 1; i < out.path.length; i++) {
+      const a = out.path[i - 1];
+      const b = out.path[i];
+      const len = Math.hypot(b.u - a.u, b.v - a.v);
+      for (let s = 0; s <= len; s += 12) {
+        out.zones.push({ u: a.u + ((b.u - a.u) * s) / len, v: a.v + ((b.v - a.v) * s) / len, hu: 16, hv: 16 });
+      }
+    }
+  }
+  return out;
 }

@@ -37,6 +37,7 @@
 
 import { heightAt } from '../world/terrain.js';
 import { clamp } from '../core/noise.js';
+import { kbd, bindingsVersion } from '../flight/input.js';
 import { boatRoute, resetBoatRoute, warmBoatRoute, hideStrayAirfield, restoreStrayAirfield } from '../game/missions-boat.js';
 
 /*
@@ -379,12 +380,9 @@ export class BoatHud {
     (top || wrap).appendChild(this.arrow);
 
     /* ---- The keys, bottom centre, where the aeroplane's strip was ---- */
-    this.keys = el(
-      'div',
-      'hud-boatkeys',
-      '<kbd>W</kbd> or <kbd>Shift</kbd> faster · <kbd>S</kbd> or <kbd>Ctrl</kbd> slower · '
-        + '<kbd>A</kbd> <kbd>D</kbd> or <kbd>←</kbd> <kbd>→</kbd> steer · <kbd>Space</kbd> stop · <kbd>J</kbd> chart'
-    );
+    // The boat's own keys (Settings → Boat), whatever they are now.
+    this.keys = el('div', 'hud-boatkeys', '');
+    this.syncKeys();
     wrap.appendChild(this.keys);
 
     /* ---- Shallow water ahead: said before the bump, not after ---- */
@@ -484,9 +482,18 @@ export class BoatHud {
    *                       can lie about it (a fouled transducer) later without
    *                       this file knowing.
    */
+  /** The key strip, rebuilt when a key is moved in Settings. */
+  syncKeys() {
+    if (!this.keys || this._keysVer === bindingsVersion()) return;
+    this._keysVer = bindingsVersion();
+    this.keys.innerHTML = `${kbd('boatFaster', null, true)} faster · ${kbd('boatSlower', null, true)} slower · `
+      + `${kbd('boatLeft', null, true)} ${kbd('boatRight', null, true)} steer · ${kbd('boatStop')} stop · ${kbd('minimap')} chart`;
+  }
+
   update(dt, r, ctx = {}) {
     if (!this.active) return;
     this.tickHudTimers(dt);
+    this.syncKeys();
     const pos = ctx.pos;
     const depth = typeof ctx.depth === 'number'
       ? ctx.depth

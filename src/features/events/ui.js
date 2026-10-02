@@ -19,6 +19,7 @@
  */
 
 import { extLayer } from '../../game/extensions.js';
+import { isKey, keyName, rekey, bindingsVersion } from '../../flight/input.js';
 
 const CSS = `
 #fx-ev { position: absolute; right: 16px; top: 110px; width: min(310px, 80vw); display: flex; flex-direction: column; gap: 8px;
@@ -111,7 +112,14 @@ const ICONS = {
 };
 const ARROW = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 L19 20 L12 16 L5 20 Z" fill="currentColor"/></svg>';
 
-const KEY_CODES = { 8: ['Digit8', 'Numpad8'], 9: ['Digit9', 'Numpad9'], 0: ['Digit0', 'Numpad0'] };
+/*
+ * A card's answers are written with the number they were given ('8', '9',
+ * '0') and the squawk button with '7'; the keys are actions in the one
+ * registry (flight-events.js declares them: Settings → Controls → Missions
+ * & events), so the card shows — and listens for — wherever they are now.
+ */
+const KEY_ACTION = { 7: 'eventSquawk', 8: 'eventChoice1', 9: 'eventChoice2', 0: 'eventChoice3' };
+const keyFor = (k) => (KEY_ACTION[k] ? keyName(KEY_ACTION[k], simRef) : String(k));
 
 let root = null;
 let simRef = null;
@@ -224,7 +232,7 @@ function tick() {
 export function showCard(sim, { who = '', text = '', tone = 'info', code = null, alert = false, button = null, choices = null, onChoice = null, icon = null, ttl = 0 } = {}) {
   if (!ensure(sim)) return;
   const list = Array.isArray(choices) ? choices.slice(0, 3) : null;
-  const key = `${who}|${text}|${tone}|${code}|${alert}|${button ? button.label : ''}|${list ? list.map((c) => c.label).join('/') : ''}|${icon}`;
+  const key = `${who}|${text}|${tone}|${code}|${alert}|${button ? button.label : ''}|${list ? list.map((c) => c.label).join('/') : ''}|${icon}|${bindingsVersion()}`;
   state.card = true;
   state.cardLeft = ttl > 0 ? ttl : 0;
   state.onPress = button && button.onPress ? button.onPress : null;
@@ -235,7 +243,7 @@ export function showCard(sim, { who = '', text = '', tone = 'info', code = null,
     state.cardKey = key;
     el.card.className = `fx-card is-${tone}`;
     el.who.textContent = who;
-    el.text.textContent = text;
+    el.text.textContent = rekey(text, 'plane');
     el.icon.hidden = !(icon && ICONS[icon]);
     if (icon && ICONS[icon]) el.icon.innerHTML = ICONS[icon];
     el.xpdr.hidden = code == null;
@@ -248,7 +256,7 @@ export function showCard(sim, { who = '', text = '', tone = 'info', code = null,
       el.btn.textContent = button.label;
       if (button.key) {
         const k = document.createElement('kbd');
-        k.textContent = button.key;
+        k.textContent = keyFor(button.key);
         el.btn.appendChild(k);
       }
       el.btn.setAttribute('aria-label', button.label);
@@ -261,11 +269,11 @@ export function showCard(sim, { who = '', text = '', tone = 'info', code = null,
       if (c) {
         btns[i].textContent = '';
         const k = document.createElement('kbd');
-        k.textContent = c.key;
+        k.textContent = keyFor(c.key);
         const span = document.createElement('span');
         span.textContent = c.label;
         btns[i].append(k, span);
-        btns[i].setAttribute('aria-label', `${c.label} (key ${c.key})`);
+        btns[i].setAttribute('aria-label', `${c.label} (key ${keyFor(c.key)})`);
       }
     }
     el.choices.hidden = !list || !list.length;
@@ -312,8 +320,8 @@ export function choosing() {
 export function chooseByCode(code) {
   if (!state.card || !state.onChoice) return false;
   for (let i = 0; i < state.choiceKeys.length; i++) {
-    const codes = KEY_CODES[state.choiceKeys[i]];
-    if (codes && codes.includes(code)) {
+    const action = KEY_ACTION[state.choiceKeys[i]];
+    if (action && isKey(simRef, action, code)) {
       const fn = state.onChoice;
       try { fn(i); } catch (err) { console.error('[events] choice failed', err); }
       return true;
@@ -326,8 +334,8 @@ export function chooseByCode(code) {
 export function isChoiceCode(code) {
   if (!state.card || !state.onChoice) return false;
   for (const k of state.choiceKeys) {
-    const codes = KEY_CODES[k];
-    if (codes && codes.includes(code)) return true;
+    const action = KEY_ACTION[k];
+    if (action && isKey(simRef, action, code)) return true;
   }
   return false;
 }

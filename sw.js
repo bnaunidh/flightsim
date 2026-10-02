@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v48';
+const CACHE_VERSION = 'island-flight-v50';
 
 const PRECACHE = [
   './',
@@ -290,6 +290,32 @@ const PRECACHE = [
   'src/features/race/courses.js',
   'src/features/race/draw.js',
   'src/features/race/hub.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/knockdown.js',
+  'src/features/multiplayer/walkers.js',
+  'src/features/pilot-mp.js',
+  'src/features/ragdoll.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/carrier-ops.js',
+  'src/features/carrier/deck.js',
+  'src/features/carrier/gear.js',
+  'src/features/carrier/lso.js',
+  'src/features/carrier/ui.js',
+  'src/features/carrier/visuals.js',
+  'src/features/carrier/who.js',
+  'src/features/rocket/spaceport.js',
+  'src/features/roles.js',
+  'src/features/tpose/moves.js',
+  'src/features/tpose/signal.js',
+  'src/features/tpose/ui.js',
+  'src/game/roles/cast.js',
+  'src/game/roles/hijack-lead.js',
+  'src/game/roles/npc-flyer.js',
+  'src/game/roles/roles.js',
+  'src/ui/hangar-showcase-ui.js',
+  'src/ui/hangar-showcase.js',
+  'src/ui/roles-ui.js',
+  'src/world/carrier-berth.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

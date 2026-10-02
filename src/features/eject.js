@@ -6,7 +6,8 @@
  * cannot eject until other passengers get ejected", "self destruct on
  * special planes" — and, from the same page, "uniforms based on planes".
  *
- * EJECT — Enter (press twice), or the striped EJECT button on a tablet. The
+ * EJECT — Enter (press twice), or the striped EJECT button: on a tablet, and in
+ *   Free Flight on a laptop too, once you are high enough (showEject). The
  *   seat rockets you out, the parachute opens, and you float down (A / D to
  *   steer, S to sink faster). Land and you are on foot (onfoot.js walks you)
  *   in the uniform for what you flew; the empty aeroplane carries on without
@@ -14,7 +15,9 @@
  *   "Crashed" screen, because you are fine. Enter again flies again.
  *   Not while parked: on the ground it says to stop and press O.
  *   Light aeroplanes have no seat: you bail out of the door (needs 60 m).
- *   Airliners and the helicopter have no way out, and say so kindly.
+ *   The helicopter, in Free Flight: out of the side door (needs 100 m).
+ *   Airliners (and the helicopter in a mission) have no way out, and say so
+ *   kindly.
  *
  * PASSENGERS FIRST — on the Nightjar B-2 and the Osprey (two crew with seats
  *   of their own) and the Tempest (a scientist aboard), the first press sends
@@ -22,13 +25,24 @@
  *   down beside yours and they wave when they land.
  *
  * SELF-DESTRUCT — Backspace, on the special planes (the B-2, the F-22, the
- *   F-35B, Air Massimo, T-Pose Harrison). Guarded: the first press lifts the
+ *   F-35B, Air Massimo — not T-Pose Harrison: he is a person, and a person
+ *   has no self-destruct). Guarded: the first press lifts the
  *   safety cover, the second starts a 5-second countdown, and any press
  *   during it cancels. EJECT during the countdown; if you have not by the
  *   last second, the seat fires you out anyway — it is a game for ten-year-
  *   olds, nobody goes up with the plane. Then a big cartoon boom.
  *
- * DRAG CHUTE — see eject/dragchute.js: the brakes pop it on the landing roll.
+ * DRAG CHUTE — see eject/dragchute.js. Only Air Massimo and T-Pose Harrison
+ *   carry one, and it comes out only when you pull it: the Drag chute key
+ *   (; by default — input.js ACTIONS.dragChute, so Settings can move it) or
+ *   the CHUTE button a touch screen shows on the landing roll. The brakes
+ *   are just the brakes. Asked for at the wrong moment, it says why.
+ *
+ * T-POSE HARRISON is the whole aeroplane (profiles.js `ends`): out in the air
+ * he opens his own parachute where he is, and that is the end of the flight
+ * — nothing flies on without him, so there is no empty aeroplane to crash.
+ * The aeroplane's state stops (its physics gated off, endGate below) and
+ * follows him down, so the map and the multiplayer snapshot stay on him.
  *
  * WHAT IT TOUCHES IN THE GAME, since main.js is not ours: the empty
  * aeroplane is flown through `sim.override` (the input main.js applies over
@@ -41,6 +55,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension } from '../game/extensions.js';
+import { registerActions, isKey, heldKey, keyName, kbd, live } from '../flight/input.js';
 import { EVENTS, SPEC } from '../aircraft/physics.js';
 import { heightAt } from '../world/terrain.js';
 import { groundAt, solidAt, WALK } from './staff/walk.js';
@@ -48,10 +63,11 @@ import { posePerson } from './staff/person.js';
 import * as FootUI from './staff/ui.js';
 import { onFoot } from './onfoot.js';
 import { explode } from './explosions.js';
-import { profileFor, listed } from './eject/profiles.js';
+import { profileFor, profileIn, listed } from './eject/profiles.js';
 import { uniformFor, createUniformPerson, poseHanging, UNIFORMS } from './uniforms.js';
 import { ChuteFlight, ChuteModel } from './eject/chute.js';
-import { DRAG_CHUTE, applyChute, DragChuteModel } from './eject/dragchute.js';
+import { DRAG_CHUTE, CHUTE_DEFAULT_KEY, applyChute, chuteBlocker, chuteWords, DragChuteModel } from './eject/dragchute.js';
+import { keyLabel } from '../flight/input.js';
 import * as UI from './eject/ui.js';
 
 const KT = 1.94384;
@@ -68,8 +84,25 @@ const BAIL_MIN_AGL = 60;
 /** An empty aeroplane that has somehow not come down by now is brought down. */
 const EMPTY_MAX_SECONDS = 40;
 
-/** Keys that are about the game, not the aeroplane: never taken while you hang under a canopy. */
-const PASS = new Set(['Escape', 'KeyJ', 'KeyK', 'KeyM', 'KeyU', 'KeyN', 'KeyH', 'Tab', 'MetaLeft', 'MetaRight', 'AltLeft', 'AltRight']);
+/*
+ * The keys, in the one registry (Settings → Controls): eject and
+ * self-destruct with the aeroplane's, the parachute's own, and "fly again"
+ * once you are down (runaway.js's "start again" is the same action).
+ */
+registerActions({
+  eject: { label: 'Eject (press twice; crew go first)', group: 'Flying', ctx: ['plane', 'heli'], default: ['Enter', 'NumpadEnter'] },
+  selfDestruct: { label: 'Self-destruct (special planes: press twice, again to cancel)', group: 'Flying', ctx: ['plane'], default: ['Backspace'] },
+  chuteLeft: { label: 'Parachute: steer left', group: 'Flying', ctx: ['chute'], default: ['KeyA', 'ArrowLeft'] },
+  chuteRight: { label: 'Parachute: steer right', group: 'Flying', ctx: ['chute'], default: ['KeyD', 'ArrowRight'] },
+  chuteSink: { label: 'Parachute: sink faster', group: 'Flying', ctx: ['chute'], default: ['KeyS', 'ArrowDown', 'Space'] },
+  chuteLookLeft: { label: 'Parachute: look left', group: 'Flying', ctx: ['chute'], default: ['KeyQ'] },
+  chuteLookRight: { label: 'Parachute: look right', group: 'Flying', ctx: ['chute'], default: ['KeyE'] },
+  flyAgain: { label: 'Fly again (after ejecting, or a runaway)', group: 'On foot', ctx: ['foot'], default: ['Enter', 'NumpadEnter'] },
+});
+
+/** Keys that are not anybody's action: never taken while you hang under a canopy. */
+const PASS = new Set(['Escape', 'Tab', 'MetaLeft', 'MetaRight', 'AltLeft', 'AltRight']);
+/** ...and the game's own keys, wherever the player has put them. */
 const GAME_ACTIONS = ['pause', 'help', 'hideUi', 'guide', 'mute', 'minimap', 'minimapRange'];
 
 const S = {
@@ -83,11 +116,13 @@ const S = {
   me: null,
   crew: [],
   ghost: null,
+  /** Out of an aeroplane that is its own pilot (Harrison): the flight has simply ended. */
+  ended: false,
   prevOverride: null,
   emptyT: 0,
   planeDown: false,
   sd: { state: 'off', t: 0, shown: -1 },
-  drag: { state: 'stowed', fill: 0, model: null, airT: 0, armed: false, hinted: false, touchPop: false, t: 0 },
+  drag: { state: 'stowed', fill: 0, model: null, airT: 0, armed: false, hinted: false, via: '', t: 0 },
   keys: Object.create(null),
   cam: { pos: new THREE.Vector3(), started: false, yaw: 0 },
   touchHidden: false,
@@ -132,6 +167,25 @@ function isTouch(sim) {
   return !!(sim && sim.touch);
 }
 
+/** How the press being handled came: 'key' (Enter), 'tap' or 'click' (the EJECT button), '' (a direct call). */
+let via = '';
+
+/** The word for pressing the button again — 'Tap', 'Click' — or '' when Enter is the way to say it. */
+function byButton(sim) {
+  if (via === 'click') return 'Click';
+  return via === 'tap' || (via !== 'key' && isTouch(sim)) ? 'Tap' : '';
+}
+
+/** Enter, or the EJECT button, saying which, for the words that come back. */
+function pressFrom(sim, how) {
+  via = how;
+  try {
+    return pressEject(sim);
+  } finally {
+    via = '';
+  }
+}
+
 function mixer(sim) {
   const a = sim && sim.audio;
   return a && a.available && a.mixer ? a.mixer : null;
@@ -166,6 +220,11 @@ function inAircraft(sim) {
   return !!(sim && sim.state === 'flying' && sim.mode !== 'drive' && sim.aircraft && sim.aircraftType && !onFoot.active);
 }
 
+/** This aeroplane's way out in this mode: the helicopter's door is Free Flight's (profiles.js). */
+function profileOf(sim) {
+  return profileIn(sim.aircraftType, sim.mode);
+}
+
 /** Where the pilot sits, in the world. */
 function seatWorld(sim, out) {
   const ac = sim.aircraft;
@@ -194,9 +253,7 @@ function windOf(sim, out) {
 
 function passes(sim, code) {
   if (PASS.has(code) || /^F\d+$/.test(code)) return true;
-  const b = sim && sim.input && sim.input.bindings;
-  if (!b) return false;
-  for (const a of GAME_ACTIONS) if (b[a] && b[a].indexOf(code) >= 0) return true;
+  for (const a of GAME_ACTIONS) if (isKey(sim, a, code)) return true;
   return false;
 }
 
@@ -204,54 +261,40 @@ function passes(sim, code) {
 /* The controls line and the H card                                    */
 /* ------------------------------------------------------------------ */
 
-function keyLineFor(prof) {
+/**
+ * The keys the drag chute is on right now. It is a named action
+ * (input.js ACTIONS.dragChute), so Settings can move it — or take it away,
+ * when another action is given its key.
+ */
+function chuteKeys(sim) {
+  const b = sim && sim.input && sim.input.bindings;
+  return b && Array.isArray(b.dragChute) ? b.dragChute : [CHUTE_DEFAULT_KEY];
+}
+
+/** The drag chute's key as a <kbd>, or '' if the player has left it on no key. */
+function chuteKbd(sim) {
+  const k = chuteKeys(sim)[0];
+  return k ? `<kbd>${keyLabel(k)}</kbd>` : '';
+}
+
+function keyLineFor(prof, sim) {
   const parts = [];
-  if (prof.escape !== 'none') parts.push(`<kbd>Enter</kbd> ${prof.escape === 'bail' ? 'bail out' : prof.escape === 'jump' ? 'jump off' : 'eject'}`);
-  if (prof.selfDestruct) parts.push('<kbd>Backspace</kbd> self-destruct');
-  if (prof.dragChute) parts.push('brakes on landing = drag chute');
+  if (prof.escape !== 'none') parts.push(`${kbd('eject')} ${prof.escape === 'bail' ? 'bail out' : prof.escape === 'jump' ? 'parachute' : 'eject'}`);
+  if (prof.selfDestruct) parts.push(`${kbd('selfDestruct')} self-destruct`);
+  if (prof.dragChute && chuteKbd(sim)) parts.push(`${chuteKbd(sim)} drag chute`);
   return parts.length ? ` · ${parts.join(' · ')}` : '';
 }
 
 function syncKeyLine(sim) {
-  UI.setKeyLine(sim.hud, inAircraft(sim) || S.phase !== 'idle' ? keyLineFor(S.prof || profileFor(sim.aircraftType)) : '');
-}
-
-/** Rows added to the H card, under the game's own. */
-function helpRows(sim) {
-  const prof = profileFor(sim.aircraftType);
-  const row = (label, keys) => `<div class="cc-row"><span>${label}</span><span class="cc-keys">${keys}</span></div>`;
-  let html = '<div class="cc-group"><h4>Getting out</h4>';
-  html += row(prof.escape === 'none' ? `Eject — not in this one (${prof.id === 'harrier' ? 'land, then O' : 'no ejection seats'})` : 'Eject (press twice; crew go first)', '<kbd>Enter</kbd>');
-  html += row('Self-destruct (special planes: press twice, again to cancel)', '<kbd>Backspace</kbd>');
-  html += row('Drag chute (fast jets, on the landing roll)', '<kbd>Space</kbd>');
-  html += row('Under the parachute: steer · sink faster', '<kbd>A</kbd><kbd>D</kbd> · <kbd>S</kbd>');
-  html += '</div>';
-  return html;
+  UI.setKeyLine(sim.hud, inAircraft(sim) || S.phase !== 'idle' ? keyLineFor(S.prof || profileOf(sim), sim) : '');
 }
 
 /*
- * Wrapped on the HUD's PROTOTYPE, not the instance: the van's HUD
- * (hud-drive.js) puts its own showControls on the instance while you drive,
- * and only if there is not one there already — an own property here left
- * the van's H card listing the aeroplane's keys (car-playtest.browser.js).
+ * The H card used to get a "Getting out" block wrapped onto it here, with
+ * Enter and Backspace written in. Eject, self-destruct and the parachute are
+ * actions in the one registry now, so the card lists them — on the player's
+ * keys — under Flying, with everything else.
  */
-function wrapHelp(sim) {
-  const hud = sim.hud;
-  const proto = hud && Object.getPrototypeOf(hud);
-  if (!proto || typeof proto.showControls !== 'function' || proto._ejectHelp) return;
-  const inner = proto.showControls;
-  proto._ejectHelp = true;
-  proto.showControls = function showControlsWithEject(...args) {
-    const out = inner.apply(this, args);
-    try {
-      const grid = this.controlsCard && this.controlsCard.querySelector('.cc-grid');
-      if (grid && inAircraft(sim)) grid.insertAdjacentHTML('beforeend', helpRows(sim));
-    } catch (e) {
-      /* the card is still the game's */
-    }
-    return out;
-  };
-}
 
 /* ------------------------------------------------------------------ */
 /* Eject                                                               */
@@ -260,13 +303,17 @@ function wrapHelp(sim) {
 /** Why you cannot eject right now, or null. For the tests too. */
 export function cannotEject(sim) {
   if (!inAircraft(sim)) return 'Not now';
-  const prof = profileFor(sim.aircraftType);
+  const prof = profileOf(sim);
   const ac = sim.aircraft;
   if (S.phase !== 'idle') return 'You are already out';
-  if (ac.crashed) return 'Too late for that — press Esc and choose Restart';
-  if (prof.escape === 'none') return prof.noneWhy;
-  if (ac.onGround) return 'You’re on the ground — stop, then press O to climb out';
-  if (prof.escape === 'bail' && ac.agl < BAIL_MIN_AGL) return 'Too low to bail out — climb higher, or land it!';
+  if (ac.crashed) return live(`Too late for that — press ${keyName('pause', sim)} and choose Restart`);
+  if (prof.escape === 'none') return live(String(prof.noneWhy).replace(/\bpress O\b/, `press ${keyName('getOut', sim)}`).replace(/\bthen O\b/, `then ${keyName('getOut', sim)}`));
+  if (ac.onGround) return live(`You’re on the ground — stop, then press ${keyName('getOut', sim)} to climb out`);
+  if (prof.escape === 'bail' && ac.agl < (prof.bailFrom || BAIL_MIN_AGL)) {
+    return prof.uniform === 'heli'
+      ? live(`Too low to jump — the parachute needs ${Math.round((prof.bailFrom * 3.281) / 10) * 10} ft above the ground to open. Climb higher, or land and press ${keyName('getOut', sim)} to hop out.`)
+      : 'Too low to bail out — climb higher, or land it!';
+  }
   return null;
 }
 
@@ -281,15 +328,15 @@ function pressEject(sim) {
   const prof = S.prof;
   if (prof.crew > 0 && !S.crewOut) {
     crewOut(sim, prof);
-    notify(sim, `Crew out first! ${isTouch(sim) ? 'Tap EJECT' : 'Press <kbd>Enter</kbd>'} again to ${prof.escape === 'bail' ? 'jump' : 'eject'} yourself.`, 'warn', 5);
+    notify(sim, live(`Crew out first! ${byButton(sim) ? `${byButton(sim)} EJECT` : `Press ${kbd('eject', sim)}`} again to ${prof.escape === 'bail' ? 'jump' : 'eject'} yourself.`), 'warn', 5);
     S.armedT = 0;
     return true;
   }
   if (!S.crewOut && S.armedT <= 0) {
     S.armedT = ARM_SECONDS;
-    notify(sim, isTouch(sim)
-      ? `Tap EJECT again to ${prof.escape === 'bail' ? 'bail out' : prof.escape === 'jump' ? 'jump off' : 'eject'}!`
-      : `Press <kbd>Enter</kbd> again to ${prof.escape === 'bail' ? 'BAIL OUT' : prof.escape === 'jump' ? 'JUMP OFF' : 'EJECT'}!`, 'warn', ARM_SECONDS);
+    notify(sim, byButton(sim)
+      ? `${byButton(sim)} EJECT again to ${prof.escape === 'bail' ? 'bail out' : prof.escape === 'jump' ? 'open your parachute' : 'eject'}!`
+      : live(`Press ${kbd('eject', sim)} again to ${prof.escape === 'bail' ? 'BAIL OUT' : prof.escape === 'jump' ? 'OPEN YOUR PARACHUTE' : 'EJECT'}!`), 'warn', ARM_SECONDS);
     sound(sim, 'cover');
     return true;
   }
@@ -334,7 +381,7 @@ function ejectNow(sim, auto) {
   const flight = new ChuteFlight();
   _up.set(0, 1, 0).applyQuaternion(ac.quat);
   if (kind === 'jump') {
-    // Harrison steps off the board from where he stands.
+    // Harrison: the parachute comes out of his own back, where he is.
     _v.set(0, 0.2, 0).applyQuaternion(ac.quat).add(ac.pos);
   } else {
     seatWorld(sim, _v);
@@ -354,10 +401,18 @@ function ejectNow(sim, auto) {
   // The empty aeroplane: flown through sim.override from here on.
   if (sim.autopilot && sim.autopilot.engaged && typeof sim.toggleAutopilot === 'function') sim.toggleAutopilot(false);
   S.prevOverride = sim.override;
-  S.ghost = { throttle: clamp(Math.max(0.55, ac.controls.throttle || 0), 0, 1), pitch: 0, roll: 0, yaw: 0, brakes: 0 };
-  sim.override = S.ghost;
   S.emptyT = 0;
   S.planeDown = !!ac.crashed;
+  if (prof.ends) {
+    // Nothing left flying: the flight ends here (endGate holds the aeroplane still).
+    S.ended = true;
+    S.ghost = null;
+    endGate(ac);
+    if (ac.engineOn && typeof ac.stopEngine === 'function') ac.stopEngine('shutdown');
+  } else {
+    S.ghost = { throttle: clamp(Math.max(0.55, ac.controls.throttle || 0), 0, 1), pitch: 0, roll: 0, yaw: 0, brakes: 0 };
+    sim.override = S.ghost;
+  }
   // stovl.js reads this: the hover lets go and an empty F-35B falls.
   sim.walking = { active: true, ejected: true };
 
@@ -373,16 +428,42 @@ function ejectNow(sim, auto) {
   }
   FootUI.setHudWalking(sim.hud, true);
   S.hudHidden = true;
-  const how = kind === 'jump' ? 'Harrison jumps off his board!' : kind === 'bail' ? 'Out of the door!' : 'EJECT! EJECT!';
+  const how = kind === 'jump' ? 'Harrison opens his parachute!' : kind === 'bail' ? 'Out of the door!' : 'EJECT! EJECT!';
   banner(sim, how, isTouch(sim)
     ? 'Your parachute opens in a moment. Hold ◀ ▶ to steer, SINK to go down faster.'
-    : 'Your parachute opens in a moment. <kbd>A</kbd> <kbd>D</kbd> steer · <kbd>S</kbd> sink faster.', 'good', 5);
+    : `Your parachute opens in a moment. ${kbd('chuteLeft', sim)} ${kbd('chuteRight', sim)} steer · ${kbd('chuteSink', sim)} sink faster.`, 'good', 5);
   if (auto) {
-    notify(sim, kind === 'jump'
-      ? 'Harrison jumped off just in time — nobody goes up with the board!'
-      : 'The seat fired you out automatically — nobody goes up with the plane!', 'good', 5);
+    notify(sim, 'The seat fired you out automatically — nobody goes up with the plane!', 'good', 5);
   }
   sound(sim, 'eject');
+}
+
+/**
+ * For an aeroplane that is its own pilot (profiles.js `ends`): its own step,
+ * gated off once he is out, so nothing flies on without him and nothing
+ * crashes. Its position follows his parachute down — the map and the other
+ * players' screens stay on him — and stays where he lands. Installed once per
+ * aeroplane and left in the chain (stovl.js and multiplayer.js wrap the same
+ * step the same way); when nobody is out it is the step it always was.
+ */
+function endGate(ac) {
+  if (!ac || ac._ejectEndGate || typeof ac.update !== 'function') return;
+  const inner = ac.update;
+  Object.defineProperty(ac, '_ejectEndGate', { value: true, enumerable: false });
+  ac.update = function ejectEndGate(...args) {
+    if (!S.ended) return inner.apply(this, args);
+    const f = S.me && S.me.flight;
+    if (f) {
+      this.pos.copy(f.pos);
+      this.vel.copy(f.vel);
+    } else {
+      this.vel.set(0, 0, 0);
+    }
+    if (this.omega) this.omega.set(0, 0, 0);
+    this.rpm = 0;
+    if (this.controls) this.controls.throttle = 0;
+    return undefined;
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -394,8 +475,8 @@ const IN = { turn: 0, sink: false };
 function chuteInput(sim) {
   const K = S.keys;
   const h = UI.held;
-  IN.turn = (K.KeyD || K.ArrowRight || h.right ? 1 : 0) - (K.KeyA || K.ArrowLeft || h.left ? 1 : 0);
-  IN.sink = !!(K.KeyS || K.ArrowDown || K.Space || h.sink);
+  IN.turn = (heldKey(sim, 'chuteRight', K) || h.right ? 1 : 0) - (heldKey(sim, 'chuteLeft', K) || h.left ? 1 : 0);
+  IN.sink = !!(heldKey(sim, 'chuteSink', K) || h.sink);
   return IN;
 }
 
@@ -417,7 +498,7 @@ function updateOut(sim, dt) {
   const agl = Math.max(0, f.pos.y - ground);
   const touch = isTouch(sim);
   UI.setChuteHud(f.open > 0
-    ? `Height <b>${Math.round(agl)} m</b> · falling ${Math.max(0, f.sinkRate).toFixed(1)} m/s<br>${touch ? 'Hold ◀ ▶ to steer · SINK to go down faster' : '<kbd>A</kbd> <kbd>D</kbd> steer · <kbd>S</kbd> sink faster'}`
+    ? `Height <b>${Math.round(agl)} m</b> · falling ${Math.max(0, f.sinkRate).toFixed(1)} m/s<br>${touch ? 'Hold ◀ ▶ to steer · SINK to go down faster' : `${kbd('chuteLeft', sim)} ${kbd('chuteRight', sim)} steer · ${kbd('chuteSink', sim)} sink faster`}`
     : '<b>Seat fired!</b> The parachute is opening…');
   UI.setSteer(touch && f.open > 0.5);
   if (landed) land(sim);
@@ -510,14 +591,14 @@ function walkControl(sim) {
     ejected: true,
     prompt: isTouch(sim)
       ? 'Safe on the ground! Tap here to fly again'
-      : 'Safe! <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk · <kbd>Enter</kbd> fly again',
+      : `Safe! ${kbd('walkForward', sim)}${kbd('walkLeft', sim)}${kbd('walkBack', sim)}${kbd('walkRight', sim)} walk · ${kbd('flyAgain', sim)} fly again`,
     promptAction: again,
     buttons: WALK_BUTTONS,
     onButton: (id) => {
       if (id === 'again') again();
     },
     key: (s, code, down) => {
-      if (code !== 'Enter' && code !== 'NumpadEnter') return false;
+      if (!isKey(s, 'flyAgain', code)) return false;
       if (down) again();
       return true;
     },
@@ -626,8 +707,9 @@ function onCrash(sim) {
 export function cannotSelfDestruct(sim) {
   if (!inAircraft(sim)) return 'Not now';
   const prof = profileFor(sim.aircraftType);
+  if (!prof.selfDestruct && prof.ends) return 'Harrison is a person, not a plane — people don’t have a self-destruct!';
   if (!prof.selfDestruct) {
-    return 'This plane has no self-destruct — only the special ones do: the B-2, F-22, F-35B, Air Massimo and T-Pose Harrison.';
+    return 'This plane has no self-destruct — only the special ones do: the B-2, F-22, F-35B and Air Massimo.';
   }
   const ac = sim.aircraft;
   if (ac.crashed) return 'Too late for that';
@@ -658,7 +740,7 @@ function pressSelfDestruct(sim) {
     sd.t = COVER_SECONDS;
     notify(sim, isTouch(sim)
       ? 'Safety cover open — tap SELF-DESTRUCT again to start the countdown.'
-      : 'Safety cover open — press <kbd>Backspace</kbd> again to start the countdown.', 'warn', COVER_SECONDS);
+      : live(`Safety cover open — press ${kbd('selfDestruct', sim)} again to start the countdown.`), 'warn', COVER_SECONDS);
     sound(sim, 'cover');
     return true;
   }
@@ -695,7 +777,7 @@ function updateSelfDestruct(sim, dt) {
   const touch = isTouch(sim);
   UI.setCountdown(Math.max(1, n), out
     ? 'You’re out — watch this!'
-    : touch ? 'Tap EJECT now · CANCEL to stop it' : '<kbd>Enter</kbd> eject now · <kbd>Backspace</kbd> cancel');
+    : touch ? 'Tap EJECT now · CANCEL to stop it' : `${kbd('eject', sim)} eject now · ${kbd('selfDestruct', sim)} cancel`);
   // Nobody goes up with the plane: the seat fires by itself at the end.
   if (sd.t <= 1.2 && S.phase === 'idle') ejectNow(sim, true);
   if (sd.t <= 0) boom(sim);
@@ -725,11 +807,48 @@ function boom(sim) {
 /* Drag chute                                                           */
 /* ------------------------------------------------------------------ */
 
-function canPopChute(sim) {
+/** Why the chute cannot come out right now (dragchute.js chuteBlocker), or null. */
+function chuteWhyNot(sim) {
   const ac = sim.aircraft;
+  if (!ac || !inAircraft(sim) || S.phase !== 'idle') return 'crashed';
+  return chuteBlocker({
+    has: !!(S.prof && S.prof.dragChute),
+    onGround: !!ac.onGround,
+    crashed: !!ac.crashed,
+    groundSpeed: ac.groundSpeed || 0,
+    throttle: (ac.controls && ac.controls.throttle) || 0,
+    state: S.drag.state,
+  });
+}
+
+function canPopChute(sim) {
+  return chuteWhyNot(sim) === null;
+}
+
+/**
+ * The Drag chute key, or the CHUTE button: the ONLY ways it comes out. At the
+ * wrong moment it says why, kindly, and does nothing. Returns what happened:
+ * 'out', or the reason it did not.
+ */
+function pressChute(sim, via = 'key') {
+  const why = chuteWhyNot(sim);
+  if (why) {
+    const words = chuteWords(why, via === 'touch' || isTouch(sim) ? '' : chuteKbd(sim));
+    if (words) notify(sim, words, 'info', 3.5);
+    return why;
+  }
   const d = S.drag;
-  return !!(S.prof && S.prof.dragChute && inAircraft(sim) && S.phase === 'idle' && !ac.crashed && ac.onGround
-    && d.state === 'stowed' && d.armed && ac.groundSpeed > DRAG_CHUTE.POP_ABOVE && (ac.controls.throttle || 0) < 0.4);
+  const ac = sim.aircraft;
+  d.state = 'out';
+  d.fill = 0;
+  d.t = 0;
+  d.via = via;
+  if (d.model) d.model.dispose();
+  d.model = new DragChuteModel((SPEC.mass || 1000) + (ac.extraMass || 0));
+  sim.scene.add(d.model.root);
+  notify(sim, 'Drag chute out! It pulls you to a stop much faster.', 'good', 3.5);
+  sound(sim, 'chute');
+  return 'out';
 }
 
 function tailWorld(sim, out) {
@@ -755,23 +874,16 @@ function updateDrag(sim, dt) {
     if (ac.groundSpeed < 3 && d.state !== 'out') d.armed = false;
   }
   const mass = (SPEC.mass || 1000) + (ac.extraMass || 0);
-  if (canPopChute(sim)) {
-    if (!d.hinted && !isTouch(sim)) {
-      d.hinted = true;
-      notify(sim, 'Brake now — <kbd>Space</kbd> pops your drag chute!', 'info', 3);
-    }
-    if ((ac.controls.brakes || 0) > 0.5 || d.touchPop) {
-      d.state = 'out';
-      d.fill = 0;
-      d.t = 0;
-      if (d.model) d.model.dispose();
-      d.model = new DragChuteModel(mass);
-      sim.scene.add(d.model.root);
-      notify(sim, 'Drag chute out! It pulls you to a stop much faster.', 'good', 3.5);
-      sound(sim, 'chute');
-    }
+  /*
+   * It never comes out by itself — not on the brakes, not on touchdown. Once
+   * per landing, on the roll, a hint says how to pull it; then it is yours.
+   */
+  if (d.armed && !d.hinted && canPopChute(sim)) {
+    d.hinted = true;
+    const key = chuteKbd(sim);
+    if (isTouch(sim)) notify(sim, 'Tap CHUTE to pull your drag chute!', 'info', 3);
+    else if (key) notify(sim, `Drag chute ready — press ${key} to pull it!`, 'info', 3);
   }
-  d.touchPop = false;
   if (d.state === 'out') {
     d.t += dt;
     d.fill = Math.min(1, d.fill + dt / DRAG_CHUTE.FILL);
@@ -802,13 +914,34 @@ function updateDrag(sim, dt) {
 /* Every frame, and putting it all back                                 */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The EJECT button. A mission keeps what it had: a touch screen's button,
+ * anywhere in the air. In Free Flight it is on every screen — a laptop's too,
+ * where Enter on one small line of the HUD was the only way anyone could find
+ * out — and only once you are high enough for this aeroplane's way out to
+ * work (a door needs its `bailFrom`; a seat could go lower, but a button
+ * flashing up on every lift-off is not a calm HUD). It comes on a few metres
+ * above that and goes below it, so it does not blink at the edge.
+ */
+const SHOW_FROM = 15;
+let ejectShown = false;
+function showEject(sim, flying, prof) {
+  const ac = sim.aircraft;
+  if (!flying || !prof || prof.escape === 'none' || ac.onGround || ac.crashed) return (ejectShown = false);
+  if (sim.mode !== 'free') return (ejectShown = isTouch(sim));
+  const from = prof.escape === 'bail' ? prof.bailFrom || BAIL_MIN_AGL : SHOW_FROM;
+  ejectShown = ac.agl >= from + (ejectShown ? 0 : 6);
+  return ejectShown;
+}
+
 function syncUi(sim) {
   const flying = inAircraft(sim) && S.phase === 'idle';
   const ac = sim.aircraft;
   const touch = isTouch(sim);
   const prof = S.prof;
   UI.setButtons({
-    eject: touch && flying && prof && prof.escape !== 'none' && !ac.onGround && !ac.crashed,
+    eject: showEject(sim, flying, prof),
+    desk: !touch,
     armed: S.armedT > 0 || (S.crewOut && S.phase === 'idle'),
     sd: touch && flying && prof && prof.selfDestruct && !ac.crashed && (!ac.onGround || S.sd.state === 'count'),
     sdState: S.sd.state,
@@ -825,7 +958,7 @@ function resetAll(sim) {
   if (S.walked) S.walked.model.dispose();
   S.walked = null;
   if (S.drag.model) S.drag.model.dispose();
-  S.drag = { state: 'stowed', fill: 0, model: null, airT: 0, armed: false, hinted: false, touchPop: false, t: 0 };
+  S.drag = { state: 'stowed', fill: 0, model: null, airT: 0, armed: false, hinted: false, via: '', t: 0 };
   if (sim) {
     if (S.ghost && sim.override === S.ghost) sim.override = S.prevOverride === S.ghost ? null : S.prevOverride || null;
     if (sim.walking && sim.walking.ejected) sim.walking = null;
@@ -840,6 +973,7 @@ function resetAll(sim) {
     restoreAudio(sim);
   }
   S.ghost = null;
+  S.ended = false;
   S.prevOverride = null;
   S.touchHidden = false;
   S.hudHidden = false;
@@ -886,15 +1020,14 @@ registerExtension({
 
   install(sim) {
     S.sim = sim;
-    UI.build((id) => {
+    UI.build((id, pointer) => {
       const s = S.sim;
       if (!s || s.state !== 'flying') return;
-      if (id === 'eject') pressEject(s);
+      if (id === 'eject') pressFrom(s, pointer === 'mouse' || pointer === 'pen' ? 'click' : 'tap');
       else if (id === 'sd') pressSelfDestruct(s);
-      else if (id === 'chute') S.drag.touchPop = true;
+      else if (id === 'chute') pressChute(s, 'touch');
     });
     bindAircraft(sim);
-    wrapHelp(sim);
     // The crash of an aeroplane nobody is in does not end the flight.
     if (typeof sim.showCrashDebrief === 'function' && !sim._ejectDebrief) {
       const inner = sim.showCrashDebrief;
@@ -952,7 +1085,7 @@ registerExtension({
   startMode(sim) {
     resetAll(sim);
     bindAircraft(sim);
-    S.prof = sim.aircraftType ? profileFor(sim.aircraftType) : null;
+    S.prof = sim.aircraftType ? profileOf(sim) : null;
     S.typeId = sim.aircraftType ? sim.aircraftType.id : '';
     syncKeyLine(sim);
   },
@@ -967,9 +1100,9 @@ registerExtension({
     if (!sim.aircraft || !sim.aircraftType) return;
     if (S.typeId !== sim.aircraftType.id) {
       S.typeId = sim.aircraftType.id;
-      S.prof = profileFor(sim.aircraftType);
+      S.prof = profileOf(sim);
     }
-    if (!S.prof) S.prof = profileFor(sim.aircraftType);
+    if (!S.prof) S.prof = profileOf(sim);
     bindAircraft(sim);
     if (S.armedT > 0) S.armedT = Math.max(0, S.armedT - dt);
     // Walking again after an ejection and then off in something else (a tug):
@@ -1011,22 +1144,34 @@ registerExtension({
     return true;
   },
 
+  /** Hanging under the canopy, the keys are the parachute's. */
+  keyContext() {
+    return S.phase === 'out' ? 'chute' : null;
+  },
+
   key(sim, code, down, e) {
     const rep = !!(e && e.repeat);
     if (S.phase === 'out') {
       if (passes(sim, code)) return false;
       S.keys[code] = down;
-      if (down && (code === 'KeyQ' || code === 'KeyE')) S.cam.yaw += code === 'KeyQ' ? -25 : 25;
+      if (down && isKey(sim, 'chuteLookLeft', code)) S.cam.yaw -= 25;
+      else if (down && isKey(sim, 'chuteLookRight', code)) S.cam.yaw += 25;
       return down;
     }
-    if (code === 'Enter' || code === 'NumpadEnter') {
+    if (isKey(sim, 'eject', code)) {
       if (!inAircraft(sim)) return false;
-      if (down && !rep) return pressEject(sim);
+      if (down && !rep) return pressFrom(sim, 'key');
       return true;
     }
-    if (code === 'Backspace') {
+    if (isKey(sim, 'selfDestruct', code)) {
       if (!inAircraft(sim)) return false;
       if (down && !rep) return pressSelfDestruct(sim);
+      return true;
+    }
+    // The Drag chute key: in any aeroplane, so one without a chute can say so.
+    if (chuteKeys(sim).includes(code)) {
+      if (!inAircraft(sim)) return false;
+      if (down && !rep) pressChute(sim, 'key');
       return true;
     }
     return false;
@@ -1063,6 +1208,10 @@ export const eject = {
   get ghost() {
     return S.ghost;
   },
+  /** Out of T-Pose Harrison: nothing is left flying. */
+  get ended() {
+    return S.ended;
+  },
   get selfDestruct() {
     return S.sd;
   },
@@ -1086,6 +1235,18 @@ export const eject = {
   },
   cannotEject(sim) {
     return cannotEject(sim || S.sim);
+  },
+  /** Pull the drag chute as the key or the button would: 'out', or why not. */
+  pressChute(sim, via = 'key') {
+    return pressChute(sim || S.sim, via);
+  },
+  /** Why the drag chute cannot come out right now, or null. */
+  chuteWhyNot(sim) {
+    return chuteWhyNot(sim || S.sim);
+  },
+  /** The keys the drag chute is on (Settings can move them). */
+  chuteKeys(sim) {
+    return chuteKeys(sim || S.sim).slice();
   },
   listed,
   ui: UI,

@@ -1,40 +1,37 @@
 /**
- * WASTED — "if you get hit by a plane, it says WASTED like yk gta" (the owner).
+ * WASTED — "if you get hit by a plane, it says WASTED like yk gta" (the owner);
+ * then "if someone hits you with anything, a plane etc, you get pushed to the
+ * ground, WASTED showing on your screen (ragdoll physics)".
  *
- * Hit by an aeroplane while you are on foot: the world drains to grey, a
- * second of slow motion, a big WASTED across the screen, and then you are
- * back on your feet beside where it happened. Cartoon: you are flung, you
- * fall flat, you get up. Nothing else.
+ * This file is the SCREEN only: the world drains to grey, a second of slow
+ * motion, a big WASTED across the middle with one line under it, and it
+ * clears. Being knocked over — what hits you, the ragdoll, getting back up —
+ * is ./knockdown.js, which calls this when it happens, on THIS player's
+ * screen only. Anything that moves can do it now (v48 said only your own
+ * plane): knockdown.js decides, this shows it.
  *
- *   showWasted(sim, cause, opts)   ->  true if it started, false if one is
- *                                      already running, the game is not on,
- *                                      the pause-menu switch is off, or it
- *                                      was not your own plane (opts.own)
+ *   showWasted(sim, cause, opts)   ->  true if it started; false if one is
+ *                                      already showing, the game is not on,
+ *                                      or the pause menu's "Runaway plane &
+ *                                      WASTED" switch is off (the knock still
+ *                                      happens then — just no WASTED screen)
  *
- *     cause   a word for the tests and the log: 'plane', 'crash', ...
- *     opts    { own: true      required: it was YOUR OWN plane (the owner's rule)
- *               push: {x, z}   which way (and how hard, m/s) to fling you,
- *               words: 'string' the small line under WASTED }
+ *     cause   a word for the tests and the log: 'plane', 'traffic', ...
+ *     opts    { words: 'string' }   the small line under WASTED
  *
- * GENERIC ON PURPOSE. runaway.js calls it when your own runaway plane runs you
- * over; the multiplayer team can call it the same way when somebody else's
- * aeroplane does. It does not care what hit you. Not on foot, it still shows
- * (the grey and the word), and there is simply nobody to knock over.
+ *   endWasted(sim)                     take it down now
  *
  * THE SLOW MOTION is the frame's time scaled to 0.3 for 1.1 s of real time.
  * main.js's loop calls sim.update(dt) every frame, and the tests call it
  * too, so install() puts a wrapper on the instance that multiplies dt by
- * the current scale — 1 whenever nothing is happening, which is almost always.
+ * the current scale — 1 whenever nothing is happening, which is almost
+ * always. The ragdoll falls in slow motion with everything else.
  *
  * THE SOUND is two generated tones through the game's own mixer (a low
  * falling "whumm" and a thud): no files, and never louder than a notify chime.
  */
 
 import { registerExtension, extLayer } from '../game/extensions.js';
-import { onFoot } from './onfoot.js';
-import { groundAt, solidAt, WALK } from './staff/walk.js';
-import { heightAt } from '../world/terrain.js';
-import * as FootUI from './staff/ui.js';
 
 /** The timeline, in real seconds. */
 export const WASTED = {
@@ -42,8 +39,8 @@ export const WASTED = {
   slowFor: 1.1,
   slowScale: 0.3,
   wordAt: 0.7,
-  holdUntil: 3.0,
-  getUpAt: 3.0,
+  /** The grey and the word go; knockdown.js gets you up from here, once the body has settled. */
+  clearAt: 3.0,
   endAt: 3.7,
 };
 
@@ -60,14 +57,13 @@ const CSS = `
   letter-spacing: .04em; color: #c3261f; text-transform: uppercase;
   -webkit-text-stroke: 3px #111; paint-order: stroke fill;
   text-shadow: 0 0 2px #000, 4px 4px 0 rgba(0,0,0,.55); }
-.ws-word span { display: block; margin-top: 10px; font: 800 18px/1.3 var(--font, system-ui, sans-serif); color: #fff;
+.ws-word span { display: block; margin-top: 10px; font: 700 18px/1.3 var(--font, system-ui, sans-serif); color: #fff;
   text-shadow: 0 2px 6px rgba(0,0,0,.8); }
 `;
 
 const S = {
   sim: null,
   root: null,
-  word: null,
   sub: null,
   active: false,
   t: 0,
@@ -75,11 +71,7 @@ const S = {
   cause: '',
   count: 0,
   canvas: null,
-  prevControl: null,
-  control: null,
-  lying: 0,
-  gotUp: false,
-  at: null,
+  cleared: false,
   history: [],
 };
 
@@ -123,40 +115,16 @@ function setGrey(sim, on) {
   c.style.filter = on ? 'grayscale(1) contrast(1.08) brightness(.82)' : '';
 }
 
-/** A spot to stand, near (x, z), out of anything solid and out of the sea. */
-function safeSpotNear(x, z, avoid) {
-  const ok = (px, pz) => {
-    const h = heightAt(px, pz);
-    if (!(h > WALK.deep + 0.1)) return false;
-    if (solidAt(px, pz, groundAt(px, pz), WALK.radius + 0.1, onFoot.solids || null)) return false;
-    if (avoid && avoid(px, pz)) return false;
-    return true;
-  };
-  if (ok(x, z)) return { x, z };
-  for (let r = 1.5; r < 60; r += 1.5) {
-    for (let k = 0; k < 12; k++) {
-      const a = (k / 12) * Math.PI * 2;
-      const px = x + Math.sin(a) * r;
-      const pz = z - Math.cos(a) * r;
-      if (ok(px, pz)) return { x: px, z: pz };
-    }
-  }
-  return null;
+/** The pause menu's switch (runaway.js paints it): off means no WASTED screen. */
+export function wastedOff(sim) {
+  return !!(sim && sim.settings && sim.settings.runawayPlane === false);
 }
 
-/**
- * The moment. See the top of the file. `opts.avoid(x, z)` -> true for places
- * you must not get up in (the runaway plane's path, say).
- */
+/** The moment. See the top of the file. */
 export function showWasted(sim, cause = 'plane', opts = {}) {
   sim = sim || S.sim;
   if (!sim || S.active || sim.state !== 'flying') return false;
-  // The pause menu's "Runaway plane & WASTED" switch, off: no WASTED moment.
-  if (sim.settings && sim.settings.runawayPlane === false) return false;
-  // The owner's rule: WASTED only when YOUR OWN plane gets you (runaway.js says
-  // so with own: true). Anybody else's plane — another player's, an AI one —
-  // is not a WASTED moment.
-  if (!opts || opts.own !== true) return false;
+  if (wastedOff(sim)) return false;
   S.sim = sim;
   build();
   S.active = true;
@@ -164,63 +132,36 @@ export function showWasted(sim, cause = 'plane', opts = {}) {
   S.scale = WASTED.slowScale;
   S.cause = String(cause || 'plane');
   S.count++;
-  S.gotUp = false;
-  S.lying = 0;
-  S.avoid = typeof opts.avoid === 'function' ? opts.avoid : null;
+  S.cleared = false;
   S.history.push({ cause: S.cause, at: Date.now() });
   if (S.history.length > 10) S.history.shift();
-  if (S.sub) S.sub.textContent = opts.words || 'You got hit by a plane. Up you get!';
+  if (S.sub) S.sub.textContent = (opts && opts.words) || 'Knocked down.';
   if (S.root) S.root.classList.add('is-on', 'is-grey');
   setGrey(sim, true);
   sound(sim);
-  // On foot: flung, and nobody moves you until you are up again.
-  if (onFoot.active) {
-    const w = onFoot.walker;
-    S.at = { x: w.x, z: w.z };
-    const push = opts.push || { x: 0, z: 0 };
-    const k = Math.min(1, 7 / Math.max(0.1, Math.hypot(push.x || 0, push.z || 0)));
-    w.vx = (push.x || 0) * k;
-    w.vz = (push.z || 0) * k;
-    w.vy = 4.2;
-    w.air = true;
-    S.prevControl = onFoot.control;
-    // O does nothing until you are up (onO swallows it: no climbing into
-    // the plane that just ran you over while you lie on the runway).
-    S.control = { locked: true, wasted: true, prompt: '', onO() {} };
-    onFoot.setControl(S.control);
-  } else {
-    S.at = null;
-    S.prevControl = null;
-    S.control = null;
-  }
   return true;
 }
 
-/** Stand back up, beside where it happened. */
-function getUp(sim) {
-  S.gotUp = true;
-  if (!onFoot.active) return;
-  const w = onFoot.walker;
-  const spot = safeSpotNear(w.x, w.z, S.avoid);
-  if (spot) onFoot.place(spot.x, spot.z, w.heading);
-  if (onFoot.control === S.control) onFoot.setControl(S.prevControl || null);
-  S.control = null;
-  S.prevControl = null;
-  const m = onFoot.model;
-  if (m) {
-    m.rotation.x = 0;
-    m.rotation.z = 0;
-  }
+/** The grey and the word go. */
+function clear(sim) {
+  if (S.cleared) return;
+  S.cleared = true;
+  if (S.root) S.root.classList.remove('is-grey', 'is-word');
+  setGrey(sim, false);
 }
 
 function finish(sim) {
   if (!S.active) return;
-  if (!S.gotUp) getUp(sim);
+  clear(sim);
   S.active = false;
   S.scale = 1;
-  S.lying = 0;
   if (S.root) S.root.classList.remove('is-on', 'is-grey', 'is-word');
   setGrey(sim, false);
+}
+
+/** Take the screen down now (the game stopped, or the walk ended). */
+export function endWasted(sim) {
+  finish(sim || S.sim);
 }
 
 /** Real time, from the update wrapper; drives the whole timeline. */
@@ -230,25 +171,9 @@ function tickReal(sim, dt) {
   S.t += dt;
   const t = S.t;
   S.scale = t < WASTED.slowFor ? WASTED.slowScale : 1;
-  if (t >= WASTED.wordAt && S.root && !S.root.classList.contains('is-word')) S.root.classList.add('is-word');
-  if (t >= WASTED.getUpAt && !S.gotUp) {
-    getUp(sim);
-    if (S.root) S.root.classList.remove('is-grey', 'is-word');
-    setGrey(sim, false);
-  }
+  if (t >= WASTED.wordAt && t < WASTED.clearAt && S.root && !S.root.classList.contains('is-word')) S.root.classList.add('is-word');
+  if (t >= WASTED.clearAt) clear(sim);
   if (t >= WASTED.endAt) finish(sim);
-}
-
-/** Flat on your back while it lasts: after onfoot has posed the walker this frame. */
-function poseLying(dt) {
-  const m = onFoot.active && onFoot.model;
-  if (!m) return;
-  const want = S.active && !S.gotUp ? 1 : 0;
-  S.lying += (want - S.lying) * Math.min(1, dt * (want ? 7 : 5));
-  if (S.lying < 0.01 && !want) return;
-  m.rotation.order = 'YXZ';
-  m.rotation.x = (Math.PI / 2) * S.lying;
-  m.position.y += 0.16 * S.lying;
 }
 
 registerExtension({
@@ -278,12 +203,6 @@ registerExtension({
   stop(sim) {
     finish(sim);
   },
-  update(sim, dt) {
-    poseLying(dt);
-    // Nothing to press while you are down: onfoot.js put its prompt up this
-    // frame ("Press O to get in"), and this runs after it.
-    if (S.active && !S.gotUp) FootUI.setPrompt('');
-  },
 });
 
 /** For the tests and the console. */
@@ -303,8 +222,9 @@ export const wasted = {
   get t() {
     return S.t;
   },
-  get gotUp() {
-    return S.gotUp;
+  /** The grey and the word have gone. */
+  get cleared() {
+    return S.cleared;
   },
   get shown() {
     return !!(S.root && S.root.classList.contains('is-on'));
@@ -314,6 +234,9 @@ export const wasted = {
   },
   get grey() {
     return !!(S.canvas && /grayscale/.test(S.canvas.style.filter || ''));
+  },
+  get words() {
+    return S.sub ? S.sub.textContent : '';
   },
   history: S.history,
 };

@@ -72,8 +72,14 @@ file on first load, so even without installing, a second visit works offline.
 | Mute | `M` |
 | Pause | `Esc` |
 
-Every key can be reassigned in **Settings → Controls**. Mouse flying and
-gamepads are supported too (Settings → Flying).
+Every key can be reassigned in **Settings → Controls** — in every game, not
+just the aeroplane: one fold per game (Flying, Helicopter, Boat, Car, Rocket,
+On foot, Multiplayer & PvP, Fun Stuff, Missions & events, View, Game), the one
+you are playing first. Click a key, press the new one (Esc cancels); a key that
+already does something in the same game asks "swap them?". Each fold has its
+own Reset, and **Reset all keys** puts everything back. The hints on screen and
+the `H` card always name your keys. Mouse flying and gamepads are supported
+too (Settings → Flying).
 
 **How do I slow down?** Hold `Ctrl` (or `↓`) to reduce power. `Space` is the
 wheel brakes and only works on the ground. `F` lowers the flaps, which lets you
@@ -130,7 +136,7 @@ src/
     model.js            the aeroplane, lofted from aerofoil sections
     cockpit.js          cockpit interior and the live instrument panel
   flight/
-    input.js            remappable keyboard, mouse flying, gamepad
+    input.js            the one key registry (every game's and feature's keys), mouse, gamepad
     camera.js           cockpit / follow / orbit / wing / tower views
   audio/
     index.js            facade over the whole audio system

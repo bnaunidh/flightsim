@@ -1002,6 +1002,16 @@ registerExtension({
   },
 });
 
+/**
+ * The host's AI aeroplanes as this (not-host) game draws them, for
+ * ./knockdown.js (through ./pilot-mp.js): they can knock a walking pilot
+ * over too. Read-only: { type, dx, dy, dz (drawn position), dh (heading),
+ * v (m/s), vs, f (1 gear down, 2 on the ground) } per aeroplane.
+ */
+export function mirrorTraffic() {
+  return W.mirror;
+}
+
 /** For the tests and the console. */
 export function worldDebug() {
   return {

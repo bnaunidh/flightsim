@@ -1174,6 +1174,11 @@ export async function check(sim, r, say = () => {}, opts = {}) {
          */
         {
           await freshDrive();
+          // On a dry runway: the circle is the tyres' grip, and a sky left wet
+          // by an earlier check made it a bigger one (14.7 s in the full run).
+          const sky = sim.weather ? `${sim.weather.time}/${sim.weather.condition}` : '';
+          const skyWas = sim.weather && typeof sim.weather.serialize === 'function' ? sim.weather.serialize() : null;
+          if (sim.weather && typeof sim.weather.load === 'function') sim.weather.load({ time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 0 });
           const w = sim.vehicle;
           w.reset({ pos: new THREE.Vector3(sx, Terrain.heightAt(sx, sz), sz), headingDeg: hdg });
           sim.step(0.2);
@@ -1202,8 +1207,10 @@ export async function check(sim, r, say = () => {}, opts = {}) {
             fullT != null && fullT <= 12,
             fullT == null
               ? `only ${turned2.toFixed(0)}° in 30 s`
-              : `once round in ${fullT.toFixed(1)} s (after the first quarter), at about ${circleKph.toFixed(0)} km/h (fastest ${top.toFixed(0)}), radius about ${rad2.toFixed(0)} m`
+              : `once round in ${fullT.toFixed(1)} s (after the first quarter), at about ${circleKph.toFixed(0)} km/h (fastest ${top.toFixed(0)}), radius about ${rad2.toFixed(0)} m (sky was ${sky})`
           );
+          // And the sky put back the way it was, for the checks after this one.
+          if (skyWas && typeof sim.weather.load === 'function') sim.weather.load(skyWas);
         }
 
         // ---- speed-sensitive: calm when fast ----

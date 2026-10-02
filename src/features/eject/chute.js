@@ -20,7 +20,7 @@
  *           the canopy snaps open at 1.5 s. Works from any height, even the
  *           ground (a real seat is "zero-zero": zero height, zero speed).
  *   'bail'  a light aeroplane: out of the door, a tumble, canopy at 2.0 s.
- *   'jump'  T-Pose Harrison stepping off his board: canopy at 1.1 s.
+ *   'jump'  T-Pose Harrison opening his own parachute: canopy at 1.1 s.
  *
  * In free fall air drag bleeds off the aeroplane's speed (a cartoon-strong
  * drag, so a Massimo at 900 km/h does not fling you three kilometres). Under

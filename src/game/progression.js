@@ -155,6 +155,228 @@ export function nextRank(p) {
   return { rank: next, need: next.at - p.earned, span: next.at - cur.at, into: p.earned - cur.at };
 }
 
+/* ====================================================================== */
+/*
+ * WHAT A MISSION PAYS.
+ *
+ * "The harder the mission and category, the more credits you get" — the
+ * owner. It used to be one price for everything: 120 plus the score, so the
+ * first lap of the island paid exactly what a night carrier trap paid, and a
+ * child saving for the F-22 did best by flying Island Circuit forty times.
+ *
+ * Now four things decide it, in this order:
+ *
+ *   1. how hard the MISSION is      its `difficulty` label   → DIFFICULTIES
+ *   2. how demanding its CATEGORY is the heading it sits under → CATEGORY_TIERS
+ *   3. the settings difficulty      Easy / Normal / Realistic → SETTINGS_PAY
+ *   4. how well you flew            the 0–100 score            → SCORE_FLOOR
+ *
+ * 1 × 2 × 3, rounded to ten, is the most a mission can pay: the "Up to 380
+ * credits" on its card. The score then decides how much of that you get —
+ * finishing at all is worth SCORE_FLOOR of it, a perfect run all of it.
+ *
+ * Everything is read off the label and the heading, never off a list of
+ * mission ids, so a mission that does not exist yet is priced the moment it
+ * says what it is. A label nobody has used before is read generously
+ * ('Tricky' is Hard, 'Expert' is above Very hard); one that cannot be read at
+ * all is Medium, which is what the mission board prints for it.
+ *
+ * Crashing still pays nothing and never takes anything away.
+ */
+
+/**
+ * Every difficulty label in use, easiest first. `rank` is THE ordering — the
+ * one thing a list sorted by difficulty and the pay both read, through
+ * difficultyRank() — and `pay` is what that difficulty is worth, at the top
+ * score, in the plainest category on Normal.
+ *
+ * Free is the free-roam entries (the boat's patrol, the van's open roads):
+ * not a mission, nothing to finish, and first in any sort.
+ */
+export const DIFFICULTIES = [
+  { id: 'free', label: 'Free', rank: 0, pay: 80 },
+  { id: 'training', label: 'Training', rank: 1, pay: 140 },
+  { id: 'easy', label: 'Easy', rank: 2, pay: 180 },
+  { id: 'medium', label: 'Medium', rank: 3, pay: 240 },
+  { id: 'hard', label: 'Hard', rank: 4, pay: 330 },
+  { id: 'very-hard', label: 'Very hard', rank: 5, pay: 420 },
+  { id: 'expert', label: 'Expert', rank: 6, pay: 500 },
+];
+
+/* Words a mission team might type, mapped onto the rows above. */
+const DIFFICULTY_WORDS = {
+  free: 'free', sandbox: 'free', 'free roam': 'free', none: 'free',
+  training: 'training', tutorial: 'training', lesson: 'training', intro: 'training', beginner: 'training', starter: 'training',
+  easy: 'easy', simple: 'easy', gentle: 'easy',
+  medium: 'medium', normal: 'medium', moderate: 'medium', intermediate: 'medium', average: 'medium',
+  hard: 'hard', tricky: 'hard', tough: 'hard', difficult: 'hard', advanced: 'hard', challenging: 'hard',
+  'very hard': 'very-hard', 'very-hard': 'very-hard', veryhard: 'very-hard', 'really hard': 'very-hard', 'super hard': 'very-hard',
+  expert: 'expert', extreme: 'expert', insane: 'expert', master: 'expert', legendary: 'expert', impossible: 'expert',
+};
+
+const MEDIUM = DIFFICULTIES.find((d) => d.id === 'medium');
+
+/**
+ * The row for a difficulty label, read generously. A number counts from Easy
+ * (1 Easy … 5 Expert), the way the map picker writes it.
+ */
+export function difficultyOf(label) {
+  if (typeof label === 'number' && isFinite(label)) {
+    const rank = Math.max(2, Math.min(6, Math.round(label) + 1));
+    return DIFFICULTIES.find((d) => d.rank === rank);
+  }
+  const s = String(label == null ? '' : label).toLowerCase().trim().replace(/[_]+/g, ' ').replace(/\s+/g, ' ');
+  if (!s) return MEDIUM;
+  const id = DIFFICULTY_WORDS[s] || DIFFICULTY_WORDS[s.replace(/-/g, ' ')];
+  if (id) return DIFFICULTIES.find((d) => d.id === id);
+  // 'Very Tricky', 'Hard+' and the like: the strongest word in it wins.
+  if (/expert|extreme|insane|impossible/.test(s)) return DIFFICULTIES.find((d) => d.id === 'expert');
+  if (/very|super|really/.test(s) && /hard|tricky|tough|difficult/.test(s)) return DIFFICULTIES.find((d) => d.id === 'very-hard');
+  if (/hard|tricky|tough|difficult|advanced/.test(s)) return DIFFICULTIES.find((d) => d.id === 'hard');
+  if (/easy|simple|gentle/.test(s)) return DIFFICULTIES.find((d) => d.id === 'easy');
+  if (/train|tutorial|lesson|learn/.test(s)) return DIFFICULTIES.find((d) => d.id === 'training');
+  return MEDIUM;
+}
+
+/**
+ * How hard a difficulty label is, as a number: 0 Free, 1 Training, 2 Easy,
+ * 3 Medium, 4 Hard, 5 Very hard, 6 Expert. Sort by this — the pay does, so a
+ * list sorted with it and the credits on its cards always agree.
+ */
+export function difficultyRank(label) {
+  return difficultyOf(label).rank;
+}
+
+/**
+ * How demanding each mission heading really is (the headings are menus.js's
+ * MISSION_CATEGORIES, plus the rocket's Space). Placed by reading the missions
+ * under each one, not by the name on the heading:
+ *
+ *   1 Practice  Training — one new thing at a time, nothing to break (First
+ *               Run is "learn where the pedals are"). Random & goofy — a
+ *               rubber duck, a cow, a giant bee, nearly all in the Skylark.
+ *   2 Jobs      Deliveries and Passengers & cargo — a clock and a load, flown
+ *               or driven somewhere ordinary. Meteor mode — dodging and
+ *               zapping rocks in the Courier, an arcade game in the sky.
+ *   3 Danger    Rescue and Firefighting — hovering over the sea, winching off
+ *               a deck at night, a lifeboat in a gale, scooping water and
+ *               dropping it on a moving fire. Challenges — a timed lap of an
+ *               erupting volcano in the fighter, three passes through a
+ *               tornado. Emergencies — a dead engine over the sea, a hijack.
+ *               Space — landing a booster on a ship.
+ *   4 Elite     Military — behind the passcode, in the twitchiest aeroplanes
+ *               in the game: a trap on a moving carrier deck, the tailless
+ *               wing at night below 500 feet.
+ *
+ * A heading that is not listed (a team invents "Stunts") pays as Jobs until
+ * somebody places it here.
+ */
+export const CATEGORY_TIERS = [
+  { tier: 1, name: 'Practice', mult: 1, categories: ['training', 'goofy'] },
+  { tier: 2, name: 'Jobs', mult: 1.25, categories: ['delivery', 'airline', 'meteor'] },
+  { tier: 3, name: 'Danger', mult: 1.5, categories: ['rescue', 'fire', 'challenge', 'events', 'space'] },
+  { tier: 4, name: 'Elite', mult: 1.75, categories: ['military'] },
+];
+const DEFAULT_TIER = CATEGORY_TIERS[1];
+
+/** The tier a heading id is in. */
+export function categoryTier(category) {
+  const id = String(category == null ? '' : category).toLowerCase().trim();
+  return CATEGORY_TIERS.find((t) => t.categories.includes(id)) || DEFAULT_TIER;
+}
+
+/*
+ * Which heading a mission is under. menus.js owns that answer
+ * (missionCategory(): the mission's own `category`, a table for the old ones,
+ * the passcode, the words in its name) and hands it over when it loads — so
+ * the pay and the board can never disagree about where a mission sits, and
+ * this file does not have to import the whole menu to find out. Until it has,
+ * a mission's own `category` field is used as written.
+ */
+let categoryResolver = null;
+export function setCategoryResolver(fn) {
+  categoryResolver = typeof fn === 'function' ? fn : null;
+}
+export function categoryOfMission(m) {
+  if (!m) return '';
+  if (categoryResolver) {
+    try {
+      return categoryResolver(m);
+    } catch (e) {
+      /* fall through to the field */
+    }
+  }
+  return String(m.category || '').toLowerCase().trim();
+}
+
+/**
+ * The settings difficulty, as today: Easy pays less, which is the honest trade
+ * for a softer undercarriage; Realistic pays more for a harder one.
+ */
+export const SETTINGS_PAY = { easy: 0.6, normal: 1, realistic: 1.5 };
+
+/*
+ * Games whose vehicle does not read the settings difficulty, so it must not
+ * change their pay either. The rocket flies the same on every setting.
+ */
+const SETTINGS_FREE_GAMES = ['rocket'];
+
+/** Finishing at all earns this share of the most; the score earns the rest. */
+export const SCORE_FLOOR = 0.4;
+
+function settingsMult(settings, game) {
+  if (game && SETTINGS_FREE_GAMES.includes(game)) return 1;
+  return SETTINGS_PAY[settings] || 1;
+}
+
+/**
+ * The most a mission can pay — the number on its card.
+ *
+ * @param {object} mission   a mission def, or just { difficulty, category }
+ * @param {object} [o]
+ * @param {string} [o.category]  the heading id, if the caller already knows it
+ * @param {string} [o.settings]  'easy' | 'normal' | 'realistic'
+ * @param {string} [o.game]      'flight' | 'heli' | 'boat' | 'car' | 'rocket'
+ * @returns {number} credits, a round ten
+ */
+export function maxPayout(mission, { category, settings = 'normal', game } = {}) {
+  const m = mission || {};
+  const cat = category != null ? category : categoryOfMission(m);
+  const raw = difficultyOf(m.difficulty).pay * categoryTier(cat).mult * settingsMult(settings, game || m.game);
+  return Math.max(10, Math.round(raw / 10) * 10);
+}
+
+/** What a finished mission pays at a score of 0–100. Never more than the most. */
+export function payoutFor(max, score) {
+  const s = Math.max(0, Math.min(1, (Number(score) || 0) / 100));
+  return Math.min(max, Math.round((max * (SCORE_FLOOR + (1 - SCORE_FLOOR) * s)) / 5) * 5);
+}
+
+/** The one small line on a mission card or a briefing. */
+export function payLine(max) {
+  return `Up to ${formatCredits(max)} credits`;
+}
+
+/**
+ * The debrief's row for what award() paid: "Credits +230 of up to 270". Empty
+ * when nothing was paid, so a crash's debrief does not mention money at all.
+ */
+export function debriefPayRow(paid) {
+  if (!paid || !(paid.credits > 0)) return '';
+  const of = paid.max ? ` <span class="debrief-pay-of">of up to ${formatCredits(paid.max)}</span>` : '';
+  return `<li class="debrief-pay" data-debrief-pay>Credits <b>+${formatCredits(paid.credits)}</b>${of}</li>`;
+}
+
+/*
+ * What a run that is not one of the missions is priced as.
+ *
+ * Flight school is a long lesson — a Medium in Training. A free flight (the
+ * rocket's free launches, today the only free flight that finishes) pays "a
+ * little", as main.js always said it should: the Free row, in its category.
+ */
+const TUTORIAL_AS = { difficulty: 'Medium', category: 'training' };
+const FREE_AS = { difficulty: 'Free', category: 'free' };
+
 /**
  * Pay for a flight.
  *
@@ -163,13 +385,19 @@ export function nextRank(p) {
  * practising. Crashing pays nothing, but it does not take anything away —
  * losing credits for crashing punishes exactly the person who most needs to
  * keep trying.
+ *
+ * `difficulty` is the SETTINGS difficulty (easy / normal / realistic), as it
+ * always was. The mission's own difficulty and heading come from `mission` —
+ * the def that was flown, or just { difficulty, category } — and `category`
+ * overrides the heading when the caller knows better.
+ *
+ * @returns {{credits:number, total:number, max:number}}
  */
-export function award(p, { kind, score = 0, crashed = false, difficulty = 'normal', label = '' }) {
-  if (crashed) return { credits: 0, total: p.credits };
-  const base = kind === 'mission' ? 120 : kind === 'tutorial' ? 200 : 25;
-  // Easy pays less, which is the honest trade for a softer undercarriage.
-  const mult = difficulty === 'easy' ? 0.6 : difficulty === 'realistic' ? 1.5 : 1;
-  const earned = Math.round((base + score * 2.2) * mult);
+export function award(p, { kind, score = 0, crashed = false, difficulty = 'normal', label = '', mission = null, category, game } = {}) {
+  const priced = kind === 'tutorial' ? TUTORIAL_AS : kind === 'free' ? FREE_AS : mission || {};
+  const max = maxPayout(priced, { category, settings: difficulty, game: game || (mission && mission.game) });
+  if (crashed) return { credits: 0, total: p.credits, max };
+  const earned = payoutFor(max, score);
   p.credits += earned;
   p.earned += earned;
   // The leaderboard: your five best, ever.
@@ -177,7 +405,7 @@ export function award(p, { kind, score = 0, crashed = false, difficulty = 'norma
   p.best.sort((a, b) => b.score - a.score);
   p.best = p.best.slice(0, 5);
   save(p);
-  return { credits: earned, total: p.credits };
+  return { credits: earned, total: p.credits, max };
 }
 
 export function isUnlocked(p, aircraftId) {

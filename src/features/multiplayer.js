@@ -119,6 +119,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extLayer } from '../game/extensions.js';
+import { registerActions, isKey } from '../flight/input.js';
 import { applyMap, heightAt } from '../world/terrain.js';
 import { refreshRunways } from '../world/airport.js';
 import { refreshApronElevation } from '../world/apron.js';
@@ -132,7 +133,7 @@ import {
   PROTO, MAX_PLAYERS, STATE_HZ, QUICK_CHAT, COLOURS, GAMES, LOBBY_MAX, CODE_GAME_MAX, BUMP_DEFAULT, BUMP_RULES, BUMP_SHORT, bumpRule,
   slotId, codeId, normaliseCode, shownCode, playerPeerId, randomToken, CODE_EXAMPLE, seatToken, lobbyName, worldName, lobbyLabel, readPrivateCount, pdirId, pdirOf, readPlayer,
   cleanName, parseServerName, randomCallSign, randomServerName, serverNameFor, mapNameFor,
-  escapeHtml, encodeState, chatIndexForKey, safeColour,
+  escapeHtml, encodeState, safeColour,
 } from './multiplayer/protocol.js';
 import { Signaling, PUBLIC_BACKEND, LAN_UNKNOWN, findNetHash, detectLanServer } from './multiplayer/signaling.js';
 import { Net, RELAY_SERVERS } from './multiplayer/link.js';
@@ -288,6 +289,12 @@ class Multiplayer {
      * (../bump.js, ../pvp.js) — and `pvp`, switched on (../pvp.js).
      */
     this.extraFlags = { ghost: false, pvp: false };
+    /**
+     * Out on foot: () => the walking pilot for the snapshot ({ x, y, z,
+     * heading, speed, air, down, wave, wading, outfit, knock }) or null.
+     * Set by ../pilot-mp.js; nothing here knows what walking is.
+     */
+    this.walkState = null;
     /** Things other features draw on the minimap overlay: fn(g, toXY, sim), toXY(x, z) → [x, y] or null. */
     this.minimapExtras = [];
     /** The bumping rule a private match is made with (protocol.js BUMP_RULES), picked on the lobby screen. */
@@ -2098,9 +2105,17 @@ class Multiplayer {
       if (p.id === this.meId) {
         const v = sim && (sim.mode === 'drive' && sim.vehicle ? sim.vehicle : sim.aircraft);
         const q = v && v.quat;
+        let walk = null;
+        try {
+          walk = this.walkState ? this.walkState() : null;
+        } catch (e) {
+          walk = null;
+        }
         return {
           ...base, me: true, ride: this.rideNow(), pos: plain(v && v.pos), quat: q ? { x: q.x, y: q.y, z: q.z, w: q.w } : null, vel: plain(v && v.vel), visible: true,
           ghost: !!this.extraFlags.ghost, pvp: !!this.extraFlags.pvp, onGround: sim.mode === 'drive' ? true : !!(v && v.onGround),
+          // Out on foot: where the pilot is (the ride is parked, or flying itself).
+          walk: walk ? { x: walk.x, y: walk.y, z: walk.z, down: !!walk.down } : null,
         };
       }
       const r = this.remotes.players.get(p.id);
@@ -2112,6 +2127,8 @@ class Multiplayer {
         // List 2, part 2: what their snapshot says (protocol.js flags), and how big what is drawn is.
         ghost: !!(snap && snap.ghost), pvp: !!(snap && snap.pvp), onGround: !!(snap && snap.onGround),
         radius: r && r.model && r.model.userData ? r.model.userData.mpRadius || 0 : 0,
+        // Out on foot: where this game draws their pilot (../multiplayer/walkers.js).
+        walk: r && r.walker && r.walker.on ? { x: r.walker.x, y: r.walker.y, z: r.walker.z, down: !!r.walker.down } : null,
       };
     });
   }
@@ -2340,10 +2357,22 @@ class Multiplayer {
     if (hud && hud.notify) hud.notify(say(text), kind, secs);
   }
 
-  /** This player's snapshot, encoded. */
+  /**
+   * This player's snapshot, encoded. Out on foot, the walking pilot rides on
+   * it too (protocol.js, the walker's tail): `walkState`, set by
+   * ./pilot-mp.js, says where they are, or null.
+   */
   myState(t) {
     const sim = this.sim;
     this._seq = (this._seq + 1) & 0xffff;
+    let walk = null;
+    if (this.walkState) {
+      try {
+        walk = this.walkState() || null;
+      } catch (e) {
+        walk = null;
+      }
+    }
     if (sim.mode === 'drive' && sim.vehicle) {
       const v = sim.vehicle;
       const kind = v.spec && v.spec.kind === 'car' ? 'car' : 'boat';
@@ -2351,7 +2380,7 @@ class Multiplayer {
         id: this.meId, seq: this._seq, t, pos: v.pos, quat: v.quat, vel: v.vel, game: kind, type: kind,
         throttle: Math.abs(v.throttle || 0), steer: v.steer || 0, brakes: (v.brakes || 0) > 0.05,
         onGround: true, engineOn: true, lights: true, gearDown: true, gearPos: 1,
-        ghost: !!this.extraFlags.ghost, pvp: !!this.extraFlags.pvp,
+        ghost: !!this.extraFlags.ghost, pvp: !!this.extraFlags.pvp, walk,
       });
     }
     const ac = sim.aircraft;
@@ -2363,7 +2392,7 @@ class Multiplayer {
       gearDown: ac.gearDown, gearPos: ac.gearPos, flaps: ac.flaps, throttle: c.throttle, rpm: ac.rpm,
       pitch: c.pitch, roll: c.roll, yaw: c.yaw, brakes: (c.brakes || 0) > 0.1,
       onGround: ac.onGround, engineOn: ac.engineOn, crashed: ac.crashed, lights: ac.engineOn || ac.rpm > 0.05,
-      ghost: !!this.extraFlags.ghost, pvp: !!this.extraFlags.pvp,
+      ghost: !!this.extraFlags.ghost, pvp: !!this.extraFlags.pvp, walk,
     });
   }
 
@@ -2677,6 +2706,20 @@ export function openServerList(sim) {
   return multiplayer;
 }
 
+/*
+ * The keys, in the one registry: Settings → Controls → Multiplayer & PvP.
+ * The quick-chat lines keep their default keys in QUICK_CHAT (protocol.js);
+ * the player can move them here.
+ */
+const MP_ACTIONS = {
+  mpPlayers: { label: 'Multiplayer: player list (hold)', group: 'Multiplayer & PvP', ctx: ['plane', 'heli', 'boat', 'car'], default: ['Tab'] },
+};
+QUICK_CHAT.forEach((c, i) => {
+  if (c.key) MP_ACTIONS[`mpChat${i + 1}`] = { label: `Quick chat: ${c.text}`, group: 'Multiplayer & PvP', ctx: ['plane', 'heli', 'boat', 'car'], default: [c.key] };
+});
+registerActions(MP_ACTIONS);
+const CHAT_ACTIONS = Object.keys(MP_ACTIONS).filter((a) => a !== 'mpPlayers');
+
 registerExtension({
   id: 'multiplayer',
   install(sim) {
@@ -2708,17 +2751,18 @@ registerExtension({
   },
   key(sim, code, down, e) {
     // Tab let go after the game was left with it held down (Leave, in the list): the mouse still has to come back.
-    if (code === 'Tab' && !down && multiplayer._mouseFreed && !multiplayer.role) {
+    if (isKey(sim, 'mpPlayers', code) && !down && multiplayer._mouseFreed && !multiplayer.role) {
       multiplayer.freeMouse(false);
       return true;
     }
     if (!multiplayer.role) return false;
-    if (code === 'Tab') {
+    if (isKey(sim, 'mpPlayers', code)) {
       multiplayer.hud.hold(down);
       multiplayer.freeMouse(down);
       return true;
     }
-    const i = chatIndexForKey(code);
+    const a = CHAT_ACTIONS.find((id) => isKey(sim, id, code));
+    const i = a ? Number(a.slice(6)) - 1 : -1;
     if (i >= 0) {
       if (down && !(e && e.repeat)) multiplayer.chat(i);
       return true;

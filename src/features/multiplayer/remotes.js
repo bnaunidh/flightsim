@@ -12,6 +12,10 @@
  * ride off where it draws the others, under the game's bumping rule, and
  * never on the ground, at spawn or when two start inside each other.
  *
+ * Out on foot (PROTO 4), a player is their aeroplane where they left it AND
+ * their pilot walking about (./walkers.js): the tag and the minimap dot go
+ * with the pilot, and the pilot can be knocked down (knock()).
+ *
  * Models live in the group the world hands this feature, so a world rebuild
  * (a map change, a graphics change) disposes them with everything else; the
  * next frame builds them again. Released models are kept, one per type and
@@ -26,6 +30,7 @@ import { createBoat, createCar, updateVehicleModel } from '../../vehicles/models
 import { VEHICLES } from '../../vehicles/surface.js';
 import { Track, Smoother, RotSmoother } from './interp.js';
 import { QUICK_CHAT } from './protocol.js';
+import { RemoteWalker } from './walkers.js';
 
 const tmpV = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion();
@@ -413,6 +418,7 @@ export class Remotes {
         disposeTag(p.tag);
         p.tag = null;
       }
+      if (p.walker) p.walker.forget(!!(p.walker.model && this.own && p.walker.model.parent === this.own));
     }
     // Pooled models were detached when they were released, so the world did not dispose them; they are kept.
     if (this.own) {
@@ -436,7 +442,7 @@ export class Remotes {
   add(id, { name, colour, host = false, admin = false }) {
     let p = this.players.get(id);
     if (!p) {
-      p = { id, name, colour, track: new Track(), smooth: new Smoother({ snapSecs: 0.6, noBack: true }), rot: new RotSmoother(), drawn: null, quat: null, model: null, modelKey: '', tag: null, chat: null, chatUntil: 0, sample: null, dist: 0, visible: false, host: false, admin: false };
+      p = { id, name, colour, track: new Track(), smooth: new Smoother({ snapSecs: 0.6, noBack: true }), rot: new RotSmoother(), drawn: null, quat: null, model: null, modelKey: '', tag: null, chat: null, chatUntil: 0, sample: null, dist: 0, visible: false, host: false, admin: false, walker: new RemoteWalker() };
       this.players.set(id, p);
     }
     p.name = name;
@@ -456,6 +462,7 @@ export class Remotes {
     this._release(p);
     if (p.tag) disposeTag(p.tag);
     p.tag = null;
+    if (p.walker) p.walker.forget(true);
     this.players.delete(id);
     this._acs.delete(id);
     this._dots.delete(id);
@@ -485,6 +492,12 @@ export class Remotes {
     const p = this.players.get(snap.id);
     if (!p) return false;
     return p.track.push(snap, now);
+  }
+
+  /** Their game says their pilot was knocked down (../pilot-mp.js 'pilot:down'): the same fall, here. */
+  knock(id, d) {
+    const p = this.players.get(id);
+    return !!(p && p.walker && p.walker.knock(d));
   }
 
   say(id, m, now) {
@@ -600,6 +613,7 @@ export class Remotes {
       const stale = !s || p.track.stale(now);
       if (stale) {
         if (p.model) p.model.visible = false;
+        if (p.walker) p.walker.hide();
         if (p.tag) p.tag.sprite.visible = p.tag.pip.visible = false;
         p.visible = false;
         p.smooth.reset();
@@ -687,6 +701,15 @@ export class Remotes {
         }
       }
 
+      // Out on foot: their pilot, walking (or knocked down) beside wherever their ride is.
+      let walking = false;
+      try {
+        walking = !!(p.walker && p.walker.update(p.track, now, dt, this._root(sim), gone || dm > 900));
+      } catch (err) {
+        walking = false;
+      }
+      const wk = walking ? p.walker : null;
+
       // The tag.
       const root = this._root(sim);
       if (!p.tag) {
@@ -695,7 +718,10 @@ export class Remotes {
       }
       if (root && !p.tag.sprite.parent) root.add(p.tag.sprite);
       if (root && !p.tag.pip.parent) root.add(p.tag.pip);
-      const d = me ? Math.hypot(at.x - me.x, at.y - me.y, at.z - me.z) : 0;
+      const tx = wk ? wk.x : at.x;
+      const ty = wk ? wk.y : at.y;
+      const tz = wk ? wk.z : at.z;
+      const d = me ? Math.hypot(tx - me.x, ty - me.y, tz - me.z) : 0;
       p.dist = d;
       const chat = p.chatUntil > now ? p.chat : null;
       let note = '';
@@ -730,10 +756,11 @@ export class Remotes {
        * few pixels and the tag must not cover it.
        */
       // syncAircraftModel drops only the pack's models by their ground offset; the built-in ones sit where they are.
-      const top = (model.userData.mpTop || 2) + (kind === 'air' && model.userData.fleetBridge ? model.userData.groundOffsetY || 0 : 0);
-      const lift = top + 1.3 + Math.min(kind === 'air' ? 30 : 20, d * 0.004);
-      p.tag.sprite.position.set(at.x, at.y, at.z).addScaledVector(UP, lift);
-      p.tag.pip.position.set(at.x, at.y, at.z).addScaledVector(UP, top + 1);
+      // Over the pilot's head, when they are out walking: the name, and the crown if they host.
+      const top = wk ? (wk.down ? 0.5 : 1.75) : (model.userData.mpTop || 2) + (kind === 'air' && model.userData.fleetBridge ? model.userData.groundOffsetY || 0 : 0);
+      const lift = top + (wk ? 0.75 : 1.3) + Math.min(wk ? 20 : kind === 'air' ? 30 : 20, d * 0.004);
+      p.tag.sprite.position.set(tx, ty, tz).addScaledVector(UP, lift);
+      p.tag.pip.position.set(tx, ty, tz).addScaledVector(UP, top + (wk ? 0.5 : 1));
       // Hidden with the rest of the interface (U), for a clean shot; placed, sized and decluttered in _layoutTags.
       p.tagOn = tags && d > 4 && !gone;
       let dot = this._dots.get(p.id);
@@ -743,9 +770,9 @@ export class Remotes {
       }
       dot.name = p.name;
       dot.colour = p.colour;
-      dot.x = at.x;
-      dot.z = at.z;
-      dot.heading = headingOf(q);
+      dot.x = tx;
+      dot.z = tz;
+      dot.heading = wk ? wk.heading : headingOf(q);
       dot.dist = d;
       out.push(dot);
     }

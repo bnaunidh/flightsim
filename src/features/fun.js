@@ -29,6 +29,15 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension } from '../game/extensions.js';
+import { registerActions, isKey } from '../flight/input.js';
+
+/*
+ * T, in the one registry: Settings → Controls → Fun Stuff. The F-35B's hover
+ * (stovl.js) has T too, by design: it takes T first in that one aeroplane.
+ */
+registerActions({
+  smoke: { label: 'Smoke trail on / off', group: 'Fun Stuff', ctx: ['plane', 'heli'], default: ['KeyT'] },
+});
 import { MAP, AIRPORT, heightAt, harbourMouth } from '../world/terrain.js';
 import * as Prog from '../game/progression.js';
 import { fireStatus } from './wildfire.js';
@@ -651,7 +660,7 @@ registerExtension({
   update,
 
   key(sim, code, down, e) {
-    if (code !== 'KeyT') return false;
+    if (!isKey(sim, 'smoke', code)) return false;
     const craft = craftOf(sim);
     if (craft !== 'plane' && craft !== 'heli') return false;
     if (down && !(e && e.repeat)) toggleSmoke(sim);

@@ -24,6 +24,7 @@
  */
 
 import { extLayer } from '../../game/extensions.js';
+import { keyName, bindingsVersion } from '../../flight/input.js';
 
 const CSS = `
 .rk-hud { position: absolute; inset: 0; pointer-events: none; color: var(--text, #eaf1fb);
@@ -213,6 +214,31 @@ function touchWords(str) {
     .replace(/hold SPACE/g, 'hold BURN');
 }
 
+/*
+ * ...and on a keyboard, the player's keys. The words are written for the
+ * defaults (SPACE launches, drops and burns); when Settings → Controls →
+ * Rocket has moved them, "Press SPACE" names the launch key and "Hold SPACE"
+ * the burn key.
+ */
+const up = (k) => String(k).toUpperCase();
+function keyWords(str) {
+  const a = keyName('rocketAction');
+  const b = keyName('rocketBurn');
+  if (a === 'Space' && b === 'Space') return str;
+  return String(str)
+    .replace(/Press SPACE/g, `Press ${up(a)}`)
+    .replace(/(Hold|hold|HOLD) SPACE/g, (m, h) => `${h} ${up(b)}`)
+    .replace(/SPACE held/g, `${up(b)} held`);
+}
+
+/** The key line along the bottom, as the player has the keys. */
+function keysLine() {
+  const k = (a) => `<kbd>${keyName(a)}</kbd>`;
+  const act = keyName('rocketAction');
+  return `${k('rocketLeanLeft')} ${k('rocketLeanRight')} lean · <kbd>${act === 'Space' ? 'SPACE' : act}</kbd> launch · drop · `
+    + `${keyName('rocketBurn') === act ? '' : `${k('rocketBurn')} `}burn · ${k('rocketView')} camera · ${k('rocketWarp')} faster · ${k('pause')} pause`;
+}
+
 export class RocketHud {
   constructor({ touch, onPause, onView, onWarp, onAction, onLean, onBurn }) {
     if (!document.getElementById('rk-css')) {
@@ -329,7 +355,8 @@ export class RocketHud {
       b.addEventListener('pointerleave', off);
     }
 
-    this.keys = el('div', 'rk-keys', '<kbd>◀</kbd> <kbd>▶</kbd> lean · <kbd>SPACE</kbd> launch · drop · burn · <kbd>C</kbd> camera · <kbd>F</kbd> faster · <kbd>Esc</kbd> pause');
+    this.keys = el('div', 'rk-keys', keysLine());
+    this.keysVer = bindingsVersion();
 
     this.target = el('div', 'rk-target', '<b>LAND HERE</b><i></i>');
     this.target.hidden = true;
@@ -410,6 +437,12 @@ export class RocketHud {
     this.textT -= dt;
     const writeText = this.textT <= 0;
     if (writeText) this.textT = 0.12;
+    // A key moved in Settings (the game was paused): every line names it again.
+    if (this.keysVer !== bindingsVersion()) {
+      this.keysVer = bindingsVersion();
+      this.keys.innerHTML = keysLine();
+      this.last.title = this.last.text = this.last.burn = this.last.act = null;
+    }
 
     // Toasts, one at a time.
     this.toastLeft -= dt;
@@ -430,11 +463,11 @@ export class RocketHud {
     if (writeText) {
       const o = s.objective;
       if (this.last.title !== o.title) {
-        this.objTitle.textContent = this.touch ? touchWords(o.title) : o.title;
+        this.objTitle.textContent = this.touch ? touchWords(o.title) : keyWords(o.title);
         this.last.title = o.title;
       }
       if (this.last.text !== o.text) {
-        this.objText.textContent = this.touch ? touchWords(o.text) : o.text;
+        this.objText.textContent = this.touch ? touchWords(o.text) : keyWords(o.text);
         if (this.last.tone !== o.tone || !this.last.text || this.last.text.slice(0, 12) !== o.text.slice(0, 12)) {
           this.objText.classList.remove('is-flash');
           void this.objText.offsetWidth;
@@ -472,7 +505,8 @@ export class RocketHud {
         this.action.hidden = true;
       } else {
         this.action.hidden = false;
-        const html = `${act.label}${s.touch ? '' : '<small>SPACE</small>'}`;
+        const ak = keyName('rocketAction');
+        const html = `${act.label}${s.touch ? '' : `<small>${ak === 'Space' ? 'SPACE' : up(ak)}</small>`}`;
         if (this.last.act !== html) { this.action.innerHTML = html; this.last.act = html; }
         this.action.dataset.mode = act.mode || 'press';
         this.action.classList.toggle('is-warn', act.tone === 'warn');
@@ -544,7 +578,7 @@ export class RocketHud {
             ? 'SPACE held ✓ — it fires by itself'
             : 'Hold SPACE when you want to slow down';
       if (this.last.burn !== burnTxt) {
-        this.burnEl.textContent = this.touch ? touchWords(burnTxt) : burnTxt;
+        this.burnEl.textContent = this.touch ? touchWords(burnTxt) : keyWords(burnTxt);
         this.burnEl.className = `rk-burn${L.burning ? ' is-on' : L.need ? ' is-need' : ''}`;
         this.last.burn = burnTxt;
         this.landBottom = 0;
