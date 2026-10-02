@@ -35,6 +35,7 @@ import { check as rocket } from './rocket.browser.js';
 import { check as races } from './race-all.browser.js';
 import { check as traffic } from './traffic.browser.js';
 import { check as weapons } from './weapons.browser.js';
+import { check as minimapGhosts } from './minimap-ghosts.browser.js';
 
 export const CHECKS = [
   { id: 'airport', check: airport },
@@ -55,6 +56,8 @@ export const CHECKS = [
   { id: 'quality', check: quality },
   { id: 'traffic', check: traffic },
   { id: 'weapons', check: weapons },
+  // After weapons (it drives the meteor missions too): nothing of meteor mode on, or left on, the minimap.
+  { id: 'minimap-ghosts', check: minimapGhosts },
   { id: 'multiplayer', check: multiplayer },
   { id: 'multiplayer-list2', check: multiplayerList2 },
   { id: 'multiplayer-list3', check: multiplayerList3 },

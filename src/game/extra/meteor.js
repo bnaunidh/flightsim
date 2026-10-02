@@ -105,7 +105,7 @@ export const MISSIONS = [
     steps: [
       {
         id: 'watch',
-        text: 'Watch the sky ahead! Fly through the gold stars to collect stardust. Point your nose at a meteor and zap it.',
+        text: 'Watch the sky ahead! Fly through the stardust a meteor leaves behind to collect it. Point your nose at a meteor and zap it.',
         hint: 'Stardust is left where a meteor burns up near you — the arrow points to the nearest cloud.',
         hintEvery: 45,
         atc: {
@@ -132,7 +132,9 @@ export const MISSIONS = [
     name: 'Rock Dodger',
     short: 'Three minutes, three shields',
     difficulty: 'Medium',
-    icon: '✹',
+    // Not a star glyph: the gold stars on the minimap are the Star Hunt's,
+    // and "the meteor icon" was being read into them.
+    icon: '◉',
     category: 'meteor',
     game: 'flight',
     map: 'kestrel',
@@ -259,7 +261,7 @@ export const MISSIONS = [
     name: 'Photograph the Big One',
     short: 'Get the picture before splashdown',
     difficulty: 'Easy',
-    icon: '✧',
+    icon: '🔭',
     category: 'meteor',
     game: 'flight',
     map: 'kestrel',

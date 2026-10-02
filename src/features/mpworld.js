@@ -804,7 +804,10 @@ mp.minimapExtras.push((g, toXY) => {
   const t = now();
   W.marks = W.marks.filter((m) => t - m.at < 60000);
   for (const m of W.marks) {
-    const [x, y] = toXY(m.x, m.z);
+    const [x, y, off] = toXY(m.x, m.z);
+    // Past the rim it is not drawn: a cross pinned to the bezel read as a
+    // mark on the chart (the crashes feature's own rule, marks.js).
+    if (off) continue;
     const a = Math.max(0.25, 1 - (t - m.at) / 60000);
     g.globalAlpha = a;
     g.lineCap = 'round';

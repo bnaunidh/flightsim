@@ -1482,7 +1482,72 @@ function placePanel() {
   }
   const top = `${Math.round(bottom + 10)}px`;
   if (UI.panel.style.top !== top) UI.panel.style.top = top;
+  /*
+   * And where the minimap is, for the pinned reticles (see placeReticle).
+   * Measured here, twice a second with the rest, never per frame.
+   */
+  const mm = document.querySelector('.minimap');
+  const r = mm && mm.style.display !== 'none' && mm.getBoundingClientRect ? mm.getBoundingClientRect() : null;
+  if (r && r.width > 0 && r.height > 0) {
+    const m = UI.mapRect || (UI.mapRect = { l: 0, t: 0, r: 0, b: 0 });
+    m.l = r.left - 4;
+    m.t = r.top - 4;
+    m.r = r.right + 4;
+    m.b = r.bottom + 4;
+  } else {
+    UI.mapRect = null;
+  }
 }
+
+/*
+ * The footprint of a pinned ("is-edge") reticle round its anchor: the 34 px
+ * teardrop and the distance printed under it.
+ */
+const PIN_HALF = 20;
+const PIN_UP = 20;
+const PIN_DOWN = 40;
+
+/**
+ * A pinned reticle must not sit on the minimap.
+ *
+ * The owner: "I see a meteor icon on the minimap even though there isn't
+ * one". It was this. The pin bands keep the HUD's top and bottom clear, but
+ * the minimap lives in a corner INSIDE those bands — bottom-right on a desk,
+ * top-left on a touch screen — and a rock behind you or off to the side was
+ * pinned straight onto it: an orange teardrop on the chart, over "6 km
+ * across", pointing at a rock that was nowhere on the screen. Measured in
+ * Rock Dodger at 1366x768 (anchor 1330,618 on a map at 1160–1350 x 470–660)
+ * and on an iPad (anchor 41,120 on a map at 8–126).
+ *
+ * So the anchor is moved the shortest way out of the map's rectangle —
+ * up, down, left or right — that stays inside the pin bands (the HUD's top
+ * and bottom are still the HUD's: below a desk's map there is only the
+ * button strip). Returns the new x and y through `out`.
+ */
+function keepOffMap(x, y, minX, maxX, minY, maxY, out) {
+  out.x = x;
+  out.y = y;
+  const m = UI.mapRect;
+  if (!m) return out;
+  if (x + PIN_HALF <= m.l || x - PIN_HALF >= m.r || y + PIN_DOWN <= m.t || y - PIN_UP >= m.b) return out;
+  // The four ways out, each with how far it is; an impossible one is Infinity.
+  const lx = m.l - PIN_HALF;
+  const rx = m.r + PIN_HALF;
+  const uy = m.t - PIN_DOWN;
+  const dy = m.b + PIN_UP;
+  const dl = lx >= minX ? x - lx : Infinity;
+  const dr = rx <= maxX ? rx - x : Infinity;
+  const du = uy >= minY ? y - uy : Infinity;
+  const dd = dy <= maxY ? dy - y : Infinity;
+  const best = Math.min(dl, dr, du, dd);
+  if (best === Infinity) return out;
+  if (best === dl) out.x = lx;
+  else if (best === dr) out.x = rx;
+  else if (best === du) out.y = uy;
+  else out.y = dy;
+  return out;
+}
+const _pin = { x: 0, y: 0 };
 
 function uiVisible(sim) {
   if (!S.active || !sim || sim.state !== 'flying') return false;
@@ -1519,8 +1584,14 @@ function placeReticle(r, p, cam, label, lock, sx, sy) {
      * flown had two orange markers printed over "Keep turning, climbing and
      * diving". The top 120 px and bottom 150 px are the HUD's.
      */
-    y = clamp(y, Math.min(120, sy * 0.25), Math.max(sy * 0.6, sy - 150));
+    const minY = Math.min(120, sy * 0.25);
+    const maxY = Math.max(sy * 0.6, sy - 150);
+    y = clamp(y, minY, maxY);
     x = clamp(x, 36, sx - 36);
+    // And never on the minimap, whichever corner it is in.
+    keepOffMap(x, y, 36, sx - 36, minY, maxY, _pin);
+    x = _pin.x;
+    y = _pin.y;
   }
   // Only what changed: a new class string and a new transform string every
   // frame for each reticle was garbage every frame for nothing.
@@ -1541,8 +1612,11 @@ function placeReticle(r, p, cam, label, lock, sx, sy) {
 function updateUi(sim, dt, photo) {
   if (!UI.root) return;
   const show = uiVisible(sim);
-  if (UI.root.hidden === show) UI.root.hidden = !show;
-  if (!show) return;
+  if (!show) {
+    hideUi();
+    return;
+  }
+  if (UI.root.hidden) UI.root.hidden = false;
   const st = S.stats;
   const ac = player(sim);
   UI.placeT -= dt;
@@ -1566,7 +1640,10 @@ function updatePanelText(sim, st, ac) {
   let line2 = '';
   if (S.mode === 'shower') {
     line = `Stardust ${st.stardust} · Zapped ${st.zapped}`;
-    line2 = st.stardust ? 'Fly through the gold stars for more' : 'Fly through the gold stars a meteor leaves behind';
+    // "Stardust", not "gold stars": the gold stars on the minimap are the
+    // Star Hunt's (fun.js), and a kid sent through "the gold stars" went
+    // looking for them there.
+    line2 = st.stardust ? 'Fly through the stardust for more' : 'Fly through the stardust a meteor leaves behind';
   } else if (S.mode === 'dodge') {
     const left = Math.max(0, DODGE_SECONDS - st.elapsed);
     line = `Shields ${'●'.repeat(st.shields)}${'○'.repeat(Math.max(0, 3 - st.shields))} · ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')} to go`;
@@ -1701,8 +1778,21 @@ function updateMarks(sim, dt, photo, st, ac) {
   }
 }
 
+/**
+ * Everything off, the reticles included. Hiding the root alone left the
+ * reticles `display:block` with the last rock's place and distance in them,
+ * for the next session to show for a frame before its own first placement —
+ * and for anything that ever unhid the root to show for good.
+ */
 function hideUi() {
   if (UI.root && !UI.root.hidden) UI.root.hidden = true;
+  for (let i = 0; i < UI.rets.length; i++) {
+    const r = UI.rets[i];
+    if (r.style.display !== 'none') {
+      r.style.display = 'none';
+      r._x = r._y = undefined;
+    }
+  }
 }
 
 /* ====================================================================== */
