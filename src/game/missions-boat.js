@@ -1136,7 +1136,8 @@ export const BOAT_MISSIONS = [
       'Somebody has gone into the water off the headland. Nobody knows exactly where. You are given a ' +
       'search area, not a position — run across it until you see him, and get him out before he is too cold.',
     reward: 'Teaches searching a patch of sea, and that the arrow does not always know.',
-    map: 'sennen',
+    // Coral Lagoon: calm water inside the reef, the kindest place to learn a search (the owner: "use different maps for different missions").
+    map: 'lagoon',
     weather: { time: 'day', condition: 'cloudy', windSpeedKts: 10, windDirDeg: 200 },
     parTime: 320,
     failOnCrash: false,
@@ -1384,7 +1385,8 @@ export const BOAT_MISSIONS = [
       'The same kind of job, at two in the morning. The lighthouse and the lit buoys are all you have ' +
       'to steer by, and only the chart knows where the rock is.',
     reward: 'Teaches trusting the chart when you cannot see the water.',
-    map: 'sennen',
+    // Cutter Bay: a working harbour with a marked channel — the chart is the whole job at night.
+    map: 'harbour',
     weather: { time: 'night', condition: 'clear', windSpeedKts: 9, windDirDeg: 220 },
     parTime: 380,
     failOnCrash: false,
@@ -1453,10 +1455,11 @@ export const BOAT_MISSIONS = [
     difficulty: 'Hard',
     icon: '≋',
     blurb:
-      'A big sea and a wind straight across the bank. There is a boat adrift out there and she is going ' +
+      'A big sea and a wind straight into the bay. There is a boat adrift off the head and she is going ' +
       'downwind faster than you would like. You cannot hold Full into this — go and get her anyway.',
     reward: 'Teaches allowing for a target that will not stay still.',
-    map: 'longbank',
+    // Squall Head: the storm coast — open water, one bay for home. Where a gale belongs.
+    map: 'stormcoast',
     weather: { time: 'day', condition: 'stormy', windSpeedKts: 28, windDirDeg: 250 },
     parTime: 430,
     timeLimit: 720,
@@ -1512,7 +1515,7 @@ export const BOAT_MISSIONS = [
         hint: 'Half ahead into a head sea is faster than Full, because Full just throws water over you.',
         atc: {
           text:
-            'Lifeboat, Coastguard. Small boat adrift on the bank, two on board, drifting east in this wind. ' +
+            'Lifeboat, Coastguard. Small boat adrift off the head, two on board, drifting east in this wind. ' +
             'Sea state is rough. Your call whether you launch.',
           voice: VOICE.coastguard,
           urgency: 1,

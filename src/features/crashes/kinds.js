@@ -91,6 +91,24 @@ export const KINDS = {
       'Knock knock. Who is there? A plane.',
     ],
   },
+  /*
+   * MID-AIR BUMP — into another aircraft (src/features/sky.js). It tumbles
+   * all the way down like a cartwheel from height, and the other crew come
+   * down under parachutes: the captions say so, because "everybody got out"
+   * is the first thing a ten-year-old wants to know.
+   */
+  midair: {
+    title: 'Mid-air bump!',
+    word: 'KA-BONK!',
+    heliTitle: 'Mid-air bump!',
+    colour: '#ffb020',
+    captions: [
+      'Two aeroplanes, one bit of sky.',
+      'The sky is very big. You found the one busy bit.',
+      'Everybody got out — look for the parachutes.',
+      'That is what the radio is for!',
+    ],
+  },
 };
 
 export const KIND_IDS = Object.keys(KINDS);
@@ -129,6 +147,8 @@ export function classifyCrash(info = {}) {
   let side = part === 'rightWing' ? 1 : part === 'leftWing' ? -1 : bank >= 0 ? 1 : -1;
   const out = (kind) => ({ kind, side, pitch, bank, gamma, speed });
 
+  // Another aircraft (sky.js): a mid-air bump up in the air, a bonk on the apron.
+  if (info.surface === 'aircraft') return out((info.agl ?? 0) > 12 + (info.size || 0) ? 'midair' : 'bonk');
   const water = info.surface === 'water' || /\b(sea|water|ditch)/i.test(reason) || (info.overWater && (info.agl ?? 0) < 6);
   if (water) return out('splash');
   if (info.surface === 'concrete') return out('bonk');

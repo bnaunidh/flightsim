@@ -35,6 +35,7 @@ import * as THREE from '../../vendor/three.module.js';
 import { createAircraftModel, groundOffsetFor } from '../../aircraft/model-adapter.js';
 import { AIRCRAFT, getAircraft, specFor } from '../../aircraft/types.js';
 import { heightAt } from '../../world/terrain.js';
+import { registerBody, unregisterBody, radiusOfType } from '../../features/sky.js';
 
 const G = 9.81;
 const DEG = Math.PI / 180;
@@ -180,6 +181,41 @@ export class NpcFlyer {
     } catch (e) {
       console.warn('[roles] the NPC aircraft could not be built; it will be invisible.', e);
     }
+    /*
+     * In the sky's list (features/sky.js): on the minimap, and solid. The
+     * airliner you intercept is an NPC (pale blue); the one you escort, and
+     * your own escort, are friends (green). Hit it and it comes down (knock).
+     */
+    this.knocked = false;
+    this.wrecked = false;
+    // The President seat's own jumbo too (afo-president.js names it 'afo-president-air…').
+    const isAF1 = /^af1|^afo-president-air/.test(name);
+    const isEscort = /escort/.test(name);
+    const self = this;
+    this.body = registerBody({
+      id: `npc-${name}`,
+      kind: isAF1 || isEscort ? 'friend' : 'npc',
+      name: isAF1 ? 'Air Force One' : isEscort ? 'your escort' : 'the airliner',
+      pos: this.pos,
+      vel: this.vel,
+      radius: radiusOfType(this.type),
+      crew: this.span > 20 ? 2 : 1,
+      uniform: this.span > 20 ? 'captain' : 'fighter',
+      hit: () => self.knock(),
+      // Knocked, it is the sky that brings it down — the story that flew it may be over.
+      tick: (dt) => {
+        if (self.knocked && !self.gone && !self.wrecked) {
+          self._knockedStep(dt);
+          self.sync(dt, null);
+        }
+      },
+      get heading() {
+        return self.heading;
+      },
+      get onGround() {
+        return self.onGround;
+      },
+    });
     this._state = {
       controls: { pitch: 0, roll: 0, yaw: 0, throttle: 0.6, brakes: 0 },
       rpm: 0.8,
@@ -461,9 +497,57 @@ export class NpcFlyer {
 
   /* ----------------------------------------------------------- update -- */
 
+  /**
+   * The player has flown into it (features/sky.js). Whatever it was doing,
+   * it stops: engine off, the nose drops and it rolls as it comes down, and
+   * where it meets the ground it stays, a wreck with nobody aboard — the
+   * crew left under their parachutes. It never hunts for its floor again.
+   */
+  knock() {
+    if (this.gone || this.knocked) return;
+    this.knocked = true;
+    this.mode = 'knocked';
+    this.engineOn = false;
+    this._gearWant = 0;
+    const h = this.heading * DEG;
+    this.vel.set(Math.sin(h) * this.speed, Math.min(0, this.vs), -Math.cos(h) * this.speed);
+    this._spin = (this.bank >= 0 ? 1 : -1) * 70;
+  }
+
+  _knockedStep(dt) {
+    if (this.wrecked) return;
+    const v = this.vel;
+    v.y -= 6 * dt;
+    const damp = Math.max(0, 1 - 0.3 * dt);
+    v.x *= damp;
+    v.z *= damp;
+    this.pos.addScaledVector(v, dt);
+    this.speed = Math.hypot(v.x, v.z);
+    this.vs = v.y;
+    this.pitch = Math.max(-65, this.pitch - 22 * dt);
+    this.bank += this._spin * dt;
+    const floor = surface(this.pos.x, this.pos.z) + this.ride;
+    if (this.pos.y <= floor) {
+      this.pos.y = floor;
+      v.set(0, 0, 0);
+      this.speed = 0;
+      this.vs = 0;
+      this.onGround = true;
+      this.groundSpeed = 0;
+      this.pitch = -6;
+      this.bank = ((this.bank % 360) + 360) % 360 > 180 ? -22 : 22;
+      this.wrecked = true;
+    }
+  }
+
   update(dt, weather = null) {
     if (this.gone || !(dt > 0)) return;
     this.t += dt;
+    // Knocked: the sky steps it (the body's tick); a wreck on the ground is only drawn.
+    if (this.knocked) {
+      if (this.wrecked) this.sync(dt, weather);
+      return;
+    }
     if (this._rock > 0) {
       this._rock -= dt;
       this._rockT += dt;
@@ -627,6 +711,7 @@ export class NpcFlyer {
   dispose() {
     if (this.gone) return;
     this.gone = true;
+    unregisterBody(this.body);
     if (!this.model) return;
     this.scene.remove(this.model);
     const seen = new Set();

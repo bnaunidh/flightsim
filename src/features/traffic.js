@@ -134,6 +134,7 @@ import { blankPlayer, reachTime, pathSlack, choose, towardPlayer, onRunwayK, rea
 import { rng, DEG, wrapPi, Path, Draft } from './traffic/path.js';
 import * as LOD from './traffic/lod.js';
 import { TrafficSound } from './traffic/sound.js';
+import { registerBody, unregisterBody } from './sky.js';
 
 /* ------------------------------------------------------------------ */
 /* Tuning                                                              */
@@ -189,6 +190,8 @@ export const PHASE_TEXT = {
   'taxi-in': 'taxiing in',
   'push-in': 'pushed in',
   shutdown: 'shutting down',
+  // Hit by the player (sky.js): falling, crew out under their parachutes, then gone.
+  knocked: 'coming down',
 };
 
 const DIGITS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
@@ -370,6 +373,7 @@ function makeCraft(type, idx, home) {
     name: type.name,
     callsign: c.callsign,
     pos: new THREE.Vector3(c.x, c.y, c.z),
+    vel: new THREE.Vector3(),
     heading: 0,
     speed: 0,
     alt: 0,
@@ -380,6 +384,18 @@ function makeCraft(type, idx, home) {
     phase: 'parked',
     activity: 'parked',
     span: perf.span,
+    /*
+     * The same record is this aeroplane's BODY in the sky (./sky.js): what
+     * the player can collide with and what the minimap draws. `name` above
+     * is the type's (the warnings' contract); the body's name for the crash
+     * reason is the callsign, so the banner says "You flew into Island 47".
+     */
+    kind: 'traffic',
+    bodyName: c.callsign,
+    radius: Math.max(perf.span, perf.length || 0) / 2,
+    crew: perf.cat === 'light' ? 1 : 2,
+    uniform: perf.cat === 'airliner' ? 'captain' : perf.cat === 'light' ? 'casual' : 'fighter',
+    hit: () => knockCraft(c),
   };
   c.ac = {
     controls: { pitch: 0, roll: 0, yaw: 0, throttle: 0, brakes: 1 },
@@ -1174,10 +1190,78 @@ function stepCraft(sim, c, dt) {
     case 'moving':
       follow(sim, c, dt);
       break;
+    case 'knocked':
+      knockedStep(sim, c, dt);
+      return;
     default:
       break;
   }
   engineAndGear(c, dt);
+}
+
+/* ------------------------------------------------------------------ */
+/* Hit by the player (./sky.js)                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The player has flown into this one. It stops flying its path and comes
+ * down — a slow tumble, engine off, nose dropping, rolling as it falls —
+ * and when it reaches the ground it is retired for good (its slot freed,
+ * its model disposed). The crew have already left under their parachutes
+ * (sky.js drops them). Nothing here is a wreck or a fire: it is simply an
+ * aeroplane that is no longer in the sky.
+ */
+function knockCraft(c) {
+  if (!c || c.state === 'knocked') return;
+  const h = c.hdg;
+  c.knock = { t: 0, vx: Math.sin(h) * c.v, vy: Math.min(0, c.vy), vz: -Math.cos(h) * c.v, spin: (c.idx % 2 ? -1 : 1) * 2.4 };
+  c.state = 'knocked';
+  c.engineOn = false;
+  c.onApproach = false;
+  c.onGround = false;
+  c.holdT = 0;
+  if (T.runwayOwner === c) T.runwayOwner = null;
+  setPhase(c, 'knocked');
+  T.notes.knocked = (T.notes.knocked || 0) + 1;
+}
+
+function knockedStep(sim, c, dt) {
+  const k = c.knock;
+  k.t += dt;
+  // A gentle gravity — a tumble, not a plummet — and the speed washing off.
+  k.vy -= 6 * dt;
+  const damp = Math.max(0, 1 - 0.35 * dt);
+  k.vx *= damp;
+  k.vz *= damp;
+  c.x += k.vx * dt;
+  c.y += k.vy * dt;
+  c.z += k.vz * dt;
+  c.v = Math.hypot(k.vx, k.vz);
+  c.vy = k.vy;
+  c.pitch = Math.max(-1.1, c.pitch - 0.9 * dt);
+  c.bank += k.spin * dt;
+  c.hdg += 0.5 * dt * Math.sign(k.spin);
+  c.rpm = Math.max(0, c.rpm - dt * 0.4);
+  c.ac.rpm = c.rpm;
+  c.ac.engineOn = false;
+  const ground = groundY(c.x, c.z);
+  if (c.y <= ground + 1 || k.t > 45) retireCraft(sim, c);
+}
+
+/** Out of the list, out of the scene, out of the sky: for one that has come down. */
+function retireCraft(sim, c) {
+  const i = T.list.indexOf(c);
+  if (i < 0) return;
+  if (c.model && c.model.parent) c.model.parent.remove(c.model);
+  if (c.tag && c.tag.parent) c.tag.parent.remove(c.tag);
+  const keep = sceneResources(sim);
+  disposeCraft(c, keep);
+  T.list.splice(i, 1);
+  if (T.watch === i) T.watch = -1;
+  else if (T.watch > i) T.watch--;
+  unregisterBody(c.pub);
+  rebuildPub();
+  T.notes.retired = (T.notes.retired || 0) + 1;
 }
 
 /**
@@ -2777,6 +2861,9 @@ function publish(sim) {
     u.pos.set(c.x, c.y, c.z);
     u.heading = ((c.hdg / DEG) % 360 + 360) % 360;
     u.speed = c.v;
+    u.vel.set(Math.sin(c.hdg) * c.v, c.vy, -Math.cos(c.hdg) * c.v);
+    // In the sky's list from its first published frame (sky.js reads bodyName, so `name` stays the type's).
+    if (!u.__sky) registerBody(u);
     u.alt = c.y;
     u.agl = c.onGround ? 0 : Math.max(0, c.y - (T.field ? T.field.elev : 0));
     u.vs = c.vy;
@@ -3047,6 +3134,7 @@ function clearAll(sim, dispose = true) {
   for (const c of T.list) {
     if (dispose) disposeCraft(c, keep);
     else if (c.home && c.home.owner === c.id) c.home.owner = null;
+    unregisterBody(c.pub);
   }
   T.list.length = 0;
   T.runwayOwner = null;

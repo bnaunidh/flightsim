@@ -29,8 +29,11 @@ import * as THREE from '../../vendor/three.module.js';
 import { createAircraftModel } from '../../aircraft/model-adapter.js';
 import { AIRCRAFT, getAircraft } from '../../aircraft/types.js';
 import { heightAt } from '../../world/terrain.js';
+import { registerBody, unregisterBody, radiusOfType } from '../sky.js';
 
 const FWD = new THREE.Vector3(0, 0, -1);
+const HDG = new THREE.Vector3();
+let ESCORT_N = 0;
 const Y = new THREE.Vector3(0, 1, 0);
 const Z = new THREE.Vector3(0, 0, 1);
 const DEG = Math.PI / 180;
@@ -96,6 +99,32 @@ export class Escort {
     } catch (e) {
       console.warn('[events] an escort jet could not be built; it will be invisible.', e);
     }
+    /*
+     * In the sky's list (../sky.js): a friend on the minimap, and no longer
+     * a ghost — fly into it and you have a mid-air bump, and it comes down.
+     */
+    const self = this;
+    this.body = registerBody({
+      id: `escort-${side < 0 ? 'left' : 'right'}-${++ESCORT_N}`,
+      kind: 'friend',
+      name: 'the fighter jet',
+      pos: this.pos,
+      vel: this.vel,
+      radius: radiusOfType(type),
+      crew: 1,
+      uniform: 'fighter',
+      onGround: false,
+      hit: () => self.knock(),
+      // Knocked, it is the sky that brings it down — the story that flew it may be over.
+      tick: (dt) => {
+        if (self.mode === 'knocked' && !self.gone) self.knockedStep(dt, null);
+      },
+      get heading() {
+        if (!self.model) return undefined;
+        HDG.copy(FWD).applyQuaternion(self.model.quaternion);
+        return ((Math.atan2(HDG.x, -HDG.z) * 180) / Math.PI + 360) % 360;
+      },
+    });
     // What the model's own animation reads: gear up, engine running. One
     // object, reused, so the per-frame call allocates nothing.
     this._state = {
@@ -194,9 +223,50 @@ export class Escort {
     return out.copy(this._local).applyQuaternion(ac.quat).add(ac.pos);
   }
 
+  /**
+   * The player has flown into it (../sky.js). It stops flying formation and
+   * comes down: engine off, nose dropping, rolling as it falls, and gone
+   * when it reaches the ground. The pilot is already out under a parachute.
+   */
+  knock() {
+    if (this.gone || this.mode === 'knocked') return;
+    this.mode = 'knocked';
+    this.modeT = 0;
+    this.formed = false;
+    this.rock = false;
+    this.vel.y = Math.min(this.vel.y, 0);
+    this._state.engineOn = false;
+    this._state.controls.throttle = 0;
+  }
+
+  knockedStep(dt, weather) {
+    this.modeT += dt;
+    this.vel.y -= 7 * dt;
+    const damp = Math.max(0, 1 - 0.35 * dt);
+    this.vel.x *= damp;
+    this.vel.z *= damp;
+    this.pos.addScaledVector(this.vel, dt);
+    const floor = Math.max(0, heightAt(this.pos.x, this.pos.z));
+    if (this.pos.y <= floor + 1 || this.modeT > 45) {
+      this.dispose();
+      return;
+    }
+    if (this.model) {
+      this._qr.setFromAxisAngle(Z, this.side * 2.4 * dt);
+      this.model.quaternion.multiply(this._qr);
+      this._qr.setFromAxisAngle(this._right.set(1, 0, 0), -0.6 * dt);
+      this.model.quaternion.multiply(this._qr);
+      this.model.position.copy(this.pos);
+    }
+    this._state.rpm = Math.max(0, this._state.rpm - dt * 0.4);
+    this.animate(dt, weather);
+  }
+
   /** @param {number} span  the airliner's wingspan, so the slot clears its tips */
   update(dt, ac, span = 30, weather = null) {
     if (this.gone) return;
+    // Knocked: the sky steps it (the body's tick), whether or not this story is still running.
+    if (this.mode === 'knocked') return;
     this.t += dt;
     this.modeT += dt;
     const acSpeed = ac.vel.length();
@@ -332,6 +402,7 @@ export class Escort {
   dispose() {
     if (this.gone) return;
     this.gone = true;
+    unregisterBody(this.body);
     if (this.model) {
       this.scene.remove(this.model);
       // The same teardown main.js gives the aeroplane you fly when you swap

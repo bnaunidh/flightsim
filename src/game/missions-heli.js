@@ -138,10 +138,36 @@ const SITES = {
  * Which pad a site means on a map that calls it something else. The Stacks
  * has no Needle Rock: its climber is on Gannet Stack, which is the same four
  * kilometres north-west of the rescue pad that the briefing always said.
+ *
+ * Raven Crag (Last Light, moved here 2026-10-02 — the owner: "mountain
+ * rescues on mountain maps"): the high call is the Anvil Shelf, the ledge
+ * 800 m up the eastern wall; the near-but-far call is the Sentinel Strip pad
+ * on the knoll five kilometres down the valley. Task Force Resolute (Man
+ * Overboard): the launch pad is the shore base, and the hospital is the
+ * Fleet Hospital Ship's deck, which the pad list already calls 'hospital'.
  */
 const SITE_ALIASES = {
   stacks: { ledge: 'gannet' },
+  ravencrag: { ledge: 'ridge', eastshore: 'field' },
+  carriergroup: { harbour: 'field' },
 };
+
+/*
+ * Sites that are not pads, on maps other than Kestrel: a measured point in
+ * the water. The task force's swimmer is between the shore base and the
+ * ships, 3.5 km from the island's middle in 55 m of water, so the boat is
+ * on the way out and the hospital ship on the way back.
+ */
+const SITES_BY_MAP = {
+  carriergroup: {
+    swimmer: { name: 'The swimmer', x: 2600, z: -2300, r: 12 },
+  },
+};
+
+function siteFallback(key) {
+  const m = MAP && SITES_BY_MAP[MAP.id];
+  return (m && m[key]) || SITES[key] || SITES.hospital;
+}
 
 function padFor(key) {
   const alias = MAP && SITE_ALIASES[MAP.id] && SITE_ALIASES[MAP.id][key];
@@ -170,18 +196,29 @@ function padFor(key) {
 export function siteAt(ctx, key) {
   const p = padFor(key);
   if (p) return new THREE.Vector3(p.pos.x, surfaceAt(p.pos.x, p.pos.z), p.pos.z);
-  const fb = SITES[key] || SITES.hospital;
+  const fb = siteFallback(key);
   return new THREE.Vector3(fb.x, surfaceAt(fb.x, fb.z), fb.z);
 }
 
 function siteName(ctx, key) {
   const p = padFor(key);
-  return (p && p.name) || (SITES[key] && SITES[key].name) || 'the pad';
+  return (p && p.name) || (siteFallback(key) && siteFallback(key).name) || 'the pad';
 }
 
 function siteRadius(key) {
   const p = padFor(key);
-  return (p && p.r) || (SITES[key] && SITES[key].r) || 12;
+  return (p && p.r) || (siteFallback(key) && siteFallback(key).r) || 12;
+}
+
+/** "about a mile north-west": how far and which way `to` is from `from`, for a briefing line. */
+function whereWords(from, to) {
+  const d = dist2D(from, to);
+  const brg = (Math.atan2(to.x - from.x, -(to.z - from.z)) * 180) / Math.PI;
+  const compass = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+  const dir = compass[Math.round(((brg + 360) % 360) / 45) % 8];
+  const km = d / 1000;
+  const far = km < 1.3 ? 'about a mile' : km < 2.2 ? 'about a mile and a half' : `about ${km.toFixed(km < 5 ? 1 : 0)} kilometres`;
+  return `${far} ${dir}`;
 }
 
 /**
@@ -890,7 +927,9 @@ export const HELI_MISSIONS = [
           );
         },
         atc: { text: 'Skyhook three lifting, one aboard, routing to St Brendan.', voice: 'pilot' },
-        targetLabel: 'St Brendan Hospital',
+        get targetLabel() {
+          return siteName(null, 'hospital');
+        },
         target: (ctx) => siteAt(ctx, 'hospital'),
         check: (ctx) => landedAt(ctx, siteAt(ctx, 'hospital'), siteRadius('hospital')),
       },
@@ -920,14 +959,22 @@ export const HELI_MISSIONS = [
     short: 'The winch',
     difficulty: 'Medium',
     icon: '≋',
-    map: 'kestrel-port',
+    /*
+     * Task Force Resolute — a man in the water among the ships, out at sea
+     * (the owner, 2026-10-02: "carrier ops on the carrier maps"). You launch
+     * from the shore base, winch him out of 55 m of water between the island
+     * and the fleet, and land him on the Fleet Hospital Ship's deck. The
+     * sites come from the pad list and SITE_ALIASES/SITES_BY_MAP above, so
+     * the briefing's distance and direction are worked out, not typed.
+     */
+    map: 'carriergroup',
     aircraft: 'harrier',
     blurb:
-      'A crewman is in the water sixty metres astern of the Kestrel fishing boat. There is nowhere to '
-      + 'land and nothing to land on. Hold a hover over him at sixty feet while the winch does the rest.',
+      'A crewman is in the water sixty metres astern of a fishing boat, out among the task force. There is nowhere to '
+      + 'land and nothing to land on. Hold a hover over him at sixty feet while the winch does the rest — then take him to the hospital ship.',
     reward: 'Teaches the winch, and holding a hover over something that is moving.',
     weather: { time: 'day', condition: 'cloudy', windSpeedKts: 9, windDirDeg: 250 },
-    parTime: 420,
+    parTime: 480,
     onStart: (ctx) => {
       begin(ctx);
       const swimmer = siteAt(ctx, 'swimmer');
@@ -938,10 +985,12 @@ export const HELI_MISSIONS = [
     steps: [
       {
         id: 'out',
-        text: 'Lift off and head out over the bay. The boat is about a mile north-west.',
+        get text() {
+          return `Lift off and head out over the water. The boat is ${whereWords(siteAt(null, 'harbour'), siteAt(null, 'swimmer'))}.`;
+        },
         hint: 'Follow the beacon. The orange strobe in the water is your man.',
         atc: {
-          text: 'Skyhook three, Rescue Coordination. Man in the water off the Kestrel fishing boat. Launch, launch, launch.',
+          text: 'Skyhook three, Rescue Coordination. Man in the water off a fishing boat. Launch, launch, launch.',
           voice: 'approach',
           urgency: 1,
         },
@@ -979,10 +1028,16 @@ export const HELI_MISSIONS = [
       }),
       {
         id: 'home',
-        text: 'He is aboard. Take him to the hospital pad on the hill above the town.',
-        hint: 'Straight across the island. The pad has a big white H on it.',
-        atc: { text: 'Skyhook three, survivor recovered, routing to St Brendan.', voice: 'pilot' },
-        targetLabel: 'St Brendan Hospital',
+        get text() {
+          return `He is aboard. Take him to ${siteName(null, 'hospital')} — ${whereWords(siteAt(null, 'swimmer'), siteAt(null, 'hospital'))} of where you found him.`;
+        },
+        hint: 'Follow the arrow. The pad has a big white H on it.',
+        get atc() {
+          return { text: `Skyhook three, survivor recovered, routing to ${siteName(null, 'hospital')}.`, voice: 'pilot' };
+        },
+        get targetLabel() {
+          return siteName(null, 'hospital');
+        },
         target: (ctx) => siteAt(ctx, 'hospital'),
         check: (ctx) => landedAt(ctx, siteAt(ctx, 'hospital'), siteRadius('hospital')),
       },
@@ -1080,7 +1135,9 @@ export const HELI_MISSIONS = [
         id: 'home',
         text: 'Take him to the hospital pad.',
         hint: 'Come off the rock and let the speed build before you climb.',
-        targetLabel: 'St Brendan Hospital',
+        get targetLabel() {
+          return siteName(null, 'hospital');
+        },
         target: (ctx) => siteAt(ctx, 'hospital'),
         check: (ctx) => landedAt(ctx, siteAt(ctx, 'hospital'), siteRadius('hospital')),
       },
@@ -1212,7 +1269,9 @@ export const HELI_MISSIONS = [
           );
         },
         atc: { text: 'Skyhook three off the deck, one aboard, inbound St Brendan.', voice: 'pilot' },
-        targetLabel: 'St Brendan Hospital',
+        get targetLabel() {
+          return siteName(null, 'hospital');
+        },
         target: (ctx) => siteAt(ctx, 'hospital'),
         check: (ctx) => landedAt(ctx, siteAt(ctx, 'hospital'), siteRadius('hospital')),
       },
@@ -1257,10 +1316,19 @@ export const HELI_MISSIONS = [
     short: 'Two calls, one evening',
     difficulty: 'Very hard',
     icon: '◑',
-    map: 'kestrel-port',
+    /*
+     * Raven Crag — the mountain rescue map (the owner, 2026-10-02: "mountain
+     * rescues on mountain maps"): the high call is the Anvil Shelf, a ledge
+     * 800 m up the eastern wall 1.3 km from the station; the far one is the
+     * Sentinel Strip pad five kilometres down the valley. SITE_ALIASES maps
+     * the story's 'ledge' and 'eastshore' onto those pads, and every name in
+     * the words below is read off the pad list, so the same mission on
+     * Kestrel still says Needle Rock and Gannet Point.
+     */
+    map: 'ravencrag',
     aircraft: 'harrier',
     blurb:
-      'Two calls at once, at opposite ends of the island, and forty minutes of daylight left. Both if '
+      'Two calls at once — one high on the mountain wall, one far down the valley — and forty minutes of daylight left. Both if '
       + 'you are quick and nothing goes wrong. One, if you are honest about the time. Your call.',
     reward: 'Teaches deciding what you can actually do, and living with the answer.',
     weather: { time: 'sunset', condition: 'cloudy', windSpeedKts: 14, windDirDeg: 280 },
@@ -1275,20 +1343,27 @@ export const HELI_MISSIONS = [
       ctx.data.saved = 0;
       siteMarker(ctx, siteAt(ctx, 'ledge'), 0xff6a4d);
       siteMarker(ctx, siteAt(ctx, 'eastshore'), 0xffb347);
-      ctx.sim.hud.notify('Two calls. Needle Rock is six kilometres out; Gannet Point is close.', 'warn', 8);
+      const home = siteAt(ctx, 'hospital');
+      ctx.sim.hud.notify(`Two calls. ${siteName(ctx, 'ledge')} is ${whereWords(home, siteAt(ctx, 'ledge'))}; ${siteName(ctx, 'eastshore')} is ${whereWords(home, siteAt(ctx, 'eastshore'))}.`, 'warn', 8);
     },
     spawn: padSpawn('hospital', 90),
     steps: [
       {
         id: 'choose',
-        text: 'Two calls. Needle Rock is far and Gannet Point is close. Lift off and go to whichever you choose.',
-        hint: 'Decide now and commit. Flying half way to one and changing your mind costs you both.',
-        atc: {
-          text: 'Skyhook three, two jobs and one of you. Climber on Needle Rock, walker at Gannet Point. We are losing the light in about ten minutes. Your call, and we will back whichever you make.',
-          voice: 'approach',
-          urgency: 1,
+        get text() {
+          return `Two calls: ${siteName(null, 'ledge')} and ${siteName(null, 'eastshore')}. Lift off and go to whichever you choose.`;
         },
-        targetLabel: 'Gannet Point',
+        hint: 'Decide now and commit. Flying half way to one and changing your mind costs you both.',
+        get atc() {
+          return {
+            text: `Skyhook three, two jobs and one of you. Climber on ${siteName(null, 'ledge')}, walker at ${siteName(null, 'eastshore')}. We are losing the light in about ten minutes. Your call, and we will back whichever you make.`,
+            voice: 'approach',
+            urgency: 1,
+          };
+        },
+        get targetLabel() {
+          return siteName(null, 'eastshore');
+        },
         target: (ctx) => siteAt(ctx, 'eastshore'),
         check: (ctx) => ctx.ac.airborneTime > 6 && ctx.ac.agl > 40,
       },
@@ -1315,7 +1390,9 @@ export const HELI_MISSIONS = [
         id: 'drop',
         text: 'Take them to the hospital pad and set down.',
         hint: 'Watch the clock on the way in. What is left of it is what decides the rest of this.',
-        targetLabel: 'St Brendan Hospital',
+        get targetLabel() {
+          return siteName(null, 'hospital');
+        },
         target: (ctx) => siteAt(ctx, 'hospital'),
         check: (ctx) => landedAt(ctx, siteAt(ctx, 'hospital'), siteRadius('hospital')),
         onDone: (ctx) => {
@@ -1381,7 +1458,9 @@ export const HELI_MISSIONS = [
         id: 'finish',
         text: 'Bring them in to the hospital pad.',
         hint: 'Gently. This is the bit that counts.',
-        targetLabel: 'St Brendan Hospital',
+        get targetLabel() {
+          return siteName(null, 'hospital');
+        },
         target: (ctx) => siteAt(ctx, 'hospital'),
         check: (ctx) => {
           if (ctx.data.stopHere) return true;
@@ -1447,10 +1526,16 @@ export const HELI_MISSIONS = [
     short: 'Free patrol',
     difficulty: 'Easy',
     icon: '◍',
-    map: 'kestrel-port',
+    /*
+     * Meridian City — a hospital roof in a city of rooftops (the owner,
+     * 2026-10-02: "city jobs on town maps"). The calls come from a ring
+     * round the hospital, land or water, so the city's streets, its park
+     * and the sea round the island all turn up as places to go.
+     */
+    map: 'meridian',
     aircraft: 'harrier',
     blurb:
-      'No mission and no clock. Sit on the hospital pad and wait. When a call comes in, go and get them. '
+      'No mission and no clock. Sit on the hospital roof in Meridian City and wait. When a call comes in, go and get them. '
       + 'The only number is how many people you have brought home.',
     reward: 'The whole game, for as long as you like.',
     weather: { time: 'day', condition: 'clear', windSpeedKts: 8, windDirDeg: 250 },

@@ -18,6 +18,7 @@ import { check as crashes } from './crashes.browser.js';
 import { check as events } from './events.browser.js';
 import { check as airliners } from './airliners.browser.js';
 import { check as afo } from './afo.browser.js';
+import { check as afoPresident } from './afo-president.browser.js';
 import { check as fighters } from './fighters.browser.js';
 import { check as fire } from './fire.browser.js';
 import { check as fun } from './fun.browser.js';
@@ -37,6 +38,8 @@ import { check as races } from './race-all.browser.js';
 import { check as traffic } from './traffic.browser.js';
 import { check as weapons } from './weapons.browser.js';
 import { check as minimapGhosts } from './minimap-ghosts.browser.js';
+import { check as sky } from './sky.browser.js';
+import { check as missionMaps } from './mission-maps.browser.js';
 
 export const CHECKS = [
   { id: 'airport', check: airport },
@@ -50,14 +53,20 @@ export const CHECKS = [
   { id: 'events', check: events },
   // After events: Air Force One is the same mission-roles/afo-combat shape, driven the same way.
   { id: 'afo', check: afo },
+  // After afo: the third seat (the President), walking its own small cabin.
+  { id: 'afo-president', check: afoPresident },
   { id: 'fire', check: fire },
   { id: 'fun', check: fun },
   { id: 'instruments', check: instruments },
   { id: 'maps', check: maps },
+  // After maps: the missions spread over them — each moved one starts on its island, three flown to the end.
+  { id: 'mission-maps', check: missionMaps },
   { id: 'menus', check: menus },
   { id: 'onfoot', check: onfoot },
   { id: 'quality', check: quality },
   { id: 'traffic', check: traffic },
+  // After traffic: every aircraft in one list — collisions with all of them, and all of them on the minimap.
+  { id: 'sky', check: sky },
   { id: 'weapons', check: weapons },
   // After weapons (it drives the meteor missions too): nothing of meteor mode on, or left on, the minimap.
   { id: 'minimap-ghosts', check: minimapGhosts },

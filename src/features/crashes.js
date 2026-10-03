@@ -70,6 +70,7 @@ const WORD_FILL = {
   wingclip: '#b8f05a',
   noseplant: '#ffd23f',
   bonk: '#ff9ec4',
+  midair: '#ffd23f',
 };
 
 const C = {

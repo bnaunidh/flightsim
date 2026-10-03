@@ -50,7 +50,7 @@
  * crashes feature (src/features/crashes.js) registers what "receiving" means.
  */
 
-export const CRASH_KINDS = ['cartwheel', 'bellyflop', 'splash', 'wingclip', 'noseplant', 'bonk'];
+export const CRASH_KINDS = ['cartwheel', 'bellyflop', 'splash', 'wingclip', 'noseplant', 'bonk', 'midair'];
 export const CRASH_VEHICLES = ['plane', 'heli'];
 
 const listeners = new Set();

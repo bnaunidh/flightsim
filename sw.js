@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v54';
+const CACHE_VERSION = 'island-flight-v55';
 
 const PRECACHE = [
   './',
@@ -321,6 +321,10 @@ const PRECACHE = [
   'src/features/events/afo.js',
   'src/game/extra/afo.js',
   'src/game/roles/afo-lead.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/sky.js',
+  'src/features/events/afo-movie.js',
+  'src/game/roles/afo-president.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

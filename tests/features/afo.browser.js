@@ -45,9 +45,15 @@ export async function check(sim, r, say) {
     p.militaryUnlocked = was;
   }
 
-  r.ok('afo: each mission offers exactly two seats, captain first', Roles.rolesOf(normal).length === 2 && Roles.rolesOf(attack).length === 2
+  r.ok('afo: each mission offers exactly three seats, captain first (then the lead fighter, then the President)',
+    Roles.rolesOf(normal).length === 3 && Roles.rolesOf(attack).length === 3
     && Roles.defaultRoleId(normal) === 'captain' && Roles.defaultRoleId(attack) === 'captain',
     `${JSON.stringify(Roles.rolesOf(normal).map((x) => x.id))} / ${JSON.stringify(Roles.rolesOf(attack).map((x) => x.id))}`);
+
+  const presidentVariant = Roles.withRole(attack, 'president');
+  r.ok('afo: the President seat of the attack mission is a composed variant that keeps the military flag',
+    presidentVariant.baseId === 'afo-attack' && presidentVariant.roleId === 'president' && presidentVariant.military === true,
+    JSON.stringify({ baseId: presidentVariant.baseId, roleId: presidentVariant.roleId, military: presidentVariant.military }));
 
   const escortVariant = Roles.withRole(attack, 'escort');
   r.ok('afo: the escort seat of the attack mission is a composed variant that keeps the military flag',
@@ -129,9 +135,10 @@ export async function check(sim, r, say) {
   await sim.startMode('mission', { id: 'afo-attack' });
   sim.override = LEVEL;
   sim.step(14, 1 / 30); // past the warning and the wave
-  // Fast-forward without ever touching the flares: the drones' own missiles,
-  // once launched, are unguarded except by the player's flares (the escort's
-  // gun only ever aims at drones, never at a missile already in the air).
+  // Fast-forward without ever touching the flares. The escort's gun goes for
+  // missiles as well as drones now (AttackField.aimFrom()), but the wave's
+  // first two come in head-on, too fast for it: the second hit landed at
+  // t ≈ 29 s in 40 of 40 headless runs, well inside this 150 s window.
   let hitSeen = false;
   for (let t = 0; t < 150 && sim.runner.status === 'running'; t += 1) {
     sim.step(1, 1 / 30);

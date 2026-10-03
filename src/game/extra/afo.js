@@ -135,7 +135,8 @@ const afoNormal = {
   short: 'Escort the president',
   difficulty: 'Medium',
   icon: '🦅',
-  map: 'kestrel',
+  // Gateway International: a jumbo's airport, with a stand to taxi to (the owner: "use different maps for different missions").
+  map: 'gateway',
   roles: AFO_NORMAL_ROLES,
   aircraft: 'b747',
   blurb:
@@ -231,7 +232,9 @@ const afoAttack = {
   short: 'Evade, decoy, get him down',
   difficulty: 'Very hard',
   icon: '🚨',
-  map: 'kestrel',
+  // Ironhead Air Base: the military field, 3,200 m of concrete for the jumbo and the fighters' own
+  // base to scramble from. The air start is open sea to the west (measured in node).
+  map: 'airbase',
   // The military passcode, exactly like the military aircraft — see
   // progression.js's needsPasscode(p, type), which reads this flag on a
   // mission exactly as it does on an aeroplane. Not a devOnly gate: the

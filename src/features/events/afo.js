@@ -38,6 +38,7 @@ import { AttackField } from './afo-combat.js';
 const ID_NORMAL = 'afo-normal';
 const ID_ATTACK = 'afo-attack';
 const LEAD = 'Guardian lead';
+const AIM = new THREE.Vector3();
 
 function homeRunway() {
   runwayFrame();
@@ -219,27 +220,15 @@ function runCaptainAttack(sim, dt) {
   if (!S.attack) return;
   S.attack.update(dt, ac.pos, ac.vel);
 
-  // Your escort's own gun: a fair, steady aim at whichever drone is nearest.
+  // Your escort's own gun: a fair, steady aim — missiles first, then
+  // drones, led for the pellet's flight (AttackField.aimFrom()). Aimed
+  // straight at the nearest drone, it shot down nothing in 600 s.
   if (S.escort) {
     S.escortGunCd -= dt;
     if (S.escortGunCd <= 0) {
-      let best = null;
-      let bd = Infinity;
-      for (const d of S.attack.drones) {
-        if (!d.alive) continue;
-        const dd = d.pos.distanceToSquared(S.escort.pos);
-        if (dd < bd) {
-          bd = dd;
-          best = d;
-        }
-      }
-      if (best && bd < 1300 * 1300) {
-        const dir = best.pos.clone().sub(S.escort.pos).normalize();
-        S.attack.fireGun(S.escort.pos.clone().addScaledVector(dir, 6), dir, S.escort.vel);
-        S.escortGunCd = 0.45;
-      } else {
-        S.escortGunCd = 0.3;
-      }
+      const dir = S.attack.aimFrom(S.escort.pos, S.escort.vel, AIM);
+      if (dir) S.attack.fireGun(S.escort.pos.clone().addScaledVector(dir, 6), dir, S.escort.vel);
+      S.escortGunCd = 0.3;
     }
   }
 

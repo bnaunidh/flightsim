@@ -32,7 +32,7 @@
 import * as THREE from '../../vendor/three.module.js';
 import { RUNWAY } from '../../world/airport.js';
 import { DELIVERY_PAD } from '../../world/scenery.js';
-import { heightAt, isOnRunway2, obstacleAt } from '../../world/terrain.js';
+import { heightAt, isOnRunway2, obstacleAt, MAP } from '../../world/terrain.js';
 import { missionProps, currentProps, adopt, addLoop, markUi } from '../../features/events/props.js';
 import * as P from '../../features/events/goofy-props.js';
 import * as SFX from '../../features/events/sfx.js';
@@ -520,23 +520,64 @@ const tower = {
  * seconds, and wandering about sightseeing loses. That is the race.
  * ================================================================== */
 
-const RACE = [
-  new THREE.Vector3(-2700, 0, -3300), // start, by Needle Rock
-  new THREE.Vector3(-600, 0, -2400), // checkpoint 1: off the north shore
-  new THREE.Vector3(2400, 0, -3200), // checkpoint 2: over the shallows
-  new THREE.Vector3(5900, 0, -5000), // finish: Mango Cay
-];
+/*
+ * One course per island the race has lived on, each four points over the
+ * sea at the gulls' height: a start by the gulls' own rock, two checkpoints
+ * and a finish on another island. The race moved to Condor Rock on
+ * 2026-10-02 (the owner: "use different maps for different missions" —
+ * Condor is the map with the gulls: `features.birds` in maps.js); Kestrel's
+ * course is kept so pinning it back is one line. Measured in node on
+ * Condor's height field: every point is open sea (-15 to -44 m) except the
+ * finish on Egg Rock at 39 m, and nothing under any leg is higher than 41 m
+ * — so the 250 m race height clears everything by two hundred metres.
+ */
+const GULL_COURSES = {
+  kestrel: {
+    pts: [
+      new THREE.Vector3(-2700, 0, -3300), // start, by Needle Rock
+      new THREE.Vector3(-600, 0, -2400), // checkpoint 1: off the north shore
+      new THREE.Vector3(2400, 0, -3200), // checkpoint 2: over the shallows
+      new THREE.Vector3(5900, 0, -5000), // finish: Mango Cay
+    ],
+    hdg: 113,
+    rock: 'Needle Rock',
+    cp1: 'off the north shore of Kestrel',
+    cp2: 'out over the shallow water to the north-east',
+    finish: 'Mango Cay',
+    finishVoice: 'Mango Cay confirms',
+  },
+  condor: {
+    pts: [
+      new THREE.Vector3(650, 0, -2600), // start, off The Beak
+      new THREE.Vector3(-2600, 0, -900), // checkpoint 1: off Condor Ledge, the west side
+      new THREE.Vector3(-4200, 0, 1300), // checkpoint 2: open sea, south-west
+      new THREE.Vector3(-3560, 0, 2600), // finish: Egg Rock
+    ],
+    hdg: 298,
+    rock: 'The Beak',
+    cp1: 'off Condor Ledge, round the west side',
+    cp2: 'out over the open sea to the south-west',
+    finish: 'Egg Rock',
+    finishVoice: 'Egg Rock confirms',
+  },
+};
 const RACE_ALT = 250;
 const GULL_SPEED = 50;
 const T_RACE = new THREE.Vector3();
-const RACE_LEN = (() => {
+for (const c of Object.values(GULL_COURSES)) {
   let s = 0;
-  for (let i = 1; i < RACE.length; i++) s += flat(RACE[i - 1], RACE[i]);
-  return s;
-})();
+  for (let i = 1; i < c.pts.length; i++) s += flat(c.pts[i - 1], c.pts[i]);
+  c.len = s;
+}
+
+/** The course for the island that is loaded (the mission pins Condor; Kestrel's is the fallback for its own island). */
+function gullCourse() {
+  return (MAP && GULL_COURSES[MAP.id]) || GULL_COURSES.condor;
+}
 
 /** A point `s` metres along the course, at the gulls' height. */
 function raceAt(s, out) {
+  const RACE = gullCourse().pts;
   let left = Math.max(0, s);
   for (let i = 1; i < RACE.length; i++) {
     const seg = flat(RACE[i - 1], RACE[i]);
@@ -553,16 +594,19 @@ function raceAt(s, out) {
 
 /** How far along the course the player is, for the scoreboard. */
 function playerProgress(ctx) {
+  const C = gullCourse();
+  const RACE = C.pts;
   const cp = ctx.data.cp || 0; // checkpoints passed
   let s = 0;
   for (let i = 1; i <= cp; i++) s += flat(RACE[i - 1], RACE[i]);
   const next = RACE[Math.min(cp + 1, RACE.length - 1)];
   const seg = flat(RACE[cp], next);
-  return Math.min(RACE_LEN, s + Math.max(0, seg - flat(ctx.ac.pos, next)));
+  return Math.min(C.len, s + Math.max(0, seg - flat(ctx.ac.pos, next)));
 }
 
 function checkpoint(i) {
   return (ctx) => {
+    const RACE = gullCourse().pts;
     if (flat(ctx.ac.pos, RACE[i]) < 450) {
       ctx.data.cp = i;
       if (i < RACE.length - 1) {
@@ -573,6 +617,14 @@ function checkpoint(i) {
     }
     return false;
   };
+}
+
+/** Distance along the course from the start to checkpoint `i`. */
+function courseTo(i) {
+  const RACE = gullCourse().pts;
+  let s = 0;
+  for (let k = 1; k <= i; k++) s += flat(RACE[k - 1], RACE[k]);
+  return s;
 }
 
 // Made once: the finish step asks every frame, and checkpoint() builds a closure.
@@ -586,14 +638,18 @@ const gulls = {
   short: 'Race a flock of cheeky seagulls',
   difficulty: 'Medium',
   icon: '🐦',
-  map: 'kestrel',
+  // Condor Rock, the island with the gulls (maps.js: features.birds): see GULL_COURSES.
+  map: 'condor',
   aircraft: 'skylark',
   blurb:
-    'The seagulls of Needle Rock say they are faster than your aeroplane. They say it every single day. '
-    + 'Race them to Mango Cay and settle it — but they know a shortcut, so fly a tidy line.',
+    'The seagulls of The Beak, off Condor Rock, say they are faster than your aeroplane. They say it every single day. '
+    + 'Race them round the island to Egg Rock and settle it — but they know a shortcut, so fly a tidy line.',
   reward: 'Teaches flying a course efficiently: full power, straight lines, no wandering.',
   weather: CALM,
-  spawn: { pos: RACE[0].clone(), headingDeg: 113, speed: 60, altAGL: RACE_ALT + 34 },
+  get spawn() {
+    const C = gullCourse();
+    return { pos: C.pts[0].clone(), headingDeg: C.hdg, speed: 60, altAGL: RACE_ALT + 34 };
+  },
   parTime: 170,
   onStart(ctx) {
     const pr = missionProps(ctx.sim, 'goofy-gulls');
@@ -606,6 +662,7 @@ const gulls = {
     ctx.data.cryT = 3;
     ctx.data.tauntT = 25;
     const fin = P.makeFinish(70);
+    const RACE = gullCourse().pts;
     const f = RACE[RACE.length - 1];
     fin.position.set(f.x, surface(f.x, f.z) + RACE_ALT - 35, f.z);
     fin.rotation.y = -bearing(RACE[2], f) * DEG + Math.PI / 2;
@@ -615,6 +672,7 @@ const gulls = {
   tick(ctx, dt) {
     const flock = ctx.data.flock;
     if (!flock || !currentProps('goofy-gulls')) return;
+    const RACE_LEN = gullCourse().len;
     ctx.data.t += dt;
     const t = ctx.data.t;
     ctx.data.gs = Math.min(RACE_LEN, ctx.data.gs + GULL_SPEED * dt);
@@ -659,31 +717,38 @@ const gulls = {
       tone: me >= ctx.data.gs ? 'good' : 'warn',
     });
   },
-  failIf: (ctx) => (ctx.data.gs >= RACE_LEN ? 'The seagulls got to Mango Cay first. They are being unbearable about it. Try again!' : null),
+  failIf: (ctx) => (ctx.data.gs >= gullCourse().len ? `The seagulls got to ${gullCourse().finish} first. They are being unbearable about it. Try again!` : null),
   steps: [
     {
       id: 'race1',
-      text: 'GO! Race the seagulls to Mango Cay! Checkpoint 1: off the north shore of Kestrel.',
+      get text() {
+        const C = gullCourse();
+        return `GO! Race the seagulls to ${C.finish}! Checkpoint 1: ${C.cp1}.`;
+      },
       hint: 'Full power (hold Shift) and fly straight at the arrow. Every wiggle is a gull in front of you.',
       atc: { text: 'Skylark one seven two, the race is on. The gulls have asked us to say they are not worried.', voice: 'tower' },
       targetLabel: 'Checkpoint 1',
-      target: () => raceAt(flat(RACE[0], RACE[1]), T_RACE),
+      target: () => raceAt(courseTo(1), T_RACE),
       check: checkpoint(1),
     },
     {
       id: 'race2',
-      text: 'Checkpoint 2: out over the shallow water to the north-east.',
+      get text() {
+        return `Checkpoint 2: ${gullCourse().cp2}.`;
+      },
       hint: 'Straight line, full power. They are right behind you.',
       targetLabel: 'Checkpoint 2',
-      target: () => raceAt(flat(RACE[0], RACE[1]) + flat(RACE[1], RACE[2]), T_RACE),
+      target: () => raceAt(courseTo(2), T_RACE),
       check: checkpoint(2),
     },
     {
       id: 'race3',
-      text: 'Final stretch! Fly through the chequered finish line at Mango Cay!',
+      get text() {
+        return `Final stretch! Fly through the chequered finish line at ${gullCourse().finish}!`;
+      },
       hint: 'Nearly there — do not slow down now.',
       targetLabel: 'Finish',
-      target: () => raceAt(RACE_LEN, T_RACE),
+      target: () => raceAt(gullCourse().len, T_RACE),
       check: (ctx) => {
         if (!FINISH_CHECK(ctx)) return false;
         UI.hideMeter();
@@ -694,9 +759,9 @@ const gulls = {
     },
   ],
   onComplete(ctx) {
-    ctx.sim.speak('Skylark one seven two, Mango Cay confirms: aeroplane first, seagulls second. They want a rematch.', 'village');
+    ctx.sim.speak(`Skylark one seven two, ${gullCourse().finishVoice}: aeroplane first, seagulls second. They want a rematch.`, 'village');
   },
-  score: (ctx) => Math.round(55 + Math.max(0, 1 - ctx.data.gs / RACE_LEN) * 180),
+  score: (ctx) => Math.round(55 + Math.max(0, 1 - ctx.data.gs / gullCourse().len) * 180),
 };
 
 /* ================================================================== *
@@ -737,11 +802,18 @@ const cow = {
   short: 'Land on the carrier with a cow aboard',
   difficulty: 'Medium',
   icon: '🐄',
-  map: 'kestrel',
+  /*
+   * Task Force Resolute — the carrier group's own map (the owner, 2026-10-02:
+   * "carrier ops on the carrier maps"). You take off from the shore base's
+   * 450 m strip (flat at 71 m from 100 m before the start to 300 m past the
+   * far end, measured in node) and the ship is 6.3 km east, read live as
+   * ever (deckTarget).
+   */
+  map: 'carriergroup',
   aircraft: 'skylark',
   blurb:
     'The sailors on the aircraft carrier want fresh milk, so Daisy the cow is moving in. She has never flown '
-    + 'before and she HATES steep turns. Fly her out to the ship and land on the deck without upsetting her.',
+    + 'before and she HATES steep turns. Fly her out from the task force\'s shore base to the ship and land on the deck without upsetting her.',
   reward: 'Teaches gentle flying and landing somewhere that is not a runway.',
   weather: CALM,
   parTime: 420,
@@ -784,14 +856,14 @@ const cow = {
       id: 'takeoff',
       text: 'Daisy the cow is strapped into the back seat. Take off — gently!',
       hint: 'A gentle take-off is a happy cow. Ease back on S, do not yank it.',
-      atc: { text: 'Skylark one seven two, Kestrel Tower, cleared for take-off. Is that a cow?', voice: 'tower' },
+      atc: { text: 'Skylark one seven two, Task Force Tower, cleared for take-off. Is that a cow?', voice: 'tower' },
       targetLabel: 'Carrier',
       target: deckTarget,
       check: airborne,
     },
     {
       id: 'fly',
-      text: 'Fly out to the aircraft carrier, south-west of the island. Keep your turns gentle — Daisy is watching.',
+      text: 'Fly out to the aircraft carrier, east of the island among the escort ships. Keep your turns gentle — Daisy is watching.',
       hint: 'Small bank angles. The meter shows how Daisy is feeling.',
       targetLabel: 'Carrier',
       target: deckTarget,
@@ -1380,14 +1452,16 @@ const icecream = {
   short: 'Deliver it before it melts',
   difficulty: 'Medium',
   icon: '🍦',
-  map: 'kestrel',
+  // Coral Atoll: the hottest day of the year belongs on the reef, and the delivery pad is on Turtle Cay (maps.js deliveryPad).
+  map: 'atoll',
   aircraft: 'skylark',
   blurb:
-    'It is the hottest day of the year and the children of Mango Cay have run out of ice cream. You have the '
+    'It is the hottest day of the year and the children of Turtle Cay have run out of ice cream. You have the '
     + 'biggest ice cream cone in the world. It is melting. Luckily, the higher you fly, the cooler the air.',
   reward: 'Teaches that air gets colder as you climb — about 2 degrees every 1,000 feet.',
   weather: { time: 'day', condition: 'clear', windSpeedKts: 4, windDirDeg: 140 },
-  spawn: { pos: new THREE.Vector3(2400, 0, -2200), headingDeg: 52, speed: 58, altAGL: 640 },
+  // Over the sea north of Long Cay, pointing at Turtle Cay (bearing 155 from here; measured in node).
+  spawn: { pos: new THREE.Vector3(2400, 0, -2200), headingDeg: 155, speed: 58, altAGL: 640 },
   parTime: 240,
   onStart(ctx) {
     missionProps(ctx.sim, 'goofy-icecream');
@@ -1426,10 +1500,10 @@ const icecream = {
   steps: [
     {
       id: 'cruise',
-      text: 'Fly to Mango Cay, north-east — and stay HIGH. It is cooler up there, so the ice cream melts more slowly.',
+      text: 'Fly to Turtle Cay, south-east — and stay HIGH. It is cooler up there, so the ice cream melts more slowly.',
       hint: 'Keep above 2,000 feet until you are nearly there. The meter shows how much is left.',
-      atc: { text: 'Skylark one seven two, Mango Cay reports forty children and zero ice creams. Please hurry.', voice: 'village' },
-      targetLabel: 'Mango Cay',
+      atc: { text: 'Skylark one seven two, Turtle Cay reports forty children and zero ice creams. Please hurry.', voice: 'village' },
+      targetLabel: 'Turtle Cay',
       target: () => T_ICE.copy(DELIVERY_PAD).setY(DELIVERY_PAD.y + 200),
       check: (ctx) => flat(ctx.ac.pos, DELIVERY_PAD) < 1400,
     },
@@ -1726,9 +1800,11 @@ export const MISSIONS = [duck, balloon, tower, gulls, cow, ufo, smores, loops, i
  */
 export const TUNING = {
   gullSpeed: GULL_SPEED,
-  raceLength: RACE_LEN,
-  raceStart: RACE[0],
-  raceFinish: RACE[RACE.length - 1],
+  // The course the mission is pinned to (Condor's); the node test's sums hold for either island.
+  raceLength: GULL_COURSES.condor.len,
+  raceStart: GULL_COURSES.condor.pts[0],
+  raceFinish: GULL_COURSES.condor.pts[GULL_COURSES.condor.pts.length - 1],
+  raceCourses: GULL_COURSES,
   meltRate,
   iceSpawn: icecream.spawn,
   icePad: DELIVERY_PAD,

@@ -140,6 +140,8 @@ export function poseAt(s, t) {
   const u = clamp(t / s.dur, 0, 1);
   s.hasContact = false;
   switch (s.kind) {
+    // A mid-air bump (sky.js) tumbles all the way down exactly as a cartwheel from height does.
+    case 'midair':
     case 'cartwheel': {
       const v0 = clamp(s.h, 10, s.airborne ? 60 : 34);
       const tau = 0.75;

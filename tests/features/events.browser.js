@@ -556,7 +556,11 @@ async function checks(sim, r, say) {
   // Seagulls: fly the course faster than they do; and lose if you do not.
   {
     await begin('goofy-gulls');
-    const cps = [[-600, -2400], [2400, -3200], [5900, -5000]];
+    // The course of the island the race is on (Condor since 2026-10-02; goofy.js GULL_COURSES), not Kestrel's numbers.
+    const G = await import('../../src/game/extra/goofy.js');
+    const T = await import('../../src/world/terrain.js');
+    const course = (G.TUNING.raceCourses && (G.TUNING.raceCourses[T.MAP.id] || G.TUNING.raceCourses.condor)) || null;
+    const cps = course ? course.pts.slice(1).map((p) => [p.x, p.z]) : [[-600, -2400], [2400, -3200], [5900, -5000]];
     for (const [x, z] of cps) {
       flyAt(x - 100, 300, z, 90, 60);
       sim.step(0.3, 1 / 30);

@@ -25,8 +25,8 @@
  *     generic crash path every mission already fails on).
  *   - afo-normal / escort:   fail = close on the airliner itself rather than
  *     its wing slot (ESCORT_NORMAL's own too-close failIf).
- *   - afo-attack / captain:  fail = never touch the flares. Nothing else
- *     stops a missile once a drone has fired it.
+ *   - afo-attack / captain:  fail = never touch the flares. The escort's
+ *     gun stops some missiles, but never the wave's first two, head-on.
  *   - afo-attack / escort:   fail = never fire the gun. The NPC captain's own
  *     four flares run out and the drones keep coming.
  *
@@ -37,8 +37,16 @@ export async function playthrough(sim, missionId, roleId, { fail = false, shots 
   const AfoFeat = await import('../../src/features/events/afo.js');
   const Cast = await import('../../src/game/roles/cast.js');
   const { RUNWAY } = await import('../../src/world/airport.js');
+  const PH = await import('../../src/aircraft/physics.js');
 
   const ac = sim.aircraft;
+  // The flare is judged on the wheels, not the middle (events.playthrough.js's
+  // own gearDrop(), same reasoning, same number for the 747: judged on the
+  // middle it flared late enough to arrive at over 900 ft a minute — a crash).
+  const gearDrop = () => {
+    const pts = PH.SPEC && PH.SPEC.gearPoints;
+    return pts && pts.length ? Math.max(0.5, -pts.reduce((m, g) => Math.min(m, g.pos.y), 0)) : 2;
+  };
   const realRender = sim.renderer.render.bind(sim.renderer);
   sim.renderer.render = () => {};
   const pics = [];
@@ -54,12 +62,17 @@ export async function playthrough(sim, missionId, roleId, { fail = false, shots 
   };
 
   const isCaptain = roleId === 'captain';
-  const defaultMax = missionId === 'afo-normal' ? (isCaptain ? 700 : 420) : (isCaptain ? 520 : 520);
+  // The escort seats wait on Air Force One's own schedule before their own
+  // landing even starts (measured, tests/features/afo-lead.mjs): normal,
+  // he reaches 'final' — 'peel' — at ≈ 324 s and stops at ≈ 467 s, and you
+  // land right behind him; attack, 'final' comes ≈ 175-250 s after the
+  // drones are down (≈ 378 s if that takes until 130 s).
+  const defaultMax = missionId === 'afo-normal' ? (isCaptain ? 700 : 560) : (isCaptain ? 520 : 600);
   const cap = maxSeconds || (fail ? Math.min(defaultMax, 170) : defaultMax);
 
   /* ---- the controller: generic heading/height/speed, taxi, and a glide-slope landing ---- */
   const TAN3 = Math.tan((3 * Math.PI) / 180);
-  const B = { hdg: ac.heading, alt: ac.pos.y, spd: 75, glide: false, flare: false, tookOff: false, L: 90, td: new THREE.Vector3(), taxi: null, I: 0, Is: 0, out: {} };
+  const B = { hdg: ac.heading, alt: ac.pos.y, spd: 75, glide: false, flare: false, diving: false, tookOff: false, L: 90, td: new THREE.Vector3(), taxi: null, I: 0, Is: 0, out: {} };
   const compute = () => {
     const dt = 1 / 30;
     const o = B.out;
@@ -83,27 +96,106 @@ export async function playthrough(sim, missionId, roleId, { fail = false, shots 
       const L = (B.L * Math.PI) / 180;
       const cross = (ac.pos.x - B.td.x) * Math.cos(L) + (ac.pos.z - B.td.z) * Math.sin(L);
       const along = (B.td.x - ac.pos.x) * Math.sin(L) - (B.td.z - ac.pos.z) * Math.cos(L);
-      B.Ix = Math.max(-8, Math.min(8, (B.Ix || 0) + cross * dt * 0.004));
-      wantHdg = B.L - Math.max(-30, Math.min(30, cross * (along < 3000 ? 0.12 : 0.05) + B.Ix));
-      wantY = B.td.y + Math.max(0, along) * TAN3;
-      ffVs = -ac.groundSpeed * TAN3;
+      /*
+       * The precise localiser law below only makes sense once the aircraft
+       * is genuinely on the approach side of the field (`along` positive —
+       * remaining distance to the threshold, measured along the RUNWAY's
+       * own heading) and roughly on the extended centreline. afo-normal's
+       * own cruise leg ends on the departure heading, thousands of metres
+       * out on the WRONG side (`along` strongly negative) until "turn back
+       * towards the field" has actually happened — engaging this law there
+       * reads a negative `along`, and `Math.max(0, along)` collapsed
+       * straight to the runway's ground-level y: the dive this bot flew
+       * into the sea with. Until `along` says the aircraft is honestly on
+       * final, fall back to the same plain pursuit of the point every other
+       * step already uses, with a 3-degree slope on the DIRECT distance —
+       * always sensible, never negative — standing in for the localiser's
+       * own slope. (afo-attack's return leg starts already on the right
+       * side, `along` positive from the first frame, so it gets the precise
+       * law immediately — this is not a loss of precision there.)
+       */
+      if (along > 300 && Math.abs(cross) < 3000) {
+        B.Ix = Math.max(-8, Math.min(8, (B.Ix || 0) + cross * dt * 0.004));
+        wantHdg = B.L - Math.max(-30, Math.min(30, cross * (along < 3000 ? 0.12 : 0.05) + B.Ix));
+        wantY = B.td.y + along * TAN3;
+        ffVs = -ac.groundSpeed * TAN3;
+      } else if (B.target) {
+        wantHdg = ((Math.atan2(B.target.x - ac.pos.x, -(B.target.z - ac.pos.z)) * 180) / Math.PI + 360) % 360;
+        wantY = B.td.y + Math.hypot(ac.pos.x - B.target.x, ac.pos.z - B.target.z) * TAN3;
+      }
     } else if (B.target) {
       wantHdg = ((Math.atan2(B.target.x - ac.pos.x, -(B.target.z - ac.pos.z)) * 180) / Math.PI + 360) % 360;
     }
     const err = ((wantHdg - ac.heading + 540) % 360) - 180;
-    const lim = B.glide && ac.agl < 150 ? 15 : 25;
-    const wantBank = ac.onGround ? 0 : Math.max(-lim, Math.min(lim, err * 0.8));
+    /*
+     * The distance-based slope above does not know it is also mid-turn: a
+     * wingtip strike happened three times running (216 s, 184 s, 182 s)
+     * each time near the same point in afo-normal's own big loop back
+     * towards the field, each a fresh bank-limit tweak later — because none
+     * of them touched the real cause, which is altitude, not bank. Asking
+     * for both a big heading correction AND a low, close-in altitude at the
+     * same time is what let a transient bank happen low enough to matter;
+     * capping how low that slope may ask while still well off heading
+     * means it is not banked AND low at once in the first place, which the
+     * bank-limit ramp and the wingtip margin override below, both reactive,
+     * were trying to catch after the fact instead.
+     */
+    if (B.glide && Math.abs(err) > 45) wantY = Math.max(wantY, 200);
+    // Ramped down to near wings-level close to the ground, not a flat 15
+    // degrees — afo-normal's own final is flown by plain pursuit of a fixed
+    // point the whole way in (see the B.glide branch above), which keeps
+    // asking for a correction right down to the flare. Below 150 m it
+    // decays in a straight line to 3 degrees at 0 m AGL; a touchdown a
+    // little off the centreline is fine — the step's own check only asks
+    // for onGround, slow, for a couple of seconds — a wingtip strike is not.
+    const lim = ac.agl < 150 ? Math.max(3, (ac.agl / 150) * 22 + 3) : 25;
+    let wantBank = ac.onGround ? 0 : Math.max(-lim, Math.min(lim, err * 0.8));
     const bank = ac.bankAngleDeg();
+    /*
+     * The ramp above lowers the COMMANDED limit, but roll only follows it at
+     * a damped rate (the o.roll law just below) — a bank built up well above
+     * 150 m AGL (unrestricted there) does not unwind instantly the moment
+     * the ramp starts to bite, and a 747 that enters that last 150 m still
+     * banked rolled the rest of the way out too slowly: a wingtip (half the
+     * 64 m span out, dropping by span/2 * sin(bank) under the fuselage)
+     * touched down before the gear did, at both 216 s and, after the ramp
+     * above, again at 184 s. This is the actual safety net: it reads the
+     * REAL current bank, not the commanded one, and once the wingtip's own
+     * estimated clearance gets tight, it overrides wantBank straight
+     * towards zero regardless of where the heading law wants to go —
+     * arriving late and off the centreline beats arriving sideways.
+     */
+    if (!ac.onGround) {
+      const wingMargin = ac.agl - 35 * Math.sin((Math.abs(bank) * Math.PI) / 180);
+      if (wingMargin < 15) wantBank *= Math.max(0, wingMargin / 15);
+    }
     o.roll = Math.max(-0.7, Math.min(0.7, (wantBank - bank) * 0.055 - ac.omega.z * 0.55));
-    let wantVs = Math.max(-9, Math.min(6, (wantY - ac.pos.y) * 0.08 + ffVs));
-    if (B.glide && ac.pos.y - B.td.y < 40) wantVs = Math.max(wantVs, -3.5);
-    if (B.flare) wantVs = ac.pos.y - B.td.y > 2 ? -1.6 : -0.8;
-    if (ac.agl < 60 && !B.glide && !ac.onGround) wantVs = Math.max(wantVs, 2);
+    // A 6 m/s climb cap suits the 747 captain seat; the escort's own fighter
+    // can climb far faster, and capped the same it took over 200 s just to
+    // reach the leader's 1250 m wing slot — long past the leader's own
+    // scripted turn at 65 s and the start of his landing approach at 125 s
+    // (afo-lead.js), so "hold station" meant chasing him already partway
+    // through a landing vector pattern rather than a steady cruise.
+    const vsMax = isCaptain ? 6 : 25;
+    let wantVs = Math.max(-9, Math.min(vsMax, (wantY - ac.pos.y) * 0.08 + ffVs));
+    if (B.glide && ac.pos.y - gearDrop() - B.td.y < 40) wantVs = Math.max(wantVs, -3.5);
+    if (B.flare) wantVs = ac.pos.y - gearDrop() - B.td.y > 2 ? -1.6 : -0.8;
+    // Ground-shy by default — except the deliberate dive-into-the-sea fail
+    // path (afo-normal/captain's own fail proof, below), which needs this
+    // bot to do the one thing it otherwise refuses to.
+    if (ac.agl < 60 && !B.glide && !B.diving && !ac.onGround) wantVs = Math.max(wantVs, 2);
     // Wheels down until flying speed, then rotate (`rolling`, above) — the
     // self-test's own take-off recipe (tests/selftest.js), not the
     // glide/cruise pitch law, which would hold the nose level at zero knots
-    // forever.
-    B.I = Math.max(-0.4, Math.min(0.5, B.I + (wantVs - ac.vs) * dt * 0.03));
+    // forever. The integral must not wind up DURING the roll, either: pitch
+    // ignores B.I entirely until airborne (the `rolling` ternary just
+    // below), but wantVs - vs (0 on the ground) kept accumulating into it
+    // regardless — harmless at the old 6 m/s climb cap, but raising the
+    // escort's to 25 (see vsMax above) let it saturate before rotation ever
+    // started, and the moment `rolling` turned false the full climb demand
+    // landed on the tail as a slammed-in nose-up: a tail strike at 10 s,
+    // before the escort even finished lifting off.
+    if (!rolling) B.I = Math.max(-0.4, Math.min(0.5, B.I + (wantVs - ac.vs) * dt * 0.03));
     o.pitch = rolling ? (ac.ias > B.spd * 0.72 ? 0.5 : 0)
       : ac.onGround ? 0
       : Math.max(-0.6, Math.min(0.75, B.I + (wantVs - ac.vs) * 0.12 - ac.omega.x * 0.6 + (Math.abs(bank) / 25) * 0.06));
@@ -163,7 +255,53 @@ export async function playthrough(sim, missionId, roleId, { fail = false, shots 
       // nowhere ("take off", "evade").
       const at = sim.runner.activeTarget();
       B.target = at ? at.pos : null;
-      if (B.target && !B.glide && !B.taxi) B.alt = B.target.y;
+      /*
+       * Only a step that names the runway AS ITS OWN target ('approach',
+       * 'land', 'home') means "heading down now" — not one the runner's own
+       * look-ahead merely echoes it onto because the CURRENT step names
+       * nowhere. afo-attack's 'evade' has no target of its own, so this
+       * used to read isRunwayTarget true there too (look-ahead to 'home')
+       * and started the captain descending, throttled back to approach
+       * speed and gear down, over open water, miles from any missile —
+       * directly inside the evasive phase the mission's own brief says
+       * should stay level ("Keep the wings level") until Guardian has it
+       * clear. `stepHasOwnTarget` is that half of the fix, below — but
+       * 'depart'/'scramble' ALSO have no target of their own, and their
+       * look-ahead (to 'cruise'/'join') is not a false echo: it is the only
+       * altitude telling either of them to climb at all, the first version
+       * of this fix froze B.alt on EVERY no-target step and the escort
+       * circled at 25 m AGL for the full 420 s cap, 'scramble' never seeing
+       * agl > 100. `rawIsRunway` below is the narrower, correct test: only
+       * a look-ahead that happens to land on the RUNWAY while this step
+       * owns no target of its own is left alone; anything else looked-ahead
+       * still updates B.alt exactly as it always did.
+       */
+      const stepHasOwnTarget = !!(step && typeof step.target === 'function');
+      // The runway threshold itself, however the step named it. Snapping
+      // the cruise altitude straight down to its ground-level y here
+      // commanded an immediate dive for the ground; a 3-degree slope on the
+      // DIRECT distance to it instead is always sensible (large and high
+      // far out, low close in), whatever the aircraft's heading. compute()'s
+      // own B.glide branch refines this to the precise runway-aligned slope
+      // once `along` says the aircraft is honestly on the approach side —
+      // see the comment there for why afo-normal's own "turn back towards
+      // the field" cannot assume that from the first frame, the way
+      // afo-attack's already-aligned return leg can.
+      const rawIsRunway = !!(B.target && Math.abs(B.target.x - RUNWAY.touchdown.x) < 1 && Math.abs(B.target.z - RUNWAY.touchdown.z) < 1);
+      const isRunwayTarget = stepHasOwnTarget && rawIsRunway;
+      if (B.target && !B.taxi) {
+        if (isRunwayTarget) {
+          B.alt = RUNWAY.touchdown.y + Math.hypot(ac.pos.x - B.target.x, ac.pos.z - B.target.z) * TAN3;
+        } else if (!rawIsRunway) {
+          // Any OTHER target, own or looked-ahead — a cruise waypoint, a
+          // wing slot — is exactly what climbing out of 'depart'/'scramble'
+          // (neither names a target of its own) to the right altitude
+          // needs: the look-ahead to 'cruise'/'join' is how those steps'
+          // check() ever sees agl > 100 at all. Only the one case above
+          // (rawIsRunway but not this step's own target) is left alone.
+          B.alt = B.target.y;
+        }
+      }
 
       if (diveArmed && ac.airborneTime > 6) {
         diveArmed = false;
@@ -173,29 +311,73 @@ export async function playthrough(sim, missionId, roleId, { fail = false, shots 
         B.target = null;
         B.alt = -200; // well under the sea: the controller dives for it and never pulls up.
         B.spd = 90;
+        B.diving = true; // overrides this bot's own ground-shy safety climb — see compute().
       }
 
       // afo-normal / escort fail: close on the airliner itself, not its slot.
+      let escortFailClose = false;
       if (fail && missionId === 'afo-normal' && !isCaptain && stepId === 'hold') {
         const air = Cast.castActor('airliner');
-        if (air) B.target = air.pos;
+        if (air) { B.target = air.pos; escortFailClose = true; }
       }
 
-      // Landing and taxi switches.
-      if (!B.glide && (stepId === 'approach' || stepId === 'land') && !ac.onGround && B.target) {
-        B.glide = true;
+      // Hold station on a MOVING slot: aim a little ahead of it along the
+      // leader's own track and match his speed, the way the game's own
+      // NpcFlyer._followTargets() does it (src/game/roles/npc-flyer.js) — a
+      // bare point-chase settles into an orbit around a moving target
+      // instead of holding station on it, which is why "hold" never
+      // satisfied its own 55%-in-the-box check. Only once already joined:
+      // 'join' itself is closing a long way from a standing start (a
+      // scramble from the ground) and wants full speed, not matched to the
+      // leader's cruise +/- 12 — capping it there during 'join' too (an
+      // earlier version of this fix did) turned a catch-up that should take
+      // well under a minute into one that still had not closed by 220s. Not
+      // for the deliberate fail above either, which wants the raw, unled
+      // chase onto the airliner itself.
+      if (!escortFailClose && stepId === 'hold' && B.target) {
+        const air = Cast.castActor('airliner');
+        if (air) {
+          const lh = ((Number.isFinite(air.heading) ? air.heading : ac.heading) * Math.PI) / 180;
+          // Modest relative to the slot's own 30 m "back" offset (afo-lead.js's
+          // wingSlot()) — large enough to settle on the point instead of
+          // orbiting it, not so large it aims the escort past the leader himself.
+          const lookahead = 60;
+          const aimX = B.target.x + Math.sin(lh) * lookahead;
+          const aimZ = B.target.z - Math.cos(lh) * lookahead;
+          B.hdg = ((Math.atan2(aimX - ac.pos.x, -(aimZ - ac.pos.z)) * 180) / Math.PI + 360) % 360;
+          const h = (ac.heading * Math.PI) / 180;
+          const along = (B.target.x - ac.pos.x) * Math.sin(h) - (B.target.z - ac.pos.z) * Math.cos(h);
+          const lsp = air.vel ? Math.hypot(air.vel.x, air.vel.z) : air.speed || B.spd;
+          B.spd = Math.max(50, Math.min(160, lsp + Math.max(-12, Math.min(12, along * 0.06))));
+          B.target = null; // steer by B.hdg above, not a direct bearing to the raw (unled) slot.
+        }
+      }
+
+      // Landing switch: on for as long as the target is the runway itself —
+      // compute()'s own B.glide branch decides, every frame, whether that
+      // means the precise runway-aligned slope or the same safe
+      // direct-distance one computed above (see the comments on both). No
+      // one-time gate here any more: there is no distance or heading that
+      // makes engaging either of those two unsafe.
+      const wasGliding = B.glide;
+      B.glide = isRunwayTarget && !ac.onGround;
+      if (B.glide && !wasGliding) {
         // The field's actual runway heading, not whatever heading the
         // aircraft happens to be on at this instant — both AFO missions
         // always land at the one home field (map: 'kestrel').
         B.L = RUNWAY.headingDeg ?? 90;
         B.td.copy(at.pos);
-        say(`on the glide for ${B.td.x.toFixed(0)},${B.td.z.toFixed(0)}`);
+        say(`landing switch armed, ${Math.hypot(ac.pos.x - B.td.x, ac.pos.z - B.td.z).toFixed(0)} m out`);
       }
       if (B.glide) {
         B.spd = 65;
-        if (!ac.gearDown) sim.tap('KeyG');
-        if (ac.flapStep && ac.flapStep() < 2 && ac.pos.y - B.td.y < 1200) ac.setFlaps(ac.flapStep() + 1);
-        if (!B.flare && ac.pos.y - B.td.y < Math.max(10, -ac.vs * 3.5) && !ac.onGround) { B.flare = true; say('flare'); }
+        // Configure for landing only once close enough that doing so this
+        // early would not just be a very long, very slow final: matches
+        // events.playthrough.js's own thresholds.
+        const dTd = Math.hypot(ac.pos.x - B.td.x, ac.pos.z - B.td.z);
+        if (dTd < 7000 && !ac.gearDown) sim.tap('KeyG');
+        if (dTd < 6000 && ac.flapStep && ac.flapStep() < 2) ac.setFlaps(ac.flapStep() + 1);
+        if (!B.flare && ac.pos.y - gearDrop() - B.td.y < Math.max(10, -ac.vs * 3.5) && !ac.onGround) { B.flare = true; say('flare'); }
       }
       if (stepId === 'taxi') {
         B.taxi = at ? at.pos : null;

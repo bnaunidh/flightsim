@@ -563,25 +563,33 @@ function els() {
       askRace();
     } else if (e.target.closest('[data-race-close]')) res.hidden = true;
   });
-  // Free play, alone: the race here for what you are in — and every race, on the Races card.
+  /*
+   * Free play, alone: ONE quiet button, "🏁 Races", which opens the Races
+   * card — where the race on this island (if there is one, for what you are
+   * in) has its own "Race it" at the top, and every other race is listed.
+   *
+   * There were two buttons here, and the first was a big yellow one that
+   * said the island's race ("Race the hoops") and started it at a tap. The
+   * owner, looking at the flight screen: "remove this yellow thing please".
+   * Fair: it sat in the sky, top right under the wind, the one saturated
+   * block of colour on an otherwise calm picture, in every free flight on
+   * every island whether or not there was a race there. The card does the
+   * same job one tap further in, in the game's own colours.
+   */
   const solo = document.createElement('div');
   solo.className = 'race-solobar';
   solo.hidden = true;
-  solo.innerHTML = '<button type="button" class="race-solo race-solo-main" data-race-solo></button><button type="button" class="race-solo-all" data-race-hub>🏁 All races</button>'
+  solo.innerHTML = '<button type="button" class="race-solo-all" data-race-hub>🏁 Races</button>'
     + '<button type="button" class="race-solo-leave" data-race-leave hidden>✕ Leave race</button>';
   solo.addEventListener('click', (e) => {
     if (e.target.closest('[data-race-leave]')) {
       quitRace();
       G.stats.left = (G.stats.left || 0) + 1;
-    } else if (e.target.closest('[data-race-solo]')) {
-      const c = islandCourse(G.sim);
-      if (c && RR.rideFits(c, myGame(G.sim))) askRace();
-      else openHub();
     } else if (e.target.closest('[data-race-hub]')) openHub();
   });
   layer.append(bar, res, solo);
   G.hub = buildHub(layer, hubApi());
-  G.els = { bar, line: bar.querySelector('[data-race-line]'), arrow: bar.querySelector('.race-arrow b'), res, solo, soloMain: solo.querySelector('[data-race-solo]'), soloAll: solo.querySelector('[data-race-hub]'), soloLeave: solo.querySelector('[data-race-leave]') };
+  G.els = { bar, line: bar.querySelector('[data-race-line]'), arrow: bar.querySelector('.race-arrow b'), res, solo, soloAll: solo.querySelector('[data-race-hub]'), soloLeave: solo.querySelector('[data-race-leave]') };
   return G.els;
 }
 
@@ -968,17 +976,14 @@ registerExtension({
       if (e.solo.hidden === show) e.solo.hidden = !show;
       if (e.soloLeave.hidden === racingSolo) e.soloLeave.hidden = !racingSolo;
       if (show && racingSolo) {
-        if (!e.soloMain.hidden) e.soloMain.hidden = true;
+        // Racing alone: only the way out.
         if (!e.soloAll.hidden) e.soloAll.hidden = true;
       } else if (show) {
-        if (e.soloMain.hidden) e.soloMain.hidden = false;
+        if (e.soloAll.hidden) e.soloAll.hidden = false;
         const c = islandCourse(sim);
         const mine = c && RR.rideFits(c, myGame(sim));
-        const main = mine ? c.cta : '🏁 Races';
-        if (e.soloMain.textContent !== main) e.soloMain.textContent = main;
-        const title = mine ? `${c.name}: ${c.blurb}` : c ? `${c.name} is here — ${RR.switchLine(c)}. Every race, and where it is.` : 'Every race in the game, which vehicle each is for and which island it is on';
-        if (e.soloMain.title !== title) e.soloMain.title = title;
-        if (e.soloAll.hidden === !mine) e.soloAll.hidden = !mine;
+        const title = mine ? `${c.name} is on this island: ${c.blurb}` : c ? `${c.name} is here — ${RR.switchLine(c)}. Every race, and where it is.` : 'Every race in the game, which vehicle each is for and which island it is on';
+        if (e.soloAll.title !== title) e.soloAll.title = title;
       }
     }
     if (inGame()) paintChip(sim);

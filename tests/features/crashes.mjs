@@ -68,6 +68,8 @@ const cases = [
   ['wheels up landing', { reason: 'You landed with the wheels up', part: 'fuselage', vel: V(0, -2, -35), ...attitude(2, 0), agl: 1 }, 'bellyflop'],
   ['very fast, fairly steep', { reason: 'Way too fast for a landing', vel: V(0, -22, -85), ...attitude(-8, 0), agl: 1 }, 'cartwheel'],
   ['came apart in the air', { reason: 'Too fast — the aeroplane came apart', vel: V(0, -30, -120), ...attitude(-10, 0), agl: 300 }, 'cartwheel'],
+  ['another aeroplane, up in the air (sky.js)', { reason: 'You flew into Island 47', surface: 'aircraft', vel: V(0, 0, -60), ...attitude(0, 0), agl: 400 }, 'midair'],
+  ['another aeroplane, on the apron', { reason: 'You taxied into Island 47', surface: 'aircraft', vel: V(0, 0, -4), ...attitude(0, 0), agl: 0.8 }, 'bonk'],
   ['a jumbo on one wing tip is not "in the air"', { part: 'leftWing', vel: V(0, -3, -30), ...attitude(0, -50), agl: 14, size: 18 }, 'wingclip'],
 ];
 for (const [name, info, want] of cases) {
@@ -76,7 +78,7 @@ for (const [name, info, want] of cases) {
 }
 ok('kinds: the low wing is the side it spins to', K.classifyCrash({ part: 'rightWing', vel: V(0, -3, -30), ...attitude(0, 40) }).side === 1 && K.classifyCrash({ part: 'leftWing', vel: V(0, -3, -30), ...attitude(0, -40) }).side === -1);
 ok('kinds: nothing given is still a crash with a name', K.KIND_IDS.includes(K.classifyCrash({}).kind));
-ok('kinds: the six the list asked for, and the same six happenings.js sends', K.KIND_IDS.length === 6 && K.KIND_IDS.every((k) => H.CRASH_KINDS.includes(k)));
+ok('kinds: the six the list asked for plus the mid-air bump, and the same seven happenings.js sends', K.KIND_IDS.length === 7 && K.KIND_IDS.every((k) => H.CRASH_KINDS.includes(k)));
 
 /* ---- 2. captions ----------------------------------------------------- */
 const BANNED = /\b(die|died|dead|death|blood|hurt|injur|kill|gore|body|bodies|pain|broken bone|funeral|ambulance)/i;

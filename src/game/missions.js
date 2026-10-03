@@ -520,9 +520,17 @@ export const MISSIONS = [
     short: 'Engine-out landing',
     difficulty: 'Hard',
     icon: '⚠',
+    /*
+     * Harrier Flats: grassland and almost no hills, which is where a pilot
+     * with no engine wants to be (the owner: "use different maps for
+     * different missions"). The runway is at the origin as on Kestrel, so the
+     * spawn and the glide are the same sums; the ground under the last three
+     * kilometres is 36-61 m of flat field rather than Kestrel's hills.
+     */
+    map: 'meadow',
     blurb:
-      'Your engine quits at 3,000 feet over the sea. You have one glide and one attempt at the runway. ' +
-      'No power, no going around.',
+      'Your engine quits at 3,000 feet over the sea off Harrier Flats. You have one glide and one attempt at the runway. ' +
+      'No power, no going around — though there are fields everywhere if it comes to that.',
     reward: 'Teaches gliding, energy management and committing to a decision.',
     // The engine failure IS the mission, so "Brace for impact" stays on offer
     // (main.js braceAvailable). Ordinary missions only get it in a real emergency.
@@ -877,11 +885,19 @@ export const MISSIONS = [
   {
     id: 'chaser',
     name: 'Storm Chaser',
+    /*
+     * Drover's Flat: open farmland, villages and a long flat horizon — tornado
+     * country (the owner: "use different maps for different missions"). Its
+     * runway is at the origin and the spawn is over the sea to the west, so
+     * nothing here needed re-measuring; the tornado drops near the aeroplane
+     * wherever it is (disasters.js).
+     */
+    map: 'drovers',
     short: 'Tornado research',
     difficulty: 'Very hard',
     icon: '🌪',
     blurb:
-      'A tornado is on the ground and the science people want readings from close to it. Fly three passes ' +
+      'A tornado is on the ground over Drover\'s Flat and the science people want readings from close to it. Fly three passes ' +
       'through the outer bands — close enough to matter, far enough to live.',
     reward: 'Teaches flying an aeroplane that is not going where you point it.',
     weather: { time: 'day', condition: 'stormy', windSpeedKts: 26, windDirDeg: 240 },
@@ -995,10 +1011,17 @@ export const MISSIONS = [
     difficulty: 'Very hard',
     icon: '⚓',
     military: true,
-    // Pinned, so it cannot inherit whichever map the last mission left behind.
-    map: 'kestrel',
+    /*
+     * Pinned, so it cannot inherit whichever map the last mission left behind
+     * — and pinned to the air station with the carrier offshore (the owner,
+     * 2026-10-02: "use different maps for different missions … carrier ops
+     * on the carrier maps"). Northwatch keeps the runway at the origin, so
+     * RUNWAY_START stands; the ship is read live (carrierTarget), seven
+     * kilometres out to the south, in the cold sea under the fells.
+     */
+    map: 'northwatch',
     blurb:
-      'Fly out to the Resolute and put it down on a kilometre and a half of moving steel — inside a '
+      'Fly out from Northwatch to the Resolute and put it down on a kilometre and a half of moving steel — inside a '
       + 'band of deck 360 m long, where the wires are. The reason the Osprey has a hook.',
     reward: 'Teaches precision approaches with no margin at all.',
     aircraft: 'osprey',
@@ -1302,10 +1325,18 @@ export const MISSIONS = [
     short: 'Lose the jet behind you',
     difficulty: 'Medium',
     icon: '\u{1F6A8}',
-    map: 'kestrel',
+    /*
+     * The fjords: cold, steep walls either side of narrow water, and a cloud
+     * deck over the lot — the place to lose somebody (the owner: "use
+     * different maps for different missions"). The spawn is open sea off the
+     * shelf, the runway is at the origin as on every flight map, and the
+     * highest fell is 835 m, well under the 1,280 m cloud the climb step
+     * wants (measured in node when the mission moved here).
+     */
+    map: 'fjord',
     aircraft: 'vanguard',
     blurb:
-      'A bomber and two fighters are on your tail and all three are faster than you are. You will '
+      'Over the Aurora Fjords, a bomber and two fighters are on your tail and all three are faster than you are. You will '
       + 'not outrun them and you cannot out-turn them. What you can do is climb into the cloud and disappear.',
     reward: 'Teaches you that the weather is a place you can hide, and how to fly on instruments once you are in it.',
     /*
@@ -1472,7 +1503,7 @@ export const MISSIONS = [
       },
       {
         id: 'home',
-        text: 'He has lost you. Get back on the ground at Kestrel.',
+        text: 'He has lost you. Get back on the ground at Aurora.',
         hint: 'Come down out of the cloud before you look for the runway.',
         atc: { text: 'Vanguard zero one, contact lost on him. Cleared straight in.', voice: 'tower' },
         targetLabel: 'Runway 09',

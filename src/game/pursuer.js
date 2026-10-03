@@ -20,6 +20,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { clamp, lerp } from '../core/noise.js';
 import { heightAt } from '../world/terrain.js';
+import { registerBody, unregisterBody, radiusOfType } from '../features/sky.js';
 
 /** Speeds in m/s. The player's Vanguard tops out at 164, measured. */
 const SPEED_MIN = 95;
@@ -111,6 +112,32 @@ export class Pursuer {
     } catch (e) {
       console.warn('The pursuer could not be built; the chase will be invisible.', e);
     }
+    /*
+     * In the sky's list (features/sky.js): an enemy on the minimap, and no
+     * longer "a picture with a position" — fly into him and it is a mid-air
+     * bump for you and the end of the chase for him (knock).
+     */
+    this.knocked = false;
+    const self = this;
+    this.body = registerBody({
+      id: `pursuer-${String(name).replace(/\s+/g, '-').toLowerCase()}`,
+      kind: 'enemy',
+      name,
+      pos: this.pos,
+      vel: this.vel,
+      radius: radiusOfType(type),
+      crew: 1,
+      uniform: 'fighter',
+      onGround: false,
+      hit: () => self.knock(),
+      // Knocked, it is the sky that brings him down — the chase's mission may have ended.
+      tick: (dt) => {
+        if (self.knocked && self.alive) self.knockedStep(dt);
+      },
+      get heading() {
+        return self.heading;
+      },
+    });
     this._q = new THREE.Quaternion();
     this._tmp = new THREE.Vector3();
     // Gunnery gets its own scratch, because _tmp and _q are both already in
@@ -169,8 +196,51 @@ export class Pursuer {
     return this._losClear;
   }
 
+  /**
+   * The player has flown into him (features/sky.js). He is out of the
+   * chase: no more contact, no more shooting, and he comes down — engine
+   * off, nose dropping, rolling — and is gone when he reaches the ground.
+   * His pilot is already out under a parachute.
+   */
+  knock() {
+    if (!this.alive || this.knocked) return;
+    this.knocked = true;
+    this.contact = false;
+    this.locking = false;
+    this.lockT = 0;
+    this.closeT = 0;
+    this._range = Infinity;
+    const h = THREE.MathUtils.degToRad(this.heading);
+    this.vel.set(Math.sin(h) * this.speed, Math.min(0, this.vel.y), -Math.cos(h) * this.speed);
+    this._knockT = 0;
+  }
+
+  knockedStep(dt) {
+    this._knockT += dt;
+    this.vel.y -= 7 * dt;
+    const damp = Math.max(0, 1 - 0.35 * dt);
+    this.vel.x *= damp;
+    this.vel.z *= damp;
+    this.pos.addScaledVector(this.vel, dt);
+    this.speed = Math.hypot(this.vel.x, this.vel.z);
+    const floor = Math.max(0, heightAt(this.pos.x, this.pos.z));
+    if (this.pos.y <= floor + 1 || this._knockT > 45) {
+      this.dispose();
+      return;
+    }
+    if (this.model) {
+      this.model.position.copy(this.pos);
+      this._q.setFromAxisAngle(this._tmp.set(0, 0, 1), 2.6 * dt);
+      this.model.quaternion.multiply(this._q);
+      this._q.setFromAxisAngle(this._tmp.set(1, 0, 0), -0.6 * dt);
+      this.model.quaternion.multiply(this._q);
+    }
+  }
+
   update(dt, ac, sim) {
     if (!this.alive) return;
+    // Knocked: the sky steps him (the body's tick).
+    if (this.knocked) return;
 
     this._range = this.pos.distanceTo(ac.pos);
     const range = this._range;
@@ -312,6 +382,7 @@ export class Pursuer {
    * miss. Being hit should be an event you remember, not a drizzle.
    */
   tryShot(ac, dt) {
+    if (this.knocked || !this.alive) return null;
     this.shotCool -= dt;
     if (this.armDelay > 0) {
       this.armDelay -= dt;
@@ -481,6 +552,7 @@ export class Pursuer {
 
   dispose() {
     this.alive = false;
+    unregisterBody(this.body);
     if (this.model) this.scene.remove(this.model);
     if (this.tracer) {
       this.scene.remove(this.tracer);

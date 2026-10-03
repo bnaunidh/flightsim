@@ -277,14 +277,16 @@ try {
   await sim.startMode('free', { ...(sim.freeOpts ? sim.freeOpts() : {}), aircraft: 'skylark', airborne: false, taxi: false });
   await frames(4, 10);
   const soloText = text('.race-solobar');
-  const main = document.querySelector('[data-race-solo]');
+  // One quiet "🏁 Races" button opens the card (the yellow island-race button is gone: the owner asked).
+  const main = document.querySelector('.race-solobar [data-race-hub]');
   main.click();
   await frames(1);
   const hubText = text('.race-hub');
   const rows = [...document.querySelectorAll('.race-hub [data-race-row]')].map((li) => li.textContent.replace(/\s+/g, ' ').trim());
   const hubRect = document.querySelector('.race-hub').getBoundingClientRect();
-  ok('an aeroplane on Harrier Flats (the helicopter race’s island): the 🏁 button says "Races", and the Races card says "This is a helicopter race — switch to the Skyhook"',
-    soloText && /Races/.test(soloText) && !/hoops/.test(soloText) && hubText && hubText.includes('This is a helicopter race — switch to the Skyhook') && race.raceState() === null,
+  ok('an aeroplane on Harrier Flats (the helicopter race’s island): the one 🏁 button says "Races" (nothing yellow, no island race started at a tap), and the Races card says "This is a helicopter race — switch to the Skyhook"',
+    soloText && /Races/.test(soloText) && !/hoops/.test(soloText) && !document.querySelector('.race-solobar [data-race-solo]') && !document.querySelector('.race-solobar .race-solo-main')
+    && hubText && hubText.includes('This is a helicopter race — switch to the Skyhook') && race.raceState() === null,
     { soloText, here: text('.race-hub [data-race-here]') });
   ok('the Races card lists all four, each saying which vehicle it is for and which island it is on — the aeroplane’s first',
     rows.length === 4 && /Ring Rally.*For aeroplanes · on Coral Atoll.*your ride/.test(rows[0]) && rows.some((t) => /Fenwick Grand Prix.*For the car · on Fenwick/.test(t))
@@ -299,7 +301,14 @@ try {
   });
   ok('the Sprint was flown in the Skyhook, on Harrier Flats', sim.aircraftType && sim.aircraftType.id === 'harrier' && sim.settings.map === 'meadow', `${sim.aircraftType && sim.aircraftType.id} on ${sim.settings.map}`);
   const heliSolo = text('.race-solobar');
-  ok('back in free play in the Skyhook on Harrier Flats: the 🏁 button says "Race the hoops", with "All races" beside it', heliSolo && /Race the hoops/.test(heliSolo) && /All races/.test(heliSolo), heliSolo);
+  // The island's race is offered on the card, not as a yellow button in the sky.
+  document.querySelector('.race-solobar [data-race-hub]').click();
+  await frames(1);
+  const heliHere = text('.race-hub [data-race-here]');
+  const heliClose = document.querySelector('.race-hub [data-race-hub-close]');
+  if (heliClose) heliClose.click();
+  await frames(1);
+  ok('back in free play in the Skyhook on Harrier Flats: the 🏁 button says "Races", and the card offers "Race the hoops" at the top', heliSolo && /Races/.test(heliSolo) && !/hoops/.test(heliSolo) && heliHere && /Race the hoops/.test(heliHere), { heliSolo, heliHere });
 
   // ---- 3. The car, from the Races card ---------------------------------------------------
   document.querySelector('[data-race-hub]').click();
@@ -313,7 +322,13 @@ try {
   const onTarmac = roadsMod.pavedAt(sim.roads && sim.roads.list, RR.gridSlot(0, RR.courseById('car')).x, RR.gridSlot(0, RR.courseById('car')).z);
   ok('the Grand Prix was driven in the car on Fenwick, from a grid place on the tarmac', sim.mode === 'drive' && v && v.spec.kind === 'car' && sim.settings.map === 'town' && onTarmac === 'tarmac', `${sim.mode} ${v && v.spec.kind} on ${sim.settings.map}; grid place is ${onTarmac}`);
   const carSolo = text('.race-solobar');
-  ok('in the car on Fenwick the 🏁 button says "Race the streets"', carSolo && /Race the streets/.test(carSolo), carSolo);
+  document.querySelector('.race-solobar [data-race-hub]').click();
+  await frames(1);
+  const carHere = text('.race-hub [data-race-here]');
+  const carClose = document.querySelector('.race-hub [data-race-hub-close]');
+  if (carClose) carClose.click();
+  await frames(1);
+  ok('in the car on Fenwick the 🏁 button says "Races", and the card offers "Race the streets"', carSolo && /Races/.test(carSolo) && carHere && /Race the streets/.test(carHere), { carSolo, carHere });
 
   // ---- 4. The boat, from the Multiplayer screen's Races card ("Race alone") ---------------
   let lobbyCard = null;

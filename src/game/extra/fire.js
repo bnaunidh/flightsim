@@ -256,6 +256,21 @@ const SPOT_KESTREL = {
 };
 
 /*
+ * Egg Rock, off Condor: the same first lesson on a low grassy island 4 km
+ * west of the clifftop strip, with the sea a few hundred metres away on
+ * every side (the owner, 2026-10-02: "use different maps for different
+ * missions"). Measured in node on Condor's height field: 365 of the 441
+ * cells within 500 m are grass at 38-42 m, and findWater's own scooping
+ * lane for it is 1,230 m due north, pointing south at the fire.
+ */
+const SPOT_CONDOR = {
+  ...SPOT_KESTREL,
+  centre: { x: -3700, z: 2600 },
+  lane: lane(-3700, 1370, 180),
+  ignite: [{ x: -3700, z: 2600, r: 30 }],
+};
+
+/*
  * Kestrel, from the south coast up to the town, grass. Spread 0.55 with cells
  * burning 40 s keeps the flanks just below the rate that sustains them, so it
  * runs as a narrow finger up the wind instead of a wall — a thing a child
@@ -329,6 +344,24 @@ const NIGHT_KESTREL_BIG = {
   ...NIGHT_KESTREL,
   lane: lane(-2051, 2413, 33),
   ignite: [{ x: -1200, z: 1350, r: 50 }, { x: -1450, z: 1250, r: 40 }],
+  preburn: 150,
+};
+
+/*
+ * The Aurora shelf, a kilometre north of the town, at night: a boreal wood
+ * the same size as Kestrel's, alight in two places (the owner, 2026-10-02:
+ * "fire on forested maps"). Measured in node on the Fjords' height field:
+ * the wood sits on 107-141 m of ground with 172 forest cells and 242 grass
+ * within 500 m once the woods are planted, and findWater's scooping lane
+ * for it is the sound to the west, 1,330 m out, pointing north-east at the
+ * glow. The helicopter's Night Watch stays on Kestrel.
+ */
+const NIGHT_FJORD_BIG = {
+  ...NIGHT_KESTREL,
+  centre: { x: -900, z: -400 },
+  woods: [{ x: -900, z: -400, r: 380 }],
+  lane: lane(-2052, 265, 60),
+  ignite: [{ x: -820, z: -440, r: 50 }, { x: -1000, z: -320, r: 40 }],
   preburn: 150,
 };
 
@@ -422,19 +455,19 @@ const DEFS = [
     short: 'Your first water drop',
     difficulty: 'Easy',
     icon: '🔥',
-    map: 'kestrel',
+    map: 'condor',
     aircraft: 'tempest',
     blurb:
-      'A little grass fire on Kestrel’s east coast. Skim the sea to fill the Tempest’s tank, fly over the fire and let the water go. One good drop puts it out.',
+      'A little grass fire on Egg Rock, off Condor. Skim the sea to fill the Tempest’s tank, fly over the fire and let the water go. One good drop puts it out.',
     reward: 'Teaches scooping — low, slow, flaps out — and judging a drop.',
     weather: { time: 'day', condition: 'clear', windSpeedKts: 7, windDirDeg: 80 },
-    spawn: laneSpawn(SPOT_KESTREL.lane),
+    spawn: laneSpawn(SPOT_CONDOR.lane),
     parTime: 240,
-    fire: SPOT_KESTREL,
+    fire: SPOT_CONDOR,
     steps: [
       withMachineText(
         fillStep({
-          atc: { text: 'Tempest one, Kestrel Fire. Small grass fire on the east coast. Fill up on the lane and go get it.', voice: 'tower' },
+          atc: { text: 'Tempest one, Condor Fire. Small grass fire on Egg Rock. Fill up on the lane and go get it.', voice: 'tower' },
         })
       ),
       dropStep(),
@@ -518,19 +551,19 @@ const DEFS = [
     short: 'A forest fire, in the dark',
     difficulty: 'Medium',
     icon: '🔥',
-    map: 'kestrel',
+    map: 'fjord',
     aircraft: 'tempest',
     blurb:
-      'The woods on the western hills are alight, after dark. You will see the fire from miles away — the trouble is seeing the sea. Trust the blue lane and your altimeter when you scoop.',
+      'The woods on the Aurora shelf, north of the town, are alight after dark. You will see the fire from miles away — the trouble is seeing the sea. Trust the blue lane and your altimeter when you scoop.',
     reward: 'Teaches flying by instruments low over dark water.',
     weather: { time: 'night', condition: 'clear', windSpeedKts: 10, windDirDeg: 220 },
-    spawn: laneSpawn(NIGHT_KESTREL_BIG.lane),
+    spawn: laneSpawn(NIGHT_FJORD_BIG.lane),
     parTime: 600,
-    fire: { ...NIGHT_KESTREL_BIG, mopText: 'Fire crew: "Got it. Nice flying in the dark!"' },
+    fire: { ...NIGHT_FJORD_BIG, mopText: 'Fire crew: "Got it. Nice flying in the dark!"' },
     steps: [
       withMachineText(
         fillStep({
-          atc: { text: 'Tempest one, Kestrel Fire. Forest fire in the western hills — you cannot miss the glow. Fill up off the west coast.', voice: 'tower' },
+          atc: { text: 'Tempest one, Aurora Fire. Forest fire on the shelf north of town — you cannot miss the glow. Fill up in the sound to the west.', voice: 'tower' },
         })
       ),
       dropStep({ text: 'Full. The glow is the fire. Come in low over it and drop when the ring goes green.' }),

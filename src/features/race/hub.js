@@ -42,7 +42,6 @@ export const HUB_CSS = `
 .race-solobar { position: fixed; right: 16px; top: 112px; z-index: 30; pointer-events: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .race-solobar[hidden] { display: none !important; }
 .race-solobar button { background: rgba(10, 17, 30, 0.82); white-space: nowrap; }
-.race-solobar button.race-solo-main { background: rgba(255, 210, 63, 0.9); color: #1b1030; border-color: #ffd23f; }
 .race-solobar button[hidden] { display: none; }
 .race-solobar button.race-solo-leave { font-size: 12.5px; min-height: 34px; padding: 5px 12px; opacity: 0.85; }
 `;

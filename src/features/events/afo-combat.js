@@ -24,16 +24,21 @@
  *
  * Every vector here is THREE.Vector3; nothing imports a seat, a story or the
  * mission runner, so a node test can drive the whole engine with a bare
- * scene and the real terrain module (see tests/features/afo.mjs).
+ * scene and the real terrain module (see tests/features/afo-lead.mjs).
  */
 
 import * as THREE from '../../vendor/three.module.js';
 import { heightAt } from '../../world/terrain.js';
 import { explode } from '../explosions.js';
 import { segmentHitsSphere } from '../pvp/rules.js';
+import { registerBody, unregisterBody } from '../sky.js';
+
+let DRONE_N = 0;
 
 const DEG = Math.PI / 180;
 const UP = new THREE.Vector3(0, 1, 0);
+/** A gun pellet's speed relative to whoever fired it, m/s. */
+const PELLET_SPEED = 340;
 
 function clamp(v, a, b) {
   return v < a ? a : v > b ? b : v;
@@ -116,7 +121,12 @@ function droneMaterial() {
 }
 
 export class Drone {
-  constructor(scene, pos, { speed = 55, r = 9 } = {}) {
+  /**
+   * `firstLaunch`: the soonest it may launch, in seconds from now; it fires
+   * within 3 s of that. The default (3–6 s) is the captain's and the
+   * President's seats; the escort's seat holds fire longer (afo-lead.js).
+   */
+  constructor(scene, pos, { speed = 55, r = 9, firstLaunch = 3 } = {}) {
     this.scene = scene;
     this.pos = pos.clone();
     this.vel = new THREE.Vector3(speed, 0, 0);
@@ -126,8 +136,8 @@ export class Drone {
     this.alive = true;
     this.t = 0;
     this.orbitSign = Math.random() < 0.5 ? 1 : -1;
-    /** Seconds until this drone may launch again; the first one is soonest. */
-    this.cooldown = 3 + Math.random() * 3;
+    /** Seconds until this drone may launch again. */
+    this.cooldown = firstLaunch + Math.random() * 3;
     this.launches = 0;
 
     const g = droneGeo();
@@ -144,6 +154,32 @@ export class Drone {
     this.model.add(body, wing, finL, finR);
     this.model.position.copy(this.pos);
     scene.add(this.model);
+    /*
+     * In the sky's list (../sky.js): a red diamond on the minimap, and
+     * solid — ram one and it pops in the same sparkles a gun hit gives it
+     * (nobody is aboard; the attack field tidies a dead drone away at the
+     * end of its frame). You have a mid-air bump: a drone is still an aircraft.
+     */
+    const self = this;
+    this.body = registerBody({
+      id: `drone-${++DRONE_N}`,
+      kind: 'enemy',
+      name: 'a drone',
+      pos: this.pos,
+      vel: this.vel,
+      radius: this.r,
+      small: true,
+      crew: 0,
+      onGround: false,
+      hit: (sim) => {
+        if (!self.alive) return;
+        self.alive = false;
+        explode(sim, self.pos, { kind: 'sparkle', size: 0.9 });
+      },
+      get heading() {
+        return headingOf(self.vel);
+      },
+    });
   }
 
   /** Fly a loose racetrack round `targetPos`, below and off to one side. */
@@ -184,6 +220,7 @@ export class Drone {
   }
 
   dispose() {
+    unregisterBody(this.body);
     if (this.model.parent) this.model.parent.remove(this.model);
   }
 }
@@ -392,10 +429,46 @@ export class AttackField {
 
   /** Fire one shot from `pos`, aimed along the unit vector `dir`. */
   fireGun(pos, dir, muzzleVel = null) {
-    const speed = 340;
-    const vel = dir.clone().normalize().multiplyScalar(speed);
+    const vel = dir.clone().normalize().multiplyScalar(PELLET_SPEED);
     if (muzzleVel) vel.add(muzzleVel);
     this.pellets.push(new Pellet(this.scene, pos, vel));
+  }
+
+  /**
+   * The NPC escort's own fair aim, for whichever seat has one (the
+   * captain's, afo.js; the President's, afo-president.js): the nearest
+   * missile in the air if there is one — the more urgent target — else the
+   * nearest drone, within `range`. Written into `out` as a unit vector, or
+   * null when there is nothing to shoot at.
+   *
+   * LED, for the pellet's time of flight: a straight shot at where a drone
+   * IS is a shot at where it no longer is. And led by the target's velocity
+   * RELATIVE to the shooter, because fireGun() adds the shooter's own
+   * velocity to the pellet — leading by the target's velocity alone still
+   * misses by the shooter's own speed times the flight time (~65 m at
+   * 300 m). Measured over 600 s (tests/features/afo-lead.mjs): no lead, 0
+   * drones down; target-velocity lead, still 0; relative lead, both down by
+   * t ≈ 45 s, every run.
+   */
+  aimFrom(pos, vel, out, range = 1300) {
+    let best = null;
+    let bd = Infinity;
+    for (const pool of [this.missiles, this.drones]) {
+      for (const t of pool) {
+        if (!t.alive) continue;
+        const dd = t.pos.distanceToSquared(pos);
+        if (dd < bd) {
+          bd = dd;
+          best = t;
+        }
+      }
+      if (best) break;
+    }
+    if (!best || bd > range * range) return null;
+    const lead = Math.sqrt(bd) / PELLET_SPEED;
+    out.copy(best.pos).addScaledVector(best.vel, lead);
+    if (vel) out.addScaledVector(vel, -lead);
+    return out.sub(pos).normalize();
   }
 
   /**

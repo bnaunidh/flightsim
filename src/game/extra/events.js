@@ -134,7 +134,14 @@ const hijack = {
   short: 'Somebody is in the cockpit',
   difficulty: 'Medium',
   icon: '🚨',
-  map: 'kestrel',
+  /*
+   * Gateway International: the big airport, a 3,800 m runway for a jumbo and
+   * a 2,600 m crosswind runway for the fighters to lead you to as the remote
+   * one (the owner, 2026-10-02: "use different maps for different
+   * missions"). Both spawns below are open sea there too (measured in node),
+   * and the story reads the runways live.
+   */
+  map: 'gateway',
   roles: HIJACK_FILM_ROLES,
   /*
    * A getter, because which airliners exist is only known once every
@@ -145,7 +152,7 @@ const hijack = {
     return longHaulId();
   },
   blurb:
-    'You are the captain of a long-haul jet passing Kestrel on the way to the mainland, when a man forces his way into '
+    'You are the captain of a long-haul jet passing Gateway on the way to the mainland, when a man forces his way into '
     + 'the cockpit and orders you down onto the island. Stay calm, squawk 7500 without him noticing, do as he says — '
     + 'and fly him straight into a welcome party.',
   reward: 'Teaches the real hijack code: 7500 tells every radar screen there is trouble on board, without a word said out loud.',
@@ -168,9 +175,9 @@ const hijack = {
   steps: [
     {
       id: 'cruise',
-      text: 'You are the captain of a long-haul flight to the mainland, passing Kestrel island on the way. Everything is calm.',
+      text: 'You are the captain of a long-haul flight to the mainland, passing Gateway on the way. Everything is calm.',
       hint: 'Keep the wings level and enjoy the view.',
-      atc: { text: 'Good afternoon, Kestrel Approach. Radar contact. Continue on course for the mainland.', voice: 'approach' },
+      atc: { text: 'Good afternoon, Gateway Approach. Radar contact. Continue on course for the mainland.', voice: 'approach' },
       check: (ctx) => ctx.elapsed > 10,
     },
     {
@@ -190,7 +197,7 @@ const hijack = {
     },
     {
       id: 'orders',
-      text: 'He wants you to land on the island. Do what he says: turn towards Kestrel and start going down to 3,000 feet.',
+      text: 'He wants you to land at Gateway. Do what he says: turn towards the airport and start going down to 3,000 feet.',
       hint: 'Ease the power back and let the nose drop a little — about 1,000 feet a minute down. Follow the arrow.',
       targetLabel: 'Line up',
       target: () => hijackInfo().guide || T1.set(RUNWAY.thresholdWest.x - 6000, RUNWAY.elev + 600, RUNWAY.thresholdWest.z),
@@ -244,7 +251,7 @@ const hijackReal = {
   short: 'The realistic one — Dev passcode',
   difficulty: 'Hard',
   icon: '🛡️',
-  map: 'kestrel',
+  map: 'gateway',
   devOnly: true,
   roles: HIJACK_REAL_ROLES,
   get aircraft() {
@@ -280,9 +287,9 @@ const hijackReal = {
   steps: [
     {
       id: 'cruise',
-      text: 'You are the captain of a long-haul flight to the mainland, north of Kestrel island. Everything is calm.',
+      text: 'You are the captain of a long-haul flight to the mainland, south-west of Gateway. Everything is calm.',
       hint: 'Keep the wings level. Enjoy it while it lasts.',
-      atc: { text: 'Good afternoon, Kestrel Approach. Radar contact. Continue on course for the mainland.', voice: 'approach' },
+      atc: { text: 'Good afternoon, Gateway Approach. Radar contact. Continue on course for the mainland.', voice: 'approach' },
       check: (ctx) => ctx.elapsed > 10,
     },
     {

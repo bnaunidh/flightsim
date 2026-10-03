@@ -1830,33 +1830,63 @@ export class Minimap {
     }
   }
 
+  /**
+   * EVERY aircraft (the owner, 2026-10-02: "each plane has a new minimap").
+   *
+   * The list is the sky's (src/features/sky.js, `sim.aircraftAround.bodies`): the
+   * traffic, the mayday's rescue aeroplanes, the chase's pursuers, the
+   * hijack's fighter jets, the roles' airliner and wingman, Air Force One's
+   * drones, the host's aeroplanes in a shared world — everything that was
+   * drawn in the world and, until now, mostly missing from the map. Without
+   * the sky feature (switched off, or an old build) it falls back to
+   * sim.traffic as before, and the warning drill's pretend aircraft are
+   * always drawn.
+   *
+   * Colours say whose side each is on, and nothing else is added, because a
+   * map a ten-year-old glances at must stay a map:
+   *   you        white (drawOwnCraft)
+   *   friends    green — your escort, the airliner you are protecting, the rescue aeroplanes
+   *   NPCs       pale blue — the traffic, the airliner you intercept; amber or
+   *              red when the collision-avoidance system flags one
+   *   enemies    red — the jets chasing you, the drones (a small diamond)
+   * A helicopter is a rotor disc. Friends, enemies and NPCs get their name
+   * when the map is zoomed in; the height difference goes under the ones
+   * that matter, as before.
+   */
   drawTraffic(g) {
     const { ctx, mx, my, craft, sim, ts, edge, cx, cy, span } = g;
-    const list = sim.traffic;
+    const sky = sim.aircraftAround && Array.isArray(sim.aircraftAround.bodies) ? sim.aircraftAround.bodies : null;
+    const list = sky || sim.traffic;
     const drill = sim.warnings && sim.warnings.drillTraffic;
     const n1 = list && list.length ? list.length : 0;
     const n2 = drill && drill.length ? drill.length : 0;
+    this._drawnBodies = 0;
     if (!n1 && !n2) return;
     const levelOf = sim.warnings && typeof sim.warnings.trafficLevel === 'function' ? sim.warnings.trafficLevel : null;
+    const named = span <= 12000;
     let tagged = 0;
     for (let i = 0; i < n1 + n2; i++) {
       const e = i < n1 ? list[i] : drill[i - n1];
-      if (!e || !e.pos || !Number.isFinite(e.pos.x) || !Number.isFinite(e.pos.z)) continue;
+      if (!e || e.gone || !e.pos || !Number.isFinite(e.pos.x) || !Number.isFinite(e.pos.z)) continue;
       const x = mx(e.pos.x);
       const y = my(e.pos.z);
       const dx = x - cx;
       const dy = y - cy;
       if (dx * dx + dy * dy > edge * edge) continue;
+      const kind = (sky && i < n1 && e.kind) || 'traffic';
+      const plain = kind === 'traffic';
       if (e.onGround) {
         if (span > 6000) continue;
-        ctx.fillStyle = 'rgba(170, 180, 190, 0.7)';
+        // On the ground: a small dot, grey for the traffic, in its colour for anybody in the story.
+        ctx.fillStyle = plain ? 'rgba(170, 180, 190, 0.7)' : kind === 'enemy' ? '#ff5a4a' : kind === 'friend' ? '#7dffb4' : '#9fdcff';
         ctx.beginPath();
-        ctx.arc(x, y, 1.6 * ts, 0, Math.PI * 2);
+        ctx.arc(x, y, (plain ? 1.6 : 2.2) * ts, 0, Math.PI * 2);
         ctx.fill();
+        this._drawnBodies++;
         continue;
       }
-      const lvl = levelOf ? levelOf(e) : 0;
-      const col = lvl >= 2 ? '#ff5a4a' : lvl === 1 ? '#ffc247' : '#9fdcff';
+      const lvl = levelOf && (plain || kind === 'npc') ? levelOf(e) : 0;
+      const col = kind === 'enemy' ? '#ff5a4a' : kind === 'friend' ? '#7dffb4' : lvl >= 2 ? '#ff5a4a' : lvl === 1 ? '#ffc247' : '#9fdcff';
       const hd = this.trafficHeading(e);
       const s = 1.05 * Math.min(ts, 1.5);
       ctx.save();
@@ -1867,28 +1897,58 @@ export class Minimap {
       ctx.strokeStyle = 'rgba(6, 12, 20, 0.85)';
       ctx.lineWidth = 0.9;
       ctx.beginPath();
-      ctx.moveTo(0, -5.5);
-      ctx.lineTo(1.1, -1.2);
-      ctx.lineTo(5, 1.4);
-      ctx.lineTo(5, 2.6);
-      ctx.lineTo(1, 1.6);
-      ctx.lineTo(0.9, 4);
-      ctx.lineTo(2.3, 5);
-      ctx.lineTo(2.3, 5.8);
-      ctx.lineTo(-2.3, 5.8);
-      ctx.lineTo(-2.3, 5);
-      ctx.lineTo(-0.9, 4);
-      ctx.lineTo(-1, 1.6);
-      ctx.lineTo(-5, 2.6);
-      ctx.lineTo(-5, 1.4);
-      ctx.lineTo(-1.1, -1.2);
-      ctx.closePath();
-      ctx.fill();
+      if (e.small) {
+        // A drone: a small diamond, nose first.
+        ctx.moveTo(0, -4.2);
+        ctx.lineTo(3, 0);
+        ctx.lineTo(0, 4.2);
+        ctx.lineTo(-3, 0);
+        ctx.closePath();
+      } else if (e.rotor) {
+        // A helicopter: a small body with the rotor disc round it.
+        ctx.moveTo(0, -4.5);
+        ctx.lineTo(1.7, -0.8);
+        ctx.lineTo(1.1, 3);
+        ctx.lineTo(0.9, 6.3);
+        ctx.lineTo(-0.9, 6.3);
+        ctx.lineTo(-1.1, 3);
+        ctx.lineTo(-1.7, -0.8);
+        ctx.closePath();
+        ctx.moveTo(4.6, 0);
+        ctx.arc(0, 0, 4.6, 0, Math.PI * 2);
+      } else {
+        ctx.moveTo(0, -5.5);
+        ctx.lineTo(1.1, -1.2);
+        ctx.lineTo(5, 1.4);
+        ctx.lineTo(5, 2.6);
+        ctx.lineTo(1, 1.6);
+        ctx.lineTo(0.9, 4);
+        ctx.lineTo(2.3, 5);
+        ctx.lineTo(2.3, 5.8);
+        ctx.lineTo(-2.3, 5.8);
+        ctx.lineTo(-2.3, 5);
+        ctx.lineTo(-0.9, 4);
+        ctx.lineTo(-1, 1.6);
+        ctx.lineTo(-5, 2.6);
+        ctx.lineTo(-5, 1.4);
+        ctx.lineTo(-1.1, -1.2);
+        ctx.closePath();
+      }
+      if (e.rotor) {
+        ctx.fill('evenodd');
+        ctx.lineWidth = 0.7;
+      } else ctx.fill();
       ctx.stroke();
       ctx.restore();
+      this._drawnBodies++;
+      // Who it is, for anybody in the story, when the map is zoomed in enough to read.
+      if (!plain && named) {
+        const nm = e.bodyName || e.name;
+        if (nm) label(ctx, String(nm), x, y - 8 * ts, col, ts * 0.9);
+      }
       // Height difference for the ones that matter: anything the system has
-      // flagged, and otherwise the first few.
-      if ((lvl > 0 || tagged < 3) && Number.isFinite(e.pos.y) && craft.kind !== 'boat' && craft.kind !== 'car') {
+      // flagged, anybody in the story, and otherwise the first few.
+      if ((lvl > 0 || !plain || tagged < 3) && Number.isFinite(e.pos.y) && craft.kind !== 'boat' && craft.kind !== 'car') {
         tagged++;
         const ft = Math.round(((e.pos.y - craft.y) * 3.28084) / 100) * 100;
         const txt = ft === 0 ? 'same height' : `${ft > 0 ? '+' : '−'}${Math.abs(ft).toLocaleString('en-GB')} ft`;

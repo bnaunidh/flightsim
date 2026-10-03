@@ -142,7 +142,7 @@ const CAST = await imp('src/game/roles/cast.js');
 const HL = await imp('src/game/roles/hijack-lead.js');
 {
   const withSeats = MISSIONS.filter((m) => R.rolesOf(m).length);
-  ok('seats: the two hijacks offer seats', withSeats.map((m) => m.id).sort().join(',') === 'event-hijack,event-hijack-real', withSeats.map((m) => m.id).join(','));
+  ok('seats: the two hijacks and the two Air Force One missions offer seats', withSeats.map((m) => m.id).sort().join(',') === 'afo-attack,afo-normal,event-hijack,event-hijack-real', withSeats.map((m) => m.id).join(','));
   for (const m of withSeats) {
     const seats = R.rolesOf(m);
     ok(`seats: ${m.id}: the first seat is the default and flies nothing of its own`, seats[0].base === true && !seats[0].steps && !seats[0].aircraft && !seats[0].spawn);
@@ -152,12 +152,17 @@ const HL = await imp('src/game/roles/hijack-lead.js');
       const where = `${m.id}/${seat.id}`;
       ok(`seats: ${where}: steps, each with a check`, Array.isArray(d.steps) && d.steps.length >= 4 && d.steps.every((x) => x.id && (typeof x.check === 'function' || x.duration)));
       ok(`seats: ${where}: step ids unique`, new Set(d.steps.map((x) => x.id)).size === d.steps.length);
-      ok(`seats: ${where}: an aircraft that exists, and not a passcode one without the code`, AIRCRAFT.some((a) => a.id === d.aircraft) && d.aircraft === 'vanguard', d.aircraft);
+      // Every non-default seat used to fly the one fighter ('vanguard'); the
+      // President (Air Force One's own seats) rides the airliner itself
+      // ('b747') instead — a real, existing aircraft, just not the
+      // passcode-locked one ('f22') you'd get without the military code.
+      ok(`seats: ${where}: an aircraft that exists, and not a passcode one without the code`, AIRCRAFT.some((a) => a.id === d.aircraft) && d.aircraft !== 'f22', d.aircraft);
       ok(`seats: ${where}: the F-22 once the military code is in`, HL.fighterId({ militaryUnlocked: true }) === (AIRCRAFT.some((a) => a.id === 'f22') ? 'f22' : 'vanguard'));
-      ok(`seats: ${where}: the base map and weather`, d.map === 'kestrel' && d.weather === m.weather);
+      // The seat flies the base mission's own island (v55 moved the hijacks and Air Force One off Kestrel).
+      ok(`seats: ${where}: the base map and weather`, d.map === m.map && !!d.map && d.weather === m.weather, d.map);
       ok(`seats: ${where}: a story that is registered`, d.cast && CAST.storyIds().includes(d.cast.story), d.cast && d.cast.story);
       ok(`seats: ${where}: a label and a line for the card`, R.roleLabel(seat).length > 3 && String(seat.line || '').length > 10);
-      ok(`seats: ${where}: the default seat label names the airliner`, /captain/i.test(R.roleLabel(seats[0])) && /747|A380|Meridian/.test(R.roleLabel(seats[0])), R.roleLabel(seats[0]));
+      ok(`seats: ${where}: the default seat label names the airliner`, /captain/i.test(R.roleLabel(seats[0])) && /747|A380|Meridian|president/i.test(R.roleLabel(seats[0])), R.roleLabel(seats[0]));
       ok(`seats: ${where}: a score function and par time`, typeof d.score === 'function' && d.parTime > 0);
       ok(`seats: ${where}: findMission still finds the base`, findMission(m.id) === m);
     }

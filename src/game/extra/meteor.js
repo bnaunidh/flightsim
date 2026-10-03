@@ -7,7 +7,9 @@
  * switched off for throwing, the missions list must still load, because it is
  * the same list every other mission in the game is in.
  *
- * Every mission here starts in the air, over Kestrel, at sunset or at night —
+ * Every mission here starts in the air — over Ember Isle, Coral Atoll, Kestrel
+ * or Condor Rock, one each (the owner: "use different maps for different
+ * missions") — at sunset or at night —
  * a meteor is a light in a darkening sky, and a trail you cannot see against
  * a midday blue is not a meteor. Each one sets `meteor: { mode }`, and its
  * onStart begins that mode (onStart also runs when "back to the runway"
@@ -89,10 +91,11 @@ export const MISSIONS = [
     icon: '☄',
     category: 'meteor',
     game: 'flight',
-    map: 'kestrel',
+    // Ember Isle: a volcano under a sky full of falling stars (the owner: "use different maps for different missions").
+    map: 'ember',
     aircraft: 'courier',
     blurb:
-      'Meteors are streaking across the evening sky over Kestrel. Most burn up in a pop of sparks and leave a '
+      'Meteors are streaking across the evening sky over Ember Isle. Most burn up in a pop of sparks and leave a '
       + 'cloud of gold stardust behind; some come all the way down with a bang. No clock and no way to lose — just fly.',
     reward:
       'Fly through stardust to collect it. Press Z (or tap ZAP) to pop a meteor your nose is pointing at. '
@@ -109,7 +112,7 @@ export const MISSIONS = [
         hint: 'Stardust is left where a meteor burns up near you — the arrow points to the nearest cloud.',
         hintEvery: 45,
         atc: {
-          text: 'All aircraft, Kestrel. Meteor shower overhead tonight. Enjoy the show — and keep clear of the big ones.',
+          text: 'All aircraft, Ember. Meteor shower overhead tonight. Enjoy the show — and keep clear of the big ones.',
           voice: 'tower',
         },
         targetLabel: 'Stardust',
@@ -137,7 +140,8 @@ export const MISSIONS = [
     icon: '◉',
     category: 'meteor',
     game: 'flight',
-    map: 'kestrel',
+    // Coral Atoll: open sky over a chain of flat cays, nothing to hit but the rocks.
+    map: 'atoll',
     aircraft: 'courier',
     blurb:
       'Space rocks are being aimed at where you are GOING to be. Keep flying straight and sooner or later one '
@@ -158,7 +162,7 @@ export const MISSIONS = [
         id: 'ready',
         text: 'Rocks incoming! An orange circle means one is coming for you.',
         hint: 'A rock goes where you WERE going. When you see a circle, turn or climb.',
-        atc: { text: 'Courier, Kestrel. Rocks inbound from all round. Keep moving and you will be fine.', voice: 'tower' },
+        atc: { text: 'Courier, Atoll. Rocks inbound from all round. Keep moving and you will be fine.', voice: 'tower' },
         check: (ctx) => ctx.elapsed > 4,
       },
       {
@@ -173,7 +177,7 @@ export const MISSIONS = [
       },
     ],
     onComplete: (ctx) => {
-      ctx.sim.speak('Courier, Kestrel. Three minutes and still flying. Brilliant dodging.', 'tower');
+      ctx.sim.speak('Courier, Atoll. Three minutes and still flying. Brilliant dodging.', 'tower');
     },
     score: (ctx) => {
       const s = S(ctx);
@@ -264,10 +268,11 @@ export const MISSIONS = [
     icon: '🔭',
     category: 'meteor',
     game: 'flight',
-    map: 'kestrel',
+    // Condor Rock: sea cliffs and an observatory's kind of sky; the spawn is open sea to the west.
+    map: 'condor',
     aircraft: 'tempest',
     blurb:
-      'The observatory has spotted an enormous green meteor that will cross the night sky and splash down in '
+      'The observatory on Condor Rock has spotted an enormous green meteor that will cross the night sky and splash down in '
       + 'the sea. They need a photograph. Fly close, keep it in the middle of your view, and the camera does the rest.',
     reward: 'Teaches intercepting something that moves — fly to where it will be, not to where it is.',
     weather: { time: 'night', condition: 'clear', windSpeedKts: 5, windDirDeg: 90 },

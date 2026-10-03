@@ -10,10 +10,10 @@
  * the airliner when you choose the fighter there.
  *
  *   Air Force One, seat 'escort': scramble, join up on the wing, hold
- *   station through the cruise and the turn, peel off as he starts his
+ *   station through the cruise and the turns, peel off as he starts his
  *   approach, land yourself. NpcFlyer's own approach logic (proven on any
- *   heading — see tests/features/afo.mjs) brings him home from wherever the
- *   turn leaves him, the same way it already recovers a hijack's airliner
+ *   heading — see tests/features/roles.mjs) brings him home from wherever the
+ *   turns leave him, the same way it already recovers a hijack's airliner
  *   from a bad leader.
  *
  *   Air Force One — Under Attack, seat 'escort': join up, then unidentified
@@ -43,6 +43,7 @@ import { touchFireHeld } from '../../features/events/afo.js';
 import { NpcFlyer } from './npc-flyer.js';
 import { registerStory, castStory, castSkip, worldOf, localOf, clearanceTo } from './cast.js';
 import { fighterId } from './hijack-lead.js';
+import { PRESIDENT_NORMAL, PRESIDENT_ATTACK } from './afo-president.js';
 
 export const STORY_NORMAL = 'afo-normal-escort';
 export const STORY_ATTACK = 'afo-attack-escort';
@@ -133,6 +134,7 @@ function createNormalEscort(sim, def) {
     holdGood: 0,
     holdTotal: 0,
     turned: false,
+    squared: false,
     peeled: false,
     failWhy: null,
     minClear: Infinity,
@@ -147,15 +149,26 @@ function createNormalEscort(sim, def) {
   st.update = (sim, dt) => {
     st.t += dt;
     const ac = sim.aircraft;
-    // One scripted turn, so "keep station through the turns" means
-    // something, then NpcFlyer's own approach logic brings him home from
-    // wherever that leaves him.
-    if (!st.turned && st.t > 65) {
+    // Out on the departure heading, turn back onto the reciprocal, then turn
+    // again onto the runway heading — two turns to "keep station through",
+    // and the same flight the President's seat flies (afo-president.js).
+    // Two 180s the same way round put him back on the runway's extended
+    // centreline, so land() finds him close to an approach. The old single
+    // 55° turn left him 9.6 km past the field and 3 km off it when land()
+    // was called; NpcFlyer's 'vector' loop then took until t ≈ 451 s just
+    // to reach 'final' (which 'peel' waits on), past the escort bot's own
+    // 420 s cap. Measured (tests/features/afo-lead.mjs): 'final' ≈ 324 s.
+    if (!st.turned && st.t > 40) {
       st.turned = true;
-      air.direct((air.heading + 55) % 360, 1250, cruiseSpeed('b747'));
-      speak(sim, `${LEAD}, ${field()} Approach, turning left, stand by.`, 'approach');
+      air.direct(((RUNWAY.headingDeg ?? 90) + 180) % 360, 1250, cruiseSpeed('b747'));
+      speak(sim, `${LEAD}, ${field()} Approach, turning back towards the field, stand by.`, 'approach');
     }
-    if (st.turned && air.mode !== 'land' && st.t > 125) {
+    if (st.turned && !st.squared && st.t > 220) {
+      st.squared = true;
+      air.direct(RUNWAY.headingDeg ?? 90, 1250, cruiseSpeed('b747'));
+      speak(sim, `${LEAD}, he is turning in. Stay with him.`, 'approach');
+    }
+    if (st.squared && air.mode !== 'land' && st.t > 225) {
       air.rw = homeRunway();
       air.vecAlt = air.pos.y;
       air.land(air.rw);
@@ -234,14 +247,20 @@ const ESCORT_NORMAL = {
   get spawn() {
     return groundStart();
   },
-  parTime: 300,
+  // His own schedule sets the floor, not your flying: measured
+  // (tests/features/afo-lead.mjs), he reaches 'final' — your cue to peel —
+  // at t ≈ 324 s and is stopped at ≈ 467 s; following him in, you land
+  // about when he does. 300 s could never be met.
+  parTime: 480,
   cast: { story: STORY_NORMAL, actors: { airliner: { type: 'b747', brain: 'captain' } } },
   steps: [
     {
       id: 'scramble',
       text: 'SCRAMBLE! Air Force One is departing. Full power (Shift), take off, and climb after him.',
       hint: 'Full power, ease back on S at about 140 knots, then wheels up (G).',
-      atc: { text: `${LEAD}, Kestrel Tower. Scramble, scramble. Cleared for take-off. Contact Approach airborne.`, voice: 'tower', urgency: 1 },
+      get atc() {
+        return { text: `${LEAD}, ${field()} Tower. Scramble, scramble. Cleared for take-off. Contact Approach airborne.`, voice: 'tower', urgency: 1 };
+      },
       check: (ctx) => ctx.ac.airborneTime > 3 && ctx.ac.agl > 100,
     },
     {
@@ -257,8 +276,8 @@ const ESCORT_NORMAL = {
     },
     {
       id: 'hold',
-      text: 'Hold the slot through the cruise and the turn. Stay with him.',
-      hint: 'Small corrections. When he banks, bank with him — he is flying the turn, not you.',
+      text: 'Hold the slot through the cruise and the turns. Stay with him.',
+      hint: 'Small corrections. When he banks, bank with him — he is flying the turns, not you.',
       targetLabel: 'The wing slot',
       target: () => {
         const s = normalStory();
@@ -294,7 +313,7 @@ const ESCORT_NORMAL = {
       hold: s.holdTotal > 0 ? Math.round(35 * Math.min(1, s.holdGood / s.holdTotal / 0.7)) : 10,
       peel: s.peeled ? 15 : 5,
       landing: Math.round((l ? l.score : 40) * 0.25),
-      time: Math.round(10 * scoreFor(ctx.elapsed, 300)),
+      time: Math.round(10 * scoreFor(ctx.elapsed, ESCORT_NORMAL.parTime)),
     };
     return Math.max(0, Math.min(100, Object.values(pts).reduce((a, b) => a + b, 0)));
   },
@@ -313,6 +332,22 @@ const ESCORT_NORMAL = {
  * both seats of this mission must agree on, wherever it is edited.
  */
 export const ATTACK_AIR_START = { x: -9800, z: -2300, y: 1450, hdg: 100 };
+
+/*
+ * How long this seat's drones hold fire after they appear, in seconds (each
+ * fires within 3 s of it). The captain's seat keeps the engine's own 3-6 s:
+ * there, that first head-on pair is what the flares are for. Here it made
+ * the mission close to unwinnable — the wave appears 3.4 km ahead, the gun
+ * reaches ~370 m, and both drones had fired by t ≈ 18 s, long before any
+ * fighter could get to either. 30 s is about what it takes to fly out and
+ * shoot the first one down. Measured (tests/features/afo-lead.mjs's
+ * chasePilot: flies at the arrow, gun along its own nose), together with
+ * autoFlareCaptain's timing below: a 130 m/s, 3 g pilot got him home in 8
+ * runs of 30 before, 40 of 40 now; a 110 m/s, 2.5 g one in 0 of 30 before,
+ * 37 of 40 now (45 of 60 on the hold alone). One that never fires still
+ * fails, 40 of 40, by t ≈ 80 s.
+ */
+const ESCORT_HOLD_FIRE = 30;
 
 /** Two drones, out of the sea ahead and to each side of his nose. */
 function droneWaveAhead(air) {
@@ -359,6 +394,7 @@ function createAttackEscort(sim, def) {
     minClear: Infinity,
     closeWarnT: 0,
     home: false,
+    headingHome: false,
   };
 
   air.onEvent = (what) => {
@@ -369,14 +405,19 @@ function createAttackEscort(sim, def) {
     // The NPC captain's own judgement: four charges, used when a missile is
     // genuinely close and not already chasing a flare — never more often
     // than that, the same limited resource a person flying captain has.
+    // "Close" means a flare can still catch it: a flare burns for 5 s, and a
+    // missile closes on one at ~210-250 m/s, so 1,000 m. He used to flare at
+    // 1,900 m, every 3 s; head-on, the first two flares burned out before
+    // the missile got there, and all four were gone on the first pair. A
+    // missile the flare did not pull gets another one 1.2 s later.
     if (st.flaresUsed >= 4) return;
     st.flareCd -= dt;
     if (st.flareCd > 0) return;
-    const danger = attack.missiles.some((m) => m.alive && !m.flare && m.pos.distanceTo(air.pos) < 1900);
+    const danger = attack.missiles.some((m) => m.alive && !m.flare && m.pos.distanceTo(air.pos) < 1000);
     if (!danger) return;
     attack.deployDecoy(air.pos, air.vel);
     st.flaresUsed++;
-    st.flareCd = 3;
+    st.flareCd = 1.2;
     notify(sim, 'Air Force One is dropping flares!', 'warn', 4);
   }
 
@@ -390,7 +431,24 @@ function createAttackEscort(sim, def) {
     }
     if (!st.waveSent && st.t > 11) {
       st.waveSent = true;
-      attack.spawnWave(droneWaveAhead(air));
+      attack.spawnWave(droneWaveAhead(air), { firstLaunch: ESCORT_HOLD_FIRE });
+    }
+    // Drones down, or 2:30 since the wave arrived (the 'defend' step's own
+    // 150 s patience): turn for home either way. Nothing else ever calls
+    // land() for him, and 'escort-home' waits on his approach — without
+    // this he flew on east at 1,450 m forever. NpcFlyer's own 'vector'
+    // phase finds the approach from wherever this leaves him, the same way
+    // the normal flight's own land() call does. Before the `ac` check, so
+    // he still goes home whatever has happened to the escort.
+    if (st.waveSent && !st.headingHome) {
+      const clear = attack.dronesAlive === 0 && attack.missilesInbound === 0;
+      if (clear || st.t > 11 + 150) {
+        st.headingHome = true;
+        air.rw = homeRunway();
+        air.vecAlt = air.pos.y;
+        air.land(air.rw);
+        speak(sim, `${LEAD}, ${field()} Approach. ${clear ? 'Drones are down.' : 'Pressing on.'} Bringing him home — stay with him.`, 'approach');
+      }
     }
     if (!ac || ac.crashed) return;
 
@@ -573,7 +631,7 @@ const ESCORT_ATTACK = {
       protected: Math.max(0, 25 - st2.hits * 20),
       home: s.home || s.air.stopped ? 20 : 8,
       landing: Math.round((l ? l.score : 40) * 0.15),
-      time: Math.round(10 * scoreFor(ctx.elapsed, 420)),
+      time: Math.round(10 * scoreFor(ctx.elapsed, ESCORT_ATTACK.parTime)),
     };
     return Math.max(0, Math.min(100, Object.values(pts).reduce((a, b) => a + b, 0)));
   },
@@ -595,5 +653,5 @@ const captain = (line) => ({
   icon: '👨‍✈️',
 });
 
-export const AFO_NORMAL_ROLES = [captain('Fly Air Force One: a proper departure, cruise, approach and landing.'), ESCORT_NORMAL];
-export const AFO_ATTACK_ROLES = [captain('Fly evasive, decoy the missiles, and get Air Force One down safely.'), ESCORT_ATTACK];
+export const AFO_NORMAL_ROLES = [captain('Fly Air Force One: a proper departure, cruise, approach and landing.'), ESCORT_NORMAL, PRESIDENT_NORMAL];
+export const AFO_ATTACK_ROLES = [captain('Fly evasive, decoy the missiles, and get Air Force One down safely.'), ESCORT_ATTACK, PRESIDENT_ATTACK];

@@ -61,6 +61,7 @@ import { getAircraft, specFor } from '../aircraft/types.js';
 import { schemeFor } from '../aircraft/liveries.js';
 import * as Prog from '../game/progression.js';
 import { clearTraffic, spawnTraffic } from './traffic.js';
+import { registerBody, unregisterBody, radiusOfType } from './sky.js';
 import { setupFire, startDevFire, wildfireDebug } from './wildfire.js';
 import { mp, ch, ride, forwardOf, inGame, who, esc, feed, chip, toon, injectStyle } from './mpplay/shared.js';
 import { GroundSights } from './mpplay/sights.js';
@@ -682,8 +683,34 @@ ch.on('world:traffic', (d, from) => {
     seen.add(id);
     let m = W.mirror.get(id);
     if (!m) {
-      m = { id, type, model: null, failed: false, x, y, z, h, v, vs, f, dx: x, dy: y, dz: z, dh: h, at: t, bank: 0, lastH: h };
+      m = { id, type, model: null, failed: false, x, y, z, h, v, vs, f, dx: x, dy: y, dz: z, dh: h, at: t, bank: 0, lastH: h, pos: new THREE.Vector3(x, y, z), body: null };
       W.mirror.set(id, m);
+      /*
+       * In the sky's list (./sky.js) on this side too: the host's aeroplane
+       * is on our minimap and solid to fly into, where it is drawn (m.pos,
+       * kept by drawMirror). It is the host's to fly, so a hit here knocks
+       * nothing down on their side: our own aeroplane has the bump.
+       */
+      try {
+        const ty = getAircraft(type);
+        m.body = registerBody({
+          id: `mp-traffic-${id}`,
+          kind: 'traffic',
+          name: ty && ty.id === type ? `the ${ty.name}` : 'another aeroplane',
+          pos: m.pos,
+          vel: null,
+          radius: ty && ty.id === type ? radiusOfType(ty) : 8,
+          crew: 1,
+          get heading() {
+            return m.dh;
+          },
+          get onGround() {
+            return !!(m.f & 2);
+          },
+        });
+      } catch (e) {
+        m.body = null;
+      }
     }
     if (m.type !== type) {
       dropModel(m);
@@ -692,10 +719,7 @@ ch.on('world:traffic', (d, from) => {
     Object.assign(m, { x, y, z, h, v, vs, f, at: t });
   }
   for (const [id, m] of W.mirror) {
-    if (!seen.has(id)) {
-      dropModel(m);
-      W.mirror.delete(id);
-    }
+    if (!seen.has(id)) dropMirror(id, m);
   }
 });
 
@@ -704,8 +728,16 @@ function dropModel(m) {
   m.model = null;
 }
 
+/** Out of the mirror for good: its body goes with it (dropModel alone is also used for a type change). */
+function dropMirror(id, m) {
+  dropModel(m);
+  if (m.body) unregisterBody(m.body);
+  m.body = null;
+  W.mirror.delete(id);
+}
+
 function clearMirror() {
-  for (const m of W.mirror.values()) dropModel(m);
+  for (const [id, m] of [...W.mirror]) dropMirror(id, m);
   W.mirror.clear();
 }
 
@@ -770,6 +802,8 @@ function drawMirror(dt) {
     }
     const dh = ((m.h - m.dh + 540) % 360) - 180;
     m.dh = (m.dh + dh * k + 360) % 360;
+    // Where it is drawn is where it can be hit and where the map shows it (sky.js).
+    m.pos.set(m.dx, m.dy, m.dz);
     // Bank from the turn it is making; nose up or down from its climb.
     const turn = (((m.h - m.lastH + 540) % 360) - 180) * D2R;
     m.lastH = m.h;

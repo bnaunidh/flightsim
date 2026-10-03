@@ -128,11 +128,12 @@ export async function check(sim, r, say) {
   r.ok('crashes: the debrief is titled with the crash, the joke over the reason', !!dbTitle && dbTitle.textContent === C.crash.title && dbBody.textContent.includes(C.crash.caption) && dbBody.textContent.includes(C.crash.reason),
     dbTitle ? `${dbTitle.textContent} / ${dbBody.textContent.slice(0, 120)}` : 'no debrief');
 
-  /* ---- restart: everything put away, the marks stay ---------------------- */
+  /* ---- restart: everything put away, the chart clean ---------------------- */
   await sim.startMode(sim.mode || 'free', sim.modeOpts || {});
   sim.step(0.3);
   r.ok('crashes: a restart puts the crash away and gives the camera back', !C.script && !D.CAM.active && !(C.fx && C.fx.starsOn) && !sim.aircraft.crashed);
-  r.ok('crashes: …but the marks stay on the minimap', C.marks.list.length >= 1, `${C.marks.list.length}`);
+  // The owner (play-testing v52): old crash stars on the minimap after a new flight read as stale meteors — a new flight starts clean.
+  r.ok('crashes: …and a new flight starts with a clean minimap (no old crash stars)', C.marks.list.length === 0, `${C.marks.list.length}`);
 
   /* ---- a real crash, flown into the ground -------------------------------- */
   say('crashes: a flown crash');
