@@ -272,7 +272,7 @@ function requestFlareDeploy(sim) {
  * ------------------------------------------------------------------ */
 
 const CSS = `
-.afo-action { position: fixed; right: 18px; bottom: 120px; width: 84px; height: 84px; border-radius: 50%; z-index: 31; pointer-events: auto;
+.afo-action { position: fixed; right: 18px; bottom: 316px; width: 84px; height: 84px; border-radius: 50%; z-index: 31; pointer-events: auto;
   touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer; border: 3px solid #1b1030; color: #fff;
   font: 900 15px "Arial Black", Impact, sans-serif; display: flex; align-items: center; justify-content: center;
   box-shadow: 0 5px 0 #1b1030, 0 8px 18px rgba(0,0,0,0.35); }
@@ -280,6 +280,10 @@ const CSS = `
 .afo-action.is-flare { background: radial-gradient(circle at 35% 30%, #ffd48a, #ffa63f 60%, #c97a12); }
 .afo-action.is-down { transform: translateY(3px); box-shadow: 0 2px 0 #1b1030; }
 .afo-action[hidden] { display: none !important; }
+/* Above the minimap on a desk (it is 190 px tall from bottom 108); on a touch screen where the fire missions' DROP sits, above the pads;
+   on a phone above the stick. It sat on the minimap in v52. */
+html.is-touch-device .afo-action { right: 96px; bottom: 196px; }
+@media (max-width: 560px) { html.is-touch-device .afo-action { left: 8px; right: auto; bottom: 132px; width: 72px; height: 72px; } }
 `;
 
 function els() {
