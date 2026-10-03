@@ -860,6 +860,15 @@ registerExtension({
 
   startMode(sim) {
     resetAll(sim);
+    /*
+     * A new flight starts with a clean chart. The owner, play-testing: "I see
+     * crash/meteor icons on the minimap even though I crashed earlier" — the
+     * marks (a star burst, which reads as a meteor) outlived the flight they
+     * were made in by up to 90 s. Another player's crash in multiplayer still
+     * shows while you are flying (mpworld's own crosses, 60 s).
+     */
+    C.marks.list.length = 0;
+    C.newestMine = null;
     C.armedSeen = {};
     // Armed "straight away" can fire before the first frame this sees.
     if (sim.armedEvents) for (const k in sim.armedEvents) C.armedSeen[k] = true;
