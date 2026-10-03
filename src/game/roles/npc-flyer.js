@@ -71,7 +71,15 @@ export class NpcFlyer {
    * @param {string} typeId  an aircraft id; looked up rather than asked for,
    *        because getAircraft() falls back to the trainer for an unknown id
    */
-  constructor(scene, typeId, { name = 'npc' } = {}) {
+  /**
+   * @param {object} [opts.livery] a scheme from aircraft/liveries.js
+   *        (schemeFor()'s return) to paint this NPC in, overriding the
+   *        type's own house colours — the airliner you intercept always
+   *        wears house colours in a hijack; the one "Air Force One" flies
+   *        (src/game/roles/afo-lead.js) always wears that scheme, whichever
+   *        seat is a person's.
+   */
+  constructor(scene, typeId, { name = 'npc', livery = null } = {}) {
     this.scene = scene;
     this.type = AIRCRAFT.find((a) => a.id === typeId) || getAircraft(typeId);
     this.id = this.type.id;
@@ -165,7 +173,7 @@ export class NpcFlyer {
     this.model = null;
     this.rideOffset = 0;
     try {
-      this.model = createAircraftModel({ type: this.type, livery: this.type.livery });
+      this.model = createAircraftModel({ type: this.type, livery: livery || this.type.livery });
       this.model.name = `npc-${name}`;
       scene.add(this.model);
       if (this.model.userData.fleetBridge && this._spec) this.rideOffset = groundOffsetFor(this.model, this._spec);

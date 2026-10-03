@@ -483,7 +483,14 @@ export function airframeTexture(schemeOrBase = '#eef1f5', accentArg = '#c8102e')
    * marking are different pictures.
    */
   const reg = scheme.reg || '';
-  const key = ['airframe', baseColor, accent, cheatline, reg].join('|');
+  /*
+   * A titling line along the body — "UNITED STATES OF AMERICA" on the
+   * Air Force One scheme (aircraft/liveries.js), the only one that has ever
+   * asked for one. Nothing else paints it, so every other scheme is the
+   * same picture it always was.
+   */
+  const title = scheme.title || '';
+  const key = ['airframe', baseColor, accent, cheatline, reg, title].join('|');
   return get(key, () => {
     const S = 1024;
     const c = canvas(S);
@@ -549,6 +556,24 @@ export function airframeTexture(schemeOrBase = '#eef1f5', accentArg = '#c8102e')
       ctx.fillStyle = 'rgba(40,48,64,0.9)';
       ctx.font = 'bold 44px Arial, sans-serif';
       ctx.fillText(reg, S * 0.06, S * 0.42);
+    }
+
+    // The titling line, run the length of the body above the cheatline.
+    // Auto-fit: a registration is six characters, this is twenty-five, and
+    // the same 44px font would have run off both edges of the texture.
+    if (title) {
+      ctx.save();
+      ctx.fillStyle = cheatline;
+      ctx.textBaseline = 'middle';
+      const maxW = S * 0.86;
+      let fsize = 46;
+      ctx.font = `bold ${fsize}px Arial, sans-serif`;
+      while (fsize > 14 && ctx.measureText(title).width > maxW) {
+        fsize -= 2;
+        ctx.font = `bold ${fsize}px Arial, sans-serif`;
+      }
+      ctx.fillText(title, S * 0.07, S * 0.345);
+      ctx.restore();
     }
 
     // Dirt streaks trailing back from panel gaps.

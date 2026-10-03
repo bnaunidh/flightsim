@@ -17,6 +17,7 @@ import { check as civil } from './civil.browser.js';
 import { check as crashes } from './crashes.browser.js';
 import { check as events } from './events.browser.js';
 import { check as airliners } from './airliners.browser.js';
+import { check as afo } from './afo.browser.js';
 import { check as fighters } from './fighters.browser.js';
 import { check as fire } from './fire.browser.js';
 import { check as fun } from './fun.browser.js';
@@ -47,6 +48,8 @@ export const CHECKS = [
   { id: 'airliners', check: airliners },
   { id: 'fighters', check: fighters },
   { id: 'events', check: events },
+  // After events: Air Force One is the same mission-roles/afo-combat shape, driven the same way.
+  { id: 'afo', check: afo },
   { id: 'fire', check: fire },
   { id: 'fun', check: fun },
   { id: 'instruments', check: instruments },

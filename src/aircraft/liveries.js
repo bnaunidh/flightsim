@@ -86,6 +86,26 @@ export const LIVERIES = [
     tail: 0x24282d,
     reg: 'N90NF',
   },
+  /*
+   * "Air Force One" (src/game/extra/afo.js). A VC-25-style scheme — white
+   * over a light-blue belly, the title the real one wears, a dark blue tail
+   * — but an invented tail code, never one of the two real aircraft's: this
+   * game names no real person or craft. `title` is new (see render/textures.js
+   * airframeTexture()): a big line of text along the body, which no airline
+   * scheme here has ever needed — a cheatline reads as an airline from a
+   * distance, but this one has always carried words, not just colour.
+   */
+  {
+    id: 'potus',
+    name: 'Air Force One',
+    blurb: 'White over light blue, flies the Commander in Chief',
+    base: '#f4f3ee',
+    accent: '#7fa9d6',
+    cheatline: 'rgba(28,54,94,0.95)',
+    tail: 0x1c365e,
+    reg: 'SAM 42',
+    title: 'UNITED STATES OF AMERICA',
+  },
 ];
 
 /**

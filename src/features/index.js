@@ -38,5 +38,8 @@ import './mpworld.js';
 import './pilot-mp.js';
 // Carrier ops: the hook, the wires, the meatball, the catapults, and military flights starting on the ship.
 import './carrier-ops.js';
+// Air Force One: the escort and the drones/missiles/flares (the captain's side; the lead fighter's own
+// side, src/game/roles/afo-lead.js, loads from the mission list, src/game/extra/afo.js, like every seat does).
+import './events/afo.js';
 // Seats: fly some missions from another aircraft in the story (the lead fighter in the hijacks).
 import './roles.js';
