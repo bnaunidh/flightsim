@@ -922,6 +922,12 @@ registerExtension({
           } catch (e) {
             return 'flight';
           }
+        }, plane: () => {
+          try {
+            return mp.rideFor ? mp.rideFor('flight').type : null;
+          } catch (e) {
+            return null;
+          }
         } });
       } catch (e) {
         G.lobby = null;

@@ -30,10 +30,12 @@ import { check as multiplayer } from './multiplayer.browser.js';
 import { check as multiplayerList2 } from './multiplayer-list2.browser.js';
 import { check as multiplayerList3 } from './multiplayer-list3.browser.js';
 import { check as multiplayerPart2 } from './multiplayer-part2.browser.js';
+import { check as multiplayerPlane } from './multiplayer-plane.browser.js';
 import { check as onfoot } from './onfoot.browser.js';
 import { check as pilot } from './pilot.browser.js';
 import { check as quality } from './quality.browser.js';
 import { check as rocket } from './rocket.browser.js';
+import { check as sound } from './sound.browser.js';
 import { check as races } from './race-all.browser.js';
 import { check as traffic } from './traffic.browser.js';
 import { check as weapons } from './weapons.browser.js';
@@ -62,6 +64,8 @@ export const CHECKS = [
   // After maps: the missions spread over them — each moved one starts on its island, three flown to the end.
   { id: 'mission-maps', check: missionMaps },
   { id: 'menus', check: menus },
+  // After menus: every way of turning sound off, and that it stays off (nothing played out loud).
+  { id: 'sound', check: sound },
   { id: 'onfoot', check: onfoot },
   { id: 'quality', check: quality },
   { id: 'traffic', check: traffic },
@@ -73,6 +77,8 @@ export const CHECKS = [
   { id: 'multiplayer', check: multiplayer },
   { id: 'multiplayer-list2', check: multiplayerList2 },
   { id: 'multiplayer-list3', check: multiplayerList3 },
+  // After list3: the plane picked in the Hangar is the one flown in a lobby, over a ride saved on the lobby screen (v56).
+  { id: 'multiplayer-plane', check: multiplayerPlane },
   { id: 'aircrew', check: aircrew },
   // After aircrew: the walking pilot knocked down by anything that moves (the pilot brief).
   { id: 'pilot', check: pilot },

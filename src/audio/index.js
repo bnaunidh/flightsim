@@ -54,6 +54,8 @@ export class GameAudio {
 
   setMuted(m) {
     this.mixer.setMuted(m);
+    // The device's speech voice is outside the mixer: stop it mid-sentence too.
+    if (m) this.radio.stopSpeech();
   }
 
   setMusicEnabled(on) {

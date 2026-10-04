@@ -144,6 +144,21 @@ export class Radio {
     return this.mode;
   }
 
+  /**
+   * Stop the device's speech voice mid-sentence, if it is the one talking.
+   *
+   * It is the one voice in the game that does not pass through the mixer, so
+   * turning the master gain down does nothing to it: muting has to say so.
+   */
+  stopSpeech() {
+    if (this.mode !== 'speech' || typeof speechSynthesis === 'undefined') return;
+    try {
+      speechSynthesis.cancel();
+    } catch {
+      /* nothing to cancel */
+    }
+  }
+
   build() {
     const m = this.mixer;
     if (!m.ctx || this.built) return;
@@ -530,7 +545,11 @@ export class Radio {
     const words = String(text).split(/\s+/).filter(Boolean).length;
     const est = Math.max(1.4, (words / 2.6) / (v.tts ? v.tts.rate : 1));
 
-    try {
+    // Sound off, or the ATC switch off: the subtitle and the spacing stay, the
+    // words do not. The master gain cannot reach the device's voice.
+    const quiet = this.mixer.muted || !this.mixer.busEnabled('atc');
+    if (quiet) this.stopSpeech();
+    else try {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(String(text));
       u.pitch = v.tts ? v.tts.pitch : 1;

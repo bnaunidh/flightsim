@@ -1873,11 +1873,15 @@ class Game {
     } else if (path === 'muted') {
       this.audio.setMuted(value);
       this.hud.setMuted(value);
+      // The start screen's button too, or it still offers "turn it off" and
+      // pressing it turns the sound back ON.
+      this.menus.syncSound(value);
     } else if (path.startsWith('soundOn.')) {
       // A source switched on or off. The volume it had is remembered, so
       // switching it back on returns it to where you left it.
       const bus = path.slice('soundOn.'.length);
       this.audio.mixer.setBusEnabled(bus, !!value);
+      if (bus === 'atc' && !value) this.audio.radio.stopSpeech();
       if (bus === 'music') {
         this.audio.setMusicEnabled(!!value && this.settings.music !== false);
         if (!value) this.audio.music.stop();
@@ -2452,6 +2456,10 @@ class Game {
   async unlockAudio() {
     if (this.audio.started || this._unlocking) return;
     this._unlocking = true;
+    // Before the context exists, so its master is made silent. Applied only
+    // afterwards, the master was made at full volume and took a fifth of a
+    // second to fade: sound off, and every session began with a blip of engine.
+    this.audio.setMuted(this.settings.muted);
     const ok = await this.audio.start();
     this._unlocking = false;
     if (!ok) {

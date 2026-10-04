@@ -366,6 +366,7 @@ class Multiplayer {
     injectStyle();
     this.hud = buildHud(this, extLayer());
     this.keepMenuCard();
+    this.followMenuPlane();
     if (typeof window !== 'undefined') {
       window.__mp = this;
       // Tab held down while the window loses focus never sends its keyup; do not leave the list stuck open.
@@ -746,6 +747,34 @@ class Multiplayer {
     this.profile.ride = { game: r.game, type: r.type };
     saveProfile(this.profile);
     return true;
+  }
+
+  /*
+   * v56: a plane picked in the Hangar or on the Free Flight screen is the
+   * ride again, as the Hangar says ("Free Flight and Multiplayer will start
+   * in it"). setRide() keeps the lobby screen's pick for good, and ride() put
+   * it first ever after: one tap on the Skylark, or the boat, and every plane
+   * picked in the Hangar since was ignored in every lobby — as host and as
+   * client, and the others saw the Skylark. Both screens pick through
+   * menus.pickFreeAircraft, so that is where this listens: a pick there
+   * forgets the lobby screen's, and the menu's own choice decides again
+   * (rideFor: that plane, with myAircraft()'s locks; the boat from the Boat
+   * page). The newest pick, on either screen, is the ride.
+   */
+  followMenuPlane() {
+    const menus = this.sim && this.sim.menus;
+    const pick = menus && menus.pickFreeAircraft;
+    if (typeof pick !== 'function' || pick.mpFollows) return;
+    const follows = (id) => {
+      const out = pick(id);
+      if (this.profile && this.profile.ride) {
+        this.profile.ride = null;
+        saveProfile(this.profile);
+      }
+      return out;
+    };
+    follows.mpFollows = true;
+    menus.pickFreeAircraft = follows;
   }
 
   rideName(r) {

@@ -1614,9 +1614,8 @@ export class Menus {
           );
           return;
         }
-        this.chosenAircraft = id;
-        s.querySelectorAll('[data-aircraft]').forEach((n) => n.classList.toggle('is-on', n === plane));
-        refresh();
+        // The Hangar's door too, so Multiplayer hears of it (features/multiplayer.js followMenuPlane).
+        this.pickFreeAircraft(id);
         return;
       }
 
@@ -2737,8 +2736,15 @@ export class Menus {
     }
   }
 
-  /** Reflect the mute state on the start-screen button. */
+  /**
+   * Reflect the mute state on the start-screen button and on Settings' "Mute
+   * everything". The box was painted once at boot, when sound starts off, so
+   * after the button turned sound on it still read ticked — and ticking it
+   * "again" to mute actually unticked it and left the sound on.
+   */
   syncSound(muted) {
+    const box = this.screens.settings && this.screens.settings.querySelector('[data-set="muted"]');
+    if (box) box.checked = !!muted;
     const btn = this.screens.main.querySelector('[data-sound]');
     if (!btn) return;
     btn.textContent = muted ? '🔇 Sound is off — turn it on' : '🔊 Sound is on — turn it off';

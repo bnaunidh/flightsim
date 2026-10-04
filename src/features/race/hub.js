@@ -159,7 +159,9 @@ export function mountLobbyCard(section, api) {
     if (t.closest('[data-mp-race-pick]')) {
       const game = api.game();
       if (game !== 'flight' && game !== 'heli') {
-        const plane = section.querySelector('[data-mp-ride^="flight:"]');
+        // Their own plane (v56) — the first on the list is the Skylark, whatever they picked in the Hangar.
+        const mine = api.plane ? api.plane() : null;
+        const plane = (mine && section.querySelector(`[data-mp-ride="flight:${mine}"]`)) || section.querySelector('[data-mp-ride^="flight:"]');
         if (plane) plane.click();
       }
       setTimeout(paint, 0);
