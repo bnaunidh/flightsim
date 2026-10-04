@@ -32,6 +32,7 @@ import { heightAt } from '../../world/terrain.js';
 import { explode } from '../explosions.js';
 import { segmentHitsSphere } from '../pvp/rules.js';
 import { registerBody, unregisterBody } from '../sky.js';
+import { FLASH, blinkLevel } from '../../render/flash-safety.js';
 
 let DRONE_N = 0;
 
@@ -210,7 +211,8 @@ export class Drone {
     this.model.position.copy(this.pos);
     const h = headingOf(this.vel) * DEG;
     this.model.rotation.set(0, -h, 0);
-    this.beacon.material.opacity = Math.sin(this.t * 6) > 0 ? 0.9 : 0.35;
+    // A hard blink, or with Reduce flashing a swell at the same rate (flash-safety.js).
+    this.beacon.material.opacity = 0.35 + 0.55 * blinkLevel(this.t, (Math.PI * 2) / 6, 0.5);
     this.cooldown -= dt;
   }
 
@@ -309,7 +311,9 @@ export class Missile {
     this.model.position.copy(this.pos);
     const dir = this.vel.clone().normalize();
     if (dir.lengthSq() > 0.001) this.model.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), dir);
-    this.flame.material.opacity = 0.7 + Math.random() * 0.25;
+    // A new random brightness every frame is noise, not fire: with Reduce
+    // flashing the flame breathes instead (render/flash-safety.js).
+    this.flame.material.opacity = FLASH.reduce ? 0.82 + 0.1 * Math.sin(this.t * 9) : 0.7 + Math.random() * 0.25;
   }
 
   dispose() {
@@ -409,12 +413,19 @@ export class AttackField {
     for (const p of positions) this.drones.push(new Drone(this.scene, p, opts));
   }
 
+  // Plain loops, not .filter(...).length — read every frame by the HUD and
+  // the mission's completeIf check, so a fresh array just to throw away is
+  // the same GC churn this class's own update() below is trying to avoid.
   get dronesAlive() {
-    return this.drones.filter((d) => d.alive).length;
+    let n = 0;
+    for (const d of this.drones) if (d.alive) n++;
+    return n;
   }
 
   get missilesInbound() {
-    return this.missiles.filter((m) => m.alive).length;
+    let n = 0;
+    for (const m of this.missiles) if (m.alive) n++;
+    return n;
   }
 
   /** Drop flares/chaff from here, travelling at `vel`: a kind word for "deployed". */
@@ -595,20 +606,33 @@ export class AttackField {
       }
     }
     for (const p of this.pellets) p.step(dt);
-    const live = [...this.drones.filter((d) => d.alive), ...this.missiles.filter((m) => m.alive)];
+    // No `live` array built from two filters + a spread every frame (see the
+    // drones/missiles pruning below for the same fix) — walk drones then
+    // missiles directly, same order the old concatenated array gave them.
     for (const p of this.pellets) {
       if (p.dead) continue;
-      for (const t of live) {
-        if (!t.alive) continue;
-        if (segmentHitsSphere(p.prev.x, p.prev.y, p.prev.z, p.pos.x, p.pos.y, p.pos.z, t.pos.x, t.pos.y, t.pos.z, t.r)) {
-          p.dead = true;
-          const wasDrone = t instanceof Drone;
-          t.alive = false;
-          if (wasDrone) this.stats.shotDrones++;
-          else this.stats.shotMissiles++;
-          explode(this.sim, t.pos, { kind: 'sparkle', size: wasDrone ? 0.9 : 0.5 });
+      let t = null;
+      for (const d of this.drones) {
+        if (d.alive && segmentHitsSphere(p.prev.x, p.prev.y, p.prev.z, p.pos.x, p.pos.y, p.pos.z, d.pos.x, d.pos.y, d.pos.z, d.r)) {
+          t = d;
           break;
         }
+      }
+      if (!t) {
+        for (const m of this.missiles) {
+          if (m.alive && segmentHitsSphere(p.prev.x, p.prev.y, p.prev.z, p.pos.x, p.pos.y, p.pos.z, m.pos.x, m.pos.y, m.pos.z, m.r)) {
+            t = m;
+            break;
+          }
+        }
+      }
+      if (t) {
+        p.dead = true;
+        const wasDrone = t instanceof Drone;
+        t.alive = false;
+        if (wasDrone) this.stats.shotDrones++;
+        else this.stats.shotMissiles++;
+        explode(this.sim, t.pos, { kind: 'sparkle', size: wasDrone ? 0.9 : 0.5 });
       }
     }
     for (let i = this.pellets.length - 1; i >= 0; i--) {
@@ -620,10 +644,21 @@ export class AttackField {
     // Anything the gun or the terrain took out this frame (or the missile
     // resolution above, or a drone's cooldown never mattering once it is
     // dead) loses its model now and leaves the live lists for good.
-    for (const d of this.drones) if (!d.alive) d.dispose();
-    for (const m of this.missiles) if (!m.alive) m.dispose();
-    this.drones = this.drones.filter((d) => d.alive);
-    this.missiles = this.missiles.filter((m) => m.alive);
+    // Reverse-iterate and splice out the dead, like flares/pellets above —
+    // touch the array only when something actually died, instead of
+    // rebuilding it from scratch every frame regardless.
+    for (let i = this.drones.length - 1; i >= 0; i--) {
+      if (!this.drones[i].alive) {
+        this.drones[i].dispose();
+        this.drones.splice(i, 1);
+      }
+    }
+    for (let i = this.missiles.length - 1; i >= 0; i--) {
+      if (!this.missiles[i].alive) {
+        this.missiles[i].dispose();
+        this.missiles.splice(i, 1);
+      }
+    }
 
     return { hit: hitThisFrame };
   }

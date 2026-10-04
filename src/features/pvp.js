@@ -44,6 +44,7 @@ registerActions({
 import { heightAt } from '../world/terrain.js';
 import { performanceFor } from '../aircraft/types.js';
 import * as R from './pvp/rules.js';
+import { FlashGate, screenOpacity } from '../render/flash-safety.js';
 import { mp, ch, ride, forwardOf, inGame, who, esc, blip, toon, chip, bigCard, feed, ghost, ghostReasons, injectStyle } from './mpplay/shared.js';
 
 export const FIRE_HZ = 8;
@@ -530,7 +531,7 @@ const UI_CSS = `
 .pvp-fire.is-down { transform: translateY(3px); box-shadow: 0 2px 0 #1b1030; }
 .is-touch-device .pvp-fire small { display: none; }
 .pvp-flash { position: fixed; inset: 0; pointer-events: none; z-index: 28; opacity: 0; transition: opacity 0.35s; box-shadow: inset 0 0 90px 30px var(--pvp-flash, #ff5a4f); }
-.pvp-flash.is-on { opacity: 0.8; transition: none; }
+.pvp-flash.is-on { opacity: var(--pvp-flash-a, 0.8); transition: none; }
 `;
 
 function els() {
@@ -646,10 +647,18 @@ function placeFire(sim, fire) {
 }
 
 let flashT = null;
+/*
+ * Reduce flashing (render/flash-safety.js): a burst of hits used to flash
+ * the red edge of the screen once per pellet, up to the host's 60 a second.
+ * With the switch on it is a faint edge, at most three times a second.
+ */
+const flashGate = new FlashGate();
 function flash(colour) {
   const e = els();
   if (!e) return;
+  if (!flashGate.allow(now() / 1000)) return;
   e.flash.style.setProperty('--pvp-flash', colour);
+  e.flash.style.setProperty('--pvp-flash-a', String(screenOpacity(0.8)));
   e.flash.classList.add('is-on');
   clearTimeout(flashT);
   flashT = setTimeout(() => e.flash.classList.remove('is-on'), 60);

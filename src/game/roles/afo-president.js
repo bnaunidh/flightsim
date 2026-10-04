@@ -577,9 +577,7 @@ function flightBase(sim, id, air, escort) {
     return true;
   };
   air.onEvent = (what) => {
-    if (what === 'touchdown') {
-      notify(sim, `Wheels down — ${field()}.`, 'good', 3.5);
-    } else if (what === 'goaround') {
+    if (what === 'goaround') {
       speak(sim, 'Going around — we will come round again, Mr. President.', V_CAPTAIN);
     }
   };
@@ -835,7 +833,8 @@ function createPresidentAttack(sim) {
     st.infoCommon(out);
     out.dronesAlive = attack.dronesAlive;
     out.missilesInbound = attack.missilesInbound;
-    out.stats = { ...attack.stats };
+    // Live object, not a copy — see afo.js afoInfo() for why.
+    out.stats = attack.stats;
     out.failWhy = st.failWhy;
     out.warned = st.warned;
     out.clear = st.clearAt != null;

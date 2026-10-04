@@ -66,6 +66,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { parseGLB, drawStats } from './glb.js';
 import { createBoatWater } from './blender-boat-water.js';
+import { strobeLevel } from '../render/flash-safety.js';
 
 /**
  * What each file must contain. `maxTriangles` is the budget the modeller was
@@ -518,9 +519,9 @@ function animateHeli(model, s, dt, A) {
   setGlow(L, 'light_nav_red', 'light_red', lightsOn ? 1 : 0);
   setGlow(L, 'light_nav_green', 'light_green', lightsOn ? 1 : 0);
   setGlow(L, 'light_nav_white', 'light_white', lightsOn ? 1 : 0);
-  const cyc = A.t % 1.3;
-  const flash = lightsOn && (cyc < 0.07 || (cyc > 0.16 && cyc < 0.23)) ? 1 : 0;
-  setGlow(L, 'light_beacon', 'light_red', flash ? 1.4 : 0.06);
+  // (Reduce flashing: one soft, dimmer pulse a cycle — render/flash-safety.js.)
+  const flash = lightsOn ? strobeLevel(A.t, 1.3, 0.07, 0.09) : 0;
+  setGlow(L, 'light_beacon', 'light_red', 0.06 + 1.34 * flash);
   setGlow(L, 'interior', 'screen', on ? 1 : 0.1);
 
   // Searchlight: tilts down under the nose, lights the ground in the dark.
@@ -637,8 +638,8 @@ function animateBoat(model, s, dt, A) {
 
   // The blue beacons double-flash; nav and anchor whites follow `lights`.
   const on = s.lights !== false;
-  const ph = (A.t * 1.25) % 1;
-  setGlow(L, 'light_blue', 'light_blue', on && (ph < 0.08 || (ph > 0.16 && ph < 0.24)) ? 1.6 : 0.12);
+  // 2.5 flashes a second; with Reduce flashing one soft pulse a cycle (flash-safety.js).
+  setGlow(L, 'light_blue', 'light_blue', on ? 0.12 + 1.48 * strobeLevel(A.t, 0.8, 0.064, 0.064) : 0.12);
   setGlow(L, 'light_nav_red', 'light_red', on ? 1 : 0);
   setGlow(L, 'light_nav_green', 'light_green', on ? 1 : 0);
   setGlow(L, 'light_mast', 'light_white', on ? 1 : 0);

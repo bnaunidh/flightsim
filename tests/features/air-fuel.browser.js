@@ -58,7 +58,7 @@ export async function check(sim, r, say) {
     }
 
     // Runway starts: full tanks, as always.
-    for (const id of ['circuit', 'event-breakin']) {
+    for (const id of ['circuit']) {
       await sim.startMode('mission', { id });
       r.ok(`air-fuel: ${id} starts on the runway with full tanks`, sim.aircraft.onGround && pct() === 1, show(pct()));
     }

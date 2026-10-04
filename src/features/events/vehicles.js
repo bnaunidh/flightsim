@@ -1,7 +1,6 @@
 /**
- * The cars in the flight events: airport police cars with light bars, one
- * lost pizza delivery car, the stretch of perimeter fence it drives through,
- * and a column of light that marks where to taxi.
+ * The cars in the flight events: airport police cars with light bars, and a
+ * column of light that marks where to taxi.
  *
  * Built from boxes and cylinders like everything else in the game, and built
  * CHEAPLY: every geometry and every material here is made once for the whole
@@ -18,6 +17,7 @@
 import * as THREE from '../../vendor/three.module.js';
 import { createPerson as rigPerson, posePerson, disposePerson } from '../staff/person.js';
 import { heightAt } from '../../world/terrain.js';
+import { FLASH, CAPS } from '../../render/flash-safety.js';
 
 let G = null; // shared geometry
 let M = null; // shared materials
@@ -59,26 +59,6 @@ function shared() {
     g.textBaseline = 'middle';
     g.fillText('POLICE', w / 2, h / 2 + 4);
   });
-  const pizzaTop = canvasTexture(128, 128, (g) => {
-    g.fillStyle = '#d9a441';
-    g.beginPath(); g.arc(64, 64, 63, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#f7d35c';
-    g.beginPath(); g.arc(64, 64, 54, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#c0392b';
-    const dots = [[40, 42], [82, 38], [64, 66], [36, 84], [88, 84], [60, 98], [96, 60], [30, 62]];
-    for (const [x, y] of dots) { g.beginPath(); g.arc(x, y, 8, 0, Math.PI * 2); g.fill(); }
-    g.fillStyle = '#3f8f3a';
-    for (const [x, y] of [[52, 50], [74, 80], [48, 74], [80, 56]]) g.fillRect(x, y, 6, 3);
-  });
-  const pizzaSign = canvasTexture(256, 64, (g, w, h) => {
-    g.fillStyle = '#ffd23f';
-    g.fillRect(0, 0, w, h);
-    g.fillStyle = '#c0392b';
-    g.font = 'bold 40px sans-serif';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillText('PIZZA!', w / 2, h / 2 + 2);
-  });
   M = {
     white: std(0xf4f6f8),
     blue: std(0x1d4fb8),
@@ -90,11 +70,6 @@ function shared() {
     redGlow: new THREE.SpriteMaterial({ map: glow, color: 0xff3322, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.9 }),
     blueGlow: new THREE.SpriteMaterial({ map: glow, color: 0x3a7bff, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.9 }),
     word: new THREE.MeshBasicMaterial({ map: word }),
-    pink: std(0xff6fb1),
-    cream: std(0xfff4e0),
-    pizza: new THREE.MeshStandardMaterial({ map: pizzaTop, roughness: 0.8 }),
-    crust: std(0xc98a35, { roughness: 0.9, metalness: 0 }),
-    sign: new THREE.MeshBasicMaterial({ map: pizzaSign }),
     pillar: new THREE.MeshBasicMaterial({ color: 0x8fdcff, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
     // The tactical team's van, the stairs truck, and the people.
     navy: std(0x1a2233, { roughness: 0.6 }),
@@ -124,7 +99,6 @@ function shared() {
     box: new THREE.BoxGeometry(1, 1, 1),
     wheel,
     plane: new THREE.PlaneGeometry(1, 1),
-    disc: new THREE.CylinderGeometry(1, 1, 1, 24),
     pillar: new THREE.CylinderGeometry(6, 6, 110, 24, 1, true),
     torso: new THREE.CylinderGeometry(0.26, 0.3, 0.72, 8),
     head: new THREE.SphereGeometry(0.17, 10, 8),
@@ -185,31 +159,6 @@ export function createPoliceCar() {
   blue.position.set(0.34, 1.82, 0.05);
   blue.scale.setScalar(3.4);
   g.add(red, blue);
-  return g;
-}
-
-/** The lost pizza car: small, pink, and carrying a pizza the size of a table. */
-export function createPizzaCar() {
-  const { G: g2, M: m } = shared();
-  const g = new THREE.Group();
-  g.name = 'pizza-car';
-  g.add(part(g2.box, m.pink, 1.7, 0.7, 3.7, 0, 0.64, 0));
-  g.add(part(g2.box, m.glass, 1.5, 0.55, 1.9, 0, 1.25, 0.25));
-  g.add(part(g2.box, m.cream, 1.52, 0.08, 1.8, 0, 1.56, 0.25));
-  // The sign on the roof, readable from both sides.
-  const sign = new THREE.Mesh(g2.box, [m.cream, m.cream, m.cream, m.cream, m.sign, m.sign]);
-  sign.scale.set(1.3, 0.45, 0.1);
-  sign.position.set(0, 1.86, -0.25);
-  sign.rotation.y = Math.PI / 2;
-  g.add(sign);
-  // The pizza, tilted a little, because it is not very well tied on.
-  const pizza = new THREE.Mesh(g2.disc, [m.crust, m.pizza, m.crust]);
-  pizza.scale.set(1.35, 0.12, 1.35);
-  pizza.position.set(0, 1.72, 0.8);
-  pizza.rotation.x = 0.12;
-  g.add(pizza);
-  wheels(g, 0.82, 1.2);
-  g.userData.pizza = pizza;
   return g;
 }
 
@@ -324,17 +273,48 @@ export function disposeEventPerson(obj) {
   disposePerson(obj);
 }
 
+/**
+ * Tests only (tests/features/flicker.mjs): stand-in light-bar materials, so the
+ * pattern below can be measured in node without building a car. null restores.
+ */
+let savedM = null;
+export function __setPoliceMaterials(m) {
+  if (m) {
+    savedM = savedM || { M };
+    M = m;
+  } else if (savedM) {
+    M = savedM.M;
+    savedM = null;
+  }
+}
+
 /** Flash every light bar. `t` is seconds; the pattern is double-flash, alternate sides. */
 export function flashPolice(t) {
   if (!M) return;
-  const phase = (t * 2.2) % 2;
-  const beat = (t * 13) % 2 < 1;
-  const redOn = phase < 1 && beat;
-  const blueOn = phase >= 1 && beat;
-  M.redGlow.opacity = redOn ? 1 : 0.08;
-  M.blueGlow.opacity = blueOn ? 1 : 0.08;
-  M.red.emissiveIntensity = redOn ? 2.2 : 0.25;
-  M.blueLens.emissiveIntensity = blueOn ? 2.2 : 0.25;
+  let red;
+  let blue;
+  if (FLASH.reduce) {
+    /*
+     * Reduce flashing (render/flash-safety.js). The bar below flickers each
+     * colour 6.5 times a second while that side is on — five flashes in the
+     * worst second, saturated red among them, the very kind the guidelines
+     * are strictest about, and the police cars of the hijack park all round
+     * the aeroplane. With the switch on the two colours swell back and forth
+     * at the same 1.1 a second, dimmer.
+     */
+    const s = 0.5 - 0.5 * Math.cos(t * 2.2 * Math.PI);
+    red = (1 - s) * CAPS.strobe;
+    blue = s * CAPS.strobe;
+  } else {
+    const phase = (t * 2.2) % 2;
+    const beat = (t * 13) % 2 < 1;
+    red = phase < 1 && beat ? 1 : 0;
+    blue = phase >= 1 && beat ? 1 : 0;
+  }
+  M.redGlow.opacity = 0.08 + 0.92 * red;
+  M.blueGlow.opacity = 0.08 + 0.92 * blue;
+  M.red.emissiveIntensity = 0.25 + 1.95 * red;
+  M.blueLens.emissiveIntensity = 0.25 + 1.95 * blue;
 }
 
 /** A column of light over the place you are meant to taxi to. */
@@ -348,130 +328,6 @@ export function createPillar() {
 
 export function pulsePillar(t) {
   if (M) M.pillar.opacity = 0.16 + 0.1 * (0.5 + 0.5 * Math.sin(t * 3));
-}
-
-/**
- * A stretch of chain-link fence between two points, following the ground,
- * with one panel — the one the pizza car goes through — built separately so
- * it can fall over.
- *
- * @returns {{ panel: THREE.Group, knockDown(): void, reset(): void, update(dt): void }}
- */
-export function buildFence(group, a, b, breach, breachWidth = 10) {
-  /*
-   * Its own geometry and materials, not the shared set the cars use. The
-   * fence lives in the world group, and main.js disposes everything in a
-   * world group — geometry, materials and their textures — every time the
-   * world is rebuilt. Sharing would hand the police cars a disposed box.
-   */
-  const chain = canvasTexture(64, 64, (g) => {
-    g.clearRect(0, 0, 64, 64);
-    g.strokeStyle = 'rgba(190,196,204,1)';
-    g.lineWidth = 3;
-    for (let i = -64; i < 128; i += 16) {
-      g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 64, 64); g.stroke();
-      g.beginPath(); g.moveTo(i + 64, 0); g.lineTo(i, 64); g.stroke();
-    }
-  });
-  chain.wrapS = chain.wrapT = THREE.RepeatWrapping;
-  const m = {
-    post: new THREE.MeshStandardMaterial({ color: 0x8a9199, roughness: 0.55, metalness: 0.5 }),
-    wire: new THREE.MeshStandardMaterial({ map: chain, transparent: true, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.4 }),
-  };
-  const g2 = { box: new THREE.BoxGeometry(1, 1, 1) };
-  const dir = new THREE.Vector3().subVectors(b, a).setY(0);
-  const len = dir.length();
-  dir.normalize();
-  const H = 2.4;
-  // Posts, one instanced mesh for the lot.
-  const spacing = 4;
-  const n = Math.max(2, Math.floor(len / spacing) + 1);
-  const posts = new THREE.InstancedMesh(g2.box, m.post, n);
-  const d = new THREE.Object3D();
-  for (let i = 0; i < n; i++) {
-    const x = a.x + dir.x * i * spacing;
-    const z = a.z + dir.z * i * spacing;
-    const y = heightAt(x, z);
-    d.position.set(x, y + H / 2 + 0.1, z);
-    d.scale.set(0.12, H + 0.2, 0.12);
-    d.updateMatrix();
-    posts.setMatrixAt(i, d.matrix);
-  }
-  posts.instanceMatrix.needsUpdate = true;
-  group.add(posts);
-
-  // Where along the fence the breach is, and the wire either side of it.
-  const along = new THREE.Vector3().subVectors(breach, a).dot(dir);
-  const s0 = Math.max(0, along - breachWidth / 2);
-  const s1 = Math.min(len, along + breachWidth / 2);
-  const strip = (from, to) => {
-    const l = to - from;
-    if (l < 1) return;
-    const segs = Math.max(1, Math.round(l / 12));
-    const geo = new THREE.PlaneGeometry(l, H, segs, 1);
-    const pos = geo.attributes.position;
-    const uv = geo.attributes.uv;
-    for (let i = 0; i < pos.count; i++) {
-      const s = from + (pos.getX(i) + l / 2);
-      const x = a.x + dir.x * s;
-      const z = a.z + dir.z * s;
-      const up = pos.getY(i) + H / 2;
-      pos.setXYZ(i, x, heightAt(x, z) + 0.1 + up, z);
-      uv.setXY(i, (s / H) * 1.0, up / H);
-    }
-    geo.computeVertexNormals();
-    geo.computeBoundingSphere();
-    const mesh = new THREE.Mesh(geo, m.wire);
-    group.add(mesh);
-  };
-  strip(0, s0);
-  strip(s1, len);
-
-  // The panel that falls. Its pivot sits on the ground line so it hinges
-  // at the bottom, the way a panel that has been driven into does.
-  const mid = (s0 + s1) / 2;
-  const pivot = new THREE.Group();
-  const px = a.x + dir.x * mid;
-  const pz = a.z + dir.z * mid;
-  pivot.position.set(px, heightAt(px, pz) + 0.1, pz);
-  // Local +X along the fence.
-  pivot.rotation.y = Math.atan2(-dir.z, dir.x);
-  const pgeo = new THREE.PlaneGeometry(s1 - s0, H);
-  pgeo.translate(0, H / 2, 0);
-  const uvp = pgeo.attributes.uv;
-  for (let i = 0; i < uvp.count; i++) uvp.setX(i, uvp.getX(i) * ((s1 - s0) / H));
-  const panel = new THREE.Mesh(pgeo, m.wire);
-  pivot.add(panel);
-  group.add(pivot);
-
-  let fall = 0;
-  let falling = false;
-  let side = -1;
-  return {
-    pivot,
-    /** Knock it flat, away from `from` (a world point on the side the car came from). */
-    knockDown(from) {
-      if (falling) return;
-      falling = true;
-      // Which way is away from the car: local +Z is the fence's normal.
-      const nx = Math.sin(pivot.rotation.y);
-      const nz = Math.cos(pivot.rotation.y);
-      const s = (from.x - px) * nx + (from.z - pz) * nz;
-      side = s > 0 ? -1 : 1;
-    },
-    reset() {
-      falling = false;
-      fall = 0;
-      pivot.rotation.x = 0;
-    },
-    update(dt) {
-      if (!falling || fall >= 1) return;
-      fall = Math.min(1, fall + dt * 2.4);
-      // A little bounce at the end, because it is a cartoon.
-      const e = fall < 1 ? fall * fall : 1;
-      pivot.rotation.x = side * (Math.PI / 2 - 0.06) * e;
-    },
-  };
 }
 
 /**

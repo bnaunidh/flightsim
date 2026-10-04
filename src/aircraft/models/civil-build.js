@@ -31,6 +31,7 @@ import {
   propTexture,
 } from '../../render/textures.js';
 import { Batch, blade, turned, tubePath } from './civil-kit.js';
+import { strobeLevel, blinkLevel } from '../../render/flash-safety.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -894,22 +895,24 @@ function updateCivil(st, dt, ac, weather) {
   /* Lights: barely there by day, the whole show at night. */
   const dark = weather ? (weather.isNight ? 1 : weather.cond && weather.cond.cloud > 0.75 ? 0.55 : 0.18) : 0.5;
   st.strobeT += dt;
-  const t13 = st.strobeT % 1.3;
-  const strobe = t13 < 0.06 || (t13 > 0.13 && t13 < 0.19);
-  const beaconOn = (st.strobeT % 1.1) < 0.35;
+  // The double flash and the beacon's blink, or with Reduce flashing a soft,
+  // dimmer pulse and a swell at the same rate (render/flash-safety.js).
+  const strobe = strobeLevel(st.strobeT, 1.3, 0.06, 0.07);
+  const beacon = blinkLevel(st.strobeT, 1.1, 0.35 / 1.1);
   const L = st.lamps;
   const agl = num(ac.agl, 0);
   const wantLanding = running && ((ac.gearDown ?? num(ac.gearPos, 1) > 0.5) || agl < 400);
   for (const k in L) {
     const s = L[k];
     let on = running;
-    if (k === 'strobeL' || k === 'strobeR') on = running && strobe;
-    else if (k === 'beacon' || k === 'beacon2') on = running && beaconOn;
+    let lit = 1;
+    if (k === 'strobeL' || k === 'strobeR') lit = strobe;
+    else if (k === 'beacon' || k === 'beacon2') lit = beacon;
     else if (k === 'landing') on = wantLanding;
-    s.visible = on;
+    s.visible = on && lit > 0.01;
     const boost = k === 'landing' ? 1.6 : 1;
     s.scale.setScalar(s.userData.baseScale * (0.55 + dark * 0.75) * boost);
-    s.material.opacity = 0.35 + dark * 0.65;
+    s.material.opacity = (0.35 + dark * 0.65) * lit;
   }
   if (st.landingSpot) st.landingSpot.intensity = wantLanding ? 190 * (0.25 + dark * 0.75) : 0;
 }

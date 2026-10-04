@@ -257,37 +257,13 @@ function beamTexture() {
 }
 
 /**
- * The locked look: a dark shape with a cold rim, like something under a sheet
- * in a dark corner. A fresnel term rather than a lit material, so it reads as
- * a silhouette whatever the lights are doing.
+ * The locked look: pure black, no rim, no shading — just the shape, with a
+ * big "?" over it from the UI (the owner, 2026-10-04: "a pure black thing
+ * with a question mark on it… don't make it a cube"). Unlit, so it stays a
+ * flat silhouette whatever the hangar lights are doing.
  */
 function silhouetteMaterial() {
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      base: { value: new THREE.Color(0x05080e) },
-      rim: { value: new THREE.Color(0x4f7bb8) },
-    },
-    vertexShader: /* glsl */ `
-      varying vec3 vN;
-      varying vec3 vV;
-      void main() {
-        vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        vN = normalize(normalMatrix * normal);
-        vV = normalize(-mv.xyz);
-        gl_Position = projectionMatrix * mv;
-      }`,
-    fragmentShader: /* glsl */ `
-      uniform vec3 base;
-      uniform vec3 rim;
-      varying vec3 vN;
-      varying vec3 vV;
-      void main() {
-        float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.4);
-        gl_FragColor = vec4(base + rim * f, 1.0);
-      }`,
-    side: THREE.DoubleSide,
-    toneMapped: false,
-  });
+  return new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, toneMapped: false });
 }
 
 /* --------------------------------------------------------------------- */

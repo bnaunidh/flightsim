@@ -46,6 +46,8 @@ const CSS = `
 .co-ball.is-waveoff .co-wo { animation: co-flash .3s steps(1) infinite; }
 .co-cut { position: absolute; left: 50%; top: -6px; width: 26px; margin-left: -13px; height: 4px; border-radius: 2px; background: #0f3a19; }
 .co-ball.is-cut .co-cut { animation: co-cut .3s steps(1) infinite; }
+/* Reduce flashing (render/flash-safety.js): 3.3 flashes a second is over the line; 1.25 is not. */
+html.reduce-flashing .co-ball.is-waveoff .co-wo, html.reduce-flashing .co-ball.is-cut .co-cut { animation-duration: .8s; }
 .co-line { text-align: center; font: 800 12px/1.2 var(--font, system-ui); letter-spacing: .04em; min-height: 15px; }
 .co-line.is-ok { color: #6fe39a; } .co-line.is-off { color: #ffc247; }
 .co-read { margin-top: 3px; text-align: center; font: 600 10.5px/1.3 var(--font, system-ui); color: #b9c9db; font-variant-numeric: tabular-nums; }

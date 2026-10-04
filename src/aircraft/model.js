@@ -27,6 +27,7 @@ import {
 import { clamp, lerp } from '../core/noise.js';
 import { getAircraft, DEFAULT_AIRCRAFT_ID } from './types.js';
 import { Builder, glowSprite } from './models/civil-build.js';
+import { strobeLevel } from '../render/flash-safety.js';
 import { buildSkylark } from './models/skylark.js';
 import { buildCourier } from './models/courier.js';
 import { buildMeridian } from './models/meridian.js';
@@ -1137,13 +1138,14 @@ export function createAircraftModel(opts = {}) {
 
     // Lights.
     state.strobeT += dt;
-    const strobe = state.strobeT % 1.3 < 0.06 || (state.strobeT % 1.3 > 0.13 && state.strobeT % 1.3 < 0.19);
+    // The double flash, or with Reduce flashing one soft, dimmer pulse (flash-safety.js).
+    const strobe = strobeLevel(state.strobeT, 1.3, 0.06, 0.07);
     const running = ac.engineOn || ac.rpm > 0.05;
     state.lights.navLeft.visible = running;
     state.lights.navRight.visible = running;
     state.lights.tail.visible = running;
-    state.lights.strobeL.visible = running && strobe;
-    state.lights.strobeR.visible = running && strobe;
+    state.lights.strobeL.visible = running && strobe > 0.01;
+    state.lights.strobeR.visible = running && strobe > 0.01;
     const wantLanding = running && (ac.gearDown || ac.agl < 400);
     state.lights.landing.visible = wantLanding;
     state.landingSpot.intensity = wantLanding ? 190 * (0.25 + dark * 0.75) : 0;
@@ -1153,7 +1155,7 @@ export function createAircraftModel(opts = {}) {
       const base = l.userData.baseScale || 1;
       const boost = k === 'landing' ? 1.6 : 1;
       l.scale.setScalar(base * (0.55 + dark * 0.75) * boost);
-      l.material.opacity = 0.35 + dark * 0.65;
+      l.material.opacity = (0.35 + dark * 0.65) * (k === 'strobeL' || k === 'strobeR' ? strobe : 1);
     }
   };
 

@@ -111,7 +111,11 @@ export function afoInfo() {
     waveSent: S.waveSent,
     dronesAlive: a ? a.dronesAlive : 0,
     missilesInbound: a ? a.missilesInbound : 0,
-    stats: a ? { ...a.stats } : null,
+    // The live object, not a copy: every reader here only reads it the same
+    // frame (score()'s st.hits, the fail check), so a `{ ...a.stats }` copy
+    // was one more allocation on every read, every frame — the same churn
+    // this file's dronesAlive/missilesInbound just stopped causing.
+    stats: a ? a.stats : null,
     decoysUsed: S.decoysUsed,
     nearestMissile: Number.isFinite(S.nearestMissile) ? S.nearestMissile : null,
     home: S.home,
@@ -325,7 +329,15 @@ function els() {
     if (S.mode === 'fire') S.touchFire = on;
     else if (S.mode === 'flare' && on) requestFlareDeploy(S.sim);
   };
-  btn.addEventListener('pointerdown', press(true));
+  btn.addEventListener('pointerdown', (e) => {
+    // Like BRAKES (touch.js) and the driving pedals: capture the pointer so
+    // a release is guaranteed to reach this button even if the finger drifts
+    // off it mid-hold — otherwise pointerup/pointercancel can land on
+    // whatever the touch ends up over (or nothing), and S.touchFire, the
+    // only place that clears, never gets cleared.
+    btn.setPointerCapture(e.pointerId);
+    press(true)(e);
+  });
   for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) btn.addEventListener(ev, press(false));
   layer.appendChild(btn);
   S.els = { btn };

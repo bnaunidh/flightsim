@@ -8,6 +8,7 @@
  */
 
 import * as THREE from '../vendor/three.module.js';
+import { dim, CAPS } from '../render/flash-safety.js';
 
 const vertexShader = /* glsl */ `
   varying vec3 vDir;
@@ -296,10 +297,13 @@ export class SkyDome {
     this.uniforms.uSunDir.value.copy(this._sunDir);
     this.uniforms.uStars.value = weather.isNight ? 1 - weather.cond.cloud * 0.95 : 0;
     this.uniforms.uOvercast.value = weather.cond.cloud;
-    this.uniforms.uFlash.value = weather.lightningFlash;
+    // Lightning washes the whole sky and the sunlight: the biggest flash in
+    // the game, so with Reduce flashing on it is a fraction of the strength.
+    const flash = dim(weather.lightningFlash, CAPS.lightning);
+    this.uniforms.uFlash.value = flash;
 
     this.sun.color.copy(p.sun);
-    this.sun.intensity = p.sunIntensity + weather.lightningFlash * 2.5;
+    this.sun.intensity = p.sunIntensity + flash * 2.5;
     this.hemi.color.copy(p.ambient);
     this.hemi.groundColor.copy(p.ground);
     this.hemi.intensity = p.ambIntensity;

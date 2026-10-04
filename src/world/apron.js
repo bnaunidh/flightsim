@@ -37,6 +37,7 @@ import { airportLayout, NOSE_STOP } from './airport-layout.js';
 import { OFFICE_TILE, officeFloors } from './airport.js';
 import { Batch, vcMaterial, instanced, glowPoints, canvas, canvasTexture, trs, trse, yawOf, bakeModel, layer } from './airport-kit.js';
 import * as V from './airport-vehicles.js';
+import { blinkLevel } from '../render/flash-safety.js';
 
 /*
  * Field elevation, read once at import — which was Kestrel's, on every map.
@@ -1778,10 +1779,12 @@ export class Apron {
       if (this.glassMat) this.glassMat.emissiveIntensity = night ? 0.9 : 0;
       if (this.boardMat) this.boardMat.emissiveIntensity = night ? 1.0 : 0.2;
     }
-    // Beacons flash once a second; brighter at night.
+    // Beacons flash once a second; brighter at night. (With Reduce flashing
+    // they swell at the same rate instead of snapping on — flash-safety.js.)
     if (this.beaconPoints) {
-      this.beaconPoints.visible = this.t % 1 < 0.45;
-      this.beaconPoints.material.opacity = night ? 1 : 0.8;
+      const lit = blinkLevel(this.t, 1, 0.45);
+      this.beaconPoints.visible = lit > 0.01;
+      this.beaconPoints.material.opacity = (night ? 1 : 0.8) * lit;
     }
 
     // Catering lifts and baggage trains.

@@ -11,36 +11,28 @@
  *                        runway. Its card is shown locked until the Dev
  *                        passcode is in: "the more realistic one is behind
  *                        a code".
- *   Pizza on the Runway  the lost pizza car, from the seat of an aeroplane
- *                        lined up and waiting to go
  *
- * All three are driven by src/features/flight-events.js: the mission starts
- * the event and reads its progress back, and the extension draws the jets,
- * the police, the car and the story cards. If that feature has been switched
- * off for throwing, the steps that wait on it give up politely after a few
- * seconds rather than leaving a child waiting for jets that are never coming.
+ * Both are driven by src/features/flight-events.js: the mission starts the
+ * event and reads its progress back, and the extension draws the jets, the
+ * police and the story cards. If that feature has been switched off for
+ * throwing, the steps that wait on it give up politely after a few seconds
+ * rather than leaving a child waiting for jets that are never coming.
  */
 
 import * as THREE from '../../vendor/three.module.js';
 import { RUNWAY } from '../../world/airport.js';
-import { heightAt, isOnRunway2 } from '../../world/terrain.js';
 /*
  * Through the bridge, not from flight-events.js: importing that file from
  * here registered the whole feature from the mission list, so leaving it out
  * of src/features/index.js switched nothing off. See src/features/events/bridge.js.
  */
-import { forceHijack, hijackInfo, forceBreakIn, breakInInfo, eventsHeartbeat } from '../../features/events/bridge.js';
+import { forceHijack, hijackInfo, eventsHeartbeat } from '../../features/events/bridge.js';
 import { cruiseSpeed, longHaulId } from '../../features/events/common.js';
 import * as Prog from '../../game/progression.js';
 // The other seat in each hijack: fly the lead fighter (src/game/roles/hijack-lead.js).
 import { HIJACK_FILM_ROLES, HIJACK_REAL_ROLES } from '../roles/hijack-lead.js';
 
-const FT = 3.28084;
 const T1 = new THREE.Vector3();
-
-function flat(a, b) {
-  return Math.hypot(a.x - b.x, a.z - b.z);
-}
 
 /**
  * If the events feature is off, give the step up after a moment, with a word.
@@ -60,19 +52,6 @@ function orSkip(ctx, dt, why) {
     ctx.data.stale = 0;
     ctx.sim.hud.notify(why, 'info', 4);
     return true;
-  }
-  return false;
-}
-
-function landedOnRunway(ctx) {
-  const ac = ctx.ac;
-  const t = ctx.data.lastTouchdown;
-  const stopped = !!t && !t.crashed && ac.onGround && ac.groundSpeed < 2.5 && ac.groundTime > 1.2;
-  if (!stopped) return false;
-  if (t.onRunway || isOnRunway2(ac.pos.x, ac.pos.z, 8)) return true;
-  if (!ctx.data.saidOffRunway) {
-    ctx.data.saidOffRunway = true;
-    ctx.sim.hud.notify('Safely down — but not on the runway. Take off and come round again.', 'warn', 6);
   }
   return false;
 }
@@ -367,105 +346,6 @@ const hijackReal = {
   },
 };
 
-/* ================================================================== *
- * Pizza on the Runway
- * ================================================================== */
-
-const T_BREACH = new THREE.Vector3();
-
-const breakin = {
-  id: 'event-breakin',
-  category: 'events',
-  game: 'flight',
-  name: 'Pizza on the Runway',
-  short: 'Hold position!',
-  difficulty: 'Easy',
-  icon: '🍕',
-  map: 'kestrel',
-  aircraft: 'skylark',
-  blurb:
-    'You are lined up and ready to go when a lost pizza delivery car drives straight through the airport fence and starts '
-    + 'doing donuts on the runway. The airport police are on it. Your job is the hardest one in aviation: wait.',
-  reward: 'Teaches holding position — air traffic control’s instructions are there to keep everybody safe.',
-  weather: { time: 'day', condition: 'clear', windSpeedKts: 6, windDirDeg: 90 },
-  parTime: 300,
-  failIf: (ctx) => {
-    const b = breakInInfo();
-    const step = ctx.runner.step;
-    if (!step || step.id !== 'hold' || !b.holdPos || b.clear) return null;
-    /*
-     * Rolling is a warning (the tower shouts); taking off, or trundling off
-     * down the runway towards the car, is the end.
-     *
-     * Not a tight radius. Measured: touching Space once lets the parking
-     * brake off, and the Skylark then creeps forward at idle, gathering
-     * 0.37 m/s every second — 90 m in about twenty seconds. A child who
-     * tapped the brakes because the screen said "brakes" has done nothing
-     * wrong, so the line is 300 m and the tower says "hold Space" first.
-     */
-    if (flat(ctx.ac.pos, b.holdPos) > 300 || !ctx.ac.onGround) {
-      return 'You did not hold position — the police had to chase you as well! Hold means stay still. Have another go.';
-    }
-    return null;
-  },
-  steps: [
-    {
-      id: 'ready',
-      text: 'You are lined up on runway 09. Wait for the tower to clear you for take-off.',
-      hint: 'Do not push the power up yet — wait for the tower.',
-      check: (ctx) => ctx.elapsed > 4 || ctx.ac.groundSpeed > 3,
-    },
-    {
-      id: 'hold',
-      text: 'HOLD POSITION! A car is on the runway. Keep the power off and stay still until the tower says it is clear.',
-      hint: 'If you start rolling, hold Space to stop. Otherwise just wait — press C to watch the police chase it.',
-      enter: (ctx) => forceBreakIn(ctx.sim, { owner: 'mission' }),
-      check: (ctx, dt) => breakInInfo().done || orSkip(ctx, dt, 'The event system is off — you are cleared for take-off.'),
-    },
-    {
-      id: 'go',
-      text: 'The runway is clear! Cleared for take-off, runway 09.',
-      hint: 'Full power with Shift, and ease back on S at 55 knots.',
-      check: (ctx) => ctx.ac.airborneTime > 3 && ctx.ac.agl > 30,
-    },
-    {
-      id: 'thanks',
-      text: 'Fly low past the police cars by the broken fence to say thank you. Wave your wings!',
-      hint: 'They are just south of the runway, at the western end. Stay above 300 feet.',
-      targetLabel: 'The police',
-      target: () => {
-        const b = breakInInfo().breach;
-        if (!b) return null;
-        return T_BREACH.set(b.x, heightAt(b.x, b.z) + 120, b.z);
-      },
-      check: (ctx) => {
-        const b = breakInInfo().breach;
-        if (!b) return true;
-        const ok = flat(ctx.ac.pos, b) < 600 && ctx.ac.agl * FT < 1000 && ctx.ac.agl > 60;
-        if (ok) ctx.sim.hud.notify('The police are waving back! One of them is holding up a slice of pizza.', 'good', 5);
-        return ok;
-      },
-    },
-    {
-      id: 'land',
-      text: 'Now come round and land on runway 09.',
-      hint: 'Fly a lap of the field and line up from the west. Two white, two red on the PAPI.',
-      atc: { text: 'Skylark one seven two, cleared to land runway zero nine. The pizza was for us, by the way.', voice: 'tower' },
-      targetLabel: 'Touchdown',
-      target: () => RUNWAY.touchdown,
-      check: landedOnRunway,
-    },
-  ],
-  onComplete(ctx) {
-    ctx.sim.speak('Skylark one seven two, nicely done. We saved you a slice. It is a bit squashed.', 'tower');
-  },
-  score: (ctx) => {
-    const l = ctx.data.lastTouchdown;
-    const held = breakInInfo().warned ? 0 : 25;
-    return Math.round(held + (l ? l.score : 40) * 0.55 + Math.max(0, 1 - ctx.elapsed / 600) * 20);
-  },
-};
-
 /*
  * "The more realistic one is behind a code." It is in the list for everybody,
  * flagged `devOnly`. Its card is shown locked until the Dev passcode is in —
@@ -477,4 +357,4 @@ const breakin = {
  */
 export const REAL_HIJACK = hijackReal;
 
-export const MISSIONS = [hijack, hijackReal, breakin];
+export const MISSIONS = [hijack, hijackReal];

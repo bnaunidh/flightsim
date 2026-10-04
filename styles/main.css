@@ -3969,10 +3969,24 @@ html.is-touch-device .slot-clear {
   white-space: nowrap;
   pointer-events: none;
 }
+/* The locked plane is a pure black silhouette with a big "?" over it. */
+.hs-q {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  font-size: clamp(72px, 14vw, 150px);
+  font-weight: 800;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+.hs-q[hidden] { display: none; }
 .hs-lock[hidden], .hs-fallback[hidden], .hs-msg:empty { display: none; }
 .hs-fallback { position: absolute; inset: 12% 10%; display: grid; place-items: center; pointer-events: none; }
 .hs-fallback canvas { width: 100%; max-width: 560px; height: auto; }
-.hs-fallback canvas.is-locked { filter: brightness(0.18) saturate(0); }
+.hs-fallback canvas.is-locked { filter: brightness(0) saturate(0); }
 
 /* The card: name, one line, the bars, the paint, and the button. */
 .hs-card {

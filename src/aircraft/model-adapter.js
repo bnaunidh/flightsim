@@ -24,6 +24,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { createAircraftModel as createLegacyModel, glowSprite } from './model.js';
 import { getAircraft, DEFAULT_AIRCRAFT_ID } from './types.js';
+import { strobeLevel } from '../render/flash-safety.js';
 // BLENDER MODELS: the Skyhook from tools/blender/, when it loaded.
 import { blenderAircraftModel } from '../vehicles/blender-models.js';
 
@@ -373,8 +374,8 @@ function updateLights(rig, dt, ac, weather) {
   const L = rig.lights;
   // Double flash: two quick pulses, then a gap. It reads as an aeroplane from
   // a long way off in a way that a steady blink does not.
-  const cycle = rig.t % 1.4;
-  const flash = cycle < 0.06 || (cycle > 0.16 && cycle < 0.22) ? 1 : 0;
+  // With Reduce flashing, one soft, dimmer pulse instead (render/flash-safety.js).
+  const flash = strobeLevel(rig.t, 1.4, 0.06, 0.1);
   const set = (sprite, lit) => {
     sprite.material.opacity = lit * dark * 0.95;
     sprite.scale.setScalar(sprite.userData.baseScale * (0.55 + dark * 0.45) * (0.85 + lit * 0.3));

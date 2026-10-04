@@ -17,6 +17,7 @@ import * as THREE from '../vendor/three.module.js';
 import { waterNormal, foamTexture } from '../render/textures.js';
 import { heightAt, ISLANDS, PALETTE, MAP, channelMarks, harbourBerth } from './terrain.js';
 import { setSeaFurniture } from '../vehicles/surface.js';
+import { SEA_DEPTH } from '../render/depth-layers.js';
 
 /**
  * Sea plane size. Deliberately inside the camera's 60 km far plane even at the
@@ -197,6 +198,7 @@ export class Ocean {
       normalMap: nrm1,
       normalScale: new THREE.Vector2(0.5, 0.5),
       envMapIntensity: 1.0,
+      ...SEA_DEPTH.deep,
     });
     // A few segments rather than a single quad. Two triangles spanning tens of
     // kilometres give the rasteriser absurd screen-space derivatives near the
@@ -223,13 +225,13 @@ export class Ocean {
        * step is ~0.5 m at 1.8 km), so out there this layer lost the depth
        * test to the one under it in blocks — measured from 590 m up over the
        * Skerries, stair-stepped dark rectangles across half the sea, and they
-       * vanished with this layer hidden. Offsetting it towards the camera in
-       * depth lets it always sit on top of the deep layer; anything genuinely
-       * in front of it (an island, a hull) is metres nearer and still wins.
+       * vanished with this layer hidden. It is offset in depth so that it
+       * always sits on the deep layer (render/depth-layers.js: the deep one is pushed
+       * further back than this). It used to be pulled TOWARDS the camera
+       * instead, which also put it in front of every beach within four depth
+       * steps of the sea — 60 m at 10 km — and the beaches strobed blue.
        */
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -4,
+      ...SEA_DEPTH.band,
     });
     // Same size as the deep layer. When it was smaller there was a hard ring
     // 20 km out where the sea abruptly changed colour.
@@ -410,6 +412,8 @@ export class Ocean {
       side: THREE.DoubleSide,
       // RGBA vertex colour: white, with the harbour fade in the alpha.
       vertexColors: true,
+      // On the sea, behind the beach (render/depth-layers.js).
+      ...SEA_DEPTH.band,
     });
     mat.onBeforeCompile = (shader) => {
       shader.fragmentShader = shader.fragmentShader.replace(
@@ -444,6 +448,8 @@ export class Ocean {
       depthWrite: false,
       side: THREE.DoubleSide,
       vertexColors: true,
+      // On the sea, behind the beach (render/depth-layers.js).
+      ...SEA_DEPTH.band,
     });
     this.foamMats.push({ mat, tex });
     const mesh = new THREE.Mesh(geo, mat);

@@ -12,6 +12,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { cloudTexture } from '../render/textures.js';
 import { makeRandom, clamp } from '../core/noise.js';
+import { dim, CAPS } from '../render/flash-safety.js';
 
 const vert = /* glsl */ `
   attribute vec3 iOffset;
@@ -285,7 +286,7 @@ export class CloudField {
         .lerp(new THREE.Color(weather.isNight ? 0x0d1420 : 0x8792a3), 0.55 + cover * 0.25);
       b.material.uniforms.uFogColor.value.copy(p.fogColor);
       b.material.uniforms.uFogDensity.value = p.fogDensity;
-      b.material.uniforms.uFlash.value = weather.lightningFlash * 0.7;
+      b.material.uniforms.uFlash.value = dim(weather.lightningFlash, CAPS.lightning) * 0.7;
     }
 
     // Cirrus veil, high and slow.

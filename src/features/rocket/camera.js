@@ -21,6 +21,7 @@
  */
 
 import * as THREE from '../../vendor/three.module.js';
+import { shakeClock } from '../../render/flash-safety.js';
 
 export const VIEWS = ['side', 'onboard', 'wide', 'ground'];
 export const VIEW_NAMES = { side: 'Side', onboard: 'Onboard', wide: 'Wide', ground: 'Ground' };
@@ -166,7 +167,8 @@ export class RocketCamera {
     if (f.shake > 0 && view !== 'onboard') {
       // The ground shakes while the engines roar close by.
       this.shakeT = (this.shakeT || 0) + dt;
-      const t = this.shakeT;
+      // Reduce flashing: the same shake on a slower clock, under 3 Hz (flash-safety.js).
+      const t = shakeClock(this.shakeT);
       c.position.x += f.shake * (Math.sin(t * 43.1) + Math.sin(t * 27.7)) * 0.5;
       c.position.y += f.shake * (Math.sin(t * 38.3) + Math.sin(t * 21.9)) * 0.5;
       c.position.z += f.shake * (Math.sin(t * 31.7) + Math.sin(t * 47.3)) * 0.5;

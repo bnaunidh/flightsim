@@ -10,6 +10,7 @@ import * as THREE from '../vendor/three.module.js';
 import { clamp, lerp } from '../core/noise.js';
 import { heightAt } from '../world/terrain.js';
 import { RUNWAY } from '../world/airport.js';
+import { dim, CAPS, shakeClock } from '../render/flash-safety.js';
 
 export const VIEWS = ['cockpit', 'chase', 'orbit', 'wing', 'tower'];
 export const VIEW_LABELS = {
@@ -339,12 +340,24 @@ export class CameraRig {
     let vib = ac.rpm * 0.016 + ac.buffet * 0.06;
     if (ac.onGround && ac.groundSpeed > 1) vib += clamp(ac.groundSpeed / 60, 0, 1) * 0.03;
     if (this.reducedMotion) vib *= 0.25;
+    /*
+     * Reduce flashing (render/flash-safety.js). The eye is a metre from the
+     * panel in the cockpit, so the same centimetre of buzz that is nothing
+     * from the chase camera moves every edge of the cockpit about five pixels,
+     * eight to ten times a second: measured (tests/flicker-probe.js), 6% of
+     * the screen flickering in every cockpit flight. With the switch on the
+     * continuous buzz there is a tenth of that — under a pixel. Knocks (a
+     * hard landing, a bang) still shake as they did.
+     */
+    if (this.mode === 'cockpit') vib = dim(vib, CAPS.cockpitBuzz);
     this.shake = Math.max(0, this.shake - dt * 2.4);
 
     const shakeAmp = vib + this.shake * 0.35;
-    const sx = Math.sin(this.t * 61) * shakeAmp + Math.sin(this.t * 27.3) * shakeAmp * 0.6;
-    const sy = Math.sin(this.t * 53.7 + 1.3) * shakeAmp + Math.sin(this.t * 19.1) * shakeAmp * 0.5;
-    const sz = Math.sin(this.t * 43.3 + 2.7) * shakeAmp * 0.5;
+    // Reduce flashing: the same shake on a slower clock, under 3 Hz (flash-safety.js).
+    const st = shakeClock(this.t);
+    const sx = Math.sin(st * 61) * shakeAmp + Math.sin(st * 27.3) * shakeAmp * 0.6;
+    const sy = Math.sin(st * 53.7 + 1.3) * shakeAmp + Math.sin(st * 19.1) * shakeAmp * 0.5;
+    const sz = Math.sin(st * 43.3 + 2.7) * shakeAmp * 0.5;
 
     const lookYaw = input ? input.lookYaw : 0;
     const lookPitch = input ? input.lookPitch : 0;
@@ -459,6 +472,12 @@ export class CameraRig {
       cam.position.lerp(offset, clamp(dt * 9, 0, 1));
       cam.position.x += sx * 0.3;
       cam.position.y += sy * 0.3;
+      // Never clip through the ground (same as 'chase' and 'orbit' above) —
+      // the offset is rotated by the aircraft's full orientation, so a low
+      // bank/pitch/roll (a hovering helicopter, a steep turn near a hill, a
+      // crash tumble) can otherwise put the camera below the terrain.
+      const gh = heightAt(cam.position.x, cam.position.z) + 2.2;
+      if (cam.position.y < gh) cam.position.y = gh;
       const aim = this._tmp2.copy(pos);
       cam.lookAt(aim);
       cam.fov = lerp(cam.fov, 64, clamp(dt * 3, 0, 1));

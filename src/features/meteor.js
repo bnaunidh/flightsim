@@ -55,6 +55,7 @@ registerActions({
   zap: { label: 'Meteor mode: zap the meteor ahead', group: 'Fun Stuff', ctx: ['plane', 'heli'], default: ['KeyZ'] },
 });
 import * as FX from './explosions.js';
+import { FlashGate, screenOpacity, now as flashNow } from '../render/flash-safety.js';
 import * as Terrain from '../world/terrain.js';
 
 const D2R = Math.PI / 180;
@@ -1427,12 +1428,15 @@ function setText(node, key, text) {
   node.textContent = text;
 }
 
+/** Reduce flashing (render/flash-safety.js): at most three a second, and faint. */
+const screenGate = new FlashGate();
 function flashScreen(kind) {
   if (!UI.flash) return;
+  if (!screenGate.allow(flashNow())) return;
   const reduce = SIM && SIM.settings && SIM.settings.reducedMotion;
   UI.flash.className = `mt-flash is-${kind}`;
   UI.flash.style.transition = 'none';
-  UI.flash.style.opacity = String(kind === 'photo' ? (reduce ? 0.35 : 0.85) : reduce ? 0.3 : 0.7);
+  UI.flash.style.opacity = String(screenOpacity(kind === 'photo' ? (reduce ? 0.35 : 0.85) : reduce ? 0.3 : 0.7));
   // Next frame, fade.
   setTimeout(() => {
     if (!UI.flash) return;

@@ -31,6 +31,13 @@ export const DEFAULT_SETTINGS = {
   music: true,
   subtitles: true,
   reducedMotion: false,
+  /*
+   * Reduce flashing (Settings → Graphics). On unless switched off: lightning,
+   * explosions, hits, strobes and the cockpit's engine buzz kept dim, soft
+   * and at most three flashes a second (render/flash-safety.js). A safety
+   * setting, so it is the default and a save that predates it gets it too.
+   */
+  reduceFlashing: true,
   highContrast: false,
   largeText: false,
   mouseFlying: false,

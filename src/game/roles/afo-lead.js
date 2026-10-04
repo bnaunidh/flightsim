@@ -501,7 +501,9 @@ function createAttackEscort(sim, def) {
     out.airliner = [Math.round(air.pos.x), Math.round(air.pos.y), Math.round(air.pos.z)];
     out.dronesAlive = attack.dronesAlive;
     out.missilesInbound = attack.missilesInbound;
-    out.stats = { ...attack.stats };
+    // Live object, not a copy — see afo.js afoInfo() for why: this is read
+    // every frame too, and nothing here holds onto it past this frame.
+    out.stats = attack.stats;
     out.defended = st.defended;
     out.failWhy = st.failWhy;
     out.minClear = Number.isFinite(st.minClear) ? Math.round(st.minClear) : null;

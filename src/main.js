@@ -83,6 +83,7 @@ import {
   resetAll,
 } from './core/storage.js';
 import { clamp } from './core/noise.js';
+import { setReduceFlashing, shakeClock } from './render/flash-safety.js';
 import { extInstall, extBuildWorld, extUpdate, extCamera, extStartMode, extStop, extensions, extKeyContext } from './game/extensions.js';
 // Every plug-in feature registers itself on import. See ./features/index.js.
 import './features/index.js';
@@ -132,6 +133,8 @@ class Game {
     this.settings = loadSettings();
     // Before anything builds an aeroplane, say which set of models to use.
     setFleetModels(this.settings.fleetModels);
+    // Before anything flashes. On unless the player has switched it off.
+    setReduceFlashing(this.settings.reduceFlashing !== false);
     this.progress = loadProgress();
     this.state = 'loading';
     this.mode = null;
@@ -2026,6 +2029,8 @@ class Game {
       );
     } else if (path === 'reducedMotion') {
       this.rig.reducedMotion = value;
+    } else if (path === 'reduceFlashing') {
+      setReduceFlashing(value);
     } else if (path === 'mouseFlying') {
       this.input.requestMouseFlying(value);
     } else if (path === 'invertMouse') {
@@ -3951,8 +3956,10 @@ class Game {
       // it uses the vehicle's own decaying jolt so there is no timer here.
       const j = v.jolt || 0;
       if (j > 0.01) {
-        want.x += Math.sin(v.t * 47) * j * 0.5;
-        want.y += Math.sin(v.t * 53 + 1.7) * j * 0.42;
+        // (Reduce flashing: on a slower clock, under 3 Hz — flash-safety.js.)
+        const jt = shakeClock(v.t);
+        want.x += Math.sin(jt * 47) * j * 0.5;
+        want.y += Math.sin(jt * 53 + 1.7) * j * 0.42;
       }
       /*
        * On the boat at once, not a second later.

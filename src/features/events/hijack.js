@@ -320,7 +320,7 @@ function begin(sim) {
 /*
  * The ambient tower would otherwise clear you to land on runway 09 while the
  * story is sending you somewhere else. Its "said" flags are how it remembers
- * a call is done, so setting them keeps it quiet; the pizza car does the same.
+ * a call is done, so setting them keeps it quiet.
  */
 function quietTower(sim, quiet) {
   const said = sim && sim.atc && sim.atc.said;

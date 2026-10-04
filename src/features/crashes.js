@@ -57,6 +57,7 @@ import { emitHappening, setHappeningReceiver, setSummonPoint } from '../game/hap
 import { KINDS, KIND_IDS, classifyCrash, pickCaption, titleFor } from './crashes/kinds.js';
 import { makeScript, poseAt, dimsFrom, CRASH_SECONDS } from './crashes/motion.js';
 import { CrashFx } from './crashes/fx.js';
+import { shakeClock } from '../render/flash-safety.js';
 import { CrashMarks, drawCrashMarks } from './crashes/marks.js';
 import { renderedHeight } from './explosions.js';
 
@@ -525,7 +526,8 @@ function crashCamera(sim, dt, camera) {
   if (y < gh + 3) y = gh + 3;
   const reduced = sim.settings && sim.settings.reducedMotion;
   const k = CAM.shake * (reduced ? 0.25 : 1);
-  const t = CAM.t;
+  // Reduce flashing: the same shake on a slower clock, under 3 Hz (flash-safety.js).
+  const t = shakeClock(CAM.t);
   camera.position.set(x + Math.sin(t * 57) * k, y + Math.sin(t * 49.3 + 1.1) * k, z + Math.sin(t * 41.7) * k * 0.5);
   // The wreck in the middle of the picture: the banner has gone up top
   // for these two seconds, and the comic word sits to one side.

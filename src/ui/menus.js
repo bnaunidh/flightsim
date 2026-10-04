@@ -1796,6 +1796,10 @@ export class Menus {
             </select>
           </label>
           <p class="hint">Changing the detail level rebuilds the island, which takes a couple of seconds.</p>
+          <label class="check"><input type="checkbox" data-set="reduceFlashing"><span>Reduce flashing</span></label>
+          <p class="hint">On by default. Keeps lightning, explosions, hits and strobe lights dim and soft, never more
+          than three flashes a second, and calms the camera's shake and the engine's buzz in the cockpit — for anyone
+          who is sensitive to flashing light. Switch it off for the full effects.</p>
           <div class="fps-box">Frames per second: <b data-fps>—</b></div>
         </div>
 

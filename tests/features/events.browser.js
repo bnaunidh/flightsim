@@ -1,6 +1,6 @@
 /**
- * Browser checks for the events team: the flight events (the pizza car and
- * both hijacks) and the events missions, run on the real game.
+ * Browser checks for the events team: the flight events (both hijacks) and
+ * the events missions, run on the real game.
  *
  *   const { check } = await import('./tests/features/events.browser.js');
  *   const r = { checks: [], ok(n, p, d) { this.checks.push({ n, p: !!p, d: String(d || '') }); return !!p; } };
@@ -8,8 +8,6 @@
  *
  * What it proves, in order:
  *   - both extensions are registered and still live after everything below;
- *   - the pizza car runs from the fence to "runway clear" with the aeroplane
- *     held, the tower's own clearances suppressed and then given back;
  *   - the film hijack runs from the man in the cockpit to the happy ending:
  *     7 squawks in secret, two fighters tuck in LOW BEHIND the tail, peel
  *     off on final, the police rush the aeroplane, the stairs drive up to
@@ -25,23 +23,16 @@
  *   - 7, 8, 9 and 0 are only taken while a story (or a question) wants them;
  *   - every events mission starts, walks through every step without
  *     throwing, and takes its props away with it;
+ *   - Free Flight never starts one on its own — there is no dice any more.
  *
  * It flies with sim.step(), so it is quick with the renderer stubbed (see the
  * note at the top of tests/selftest.js).
  */
 
 export async function check(sim, r, say = () => {}) {
-  const FE0 = await import('../../src/features/flight-events.js');
-  // The dice stay out of it: every event below is started on purpose, and a
-  // random one arming itself halfway through would make the run depend on luck.
-  const odds = { ...FE0.ODDS };
-  FE0.ODDS.hijack = 0;
-  FE0.ODDS.breakin = 0;
   try {
     await checks(sim, r, say);
   } finally {
-    FE0.ODDS.hijack = odds.hijack;
-    FE0.ODDS.breakin = odds.breakin;
     sim.override = null;
     for (const k of ['Space', 'Digit7', 'Digit8']) sim.key(k, false);
   }
@@ -54,7 +45,6 @@ async function checks(sim, r, say) {
   const { extStatus } = await import('../../src/game/extensions.js');
   const { MISSIONS } = await import('../../src/game/missions.js');
   const { RUNWAY } = await import('../../src/world/airport.js');
-  const { DELIVERY_PAD } = await import('../../src/world/scenery.js');
   const { heightAt } = await import('../../src/world/terrain.js');
 
   const live = () => ['flightevents', 'eventcards'].every((id) => {
@@ -62,7 +52,6 @@ async function checks(sim, r, say) {
     return e && e.live;
   });
   const ac = sim.aircraft;
-  const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
   /** Step in half-second chunks until `until()` or the time runs out. */
   const run = (secs, until) => {
     for (let t = 0; t < secs; t += 0.5) {
@@ -91,7 +80,7 @@ async function checks(sim, r, say) {
 
   /* ------------------------------------------------------------ data -- */
   const events = MISSIONS.filter((m) => m.category === 'events');
-  r.ok('events: both event missions are in the mission list', events.some((m) => m.id === 'event-hijack') && events.some((m) => m.id === 'event-breakin'), events.map((m) => m.id).join());
+  r.ok('events: the hijack mission is in the mission list', events.some((m) => m.id === 'event-hijack'), events.map((m) => m.id).join());
 
   /* ------------------------------------- the realistic one's card -- */
   {
@@ -152,73 +141,9 @@ async function checks(sim, r, say) {
   /* ------------------------------------------------------- dev panel -- */
   const { extDevActions } = await import('../../src/game/extensions.js');
   const labels = extDevActions().map((a) => a.label);
-  r.ok('events: Dev panel offers "Trigger hijack event" and "Trigger airport break-in"',
-    labels.includes('Trigger hijack event') && labels.includes('Trigger airport break-in'), labels.join(' | '));
-
-  /* ----------------------------------------------- pizza car, ground -- */
-  say('events: pizza car, on the ground');
-  await free('skylark', false);
-  const held = ac.pos.clone();
-  FE.forceBreakIn(sim, { owner: 'test' });
-  sim.step(1, 1 / 30);
-  let b = FE.breakInInfo();
-  r.ok('break-in: the car and two police cars appear', b.phase === 'run' && b.car && b.police === 2, JSON.stringify({ phase: b.phase, car: b.car, police: b.police }));
-  r.ok('break-in: the tower holds you, on screen', /hold position/i.test(objective()) && UI.uiState().card, objective());
-  run(20);
-  r.ok('break-in: the tower’s own take-off clearance is held back while the car is out', !!(sim.atc.said && sim.atc.said.clearance));
-  const doneIn = (() => {
-    let t = 20;
-    while (t < 140) {
-      sim.step(1, 1 / 30);
-      t++;
-      if (FE.breakInInfo().done) return t;
-    }
-    return null;
-  })();
-  b = FE.breakInInfo();
-  r.ok('break-in: runs to "runway clear" in a little over a minute', doneIn != null && doneIn < 100, `done after ${doneIn} s`);
-  r.ok('break-in: the aeroplane was held where it stopped', flat(ac.pos, held) < 30, `${flat(ac.pos, held).toFixed(1)} m`);
-  r.ok('break-in: the tower’s clearances are given back afterwards', !sim.atc.said.clearance && !sim.atc.said.final);
-  r.ok('break-in: the objective goes back to free flight', /free flight/i.test(objective()), objective());
-  r.ok('break-in: the feature is still live', live());
-
-  /* --------------------------------------------- pizza car, approach -- */
-  say('events: pizza car, on the way in');
-  await free('skylark', true);
-  flyAt(-4000, 300, 0, 90, 60);
-  FE.forceBreakIn(sim, { owner: 'test' });
-  sim.step(1, 1 / 30);
-  r.ok('break-in: airborne, the tower sends you round instead', /runway closed/i.test(objective()) && /climb away/i.test(objective()), objective());
-
-  /* ------------------------------ pizza car, in somebody's mission -- */
-  /*
-   * The window a reviewer caught: the car at the start of Island Circuit
-   * wrote "Hold position" over step 1 and never gave it back — 76 s after the
-   * all-clear the panel still said keep still, and "press Shift" was gone.
-   * Armed here the way the dice arm it, in the real mission on the real HUD.
-   */
-  say('events: pizza car, at the start of a mission');
-  {
-    await sim.startMode('mission', { id: 'circuit' });
-    sim.step(0.3, 1 / 30);
-    const before = objective();
-    const step0 = sim.runner.stepIndex;
-    const armed = FE.armBreakIn(sim, 'mission');
-    const came = run(12, () => FE.breakInInfo().phase === 'run');
-    const held = objective();
-    const t0 = sim.runner.elapsed;
-    const cleared = run(150, () => FE.breakInInfo().done);
-    const after = objective();
-    const t1 = sim.runner.elapsed;
-    r.ok('break-in in a mission: at the start of Island Circuit the car comes, and the panel says hold',
-      armed && came && /^Hold position/.test(held), `armed ${armed}, came ${came}: ${held}`);
-    r.ok('break-in in a mission: after the all-clear the mission\'s step is back on the panel, word for word',
-      cleared && after === before, `before "${before}" / after "${after}"`);
-    r.ok('break-in in a mission: the hold costs no mission time (the time bonus)', cleared && t1 - t0 < 2, `${(t1 - t0).toFixed(1)} s counted`);
-    r.ok('break-in in a mission: the mission is still running, on its first step', status() === 'running' && sim.runner.stepIndex === step0,
-      `${status()} step ${sim.runner.stepIndex}`);
-    sim.quitToMenu('missions');
-  }
+  r.ok('events: Dev panel offers "Trigger hijack event"',
+    labels.includes('Trigger hijack event'), labels.join(' | '));
+  r.ok('events: no leftover break-in Dev button', !labels.includes('Trigger airport break-in'), labels.join(' | '));
 
   /* --------------------------------------------------- the 7 key -- */
   const pressKey = (code) => {
@@ -337,8 +262,8 @@ async function checks(sim, r, say) {
   r.ok('film: the feature is still live', live());
   sim.quitToMenu('main');
   const leftovers = () => sim.scene.children.filter((o) => o.name && (o.name === 'police-car' || o.name === 'police-van' || o.name === 'police-stairs'
-    || o.name === 'pizza-car' || o.name.startsWith('escort-') || o.name.startsWith('person-'))).length;
-  r.ok('film: going back to the menu clears it all away', h().phase === 'idle' && FE.breakInInfo().phase === 'idle' && leftovers() === 0, leftovers());
+    || o.name.startsWith('escort-') || o.name.startsWith('person-'))).length;
+  r.ok('film: going back to the menu clears it all away', h().phase === 'idle' && leftovers() === 0, leftovers());
 
   /* -------------------------------------- the hijack, by the book -- */
   say('events: hijack, by the book');
@@ -606,79 +531,41 @@ async function checks(sim, r, say) {
       if (sim.prog) sim.prog.devUnlocked = devWas;
       sim.override = null;
     }
-
-    say('events: Pizza on the Runway, the mission');
-    await begin('event-breakin');
-    run(6, () => stepId() === 'hold');
-    r.ok('event-breakin: the car arrives while you are lined up', stepId() === 'hold' && FE.breakInInfo().phase === 'run', stepId());
-    run(110, () => stepId() === 'go');
-    r.ok('event-breakin: holding still gets you cleared', stepId() === 'go', `${stepId()} ${status()} ${FE.breakInInfo().phase} at ${Math.round(ac.pos.x)},${Math.round(ac.pos.z)} ground ${ac.onGround}`);
-    // Off and climbing — high, so the low pass does not count on the way.
-    flyAt(0, 700, 0, 90, 60);
-    run(5, () => stepId() === 'thanks');
-    // A take-off and a lap take a minute; the police must still be there to wave to.
-    run(40);
-    const br = FE.breakInInfo().breach;
-    {
-      const cars = sim.scene.children.filter((o) => o.name === 'police-car' && flat(o.position, br) < 80).length;
-      r.ok('event-breakin: a minute later the police are still by the fence to wave to', stepId() === 'thanks' && cars === 2, `${stepId()} ${cars} cars`);
-    }
-    flyAt(br.x - 100, heightAt(br.x, br.z) + 100, br.z, 90, 55);
-    run(2, () => stepId() === 'land');
-    r.ok('event-breakin: a low pass by the police moves on', stepId() === 'land', stepId());
-    land(-300, 0);
-    r.ok('event-breakin: and landing finishes it', finished(6));
-    sim.key('Space', false);
-    sim.step(0.5, 1 / 30);
-    sim.quitToMenu('missions');
-
-    await begin('event-breakin');
-    run(6, () => stepId() === 'hold');
-    flyAt(-300, 100, 0, 90, 60);
-    sim.step(0.5, 1 / 30);
-    r.ok('event-breakin: not holding is a (friendly) fail', status() === 'failed', status());
-    sim.quitToMenu('main');
   }
 
-  /* ------------------------------------------------------ the dice -- */
+  /* ------------------------------------------------------ no dice -- */
   /*
-   * startMode keeps the dice out of the self-test (it drives the game with
-   * auto-pause off), so they are rolled here by hand with the odds at one:
-   * what each kind of flight arms, and that what is armed then happens.
+   * NO RANDOM EVENTS IN FREE FLIGHT. The owner asked for it more than once,
+   * and a hijack (or, before it was removed, the pizza car) that ambushed a
+   * flight nobody chose was exactly the "random stuff" they meant. Free
+   * Flight no longer rolls any dice at all, for any kind of aeroplane — this
+   * stubs Math.random() to whatever old code would have read as "arm it" and
+   * proves nothing starts anyway. forceHijack() still works on purpose
+   * (a mission or the Dev panel), proven right after.
    */
-  say('events: the dice');
+  say('events: no dice in Free Flight');
   {
     const { AIRCRAFT } = await import('../../src/aircraft/types.js');
-    // Only a roster entry marked longHaul (the airliners team's 747 and
-    // A380) gets the hijack. A roster without one has nothing to arm.
-    const lh = AIRCRAFT.find((a) => a.longHaul);
-    FE.ODDS.hijack = 1;
-    FE.ODDS.breakin = 1;
+    const lh = AIRCRAFT.find((a) => a.longHaul) || { id: FE.longHaulId() };
+    const origRandom = Math.random;
+    Math.random = () => 0;
     try {
-      if (lh) {
-        await free(lh.id, true);
-        flyAt(-16000, 2400, -9000, 0, 120, false);
-        const rolledLH = FE.rollDice(sim, 'free');
-        const armedLH = FE.hijackInfo().phase === 'armed' && FE.hijackInfo().owner === 'free';
-        // It waits until you are properly on your way (one to three minutes airborne, far from the field).
-        const began = run(200, () => FE.hijackInfo().phase !== 'armed');
-        const beganAs = `${FE.hijackInfo().phase} ${FE.hijackInfo().version}`;
-        r.ok(`dice: a long-haul Free Flight (${lh.id}) arms the hijack`, rolledLH && rolledLH.startsWith('hijack') && armedLH, `${rolledLH} ${FE.hijackInfo().phase}`);
-        r.ok('dice: ...and it begins on its own, later in the flight', began && /^(burst|door) /.test(beganAs), beganAs);
-        sim.quitToMenu('main');
-      } else {
-        r.ok('dice: no roster entry is marked longHaul here, so no flight can arm the hijack', true, AIRCRAFT.map((a) => a.id).join(','));
-      }
+      await free(lh.id, true);
+      flyAt(-16000, 2400, -9000, 0, 120, false);
+      r.ok(`no dice: a long-haul Free Flight (${lh.id}) does not arm the hijack on its own`, FE.hijackInfo().phase === 'idle', FE.hijackInfo().phase);
+      const armedLater = run(200, () => FE.hijackInfo().phase !== 'idle');
+      r.ok('no dice: ...and nothing starts later in the flight either', !armedLater && FE.hijackInfo().phase === 'idle', FE.hijackInfo().phase);
+      sim.quitToMenu('main');
       await free('skylark', false);
-      const rolledSky = FE.rollDice(sim, 'free');
-      const came = run(40, () => FE.breakInInfo().phase === 'run');
-      r.ok('dice: a Skylark never gets a hijack; it gets the pizza car, which comes while you sit on the runway',
-        rolledSky === 'breakin' && FE.hijackInfo().phase === 'idle' && came, `${rolledSky} ${FE.breakInInfo().phase}`);
+      const armedOnGround = run(60, () => FE.hijackInfo().phase !== 'idle');
+      r.ok('no dice: a Skylark sitting on the runway in Free Flight starts nothing either', !armedOnGround && FE.hijackInfo().phase === 'idle', FE.hijackInfo().phase);
       sim.quitToMenu('main');
     } finally {
-      FE.ODDS.hijack = 0;
-      FE.ODDS.breakin = 0;
+      Math.random = origRandom;
     }
+    const started = FE.forceHijack(sim, { owner: 'test', version: 'film' });
+    r.ok('no dice: forceHijack still starts one on purpose', started !== false && FE.hijackInfo().phase !== 'idle', FE.hijackInfo().phase);
+    sim.quitToMenu('main');
   }
 
   /* ------------------------------------------------ the Dev buttons -- */
@@ -711,16 +598,12 @@ async function checks(sim, r, say) {
     r.ok('dev: "Realistic hijack" starts the by-the-book one', real && heavy() && FE.hijackInfo().version === 'real' && FE.hijackInfo().phase === 'door',
       `${FE.hijackInfo().phase} ${FE.hijackInfo().version}`);
     sim.quitToMenu('main');
-    const bi = act('Trigger airport break-in');
-    if (bi) bi.run(sim);
-    const car = await until(() => sim.state === 'flying' && FE.breakInInfo().phase === 'run');
-    r.ok('dev: "Trigger airport break-in" from the menu starts a flight on the runway, and the car', car && ac.onGround, FE.breakInInfo().phase);
-    sim.quitToMenu('main');
-    r.ok('dev: back at the menu, nothing is left running', FE.hijackInfo().phase === 'idle' && FE.breakInInfo().phase === 'idle');
+    r.ok('dev: no leftover "Trigger airport break-in" button', !act('Trigger airport break-in'), acts.map((a) => a.label).join(' | '));
+    r.ok('dev: back at the menu, nothing is left running', FE.hijackInfo().phase === 'idle');
   }
 
   r.ok('events: both features still live at the end', live(), JSON.stringify(extStatus()));
   r.ok('events: nothing left over in the scene',
     sim.scene.children.filter((o) => o.name && (o.name === 'police-car' || o.name === 'police-van' || o.name === 'police-stairs'
-      || o.name === 'pizza-car' || o.name.startsWith('person-') || o.name.startsWith('escort-'))).length === 0);
+      || o.name.startsWith('person-') || o.name.startsWith('escort-'))).length === 0);
 }

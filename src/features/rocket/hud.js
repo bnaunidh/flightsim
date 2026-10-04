@@ -330,6 +330,10 @@ export class RocketHud {
     this.action.hidden = true;
     const press = (e) => {
       e.preventDefault();
+      // Capture the pointer so a held burn always gets its release, even if
+      // the finger drifts off this button mid-hold — same reason BRAKES
+      // (touch.js) and the driving pedals capture theirs.
+      this.action.setPointerCapture(e.pointerId);
       this.action.classList.add('is-held');
       if (this.action.dataset.mode === 'burn') this.cbs.onBurn && this.cbs.onBurn(true);
       else this.cbs.onAction && this.cbs.onAction();
@@ -347,7 +351,7 @@ export class RocketHud {
     this.lean.hidden = !touch;
     for (const b of this.lean.querySelectorAll('button')) {
       const v = Number(b.dataset.lean);
-      const on = (e) => { e.preventDefault(); b.classList.add('is-held'); this.cbs.onLean && this.cbs.onLean(v, true); };
+      const on = (e) => { e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add('is-held'); this.cbs.onLean && this.cbs.onLean(v, true); };
       const off = () => { b.classList.remove('is-held'); this.cbs.onLean && this.cbs.onLean(v, false); };
       b.addEventListener('pointerdown', on);
       b.addEventListener('pointerup', off);

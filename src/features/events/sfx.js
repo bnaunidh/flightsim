@@ -156,24 +156,6 @@ export function thud(sim) {
   note(m, { freq: 70, sweepTo: 40, dur: 0.35, gain: 0.07, attack: 0.003 });
 }
 
-/** A bubble going pop. */
-export function pop(sim) {
-  const m = mixerOf(sim);
-  if (!m) return;
-  m.noiseBurst({ bus: 'environment', duration: 0.07, gain: 0.07, type: 'highpass', freq: 2400, q: 0.7 });
-  note(m, { freq: 700, sweepTo: 1800, dur: 0.08, gain: 0.05, attack: 0.002 });
-}
-
-/** The pizza car's horn: a cheerful, slightly rubbish beep-beep. */
-export function honk(sim, level = 1) {
-  const m = mixerOf(sim);
-  if (!m || level < 0.05) return;
-  for (let i = 0; i < 2; i++) {
-    note(m, { freq: 440, when: i * 0.24, dur: 0.18, gain: 0.05 * level, type: 'square', filter: { type: 'lowpass', freq: 1500 } });
-    note(m, { freq: 554, when: i * 0.24, dur: 0.18, gain: 0.035 * level, type: 'square', filter: { type: 'lowpass', freq: 1500 } });
-  }
-}
-
 /** A little fanfare for a happy ending. */
 export function fanfare(sim) {
   const m = mixerOf(sim);

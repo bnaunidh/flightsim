@@ -28,6 +28,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { heightAt, MAP, ISLANDS, addObstacleAt, padWeight, flatAt } from './terrain.js';
 import { fbm, makeRandom, clamp, smoothstep, lerp } from '../core/noise.js';
+import { SEA_DEPTH } from '../render/depth-layers.js';
 
 /** Scratch transform for the birds' per-frame matrices, so the loop allocates nothing. */
 const _bird = new THREE.Object3D();
@@ -680,6 +681,8 @@ export class MapFeatures {
         depthWrite: false,
         side: THREE.DoubleSide,
         toneMapped: true,
+        // On the sea, behind the beach, like the surf (render/depth-layers.js).
+        ...SEA_DEPTH.band,
       });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.name = 'reef';

@@ -62,7 +62,7 @@ const mine = EVENTS;
 const shaped = mine;
 const CATEGORIES = ['training', 'airline', 'military', 'rescue', 'delivery', 'events', 'meteor'];
 
-ok('events: the hijack and the break-in both have a mission', EVENTS.some((m) => m.id === 'event-hijack') && EVENTS.some((m) => m.id === 'event-breakin'));
+ok('events: the hijack has a mission', EVENTS.some((m) => m.id === 'event-hijack'));
 ok('events: the realistic hijack is a mission too', REAL_HIJACK && REAL_HIJACK.id === 'event-hijack-real' && REAL_HIJACK.category === 'events');
 ok('events: ...in the list, flagged devOnly so its card waits for the Dev passcode',
   EVENTS.includes(REAL_HIJACK) && MISSIONS.includes(REAL_HIJACK) && REAL_HIJACK.devOnly === true);
@@ -114,13 +114,14 @@ for (const m of shaped) {
 
 /* --------------------------------------------------------- the feature -- */
 
-ok('flight-events: one flight in ten for the hijack, one in six for the break-in', FE.ODDS.hijack === 0.1 && Math.abs(FE.ODDS.breakin - 1 / 6) < 1e-9, JSON.stringify(FE.ODDS));
+ok('flight-events: no dice — ODDS and rollDice are gone, not just zeroed', FE.ODDS === undefined && FE.rollDice === undefined && FE.armBreakIn === undefined && FE.forceBreakIn === undefined && FE.breakInInfo === undefined);
 ok('flight-events: registered as an extension', extStatus().some((e) => e.id === 'flightevents'));
 ok('event cards: registered as an extension', extStatus().some((e) => e.id === 'eventcards'));
 const labels = extDevActions().map((a) => a.label);
-ok('flight-events: Dev panel buttons', ['Trigger hijack event', 'Realistic hijack', 'Trigger airport break-in'].every((l) => labels.includes(l)), labels.join(' | '));
+ok('flight-events: Dev panel buttons', ['Trigger hijack event', 'Realistic hijack'].every((l) => labels.includes(l)), labels.join(' | '));
+ok('flight-events: no leftover break-in Dev button', !labels.includes('Trigger airport break-in'), labels.join(' | '));
 ok('flight-events: the long-haul aeroplane it picks exists', AIRCRAFT.some((a) => a.id === FE.longHaulId()), FE.longHaulId());
-ok('flight-events: nothing is running before a flight', FE.hijackInfo().phase === 'idle' && FE.breakInInfo().phase === 'idle');
+ok('flight-events: nothing is running before a flight', FE.hijackInfo().phase === 'idle');
 
 /* ------------------------------------------------------- what it says -- */
 
@@ -461,112 +462,40 @@ ok('flight-events: nothing is running before a flight', FE.hijackInfo().phase ==
     const sim = makeSim('meridian');
     ok('rules: nothing on the 7 key when there is no story', fe.key(sim, 'Digit7', true) === false);
     ok('rules: nothing on 8, 9 or 0 when there is no question', fe.key(sim, 'Digit8', true) === false && fe.key(sim, 'Digit0', true) === false);
-    // The dice: the long-haul type arms the hijack one flight in ten; with
-    // the passcode, the one it arms is the realistic one.
-    const odds = FE.ODDS.hijack;
-    FE.ODDS.hijack = 1;
-    const lh = { ...sim.aircraftType, longHaul: true };
-    sim.aircraftType = lh;
-    fe.startMode(sim, 'free', {});
-    const film = H().phase === 'armed' && H().version === 'film';
-    sim.prog.devUnlocked = true;
-    fe.startMode(sim, 'free', {});
-    const real = H().phase === 'armed' && H().version === 'real';
     fe.startMode(sim, 'mission', {});
-    const notInMission = H().phase === 'idle';
-    FE.ODDS.hijack = odds;
-    ok('rules: a long-haul Free Flight arms the film version', film);
-    ok('rules: ...and the realistic one once the Dev passcode is in', real);
-    ok('rules: never in a mission', notInMission);
+    ok('rules: starting a mission never arms anything on its own', H().phase === 'idle', H().phase);
     fe.stop(sim, 'menu');
   }
 
   /*
-   * The pizza car at the start of somebody else's mission.
-   *
-   * It wrote "Hold position" over the mission's first step and never put the
-   * step back: measured on Island Circuit, 76 s after the all-clear the panel
-   * still said "keep still" while the tower said "cleared for take-off", and
-   * the only line telling a new player to press Shift was gone. Here the hud
-   * is a stand-in with the real one's two text elements, the runner a
-   * stand-in that counts time the way the real one does, and the car comes
-   * the way it comes in the game: the dice, at the mission's start.
+   * NO RANDOM EVENTS IN FREE FLIGHT. The owner asked for it more than once,
+   * and a hijack (or, before it was removed, the pizza car) that ambushed a
+   * flight nobody chose was exactly the "random stuff" they meant. Free
+   * Flight no longer rolls any dice at all: a long-haul aeroplane, with every
+   * random-number call made to return something that used to arm a hijack
+   * (0, which old code read as "arm it"), sat through ten minutes of sim time
+   * and nothing started on its own. forceHijack() still works — it is how a
+   * mission or the Dev panel start one on purpose.
    */
   {
-    const sim = makeSim('skylark');
-    const node = () => ({ textContent: '' });
-    sim.hud = {
-      objectiveTitle: node(),
-      objectiveText: node(),
-      notify: (t) => sim.notes.push(t),
-      showBanner() {},
-      setObjective(a, b) {
-        this.objectiveTitle.textContent = a;
-        this.objectiveText.textContent = b;
-        sim.objectiveText = `${a} — ${b}`;
-      },
-    };
-    const STEP1 = ['Island Circuit · step 1 of 8', 'Welcome aboard! Push the throttle up with Shift and roll down the runway.'];
-    const STEP2 = ['Island Circuit · step 2 of 8', 'Lift off.'];
-    const onScreen = () => `${sim.hud.objectiveTitle.textContent} — ${sim.hud.objectiveText.textContent}`;
-    fe.buildWorld(sim, new THREE.Group());
-    const site = FE.breakInInfo().siteOk;
-    ok('mission window: Kestrel has room for the pizza car', site);
-    const runOnce = (advance) => {
-      ground(sim, AP.RUNWAY.touchdown.x - 150, AP.RUNWAY.touchdown.z, 90);
-      sim.mode = 'mission';
-      sim.runner = { status: 'running', stepIndex: 0, elapsed: 0, def: { id: 'test-circuit', name: 'Island Circuit', category: 'training', steps: [{}, {}] } };
-      sim.hud.setObjective(...STEP1);
-      const odds = { ...FE.ODDS };
-      FE.ODDS.hijack = 0;
-      FE.ODDS.breakin = 1;
-      fe.startMode(sim, 'mission', {});
-      FE.ODDS.hijack = odds.hijack;
-      FE.ODDS.breakin = odds.breakin;
-      const armed = FE.breakInInfo().phase === 'armed';
-      let wall = 0;
-      let heldText = '';
-      let done = false;
-      for (let t = 0; t < 160 && !done; t += DT) {
-        sim.aircraft.update(DT, sim.weather);
-        sim.runner.elapsed += DT;
-        extUpdate(sim, DT);
-        wall += DT;
-        if (!heldText && FE.breakInInfo().phase === 'run') {
-          heldText = onScreen();
-          if (advance) sim.hud.setObjective(...STEP2);
-        }
-        done = FE.breakInInfo().done;
-      }
-      return { armed, heldText, done, wall, elapsed: sim.runner.elapsed };
-    };
-    if (site) {
-      const a = runOnce(false);
-      ok('mission window: the dice arm the car at the start of an untimed mission', a.armed);
-      ok('mission window: the car comes, and the panel says hold position', /^Hold position — .*mission carries on/.test(a.heldText), a.heldText);
-      ok('mission window: after the all-clear the mission\'s own step is back on the panel, word for word',
-        a.done && onScreen() === `${STEP1[0]} — ${STEP1[1]}`, `${a.done ? 'done' : 'not done'}; ${onScreen()}`);
-      ok('mission window: the hold does not come off the mission\'s clock (time bonus)', a.done && a.elapsed < 8 && a.wall > 40,
-        `${a.wall.toFixed(0)} s passed, the mission counted ${a.elapsed.toFixed(1)} s`);
-      fe.stop(sim, 'menu');
-      const b = runOnce(true);
-      ok('mission window: a mission that moved on a step during the hold keeps its new step', b.done && onScreen() === `${STEP2[0]} — ${STEP2[1]}`, onScreen());
-      fe.stop(sim, 'menu');
-      // Free Flight: the same car, back to the Free Flight line afterwards.
-      sim.runner = { status: 'idle', def: null };
-      sim.mode = 'free';
-      sim.hud.setObjective('Free Flight', 'Take off from runway 09, explore the islands, and land whenever you like.');
-      FE.armBreakIn(sim, 'free');
-      let freeDone = false;
-      for (let t = 0; t < 170 && !freeDone; t += DT) {
-        sim.aircraft.update(DT, sim.weather);
-        extUpdate(sim, DT);
-        freeDone = FE.breakInInfo().done;
-      }
-      ok('free window: after the all-clear the panel is Free Flight again', freeDone && sim.hud.objectiveTitle.textContent === 'Free Flight', onScreen());
-      fe.stop(sim, 'menu');
-      ok('mission window: the feature is still live', live());
+    const sim = makeSim(FE.longHaulId());
+    air(sim, -16000, 1500, 5000, 90);
+    const lh = { ...sim.aircraftType, longHaul: true };
+    sim.aircraftType = lh;
+    sim.mode = 'free';
+    const origRandom = Math.random;
+    Math.random = () => 0;
+    try {
+      fe.startMode(sim, 'free', {});
+      ok('no dice: starting Free Flight does not arm a hijack', H().phase === 'idle', H().phase);
+      const ran = step(sim, 600, () => H().phase !== 'idle');
+      ok('no dice: ten minutes of Free Flight with a long-haul aeroplane never starts a hijack on its own',
+        !ran && H().phase === 'idle', H().phase);
+    } finally {
+      Math.random = origRandom;
     }
+    ok('no dice: forceHijack still starts one on purpose', FE.forceHijack(sim, { owner: 'test', version: 'film' }) !== false && H().phase !== 'idle', H().phase);
+    fe.stop(sim, 'menu');
   }
 }
 

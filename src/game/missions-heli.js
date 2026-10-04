@@ -66,6 +66,7 @@ import { PADS } from '../world/pads.js';
 import { UNITS, SPEC } from '../aircraft/physics.js';
 import { isKidMode, parkingClearance, chaseViewClear } from '../aircraft/rotor-assist.js';
 import { createFishingBoat } from '../fleet/maritime.js';
+import { strobeLevel } from '../render/flash-safety.js';
 
 const clamp = THREE.MathUtils.clamp;
 const ft = (m) => m * UNITS.FT;
@@ -552,8 +553,9 @@ function siteMarker(ctx, pos, colour = 0x7dffb4) {
     },
     update(dt) {
       this.t += dt;
-      // A proper aviation strobe: dark most of the second, then a hard flash.
-      const f = this.t % 1.15 < 0.09 ? 1 : 0.06;
+      // A proper aviation strobe: dark most of the second, then a hard flash
+      // (with Reduce flashing a soft, dimmer pulse — render/flash-safety.js).
+      const f = 0.06 + 0.94 * strobeLevel(this.t, 1.15, 0.09);
       strobeMat.color.setScalar(f);
       ringMat.opacity = 0.45 + Math.sin(this.t * 2.2) * 0.2;
     },

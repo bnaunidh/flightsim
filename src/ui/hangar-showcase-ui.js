@@ -93,6 +93,7 @@ export function installHangarShowcase(menus, screen, kit) {
         <div class="hs-stage" data-hs-stage>
           <div class="hs-fallback" data-hs-fallback hidden></div>
           <div class="hs-lock" data-hs-lock hidden></div>
+          <div class="hs-q" data-hs-q aria-hidden="true" hidden>?</div>
           <button type="button" class="hs-arrow is-prev" data-hs-prev aria-label="Previous aircraft">${icon('chevronLeft', 30)}</button>
           <button type="button" class="hs-arrow is-next" data-hs-next aria-label="Next aircraft">${icon('chevronRight', 30)}</button>
           <div class="hs-under">
@@ -252,6 +253,7 @@ export function installHangarShowcase(menus, screen, kit) {
     const lock = $('[data-hs-lock]');
     lock.hidden = mine;
     lock.innerHTML = mine ? '' : `${LOCK_SVG}<span>${cost ? `${cost.toLocaleString()} credits` : 'Not in the shop yet'}</span>`;
+    $('[data-hs-q]').hidden = mine;
 
     // Arrows wrap round, so they never grey out — but say where they go.
     const prev = typeOf(ui.order[(idx - 1 + ui.order.length) % ui.order.length]);

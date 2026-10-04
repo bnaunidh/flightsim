@@ -42,6 +42,7 @@ import { check as weapons } from './weapons.browser.js';
 import { check as minimapGhosts } from './minimap-ghosts.browser.js';
 import { check as sky } from './sky.browser.js';
 import { check as missionMaps } from './mission-maps.browser.js';
+import { check as flicker } from './flicker.browser.js';
 
 export const CHECKS = [
   { id: 'airport', check: airport },
@@ -86,6 +87,8 @@ export const CHECKS = [
   { id: 'multiplayer-part2', check: multiplayerPart2 },
   { id: 'races', check: races },
   { id: 'air-fuel', check: airFuel },
+  // The owner's "graphic errors that can cause seziure": the screen measured at the worst places, and Reduce flashing.
+  { id: 'flicker', check: flicker },
   // Last: it rebinds keys through Settings (and puts the player's back after).
   { id: 'keybinds', check: keybinds },
 ];

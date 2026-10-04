@@ -76,6 +76,7 @@
  */
 
 import * as THREE from '../vendor/three.module.js';
+import { FLASH, CAPS, FlashGate, FlashSmoother, screenOpacity, shakeClock } from '../render/flash-safety.js';
 import { registerExtension, extLayer, extStatus } from '../game/extensions.js';
 import * as Terrain from '../world/terrain.js';
 
@@ -493,6 +494,24 @@ export const F_TWINKLE = 8;
  */
 let SURF_HINT = NaN; // surface height for the particles being spawned right now; NaN = look it up
 let FRAME = 0;
+/**
+ * Reduce flashing (render/flash-safety.js): the game seconds the explosions
+ * have run for, and the gate that lets at most three of them a second flash.
+ * A string of bombs or a meteor shower used to flash the world (and, close
+ * up, the whole screen) once per bang, as fast as they came.
+ */
+let CLOCK = 0;
+const _lightTo = new THREE.Vector3();
+const FLASH_GATE = new FlashGate();
+/**
+ * And the one light and the sky's bounce, smoothed with the switch on: the
+ * light used to jump to whichever bang was brightest each frame and flash
+ * with each, so a string of them lit the whole ground on and off several
+ * times a second (measured: eight bombs in a second, the whole runway
+ * flickering). Smoothed, they are one swell of light that moves, not hops.
+ */
+const LIGHT_SMOOTH = new FlashSmoother();
+const SKY_SMOOTH = new FlashSmoother();
 /*
  * How much daylight there is, 0.15 (night) to 1 (midday). The particle
  * colours are screen colours, not lit materials, so a smoke column at night
@@ -1092,7 +1111,7 @@ function blankBlast() {
     columnLeft: 0, columnRate: 0, columnAcc: 0,
     fireLeft: 0, fireAcc: 0, glowLeft: 0, glowAcc: 0, steamLeft: 0, steamAcc: 0,
     lightPeak: 0, lightRange: 100, lightCol: 0xffa050,
-    flashK: 0, soft: false, gentle: false,
+    flashK: 0, soft: false, gentle: false, flashSprite: 1, flashLight: 1,
   };
 }
 const BLANK = blankBlast();
@@ -1241,6 +1260,16 @@ export function explode(sim, pos, opts = {}) {
   b.soft = !!o.burnup;
   b.gentle = !!o.gentle && !water && !air && kind !== 'sparkle';
   b.R = R;
+  /*
+   * How much of its flash this one gets. Switch off: all of it. Switch on:
+   * the flash sprite and the light dimmed (CAPS), and only three bangs a
+   * second flash at all — the rest keep their fire and smoke and sound and
+   * flash a quarter as bright as that again.
+   */
+  const flashes = FLASH_GATE.allow(CLOCK);
+  const spare = flashes ? 1 : 0.25;
+  b.flashSprite = FLASH.reduce ? CAPS.blastSprite * spare : 1;
+  b.flashLight = FLASH.reduce ? CAPS.blastLight * spare : 1;
 
   const L = listenerPos(sim);
   const dist = L ? Math.hypot(L.x - x, L.y - y, L.z - z) : 0;
@@ -1284,7 +1313,8 @@ export function explode(sim, pos, opts = {}) {
   // A very close one flashes the whole screen for a moment.
   if (kind !== 'sparkle' && !b.gentle && L && dist < 12 * R) {
     const reduce = sim.settings && sim.settings.reducedMotion ? 0.4 : 1;
-    fx.screenA = Math.max(fx.screenA, 0.38 * (1 - dist / (12 * R)) * reduce);
+    // Reduce flashing: never over SCREEN_MAX, and not at all past three a second.
+    if (flashes) fx.screenA = Math.max(fx.screenA, screenOpacity(0.38 * (1 - dist / (12 * R)) * reduce));
     // And the camera jolts with the light, before the sound arrives — you
     // were close enough to feel the ground move.
     if (sim.rig && sim.rig.kick && dist < 4 * R) sim.rig.kick(0.25);
@@ -1300,7 +1330,7 @@ function spawnGround(fx, b, n, quality) {
   const S = fx.smoke;
   const sq = Math.sqrt(size);
   // The flash, centred a little above the ground.
-  G.spawn(PARTICLES.flash, x, y + R * 0.5, z, 0, 0, 0, R * vis);
+  G.spawn(PARTICLES.flash, x, y + R * 0.5, z, 0, 0, 0, R * vis, 1, b.flashSprite);
   // A white-hot core, then the fireball body: solid puffs thrown out and up,
   // dragged to a stop inside about one radius, rising, going sooty.
   const nc = n(6);
@@ -1385,7 +1415,7 @@ function spawnThud(fx, b, n, quality) {
   const { x, y, z, R, size, vis } = b;
   const S = fx.smoke;
   const sq = Math.sqrt(size);
-  fx.glow.spawn(PARTICLES.flash, x, y + R * 0.3, z, 0, 0, 0, R * 0.45 * vis, 1, 0.45);
+  fx.glow.spawn(PARTICLES.flash, x, y + R * 0.3, z, 0, 0, 0, R * 0.45 * vis, 1, 0.45 * b.flashSprite);
   const np = n(22 + 5 * sq);
   for (let i = 0; i < np; i++) {
     const a = Math.random() * Math.PI * 2;
@@ -1432,7 +1462,7 @@ function spawnAirburst(fx, b, n) {
   const { x, y, z, R, size, vis } = b;
   const G = fx.glow;
   const sq = Math.sqrt(size);
-  G.spawn(PARTICLES.flash, x, y, z, 0, 0, 0, R * 0.8 * vis);
+  G.spawn(PARTICLES.flash, x, y, z, 0, 0, 0, R * 0.8 * vis, 1, b.flashSprite);
   const nf = n(10 + 5 * sq);
   for (let i = 0; i < nf; i++) {
     const u = rand(-1, 1);
@@ -1505,7 +1535,7 @@ function spawnSplash(fx, b, n) {
   }
   if (meteor) {
     // A hot rock in the sea: a flash under the water and a lot of steam.
-    fx.glow.spawn(PARTICLES.flash, x, y + 2, z, 0, 0, 0, R * 0.6 * vis, 1, 0.6);
+    fx.glow.spawn(PARTICLES.flash, x, y + 2, z, 0, 0, 0, R * 0.6 * vis, 1, 0.6 * b.flashSprite);
     b.steamLeft = 9 + size * 2;
   }
   // Ripples, and a foam patch that sits there after.
@@ -1527,7 +1557,7 @@ function spawnSparkle(fx, b, n) {
     fx.star.spawn(PARTICLES.sparkle, x, y, z, Math.cos(a) * r * v, u * v + 3, Math.sin(a) * r * v,
       rand(1.6, 3.2) * Math.sqrt(size) * b.vis, rand(0.7, 1.3), 1, _c.r, _c.g, _c.b);
   }
-  fx.glow.spawn(PARTICLES.flash, x, y, z, 0, 0, 0, R * 0.3 * b.vis, 1.4, 0.7);
+  fx.glow.spawn(PARTICLES.flash, x, y, z, 0, 0, 0, R * 0.3 * b.vis, 1.4, 0.7 * b.flashSprite);
 }
 
 function ring(fx, x, y, z, r0, r1, life, a, water, foam = false) {
@@ -1574,6 +1604,7 @@ export function updateExplosions(sim, dt) {
   if (!(dt > 0)) return;
   dt = Math.min(dt, 0.1);
   FRAME = (FRAME + 1) & 0xffff;
+  CLOCK += dt;
   if (FRAME % 30 === 1) refreshLight(sim);
   const wind = windOf(sim);
   const L = listenerPos(sim);
@@ -1606,7 +1637,7 @@ export function updateExplosions(sim, dt) {
     // Light: a hard flash, then (on land) the fire flickering down.
     const flash = Math.exp(-b.t * 9);
     const burn = b.fireLeft > 0 || b.glowLeft > 0 ? Math.min(1, (b.fireLeft + b.glowLeft) / 6) * (0.75 + 0.25 * Math.sin(b.t * 13)) : 0;
-    const light = b.lightPeak * (flash + 0.06 * burn);
+    const light = b.lightPeak * (flash * b.flashLight + 0.06 * burn);
     if (light > bestLight) {
       bestLight = light;
       bestBlast = b;
@@ -1614,7 +1645,7 @@ export function updateExplosions(sim, dt) {
     if (L && flash > 0.02) {
       const d = Math.hypot(L.x - x, L.y - y, L.z - z);
       const reach = 700 * Math.sqrt(size);
-      skyBoost += flash * b.flashK * Math.sqrt(size) * (1 / (1 + (d / reach) * (d / reach)));
+      skyBoost += flash * b.flashLight * b.flashK * Math.sqrt(size) * (1 / (1 + (d / reach) * (d / reach)));
     }
 
     // The column, climbing and leaning with the wind.
@@ -1681,19 +1712,21 @@ export function updateExplosions(sim, dt) {
 
   // One light, at the brightest thing happening.
   const light = fx.light;
+  const lit = LIGHT_SMOOTH.step(bestBlast && bestLight > 1 ? bestLight : 0, dt);
   if (bestBlast && bestLight > 1) {
-    light.position.set(bestBlast.x, bestBlast.y + bestBlast.R * 0.6, bestBlast.z);
-    light.intensity = bestLight;
+    // (Reduce flashing: glides to the new bang instead of jumping.)
+    const k = FLASH.reduce && lit > 1 ? 1 - Math.exp(-dt * 6) : 1;
+    light.position.lerp(_lightTo.set(bestBlast.x, bestBlast.y + bestBlast.R * 0.6, bestBlast.z), k);
     light.distance = bestBlast.lightRange;
     light.color.setHex(bestBlast.lightCol);
-  } else {
-    light.intensity = 0;
   }
+  light.intensity = lit > 1 ? lit : 0;
   // The whole sky, briefly, if it was close. sky.update() rewrites the
   // hemisphere light every frame before this runs, so adding to it cannot
   // accumulate.
-  if (skyBoost > 0.01 && sim && sim.sky && sim.sky.hemi) {
-    sim.sky.hemi.intensity += Math.min(1.4, skyBoost * 0.9);
+  const boost = SKY_SMOOTH.step(skyBoost > 0.01 ? Math.min(1.4, skyBoost * 0.9) : 0, dt);
+  if (boost > 0.005 && sim && sim.sky && sim.sky.hemi) {
+    sim.sky.hemi.intensity += boost;
   }
 
   // Rings.
@@ -2058,7 +2091,8 @@ function bombCamera(sim, dt, camera) {
   const gh = safeHeight(x, z);
   if (y < gh + 12) y = gh + 12;
   const k = CAM.shake * (sim.settings && sim.settings.reducedMotion ? 0.25 : 1);
-  const t = CAM.t;
+  // Reduce flashing: the same shake on a slower clock, under 3 Hz (flash-safety.js).
+  const t = shakeClock(CAM.t);
   camera.position.set(x + Math.sin(t * 61) * k, y + Math.sin(t * 53.7 + 1.3) * k, z + Math.sin(t * 43.3) * k * 0.5);
   camera.lookAt(CAM.x, CAM.y + CAM.R * 1.4, CAM.z);
   camera.fov = CAM.fov;

@@ -1,10 +1,10 @@
 /**
- * The small things both flight events need: who you are on the radio, which
+ * The small things the flight events need: who you are on the radio, which
  * field you are at, the runway's own frame, talking and showing things, story
  * beats counted in game time, and the police cars.
  *
  * These lived in flight-events.js while there was one story in it. There are
- * three now — the pizza car and two hijacks — and the hijacks live in their
+ * two now — the film hijack and the by-the-book one — and they live in their
  * own file, so the shared half moved here rather than being copied.
  */
 

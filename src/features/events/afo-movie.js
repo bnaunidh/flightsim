@@ -170,7 +170,6 @@ const END_SUB = { president: 'WELCOME HOME, MR. PRESIDENT' };
 // The President's jet is already flying when the seat starts: no lift-off
 // beat for that seat (its first step is a walk to the office, not a take-off).
 const LIFTOFF_CHIP = { captain: 'WHEELS UP', escort: 'GUARDIAN, AIRBORNE' };
-const LAND_CHIP = { captain: 'DOWN SAFE', escort: 'HOME, TOGETHER', president: 'WHEELS DOWN' };
 const JOIN_CHIP = 'ON HIS WING';
 const MISSILE_CHIP = 'MISSILE IN THE AIR';
 
@@ -292,11 +291,8 @@ registerExtension({
     if (seat === 'escort' && S.lastStepId === 'join' && stepId && stepId !== 'join') {
       queueBeat('caption', { chip: JOIN_CHIP });
     }
-    // Touchdown: the 'land' step completing, for captain and escort (the
-    // one step id both of those seats actually carry).
-    if (S.lastStepId === 'land' && stepId && stepId !== 'land') {
-      queueBeat('caption', { chip: LAND_CHIP[seat] || LAND_CHIP.captain });
-    }
+    // No touchdown caption: the owner asked for the dramatic "wheels down"
+    // moment to go (2026-10-04). The landing speaks for itself.
     S.lastStepIndex = stepIndex;
     S.lastStepId = stepId;
 
@@ -312,7 +308,6 @@ registerExtension({
     if (seat === 'president') {
       if (counts.warned && !S.lastWarned) queueBeat('caption', { chip: 'CONTACTS INBOUND', dur: 2 });
       if (counts.clear && !S.lastClear) queueBeat('caption', { chip: 'SKY CLEAR', dur: 1.8 });
-      if (counts.onGround && !S.lastOnGround) queueBeat('caption', { chip: LAND_CHIP.president });
       S.lastWarned = !!counts.warned;
       S.lastClear = !!counts.clear;
       S.lastOnGround = !!counts.onGround;

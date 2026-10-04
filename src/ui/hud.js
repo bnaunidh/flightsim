@@ -1159,7 +1159,10 @@ export class Hud {
     }
     // Needle points the way the wind is blowing, relative to where we point.
     const rel = ((w.windDirDeg - r.heading + 540) % 360) - 180;
-    this.windNeedle.style.transform = `rotate(${rel}deg)`;
+    if (this.lastValues.windRel !== rel) {
+      this.windNeedle.style.transform = `rotate(${rel}deg)`;
+      this.lastValues.windRel = rel;
+    }
     const wx = `${w.cond.label} · ${w.timeInfo.label}`;
     if (this.lastValues.wx !== wx) {
       this.weatherText.textContent = wx;
@@ -1167,11 +1170,22 @@ export class Hud {
     }
 
     // --- Bars and chips ---
-    this.throttleBar.fill.style.width = `${Math.round(r.throttle * 100)}%`;
-    this.throttleBar.val.textContent = `${Math.round(r.throttle * 100)}%`;
-    this.fuelBar.fill.style.width = `${Math.round(r.fuelPct * 100)}%`;
-    this.fuelBar.val.textContent = `${Math.round(r.fuelPct * 100)}%`;
-    this.fuelBar.fill.classList.toggle('is-low', r.fuelPct < 0.15);
+    // Change-gated like everything else here — this panel is repainted sixty
+    // times a second and writing the same word into the DOM sixty times a
+    // second is how an overlay ends up costing more than the island does.
+    const throttlePct = Math.round(r.throttle * 100);
+    if (this.lastValues.throttle !== throttlePct) {
+      this.throttleBar.fill.style.width = `${throttlePct}%`;
+      this.throttleBar.val.textContent = `${throttlePct}%`;
+      this.lastValues.throttle = throttlePct;
+    }
+    const fuelPct = Math.round(r.fuelPct * 100);
+    if (this.lastValues.fuel !== fuelPct) {
+      this.fuelBar.fill.style.width = `${fuelPct}%`;
+      this.fuelBar.val.textContent = `${fuelPct}%`;
+      this.fuelBar.fill.classList.toggle('is-low', r.fuelPct < 0.15);
+      this.lastValues.fuel = fuelPct;
+    }
 
     const gearText = r.gearPos > 0.95 ? 'GEAR DOWN' : r.gearPos < 0.05 ? 'GEAR UP' : 'GEAR MOVING';
     if (this.lastValues.gear !== gearText) {
@@ -1186,7 +1200,11 @@ export class Hud {
       this.flapChip.classList.toggle('is-good', r.flapStep > 0);
       this.lastValues.flap = flapText;
     }
-    this.brakeChip.classList.toggle('is-on', r.brakes > 0.4);
+    const brakesOn = r.brakes > 0.4;
+    if (this.lastValues.brakes !== brakesOn) {
+      this.brakeChip.classList.toggle('is-on', brakesOn);
+      this.lastValues.brakes = brakesOn;
+    }
     const modeText = ac.mode === 'simplified' ? 'EASY MODE' : 'REAL MODE';
     if (this.lastValues.mode !== modeText) {
       this.modeChip.textContent = modeText;
@@ -1203,11 +1221,18 @@ export class Hud {
      */
     const t = ac.controls.trim || 0;
     const set = Math.abs(t) > 0.02;
-    this.trimChip.style.display = set ? '' : 'none';
+    if (this.lastValues.trimSet !== set) {
+      this.trimChip.style.display = set ? '' : 'none';
+      this.lastValues.trimSet = set;
+    }
     if (set) {
       const notches = Math.round(Math.abs(t) * 10);
-      this.trimChip.textContent = `TRIM ${t > 0 ? 'UP' : 'DOWN'} ${notches}`;
-      this.trimChip.classList.toggle('is-on', true);
+      const trimText = `TRIM ${t > 0 ? 'UP' : 'DOWN'} ${notches}`;
+      if (this.lastValues.trim !== trimText) {
+        this.trimChip.textContent = trimText;
+        this.trimChip.classList.toggle('is-on', true);
+        this.lastValues.trim = trimText;
+      }
     }
 
     // --- Stall + PAPI guidance ---

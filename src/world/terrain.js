@@ -1897,7 +1897,35 @@ function buildChunk(centerX, centerZ, size, segments, materialFactory) {
   mesh.position.set(centerX, 0, centerZ);
   mesh.receiveShadow = true;
   mesh.castShadow = false;
+  mesh.onBeforeRender = seaCut;
   return mesh;
+}
+
+/**
+ * Where the terrain stops being drawn: sea level, while the camera is above it.
+ *
+ * THE FLICKER (the owner: "graphic errors that can cause seziure"). The sea is
+ * an opaque plane at y = 0 and the terrain carries on underneath it, a few
+ * metres down over every beach, bank and shoal. Which of the two is nearer is
+ * the depth buffer's call, and with a 0.4 m near plane and a 60 km far plane
+ * its step is about 15 m at 10 km. So from the air every pixel where the sea
+ * floor lies within a few metres of the surface was decided at random, again
+ * every frame: measured from 27,700 ft over Kestrel (tests/flicker-probe.js),
+ * 3% of the screen flickering more than three times a second, the shelf round
+ * the island and the sandbanks as strobing discs, all of it gone with the
+ * terrain or the sea hidden.
+ *
+ * With the camera above the sea, nothing under the sea can be seen: a ray
+ * that reaches ground below y = 0 has gone through the surface first. So
+ * those fragments are not drawn at all and never enter the depth contest;
+ * the sea (pushed a little back in depth, render/depth-layers.js) loses to anything
+ * of the land above it. Exactly the same picture, decided by height instead
+ * of by depth precision. The camera below the sea (nothing does that today)
+ * gets the old behaviour: the cut drops out of the way.
+ */
+export const SEA_CUT = { value: 0 };
+export function seaCut(renderer, scene, camera) {
+  SEA_CUT.value = camera.position.y > 0 ? 0 : -1e9;
 }
 
 /**
@@ -1945,6 +1973,7 @@ function makeTerrainMaterial() {
     // Snow line. Off by default — a start height above anything on the map
     // costs one compare per fragment and changes nothing.
     shader.uniforms.uSnow = { value: new THREE.Vector2(...(tint.snow || [99999, 99999])) };
+    shader.uniforms.uSeaCut = SEA_CUT;
 
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -1969,7 +1998,14 @@ function makeTerrainMaterial() {
          uniform vec3 uTintSand;
          uniform vec3 uTintRock;
          uniform vec3 uShallow;
-         uniform vec2 uSnow;`
+         uniform vec2 uSnow;
+         uniform float uSeaCut;`
+      )
+      .replace(
+        '#include <clipping_planes_fragment>',
+        `#include <clipping_planes_fragment>
+        // Under the sea: never seen, and never a contest with it (SEA_CUT).
+        if (vGroundY < uSeaCut) discard;`
       )
       .replace(
         '#include <map_fragment>',
