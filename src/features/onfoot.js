@@ -1106,7 +1106,10 @@ function placeCamera(sim, dt) {
 /** Not walking: offer the way out when it is on offer. */
 function idleFrame(sim, dt) {
   S.sim = sim;
-  if (sim.state !== 'flying') {
+  // A passenger (sim.riding: the President's seat, afo-president.js) has no
+  // door of their own to offer: the parked aeroplane under the seat is not
+  // where they are.
+  if (sim.state !== 'flying' || sim.riding) {
     S.stoppedT = 0;
     UI.setPrompt('');
     return;

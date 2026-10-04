@@ -1,35 +1,34 @@
 /**
  * Browser checks for Fun Stuff and the Wildfire disaster, in the real game.
- * tests/features/fun.mjs has placed every star and flown every stunt in
- * node; this is what node cannot see:
+ * tests/features/fun.mjs checks the colours and the save in node; this is
+ * what node cannot see:
  *
- *   - the gold Fun Stuff button on the start screen, the screen behind it
- *     with its four one-line explanations, the sticker book and colours;
+ *   - the gold Fun Stuff button on the start screen, and the smoke-colour
+ *     screen behind it;
  *   - the Wildfire disaster on the Free Flight panel and the pause menu,
  *     lighting a fire with the water armed, staying lit in the pause menu,
  *     and doing nothing at all in the car; and its pause-menu button pressed
  *     the way a kid presses it, with the game paused, in the plane and the
  *     helicopter;
- *   - stars in the sky, drawn, on the minimap, caught by flying through,
- *     paid for, saved, and none in a mission;
- *   - a barrel roll with the real flight model and the real stick;
  *   - T leaving smoke behind the aeroplane, and not being taken in the car;
  *   - the chip, where it sits, and that it goes when the game pauses.
  *
  * It puts back the player's own Fun Stuff save and credits afterwards.
  * `check(sim, r, say)` — r.ok(name, pass, detail) per assertion.
+ *
+ * Fun Stuff used to also carry a Star Hunt and Stunts (pop-up scoring) — see
+ * git history for their browser checks (gold stars on the minimap, catching
+ * one, a barrel roll on the real stick).
  */
 
 export async function check(sim, r, say) {
   let fun;
   let ext;
   let wf;
-  let T;
   try {
     fun = await import('../../src/features/fun.js');
     ext = await import('../../src/game/extensions.js');
     wf = await import('../../src/features/wildfire.js');
-    T = await import('../../src/world/terrain.js');
   } catch (err) {
     r.ok('fun: the Fun Stuff modules load', false, String(err && err.message));
     return;
@@ -45,12 +44,6 @@ export async function check(sim, r, say) {
     savedFun = null;
   }
   const credits0 = sim.prog ? { c: sim.prog.credits, e: sim.prog.earned } : null;
-  const pops = [];
-  const realPop = F.hud.pop.bind(F.hud);
-  F.hud.pop = (t, s, o) => {
-    pops.push(String(t));
-    return realPop(t, s, o);
-  };
   const keyAt = (code, down) =>
     document.body.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { code, bubbles: true, cancelable: true }));
   const pressT = () => {
@@ -62,9 +55,8 @@ export async function check(sim, r, say) {
     /* ---- registered, and on the start screen ------------------------------ */
     const live = ext.extStatus().find((e) => e.id === 'fun');
     r.ok('fun: the Fun Stuff feature is registered and live', !!(live && live.live), JSON.stringify(live));
-    // A clean save for the run, so the numbers below mean something.
+    // A clean save for the run, so the screen below means something.
     F.data = (await import('../../src/features/fun/save.js')).blankFun();
-    F.fresh.clear();
     sim.menus.show('main');
     const btn = sim.menus.screens.main.querySelector('[data-fun-open]');
     r.ok('fun: a Fun Stuff button on the start screen', !!btn && btn.getBoundingClientRect().height > 30, btn ? btn.textContent.replace(/\s+/g, ' ').trim() : 'none');
@@ -75,19 +67,14 @@ export async function check(sim, r, say) {
     r.ok('fun: it opens the Fun Stuff screen', !!scr && !scr.hidden && sim.menus.current === 'fun');
     const cards = scr ? [...scr.querySelectorAll('.fun-card')] : [];
     const titles = cards.map((c) => c.querySelector('h3').textContent);
-    r.ok(
-      'fun: four things on it — stars, stunts, smoke, the Wildfire disaster',
-      ['Star Hunt', 'Stunts', 'Smoke', 'Wildfire'].every((w) => titles.some((t) => t.includes(w))),
-      titles.join(' | ')
-    );
-    r.ok('fun: …each explained in a line or two', cards.every((c) => {
-      const p = c.querySelector('p');
-      return p && p.textContent.trim().length > 20 && p.textContent.length < 260;
-    }));
-    const stickers = scr ? scr.querySelectorAll('.fun-sticker') : [];
-    r.ok('fun: a sticker book with every sticker and how to get it', stickers.length >= 20 && [...stickers].every((s) => s.querySelector('em').textContent.length > 5), `${stickers.length} stickers`);
-    r.ok('fun: smoke colours: white to start with, the rest locked', scr && scr.querySelectorAll('.fun-swatch:not([disabled])').length === 1 && scr.querySelectorAll('.fun-swatch[disabled]').length >= 5);
+    r.ok('fun: the smoke-trail card is on it', titles.some((t) => t.includes('Smoke')), titles.join(' | '));
+    r.ok('fun: every smoke colour is unlocked (no stickers to gate them any more)', scr && scr.querySelectorAll('.fun-swatch').length >= 6 && scr.querySelectorAll('.fun-swatch[disabled]').length === 0, scr && scr.querySelectorAll('.fun-swatch').length);
     r.ok('fun: the screen does not scroll sideways', scr && scr.scrollWidth <= scr.clientWidth + 1, `${scr && scr.scrollWidth} in ${scr && scr.clientWidth}`);
+    // Picking a colour saves it and re-renders with it selected.
+    const swatch = scr.querySelector('.fun-swatch[data-colour="blue"]');
+    swatch && swatch.click();
+    r.ok('fun: picking a colour marks it on', scr.querySelector('.fun-swatch[data-colour="blue"]').classList.contains('is-on'));
+    r.ok('fun: …and saves it', F.data.smoke.color === 'blue');
     scr && scr.querySelector('[data-back]').click();
     r.ok('fun: Back goes to the start screen', sim.menus.current === 'main');
 
@@ -110,7 +97,6 @@ export async function check(sim, r, say) {
     W.grid.extinguishAll(true);
     sim.step(0.5);
     r.ok('fun: put out, it is over', !(sim.activeEvents && sim.activeEvents.wildfire), sim.hud.banner && sim.hud.banner.textContent);
-    r.ok('fun: …and putting one out earns Firefighter', !!F.data.stickers.firefighter);
     sim.startDrive('car');
     sim.step(0.3);
     const before = (sim.hud.toasts || []).length;
@@ -168,78 +154,10 @@ export async function check(sim, r, say) {
       r.ok(`fun: ${craft}: …and out again when it is put out`, !(sim.activeEvents && sim.activeEvents.wildfire));
     }
 
-    /* ---- stars in the sky ------------------------------------------------- */
-    say('fun: Star Hunt');
-    await sim.startMode('free', { aircraft: 'skylark', time: 'day', condition: 'clear', airborne: true });
-    sim.step(0.3);
-    r.ok('fun: ten stars in Free Flight', F.stars.length === 10 && F.field.mesh.count === 10, `${F.stars.length} (${F.setKey})`);
-    const inScene = !!F.field.mesh.parent && !!sim.scene.getObjectById(F.field.mesh.id);
-    r.ok('fun: …in the scene', inScene);
-    const tipped = [...document.querySelectorAll('.fun-note')].some((t) => /golden star/.test(t.textContent));
-    r.ok('fun: the flight says the stars are there (in its own line, not the game\'s toasts)', (tipped || F.tips.size > 0) && !(sim.hud.toasts || []).some((t) => /golden star/.test(t.node.textContent)));
-    const chip = document.querySelector('.fun-chip');
-    r.ok('fun: the chip shows 0 of 10', chip && !chip.hidden && /0\s*\/\s*10/.test(chip.textContent), chip && chip.textContent.replace(/\s+/g, ' '));
-    const cr = chip.getBoundingClientRect();
-    const blocked = ['.hud-left', '.minimap', '.touch-stick'].map((q) => document.querySelector(q)).filter((e) => {
-      if (!e) return false;
-      const b = e.getBoundingClientRect();
-      return b.width && !(cr.right <= b.left || b.right <= cr.left || cr.bottom <= b.top || b.bottom <= cr.top);
-    });
-    r.ok('fun: …clear of the instruments, the map and the stick', blocked.length === 0, blocked.map((e) => e.className).join(', '));
-    // Stars on the minimap: gold pixels in the round map.
-    const mm = sim.minimap;
-    let gold = 0;
-    if (mm && mm.ctx && mm.visible) {
-      sim.step(0.1);
-      const cv = mm.ctx.canvas;
-      const px = mm.ctx.getImageData(0, 0, cv.width, cv.height).data;
-      for (let i = 0; i < px.length; i += 4) if (px[i] > 225 && px[i + 1] > 180 && px[i + 1] < 235 && px[i + 2] < 110) gold++;
-    }
-    r.ok('fun: stars are drawn on the minimap', gold > 10, `${gold} gold pixels`);
-    const star = F.stars.find((s) => s.what === 'way up high') || F.stars[0];
-    const c0 = sim.prog.credits;
-    const ac = sim.aircraft;
-    ac.pos.set(star.x - 150, star.y, star.z);
-    ac.quat.setFromAxisAngle({ x: 0, y: 1, z: 0, isVector3: true }, -Math.PI / 2);
-    ac.vel.set(55, 0, 0);
-    for (let i = 0; i < 30 && !F.found.has(star.id); i++) sim.step(0.1);
-    r.ok('fun: flying through a star catches it', F.found.has(star.id), `${Math.round(Math.hypot(ac.pos.x - star.x, ac.pos.z - star.z))} m from it`);
-    r.ok('fun: …25 credits', sim.prog.credits - c0 === 25, `${sim.prog.credits - c0}`);
-    r.ok('fun: …a pop-up and the count goes up', pops.some((p) => /STAR/.test(p)) && /1\s*\/\s*10/.test(chip.textContent));
-    r.ok('fun: …the First Star sticker', !!F.data.stickers['first-star']);
-    sim.step(1);
-    let saved = null;
-    try {
-      saved = JSON.parse(localStorage.getItem(FUN_KEY));
-    } catch (e) {
-      saved = null;
-    }
-    const key = `flight:${T.MAP.id}`;
-    r.ok('fun: …and it is saved on this device', !!(saved && saved.stars && (saved.stars[key] || []).includes(star.id)), JSON.stringify(saved && saved.stars));
-    await sim.startMode('free', { aircraft: 'skylark', time: 'day', condition: 'clear', airborne: true });
-    sim.step(0.2);
-    r.ok('fun: next flight it is still found', F.found.has(star.id) && /1\s*\/\s*10/.test(chip.textContent));
-    await Promise.resolve(sim.startAnyMission('circuit')).catch(() => null);
-    sim.step(0.2);
-    if (sim.mode === 'mission') r.ok('fun: no stars in a mission', F.stars.length === 0 && F.field.mesh.count === 0, `${F.stars.length}`);
-
-    /* ---- a barrel roll with the real stick ------------------------------ */
-    say('fun: stunts');
-    await sim.startMode('free', { aircraft: 'skylark', time: 'day', condition: 'clear', airborne: true });
-    sim.aircraft.pos.y += 500;
-    sim.override = { throttle: 1, brakes: 0, pitch: 0, roll: 0, yaw: 0 };
-    sim.step(1.5);
-    pops.length = 0;
-    const c1 = sim.prog.credits;
-    sim.override = { throttle: 1, brakes: 0, pitch: 0, roll: 1, yaw: 0 };
-    for (let i = 0; i < 55 && !pops.length; i++) sim.step(0.1);
-    sim.override = null;
-    r.ok('fun: full aileron in the Skylark is a BARREL ROLL', pops.includes('BARREL ROLL!'), pops.join(', '));
-    r.ok('fun: …20 credits and the Barrel Roller sticker', sim.prog.credits - c1 === 20 && !!F.data.stickers.roll, `${sim.prog.credits - c1}`);
-    r.ok('fun: …and the points on the chip', /200/.test(chip.textContent), chip.textContent.replace(/\s+/g, ' '));
-
     /* ---- smoke ------------------------------------------------------------ */
     say('fun: smoke');
+    await sim.startMode('free', { aircraft: 'skylark', time: 'day', condition: 'clear', airborne: true });
+    const chip = document.querySelector('.fun-chip');
     pressT();
     sim.step(1.5);
     r.ok('fun: T turns the smoke on', F.smokeOn && F.smoke.liveCount(F.time) > 30, `${F.smoke.liveCount(F.time)} puffs`);
@@ -247,7 +165,7 @@ export async function check(sim, r, say) {
     const lastI = (F.smoke.next + F.smoke.max - 1) % F.smoke.max;
     const d = Math.hypot(tail.getX(lastI) - sim.aircraft.pos.x, tail.getY(lastI) - sim.aircraft.pos.y, tail.getZ(lastI) - sim.aircraft.pos.z);
     r.ok('fun: …from the tail of the aeroplane', d < 12, `${d.toFixed(1)} m from the middle`);
-    r.ok('fun: …and gets the Smoke Show sticker', !!F.data.stickers.smoke);
+    r.ok('fun: …and the chip shows it on', chip && !chip.hidden && chip.querySelector('[data-fun-smoke]').getAttribute('aria-pressed') === 'true');
     pressT();
     sim.step(0.2);
     r.ok('fun: T again turns it off', !F.smokeOn);
@@ -257,7 +175,6 @@ export async function check(sim, r, say) {
     document.body.dispatchEvent(down);
     document.body.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyT', bubbles: true, cancelable: true }));
     r.ok('fun: in the car T is left alone', !F.smokeOn && !down.defaultPrevented);
-    r.ok('fun: the car hunts stars on the roads when there are roads', F.kind === 'road' && (F.stars.length === 10 || !(sim.roads && sim.roads.list && sim.roads.list.length)), `${F.stars.length} on ${T.MAP.id}`);
 
     /* ---- pause ------------------------------------------------------------ */
     await sim.startMode('free', { aircraft: 'skylark', time: 'day', condition: 'clear', airborne: true });
@@ -277,10 +194,9 @@ export async function check(sim, r, say) {
     for (let k = 0; k < N; k++) upd(sim, 1 / 30);
     const ms = (performance.now() - t0) / N;
     F.smokeOn = false;
-    r.ok('fun: stars, stunts and smoke cost the frame little', ms < 0.6, `${ms.toFixed(3)} ms a frame`);
+    r.ok('fun: smoke costs the frame little', ms < 0.6, `${ms.toFixed(3)} ms a frame`);
     sim.quitToMenu('main');
   } finally {
-    F.hud.pop = realPop;
     sim.override = null;
     // Put the player's own things back.
     try {
@@ -290,7 +206,6 @@ export async function check(sim, r, say) {
       /* nothing to put back */
     }
     F.data = (await import('../../src/features/fun/save.js')).loadFun();
-    F.fresh.clear();
     if (credits0 && sim.prog) {
       sim.prog.credits = credits0.c;
       sim.prog.earned = credits0.e;

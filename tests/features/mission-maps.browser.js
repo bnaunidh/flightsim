@@ -10,7 +10,7 @@
  *   2. Every moved mission STARTS on its island: the game loads that map,
  *      the aircraft (or the boat) is where the mission put it, above the
  *      ground, not crashed, with the runner running.
- *   3. Scripted pilots finish three of the moved flight missions here, on
+ *   3. Scripted pilots finish two of the moved flight missions here, on
  *      the real game (tests/features/mission-pilot.js) — the rest are flown
  *      by tests/features/mission-maps.playthrough.js, which is long.
  *
@@ -34,9 +34,6 @@ export const MOVED = {
   'event-hijack-real': 'gateway',
   'afo-normal': 'gateway',
   'afo-attack': 'airbase', // the military field
-  'goofy-gulls': 'condor', // the island with the gulls
-  'goofy-cow': 'carriergroup', // the carrier group
-  'goofy-icecream': 'atoll', // the hottest day, on the reef
   lastlight: 'ravencrag', // mountain rescue
   oncall: 'meridian', // city calls
   overboard: 'carriergroup', // a man in the water among the ships
@@ -80,7 +77,7 @@ export async function check(sim, r, say) {
     r.ok('mission maps: fewer than half the missions are on Kestrel (it was thirty-five of sixty)', onKestrel < MIS.MISSIONS.length / 2, `${onKestrel} of ${MIS.MISSIONS.length}`);
     const forest = ['fire-night', 'fire-bigburn', 'fire-ridge', 'fire-lineone'].map((id) => MIS.findMission(id)).filter(Boolean);
     r.ok('mission maps: the forest fires are on forested maps', forest.every((m) => ['fjord', 'meadow', 'firewatch'].includes(m.map)), forest.map((m) => `${m.id}:${m.map}`).join(', '));
-    const carrierOnes = ['carrierqual', 'goofy-cow', 'overboard'].map((id) => MIS.findMission(id)).filter(Boolean);
+    const carrierOnes = ['carrierqual', 'overboard'].map((id) => MIS.findMission(id)).filter(Boolean);
     r.ok('mission maps: the carrier jobs are on the maps with a carrier', carrierOnes.every((m) => ['northwatch', 'carriergroup'].includes(m.map)), carrierOnes.map((m) => `${m.id}:${m.map}`).join(', '));
     r.ok('mission maps: the mountain rescue is on the mountain map, the city calls in the city', MIS.findMission('lastlight').map === 'ravencrag' && MIS.findMission('oncall').map === 'meridian');
 
@@ -113,8 +110,8 @@ export async function check(sim, r, say) {
       quit();
     }
 
-    /* ---- 3. three of them flown to the end by the scripted pilot ---- */
-    for (const id of ['deadstick', 'meteor-photo', 'goofy-gulls']) {
+    /* ---- 3. two of them flown to the end by the scripted pilot ---- */
+    for (const id of ['deadstick', 'meteor-photo']) {
       say(`mission maps: the pilot flies ${id}`);
       const out = await Pilot.flyMission(sim, id, { say });
       r.ok(`mission maps: the scripted pilot finishes ${id} on ${MOVED[id]} without help`, out.ok && out.assisted.length === 0 && out.map === MOVED[id],

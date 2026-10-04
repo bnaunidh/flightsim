@@ -42,7 +42,7 @@ export async function check(sim, r, say) {
   const added = [];
   try {
     // Airborne missions, four aeroplanes, all on Kestrel (or no map of their own).
-    for (const id of ['storm', 'tail', 'goofy-gulls', 'fire-spot']) {
+    for (const id of ['storm', 'tail', 'fire-spot']) {
       await sim.startMode('mission', { id });
       const ac = sim.aircraft;
       r.ok(`air-fuel: ${id} (${sim.aircraftType.id}) starts in the air with ${Math.round(AIR * 100)}% fuel`,

@@ -1,6 +1,6 @@
 /**
  * Browser checks for the events team: the flight events (the pizza car and
- * both hijacks) and the goofy and events missions, run on the real game.
+ * both hijacks) and the events missions, run on the real game.
  *
  *   const { check } = await import('./tests/features/events.browser.js');
  *   const r = { checks: [], ok(n, p, d) { this.checks.push({ n, p: !!p, d: String(d || '') }); return !!p; } };
@@ -23,11 +23,8 @@
  *     interphone, the break-away, the remote runway, engines off (I), the
  *     tactical team in vans, and a by-the-book ending;
  *   - 7, 8, 9 and 0 are only taken while a story (or a question) wants them;
- *   - every goofy and events mission starts, walks through every step without
+ *   - every events mission starts, walks through every step without
  *     throwing, and takes its props away with it;
- *   - and each goofy mission's own checks can actually be satisfied — by
- *     putting the aeroplane where the check says and letting the real
- *     update loop decide, not by calling the check.
  *
  * It flies with sim.step(), so it is quick with the renderer stubbed (see the
  * note at the top of tests/selftest.js).
@@ -60,7 +57,7 @@ async function checks(sim, r, say) {
   const { DELIVERY_PAD } = await import('../../src/world/scenery.js');
   const { heightAt } = await import('../../src/world/terrain.js');
 
-  const live = () => ['flightevents', 'goofyprops'].every((id) => {
+  const live = () => ['flightevents', 'eventcards'].every((id) => {
     const e = extStatus().find((x) => x.id === id);
     return e && e.live;
   });
@@ -86,17 +83,14 @@ async function checks(sim, r, say) {
     sim.input.throttleTarget = 0.7;
   };
   const free = (aircraft, airborne) => sim.startMode('free', { ...sim.weather.serialize(), aircraft, airborne });
-  const propsLeft = () => sim.scene.children.filter((o) => o.name && o.name.startsWith('goofy:')).length;
   const status = () => sim.runner.status;
   // What the objective panel says, title and text together.
   const objective = () => `${sim.hud.objectiveTitle.textContent} — ${sim.hud.objectiveText.textContent}`;
 
-  r.ok('events: flight-events and goofy-props extensions are registered and live', live(), JSON.stringify(extStatus()));
+  r.ok('events: flight-events and event-cards extensions are registered and live', live(), JSON.stringify(extStatus()));
 
   /* ------------------------------------------------------------ data -- */
-  const goofy = MISSIONS.filter((m) => m.category === 'goofy');
   const events = MISSIONS.filter((m) => m.category === 'events');
-  r.ok('events: 10 to 12 goofy missions are in the mission list', goofy.length >= 10 && goofy.length <= 12, goofy.length);
   r.ok('events: both event missions are in the mission list', events.some((m) => m.id === 'event-hijack') && events.some((m) => m.id === 'event-breakin'), events.map((m) => m.id).join());
 
   /* ------------------------------------- the realistic one's card -- */
@@ -452,7 +446,7 @@ async function checks(sim, r, say) {
   sim.quitToMenu('main');
   r.ok('real: going back to the menu clears it all away', h().phase === 'idle' && leftovers() === 0 && !UI.uiState().card, leftovers());
   /* ------------------------------------ every mission, every step -- */
-  for (const m of [...goofy, ...events]) {
+  for (const m of events) {
     say(`events: mission ${m.id}`);
     let threw = null;
     // The realistic one gates itself on the Dev passcode; walk it with the code in.
@@ -461,7 +455,7 @@ async function checks(sim, r, say) {
     try {
       await sim.startMode('mission', { id: m.id });
       sim.step(0.5, 1 / 30);
-      const started = status() === 'running' && sim.runner.def.id === m.id && (m.category !== 'goofy' || propsLeft() >= 1 || m.id === 'goofy-icecream');
+      const started = status() === 'running' && sim.runner.def.id === m.id;
       for (let i = 0; i < m.steps.length && status() === 'running'; i++) {
         sim.runner.skipStep();
         sim.step(0.4, 1 / 30);
@@ -473,7 +467,6 @@ async function checks(sim, r, say) {
     if (threw) r.ok(`mission ${m.id}: starts and runs every step without throwing`, false, String(threw && threw.message));
     if (sim.prog) sim.prog.devUnlocked = devWas;
     sim.quitToMenu('missions');
-    r.ok(`mission ${m.id}: takes its props away afterwards`, propsLeft() === 0, propsLeft());
   }
 
   /* ------------------------------------- can each one be finished? -- */
@@ -502,213 +495,6 @@ async function checks(sim, r, say) {
     ac.lastTouchdown = sim.runner.data.lastTouchdown;
     sim.key('Space', true);
   };
-
-  // Rubber Duck: drop it on the lighthouse.
-  {
-    say('events: can the duck be delivered');
-    await begin('goofy-duck');
-    toStep('drop');
-    const x = -3100 - 60;
-    flyAt(x, heightAt(-3100, -3600) + 90, -3600, 90, 40);
-    sim.dropCargo();
-    const ok = run(40, () => stepId() === 'home');
-    r.ok('goofy-duck: a drop on the lighthouse counts', ok, `step ${stepId()}`);
-    land(-300, 0);
-    r.ok('goofy-duck: and landing finishes it', finished(6));
-    sim.key('Space', false);
-    sim.step(0.5, 1 / 30);
-    sim.quitToMenu('missions');
-  }
-
-  // Balloon: catch it, then take it to the party.
-  {
-    await begin('goofy-balloon');
-    toStep('catch');
-    const bal = sim.runner.data.balloon.position;
-    flyAt(bal.x - 20, bal.y, bal.z, 90, 45);
-    sim.step(0.3, 1 / 30);
-    r.ok('goofy-balloon: flying up to it hooks it', stepId() === 'tow' && sim.runner.data.caught, stepId());
-    const p = sim.runner.data.party;
-    flyAt(p.x - 150, p.y + 150, p.z, 90, 50);
-    sim.step(1, 1 / 30);
-    r.ok('goofy-balloon: it has to actually be towed, not just caught over the cake', stepId() === 'tow', stepId());
-    run(8);
-    flyAt(p.x - 150, p.y + 150, p.z, 90, 50);
-    r.ok('goofy-balloon: a low pass over the party finishes it', finished(3));
-    sim.quitToMenu('missions');
-  }
-
-  // Hello, Tower: upside down past it.
-  {
-    await begin('goofy-tower');
-    toStep('flip');
-    flyAt(-300, 14 + 220, -206, 90, 140);
-    // Roll it over, then let the real update decide.
-    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI);
-    ac.quat.multiply(q);
-    sim.step(0.1, 1 / 30);
-    r.ok('goofy-tower: upside down within 650 m of the tower counts', stepId() === 'marks', stepId());
-    flyAt(-400, 14 + 200, -206, 90, 140);
-    r.ok('goofy-tower: then a pass the right way up finishes it', finished(10));
-    sim.quitToMenu('missions');
-  }
-
-  // Seagulls: fly the course faster than they do; and lose if you do not.
-  {
-    await begin('goofy-gulls');
-    // The course of the island the race is on (Condor since 2026-10-02; goofy.js GULL_COURSES), not Kestrel's numbers.
-    const G = await import('../../src/game/extra/goofy.js');
-    const T = await import('../../src/world/terrain.js');
-    const course = (G.TUNING.raceCourses && (G.TUNING.raceCourses[T.MAP.id] || G.TUNING.raceCourses.condor)) || null;
-    const cps = course ? course.pts.slice(1).map((p) => [p.x, p.z]) : [[-600, -2400], [2400, -3200], [5900, -5000]];
-    for (const [x, z] of cps) {
-      flyAt(x - 100, 300, z, 90, 60);
-      sim.step(0.3, 1 / 30);
-    }
-    r.ok('goofy-gulls: reaching the finish first wins', status() === 'complete', status());
-    sim.quitToMenu('missions');
-    await begin('goofy-gulls');
-    sim.runner.data.gs = 1e9;
-    sim.step(0.2, 1 / 30);
-    r.ok('goofy-gulls: and the gulls getting there first loses', status() === 'failed', status());
-    sim.quitToMenu('missions');
-  }
-
-  // Moo-ving Day: onto the deck.
-  {
-    await begin('goofy-cow');
-    toStep('land');
-    const c = sim.carrier;
-    r.ok('goofy-cow: there is a carrier to land on', !!c);
-    if (c) {
-      stopHere(c.pos.x, c.pos.z - c.halfDepth * 0.3, 180);
-      sim.key('Space', true);
-      r.ok('goofy-cow: stopping on the deck finishes it', finished(6));
-      sim.key('Space', false);
-    sim.step(0.5, 1 / 30);
-    }
-    sim.quitToMenu('missions');
-  }
-
-  // UFO: three sightings, then the beach.
-  {
-    await begin('goofy-ufo');
-    toStep('spot1');
-    for (const id of ['spot1', 'spot2', 'spot3']) {
-      run(4, () => !sim.runner.data.zip);
-      const u = sim.runner.data.ufo.position;
-      flyAt(u.x - 200, u.y, u.z, 90, 55);
-      sim.step(0.3, 1 / 30);
-      r.ok(`goofy-ufo: getting close at ${id} moves it on`, stepId() !== id, stepId());
-    }
-    run(4);
-    flyAt(-200, heightAt(0, 2200) + 150, 2200, 90, 55);
-    r.ok('goofy-ufo: leading it over the beach finishes it', finished(3));
-    sim.quitToMenu('missions');
-  }
-
-  // S'mores: the warm band toasts, too close burns, the other way round does side two.
-  {
-    await begin('goofy-smores');
-    toStep('toastA');
-    const C = { x: 2500, z: -2400 };
-    flyAt(C.x + 1500, 750, C.z, 0, 60); // heading north, tangent to the ring
-    run(6);
-    const a1 = sim.runner.data.a;
-    r.ok('goofy-smores: flying round in the warm band toasts the marshmallow', a1 > 0.1, a1.toFixed(2));
-    flyAt(C.x + 1000, 700, C.z, 0, 60);
-    run(2.5);
-    r.ok('goofy-smores: too close and it catches fire (and you get a fresh one)', sim.runner.data.burns >= 1, sim.runner.data.burns);
-    sim.runner.data.a = 0.999;
-    flyAt(C.x + 1500, 750, C.z, 0, 60);
-    run(2, () => stepId() === 'toastB');
-    r.ok('goofy-smores: a golden side 1 moves on to side 2', stepId() === 'toastB', stepId());
-    flyAt(C.x + 1500, 750, C.z, 0, 60); // same way round: must not count
-    run(3);
-    const bSame = sim.runner.data.b;
-    flyAt(C.x + 1500, 750, C.z, 180, 60); // the other way round
-    run(6);
-    r.ok('goofy-smores: side 2 only toasts going the other way round', bSame < 0.02 && sim.runner.data.b > 0.1, `${bSame.toFixed(2)} then ${sim.runner.data.b.toFixed(2)}`);
-    /*
-     * The mission holds Ember's eruption clock at zero by writing main.js's
-     * private sim._eruptT (goofy.js, holdEruption). If main.js ever renames
-     * it, the hold would go quiet and the volcano would erupt mid-s'more; this
-     * turns that red instead: main.js's updateVolcano must still count on the
-     * field, and the mission must still be holding it.
-     */
-    {
-      const hasIt = typeof sim.updateVolcano === 'function';
-      sim._eruptT = 5;
-      if (hasIt) sim.updateVolcano(0.5);
-      const counted = sim._eruptT;
-      run(0.5);
-      r.ok('goofy-smores: main.js still keeps the eruption clock in sim._eruptT, and the mission holds it at zero',
-        hasIt && Math.abs(counted - 5.5) < 1e-6 && sim._eruptT < 0.1, `updateVolcano ${hasIt}, 5 -> ${counted}, held at ${Number(sim._eruptT).toFixed(3)}`);
-    }
-    sim.quitToMenu('missions');
-  }
-
-  // Loop-the-loop: a real loop, on the real flight model.
-  {
-    say('events: loop-the-loop, flown');
-    await begin('goofy-loops');
-    toStep('loop1');
-    flyAt(700, 900, 620, 90, 150);
-    ac.controls.throttle = 1;
-    sim.input.throttleTarget = 1;
-    sim.override = { pitch: 1, roll: 0, yaw: 0 };
-    const looped = run(40, () => sim.runner.data.loops >= 1);
-    sim.override = null;
-    r.ok('goofy-loops: holding S in the fighter flies a loop that counts', looped, `loops ${sim.runner.data.loops}, crashed ${ac.crashed}`);
-    // And a steep level turn does not.
-    await begin('goofy-loops');
-    toStep('loop1');
-    flyAt(700, 900, 620, 90, 150);
-    // Hold 60 degrees of bank and pull, for twenty seconds.
-    for (let t = 0; t < 20; t += 0.1) {
-      const bank = ac.bankAngleDeg();
-      sim.override = { pitch: 0.6, roll: Math.max(-1, Math.min(1, (60 - bank) / 30)), yaw: 0 };
-      sim.step(0.1, 1 / 30);
-    }
-    sim.override = null;
-    r.ok('goofy-loops: a tight turn is not a loop', sim.runner.data.loops === 0, sim.runner.data.loops);
-    sim.quitToMenu('missions');
-  }
-
-  // Ice cream: a drop on the pad from height.
-  {
-    await begin('goofy-icecream');
-    toStep('drop');
-    flyAt(DELIVERY_PAD.x - 50, DELIVERY_PAD.y + 90, DELIVERY_PAD.z, 90, 40);
-    sim.dropCargo();
-    r.ok('goofy-icecream: a drop on the target finishes it before it melts', finished(40) && sim.runner.data.melt < 1, (sim.runner.data.melt || 0).toFixed(2));
-    sim.quitToMenu('missions');
-  }
-
-  // Bubbles: twelve pops.
-  {
-    await begin('goofy-bubbles');
-    toStep('pop');
-    const list = sim.runner.data.bubbles.slice(0, 12);
-    for (const s of list) {
-      flyAt(s.position.x - 20, s.position.y, s.position.z, 90, 50);
-      sim.step(0.1, 1 / 30);
-    }
-    r.ok('goofy-bubbles: flying through twelve finishes it', status() === 'complete', `${sim.runner.data.popped} popped`);
-    sim.quitToMenu('missions');
-  }
-
-  // Bee: stay close for forty seconds.
-  {
-    await begin('goofy-bee');
-    toStep('follow');
-    const ok = finished(60, () => {
-      const p = sim.runner.data.bee.position;
-      flyAt(p.x - 80, p.y, p.z, 90, 40);
-    });
-    r.ok('goofy-bee: forty seconds close to the bee finishes it', ok, sim.runner.data.follow);
-    sim.quitToMenu('missions');
-  }
 
   // The events missions, start to finish.
   {
@@ -935,6 +721,6 @@ async function checks(sim, r, say) {
 
   r.ok('events: both features still live at the end', live(), JSON.stringify(extStatus()));
   r.ok('events: nothing left over in the scene',
-    propsLeft() === 0 && sim.scene.children.filter((o) => o.name && (o.name === 'police-car' || o.name === 'police-van' || o.name === 'police-stairs'
+    sim.scene.children.filter((o) => o.name && (o.name === 'police-car' || o.name === 'police-van' || o.name === 'police-stairs'
       || o.name === 'pizza-car' || o.name.startsWith('person-') || o.name.startsWith('escort-'))).length === 0);
 }

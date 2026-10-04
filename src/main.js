@@ -144,6 +144,8 @@ class Game {
     this.papiHint = null;
     this.cloudImmersion = 0;
     this.activeTarget = null;
+    /** The aircraft carrying you when you are a passenger, not a pilot (the President's seat); else null. */
+    this.riding = null;
     this._armed = false;
     this._storesLeft = 0;
     this.hasCargo = false;
@@ -1540,6 +1542,8 @@ class Game {
     this.state = 'flying';
     if (wantsTaxi) this.taxi.start();
     this.clock.getDelta();
+    // Nobody is a passenger until a feature says so for this flight.
+    this.riding = null;
     extStartMode(this, mode, opts);
   }
 
@@ -1600,6 +1604,7 @@ class Game {
 
   quitToMenu(screen = 'main') {
     extStop(this, 'menu');
+    this.riding = null;
     this.clearPursuer();
     this.restoreChosenMap();
     this.state = 'menu';
@@ -4308,10 +4313,14 @@ class Game {
       }
     }
 
-    // World.
+    // World. It centres on the aeroplane you are in: your own, or — riding as
+    // a passenger, the President's seat — the one flying you (`this.riding`,
+    // set by src/game/roles/afo-president.js), many kilometres from the
+    // parked aeroplane under the seat.
+    const focus = (this.riding && this.riding.pos) || ac.pos;
     this.sky.update(this.weather);
-    this.sky.followTarget(ac.pos);
-    this.ocean.follow(ac.pos);
+    this.sky.followTarget(focus);
+    this.ocean.follow(focus);
     this.ocean.update(dt, this.weather);
     this.airport.update(dt, this.weather);
     this.apron.update(dt, this.weather);
@@ -4470,9 +4479,9 @@ class Game {
     this.scenery.update(dt, this.weather);
     if (this.seamarks) this.seamarks.update(dt, this.weather);
     this.features.update(dt, this.weather);
-    this.clouds.update(dt, this.weather, ac.pos);
+    this.clouds.update(dt, this.weather, focus);
     this.rain.update(dt, this.weather, this.camera.position, ac.vel);
-    this.cloudImmersion = this.clouds.cloudImmersion(ac.pos.y, this.weather);
+    this.cloudImmersion = this.clouds.cloudImmersion(focus.y, this.weather);
     this.papiHint = this.airport.updatePapi(ac.pos);
 
     // Aeroplane + cockpit.
@@ -4537,7 +4546,9 @@ class Game {
        * which is why this is a setting and not a decision I get to make.
        */
       const style = this.settings.guideStyle || 'arrow';
-      const wantRails = this.state === 'flying' && style !== 'beacon';
+      // Not for a passenger (this.riding): the rails would run from the parked
+      // aeroplane under the President's seat, drawn over the cabin's walls.
+      const wantRails = this.state === 'flying' && style !== 'beacon' && !this.riding;
       this.navGuide.update(
         dt,
         wantRails ? guideTarget : null,
@@ -4547,7 +4558,7 @@ class Game {
       );
       if (this.minimap) this.minimap.update(dt, this);
       if (this.beacon) {
-        const wantBeacon = this.state === 'flying' && style !== 'arrow' && this.navGuide.enabled;
+        const wantBeacon = this.state === 'flying' && style !== 'arrow' && this.navGuide.enabled && !this.riding;
         this.beacon.setTarget(wantBeacon ? guideTarget : null);
         this.beacon.update(dt);
       }

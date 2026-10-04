@@ -23,8 +23,9 @@
  * worth two different flights rather than one:
  *   - afo-normal / captain:  fail = dive into the sea on departure (the
  *     generic crash path every mission already fails on).
- *   - afo-normal / escort:   fail = close on the airliner itself rather than
- *     its wing slot (ESCORT_NORMAL's own too-close failIf).
+ *   - afo-normal / escort:   fail = the same dive, once the fighter is up
+ *     (its "crowd the airliner" chase never closed inside any cap; the
+ *     too-close failIf itself is proved by placement in afo.browser.js).
  *   - afo-attack / captain:  fail = never touch the flares. The escort's
  *     gun stops some missiles, but never the wave's first two, head-on.
  *   - afo-attack / escort:   fail = never fire the gun. The NPC captain's own
@@ -38,6 +39,7 @@ export async function playthrough(sim, missionId, roleId, { fail = false, shots 
   const Cast = await import('../../src/game/roles/cast.js');
   const { RUNWAY } = await import('../../src/world/airport.js');
   const PH = await import('../../src/aircraft/physics.js');
+  const { heightAt } = await import('../../src/world/terrain.js');
 
   const ac = sim.aircraft;
   // The flare is judged on the wheels, not the middle (events.playthrough.js's
@@ -114,15 +116,56 @@ export async function playthrough(sim, missionId, roleId, { fail = false, shots 
        * side, `along` positive from the first frame, so it gets the precise
        * law immediately — this is not a loss of precision there.)
        */
-      if (along > 300 && Math.abs(cross) < 3000) {
+      /*
+       * ...and only from the approach end. Coming back from the cruise point
+       * the field lies BETWEEN you and that end (afo-normal's cruise leg is
+       * out on the departure side), and Gateway's 3.8 km runway put the bot
+       * over it, westbound, low, before the localiser law asked for a
+       * 180-degree turn onto final at 130 m — "You came down far too fast".
+       * So from the wrong side it flies out to a fix 8 km out on the extended
+       * centre line first, at the slope's own height there, and turns in
+       * from there — a real circuit, the way the escort NPC lands too.
+       */
+      const aligned = Math.abs(((ac.heading - B.L + 540) % 360) - 180) < 40;
+      // Far too high to make it from here (Ironhead's "home" leg arrives
+      // 800 m above a field at 300 m): go round, out to the fix and back.
+      if (B.onFinal && along < 3000 && ac.pos.y - (B.td.y + Math.max(0, along) * TAN3) > 150) {
+        B.onFinal = false;
+        B.fix = null;
+        say('going around');
+      }
+      if (along > 300 && Math.abs(cross) < 3000 && (B.onFinal || ((aligned || along > 8000) && ac.pos.y - (B.td.y + along * TAN3) < 150))) B.onFinal = true;
+      else if (!B.onFinal) {
+        const fx = B.td.x - Math.sin(L) * 8500;
+        const fz = B.td.z + Math.cos(L) * 8500;
+        B.fix = B.fix || { x: fx, z: fz };
+      }
+      if (B.onFinal) {
         B.Ix = Math.max(-8, Math.min(8, (B.Ix || 0) + cross * dt * 0.004));
         wantHdg = B.L - Math.max(-30, Math.min(30, cross * (along < 3000 ? 0.12 : 0.05) + B.Ix));
         wantY = B.td.y + along * TAN3;
         ffVs = -ac.groundSpeed * TAN3;
+        // Ironhead's 09 has a ridge 1.2-1.7 km short of the touchdown that
+        // comes within 12 m of the three-degree slope: a jumbo exactly on it
+        // with a few degrees of bank put a wingtip into it. Over high ground,
+        // fly the slope a little high.
+        if (along > 600) {
+          let hi = -Infinity;
+          for (let k = 0; k <= 1500; k += 150) hi = Math.max(hi, heightAt(ac.pos.x + Math.sin(L) * k, ac.pos.z - Math.cos(L) * k));
+          wantY = Math.max(wantY, hi + 40);
+        }
+      } else if (B.fix) {
+        wantHdg = ((Math.atan2(B.fix.x - ac.pos.x, -(B.fix.z - ac.pos.z)) * 180) / Math.PI + 360) % 360;
+        wantY = B.td.y + 8500 * TAN3;
       } else if (B.target) {
         wantHdg = ((Math.atan2(B.target.x - ac.pos.x, -(B.target.z - ac.pos.z)) * 180) / Math.PI + 360) % 360;
         wantY = B.td.y + Math.hypot(ac.pos.x - B.target.x, ac.pos.z - B.target.z) * TAN3;
       }
+    } else if (B.flare && ac.onGround && B.tookOff) {
+      // Down: straight along the runway while it slows, never round towards
+      // the touchdown marker it has just rolled past (the escort did that at
+      // 40 knots and taxied into Gateway's terminal).
+      wantHdg = B.L;
     } else if (B.target) {
       wantHdg = ((Math.atan2(B.target.x - ac.pos.x, -(B.target.z - ac.pos.z)) * 180) / Math.PI + 360) % 360;
     }
@@ -196,8 +239,31 @@ export async function playthrough(sim, missionId, roleId, { fail = false, shots 
     // landed on the tail as a slammed-in nose-up: a tail strike at 10 s,
     // before the escort even finished lifting off.
     if (!rolling) B.I = Math.max(-0.4, Math.min(0.5, B.I + (wantVs - ac.vs) * dt * 0.03));
-    o.pitch = rolling ? (ac.ias > B.spd * 0.72 ? 0.5 : 0)
+    // The escort's fighter takes off the way its own hint says (afo-lead.js
+    // sets take-off flap): hands off the stick until it is well clear of the
+    // runway — any real pull on the roll strikes its tail, and a nudge as the
+    // wheels lift can set it back down at 145 knots, which the game counts
+    // as a landing far too fast. The 747 captain rotates as before.
+    const handsOff = !isCaptain && (rolling || ac.agl < 6);
+    /*
+     * The 747 is flown on its ATTITUDE: a pitch angle asked of the vertical
+     * speed error, then the elevator on the pitch error, damped. The plain
+     * vertical-speed law below (the escort's) porpoised the jumbo on final
+     * with the gear and the flaps out — nose -12 to +7 degrees every four
+     * seconds, ±9 m/s — until a trough met the ground: "You came down far
+     * too fast" on Gateway's approach. A big jet is held on attitude, not
+     * chased with the stick.
+     */
+    let capPitch = 0;
+    if (isCaptain && !rolling && !ac.onGround) {
+      B.Ip = Math.max(-4, Math.min(8, (B.Ip ?? 2) + (wantVs - ac.vs) * dt * 0.25));
+      const wantPitch = Math.max(-8, Math.min(14, B.Ip + (wantVs - ac.vs) * 0.9));
+      capPitch = Math.max(-0.6, Math.min(0.75, (wantPitch - ac.pitchAngleDeg()) * 0.07 - ac.omega.x * 2.2 + (Math.abs(bank) / 25) * 0.06));
+    }
+    o.pitch = handsOff ? 0
+      : rolling ? (ac.ias > B.spd * 0.72 ? 0.5 : 0)
       : ac.onGround ? 0
+      : isCaptain ? capPitch
       : Math.max(-0.6, Math.min(0.75, B.I + (wantVs - ac.vs) * 0.12 - ac.omega.x * 0.6 + (Math.abs(bank) / 25) * 0.06));
     B.Is = Math.max(-0.4, Math.min(0.5, B.Is + (B.spd - ac.ias) * dt * 0.01));
     o.throttle = (B.flare && ac.agl < 8) ? 0
@@ -208,7 +274,10 @@ export async function playthrough(sim, missionId, roleId, { fail = false, shots 
     o.brakes = rolling ? 0 : ac.onGround && ac.groundTime > 1 ? 1 : 0;
     if (B.taxi && ac.onGround) {
       const d = Math.hypot(B.taxi.x - ac.pos.x, B.taxi.z - ac.pos.z);
-      const want = d < 45 ? 0 : Math.abs(err) > 40 ? 3 : 8;
+      // Stop inside the step's own 60 m: a 747 driven nose-first right onto a
+      // stand that faces the terminal puts its nose and a wingtip into the
+      // building before its middle gets there (Gateway, v55).
+      const want = d < 55 ? 0 : Math.abs(err) > 40 ? 3 : 8;
       o.throttle = want === 0 ? 0 : Math.max(0, Math.min(0.5, 0.1 + (want - ac.groundSpeed) * 0.08));
       o.brakes = want === 0 || ac.groundSpeed > want + 1 ? 1 : 0;
       o.yaw = Math.max(-1, Math.min(1, err * 0.05));
@@ -223,6 +292,7 @@ export async function playthrough(sim, missionId, roleId, { fail = false, shots 
   const flareCode = (sim.input.bindings.afoFlare || [])[0] || 'Digit4';
   let firing = false;
   let flareCd = 0;
+  let flareUp = null;
   let evadeT = 0;
 
   try {
@@ -234,12 +304,20 @@ export async function playthrough(sim, missionId, roleId, { fail = false, shots 
 
     // Deliberate dive, afo-normal captain's own fail path: nothing else on
     // this mission can fail it, so a real crash is the honest proof.
-    let diveArmed = fail && missionId === 'afo-normal' && isCaptain;
+    // The escort's seat too: its own "crowd him" fail (the chase below) never
+    // closed inside any cap — it only ever "failed" because the take-off
+    // struck the tail at 10 s — and afo.browser.js proves the too-close rule
+    // by placement; so the escort proves its fail path the same way.
+    let diveArmed = fail && missionId === 'afo-normal';
 
     let lastStepId = null;
     while (T < cap) {
       sim.step(0.25, 1 / 30);
       T += 0.25;
+      if (flareUp != null && T >= flareUp) {
+        sim.key(flareCode, false);
+        flareUp = null;
+      }
       const step = sim.runner.step;
       const stepId = step ? step.id : null;
       if (stepId !== lastStepId) {
@@ -307,7 +385,7 @@ export async function playthrough(sim, missionId, roleId, { fail = false, shots 
         diveArmed = false;
         say('diving into the sea on purpose (fail path)');
       }
-      if (fail && missionId === 'afo-normal' && isCaptain && ac.airborneTime > 6) {
+      if (fail && missionId === 'afo-normal' && ac.airborneTime > (isCaptain ? 6 : 12)) {
         B.target = null;
         B.alt = -200; // well under the sea: the controller dives for it and never pulls up.
         B.spd = 90;
@@ -399,9 +477,15 @@ export async function playthrough(sim, missionId, roleId, { fail = false, shots 
             if (!B.glide) B.hdg = ac.heading + Math.sin(evadeT * 0.3) * 20;
           }
           flareCd = Math.max(0, flareCd - 0.25);
-          if (!fail && info.missilesInbound > 0 && flareCd <= 0) {
-            sim.tap(flareCode);
-            flareCd = 3;
+          // Flares when the missile is CLOSE (the game's own "MISSILE CLOSE"
+          // call, inside 1.1 km): dropped at the launch they burn out first.
+          if (!fail && info.missilesInbound > 0 && info.nearestMissile != null && info.nearestMissile < 1000 && flareCd <= 0) {
+            // Held for a moment, the way a finger presses it: afo.js reads the
+            // flare key as held-this-frame, and sim.tap() goes down and up
+            // inside one step — every "flare" this bot ever dropped was none.
+            sim.key(flareCode, true);
+            flareUp = T + 0.2;
+            flareCd = 2;
             say('flare');
           }
           if (info.failWhy) shot(`${missionId}-${roleId}-${fail ? 'fail' : 'pass'}-missile-hit`);

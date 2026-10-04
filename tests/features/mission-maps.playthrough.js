@@ -36,7 +36,7 @@ export async function playMoved(sim, say = () => {}, opts = {}) {
     const checks = [];
     return { checks, ok(name, pass, detail = '') { checks.push({ name, pass: !!pass, detail: String(detail) }); return !!pass; }, get failed() { return checks.filter((c) => !c.pass); } };
   };
-  const flight = ['carrierqual', 'tail', 'deadstick', 'chaser', 'meteor-shower', 'meteor-dodge', 'meteor-photo', 'goofy-gulls', 'goofy-cow', 'goofy-icecream'];
+  const flight = ['carrierqual', 'tail', 'deadstick', 'chaser', 'meteor-shower', 'meteor-dodge', 'meteor-photo'];
 
   for (const id of flight) {
     if (!want(id)) continue;

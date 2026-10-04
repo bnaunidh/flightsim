@@ -69,9 +69,6 @@ export async function flyMission(sim, id, { role = undefined, maxSeconds = undef
     'meteor-dodge': { budget: 230, weave: 'rocks' },
     'meteor-photo': { budget: 240 },
     'meteor-shower': { budget: 40, neverEnds: true },
-    'goofy-gulls': { budget: 320, fullPower: true, alt: 250 },
-    'goofy-icecream': { budget: 480, high: { cruise: 760 }, drop: 'drop' },
-    'goofy-cow': { budget: 600, deck: ['land'], gentle: true },
     carrierqual: { budget: 900, deck: ['trap'], approachAt: ['pattern'] },
   };
   const plan = PLAN[id] || { budget: 420 };

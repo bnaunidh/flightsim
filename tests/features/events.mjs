@@ -3,19 +3,10 @@
  *
  *   node tests/features/events.mjs
  *
- * Two kinds of check.
- *
- * SHAPE — every goofy and events mission is a real mission: an id, a name, a
+ * SHAPE — every events mission is a real mission: an id, a name, a
  * category, a difficulty the menu can lower-case, steps that each have a
  * check function (or a duration), a map that exists, an aeroplane that exists,
  * weather the weather system knows, and an id nobody else has used.
- *
- * PHYSICS — the numbers the goofy missions are balanced on still hold on the
- * real flight model, flown here in node with no browser: the trainer really
- * does out-fly the seagulls, really does get the ice cream there before it
- * melts, really is faster than the bee; the fighter really does roll upside
- * down inside the tower window and really does fly a loop. A retune of the
- * trainer that quietly made a mission impossible fails here, by name.
  *
  * Exits non-zero if anything fails.
  */
@@ -53,7 +44,6 @@ const ok = (name, pass, detail = '') => {
 
 const THREE = await imp('src/vendor/three.module.js');
 const { MISSIONS } = await imp('src/game/missions.js');
-const { MISSIONS: GOOFY, TUNING } = await imp('src/game/extra/goofy.js');
 const { MISSIONS: EVENTS, REAL_HIJACK } = await imp('src/game/extra/events.js');
 const { MAPS } = await imp('src/world/maps.js');
 const { AIRCRAFT } = await imp('src/aircraft/types.js');
@@ -65,14 +55,13 @@ const P = await imp('src/aircraft/physics.js');
 
 /* ---------------------------------------------------------------- shape -- */
 
-const mine = [...GOOFY, ...EVENTS];
+const mine = EVENTS;
 // The by-the-book hijack is in the list for everybody and its CARD is hidden
 // until the Dev passcode is in (flight-events.js does that, live, in the
 // browser — events.browser.js checks it there). Here: it is in, and flagged.
 const shaped = mine;
-const CATEGORIES = ['training', 'airline', 'military', 'rescue', 'delivery', 'goofy', 'events', 'meteor'];
+const CATEGORIES = ['training', 'airline', 'military', 'rescue', 'delivery', 'events', 'meteor'];
 
-ok('goofy: 10 to 12 missions', GOOFY.length >= 10 && GOOFY.length <= 12, GOOFY.length);
 ok('events: the hijack and the break-in both have a mission', EVENTS.some((m) => m.id === 'event-hijack') && EVENTS.some((m) => m.id === 'event-breakin'));
 ok('events: the realistic hijack is a mission too', REAL_HIJACK && REAL_HIJACK.id === 'event-hijack-real' && REAL_HIJACK.category === 'events');
 ok('events: ...in the list, flagged devOnly so its card waits for the Dev passcode',
@@ -91,7 +80,7 @@ for (const m of shaped) {
   ok(`${where}: has an id, a name, a short line, a blurb, a reward and an icon`,
     typeof m.id === 'string' && m.id && m.name && m.short && m.blurb && m.reward && m.icon);
   ok(`${where}: category is one of the agreed ones`, CATEGORIES.includes(m.category), m.category);
-  ok(`${where}: category matches its file`, (GOOFY.includes(m) ? 'goofy' : 'events') === m.category, m.category);
+  ok(`${where}: category matches its file`, m.category === 'events', m.category);
   // A step you have to DO something for says how; a five-second pause does not need to.
   const noHint = m.steps.filter((st) => typeof st.check === 'function' && !(typeof st.hint === 'string' && st.hint.length > 0));
   ok(`${where}: every step you have to do something for has a hint`, noHint.length === 0, noHint.map((st) => st.id).join());
@@ -127,7 +116,7 @@ for (const m of shaped) {
 
 ok('flight-events: one flight in ten for the hijack, one in six for the break-in', FE.ODDS.hijack === 0.1 && Math.abs(FE.ODDS.breakin - 1 / 6) < 1e-9, JSON.stringify(FE.ODDS));
 ok('flight-events: registered as an extension', extStatus().some((e) => e.id === 'flightevents'));
-ok('goofy props: registered as an extension', extStatus().some((e) => e.id === 'goofyprops'));
+ok('event cards: registered as an extension', extStatus().some((e) => e.id === 'eventcards'));
 const labels = extDevActions().map((a) => a.label);
 ok('flight-events: Dev panel buttons', ['Trigger hijack event', 'Realistic hijack', 'Trigger airport break-in'].every((l) => labels.includes(l)), labels.join(' | '));
 ok('flight-events: the long-haul aeroplane it picks exists', AIRCRAFT.some((a) => a.id === FE.longHaulId()), FE.longHaulId());
@@ -609,136 +598,6 @@ ok('flight-events: nothing is running before a flight', FE.hijackInfo().phase ==
     got ? got.ids.join(',') : `${out.status} ${String(out.stderr).slice(0, 200)}`);
   ok('off switch: ...and the missions read a quiet "nothing happening" through the bridge', !!got && !got.api && got.hb === -1 && got.phase === 'idle',
     got ? JSON.stringify(got) : 'no output');
-}
-
-/* -------------------------------------------------------------- physics -- */
-
-/**
- * Fly one aeroplane on the real flight model. `control(ac, t)` sets the
- * controls each step; returns the aeroplane.
- */
-function fly(id, { pos, heading = 90, speed = 60, altAGL = 400, seconds = 30, map = 'kestrel', control = null, onStep = null }) {
-  T.applyMap(map);
-  P.applyAircraft(id);
-  const ac = new P.Aircraft();
-  const w = new Weather();
-  w.load({ time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 90 });
-  ac.mode = 'simplified';
-  ac.reset({ pos: pos.clone(), headingDeg: heading, speed, altAGL, engineOn: true });
-  ac.controls.throttle = 1;
-  const STEP = 1 / 120;
-  for (let t = 0; t < seconds; t += STEP) {
-    if (control) control(ac, t);
-    ac.update(STEP, w);
-    if (onStep) onStep(ac, t, STEP);
-    if (ac.crashed) break;
-  }
-  return ac;
-}
-
-// The trainer, flat out and level, over the sea.
-const cruise = fly('skylark', { pos: new THREE.Vector3(-8000, 0, 3000), speed: 60, altAGL: 400, seconds: 90 });
-const vTrainer = cruise.groundSpeed;
-ok('physics: the trainer cruises (flat out, level) without crashing', !cruise.crashed && vTrainer > 55, `${vTrainer.toFixed(1)} m/s`);
-
-// Seagull Showdown: the gulls fly the course at a fixed speed; a straight
-// course at the trainer's speed, plus a generous 20 s for three turns, must
-// still beat them.
-const tGulls = TUNING.raceLength / TUNING.gullSpeed;
-const tYou = TUNING.raceLength / vTrainer + 20;
-ok('goofy-gulls: flat out, the trainer beats the seagulls with time to spare', tYou < tGulls - 5, `you ${tYou.toFixed(0)} s, gulls ${tGulls.toFixed(0)} s`);
-// ...and at the throttle it spawns at, dawdling at 55 m/s with no turns, it
-// is close — the race is a race.
-ok('goofy-gulls: at a lazy 45 m/s the seagulls win', TUNING.raceLength / 45 > tGulls, `${(TUNING.raceLength / 45).toFixed(0)} s vs ${tGulls.toFixed(0)} s`);
-
-// Ice Cream Emergency: from the spawn at ~2,000 ft to the pad, then a
-// minute of descent at ~800 ft, then 25 s under the parachute at pad height.
-{
-  const s = TUNING.iceSpawn;
-  const d = Math.hypot(TUNING.icePad.x - s.pos.x, TUNING.icePad.z - s.pos.z);
-  const cruiseMelt = (d / vTrainer) * TUNING.meltRate(610);
-  const descentMelt = 60 * TUNING.meltRate(245);
-  const fallMelt = 25 * TUNING.meltRate(120);
-  const total = cruiseMelt + descentMelt + fallMelt;
-  ok('goofy-icecream: a sensible flight arrives with ice cream to spare', total < 0.65, `${(total * 100).toFixed(0)}% melted`);
-  // Two misses cost two more descents and falls: still not quite a milkshake.
-  ok('goofy-icecream: there is room for one missed drop', total + descentMelt + fallMelt < 1, `${((total + descentMelt + fallMelt) * 100).toFixed(0)}% after a miss`);
-  const lowMelt = (d / vTrainer) * TUNING.meltRate(90) + descentMelt + fallMelt;
-  ok('goofy-icecream: flying the whole way low melts more (the lesson)', lowMelt > total * 1.25, `${(lowMelt * 100).toFixed(0)}% vs ${(total * 100).toFixed(0)}%`);
-}
-
-// Buzz Off!: the bee is slower than the trainer everywhere on its path.
-{
-  const a = new THREE.Vector3();
-  const b = new THREE.Vector3();
-  let vmax = 0;
-  for (let t = 0; t < 900; t += 1) {
-    TUNING.beeAt(t, a);
-    TUNING.beeAt(t + 1, b);
-    vmax = Math.max(vmax, Math.hypot(b.x - a.x, b.z - a.z));
-  }
-  ok('goofy-bee: the bee is never faster than the trainer', vmax < vTrainer * 0.85, `bee up to ${vmax.toFixed(1)} m/s, trainer ${vTrainer.toFixed(1)}`);
-}
-
-// Hello, Tower!: full roll in the fighter reaches upside down inside the
-// window, well above the floor, and it rolls itself back when let go.
-{
-  let invAt = null;
-  let lost = 0;
-  const y0 = 14 + 250;
-  const ac = fly('vanguard', {
-    pos: new THREE.Vector3(-5000, 0, 3000),
-    speed: 140,
-    altAGL: 250 + 34,
-    seconds: 7,
-    control: (a, t) => {
-      a.controls.throttle = 0.8;
-      a.controls.roll = t < 1.2 ? 1 : 0;
-    },
-    onStep: (a, t) => {
-      if (invAt === null && Math.abs(a.bankAngleDeg()) > TUNING.towerFlip.bank) invAt = t;
-      lost = Math.max(lost, y0 - a.pos.y);
-    },
-  });
-  ok('goofy-tower: the fighter is upside down within about a second', invAt !== null && invAt < 1.5, invAt);
-  // Roll and recovery together must fit above the lowest height the check
-  // accepts, with room to spare over an 80 m tower and the grass beside it.
-  ok('goofy-tower: a flip at the bottom of the window still recovers 40 m up', TUNING.towerFlip.minAgl - lost > 40,
-    `loses ${lost.toFixed(0)} m, window floor ${TUNING.towerFlip.minAgl} m`);
-  ok('goofy-tower: and rolls back upright on its own', Math.abs(ac.bankAngleDeg()) < 30 && !ac.crashed, ac.bankAngleDeg().toFixed(0));
-}
-
-// Loop-the-Loop: hold the stick back in the fighter and it goes all the way
-// round — nose up, over the top, and back level — without losing height.
-{
-  const f = new THREE.Vector3();
-  const u = new THREE.Vector3();
-  let noseUp = false;
-  let inverted = false;
-  let cum = 0;
-  let minY = Infinity;
-  let back = false;
-  const ac = fly('vanguard', {
-    pos: new THREE.Vector3(-5000, 0, 3000),
-    speed: 150,
-    altAGL: 800,
-    seconds: 32,
-    control: (a) => {
-      a.controls.pitch = back ? 0 : 1;
-      a.controls.throttle = 1;
-    },
-    onStep: (a, t, dt) => {
-      a.forward(f);
-      a.up(u);
-      if (Math.asin(f.y) > (55 * Math.PI) / 180) noseUp = true;
-      if (noseUp) cum += a.omega.x * dt;
-      if (noseUp && u.y < -0.3) inverted = true;
-      if (inverted && u.y > 0.5 && cum > (280 * Math.PI) / 180) back = true;
-      minY = Math.min(minY, a.pos.y);
-    },
-  });
-  ok('goofy-loops: holding S flies a whole loop in the fighter', noseUp && inverted && back && !ac.crashed, `${((cum * 180) / Math.PI).toFixed(0)} deg, crashed ${ac.crashed}`);
-  ok('goofy-loops: without sinking below where it started', minY > 766 - 80, `lowest ${minY.toFixed(0)} m from ${766}`);
 }
 
 /* --------------------------------------------------------------- report -- */

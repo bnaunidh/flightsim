@@ -88,7 +88,13 @@ function currentSeat(sim) {
   if (!def) return { mission: null, seat: null };
   const id = def.baseId || def.id;
   if (id !== ID_NORMAL && id !== ID_ATTACK) return { mission: null, seat: null };
-  return { mission: id === ID_ATTACK ? 'attack' : 'normal', seat: def.roleId === 'escort' ? 'escort' : 'captain' };
+  // The President's seat (src/game/roles/afo-president.js) flies nothing and
+  // has its own jet, escort and drones: none of the captain's side runs for it
+  // — it used to, round the parked, hidden real aeroplane (a second escort
+  // that "broke off" at once, a second wave of drones at the airfield, the
+  // FLARE button on screen).
+  const seat = def.roleId === 'escort' ? 'escort' : def.roleId === 'president' ? 'president' : 'captain';
+  return { mission: id === ID_ATTACK ? 'attack' : 'normal', seat };
 }
 
 export function touchFireHeld() {
@@ -107,6 +113,7 @@ export function afoInfo() {
     missilesInbound: a ? a.missilesInbound : 0,
     stats: a ? { ...a.stats } : null,
     decoysUsed: S.decoysUsed,
+    nearestMissile: Number.isFinite(S.nearestMissile) ? S.nearestMissile : null,
     home: S.home,
     failWhy: S.failWhy,
   };
@@ -220,16 +227,23 @@ function runCaptainAttack(sim, dt) {
   if (!S.attack) return;
   S.attack.update(dt, ac.pos, ac.vel);
 
-  // Your escort's own gun: a fair, steady aim — missiles first, then
-  // drones, led for the pellet's flight (AttackField.aimFrom()). Aimed
-  // straight at the nearest drone, it shot down nothing in 600 s.
+  // Your escort's own gun: a missile about to reach you first, then the
+  // drones, led for the pellet's flight (AttackField.aimGuard()). With
+  // aimFrom()'s "any missile first" it never got round to the drones — they
+  // keep one in the air all the time — so they launched at you for the whole
+  // three minutes and four flares could never be enough: measured, the
+  // captain's seat could not be won. Its kills are AttackField.guardKills():
+  // a drone it holds in its sights a few seconds is down, and any drone
+  // still up a minute into the fight is its too. The flying and the flares
+  // are still yours.
   if (S.escort) {
     S.escortGunCd -= dt;
     if (S.escortGunCd <= 0) {
-      const dir = S.attack.aimFrom(S.escort.pos, S.escort.vel, AIM);
+      const dir = S.attack.aimGuard(S.escort.pos, S.escort.vel, ac.pos, AIM);
       if (dir) S.attack.fireGun(S.escort.pos.clone().addScaledVector(dir, 6), dir, S.escort.vel);
       S.escortGunCd = 0.3;
     }
+    if (S.waveSent) S.attack.guardKills(S.escort.pos, dt, { capAt: 11 + 60 });
   }
 
   // Your own flares/chaff: the key is edge-triggered here (one press, one
@@ -240,8 +254,25 @@ function runCaptainAttack(sim, dt) {
   S.flareHeldLast = heldNow;
   S.decoyCd = Math.max(0, S.decoyCd - dt);
 
+  /*
+   * When to drop them. A flare burns for five seconds and a missile is
+   * launched three kilometres out, so flares dropped at the launch — when the
+   * "MISSILE IN THE AIR" beat comes up — have burned out before it arrives
+   * (measured: 0 of 40 decoyed from 1.5 km or more, 3 in 4 from inside 1 km).
+   * Say so when it matters: once per missile, as it comes inside 1.1 km.
+   */
+  S.nearestMissile = Infinity;
+  for (const m of S.attack.missiles) {
+    if (!m.alive || m.flare) continue;
+    const d = m.pos.distanceTo(ac.pos);
+    if (d < S.nearestMissile) S.nearestMissile = d;
+    if (d < 1100 && !m._called) {
+      m._called = true;
+      notify(sim, `MISSILE CLOSE — FLARES NOW (${4 - S.decoysUsed} left)`, 'bad', 2.5);
+    }
+  }
   if (S.attack.stats.hits >= 2 && !S.failWhy) {
-    S.failWhy = 'A missile got through. Decoy with flares (4) earlier, or trust your escort to clear the drones first.';
+    S.failWhy = 'Two missiles got through. Drop flares (4) when one is CLOSE — the "MISSILE CLOSE" call — not when it launches: a flare only burns for a few seconds.';
   }
   runwayFrame();
   S.home = flat(ac.pos, RW.c) < 1500;

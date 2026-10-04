@@ -152,6 +152,12 @@ export class Drone {
     const finR = new THREE.Mesh(g.fin, m);
     finR.position.set(1.1, 0.3, 1.3);
     this.model.add(body, wing, finL, finR);
+    // A blinking red beacon, so a drone reads at a kilometre — through a
+    // gunsight, a windscreen or the President's cabin window — not just as
+    // a dark speck against the sea.
+    this.beacon = glowSprite(0xff4a3a, 11, 0.85);
+    this.beacon.position.y = 0.6;
+    this.model.add(this.beacon);
     this.model.position.copy(this.pos);
     scene.add(this.model);
     /*
@@ -204,6 +210,7 @@ export class Drone {
     this.model.position.copy(this.pos);
     const h = headingOf(this.vel) * DEG;
     this.model.rotation.set(0, -h, 0);
+    this.beacon.material.opacity = Math.sin(this.t * 6) > 0 ? 0.9 : 0.35;
     this.cooldown -= dt;
   }
 
@@ -274,7 +281,8 @@ export class Missile {
       fin.position.set(s * 0.22, 0, 1.0);
       this.model.add(fin);
     }
-    this.flame = glowSprite(0xffb060, 1.4, 0.95);
+    // Bright enough to follow from another aeroplane (it was 1.4 m: a dot at 500 m).
+    this.flame = glowSprite(0xffb060, 3.2, 0.95);
     this.flame.position.z = 1.4;
     this.model.add(this.flame);
     this.model.position.copy(this.pos);
@@ -469,6 +477,61 @@ export class AttackField {
     out.copy(best.pos).addScaledVector(best.vel, lead);
     if (vel) out.addScaledVector(vel, -lead);
     return out.sub(pos).normalize();
+  }
+
+  /**
+   * An NPC escort's aim, guarding someone else (the jet at `jetPos`): a
+   * missile about to reach the jet first, then the drones themselves, then
+   * any other missile — led for the shot's flight as aimFrom() leads.
+   * aimFrom()'s plain "any missile first" never got round to the drones when
+   * they launch often enough to keep one in the air all the time, and the
+   * wave never ended. A unit vector into `out`, or null.
+   */
+  aimGuard(pos, vel, jetPos, out, range = 1300) {
+    const pick = (list, test) => {
+      let best = null;
+      let bd = range * range;
+      for (const t of list) {
+        if (!t.alive || (test && !test(t))) continue;
+        const d = t.pos.distanceToSquared(pos);
+        if (d < bd) {
+          bd = d;
+          best = t;
+        }
+      }
+      return best;
+    };
+    const target = pick(this.missiles, (m) => !m.flare && m.pos.distanceTo(jetPos) < 700)
+      || pick(this.drones)
+      || pick(this.missiles);
+    if (!target) return null;
+    const lead = target.pos.distanceTo(pos) / PELLET_SPEED;
+    out.copy(target.pos).addScaledVector(target.vel, lead);
+    if (vel) out.addScaledVector(vel, -lead);
+    return out.sub(pos).normalize();
+  }
+
+  /**
+   * An NPC escort's kills. Its rounds carry ~400 m and an NPC holding a
+   * station is no dogfighter, so in a seat where the player cannot fight
+   * (the President's) or is busy flying the jet (the captain's), a drone the
+   * escort has held within `range` — tracers going its way — for `hold`
+   * seconds is down; and from `capAt` (this field's own clock) every drone
+   * still up is. Same sparkle, same tally, as a gun hit. @returns {number} downed now
+   */
+  guardKills(pos, dt, { range = 650, hold = 5, capAt = Infinity } = {}) {
+    let n = 0;
+    for (const d of this.drones) {
+      if (!d.alive) continue;
+      d._held = d.pos.distanceTo(pos) < range ? (d._held || 0) + dt : 0;
+      if (d._held > hold || this.t > capAt) {
+        d.alive = false;
+        this.stats.shotDrones++;
+        explode(this.sim, d.pos, { kind: 'sparkle', size: 0.9 });
+        n++;
+      }
+    }
+    return n;
   }
 
   /**

@@ -1,5 +1,5 @@
 /**
- * Every sound the flight events and the goofy missions make.
+ * Every sound the flight events make.
  *
  * All of it is synthesised here with Web Audio — oscillators, filters and the
  * mixer's shared noise buffers. No files, no speech. And all of it is QUIET:
@@ -56,15 +56,6 @@ export function chime(sim) {
   if (!m) return;
   note(m, { freq: 659, dur: 0.9, gain: 0.07, bus: 'alerts', attack: 0.004 });
   note(m, { freq: 523, when: 0.42, dur: 1.2, gain: 0.07, bus: 'alerts', attack: 0.004 });
-}
-
-/** Three soft thumps: somebody knocking on a door that is not going to open. */
-export function knock(sim) {
-  const m = mixerOf(sim);
-  if (!m) return;
-  for (let i = 0; i < 3; i++) {
-    note(m, { freq: 110, sweepTo: 60, when: i * 0.26, dur: 0.16, gain: 0.07, attack: 0.002 });
-  }
 }
 
 /**
@@ -165,46 +156,12 @@ export function thud(sim) {
   note(m, { freq: 70, sweepTo: 40, dur: 0.35, gain: 0.07, attack: 0.003 });
 }
 
-/** A cow, more or less: a falling sawtooth through an "oo" formant. */
-export function moo(sim, pitch = 1) {
-  const m = mixerOf(sim);
-  if (!m) return;
-  note(m, { freq: 150 * pitch, sweepTo: 98 * pitch, dur: 1.15, gain: 0.08, type: 'sawtooth', attack: 0.16, filter: { type: 'lowpass', freq: 520, q: 3 } });
-  note(m, { freq: 75 * pitch, sweepTo: 50 * pitch, dur: 1.1, gain: 0.03, type: 'triangle', attack: 0.2 });
-}
-
-/** A rubber duck's quack: two nasal square-wave blips. */
-export function quack(sim) {
-  const m = mixerOf(sim);
-  if (!m) return;
-  for (let i = 0; i < 2; i++) {
-    note(m, { freq: 560, sweepTo: 360, when: i * 0.22, dur: 0.16, gain: 0.05, type: 'square', filter: { type: 'bandpass', freq: 1300, q: 3 } });
-  }
-}
-
 /** A bubble going pop. */
 export function pop(sim) {
   const m = mixerOf(sim);
   if (!m) return;
   m.noiseBurst({ bus: 'environment', duration: 0.07, gain: 0.07, type: 'highpass', freq: 2400, q: 0.7 });
   note(m, { freq: 700, sweepTo: 1800, dur: 0.08, gain: 0.05, attack: 0.002 });
-}
-
-/** A seagull, laughing at you. */
-export function gull(sim, level = 1) {
-  const m = mixerOf(sim);
-  if (!m || level < 0.05) return;
-  for (let i = 0; i < 3; i++) {
-    note(m, { freq: 1500 - i * 80, sweepTo: 900, when: i * 0.19, dur: 0.16, gain: 0.035 * level, type: 'triangle', filter: { type: 'bandpass', freq: 1400, q: 2 } });
-  }
-}
-
-/** A quick "wheee-oo" for the UFO zipping off. */
-export function whoosh(sim) {
-  const m = mixerOf(sim);
-  if (!m) return;
-  note(m, { freq: 380, sweepTo: 1900, dur: 0.55, gain: 0.05, type: 'sine', attack: 0.02 });
-  note(m, { freq: 1900, sweepTo: 240, when: 0.5, dur: 0.6, gain: 0.04, type: 'sine' });
 }
 
 /** The pizza car's horn: a cheerful, slightly rubbish beep-beep. */

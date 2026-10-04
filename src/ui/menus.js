@@ -65,7 +65,6 @@ const CAT_ICONS = {
   rescue: '<circle cx="12" cy="12" r="8.4"/><circle cx="12" cy="12" r="3.6"/><path d="m6.1 6.1 3.4 3.4M17.9 6.1l-3.4 3.4M6.1 17.9l3.4-3.4M17.9 17.9l-3.4-3.4"/>',
   challenge: '<path d="M7.5 4.5h9v4a4.5 4.5 0 0 1-9 0Z"/><path d="M7.5 6.3H4.6a3 3 0 0 0 3.1 4M16.5 6.3h2.9a3 3 0 0 1-3.1 4"/><path d="M12 13v3.4"/><path d="M8.6 19.6h6.8l-1-3.2H9.6Z"/>',
   events: '<path d="M6.6 17v-4.8a5.4 5.4 0 0 1 10.8 0V17"/><path d="M4.6 17h14.8v2.6H4.6Z"/><path d="M12 3v2M4.4 6.1l1.4 1.4M19.6 6.1l-1.4 1.4"/>',
-  goofy: '<circle cx="12" cy="12" r="8.4"/><path d="M8.3 14a4.4 4.4 0 0 0 7.4 0"/><circle cx="9.2" cy="9.9" r="0.9" fill="currentColor" stroke="none"/><circle cx="14.8" cy="9.9" r="0.9" fill="currentColor" stroke="none"/>',
   meteor: '<circle cx="15.4" cy="8.6" r="3.8"/><path d="M12.6 11.4 3.8 20.2M10.9 8.4 5.4 13.9M15.6 13 10.1 18.5"/>',
   fire: '<path d="M12 20.8c-3.8 0-6.4-2.5-6.4-6 0-3.2 2.2-5 3.5-7.6.4 1.8 1.3 2.9 2.6 3.5.3-3.2 1.7-5.6 4-7.5-.3 2.9.8 4.7 2 6.5.9 1.4 1.5 2.9 1.5 5.1 0 3.5-2.9 6-7.2 6Z"/><path d="M12 20.8c-1.6 0-2.7-1.1-2.7-2.7 0-1.6 1.2-2.5 2-3.8.8 1.2 3.4 2.1 3.4 4 0 1.4-1.1 2.5-2.7 2.5Z"/>',
   military: '<path d="M12 3.2 19.5 6v5.6c0 4.3-3.1 7.7-7.5 9.2-4.4-1.5-7.5-4.9-7.5-9.2V6Z"/><path d="m12 8.3 1.2 2.5 2.7.3-2 1.8.6 2.7-2.5-1.4-2.5 1.4.6-2.7-2-1.8 2.7-.3Z"/>',
@@ -121,7 +120,6 @@ export const MISSION_CATEGORIES = [
   { id: 'fire', label: 'Firefighting', blurb: 'The forest is on fire — scoop up water and put it out', colour: '#ff6a2b', icon: 'fire' },
   { id: 'challenge', label: 'Challenges', blurb: 'Against the clock, the weather or the ground', colour: '#c39bff', icon: 'challenge' },
   { id: 'events', label: 'Emergencies', blurb: 'Something goes wrong — stay calm and get it down', colour: '#ffa24d', icon: 'events' },
-  { id: 'goofy', label: 'Random & goofy', blurb: 'Silly ones, just for fun', colour: '#ff8fd6', icon: 'goofy' },
   { id: 'meteor', label: 'Meteor mode', blurb: 'Things falling out of space — keep out of the way', colour: '#8fa6ff', icon: 'meteor' },
   { id: 'military', label: 'Military', blurb: 'Fast jets, the carrier and the range', colour: '#b9cf8f', icon: 'military' },
 ];
@@ -186,7 +184,6 @@ const MISSION_CATEGORY_WORDS = {
   wildfire: 'fire', wildfires: 'fire', 'forest fire': 'fire', 'forest fires': 'fire', 'water bombing': 'fire',
   challenge: 'challenge', challenges: 'challenge',
   events: 'events', event: 'events', emergency: 'events', emergencies: 'events',
-  goofy: 'goofy', random: 'goofy', silly: 'goofy', 'random & goofy': 'goofy',
   meteor: 'meteor', meteors: 'meteor', 'meteor mode': 'meteor',
   military: 'military',
 };
@@ -239,7 +236,6 @@ const MISSION_WORDS = [
   [/rescue|medevac|overboard|winch|casualty|stranded|call-?out|lifeboat|ambulance|search/, 'rescue'],
   [/passenger|airline|charter|cargo|freight|long ?haul|jumbo|holiday|boarding/, 'airline'],
   [/deliver|parcel|courier|supplies|supply|relay|mail|post run|pizza/, 'delivery'],
-  [/goofy|silly|random|banana|rubber duck|chicken|cow|upside ?down|bouncy|wobbl/, 'goofy'],
   [/first|lesson|training|practice|circuit|learn|basics/, 'training'],
 ];
 

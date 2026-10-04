@@ -253,8 +253,7 @@ export function difficultyRank(label) {
  * under each one, not by the name on the heading:
  *
  *   1 Practice  Training — one new thing at a time, nothing to break (First
- *               Run is "learn where the pedals are"). Random & goofy — a
- *               rubber duck, a cow, a giant bee, nearly all in the Skylark.
+ *               Run is "learn where the pedals are").
  *   2 Jobs      Deliveries and Passengers & cargo — a clock and a load, flown
  *               or driven somewhere ordinary. Meteor mode — dodging and
  *               zapping rocks in the Courier, an arcade game in the sky.
@@ -272,7 +271,7 @@ export function difficultyRank(label) {
  * somebody places it here.
  */
 export const CATEGORY_TIERS = [
-  { tier: 1, name: 'Practice', mult: 1, categories: ['training', 'goofy'] },
+  { tier: 1, name: 'Practice', mult: 1, categories: ['training'] },
   { tier: 2, name: 'Jobs', mult: 1.25, categories: ['delivery', 'airline', 'meteor'] },
   { tier: 3, name: 'Danger', mult: 1.5, categories: ['rescue', 'fire', 'challenge', 'events', 'space'] },
   { tier: 4, name: 'Elite', mult: 1.75, categories: ['military'] },

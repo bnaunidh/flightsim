@@ -65,10 +65,19 @@ function scoreFor(elapsed, par) {
  * "Air Force One" — the normal flight, seat 'captain'
  * ================================================================== */
 
-/** A point out over the sea, well clear of the island, on the departure heading. */
-function seaWaypoint(uMul, vOff, altAdd) {
+/**
+ * A point out over the sea, well clear of the island, on the departure
+ * heading: `beyond` metres past the runway's far end.
+ *
+ * It was a multiple of the runway's length (4.5 x from its middle), which
+ * was 4.4 km past the end at Kestrel (1,100 m of runway) but 15 km past it at
+ * Gateway (3,800 m) once v55 moved this mission there — four extra minutes
+ * of cruise each way before "turn back" was even asked for. Kestrel's own
+ * distance, kept on every field.
+ */
+function seaWaypoint(beyond, vOff, altAdd) {
   runwayFrame();
-  const p = rw(RW.L * uMul, vOff);
+  const p = rw(RW.L / 2 + beyond, vOff);
   p.y += altAdd;
   return p;
 }
@@ -151,7 +160,9 @@ const afoNormal = {
       id: 'depart',
       text: 'You are the captain of Air Force One. Full power, take off, and climb out over the sea. Guardian lead is joining on your wing.',
       hint: 'Full power (Shift), ease back around 160 knots, then wheels up (G).',
-      atc: { text: `Air Force One, ${field()} Tower, winds light, cleared for take-off.`, voice: 'tower' },
+      get atc() {
+        return { text: `Air Force One, ${field()} Tower, winds light, cleared for take-off.`, voice: 'tower' };
+      },
       check: (ctx) => {
         trackSmooth(ctx);
         return ctx.ac.airborneTime > 3 && ctx.ac.agl > 100;
@@ -162,16 +173,18 @@ const afoNormal = {
       text: 'Climb out to sea and hold your heading. Guardian is settled on your wing — fly smoothly for him.',
       hint: 'Gentle control inputs. A big jet does not like to be hurried.',
       targetLabel: 'Cruise point',
-      target: () => seaWaypoint(4.5, 1200, 550),
+      target: () => seaWaypoint(4400, 1200, 550),
       check: (ctx) => {
         trackSmooth(ctx);
-        const p = seaWaypoint(4.5, 1200, 550);
+        const p = seaWaypoint(4400, 1200, 550);
         return flat(ctx.ac.pos, p) < 1100 && ctx.ac.agl * FT > 1200;
       },
     },
     {
       id: 'approach',
-      text: `Turn back towards ${field()} and begin your descent. Guardian will peel off as you line up.`,
+      get text() {
+        return `Turn back towards ${field()} and begin your descent. Guardian will peel off as you line up.`;
+      },
       hint: 'Ease the power back and let the nose drop a little. Follow the arrow in.',
       targetLabel: 'Runway threshold',
       target: () => RUNWAY.touchdown,
@@ -266,7 +279,9 @@ const afoAttack = {
       id: 'cruise',
       text: 'You are the captain of Air Force One, over open water. Everything is calm — for now.',
       hint: 'Keep the wings level.',
-      atc: { text: `Air Force One, ${field()} Approach. Radar contact.`, voice: 'approach' },
+      get atc() {
+        return { text: `Air Force One, ${field()} Approach. Radar contact.`, voice: 'approach' };
+      },
       check: (ctx) => ctx.elapsed > 6,
     },
     {
@@ -278,7 +293,7 @@ const afoAttack = {
     {
       id: 'evade',
       text: 'Fly evasive — turns, a dive — and keep going. If a missile gets close, drop flares (press 4, or tap FLARE).',
-      hint: 'A missile chases the newest flare for a few seconds. Do not drop them all at once.',
+      hint: 'Wait for "MISSILE CLOSE", then flares (4). A flare only burns a few seconds: drop it too early and it is gone before the missile gets there.',
       check: (ctx) => {
         const i = afoInfo();
         return (i.dronesAlive === 0 && i.missilesInbound === 0) || ctx.runner.stepElapsed > 180;
@@ -286,9 +301,13 @@ const afoAttack = {
     },
     {
       id: 'home',
-      text: `Guardian has it clear. Head for ${field()} and get down safe.`,
+      get text() {
+        return `Guardian has it clear. Head for ${field()} and get down safe.`;
+      },
       hint: 'Follow the arrow home.',
-      targetLabel: field(),
+      get targetLabel() {
+        return field();
+      },
       target: () => RUNWAY.touchdown,
       // afoInfo().home is runCaptainAttack's own flat(ac.pos, RW.c) < 1500,
       // computed there (where it already calls runwayFrame() first) — read
@@ -297,8 +316,12 @@ const afoAttack = {
     },
     {
       id: 'land',
-      text: `Land at ${field()}.`,
-      hint: 'Gear down (G), flaps down (F).',
+      get text() {
+        return `Land at ${field()}.`;
+      },
+      // Ironhead's runway 09 has a ridge 1.2-1.7 km short of the touchdown that
+      // comes within 12 m of the three-degree slope: say so.
+      hint: 'Gear down (G), flaps down (F). High ground just short of the runway: stay on the approach lights or a touch above, wings level.',
       targetLabel: 'Touchdown',
       target: () => RUNWAY.touchdown,
       check: (ctx) => ctx.ac.onGround && ctx.ac.groundSpeed < 2.5 && ctx.ac.groundTime > 1.2,

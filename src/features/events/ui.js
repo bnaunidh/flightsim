@@ -1,10 +1,10 @@
 /**
- * The on-screen bits the flight events and the goofy missions share: a story
- * card on the right (who is talking and what they said, with a transponder
- * readout, a big button or a choice of answers when there is something to
- * press), a meter underneath it for the missions that have one — toast, ice
- * cream, the cow's mood, how angry the hijacker is — and a small arrow that
- * says which way to turn when there is no mission to put one on the HUD.
+ * The on-screen bits the flight events share: a story card on the right (who
+ * is talking and what they said, with a transponder readout, a big button or
+ * a choice of answers when there is something to press), a meter underneath
+ * it for the missions that have one — toast, how angry the hijacker is — and
+ * a small arrow that says which way to turn when there is no mission to put
+ * one on the HUD.
  *
  * It lives in the extension layer, which sits ABOVE the menus (z-index 30
  * against their 10), and the game only calls a feature's update() while it is
@@ -16,9 +16,13 @@
  * The buttons are the only pieces of this that take clicks. Everything else
  * is pointer-events: none, like the layer it sits in — a card must never be
  * the reason a tap meant for the touch stick went nowhere.
+ *
+ * It also registers its own small extension ('eventcards', below) purely to
+ * age the card down every frame — see ageCard() — so it works even if
+ * flight-events is the only thing that ever imports this module.
  */
 
-import { extLayer } from '../../game/extensions.js';
+import { extLayer, registerExtension } from '../../game/extensions.js';
 import { isKey, keyName, rekey, bindingsVersion } from '../../flight/input.js';
 
 const CSS = `
@@ -284,8 +288,8 @@ export function showCard(sim, { who = '', text = '', tone = 'info', code = null,
 
 /**
  * Time a card out, in game seconds: called from the game's own update (the
- * goofyprops extension, which is always loaded), so it stands still while
- * the game is paused. It used to be timed off performance.now() by the
+ * 'eventcards' extension below, which is always loaded), so it stands still
+ * while the game is paused. It used to be timed off performance.now() by the
  * panel's 250 ms watcher, and a card could vanish behind the pause screen —
  * the 20 s ending of a hijack among them.
  */
@@ -417,6 +421,13 @@ export function hideAll() {
   hideMeter();
   hideGuide();
 }
+
+registerExtension({
+  id: 'eventcards',
+  update(sim, dt) {
+    ageCard(dt);
+  },
+});
 
 /** For the tests: what is on screen right now. */
 export function uiState() {

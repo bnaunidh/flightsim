@@ -94,7 +94,17 @@ for (const [where, m] of aircraftMissions) {
   else grounded++;
 }
 const onBoard = airborne.filter((a) => a.where === 'board').length;
-ok('the board has airborne missions to check (and ground ones)', onBoard >= 20 && grounded >= 20, `${onBoard} in the air, ${grounded} on the ground`);
+const boardTotal = aircraftMissions.filter(([where]) => where === 'board').length;
+// Sanity floor, not an exact count: enough airborne AND grounded missions exist to
+// meaningfully exercise the budget check below. Tied to a fraction of the board's own
+// size instead of a magic number, so trimming/adding missions elsewhere — like the
+// Goofy removal, which quietly dropped the old onBoard >= 20 floor to 18 — doesn't
+// leave this check stale again.
+ok(
+  'the board has airborne missions to check (and ground ones)',
+  onBoard > 0 && onBoard >= Math.ceil(boardTotal * 0.4) && grounded >= 20,
+  `${onBoard} in the air, ${grounded} on the ground, of ${boardTotal} on the board`
+);
 
 // Running on Fumes: placed at 80% like every airborne start, then its own
 // onStart puts the leak's 9 litres in — and that is what it flies on.

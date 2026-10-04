@@ -183,8 +183,12 @@ function createNormalEscort(sim, def) {
     const sy = LOC.y - 5;
     const sz = LOC.z + 30;
     const inSlot = Math.abs(sx) < 45 && Math.abs(sy) < 30 && Math.abs(sz) < 70;
-    st.holdTotal += dt;
-    if (inSlot) st.holdGood += dt;
+    // Station-keeping is judged from the moment you have joined him — the
+    // take-off and the chase to catch him are not time out of the slot.
+    if (st.joinT > 3) {
+      st.holdTotal += dt;
+      if (inSlot) st.holdGood += dt;
+    }
     if (flat(ac.pos, air.pos) < 220 && Math.abs(ac.pos.y - air.pos.y) < 90) st.joinT += dt;
 
     if (air.landPhase === 'final' || air.landPhase === 'flare' || air.landPhase === 'roll' || air.landPhase === 'stopped') {
@@ -253,11 +257,24 @@ const ESCORT_NORMAL = {
   // about when he does. 300 s could never be met.
   parTime: 480,
   cast: { story: STORY_NORMAL, actors: { airliner: { type: 'b747', brain: 'captain' } } },
+  /*
+   * A take-off a player can actually fly. Holding S for about a second at
+   * 120-140 knots — what this step's hint used to ask — pitches either
+   * fighter (Vanguard or F-22) past its tail-strike angle while the wheels
+   * are still on the runway: "The tail struck the ground", ten seconds in,
+   * every time it was tried. With take-off flap set (as airliners.js does for
+   * the jumbos) it flies itself off at about 145 knots with the stick left
+   * alone, and pulling back once it is off the ground is safe.
+   */
+  onStart(ctx) {
+    const ac = ctx.ac;
+    if (ac && ac.onGround && typeof ac.setFlaps === 'function' && ac.flapStep() < 2) ac.setFlaps(2);
+  },
   steps: [
     {
       id: 'scramble',
-      text: 'SCRAMBLE! Air Force One is departing. Full power (Shift), take off, and climb after him.',
-      hint: 'Full power, ease back on S at about 140 knots, then wheels up (G).',
+      text: 'SCRAMBLE! Air Force One is departing. Full power (Shift), let her fly herself off, and climb after him.',
+      hint: 'Take-off flap is set. Full power and keep off S until the wheels leave the runway — then ease back, and wheels up (G).',
       get atc() {
         return { text: `${LEAD}, ${field()} Tower. Scramble, scramble. Cleared for take-off. Contact Approach airborne.`, voice: 'tower', urgency: 1 };
       },
@@ -283,7 +300,10 @@ const ESCORT_NORMAL = {
         const s = normalStory();
         return s ? wingSlot(s.air, 1, T2) : null;
       },
-      check: waitNormal((s) => s.holdTotal > 50 && s.holdGood / s.holdTotal > 0.55),
+      // Done when you have held it well — or, held well or not, when he turns
+      // in for his approach: the slot is over then, and the score says how it
+      // went. (It used to wait for the 55% for ever, through his landing.)
+      check: waitNormal((s) => (s.holdTotal > 50 && s.holdGood / s.holdTotal > 0.55) || s.peeled),
     },
     {
       id: 'peel',
@@ -599,7 +619,9 @@ const ESCORT_ATTACK = {
     },
     {
       id: 'escort-home',
-      text: `Escort him home to ${field()}.`,
+      get text() {
+        return `Escort him home to ${field()}.`;
+      },
       hint: 'Stay close. He is heading in on his own.',
       targetLabel: 'Air Force One',
       target: () => {
@@ -610,7 +632,9 @@ const ESCORT_ATTACK = {
     },
     {
       id: 'land',
-      text: `Land at ${field()} yourself.`,
+      get text() {
+        return `Land at ${field()} yourself.`;
+      },
       hint: 'Gear down (G), flaps down (F).',
       targetLabel: 'Touchdown',
       target: () => RUNWAY.touchdown,

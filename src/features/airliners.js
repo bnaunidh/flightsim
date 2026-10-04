@@ -256,7 +256,11 @@ registerExtension({
     // builds a fresh camera rig after boot.
     installCamera(sim);
     seatPanel(sim);
-    // Take-off flap only on the ground, and only before it has moved.
+    // Take-off flap only on the ground, and only before it has moved — and
+    // never for a seat that flies nothing (the President rides in Air Force
+    // One; the parked 747 under the seat is not anybody's to take off in).
+    const def = sim.runner && sim.runner.def;
+    if (def && def.passenger) return;
     const ac = sim.aircraft;
     if (!ac || !ac.onGround || ac.distanceFlown > 0) return;
     if (ac.vel && ac.vel.lengthSq() > 0.01) return;

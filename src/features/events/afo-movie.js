@@ -130,7 +130,7 @@ function currentSeat(sim) {
 
 /** The other seats' live drone/missile count, read the same way their own steps do. */
 function attackCounts(sim, mission, seat) {
-  if (mission !== ID_ATTACK) return { missiles: 0 };
+  if (mission !== ID_ATTACK && seat !== 'president') return { missiles: 0 };
   try {
     if (seat === 'captain') {
       // Lazy require avoided: this module is only ever imported after
@@ -142,7 +142,8 @@ function attackCounts(sim, mission, seat) {
       return { missiles: CastInfo().missilesInbound || 0 };
     }
     if (seat === 'president') {
-      return { missiles: PresidentInfo().missilesInbound || 0 };
+      const p = PresidentInfo();
+      return { missiles: p.missilesInbound || 0, onGround: !!p.onGround, warned: !!p.warned, clear: !!p.clear };
     }
   } catch (e) {
     /* a feature that is not live yet reports nothing; no beat is fine */
@@ -165,7 +166,10 @@ const END_TITLE = {
   [ID_NORMAL]: 'MISSION COMPLETE',
   [ID_ATTACK]: 'HOME SAFE',
 };
-const LIFTOFF_CHIP = { captain: 'WHEELS UP', escort: 'GUARDIAN, AIRBORNE', president: 'CLIMBING OUT' };
+const END_SUB = { president: 'WELCOME HOME, MR. PRESIDENT' };
+// The President's jet is already flying when the seat starts: no lift-off
+// beat for that seat (its first step is a walk to the office, not a take-off).
+const LIFTOFF_CHIP = { captain: 'WHEELS UP', escort: 'GUARDIAN, AIRBORNE' };
 const LAND_CHIP = { captain: 'DOWN SAFE', escort: 'HOME, TOGETHER', president: 'WHEELS DOWN' };
 const JOIN_CHIP = 'ON HIS WING';
 const MISSILE_CHIP = 'MISSILE IN THE AIR';
@@ -220,6 +224,9 @@ function hideAll() {
 }
 
 function resetRun() {
+  S.lastWarned = false;
+  S.lastClear = false;
+  S.lastOnGround = false;
   S.lastStepIndex = -1;
   S.lastStepId = null;
   S.lastStatus = null;
@@ -278,8 +285,8 @@ registerExtension({
 
     // The first step completing: wheels up / scrambled / climbing out —
     // the same "left the ground" beat, worded per seat.
-    if (S.lastStepIndex === 0 && stepIndex > 0) {
-      queueBeat('caption', { chip: LIFTOFF_CHIP[seat] || LIFTOFF_CHIP.captain });
+    if (S.lastStepIndex === 0 && stepIndex > 0 && LIFTOFF_CHIP[seat]) {
+      queueBeat('caption', { chip: LIFTOFF_CHIP[seat] });
     }
     // The escort's own signature moment: settling onto the wing.
     if (seat === 'escort' && S.lastStepId === 'join' && stepId && stepId !== 'join') {
@@ -296,15 +303,26 @@ registerExtension({
     // A missile just launched: a half-second, cosmetic "bullet-time" pulse —
     // never a change to the simulation's own clock, just a vignette and a
     // word, so nothing about the attack's timing or fairness changes.
-    const missiles = attackCounts(sim, mission, seat).missiles;
+    const counts = attackCounts(sim, mission, seat);
+    const missiles = counts.missiles;
     if (missiles > 0 && S.lastMissiles === 0) queueBeat('pulse', { chip: MISSILE_CHIP });
     S.lastMissiles = missiles;
+    // The President's own beats, read off the seat's info (it has no 'land'
+    // step: you sit down for the landing, you do not fly it).
+    if (seat === 'president') {
+      if (counts.warned && !S.lastWarned) queueBeat('caption', { chip: 'CONTACTS INBOUND', dur: 2 });
+      if (counts.clear && !S.lastClear) queueBeat('caption', { chip: 'SKY CLEAR', dur: 1.8 });
+      if (counts.onGround && !S.lastOnGround) queueBeat('caption', { chip: LAND_CHIP.president });
+      S.lastWarned = !!counts.warned;
+      S.lastClear = !!counts.clear;
+      S.lastOnGround = !!counts.onGround;
+    }
 
     // The ending: one card, whichever way it went, shown once.
     if (!S.endShown && status !== S.lastStatus) {
       if (status === 'complete') {
         S.endShown = true;
-        queueBeat('card', { main: END_TITLE[mission] || 'MISSION COMPLETE', sub: 'WELL FLOWN', dur: 3 });
+        queueBeat('card', { main: END_TITLE[mission] || 'MISSION COMPLETE', sub: END_SUB[seat] || 'WELL FLOWN', dur: 3 });
       } else if (status === 'failed') {
         S.endShown = true;
         queueBeat('caption', { chip: 'MISSION NOT COMPLETE', dur: 2.2 });

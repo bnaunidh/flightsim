@@ -154,7 +154,7 @@ ok('a Hard mission in the hardest heading pays 3–4× an Easy lesson', hardElit
 const circuit = priced.find((r) => r.id === 'circuit');
 const carrier = priced.find((r) => r.id === 'carrierqual');
 ok('Island Circuit no longer pays what a carrier trap pays', circuit.normal * 3 < carrier.normal, `${circuit.normal} vs ${carrier.normal}`);
-ok('every mission in every game is priced', priced.length >= 60 && priced.every((r) => r.normal > 0)
+ok('every mission in every game is priced', priced.length >= 50 && priced.every((r) => r.normal > 0)
   && ['flight', 'heli', 'boat', 'car', 'rocket'].every((g) => priced.some((r) => r.game === g)),
   `${priced.length} missions: ${['flight', 'heli', 'boat', 'car', 'rocket'].map((g) => `${g} ${priced.filter((r) => r.game === g).length}`).join(', ')}`);
 
@@ -214,7 +214,7 @@ const wallet = () => ({ credits: 500, earned: 900, best: [], unlocked: [], redee
 
 {
   // main.js: every runner mission — plane, heli, boat, car — with the def flown.
-  for (const id of ['circuit', 'stackrescue', 'long-tow', 'summit', 'carrierqual', 'goofy-duck', 'fire-ridge']) {
+  for (const id of ['circuit', 'stackrescue', 'long-tow', 'summit', 'carrierqual', 'deadstick', 'fire-ridge']) {
     const r = priced.find((x) => x.id === id);
     const p = wallet();
     const out = Prog.award(p, { kind: 'mission', score: 100, difficulty: 'normal', label: r.name, mission: r.def, game: r.game });

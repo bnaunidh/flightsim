@@ -272,6 +272,9 @@ function mySize(sim) {
 
 function canCollide(sim) {
   if (!sim || sim.state !== 'flying' || sim.mode === 'drive') return false;
+  // A passenger (sim.riding, the President's seat) flies nothing: the
+  // aeroplane under the seat is parked out of the way and hidden.
+  if (sim.riding) return false;
   const ac = sim.aircraft;
   if (!ac || !ac.pos || ac.crashed) return false;
   if (K.clock < K.safeUntil) {

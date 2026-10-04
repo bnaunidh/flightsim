@@ -61,9 +61,6 @@ import {
 } from './events/common.js';
 import * as HJ from './events/hijack.js';
 import { BRIDGE } from './events/bridge.js';
-// The goofy missions' prop cleanup registers itself from here too, so it is
-// in place even if nothing else imports it first.
-import './events/props.js';
 
 export { longHaulId };
 export { squawk, hijackInfo, devOpen, answerChoice, TALK_LINES } from './events/hijack.js';
@@ -583,7 +580,6 @@ function missionTakesCar(sim) {
     && !def.timeLimit
     && !def.vehicle
     && (def.game || 'flight') === 'flight'
-    && def.category !== 'goofy'
     && def.category !== 'events'
     && sim.aircraft && sim.aircraft.onGround);
 }

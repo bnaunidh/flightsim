@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v56';
+const CACHE_VERSION = 'island-flight-v57';
 
 const PRECACHE = [
   './',
@@ -156,7 +156,6 @@ const PRECACHE = [
   'src/fleet/extra/index.js',
   'src/game/extensions.js',
   'src/game/extra/events.js',
-  'src/game/extra/goofy.js',
   'src/game/extra/index.js',
   'src/game/extra/fire.js',
   'src/game/extra/meteor.js',
@@ -206,9 +205,7 @@ const PRECACHE = [
   'src/features/events/bridge.js',
   'src/features/events/common.js',
   'src/features/events/escort.js',
-  'src/features/events/goofy-props.js',
   'src/features/events/hijack.js',
-  'src/features/events/props.js',
   'src/features/events/sfx.js',
   'src/features/events/ui.js',
   'src/features/events/vehicles.js',
@@ -257,9 +254,7 @@ const PRECACHE = [
   'src/features/fun.js',
   'src/features/fun/fx.js',
   'src/features/fun/save.js',
-  'src/features/fun/stars.js',
-  'src/features/fun/stickers.js',
-  'src/features/fun/stunts.js',
+  'src/features/fun/smoke.js',
   'src/features/fun/ui.js',
   // Added by tools/sync-precache.mjs.
   'src/features/rocket.js',

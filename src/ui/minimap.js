@@ -645,8 +645,9 @@ function craftOf(sim, mode, out = {}) {
     return out;
   }
   // Straight off the aircraft rather than through readouts(), which builds a
-  // thirty-field object every call — this runs every frame.
-  const ac = sim.aircraft;
+  // thirty-field object every call — this runs every frame. Riding as a
+  // passenger (sim.riding, the President's seat), "you" is the jet you are in.
+  const ac = (sim.riding && sim.riding.pos) ? sim.riding : sim.aircraft;
   out.x = ac.pos.x;
   out.y = ac.pos.y;
   out.z = ac.pos.z;
