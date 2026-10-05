@@ -34,6 +34,7 @@ const NOT_ROCKET = ['plane', 'heli', 'boat', 'car', 'foot', 'chute'];
 /** The groups in Settings and on the H card, in order. `ctx` is the game a group belongs to. */
 export const GROUPS = [
   { id: 'Flying', ctx: 'plane' },
+  { id: 'Autopilot', ctx: 'plane' },
   { id: 'Helicopter', ctx: 'heli' },
   { id: 'Boat', ctx: 'boat' },
   { id: 'Car', ctx: 'car' },
@@ -108,6 +109,22 @@ export const ACTIONS = {
   trimDown: { label: 'Trim nose down', group: 'Flying', ctx: AIR, default: ['Comma'] },
   trimUp: { label: 'Trim nose up', group: 'Flying', ctx: AIR, default: ['Period'] },
   trimReset: { label: 'Trim back to neutral', group: 'Flying', ctx: AIR, default: ['Slash'] },
+
+  /*
+   * Dial the autopilot's bugs while it keeps flying — the owner's long-
+   * standing ask. Every letter, digit and the punctuation a trim wheel or a
+   * mission key could want was already spoken for in the aeroplane, so these
+   * take what was left: the two quote keys for heading, minus/equal (the
+   * keyboard's own -/+) for speed, and the numeric keypad's own +/- for the
+   * climb and descent rate. Plane only — the stick still overrides exactly
+   * as before, and these never touch it.
+   */
+  apHdgLeft: { label: 'Autopilot: heading left 5 degrees', group: 'Autopilot', ctx: ['plane'], default: ['Backquote'] },
+  apHdgRight: { label: 'Autopilot: heading right 5 degrees', group: 'Autopilot', ctx: ['plane'], default: ['Quote'] },
+  apSpdDown: { label: 'Autopilot: speed -5 kt', group: 'Autopilot', ctx: ['plane'], default: ['Minus'] },
+  apSpdUp: { label: 'Autopilot: speed +5 kt', group: 'Autopilot', ctx: ['plane'], default: ['Equal'] },
+  apVsDown: { label: 'Autopilot: climb/descend rate -100 ft/min', group: 'Autopilot', ctx: ['plane'], default: ['NumpadSubtract'] },
+  apVsUp: { label: 'Autopilot: climb/descend rate +100 ft/min', group: 'Autopilot', ctx: ['plane'], default: ['NumpadAdd'] },
 
   /*
    * The helicopter, the boat and the van. They used to borrow the aeroplane's
@@ -228,7 +245,7 @@ const SHORT = {
   MetaLeft: 'Cmd', MetaRight: 'Cmd', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Escape: 'Esc',
   Space: 'Space', Enter: 'Enter', NumpadEnter: 'Enter', Backspace: 'Backspace', Tab: 'Tab', Comma: ',', Period: '.',
   Slash: '/', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=',
-  Backquote: '`', CapsLock: 'Caps Lock', Delete: 'Delete',
+  Backquote: '`', CapsLock: 'Caps Lock', Delete: 'Delete', NumpadAdd: 'Num +', NumpadSubtract: 'Num -',
 };
 export function shortKey(code) {
   if (!code) return '—';

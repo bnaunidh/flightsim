@@ -233,6 +233,19 @@ export class Hud {
 
     /* ---- Engine strip, bottom left ---- */
     const bottom = el('div', 'hud-panel hud-bottom');
+    /*
+     * Everything the panel showed before this feature — the two bars, the
+     * key hint, the gear/flap/brake/mode/trim/autopilot chips — lives in its
+     * own wrapper now. `.hud.is-touch .hud-bottom { display: none; }` hides
+     * the whole panel on a touchscreen (a phone has no room for it, and the
+     * dock/readouts carry the same state), and a child of a display:none
+     * ancestor can never be made visible by its own CSS — so the autopilot
+     * bugs below, which a touchscreen is the main reason to have at all,
+     * would never render if they stayed inside this. Wrapping the OLD
+     * content instead of the new lets touch hide exactly what it hid before
+     * and nothing more.
+     */
+    const bottomContent = el('div', 'hud-bottom-content');
     const mkBar = (label, cls) => {
       const b = el('div', 'hud-bar');
       b.appendChild(el('div', 'hud-bar-label', label));
@@ -247,13 +260,13 @@ export class Hud {
     this.throttleBar = mkBar('Power', 'is-throttle');
     this.throttleBar.root.title = 'Shift or ↑ for more power, Ctrl or ↓ to slow down';
     this.fuelBar = mkBar('Fuel', 'is-fuel');
-    bottom.appendChild(this.throttleBar.root);
-    bottom.appendChild(this.fuelBar.root);
+    bottomContent.appendChild(this.throttleBar.root);
+    bottomContent.appendChild(this.fuelBar.root);
 
     // Written with the default keys, like every hint; syncKeyHint() puts the
     // player's own in (whoever last wrote it: this, the helicopter, the van).
     this.keyHintEl = el('div', 'hud-keyhint', 'Power: <kbd>Shift</kbd>/<kbd>↑</kbd> up · <kbd>Ctrl</kbd>/<kbd>↓</kbd> down · <kbd>Space</kbd> brakes');
-    bottom.appendChild(this.keyHintEl);
+    bottomContent.appendChild(this.keyHintEl);
 
     const chips = el('div', 'hud-chips');
     this.gearChip = el('div', 'hud-chip', 'GEAR DOWN');
@@ -273,7 +286,44 @@ export class Hud {
     chips.appendChild(this.modeChip);
     chips.appendChild(this.trimChip);
     chips.appendChild(this.apChip);
-    bottom.appendChild(chips);
+    bottomContent.appendChild(chips);
+    bottom.appendChild(bottomContent);
+
+    /*
+     * The autopilot's own bugs: heading, speed and climb/descend rate, each
+     * with a small +/- so a finger (or the keys in the Autopilot group) can
+     * dial a new one in without ever switching it off. A sibling of the old
+     * content, not a child of it — see the comment above `bottomContent` —
+     * so it survives on a touchscreen where that content is hidden. Shown
+     * only while the chip is — nothing to adjust when it is not flying.
+     */
+    this.apBugs = el('div', 'hud-ap-bugs');
+    this.apBugs.style.display = 'none';
+    const mkBug = (dec, inc, decTitle, incTitle) => {
+      const row = el('div', 'hud-ap-bug');
+      const minus = el('button', 'hud-ap-bug-btn', '−');
+      minus.type = 'button';
+      minus.title = decTitle;
+      minus.setAttribute('aria-label', decTitle);
+      minus.addEventListener('click', (e) => { e.preventDefault(); this.onAction(dec); });
+      const val = el('div', 'hud-ap-bug-val', '');
+      const plus = el('button', 'hud-ap-bug-btn', '+');
+      plus.type = 'button';
+      plus.title = incTitle;
+      plus.setAttribute('aria-label', incTitle);
+      plus.addEventListener('click', (e) => { e.preventDefault(); this.onAction(inc); });
+      row.appendChild(minus);
+      row.appendChild(val);
+      row.appendChild(plus);
+      return { root: row, val };
+    };
+    this.apHdgBug = mkBug('apHdgLeft', 'apHdgRight', 'Heading left 5°', 'Heading right 5°');
+    this.apSpdBug = mkBug('apSpdDown', 'apSpdUp', 'Speed -5 kt', 'Speed +5 kt');
+    this.apVsBug = mkBug('apVsDown', 'apVsUp', 'Climb/descend rate -100 ft/min', 'Climb/descend rate +100 ft/min');
+    this.apBugs.appendChild(this.apHdgBug.root);
+    this.apBugs.appendChild(this.apSpdBug.root);
+    this.apBugs.appendChild(this.apVsBug.root);
+    bottom.appendChild(this.apBugs);
     wrap.appendChild(bottom);
 
     /* ---- Quick buttons, bottom right ----
@@ -1009,12 +1059,31 @@ export class Hud {
     if (this.btnGuide) this.btnGuide.classList.toggle('is-on', !!on);
   }
 
-  /** Show or hide the autopilot chip, and light its button. */
-  setAutopilot(on, label) {
+  /**
+   * Show or hide the autopilot chip, and light its button. `ap` (the
+   * Autopilot instance) is optional — pass it to keep the HDG/SPD/VS bugs
+   * under the chip in step; leave it out (as a plain disengage does) and the
+   * bugs simply go away with the chip.
+   */
+  setAutopilot(on, label, ap) {
     this.apChip.textContent = label || 'AUTOPILOT';
     this.apChip.classList.toggle('is-on', !!on);
     this.apChip.style.display = on ? '' : 'none';
     if (this.btnAuto) this.btnAuto.classList.toggle('is-on', !!on);
+    this.setAutopilotBugs(on ? ap : null);
+  }
+
+  /** The heading, speed and climb/descend bugs, or hide them when it is not flying. */
+  setAutopilotBugs(ap) {
+    if (!this.apBugs) return;
+    if (!ap || !ap.engaged) {
+      this.apBugs.style.display = 'none';
+      return;
+    }
+    this.apBugs.style.display = '';
+    this.apHdgBug.val.textContent = `HDG ${String(Math.round(ap.selectedHeadingDeg)).padStart(3, '0')}°`;
+    this.apSpdBug.val.textContent = `SPD ${Math.round(ap.selectedSpeedKts)}`;
+    this.apVsBug.val.textContent = `VS ${Math.round(ap.selectedVsFpm)}`;
   }
 
   /** Show or hide the key monitor. @returns {boolean} whether it is now on */

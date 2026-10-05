@@ -360,14 +360,14 @@ class Game {
         // returning to the field and lining up both set their own heights.
         this.autopilot.setSelectedAlt(ft);
         if (this.autopilot.engaged) {
-          this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget));
+          this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget), this.autopilot);
           this.hud.notify(`Autopilot to ${ft.toLocaleString()} ft`, 'info', 2.4);
         }
       },
       onAutopilotHeading: (deg) => {
         const r = this.autopilot.setSelectedHeading(deg);
         if (this.autopilot.engaged) {
-          this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget));
+          this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget), this.autopilot);
           this.hud.notify(
             r.applied
               ? `Autopilot turning to ${String(r.heading).padStart(3, '0')}°`
@@ -375,21 +375,33 @@ class Game {
             'info',
             2.6
           );
+        } else {
+          this.hud.setAutopilotBugs(this.autopilot);
         }
       },
       onAutopilotSpeed: (kt) => {
         this.autopilot.setSelectedSpeed(kt);
-        if (this.autopilot.engaged) this.hud.notify(`Autopilot holding ${kt} kt`, 'info', 2.4);
+        if (this.autopilot.engaged) {
+          this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget), this.autopilot);
+          this.hud.notify(`Autopilot holding ${kt} kt`, 'info', 2.4);
+        } else {
+          this.hud.setAutopilotBugs(this.autopilot);
+        }
       },
       onAutopilotVs: (fpm) => {
         this.autopilot.setSelectedVs(fpm);
-        if (this.autopilot.engaged) this.hud.notify(`Climb and descent at ${fpm.toLocaleString()} ft/min`, 'info', 2.4);
+        if (this.autopilot.engaged) {
+          this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget), this.autopilot);
+          this.hud.notify(`Climb and descent at ${fpm.toLocaleString()} ft/min`, 'info', 2.4);
+        } else {
+          this.hud.setAutopilotBugs(this.autopilot);
+        }
       },
       onAutopilotMode: (id) => {
         this.autopilot.setMode(id);
         // Choosing a job for it is also asking it to do the job.
         if (!this.autopilot.engaged) this.toggleAutopilot(true);
-        else this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget));
+        else this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget), this.autopilot);
         const m = {
           hold: 'holding heading and height',
           level: `on its way to ${Math.round(this.autopilot.selectedAltFt).toLocaleString()} ft`,
@@ -1764,6 +1776,24 @@ class Game {
       case 'autopilot':
         this.toggleAutopilot();
         break;
+      case 'apHdgLeft':
+        this.nudgeAutopilotHeading(-5);
+        break;
+      case 'apHdgRight':
+        this.nudgeAutopilotHeading(5);
+        break;
+      case 'apSpdDown':
+        this.nudgeAutopilotSpeed(-5);
+        break;
+      case 'apSpdUp':
+        this.nudgeAutopilotSpeed(5);
+        break;
+      case 'apVsDown':
+        this.nudgeAutopilotVs(-100);
+        break;
+      case 'apVsUp':
+        this.nudgeAutopilotVs(100);
+        break;
       case 'skipTaxi':
         this.taxi.skip();
         break;
@@ -1881,7 +1911,7 @@ class Game {
       return false;
     }
     const on = this.autopilot.setEngaged(want, this.aircraft);
-    this.hud.setAutopilot(on);
+    this.hud.setAutopilot(on, null, this.autopilot);
     if (on) {
       this.hud.notify(
         `Autopilot on — holding ${Math.round(this.autopilot.targetAltFt)} ft. Move the stick to take over.`,
@@ -1898,6 +1928,34 @@ class Game {
     // as it had — no FLYING tag, no highlight, nothing.
     this.menus.syncAutopilot(this.autopilot.engaged, this.autopilot.mode);
     return on;
+  }
+
+  /**
+   * Dial the autopilot's heading, speed or climb/descend bug up or down —
+   * from a key, from a touch +/- on its HUD chip, or from the pause menu's
+   * own slider calling the same place. None of these disengage it: that is
+   * the whole point of a bug you can move while it is flying. Only the stick
+   * still hands control back, exactly as before.
+   */
+  nudgeAutopilotHeading(deltaDeg) {
+    const r = this.autopilot.setSelectedHeading(this.autopilot.selectedHeadingDeg + deltaDeg);
+    if (this.autopilot.engaged) this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget), this.autopilot);
+    else this.hud.setAutopilotBugs(this.autopilot);
+    return r;
+  }
+
+  nudgeAutopilotSpeed(deltaKt) {
+    const kt = this.autopilot.setSelectedSpeed(this.autopilot.selectedSpeedKts + deltaKt);
+    if (this.autopilot.engaged) this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget), this.autopilot);
+    else this.hud.setAutopilotBugs(this.autopilot);
+    return kt;
+  }
+
+  nudgeAutopilotVs(deltaFpm) {
+    const fpm = this.autopilot.setSelectedVs(this.autopilot.selectedVsFpm + deltaFpm);
+    if (this.autopilot.engaged) this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget), this.autopilot);
+    else this.hud.setAutopilotBugs(this.autopilot);
+    return fpm;
   }
 
   /* ------------------------------------------------------------------ */
@@ -2789,6 +2847,17 @@ class Game {
     if (input.pressed('help')) this.hud.toggleControls(this.input.bindings, keyLabel, this.helpActions());
     if (input.pressed('guide')) this.toggleGuide();
     if (input.pressed('autopilot')) this.toggleAutopilot();
+    // The autopilot's own bugs — plane only, so the helicopter's identical
+    // keys (it has none of these, but the context guard is what ctx:
+    // ['plane'] in the registry actually means) never see them.
+    if (this.input.context === 'plane') {
+      if (input.pressed('apHdgLeft')) this.hudAction('apHdgLeft');
+      if (input.pressed('apHdgRight')) this.hudAction('apHdgRight');
+      if (input.pressed('apSpdDown')) this.hudAction('apSpdDown');
+      if (input.pressed('apSpdUp')) this.hudAction('apSpdUp');
+      if (input.pressed('apVsDown')) this.hudAction('apVsDown');
+      if (input.pressed('apVsUp')) this.hudAction('apVsUp');
+    }
     if (input.pressed('minimap')) this.hudAction('minimap');
     if (input.pressed('minimapRange')) this.hudAction('minimapRange');
     if (input.pressed('hideUi')) this.toggleHideUi();
@@ -3078,7 +3147,7 @@ class Game {
     this.autopilot.setEngaged(true, ac);
     this.instrumentBlackout = 70;
     this.hud.setBlackout(true);
-    this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget));
+    this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget), this.autopilot);
     this.braceChoice = null;
     this.hud.setEmergencyChoice([
       { key: '1', label: 'Attempt to land', hint: 'Line up with the runway and fly it down' },
@@ -4246,7 +4315,7 @@ class Game {
           yaw = ap.yaw;
           throttle = ap.throttle;
           this.input.throttleTarget = ap.throttle;
-          this.hud.setAutopilot(true, this.autopilot.status(t));
+          this.hud.setAutopilot(true, this.autopilot.status(t), this.autopilot);
           // On an approach it configures the aeroplane, because that is how
           // you actually come down: a clean airframe at idle will not descend
           // steeply however hard you push, and no amount of elevator is a

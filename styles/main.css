@@ -373,6 +373,51 @@ html, body {
   background: rgba(124, 199, 255, 0.16);
 }
 
+/*
+ * The autopilot's own bugs — HDG, SPD and VS, each with a small +/-. Three
+ * rows stacked rather than one wide one, so the panel stays inside
+ * hud-bottom's own width on a phone (390px) instead of running off the edge.
+ */
+.hud-ap-bugs { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.hud-ap-bug { display: flex; align-items: center; gap: 6px; }
+.hud-ap-bug-val {
+  flex: 1;
+  font-size: 10px;
+  font-family: var(--mono);
+  letter-spacing: 0.03em;
+  color: #cfeaff;
+  text-align: center;
+}
+.hud-ap-bug-btn {
+  width: 22px;
+  height: 20px;
+  flex: none;
+  border-radius: 5px;
+  border: 1px solid rgba(124, 199, 255, 0.5);
+  background: rgba(124, 199, 255, 0.14);
+  color: #cfeaff;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+.hud-ap-bug-btn:hover { background: rgba(124, 199, 255, 0.28); }
+.hud-ap-bug-btn:active { transform: translateY(1px); }
+
+/*
+ * On a touchscreen the three rows are all `.hud-bottom` still shows (its own
+ * background and border were stripped off above, since the panel moved out
+ * from under the engine strip into its own corner) — so they draw a small
+ * backing of their own, calm rather than another full panel.
+ */
+.hud.is-touch .hud-ap-bugs {
+  margin-top: 0;
+  background: rgba(10, 18, 28, 0.6);
+  border: 1px solid rgba(124, 199, 255, 0.35);
+  border-radius: 8px;
+  padding: 6px 7px;
+}
+
 .hud-stall {
   position: absolute;
   top: 30%;
@@ -1350,7 +1395,26 @@ body.is-large { font-size: 18px; }
  * the tray (it is appended later, so it paints on top) and the tray could not
  * be pressed at all. `.is-touch` is exactly the condition; the width is not.
  */
-.hud.is-touch .hud-bottom { display: none; }
+/*
+ * The engine strip (bars, key hint, gear/flap/brake/trim chips) has nowhere
+ * to go on a touchscreen and nothing it alone shows that the dock and
+ * readouts do not — so it stays hidden, by hiding `.hud-bottom-content`
+ * rather than the panel itself. The panel is what the autopilot's HDG/SPD/VS
+ * bugs now live in (see ui/hud.js), and they are for exactly this device, so
+ * the panel itself is repositioned here instead of hidden: its own chrome
+ * stripped off (the bugs draw their own small background), tucked under the
+ * button dock in the one corner nothing else uses.
+ */
+.hud.is-touch .hud-bottom-content { display: none; }
+.hud.is-touch .hud-bottom {
+  /* Clear of the button dock above (ends at ~52px) and the full-width
+     objective banner below it (starts at 96px, backed by its own panel —
+     not just text, so there is no slipping in behind it): 168px is past
+     both, with the autopilot bugs' own roughly 70-80px fitting above the
+     touch pads (they start at 640px on a 390x844 phone). */
+  left: auto; right: 6px; top: 168px; bottom: auto;
+  background: none; border: none; box-shadow: none; padding: 0; min-width: 0;
+}
 .hud.is-touch .hud-right { top: 74px; right: 12px; }
 .hud.is-touch .hud-buttons { right: 12px; bottom: auto; top: 12px; }
 
@@ -2554,7 +2618,9 @@ html.is-touch-device .slot-clear {
   .hud.is-touch.has-minimap .hud-top { padding-left: 0; }
   /* The strip starts after the map with a real gap, not against it. */
   .hud.is-touch .hud-left { left: 100px; }
-  .hud.is-touch .hud-bottom { display: none; }
+  /* The old content, not the panel itself — see the rule above (it is not
+     gated by width, so it already applies here too) and ui/hud.js. */
+  .hud.is-touch .hud-bottom-content { display: none; }
 
   /* --- bottom band ------------------------------------------------------ */
   .hud.is-touch .touch-stick { width: 116px; height: 116px; left: 8px; bottom: 8px; }
