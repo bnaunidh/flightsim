@@ -790,8 +790,10 @@ function boom(sim) {
   UI.setCountdown(null);
   const p = ac.pos.clone();
   try {
+    // One real explosion, the ordinary 'bomb' kind (fireball, smoke, debris)
+    // — the crew are already down under their own canopy by now, so this is
+    // just the empty airframe going up. No second, decorative burst on top.
     explode(sim, p, { size: 1.6 });
-    explode(sim, p, { size: 0.8, kind: 'sparkle', silent: true });
   } catch (e) {
     console.warn('[eject] the bang failed', e);
   }

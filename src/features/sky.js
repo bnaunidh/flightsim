@@ -25,9 +25,10 @@
  *   (./crashes/kinds.js: surfaceKind 'aircraft'). The other aircraft is told
  *   (body.hit) and its owner knocks it down its own way: the traffic tumbles
  *   and is retired, a jet or the airliner falls out of the sky and comes to
- *   rest, a drone pops in sparkles. Its crew come down under parachutes
+ *   rest, a drone goes up in a real airburst (explosions.js's 'airburst'
+ *   kind — nobody is ever aboard one). Any crew come down under parachutes
  *   (the eject feature's own canopy), because this is a game for ten-year-
- *   olds: no fire, nobody hurt, "everybody got out".
+ *   olds: nobody hurt, "everybody got out".
  *
  *   THE MINIMAP reads the same list (sim.aircraftAround.bodies, src/ui/minimap.js
  *   drawTraffic) and draws every body: you white, friends green, NPCs pale

@@ -956,11 +956,12 @@ function checkHit(sim, m, ac) {
   // Out of shields is the end of the round; a rock already on its way does
   // not get to count a fourth bonk against nothing.
   if (d < m.radius + 9 && S.invuln <= 0 && S.stats.shields > 0) {
-    // Bonk: a shield gone, a shower of stars, the rock in pieces. Nobody is hurt.
+    // Bonk: a shield gone, the rock shatters — fragments and smoke, not a
+    // fireball (rock is not fuel). Nobody is hurt.
     S.invuln = 2;
     S.stats.hits++;
     S.stats.shields = Math.max(0, S.stats.shields - 1);
-    FX.explode(sim, m.pos, { size: 0.8, kind: 'sparkle' });
+    FX.explode(sim, m.pos, { size: 0.8, kind: 'shatter' });
     sfx(sim, 'bonk');
     if (sim.rig && sim.rig.kick) sim.rig.kick(1.1);
     flashScreen('bonk');
@@ -1133,7 +1134,7 @@ export function zap(sim) {
     sfx(sim, 'fizzle');
     return false;
   }
-  FX.explode(sim, t.pos, { size: clamp(t.radius * 0.45, 0.6, 2.2), kind: 'sparkle' });
+  FX.explode(sim, t.pos, { size: clamp(t.radius * 0.45, 0.6, 2.2), kind: 'shatter' });
   S.stats.zapped++;
   if (t.town) {
     // Counted apart from `zapped`: the everyday meteors in the evening sky

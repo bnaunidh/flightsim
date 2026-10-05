@@ -63,15 +63,27 @@
  *
  * CONTRACT (fixed between teams): `explode(sim, pos, { size, kind })`.
  *   size 1 is a practice bomb (fireball radius R = 22 m). Meteors pass 0.3–6.
- *   kind  'bomb' (default) | 'meteor' | 'airburst' | 'sparkle' | 'splash'.
- *         Anything else is treated as 'bomb'. WHERE it goes off decides the
- *         rest: over the sea near the surface it is a splash, well above the
- *         ground it is an airburst, on land it is a ground blast. 'splash'
- *         is always a splash, on land too (a water drop, a burst tank).
+ *   kind  'bomb' (default) | 'meteor' | 'airburst' | 'shatter' | 'sparkle' |
+ *         'splash'. Anything else is treated as 'bomb'. WHERE it goes off
+ *         decides the rest: over the sea near the surface it is a splash,
+ *         well above the ground it is an airburst, on land it is a ground
+ *         blast. 'splash' is always a splash, on land too (a water drop, a
+ *         burst tank).
+ *   'airburst' is a drone or missile going down: a real fireball — bright
+ *   core, orange, then sooty smoke — a short shock ring and a handful of
+ *   burning chunks thrown out, arcing down on their own smoke trails (they
+ *   splash and go if they reach water). Smaller for a missile than a drone
+ *   because `size` is smaller, same shapes. 'shatter' is a meteor zapped out
+ *   of the sky: rock does not burn like fuel, so it is mostly glowing
+ *   fragments on arcs and a drifting dust cloud, with only a small fireball
+ *   at the centre — never a scorch mark, there being no ground under it.
+ *   'sparkle' remains for cosmetic, non-destructive pops (collecting
+ *   stardust) — a four-point rainbow sparkle, no fire, no boom, no shake.
  *   extra options (all optional): silent (no boom), burnup (a meteor burning
- *   up: sparks and a pale puff, not a dark flak burst), gentle (on land: a
- *   cartoon thud — dust, dirt, stars and a crater, no fire or black smoke;
- *   for something landing where people live).
+ *   up on its own in the dodge missions: sparks and a pale puff, no debris,
+ *   not a dark flak burst), gentle (on land: a cartoon thud — dust, dirt,
+ *   stars and a crater, no fire or black smoke; for something landing where
+ *   people live).
  * Returns a small description of what it did, or null if it could not.
  */
 
@@ -100,7 +112,7 @@ const DECAL_CAP = 28;
 const DECAL_N = 7; // vertices per side of a decal patch
 const RING_CAP = 10;
 const BLAST_CAP = 24;
-const KINDS = ['bomb', 'meteor', 'airburst', 'sparkle', 'splash'];
+const KINDS = ['bomb', 'meteor', 'airburst', 'shatter', 'sparkle', 'splash'];
 
 /** Seconds for a sound to travel `metres`. */
 export function soundDelay(metres) {
@@ -1227,10 +1239,10 @@ export function explode(sim, pos, opts = {}) {
   const gh = safeHeight(x, z);
   const py = Number.isFinite(pos.y) ? pos.y : Math.max(0, gh);
   const R = blastRadius(size);
-  const water = kind === 'splash' || (gh < 0.2 && py < 4 + size * 3 && kind !== 'sparkle');
+  const water = kind === 'splash' || (gh < 0.2 && py < 4 + size * 3 && kind !== 'sparkle' && kind !== 'shatter');
   const surface = water ? Math.max(0, gh) : gh;
   const y = water ? surface : Math.max(py, surface);
-  const air = kind === 'airburst' || kind === 'sparkle' || (!water && y - surface > 6 + 0.5 * R);
+  const air = kind === 'airburst' || kind === 'shatter' || kind === 'sparkle' || (!water && y - surface > 6 + 0.5 * R);
 
   // A slot: a free one, else the oldest (whose only remaining work is smoke).
   let b = null;
@@ -1294,6 +1306,7 @@ export function explode(sim, pos, opts = {}) {
   SURF_HINT = surface;
   try {
     if (kind === 'sparkle') spawnSparkle(fx, b, n);
+    else if (kind === 'shatter') spawnShatter(fx, b, n);
     else if (water) spawnSplash(fx, b, n);
     else if (air) spawnAirburst(fx, b, n);
     else if (b.gentle) spawnThud(fx, b, n, qualityOf(sim));
@@ -1303,10 +1316,10 @@ export function explode(sim, pos, opts = {}) {
   }
 
   // Light.
-  const heat = kind === 'sparkle' ? 0.12 : b.gentle ? 0.3 : water ? (kind === 'meteor' ? 0.7 : 0.35) : air ? 0.7 : kind === 'meteor' ? 1.5 : 1;
+  const heat = kind === 'sparkle' ? 0.12 : kind === 'shatter' ? 0.4 : b.gentle ? 0.3 : water ? (kind === 'meteor' ? 0.7 : 0.35) : air ? 0.7 : kind === 'meteor' ? 1.5 : 1;
   b.lightPeak = 16000 * Math.pow(size, 1.5) * heat;
   b.lightRange = 420 * Math.sqrt(size) * (water ? 0.8 : 1);
-  b.lightCol = kind === 'sparkle' ? 0xc8e0ff : water ? 0xd8ecff : b.gentle ? 0xffe0b0 : 0xffa050;
+  b.lightCol = kind === 'sparkle' ? 0xc8e0ff : kind === 'shatter' ? 0xffb060 : water ? 0xd8ecff : b.gentle ? 0xffe0b0 : 0xffa050;
   b.flashK = heat;
   b.silent = !!o.silent;
 
@@ -1399,6 +1412,10 @@ function spawnGround(fx, b, n, quality) {
 const DEBRIS_METEOR = [0.16, 0.13, 0.12];
 const DEBRIS_DIRT = [0.42, 0.33, 0.24];
 const DEBRIS_ROCK = [0.46, 0.45, 0.44];
+// A drone or missile's own abstract chunks — dull gunmetal, or the same dark
+// char a burnt rock gets. Low-poly and unmarked on purpose: see the "no
+// wreckage that looks like a vehicle" rule at the top of the file.
+const DEBRIS_METAL = [0.34, 0.35, 0.37];
 
 /*
  * A thud: something landing where people live, drawn the way a cartoon
@@ -1502,6 +1519,28 @@ function spawnAirburst(fx, b, n) {
       const v = rand(10, 26);
       fx.star.spawn(PARTICLES.sparkle, x, y, z, Math.cos(a) * r * v, u * v, Math.sin(a) * r * v, rand(2, 3.6) * sq * vis, rand(0.8, 1.2), 1, 1, 0.9, 0.62);
     }
+  } else {
+    // A drone or missile going down for real: a short shock ring (it has
+    // nothing to run along, so it is small and quick next to a ground
+    // blast's), and burning chunks thrown out on arcs — the same debris
+    // pool as a ground hit, trailing their own smoke as they fall (Debris.
+    // update), splashing if they reach the sea. More, and bigger, for a
+    // drone than the missile that downed it: `size` already says which.
+    ring(fx, x, y, z, R * 0.5, R * 3.4, 0.5, 0.35, false);
+    const nd = Math.min(14, n(3 + 6 * size));
+    for (let i = 0; i < nd; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const el = rand(0.1, 1.3);
+      const v = rand(18, 42) * sq;
+      const c = Math.random() < 0.55 ? DEBRIS_METAL : DEBRIS_METEOR;
+      const vx = Math.cos(a) * Math.cos(el) * v;
+      const vy = Math.sin(el) * v + R * 0.3;
+      const vz = Math.sin(a) * Math.cos(el) * v;
+      fx.debris.spawn(x, y, z, vx, vy, vz, rand(0.7, 1.7) * sq, c[0], c[1], c[2], rand(6, 9));
+      // A glowing ember riding the same arc, so a falling chunk reads as
+      // burning, not just as a dark rock the smoke trail happens to follow.
+      fx.glow.spawn(PARTICLES.ember, x, y, z, vx, vy, vz, rand(0.8, 1.3) * sq * vis, rand(0.8, 1.2));
+    }
   }
 }
 
@@ -1558,6 +1597,64 @@ function spawnSparkle(fx, b, n) {
       rand(1.6, 3.2) * Math.sqrt(size) * b.vis, rand(0.7, 1.3), 1, _c.r, _c.g, _c.b);
   }
   fx.glow.spawn(PARTICLES.flash, x, y, z, 0, 0, 0, R * 0.3 * b.vis, 1.4, 0.7 * b.flashSprite);
+}
+
+/*
+ * A meteor zapped out of the sky: it SHATTERS, not burns. A small fireball
+ * at the centre (rock is not fuel), a hot fragment burst — glowing chunks
+ * on arcs trailing their own smoke, the same debris pool a ground hit uses
+ * — and a pale dust cloud drifting off the break. No shockwave ring (there
+ * is nothing for it to run along up here) and no scorch mark (nothing under
+ * it to mark).
+ */
+function spawnShatter(fx, b, n) {
+  const { x, y, z, R, size, vis } = b;
+  const G = fx.glow;
+  const S = fx.smoke;
+  const sq = Math.sqrt(size);
+  G.spawn(PARTICLES.flash, x, y, z, 0, 0, 0, R * 0.55 * vis, 1, 0.65 * b.flashSprite);
+  // A little fire at the break — just enough to sell the hit, not a fuel fire.
+  const nf = n(5 + 2 * sq);
+  for (let i = 0; i < nf; i++) {
+    const u = rand(-1, 1);
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(1 - u * u);
+    const v = R * rand(0.5, 1.3);
+    G.spawn(PARTICLES.fire, x, y, z, Math.cos(a) * r * v, u * v, Math.sin(a) * r * v, R * rand(0.4, 0.7) * vis, rand(0.5, 0.9));
+  }
+  // The fragment burst: hot sparks, same shape a ground hit's spark layer uses.
+  const nsp = n(16 + 6 * size);
+  for (let i = 0; i < nsp; i++) {
+    const u = rand(-1, 1);
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(1 - u * u);
+    const v = rand(20, 46) * sq;
+    G.spawn(PARTICLES.spark, x, y, z, Math.cos(a) * r * v, u * v, Math.sin(a) * r * v, rand(0.7, 1.3) * sq * Math.sqrt(vis), rand(0.8, 1.4));
+  }
+  // Glowing rock chunks on arcs, trailing smoke as they fall (Debris.update);
+  // more fragments than an airburst gets, because this is mostly what the
+  // rock has to show for itself.
+  const nd = Math.min(18, n(5 + 7 * size));
+  for (let i = 0; i < nd; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const el = rand(0.05, 1.3);
+    const v = rand(16, 40) * sq;
+    const c = Math.random() < 0.4 ? DEBRIS_METEOR : DEBRIS_ROCK;
+    const vx = Math.cos(a) * Math.cos(el) * v;
+    const vy = Math.sin(el) * v + R * 0.2;
+    const vz = Math.sin(a) * Math.cos(el) * v;
+    fx.debris.spawn(x, y, z, vx, vy, vz, rand(0.6, 1.5) * sq, c[0], c[1], c[2], rand(6, 9));
+    G.spawn(PARTICLES.ember, x, y, z, vx, vy, vz, rand(0.7, 1.2) * sq * vis, rand(0.9, 1.3));
+  }
+  // A pale dust cloud off the break — drifting, not hugging the ground
+  // (PARTICLES.dust pins itself to the terrain, wrong for something that
+  // just shattered in open sky).
+  const ndu = n(8 + 3 * size);
+  for (let i = 0; i < ndu; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const v = R * rand(0.15, 0.4);
+    S.spawn(PARTICLES.trailSmoke, x, y, z, Math.cos(a) * v, rand(-1, 2), Math.sin(a) * v, R * rand(0.6, 1), rand(0.7, 1.1));
+  }
 }
 
 function ring(fx, x, y, z, r0, r1, life, a, water, foam = false) {

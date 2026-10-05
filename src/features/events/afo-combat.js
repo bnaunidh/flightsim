@@ -12,9 +12,10 @@
  * KID-SAFE, ON PURPOSE, THROUGHOUT:
  *   - the attackers are UNMANNED drones ("unidentified drones" on the radio
  *     — no country, no person, ever named); nobody is ever aboard one;
- *   - destroying one is explosions.js's 'sparkle' kind — the same gentle
- *     puff of sparks a burning-up meteor gets in the dodge missions, never a
- *     fireball, never a scorch mark, never anywhere near the jet;
+ *   - destroying one is explosions.js's 'airburst' kind: a real fireball and
+ *     a few burning chunks arcing down on their own smoke, same as a
+ *     missile going down — but it is mid-air, well clear of the jet, and
+ *     nobody is ever aboard it. A missile gets the same kind, smaller;
  *   - a missile that is not stopped does not crash anybody. It is a FAIL,
  *     with a kind word about decoying it earlier, exactly the way other
  *     missions here fail on a `failIf` message rather than a wreck;
@@ -163,7 +164,7 @@ export class Drone {
     scene.add(this.model);
     /*
      * In the sky's list (../sky.js): a red diamond on the minimap, and
-     * solid — ram one and it pops in the same sparkles a gun hit gives it
+     * solid — ram one and it goes up the same way a gun hit takes it down
      * (nobody is aboard; the attack field tidies a dead drone away at the
      * end of its frame). You have a mid-air bump: a drone is still an aircraft.
      */
@@ -181,7 +182,7 @@ export class Drone {
       hit: (sim) => {
         if (!self.alive) return;
         self.alive = false;
-        explode(sim, self.pos, { kind: 'sparkle', size: 0.9 });
+        explode(sim, self.pos, { kind: 'airburst', size: 0.9 });
       },
       get heading() {
         return headingOf(self.vel);
@@ -528,7 +529,7 @@ export class AttackField {
    * (the President's) or is busy flying the jet (the captain's), a drone the
    * escort has held within `range` — tracers going its way — for `hold`
    * seconds is down; and from `capAt` (this field's own clock) every drone
-   * still up is. Same sparkle, same tally, as a gun hit. @returns {number} downed now
+   * still up is. Same blast, same tally, as a gun hit. @returns {number} downed now
    */
   guardKills(pos, dt, { range = 650, hold = 5, capAt = Infinity } = {}) {
     let n = 0;
@@ -538,7 +539,7 @@ export class AttackField {
       if (d._held > hold || this.t > capAt) {
         d.alive = false;
         this.stats.shotDrones++;
-        explode(this.sim, d.pos, { kind: 'sparkle', size: 0.9 });
+        explode(this.sim, d.pos, { kind: 'airburst', size: 0.9 });
         n++;
       }
     }
@@ -595,14 +596,14 @@ export class AttackField {
       if (decoyed && d3 < 22) {
         m.alive = false;
         this.stats.decoyed++;
-        explode(this.sim, m.pos, { kind: 'sparkle', size: 0.5 });
+        explode(this.sim, m.pos, { kind: 'airburst', size: 0.5 });
       } else if (!decoyed && d3 < 20) {
         m.alive = false;
         this.stats.hits++;
         hitThisFrame = true;
         // Never literally on the jet: a near miss you are told about, not shown on it.
         const off = targetVel ? targetVel.clone().normalize().multiplyScalar(-22) : new THREE.Vector3(0, 0, 22);
-        explode(this.sim, m.pos.clone().add(off), { kind: 'sparkle', size: 0.7 });
+        explode(this.sim, m.pos.clone().add(off), { kind: 'airburst', size: 0.7 });
       }
     }
     for (const p of this.pellets) p.step(dt);
@@ -632,7 +633,7 @@ export class AttackField {
         t.alive = false;
         if (wasDrone) this.stats.shotDrones++;
         else this.stats.shotMissiles++;
-        explode(this.sim, t.pos, { kind: 'sparkle', size: wasDrone ? 0.9 : 0.5 });
+        explode(this.sim, t.pos, { kind: 'airburst', size: wasDrone ? 0.9 : 0.5 });
       }
     }
     for (let i = this.pellets.length - 1; i >= 0; i--) {
