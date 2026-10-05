@@ -150,7 +150,9 @@ function update(sim, dt) {
 
   // The chip.
   if (F.hud) {
-    const show = sim.state === 'flying' && !(sim.hud && sim.hud.hidden);
+    // Not for a passenger (sim.riding, Air Force One's President seat): the
+    // trail belongs to whoever is flying, and nobody is flying from there.
+    const show = sim.state === 'flying' && !(sim.hud && sim.hud.hidden) && !sim.riding;
     F.hud.setVisible(show);
     if (show) {
       F.hud.set({ smokeOk, smokeOn: F.smokeOn && smokeOk });

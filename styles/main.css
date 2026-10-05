@@ -455,6 +455,12 @@ html, body {
   gap: 6px;
   align-items: center;
   width: min(520px, 60vw);
+  /* A sibling of .hud now (hud.js's build()), not a child of it, so it is
+     never taken down by wrap's own display:none — and stacked above
+     .menu-layer (which sets no z-index of its own) so a toast that lands
+     right as a debrief dialog opens stays crisp, not blurred behind the
+     menu layer's backdrop-filter. */
+  z-index: 20;
 }
 .hud-toast {
   padding: 8px 16px;
@@ -1047,7 +1053,11 @@ body.is-large { font-size: 18px; }
 .hud.is-contrast .hud-subtitle,
 .hud.is-contrast .hud-toast,
 .hud.is-contrast .hud-waypoint,
-.hud.is-contrast .hud-btn {
+.hud.is-contrast .hud-btn,
+/* .hud-toasts is a sibling of .hud, not a descendant (hud.js's build()), so
+   it carries its own is-contrast class (setHighContrast()) rather than
+   inheriting .hud.is-contrast. */
+.hud-toasts.is-contrast .hud-toast {
   background: #000;
   border-color: #fff;
   backdrop-filter: none;

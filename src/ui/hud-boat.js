@@ -100,9 +100,14 @@ const BOAT_CSS = `
  * "Tap Shift to go faster" notice at the start of every trip covered it.
  * Measured at 1280x800: arrow 138-184 px, and at 190 the first toast still
  * began at 182. At 206 they clear it.
+ *
+ * .hud-toasts carries its own is-boat/is-touch (mirrored in enter()/leave()
+ * below and in main.js), not .hud's — it is a sibling of .hud, appended
+ * straight to #ui (hud.js's build()), so an achievement toast still shows
+ * once the boat (or any other game) has hidden the aeroplane's own HUD.
  */
 @media (min-width: 621px) {
-  .hud.is-boat .hud-toasts { top: 206px; }
+  .hud-toasts.is-boat { top: 206px; }
 }
 /*
  * The radio line. It sits 118 px up to clear the aeroplane's bottom strip,
@@ -132,7 +137,7 @@ const BOAT_CSS = `
  */
 @media (max-width: 1260px) {
   .hud.is-boat:not(.is-touch) .hud-right { top: 130px; }
-  .hud.is-boat:not(.is-touch) .hud-toasts { top: 226px; }
+  .hud-toasts.is-boat:not(.is-touch) { top: 226px; }
 }
 /*
  * On an iPad. On a touch screen .hud-left is a four-column strip across the
@@ -161,7 +166,7 @@ const BOAT_CSS = `
  * open under the arrow instead of on it (arrow 232-278, toasts from 206).
  */
 .hud.is-touch.is-boat .hud-right { display: none; }
-.hud.is-touch.is-boat .hud-toasts { top: 290px; }
+.hud-toasts.is-touch.is-boat { top: 290px; }
 `;
 
 let cssInjected = false;
@@ -402,6 +407,9 @@ export class BoatHud {
     this.active = true;
     this.sim = sim || null;
     this.hud.wrap.classList.add('is-boat');
+    // toastLayer is a sibling of wrap, not a descendant (hud.js's build()),
+    // so the .hud-toasts.is-boat rules above need it mirrored here too.
+    this.hud.toastLayer.classList.add('is-boat');
     this.panel.style.display = '';
     this.ribbon.style.display = '';
     if (this.sea) this.sea.style.display = '';
@@ -437,6 +445,7 @@ export class BoatHud {
     this.active = false;
     if (!this.built) return;
     this.hud.wrap.classList.remove('is-boat');
+    this.hud.toastLayer.classList.remove('is-boat');
     this.panel.style.display = 'none';
     this.ribbon.style.display = 'none';
     if (this.sea) this.sea.style.display = 'none';

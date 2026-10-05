@@ -160,8 +160,8 @@ export const MISSIONS = [
     steps: [
       {
         id: 'ready',
-        text: 'Rocks incoming! An orange circle means one is coming for you.',
-        hint: 'A rock goes where you WERE going. When you see a circle, turn or climb.',
+        text: 'Rocks incoming! A red target means a rock is aimed there. Get out of it!',
+        hint: 'A rock goes where you WERE going. When you see a red target, turn or climb — never fly into it.',
         atc: { text: 'Courier, Atoll. Rocks inbound from all round. Keep moving and you will be fine.', voice: 'tower' },
         check: (ctx) => ctx.elapsed > 4,
       },

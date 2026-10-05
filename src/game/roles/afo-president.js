@@ -958,6 +958,7 @@ function teardown(sim) {
     if (sim.riding) sim.riding = null;
     if (sim.touch && sim.touch.setVisible && S.touchHidden) sim.touch.setVisible(true);
     FUI.setHudWalking(sim.hud, false);
+    FUI.setHudRiding(sim.hud, false);
   }
   S.touchHidden = false;
   S.drag = null;
@@ -984,6 +985,11 @@ function setup(sim, missionId) {
   sim.override = PARK;
   if (sim.model) sim.model.visible = false;
   FUI.setHudWalking(sim.hud, true);
+  // Pilot-only HUD the owner called out by name: "Wind on the nose" and the
+  // smoke-trail chip (fun.js reads sim.riding itself) have no pilot behind
+  // them in this seat; the FLARE/FIRE button is already gated on the
+  // captain's and escort's own seats (afo.js's currentSeat()).
+  FUI.setHudRiding(sim.hud, true);
   /*
    * The real aeroplane is parked (it has to be, to stay put while you are not
    * flying it) — exactly what onfoot.js's own "get out" looks for. While

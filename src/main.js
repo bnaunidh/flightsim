@@ -87,6 +87,7 @@ import { setReduceFlashing, shakeClock } from './render/flash-safety.js';
 import { extInstall, extBuildWorld, extUpdate, extCamera, extStartMode, extStop, extensions, extKeyContext } from './game/extensions.js';
 // Every plug-in feature registers itself on import. See ./features/index.js.
 import './features/index.js';
+import { noteLiftoff, noteTouchdown, noteArrested, noteCeiling, noteMissionComplete } from './features/achievements/index.js';
 import { viewScale as airlinerViewScale } from './features/airliners.js';
 
 const KTS = UNITS.KTS;
@@ -287,6 +288,10 @@ class Game {
         onAction: (a) => this.hudAction(a),
       });
       this.hud.wrap.classList.add('is-touch');
+      // toastLayer is a sibling of wrap, not a descendant (ui/hud.js's
+      // build()), so hud-boat.js's `.hud-toasts.is-touch.is-boat` rule needs
+      // it mirrored here too.
+      this.hud.toastLayer.classList.add('is-touch');
       /*
        * Also on the root, so the MENUS can size their touch targets.
        * `is-touch` lives on the HUD wrapper, which is not an ancestor of the
@@ -961,6 +966,12 @@ class Game {
       );
       this.audio.available && (g.quality === 'rough' ? this.audio.alerts.uiBack() : this.audio.alerts.checkpoint());
       this.atc.onTouchdown(g);
+      const wind = this.weather.windDescription(RUNWAY.headingDeg);
+      noteTouchdown(this, g, {
+        crosswindKts: wind.cross,
+        night: this.weather.isNight,
+        stormy: this.weather.windSpeedKts >= 20 || /storm|rain/i.test(this.weather.condition || ''),
+      });
     });
 
     ac.on(EVENTS.LIFTOFF, (d) => {
@@ -968,6 +979,7 @@ class Game {
       saveProgress(this.progress);
       this.hud.showBanner('Airborne!', `Lift-off at ${Math.round(d.speedKts)} knots — well flown.`, 'good', 3);
       this.audio.available && this.audio.alerts.checkpoint();
+      noteLiftoff(this, d);
     });
 
     ac.on(EVENTS.CRASH, (c) => {
@@ -1057,6 +1069,14 @@ class Game {
       this.hud.showBanner('Trapped!', `Caught a wire at ${Math.round(d.speedKts)} knots.`, 'good', 3);
       this.rig.kick(0.9);
       this.audio.available && this.audio.ambience.playGear(true);
+      noteArrested(this);
+    });
+
+    // The top of the sky (aircraft/physics.js): a calm line, never a banner —
+    // this is not an emergency, it is just as high as the sky goes.
+    ac.on(EVENTS.CEILING, () => {
+      this.hud.notify('Top of the sky — 70,000 ft', 'info', 4);
+      noteCeiling(this);
     });
 
     ac.on(EVENTS.GEAR, (d) => {
@@ -1138,6 +1158,21 @@ class Game {
       game: flown ? gameOf(flown) : undefined,
     });
     const after = Prog.rankFor(this.prog);
+    {
+      // Achievements: mission categories, gold medals, Air Force One's two
+      // seats. Free Flight and the tutorial are not "a mission" for this —
+      // no category, no Captain/President seat — but they still count
+      // towards the flight-count milestones, the same as any finish.
+      const isMission = result.id !== 'free' && result.id !== 'tutorial';
+      const baseId = flown && (flown.baseId || flown.id);
+      const seat = isMission && (baseId === 'afo-normal' || baseId === 'afo-attack') ? (flown.roleId || 'captain') : null;
+      noteMissionComplete(this, {
+        category: isMission ? Prog.categoryOfMission(flown || {}) : null,
+        score: result.score || 0,
+        crashed: !!result.crashed,
+        afo: seat === 'president' ? 'president' : seat === 'captain' ? 'captain' : null,
+      });
+    }
     if (paid.credits > 0) this.hud.notify(`+${paid.credits} credits · ${paid.total} total`, 'good', 4);
     if (after.id !== before) this.hud.notify(`Promoted — you are now a ${after.name}`, 'good', 6);
     this.menus.syncProgression && this.menus.syncProgression(this.prog);

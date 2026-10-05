@@ -92,6 +92,13 @@ const CSS = `
 .of-walking .hud-cargo, .of-walking .hud-coach, .of-walking .hud-stall,
 .of-walking .hud-papi, .of-walking .hud-taxi, .of-walking .hud-waypoint { display: none !important; }
 /*
+ * A passenger riding along (sim.riding — Air Force One's President seat) is
+ * not the ground crew above: there is no aeroplane of their own parked
+ * nearby to glance the wind for, so .of-riding folds the wind panel away
+ * too, on top of everything .of-walking already hides.
+ */
+.of-riding .hud-right { display: none !important; }
+/*
  * On foot the vehicle's bottom panels are gone, so the prompt comes down out
  * of the middle of the picture — where it sat over the marshaller's back and
  * the nose of the aeroplane being waved in — to just above the radio line.
@@ -365,6 +372,17 @@ export function setHudWalking(hud, on) {
   build();
   w.classList.toggle('of-walking', !!on);
   if (UI.root) UI.root.classList.toggle('of-walk', !!on);
+}
+
+/**
+ * Fold the wind panel away too — only for a passenger (sim.riding), never
+ * for the ground crew's ordinary walk, which keeps it (see .of-walking's own
+ * note above .of-riding in the CSS). Call alongside setHudWalking(hud, true).
+ */
+export function setHudRiding(hud, on) {
+  const w = hud && hud.wrap;
+  if (!w || !w.classList) return;
+  w.classList.toggle('of-riding', !!on);
 }
 
 /* ------------------------------------------------------------------ */

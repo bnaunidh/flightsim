@@ -29,6 +29,39 @@ const FPM = 196.85; // m/s → feet per minute
 const FT = 3.28084;
 
 /**
+ * The top of the sky: 70,000 ft MSL.
+ *
+ * The owner, 2026-10-04: "if you hit the max of the sky, 70,000 feet you get
+ * the achievement: The Sky's the Limit". There was no ceiling anywhere in the
+ * code — grep found none — so "the top of the sky" meant nothing: climbing
+ * to 70,000 ft was exactly as possible as climbing to 7,000.
+ *
+ * This gives it a top the way a real aeroplane has one: not a wall and never
+ * a bounce, just less and less air to climb on on the way there, until there
+ * is none left. Below SKY_CEILING_FT - SKY_CEILING_BAND_FT (68,000 ft) none
+ * of this runs at all, so nothing about ordinary flying changes — the owner's
+ * own line was "nothing else about flying changes below 60,000 ft", and this
+ * is well inside that.
+ *
+ * The rocket (features/rocket/) is a different machine on a different
+ * physics module entirely and is rightly excluded: it goes to space.
+ */
+export const SKY_CEILING_FT = 70000;
+const SKY_CEILING_M = SKY_CEILING_FT / FT;
+const SKY_CEILING_BAND_FT = 2000;
+/*
+ * How hard the remaining height pulls the climb rate down, per second of
+ * remaining-height "half-life": big enough that the last hundred feet still
+ * close in a handful of seconds, small enough at the band's own edge
+ * (2,000 ft out) that a normal climb is not felt at all.
+ */
+const SKY_CEILING_PULL = 0.15;
+// Close enough to call it "the top of the sky" for the HUD line and the
+// achievement — the climb rate this near the ceiling is already down to a
+// crawl, and asking for the exact, asymptotic 70,000.000 ft would mean never.
+const SKY_CEILING_NOTE_FT = 100;
+
+/**
  * The aeroplane currently being flown, and the numbers that describe it.
  *
  * These are `let`, not `const`, and every module that imports them gets a live
@@ -64,6 +97,7 @@ export const EVENTS = {
   BOUNCE: 'bounce',
   ARRESTED: 'arrested',
   DAMAGE: 'damage',
+  CEILING: 'ceiling',
 };
 
 export class Aircraft {
@@ -196,6 +230,7 @@ export class Aircraft {
     this._stallTimer = 0;
     this._lowFuelWarned = false;
     this._overspeedWarned = 0;
+    this._atSkyCeiling = false;
     this._rollHeading = null;
     this._steerAssist = 0;
   }
@@ -1818,6 +1853,36 @@ export class Aircraft {
     this.vel.addScaledVector(accel, dt);
     this.pos.addScaledVector(this.vel, dt);
     this.distanceFlown += this.groundSpeed * dt;
+
+    // ---- The top of the sky: 70,000 ft ---------------------------------
+    {
+      const altFt = this.pos.y * FT;
+      const remainingFt = SKY_CEILING_FT - altFt;
+      if (remainingFt < SKY_CEILING_BAND_FT) {
+        if (remainingFt <= 0) {
+          // Never a wall to hit, never a bounce — by the time anything gets
+          // here the climb rate below has already been pulled to almost
+          // nothing, so this is a safety net for a big dt, not the thing
+          // that actually stops the climb.
+          this.pos.y = SKY_CEILING_M;
+          if (this.vel.y > 0) this.vel.y = 0;
+        } else if (this.vel.y > 0) {
+          const capMps = (SKY_CEILING_PULL * remainingFt) / FT;
+          if (this.vel.y > capMps) this.vel.y = capMps;
+        }
+        if (!this._atSkyCeiling && remainingFt <= SKY_CEILING_NOTE_FT) {
+          this._atSkyCeiling = true;
+          this.emit(EVENTS.CEILING, { altFt: Math.round(altFt) });
+        } else if (this._atSkyCeiling && remainingFt > SKY_CEILING_NOTE_FT * 4) {
+          // Well clear again (400 ft) before it can fire a second time —
+          // enough hysteresis that riding right at the line does not toast
+          // on every frame it dips a foot either way.
+          this._atSkyCeiling = false;
+        }
+      } else if (this._atSkyCeiling) {
+        this._atSkyCeiling = false;
+      }
+    }
 
     // Angular: I·ω̇ = τ - ω × (I·ω)
     const Iw = new THREE.Vector3(

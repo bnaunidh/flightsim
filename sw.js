@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v58';
+const CACHE_VERSION = 'island-flight-v59';
 
 const PRECACHE = [
   './',
@@ -323,6 +323,13 @@ const PRECACHE = [
   // Added by tools/sync-precache.mjs.
   'src/render/depth-layers.js',
   'src/render/flash-safety.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/achievements/data.js',
+  'src/features/achievements/icons.js',
+  'src/features/achievements/index.js',
+  'src/features/achievements/rules.js',
+  'src/features/achievements/store.js',
+  'src/features/achievements/ui.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

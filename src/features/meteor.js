@@ -1343,12 +1343,44 @@ const CSS = `
    shows there if Z has been given to something else, and then sits left of the map. */
 #meteor-ui .mt-zap.is-desk { right:224px; bottom:120px; }
 #meteor-ui .mt-zap:active { transform:scale(0.95); }
+/*
+ * The owner's words, verbatim: "in the metor dodge mission theres a finish
+ * cirlce?.." — the rock-is-coming warning used to be a plain open ring, the
+ * same shape this game uses elsewhere for a gate to FLY THROUGH (the race
+ * rings). This is the opposite of that: a closing target reticle (four
+ * inward corner brackets, never a full circle) with a warning triangle in
+ * the middle, drawn as one background image so nothing about it reads as an
+ * empty hoop. It pulses slowly — never a flash — and that pulse obeys
+ * "Reduce flashing" below.
+ *
+ * placeReticle() moves the real element with an inline style.transform:
+ * translate(...) every frame — a CSS animation on that same transform
+ * property would win over the inline value and freeze it in place the
+ * instant the animation started (the first dodge flown had both pinned
+ * reticles stuck at the origin). So the real element only ever positions
+ * itself; every bit of look-and-pulse lives on its ::before, a second,
+ * un-positioned layer the inline transform never touches.
+ */
 #meteor-ui .mt-ret { position:absolute; left:0; top:0; width:48px; height:48px; margin:-24px 0 0 -24px;
-  border:2px solid rgba(255,164,84,0.95); border-radius:50%; display:none; will-change:transform; }
-#meteor-ui .mt-ret.is-lock { border-color:rgba(130,240,255,0.98); border-radius:10px; box-shadow:0 0 12px rgba(130,240,255,0.6); }
-#meteor-ui .mt-ret.is-edge { width:34px; height:34px; margin:-17px 0 0 -17px; border-radius:50% 50% 50% 0; background:rgba(255,120,60,0.3); }
+  display:none; will-change:transform; }
+#meteor-ui .mt-ret::before { content:''; position:absolute; inset:0;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cg fill='none' stroke='%23ff5a3c' stroke-width='4' stroke-linecap='round'%3E%3Cpath d='M4 16 L4 4 L16 4'/%3E%3Cpath d='M32 4 L44 4 L44 16'/%3E%3Cpath d='M4 32 L4 44 L16 44'/%3E%3Cpath d='M44 32 L44 44 L32 44'/%3E%3C/g%3E%3Cpath d='M24 13 L35.5 33.5 H12.5 Z' fill='none' stroke='%23ff5a3c' stroke-width='3' stroke-linejoin='round'/%3E%3Crect x='22.6' y='18.6' width='2.8' height='8.4' rx='1.3' fill='%23ff5a3c'/%3E%3Ccircle cx='24' cy='29.6' r='1.7' fill='%23ff5a3c'/%3E%3C/svg%3E") center/100% 100% no-repeat;
+  filter: drop-shadow(0 0 5px rgba(255,70,40,0.55));
+  animation: mtThreatPulse 1.3s ease-in-out infinite alternate; will-change:transform, opacity; }
+#meteor-ui .mt-ret.is-lock::before { background:none; filter:none; animation:none;
+  border:2px solid rgba(130,240,255,0.98); border-radius:10px; box-shadow:0 0 12px rgba(130,240,255,0.6); }
+/* Off-screen: a direction pointer, not a danger ring over a place on the view — a filled "look over there" pin. */
+#meteor-ui .mt-ret.is-edge { width:34px; height:34px; margin:-17px 0 0 -17px; }
+#meteor-ui .mt-ret.is-edge::before { background:rgba(255,70,40,0.42); background-image:none;
+  border:2px solid rgba(255,130,90,0.95); border-radius:50% 50% 50% 0; filter:none; animation:none; }
+#meteor-ui .mt-ret.is-edge::after { content:'!'; position:absolute; left:0; right:0; top:0; text-align:center; font-size:15px; font-weight:800;
+  color:#fff3ea; text-shadow:0 1px 2px rgba(0,0,0,0.6); }
+#meteor-ui .mt-ret.is-lock.is-edge::after { content:none; }
 #meteor-ui .mt-ret b { position:absolute; left:50%; top:100%; transform:translate(-50%,4px); font-size:11px; font-weight:700;
-  white-space:nowrap; text-shadow:0 1px 3px #000, 0 0 2px #000; }
+  white-space:nowrap; text-shadow:0 1px 3px #000, 0 0 2px #000; color:#ffd9c6; }
+@keyframes mtThreatPulse { from { transform:scale(1); opacity:0.86; } to { transform:scale(1.12); opacity:1; } }
+@media (prefers-reduced-motion: reduce) { #meteor-ui .mt-ret::before { animation:none; } }
+html.reduce-flashing #meteor-ui .mt-ret::before { animation-duration: 2.4s; }
 #meteor-ui .mt-flash { position:absolute; inset:0; opacity:0; transition:opacity 0.35s ease-out; }
 #meteor-ui .mt-flash.is-photo { background:#fff; }
 #meteor-ui .mt-flash.is-bonk { background:radial-gradient(circle, rgba(255,255,255,0) 45%, rgba(255,120,90,0.75)); }

@@ -287,6 +287,11 @@ async function session(sim, r, say, THREE, realRender) {
 
   /* ---- P5: only boat things on the HUD ---- */
   const wrap = sim.hud.wrap;
+  // .hud-toast lives in its own layer, a sibling of wrap, not a descendant
+  // of it (ui/hud.js's build() — so a toast can outlive the HUD being
+  // hidden); wrap.querySelectorAll('.hud-toast') below would otherwise
+  // always come back empty.
+  const toastLayer = sim.hud.toastLayer || wrap;
   const planeWords = [];
   for (const e of wrap.querySelectorAll('.hud-chip, .hud-bar-label, .hud-keyhint')) {
     if (visible(e)) planeWords.push(e.textContent.trim().slice(0, 18));
@@ -307,7 +312,7 @@ async function session(sim, r, say, THREE, realRender) {
   let covered = '';
   if (arrow && arrow.el) {
     const ar = arrow.el.getBoundingClientRect();
-    for (const tEl of wrap.querySelectorAll('.hud-toast, .hud-subtitle, .hud-aground')) {
+    for (const tEl of [...wrap.querySelectorAll('.hud-subtitle, .hud-aground'), ...toastLayer.querySelectorAll('.hud-toast')]) {
       if (!visible(tEl)) continue;
       const tr = tEl.getBoundingClientRect();
       if (tr.left < ar.right && tr.right > ar.left && tr.top < ar.bottom && tr.bottom > ar.top) covered = tEl.textContent.slice(0, 40);
@@ -358,12 +363,12 @@ async function session(sim, r, say, THREE, realRender) {
     seconds(sim, 15 - sim.vehicle.t);
     const sub = wrap.querySelector('.hud-subtitle');
     const callUp = !!sub && visible(sub) && firstCall && firstCall.textContent === callText && !!callText;
-    const stale = [...wrap.querySelectorAll('.hud-toast')].filter((tEl) => visible(tEl) && !tEl.classList.contains('is-out') && /to go faster/.test(tEl.textContent));
+    const stale = [...toastLayer.querySelectorAll('.hud-toast')].filter((tEl) => visible(tEl) && !tEl.classList.contains('is-out') && /to go faster/.test(tEl.textContent));
     r.ok(
       'P30 fifteen seconds in, the opening call and the first notice have gone',
       !callUp && stale.length === 0,
       `opening call still up: ${callUp}; "to go faster" notice still up: ${stale.length > 0}; ` +
-        `${[...wrap.querySelectorAll('.hud-toast')].filter(visible).length} toast(s) on screen at ${sim.vehicle.t.toFixed(0)} s`
+        `${[...toastLayer.querySelectorAll('.hud-toast')].filter(visible).length} toast(s) on screen at ${sim.vehicle.t.toFixed(0)} s`
     );
   }
 

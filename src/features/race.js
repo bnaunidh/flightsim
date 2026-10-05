@@ -711,7 +711,13 @@ function placeBar(bar) {
   const x0 = b.left - 6;
   const x1 = b.right + 6;
   const boxes = [...hudEl.children].filter((el) => !BAR_SKIP.test(typeof el.className === 'string' ? el.className : ''));
-  boxes.push(...hudEl.querySelectorAll('.hud-heli, .hud-toasts > .hud-toast:not(.is-out)'));
+  boxes.push(...hudEl.querySelectorAll('.hud-heli'));
+  // .hud-toasts is a sibling of .hud, not a descendant of it (ui/hud.js's
+  // build(), so a toast can outlive the HUD being hidden) — reached from
+  // #ui instead of hudEl, or an active toast would stop keeping the race
+  // bar clear of it.
+  const uiRoot = hudEl.parentElement;
+  if (uiRoot) boxes.push(...uiRoot.querySelectorAll(':scope > .hud-toasts > .hud-toast:not(.is-out)'));
   if (slot) boxes.push(...slot.children);
   for (const sel of ['#ui .minimap', '.mp-badge', '.race-solobar']) {
     const el = document.querySelector(sel);

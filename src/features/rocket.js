@@ -41,6 +41,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension } from '../game/extensions.js';
 import { registerActions, isKey, heldKey } from '../flight/input.js';
+import { noteRocketStart } from './achievements/index.js';
 
 /*
  * The rocket's keys, in the one registry: Settings → Controls → Rocket.
@@ -285,6 +286,10 @@ function startFlight(sim, opts) {
   sim.game = 'rocket';
   if (sim.menus.currentGame !== 'rocket') sim.menus.setGame('rocket');
   sim.state = 'flying';
+  // The one place a rocket flight begins (sim.update is swapped out while a
+  // session is live — see install() below — so extensions.js's own
+  // `startMode` hook never sees a rocket launch at all; this is the hook).
+  if (!opts.robot) noteRocketStart(sim);
   sim.wakeAudio && sim.wakeAudio();
   if (sim.unlockAudio) sim.unlockAudio().catch(() => {});
   try {

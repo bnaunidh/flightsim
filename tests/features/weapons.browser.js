@@ -255,6 +255,33 @@ export async function check(sim, r, say) {
     r.ok('weapons: a rock straight at you costs a shield, not the aeroplane', sim.meteors.stats.shields === shields0 - 1 && !sim.aircraft.crashed && sim.runner.status === 'running',
       `shields ${shields0} -> ${sim.meteors.stats.shields}, runner ${sim.runner.status}`);
     r.ok('weapons: Rock Dodger has no zapper (Z is left for everyone else)', !ui.querySelector('.mt-zap') || ui.querySelector('.mt-zap').hidden);
+    // A survival mission has no destination: the owner saw what looked like a
+    // "finish circle" in it. There must be no HUD objective marker…
+    r.ok('weapons: Rock Dodger has no finish or objective marker', !sim.activeTarget, sim.activeTarget && sim.activeTarget.label);
+    // …and no rock in it ever gets the 3D ground ring (that is meteor-town's
+    // landing marker, a real destination for a real mission).
+    const dodgeGroundMarkers = sim.meteors.meteors().filter((m) => m.marker >= 0).length;
+    r.ok('weapons: …and no rock gets the ground landing ring either', dodgeGroundMarkers === 0, `${dodgeGroundMarkers}`);
+    // The on-screen reticle on an incoming rock reads as danger, not a gate to
+    // fly through: on screen, a closing-bracket target with a warning
+    // triangle (a background image, not an open ring); pinned to the edge
+    // (off screen), a filled "look over there" pointer — either way, never
+    // the old plain hollow orange circle.
+    const a3 = sim.aircraft;
+    const T2 = 6;
+    const at2 = a3.pos.clone().addScaledVector(a3.vel, T2);
+    sim.meteors.spawn({ target: at2, az: a3.heading + 180, dive: 35, speed: 200, T: T2, radius: 4, size: 1.6, threat: true });
+    step(0.3);
+    const threatRets = [...ui.querySelectorAll('.mt-ret')].filter((e) => e.style.display === 'block' && !e.classList.contains('is-lock'));
+    r.ok('weapons: …an incoming rock shows a danger reticle', threatRets.length > 0, threatRets.length);
+    const wrongShape = threatRets.find((e) => {
+      // The look-and-pulse lives on ::before, never on the real element — see
+      // meteor.js's own note by .mt-ret::before on why (the inline transform
+      // that positions the real element must stay untouched by the pulse).
+      const cs = getComputedStyle(e, '::before');
+      return e.classList.contains('is-edge') ? !/rgba?\(/.test(cs.backgroundColor) || cs.backgroundColor === 'rgba(0, 0, 0, 0)' : !cs.backgroundImage || cs.backgroundImage === 'none';
+    });
+    r.ok('weapons: …drawn as a warning icon or pointer, never an empty circular border', !wrongShape, wrongShape ? wrongShape.className : 'all good');
 
     /* ---------------- Guard the Town ---------------- */
     log('weapons: town');

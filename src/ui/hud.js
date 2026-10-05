@@ -162,6 +162,9 @@ export class Hud {
     this.objectiveOpen = true;
     this.objectiveT = OBJECTIVE_OPEN_MIN;
     this.objectiveHover = false;
+    // Set every frame by update(dt, sim); starts false so a HUD that is
+    // never ticked (built but never flown) never folds for the wrong reason.
+    this._riding = false;
     this.objective.addEventListener('pointerenter', (e) => {
       if (e.pointerType !== 'mouse') return;
       this.objectiveHover = true;
@@ -361,8 +364,14 @@ export class Hud {
     this.coach.style.display = 'none';
     wrap.appendChild(this.coach);
 
+    // NOT a child of `wrap`: setVisible(false) sets wrap's own display to
+    // 'none', which would take every descendant — including a toast that
+    // landed the instant before, such as an achievement's — down with it,
+    // unseen. Appended straight to `root` below (after `wrap`, and with its
+    // own z-index in main.css) so a toast outlives the HUD being hidden for
+    // a debrief dialog, a menu, or another game's own loop (the rocket)
+    // that never shows this HUD at all.
     this.toastLayer = el('div', 'hud-toasts');
-    wrap.appendChild(this.toastLayer);
 
     this.subtitle = el('div', 'hud-subtitle');
     this.subtitle.style.display = 'none';
@@ -421,6 +430,7 @@ export class Hud {
     wrap.appendChild(this.keyMon);
 
     this.root.appendChild(wrap);
+    this.root.appendChild(this.toastLayer);
   }
 
   setVisible(v) {
@@ -444,6 +454,9 @@ export class Hud {
 
   setHighContrast(on) {
     this.wrap.classList.toggle('is-contrast', !!on);
+    // toastLayer is no longer a descendant of wrap (see build()), so it does
+    // not pick up .hud.is-contrast for free — mirror the class directly.
+    this.toastLayer.classList.toggle('is-contrast', !!on);
   }
 
   setLargeText(on) {
@@ -726,7 +739,10 @@ export class Hud {
     }
     if (this.objectiveOpen && !this.objectiveHover) {
       this.objectiveT -= dt;
-      if (this.objectiveT <= 0) this.foldObjective();
+      // Not the automatic fold for a passenger (see update()'s own note by
+      // this._riding) — a deliberate tap still folds it (the click handler
+      // above calls foldObjective() directly, never through this timer).
+      if (this.objectiveT <= 0 && !this._riding) this.foldObjective();
     }
     this._keyHintT = (this._keyHintT || 0) - dt;
     if (this._keyHintT <= 0) {
@@ -762,12 +778,19 @@ export class Hud {
   notify(text, kind = 'info', duration = 4.2) {
     const t = el('div', `hud-toast is-${kind}`, rekey(text));
     this.toastLayer.appendChild(t);
-    this.toasts.push({ node: t, life: duration });
+    const entry = { node: t, life: duration };
+    this.toasts.push(entry);
     // Keep the stack short.
     while (this.toasts.length > 4) {
       const old = this.toasts.shift();
       old.node.remove();
     }
+    // Handed back so a caller whose toast can land outside the only state
+    // that ticks `life` down (updateOverlays(), run from main.js only while
+    // state === 'flying') can give it its own real-clock expiry instead of
+    // it sitting at full life forever — see achievements/ui.js's
+    // showUnlockToast(), the one caller that needs this.
+    return entry;
   }
 
   showBanner(title, subtitle, kind = 'good', duration = 3.6) {
@@ -1037,6 +1060,12 @@ export class Hud {
     const ac = sim.aircraft;
     const r = ac.readouts();
     const w = sim.weather;
+    // A passenger (sim.riding — Air Force One's President seat) has no key
+    // or tap bound to "read it again", and walking a first-person cabin
+    // gives no hint that the folded chip is even clickable — so the step
+    // banner stays open and whole for them instead of folding to an
+    // ellipsis after the usual read-it-once timer (updateOverlays()).
+    this._riding = !!sim.riding;
     this.updateKeyMonitor(sim.input, ac);
     /*
      * The helicopter's panel, if this is a helicopter. It swaps the four

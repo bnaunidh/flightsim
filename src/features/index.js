@@ -32,6 +32,10 @@ import './sky.js';
 import './traffic.js';
 import './fun.js';
 import './rocket.js';
+// Replaces the sticker book fun.js used to carry: achievements, named and
+// iconned like a console game's. After fun and rocket: it reads a liftoff,
+// a touchdown and a rocket launch, never changes them.
+import './achievements/index.js';
 // List 2, multiplayer part 2: PvP, bumping, the Ring Rally and a world everybody shares.
 import './pvp.js';
 import './bump.js';
