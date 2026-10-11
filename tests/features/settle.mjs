@@ -111,7 +111,9 @@ for (const mode of ['simplified', 'realistic']) {
      * where it ends up; the pitch between is that build-up, measured at up to
      * 0.93° (Vanguard) and zero with a brake that holds (tried in a copy of
      * the tyre code). On the rotor the hover assist's cyclic, which the
-     * settle does not model, levels it by 0.46°.
+     * settle does not model, used to level it by 0.46-0.60° on its skids;
+     * it now stands down while the machine is parked with the lever at
+     * idle (rotor-assist.js, `parked`), and it ends within 0.17°.
      */
     const on = spawnAndHold(id, { mode, engineOn: true });
     ok(`${id} ${mode}: engine at idle, height holds within 2 cm (3 s)`,

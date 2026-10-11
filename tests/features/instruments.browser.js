@@ -780,8 +780,8 @@ export async function check(sim, r, say = () => {}) {
     /* ---------------- 3. The helicopter ---------------- */
     log('helicopter');
     await freeFlight(sim, 'harrier');
-    // Kid mode (the heli team's default) never lets the Skyhook sink this fast,
-    // on purpose; the warning is for a pilot flying it without the hover assist.
+    // The stability assist (on by default) eases a Skyhook's descent near the ground,
+    // on purpose; the warning is for a pilot flying it with the assist off.
     sim.aircraft.hoverAssist = false;
     placeAirborne(sim, { x: -2000, z: 800, agl: 150, speed: 12, gear: true, thr: 0.15 });
     w3 = watch(sim);

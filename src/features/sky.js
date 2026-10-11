@@ -152,6 +152,21 @@ export function registerBody(b) {
   return b;
 }
 
+/**
+ * Listeners told about every hit, after the body's owner has been (`b.hit`):
+ * fn(sim, body, { closing, nx, ny, nz, at, onGround }). The break-up
+ * (./breakup.js) listens, to break the other aircraft where it was struck.
+ * A listener that throws is skipped, never the collision.
+ */
+const HIT_LISTENERS = [];
+export function onBodyHit(fn) {
+  if (typeof fn === 'function' && !HIT_LISTENERS.includes(fn)) HIT_LISTENERS.push(fn);
+  return () => {
+    const i = HIT_LISTENERS.indexOf(fn);
+    if (i >= 0) HIT_LISTENERS.splice(i, 1);
+  };
+}
+
 /** Take a body out (its owner has disposed it). */
 export function unregisterBody(b) {
   if (!b) return;
@@ -422,6 +437,14 @@ function collide(sim, b, c) {
     if (!K.warned) console.warn(`[sky] "${b.id}" would not take the hit:`, err);
     K.warned = true;
   }
+  for (const fn of HIT_LISTENERS) {
+    try {
+      fn(sim, b, { closing: c.closing, nx: c.nx, ny: c.ny, nz: c.nz, at: AT, onGround });
+    } catch (err) {
+      if (!K.warned) console.warn('[sky] a hit listener failed:', err);
+      K.warned = true;
+    }
+  }
   dropCrew(sim, b);
   try {
     toon.puff(AT, '#ffffff', { n: 12, size: 5 + Math.min(5, c.closing * 0.1), spread: 9, life: 1.3, up: 2 });
@@ -429,7 +452,8 @@ function collide(sim, b, c) {
     /* the puff is decoration */
   }
   const reason = onGround ? `You taxied into ${name}` : `You flew into ${name}`;
-  ac.crash(reason, { part: 'fuselage', surfaceKind: 'aircraft', worldPoint: AT.clone(), other: b.id, otherKind: b.kind });
+  // `closing` is how fast the two came together: the break-up sizes the damage by it.
+  ac.crash(reason, { part: 'fuselage', surfaceKind: 'aircraft', worldPoint: AT.clone(), other: b.id, otherKind: b.kind, closing: c.closing, otherPos: b.pos.clone() });
 }
 
 /* ------------------------------------------------------------------ *

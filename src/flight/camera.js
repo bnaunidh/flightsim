@@ -8,8 +8,10 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { clamp, lerp } from '../core/noise.js';
-import { heightAt } from '../world/terrain.js';
+import { heightAt, OBSTACLES } from '../world/terrain.js';
 import { RUNWAY } from '../world/airport.js';
+import { SPEC } from '../aircraft/physics.js';
+import { boomClear } from '../vehicles/driving.js';
 import { dim, CAPS, shakeClock } from '../render/flash-safety.js';
 
 export const VIEWS = ['cockpit', 'chase', 'orbit', 'wing', 'tower'];
@@ -62,6 +64,42 @@ const REALISTIC_OFFSET = new THREE.Vector3(0, -0.02, 0.16);
 const _desired = new THREE.Vector3();
 const _accel = new THREE.Vector3();
 const UP_BIAS = new THREE.Vector3(0, 0.65, 0);
+
+/*
+ * The helicopter's Follow view, kept out of buildings and rock.
+ *
+ * The chase spring only ever floored the lens at the ground under it plus
+ * 2.2 m. A Skyhook hovering beside a building, the carrier's island or a sea
+ * stack put the lens behind the wall or inside the island with the machine
+ * hidden — measured with a real render (scratchpad camprobe.mjs), hovering
+ * 6 m up in the street 9 m off the Cottage Hospital's wall, nose away from
+ * it, the sight line from the machine to the lens went through the hospital
+ * on 150 of 150 frames, and 12 m off the island of CV-11 Resolute the same.
+ * Beside a stack the floor clamp instead threw the lens up onto the rock's
+ * top. Aeroplanes do not hover beside things, so this is the rotor's alone
+ * and none of the aeroplane views move.
+ *
+ * So, every frame in Follow: the boxes within NEAR_R of the machine (gathered
+ * again every NEAR_MOVE metres, as SurfaceVehicle.nearObstacles does) are
+ * asked with the van camera's own boomClear(), and the ground at BOOM_T along
+ * the line; on a hit the lens comes in along the line to just short of it,
+ * never nearer than MIN_BOOM. Ground starts pulling it in up to SOFT metres
+ * before it touches the line (less near the machine, which may be standing
+ * on it), so rock sliding towards the line moves the lens
+ * smoothly; a box that appears in the line brings it in at up to IN_RATE
+ * (measured beside a sea stack, snapping in at once moved the lens 17.6 m
+ * in one frame), and it goes back out over EASE_OUT seconds.
+ * Only the lens moves (camera.position), never the spring's own state.
+ */
+const NEAR_R = 60;
+const NEAR_MOVE = 12;
+const BOOM_T = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1];
+const MIN_BOOM = 6;
+const BOOM_PAD = 1.2;
+const SOFT = 3;
+const IN_RATE = 30; // m/s along the boom
+const EASE_OUT = 0.4;
+const _boomEnd = new THREE.Vector3();
 
 /**
  * Where the chase view stands at rest, behind and above the centre of
@@ -325,6 +363,78 @@ export class CameraRig {
     this._chaseOut.copy(this.camera.position);
   }
 
+  /**
+   * Bring the helicopter's Follow lens in short of whatever stands between it
+   * and the machine. See NEAR_R. `desired` is where the spring is aiming,
+   * before the floor: as the floor lifts the lens above that (a sea stack
+   * behind the machine), the line is taken down towards where the spring
+   * wanted to be — all of the way once it is lifted 8 m, smoothly from 2 m,
+   * so it never jumps — and the lens comes in short of the rock face instead
+   * of sitting on its summit.
+   */
+  rotorBoom(ac, desired, dt) {
+    const cam = this.camera.position;
+    const px = ac.pos.x;
+    const py = ac.pos.y + 1;
+    const pz = ac.pos.z;
+    const near = this._nearBoxes || (this._nearBoxes = []);
+    if (this._nearN !== OBSTACLES.length || !(Math.abs(px - this._nearX) < NEAR_MOVE && Math.abs(pz - this._nearZ) < NEAR_MOVE)) {
+      this._nearX = px;
+      this._nearZ = pz;
+      this._nearN = OBSTACLES.length;
+      near.length = 0;
+      for (let i = 0; i < OBSTACLES.length; i++) {
+        const o = OBSTACLES[i];
+        if (o.x1 < px - NEAR_R || o.x0 > px + NEAR_R || o.z1 < pz - NEAR_R || o.z0 > pz + NEAR_R) continue;
+        near.push(o);
+      }
+    }
+    const end = _boomEnd.copy(cam);
+    const lift = clamp((end.y - desired.y - 2) / 6, 0, 1);
+    if (lift > 0) end.y -= lift * (end.y - Math.max(desired.y, py + 2));
+    const dx = end.x - px;
+    const dy = end.y - py;
+    const dz = end.z - pz;
+    const len = Math.hypot(dx, dy, dz);
+    let k = 1;
+    if (len > MIN_BOOM) {
+      const shim = this._boomShim || (this._boomShim = { nearObstacles: () => this._nearBoxes });
+      const hit = boomClear(shim, px, py, pz, end.x, end.y, end.z);
+      if (hit < 1) k = hit - BOOM_PAD / len;
+      const pad = BOOM_PAD / len;
+      for (let i = 0; i < BOOM_T.length; i++) {
+        const t = BOOM_T[i];
+        if (t - pad >= k) break;
+        // Clearance of the line over the ground here; under SOFT it starts
+        // bringing the lens in, at none it is in short of this sample.
+        const c = py + dy * t - (heightAt(px + dx * t, pz + dz * t) + 0.6);
+        // The margin grows along the boom: by the machine the ground it is
+        // standing on is meant to be close.
+        const soft = SOFT * t;
+        if (c < soft) k = Math.min(k, t - pad + (1 - t + pad) * clamp(c / soft, 0, 1));
+      }
+      // And the lens itself out of the ground: in along the line rather than
+      // lifted by the floor, which beside a cliff threw it up the rock face
+      // (4.9 m in one 1/15 s step beside a sea stack).
+      while (k > MIN_BOOM / len && heightAt(px + dx * k, pz + dz * k) + 1.6 > py + dy * k) k -= 0.05;
+      k = Math.max(MIN_BOOM / len, k);
+    }
+    // In quickly, out gently, so it never pops.
+    const prev = Number.isFinite(this._boomK) ? this._boomK : 1;
+    // (A new view — a flight starting, the view key — goes straight there.)
+    this._boomK = this._boomSnap
+      ? k
+      : k < prev
+        ? Math.max(k, prev - (IN_RATE * dt) / Math.max(len, MIN_BOOM))
+        : prev + (k - prev) * Math.min(1, dt / EASE_OUT);
+    this._boomSnap = false;
+    if (this._boomK < 0.999 || end.y !== cam.y) {
+      cam.set(px + dx * this._boomK, py + dy * this._boomK, pz + dz * this._boomK);
+      const gh = heightAt(cam.x, cam.z) + 1.6;
+      if (cam.y < gh) cam.y = gh;
+    }
+  }
+
   /** Add a one-off jolt (touchdown, crash, gust). */
   kick(amount) {
     if (this.reducedMotion) amount *= 0.25;
@@ -398,6 +508,8 @@ export class CameraRig {
         .addScaledVector(upV.normalize(), this.chaseUp + ac.airspeed * 0.02);
       if (!this.initialised) {
         this.chasePos.copy(desired);
+        this._boomK = 1;
+        this._boomSnap = true;
         // The look-at point too. It was left wherever the last flight or the
         // last spell in this view ended, so a new flight began with the camera
         // aimed at the old one: measured in the game, a Skylark take-off after
@@ -428,6 +540,8 @@ export class CameraRig {
       cam.position.copy(this.chasePos);
       cam.position.x += sx * 0.35;
       cam.position.y += sy * 0.35;
+      if (SPEC.rotor) this.rotorBoom(ac, desired, dt);
+      else this._boomK = 1;
       this._chaseOut.copy(cam.position);
       // The same for the point it looks at: carried along with the part of
       // the aeroplane's velocity the spring does not lag, then eased in. On

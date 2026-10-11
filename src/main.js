@@ -244,6 +244,8 @@ class Game {
     this.aircraft = new Aircraft();
     this.aircraft.mode = this.settings.flightMode;
     this.aircraft.difficulty = this.settings.difficulty || 'normal';
+    // The helicopter's stability assist: Settings > Flying, or its key in the air.
+    this.aircraft.hoverAssist = this.settings.heliAssist !== false;
     this.aircraft.realisticFuel = !!this.settings.realisticFuel;
     // Built with no options at all before, so it silently wore the skylark's
     // colours whatever was saved. setAircraft rebuilds it a moment later, but
@@ -1546,6 +1548,7 @@ class Game {
     }
     this.aircraft.mode = this.settings.flightMode;
     this.aircraft.difficulty = this.settings.difficulty || 'normal';
+    this.aircraft.hoverAssist = this.settings.heliAssist !== false;
     this.input.out.throttle = this.aircraft.controls.throttle;
 
     // Camera: cockpit for the tutorial (you learn the instruments), chase otherwise.
@@ -1573,16 +1576,18 @@ class Game {
       this.runner.status = STATUS.IDLE;
       this.runner.def = null;
       this.runner.clearGates();
-      const kidHeli = this.aircraft.mode === 'simplified' && this.aircraft.hoverAssist !== false;
+      const assisted = this.aircraft.hoverAssist !== false;
       const padName = heliPad ? heliPad.name : 'the pad';
       this.hud.setObjective(
         'Free Flight',
         heliStart
           ? airborne
             ? 'You are already flying. Explore the islands, then set down on any H you like.'
-            : kidHeli
-              ? `You are on ${padName}. Hold Shift to lift off, and let go to hover. W A S D fly, Q and E turn, and Ctrl brings you down onto any H.`
-              : `You are on ${padName}. Raise the collective with Shift until she lifts. Set down on any H you like.`
+            : this.touch
+              ? `You are on ${padName}. Slide the lever up until she lifts, and let go to hover. The stick flies her, the strip along the bottom turns her, and the lever down brings her onto any H.`
+              : assisted
+                ? `You are on ${padName}. Hold Shift to raise the collective until she lifts, and let go to hover. W A S D fly, Q and E turn, and Ctrl brings you down onto any H.`
+                : `You are on ${padName}. Raise the collective with Shift until she lifts. The assist is off, so she is all yours. Set down on any H you like.`
           : airborne
             ? 'You are already flying. Explore the islands, then land back on runway 09 when you like.'
             : 'Take off from runway 09, explore the islands, and land whenever you like.'
@@ -1805,18 +1810,21 @@ class Game {
        * there is one rule for what these do and not two.
        */
       case 'starter':
-        if (this.aircraft.engineOn) this.aircraft.stopEngine('shutdown');
-        else this.aircraft.startEngine();
+        this.pressStarter(true);
         break;
       case 'drop':
         if (!this.dropCargo()) this.hud.notify('Nothing to drop right now', 'info', 2);
         break;
       case 'gear':
+        // Skids: main.css hides the pad in the helicopter, and this is the
+        // same rule for whatever else might call it (see handleDiscreteInput).
+        if (SPEC.rotor) break;
         if (!this.aircraft.toggleGear()) {
           this.hud.notify('Too fast for the landing gear — slow down first', 'warn', 3);
         }
         break;
       case 'flaps': {
+        if (SPEC.rotor) break;
         // One button, so it walks down through the settings and wraps around.
         const ac = this.aircraft;
         const next = ac.flapStep() >= 3 ? 0 : ac.flapStep() + 1;
@@ -1928,6 +1936,64 @@ class Game {
     // as it had — no FLYING tag, no highlight, nothing.
     this.menus.syncAutopilot(this.autopilot.engaged, this.autopilot.mode);
     return on;
+  }
+
+  /**
+   * The engine switch: the I key (`fromPad` false) or the touch pad (true).
+   *
+   * One press starts it, and one press stops it on the ground, as in every
+   * aircraft. In a helicopter in the AIR it is different, because the rotor
+   * has no glide to fall back on: measured on the Skyhook at 40 m, one I had
+   * the collective at zero inside a second and the machine at -9 m/s; I again
+   * did not save it (a restart takes 1.8 s, and 0.3 s, 1 s and 2 s later from
+   * 40 m, and 1 s later from 15 m, all ended "You came down far too fast").
+   * So in the air the key asks twice, the way the emergency key does, and
+   * the pad — which on a phone sits next to the camera pad, under the same
+   * thumb — does not do it at all: it is greyed out (ui/touch.js) and a tap
+   * says why. Nothing is refused on the ground, and no difficulty is asked.
+   */
+  pressStarter(fromPad = false) {
+    const ac = this.aircraft;
+    if (!ac.engineOn) {
+      this._starterArm = 0;
+      ac.startEngine();
+      return true;
+    }
+    if (SPEC.rotor && !ac.onGround && !ac.crashed) {
+      if (fromPad) {
+        this.hud.notify('In the air the engine stays on — land to shut it down', 'info', 2.6);
+        return false;
+      }
+      if (!(this._starterArm > 0)) {
+        this._starterArm = 3;
+        this.hud.notify('Shut the engine down in flight? Press I again within 3 s — she will come down fast', 'warn', 3);
+        return false;
+      }
+    }
+    this._starterArm = 0;
+    ac.stopEngine('shutdown');
+    return true;
+  }
+
+  /**
+   * The helicopter's stability assist on or off — hover hold, height hold and
+   * auto-level (rotor-assist.js). One saved switch; choosing a difficulty
+   * sets it (on for easy and normal, off for realistic), and F flips it.
+   */
+  setHeliAssist(on, save = true) {
+    this.settings.heliAssist = !!on;
+    if (save) saveSettings(this.settings);
+    this.aircraft.hoverAssist = !!on;
+    if (this.hud) {
+      this.hud.notify(
+        on
+          ? 'Stability assist on — let go and the helicopter holds its height, levels out and stops'
+          : 'Stability assist off — no help at all. The lever and the stick are all yours.',
+        on ? 'good' : 'info',
+        3.5
+      );
+    }
+    return !!on;
   }
 
   /**
@@ -2102,6 +2168,10 @@ class Game {
       this.hud.notify(`Repainted — ${findLivery(value).name}`, 'info', 3);
     } else if (path === 'difficulty') {
       this.applyDifficulty(value);
+      // The helicopter assist box follows the dial on the same screen.
+      if (this.menus && this.menus.syncSettings) this.menus.syncSettings(this.settings);
+    } else if (path === 'heliAssist') {
+      this.setHeliAssist(value !== false, false);
     } else if (path === 'realisticFuel') {
       this.aircraft.realisticFuel = value;
       this.hud.notify(
@@ -2349,8 +2419,12 @@ class Game {
     this.settings.difficulty = lv;
     this.settings.flightMode = lv === 'realistic' ? 'realistic' : 'simplified';
     this.aircraft.mode = this.settings.flightMode;
-    this.aircraft.difficulty = this.settings.difficulty || 'normal';
     this.aircraft.difficulty = lv;
+    // The helicopter's stability assist follows the dial: on for easy and
+    // normal, off for realistic ("no assistance at all"). F in the
+    // helicopter, or the box in Settings, still switches it either way.
+    this.settings.heliAssist = lv !== 'realistic';
+    this.aircraft.hoverAssist = this.settings.heliAssist;
     saveSettings(this.settings);
     if (this.hud) {
       this.hud.notify(
@@ -2819,23 +2893,31 @@ class Game {
       this.hud.notify(`View: ${VIEW_LABELS[this.rig.cycle()]}`, 'info', 1.8);
       this.runner.data.cameraChanged = true;
     }
-    if (input.pressed('gear') || (pad && pad.gear)) {
+    /*
+     * The undercarriage and the flaps are the aeroplane's. The helicopter has
+     * skids and no flaps, and input.js binds its stability-assist key to F in
+     * the 'heli' context while flapsDown keeps F in 'plane' — but pressed()
+     * reads codes, not contexts, so the two handlers both fired. Measured in
+     * the Skyhook: F showed "Flaps 10° — more lift, more drag" beside
+     * "Stability assist off", flapStep() went 1 then 2, and a 40 m/s cruise
+     * settled 1.4 m/s slower at full flap. G put the skids "up", and the
+     * next touchdown was "You landed with the wheels up".
+     */
+    const wings = !SPEC.rotor;
+    if (wings && (input.pressed('gear') || (pad && pad.gear))) {
       if (!ac.toggleGear()) this.hud.notify('Too fast for the landing gear — slow down first', 'warn', 3);
     }
-    if (input.pressed('flapsDown')) {
+    if (wings && input.pressed('flapsDown')) {
       const s = ac.setFlaps(ac.flapStep() + 1);
       this.audio.available && this.audio.ambience.playFlaps();
       this.hud.notify(`Flaps ${s * 10}° — more lift, more drag`, 'info', 2.4);
     }
-    if (input.pressed('flapsUp')) {
+    if (wings && input.pressed('flapsUp')) {
       const s = ac.setFlaps(ac.flapStep() - 1);
       this.audio.available && this.audio.ambience.playFlaps();
       this.hud.notify(`Flaps ${s * 10}°`, 'info', 2);
     }
-    if (input.pressed('starter')) {
-      if (ac.engineOn) ac.stopEngine('shutdown');
-      else ac.startEngine();
-    }
+    if (input.pressed('starter')) this.pressStarter(false);
     if (input.pressed('brace')) this.braceForImpact();
     if (this.bracing && !this.braceChoice) {
       if (input.pressed('emergencyLand')) this.chooseBrace('land');
@@ -2847,6 +2929,7 @@ class Game {
     if (input.pressed('help')) this.hud.toggleControls(this.input.bindings, keyLabel, this.helpActions());
     if (input.pressed('guide')) this.toggleGuide();
     if (input.pressed('autopilot')) this.toggleAutopilot();
+    if (input.pressed('heliAssist') && SPEC.rotor) this.setHeliAssist(ac.hoverAssist === false, true);
     // The autopilot's own bugs — plane only, so the helicopter's identical
     // keys (it has none of these, but the context guard is what ctx:
     // ['plane'] in the registry actually means) never see them.
@@ -4320,7 +4403,7 @@ class Game {
           // you actually come down: a clean airframe at idle will not descend
           // steeply however hard you push, and no amount of elevator is a
           // substitute for putting the wheels and the flaps out.
-          if (this.autopilot.mode === 'approach') {
+          if (this.autopilot.mode === 'approach' && !SPEC.rotor) {
             const out = -550 - ac.pos.x;
             if (out < 7000 && !ac.gearDown) ac.toggleGear();
             const wantFlap = out < 3500 ? 2 : out < 6000 ? 1 : 0;
@@ -4334,6 +4417,11 @@ class Game {
       ac.controls.yaw = yaw;
       ac.controls.throttle = throttle;
       ac.controls.brakes = ctrl.brakes;
+      // A hand on the lever (the helicopter's height hold must not mistake
+      // its own follow-up for the pilot), and whether the autopilot is the
+      // pilot (the helicopter's assist stands down while it is).
+      ac.controls.leverHeld = !!ctrl.leverHeld;
+      ac.autopilotOn = this.autopilot.engaged;
       // Trim is the pilot's, and the autopilot must not inherit it — it flies
       // the elevator directly and would be fighting a bias it did not set.
       ac.controls.trim = this.autopilot.engaged ? 0 : ctrl.trim || 0;
@@ -4343,6 +4431,8 @@ class Game {
         for (const k in this.override) {
           if (this.override[k] !== null && this.override[k] !== undefined) ac.controls[k] = this.override[k];
         }
+        // An overridden lever is a held lever.
+        if (this.override.throttle !== null && this.override.throttle !== undefined) ac.controls.leverHeld = true;
       }
     } else {
       this.input.update(dt, { simple: true });
@@ -4365,30 +4455,15 @@ class Game {
          * iPad. Not while the autopilot is flying — it sets throttleTarget
          * itself and the two would fight.
          */
-        if (ac.rotor) {
-          if (ac.rotor.trimRequest && !this.autopilot.engaged) {
-            this.input.nudgeThrottle(ac.rotor.trimRequest * STEP);
-          }
-          // And what Shift and Ctrl mean: a lever, or the kid computer's lift
-          // command. Same rule — the flight model says, the input layer
-          // listens. `ac.rotor` exists from the first helicopter step on, and
-          // physics.js sets rotor.kid false on every aeroplane step after, so
-          // this also hands the lever back when the next flight is a plane.
-          this.input.rotorCollective = ac.rotor.kid ? 'command' : null;
-          // The aeroplane autopilot and the kid computer are two pilots on
-          // one set of keys: handed straight back, before it flies a frame.
-          // See heliNoAutopilot() in hud-rotor.js for what it did when not.
-          if (ac.rotor.kid && this.autopilot.engaged) {
-            this.autopilot.setEngaged(false, ac);
-            this.hud.setAutopilot(false);
-            this.menus.syncAutopilot(false, this.autopilot.mode);
-            if (this.hud.heliNoAutopilot) this.hud.heliNoAutopilot();
-          }
+        if (ac.rotor && ac.rotor.trimRequest && !this.autopilot.engaged) {
+          this.input.nudgeThrottle(ac.rotor.trimRequest * STEP);
         }
         this.acc -= STEP;
         steps++;
       }
       this.updateBrace(dt);
+      // The engine key's "press again" window (pressStarter), in game time.
+      if (this._starterArm > 0) this._starterArm -= dt;
       this.runner.update(dt);
       this.atc.update(dt);
       this.activeTarget = this.runner.activeTarget();

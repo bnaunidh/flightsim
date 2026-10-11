@@ -529,7 +529,7 @@ const MIN_BOOM = 4;
  * so a tree is grown by one and a half times the trunk's width all round
  * and above — about the canopy. A building by 30 cm.
  */
-function boomClear(v, x0, y0, z0, x1, y1, z1) {
+export function boomClear(v, x0, y0, z0, x1, y1, z1) {
   const list = v && typeof v.nearObstacles === 'function' ? v.nearObstacles() : null;
   if (!list || !list.length) return 1;
   const dx = x1 - x0;

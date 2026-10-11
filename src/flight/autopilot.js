@@ -15,7 +15,9 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { clamp } from '../core/noise.js';
-import { AIRPORT } from '../world/terrain.js';
+import { AIRPORT, heightAt } from '../world/terrain.js';
+import { SPEC } from '../aircraft/physics.js';
+import { rotorAutopilot } from '../aircraft/rotor-assist.js';
 
 /**
  * What you can ask it to do. "Hold" is what it always did; the other two are
@@ -50,6 +52,20 @@ const TAKEOVER = 0.14;
 
 const _fwd = new THREE.Vector3();
 const _to = new THREE.Vector3();
+
+/*
+ * The helicopter's numbers. It flies low and slow on purpose — 150 ft over
+ * the ground it can see ahead of it, not the aeroplane's 500, and 80 kt when
+ * it is sent somewhere from a hover — and it comes to a hover over the thing
+ * it was sent to rather than flying past it.
+ */
+const HELI_FLOOR_M = 46; // 150 ft
+const HELI_CRUISE_KTS = 80;
+const HELI_MAX_KTS = 110;
+const HELI_LOOK_S = [0, 2, 4, 6];
+const KTS = 1.94384;
+const _heliOut = { pitch: 0, roll: 0, yaw: 0, throttle: 0 };
+const _heliWant = { vs: 0, hdg: null, speed: 0, hover: false, x: null, z: null, reset: false };
 
 export class Autopilot {
   constructor() {
@@ -233,6 +249,27 @@ export class Autopilot {
 
   /** @returns {boolean} whether it is now engaged */
   setEngaged(on, ac) {
+    if (on && !this.engaged && SPEC.rotor) {
+      /*
+       * A helicopter holds what it has: the altitude it is at, no 1,000 ft
+       * climb; and slow, the hover and the spot it is over. Sent somewhere
+       * from a hover it goes at a sensible 80 kt.
+       */
+      const r = ac.readouts();
+      const gsKts = ac.groundSpeed * KTS;
+      this._lastAltFt = r.altFt;
+      this.targetAltFt = this.mode === 'level' ? this.selectedAltFt : Math.round(r.altFt / 10) * 10;
+      if (this.mode === 'level') this.levelOff = false;
+      this.targetSpeedKts = gsKts < 25 ? HELI_CRUISE_KTS : clamp(Math.round(gsKts / 5) * 5, 40, HELI_MAX_KTS);
+      this.selectedSpeedKts = this.targetSpeedKts;
+      this.holdHeadingDeg = r.heading;
+      this._heliHover = gsKts < 25;
+      this._holdX = ac.pos.x;
+      this._holdZ = ac.pos.z;
+      this._heliReset = true;
+      this.engaged = true;
+      return true;
+    }
     if (on && !this.engaged) {
       // Capture the current state so it does not lurch on engagement.
       const r = ac.readouts();
@@ -271,7 +308,10 @@ export class Autopilot {
     return (
       Math.abs(input.pitch) > TAKEOVER ||
       Math.abs(input.roll) > TAKEOVER ||
-      Math.abs(input.yaw) > TAKEOVER
+      Math.abs(input.yaw) > TAKEOVER ||
+      // In a helicopter the lever is the autopilot's height: a hand on it
+      // takes the machine back, exactly like the stick.
+      (!!SPEC.rotor && !!input.leverHeld)
     );
   }
 
@@ -301,6 +341,8 @@ export class Autopilot {
       this._ffFpm = plan.feedForwardFpm || 0;
       this._brisk = !!plan.brisk;
     }
+
+    if (SPEC.rotor) return this._rotorUpdate(dt, ac, target, r);
 
     /* ---- Where do we want to be pointing? ---- */
     let wantHeading = this.holdHeadingDeg;
@@ -375,9 +417,61 @@ export class Autopilot {
     return { pitch, roll, yaw, throttle };
   }
 
+  /**
+   * The helicopter's controls: the plan and the target are the aeroplane's,
+   * the flying is rotorAutopilot()'s (rotor-assist.js) — the lever holds the
+   * height and the nose the speed, which is the other way round from a wing.
+   */
+  _rotorUpdate(dt, ac, target, r) {
+    const w = _heliWant;
+    w.reset = !!this._heliReset;
+    this._heliReset = false;
+    w.hdg = this.holdHeadingDeg;
+    w.speed = Math.min(this.targetSpeedKts, HELI_MAX_KTS) / KTS;
+    w.hover = false;
+    w.x = null;
+    w.z = null;
+    this._heliArriving = false;
+    if (target) {
+      const dx = target.x - ac.pos.x;
+      const dz = target.z - ac.pos.z;
+      const d = Math.hypot(dx, dz);
+      // Slow down in time to stop over it: 1 m/s^2 from 25 m short.
+      w.speed = Math.min(w.speed, Math.sqrt(2 * Math.max(0, d - 25)));
+      if (d > 30) {
+        w.hdg = ((Math.atan2(dx, -dz) * 180) / Math.PI + 360) % 360;
+      } else {
+        w.hover = true;
+        w.x = target.x;
+        w.z = target.z;
+        this._heliArriving = true;
+        if (d < 8 && ac.groundSpeed < 2) this.handedBack = 'Over the target — you have control';
+      }
+    } else if (this._heliHover && this.mode === 'hold') {
+      w.hover = true;
+      w.x = this._holdX;
+      w.z = this._holdZ;
+    }
+    // Height: what it was given, and never lower than 150 ft over the
+    // highest ground it will be over in the next six seconds.
+    let wantM = this.targetAltFt / 3.28084;
+    if (!w.hover) {
+      let g = -Infinity;
+      for (const t of HELI_LOOK_S) g = Math.max(g, heightAt(ac.pos.x + ac.vel.x * t, ac.pos.z + ac.vel.z * t));
+      wantM = Math.max(wantM, Math.max(0, g) + HELI_FLOOR_M);
+    }
+    const upMs = this._brisk ? (this.selectedVsFpm || 1200) / 196.85 : 4;
+    const downMs = this._brisk ? (this.selectedVsFpm || 1200) / 196.85 : 4;
+    w.vs = clamp((wantM - ac.pos.y) * 0.4 + (this._ffFpm || 0) / 196.85, -downMs, upMs);
+    return rotorAutopilot(ac, SPEC, dt, w, _heliOut);
+  }
+
   /** One-line description for the HUD. */
   status(target) {
     const alt = `${Math.round(this.targetAltFt).toLocaleString()} ft`;
+    if (SPEC.rotor && this.mode === 'hold' && (this._heliArriving || (!target && this._heliHover))) {
+      return `AUTO · HOVER · ${alt}`;
+    }
     if (this.mode === 'level') {
       if (this.levelOff) return `AUTO · LEVEL ${alt}`;
       const up = this.targetAltFt > this._lastAltFt;

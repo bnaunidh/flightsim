@@ -155,7 +155,15 @@ export class FunHud {
     const H = window.innerHeight;
     let bottom = 8;
     let left = 16;
-    for (const e of root.querySelectorAll('.hud-panel, .minimap')) {
+    // .hud-heli: the helicopter's card hangs under its hover strip on a
+    // touch screen, and the chip sat on top of it (on a phone it covered
+    // the card's HOVERING). .race-solobar: the Races button is not in the
+    // HUD's tree, and while the helicopter's hover strip is up on a touch
+    // screen it waits on the left under the map (main.css) — exactly where
+    // this chip sits; measured on an emulated 1024 x 768 iPad, the chip was
+    // on top of it (2,400 px²).
+    const under = [...root.querySelectorAll('.hud-panel, .minimap, .hud-heli'), ...document.querySelectorAll('.race-solobar')];
+    for (const e of under) {
       const r = e.getBoundingClientRect();
       if (!r.width || !r.height || r.left > 240 || r.top > H * 0.45 || r.width > 420) continue;
       if (r.bottom > bottom) {
@@ -165,6 +173,13 @@ export class FunHud {
       }
     }
     let top = bottom + 10;
+    // Nor on the objective line (on a phone the helicopter's card brings it
+    // down to that row).
+    const obj = root.querySelector('.hud-top');
+    if (obj) {
+      const r = obj.getBoundingClientRect();
+      if (r.width && r.left < left + 60 && r.right > left && top < r.bottom && top + 44 > r.top) top = r.bottom + 8;
+    }
     const stick = root.querySelector('.touch-stick');
     if (stick) {
       const r = stick.getBoundingClientRect();

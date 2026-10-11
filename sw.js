@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v62';
+const CACHE_VERSION = 'island-flight-v63';
 
 const PRECACHE = [
   './',
@@ -231,6 +231,12 @@ const PRECACHE = [
   'src/features/multiplayer/lobby.js',
   'src/features/multiplayer/lobbyui.js',
   // Added by tools/sync-precache.mjs.
+  'src/features/breakup.js',
+  'src/features/breakup/fx.js',
+  'src/game/breakup.js',
+  'src/game/breakup-mesh.js',
+  'src/game/breakup-body.js',
+  'src/aircraft/damage-handling.js',
   'src/features/crashes.js',
   'src/features/crashes/fx.js',
   'src/features/crashes/kinds.js',

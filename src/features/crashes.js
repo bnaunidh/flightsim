@@ -57,7 +57,7 @@ import { emitHappening, setHappeningReceiver, setSummonPoint } from '../game/hap
 import { KINDS, KIND_IDS, classifyCrash, pickCaption, titleFor } from './crashes/kinds.js';
 import { makeScript, poseAt, dimsFrom, CRASH_SECONDS } from './crashes/motion.js';
 import { CrashFx } from './crashes/fx.js';
-import { shakeClock } from '../render/flash-safety.js';
+import { shakeClock, FLASH } from '../render/flash-safety.js';
 import { CrashMarks, drawCrashMarks } from './crashes/marks.js';
 import { renderedHeight } from './explosions.js';
 
@@ -409,8 +409,24 @@ function cancelScript() {
  * The crash cam.
  * ------------------------------------------------------------------ */
 
+/**
+ * Reduce flashing (render/flash-safety.js, on by default): the crash cam
+ * stands this much further back.
+ *
+ * WCAG 2.3.1 measures flashing by how much of a 10-degree field it covers,
+ * and a crash seen from close up is big, bright pieces of aeroplane moving
+ * across most of the picture: the break-up's pieces tumbling away from an
+ * A320 nose-first took the worst field from 16% (v61, the aeroplane in one
+ * piece) to 25%, over the line (tests/flicker-probe.js, the v62 check). How much of the
+ * picture they cover goes with the square of how close the camera is; one
+ * and a half times as far back took the same crash to 14% — under what it
+ * was before there were any pieces — and shows more of where they land.
+ */
+export const CRASH_CAM_BACK_REDUCED = 1.5;
+
 function camDistance(dims) {
-  return clamp(dims.L * 1.5 + dims.semi * 0.9 + 10, 16, 110);
+  const d = clamp(dims.L * 1.5 + dims.semi * 0.9 + 10, 16, 110);
+  return FLASH.reduce ? d * CRASH_CAM_BACK_REDUCED : d;
 }
 
 const viewOf = (sim) => (sim && sim.rig && typeof sim.rig.mode === 'string' ? sim.rig.mode : null);

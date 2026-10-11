@@ -37,6 +37,14 @@ export async function check(sim, r, say) {
   }
   const origAuto = sim.autoPauseOnHide;
   sim.autoPauseOnHide = false;
+  /*
+   * The crash cam below is timed in game seconds. The break-up's slow-motion
+   * beat (features/breakup.js — tests/features/breakup.browser.js checks it)
+   * stretches those in real ones, which is the point of it and not what is
+   * measured here, so it is off for these checks and put back at the end.
+   */
+  const origSlow = sim.settings.crashSlowMo;
+  sim.settings.crashSlowMo = false;
   const D = cr.crashDebug();
   const C = D.C;
   const heard = [];
@@ -325,4 +333,5 @@ export async function check(sim, r, say) {
   C.newestMine = null;
   off();
   sim.autoPauseOnHide = origAuto;
+  sim.settings.crashSlowMo = origSlow;
 }

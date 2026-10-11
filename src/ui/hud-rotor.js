@@ -60,6 +60,7 @@
  */
 
 import { SPEC } from '../aircraft/physics.js';
+import { ROTOR_TUNE } from '../aircraft/rotor-assist.js';
 import { rekey } from '../flight/input.js';
 
 /* Groundspeed, in knots, at which the panel swaps.
@@ -107,7 +108,7 @@ const HELI_CSS = `
   background: var(--panel); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
 }
 @media (pointer: coarse) and (max-height: 460px) {
-  .hud.is-touch .hud-heli-say, .hud.is-touch .hud-heli-lift { display: none; }
+  .hud.is-touch .hud-heli-say { display: none; }
 }
 /* And the objective under the hover band, not behind it. Measured on an
    emulated 1024 x 768 iPad, hovering: the band runs from y66 to y179 and the
@@ -125,15 +126,6 @@ const HELI_CSS = `
 .hud-heli-hu { font-size: 11px; color: var(--text-dim); }
 .hud-heli-vs { font-size: 12px; color: var(--text-dim); font-family: var(--mono); margin-top: 2px; text-align: right; }
 .hud-heli-say { font-size: 12px; line-height: 1.3; margin-top: 4px; color: #e4edf8; }
-.hud-heli-lift { display: flex; gap: 5px; margin-top: 6px; }
-.hud-heli-lift[hidden] { display: none; }
-.hud-heli-lift span {
-  /* Sized by their words, on one line each: at equal thirds "CTRL ▼ DOWN"
-     wrapped to two lines and stood taller than the other two keys. */
-  flex: 1 1 auto; white-space: nowrap; text-align: center; font-size: 10px; letter-spacing: 0.04em; padding: 3px 4px;
-  border: 1px solid rgba(140, 180, 230, 0.22); border-radius: 6px; color: var(--text-dim);
-}
-.hud-heli-lift span.is-on { color: #fff; border-color: rgba(88, 198, 255, 0.8); background: rgba(88, 198, 255, 0.2); }
 .hud-heli-land { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; }
 .hud-heli-land[hidden] { display: none; }
 .hud-heli-land b { font-size: 10px; letter-spacing: 0.1em; color: var(--text-dim); font-weight: 600; }
@@ -145,6 +137,9 @@ const HELI_CSS = `
 .hud-heli-land.is-warn span { color: var(--amber); }
 .hud-heli-land.is-bad span { color: var(--red); }
 .hud-bar[hidden] { display: none; }
+/* The lever's row says COLLECTIVE, which is wider than the 44 px the aeroplane's
+   POWER gets: measured at 1280 x 800, the word ran 26 px into the bar under it. */
+.hud.is-rotor .hud-bar { grid-template-columns: 74px 1fr 36px; }
 /* The PAPI is a runway's glide path. Measured: hovering by Kestrel's pad the
    panel said "Too high — ease off and descend" at a helicopter sitting still. */
 .hud.is-rotor .hud-papi { display: none !important; }
@@ -163,69 +158,49 @@ function injectHeliCss() {
 }
 
 /*
- * What the card says, per state. Kid mode is the flight computer's states;
- * the realistic ones are what the hover assist is actually doing, because the
- * old chip said HOVER ASSIST the whole time — measured on the unmodified
- * build, it said so through a 12 m/s climb to 228 m with the height hold
- * refusing to engage, which is the panel lying at the one moment it matters.
+ * What the card says, per state: what the stability assist is actually doing,
+ * because the old chip said HOVER ASSIST the whole time — measured on the
+ * unmodified build, it said so through a 12 m/s climb to 228 m with the
+ * height hold refusing to engage, which is the panel lying at the one moment
+ * it matters. Every player flies the same lever; the words follow it.
  */
-const KID_WORDS = {
-  off: ['ENGINE OFF', 'Press I to start the engine.', 'warn'],
-  ground: ['ON THE GROUND', 'Hold Shift to lift off.', ''],
-  lifting: ['LIFTING OFF', 'Keep holding Shift. Let go and it stops and hovers.', ''],
-  climbing: ['GOING UP', 'Let go of Shift to stop and hover at this height.', ''],
-  hover: ['HOVERING', 'Holding this height and this spot. Hands off is fine.', 'good'],
-  holding: ['HOLDING HEIGHT', 'Let go of W A S D and it stops over the ground.', 'good'],
-  descending: ['COMING DOWN', 'Let go of Ctrl to stop. It slows by itself near the ground.', ''],
+const HELI_WORDS = {
+  engine: ['ENGINE OFF', 'Press I to start the engine.', 'warn'],
+  off: ['ASSIST OFF', 'No help at all. The lever and the stick are all yours. F turns the assist back on.', 'warn'],
+  ground: ['ON THE GROUND', 'Hold Shift to raise the collective until she lifts.', ''],
+  climbing: ['CLIMBING', 'Let go of Shift and the assist stops the climb and holds the height.', ''],
+  descending: ['COMING DOWN', 'Hold Ctrl to land — it eases off near the ground. Let go to hold this height.', ''],
   landing: ['LANDING', 'Keep holding Ctrl until the skids touch.', ''],
-  terrain: ['CLIMBING OVER HIGH GROUND', 'The ground ahead is higher, so it is climbing over it for you.', 'warn'],
-  tooclose: ['CAN\u2019T LAND HERE', 'Something under you is too high or not flat. Move over open ground or the middle of an H.', 'warn'],
-  // The same when the thing is a tree, which a child can see and move off.
-  tree: ['CAN\u2019T LAND HERE', 'A tree is in the way. Move over open ground with W A S D, then hold Ctrl.', 'warn'],
-  // The same refusal when the thing in the way is the hillside itself.
-  // Measured: on 9.8 degrees of grass it lands facing across or down the
-  // hill and not up it, so the useful words are "turn round" — but only
-  // where some way round does land, and which key is the shorter turn to it.
-  // The review of the second kid build found the card saying "turn with Q
-  // or E" on 64-degree cliffs, where no heading lands and turning swung the
-  // tail into the rock. The flight computer now asks sixteen headings (the
-  // ring in rotor-assist.js) and says one of these three. 'hill' is kept for
-  // anything still asking for it.
-  hill: ['TOO STEEP THIS WAY', 'The hill is in the way. Turn with Q or E to face down the hill, or find flatter ground.', 'warn'],
-  hille: ['TOO STEEP THIS WAY', 'Keep holding Ctrl and turn with E. It stops turning where it can land.', 'warn'],
-  hillq: ['TOO STEEP THIS WAY', 'Keep holding Ctrl and turn with Q. It stops turning where it can land.', 'warn'],
-  steep: ['TOO STEEP HERE', 'No way round lands on this slope. Fly with W A S D to flatter ground.', 'warn'],
-  // A turn beside a hill: it goes up first, so the tail does not swing into it.
-  turnroom: ['MAKING ROOM TO TURN', 'The ground is close, so it goes up a little before it turns.', 'warn'],
-  // Any key beside steep rock: up first, then it moves (roomR in rotor-assist.js).
-  room: ['MAKING ROOM', 'The rock is close, so it goes up before it moves.', 'warn'],
-  // Stopped short of rock beside it with a key pushing at it (THE WALL in
-  // rotor-assist.js): it will not go closer, and any other way is open.
-  wall: ['ROCK IN THE WAY', 'It stops before it touches. Fly another way, or go up with Shift.', 'warn'],
-  // Holding its height over ground that rises or falls under it: the V/S
-  // row is not level, and the card must not say it is holding still.
-  following: ['FOLLOWING THE GROUND', 'Staying the same height over the ground below. Let go of W A S D to stop.', 'good'],
-  gate: ['LET GO TO LAND', 'Let go of W A S D. It comes down the last bit once it has stopped.', 'warn'],
-  settle: ['STOPPING TO LAND', 'It comes down the last bit once it has stopped moving.', ''],
-  water: ['CAN\u2019T LAND ON WATER', 'Stopped above the waves. Find an H or dry ground to land on.', 'warn'],
-  // I pressed in the air: see stopEngine in rotor-assist.js, hookAircraft().
-  engine: ['ENGINE STAYS ON', 'Not while you are flying! Land first, then press I to switch it off.', 'warn'],
+  // Ctrl held at speed: the assist keeps the skids up until it slows.
+  gate: ['SLOW DOWN TO LAND', 'Too fast to put her down. Let go of W, or brake with S, and she comes down the rest.', 'warn'],
+  // Ctrl held with a wing tip, the nose or the tail over an edge.
+  edge: ['CAN\u2019T LAND HERE', 'Part of her is over an edge or a slope. Turn her across or down the slope with Q or E, or move over flatter ground or the middle of the H.', 'warn'],
+  // The height hold climbing for high ground or a roof on the track ahead.
+  terrain: ['CLIMBING OVER HIGH GROUND', 'The ground ahead is higher, so the assist is climbing. Ease off W if it is close.', 'warn'],
+  lever: ['ON THE LEVER', 'Let go of Shift and Ctrl and the assist holds this height.', ''],
+  hover: ['HOVERING', 'Holding this height and this spot over the ground. Hands off is fine.', 'good'],
+  height: ['HEIGHT HOLD', 'Holding this height. Let go of the stick and she levels out and slows.', 'good'],
+  autopilot: ['AUTOPILOT', 'The autopilot is flying. Move the stick or the lever to take over.', 'good'],
 };
+
 /*
- * The states in which the flight computer will not put it down here. The
- * landing light said "steady" in green under TOO STEEP HERE (measured
- * 2026-09-26, headless Chrome, Kestrel, Ctrl held beside the 64-degree rock
- * at (1128, 942): card TOO STEEP HERE, light "steady · 25 ft", green). A
- * child reads the green light, not the grey words; under these it is amber,
- * "not here".
+ * The same lines on a touch screen, where there is no Shift, Ctrl, W or F:
+ * the lever is the slider under the right thumb and the stick is the left
+ * one. Measured at 1024 x 768 and 390 x 844 with real touches on the
+ * slider: the card said "Let go of Shift" to a thumb.
  */
-const KID_REFUSES = new Set(['tooclose', 'tree', 'hill', 'hille', 'hillq', 'steep', 'water']);
-const REAL_WORDS = {
-  off: ['ASSIST OFF', 'No help at all. The lever and the stick are all yours.', 'warn'],
-  ground: ['ON THE GROUND', 'Raise the collective with Shift until she lifts.', ''],
-  height: ['HEIGHT HOLD', 'The assist is holding this height. Move the lever and it is yours.', 'good'],
-  drift: ['DRIFT DAMPING', 'The assist is steadying the drift. The height is yours.', ''],
-  standby: ['ASSIST STANDBY', 'Too fast for the hover assist, so you are flying it.', ''],
+const TOUCH_SAY = {
+  // The pad beside the lever reads START while the engine is off (ui/touch.js).
+  engine: 'Tap START to start the engine.',
+  off: 'No help at all. The lever and the stick are all yours. Switch the assist back on in Settings.',
+  ground: 'Slide the lever up until she lifts.',
+  climbing: 'Let go of the lever and the assist stops the climb and holds the height.',
+  descending: 'Keep the lever down to land — it eases off near the ground. Let go to hold this height.',
+  landing: 'Keep the lever down until the skids touch.',
+  gate: 'Too fast to put her down. Let go of the stick, or pull it back to brake, and she comes down the rest.',
+  edge: 'Part of her is over an edge or a slope. Turn her across or down the slope, or move over flatter ground or the middle of the H.',
+  terrain: 'The ground ahead is higher, so the assist is climbing. Ease off the stick if it is close.',
+  lever: 'Let go of the lever and the assist holds this height.',
 };
 
 /** Everything below is mixed into Hud.prototype by installRotorHud(). */
@@ -428,21 +403,12 @@ const ROTOR = {
       </div>
       <div class="hud-heli-vs">level</div>
       <div class="hud-heli-say"></div>
-      <div class="hud-heli-lift">
-        <span data-l="1">SHIFT &#9650; UP</span><span data-l="0">HOLD</span><span data-l="-1">CTRL &#9660; DOWN</span>
-      </div>
       <div class="hud-heli-land" hidden><b>LANDING</b><i></i><span></span></div>`;
     this.heliCard = card;
     this.heliState = card.querySelector('.hud-heli-state');
     this.heliH = card.querySelector('.hud-heli-hv');
     this.heliVs = card.querySelector('.hud-heli-vs');
     this.heliSay = card.querySelector('.hud-heli-say');
-    this.heliLift = card.querySelector('.hud-heli-lift');
-    this.heliLiftKeys = {
-      1: card.querySelector('[data-l="1"]'),
-      0: card.querySelector('[data-l="0"]'),
-      '-1': card.querySelector('[data-l="-1"]'),
-    };
     this.heliLand = card.querySelector('.hud-heli-land');
     this.heliLandText = card.querySelector('.hud-heli-land span');
     card.hidden = true;
@@ -490,7 +456,7 @@ const ROTOR = {
       const lab = this.throttleBar.root.querySelector('.hud-bar-label');
       if (lab) lab.textContent = want ? 'Collective' : 'Power';
       this.throttleBar.root.title = want
-        ? 'Shift or ↑ to lift, Ctrl or ↓ to sink. Halfway is roughly a hover.'
+        ? 'The collective lever. Shift or ↑ raises it, Ctrl or ↓ lowers it; let go and the assist holds the height.'
         : 'Shift or ↑ for more power, Ctrl or ↓ to slow down';
     }
 
@@ -501,20 +467,26 @@ const ROTOR = {
       if (this._cruiseHint == null) this._cruiseHint = hint.innerHTML;
       hint.innerHTML = want
         ? 'Collective: <kbd>Shift</kbd>/<kbd>↑</kbd> up · <kbd>Ctrl</kbd>/<kbd>↓</kbd> down '
-          + '· Cyclic: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · Tail rotor: <kbd>Q</kbd>/<kbd>E</kbd>'
+          + '· Cyclic: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · Tail rotor: <kbd>Q</kbd>/<kbd>E</kbd> · Assist: <kbd>F</kbd>'
         : this._cruiseHint;
     }
 
-    // A helicopter has no flaps, and the Skyhook's skids do not retract, so
-    // both chips are permanently meaningless furniture on this airframe.
+    // A helicopter has no flaps, and the Skyhook's skids do not retract or
+    // carry wheel brakes, so all three chips are permanently meaningless
+    // furniture on this airframe.
     if (this.gearChip) this.gearChip.hidden = want;
     if (this.flapChip) this.flapChip.hidden = want;
+    if (this.brakeChip) this.brakeChip.hidden = want;
+    // And the aeroplane's EASY MODE / REAL MODE chip: the helicopter has one
+    // switch, the stability assist, and its own chip says ASSIST ON or OFF.
+    // Beside HEIGHT HOLD, "EASY MODE" read as the old easy-mode computer.
+    if (this.modeChip) this.modeChip.hidden = want;
 
-    // Hover assist, said out loud. A child who finds out later that the
-    // machine was holding its own height has been cheated of the thing they
-    // were proud of.
+    // The stability assist, said out loud. A pilot who finds out later that
+    // the machine was holding its own height has been cheated of the thing
+    // they were proud of.
     if (want && !this.assistChip && this.gearChip && this.gearChip.parentElement) {
-      this.assistChip = el('div', 'hud-chip hud-chip-assist', 'HOVER ASSIST');
+      this.assistChip = el('div', 'hud-chip hud-chip-assist', 'ASSIST ON');
       this.gearChip.parentElement.insertBefore(this.assistChip, this.gearChip);
     }
     if (this.assistChip) this.assistChip.hidden = !want;
@@ -523,34 +495,6 @@ const ROTOR = {
     if (!want && this.holdPanel) this.holdPanel.hidden = true;
     if (this.heliCard) this.heliCard.hidden = !want;
     if (!want && this.throttleBar) this.throttleBar.root.hidden = false;
-    if (!want) this.wrap.classList.remove('is-rotorkid');
-    // Re-decide the kid/lever words on the next frame.
-    this._kidShown = undefined;
-  },
-
-  /**
-   * Kid mode or a lever. Changes the key hint, the collective bar and the
-   * card's lift row — once, when it changes, not sixty times a second.
-   */
-  setRotorKid(kid) {
-    if (kid === this._kidShown) return;
-    this._kidShown = kid;
-    this.wrap.classList.toggle('is-rotorkid', kid);
-    if (this.throttleBar) this.throttleBar.root.hidden = kid;
-    if (this.heliLift) this.heliLift.hidden = !kid;
-    const hint = this.wrap.querySelector('.hud-keyhint');
-    if (hint) {
-      hint.innerHTML = kid
-        ? 'Up: <kbd>Shift</kbd> · Down: <kbd>Ctrl</kbd> · Let go to hover '
-          + '· Fly: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · Turn: <kbd>Q</kbd>/<kbd>E</kbd>'
-        : 'Collective: <kbd>Shift</kbd>/<kbd>↑</kbd> up · <kbd>Ctrl</kbd>/<kbd>↓</kbd> down '
-          + '· Cyclic: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · Tail rotor: <kbd>Q</kbd>/<kbd>E</kbd>';
-    }
-    if (this.throttleBar) {
-      this.throttleBar.root.title = kid
-        ? 'Shift climbs, Ctrl comes down, let go and it holds the height.'
-        : 'Shift or ↑ to lift, Ctrl or ↓ to sink. The hover is at about 40% of the lever.';
-    }
   },
 
   /**
@@ -561,7 +505,7 @@ const ROTOR = {
     if (!this.heliCard) return;
     const ac = sim.aircraft;
     /*
-     * Crashed: the card goes. The review of the second kid build has a
+     * Crashed: the card goes. The review of an earlier build has a
      * screenshot of TOO STEEP THIS WAY and a green "gentle" landing light
      * still up behind "The tail struck the ground".
      */
@@ -572,34 +516,29 @@ const ROTOR = {
     }
     if (crashed) return;
     const R = ac.rotor || {};
-    const kid = !!R.kid;
-    this.setRotorKid(kid);
 
     let key;
-    let words;
-    if (kid) {
-      key = R.kidState || 'ground';
-      if (key === 'holding' && R.holdingSpot) key = 'hover';
-      words = KID_WORDS[key] || KID_WORDS.holding;
-    } else {
-      key = ac.hoverAssist === false
-        ? 'off'
-        : r.onGround
-          ? 'ground'
-          : R.holdingHeight
-            ? 'height'
-            : (R.hoverAuth || 0) > 0.01
-              ? 'drift'
-              : 'standby';
-      words = REAL_WORDS[key];
-    }
-    if (key !== this._heliKey || kid !== this._heliKeyKid) {
+    if (!ac.engineOn) key = 'engine';
+    else if (sim.autopilot && sim.autopilot.engaged) key = 'autopilot';
+    else if (ac.hoverAssist === false) key = 'off';
+    else if (r.onGround) key = 'ground';
+    else if (R.landGate) key = 'gate';
+    else if (R.landEdge) key = 'edge';
+    else if (R.climbingOver) key = 'terrain';
+    else if (R.arriving) key = 'landing';
+    else if (R.holdingHeight) key = R.holdingSpot || ((R.hoverAuth || 0) > 0.5 && (R.drift || 0) < 1.5) ? 'hover' : 'height';
+    else if (ac.vs > 1) key = 'climbing';
+    else if (ac.vs < -1) key = 'descending';
+    else key = 'lever';
+    const words = HELI_WORDS[key];
+    const touch = !!(this.wrap && this.wrap.classList.contains('is-touch'));
+    if (key !== this._heliKey || touch !== this._heliTouch) {
       this._heliKey = key;
-      this._heliKeyKid = kid;
+      this._heliTouch = touch;
       this.heliState.textContent = words[0];
       this.heliState.classList.toggle('is-good', words[2] === 'good');
       this.heliState.classList.toggle('is-warn', words[2] === 'warn');
-      this.heliSay.textContent = rekey(words[1], 'heli');
+      this.heliSay.textContent = (touch && TOUCH_SAY[key]) || rekey(words[1], 'heli');
     }
 
     // Height above whatever is underneath — sea, rock, roof or deck. The same
@@ -615,15 +554,6 @@ const ROTOR = {
       this._heliVsShown = vs;
       this.heliVs.textContent = vs > 60 ? `\u25B2 up ${vs} ft/min` : vs < -60 ? `\u25BC down ${-vs} ft/min` : 'level';
     }
-    if (kid) {
-      const lift = R.lift || 0;
-      if (lift !== this._heliLiftShown) {
-        this._heliLiftShown = lift;
-        this.heliLiftKeys[1].classList.toggle('is-on', lift === 1);
-        this.heliLiftKeys[0].classList.toggle('is-on', lift === 0);
-        this.heliLiftKeys[-1].classList.toggle('is-on', lift === -1);
-      }
-    }
 
     /* ---- The landing light ----
      * On whenever the skids are within eight metres of something, or on it.
@@ -632,13 +562,12 @@ const ROTOR = {
      *
      * It judged the sink rate alone — red over 500 ft/min at any height —
      * and so it told a child doing exactly what it said to be in trouble.
-     * Measured on the first kid build: holding Ctrl, the computer comes down
-     * at 3 m/s and eases off from 7 m, and the light was red "too fast, keep
-     * holding Ctrl" from 19 ft to 16 ft, amber to 9 ft, and the touchdown was
-     * 86 ft/min, "perfect". So it now judges the ARRIVAL: the braking it
-     * would take to be down to a gentle 0.6 m/s by the time the skids get
-     * there. Up to 1.2 m/s^2 is green (the kid computer's own profile needs
-     * under 0.8), up to 2.6 amber, more than that red. In the last 40 cm it
+     * Measured on an earlier build: holding Ctrl, it came down at 3 m/s and
+     * eased off from 7 m, and the light was red "too fast, keep holding
+     * Ctrl" from 19 ft to 16 ft, amber to 9 ft, and the touchdown was
+     * 86 ft/min, "perfect". So it judges the ARRIVAL: the sink against the
+     * assist's own arrival profile at this height (green within 15%, amber
+     * within 60%, red beyond). In the last 40 cm it
      * is the sink rate itself, against the touchdown grading's numbers: under
      * 320 ft/min is "good", over 560 is "rough".
      */
@@ -646,30 +575,32 @@ const ROTOR = {
     // Worked out as a number first and only turned into words when it
     // changes: this runs every frame and a string built every frame is a
     // string the collector has to sweep up on a school Chromebook.
-    let word = 0; // 0 off, 1 on the skids, 2 steady, 3 gentle, 4 a bit fast, 5 too fast, 6 not here
+    let word = 0; // 0 off, 1 on the skids, 2 steady, 3 gentle, 4 a bit fast, 5 too fast
     let ft = 0;
     if (r.onGround) word = 1;
-    else if (skids < 8 && kid && KID_REFUSES.has(R.kidState)) {
-      // The card says it will not land here: the light must not say "steady"
-      // in green under it (see KID_REFUSES).
-      word = 6;
-      ft = Math.max(0, Math.round(skids * M_TO_FT));
-    } else if (skids < 8) {
+    else if (skids < 8) {
       const sink = Math.max(0, -r.vsFpm) / M_TO_FT / 60; // m/s, downwards
       if (sink < 0.2) word = 2;
       else if (skids < 0.4) word = sink < 1.63 ? 3 : sink < 2.85 ? 4 : 5;
       else {
-        const brake = (sink * sink - 0.36) / (2 * (skids - 0.3));
-        word = brake <= 1.2 ? 3 : brake <= 2.6 ? 4 : 5;
+        /*
+         * Against the assist's own arrival profile (rotor-assist.js,
+         * landSinkMin and landDecel), so Ctrl held all the way is green all
+         * the way. Judged as the braking it would take to arrive at
+         * landSinkMin at the skids, this went amber at 16 ft and red at 2 ft
+         * on a 118 ft/min "perfect" landing (measured, heli-playtest).
+         */
+        const T = ROTOR_TUNE;
+        const ok = Math.sqrt(T.landSinkMin * T.landSinkMin + 2 * T.landDecel * skids);
+        word = sink <= ok * 1.15 + 0.15 ? 3 : sink <= ok * 1.6 + 0.3 ? 4 : 5;
       }
       ft = Math.max(0, Math.round(skids * M_TO_FT));
     }
-    const landKey = word * 1000 + ft + (kid ? 0.5 : 0);
+    const landKey = word * 1000 + ft;
     if (landKey !== this._heliLandShown) {
       this._heliLandShown = landKey;
-      const land = word === 0 ? '' : word <= 3 ? 'good' : word === 4 || word === 6 ? 'warn' : 'bad';
-      const say = ['', 'on the skids', 'steady', 'gentle', 'a bit fast',
-        kid ? 'too fast, hold Shift' : 'too fast, raise the collective', 'not here'][word];
+      const land = word === 0 ? '' : word <= 3 ? 'good' : word === 4 ? 'warn' : 'bad';
+      const say = ['', 'on the skids', 'steady', 'gentle', 'a bit fast', 'too fast, raise the collective'][word];
       this.heliLand.hidden = !land;
       this.heliLand.classList.toggle('is-good', land === 'good');
       this.heliLand.classList.toggle('is-warn', land === 'warn');
@@ -730,7 +661,7 @@ const ROTOR = {
     const lab = this.speedValue && this.speedValue.parentElement
       && this.speedValue.parentElement.parentElement;
     const speedLabel = lab ? lab.querySelector('.hud-label') : null;
-    if (speedLabel) speedLabel.textContent = this._rotorActive ? 'Groundspeed' : 'Airspeed';
+    if (speedLabel) speedLabel.textContent = this._rotorActive ? 'Ground speed' : 'Airspeed';
     // The hover strip carries its own units in its own markup, so there is
     // nothing to rewrite there; this exists so that the cruise rows are
     // correct the instant we come back to them, rather than one frame later.
@@ -754,31 +685,6 @@ const ROTOR = {
     if (this.rescueLine) this.rescueLine.hidden = true;
     this._holdShown = -1;
     this._holdFallback = 0;
-  },
-
-  /**
-   * Kid mode has just handed the autopilot back (main.js, the trimRequest
-   * block): say why, in the toast that said "Autopilot on" a moment ago
-   * rather than in a second one under it.
-   *
-   * Measured on the first kid build: P in a 13 m hover engaged the
-   * aeroplane autopilot, which captures 1,000 ft above the ground and 55 kt
-   * on engagement. Its throttle became a climb command and its elevator a
-   * tilt, so the Skyhook went forward at 25 m/s and up at 4.5 m/s, 13 m to
-   * 222 m in 40 s, with the card saying GOING UP and nobody on the keys.
-   * Hands off, the kid computer already holds the height and the spot, which
-   * is all an autopilot could promise here.
-   */
-  heliNoAutopilot() {
-    const text = 'No autopilot in kid mode: let go of every key and the Skyhook holds itself still.';
-    const last = this.toasts && this.toasts[this.toasts.length - 1];
-    if (last && last.node && /^Autopilot on/.test(last.node.textContent || '')) {
-      last.node.textContent = text;
-      last.node.className = 'hud-toast is-info';
-      last.life = Math.max(last.life, 4.5);
-    } else {
-      this.notify(text, 'info', 4.5);
-    }
   },
 
   /* ------------------------------------------------------------------ */
@@ -812,18 +718,18 @@ const ROTOR = {
        * costing more than the island does.
        */
       const R = sim.aircraft.rotor || {};
-      const txt = R.kid
-        ? 'KID MODE'
-        : sim.aircraft.hoverAssist === false
-          ? 'ASSIST OFF'
+      const txt = sim.aircraft.hoverAssist === false
+        ? 'ASSIST OFF'
+        : sim.autopilot && sim.autopilot.engaged
+          ? 'AUTOPILOT'
           : R.holdingHeight
             ? 'HEIGHT HOLD'
-            : (R.hoverAuth || 0) > 0.01 && !r.onGround
-              ? 'DRIFT DAMPING'
-              : 'ASSIST STANDBY';
+            : R.arriving
+              ? 'SOFT LANDING'
+              : 'ASSIST ON';
       if (txt !== this._assistShown) {
         this._assistShown = txt;
-        this.assistChip.classList.toggle('is-on', txt === 'KID MODE' || txt === 'HEIGHT HOLD');
+        this.assistChip.classList.toggle('is-on', txt !== 'ASSIST OFF');
         this.assistChip.textContent = txt;
       }
     }
@@ -948,8 +854,7 @@ const ROTOR = {
      * CORRECTION, measured 2026-09-23: the bar showed the LEVER (r.throttle)
      * against a mark in COLLECTIVE units, and those are different scales —
      * the lever idles at 0.18 of collective, so a steady hover read "39% ·
-     * hover 50%" and looked like it was falling. In kid mode the lever is not
-     * a lever at all. Both numbers now come from rotor-assist.js on the same
+     * hover 50%" and looked like it was falling. Both numbers now come from rotor-assist.js on the same
      * scale: the collective the blades actually get, and where the hover is.
      */
     const R = ac.rotor || {};

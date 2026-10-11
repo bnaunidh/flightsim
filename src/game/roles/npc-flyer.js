@@ -209,6 +209,11 @@ export class NpcFlyer {
           self.sync(dt, null);
         }
       },
+      // What is drawn, for the break-up (features/breakup.js): it comes apart where it was hit.
+      get model() {
+        return self.model;
+      },
+      typeId: this.type && this.type.id,
       get heading() {
         return self.heading;
       },

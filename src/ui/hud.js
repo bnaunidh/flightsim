@@ -40,6 +40,52 @@ function fmt(n, digits = 0) {
 }
 
 /*
+ * Height over the ground as the panel prints it: to 5 ft under 100, so a
+ * roof (20 to 30 ft) reads as one, and to 10 ft above, like the altimeter.
+ */
+export function aboveGroundFt(ft) {
+  const v = Math.max(0, Number(ft) || 0);
+  return v < 100 ? Math.round(v / 5) * 5 : Math.round(v / 10) * 10;
+}
+
+/*
+ * The altitude row's words, in two lengths from one place.
+ *
+ * `word` is the sentence under the altimeter on a laptop ("just off the
+ * ground · 20 ft up"). `short` is the same height over the ground in a few
+ * characters ("20 ft up"), for the layouts that have no room for a sentence:
+ * the touch band (iPads, phones, touchscreen Chromebooks) and a narrow
+ * window hide .hud-word (styles/main.css), which was the only place the
+ * height over the ground was written. So beside a 29 ft roof an iPad still
+ * read the altimeter's 150 ft — or 1,080 on the Skerries — and nothing else:
+ * the owner's "200 ft house", unchanged on the devices README names. The
+ * short form is built here, from the same rounding and the same bands as
+ * the sentence, so the two can never disagree.
+ *
+ *   on the ground          "on the ground · field 140 ft"   "on the ground"
+ *   under 60 ft over it    "just off the ground · 20 ft up"  "20 ft up"
+ *   under 400              "low · 150 ft over ground"        "150 ft up"
+ *   under 1,500            "safe · 1,200 ft over ground"     "1,200 ft up"
+ *   under 6,000            "high above the island"           "high up"
+ *   and above              "very high"                       "very high"
+ */
+export function altitudeWords({ onGround, fieldFt, aglFt }) {
+  if (onGround) {
+    const field = Math.max(0, Number(fieldFt) || 0);
+    return { word: field >= 10 ? `on the ground · field ${fmt(field)} ft` : 'on the ground', short: 'on the ground' };
+  }
+  const agl = Math.max(0, Number(aglFt) || 0);
+  const over = fmt(aboveGroundFt(agl));
+  if (agl < 60) return { word: `just off the ground · ${over} ft up`, short: `${over} ft up` };
+  // (Short enough for the panel's 158 px at 1,490: "over the ground" was
+  // 167 and widened the panel every time the line said it.)
+  if (agl < 400) return { word: `low · ${over} ft over ground`, short: `${over} ft up` };
+  if (agl < 1500) return { word: `safe · ${over} ft over ground`, short: `${over} ft up` };
+  if (agl < 6000) return { word: 'high above the island', short: 'high up' };
+  return { word: 'very high', short: 'very high' };
+}
+
+/*
  * How long a line takes a ten-year-old to read, in seconds: a second to find
  * it, then about three words a second. Used as the floor for the radio line
  * and for how long the objective stays open before folding into its chip.
@@ -77,12 +123,15 @@ export class Hud {
     this.speedWord = el('div', 'hud-word', 'stopped');
     this.altValue = el('div', 'hud-value', '0');
     this.altWord = el('div', 'hud-word', 'on the ground');
+    // The height over the ground in a few characters, for the layouts that
+    // hide the sentence (altitudeWords(); .hud-up in styles/main.css).
+    this.altUp = el('div', 'hud-up', 'on the ground');
     this.vsValue = el('div', 'hud-value', '0');
     this.vsWord = el('div', 'hud-word', 'level');
     this.hdgValue = el('div', 'hud-value', '090');
     this.hdgWord = el('div', 'hud-word', 'east');
 
-    const row = (label, value, word, unit) => {
+    const row = (label, value, word, unit, short) => {
       const r = el('div', 'hud-row');
       r.appendChild(el('div', 'hud-label', label));
       const v = el('div', 'hud-valuewrap');
@@ -91,6 +140,10 @@ export class Hud {
       // "090 ∘", so it gets its own class and sits up by the figure.
       if (unit) v.appendChild(el('span', unit === '°' ? 'hud-unit is-deg' : 'hud-unit', unit));
       r.appendChild(v);
+      // After the figure and before the sentence: a third line under the
+      // number where the rows stack (the touch band), on the number's line
+      // where they do not (a narrow window).
+      if (short) r.appendChild(short);
       r.appendChild(word);
       return r;
     };
@@ -100,7 +153,7 @@ export class Hud {
     this.acName = el('div', 'hud-acname', '');
     left.appendChild(this.acName);
     left.appendChild(row('Airspeed', this.speedValue, this.speedWord, 'kt'));
-    left.appendChild(row('Altitude', this.altValue, this.altWord, 'ft'));
+    left.appendChild(row('Altitude', this.altValue, this.altWord, 'ft', this.altUp));
     left.appendChild(row('Vertical speed', this.vsValue, this.vsWord, 'ft/min'));
     left.appendChild(row('Heading', this.hdgValue, this.hdgWord, '°'));
     wrap.appendChild(left);
@@ -972,6 +1025,8 @@ export class Hud {
       h > 315 || h <= 45 ? 'north' : h <= 135 ? 'east' : h <= 225 ? 'south' : 'west';
     this.altValue.textContent = (r.distanceM / 1000).toFixed(1);
     this.altWord.textContent = 'travelled';
+    // A van is not up anything: the short height line goes (empty = hidden).
+    this.altUp.textContent = '';
     const altUnit = this.altValue.parentElement.querySelector('.hud-unit');
     if (altUnit) altUnit.textContent = 'km';
     this.throttleBar.fill.style.width = `${Math.round(r.throttle * 100)}%`;
@@ -996,6 +1051,9 @@ export class Hud {
     const altUnit = this.altValue.parentElement.querySelector('.hud-unit');
     if (altUnit) altUnit.textContent = 'ft';
     this.altWord.textContent = '';
+    this.altUp.textContent = '';
+    // So the next update() writes the aeroplane's words straight back.
+    this.lastValues.alt = null;
   }
 
   /** Name of the aeroplane, shown on the top strip. */
@@ -1192,22 +1250,41 @@ export class Hud {
      * also why the number picks up at the field's height the moment the
      * wheels leave it.
      */
+    /*
+     * And in the air, low down, the line under it says how high you are over
+     * the GROUND, in feet, as a number.
+     *
+     * The owner, 2026-10-04: "houses are like 200 ft tall according to the
+     * game". Measured beside the house nearest the middle of Kestrel's town,
+     * level with its ridge (9.8 m, 32 ft): the panel read "180 ft · just off
+     * the ground". The town stands on a hill 43 m (140 ft) above the sea, and
+     * the big number counts from the sea; nothing on the panel said how far
+     * down the ground was, so the only reading of it was a 180 ft house. The
+     * thirty maps' towns stand 16 to 318 m above the sea (median 66 m), so
+     * every one of them told the same story: a roof read anything from 90 ft
+     * to over 1,000.
+     *
+     * The big number stays what it is — the altimeter, the cockpit's and the
+     * tutorial's "climb to 1,000 feet" — and under it, below 1,500 ft over
+     * the ground, the line now gives the height over it, which is what a
+     * house can be measured against. Over the sea that is over the water,
+     * not the sea floor (the warnings' radio altitude does the same).
+     */
     const onGround = !!r.onGround;
     const fieldFt = Math.max(0, Math.round((r.altFt - r.aglFt) / 10) * 10);
     const alt = onGround ? 0 : Math.round(r.altFt / 10) * 10;
-    const altKey = onGround ? `ground ${fieldFt}` : alt;
+    const agl = Math.max(0, Math.min(r.aglFt, r.altFt));
+    const overFt = aboveGroundFt(agl);
+    const altKey = onGround ? `ground ${fieldFt}` : `${alt} ${agl < 1500 ? overFt : agl < 6000 ? 'high' : 'very'}`;
     if (this.lastValues.alt !== altKey) {
       this.altValue.textContent = fmt(alt);
       this.lastValues.alt = altKey;
-      const agl = r.aglFt;
-      let word;
-      if (onGround) word = fieldFt >= 10 ? `on the ground · field ${fmt(fieldFt)} ft` : 'on the ground';
-      else if (agl < 60) word = 'just off the ground';
-      else if (agl < 400) word = 'low — be careful';
-      else if (agl < 1500) word = 'a nice safe height';
-      else if (agl < 6000) word = 'high above the island';
-      else word = 'very high';
+      // Both lengths from one place (altitudeWords): the sentence for the
+      // laptop panel, the short form for the touch band and a narrow window,
+      // which hide the sentence and showed nothing over the ground at all.
+      const { word, short } = altitudeWords({ onGround, fieldFt, aglFt: agl });
       this.altWord.textContent = word;
+      this.altUp.textContent = short;
     }
 
     const vs = Math.round(r.vsFpm / 25) * 25;

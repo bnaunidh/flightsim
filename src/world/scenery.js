@@ -370,6 +370,8 @@ function addTrees(group, spots, height = 9, mix = [0.7, 0.15, 0.05, 0.1], solid 
       if (treeCache) treeCache.set(kind, geo);
     }
     const inst = new THREE.InstancedMesh(geo, mat, list.length);
+    // Named so tests/features/world-scale.mjs can find the trees.
+    inst.name = `trees:${['palm', 'broadleaf', 'conifer', 'scrub', 'birch', 'thorn'][kind]}`;
     inst.castShadow = true;
     inst.receiveShadow = false;
     // How tall this species is relative to the grove's nominal height.
@@ -742,11 +744,14 @@ export function addTown(group, spots, opts = {}) {
   const plan = spots.map((s, i) => {
     const q = ((Math.sin(s.x * 0.731 + s.z * 1.173) * 24634.6345) % 1 + 1) % 1;
     const q2 = ((Math.sin(s.x * 1.913 + s.z * 0.417) * 7351.137) % 1 + 1) % 1;
-    // A spot with no plan (an old caller) is a house of the old size.
+    // A spot with no plan (an old caller) is an ordinary house (TOWN_SIZES).
+    // It was 14-19 m wide with its eaves 10-14 m up: no caller is left that
+    // relies on it, and none should get a four-storey cottage if one comes.
     const kind = s.kind || 'house';
-    const w = s.w || 8 + (s.scale || 1) * 8;
-    const d = s.d || 9 + q2 * 7;
-    const h = s.h || 5.5 + (s.scale || 1) * 6.5;
+    const HS = TOWN_SIZES.house;
+    const w = s.w || HS.width[0] + q * (HS.width[1] - HS.width[0]);
+    const d = s.d || HS.depth[0] + q2 * (HS.depth[1] - HS.depth[0]);
+    const h = s.h || houseEaves(q2);
     const lo = Number.isFinite(s.lo) ? Math.min(s.lo, s.y) : s.y - 2.2;
     return { s, kind, w, d, h, base: lo - 0.3, v: i % 2, q, q2 };
   });
@@ -777,7 +782,7 @@ export function addTown(group, spots, opts = {}) {
   const walls = new Batch();
   const blockWalls = [new Batch(), new Batch()];
   const trims = new Batch();
-  const facts = { doors: 0, doorGap: Infinity, bays: 0, buriedBays: 0, stretch: 1, hipped: 0, gabled: 0, openBays: 0, blankBays: 0 };
+  const facts = { doors: 0, doorGap: Infinity, bays: 0, buriedBays: 0, stretch: 1, hipped: 0, gabled: 0, openBays: 0, blankBays: 0, hoodClear: Infinity, sizes: [] };
   const cellUV = (c, r, m = 0) => [(c + m) / 4, 1 - (r + 1 - m) / 4, (c + 1 - m) / 4, 1 - (r + m) / 4];
   const PLAIN = cellUV(0, 2, 0.15);
   const STONE = cellUV(1, 2, 0.1);
@@ -816,6 +821,10 @@ export function addTown(group, spots, opts = {}) {
     const hw = b.w / 2;
     const hd = b.d / 2;
     let T = top(b);
+    // How far the roof rises over the eaves: a house's pitch (set below, from
+    // TOWN_SIZES), a block's roof slab. The collision box is the walls plus
+    // this, so it is the drawn building and not a guess at one.
+    let roofRise = 0.8;
     // Each wall from its left end to its right end, as seen from outside.
     const faces = [
       { a: [-hw, hd], b: [hw, hd], n: [0, 1], len: b.w },
@@ -851,8 +860,12 @@ export function addTown(group, spots, opts = {}) {
       const doorBay = b.v ? Math.floor(nbF / 2) : Math.floor((nbF - 1) / 2);
       const gDoor = ground(front, doorBay / nbF, (doorBay + 1) / nbF, 0.7);
       const floor0 = Math.max(s.y, gDoor) + 0.18;
-      // Never less than one storey above the door, whatever the slope.
-      if (T < floor0 + 2.5) T = floor0 + 2.5;
+      // Never less than one storey above the door, whatever the slope — and
+      // that storey tall enough for the door, its frame and the hood over it
+      // (2.68 m) to stand under the eaves, whose edge hangs as much as 0.37 m
+      // below the wall head. When every house was two storeys or more this
+      // never came up; a bungalow's hood went through its own roof at 2.5.
+      if (T < floor0 + 3.1) T = floor0 + 3.1;
       const n = Math.max(1, Math.round((T - floor0) / 2.9));
       const sh = (T - floor0) / n;
       for (const f of faces) {
@@ -903,7 +916,8 @@ export function addTown(group, spots, opts = {}) {
       const along = b.d >= b.w;
       const span = along ? b.w : b.d;
       const len = along ? b.d : b.w;
-      const pitch = span * (0.34 + b.q * 0.16);
+      const pitch = houseRoofRise(span, b.q);
+      roofRise = pitch;
       const hip = hash(bi, 3, 11) < 0.36;
       const roofCol = roofTints[Math.floor(((b.q * 7.31) % 1) * roofTints.length)];
       // Roof coordinates: x across the ridge, y along it.
@@ -991,6 +1005,8 @@ export function addTown(group, spots, opts = {}) {
       trims.box(1.75, 0.12, 0.76, p[0], floor0 + 2.62, p[2], 0xf6f4ee, ry);
       facts.doors++;
       facts.doorGap = Math.min(facts.doorGap, floor0 - gDoor);
+      // The hood's top (floor0 + 2.68) under the lowest edge of the roof.
+      facts.hoodClear = Math.min(facts.hoodClear, T - (pitch / (span / 2)) * oe - (floor0 + 2.68));
     } else {
       /* A block: walls in metres, a door at the front, a roof slab and a plant room. */
       const tex = blockWalls[b.v];
@@ -1040,8 +1056,14 @@ export function addTown(group, spots, opts = {}) {
     }
 
     const [hx, hz] = turnedHalf(b.w, b.d, s.rot);
-    // A roof is at most half its span high, and the span is always the short side.
-    if (solid) addObstacleAt(s.x, s.z, hx * 2, hz * 2, base, T - base + (b.kind === 'house' ? Math.min(b.w, b.d) * 0.5 + 0.5 : 1.3), 'You flew into a building');
+    // To the top of the roof as drawn: the ridge (slabs 0.18 m thick) and
+    // half a metre, or a block's roof slab. It was half the span plus half a
+    // metre whatever the pitch, which was the steepest roof there was.
+    if (solid) addObstacleAt(s.x, s.z, hx * 2, hz * 2, base, T - base + roofRise + 0.5, 'You flew into a building');
+    // What was built, over the spot's own ground, for tests/features/world-scale.mjs:
+    // the eaves, the top of the roof (a house's ridge, a block's roof slab)
+    // and the top of its collision box.
+    facts.sizes.push({ kind: b.kind, x: s.x, z: s.z, rot: s.rot, ground: s.y, w: b.w, d: b.d, eaves: T - s.y, ridge: T + (b.kind === 'house' ? roofRise + 0.18 : 0.85) - s.y, top: T + roofRise + 0.5 - s.y });
   });
 
   const atlas = townAtlas();
@@ -1469,7 +1491,9 @@ function buildDeliveryPad(group) {
       for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) lo = Math.min(lo, heightAt(h.x + (c * lx + sn * lz) * w / 2, h.z + (-sn * lx + c * lz) * w / 2));
       // Front door toward the pad.
       const front = Math.sin(h.rot) * (DELIVERY_PAD.x - h.x) + Math.cos(h.rot) * (DELIVERY_PAD.z - h.z) >= 0 ? 1 : -1;
-      return { x: h.x, z: h.z, y: h.y, lo, rot: h.rot, kind: 'house', w, d: w * 1.1, h: 5 * h.s, front };
+      // One storey: a hut. Its eaves were 5 m x size, 4 to 6.5 m — two
+      // storeys of thatch. addTown keeps a door's storey under the eaves.
+      return { x: h.x, z: h.z, y: h.y, lo, rot: h.rot, kind: 'house', w, d: w * 1.1, h: 3.4 * h.s, front };
     });
     const built = addTown(group, spots, { solid: false, roofTints: [0x8d6b3f, 0x7d5f38, 0x9a7a4a], meshName: 'huts' });
     pad.userData.nightMats = built.nightMats;
@@ -2438,6 +2462,67 @@ function addWeaponsRange(group, cfg) {
 /** A downtown block, street centre to street centre. */
 const DOWNTOWN_BLOCK = 110;
 
+/*
+ * How big a town's buildings are, in metres: the one place the sizes live.
+ * layTown() draws its plots from these, addTown() its roofs, and
+ * tests/features/world-scale.mjs holds both to real buildings.
+ *
+ * The houses were half as tall again as real ones. Eaves anywhere from 5.2 to
+ * 9 m (two in five of them three storeys) under a roof rising a third to a half of
+ * the house's width, so an ordinary house's ridge stood 12 m up and the
+ * biggest 16 — measured on all thirty maps at v57, eaves 7.0 m and ridge
+ * 11.9 m at the median. A two-storey house has its eaves at 5 to 6 m and its
+ * ridge at 7 to 9; a bungalow about 3.5 and 6. So: one house in five a bungalow,
+ * the rest two storeys, a roof pitch of 27 to 37 degrees. Footprints are
+ * unchanged, so every plot, street and gap is where it was.
+ *
+ * A village's blocks stood 9 to 22 m (to 25 with the plant room) round a
+ * square of two-storey houses: five- and six-storey slabs in a village. A
+ * village centre is two to four storeys of shops with flats over them, and
+ * one a storey taller on the square. Downtown blocks, round the towers, are
+ * the city's and keep their 14 to 44 m.
+ *
+ * Each height is ONE draw from the layout's random stream mapped onto its
+ * range, as before, so the sequence of draws — and with it where every
+ * building stands — is exactly what it was.
+ */
+export const TOWN_SIZES = Object.freeze({
+  house: Object.freeze({
+    width: [7.5, 12.5],
+    depth: [8, 12],
+    /** Share of houses that are single-storey. */
+    bungalow: 0.22,
+    /** Eaves over the ground, bungalow and two-storey. */
+    eaves1: [3.2, 3.6],
+    eaves2: [5.0, 6.0],
+    /** Roof rise over the eaves, as a fraction of the span (the short side). */
+    pitch: [0.25, 0.37],
+  }),
+  block: Object.freeze({
+    width: [13, 22],
+    depth: [11, 17],
+    /** A village's blocks, and the extra storey on its square. */
+    village: [7, 13],
+    villageSquare: 3,
+    /** Downtown's mid-rise round the towers, and the extra in its core. */
+    downtown: [14, 34],
+    downtownCore: 10,
+  }),
+});
+
+/** A house's eaves height for one uniform draw `u` in [0, 1). */
+export function houseEaves(u) {
+  const H = TOWN_SIZES.house;
+  if (u < H.bungalow) return H.eaves1[0] + (H.eaves1[1] - H.eaves1[0]) * (u / H.bungalow);
+  return H.eaves2[0] + (H.eaves2[1] - H.eaves2[0]) * ((u - H.bungalow) / (1 - H.bungalow));
+}
+
+/** A house's roof rise, from its span and its own 0..1 hash `q`. */
+export function houseRoofRise(span, q) {
+  const p = TOWN_SIZES.house.pitch;
+  return span * (p[0] + (p[1] - p[0]) * q);
+}
+
 /** Squared distance from a point to a segment. */
 function segDist2(px, pz, ax, az, bx, bz) {
   const dx = bx - ax;
@@ -2841,10 +2926,13 @@ function layTown(cfg, count, pool) {
     // taller buildings on its square and houses everywhere else.
     const pBlock = towersWanted ? (dc < 0.3 ? 0.65 : dc < 0.5 ? 0.35 : 0.08) : (dc < 0.25 ? 0.3 : dc < 0.45 ? 0.14 : 0.03);
     const kind = rnd() < pBlock ? 'block' : 'house';
-    const w = kind === 'house' ? 7.5 + rnd() * 5 : 13 + rnd() * 9;
-    const d = kind === 'house' ? 8 + rnd() * 4 : 11 + rnd() * 6;
-    const h = kind === 'house' ? 5.2 + rnd() * 3.8
-      : towersWanted ? 14 + rnd() * 20 + (dc < 0.25 ? 10 : 0) : 9 + rnd() * 9 + (dc < 0.2 ? 4 : 0);
+    const HS = TOWN_SIZES.house;
+    const BS = TOWN_SIZES.block;
+    const w = kind === 'house' ? HS.width[0] + rnd() * (HS.width[1] - HS.width[0]) : BS.width[0] + rnd() * (BS.width[1] - BS.width[0]);
+    const d = kind === 'house' ? HS.depth[0] + rnd() * (HS.depth[1] - HS.depth[0]) : BS.depth[0] + rnd() * (BS.depth[1] - BS.depth[0]);
+    const h = kind === 'house' ? houseEaves(rnd())
+      : towersWanted ? BS.downtown[0] + rnd() * (BS.downtown[1] - BS.downtown[0]) + (dc < 0.25 ? BS.downtownCore : 0)
+        : BS.village[0] + rnd() * (BS.village[1] - BS.village[0]) + (dc < 0.2 ? BS.villageSquare : 0);
     const off = st.hw + 2.5 + rnd() * 2.5 + d / 2;
     const x = p.x - p.tz * off * side;
     const z = p.z + p.tx * off * side;
@@ -2870,7 +2958,8 @@ function layTown(cfg, count, pool) {
   for (const { p, rot } of fill) {
     if (placed.length >= want) break;
     const q = rnd();
-    tryPlace(p.x, p.z, 7.5 + q * 5, 8 + rnd() * 4, rot, 'house', 5.2 + rnd() * 3.8);
+    const HS = TOWN_SIZES.house;
+    tryPlace(p.x, p.z, HS.width[0] + q * (HS.width[1] - HS.width[0]), HS.depth[0] + rnd() * (HS.depth[1] - HS.depth[0]), rot, 'house', houseEaves(rnd()));
   }
 
   // Trim each made-up street back to its last house (plus a little), and

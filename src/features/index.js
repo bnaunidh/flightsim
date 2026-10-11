@@ -56,3 +56,7 @@ import '../game/roles/afo-president.js';
 import './events/afo-movie.js';
 // Seats: fly some missions from another aircraft in the story (the lead fighter in the hijacks).
 import './roles.js';
+// Crash physics: every model breaks at its own break points, nearest the hit first, the pieces as
+// rigid bodies; the slow-motion beat and the instant replay. Last, so every other feature's crash
+// handling (./crashes.js's choreography, ./sky.js's knock) has run before it breaks anything.
+import './breakup.js';

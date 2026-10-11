@@ -202,7 +202,11 @@ export function attachAircraftImpact(model, config = {}) {
       model.userData.applyCrashImpulse(contactImpulse, point);
     }
     let detached = null;
-    if (action === 'detach') detached = model.userData.strike(selection.id, {
+    // The game's break-up (src/features/breakup.js) can own what comes off,
+    // zone by zone, for every model alike; then this impact dents and scuffs
+    // and leaves the parts on.
+    const partsOwned = typeof model.userData.partsOwner === 'function' && model.userData.partsOwner();
+    if (action === 'detach' && !partsOwned) detached = model.userData.strike(selection.id, {
       debrisParent: options.debrisParent, groundHeight, lifetime: 20,
       worldVelocity: body?.velocity ?? velocity, worldAngularVelocity: body?.angularVelocity ?? angular,
       velocityOrigin: body?.position ?? origin,

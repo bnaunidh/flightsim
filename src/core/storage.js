@@ -55,6 +55,9 @@ export const DEFAULT_SETTINGS = {
   guideStyle: 'arrow',
   // Wandering wind with occasional gusts. Off while you are learning.
   randomWinds: false,
+  // The helicopter's stability assist (hover hold, height hold, auto-level).
+  // On; switched off it is the raw lever and stick. See rotor-assist.js.
+  heliAssist: true,
   // Flat 1% of the tank every 30 seconds. Off by default.
   realisticFuel: false,
   // Look around the cockpit with the mouse or arrow keys.
@@ -124,6 +127,12 @@ export const DEFAULT_SETTINGS = {
    * yesterday.
    */
   damageModel: false,
+  /*
+   * A moment of slow motion when a crash really breaks the aeroplane up
+   * (src/features/breakup.js): a third of real speed for half a second. The
+   * owner asked for it as "optional", so it is a switch, on by default.
+   */
+  crashSlowMo: true,
   aircraft: 'skylark',
   /** Which airline paint scheme. 'house' means each type's own colours. */
   livery: 'house',

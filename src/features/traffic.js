@@ -396,6 +396,10 @@ function makeCraft(type, idx, home) {
     crew: perf.cat === 'light' ? 1 : 2,
     uniform: perf.cat === 'airliner' ? 'captain' : perf.cat === 'light' ? 'casual' : 'fighter',
     hit: () => knockCraft(c),
+    // What is drawn, for the break-up (./breakup.js): it comes apart where it was hit.
+    get model() {
+      return c.model;
+    },
   };
   c.ac = {
     controls: { pitch: 0, roll: 0, yaw: 0, throttle: 0, brakes: 1 },

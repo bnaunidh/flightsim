@@ -843,6 +843,19 @@ export class DriveHud {
     if (this.distLabel) this.distLabel.textContent = 'Trip';
     if (this.distUnit) this.distUnit.textContent = 'km';
     if (this.vsRow) this.vsRow.hidden = true;          // a van has no vertical speed
+    /*
+     * And no height over the ground. The altitude row carries "N ft up" in
+     * .hud-up for the touch band and a window 760 px or narrower, where the
+     * sentence (.hud-word) is hidden (ui/hud.js altitudeWords), and nothing
+     * here wrote it: measured on an iPad, the car after a flight read TRIP
+     * 0.0 km with "1,200 ft up" under it, and the tug "on the ground" (the
+     * HUD's first text) — a third line the cell has no room for, which grew
+     * the band from 60 to 71 px and left it 3 px short of the objective.
+     * Kilometres travelled are not up anything. Empty takes no room
+     * (.hud-up:empty), and hud.clearVehicle() on exit() clears the
+     * aeroplane's cache, so its first frame writes the line back.
+     */
+    if (hud.altUp) hud.altUp.textContent = '';
     // Every other aeroplane row, remembered and put back on exit().
     this.hideAero(true);
     if (this.keyhint) {

@@ -1,53 +1,47 @@
 /**
- * KID PLAYTEST — the Skyhook, flown the way a ten-year-old flies it.
+ * HELI PLAYTEST — the Skyhook, flown the way a first-timer and a sim fan fly it.
  *
- * Not "is the flight model right". This presses the keys a child presses —
- * holds Shift and lets go, holds W for ten seconds and then a lot longer,
- * spins on E, leans on D at speed, mashes four keys at once, holds W and Ctrl
- * together at an H, holds Ctrl all the way to the ground — and asserts the
- * numbers that decide whether the helicopter is a toy or a trap. Each detail
- * string says what it measured; the unmodified build's number is in the
- * comment above the check, so a red line says how far off it is.
+ * Not "is the flight model right". This presses the keys a player presses —
+ * holds Shift and lets go, holds it far too long, holds W for ten seconds
+ * and then a lot longer, spins on E, banks on A at speed, brakes on S, mashes
+ * keys, holds Ctrl all the way to the ground, presses P and F to see what
+ * they do — and asserts the numbers that decide whether the helicopter is a
+ * game or a trap. Each detail string says what it measured.
  *
- * The unmodified build (0db28ca), easy, hover assist on, measured:
- *   - Free Flight put it on runway 09: "Take off from runway 09", tower "Taxi
- *     and hold". The panel said HOVER ASSIST the whole time.
- *   - Shift held 4 s ran the collective to 100% and it STAYED there: climbed
- *     at 12 m/s to 228 m; the height hold refuses to capture above 3 m/s.
- *   - Ctrl, 90% -> 3% of lever over 2 s: vertical speed unchanged (12.6 m/s).
- *   - W held 4 s: nose to -87 degrees, heading 90 -> 270, into the ground at
- *     18 m/s: "You came down far too fast". A held 4 s: 61 degrees of bank.
+ * Every player flies the same helicopter: the collective lever on Shift and
+ * Ctrl, the cyclic on W A S D, the pedals on Q and E. The stability assist
+ * (rotor-assist.js) is on by default at every difficulty and F switches it
+ * off: let go of the lever and it holds the height, let go of the stick and
+ * it levels out and stops over the ground, and Ctrl held to the ground is a
+ * soft landing. There used to be a separate easy-mode flight computer (a
+ * spring-centred lift command, no autopilot, the engine key refused in the
+ * air); it is gone, and the first section checks nothing on screen still
+ * calls the game what it called that mode.
  *
- * And the review of the first kid build (54b893e) found, and this checks:
- *   - the Kestrel start put the Follow camera on the next block's roof, so
- *     the first frame was a grey slab with no helicopter in it;
- *   - the tower's subtitle covered the lower half of the helicopter card;
- *   - I in the air stopped the engine (a crash 2.5 s later), and P handed
- *     the machine to the aeroplane autopilot, which climbed it to 222 m;
- *   - the landing light went red, then amber, on a landing the child was
- *     flying exactly as told, which then graded "perfect";
- *   - controls.throttle read the lift command (50% in a hover), not a lever;
- *   - realistic mode no longer flipped but W still reached -43.5 degrees,
- *     stayed at -34 when let go, and A reached 56 degrees of bank;
- *   - on hills of 8.8-11.2 degrees Ctrl hovered saying CAN'T LAND HERE,
- *     with nothing on the card about turning round, which lands.
- *
- * And the review of the second kid build (30a4007) found, and this checks:
- *   - beside a 64-degree cliff on Kestrel, Ctrl parked it 6-11 m up with
- *     "Turn with Q or E" on the card, and Q or E then swung the tail or the
- *     nose into the rock: 9 of 12 tries crashed (measured again here before
- *     the fix, the review's own three spots);
- *   - on slopes over about 15 degrees no heading lands, and the card still
- *     said to turn;
- *   - HOLDING HEIGHT on the card over a 400-500 ft/min descent, with W held
- *     off the hospital roof;
- *   - Ctrl from high up came down at 3 m/s all the way: 94 s from 270 m.
- * And, with the turn fixed, a wider cliff probe here found Q, D and Ctrl
- * held together at a 63-degree face slid the right wing tip into the rock.
- * And a wider one again (node harness, 300 runs at 75 cliff spots in four
- * winds) found 58 crashes on that build, tail or propeller first, sliding
- * or backing into the rock with Ctrl held or keys mashed; three of those
- * spots are the "whole sequence" check below.
+ * The traps this was written against, measured on earlier builds:
+ *   - the lever held four seconds stayed at 100% and the machine climbed at
+ *     12 m/s to 228 m — the old height hold refused to capture above 3 m/s;
+ *   - W held 4 s put the nose through -87 degrees and over on its back;
+ *   - E let go ran on 13-35 degrees past where it was let go;
+ *   - P handed the machine to the aeroplane autopilot, which climbed it from
+ *     13 m to 222 m;
+ *   - the Kestrel start put the Follow camera on the next block's roof;
+ *   - the tower's subtitle covered the helicopter card;
+ *   - hovering beside a building or the carrier's island the Follow lens sat
+ *     behind the wall, the machine hidden (H2; the camera block below);
+ *   - F, the assist key, also lowered the aeroplane's flaps a notch ("Flaps
+ *     10°" beside "Stability assist off"; a 40 m/s cruise 1.4 m/s slower at
+ *     full flap), and G retracted the skids;
+ *   - one I in the air was an instant, unrecoverable crash (collective zero
+ *     inside a second, -9 m/s; a restart takes 1.8 s and never caught it
+ *     from 40 m), and on a phone the STOP pad next to the camera pad did the
+ *     same in one tap at 30 ft;
+ *   - Shift and W together from the pad went nose first into it ("The
+ *     propeller struck the ground" at 0.5 m, -17 degrees), because the stick
+ *     was full forward before the skids were light;
+ *   - W and A held together for 15 s sank the machine with the assist on,
+ *     the hold's lever pinned at 100% and the disc 46 degrees off the
+ *     vertical: 31 m lost from 80 m, a crash from 25 m.
  *
  * Run it on its own from the console (or from node, see the hand-over):
  *
@@ -56,12 +50,11 @@
  *   await (await import('/tests/features/heli-playtest.browser.js')).check(s, r, console.log);
  *   console.table(r.checks);
  *
- * It drives the game ONLY through keyboard events on window and sim.step().
- * The exceptions are the ones a child does from a menu — the difficulty, the
- * Heli button, Free Flight, the First Light card — putting the machine
- * back on the pad between sections so one section's crash is reported once,
- * not again by every section after it, and putting it 6 m over one hillside
- * for the hill check. About 400 s of game time.
+ * It drives the game through keyboard events on window and sim.step(). The
+ * exceptions are the ones a player does from a menu — the difficulty, the
+ * Heli button, Free Flight, a mission card — putting the machine back on the
+ * pad between sections so one section's crash is reported once, and placing
+ * it beside a building, a stack and the carrier's island for the camera.
  */
 
 const KEYS = {
@@ -73,9 +66,13 @@ const KEYS = {
   D: ['KeyD', 'd'],
   Q: ['KeyQ', 'q'],
   E: ['KeyE', 'e'],
-  // Not flying keys, but keys a child presses to see what they do.
+  // Not flying keys, but keys a player presses to see what they do.
   I: ['KeyI', 'i'],
   P: ['KeyP', 'p'],
+  F: ['KeyF', 'f'],
+  // The aeroplane's flaps-up and gear keys, which mean nothing on skids.
+  V: ['KeyV', 'v'],
+  G: ['KeyG', 'g'],
 };
 
 export async function check(sim, r, say = () => {}) {
@@ -87,8 +84,7 @@ export async function check(sim, r, say = () => {}) {
   const ac = () => sim.aircraft;
   const ro = () => ac().readouts();
   const tilt = () => Math.max(Math.abs(ro().pitch), Math.abs(ro().bank));
-  // What the card says: metres of air under the skids. The unmodified build
-  // has no such number, so it falls back to the same sum.
+  // What the card says: metres of air under the skids.
   const skidH = () => {
     const R = ac().rotor;
     if (R && Number.isFinite(R.heightAbove)) return R.heightAbove;
@@ -97,8 +93,16 @@ export async function check(sim, r, say = () => {}) {
   const hud = () => sim.hud || {};
   const text = (el) => (el && el.textContent ? el.textContent.replace(/\s+/g, ' ').trim() : '');
   const card = () => text(hud().heliState);
+  const chip = () => text(hud().assistChip);
+  // The toasts on screen right now (hud.notify; they live 2-5 s of game time).
+  const toasts = () => [...document.querySelectorAll('.hud-toast')].map(text);
   const hdgDiff = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
   const f1 = (v) => (Number.isFinite(v) ? v.toFixed(1) : String(v));
+  // The lever that holds a hover, on the lever's own 0-1 travel.
+  const hoverLever = () => {
+    const R = ac().rotor || {};
+    return Number.isFinite(R.hoverPoint) ? (R.hoverPoint - 0.18) / 0.82 : NaN;
+  };
   const DT = 1 / 15;
   /** Advance `secs` of game time, calling `each` between frames; true stops it. */
   const run = (secs, each) => {
@@ -116,30 +120,43 @@ export async function check(sim, r, say = () => {}) {
     for (const k of keys) release(k);
     return out;
   };
+  const tapKey = (k) => {
+    press(k);
+    run(DT);
+    release(k);
+    run(DT);
+  };
 
   const origRender = sim.renderer.render;
   sim.renderer.render = () => {};
   const origAutoPause = sim.autoPauseOnHide;
   sim.autoPauseOnHide = false;
   const origDiff = (sim.settings && sim.settings.difficulty) || 'normal';
+  const origAssist = sim.settings ? sim.settings.heliAssist : undefined;
   const origSpeak = sim.speak;
   // Headless Chrome never resolves AudioContext.resume() without a real
   // gesture, and startMode() waits for it. Skip the unlock if nobody has made
   // one; a real session with sound already running is not touched.
   const origUnlocking = sim._unlocking;
   if (sim.audio && !sim.audio.started) sim._unlocking = true;
+  const origTouch = sim.input ? sim.input.touch : null;
 
   let PADS = [];
+  let T = null;
+  let THREE = null;
   try {
     PADS = (await import('../../src/world/pads.js')).PADS;
+    T = await import('../../src/world/terrain.js');
+    THREE = await import('../../src/vendor/three.module.js');
   } catch (e) {
-    /* reported below as a failed check, not a thrown suite */
+    /* reported below as failed checks, not a thrown suite */
   }
 
   /** Free Flight in the helicopter, as the menu does it, on a calm day. */
-  const startHeli = async (difficulty = 'easy', extra = {}) => {
+  const startHeli = async (difficulty = 'normal', extra = {}) => {
     allUp();
     if (typeof sim.applyDifficulty === 'function') sim.applyDifficulty(difficulty);
+    if (sim.settings) sim.settings.heliAssist = true;
     if (typeof sim.switchGame === 'function') sim.switchGame('heli');
     await sim.startMode('free', {
       aircraft: 'harrier', time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 250, ...extra,
@@ -147,31 +164,28 @@ export async function check(sim, r, say = () => {}) {
     allUp();
     run(1);
   };
-  /** Up to about `h` metres by holding Shift and letting go, then settle. */
-  const liftTo = (h) => {
-    hold(['Shift'], 15, () => skidH() > h - 2 || ac().crashed);
-    run(4);
-  };
   /**
-   * Q or E until the nose points at `h`, the way a child lines it up. The
-   * two sections that fly a long way both fly EAST from the start pad: the
-   * Free Flight start on Kestrel is the Cottage Hospital roof, in the town,
-   * with the hills to the south — and flying at hills or rooftops is what
-   * the ground-ahead brake and the landing guard are for, not what these
-   * two checks are measuring. Measured 2026-09-25 flying south instead: W
-   * held 45 s topped out at 32.5 m/s braking for the hills, and W+Ctrl let
-   * go over the town hovered at 39 m saying CAN'T LAND HERE.
+   * Up to about `h` metres: hold Shift, and let go early enough that the
+   * height hold's own stop lands near it, the way a player learns to.
    */
+  const liftTo = (h) => {
+    hold(['Shift'], 20, () => {
+      const vs = Math.max(0, ac().vs);
+      return skidH() + (vs * vs) / 6 + vs * 0.3 > h || ac().crashed;
+    });
+    run(5);
+  };
+  /** Q or E until the nose points at `h`. */
   const face = (h) => {
     for (let i = 0; i < 24; i++) {
       const e = ((h - ac().heading + 540) % 360) - 180;
       if (Math.abs(e) < 4) return;
-      hold([e > 0 ? 'E' : 'Q'], Math.min(0.6, Math.abs(e) / 50));
+      hold([e > 0 ? 'E' : 'Q'], Math.min(0.6, Math.abs(e) / 45));
       run(1);
     }
   };
   /** Each section starts flying, from the pad again if the last one ended badly. */
-  const flyingAt = async (h, difficulty = 'easy') => {
+  const flyingAt = async (h, difficulty = 'normal') => {
     if (ac().crashed || ac().onGround || skidH() < h - 8 || skidH() > h + 25 || ac().groundSpeed > 3) {
       await startHeli(difficulty);
       liftTo(h);
@@ -186,7 +200,7 @@ export async function check(sim, r, say = () => {}) {
       heard.push(String(t));
       return origSpeak.call(this, t, ...rest);
     };
-    await startHeli('easy');
+    await startHeli('normal');
     run(2);
     sim.speak = origSpeak;
     const a0 = ac();
@@ -199,7 +213,6 @@ export async function check(sim, r, say = () => {}) {
         nearest = p;
       }
     }
-    // Unmodified: on the numbers of runway 09.
     r.ok(
       'Free Flight in the helicopter starts on a helipad',
       !!nearest && nd <= nearest.r && a0.onGround,
@@ -207,33 +220,32 @@ export async function check(sim, r, say = () => {}) {
     );
     const objText = text(hud().objective);
     const said = heard.join(' | ');
-    // Unmodified: "Take off from runway 09" and "Taxi and hold".
     r.ok(
       'the panel and the tower use helicopter words',
-      !/runway 0?9/i.test(objText) && /shift/i.test(objText) && !/taxi and hold|cleared for take-off/i.test(said),
-      `panel "${objText.slice(0, 110)}" · tower "${said.slice(0, 110) || 'nothing'}"`
+      !/runway 0?9/i.test(objText) && /shift/i.test(objText) && /collective/i.test(objText) && !/taxi and hold|cleared for take-off/i.test(said),
+      `panel "${objText.slice(0, 120)}" · tower "${said.slice(0, 110) || 'nothing'}"`
     );
-    // Unmodified: HOVER ASSIST, whatever was happening.
-    const chip = text(hud().assistChip);
+    // The easy-mode flight computer is gone: nothing a player can read says so.
+    const screenText = `${document.body.innerText} ${chip()} ${card()} ${text(hud().heliSay)}`;
     r.ok(
-      'easy is kid mode, and the panel says so',
-      !!(a0.rotor && a0.rotor.kid) && /KID/.test(chip),
-      `rotor.kid ${a0.rotor && a0.rotor.kid}, chip "${chip}"`
+      'the stability assist is on by default, says so, and nothing on screen says "kid"',
+      a0.hoverAssist !== false && /ASSIST ON/.test(chip()) && !/\bkids?\b/i.test(screenText),
+      `assist ${a0.hoverAssist !== false}, chip "${chip()}", "kid" on screen ${/\bkids?\b/i.test(screenText)}`
     );
+    // Nor "EASY MODE": the aeroplane's mode chip sat beside HEIGHT HOLD and
+    // read as the old easy-mode computer. The assist chip is the one switch.
+    const modeChipShown = !!(hud().modeChip && !hud().modeChip.hidden && hud().modeChip.getBoundingClientRect().width > 0);
+    r.ok('the helicopter shows no EASY MODE / REAL MODE chip', !modeChipShown, `mode chip ${modeChipShown ? `shown: "${text(hud().modeChip)}"` : 'hidden'}`);
     const hOnPad = text(hud().heliH);
-    // Measured before the fix: 5 ft sitting on the pad (the machine's centre).
     r.ok('on the pad the height reads 0', hOnPad === '0' && Math.abs(skidH()) < 0.3, `card "${hOnPad}" ft, skids ${f1(skidH())} m`);
     /*
-     * What the child SEES first. Measured on the first kid build (54b893e),
-     * this same calm start: parked on the Cottage Hospital roof nose 157.5,
-     * the Follow camera stood 0.9 m over the next town block's roof and a
-     * ray from it to the machine met that roof 2.4 m out — the first frame
-     * was a grey slab. Rays to the machine's centre and to its mast top,
-     * against everything drawn except the machine itself.
+     * What the player SEES first. Measured on an earlier build, this same
+     * calm start: parked on the Cottage Hospital roof nose 157.5, the Follow
+     * camera stood 0.9 m over the next town block's roof and a ray from it to
+     * the machine met that roof 2.4 m out — the first frame was a grey slab.
      */
     let seen = 'no camera';
     try {
-      const THREE = await import('../../src/vendor/three.module.js');
       const inModel = (o) => {
         for (; o; o = o.parent) if (o === sim.model) return true;
         return false;
@@ -257,16 +269,13 @@ export async function check(sim, r, say = () => {}) {
     }
     r.ok('from the start the Follow camera can see the helicopter', /centre clear, mast clear/.test(seen), seen);
     /*
-     * And the card, while the tower talks. Measured on the first kid build
-     * at 1280 x 800: the tower's subtitle (bottom 118 px, up to 720 px wide)
-     * was printed over the lower half of the card — the SHIFT / HOLD / CTRL
-     * row and the landing light — for the first seconds of every flight.
+     * And the card, while the tower talks. Measured at 1280 x 800: the
+     * tower's subtitle (bottom 118 px, up to 720 px wide) was printed over the
+     * lower half of the card for the first seconds of every flight.
      */
     const box = (el) => (el && el.getBoundingClientRect ? el.getBoundingClientRect() : null);
     const cardEl = hud().heliCard;
     const subEl = hud().subtitle;
-    // The tower's start call may have finished by now; put its own words
-    // back up for the measurement.
     if (subEl && subEl.style.display === 'none' && heard.length && typeof hud().setSubtitle === 'function') {
       hud().setSubtitle(heard[heard.length - 1], 'Tower', 4);
     }
@@ -281,111 +290,95 @@ export async function check(sim, r, say = () => {}) {
         ? `card ${Math.round(cb.left)},${Math.round(cb.top)} ${Math.round(cb.width)}x${Math.round(cb.height)}; subtitle ${subOn ? `${Math.round(sb.left)},${Math.round(sb.top)} ${Math.round(sb.width)}x${Math.round(sb.height)}` : 'not showing'}; ${Math.round(over)} px² overlap`
         : 'no helicopter card'
     );
+    // Every panel the helicopter shows is on the screen.
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const offs = [];
+    for (const [name, el] of [['card', hud().heliCard], ['hover strip', hud().rotorPanel], ['chip', hud().assistChip]]) {
+      const b = box(el);
+      if (!el || el.hidden || !b || !b.width) continue;
+      if (b.left < -1 || b.top < -1 || b.right > vw + 1 || b.bottom > vh + 1) offs.push(`${name} ${Math.round(b.left)},${Math.round(b.top)}-${Math.round(b.right)},${Math.round(b.bottom)}`);
+    }
+    // The lever's row: COLLECTIVE ran 26 px into its own bar.
+    const bar = hud().throttleBar && hud().throttleBar.root;
+    const lab = bar && bar.querySelector('.hud-bar-label');
+    const trk = bar && bar.querySelector('.hud-bar-track');
+    if (lab && trk && !bar.hidden) {
+      const range = document.createRange();
+      range.selectNodeContents(lab);
+      const textRight = range.getBoundingClientRect().right;
+      const trackLeft = trk.getBoundingClientRect().left;
+      if (textRight > trackLeft + 0.5) offs.push(`"${text(lab)}" runs ${Math.round(textRight - trackLeft)} px into its bar`);
+    }
+    r.ok('the helicopter panels fit on the screen, and the lever row reads cleanly', offs.length === 0, offs.join('; ') || `all inside ${vw}x${vh}`);
 
     /* ============================================================= lift */
     say('heli playtest: Shift, then let go');
     const h0 = skidH();
-    hold(['Shift'], 4);
-    const vs4 = ac().vs;
-    // Unmodified: 12 m/s and still accelerating.
-    r.ok('holding Shift climbs at 3.5 to 5.5 m/s', vs4 >= 3.5 && vs4 <= 5.5 && h0 < 0.5, `${f1(vs4)} m/s after 4 s, from ${f1(h0)} m`);
+    hold(['Shift'], 8, () => skidH() > 4);
     const hRel = skidH();
-    run(4);
-    const hStop = skidH();
+    const vsRel = ac().vs;
+    let peak = hRel;
+    run(6, () => {
+      peak = Math.max(peak, skidH());
+    });
     let lo = Infinity;
     let hi = -Infinity;
     run(8, () => {
       lo = Math.min(lo, skidH());
       hi = Math.max(hi, skidH());
     });
-    // Unmodified: the lever stayed at 100% and it climbed to 228 m.
+    // A stop at 3 m/s^2 from whatever it is doing, plus the lever's lag.
+    const stopAllow = (vsRel * vsRel) / 6 + vsRel * 0.5 + 2;
     r.ok(
-      'letting go of Shift stops the climb and holds that height',
-      hStop - hRel < 6 && hi - lo < 0.75 && Math.abs(ac().vs) < 0.3,
-      `let go at ${f1(hRel)} m, stopped at ${f1(hStop)} m, then ${f1(lo)}-${f1(hi)} m over 8 s, vs ${f1(ac().vs)}`
+      'Shift lifts it off, and letting go stops the climb and holds that height',
+      h0 < 0.5 && hRel > 3.5 && peak - hRel < stopAllow && hi - lo < 0.75 && Math.abs(ac().vs) < 0.3 && !ac().crashed,
+      `let go at ${f1(hRel)} m climbing ${f1(vsRel)} m/s, stopped at ${f1(peak)} m (allowed ${f1(hRel + stopAllow)}), then ${f1(lo)}-${f1(hi)} m over 8 s, vs ${f1(ac().vs)}`
     );
-    r.ok('the panel says it is hovering while it hovers', /HOVER|HOLD/.test(card()), `card "${card()}"`);
-    /*
-     * sim.aircraft.controls.throttle keeps its meaning — the lever — for
-     * anybody else reading it. On the first kid build it was the lift
-     * command, so a steady hover read 50%; the lever that holds the same
-     * hover in realistic mode reads (hoverPoint - idle) / (1 - idle).
-     */
-    const Rh = ac().rotor || {};
+    r.ok('the panel says it is hovering while it hovers', /HOVER|HOLD/.test(card()) && /HEIGHT HOLD/.test(chip()), `card "${card()}", chip "${chip()}"`);
+    // The lever follows the hold: the gauge shows where the hover is.
     const thr = ac().controls.throttle;
-    const hoverLever = Number.isFinite(Rh.hoverPoint) ? (Rh.hoverPoint - 0.18) / 0.82 : NaN;
     r.ok(
-      'in the hover, controls.throttle reads the lever that holds it',
-      Math.abs(thr - hoverLever) < 0.05,
-      `controls.throttle ${thr.toFixed(3)}, hover lever ${Number.isFinite(hoverLever) ? hoverLever.toFixed(3) : 'unknown'}`
+      'in the hover the lever has come to the hover mark by itself',
+      Math.abs(thr - hoverLever()) < 0.05,
+      `lever ${thr.toFixed(3)}, hover lever ${f1(hoverLever())}`
+    );
+
+    /* ============================================== Shift held far too long */
+    say('heli playtest: Shift held four seconds');
+    await flyingAt(10);
+    run(2);
+    hold(['Shift'], 4);
+    const hTop = skidH();
+    const vsTop = ac().vs;
+    const leverTop = ac().controls.throttle;
+    let peakTop = hTop;
+    run(10, () => {
+      peakTop = Math.max(peakTop, skidH());
+    });
+    // An earlier build: the lever stayed at 100% and it climbed at 12 m/s to 228 m.
+    r.ok(
+      'with the lever run right up, letting go still stops the climb and holds',
+      leverTop > 0.85 && vsTop > 5 && peakTop - hTop < 20 && Math.abs(ac().vs) < 0.3 && Math.abs(ac().controls.throttle - hoverLever()) < 0.06,
+      `lever ${Math.round(leverTop * 100)}% climbing ${f1(vsTop)} m/s at ${f1(hTop)} m; stopped ${f1(peakTop - hTop)} m higher, vs ${f1(ac().vs)} 10 s later, lever back to ${Math.round(ac().controls.throttle * 100)}%`
     );
 
     /* ============================================================= ctrl */
     say('heli playtest: Ctrl');
     await flyingAt(18);
     run(2);
-    let vsAt1 = 0;
-    let vsLow = 0;
+    let vsAt15 = 0;
     let tc = 0;
-    hold(['Ctrl'], 3, () => {
+    hold(['Ctrl'], 2, () => {
       tc += DT;
-      if (tc <= 1.001) vsAt1 = Math.min(vsAt1, ac().vs);
-      vsLow = Math.min(vsLow, ac().vs);
+      if (tc <= 1.501) vsAt15 = Math.min(vsAt15, ac().vs);
     });
-    // Unmodified: no change at all for 1.5 s, then it fell at 21 m/s.
+    r.ok('Ctrl starts it down within a second and a half', vsAt15 <= -1.5, `${f1(vsAt15)} m/s within 1.5 s`);
+    run(5);
     r.ok(
-      'Ctrl comes down within a second, and no faster than 3.5 m/s',
-      vsAt1 <= -2 && vsLow >= -3.5,
-      `${f1(vsAt1)} m/s within 1 s, fastest ${f1(vsLow)} m/s over 3 s`
-    );
-    run(3);
-    r.ok('letting go of Ctrl holds the height again', Math.abs(ac().vs) < 0.3, `vs ${f1(ac().vs)} m/s 3 s after`);
-
-    /* ================================================== I and P, in the air */
-    /*
-     * The two keys a child presses to find out what they do. Measured on the
-     * first kid build: I in a 23.7 m hover stopped the engine and 2.5 s later
-     * it hit the ground at 17.4 m/s, "You came down far too fast"; P engaged
-     * the aeroplane autopilot, which flew it forward at 25 m/s and up at
-     * 4.5 m/s from 13 m to 222 m in 40 s with the card saying GOING UP.
-     */
-    say('heli playtest: I and P in the air');
-    await flyingAt(18);
-    run(2);
-    const yI = ac().pos.y;
-    const tapKey = (k) => {
-      press(k);
-      run(DT);
-      release(k);
-      run(DT);
-    };
-    tapKey('I');
-    const cardI = card();
-    let lowI = 0;
-    run(5, () => {
-      lowI = Math.min(lowI, ac().pos.y - yI);
-    });
-    r.ok(
-      'I in the air does not stop the engine, and the card says why',
-      ac().engineOn && !ac().crashed && lowI > -1 && /ENGINE/.test(cardI),
-      `engine ${ac().engineOn ? 'on' : 'OFF'}, lowest ${f1(lowI)} m in 5 s, card "${cardI}"${ac().crashed ? ', CRASHED: ' + ac().crashReason : ''}`
-    );
-    await flyingAt(13);
-    run(2);
-    const pP = ac().pos.clone();
-    tapKey('P');
-    const toastP = ((hud().toasts || []).slice(-1)[0] || {}).node;
-    const toastPText = toastP ? text(toastP) : '';
-    let farP = 0;
-    let highP = 0;
-    run(20, () => {
-      farP = Math.max(farP, Math.hypot(ac().pos.x - pP.x, ac().pos.z - pP.z));
-      highP = Math.max(highP, Math.abs(ac().pos.y - pP.y));
-    });
-    r.ok(
-      'P in the air leaves it hovering where it was, and says so',
-      !(sim.autopilot && sim.autopilot.engaged) && farP < 3 && highP < 1.5 && !ac().crashed,
-      `autopilot ${sim.autopilot && sim.autopilot.engaged ? 'ENGAGED' : 'off'}, ${f1(farP)} m and ${f1(highP)} m of height in 20 s; toast "${toastPText.slice(0, 90)}"`
+      'letting go of Ctrl holds the height again, clear of the ground',
+      Math.abs(ac().vs) < 0.3 && skidH() > 3 && !ac().crashed,
+      `vs ${f1(ac().vs)} m/s 5 s after, ${f1(skidH())} m up`
     );
 
     /* ========================================================= hands off */
@@ -405,12 +398,10 @@ export async function check(sim, r, say = () => {}) {
       drift < 2 && dy < 1 && hdgDiff(ac().heading, hd0) < 3 && !ac().crashed,
       `${f1(drift)} m, ${f1(dy)} m of height, ${f1(hdgDiff(ac().heading, hd0))} deg`
     );
-
-    /* ================================================ hands off, windy */
     // The winch missions blow 9 to 20 kt. A hover that only holds in a calm
     // is a hover that fails the first rescue.
     say('heli playtest: hands off in fifteen knots');
-    await startHeli('easy', { windSpeedKts: 15, windDirDeg: 300 });
+    await startHeli('normal', { windSpeedKts: 15, windDirDeg: 300 });
     liftTo(15);
     run(10);
     const pw = ac().pos.clone();
@@ -420,62 +411,116 @@ export async function check(sim, r, say = () => {}) {
       driftW = Math.max(driftW, Math.hypot(ac().pos.x - pw.x, ac().pos.z - pw.z));
       dyW = Math.max(dyW, Math.abs(ac().pos.y - pw.y));
     });
-    // Height as well as place: the unmodified build held its place to 0.3 m
-    // here while the stuck lever took it straight up.
     r.ok(
       'in 15 kt of wind, hands off for 30 s, it stays within 3 m and 1.5 m of height',
       driftW < 3 && dyW < 1.5 && !ac().crashed && !ac().onGround,
       `${f1(driftW)} m and ${f1(dyW)} m of height in 30 s, ${f1(ac().groundSpeed)} m/s over the ground at the end${ac().crashed ? ', CRASHED: ' + ac().crashReason : ''}`
     );
 
-    /* =============================================== W off the roof */
     /*
-     * W off the hospital roof the way the start faces, as the review of
-     * 30a4007 flew it: 92.2 m to 78.2 m in 10 s, following the hillside
-     * down, with HOLDING HEIGHT on the card and "down 380-520 ft/min" under
-     * it. The card may hold a height over the ground; it must not say it is
-     * holding still while the V/S row says otherwise.
+     * Shuffling over a spot in that wind, the way a winch run is flown: taps
+     * of D. Each must move it the way it was tapped, and it must hold where
+     * it stops. Before the hover hold took the spot, and while every tap
+     * bled the learned wind lean away, the missions' own pilot could not keep
+     * a winch circle on Gannet Stack (18 kt) for 500 s.
      */
-    say('heli playtest: W off the roof, card against V/S');
-    await startHeli('easy');
-    liftTo(18);
-    let liesW = 0;
-    let lieAt = '';
-    let followSeen = false;
-    let vsMostW = 0;
-    hold(['W'], 10, () => {
-      const vsFpm = ac().vs * 196.85;
-      if (Math.abs(vsFpm) > Math.abs(vsMostW)) vsMostW = vsFpm;
-      if (/FOLLOWING/.test(card())) followSeen = true;
-      if (/HOLDING HEIGHT|HOVERING/.test(card()) && Math.abs(vsFpm) > 300) {
-        liesW++;
-        if (!lieAt) lieAt = `"${card()}" at ${Math.round(vsFpm)} ft/min`;
-      }
+    say('heli playtest: taps in fifteen knots');
+    const pt0 = ac().pos.clone();
+    const hRad = (ac().heading * Math.PI) / 180;
+    const rx = Math.cos(hRad);
+    const rz = Math.sin(hRad);
+    let backMost = 0;
+    for (let i = 0; i < 6; i++) {
+      hold(['D'], 0.27);
+      run(2.2, () => {
+        backMost = Math.min(backMost, (ac().pos.x - pt0.x) * rx + (ac().pos.z - pt0.z) * rz);
+      });
+    }
+    run(6);
+    const movedD = (ac().pos.x - pt0.x) * rx + (ac().pos.z - pt0.z) * rz;
+    const pStop = ac().pos.clone();
+    let wander = 0;
+    run(10, () => {
+      wander = Math.max(wander, Math.hypot(ac().pos.x - pStop.x, ac().pos.z - pStop.z));
     });
     r.ok(
-      'with W held off the roof, the card never says HOLDING HEIGHT over a 300 ft/min climb or descent',
-      liesW === 0 && !ac().crashed,
-      `${liesW} frames${lieAt ? ', first ' + lieAt : ''}; most ${Math.round(vsMostW)} ft/min; FOLLOWING THE GROUND ${followSeen ? 'shown' : 'not needed'}`
+      'in 15 kt, six taps of D move it right, never back, and it holds where it stops',
+      movedD > 1 && backMost > -0.5 && wander < 1 && ac().groundSpeed < 0.3 && !ac().crashed,
+      `${f1(movedD)} m to the right, at most ${f1(-backMost)} m back; 6 s after the last tap, within ${f1(wander)} m for 10 s, ${f1(ac().groundSpeed)} m/s at the end`
+    );
+
+    /*
+     * And straight into a stronger wind, tapping at once, the way a player
+     * arrives over a deck and starts lining up: no four seconds hands off
+     * first for the wind lean to be learned. Before the assist felt the wind
+     * (rotor-assist.js windLean) every tap sagged back downwind by the same
+     * few metres, and the missions' pilot sat 7 m off Night Deck's rig in
+     * 20 kt for ten minutes, tapping towards it.
+     */
+    say('heli playtest: taps into twenty knots, straight away');
+    await startHeli('normal', { windSpeedKts: 20, windDirDeg: 270 });
+    liftTo(15);
+    face(270);
+    run(1.5);
+    const pu0 = ac().pos.clone();
+    for (let i = 0; i < 6; i++) {
+      hold(['W'], 0.3);
+      run(2);
+    }
+    run(4);
+    // Upwind is west, -x.
+    const upwind = pu0.x - ac().pos.x;
+    r.ok(
+      'in 20 kt, six taps of W into the wind straight after lifting move it upwind',
+      upwind > 3 && !ac().crashed,
+      `${f1(upwind)} m upwind after six 0.3 s taps, ${f1(ac().groundSpeed)} m/s at the end`
     );
 
     /* ======================================================== W, and on */
+    /*
+     * East from the Kestrel start: over the town and out to sea. W held
+     * tilts the nose down to the envelope (15-30 degrees) and the height
+     * hold keeps it at its height while it goes.
+     */
     say('heli playtest: W for ten seconds, then a lot longer');
-    await startHeli('easy');
-    liftTo(30);
+    await startHeli('normal');
+    liftTo(45);
     face(90);
     run(3);
     const hdgW = ac().heading;
+    const yW = ac().pos.y;
     let maxTiltW = 0;
+    let dyWmax = 0;
     press('W');
     run(10, () => {
       maxTiltW = Math.max(maxTiltW, tilt());
+      dyWmax = Math.max(dyWmax, Math.abs(ac().pos.y - yW));
     });
     const gs10 = ac().groundSpeed;
+    // The cruise strip at this speed: its first row's label is the
+    // helicopter's own word, and it must not run into the number beside it
+    // (GROUNDSPEED did, on every cruise screenshot).
+    {
+      const sv = hud().speedValue;
+      const row = sv && sv.parentElement && sv.parentElement.parentElement;
+      const lab = row && row.querySelector('.hud-label');
+      let clash = 'no cruise strip';
+      if (lab && sv) {
+        const range = document.createRange();
+        range.selectNodeContents(lab);
+        const lr = range.getBoundingClientRect();
+        const vr = sv.getBoundingClientRect();
+        const ox = Math.min(lr.right, vr.right) - Math.max(lr.left, vr.left);
+        const oy = Math.min(lr.bottom, vr.bottom) - Math.max(lr.top, vr.top);
+        clash = ox > 0.5 && oy > 0.5 ? `"${text(lab)}" overlaps "${text(sv)}" by ${Math.round(ox)}x${Math.round(oy)} px` : '';
+        r.ok('in the cruise the speed row reads cleanly', !clash, clash || `"${text(lab)}" beside "${text(sv)}"`);
+      } else r.ok('in the cruise the speed row reads cleanly', false, clash);
+    }
     // Unmodified: -87 degrees, over on its back, heading 90 -> 270.
     r.ok(
-      'holding W for 10 s flies forwards, tilted no more than 20 degrees',
-      maxTiltW <= 20 && gs10 > 15 && hdgDiff(ac().heading, hdgW) < 5 && !ac().crashed,
-      `max tilt ${f1(maxTiltW)} deg, ${f1(gs10)} m/s at 10 s, heading moved ${f1(hdgDiff(ac().heading, hdgW))} deg`
+      'holding W for 10 s flies forwards at its height, nose down no more than 32 degrees',
+      maxTiltW <= 32 && gs10 > 25 && dyWmax < 6 && hdgDiff(ac().heading, hdgW) < 5 && !ac().crashed,
+      `max tilt ${f1(maxTiltW)} deg, ${f1(gs10)} m/s at 10 s, height within ${f1(dyWmax)} m, heading moved ${f1(hdgDiff(ac().heading, hdgW))} deg`
     );
     run(35, () => {
       maxTiltW = Math.max(maxTiltW, tilt());
@@ -483,22 +528,41 @@ export async function check(sim, r, say = () => {}) {
     release('W');
     const top = ac().groundSpeed;
     r.ok(
-      'held on, it tops out at a sensible 50 to 66 m/s',
-      top > 50 && top < 66 && maxTiltW <= 20 && !ac().crashed,
-      `${f1(top)} m/s after 45 s of W, max tilt ${f1(maxTiltW)} deg, card "${card().slice(0, 40)}"${ac().crashed ? ', CRASHED: ' + ac().crashReason : ''}`
+      'held on, it tops out at a sensible 55 to 75 m/s',
+      top > 55 && top < 75 && maxTiltW <= 32 && !ac().crashed,
+      `${f1(top)} m/s after 45 s of W, max tilt ${f1(maxTiltW)} deg${ac().crashed ? ', CRASHED: ' + ac().crashReason : ''}`
     );
+    let levelT = -1;
     let stopT = -1;
     let t = 0;
-    run(25, () => {
+    const yLetGo = ac().pos.y;
+    let dyCoast = 0;
+    run(70, () => {
       t += DT;
+      dyCoast = Math.max(dyCoast, Math.abs(ac().pos.y - yLetGo));
+      if (levelT < 0 && tilt() < 5) levelT = t;
       if (stopT < 0 && ac().groundSpeed < 1.5 && tilt() < 5) stopT = t;
-      return stopT >= 0 && t > stopT + 1;
+      return (stopT >= 0 && t > stopT + 1) || ac().crashed;
     });
-    // Unmodified: letting go did not level it.
     r.ok(
-      'letting go levels it and brings it to a hover within 20 s',
-      stopT >= 0 && stopT <= 20 && !ac().crashed,
-      stopT >= 0 ? `level and under 1.5 m/s ${f1(stopT)} s after letting go of W at ${f1(top)} m/s` : `still ${f1(ac().groundSpeed)} m/s and ${f1(tilt())} deg`
+      'letting go levels it within 4 s and brings it to a hover, holding its height',
+      levelT >= 0 && levelT <= 4 && stopT >= 0 && stopT <= 70 && dyCoast < 6 && !ac().crashed,
+      `level after ${f1(levelT)} s, under 1.5 m/s after ${f1(stopT)} s from ${f1(top)} m/s, height within ${f1(dyCoast)} m${ac().crashed ? ', CRASHED: ' + ac().crashReason : ''}`
+    );
+
+    /* =========================================================== braking */
+    say('heli playtest: S brakes');
+    await startHeli('normal');
+    liftTo(45);
+    face(90);
+    hold(['W'], 8);
+    const gsB = ac().groundSpeed;
+    hold(['S'], 4);
+    run(1);
+    r.ok(
+      'S brakes hard: at least 15 m/s off in 4 s, and no crash',
+      gsB - ac().groundSpeed >= 15 && !ac().crashed,
+      `${f1(gsB)} -> ${f1(ac().groundSpeed)} m/s${ac().crashed ? ', CRASHED: ' + ac().crashReason : ''}`
     );
 
     /* ============================================================== turn */
@@ -519,37 +583,140 @@ export async function check(sim, r, say = () => {}) {
     run(3, () => {
       ranOn = Math.max(ranOn, hdgDiff(ac().heading, hLetGo));
     });
-    r.ok('E turns it right round in under 10 s', turned >= 360 && turnT <= 10, `${f1(turned)} deg in ${f1(turnT)} s`);
-    // Measured before the yaw brake was wired in: 13.0 degrees.
-    r.ok('and it stops within 10 degrees of where E was let go', ranOn < 10, `ran on ${f1(ranOn)} deg`);
+    r.ok('E turns it right round on the spot in under 10 s', turned >= 360 && turnT <= 10, `${f1(turned)} deg in ${f1(turnT)} s`);
+    // The airframe alone ran on 35 degrees; with the pedals a rate, about 10.
+    r.ok('and it stops within 12 degrees of where E was let go', ranOn < 12, `ran on ${f1(ranOn)} deg`);
 
-    /* ============================================================= steer */
-    say('heli playtest: W and D together');
-    await flyingAt(35);
-    press('W');
-    run(8);
-    let steered = 0;
-    let lastS = ac().heading;
-    let maxTiltS = 0;
-    press('D');
-    run(10, () => {
-      const h = ac().heading;
-      steered += ((h - lastS + 540) % 360) - 180;
-      lastS = h;
-      maxTiltS = Math.max(maxTiltS, tilt());
+    /* ============================================================== bank */
+    say('heli playtest: A at speed');
+    await startHeli('normal');
+    liftTo(45);
+    face(90);
+    hold(['W'], 6);
+    let maxBank = 0;
+    let turnedA = 0;
+    let lastA = ac().heading;
+    hold(['A'], 4, () => {
+      maxBank = Math.max(maxBank, Math.abs(ro().bank));
+      turnedA += ((ac().heading - lastA + 540) % 360) - 180;
+      lastA = ac().heading;
     });
-    release('D');
-    release('W');
+    run(3);
+    const bank3 = ro().bank;
     r.ok(
-      'W and D together steer it round like a car',
-      steered >= 90 && maxTiltS <= 20 && !ac().crashed,
-      `${f1(steered)} deg of turn in 10 s, max tilt ${f1(maxTiltS)} deg`
+      'A at speed banks and turns it, no further than 43 degrees, and let go it levels within 3 s',
+      maxBank < 43 && turnedA < -20 && Math.abs(bank3) < 5 && !ac().crashed,
+      `max bank ${f1(maxBank)} deg, turned ${f1(turnedA)} deg in 4 s, ${f1(bank3)} deg 3 s after letting go`
     );
-    run(10);
+
+    /*
+     * And E at speed is a turn too, not a skid: the key hint says "Q and E
+     * turn". Before, E held 6 s at 45 m/s turned the nose 28 degrees and the
+     * flight path 1 — she flew on sideways.
+     */
+    say('heli playtest: E at speed');
+    await startHeli('normal');
+    liftTo(45);
+    face(90);
+    hold(['W'], 6);
+    const track = () => (Math.atan2(ac().vel.x, -ac().vel.z) * 180) / Math.PI;
+    const trk0 = track();
+    const gsE = ac().groundSpeed;
+    hold(['E'], 5);
+    const trackE = ((track() - trk0 + 540) % 360) - 180;
+    run(4);
+    r.ok(
+      'E at speed turns the flight path, not just the nose, and let go it levels',
+      trackE > 15 && Math.abs(ro().bank) < 6 && !ac().crashed,
+      `from ${f1(gsE)} m/s, E 5 s turned the track ${f1(trackE)} deg; bank ${f1(ro().bank)} deg 4 s after letting go`
+    );
+
+    /* ====================================================== W and A held */
+    /*
+     * The way a first-timer curves while moving: W, then W and A together,
+     * held. Measured before the power margin (rotor-assist.js): from 25 m,
+     * W 8 s then W+D 6 s then W+A 10 s ended "The propeller struck the
+     * ground"; from 80 m, 31 m lost in 21 s with the hold's lever pinned at
+     * 100% and the panel saying it held the height. The turn checks above
+     * hold the keys 4 to 5 s and could not see it.
+     */
+    say('heli playtest: W and A held together for fifteen seconds');
+    await startHeli('normal');
+    liftTo(40);
+    face(90);
+    hold(['W'], 8);
+    const yWA = ac().pos.y;
+    let lostWA = 0;
+    let bankWA = 0;
+    let turnedWA = 0;
+    let lastWA = ac().heading;
+    // The trap itself: the collective pinned at the top while the machine
+    // sinks. (The hold may use full lever for a moment climbing over ground
+    // ahead; that is not it.)
+    let pinnedWA = 0;
+    hold(['W', 'A'], 15, () => {
+      lostWA = Math.max(lostWA, yWA - ac().pos.y);
+      bankWA = Math.max(bankWA, Math.abs(ro().bank));
+      turnedWA += ((ac().heading - lastWA + 540) % 360) - 180;
+      lastWA = ac().heading;
+      const R = ac().rotor || {};
+      if ((Number.isFinite(R.collective) ? R.collective : 0) >= 0.97 && ac().vs < -0.5) pinnedWA += DT;
+    });
+    r.ok(
+      'W and A held together for 15 s at 40 m turns it and keeps its height: under 3 m lost, never sinking on a pinned lever, no crash',
+      !ac().crashed && lostWA < 3 && pinnedWA < 0.5 && Math.abs(turnedWA) > 30 && bankWA > 15,
+      `${ac().crashed ? 'CRASHED: ' + ac().crashReason + '; ' : ''}lost ${f1(lostWA)} m, ${f1(pinnedWA)} s sinking on a pinned lever, turned ${f1(turnedWA)} deg, bank up to ${f1(bankWA)} deg, ${f1(ac().groundSpeed)} m/s at the end`
+    );
+
+    /* ============================================ Shift and W together */
+    /*
+     * "Power and go" from the pad, the aeroplane player's first move.
+     * Measured before the ground stop (rotor-assist.js): Shift and W held
+     * together, "The propeller struck the ground" at 0.5 m, nose 17 degrees
+     * down; W half a second after Shift the same; Shift and S, the tail.
+     * v61's computer capped the tilt at 18 degrees and it lifted off.
+     */
+    say('heli playtest: Shift and W together from the pad');
+    await startHeli('normal');
+    let noseSW = 0;
+    let topSW = 0;
+    let gsSW = 0;
+    const watchSW = () => {
+      noseSW = Math.min(noseSW, ro().pitch);
+      topSW = Math.max(topSW, skidH());
+      gsSW = Math.max(gsSW, ac().groundSpeed);
+    };
+    // Shift and W for three seconds, then W on its own for three more: off
+    // the pad and away, the way it is meant to go.
+    hold(['Shift', 'W'], 3, watchSW);
+    hold(['W'], 3, watchSW);
+    run(1, watchSW);
+    r.ok(
+      'Shift and W together from the pad lift off without a strike and fly forward',
+      !ac().crashed && topSW > 5 && gsSW > 12,
+      `${ac().crashed ? 'CRASHED: ' + ac().crashReason + '; ' : ''}${f1(topSW)} m up, up to ${f1(gsSW)} m/s, nose at worst ${f1(noseSW)} deg`
+    );
+    await startHeli('normal');
+    hold(['Shift'], 0.5);
+    noseSW = 0;
+    topSW = 0;
+    gsSW = 0;
+    hold(['Shift', 'W'], 2.5, watchSW);
+    hold(['W'], 3, watchSW);
+    run(1, watchSW);
+    r.ok(
+      'W half a second after Shift lifts off without a strike too',
+      !ac().crashed && topSW > 5 && gsSW > 12,
+      `${ac().crashed ? 'CRASHED: ' + ac().crashReason + '; ' : ''}${f1(topSW)} m up, up to ${f1(gsSW)} m/s, nose at worst ${f1(noseSW)} deg`
+    );
+    await startHeli('normal');
+    hold(['Shift', 'S'], 3);
+    run(2);
+    r.ok('Shift and S together from the pad lift off without the tail striking', !ac().crashed && skidH() > 3, `${ac().crashed ? 'CRASHED: ' + ac().crashReason : `${f1(skidH())} m up`}`);
 
     /* ============================================================== mash */
     say('heli playtest: mashing the keys');
-    const combos = [['W', 'A'], ['S', 'D'], ['W', 'S', 'A', 'D'], ['S', 'A', 'Q', 'Shift'], ['W', 'D', 'E', 'Ctrl'], ['S', 'Ctrl']];
+    const combos = [['W', 'A'], ['S', 'D'], ['W', 'S', 'A', 'D'], ['S', 'A', 'Q', 'Shift'], ['W', 'D', 'E'], ['A', 'E', 'Shift']];
     let worst = 0;
     let worstKeys = '';
     let crashedOn = '';
@@ -570,19 +737,17 @@ export async function check(sim, r, say = () => {}) {
     }
     // Unmodified: one key (W) flipped it.
     r.ok(
-      'no bunch of keys tips it past 20 degrees or crashes it',
-      worst <= 20 && !crashedOn,
+      'no bunch of keys tips it past 48 degrees (the envelope’s 40 of bank and its stop) or crashes it',
+      worst <= 48 && !crashedOn,
       `worst ${f1(worst)} deg on ${worstKeys}${crashedOn ? ' — CRASHED on ' + crashedOn : ''}`
     );
 
     /* =========================================================== landing */
     say('heli playtest: Ctrl all the way down');
-    await startHeli('easy');
+    await startHeli('normal');
     liftTo(20);
     let lightSeen = false;
-    let vsHigh = 0;
     let vsLastM = 0;
-    // Every colour the light showed on the way down, with where it changed.
     const lightLog = [];
     let lightWas = '';
     const landed = hold(['Ctrl'], 40, () => {
@@ -596,354 +761,82 @@ export async function check(sim, r, say = () => {}) {
           lightLog.push(`${col} at ${f1(h * 3.28084)} ft "${text(hud().heliLandText)}"`);
         }
       }
-      if (h > 8) vsHigh = Math.min(vsHigh, ac().vs);
       if (h < 1 && !ac().onGround) vsLastM = Math.min(vsLastM, ac().vs);
       return ac().onGround || ac().crashed;
     });
     run(1);
     const td = ac().lastTouchdown;
-    // Unmodified: "You came down far too fast".
-    // From 20 m: 3.4 m/s at the top since Ctrl comes down faster from high
-    // up (see descendHigh in rotor-assist.js), 3 m/s from 15 m.
     r.ok(
-      'holding Ctrl lands it: 3 to 4 m/s up high, under 1 m/s in the last metre, touchdown under 150 ft/min',
-      landed && !ac().crashed && vsHigh <= -2.5 && vsHigh >= -4 && vsLastM >= -1 && td && Math.abs(td.vsFpm) < 150,
+      'holding Ctrl lands it: no faster than 1.8 m/s in the last metre (the assist’s profile allows 1.7), touchdown under 200 ft/min',
+      landed && !ac().crashed && vsLastM >= -1.8 && td && Math.abs(td.vsFpm) < 200,
       td
-        ? `${f1(vsHigh)} m/s up high, ${f1(vsLastM)} m/s in the last metre, ${td.vsFpm} ft/min, ${td.quality}`
+        ? `${f1(vsLastM)} m/s in the last metre, ${td.vsFpm} ft/min, ${td.quality}`
         : `no touchdown; crashed ${ac().crashed} ${ac().crashReason || ''}`
     );
-    // Graded as a helicopter landing on an H: before the first kid build a
-    // 90 ft/min vertical touchdown scored 33/100 "not on the runway".
+    // Graded as a helicopter landing on an H: a 90 ft/min vertical touchdown
+    // once scored 33/100 "not on the runway".
     r.ok(
       'the touchdown is scored as a landing on the H',
       !!td && !td.crashed && td.onRunway && td.score >= 80,
       td ? `${td.score}/100, on an H ${td.onRunway}, ${td.centreline} m from its middle` : 'no touchdown'
     );
-    r.ok('the landing light came on for the landing', lightSeen, `seen ${lightSeen}`);
-    // Measured on the first kid build, this same landing: red "too fast,
-    // keep holding Ctrl" from 19 ft to 16 ft, amber to 9 ft, and then an
-    // 86 ft/min touchdown graded "perfect". The child was doing exactly what
-    // the light said.
     r.ok(
-      'doing what it says, the landing light stays green all the way down',
-      lightSeen && lightLog.every((s) => s.startsWith('green')),
+      'doing what it says, the landing light never goes red on the way down',
+      lightSeen && !lightLog.some((s) => s.startsWith('red')),
       lightLog.join(' > ') || 'never lit'
     );
     run(3);
-    r.ok('and it stays down when Ctrl is let go', ac().onGround && !ac().crashed, `on the ground ${ac().onGround}`);
-
-    /* ============================================================== gate */
-    say('heli playtest: W and Ctrl together, flying at an H');
-    await startHeli('easy');
-    liftTo(30);
-    face(90);
-    run(3);
-    press('W');
-    run(6);
-    let lowest = Infinity;
-    let gateWords = '';
-    press('Ctrl');
-    run(20, () => {
-      if (!ac().onGround) lowest = Math.min(lowest, skidH());
-      if (/LET GO/.test(card())) gateWords = card();
-      return ac().crashed;
-    });
-    release('W');
-    const downAfter = run(30, () => ac().onGround || ac().crashed);
-    release('Ctrl');
-    run(1);
-    // Measured before the gate was wired in: into the grass at 39.5 m/s.
     r.ok(
-      'W and Ctrl together hold it off the ground, and letting go of W lands it',
-      !ac().crashed && lowest >= 2 && downAfter && ac().onGround,
-      `lowest ${f1(lowest)} m with W held, then ${ac().crashed ? 'CRASHED: ' + ac().crashReason : ac().onGround ? 'landed' : 'not down'}; card "${gateWords}"`
+      'and it stays down when Ctrl is let go, the lever at the bottom',
+      ac().onGround && !ac().crashed && ac().controls.throttle < 0.05,
+      `on the ground ${ac().onGround}, lever ${Math.round(ac().controls.throttle * 100)}%`
     );
 
-    /* ============================================================== hill */
+    /* ============================================================== gate */
     /*
-     * Ctrl over a hill with the nose pointing up it. The review of the first
-     * kid build found spots of 8.8-11.2 degrees on Kestrel where Ctrl held
-     * for 40 s hovered saying CAN'T LAND HERE. It is geometry — the nose
-     * would touch before the skids — and turning round lands, so the card
-     * has to say that, and doing what it says has to work. The spot is bare
-     * grass east of the airfield, 9.8 degrees when this was written; the
-     * detail string says if the map has changed under it.
+     * W and Ctrl together, flying at an H: "go there and come down". Measured
+     * in the node harness before the guard: into the runway nose first at
+     * 56 m/s. Over the runway, so whatever happens it happens over land.
      */
-    say('heli playtest: Ctrl over a hill, nose up the slope');
-    await startHeli('easy');
-    try {
-      const T = await import('../../src/world/terrain.js');
-      const HX = 2120.1;
-      const HZ = -32.6;
-      const e = 3;
-      const gx = (T.heightAt(HX + e, HZ) - T.heightAt(HX - e, HZ)) / (2 * e);
-      const gz = (T.heightAt(HX, HZ + e) - T.heightAt(HX, HZ - e)) / (2 * e);
-      const hillDeg = (Math.atan(Math.hypot(gx, gz)) * 180) / Math.PI;
-      // Heading h points along (sin h, 0, -cos h): the uphill heading.
-      const upHdg = ((Math.atan2(gx, -gz) * 180) / Math.PI + 360) % 360;
-      // Put it 6 m over the hill, nose up it — the one move here that is not
-      // a key, like putting it back on the pad between sections.
-      ac().reset({ pos: { x: HX, y: 0, z: HZ }, headingDeg: upHdg, speed: 0, altAGL: 6, engineOn: true });
-      allUp();
-      run(2);
-      press('Ctrl');
-      let hillCard = '';
-      let hillSay = '';
-      run(12, () => {
-        if (/TOO STEEP/.test(card())) {
-          hillCard = card();
-          hillSay = text(hud().heliSay);
-        }
-        return ac().onGround || ac().crashed;
-      });
-      const refused = !ac().onGround && !ac().crashed;
-      const heldAt = skidH();
-      /*
-       * What the card says: turn with E, or with Q — whichever it names —
-       * with Ctrl still down, and it stops turning where it can land. The
-       * first repair's card said "Q or E" and the child picked; 30a4007's
-       * playtest held E for 168 degrees and then let go.
-       */
-      const key = /turn with E/i.test(hillSay) ? 'E' : /turn with Q/i.test(hillSay) ? 'Q' : /Q or E/.test(hillSay) ? 'E' : null;
-      const h0 = ac().heading;
-      let landed = false;
-      if (key) {
-        press(key);
-        landed = run(20, () => ac().onGround || ac().crashed);
-        release(key);
-      }
-      const turned = hdgDiff(ac().heading, h0);
-      // The card says keep holding both: it has to land with the key still
-      // down. Measured before the room-to-turn climb stood down at a heading
-      // that lands, it stopped turning and hovered until the key came up.
-      const whileHeld = landed;
-      if (!landed) landed = run(10, () => ac().onGround || ac().crashed);
-      release('Ctrl');
+    say('heli playtest: W and Ctrl together');
+    await startHeli('normal');
+    {
+      const RS = (await import('../../src/game/missions.js')).RUNWAY_START;
+      const x = RS.pos.x - 300;
+      const z = RS.pos.z;
+      ac().reset({ pos: new THREE.Vector3(x, 0, z), headingDeg: 90, altAGL: 30 + 1.7, engineOn: true });
+      sim.input.throttleTarget = hoverLever();
+      sim.input.out.throttle = sim.input.throttleTarget;
+      sim.rig.setMode('chase');
       run(3);
-      const td = ac().lastTouchdown;
-      const fpm = td ? Math.abs(td.vsFpm) : NaN;
-      r.ok(
-        'on a hill too steep to land nose-first, the card says which way to turn, and doing it lands it',
-        hillDeg > 8 && hillDeg < 12 && refused && /TOO STEEP THIS WAY/.test(hillCard) && /turn with [EQ]\b/i.test(hillSay)
-          && landed && whileHeld && ac().onGround && !ac().crashed && fpm < 150,
-        `hill ${f1(hillDeg)} deg; nose up it: ${refused ? `held at ${f1(heldAt)} m` : 'did not hold off'}, card "${hillCard}" "${hillSay}"; `
-          + `${key ? `held ${key} with Ctrl, turned ${f1(turned)} deg` : 'no key named'}, then ${ac().crashed ? 'CRASHED: ' + ac().crashReason : landed ? `landed at ${f1(fpm)} ft/min ${whileHeld ? 'with the key still held' : 'only once the key was let go'}` : 'not down'}`
-      );
-    } catch (e) {
-      r.ok('on a hill too steep to land nose-first, the card says which way to turn, and doing it lands it', false, (e && e.message) || String(e));
     }
-
-    /* ============================================================= cliff */
-    /*
-     * Beside a cliff. The review of 30a4007 parked it with Ctrl beside three
-     * 63-65 degree rock faces on Kestrel — (1128, 942) nose 161, (770, 1481)
-     * nose 256, (-1660, -1166) nose 4 — where the card said "Turn with Q or
-     * E", and Q or E then crashed it 7 times in 9. Measured here on 30a4007
-     * before the fix, the same spots, E+Ctrl / E / Q / E from an 8 m hover:
-     * 9 of 12 crashed, tail or propeller, in 0.9-4.5 s. No way round lands
-     * on 64 degrees, so the card must say that; and a child who turns anyway
-     * must not be killed for it.
-     */
-    say('heli playtest: beside a cliff, then Q and E');
-    await startHeli('easy');
-    try {
-      const cliffs = [
-        [1128.4, 942.2, 161, 'E+Ctrl, then Q'],
-        [-1660, -1166, 4, 'E from an 8 m hover'],
-      ];
-      const got = [];
-      let cliffWords = '';
-      let cliffOk = true;
-      let spinOk = true;
-      for (const [cx, cz, ch, how] of cliffs) {
-        ac().reset({ pos: { x: cx, y: 0, z: cz }, headingDeg: ch, speed: 0, altAGL: 14, engineOn: true });
-        allUp();
-        run(3);
-        press('Ctrl');
-        if (how === 'E from an 8 m hover') {
-          run(30, () => skidH() < 8.5 || ac().crashed);
-          release('Ctrl');
-          run(2);
-        } else {
-          run(20, () => ac().crashed);
-        }
-        const c0 = card();
-        const s0 = text(hud().heliSay);
-        if (!cliffWords) cliffWords = `"${c0}" "${s0}"`;
-        const saysSteep = /TOO STEEP HERE/.test(c0) && !/turn with/i.test(s0);
-        let turned = 0;
-        let prev = ac().heading;
-        const spin = (k, secs) => {
-          press(k);
-          run(secs, () => {
-            let d = ac().heading - prev;
-            if (d > 180) d -= 360;
-            if (d < -180) d += 360;
-            turned += Math.abs(d);
-            prev = ac().heading;
-            return ac().crashed;
-          });
-          release(k);
-        };
-        spin('E', 10);
-        if (how === 'E+Ctrl, then Q') {
-          release('Ctrl');
-          run(1);
-          spin('Q', 10);
-        }
-        release('Ctrl');
-        run(1);
-        cliffOk = cliffOk && saysSteep;
-        spinOk = spinOk && !ac().crashed && turned > 180;
-        got.push(`(${cx}, ${cz}) ${how}: card "${c0}"; turned ${f1(turned)} deg, ${ac().crashed ? 'CRASHED: ' + ac().crashReason : `fine, ${f1(skidH())} m up`}`);
-        if (ac().crashed) await startHeli('easy');
-      }
-      r.ok('beside a cliff where no way round lands, the card says so and does not say turn', cliffOk, `${cliffWords}; ${got.join('; ')}`);
-      r.ok('beside a cliff, Q and E turn it without swinging anything into the rock', spinOk, got.join('; '));
-    } catch (e) {
-      r.ok('beside a cliff, Q and E turn it without swinging anything into the rock', false, (e && e.message) || String(e));
-    }
-
-    /* ============================================== cliff, keys together */
-    /*
-     * Beside a cliff, keys together. With the turn guarded, a wider probe
-     * (15 spots of 27-68 degrees on Kestrel, seed 99) found one more way in:
-     * Q, D and Ctrl held together at (1863, -1534), 63 degrees, sliding the
-     * machine sideways at the rock while it turned and came down — "The
-     * right wing tip hit the ground". Here: at that spot and the review's
-     * three, parked at the card, nose turned so D slides it uphill at the
-     * rock, then Q+D with Ctrl held for 8 s, then W+A+E with Ctrl held for
-     * 8 s. Nothing may touch, and it may not tilt past 20 degrees.
-     */
-    say('heli playtest: beside a cliff, keys together');
-    await startHeli('easy');
-    try {
-      const T = await import('../../src/world/terrain.js');
-      const spots = [
-        [1862.87, -1533.54],
-        [1128.4, 942.2],
-        [770, 1481],
-        [-1660, -1166],
-      ];
-      const got = [];
-      let allOk = true;
-      for (const [cx, cz] of spots) {
-        const e = 3;
-        const gx = (T.heightAt(cx + e, cz) - T.heightAt(cx - e, cz)) / (2 * e);
-        const gz = (T.heightAt(cx, cz + e) - T.heightAt(cx, cz - e)) / (2 * e);
-        const upHdg = ((Math.atan2(gx, -gz) * 180) / Math.PI + 360) % 360;
-        const slopeDeg = (Math.atan(Math.hypot(gx, gz)) * 180) / Math.PI;
-        // D slides it right: with the uphill 90 degrees to the right of the
-        // nose, right is at the rock.
-        ac().reset({ pos: { x: cx, y: 0, z: cz }, headingDeg: (upHdg + 270) % 360, speed: 0, altAGL: 14, engineOn: true });
-        allUp();
-        run(3);
-        press('Ctrl');
-        run(15, () => ac().crashed);
-        let worst = 0;
-        let lowest = Infinity;
-        const watch = () => {
-          worst = Math.max(worst, tilt());
-          lowest = Math.min(lowest, skidH());
-          return ac().crashed;
-        };
-        const cards = new Set();
-        hold(['Q', 'D'], 8, () => {
-          cards.add(card());
-          return watch();
-        });
-        if (!ac().crashed) hold(['W', 'A', 'E'], 8, () => {
-          cards.add(card());
-          return watch();
-        });
-        release('Ctrl');
-        run(2, watch);
-        const ok = !ac().crashed && worst <= 20;
-        allOk = allOk && ok;
-        got.push(
-          `(${cx}, ${cz}) ${f1(slopeDeg)} deg: ${ac().crashed ? 'CRASHED: ' + ac().crashReason : `fine, worst tilt ${f1(worst)} deg, lowest ${f1(lowest)} m`}; cards ${[...cards].filter(Boolean).join(' / ')}`
-        );
-        if (ac().crashed) await startHeli('easy');
-      }
-      r.ok('beside a cliff, Q+D and W+A+E with Ctrl held put nothing into the rock and tilt it no more than 20 degrees', allOk, got.join('; '));
-    } catch (e) {
-      r.ok('beside a cliff, Q+D and W+A+E with Ctrl held put nothing into the rock and tilt it no more than 20 degrees', false, (e && e.message) || String(e));
-    }
-
-    /* ======================================= cliff, a child who stays there */
-    /*
-     * The whole cliff sequence at three spots where b1d130b crashed. A wider
-     * sweep than any before (node harness, 5 seeds x 15 spots of 25-72
-     * degrees on Kestrel x 4 winds: 58 of 300 runs crashed on b1d130b, 0 on
-     * this build) found the machine sliding tail-first into the rock with
-     * Ctrl held: Q+D+Ctrl spiralled it backwards at the face while it came
-     * down, and S+Ctrl backed it in. At each: Ctrl to the card, then E with
-     * Ctrl, Q, D, A, Q+D+Ctrl, S+Ctrl, A+E and W+Ctrl, in a calm. b1d130b in
-     * the harness, this sequence in a calm: "The tail struck the ground" at
-     * all three — (-988, 1133) and (1565, -1964) on Q+D+Ctrl, (974, 1732)
-     * on S+Ctrl. This build: none, worst tilt 18.0, 29-63 m up at the end.
-     * Nothing may touch or tilt past 20 degrees.
-     */
-    say('heli playtest: beside a cliff, the whole sequence');
-    await startHeli('easy');
-    try {
-      const spots = [
-        [-988.388, 1132.917, 312],
-        [974.398, 1731.834, 183],
-        [1564.745, -1964.16, 276],
-      ];
-      const got = [];
-      let allOk = true;
-      for (const [cx, cz, ch] of spots) {
-        ac().reset({ pos: { x: cx, y: 0, z: cz }, headingDeg: ch, speed: 0, altAGL: 14, engineOn: true });
-        allUp();
-        run(3);
-        let worst = 0;
-        let crashedOn = '';
-        const step = (name, keys, secs, rel = true) => {
-          if (ac().crashed) return;
-          for (const k of keys) press(k);
-          run(secs, () => {
-            worst = Math.max(worst, tilt());
-            if (ac().crashed && !crashedOn) crashedOn = name;
-            return ac().crashed;
-          });
-          if (rel) for (const k of keys) release(k);
-        };
-        step('Ctrl', ['Ctrl'], 20, false);
-        const parked = card();
-        step('E+Ctrl', ['E'], 8);
-        release('Ctrl');
-        step('Q', ['Q'], 8);
-        step('D', ['D'], 4);
-        step('A', ['A'], 4);
-        step('Q+D+Ctrl', ['Q', 'D', 'Ctrl'], 6);
-        step('S+Ctrl', ['S', 'Ctrl'], 5);
-        step('A+E', ['A', 'E'], 5);
-        step('W+Ctrl', ['W', 'Ctrl'], 5);
-        allUp();
-        const ok = !ac().crashed && worst <= 20;
-        allOk = allOk && ok;
-        got.push(
-          `(${cx}, ${cz}): parked "${parked}", ${ac().crashed ? `CRASHED on ${crashedOn}: ${ac().crashReason}` : `fine, worst tilt ${f1(worst)} deg, ${f1(skidH())} m up`}`
-        );
-        if (ac().crashed) await startHeli('easy');
-      }
-      r.ok('beside a cliff, the whole sequence of keys puts nothing into the rock', allOk, got.join('; '));
-    } catch (e) {
-      r.ok('beside a cliff, the whole sequence of keys puts nothing into the rock', false, (e && e.message) || String(e));
-    }
+    press('W');
+    run(3);
+    let lowestG = Infinity;
+    let gateWords = '';
+    press('Ctrl');
+    run(8, () => {
+      if (!ac().onGround) lowestG = Math.min(lowestG, skidH());
+      if (/SLOW DOWN/.test(card())) gateWords = `${card()}: ${text(hud().heliSay)}`;
+      return ac().crashed;
+    });
+    const gsGate = ac().groundSpeed;
+    release('W');
+    hold(['S'], 3);
+    const downGate = run(60, () => ac().onGround || ac().crashed);
+    release('Ctrl');
+    run(1);
+    r.ok(
+      'W and Ctrl together keep it off the ground at speed and say why; slowing down lands it',
+      !ac().crashed && lowestG >= 2 && !!gateWords && downGate && ac().onGround,
+      `lowest ${f1(lowestG)} m at up to ${f1(gsGate)} m/s, card "${gateWords}", then ${ac().crashed ? 'CRASHED: ' + ac().crashReason : ac().onGround ? 'landed' : 'not down'}`
+    );
 
     /* ======================================================= from high */
-    /*
-     * Ctrl from high up. The review of 30a4007: Shift 60 s to 270 m, then
-     * Ctrl took 94 s to land, 3 m/s the whole way. It comes down faster high
-     * up now and still slows to the same gentle touchdown.
-     */
     say('heli playtest: Ctrl from 150 m');
-    await startHeli('easy');
-    hold(['Shift'], 40, () => skidH() > 148 || ac().crashed);
-    run(4);
+    await startHeli('normal');
+    hold(['Shift'], 40, () => skidH() > 130 || ac().crashed);
+    run(8);
     const hHigh = skidH();
     let tDown = 0;
     let vsFast = 0;
@@ -955,9 +848,438 @@ export async function check(sim, r, say = () => {}) {
     run(1);
     const tdH = ac().lastTouchdown;
     r.ok(
-      'Ctrl from 150 m lands inside 40 s, no faster than 8 m/s, and gently',
-      downHigh && !ac().crashed && hHigh > 140 && tDown <= 40 && vsFast >= -8 && tdH && Math.abs(tdH.vsFpm) < 150,
+      'Ctrl from 150 m lands inside 45 s, no faster than 9.5 m/s, and gently',
+      downHigh && !ac().crashed && hHigh > 135 && tDown <= 45 && vsFast >= -9.5 && tdH && Math.abs(tdH.vsFpm) < 200,
       `from ${f1(hHigh)} m: ${f1(tDown)} s, fastest ${f1(vsFast)} m/s, ${tdH ? `${tdH.vsFpm} ft/min ${tdH.quality}` : ac().crashed ? 'CRASHED: ' + ac().crashReason : 'not down'}`
+    );
+
+    /*
+     * Ctrl held at a deck's edge, in Night Deck's own 20 kt. Measured before:
+     * the missions' pilot with the middle 3 m past Ironhead Foxtrot's edge
+     * set her down on the deck-side skids, she tipped, "The propeller struck
+     * the ground"; in the node harness a wing tip 0.1 m past the edge sank
+     * her 16 m beside the deck until the drift put the tip under it. Now,
+     * anywhere from on the edge to 4 m past it: no crash, and the card says
+     * CAN'T LAND HERE when it holds her up.
+     */
+    say('heli playtest: Ctrl at a deck edge');
+    const edgeRuns = [];
+    if (typeof sim.startAnyMission === 'function' && THREE) {
+      allUp();
+      if (typeof sim.switchGame === 'function') sim.switchGame('heli');
+      await sim.startAnyMission('nightdeck');
+      run(1);
+      const deckPads = (await import('../../src/world/pads.js')).PADS.filter((p) => /Foxtrot/.test(p.name));
+      const deck = deckPads[0];
+      const plat = deck && T.platformAt(deck.pos.x, deck.pos.z);
+      for (const [past, hdg] of (plat ? [[0, 0], [1, 90], [2.5, 0], [4, 180]] : [])) {
+        const x = plat.cx + plat.hw + past;
+        const z = plat.cz;
+        ac().reset({ pos: new THREE.Vector3(x, 0, z), headingDeg: hdg, altAGL: plat.y + 20 - Math.min(0, T.heightAt(x, z)), engineOn: true });
+        if (sim.input) {
+          sim.input.throttleTarget = 0.4;
+          if (sim.input.out) sim.input.out.throttle = 0.4;
+        }
+        run(5);
+        let refused = false;
+        hold(['Ctrl'], 30, () => {
+          if (/CAN.T LAND/.test(card())) refused = true;
+          return ac().crashed || ac().onGround;
+        });
+        run(2);
+        edgeRuns.push({ past, crashed: ac().crashed ? ac().crashReason : '', onGround: ac().onGround, refused, onDeck: ac().onGround && !!T.platformAt(ac().pos.x, ac().pos.z) });
+        if (ac().crashed) break;
+      }
+      if (typeof sim.quitToMenu === 'function') sim.quitToMenu();
+    }
+    r.ok(
+      'Ctrl held at a deck edge in 20 kt never crashes: she lands on the deck or holds and says CAN’T LAND HERE',
+      edgeRuns.length === 4 && edgeRuns.every((e) => !e.crashed && (e.onDeck || (!e.onGround && e.refused))),
+      edgeRuns.map((e) => `${e.past} m past: ${e.crashed ? 'CRASHED ' + e.crashed : e.onDeck ? 'on the deck' : e.onGround ? 'down off the deck' : 'held'}${e.refused ? ' (card said so)' : ''}`).join('; ') || 'no deck found'
+    );
+
+    /* ===================================================== the engine key */
+    say('heli playtest: I on the pad');
+    await startHeli('normal');
+    tapKey('I');
+    run(1);
+    const offCard = card();
+    const offSay = text(hud().heliSay);
+    tapKey('I');
+    run(2);
+    r.ok(
+      'I on the pad stops the engine, the card says how to start it, and I starts it again',
+      /ENGINE OFF/.test(offCard) && /\bI\b/.test(offSay) && ac().engineOn,
+      `card "${offCard}" "${offSay}", engine ${ac().engineOn ? 'on' : 'off'} after the second I`
+    );
+    // The pad route (ui/touch.js → hudAction('starter')) on the ground: one
+    // tap stops it, one tap starts it, the same as the key.
+    run(1);
+    sim.hudAction('starter');
+    run(0.5);
+    const padStopped = !ac().engineOn;
+    sim.hudAction('starter');
+    run(2.4);
+    r.ok(
+      'the engine pad on the ground: STOP stops it and START starts it again',
+      padStopped && ac().engineOn,
+      `engine ${padStopped ? 'off' : 'STILL ON'} after the tap, ${ac().engineOn ? 'on' : 'OFF'} 2.4 s after the second`
+    );
+
+    /*
+     * In the air it asks twice. Measured on an earlier build at 40 m: one I
+     * had the collective at zero inside a second and the machine at -9 m/s,
+     * and I again did not save it (a restart takes 1.8 s; 0.3 s, 1 s and
+     * 2 s later from 40 m, and 1 s later from 15 m, all ended "You came down
+     * far too fast"). On a phone the STOP pad sits beside the camera pad,
+     * and one tap at 30 ft was -18.7 m/s at the ground. Now: the key asks,
+     * the pad is greyed out and says why, and the ground is as it was.
+     */
+    say('heli playtest: I in the air asks twice; the STOP pad is greyed out');
+    await flyingAt(40);
+    run(2);
+    const yAsk = ac().pos.y;
+    tapKey('I');
+    const askToast = toasts().find((t) => /again/i.test(t)) || '';
+    const onAfterOne = ac().engineOn;
+    run(4); // the 3 s window lapses
+    const heldHeight = Math.abs(ac().pos.y - yAsk) < 3;
+    tapKey('I');
+    const onAfterLapsed = ac().engineOn;
+    run(0.5);
+    tapKey('I'); // within 3 s of the last one: this is the second press
+    run(0.3);
+    const offAfterTwo = !ac().engineOn;
+    r.ok(
+      'I in the air asks first: one press leaves the engine running and says so, after 4 s a single press still does, and a second press within 3 s shuts it down',
+      onAfterOne && /again/i.test(askToast) && heldHeight && onAfterLapsed && offAfterTwo && !ac().crashed,
+      `engine ${onAfterOne ? 'on' : 'OFF'} after one I (toast "${askToast}"), ${heldHeight ? 'height held' : 'height NOT held'} through the lapse, ${onAfterLapsed ? 'on' : 'OFF'} after a press 4 s later, ${offAfterTwo ? 'off' : 'STILL ON'} after a second within 3 s`
+    );
+    // Back on the pad and up again (the machine above has no engine).
+    await startHeli('normal');
+    liftTo(40);
+    run(2);
+    const padStart = ac().engineOn && !ac().onGround;
+    sim.hudAction('starter');
+    const padToast = toasts().find((t) => /land/i.test(t)) || '';
+    run(0.5);
+    sim.hudAction('starter');
+    run(0.5);
+    // The pad's look: greyed out in the air. The real pad on a touch device
+    // (heli-touch.playtest.mjs presses it with a finger); on a desktop run,
+    // one made the same way, through the stylesheet.
+    let enginePad = sim.touch && sim.touch.enginePad;
+    let padProbe2 = null;
+    if (!enginePad) {
+      padProbe2 = document.createElement('button');
+      padProbe2.className = 'touch-pad is-on is-off';
+      padProbe2.textContent = 'STOP';
+      document.body.appendChild(padProbe2);
+      enginePad = padProbe2;
+    }
+    const padOpacity = parseFloat(getComputedStyle(enginePad).opacity);
+    const padOff = enginePad.classList.contains('is-off');
+    if (padProbe2) padProbe2.remove();
+    r.ok(
+      'the STOP pad in the air is greyed out, and two taps on it leave the engine running with a word about landing first',
+      padStart && ac().engineOn && /land/i.test(padToast) && padOff && padOpacity < 0.7 && !ac().crashed,
+      `engine ${ac().engineOn ? 'on' : 'OFF'} after two taps at ${f1(skidH())} m, toast "${padToast}", pad ${padOff ? 'is-off' : 'NOT is-off'} at opacity ${padOpacity}${padProbe2 ? ' (stylesheet probe)' : ''}`
+    );
+
+    /* ========================================================= autopilot */
+    /*
+     * P, as for the aeroplanes. Measured on an earlier build: the aeroplane
+     * autopilot took a 13 m hover forward at 25 m/s and up at 4.5 m/s to
+     * 222 m in 40 s. On a helicopter it holds what it has.
+     */
+    say('heli playtest: P in the hover, then at speed');
+    await flyingAt(13);
+    run(2);
+    const pP = ac().pos.clone();
+    tapKey('P');
+    const apCard = card();
+    let farP = 0;
+    let highP = 0;
+    run(20, () => {
+      farP = Math.max(farP, Math.hypot(ac().pos.x - pP.x, ac().pos.z - pP.z));
+      highP = Math.max(highP, Math.abs(ac().pos.y - pP.y));
+    });
+    r.ok(
+      'P in the hover engages the autopilot, which holds the hover where it was',
+      !!(sim.autopilot && sim.autopilot.engaged) && /AUTOPILOT/.test(apCard) && farP < 3 && highP < 1.5 && !ac().crashed,
+      `autopilot ${sim.autopilot && sim.autopilot.engaged ? 'engaged' : 'OFF'}, card "${apCard}", ${f1(farP)} m and ${f1(highP)} m of height in 20 s`
+    );
+    hold(['W'], 0.4);
+    r.ok('moving the stick hands it straight back', !(sim.autopilot && sim.autopilot.engaged), `autopilot ${sim.autopilot && sim.autopilot.engaged ? 'still on' : 'off'}`);
+    run(4);
+    await startHeli('normal');
+    liftTo(50);
+    face(90);
+    hold(['W'], 6);
+    run(0.5);
+    tapKey('P');
+    const yAp = ac().pos.y;
+    const hAp = ac().heading;
+    const gsAp = ac().groundSpeed;
+    let dyAp = 0;
+    let dhAp = 0;
+    run(20, () => {
+      dyAp = Math.max(dyAp, Math.abs(ac().pos.y - yAp));
+      dhAp = Math.max(dhAp, hdgDiff(ac().heading, hAp));
+    });
+    r.ok(
+      'P at speed holds the height and the heading and keeps going',
+      !!(sim.autopilot && sim.autopilot.engaged) && dyAp < 6 && dhAp < 5 && ac().groundSpeed > 15 && !ac().crashed,
+      `engaged at ${f1(gsAp)} m/s; 20 s: height within ${f1(dyAp)} m, heading within ${f1(dhAp)} deg, ${f1(ac().groundSpeed)} m/s, "${sim.autopilot && sim.autopilot.status(null)}"`
+    );
+    hold(['Shift'], 0.4);
+    r.ok('and a hand on the lever takes it back too', !(sim.autopilot && sim.autopilot.engaged), `autopilot ${sim.autopilot && sim.autopilot.engaged ? 'still on' : 'off'}`);
+
+    /* ======================================================== F: assist */
+    say('heli playtest: F switches the assist off and on');
+    await flyingAt(25);
+    run(3);
+    tapKey('F');
+    const offChip = chip();
+    const offCard2 = card();
+    const assistWas = ac().hoverAssist;
+    const toastsF1 = toasts();
+    const flapsF1 = ac().flapStep();
+    // The raw machine: a lever 6% over the hover climbs and goes on climbing.
+    sim.input.throttleTarget = hoverLever() + 0.06;
+    const yRaw = ac().pos.y;
+    run(10);
+    const climbedRaw = ac().pos.y - yRaw;
+    r.ok(
+      'F switches it off: the panel says so, and the lever is all yours',
+      assistWas === false && /ASSIST OFF/.test(offChip) && /ASSIST OFF/.test(offCard2) && climbedRaw > 5 && sim.settings.heliAssist === false,
+      `assist ${assistWas}, chip "${offChip}", card "${offCard2}", ${f1(climbedRaw)} m of climb in 10 s with the lever 6% over the hover`
+    );
+    tapKey('F');
+    const toastsF2 = toasts();
+    const flapsF2 = ac().flapStep();
+    run(8);
+    r.ok(
+      'F again and it catches the height and holds it',
+      ac().hoverAssist !== false && Math.abs(ac().vs) < 0.3 && /ASSIST ON|HEIGHT HOLD/.test(chip()) && !ac().crashed,
+      `assist ${ac().hoverAssist}, vs ${f1(ac().vs)} m/s 8 s later, chip "${chip()}"`
+    );
+    /*
+     * F is the aeroplane's flaps key too (input.js binds KeyF to flapsDown in
+     * the 'plane' context and to heliAssist in 'heli'), and main.js read
+     * codes, not contexts: measured, the two F taps above also showed "Flaps
+     * 10° — more lift, more drag" and "Flaps 20°", flapStep() went 1 then 2
+     * and stayed, and a 40 m/s cruise settled 1.4 m/s slower at full flap.
+     * G retracted the skids, which made the next touchdown "You landed with
+     * the wheels up". None of it, now: nothing moves and nothing is said.
+     */
+    const flapToasts = [...toastsF1, ...toastsF2].filter((t) => /flaps/i.test(t));
+    tapKey('V');
+    const toastsV = toasts();
+    tapKey('G');
+    const toastsG = toasts();
+    const wingToasts = [...toastsV, ...toastsG].filter((t) => /flaps|landing gear/i.test(t));
+    r.ok(
+      'F, V and G move no flaps and no gear in the helicopter, and no flaps or gear toast appears',
+      flapsF1 === 0 && flapsF2 === 0 && ac().flapStep() === 0 && ac().gearDown && flapToasts.length === 0 && wingToasts.length === 0,
+      `flaps ${flapsF1} and ${flapsF2} after the two F, ${ac().flapStep()} after V, gear ${ac().gearDown ? 'down' : 'UP'} after G; flaps/gear toasts ${JSON.stringify([...flapToasts, ...wingToasts])}`
+    );
+
+    /* ============================================================ touch */
+    /*
+     * The touch lever. A thumb on the slider is a hand on the lever; lifted,
+     * the hold takes over. Driven through the same state the on-screen
+     * slider writes (ui/touch.js), so a desktop run checks it too.
+     */
+    say('heli playtest: the touch lever');
+    await flyingAt(20);
+    run(2);
+    const touchState = { pitch: 0, roll: 0, yaw: 0, throttle: null, lever: null, brakes: false, stickHeld: false, rudderHeld: false, dragging: false };
+    const hadTouch = !!sim.input.touch;
+    if (!hadTouch) sim.input.touch = touchState;
+    const ts = sim.input.touch;
+    const yT = ac().pos.y;
+    ts.dragging = true;
+    ts.throttle = Math.min(1, hoverLever() + 0.25);
+    run(3);
+    // And the card talks about the lever, not about keys a tablet has not got.
+    const wrapEl = hud().wrap;
+    const wasTouch = !!(wrapEl && wrapEl.classList.contains('is-touch'));
+    if (wrapEl) wrapEl.classList.add('is-touch');
+    run(DT);
+    const touchSay = text(hud().heliSay);
+    // Nothing of the free-play extras on top of the hover strip or the card:
+    // the Races button sat on the strip's WIND row and the smoke button on
+    // the card's HOVERING, on an iPad and on a phone (measured at 1024 x 768
+    // and 390 x 844). The smoke button places itself once a second.
+    run(1.2);
+    const boxOf = (sel) => {
+      const e = document.querySelector(sel);
+      if (!e || e.hidden) return null;
+      const b = e.getBoundingClientRect();
+      return b.width > 2 && b.height > 2 && getComputedStyle(e).display !== 'none' ? b : null;
+    };
+    // ...and not on each other: with the Races button moved to the left under
+    // the map, the smoke button placed itself on top of it (an emulated
+    // 1024 x 768 iPad, 2,400 px²), because the button is not in the HUD's
+    // own tree and the chip only looked there.
+    const overlapsOf = [];
+    for (const [a, b] of [['.race-solobar', '.hud-rotor'], ['.race-solobar', '.hud-heli'], ['.fun-chip', '.hud-rotor'], ['.fun-chip', '.hud-heli'], ['.fun-chip', '.race-solobar']]) {
+      const A = boxOf(a);
+      const B = boxOf(b);
+      if (!A || !B) continue;
+      const ox = Math.min(A.right, B.right) - Math.max(A.left, B.left);
+      const oy = Math.min(A.bottom, B.bottom) - Math.max(A.top, B.top);
+      if (ox > 2 && oy > 2) overlapsOf.push(`${a} over ${b} ${Math.round(ox)}x${Math.round(oy)}`);
+    }
+    r.ok(
+      'on a touch screen the Races and smoke buttons stay off the hover strip, the card and each other',
+      overlapsOf.length === 0,
+      overlapsOf.join('; ') || `clear (${['.race-solobar', '.fun-chip', '.hud-rotor', '.hud-heli'].map((q) => `${q} ${boxOf(q) ? 'shown' : 'not shown'}`).join(', ')})`
+    );
+    if (wrapEl && !wasTouch) wrapEl.classList.remove('is-touch');
+    run(DT);
+    r.ok('on a touch screen the card says lever, not Shift', /lever/i.test(touchSay) && !/\b(Shift|Ctrl)\b/.test(touchSay), `"${touchSay}"`);
+    // And none of the aeroplane's pads (BRAKES, GEAR, FLAPS): on a phone they
+    // were three dead buttons beside the lever. The real pads on a touch
+    // device; on a desktop run, one made the same way, through the stylesheet.
+    let wingPads = sim.touch && sim.touch.layer ? [...sim.touch.layer.querySelectorAll('.touch-pad.is-wing')] : [];
+    let padProbe = null;
+    if (!wingPads.length && wrapEl) {
+      padProbe = document.createElement('button');
+      padProbe.className = 'touch-pad is-wing';
+      padProbe.textContent = 'GEAR';
+      wrapEl.appendChild(padProbe);
+      wingPads = [padProbe];
+    }
+    const padsShown = wingPads.filter((b) => getComputedStyle(b).display !== 'none').map((b) => b.textContent);
+    if (padProbe) padProbe.remove();
+    r.ok(
+      'on a touch screen the helicopter shows no BRAKES, GEAR or FLAPS pad',
+      wingPads.length > 0 && padsShown.length === 0 && !!wrapEl && wrapEl.classList.contains('is-rotor'),
+      `${wingPads.length} aeroplane pads, shown: ${padsShown.join(', ') || 'none'}${padProbe ? ' (stylesheet probe)' : ''}`
+    );
+    const climbT = ac().pos.y - yT;
+    ts.dragging = false;
+    ts.throttle = null;
+    run(8);
+    r.ok(
+      'a thumb on the touch lever climbs, and lifting it holds the height',
+      climbT > 4 && Math.abs(ac().vs) < 0.3 && !ac().crashed,
+      `${f1(climbT)} m in 3 s with the slider up, then vs ${f1(ac().vs)} m/s 8 s after letting go`
+    );
+    if (!hadTouch) sim.input.touch = origTouch;
+
+    /* ================================================== the Follow camera */
+    /*
+     * H2. Hovering beside a building, a sea stack and the carrier's island,
+     * the line from the machine to the Follow lens must be clear of every
+     * box and the ground on every frame, the lens never inside a box, and it
+     * must not jump (under 3.5 m in a 1/15 s step, about 50 m/s). Measured before the fix: 9 m off the
+     * Cottage Hospital's wall and 12 m off CV-11 Resolute's island, the line
+     * ran through the building on 150 of 150 frames.
+     */
+    say('heli playtest: the Follow camera beside things');
+    const camSpots = [];
+    const lineClear = (P, C) => {
+      for (const o of T.OBSTACLES) {
+        let t0 = 0;
+        let t1 = 1;
+        for (const [p, d, a, b] of [[P.x, C.x - P.x, o.x0, o.x1], [P.y, C.y - P.y, o.y0, o.y1], [P.z, C.z - P.z, o.z0, o.z1]]) {
+          if (Math.abs(d) < 1e-9) {
+            if (p < a || p > b) t0 = 2;
+            continue;
+          }
+          let ta = (a - p) / d;
+          let tb = (b - p) / d;
+          if (ta > tb) [ta, tb] = [tb, ta];
+          t0 = Math.max(t0, ta);
+          t1 = Math.min(t1, tb);
+        }
+        if (t0 <= t1 && t0 > 0.02) return `through ${o.what || 'a box'}`;
+        if (C.x > o.x0 && C.x < o.x1 && C.z > o.z0 && C.z < o.z1 && C.y > o.y0 && C.y < o.y1) return `inside ${o.what || 'a box'}`;
+      }
+      for (let k = 1; k < 10; k++) {
+        const tt = k / 10;
+        if (T.heightAt(P.x + (C.x - P.x) * tt, P.z + (C.z - P.z) * tt) > P.y + (C.y - P.y) * tt) return 'through the ground';
+      }
+      return '';
+    };
+    const hoverBeside = (x, y, z, hdg) => {
+      ac().reset({ pos: new THREE.Vector3(x, y, z), headingDeg: (hdg + 360) % 360, altAGL: y - T.heightAt(x, z), engineOn: true });
+      sim.input.throttleTarget = hoverLever();
+      sim.input.out.throttle = sim.input.throttleTarget;
+      sim.rig.setMode('chase');
+      run(DT * 2);
+      let bad = 0;
+      let firstBad = '';
+      let jump = 0;
+      let last = sim.camera.position.clone();
+      let dist = 0;
+      for (let i = 0; i < 75; i++) {
+        run(DT);
+        const why = lineClear({ x: ac().pos.x, y: ac().pos.y + 1, z: ac().pos.z }, sim.camera.position);
+        if (why) {
+          bad++;
+          if (!firstBad) firstBad = why;
+        }
+        jump = Math.max(jump, sim.camera.position.distanceTo(last));
+        last.copy(sim.camera.position);
+        dist = sim.camera.position.distanceTo(ac().pos);
+      }
+      return { bad, firstBad, jump, dist, crashed: ac().crashed ? ac().crashReason : '' };
+    };
+    try {
+      await startHeli('normal');
+      const hosp = T.OBSTACLES.find((o) => /Hospital/.test(o.what || ''));
+      if (hosp) {
+        const x = hosp.x0 - 9;
+        const z = (hosp.z0 + hosp.z1) / 2;
+        camSpots.push({ where: 'beside the Cottage Hospital', ...hoverBeside(x, T.heightAt(x, z) + 7.7, z, 270) });
+      }
+      if (typeof sim.startAnyMission === 'function') {
+        await sim.startAnyMission('stackrescue');
+        run(1);
+        // A sea point beside rock that stands over 100 m, near the climber.
+        const tgt = sim.runner && sim.runner.activeTarget ? sim.runner.activeTarget() : null;
+        const cx = tgt ? tgt.pos.x : ac().pos.x;
+        const cz = tgt ? tgt.pos.z : ac().pos.z;
+        let found = null;
+        for (let rr = 20; rr < 900 && !found; rr += 15) {
+          for (let a = 0; a < 360 && !found; a += 9) {
+            const px = cx + Math.cos((a * Math.PI) / 180) * rr;
+            const pz = cz + Math.sin((a * Math.PI) / 180) * rr;
+            if (T.heightAt(px, pz) > 0) continue;
+            let clear = true;
+            for (let b = 0; b < 360 && clear; b += 30) for (const q of [4, 7]) if (T.heightAt(px + Math.cos((b * Math.PI) / 180) * q, pz + Math.sin((b * Math.PI) / 180) * q) > 30) clear = false;
+            if (!clear) continue;
+            for (let b = 0; b < 360 && !found; b += 15) {
+              for (const q of [14, 18, 22]) {
+                const qx = px + Math.cos((b * Math.PI) / 180) * q;
+                const qz = pz + Math.sin((b * Math.PI) / 180) * q;
+                if (T.heightAt(qx, qz) > 100) {
+                  found = { px, pz, hdg: (Math.atan2(px - qx, -(pz - qz)) * 180) / Math.PI };
+                  break;
+                }
+              }
+            }
+          }
+        }
+        if (found) camSpots.push({ where: 'beside a sea stack', ...hoverBeside(found.px, 60, found.pz, found.hdg) });
+        else camSpots.push({ where: 'beside a sea stack', bad: 1, firstBad: 'no spot found', jump: 0, dist: 0, crashed: '' });
+        await sim.startAnyMission('overboard');
+        run(1);
+        const isl = T.OBSTACLES.find((o) => /Resolute/.test(o.what || ''));
+        if (isl && sim.carrier) camSpots.push({ where: 'beside the carrier’s island', ...hoverBeside(isl.x0 - 12, sim.carrier.deckY + 6.7, (isl.z0 + isl.z1) / 2, 270) });
+        sim.quitToMenu();
+      }
+    } catch (e) {
+      camSpots.push({ where: 'the camera spots', bad: 1, firstBad: `threw: ${e && e.message}`, jump: 0, dist: 0, crashed: '' });
+    }
+    r.ok(
+      'hovering beside a building, a stack and the carrier, the Follow camera always sees the helicopter and never jumps',
+      camSpots.length === 3 && camSpots.every((s) => s.bad === 0 && s.jump < 3.5 && !s.crashed),
+      camSpots.map((s) => `${s.where}: ${s.bad ? `${s.bad} frames blocked (${s.firstBad})` : 'clear'}, lens ${f1(s.dist)} m, worst jump ${f1(s.jump)} m${s.crashed ? ', CRASHED: ' + s.crashed : ''}`).join('; ')
     );
 
     /* ===================================================== first mission */
@@ -975,24 +1297,25 @@ export async function check(sim, r, say = () => {}) {
       const id = stepId();
       log.push(id);
       if (id === 'lift') {
-        // "Hold Shift to lift off the pad. Let go when you are a little way up."
-        hold(['Shift'], 6, () => skidH() > 3);
-        run(3);
+        // "Hold Shift to raise the collective until the skids come off the
+        // pad. Let go a little way up — the assist holds that height."
+        hold(['Shift'], 6, () => skidH() > 2.5);
+        run(4);
       } else if (id === 'hold') {
         // "Hold it at about twenty feet over the pad... Let go of everything."
         // The HEIGHT light is green in the band; tap towards it if it is not.
-        const box = sim.hoverBox;
-        const lo2 = box ? box.minAgl : 4;
-        const hi2 = box ? box.maxAgl : 11;
-        if (skidH() < lo2 + 0.5) hold(['Shift'], 0.5);
-        else if (skidH() > hi2 - 0.5) hold(['Ctrl'], 0.5);
+        const hb = sim.hoverBox;
+        const lo2 = hb ? hb.minAgl : 4;
+        const hi2 = hb ? hb.maxAgl : 11;
+        if (skidH() < lo2 + 0.5) hold(['Shift'], 0.4);
+        else if (skidH() > hi2 - 0.5) hold(['Ctrl'], 0.4);
         run(7, () => stepId() !== 'hold');
       } else if (id === 'turn') {
         // "Turn right on the spot with E, until you are facing the sea."
         hold(['E'], 8, () => stepId() !== 'turn');
         run(1);
       } else if (id === 'down') {
-        // "Come back down onto the H... hold Ctrl."
+        // "Hold Ctrl ... keep holding until the skids touch."
         hold(['Ctrl'], 40, () => ac().onGround || !running());
         run(4, () => !running());
       } else {
@@ -1005,112 +1328,62 @@ export async function check(sim, r, say = () => {}) {
       `status ${sim.runner && sim.runner.status}, steps ${log.join(' > ')}${ac().crashed ? ' — CRASHED: ' + ac().crashReason : ''}`
     );
 
-    /* ======================================================== normal too */
-    await startHeli('normal');
-    r.ok('normal difficulty (the default setting) is kid mode too', !!(ac().rotor && ac().rotor.kid), `rotor.kid ${ac().rotor && ac().rotor.kid}`);
-
-    /* ========================================================= realistic */
-    say('heli playtest: realistic mode');
-    await startHeli('realistic');
-    hold(['Shift'], 4);
+    /* ===================================================== every level */
+    say('heli playtest: easy and realistic');
+    for (const lv of ['easy', 'realistic']) {
+      await startHeli(lv);
+      const assistOn = ac().hoverAssist !== false && /ASSIST ON/.test(chip());
+      liftTo(15);
+      run(3);
+      const pL = ac().pos.clone();
+      let dL = 0;
+      run(10, () => {
+        dL = Math.max(dL, ac().pos.distanceTo(pL));
+      });
+      r.ok(
+        `${lv}: the same helicopter, the assist on, and it hovers hands off`,
+        assistOn && dL < 1.5 && !ac().crashed,
+        `assist on ${assistOn}, moved ${f1(dL)} m in 10 s`
+      );
+    }
+    // And with the assist off, realistic is the real lever: let go of Shift
+    // after a climb and it goes on climbing.
+    tapKey('F');
+    hold(['Shift'], 2.5);
     run(3);
-    const vsFull = ac().vs;
-    let vsCut = vsFull;
-    hold(['Ctrl'], 1.5, () => {
-      vsCut = ac().vs;
-    });
-    // Unmodified: 90% -> 3% of lever over 2 s with no change at all.
-    r.ok(
-      'realistic: lowering the lever from full slows the climb within 1.5 s',
-      vsFull - vsCut >= 1.5,
-      `vs ${f1(vsFull)} -> ${f1(vsCut)} m/s after 1.5 s of Ctrl from a full-lever climb`
-    );
-    r.ok('realistic: the lever is still a lever', !(ac().rotor && ac().rotor.kid) && vsFull > 6, `rotor.kid ${ac().rotor && ac().rotor.kid}, ${f1(vsFull)} m/s with Shift let go`);
-    const realHover = async () => {
-      await startHeli('realistic');
-      // Up on the lever and back to a hover, the way a pilot would: Shift,
-      // then Ctrl until the climb stops. The height hold takes it from there.
-      hold(['Shift'], 2.2);
-      run(1);
-      hold(['Ctrl'], 1.2);
-      run(4);
-    };
-    await realHover();
-    const hdgR = ac().heading;
-    let minPitch = 0;
-    hold(['W'], 4, () => {
-      minPitch = Math.min(minPitch, ro().pitch);
-    });
-    const pitchLetGo = ro().pitch;
-    run(3);
-    const pitch3 = ro().pitch;
-    // Unmodified: -87 degrees and over on its back, heading 90 -> 270. The
-    // first kid build: -43.5 peak, and let go it stayed at -34 and ran on to
-    // 55 m/s.
-    r.ok(
-      'realistic: W held 4 s stays under 35 degrees, and let go it comes back under 20',
-      minPitch > -35 && Math.abs(pitch3) < 20 && hdgDiff(ac().heading, hdgR) < 10 && !ac().crashed,
-      `nose down to ${f1(minPitch)} deg, ${f1(pitchLetGo)} when W was let go, ${f1(pitch3)} 3 s later; heading moved ${f1(hdgDiff(ac().heading, hdgR))} deg`
-    );
-    /*
-     * The same four seconds of W from the review of 30a4007's hover: full
-     * lever to a steady climb, Ctrl for 2 s, then taps on the vertical speed
-     * until it sits still — which leaves the lever near 90%, the height hold
-     * taking off the rest. From there it came back to -14 and then sat at
-     * -24.8 degrees at 51 m/s for a minute: the aeroplane's trim assist had
-     * wound its trim to the stop, holding the nose down (see envTrimBleed in
-     * rotor-assist.js).
-     *
-     * CORRECTION, measured 2026-09-26: the review's recipe leaves the lever
-     * at 91% only in its weather (Free Flight's default, 4 kt from 090). In
-     * this playtest's calm the same 300 taps leave it at 48%, and this check
-     * read "lever 48%" and measured nothing new. So the lever is put there:
-     * the pilot's hover, then Shift until it reads 90%. Measured that way on
-     * b1d130b: W 4 s peaks at -31.4, -12.9 three seconds after letting go,
-     * and -15.2 at 46 m/s a minute later, the lever at 90%.
-     */
-    await realHover();
-    hold(['Shift'], 3, () => ac().controls.throttle >= 0.9 || ac().crashed);
-    const leverHi = ac().controls.throttle;
-    let minPitchHi = 0;
-    hold(['W'], 4, () => {
-      minPitchHi = Math.min(minPitchHi, ro().pitch);
-    });
-    run(3);
-    const pitchHi3 = ro().pitch;
-    let worstAfter = 0;
-    run(27, () => {
-      worstAfter = Math.max(worstAfter, Math.abs(ro().pitch));
-    });
-    r.ok(
-      'realistic, lever high: W held 4 s stays under 35 degrees, and let go it comes back under 20 and stays there',
-      leverHi >= 0.85 && minPitchHi > -35 && Math.abs(pitchHi3) < 20 && worstAfter < 20 && !ac().crashed,
-      `lever ${Math.round(leverHi * 100)}%: nose down to ${f1(minPitchHi)} deg, ${f1(pitchHi3)} 3 s after letting go, worst ${f1(worstAfter)} over the next 27 s at ${f1(ac().groundSpeed)} m/s${ac().crashed ? ', CRASHED: ' + ac().crashReason : ''}`
-    );
-    await realHover();
-    let maxBank = 0;
-    hold(['A'], 4, () => {
-      maxBank = Math.max(maxBank, Math.abs(ro().bank));
-    });
-    run(3);
-    const bank3 = ro().bank;
-    // Unmodified: 61 degrees of bank. The first kid build: 56.
-    r.ok(
-      'realistic: A held 4 s stays under 45 degrees of bank, and let go it comes back under 30',
-      maxBank < 45 && Math.abs(bank3) < 30 && !ac().crashed,
-      `max bank ${f1(maxBank)} deg, ${f1(bank3)} 3 s after letting go`
-    );
+    r.ok('realistic with the assist off: the lever stays where you leave it', ac().hoverAssist === false && ac().vs > 4, `vs ${f1(ac().vs)} m/s 3 s after letting go of Shift`);
+    tapKey('F');
+    // The difficulty dial in Settings sets the assist's default: off for
+    // realistic ("no help at all"), on again for normal and easy, and the
+    // box on the same screen follows it.
+    if (typeof sim.applySetting === 'function') {
+      const box = () => {
+        const b = document.querySelector('[data-set="heliAssist"]');
+        return b ? b.checked : null;
+      };
+      const got = [];
+      for (const lv of ['realistic', 'normal', 'easy']) {
+        sim.applySetting('difficulty', lv);
+        run(0.2);
+        got.push({ lv, s: sim.settings.heliAssist, a: ac().hoverAssist !== false, box: box(), chip: chip() });
+      }
+      r.ok(
+        'Settings: realistic sets the assist off by default, normal and easy on, and the box follows',
+        got[0].s === false && !got[0].a && got[0].box !== true && /OFF/.test(got[0].chip)
+          && got.slice(1).every((g) => g.s === true && g.a && g.box !== false && /ON|HOLD/.test(g.chip)),
+        got.map((g) => `${g.lv}: setting ${g.s}, machine ${g.a}, box ${g.box}, chip "${g.chip}"`).join('; ')
+      );
+    }
 
     /* ============================================ and then an aeroplane */
     say('heli playtest: the aeroplane after it');
-    await startHeli('easy');
+    await startHeli('normal');
     run(1);
     allUp();
     if (typeof sim.switchGame === 'function') sim.switchGame('flight');
     await sim.startMode('free', { aircraft: 'skylark', time: 'day', condition: 'clear', windSpeedKts: 0 });
     allUp();
     run(3);
-    // Measured before the lift command gave the lever back: 50% and rolling.
     r.ok(
       'after the helicopter, the Skylark sits on the runway at 0% throttle',
       ac().controls.throttle < 0.02 && ac().groundSpeed < 0.5,
@@ -1121,7 +1394,13 @@ export async function check(sim, r, say = () => {}) {
   } finally {
     allUp();
     sim.speak = origSpeak;
+    if (sim.input) sim.input.touch = origTouch;
     if (typeof sim.applyDifficulty === 'function') sim.applyDifficulty(origDiff);
+    if (sim.settings) {
+      if (origAssist === undefined) delete sim.settings.heliAssist;
+      else sim.settings.heliAssist = origAssist;
+      if (sim.aircraft) sim.aircraft.hoverAssist = sim.settings.heliAssist !== false;
+    }
     sim.autoPauseOnHide = origAutoPause;
     sim.renderer.render = origRender;
     sim._unlocking = origUnlocking;

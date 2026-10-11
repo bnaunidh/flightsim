@@ -119,6 +119,11 @@ export class Escort {
       tick: (dt) => {
         if (self.mode === 'knocked' && !self.gone) self.knockedStep(dt, null);
       },
+      // What is drawn, for the break-up (../breakup.js): it comes apart where it was hit.
+      get model() {
+        return self.model;
+      },
+      typeId: type && type.id,
       get heading() {
         if (!self.model) return undefined;
         HDG.copy(FWD).applyQuaternion(self.model.quaternion);

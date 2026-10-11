@@ -20,7 +20,7 @@
  *
  * THREE SIZES, chosen by runway length:
  *   strip     < 600 m   a flying club: light stands, a clubhouse, a small tower
- *   regional  < 1500 m  Kestrel: jet bridges, a 64 m tower, maintenance hangars
+ *   regional  < 1500 m  Kestrel: jet bridges, a 40 m tower, maintenance hangars
  *   hub       otherwise the 3-4 km fields: a long terminal, heavy stands, big hangars
  * and when a size does not fit its field, the next one down is tried:
  * `compact` (a regional airport on 140 m of level ground — Sennen, Skerries,
@@ -313,7 +313,16 @@ function template(shape, L, hw) {
       apron: { u0: Math.round(-260 * k), u1: Math.round(100 * k), w0: 106, depth: 84 },
       terminal: { depth: 38, H: 24, name: 'terminal', minLen: 120, maxLen: 300 },
       // Kestrel's tower, (40, -206): 60 m in from the apron's east end, 16 m behind it.
-      tower: { size: 16, H: 64, kind: 'tall', du: -60, dw: 16 },
+      /*
+       * 40 m to the gallery, 51 m to the top of the cab. It was 64 (75 m all
+       * told): taller than the towers at most of the world's big airports,
+       * on a field with an 1,100 m runway, and with the houses fixed (see
+       * TOWN_SIZES in scenery.js) it stood seven times the town's roofs. A
+       * regional field's tower is 25 to 50 m. Only the height: where it
+       * stands, its footprint and everything laid out round it are as they
+       * were, and the cab, the gallery and the solid box are drawn from H.
+       */
+      tower: { size: 16, H: 40, kind: 'tall', du: -60, dw: 16 },
       standPlan: ['heavy', 'medium', 'medium', 'medium', 'medium', 'medium', 'medium'],
       bridges: true,
       hangars: [
@@ -335,7 +344,9 @@ function template(shape, L, hw) {
     connectors: [-(L / 2 - 160), -L / 4, 0, L / 4, L / 2 - 160],
     apron: { u0: -700, u1: 500, w0: 185, depth: 121 },
     terminal: { depth: 56, H: 26, name: 'terminal', minLen: 400, maxLen: 1060 },
-    tower: { size: 20, H: 84, kind: 'tall', du: -75, dw: 46 },
+    // 62 m to the gallery, 76 m to the cab roof: a big airport's tower (most
+    // are 50 to 90 m). It was 84 (98 m), with the regional one, above.
+    tower: { size: 20, H: 62, kind: 'tall', du: -75, dw: 46 },
     standPlan: ['heavy', 'medium', 'medium', 'heavy', 'medium', 'medium', 'heavy', 'medium', 'medium', 'medium', 'heavy', 'medium', 'medium', 'medium', 'medium'],
     bridges: true,
     hangars: [

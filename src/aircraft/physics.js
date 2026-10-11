@@ -20,9 +20,18 @@ import * as THREE from '../vendor/three.module.js';
 import { getAircraft, specFor, DEFAULT_AIRCRAFT_ID } from './types.js';
 import { clamp, lerp } from '../core/noise.js';
 import { rotorAssist, ROTOR_TUNE } from './rotor-assist.js';
+import { handlingFor, ROLL_SHARE_MAX } from './damage-handling.js';
 import { heightAt, isPaved, isOnRunway, isOnAnyRunway, obstacleAt, platformAt, AIRPORT } from '../world/terrain.js';
 
 const RHO0 = 1.225;
+/**
+ * Easy flying, a wing tip gone: the wing leveller holds this much bank
+ * (radians, 5 degrees) down on that side rather than level — you see her
+ * lean and drift round that way, and the stick still has most of its travel
+ * to fly with (./damage-handling.js ROLL_SHARE_MAX). A wing only scuffed
+ * pulls less and leans less, in proportion.
+ */
+export const DAMAGE_LEAN = 0.087;
 const G = 9.80665;
 const KTS = 1.94384; // m/s → knots
 const FPM = 196.85; // m/s → feet per minute
@@ -154,6 +163,13 @@ export class Aircraft {
      */
     this.damage = { leftWing: 0, rightWing: 0, nose: 0, tail: 0, fuselage: 0, gear: 0 };
     /*
+     * Pieces that have come OFF — a wing tip, the fin, a tailplane, an
+     * engine — set by the break-up (src/features/breakup.js) when a knock
+     * snaps one and you fly on. null until then. What it and `damage` do to
+     * the handling is ./damage-handling.js, the one place for it.
+     */
+    this.lost = null;
+    /*
      * Off unless the game turns it on — it is behind Dev mode for now, and a
      * flight model that silently changed how crashing works would invalidate
      * every score anybody has already set.
@@ -278,6 +294,7 @@ export class Aircraft {
     this._jammedPitch = null;
     this.arrested = 0;
     for (const k in this.damage) this.damage[k] = 0;
+    this.lost = null;
     this._hitCool = 0;
     this.rpm = engineOn ? 0.18 : 0;
     this.fuel = SPEC.fuelCapacity * fuel;
@@ -770,16 +787,34 @@ export class Aircraft {
     // front-to-back. Only ever less than 1 in degenerate cases.
     const aeroFade = clamp(u / 8, 0, 1);
 
+    /*
+     * What damage does to the handling (./damage-handling.js), worked out once
+     * here so the wing leveller below can see a lost wing tip's roll as well
+     * as the aerodynamics further down. Null when nothing is hurt or missing.
+     */
+    const H = handlingFor(this.damage, this.lost, SPEC);
+
     // ---- Control inputs (with mode assists) ---------------------------
     let elevator = clamp(this.controls.pitch, -1, 1);
     let aileron = clamp(this.controls.roll, -1, 1);
     let rudder = clamp(this.controls.yaw, -1, 1);
     const simple = this.mode === 'simplified';
+    /*
+     * The aeroplane's beginner assists below — the wing leveller, the auto-
+     * coordinated rudder, the auto-trim, the low-speed elevator boost and the
+     * stall guard — are the aeroplane's. A helicopter's are all in
+     * rotor-assist.js, behind the one switch the pilot can see, so the rotor
+     * never gets these whatever the difficulty: two loops flying one airframe
+     * is the argument the old hand-over between them was written to stop.
+     * (The airframe's own simplified-mode damping further down is not an
+     * assist and still applies.)
+     */
+    const planeAssist = simple && !SPEC.rotor;
 
     /*
-     * Hover assist.
+     * Hover assist — the helicopter's stability assist.
      *
-     * It runs in BOTH flight modes because it is equipment, not a beginner's
+     * It runs at every difficulty because it is equipment, not a beginner's
      * aid — every search-and-rescue helicopter flying has height hold, drift
      * damping and heading hold, and the HUD says so out loud. `hoverAssist`
      * turns it off for anybody who wants the machine raw.
@@ -792,43 +827,22 @@ export class Aircraft {
     if (SPEC.rotor) {
       const a = rotorAssist(this, SPEC, dt);
       hoverAuth = this.rotor.hoverAuth;
-      if (a.kidOn) {
-        /*
-         * Kid mode: the flight computer's cyclic and pedal ARE the controls.
-         * They are not added to the keys, because in kid mode the keys mean
-         * "tilt to eighteen degrees" and "climb at 4.5 m/s", not "deflect the
-         * stick", and the computer has already turned the one into the other.
-         * The wing leveller below stands down (hoverAuth 1 gives it no share)
-         * — two loops flying one airframe is the argument the fade between
-         * them was written to stop.
-         */
-        elevator = a.cyclicPitch;
-        aileron = a.cyclicRoll;
-        rudder = a.pedal;
-        hoverAuth = 1;
-      } else {
-        elevator = clamp(elevator + a.cyclicPitch, -1, 1);
-        aileron = clamp(aileron + a.cyclicRoll, -1, 1);
-        rudder = clamp(rudder + a.pedal, -1, 1);
-      }
+      elevator = clamp(elevator + a.cyclicPitch, -1, 1);
+      aileron = clamp(aileron + a.cyclicRoll, -1, 1);
+      rudder = clamp(rudder + a.pedal, -1, 1);
       this._collectiveAssist = a.collective;
-      // What the blades get: lever and assist, or the kid computer. The rotor
-      // force and moment blocks below read this and never `rpm`. `lift` is
-      // rotorLiftRatio() of it, worked out where the collective is.
+      // What the blades get: lever and assist. The rotor force and moment
+      // blocks below read this and never `rpm`. `lift` is rotorLiftRatio()
+      // of it, worked out where the collective is.
       this._rotorColl = a.coll;
       this._rotorLift = a.lift;
-      this._kidCyclic = a.kidOn ? a : null;
     } else {
       this._collectiveAssist = 0;
-      this._kidCyclic = null;
       // Readouts from the last helicopter flight must not outlive it: a stale
       // trimRequest here was still winding the aeroplane's throttle.
-      if (this.rotor) {
-        this.rotor.kid = false;
-        this.rotor.trimRequest = 0;
-      }
-      // Nor the helicopter's touchdown rules and engine rule (rotor-assist.js,
-      // hookAircraft), which ask this flag whether they apply.
+      if (this.rotor) this.rotor.trimRequest = 0;
+      // Nor the helicopter's touchdown rule (rotor-assist.js,
+      // hookAircraft), which asks this flag whether it applies.
       if (this._rotorAssist) this._rotorAssist.rotor = false;
     }
 
@@ -853,14 +867,14 @@ export class Aircraft {
     const manualTrim = Math.abs(this.controls.trim || 0) > 0.001;
     if (manualTrim) {
       this.trim = clamp(this.controls.trim * 0.45, -0.45, 0.45);
-    } else if (!simple && !this.onGround && Math.abs(this.controls.pitch) < 0.05 && V > 20) {
+    } else if (!simple && !SPEC.rotor && !this.onGround && Math.abs(this.controls.pitch) < 0.05 && V > 20) {
       this.trim = clamp(this.trim + (-this.omega.x * 1.1 - this.vs * 0.006) * dt * 0.55, -0.45, 0.45);
-    } else if (this.onGround || simple) {
+    } else if (this.onGround || simple || SPEC.rotor) {
       this.trim *= 1 - Math.min(1, dt * 0.8);
     }
     elevator = clamp(elevator + this.trim, -1, 1);
 
-    if (simple) {
+    if (planeAssist) {
       // Auto-coordinate: rudder follows aileron so turns stay tidy. Strictly an
       // in-flight assist — on the ground the rudder steers the nose wheel, and
       // feeding sideslip into it makes the aeroplane chase the crosswind
@@ -981,7 +995,25 @@ export class Aircraft {
           // properly damped rather than merely quiet.
           const kp = (WN * WN) / A;
           const kd = Math.max(0, (2 * ZETA * WN - D) / A);
-          aileron = clamp(aileron - (bank * kp + this.omega.z * kd) * wingShare, -1, 1);
+          /*
+           * A hurt or missing wing rolls you with a steady pull (H.roll, a
+           * share of Cl). A loop that only sees the bank has to lean into it
+           * before it pushes back — measured, 35-55 degrees in the first
+           * second, hands off, on every type, and 22-89 degrees held. So the
+           * leveller holds the aileron that cancels it from the start (Cl =
+           * -Clda x aileron + H.roll is zero at aileron = H.roll / Clda) and
+           * settles a few degrees down on the hurt side (DAMAGE_LEAN), the
+           * same on every aeroplane: she leans towards the lost tip, as the
+           * warning says, and lets go of nothing.
+           */
+          let lev;
+          if (H && H.roll && SPEC.Clda) {
+            // The lean grows with the pull: all of it for a tip gone, a touch for a scuffed wing.
+            const pull = clamp(Math.abs(H.roll) / (ROLL_SHARE_MAX * SPEC.Clda), 0, 1);
+            const lean = (H.roll > 0 ? -DAMAGE_LEAN : DAMAGE_LEAN) * pull; // + roll is left; left bank is negative
+            lev = aileron - ((bank - lean) * kp + this.omega.z * kd) * wingShare + (H.roll / SPEC.Clda) * wingShare;
+          } else lev = aileron - (bank * kp + this.omega.z * kd) * wingShare;
+          aileron = clamp(lev, -1, 1);
         }
         if (Math.abs(this.controls.pitch) < 0.06) {
           /*
@@ -1039,7 +1071,7 @@ export class Aircraft {
       rudder = clamp(rudder + this.omega.y * kYaw, -1, 1);
     }
 
-    if (this.mode === 'simplified') {
+    if (planeAssist) {
       /*
        * How much the aeroplane helps, by level.
        *
@@ -1163,12 +1195,15 @@ export class Aircraft {
      * A hurt wing makes less lift and more drag. Both wings hurt equally and
      * the aeroplane simply sinks; one wing worse than the other and it rolls
      * towards the bad side, which is the part you can feel and fly against.
+     *
+     * All of what damage does lives in ./damage-handling.js now — the hurt
+     * parts and the pieces that have come off together. `H` is null when
+     * nothing is hurt, and then every damage term below is skipped: the
+     * arithmetic of an undamaged flight is exactly what it always was. (It
+     * is worked out once, before the controls, so the leveller sees it too.)
      */
-    const dmg = this.damage;
-    const wingHurt = (dmg.leftWing + dmg.rightWing) / 2;
-    const wingAsym = dmg.leftWing - dmg.rightWing;
-    const lift = qS * CL * aeroFade * (1 - wingHurt * 0.34);
-    const drag = qS * (CD + wingHurt * 0.05 + dmg.nose * 0.03 + dmg.tail * 0.02 + dmg.fuselage * 0.04);
+    const lift = H ? qS * CL * aeroFade * H.lift : qS * CL * aeroFade;
+    const drag = H ? qS * (CD + H.drag) : qS * CD;
     const sideForce = qS * SPEC.CYb * this.beta * aeroFade;
 
     // Thrust falls off with forward speed like a fixed-pitch propeller.
@@ -1177,10 +1212,11 @@ export class Aircraft {
     // far more interesting problem than one that has stopped: you can still
     // fly, you just have to decide where you are going to get to.
     const rough = this.failures.roughEngine ? 0.45 : 1;
-    // A hit up front costs you power, and at the top end costs you the engine.
-    const noseHurt = 1 - dmg.nose * 0.55;
-    const thrust =
-      this.rpm * SPEC.thrustMax * (rho / RHO0) * propEff * rough * noseHurt * (simple ? 1.12 : 1);
+    // A hit up front costs you power, and at the top end costs you the engine
+    // (and an engine that has come off costs you its share): H.thrust.
+    const thrust = H
+      ? this.rpm * SPEC.thrustMax * (rho / RHO0) * propEff * rough * H.thrust * (simple ? 1.12 : 1)
+      : this.rpm * SPEC.thrustMax * (rho / RHO0) * propEff * rough * (simple ? 1.12 : 1);
 
     // Body-frame aerodynamic force.
     //
@@ -1254,8 +1290,8 @@ export class Aircraft {
        * lever did nothing at all. rotorLiftRatio() is the same hover point
        * and the same best climb with no dead band — see ROTOR_TUNE.maxLift.
        * rotorAssist() applies it to `_rotorColl` and hands it over as
-       * `_rotorLift`, so the kid computer that inverts it and the force here
-       * are one function.
+       * `_rotorLift`, so the height hold that inverts it (collectiveFor) and
+       * the force here are one function.
        */
       const rotor = (this._rotorLift || 0) * hoverThrust * (rho / RHO0) * rough;
       // Translational lift: a rotor is measurably more efficient once it flies
@@ -1290,11 +1326,11 @@ export class Aircraft {
        * missions actually fly is untouched; above it the machine runs out of
        * speed near 105 kt instead of running away.
        */
-      // Kid mode's own two numbers; see ROTOR_TUNE.kid.dragScale.
-      const kidAir = !!this._kidCyclic;
-      const stallAt = kidAir ? ROTOR_TUNE.kid.stallAt : 46;
-      const bladeStall = 1 + clamp((V - stallAt) / 22, 0, 1) * 2.4;
-      const rd = clamp(V, 0, 60) * SPEC.rotorDrag * 0.5 * bladeStall * (kidAir ? ROTOR_TUNE.kid.dragScale : 1);
+      // The airframe's own two numbers; see ROTOR_TUNE.dragScale. (They
+      // were 46 m/s and full drag outside the old easy-mode computer, which
+      // made the same machine 15 kt slower on the hardest setting.)
+      const bladeStall = 1 + clamp((V - ROTOR_TUNE.stallAt) / 22, 0, 1) * 2.4;
+      const rd = clamp(V, 0, 60) * SPEC.rotorDrag * 0.5 * bladeStall * ROTOR_TUNE.dragScale;
       if (V > 0.15) {
         // Same body-frame airflow direction the drag above uses: (v, w, -u).
         const inv = 1 / V;
@@ -1414,9 +1450,12 @@ export class Aircraft {
      * it bites hardest when you are fast, and you can fly slower to tame it.
      * That is a real decision for the player, not just a penalty.
      */
-    const tailAuth = 1 - dmg.tail * 0.62;
-    Cm *= tailAuth;
-    Cn *= tailAuth;
+    if (H) {
+      Cm *= H.pitchAuth;
+      Cn *= H.yawAuth;
+      // No fin: the weathercock turns round and the yaw wanders off.
+      if (H.yawDestab) Cn += H.yawDestab * SPEC.Cnb * this.beta;
+    }
     /*
      * A lopsided wing rolls you towards the damaged side.
      *
@@ -1430,11 +1469,13 @@ export class Aircraft {
      * handful you can still fly against with the stick, and half-damage is a
      * nuisance you can trim out with a little aileron held in.
      */
-    Cl += wingAsym * 0.025;
+    if (H) Cl += H.roll;
 
     // Torque about body axes: X = pitch, Y = yaw, Z = roll. Faded out with the
     // forward airflow for the same reason as the forces above.
     this._t.set(Cm * qS * c * aeroFade, Cn * qS * b * aeroFade, Cl * qS * b * aeroFade);
+    // An engine gone from one side: the others push the nose round towards it.
+    if (H && H.yawArm) this._t.y += thrust * H.yawArm;
 
     /*
      * Cyclic and tail rotor — control that works when standing still.
@@ -1458,18 +1499,6 @@ export class Aircraft {
       const collective = clamp(this._rotorColl || 0, 0, 1);
       // Enough authority to be crisp in the hover, without being twitchy.
       const disc = (0.35 + collective * 0.65) * SPEC.mass * G;
-      /*
-       * In kid mode the computer's cyclic goes to the rotor as it is. The
-       * `elevator` above has been through simplified mode's low-speed
-       * elevator boost (up to x1.55), the stall guard and the trim, all of
-       * which are the aeroplane's and none of which the computer asked for.
-       */
-      const kc = this._kidCyclic;
-      if (kc) {
-        elevator = kc.cyclicPitch;
-        aileron = kc.cyclicRoll;
-        rudder = kc.pedal;
-      }
       /*
        * Two bugs lived in these six lines, and both were invisible in a
        * straight-line hover, which is the only way anybody ever tested it.
@@ -1499,7 +1528,10 @@ export class Aircraft {
        */
       this._t.x += elevator * disc * SPEC.rotorPitchArm;
       this._t.z -= aileron * disc * SPEC.rotorRollArm;
-      this._t.y -= rudder * disc * SPEC.rotorYawArm;
+      // The pedals work the tail rotor: with it gone (H, ./damage-handling.js)
+      // they do next to nothing and the main rotor's torque turns her round.
+      this._t.y -= (H ? rudder * H.pedalAuth : rudder) * disc * SPEC.rotorYawArm;
+      if (H && H.rotorSpin) this._t.y -= H.rotorSpin * disc * SPEC.rotorYawArm;
       this._t.x -= this.omega.x * SPEC.Ixx * ROTOR_TUNE.dampPitch;
       this._t.z -= this.omega.z * SPEC.Izz * ROTOR_TUNE.dampRoll;
       this._t.y -= this.omega.y * SPEC.Iyy * ROTOR_TUNE.dampYaw;
@@ -2099,7 +2131,7 @@ export class Aircraft {
    *
    * Returns the part's new damage level so the caller can react to it.
    */
-  takeHit(part, severity, reason = '') {
+  takeHit(part, severity, reason = '', at = null) {
     if (!(part in this.damage)) return 0;
     const add = clamp(severity, 0, 1);
     if (add <= 0) return this.damage[part];
@@ -2111,6 +2143,9 @@ export class Aircraft {
       level: this.damage[part],
       reason,
       worsened: this.damage[part] > before + 0.001,
+      // Where it touched, world metres, when the caller knows (the break-up
+      // snaps the piece nearest it: src/features/breakup.js).
+      point: at,
     });
     return this.damage[part];
   }
@@ -2165,7 +2200,7 @@ export class Aircraft {
     }
 
     const severity = clamp(blow / HARD, 0.08, 0.75);
-    this.takeHit(hp.part, severity, what || hp.what);
+    this.takeHit(hp.part, severity, what || hp.what, world.clone());
 
     /*
      * Scraping on landing is not the same event as flying into a hillside.

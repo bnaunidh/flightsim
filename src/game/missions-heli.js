@@ -64,7 +64,7 @@ import { registerExtension } from './extensions.js';
 import { heightAt, platformAt, MAP } from '../world/terrain.js';
 import { PADS } from '../world/pads.js';
 import { UNITS, SPEC } from '../aircraft/physics.js';
-import { isKidMode, parkingClearance, chaseViewClear } from '../aircraft/rotor-assist.js';
+import { parkingClearance, chaseViewClear } from '../aircraft/rotor-assist.js';
 import { createFishingBoat } from '../fleet/maritime.js';
 import { strobeLevel } from '../render/flash-safety.js';
 
@@ -236,9 +236,14 @@ function padSpawn(key, headingDeg) {
   };
 }
 
-/** Is a child flying this with the kid computer, or a pilot with a lever? */
-let KID = true;
-const kidWords = (kid, lever) => (KID ? kid : lever);
+/*
+ * Is the stability assist on (it is unless the pilot switched it off)? Every
+ * pilot flies the same lever and stick; the words differ only in what the
+ * machine does when you let go — holds its height and stops, or nothing.
+ */
+let ASSIST = true;
+const assistOn = (ac) => !!ac && ac.hoverAssist !== false;
+const assistWords = (assisted, raw) => (ASSIST ? assisted : raw);
 
 /**
  * Down, stopped, not broken, and in the right place.
@@ -425,9 +430,9 @@ export class HoverTask {
           ? 'You are drifting off the circle.'
           : !this.aglOk
             ? this.agl < this.spec.aglMin
-              ? kidWords('Too low for the winch — tap Shift to go up a little.', 'Too low for the winch — a little more collective.')
-              : kidWords('Too high for the winch — tap Ctrl to come down a little.', 'Too high for the winch — ease the collective down.')
-            : kidWords('Moving too fast over the ground. Let go of W A S D and it will stop.', 'Moving too fast over the ground. Stop it, then hold it.'),
+              ? assistWords('Too low for the winch — tap Shift to go up a little.', 'Too low for the winch — a little more collective.')
+              : assistWords('Too high for the winch — tap Ctrl to come down a little.', 'Too high for the winch — ease the collective down.')
+            : assistWords('Moving too fast over the ground. Let go of W A S D and it will stop.', 'Moving too fast over the ground. Stop it, then hold it.'),
         'warn',
         3.4
       );
@@ -639,7 +644,7 @@ class RescueBoat {
 function winchStep({ id, text, hint, atc, label, at, spec = {}, onPicked }) {
   return {
     id,
-    // Either words, or a function choosing words for kid mode or the lever.
+    // Either words, or a function choosing words for the assist on or off.
     get text() {
       return typeof text === 'function' ? text() : text;
     },
@@ -672,7 +677,7 @@ function winchStep({ id, text, hint, atc, label, at, spec = {}, onPicked }) {
 
 /** Every winch mission ticks its hover and whatever is moving underneath it. */
 function heliTick(ctx, dt) {
-  KID = isKidMode(ctx.ac);
+  ASSIST = assistOn(ctx.ac);
   if (ctx.data.hover) ctx.data.hover.update(dt, ctx);
   if (ctx.data.boat) ctx.data.boat.update(dt);
   for (const p of PROPS) if (p.update) p.update(dt);
@@ -710,7 +715,7 @@ function unload(ctx) {
 function begin(ctx) {
   clearHeliProps(ctx.sim);
   unload(ctx);
-  KID = isKidMode(ctx.ac);
+  ASSIST = assistOn(ctx.ac);
 }
 
 /* ================================================================== *
@@ -750,19 +755,19 @@ export const HELI_MISSIONS = [
       {
         id: 'lift',
         get text() {
-          return kidWords(
-            'Hold Shift to lift off the pad. Let go when you are a little way up — it holds that height by itself.',
+          return assistWords(
+            'Hold Shift to raise the collective until the skids come off the pad. Let go a little way up — the assist holds that height.',
             'Hold Shift to raise the collective until the skids come off the pad.'
           );
         },
         /*
          * "About half of the range" was never true. The lever's idle is 0.18
-         * of collective, so the hover sits at 39% of lever travel — and in kid
-         * mode there is no range at all, Shift simply means up.
+         * of collective, so the hover sits at 39% of lever travel — and with
+         * the assist on, letting go holds the height wherever the lever is.
          */
         get hint() {
-          return kidWords(
-            'Shift goes up, Ctrl comes down, and letting go of both holds the height.',
+          return assistWords(
+            'Shift raises the collective, Ctrl lowers it, and letting go of both holds the height.',
             'Shift lifts, Ctrl lowers. It takes about 40% of the lever before it flies at all.'
           );
         },
@@ -775,12 +780,12 @@ export const HELI_MISSIONS = [
       winchStep({
         id: 'hold',
         text: () =>
-          kidWords(
+          assistWords(
             'Now hold it at about twenty feet over the pad for five seconds. Let go of everything — it holds itself.',
             'Now hold twenty feet for five seconds. Do not chase it — tiny taps of Shift and Ctrl.'
           ),
         hint: () =>
-          kidWords(
+          assistWords(
             'The HEIGHT light goes green in the band. Too high? Tap Ctrl. Too low? Tap Shift.',
             'If it climbs, let go of Shift and wait. The machine takes a second to answer. Wait for it.'
           ),
@@ -812,8 +817,8 @@ export const HELI_MISSIONS = [
         id: 'down',
         text: 'Come back down onto the H and set her down gently.',
         get hint() {
-          return kidWords(
-            'Hold Ctrl. It slows down by itself just above the ground, so keep holding until the skids touch.',
+          return assistWords(
+            'Hold Ctrl. The assist eases the descent just above the ground, so keep holding until the skids touch.',
             'Ease the collective off a little at a time. Aim for the middle and let it settle.'
           );
         },
@@ -865,8 +870,8 @@ export const HELI_MISSIONS = [
         id: 'out',
         text: 'Lift off and fly round the south of the island to Cormorant Cove.',
         get hint() {
-          return kidWords(
-            'Hold W to fly forwards and A or D to steer. Let go and it stops by itself.',
+          return assistWords(
+            'Hold W to tilt forwards and fly, A or D to bank and turn. Let go and it levels out and slows to a hover.',
             'Nose down a little with W to go forwards. It flies like an aeroplane once it is moving.'
           );
         },
@@ -882,8 +887,8 @@ export const HELI_MISSIONS = [
         id: 'land',
         text: 'Come to a stop over the orange ring above the cove, then let it down onto the grass beside her.',
         get hint() {
-          return kidWords(
-            'Let go of W over the ring so it stops, THEN hold Ctrl. It slows down by itself near the ground.',
+          return assistWords(
+            'Slow down over the ring — let go of W, or S to brake — THEN hold Ctrl. It eases off near the ground.',
             'Stop first, THEN descend. Trying to do both at once is what puts helicopters in the sea.'
           );
         },
@@ -902,7 +907,7 @@ export const HELI_MISSIONS = [
          */
         text: 'Keep her steady on the ground while they load the stretcher.',
         get hint() {
-          return kidWords('Stay put. Hands off everything — it sits on its skids.', 'Stay put. Collective down, feet still.');
+          return assistWords('Stay put. Hands off everything — it sits on its skids.', 'Stay put. Collective down, feet still.');
         },
         enter: (ctx) => {
           ctx.sim.hud.notify('Loading — hold it still.', 'info', 4);
@@ -923,7 +928,7 @@ export const HELI_MISSIONS = [
         id: 'home',
         text: 'Take her to the hospital pad. She is aboard, so fly it gently.',
         get hint() {
-          return kidWords(
+          return assistWords(
             'The hospital pad is on the roof. Come in above it, stop over the H, then hold Ctrl.',
             'It will want more collective than it did on the way out. That is the extra weight.'
           );
@@ -1005,8 +1010,8 @@ export const HELI_MISSIONS = [
         id: 'winch',
         text: 'Come to a hover over the swimmer at about sixty feet and hold it steady. The winchman does the rest.',
         hint: () =>
-          kidWords(
-            'Let go of W A S D over the strobe and it stops and holds the spot. Shift or Ctrl until HEIGHT is green.',
+          assistWords(
+            'Let go of W A S D over the strobe and it stops and holds its height. Tap Shift or Ctrl until HEIGHT is green.',
             'Watch the drift, not the sea. Stop the machine first, then hold the height. Ten seconds.'
           ),
         atc: {
@@ -1097,8 +1102,8 @@ export const HELI_MISSIONS = [
         id: 'out',
         text: 'Lift off and fly out to Gannet Stack. It is about four and a half kilometres north-west.',
         get hint() {
-          return kidWords(
-            'The top of the stack is two hundred metres up. Hold Shift on the way — the helicopter climbs over the rock if you are low.',
+          return assistWords(
+            'The top of the stack is two hundred metres up. Hold Shift on the way and arrive above the rock, not beside it.',
             'Get some height on the way. Arriving low at a cliff is arriving with no options.'
           );
         },
@@ -1115,8 +1120,8 @@ export const HELI_MISSIONS = [
         id: 'winch',
         text: 'Hold a hover over the climber at sixty feet for twelve seconds while they get him into the strop.',
         hint: () =>
-          kidWords(
-            'Let go of W A S D over the strobe — the helicopter leans into the wind by itself. Shift or Ctrl until HEIGHT is green.',
+          assistWords(
+            'Let go of W A S D over the strobe — the assist leans into the wind for you. Tap Shift or Ctrl until HEIGHT is green.',
             'The wind is pushing you off the rock. Hold a little into it and keep correcting — small, steady, early.'
           ),
         label: 'The ledge',
@@ -1233,8 +1238,8 @@ export const HELI_MISSIONS = [
         id: 'land',
         text: 'Come to a stop over the deck, then put it down on the middle of it.',
         get hint() {
-          return kidWords(
-            'Let go of W over the deck so it stops, then hold Ctrl all the way down.',
+          return assistWords(
+            'Stop over the deck — let go of W, or S to brake — then hold Ctrl all the way down.',
             'Stop over the deck FIRST. If you are still sliding when you touch, you slide off the edge.'
           );
         },
@@ -1253,7 +1258,7 @@ export const HELI_MISSIONS = [
         id: 'wait',
         text: 'Hold it on the deck while they carry him aboard.',
         get hint() {
-          return kidWords('Stay put, hands off. Ten seconds.', 'Stay put and keep the collective down. Ten seconds.');
+          return assistWords('Stay put, hands off. Ten seconds.', 'Stay put and keep the collective down. Ten seconds.');
         },
         check: (ctx) => ctx.ac.onGround && ctx.runner.stepElapsed > 10,
         onDone: (ctx) => {
@@ -1265,7 +1270,7 @@ export const HELI_MISSIONS = [
         id: 'home',
         text: 'Lift off the deck and take him to the hospital pad.',
         get hint() {
-          return kidWords(
+          return assistWords(
             'Shift to lift off the deck, then W towards the hospital beacon.',
             'Off the side of the deck and let it fall away a little — that is how you get flying speed.'
           );
@@ -1580,7 +1585,7 @@ export const HELI_MISSIONS = [
     ],
     tick: (ctx, dt) => {
       const d = ctx.data;
-      KID = isKidMode(ctx.ac);
+      ASSIST = assistOn(ctx.ac);
       if (d.hover) d.hover.update(dt, ctx);
       for (const p of PROPS) if (p.update) p.update(dt);
 

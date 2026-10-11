@@ -1719,6 +1719,7 @@ export class Menus {
             </select>
           </label>
           <p class="hint"><b>Easy</b> gives you much more elevator at low speed, so the aeroplane rotates and flares almost by itself, guards the stall earlier, and halves the gusts. <b>Normal</b> is the game as it has always flown: it levels the wings, coordinates the rudder and will not let you stall. <b>Realistic</b> switches all of that off — it can stall, and it will drift in a crosswind.</p>
+          <label class="check"><input type="checkbox" data-set="heliAssist"><span>Helicopter stability assist — let go of the controls and it holds its height, levels out and stops over the ground (F in the helicopter). On for Easy and Normal, off for Realistic.</span></label>
           <label class="check"><input type="checkbox" data-set="mouseFlying"><span>Fly with the mouse (click the sky to capture the pointer)</span></label>
           <label class="check"><input type="checkbox" data-set="invertMouse"><span>Invert mouse up/down</span></label>
           <label class="field"><span>Mouse / stick sensitivity <b data-out="sensitivity"></b></span>
@@ -1736,7 +1737,8 @@ export class Menus {
           <label class="check"><input type="checkbox" data-set="realisticFuel"><span>Realistic fuel — the tank drains 1% every 30 seconds, so you have to plan</span></label>
           <label class="check"><input type="checkbox" data-set="randomWinds"><span>Random winds — the wind wanders and gusts blow through</span></label>
           <label class="check"><input type="checkbox" data-set="minimap"><span>Minimap — the little round map, with a warning if you are heading at a hill (J)</span></label>
-          <label class="check"><input type="checkbox" data-set="damageModel"><span>Damage instead of crashes — clip something and, depending on how hard you hit it, you may keep flying with that part damaged. A hurt wing rolls you towards it, a hurt tail goes soft, a hurt nose loses power, and the panel shows where you were hit.</span></label>
+          <label class="check"><input type="checkbox" data-set="damageModel"><span>Damage instead of crashes — clip something and, depending on how hard you hit it, you may keep flying with that part damaged, or with it torn off. A hurt or missing wing tip rolls you towards it, a hurt tail goes soft, no fin makes the nose wander, a lost engine swings you towards it, and the panel shows where you were hit.</span></label>
+          <label class="check"><input type="checkbox" data-set="crashSlowMo"><span>Slow motion for a moment when a crash breaks the aeroplane up (Controls → View has the instant replay key)</span></label>
           <label class="check"><input type="checkbox" data-set="fleetModels"><span>Use the alternative models for every aeroplane — the redrawn airframes that come apart when you crash. Off by default, the military aeroplanes use them anyway and the civil ones use the built-in shapes.</span></label>
           <p class="hint">With random winds on, the wind drifts around the speed and direction you chose and a gust rolls
           through every half minute or so. It makes landings much more interesting. Leave it off while you are learning.</p>

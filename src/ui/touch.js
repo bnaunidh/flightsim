@@ -250,6 +250,9 @@ export class TouchControls {
     brake.addEventListener('pointerleave', () => down(false));
     pads.appendChild(brake);
     this.brakePad = brake;
+    // Aeroplane-only pads (main.css hides them in the helicopter, whose skids
+    // have no wheel brakes, nothing to retract and no flaps).
+    brake.classList.add('is-wing');
 
     const tap = (label, action) => {
       const b = el('button', 'touch-pad', label);
@@ -277,6 +280,8 @@ export class TouchControls {
     this.enginePad = tap('ENGINE', 'starter');
     this.gearPad = tap('GEAR', 'gear');
     this.flapPad = tap('FLAPS', 'flaps');
+    this.gearPad.classList.add('is-wing');
+    this.flapPad.classList.add('is-wing');
     /*
      * And the release, for the same reason: X was the only way to let go of a
      * crate or a bomb, so Mango Cay Delivery and Weapons Range were both
@@ -305,6 +310,21 @@ export class TouchControls {
       const label = running ? 'STOP' : 'START';
       if (this.enginePad.textContent !== label) this.enginePad.textContent = label;
       this.enginePad.classList.toggle('is-on', running);
+      /*
+       * In a helicopter in the air the pad is greyed out. On a phone it sits
+       * beside the camera pad, under the same thumb, and one tap on STOP at
+       * 30 ft was "ENGINE OFF" and -18.7 m/s at the ground (measured, 390 x
+       * 844, real touches): a rotor has no glide to fall back on and a
+       * restart takes 1.8 s. The tap still lands — main.js pressStarter()
+       * answers it with a word instead of a shutdown — so the look says what
+       * the rule is. Written on a change only: this runs every frame.
+       */
+      const off = running && !ac.onGround && !!(this.input && this.input.context === 'heli');
+      if (off !== this._enginePadOff) {
+        this._enginePadOff = off;
+        this.enginePad.classList.toggle('is-off', off);
+        this.enginePad.setAttribute('aria-disabled', off ? 'true' : 'false');
+      }
     }
     // Only offered when there is something to drop.
     if (this.dropPad) this.dropPad.hidden = !(sim && sim.hasCargo);

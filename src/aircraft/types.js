@@ -817,8 +817,8 @@ export const AIRCRAFT = [
     name: 'Skyhook H-3',
     class: 'Helicopter',
     blurb:
-      'Hovers, which nothing else here does. Shift goes up, Ctrl comes down, and let go and it holds itself '
-      + 'still; W A S D tilt it, Q and E turn it. Realistic gives you the real collective lever. It will not '
+      'Hovers, which nothing else here does. Shift and Ctrl are the collective lever, W A S D the cyclic and Q and E '
+      + 'the pedals; the stability assist holds the height and levels her out when you let go (F switches it off). It will not '
       + 'glide — that and the hover are the same fact.',
     stats: { speed: 2, handling: 3, ease: 2 },
     livery: '#2f4a63',

@@ -9,13 +9,15 @@
  *   - Esc while a cap is waiting cancels (and does not unpause the game);
  *   - Eject onto Backspace asks "This key already does Self-destruct — swap
  *     them?"; Swap moves Self-destruct to Enter;
- *   - Get out onto ' (a free key) just takes it; Start engine onto ;
+ *   - Get out onto \ (a free key) just takes it; Start engine onto Delete
+ *     (the quotes, ; and -/= are taken: the drag chute and, since v61, the
+ *     autopilot's heading and speed);
  *   - Smoke onto G asks about Landing gear; Cancel leaves both alone;
  *   - in the F-22, the key line names Backspace for eject, Enter now opens
  *     the self-destruct cover (not the seat), and Backspace twice ejects —
  *     every message naming the new key;
- *   - parked, O no longer gets you out and ' does, and the prompts say ';
- *   - the coach says "Press ; to start the engine", and the H card lists the
+ *   - parked, O no longer gets you out and \ does, and the prompts say \;
+ *   - the coach says "Press Delete to start the engine", and the H card lists the
  *     moved keys;
  *   - walking, Settings opens on the On foot group;
  *   - Reset Flying keys, then Reset all keys, put everything back.
@@ -127,9 +129,9 @@ export async function check(sim, r, say) {
       && /Backspace/.test(cap('eject').textContent) && /Enter/.test(cap('selfDestruct').textContent) && !S().querySelector('.keymap-row.is-clash'), `eject ${inp.bindings.eject} · self-destruct ${inp.bindings.selfDestruct}`);
 
     // A free key: Get out onto ', Start engine onto ;.
-    rebind('getOut', 'Minus');
-    rebind('starter', 'Equal');
-    r.ok('keybinds: a free key is simply taken (Get out → -, Start engine → =)', inp.bindings.getOut.join() === 'Minus' && inp.bindings.starter.join() === 'Equal' && /is now/.test(ask().textContent), `${inp.bindings.getOut} ${inp.bindings.starter}: ${ask().textContent}`);
+    rebind('getOut', 'Backslash');
+    rebind('starter', 'Delete');
+    r.ok('keybinds: a free key is simply taken (Get out → \\, Start engine → Delete)', inp.bindings.getOut.join() === 'Backslash' && inp.bindings.starter.join() === 'Delete' && /is now/.test(ask().textContent), `${inp.bindings.getOut} ${inp.bindings.starter}: ${ask().textContent}`);
 
     // A clash, cancelled: Smoke onto G.
     rebind('smoke', 'KeyG');
@@ -165,21 +167,21 @@ export async function check(sim, r, say) {
     run(2.2);
     const pr = () => (document.querySelector('.of-prompt') || {}).innerHTML || '';
     const prompt = pr();
-    r.ok('keybinds: parked, the prompt says "Press - to get out"', /Press <kbd>-<\/kbd> to get out/.test(prompt), prompt);
+    r.ok('keybinds: parked, the prompt says "Press \\ to get out"', /Press <kbd>\\<\/kbd> to get out/.test(prompt), prompt);
     tap('KeyO');
     run(0.3);
     const outOnO = OF.active;
-    tap('Minus');
+    tap('Backslash');
     run(0.5);
-    r.ok('keybinds: O no longer gets you out; - does', !outOnO && OF.active, `O → ${outOnO}, - → ${OF.active}`);
+    r.ok('keybinds: O no longer gets you out; \\ does', !outOnO && OF.active, `O → ${outOnO}, \\ → ${OF.active}`);
     // Walking: Settings opens on the On foot group.
     toControls();
     const firstOnFoot = (S().querySelector('details[data-keygroup]') || {}).dataset;
     r.ok('keybinds: paused while walking, Settings opens on the On foot keys', firstOnFoot && firstOnFoot.keygroup === 'On foot' && S().querySelector('details[data-keygroup="On foot"]').open, firstOnFoot && firstOnFoot.keygroup);
     backToFlying();
-    tap('Minus');
+    tap('Backslash');
     run(0.5);
-    r.ok('keybinds: - gets you back in', !OF.active, `walking ${OF.active}`);
+    r.ok('keybinds: \\ gets you back in', !OF.active, `walking ${OF.active}`);
 
     // The coach names the moved starter.
     const ac = sim.aircraft;
@@ -187,13 +189,13 @@ export async function check(sim, r, say) {
     ac.rpm = 0;
     run(0.3);
     const coach = sim.hud.coach ? sim.hud.coach.innerHTML : '';
-    r.ok('keybinds: the coach says "Press = to start the engine"', /Press <kbd>=<\/kbd> to start the engine/.test(coach), coach);
+    r.ok('keybinds: the coach says "Press Delete to start the engine"', /Press <kbd>Delete<\/kbd> to start the engine/.test(coach), coach);
     tap('KeyI');
     run(0.2);
     const noStart = !ac.engineOn;
-    tap('Equal');
+    tap('Delete');
     run(0.4);
-    r.ok('keybinds: I no longer starts the engine; = does', noStart && (ac.engineOn || ac.starting || ac.rpm > 0), `I → ${!noStart}, = → ${ac.engineOn}`);
+    r.ok('keybinds: I no longer starts the engine; Delete does', noStart && (ac.engineOn || ac.starting || ac.rpm > 0), `I → ${!noStart}, Delete → ${ac.engineOn}`);
 
     // H: the card names the player's keys.
     tap('KeyH');
@@ -201,14 +203,14 @@ export async function check(sim, r, say) {
     const card = sim.hud.controlsCard ? sim.hud.controlsCard.textContent : '';
     tap('KeyH');
     run(0.1);
-    r.ok('keybinds: the H card lists Eject on Backspace, Start engine on =, and Get out on -', /Eject[^]*?Backspace/.test(card) && /Start \/ stop engine\s*=/.test(card) && /Get out \/ get in\s*-/.test(card), card.slice(0, 200));
+    r.ok('keybinds: the H card lists Eject on Backspace, Start engine on Delete, and Get out on \\', /Eject[^]*?Backspace/.test(card) && /Start \/ stop engine\s*Delete/.test(card) && /Get out \/ get in\s*\\/.test(card), card.slice(0, 200));
 
     /* ---------------- reset ---------------- */
     toControls();
     openGroup('Flying');
     const rf = S().querySelector('[data-reset-group="Flying"]');
     if (rf) rf.click();
-    r.ok('keybinds: Reset Flying keys — eject, self-destruct and the starter are back; Get out is not (it is On foot)', inp.bindings.eject.join() === 'Enter,NumpadEnter' && inp.bindings.selfDestruct.join() === 'Backspace' && inp.bindings.starter.join() === 'KeyI' && inp.bindings.getOut.join() === 'Minus', `eject ${inp.bindings.eject} · getOut ${inp.bindings.getOut}`);
+    r.ok('keybinds: Reset Flying keys — eject, self-destruct and the starter are back; Get out is not (it is On foot)', inp.bindings.eject.join() === 'Enter,NumpadEnter' && inp.bindings.selfDestruct.join() === 'Backspace' && inp.bindings.starter.join() === 'KeyI' && inp.bindings.getOut.join() === 'Backslash', `eject ${inp.bindings.eject} · getOut ${inp.bindings.getOut}`);
     const ra = S().querySelector('[data-reset-keys]');
     if (ra) ra.click();
     const all = Object.keys(I.ACTIONS).every((id) => JSON.stringify(inp.bindings[id]) === JSON.stringify(I.ACTIONS[id].default));

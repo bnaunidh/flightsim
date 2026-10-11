@@ -189,6 +189,15 @@ html, body {
 .hud-unit { font-size: 10.5px; color: var(--text-dim); }
 .hud-unit.is-deg { align-self: flex-start; font-size: 15px; line-height: 1; margin-left: -3px; }
 .hud-word { grid-column: 1 / -1; grid-row: 2; font-size: 11.5px; line-height: 1.3; margin-top: 1px; color: var(--accent); }
+/*
+ * The altitude row's height over the ground in a few characters ("20 ft up";
+ * ui/hud.js altitudeWords). The sentence above already says it on a laptop,
+ * so here it is off; the touch band and a narrow window hide the sentence
+ * and show this instead (their blocks, below). Empty in the van (kilometres
+ * travelled are not "up" anything), and empty takes no room.
+ */
+.hud-up { display: none; font-size: 11px; line-height: 1.2; white-space: nowrap; color: var(--accent); }
+.hud-up:empty { display: none !important; }
 
 .hud-top {
   position: absolute;
@@ -1109,6 +1118,7 @@ body.is-large { font-size: 18px; }
   -webkit-backdrop-filter: none;
 }
 .hud.is-contrast .hud-word,
+.hud.is-contrast .hud-up,
 .hud.is-contrast .hud-objective-title,
 .hud.is-contrast .hud-weather { color: #ffe95c; }
 .hud.is-contrast .hud-value,
@@ -1345,6 +1355,11 @@ body.is-large { font-size: 18px; }
   user-select: none;
 }
 .touch-pad.is-on { background: var(--accent); border-color: var(--accent); color: #0b1220; }
+/* Greyed out, not gone: the helicopter's STOP pad in the air (ui/touch.js).
+   Removing it would shift the camera pad under the thumb that was reaching
+   for it; it stays where it is, dimmed, and a tap gets a word instead. */
+.touch-pad.is-off,
+.touch-pad.is-on.is-off { background: var(--panel); border-color: var(--panel-line); color: var(--text); opacity: 0.45; }
 .touch-pad:active { transform: scale(0.96); }
 
 /* Rudder: a wide strip along the bottom middle, where a thumb can reach it. */
@@ -1485,6 +1500,39 @@ body.is-large { font-size: 18px; }
 .hud.is-touch .hud-left .hud-label { font-size: 8px; min-width: 0; letter-spacing: 0.04em; }
 .hud.is-touch .hud-left .hud-value { font-size: 19px; line-height: 1.05; }
 .hud.is-touch .hud-left .hud-unit { font-size: 8px; }
+/*
+ * The band says how high over the GROUND you are, in one short line under
+ * the altimeter: "20 ft up" beside a roof.
+ *
+ * The owner, 2026-10-04: "houses are like 200 ft tall according to the
+ * game". The laptop panel's fix was the sentence under the number ("just
+ * off the ground · 20 ft up", ui/hud.js) — which is .hud-word, and the band
+ * never showed it: `(pointer: coarse)` hides every .hud-word below, so on
+ * an iPad or a phone the altitude cell was the sea-level number and its
+ * unit, and nothing else. Level with a 29 ft roof it still read 150 ft on
+ * Kestrel and up to 1,080 ft on the Skerries. (A touchscreen with a fine
+ * pointer, a Chromebook, was the other way round: the whole sentence, 170
+ * px of it, wrapping inside a 130 px cell.) So the band hides the sentence
+ * itself, whatever the pointer, and shows .hud-up — a third line only in the
+ * altitude cell, 8.5 px, the width of "1,200 ft up" at most, which no cell
+ * is too narrow for. The cells stack their lines (flex-direction: column,
+ * above), so it costs the band about 10 px: 66-122 on an iPad, and the
+ * objective starts at 140.
+ */
+.hud.is-touch .hud-left .hud-word { display: none; }
+.hud.is-touch .hud-left .hud-up { display: block; font-size: 8.5px; line-height: 1.2; margin-top: 1px; }
+/* Not in the helicopter: its card hangs under the right-hand end of the band
+   (hud-rotor.js) with its own radar altimeter, "ft up" and all, and the
+   objective's place under that card was measured against the band as it is. */
+.hud.is-touch.is-rotor .hud-left .hud-up { display: none; }
+/* Nor in a vehicle. The car and the tug keep this strip (TRIP, in
+   kilometres, in the altimeter's cell: ui/hud-drive.js) and nothing there
+   wrote the line, so it kept a flight's "1,200 ft up" — or the HUD's first
+   text, "on the ground" — as a third line under TRIP, and grew the band 11
+   px towards the objective (the v62 checker, on an iPad). DriveHud.enter()
+   empties it now; this is the belt to that: kilometres travelled are not up
+   anything. */
+.hud.is-touch.is-vehicle .hud-left .hud-up { display: none; }
 .hud.is-touch .hud-acname { display: none; }
 /*
  * And the objective drops below the strip.
@@ -2220,6 +2268,15 @@ html.is-touch-device .minimap { top: 8px; left: 8px; right: auto; bottom: auto; 
   /* The plain-English word under each number is lovely on a laptop and simply
      will not fit next to a thumb. The numbers keep their units. */
   .hud-left .hud-word { display: none; }
+  /* But the height over the ground does fit, as a few characters on the
+     number's own line: "150 ft  20 ft up" (the rows run across here). It was
+     only ever in the sentence, so a narrow window read a roof as the
+     altimeter's hundreds. Not in the helicopter: its card has a radar
+     altimeter. */
+  .hud-left .hud-up { display: block; font-size: 9.5px; }
+  .hud.is-rotor .hud-left .hud-up { display: none; }
+  /* Nor in the car or the tug (the touch band's rule says why). */
+  .hud.is-vehicle .hud-left .hud-up { display: none; }
   .hud-acname { font-size: 10px; }
 
   /* Weather goes away; the wind is on the map and in the briefing. */
@@ -2563,6 +2620,18 @@ html.is-touch-device .slot-clear {
      HEADING under the objective. Still the biggest number, inside the band. */
   .hud.is-touch.is-drive .hud-left .hud-value { font-size: 18px; }
   .hud.is-touch .hud-left:not(.hud-boatpanel) .hud-unit { font-size: 7.5px; }
+  /*
+   * The height over the ground ("20 ft up", .hud-up, the band's rule above)
+   * as the altitude cell's third line here too, at the unit's size: 40 px
+   * for "1,200 ft up", inside a 44 px cell on a 375 phone. Its 9 px of
+   * height come out of the rows' padding (3 px above and below each, which
+   * the 2x2 has twice over) and the label's line, so the band stays what it
+   * was measured to be: no taller than the map (84 px) and above the
+   * objective at 96.
+   */
+  .hud.is-touch .hud-left:not(.hud-boatpanel) .hud-up { font-size: 7.5px; line-height: 1.1; margin-top: 0; }
+  .hud.is-touch .hud-left:not(.hud-boatpanel) .hud-row { padding: 1px 0; }
+  .hud.is-touch .hud-left:not(.hud-boatpanel) .hud-label { line-height: 1.1; }
   .hud.is-touch .hud-right { display: none; }
 
   /* --- objective: one line, under the band, and inside the screen -------- */
@@ -3419,12 +3488,46 @@ html.is-touch-device .slot-clear {
 .hud.is-touch .hud-hold-text { font-size: 10px; }
 /* The hover strip runs to about 179 px, so what used to sit under the buttons moves below it. */
 .hud.is-touch.is-rotorhover .hud-top { top: 186px; }
-/* On a phone the heli's ON THE GROUND card (hud-rotor.js) hangs under this
-   band at 186-304 px, right-aligned and 236 wide: that is the objective's
-   whole row, so the objective sat behind it, open or folded. It goes under
-   the card instead. Tablets keep 188 (hud-rotor.js): the two sit side by side. */
+/*
+ * A phone (the PHONE LAYOUT block's 560 px). The strip above is 176 px wide
+ * at 206 px with some 350 px of readings in it; measured on an emulated
+ * 390 x 844 phone, RAD ALT and WIND were squeezed to 50 px and cut by the
+ * screen's edge, and the drift words (x401-505) and POWER (x517-557) were
+ * off a 390 px screen altogether. It goes under the map and the Races
+ * button, full width, exactly where the aeroplane's cruise strip goes on a
+ * phone (.hud.is-touch .hud-left, 146 px), with what fits in 374 px: the
+ * drift square, the V/S bar, RAD ALT and WIND, and the hold lights. The
+ * drift words say what the square already shows, and the lever's own label
+ * shows the power.
+ */
 @media (max-width: 560px) {
-  .hud.is-touch.is-rotorhover .hud-top { top: 312px; }
+  .hud.is-touch.is-rotorhover .hud-rotor { left: 8px; right: 8px; top: 146px; }
+  .hud.is-touch.is-rotorhover .hud-drift-info,
+  .hud.is-touch.is-rotorhover .hud-power { display: none; }
+  .hud.is-touch.is-rotorhover .hud-hold { width: auto; flex: 0 0 auto; }
+  .hud.is-touch.is-rotorhover .hud-hold-text { display: none; }
+  /* The swap this strip is built on (the top of this section): the phone
+     block's `.hud-left:not(.hud-boatpanel)` outranks `.hud.is-rotorhover
+     .hud-left`, so a phone showed the four cruise readings at the top beside
+     the hover strip. */
+  .hud.is-touch.is-rotorhover .hud-left:not(.hud-boatpanel) { display: none; }
+  /* The card hangs under the strip (146 + 113 + 8 = 267 px; 92 px tall on
+     the ground, up to about 106 in a hover, when its line about the hold is
+     longer), so the objective goes under the card, not behind it. */
+  .hud.is-touch.is-rotorhover .hud-top { top: 382px; }
+}
+/* The helicopter's skids have no wheel brakes, nothing to retract and no
+   flaps: BRAKES, GEAR and FLAPS were dead pads beside the lever on a phone.
+   (The van and the boat keep theirs: those classes win here.) */
+.hud.is-rotor:not(.is-drive):not(.is-boat) .touch-pad.is-wing { display: none; }
+/* (On a phone the objective goes under the card: the phone block above.
+   Tablets keep 188 (hud-rotor.js): the card and the objective sit side by side.) */
+/* The Races button (race.js: top right, under the wind) sat on top of the
+   hover strip on a touch screen, iPad and phone alike (93 x 41 px over its
+   WIND row). While the strip is up it waits on the left, under the map. */
+body:has(.hud.is-touch.is-rotorhover) .race-solobar { left: 8px; right: auto; top: 132px; align-items: flex-start; }
+@media (max-width: 560px) {
+  body:has(.hud.is-touch.is-rotorhover) .race-solobar { top: 96px; }
 }
 
 /* ========================================================================

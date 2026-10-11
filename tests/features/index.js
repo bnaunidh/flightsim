@@ -15,6 +15,7 @@ import { check as brace } from './brace.browser.js';
 import { check as carPlaytest } from './car-playtest.browser.js';
 import { check as civil } from './civil.browser.js';
 import { check as crashes } from './crashes.browser.js';
+import { check as breakup } from './breakup.browser.js';
 import { check as events } from './events.browser.js';
 import { check as airliners } from './airliners.browser.js';
 import { check as afo } from './afo.browser.js';
@@ -44,6 +45,7 @@ import { check as sky } from './sky.browser.js';
 import { check as missionMaps } from './mission-maps.browser.js';
 import { check as flicker } from './flicker.browser.js';
 import { check as achievements } from './achievements.browser.js';
+import { check as worldScale } from './world-scale.browser.js';
 
 export const CHECKS = [
   { id: 'airport', check: airport },
@@ -52,6 +54,8 @@ export const CHECKS = [
   { id: 'car-playtest', check: carPlaytest },
   { id: 'civil', check: civil },
   { id: 'crashes', check: crashes },
+  // After crashes: the break points, the pieces, the replay and the slow sinking at sea.
+  { id: 'breakup', check: breakup },
   { id: 'airliners', check: airliners },
   { id: 'fighters', check: fighters },
   { id: 'events', check: events },
@@ -70,6 +74,8 @@ export const CHECKS = [
   { id: 'sound', check: sound },
   { id: 'onfoot', check: onfoot },
   { id: 'quality', check: quality },
+  // After quality: how big things are — a house beside the aeroplane and the altitude line's height over the ground (the owner's "200 ft houses").
+  { id: 'world-scale', check: worldScale },
   { id: 'traffic', check: traffic },
   // After traffic: every aircraft in one list — collisions with all of them, and all of them on the minimap.
   { id: 'sky', check: sky },
