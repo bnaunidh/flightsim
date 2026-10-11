@@ -159,6 +159,8 @@ const PROFILE_KEY = 'islandsim.multiplayer.v1';
 /** How long the lobby screen's sockets stay open after it is shut, in case it is opened again (lingerSockets). */
 export const SOCKET_LINGER_MS = 10000;
 const now = () => (globalThis.performance ? performance.now() : Date.now());
+/** A paused player's velocity on the wire (myState). */
+const STILL = Object.freeze({ x: 0, y: 0, z: 0 });
 
 function loadProfile() {
   let p = null;
@@ -2277,6 +2279,7 @@ class Multiplayer {
     this.ready = false;
     this.meId = null;
     this.server = null;
+    this._rtt = null;
     this.remotes.clear();
     this.showHud(false);
     const r = this._restoreGameMap;
@@ -2390,8 +2393,14 @@ class Multiplayer {
    * This player's snapshot, encoded. Out on foot, the walking pilot rides on
    * it too (protocol.js, the walker's tail): `walkState`, set by
    * ./pilot-mp.js, says where they are, or null.
+   *
+   * `still` (v56): paused — sent from idle(), four times a second at most and
+   * once a second in a background tab. The aeroplane keeps the velocity it
+   * was flying at, and every other game guessed it on along that between
+   * snapshots a second apart, then held it, then waited: a paused friend
+   * that crept forward and stuck. Paused, it is sent standing still.
    */
-  myState(t) {
+  myState(t, still = false) {
     const sim = this.sim;
     this._seq = (this._seq + 1) & 0xffff;
     let walk = null;
@@ -2406,7 +2415,7 @@ class Multiplayer {
       const v = sim.vehicle;
       const kind = v.spec && v.spec.kind === 'car' ? 'car' : 'boat';
       return encodeState({
-        id: this.meId, seq: this._seq, t, pos: v.pos, quat: v.quat, vel: v.vel, game: kind, type: kind,
+        id: this.meId, seq: this._seq, t, pos: v.pos, quat: v.quat, vel: still ? STILL : v.vel, game: kind, type: kind,
         throttle: Math.abs(v.throttle || 0), steer: v.steer || 0, brakes: (v.brakes || 0) > 0.05,
         onGround: true, engineOn: true, lights: true, gearDown: true, gearPos: 1,
         ghost: !!this.extraFlags.ghost, pvp: !!this.extraFlags.pvp, walk,
@@ -2416,7 +2425,7 @@ class Multiplayer {
     const c = ac.controls || {};
     const type = sim.aircraftType ? sim.aircraftType.id : 'skylark';
     return encodeState({
-      id: this.meId, seq: this._seq, t, pos: ac.pos, quat: ac.quat, vel: ac.vel,
+      id: this.meId, seq: this._seq, t, pos: ac.pos, quat: ac.quat, vel: still ? STILL : ac.vel,
       game: type === 'harrier' ? 'heli' : 'flight', type,
       gearDown: ac.gearDown, gearPos: ac.gearPos, flaps: ac.flaps, throttle: c.throttle, rpm: ac.rpm,
       pitch: c.pitch, roll: c.roll, yaw: c.yaw, brakes: (c.brakes || 0) > 0.1,
@@ -2639,9 +2648,54 @@ class Multiplayer {
     }
     this._dots = this.remotes.players.size ? this.remotes.update(dt, t, this.sim, !(this.sim.hud && this.sim.hud.hidden)) : NO_DOTS;
     if (this.hud) {
-      this.hud.el.style.visibility = this.sim.hud && this.sim.hud.hidden ? 'hidden' : '';
+      // Written only when it changes: a style write every frame is a style recalculation every frame.
+      const vis = this.sim.hud && this.sim.hud.hidden ? 'hidden' : '';
+      if (this.hud.el.style.visibility !== vis) this.hud.el.style.visibility = vis;
       this.hud.place(this.sim);
       this.hud.minimap(this.sim, this._dots, this.minimapExtras);
+    }
+  }
+
+  /**
+   * v56, "still laggy": how long each friend's snapshots take to get here,
+   * for remotes.js to put back (interp.js, Track.setLatency). From the pings
+   * the host already sends every two seconds — a round trip each, host to
+   * player — so nothing new goes over the network: the host's own to a
+   * player, half of it; a player's to another player, half of each of the
+   * two legs through the host. The smallest lately, rising a little each
+   * second so a network that has slowed is believed in time.
+   */
+  syncLatency(t) {
+    const s = this.session;
+    if (!s || !this.remotes.players.size || t - (this._latAt || -Infinity) < 1000) return;
+    this._latAt = t;
+    const rtt = this._rtt || (this._rtt = new Map());
+    // Somebody gone, and their number perhaps somebody new's: forget their trip.
+    for (const k of rtt.keys()) if (k !== 'me' && !this.remotes.players.has(k)) rtt.delete(k);
+    const low = (key, ping) => {
+      if (!Number.isFinite(ping) || ping <= 0) return rtt.get(key) ?? null;
+      const was = rtt.get(key);
+      const v = was == null ? ping : Math.min(ping, was + 3);
+      rtt.set(key, v);
+      return v;
+    };
+    if (this.role === 'host') {
+      for (const id of this.remotes.players.keys()) {
+        const p = s.players.get(id);
+        const r = low(id, p && p.ping);
+        this.remotes.setLatency(id, r == null ? 0 : r / 2);
+      }
+    } else {
+      const mine = low('me', s.ping);
+      for (const id of this.remotes.players.keys()) {
+        if (mine == null) {
+          this.remotes.setLatency(id, 0);
+          continue;
+        }
+        const p = id === 0 ? null : s.players.get(id);
+        const theirs = id === 0 ? 0 : low(id, p && p.ping);
+        this.remotes.setLatency(id, (mine + (theirs || 0)) / 2);
+      }
     }
   }
 
@@ -2651,12 +2705,13 @@ class Multiplayer {
     if (!sim) return;
     const t = now();
     const s = this.session;
+    this.syncLatency(t);
     // The game's frame hook stops while paused; the server must not.
     if (s && t - this._lastTick > 150) {
       let buf = null;
       if (this.ready && !this.transition && sim.state === 'paused' && t - this._lastSend > 250) {
         this._lastSend = t;
-        buf = this.myState(t);
+        buf = this.myState(t, true);
       }
       s.tick(t, buf);
       this._lastTick = t;

@@ -31,16 +31,32 @@
  *                 busy Wi-Fi, healthy, struggling and overloaded games) and
  *                 in the eight-tab lobby playtest.
  *
+ *                 v56 ("still laggy af"): all of that was measured where a
+ *                 trip takes almost no time. On a real network "now" by the
+ *                 sender's clock, as worked out below, is now LESS the
+ *                 fastest trip — 100-250 ms through a host — so the trip is
+ *                 put back (setLatency, from the host's pings), and the
+ *                 "they have stopped" rule allows for the network's own
+ *                 jitter. NETS.wifi in the lag bench, and
+ *                 tests/features/multiplayer.wifi.playtest.mjs in real tabs.
+ *
  * When the stream stops — a dropped packet, a tab gone to the background —
  * sample() keeps going along the last velocity for half a second and holds;
  * predict() for `predictMs` (0.9 s) and holds.
  *
  * Timestamps are the SENDER's clock. The offset between the two clocks is the
- * smallest (arrival − sent) seen in the last three seconds: the fastest packet
+ * smallest (arrival − sent) seen in the last eight seconds: the fastest packet
  * is the one with the least queueing in it, so its offset is the best
  * estimate of the true one. The estimate is then only allowed to move a few
  * milliseconds per packet, so a single fast or slow packet cannot make the
- * aeroplane jump.
+ * aeroplane jump — and it comes down faster than it goes up (offsetDown,
+ * offsetUp in Track): no packet can beat the fastest trip, so a faster one is
+ * proof the estimate was late, while a slower minimum may be nothing more than
+ * this player's own game stopping. Three seconds, and as slow down as up,
+ * was a trap on a struggling computer: a few stops in a row and every packet
+ * in the window was handled late, the estimate crept up, and friends were
+ * drawn 300 ms behind for six seconds after (the Wi-Fi playtest's host, a
+ * Skylark 15 m back in straight and level flight with no stop anywhere).
  *
  * Plain objects in and out; no three.js here, so node can test it.
  */
@@ -123,10 +139,19 @@ export function quatAngle(a, b) {
   return 2 * Math.acos(Math.min(1, d));
 }
 
+/**
+ * How much of a path's measured latency (half the smallest ping, per leg) is
+ * put back. A little under all of it: half a round trip is a shade more than
+ * the fastest one-way trip the clock offset already holds, and drawn a few
+ * milliseconds behind is a steadier picture than drawn a few ahead.
+ */
+export const LEAD_K = 0.85;
+
 export class Track {
   constructor({
     delayMs = 100, maxDelayMs = 350, maxExtrapMs = 500, keepMs = 3000, staleMs = 5000,
     predictMs = 900, accelMs = 350, leadMs = 0, maxAccel = 45, maxTurn = 3, stallMs = 220, coastMs = 160, rateK = 0.25,
+    jitterStall = true, maxLatencyMs = 300, latencySlew = 40, offsetUp = 2, offsetDown = 20, offsetWinMs = 8000,
   } = {}) {
     /*
      * predict(): how far past the newest snapshot to guess before holding
@@ -158,6 +183,41 @@ export class Track {
      */
     this.stallMs = stallMs;
     this.coastMs = coastMs;
+    /*
+     * ...but 220 ms of quiet was picked on loopback, where a gap that long can
+     * only be the sender's game. Over a real Wi-Fi it is the network: with
+     * 60-150 ms a leg and ±40 ms of jitter on each of the two legs through
+     * the host, one snapshot early and the next late is a 230 ms gap, and a
+     * lost one is 130 ms plus the jitter — measured in the Wi-Fi playtest
+     * (tests/features/multiplayer.wifi.playtest.mjs) as friends who slowed
+     * and caught up 25 to 45 times a minute in an ordinary turn. So the quiet
+     * allowed grows by how late packets on this stream actually are (`lateMs`,
+     * the 95th percentile of their lateness, read off the same samples as the
+     * clock): a few milliseconds on a good network, as before, and the
+     * network's own spread on a jittery one. false: the fixed 220 ms.
+     */
+    this.jitterStall = jitterStall;
+    this.lateMs = 0;
+    /*
+     * The network's delay, put back. The clock offset above is the smallest
+     * (arrival − sent), which is the clock difference PLUS the fastest
+     * packet's trip — so "now" by that clock is really "now, less the trip":
+     * nothing on loopback, where this was all measured, and 100-250 ms
+     * through a host on a real Wi-Fi, where a Skylark drawn that far back is
+     * 5-14 m behind where it is and a fighter 20-55 m. Remotes tells each
+     * track how long the fastest trip is (setLatency, from the pings the host
+     * already measures) and the guess runs that much further on. It moves
+     * at most `latencySlew` ms per second, so a ping that changes does not
+     * shove the aeroplane, and never past `maxLatencyMs`.
+     */
+    this.maxLatencyMs = maxLatencyMs;
+    this.latencySlew = latencySlew;
+    this.offsetUp = offsetUp;
+    this.offsetDown = offsetDown;
+    this.offsetWinMs = offsetWinMs;
+    this.latency = 0;
+    this.latencyTarget = 0;
+    this._latAt = null;
     /*
      * How fast their game's time runs against the clock. A game that
      * hitches loses the time (main.js runs at most 0.1 s of physics a
@@ -209,22 +269,35 @@ export class Track {
     const s = { ...snap, t };
     const off = now - t;
     this.offs.push({ off, at: now });
-    while (this.offs.length && this.offs[0].at < now - 3000) this.offs.shift();
+    while (this.offs.length && this.offs[0].at < now - this.offsetWinMs) this.offs.shift();
+    // min: the fastest of the whole window, for the offset; min3: of the last three seconds, for the clock-jump rule below.
     let min = Infinity;
-    for (const o of this.offs) if (o.off < min) min = o.off;
+    let min3 = Infinity;
+    for (const o of this.offs) {
+      if (o.off < min) min = o.off;
+      if (o.at >= now - 3000 && o.off < min3) min3 = o.off;
+    }
     if (this.offset === null) this.offset = min;
-    else this.offset += Math.max(-4, Math.min(4, min - this.offset));
+    else this.offset += Math.max(-this.offsetDown, Math.min(this.offsetUp, min - this.offset));
     if (this.offs.length >= 8) {
-      const late = this.offs.map((o) => o.off - min).sort((a, b) => a - b);
+      // One array kept and refilled: this runs for every snapshot of every friend.
+      const late = this._late || (this._late = []);
+      late.length = 0;
+      for (const o of this.offs) if (o.at >= now - 3000) late.push(o.off - min);
+      late.sort(byNumber);
       const p90 = late[Math.floor(late.length * 0.9)];
+      const p95 = late[Math.floor(late.length * 0.95)];
       const want = Math.max(this.minDelayMs, Math.min(this.maxDelayMs, p90 + 30));
       this.delayMs += (want - this.delayMs) * 0.08;
+      this.lateMs += (Math.min(600, p95) - this.lateMs) * 0.08;
     }
     // A clock that has jumped by more than a second — a sleeping laptop, a
     // reloaded tab reusing the id — is a new clock, not a slow network.
-    if (Math.abs(min - this.offset) > 1000) {
-      this.offset = min;
+    if (Math.abs(min3 - this.offset) > 1000) {
+      this.offset = min3;
       this.snaps.length = 0;
+      // The old clock's samples are no evidence about the new one.
+      while (this.offs.length && this.offs[0].at < now - 3000) this.offs.shift();
     }
 
     const n = this.snaps.length;
@@ -262,6 +335,16 @@ export class Track {
     }
     const r = Math.max(0.2, Math.min(1.1, dist(a.pos, b.pos) / expect));
     this.rate += (r - this.rate) * this.rateK;
+  }
+
+  /**
+   * How long the fastest trip from their game to this one takes, in ms
+   * (Remotes, from the host's pings): the guess is run on that much further,
+   * so they are drawn where they are now and not where they were when it set
+   * off. Taken up slowly (see the constructor).
+   */
+  setLatency(ms) {
+    this.latencyTarget = Number.isFinite(ms) ? Math.max(0, Math.min(this.maxLatencyMs, ms)) : 0;
   }
 
   /** True once nothing has been heard for a while. */
@@ -350,7 +433,14 @@ export class Track {
     const n = S.length;
     if (!n) return null;
     if (!out.omega) out.omega = {};
-    const rt = now - this.offset - this.leadMs;
+    // The latency, eased towards what it was last told.
+    if (this._latAt === null) this.latency = this.latencyTarget;
+    else if (this.latency !== this.latencyTarget) {
+      const step = (this.latencySlew * Math.max(0, Math.min(200, now - this._latAt))) / 1000;
+      this.latency += Math.max(-step, Math.min(step, this.latencyTarget - this.latency));
+    }
+    this._latAt = now;
+    const rt = now - this.offset - this.leadMs + this.latency;
     const b = S[n - 1];
     if (rt < b.t && n >= 2) {
       let i = n - 1;
@@ -408,8 +498,9 @@ export class Track {
      * Wi-Fi and not their game: then everybody is still flying, and the
      * guess carries on. With nobody else to tell by (two players), coast.
      */
-    const linkQuiet = othersAt != null && now - othersAt > this.stallMs;
-    const quiet = this.stallMs > 0 && !linkQuiet ? now - this.lastArrival - this.stallMs : 0;
+    const allow = this.stallMs + (this.jitterStall ? this.lateMs : 0);
+    const linkQuiet = othersAt != null && now - othersAt > allow;
+    const quiet = this.stallMs > 0 && !linkQuiet ? now - this.lastArrival - allow : 0;
     let ext = gap;
     let slow = 1;
     if (quiet > 0) {
@@ -441,6 +532,8 @@ export class Track {
     return out;
   }
 }
+
+const byNumber = (a, b) => a - b;
 
 /** Two snapshots a long way apart in time or space: a respawn, not a journey. */
 function isJump(a, b) {

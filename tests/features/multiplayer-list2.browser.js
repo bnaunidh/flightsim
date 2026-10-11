@@ -241,7 +241,8 @@ export async function check(sim, r, say = () => {}) {
       sim.camera.lookAt(own.clone().addScaledVector(fwd, 100));
       sim.camera.updateMatrixWorld(true);
       const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
-      const layout = [[40, 8, 3], [60, -10, 5], [80, 12, 6], [300, 0, 20], [700, 40, 40], [1500, -60, 60], [9000, 0, 200]];
+      // The one 10 km off is out to the right, clear of the others' tags: v56 asks whether a tag still shows that far, not whether it gives way.
+      const layout = [[40, 8, 3], [60, -10, 5], [80, 12, 6], [300, 0, 20], [700, 40, 40], [1500, -60, 60], [9000, 5000, 200]];
       const types = ['skylark', 'courier', 'skylark', 'harrier', 'courier', 'skylark', 'courier'];
       const cam = own.clone();
       for (let i = 0; i < 7; i++) rem.add(10 + i, { name: NAMES[i], colour: P.COLOURS[i] });
@@ -277,7 +278,19 @@ export async function check(sim, r, say = () => {}) {
       r.ok('list2 mp: seven remote aircraft cost little of a 30 fps Chromebook frame (33 ms)', pct(costs, 0.5) < 3 && shown.every((p) => p.model),
         `multiplayer update median ${pct(costs, 0.5).toFixed(2)} ms, p95 ${pct(costs, 0.95).toFixed(2)} ms; drawing them: +${withThem.calls - without.calls} draw calls, +${withThem.tris - without.tris} triangles (${withThem.ms.toFixed(1)} vs ${without.ms.toFixed(1)} ms here)`);
 
-      // The tags: sized by distance, never overlapping, a dot when there is no room or past 8 km.
+      // v56: far off, a stand-in of one draw call (or the dot), never the whole model and never both.
+      {
+        const kinds = shown.map((p) => `${Math.round(p.dist)}m/${((2 * (p.model.userData.mpRadius || 6) * sim.camera.projectionMatrix.elements[5] * (innerHeight / 2)) / p.dist).toFixed(1)}px:${p.model && p.model.visible ? 'model' : p.lod && p.lod.visible ? 'standin' : p.far ? 'dot' : 'none'}`);
+        // How many pixels across each is, as remotes.js works it out: the model's size against the camera and the window.
+        const pxPerM = sim.camera.projectionMatrix.elements[5] * (innerHeight / 2);
+        const px = (p) => (2 * (p.model.userData.mpRadius || 6) * pxPerM) / p.dist;
+        const near = shown.filter((p) => p.dist < 600 || px(p) > 7);
+        const far = shown.filter((p) => p.dist > 700 && px(p) < 5);
+        r.ok('v56: friends close to are their real model; far off, a one-draw-call stand-in or the dot — never the whole model for a speck',
+          far.length >= 1 && near.every((p) => p.model.visible) && far.every((p) => !p.model.visible && ((p.lod && p.lod.visible) || p.far)) && shown.every((p) => !(p.model.visible && p.lod && p.lod.visible)),
+          kinds.join(', '));
+      }
+      // The tags: sized by distance, never overlapping, a dot when there is no room. v56: and out to the edge of the view, a far one with the dot marking the aeroplane under it.
       const W = innerWidth;
       const H = innerHeight;
       const P11 = sim.camera.projectionMatrix.elements[5];
@@ -305,8 +318,9 @@ export async function check(sim, r, say = () => {}) {
       const far = rects.reduce((m, x) => (x.d > m.d ? x : m), { d: -1 });
       const pips = shown.filter((p) => p.tag && p.tag.pip.visible);
       const past8 = shown.find((p) => p.dist > 8000);
-      r.ok('list2 mp: nametags never sit on top of each other; those with no room, and anybody past 8 km, are a dot in their colour',
-        rects.length >= 3 && overlaps === 0 && !!past8 && past8.tag.pip.visible && !past8.tag.sprite.visible && shown.every((p) => !(p.tag.sprite.visible && p.tag.pip.visible)),
+      r.ok('list2 mp: nametags never sit on top of each other; those with no room are a dot in their colour; a friend 10 km off still wears their name, over a dot (v56: tags stopped at 8 km)',
+        rects.length >= 3 && overlaps === 0 && !!past8 && past8.tag.pip.visible && past8.tag.sprite.visible && past8.far
+          && shown.every((p) => !(p.tag.sprite.visible && p.tag.pip.visible) || p.far),
         `${rects.length} tags, ${pips.length} dots, ${overlaps} overlapping: ${rects.map((x) => `${x.name} ${Math.round(x.d)} m ${x.pillH.toFixed(1)} px`).join(', ')}`);
       r.ok('list2 mp: and a tag is smaller the further away its friend is — about 3 % of the screen close to, 2 % far off',
         near.pillH > far.pillH && near.pillH / H > 0.026 && near.pillH / H < 0.034 && far.d > near.d, `${near.name} ${near.pillH.toFixed(1)} px at ${Math.round(near.d)} m, ${far.name} ${far.pillH.toFixed(1)} px at ${Math.round(far.d)} m, of ${H}`);
@@ -322,7 +336,8 @@ export async function check(sim, r, say = () => {}) {
       rem.update(1 / 30, t1 + 2000, sim, true);
       const afterRebuild = inScene();
       r.ok('list2 mp: a player who leaves takes their tag with them, and a world rebuild does not double anybody’s',
-        afterLeave === 6 && afterRebuild === 6 && countTags() <= 6, `${afterLeave} tags after a leave, ${afterRebuild} after a rebuild (6 players)`);
+        // A tag or a dot each — and both for one far enough off that the dot marks them under their name (v56).
+        afterLeave === 6 && afterRebuild === 6 && countTags() <= 6 + [...rem.players.values()].filter((p) => p.far).length, `${afterLeave} tags after a leave, ${afterRebuild} after a rebuild (6 players)`);
       for (let i = 0; i < 7; i++) rem.remove(10 + i);
       rem.setGroup(null);
       group.removeFromParent();

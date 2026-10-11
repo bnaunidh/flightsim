@@ -318,6 +318,7 @@ export class Link {
   send(ev) {
     if (this.state !== 'open' || !this.ev || this.ev.readyState !== 'open') return false;
     try {
+      if (Link.netsim) return simSend(this, this.ev, writeEvent(ev), true);
       this.ev.send(writeEvent(ev));
       return true;
     } catch (err) {
@@ -331,6 +332,7 @@ export class Link {
     // A backed-up channel means a slow link; drop this one rather than queue it.
     if (ch.bufferedAmount > 64 * 1024) return false;
     try {
+      if (Link.netsim) return simSend(this, ch, buf, false);
       ch.send(buf);
       return true;
     } catch (err) {
@@ -365,6 +367,75 @@ export class Link {
     }
     if (this.onclose) this.onclose(reason, was, this);
   }
+}
+
+/**
+ * A pretend Wi-Fi, for the tests only: null in the game, and nothing in the
+ * game sets it. Two tabs on one computer talk over loopback, which has no
+ * delay and loses nothing, and that hides exactly what players on a real
+ * network feel. tests/features/multiplayer.wifi.playtest.mjs sets
+ *
+ *   Link.netsim = { latency: [min, max], jitter, loss, rand }
+ *
+ * and every message a link sends then waits that connection's own latency
+ * (picked once per connection, between min and max, in ms, the same in both
+ * directions) give or take `jitter`, before
+ * it goes; the snapshot channel loses `loss` of them (0.02 is 2 %). The
+ * reliable channel loses nothing and stays in order — what the real one does
+ * with a lost packet is send it again, which arrives as a late one.
+ */
+Link.netsim = null;
+
+/** A string hashed to a fraction in [0, 1): FNV-1a, 32 bits. The same at both ends of a connection. */
+function hashFrac(s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h / 4294967296;
+}
+
+function simSend(link, ch, data, reliable) {
+  const sim = Link.netsim;
+  const rand = typeof sim.rand === 'function' ? sim.rand : Math.random;
+  const st = sim.stats || (sim.stats = { sent: 0, lost: 0 });
+  st.sent++;
+  if (!reliable && rand() < (sim.loss || 0)) {
+    st.lost++;
+    return true;
+  }
+  if (link._simLatency == null) {
+    const [a, b] = Array.isArray(sim.latency) ? sim.latency : [Number(sim.latency) || 0, Number(sim.latency) || 0];
+    /*
+     * One latency per CONNECTION, the same at both ends. The two Link objects
+     * of a connection (the host's and the player's) share its connectionId,
+     * so a hash of it picks the same point between min and max on either
+     * side; a real link's two directions share a path. Picked per Link
+     * object, each direction drew its own: 60 ms one way and 150 the other,
+     * which no Wi-Fi does, and which read in the playtest as friends drawn
+     * 40-60 ms ahead or behind by which direction had drawn the long one.
+     */
+    link._simLatency = a + (link.connectionId ? hashFrac(link.connectionId) : rand()) * (b - a);
+  }
+  const now = link.net.now();
+  let wait = Math.max(0, link._simLatency + (rand() * 2 - 1) * (sim.jitter || 0));
+  if (reliable) {
+    // In order: never before the one sent ahead of it.
+    wait = Math.max(wait, (link._simEvAt || 0) - now);
+    link._simEvAt = now + wait;
+  }
+  // Copied now: the host stamps and reuses the buffers it relays.
+  const copy = typeof data === 'string' ? data : data.slice(0);
+  setTimeout(() => {
+    if (ch.readyState !== 'open') return;
+    try {
+      ch.send(copy);
+    } catch (err) {
+      /* closed meanwhile */
+    }
+  }, wait);
+  return true;
 }
 
 /**

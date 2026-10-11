@@ -774,6 +774,147 @@ const diceFor = (codes) => {
     `${before.perSec} packets/s from the host relaying each → ${after.perSec}/s bundled (${Math.min(...after.perPlayer)}-${Math.max(...after.perPlayer)} per player)`);
 }
 
+/* ---- v56, "still laggy": a real network's delay ------------------------ */
+{
+  const I = await import('../../src/features/multiplayer/interp.js');
+  // East at 55 m/s; every snapshot takes 180 ms ± 80 to arrive (two Wi-Fi legs through the host), 15 a second.
+  let rand = 7;
+  const rnd = () => ((rand = (rand * 16807) % 2147483647) / 2147483647);
+  const run = (opts, latency, hitchAt = -1) => {
+    const tr = new I.Track(opts);
+    if (latency) tr.setLatency(latency);
+    const arr = [];
+    for (let t = 0; t <= 12000; t += 1000 / 15) {
+      // A sender that hitches stops: nothing sent for 700 ms, and where it is stands still.
+      if (hitchAt >= 0 && t > hitchAt && t < hitchAt + 700) continue;
+      arr.push({ t, at: t + 100 + rnd() * 160 });
+    }
+    arr.sort((a, b) => a.at - b.at);
+    const x = (t) => 55 * (hitchAt >= 0 && t > hitchAt ? Math.max(hitchAt, t - 700) / 1000 : t / 1000);
+    let k = 0;
+    const out = { behind: [], slow: 0, frames: 0, hitchSlow: 0 };
+    for (let now = 0; now < 12000; now += 16) {
+      while (k < arr.length && arr[k].at <= now) {
+        const a = arr[k++];
+        if (tr.push({ t: a.t, pos: { x: x(a.t), y: 300, z: 0 }, vel: { x: hitchAt >= 0 && a.t > hitchAt && a.t < hitchAt + 700 ? 0 : 55, y: 0, z: 0 }, quat: { x: 0, y: 0, z: 0, w: 1 } }, a.at) === false) continue;
+      }
+      if (now < 4000) continue;
+      const s = tr.predict(now);
+      if (!s) continue;
+      const inHitch = hitchAt >= 0 && now > hitchAt && now < hitchAt + 1200;
+      if (!inHitch) {
+        out.frames++;
+        out.behind.push((x(now) - s.pos.x) / 55 * 1000);
+        if (Math.hypot(s.vel.x, s.vel.y, s.vel.z) < 0.6 * 55) out.slow++;
+      } else if (s.vel.x < 0.6 * 55) out.hitchSlow++;
+    }
+    out.behindMs = out.behind.reduce((a, b) => a + b, 0) / (out.behind.length || 1);
+    return out;
+  };
+  const v55 = run({ jitterStall: false }, 0);
+  const v56 = run({}, 100 * I.LEAD_K);
+  ok('v56: on a network with 180 ms ± 80 of delay, a friend is drawn where they are now, not the trip behind',
+    v55.behindMs > 90 && Math.abs(v56.behindMs) < 35, `${Math.round(v55.behindMs)} ms behind → ${Math.round(v56.behindMs)} ms`);
+  ok('v56: and the jitter alone is not taken for a friend whose game has stopped (no slowing down in steady flight)',
+    v56.slow === 0 && v56.frames > 400, `${v55.slow} → ${v56.slow} slow frames of ${v56.frames}`);
+  const hitched = run({}, 100 * I.LEAD_K, 7000);
+  ok('v56: a friend whose game really stops for 700 ms is still coasted to a stop', hitched.hitchSlow > 10, `${hitched.hitchSlow} frames slowing through the hitch`);
+  // The latency is eased in, never jumped: a change of 150 ms moves the guess at 40 ms a second.
+  const tl = new I.Track();
+  tl.push({ t: 0, pos: { x: 0, y: 0, z: 0 }, vel: { x: 50, y: 0, z: 0 }, quat: { x: 0, y: 0, z: 0, w: 1 } }, 100);
+  tl.predict(100);
+  tl.setLatency(150);
+  const a1 = tl.predict(116).pos.x;
+  const a2 = tl.predict(132).pos.x;
+  ok('v56: a new latency is taken up slowly — a frame moves by its speed and a hair, not a jump', Math.abs(a2 - a1 - 50 * 0.016) < 50 * 0.002, `${(a2 - a1).toFixed(3)} m in 16 ms at 50 m/s`);
+  const S2 = await import('../../src/features/multiplayer/session.js');
+  ok('v56: the host relays at once in a game of up to four, and bundles in a lobby of eight',
+    S2.bundleFor(1) === 0 && S2.bundleFor(3) === 0 && S2.bundleFor(7) === S2.BUNDLE_MS, `${[1, 2, 3, 4, 7].map((n) => S2.bundleFor(n)).join(', ')} ms`);
+
+  /*
+   * This player's own game hitches for 600 ms. The game's dt is capped at
+   * 0.25 s (main.js), but the friend flew on for all 600; drawn with the
+   * capped dt, the rest was taken for a seam — held back a few metres, then
+   * a surge to catch up, after every hitch. Remotes runs its smoothers on
+   * the wall clock.
+   */
+  const { Remotes } = await import('../../src/features/multiplayer/remotes.js');
+  const rem = new Remotes();
+  rem._ensureModel = () => null; // no models in node: where they are drawn is the question
+  rem.add(9, { name: 'Steady Wren', colour: '#58c6ff' });
+  const sim = { aircraft: { pos: { x: 0, y: 300, z: 50 } }, camera: null };
+  const snapAt = (t) => ({ id: 9, t: t + 5000, pos: { x: 55 * t / 1000, y: 300, z: 0 }, vel: { x: 55, y: 0, z: 0 }, quat: { x: 0, y: 0, z: 0, w: 1 }, game: 'flight', type: 'skylark' });
+  let sent = 0;
+  let prevX = null;
+  let worstOff = 0;
+  let slowFrames = 0;
+  let after = 0;
+  let hitchAt = null;
+  const HITCH = 3000;
+  for (let now = 0, last = 0; now < 4500;) {
+    // Everything sent up to 40 ms ago has landed (handled after the hitch, when the page runs again).
+    while (sent <= now - 40) { rem.push(snapAt(sent), now); sent += 1000 / 15; }
+    const hitch = hitchAt === null && now >= HITCH;
+    if (hitch) hitchAt = now;
+    // The game's dt, as main.js gives it: the time since the last frame, at most 0.25 s.
+    rem.update(Math.min(0.25, Math.max(1 / 60, (now - last) / 1000)), now, sim, false);
+    last = now;
+    const p = rem.players.get(9);
+    if (hitchAt !== null && now > hitchAt && after < 12 && p.drawn && p.sample) {
+      after++;
+      worstOff = Math.max(worstOff, Math.abs(p.drawn.x - p.sample.pos.x));
+      if (prevX !== null && p.drawn.x - prevX < 0.5 * 55 / 60) slowFrames++;
+    }
+    prevX = p.drawn ? p.drawn.x : null;
+    now += hitch ? 600 : 1000 / 60;
+  }
+  ok('lag pass 3: after a 600 ms hitch of this player\'s own, a friend is drawn where the guess says at once — not held back, then surging',
+    after === 12 && worstOff < 0.3 && slowFrames === 0, `at most ${worstOff.toFixed(2)} m off the guess in the 12 frames after it, ${slowFrames} frames slowed (with the game's capped dt: ${(55 * (0.6 - 0.25) * Math.exp(-250 / 150)).toFixed(1)} m back, then a surge)`);
+
+  /*
+   * The pretend Wi-Fi (Link.netsim, the Wi-Fi playtest): one latency per
+   * CONNECTION, the same at both ends. Picked per Link object, the host's
+   * side of a connection and the player's each drew their own — 60 ms one
+   * way, 150 the other — and the playtest read friends drawn 40-60 ms ahead
+   * or behind by which direction had drawn the long one. Jitter and loss
+   * stay per packet.
+   */
+  {
+    const LK = await import('../../src/features/multiplayer/link.js');
+    const delivered = [];
+    const fakeNet = { now: () => 1000, sig: { id: 'ifs-slot-x' } };
+    const mkLink = (connectionId, initiator) => {
+      const l = new LK.Link(fakeNet, { peer: 'ifs-slot-y', connectionId, initiator });
+      l.state = 'open';
+      l.st = { readyState: 'open', bufferedAmount: 0, send: (b) => delivered.push(b) };
+      l.ev = { readyState: 'open', send: (b) => delivered.push(b) };
+      return l;
+    };
+    const buf = P.encodeState({ id: 1, seq: 1, t: 1, pos: { x: 0, y: 0, z: 0 }, quat: { x: 0, y: 0, z: 0, w: 1 }, vel: { x: 0, y: 0, z: 0 }, game: 'flight', type: 'skylark' });
+    const was = LK.Link.netsim;
+    try {
+      let seed = 3;
+      const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+      LK.Link.netsim = { latency: [60, 150], jitter: 40, loss: 0.5, rand: rnd };
+      const hostSide = mkLink('dc_abc123', false);
+      const playerSide = mkLink('dc_abc123', true);
+      const other = mkLink('dc_zzz999', true);
+      for (const l of [hostSide, playerSide, other]) for (let i = 0; i < 20; i++) l.sendState(buf);
+      const same = hostSide._simLatency === playerSide._simLatency;
+      const inRange = [hostSide, playerSide, other].every((l) => l._simLatency >= 60 && l._simLatency <= 150);
+      ok('pretend Wi-Fi: both ends of one connection share its latency, between min and max; another connection has its own',
+        same && inRange && other._simLatency !== hostSide._simLatency,
+        `${hostSide._simLatency.toFixed(1)} / ${playerSide._simLatency.toFixed(1)} ms, the other connection ${other._simLatency.toFixed(1)} ms`);
+      const st = LK.Link.netsim.stats;
+      ok('pretend Wi-Fi: loss is still per packet (about half of 60 snapshots at 50 %), none of it on the reliable channel',
+        st.sent === 60 && st.lost > 15 && st.lost < 45 && hostSide.send({ t: 'ping', ts: 1 }) === true && LK.Link.netsim.stats.lost === st.lost,
+        `${st.lost} of ${st.sent} snapshots lost`);
+    } finally {
+      LK.Link.netsim = was;
+    }
+  }
+}
+
 /* ---- the signaling server --------------------------------------------- */
 /*
  * `--real` runs everything below against the public PeerJS server instead of

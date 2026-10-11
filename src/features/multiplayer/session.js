@@ -82,6 +82,20 @@ const GONE_PING_MS = 1500;
  * draws past. 0 relays each snapshot the moment it arrives, as before.
  */
 export const BUNDLE_MS = 50;
+/*
+ * ...in a game big enough for it to matter (v56, "still laggy"). Bundling is
+ * for a lobby of eight, where relaying each snapshot was 735 packets a second
+ * from the host. In a game of three or four a player hears from two or three
+ * others — 30 to 45 packets a second, nothing for any Wi-Fi — and the wait
+ * only added up to 50 ms of jitter to every friend, on top of the network's
+ * own (tests/features/multiplayer.lag.mjs, NETS.wifi). So a player who hears
+ * from fewer than BUNDLE_FROM others gets each snapshot the moment it lands.
+ */
+export const BUNDLE_FROM = 4;
+/** How long the host may hold snapshots for a player who hears from `senders` others. */
+export function bundleFor(senders, bundleMs = BUNDLE_MS) {
+  return senders >= BUNDLE_FROM ? bundleMs : 0;
+}
 
 /*
  * Part 3b, admins (admin.js). An admin's freeze holds a player still this
@@ -583,7 +597,8 @@ export class HostSession {
   _queue(q, id, buf, now) {
     if (!q.out) q.out = new Map();
     q.out.set(id, buf);
-    if (now - (q.outAt ?? -Infinity) >= this.bundleMs) this._flush(q, now);
+    // Everybody but q, and the host itself: who q hears from.
+    if (now - (q.outAt ?? -Infinity) >= bundleFor(this.players.size, this.bundleMs)) this._flush(q, now);
   }
 
   _flush(q, now) {
@@ -721,7 +736,8 @@ export class HostSession {
       for (const p of this.players.values()) this._queue(p, 0, stateBuf, now);
     }
     // Whatever is still held for somebody goes once it is due, even if nothing new arrives to carry it.
-    for (const p of this.players.values()) if (p.out && p.out.size && now - (p.outAt ?? -Infinity) >= this.bundleMs) this._flush(p, now);
+    const wait = bundleFor(this.players.size, this.bundleMs);
+    for (const p of this.players.values()) if (p.out && p.out.size && now - (p.outAt ?? -Infinity) >= wait) this._flush(p, now);
     if (now - this._pingT >= PING_EVERY_MS) {
       this._pingT = now;
       for (const p of this.players.values()) p.link.send({ t: 'ping', ts: now });

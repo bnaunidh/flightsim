@@ -28,7 +28,7 @@ import { createAircraftModel, syncAircraftModel, groundOffsetFor } from '../../a
 import { getAircraft, specFor } from '../../aircraft/types.js';
 import { createBoat, createCar, updateVehicleModel } from '../../vehicles/models.js';
 import { VEHICLES } from '../../vehicles/surface.js';
-import { Track, Smoother, RotSmoother } from './interp.js';
+import { Track, Smoother, RotSmoother, LEAD_K } from './interp.js';
 import { QUICK_CHAT } from './protocol.js';
 import { RemoteWalker } from './walkers.js';
 
@@ -146,8 +146,14 @@ function tintVehicle(model, colour) {
  *     2 % by a kilometre and a half — readable, never a banner;
  *   - no two tags overlap: nearest first, a tag that would land on another
  *     steps up above it (twice at most), and one that still does not fit
- *     becomes a small dot in the player's colour, as does anybody past
- *     8 km — they are still there, and on the minimap;
+ *     becomes a small dot in the player's colour — they are still there,
+ *     and on the minimap;
+ *   - v56, "increase range": a tag is shown out to the far edge of the view
+ *     (it stopped at 8 km, past which a friend was an unnamed dot), and
+ *     neither tags nor dots are hazed by the fog — at 10 km on a cloudy day
+ *     the fog had washed a third of the colour out of them, on a rainy one
+ *     nearly all. Far off, the aeroplane itself is a one-draw-call stand-in
+ *     (impostor(), below) and then the dot under its tag.
  *   - a chat bubble sits over its own pill, and a player talking goes first.
  *
  * Part 3b: whoever hosts the game — a lobby's owner — has a small gold crown
@@ -166,14 +172,16 @@ const PILL_NEAR = 0.03;
 const PILL_FAR = 0.02;
 const NEAR_M = 60;
 const FAR_M = 1500;
-const TAG_MAX_M = 8000;
+/** As far as the camera sees (main.js: a 60 km far plane): the whole of any island. */
+const TAG_MAX_M = 60000;
 const PIP_FRAC = 0.012;
 export const TAG_LAYOUT = { TAG_W, TAG_H, PILL_Y, PILL_H, BUBBLE_H, PILL_NEAR, PILL_FAR, NEAR_M, FAR_M, TAG_MAX_M };
 
 function spriteOf(canvas, name) {
   const tex = new THREE.CanvasTexture(canvas);
   if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false });
+  // fog: false — a label, not a thing in the world; the haze took the far ones away.
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false, fog: false });
   const sprite = new THREE.Sprite(mat);
   sprite.renderOrder = 998;
   sprite.frustumCulled = false;
@@ -368,6 +376,49 @@ export function pillFraction(d) {
 const tmpP = new THREE.Vector3();
 
 /* ------------------------------------------------------------------ */
+/* Far off: a stand-in                                                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A friend's aeroplane a few pixels across is still the whole model — about
+ * 29 draw calls (tests/features/multiplayer-list2.browser.js) for a speck.
+ * So once the model would be under STANDIN_PX across, it is swapped for one
+ * mesh: a fuselage, a wing, a tailplane and a fin in their colour, 64
+ * triangles in one draw call, turned and sized as the real one is. Under
+ * PIP_PX it is the dot under their tag instead, out to the edge of the view.
+ */
+const STANDIN_PX = 6;
+const PIP_PX = 2.5;
+/** Always the real model this close, whatever the screen. */
+const MODEL_ALWAYS_M = 600;
+
+let standinGeo = null;
+/** One geometry for every stand-in: unit-sized (span 1.8), nose to −Z, made of four boxes merged into one. */
+function standinGeometry() {
+  if (standinGeo) return standinGeo;
+  const parts = [
+    [0.2, 0.2, 1.7, 0, 0, 0],        // fuselage
+    [1.8, 0.05, 0.36, 0, 0.02, -0.08], // wing
+    [0.72, 0.04, 0.22, 0, 0.04, 0.72], // tailplane
+    [0.04, 0.32, 0.26, 0, 0.2, 0.72],  // fin
+  ];
+  const pos = [];
+  const nor = [];
+  for (const [w, h, d, x, y, z] of parts) {
+    const g = new THREE.BoxGeometry(w, h, d).toNonIndexed();
+    g.translate(x, y, z);
+    pos.push(...g.attributes.position.array);
+    nor.push(...g.attributes.normal.array);
+    g.dispose();
+  }
+  standinGeo = new THREE.BufferGeometry();
+  standinGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  standinGeo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  standinGeo.computeBoundingSphere();
+  return standinGeo;
+}
+
+/* ------------------------------------------------------------------ */
 
 export class Remotes {
   constructor() {
@@ -414,6 +465,8 @@ export class Remotes {
       if (p.model && this.own && p.model.parent === this.own) disposeModel(p.model);
       p.model = null;
       p.modelKey = '';
+      // The stand-in was in the world's group too, and went with it.
+      p.lod = null;
       if (p.tag) {
         disposeTag(p.tag);
         p.tag = null;
@@ -442,7 +495,8 @@ export class Remotes {
   add(id, { name, colour, host = false, admin = false }) {
     let p = this.players.get(id);
     if (!p) {
-      p = { id, name, colour, track: new Track(), smooth: new Smoother({ snapSecs: 0.6, noBack: true }), rot: new RotSmoother(), drawn: null, quat: null, model: null, modelKey: '', tag: null, chat: null, chatUntil: 0, sample: null, dist: 0, visible: false, host: false, admin: false, walker: new RemoteWalker() };
+      // Every seam slid over (ignoreM): a 25 cm step passed straight through was a twitch at fifteen a second, close to.
+      p = { id, name, colour, track: new Track(), smooth: new Smoother({ snapSecs: 0.6, noBack: true, ignoreM: 0.02 }), rot: new RotSmoother(), drawn: null, quat: null, model: null, modelKey: '', tag: null, chat: null, chatUntil: 0, sample: null, dist: 0, visible: false, host: false, admin: false, walker: new RemoteWalker() };
       this.players.set(id, p);
     }
     p.name = name;
@@ -452,8 +506,39 @@ export class Remotes {
     if (p.colour !== colour) {
       p.colour = colour;
       this._release(p);
+      if (p.lod) p.lod.material = this._lodMat(colour);
     }
     return p;
+  }
+
+  /** The stand-in's paint: one material per colour, shared. */
+  _lodMat(colour) {
+    const mats = this._lodMats || (this._lodMats = new Map());
+    let m = mats.get(colour);
+    if (!m) {
+      /*
+       * Unlit, flat: under six pixels nobody sees shading. And a kind of
+       * material the game already draws with everywhere, so its shader is
+       * already built. The first version was lit (Lambert, which hardly
+       * anything else uses): its shader was compiled — with every light on
+       * the island in it — the first time a friend shrank to a stand-in, and
+       * in the Wi-Fi playtest that one frame took 22-24 SECONDS on a busy Mac.
+       */
+      m = new THREE.MeshBasicMaterial({ color: new THREE.Color(colour).multiplyScalar(0.8) });
+      mats.set(colour, m);
+    }
+    return m;
+  }
+
+  /** Their far-off stand-in (see standinGeometry), in the group the models are in. */
+  _standin(p, root) {
+    if (!p.lod) {
+      p.lod = new THREE.Mesh(standinGeometry(), this._lodMat(p.colour));
+      p.lod.name = `mp-standin-${p.id}`;
+      p.lod.matrixAutoUpdate = true;
+    }
+    if (root && p.lod.parent !== root) root.add(p.lod);
+    return p.lod;
   }
 
   remove(id) {
@@ -462,6 +547,8 @@ export class Remotes {
     this._release(p);
     if (p.tag) disposeTag(p.tag);
     p.tag = null;
+    if (p.lod) p.lod.removeFromParent();
+    p.lod = null;
     if (p.walker) p.walker.forget(true);
     this.players.delete(id);
     this._acs.delete(id);
@@ -482,6 +569,8 @@ export class Remotes {
     for (const id of [...this.players.keys()]) this.remove(id);
     for (const m of this.pool.values()) disposeModel(m);
     this.pool.clear();
+    if (this._lodMats) for (const m of this._lodMats.values()) m.dispose();
+    this._lodMats = null;
     if (this.own) {
       this.own.removeFromParent();
       this.own = null;
@@ -492,6 +581,12 @@ export class Remotes {
     const p = this.players.get(snap.id);
     if (!p) return false;
     return p.track.push(snap, now);
+  }
+
+  /** How long the fastest trip from their game to this one takes, ms (multiplayer.js, from the host's pings). */
+  setLatency(id, ms) {
+    const p = this.players.get(id);
+    if (p) p.track.setLatency(ms * LEAD_K);
   }
 
   /** Their game says their pilot was knocked down (../pilot-mp.js 'pilot:down'): the same fall, here. */
@@ -595,6 +690,23 @@ export class Remotes {
      * the others keep arriving has hitched, and is coasted to a stop; everybody
      * quiet at once is this player's own Wi-Fi, and they fly on (interp.js).
      */
+    // Pixels a metre covers at a metre away (half the viewport's height × the projection's y scale): sizes on screen.
+    const cam = sim && sim.camera;
+    const vh = (typeof window !== 'undefined' && window.innerHeight) || 720;
+    const pxPerM = ((cam && cam.projectionMatrix ? cam.projectionMatrix.elements[5] : 0) || 1.48) * (vh / 2);
+    /*
+     * The smoothers run on the wall clock, not the game's dt. After a long
+     * frame of this player's own (a hitch, a garbage collection) the game's dt
+     * is capped (main.js, 0.25 s) but the friends flew on for all of it, and
+     * the guess says so; with the capped dt the smoothers took the rest of
+     * the way as a seam — every friend held back a few metres, then surging
+     * to catch up, after every hitch. A second or more is a fresh start
+     * (Smoother and RotSmoother reset), as after a pause. Never less than
+     * the game's dt: a check that steps the game faster than the clock
+     * (sim.update(1 / 30) every 16 ms) moves its friends with the game.
+     */
+    const wall = this._nowAt != null && now > this._nowAt ? Math.max(dt, (now - this._nowAt) / 1000) : dt;
+    this._nowAt = now;
     let first = -Infinity;
     let second = -Infinity;
     for (const p of this.players.values()) {
@@ -613,6 +725,7 @@ export class Remotes {
       const stale = !s || p.track.stale(now);
       if (stale) {
         if (p.model) p.model.visible = false;
+        if (p.lod) p.lod.visible = false;
         if (p.walker) p.walker.hide();
         if (p.tag) p.tag.sprite.visible = p.tag.pip.visible = false;
         p.visible = false;
@@ -622,24 +735,32 @@ export class Remotes {
       }
       const snap = s.snap;
       // Where to draw them: the guess, with its seams smoothed over (see Smoother and RotSmoother).
-      const at = p.smooth.step(s.pos, s.vel, dt);
-      const q = p.rot.step(s.quat, this.drawMode === 'sample' ? null : s.omega, dt);
+      const at = p.smooth.step(s.pos, s.vel, wall);
+      const q = p.rot.step(s.quat, this.drawMode === 'sample' ? null : s.omega, wall);
       p.drawn = at;
       p.quat = q;
       const model = this._ensureModel(p, snap, sim);
       if (!model) continue;
       /*
-       * Too far to be more than a couple of pixels — a Skylark past about
-       * four kilometres, an airliner past twenty — the model is not drawn at
-       * all: seven remote aircraft were measured at 201 draw calls, about
-       * 29 each (tests/features/multiplayer-list2.browser.js), which is a
-       * lot to spend on specks on a school Chromebook. The tag or the dot
-       * still shows where they are.
+       * A speck is not worth the whole model: seven remote aircraft were
+       * measured at 201 draw calls, about 29 each
+       * (tests/features/multiplayer-list2.browser.js), which is a lot to
+       * spend on a few pixels on a school Chromebook.
        */
       const dm = me ? Math.hypot(at.x - me.x, at.y - me.y, at.z - me.z) : 0;
-      model.visible = dm < Math.max(MODEL_MIN_M, (model.userData.mpRadius || 6) * MODEL_PX_K);
-      p.visible = true;
       const kind = model.userData.mpKind;
+      const rad = model.userData.mpRadius || 6;
+      /*
+       * How many pixels across they are (v56): the real model while it is
+       * STANDIN_PX or more — or closer than MODEL_ALWAYS_M — then the
+       * one-draw-call stand-in, then the dot. A boat or a car has no
+       * stand-in: past the old distance it is the dot and its tag.
+       */
+      const px = dm > 0 ? (2 * rad * pxPerM) / dm : Infinity;
+      if (kind === 'air') model.visible = dm < MODEL_ALWAYS_M || px >= STANDIN_PX;
+      else model.visible = dm < Math.max(MODEL_MIN_M, rad * MODEL_PX_K);
+      p.visible = true;
+      p.far = px < PIP_PX || (kind !== 'air' && !model.visible);
       let gone = false;
       try {
         gone = !!(this.hidden && this.hidden(p.id));
@@ -647,6 +768,15 @@ export class Remotes {
         gone = false;
       }
       if (gone) model.visible = false;
+      const standin = kind === 'air' && !gone && !model.visible && px >= PIP_PX * 0.6;
+      if (standin) {
+        const lod = this._standin(p, this._root(sim));
+        lod.visible = true;
+        lod.position.set(at.x, at.y, at.z);
+        lod.quaternion.set(q.x, q.y, q.z, q.w);
+        // Its span about the real one's: the box's half-diagonal is about three-quarters of a span.
+        lod.scale.setScalar(rad * 0.74);
+      } else if (p.lod) p.lod.visible = false;
       if (!model.visible) {
         // Too far to draw: nothing to pose or animate either.
       } else if (kind === 'air') {
@@ -825,7 +955,9 @@ export class Remotes {
       const ay = ((1 - tmpP.y) / 2) * H;
       const hPx = (frac * TAG_H / PILL_H) * H;
       const pillW = (tag.pillW / TAG_W) * hPx * (TAG_W / TAG_H);
-      const bottom = ay - ((TAG_H - PILL_Y - PILL_H) / TAG_H) * hPx;
+      // Far off, the dot marks the aeroplane and the pill sits clear above it.
+      const lift = p.far ? (PIP_FRAC / 2) * H + 2 : 0;
+      const bottom = ay - ((TAG_H - PILL_Y - PILL_H) / TAG_H) * hPx - lift;
       const tall = ((tag.chat ? PILL_H + BUBBLE_H + 6 : PILL_H) / TAG_H) * hPx;
       const step = ((PILL_H + 6) / TAG_H) * hPx;
       let at = -1;
@@ -841,9 +973,10 @@ export class Remotes {
         tag.pip.visible = true;
         continue;
       }
-      sp.center.y = -at * ((PILL_H + 6) / TAG_H);
+      sp.center.y = -at * ((PILL_H + 6) / TAG_H) - lift / hPx;
       sp.visible = true;
-      tag.pip.visible = false;
+      // Too far off to be more than a speck: the dot marks the aeroplane, under its name.
+      tag.pip.visible = !!p.far;
     }
   }
 }

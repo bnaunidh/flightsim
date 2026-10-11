@@ -851,20 +851,33 @@ export function buildHud(ctrl, layer) {
       const visible = !!(mm && mm.visible && canvas && canvas.getBoundingClientRect && !el.hidden && (dots.length || more));
       if (!visible) {
         if (mini.style.display !== 'none') mini.style.display = 'none';
+        mini._was = false;
         return;
       }
-      // Where the minimap is, re-measured four times a second rather than forcing a layout every frame.
+      /*
+       * Where the minimap is, re-measured once a second — and at once when
+       * the window changes size or the minimap is shown again — rather than
+       * forcing a layout every frame. (Four times a second was still four
+       * forced layouts a second: by now in the frame the game's HUD has
+       * written to the page, so every measure lays the whole page out again.)
+       */
       const t = typeof performance !== 'undefined' ? performance.now() : 0;
-      if (!mini._rect || t - mini._rectAt > 250) {
+      const wh = `${window.innerWidth}x${window.innerHeight}`;
+      if (!mini._rect || t - mini._rectAt > 1000 || mini._wh !== wh || mini._was !== true) {
         mini._rect = canvas.getBoundingClientRect();
         mini._rectAt = t;
+        mini._wh = wh;
       }
+      mini._was = true;
       const r = mini._rect;
       if (!r.width) {
         if (mini.style.display !== 'none') mini.style.display = 'none';
         return;
       }
       if (mini.style.display === 'none') mini.style.display = '';
+      // At the minimap's own pace (thirty a second, ui/minimap.js), not every frame: on a 60 Hz screen, half the cost.
+      if (t - (mini._drawnAt ?? -Infinity) < 1000 / 31) return;
+      mini._drawnAt = t;
       // Moved only when the minimap has: four style strings a frame was review's count.
       if (mini._pl !== r.left || mini._pt !== r.top || mini._pw !== r.width || mini._ph !== r.height) {
         mini._pl = r.left;
