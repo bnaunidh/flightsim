@@ -4,24 +4,49 @@
  * ../aircraft-transport.js — ordered body stations, wing, tail, fin, gear,
  * engines and a decorate(ctx) for everything that makes the type itself.
  *
- * WHAT MAKES EACH ONE ITSELF FROM 300 m, which is what was checked in the
- * renders and what everything below is in service of:
+ * WHAT MAKES EACH ONE ITSELF, from 300 m and from the jet bridge:
  *
- *   A320  two engines, a slim tube, sharklets turned up at the tips
- *   747   the hump — a second, narrower loft on top of the first, running
- *         from the nose back to the wing — four engines, canted winglets
- *   A380  a fuselage that is taller than it is wide for its whole length,
- *         two full rows of windows, four engines under an enormous wing and
- *         the little triangular fences at the tips
+ *   A320  a slim tube; the Airbus nose — a blunt radome, the windscreen set
+ *         at a break in the top line, six panes in a black frame with no
+ *         eyebrow windows above them; two engines; sharklets
+ *   747   the hump: a second, narrower loft on the first, its front the
+ *         flight deck, the top line rising in one sweep from a low, round
+ *         nose; a row of upper-deck windows; four engines; canted winglets
+ *   A380  a fuselage taller than it is wide its whole length, the flight
+ *         deck BETWEEN the decks so a tall forehead stands above the
+ *         windscreen; two full rows of windows; four engines; wingtip fences
+ *
+ * THE REDO (brief item 1, "redo airliner models — like the cockpit and the
+ * cockpit window"). Before it the nose was six rings of the pack's lathe —
+ * a cone with a rounded tip — with dark patches laid on it for glass, and
+ * the livery was mapped once per fuselage section, so the cheatline stopped
+ * at every joint and the pack's light-aeroplane anti-glare patch sat on the
+ * crown of each section. Now (./airliner-kit.js):
+ *
+ *   - the fuselage is the civil kit's hull: superellipse sections through a
+ *     dense nose table drawn per type, cut into the pack's nose, cabin and
+ *     tail sections afterwards so the crash code still breaks it up;
+ *   - its livery is painted for the airframe — a cheatline that runs the
+ *     length, a grey belly, every door's outline — in the type's colours or
+ *     the game's livery scheme (cheatline colour, tail, registration);
+ *   - the flight deck is six panes per type in black frames, dark tinted
+ *     glass that reflects the sky, and a wiper on each windscreen;
+ *   - cabin windows are rounded, one instanced draw for the aeroplane;
+ *   - every passenger door and exit is a named group that opens
+ *     (model.userData.doors; the table is AIRLINER_DOORS in
+ *     ../../aircraft/extra/airliners.js);
+ *   - the engines are high-bypass turbofans: lip, fan cowl, fan nozzle,
+ *     core cowl, plug.
  *
  * GEOMETRY THAT THE FLIGHT MODEL SHARES. Tyre contact points, the belly, the
  * wing tips and the tail-strike point all come from AIRLINER_GEOMETRY in
  * ../../aircraft/extra/airliners.js, which is also what the physics shape is
  * derived from. The underside of each tail cone was drawn against the strike
- * angle: the physics tail point (0.12 × scale below the centre of gravity)
- * sits on the drawn underside, and the drawn underside nowhere dips below
- * the line from the main wheels at that angle — measured in the test,
- * tests/features/airliners.mjs, not asserted here.
+ * angle: the physics tail point sits on the drawn underside, and the drawn
+ * underside nowhere dips below the line from the main wheels at that angle —
+ * measured in the test, tests/features/airliners.mjs, not asserted here.
+ * The nose tip, the eye and the span are pinned there too; the redo moved
+ * none of them.
  *
  * Proportions against the real aeroplanes (span : length):
  *   A320  35.80 × 37.57 m  0.953  (with sharklets)
@@ -30,8 +55,14 @@
  */
 
 import * as THREE from '../../vendor/three.module.js';
-import { addInstanced, makeMaterial } from '../common.js';
+import { addInstanced } from '../common.js';
+import { aircraftDecalTexture } from '../aircraft-textures.js';
 import { AIRLINER_GEOMETRY as GEO } from '../../aircraft/extra/airliners.js';
+import { hull } from '../../aircraft/models/civil-kit.js';
+import {
+  piecewise, loftFuselage, placeFuselage, splitByZ, liveryTexture, airlinerMaterials, glazing,
+  windowRows, buildDoors, turbofan, registration, meshOf, remapUV, DECAL,
+} from './airliner-kit.js';
 
 const mix = (a, b, t) => a + (b - a) * t;
 const clamp = THREE.MathUtils.clamp;
@@ -39,81 +70,6 @@ const clamp = THREE.MathUtils.clamp;
 /* ------------------------------------------------------------------ *
  * Shared construction helpers. Everything here runs once, at build time.
  * ------------------------------------------------------------------ */
-
-/** [rx, ry, cy] of a loft at station z, interpolated exactly as the core does. */
-function profile(stations, z) {
-  let k = 0;
-  while (k < stations.length - 2 && stations[k + 1][0] < z) k++;
-  const a = stations[k];
-  const b = stations[k + 1];
-  const t = clamp((z - a[0]) / (b[0] - a[0]), 0, 1);
-  return [mix(a[1], b[1], t), mix(a[2], b[2], t), mix(a[3] || 0, b[3] || 0, t)];
-}
-
-/** A point on a loft: phi from the top (0) round to the side (pi/2). */
-function onLoft(stations, z, phi, off = 0) {
-  const [rx, ry, cy] = profile(stations, z);
-  return [(rx + off) * Math.sin(phi), cy + (ry + off) * Math.cos(phi), z];
-}
-
-/** The point on the loft's right-hand side at height y (x > 0). */
-function atHeight(stations, z, y, off = 0) {
-  const [rx, ry, cy] = profile(stations, z);
-  const d = clamp((y - cy) / (ry + off), -0.999, 0.999);
-  const x = (rx + off) * Math.sqrt(1 - d * d);
-  // Outward normal of the ellipse at that point.
-  const nx = x / ((rx + off) * (rx + off));
-  const ny = (y - cy) / ((ry + off) * (ry + off));
-  const n = Math.hypot(nx, ny) || 1;
-  return { x, n: [nx / n, ny / n] };
-}
-
-function own(ctx, geo) {
-  return ctx.model.userData.ownGeometry(geo);
-}
-
-function meshOf(ctx, name, geo, mat, parent) {
-  const m = new THREE.Mesh(own(ctx, geo), mat);
-  m.name = name;
-  m.castShadow = !mat.transparent;
-  m.receiveShadow = true;
-  parent.add(m);
-  return m;
-}
-
-/** Flip every triangle of an indexed or non-indexed geometry. */
-function flipWinding(geo) {
-  if (geo.index) {
-    const ix = geo.index;
-    for (let i = 0; i < ix.count; i += 3) {
-      const a = ix.getX(i + 1);
-      ix.setX(i + 1, ix.getX(i + 2));
-      ix.setX(i + 2, a);
-    }
-    ix.needsUpdate = true;
-  }
-  geo.computeVertexNormals();
-}
-
-/**
- * A curved patch laid on a surface: fn(u, v) -> [x, y, z]. `outward` gives the
- * direction the face must point at its middle; the winding is flipped to
- * match, so nothing here depends on remembering which way PlaneGeometry winds.
- */
-function surfacePatch(ctx, name, fn, nu, nv, mat, parent, outward) {
-  const geo = new THREE.PlaneGeometry(1, 1, nu, nv);
-  const p = geo.attributes.position;
-  const uv = geo.attributes.uv;
-  for (let i = 0; i < p.count; i++) p.setXYZ(i, ...fn(uv.getX(i), uv.getY(i)));
-  geo.computeVertexNormals();
-  const mid = fn(0.5, 0.5);
-  const want = outward(mid);
-  const nrm = new THREE.Vector3();
-  const idx = Math.floor(p.count / 2);
-  nrm.fromBufferAttribute(geo.attributes.normal, idx);
-  if (nrm.x * want[0] + nrm.y * want[1] + nrm.z * want[2] < 0) flipWinding(geo);
-  return meshOf(ctx, name, geo, mat, parent);
-}
 
 /**
  * A thin closed plate from a four-cornered outline — a winglet, a pylon, a
@@ -181,26 +137,101 @@ function wingAt(w, x) {
  * Tyres, bogies, legs.
  * ------------------------------------------------------------------ */
 
-const _qz = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI / 2));
+/**
+ * A wheel, axle along X: the tyre's tread and sloping sidewalls in black and
+ * the hub dish in grey, one lathe with vertex colours so a leg's wheels are
+ * one instanced draw. Sixteen round — a multiple of four, which puts a vertex
+ * at the very bottom (the tyre's lowest point is exactly -r, where the
+ * physics has its contact); twelve read as a dodecagon in the hangar's gear
+ * close-up.
+ */
+let _tyreGeos = new Map();
+function tyreGeometry(r, width) {
+  const key = `${r.toFixed(3)}|${width.toFixed(3)}`;
+  if (_tyreGeos.has(key)) return _tyreGeos.get(key);
+  const hub = r * 0.5;
+  const w = width / 2;
+  // Six points, five strips, 160 triangles a wheel: a 747 carries eighteen.
+  const pts = [
+    new THREE.Vector2(hub * 0.5, -w * 0.52), // hub face, dished in
+    new THREE.Vector2(hub, -w * 0.66), // hub rim, where the sidewall starts
+    new THREE.Vector2(r, -w), // shoulder
+    new THREE.Vector2(r, w),
+    new THREE.Vector2(hub, w * 0.66),
+    new THREE.Vector2(hub * 0.5, w * 0.52),
+  ];
+  const g = new THREE.LatheGeometry(pts, 16);
+  g.rotateZ(Math.PI / 2);
+  // Colour by profile point: the two innermost rings each side are the hub.
+  // (LatheGeometry lays its vertices segment-major: point j of segment i is
+  // vertex i * points + j.)
+  const n = g.attributes.position.count;
+  const col = new Float32Array(n * 3);
+  // Vertex colours are linear, not sRGB: the pack's rubber is #15171a, which
+  // is 0.007 linear, and a hub of #999 is 0.32.
+  for (let i = 0; i < n; i++) {
+    const ring = i % pts.length;
+    const isHub = ring <= 1 || ring >= pts.length - 2;
+    const c = isHub ? 0.32 : 0.007;
+    col[i * 3] = c;
+    col[i * 3 + 1] = c;
+    col[i * 3 + 2] = c * (isHub ? 1.04 : 1.25);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  _tyreGeos.set(key, g);
+  return g;
+}
 
-/** Instanced tyres, axles along X. One material, so one draw call per leg (the core's three-material tyre is three). */
-function tyres(ctx, parent, name, centres, r, width) {
-  const geo = new THREE.CylinderGeometry(r, r, width, 14);
-  const m = ctx.materials;
+/** Instanced wheels, axles along X. One draw call per leg. Named 'tyres': groundOffsetFor() measures the lowest tyre. */
+function tyres(ctx, parent, name, centres, r, width, mat) {
+  const geo = tyreGeometry(r, width);
   const mats = centres.map((c) =>
-    new THREE.Matrix4().compose(new THREE.Vector3(...c), _qz, new THREE.Vector3(1, 1, 1))
+    new THREE.Matrix4().compose(new THREE.Vector3(...c), new THREE.Quaternion(), new THREE.Vector3(1, 1, 1))
   );
-  const mesh = addInstanced(ctx.model, parent, name, geo, m.rubber, mats);
+  const mesh = addInstanced(ctx.model, parent, name, geo, mat, mats);
   mesh.computeBoundingBox();
   mesh.computeBoundingSphere();
   return mesh;
+}
+
+/** The point a fraction `t` of the way along the vector `v`, plus an offset. */
+const along3 = (v, t, dx = 0, dy = 0, dz = 0) => [v.x * t + dx, v.y * t + dy, v.z * t + dz];
+
+/**
+ * The oleo and its linkage, on a leg whose strut runs from the trunnion (the
+ * group's origin) down `rel` to the axle: the outer cylinder over the upper
+ * three fifths, a collar at its foot, the torque links — the scissor on the
+ * front that keeps the wheels pointing the way the leg does — and a brace.
+ * The core's thin strut stays inside as the sliding piston (it animates with
+ * the compression). `brace`: 'aft' (a nose leg: up and back into the bay) or
+ * a side (+1/-1: a main leg's side stay, inboard towards the fuselage).
+ */
+function oleo(ctx, leg, rel, { oleo: R, r, mats, brace = 'aft', side = 0 }) {
+  const G = mats.gear;
+  const len = rel.length();
+  ctx.tube('Oleo cylinder', [0, 0.12, 0], along3(rel, 0.6), R, G, leg, 10);
+  ctx.tube('Oleo collar', along3(rel, 0.52), along3(rel, 0.62), R * 1.2, G, leg, 10);
+  // Torque links: upper arm from the collar, lower arm from above the axle, knee forward.
+  const a = along3(rel, 0.62, 0, 0, -R * 0.95);
+  const knee = along3(rel, 0.81, 0, 0, -R * 2.7);
+  const b = along3(rel, 1.0, 0, r * 0.3, -R * 0.95);
+  ctx.tube('Torque link', a, knee, R * 0.3, G, leg, 6);
+  ctx.tube('Torque link', knee, b, R * 0.28, G, leg, 6);
+  ctx.tube('Torque link pin', along3(rel, 0.81, -R * 0.45, 0, -R * 2.7), along3(rel, 0.81, R * 0.45, 0, -R * 2.7), R * 0.14, G, leg, 6);
+  if (brace === 'aft') {
+    ctx.tube('Drag brace', [0, 0.02, len * 0.45], along3(rel, 0.6, 0, 0, R * 0.6), R * 0.42, G, leg, 8);
+  } else {
+    const inboard = -(side || 1);
+    ctx.tube('Side stay', [inboard * len * 0.55, 0.02, 0], along3(rel, 0.6, inboard * R * 0.6), R * 0.42, G, leg, 8);
+  }
 }
 
 /**
  * A bogie: a beam with `axles` pairs of wheels, centred on its own pivot so
  * it can be tilted. Returned group is positioned by the caller.
  */
-function bogie(ctx, parent, label, { axles, pitch, track, r, width }) {
+function bogie(ctx, parent, label, { axles, pitch, track, r, width, mats }) {
   const g = new THREE.Group();
   g.name = label;
   parent.add(g);
@@ -210,37 +241,67 @@ function bogie(ctx, parent, label, { axles, pitch, track, r, width }) {
     const z = -half + i * pitch;
     for (const x of [-track / 2, track / 2]) centres.push([x, 0, z]);
   }
-  tyres(ctx, g, `${label} tyres`, centres, r, width);
-  ctx.box(`${label} beam`, [0.26, 0.24, half * 2 + r * 0.9], [0, r * 0.15, 0], ctx.materials.metal, g);
+  tyres(ctx, g, `${label} tyres`, centres, r, width, mats.tyre);
+  ctx.box(`${label} beam`, [r * 0.42, r * 0.4, half * 2 + r * 0.9], [0, r * 0.12, 0], mats.gear, g);
   for (let i = 0; i < axles; i++) {
-    ctx.tube(`${label} axle`, [-track / 2, 0, -half + i * pitch], [track / 2, 0, -half + i * pitch], 0.07, ctx.materials.metal, g, 6);
+    ctx.tube(`${label} axle`, [-track / 2 - width * 0.3, 0, -half + i * pitch], [track / 2 + width * 0.3, 0, -half + i * pitch], r * 0.12, mats.gear, g, 8);
+  }
+  // The brake packs: a drum inside each wheel pair, between the tyres.
+  for (let i = 0; i < axles; i++) {
+    ctx.tube(`${label} brakes`, [-track / 2 + width * 0.55, 0, -half + i * pitch], [track / 2 - width * 0.55, 0, -half + i * pitch], r * 0.45, mats.hub, g, 10);
   }
   return g;
 }
 
 /**
- * Replace the core's single tyre on a leg with the real arrangement.
+ * Replace the core's single tyre and bare strut on a leg with the real
+ * arrangement: the oleo and its linkage (see oleo()), then
  *
  *   dual   two wheels side by side on the axle (A320 mains, every nose leg);
  *          they stay in the core's rolling wheel group, so they still steer
  *          and turn
  *   bogie  a tilting beam of 2 or 3 axle pairs (747 and A380 wing gear)
+ *
+ * and the doors that stay open with the gear down: a nose leg's two aft
+ * doors, hinged at the bay's edges and hanging beside the strut; a main
+ * leg's door on the outboard side of the strut. (The forward bay doors of a
+ * real airliner close again once the gear is down, so they are painted on
+ * the belly by the livery, not drawn.)
  */
 function refitLeg(ctx, legId, opt) {
   const leg = ctx.parts[legId];
   if (!leg) return null;
+  const mats = opt.mats;
   const wheel = findByName(leg, 'Rolling wheels');
   const axle = findByName(leg, 'Suspending axle');
   const steering = findByName(leg, 'Wheel steering');
   const old = wheel && wheel.children.find((c) => c.name === 'Tyres and hubs');
   if (old) old.removeFromParent();
-  // A fatter oleo cylinder over the top half of the core's thin strut.
   const rel = steering ? steering.position : new THREE.Vector3(0, -1, 0);
-  ctx.tube('Oleo cylinder', [0, 0.1, 0], [rel.x * 0.55, rel.y * 0.55, rel.z * 0.55], opt.oleo, ctx.materials.metal, leg, 8);
+  const len = rel.length();
+  const side = Math.sign(leg.position.x) || 0;
+  oleo(ctx, leg, rel, { oleo: opt.oleo, r: opt.r, mats, brace: side ? 'side' : 'aft', side });
   if (opt.kind === 'dual') {
-    tyres(ctx, wheel, 'Twin tyres', [[-opt.track / 2, 0, 0], [opt.track / 2, 0, 0]], opt.r, opt.width);
-    return null;
+    // The axle through both wheels turns with the steering but not with the wheels.
+    if (steering) ctx.tube('Axle', [-opt.track / 2 - opt.width * 0.3, 0, 0], [opt.track / 2 + opt.width * 0.3, 0, 0], opt.r * 0.13, mats.gear, steering, 8);
+    tyres(ctx, wheel, 'Twin tyres', [[-opt.track / 2, 0, 0], [opt.track / 2, 0, 0]], opt.r, opt.width, mats.tyre);
   }
+  if (!side) {
+    // Nose gear: two aft doors, hinged at the bay edges, hanging either side
+    // of the strut and canted out a little.
+    const h = len * 0.46;
+    for (const s of [-1, 1]) {
+      const door = ctx.box('Nose gear door', [0.03, h, opt.track * 0.95], [s * (opt.oleo * 1.3 + 0.06), -h / 2 - 0.02, 0.1], mats.nacelle, leg);
+      door.rotation.z = s * 0.07;
+      door.castShadow = true;
+    }
+  } else {
+    // Main gear: the leg door on the outboard side of the strut.
+    const h = len * 0.72;
+    const door = ctx.box('Gear leg door', [0.035, h, Math.max(opt.r * 2.6, (opt.pitch || 0) * 0.9)], [side * (opt.oleo * 1.5 + 0.1), -h / 2 - 0.02, 0], mats.nacelle, leg);
+    door.castShadow = true;
+  }
+  if (opt.kind === 'dual') return null;
   const b = bogie(ctx, axle, `${legId} bogie`, opt);
   b.position.copy(rel);
   return b;
@@ -250,14 +311,16 @@ function refitLeg(ctx, legId, opt) {
  * A body-gear leg the core does not know about (747: four wheels, A380: six),
  * with its own retraction — forwards into the belly, as the real ones go.
  */
-function bodyLeg(ctx, side, { x, z, attachY, contactY, axles, pitch, track, r, width, oleo, mass }) {
+function bodyLeg(ctx, side, { x, z, attachY, contactY, axles, pitch, track, r, width, oleo: R, mass, mats }) {
   const id = side < 0 ? 'leftBodyGear' : 'rightBodyGear';
   const g = ctx.group(id, side < 0 ? 'Port body landing gear' : 'Starboard body landing gear', mass, 'fuselage', ctx.parts.fuselage);
   g.position.set(side * x, attachY, z);
   const drop = contactY + r - attachY; // negative: from the attach down to the axle
-  ctx.tube('Body gear oleo', [0, 0.1, 0], [0, drop, 0], oleo, ctx.materials.metal, g, 8);
-  ctx.tube('Body gear drag brace', [0, drop * 0.35, -0.9], [0, drop * 0.8, 0], oleo * 0.45, ctx.materials.metal, g, 6);
-  const b = bogie(ctx, g, `${id} bogie`, { axles, pitch, track, r, width });
+  const rel = new THREE.Vector3(0, drop, 0);
+  // The piston, the full length (the core draws this for its own legs).
+  ctx.tube('Body gear piston', [0, 0, 0], [0, drop, 0], R * 0.62, mats.gear, g, 8);
+  oleo(ctx, g, rel, { oleo: R, r, mats, brace: 'aft' });
+  const b = bogie(ctx, g, `${id} bogie`, { axles, pitch, track, r, width, mats });
   b.position.set(0, drop, 0);
   return { leg: g, bogie: b };
 }
@@ -310,218 +373,6 @@ function levelBogies(ctx, bogies, pivotZ) {
  * ------------------------------------------------------------------ */
 
 /**
- * Every cabin window of the aeroplane as ONE instanced mesh — both sides,
- * every deck — so three hundred windows are a single draw call. Each pane is
- * turned to the fuselage's own surface normal at its height, not just faced
- * sideways, so the upper deck windows lean in with the roof as they should.
- */
-function windowRows(ctx, stations, rows, parent) {
-  const mats = [];
-  const up = new THREE.Vector3(0, 1, 0);
-  const pos = new THREE.Vector3();
-  const tgt = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-  const scl = new THREE.Vector3();
-  const look = new THREE.Matrix4();
-  for (const row of rows) {
-    for (let i = 0; i < row.count; i++) {
-      const z = mix(row.z0, row.z1, row.count === 1 ? 0.5 : i / (row.count - 1));
-      if ((row.skip || []).some(([a, b]) => z > a && z < b)) continue;
-      const { x, n } = atHeight(row.st || stations, z, row.y, 0.02);
-      for (const side of [-1, 1]) {
-        pos.set(side * x, row.y, z);
-        tgt.set(pos.x + side * n[0], pos.y + n[1], pos.z);
-        // Matrix4.lookAt points +Z from target to eye: eye outside, target on the skin.
-        look.lookAt(tgt, pos, up);
-        quat.setFromRotationMatrix(look);
-        scl.set(row.w, row.h, 1);
-        mats.push(new THREE.Matrix4().compose(pos, quat, scl));
-      }
-    }
-  }
-  const geo = new THREE.PlaneGeometry(1, 1);
-  const mesh = addInstanced(ctx.model, parent, 'Cabin window rows', geo, ctx.materials.dark, mats);
-  mesh.castShadow = false;
-  mesh.computeBoundingSphere();
-  return mesh;
-}
-
-/**
- * Door outlines: a thin dark seam laid ON the skin, and a porthole.
- *
- * They were a flat white card on a dark card, tangent to the fuselage at the
- * door's middle: a 1.9 m door on a 4 m tube, so the card stood off the skin
- * by its middle and sank into it at the top and bottom, and its flat paint lit
- * brighter than the curved skin round it and cut the cheatline in two. Seen
- * from the apron — which is where the walker and the ramp crew see them — a
- * row of white stickers. Now the seam is a strip that follows the skin, the
- * skin and its cheatline show through inside it, and nothing is painted over.
- */
-function doors(ctx, stations, list, parent) {
-  const SEAM = 0.045;
-  const OFF = 0.012;
-  const pos = [];
-  const idx = [];
-  const a = new THREE.Vector3();
-  const b = new THREE.Vector3();
-  const c = new THREE.Vector3();
-  const vert = (st, side, z, y) => {
-    const { x } = atHeight(st, z, y, OFF);
-    pos.push(side * x, y, z);
-    return pos.length / 3 - 1;
-  };
-  // A strip from (z0, y0) to (z1, y1), SEAM wide toward the door's middle.
-  const strip = (st, side, z0, y0, z1, y1, iz, iy, n) => {
-    const base = pos.length / 3;
-    for (let i = 0; i <= n; i++) {
-      const t = i / n;
-      const z = z0 + (z1 - z0) * t;
-      const y = y0 + (y1 - y0) * t;
-      vert(st, side, z, y);
-      vert(st, side, z + iz * SEAM, y + iy * SEAM);
-    }
-    for (let i = 0; i < n; i++) {
-      const o = base + i * 2;
-      for (const [p, q, r] of [[o, o + 2, o + 1], [o + 1, o + 2, o + 3]]) {
-        // Wound to face out of the fuselage on either side.
-        a.fromArray(pos, p * 3);
-        b.fromArray(pos, q * 3).sub(a);
-        c.fromArray(pos, r * 3).sub(a);
-        if (b.cross(c).x * side >= 0) idx.push(p, q, r);
-        else idx.push(p, r, q);
-      }
-    }
-  };
-  const ports = [];
-  const up = new THREE.Vector3(0, 1, 0);
-  const look = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  for (const d of list) {
-    const st = d.st || stations;
-    const hz = d.w / 2;
-    /*
-     * Never below the skin's own belly or over its crown: where the tail cone
-     * rises under the last door (the A380's aft door hangs 0.2 m below it),
-     * a seam that follows the skin would wrap round under the fuselage.
-     */
-    let lo = d.y - d.h / 2;
-    let hi = d.y + d.h / 2;
-    for (const z of [d.z - hz, d.z + hz]) {
-      const [, ry, cy] = profile(st, z);
-      lo = Math.max(lo, cy - ry * 0.9);
-      hi = Math.min(hi, cy + ry * 0.9);
-    }
-    const hy = Math.max(0.2, (hi - lo) / 2);
-    const dy = (hi + lo) / 2;
-    for (const side of [-1, 1]) {
-      strip(st, side, d.z - hz, dy - hy, d.z - hz, dy + hy, 1, 0, 8); // fore edge
-      strip(st, side, d.z + hz, dy - hy, d.z + hz, dy + hy, -1, 0, 8); // aft edge
-      strip(st, side, d.z - hz, dy + hy, d.z + hz, dy + hy, 0, -1, 2); // top
-      strip(st, side, d.z - hz, dy - hy, d.z + hz, dy - hy, 0, 1, 2); // sill
-      // The porthole, on the skin at its own height.
-      const py = dy + hy * 0.44;
-      const { x, n } = atHeight(st, d.z, py, 0.02);
-      const p = new THREE.Vector3(side * x, py, d.z);
-      look.lookAt(p.clone().add(new THREE.Vector3(side * n[0], n[1], 0)), p, up);
-      q.setFromRotationMatrix(look);
-      ports.push(new THREE.Matrix4().compose(p, q, new THREE.Vector3(0.2, 0.28, 1)));
-    }
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setIndex(idx);
-  geo.computeVertexNormals();
-  const seams = meshOf(ctx, 'Door seams', geo, ctx.materials.dark, parent);
-  seams.castShadow = false;
-  const m = addInstanced(ctx.model, parent, 'Door windows', new THREE.PlaneGeometry(1, 1), ctx.materials.dark, ports);
-  m.castShadow = false;
-  m.computeBoundingSphere();
-}
-
-/**
- * The flight-deck glazing: each pane a dark curved patch laid on the nose,
- * with a thin sheet of reflective glass just outside it. Both are one-sided
- * and face outwards, so from the cockpit they are culled and the view out is
- * clear.
- */
-function flightDeck(ctx, stations, panes, parent) {
-  /*
-   * The game's glass is double-sided so a bubble canopy shows from inside.
-   * Here that put six large tinted trapezoids across the cockpit view with
-   * clear gaps between them where the (culled) frames are — seen in the game
-   * from the 747's left seat. One-sided, the outside keeps its reflective
-   * glazing and the inside gets the same clean view every other aeroplane
-   * has in the default cockpit view.
-   */
-  const glass = ctx.model.userData.ownMaterial(ctx.materials.glass.clone());
-  glass.side = THREE.FrontSide;
-  glass.name = 'Aircraft_flight_deck_glazing';
-  for (const p of panes) {
-    for (const side of [-1, 1]) {
-      const fn = (off) => (u, v) => {
-        const z = mix(p.z0, p.z1, v);
-        const phi = mix(mix(p.phi0[0], p.phi0[1], v), mix(p.phi1[0], p.phi1[1], v), u);
-        const q = onLoft(stations, z, phi, off);
-        return [side * q[0], q[1], q[2]];
-      };
-      const outward = ([x, y, z]) => {
-        const [, , cy] = profile(stations, z);
-        return [x, y - cy, 0];
-      };
-      // Eight rows along the aeroplane, not two: a pane that crosses a loft
-      // station is laid over a crease in the skin, and with only its edges and
-      // middle on the surface the crease poked through the glass as a white
-      // chevron (seen in the 747 render, where the pane spans z = -29.2).
-      surfacePatch(ctx, 'Flight deck window', fn(0.04), 3, 8, ctx.materials.dark, parent, outward);
-      surfacePatch(ctx, 'Flight deck glass', fn(0.055), 3, 8, glass, parent, outward);
-    }
-  }
-}
-
-/* ------------------------------------------------------------------ *
- * Engines, pylons, wing details.
- * ------------------------------------------------------------------ */
-
-/**
- * Turn the core's jet pod into a high-bypass turbofan: its own pylon rising
- * from the nacelle to the wing (the core's generic pylon is removed — it
- * stands vertically at mid-nacelle and misses a swept wing's leading edge),
- * a grey core cowl stepping down out of the fan duct, and an exhaust plug.
- */
-function turbofans(ctx) {
-  const w = ctx.config.wing;
-  const m = ctx.materials;
-  for (const e of ctx.config.engines) {
-    const g = ctx.parts[e.id];
-    if (!g) continue;
-    const old = g.children.filter((c) => c.name === 'Engine support pylon');
-    for (const o of old) o.removeFromParent();
-    const r = e.radius;
-    const L = e.length;
-    const zf = e.z - L / 2;
-    const zb = e.z + L / 2;
-    // Core cowl and plug.
-    const cowl = new THREE.CylinderGeometry(r * 0.4, r * 0.55, L * 0.42, 16, 1, true);
-    cowl.rotateX(Math.PI / 2);
-    cowl.translate(e.x, e.y, zb + L * 0.21);
-    meshOf(ctx, 'Core cowl', cowl, m.metal, g);
-    const plug = new THREE.CylinderGeometry(0.02, r * 0.27, L * 0.3, 12);
-    plug.rotateX(Math.PI / 2);
-    plug.translate(e.x, e.y, zb + L * 0.42 + L * 0.15);
-    meshOf(ctx, 'Exhaust plug', plug, m.dark, g);
-    // Pylon: sloped leading edge from the top of the fan cowl up to the wing.
-    const wa = wingAt(w, e.x);
-    const topY = e.y + r * 0.93;
-    plate(ctx, 'Engine pylon', [
-      [e.x, topY - 0.12, zf + L * 0.3],
-      [e.x, e.y + r * 0.5, zb + L * 0.32],
-      [e.x, wa.mid, wa.le + wa.chord * 0.55],
-      [e.x, wa.under + 0.05, wa.le - 0.25],
-    ], r * 0.3, m.skin, g);
-  }
-}
-
-/**
  * The trailing edge of an airliner wing is cranked: unswept inboard of the
  * engines, swept outboard. The core lofts a straight taper, so the inboard
  * trailing edge is filled in here — without it the wing looks like a
@@ -542,8 +393,12 @@ function trailingEdgeFill(ctx, kinkX, extra, thickness) {
   }
 }
 
-/** The fin in livery colour: an overlay a shade proud of the core's fin. */
-function paintFin(ctx, from = 0.1) {
+/**
+ * The fin in livery colour: an overlay a shade proud of the core's fin.
+ * `mat` must be a decal material (polygon offset, see airliner-kit DECAL):
+ * dress() makes one, since the shell and the fin are millimetres apart.
+ */
+function paintFin(ctx, mat, from = 0.1) {
   const fc = ctx.config.fin;
   const fin = ctx.parts.verticalFin;
   if (!fc || !fin) return;
@@ -558,7 +413,7 @@ function paintFin(ctx, from = 0.1) {
       fc.rootZ + fc.sweep * t + (0.012 + (p.getZ(i) + 0.5) * 0.735) * ch);
   }
   geo.computeVertexNormals();
-  meshOf(ctx, 'Painted fin', geo, ctx.materials.accent, fin);
+  meshOf(ctx, 'Painted fin', geo, mat, fin);
   // And the rudder, which is its own hinged group in the core: painted in the
   // rudder's own frame so it swings with it.
   const rudder = findByName(fin, 'Rudder');
@@ -574,55 +429,241 @@ function paintFin(ctx, from = 0.1) {
       fc.rootZ + fc.sweep * t + (0.775 + (q.getZ(i) + 0.5) * 0.215) * ch - piv.z);
   }
   rg.computeVertexNormals();
-  meshOf(ctx, 'Painted rudder', rg, ctx.materials.accent, rudder);
+  meshOf(ctx, 'Painted rudder', rg, mat, rudder);
+}
+
+
+/** The pylon: from the top of the fan cowl up into the wing's leading edge. */
+function pylon(ctx, e, mat) {
+  const w = ctx.config.wing;
+  const g = ctx.parts[e.id];
+  if (!g) return;
+  const r = e.radius;
+  const L = e.length;
+  const zf = e.z - L / 2;
+  const zb = e.z + L / 2;
+  const wa = wingAt(w, e.x);
+  const topY = e.y + r * 0.93;
+  plate(ctx, 'Engine pylon', [
+    [e.x, topY - 0.12, zf + L * 0.3],
+    [e.x, e.y + r * 0.5, zb + L * 0.32],
+    [e.x, wa.mid, wa.le + wa.chord * 0.55],
+    [e.x, wa.under + 0.05, wa.le - 0.25],
+  ], r * 0.3, mat, g);
 }
 
 /** The APU exhaust at the very tip of the tail cone. */
-function apu(ctx, stations) {
-  const last = stations[stations.length - 1];
-  const tube = new THREE.CylinderGeometry(last[1] * 1.6, last[1] * 2.2, 0.5, 10, 1, true);
+function apu(ctx, last) {
+  const tube = new THREE.CylinderGeometry(last.w * 1.6, last.w * 2.2, 0.5, 10, 1, true);
   tube.rotateX(Math.PI / 2);
-  tube.translate(0, last[3], last[0] - 0.2);
+  tube.translate(0, last.yc, last.z - 0.2);
   meshOf(ctx, 'APU exhaust', tube, ctx.materials.dark, ctx.parts.tail);
 }
 
-/**
- * Open the seams between the three fuselage sections.
- *
- * The core lofts the nose, cabin and tail as separate closed cylinders so each
- * can break away on its own, and every closed cylinder has a lid at each end.
- * The lid at the back of the nose section faces aft — straight at the pilot,
- * whose eye is behind it on all three of these. From the cockpit view the
- * whole windscreen was a white disc 0.4 m away (found by raycasting from the
- * A380's eye: "Tapered nose", normal +Z, 0.40 m). The internal lids are never
- * seen from outside, so they go; the tip caps at the nose and tail stay.
- */
-function openSeams(ctx) {
-  const drop = (mesh, top, bottom) => {
-    const g = mesh && mesh.geometry;
-    if (!g || !g.index || g.groups.length < 3) return;
-    const idx = g.index.array;
-    const keep = [];
-    g.groups.forEach((gr, i) => {
-      // CylinderGeometry: group 1 is the top cap (the front station, as
-      // skin() maps it), group 2 the bottom cap (the last station).
-      if ((i === 1 && top) || (i === 2 && bottom)) return;
-      for (let k = gr.start; k < gr.start + gr.count; k++) keep.push(idx[k]);
-    });
-    g.setIndex(keep);
-    g.clearGroups();
-  };
-  const find = (part, name) => part && part.children.find((c) => c.name === name);
-  drop(find(ctx.parts.nose, 'Tapered nose'), false, true);
-  drop(find(ctx.parts.fuselage, 'Shaped cabin fuselage'), true, true);
-  drop(find(ctx.parts.tail, 'Tapered aft fuselage'), true, false);
+/** A belly fairing where the wing meets the body, painted the belly's colour. */
+function bellyFairing(ctx, list, along, mat) {
+  const stations = list.map(ell);
+  const a = stations[0];
+  stations.unshift({ z: a.z - 0.7, w: 0.02, top: a.yc + 0.02, bot: a.yc - 0.02, yc: a.yc });
+  const h = hull({ stations, radial: 8, maxStep: 2.5, closeTail: true });
+  const p = h.geometry.attributes.position;
+  const uv = h.geometry.attributes.uv;
+  for (let i = 0; i < p.count; i++) uv.setXY(i, along(p.getZ(i)), 0.03);
+  meshOf(ctx, 'Wing-body fairing', h.geometry, mat, ctx.parts.fuselage);
 }
 
-/** A belly fairing where the wing meets the body. */
-function bellyFairing(ctx, stations) {
-  const m = ctx.skin(stations, ctx.materials.skin, ctx.parts.fuselage, 18);
-  m.name = 'Wing-body fairing';
-  return m;
+/** Ellipse station [z, rx, ry, cy] (the pack's) as a hull station. */
+function ell([z, rx, ry, cy]) {
+  return { z, w: rx, top: cy + ry, bot: cy - ry, yc: cy, nT: 2, nB: 2 };
+}
+/** A hull station: top and bottom of the skin on the centreline, half-width, shoulder height, exponents. */
+function st(z, top, bot, w, yc, nT = 2, nB = 2) {
+  return { z, w, top, bot, yc: yc ?? (top + bot) / 2, nT, nB };
+}
+/** The pack core's own station list, from the hull's: [z, rx, ry, cy]. */
+function bodyOf(stations) {
+  return stations.map((s) => [s.z, Math.max(0.001, s.w), Math.max(0.001, (s.top - s.bot) / 2), (s.top + s.bot) / 2]);
+}
+/** Ring stations every `step` between a and b, for the curving tail cone. */
+function ringsBetween(a, b, step) {
+  const out = [];
+  for (let z = a + step; z < b - step * 0.4; z += step) out.push(+z.toFixed(3));
+  return out;
+}
+
+/**
+ * Everything in the redo that every airliner has: fuselage and livery,
+ * flight deck, windows, doors, engines, registration, fairing, fin paint.
+ */
+function dress(ctx, S) {
+  const { parts, model, config: c } = ctx;
+  const scheme = c.scheme && typeof c.scheme === 'object' ? c.scheme : null;
+  // A named airline scheme brings its own cheatline, tail and number; the
+  // house colours are the type's own, as they always were.
+  const named = !!(scheme && scheme.id && scheme.id !== 'house');
+  const base = c.paint;
+  const accent = c.accent;
+  const line = named && typeof scheme.cheatline === 'string' ? scheme.cheatline : null;
+  const tailColour = named && scheme.tail != null ? scheme.tail : null;
+  const reg = (named && scheme.reg) || (scheme && scheme.reg) || c.registration;
+  const F = S.fuselage;
+  const along = piecewise(F.alongKnots);
+  const h = loftFuselage({ ...F, along });
+  const HUMP = 0.88; // the hump is painted from the roof band of the texture, hidden under it on the main loft
+  const hump = S.hump ? loftFuselage({ ...S.hump, along, cuts: [F.cuts[0]] }, { vMap: (v) => HUMP + (1 - HUMP) * v }) : null;
+  const vMain = (z, y) => 1 - h.angleAt(z, y) / Math.PI;
+  const vHump = hump ? (z, y) => HUMP + (1 - HUMP) * (1 - hump.angleAt(z, y) / Math.PI) : null;
+  const first = F.stations[0];
+  const last = F.stations[F.stations.length - 1];
+  // One side's doors paint both: the texture is the same either side.
+  const painted = [];
+  for (const d of S.doors) {
+    if (painted.some((p) => Math.abs(p.z - d.z) < 0.01 && p.deck === d.deck)) continue;
+    painted.push({ ...d, vAt: d.deck === 'upper' && hump ? vHump : undefined });
+  }
+  // The nose gear bay's doors on the belly, drawn shut round the leg.
+  const ng = c.gear && c.gear.nose;
+  const bays = ng ? [{ z0: ng[2] - 1.6 * (c.gear.noseRadius || 0.4) - 0.3, z1: ng[2] + 2.4 * (c.gear.noseRadius || 0.4), halfWidth: 1.5 * (c.gear.noseRadius || 0.4), w: h.section(ng[2]).w }] : [];
+  const tex = liveryTexture({
+    key: c.id, base, accent, line, along, vAt: vMain, cabinZ: S.cabinZ, bellyY: S.bellyY, z0: first.z, z1: last.z,
+    laps: S.laps, cheat: S.cheat, doors: painted, radomeZ: S.radomeZ, bays,
+  });
+  const M = airlinerMaterials(model, { livery: tex, base });
+  placeFuselage(ctx, h, F.cuts, M.skin);
+  if (hump) {
+    const [front, back] = splitByZ(hump.geometry, [F.cuts[0]]);
+    if (front) meshOf(ctx, 'Upper deck nose skin', front, M.skin, parts.nose);
+    if (back) meshOf(ctx, 'Upper deck skin', back, M.skin, parts.fuselage);
+  }
+  bellyFairing(ctx, S.fairing, along, M.skin);
+  apu(ctx, last);
+
+  // The flight deck. The frames and glass sit 3 and 4 cm out: the hull is
+  // flat quads between its vertices, and on these tubes the skin between two
+  // of them sags up to 1.5 cm below the surface the panes follow (see
+  // airliner-kit windowRows), so anything laid closer is half buried.
+  const deck = S.flightDeckOn === 'upper' ? hump : h;
+  const gz = glazing(deck, S.panes, { frame: S.frame ?? 0.065, frameOff: 0.03, glassOff: 0.042 });
+  meshOf(ctx, 'Windscreen frames', gz.frames, M.frame, parts.nose).castShadow = false;
+  meshOf(ctx, 'Flight deck glass', gz.glass, M.glass, parts.nose).castShadow = false;
+  if (gz.wipers) meshOf(ctx, 'Windscreen wipers', gz.wipers, M.wiper, parts.nose);
+
+  // Which breakaway piece of the fuselage a station z is on: the skin is cut
+  // at F.cuts (placeFuselage), and everything that sits on the skin — the
+  // windows, the doors, the decals, the aerials — must hang from the piece it
+  // sits on, or it stays behind in the air when that piece comes off.
+  const cuts = F.cuts;
+  const pieceOf = (z) => (z < cuts[0] ? parts.nose : z > cuts[1] ? parts.tail : parts.fuselage);
+
+  // Cabin windows, every deck: one draw per piece that has any (the 747's
+  // upper deck runs forward into the nose piece, every type's main deck runs
+  // aft past the tail cut).
+  windowRows(ctx, S.windows.map((r) => ({ ...r, h: r.deck === 'upper' ? hump : h })), M.window, pieceOf);
+
+  // Doors that open.
+  const doors = buildDoors({
+    list: S.doors.map((d) => ({ ...d, hull: d.deck === 'upper' && hump ? hump : h })),
+    parentFor: (d) => pieceOf(d.z),
+    materials: M,
+    uvOf: (hh, z, s) => [along(z), hh === hump ? HUMP + (1 - HUMP) * (1 - s / Math.PI) : 1 - s / Math.PI],
+    own: (g) => model.userData.ownGeometry(g),
+  });
+  ctx.registerAnimation((dt) => doors.update(dt));
+  ctx.exports.doors = doors;
+  ctx.exports.flightDeck = { panes: gz.outlines, eye: [...c.eye], on: S.flightDeckOn === 'upper' ? 'upper deck' : 'nose' };
+  // The fuselage as one thing, for whoever measures the aeroplane (the
+  // ground crew's jobs): its skin is three pieces, so its longest mesh is
+  // only the cabin.
+  const tops = [...F.stations, ...(S.hump ? S.hump.stations : [])];
+  ctx.exports.fuselage = {
+    nose: first.z,
+    tail: last.z,
+    halfWidth: Math.max(...F.stations.map((q) => q.w)),
+    top: Math.max(...tops.map((q) => q.top)),
+    bottom: Math.min(...F.stations.map((q) => q.bot)),
+  };
+
+  // Turbofans and their pylons.
+  for (const e of c.engines) {
+    const g = parts[e.id];
+    if (!g) continue;
+    turbofan(ctx, g, e, M);
+    pylon(ctx, e, M.nacelle);
+  }
+
+  // The number, on the tail cone.
+  const light = (() => {
+    const k = new THREE.Color(base);
+    return 0.2126 * k.r + 0.7152 * k.g + 0.0722 * k.b > 0.35;
+  })();
+  if (reg) {
+    const tex2 = aircraftDecalTexture(reg, { color: light ? '#1f272e' : '#e9eef2', background: 'transparent', width: 512, height: 128 });
+    registration(ctx, h, { text: reg, z: S.reg.z, y: S.reg.y, width: S.reg.w, texture: tex2 }, pieceOf(S.reg.z));
+  }
+  // The titling line a scheme may carry — "UNITED STATES OF AMERICA" on Air
+  // Force One (aircraft/liveries.js), the only one that has ever asked for
+  // one. The pack's old skin (render/textures.js airframeTexture) painted it
+  // into the texture; here it is a decal in the band above the windows, from
+  // behind the forward door back towards the wing (S.title), in the scheme's
+  // cheatline colour, and registration() flips it per side so it reads
+  // left-to-right from both. Sixteen to one: the decal texture fits twenty
+  // or so characters at about two thirds of its width.
+  const title = named && typeof scheme.title === 'string' && scheme.title.trim() ? scheme.title.trim() : null;
+  if (title && S.title) {
+    const ink = typeof line === 'string' ? line : light ? '#1f272e' : '#e9eef2';
+    const tex3 = aircraftDecalTexture(title, { color: ink, background: 'transparent', width: 2048, height: 128 });
+    const tz = S.title.z;
+    registration(ctx, h, { text: title, z: tz, y: S.title.y, width: S.title.w, height: S.title.w / 16, texture: tex3, name: 'Titling' }, pieceOf(tz));
+  }
+
+  // The fin in the scheme's tail colour, or the accent. Its own material
+  // either way: the paint is a shell a few millimetres proud of the core's
+  // fin (paintFin), and at the tip the two are closer than the depth buffer
+  // can tell apart from a few hundred metres — so, like every other overlay
+  // on these aeroplanes, it carries the decal polygon offset and the paint
+  // wins the depth test on every frame rather than flickering with the fin.
+  const finMat = model.userData.ownMaterial(Object.assign(ctx.materials.accent.clone(), DECAL));
+  if (tailColour != null) {
+    finMat.color = new THREE.Color(tailColour);
+    finMat.name = 'Aircraft_livery_tail';
+  }
+  paintFin(ctx, finMat);
+
+  // Antennas: blade aerials on the crown and under the belly, and the pitot
+  // probes either side of the nose below the flight deck.
+  const k = clamp(F.stations.reduce((m, q) => Math.max(m, q.w), 0) / 2, 0.9, 1.9); // 1 on the A320, 1.8 on the A380
+  const blade = (z, y, up, mat, parent) => plate(ctx, up > 0 ? 'VHF aerial' : 'Belly aerial', [
+    [0, y - 0.02 * up, z], [0, y + 0.34 * k * up, z + 0.1 * k], [0, y + 0.34 * k * up, z + 0.26 * k], [0, y - 0.02 * up, z + 0.42 * k],
+  ], 0.04 * k, mat, parent);
+  const crownAt = (z) => (hump && z > S.hump.stations[0].z && z < S.hump.stations[S.hump.stations.length - 1].z ? hump.topAt(z) : h.topAt(z));
+  for (const z of S.aerials.crown) blade(z, crownAt(z), 1, M.nacelle, pieceOf(z));
+  for (const z of S.aerials.belly) blade(z, h.botAt(z), -1, M.core, pieceOf(z));
+  for (const side of [-1, 1]) {
+    const z = S.radomeZ + 0.9 * k;
+    const y = c.eye[1] - 1.0 * k;
+    const x = h.halfWidthAt(z, y);
+    ctx.tube('Pitot probe', [side * (x - 0.02), y, z], [side * (x + 0.05 * k), y - 0.01, z - 0.42 * k], 0.028 * k, M.gear, parts.nose, 5);
+  }
+
+  // Where the game hangs its lamps (model-adapter addLights): the real wing
+  // tips, which on these swept wings are 8-20 m aft of its guess, the beacon
+  // on the crown over the wing, the tail light on the end of the cone and
+  // the landing lights in the wing roots.
+  const w = c.wing;
+  const tipX = w.rootX + w.span;
+  const tip = wingAt(w, tipX);
+  const rootLamp = wingAt(w, w.rootX + 1.6 * k);
+  const beaconZ = S.beaconZ ?? S.cabinZ;
+  ctx.exports.lamps = {
+    navLeft: [-tipX, tip.mid + 0.04, tip.le + 0.12],
+    navRight: [tipX, tip.mid + 0.04, tip.le + 0.12],
+    strobeL: [-tipX, tip.mid, tip.te - 0.15],
+    strobeR: [tipX, tip.mid, tip.te - 0.15],
+    tail: [0, last.yc + 0.04, last.z - 0.15],
+    beacon: [0, crownAt(beaconZ) + 0.1, beaconZ],
+    landing: [-(w.rootX + 1.6 * k), rootLamp.mid - 0.04, rootLamp.le + 0.12],
+  };
+  return { h, hump, M };
 }
 
 /* ------------------------------------------------------------------ *
@@ -636,27 +677,88 @@ const C = GEO.a380;
 /** Axle height: the contact point plus a tyre radius. */
 const axleY = (g, r) => g.ground + r;
 
-const a320Body = [
-  [-16.8, 0.06, 0.06, -0.55],
-  [-16.6, 0.55, 0.62, -0.47],
-  [-16.15, 1.02, 1.1, -0.34],
-  [-15.45, 1.42, 1.5, -0.22],
-  [-14.55, 1.72, 1.8, -0.12],
-  [-13.45, 1.9, 1.99, -0.04],
-  [-12.2, 1.975, 2.07, 0],
-  [5.5, 1.975, 2.07, 0],
-  [9.0, 1.9, 1.93, 0.14],
-  [12.5, 1.62, 1.55, 0.42],
-  [16.0, 1.12, 1.0, 0.78],
-  [18.8, 0.62, 0.52, 1.02],
-  [20.2, 0.3, 0.28, 1.12],
-  [20.77, 0.1, 0.1, 1.15],
-];
+/** Both sides of a door list. */
+const both = (list) => list.flatMap((d) => [
+  { ...d, id: d.id.replace('#', 'L'), side: 'left' },
+  { ...d, id: d.id.replace('#', 'R'), side: 'right' },
+]);
+
+/* ---------------------------------------------------------------- *
+ * A320. The nose: the radome a blunt rounded cone with its tip low, a
+ * near-flat top running back to the windscreen, then the break — the
+ * windscreen leans back at about fifty degrees — and a long brow rounding
+ * over to the crown two metres behind it. Six panes: two windscreens
+ * either side of a centre post, the sliding window, the small rear one, in
+ * a black frame, and nothing above them.
+ * ---------------------------------------------------------------- */
+const A320 = {
+  fuselage: {
+    stations: [
+      st(-16.80, -0.45, -0.45, 0.0, -0.45),
+      st(-16.76, -0.22, -0.66, 0.24, -0.44),
+      st(-16.66, -0.06, -0.83, 0.46, -0.45),
+      st(-16.45, 0.06, -1.06, 0.74, -0.48),
+      st(-16.10, 0.15, -1.33, 1.04, -0.52),
+      st(-15.60, 0.22, -1.58, 1.33, -0.56),
+      st(-15.00, 0.27, -1.78, 1.57, -0.58, 2.05),
+      st(-14.60, 0.32, -1.88, 1.69, -0.58, 2.1),
+      st(-14.30, 0.62, -1.94, 1.77, -0.55, 2.15),
+      st(-14.00, 0.98, -1.99, 1.83, -0.5, 2.2),
+      st(-13.60, 1.27, -2.03, 1.88, -0.42, 2.2),
+      st(-13.10, 1.55, -2.05, 1.92, -0.32, 2.15),
+      st(-12.40, 1.83, -2.065, 1.95, -0.18, 2.1),
+      st(-11.60, 2.0, -2.07, 1.97, -0.06, 2.05),
+      st(-10.60, 2.07, -2.07, 1.975, 0),
+      st(5.5, 2.07, -2.07, 1.975, 0),
+      ell([9.0, 1.9, 1.93, 0.14]),
+      ell([12.5, 1.62, 1.55, 0.42]),
+      ell([16.0, 1.12, 1.0, 0.78]),
+      ell([18.8, 0.62, 0.52, 1.02]),
+      ell([20.2, 0.3, 0.28, 1.12]),
+      ell([20.77, 0.1, 0.1, 1.15]),
+    ],
+    radial: 16,
+    rings: ringsBetween(5.5, 20.77, 1.5),
+    cuts: [-10.6, 9.0],
+    alongKnots: [[-16.8, 0], [-10.6, 0.18], [20.77, 1]],
+  },
+  cabinZ: 0,
+  bellyY: -1.2,
+  laps: [1.45, -0.8],
+  radomeZ: -14.72,
+  cheat: { y0: -0.1, y1: 0.15, z0: -12.9, z1: 15.6 },
+  reg: { z: 14.4, y: 0.95, w: 2.0 },
+  // The titling band (schemes with words): above the window row, from
+  // behind door 1 to over the wing.
+  title: { z: -3.3, y: 1.15, w: 16 },
+  frame: 0.065,
+  panes: [
+    { name: 'Windscreen', wiper: true, corners: [{ z: -14.56, x: 0.07 }, { z: -14.4, y: 0.37 }, { z: -13.99, y: 0.88 }, { z: -14.06, x: 0.07 }] },
+    { name: 'Sliding window', corners: [{ z: -14.3, y: 0.37 }, { z: -13.42, y: 0.4 }, { z: -13.46, y: 0.95 }, { z: -13.9, y: 0.9 }] },
+    { name: 'Rear side window', corners: [{ z: -13.32, y: 0.41 }, { z: -12.8, y: 0.43 }, { z: -12.96, y: 0.86 }, { z: -13.32, y: 0.94 }] },
+  ],
+  windows: [{ y: 0.4, z0: -10.3, z1: 11.4, pitch: 0.533, w: 0.235, ht: 0.33 }],
+  doors: both([
+    { id: '#1', z: -11.95, y: 0.31, w: 0.81, h: 1.85, kind: 'passenger', sill: -0.62 },
+    { id: '#2', z: 12.3, y: 0.31, w: 0.81, h: 1.85, kind: 'passenger', sill: -0.62 },
+    // Two Type III exits over the wing, each round a window of the row.
+    { id: 'O#1', z: -1.08, y: 0.36, w: 0.51, h: 0.94, kind: 'overwing', sill: -0.11 },
+    { id: 'O#2', z: -0.535, y: 0.36, w: 0.51, h: 0.94, kind: 'overwing', sill: -0.11 },
+  ]),
+  fairing: [
+    [-5.6, 1.2, 0.3, -1.75], [-3.6, 1.8, 0.62, -1.6], [-0.5, 1.98, 0.72, -1.52],
+    [2.4, 1.95, 0.68, -1.55], [4.6, 1.45, 0.38, -1.72], [5.6, 0.9, 0.2, -1.8],
+  ],
+  // Belly aerials ahead of the wing: anything under the tail cone would be
+  // the first thing to touch the runway at rotation (the strike test).
+  aerials: { crown: [-7.0, 3.0], belly: [-9.6, -7.4] },
+  beaconZ: -2.0,
+};
 
 const a320 = {
   id: 'a320', name: 'Airbus A320', kind: 'airliner', massKg: 18000,
-  paint: '#f5f7f9', accent: '#c4122f', registration: 'N320IF', bodySegments: 20,
-  body: a320Body,
+  paint: '#f5f7f9', accent: '#c4122f', registration: 'N320IF', bodySegments: 8,
+  body: bodyOf(A320.fuselage.stations),
   wing: {
     rootX: 1.35, span: A.tip.x - 1.35, rootZ: -3.72, rootY: -1.45,
     rootChord: 4.82, tipChord: 1.45, sweep: 8.0, dihedral: A.tip.y + 1.45,
@@ -678,15 +780,8 @@ const a320 = {
   eye: A.eye,
   decorate(ctx) {
     const { parts, materials: m } = ctx;
-    openSeams(ctx);
-    turbofans(ctx);
+    const { M } = dress(ctx, A320);
     trailingEdgeFill(ctx, 6.3, 1.65, 0.3);
-    paintFin(ctx);
-    apu(ctx, a320Body);
-    bellyFairing(ctx, [
-      [-5.6, 1.2, 0.3, -1.75], [-3.6, 1.8, 0.62, -1.6], [-0.5, 1.98, 0.72, -1.52],
-      [2.4, 1.95, 0.68, -1.55], [4.6, 1.45, 0.38, -1.72], [5.6, 0.9, 0.2, -1.8],
-    ]);
     // Sharklets: a curved blend out of the tip, then a tall swept fin.
     const w = ctx.config.wing;
     const tip = wingAt(w, w.rootX + w.span);
@@ -703,67 +798,109 @@ const a320 = {
       ], 0.11, m.accent, wing);
     }
     // Twin-wheel legs, nose and main.
-    refitLeg(ctx, 'noseGear', { kind: 'dual', track: 0.52, r: A.nose.r, width: 0.26, oleo: 0.11 });
-    for (const id of ['leftGear', 'rightGear']) refitLeg(ctx, id, { kind: 'dual', track: 0.93, r: A.main.r, width: 0.4, oleo: 0.14 });
-    windowRows(ctx, a320Body, [
-      { y: 0.42, z0: -11.0, z1: 11.2, count: 43, w: 0.24, h: 0.34, skip: [[-2.1, -1.2], [0.1, 0.9]] },
-    ], parts.fuselage);
-    doors(ctx, a320Body, [
-      { z: -12.0, y: -0.02, w: 0.82, h: 1.85 }, { z: 12.3, y: 0.24, w: 0.8, h: 1.8 },
-    ], parts.fuselage);
-    flightDeck(ctx, a320Body, [
-      { z0: -15.3, z1: -14.55, phi0: [0.1, 0.1], phi1: [0.62, 0.62] },
-      { z0: -14.48, z1: -13.62, phi0: [0.7, 0.7], phi1: [1.12, 1.1] },
-      { z0: -13.55, z1: -13.0, phi0: [0.75, 0.76], phi1: [1.05, 1.03] },
-    ], parts.nose);
+    refitLeg(ctx, 'noseGear', { kind: 'dual', track: 0.52, r: A.nose.r, width: 0.26, oleo: 0.11, mats: M });
+    for (const id of ['leftGear', 'rightGear']) refitLeg(ctx, id, { kind: 'dual', track: 0.93, r: A.main.r, width: 0.4, oleo: 0.14, mats: M });
   },
-  description: 'A narrow-body twin: slim round fuselage, swept low wing with a cranked trailing edge and sharklets, two turbofans on pylons, twin-wheel gear.',
+  description: 'A narrow-body twin: slim round fuselage, the Airbus nose with a six-pane windscreen, swept low wing with a cranked trailing edge and sharklets, two turbofans on pylons, twin-wheel gear, doors that open.',
   inspiration: 'Drawn to the A320\'s published dimensions for a children\'s flight game; house livery is the game\'s own.',
 };
 
-/* ---------------------------------------------------------------- */
-
-const b747Body = [
-  [-31.1, 0.07, 0.07, -0.95],
-  [-30.8, 0.78, 0.8, -0.85],
-  [-30.15, 1.45, 1.5, -0.62],
-  [-29.2, 2.1, 2.18, -0.4],
-  [-27.85, 2.68, 2.78, -0.2],
-  [-26.2, 3.08, 3.18, -0.06],
-  [-24.2, 3.25, 3.3, 0],
-  [11.0, 3.25, 3.3, 0],
-  [16.0, 3.12, 2.95, 0.4],
-  [22.0, 2.75, 2.35, 1.0],
-  [28.0, 2.12, 1.72, 1.58],
-  [33.5, 1.4, 1.08, 2.2],
-  [37.6, 0.72, 0.55, 2.62],
-  [39.5, 0.14, 0.14, 2.8],
-];
-
-/**
- * The upper deck, lofted separately and sat on top of the main tube.
- *
- * Its roof is 1.54 m above the main crown. It was 1.24, and in the game from
- * 300 m, side on, the 747 and the A380 were two white tubes with a coloured
- * fin: the hump read as a slight thickening of the nose rather than the step
- * in the roof line that makes a 747 a 747 from any distance.
- */
-const b747Hump = [
-  [-30.0, 0.85, 0.65, 0.55],
-  [-29.2, 1.55, 1.27, 1.28],
-  [-28.2, 1.95, 1.7, 2.1],
-  [-26.9, 2.15, 1.88, 2.7],
-  [-25.0, 2.22, 1.92, 2.92],
-  [-8.5, 2.22, 1.92, 2.92],
-  [-4.0, 2.05, 1.6, 2.78],
-  [0.5, 1.6, 1.0, 2.7],
-  [3.0, 0.9, 0.3, 2.95],
-];
+/* ---------------------------------------------------------------- *
+ * 747-400. The main tube has a low round nose; the upper deck is its own
+ * loft, rising out of the top of the nose so the top line climbs in one
+ * sweep from the radome to the hump, with the flight deck on its front.
+ * ---------------------------------------------------------------- */
+const B747 = {
+  fuselage: {
+    stations: [
+      st(-31.10, -0.95, -0.95, 0.0, -0.95),
+      st(-31.04, -0.6, -1.27, 0.38, -0.95),
+      st(-30.92, -0.3, -1.55, 0.72, -0.95),
+      st(-30.60, 0.2, -1.95, 1.25, -0.95),
+      st(-30.10, 0.85, -2.35, 1.78, -0.92),
+      st(-29.40, 1.55, -2.7, 2.25, -0.85),
+      st(-28.50, 2.2, -2.98, 2.66, -0.72),
+      st(-27.30, 2.78, -3.17, 2.98, -0.52),
+      st(-26.00, 3.12, -3.26, 3.16, -0.28),
+      st(-24.60, 3.28, -3.3, 3.24, -0.06),
+      st(-23.40, 3.3, -3.3, 3.25, 0),
+      st(11.0, 3.3, -3.3, 3.25, 0),
+      st(16.0, 3.3, -2.55, 3.12, 0.4),
+      st(22.0, 3.3, -1.35, 2.75, 1.0),
+      ell([28.0, 2.12, 1.72, 1.58]),
+      ell([33.5, 1.4, 1.08, 2.2]),
+      ell([37.6, 0.72, 0.55, 2.62]),
+      ell([39.5, 0.14, 0.14, 2.8]),
+    ],
+    radial: 18,
+    rings: ringsBetween(11.0, 39.5, 2.4),
+    cuts: [-21.0, 16.0],
+    alongKnots: [[-31.1, 0], [-21.0, 0.17], [39.5, 1]],
+  },
+  hump: {
+    stations: [
+      st(-30.35, 0.5, 0.4, 0.0, 0.45),
+      st(-30.15, 1.02, 0.3, 0.6, 0.7, 2, 1.6),
+      st(-29.80, 1.65, 0.35, 1.12, 1.15, 2, 1.6),
+      st(-29.30, 2.4, 0.5, 1.55, 1.75, 2, 1.6),
+      st(-28.85, 2.98, 0.65, 1.82, 2.25, 2.1, 1.6),
+      st(-28.62, 3.2, 0.75, 1.92, 2.45, 2.1, 1.6),
+      st(-28.05, 3.95, 0.85, 2.08, 2.95, 2.2, 1.7),
+      st(-27.50, 4.33, 0.95, 2.16, 3.05, 2.2, 1.8),
+      st(-26.60, 4.66, 1.0, 2.21, 3.0, 2.2, 1.9),
+      st(-25.40, 4.82, 1.0, 2.22, 2.95, 2.1, 2),
+      st(-24.40, 4.84, 1.0, 2.22, 2.92),
+      st(-8.5, 4.84, 1.0, 2.22, 2.92),
+      st(-4.0, 4.38, 1.2, 2.05, 2.78),
+      st(0.5, 3.7, 1.7, 1.6, 2.7),
+      st(3.0, 3.25, 2.65, 0.9, 2.95),
+      st(3.6, 3.1, 2.95, 0.1, 3.02),
+    ],
+    radial: 14,
+    rings: [-6.2, -2.0, 1.8],
+  },
+  flightDeckOn: 'upper',
+  cabinZ: 0,
+  bellyY: -1.9,
+  laps: [2.25, -1.3],
+  radomeZ: -29.7,
+  cheat: { y0: -0.26, y1: 0.12, z0: -26.6, z1: 33.0 },
+  reg: { z: 29.0, y: 1.55, w: 3.4 },
+  // The titling band: on the main tube between the window row and the
+  // hump's flank (the tube is wider than the hump up to about y 2.4 there),
+  // from behind door 1 to the wing root.
+  title: { z: -11.5, y: 1.4, w: 19 },
+  frame: 0.075,
+  panes: [
+    { name: 'Windscreen', wiper: true, corners: [{ z: -28.72, x: 0.07 }, { z: -28.52, y: 3.18 }, { z: -28.06, y: 3.82 }, { z: -28.14, x: 0.07 }] },
+    { name: 'Second side window', corners: [{ z: -28.42, y: 3.18 }, { z: -27.55, y: 3.25 }, { z: -27.62, y: 3.95 }, { z: -27.96, y: 3.84 }] },
+    { name: 'Rear side window', corners: [{ z: -27.45, y: 3.26 }, { z: -26.85, y: 3.3 }, { z: -27.0, y: 3.9 }, { z: -27.42, y: 3.98 }] },
+  ],
+  windows: [
+    { y: 0.55, z0: -24.0, z1: 29.0, pitch: 0.51, w: 0.25, ht: 0.37,
+      skip: [[-23.0, -21.6], [-12.7, -11.3], [-1.6, -0.2], [9.7, 11.1], [21.3, 22.7]] },
+    { deck: 'upper', y: 3.55, z0: -24.5, z1: -9.6, pitch: 0.53, w: 0.25, ht: 0.36, skip: [[-17.1, -15.7]] },
+  ],
+  doors: both([
+    { id: '#1', z: -22.3, y: 0.465, w: 1.07, h: 1.93, kind: 'passenger', sill: -0.5 },
+    { id: '#2', z: -12.0, y: 0.465, w: 1.07, h: 1.93, kind: 'passenger', sill: -0.5 },
+    { id: '#3', z: -0.9, y: 0.465, w: 1.07, h: 1.93, kind: 'passenger', sill: -0.5 },
+    { id: '#4', z: 10.4, y: 0.465, w: 1.07, h: 1.93, kind: 'passenger', sill: -0.5 },
+    { id: '#5', z: 22.0, y: 0.465, w: 1.07, h: 1.93, kind: 'passenger', sill: -0.5 },
+    { id: 'U#1', z: -16.4, y: 3.4, w: 0.92, h: 1.6, kind: 'passenger', deck: 'upper', sill: 2.6 },
+  ]),
+  fairing: [
+    [-14.5, 2.4, 0.5, -2.85], [-10.5, 3.05, 0.95, -2.62], [-4.5, 3.3, 1.15, -2.52],
+    [1.5, 3.3, 1.1, -2.55], [5.8, 2.9, 0.78, -2.68], [8.8, 2.0, 0.4, -2.86],
+  ],
+  aerials: { crown: [-14.0, 9.0, 19.5], belly: [-20.5, -17.5] },
+  beaconZ: 7.0,
+};
 
 const b747 = {
   id: 'b747', name: 'Boeing 747', kind: 'airliner', massKg: 24000,
-  paint: '#f4f6f8', accent: '#123a78', registration: 'N747IF', bodySegments: 22,
-  body: b747Body,
+  paint: '#f4f6f8', accent: '#123a78', registration: 'N747IF', bodySegments: 8,
+  body: bodyOf(B747.fuselage.stations),
   wing: {
     rootX: 2.45, span: B.tip.x - 2.45, rootZ: -12.57, rootY: -2.1,
     rootChord: 13.78, tipChord: 3.6, sweep: 24.25, dihedral: B.tip.y + 2.1,
@@ -788,18 +925,8 @@ const b747 = {
   eye: B.eye,
   decorate(ctx) {
     const { parts, materials: m } = ctx;
-    // The hump, and the flight deck on the front of it.
-    const hump = ctx.skin(b747Hump, m.skin, parts.fuselage, 18);
-    hump.name = 'Upper deck';
-    openSeams(ctx);
-    turbofans(ctx);
+    const { M } = dress(ctx, B747);
     trailingEdgeFill(ctx, 11.5, 3.5, 0.6);
-    paintFin(ctx);
-    apu(ctx, b747Body);
-    bellyFairing(ctx, [
-      [-14.5, 2.4, 0.5, -2.85], [-10.5, 3.05, 0.95, -2.62], [-4.5, 3.3, 1.15, -2.52],
-      [1.5, 3.3, 1.1, -2.55], [5.8, 2.9, 0.78, -2.68], [8.8, 2.0, 0.4, -2.86],
-    ]);
     // Canted winglets.
     const w = ctx.config.wing;
     const tip = wingAt(w, w.rootX + w.span);
@@ -812,14 +939,14 @@ const b747 = {
       ], 0.16, m.accent, parts[s < 0 ? 'leftWing' : 'rightWing']);
     }
     // Eighteen wheels: two on the nose, four on each of four legs.
-    refitLeg(ctx, 'noseGear', { kind: 'dual', track: 0.78, r: B.nose.r, width: 0.36, oleo: 0.16 });
+    refitLeg(ctx, 'noseGear', { kind: 'dual', track: 0.78, r: B.nose.r, width: 0.36, oleo: 0.16, mats: M });
     const bogies = [];
     for (const id of ['leftGear', 'rightGear']) {
-      const b = refitLeg(ctx, id, { kind: 'bogie', axles: 2, pitch: 1.47, track: 1.12, r: B.main.r, width: 0.42, oleo: 0.2 });
+      const b = refitLeg(ctx, id, { kind: 'bogie', axles: 2, pitch: 1.47, track: 1.12, r: B.main.r, width: 0.42, oleo: 0.2, mats: M });
       if (b) bogies.push({ node: b, z: 0.8 });
     }
     for (const s of [-1, 1]) {
-      const body = bodyLeg(ctx, s, { x: 1.92, z: 3.7, attachY: -2.5, contactY: B.ground, axles: 2, pitch: 1.47, track: 1.12, r: B.main.r, width: 0.42, oleo: 0.2, mass: 300 });
+      const body = bodyLeg(ctx, s, { x: 1.92, z: 3.7, attachY: -2.5, contactY: B.ground, axles: 2, pitch: 1.47, track: 1.12, r: B.main.r, width: 0.42, oleo: 0.2, mass: 300, mats: M });
       bogies.push({ node: body.bogie, z: 3.7 });
       ctx.registerAnimation((dt, state) => {
         const gear = state.gear ?? 1;
@@ -828,52 +955,88 @@ const b747 = {
       });
     }
     levelBogies(ctx, bogies, B.main.z);
-    // Main deck and upper deck in one instanced mesh; `st` says which loft a
-    // row or a door sits on.
-    windowRows(ctx, b747Body, [
-      { y: 0.55, z0: -24.2, z1: 29.0, count: 88, w: 0.25, h: 0.37,
-        skip: [[-23.2, -21.4], [-12.8, -11.2], [-1.7, -0.1], [9.6, 11.2], [21.2, 22.8]] },
-      { st: b747Hump, y: 3.45, z0: -24.0, z1: -8.0, count: 12, w: 0.25, h: 0.36, skip: [[-17.0, -15.8]] },
-    ], parts.fuselage);
-    doors(ctx, b747Body, [
-      { z: -22.3, y: 0.1, w: 1.07, h: 1.93 }, { z: -12.0, y: 0.1, w: 1.07, h: 1.93 },
-      { z: -0.9, y: 0.1, w: 1.07, h: 1.93 }, { z: 10.4, y: 0.1, w: 1.07, h: 1.93 },
-      { z: 22.0, y: 0.25, w: 1.07, h: 1.9 },
-      { st: b747Hump, z: -16.4, y: 3.25, w: 0.9, h: 1.6 },
-    ], parts.fuselage);
-    flightDeck(ctx, b747Hump, [
-      { z0: -29.35, z1: -28.35, phi0: [0.1, 0.08], phi1: [0.6, 0.6] },
-      { z0: -28.25, z1: -27.35, phi0: [0.68, 0.66], phi1: [1.05, 1.02] },
-      { z0: -27.25, z1: -26.7, phi0: [0.7, 0.7], phi1: [0.98, 0.97] },
-    ], parts.fuselage);
   },
-  description: 'The 747-400: long fuselage with the upper-deck hump and flight deck on top, four turbofans on pylons under a 37-degree swept wing, canted winglets, eighteen wheels.',
+  description: 'The 747-400: long fuselage with the upper-deck hump and its row of windows, the flight deck on top of a round nose, four turbofans on pylons under a 37-degree swept wing, canted winglets, eighteen wheels, doors that open.',
   inspiration: 'Drawn to the 747-400\'s published dimensions for a children\'s flight game; house livery is the game\'s own.',
 };
 
-/* ---------------------------------------------------------------- */
-
-const a380Body = [
-  [-33.6, 0.09, 0.09, -1.3],
-  [-33.25, 1.0, 1.1, -1.12],
-  [-32.5, 1.85, 2.15, -0.8],
-  [-31.3, 2.62, 3.05, -0.45],
-  [-29.7, 3.18, 3.7, -0.16],
-  [-27.7, 3.5, 4.08, -0.02],
-  [-25.6, 3.57, 4.2, 0],
-  [12.0, 3.57, 4.2, 0],
-  [17.0, 3.45, 3.75, 0.5],
-  [23.0, 3.05, 3.1, 1.08],
-  [29.0, 2.35, 2.35, 1.72],
-  [34.0, 1.55, 1.45, 2.05],
-  [37.5, 0.8, 0.75, 2.35],
-  [39.1, 0.15, 0.15, 2.55],
-];
+/* ---------------------------------------------------------------- *
+ * A380. The flight deck sits between the two decks, so the windscreen
+ * is low on a tall nose and a high forehead rises above it to the upper
+ * deck's crown. The section is taller than it is wide and squarer on top.
+ * ---------------------------------------------------------------- */
+const A380 = {
+  fuselage: {
+    stations: [
+      st(-33.60, -1.3, -1.3, 0.0, -1.3),
+      st(-33.55, -0.95, -1.65, 0.42, -1.3),
+      st(-33.40, -0.62, -2.02, 0.85, -1.32),
+      st(-33.10, -0.25, -2.45, 1.32, -1.35),
+      st(-32.65, 0.2, -2.9, 1.82, -1.36, 2.05),
+      st(-32.25, 0.52, -3.25, 2.15, -1.34, 2.1),
+      st(-31.95, 0.95, -3.47, 2.36, -1.3, 2.15),
+      st(-31.60, 1.45, -3.68, 2.58, -1.22, 2.2),
+      st(-31.10, 2.05, -3.88, 2.82, -1.08, 2.25),
+      st(-30.40, 2.75, -4.03, 3.08, -0.9, 2.3),
+      st(-29.40, 3.4, -4.13, 3.32, -0.6, 2.3, 2.05),
+      st(-28.10, 3.88, -4.18, 3.48, -0.35, 2.3, 2.1),
+      st(-26.70, 4.12, -4.2, 3.55, -0.25, 2.3, 2.1),
+      st(-25.30, 4.2, -4.2, 3.57, -0.2, 2.3, 2.1),
+      st(12.0, 4.2, -4.2, 3.57, -0.2, 2.3, 2.1),
+      st(17.0, 4.2, -3.25, 3.45, 0.5, 2.2, 2.05),
+      st(23.0, 4.15, -2.02, 3.05, 1.08),
+      ell([29.0, 2.35, 2.35, 1.72]),
+      ell([34.0, 1.55, 1.45, 2.05]),
+      ell([37.5, 0.8, 0.75, 2.35]),
+      ell([39.1, 0.15, 0.15, 2.55]),
+    ],
+    radial: 18,
+    rings: ringsBetween(12.0, 39.1, 2.4),
+    cuts: [-24.0, 17.0],
+    alongKnots: [[-33.6, 0], [-24.0, 0.16], [39.1, 1]],
+  },
+  cabinZ: 0,
+  bellyY: -2.7,
+  laps: [3.4, 1.0, -2.2],
+  radomeZ: -32.45,
+  cheat: { y0: -1.5, y1: -1.08, z0: -29.6, z1: 33.5 },
+  reg: { z: 29.5, y: 1.9, w: 3.6 },
+  // The titling band: between the two window rows, from behind door 1.
+  title: { z: -11.6, y: 1.0, w: 24 },
+  frame: 0.08,
+  panes: [
+    { name: 'Windscreen', wiper: true, corners: [{ z: -32.27, x: 0.08 }, { z: -32.1, x: 1.12 }, { z: -31.62, x: 1.16 }, { z: -31.68, x: 0.08 }] },
+    { name: 'Second side window', corners: [{ z: -31.98, y: 0.5 }, { z: -31.15, y: 0.58 }, { z: -31.22, y: 1.3 }, { z: -31.55, y: 1.25 }] },
+    { name: 'Rear side window', corners: [{ z: -31.05, y: 0.6 }, { z: -30.45, y: 0.66 }, { z: -30.62, y: 1.24 }, { z: -31.02, y: 1.3 }] },
+  ],
+  windows: [
+    { y: -0.6, z0: -24.0, z1: 25.0, pitch: 0.53, w: 0.3, ht: 0.42,
+      skip: [[-25.7, -24.1], [-12.8, -11.2], [-0.1, 1.5], [9.4, 11.0], [18.4, 20.0]] },
+    { y: 2.55, z0: -23.5, z1: 26.0, pitch: 0.53, w: 0.3, ht: 0.4,
+      skip: [[-21.55, -19.95], [-3.95, -2.35], [16.7, 18.3]] },
+  ],
+  doors: both([
+    { id: '#1', z: -24.9, y: -0.68, w: 1.07, h: 1.93, kind: 'passenger', sill: -1.65 },
+    { id: '#2', z: -12.0, y: -0.68, w: 1.07, h: 1.93, kind: 'passenger', sill: -1.65 },
+    { id: '#3', z: 0.7, y: -0.68, w: 1.07, h: 1.93, kind: 'passenger', sill: -1.65 },
+    { id: '#4', z: 10.2, y: -0.68, w: 1.07, h: 1.93, kind: 'passenger', sill: -1.65 },
+    { id: '#5', z: 19.2, y: -0.68, w: 1.07, h: 1.93, kind: 'passenger', sill: -1.65 },
+    { id: 'U#1', z: -20.75, y: 2.52, w: 1.07, h: 1.93, kind: 'passenger', deck: 'upper', sill: 1.55 },
+    { id: 'U#2', z: -3.15, y: 2.52, w: 1.07, h: 1.93, kind: 'passenger', deck: 'upper', sill: 1.55 },
+    { id: 'U#3', z: 17.5, y: 2.52, w: 1.07, h: 1.93, kind: 'passenger', deck: 'upper', sill: 1.55 },
+  ]),
+  fairing: [
+    [-16.0, 2.6, 0.55, -3.75], [-11.5, 3.45, 1.1, -3.45], [-4.5, 3.72, 1.35, -3.3],
+    [2.5, 3.72, 1.3, -3.32], [7.2, 3.3, 0.9, -3.5], [10.5, 2.3, 0.45, -3.75],
+  ],
+  aerials: { crown: [-14.0, 6.0, 20.0], belly: [-24.0, -20.0] },
+  beaconZ: -2.0,
+};
 
 const a380 = {
   id: 'a380', name: 'Airbus A380', kind: 'airliner', massKg: 27000,
-  paint: '#f6f7f9', accent: '#0d6f78', registration: 'N380IF', bodySegments: 24,
-  body: a380Body,
+  paint: '#f6f7f9', accent: '#0d6f78', registration: 'N380IF', bodySegments: 8,
+  body: bodyOf(A380.fuselage.stations),
   wing: {
     rootX: 2.95, span: C.tip.x - 2.95, rootZ: -12.99, rootY: -2.3,
     rootChord: 16.2, tipChord: 4.0, sweep: 24.84, dihedral: C.tip.y + 2.3,
@@ -898,15 +1061,8 @@ const a380 = {
   eye: C.eye,
   decorate(ctx) {
     const { parts, materials: m } = ctx;
-    openSeams(ctx);
-    turbofans(ctx);
+    const { M } = dress(ctx, A380);
     trailingEdgeFill(ctx, 13.5, 3.3, 0.7);
-    paintFin(ctx);
-    apu(ctx, a380Body);
-    bellyFairing(ctx, [
-      [-16.0, 2.6, 0.55, -3.75], [-11.5, 3.45, 1.1, -3.45], [-4.5, 3.72, 1.35, -3.3],
-      [2.5, 3.72, 1.3, -3.32], [7.2, 3.3, 0.9, -3.5], [10.5, 2.3, 0.45, -3.75],
-    ]);
     // Wingtip fences: a swept triangle above the tip and a smaller one below.
     const w = ctx.config.wing;
     const tip = wingAt(w, w.rootX + w.span);
@@ -923,14 +1079,14 @@ const a380 = {
       ], 0.14, m.accent, wing);
     }
     // Twenty-two wheels: two on the nose, four on each wing leg, six on each body leg.
-    refitLeg(ctx, 'noseGear', { kind: 'dual', track: 0.86, r: C.nose.r, width: 0.4, oleo: 0.18 });
+    refitLeg(ctx, 'noseGear', { kind: 'dual', track: 0.86, r: C.nose.r, width: 0.4, oleo: 0.18, mats: M });
     const bogies = [];
     for (const id of ['leftGear', 'rightGear']) {
-      const b = refitLeg(ctx, id, { kind: 'bogie', axles: 2, pitch: 1.6, track: 1.24, r: C.main.r, width: 0.5, oleo: 0.24 });
+      const b = refitLeg(ctx, id, { kind: 'bogie', axles: 2, pitch: 1.6, track: 1.24, r: C.main.r, width: 0.5, oleo: 0.24, mats: M });
       if (b) bogies.push({ node: b, z: 0.5 });
     }
     for (const s of [-1, 1]) {
-      const body = bodyLeg(ctx, s, { x: 2.65, z: 4.4, attachY: -3.0, contactY: C.ground, axles: 3, pitch: 1.55, track: 1.24, r: C.main.r, width: 0.5, oleo: 0.24, mass: 420 });
+      const body = bodyLeg(ctx, s, { x: 2.65, z: 4.4, attachY: -3.0, contactY: C.ground, axles: 3, pitch: 1.55, track: 1.24, r: C.main.r, width: 0.5, oleo: 0.24, mass: 420, mats: M });
       bogies.push({ node: body.bogie, z: 4.4 });
       ctx.registerAnimation((dt, state) => {
         const gear = state.gear ?? 1;
@@ -939,29 +1095,14 @@ const a380 = {
       });
     }
     levelBogies(ctx, bogies, C.main.z);
-    // Two full decks.
-    windowRows(ctx, a380Body, [
-      { y: -0.6, z0: -26.5, z1: 30.0, count: 90, w: 0.3, h: 0.42,
-        skip: [[-25.9, -24.2], [-12.9, -11.1], [-0.2, 1.6], [13.6, 15.4], [25.2, 27.0]] },
-      { y: 2.55, z0: -24.5, z1: 26.5, count: 80, w: 0.3, h: 0.4,
-        skip: [[-21.6, -19.9], [-4.0, -2.3], [18.3, 20.0]] },
-    ], parts.fuselage);
-    doors(ctx, a380Body, [
-      { z: -25.05, y: -0.9, w: 1.07, h: 1.93 }, { z: -12.0, y: -0.9, w: 1.07, h: 1.93 },
-      { z: 0.7, y: -0.9, w: 1.07, h: 1.93 }, { z: 14.5, y: -0.9, w: 1.07, h: 1.93 },
-      { z: 26.1, y: -0.6, w: 1.07, h: 1.93 },
-      { z: -20.75, y: 2.25, w: 1.07, h: 1.9 }, { z: -3.15, y: 2.25, w: 1.07, h: 1.9 },
-      { z: 19.15, y: 2.3, w: 1.07, h: 1.85 },
-    ], parts.fuselage);
-    flightDeck(ctx, a380Body, [
-      { z0: -32.75, z1: -32.0, phi0: [0.1, 0.09], phi1: [0.58, 0.55] },
-      { z0: -31.95, z1: -31.15, phi0: [0.66, 0.64], phi1: [0.98, 0.95] },
-      { z0: -31.1, z1: -30.55, phi0: [0.7, 0.7], phi1: [0.92, 0.92] },
-    ], parts.nose);
   },
-  description: 'The A380: a double-deck fuselage the full length of the aeroplane, a huge wing with wingtip fences, four turbofans, twenty-two wheels.',
+  description: 'The A380: a double-deck fuselage the full length of the aeroplane, the flight deck between the decks under a tall forehead, a huge wing with wingtip fences, four turbofans, twenty-two wheels, doors that open on both decks.',
   inspiration: 'Drawn to the A380-800\'s published dimensions for a children\'s flight game; house livery is the game\'s own.',
 };
 
 export const DEFINITIONS = [a320, b747, a380];
 export const DRAWS = ['a320', 'b747', 'a380'];
+
+/** For tests and the hangar: each type's fuselage, deck and door specification, in metres. */
+export const AIRLINER_SPECS = { a320: A320, b747: B747, a380: A380 };
+export { dress as dressAirliner, refitLeg as refitAirlinerLeg, st as hullStation, ell as ellipseStation, bodyOf, ringsBetween };

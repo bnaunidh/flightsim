@@ -37,6 +37,7 @@
  */
 import { hull, wing, roundNose, tubePath, turned } from './civil-kit.js';
 import { tailGroup, oleoLeg, windowRow, jetNacelle, seamOnSkin } from './civil-details.js';
+import { glazing, buildDoors } from './airliner-parts.js';
 
 export function buildMeridian(b) {
   const { S, m } = b;
@@ -50,11 +51,27 @@ export function buildMeridian(b) {
   // Aft of the constant section every station's belly sits 0.06-0.08 above
   // the tail-strike line, y = -1.5 + 0.3113 (z - 0.9): the line from the
   // main wheels' contact to the physics' tail point (0, -0.12, 5.3325).
+  /*
+   * The nose (redone with the airliners, brief item 1). It was a short
+   * round cap with the windscreen 2.6 m ahead of the pilot's eye, which
+   * sat beside the forward door. A regional jet's nose is long and
+   * pointed, its top nearly flat back to the windscreen, the windscreen
+   * steep and just ahead of the pilots, the cabin starting behind them —
+   * so the radome now runs back to z -2.0, the windscreen leans back from
+   * there to -1.75 with its lower edge 0.4 m below the (fixed) eye, the
+   * side windows are beside the eye at -1.5, and the full section starts
+   * at -0.9, with the forward door behind it.
+   */
   const stations = [
-    ...roundNose(-3.76, 1.0, { w: 0.54, top: 0.33, bot: -0.59, yc: -0.11, nT: 2.0, nB: 2.0 }, { y: -0.18 }, 5, 0.9),
-    { z: -2.4, w: 0.6, top: 0.47, bot: -0.62, yc: -0.05, nT: 2.0, nB: 2.0 },
-    { z: -2.0, w: 0.63, top: 0.59, bot: -0.635, yc: -0.02, nT: 2.0, nB: 2.0 },
-    { z: -1.5, w: R, top: R, bot: -R, yc: 0, nT: 2.0, nB: 2.05 },
+    ...roundNose(-3.76, 0.45, { w: 0.27, top: -0.03, bot: -0.38, yc: -0.2, nT: 2.0, nB: 2.0 }, { y: -0.2 }, 5, 0.9),
+    { z: -2.85, w: 0.39, top: 0.02, bot: -0.47, yc: -0.21, nT: 2.0, nB: 2.0 },
+    { z: -2.4, w: 0.48, top: 0.06, bot: -0.55, yc: -0.21, nT: 2.0, nB: 2.0 },
+    { z: -2.02, w: 0.55, top: 0.1, bot: -0.6, yc: -0.2, nT: 2.05, nB: 2.0 },
+    { z: -1.88, w: 0.575, top: 0.24, bot: -0.62, yc: -0.16, nT: 2.1, nB: 2.0 },
+    { z: -1.74, w: 0.6, top: 0.4, bot: -0.63, yc: -0.12, nT: 2.1, nB: 2.0 },
+    { z: -1.5, w: 0.62, top: 0.52, bot: -0.638, yc: -0.07, nT: 2.05, nB: 2.02 },
+    { z: -1.2, w: 0.635, top: 0.6, bot: -0.64, yc: -0.02, nT: 2.0, nB: 2.04 },
+    { z: -0.9, w: R, top: R, bot: -R, yc: 0, nT: 2.0, nB: 2.05 },
     { z: 3.3, w: R, top: R, bot: -R, yc: 0, nT: 2.0, nB: 2.05 },
     { z: 4.05, w: 0.6, top: 0.63, bot: -0.45, yc: 0.06, nT: 2.0, nB: 2.0 },
     { z: 4.8, w: 0.49, top: 0.61, bot: -0.21, yc: 0.15, nT: 2.0, nB: 2.0 },
@@ -62,39 +79,95 @@ export function buildMeridian(b) {
     { z: 6.25, w: 0.2, top: 0.55, bot: 0.24, yc: 0.38, nT: 2.0, nB: 2.0 },
     { z: 6.72, w: 0.09, top: 0.52, bot: 0.39, yc: 0.45, nT: 2.0, nB: 2.0 },
   ];
+  const UV = { right: 0, left: -0.7 };
   const h = hull({
     stations,
-    radial: 9,
-    // Rings where the section changes; the constant cabin between -1.5 and
+    radial: 10,
+    // Rings where the section changes; the constant cabin between -0.9 and
     // 3.3 needs none but the stations, and a ring every 0.5 through it was
     // 400 triangles bending nothing.
     maxStep: 0.8,
-    rings: [-1.75, 3.7, 4.4, 5.15, 5.9],
-    lines: {
-      ctr: 0.05, // the windscreen's centre post
-      fdTop: 0.55, // top of the flight-deck side windows
-      ws: 0.9, // the windscreen wraps this far round
-      fdBot: 1.1, // bottom of the flight-deck side windows
-    },
-    windows: [
-      { z0: -2.74, z1: -2.44, from: 'ctr', to: 'ws' },
-      { z0: -2.4, z1: -2.2, from: 'fdTop', to: 'fdBot' },
-      { z0: -2.16, z1: -1.92, from: 'fdTop', to: 'fdBot' },
-    ],
-    uv: { right: 0, left: -0.7 },
+    rings: [3.7, 4.4, 5.15, 5.9],
+    uv: UV,
   });
   b.addHull(h);
 
+  /*
+   * The flight deck: two windscreens either side of a centre post, then
+   * two side windows, the second beside the pilot's eye — each in a black
+   * frame, the glass dark and reflective, a wiper on each windscreen.
+   * Laid on the skin rather than cut out of it, as on the airliners
+   * (./airliner-parts.js); the outline is published for the cockpit.
+   */
+  const unit = S.scale;
+  /*
+   * The frames sit 1.2 and the glass 1.8 shape units out (2.5 and 3.7 cm):
+   * the hull is twenty flat quads round, and the skin between two of them
+   * sags 0.8 units below the surface the panes follow, so panes 0.5 out had
+   * their middles buried. The decal materials carry a polygon offset too, so
+   * from a few hundred metres away the panes and the skin never trade the
+   * depth test frame to frame (the flicker on parked traffic).
+   */
+  if (!m.glassDecal) {
+    m.glassDecal = m.glass.clone();
+    m.glassDecal.polygonOffset = true;
+    m.glassDecal.polygonOffsetFactor = -2;
+    m.glassDecal.polygonOffsetUnits = -2;
+  }
+  if (!m.darkDecal) {
+    m.darkDecal = m.dark.clone();
+    m.darkDecal.polygonOffset = true;
+    m.darkDecal.polygonOffsetFactor = -2;
+    m.darkDecal.polygonOffsetUnits = -2;
+  }
+  const deck = glazing(h, [
+    { name: 'Windscreen', wiper: true, corners: [{ z: -2.02, x: 0.025 }, { z: -1.93, y: 0.12 }, { z: -1.74, y: 0.31 }, { z: -1.78, x: 0.025 }] },
+    { name: 'Side window', corners: [{ z: -1.89, y: 0.12 }, { z: -1.56, y: 0.15 }, { z: -1.58, y: 0.4 }, { z: -1.71, y: 0.33 }] },
+    { name: 'Rear side window', corners: [{ z: -1.5, y: 0.16 }, { z: -1.27, y: 0.17 }, { z: -1.31, y: 0.39 }, { z: -1.5, y: 0.43 }] },
+  ], { frame: 0.032, frameOff: 0.012, glassOff: 0.018, unit, frameGrid: [3, 3], glassGrid: [3, 4] });
+  b.put(deck.frames, m.darkDecal);
+  b.put(deck.glass, m.glassDecal);
+  if (deck.wipers) b.put(deck.wipers, m.darkDecal);
+  b.flightDeck = { panes: deck.outlines.map((p) => ({ ...p, corners: p.corners.map((c) => c.map((v) => +(v * unit).toFixed(3))) })) };
+
   // Cabin windows on the skin, a door at each end each side.
   const winY = 0.2;
-  const doorZ = [-1.5, 3.3];
-  windowRow(b, h, { z0: -1.25, z1: 3.05, pitch: 0.25, y: winY, w: 0.1, h: 0.15, skip: [] });
+  const doorZ = [-0.95, 3.3];
+  windowRow(b, h, { z0: -0.62, z1: 3.05, pitch: 0.25, y: winY, w: 0.1, h: 0.15, skip: [], lift: 0.012 });
+  // The doors themselves: hidden until opened (the seams below are what a
+  // shut door looks like), then the leaf swings forward along the skin.
+  const uvOf = (hh, z, s, side) => {
+    const t = (z - h.zMin) / (h.zMax - h.zMin);
+    return [side > 0 ? UV.right + (1 - t) : UV.left + t, 1 - s / Math.PI];
+  };
+  b.doors = buildDoors({
+    list: doorZ.flatMap((z, i) => ['left', 'right'].map((side) => ({
+      id: `${side === 'left' ? 'L' : 'R'}${i + 1}`, side, z, y: 0.02, w: 0.34, h: 0.76, kind: 'passenger', sill: -0.36, hull: h,
+    }))),
+    parentFor: () => b.root,
+    // The doorway behind an open door lies on the skin: a decal, like the seams.
+    materials: { skin: m.body, interior: m.grey, opening: m.darkDecal },
+    // The leaf's paint mapped as the hull maps it, so the door and the skin
+    // round it match.
+    uvOf,
+    own: (g) => g,
+    scale: unit,
+  });
+  b.updaters.push((dt) => b.doors.update(dt));
+  if (!m.greyDecal) {
+    m.greyDecal = m.grey.clone();
+    m.greyDecal.polygonOffset = true;
+    m.greyDecal.polygonOffsetFactor = -2;
+    m.greyDecal.polygonOffsetUnits = -2;
+  }
   for (const dz of doorZ) {
     for (const side of [-1, 1]) {
-      // Door outline: a thin dark seam laid on the skin, following its
-      // curve (see seamOnSkin).
+      // Door outline: a thin seam laid on the skin, following its curve
+      // (see seamOnSkin), lifted clear of the facets like the panes above,
+      // with a small handle recess at half height on the aft edge.
       const corners = [[-0.17, -0.36], [-0.17, 0.33], [-0.11, 0.4], [0.11, 0.4], [0.17, 0.33], [0.17, -0.36], [-0.17, -0.36]];
-      b.put(seamOnSkin(h, dz, side, corners), m.grey);
+      b.put(seamOnSkin(h, dz, side, corners, { width: 0.016, lift: 0.012 }), m.greyDecal);
+      b.put(seamOnSkin(h, dz, side, [[0.09, 0.0], [0.14, 0.0], [0.14, 0.03], [0.09, 0.03], [0.09, 0.0]], { width: 0.014, step: 0.03, lift: 0.013 }), m.darkDecal);
     }
   }
 
@@ -197,6 +270,9 @@ export function buildMeridian(b) {
       doorWidth: 0.36,
     });
   }
+  // The nose leg's aft doors stay open with the gear down (the forward pair
+  // closes again on a real airliner): 'front' puts the plate ahead of the
+  // strut, where the pair's hinge line is.
   oleoLeg(b, {
     name: 'nose gear',
     top: [0, -0.62, S.nose.z - 0.05],
@@ -207,6 +283,8 @@ export function buildMeridian(b) {
     strut: 0.045,
     steer: true,
     fold: { axis: [1, 0, 0], angle: 1.45 },
+    door: 'front',
+    doorWidth: 0.3,
   });
 
   /* ---------------- Details ---------------- */

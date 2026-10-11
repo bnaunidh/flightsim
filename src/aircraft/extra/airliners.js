@@ -422,3 +422,116 @@ export function TYPES(base) {
     },
   ];
 }
+
+/* ------------------------------------------------------------------ *
+ * Doors
+ * ------------------------------------------------------------------ */
+
+/**
+ * Every door and exit of each airliner as drawn by default, in metres in
+ * the aeroplane's own frame (origin at the centre of gravity, -Z forward,
+ * +Y up, +X right) — for whatever needs a door without building the model:
+ * the evacuation (passengers out of these, crew, then you), the jet bridges
+ * and stair trucks at the stands.
+ *
+ *   id      L1, R1, ... (main deck, from the front); UL1/UR1... the upper
+ *           deck; OL1/OR1... the A320's overwing exits
+ *   side    'left' | 'right'; deck 'main' | 'upper'
+ *   kind    'passenger' (a full-size door) | 'overwing' (a Type III exit)
+ *   x, y, z the middle of the doorway on the skin
+ *   w, h    its width and height
+ *   sill    the floor's height at the door
+ *   normal  outward, horizontal-ish: the way out of it
+ *
+ * Measured off the models (src/fleet/extra/airliners.js and, for the
+ * Meridian, src/aircraft/models/meridian.js), not typed in: the node test
+ * tests/features/airliners.mjs rebuilds every one and fails, naming the
+ * door, if this table and the drawing are 2 cm apart anywhere. On a model
+ * the same records, with the doors themselves, are model.userData.doors —
+ * open(id) / close(id) / set(id, t) / amount(id) / node(id) /
+ * worldPosition(model, id) — which is the one to use when the model is at
+ * hand (the pack's Meridian, drawn when Settings turns the pack on, has
+ * doors of its own there).
+ */
+export const AIRLINER_DOORS = {
+  a320: [
+    { id: "L1", side: "left", deck: "main", kind: "passenger", x: -1.928, y: 0.31, z: -11.95, w: 0.81, h: 1.85, sill: -0.62, normal: [-0.984,0.174,0] },
+    { id: "R1", side: "right", deck: "main", kind: "passenger", x: 1.928, y: 0.31, z: -11.95, w: 0.81, h: 1.85, sill: -0.62, normal: [0.984,0.174,0] },
+    { id: "L2", side: "left", deck: "main", kind: "passenger", x: -1.639, y: 0.31, z: 12.3, w: 0.81, h: 1.85, sill: -0.62, normal: [-0.992,-0.06,0] },
+    { id: "R2", side: "right", deck: "main", kind: "passenger", x: 1.639, y: 0.31, z: 12.3, w: 0.81, h: 1.85, sill: -0.62, normal: [0.992,-0.06,0] },
+    { id: "OL1", side: "left", deck: "main", kind: "overwing", x: -1.945, y: 0.36, z: -1.08, w: 0.51, h: 0.94, sill: -0.11, normal: [-0.986,0.166,0] },
+    { id: "OR1", side: "right", deck: "main", kind: "overwing", x: 1.945, y: 0.36, z: -1.08, w: 0.51, h: 0.94, sill: -0.11, normal: [0.986,0.166,0] },
+    { id: "OL2", side: "left", deck: "main", kind: "overwing", x: -1.945, y: 0.36, z: -0.535, w: 0.51, h: 0.94, sill: -0.11, normal: [-0.986,0.166,0] },
+    { id: "OR2", side: "right", deck: "main", kind: "overwing", x: 1.945, y: 0.36, z: -0.535, w: 0.51, h: 0.94, sill: -0.11, normal: [0.986,0.166,0] },
+  ],
+  b747: [
+    { id: "L1", side: "left", deck: "main", kind: "passenger", x: -3.218, y: 0.465, z: -22.3, w: 1.07, h: 1.93, sill: -0.5, normal: [-0.99,0.139,0] },
+    { id: "R1", side: "right", deck: "main", kind: "passenger", x: 3.218, y: 0.465, z: -22.3, w: 1.07, h: 1.93, sill: -0.5, normal: [0.99,0.139,0] },
+    { id: "L2", side: "left", deck: "main", kind: "passenger", x: -3.218, y: 0.465, z: -12, w: 1.07, h: 1.93, sill: -0.5, normal: [-0.99,0.139,0] },
+    { id: "R2", side: "right", deck: "main", kind: "passenger", x: 3.218, y: 0.465, z: -12, w: 1.07, h: 1.93, sill: -0.5, normal: [0.99,0.139,0] },
+    { id: "L3", side: "left", deck: "main", kind: "passenger", x: -3.218, y: 0.465, z: -0.9, w: 1.07, h: 1.93, sill: -0.5, normal: [-0.99,0.139,0] },
+    { id: "R3", side: "right", deck: "main", kind: "passenger", x: 3.218, y: 0.465, z: -0.9, w: 1.07, h: 1.93, sill: -0.5, normal: [0.99,0.139,0] },
+    { id: "L4", side: "left", deck: "main", kind: "passenger", x: -3.218, y: 0.465, z: 10.4, w: 1.07, h: 1.93, sill: -0.5, normal: [-0.99,0.139,0] },
+    { id: "R4", side: "right", deck: "main", kind: "passenger", x: 3.218, y: 0.465, z: 10.4, w: 1.07, h: 1.93, sill: -0.5, normal: [0.99,0.139,0] },
+    { id: "L5", side: "left", deck: "main", kind: "passenger", x: -2.678, y: 0.465, z: 22, w: 1.07, h: 1.93, sill: -0.5, normal: [-0.959,-0.262,0] },
+    { id: "R5", side: "right", deck: "main", kind: "passenger", x: 2.678, y: 0.465, z: 22, w: 1.07, h: 1.93, sill: -0.5, normal: [0.959,-0.262,0] },
+    { id: "UL1", side: "left", deck: "upper", kind: "passenger", x: -2.15, y: 3.4, z: -16.4, w: 0.92, h: 1.6, sill: 2.6, normal: [-0.958,0.286,0] },
+    { id: "UR1", side: "right", deck: "upper", kind: "passenger", x: 2.15, y: 3.4, z: -16.4, w: 0.92, h: 1.6, sill: 2.6, normal: [0.958,0.286,0] },
+  ],
+  a380: [
+    { id: "L1", side: "left", deck: "main", kind: "passenger", x: -3.55, y: -0.68, z: -24.9, w: 1.07, h: 1.93, sill: -1.65, normal: [-0.996,-0.087,0] },
+    { id: "R1", side: "right", deck: "main", kind: "passenger", x: 3.55, y: -0.68, z: -24.9, w: 1.07, h: 1.93, sill: -1.65, normal: [0.996,-0.087,0] },
+    { id: "L2", side: "left", deck: "main", kind: "passenger", x: -3.55, y: -0.68, z: -12, w: 1.07, h: 1.93, sill: -1.65, normal: [-0.996,-0.087,0] },
+    { id: "R2", side: "right", deck: "main", kind: "passenger", x: 3.55, y: -0.68, z: -12, w: 1.07, h: 1.93, sill: -1.65, normal: [0.996,-0.087,0] },
+    { id: "L3", side: "left", deck: "main", kind: "passenger", x: -3.55, y: -0.68, z: 0.7, w: 1.07, h: 1.93, sill: -1.65, normal: [-0.996,-0.087,0] },
+    { id: "R3", side: "right", deck: "main", kind: "passenger", x: 3.55, y: -0.68, z: 0.7, w: 1.07, h: 1.93, sill: -1.65, normal: [0.996,-0.087,0] },
+    { id: "L4", side: "left", deck: "main", kind: "passenger", x: -3.55, y: -0.68, z: 10.2, w: 1.07, h: 1.93, sill: -1.65, normal: [-0.996,-0.087,0] },
+    { id: "R4", side: "right", deck: "main", kind: "passenger", x: 3.55, y: -0.68, z: 10.2, w: 1.07, h: 1.93, sill: -1.65, normal: [0.996,-0.087,0] },
+    { id: "L5", side: "left", deck: "main", kind: "passenger", x: -3.072, y: -0.68, z: 19.2, w: 1.07, h: 1.93, sill: -1.65, normal: [-0.925,-0.366,0] },
+    { id: "R5", side: "right", deck: "main", kind: "passenger", x: 3.072, y: -0.68, z: 19.2, w: 1.07, h: 1.93, sill: -1.65, normal: [0.925,-0.366,0] },
+    { id: "UL1", side: "left", deck: "upper", kind: "passenger", x: -2.998, y: 2.52, z: -20.75, w: 1.07, h: 1.93, sill: 1.55, normal: [-0.878,0.478,0] },
+    { id: "UR1", side: "right", deck: "upper", kind: "passenger", x: 2.998, y: 2.52, z: -20.75, w: 1.07, h: 1.93, sill: 1.55, normal: [0.878,0.478,0] },
+    { id: "UL2", side: "left", deck: "upper", kind: "passenger", x: -2.998, y: 2.52, z: -3.15, w: 1.07, h: 1.93, sill: 1.55, normal: [-0.878,0.478,0] },
+    { id: "UR2", side: "right", deck: "upper", kind: "passenger", x: 2.998, y: 2.52, z: -3.15, w: 1.07, h: 1.93, sill: 1.55, normal: [0.878,0.478,0] },
+    { id: "UL3", side: "left", deck: "upper", kind: "passenger", x: -2.986, y: 2.52, z: 17.5, w: 1.07, h: 1.93, sill: 1.55, normal: [-0.882,0.47,0] },
+    { id: "UR3", side: "right", deck: "upper", kind: "passenger", x: 2.986, y: 2.52, z: 17.5, w: 1.07, h: 1.93, sill: 1.55, normal: [0.882,0.47,0] },
+  ],
+  meridian: [
+    { id: "L1", side: "left", deck: "main", kind: "passenger", x: -1.311, y: 0.041, z: -1.947, w: 0.697, h: 1.558, sill: -0.738, normal: [-0.999,0.032,0] },
+    { id: "R1", side: "right", deck: "main", kind: "passenger", x: 1.311, y: 0.041, z: -1.947, w: 0.697, h: 1.558, sill: -0.738, normal: [0.999,0.032,0] },
+    { id: "L2", side: "left", deck: "main", kind: "passenger", x: -1.311, y: 0.041, z: 6.765, w: 0.697, h: 1.558, sill: -0.738, normal: [-1,0.031,0] },
+    { id: "R2", side: "right", deck: "main", kind: "passenger", x: 1.311, y: 0.041, z: 6.765, w: 0.697, h: 1.558, sill: -0.738, normal: [1,0.031,0] },
+  ],
+};
+
+/** The door list for a type (a copy), or null for one without a table. */
+export function doorsFor(typeId) {
+  const list = AIRLINER_DOORS[typeId];
+  return list ? list.map((d) => ({ ...d, normal: [...d.normal] })) : null;
+}
+
+/**
+ * The doors the ground crew use, picked from any door list — a table's, or
+ * a model's own (model.userData.doors.list): the front left main-deck
+ * passenger door (the bridge and the stairs), the rearmost right one
+ * (catering), and the sill. Null for no list, or one with no such door.
+ */
+export function serviceDoorsFrom(list) {
+  if (!Array.isArray(list) || !list.length) return null;
+  const main = (side) => list.filter((d) => d.deck === 'main' && d.kind === 'passenger' && d.side === side).sort((a, b) => a.z - b.z);
+  const L = main('left');
+  const R = main('right');
+  if (!L.length) return null;
+  return { front: L[0], rear: (R.length ? R : L)[(R.length ? R : L).length - 1], sill: L[0].sill };
+}
+
+/**
+ * The same from the type's table. Null for a type without a table. The
+ * table describes the model the game draws by default: when the model is
+ * at hand, read its own doors (serviceDoorsFrom(model.userData.doors.list))
+ * — the pack's Meridian, drawn when Settings turns the pack on, has its
+ * front door 7.5 m ahead of the table's.
+ */
+export function serviceDoors(typeId) {
+  return serviceDoorsFrom(AIRLINER_DOORS[typeId]);
+}

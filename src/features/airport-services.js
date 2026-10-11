@@ -305,16 +305,22 @@ function playerInfo(sim) {
       if (base) {
         // The measured body and wing, the roster's wheels.
         const b = m.body;
+        // An airliner's drawn doors (its model publishes them) over the
+        // guess from the body's parallel part.
+        const doors = sim.model.userData && sim.model.userData.doors;
+        const main = doors && doors.list ? doors.list.filter((d) => d.deck === 'main' && d.kind === 'passenger').sort((p, q) => p.z - q.z) : [];
+        const front = main.find((d) => d.side === 'left');
+        const rear = main.filter((d) => d.side === 'right').pop();
         info = {
           ...base,
           hw: b.halfWidth,
           yc: b.centreY,
           noseZ: m.box.min.z,
           tailZ: m.box.max.z,
-          frontDoorZ: b.front + Math.min(1.5, (b.rear - b.front) * 0.08),
-          rearDoorZ: b.rear - Math.min(1.8, (b.rear - b.front) * 0.08),
+          frontDoorZ: front ? front.z : b.front + Math.min(1.5, (b.rear - b.front) * 0.08),
+          rearDoorZ: rear ? rear.z : b.rear - Math.min(1.8, (b.rear - b.front) * 0.08),
           holdZ: b.front + (b.rear - b.front) * 0.3,
-          sill: b.centreY - 0.3 * b.halfWidth,
+          sill: front ? front.sill : b.centreY - 0.3 * b.halfWidth,
           holdSill: b.centreY - 0.8 * b.halfWidth,
           halfSpan: m.halfSpan,
           wingTipZ: m.wingTipZ,

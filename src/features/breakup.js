@@ -481,6 +481,28 @@ function unwatch(model) {
   S.models.delete(model);
 }
 
+/**
+ * A model back as built. The fleet pack's aeroplanes crush their own skin —
+ * and move their own window panes with it — in the game's crash entry
+ * BEFORE we survey them, so what our record saved of their instanced meshes
+ * is the pack's crushed state. main.js puts a new flight's model back in this
+ * order: the pack's own reset (syncAircraftModel), then the features'
+ * update, ours — so restoring our record alone wrote the crushed panes back
+ * over the pack's reset. Its reset runs again after ours, which puts what it
+ * owns back; it is idempotent and cheap.
+ */
+function putBack(model) {
+  restoreModel(model);
+  const u = model && model.userData;
+  if (u && u.fleetBridge && typeof u.resetDamage === 'function') {
+    try {
+      u.resetDamage();
+    } catch (e) {
+      /* the pack's own business; the model is already ours-as-built */
+    }
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * The pool
  * ------------------------------------------------------------------ */
@@ -530,9 +552,9 @@ function resetAll(sim) {
   for (const f of S.pre) f.t = -1e9;
   for (const m of [...S.models]) {
     unwatch(m);
-    restoreModel(m);
+    putBack(m);
   }
-  if (sim && sim.model && isBroken(sim.model)) restoreModel(sim.model);
+  if (sim && sim.model && isBroken(sim.model)) putBack(sim.model);
   if (sim && sim.aircraft) sim.aircraft.lost = null;
 }
 
@@ -1913,7 +1935,7 @@ registerExtension({
     // A new flight in the same aeroplane, or a reset on the runway: put it back.
     const ac = sim.aircraft;
     if (ac && !ac.crashed && !ac.lost && m && isBroken(m) && !S.replay) {
-      restoreModel(m);
+      putBack(m);
       unwatch(m);
     }
   },
@@ -1969,6 +1991,7 @@ export function breakupDebug() {
     slow: { ...S.slow },
     zonesOf: (model, type) => zonesOf(S.sim, model || (S.sim && S.sim.model), type),
     breakModel: (model, type, hit) => breakModel(S.sim, model, type, hit),
+    putBack: (model) => putBack(model),
     trackNpc: (body, model) => trackNpc(body, model),
     spawnRaft: (x, z, yaw, L) => spawnRaft(S.sim, x, z, yaw, L),
     npcSinks: () => S.npcs.map((n) => (n.sink ? { t: n.sink.t, phase: n.sink.last ? n.sink.last.phase : null, pitch: n.sink.last ? n.sink.last.pitch : null } : null)),

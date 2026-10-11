@@ -25,7 +25,10 @@
  *                                  the piece's centre, same materials), and
  *                                  the model's meshes are given a geometry
  *                                  with those triangles left out
- *   deformZones(asg, actions, hit) bend, crush and fold what stays on
+ *   deformZones(asg, actions, hit) bend, crush and fold what stays on — the
+ *                                  meshes vertex by vertex, the instanced
+ *                                  ones (window panes, tyres) copy by copy,
+ *                                  so what sits on a skin moves with it
  *   restoreModel(model)            put everything back exactly as built
  *
  * NOTHING HERE EDITS A MODEL BUILDER OR A SHARED GEOMETRY. A broken mesh is
@@ -769,8 +772,12 @@ function applyDeform(asg, rec, d, fn) {
   let moved = 0;
   for (const it of asg.items) {
     const e = it.e;
-    if (e.kind !== 'mesh' || e.effect) continue;
+    if (e.effect || e.kind === 'sprite') continue;
     if (!it.zone.includes(idx)) continue;
+    if (e.kind === 'instanced') {
+      moved += deformInstances(rec, e, it, idx, fn);
+      continue;
+    }
     const o = e.obj;
     // Deformed on a geometry of its own (the cut one), never the shared one.
     if (!rec.owned.has(o.geometry)) {
@@ -812,12 +819,59 @@ function applyDeform(asg, rec, d, fn) {
   return moved;
 }
 
+/**
+ * The instanced meshes of a zone — an airliner's cabin window panes, its
+ * tyres — ride the same deformation as the skin they sit on, each copy by
+ * where it is: moved where the field moves that point, its facing kept. Left
+ * alone (as they were at first) the panes of a crushed nose or a bent tail
+ * cone stayed in the air where the skin had been, a dashed row of dark
+ * squares beside the wreck. Their matrices as built are saved once, in the
+ * same record the removed zones use, and restoreModel puts them back.
+ */
+function deformInstances(rec, e, it, idx, fn) {
+  const o = e.obj;
+  let any = false;
+  for (let k = 0; k < o.count && !any; k++) if (it.zone[k] === idx) any = true;
+  if (!any) return 0;
+  if (!rec.instanceSaved.has(o)) rec.instanceSaved.set(o, o.instanceMatrix.array.slice());
+  const inv = new THREE.Matrix4().copy(e.M).invert();
+  const m = new THREE.Matrix4();
+  const shift = new THREE.Matrix4();
+  const at = new THREE.Vector3();
+  const to = new THREE.Vector3();
+  let moved = 0;
+  for (let k = 0; k < o.count; k++) {
+    if (it.zone[k] !== idx) continue;
+    o.getMatrixAt(k, m);
+    m.premultiply(e.M); // the copy, in body metres
+    at.setFromMatrixPosition(m);
+    to.copy(at);
+    if (!fn(to)) continue;
+    shift.makeTranslation(to.x - at.x, to.y - at.y, to.z - at.z);
+    m.premultiply(shift).premultiply(inv); // moved, then back into the mesh's frame
+    o.setMatrixAt(k, m);
+    moved++;
+  }
+  if (moved) {
+    o.instanceMatrix.needsUpdate = true;
+    o.computeBoundingSphere();
+  }
+  return moved;
+}
+
 /** One deformation, in body metres: a function that moves a point (true if it did). */
 function deformer(f, d) {
   const sc = f.scale || 1;
   const k = Math.max(0, Math.min(1, d.amount));
   const zone = d.zone;
   const Z = ZONES[zone] || {};
+  // The crumple waves below stretch with airframes past 10 m. A 2 m wave on
+  // a 70 m airliner whose hull rings are 2-3 m apart is not drawn by that
+  // skin, it only jitters its rings — and the window panes, which ride the
+  // same wave exactly (deformInstances), then sat up to 0.6 m off the
+  // jittered skin beside them. A 14 m wave the skin resolves, so what is laid
+  // on it stays on it; a trainer (7 m) crumples exactly as before.
+  const wave = Math.min(1, 10 / Math.max(1, f.L || 1));
   const q = new THREE.Quaternion();
   const rot = (axis, origin, ang) => {
     const qq = new THREE.Quaternion().setFromAxisAngle(axis, ang);
@@ -896,7 +950,7 @@ function deformer(f, d) {
       if (dz <= 0) return false;
       p.z = zs - dz * (1 - 0.38 * k);
       p.y -= dz * 0.12 * k * up;
-      p.x += Math.sin(p.z * 7.1 + d.seed) * 0.0025 * k * f.L;
+      p.x += Math.sin(p.z * 7.1 * wave + d.seed) * 0.0025 * k * f.L;
       return true;
     };
   }
@@ -907,8 +961,8 @@ function deformer(f, d) {
   if (zone === CORE) {
     const amp = 0.012 * f.L * k;
     return (p) => {
-      p.y += Math.sin(p.z * 3.1 + d.seed) * amp * 0.6;
-      p.x += Math.sin(p.z * 2.3 + d.seed * 0.7) * amp * 0.4 * Math.sign(p.x || 1);
+      p.y += Math.sin(p.z * 3.1 * wave + d.seed) * amp * 0.6;
+      p.x += Math.sin(p.z * 2.3 * wave + d.seed * 0.7) * amp * 0.4 * Math.sign(p.x || 1);
       return true;
     };
   }

@@ -268,11 +268,25 @@ export async function check(sim, r, say = () => {}) {
     const lowered = hook ? hook.rotation.x : null;
     r.ok('quality: the Osprey\'s hook is stowed on the ground and comes down for the approach',
       hook && stowed < -1 && lowered > -0.1, hook ? `on the ground ${stowed.toFixed(2)} rad, gear down in the air ${lowered.toFixed(2)} rad` : 'no hook found');
+    /*
+     * The exterior redo: the seams are painted in the livery and each door
+     * is a hidden group of its own ('Door L1' and so on, shut by default),
+     * published as userData.doors — not the old white 'Doors' cards, and no
+     * longer a 'Door seams' mesh either.
+     */
     const a320 = MA.createAircraftModel({ type: TY.getAircraft('a320') });
     let cards = 0;
-    let seams = 0;
-    a320.traverse((o) => { if (o.name === 'Doors') cards++; if (o.name === 'Door seams') seams++; });
-    r.ok('quality: the A320\'s doors are seams on the skin, not white cards', cards === 0 && seams > 0, `${cards} card meshes, ${seams} seam meshes`);
+    const doorList = (a320.userData.doors && a320.userData.doors.list) || [];
+    let shutDoors = 0;
+    a320.traverse((o) => { if (o.name === 'Doors' || o.name === 'Door seams') cards++; });
+    for (const d of doorList) {
+      const n = a320.userData.doors.node(d.id);
+      let leaf = null;
+      if (n) n.traverse((o) => { if (o.name === `Door ${d.id} leaf`) leaf = o; });
+      if (leaf && !leaf.visible) shutDoors++;
+    }
+    r.ok('quality: the A320\'s doors are seams on the skin, not white cards', cards === 0 && doorList.length === 8 && shutDoors === 8,
+      `${cards} card/seam meshes, ${doorList.length} published doors, ${shutDoors} shut`);
 
     const cop = EV.createPerson('police');
     const rig = cop.userData && cop.userData.rig;

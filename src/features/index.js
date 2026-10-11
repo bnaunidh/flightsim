@@ -30,6 +30,13 @@ import './multiplayer.js';
 // which is what the minimap draws and what the player can collide with.
 import './sky.js';
 import './traffic.js';
+// After traffic and sky: the ambient population of every map — cars on the streets, boats on the
+// water, helicopters and light aeroplanes in the sky (solid sky bodies, so the minimap draws them),
+// and airport traffic asked of traffic.js under its own runway rules.
+import './ambient.js';
+// After ambient: the emergency scene (a cordon, crews and helicopters round an incident), raised by
+// a mission's `scenes` or by any feature; it thins the ambient population round itself.
+import './emergency-scene.js';
 import './fun.js';
 import './rocket.js';
 // Replaces the sticker book fun.js used to carry: achievements, named and
@@ -45,6 +52,10 @@ import './mpworld.js';
 import './pilot-mp.js';
 // Carrier ops: the hook, the wires, the meatball, the catapults, and military flights starting on the ship.
 import './carrier-ops.js';
+// After carrier-ops: where a Free Flight starts by aircraft class — a gate, the GA apron, the flight
+// line, a pad, the harbour — with the "Start at" picker that folds the carrier choice in. Its
+// startFree wrapper has to be the outermost one, so it is installed after the carrier's.
+import './spawns.js';
 // Air Force One: the escort and the drones/missiles/flares (the captain's side; the lead fighter's own
 // side, src/game/roles/afo-lead.js, loads from the mission list, src/game/extra/afo.js, like every seat does).
 import './events/afo.js';

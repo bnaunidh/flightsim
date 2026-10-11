@@ -276,7 +276,62 @@ for (const id of IDS) {
   const hulls = [];
   model.traverse((o) => o.isMesh && Array.isArray(o.material) && hulls.push(o));
   const main = hulls.find((o) => o.name === 'fuselage');
-  ok(`${id}: fuselage has glass in its own grid`, main && main.geometry.groups.length === 2 && main.geometry.groups[1].count > 0, main && JSON.stringify(main.geometry.groups));
+  /*
+   * The Meridian's flight deck is glazed like the airliners' since their
+   * redo: panes in black frames laid on the skin (models/airliner-parts.js),
+   * published as userData.flightDeck for the cockpit, so its hull has no
+   * glass of its own. Everyone else's glass is still the hull's grid.
+   */
+  if (model.userData.flightDeck) {
+    const panes = model.userData.flightDeck.panes || [];
+    ok(`${id}: flight deck glazed on the skin, six panes, both sides`, panes.length === 6 && panes.every((p) => p.corners.length === 4 && p.corners.flat().every(Number.isFinite)), `${panes.length} panes`);
+    /*
+     * The same exterior contract the airliners are held to
+     * (tests/features/airliners.mjs): the windscreens straddle the pilot's
+     * eye and end just ahead of it (the panes are published in metres in
+     * the model's frame; the eye is the shape's, scaled), the doors are on
+     * both sides, shut by default and open, and everything laid on the skin
+     * — the doorways, the flight-deck glass — carries a polygon offset so it
+     * cannot z-fight the hull from a few hundred metres.
+     */
+    const eye = eyeAt(S);
+    const ws = panes.filter((p) => /^Windscreen/.test(p.name));
+    const wy = ws.flatMap((p) => p.corners.map((c) => c[1]));
+    const wz = ws.flatMap((p) => p.corners.map((c) => c[2]));
+    const aft = eye.z - Math.max(...wz);
+    ok(`${id}: the windscreen is set at the pilot's eye — its height inside the panes, the glass 0.3-2 m ahead`,
+      ws.length === 2 && Math.min(...wy) < eye.y && Math.max(...wy) > eye.y && aft > 0.3 && aft < 2,
+      `panes y ${Math.min(...wy).toFixed(2)}..${Math.max(...wy).toFixed(2)}, eye y ${eye.y.toFixed(2)}, glass ${aft.toFixed(2)} m ahead of the eye`);
+    const doors = model.userData.doors;
+    const list = doors ? doors.list : [];
+    const leafOf = (d) => {
+      let leaf = null;
+      const n = doors.node(d.id);
+      if (n) n.traverse((o) => { if (o.name === `Door ${d.id} leaf`) leaf = o; });
+      return leaf;
+    };
+    const shut = list.length > 0 && list.every((d) => leafOf(d) && !leafOf(d).visible);
+    if (doors) doors.open('all', { instant: true });
+    const opened = list.length > 0 && list.every((d) => leafOf(d) && leafOf(d).visible && Math.abs(leafOf(d).rotation.y) > 1);
+    if (doors) doors.close('all', { instant: true });
+    const shutAgain = list.every((d) => !leafOf(d).visible);
+    ok(`${id}: four doors, two a side, shut by default (a painted seam), and they swing open`,
+      list.length === 4 && list.filter((d) => d.side === 'left').length === 2 && shut && opened && shutAgain,
+      `${list.length} doors; shut ${shut}, opened ${opened}, shut again ${shutAgain}`);
+    const openings = [];
+    let glassDecal = false;
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      if (/^Door .* opening$/.test(o.name)) openings.push(o);
+      // The flight-deck glass is one of the airframe's material groups (the
+      // decal clone of its glass, models/meridian.js), not a mesh of its own.
+      const ms = Array.isArray(o.material) ? o.material : [o.material];
+      if (/airframe/.test(o.name) && ms.some((m) => /glass/i.test(m.name) && m.polygonOffset && m.polygonOffsetFactor < 0)) glassDecal = true;
+    });
+    ok(`${id}: the doorways and the flight-deck glass are offset decals on the skin`,
+      openings.length === 4 && openings.every((o) => o.material.polygonOffset && o.material.polygonOffsetFactor < 0) && glassDecal,
+      `${openings.length} doorways, glass decal ${glassDecal}`);
+  } else ok(`${id}: fuselage has glass in its own grid`, main && main.geometry.groups.length === 2 && main.geometry.groups[1].count > 0, main && JSON.stringify(main.geometry.groups));
   ok(`${id}: fuselage wound outward`, main && signedVolume(main.geometry) > 0, main && signedVolume(main.geometry).toFixed(3));
   const surf = model.userData.parts.surfaces;
   const badSurf = surf.filter((s) => signedVolume(s.obj.children[0].geometry) <= 0).map((s) => s.kind);

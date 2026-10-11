@@ -509,6 +509,140 @@ for (const id of ['skylark', 'a320', 'harrier', 'vanguard']) {
   for (const p of pieces) BM.disposePiece(p.group);
   void layout;
 }
+/* An airliner's cabin windows are instanced — one draw per breakaway piece —
+ * and the fleet's windscreen, doors and decals are meshes of their own laid
+ * on the skin. A crushed nose, a bent tail cone and the rippled core must take
+ * all of it with them, or the panes hang in the air where the skin was. Read
+ * as the game would see it: after the deform every pane is within 0.3 m of a
+ * visible skin triangle, the panes of a deformed zone really moved, and
+ * restoreModel puts every copy back to the last bit. */
+const paneFit = (model) => {
+  model.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(model.matrixWorld).invert();
+  const rel = new THREE.Matrix4();
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const shelf = new Map();
+  const slot = (z) => Math.floor(z / 2);
+  model.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh || !o.visible || !o.material || o.material.name !== 'Airliner_livery' || /^Door/.test(o.name)) return;
+    rel.multiplyMatrices(inv, o.matrixWorld);
+    const pos = o.geometry.attributes.position;
+    const idx = o.geometry.index;
+    const n = idx ? idx.count : pos.count;
+    for (let i = 0; i < n; i += 3) {
+      a.fromBufferAttribute(pos, idx ? idx.getX(i) : i).applyMatrix4(rel);
+      b.fromBufferAttribute(pos, idx ? idx.getX(i + 1) : i + 1).applyMatrix4(rel);
+      c.fromBufferAttribute(pos, idx ? idx.getX(i + 2) : i + 2).applyMatrix4(rel);
+      const t = new THREE.Triangle(a.clone(), b.clone(), c.clone());
+      for (let k = slot(Math.min(a.z, b.z, c.z)); k <= slot(Math.max(a.z, b.z, c.z)); k++) {
+        if (!shelf.has(k)) shelf.set(k, []);
+        shelf.get(k).push(t);
+      }
+    }
+  });
+  const tmp = new THREE.Vector3();
+  const m = new THREE.Matrix4();
+  let worst = 0;
+  let panes = 0;
+  model.traverse((o) => {
+    if (!o.isInstancedMesh || o.name !== 'Cabin window rows') return;
+    rel.multiplyMatrices(inv, o.matrixWorld);
+    for (let i = 0; i < o.count; i++) {
+      o.getMatrixAt(i, m);
+      if (m.elements[0] === 0 && m.elements[5] === 0) continue; // zeroed: its zone has gone
+      a.setFromMatrixPosition(m.premultiply(rel));
+      let best = Infinity;
+      const k0 = slot(a.z);
+      for (let k = k0 - 1; k <= k0 + 1; k++) for (const t of shelf.get(k) || []) best = Math.min(best, t.closestPointToPoint(a, tmp).distanceTo(a));
+      worst = Math.max(worst, best);
+      panes++;
+    }
+  });
+  return { worst, panes };
+};
+for (const id of ['a320', 'b747', 'a380']) {
+  const { model } = built[id];
+  const { asg } = zonesFor(id);
+  const rows = asg.items.filter((it) => it.e.kind === 'instanced' && it.e.obj.name === 'Cabin window rows');
+  const before = rows.map((it) => it.e.obj.instanceMatrix.array.slice());
+  const fit0 = paneFit(model);
+  const actions = [{ zone: 'nose', action: 'crush', amount: 0.8 }, { zone: 'rear', action: 'bend', amount: 0.7 }, { zone: B.CORE, action: 'crush', amount: 0.6 }];
+  const moved = BM.deformZones(asg, actions, { point: [0, -1, -5], normal: [0, 1, 0] });
+  const fit = paneFit(model);
+  // Per zone: how many panes it has, and how many of them moved.
+  const tally = actions.map(({ zone }) => {
+    const idx = asg.index.get(zone);
+    let has = 0;
+    let went = 0;
+    rows.forEach((it, r) => {
+      for (let k = 0; k < it.e.obj.count; k++) {
+        if (it.zone[k] !== idx) continue;
+        has++;
+        const now = it.e.obj.instanceMatrix.array;
+        for (let j = 0; j < 16; j++) if (now[k * 16 + j] !== before[r][k * 16 + j]) { went++; break; }
+      }
+    });
+    return { zone, has, went };
+  });
+  ok(`panes: ${id} — crushed nose, bent tail cone, rippled core: every cabin window pane is still on the skin (worst ${f1(fit.worst * 100)} cm of ${fit.panes}; intact ${f1(fit0.worst * 100)} cm)`,
+    rows.length >= 1 && fit.panes === fit0.panes && fit.panes > 40 && fit0.worst < 0.1 && fit.worst <= 0.3 && moved > 0,
+    tally.map((t) => `${t.zone}: ${t.went} of ${t.has} panes moved`).join(', '));
+  ok(`panes: ${id} — the panes of every deformed zone moved with it`, tally.every((t) => t.has === 0 || t.went === t.has) && tally.some((t) => t.has > 0),
+    tally.map((t) => `${t.zone}: ${t.went} of ${t.has}`).join(', '));
+  BM.restoreModel(model);
+  const back = rows.every((it, r) => it.e.obj.instanceMatrix.array.every((v, j) => v === before[r][j]));
+  ok(`panes: ${id} — restoreModel puts every pane back exactly`, back && !BM.isBroken(model));
+}
+/* In the game both systems touch the panes. The fleet pack's airliner crushes
+ * its own skin — and moves its own panes with it — in the game's crash entry
+ * BEFORE the break-up surveys it, so the break-up's record holds the pack's
+ * crushed panes; and main.js puts a new flight's model back in this order:
+ * the pack's reset (syncAircraftModel), then the features' update (the
+ * break-up's). Restoring the break-up's record alone would write the crushed
+ * panes back over the pack's reset. The feature's putBack runs the pack's
+ * reset again after its own. */
+{
+  const type = T.getAircraft('a320');
+  const model = A.createAircraftModel({ type });
+  const scene = new THREE.Scene();
+  scene.add(model);
+  model.position.set(0, 14, 0);
+  model.updateMatrixWorld(true);
+  const rows = [];
+  model.traverse((o) => {
+    if (o.isInstancedMesh && o.name === 'Cabin window rows') rows.push(o);
+  });
+  const asBuilt = rows.map((o) => o.instanceMatrix.array.slice());
+  const same = () => rows.every((o, r) => o.instanceMatrix.array.every((v, j) => v === asBuilt[r][j]));
+  const ac = { pos: model.position.clone(), quat: model.quaternion.clone(), vel: new THREE.Vector3(0, -1, -70), omega: new THREE.Vector3(), crashed: true, controls: {} };
+  const crashIt = () => {
+    ac.crashed = true;
+    A.crashAircraftModel(model, ac, { reason: 'Hit the ground', worldVelocity: ac.vel.clone(), worldAngularVelocity: new THREE.Vector3(), worldPoint: model.position.clone() }, { groundHeight: 0 });
+    const packMoved = !same();
+    const asg = F.breakupDebug().zonesOf(model, type);
+    BM.deformZones(asg, [{ zone: 'nose', action: 'crush', amount: 0.8 }, { zone: B.CORE, action: 'crush', amount: 0.6 }], { point: [0, -1, -5], normal: [0, 1, 0] });
+    return packMoved;
+  };
+  // What restoring the record alone leaves, in main.js's order.
+  const packMoved = crashIt();
+  ac.crashed = false;
+  model.userData.resetDamage();
+  BM.restoreModel(model);
+  const aloneBack = same();
+  // The same crash again, put back the feature's way.
+  model.userData.resetDamage();
+  const packMoved2 = crashIt();
+  ac.crashed = false;
+  model.userData.resetDamage();
+  F.breakupDebug().putBack(model);
+  ok("panes: a new flight in the pack's airliner has its windows as built — the break-up's restore followed by the pack's own reset, in the order main.js runs them",
+    rows.length >= 1 && packMoved && packMoved2 && same() && !BM.isBroken(model) && !model.userData.gameCrash,
+    `the pack moved the panes in the crash: ${packMoved}; the record alone put them back as built: ${aloneBack}`);
+  model.userData.dispose();
+  model.removeFromParent();
+}
 
 /* ---- 7. the pieces ------------------------------------------------------------ */
 function drop(opts, kind, secs) {

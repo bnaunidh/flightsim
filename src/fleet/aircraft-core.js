@@ -11,7 +11,8 @@ import {attachAircraftImpact} from './aircraft-impact.js';
 const clamp=THREE.MathUtils.clamp, V=(p)=>new THREE.Vector3(...p);
 const mix=(a,b,t)=>a+(b-a)*t;
 export function buildAircraft(config,options={}) {
- const c={...config,paint:options.livery||options.paint||config.paint,accent:options.accent||config.accent};
+ // `scheme` is the game's whole livery (cheatline, tail colour, registration) for the decorators that can paint it; the two colours above are what everything else reads.
+ const c={...config,paint:options.livery||options.paint||config.paint,accent:options.accent||config.accent,scheme:options.scheme||null};
  if(!c.id||!Array.isArray(c.body)||c.body.length<4)throw new TypeError('Aircraft needs an id and ordered body stations.');
  for(let i=0;i<c.body.length;i++)if(!c.body[i].every(Number.isFinite)||(i&&c.body[i][0]<=c.body[i-1][0]))throw new RangeError('Body stations must be finite and increasing in Z.');
  const model=makeModel(c.name),materials=createAircraftMaterials(model,c),parts={},definitions={},animations=[],restTransforms=new Map(),wheels=[],controlNodes={},engines=[];
@@ -105,7 +106,8 @@ export function buildAircraft(config,options={}) {
  if(c.hook){const hook=group('arrestorHook','Arrestor hook',c.massKg*.009,'tail',tail);hook.position.set(0,-.42,c.body.at(-2)[0]-.6);tube('Arresting hook shank',[0,0,0],[0,-1.25,1.7],.048,materials.metal,hook);tube('Hook shoe',[0,-1.25,1.7],[0,-1.34,1.93],.073,materials.dark,hook);/* Stowed until asked for: a model that is only ever parked (the carrier's deck) never gets a frame to raise it. */hook.rotation.x=-1.1;controlNodes.hook={node:hook,kind:'hook',side:1};}
  // Legible aircraft-specific registration, with separate correctly facing decals.
  if(c.registration&&c.kind!=='flying-wing'){const decalMat=model.userData.ownMaterial(new THREE.MeshBasicMaterial({map:aircraftDecalTexture(c.registration,{color:c.accent,background:'transparent',width:512,height:128}),transparent:true,depthWrite:false,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2}));const z=c.body[Math.max(1,c.body.length-4)][0],pr=profile(z),width=Math.min(2.4,(c.body.at(-1)[0]-c.body[0][0])*.18);for(const side of[-1,1]){const decalHeight=Math.max(.16,width*.15),phi=Math.PI*.455,dphi=decalHeight/Math.max(.15,pr[1])* .5;const p=conformingPatch('Airframe registration',z-width*.5,z+width*.5,side*(phi-dphi),side*(phi+dphi),decalMat,tail,.028);const uv=p.geometry.attributes.uv;for(let i=0;i<uv.count;i++){const u=uv.getX(i),v=uv.getY(i);uv.setXY(i,side>0?1-v:v,1-u);}p.castShadow=false;}}
- const ctx={model,config:c,materials,parts,group,box,tube,panel,skin,registerAnimation:fn=>animations.push(fn),THREE};c.decorate?.(ctx);
+ // ctx.exports: whatever a decorator wants on the finished aircraft's userData (the airliners' doors and flight-deck outline). The airframe it decorates is wrapped by the damage adapter below, so its own userData is not what callers see.
+ const ctx={model,config:c,materials,parts,group,box,tube,panel,skin,registerAnimation:fn=>animations.push(fn),THREE,exports:{}};c.decorate?.(ctx);
  // Merge primitive buffers within each named assembly without merging across hinges/strike roots.
  function batchStatic(parent){
   for(const child of [...parent.children])if(child.isGroup)batchStatic(child);
@@ -134,6 +136,7 @@ export function buildAircraft(config,options={}) {
  else for(const side of[-1,1])if(parts[side<0?'leftWing':'rightWing']){const root=parts[side<0?'leftWing':'rightWing'];model.updateMatrixWorld(true);const vertices=[];root.traverse(n=>{if(n.isMesh&&!n.isInstancedMesh){const a=n.geometry.attributes.position;for(let i=0;i<a.count;i++)vertices.push(new THREE.Vector3().fromBufferAttribute(a,i).applyMatrix4(n.matrixWorld));}});vertices.sort((a,b)=>side*(b.x-a.x)||a.y-b.y);const p=vertices[0];hardPoints.push({pos:p.toArray(),what:'The wing tip hit the ground',partId:side<0?'leftWing':'rightWing'});}
  for(const e of engines)if(e.config.kind==='prop')hardPoints.push({pos:[e.config.x,e.config.y-e.config.propRadius,e.config.z-.05],what:'The propeller struck the ground',partId:e.id+'Propeller'});
  Object.assign(aircraft.userData,{aircraftId:c.id,config:c,controls:controlNodes,parts:{...parts,surfaces:controlNodes,gear:wheels,engines,glassMat:materials.glass,type:options.type||{id:c.id},shape:{scale:1,eye:c.eye}},flightGeometry:{units:'metres',scale:1,gearPoints:contactPoints,hardPoints,eye:c.eye||[0,.5,-1],wingSpan:c.wing?2*(c.wing.rootX+c.wing.span):bounds.max.x-bounds.min.x,bounds:{min:bounds.min.toArray(),max:bounds.max.toArray()}},materials});
+ Object.assign(aircraft.userData,ctx.exports);
  attachAircraftImpact(aircraft,c);
  aircraft.userData.update=(dt,state={})=>{if(disposed)return;if(!Number.isFinite(dt)||dt<0)throw new RangeError('Aircraft dt must be nonnegative seconds.');if(!aircraft.userData.crashBody&&!aircraft.userData.crashRetired)animate(dt,state);damageUpdate(dt,state);aircraft.userData.updateImpact?.(dt);};
  aircraft.userData.resetDamage=()=>{if(disposed)return;aircraft.userData.resetImpact?.();damageReset();for(const[n,s]of restTransforms){n.position.copy(s.position);n.quaternion.copy(s.quaternion);n.scale.copy(s.scale);n.visible=s.visible;}time=0;animate(0,{rpm:0,gear:1});};

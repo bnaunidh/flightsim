@@ -542,6 +542,34 @@ const DEFS = [
     failIf: lostIf(null),
     onComplete: (ctx) => ctx.sim.speak('Tempest one, crews have it. Head home, and well done.', 'tower'),
     score,
+    /*
+     * The fire crews on the ground (src/features/emergency-scene.js): a
+     * fire scene on the town side of the woods, with a police cordon on the
+     * approaches to the town, and news, police and a bucket helicopter
+     * overhead. The spot was measured in node: dry, level, unburnt ground on
+     * the line from the fire's centre (2000, -1800) towards the town (1500,
+     * 900), 750 m from the centre, about 80 m up — outside the woods' 520 m
+     * and the drop circle. The scoop lane and the drop circle are kept
+     * clear, so nothing of the scene is ever under the Tempest's run-in.
+     */
+    scenes: [
+      {
+        step: 'start',
+        kind: 'fire',
+        at: { x: 1700, z: -1110 },
+        radius: 200,
+        roads: true,
+        cordon: 'town',
+        crews: { fire: 3, ambulance: 2, police: 3 },
+        helis: { news: 1, police: 1, fire: 1 },
+        keepClear: [
+          { x: BIGBURN_FLATS.lane.x, z: BIGBURN_FLATS.lane.z, r: LANE_HALF + 100 },
+          { x: BIGBURN_FLATS.centre.x, z: BIGBURN_FLATS.centre.z, r: BIGBURN_FLATS.woods[0].r + 100 },
+        ],
+        avoidRunway: true,
+        label: 'Fire scene',
+      },
+    ],
   },
 
   {

@@ -565,6 +565,60 @@ APR.refreshApronElevation();
   ok('and goes back to waiting when nobody is on the stand', !apron.dockMesh.visible);
 
   /*
+   * A parked airliner is served at the doors its model draws, whichever
+   * factory drew it. The door table (AIRLINER_DOORS) describes the model the
+   * game draws by default; with Settings' "alternative models for every
+   * aeroplane" on, the Meridian is the pack's, whose front door is 7.5 m
+   * further forward, and the bake was served at the table's — the bridge cab
+   * and the stair truck 7.5 m aft of the door actually drawn. The bake reads
+   * the model's own published doors now.
+   */
+  {
+    const MA = await import(src + 'aircraft/model-adapter.js');
+    const { serviceDoors, serviceDoorsFrom } = await import(src + 'aircraft/extra/airliners.js');
+    const near = (a, b) => Math.abs(a - b) < 0.01;
+    const infoByType = (apr) => {
+      const out = new Map();
+      for (const [key, e] of apr.bakes) out.set(key.split('|')[0], e.info);
+      return out;
+    };
+    const drawnDoors = (id) => {
+      const type = AIRCRAFT.find((a) => a.id === id);
+      const m = createAircraftModel({ type, livery: schemeFor(type, 'house') });
+      return serviceDoorsFrom(m.userData.doors && m.userData.doors.list);
+    };
+    const same = (info, d) => !!(info && d && near(info.frontDoorZ, d.front.z) && near(info.rearDoorZ, d.rear.z) && near(info.sill, d.sill));
+    const say = (info) => (info ? `front ${info.frontDoorZ.toFixed(2)} / rear ${info.rearDoorZ.toFixed(2)} / sill ${info.sill.toFixed(2)}` : 'no bake');
+    const table = serviceDoors('meridian');
+    const own = infoByType(apron);
+    const offBad = [];
+    for (const [id, info] of own) {
+      if (!serviceDoors(id)) continue;
+      if (!same(info, serviceDoors(id)) || !same(info, drawnDoors(id))) offBad.push(`${id}: ${say(info)}, table front ${serviceDoors(id).front.z}`);
+    }
+    ok('parked airliners are served at their drawn doors, which are the table\'s (built-in models)',
+      own.has('meridian') && own.has('a320') && offBad.length === 0, offBad.join('; ') || `${[...own.keys()].filter((id) => serviceDoors(id)).join(', ')} at their table doors`);
+    let packInfo = null;
+    let packDoors = null;
+    let packA320 = null;
+    MA.setFleetModels(true);
+    try {
+      const pack = infoByType(new APR.Apron(new THREE.Scene(), 'high'));
+      packInfo = pack.get('meridian');
+      packA320 = pack.get('a320');
+      packDoors = drawnDoors('meridian');
+    } finally {
+      MA.setFleetModels(false);
+    }
+    ok("with the alternative models on, the parked Meridian is served at the pack model's doors, not the table's",
+      same(packInfo, packDoors) && packDoors && packDoors.front.z < table.front.z - 5,
+      `bake ${say(packInfo)}; the pack's doors front ${packDoors && packDoors.front.z} / rear ${packDoors && packDoors.rear.z} / sill ${packDoors && packDoors.sill}; table front ${table.front.z}`);
+    ok('and the A320, which the pack draws either way, is served at the same doors as before', same(packA320, serviceDoors('a320')), say(packA320));
+    const again = infoByType(new APR.Apron(new THREE.Scene(), 'high')).get('meridian');
+    ok("switched back off, a fresh apron serves the Meridian at the table's doors again", same(again, table), say(again));
+  }
+
+  /*
    * The layout answers the frame loop without rebuilding or re-keying.
    * Counted, not timed: this used to assert 100,000 calls under 40 ms, which
    * measured JIT warm-up and the machine's load (148 ms at load average 300,

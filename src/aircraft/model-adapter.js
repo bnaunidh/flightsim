@@ -118,15 +118,19 @@ export const fleetStatus = () => ({
  * The game thinks in livery *schemes* — a base, an accent, a cheatline and a
  * separate tail colour, because a painted cheatline unwraps into a ring unless
  * the fin is its own material. The pack thinks in two colours. So the scheme is
- * flattened on the way in, and the parts of it the pack has nowhere to put
- * (cheatline, registration) are dropped rather than passed through as an object
- * the pack would try to read as a colour.
+ * flattened on the way in, never passed as `livery` (an object the pack would
+ * try to read as a colour); the airliners, which do paint a cheatline, a tail
+ * and a registration, get the whole scheme alongside as `scheme`.
  */
 function paintFor(livery, type) {
   if (livery && typeof livery === 'object') {
     return {
       livery: livery.base || (type && type.livery) || '#eef1f5',
       accent: livery.accent || (type && type.accent) || '#c8102e',
+      // The whole scheme as well, as `scheme`, for the decorators that can
+      // paint a cheatline and a tail (the airliners); the rest read only the
+      // two colours above and never look at it.
+      scheme: livery,
     };
   }
   return {
@@ -325,15 +329,24 @@ function addLights(model) {
   const nose = fg.bounds ? fg.bounds.min[2] : -3;
   const tail = fg.bounds ? fg.bounds.max[2] : 4;
   const y = fg.eye ? fg.eye[1] - 0.35 : 0.2;
+  /*
+   * A model that knows where its own lamps go says so as userData.lamps
+   * (the airliners: the navigation lights on the real wing tips, which on a
+   * swept wing sit 10-20 m behind the guess below; the beacon on the crown;
+   * the tail light on the end of the cone). The guess from the bounds is for
+   * everything else.
+   */
+  const own = model.userData.lamps || {};
+  const at = (k, guess) => (Array.isArray(own[k]) && own[k].length === 3 && own[k].every(Number.isFinite) ? own[k] : guess);
 
   const lights = {
-    navLeft: [glowSprite(0xff2020, 0.42), [-halfSpan, y, tail * 0.1]],
-    navRight: [glowSprite(0x20ff40, 0.42), [halfSpan, y, tail * 0.1]],
-    tail: [glowSprite(0xffffff, 0.3), [0, y + 0.5, tail * 0.96]],
-    strobeL: [glowSprite(0xffffff, 0.8), [-halfSpan, y, tail * 0.1 + 0.1]],
-    strobeR: [glowSprite(0xffffff, 0.8), [halfSpan, y, tail * 0.1 + 0.1]],
-    beacon: [glowSprite(0xff3010, 0.5), [0, y - 0.9, 0]],
-    landing: [glowSprite(0xfff0c0, 0.75), [-halfSpan * 0.3, y - 0.2, nose * 0.35]],
+    navLeft: [glowSprite(0xff2020, 0.42), at('navLeft', [-halfSpan, y, tail * 0.1])],
+    navRight: [glowSprite(0x20ff40, 0.42), at('navRight', [halfSpan, y, tail * 0.1])],
+    tail: [glowSprite(0xffffff, 0.3), at('tail', [0, y + 0.5, tail * 0.96])],
+    strobeL: [glowSprite(0xffffff, 0.8), at('strobeL', [-halfSpan, y, tail * 0.1 + 0.1])],
+    strobeR: [glowSprite(0xffffff, 0.8), at('strobeR', [halfSpan, y, tail * 0.1 + 0.1])],
+    beacon: [glowSprite(0xff3010, 0.5), at('beacon', [0, y - 0.9, 0])],
+    landing: [glowSprite(0xfff0c0, 0.75), at('landing', [-halfSpan * 0.3, y - 0.2, nose * 0.35])],
   };
   for (const k in lights) {
     const [sprite, pos] = lights[k];
@@ -345,7 +358,8 @@ function addLights(model) {
 
   // A real spot, so the landing light actually puts something on the runway.
   const spot = new THREE.SpotLight(0xfff0c8, 0, 260, 0.34, 0.45, 1.2);
-  spot.position.set(0, y, nose * 0.5);
+  const lp = lights.landing.position;
+  spot.position.set(own.landing ? lp.x : 0, own.landing ? lp.y : y, own.landing ? lp.z : nose * 0.5);
   const target = new THREE.Object3D();
   target.position.set(0, -0.3, nose - 60);
   model.add(target);

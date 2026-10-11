@@ -364,6 +364,12 @@ export class Builder {
     this.nozzles = [];
     this.lamps = {};
     this.hullMeshes = [];
+    // Per-frame work a type adds for itself (the Meridian's doors), run
+    // after the shared update; and what it publishes on the model (doors,
+    // the flight deck's outline) — see finish().
+    this.updaters = [];
+    this.doors = null;
+    this.flightDeck = null;
   }
 
   /** Put a geometry into the merged static airframe. */
@@ -682,7 +688,17 @@ export class Builder {
     };
     const root = this.root;
     root.userData.parts = state;
-    root.userData.update = (dt, ac, weather) => updateCivil(state, dt || 0, ac || REST, weather);
+    const updaters = this.updaters;
+    root.userData.update = updaters.length
+      ? (dt, ac, weather) => {
+        updateCivil(state, dt || 0, ac || REST, weather);
+        for (let i = 0; i < updaters.length; i++) updaters[i](dt || 0);
+      }
+      : (dt, ac, weather) => updateCivil(state, dt || 0, ac || REST, weather);
+    // Doors that open and the flight deck's glazing outline, in metres in
+    // the model's frame — the same contract as the fleet's airliners.
+    if (this.doors) root.userData.doors = this.doors;
+    if (this.flightDeck) root.userData.flightDeck = this.flightDeck;
     root.userData.inspiration = 'Original ' + String(this.type.class || '').toLowerCase() + ' proportions; not a licensed replica.';
     // Which airframe drew this, for the tests: the generic factory in
     // model.js is the fallback if a civil build throws, and silently

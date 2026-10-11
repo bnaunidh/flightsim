@@ -107,6 +107,16 @@ export function planeProfile(type, model = null) {
       fuseY0 = m.fuse.min.y;
       fuseY1 = m.fuse.max.y;
     }
+    // The airliners say where their fuselage is (their skin is three
+    // pieces, for breaking up, so the longest one is only the cabin).
+    const fz = model.userData && model.userData.fuselage;
+    if (fz && [fz.nose, fz.tail, fz.halfWidth, fz.bottom, fz.top].every(Number.isFinite)) {
+      noseZ = fz.nose;
+      tailZ = fz.tail;
+      halfWidth = fz.halfWidth;
+      fuseY0 = fz.bottom;
+      fuseY1 = fz.top;
+    }
     if (m.all) halfSpan = Math.max(m.all.max.x, -m.all.min.x);
   }
   const gearLow = Math.min(sh.main ? sh.main.y : -1.5, sh.nose ? sh.nose.y : -1.42);
@@ -128,6 +138,16 @@ export function planeProfile(type, model = null) {
    */
   const shapeWing = ((sh.wingRootX != null ? sh.wingRootX : 0.62) + (sh.halfSpan || 5.5)) * s;
   const wingSpan = Math.min(halfSpan, shapeWing * 1.05);
+  /*
+   * An airliner publishes its doors (model.userData.doors, metres in its own
+   * frame): the stairs go to the drawn front left door, catering to the
+   * rearmost right one, at the drawn sill — not to 20% of a fuselage length
+   * that the airliners' three-piece skins no longer measure as one.
+   */
+  const list = model && model.userData && model.userData.doors && model.userData.doors.list;
+  const mainDoors = Array.isArray(list) ? list.filter((d) => d.deck === 'main' && d.kind === 'passenger').sort((a, b) => a.z - b.z) : [];
+  const frontDoor = mainDoors.find((d) => d.side === 'left');
+  const rearDoor = mainDoors.filter((d) => d.side === 'right').pop();
   return {
     // Along the aeroplane, metres ahead of the CG (so the nose is positive).
     nose: -noseZ,
@@ -146,15 +166,15 @@ export function planeProfile(type, model = null) {
     mainGear,
     wheelbase: noseGear + mainGear,
     /** Front passenger door, left side: metres ahead of the CG. */
-    doorFront: -noseZ - 0.2 * len,
+    doorFront: frontDoor ? -frontDoor.z : -noseZ - 0.2 * len,
     /**
      * Galley door, right side, near the back. At 28% of the length from the
      * tail it was under the Meridian's swept trailing edge, where a catering
      * truck cannot reach without driving its box through the wing.
      */
-    doorRear: -(tailZ - 0.22 * len),
+    doorRear: rearDoor ? -rearDoor.z : -(tailZ - 0.22 * len),
     /** How high the door sill is above the ground. */
-    sill: Math.max(0.6, cgH + fuseMid - 0.45 * fuseR),
+    sill: frontDoor ? Math.max(0.6, cgH + frontDoor.sill) : Math.max(0.6, cgH + fuseMid - 0.45 * fuseR),
     /**
      * The wing, for clearances: from its leading edge at the root back to
      * the trailing edge at the tip (a swept wing's tip sits well aft), and

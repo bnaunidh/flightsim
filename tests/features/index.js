@@ -46,6 +46,7 @@ import { check as missionMaps } from './mission-maps.browser.js';
 import { check as flicker } from './flicker.browser.js';
 import { check as achievements } from './achievements.browser.js';
 import { check as worldScale } from './world-scale.browser.js';
+import { check as mapsKitB } from './maps-kit-b.browser.js';
 
 export const CHECKS = [
   { id: 'airport', check: airport },
@@ -98,6 +99,9 @@ export const CHECKS = [
   { id: 'flicker', check: flicker },
   // Replaces the sticker book fun.js used to carry.
   { id: 'achievements', check: achievements },
+  // After everything that flies: KIT-B — where a Free Flight starts (the picker), the ambient
+  // population and the emergency scene, on Gateway and The Big Burn.
+  { id: 'maps-kit-b', check: mapsKitB },
   // Last: it rebinds keys through Settings (and puts the player's back after).
   { id: 'keybinds', check: keybinds },
 ];

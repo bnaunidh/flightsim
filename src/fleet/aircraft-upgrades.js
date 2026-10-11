@@ -45,7 +45,7 @@ export function createFighterEngineAssembly({color=0x737e83,showCutaway=false}={
  * animation still belongs to the game while damage owns transforms after crash. */
 export function createAircraftDamageAdapter({airframe,sections,massKg=1100,centerOfMass={x:0,y:0,z:0},disposeAirframe=false}={}) {
   if(!airframe?.isObject3D||!sections||!Object.keys(sections).length)throw new TypeError('Pass an airframe and named section nodes.');
-  const m=makeModel('Aircraft damage adapter');m.add(airframe);const rest=new Map(),severity={},wingHinges=new Map();
+  const m=makeModel('Aircraft damage adapter');m.add(airframe);const rest=new Map(),crushFrames=new Map(),severity={},wingHinges=new Map();
   const finiteVector=v=>v&&['x','y','z'].every(key=>Number.isFinite(v[key]));
   const vector=v=>new THREE.Vector3(v.x,v.y,v.z);
   for(const[id,entry]of Object.entries(sections)){
@@ -53,18 +53,62 @@ export function createAircraftDamageAdapter({airframe,sections,massKg=1100,cente
     registerPart(m,id,definition.label||id,definition.nodes,{massKg:definition.massKg||40,dependsOn:definition.dependsOn||null});
     severity[id]=0;
   }
-  function deformedMeshes(id){const nodes=m.userData.strikePoints[id]?.nodes;if(!nodes)throw new RangeError(`Unknown damage section ${id}`);
-    const meshes=new Set();for(const node of nodes)node.traverse(o=>{if(o.isMesh&&!o.isInstancedMesh)meshes.add(o);});return [...meshes];}
+  // Every mesh of a section. The instanced ones (an airliner's window rows,
+  // its tyres) are kept apart by the callers: they move by matrix, not vertex.
+  function sectionMeshes(id){const nodes=m.userData.strikePoints[id]?.nodes;if(!nodes)throw new RangeError(`Unknown damage section ${id}`);
+    const meshes=new Set();for(const node of nodes)node.traverse(o=>{if(o.isMesh)meshes.add(o);});return [...meshes];}
+  function deformedMeshes(id){return sectionMeshes(id).filter(o=>!o.isInstancedMesh);}
+  // What a mesh was before any damage, and where it sits in the adapter's
+  // frame (`rel`): a damaged shape is always computed afresh from this.
+  function restOf(mesh){
+    let saved=rest.get(mesh);if(saved)return saved;
+    const rel=m.matrixWorld.clone().invert().multiply(mesh.matrixWorld);
+    if(mesh.isInstancedMesh){const matrices=[];for(let i=0;i<mesh.count;i++){const k=new THREE.Matrix4();mesh.getMatrixAt(i,k);matrices.push(k);}saved={instanced:true,matrices,rel,inverse:rel.clone().invert()};}
+    else{const original=mesh.geometry;mesh.geometry=m.userData.ownGeometry(original.clone());mesh.geometry.computeBoundingBox();
+      saved={original,array:mesh.geometry.attributes.position.array.slice(),bounds:mesh.geometry.boundingBox.clone(),rel,inverse:rel.clone().invert()};}
+    rest.set(mesh,saved);return saved;
+  }
+  // A crush is ONE field over the whole section, in the adapter's frame,
+  // measured on the section's skin before the first blow — its longest mesh
+  // nose to tail, which is the fuselage piece itself and never the tailplane
+  // lying across it. The skin, the windscreen set into it, the doors, the
+  // decals and the instanced window panes all go through the same squash, so
+  // a pane stays on its skin when the nose concertinas. Crushing each mesh by
+  // its own little bounds, as this did at first, pulled an airliner's nose
+  // skin aft by metres and left its windscreen and windows hanging where the
+  // skin had been (the window panes, being instanced, never moved at all).
+  function crushFrame(id){
+    let frame=crushFrames.get(id);if(frame)return frame;
+    let best=null;const v=new THREE.Vector3();
+    for(const mesh of deformedMeshes(id)){const saved=restOf(mesh),box=new THREE.Box3();
+      for(let i=0;i<saved.array.length;i+=3)box.expandByPoint(v.set(saved.array[i],saved.array[i+1],saved.array[i+2]).applyMatrix4(saved.rel));
+      const reach=box.isEmpty()?0:box.getSize(v).z;if(!best||reach>best.reach)best={box,reach};}
+    const box=best?best.box:new THREE.Box3().setFromPoints([new THREE.Vector3()]);
+    frame={bounds:box,size:box.getSize(new THREE.Vector3()),center:box.getCenter(new THREE.Vector3())};crushFrames.set(id,frame);return frame;
+  }
+  // The crush, on one point of the adapter's frame: the front concertinas
+  // aft, the whole squashes towards the skin's middle and sags at the front,
+  // and the skin ripples a little. The ripple's wave stretches with the
+  // section past 3 m: a 1.3 m wave on a 15 m tail cone whose hull rings are
+  // 2-3 m apart is not drawn by that skin, it only jitters its rings — and a
+  // window pane set exactly on the wave then sat up to 0.4 m off the jittered
+  // skin beside it. A 6 m wave on that cone (17 m on a 41 m cabin) the skin
+  // resolves, so what rides on the skin stays on it (worst pane 0.13 m).
+  // A fighter's nose, a gear leg, an engine (3 m and under) ripple as before.
+  function crushPoint(p,{bounds:b,size,center},amount){
+    const front=THREE.MathUtils.clamp(1-(p.z-b.min.z)/Math.max(.01,size.z),0,1),wave=Math.min(1,3/Math.max(.01,size.z));
+    p.z+=amount*.4*size.z*front**2;
+    p.y=center.y+(p.y-center.y)*(1-amount*.34)-amount*front*.10*size.y;
+    p.x+=amount*.06*size.x*Math.sin((p.y*8+p.z*5)*wave)*front;return p;
+  }
   function damagePart(id,amount=1,mode=id.toLowerCase().includes('prop')?'bendProp':id.toLowerCase().includes('wing')?'bendWing':'crush') {
     if(!Number.isFinite(amount)||amount<0||amount>1)throw new RangeError('Damage severity is 0..1.');
     if(!m.userData.strikePoints[id])throw new RangeError(`Unknown damage section ${id}`);
     if(m.userData.strikePoints[id].detached)return false;
+    m.updateWorldMatrix(true,true);
+    const frame=mode==='crush'?crushFrame(id):null,v=new THREE.Vector3();
     for(const mesh of deformedMeshes(id)){
-      if(!rest.has(mesh)){
-        const original=mesh.geometry;mesh.geometry=m.userData.ownGeometry(original.clone());mesh.geometry.computeBoundingBox();
-        rest.set(mesh,{original,array:mesh.geometry.attributes.position.array.slice(),bounds:mesh.geometry.boundingBox.clone()});
-      }
-      const saved=rest.get(mesh),p=mesh.geometry.attributes.position,b=saved.bounds,size=b.getSize(new THREE.Vector3()),center=b.getCenter(new THREE.Vector3());
+      const saved=restOf(mesh),p=mesh.geometry.attributes.position,b=saved.bounds,size=b.getSize(new THREE.Vector3()),center=b.getCenter(new THREE.Vector3());
       for(let i=0;i<p.count;i++){
         let x=saved.array[i*3],y=saved.array[i*3+1],z=saved.array[i*3+2];
         if(mode==='bendProp'){
@@ -74,13 +118,22 @@ export function createAircraftDamageAdapter({airframe,sections,massKg=1100,cente
           const span=Math.abs(x-center.x)/Math.max(.01,size.x*.5);y-=amount*span**2*size.x*.20;
           z+=amount*span**2*size.z*.12;
         }else{
-          const front=1-(z-b.min.z)/Math.max(.01,size.z);z+=amount*.4*size.z*front**2;
-          y=center.y+(y-center.y)*(1-amount*.34)-amount*front*.10*size.y;
-          x+=amount*.06*size.x*Math.sin(y*8+z*5)*front;
+          crushPoint(v.set(x,y,z).applyMatrix4(saved.rel),frame,amount).applyMatrix4(saved.inverse);x=v.x;y=v.y;z=v.z;
         }
         p.setXYZ(i,x,y,z);
       }
       p.needsUpdate=true;mesh.geometry.computeVertexNormals();mesh.geometry.computeBoundingBox();mesh.geometry.computeBoundingSphere();
+    }
+    // The instanced meshes ride the same field, each copy by where it sits:
+    // moved where the crush moves that point, its facing kept.
+    if(frame)for(const mesh of sectionMeshes(id)){
+      if(!mesh.isInstancedMesh)continue;
+      const saved=restOf(mesh),at=new THREE.Vector3(),k=new THREE.Matrix4(),shift=new THREE.Matrix4();
+      for(let i=0;i<saved.matrices.length;i++){
+        k.multiplyMatrices(saved.rel,saved.matrices[i]);at.setFromMatrixPosition(k);crushPoint(v.copy(at),frame,amount);
+        shift.makeTranslation(v.x-at.x,v.y-at.y,v.z-at.z);k.premultiply(shift).premultiply(saved.inverse);mesh.setMatrixAt(i,k);
+      }
+      mesh.instanceMatrix.needsUpdate=true;mesh.computeBoundingSphere();
     }
     severity[id]=amount;m.userData.refreshStrikeGeometry();return true;
   }
@@ -169,9 +222,11 @@ export function createAircraftDamageAdapter({airframe,sections,massKg=1100,cente
       state.hinge.removeFromParent();state.active=false;state.angle=state.angularVelocity=0;state.liftScale=state.dragScale=1;
     }wingHinges.clear();
   }
-  function reset(){resetHinges();for(const[mesh,saved]of rest){mesh.geometry.attributes.position.array.set(saved.array);mesh.geometry.attributes.position.needsUpdate=true;
+  function reset(){resetHinges();for(const[mesh,saved]of rest){
+    if(saved.instanced){saved.matrices.forEach((k,i)=>mesh.setMatrixAt(i,k));mesh.instanceMatrix.needsUpdate=true;mesh.computeBoundingSphere();continue;}
+    mesh.geometry.attributes.position.array.set(saved.array);mesh.geometry.attributes.position.needsUpdate=true;
     mesh.geometry.computeVertexNormals();mesh.geometry.computeBoundingBox();mesh.geometry.computeBoundingSphere();}for(const id in severity)severity[id]=0;}
-  finishModel(m,{update:updateHinges,reset,dispose(){for(const[mesh,saved]of rest)mesh.geometry=saved.original;if(disposeAirframe)airframe.userData.dispose?.();}});
+  finishModel(m,{update:updateHinges,reset,dispose(){for(const[mesh,saved]of rest)if(!saved.instanced)mesh.geometry=saved.original;if(disposeAirframe)airframe.userData.dispose?.();}});
   // Common freezes normal animation during crashes. A hanging wing remains an
   // articulated approximation, so advance it before the crash contact rebuild.
   const updateModel=m.userData.update;

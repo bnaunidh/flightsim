@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v63';
+const CACHE_VERSION = 'island-flight-v64';
 
 const PRECACHE = [
   './',
@@ -326,6 +326,8 @@ const PRECACHE = [
   'src/features/sky.js',
   'src/features/events/afo-movie.js',
   'src/game/roles/afo-president.js',
+  'src/aircraft/models/airliner-parts.js',
+  'src/fleet/extra/airliner-kit.js',
   // Added by tools/sync-precache.mjs.
   'src/render/depth-layers.js',
   'src/render/flash-safety.js',
@@ -336,6 +338,18 @@ const PRECACHE = [
   'src/features/achievements/rules.js',
   'src/features/achievements/store.js',
   'src/features/achievements/ui.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/ambient.js',
+  'src/features/ambient/boats.js',
+  'src/features/ambient/cars.js',
+  'src/features/ambient/flyers.js',
+  'src/features/ambient/lanes.js',
+  'src/features/emergency-scene.js',
+  'src/features/emergency-scene/models.js',
+  'src/features/spawns.js',
+  'src/features/spawns/ui.js',
+  'src/world/ambient.js',
+  'src/world/spawns.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

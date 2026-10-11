@@ -1042,6 +1042,14 @@ function installStartChoice(sim) {
         get: choice,
         set: saveChoice,
         visible: () => {
+          /*
+           * The spawns feature's "Start at" picker (features/spawns.js) carries
+           * the carrier as one of its entries and wraps startFree outside this
+           * one; while it is installed these two buttons would be the same
+           * choice twice, so they hide. `startAt: 'carrier'` still arrives
+           * here exactly as before, and startMode below still places the jet.
+           */
+          if (menus.hooks && menus.hooks.startFree && menus.hooks.startFree._spawns) return false;
           const id = menus.chosenAircraft;
           let t = null;
           try {

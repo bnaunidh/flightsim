@@ -141,7 +141,9 @@ export function windowRow(b, hull, o) {
       const s = side * hull.angleAt(z, o.y);
       hull.point(z, s, P);
       hull.normal(z, s, N);
-      P.addScaledVector(N, 0.006);
+      // `lift`: how far out of the skin. The hull is flat quads between its
+      // vertices; a pane closer than the facet's sag is half buried.
+      P.addScaledVector(N, o.lift ?? 0.006);
       // The pane lies in the skin: its +Z faces out along the normal, its
       // +Y points up the skin.
       const zAxis = N.clone();

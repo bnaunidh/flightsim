@@ -101,6 +101,36 @@ function gearUp(ctx) {
   }
 }
 
+/**
+ * The welcome party on the ground, from src/features/emergency-scene.js: a
+ * police cordon round the stopped aeroplane, fire engines and ambulances
+ * staged off the strip edges (never on a runway, never on the centreline),
+ * police and news helicopters 500 m off and 300 m up. Raised on the step the
+ * story stops in, and only once the aeroplane HAS stopped — `at` answers
+ * null while it is still rolling, and the scene waits. It never touches the
+ * hijack's own police cars or the tactical team (features/events/vehicles.js):
+ * those drive to the aeroplane; the cordon stands 180 m out.
+ */
+function hijackScene(step) {
+  return {
+    step,
+    kind: 'police',
+    at: (sim) => {
+      const ac = sim && sim.aircraft;
+      if (!ac || !ac.onGround || !ac.pos) return null;
+      if (Math.hypot(ac.vel.x, ac.vel.z) > 1) return null;
+      return { x: ac.pos.x, z: ac.pos.z };
+    },
+    radius: 180,
+    roads: true,
+    crews: { fire: 2, ambulance: 2, police: 4 },
+    helis: { police: 1, news: 1 },
+    heliMinAgl: 300,
+    avoidRunway: true,
+    label: 'Police cordon',
+  };
+}
+
 /* ================================================================== *
  * Hijacked! — the film version
  * ================================================================== */
@@ -151,6 +181,8 @@ const hijack = {
   },
   parTime: 540,
   onStart: gearUp,
+  // The cordon comes when you have stopped — at the stand, or wherever you stop ("help will come to you").
+  scenes: [hijackScene('stand')],
   steps: [
     {
       id: 'cruise',
@@ -263,6 +295,8 @@ const hijackReal = {
   },
   parTime: 720,
   onStart: gearUp,
+  // The cordon comes when you have stopped on the remote runway.
+  scenes: [hijackScene('stop')],
   steps: [
     {
       id: 'cruise',

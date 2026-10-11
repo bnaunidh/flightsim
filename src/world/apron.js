@@ -33,6 +33,7 @@ import { buildingTexture, roofTexture } from '../render/textures.js';
 import { createAircraftModel } from '../aircraft/model-adapter.js';
 import { LIVERIES, schemeFor } from '../aircraft/liveries.js';
 import { AIRCRAFT, specFor } from '../aircraft/types.js';
+import { serviceDoors, serviceDoorsFrom } from '../aircraft/extra/airliners.js';
 import { airportLayout, NOSE_STOP } from './airport-layout.js';
 import { OFFICE_TILE, officeFloors } from './airport.js';
 import { Batch, vcMaterial, instanced, glowPoints, canvas, canvasTexture, trs, trse, yawOf, bakeModel, layer } from './airport-kit.js';
@@ -95,14 +96,26 @@ function local(tg, lx, ly, lz, out = { x: 0, y: 0, z: 0 }) {
  * Doors and holds from a bake: front door at the start of the parallel
  * fuselage, rear door at its end, sills a third of a radius below the
  * centreline (where the floor is), the forward hold a third of the way back.
+ *
+ * `model`, when the measured model is at hand (the apron's bakes): its own
+ * published doors win, whichever factory drew it.
  */
-function infoFromMeasure(meas, typeId) {
+function infoFromMeasure(meas, typeId, model) {
   const b = meas.body;
   const hw = b.halfWidth;
   const yc = b.centreY;
   const spec = specFor(typeId);
   const lowest = spec.gearPoints.reduce((m, g) => Math.min(m, g.pos.y), 0);
   const nose = spec.gearPoints.find((g) => g.name === 'nose') || spec.gearPoints[0];
+  // An airliner's real doors: the bridge and the stairs go to the drawn
+  // front door, catering to the rearmost. From the model where there is
+  // one — whichever factory drew it: with Settings' alternative models on
+  // the Meridian is the pack's, with its front door 7.5 m ahead of the
+  // table's, and the bridge cab and the stair truck used to go to the table.
+  // Else from the type's table, which, like the roster `plan` the estimate
+  // is built from, describes the model the game draws by default.
+  const drawn = model && model.userData && model.userData.doors ? serviceDoorsFrom(model.userData.doors.list) : null;
+  const doors = drawn || serviceDoors(typeId);
   return {
     typeId,
     ground: -lowest,
@@ -110,10 +123,10 @@ function infoFromMeasure(meas, typeId) {
     yc,
     noseZ: meas.box.min.z,
     tailZ: meas.box.max.z,
-    frontDoorZ: b.front + Math.min(1.5, (b.rear - b.front) * 0.08),
-    rearDoorZ: b.rear - Math.min(1.8, (b.rear - b.front) * 0.08),
+    frontDoorZ: doors ? doors.front.z : b.front + Math.min(1.5, (b.rear - b.front) * 0.08),
+    rearDoorZ: doors ? doors.rear.z : b.rear - Math.min(1.8, (b.rear - b.front) * 0.08),
     holdZ: b.front + (b.rear - b.front) * 0.3,
-    sill: yc - 0.3 * hw,
+    sill: doors ? doors.sill : yc - 0.3 * hw,
     holdSill: yc - 0.8 * hw,
     halfSpan: meas.halfSpan,
     wingTipZ: meas.wingTipZ,
@@ -1052,8 +1065,9 @@ export class Apron {
       let entry = bakes.get(key);
       if (!entry) {
         let bake = null;
+        let model = null;
         try {
-          const model = createAircraftModel({ type, livery: w.livery || schemeFor(type, 'house') });
+          model = createAircraftModel({ type, livery: w.livery || schemeFor(type, 'house') });
           // Parked: everything still, lights out, wheels on the ground.
           model.userData.update(
             0.016,
@@ -1075,7 +1089,7 @@ export class Apron {
           console.warn(`[apron] could not park a ${type.id}:`, e);
           continue;
         }
-        entry = { bake, info: infoFromMeasure(bake, type.id), users: [] };
+        entry = { bake, info: infoFromMeasure(bake, type.id, model), users: [] };
         bakes.set(key, entry);
       }
       entry.users.push(w);

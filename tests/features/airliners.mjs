@@ -149,7 +149,18 @@ for (const id of IDS) {
   const { bad, verts } = nanIn(model);
   ok(`${id}: zero NaN vertices or instance matrices`, bad === 0 && verts > 1000, `${bad} bad of ${verts}`);
   const tris = measure(model);
-  ok(`${id}: under 9,000 triangles`, tris < 9000, `${Math.round(tris)}`);
+  /*
+   * The budget was 9,000 for the pack's first drawing of these: three
+   * cylinders of fuselage, a single tyre per leg and a pod per engine. The
+   * exterior redo (src/fleet/extra/airliners.js) spends more on purpose —
+   * the lofted nose, a six-pane flight deck in frames, high-bypass turbofans,
+   * doors that open, and real undercarriage: eighteen or twenty-two wheels
+   * with hubs, oleos, torque links and doors on a jumbo. Measured 7.0k on the
+   * A320 and 13.4-13.5k on the 747 and A380; a hero model of that size draws
+   * in well under a millisecond on the hangar's turntable (counted in
+   * scratchpad/shots/airliners/*.json). 15,000 keeps the lid on.
+   */
+  ok(`${id}: under 15,000 triangles`, tris < 15000, `${Math.round(tris)}`);
   const fg = model.userData.flightGeometry;
   const b = fg.bounds;
   const span = b.max[0] - b.min[0];
@@ -215,6 +226,605 @@ for (const id of IDS) {
     threw = e;
   }
   ok(`${id}: model animates without throwing`, !threw, threw ? String(threw) : '');
+  model.userData.dispose();
+}
+
+/* ------------------------------------------------------------------ *
+ * The exterior (src/fleet/extra/airliners.js, airliner-kit.js): what the
+ * owner asked for in "fix these parts of the airliners" — a real windscreen
+ * set into the nose at the pilot's eye, even rounded windows in straight
+ * rows on every deck, doors that are seams and open, twin-wheel nose gear
+ * on a strut that reaches the ground, lamps on the real wing tips, and no
+ * overlay that can z-fight the skin. Measured on the built model, not
+ * asserted from the tables.
+ * ------------------------------------------------------------------ */
+const LIV = await import(SRC + 'aircraft/liveries.js');
+const { AIRLINER_SPECS } = await import(SRC + 'fleet/extra/airliners.js');
+const { loftFuselage, piecewise } = await import(SRC + 'fleet/extra/airliner-kit.js');
+
+function meshesNamed(model, re) {
+  const out = [];
+  model.traverse((o) => {
+    if (o.isMesh && re.test(o.name)) out.push(o);
+  });
+  return out;
+}
+/** Instance placements of an instanced mesh, in the model's frame. */
+function instancesOf(mesh, model) {
+  mesh.updateWorldMatrix(true, false);
+  const inv = new THREE.Matrix4().copy(model.matrixWorld).invert();
+  const m = new THREE.Matrix4();
+  const p = new THREE.Vector3();
+  const q = new THREE.Quaternion();
+  const s = new THREE.Vector3();
+  const out = [];
+  for (let i = 0; i < mesh.count; i++) {
+    mesh.getMatrixAt(i, m);
+    m.premultiply(mesh.matrixWorld).premultiply(inv).decompose(p, q, s);
+    out.push({ x: p.x, y: p.y, z: p.z, sx: s.x, sy: s.y });
+  }
+  return out;
+}
+/** The lowest vertex of a mesh (every instance of an instanced one), in the model's frame. */
+function lowestOf(mesh, model) {
+  mesh.updateWorldMatrix(true, false);
+  const inv = new THREE.Matrix4().copy(model.matrixWorld).invert();
+  const pos = mesh.geometry.attributes.position;
+  const v = new THREE.Vector3();
+  const m = new THREE.Matrix4();
+  let low = Infinity;
+  const mats = [];
+  if (mesh.isInstancedMesh) for (let i = 0; i < mesh.count; i++) mats.push(new THREE.Matrix4().copy((mesh.getMatrixAt(i, m), m)));
+  else mats.push(new THREE.Matrix4());
+  for (const im of mats) {
+    const full = new THREE.Matrix4().copy(mesh.matrixWorld).multiply(im).premultiply(inv);
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(full);
+      if (v.y < low) low = v.y;
+    }
+  }
+  return low;
+}
+const r2 = (v) => +v.toFixed(2);
+
+for (const id of IDS) {
+  const type = T.getAircraft(id);
+  const model = ADAPTER.createAircraftModel({ type });
+  model.updateMatrixWorld(true);
+  const fg = model.userData.flightGeometry;
+  const S = AIRLINER_SPECS[id];
+  const g = AIRLINER_GEOMETRY[id];
+  const spec = T.specFor(id);
+
+  /* The flight deck: six panes in frames with wipers, published for the
+   * cockpit, and the windscreens straddle the eye's height and end just
+   * ahead of it — so from the seat, the glass is where the view out is. */
+  const fd = model.userData.flightDeck;
+  const panes = fd ? fd.panes : [];
+  ok(`${id}: a six-pane flight deck in black frames, with wipers, published for the cockpit`,
+    panes.length === 6 && panes.every((p) => p.corners.length === 4 && p.corners.flat().every(Number.isFinite))
+      && meshesNamed(model, /^Windscreen frames$/).length === 1 && meshesNamed(model, /^Flight deck glass$/).length === 1
+      && meshesNamed(model, /^Windscreen wipers$/).length === 1,
+    `${panes.length} panes`);
+  const ws = panes.filter((p) => /^Windscreen/.test(p.name));
+  const wy = ws.flatMap((p) => p.corners.map((c) => c[1]));
+  const wz = ws.flatMap((p) => p.corners.map((c) => c[2]));
+  const eye = fg.eye;
+  const aft = eye[2] - Math.max(...wz);
+  ok(`${id}: the windscreen is set at the pilot's eye — its height inside the panes, the glass 0.3-2 m ahead`,
+    ws.length === 2 && Math.min(...wy) < eye[1] && Math.max(...wy) > eye[1] && aft > 0.3 && aft < 2,
+    `panes y ${r2(Math.min(...wy))}..${r2(Math.max(...wy))}, eye y ${eye[1]}, glass ${r2(aft)} m ahead of the eye`);
+
+  /* Cabin windows: instanced draws of rounded (alpha-tested) panes — one per
+   * breakaway piece of the fuselage that carries any, never one per window —
+   * and every row — the 747's upper deck and the A380's two decks included —
+   * is straight and at one pitch, gaps only where a door is. */
+  const wins = meshesNamed(model, /^Cabin window rows$/);
+  const wm = wins[0];
+  const winCount = wins.reduce((n, w) => n + w.count, 0);
+  ok(`${id}: cabin windows are a few instanced draws of rounded panes (one per fuselage piece), not one per window`,
+    wins.length >= 1 && wins.length <= 3 && wins.every((w) => w.isInstancedMesh && !!w.material.map && w.material.alphaTest > 0) && winCount > 40,
+    `${wins.length} draw(s), ${winCount} windows`);
+  /* Every pane hangs from the piece of skin it sits on (the nose, the cabin
+   * or the tail cone, cut at F.cuts), so when a piece comes off in a crash
+   * its windows go with it. They were all on the cabin piece once, and a
+   * tail strike left a dashed row of dark panes hanging in the air behind
+   * the broken end. */
+  {
+    const F = S.fuselage;
+    const span = { nose: [-Infinity, F.cuts[0]], fuselage: [F.cuts[0], F.cuts[1]], tail: [F.cuts[1], Infinity] };
+    const pieces = model.userData.strikePoints || {};
+    const pieceOf = (o) => {
+      for (let n = o; n; n = n.parent) for (const key of ['nose', 'fuselage', 'tail']) if (pieces[key] && pieces[key].nodes.includes(n)) return key;
+      return null;
+    };
+    const bad = [];
+    const where = [];
+    for (const w of wins) {
+      const key = pieceOf(w);
+      const zs = instancesOf(w, model).map((p) => p.z);
+      where.push(`${key || 'no piece'} ${w.count} (z ${r2(Math.min(...zs))}..${r2(Math.max(...zs))})`);
+      if (!key) { bad.push(`${w.count} panes on no breakaway piece`); continue; }
+      const [lo, hi] = span[key];
+      const out = zs.filter((z) => z < lo - 1e-6 || z > hi + 1e-6);
+      if (out.length) bad.push(`${out.length} pane(s) on the ${key} piece lie outside its skin (z ${r2(Math.min(...out))}..${r2(Math.max(...out))}, piece ${r2(lo)}..${r2(hi)})`);
+    }
+    const expectTail = S.windows.some((r) => Math.max(r.z0, r.z1) > F.cuts[1]);
+    const expectNose = S.windows.some((r) => Math.min(r.z0, r.z1) < F.cuts[0]);
+    const keys = new Set(wins.map(pieceOf));
+    if (expectTail && !keys.has('tail')) bad.push('the rows run past the tail cut but no draw hangs from the tail piece');
+    if (expectNose && !keys.has('nose')) bad.push('the rows run forward of the nose cut but no draw hangs from the nose piece');
+    ok(`${id}: every cabin window hangs from the fuselage piece it sits on, ready to break away with it`,
+      bad.length === 0, bad.join('; ') || where.join(', '));
+  }
+  if (wm) {
+    const inst = wins.flatMap((w) => instancesOf(w, model));
+    const bad = [];
+    let rows = 0;
+    for (const row of S.windows) {
+      for (const side of [-1, 1]) {
+        const mine = inst.filter((w) => Math.sign(w.x) === side && Math.abs(w.y - row.y) < 0.08).sort((a, b) => a.z - b.z);
+        rows++;
+        if (mine.length < 8) {
+          bad.push(`${row.deck || 'main'} ${side < 0 ? 'left' : 'right'}: only ${mine.length} windows`);
+          continue;
+        }
+        const ys = mine.map((w) => w.y);
+        if (Math.max(...ys) - Math.min(...ys) > 0.07) bad.push(`${row.deck || 'main'} row wanders ${r2(Math.max(...ys) - Math.min(...ys))} m`);
+        const gaps = mine.slice(1).map((w, i) => w.z - mine[i].z);
+        if (Math.abs(Math.min(...gaps) - row.pitch) > 0.02) bad.push(`${row.deck || 'main'} pitch ${r2(Math.min(...gaps))}, wanted ${row.pitch}`);
+        const off = gaps.filter((gp) => Math.abs(gp / row.pitch - Math.round(gp / row.pitch)) > 0.08);
+        if (off.length) bad.push(`${row.deck || 'main'}: ${off.length} gap(s) off the pitch`);
+        if (mine.some((w) => Math.abs(w.sx - row.w) > 0.01 || Math.abs(w.sy - row.ht) > 0.01)) bad.push(`${row.deck || 'main'}: window sizes vary`);
+      }
+    }
+    ok(`${id}: ${rows / 2} window row(s) straight and evenly spaced on each side${S.windows.some((r) => r.deck === 'upper') || S.windows.length > 1 ? ', the upper deck included' : ''}`,
+      bad.length === 0, bad.join('; '));
+  }
+
+  /* Doors: every one of the table, both sides alike, closed by default
+   * (nothing drawn but the painted seam), and they open. */
+  const doors = model.userData.doors;
+  {
+    const list = doors ? doors.list : [];
+    const left = list.filter((d) => d.side === 'left').length;
+    const right = list.filter((d) => d.side === 'right').length;
+    const leafOf = (d) => {
+      const n = doors.node(d.id);
+      let leaf = null;
+      if (n) n.traverse((o) => { if (o.name === `Door ${d.id} leaf`) leaf = o; });
+      return leaf;
+    };
+    const shut = list.every((d) => leafOf(d) && !leafOf(d).visible);
+    if (doors) doors.open('all', { instant: true });
+    const opened = list.every((d) => leafOf(d) && leafOf(d).visible && Math.abs(leafOf(d).rotation.y) > 1);
+    if (doors) doors.close('all', { instant: true });
+    const shutAgain = list.every((d) => !leafOf(d).visible);
+    const where = list.every((d) => Number.isFinite(d.x) && Number.isFinite(d.y) && Number.isFinite(d.z) && d.sill < d.y && Math.abs(d.x) > 1);
+    ok(`${id}: ${list.length} doors, the same on both sides, shut by default (a painted seam), and they swing open`,
+      list.length === S.doors.length && left === right && shut && opened && shutAgain && where,
+      `${left} left, ${right} right; shut ${shut}, opened ${opened}, shut again ${shutAgain}`);
+  }
+
+  /* Undercarriage: twin tyres on the nose leg — on a strut with an oleo,
+   * torque links, a drag brace and its doors — and the tyres of every leg
+   * rest on the contact point the physics lands on. */
+  {
+    const twins = meshesNamed(model, /^Twin tyres$/);
+    const noseTyres = twins.find((m) => Math.abs(new THREE.Vector3().setFromMatrixPosition(m.matrixWorld).x) < 0.3);
+    const noseLeg = (() => {
+      for (let p = noseTyres; p; p = p.parent) if (/^Nose landing gear$/i.test(p.name)) return p;
+      return null;
+    })();
+    /*
+     * The pack core bakes a part's static meshes that share a material into
+     * one "surface assembly", so the oleo cylinder, collar, torque links,
+     * pin and drag brace arrive as one gear-metal mesh (184 triangles on the
+     * 747; the core's bare strut alone is 24) and the two bay doors as one
+     * in the nacelle paint. The axle through both wheels stays its own mesh
+     * inside the steering group, as it turns with it.
+     */
+    const triCount = (m) => (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
+    let linkage = 0;
+    let doorsTris = 0;
+    let axle = null;
+    if (noseLeg) noseLeg.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh) return;
+      if (/surface assembly/.test(o.name) && /gear_metal/.test(o.material.name)) linkage += triCount(o);
+      if (/surface assembly/.test(o.name) && /nacelle/.test(o.material.name)) doorsTris += triCount(o);
+      if (o.name === 'Axle') axle = o;
+    });
+    const nosePt = spec.gearPoints.find((p) => p.name === 'nose');
+    const low = noseTyres ? lowestOf(noseTyres, model) : NaN;
+    ok(`${id}: twin nose wheels on an axle, on a strut with an oleo, torque links, a drag brace and two bay doors`,
+      !!noseTyres && noseTyres.count === 2 && !!noseLeg && !!axle && linkage >= 150 && doorsTris >= 24,
+      noseTyres ? `${noseTyres.count} tyres; ${linkage} triangles of linkage, ${doorsTris} of doors, axle ${!!axle}` : 'no twin tyres at x 0');
+    ok(`${id}: the nose tyres rest on the physics' nose contact point`, Math.abs(low - nosePt.pos.y) < 0.03,
+      `tyres ${r2(low)} m, physics ${r2(nosePt.pos.y)} m`);
+    // The main legs: a pair or a bogie each, their lowest tyre on the main contact point.
+    const mainPt = spec.gearPoints.find((p) => p.name === 'right');
+    const mains = [];
+    model.traverse((o) => {
+      if (!o.isInstancedMesh || !/tyres$/i.test(o.name)) return;
+      const x = new THREE.Vector3().setFromMatrixPosition(o.matrixWorld).x;
+      if (Math.abs(x) > 1) mains.push(o);
+    });
+    const mainLow = mains.map((m) => lowestOf(m, model));
+    const legs = mains.length;
+    const wantLegs = { a320: 2, b747: 4, a380: 4 }[id];
+    ok(`${id}: ${wantLegs} main legs, every tyre set on the physics' main contact point`,
+      legs === wantLegs && mainLow.every((y) => Math.abs(y - mainPt.pos.y) < 0.03) && mains.every((m) => m.count >= 2),
+      `${legs} legs at ${mainLow.map(r2).join(', ')} m; physics ${r2(mainPt.pos.y)} m`);
+  }
+
+  /* Every overlay on the skin is a decal with a polygon offset, so none can
+   * trade the depth test with the skin from a few hundred metres (the
+   * strobing on the traffic). The fin paint and the door openings too. */
+  {
+    const overlays = meshesNamed(model, /^(Windscreen frames|Flight deck glass|Windscreen wipers|Cabin window rows|Airframe registration|Painted fin|Painted rudder|Titling)$|^Door .* opening$/);
+    const plain = overlays.filter((m) => !(m.material.polygonOffset === true && m.material.polygonOffsetFactor < 0));
+    ok(`${id}: every overlay on the skin carries the decal polygon offset (${overlays.length} of them)`,
+      overlays.length >= 8 && plain.length === 0, plain.map((m) => m.name).join(', '));
+  }
+
+  /* The painted-on words stand clear of the skin. The registration (and a
+   * scheme's titling line) are patches laid on the loft: every vertex has
+   * to sit 2-5 cm proud of the analytic surface, and the patch needs rows
+   * enough across that it does not cut a chord through the facets — one
+   * row over a 1.2 m band on a 3.3 m tube sagged 5 cm inside, and the
+   * number on every type was buried in the hull's own facets. */
+  {
+    const F = S.fuselage;
+    const h = loftFuselage({ ...F, along: piecewise(F.alongKnots) });
+    const P = new THREE.Vector3();
+    const N = new THREE.Vector3();
+    const v = new THREE.Vector3();
+    const words = meshesNamed(model, /^(Airframe registration|Titling)$/);
+    const bad = [];
+    let rows = Infinity;
+    for (const m of words) {
+      m.updateWorldMatrix(true, false);
+      const inv = new THREE.Matrix4().copy(model.matrixWorld).invert();
+      const full = new THREE.Matrix4().copy(m.matrixWorld).premultiply(inv);
+      const pos = m.geometry.attributes.position;
+      // Columns of the patch: its z values clustered (the normal offset
+      // shifts a row's z by millimetres on a tapered section; columns are
+      // 20 cm or more apart).
+      const zs = [];
+      let worst = [Infinity, -Infinity];
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(full);
+        if (!zs.some((z) => Math.abs(z - v.z) < 0.1)) zs.push(v.z);
+        // The surface point at this vertex's height on its side, and how far out along the normal the vertex is.
+        const s = h.angleAt(v.z, v.y) * Math.sign(v.x || 1);
+        h.point(v.z, s, P);
+        h.normal(v.z, s, N);
+        const out = v.clone().sub(P).dot(N);
+        worst = [Math.min(worst[0], out), Math.max(worst[1], out)];
+      }
+      rows = Math.min(rows, pos.count / zs.length);
+      if (worst[0] < 0.02 || worst[1] > 0.06) bad.push(`${m.name}: ${r2(worst[0] * 100)}..${r2(worst[1] * 100)} cm off the surface`);
+    }
+    ok(`${id}: the registration stands 2-6 cm proud of the lofted skin, in rows fine enough not to sag into its facets`,
+      words.length >= 2 && bad.length === 0 && rows >= 5, bad.join('; ') || `${words.length} patches, ${rows} rows across`);
+  }
+
+  /* The lamps: where the model says they go (userData.lamps) — the nav
+   * lights on the real wing tips, the beacon on the crown, the tail light
+   * on the end of the cone — and the adapter hung its sprites there. */
+  {
+    const lamps = model.userData.lamps || {};
+    const sprites = model.children.filter((o) => o.isSprite);
+    const at = (k) => Array.isArray(lamps[k]) && sprites.some((s) => s.position.distanceTo(new THREE.Vector3(...lamps[k])) < 0.01);
+    // The crown at the beacon's own station: the main tube's top there, or
+    // the hump's where the hump covers it (the 747's beacon is aft of it).
+    const topAt = (stations, z) => {
+      const st = stations.filter((q) => Number.isFinite(q.top)).sort((a, b) => a.z - b.z);
+      if (z <= st[0].z || z >= st[st.length - 1].z) return -Infinity;
+      for (let i = 0; i < st.length - 1; i++) {
+        if (z <= st[i + 1].z) return st[i].top + ((st[i + 1].top - st[i].top) * (z - st[i].z)) / (st[i + 1].z - st[i].z || 1);
+      }
+      return -Infinity;
+    };
+    const bz = lamps.beacon ? lamps.beacon[2] : 0;
+    const top = Math.max(topAt(S.fuselage.stations, bz), S.hump ? topAt(S.hump.stations, bz) : -Infinity);
+    const tailZ = S.fuselage.stations[S.fuselage.stations.length - 1].z;
+    ok(`${id}: navigation lights on the wing tips, the beacon on the crown, the tail light on the cone — and the sprites hang there`,
+      lamps.navLeft && Math.abs(lamps.navLeft[0] + g.tip.x) < 0.1 && Math.abs(lamps.navRight[0] - g.tip.x) < 0.1
+        && lamps.beacon && lamps.beacon[1] > top - 0.2 && lamps.tail && lamps.tail[2] > tailZ - 0.5
+        && ['navLeft', 'navRight', 'beacon', 'tail', 'strobeL', 'strobeR', 'landing'].every(at),
+      `nav x ${lamps.navLeft && r2(lamps.navLeft[0])} / tip ${g.tip.x}; beacon y ${lamps.beacon && r2(lamps.beacon[1])} / crown ${r2(top)}; tail z ${lamps.tail && r2(lamps.tail[2])} / cone end ${tailZ}`);
+  }
+
+  /* The skin is one picture: the three breakaway pieces share one livery
+   * material, and the texture's u runs on from the nose piece into the cabin
+   * piece into the tail — so the cheatline cannot stop at a joint. */
+  {
+    // The pieces by their material (the pack core bakes each part's skin
+    // with whatever else wears the livery there — the upper deck, the
+    // fairing — into one "surface assembly"); the door leaves are dynamic
+    // and wear the same paint, but are not the fuselage.
+    const skins = [];
+    model.traverse((o) => {
+      if (o.isMesh && !o.isInstancedMesh && !o.userData.dynamic && o.material.name === 'Airliner_livery') skins.push(o);
+    });
+    const ranges = skins.map((m) => {
+      const uv = m.geometry.attributes.uv;
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let i = 0; i < uv.count; i++) {
+        const u = uv.getX(i);
+        if (u < lo) lo = u;
+        if (u > hi) hi = u;
+      }
+      return [lo, hi];
+    }).sort((a, b) => a[0] - b[0]);
+    const joined = ranges.length === 3 && ranges[0][0] < 0.01 && ranges[2][1] > 0.99
+      && Math.abs(ranges[0][1] - ranges[1][0]) < 0.01 && Math.abs(ranges[1][1] - ranges[2][0]) < 0.01;
+    ok(`${id}: the fuselage is one livery in three breakaway pieces (one material, the paint running on across the joints)`,
+      skins.length === 3 && skins.every((m) => m.material === skins[0].material) && !!skins[0].material.map && joined,
+      ranges.map((r) => `${r2(r[0])}..${r2(r[1])}`).join(' | '));
+  }
+
+  /* Draw calls: merged geometry and shared materials. A mesh is a draw. The
+   * old pack drawing was 50/65/66 meshes; the redo's undercarriage and
+   * flight deck cost more on purpose (79/112/124 measured) — these are the
+   * lids, so nothing creeps towards a draw per window. */
+  {
+    let meshes = 0;
+    const mats = new Set();
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      meshes++;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) mats.add(m.uuid);
+    });
+    const lid = { a320: 90, b747: 125, a380: 135 }[id];
+    ok(`${id}: under ${lid} draws and 26 materials`, meshes < lid && mats.size <= 26, `${meshes} meshes, ${mats.size} materials`);
+  }
+
+  /* The crash itself, through the same strike() the game's impact() calls:
+   * when the tail cone (or, on the 747, the nose with its upper-deck row)
+   * comes off, its windows leave with it and none is left hanging in the air
+   * beyond the broken end of the cabin piece. Last on purpose: strike hides
+   * the lost pieces, and everything above measured the whole aeroplane. */
+  {
+    const F = S.fuselage;
+    const debris = new THREE.Scene();
+    const hit = { debrisParent: debris, groundHeight: 0, lifetime: 20, worldVelocity: { x: 0, y: -1, z: -70 }, worldAngularVelocity: { x: 0, y: 0, z: 0 } };
+    const panesIn = (root) => {
+      let n = 0;
+      root.traverse((o) => { if (o.isInstancedMesh && o.name === 'Cabin window rows') n += o.count; });
+      return n;
+    };
+    const left = () => {
+      const zs = [];
+      model.traverseVisible((o) => { if (o.isInstancedMesh && o.name === 'Cabin window rows') zs.push(...instancesOf(o, model).map((p) => p.z)); });
+      return zs;
+    };
+    const before = left().length;
+    const tail = model.userData.strike('tail', hit);
+    const carried = tail && tail.body ? panesIn(tail.body.visual) : 0;
+    const after = left();
+    const hanging = after.filter((z) => z > F.cuts[1] + 1e-6).length;
+    ok(`${id}: when the tail breaks off its windows go with it — none left hanging behind the cabin's broken end`,
+      !!tail && carried > 0 && hanging === 0 && after.length + carried === before,
+      `${carried} panes on the tail piece, ${after.length} left on the aeroplane, ${hanging} beyond the cut at z ${F.cuts[1]}`);
+    if (S.windows.some((r) => Math.min(r.z0, r.z1) < F.cuts[0])) {
+      const nose = model.userData.strike('nose', hit);
+      const carriedN = nose && nose.body ? panesIn(nose.body.visual) : 0;
+      const afterN = left();
+      const hangingN = afterN.filter((z) => z < F.cuts[0] - 1e-6).length;
+      ok(`${id}: when the nose breaks off its upper-deck windows go with it`,
+        !!nose && carriedN > 0 && hangingN === 0 && afterN.length + carriedN === after.length,
+        `${carriedN} panes on the nose piece, ${afterN.length} left, ${hangingN} ahead of the cut at z ${F.cuts[0]}`);
+    }
+  }
+  model.userData.dispose();
+}
+
+/* The pack's Meridian (Settings' "alternative models for every aeroplane",
+ * fleet/aircraft-transport.js) is dressed by the same kit: its window row
+ * runs half a metre past the tail cut, and those panes must break away with
+ * the tail cone too. */
+{
+  ADAPTER.setFleetModels(true);
+  let model;
+  try {
+    model = ADAPTER.createAircraftModel({ type: T.getAircraft('meridian') });
+  } finally {
+    ADAPTER.setFleetModels(false);
+  }
+  model.updateMatrixWorld(true);
+  const wins = meshesNamed(model, /^Cabin window rows$/);
+  const pieces = model.userData.strikePoints || {};
+  const pieceOf = (o) => {
+    for (let n = o; n; n = n.parent) for (const key of ['nose', 'fuselage', 'tail']) if (pieces[key] && pieces[key].nodes.includes(n)) return key;
+    return null;
+  };
+  const onTail = wins.filter((w) => pieceOf(w) === 'tail');
+  const tailZ = onTail.flatMap((w) => instancesOf(w, model).map((p) => p.z));
+  const cabinZ = wins.filter((w) => pieceOf(w) === 'fuselage').flatMap((w) => instancesOf(w, model).map((p) => p.z));
+  const cut = 6.5; // MERIDIAN.fuselage.cuts[1]
+  const hit = { debrisParent: new THREE.Scene(), groundHeight: 0, lifetime: 20, worldVelocity: { x: 0, y: -1, z: -70 }, worldAngularVelocity: { x: 0, y: 0, z: 0 } };
+  const tail = model.userData.strike('tail', hit);
+  let carried = 0;
+  if (tail) tail.body.visual.traverse((o) => { if (o.isInstancedMesh && o.name === 'Cabin window rows') carried += o.count; });
+  const left = [];
+  model.traverseVisible((o) => { if (o.isInstancedMesh && o.name === 'Cabin window rows') left.push(...instancesOf(o, model).map((p) => p.z)); });
+  ok("pack Meridian (alternative models on): the panes aft of the tail cut hang from the tail cone and leave with it when it breaks off",
+    wins.length === 2 && onTail.length === 1 && tailZ.length > 0 && tailZ.every((z) => z > cut) && cabinZ.every((z) => z <= cut)
+      && !!tail && carried === tailZ.length && left.every((z) => z <= cut),
+    `${wins.length} draws; ${tailZ.length} pane(s) on the tail at z ${tailZ.length ? r2(Math.min(...tailZ)) : '-'}..${tailZ.length ? r2(Math.max(...tailZ)) : '-'}, cut ${cut}; ${carried} carried off, ${left.filter((z) => z > cut).length} left hanging`);
+  model.userData.dispose();
+}
+
+/* Through the game's own crash entry — crashAircraftModel (model-adapter) →
+ * beginGameAircraftCrash → impact(), which CRUSHES the struck section
+ * (damagePart, from severity 0.32) before anything comes off, and only then
+ * strike()s it. The redo's first window fix went through strike() alone and
+ * missed that: the skin concertinaed and the panes, instanced, stayed where
+ * the skin had been — a dashed row of dark squares in the air beside the
+ * wreck — and the windscreen sat 2 m off the crushed nose. So, after each of
+ * the three crashes the game names, every visible pane (on the aeroplane and
+ * on each piece that came off) sits on a visible triangle of its own body's
+ * skin, and the flight deck glass, its frames and the door leaves do too.
+ *
+ * skinFit(root): the worst distance, in metres, from each kind of thing laid
+ * on the skin to the nearest visible livery triangle of the same body. */
+function skinFit(root) {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const shown = (o) => {
+    for (let n = o; n && n !== root.parent; n = n.parent) if (!n.visible) return false;
+    return true;
+  };
+  const rel = new THREE.Matrix4();
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  // The skin's triangles, filed under every 2 m of z they span.
+  const tris = [];
+  const shelf = new Map();
+  const slot = (z) => Math.floor(z / 2);
+  root.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh || !shown(o) || !o.material || o.material.name !== 'Airliner_livery' || /^Door/.test(o.name)) return;
+    rel.multiplyMatrices(inv, o.matrixWorld);
+    const pos = o.geometry.attributes.position;
+    const idx = o.geometry.index;
+    const n = idx ? idx.count : pos.count;
+    for (let i = 0; i < n; i += 3) {
+      a.fromBufferAttribute(pos, idx ? idx.getX(i) : i).applyMatrix4(rel);
+      b.fromBufferAttribute(pos, idx ? idx.getX(i + 1) : i + 1).applyMatrix4(rel);
+      c.fromBufferAttribute(pos, idx ? idx.getX(i + 2) : i + 2).applyMatrix4(rel);
+      const t = new THREE.Triangle(a.clone(), b.clone(), c.clone());
+      tris.push(t);
+      for (let k = slot(Math.min(a.z, b.z, c.z)); k <= slot(Math.max(a.z, b.z, c.z)); k++) {
+        if (!shelf.has(k)) shelf.set(k, []);
+        shelf.get(k).push(t);
+      }
+    }
+  });
+  const tmp = new THREE.Vector3();
+  const gap = (p) => {
+    let best = Infinity;
+    const k0 = slot(p.z);
+    for (let k = k0 - 1; k <= k0 + 1; k++) for (const t of shelf.get(k) || []) best = Math.min(best, t.closestPointToPoint(p, tmp).distanceTo(p));
+    if (best === Infinity) for (const t of tris) best = Math.min(best, t.closestPointToPoint(p, tmp).distanceTo(p)); // far off: say how far
+    return best;
+  };
+  const out = { tris: tris.length, panes: 0, pane: 0, glass: 0, frames: 0, doors: 0 };
+  const m = new THREE.Matrix4();
+  root.traverse((o) => {
+    if (!o.isMesh || !shown(o)) return;
+    rel.multiplyMatrices(inv, o.matrixWorld);
+    if (o.isInstancedMesh && o.name === 'Cabin window rows') {
+      for (let i = 0; i < o.count; i++) {
+        o.getMatrixAt(i, m);
+        out.panes++;
+        out.pane = Math.max(out.pane, gap(a.setFromMatrixPosition(m.premultiply(rel))));
+      }
+      return;
+    }
+    const key = o.name === 'Flight deck glass' ? 'glass' : o.name === 'Windscreen frames' ? 'frames' : /^Door .* skin$/.test(o.name) ? 'doors' : null;
+    if (!key || o.isInstancedMesh) return;
+    const pos = o.geometry.attributes.position;
+    const step = Math.max(1, Math.floor(pos.count / 40));
+    for (let i = 0; i < pos.count; i += step) out[key] = Math.max(out[key], gap(a.fromBufferAttribute(pos, i).applyMatrix4(rel)));
+  });
+  return out;
+}
+const worstOf = (fit) => Math.max(fit.pane, fit.glass, fit.frames, fit.doors);
+const fitText = (fit) => `${fit.panes} panes ${r2(fit.pane)} m, glass ${r2(fit.glass)}, frames ${r2(fit.frames)}, doors ${r2(fit.doors)} (${fit.tris} skin triangles)`;
+
+/** Crash a freshly built aeroplane the way main.js does, and look at what is left 20 frames on. */
+function gameCrash(id, reason, { fleet = false } = {}) {
+  if (fleet) ADAPTER.setFleetModels(true);
+  let model;
+  try {
+    model = ADAPTER.createAircraftModel({ type: T.getAircraft(id) });
+  } finally {
+    if (fleet) ADAPTER.setFleetModels(false);
+  }
+  const scene = new THREE.Scene();
+  scene.add(model);
+  model.position.set(0, 14, 0);
+  model.quaternion.identity();
+  model.updateMatrixWorld(true);
+  const intact = skinFit(model);
+  const ac = { pos: model.position.clone(), quat: model.quaternion.clone(), vel: new THREE.Vector3(0, -1, -70), omega: new THREE.Vector3(), crashed: true, controls: {} };
+  const began = ADAPTER.crashAircraftModel(model, ac, { reason, worldVelocity: ac.vel.clone(), worldAngularVelocity: new THREE.Vector3(), worldPoint: model.position.clone() }, { groundHeight: 0 });
+  const report = model.userData.gameCrash && model.userData.gameCrash.report;
+  for (let i = 0; i < 20; i++) model.userData.update(1 / 60, ac, {});
+  const bodies = [{ name: 'the aeroplane', fit: skinFit(model) }];
+  for (const p of model.userData.partBodies) if (p.active) bodies.push({ name: `the ${p.id} piece`, fit: skinFit(p.visual) });
+  model.userData.dispose();
+  model.removeFromParent();
+  return { began, intact, action: report && report.action, severity: report ? report.accumulatedSeverity : 0, part: report && report.partId, bodies };
+}
+
+const CRASHES = ['The tail struck the ground', 'The nose struck the ground', 'Hit the ground'];
+for (const [id, fleet] of [...IDS.map((i) => [i, false]), ['meridian', true]]) {
+  const name = fleet ? 'pack Meridian' : id;
+  for (const reason of CRASHES) {
+    const r = gameCrash(id, reason, { fleet });
+    const sane = r.began && worstOf(r.intact) < 0.1 && r.intact.panes > 40;
+    // The crush ran (severity 0.32 and up), and a tail or nose strike took that section off.
+    const struck = r.severity >= 0.32 && (reason === 'Hit the ground' ? r.part === 'fuselage' : r.action === 'detach' && r.bodies.length === 2);
+    const worst = Math.max(...r.bodies.map((b) => worstOf(b.fit)));
+    const stayed = r.bodies.reduce((n, b) => n + b.fit.panes, 0) === r.intact.panes;
+    ok(`${name}: "${reason}" through the game's crash entry (${r.action} ${r.part} at ${r2(r.severity)}): every window pane, the windscreen and the doors stay on the crushed skin, on the aeroplane and on what came off (worst ${r2(worst)} m)`,
+      sane && struck && stayed && worst <= 0.3,
+      r.bodies.map((b) => `${b.name}: ${fitText(b.fit)}`).join('; ') + (sane ? '' : ` — intact: ${fitText(r.intact)}`));
+  }
+}
+
+/* Air Force One: the 747 in the 'potus' scheme (aircraft/liveries.js) keeps
+ * its look — white over the scheme's blue band and line, the dark blue fin,
+ * SAM 42, and the titling line, which the pack's old skin painted and the
+ * redo must too, readable from both sides. */
+{
+  const type = T.getAircraft('b747');
+  const scheme = LIV.schemeFor(type, 'potus');
+  const model = ADAPTER.createAircraftModel({ type, livery: scheme });
+  model.updateMatrixWorld(true);
+  const fin = meshesNamed(model, /^Painted fin$/)[0];
+  const finOk = !!fin && fin.material.color.getHex() === new THREE.Color(scheme.tail).getHex();
+  let skin = null;
+  model.traverse((o) => { if (!skin && o.isMesh && o.material.name === 'Airliner_livery') skin = o; });
+  const skinOk = !!skin && !!skin.material.map && String(skin.material.map.name).includes(scheme.base) && String(skin.material.map.name).includes(scheme.accent);
+  const regs = meshesNamed(model, /^Airframe registration$/);
+  const regOk = regs.length === 2 && regs.every((m) => String(m.material.map && m.material.map.name).includes(scheme.reg));
+  const titles = meshesNamed(model, /^Titling$/);
+  const titleOk = titles.length === 2 && titles.every((m) => String(m.material.map && m.material.map.name).includes(scheme.title) && m.material.polygonOffset);
+  // Readable from both sides: the two decals run their u the opposite way.
+  const uDir = (m) => {
+    const uv = m.geometry.attributes.uv;
+    const pos = m.geometry.attributes.position;
+    let a = null;
+    let b = null;
+    for (let i = 0; i < pos.count; i++) {
+      if (a === null || pos.getZ(i) < pos.getZ(a)) a = i;
+      if (b === null || pos.getZ(i) > pos.getZ(b)) b = i;
+    }
+    return Math.sign(uv.getX(b) - uv.getX(a));
+  };
+  const mirrored = titles.length === 2 && uDir(titles[0]) !== 0 && uDir(titles[0]) === -uDir(titles[1]);
+  // On the main tube above the window row, forward of the wing.
+  const span = titles.length ? (() => {
+    const box = new THREE.Box3();
+    for (const m of titles) box.expandByObject(m);
+    return box;
+  })() : null;
+  // Above the window row (top 0.74) and under the hump's flank, from behind
+  // door 1 (-21.8) to over the wing root, a line a dozen metres or longer.
+  const placed = !!span && span.min.y > 0.74 && span.max.y < 2.4 && span.min.z > -21.8 && span.max.z <= 0 && span.max.z - span.min.z > 12;
+  ok('b747 as Air Force One: white over its blue band and line, the dark blue fin, SAM 42 — and "UNITED STATES OF AMERICA" along the body, reading left to right from both sides',
+    finOk && skinOk && regOk && titleOk && mirrored && placed,
+    `fin ${finOk}, skin ${skinOk}, reg ${regOk} (${regs.length}), title ${titleOk} (${titles.length}), mirrored ${mirrored}, placed ${placed}${span ? ` y ${r2(span.min.y)}..${r2(span.max.y)} z ${r2(span.min.z)}..${r2(span.max.z)}` : ''}`);
+  // And the house scheme paints no words: the title is the scheme's, not the type's.
+  const plain = ADAPTER.createAircraftModel({ type });
+  ok('b747 in house colours: no titling line', meshesNamed(plain, /^Titling$/).length === 0);
+  plain.userData.dispose();
   model.userData.dispose();
 }
 
