@@ -3325,6 +3325,32 @@ export function clearTraffic(sim) {
   T.why = 'cleared';
 }
 
+/**
+ * The owner takes one aeroplane over (src/features/owner/teleport.js): it
+ * leaves the traffic — model, name tag, parking slot and runway given up, its
+ * brain and its route with them — and its last pose comes back for the owner
+ * to be put into. Null when there is no such craft. The traffic carries on
+ * with the others (and fills the gap in its own time).
+ */
+export function takeCraft(sim, id) {
+  const i = T.list.findIndex((c) => c.id === id);
+  if (i < 0) return null;
+  const c = T.list[i];
+  const pose = {
+    id: c.id, typeId: c.type.id, callsign: c.callsign, x: c.x, y: c.y, z: c.z,
+    heading: ((c.hdg / DEG) % 360 + 360) % 360, speed: c.v, vs: c.vy, onGround: !!c.onGround, gearDown: c.gear > 0.5,
+  };
+  if (c.model && c.model.parent) c.model.parent.remove(c.model);
+  if (c.tag && c.tag.parent) c.tag.parent.remove(c.tag);
+  T.list.splice(i, 1);
+  if (T.watch === i) T.watch = -1;
+  else if (T.watch > i) T.watch--;
+  disposeCraft(c, sceneResources(sim));
+  rebuildPub();
+  if (sim && sim.traffic === T.pub) sim.traffic = T.pub;
+  return pose;
+}
+
 /** For the browser check and the console: a snapshot of everything. */
 export function trafficState() {
   return {

@@ -177,6 +177,8 @@ const CSS = `
 .mp-admintag { display: inline-block; margin-left: 6px; padding: 1px 5px; border-radius: 5px; background: #ff5a4f; color: #fff;
   font-size: 10px; font-weight: 800; letter-spacing: 0.06em; vertical-align: 1px; }
 .mp-badge .mp-admintag { margin-left: 0; }
+/* The owner (owner.js): gold, so everybody can tell it from an admin's red. */
+.mp-admintag.mp-ownertag { background: #ffd23f; color: #3a2a00; }
 .mp-frozen { color: #bfe6ff; font-weight: 650; }
 .mp-prow .mp-acts { display: inline-flex; gap: 5px; justify-content: flex-end; }
 .mp-admrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 2px 0 9px 24px; font-size: 12.5px; color: var(--text-dim); }
@@ -185,8 +187,11 @@ const CSS = `
 .mp-hud button.mp-admbtn, .mp-pausefold button.mp-admbtn { border-color: rgba(255, 90, 79, 0.55); }
 `;
 
-/** The owner's crown, for the player list (the tags draw their own: remotes.js). */
-export const CROWN_SVG = '<svg class="mp-crown" viewBox="0 0 24 18" role="img" aria-label="Owner"><title>Owner</title>'
+/**
+ * The crown — whoever hosts this game (a lobby's owner) — for the player list (the tags draw their own: remotes.js).
+ * Read out as "Host", so it is never taken for the gold OWNER badge (../owner.js: the owner's hour).
+ */
+export const CROWN_SVG = '<svg class="mp-crown" viewBox="0 0 24 18" role="img" aria-label="Host"><title>Host</title>'
   + '<path d="M2 16.5h20V5.5l-5.5 5L12 1.5l-4.5 9L2 5.5z" fill="#ffd23f" stroke="#6b4e00" stroke-width="1.4" stroke-linejoin="round"/>'
   + '<rect x="3" y="13" width="18" height="2.4" fill="#e0a800"/></svg>';
 
@@ -486,7 +491,7 @@ export function buildScreen(ctrl) {
 function paintRoster(box, players, {
   meId, isHost, code: rawCode, server, locked, closeButton = false, lobby = false, muted = null, max = MAX_PLAYERS, reconnecting = false, place = '', priv = false,
   world = false,
-  admin = false, adm = null,
+  admin = false, adm = null, owner = false, own = null,
 }) {
   if (!box) return;
   // Checked again here, the last step before the screen: a code is shown only if it is exactly one the game could make.
@@ -494,8 +499,10 @@ function paintRoster(box, players, {
   // Part 3b: which row's admin menu is open, and which action is waiting for "yes" (buildHud keeps both).
   const open = admin && adm ? adm.open : null;
   const armed = admin && adm ? adm.armed : null;
-  let shape = `${meId}|${isHost}|${code}|${server}|${locked}|${closeButton}|${lobby}|${max}|${reconnecting}|${place}|${priv}|${world}|${admin}|${open}|${armed ? `${armed.op}:${armed.id}` : ''}`;
-  for (const p of players) shape += `#${p.id}|${p.name}|${p.colour}|${p.host ? 1 : 0}|${muted && muted.has(p.name) ? 1 : 0}|${p.admin ? 1 : 0}${p.muted ? 1 : 0}${p.frozen ? 1 : 0}`;
+  // The owner's troll menu (../owner/trolls.js): only the owner's list has it, and only its shape decides a repaint.
+  const trolls = owner && own ? own : null;
+  let shape = `${meId}|${isHost}|${code}|${server}|${locked}|${closeButton}|${lobby}|${max}|${reconnecting}|${place}|${priv}|${world}|${admin}|${owner}|${open}|${armed ? `${armed.op}:${armed.id}` : ''}|${trolls ? trolls.shape() : ''}`;
+  for (const p of players) shape += `#${p.id}|${p.name}|${p.colour}|${p.host ? 1 : 0}|${muted && muted.has(p.name) ? 1 : 0}|${p.admin ? 1 : 0}${p.owner ? 1 : 0}${p.muted ? 1 : 0}${p.frozen ? 1 : 0}`;
   if (shape !== box._shape) {
     box._shape = shape;
     const rows = players.map((p) => {
@@ -510,20 +517,22 @@ function paintRoster(box, players, {
       } else if (!lobby && isHost && !p.host && !p.admin) acts.push(`<button data-mp-kick="${p.id}" title="Remove ${name} from the server">Kick</button>`);
       // The admin menu: for anybody here who is not an admin themselves.
       if (admin && !you && !p.admin) acts.push(`<button class="mp-admbtn" data-mp-adm-open="${p.id}" aria-expanded="${open === p.id}" title="Admin: kick, mute or freeze ${name}">Admin</button>`);
-      let sub = '';
+      // The owner's trolls, beside Admin: for everybody but the owner.
+      if (trolls && !you) acts.push(trolls.button(p));
+      let sub = trolls && !you ? trolls.row(p) : '';
       if (admin && open === p.id && !you && !p.admin) {
         if (armed && armed.id === p.id) {
-          sub = `<div class="mp-admrow" data-mp-admrow="${p.id}"><span class="mp-sure">${escapeHtml(ADMIN_WORDS[armed.op][1](p.name))}</span>`
+          sub += `<div class="mp-admrow" data-mp-admrow="${p.id}"><span class="mp-sure">${escapeHtml(ADMIN_WORDS[armed.op][1](p.name))}</span>`
             + '<button class="mp-yes" data-mp-adm-yes>Yes</button><button data-mp-adm-no>No</button></div>';
         } else {
           const ops = [];
           // A match the host made: taking its host out would end it, which is Close server.
           if (!(p.host && !lobby)) ops.push('kick');
           ops.push(p.muted ? 'unmute' : 'mute', p.frozen ? 'unfreeze' : 'freeze');
-          sub = `<div class="mp-admrow" data-mp-admrow="${p.id}">${ops.map((op) => `<button data-mp-adm="${op}:${p.id}">${ADMIN_WORDS[op][0]}</button>`).join('')}</div>`;
+          sub += `<div class="mp-admrow" data-mp-admrow="${p.id}">${ops.map((op) => `<button data-mp-adm="${op}:${p.id}">${ADMIN_WORDS[op][0]}</button>`).join('')}</div>`;
         }
       }
-      return `<div class="mp-prow"><i style="background:${safeCss(p.colour)}"></i><span>${p.host ? CROWN_SVG : ''}${name}${p.admin ? '<b class="mp-admintag">ADMIN</b>' : ''}${tags ? `<span class="mp-tagline">${tags}</span>` : ''}</span><span class="mp-ping" data-mp-ping="${p.id}"></span><span class="mp-acts">${acts.join('')}</span></div>${sub}`;
+      return `<div class="mp-prow"><i style="background:${safeCss(p.colour)}"></i><span>${p.host ? CROWN_SVG : ''}${name}${p.owner ? '<b class="mp-admintag mp-ownertag">OWNER</b>' : p.admin ? '<b class="mp-admintag">ADMIN</b>' : ''}${tags ? `<span class="mp-tagline">${tags}</span>` : ''}</span><span class="mp-ping" data-mp-ping="${p.id}"></span><span class="mp-acts">${acts.join('')}</span></div>${sub}`;
     });
     const lockBtn = isHost && !lobby ? `<button data-mp-lock="${locked ? 'off' : 'on'}" title="${locked ? 'Let new players join again' : 'Stop anybody new from joining'}">${locked ? 'Unlock' : 'Lock'}</button> ` : '';
     // A world lobby (list 3) says so: the others in it can be anybody, anywhere — usernames from the lists and quick chat only, as everywhere.
@@ -533,10 +542,11 @@ function paintRoster(box, players, {
     const closing = admin && armed && armed.op === 'close';
     const adminClose = !admin ? '' : closing
       ? `<div class="mp-admrow" data-mp-admrow="close"><span class="mp-sure">${escapeHtml(ADMIN_WORDS.close[1]())}</span><button class="mp-yes" data-mp-adm-yes>Yes, close it</button><button data-mp-adm-no>No</button></div>`
-      : '<div class="mp-admrow" data-mp-admrow="close"><b class="mp-admintag">ADMIN</b><button class="mp-admbtn" data-mp-adm="close:-1">Close server for everybody</button></div>';
+      : `<div class="mp-admrow" data-mp-admrow="close">${owner ? '<b class="mp-admintag mp-ownertag">OWNER</b>' : '<b class="mp-admintag">ADMIN</b>'}<button class="mp-admbtn" data-mp-adm="close:-1">Close server for everybody</button></div>`;
     box.innerHTML = `
       <h4>Players <span>${players.length}/${max} · ${escapeHtml(server || '')}${place ? ` · ${escapeHtml(place)}` : ''}${locked ? ' · locked' : ''}</span></h4>
       ${rows.join('')}
+      ${trolls ? trolls.foot() : ''}
       ${adminClose}
       <div class="mp-foot">
         <span>${code ? `Code <b>${escapeHtml(code)}</b>${priv ? '<br><small>Works with friends who aren’t on your Wi-Fi.</small>' : ''}` : note}</span>
@@ -601,6 +611,11 @@ export function buildHud(ctrl, layer) {
     if (lastRoster) hud.roster(lastRoster.players, lastRoster.opts);
   };
   const onClick = (e) => {
+    // The owner's troll menu (../owner/trolls.js): its buttons are its own; the list repaints after.
+    if (ctrl.ownerMenu && lastRoster && lastRoster.opts && lastRoster.opts.owner && ctrl.ownerMenu.click(e)) {
+      repaint();
+      return;
+    }
     const admOpen = e.target.closest('[data-mp-adm-open]');
     if (admOpen) {
       const id = Number(admOpen.dataset.mpAdmOpen);
@@ -670,6 +685,11 @@ export function buildHud(ctrl, layer) {
     }
   };
   el.addEventListener('click', onClick);
+  // The troll menu's duration slider: no repaint while the finger is on it.
+  const onInput = (e) => {
+    if (ctrl.ownerMenu && typeof ctrl.ownerMenu.input === 'function') ctrl.ownerMenu.input(e);
+  };
+  el.addEventListener('input', onInput);
 
   const hud = {
     el,
@@ -727,8 +747,10 @@ export function buildHud(ctrl, layer) {
         if (adm.armed && adm.armed.op !== 'close') adm.armed = null;
       }
       if (!(opts && opts.admin)) adm.open = adm.armed = null;
-      paintRoster(list, players, { ...opts, closeButton: true, adm });
-      if (pause && !pause.hidden) paintRoster(pause.querySelector('[data-mp-pauselist]'), players, { ...opts, adm });
+      const own = opts && opts.owner && ctrl.ownerMenu ? ctrl.ownerMenu : null;
+      if (own && typeof own.prune === 'function') own.prune(players);
+      paintRoster(list, players, { ...opts, closeButton: true, adm, own });
+      if (pause && !pause.hidden) paintRoster(pause.querySelector('[data-mp-pauselist]'), players, { ...opts, adm, own });
     },
     /** For the tests: the admin menu's state. */
     get adminMenu() {
@@ -747,6 +769,7 @@ export function buildHud(ctrl, layer) {
       if (!pause) {
         pause = h(`<details class="pause-fold mp-pausefold" open hidden><summary>Multiplayer · <span data-mp-pausehead></span></summary><div data-mp-pauselist></div></details>`);
         pause.addEventListener('click', onClick);
+        pause.addEventListener('input', onInput);
       }
       if (pause.parentNode !== card) {
         const after = card.querySelector('.pause-actions');
@@ -756,7 +779,8 @@ export function buildHud(ctrl, layer) {
       if (pause.hidden === !!on) pause.hidden = !on;
       if (on) {
         setText(pause.querySelector('[data-mp-pausehead]'), `${players.length}/${(opts && opts.max) || MAX_PLAYERS} players`);
-        paintRoster(pause.querySelector('[data-mp-pauselist]'), players, { ...opts, adm });
+        const own = opts && opts.owner && ctrl.ownerMenu ? ctrl.ownerMenu : null;
+        paintRoster(pause.querySelector('[data-mp-pauselist]'), players, { ...opts, adm, own });
       }
     },
     /**

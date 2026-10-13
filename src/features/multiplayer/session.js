@@ -25,6 +25,7 @@ import {
 } from './protocol.js';
 import { SignalError } from './signaling.js';
 import { nonce, proofText, verifyProof, adminCrypto } from './admin.js';
+import { ownerProofText, verifyOwnerProof, ownerCrypto } from './owner.js';
 
 const nowMs = () => (globalThis.performance ? performance.now() : Date.now());
 
@@ -106,6 +107,16 @@ export const FREEZE_MS = 30000;
 const PROVE_WAIT_MS = 5000;
 /** What an admin may ask a host to do. */
 export const ADMIN_OPS = Object.freeze(['kick', 'mute', 'unmute', 'freeze', 'unfreeze', 'close']);
+
+/*
+ * The owner (owner.js): every admin power, for the hour on their pass. A
+ * player's `ownerUntil` is the pass's exp, set only by this host's own check
+ * of it (or, for the host itself, by this device's own checked pass), and
+ * judged against this host's clock (`wall`) every time it matters — so the
+ * powers and the OWNER badge go when the hour does, whatever the owner's
+ * device says.
+ */
+const ownerLive = (p, wall) => !!p && p.ownerUntil > wall;
 
 /**
  * Whether it is time to ask if a quiet link's other end has gone: at most
@@ -248,8 +259,10 @@ export class HostSession {
    *                  'code'  a game for a friend on another network, joined by code: eight, the same
    *                          username rule, and lock and kick, since the host made it.
    */
-  constructor({ profile, server, spawnInfo, weather, onEvent, now = nowMs, mode = 'slot', max = 0, admin = false }) {
+  constructor({ profile, server, spawnInfo, weather, onEvent, now = nowMs, mode = 'slot', max = 0, admin = false, ownerUntil = 0, wall = () => Date.now() }) {
     this.now = now;
+    /** The wall clock, ms since 1970: what an owner's hour is measured against (owner.js). */
+    this.wall = wall;
     this.mode = mode === 'lobby' || mode === 'code' ? mode : 'slot';
     this.max = Math.min(PLAYER_IDS, max || (this.mode === 'lobby' ? LOBBY_MAX : this.mode === 'code' ? CODE_GAME_MAX : MAX_PLAYERS));
     // A world lobby (list 3): one of the five that are the same for everybody on the internet.
@@ -260,9 +273,10 @@ export class HostSession {
     // A game made to be joined by code only (the lobby screen's private match): on no list anywhere.
     this.server = { ...server, name, mapName: mapNameFor(server.map), lobby, world: !!(world && lobby), max: this.max, priv: this.mode === 'code' };
     // `admin`: this device has an admin key (admin.js). The host is its own server, so it takes its own word for it.
+    // `ownerUntil`: this device's owner pass runs until then (owner.js) — checked when it was loaded or made.
     this.me = {
       id: 0, name: safeName(profile.name, callSignForId(0)), colour: safeColour(profile.colour), host: true, key: profile.key, ping: 0, rank: 0,
-      admin: !!admin, muted: false, frozenUntil: 0,
+      admin: !!admin, muted: false, frozenUntil: 0, ownerUntil: Number.isFinite(ownerUntil) ? ownerUntil : 0,
     };
     this.freezeMs = FREEZE_MS;
     this.proveWaitMs = PROVE_WAIT_MS;
@@ -327,6 +341,16 @@ export class HostSession {
     return this.players.size + 1;
   }
 
+  /** The owner, right now, by this host's clock. */
+  isOwner(p) {
+    return ownerLive(p, this.wall());
+  }
+
+  /** An admin's powers: an admin (signature checked), or the owner in their hour. */
+  hasPowers(p) {
+    return !!p && (p.admin === true || ownerLive(p, this.wall()));
+  }
+
   get full() {
     return this.count >= this.max;
   }
@@ -348,9 +372,12 @@ export class HostSession {
   roster() {
     const now = this.now();
     // Part 3b: an admin (the host checked their signature), and who an admin has muted or frozen — flags, nothing else.
+    // The owner (owner.js) has an admin's powers, so `adm` too, and `own`: the OWNER badge, for everybody to see.
+    const wall = this.wall();
     const pub = (p) => ({
       id: p.id, name: p.name, colour: p.colour, host: !!p.host, ping: p.ping == null ? null : Math.round(p.ping), rank: p.rank,
-      adm: p.admin ? 1 : undefined, mu: p.muted ? 1 : undefined, fz: p.frozenUntil > now ? 1 : undefined,
+      adm: p.admin || ownerLive(p, wall) ? 1 : undefined, own: ownerLive(p, wall) ? 1 : undefined,
+      mu: p.muted ? 1 : undefined, fz: p.frozenUntil > now ? 1 : undefined,
     });
     return [pub(this.me), ...[...this.players.values()].sort((a, b) => a.id - b.id).map(pub)];
   }
@@ -417,13 +444,23 @@ export class HostSession {
     link._proving = true;
     const hostId = link.net && link.net.sig ? link.net.sig.id : null;
     const text = proofText(link._chal, hostId, link.peer);
-    verifyProof(text, ev.s).then((yes) => this._proved(link, !!(yes && hostId)), () => this._proved(link, false));
+    /*
+     * The owner (owner.js) answers the same question with their pass: `o`,
+     * the pass's key's signature over the owner's words for it, and `c`, the
+     * pass. Checked here, against this host's clock; what comes back is the
+     * pass's exp, or 0.
+     */
+    const ownerUntil = typeof ev.o === 'string' && hostId && ownerCrypto()
+      ? verifyOwnerProof(ownerProofText(link._chal, hostId, link.peer), ev.o, ev.c, this.wall()) : 0;
+    const admin = typeof ev.s === 'string' && ev.s ? verifyProof(text, ev.s) : Promise.resolve(false);
+    admin.then((yes) => this._proved(link, !!(yes && hostId), ownerUntil), () => this._proved(link, false, ownerUntil));
   }
 
-  _proved(link, yes) {
+  _proved(link, yes, ownerUntil = 0) {
     if (link._proof != null) return;
     clearTimeout(link._proveTimer);
     link._proof = !!yes;
+    link._ownerUntil = ownerUntil > 0 ? ownerUntil : 0;
     if (this.closed || link.state === 'closed' || !this.pending.has(link)) return;
     this._hello(link, link._helloEv);
   }
@@ -440,11 +477,14 @@ export class HostSession {
     clearTimeout(link._hello);
     if (this.closed) return this._deny(link, 'closing');
     if (Number(ev.v) !== PROTO) return this._deny(link, 'version');
-    // "I am an admin": asked first (see _ask). A host that cannot check (no WebCrypto) lets them in as anybody.
-    if (ev.adm === 1 && link._proof == null && adminCrypto()) return this._ask(link, ev);
+    // "I am an admin" (or the owner): asked first (see _ask). A host that can check neither lets them in as anybody.
+    if (ev.adm === 1 && link._proof == null && (adminCrypto() || ownerCrypto())) return this._ask(link, ev);
     const admin = link._proof === true;
-    // Through the directory, a private match lets in admins only; everybody else needs its code.
-    if (link.net && link.net.dirOnly && !admin) return this._deny(link, 'private');
+    const ownerUntil = link._ownerUntil || 0;
+    // An admin's powers: an admin, or the owner in their hour (by this host's clock).
+    const powers = admin || ownerUntil > this.wall();
+    // Through the directory, a private match lets in admins (and the owner) only; everybody else needs its code.
+    if (link.net && link.net.dirOnly && !powers) return this._deny(link, 'private');
     // A client that sends no key is kept out by the id it connected under instead.
     const key = typeof ev.key === 'string' && /^[\x21-\x7e]{1,40}$/.test(ev.key) ? ev.key : `peer:${link.peer}`;
     if (this.banned.has(key)) return this._deny(link, 'kicked');
@@ -457,8 +497,8 @@ export class HostSession {
     const seat = typeof ev.seat === 'string' && /^[a-z0-9]{8,24}$/.test(ev.seat) ? ev.seat : null;
     if (seat) for (const old of this.players.values()) if (old.seat === seat) this._gone(old, 'left', 'came back');
     if (this.full) return this._deny(link, 'full');
-    // An admin comes in whether or not the host has locked the door.
-    if (this.locked && !admin) return this._deny(link, 'locked');
+    // An admin (or the owner) comes in whether or not the host has locked the door.
+    if (this.locked && !powers) return this._deny(link, 'locked');
     let id = 1;
     while (this.players.has(id)) id++;
     if (id >= this.max) return this._deny(link, 'full');
@@ -493,6 +533,7 @@ export class HostSession {
       admin,
       muted: false,
       frozenUntil: 0,
+      ownerUntil,
     };
     this.players.set(id, p);
     link.onevent = (e) => this._event(p, e);
@@ -509,9 +550,10 @@ export class HostSession {
       at: this.spawnInfo(),
       weather: this.weather(),
     });
-    this._broadcast({ t: 'join', p: { id, name: p.name, colour: p.colour, host: false, rank: p.rank, adm: admin ? 1 : undefined } }, p.id);
+    const owner = this.isOwner(p);
+    this._broadcast({ t: 'join', p: { id, name: p.name, colour: p.colour, host: false, rank: p.rank, adm: powers ? 1 : undefined, own: owner ? 1 : undefined } }, p.id);
     this._rosterDirty = true;
-    this.emit('join', { id, name: p.name, colour: p.colour, admin });
+    this.emit('join', { id, name: p.name, colour: p.colour, admin: powers, owner });
   }
 
   _event(p, ev) {
@@ -538,8 +580,12 @@ export class HostSession {
         this._gone(p, 'left');
         break;
       case 'adm':
-        // An admin's request. Only from a player this host checked the signature of; from anybody else, nothing.
-        if (p.admin) this.adminAct(ev.op, Number(ev.id), p);
+        // An admin's request. Only from a player this host checked the signature of (or the owner's pass, in its hour); from anybody else, nothing.
+        if (this.hasPowers(p)) this.adminAct(ev.op, Number(ev.id), p);
+        break;
+      case 'unown':
+        // The owner's hour ended on their device ("End owner now", or run out): the powers and the badge go now.
+        if (p.ownerUntil) this._ownerOver(p, 'ended');
         break;
       case 'gev':
         // A game event (events.js): checked, relayed or kept by the controller's GameEvents, which knows the kinds.
@@ -633,8 +679,8 @@ export class HostSession {
     if (this.mode === 'lobby' && !byAdmin) return false;
     const p = this.players.get(id);
     if (!p) return false;
-    // An admin is not removed by anybody.
-    if (p.admin) return false;
+    // An admin (or the owner) is not removed by anybody.
+    if (this.hasPowers(p)) return false;
     this.banned.add(p.key);
     p.link.send(byAdmin ? { t: 'kick', a: 1 } : { t: 'kick' });
     const link = p.link;
@@ -673,11 +719,11 @@ export class HostSession {
    * (the list), and admins wear a badge: nothing an admin does is hidden.
    */
   adminAct(op, id, by = this.me) {
-    if (this.closed || !by || !by.admin || !ADMIN_OPS.includes(op)) return false;
+    if (this.closed || !this.hasPowers(by) || !ADMIN_OPS.includes(op)) return false;
     if (op === 'close') return this.adminClose(by);
     const self = id === 0;
     const p = self ? this.me : this.players.get(id);
-    if (!p || p.admin || p === by) return false;
+    if (!p || this.hasPowers(p) || p === by) return false;
     const now = this.now();
     let done = false;
     if (op === 'kick') {
@@ -709,16 +755,39 @@ export class HostSession {
 
   /** An admin closes the game: everybody is told kindly (a: 1, "an admin closed it") and goes back to the list. */
   adminClose(by = this.me) {
-    if (this.closed || !by || !by.admin) return false;
+    if (this.closed || !this.hasPowers(by)) return false;
     this.emit('admin', { op: 'close', id: -1, by: by.name, name: '' });
     this.close(true);
     this.emit('removed', 'shut');
     return true;
   }
 
+  /** An owner's hour is over here: no powers, no badge — said to everybody with the next roster. */
+  _ownerOver(p, why) {
+    p.ownerUntil = 0;
+    this._rosterDirty = true;
+    this.emit('owner', { id: p.id, name: p.name, on: false, why });
+  }
+
+  /** This device's own owner hour, as it hosts: on (until exp, a pass this device checked) or off (0). */
+  setOwner(until) {
+    const u = Number.isFinite(until) && until > this.wall() ? until : 0;
+    if (u) {
+      this.me.ownerUntil = u;
+      this._rosterDirty = true;
+    } else if (this.me.ownerUntil) this._ownerOver(this.me, 'ended');
+  }
+
   /** Once a frame or so. `stateBuf` is the host's own snapshot, if it is time to send one. */
   tick(now = this.now(), stateBuf = null) {
     if (this.closed) return;
+    // The owner's hour runs out by this host's clock: the powers and the badge go by themselves.
+    if (!(now - this._ownerT < 500)) {
+      this._ownerT = now;
+      const wall = this.wall();
+      if (this.me.ownerUntil && this.me.ownerUntil <= wall) this._ownerOver(this.me, 'expired');
+      for (const p of this.players.values()) if (p.ownerUntil && p.ownerUntil <= wall) this._ownerOver(p, 'expired');
+    }
     // An admin's freeze lets go by itself.
     if (this.me.frozenUntil && this.me.frozenUntil <= now) {
       this.me.frozenUntil = 0;
@@ -806,7 +875,7 @@ const DENY = {
 };
 
 export class ClientSession {
-  constructor({ net, target, profile, onEvent, now = nowMs, seat = null, relayOnly = false, admin = null }) {
+  constructor({ net, target, profile, onEvent, now = nowMs, seat = null, relayOnly = false, admin = null, owner = null }) {
     this.net = net;
     this.target = target;
     /** A second try at a join by code, through a relay only (link.js, RELAY_SERVERS). */
@@ -830,8 +899,10 @@ export class ClientSession {
     this.gstate = new Map();
     /** Part 3b: this device's admin key (admin.js), to answer a host's question with; null for everybody else. */
     this.admin = admin && typeof admin.sign === 'function' ? admin : null;
-    /** What the host says about this player: an admin, muted or frozen by one. */
-    this.self = { admin: false, muted: false, frozen: false };
+    /** The owner's pass (owner.js), to answer the same question with; null for everybody else. */
+    this.owner = owner && typeof owner.answer === 'function' ? owner : null;
+    /** What the host says about this player: an admin, muted or frozen by one; the owner. */
+    this.self = { admin: false, muted: false, frozen: false, owner: false };
   }
 
   /** Resolves with the welcome; rejects with an Error whose `code` says why. */
@@ -844,8 +915,8 @@ export class ClientSession {
       link.onopen = () => {
         link.send({
           t: 'hello', v: PROTO, name: this.profile.name, colour: this.profile.colour, key: this.profile.key, seat: this.seat || undefined,
-          // An admin says so, and is asked to prove it (HostSession._ask).
-          adm: this.admin ? 1 : undefined,
+          // An admin (or the owner) says so, and is asked to prove it (HostSession._ask).
+          adm: this.admin || this.owner ? 1 : undefined,
         });
       };
       link.onevent = (ev) => this._event(ev);
@@ -963,12 +1034,14 @@ export class ClientSession {
         break;
       case 'chal':
         // The host's question for an admin: signed with this device's key, over the host's id and ours (admin.js).
-        if (this.admin && !this._answered && !this.welcomed && typeof ev.n === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(ev.n)) {
+        // The owner answers it too, with their pass (owner.js): `o` and `c`. A device can be both.
+        if ((this.admin || this.owner) && !this._answered && !this.welcomed && typeof ev.n === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(ev.n)) {
           this._answered = true;
           const link = this.link;
-          this.admin.sign(proofText(ev.n, this.target, this.net.sig ? this.net.sig.id : null))
-            .then((sig) => link.send({ t: 'prove', s: sig }))
-            .catch(() => link.send({ t: 'prove', s: '' }));
+          const me = this.net.sig ? this.net.sig.id : null;
+          const asAdmin = this.admin ? this.admin.sign(proofText(ev.n, this.target, me)).catch(() => '') : Promise.resolve('');
+          const asOwner = this.owner ? this.owner.answer(ownerProofText(ev.n, this.target, me)).catch(() => null) : Promise.resolve(null);
+          Promise.all([asAdmin, asOwner]).then(([s, o]) => link.send(o && o.o ? { t: 'prove', s: s || '', o: o.o, c: o.c } : { t: 'prove', s: s || '' }));
         }
         break;
       case 'kick':
@@ -1003,6 +1076,13 @@ export class ClientSession {
     }
   }
 
+  /** The owner's hour is over on this device: the host is told, and takes the powers and the badge away now. */
+  ownerOff() {
+    this.owner = null;
+    if (!this.welcomed || this.ended) return false;
+    return this.link.send({ t: 'unown' });
+  }
+
   /** Part 3b: an admin's request to the host. The host does it only if it checked this player's signature. */
   adminAct(op, id) {
     if (!this.welcomed || this.ended || !ADMIN_OPS.includes(op)) return false;
@@ -1026,7 +1106,7 @@ export class ClientSession {
       if (p.id === this.id) {
         this.name = p.name;
         this.rank = p.rank;
-        this.self = { admin: p.admin, muted: p.muted, frozen: p.frozen };
+        this.self = { admin: p.admin, muted: p.muted, frozen: p.frozen, owner: p.owner };
         continue;
       }
       const had = this.players.get(p.id);

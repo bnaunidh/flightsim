@@ -1137,6 +1137,8 @@ const EVENTS = new Set([
   'gev', 'gst',
   // Admin (admin.js): the host's question, the admin's signed answer, and an admin's request to the host.
   'chal', 'prove', 'adm',
+  // The owner (owner.js): their hour ended on their device.
+  'unown',
 ]);
 
 export function writeEvent(ev) {
@@ -1173,6 +1175,8 @@ export function readPlayer(p) {
     admin: p.adm === 1,
     muted: p.mu === 1,
     frozen: p.fz === 1,
+    // The owner (owner.js), in their hour — the OWNER badge. The host says so only after checking their pass itself.
+    owner: p.own === 1,
   };
 }
 

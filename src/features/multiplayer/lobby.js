@@ -122,10 +122,12 @@ export class LobbyMember {
   constructor({
     n, hash, net, makeSig, profile, place, spawnInfo, weather, onEvent, now = nowMs, netOpts = {},
     stepMs = SUCCESSION_STEP_MS, enterGiveUpMs = 0, reformGiveUpMs = REFORM_GIVE_UP_MS, pingMs = 1500,
-    seat = seatToken(), verifyEveryMs = 0, world = false, admin = null,
+    seat = seatToken(), verifyEveryMs = 0, world = false, admin = null, owner = null,
   }) {
     /** Part 3b: this device's admin key (admin.js), or a function for it — asked again at every join, so a code typed meanwhile counts. */
     this.getAdmin = typeof admin === 'function' ? admin : () => admin;
+    /** The owner's pass (owner.js), or a function for it — asked again at every join, and at every hosting. */
+    this.getOwner = typeof owner === 'function' ? owner : () => owner;
     /** A world lobby (list 3): the same five for everybody on the internet. */
     this.world = !!world;
     this.verifyEveryMs = verifyEveryMs || (this.world ? WORLD_VERIFY_MS : 3000);
@@ -295,6 +297,7 @@ export class LobbyMember {
       mode: 'lobby',
       max: LOBBY_MAX,
       admin: !!this.getAdmin(),
+      ownerUntil: (this.getOwner() || {}).exp || 0,
       profile: this.profile,
       server: {
         name: this.world ? worldName(this.n) : lobbyName(this.n), map, mapName: mapNameFor(map), game, code: null, slot: 0, lobby: this.n, world: this.world, bump: BUMP_DEFAULT,
@@ -422,6 +425,7 @@ export class LobbyMember {
       relayOnly: this.world && this.pathFails > 0 && RELAY_SERVERS.length > 0,
       now: this.now,
       admin: this.getAdmin() || null,
+      owner: this.getOwner() || null,
       onEvent: (type, ...args) => {
         if (this.session !== client) return;
         if (type === 'ended') this._hostGone(client, args[0], args[1]);

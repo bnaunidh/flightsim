@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v64';
+const CACHE_VERSION = 'island-flight-v65';
 
 const PRECACHE = [
   './',
@@ -350,6 +350,15 @@ const PRECACHE = [
   'src/features/spawns/ui.js',
   'src/world/ambient.js',
   'src/world/spawns.js',
+  'src/features/multiplayer/owner.js',
+  'src/features/owner.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/owner/common.js',
+  'src/features/owner/disasters.js',
+  'src/features/owner/fx.js',
+  'src/features/owner/place.js',
+  'src/features/owner/teleport.js',
+  'src/features/owner/trolls.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

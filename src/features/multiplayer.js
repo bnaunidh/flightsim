@@ -74,6 +74,14 @@
  *     asks — kick, mute, freeze, close — and lets them into locked games and,
  *     from the admin's list of private matches, into private matches without
  *     their code. Admins wear an ADMIN badge on their tag and in the list.
+ *   - THE OWNER ("if i press the fan on the main page 10 times and put in the
+ *     code i get owner on that device for 1 hour"): ./multiplayer/owner.js,
+ *     and the fan and the chip in ../features/owner.js. Every admin power for
+ *     the hour on their pass, proved to every host the same way (the host
+ *     checks the pass and the signature itself, and by its own clock), and a
+ *     gold OWNER badge on their tag and in every list. When the hour is over
+ *     — or "End owner now" — the host is told, and takes it all away by
+ *     itself at exp in any case.
  *
  * LIST 2, PART 2 — built on the events channel below, each its own plug-in:
  *   ./pvp.js      PvP, a per-player switch (OFF until turned on); Space or FIRE;
@@ -140,6 +148,7 @@ import { Net, RELAY_SERVERS } from './multiplayer/link.js';
 import { HostSession, ClientSession, Prober, claimSlot, claimCode, claimPdir, FREEZE_MS } from './multiplayer/session.js';
 import { LobbyMember, LobbyWatch, PrivateWatch } from './multiplayer/lobby.js';
 import { AdminKey, adminCrypto } from './multiplayer/admin.js';
+import { owner as ownerState } from './multiplayer/owner.js';
 import { Remotes } from './multiplayer/remotes.js';
 import { GameEvents } from './multiplayer/events.js';
 import { injectStyle, buildScreen, buildHud, CROWN_SVG } from './multiplayer/ui.js';
@@ -280,8 +289,8 @@ class Multiplayer {
     this.adminKey = null;
     /** The admin's list of private matches, while their lobby screen is open. */
     this.privateWatch = null;
-    /** What the host says about this player right now: an admin here, muted or frozen by one. */
-    this.me = { admin: false, muted: false, frozen: false };
+    /** What the host says about this player right now: an admin here, muted or frozen by one; the owner. */
+    this.me = { admin: false, muted: false, frozen: false, owner: false };
     this._frozeAt = 0;
     /** A lobby an admin took this player out of: not straight back in (the lobby's next host would not know). */
     this._barred = null;
@@ -365,6 +374,11 @@ class Multiplayer {
     this.installed = true;
     this.profile = loadProfile();
     this.adminKey = AdminKey.load();
+    // The owner's hour (./multiplayer/owner.js): whatever this device kept is checked there; this hears it start and end.
+    if (!this._ownerHooked) {
+      this._ownerHooked = true;
+      ownerState.on((e) => this.ownerChanged(e));
+    }
     injectStyle();
     this.hud = buildHud(this, extLayer());
     this.keepMenuCard();
@@ -866,6 +880,7 @@ class Multiplayer {
         makeSig: (token) => (world ? this.makeWorldSig(token) : this.makeSig(token)),
         profile: this.profile, seat: this.seat,
         admin: () => this.adminNow(),
+        owner: () => this.ownerNow(),
         place: () => this.lobbyPlace(),
         spawnInfo: () => this.whereAmI(),
         weather: () => (this.sim.weather && this.sim.weather.serialize ? this.sim.weather.serialize() : null),
@@ -1585,6 +1600,7 @@ class Multiplayer {
       this.host = new HostSession({
         mode: privateGame ? 'code' : 'slot',
         admin: !!this.adminNow(),
+        ownerUntil: ownerState.until,
         profile: this.profile,
         server: this.server,
         spawnInfo: () => this.whereAmI(),
@@ -1729,7 +1745,7 @@ class Multiplayer {
       let welcome = null;
       for (let tryNo = 0; tryNo < 2 && !welcome; tryNo++) {
         client = new ClientSession({
-          net, target, profile: this.profile, seat: this.seat, relayOnly: tryNo > 0 && RELAY_SERVERS.length > 0, admin: this.adminNow(),
+          net, target, profile: this.profile, seat: this.seat, relayOnly: tryNo > 0 && RELAY_SERVERS.length > 0, admin: this.adminNow(), owner: this.ownerNow(),
           onEvent: (type, ...args) => this.onSessionEvent(type, ...args),
         });
         this.client = client;
@@ -2069,8 +2085,8 @@ class Multiplayer {
         this.remotes.add(a.id, a);
         this.events.joined({ id: a.id, name: a.name, colour: a.colour });
         this.note(`${a.name} joined as player ${a.id}`);
-        // An admin arriving is said to be one: nothing an admin does is hidden from the others (part 3b).
-        this.comeAndGo('joined', a.admin ? `${a.name} (an admin)` : a.name);
+        // An admin arriving is said to be one: nothing an admin does is hidden from the others (part 3b). The owner too.
+        this.comeAndGo('joined', a.owner ? `${a.name} (the owner)` : a.admin ? `${a.name} (an admin)` : a.name);
         this.syncRoster();
         break;
       case 'leave': {
@@ -2106,6 +2122,12 @@ class Multiplayer {
         // Part 3b, on the host's screen: what an admin just did here, said plainly.
         this.adminSaid(a);
         break;
+      case 'owner':
+        // The owner's hour is over in this game (their device said so, or it ran out by this host's clock).
+        this.note(`owner hour over for ${a && a.name} (${a && a.why})`);
+        this.syncSelf();
+        this.syncRoster();
+        break;
       case 'removed':
         // Part 3b: an admin took this host out of its lobby ('kicked'), or closed the game ('shut').
         this.removedByAdmin(a);
@@ -2131,8 +2153,8 @@ class Multiplayer {
     const sim = this.sim;
     const plain = (v) => (v ? { x: v.x, y: v.y, z: v.z } : null);
     return this.roster().map((p) => {
-      // Part 3b's `frozen` too: a player an admin froze shoots nobody (../pvp.js).
-      const base = { id: p.id, name: p.name, colour: p.colour, host: !!p.host, frozen: !!p.frozen };
+      // Part 3b's `frozen` too: a player an admin froze shoots nobody (../pvp.js). And who the host says is an admin, or the owner (../owner/trolls.js).
+      const base = { id: p.id, name: p.name, colour: p.colour, host: !!p.host, frozen: !!p.frozen, admin: !!p.admin, owner: !!p.owner };
       if (p.id === this.meId) {
         const v = sim && (sim.mode === 'drive' && sim.vehicle ? sim.vehicle : sim.aircraft);
         const q = v && v.quat;
@@ -2268,7 +2290,7 @@ class Multiplayer {
 
   cleanup() {
     this.holdStill(false);
-    this.me = { admin: false, muted: false, frozen: false };
+    this.me = { admin: false, muted: false, frozen: false, owner: false };
     this.events.detach();
     this.role = null;
     this.host = null;
@@ -2320,7 +2342,7 @@ class Multiplayer {
       const self = this.client.self || {};
       const me = {
         id: this.meId, name: this.client.name || this.profile.name, colour: this.profile.colour, host: false, ping: this.client.ping == null ? null : Math.round(this.client.ping),
-        admin: !!self.admin, muted: !!self.muted, frozen: !!self.frozen,
+        admin: !!self.admin, muted: !!self.muted, frozen: !!self.frozen, owner: !!self.owner,
       };
       return [me, ...this.client.players.values()].sort((a, b) => a.id - b.id);
     }
@@ -2350,6 +2372,7 @@ class Multiplayer {
       code: shown, server: title, locked, place, priv, world,
       // Part 3b: this player is an admin here (the host checked), so the list has the admin menu.
       admin: !!this.me.admin && !this.reconnecting,
+      owner: !!this.me.owner && !this.reconnecting,
     };
     this.hud.roster(list, opts);
     if (this.sim && this.sim.state === 'paused') this.hud.pauseList(this.sim, true, list, opts);
@@ -2363,7 +2386,7 @@ class Multiplayer {
     const left = this.me.frozen ? Math.max(1, Math.ceil((this._frozeAt + FREEZE_MS - now()) / 1000)) : 0;
     const adminLine = this.me.frozen ? `<b class="mp-frozen">Frozen by an admin</b>${left <= 30 ? ` — ${left} s` : ''}`
       : this.me.muted ? '<b class="mp-frozen">Your chat is muted by an admin</b>' : '';
-    const tag = this.me.admin ? ' · <b class="mp-admintag">ADMIN</b>' : '';
+    const tag = this.me.owner ? ' · <b class="mp-admintag mp-ownertag">OWNER</b>' : this.me.admin ? ' · <b class="mp-admintag">ADMIN</b>' : '';
     // The crown on your own badge while this game is yours (you host it): everybody else sees it over your aeroplane.
     const crown = this.role === 'host' && !this.reconnecting ? CROWN_SVG : '';
     this.hud.badge(`${crown}<b>${say(title)}</b> · ${list.length}/${max}${locked ? ' · locked' : ''}${tag}${again}`, [adminLine, placeLine, codeLine].filter(Boolean).join('<br>'));
@@ -2443,8 +2466,39 @@ class Multiplayer {
     return this.adminKey && this.adminKey.valid ? this.adminKey : null;
   }
 
+  /** This device's owner pass, while its hour lasts (./multiplayer/owner.js) — asked afresh each time. */
+  ownerNow() {
+    return ownerState.current();
+  }
+
+  /** An admin's powers on this device: an admin key, or the owner's hour. */
   get isAdmin() {
-    return !!this.adminNow();
+    return !!this.adminNow() || !!this.ownerNow();
+  }
+
+  get isOwner() {
+    return !!this.ownerNow();
+  }
+
+  /**
+   * The owner's hour started or ended on this device (../features/owner.js
+   * runs the code box and the chip). Hosting: the host is its own server, so
+   * it is the owner here at once, and stops being one at once. A player: a
+   * pass started now counts from the next game (as an admin key does); one
+   * that ended is told to the host now, which takes the powers and the badge
+   * away (and would by itself at exp in any case).
+   */
+  ownerChanged(e) {
+    if (!e) return;
+    if (this.host && !this.host.closed) this.host.setOwner(e.on && e.pass ? e.pass.exp : 0);
+    if (!e.on && this.client) this.client.ownerOff();
+    this.note(e.on ? 'this device is the owner for an hour' : `owner hour over on this device (${e.why})`);
+    if (!e.on && this.role && this.me.owner) this.toast('Your owner hour is over — you are back to normal', 'info', 4);
+    this.syncSelf();
+    this.syncRoster();
+    if (!this.isAdmin) this.stopWatchingPrivates();
+    else if (this.lobbyScreenOpen) this.watchPrivates();
+    if (this.lobbyScreen) this.lobbyScreen.refresh();
   }
 
   /**
@@ -2475,6 +2529,11 @@ class Multiplayer {
     };
   }
 
+  /** "End owner now" (the lobby screen's owner box): the hour is over on this device (ownerChanged hears it). */
+  ownerEnd() {
+    return ownerState.end('ended');
+  }
+
   /** Admin off on this device. */
   adminOff() {
     AdminKey.forget();
@@ -2486,11 +2545,11 @@ class Multiplayer {
 
   /** What the host says about this player right now, and what this device does about it: freeze and unfreeze. */
   syncSelf() {
-    let me = { admin: false, muted: false, frozen: false };
+    let me = { admin: false, muted: false, frozen: false, owner: false };
     if (this.role === 'host' && this.host) {
       const m = this.host.me;
-      me = { admin: !!m.admin, muted: !!m.muted, frozen: m.frozenUntil > now() };
-    } else if (this.role === 'client' && this.client && this.client.self) me = { ...this.client.self };
+      me = { admin: this.host.hasPowers(m), muted: !!m.muted, frozen: m.frozenUntil > now(), owner: this.host.isOwner(m) };
+    } else if (this.role === 'client' && this.client && this.client.self) me = { owner: false, ...this.client.self };
     const was = this.me;
     this.me = me;
     if (me.frozen && !was.frozen) {
@@ -2503,6 +2562,7 @@ class Multiplayer {
     if (me.muted && !was.muted) this.toast('An admin has muted your chat for now', 'warn', 5);
     else if (!me.muted && was.muted) this.toast('Your chat is back on', 'good', 3);
     if (me.admin && !was.admin) this.note('the host checked this device’s admin key');
+    if (me.owner !== !!was.owner) this.note(me.owner ? 'the host checked this device’s owner pass' : 'not the owner here any more');
   }
 
   /**

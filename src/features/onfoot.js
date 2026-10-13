@@ -1243,6 +1243,14 @@ export const onFoot = {
   setExitRule(r) {
     S.exitRule = r || null;
   },
+  /**
+   * The exit rule in force, so a feature that puts in its own for a while
+   * (the President's seat) can hand back the one it found — runaway.js's —
+   * instead of leaving none at all.
+   */
+  get exitRule() {
+    return S.exitRule;
+  },
   setHint(html) {
     S.hint = html || '';
   },

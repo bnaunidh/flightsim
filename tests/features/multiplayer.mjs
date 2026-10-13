@@ -1721,6 +1721,17 @@ if (!REAL || LAN) {
     `${sent.length - before} messages`);
 }
 
+/* ---- the owner's hour (multiplayer.owner.mjs) --------------------------- */
+{
+  const L = await import('../../src/features/multiplayer/lobby.js');
+  const { ownerTests } = await import('./multiplayer.owner.mjs');
+  const before = sent.length;
+  await ownerTests({ P, S, L, Signaling, Net, backend, WS: LogWS, RTC, ok, sleep, until, REAL, server });
+  // The owner's pass and proof go player to host, never through the signaling server.
+  ok('no owner pass, proof or request went through the signaling server', sent.length > before && !sent.slice(before).some((m) => /"prove"|"chal"|"adm"|"unown"|Swift Falcon/.test(m)),
+    `${sent.length - before} messages`);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) {

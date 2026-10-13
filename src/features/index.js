@@ -67,6 +67,11 @@ import '../game/roles/afo-president.js';
 import './events/afo-movie.js';
 // Seats: fly some missions from another aircraft in the story (the lead fighter in the hijacks).
 import './roles.js';
+// The owner's hour: the fan on the main page, the code box and the chip (./owner.js; the pass itself is ./multiplayer/owner.js).
+import './owner.js';
+// The owner's toys, in the hour: the troll menu, the disaster trolls, teleport on the map and taking aircraft over (./owner/*.js).
+import './owner/trolls.js';
+import './owner/teleport.js';
 // Crash physics: every model breaks at its own break points, nearest the hit first, the pieces as
 // rigid bodies; the slow-motion beat and the instant replay. Last, so every other feature's crash
 // handling (./crashes.js's choreography, ./sky.js's knock) has run before it breaks anything.

@@ -913,6 +913,9 @@ const S = {
   camDt: 0,
   agentNag: 0,
   waveHintT: 0,
+  /** The exit rule this seat puts in, and the one it found there (runaway.js's), handed back on teardown. */
+  exitRule: null,
+  prevExitRule: null,
 };
 
 const NO_BUTTONS = [];
@@ -966,7 +969,17 @@ function teardown(sim) {
   hideGuide();
   freePanel();
   if (S.asked) hideCard();
-  onFoot.setExitRule(null);
+  /*
+   * Hand back the rule this seat found, not none. Setting null here took away
+   * runaway.js's rule (installed once, at boot) for the rest of the session:
+   * after one President flight, getting out of a Skylark with the power on
+   * parked her — no warning, no runaway plane (the owner's "i miss when the
+   * plane flew itself"). Only if ours is still the one in force: somebody
+   * else's, put in since, is theirs to take away.
+   */
+  if (S.exitRule && onFoot.exitRule === S.exitRule) onFoot.setExitRule(S.prevExitRule);
+  S.exitRule = null;
+  S.prevExitRule = null;
   for (const k of Object.keys(KEYS)) delete KEYS[k];
 }
 
@@ -995,9 +1008,11 @@ function setup(sim, missionId) {
    * flying it) — exactly what onfoot.js's own "get out" looks for. While
    * sim.riding is set it offers no door at all; this rule answers the key.
    */
-  onFoot.setExitRule({
+  S.prevExitRule = onFoot.exitRule;
+  S.exitRule = {
     decide: () => ({ why: 'You are a passenger on Air Force One — the crew will open the door when you are down.' }),
-  });
+  };
+  onFoot.setExitRule(S.exitRule);
   if (isTouch(sim) && sim.touch && sim.touch.setVisible) {
     sim.touch.setVisible(false);
     S.touchHidden = true;

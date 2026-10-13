@@ -115,7 +115,8 @@ ok(`no feature, game or HUD hard-codes a key (${files.length} files read)`, stra
 // A plain e.key check is a form's own Enter / Esc (the briefing card, a code
 // box, the search box, the tray) — never a game key. List them so a new one
 // is a decision, not an accident.
-const FORM_KEYS = new Set(['src/ui/briefing.js', 'src/ui/menus.js', 'src/ui/hud.js', 'src/features/multiplayer/ui.js', 'src/features/multiplayer/lobbyui.js', 'src/features/owner.js']);
+// (owner/teleport.js: the owner's teleport picker — a height slider whose Enter teleports and whose Esc shuts it; it stops its keys reaching the game.)
+const FORM_KEYS = new Set(['src/ui/briefing.js', 'src/ui/menus.js', 'src/ui/hud.js', 'src/features/multiplayer/ui.js', 'src/features/multiplayer/lobbyui.js', 'src/features/owner.js', 'src/features/owner/teleport.js']);
 const formHits = [];
 for (const f of files) {
   const s = readFileSync(new URL(f, root), 'utf8');

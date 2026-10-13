@@ -32,6 +32,8 @@ import { check as multiplayerList2 } from './multiplayer-list2.browser.js';
 import { check as multiplayerList3 } from './multiplayer-list3.browser.js';
 import { check as multiplayerPart2 } from './multiplayer-part2.browser.js';
 import { check as multiplayerPlane } from './multiplayer-plane.browser.js';
+import { check as owner } from './owner.browser.js';
+import { check as ownerTrolls } from './owner-trolls.browser.js';
 import { check as onfoot } from './onfoot.browser.js';
 import { check as pilot } from './pilot.browser.js';
 import { check as quality } from './quality.browser.js';
@@ -93,6 +95,9 @@ export const CHECKS = [
   { id: 'pilot', check: pilot },
   { id: 'rocket', check: rocket },
   { id: 'multiplayer-part2', check: multiplayerPart2 },
+  { id: 'owner', check: owner },
+  // After owner: the owner's toys — the troll menu, the disaster trolls, teleport and take over (a private match in this tab).
+  { id: 'owner-trolls', check: ownerTrolls },
   { id: 'races', check: races },
   { id: 'air-fuel', check: airFuel },
   // The owner's "graphic errors that can cause seziure": the screen measured at the worst places, and Reduce flashing.

@@ -779,8 +779,8 @@ export class Menus {
     const s = h(`
       <section class="screen screen-main" data-screen="main" hidden>
         <div class="brand">
-          <div class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 64 64" width="58" height="58">
+          <div class="brand-mark" data-fan tabindex="0" role="img" aria-label="Propeller">
+            <svg viewBox="0 0 64 64" width="58" height="58" aria-hidden="true">
               <path d="M32 6 L36 24 L58 32 L36 40 L32 58 L28 40 L6 32 L28 24 Z" fill="currentColor" opacity="0.9"/>
               <circle cx="32" cy="32" r="5" fill="#0b1220"/>
             </svg>

@@ -158,7 +158,8 @@ function tintVehicle(model, colour) {
  *
  * Part 3b: whoever hosts the game — a lobby's owner — has a small gold crown
  * on top of their pill (moved to the pill's corner while a chat bubble is
- * up), and an admin an ADMIN badge in it, after the name. The crown is about
+ * up), and an admin an ADMIN badge in it, after the name — the owner, in
+ * their hour (owner.js), a gold OWNER badge instead. The crown is about
  * two-thirds of the pill's height, so it reads as a crown as far off as the
  * name does, and it follows the host when the lobby re-forms (the roster).
  */
@@ -260,8 +261,8 @@ function drawCrown(g, cx, baseY, w) {
 
 export const TAG_CROWN_W = 40;
 
-function drawTag(tag, name, colour, dist, chat, host = false, admin = false) {
-  const key = `${name}|${colour}|${dist}|${chat || ''}|${host ? 'h' : ''}${admin ? 'a' : ''}`;
+function drawTag(tag, name, colour, dist, chat, host = false, admin = false, owner = false) {
+  const key = `${name}|${colour}|${dist}|${chat || ''}|${host ? 'h' : ''}${owner ? 'o' : admin ? 'a' : ''}`;
   if (tag.key === key) return;
   tag.key = key;
   tag.chat = !!chat;
@@ -287,7 +288,9 @@ function drawTag(tag, name, colour, dist, chat, host = false, admin = false) {
   g.font = `600 20px ${font}`;
   const distW = dist ? g.measureText(dist).width + 12 : 0;
   g.font = `800 16px ${font}`;
-  const adminW = admin ? g.measureText('ADMIN').width + 14 + 10 : 0;
+  // The owner's badge says OWNER, in gold; an admin's says ADMIN, in red. Never both: the owner has every admin power.
+  const word = owner ? 'OWNER' : admin ? 'ADMIN' : '';
+  const adminW = word ? g.measureText(word).width + 14 + 10 : 0;
   const nw = Math.min(TAG_W - 4, 12 + 16 + 8 + nameW + adminW + distW + 14);
   tag.pillW = nw;
   const x0 = (TAG_W - nw) / 2;
@@ -306,15 +309,15 @@ function drawTag(tag, name, colour, dist, chat, host = false, admin = false) {
   const room = nw - (tx - x0) - distW - adminW - 10;
   g.fillText(name, tx, y + PILL_H / 2 + 1, room);
   let after = tx + Math.min(nameW, room);
-  if (admin) {
-    // ADMIN, in a badge of its own: an admin is always seen to be one.
+  if (word) {
+    // ADMIN (or OWNER), in a badge of its own: an admin is always seen to be one, and so is the owner.
     const bw = adminW - 10;
-    g.fillStyle = '#ff5a4f';
+    g.fillStyle = owner ? '#ffd23f' : '#ff5a4f';
     roundRect(g, after + 10, y + 8, bw, PILL_H - 16, 6);
     g.fill();
-    g.fillStyle = '#ffffff';
+    g.fillStyle = owner ? '#3a2a00' : '#ffffff';
     g.font = `800 16px ${font}`;
-    g.fillText('ADMIN', after + 10 + 7, y + PILL_H / 2 + 1);
+    g.fillText(word, after + 10 + 7, y + PILL_H / 2 + 1);
     after += adminW;
   }
   if (dist) {
@@ -329,16 +332,17 @@ function drawTag(tag, name, colour, dist, chat, host = false, admin = false) {
   }
   tag.host = !!host;
   tag.admin = !!admin;
+  tag.owner = !!owner;
   tag.tex.needsUpdate = true;
 }
 
 /** One tag's canvas, painted as it is over an aeroplane — for the tests and a look at the crown. */
-export function paintTag(name, colour, { dist = '', chat = null, host = false, admin = false } = {}) {
+export function paintTag(name, colour, { dist = '', chat = null, host = false, admin = false, owner = false } = {}) {
   const canvas = document.createElement('canvas');
   canvas.width = TAG_W;
   canvas.height = TAG_H;
   const tag = { canvas, tex: {}, key: '', pillW: TAG_W, chat: false };
-  drawTag(tag, name, colour, dist, chat, host, admin);
+  drawTag(tag, name, colour, dist, chat, host, admin, owner);
   return { canvas, pillW: tag.pillW, key: tag.key };
 }
 
@@ -492,17 +496,18 @@ export class Remotes {
     return this.own;
   }
 
-  add(id, { name, colour, host = false, admin = false }) {
+  add(id, { name, colour, host = false, admin = false, owner = false }) {
     let p = this.players.get(id);
     if (!p) {
       // Every seam slid over (ignoreM): a 25 cm step passed straight through was a twitch at fifteen a second, close to.
-      p = { id, name, colour, track: new Track(), smooth: new Smoother({ snapSecs: 0.6, noBack: true, ignoreM: 0.02 }), rot: new RotSmoother(), drawn: null, quat: null, model: null, modelKey: '', tag: null, chat: null, chatUntil: 0, sample: null, dist: 0, visible: false, host: false, admin: false, walker: new RemoteWalker() };
+      p = { id, name, colour, track: new Track(), smooth: new Smoother({ snapSecs: 0.6, noBack: true, ignoreM: 0.02 }), rot: new RotSmoother(), drawn: null, quat: null, model: null, modelKey: '', tag: null, chat: null, chatUntil: 0, sample: null, dist: 0, visible: false, host: false, admin: false, owner: false, walker: new RemoteWalker() };
       this.players.set(id, p);
     }
     p.name = name;
     // Part 3b: the crown (whoever hosts right now) and the ADMIN badge, redrawn on the tag's next paint.
     p.host = !!host;
     p.admin = !!admin;
+    p.owner = !!owner;
     if (p.colour !== colour) {
       p.colour = colour;
       this._release(p);
@@ -874,7 +879,7 @@ export class Remotes {
         p.tagNote = note;
         p.tagDist = d;
         // List 2, part 2: their PvP hearts (this.note) before the distance; part 3b: the host's crown and an admin's badge.
-        drawTag(p.tag, p.name, p.colour, note ? `${note}  ${fmtDist(d)}` : fmtDist(d), chat, p.host, p.admin);
+        drawTag(p.tag, p.name, p.colour, note ? `${note}  ${fmtDist(d)}` : fmtDist(d), chat, p.host, p.admin, p.owner);
       }
       drawPip(p.tag, p.colour);
       /*

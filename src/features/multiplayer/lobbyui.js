@@ -39,7 +39,8 @@
  * a box under the private match that says this device is an admin, lists
  * the private matches going on now (the directory, lobby.js PrivateWatch —
  * how many and which island, never a code) with Join, which gets in without
- * the code, and turns admin off. Nobody else sees any of it.
+ * the code, and turns admin off. Nobody else sees any of it. The OWNER, in
+ * their hour (owner.js), gets the same box, saying so, with "End owner now".
  *
  * The screen is a menu screen like the others (see ui.js), built once and
  * written into, never rebuilt, so a button under the pointer is never
@@ -308,11 +309,12 @@ export function buildLobbyScreen(ctrl) {
       </div>
 
       <div class="mp-adminbox" data-mp-adminbox hidden>
-        <h3 class="fail-heading mp-lanhead mp-privhead">Admin <b class="mp-admintag">ADMIN</b></h3>
-        <p class="hint">This device is an admin. In any game, the player list (<kbd>${escapeHtml(keyName('mpPlayers'))}</kbd>) has the admin menu — and everybody sees an ADMIN badge on you. Private matches going on now; join one without its code:</p>
+        <h3 class="fail-heading mp-lanhead mp-privhead" data-mp-adminhead>Admin <b class="mp-admintag">ADMIN</b></h3>
+        <p class="hint" data-mp-adminhint>This device is an admin. In any game, the player list (<kbd>${escapeHtml(keyName('mpPlayers'))}</kbd>) has the admin menu — and everybody sees an ADMIN badge on you. Private matches going on now; join one without its code:</p>
         <div class="mp-lobbylist" data-mp-privlist></div>
         <p class="hint tiny mp-privnone" data-mp-privnone>Looking for private matches…</p>
         <button class="ghost" data-mp-admin-off>Turn admin off on this device</button>
+        <button class="ghost" data-mp-owner-end hidden>End owner now</button>
       </div>
     </section>
   `);
@@ -619,10 +621,32 @@ export function buildLobbyScreen(ctrl) {
       ui.status('Admin is off on this device.', 'good');
       return undefined;
     }
+    // The owner's hour, ended early (owner.js): everything the owner had goes, here and in the game.
+    if (t.closest('[data-mp-owner-end]')) {
+      ctrl.ownerEnd();
+      ui.status('Owner is off on this device.', 'good');
+      return undefined;
+    }
     return undefined;
   });
 
   const adminBox = $('[data-mp-adminbox]');
+  // The box says which this device is: an admin, or the owner for the hour (owner.js) — or both.
+  const ADMIN_HEAD = 'Admin <b class="mp-admintag">ADMIN</b>';
+  const OWNER_HEAD = 'Owner <b class="mp-admintag mp-ownertag">OWNER</b>';
+  const ADMIN_HINT = $('[data-mp-adminhint]').innerHTML;
+  const OWNER_HINT = 'This device is the owner for the hour — every admin power: in any game, the player list (<kbd>Tab</kbd>) has the admin menu, and everybody sees a gold OWNER badge on you. Private matches going on now; join one without its code:';
+  const paintAdminBox = () => {
+    const owner = !!ctrl.isOwner;
+    const head = owner ? OWNER_HEAD : ADMIN_HEAD;
+    const el = $('[data-mp-adminhead]');
+    if (el.innerHTML !== head) el.innerHTML = head;
+    const hint = $('[data-mp-adminhint]');
+    const want = owner ? OWNER_HINT : ADMIN_HINT;
+    if (hint.innerHTML !== want) hint.innerHTML = want;
+    $('[data-mp-admin-off]').hidden = !ctrl.adminNow();
+    $('[data-mp-owner-end]').hidden = !owner;
+  };
   const privList = $('[data-mp-privlist]');
   const privNone = $('[data-mp-privnone]');
   const privCards = new Map();
@@ -868,6 +892,7 @@ export function buildLobbyScreen(ctrl) {
       const on = !!(places && ctrl.isAdmin);
       if (adminBox.hidden === on) adminBox.hidden = !on;
       if (!on) return;
+      paintAdminBox();
       const found = places.filter((p) => p.state === 'here');
       const looking = places.some((p) => p.state === 'looking');
       privNone.hidden = found.length > 0;

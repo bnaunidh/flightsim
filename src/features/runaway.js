@@ -499,6 +499,10 @@ registerExtension({
     end(sim, 'start');
     R.armedT = 0;
     bindAircraft(sim);
+    // Ours is installed once, at boot. If something took it away and put
+    // nothing back (v55-v64: the President's seat did, after one flight),
+    // every flight after that parked her: put it back for the next one.
+    if (!onFoot.exitRule) onFoot.setExitRule(RULE);
   },
 
   stop(sim) {

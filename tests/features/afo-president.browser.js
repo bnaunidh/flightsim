@@ -142,6 +142,17 @@ export async function check(sim, r, say) {
     r.ok('afo-attack/president: never walking to the secure room fails the mission with a plain reason, not a wreck',
       sim.runner.status === 'failed' && !!failedAt && /secure room/.test(why || ''), `status ${sim.runner.status}, at ${failedAt}s, why "${why || ''}"`);
     sim.quitToMenu('main');
+
+    /* ------------------------------------- what it borrowed, handed back -- */
+    // The seat answers O with an exit rule of its own while it is up. It used
+    // to leave NONE behind, which took runaway.js's away for the rest of the
+    // session: after any President flight a Skylark left with the power on
+    // was parked — no warning, no runaway plane (v55-v64).
+    const OF = await import('../../src/features/onfoot.js');
+    const RWm = await import('../../src/features/runaway.js');
+    const rule = OF.onFoot.exitRule;
+    r.ok('afo-president: after the seat, getting out is runaway.js’s rule again (the runaway plane survives a President flight)',
+      !!rule && rule === RWm.runaway.rule, rule ? (rule === RWm.runaway.rule ? 'runaway.js' : 'somebody else’s') : 'none');
   } finally {
     sim.renderer.render = realRender;
   }
