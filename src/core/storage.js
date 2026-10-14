@@ -38,6 +38,13 @@ export const DEFAULT_SETTINGS = {
    * setting, so it is the default and a save that predates it gets it too.
    */
   reduceFlashing: true,
+  /*
+   * Comic effects (Settings → Graphics): comic words and cards, stars, the
+   * cartoon crashes, the starburst on the map (render/comic.js). OFF — "remove
+   * the comic stuff, put it in settings and default off" — and a save that
+   * predates the setting has no value for it, so it gets the default too.
+   */
+  comicEffects: false,
   highContrast: false,
   largeText: false,
   mouseFlying: false,

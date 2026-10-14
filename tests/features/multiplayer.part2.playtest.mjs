@@ -882,10 +882,10 @@ try {
   if (SHOTS) await Promise.all([A.unsize(), B.unsize()]);
   await A.eval(`pt.before = null; return true;`);
   const bDown = await B.eval(`
-    const r = await pt.until(() => pt.cards.some((c) => /TAGGED/.test(c)), 5000, 30);
+    const r = await pt.until(() => pt.cards.some((c) => /TAGGED|Tagged out/.test(c)), 5000, 30);
     return { cards: pt.cards.slice(-4), down: !!pt.pvp.pvpDebug().P.down || pt.pvp.pvpDebug().stats.respawns > 0 };`, 20);
   ok('6: Brave Otter flies level; Swift Falcon chases 140 m behind and holds Space: pellets, the reticle and FIRE on screen, and a TAG — Brave Otter sees "TAGGED!"',
-    fireRes.tagged && fireRes.shots > 5 && fireRes.claims >= 5 && fireRes.reticle && fireRes.fire && bDown.down && bDown.cards.some((c) => /TAGGED/.test(c)),
+    fireRes.tagged && fireRes.shots > 5 && fireRes.claims >= 5 && fireRes.reticle && fireRes.fire && bDown.down && bDown.cards.some((c) => /TAGGED|Tagged out/.test(c)),
     `${fireRes.ms} ms, ${fireRes.shots} shots, ${fireRes.claims} claimed; B's cards: ${bDown.cards.join(' / ')}`);
   M.pvp = { tagMs: fireRes.ms, shots: fireRes.shots, claims: fireRes.claims };
   const boards = await all((p) => p.eval(`

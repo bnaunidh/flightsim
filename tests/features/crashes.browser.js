@@ -15,7 +15,7 @@
  * `check(sim, r, say)` — r.ok(name, pass, detail) per assertion.
  */
 
-export async function check(sim, r, say) {
+async function checkWithComic(sim, r, say) {
   let cr;
   let ext;
   let hap;
@@ -334,4 +334,20 @@ export async function check(sim, r, say) {
   off();
   sim.autoPauseOnHide = origAuto;
   sim.settings.crashSlowMo = origSlow;
+}
+
+/**
+ * Comic effects (Settings -> Graphics) are OFF by default, and this check is
+ * about the cartoon they switch on: the choreography, the stars, the comic word and the jokes. It runs with them on, and puts the
+ * setting back. tests/features/comic.browser.js is the one that plays the
+ * same things with the default settings.
+ */
+export async function check(sim, r, say) {
+  const comicWas = sim.settings.comicEffects;
+  sim.applySetting('comicEffects', true);
+  try {
+    return await checkWithComic(sim, r, say);
+  } finally {
+    sim.applySetting('comicEffects', comicWas === true);
+  }
 }

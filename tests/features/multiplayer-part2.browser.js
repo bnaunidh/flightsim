@@ -53,7 +53,7 @@ async function until(fn, ms = 6000, step = 25) {
   }
 }
 
-export async function check(sim, r, say = () => {}) {
+async function checkWithComic(sim, r, say = () => {}) {
   const THREE = await import('../../src/vendor/three.module.js');
   const mpMod = await import('../../src/features/multiplayer.js');
   const P = await import('../../src/features/multiplayer/protocol.js');
@@ -701,3 +701,19 @@ export async function check(sim, r, say = () => {}) {
 }
 
 export default check;
+
+/**
+ * Comic effects (Settings -> Graphics) are OFF by default, and this check is
+ * about the cartoon they switch on: the TAGGED! card and the BONK on a bump. It runs with them on, and puts the
+ * setting back. tests/features/comic.browser.js is the one that plays the
+ * same things with the default settings.
+ */
+export async function check(sim, r, say = () => {}) {
+  const comicWas = sim.settings.comicEffects;
+  sim.applySetting('comicEffects', true);
+  try {
+    return await checkWithComic(sim, r, say);
+  } finally {
+    sim.applySetting('comicEffects', comicWas === true);
+  }
+}

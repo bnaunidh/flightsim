@@ -25,6 +25,7 @@ import { check as gunsight } from './gunsight.browser.js';
 import { check as fighters } from './fighters.browser.js';
 import { check as fire } from './fire.browser.js';
 import { check as fun } from './fun.browser.js';
+import { check as smokeClouds } from './smoke-clouds.browser.js';
 import { check as instruments } from './instruments.browser.js';
 import { check as keybinds } from './keybinds.browser.js';
 import { check as maps } from './maps.browser.js';
@@ -53,6 +54,7 @@ import { check as flicker } from './flicker.browser.js';
 import { check as achievements } from './achievements.browser.js';
 import { check as worldScale } from './world-scale.browser.js';
 import { check as mapsKitB } from './maps-kit-b.browser.js';
+import { check as comic } from './comic.browser.js';
 import { check as story } from './story.browser.js';
 
 export const CHECKS = [
@@ -77,6 +79,8 @@ export const CHECKS = [
   { id: 'gunsight', check: gunsight },
   { id: 'fire', check: fire },
   { id: 'fun', check: fun },
+  // After fun: the smoke turned into a cloud that wears off, and the tank that makes it "every so often".
+  { id: 'smoke-clouds', check: smokeClouds },
   { id: 'instruments', check: instruments },
   { id: 'maps', check: maps },
   // After maps: the missions spread over them — each moved one starts on its island, three flown to the end.
@@ -114,6 +118,8 @@ export const CHECKS = [
   { id: 'air-fuel', check: airFuel },
   // The owner's "graphic errors that can cause seziure": the screen measured at the worst places, and Reduce flashing.
   { id: 'flicker', check: flicker },
+  // The owner's "remove the comic stuff, put it in settings and default off": the default settings, and the switch.
+  { id: 'comic', check: comic },
   // Replaces the sticker book fun.js used to carry.
   { id: 'achievements', check: achievements },
   // After achievements (it notes the story's medals): STORY MODE — the Story card, chapter 1

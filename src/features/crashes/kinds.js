@@ -16,6 +16,11 @@
  * Every caption is a joke at the aeroplane's expense, never the pilot's, and
  * never about anybody being hurt: the class is ten, and "no harm done — this
  * is a simulator" is what the debrief has always said.
+ *
+ * All of that wording is Comic effects (Settings -> Graphics, off by default;
+ * render/comic.js). Each kind also carries the PLAIN title the banner, the
+ * debrief and a friend's crash notice use with Comic effects off: no joke,
+ * no comic word, just what happened ("Mid-air collision").
  */
 
 export const KINDS = {
@@ -23,6 +28,8 @@ export const KINDS = {
     title: 'Cartwheel crash!',
     word: 'KA-TUMBLE!',
     heliTitle: 'Tumble crash!',
+    plainTitle: 'Crashed',
+    plainHeliTitle: 'Crashed',
     colour: '#ffb020',
     captions: [
       'Ten out of ten for gymnastics. Zero for the landing.',
@@ -35,6 +42,8 @@ export const KINDS = {
     title: 'Belly-flop skid!',
     word: 'FWUMP!',
     heliTitle: 'Belly-flop skid!',
+    plainTitle: 'Crash landing',
+    plainHeliTitle: 'Hard landing',
     colour: '#ffb020',
     captions: [
       'The loudest belly flop at the pool.',
@@ -47,6 +56,8 @@ export const KINDS = {
     title: 'Splash-down!',
     word: 'SPLOOSH!',
     heliTitle: 'Splash-down!',
+    plainTitle: 'Crashed into the sea',
+    plainHeliTitle: 'Ditched in the sea',
     colour: '#5ec8ff',
     captions: [
       'The fish did not see that coming.',
@@ -59,6 +70,8 @@ export const KINDS = {
     title: 'Wing-clip spin!',
     word: 'WHIRRR!',
     heliTitle: 'Rotor-clip spin!',
+    plainTitle: 'Wing strike',
+    plainHeliTitle: 'Rotor strike',
     colour: '#ffb020',
     captions: [
       'Spun like a fidget spinner!',
@@ -71,6 +84,8 @@ export const KINDS = {
     title: 'Nose-in plant!',
     word: 'THUNK!',
     heliTitle: 'Nose-in plant!',
+    plainTitle: 'Nose-first impact',
+    plainHeliTitle: 'Nose-first impact',
     colour: '#ffb020',
     captions: [
       'Planted it like a lawn dart!',
@@ -83,6 +98,8 @@ export const KINDS = {
     title: 'Bonk!',
     word: 'BONK!',
     heliTitle: 'Bonk!',
+    plainTitle: 'Collision',
+    plainHeliTitle: 'Collision',
     colour: '#ffb020',
     captions: [
       'Who put that there?',
@@ -101,6 +118,8 @@ export const KINDS = {
     title: 'Mid-air bump!',
     word: 'KA-BONK!',
     heliTitle: 'Mid-air bump!',
+    plainTitle: 'Mid-air collision',
+    plainHeliTitle: 'Mid-air collision',
     colour: '#ffb020',
     captions: [
       'Two aeroplanes, one bit of sky.',
@@ -171,7 +190,14 @@ export function pickCaption(kind, last = null, rnd = Math.random) {
   return list[i];
 }
 
-export function titleFor(kind, vehicle = 'plane') {
+/**
+ * The crash's name. `comic` (the Comic effects setting, passed in by the
+ * caller: this file knows nothing of the page) chooses the comic title
+ * ("Bonk!") or the plain one ("Collision"); it is true by default, which is
+ * the cartoon the tests of the choreography were written against.
+ */
+export function titleFor(kind, vehicle = 'plane', comic = true) {
   const k = KINDS[kind] || KINDS.bellyflop;
+  if (!comic) return vehicle === 'heli' ? k.plainHeliTitle : k.plainTitle;
   return vehicle === 'heli' ? k.heliTitle : k.title;
 }

@@ -380,7 +380,7 @@ try {
   lat.moon = moonIn.ms;
   const yeetIn = await arrival(T1, 'yeet', 3000);
   const yeetGone = await gone(T1, 'yeet', 4000);
-  ok('Yeet on the host: a jump of 70 m/s straight up, YEET! on the screen, over in two seconds, nobody crashed', yeetIn.ok && yeetIn.vy - vyBefore > 40 && /YEET/.test(yeetIn.card) && yeetGone.ok && !yeetGone.crashed, { ms: yeetIn.ms, dvy: (yeetIn.vy - vyBefore).toFixed(0) });
+  ok('Yeet on the host: a jump of 70 m/s straight up, a plain “Launched” card on the screen (Comic effects are off by default), over in two seconds, nobody crashed', yeetIn.ok && yeetIn.vy - vyBefore > 40 && /Launched/.test(yeetIn.card) && !/YEET/.test(yeetIn.card) && yeetGone.ok && !yeetGone.crashed, { ms: yeetIn.ms, dvy: (yeetIn.vy - vyBefore).toFixed(0) });
   ok('Moon gravity on the classmate: arrives, and the tag says so', moonIn.ok && /Moon gravity/.test(moonIn.tag), { ms: moonIn.ms });
 
   // t = 13: tiny → mate (30 s); upside-down → host (5 s).
@@ -407,7 +407,7 @@ try {
   const wastedIn = await arrival(T1, 'wasted', 3000);
   const wastedShown = await T1.eval(`const r = await pt.until(() => { const root = document.querySelector('.ws-root'); return root && root.classList.contains('is-word') ? root.querySelector('.ws-word span').textContent : null; }, 3000); return r;`);
   const wastedGone = await gone(T1, 'wasted', 6000);
-  ok('Fake WASTED on the host: the WASTED screen with “jk 😂” under it, gone four seconds later, nobody crashed', wastedIn.ok && wastedShown.v && /jk 😂/.test(wastedShown.v) && wastedGone.ok && !wastedGone.wasted && !wastedGone.crashed, { ms: wastedIn.ms, line: wastedShown.v });
+  ok('Fake WASTED on the host: the WASTED screen with “Just a joke” under it (the “jk 😂” is Comic effects, off by default), gone four seconds later, nobody crashed', wastedIn.ok && wastedShown.v && /Just a joke/.test(wastedShown.v) && !/😂/.test(wastedShown.v) && wastedGone.ok && !wastedGone.wasted && !wastedGone.crashed, { ms: wastedIn.ms, line: wastedShown.v });
   ok('Harrison-ify on the classmate: their own aeroplane hidden, T-Pose Harrison in its place', harrIn.ok && harrIn.visible === false, { ms: harrIn.ms });
   await T3.shot('04-mate-harrison-1366.png');
 

@@ -34,6 +34,15 @@
  * so. A crash another player has in multiplayer arrives through
  * ../game/happenings.js and is marked in their colour.
  *
+ * ALL OF THIS IS COMIC EFFECTS (Settings -> Graphics, OFF by default:
+ * render/comic.js). With it off a crash is the real one: the fireball and the
+ * smoke from wreck.js, the pieces and the wreck of ./breakup.js (the v63 crash
+ * physics), with no choreography, no cartoon cloud, no stars, no comic word, no
+ * joke and no crash cam. The banner and the debrief still say what kind of
+ * crash it was, in plain words ("Mid-air collision"), and it still goes on the
+ * map (as a cross) and out to the other players; a friend's crash is named by
+ * YOUR setting, not theirs.
+ *
  * A mayday that ends on the ground is left alone: the brace sequence writes
  * its own ending, and a joke on top of "everyone walked away" would be wrong.
  * The mark still goes on the map.
@@ -58,6 +67,7 @@ import { KINDS, KIND_IDS, classifyCrash, pickCaption, titleFor } from './crashes
 import { makeScript, poseAt, dimsFrom, CRASH_SECONDS } from './crashes/motion.js';
 import { CrashFx } from './crashes/fx.js';
 import { shakeClock, FLASH } from '../render/flash-safety.js';
+import { COMIC } from '../render/comic.js';
 import { CrashMarks, drawCrashMarks } from './crashes/marks.js';
 import { renderedHeight } from './explosions.js';
 
@@ -184,11 +194,13 @@ function handleCrash(sim, c) {
   };
   const cls = classifyCrash(info);
   const kind = cls.kind;
-  const caption = pickCaption(kind, C.lastCaption);
-  C.lastCaption = caption;
-  const title = titleFor(kind, vehicle);
+  // Comic effects off: no joke, and the kind's plain name.
+  const comic = COMIC.on;
+  const caption = comic ? pickCaption(kind, C.lastCaption) : '';
+  if (comic) C.lastCaption = caption;
+  const title = titleFor(kind, vehicle, comic);
   const quiet = !!(sim.bracing || sim.braceRescueT);
-  C.crash = { kind, caption, title, reason: c.reason || '', vehicle, quiet, x: ac.pos.x, z: ac.pos.z, real: now() };
+  C.crash = { kind, caption, title, reason: c.reason || '', vehicle, quiet, comic, x: ac.pos.x, z: ac.pos.z, real: now() };
   C.stats.crashes++;
   C.stats.byKind[kind] = (C.stats.byKind[kind] || 0) + 1;
 
@@ -197,6 +209,23 @@ function handleCrash(sim, c) {
   emitHappening({ type: 'crash', kind, vehicle, x: round1(ac.pos.x), z: round1(ac.pos.z), map: mapId() });
 
   if (quiet) return;
+
+  if (!comic) {
+    /*
+     * The real crash: wreck.js's fireball and smoke and breakup.js's pieces,
+     * left alone. No choreography (the aeroplane stays where the flight model
+     * put it), no cartoon cloud, stars or word, and no crash cam, which
+     * stands 25 m from the wreck to watch the choreography and would white
+     * out on the real fireball. The banner is main.js's own, with the kind's
+     * plain name in place of "Crashed".
+     */
+    cancelScript();
+    C.dims = null;
+    C.wispLeft = 0;
+    if (C.fx) C.fx.clear();
+    if (sim.hud && sim.hud.showBanner) sim.hud.showBanner(esc(title), esc(c.reason || ''), 'bad', 6);
+    return;
+  }
 
   /*
    * A cartoon crash goes "poof", not "boom". wreck.js's fireball, firelight
@@ -620,7 +649,7 @@ function drawMarksOn(mm, sim) {
   const centre = drive ? sim.vehicle.pos : sim.aircraft.pos;
   // Bigger where the map is drawn small (a phone shows it at 84 px): the same rule the minimap's own text follows.
   const scale = clamp(mm.textScale || 1, 1, 1.9);
-  const n = drawCrashMarks(mm.ctx, C.marks, centre, mm.span, MINIMAP_SIZE, C.clock, mapId(), C.newestMine, scale);
+  const n = drawCrashMarks(mm.ctx, C.marks, centre, mm.span, MINIMAP_SIZE, C.clock, mapId(), C.newestMine, scale, COMIC.on);
   C.lastDrawn = n;
   return n;
 }
@@ -640,7 +669,10 @@ function wrapDebrief(sim) {
         o = {
           ...o,
           title: cr.title,
-          body: `<p class="debrief-caption" style="font-size:18px;font-weight:700;color:#ffd23f;margin:0 0 6px">${esc(cr.caption)}</p>${o.body || ''}`,
+          // The joke is Comic effects; the plain debrief is the title and the flight model's own account.
+          body: cr.caption
+            ? `<p class="debrief-caption" style="font-size:18px;font-weight:700;color:#ffd23f;margin:0 0 6px">${esc(cr.caption)}</p>${o.body || ''}`
+            : o.body,
         };
       }
     } catch (e) {
@@ -717,7 +749,7 @@ function receiveCrash(sim, e, from) {
   C.stats.remote++;
   const name = cleanName(from.name);
   if (name && sim && sim.state === 'flying' && sim.hud && sim.hud.notify) {
-    sim.hud.notify(`${esc(name)}: ${esc(titleFor(e.kind, e.vehicle))}`, 'info', 3);
+    sim.hud.notify(`${esc(name)}: ${esc(titleFor(e.kind, e.vehicle, COMIC.on))}`, 'info', 3);
   }
   return true;
 }
@@ -924,7 +956,7 @@ registerExtension({
       C.tellMarksT -= dt;
       if (C.tellMarksT <= 0 && sim.hud && sim.hud.notify && sim.minimap && sim.minimap.visible) {
         C.toldMarks = true;
-        sim.hud.notify('The star on your map is where you crashed. It fades after a minute or so.', 'info', 5);
+        sim.hud.notify(`The ${COMIC.on ? 'star' : 'cross'} on your map is where you crashed. It fades after a minute or so.`, 'info', 5);
       }
     }
     // The Dev button's crash, once there is air under you to crash out of.
@@ -953,7 +985,7 @@ registerExtension({
         // From the menu or the pause screen: as soon as you are flying again.
         C.pendingStage = kind;
         C.pendingT = 0;
-        note(sim, `A ${KINDS[kind].title.replace('!', '').toLowerCase()} is coming as soon as you are flying.`);
+        note(sim, `A ${titleFor(kind, 'plane', COMIC.on).replace('!', '').toLowerCase()} is coming as soon as you are flying.`);
       },
     },
   ],

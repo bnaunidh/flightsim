@@ -36,6 +36,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension } from '../game/extensions.js';
 import { mp, ch, ride, inGame, toon, blip, ghost } from './mpplay/shared.js';
+import { COMIC } from '../render/comic.js';
 
 /** A ride's bumping size: most of what is drawn, so wingtips can touch but a fin alone does not. */
 export const BODY = 0.7;
@@ -222,7 +223,7 @@ ch.on('bump:knock', (d, from) => {
   if (t - pair.fxAt > FX_COOL_MS) {
     pair.fxAt = t;
     B.stats.bumps++;
-    toon.puff(me.pos, '#ffffff', { n: 6, size: 3, spread: 6, life: 0.9, up: 1 });
+    toon.poof(me.pos, { n: 6, size: 3, spread: 6, life: 0.9, up: 1 });
     blip(sim, 'bonk');
   }
 });
@@ -239,8 +240,8 @@ function applyPush(r, c, sign = 1) {
     ac.vel.x += c.nx * dv;
     ac.vel.y += c.ny * dv;
     ac.vel.z += c.nz * dv;
-    // A cartoon wobble: a little roll and yaw, gone in a second.
-    if (ac.omega && c.dv > 1) {
+    // A cartoon wobble: a little roll and yaw, gone in a second. Comic effects only.
+    if (COMIC.on && ac.omega && c.dv > 1) {
       ac.omega.x += (Math.random() - 0.5) * 0.5;
       ac.omega.z += (Math.random() - 0.5) * 0.9;
     }
@@ -334,7 +335,7 @@ function step(sim) {
       pair.fxAt = t;
       B.stats.bumps++;
       const at = { x: (mine.x + other.x) / 2, y: (mine.y + other.y) / 2, z: (mine.z + other.z) / 2 };
-      toon.puff(at, '#ffffff', { n: 6, size: 3 + Math.min(4, c.closing * 0.2), spread: 6, life: 0.9, up: 1 });
+      toon.poof(at, { n: 6, size: 3 + Math.min(4, c.closing * 0.2), spread: 6, life: 0.9, up: 1 });
       if (c.closing > 4) toon.word('BONK!', at, sim.camera, 0.8);
       blip(sim, 'bonk');
     }

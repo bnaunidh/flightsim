@@ -128,6 +128,9 @@ export async function check(sim, r, say) {
         return origThunder.apply(amb, a);
       };
     }
+    // The cartoon whistle is Comic effects (off by default): this is the check that it whistles when they are on.
+    const comicWas = sim.settings.comicEffects;
+    sim.applySetting('comicEffects', true);
     const dropped = sim.dropCargo();
     const bomb = sim.crate;
     r.ok('weapons: X lets a practice bomb go', dropped && !!bomb && !!bomb.fire);
@@ -144,6 +147,7 @@ export async function check(sim, r, say) {
       camOn = FX.explosionStats().bombCam;
     } finally {
       if (amb && origThunder) amb.playThunder = origThunder;
+      sim.applySetting('comicEffects', comicWas === true);
     }
     const s2 = FX.explosionStats();
     r.ok('weapons: it goes off through explode() when it lands', bomb && bomb.landed && s2.blasts >= 1, `landed ${bomb && bomb.landed} after ${t} s, blasts ${s2.blasts}`);

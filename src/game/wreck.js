@@ -12,10 +12,18 @@
  *
  * Everything is procedural, everything is pooled and reused, and it all cleans
  * itself up when the flight restarts.
+ *
+ * REDUCE FLASHING (render/flash-safety.js, on by default): the blast's light
+ * and the fire's sprites are dimmed to the same caps the explosions use. With
+ * Comic effects off, the default, this IS the crash everybody sees (the
+ * cartoon cloud used to clear it away), and a dive into the sea measured up
+ * to 22% of a 10-degree field flashing under the flicker probe, near
+ * WCAG's 25% line, before they were capped.
  */
 
 import * as THREE from '../vendor/three.module.js';
 import { heightAt } from '../world/terrain.js';
+import { dim, CAPS } from '../render/flash-safety.js';
 
 const DEBRIS = 16;
 const SPARKS = 90;
@@ -375,10 +383,10 @@ export class Wreck {
             continue;
           }
           size[i] = 22 + f * 26;
-          alpha[i] = Math.pow(1 - f, 1.1) * 0.85;
+          alpha[i] = dim(Math.pow(1 - f, 1.1) * 0.85, CAPS.blastSprite);
         } else {
           size[i] = 34 * (1 - f * 0.55);
-          alpha[i] = Math.pow(1 - f, 1.5);
+          alpha[i] = dim(Math.pow(1 - f, 1.5), CAPS.blastSprite);
         }
       }
       set.geo.attributes.position.needsUpdate = true;
@@ -428,7 +436,9 @@ export class Wreck {
         ? Math.max(0, 1 - (this.t - this.blastAt) / 14)
         : 0
       : Math.max(0, 1 - this.t / 30);
-    this.light.intensity =
-      3200 * flash + 900 * burn * (0.7 + Math.sin(this.t * 11) * 0.15 + Math.sin(this.t * 3.7) * 0.15);
+    this.light.intensity = dim(
+      3200 * flash + 900 * burn * (0.7 + Math.sin(this.t * 11) * 0.15 + Math.sin(this.t * 3.7) * 0.15),
+      CAPS.blastLight
+    );
   }
 }

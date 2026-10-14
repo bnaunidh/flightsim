@@ -290,9 +290,21 @@ export async function check(sim, r, say) {
     const vy1 = ac().vel.y;
     const card = shared.bigCardText();
     await frames(60);
-    r.ok('owner trolls: Yeet — 70 m/s straight up (YEET! on the screen), a second later it is higher and not crashed',
-      vy1 - vy0 >= T.YEET_MS - 1 && /YEET!/.test(card) && ac().pos.y > y0 + 20 && !ac().crashed, JSON.stringify({ vy0: vy0.toFixed(1), vy1: vy1.toFixed(1), climbed: (ac().pos.y - y0).toFixed(0) }));
+    r.ok('owner trolls: Yeet — 70 m/s straight up (a plain “Launched” card: Comic effects are off by default), a second later it is higher and not crashed',
+      vy1 - vy0 >= T.YEET_MS - 1 && /Launched/.test(card) && !/YEET/.test(card) && ac().pos.y > y0 + 20 && !ac().crashed, JSON.stringify({ card, vy0: vy0.toFixed(1), vy1: vy1.toFixed(1), climbed: (ac().pos.y - y0).toFixed(0) }));
     expire('yeet');
+    await frames(1);
+    // With Comic effects switched on, it is the cartoon card.
+    const comicWas = sim.settings.comicEffects === true;
+    sim.applySetting('comicEffects', true);
+    airborne(0, 0);
+    await frames(3);
+    TD.arrive({ id: 'yeet', t: mp.meId, by: A.id });
+    const comicCard = shared.bigCardText();
+    expire('yeet');
+    await frames(1);
+    sim.applySetting('comicEffects', comicWas);
+    r.ok('owner trolls: Yeet — with Comic effects on the card is the cartoon one (YEET!)', /YEET!/.test(comicCard), comicCard);
     // Tiny / Giant: the model's scale, physics untouched.
     const sx = sim.model.scale.x;
     const speedBefore = ac().airspeed;
@@ -334,9 +346,20 @@ export async function check(sim, r, say) {
     const word = root && root.classList.contains('is-on') && root.classList.contains('is-word');
     const jk = root ? root.querySelector('.ws-word span').textContent : '';
     await frames(200);
-    r.ok('owner trolls: Fake WASTED — the real WASTED screen comes up with “jk 😂” under it, and is gone four seconds later; nobody crashed',
-      wasted.count === wastedBefore + 1 && word && /jk 😂/.test(jk) && !wasted.active && !ac().crashed, JSON.stringify({ word, jk }));
+    r.ok('owner trolls: Fake WASTED — the real WASTED screen comes up with a plain “Just a joke” under it (the “jk 😂” is Comic effects, off by default), and is gone four seconds later; nobody crashed',
+      wasted.count === wastedBefore + 1 && word && /Just a joke/.test(jk) && !/😂/.test(jk) && !wasted.active && !ac().crashed, JSON.stringify({ word, jk }));
     expire('wasted');
+    await frames(1);
+    // With Comic effects switched on, it is the joke.
+    sim.applySetting('comicEffects', true);
+    TD.arrive({ id: 'wasted', t: mp.meId, by: A.id });
+    await frames(50);
+    const root2 = document.querySelector('.ws-root');
+    const jk2 = root2 && root2.querySelector('.ws-word span') ? root2.querySelector('.ws-word span').textContent : '';
+    expire('wasted');
+    await frames(200);
+    sim.applySetting('comicEffects', comicWas);
+    r.ok('owner trolls: Fake WASTED — with Comic effects on, “jk 😂” is under it', /jk 😂/.test(jk2) && !wasted.active, JSON.stringify({ jk2 }));
     // Pink paint.
     TD.arrive({ id: 'pink', t: mp.meId, by: A.id });
     await frames(2);

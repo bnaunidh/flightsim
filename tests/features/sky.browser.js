@@ -208,7 +208,7 @@ export async function check(sim, r, say) {
     r.ok('sky: flying into it is a crash, within a few seconds', took >= 0 && ac.crashed, took >= 0 ? `after ${took.toFixed(1)} s: "${ac.crashReason}"` : `no crash in 12 s; last ${JSON.stringify(D1.last)}; stats ${JSON.stringify(D1.stats)}`);
     r.ok('sky: the reason says who you flew into', /^You flew into /.test(ac.crashReason || '') && !!target && (ac.crashReason || '').includes(SKY.nameOf(target)), ac.crashReason);
     const crash = CR.crashDebug().C.crash;
-    r.ok('sky: the crash system calls it a mid-air bump, with a kid-safe caption', !!crash && crash.kind === 'midair' && /Mid-air bump/.test(crash.title) && !/die|dead|hurt|blood/i.test(crash.caption), crash ? `${crash.kind}: ${crash.title} — ${crash.caption}` : 'no crash record');
+    r.ok('sky: the crash system calls it a mid-air bump, with a kid-safe caption', !!crash && crash.kind === 'midair' && /Mid-air (bump|collision)/.test(crash.title) && !/die|dead|hurt|blood/i.test(crash.caption), crash ? `${crash.kind}: ${crash.title} — ${crash.caption}` : 'no crash record');
     r.ok('sky: the collision is counted, against the traffic', D1.stats.collisions === before + 1 && D1.last && D1.last.kind === 'traffic', JSON.stringify(D1.last));
     const knocked = Array.isArray(sim.traffic) ? sim.traffic.find((e) => e.phase === 'knocked') : null;
     r.ok('sky: the AI aeroplane is no ghost — it is knocked down (phase "knocked", "coming down")', !!knocked && knocked.activity === 'coming down', knocked ? `${knocked.callsign}: ${knocked.phase} / ${knocked.activity}` : (sim.traffic || []).map((e) => `${e.callsign}:${e.phase}`).join(', '));

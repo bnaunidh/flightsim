@@ -33,6 +33,21 @@ const CSS = /* css */ `
 .is-touch-fun .fun-smoke { min-height: 40px; min-width: 44px; justify-content: center; }
 .is-touch-fun .fun-smoke small { display: none; }
 
+/* The smoke tank: a thin, quiet bar. It only ever fills or empties smoothly; nothing about it blinks. */
+.fun-tank {
+  position: relative; flex: none; width: 46px; height: 7px; margin-right: 4px; border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14); overflow: hidden;
+}
+.fun-tank i {
+  position: absolute; inset: 0; border-radius: 4px; background: #cfe0f5;
+  transform-origin: 0 50%; transform: scaleX(1); transition: transform 0.4s linear, background-color 0.6s linear;
+}
+.fun-tank.is-low i { background: #f0cd80; }
+.fun-tank.is-empty i { background: #8d9bb0; }
+.fun-tank[hidden] { display: none; }
+.is-touch-fun .fun-tank { width: 40px; }
+@media (prefers-reduced-motion: reduce) { .fun-tank i { transition: none; } }
+
 .fun-side { position: absolute; left: 16px; top: 322px; width: min(330px, 44vw); display: flex; flex-direction: column; gap: 8px; pointer-events: none; z-index: 32; }
 .fun-note {
   padding: 8px 12px; border-radius: 12px; text-align: left;
@@ -102,7 +117,8 @@ export class FunHud {
     this.chip = el(
       'div',
       'fun-chip',
-      `<button class="fun-smoke" type="button" data-fun-smoke aria-pressed="false" title="Smoke trail — press ${keyName('smoke')}">💨<small>${keyName('smoke')}</small></button>`
+      `<button class="fun-smoke" type="button" data-fun-smoke aria-pressed="false" title="Smoke trail — press ${keyName('smoke')}">💨<small>${keyName('smoke')}</small></button>
+       <span class="fun-tank" data-fun-tank role="meter" aria-label="Smoke tank" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" title="Smoke tank: full"><i></i></span>`
     );
     this.chip.hidden = true;
     // Our own messages ("Smoke on: ...") under the chip, off to the side, so
@@ -111,6 +127,8 @@ export class FunHud {
     layer.appendChild(this.chip);
     layer.appendChild(this.side);
     this.$smoke = this.chip.querySelector('[data-fun-smoke]');
+    this.$tank = this.chip.querySelector('[data-fun-tank]');
+    this.$tankBar = this.$tank.querySelector('i');
     this.$smoke.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -129,9 +147,13 @@ export class FunHud {
     this.chip.hidden = !on;
   }
 
-  /** smoke on/off, and whether this craft can smoke at all. */
-  set({ smokeOk, smokeOn }) {
-    const key = `${smokeOk}|${smokeOn}|${bindingsVersion()}`;
+  /**
+   * smoke on/off, whether this craft can smoke at all, and how full the
+   * smoke tank is (0..1; the bar beside the button).
+   */
+  set({ smokeOk, smokeOn, tank = 1, dry = false }) {
+    const pct = Math.round(Math.min(1, Math.max(0, tank)) * 100);
+    const key = `${smokeOk}|${smokeOn}|${pct}|${dry}|${bindingsVersion()}`;
     if (key === this.last) return;
     this.last = key;
     // The smoke key, as the player has it now (Settings → Controls → Fun Stuff).
@@ -141,6 +163,14 @@ export class FunHud {
     this.$smoke.title = `Smoke trail — press ${sk}`;
     this.$smoke.hidden = !smokeOk;
     this.$smoke.setAttribute('aria-pressed', smokeOn ? 'true' : 'false');
+    // The tank.
+    this.$tank.hidden = !smokeOk;
+    this.$tankBar.style.transform = `scaleX(${(pct / 100).toFixed(2)})`;
+    // `dry` is "too low to start": the bar stays grey while it fills that far, not for the single frame it is at zero.
+    this.$tank.classList.toggle('is-low', !dry && pct < 20);
+    this.$tank.classList.toggle('is-empty', !!dry);
+    this.$tank.setAttribute('aria-valuenow', String(pct));
+    this.$tank.title = pct >= 100 ? 'Smoke tank: full' : dry && !smokeOn ? 'Smoke tank: empty, filling up' : `Smoke tank: ${pct}%`;
   }
 
   /**
@@ -287,7 +317,7 @@ export function buildFunScreen(menus, { model, onColour }) {
     s.querySelector('[data-fun-cards]').innerHTML = `
       <article class="fun-card">
         <h3>💨 Smoke trails</h3>
-        <p>While flying, press <b>${keyName('smoke')}</b> (or the 💨 button) to leave a smoke trail. Pick a colour:</p>
+        <p>While flying, press <b>${keyName('smoke')}</b> (or the 💨 button) to leave a smoke trail. It spreads into a cloud, drifts with the wind and fades away after a minute or so, so a loop or a circle hangs in the sky for a while. The tank gives about 20 seconds of smoke and fills again in about 30. Pick a colour:</p>
         <div class="fun-swatches">${swatches}</div>
       </article>`;
   };

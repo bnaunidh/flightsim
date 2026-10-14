@@ -10,16 +10,21 @@
  *     while any of them is;
  *   - the cartoon effects: puffs, stars, comic words ("POW!", "BONK!",
  *     "POOF!") and pellets, pooled and made once per world, one draw call a
- *     kind, nothing that looks like a real weapon or a real wound;
+ *     kind, nothing that looks like a real weapon or a real wound. The stars
+ *     and the words are Comic effects (Settings → Graphics, off by default,
+ *     render/comic.js): with it off they are never drawn, and a puff is a
+ *     small grey smoke;
  *   - small sounds through the game's own mixer, quiet, and never unless the
  *     game's sound is on;
- *   - the chip row on the multiplayer badge, and a big comic card in the
- *     middle of the screen for a moment that matters.
+ *   - the chip row on the multiplayer badge, and a big card in the middle of
+ *     the screen for a moment that matters (comic yellow with Comic effects
+ *     on, a calm plain line with them off).
  */
 
 import * as THREE from '../../vendor/three.module.js';
 import { extLayer, registerExtension } from '../../game/extensions.js';
 import { multiplayer } from '../multiplayer.js';
+import { COMIC, wordFor } from '../../render/comic.js';
 
 export const mp = multiplayer;
 export const ch = multiplayer.events;
@@ -142,6 +147,8 @@ function canvasTex(w, h, paint) {
 }
 
 const WORDS = ['POW!', 'BONK!', 'POOF!', 'SPLAT!', 'ZAP!', 'GO!'];
+/** What a "poof" is with Comic effects off: a small puff of ordinary grey smoke. */
+export const SMOKE_PUFF = '#8d9299';
 const WORD_COLOURS = { 'POW!': '#ffd23f', 'BONK!': '#ffb3d9', 'POOF!': '#ffffff', 'SPLAT!': '#9dff7a', 'ZAP!': '#8ee6ff', 'GO!': '#7dff9a' };
 
 /**
@@ -272,8 +279,19 @@ export class Toon {
     }
   }
 
+  /**
+   * The cartoon cloud that goes with a tag, a bump or a collision: white and
+   * fat with Comic effects on; with them off, half as many puffs of plain
+   * grey smoke, because there is no cartoon to be drawn.
+   */
+  poof(pos, opts = {}) {
+    if (COMIC.on) return this.puff(pos, '#ffffff', opts);
+    return this.puff(pos, SMOKE_PUFF, { ...opts, n: Math.max(2, Math.ceil((opts.n ?? 8) / 2)) });
+  }
+
+  /** Comic stars, flying out of a place. Never drawn with Comic effects off. */
   starBurst(pos, n = 6, speed = 9) {
-    if (!this.ready) return;
+    if (!COMIC.on || !this.ready) return;
     for (let k = 0; k < n; k++) {
       const p = this.stars[this._i.star++ % this.stars.length];
       const a = (k / n) * Math.PI * 2 + Math.random() * 0.5;
@@ -286,9 +304,13 @@ export class Toon {
     }
   }
 
-  /** A comic word over a place, kept about the same size on screen whatever the distance. */
+  /**
+   * A comic word over a place, kept about the same size on screen whatever the
+   * distance. Never drawn with Comic effects off: plain text goes on the HUD
+   * instead (bigCard, the feed).
+   */
   word(text, pos, camera, big = 1) {
-    if (!this.ready || !this.wordTex[text]) return;
+    if (!COMIC.on || !this.ready || !this.wordTex[text]) return;
     const w = this.words[this._i.word++ % this.words.length];
     w.s.material.map = this.wordTex[text];
     w.s.material.needsUpdate = true;
@@ -453,6 +475,9 @@ const CSS = `
 .mpp-card.is-on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 .mpp-card strong { display: block; font-size: clamp(30px, 6.5vw, 64px); line-height: 1; color: #ffd23f; letter-spacing: 0.02em;
   -webkit-text-stroke: 2px #1b1030; text-shadow: 0 4px 0 #1b1030, 0 8px 22px rgba(0,0,0,0.45); }
+.mpp-card.is-plain { font-family: var(--font), sans-serif; }
+.mpp-card.is-plain strong { font-size: clamp(28px, 5vw, 52px); font-weight: 700; letter-spacing: 0; color: #fff; -webkit-text-stroke: 0;
+  text-shadow: 0 2px 14px rgba(0,0,0,0.6); }
 .mpp-card span { display: inline-block; margin-top: 8px; font-family: var(--font), sans-serif; font-weight: 700; font-size: clamp(14px, 2.2vw, 20px);
   color: #fff; background: rgba(10, 17, 30, 0.72); padding: 5px 12px; border-radius: 999px; }
 .mpp-feed { position: fixed; left: 16px; top: 38%; z-index: 30; pointer-events: none; display: flex; flex-direction: column; gap: 4px; max-width: min(320px, 60vw); }
@@ -500,7 +525,12 @@ export function chip(id, order, onClick) {
 
 let card = null;
 let cardTimer = null;
-/** The big comic card in the middle of the screen: a word and a line under it. */
+/**
+ * The big card in the middle of the screen: a word and a line under it. With
+ * Comic effects on it is the yellow outlined comic card; with them off, a
+ * comic word ("BONK!", "TAGGED!") is put in plain words ("Mid-air collision",
+ * "Tagged out") and the card is a calm plain panel in the game's own font.
+ */
 export function bigCard(word, line = '', secs = 1.8) {
   if (typeof document === 'undefined') return;
   injectStyle();
@@ -512,7 +542,8 @@ export function bigCard(word, line = '', secs = 1.8) {
     card.innerHTML = '<strong></strong><span></span>';
     extLayer().appendChild(card);
   }
-  card.querySelector('strong').textContent = word;
+  card.querySelector('strong').textContent = wordFor(word);
+  card.classList.toggle('is-plain', !COMIC.on);
   const sp = card.querySelector('span');
   sp.textContent = line;
   sp.hidden = !line;

@@ -50,6 +50,7 @@ import * as THREE from '../../vendor/three.module.js';
 import { registerExtension } from '../../game/extensions.js';
 import { mp, ch, ride, inGame, who, esc, feed, bigCard } from '../mpplay/shared.js';
 import { showWasted, endWasted, wasted } from '../wasted.js';
+import { pick } from '../../render/comic.js';
 import { placeAircraft, besideOf } from './place.js';
 import { paintPink, scaleModel, harrisonFor, poseHarrison, DuckShower, forgetHarrisons } from './fx.js';
 import { hostMayTroll, amStaffInGame, mayTroll, myRole, playerOf, rosterRole, byWho, placeOf, nameOf, isId, now, showTag, clearTag, dropTag, tickTag, injectOwnerStyle, tellWait, OWNER_GOLD } from './common.js';
@@ -271,8 +272,10 @@ function applyToMe(sim, troll, d) {
       };
       break;
     }
-    case 'wasted':
-      if (!showWasted(sim, WASTED_CAUSE, { words: `jk 😂 — ${byWho(d.by)} got you` })) bigCard('WASTED', `jk 😂 — ${byWho(d.by)} got you`, 2.5);
+    case 'wasted': {
+      // The joke's own words are Comic effects (render/comic.js): off, it says so plainly. The fake screen itself is the troll.
+      const joke = pick(`jk 😂 — ${byWho(d.by)} got you`, `Just a joke — ${byWho(d.by)} trolled you`);
+      if (!showWasted(sim, WASTED_CAUSE, { words: joke })) bigCard('WASTED', joke, 2.5);
       /*
        * The screen runs on the game's own clock (wasted.js counts the frames'
        * dt; 3.7 s of them) and the troll on the wall clock (4 s). On a laptop
@@ -284,6 +287,7 @@ function applyToMe(sim, troll, d) {
         if (wasted.active && wasted.cause === WASTED_CAUSE) endWasted(sim);
       };
       break;
+    }
     case 'pink':
       eff.paint = paintPink(sim.model, sim.cockpit);
       eff.step = (s) => {

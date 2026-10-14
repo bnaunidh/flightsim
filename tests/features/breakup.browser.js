@@ -777,6 +777,11 @@ export async function check(sim, r, say) {
    * under CRASH_WINDOW_MAX: under v61's own numbers, with room below WCAG's 25%.
    * So must the instant replay, whose orbiting camera had the same problem
    * (19-30% after a cartwheel) and stands back the same way (REPLAY.backReduced).
+   *
+   * Each crash is seen twice: with Comic effects ON (the cartoon: the crash cam,
+   * the choreography, no fireball) and OFF, the default (the real crash: the
+   * fireball, the pieces and the wreck, seen from the ordinary camera and the
+   * replay; no crash cam). Both must come in under the same limits.
    */
   say('breakup: the crash scenes under the flicker probe');
   {
@@ -785,6 +790,7 @@ export async function check(sim, r, say) {
     const real = (typeof window !== 'undefined' && window.__realRender) || (isStub ? null : sim.renderer.render);
     const stub = sim.renderer.render;
     const reduceWas = sim.settings.reduceFlashing;
+    const comicWas = sim.settings.comicEffects;
     try {
       const P = await import('../flicker-probe.js');
       if (real) sim.renderer.render = real;
@@ -793,7 +799,10 @@ export async function check(sim, r, say) {
       // [type, crash, its own limit, replay it too]. The cartwheel failed WCAG
       // in v61 already (34%, the airframe turning over close up) and measures
       // 19-24% now: it is held under v61, not to the tighter line.
-      for (const [id, kind, max, replay] of [['a320', 'noseplant', CRASH_WINDOW_MAX, false], ['a320', 'cartwheel', 0.3, true], ['skylark', 'bellyflop', CRASH_WINDOW_MAX, false]]) {
+      const scenes = [['a320', 'noseplant', CRASH_WINDOW_MAX, false], ['a320', 'cartwheel', 0.3, true], ['skylark', 'bellyflop', CRASH_WINDOW_MAX, false]];
+      for (const [id, kind, max, replay, comicOn] of [true, false].flatMap((c) => scenes.map((sc) => [...sc, c]))) {
+        const tag = comicOn ? '' : ' (Comic effects off, the default)';
+        sim.applySetting('comicEffects', comicOn);
         await fly(id);
         sim.rig.setMode('chase');
         sim.step(0.5);
@@ -802,13 +811,17 @@ export async function check(sim, r, say) {
         const CAM = cr.crashDebug().CAM;
         const dims = cr.crashDebug().C.dims;
         const near = dims ? Math.min(110, Math.max(16, dims.L * 1.5 + dims.semi * 0.9 + 10)) : NaN;
-        r.ok(`breakup: ${id} ${kind} — with Reduce flashing the crash cam stands back (${cr.CRASH_CAM_BACK_REDUCED}x)`, CAM.active && Math.abs(CAM.dist - near * cr.CRASH_CAM_BACK_REDUCED) < 0.01,
-          `${CAM.dist && CAM.dist.toFixed(1)} m, ${near.toFixed(1)} m without`);
+        if (comicOn) {
+          r.ok(`breakup: ${id} ${kind} — with Reduce flashing the crash cam stands back (${cr.CRASH_CAM_BACK_REDUCED}x)`, CAM.active && Math.abs(CAM.dist - near * cr.CRASH_CAM_BACK_REDUCED) < 0.01,
+            `${CAM.dist && CAM.dist.toFixed(1)} m, ${near.toFixed(1)} m without`);
+        } else {
+          r.ok(`breakup: ${id} ${kind} — with Comic effects off there is no crash cam: the ordinary camera and the replay show the real crash`, !CAM.active && sim.wreck.active, `cam ${CAM.active}, wreck ${sim.wreck.active}`);
+        }
         const pieces = D().pieces.length;
         const m = await P.measure(sim, { frames: 90, fps: 30, warm: 0, raycast: false });
         noDebrief();
         const drawn = !!real && m.meanLum.max > 0.01;
-        r.ok(`breakup: ${id} ${kind}, broken up, flashes over under ${(max * 100).toFixed(0)}% of any 10-degree field (WCAG's line is 25%; Reduce flashing on)`,
+        r.ok(`breakup: ${id} ${kind}, broken up, flashes over under ${(max * 100).toFixed(0)}% of any 10-degree field (WCAG's line is 25%; Reduce flashing on)${tag}`,
           drawn && pieces > 0 && m.wcagWindow < max,
           `${(m.wcagWindow * 100).toFixed(1)}% (area ${(m.wcagArea * 100).toFixed(2)}%); ${pieces} pieces; ${drawn ? 'drawn' : 'NOT drawn'}`);
         if (!replay) continue;
@@ -829,17 +842,27 @@ export async function check(sim, r, say) {
         // Here, 19-30% from where it stood first; 18-27% half as far back
         // again (over WCAG's line one run in five); twice as far back, 11-12%:
         // held under the same line as the crashes, with room below WCAG's.
-        r.ok(`breakup: ${id} ${kind}, its instant replay, flashes over under ${(CRASH_WINDOW_MAX * 100).toFixed(0)}% of any 10-degree field (WCAG's line is 25%; Reduce flashing on)`,
+        r.ok(`breakup: ${id} ${kind}, its instant replay, flashes over under ${(CRASH_WINDOW_MAX * 100).toFixed(0)}% of any 10-degree field (WCAG's line is 25%; Reduce flashing on)${tag}`,
           started && stillOn && radius >= 20 * bu.REPLAY.backReduced && mr.meanLum.max > 0.01 && mr.wcagWindow < CRASH_WINDOW_MAX,
           `${(mr.wcagWindow * 100).toFixed(1)}% (area ${(mr.wcagArea * 100).toFixed(2)}%); camera ${radius.toFixed(0)} m out (${bu.REPLAY.backReduced}x); replaying all through ${stillOn}`);
       }
       // The dive into the sea, flown: the nose in and the airframe falling
       // onto the water after it, with the spray where its belly hits.
-      // Measured 5-9% (and 4-7% before it fell, when it hung over the water).
+      // Measured 5-9% (and 4-7% before it fell, when it hung over the water)
+      // with the cartoon crash cam; with Comic effects off (the default) it is
+      // the ordinary chase camera that watches the real crash, and it must
+      // start where a real dive would: diveIn() moves the aeroplane a long
+      // way, and a camera left at the old spot swoops 300 m down to it over
+      // the glittering sea (measured: 13-21% of the field, all of it the
+      // camera's flight, and 0.2% with the camera held) — so it is told it
+      // is a new flight (it snaps behind the aeroplane); measured then,
+      // with the real wreck, 1-2%.
       if (deep) {
+        sim.applySetting('comicEffects', false);
         await fly('a380');
         sim.rig.setMode('chase');
         sim.step(0.5);
+        sim.rig.initialised = false;
         const crashed = diveIn(deep, 1 / 30);
         const m = await P.measure(sim, { frames: 90, fps: 30, warm: 0, raycast: false });
         noDebrief();
@@ -854,6 +877,7 @@ export async function check(sim, r, say) {
       noDebrief();
       sim.renderer.render = stub;
       if (sim.settings.reduceFlashing !== reduceWas) sim.applySetting('reduceFlashing', reduceWas !== false);
+      if (sim.settings.comicEffects !== comicWas) sim.applySetting('comicEffects', comicWas === true);
     }
   }
 

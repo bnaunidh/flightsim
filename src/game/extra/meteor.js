@@ -30,6 +30,7 @@
 
 import * as THREE from '../../vendor/three.module.js';
 import * as Terrain from '../../world/terrain.js';
+import { COMIC } from '../../render/comic.js';
 
 const TOWN_LIMIT = 5;
 
@@ -154,9 +155,13 @@ export const MISSIONS = [
     // Coral Atoll: open sky over a chain of flat cays, nothing to hit but the rocks.
     map: 'atoll',
     aircraft: 'courier',
-    blurb:
-      'Space rocks are being aimed at where you are GOING to be. Keep flying straight and sooner or later one '
-      + 'will bonk you. Turn, climb and dive, and watch them whoosh past. Last three minutes with a shield left.',
+    // The "bonk" wording is Comic effects (render/comic.js); read as it is shown, so the setting is live.
+    get blurb() {
+      return 'Space rocks are being aimed at where you are GOING to be. Keep flying straight and sooner or later one '
+        + (COMIC.on
+          ? 'will bonk you. Turn, climb and dive, and watch them whoosh past. Last three minutes with a shield left.'
+          : 'will hit you. Turn, climb and dive, and watch them go past. Last three minutes with a shield left.');
+    },
     reward: 'Teaches you to fly with your head up — watching what is coming, not only the instruments.',
     weather: SUNSET,
     spawn: airborneAt(-600, 4200, 700, 90),
@@ -165,7 +170,7 @@ export const MISSIONS = [
     failIf: (ctx) => {
       const s = S(ctx);
       return s && s.shields <= 0
-        ? 'Three bonks — out of shields! The rocks were aimed at where you were heading. Keep changing direction and try again.'
+        ? `${COMIC.on ? 'Three bonks' : 'Three hits'} — out of shields! The rocks were aimed at where you were heading. Keep changing direction and try again.`
         : null;
     },
     steps: [
@@ -208,9 +213,10 @@ export const MISSIONS = [
     map: 'kestrel',
     // A plane with guns: only those can zap a meteor.
     aircraft: 'osprey',
-    blurb:
-      'Sixteen space rocks are heading for Kestrel town, four at a time, all from the north-east. Fly the Osprey, a jet '
-      + 'with guns, out to meet them, point your nose at each one and zap it. If five get through, the town has had enough bonks for one evening.',
+    get blurb() {
+      return 'Sixteen space rocks are heading for Kestrel town, four at a time, all from the north-east. Fly the Osprey, a jet '
+        + `with guns, out to meet them, point your nose at each one and zap it. If five get through, the town has had enough ${COMIC.on ? 'bonks ' : ''}for one evening.`;
+    },
     reward: 'Teaches pointing the aeroplane exactly where you want it — the nose is your aim.',
     weather: { time: 'sunset', condition: 'clear', windSpeedKts: 8, windDirDeg: 40 },
     spawn: TOWN_SPAWN,
@@ -219,7 +225,7 @@ export const MISSIONS = [
     failIf: (ctx) => {
       const s = S(ctx);
       return s && s.landedTown >= TOWN_LIMIT
-        ? 'Five rocks bonked the town. Nobody was hurt — gardens and the park took the hits — but meet them further out next time.'
+        ? `Five rocks ${COMIC.on ? 'bonked' : 'landed in'} the town. Nobody was hurt — gardens and the park took the hits — but meet them further out next time.`
         : null;
     },
     steps: [

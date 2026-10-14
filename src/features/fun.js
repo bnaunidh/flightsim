@@ -5,6 +5,15 @@
  *              aircraft, picked on the Fun Stuff screen (the gold button on
  *              the start screen). Saved on this device.
  *
+ *              The trail turns into a cloud: each puff opens out, drifts with
+ *              the wind and thins away over a minute or so, so a loop you
+ *              flew hangs in the sky for a while (fun/fx.js). It comes from
+ *              a smoke tank — about 20 seconds from full, about 30 seconds
+ *              to fill again, shown by the small bar beside the 💨 button —
+ *              so it is something you do every so often, not all the time.
+ *              The tank empties, the smoke stops by itself; T and the
+ *              button still just toggle.
+ *
  * Nothing in main.js knows any of this is here: it plugs in through
  * game/extensions.js like every other feature, and a fault in it switches
  * off this feature alone.
@@ -27,8 +36,8 @@ registerActions({
   smoke: { label: 'Smoke trail on / off', group: 'Fun Stuff', ctx: ['plane', 'heli'], default: ['KeyT'] },
 });
 import { loadFun, saveFun } from './fun/save.js';
-import { activeColour } from './fun/smoke.js';
-import { SmokeTrail, rainbowAt, linearRGB } from './fun/fx.js';
+import { activeColour, SmokeTank, smokeLight } from './fun/smoke.js';
+import { SmokeTrail, SMOKE, rainbowAt, linearRGB } from './fun/fx.js';
 import { FunHud, addMenuButton, buildFunScreen } from './fun/ui.js';
 
 const F = {
@@ -42,6 +51,12 @@ const F = {
   smokeOn: false,
   rgb: [1, 1, 1],
   pixelScale: 400,
+  /** What is left to smoke with. */
+  tank: new SmokeTank(),
+  /** The sky's light on the smoke, and the wind that carries it (written in place each frame). */
+  light: { sun: [1, 1, 1], amb: [1, 1, 1] },
+  wind: new THREE.Vector3(),
+  maxPx: 0,
 };
 
 const _tail = new THREE.Vector3();
@@ -70,11 +85,15 @@ function pixelScale(sim) {
   return hgt / (2 * Math.tan((((cam && cam.fov) || 68) * Math.PI) / 360));
 }
 
-function light(sim) {
-  const w = sim.weather;
-  if (!w) return 1;
-  if (w.isNight) return 0.35;
-  return w.time === 'sunset' ? 0.7 : 1;
+/** The biggest point this graphics card will draw, asked once (big old puffs are capped to it). */
+function maxPointPx(sim) {
+  try {
+    const gl = sim.renderer.getContext();
+    const r = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
+    return r && r[1] > 0 ? r[1] : 64;
+  } catch (e) {
+    return 64;
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -84,6 +103,11 @@ function light(sim) {
 function toggleSmoke(sim) {
   const craft = craftOf(sim);
   if (craft !== 'plane' && craft !== 'heli') return false;
+  if (!F.smokeOn && !F.tank.canStart()) {
+    // Dry, or nearly: say so, calmly, and let it fill.
+    if (F.hud) F.hud.note('The smoke tank is filling up. Give it a few seconds.', 2.5);
+    return true;
+  }
   F.smokeOn = !F.smokeOn;
   if (F.smokeOn) {
     const c = activeColour(F.data);
@@ -138,14 +162,30 @@ function update(sim, dt) {
   if (F.smoke) {
     // Not while parked: a smoking aeroplane standing on the apron is a fire.
     const parked = sim.aircraft && sim.aircraft.onGround && sim.aircraft.vel.lengthSq() < 25;
-    if (F.smokeOn && smokeOk && !crashed && sim.aircraft && !parked) {
+    const puffing = !!(F.smokeOn && smokeOk && !crashed && sim.aircraft && !parked);
+    if (puffing) {
       const c = activeColour(F.data);
       const rgb = c.rgb ? linearRGB(c.rgb, F.rgb) : rainbowAt(F.time, F.rgb);
       F.smoke.emit(dt, F.time, tailPoint(sim, _tail), rgb);
     } else {
       F.smoke.cut();
     }
-    F.smoke.update(F.time, F.pixelScale, light(sim));
+    // The tank empties while smoke comes out and fills while it does not.
+    if (F.tank.update(dt, puffing) === 'empty') {
+      F.smokeOn = false;
+      F.smoke.cut();
+      if (F.hud) F.hud.note('Smoke tank empty. It fills up again in about half a minute.', 3.5);
+    }
+    if (!F.maxPx) {
+      F.maxPx = maxPointPx(sim);
+      F.smoke.setMaxPointPx(F.maxPx);
+    }
+    const w = sim.weather;
+    if (w) {
+      smokeLight(w.time, w.cond ? w.cond.cloud : 0, F.light);
+      if (w.windVector) w.windVector(F.wind);
+    }
+    F.smoke.update(F.time, F.pixelScale, F.light, w ? F.wind : null);
   }
 
   // The chip.
@@ -155,7 +195,7 @@ function update(sim, dt) {
     const show = sim.state === 'flying' && !(sim.hud && sim.hud.hidden) && !sim.riding;
     F.hud.setVisible(show);
     if (show) {
-      F.hud.set({ smokeOk, smokeOn: F.smokeOn && smokeOk });
+      F.hud.set({ smokeOk, smokeOn: F.smokeOn && smokeOk, tank: F.tank.level, dry: !F.tank.canStart() });
       F.hud.place(dt, typeof document !== 'undefined' ? document.body : null);
     }
   }
@@ -192,18 +232,21 @@ registerExtension({
 
   buildWorld(sim, group) {
     // A new trail for every world: the old one went with the old world.
-    F.smoke = new SmokeTrail(700);
+    F.smoke = new SmokeTrail(SMOKE.pool);
+    F.maxPx = 0;
     group.add(F.smoke.points);
   },
 
   startMode(sim, mode) {
     F.smokeOn = false;
+    F.tank.reset();
     if (F.smoke) F.smoke.clear();
   },
 
   stop(sim) {
     if (F.smoke) F.smoke.clear();
     F.smokeOn = false;
+    F.tank.reset();
     if (F.hud) {
       F.hud.setVisible(false);
       F.hud.clearPops();

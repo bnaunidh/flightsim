@@ -1,6 +1,7 @@
 /**
  * "crashes show on minimap" — where you (and, in multiplayer, everybody
- * else) came down, as a little comic burst on the map.
+ * else) came down, as a little comic burst on the map (a small cross with
+ * Comic effects off, Settings -> Graphics: render/comic.js).
  *
  * TIDY, because a minimap is 190 pixels and a class crashes a lot:
  *   - at most MAX marks; the oldest goes when a new one comes;
@@ -66,6 +67,24 @@ export class CrashMarks {
   }
 }
 
+/** A plain cross, for Comic effects off: a dark edge under the colour so it reads on any map. */
+function cross(ctx, x, y, r, colour, edge, scale) {
+  const q = r * 0.8;
+  ctx.beginPath();
+  ctx.moveTo(x - q, y - q);
+  ctx.lineTo(x + q, y + q);
+  ctx.moveTo(x + q, y - q);
+  ctx.lineTo(x - q, y + q);
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 3.6 * Math.min(scale, 1.5);
+  ctx.strokeStyle = edge;
+  ctx.stroke();
+  ctx.lineWidth = 1.8 * Math.min(scale, 1.5);
+  ctx.strokeStyle = colour;
+  ctx.stroke();
+  ctx.lineCap = 'butt';
+}
+
 function burst(ctx, x, y, r) {
   ctx.beginPath();
   const n = 8;
@@ -86,9 +105,10 @@ function burst(ctx, x, y, r) {
  * @param size     logical size in pixels (190)
  * @param span     metres across
  * @param scale    how much bigger to draw (the minimap's textScale, for small screens)
+ * @param comic    the Comic effects setting: the starburst (true, the default) or a plain cross
  * @returns how many were drawn
  */
-export function drawCrashMarks(ctx, marks, centre, span, size, now, map, newestMine = null, scale = 1) {
+export function drawCrashMarks(ctx, marks, centre, span, size, now, map, newestMine = null, scale = 1, comic = true) {
   if (!ctx || !marks || !marks.list.length || !(span > 0)) return 0;
   const k = size / span;
   const c = size / 2;
@@ -115,22 +135,27 @@ export function drawCrashMarks(ctx, marks, centre, span, size, now, map, newestM
       ctx.arc(x, y, r + 2 + p * 9, 0, Math.PI * 2);
       ctx.stroke();
     }
-    burst(ctx, x, y, r);
-    ctx.fillStyle = m.mine ? (m.kind === 'splash' ? '#5ec8ff' : '#ffa928') : m.colour || '#c9a0ff';
-    ctx.fill();
-    ctx.lineWidth = 1.3;
-    ctx.strokeStyle = m.mine ? 'rgba(20, 16, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)';
-    ctx.stroke();
-    // A tiny X in the middle: "here".
-    ctx.strokeStyle = 'rgba(20, 16, 30, 0.9)';
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    const q = 1.8 * scale;
-    ctx.moveTo(x - q, y - q);
-    ctx.lineTo(x + q, y + q);
-    ctx.moveTo(x + q, y - q);
-    ctx.lineTo(x - q, y + q);
-    ctx.stroke();
+    const fill = m.mine ? (m.kind === 'splash' ? '#5ec8ff' : '#ffa928') : m.colour || '#c9a0ff';
+    if (comic) {
+      burst(ctx, x, y, r);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.lineWidth = 1.3;
+      ctx.strokeStyle = m.mine ? 'rgba(20, 16, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)';
+      ctx.stroke();
+      // A tiny X in the middle: "here".
+      ctx.strokeStyle = 'rgba(20, 16, 30, 0.9)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      const q = 1.8 * scale;
+      ctx.moveTo(x - q, y - q);
+      ctx.lineTo(x + q, y + q);
+      ctx.moveTo(x + q, y - q);
+      ctx.lineTo(x - q, y + q);
+      ctx.stroke();
+    } else {
+      cross(ctx, x, y, r, fill, m.mine ? 'rgba(20, 16, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)', scale);
+    }
     if (m.count > 1) {
       ctx.font = `700 ${Math.round(7 * scale)}px system-ui, sans-serif`;
       ctx.textAlign = 'left';

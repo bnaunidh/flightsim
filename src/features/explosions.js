@@ -83,12 +83,16 @@
  *   up on its own in the dodge missions: sparks and a pale puff, no debris,
  *   not a dark flak burst), gentle (on land: a cartoon thud — dust, dirt,
  *   stars and a crater, no fire or black smoke; for something landing where
- *   people live).
+ *   people live). The cartoon STARS (the thud's ring, the pop's few) and the
+ *   bomb's cartoon whistle are Comic effects (render/comic.js, off by
+ *   default): with it off the thud is dust, dirt, the rock and the crater, and
+ *   the bomb falls quietly the way a real one barely whistles.
  * Returns a small description of what it did, or null if it could not.
  */
 
 import * as THREE from '../vendor/three.module.js';
 import { FLASH, CAPS, FlashGate, FlashSmoother, screenOpacity, shakeClock } from '../render/flash-safety.js';
+import { COMIC } from '../render/comic.js';
 import { registerExtension, extLayer, extStatus } from '../game/extensions.js';
 import * as Terrain from '../world/terrain.js';
 
@@ -1459,8 +1463,8 @@ function spawnThud(fx, b, n, quality) {
     fx.debris.spawn(x, y + 2, z, Math.cos(a) * Math.cos(el) * v, Math.sin(el) * v, Math.sin(a) * Math.cos(el) * v,
       rand(0.8, 2) * sq, c[0], c[1], c[2], rand(8, 12));
   }
-  // The stars you see when something goes bonk, in a ring round the top.
-  const nst = n(14 + 3 * size);
+  // The stars you see when something goes bonk, in a ring round the top. Comic effects only.
+  const nst = COMIC.on ? n(14 + 3 * size) : 0;
   for (let i = 0; i < nst; i++) {
     const a = (i / nst) * Math.PI * 2;
     const v = rand(10, 18) * sq;
@@ -1510,8 +1514,8 @@ function spawnAirburst(fx, b, n) {
     }
   }
   if (b.soft) {
-    // A few stars in the pop.
-    const nst = n(10 + 4 * size);
+    // A few stars in the pop. Comic effects only.
+    const nst = COMIC.on ? n(10 + 4 * size) : 0;
     for (let i = 0; i < nst; i++) {
       const u = rand(-1, 1);
       const a = Math.random() * Math.PI * 2;
@@ -1990,6 +1994,8 @@ function chime(m, freq, when, gain) {
  * it is nearly there. Very quiet, and quieter the further it is from you.
  */
 function startWhistle(sim, fallSeconds) {
+  // The cartoon whistle is Comic effects: a real bomb barely whistles.
+  if (!COMIC.on) return;
   const m = mixerOf(sim);
   if (!m || !FX) return;
   stopWhistle();

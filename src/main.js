@@ -84,6 +84,7 @@ import {
 } from './core/storage.js';
 import { clamp } from './core/noise.js';
 import { setReduceFlashing, shakeClock } from './render/flash-safety.js';
+import { setComicEffects } from './render/comic.js';
 import { extInstall, extBuildWorld, extUpdate, extCamera, extStartMode, extStop, extensions, extKeyContext } from './game/extensions.js';
 // Every plug-in feature registers itself on import. See ./features/index.js.
 import './features/index.js';
@@ -136,6 +137,8 @@ class Game {
     setFleetModels(this.settings.fleetModels);
     // Before anything flashes. On unless the player has switched it off.
     setReduceFlashing(this.settings.reduceFlashing !== false);
+    // Off unless the player has switched Comic effects on.
+    setComicEffects(this.settings.comicEffects === true);
     this.progress = loadProgress();
     this.state = 'loading';
     this.mode = null;
@@ -2194,6 +2197,8 @@ class Game {
       this.rig.reducedMotion = value;
     } else if (path === 'reduceFlashing') {
       setReduceFlashing(value);
+    } else if (path === 'comicEffects') {
+      setComicEffects(value);
     } else if (path === 'mouseFlying') {
       this.input.requestMouseFlying(value);
     } else if (path === 'invertMouse') {

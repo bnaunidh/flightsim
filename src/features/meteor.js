@@ -56,6 +56,7 @@ registerActions({
 });
 import * as FX from './explosions.js';
 import { FlashGate, screenOpacity, now as flashNow } from '../render/flash-safety.js';
+import { COMIC } from '../render/comic.js';
 import * as Terrain from '../world/terrain.js';
 import { hasGuns } from './gunsight/rules.js';
 
@@ -974,7 +975,7 @@ function land(sim, m, surf, water) {
     S.stats.townResolved++;
     if (townHit) {
       S.stats.landedTown++;
-      sim.hud && sim.hud.notify(`Bonk! One landed in town — ${S.stats.landedTown} of ${TOWN_LIMIT}`, 'warn', 3.5);
+      sim.hud && sim.hud.notify(`${COMIC.on ? 'Bonk! One' : 'One'} landed in town — ${S.stats.landedTown} of ${TOWN_LIMIT}`, 'warn', 3.5);
     }
   }
   if (m.giant) {
@@ -1000,7 +1001,9 @@ function checkHit(sim, m, ac) {
     if (sim.rig && sim.rig.kick) sim.rig.kick(1.1);
     flashScreen('bonk');
     sim.hud && sim.hud.notify(
-      S.stats.shields > 0 ? `BONK! Shield lost — ${S.stats.shields} left` : 'BONK! That was your last shield',
+      S.stats.shields > 0
+        ? `${COMIC.on ? 'BONK! Shield' : 'Shield'} lost — ${S.stats.shields} left`
+        : `${COMIC.on ? 'BONK! That' : 'That'} was your last shield`,
       'warn', 3
     );
     kill(m);

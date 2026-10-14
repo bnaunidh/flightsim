@@ -56,7 +56,7 @@ function ok(name, pass, detail = '') {
   return !!pass;
 }
 
-let THREE, Terrain, FX, MET, MIS, ALL, EXT, MARK, TYPES, RUN;
+let THREE, Terrain, FX, MET, MIS, ALL, EXT, MARK, TYPES, RUN, CM;
 try {
   THREE = await import(src('vendor/three.module.js'));
   Terrain = await import(src('world/terrain.js'));
@@ -68,6 +68,7 @@ try {
   MARK = await import(src('game/markers.js'));
   TYPES = await import(src('aircraft/types.js'));
   RUN = await import(src('game/runner.js'));
+  CM = await import(src('render/comic.js'));
   ok('every module imports and links in node', true);
 } catch (err) {
   ok('every module imports and links in node', false, err && err.stack);
@@ -813,11 +814,22 @@ function particleFill(sim, fade = FX.FADE) {
   // Half way through, 30% are aimed dead on (0-8 m) and would bonk you.
   ok('and about a third of them would actually hit', straightAt > N_ROCKS * 0.2 && straightAt < N_ROCKS * 0.42, `${straightAt} of ${N_ROCKS} within bonk range`);
 
+  // Comic effects (Settings -> Graphics) are off by default; the "BONK!" wording is theirs.
+  CM.setComicEffects(true);
   sim.meteors.begin({ mode: 'dodge' }, null);
   run(sim, 120, 1 / 30);
   const st = sim.meteors.stats;
   ok('fly dead straight and you get bonked', st.hits >= 1 && st.shields === 3 - st.hits, `hits ${st.hits}, shields ${st.shields}, close shaves ${st.nearMisses}`);
   ok('a bonk is a shield and a notice, never a crash', sim.notes.some((n) => n.startsWith('BONK')) && !sim.aircraft.crashed);
+  // And with them off, the same hit is the same shield and a plain notice.
+  CM.setComicEffects(false);
+  sim.notes.length = 0;
+  sim.meteors.end();
+  sim.meteors.begin({ mode: 'dodge' }, null);
+  run(sim, 120, 1 / 30);
+  const st2 = sim.meteors.stats;
+  ok('Comic effects off: the same hit costs a shield with a plain notice (no BONK)', st2.hits >= 1 && st2.shields === 3 - st2.hits
+    && sim.notes.some((n) => /^(Shield lost|That was your last shield)/.test(n)) && !sim.notes.some((n) => /bonk/i.test(n)) && !sim.aircraft.crashed, sim.notes.join(' | '));
 }
 
 {

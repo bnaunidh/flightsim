@@ -1810,6 +1810,11 @@ export class Menus {
           <p class="hint">On by default. Keeps lightning, explosions, hits and strobe lights dim and soft, never more
           than three flashes a second, and calms the camera's shake and the engine's buzz in the cockpit — for anyone
           who is sensitive to flashing light. Switch it off for the full effects.</p>
+          <label class="check"><input type="checkbox" data-set="comicEffects"><span>Comic effects</span></label>
+          <p class="hint">Off by default. Turns on the cartoon side of the game: comic words (BONK!, POOF!) and big cards,
+          stars over a crash, the cartoon crashes that bounce and cartwheel with a joke under them, and a starburst on the
+          map. Off, a tag is "Tagged out", a collision is a collision and a crash is the real break-up and wreck.
+          It is your own choice; other players see the game their own way.</p>
           <div class="fps-box">Frames per second: <b data-fps>—</b></div>
         </div>
 

@@ -447,7 +447,7 @@ function collide(sim, b, c) {
   }
   dropCrew(sim, b);
   try {
-    toon.puff(AT, '#ffffff', { n: 12, size: 5 + Math.min(5, c.closing * 0.1), spread: 9, life: 1.3, up: 2 });
+    toon.poof(AT, { n: 12, size: 5 + Math.min(5, c.closing * 0.1), spread: 9, life: 1.3, up: 2 });
   } catch (e) {
     /* the puff is decoration */
   }

@@ -44,6 +44,7 @@ registerActions({
 import { heightAt } from '../world/terrain.js';
 import { performanceFor } from '../aircraft/types.js';
 import * as R from './pvp/rules.js';
+import { COMIC, pick } from '../render/comic.js';
 import { FlashGate, screenOpacity } from '../render/flash-safety.js';
 import { explode } from './explosions.js';
 import { dropCrewAt } from './sky.js';
@@ -346,10 +347,12 @@ function onDown(d) {
         explode(P.sim, c, { kind: 'airburst', size: 0.8 });
         dropCrewAt(P.sim, { pos: c, heading: 0, crew: 1, uniform: 'fighter' });
       }
-      toon.puff(c, by ? by.colour : t.colour, { n: 6, size: 6, spread: 10, life: 1.3, up: 2 });
+      // The coloured puff is the cartoon's; with Comic effects off the airburst is all there is.
+      if (COMIC.on) toon.puff(c, by ? by.colour : t.colour, { n: 6, size: 6, spread: 10, life: 1.3, up: 2 });
     } else {
-      toon.puff(c, '#ffffff', { n: 10, size: 9, spread: 14, life: 1.6, up: 3 });
-      toon.puff(c, by ? by.colour : t.colour, { n: 8, size: 6, spread: 10, life: 1.3, up: 2 });
+      toon.poof(c, { n: 10, size: 9, spread: 14, life: 1.6, up: 3 });
+      // The coloured splat is the cartoon's; with Comic effects off the tag is the grey smoke alone.
+      if (COMIC.on) toon.puff(c, by ? by.colour : t.colour, { n: 8, size: 6, spread: 10, life: 1.3, up: 2 });
       toon.starBurst(c, 7, 12);
       if (P.sim) toon.word(d.how === 1 ? 'BONK!' : 'POOF!', c, P.sim.camera, 1.2);
     }
@@ -360,7 +363,7 @@ function onDown(d) {
   if (d.t === mp.meId) startDown(d, by);
   else if (d.by === mp.meId) {
     P.stats.tagsByMe++;
-    bigCard(d.how === 2 ? 'MISSILE HIT!' : 'TAGGED!', `You tagged ${t.name}! +1`, 1.8);
+    bigCard(d.how === 2 ? 'MISSILE HIT!' : pick('TAGGED!', 'Tag scored'), `You tagged ${t.name}! +1`, 1.8);
     blip(P.sim, 'pop');
   }
 }
@@ -378,7 +381,13 @@ function startDown(d, by) {
     agl: r.kind === 'air' ? Math.max(0, r.pos.y - Math.max(0, heightAt(r.pos.x, r.pos.z))) : 0, spin: 0, left: 3,
   };
   if (r.model) r.model.visible = false;
-  bigCard(d.how === 1 ? 'BONK!' : d.how === 2 ? 'MISSILE HIT!' : 'TAGGED!', d.how === 2 && by ? `${by.name}'s missile got you — your pilot ejected safely — back in 3…` : by ? `${by.name} got you — back in 3…` : 'You crashed into each other — back in 3…', 2.9);
+  bigCard(
+    d.how === 1 ? 'BONK!' : d.how === 2 ? 'MISSILE HIT!' : 'TAGGED!',
+    d.how === 2 && by
+      ? `${by.name}'s missile got you — your pilot ejected safely — back in 3…`
+      : by ? `${by.name} ${pick('got', 'tagged')} you — back in 3…` : 'You crashed into each other — back in 3…',
+    2.9
+  );
   blip(sim, 'pop');
 }
 
