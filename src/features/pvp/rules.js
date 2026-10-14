@@ -48,6 +48,16 @@ export const HOST_RANGE_M = 1300;
 export const RAM_RANGE_M = 160;
 /** One crash per pair, however many times each side reports it. */
 export const RAM_DEDUPE_MS = 2500;
+/**
+ * A heat-seeker (src/features/heatseek.js) is a pilot's own, three to a flight: the host lets one
+ * player's claims through at most this many in a minute — a missile that hits is a TAG, whole, so
+ * it is not worth more than a few — and only when the two are within a missile's reach of each
+ * other, as the host sees them: its 3.4 km of flight (heatseek/rules.js FLIGHT.player.rangeCap)
+ * plus what a lag of a quarter of a second at 400 m/s moves. (It is the shooter and the target
+ * that are measured, not the missile and the target: the host never sees the missile.)
+ */
+export const MSL_PER_MIN = 3;
+export const MSL_HOST_RANGE_M = 3800;
 
 /** Bits of a player's flags in the shared state. */
 export const F = { on: 1, arming: 2, down: 4, shield: 8 };
@@ -63,12 +73,14 @@ export const cleanWant = (d) => (d && typeof d.on === 'boolean' ? { on: d.on } :
 export const cleanFire = (d) => (d && typeof d.on === 'boolean' ? { on: d.on } : null);
 /** 'pvp:hit' — a claim: I hit player t. */
 export const cleanHit = (d) => (d && okId(d.t) ? { t: d.t } : null);
+/** 'pvp:msl' — a claim: my heat-seeker hit player t. */
+export const cleanMsl = (d) => (d && okId(d.t) ? { t: d.t } : null);
 /** 'pvp:ram' — a claim: I crashed into player t. */
 export const cleanRam = (d) => (d && okId(d.t) ? { t: d.t } : null);
 /** 'pvp:ouch' — the host: player t lost a heart to player by, and has hp left. */
 export const cleanOuch = (d) => (d && okId(d.t) && okId(d.by) && Number.isInteger(d.hp) && d.hp >= 0 && d.hp <= HEARTS ? { t: d.t, by: d.by, hp: d.hp } : null);
-/** 'pvp:down' — the host: player t is tagged out; by is who did it (-1 for a crash), how is 0 a pellet, 1 a crash. */
-export const cleanDown = (d) => (d && okId(d.t) && Number.isInteger(d.by) && d.by >= -1 && d.by <= ID_MAX && (d.how === 0 || d.how === 1)
+/** 'pvp:down' — the host: player t is tagged out; by is who did it (-1 for a crash), how is 0 a pellet, 1 a crash, 2 a heat-seeker. */
+export const cleanDown = (d) => (d && okId(d.t) && Number.isInteger(d.by) && d.by >= -1 && d.by <= ID_MAX && (d.how === 0 || d.how === 1 || d.how === 2)
   ? { t: d.t, by: d.by, how: d.how } : null);
 
 /**
@@ -218,6 +230,36 @@ export class PvpJudge {
     v.by = shooter;
     this.dirty = true;
     if (v.hp > 0) return { ok: true, hp: v.hp, down: false };
+    this._down(v, t);
+    s.tags++;
+    return { ok: true, hp: 0, down: true };
+  }
+
+  /**
+   * A claim: `shooter`'s heat-seeker hit `target`. The same two-sided PvP rules as a pellet (both in
+   * play, target not shielded or already out, near enough as the host sees them), but it needs no
+   * trigger held — a missile is already in the air — and it is the whole of the target's hearts: the
+   * pilot ejects, the target is tagged out and comes back shielded, the shooter scores one.
+   * At most MSL_PER_MIN a minute from one shooter.
+   */
+  missile(shooter, target, dist, t = this.now()) {
+    if (shooter === target) return this._refuse('self');
+    const s = this.players.get(shooter);
+    const v = this.players.get(target);
+    if (!s || !s.on || s.armUntil) return this._refuse('shooter has PvP off');
+    if (s.downUntil > t) return this._refuse('shooter is tagged out');
+    if (!v || !v.on || v.armUntil) return this._refuse('target has PvP off');
+    if (v.downUntil > t) return this._refuse('target is tagged out');
+    if (v.shieldUntil > t) return this._refuse('target is shielded');
+    if (dist != null && !(dist <= MSL_HOST_RANGE_M)) return this._refuse('too far apart');
+    s.msl = (s.msl || []).filter((at) => t - at < 60000);
+    if (s.msl.length >= MSL_PER_MIN) return this._refuse('too many missiles');
+    s.msl.push(t);
+    v.hp = 0;
+    v.lastHit = t;
+    v.regenAt = t + REGEN_AFTER_MS;
+    v.by = shooter;
+    this.dirty = true;
     this._down(v, t);
     s.tags++;
     return { ok: true, hp: 0, down: true };

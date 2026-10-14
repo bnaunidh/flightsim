@@ -291,7 +291,8 @@ if (!window.__pt) {
     if (pt.shared.ghostReasons().includes('pvp-shield')) pt.sawShield = true;
     const ret = document.querySelector('.pvp-reticle');
     const fb = document.querySelector('.pvp-fire');
-    if (ret && !ret.hidden) pt.sawReticle = true;
+    // The gunsight (src/features/gunsight.js) stands the old PvP cross down in an aeroplane; either one is the crosshair.
+    if ((ret && !ret.hidden) || document.querySelector('.gsk-root:not([hidden]) .gsk-sight:not([hidden])')) pt.sawReticle = true;
     if (fb && !fb.hidden) pt.sawFire = true;
     pt.ticks++;
   }, 33);

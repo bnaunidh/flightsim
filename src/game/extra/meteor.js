@@ -15,6 +15,14 @@
  * onStart begins that mode (onStart also runs when "back to the runway"
  * restarts a mission, which the startMode hook alone would miss).
  *
+ * Zapping needs GUNS. The owner: "you can only shoot metores if u have a plane
+ * with guns". So the two missions that are about zapping (Meteor Shower and
+ * Guard the Town) hand you the Osprey CV, a carrier jet that has them, instead
+ * of the Courier; the zapper checks the aeroplane (src/features/gunsight/rules.js
+ * hasGuns) and in a civilian plane just says so. Rock Dodger (you dodge, you
+ * do not shoot) and Photograph the Big One (the Tempest, a camera plane) are
+ * as they were.
+ *
  * Every spoken line is in `atc`, which goes through sim.speak() — the radio,
  * honouring the voice setting — and appears as a subtitle. Nothing here needs
  * a voice to be understood.
@@ -73,12 +81,13 @@ const TOWN_SPAWN = {
     return new THREE.Vector3(cx - 420, 0, cz + 420);
   },
   headingDeg: 45,
-  speed: 62,
+  speed: 90,
   get altAGL() {
     const p = this.pos;
     return Math.max(250, 820 - Math.max(0, groundAt(p.x, p.z)));
   },
 };
+// (The town's spawn is flown by a jet now, which wants more speed than the Courier did.)
 
 const SUNSET = { time: 'sunset', condition: 'clear', windSpeedKts: 6, windDirDeg: 250 };
 
@@ -93,15 +102,17 @@ export const MISSIONS = [
     game: 'flight',
     // Ember Isle: a volcano under a sky full of falling stars (the owner: "use different maps for different missions").
     map: 'ember',
-    aircraft: 'courier',
+    // A plane with guns: only those can zap a meteor.
+    aircraft: 'osprey',
     blurb:
       'Meteors are streaking across the evening sky over Ember Isle. Most burn up in a pop of sparks and leave a '
-      + 'cloud of gold stardust behind; some come all the way down with a bang. No clock and no way to lose — just fly.',
+      + 'cloud of gold stardust behind; some come all the way down with a bang. You have the Osprey, a carrier jet '
+      + 'with guns. No clock and no way to lose — just fly.',
     reward:
-      'Fly through stardust to collect it. Press Z (or tap ZAP) to pop a meteor your nose is pointing at. '
+      'Fly through stardust to collect it. Press Z (or tap ZAP) to pop a meteor your nose is pointing at — only a plane with guns can. '
       + 'Big ones get a warning and a light where they will land.',
     weather: SUNSET,
-    spawn: airborneAt(-3000, 900, 650, 60),
+    spawn: airborneAt(-3000, 900, 650, 60, 90),
     failOnCrash: false,
     meteor: { mode: 'shower' },
     onStart: begin,
@@ -112,7 +123,7 @@ export const MISSIONS = [
         hint: 'Stardust is left where a meteor burns up near you — the arrow points to the nearest cloud.',
         hintEvery: 45,
         atc: {
-          text: 'All aircraft, Ember. Meteor shower overhead tonight. Enjoy the show — and keep clear of the big ones.',
+          text: 'Osprey, Ember. Meteor shower overhead tonight. Enjoy the show — and keep clear of the big ones.',
           voice: 'tower',
         },
         targetLabel: 'Stardust',
@@ -195,10 +206,11 @@ export const MISSIONS = [
     category: 'meteor',
     game: 'flight',
     map: 'kestrel',
-    aircraft: 'courier',
+    // A plane with guns: only those can zap a meteor.
+    aircraft: 'osprey',
     blurb:
-      'Sixteen space rocks are heading for Kestrel town, four at a time, all from the north-east. Fly out to '
-      + 'meet them, point your nose at each one and zap it. If five get through, the town has had enough bonks for one evening.',
+      'Sixteen space rocks are heading for Kestrel town, four at a time, all from the north-east. Fly the Osprey, a jet '
+      + 'with guns, out to meet them, point your nose at each one and zap it. If five get through, the town has had enough bonks for one evening.',
     reward: 'Teaches pointing the aeroplane exactly where you want it — the nose is your aim.',
     weather: { time: 'sunset', condition: 'clear', windSpeedKts: 8, windDirDeg: 40 },
     spawn: TOWN_SPAWN,
@@ -216,7 +228,7 @@ export const MISSIONS = [
         text: 'They come from the north-east. Fly towards a rock and zap it when the blue box is on it.',
         hint: 'Point your nose straight at the glowing rock. The blue box means it is in range.',
         atc: {
-          text: 'Courier, Kestrel. Rocks inbound from the north-east, heading for town. Go and meet them.',
+          text: 'Osprey, Kestrel. Rocks inbound from the north-east, heading for town. Go and meet them.',
           voice: 'tower',
         },
         targetLabel: 'Incoming rock',
@@ -248,7 +260,7 @@ export const MISSIONS = [
     onComplete: (ctx) => {
       const s = S(ctx);
       ctx.sim.speak(
-        s && s.landedTown === 0 ? 'Courier, Kestrel. Not one got through. The town owes you a cake.' : 'Courier, Kestrel. Town is safe. Nicely done.',
+        s && s.landedTown === 0 ? 'Osprey, Kestrel. Not one got through. The town owes you a cake.' : 'Osprey, Kestrel. Town is safe. Nicely done.',
         'tower'
       );
     },

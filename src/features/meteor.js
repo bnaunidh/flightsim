@@ -57,6 +57,7 @@ registerActions({
 import * as FX from './explosions.js';
 import { FlashGate, screenOpacity, now as flashNow } from '../render/flash-safety.js';
 import * as Terrain from '../world/terrain.js';
+import { hasGuns } from './gunsight/rules.js';
 
 const D2R = Math.PI / 180;
 const MAX_METEORS = 28;
@@ -65,6 +66,9 @@ const MAX_MARKERS = 6;
 const LANDED_CAP = 24;
 
 const ZAP_RANGE = 3500;
+/** What a pilot in an aeroplane without guns is told (the owner: "you can only shoot metores if u have a plane with guns"). */
+export const NO_GUNS_HINT = 'You need a plane with guns to shoot meteors.';
+let UID = 0;
 const ZAP_CONE = Math.cos(16 * D2R);
 const DUST_RADIUS = 85;
 const PHOTO_RANGE = 2000;
@@ -104,7 +108,7 @@ function newMeteor(i) {
     impact: new THREE.Vector3(), impactT: 0, hasImpact: false, water: false,
     marker: -1, spin: new THREE.Vector3(), rot: new THREE.Euler(),
     trailAcc: 0, smokeAcc: 0, threat: false, minDist: 1e9, nearMissDone: false,
-    stardust: false, town: false, giant: false, big: false, whooshDone: false, warnedNear: false,
+    stardust: false, town: false, giant: false, big: false, whooshDone: false, warnedNear: false, uid: 0,
   };
 }
 
@@ -123,6 +127,7 @@ const S = {
   invuln: 0,
   photoHold: 0,
   lock: null,
+  prefer: 0,
   giant: null,
   beam: { t: 0 },
   lastPhoto: null,
@@ -139,11 +144,13 @@ function freshStats() {
 }
 S.stats = freshStats();
 
-const MODES = {
+/** The four ways to play, and whether the nose-aim zapper is on in each (it still needs an aeroplane with guns: gunsOn). */
+export const MODES = {
   shower: { zapper: true, stardust: true, hitPlayer: false, title: 'Meteor shower' },
   dodge: { zapper: false, stardust: false, hitPlayer: true, title: 'Rock dodger' },
   town: { zapper: true, stardust: false, hitPlayer: false, title: 'Guard the town' },
-  photo: { zapper: true, stardust: false, hitPlayer: false, title: 'Photo run', giantAt: 7 },
+  // The photo run is flown in the Tempest, a camera plane with no guns: nothing here to zap (the giant is far too big to anyway).
+  photo: { zapper: false, stardust: false, hitPlayer: false, title: 'Photo run', giantAt: 7 },
 };
 
 let SIM = null;
@@ -359,6 +366,7 @@ export function spawnMeteor(o) {
   const m = freeMeteor();
   if (!m) return null;
   m.active = true;
+  m.uid = ++UID;
   m.kind = o.kind || 'lander';
   m.t = 0;
   m.radius = o.radius || 2;
@@ -446,6 +454,15 @@ function segDist(p, a, b) {
 
 function player(sim) {
   return sim && sim.aircraft ? sim.aircraft : null;
+}
+
+/**
+ * Does the aeroplane being flown have guns? Only the military jets do (and a
+ * type marked `guns: true`): a Courier, a trainer, an airliner or a
+ * helicopter cannot zap a meteor. gunsight/rules.js hasGuns() is the one rule.
+ */
+export function gunsOn(sim) {
+  return !!(sim && sim.aircraft && hasGuns(sim.aircraftType, sim.game));
 }
 
 /**
@@ -651,7 +668,24 @@ function spawnGiant(sim) {
   const h = ac.heading || 0;
   const fwd = headingVec(h, new THREE.Vector3());
   const right = headingVec(h + 90, new THREE.Vector3());
-  const want = new THREE.Vector3().copy(ac.pos).addScaledVector(fwd, 5200).addScaledVector(right, -1200);
+  /*
+   * Where it comes down, how fast and how long it takes are the mission's to
+   * set (`meteor: { giantAhead, giantSide, giantSpeed, giantT }`): the photo
+   * run wants it 5.2 km ahead and a little left, a hundred seconds out; the
+   * story's chapter 1 (src/story/ch01-the-glint.js) resumes a checkpoint
+   * with the same giant respawned close alongside. `giantCross` is the
+   * direction it travels, in degrees from your heading (−90: straight across,
+   * right to left; the story's −25 comes in from your right and converges, so
+   * a formation is possible). The defaults are exactly what the photo run
+   * always had.
+   */
+  const cfg = S.cfg || {};
+  const ahead = Number.isFinite(cfg.giantAhead) ? cfg.giantAhead : 5200;
+  const side = Number.isFinite(cfg.giantSide) ? cfg.giantSide : -1200;
+  const gSpeed = Number.isFinite(cfg.giantSpeed) ? cfg.giantSpeed : 85;
+  const gT = Number.isFinite(cfg.giantT) ? cfg.giantT : 100;
+  const across = Number.isFinite(cfg.giantCross) ? cfg.giantCross : -90;
+  const want = new THREE.Vector3().copy(ac.pos).addScaledVector(fwd, ahead).addScaledVector(right, side);
   /*
    * It has to come down in the sea — that splash is the ending — and at
    * eleven degrees its last kilometre is barely two hundred metres up, so a
@@ -661,14 +695,14 @@ function spawnGiant(sim) {
    */
   let m = null;
   const spot = new THREE.Vector3();
-  const giant = (az) => spawnMeteor({ kind: 'giant', target: spot, az, dive: 11, speed: 85, T: 100, radius: 38, size: 6, giant: true });
+  const giant = (az) => spawnMeteor({ kind: 'giant', target: spot, az, dive: 11, speed: gSpeed, T: gT, radius: 38, size: 6, giant: true });
   search: for (let r = 0; r <= 4800; r += 400) {
     for (let k = 0; k < (r ? 14 : 1); k++) {
       const a = (k / 14) * Math.PI * 2;
       spot.set(want.x + Math.cos(a) * r, 0, want.z + Math.sin(a) * r);
       if (safeHeight(spot.x, spot.z) > -4) continue;
       for (const turn of [0, 25, -25]) {
-        const c = giant(h - 90 + turn);
+        const c = giant(h + across + turn);
         if (!c) break search;
         if (c.hasImpact && c.water && Math.hypot(c.impact.x - spot.x, c.impact.z - spot.z) < 60) {
           m = c;
@@ -683,7 +717,7 @@ function spawnGiant(sim) {
   // a mission that waits for a meteor that never comes is the worst outcome.
   if (!m) {
     spot.copy(want).setY(surfaceAt(want.x, want.z));
-    m = giant(h - 90);
+    m = giant(h + across);
   }
   S.stats.giantSpawned = true;
   if (!m) return null;
@@ -1101,8 +1135,8 @@ function findZapTarget(sim) {
     if (dist > ZAP_RANGE + m.radius || dist < 1) continue;
     const c = _v.dot(_fwd) / dist;
     if (c < ZAP_CONE) continue;
-    // Prefer the one nearest the middle of the view, then the nearer one.
-    const score = c * 4 - dist / ZAP_RANGE;
+    // Prefer the one nearest the middle of the view, then the nearer one — and above all the one the lock key picked.
+    const score = c * 4 - dist / ZAP_RANGE + (S.prefer && m.uid === S.prefer ? 100 : 0);
     if (score > bestScore) {
       bestScore = score;
       best = m;
@@ -1115,6 +1149,14 @@ export function zap(sim) {
   if (!S.active || !S.cfg || !S.cfg.zapper) return false;
   const ac = player(sim);
   if (!ac || S.zapCool > 0) return false;
+  if (!gunsOn(sim)) {
+    // A calm word, not a scolding: and no beam, no sound, no cooldown.
+    if (S.msgCool <= 0) {
+      S.msgCool = 4;
+      sim.hud && sim.hud.notify(NO_GUNS_HINT, 'info', 3.2);
+    }
+    return false;
+  }
   S.zapCool = 0.45;
   const t = findZapTarget(sim);
   _fwd.set(0, 0, -1).applyQuaternion(ac.quat);
@@ -1195,11 +1237,22 @@ function updatePhoto(sim, dt) {
   _v.copy(g.pos).project(cam);
   const off = _v.z < 1 ? Math.max(Math.abs(_v.x) / PHOTO_FRAME_X, Math.abs(_v.y) / PHOTO_FRAME_Y) : 9;
   const ang = off * PHOTO_CONE_DEG; // for the score: 0 dead centre, PHOTO_CONE_DEG at the frame edge
-  const inRange = d < PHOTO_RANGE + g.radius;
+  /*
+   * The range is the mission's (`meteor: { photoRange }`), two kilometres by
+   * default. A HAND-HELD camera (`manualPhoto: true`) only ever reports: the
+   * shutter is the player's, through API.snap() — the story's chapter 1 asks
+   * you to get alongside and press the key, with a meter rather than a hold.
+   */
+  const range = photoRange();
+  const inRange = d < range + g.radius;
   const aimed = off < 1;
-  if (inRange && aimed) S.photoHold += dt;
-  else S.photoHold = Math.max(0, S.photoHold - dt * 0.6);
-  if (S.photoHold >= PHOTO_HOLD) takePhoto(sim, d, Math.min(ang, PHOTO_CONE_DEG));
+  if (S.cfg && S.cfg.manualPhoto) {
+    S.photoHold = 0;
+  } else {
+    if (inRange && aimed) S.photoHold += dt;
+    else S.photoHold = Math.max(0, S.photoHold - dt * 0.6);
+    if (S.photoHold >= PHOTO_HOLD) takePhoto(sim, d, Math.min(ang, PHOTO_CONE_DEG));
+  }
   PHOTO.inRange = inRange;
   PHOTO.aimed = aimed;
   PHOTO.d = d;
@@ -1212,11 +1265,31 @@ function updatePhoto(sim, dt) {
  * frame, so one extra frame is drawn and copied straight away, in the same
  * task, before the browser can clear it. Once, at the moment of the click.
  */
+/** The photo range in force: the mission's, or the photo run's two kilometres. */
+function photoRange() {
+  const r = S.cfg && S.cfg.photoRange;
+  return Number.isFinite(r) && r > 0 ? r : PHOTO_RANGE;
+}
+
+/**
+ * The hand-held shutter (API.snap). Takes the picture when the giant is in
+ * range and in the frame; otherwise says which of the two is wanting.
+ */
+function snap(sim) {
+  const g = S.giant;
+  if (!S.active || S.mode !== 'photo' || !g || !g.active) return { ok: false, why: 'nothing' };
+  if (S.stats.photoTaken) return { ok: false, why: 'taken' };
+  if (!PHOTO.inRange) return { ok: false, why: 'range', d: PHOTO.d };
+  if (!PHOTO.aimed) return { ok: false, why: 'aim', d: PHOTO.d };
+  takePhoto(sim, PHOTO.d, Math.min(PHOTO.ang, PHOTO_CONE_DEG));
+  return { ok: true, d: S.stats.photoDistance, quality: S.stats.photoQuality };
+}
+
 function takePhoto(sim, d, ang) {
   const st = S.stats;
   st.photoTaken = true;
   st.photoDistance = Math.round(d);
-  const near = clamp(1 - d / PHOTO_RANGE, 0, 1);
+  const near = clamp(1 - d / photoRange(), 0, 1);
   const centred = clamp(1 - ang / PHOTO_CONE_DEG, 0, 1);
   st.photoQuality = Math.round(100 * clamp(0.4 + 0.38 * near + 0.22 * centred, 0, 1));
   let shot = null;
@@ -1402,6 +1475,9 @@ html.reduce-flashing #meteor-ui .mt-ret::before { animation-duration: 2.4s; }
 @keyframes mtPulse { from { transform:scale(1); } to { transform:scale(1.035); } }
 @media (prefers-reduced-motion: reduce) { #meteor-ui .mt-warn.is-near { animation:none; } }
 @media (max-width: 620px) { #meteor-ui .mt-panel { min-width:0; max-width:190px; font-size:12px; } #meteor-ui .mt-zap { width:64px; height:64px; bottom:214px; } }
+/* A phone upright: the weapons share one row (a plane that zaps has guns, so it has FIRE MSL and FLARES too (heatseek/hud.js), and the LOCK button above them):
+   ZAP goes left of FLARES, clear of FIRE MSL and of the power bar it used to sit on. Measured at 390x844 (tests/features/gunsight.browser.js). */
+@media (max-width: 560px) { html.is-touch-device #meteor-ui .mt-zap:not(.is-desk) { right:160px; bottom:268px; width:60px; height:60px; } }
 `;
 
 function el(tag, cls, parent) {
@@ -1693,7 +1769,13 @@ function updatePanelText(sim, st, ac) {
     if (g && g.active && ac) {
       const d = ac.pos.distanceTo(g.pos);
       line = `The big one: ${(d / 1000).toFixed(1)} km · ${clockOf(ac, g.pos.x, g.pos.z)} o'clock`;
-      line2 = st.photoTaken ? `Photo taken — ${st.photoQuality}%` : `Get within ${(PHOTO_RANGE / 1000).toFixed(0)} km and keep it in view`;
+      const range = photoRange();
+      const near = range < 1000 ? `${Math.round(range)} m` : `${(range / 1000).toFixed(0)} km`;
+      line2 = st.photoTaken
+        ? `Photo taken — ${st.photoQuality}%`
+        : S.cfg && S.cfg.manualPhoto
+          ? `Get within ${near}, frame it, and press ${keyName('storyPhoto', sim) || 'SPACE'}`
+          : `Get within ${near} and keep it in view`;
     } else {
       line = st.giantLanded ? 'Splashdown!' : 'Watch the sky…';
       line2 = st.photoTaken ? `Photo taken — ${st.photoQuality}%` : '';
@@ -1734,11 +1816,13 @@ function updatePanelText(sim, st, ac) {
    * and Z already does the job, so it only appears there if the player has
    * bound Z to something else and the zapper has left the key alone.
    */
-  const zapOn = !!(S.cfg && S.cfg.zapper);
+  // A zap mode in an aeroplane with no guns: no button and no key line, just the one calm sentence.
+  const zapMode = !!(S.cfg && S.cfg.zapper);
+  const zapOn = zapMode && gunsOn(sim);
   const touch = isTouch();
   const zFree = zKeyFree(sim);
   const showBtn = zapOn && (touch || !zFree);
-  if (UI.keys.hidden === zapOn) UI.keys.hidden = !zapOn;
+  if (UI.keys.hidden === zapMode) UI.keys.hidden = !zapMode;
   if (UI.zap.hidden === showBtn) UI.zap.hidden = !showBtn;
   const zapCls = touch ? 'mt-zap' : 'mt-zap is-desk';
   if (UI.zap.className !== zapCls) UI.zap.className = zapCls;
@@ -1746,9 +1830,10 @@ function updatePanelText(sim, st, ac) {
   const how = touch ? 'Tap <b>ZAP</b>' : zFree ? `Press <kbd>${zk}</kbd>` : 'Click <b>ZAP</b>';
   // The lock reticle said "Z ZAP" on an iPad too, which has no Z.
   UI.zapLabel = touch || !zFree ? 'ZAP' : `${zk}  ZAP`;
-  if (UI.cache.keys !== how) {
-    UI.cache.keys = how;
-    UI.keys.innerHTML = `${how} to zap the meteor your nose is pointing at`;
+  const keysLine = zapOn ? `${how} to zap the meteor your nose is pointing at` : NO_GUNS_HINT;
+  if (UI.cache.keys !== keysLine) {
+    UI.cache.keys = keysLine;
+    UI.keys.innerHTML = keysLine;
   }
 }
 
@@ -1774,7 +1859,7 @@ function zKeyFree(sim) {
 }
 
 function updateMarks(sim, dt, photo, st, ac) {
-  const zapOn = !!(S.cfg && S.cfg.zapper);
+  const zapOn = !!(S.cfg && S.cfg.zapper) && gunsOn(sim);
   // Reticles: the zap lock, then any rock that is coming for you.
   const cam = sim.camera;
   const sx = window.innerWidth || 1280;
@@ -1804,8 +1889,9 @@ function updateMarks(sim, dt, photo, st, ac) {
     UI.vf.style.display = 'block';
     const cls = photo.aimed ? 'mt-vf is-aimed' : 'mt-vf';
     if (UI.vf.className !== cls) UI.vf.className = cls;
-    UI.vfBar.style.width = `${Math.round(clamp(S.photoHold / PHOTO_HOLD, 0, 1) * 100)}%`;
-    setText(UI.vfText, 'vf', photo.aimed ? 'Hold it there…' : 'Turn to put it in the frame');
+    const manual = !!(S.cfg && S.cfg.manualPhoto);
+    UI.vfBar.style.width = manual ? (photo.aimed ? '100%' : '0%') : `${Math.round(clamp(S.photoHold / PHOTO_HOLD, 0, 1) * 100)}%`;
+    setText(UI.vfText, 'vf', photo.aimed ? (manual ? `Press ${keyName('storyPhoto', sim) || 'SPACE'}` : 'Hold it there…') : 'Turn to put it in the frame');
   } else if (UI.vf.style.display !== 'none') {
     UI.vf.style.display = 'none';
   }
@@ -1878,6 +1964,7 @@ export function begin(sim, cfg, missionId = null) {
   S.invuln = 0;
   S.photoHold = 0;
   S.msgCool = 0;
+  S.prefer = 0;
   S.lastPhoto = null;
   photoTimer = 0;
   if (UI.photo) UI.photo.style.display = 'none';
@@ -1927,7 +2014,7 @@ export function updateMeteorMode(sim, dt) {
   updateDust(sim, dt);
   updateMarkers(dt);
   updateBeam(dt);
-  S.lock = S.cfg.zapper ? findZapTarget(sim) : null;
+  S.lock = S.cfg.zapper && gunsOn(sim) ? findZapTarget(sim) : null;
   const photo = S.mode === 'photo' ? updatePhoto(sim, dt) : null;
   try {
     updateUi(sim, dt, photo);
@@ -1945,6 +2032,10 @@ export const API = {
   begin: (cfg, id) => begin(SIM, cfg, id),
   end: () => end(),
   zap: () => zap(SIM),
+  /** The hand-held shutter (a `manualPhoto` photo run): { ok, why?, d, quality? }. */
+  snap: () => snap(SIM),
+  /** Where the giant stands in the frame right now, for a mission's own meter. */
+  photoInfo: () => ({ inRange: PHOTO.inRange, aimed: PHOTO.aimed, d: PHOTO.d, range: photoRange(), taken: !!S.stats.photoTaken, manual: !!(S.cfg && S.cfg.manualPhoto) }),
   nearestStardust: () => nearestStardust(SIM && SIM.aircraft ? SIM.aircraft.pos : null),
   giantPos: () => (S.giant && S.giant.active ? S.giant.pos : null),
   nextWarning: () => {
@@ -1970,6 +2061,25 @@ export const API = {
   },
   count: () => activeCount(),
   meteors: () => S.meteors.filter((m) => m.active),
+  /** Can the aeroplane being flown zap? Only a plane with guns. */
+  get guns() { return gunsOn(SIM); },
+  /**
+   * The meteors the gun can be locked on (../gunsight.js): in flight, not
+   * the giant (too big to zap). [{ id, uid, pos, vel, radius, kind: 'meteor', name, ref }].
+   */
+  targets: (out = []) => {
+    out.length = 0;
+    if (!S.active || !S.cfg || !S.cfg.zapper) return out;
+    for (const m of S.meteors) {
+      if (!m.active || m.giant) continue;
+      out.push({ id: `meteor:${m.uid}`, uid: m.uid, pos: m.pos, vel: m.vel, radius: m.radius, kind: 'meteor', name: 'a meteor', ref: m });
+    }
+    return out;
+  },
+  /** The lock key picked this meteor (its uid): the zap goes to it first. 0: none. */
+  prefer: (uid) => {
+    S.prefer = uid | 0;
+  },
   /** For the tests and the dev panel: put a meteor somewhere on purpose. */
   spawn: (o) => spawnMeteor(o),
   spawnGiant: () => spawnGiant(SIM),
@@ -2025,6 +2135,7 @@ registerExtension({
   },
   key(sim, code, down, e) {
     if (!isKey(sim, 'zap', code) || !S.active || !S.cfg || !S.cfg.zapper || playerClaimed(sim, code, 'zap')) return false;
+    // zap() itself says "You need a plane with guns" in an aeroplane without any.
     if (down && !(e && e.repeat)) zap(sim);
     return true;
   },
@@ -2035,7 +2146,7 @@ registerExtension({
       run(sim) {
         if (sim.state === 'flying' && sim.aircraft && sim.mode !== 'drive') {
           begin(sim, { mode: 'shower' }, null);
-          sim.hud && sim.hud.notify('Meteor shower! Watch the sky ahead — point your nose at one and zap it', 'good', 4);
+          sim.hud && sim.hud.notify(gunsOn(sim) ? 'Meteor shower! Watch the sky ahead — point your nose at one and zap it' : `Meteor shower! Watch the sky ahead. ${NO_GUNS_HINT}`, 'good', 4);
           return;
         }
         if (sim.startMode) {

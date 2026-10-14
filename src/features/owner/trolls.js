@@ -1,12 +1,16 @@
 /**
  * THE OWNER'S TROLL MENU — "in owner mode you should have a bunch of trolls
- * to use".
+ * to use" — AND THE ADMINS' ("troll thing for admin").
  *
  * Only while owner mode is on (the fan x10 and the code, ../owner.js — and in
  * a game, only once the HOST has checked the pass, ../multiplayer/owner.js),
+ * or for an ADMIN (the admin code; the host has checked the key's signature),
  * the player list (Tab, and the pause menu's fold) has a 🃏 Troll button on
- * every other player's row, beside Admin. It opens a gold row: pick a troll,
- * and it happens to them. Harmless, short, funny, each wears off by itself,
+ * the rows of the players that role may troll, beside Admin: the owner's on
+ * everybody but another owner, an admin's on plain players only (an admin can
+ * NEVER troll the owner, and only the owner trolls an admin: common.js
+ * mayTroll, which the HOST applies, from its own reading of both roles). It
+ * opens a gold row: pick a troll, and it happens to them. Harmless, short, funny, each wears off by itself,
  * never crashes, kicks or deletes anything:
  *
  *   Barrel roll    their aeroplane rolls once on its own (1.6 s)
@@ -23,15 +27,18 @@
  *   Freeze controls   their stick does nothing for 3 s (the aeroplane flies on)
  *
  * HOW IT TRAVELS. The existing game-events channel (../multiplayer/events.js),
- * host-relayed as everything is: the owner's copy asks the host
- * ('owner:troll' { k, t }); the host checks for ITSELF that the asker is the
- * owner (session.js isOwner — the pass and its signature, never a flag), that
- * the target is in the game and not the owner, and that this target has not
- * been trolled in the last COOLDOWN_MS; then it tells everybody
+ * host-relayed as everything is: the owner's (or an admin's) copy asks the
+ * host ('owner:troll' { k, t }); the host checks for ITSELF who is asking and
+ * whom (session.js isOwner — the pass and its signature —, or the admin key
+ * it checked at the door; never a flag a player sent): that the target is in
+ * the game and one the asker may troll (common.js hostMayTroll), and that
+ * this target has not been trolled in the last COOLDOWN_MS (the same
+ * cooldown, whoever trolled); then it tells everybody
  * ('owner:trolled' { k, t, by }). Everything on the wire is three small
  * numbers. The target's copy does the troll to itself; everybody else's draws
  * what can be seen from outside (tiny, giant, pink, Harrison, ducks); the
- * target sees a small "🃏 trolled by the owner — Duck rain" tag. Lobbies,
+ * target sees a small "🃏 trolled by the owner — Duck rain" tag ("by an
+ * admin", for an admin's: read off the roster the host sent). Lobbies,
  * private matches and World lobbies all go through the same host, so it
  * works in all three.
  *
@@ -45,7 +52,7 @@ import { mp, ch, ride, inGame, who, esc, feed, bigCard } from '../mpplay/shared.
 import { showWasted, endWasted, wasted } from '../wasted.js';
 import { placeAircraft, besideOf } from './place.js';
 import { paintPink, scaleModel, harrisonFor, poseHarrison, DuckShower, forgetHarrisons } from './fx.js';
-import { hostOwner, amOwnerInGame, placeOf, nameOf, isId, now, showTag, clearTag, dropTag, tickTag, injectOwnerStyle, tellWait, OWNER_GOLD } from './common.js';
+import { hostMayTroll, amStaffInGame, mayTroll, myRole, playerOf, rosterRole, byWho, placeOf, nameOf, isId, now, showTag, clearTag, dropTag, tickTag, injectOwnerStyle, tellWait, OWNER_GOLD } from './common.js';
 import { disasterMenu } from './disasters.js';
 import { armTeleport } from './teleport.js';
 
@@ -132,8 +139,9 @@ const A = {
 ch.on('owner:troll', (d, from, meta) => {
   if (!ch.isHost || !meta || !meta.toHost || !from) return;
   A.stats.asked++;
-  // The host's own check of who is asking: the owner's pass, verified by this session. Nobody else gets a troll.
-  if (!hostOwner(from.id) || d.t === from.id || !ch.players().some((p) => p.id === d.t)) {
+  // The host's own check of who is asking and whom: the owner's pass or an admin's signature, verified by this session, and
+  // the one rule (mayTroll). A plain player gets no troll; an admin none on the owner or on another admin; nobody one on the owner.
+  if (!hostMayTroll(from.id, d.t) || d.t === from.id || !ch.players().some((p) => p.id === d.t)) {
     A.stats.refused++;
     return;
   }
@@ -152,9 +160,11 @@ ch.on('owner:trolled', (d, from) => {
   arrive(d);
 });
 
-/** The owner's copy: ask the host. False when this copy is not the owner in a game. */
+/** The owner's or an admin's copy: ask the host. False when this copy is neither, in a game. */
 export function sendTroll(k, targetId) {
-  if (!amOwnerInGame() || !cleanTroll({ k, t: targetId }) || targetId === mp.meId) return false;
+  if (!amStaffInGame() || !cleanTroll({ k, t: targetId }) || targetId === mp.meId) return false;
+  // This copy's own reading of the roster, so the menu does not send what the host will only refuse. The host decides all the same.
+  if (!mayTroll(myRole(), rosterRole(playerOf(targetId)))) return false;
   return ch.toHost('owner:troll', { k, t: targetId });
 }
 
@@ -209,7 +219,7 @@ function applyToMe(sim, troll, d) {
         ac.parkingBrake = false;
         ac.pos.y += 2;
         ac.vel.y = Math.max(0, ac.vel.y) + YEET_MS;
-        bigCard('YEET!', 'the owner launched you', 1.6);
+        bigCard('YEET!', `${byWho(d.by)} launched you`, 1.6);
       }
       break;
     }
@@ -262,7 +272,7 @@ function applyToMe(sim, troll, d) {
       break;
     }
     case 'wasted':
-      if (!showWasted(sim, WASTED_CAUSE, { words: 'jk 😂 — the owner got you' })) bigCard('WASTED', 'jk 😂 — the owner got you', 2.5);
+      if (!showWasted(sim, WASTED_CAUSE, { words: `jk 😂 — ${byWho(d.by)} got you` })) bigCard('WASTED', `jk 😂 — ${byWho(d.by)} got you`, 2.5);
       /*
        * The screen runs on the game's own clock (wasted.js counts the frames'
        * dt; 3.7 s of them) and the troll on the wall clock (4 s). On a laptop
@@ -306,12 +316,12 @@ function applyToMe(sim, troll, d) {
       if (o && me) {
         const at = besideOf(o, o.heading);
         placeAircraft(sim, { x: at.x, z: at.z, y: Math.max(o.y, 120), headingDeg: o.heading, speed: Math.max(me.speed, o.speed) });
-        bigCard('WHOOSH', `the owner brought you to ${nameOf(d.by)}`, 1.8);
+        bigCard('WHOOSH', `${byWho(d.by)} brought you to ${nameOf(d.by)}`, 1.8);
       }
       break;
     }
     case 'go':
-      bigCard('HI 👋', 'the owner came to you', 1.6);
+      bigCard('HI 👋', `${byWho(d.by)} came to you`, 1.6);
       break;
     case 'freeze':
       gateInput(sim);
@@ -325,7 +335,7 @@ function applyToMe(sim, troll, d) {
   }
   A.mine.set(troll.id, eff);
   A.stats.applied++;
-  showTag(troll.name, Math.max(3, troll.secs));
+  showTag(troll.name, Math.max(3, troll.secs), d.by);
 }
 
 /** The owner's copy, "Go there": beside the target. */
@@ -527,25 +537,32 @@ function trollRow(p) {
  * What multiplayer/ui.js asks of the owner's menu: a shape string (so the
  * list is rebuilt only when something here changed), a button for a row, the
  * open row, the foot, and what a click or a slider did. All of it only when
- * the list says this copy is the owner (opts.owner).
+ * the list says this copy has admin powers (opts.admin: an owner or an admin),
+ * and `mine` ('owner' | 'admin') is which: a row gets the button only if that
+ * role may troll that player (common.js mayTroll — the host judges again).
  */
 export const ownerMenu = {
   shape() {
     return `${MENU.open}|${MENU.tab}|${MENU.secs}|${MENU.dis}|${disasterMenu.shape()}`;
   },
-  button(p) {
-    return `<button class="mp-ownbtn" data-mp-own-open="${p.id}" aria-expanded="${MENU.open === p.id}" title="Owner: troll ${esc(p.name)}">🃏 Troll</button>`;
+  /** Whether `mine` ('owner' | 'admin') may troll the player on this roster row. */
+  allows(p, mine) {
+    return !!p && mayTroll(mine === 'owner' ? 'owner' : 'admin', rosterRole(p));
   },
-  row(p) {
-    if (MENU.open !== p.id) return '';
+  button(p, mine = 'owner') {
+    if (!ownerMenu.allows(p, mine)) return '';
+    return `<button class="mp-ownbtn" data-mp-own-open="${p.id}" aria-expanded="${MENU.open === p.id}" title="${mine === 'owner' ? 'Owner' : 'Admin'}: troll ${esc(p.name)}">🃏 Troll</button>`;
+  },
+  row(p, mine = 'owner') {
+    if (MENU.open !== p.id || !ownerMenu.allows(p, mine)) return '';
     return MENU.tab === 'dis' ? disasterMenu.row(p, MENU) : trollRow(p);
   },
   foot() {
     return disasterMenu.foot();
   },
-  /** A row's menu for somebody who has gone: shut. */
-  prune(players) {
-    if (MENU.open != null && !players.some((p) => p.id === MENU.open)) MENU.open = null;
+  /** A row's menu for somebody who has gone, or who this role may not troll (now an admin, say): shut. */
+  prune(players, mine = 'owner') {
+    if (MENU.open != null && !players.some((p) => p.id === MENU.open && ownerMenu.allows(p, mine))) MENU.open = null;
   },
   /** A click in the list. True if it was this menu's (the list repaints). */
   click(e) {

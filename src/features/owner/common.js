@@ -6,7 +6,16 @@
  *     session's own check of the pass and its signature (multiplayer/session.js
  *     isOwner), never a flag a player sent. Every owner request goes to the
  *     host (ch.toHost) and the host does nothing for anybody else;
+ *   - hostRole(id) and mayTroll(by, target): "troll thing for admin" — the
+ *     owner's toys are the admins' too (every troll, the disaster trolls,
+ *     teleport; taking an aircraft over stays the owner's). The host works
+ *     out each player's role for ITSELF — owner (the pass), admin (the
+ *     signature on the admin key), or a plain player — and the one rule is
+ *     mayTroll: nobody trolls the owner, only the owner trolls an admin, an
+ *     admin trolls plain players, a plain player trolls nobody;
  *   - amOwnerInGame(): this copy, in a game where the host has checked its pass;
+ *     amStaffInGame(): the same for an owner OR an admin (the host checked the
+ *     key); myRole(): which of the two this copy is;
  *   - the small "🃏 trolled by the owner" tag the target sees;
  *   - where a player is right now, as this copy draws them.
  */
@@ -30,9 +39,68 @@ export function hostOwner(id) {
   return !!p && typeof h.isOwner === 'function' && h.isOwner(p);
 }
 
+/**
+ * A role, ranked: what a player is to the HOST. `owner` is a pass in its hour (session.js isOwner), `admin` an admin key
+ * whose signature the host checked (p.admin === true) — an owner who is also an admin is an owner —, and `player`
+ * everybody else.
+ */
+export const ROLE_RANK = Object.freeze({ player: 0, admin: 1, owner: 2 });
+
+/**
+ * THE rule for who may troll whom, as a pure function of two roles (null: not in the game). Nobody trolls the owner; only
+ * the owner trolls an admin; an admin or the owner trolls a plain player; a plain player trolls nobody. (Two owners do not
+ * troll each other either: the owner is never a target.)
+ */
+export function mayTroll(by, target) {
+  // Own keys only: 'toString' and friends are "in" every object, and are no role.
+  const known = (r) => typeof r === 'string' && Object.prototype.hasOwnProperty.call(ROLE_RANK, r);
+  if (!known(by) || !known(target) || by === 'player' || target === 'owner') return false;
+  return target === 'player' || by === 'owner';
+}
+
+/** HOST ONLY: player `id`'s role by the session's own checks — 'owner', 'admin', 'player' — or null for nobody here. */
+export function hostRole(id) {
+  const h = mp.host;
+  if (!h || !ch.isHost) return null;
+  const p = id === 0 ? h.me : h.players.get(id);
+  if (!p) return null;
+  if (typeof h.isOwner === 'function' && h.isOwner(p)) return 'owner';
+  return p.admin === true ? 'admin' : 'player';
+}
+
+/** HOST ONLY: may player `from` troll player `target`, by the host's own reading of both roles? */
+export function hostMayTroll(from, target) {
+  return mayTroll(hostRole(from), hostRole(target));
+}
+
 /** This copy is the owner in a game right now: its pass checked by the host (mp.me.owner), in a game past the loading. */
 export function amOwnerInGame() {
   return !!(inGame() && mp.me && mp.me.owner);
+}
+
+/** This copy is an owner or an admin in a game right now, as the host checked it (mp.me.admin is "has admin powers"). */
+export function amStaffInGame() {
+  return !!(inGame() && mp.me && (mp.me.owner || mp.me.admin));
+}
+
+/** 'owner', 'admin' or null: which this copy is in the game, by the host's word. */
+export function myRole() {
+  if (!inGame() || !mp.me) return null;
+  return mp.me.owner ? 'owner' : mp.me.admin ? 'admin' : null;
+}
+
+/** A player's role as the roster says it (the host checked it): 'owner', 'admin' or 'player'. */
+export function rosterRole(p) {
+  return p && p.owner ? 'owner' : p && p.admin ? 'admin' : 'player';
+}
+
+/**
+ * Who did it, in words, for the one it was done to: "an admin" when the roster (the host's word) has the player `id` as an
+ * admin and not the owner; otherwise "the owner" — the host only relays a troll from one of the two.
+ */
+export function byWho(id) {
+  const p = playerOf(id);
+  return p && p.admin && !p.owner ? 'an admin' : 'the owner';
 }
 
 export function playerOf(id) {
@@ -67,6 +135,7 @@ export const WAIT_LINES = Object.freeze([
   (s) => `🃏 Give them a moment — the next troll on them can come in ${s} s`,
   (s) => `🃏 Three disasters are already running — stop one first (or wait ${s} s)`,
   (s) => `🃏 Not yet — try again in ${s} s`,
+  (s) => `🃏 The owner has one running on them already — try again in ${s} s`,
 ]);
 
 export function cleanWait(d) {
@@ -94,6 +163,7 @@ ch.on('owner:wait', (d, from) => {
 
 const STYLE_ID = 'owner-trolls-style';
 export const CSS = `
+/* "🃏 trolled by the owner / an admin" */
 .owner-trolltag { position: fixed; left: 50%; top: 58px; transform: translateX(-50%); z-index: 32; pointer-events: none;
   padding: 5px 12px; border-radius: 99px; background: rgba(12, 20, 34, 0.9); color: #fff; border: 1px solid rgba(255, 210, 63, 0.7);
   font: 650 13px var(--font, system-ui, sans-serif); white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis; }
@@ -121,10 +191,11 @@ export function injectOwnerStyle() {
   document.head.appendChild(s);
 }
 
-const TAG = { el: null, text: '', until: 0, lines: new Map() };
+const TAG = { el: null, text: '', until: 0, lines: new Map(), by: new Map() };
 
-/** Show "🃏 trolled by the owner — <what>" for `secs`; several at once are joined. */
-export function showTag(what, secs = 3) {
+/** Show "🃏 trolled by the owner — <what>" ("…by an admin —", for an admin's) for `secs`; several at once are joined. */
+export function showTag(what, secs = 3, by = null) {
+  if (by != null) TAG.by.set(what, byWho(by));
   const t = now();
   TAG.lines.set(what, t + Math.max(1, secs) * 1000);
   tickTag();
@@ -132,11 +203,13 @@ export function showTag(what, secs = 3) {
 
 export function clearTag() {
   TAG.lines.clear();
+  TAG.by.clear();
   tickTag();
 }
 
 /** One line off the tag now (its troll is over early, or was replaced). */
 export function dropTag(what) {
+  TAG.by.delete(what);
   if (TAG.lines.delete(what)) tickTag();
 }
 
@@ -147,8 +220,15 @@ export function tagText() {
 /** Once a frame: drop lines whose time is up, and write the element only when the text changed. */
 export function tickTag() {
   const t = now();
-  for (const [k, until] of TAG.lines) if (t >= until) TAG.lines.delete(k);
-  const text = TAG.lines.size ? `🃏 trolled by the owner — ${[...TAG.lines.keys()].join(' · ')}` : '';
+  for (const [k, until] of TAG.lines) {
+    if (t >= until) {
+      TAG.lines.delete(k);
+      TAG.by.delete(k);
+    }
+  }
+  // "by the owner", or "by an admin" when every line on it is an admin's (a mix says the owner: the bigger name).
+  const byOwner = [...TAG.lines.keys()].some((k) => TAG.by.get(k) !== 'an admin');
+  const text = TAG.lines.size ? `🃏 trolled by ${byOwner ? 'the owner' : 'an admin'} — ${[...TAG.lines.keys()].join(' · ')}` : '';
   if (text === TAG.text) return;
   TAG.text = text;
   if (typeof document === 'undefined') return;

@@ -182,8 +182,8 @@ export async function check(sim, r, say) {
     /* ---------------- Meteor Shower ---------------- */
     log('weapons: meteor shower');
     await sim.startMode('mission', { id: 'meteor-shower' });
-    r.ok('weapons: Meteor Shower starts meteor mode, in the Courier, at sunset',
-      sim.meteors.active && sim.meteors.mode === 'shower' && sim.aircraftType.id === 'courier' && sim.weather.time === 'sunset',
+    r.ok('weapons: Meteor Shower starts meteor mode, in the Osprey (a jet with guns: only those can zap), at sunset',
+      sim.meteors.active && sim.meteors.mode === 'shower' && sim.aircraftType.id === 'osprey' && sim.meteors.guns && sim.weather.time === 'sunset',
       `${sim.meteors.mode}, ${sim.aircraftType.id}, ${sim.weather.time}`);
     for (let i = 0; i < 20; i++) step(1);
     const st = sim.meteors.stats;

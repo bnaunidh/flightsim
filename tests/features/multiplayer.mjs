@@ -1706,8 +1706,23 @@ if (!REAL || LAN) {
   const before = sent.length;
   await worldTests(ctx);
   const worldNamed = /Swift Falcon|Brave Otter|Sunny Puffin|Kind Koala|Lucky Llama|Zany Zebra|Lucky Lark|Plucky Puffin/;
-  ok('no username went through the signaling server in any of the world lobby tests', sent.length > before && !sent.slice(before).some((m) => worldNamed.test(m)),
+  // Against the public server the world tests are skipped (their lobbies are real children's), so nothing was sent: nothing to check.
+  const worldsSkipped = /0\.peerjs\.com/.test(String(backend && backend.url));
+  ok('no username went through the signaling server in any of the world lobby tests', (worldsSkipped || sent.length > before) && !sent.slice(before).some((m) => worldNamed.test(m)),
+    `${sent.length - before} messages${worldsSkipped ? ' (skipped on the public server)' : ''}`);
+}
+
+/* ---- joining fast: the join's steps, the list's word, the connect window (multiplayer.join.mjs) ---- */
+{
+  const L = await import('../../src/features/multiplayer/lobby.js');
+  const J = await import('../../src/features/multiplayer/joinflow.js');
+  const { joinTests } = await import('./multiplayer.join.mjs');
+  const ctx = { P, S, L, J, Signaling, Net, backend, WS: LogWS, RTC, ok, sleep, until, REAL, server };
+  const before = sent.length;
+  await joinTests(ctx);
+  ok('no username went through the signaling server in any of the join tests', sent.length > before && !sent.slice(before).some((m) => /Swift Falcon|Brave Otter|Sunny Puffin|Jolly Penguin|Clever Koala|Mighty Moose/.test(m)),
     `${sent.length - before} messages`);
+  console.log(`join numbers: ${JSON.stringify(ctx.joinNumbers)}`);
 }
 
 /* ---- part 3b: the crown and admins (multiplayer.admin.mjs) ------------ */

@@ -92,6 +92,11 @@ export const ACHIEVEMENTS = [
   { id: 'massimo-fast', name: 'Mach Massimo', how: 'Take off in Air Massimo at full tilt.', glyph: 'bolt', group: 'fun', hidden: true, tier: 'silver' },
   { id: 'tpose-up', name: 'Floats Like Harrison', how: 'Take off as T-Pose Harrison.', glyph: 'star', group: 'fun', hidden: true, tier: 'silver' },
 
+  /* ---- Story — Signal Zero (src/story) -------------------------------------*/
+  { id: 'story-glint', name: 'The Glint', how: 'Finish Chapter 1 of Signal Zero.', glyph: 'star', group: 'story', tier: 'bronze' },
+  { id: 'story-through-the-eye', name: 'Through the Eye', how: 'Chapter 1: fly the marked gap in the squall wall.', glyph: 'cloud', group: 'story', tier: 'silver' },
+  { id: 'story-early-bird', name: 'Early Bird', how: 'Chapter 1: pass the faint light in Condor Rock’s west cliff.', glyph: 'moon', group: 'story', hidden: true, tier: 'silver' },
+
   /* ---- Milestones ---------------------------------------------------------*/
   { id: 'rank-pilot', name: 'Pilot', how: 'Reach the rank of Pilot.', glyph: 'seal', group: 'progress', tier: 'bronze' },
   { id: 'rank-captain', name: 'Captain', how: 'Reach the rank of Captain.', glyph: 'seal', group: 'progress', tier: 'silver' },

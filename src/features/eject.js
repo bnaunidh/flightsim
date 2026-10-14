@@ -344,6 +344,18 @@ function pressEject(sim) {
   return true;
 }
 
+/**
+ * The seat fires for you, no second press: for a feature that has wrecked the aeroplane under you
+ * (the Heat-Seeker disaster's big hit) and is not going to let anybody go down with it. False, and
+ * nothing happens, when you could not eject by hand either (on the ground, an airliner, too low):
+ * then it is a forced landing.
+ */
+export function ejectPilot(sim) {
+  if (!sim || cannotEject(sim)) return false;
+  ejectNow(sim, true);
+  return true;
+}
+
 /** Send the other crew out. */
 function crewOut(sim, prof) {
   const ac = sim.aircraft;

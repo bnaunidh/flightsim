@@ -145,6 +145,11 @@ export function noteRocketStart(sim) {
   note(sim, 'rocketStart', {});
 }
 
+/** src/story/director.js, when a chapter ends: { chapter, medal, style, secrets, files }. */
+export function noteStoryChapter(sim, payload) {
+  note(sim, 'storyChapter', payload || {});
+}
+
 /* ------------------------------------------------------------------ *
  * The plug-in
  * ------------------------------------------------------------------ */

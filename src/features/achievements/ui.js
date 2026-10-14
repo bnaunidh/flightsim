@@ -70,10 +70,11 @@ function el(tag, cls, html) {
   return e;
 }
 
-const GROUP_ORDER = ['flying', 'missions', 'games', 'multiplayer', 'afo', 'fun', 'progress'];
+const GROUP_ORDER = ['flying', 'missions', 'story', 'games', 'multiplayer', 'afo', 'fun', 'progress'];
 const GROUP_LABELS = {
   flying: 'Flying',
   missions: 'Missions',
+  story: 'Story — Signal Zero',
   games: 'The other games',
   multiplayer: 'Multiplayer',
   afo: 'Air Force One',

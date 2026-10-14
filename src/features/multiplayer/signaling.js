@@ -71,6 +71,38 @@ export function answerPayload({ sdp, connectionId, metadata }) {
   return p;
 }
 
+/** A timer that went off this much after it was due was held up by the tab itself — a long task, a frozen page. */
+export const LATE_MS = 250;
+/** ...and then waits this much longer, once, for whatever arrived meanwhile to be read. */
+export const LATE_GRACE_MS = 1500;
+
+/**
+ * setTimeout for a give-up timer, that does not give up on a tab's own stall.
+ *
+ * A join builds the lobby's island while its connection is being made
+ * (multiplayer.js joinLobby, 2026-10-12), and the build holds the main thread
+ * for its whole length — seconds, on a school Chromebook. The answer that
+ * arrives meanwhile waits in the queue; a timer due meanwhile fires as soon
+ * as the build is done, possibly ahead of it, and would call the try (or
+ * the claim's socket) dead with its answer sitting unread. So a timer that fires late gives the queue
+ * one more short wait first. `keep(t)` is told each timer id, for clearTimeout.
+ */
+export function lateAware(fn, ms, now = () => (globalThis.performance ? performance.now() : Date.now()), keep = () => {}) {
+  const due = now() + ms;
+  let graced = false;
+  const fire = () => {
+    if (!graced && now() - due > LATE_MS) {
+      graced = true;
+      keep(setTimeout(fire, LATE_GRACE_MS));
+      return;
+    }
+    fn();
+  };
+  const t = setTimeout(fire, ms);
+  keep(t);
+  return t;
+}
+
 export class Signaling {
   /**
    * @param backend  { url, key }
@@ -122,10 +154,13 @@ export class Signaling {
       };
       // Closed by us before the server answered: say so now, not when the nine-second timer runs out.
       this._abortOpen = () => settle(reject, new SignalError('closed', 'Closed before the signaling server answered'));
-      const timer = setTimeout(() => {
+      let timer = null;
+      lateAware(() => {
         settle(reject, new SignalError('timeout', 'The signaling server did not answer'));
         this._drop('timeout');
-      }, this.openTimeoutMs);
+      }, this.openTimeoutMs, undefined, (t) => {
+        timer = t;
+      });
 
       ws.onmessage = (e) => {
         let m;

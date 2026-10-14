@@ -233,7 +233,9 @@ export async function check(sim, r, say = () => {}) {
       A.at.vel = { x: sim.aircraft.vel.x, y: sim.aircraft.vel.y, z: sim.aircraft.vel.z };
     });
     fireShown = !document.querySelector('.pvp-fire').hidden;
-    reticle = !document.querySelector('.pvp-reticle').hidden;
+    // In an aeroplane the gunsight (src/features/gunsight.js) is the crosshair and the old PvP cross is stood down, so either one counts.
+    const gs = document.querySelector('.gsk-root:not([hidden]) .gsk-sight:not([hidden])');
+    reticle = !document.querySelector('.pvp-reticle').hidden || (sim.gunsightUp === true && !!gs);
     // Space, as a child would press it.
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true }));
     const shotsBefore = pvp.pvpDebug().stats.shots;
@@ -299,6 +301,65 @@ export async function check(sim, r, say = () => {}) {
     r.ok('mp part 2: tagged — held where it happened, the camera circling the puff, the aeroplane hidden; back three seconds later, higher, in a shield',
       !!downMe && heldStill && camOwned && modelHidden && sim.model.visible && aglAfter >= 250 && shielded && pvp.pvpDebug().stats.respawns >= 1,
       `held ${heldStill}, camera ${camOwned}, hidden ${modelHidden}; ${Math.round(aglBefore)} m → ${Math.round(aglAfter)} m above the ground; shield ${shielded}`);
+
+    /* ---- a heat-seeker at a friend: the PvP tag, judged by the host (src/features/heatseek.js) -------- */
+    {
+      const HSK = await import('../../src/features/heatseek.js');
+      const { AIRCRAFT } = await import('../../src/aircraft/types.js');
+      const hs = HSK.heatseek;
+      const realType = sim.aircraftType;
+      try {
+        // This lobby flies a Skylark; a heat-seeker needs a military jet. Lend the real F-22's numbers for the minute.
+        sim.aircraftType = AIRCRAFT.find((t) => t.id === 'f22');
+        await until(() => { sim.update(1 / 30); const a = PR.rowOf(A.ev.getState('pvp'), A.id); const me = PR.rowOf(A.ev.getState('pvp'), 0); return a && a.on && !a.down && !a.shield && me && me.on && !me.down && !me.shield; }, 14000, 50);
+        airborne(0, 0, 90, 600);
+        const ahead = (m) => {
+          const f = fwd();
+          const me = sim.aircraft.pos;
+          A.at.pos = { x: me.x + f.x * m, y: me.y + f.y * m, z: me.z + f.z * m };
+          A.at.vel = { x: sim.aircraft.vel.x, y: sim.aircraft.vel.y, z: sim.aircraft.vel.z };
+        };
+        let locked = false;
+        for (let i = 0; i < 120 && !locked; i++) {
+          ahead(1300);
+          sim.update(1 / 30);
+          await wait(16);
+          locked = hs.lock.locked && hs.lock.target && hs.lock.target.kind === 'player' && hs.lock.target.playerId === A.id;
+        }
+        r.ok('mp part 2: heat-seeker: with PvP on for both, a friend 1.3 km ahead is locked in a second or so — and listed as a target', locked, `lock ${hs.lock.target && hs.lock.target.kind}, ${hs.lock.progress.toFixed(2)}`);
+        const shot = hs.fire();
+        let down = null;
+        for (let i = 0; i < 400 && !down; i++) {
+          ahead(1300 - Math.min(1200, i * 18));
+          sim.update(1 / 30);
+          await wait(8);
+          down = A.heard.find((e) => e.kind === 'pvp:down' && e.data.t === A.id && e.data.how === 2);
+        }
+        const launched = A.heard.find((e) => e.kind === 'hs:launch' && e.data.t === A.id);
+        r.ok('mp part 2: heat-seeker: the missile goes — everybody hears the launch — and the host tags the friend out: pvp:down, how 2 (a missile), by me',
+          shot.ok && !!launched && !!down && down.data.by === 0 && B.heard.some((e) => e.kind === 'pvp:down' && e.data.how === 2), `fired ${shot.ok}, launch heard ${!!launched}, down ${down && JSON.stringify(down.data)}`);
+        r.ok('mp part 2: heat-seeker: one missile spent (MSL 2/3), a tag for me on the scoreboard, and the feed says whose missile hit whom — the pilot ejected',
+          hs.left === 2 && PR.rowOf(A.ev.getState('pvp'), 0).tags >= 2 && /missile hit/.test(shared.feedLines().join(' | ')) && /ejected/.test(shared.feedLines().join(' | ')), `${hs.label}; ${shared.feedLines().slice(-2).join(' | ')}`);
+        await frames(6);
+        // Switched off for the other one: PvP OFF can never be locked.
+        const bTargets = HSK.validTargets(sim, 0, []).filter((c) => c.playerId === B.id);
+        r.ok('mp part 2: heat-seeker: a friend with PvP OFF is never a target, however well placed', bTargets.length === 0, `${bTargets.length}`);
+        // Somebody else's missile at me: the lobby sees it, I am told, and a flare I drop is theirs to be fooled by.
+        const warn0 = hs.notes.length;
+        A.ev.send('hs:launch', { t: 0 });
+        await frames(6);
+        r.ok('mp part 2: heat-seeker: a friend\'s launch at me puts a missile in my sky (for show) and a warning on my screen', hs.liveMissiles((m) => m.owner === 'remote').length >= 1 && hs.notes.slice(warn0).some((n) => /MISSILE LAUNCH from Brave Otter/.test(n)), hs.notes.slice(-2).join(' | '));
+        const flaresBefore = hs.world.flares.length;
+        A.ev.send('hs:flare', {});
+        await frames(4);
+        r.ok('mp part 2: heat-seeker: their flares are drawn in my sky too', hs.world.flares.length >= flaresBefore + 2, `${flaresBefore} -> ${hs.world.flares.length}`);
+        hs.world.missiles.forEach((m) => m.dispose());
+      } catch (e) {
+        r.ok('mp part 2: heat-seeker: the section ran', false, String((e && e.stack) || e).slice(0, 300));
+      } finally {
+        sim.aircraftType = realType;
+      }
+    }
 
     /* ---- bumping ---------------------------------------------------------------------------------- */
     // Out of PvP's shield and the spawn one first.

@@ -43,6 +43,10 @@ import './rocket.js';
 // iconned like a console game's. After fun and rocket: it reads a liftoff,
 // a touchdown and a rocket launch, never changes them.
 import './achievements/index.js';
+// After achievements and meteor (it adapts the photo run and notes its medals):
+// STORY MODE — "Signal Zero", the Story card on every front page, save/continue,
+// the chapter runner on the mission runner, cutscenes, and chapter 1.
+import '../story/index.js';
 // List 2, multiplayer part 2: PvP, bumping, the Ring Rally and a world everybody shares.
 import './pvp.js';
 import './bump.js';
@@ -67,6 +71,13 @@ import '../game/roles/afo-president.js';
 import './events/afo-movie.js';
 // Seats: fly some missions from another aircraft in the story (the lead fighter in the hijacks).
 import './roles.js';
+// Heat-seeking missiles on the military jets (three, lock-on, flares, pylons you can see) and the
+// Heat-Seeker disaster. After pvp (the host judges a missile that hits a player), sky (the drones are
+// bodies in its list), eject (the seat that fires for you after a big hit) and the Air Force One drones.
+import './heatseek.js';
+import './heatseek-disaster.js';
+// The gunsight and the lock key: a ring and dot, range ticks, a lead pipper and a target box for the guns (and the same box for the missiles). After heatseek, whose lock it steers.
+import './gunsight.js';
 // The owner's hour: the fan on the main page, the code box and the chip (./owner.js; the pass itself is ./multiplayer/owner.js).
 import './owner.js';
 // The owner's toys, in the hour: the troll menu, the disaster trolls, teleport on the map and taking aircraft over (./owner/*.js).

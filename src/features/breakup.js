@@ -244,6 +244,8 @@ function typeOf(model, typeId) {
 function zonesOf(sim, model, type) {
   const skip = new Set();
   if (sim && sim.cockpit) skip.add(sim.cockpit);
+  // The heat-seekers on their pylons (src/features/heatseek.js) are hung on the model but are not airframe.
+  if (sim && sim.weaponsRig) skip.add(sim.weaponsRig);
   const survey = surveyModel(model, { skip });
   const config = model.userData && model.userData.fleetBridge ? model.userData.config : null;
   const t = type || typeOf(model) || getAircraft();

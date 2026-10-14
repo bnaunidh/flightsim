@@ -30,6 +30,13 @@
  * is started afresh first (sim.startMode, the same path as Restart), then
  * placed. Everybody else sees you flying it: your snapshot carries the type.
  * For non-owners the ordinary way stays the pilot job's "find another ride".
+ *
+ * ADMINS ("troll thing for admin") get the teleport — the map tap, the height
+ * picker, "Teleport them" — in a game where the host has checked their admin
+ * key, on plain players only: an admin never teleports the owner or another
+ * admin (common.js mayTroll, judged by the HOST on 'owner:tp'). TAKING OVER
+ * stays the owner's: no list, no button on the picker for an admin, and the
+ * host refuses 'owner:take' from anybody who is not the owner.
  */
 
 import { registerExtension, extLayer } from '../../game/extensions.js';
@@ -42,7 +49,7 @@ import { eject } from '../eject.js';
 import { onFoot } from '../onfoot.js';
 import { mp, ch, inGame, esc, feed, bigCard, who } from '../mpplay/shared.js';
 import { placeAircraft, clampAltFt, mapToWorld, clientToMap, mToFt, ftToM, MAX_ALT_FT } from './place.js';
-import { hostOwner, amOwnerInGame, placeOf, isId, num, now, showTag, injectOwnerStyle, OWNER_GOLD } from './common.js';
+import { hostOwner, hostMayTroll, amOwnerInGame, amStaffInGame, mayTroll, myRole, rosterRole, playerOf, byWho, placeOf, isId, num, now, showTag, injectOwnerStyle, OWNER_GOLD } from './common.js';
 
 export const TAKE_RANGE_M = 8000;
 export const PRESET_FT = Object.freeze([0, 1000, 5000, 10000, 25000, 50000]);
@@ -71,6 +78,7 @@ const CSS = `
   font: 12px var(--font, system-ui, sans-serif); color: var(--text-dim, #9fb2cc); }
 .owner-tools button { border-radius: 99px; background: rgba(12, 20, 34, 0.92); border-color: rgba(255, 210, 63, 0.6); font-weight: 650; }
 .owner-tools .owner-tools-hint { background: rgba(12, 20, 34, 0.7); padding: 4px 9px; border-radius: 99px; white-space: nowrap; }
+.owner-tools[data-staff="admin"] { left: 50%; transform: translateX(-50%); }
 :root.is-touch-device .owner-tools { top: max(8px, env(safe-area-inset-top)); bottom: auto; }
 :root.is-touch-device .owner-tools .owner-tools-hint { display: none; }
 `;
@@ -112,7 +120,8 @@ ch.define('owner:take', { validate: cleanTake, rate: 1 });
 ch.define('owner:took', { from: 'host', validate: cleanTook, rate: 2 });
 
 ch.on('owner:tp', (d, from, meta) => {
-  if (!ch.isHost || !meta || !meta.toHost || !from || !hostOwner(from.id)) return;
+  // The owner, or an admin on a plain player: the host's own reading of both (hostMayTroll), never the asker's word.
+  if (!ch.isHost || !meta || !meta.toHost || !from || !hostMayTroll(from.id, d.t)) return;
   if (!ch.players().some((p) => p.id === d.t)) return;
   ch.send('owner:tpgo', { ...d, by: from.id }, { self: true });
 });
@@ -126,8 +135,8 @@ ch.on('owner:tpgo', (d, from) => {
   if (!me) return;
   const done = placeAircraft(sim, { x: d.x, z: d.z, y: d.y, headingDeg: me.heading, speed: me.speed, ground: d.y <= 0 });
   if (!done) return;
-  showTag(`teleported by ${who(d.by).name}`, 3);
-  bigCard('WHOOSH', `the owner teleported you${done.ground ? ' — to the ground' : ` — ${Math.round(mToFt(done.y)).toLocaleString('en-GB')} ft`}`, 1.8);
+  showTag(`teleported by ${who(d.by).name}`, 3, d.by);
+  bigCard('WHOOSH', `${byWho(d.by)} teleported you${done.ground ? ' — to the ground' : ` — ${Math.round(mToFt(done.y)).toLocaleString('en-GB')} ft`}`, 1.8);
 });
 
 ch.on('owner:take', (d, from, meta) => {
@@ -155,6 +164,11 @@ ch.on('owner:took', (d, from) => {
  */
 export function ownerOn(sim, states = ['flying', 'paused']) {
   return !!((owner.active || amOwnerInGame()) && sim && sim.aircraft && sim.mode !== 'drive' && states.includes(sim.state));
+}
+
+/** The owner's tools, or an admin's (a game, the host has checked the key): the map tap and the picker. Take over is ownerOn's alone. */
+export function staffOn(sim, states = ['flying', 'paused']) {
+  return ownerOn(sim, states) || !!(amStaffInGame() && sim && sim.aircraft && sim.mode !== 'drive' && states.includes(sim.state));
 }
 
 /* ---- the aircraft that can be taken ---------------------------------------------------------- */
@@ -321,7 +335,7 @@ export function craftAtMap(sim, g, px, py) {
 function onPointer(e) {
   const sim = T.sim;
   const mm = sim && sim.minimap;
-  if (!mm || !mm.canvas || !ownerOn(sim)) return;
+  if (!mm || !mm.canvas || !staffOn(sim)) return;
   const t = e.target;
   if (t !== mm.canvas && !(mm.el && mm.el.contains(t))) return;
   if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -434,7 +448,7 @@ function openPicker(sim) {
   const dz = me ? tap.z - me.z : 0;
   el.querySelector('[data-tp-at]').textContent = `${me ? `${(Math.hypot(dx, dz) / 1000).toFixed(1)} km ${compass(dx, dz)} of you` : 'there'}${tap.craft ? ` — ${tap.craft.name} is there` : ''}`;
   const take = el.querySelector('[data-tp-take]');
-  take.hidden = !tap.craft || tap.forId != null;
+  take.hidden = !tap.craft || tap.forId != null || !ownerOn(sim);
   if (tap.craft) take.textContent = `✈ Take over ${tap.craft.name}`;
   setFt(startFt);
   // Beside the map, inside the screen: the map sits in a corner, so the picker goes towards the middle from it.
@@ -462,7 +476,7 @@ function go(sim) {
   closePicker();
   if (tap.forId != null) {
     T.armed = null;
-    if (!amOwnerInGame()) return false;
+    if (!amStaffInGame() || !mayTroll(myRole(), rosterRole(playerOf(tap.forId)))) return false;
     T.stats.sentTp++;
     feed(`🗺 Teleporting <b>${esc(tap.forName)}</b> — ${esc(ftText(tap.ft || 0))}`, OWNER_GOLD);
     return ch.toHost('owner:tp', { t: tap.forId, x: tap.x, y, z: tap.z });
@@ -550,7 +564,7 @@ function syncTools(sim) {
   const t = now();
   if (t - T.toolsAt < 1000) return;
   T.toolsAt = t;
-  const on = ownerOn(sim, ['flying', 'paused', 'debrief']);
+  const on = staffOn(sim, ['flying', 'paused', 'debrief']);
   mapTakesTaps(sim, on);
   if (!on) {
     if (T.tools && !T.tools.hidden) {
@@ -561,7 +575,13 @@ function syncTools(sim) {
     return;
   }
   const el = buildTools();
-  const n = candidates(sim).length;
+  // Take over is the owner's: an admin's bar is the map hint alone (and there is no owner chip beside it to make room for).
+  const canTake = ownerOn(sim, ['flying', 'paused', 'debrief']);
+  el.dataset.staff = canTake ? 'owner' : 'admin';
+  const takeBtn = el.querySelector('[data-owner-take-list]');
+  if (takeBtn.hidden === canTake) takeBtn.hidden = !canTake;
+  if (!canTake && T.list && !T.list.hidden) T.list.hidden = true;
+  const n = canTake ? candidates(sim).length : 0;
   const span = el.querySelector('[data-take-n]');
   const text = n ? `(${n})` : '';
   if (span.textContent !== text) span.textContent = text;
@@ -592,7 +612,7 @@ registerExtension({
   },
   update(sim) {
     T.sim = sim;
-    if (owner.active || (T.tools && !T.tools.hidden)) syncTools(sim);
+    if (owner.active || amStaffInGame() || (T.tools && !T.tools.hidden)) syncTools(sim);
   },
   stop(sim, why) {
     if (why === 'airport') return;

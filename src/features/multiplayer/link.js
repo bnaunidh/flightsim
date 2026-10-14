@@ -67,7 +67,7 @@
  * child can act on when it still fails.
  */
 
-import { offerPayload, answerPayload } from './signaling.js';
+import { offerPayload, answerPayload, lateAware } from './signaling.js';
 import { PROTO, readEvent, writeEvent } from './protocol.js';
 
 /** STUN, for a join by code: Google's and Cloudflare's, either of which a school may block. One entry, so one list of addresses to ask. */
@@ -220,9 +220,13 @@ export class Link {
     pc.onconnectionstatechange = watch;
     pc.oniceconnectionstatechange = watch;
     // Not open in fifteen seconds is not going to open — or in twenty-five, between two networks.
-    this._timer = setTimeout(() => {
-      if (this.state !== 'open') this.close('timeout');
-    }, this.share === 'v4' ? Math.max(this.net.connectTimeoutMs, this.net.codeConnectMs) : this.net.connectTimeoutMs);
+    // A lobby's join says its own (lobby.js): a stuck try is given up sooner, and the lobby asks again at once.
+    // Only for a link we start: an accepted one's meta came off the wire.
+    const own = this.initiator ? Math.min(60000, Number(this.meta && this.meta.connectMs) || 0) : 0;
+    const ms = own > 0 ? own : this.share === 'v4' ? Math.max(this.net.connectTimeoutMs, this.net.codeConnectMs) : this.net.connectTimeoutMs;
+    this._timer = lateAware(() => this.state !== 'open' && this.close('timeout'), ms, this.net.now, (t) => {
+      this._timer = t;
+    });
   }
 
   async start() {

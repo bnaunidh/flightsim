@@ -35,6 +35,8 @@ const NOT_ROCKET = ['plane', 'heli', 'boat', 'car', 'foot', 'chute'];
 export const GROUPS = [
   { id: 'Flying', ctx: 'plane' },
   { id: 'Autopilot', ctx: 'plane' },
+  // The military jets' heat-seekers and flares (src/features/heatseek.js).
+  { id: 'Weapons', ctx: 'plane' },
   { id: 'Helicopter', ctx: 'heli' },
   { id: 'Boat', ctx: 'boat' },
   { id: 'Car', ctx: 'car' },

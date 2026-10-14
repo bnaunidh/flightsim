@@ -875,11 +875,15 @@ const DENY = {
 };
 
 export class ClientSession {
-  constructor({ net, target, profile, onEvent, now = nowMs, seat = null, relayOnly = false, admin = null, owner = null }) {
+  constructor({ net, target, profile, onEvent, now = nowMs, seat = null, relayOnly = false, admin = null, owner = null, connectMs = 0, onPhase = null }) {
     this.net = net;
     this.target = target;
     /** A second try at a join by code, through a relay only (link.js, RELAY_SERVERS). */
     this.relayOnly = !!relayOnly;
+    /** How long this try may take to connect, if not the Net's own (a lobby's join, lobby.js); 0 for the Net's. */
+    this.connectMs = connectMs;
+    /** How far the join has got, for the progress line (joinflow.js): 'syncing' once the line to the host is open. */
+    this.onPhase = onPhase;
     this.profile = profile;
     this.seat = seat;
     this.rank = null;
@@ -910,9 +914,11 @@ export class ClientSession {
     return new Promise((resolve, reject) => {
       this._resolve = resolve;
       this._reject = reject;
-      const link = this.net.connect(this.target, 'join', this.relayOnly ? { relayOnly: true } : undefined);
+      const meta = this.relayOnly || this.connectMs ? { relayOnly: this.relayOnly || undefined, connectMs: this.connectMs || undefined } : undefined;
+      const link = this.net.connect(this.target, 'join', meta);
       this.link = link;
       link.onopen = () => {
+        if (this.onPhase) this.onPhase('syncing');
         link.send({
           t: 'hello', v: PROTO, name: this.profile.name, colour: this.profile.colour, key: this.profile.key, seat: this.seat || undefined,
           // An admin (or the owner) says so, and is asked to prove it (HostSession._ask).

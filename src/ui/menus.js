@@ -1241,6 +1241,10 @@ export class Menus {
             <span><strong>Randomised disasters</strong>
             <em>Things go wrong on their own, at times you will not see coming. Bad weather makes them
             more likely — a storm is when an aeroplane is most likely to have a bad day.</em></span></label>
+          <label class="check check-wide"><input type="checkbox" data-practice-targets>
+            <span><strong>Practice target drones</strong>
+            <em>Three orange, unmanned target drones circle ahead of you from the start — something for a military
+            jet's three heat-seeking missiles to lock on and hit. Only drones are ever targets.</em></span></label>
         </div>
 
         <div class="free-slots">
@@ -1424,6 +1428,8 @@ export class Menus {
         // -1 means "let it choose", which is why this is null rather than 0.
         tornadoEF: efRaw < 0 ? null : efRaw,
         randomDisasters: s.querySelector('[data-random-disasters]').checked,
+        // Heat-seekers' practice drones (src/features/heatseek.js reads it from the start options).
+        practiceTargets: !!(s.querySelector('[data-practice-targets]') || {}).checked,
         time: time.value,
         condition: cond.value,
         windSpeedKts: Number(wind.value),
@@ -1450,6 +1456,8 @@ export class Menus {
         n.classList.toggle('is-on', n.dataset.start === this.chosenStart));
       s.querySelector('[data-fuel]').value = Math.round((c.fuel ?? 1) * 100);
       s.querySelector('[data-random-disasters]').checked = !!c.randomDisasters;
+      const pt = s.querySelector('[data-practice-targets]');
+      if (pt) pt.checked = !!c.practiceTargets;
       const ef = s.querySelector('[data-ef]');
       if (ef) {
         ef.value = c.tornadoEF == null ? -1 : c.tornadoEF;

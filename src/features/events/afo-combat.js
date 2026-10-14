@@ -184,6 +184,13 @@ export class Drone {
         self.alive = false;
         explode(sim, self.pos, { kind: 'airburst', size: 0.9 });
       },
+      // A heat-seeking missile (src/features/heatseek.js): the same airburst, and it counts as shot down.
+      shot: (sim) => {
+        if (!self.alive) return;
+        self.alive = false;
+        if (self.field) self.field.stats.shotDrones++;
+        explode(sim, self.pos, { kind: 'airburst', size: 0.9 });
+      },
       get heading() {
         return headingOf(self.vel);
       },
@@ -411,7 +418,11 @@ export class AttackField {
 
   /** Bring on a wave of drones at these positions (world space). */
   spawnWave(positions, opts) {
-    for (const p of positions) this.drones.push(new Drone(this.scene, p, opts));
+    for (const p of positions) {
+      const d = new Drone(this.scene, p, opts);
+      d.field = this;
+      this.drones.push(d);
+    }
   }
 
   // Plain loops, not .filter(...).length — read every frame by the HUD and

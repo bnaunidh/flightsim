@@ -45,6 +45,8 @@ import { heightAt } from '../world/terrain.js';
 import { performanceFor } from '../aircraft/types.js';
 import * as R from './pvp/rules.js';
 import { FlashGate, screenOpacity } from '../render/flash-safety.js';
+import { explode } from './explosions.js';
+import { dropCrewAt } from './sky.js';
 import { mp, ch, ride, forwardOf, inGame, who, esc, blip, toon, chip, bigCard, feed, ghost, ghostReasons, injectStyle } from './mpplay/shared.js';
 
 export const FIRE_HZ = 8;
@@ -55,6 +57,7 @@ ch.define('pvp:want', { validate: R.cleanWant, rate: 1 });
 ch.define('pvp:fire', { validate: R.cleanFire, rate: 4 });
 ch.define('pvp:hit', { validate: R.cleanHit, rate: 12 });
 ch.define('pvp:ram', { validate: R.cleanRam, rate: 2 });
+ch.define('pvp:msl', { validate: R.cleanMsl, rate: 3 });
 ch.define('pvp:ouch', { from: 'host', validate: R.cleanOuch, rate: 60 });
 ch.define('pvp:down', { from: 'host', validate: R.cleanDown, rate: 20 });
 ch.define('pvp', { from: 'host', validate: R.cleanState });
@@ -169,6 +172,23 @@ ch.on('pvp:hit', (d, from, meta) => {
   if (!r.ok) return;
   if (r.down) ch.send('pvp:down', { t: d.t, by: from.id, how: 0 }, { self: true });
   else ch.send('pvp:ouch', { t: d.t, by: from.id, hp: r.hp }, { self: true });
+  publish(true);
+});
+// A heat-seeker (src/features/heatseek.js) that went off beside a player: the shooter's claim, the host's word.
+ch.on('pvp:msl', (d, from, meta) => {
+  if (!ch.isHost || !meta || !meta.toHost || !P.judge) return;
+  if (isGhostNow(d.t)) {
+    P.judge._refuse('target is safe (ground, spawn or race)');
+    return;
+  }
+  const shooter = ch.players().find((p) => p.id === from.id);
+  if (shooter && shooter.frozen) {
+    P.judge._refuse('shooter is frozen by an admin');
+    return;
+  }
+  const r = P.judge.missile(from.id, d.t, distance(from.id, d.t), now());
+  if (!r.ok) return;
+  ch.send('pvp:down', { t: d.t, by: from.id, how: 2 }, { self: true });
   publish(true);
 });
 ch.on('pvp:ram', (d, from, meta) => {
@@ -320,17 +340,27 @@ function onDown(d) {
   const by = d.by >= 0 ? who(d.by) : null;
   if (pos) {
     const c = pos.clone ? pos.clone() : new THREE.Vector3(pos.x, pos.y, pos.z);
-    toon.puff(c, '#ffffff', { n: 10, size: 9, spread: 14, life: 1.6, up: 3 });
-    toon.puff(c, by ? by.colour : t.colour, { n: 8, size: 6, spread: 10, life: 1.3, up: 2 });
-    toon.starBurst(c, 7, 12);
-    if (P.sim) toon.word(d.how === 1 ? 'BONK!' : 'POOF!', c, P.sim.camera, 1.2);
+    if (d.how === 2) {
+      // A heat-seeker: the game's own airburst (Reduce flashing and all), and the pilot out under a parachute.
+      if (P.sim) {
+        explode(P.sim, c, { kind: 'airburst', size: 0.8 });
+        dropCrewAt(P.sim, { pos: c, heading: 0, crew: 1, uniform: 'fighter' });
+      }
+      toon.puff(c, by ? by.colour : t.colour, { n: 6, size: 6, spread: 10, life: 1.3, up: 2 });
+    } else {
+      toon.puff(c, '#ffffff', { n: 10, size: 9, spread: 14, life: 1.6, up: 3 });
+      toon.puff(c, by ? by.colour : t.colour, { n: 8, size: 6, spread: 10, life: 1.3, up: 2 });
+      toon.starBurst(c, 7, 12);
+      if (P.sim) toon.word(d.how === 1 ? 'BONK!' : 'POOF!', c, P.sim.camera, 1.2);
+    }
   }
-  if (by) feed(`<b>${esc(by.name)}</b> tagged <b>${esc(t.name)}</b>`, by.colour);
+  if (by && d.how === 2) feed(`<b>${esc(by.name)}</b>'s missile hit <b>${esc(t.name)}</b> — the pilot ejected`, by.colour);
+  else if (by) feed(`<b>${esc(by.name)}</b> tagged <b>${esc(t.name)}</b>`, by.colour);
   else feed(`<b>${esc(t.name)}</b> crashed out — bumped in PvP`, t.colour);
   if (d.t === mp.meId) startDown(d, by);
   else if (d.by === mp.meId) {
     P.stats.tagsByMe++;
-    bigCard('TAGGED!', `You tagged ${t.name}! +1`, 1.8);
+    bigCard(d.how === 2 ? 'MISSILE HIT!' : 'TAGGED!', `You tagged ${t.name}! +1`, 1.8);
     blip(P.sim, 'pop');
   }
 }
@@ -348,7 +378,7 @@ function startDown(d, by) {
     agl: r.kind === 'air' ? Math.max(0, r.pos.y - Math.max(0, heightAt(r.pos.x, r.pos.z))) : 0, spin: 0, left: 3,
   };
   if (r.model) r.model.visible = false;
-  bigCard(d.how === 1 ? 'BONK!' : 'TAGGED!', by ? `${by.name} got you — back in 3…` : 'You crashed into each other — back in 3…', 2.9);
+  bigCard(d.how === 1 ? 'BONK!' : d.how === 2 ? 'MISSILE HIT!' : 'TAGGED!', d.how === 2 && by ? `${by.name}'s missile got you — your pilot ejected safely — back in 3…` : by ? `${by.name} got you — back in 3…` : 'You crashed into each other — back in 3…', 2.9);
   blip(sim, 'pop');
 }
 
@@ -379,7 +409,7 @@ function holdDown(sim) {
   const left = Math.max(1, Math.ceil((D.until - now()) / 1000));
   if (left !== D.left) {
     D.left = left;
-    bigCard(D.how === 1 ? 'BONK!' : 'TAGGED!', `Back in ${left}…`, 1.2);
+    bigCard(D.how === 1 ? 'BONK!' : D.how === 2 ? 'MISSILE HIT!' : 'TAGGED!', `Back in ${left}…`, 1.2);
   }
 }
 
@@ -677,7 +707,8 @@ const TO = new THREE.Vector3();
 function drawReticle(sim, r, on) {
   const e = els();
   if (!e) return;
-  const show = on && r && sim.camera && !(sim.hud && sim.hud.hidden) && !P.down;
+  // In an aeroplane the gunsight (./gunsight.js) is the crosshair: a ring and dot with a lead pipper, not two sights at once.
+  const show = on && r && sim.camera && !(sim.hud && sim.hud.hidden) && !P.down && !sim.gunsightUp;
   if (!show) {
     if (!e.reticle.hidden) e.reticle.hidden = true;
     return;

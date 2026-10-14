@@ -68,12 +68,15 @@ file on first load, so even without installing, a second visit works offline.
 | Change camera | `C` |
 | Look behind | `B` (hold) |
 | Release cargo | `X` |
+| Fire a heat-seeker (military jets, once locked) | `\` |
+| Lock on: pick the next target in front (guns and missiles) | `Home` |
+| Drop flares (military jets; everyone in the Heat-Seeker disaster) | `4` |
 | Show controls | `H` |
 | Mute | `M` |
 | Pause | `Esc` |
 
 Every key can be reassigned in **Settings → Controls** — in every game, not
-just the aeroplane: one fold per game (Flying, Helicopter, Boat, Car, Rocket,
+just the aeroplane: one fold per game (Flying, Weapons, Helicopter, Boat, Car, Rocket,
 On foot, Multiplayer & PvP, Fun Stuff, Missions & events, View, Game), the one
 you are playing first. Click a key, press the new one (Esc cancels); a key that
 already does something in the same game asks "swap them?". Each fold has its
@@ -89,6 +92,15 @@ fly slowly on the approach.
 
 ## What is in the game
 
+- **Story — Signal Zero** — a 12-chapter story across every vehicle, from the
+  Story card on any game's front page. Chapter 1, *The Glint*: race a rival
+  through a midnight squall to photograph a fireball off Condor Rock, then land
+  on the clifftop strip. It autosaves at every checkpoint, so you can leave
+  whenever you like and **Continue** picks up exactly there with a "previously
+  on…". A first-timer gets three one-line flying prompts (power, nose,
+  bank) in the first minute; "I know how to fly" skips them.
+  Voices are text and subtitles; cutscenes are short and skippable;
+  Reduce flashing is respected. Chapters 2–12 arrive in later updates.
 - **Tutorial** — nine guided steps from starting the engine to landing.
 - **Island Circuit** — take off, fly five checkpoint rings, land.
 - **Mango Cay Delivery** — carry supplies 8 km, parachute them onto a target, come home.
@@ -98,6 +110,48 @@ fly slowly on the approach.
 Weather covers midday / sunset / night crossed with clear / cloudy / rainy /
 stormy, with adjustable wind speed and direction, real crosswind effects,
 turbulence, gusts, drifting clouds and lightning.
+
+**Heat-seeking missiles** — every military jet (the Vanguard, Osprey, Nightjar,
+F-22, F-35B and F/A-18; not airliners, trainers or helicopters) carries exactly
+three, hung where you can see them under the wings and belly, and the screen
+says `MSL 3/3`. A ring ahead of the nose is the seeker, about 20 degrees across:
+hold a drone in it for a second and the box closes and turns red, then fire
+(`\`, or the FIRE MSL button on a touch screen). The missile burns for a moment,
+coasts on a white trail and steers by proportional navigation, so it flies to
+where the target will be — and it can be beaten by flares or by a hard turn at
+short range. Land and stop at an airbase or a carrier (or start a new flight)
+and the three come back. Targets are drones only: the drones of Air Force One -
+Under Attack, orange practice drones (the pause menu's Targets, or a tick on the
+Free Flight screen), and another player's aeroplane only when PvP is on for you
+both. Never civilian traffic, airliners or Air Force One.
+
+**The gunsight and the lock key** — a military jet (or any aeroplane while PvP is
+on for you) has a clean sight where the nose points: a dot inside a ring, with
+twelve range ticks that light up as a locked target comes into the gun's reach
+(all twelve means in range). Press `Home` (the LOCK button on a touch screen) and
+it takes the next target in front of you, nearest the nose first — a drone, a
+practice drone, a meteor, or another player with PvP on, never civilian traffic or
+Air Force One — and lets go after the last. The target gets a box with its range
+(an arrow round the middle of the screen when it is off the screen) and a **lead
+pipper**: where the nose has to point, counting the pellet's speed, your own speed
+and the target's, for a burst to meet it. Put the dot on the pipper and fire. The
+same box serves the heat-seekers: a drone you locked is the only one the seeker
+works on, and the box goes yellow, then red. No guns, no sight.
+
+**Meteors need guns** — only a plane with guns can zap a meteor (`Z`, or ZAP): the
+military jets. In a Courier, a trainer, an airliner or a helicopter the zap says
+"You need a plane with guns to shoot meteors." Meteor Shower and Guard the Town
+hand you the Osprey, a carrier jet that has them; Rock Dodger (you dodge) and the
+photo run (the Tempest, a camera plane) are as they were.
+
+**The Heat-Seeker disaster** (Free Flight: arm it before departure or set it off
+from the pause menu's Disasters — never random) — for a minute or so unmanned
+launchers fire heat-seeking missiles at you, one or two at a time. You get
+"MISSILE LAUNCH — break left and pop flares", an arrow on the screen pointing at
+each missile, and eight pairs of flares in any aircraft (`4`, or the FLARES
+button). Pop them when the missile is close and break hard. A hit damages the
+nearest part of the aircraft; a big one means eject or a forced landing. Nobody
+is ever hurt.
 
 Two flight models: **simplified** (the aeroplane levels its wings, holds its
 height, coordinates the rudder and refuses to stall) and **realistic** (all of

@@ -20,6 +20,8 @@ import { check as events } from './events.browser.js';
 import { check as airliners } from './airliners.browser.js';
 import { check as afo } from './afo.browser.js';
 import { check as afoPresident } from './afo-president.browser.js';
+import { check as heatSeekers } from './heat-seekers.browser.js';
+import { check as gunsight } from './gunsight.browser.js';
 import { check as fighters } from './fighters.browser.js';
 import { check as fire } from './fire.browser.js';
 import { check as fun } from './fun.browser.js';
@@ -30,10 +32,12 @@ import { check as menus } from './menus.browser.js';
 import { check as multiplayer } from './multiplayer.browser.js';
 import { check as multiplayerList2 } from './multiplayer-list2.browser.js';
 import { check as multiplayerList3 } from './multiplayer-list3.browser.js';
+import { check as multiplayerJoin } from './multiplayer-join.browser.js';
 import { check as multiplayerPart2 } from './multiplayer-part2.browser.js';
 import { check as multiplayerPlane } from './multiplayer-plane.browser.js';
 import { check as owner } from './owner.browser.js';
 import { check as ownerTrolls } from './owner-trolls.browser.js';
+import { check as adminTrolls } from './admin-trolls.browser.js';
 import { check as onfoot } from './onfoot.browser.js';
 import { check as pilot } from './pilot.browser.js';
 import { check as quality } from './quality.browser.js';
@@ -49,6 +53,7 @@ import { check as flicker } from './flicker.browser.js';
 import { check as achievements } from './achievements.browser.js';
 import { check as worldScale } from './world-scale.browser.js';
 import { check as mapsKitB } from './maps-kit-b.browser.js';
+import { check as story } from './story.browser.js';
 
 export const CHECKS = [
   { id: 'airport', check: airport },
@@ -66,6 +71,10 @@ export const CHECKS = [
   { id: 'afo', check: afo },
   // After afo: the third seat (the President), walking its own small cabin.
   { id: 'afo-president', check: afoPresident },
+  // After afo: three heat-seekers on the military jets (the escort seat's drones are targets), and the Heat-Seeker disaster.
+  { id: 'heat-seekers', check: heatSeekers },
+  // After heat-seekers: the gunsight and the lock key (the same box, the same targets), and the meteor zapper that needs a plane with guns.
+  { id: 'gunsight', check: gunsight },
   { id: 'fire', check: fire },
   { id: 'fun', check: fun },
   { id: 'instruments', check: instruments },
@@ -88,6 +97,7 @@ export const CHECKS = [
   { id: 'multiplayer', check: multiplayer },
   { id: 'multiplayer-list2', check: multiplayerList2 },
   { id: 'multiplayer-list3', check: multiplayerList3 },
+  { id: 'multiplayer-join', check: multiplayerJoin },
   // After list3: the plane picked in the Hangar is the one flown in a lobby, over a ride saved on the lobby screen (v56).
   { id: 'multiplayer-plane', check: multiplayerPlane },
   { id: 'aircrew', check: aircrew },
@@ -98,12 +108,17 @@ export const CHECKS = [
   { id: 'owner', check: owner },
   // After owner: the owner's toys — the troll menu, the disaster trolls, teleport and take over (a private match in this tab).
   { id: 'owner-trolls', check: ownerTrolls },
+  // "troll thing for admin": the same toys for an admin, never on the owner or another admin.
+  { id: 'admin-trolls', check: adminTrolls },
   { id: 'races', check: races },
   { id: 'air-fuel', check: airFuel },
   // The owner's "graphic errors that can cause seziure": the screen measured at the worst places, and Reduce flashing.
   { id: 'flicker', check: flicker },
   // Replaces the sticker book fun.js used to carry.
   { id: 'achievements', check: achievements },
+  // After achievements (it notes the story's medals): STORY MODE — the Story card, chapter 1
+  // played to the end by a scripted pilot, and leave-then-Continue at a checkpoint.
+  { id: 'story', check: story },
   // After everything that flies: KIT-B — where a Free Flight starts (the picker), the ambient
   // population and the emergency scene, on Gateway and The Big Burn.
   { id: 'maps-kit-b', check: mapsKitB },

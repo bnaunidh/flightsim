@@ -25,9 +25,20 @@
  *   wildfire     a fire is lit on the land under their path every fifteen
  *                seconds (on the nearest land if they are over the sea).
  *
- * IT IS THE SHARED WORLD'S. Exactly as ../mpworld.js does it: the owner asks
- * the host ('owner:dis'); the host checks for itself that the asker is the
- * owner (the pass, session.js isOwner), caps it (one per target — a new one
+ * ADMINS TOO ("troll thing for admin"). An admin (the host checked the admin
+ * key) sends them on plain players, with the same durations, the same caps
+ * and the same STOP NOW — and never on the owner or on another admin (common.js
+ * mayTroll; only the owner sends one at an admin). The owner always wins a
+ * clash: an admin cannot replace a disaster the owner has running on a
+ * player, cannot stop one of the owner's, and cannot take the last of the
+ * three places in the game (they get two between them); and the host ends a
+ * disaster by itself when whoever sent it has left or lost their powers (the
+ * owner's hour is up), so "until I stop it" never runs with nobody to stop it.
+ *
+ * IT IS THE SHARED WORLD'S. Exactly as ../mpworld.js does it: the owner (or an
+ * admin) asks the host ('owner:dis'); the host checks for itself who is asking
+ * and whom (the pass, session.js isOwner, or the admin key it checked at the
+ * door; common.js hostMayTroll), caps it (one per target — a new one
  * replaces the old —, three in the game at once), and tells everybody
  * ('owner:disgo'); every copy starts the disaster itself, from the game's own
  * code, so it is on every screen. The HOST runs the hunting: where its tornado
@@ -52,7 +63,7 @@ import { startWildfireAt } from '../wildfire-disaster.js';
 import { wildfireDebug } from '../wildfire.js';
 import { heightAt } from '../../world/terrain.js';
 import { mp, ch, ride, inGame, who, esc, feed } from '../mpplay/shared.js';
-import { hostOwner, amOwnerInGame, placeOf, nameOf, isId, num, now, showTag, tellWait, OWNER_GOLD } from './common.js';
+import { hostRole, hostMayTroll, ROLE_RANK, amStaffInGame, mayTroll, myRole, playerOf, rosterRole, byWho, placeOf, nameOf, isId, num, now, showTag, tellWait, OWNER_GOLD } from './common.js';
 import { Bolts } from './fx.js';
 
 /** The duration buttons: seconds, 0 for "until I stop it". The slider runs MIN_S..MAX_S. */
@@ -72,6 +83,10 @@ export const METEOR_EVERY_S = [3, 5];
 export const IGNITE_EVERY_S = 15;
 /** The host says where its hunt is this often. */
 export const AT_EVERY_MS = 500;
+/** Places in the game an admin can hold between them: the owner keeps the last one. */
+export const ADMIN_CAP = GLOBAL_CAP - 1;
+/** The host looks at who sent what it runs this often (the sender left, or lost their powers). */
+export const SWEEP_EVERY_MS = 1000;
 /** The ones that hunt the target; everything else is weather, everywhere. */
 export const HUNTERS = Object.freeze(['tornado', 'lightning', 'meteors', 'wildfire']);
 
@@ -138,29 +153,54 @@ ch.define('owner:disat', { from: 'host', validate: cleanAt, rate: 8 });
  * the node test can run it with its own clock and no game.
  */
 export class DisasterDesk {
-  constructor(clock = now, { cap = GLOBAL_CAP } = {}) {
+  constructor(clock = now, { cap = GLOBAL_CAP, adminCap = cap - 1 } = {}) {
     this.now = clock;
     this.cap = cap;
+    /** How many an admin's can fill: the owner's rank (2) gets all of `cap`, an admin's (1) gets `adminCap`. */
+    this.adminCap = adminCap;
     this.seq = 0;
     this.running = new Map();
   }
 
-  /** The owner asks: { ok, n, replaced } or { ok: false, why: 'cap' }. */
-  ask({ id, t, s, by }, t0 = this.now()) {
+  /**
+   * The owner or an admin asks (`rank`: 2 the owner, 1 an admin): { ok, n,
+   * replaced } or { ok: false, why }. why 'cap': the game is full (for an
+   * admin, full to `adminCap`, which leaves the owner a place); why 'held': a
+   * player who has a bigger name's disaster on them cannot have it replaced.
+   */
+  ask({ id, t, s, by, rank = 2 }, t0 = this.now()) {
     const old = [...this.running.values()].find((r) => r.t === t);
-    if (!old && this.running.size >= this.cap) return { ok: false, why: 'cap' };
+    if (old && (old.rank || 2) > rank) return { ok: false, why: 'held' };
+    // Replacing one needs no new place; a new target needs one — and an admin cannot take the last (the owner's).
+    if (!old && this.running.size >= (rank >= 2 ? this.cap : this.adminCap)) return { ok: false, why: 'cap' };
     if (old) this.running.delete(old.n);
     const n = ++this.seq;
     const life = s || UNTIL_STOPPED_S;
-    this.running.set(n, { n, id, t, s, by, at: t0, until: t0 + life * 1000 });
+    this.running.set(n, { n, id, t, s, by, rank, at: t0, until: t0 + life * 1000 });
     return { ok: true, n, replaced: old ? old.n : 0 };
   }
 
-  /** STOP NOW (n) or STOP ALL by `by` (n = 0): the ones ended. */
-  stop(n, by) {
+  /**
+   * STOP NOW (n) or STOP ALL by `by` (n = 0): the ones ended. A disaster is
+   * stopped by whoever sent it, or by someone of at least its sender's rank
+   * (the owner stops any; an admin cannot stop the owner's).
+   */
+  stop(n, by, rank = 2) {
     const out = [];
     for (const r of [...this.running.values()]) {
-      if ((n === 0 && r.by === by) || r.n === n) {
+      if ((n === 0 && r.by === by) || (r.n === n && (r.by === by || rank >= (r.rank || 2)))) {
+        this.running.delete(r.n);
+        out.push(r.n);
+      }
+    }
+    return out;
+  }
+
+  /** The ones whose sender is not `valid` any more (left, or lost their powers) — skipping any marked `kept` — ended and returned. */
+  sweep(valid) {
+    const out = [];
+    for (const r of [...this.running.values()]) {
+      if (!r.kept && !valid(r.by)) {
         this.running.delete(r.n);
         out.push(r.n);
       }
@@ -194,6 +234,7 @@ const D = {
   group: null,
   bolts: null,
   desk: new DisasterDesk(),
+  sweepAt: 0,
   /** Every running disaster this copy knows of: n → inst. */
   active: new Map(),
   stats: { asked: 0, started: 0, refused: 0, stopped: 0, ended: 0, in: 0, applied: 0, strikes: 0, hits: 0, meteors: 0, ignites: 0, at: 0, atSent: 0 },
@@ -208,15 +249,19 @@ function hostEnd(n, why) {
 ch.on('owner:dis', (d, from, meta) => {
   if (!ch.isHost || !meta || !meta.toHost || !from) return;
   D.stats.asked++;
-  if (!hostOwner(from.id) || !ch.players().some((p) => p.id === d.t)) {
+  // The host's own reading of who is asking and whom: an owner or an admin, aiming at a player their role may troll — or at
+  // themselves, which has always been theirs to do. A plain player's ask, an admin's at the owner or at another admin: nothing.
+  const role = hostRole(from.id);
+  const aimed = d.t === from.id ? !!role && role !== 'player' : hostMayTroll(from.id, d.t);
+  if (!aimed || !ch.players().some((p) => p.id === d.t)) {
     D.stats.refused++;
     return;
   }
-  const r = D.desk.ask({ ...d, by: from.id });
+  const r = D.desk.ask({ ...d, by: from.id, rank: ROLE_RANK[role] });
   if (!r.ok) {
     D.stats.refused++;
     const soonest = Math.min(...[...D.desk.running.values()].map((x) => x.until)) - now();
-    tellWait(from.id, Math.max(1000, Math.min(60000, soonest)), 1);
+    tellWait(from.id, Math.max(1000, Math.min(60000, soonest)), r.why === 'held' ? 3 : 1);
     return;
   }
   if (r.replaced) ch.send('owner:disend', { n: r.replaced }, { self: true });
@@ -225,17 +270,21 @@ ch.on('owner:dis', (d, from, meta) => {
 });
 
 ch.on('owner:disstop', (d, from, meta) => {
-  if (!ch.isHost || !meta || !meta.toHost || !from || !hostOwner(from.id)) return;
-  for (const n of D.desk.stop(d.n, from.id)) hostEnd(n, 'stop');
+  if (!ch.isHost || !meta || !meta.toHost || !from) return;
+  const role = hostRole(from.id);
+  if (role !== 'owner' && role !== 'admin') return;
+  for (const n of D.desk.stop(d.n, from.id, ROLE_RANK[role])) hostEnd(n, 'stop');
 });
 
-/** The owner's copy. */
+/** The owner's copy, or an admin's (the host judges whom). */
 export function sendDisaster(id, t, s) {
-  if (!amOwnerInGame() || !cleanAsk({ id, t, s })) return false;
+  if (!amStaffInGame() || !cleanAsk({ id, t, s })) return false;
+  // This copy's own reading of the roster, so the menu does not send what the host will only refuse (aiming at yourself is allowed).
+  if (t !== mp.meId && !mayTroll(myRole(), rosterRole(playerOf(t)))) return false;
   return ch.toHost('owner:dis', { id, t, s });
 }
 export function sendStop(n = 0) {
-  if (!amOwnerInGame()) return false;
+  if (!amStaffInGame()) return false;
   return ch.toHost('owner:disstop', { n });
 }
 
@@ -263,16 +312,18 @@ function begin(d) {
   const icon = (trollDisasters().find((x) => x.id === d.id) || {}).icon || '';
   const mine = d.t === mp.meId;
   feed(`🃏 <b>${esc(who(d.by).name)}</b> sent ${icon} <b>${esc(name)}</b> after <b>${mine ? 'you' : esc(who(d.t).name)}</b> — ${esc(secsLabel(d.s))}`, OWNER_GOLD);
+  // Whose it is, for "the owner stopped it" and for the tag: the roster's reading of the sender, as it stands now.
+  const byRole = byWho(d.by);
   const old = D.active.get(d.n);
   if (old) end(d.n, 'again');
   const life = d.s || UNTIL_STOPPED_S;
   const t0 = now();
   const inst = {
-    ...d, name, icon, mine, life, at: t0, deadline: t0 + life * 1000 + 3000, applied: false,
+    ...d, name, icon, mine, life, byRole, at: t0, deadline: t0 + life * 1000 + 3000, applied: false,
     torAt: null, nextStrike: 2, nextMeteor: 1.5, nextIgnite: 0, nextAt: 0, strikes: 0, hits: 0, meteors: 0, ignites: 0, tagAt: 0,
   };
   D.active.set(d.n, inst);
-  if (mine) showTag(`${name} after you`, Math.min(life, 4));
+  if (mine) showTag(`${name} after you`, Math.min(life, 4), d.by);
   if (!playing(sim)) return;
   try {
     apply(sim, inst);
@@ -349,7 +400,7 @@ function end(n, why) {
       console.warn('[owner-disasters] could not end', inst.id, err);
     }
   }
-  if (why !== 'again') feed(`${inst.icon} ${esc(inst.name)} after <b>${inst.mine ? 'you' : esc(who(inst.t).name)}</b> is over${why === 'host' && inst.s === 0 ? ' — the owner stopped it' : ''}`);
+  if (why !== 'again') feed(`${inst.icon} ${esc(inst.name)} after <b>${inst.mine ? 'you' : esc(who(inst.t).name)}</b> is over${why === 'host' && inst.s === 0 ? ` — ${inst.byRole || 'the owner'} stopped it` : ''}`);
   return true;
 }
 
@@ -458,7 +509,14 @@ function ignite(sim, inst, x, z) {
 /** Every frame, every copy: the tornado's chase; the host's clocks for its strikes, rocks and fires. */
 function tick(sim, dt) {
   const t = now();
-  if (ch.isHost && D.desk.running.size) for (const n of D.desk.due(t)) hostEnd(n, 'time');
+  if (ch.isHost && D.desk.running.size) {
+    for (const n of D.desk.due(t)) hostEnd(n, 'time');
+    // Whoever sent it has left, or the owner's hour is up: it ends, so "until I stop it" is never left with nobody to stop it.
+    if (t - D.sweepAt >= SWEEP_EVERY_MS) {
+      D.sweepAt = t;
+      for (const n of D.desk.sweep((by) => { const r = hostRole(by); return r === 'owner' || r === 'admin'; })) hostEnd(n, 'sender');
+    }
+  }
   if (D.active.size) {
     for (const inst of [...D.active.values()]) {
       if (t > inst.deadline) {
@@ -467,7 +525,7 @@ function tick(sim, dt) {
       }
       if (inst.mine && t - inst.tagAt > 1500) {
         inst.tagAt = t;
-        showTag(`${inst.name} after you`, 2.5);
+        showTag(`${inst.name} after you`, 2.5, inst.by);
       }
       if (!inst.applied) {
         // Into the aeroplane after it started (the menus, the van): start it now.
@@ -575,17 +633,23 @@ ch.on('mp:end', () => {
 });
 ch.on('mp:host', () => {
   // The lobby re-formed round this tab: what the old host ran, this one now runs out (its own clock, from what it knew).
-  for (const inst of D.active.values()) D.desk.running.set(inst.n, { n: inst.n, id: inst.id, t: inst.t, s: inst.s, by: inst.by, at: inst.at, until: inst.deadline - 3000 });
+  // `kept`: the new host cannot read the old one's roles, so these run out on their own clocks (or at STOP NOW) and are not swept.
+  for (const inst of D.active.values()) D.desk.running.set(inst.n, { n: inst.n, id: inst.id, t: inst.t, s: inst.s, by: inst.by, rank: 2, kept: true, at: inst.at, until: inst.deadline - 3000 });
   D.desk.seq = Math.max(D.desk.seq, ...[...D.active.keys()], 0);
 });
 ch.on('mp:leave', (p) => {
   if (!ch.isHost || !p) return;
-  for (const r of [...D.desk.running.values()]) if (r.t === p.id) hostEnd(r.n, 'left');
+  for (const r of [...D.desk.running.values()]) if (r.t === p.id || r.by === p.id) hostEnd(r.n, 'left');
 });
 
 /* ---- the menu, in the owner's troll row ---------------------------------------------------- */
 
 let M = null;
+
+/** Whether this copy may stop that one: the owner any, an admin theirs and other admins' — never the owner's (the host judges again). */
+function canStop(i) {
+  return myRole() === 'owner' || i.by === mp.meId || rosterRole(playerOf(i.by)) !== 'owner';
+}
 
 /** The pieces ./trolls.js paints into the player list. */
 export const disasterMenu = {
@@ -603,7 +667,7 @@ export const disasterMenu = {
     const picks = list.map((d) => `<button class="${m.dis === d.id ? 'is-on' : ''}" data-mp-own="pick:${esc(d.id)}:${p.id}" title="${esc(d.hint)}">${d.icon} ${esc(d.name)}</button>`).join('');
     const secs = PRESETS.map((s) => `<button class="${m.secs === s ? 'is-on' : ''}" data-mp-own="secs:${s}:${p.id}">${esc(secsLabel(s))}</button>`).join('');
     const slider = `<input type="range" min="${MIN_S}" max="${MAX_S}" step="10" value="${m.secs || MAX_S}" data-mp-own-range aria-label="How long, in seconds"><output>${esc(secsLabel(m.secs))}</output>`;
-    const running = [...D.active.values()].filter((i) => i.t === p.id);
+    const running = [...D.active.values()].filter((i) => i.t === p.id && canStop(i));
     const stops = running.map((i) => `<button class="mp-own-stop" data-mp-own="stop:${i.n}:${p.id}">⏹ STOP NOW — ${i.icon} ${esc(i.name)}</button>`).join('');
     const chosen = list.find((d) => d.id === m.dis) || list[0];
     const hunts = HUNTERS.includes(chosen.id) ? 'It follows them.' : 'Weather: everybody gets it.';

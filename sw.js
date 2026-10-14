@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v65';
+const CACHE_VERSION = 'island-flight-v66';
 
 const PRECACHE = [
   './',
@@ -230,6 +230,7 @@ const PRECACHE = [
   // Added by tools/sync-precache.mjs.
   'src/features/multiplayer/lobby.js',
   'src/features/multiplayer/lobbyui.js',
+  'src/features/multiplayer/joinflow.js',
   // Added by tools/sync-precache.mjs.
   'src/features/breakup.js',
   'src/features/breakup/fx.js',
@@ -350,6 +351,13 @@ const PRECACHE = [
   'src/features/spawns/ui.js',
   'src/world/ambient.js',
   'src/world/spawns.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/heatseek-disaster.js',
+  'src/features/heatseek.js',
+  'src/features/heatseek/fly.js',
+  'src/features/heatseek/hud.js',
+  'src/features/heatseek/rules.js',
+  'src/features/heatseek/world.js',
   'src/features/multiplayer/owner.js',
   'src/features/owner.js',
   // Added by tools/sync-precache.mjs.
@@ -359,6 +367,21 @@ const PRECACHE = [
   'src/features/owner/place.js',
   'src/features/owner/teleport.js',
   'src/features/owner/trolls.js',
+  'src/story/beats.js',
+  'src/story/ch01-the-glint.js',
+  'src/story/chapters.js',
+  'src/story/cinema.js',
+  'src/story/director.js',
+  'src/story/index.js',
+  'src/story/lessons.js',
+  'src/story/portraits.js',
+  'src/story/save.js',
+  'src/story/script.js',
+  'src/story/ui.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/gunsight.js',
+  'src/features/gunsight/hud.js',
+  'src/features/gunsight/rules.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

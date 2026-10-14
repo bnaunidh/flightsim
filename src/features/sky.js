@@ -495,6 +495,16 @@ function dropCrew(sim, b) {
   }
 }
 
+/**
+ * Put a pilot under a parachute where an aeroplane was: another player's, tagged out by a missile
+ * (src/features/pvp.js), or any crew a feature wants to see out safely. `o`: { pos, vel?, heading?,
+ * crew? (1), uniform? ('fighter') }.
+ */
+export function dropCrewAt(sim, o) {
+  if (!sim || !o || !o.pos) return;
+  dropCrew(sim, { small: false, crew: o.crew == null ? 1 : o.crew, uniform: o.uniform || 'fighter', pos: o.pos, heading: o.heading });
+}
+
 function stepChutes(sim, dt) {
   if (!K.chutes.length) return;
   for (let i = K.chutes.length - 1; i >= 0; i--) {

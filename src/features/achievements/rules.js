@@ -136,6 +136,20 @@ export function applyEvent(store, type, payload = {}) {
       break;
     }
 
+    /*
+     * A story chapter finished (src/story/director.js): { chapter, medal,
+     * style: [badge ids], secrets: [ids] }. The chapter's own achievement,
+     * and the style and secret ones it carries.
+     */
+    case 'storyChapter': {
+      if (payload.chapter === 'ch01-the-glint') unlock(store, 'story-glint', out);
+      const style = Array.isArray(payload.style) ? payload.style : [];
+      const secrets = Array.isArray(payload.secrets) ? payload.secrets : [];
+      if (style.includes('through-the-eye')) unlock(store, 'story-through-the-eye', out);
+      if (secrets.includes('condor-light')) unlock(store, 'story-early-bird', out);
+      break;
+    }
+
     default:
       break;
   }

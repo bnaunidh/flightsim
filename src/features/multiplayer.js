@@ -140,6 +140,7 @@ import { icon } from '../ui/icons.js';
 import {
   PROTO, MAX_PLAYERS, STATE_HZ, QUICK_CHAT, COLOURS, GAMES, LOBBY_MAX, CODE_GAME_MAX, BUMP_DEFAULT, BUMP_RULES, BUMP_SHORT, bumpRule,
   slotId, codeId, normaliseCode, shownCode, playerPeerId, randomToken, CODE_EXAMPLE, seatToken, lobbyName, worldName, lobbyLabel, readPrivateCount, pdirId, pdirOf, readPlayer,
+  lobbyMap, worldMap,
   cleanName, parseServerName, randomCallSign, randomServerName, serverNameFor, mapNameFor,
   escapeHtml, encodeState, safeColour,
 } from './multiplayer/protocol.js';
@@ -147,6 +148,7 @@ import { Signaling, PUBLIC_BACKEND, LAN_UNKNOWN, findNetHash, detectLanServer } 
 import { Net, RELAY_SERVERS } from './multiplayer/link.js';
 import { HostSession, ClientSession, Prober, claimSlot, claimCode, claimPdir, FREEZE_MS } from './multiplayer/session.js';
 import { LobbyMember, LobbyWatch, PrivateWatch } from './multiplayer/lobby.js';
+import { JoinFlow } from './multiplayer/joinflow.js';
 import { AdminKey, adminCrypto } from './multiplayer/admin.js';
 import { owner as ownerState } from './multiplayer/owner.js';
 import { Remotes } from './multiplayer/remotes.js';
@@ -167,6 +169,13 @@ export const LOBBIES_ON_MAIN_MENU = true;
 const PROFILE_KEY = 'islandsim.multiplayer.v1';
 /** How long the lobby screen's sockets stay open after it is shut, in case it is opened again (lingerSockets). */
 export const SOCKET_LINGER_MS = 10000;
+/**
+ * The island is built side by side with the network (joinLobby), once the
+ * network is waiting on the far end — the claim's socket opening, the offer
+ * gone to the host — or after this long at most: a build holds the main
+ * thread for its whole length, and a note not yet sent waits for it.
+ */
+export const ISLAND_AFTER_MS = 1500;
 const now = () => (globalThis.performance ? performance.now() : Date.now());
 /** A paused player's velocity on the wire (myState). */
 const STILL = Object.freeze({ x: 0, y: 0, z: 0 });
@@ -504,6 +513,7 @@ class Multiplayer {
     if (this.busy) this.cancelAttempt();
     this.stopLooking();
     this.stopWatchingLobbies();
+    this.putIslandBack();
     const ui = this.lobbyScreenOpen ? this.lobbyScreen : this.screen;
     if (ui && ui.viaMenus) sim.menus.show(sim.state === 'paused' ? 'pause' : 'main');
     else if (ui) ui.wrap.hidden = true;
@@ -576,6 +586,17 @@ class Multiplayer {
     this._lobbyLooking = true;
     try {
       ui.net('Finding your Wi-Fi…');
+      /*
+       * The five cards say "Looking…" straight away, with Join on: a tap
+       * before the list has answered joins all the same (joinLobby asks for
+       * itself). Until 2026-10-12 they said "Can’t look for lobbies on this
+       * network", greyed out, for the second or two this took — the first
+       * thing a child saw, every time.
+       */
+      if (typeof RTCPeerConnection === 'function') ui.lobbies(LobbyWatch.looking({ hash: this.hash || '' }));
+      // Which Wi-Fi this is, and the matchmaking socket, at once: the socket needs only the server (ensureBackend), not the hash.
+      await this.ensureBackend();
+      const socket = typeof RTCPeerConnection === 'function' ? this.lookSocketForList() : Promise.resolve(null);
       const hash = await this.ensureNetwork();
       if (typeof RTCPeerConnection !== 'function') {
         ui.net('This browser can’t do multiplayer', true);
@@ -589,14 +610,7 @@ class Multiplayer {
         return;
       }
       ui.net(this.hashVia === 'lan' ? `On ${this.backend.label}` : `Wi-Fi #${hash.slice(0, 4)}`, false);
-      let net = null;
-      for (let attempt = 0; attempt < 2 && !net; attempt++) {
-        try {
-          net = await this.ensureLookSocket();
-        } catch (err) {
-          if (!(err && err.code === 'closed' && this.lobbyScreenOpen)) break;
-        }
-      }
+      const net = await socket;
       if (!net) {
         this._wifiFails = (this._wifiFails || 0) + 1;
         if (this.lobbyScreenOpen) {
@@ -616,6 +630,18 @@ class Multiplayer {
     }
   }
 
+  /** The look socket, for a list: asked twice if it was closed under it while opening (the screen shut and opened again). */
+  async lookSocketForList() {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await this.ensureLookSocket();
+      } catch (err) {
+        if (!(err && err.code === 'closed' && this.lobbyScreenOpen)) return null;
+      }
+    }
+    return null;
+  }
+
   /**
    * The world lobbies' row (list 3). They do not need to know which Wi-Fi
    * this is — only a way to the public matchmaking server (or whatever
@@ -628,6 +654,8 @@ class Multiplayer {
     this._worldLooking = true;
     try {
       ui.worldNet('Looking for the world lobbies…');
+      // As the Wi-Fi row: "Looking…" at once, and Join works before the list has answered.
+      if (typeof RTCPeerConnection === 'function') ui.worlds(LobbyWatch.looking({ world: true }));
       await this.ensureBackend();
       if (typeof RTCPeerConnection !== 'function') {
         ui.worldNet('This browser can’t do multiplayer', true);
@@ -843,6 +871,26 @@ class Multiplayer {
    * Into lobby n: host it if it is empty, join whoever hosts it if not.
    * `world` (list 3): world lobby n instead — the same for everybody on the
    * internet, through the world lobbies' own server; it needs no Wi-Fi hash.
+   *
+   * "it takes forever to join" (owner, 2026-10-12). Measured then, in two
+   * real tabs against the public matchmaking server, every step waited for
+   * the one before it: the Wi-Fi's hash, then the matchmaking socket, then a
+   * ping to the lobby the list had pinged a moment before, then the claim or
+   * the connection, then the welcome — and only then the island, the longest
+   * of them all. Now (joinflow.js has the steps; the numbers are in
+   * tests/features/multiplayer.join.mjs):
+   *   - the hash and the socket are asked for at once, and the list has most
+   *     likely asked for both already (watchWifiLobbies);
+   *   - the list's fresh word on the lobby stands in for the ping (lobby.js,
+   *     HINT_FRESH_MS);
+   *   - the island is built while the network waits on the far end
+   *     (islandWhileJoining), not after it;
+   *   - a try that cannot connect is given up in 8 s on the Wi-Fi and 12 s
+   *     across the internet, not 15 and 25 (lobby.js), and the lobby is
+   *     asked again at once;
+   *   - and the screen says which step it is on — "Connecting…",
+   *     "Syncing…", "Ready" — and, when one is taking long, that it is still
+   *     going (JoinFlow.line).
    */
   async joinLobby(n, world = false) {
     const ui = this.lobbyScreen;
@@ -857,22 +905,53 @@ class Multiplayer {
     this.wake();
     ui.busy(true);
     ui.offer(null);
-    ui.status(`Joining ${label}…`);
     const attempt = this.newAttempt();
     const wanted = () => this._attempt === attempt;
+    // What the list last said about this lobby: where it is, and whether anybody holds it.
+    const seen = this.lobbySeen(n, world);
+    const mapId = (seen && seen.map) || (world ? worldMap(n) : lobbyMap(n));
+    const flow = new JoinFlow({ label, island: mapNameFor(mapId) });
+    this.joinFlow = flow;
+    this._joinUi = ui;
+    flow.step('signalling');
+    this.paintJoin(flow);
     let member = null;
+    let island = null;
     try {
-      const hash = world ? (await this.ensureBackend(), this.hash) : await this.ensureNetwork();
+      await this.ensureBackend();
       if (!wanted()) return;
-      if (typeof RTCPeerConnection !== 'function') return ui.status('This browser has no WebRTC, which multiplayer needs.', 'bad');
-      if (!world && !hash) return ui.status('Couldn’t tell which Wi-Fi you are on, so the lobbies can’t be found. The World lobbies and a friend’s code still work.', 'bad');
-      const net = world ? await this.worldSocketWithRetry(2, ui, wanted) : await this.lookSocketWithRetry(1, null, wanted);
+      if (typeof RTCPeerConnection !== 'function') {
+        flow.fail('nortc');
+        ui.status('This browser has no WebRTC, which multiplayer needs.', 'bad');
+        return;
+      }
+      // The matchmaking socket and the Wi-Fi's hash at once: neither needs the other, and the list has most likely asked for both already.
+      const socket = world ? this.worldSocketWithRetry(2, ui, wanted) : this.lookSocketWithRetry(1, null, wanted);
+      const hash = world ? this.hash : await this.ensureNetwork();
       if (!wanted()) return;
-      if (!net) {
+      if (!world && !hash) {
+        flow.fail('hash');
+        ui.status('Couldn’t tell which Wi-Fi you are on, so the lobbies can’t be found. The World lobbies and a friend’s code still work.', 'bad');
+        return;
+      }
+      const noSocket = () => {
+        flow.fail('signaling');
         ui.status(world
           ? 'Couldn’t reach the world lobbies — they need the internet. The Wi-Fi lobbies still work.'
           : 'Couldn’t reach the matchmaking server — check the internet is working. You can still fly on your own.', 'bad');
-        return;
+      };
+      /*
+       * Nothing from the list yet — a tap before it had answered: the join
+       * claims the lobby on the claim's own socket and asks through the
+       * matchmaking socket at once, while that is still opening, and the
+       * first answer decides (lobby.js, CLAIM AND ASK AT ONCE). Otherwise the
+       * socket first, as before; it is most likely open already.
+       */
+      const claimFirst = !seen || !Number.isFinite(seen.at);
+      if (!claimFirst) {
+        const net = await socket;
+        if (!wanted()) return;
+        if (!net) return noSocket();
       }
       member = new LobbyMember({
         n, hash, world,
@@ -885,29 +964,48 @@ class Multiplayer {
         spawnInfo: () => this.whereAmI(),
         weather: () => (this.sim.weather && this.sim.weather.serialize ? this.sim.weather.serialize() : null),
         onEvent: (type, ...args) => this.onLobbyEvent(member, type, ...args),
+        // The list's word, if it has one: a join that knows who holds the lobby need not ask first.
+        hint: seen && (seen.state === 'empty' || seen.state === 'open') ? { state: seen.state, at: seen.at } : null,
+        onPhase: (step) => {
+          if (this.joinFlow === flow && flow.step(step)) this.paintJoin(flow);
+        },
+        claimFirst,
       });
       this.lobby = member;
       this._cancelLobby = () => member.leave();
-      // Across the internet a first connection can take a while: after a few seconds, say it is still going.
-      const slow = world ? setTimeout(() => {
-        if (wanted() && this.lobby === member && !this.role) ui.status(`Still joining ${label} — reaching its host over the internet can take a few seconds…`);
-      }, 6000) : null;
+      const going = member.start();
+      // Claiming first, the socket is still on its way: if it never comes, and the claim did not make us the host, stop and say so.
+      let offline = false;
+      if (claimFirst) {
+        socket.then((net) => {
+          if (!net && wanted() && this.lobby === member && !member.session) {
+            offline = true;
+            member.leave();
+          }
+        });
+      }
+      // The island, side by side with the network rather than after it: if it needs building, and not for a lobby said to be full.
+      if (!seen || ['empty', 'open', 'looking'].includes(seen.state)) island = this.islandWhileJoining(mapId, flow, member, wanted);
       let r;
       try {
-        r = await member.start();
+        r = await going;
       } catch (err) {
+        if (island) island.stop();
         if (this.lobby === member) this.lobby = null;
+        if (offline && wanted()) return noSocket();
         if (!wanted() || (err && err.code === 'cancelled')) {
           ui.status('');
           return;
         }
+        flow.fail(err && err.code);
+        this.note(`join: ${flow.summary()} (${err && err.code})`);
         this.lobbyRefused(n, err, world);
         return;
       } finally {
-        clearTimeout(slow);
         this._cancelLobby = null;
       }
       if (!wanted()) {
+        if (island) island.stop();
         member.leave();
         if (this.lobby === member) this.lobby = null;
         return;
@@ -924,16 +1022,107 @@ class Multiplayer {
       this.takeLobbySession(r.role, r.session, r.welcome);
       const server = member.server;
       this.server = { ...server };
-      ui.status('');
+      flow.joined(r.role);
+      this.paintJoin(flow);
+      // The island, if it is still being built; then into the world on it — no second build when it is the same one.
+      if (island) await island.done;
+      if (this.lobby !== member) return;
+      // "Ready": both in; the world is a moment away.
+      this.paintJoin(flow);
       await this.enterWithRide(server, r.welcome ? r.welcome.at : null, r.welcome ? r.welcome.weather : null);
       if (this.lobby !== member) return;
+      this._islandEarly = null;
       this.ready = true;
+      flow.ready();
+      ui.status('');
       this.showHud();
-      this.note(`in ${world ? 'world lobby' : 'lobby'} ${n} (${server.map}) as ${r.role === 'host' ? 'its host' : `player ${this.meId}`}`);
+      this.note(`in ${world ? 'world lobby' : 'lobby'} ${n} (${server.map}) as ${r.role === 'host' ? 'its host' : `player ${this.meId}`} — ${flow.summary()}`);
       this.toast(`You’re in ${label} · ${world ? worldName(n) : lobbyName(n)} — on ${mapNameFor(server.map)}`, 'good', 5);
     } finally {
+      flow.cancel();
       this.afterAttempt(attempt);
     }
+  }
+
+  /** The list's last word on lobby n — { state, map, at } — or null if the list has not been looked at. */
+  lobbySeen(n, world = false) {
+    const watch = world ? this.worldWatch : this.lobbyWatch;
+    const l = watch && watch.lobbies && watch.lobbies[n - 1];
+    return l && l.n === n ? { state: l.state, map: l.map, at: l.at } : null;
+  }
+
+  /** The join's progress line, on the screen it was started from (JoinFlow.line): "Connecting…", "Syncing…", "Ready". */
+  paintJoin(flow) {
+    const ui = this._joinUi || this.lobbyScreen;
+    if (!flow || this.joinFlow !== flow || !ui) return;
+    const line = flow.line();
+    if (line) ui.status(line.text, line.kind);
+  }
+
+  /**
+   * Build the lobby's island while the network works, instead of after it.
+   *
+   * Measured (tests/features/multiplayer.join.mjs): a lobby on another
+   * island spent longer building it than on everything else in the join
+   * together, and the build started only once the welcome had come. Here it
+   * overlaps the claim or the connection. A build holds the main thread for
+   * its whole length, though, and a note not yet sent waits for it — so it
+   * starts once the network is waiting on the far end (the claim's socket
+   * opening, the offer gone to the host, or the join already in), or after
+   * ISLAND_AFTER_MS at most.
+   *
+   * Only from the menus, onto another island, in an aeroplane or the
+   * helicopter (the boat and the car start through startDrive, which builds
+   * its own way). Mid-flight it is not done: a world rebuilt under a paused
+   * aeroplane whose join then failed would leave it over somebody else's
+   * island. A join that does not go in leaves the lobby's island under the
+   * menu, and Back puts the player's own back (putIslandBack).
+   *
+   * Returns { done, stop }, or null when there is nothing to build.
+   */
+  islandWhileJoining(mapId, flow, member, wanted) {
+    const sim = this.sim;
+    if (!sim || sim.state !== 'menu' || this.transition || typeof sim.buildWorld !== 'function' || !mapId || !sim.settings || sim.settings.map === mapId) return null;
+    const game = this.rideOn(mapId, 'flight').ride.game;
+    if (game !== 'flight' && game !== 'heli') return null;
+    let stopped = false;
+    flow.island('loading', mapNameFor(mapId));
+    this.paintJoin(flow);
+    const waiting = () => {
+      if (flow.net === 'claiming' || flow.net === 'syncing' || flow.net === 'in') return true;
+      return flow.net === 'connecting' && member.offerOut;
+    };
+    const done = (async () => {
+      const t0 = now();
+      // At least one turn first, so the line above can be painted before the build holds the thread.
+      do await new Promise((res) => setTimeout(res, 16));
+      while (!stopped && !waiting() && now() - t0 < ISLAND_AFTER_MS);
+      if (stopped || !wanted() || this.lobby !== member || sim.state !== 'menu' || this.transition || sim.settings.map === mapId) {
+        flow.island('in');
+        return;
+      }
+      const t1 = now();
+      // The island the player had: put back if this join never goes in (putIslandBack).
+      if (!this._islandEarly) this._islandEarly = { own: sim.mapBeforeMission || sim.settings.map };
+      this.borrowMap(mapId);
+      flow.island('in');
+      this.note(`built ${mapNameFor(mapId)} while joining (${Math.round(now() - t1)} ms, started after ${Math.round(t1 - t0)} ms)`);
+    })();
+    return { done, stop: () => { stopped = true; } };
+  }
+
+  /**
+   * A join built a lobby's island under the menu and never went in: put the
+   * player's own island back, as quitting to the menu would, so Free Flight
+   * starts where they left it.
+   */
+  putIslandBack() {
+    const e = this._islandEarly;
+    if (!e || this.role || this.lobby) return;
+    this._islandEarly = null;
+    const sim = this.sim;
+    if (!sim || sim.state !== 'menu' || typeof sim.restoreChosenMap !== 'function' || !sim.mapBeforeMission) return;
+    if (sim.settings.map !== e.own) sim.restoreChosenMap();
   }
 
   /** The session a lobby has just given us — at first, or after it re-formed. */
@@ -1529,7 +1718,11 @@ class Multiplayer {
     if (this.screen) this.screen.busy(false);
     if (this.lobbyScreen) this.lobbyScreen.busy(false);
     if (!this.role && !this.screenOpen) this.stopLooking();
-    if (!this.role && !this.lobby && !this.screenOpen) this.stopWatchingLobbies();
+    if (!this.role && !this.lobby && !this.screenOpen) {
+      this.stopWatchingLobbies();
+      // Back pressed while a join was building a lobby's island: the player's own goes back under the menu.
+      this.putIslandBack();
+    }
   }
 
   /**
@@ -1716,21 +1909,28 @@ class Multiplayer {
     this.busy = true;
     this.wake();
     ui.busy(true);
-    ui.status('Joining…');
     const attempt = this.newAttempt();
     const wanted = () => this._attempt === attempt;
+    // A code, or an admin joining a private match from the directory: both reach across networks.
+    const byCode = /^ifs-(code|pdir)-/.test(String(target));
+    // The same progress line as a lobby's (joinflow.js): Connecting…, Syncing…, Ready — never one "Joining…" for all of it.
+    const flow = new JoinFlow({ label: byCode ? 'the private match' : 'that server' });
+    this.joinFlow = flow;
+    this._joinUi = ui;
+    flow.step('signalling');
+    this.paintJoin(flow);
     try {
       await this.ensureBackend();
       if (!wanted()) return;
       if (typeof RTCPeerConnection !== 'function') {
+        flow.fail('nortc');
         ui.status('This browser has no WebRTC, which multiplayer needs.', 'bad');
         return;
       }
-      // A code, or an admin joining a private match from the directory: both reach across networks.
-      const byCode = /^ifs-(code|pdir)-/.test(String(target));
       let net = await this.lookSocketWithRetry(byCode ? 3 : 1, ui, wanted);
       if (!wanted()) return;
       if (!net) {
+        flow.fail('signaling');
         ui.status('Couldn’t reach the matchmaking server — check the internet is working. You can still fly on your own.', 'bad');
         return;
       }
@@ -1747,19 +1947,25 @@ class Multiplayer {
         client = new ClientSession({
           net, target, profile: this.profile, seat: this.seat, relayOnly: tryNo > 0 && RELAY_SERVERS.length > 0, admin: this.adminNow(), owner: this.ownerNow(),
           onEvent: (type, ...args) => this.onSessionEvent(type, ...args),
+          onPhase: (step) => {
+            if (this.joinFlow === flow && flow.step(step)) this.paintJoin(flow);
+          },
         });
         this.client = client;
+        if (flow.step('connecting')) this.paintJoin(flow);
         try {
           welcome = await client.start();
         } catch (err) {
           if (this.client === client) this.client = null;
           if (byCode && tryNo === 0 && wanted() && err && ['ice', 'timeout', 'signaling', 'dropped'].includes(err.code)) {
             this.note(`join by code: the first try failed (${err.code}); trying again${RELAY_SERVERS.length ? ' through a relay' : ''}`);
+            flow.step('finding');
             ui.status('Still trying to reach your friend’s game — this can take a few seconds…');
             if (!(net.sig && net.sig.isOpen)) net = await this.lookSocketWithRetry(3, ui, wanted);
             if (!wanted()) return;
             if (net) continue;
           }
+          flow.fail(err && err.code);
           this.joinFailed(err, target, ui);
           return;
         }
@@ -1787,19 +1993,30 @@ class Multiplayer {
       this.ready = false;
       this.remotes.clear();
       for (const p of welcome.players) if (p.id !== this.meId) this.remotes.add(p.id, p);
-      ui.status('');
+      flow.joined('client');
+      // Another island to build: said, and painted, before the build holds the thread.
+      if (welcome.server.map && this.sim.settings && this.sim.settings.map !== welcome.server.map) {
+        flow.island('loading', mapNameFor(welcome.server.map));
+        this.paintJoin(flow);
+        await new Promise((res) => setTimeout(res, 16));
+        if (this.role !== 'client') return;
+      }
       // A private match: in this player's own ride, as in a lobby. A server from the older list: its game.
       if (welcome.server.priv) await this.enterWithRide(welcome.server, welcome.at, welcome.weather);
       else await this.enterWorld(welcome.server, welcome.at, welcome.weather);
+      flow.island('in');
+      ui.status('');
       // The client may have been dropped while the world was loading.
       if (this.role !== 'client') return;
       this.ready = true;
+      flow.ready();
       this.showHud();
-      this.note(`joined "${welcome.server.name}" as player ${welcome.you}${welcome.server.priv ? `, private, on ${welcome.server.map}` : ''}`);
+      this.note(`joined "${welcome.server.name}" as player ${welcome.you}${welcome.server.priv ? `, private, on ${welcome.server.map}` : ''} — ${flow.summary()}`);
       this.toast(welcome.server.priv
         ? `You’re in the private match — on ${mapNameFor(welcome.server.map)}${welcome.name !== this.profile.name ? `, as ${welcome.name}` : ''}`
         : `Joined ${welcome.server.name}${welcome.name !== this.profile.name ? ` as ${welcome.name}` : ''}`, 'good', 5);
     } finally {
+      flow.cancel();
       this.afterAttempt(attempt);
     }
   }
@@ -2310,7 +2527,17 @@ class Multiplayer {
       if (r.had) this.sim.gameMap[r.game] = r.map;
       else delete this.sim.gameMap[r.game];
     }
-    if (!this.screenOpen) this.stopLooking();
+    if (!this.screenOpen) {
+      /*
+       * The older list stops looking, but the matchmaking socket stays a few
+       * seconds (lingerSockets), as it does when the lobby screen is shut: a
+       * player who leaves one lobby for another used to wait for a fresh one
+       * to open — 0.5-2 s, measured 2026-10-12 — before anything else began.
+       */
+      if (this.prober) this.prober.stop();
+      this.prober = null;
+      this.lingerSockets();
+    }
     // Out of a world lobby: its own socket to the public server goes too, unless the lobby screen is looking through it.
     if (!this.lobbyScreenOpen && !this.worldWatch && !this.worldOnLookServer()) this.closeWorldSocket();
   }
@@ -2766,6 +2993,12 @@ class Multiplayer {
     const t = now();
     const s = this.session;
     this.syncLatency(t);
+    // A join's progress line, again now and then: a step that goes on too long says it is still going (joinflow.js).
+    const flow = this.joinFlow;
+    if (flow && !flow.done && this.busy && t - (this._joinPaintAt || -Infinity) > 500) {
+      this._joinPaintAt = t;
+      this.paintJoin(flow);
+    }
     // The game's frame hook stops while paused; the server must not.
     if (s && t - this._lastTick > 150) {
       let buf = null;

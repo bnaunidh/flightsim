@@ -57,12 +57,36 @@ const pause = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
 export const SUCCESSION_STEP_MS = 1200;
 /** A first join that has found nobody to join and could not claim either gives up after this. */
 export const ENTER_GIVE_UP_MS = 20000;
+/*
+ * How long one try at a lobby's host may take to connect before it is given
+ * up and the lobby asked again ("it takes forever to join", 2026-10-12).
+ * link.js gives any link 15 s, and a path between networks 25: on the Wi-Fi
+ * that was one try in the twenty seconds a first join has, and a try whose
+ * notes crossed badly sat out all fifteen before anything else happened.
+ * Measured the same day, a Wi-Fi lobby's connection opened 0.5 s after its
+ * offer went out (3.3 s on a loaded Mac with both tabs busy), a world lobby's
+ * — STUN and all — in under 2. So: 8 s on the Wi-Fi, two tries and change in
+ * the twenty; 12 across the internet, two tries in the thirty below.
+ */
+export const LOBBY_CONNECT_MS = 8000;
+export const WORLD_CONNECT_MS = 12000;
 /**
  * A world lobby's first join: long enough for two tries at a path between
- * two networks (link.js gives each 25 s), the second through a relay if one
- * is configured — as a join by code gets.
+ * two networks (WORLD_CONNECT_MS each), the second through a relay if one
+ * is configured. It was 55 s, two of a code's 25-s tries: a minute of
+ * "Joining…" before a child was told the two networks would not connect.
  */
-export const WORLD_ENTER_GIVE_UP_MS = 55000;
+export const WORLD_ENTER_GIVE_UP_MS = 30000;
+/**
+ * The lobby list's word on a lobby — nobody there, or a host there — is
+ * taken instead of asking again if it is this fresh (2026-10-12): the ping a
+ * join used to start with costs 0.2-0.6 s on the public server and only
+ * repeats what the list asked a moment ago. A word gone stale costs one try:
+ * a claim the server refuses ("taken") or an offer it sends back (nobody
+ * there), and the join asks properly.
+ */
+export const HINT_FRESH_MS = 6000;
+export const WORLD_HINT_FRESH_MS = 10000;
 /**
  * Re-forming gives up after this. It is long on purpose: a host whose Wi-Fi
  * went holds the lobby's id until the signaling server notices — 15 s on the
@@ -122,8 +146,23 @@ export class LobbyMember {
   constructor({
     n, hash, net, makeSig, profile, place, spawnInfo, weather, onEvent, now = nowMs, netOpts = {},
     stepMs = SUCCESSION_STEP_MS, enterGiveUpMs = 0, reformGiveUpMs = REFORM_GIVE_UP_MS, pingMs = 1500,
-    seat = seatToken(), verifyEveryMs = 0, world = false, admin = null, owner = null,
+    seat = seatToken(), verifyEveryMs = 0, world = false, admin = null, owner = null, hint = null, onPhase = null, connectMs = 0, claimFirst = false,
   }) {
+    /**
+     * With no word from the list (a tap before it had answered): claim and ask at once (_race) — the claim's
+     * own socket is opened while the matchmaking socket still is, instead of after it and a ping.
+     */
+    this.claimFirst = !!claimFirst;
+    /**
+     * The list's last word on this lobby, { state: 'empty' | 'open', at } (LobbyWatch), used once by the
+     * first join if it is fresh (HINT_FRESH_MS); and how far the join has got, for its progress line (joinflow.js).
+     */
+    this.hint = hint;
+    this.onPhase = typeof onPhase === 'function' ? onPhase : null;
+    /** How long a try at the host may take to connect (LOBBY_CONNECT_MS, WORLD_CONNECT_MS). */
+    this.connectMs = connectMs || (world ? WORLD_CONNECT_MS : LOBBY_CONNECT_MS);
+    /** Pings this member sent to find its lobby: the list's word saves the first (the tests count them). */
+    this.asked = 0;
     /** Part 3b: this device's admin key (admin.js), or a function for it — asked again at every join, so a code typed meanwhile counts. */
     this.getAdmin = typeof admin === 'function' ? admin : () => admin;
     /** The owner's pass (owner.js), or a function for it — asked again at every join, and at every hosting. */
@@ -170,9 +209,27 @@ export class LobbyMember {
 
   /** Into the lobby for the first time. */
   async start() {
-    const r = await this._enter({ claimAt: this.now(), deadline: this.now() + this.enterGiveUpMs });
+    const r = await this._enter({ claimAt: this.now(), deadline: this.now() + this.enterGiveUpMs, hint: this._freshHint() || (this.claimFirst ? 'claim' : null) });
     this._took(r);
     return r;
+  }
+
+  /** 'empty' or 'here' if the list said so a moment ago, else null: a join that knows need not ask. */
+  _freshHint() {
+    const h = this.hint;
+    this.hint = null;
+    if (!h || !Number.isFinite(h.at) || this.now() - h.at > (this.world ? WORLD_HINT_FRESH_MS : HINT_FRESH_MS)) return null;
+    return h.state === 'empty' ? 'empty' : h.state === 'open' ? 'here' : null;
+  }
+
+  _phase(step) {
+    if (this.onPhase && !this.left) {
+      try {
+        this.onPhase(step);
+      } catch (err) {
+        /* the progress line is not worth a join */
+      }
+    }
   }
 
   /** Out, for good. `closing` is a tab going away: let the lobby's id go at once, which is what tells everybody. */
@@ -206,6 +263,16 @@ export class LobbyMember {
     return this.session instanceof HostSession;
   }
 
+  /**
+   * A join's offer is on its way to the host: its description is set, and the
+   * send follows in the same turn. multiplayer.js waits for this before it
+   * starts building the island, which holds the main thread (joinLobby).
+   */
+  get offerOut() {
+    const c = this._pending;
+    return !!(c && c.link && c.link.pc && c.link.pc.localDescription);
+  }
+
   /* ---------------------------------------------------------------- */
 
   _took(r) {
@@ -219,18 +286,47 @@ export class LobbyMember {
    * whoever does. Round again for anything that is not an answer — a host in
    * the middle of going, a claim somebody else won, an id nobody answers on.
    */
-  async _enter({ claimAt, deadline }) {
+  async _enter({ claimAt, deadline, hint = null }) {
     let last = null;
+    // The list's word, if it is fresh, stands in for the first question (HINT_FRESH_MS) — once.
+    let known = hint;
     for (;;) {
       if (this.left) throw coded('cancelled', 'Stopped joining.');
       if (this.now() > deadline) throw last && (last.code === 'full' || last.code === 'signaling') ? last : coded('unreachable', 'Couldn’t reach the lobby.');
+      if (known === 'claim') {
+        known = null;
+        const raced = await this._race();
+        if (raced.host) return { role: 'host', session: raced.host, welcome: null };
+        if (raced.net) {
+          try {
+            const { client, welcome } = await this._join(raced.net);
+            return { role: 'client', session: client, welcome };
+          } catch (err) {
+            if (['name', 'full', 'version', 'cancelled', 'kicked'].includes(err && err.code)) throw err;
+            last = err;
+            // Gone: nobody holds it after all — claim it next (as below).
+            if (err && err.code === 'gone') known = 'empty';
+            else await pause(250 * this.pace);
+            continue;
+          }
+        }
+        // Neither said: ask the ordinary way.
+        continue;
+      }
       let net = null;
       try {
         net = await this.getNet();
       } catch (err) {
         net = null;
       }
-      const r = net ? await net.ping(this.id, this.pingMs) : 'offline';
+      let r;
+      if (known && net) r = known;
+      else {
+        this._phase('finding');
+        this.asked++;
+        r = net ? await net.ping(this.id, this.pingMs) : 'offline';
+      }
+      known = null;
       if (this.left) throw coded('cancelled', 'Stopped joining.');
       if (r === 'offline') {
         // The matchmaking server is out of reach for a moment; keep trying until the deadline.
@@ -259,8 +355,21 @@ export class LobbyMember {
             this.pathFails++;
             this.emit('trying', err.code, this.pathFails);
           }
-          // Gone, closing, busy, timed out: the lobby is changing hands. Ask again.
           last = err;
+          /*
+           * Gone: the matchmaking server sent the offer back — nobody holds
+           * the lobby (a host that left a moment after the list looked). That
+           * is the answer a ping would get, so the next round claims without
+           * one. Measured against the public server on 2026-10-12, a ping
+           * straight after an offer to nobody went unanswered for seconds
+           * (three timed out, 5.6 s in all) while the offer’s own notes were
+           * still being sent back.
+           */
+          if (err && err.code === 'gone') {
+            known = 'empty';
+            continue;
+          }
+          // Closing, busy, timed out: the lobby is changing hands. Ask again.
           await pause(250 * this.pace);
           continue;
         }
@@ -270,8 +379,74 @@ export class LobbyMember {
     }
   }
 
+  /**
+   * CLAIM AND ASK AT ONCE (2026-10-12), for a first join that knows nothing
+   * — a tap before the list had answered. It used to wait for the
+   * matchmaking socket (0.5-0.7 s on the public server), then ping
+   * (0.2-0.6), then, for an empty lobby, claim on a socket of its own
+   * (0.5-0.7 more). The claim needs neither of the first two, so it goes at
+   * once, side by side with the socket and the ping; whichever answers first
+   * decides. The ping says somebody is there: join them, and a claim that
+   * then comes back granted (they went that instant) is let go. The claim is
+   * granted: host. It is refused ("taken"): somebody holds the lobby, which
+   * is all a ping would have said. The claim stays the only lock — two at
+   * once still make one host.
+   *
+   * Resolves { host } to host, { net } to join through, or {} to ask again.
+   */
+  async _race() {
+    this._phase('finding');
+    let decided = false;
+    const claim = this._takeId().then((sig) => ({ sig }), (err) => ({ err }));
+    const ask = (async () => {
+      let net = null;
+      try {
+        net = await this.getNet();
+      } catch (err) {
+        net = null;
+      }
+      if (!net || decided) return { net: null, r: 'offline' };
+      this.asked++;
+      return { net, r: await net.ping(this.id, this.pingMs) };
+    })();
+    // The ping first only if it says somebody is there; anything else waits for the claim, which is on its way.
+    const first = await Promise.race([claim.then((c) => ({ c })), ask.then((a) => (a.r === 'here' ? { a } : new Promise(() => {})))]);
+    if (first.a) {
+      decided = true;
+      claim.then((c) => {
+        if (c.sig) c.sig.close();
+      });
+      return { net: first.a.net };
+    }
+    decided = true;
+    const c = first.c;
+    if (c.err) {
+      if (c.err.code === 'cancelled') throw c.err;
+      return {};
+    }
+    if (c.sig) {
+      this._phase('claiming');
+      return { host: this._hostOn(c.sig) };
+    }
+    // Taken: somebody holds it. Join them through the matchmaking socket, as soon as it is open.
+    let net = null;
+    try {
+      net = await this.getNet();
+    } catch (err) {
+      net = null;
+    }
+    return net ? { net } : {};
+  }
+
   /** Take the lobby's id and host it; null if somebody else has it. */
   async _claim() {
+    this._phase('claiming');
+    const sig = await this._takeId();
+    return sig ? this._hostOn(sig) : null;
+  }
+
+  /** The lobby's id on a socket of its own: the open socket, or null if somebody holds it. */
+  async _takeId() {
     const sig = this.makeSig();
     try {
       await sig.open(this.id);
@@ -284,6 +459,11 @@ export class LobbyMember {
       sig.close();
       throw coded('cancelled', 'Stopped joining.');
     }
+    return sig;
+  }
+
+  /** Host the lobby on `sig`, which holds its id. */
+  _hostOn(sig) {
     /*
      * An empty lobby starts on its own island (list 3: it used to take its
      * first player's). One that is re-forming keeps the island it was on —
@@ -417,6 +597,7 @@ export class LobbyMember {
 
   /** Join whoever holds the lobby. */
   _join(net) {
+    this._phase('connecting');
     const client = new ClientSession({
       net,
       target: this.id,
@@ -426,6 +607,8 @@ export class LobbyMember {
       now: this.now,
       admin: this.getAdmin() || null,
       owner: this.getOwner() || null,
+      connectMs: this.connectMs,
+      onPhase: (step) => this._phase(step),
       onEvent: (type, ...args) => {
         if (this.session !== client) return;
         if (type === 'ended') this._hostGone(client, args[0], args[1]);
@@ -571,6 +754,11 @@ export class LobbyWatch {
 
   get cacheKey() {
     return this.world ? 'world' : `wifi:${this.hash}`;
+  }
+
+  /** A row as it is before anything has answered — every lobby 'looking' — for the screen to show at once (2026-10-12). */
+  static looking({ hash = '', world = false } = {}) {
+    return new LobbyWatch({ net: null, hash, world }).lobbies;
   }
 
   start() {

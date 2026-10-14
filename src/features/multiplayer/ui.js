@@ -499,8 +499,10 @@ function paintRoster(box, players, {
   // Part 3b: which row's admin menu is open, and which action is waiting for "yes" (buildHud keeps both).
   const open = admin && adm ? adm.open : null;
   const armed = admin && adm ? adm.armed : null;
-  // The owner's troll menu (../owner/trolls.js): only the owner's list has it, and only its shape decides a repaint.
-  const trolls = owner && own ? own : null;
+  // The troll menu (../owner/trolls.js): only an owner's or an admin's list has it ("troll thing for admin"), and only its shape
+  // decides a repaint. `mine` is which of the two this list is for; a row gets the button only if that role may troll that player.
+  const trolls = admin && own ? own : null;
+  const mine = owner ? 'owner' : 'admin';
   let shape = `${meId}|${isHost}|${code}|${server}|${locked}|${closeButton}|${lobby}|${max}|${reconnecting}|${place}|${priv}|${world}|${admin}|${owner}|${open}|${armed ? `${armed.op}:${armed.id}` : ''}|${trolls ? trolls.shape() : ''}`;
   for (const p of players) shape += `#${p.id}|${p.name}|${p.colour}|${p.host ? 1 : 0}|${muted && muted.has(p.name) ? 1 : 0}|${p.admin ? 1 : 0}${p.owner ? 1 : 0}${p.muted ? 1 : 0}${p.frozen ? 1 : 0}`;
   if (shape !== box._shape) {
@@ -517,9 +519,9 @@ function paintRoster(box, players, {
       } else if (!lobby && isHost && !p.host && !p.admin) acts.push(`<button data-mp-kick="${p.id}" title="Remove ${name} from the server">Kick</button>`);
       // The admin menu: for anybody here who is not an admin themselves.
       if (admin && !you && !p.admin) acts.push(`<button class="mp-admbtn" data-mp-adm-open="${p.id}" aria-expanded="${open === p.id}" title="Admin: kick, mute or freeze ${name}">Admin</button>`);
-      // The owner's trolls, beside Admin: for everybody but the owner.
-      if (trolls && !you) acts.push(trolls.button(p));
-      let sub = trolls && !you ? trolls.row(p) : '';
+      // The trolls, beside Admin: the owner's on everybody but another owner, an admin's on plain players only.
+      if (trolls && !you) acts.push(trolls.button(p, mine));
+      let sub = trolls && !you ? trolls.row(p, mine) : '';
       if (admin && open === p.id && !you && !p.admin) {
         if (armed && armed.id === p.id) {
           sub += `<div class="mp-admrow" data-mp-admrow="${p.id}"><span class="mp-sure">${escapeHtml(ADMIN_WORDS[armed.op][1](p.name))}</span>`
@@ -612,7 +614,7 @@ export function buildHud(ctrl, layer) {
   };
   const onClick = (e) => {
     // The owner's troll menu (../owner/trolls.js): its buttons are its own; the list repaints after.
-    if (ctrl.ownerMenu && lastRoster && lastRoster.opts && lastRoster.opts.owner && ctrl.ownerMenu.click(e)) {
+    if (ctrl.ownerMenu && lastRoster && lastRoster.opts && lastRoster.opts.admin && ctrl.ownerMenu.click(e)) {
       repaint();
       return;
     }
@@ -747,8 +749,8 @@ export function buildHud(ctrl, layer) {
         if (adm.armed && adm.armed.op !== 'close') adm.armed = null;
       }
       if (!(opts && opts.admin)) adm.open = adm.armed = null;
-      const own = opts && opts.owner && ctrl.ownerMenu ? ctrl.ownerMenu : null;
-      if (own && typeof own.prune === 'function') own.prune(players);
+      const own = opts && opts.admin && ctrl.ownerMenu ? ctrl.ownerMenu : null;
+      if (own && typeof own.prune === 'function') own.prune(players, opts.owner ? 'owner' : 'admin');
       paintRoster(list, players, { ...opts, closeButton: true, adm, own });
       if (pause && !pause.hidden) paintRoster(pause.querySelector('[data-mp-pauselist]'), players, { ...opts, adm, own });
     },
@@ -779,7 +781,7 @@ export function buildHud(ctrl, layer) {
       if (pause.hidden === !!on) pause.hidden = !on;
       if (on) {
         setText(pause.querySelector('[data-mp-pausehead]'), `${players.length}/${(opts && opts.max) || MAX_PLAYERS} players`);
-        const own = opts && opts.owner && ctrl.ownerMenu ? ctrl.ownerMenu : null;
+        const own = opts && opts.admin && ctrl.ownerMenu ? ctrl.ownerMenu : null;
         paintRoster(pause.querySelector('[data-mp-pauselist]'), players, { ...opts, adm, own });
       }
     },

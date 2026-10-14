@@ -226,8 +226,10 @@ export async function worldTests(ctx) {
       const rj = await j.start().then((r) => ({ r }), (err) => ({ err }));
       const pol = rj.r ? rj.r.session.link.pc.cfg.iceTransportPolicy : null;
       ok('a world lobby’s host with no path on the first try: the second goes through a relay (when one is configured), and it is said',
-        rj.r && rj.r.role === 'client' && j.pathFails === 1 && pol === 'relay' && said.some((e) => e[0] === 'trying') && j.enterGiveUpMs === L.WORLD_ENTER_GIVE_UP_MS && L.WORLD_ENTER_GIVE_UP_MS >= 50000,
-        rj.err ? rj.err.code : `in on try ${j.pathFails + 1}, policy ${pol}; gives up after ${j.enterGiveUpMs / 1000} s`);
+        // Two tries' worth before giving up (2026-10-12: 12 s a try, not a code's 25, so a child hears in 30 s, not 55).
+        rj.r && rj.r.role === 'client' && j.pathFails === 1 && pol === 'relay' && said.some((e) => e[0] === 'trying') && j.enterGiveUpMs === L.WORLD_ENTER_GIVE_UP_MS
+          && L.WORLD_ENTER_GIVE_UP_MS >= 2 * L.WORLD_CONNECT_MS && j.connectMs === L.WORLD_CONNECT_MS,
+        rj.err ? rj.err.code : `in on try ${j.pathFails + 1}, policy ${pol}; ${j.connectMs / 1000} s a try, gives up after ${j.enterGiveUpMs / 1000} s`);
       clearInterval(tk);
       j.leave();
       h.leave();

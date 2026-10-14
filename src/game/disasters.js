@@ -176,6 +176,9 @@ export function poolForMap(map) {
   const hasVolcano = !!(map && map.features && map.features.volcano);
   return NATURAL_EVENTS.filter((e) => {
     if (e.id === 'ashCloud' || e.id === 'eruption') return hasVolcano;
+    // `random: false` = only ever on purpose (armed, from the pause menu, or summoned): the
+    // Heat-Seeker's missiles are not something the dice should hand a child.
+    if (e.random === false) return false;
     return true;
   });
 }
