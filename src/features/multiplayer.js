@@ -127,7 +127,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extLayer } from '../game/extensions.js';
-import { registerActions, isKey } from '../flight/input.js';
+import { registerActions, isKey, keyName } from '../flight/input.js';
 import { applyMap, heightAt } from '../world/terrain.js';
 import { refreshRunways } from '../world/airport.js';
 import { refreshApronElevation } from '../world/apron.js';
@@ -1165,6 +1165,22 @@ class Multiplayer {
     if (member !== this.lobby) return;
     switch (type) {
       case 'reconnecting': {
+        /*
+         * Scuffs #7: when the host's tab closed the lobby re-formed round the
+         * next in line — in 25 ms — and said nothing: no "left", no "who
+         * hosts now", and the new host was told its old friends had "joined".
+         * Who was here, and who hosted, are kept for what is said once it has
+         * re-formed ('role' below, 'join', reformSettled).
+         */
+        if (!this._reform || !this._reform.open) {
+          const names = new Set();
+          let was = null;
+          for (const p of this.remotes.players.values()) {
+            names.add(p.name);
+            if (p.host) was = p.name;
+          }
+          this._reform = { open: true, names, host: args[0] === 'moved' ? null : was, at: now(), why: args[0] };
+        }
         this.reconnecting = true;
         this.host = null;
         this.client = null;
@@ -1182,6 +1198,7 @@ class Multiplayer {
         const was = this.server && this.server.map;
         this.server = { ...info.server };
         this.note(`${member.world ? 'world lobby' : 'lobby'} ${member.n} re-formed in ${Math.round(info.ms)} ms; ${role === 'host' ? 'this tab hosts it now' : `player ${this.meId}`}`);
+        this.reformSaid(role);
         // Only a merge with a lobby on another island moves anybody: re-forming in place changes nothing on screen.
         if (was && info.server.map !== was) {
           this.ready = false;
@@ -1255,6 +1272,35 @@ class Multiplayer {
         this.toast(`${who} ${w}`, w === 'joined' ? 'good' : 'info');
       }
     }, Math.max(0, Math.min(1000, this._cagFirst + 3000 - t)));
+  }
+
+  /**
+   * The lobby has re-formed (scuffs #7): say who went and who hosts now —
+   * "Brave Otter left — Swift Falcon is hosting now", or "— you're hosting
+   * now" — once. The friends coming back to the new host over the next few
+   * seconds are not "joined" (onSessionEvent 'join'); anybody who was here
+   * and has not come back by then is said to have left.
+   */
+  reformSaid(role) {
+    const r = this._reform;
+    if (!r || !r.open) return;
+    r.open = false;
+    r.until = now() + 15000;
+    const hostNow = role === 'host' ? null : (this.roster().find((p) => p.host && p.id !== this.meId) || {}).name || null;
+    if (r.host && r.host !== hostNow) {
+      r.names.delete(r.host);
+      const next = role === 'host' ? 'you’re hosting now' : hostNow ? `${hostNow} is hosting now` : 'the lobby carries on';
+      this.toast(`${r.host} left — ${next}`, 'info', 5);
+    }
+    clearTimeout(this._reformT);
+    this._reformT = setTimeout(() => {
+      const z = this._reform;
+      if (z !== r || !this.role) return;
+      const here = new Set(this.roster().map((p) => p.name));
+      const gone = [...r.names].filter((n) => n !== this.profile.name && !here.has(n));
+      for (const n of gone) this.comeAndGo('left', n);
+      r.names.clear();
+    }, 8000);
   }
 
   /** Hide one player's quick chat — for this player only; nobody else is told. By username, which survives the lobby re-forming. */
@@ -2194,39 +2240,18 @@ class Multiplayer {
     const rz = Math.sin(h);
     if (mode === 'drive' && sim.vehicle) {
       const v = sim.vehicle;
-      if (pending.game === 'boat') {
-        for (const s of [side, -side]) {
-          const x = at.x + rx * 16 * rank * s;
-          const z = at.z + rz * 16 * rank * s;
-          if (heightAt(x, z) < -1.5) {
-            v.reset({ pos: new THREE.Vector3(x, 0, z), headingDeg: at.heading });
-            return;
-          }
-        }
-        return;
-      }
-      const x = at.x - fx * 9 * idx;
-      const z = at.z - fz * 9 * idx;
-      const onRoad = typeof sim.onRoad === 'function' ? sim.onRoad(x, z, 1) : true;
-      if (onRoad) v.reset({ pos: new THREE.Vector3(x, 0, z), headingDeg: at.heading });
+      // Beside a host who is on the water (a boat) or a road (a van) near here; otherwise off this player's own start (scuffs #3).
+      const boat = pending.game === 'boat';
+      const near = !!at.onGround && Math.hypot(at.x - v.pos.x, at.z - v.pos.z) < 600
+        && (boat ? heightAt(at.x, at.z) < -1.5 : typeof sim.onRoad === 'function' && sim.onRoad(at.x, at.z, 1));
+      const base = near ? at : { x: v.pos.x, z: v.pos.z, heading: v.heading };
+      if (boat) this.spreadBoat(sim, base, idx);
+      else this.spreadCar(sim, base, idx);
       return;
     }
     if (mode !== 'free' || !sim.aircraft) return;
     if (at.onGround || at.agl < 25) {
-      // Lined up off the start the game just gave us, along its runway, not the host's heading.
-      const ac = sim.aircraft;
-      const start = ac.pos.clone();
-      let hdg = at.heading;
-      try {
-        hdg = ac.readouts().heading;
-      } catch (e) {
-        /* the host's heading will do */
-      }
-      const g = (hdg * Math.PI) / 180;
-      const x = start.x + Math.cos(g) * 10 * side - Math.sin(g) * 22 * (rank - 1);
-      const z = start.z + Math.sin(g) * 10 * side + Math.cos(g) * 22 * (rank - 1);
-      ac.reset({ pos: new THREE.Vector3(x, 0, z), headingDeg: hdg, speed: 0, altAGL: null, engineOn: true });
-      this.snapCamera(sim);
+      this.lineUpOnStart(sim, idx);
       return;
     }
     const x = at.x - fx * 140 + rx * 40 * rank * side;
@@ -2255,6 +2280,191 @@ class Multiplayer {
       if (sim.input.out) sim.input.out.throttle = 0.7;
     }
     this.snapCamera(sim);
+  }
+
+  /**
+   * The formation take-off line (see applySpawn): player `idx` lined up off
+   * the start the game has just given this aeroplane, along its runway — the
+   * host (0) on the start itself, 1 and 2 ten metres either side, 3 and 4
+   * twenty-two metres behind them, and so on. An aeroplane that starts in the
+   * air (an airborne start) is moved off to the side and back instead, the
+   * same pattern forty metres apart.
+   */
+  lineUpOnStart(sim, idx) {
+    const ac = sim.aircraft;
+    if (!ac || idx < 1) return false;
+    const side = idx % 2 ? 1 : -1;
+    const rank = Math.ceil(idx / 2);
+    let hdg = 90;
+    try {
+      hdg = ac.readouts().heading;
+    } catch (e) {
+      /* along the runway's own heading, near enough */
+    }
+    const g = (hdg * Math.PI) / 180;
+    if (!ac.onGround && (ac.agl || 0) > 25) {
+      const dx = Math.cos(g) * 40 * rank * side - Math.sin(g) * 40 * rank;
+      const dz = Math.sin(g) * 40 * rank * side + Math.cos(g) * 40 * rank;
+      if (heightAt(ac.pos.x + dx, ac.pos.z + dz) + 30 > ac.pos.y) return false;
+      ac.pos.x += dx;
+      ac.pos.z += dz;
+      this.snapCamera(sim);
+      return true;
+    }
+    const start = ac.pos.clone();
+    const x = start.x + Math.cos(g) * 10 * side - Math.sin(g) * 22 * (rank - 1);
+    const z = start.z + Math.sin(g) * 10 * side + Math.cos(g) * 22 * (rank - 1);
+    ac.reset({ pos: new THREE.Vector3(x, 0, z), headingDeg: hdg, speed: 0, altAGL: null, engineOn: true });
+    this.snapCamera(sim);
+    return true;
+  }
+
+  /**
+   * Scuffs #3: the vans. "Behind the host" was the only place tried, and
+   * only if that one point was road; the audit's host was 48 km off in the
+   * air, so every van stayed on the depot's one start, drawn inside each
+   * other. Now: along the lane behind the start (or the host), then ahead
+   * of it, then the other lane, a van's length and a bit apart for each
+   * player — and if none of that is road, off to the side all the same:
+   * a van on the verge is better than two in one.
+   */
+  spreadCar(sim, base, idx) {
+    const v = sim.vehicle;
+    if (!v || idx < 1) return false;
+    const h = ((base.heading || 0) * Math.PI) / 180;
+    const fx = Math.sin(h);
+    const fz = -Math.cos(h);
+    const rx = Math.cos(h);
+    const rz = Math.sin(h);
+    const onRoad = (x, z) => (typeof sim.onRoad === 'function' ? sim.onRoad(x, z, 1) : true);
+    // The depot's own start is on its apron, which is not "road": there, the same flat apron will do.
+    const h0 = heightAt(base.x, base.z);
+    const startOnRoad = onRoad(base.x, base.z);
+    const road = (x, z) => onRoad(x, z) || (!startOnRoad && h0 > 0.3 && Math.abs(heightAt(x, z) - h0) < 0.5);
+    const step = 9;
+    // Each player's distances are their own (whole, half and far steps never meet another number's), so two never pick one spot.
+    for (const d of [step * idx, -step * idx, step * (idx + 0.5), -step * (idx + 0.5), step * (idx + 8), -step * (idx + 8)]) {
+      for (const lat of [0, 3.6, -3.6]) {
+        const x = base.x - fx * d + rx * lat;
+        const z = base.z - fz * d + rz * lat;
+        if (!road(x, z)) continue;
+        v.reset({ pos: new THREE.Vector3(x, 0, z), headingDeg: base.heading });
+        this.snapDrive(sim);
+        return true;
+      }
+    }
+    const side = idx % 2 ? 1 : -1;
+    const x = base.x + rx * 6 * Math.ceil(idx / 2) * side - fx * step * idx;
+    const z = base.z + rz * 6 * Math.ceil(idx / 2) * side - fz * step * idx;
+    v.reset({ pos: new THREE.Vector3(x, 0, z), headingDeg: base.heading });
+    this.snapDrive(sim);
+    return true;
+  }
+
+  /** The boats: alongside, sixteen metres a place, wherever there is water deep enough — either side, then astern, then ahead. */
+  spreadBoat(sim, base, idx) {
+    const v = sim.vehicle;
+    if (!v || idx < 1) return false;
+    const side = idx % 2 ? 1 : -1;
+    const h = ((base.heading || 0) * Math.PI) / 180;
+    const fx = Math.sin(h);
+    const fz = -Math.cos(h);
+    const rx = Math.cos(h);
+    const rz = Math.sin(h);
+    // Sixteen metres a place, every place its own distance: two boats never land on one spot whichever way each is turned.
+    const d = 16 * idx;
+    const tries = [[d * side, 0], [-d * side, 0], [0, -d], [0, d]];
+    for (const [lat, fwd] of tries) {
+      const x = base.x + rx * lat + fx * fwd;
+      const z = base.z + rz * lat + fz * fwd;
+      if (heightAt(x, z) < -1.5) {
+        v.reset({ pos: new THREE.Vector3(x, 0, z), headingDeg: base.heading });
+        sim._boatCamSnap = true;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Scuffs #11: single-player's scripts in a game with friends. Everybody
+   * read "FREE FLIGHT: Take off from runway 09, explore the islands…" pinned
+   * at the top, and in a boat lobby each player was sent on the lifeboat
+   * patrol ("PATROL: Out you go", their own casualty somewhere in the bay)
+   * that nobody else could see. In a game: no patrol, and the line at the
+   * top says where you are and with whom. (The tower calls you by your
+   * username, not "Skylark one seven two": sim.mpCallsign, set in frame().)
+   */
+  notSolo(sim, mode) {
+    if (!sim) return;
+    if (this.profile && this.profile.name) sim.mpCallsign = this.profile.name;
+    const r = sim.runner;
+    if (mode === 'drive' && r && r.def && r.def.id === 'boat-patrol' && typeof r.standDown === 'function') {
+      r.standDown();
+      r.def = null;
+    }
+    const boat = mode === 'drive' && sim.vehicle && sim.vehicle.isBoat;
+    if ((mode !== 'free' && !boat) || !sim.hud || typeof sim.hud.setObjective !== 'function') return;
+    sim.hud.setObjective(this.objectiveTitle(), this.objectiveLine());
+  }
+
+  /** "Lobby 1", "World 2", "Private match", or the server's name. */
+  objectiveTitle() {
+    const m = this.lobby;
+    if (m && m.n) return lobbyLabel(m.n, !!m.world);
+    if (this.server && this.server.priv) return 'Private match';
+    return (this.server && this.server.name) || 'Multiplayer';
+  }
+
+  objectiveLine() {
+    const place = this.server && this.server.map ? mapNameFor(this.server.map) : '';
+    const touch = !!(this.sim && this.sim.touch);
+    const keyed = QUICK_CHAT.filter((c) => c.key).length;
+    const how = touch ? 'Players shows who’s here, Chat sends a quick message.'
+      : `${keyName('mpPlayers')} shows who’s here, ${keyName('mpChat1')}–${keyName(`mpChat${keyed}`)} send a quick chat.`;
+    const sim = this.sim;
+    const what = sim && sim.mode === 'drive' ? (sim.vehicle && sim.vehicle.isBoat ? 'Out on the water' : 'Driving') : 'Flying';
+    return `${what} with friends${place ? ` on ${place}` : ''} — go anywhere you like. ${how}`;
+  }
+
+  /** The van's camera put straight behind it after a move (the boat's has its own flag). */
+  snapDrive(sim) {
+    try {
+      if (sim.driveCam && typeof sim.driveCam.snap === 'function') sim.driveCam.snap(sim.camera, sim.vehicle);
+    } catch (e) {
+      /* it catches up by itself */
+    }
+  }
+
+  /**
+   * Scuffs #2: "Reset on the runway", Restart and "Return to the airfield"
+   * put everybody in a lobby on the very same spot — measured 0 m apart,
+   * two aeroplanes drawn inside each other with their wings flickering —
+   * because the formation line was only ever applied to a join. Now every
+   * new start in a game is spread the same way, by this player's number:
+   * the host keeps the start, everybody else lines up off it.
+   */
+  spreadOnStart(sim, mode) {
+    if (!this.role || this.meId == null || this.meId < 1 || !sim) return false;
+    /*
+     * The taxi from the gate keeps its own route. A "Start at" stand or pad
+     * (spawns.js) is placed by that feature's own startMode, which runs after
+     * this one (it imports this module, so it registers later) and picks a
+     * free place itself; when it leaves the aeroplane on the runway, this
+     * spread stands.
+     */
+    if (mode === 'free' && sim.taxi && sim.taxi.active) return false;
+    try {
+      if (mode === 'drive' && sim.vehicle) {
+        const v = sim.vehicle;
+        const base = { x: v.pos.x, z: v.pos.z, heading: v.heading };
+        return sim.vehicle.spec && sim.vehicle.spec.kind === 'car' ? this.spreadCar(sim, base, this.meId) : this.spreadBoat(sim, base, this.meId);
+      }
+      if (mode === 'free' && sim.aircraft) return this.lineUpOnStart(sim, this.meId);
+    } catch (e) {
+      this.note(`could not spread this start: ${e && e.message}`);
+    }
+    return false;
   }
 
   /**
@@ -2302,6 +2512,12 @@ class Multiplayer {
         this.remotes.add(a.id, a);
         this.events.joined({ id: a.id, name: a.name, colour: a.colour });
         this.note(`${a.name} joined as player ${a.id}`);
+        // Back after the lobby re-formed round this host (scuffs #7): they never left, so they did not "join".
+        if (this._reform && this._reform.names.has(a.name) && t < (this._reform.until || 0)) {
+          this._reform.names.delete(a.name);
+          this.syncRoster();
+          break;
+        }
         // An admin arriving is said to be one: nothing an admin does is hidden from the others (part 3b). The owner too.
         this.comeAndGo('joined', a.owner ? `${a.name} (the owner)` : a.admin ? `${a.name} (an admin)` : a.name);
         this.syncRoster();
@@ -2506,6 +2722,9 @@ class Multiplayer {
   }
 
   cleanup() {
+    if (this.sim) this.sim.mpCallsign = null;
+    this._reform = null;
+    clearTimeout(this._reformT);
     this.holdStill(false);
     this.me = { admin: false, muted: false, frozen: false, owner: false };
     this.events.detach();
@@ -2616,7 +2835,10 @@ class Multiplayer {
     const tag = this.me.owner ? ' · <b class="mp-admintag mp-ownertag">OWNER</b>' : this.me.admin ? ' · <b class="mp-admintag">ADMIN</b>' : '';
     // The crown on your own badge while this game is yours (you host it): everybody else sees it over your aeroplane.
     const crown = this.role === 'host' && !this.reconnecting ? CROWN_SVG : '';
-    this.hud.badge(`${crown}<b>${say(title)}</b> · ${list.length}/${max}${locked ? ' · locked' : ''}${tag}${again}`, [adminLine, placeLine, codeLine].filter(Boolean).join('<br>'));
+    // The lobby's name in a span of its own: a phone's one-row badge (ui.js is-compact) keeps "Lobby 1 · 3/8" and drops the name.
+    const short = lobby ? lobbyLabel(lobby, world) : '';
+    const titleHtml = short && title.startsWith(short) ? `${say(short)}<span class="mp-bname">${say(title.slice(short.length))}</span>` : say(title);
+    this.hud.badge(`${crown}<b>${titleHtml}</b> · ${list.length}/${max}${locked ? ' · locked' : ''}${tag}${again}`, [adminLine, placeLine, codeLine].filter(Boolean).join('<br>'), !!adminLine);
   }
 
   /** The host stops (or starts again) letting new players in. */
@@ -2668,7 +2890,7 @@ class Multiplayer {
         id: this.meId, seq: this._seq, t, pos: v.pos, quat: v.quat, vel: still ? STILL : v.vel, game: kind, type: kind,
         throttle: Math.abs(v.throttle || 0), steer: v.steer || 0, brakes: (v.brakes || 0) > 0.05,
         onGround: true, engineOn: true, lights: true, gearDown: true, gearPos: 1,
-        ghost: !!this.extraFlags.ghost, pvp: !!this.extraFlags.pvp, walk,
+        ghost: !!this.extraFlags.ghost || still, pvp: !!this.extraFlags.pvp, walk,
       });
     }
     const ac = sim.aircraft;
@@ -2680,7 +2902,8 @@ class Multiplayer {
       gearDown: ac.gearDown, gearPos: ac.gearPos, flaps: ac.flaps, throttle: c.throttle, rpm: ac.rpm,
       pitch: c.pitch, roll: c.roll, yaw: c.yaw, brakes: (c.brakes || 0) > 0.1,
       onGround: ac.onGround, engineOn: ac.engineOn, crashed: ac.crashed, lights: ac.engineOn || ac.rpm > 0.05,
-      ghost: !!this.extraFlags.ghost, pvp: !!this.extraFlags.pvp, walk,
+      // Paused (scuffs #10): a ghost while away — nobody bumps or tags somebody who is not there.
+      ghost: !!this.extraFlags.ghost || still, pvp: !!this.extraFlags.pvp, walk,
     });
   }
 
@@ -2914,6 +3137,14 @@ class Multiplayer {
     const s = this.session;
     // Frozen by an admin: the aeroplane (or boat, or car) is held where it is — its own step does nothing until let go.
     if (this.me.frozen) this.holdStill(true);
+    // The tower calls this player by their username in a game (scuffs #11; ../game/atc-director.js).
+    const cs = this.role && this.profile && this.profile.name ? this.profile.name : null;
+    if (this.sim.mpCallsign !== cs) this.sim.mpCallsign = cs;
+    // Back on the runway ("Return to the airfield", stop hook): not on top of everybody else who did the same.
+    if (this._spreadNext) {
+      this._spreadNext = false;
+      if (this.role && this.sim && this.sim.mode === 'free') this.spreadOnStart(this.sim, 'free');
+    }
     if (s) {
       let buf = null;
       /*
@@ -3110,12 +3341,18 @@ registerExtension({
     if (p) {
       multiplayer.pendingSpawn = null;
       multiplayer.applySpawn(sim, mode, p);
+    } else if (multiplayer.role && !multiplayer.transition) {
+      // Scuffs #2: a restart in a game (Reset on the runway, Fly again, a new drive) lines up off the start too.
+      multiplayer.spreadOnStart(sim, mode);
     }
+    if (multiplayer.role || multiplayer.transition) multiplayer.notSolo(sim, mode);
   },
   stop(sim, why) {
     // Going back to the menu is leaving the game. Going back to the runway is not.
     if (multiplayer.transition || !multiplayer.role) return;
     if (why === 'menu') multiplayer.leave('menu');
+    // "Return to the airfield" puts the aeroplane on the start once this hook has run: spread it on the next frame (frame()).
+    if (why === 'airport') multiplayer._spreadNext = true;
   },
   update(sim, dt) {
     if (!multiplayer.installed) return;

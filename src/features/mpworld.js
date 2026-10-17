@@ -942,6 +942,8 @@ function toggleMenu() {
   m.innerHTML = `<h5>Summon for everybody</h5>${summonList().map((s) => `<button type="button" data-summon="${esc(s.id)}"><span aria-hidden="true">${s.icon}</span><b>${esc(s.name)}</b><small>${esc(hintOf(s))}</small></button>`).join('')}`
     + '<p>One at a time — the host says when the next can come.</p>';
   m.hidden = false;
+  // Scuffs #1: all eight on the screen — beside the badge at 1366x768, scrolling inside itself on a phone (ui.js placePopup).
+  if (typeof mp.hud.popup === 'function') mp.hud.popup(m);
 }
 
 /* ---- the plug-in ------------------------------------------------------------------------------------------- */

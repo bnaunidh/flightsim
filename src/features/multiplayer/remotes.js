@@ -26,6 +26,7 @@
 import * as THREE from '../../vendor/three.module.js';
 import { createAircraftModel, syncAircraftModel, groundOffsetFor } from '../../aircraft/model-adapter.js';
 import { getAircraft, specFor } from '../../aircraft/types.js';
+import { schemeFor } from '../../aircraft/liveries.js';
 import { createBoat, createCar, updateVehicleModel } from '../../vehicles/models.js';
 import { VEHICLES } from '../../vehicles/surface.js';
 import { Track, Smoother, RotSmoother, LEAD_K } from './interp.js';
@@ -35,6 +36,8 @@ import { RemoteWalker } from './walkers.js';
 const tmpV = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion();
 const UP = new THREE.Vector3(0, 1, 0);
+/** How long a friend's wreck stays where they came down after their last crashed snapshot (scuffs #13). */
+export const WRECK_MS = 8000;
 
 /** Dispose a model the way main.js disposes the player's when the type changes. */
 function disposeModel(model) {
@@ -83,7 +86,38 @@ function schemeIn(colour) {
  * colour. Cloned, because the pack shares materials between parts and a
  * shared material painted red would paint the player's own boat red too.
  */
+/*
+ * Scuffs #9: painting the whole hull and deck made a friend's Kestrel Launch
+ * a plain green boat with railings, nothing like the white-and-orange launch
+ * they were driving — and the van a one-colour van. The boat and the van
+ * keep their own paint now, and the player's colour goes on their stripe
+ * (the launch's navy band, the van's blue one), which is where a livery's
+ * own colour is. A model without such a stripe (another pack) is tinted the
+ * old way, so a player is still told apart by their colour.
+ */
+const STRIPE_MAT = /^(paint_navy|paint_blue|stripe|accent)/i;
+
+function tintStripe(model, colour) {
+  const clones = new Map();
+  const tint = new THREE.Color(colour);
+  model.traverse((o) => {
+    if (!o.isMesh || Array.isArray(o.material) || !o.material || !o.material.color) return;
+    const m = o.material;
+    if (!STRIPE_MAT.test(m.name || '')) return;
+    if (!clones.has(m)) {
+      const c = m.clone();
+      c.color.copy(tint);
+      clones.set(m, c);
+    }
+    o.material = clones.get(m);
+  });
+  if (!clones.size) return false;
+  model.userData.mpTinted = [...clones.values()];
+  return true;
+}
+
 function tintVehicle(model, colour) {
+  if (tintStripe(model, colour)) return;
   /*
    * The deck as well as the hull. Painting the hull alone was measured to
    * show nothing: the pack's planing hull spans -0.45 to +0.65 m and the
@@ -456,6 +490,13 @@ export class Remotes {
      */
     this.hidden = null;
     this.note = null;
+    /*
+     * Scuffs #9 and #10 (../mplook.js): away(id) is true while a player is
+     * paused or in another tab ("⏸ away" on their tag); liveryOf(id) is the
+     * hangar livery they picked, or null.
+     */
+    this.away = null;
+    this.liveryOf = null;
   }
 
   /**
@@ -618,7 +659,7 @@ export class Remotes {
     p.modelKey = '';
   }
 
-  _build(kind, type, colour) {
+  _build(kind, type, colour, livery = 'house') {
     if (kind === 'boat' || kind === 'car') {
       const m = kind === 'boat' ? createBoat() : createCar();
       tintVehicle(m, colour);
@@ -626,7 +667,9 @@ export class Remotes {
       return m;
     }
     const t = getAircraft(type);
-    const model = createAircraftModel({ type: t, livery: schemeIn(colour) });
+    // Their hangar livery, if they picked one, with their colour as its accent; house colours is the lobby's "your plane's colour".
+    const scheme = livery && livery !== 'house' ? { ...schemeFor(t, livery), accent: colour } : schemeIn(colour);
+    const model = createAircraftModel({ type: t, livery: scheme });
     // How far the picture drops so the wheels meet the ground — measured once per type, as main.js does for yours.
     if (!this.offsets.has(t.id)) {
       let off = 0;
@@ -645,7 +688,13 @@ export class Remotes {
   _ensureModel(p, snap, sim) {
     const kind = snap.game === 'boat' || snap.game === 'car' ? snap.game : 'air';
     const type = kind === 'air' ? (snap.type || 'skylark') : kind;
-    const key = `${kind}:${type}:${p.colour}`;
+    let livery = 'house';
+    try {
+      livery = (kind === 'air' && this.liveryOf && this.liveryOf(p.id)) || 'house';
+    } catch (e) {
+      livery = 'house';
+    }
+    const key = `${kind}:${type}:${p.colour}:${livery}`;
     if (p.model && p.modelKey === key && p.model.parent) return p.model;
     this._release(p);
     const root = this._root(sim);
@@ -654,7 +703,7 @@ export class Remotes {
     if (model) this.pool.delete(key);
     else {
       try {
-        model = this._build(kind, type, p.colour);
+        model = this._build(kind, type, p.colour, livery);
       } catch (err) {
         console.warn('[mp] could not build a model for', type, err);
         return null;
@@ -728,6 +777,28 @@ export class Remotes {
         : p.track.predict(now, p.sample || undefined, Number.isFinite(others) ? others : null);
       if (s) p.sample = s;
       const stale = !s || p.track.stale(now);
+      /*
+       * Scuffs #13: a friend who crashed was simply gone — the model dropped
+       * the moment their game went to its debrief (no more snapshots), and
+       * nothing at all was left where they came down. The wreck stays where
+       * it stopped for a few seconds now, under a puff of smoke
+       * (../mplook.js), and goes when they fly again or the time is up.
+       */
+      if (s && s.snap && s.snap.crashed) {
+        // Kept from the last crashed snapshot: their game shows the crash for a while before its debrief, then goes quiet.
+        if (!p.wreck) p.wreck = { since: now, until: now + WRECK_MS };
+        else if (!stale) p.wreck.until = now + WRECK_MS;
+      } else if (s && s.snap && !stale && p.wreck) p.wreck = null;
+      if (stale && p.wreck && now < p.wreck.until && p.model && p.model.parent && p.drawn) {
+        p.model.visible = true;
+        if (p.lod) p.lod.visible = false;
+        if (p.walker) p.walker.hide();
+        if (p.tag) p.tag.sprite.visible = p.tag.pip.visible = false;
+        p.visible = false;
+        p.wrecked = true;
+        continue;
+      }
+      p.wrecked = false;
       if (stale) {
         if (p.model) p.model.visible = false;
         if (p.lod) p.lod.visible = false;
@@ -802,7 +873,7 @@ export class Remotes {
         ac.groundSpeed = Math.hypot(s.vel.x, s.vel.z);
         ac.engineOn = snap.engineOn;
         ac.agl = snap.onGround ? 0 : 500;
-        ac.crashed = false;
+        ac.crashed = !!snap.crashed;
         try {
           syncAircraftModel(model, ac);
           if (model.userData.update) model.userData.update(dt, ac, sim && sim.weather);
@@ -865,6 +936,15 @@ export class Remotes {
       } catch (e) {
         note = '';
       }
+      // Paused or in another tab (scuffs #10): said on the tag, so a friend who has stopped is not taken for lag.
+      let away = false;
+      try {
+        away = !!(this.away && this.away(p.id));
+      } catch (e) {
+        away = false;
+      }
+      p.away = away;
+      if (away) note = note ? `⏸ away ${note}` : '⏸ away';
       /*
        * Redrawing the tag is a canvas paint and a texture upload. Every frame,
        * for four friends, that was half a megabyte a frame to the GPU on a

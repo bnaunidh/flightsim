@@ -143,6 +143,30 @@ const CSS = `
 .is-touch-device .mp-hud .mp-keys { display: none; }
 .is-touch-device .mp-hud button { padding: 9px 14px; font-size: 14px; }
 .is-touch-device .mp-badge .mp-bact { justify-content: flex-start; }
+/*
+ * Scuffs #4: a phone on its side (844x390) had the badge under the minimap on
+ * top of the smoke chip, the EJECT button and the joystick, and two rows of
+ * a phone's free space are not there to be had. On a short touch screen it
+ * is ONE row — the lobby and its head-count, Players, Chat, and the chips
+ * (PvP, Summon, Race) — that fits the strip along the top beside the map.
+ * The island-and-rule line goes (the player list has it) unless an admin
+ * froze or muted the player; the PvP table goes (the chip has the hearts,
+ * the corner feed says who tagged whom).
+ */
+.mp-badge.is-compact { flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 4px 5px 4px 9px; max-width: calc(100vw - 24px); }
+.mp-badge.is-compact .mp-brow { flex: 0 1 auto; min-width: 0; }
+.mp-badge.is-compact .mp-bname { display: none; }
+.mp-badge.is-compact .mp-bcode:not(.is-urgent) { display: none; }
+.mp-badge.is-compact .mp-bcode { flex: 0 1 auto; order: 5; max-width: 160px; }
+.mp-badge.is-compact .mp-bact { flex: 0 0 auto; }
+.mp-badge.is-compact .mp-bext { flex: 0 0 auto; flex-wrap: nowrap; }
+.mp-badge.is-compact .mpp-board { display: none; }
+.is-touch-device .mp-hud .mp-badge.is-compact button { padding: 6px 10px; font-size: 13px; }
+/* ...and where no strip that long is free (a boat on a phone: the compass ribbon, the panel and the lever take the top), a narrow column. */
+.mp-badge.is-compact.is-stack { flex-direction: column; align-items: stretch; gap: 4px; max-width: 190px; padding: 5px 6px 5px 9px; }
+.is-touch-device .mp-hud .mp-badge.is-compact.is-stack button { padding: 5px 8px; font-size: 12.5px; }
+.mp-badge.is-compact.is-stack .mp-bext { flex-wrap: wrap; }
+.mp-badge.is-compact.is-stack .mp-bcode { max-width: none; }
 .mp-list {
   position: absolute; left: 50%; top: 18%; transform: translateX(-50%); width: min(440px, 92vw); z-index: 2;
   max-height: 70vh; overflow-y: auto;
@@ -168,6 +192,8 @@ const CSS = `
   background: rgba(10, 17, 30, 0.9); border: 1px solid var(--panel-line); box-shadow: var(--shadow);
 }
 .mp-chatmenu[hidden] { display: none !important; }
+/* Scuffs #1: a menu taller than the room it has scrolls inside itself instead of running off the screen (placePopup). */
+.mp-chatmenu.is-scroll, .mpp-menu.is-scroll { overflow-y: auto; overscroll-behavior: contain; }
 .mp-hud .mp-chatmenu button { text-align: left; padding: 9px 10px; }
 .mp-chatmenu kbd { font-family: var(--mono); font-size: 10.5px; color: var(--text-dim); margin-right: 5px; }
 .mp-mini { position: absolute; pointer-events: none; }
@@ -567,6 +593,91 @@ function paintRoster(box, players, {
 
 const safeCss = (c) => (/^#[0-9a-f]{6}$/i.test(String(c)) ? c : '#58c6ff');
 
+/**
+ * Put a menu that hangs off the badge where all of it can be seen (scuffs #1).
+ *
+ * The ⚡ Summon menu opened upwards from a badge docked over the minimap and
+ * was 648 px tall: at 1366x768 its top was at y = -301, and four of the
+ * eight disasters could not be clicked; on a phone the Chat menu opened down
+ * over the joystick and six of its ten presets were under the bottom edge.
+ *
+ * Tried in this order, and the first where the whole menu fits is used:
+ * away from the screen edge the badge is nearest (up from a badge in the
+ * bottom half, down from one in the top half), the other way, then beside
+ * the badge towards the middle of the screen, as tall as the window. If it
+ * fits nowhere (a phone, and eight disasters), it takes the biggest of those
+ * and scrolls inside itself. `anchor` is the badge's rectangle in the
+ * window; the menu may live in any positioned box (the badge's chip row is
+ * one), and is placed in that box's own coordinates.
+ */
+export function placePopup(menu, anchor, { margin = 8, gap = 8 } = {}) {
+  if (!menu || !anchor || typeof window === 'undefined') return null;
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const st = menu.style;
+  menu.classList.remove('is-up', 'is-down', 'is-scroll');
+  st.maxHeight = '';
+  st.width = '';
+  // Measured far to the left, where nothing squeezes it (a box placed by `left` shrinks to the room left of it in its parent), then held at that width.
+  st.left = '-5000px';
+  st.top = '0px';
+  st.right = 'auto';
+  st.bottom = 'auto';
+  st.visibility = 'hidden';
+  const w = menu.offsetWidth;
+  const h = menu.offsetHeight;
+  st.width = `${w}px`;
+  const box = menu.offsetParent && menu.offsetParent.getBoundingClientRect ? menu.offsetParent.getBoundingClientRect() : { left: 0, top: 0 };
+  const a = anchor;
+  const onRight = (a.left + a.right) / 2 > W / 2;
+  const upFirst = (a.top + a.bottom) / 2 > H / 2;
+  const clampX = (x) => Math.max(margin, Math.min(W - margin - w, x));
+  const clampY = (y) => Math.max(margin, Math.min(H - margin - h, y));
+  const xUnder = clampX(onRight ? a.right - w : a.left);
+  const room = {
+    up: a.top - gap - margin,
+    down: H - a.bottom - gap - margin,
+    side: onRight ? a.left - gap - margin : W - a.right - gap - margin,
+  };
+  const tall = H - 2 * margin;
+  const at = {
+    up: (hh) => [xUnder, a.top - gap - hh],
+    down: () => [xUnder, a.bottom + gap],
+    side: (hh) => [onRight ? a.left - gap - w : a.right + gap, Math.max(margin, Math.min(H - margin - hh, upFirst ? a.bottom - hh : a.top))],
+  };
+  const order = upFirst ? ['up', 'down', 'side'] : ['down', 'up', 'side'];
+  let how = order.find((k) => (k === 'side' ? room.side >= w && h <= tall : h <= room[k]));
+  let hh = h;
+  if (!how) {
+    // Nowhere for all of it: the most room, scrolling. Beside the badge counts only if the menu is not wider than the gap there.
+    const fit = { up: room.up, down: room.down, side: room.side >= w ? tall : 0 };
+    how = order.reduce((best, k) => (fit[k] > fit[best] ? k : best), order[0]);
+    hh = Math.max(120, Math.floor(fit[how]));
+    st.maxHeight = `${hh}px`;
+    menu.classList.add('is-scroll');
+  }
+  let [x, y] = at[how](hh);
+  x = Math.max(margin, Math.min(W - margin - w, x));
+  y = Math.max(margin, Math.min(H - margin - hh, how === 'side' ? y : clampY(y)));
+  st.left = `${Math.round(x - box.left)}px`;
+  st.top = `${Math.round(y - box.top)}px`;
+  st.visibility = '';
+  menu.classList.add(how === 'down' ? 'is-down' : 'is-up');
+  return { how, x: Math.round(x), y: Math.round(y), w, h: Math.min(h, hh), scroll: hh < h };
+}
+
+/*
+ * What the badge must not cover (scuffs #4 and #12): the game's own HUD,
+ * the touch controls and the other features' chips that stay on the
+ * screen. Not what comes and goes — a toast, a subtitle, the coach's line,
+ * a banner — or the badge would jump about under a finger; and not FIRE or
+ * the race line, which move out of the badge's way themselves (../pvp.js
+ * fireSpot, ../race.js placeBar): the two of them chasing each other would
+ * never settle.
+ */
+const TRANSIENT_HUD = /\bhud-(toast|toasts|subtitle|subtitle-who|subtitle-text|coach|banner|controls-card|papi)\b/;
+const KEEP_CLEAR_EXTRA = ['.touch-layer > *', '.fun-chip', '.ej-col > .ej-btn', '.ej-col > *', '.wf-panel', '.race-solobar', '[data-owner-chip]'];
+
 export function buildHud(ctrl, layer) {
   const el = h(`
     <div class="mp-hud" hidden>
@@ -654,6 +765,7 @@ export function buildHud(ctrl, layer) {
     }
     if (e.target.closest('[data-mp-chat]')) {
       menu.hidden = !menu.hidden;
+      if (!menu.hidden) hud.popup(menu);
       return;
     }
     const say = e.target.closest('[data-mp-say]');
@@ -692,6 +804,16 @@ export function buildHud(ctrl, layer) {
     if (ctrl.ownerMenu && typeof ctrl.ownerMenu.input === 'function') ctrl.ownerMenu.input(e);
   };
   el.addEventListener('input', onInput);
+  // The badge grew or shrank (a chip row came, PvP's table, a code line): placed again on the next frame, not a second later on top of the minimap.
+  if (typeof ResizeObserver === 'function') {
+    try {
+      new ResizeObserver(() => {
+        placedAt = -Infinity;
+      }).observe(badge);
+    } catch (e) {
+      /* placed once a second regardless */
+    }
+  }
 
   const hud = {
     el,
@@ -708,7 +830,9 @@ export function buildHud(ctrl, layer) {
       }
     },
     // Once a second from the idle loop; written only when it changed, which is rarely.
-    badge(text, code = '') {
+    // `urgent`: the second line says something the player must see even on a phone (an admin froze or muted them).
+    badge(text, code = '', urgent = false) {
+      if (badgeCode.classList.contains('is-urgent') !== !!urgent) badgeCode.classList.toggle('is-urgent', !!urgent);
       // A key moved in Settings: the key line and the chat menu say so.
       if (keysVer !== bindingsVersion()) {
         keysVer = bindingsVersion();
@@ -788,11 +912,21 @@ export function buildHud(ctrl, layer) {
     /**
      * Where the badge goes: docked to the minimap, where the same players'
      * dots are — above it when the minimap is at the bottom (a computer),
-     * below it when it is at the top (a tablet) — with the chat menu
-     * opening away from it. Without a minimap (hidden with M), the top right
-     * corner, below whatever of the game's own HUD is there: re-measured once
-     * a second, and never counting the toasts, which come and go and used to
-     * push it into the middle of the view.
+     * below it when it is at the top (a tablet). Without a minimap (hidden
+     * with M), the top right corner. Re-measured once a second.
+     *
+     * Scuffs #4 and #12 (the audit of live v64): the dock was the only
+     * place it looked, measured against the minimap and the wildfire's
+     * panel and nothing else. On a phone on its side it landed on the smoke
+     * chip, the EJECT button and the joystick; in a boat with PvP on it grew
+     * up into the Wind panel. Now each place it may go is checked against
+     * everything that stays on the screen (keepClear) and the first that
+     * covers nothing is used: the dock; the dock slid along towards the
+     * middle (the wildfire's panel, as before); beside the minimap; along the
+     * top; down the right-hand side. If every one covers something, the one
+     * that covers least. On a short touch screen the badge is one row first
+     * (is-compact). The menus that hang off it open into whatever room
+     * there is (placePopup).
      */
     place(sim) {
       const t = typeof performance !== 'undefined' ? performance.now() : 0;
@@ -800,81 +934,139 @@ export function buildHud(ctrl, layer) {
       placedAt = t;
       const W = window.innerWidth;
       const H = window.innerHeight;
-      const bw = badge.offsetWidth || 200;
-      const bh = badge.offsetHeight || 60;
+      const touch = !!(document.documentElement && document.documentElement.classList.contains('is-touch-device'));
+      const compact = touch && (H < 560 || W < 560);
       const mm = sim && sim.minimap;
-      const canvas = mm && mm.visible && mm.canvas;
+      const shown = mm && mm.visible && !mm._offstage && mm.el && mm.el.style && mm.el.style.display !== 'none';
+      const canvas = shown && mm.canvas;
       const r = canvas && canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : null;
-      let pos;
-      if (r && r.width > 20 && r.height > 20) {
-        const bottomHalf = r.top + r.height / 2 > H / 2;
-        const rightHalf = r.left + r.width / 2 > W / 2;
-        const top = bottomHalf ? Math.max(8, r.top - 8 - bh) : Math.min(H - bh - 8, r.bottom + 8);
-        pos = rightHalf ? { right: Math.max(8, W - r.right), top } : { left: Math.max(8, r.left), top };
-        pos.menuUp = bottomHalf;
-        // The wildfire's panel grows down that side to meet it (a laptop, 1366x768: its last lines were under the
-        // badge): the badge steps to the left of the panel rather than cover it.
-        if (rightHalf) {
-          const bx1 = W - pos.right;
-          let edge = Infinity;
-          for (const n of document.querySelectorAll('.wf-panel')) {
-            const b = n.getBoundingClientRect();
-            if (b.width && b.height && b.left < bx1 && b.right > bx1 - bw && b.top < top + bh && b.bottom > top) edge = Math.min(edge, b.left);
+      const avoid = hud.keepClear(t, W, H);
+      const pad = 6;
+      const search = (bw, bh) => {
+        const overlap = (x, y) => {
+          let a = 0;
+          for (const b of avoid) {
+            const ow = Math.min(x + bw, b.right + pad) - Math.max(x, b.left - pad);
+            const oh = Math.min(y + bh, b.bottom + pad) - Math.max(y, b.top - pad);
+            if (ow > 0 && oh > 0) a += ow * oh;
           }
-          if (edge < Infinity && edge - 8 - bw > 8) pos.right = Math.round(W - edge + 8);
+          return a;
+        };
+        const inside = (x, y) => x >= 4 && y >= 4 && x + bw <= W - 4 && y + bh <= H - 4;
+        // Candidates: [x, y, slide dx, slide dy, steps]. A slide tries the same place moved along, 12 px a step.
+        const cands = [];
+        if (r && r.width > 20 && r.height > 20) {
+          const bottomHalf = r.top + r.height / 2 > H / 2;
+          const rightHalf = r.left + r.width / 2 > W / 2;
+          const x = rightHalf ? Math.min(W - 8, r.right) - bw : Math.max(8, r.left);
+          const y = bottomHalf ? r.top - 8 - bh : r.bottom + 8;
+          const toMid = rightHalf ? -12 : 12;
+          cands.push([x, y, 0, 0, 0]);
+          cands.push([x, y, toMid, 0, Math.floor((W / 2) / 12)]);
+          // Beside it, towards the middle, level with its outer edge.
+          const sx = rightHalf ? r.left - 8 - bw : r.right + 8;
+          const sy = bottomHalf ? r.bottom - bh : r.top;
+          cands.push([sx, sy, 0, bottomHalf ? -12 : 12, Math.floor((H * 0.6) / 12)]);
+          cands.push([sx, sy, toMid, 0, Math.floor((W / 2) / 12)]);
+          // Down (or up) that side of the screen, past whatever is under (over) the minimap.
+          cands.push([x, y, 0, bottomHalf ? -12 : 12, Math.floor((H * 0.7) / 12)]);
         }
-      } else {
-        if (t - hudNodesAt > 5000) {
-          hudNodesAt = t;
-          hudNodes = [];
-          for (const n of document.querySelectorAll('[class*="hud-"]')) if (!el.contains(n) && !/hud-toast/.test(n.className)) hudNodes.push(n);
-        }
-        const left = W - 16 - bw;
-        boxes.length = 0;
-        for (const n of hudNodes) {
-          if (!n.isConnected) continue;
-          const b = n.getBoundingClientRect();
-          if (!b.width || !b.height || b.right <= left || b.left >= W || b.top > H * 0.55) continue;
-          if (b.width > W * 0.6 || b.height > H * 0.6) continue;
-          const cs = getComputedStyle(n);
-          if (cs.visibility === 'hidden' || Number(cs.opacity) < 0.05) continue;
-          boxes.push(b);
-        }
-        let y = 16;
-        for (let k = 0, moved = true; moved && k < 12; k++) {
-          moved = false;
-          for (const b of boxes) {
-            if (b.top < y + bh && b.bottom > y) {
-              y = Math.ceil(b.bottom) + 8;
-              moved = true;
-            }
+        // The top right corner and down that side; the top left and down that side; along the top.
+        cands.push([W - 16 - bw, 16, 0, 12, Math.floor((H * 0.7) / 12)]);
+        cands.push([16, 16, 0, 12, Math.floor((H * 0.7) / 12)]);
+        cands.push([W - 16 - bw, 16, -12, 0, Math.floor(W / 12)]);
+        let best = null;
+        for (const [x0, y0, dx, dy, n] of cands) {
+          for (let k = 0; k <= n; k++) {
+            const x = Math.round(x0 + dx * k);
+            const y = Math.round(y0 + dy * k);
+            if (!inside(x, y)) continue;
+            const o = overlap(x, y);
+            if (!best || o < best.o) best = { x, y, o };
+            if (o === 0) break;
           }
+          if (best && best.o === 0) break;
         }
-        pos = { right: 16, top: Math.min(y, Math.max(16, H * 0.55)), menuUp: false };
+        return best || { x: Math.max(8, W - 16 - bw), y: 16, o: Infinity };
+      };
+      // The shapes it can take: on a short touch screen one row first, then a narrow column; elsewhere the usual card.
+      const setForm = (f) => {
+        const c = f !== 'full';
+        const s = f === 'stack';
+        if (badge.classList.contains('is-compact') !== c) badge.classList.toggle('is-compact', c);
+        if (badge.classList.contains('is-stack') !== s) badge.classList.toggle('is-stack', s);
+      };
+      const forms = compact ? ['row', 'stack'] : ['full'];
+      let pick = null;
+      for (const f of forms) {
+        setForm(f);
+        const bw = badge.offsetWidth || 200;
+        const bh = badge.offsetHeight || 60;
+        const best = search(bw, bh);
+        if (!pick || best.o < pick.o) pick = { ...best, f, bw, bh };
+        if (best.o === 0) break;
       }
-      const key = `${pos.left}|${pos.right}|${pos.top}|${pos.menuUp}|${bh}`;
+      setForm(pick.f);
+      const { bw, bh } = pick;
+      hud.placed = { x: pick.x, y: pick.y, w: bw, h: bh, covers: Math.round(pick.o), compact, form: pick.f };
+      const pos = { left: pick.x, top: pick.y, menuUp: pick.y + bh / 2 > H / 2 };
+      const key = `${pos.left}|${pos.top}|${pos.menuUp}|${bh}|${bw}`;
       hud.menuUp = !!pos.menuUp;
       if (badge._pos === key) return;
       badge._pos = key;
-      badge.style.left = pos.left != null ? `${pos.left}px` : 'auto';
-      badge.style.right = pos.right != null ? `${pos.right}px` : 'auto';
+      badge.style.left = `${pos.left}px`;
+      badge.style.right = 'auto';
       badge.style.top = `${pos.top}px`;
-      menu.style.left = pos.left != null ? `${pos.left}px` : 'auto';
-      menu.style.right = pos.right != null ? `${pos.right}px` : 'auto';
-      if (pos.menuUp) {
-        menu.style.top = 'auto';
-        menu.style.bottom = `${H - pos.top + 8}px`;
-      } else {
-        menu.style.bottom = 'auto';
-        menu.style.top = `${pos.top + bh + 8}px`;
+      // A menu that is open moves with the badge.
+      if (!menu.hidden) hud.popup(menu);
+      for (const m of ext.querySelectorAll('.mpp-menu')) if (!m.hidden) hud.popup(m);
+    },
+    /** Where the badge was put last, and how much of the HUD it covers there (0, unless nothing was free). For the tests. */
+    placed: null,
+    /** What the badge keeps clear of, measured now: the nodes are looked up again every three seconds. */
+    keepClear(t, W, H) {
+      if (t - hudNodesAt > 3000) {
+        hudNodesAt = t;
+        hudNodes = [];
+        for (const n of document.querySelectorAll('#ui [class*="hud-"]')) {
+          if (el.contains(n) || TRANSIENT_HUD.test(typeof n.className === 'string' ? n.className : '')) continue;
+          if (n.closest('.hud-toasts, .hud-subtitle, .hud-banner, .hud-controls-card')) continue;
+          hudNodes.push(n);
+        }
+        for (const sel of KEEP_CLEAR_EXTRA) for (const n of document.querySelectorAll(sel)) if (!el.contains(n) && !hudNodes.includes(n)) hudNodes.push(n);
       }
+      boxes.length = 0;
+      for (const n of hudNodes) {
+        if (!n.isConnected || n.hidden) continue;
+        const b = n.getBoundingClientRect();
+        if (b.width < 2 || b.height < 2 || b.right <= 0 || b.left >= W || b.bottom <= 0 || b.top >= H) continue;
+        if (b.width > W * 0.6 || b.height > H * 0.6) continue;
+        const cs = getComputedStyle(n);
+        if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) < 0.05) continue;
+        boxes.push(b);
+      }
+      return boxes;
+    },
+    /** Open `m` (the chat menu, or a feature's menu on the chip row) where all of it can be seen: placePopup, off the badge. */
+    popup(m) {
+      if (!m || m.hidden) return null;
+      return placePopup(m, badge.getBoundingClientRect());
     },
     /** Coloured dots over the game's minimap, drawn on our own canvas so minimap.js is untouched. */
     minimap(sim, dots, extras = null) {
       const mm = sim && sim.minimap;
       const canvas = mm && mm.canvas;
       const more = !!(extras && extras.length);
-      const visible = !!(mm && mm.visible && canvas && canvas.getBoundingClientRect && !el.hidden && (dots.length || more));
+      /*
+       * Scuffs #15: after a crash the friends' arrows and the race's rings
+       * stayed drawn where the minimap had been, over nothing — `visible` is
+       * "switched on", and stays true while the map itself is taken off the
+       * screen (a debrief, a menu: minimap.js _apply). So: only over a map
+       * that is really there, in a game that is really flying.
+       */
+      const onScreen = !!(mm && mm.visible && !mm._offstage && !(mm.el && mm.el.style && mm.el.style.display === 'none')
+        && !(sim.hud && (sim.hud.hidden || (sim.hud.wrap && sim.hud.wrap.style && sim.hud.wrap.style.display === 'none'))) && sim.state === 'flying');
+      const visible = !!(onScreen && canvas && canvas.getBoundingClientRect && !el.hidden && (dots.length || more));
       if (!visible) {
         if (mini.style.display !== 'none') mini.style.display = 'none';
         mini._was = false;

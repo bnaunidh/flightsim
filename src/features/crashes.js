@@ -749,7 +749,8 @@ function receiveCrash(sim, e, from) {
   C.stats.remote++;
   const name = cleanName(from.name);
   if (name && sim && sim.state === 'flying' && sim.hud && sim.hud.notify) {
-    sim.hud.notify(`${esc(name)}: ${esc(titleFor(e.kind, e.vehicle, COMIC.on))}`, 'info', 3);
+    // A crash icon, and what happened to them (scuffs #13: "Brave Otter: Belly-flop skid!" alone read like a quick chat).
+    sim.hud.notify(`💥 ${esc(name)}: ${esc(titleFor(e.kind, e.vehicle, COMIC.on))} — everybody’s fine`, 'info', 3.5);
   }
   return true;
 }

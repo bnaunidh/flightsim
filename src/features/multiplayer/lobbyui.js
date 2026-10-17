@@ -115,6 +115,26 @@ const CSS = `
 .mp-lobby.is-world .mp-bar i { background: #4fd684; }
 .mp-offer[hidden] { display: none !important; }
 .mp-offer { margin-top: 10px; }
+/*
+ * Scuffs #6: a refused join ("someone in Lobby 1 is already called…", with
+ * the one-tap fix) was said 393 px under the Join button, below the World
+ * lobbies — off the screen, so a child saw nothing happen. What a join says
+ * (its progress, a refusal, the fix) now sits on the bottom edge of the
+ * screen wherever it is scrolled to, until it is answered.
+ */
+.mp-joinnote { margin-top: 14px; }
+.mp-joinnote .mp-status { margin: 0; min-height: 22px; }
+.mp-joinnote .mp-offer { margin-top: 8px; }
+.mp-joinnote.is-note { position: sticky; bottom: 10px; z-index: 4; padding: 10px 14px; border-radius: 12px;
+  background: rgba(10, 17, 30, 0.95); border: 1px solid var(--panel-line); box-shadow: var(--shadow); }
+.mp-joinnote.is-note .mp-status { min-height: 0; }
+/* ...and once the username is picked, You, Your ride and PvP fold to one line, so the lobbies are near the top. */
+.mp-mesum { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 16px; padding: 12px 16px; }
+.mp-mesum[hidden] { display: none !important; }
+.mp-mesum .mp-mesum-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+.mp-mesum strong { font-size: 17px; color: var(--text); }
+.mp-mesum .mp-mesum-what { flex: 1 1 180px; color: var(--text-dim); font-size: 13.5px; }
+.mp-lobbies.is-folded .mp-usercard, .mp-lobbies.is-folded .mp-ridecard, .mp-lobbies.is-folded .mp-pvpcard { display: none; }
 .mp-lobbies .mp-ridecard { margin-bottom: 16px; }
 .mp-rides { display: flex; flex-wrap: wrap; gap: 6px; }
 .mp-lobbies .mp-rides button { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 13px; padding: 6px 10px;
@@ -205,6 +225,12 @@ export function buildLobbyScreen(ctrl) {
       </header>
       <p class="hint">Lobbies are always open, up to eight players in each, and every lobby has its own island. Everybody sees everybody and you can bump into each other — switch PvP on to tag each other too. Chat is quick messages only.</p>
 
+      <div class="mp-card mp-mesum" data-mp-mesum hidden>
+        <span class="mp-mesum-dot" data-mp-mesum-dot></span><strong data-mp-mesum-name></strong>
+        <span class="mp-mesum-what" data-mp-mesum-what></span>
+        <button class="ghost mp-dice" data-mp-mesum-change>Change</button>
+      </div>
+
       <div class="mp-card mp-usercard">
         <h3>Your username</h3>
         <div class="mp-userhead">
@@ -273,8 +299,10 @@ export function buildLobbyScreen(ctrl) {
       </h3>
       <p class="hint">Play with people who aren’t on your Wi-Fi — across town or across the world. The same rules as every lobby: usernames from the lists, quick chat only, eight at most.</p>
       <div class="mp-lobbylist mp-worldlist" data-mp-worldlist></div>
-      <div class="mp-offer" data-mp-offer hidden><button class="primary" data-mp-offer-go></button></div>
-      <p class="mp-status" data-mp-status role="status" aria-live="polite"></p>
+      <div class="mp-joinnote" data-mp-joinnote>
+        <p class="mp-status" data-mp-status role="status" aria-live="polite"></p>
+        <div class="mp-offer" data-mp-offer hidden><button class="primary" data-mp-offer-go></button></div>
+      </div>
 
       <h3 class="fail-heading mp-lanhead mp-privhead">Private match</h3>
       <p class="hint">Only friends who have the code can join — up to eight. <b>Works with friends who aren’t on your Wi-Fi.</b> It isn’t on any list.</p>
@@ -342,6 +370,17 @@ export function buildLobbyScreen(ctrl) {
   let privPick = null;
   const finds = { adj: $('[data-mp-find="adj"]'), noun: $('[data-mp-find="noun"]') };
   let offer = null;
+  /** Scuffs #6: You, Your ride and PvP folded to one line (the username picked); Change opens them again. */
+  let folded = false;
+  const meSum = $('[data-mp-mesum]');
+  const joinNote = $('[data-mp-joinnote]');
+  /** The note on the bottom edge: while a join is going, or something needs an answer (a refusal, the one-tap fix). */
+  let noteKind = '';
+  const paintNote = () => {
+    const text = $('[data-mp-status]').textContent;
+    const stick = !!offer || (!!text && (noteKind === 'warn' || noteKind === 'bad' || s.classList.contains('mp-busy')));
+    if (joinNote.classList.contains('is-note') !== stick) joinNote.classList.toggle('is-note', stick);
+  };
 
   const current = () => parseCallSign(ctrl.profile.name) || { adjective: CALLSIGN_ADJECTIVES[0], noun: CALLSIGN_NOUNS[0], number: 0 };
 
@@ -356,6 +395,16 @@ export function buildLobbyScreen(ctrl) {
       }
     }
     numSel.value = String(cs.number);
+  };
+  const paintMe = () => {
+    const fold = folded && !!ctrl.profile.chosen;
+    if (s.classList.contains('is-folded') !== fold) s.classList.toggle('is-folded', fold);
+    if (meSum.hidden === fold) meSum.hidden = !fold;
+    if (!fold) return;
+    setText($('[data-mp-mesum-name]'), ctrl.profile.name || '');
+    $('[data-mp-mesum-dot]').style.background = /^#[0-9a-f]{6}$/i.test(String(ctrl.profile.colour)) ? ctrl.profile.colour : '#58c6ff';
+    const ride = ctrl.ride && ctrl.rideName ? ctrl.rideName(ctrl.ride()) : '';
+    setText($('[data-mp-mesum-what]'), `${ride ? `in the ${ride} · ` : ''}PvP ${ctrl.profile.pvp ? 'ON' : 'OFF'}`);
   };
   const paintUser = () => {
     const inGame = !!(ctrl.role || ctrl.lobby);
@@ -372,6 +421,7 @@ export function buildLobbyScreen(ctrl) {
     paintRides();
     paintPrivate();
     paintPvp();
+    paintMe();
   };
   /* PvP: the player's own switch, OFF until they turn it on (../pvp.js). */
   const paintPvp = () => {
@@ -524,6 +574,13 @@ export function buildLobbyScreen(ctrl) {
       paintWords(true);
       return;
     }
+    if (t.closest('[data-mp-mesum-change]')) {
+      folded = false;
+      paintUser();
+      const card = $('.mp-usercard');
+      if (card && card.scrollIntoView) card.scrollIntoView({ block: 'nearest' });
+      return undefined;
+    }
     if (t.closest('[data-mp-user-done]')) {
       ctrl.setProfile({ name: ctrl.profile.name, chosen: true });
       pickBox.hidden = true;
@@ -574,6 +631,7 @@ export function buildLobbyScreen(ctrl) {
     if (pvpBtn) {
       if (ctrl.setPvp) ctrl.setPvp(pvpBtn.dataset.mpPvp === 'on');
       paintPvp();
+      paintMe();
       return undefined;
     }
     const bumpBtn = t.closest('[data-mp-bump]');
@@ -930,6 +988,8 @@ export function buildLobbyScreen(ctrl) {
       return privPick;
     },
     refresh() {
+      // Opened again with the username already picked: the three cards folded to one line, the lobbies near the top (#6).
+      folded = !!ctrl.profile.chosen;
       paintUser();
       if (!ctrl.profile.chosen) paintWords(true);
       // The admin box: shown on an admin's device (its list fills in from the directory), gone when admin is turned off.
@@ -943,9 +1003,16 @@ export function buildLobbyScreen(ctrl) {
       const el = $('[data-mp-status]');
       el.textContent = text || '';
       el.className = `mp-status${kind ? ` is-${kind}` : ''}`;
+      noteKind = text ? kind : '';
+      paintNote();
     },
     busy(on) {
       s.classList.toggle('mp-busy', !!on);
+      paintNote();
+    },
+    /** Whether the join's note is on the bottom edge right now (for the tests). */
+    get noteStuck() {
+      return joinNote.classList.contains('is-note');
     },
     net(text, bad = false) {
       $('[data-mp-net-text]').textContent = text;
@@ -955,6 +1022,7 @@ export function buildLobbyScreen(ctrl) {
     offer(o) {
       offer = o || null;
       offerBox.hidden = !offer;
+      paintNote();
       if (!offer) return;
       offerBtn.textContent = offer.kind === 'name'
         ? `Use ${offer.name} and join`

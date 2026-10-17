@@ -54,6 +54,8 @@ import './race.js';
 import './mpworld.js';
 // The walking pilot in multiplayer: seen by everybody, knocked down by anybody, and everybody sees the fall.
 import './pilot-mp.js';
+// What friends see of you that the snapshot does not carry: your smoke, your livery, and "away" while you are paused (scuffs #8-#10).
+import './mplook.js';
 // Carrier ops: the hook, the wires, the meatball, the catapults, and military flights starting on the ship.
 import './carrier-ops.js';
 // After carrier-ops: where a Free Flight starts by aircraft class — a gate, the GA apron, the flight

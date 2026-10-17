@@ -49,6 +49,8 @@ const F = {
   smoke: null,
   time: 0,
   smokeOn: false,
+  /** Smoke actually coming out this frame (on, flying, not parked, not crashed). */
+  puffing: false,
   rgb: [1, 1, 1],
   pixelScale: 400,
   /** What is left to smoke with. */
@@ -163,6 +165,7 @@ function update(sim, dt) {
     // Not while parked: a smoking aeroplane standing on the apron is a fire.
     const parked = sim.aircraft && sim.aircraft.onGround && sim.aircraft.vel.lengthSq() < 25;
     const puffing = !!(F.smokeOn && smokeOk && !crashed && sim.aircraft && !parked);
+    F.puffing = puffing;
     if (puffing) {
       const c = activeColour(F.data);
       const rgb = c.rgb ? linearRGB(c.rgb, F.rgb) : rainbowAt(F.time, F.rgb);
@@ -246,6 +249,7 @@ registerExtension({
   stop(sim) {
     if (F.smoke) F.smoke.clear();
     F.smokeOn = false;
+    F.puffing = false;
     F.tank.reset();
     if (F.hud) {
       F.hud.setVisible(false);
@@ -263,6 +267,14 @@ registerExtension({
     return true;
   },
 });
+
+/**
+ * What this player's smoke is doing right now — coming out or not, and in
+ * which colour — for multiplayer to show the friends (./mplook.js, scuffs #8).
+ */
+export function smokeNow() {
+  return { on: !!F.puffing, colour: activeColour(F.data || {}).id };
+}
 
 /* For the tests. */
 export const __test = { F, toggleSmoke, model, openFun, craftOf };

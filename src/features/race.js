@@ -67,7 +67,17 @@ const G = {
   hub: null,
   lobby: null,
   parked: null,
-  stats: { rings: 0, finishes: 0, asked: 0, resultsShown: 0, countdown: [], told: [], hubOpened: 0 },
+  /*
+   * Scuffs #5 and #14: the highest race number this tab has seen on the grid
+   * in this game. Somebody who arrives while a race runs (or after it is
+   * over) first sees it at GO or done, and a player number in its entry list
+   * is no proof they are in it: numbers are handed out again, so a late
+   * joiner could wear a racer's who had left (step(): late).
+   */
+  gridSeen: -1,
+  /** The racers' names as they were when each race formed ("n:id" → { name, colour }), for the results after some have gone. */
+  names: new Map(),
+  stats: { rings: 0, finishes: 0, asked: 0, resultsShown: 0, quietResults: 0, countdown: [], told: [], hubOpened: 0 },
 };
 
 /** The race on the island this game is on, or null. */
@@ -124,7 +134,33 @@ function racers(course) {
 
 ch.onState('race', (v) => {
   if (v && v.s === RR.S.go && (!G.goArrived || G.goArrived.n !== v.n)) G.goArrived = { n: v.n, at: now() };
+  // Here when it formed (the host's own setState comes through here too): it can be this player's race.
+  if (v && v.s === RR.S.grid && Number.isInteger(v.n)) {
+    G.gridSeen = Math.max(G.gridSeen, v.n);
+    rememberNames(v);
+  }
 });
+
+/** The racers' names now, while they are all here — kept for the results card. */
+function rememberNames(st) {
+  if (!st || !Array.isArray(st.ent)) return;
+  for (const id of st.ent) {
+    const key = `${st.n}:${id}`;
+    if (G.names.has(key)) continue;
+    const w = who(id);
+    if (w.name !== 'Somebody') G.names.set(key, { name: w.name, colour: w.colour });
+  }
+  // Only the last few races are worth keeping.
+  if (G.names.size > 64) for (const k of [...G.names.keys()].slice(0, G.names.size - 64)) G.names.delete(k);
+}
+
+/** A racer of race `st`, by the name they had in it — "A racer who left" when nobody knew them. */
+function racerOf(st, id) {
+  const kept = G.names.get(`${st.n}:${id}`);
+  if (kept) return kept;
+  const w = who(id);
+  return w.name === 'Somebody' ? { name: 'A racer who left', colour: w.colour } : w;
+}
 
 ch.on('race:ask', (d, from, meta) => {
   if (!ch.isHost || !meta || !meta.toHost || !G.host) return;
@@ -151,6 +187,8 @@ ch.on('mp:start', ({ role }) => {
   G.L = null;
   // Every game counts its races from 1: the last game's race 1 is not this one's.
   G.shown = -1;
+  G.gridSeen = -1;
+  G.names.clear();
   G.goArrived = null;
   G.host = role === 'host' ? new RR.RaceHost({ now, course: islandCourse(G.sim) || RR.COURSE }) : null;
   startTimer();
@@ -392,7 +430,14 @@ function step(sim) {
     G.stats.countdown = [];
     // A new race: the last one's results card goes.
     if (G.els && !G.els.res.hidden && st.s !== RR.S.done) G.els.res.hidden = true;
-    G.L = { n: st.n, c: course.id, slot: st.ent.indexOf(id), k: 0, t0: 0, fin: false, out: false, placed: false, cd: -1, prev: null, goAt: 0, gridAt: now() };
+    /*
+     * Arrived after it formed (scuffs #5, #14): first seen running or over, and this player's number is not a racer's still
+     * in it — not on the grid at all, or a racer's who has gone (the host takes a leaver out, and their number can be given to
+     * the next to join). A racer whose game simply missed the grid message is still a racer: their number is in, and not out.
+     */
+    const late = inGame() && st.s !== RR.S.grid && G.gridSeen < st.n && (!st.ent.includes(id) || st.out.includes(id));
+    if (st.s === RR.S.grid) rememberNames(st);
+    G.L = { n: st.n, c: course.id, slot: late ? -1 : st.ent.indexOf(id), late, k: 0, t0: 0, fin: false, out: false, placed: false, cd: -1, prev: null, goAt: 0, gridAt: now() };
   }
   const L = G.L;
   // The others' race forming on this island, and this player in the wrong vehicle for it: told why they are not on the grid.
@@ -460,11 +505,37 @@ function step(sim) {
   // the race is over: nobody still racing is bumped (or tagged) by somebody done.
   ghost('race', st.s === RR.S.go && L.slot >= 0 && L.fin);
   paintCourse(G.view, 0, false);
-  hud(st.s === RR.S.go ? { st, L, me, id, course, watching: true } : null);
+  // Somebody not in this race (arrived after it formed, or in another vehicle) is told, once it runs, that it is on and the next one is theirs (#14).
+  // Not while it is on the grid: a line saying "on the grid" to somebody who is not on it reads as if they were (the wrong vehicle is told on the big card).
+  const racer = L.slot >= 0 && !L.late;
+  hud(st.s === RR.S.go ? { st, L, me, id, course, watching: true, spectator: !racer } : null);
   if (st.s === RR.S.done && G.shown !== st.n) {
     G.shown = st.n;
-    showResults(st);
+    /*
+     * Scuffs #5: the results card popped up over the cockpit of anybody who
+     * joined after a race — "Here's how the race went", with "Somebody" for
+     * the racers who had gone. It is for the racers. Anybody else who was
+     * here and saw it run gets one line in the corner; somebody who arrived
+     * after it, nothing.
+     */
+    if (racer || !inGame()) showResults(st);
+    else if (!L.late || L.sawGo) quietResults(st);
   }
+  if (st.s === RR.S.go) L.sawGo = true;
+}
+
+/** The race's result as one line in the corner, for somebody who watched it but was not in it. */
+function quietResults(st) {
+  const rows = RR.results(st);
+  const first = rows.find((r) => r.place === 1);
+  G.stats.quietResults++;
+  const course = courseOf(st);
+  if (!first) {
+    feed(`🏁 The ${esc(course.name)} is over`);
+    return;
+  }
+  const w = racerOf(st, first.id);
+  feed(`🏁 <b>${esc(w.name)}</b> won the ${esc(course.name)} — the next race is yours too`, w.colour);
 }
 
 function gatesWord(course, n) {
@@ -750,6 +821,12 @@ function hudLine(e, o) {
     return;
   }
   if (o.watching) {
+    if (o.spectator) {
+      // Scuffs #14: not "0/3 finished" with a Leave race button — what is going on, and what they can do.
+      e.line.innerHTML = `<em>${esc(course.name)}</em> · race on · ${st.fin.length}/${st.ent.length} finished <small>· you can race the next one</small>`;
+      e.arrow.style.transform = 'rotate(0deg)';
+      return;
+    }
     const done = L && L.fin;
     e.line.innerHTML = `<em>${esc(course.name)}</em> · ${done ? 'you’re done — ' : ''}${st.fin.length}/${st.ent.length} finished`;
     return;
@@ -792,7 +869,8 @@ function showResults(st) {
   const medal = ['🥇', '🥈', '🥉'];
   const mine = myId();
   const list = rows.map((r) => {
-    const w = inGame() ? who(r.id) : { name: (mp.profile && mp.profile.name) || 'You', colour: (mp.profile && mp.profile.colour) || '#58c6ff' };
+    // By the names they raced under (scuffs #5): a racer who has since left is still themselves, not "Somebody".
+    const w = inGame() ? racerOf(st, r.id) : { name: (mp.profile && mp.profile.name) || 'You', colour: (mp.profile && mp.profile.colour) || '#58c6ff' };
     return `<li class="${r.id === mine ? 'is-me' : ''}"><span>${r.place ? medal[r.place - 1] || RR.ordinal(r.place) : '—'}</span><i style="background:${esc(w.colour)}"></i>`
       + `<b>${esc(w.name)}</b><em>${r.ms != null ? RR.fmtTime(r.ms) : 'didn’t finish'}</em></li>`;
   }).join('');
@@ -830,7 +908,12 @@ function paintChip(sim) {
   const b = chip('race', 3, () => {
     const st = state();
     if (st && (st.s === RR.S.grid || st.s === RR.S.go) && G.L && G.L.slot >= 0 && !G.L.fin && !G.L.out) quitRace();
-    else askRace();
+    else if (st && (st.s === RR.S.grid || st.s === RR.S.go)) {
+      // A race already running without this player: say so, rather than a tap that does nothing (scuffs #14).
+      const c = courseOf(st);
+      G.stats.told.push('race on');
+      bigCard(c.name.toUpperCase(), 'A race is on — tap 🏁 Race again when it’s over and you’re in the next one', 2.6);
+    } else askRace();
   });
   if (!b) return;
   if (b.hidden === on) b.hidden = !on;

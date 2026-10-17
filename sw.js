@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v67';
+const CACHE_VERSION = 'island-flight-v68';
 
 const PRECACHE = [
   './',
@@ -284,6 +284,7 @@ const PRECACHE = [
   'src/features/mpplay/shared.js',
   'src/features/mpplay/sights.js',
   'src/features/mpworld.js',
+  'src/features/mplook.js',
   'src/features/pvp.js',
   'src/features/pvp/rules.js',
   'src/features/race.js',

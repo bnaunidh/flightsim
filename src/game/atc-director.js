@@ -38,6 +38,8 @@ export class AtcDirector {
    * bug the class actually noticed.
    */
   get callsign() {
+    // In a game with friends everybody in a Skylark was "Skylark one seven two": there it is the player's username (multiplayer.js frame()).
+    if (this.sim.mpCallsign) return this.sim.mpCallsign;
     const t = this.sim.aircraftType;
     return (t && t.callsign) || `${this.callsign}`;
   }
