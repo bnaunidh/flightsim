@@ -443,9 +443,10 @@ export function cannotGetOut(sim) {
    * old limit of 1 m/s a 747 or an F-35B could only be left by holding the
    * brakes and pressing O at the same time.
    */
-  if ((ac.groundSpeed || 0) > Math.max(CREEP, ruleSpeed(sim))) {
+  // Under 15 knots you may get out (the owner: "if the plane is under 15 knots u can get out"); it is parked as you step down.
+  if ((ac.groundSpeed || 0) > Math.max(GETOUT_MAX, ruleSpeed(sim))) {
     const o = keyName('getOut', sim);
-    return live(craftWord(sim) === 'the helicopter' ? `Sit still on the ground first, then press ${o}` : `Stop the aeroplane first (hold ${keyName('brakes', sim)} to brake), then press ${o}`);
+    return live(craftWord(sim) === 'the helicopter' ? `Sit still on the ground first, then press ${o}` : `Slow down under 15 knots (hold ${keyName('brakes', sim)} to brake), then press ${o}`);
   }
   return null;
 }
@@ -474,6 +475,8 @@ function ruleDecides(sim) {
 
 /** Ground speed, m/s, an aeroplane is parked from when you get out: a brisk walk. */
 const CREEP = 2.0;
+/** Ground speed, m/s, under which you may get out of an aeroplane or helicopter: 15 knots. */
+const GETOUT_MAX = 15 * 0.514444;
 
 function exitAircraft(sim) {
   const ac = sim.aircraft;

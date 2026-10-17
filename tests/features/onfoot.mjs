@@ -521,8 +521,10 @@ if (OF) {
   };
   ext.update(sim, 1 / 60);
   ok('stopped on the ground, O is on offer', OF.cannotGetOut(sim) === null);
-  ac.groundSpeed = 5;
-  ok('rolling, it is not', !!OF.cannotGetOut(sim));
+  ac.groundSpeed = 5; // about 10 kt
+  ok('rolling under 15 knots, O is still on offer (the owner\'s rule)', OF.cannotGetOut(sim) === null);
+  ac.groundSpeed = 9; // about 17.5 kt
+  ok('rolling faster than 15 knots, it is not', !!OF.cannotGetOut(sim));
   ac.groundSpeed = 0;
   ac.onGround = false;
   ok('in the air, it is not', /air/.test(OF.cannotGetOut(sim) || ''));
