@@ -224,7 +224,8 @@ if (!window.__pt) {
   const SH = await import('/src/features/mpplay/shared.js');
   const LK = await import('/src/features/mplook.js');
   const FUN = await import('/src/features/fun.js');
-  const pt = (window.__pt = { THREE, mpMod, race, RR, SH, LK, FUN, mp: mpMod.multiplayer, ticks: 0, toasts: [] });
+  const OF = await import('/src/features/onfoot.js');
+  const pt = (window.__pt = { THREE, mpMod, race, RR, SH, LK, FUN, OF, mp: mpMod.multiplayer, ticks: 0, toasts: [] });
   window.__realRender = s.renderer.render.bind(s.renderer);
   s.renderer.render = () => {};
   if (s.hud && s.hud.notify) {
@@ -273,19 +274,44 @@ if (!window.__pt) {
     const r = m.getBoundingClientRect();
     return { open: true, n: btns.length, on, hit, top: Math.round(r.top), bottom: Math.round(r.bottom) };
   };
-  /* What the badge covers, of the HUD it must keep clear of, measured independently of the badge's own list. */
+  /*
+   * What the badge covers, of the HUD it must keep clear of, measured independently of the badge's own list.
+   * The repair round added what the first list missed: the buttons deeper in the touch layer (the boat's
+   * lever detents), the lit get-out prompt (the only way out on a touch screen) and the minimap itself.
+   */
   pt.covers = () => {
     const b = document.querySelector('.mp-badge').getBoundingClientRect();
     const hits = [];
     const vis = (n) => { const r = n.getBoundingClientRect(); const cs = getComputedStyle(n); return r.width > 1 && r.height > 1 && cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.05; };
-    for (const n of document.querySelectorAll('#ui [class*="hud-"], .touch-layer > *, .fun-chip, .ej-col > *, .wf-panel')) {
+    for (const n of document.querySelectorAll('#ui [class*="hud-"], .touch-layer > *, .touch-layer button, .fun-chip, .ej-col > *, .wf-panel, .of-prompt.on, .minimap-canvas')) {
       if (n.closest('.mp-hud, .hud-toasts, .hud-subtitle, .hud-banner, .hud-controls-card') || /hud-(toast|subtitle|coach|banner|controls-card|papi)/.test(n.className)) continue;
       if (!vis(n)) continue;
       const r = n.getBoundingClientRect();
       if (r.width > innerWidth * 0.6 || r.height > innerHeight * 0.6) continue;
       if (r.left < b.right - 1 && r.right > b.left + 1 && r.top < b.bottom - 1 && r.bottom > b.top + 1) hits.push(String(n.className).split(' ')[0]);
     }
-    return { badge: [b.left, b.top, b.width, b.height].map(Math.round), hits, placed: pt.mp.hud.placed };
+    return { size: innerWidth + 'x' + innerHeight, badge: [b.left, b.top, b.width, b.height].map(Math.round), hits, placed: pt.mp.hud.placed };
+  };
+  /* The get-out prompt: lit, and what a finger at its middle (and its two ends) lands on. */
+  pt.door = () => {
+    const p = document.querySelector('.of-prompt');
+    if (!p) return { lit: false };
+    const r = p.getBoundingClientRect();
+    const y = (r.top + r.bottom) / 2;
+    const ours = [r.left + 8, (r.left + r.right) / 2, r.right - 8].every((x) => { const h = document.elementFromPoint(x, y); return !!h && (h === p || p.contains(h)); });
+    return { lit: p.classList.contains('on') && p.classList.contains('act'), text: p.textContent, r: [r.left, r.top, r.right, r.bottom].map(Math.round), ours, x: Math.round((r.left + r.right) / 2), y: Math.round(y) };
+  };
+  /* The boat's engine lever: every detent's middle and corners are the detent's own. */
+  pt.lever = () => {
+    const out = [];
+    for (const d of document.querySelectorAll('.touch-detent')) {
+      const r = d.getBoundingClientRect();
+      if (r.width < 2) continue;
+      const pts = [[(r.left + r.right) / 2, (r.top + r.bottom) / 2], [r.left + 4, r.top + 4], [r.right - 4, r.top + 4], [r.left + 4, r.bottom - 4], [r.right - 4, r.bottom - 4]];
+      const bad = pts.filter(([x, y]) => { const h = document.elementFromPoint(x, y); return !(h && (h === d || d.contains(h))); }).length;
+      out.push(d.textContent.trim() + (bad ? ' ✗' + bad : ''));
+    }
+    return out;
   };
   pt.mp.install(s);
 }
@@ -358,6 +384,41 @@ try {
     phone.touch && phone.cov.hits.length === 0 && phone.cov.placed && phone.cov.placed.compact && phone.cov.placed.covers === 0, phone.cov);
   ok('#1 phone: all 10 quick chats and all 8 disasters reachable (6 chats were below the screen)',
     phone.chat.on === 10 && phone.chat.hit === 10 && phone.summon.on === 8 && phone.summon.hit === 8, { chat: phone.chat, summon: phone.summon });
+  /* #1, the repair round: a Summon menu cut down to scroll on the phone opens under the badge, not over its own chips (it was clamped with its full height, to y = 8) */
+  const sumD = await D.eval(`
+    document.querySelector('[data-mpp-chip="summon"]').click();
+    await pt.sleep(150);
+    const m = document.querySelector('.mpp-menu').getBoundingClientRect();
+    const b = document.querySelector('.mp-badge').getBoundingClientRect();
+    const over = Math.max(0, Math.min(m.right, b.right) - Math.max(m.left, b.left)) * Math.max(0, Math.min(m.bottom, b.bottom) - Math.max(m.top, b.top));
+    document.querySelector('[data-mpp-chip="summon"]').click();
+    return { menu: [m.left, m.top, m.right, m.bottom].map(Math.round), badge: [b.left, b.top, b.right, b.bottom].map(Math.round), over: Math.round(over) };`);
+  ok('#1r phone: the Summon menu does not open over the badge (its Players, Chat and PvP chips)', sumD.over === 0, sumD);
+  /*
+   * #4, the repair round (a checker on phones): standing still on the runway the
+   * "Tap here to get out" door is a touch screen's only way out, and the one-row
+   * badge sat on it (a tap on it turned PvP on). And on smaller phones the badge
+   * slid over the minimap, which its own list did not have. Every size the
+   * checker tried, the phone held upright too: the door lit and all of it the
+   * door's own, and the badge over none of the HUD, the door or the map.
+   */
+  const sizes = [[844, 390], [667, 375], [740, 360], [568, 320], [812, 375], [932, 430], [390, 844]];
+  const sweep = [];
+  for (const [w, h] of sizes) {
+    await D.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: true });
+    sweep.push(await D.eval(`await pt.sleep(1300); mp.hud.place(sim); return { door: pt.door(), cov: pt.covers() };`));
+  }
+  await D.send('Emulation.setDeviceMetricsOverride', { width: 844, height: 390, deviceScaleFactor: 1, mobile: true });
+  for (const [i, [w, h]] of sizes.entries()) {
+    const m = sweep[i];
+    ok(`#4r phone ${w}x${h}, still on the runway: the get-out door is lit and all of it is the door's; the badge covers none of the HUD, the door or the minimap`,
+      m.door.lit && m.door.ours && m.cov.hits.length === 0, { door: m.door.r, under: m.door.ours, hits: m.cov.hits, badge: m.cov.badge, form: m.cov.placed && m.cov.placed.form, covers: m.cov.placed && m.cov.placed.covers });
+  }
+  const door = await D.eval(`await pt.sleep(1300); mp.hud.place(sim); return { door: pt.door(), pvp: mp.pvp };`);
+  await D.tap(door.door.x, door.door.y);
+  const got = await D.eval(`const r = await pt.until(() => pt.OF.onFoot.active, 5000); return { out: !!r.v, pvp: mp.pvp };`, 20);
+  ok('#4r phone: a real tap on the middle of the door gets the player out, and PvP is left as it was (the tap used to turn it on)', got.out && got.pvp === door.pvp, { door: door.door, got });
+  await D.eval('sim.restart(); await pt.sleep(900); return 1;');
   // EJECT shows once airborne on a phone: still clear.
   const phoneAir = await D.eval(`pt.airborne(300, 400, 90, 300); await pt.sleep(1600); mp.hud.place(sim); return pt.covers();`);
   ok('#4 phone, airborne (EJECT up): the badge still covers nothing', phoneAir.hits.length === 0, phoneAir);
@@ -485,8 +546,10 @@ try {
   const jbd = await D.eval(JOIN(3, boat), 90);
   await sleep(4500);
   const boatA = await A.eval(`mp.hud.place(sim); await pt.sleep(1200); mp.hud.place(sim); return { cov: pt.covers(), runner: sim.runner.def ? sim.runner.def.id : sim.runner.status, obj: pt.text('#ui .hud-objective') };`);
-  const boatD = await D.eval(`await pt.sleep(1200); mp.hud.place(sim); return { cov: pt.covers(), runner: sim.runner.def ? sim.runner.def.id : sim.runner.status };`);
+  const boatD = await D.eval(`await pt.sleep(1200); mp.hud.place(sim); return { cov: pt.covers(), lever: pt.lever(), runner: sim.runner.def ? sim.runner.def.id : sim.runner.status };`);
   ok('#12 a boat lobby with PvP on: the badge covers none of the HUD — laptop and phone', jba.mode === 'drive' && jbd.mode === 'drive' && boatA.cov.hits.length === 0 && boatD.cov.hits.length === 0, { A: boatA.cov, D: boatD.cov });
+  // The repair round: the lever's detents are deeper than the touch layer's own children, and the badge sat on SLOW and STOP.
+  ok('#12r the phone\'s boat: every detent of the engine lever is under a finger, none under the badge', boatD.lever.length === 5 && boatD.lever.every((d) => !/✗/.test(d)), { lever: boatD.lever, badge: boatD.cov.badge, placed: boatD.cov.placed });
   ok('#11 no lifeboat patrol in a boat lobby; the lobby line instead', boatA.runner !== 'boat-patrol' && boatD.runner !== 'boat-patrol' && /Lobby 3/.test(boatA.obj || '') && !/PATROL/i.test(boatA.obj || ''), { A: boatA.runner, D: boatD.runner, obj: boatA.obj });
   await A.eval(`mp.setPvp(false); return 1;`);
   await D.eval(`mp.setPvp(false); return 1;`);

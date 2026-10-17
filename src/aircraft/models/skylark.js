@@ -22,6 +22,7 @@
  * flight model never reads them) and moved to where a 172 has them.
  */
 import { hull, wing, roundNose, tubePath, turned, Batch } from './civil-kit.js';
+import { fuselageLettering } from './civil-details.js';
 
 export function buildSkylark(b) {
   const { S, m } = b;
@@ -87,6 +88,8 @@ export function buildSkylark(b) {
     ],
   });
   b.addHull(h);
+  // The scheme's number and, when it has one, its title: decals on the fuselage, once a side (not painted into the shared skin).
+  fuselageLettering(b, h, { regAt: { z: 2.75, y: 0.06, w: 1.0 }, titleAt: { z: 0.2, y: -0.17, w: 1.8 } });
   // The firewall, seen only from the cockpit (see civil-kit.js capAt).
   b.put(h.capAt(-1.02), m.dark);
 

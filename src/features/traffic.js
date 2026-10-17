@@ -126,7 +126,7 @@ import { registerExtension } from '../game/extensions.js';
 import * as Prog from '../game/progression.js';
 import { createAircraftModel, groundOffsetFor } from '../aircraft/model-adapter.js';
 import { specFor, performanceFor } from '../aircraft/types.js';
-import { LIVERIES, schemeFor } from '../aircraft/liveries.js';
+import { AIRLINE_LIVERIES, schemeFor } from '../aircraft/liveries.js';
 import { heightAt, isOnRunway, isOnRunway2, AIRPORT, MAP } from '../world/terrain.js';
 import { buildField, runwayFor, groundY, alongR2, holdPoint } from './traffic/field.js';
 import * as PL from './traffic/planner.js';
@@ -277,15 +277,25 @@ function shortName(type) {
   return w;
 }
 
+/**
+ * The airline an ambient airliner flies for: one of the real schemes, never
+ * a `special` one (the Air Force One paint is the story's, and an ambient
+ * airliner in it was "Air Force One 47" on the radio and the traffic tag).
+ * `rand` is the generator to draw from; null when there is no scheme to give.
+ */
+export function pickAirlineScheme(rand = T.rand) {
+  const painted = AIRLINE_LIVERIES;
+  return painted.length ? painted[Math.min(painted.length - 1, Math.floor(rand() * painted.length))] : null;
+}
+
 function makeCraft(type, idx, home) {
   const perf = PL.perfFor(type);
   // Airliners in airline colours, everything else in its own.
   let scheme = null;
   let brand = shortName(type);
   if (perf.cat === 'airliner') {
-    const painted = LIVERIES.filter((l) => !l.house);
-    if (painted.length) {
-      const l = painted[Math.floor(T.rand() * painted.length)];
+    const l = pickAirlineScheme();
+    if (l) {
       scheme = l;
       brand = String(l.name).replace(/\s+(Air|States)$/i, '');
     }
@@ -3385,6 +3395,7 @@ export function trafficState() {
       id: c.id,
       type: c.type.id,
       callsign: c.callsign,
+      scheme: c.scheme ? c.scheme.id : null,
       state: c.state,
       phase: c.phase,
       activity: c.activity,

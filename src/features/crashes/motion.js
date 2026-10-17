@@ -25,6 +25,7 @@
  */
 
 import * as THREE from '../../vendor/three.module.js';
+import { FLASH } from '../../render/flash-safety.js';
 
 export const CRASH_SECONDS = 2.0;
 
@@ -43,7 +44,7 @@ const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
 
 /** Sizes of the aeroplane from its strike points, with a fallback for anything missing. */
-export function dimsFrom(hardPoints, plan) {
+export function dimsFrom(hardPoints, plan, shape = null) {
   const hp = Array.isArray(hardPoints) ? hardPoints : [];
   const find = (part) => hp.find((p) => p && p.part === part && p.pos);
   const nose = find('nose');
@@ -56,11 +57,26 @@ export function dimsFrom(hardPoints, plan) {
   const semi = tip ? Math.abs(tip.pos.x) : Number.isFinite(pl.span) ? pl.span / 2 : 6;
   const bellyY = belly ? belly.pos.y : nose ? nose.pos.y : -1;
   const L = Math.max(3, tailZ - noseZ);
+  let r = clamp(-bellyY, 0.4, 6);
+  // Underwing engines hang lower than the belly (an A320's nacelles by 1.3 m, a jumbo's by more): flat on its
+  // belly it is on them first, and they finished 1-1.7 m in the ground (the crash sweep, finding 7).
+  const pw = shape && shape.power;
+  if (pw && pw.kind === 'jet' && Number.isFinite(pw.y) && pw.y < 0 && Math.abs(pw.x || 0) > 0.5 && Number.isFinite(pw.radius)) {
+    r = clamp(Math.max(r, (shape.scale || 1) * (-pw.y + pw.radius)), 0.4, 8);
+  }
+  // How far the top of the fin stands above the origin, from the type's own shape (the fin's height, on a body
+  // radius or so): what an aeroplane on its back rests on. Without a shape, a fin of about the belly's depth again.
+  const sc = shape && Number.isFinite(shape.scale) ? shape.scale : 1;
+  const top = shape && Number.isFinite(shape.finHeight) && shape.finHeight > 0.2
+    ? clamp(sc * ((Number.isFinite(shape.bodyRadius) ? shape.bodyRadius : 1) * 0.75 + shape.finHeight), r, 16)
+    : r * 1.8;
   return {
     L,
     semi: Math.max(1.5, semi),
     // Origin height when it lies on its belly.
-    r: clamp(-bellyY, 0.4, 6),
+    r,
+    // ...and on its back, on the fin.
+    top,
     noseZ,
     noseY: nose ? nose.pos.y : bellyY * 0.6,
     tailZ,
@@ -152,14 +168,24 @@ export function poseAt(s, t) {
       // A trainer goes over one and a half times; anything with a wing
       // longer than a bus goes over once, onto its back — the same tip speed
       // on a 36 m span would be a blur. Both end upside down.
-      const turns = D.semi > 9 ? 1 : 3;
+      //
+      // Reduce flashing: everything goes over once. The turn is eased out, so
+      // it is at its fastest as it starts: three half-turns in two seconds is
+      // 14 rad/s, more than two revolutions a second, and a shiny airframe
+      // doing that in front of the crash cam put 25-42% of a 10-degree field
+      // over WCAG's flash rate on the fighters, the racer, the Courier and the
+      // Skylark (the A320, a wing of 17 m, went over once, and held 14%).
+      // One half-turn peaks at 4.7 rad/s, under the 5 the pieces are held to.
+      const turns = D.semi > 9 || FLASH.reduce ? 1 : 3;
       const phi = s.side * turns * Math.PI * easeOut3(u);
       _q.setFromAxisAngle(_v, phi);
       s.quat.copy(_q).multiply(yawQ(_q2, s.yaw0));
       blendIn(s, t, 0.1);
       const x = s.p0.x + s.d.x * dist;
       const z = s.p0.z + s.d.z * dist;
-      const lift = Math.max(D.r, D.semi * Math.abs(Math.sin(phi)) * 0.92 + D.r * Math.abs(Math.cos(phi)));
+      // Upright it stands on its belly; over on its back on the top of its fin, which is much higher (the airliners
+      // finished 5-12 m of fin in the ground, the fighters 1.4-2.5: the crash sweep, finding 7).
+      const lift = Math.max(D.r, D.semi * Math.abs(Math.sin(phi)) * 0.92 + (Math.cos(phi) >= 0 ? D.r : D.top) * Math.abs(Math.cos(phi)));
       const floor = g(x, z) + lift;
       const ballistic = s.p0.y + s.vy * t - 4.905 * t * t;
       const y = s.airborne ? Math.max(floor, ballistic) : floor;
@@ -183,7 +209,11 @@ export function poseAt(s, t) {
       const dist = slide(v0, tau, t);
       s.speed = v0 * Math.exp(-t / tau) + (1 - u) * 6;
       // The low wing digs in and drags it round: right tip down, it turns right.
-      const yaw = s.yaw0 - s.side * 4.4 * Math.PI * easeOut3(u);
+      // Twice round and a bit in two seconds, which at the start of the ease is
+      // 21 rad/s — over three revolutions a second. With Reduce flashing it
+      // slews half a turn instead (4.7 rad/s at its fastest): the same dig
+      // and drag, without a spinning top for the strobe-sensitive to watch.
+      const yaw = s.yaw0 - s.side * (FLASH.reduce ? Math.PI : 4.4 * Math.PI) * easeOut3(u);
       const bank = s.side * (0.34 - 0.14 * u);
       s.quat.copy(yawQ(_q, yaw)).multiply(bankQ(_q2, bank));
       blendIn(s, t, 0.12);
@@ -195,7 +225,7 @@ export function poseAt(s, t) {
       s.contact.set(x + _w.x * D.semi, 0, z + _w.z * D.semi);
       s.contact.y = g(s.contact.x, s.contact.z);
       s.hasContact = true;
-      s.slams = Math.floor(easeOut3(u) * 2.2);
+      s.slams = Math.floor(easeOut3(u) * (FLASH.reduce ? 1.2 : 2.2));
       break;
     }
     case 'noseplant': {

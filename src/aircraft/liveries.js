@@ -105,8 +105,34 @@ export const LIVERIES = [
     tail: 0x1c365e,
     reg: 'SAM 42',
     title: 'UNITED STATES OF AMERICA',
+    // Story-only: the hangar offers it (the player may fly it), but nothing
+    // draws it at random. A random pick put the President's paint on the
+    // second parked A380 and one ambient airliner in seven, and a callsign of
+    // "Air Force One 47" on the radio.
+    special: true,
   },
 ];
+
+/**
+ * The schemes a stand or a sky may hand out at random: real airlines only.
+ * Not the house colours, which are no scheme, and not a `special` one.
+ */
+export const AIRLINE_LIVERIES = Object.freeze(LIVERIES.filter((l) => !l.house && !l.special));
+
+/**
+ * Does this type wear an airline's colours when the world paints it for
+ * itself (an apron, a taxiing queue)? Airliners and the civil light aeroplanes
+ * do; a fighter, a carrier jet, a racer or a novelty model keeps its own
+ * paint. The apron used to hand every stand occupant an airline scheme, so
+ * a parked F-22 stood there in Night Freight charcoal.
+ */
+export function wearsAirlinePaint(type) {
+  if (!type) return false;
+  if (type.military || type.category === 'military' || type.category === 'special') return false;
+  const cls = String(type.class || '').toLowerCase();
+  if (type.category === 'airliner' || cls === 'airliner') return true;
+  return cls === 'trainer' || cls === 'tourer';
+}
 
 /**
  * The registration each type wears in its own house colours.

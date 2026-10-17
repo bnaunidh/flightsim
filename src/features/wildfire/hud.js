@@ -26,8 +26,9 @@
 import { extLayer } from '../../game/extensions.js';
 
 const CSS = `
+/* A card in the HUD's right-hand stack (ui/hud-stack.js, prio 1): placed
+   by the stack, under the warnings. Folded (.rs-chip), the tip line goes. */
 .wf-panel {
-  position: absolute; right: 16px; top: 250px; width: 236px;
   background: var(--panel, rgba(12,20,34,0.72));
   backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
   border: 1px solid rgba(255,140,70,0.35); border-radius: 14px;
@@ -61,14 +62,13 @@ const CSS = `
 .wf-tip { margin-top: 7px; font-size: 12.5px; color: #ffe0a8; min-height: 16px; }
 .wf-tip.is-good { color: #9ff0bf; }
 .wf-tip:empty { display: none; }
+.wf-panel.rs-chip .wf-tip { display: none; }
 .wf-warn { margin-top: 7px; padding: 5px 8px; border-radius: 8px; background: rgba(200,40,25,0.85); color: #fff; font-size: 12px; font-weight: 680; letter-spacing: 0.02em; }
 .wf-warn[hidden] { display: none; }
 .wf-clock { margin-top: 7px; font-size: 12.5px; font-weight: 640; color: #bfe6ff; letter-spacing: 0.02em; }
 .wf-clock:empty { display: none; }
-.hud.is-large .wf-panel { width: 270px; font-size: 15px; }
+.hud.is-large .wf-panel { font-size: 15px; }
 .hud.is-contrast .wf-panel { background: #000; border-color: #ffe95c; }
-.hud.is-touch .wf-panel { top: 140px; right: 12px; width: 214px; }
-.hud.is-touch.is-rotorhover .wf-panel { top: 186px; }
 .wf-drop {
   position: absolute; right: 96px; bottom: 196px; width: 104px; height: 70px;
   border-radius: 16px; border: 2px solid rgba(190,234,255,0.8);
@@ -80,7 +80,7 @@ const CSS = `
 .wf-drop[hidden] { display: none; }
 .wf-drop:active { transform: scale(0.96); }
 .wf-drop.is-empty { background: rgba(40,60,80,0.8); border-color: rgba(140,180,230,0.4); color: #cfe0f2; font-size: 12px; }
-@media (max-width: 560px) { .wf-panel { width: 190px; top: 120px; font-size: 12px; } .wf-pct { font-size: 17px; } }
+@media (max-width: 560px) { .wf-panel { font-size: 12px; padding: 8px 9px 9px; } .wf-pct { font-size: 17px; } }
 /* A phone stacks the control pads two by three from 60 px up to 208, which
    is where the button sits on a tablet. Above the stick instead: 8-124 is
    the stick, 216 up is the radio line. */
@@ -94,9 +94,6 @@ let styled = false;
 const DASH = [4, 3];
 const NO_DASH = [];
 
-/** What else lives down the right-hand side of the screen. */
-const BLOCKERS = ['.hud-right', '.hud-damage', '.hud-vital', '.hud-tray', '.hud-buttons', '.minimap', '.touch-pads', '.touch-throttle', '.touch-lever', '.wf-drop'];
-
 export class FireHud {
   constructor(sim, { onDrop } = {}) {
     this.sim = sim;
@@ -104,7 +101,6 @@ export class FireHud {
     this.last = {};
     this.visible = false;
     this._t = 0;
-    this._layoutT = 0;
     this.mount();
   }
 
@@ -131,6 +127,10 @@ export class FireHud {
       <div class="wf-clock" data-clock></div>
       <div class="wf-warn" data-warn hidden></div>`;
     host.appendChild(el);
+    // A card in the HUD's right-hand stack (prio 1.3), which puts it under
+    // the warnings and above the wind; without a HUD it stays in `host`.
+    const stack = this.sim && this.sim.hud && this.sim.hud.stack;
+    if (stack && typeof stack.add === 'function') stack.add(el, { prio: 1.3, id: 'wildfire', info: true });
     this.el = el;
     this.q = (k) => el.querySelector(`[data-${k}]`);
     this.pct = this.q('pct');
@@ -175,59 +175,16 @@ export class FireHud {
     else if (prop === 'hidden') node.hidden = value;
   }
 
-  /**
-   * Find the panel a place on the right that nothing else is using.
-   *
-   * It sat at a fixed 250 px from the top, clear of the damage box — and on a
-   * Chromebook, whose window is about 650 px tall, the minimap in the bottom
-   * right starts at 350, so the two overlapped by seventy pixels. What sits
-   * on the right changes with the screen, the touch layout and the flight
-   * (the damage box only appears once you have been hit), so it is measured:
-   * twice a second, the first gap down the right-hand column that the panel
-   * fits in. If there is none, it goes under whatever is at the top and
-   * overlaps what is at the bottom, which is the minimap: the one thing on
-   * that side a child can switch off (J).
+  /*
+   * (layout() measured the right-hand side twice a second for a gap the
+   * panel fitted in, from a list of what else lived there that did not
+   * include the warnings or the meteor panel. The HUD's stack places it.)
    */
-  layout() {
-    const el = this.el;
-    if (!el || el.hidden || typeof document === 'undefined') return;
-    const pr = el.getBoundingClientRect();
-    if (!pr.height) return;
-    const H = window.innerHeight || 800;
-    const spans = [];
-    for (const sel of BLOCKERS) {
-      for (const n of document.querySelectorAll(sel)) {
-        if (n === el) continue;
-        const r = n.getBoundingClientRect();
-        if (!r.width || !r.height || r.right < pr.left || r.left > pr.right) continue;
-        spans.push([r.top, r.bottom]);
-      }
-    }
-    spans.sort((a, b) => a[0] - b[0]);
-    const need = pr.height + 16;
-    let y = 8;
-    let top = null;
-    for (const [t, b] of spans) {
-      if (t - y >= need) {
-        top = y + 8;
-        break;
-      }
-      // Only what is near the top pushes the fallback down.
-      if (t < H * 0.5) y = Math.max(y, b);
-    }
-    if (top === null) top = y + 8;
-    top = Math.round(Math.max(8, top));
-    if (this.last.top !== top) {
-      this.last.top = top;
-      el.style.top = `${top}px`;
-    }
-  }
 
   setVisible(on) {
     if (!this.el) return;
     if (this.visible === on) return;
     this.visible = on;
-    this._layoutT = 0;
     this.el.hidden = !on;
     if (!on && this.btn) this.btn.hidden = true;
     this.last = {};
@@ -242,13 +199,8 @@ export class FireHud {
   update(dt, m) {
     if (!this.el || !this.visible) return;
     this._t += dt;
-    this._layoutT -= dt;
     if (this._t < 0.125 && !m.force) return;
     this._t = 0;
-    if (this._layoutT <= 0) {
-      this._layoutT = 0.5;
-      this.layout();
-    }
     const pct = Math.round(m.contained * 100);
     this._set('pct', this.pct, 'html', m.burning ? `${pct}%<small>contained</small>` : 'Out<small>all clear</small>');
     this._set('bar', this.bar, 'width', `${m.burning ? pct : 100}%`);
@@ -272,6 +224,9 @@ export class FireHud {
     } else {
       this._set('nexth', this.next, 'hidden', true);
     }
+    // A new tip opens the card for a few seconds in the Clean HUD (it folds
+    // back to the bar, the tank and where to go next).
+    if (m.tip && this.last.tip !== m.tip && this.sim && this.sim.hud && this.sim.hud.stack) this.sim.hud.stack.poke(this.el);
     this._set('tip', this.tip, 'text', m.tip || '');
     this._set('tipc', this.tip, 'class', m.tipGood ? 'wf-tip is-good' : 'wf-tip');
     this._set('clock', this.clock, 'text', m.clock || '');

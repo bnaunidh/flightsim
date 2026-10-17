@@ -115,7 +115,7 @@ function ensurePrompt() {
    */
   style.textContent = `
     .ap-prompt {
-      position: absolute; left: 50%; bottom: 276px; transform: translateX(-50%);
+      position: absolute; left: 50%; bottom: max(276px, calc(var(--bl-h, 0px) + 158px)); transform: translateX(-50%);
       background: rgba(14, 22, 30, 0.84); color: #f4f7fa;
       font: 600 15px/1.35 system-ui, -apple-system, 'Segoe UI', sans-serif;
       padding: 10px 16px; border-radius: 12px;
@@ -140,6 +140,11 @@ function ensurePrompt() {
     }
     @media (max-width: 620px) {
       .ap-prompt { bottom: auto; top: 160px; font-size: 13px; }
+    }
+    /* A phone: left of the HUD's right-hand stack, under the objective. */
+    @media (max-width: 560px) {
+      .ap-prompt { left: 8px; transform: none; max-width: calc(100vw - 180px); top: 168px; text-align: left; }
+      .ap-prompt.act:active { transform: scale(0.97); }
     }`;
   document.head.appendChild(style);
   const el = document.createElement('div');

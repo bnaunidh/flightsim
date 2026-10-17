@@ -67,6 +67,7 @@ import * as THREE from '../vendor/three.module.js';
 import { parseGLB, drawStats } from './glb.js';
 import { createBoatWater } from './blender-boat-water.js';
 import { strobeLevel } from '../render/flash-safety.js';
+import { lettersTexture } from '../render/textures.js';
 
 /**
  * What each file must contain. `maxTriangles` is the budget the modeller was
@@ -705,26 +706,105 @@ export function blenderDriveState(model, v, dt = 0) {
 /** Defaults the model was painted in: the Skyhook's own livery. */
 const HELI_PAINT = { paint_main: '#2f4a63', paint_accent: '#f0a020' };
 
-/** Repaint one copy in a hangar livery, cloning only the paint that changes. */
+const lumOf = (c) => {
+  const k = new THREE.Color(c);
+  return 0.2126 * k.r + 0.7152 * k.g + 0.0722 * k.b;
+};
+
+/**
+ * Repaint one copy in a hangar livery, cloning only the paint that changes.
+ *
+ * `paint_main` is the body, `paint_accent` the stripe and the fin (so a scheme's TAIL colour goes
+ * there when it has one), and `paint_white` is the lettering and the panel
+ * trim: white on the factory blue, and white on white on an airline's light
+ * body ("SKYHOOK" vanished off the boom in Abyssinia and Air Force One), so on
+ * a light paint it takes the scheme's own dark colour instead. A scheme that
+ * carries a registration gets it on the boom, once a side (`registration`).
+ */
 function repaint(model, livery) {
   if (!livery) return;
-  const want = typeof livery === 'string' ? { paint_main: livery } : { paint_main: livery.base, paint_accent: livery.accent };
+  const named = typeof livery === 'object' && !!livery.id && livery.id !== 'house';
+  const want = typeof livery === 'string' ? { paint_main: livery } : { paint_main: livery.base, paint_accent: named && livery.tail != null ? livery.tail : livery.accent };
+  if (named && livery.base && lumOf(livery.base) > 0.55) {
+    let ink = livery.tail != null ? livery.tail : livery.accent;
+    if (!ink || lumOf(ink) > 0.45) ink = '#2b3138';
+    want.paint_white = ink;
+  }
   const own = {};
   model.traverse((o) => {
     if (!o.isMesh) return;
     const name = o.material.name;
     const colour = want[name];
-    if (!colour || String(colour).toLowerCase() === HELI_PAINT[name]) return;
+    if (colour == null || String(colour).toLowerCase() === HELI_PAINT[name]) return;
     if (!own[name]) {
       own[name] = o.material.clone();
       try {
-        own[name].color.setStyle(colour);
+        own[name].color.set(colour);
       } catch (e) {
         return;
       }
     }
     o.material = own[name];
   });
+  if (named && typeof livery.reg === 'string' && livery.reg.trim()) registration(model, livery);
+}
+
+/**
+ * The scheme's number on the tail boom, a decal each side that reads left to
+ * right from outside (nose on the reader's right on the starboard side).
+ * The boom is found by firing rays at the body from both sides, a little
+ * aft of the cabin, at several heights: the height where the surface stands
+ * furthest out is the boom's side, whatever shape the modeller gave it.
+ */
+function registration(model, livery) {
+  // The body is one mesh per material, called 'body:paint_main', 'body:metal' and so on.
+  const body = [];
+  model.traverse((o) => {
+    if (o.isMesh && /^body\b/.test(o.name)) body.push(o);
+  });
+  if (!body.length) return null;
+  model.updateWorldMatrix(true, true);
+  const text = livery.reg.trim();
+  const ink = lumOf(livery.base || '#ffffff') > 0.35 ? '#1f272e' : '#e9eef2';
+  const mat = new THREE.MeshBasicMaterial({
+    map: lettersTexture(text, { color: ink, width: 512, height: 128 }),
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  });
+  mat.name = 'registration';
+  const rc = new THREE.Raycaster();
+  const inv = new THREE.Matrix4().copy(model.matrixWorld).invert();
+  const zc = 4.4;
+  const out = [];
+  for (const side of [1, -1]) {
+    let best = null;
+    for (let y = -0.3; y <= 2.0; y += 0.1) {
+      rc.set(model.localToWorld(new THREE.Vector3(side * 4, y, zc)), new THREE.Vector3(-side, 0, 0).transformDirection(model.matrixWorld));
+      const hit = rc.intersectObjects(body, false)[0];
+      if (!hit) continue;
+      const p = hit.point.clone().applyMatrix4(inv);
+      // Furthest out wins; on a tie (a flat-sided boom) the higher one.
+      if (!best || Math.abs(p.x) > Math.abs(best.p.x) + 0.01) best = { p, n: hit.face.normal.clone() };
+    }
+    if (!best) continue;
+    // The boom is a thin tube (about 0.35 m across): a label this size sags only a few centimetres off its round side.
+    const w = 0.9;
+    const h = 0.225;
+    const geo = new THREE.PlaneGeometry(w, h);
+    // Reads left to right from outside: on the starboard side the reader's right is the nose (-z).
+    geo.rotateY(side > 0 ? Math.PI / 2 : -Math.PI / 2);
+    geo.translate(best.p.x + side * 0.02, best.p.y, best.p.z);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = 'Airframe registration';
+    mesh.castShadow = false;
+    mesh.userData.lettering = true;
+    model.add(mesh);
+    out.push(mesh);
+  }
+  return out;
 }
 
 /**

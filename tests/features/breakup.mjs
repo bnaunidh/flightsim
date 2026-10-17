@@ -278,6 +278,75 @@ for (const id of ['skylark', 'meridian', 'tempest', 'f22', 'f35b', 'fa18', 'mass
   ok('energy: T-Pose Harrison — nothing of a person ever comes off or bends', p.actions.every((a) => a.action === 'shake') && !p.pieces.length, p.actions.map((a) => a.zone + ':' + a.action).join(' '));
 }
 
+/* ---- 4b. calibration: a knock, a wheels-down landing and a tail strike break what they touched ---- */
+// The crash sweep (finding 5 and 8): on a short jet the reach of a blow was the length of the aeroplane, so
+// a knock on an engine took the fin and both tailplanes, a knock on a tailplane "hit" the wing and a hard
+// wheels-down landing tore the tailplanes and the wing tips off every fighter. Held here for every
+// fixed-wing type the game has.
+{
+  const FIXED = T.AIRCRAFT.filter((t) => {
+    const f = drawn[t.id].frame;
+    return f.family !== 'rotor' && f.family !== 'person';
+  }).map((t) => t.id);
+  const TAILS = new Set(['fin', 'tailplaneL', 'tailplaneR']);
+  const wingTip = (id, side) => {
+    const bx = drawn[id].asg.boxes[side < 0 ? 'wingOuterL' : 'wingOuterR'];
+    return [side < 0 ? bx.min[0] + 0.2 : bx.max[0] - 0.2, (bx.min[1] + bx.max[1]) / 2, (bx.min[2] + bx.max[2]) / 2];
+  };
+  const centre = (b) => [0, 1, 2].map((k) => (b.min[k] + b.max[k]) / 2);
+  const tailPoint = (id) => {
+    const spec = T.specFor(id);
+    const hp = spec.hardPoints.find((h) => h.part === 'tail');
+    const bx = drawn[id].asg.boxes;
+    return [0, hp.pos.y, Math.max(hp.pos.z, bx.rear.max[2] - 0.5)];
+  };
+  const names = (p) => detached(p).join('+') || 'nothing';
+  for (const id of FIXED) {
+    const lay = drawn[id].layout;
+    const bx = drawn[id].asg.boxes;
+    const has = (z) => !!bx[z];
+    // A knock on a wing tip (severity 0.6, what the Dev button does): that outer wing, and nothing else.
+    for (const side of [-1, 1]) {
+      const z = side < 0 ? 'wingOuterL' : 'wingOuterR';
+      if (!has(z)) continue;
+      const k = plan(id, { point: wingTip(id, side), normal: [0, 1, 0], energy: 24, survivable: true, zones: side < 0 ? ['wingOuterL', 'wingInnerL'] : ['wingOuterR', 'wingInnerR'] });
+      ok(`calibration: ${id} — a knock on the ${side < 0 ? 'left' : 'right'} wing tip takes that tip and nothing else`, detached(k).length === 1 && detached(k)[0] === z, names(k));
+    }
+    // A knock on the tail takes tail, never a wing or an engine.
+    if (has('fin') || has('tailplaneL')) {
+      const k = plan(id, { point: tailPoint(id), normal: [0, 1, 0], energy: 24, survivable: true, zones: ['fin', 'tailplaneL', 'tailplaneR', 'rear'] });
+      ok(`calibration: ${id} — a knock on the tail takes only tail`, detached(k).every((z) => TAILS.has(z)), names(k));
+    }
+    // A knock on an engine takes engines, not the fin and the tailplanes.
+    for (const z of lay.zones.filter((q) => /^engine/.test(q))) {
+      const k = plan(id, { point: centre(bx[z]), normal: [0, 1, 0], energy: 24, survivable: true });
+      ok(`calibration: ${id} — a knock on ${z} takes engines only`, detached(k).every((q) => /^engine/.test(q)), names(k));
+    }
+    // A hard landing on the wheels (6 m/s down at 55 m/s along: twelve hundred feet a minute) bends things and folds
+    // a leg, and tears nothing off.
+    const spec = T.specFor(id);
+    const gp = spec.gearPoints.filter((g) => g.pos.x > 0.1).sort((a, b) => b.pos.z - a.pos.z)[0] || spec.gearPoints[0];
+    const land = plan(id, { point: [gp.pos.x, gp.pos.y - 0.3, gp.pos.z], normal: [0, 1, 0], velocity: [0, -6, -55], gearDown: 1 });
+    ok(`calibration: ${id} — a 6 m/s landing on the wheels tears nothing off (no leg, tip, tailplane or fin)`, detached(land).length === 0, names(land));
+    // ...and at 8 m/s a leg may fold, but the legs still hold and the fin stays on.
+    const land8 = plan(id, { point: [gp.pos.x, gp.pos.y - 0.3, gp.pos.z], normal: [0, 1, 0], velocity: [0, -8, -55], gearDown: 1 });
+    ok(`calibration: ${id} — a 8 m/s one folds a leg and keeps the legs and the fin`, !detached(land8).some((z) => /^gear|^fin$/.test(z)), names(land8));
+    // A tail strike is the tail, on both sides: both tailplanes or neither, never one.
+    if (has('tailplaneL') && has('tailplaneR')) {
+      for (const v of [3.5, 6, 9]) {
+        const k = plan(id, { point: tailPoint(id), normal: [0, 1, 0], velocity: [0, -v, -50], gearDown: 1, zones: ['rear'] });
+        const d = new Set(detached(k));
+        ok(`calibration: ${id} — a tail strike at ${v} m/s breaks both tailplanes or neither`, d.has('tailplaneL') === d.has('tailplaneR') && k.hitZone === 'rear', `${names(k)} (hit ${k.hitZone})`);
+      }
+    }
+  }
+  const harrier = T.AIRCRAFT.find((t) => drawn[t.id].frame.family === 'rotor');
+  if (harrier) {
+    const k = plan(harrier.id, { point: centre(drawn[harrier.id].asg.boxes.tailRotor), normal: [0, 1, 0], velocity: [0, -3, -3], zones: ['rear'] });
+    ok('calibration: a helicopter\'s tail strike is still its tail rotor (the zone hint is for aeroplanes)', detached(k).includes('tailRotor'), names(k));
+  }
+}
+
 /* ---- 5. handling ------------------------------------------------------------ */
 ok('handling: no damage and nothing lost is null — the flight model skips every term', H.handlingFor({ leftWing: 0, rightWing: 0, nose: 0, tail: 0, fuselage: 0, gear: 0 }, null) === null
   && H.handlingFor({ leftWing: 0, rightWing: 0, nose: 0, tail: 0, fuselage: 0, gear: 0 }, { engines: [], engineCount: 2 }) === null);
@@ -677,6 +746,68 @@ function drop(opts, kind, secs) {
   ok('pieces: and stays just under the surface, faintly there', k.b.pos.y < -2 && k.b.pos.y > -6, `${f1(k.b.pos.y)} m`);
   const big = drop({ position: V(0, 3, 0), size: V(6, 6, 38), mass: 18000, velocity: V(0, -3, -20), float: 1.4, heavy: -1 }, 'water', 160);
   ok('pieces: an airliner\'s hull floats far longer than an engine, and still goes down within a minute', big.sunkAt > k.sunkAt + 15 && big.sunkAt < 75, `under at ${f1(big.sunkAt)} s`);
+  /*
+   * Hard in: a crash into the sea throws its pieces in at the airframe's own
+   * speed. They used to plough ten metres down on the momentum, be frozen
+   * "sunk" under 2.2 m of water inside a second and half, light wing tips
+   * and gear legs included, and be culled: nothing floated, nothing sank
+   * slowly (the crash sweep, finding 2). Fast in, a heavy piece plunges a
+   * couple of metres, bobs back, floats for its air and goes down slowly; a
+   * light one comes back up and floats for good.
+   */
+  const plunge = (opts, secs = 120) => {
+    const env = { surface: (x, z, o) => Object.assign(o, { y: 0, nx: 0, ny: 1, nz: 0, kind: 'water', floor: -40 }), onSplash() {}, onBubble() {} };
+    const b = BB.makeBody(opts);
+    let deepest = 0;
+    let sunkAt = null;
+    let y3 = null;
+    let y6 = null;
+    let t = 0;
+    for (; t < secs && !b.sleeping; t += 1 / 60) {
+      BB.stepBody(b, 1 / 60, env);
+      deepest = Math.min(deepest, b.pos.y);
+      if (y3 === null && t >= 3) y3 = b.pos.y;
+      if (y6 === null && t >= 6) y6 = b.pos.y;
+      if (b.sunk && sunkAt === null) sunkAt = t;
+    }
+    return { b, deepest, sunkAt, y3, y6, t };
+  };
+  for (const speed of [40, 60]) {
+    const eng = plunge({ position: V(0, 3, 0), size: V(1.2, 1.2, 3), mass: 600, velocity: V(0, -speed * 0.5, -speed), float: 1.3 });
+    ok(`pieces: an engine thrown into the sea at ${speed} m/s plunges a few metres at most, and is bobbing at the surface again by 6 s`, eng.deepest > -6 && eng.y6 > -1.2, `deepest ${f1(eng.deepest)} m, ${f1(eng.y6)} m at 6 s`);
+    ok(`pieces: …it is not "sunk" in the first ten seconds, and still goes down slowly in the end`, eng.sunkAt > 10 && eng.sunkAt < 75, `under at ${f1(eng.sunkAt)} s`);
+    const tip = plunge({ position: V(0, 3, 0), size: V(3, 0.3, 1.2), mass: 80, velocity: V(0, -speed * 0.5, -speed), float: 1.7, light: true }, 60);
+    ok(`pieces: a wing tip thrown in at ${speed} m/s comes back up and floats for good (never sunk)`, tip.sunkAt === null && tip.y6 > -0.8 && tip.b.pos.y > -0.8, `${f1(tip.y6)} m at 6 s, ${f1(tip.b.pos.y)} m at ${f1(tip.t)} s, deepest ${f1(tip.deepest)} m`);
+    const leg = plunge({ position: V(0, 3, 0), size: V(0.2, 1.4, 0.2), mass: 25, velocity: V(0, -speed * 0.5, -speed), float: 1.7, light: true }, 60);
+    ok(`pieces: …and so does a gear leg`, leg.sunkAt === null && leg.b.pos.y > -1.4, `${f1(leg.b.pos.y)} m, deepest ${f1(leg.deepest)} m`);
+  }
+  /*
+   * A big piece on ground that bends under it. One plane through the middle
+   * of a 25 m wing put it 1-4 m into a hillside wherever the slope was not
+   * the same all along (the crash sweep, finding 4): the plane was right at
+   * the middle and wrong at both ends. Now each corner is on the ground
+   * under it, so a wing lies across a hollow, bridging it.
+   */
+  {
+    const hollow = (x) => -6 * Math.exp(-((x / 12) ** 2));
+    const slopeAt = (x) => {
+      const d = (hollow(x + 0.5) - hollow(x - 0.5)) / 1;
+      const n = Math.hypot(d, 1);
+      return { nx: -d / n, ny: 1 / n };
+    };
+    const env = { surface: (x, z, o) => { const n = slopeAt(x); return Object.assign(o, { y: hollow(x), nx: n.nx, ny: n.ny, nz: 0, kind: 'ground', floor: -40 }); } };
+    for (const [label, size] of [['a wing', V(24, 0.8, 4)], ['a fuselage section', V(5, 5, 24)], ['a tailplane', V(9, 0.5, 2.5)]]) {
+      const b = BB.makeBody({ position: V(0, 3, 0), size, mass: 3000, quaternion: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, label === 'a fuselage section' ? Math.PI / 2 : 0, 0)) });
+      for (let t = 0; t < 30 && !b.sleeping; t += 1 / 60) BB.stepBody(b, 1 / 60, env);
+      let worst = 0;
+      const p = new THREE.Vector3();
+      for (let i = 0; i < 24; i += 3) {
+        p.set(b.hull[i], b.hull[i + 1], b.hull[i + 2]).applyQuaternion(b.quat).add(b.pos);
+        worst = Math.min(worst, p.y - hollow(p.x));
+      }
+      ok(`pieces: ${label} lying across a hollow is on the ground at both ends, not buried by one plane through its middle`, worst > -0.6, `lowest corner ${f1(worst)} m under the ground`);
+    }
+  }
   const shallow = (() => {
     const env = { surface: (x, z, o) => Object.assign(o, { y: 0, nx: 0, ny: 1, nz: 0, kind: 'water', floor: -2.5 }) };
     const b = BB.makeBody({ position: V(0, 3, 0), size: V(1.2, 1.2, 3), mass: 600, float: 1.3, floatT: 1 });
@@ -815,6 +946,12 @@ ok('at sea: the slow sink eases in and out, and never runs at more than a third 
   const CR = await imp('features/crashes.js');
   ok('seizure safety: with Reduce flashing the crash cam stands back (at least 1.4x), and the instant replay further (at least 1.9x)', CR.CRASH_CAM_BACK_REDUCED >= 1.4 && F.REPLAY.backReduced >= 1.9,
     `crash cam ${CR.CRASH_CAM_BACK_REDUCED}x, replay ${F.REPLAY.backReduced}x`);
+  // The crash sweep (finding 1): at 1.5x the fighters', the racer's and the small tourers' cartoon crashes were
+  // over WCAG's line; every size now stands back by the same two, from 16 m up to 110 m before it.
+  const sizes = { man: { L: 3, semi: 1.75 }, trainer: { L: 7.4, semi: 5.5 }, fighter: { L: 19, semi: 6.5 }, a320: { L: 37, semi: 17.9 }, a380: { L: 75, semi: 39 } };
+  const rows = Object.entries(sizes).map(([k, d]) => [k, CR.crashCamDistance(d, false), CR.crashCamDistance(d, true)]);
+  ok('seizure safety: the crash cam stands twice as far back with Reduce flashing, for every size, and never nearer than 48 m or further than 220', rows.every(([, a, b]) => Math.abs(b / a - CR.CRASH_CAM_BACK_REDUCED) < 1e-9 && b >= 48 && b <= 220),
+    rows.map(([k, a, b]) => `${k} ${f1(a)} -> ${f1(b)} m`).join(', '));
 }
 
 /* ---- 10. seizure safety: the secondary pops go through Reduce flashing ---------- */

@@ -48,6 +48,8 @@ const TOP_Y = PODIUM_H + 0.14;
 /** Display radius of a light aircraft, and the real one it stands for. */
 const R0 = 7.1;
 const R_REF = 6.8;
+/** How much of its own sky reflection a paint keeps on the podium (see entry()). */
+const STUDIO_ENV = 0.4;
 /** The largest drawn radius any aeroplane may reach. The camera frames this. */
 const R_MAX = R0 * 1.2;
 /** How far a model slides when you browse. */
@@ -392,17 +394,28 @@ export class HangarShowcase {
       scene.add(beam);
     }
 
-    // Light. Decay 0 so the numbers mean the same at any size of room.
-    scene.add(new THREE.HemisphereLight(0xd8e6ff, 0x262e3b, 1.6));
-    const key = new THREE.SpotLight(0xfff3e2, 9, 0, 0.5, 0.6, 0);
+    /*
+     * Light. Decay 0 so the numbers mean the same at any size of room.
+     *
+     * Kept low enough that a paint reads at its own shade. At 1.6 / 9 / 7 / 1.1
+     * on a bright studio environment the house F-22 (#8e959c), the Vanguard
+     * (#6d7480) and the Nightjar (#2b2f35) were pale grey, pale blue and mid
+     * grey on the podium and the card sold the wrong paint: a mid-grey jet
+     * came out at 235 of 255. Now 0.62 / 3.5 / 2.9 / 0.44 and the paint's own
+     * reflection turned down (STUDIO_ENV): it reads about 180, a dark one
+     * stays dark, and the airliners and the white schemes are still white
+     * (the skins sweep, finding 7).
+     */
+    scene.add(new THREE.HemisphereLight(0xd8e6ff, 0x262e3b, 0.62));
+    const key = new THREE.SpotLight(0xfff3e2, 3.5, 0, 0.5, 0.6, 0);
     key.position.set(6, 27, 10);
     key.target.position.set(0, TOP_Y, 0);
     scene.add(key, key.target);
-    const rim = new THREE.SpotLight(0x8fb8ff, 7, 0, 0.55, 0.7, 0);
+    const rim = new THREE.SpotLight(0x8fb8ff, 2.9, 0, 0.55, 0.7, 0);
     rim.position.set(-14, 20, -22);
     rim.target.position.set(0, TOP_Y + 2, 0);
     scene.add(rim, rim.target);
-    const fill = new THREE.DirectionalLight(0xffffff, 1.1);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.44);
     fill.position.set(-10, 8, 20);
     scene.add(fill);
 
@@ -429,7 +442,7 @@ export class HangarShowcase {
         if (o.material) o.material.dispose();
       });
       scene.environment = this.envRT.texture;
-      scene.environmentIntensity = 0.85;
+      scene.environmentIntensity = 0.55;
     } catch (e) {
       /* no reflections is a dimmer picture, not a broken one */
     }
@@ -466,6 +479,19 @@ export class HangarShowcase {
     } catch (e) {
       /* a model that cannot settle still stands */
     }
+    // The pack's paint carries its own reflection of a bright sky (env map, clearcoat): on the podium, under
+    // the studio's lamps, that doubled the shine and washed a mid-grey jet out to 210 of 255. Turned down for
+    // the studio only (this model's materials are its own; the runway's are untouched).
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      for (const m of [].concat(o.material)) {
+        if (m && m.envMap && typeof m.envMapIntensity === 'number' && !(m.userData && m.userData.studioDimmed)) {
+          m.envMapIntensity *= STUDIO_ENV;
+          m.userData = m.userData || {};
+          m.userData.studioDimmed = true;
+        }
+      }
+    });
     // Its own lamps go dark: a light more or less in the scene recompiles
     // every material in it, which is a stutter on every press of the arrow.
     const sprites = [];

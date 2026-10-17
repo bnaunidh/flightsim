@@ -91,8 +91,11 @@ export async function runThreeGames(sim, opts = {}) {
 
   const origAutoPause = sim.autoPauseOnHide;
   sim.autoPauseOnHide = false;
+  const origLoading = sim.loading ? sim.loading.enabled : null;
+  if (sim.loading) sim.loading.enabled = false;
   await threeGameChecks(sim, r, say, opts);
   sim.autoPauseOnHide = origAutoPause;
+  if (sim.loading && origLoading != null) sim.loading.enabled = origLoading;
 
   const failed = r.failed;
   const summary = `${r.checks.length - failed.length}/${r.checks.length} checks passed`;

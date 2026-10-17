@@ -1,0 +1,122 @@
+{
+ "kestrel": [
+  25,
+  31
+ ],
+ "meadow": [
+  34,
+  43
+ ],
+ "atoll": [
+  50,
+  42
+ ],
+ "fjord": [
+  56,
+  46
+ ],
+ "ember": [
+  62,
+  42
+ ],
+ "airbase": [
+  60,
+  44
+ ],
+ "gateway": [
+  34,
+  42
+ ],
+ "northwatch": [
+  58,
+  44
+ ],
+ "condor": [
+  60,
+  44
+ ],
+ "sennen": [
+  34,
+  42
+ ],
+ "skerries": [
+  34,
+  42
+ ],
+ "archipelago": [
+  34,
+  42
+ ],
+ "harbour": [
+  34,
+  42
+ ],
+ "lagoon": [
+  34,
+  42
+ ],
+ "longbank": [
+  34,
+  42
+ ],
+ "delta": [
+  34,
+  42
+ ],
+ "stormcoast": [
+  34,
+  42
+ ],
+ "drovers": [
+  34,
+  43
+ ],
+ "cape": [
+  34,
+  43
+ ],
+ "cullen": [
+  34,
+  43
+ ],
+ "town": [
+  34,
+  43
+ ],
+ "coastroad": [
+  34,
+  43
+ ],
+ "mountainpass": [
+  34,
+  43
+ ],
+ "kestrel-port": [
+  34,
+  42
+ ],
+ "stacks": [
+  34,
+  42
+ ],
+ "rigs": [
+  34,
+  42
+ ],
+ "carriergroup": [
+  60,
+  46
+ ],
+ "firewatch": [
+  35,
+  42
+ ],
+ "ravencrag": [
+  58,
+  42
+ ],
+ "meridian": [
+  34,
+  41
+ ]
+}

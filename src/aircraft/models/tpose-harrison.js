@@ -276,7 +276,25 @@ function vapourCone() {
 /* Harrison                                                            */
 /* ------------------------------------------------------------------ */
 
-export function buildTPoseHarrison(type) {
+/**
+ * The hangar's paint, as his clothes: the scheme's body colour is his shirt and
+ * its accent his trousers. The house paint is no scheme — he keeps his own
+ * green shirt and blue trousers. (It used to take no paint at all: the eight
+ * swatches in the hangar all showed one picture.)
+ */
+export function clothesFor(livery) {
+  if (!livery || typeof livery !== 'object' || !livery.id || livery.id === 'house') return {};
+  const out = {};
+  try {
+    if (livery.base) out.shirt = new THREE.Color(livery.base).getHex();
+    if (livery.accent) out.trousers = new THREE.Color(livery.accent).getHex();
+  } catch (e) {
+    return {};
+  }
+  return out;
+}
+
+export function buildTPoseHarrison(type, livery = null) {
   const S = (type && type.shape) || { scale: 0.5 };
   const root = new THREE.Group();
   root.name = 'aircraft:tpose';
@@ -301,7 +319,7 @@ export function buildTPoseHarrison(type) {
   pose.rotation.x = -Math.PI / 2;
   pose.position.set(0, 0, Z0);
   body.add(pose);
-  const person = createUniformPerson('harrison', { seed: 5, flight: true });
+  const person = createUniformPerson('harrison', { seed: 5, flight: true, ...clothesFor(livery) });
   person.scale.setScalar(HARRISON_SCALE);
   pose.add(person);
   person.traverse((o) => {

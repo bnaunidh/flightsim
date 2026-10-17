@@ -548,6 +548,8 @@ async function testTaxi(sim, r) {
 export async function runPlaytest(sim, { verbose = false } = {}) {
   const r = new Report();
   sim.autoPauseOnHide = false;
+  // The map loading screen would hold each of its starts for about three seconds.
+  if (sim.loading) sim.loading.enabled = false;
   const say = (s) => verbose && console.log('[playtest]', s);
 
   say('maps');

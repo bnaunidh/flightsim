@@ -103,6 +103,48 @@ export class RingGate {
     this.setActive(false);
   }
 
+  /**
+   * A one-off gate (the story's): flown through, it fades and shrinks away
+   * over `seconds` and is then gone from the scene — a 150 m ring left
+   * hanging green in the sky for the rest of the chapter was the owner's
+   * "once you go through it it should disappear". update() runs the fade
+   * (ease-out: most of it in the first half), then removes and disposes the
+   * gate itself and sets `done`. Reduced motion: a plain, shorter fade, no
+   * shrink. Mission courses keep markPassed() — their rings stay as the
+   * record of the course flown.
+   */
+  fadeOut(scene, seconds = 0.8, { reduced = false } = {}) {
+    if (this.fade || this.done) return;
+    if (!this.passed) this.markPassed();
+    const sec = reduced ? Math.min(0.3, seconds) : seconds;
+    this.fade = {
+      t: 0,
+      sec: Math.max(0.05, sec),
+      reduced,
+      scene,
+      torus: this.torus.material.opacity,
+      halo: this.halo.material.opacity,
+      chev: this.chevrons.length ? this.chevrons[0].material.opacity : 0,
+    };
+  }
+
+  tickFade(dt) {
+    const f = this.fade;
+    if (!f || this.done) return;
+    f.t += dt;
+    const k = Math.min(1, f.t / f.sec);
+    const e = 1 - (1 - k) * (1 - k);
+    if (!f.reduced) this.group.scale.setScalar(1 - 0.35 * e);
+    this.torus.material.opacity = f.torus * (1 - e);
+    this.halo.material.opacity = f.halo * (1 - e);
+    if (this.chevrons.length) this.chevrons[0].material.opacity = f.chev * (1 - e);
+    if (k >= 1) {
+      this.done = true;
+      this.group.visible = false;
+      if (f.scene) this.dispose(f.scene);
+    }
+  }
+
   /** Did the aeroplane just fly through? */
   test(pos) {
     if (this.passed) return false;
@@ -110,7 +152,10 @@ export class RingGate {
   }
 
   update(dt, camPos) {
+    if (this.done) return;
     this.t += dt;
+    if (this.fade) this.tickFade(dt);
+    if (this.done) return;
     const pulse = this.active ? 1 + Math.sin(this.t * 3.4) * 0.06 : 1;
     this.torus.scale.setScalar(pulse);
     this.torus.rotation.z += dt * (this.active ? 0.55 : 0.12);
@@ -121,9 +166,15 @@ export class RingGate {
   }
 
   dispose(scene) {
-    scene.remove(this.group);
+    if (this.disposed) return;
+    this.disposed = true;
+    if (scene) scene.remove(this.group);
     this.torus.geometry.dispose();
+    this.torus.material.dispose();
     this.halo.geometry.dispose();
+    this.halo.material.dispose(); // the glow texture is shared by every ring, so it stays
+    for (const ch of this.chevrons) ch.geometry.dispose();
+    if (this.chevrons.length) this.chevrons[0].material.dispose(); // one material for all eight
   }
 }
 

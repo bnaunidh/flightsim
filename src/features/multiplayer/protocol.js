@@ -1140,6 +1140,10 @@ const EVENTS = new Set([
   // The owner (owner.js): their hour ended on their device.
   'unown',
 ]);
+// (Game events 'gev' carry the features' own kinds, checked by events.js: among them 'skin:paint', which
+// features/mpskin.js sends so another player's aeroplane wears the paint its pilot chose. It is not part of
+// the snapshot or of PROTO: a copy of the game without it drops the kind and draws the aeroplane in its
+// player colour, as before.)
 
 export function writeEvent(ev) {
   return JSON.stringify(ev);

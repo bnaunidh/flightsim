@@ -94,6 +94,10 @@ export const ZONES = {
   tailRotor: { label: 'Tail rotor', kind: 'rotor', bend: 1, detach: 4, survivable: true },
 };
 export const ZONE_IDS = Object.keys(ZONES);
+/** How much harder than its own strength a blow must reach a zone it only travelled to, to take it off (see planBreak). */
+export const TRANSMIT = 1.8;
+/** ...for a blow under this, J/kg, fading to none at it. */
+export const TRANSMIT_FADE = 250;
 /** The zone the airframe IS: it never comes off, everything else hangs on it. */
 export const CORE = 'core';
 
@@ -718,10 +722,35 @@ export function planBreak(layout, hit, boxes = null) {
   }
   const speed = Math.hypot(...(hit.velocity || [0, 0, 0]));
   const steep = speed > 0.5 ? clamp(closing / speed, 0, 1) : 0.5;
-  const hitZone = hit.zone && B[hit.zone] ? hit.zone : nearestZone(layout, B, p) || CORE;
+  /*
+   * The zone that touched: named (`hit.zone`), or the nearest of the ones the
+   * caller says it can only have been (`hit.zones`, in order of preference —
+   * the flight model knows which part touched, a wing or the tail, and where
+   * the point lies on a short jet the zone nearest it can be the neighbour's:
+   * a knock on a tailplane that "hit" the wing, a tail strike that broke
+   * whichever tailplane the tie happened to fall to), or the nearest of all.
+   */
+  // (Not for a helicopter, whose tail strike is the tail rotor and whose "wings" are blades.)
+  const named = Array.isArray(hit.zones) && !layout.zones.includes('rotor') ? hit.zones.filter((z) => B[z]) : [];
+  let hitZone = hit.zone && B[hit.zone] ? hit.zone : null;
+  if (!hitZone && named.length) {
+    let bd = Infinity;
+    for (const z of named) {
+      const d = boxDistance(B[z], p);
+      if (d < bd - 1e-6) {
+        bd = d;
+        hitZone = z;
+      }
+    }
+  }
+  if (!hitZone) hitZone = nearestZone(layout, B, p) || CORE;
   // How far the blow travels through the airframe, metres: a clip stays in
   // the tip it clipped, a square blow at the same place goes on up the spar.
-  const reach = f.L * clamp(0.15 + 0.7 * Math.sqrt((blow + 0.25 * scrape) / 1000), 0.15, 1.3);
+  let reach = f.L * clamp(0.15 + 0.7 * Math.sqrt((blow + 0.25 * scrape) / 1000), 0.15, 1.3);
+  // A knock you fly on from is a touch, not a crash: it stays in what it touched and what is next to it. On a short
+  // jet the reach above is the length of the aeroplane, and a knock on an engine took the fin and both tailplanes
+  // off (the crash sweep, finding 5).
+  if (hit.survivable) reach = Math.min(reach, Math.max(0.1 * f.L, 2 * sc));
   // The scrape grinds what is DOWN on the surface: the lowest thing along the
   // normal is what the aeroplane is sliding on, and whatever is within a
   // little of it scrapes too — the whole underside in a level belly slide,
@@ -753,19 +782,27 @@ export function planBreak(layout, hit, boxes = null) {
     const b = B[id];
     if (!b) continue;
     if (id === hitZone) {
-      // The zone that touched takes all of it.
-      local[id] = E;
+      // The zone that touched takes all of it — except that a wheel on the ground is rolling, not sliding:
+      // its leg takes the blow, and almost none of the speed along the ground. A 55 m/s landing at 6 m/s
+      // down put 1500 J/kg of "scrape" into the leg and tore it off, and the belly slide that followed
+      // took the tailplanes and wing tips of every jet with them (the crash sweep, finding 5).
+      local[id] = isGear(id) && gearOut >= 0.5 && !hit.survivable ? blow + 0.04 * scrape : E;
       continue;
     }
     const d = boxDistance(b, p, kz);
     dist[id] = d;
     const u = d / reach;
     blowAt[id] = u >= 1 ? 0 : blow * Math.pow(1 - u, 1.2);
+    // A knock is a touch: what is next to the zone it touched feels a third of it, not all of it (an engine in the
+    // tail of a fighter shares its box walls with the fin and the tailplanes).
+    if (hit.survivable) blowAt[id] *= 0.35;
     local[id] = blowAt[id] + scrapeOn(id, floor);
   }
   // The gear gives way: the aeroplane settles on its belly, its nacelles and
   // its propellers, and they scrape as well (bent props on a belly landing).
-  if (scrape > 0 && gearOut >= 0.5 && layout.zones.some((id) => isGear(id) && (local[id] || 0) >= ZONES[id].fold)) {
+  // (A leg on the ground that merely folds under a hard landing leaves the aeroplane on its other legs: it settles on the belly when a leg is touched hard enough to go, or the contact was somewhere else.)
+  const wheelHit = isGear(hitZone) && gearOut >= 0.5 && (local[hitZone] || 0) < ZONES[hitZone].detach;
+  if (scrape > 0 && gearOut >= 0.5 && !wheelHit && layout.zones.some((id) => isGear(id) && (local[id] || 0) >= ZONES[id].fold)) {
     const belly = floorOf(false);
     for (const id of layout.zones) if (B[id] && id !== hitZone && !isGear(id)) local[id] = Math.max(local[id], blowAt[id] + scrapeOn(id, belly));
   }
@@ -783,7 +820,13 @@ export function planBreak(layout, hit, boxes = null) {
       continue;
     }
     const canDetach = !hit.survivable || Z.survivable;
-    if (e >= Z.detach && canDetach) actions.push({ zone: id, action: 'detach', amount: 1, e });
+    // A zone the blow only reached THROUGH the airframe needs a harder blow to be torn off than one that
+    // touched: the touched zone gives first, and the thresholds above (a wing tip at 11 J/kg, a tailplane
+    // 13, a fin 16) are for it. Without this a 32 J/kg landing (8 m/s down) took both tailplanes and a wing
+    // tip off a short jet from the wheels, three metres away.
+    // (Fading out as the blow becomes a real crash: past TRANSMIT_FADE J/kg everything near the touch goes, as it always did.)
+    const detachAt = id === hitZone ? Z.detach : Z.detach * (1 + (TRANSMIT - 1) * clamp(1 - blow / TRANSMIT_FADE, 0, 1));
+    if (e >= detachAt && canDetach) actions.push({ zone: id, action: 'detach', amount: 1, e });
     else if (e >= Z.bend) {
       const amount = clamp((e - Z.bend) / Math.max(1, (Number.isFinite(Z.detach) ? Z.detach : Z.bend * 6) - Z.bend), 0.15, 1);
       actions.push({ zone: id, action: id === 'nose' || id === CORE || id === 'rear' ? 'crush' : 'bend', amount, e });

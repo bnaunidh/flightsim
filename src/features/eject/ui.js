@@ -216,9 +216,17 @@ export function setKeyLine(hud, html) {
   const line = wrap.querySelector('.hud-keyhint');
   if (!line) return;
   if (!UI.keyEl || UI.keyEl.parentNode !== line) {
-    UI.keyEl = document.createElement('span');
+    /*
+     * One span, ever. When the line is rewritten under us (the helicopter
+     * puts back the aeroplane's words, and they had a copy of our span in
+     * them) the copy that came back is ours: reuse it, and drop any other.
+     * It was "· Enter bail out · Enter bail out" until a reload.
+     */
+    const spans = line.querySelectorAll('.ej-keys');
+    for (let i = 1; i < spans.length; i++) spans[i].remove();
+    UI.keyEl = spans[0] || document.createElement('span');
     UI.keyEl.className = 'ej-keys';
-    line.appendChild(UI.keyEl);
+    if (!UI.keyEl.parentNode) line.appendChild(UI.keyEl);
   }
   UI.keyHtml = html;
   UI.keyEl.innerHTML = html;

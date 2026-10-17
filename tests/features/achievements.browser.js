@@ -93,7 +93,12 @@ export async function check(sim, r, say) {
     const unlockToast = toastsAfterTakeoff.find((n) => /Wheels Up/.test(n.textContent));
     r.ok('achievements: take-off shows the unlock toast', !!unlockToast, toastsAfterTakeoff.map((n) => n.textContent).join(' | '));
     r.ok('achievements: …icon + name, not a wall of text', !!(unlockToast && unlockToast.querySelector('svg') && unlockToast.querySelector('b')));
-    r.ok('achievements: …and it is on top (top-centre), not over the minimap', !!unlockToast && unlockToast.closest('.hud-toasts'));
+    // In flight the notices are a card in the HUD's right-hand stack (ui/hud-stack.js), under the
+    // warnings and over the wind — it used to be top-centre, over the objective and the waypoint arrow.
+    const mmBox = sim.minimap && sim.minimap.visible && sim.minimap.canvas ? sim.minimap.canvas.getBoundingClientRect() : null;
+    const tBox = unlockToast ? unlockToast.getBoundingClientRect() : null;
+    const overMap = !!(mmBox && tBox && tBox.width && tBox.left < mmBox.right && tBox.right > mmBox.left && tBox.top < mmBox.bottom && tBox.bottom > mmBox.top);
+    r.ok('achievements: …and it is in the notices of the right-hand stack, not over the minimap', !!unlockToast && !!unlockToast.closest('.hud-toasts') && !!unlockToast.closest('.hud-rstack') && !overMap);
     r.ok('achievements: the store actually has it', !!A.store.unlocked['first-takeoff']);
     sim.menus.show('main');
     sim.menus.screens.main.querySelector('[data-ach-open]').click();

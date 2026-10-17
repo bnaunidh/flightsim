@@ -21,7 +21,7 @@
  */
 import * as THREE from '../../vendor/three.module.js';
 import { hull, wing, roundNose, tubePath, turned } from './civil-kit.js';
-import { tailGroup, oleoLeg, windowRow, tailBumper, seamOnSkin } from './civil-details.js';
+import { tailGroup, oleoLeg, windowRow, tailBumper, seamOnSkin, fuselageLettering } from './civil-details.js';
 
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 
@@ -84,6 +84,8 @@ export function buildTempest(b) {
     ],
   });
   b.addHull(h);
+  // The scheme's number and, when it has one, its title: decals on the fuselage, once a side (not painted into the shared skin).
+  fuselageLettering(b, h, { regAt: { z: 4.75, y: 0.2, w: 1.0 }, titleAt: { z: 1.0, y: 0.52, w: 2.6 } });
   // Big square cabin windows, the survey aeroplane's trademark.
   windowRow(b, h, { z0: -0.25, z1: 2.25, pitch: 0.5, y: 0.26, w: 0.3, h: 0.3, r: 0.07 });
   // Cargo door outline, left side aft. Its sill was at y -0.5 where the

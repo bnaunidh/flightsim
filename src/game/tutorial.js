@@ -11,6 +11,7 @@ import * as THREE from '../vendor/three.module.js';
 import { RUNWAY } from '../world/airport.js';
 import { UNITS } from '../aircraft/physics.js';
 import { RUNWAY_START } from './missions.js';
+import { landedOnRunway } from './landing-zone.js';
 
 const ELEV = RUNWAY.elev;
 const ft = (m) => m * UNITS.FT;
@@ -199,12 +200,11 @@ export const TUTORIAL = {
       },
       targetLabel: 'Touchdown zone',
       target: () => RUNWAY.touchdown,
-      check: (ctx) =>
-        !!ctx.data.lastTouchdown &&
-        !ctx.data.lastTouchdown.crashed &&
-        ctx.ac.onGround &&
-        ctx.ac.groundSpeed < 3 &&
-        ctx.ac.groundTime > 1,
+      // Three seconds down on the runway, in one piece: the secret box and
+      // the three-second rule every landing step shares (landing-zone.js).
+      // The stop is what the instructor asks for and the grade scores, not
+      // what ends the lesson.
+      check: landedOnRunway,
     },
   ],
   onComplete: (ctx) => {

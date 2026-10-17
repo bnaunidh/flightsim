@@ -293,10 +293,8 @@ class Game {
         onAction: (a) => this.hudAction(a),
       });
       this.hud.wrap.classList.add('is-touch');
-      // toastLayer is a sibling of wrap, not a descendant (ui/hud.js's
-      // build()), so hud-boat.js's `.hud-toasts.is-touch.is-boat` rule needs
-      // it mirrored here too.
-      this.hud.toastLayer.classList.add('is-touch');
+      // The right-hand stack's touch layout (ui/hud.js): under the band.
+      this.hud.useTouchLayout();
       /*
        * Also on the root, so the MENUS can size their touch targets.
        * `is-touch` lives on the HUD wrapper, which is not an ancestor of the
@@ -308,6 +306,8 @@ class Game {
     this.hud.setSubtitlesEnabled(this.settings.subtitles);
     this.hud.setHighContrast(this.settings.highContrast);
     this.hud.setLargeText(this.settings.largeText);
+    this.hud.setDensity(this.settings.hudDensity);
+    document.documentElement.classList.toggle('reduce-motion', !!this.settings.reducedMotion);
     this.hud.setMuted(this.settings.muted);
     this.hud.setVisible(false);
 
@@ -348,7 +348,7 @@ class Game {
       onTrigger: (kind) => this.toggleFailure(kind),
       onNatural: (id) => this.triggerNatural(id),
       onLocked: (msg) => this.hud.notify(msg, 'warn', 5),
-      startDrive: (kind) => this.startDrive(kind),
+      startDrive: (kind) => this.launchDrive(kind),
       // The multiplayer feature cannot put a button on the main menu itself;
       // this is the door it exports (src/features/multiplayer.js).
       openMultiplayer: () => import('./features/multiplayer.js')
@@ -464,7 +464,7 @@ class Game {
      */
     installGameUi(this.menus, {
       onFreeDrive: (gameId) => {
-        if (gameId === 'boat' || gameId === 'car') return this.startDrive(gameId);
+        if (gameId === 'boat' || gameId === 'car') return this.launchDrive(gameId);
         return this.switchGame(gameId);
       },
       startMission: (id) => this.startAnyMission(id),
@@ -830,6 +830,56 @@ class Game {
   }
 
   buildWorld(quality) {
+    // The whole build in one go, as it always was: run the steps to the end.
+    const steps = this.buildWorldSteps(quality);
+    while (!steps.next().done);
+  }
+
+  /**
+   * The same build, stopping between its pieces so a loading screen can paint.
+   *
+   * buildWorld() holds the main thread for the whole of it, so a screen that
+   * said "Shaping the land…" could not be seen until the land was shaped.
+   * `onStep({ at, of, label })` is told what is ABOUT to be built, and a
+   * frame is given before it is. The frame loop skips drawing while this
+   * runs: half a world is not a picture.
+   */
+  async buildWorldStaged(quality, onStep) {
+    this._worldBuilding = true;
+    try {
+      for (const step of this.buildWorldSteps(quality)) {
+        if (onStep) onStep(step);
+        await this.frame();
+      }
+    } finally {
+      this._worldBuilding = false;
+    }
+  }
+
+  /**
+   * Fly to another map the way a flight that borrows one does (the map you
+   * chose is put back by restoreChosenMap), building it in stages. False when
+   * it is already the map.
+   */
+  async borrowMapStaged(id, onStep) {
+    const want = getMap(id).id;
+    if (!want || this.settings.map === want) return false;
+    if (!this.mapBeforeMission) this.mapBeforeMission = this.settings.map;
+    applyMap(want);
+    this.layRoads();
+    refreshRunways();
+    refreshApronElevation();
+    this.settings.map = want;
+    this.menus.syncMap(want);
+    await this.buildWorldStaged(this.settings.quality, onStep);
+    return true;
+  }
+
+  *buildWorldSteps(quality) {
+    const STEPS = 15;
+    let at = 0;
+    const next = (label) => ({ at: at++, of: STEPS, label });
+    yield next('Clearing the last map…');
     this.disposeWorld();
     // Timing each piece makes it obvious which part of the world is
     // expensive if someone changes the detail settings later.
@@ -853,15 +903,19 @@ class Game {
     // to construct. One line, and the failure mode it removes is "a pad
     // hanging in the air over a different island".
     clearPads();
+    yield next('Painting the sky…');
     this.sky = t('sky', () =>
       new SkyDome(this.scene, {
         shadows: quality !== 'low',
         shadowMapSize: quality === 'ultra' ? 4096 : quality === 'high' ? 2048 : 1024,
       })
     );
+    yield next('Filling the sea…');
     this.ocean = t('ocean', () => new Ocean(this.scene));
+    yield next('Laying the runway…');
     this.airport = t('airport', () => new Airport(this.scene));
     // The terminal, the air bridges, the parked aeroplanes and the vehicles.
+    yield next('Building the airfield…');
     this.apron = t('apron', () => new Apron(this.scene, quality));
     /*
      * The roads, here, between the airfield and the ground it stands on.
@@ -881,8 +935,10 @@ class Game {
      * Nothing between here and there reads this.terrain — the height
      * function is analytic and owes the mesh nothing.
      */
+    yield next('Shaping the land…');
     this.layRoads();
     this.terrain = t('terrain', () => createTerrain(this.scene, quality));
+    yield next('Planting the scenery…');
     this.scenery = t('scenery', () => {
       const sc = new Scenery(this.scene, quality);
       // Something on the apron to measure the base against — see parkJets().
@@ -897,6 +953,7 @@ class Game {
      * the picture, and falling through a deck you were aiming at is far worse
      * than a ship that happens to point north.
      */
+    yield next('Anchoring the carrier…');
     this.carrier = t('carrier', () => {
       const at = this.carrierBerth();
       const c = new Carrier(this.scene, {
@@ -917,20 +974,26 @@ class Game {
       this.roadMesh.geometry.dispose();
       this.roadMesh = null;
     }
+    yield next('Laying the roads…');
     if (this.roads && this.roads.list.length) {
       this.roadMesh = t('roads', () =>
         roadRibbon(THREE, this.roads.list, { tex: asphaltTexture(), nrm: asphaltNormal() })
       );
       if (this.roadMesh) this.scene.add(this.roadMesh);
     }
+    yield next('Raising the landmarks…');
     this.features = t('features', () => new MapFeatures(this.scene, quality));
     // Broken water over the drying shoals. Builds nothing on a map with none,
     // which is every map that has not been given shoals of its own.
+    yield next('Marking the channels…');
     this.seamarks = t('seamarks', () => new SeaMarks(this.scene, quality));
+    yield next('Gathering the clouds…');
     this.clouds = t('clouds', () => new CloudField(this.scene, quality));
+    yield next('Checking the weather…');
     this.rain = t('rain', () => new Rain(this.scene, quality));
     // Image-based lighting from the sky. Do this after the world exists so the
     // aeroplane, sea and buildings all pick it up.
+    yield next('Lighting the world…');
     try {
       this.sky.buildEnvironment(this.renderer, this.scene);
     } catch (err) {
@@ -951,6 +1014,7 @@ class Game {
       this.rain.mesh,
     ];
     if (this.roadMesh) this.worldGroups.push(this.roadMesh);
+    yield next('Finishing touches…');
     this.worldGroups.push(...extBuildWorld(this, THREE));
     this.qualityBuilt = quality;
     console.debug('[world] build complete');
@@ -1108,7 +1172,13 @@ class Game {
       this.audio.available && this.audio.engine.playStop();
       this.hud.notify(d.reason === 'fuel' ? 'The engine stopped — out of fuel!' : 'Engine off', 'warn', 5);
     });
-    ac.on(EVENTS.STALL, () => this.hud.notify('Stall! Lower the nose and add power', 'bad', 3.5));
+    // A wing's stall already has the HUD's STALL slab in the middle of the
+    // screen (and the warnings' row after it): the same words as a notice
+    // too was the third time. The helicopter has no slab, so it keeps it.
+    ac.on(EVENTS.STALL, () => {
+      if (!SPEC.rotor) return;
+      this.hud.notify('Stall! Lower the nose and add power', 'bad', 3.5);
+    });
     ac.on(EVENTS.OVERSPEED, () => {
       this.audio.available && this.audio.alerts.overspeed();
       this.hud.notify('Too fast! Reduce power and level off', 'bad', 3.5);
@@ -1286,6 +1356,23 @@ class Game {
   /* Mode control                                                        */
   /* ------------------------------------------------------------------ */
 
+  /**
+   * What startMode() is about to fly. Asked on its own so the loading screen
+   * (features/loading-screens.js) can name the map and the aeroplane before
+   * the flight starts, from the one place that decides them.
+   */
+  defForMode(mode, opts = {}) {
+    if (mode === 'tutorial') return TUTORIAL;
+    // The seat: a mission with `roles` may be flown from another aircraft in its story (src/game/roles/roles.js).
+    if (mode === 'mission') return withRole(findMission(opts.id), opts.role ?? currentRole(opts.id)) || FREE_FLIGHT;
+    return FREE_FLIGHT;
+  }
+
+  /** What startDrive() is about to drive: the boat mission or car job, or null for a free drive. */
+  defForDrive(opts = {}) {
+    return opts.mission ? findBoatMission(opts.mission) : opts.job ? findJob(opts.job) : null;
+  }
+
   async startMode(mode, opts = {}) {
     await this.unlockAudio();
     this.wakeAudio();
@@ -1328,10 +1415,7 @@ class Game {
     // Nothing from the last flight is allowed to arrive during this one.
     clearTimeout(this._crashDebriefT);
 
-    let def = FREE_FLIGHT;
-    if (mode === 'tutorial') def = TUTORIAL;
-    // The seat: a mission with `roles` may be flown from another aircraft in its story (src/game/roles/roles.js).
-    else if (mode === 'mission') def = withRole(findMission(opts.id), opts.role ?? currentRole(opts.id)) || FREE_FLIGHT;
+    const def = this.defForMode(mode, opts);
 
     // Failures armed on the Free Flight screen. They wait until you are
     // actually flying and then the clock starts, so you get to be somewhere
@@ -2092,6 +2176,8 @@ class Game {
     } else if (path === 'largeText') {
       this.hud.setLargeText(value);
       document.body.classList.toggle('is-large', !!value);
+    } else if (path === 'hudDensity') {
+      this.hud.setDensity(value);
     } else if (path === 'guidance') {
       this.navGuide.setEnabled(value);
       this.hud.setGuideActive(value);
@@ -2195,6 +2281,8 @@ class Game {
       );
     } else if (path === 'reducedMotion') {
       this.rig.reducedMotion = value;
+      // The HUD's own motion (cards sliding, gliding, folding) reads this too.
+      document.documentElement.classList.toggle('reduce-motion', !!value);
     } else if (path === 'reduceFlashing') {
       setReduceFlashing(value);
     } else if (path === 'comicEffects') {
@@ -3635,7 +3723,7 @@ class Game {
      * mission says where it begins; failing that the boat starts at the quay
      * and the van at the depot, both of which the map itself declares.
      */
-    const def = opts.mission ? findBoatMission(opts.mission) : opts.job ? findJob(opts.job) : null;
+    const def = this.defForDrive(opts);
 
     /*
      * A mission's own map, loaded before the vehicle is put down on it.
@@ -3868,9 +3956,29 @@ class Game {
    */
   startAnyMission(id) {
     const def = findMission(id);
-    if (def && def.vehicle === 'boat') return this.startDrive('boat', { mission: id });
-    if (def && def.vehicle === 'car') return this.startDrive('car', { job: id });
+    if (def && def.vehicle === 'boat') return this.launchDrive('boat', { mission: id });
+    if (def && def.vehicle === 'car') return this.launchDrive('car', { job: id });
     return this.startMode('mission', { id });
+  }
+
+  /**
+   * A drive started from a button: behind the map's loading screen when there
+   * is one. startDrive() itself stays what it was — synchronous, so the code
+   * that starts a drive and carries on with the van or the launch at once
+   * (the race, a multiplayer join) still can. Only the buttons come here.
+   */
+  launchDrive(kind, opts = {}) {
+    const L = this.loading;
+    if (L && L.wanted()) {
+      let plan = null;
+      try {
+        plan = L.planDrive(kind, opts);
+      } catch (err) {
+        console.warn('[loading-screens] could not plan the drive; starting without the screen', err);
+      }
+      if (plan) return L.around(plan, () => this.startDrive(kind, opts));
+    }
+    return this.startDrive(kind, opts);
   }
 
   /**
@@ -4879,6 +4987,11 @@ class Game {
   loop() {
     const tick = () => {
       requestAnimationFrame(tick);
+      // A world being built in stages (buildWorldStaged) is half there: draw nothing until it is whole.
+      if (this._worldBuilding) {
+        this.clock.getDelta();
+        return;
+      }
       let dt = this.clock.getDelta();
       if (dt > 0.25) dt = 0.25; // after a tab switch, do not jump
       try {

@@ -12,7 +12,12 @@ const clamp=THREE.MathUtils.clamp, V=(p)=>new THREE.Vector3(...p);
 const mix=(a,b,t)=>a+(b-a)*t;
 export function buildAircraft(config,options={}) {
  // `scheme` is the game's whole livery (cheatline, tail colour, registration) for the decorators that can paint it; the two colours above are what everything else reads.
- const c={...config,paint:options.livery||options.paint||config.paint,accent:options.accent||config.accent,scheme:options.scheme||null};
+ const sch=options.scheme&&typeof options.scheme==='object'?options.scheme:null,schemeNamed=!!(sch&&sch.id&&sch.id!=='house'&&config.kind!=='airliner'); // the airliners paint their own scheme (extra/airliners.js dress), from `scheme` below
+ // The scheme's own bits, named so none of them can be mistaken for the stabiliser spec (`config.tail`, an object: a hex number there made NaN geometry).
+ // A house scheme is no scheme: the type keeps its own tail, registration and paint.
+ const c={...config,paint:options.livery||options.paint||config.paint,accent:options.accent||config.accent,scheme:sch,schemeNamed,
+  tailColor:schemeNamed&&sch.tail!=null?sch.tail:null,cheatline:schemeNamed&&typeof sch.cheatline==='string'?sch.cheatline:null,
+  schemeReg:schemeNamed&&typeof sch.reg==='string'&&sch.reg.trim()?sch.reg.trim():null,schemeTitle:schemeNamed&&typeof sch.title==='string'&&sch.title.trim()?sch.title.trim():null};
  if(!c.id||!Array.isArray(c.body)||c.body.length<4)throw new TypeError('Aircraft needs an id and ordered body stations.');
  for(let i=0;i<c.body.length;i++)if(!c.body[i].every(Number.isFinite)||(i&&c.body[i][0]<=c.body[i-1][0]))throw new RangeError('Body stations must be finite and increasing in Z.');
  const model=makeModel(c.name),materials=createAircraftMaterials(model,c),parts={},definitions={},animations=[],restTransforms=new Map(),wheels=[],controlNodes={},engines=[];
@@ -40,8 +45,8 @@ export function buildAircraft(config,options={}) {
   if(w.struts){tube('Lift strut',[side*.42,-.32,w.rootZ+.35],[side*(w.rootX+w.span*.53),w.rootY+(w.dihedral||0)*.53-.035,w.rootZ+(w.sweep||0)*.53+w.rootChord*.48],.033,materials.skin,g);}
  }}
  if(c.tail){for(const side of[-1,1]){const w=c.tail;segment('Horizontal stabilizer',w,side,0,1,0,.73,materials.tail,tail);control('Elevator',side<0?'leftElevator':'rightElevator',w,side,0,1,tail,'tail','elevator');}}
- function finShape(fc,parent,label='Vertical stabilizer'){const geo=new THREE.BoxGeometry(1,1,1),p=geo.attributes.position;for(let i=0;i<p.count;i++){const t=p.getY(i)+.5,ch=mix(fc.rootChord,fc.tipChord,t);p.setXYZ(i,(fc.x||0)+p.getX(i)*mix(fc.thickness||.14,.045,t),fc.rootY+fc.height*t,fc.rootZ+fc.sweep*t+(p.getZ(i)+.5)*ch*.76);}geo.computeVertexNormals();mesh(label,geo,materials.tail,parent);
-  const pivot=[fc.x||0,fc.rootY+fc.height*.5,fc.rootZ+fc.sweep*.5+mix(fc.rootChord,fc.tipChord,.5)*.77];const rudder=new THREE.Group();rudder.name='Rudder';rudder.position.set(...pivot);parent.add(rudder);const rg=new THREE.BoxGeometry(1,1,1),rp=rg.attributes.position;for(let i=0;i<rp.count;i++){const t=rp.getY(i)+.5,ch=mix(fc.rootChord,fc.tipChord,t);rp.setXYZ(i,(fc.x||0)+rp.getX(i)*mix(.1,.025,t)-pivot[0],fc.rootY+fc.height*t-pivot[1],fc.rootZ+fc.sweep*t+(.77+(rp.getZ(i)+.5)*.23)*ch-pivot[2]);}rg.computeVertexNormals();mesh('Hinged rudder',rg,materials.tail,rudder);controlNodes['rudder'+(fc.x||0)]={node:rudder,kind:'rudder',side:1};}
+ function finShape(fc,parent,label='Vertical stabilizer'){const geo=new THREE.BoxGeometry(1,1,1),p=geo.attributes.position;for(let i=0;i<p.count;i++){const t=p.getY(i)+.5,ch=mix(fc.rootChord,fc.tipChord,t);p.setXYZ(i,(fc.x||0)+p.getX(i)*mix(fc.thickness||.14,.045,t),fc.rootY+fc.height*t,fc.rootZ+fc.sweep*t+(p.getZ(i)+.5)*ch*.76);}geo.computeVertexNormals();mesh(label,geo,materials.fin,parent);
+  const pivot=[fc.x||0,fc.rootY+fc.height*.5,fc.rootZ+fc.sweep*.5+mix(fc.rootChord,fc.tipChord,.5)*.77];const rudder=new THREE.Group();rudder.name='Rudder';rudder.position.set(...pivot);parent.add(rudder);const rg=new THREE.BoxGeometry(1,1,1),rp=rg.attributes.position;for(let i=0;i<rp.count;i++){const t=rp.getY(i)+.5,ch=mix(fc.rootChord,fc.tipChord,t);rp.setXYZ(i,(fc.x||0)+rp.getX(i)*mix(.1,.025,t)-pivot[0],fc.rootY+fc.height*t-pivot[1],fc.rootZ+fc.sweep*t+(.77+(rp.getZ(i)+.5)*.23)*ch-pivot[2]);}rg.computeVertexNormals();mesh('Hinged rudder',rg,materials.fin,rudder);controlNodes['rudder'+(fc.x||0)]={node:rudder,kind:'rudder',side:1};}
  if(c.fin){const f=group('verticalFin','Fin and rudder',c.massKg*.02,'tail',tail);finShape(c.fin,f);if(c.fin.mirror)finShape({...c.fin,x:-(c.fin.x||0),mirror:false},f,'Port stabilizer');}
  // One appropriate cockpit per aircraft. No universal windscreen layered over a bubble.
  if(c.canopy){const q=c.canopy,g=group('canopy','Cockpit glazing and frames',c.massKg*.013,'fuselage',fuselage);const len=q.z1-q.z0,mid=(q.z0+q.z1)/2,w=q.width,base=q.baseY,h=q.height;
@@ -105,7 +110,22 @@ export function buildAircraft(config,options={}) {
  lampGeo.dispose();
  if(c.hook){const hook=group('arrestorHook','Arrestor hook',c.massKg*.009,'tail',tail);hook.position.set(0,-.42,c.body.at(-2)[0]-.6);tube('Arresting hook shank',[0,0,0],[0,-1.25,1.7],.048,materials.metal,hook);tube('Hook shoe',[0,-1.25,1.7],[0,-1.34,1.93],.073,materials.dark,hook);/* Stowed until asked for: a model that is only ever parked (the carrier's deck) never gets a frame to raise it. */hook.rotation.x=-1.1;controlNodes.hook={node:hook,kind:'hook',side:1};}
  // Legible aircraft-specific registration, with separate correctly facing decals.
- if(c.registration&&c.kind!=='flying-wing'){const decalMat=model.userData.ownMaterial(new THREE.MeshBasicMaterial({map:aircraftDecalTexture(c.registration,{color:c.accent,background:'transparent',width:512,height:128}),transparent:true,depthWrite:false,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2}));const z=c.body[Math.max(1,c.body.length-4)][0],pr=profile(z),width=Math.min(2.4,(c.body.at(-1)[0]-c.body[0][0])*.18);for(const side of[-1,1]){const decalHeight=Math.max(.16,width*.15),phi=Math.PI*.455,dphi=decalHeight/Math.max(.15,pr[1])* .5;const p=conformingPatch('Airframe registration',z-width*.5,z+width*.5,side*(phi-dphi),side*(phi+dphi),decalMat,tail,.028);const uv=p.geometry.attributes.uv;for(let i=0;i<uv.count;i++){const u=uv.getX(i),v=uv.getY(i);uv.setXY(i,side>0?1-v:v,1-u);}p.castShadow=false;}}
+ // A decal lying on the fuselage side, once per side, facing outward and reading left to right from either (the u flip), out of the lofted skin's facets.
+ function sideDecal(name,texture,z,width,height,parent,phi=Math.PI*.455){const mat=model.userData.ownMaterial(new THREE.MeshBasicMaterial({map:texture,transparent:true,depthWrite:false,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2})),pr=profile(z);
+  for(const side of[-1,1]){const dphi=height/Math.max(.15,pr[1])*.5;const p=conformingPatch(name,z-width*.5,z+width*.5,side*(phi-dphi),side*(phi+dphi),mat,parent,.028);const uv=p.geometry.attributes.uv;for(let i=0;i<uv.count;i++){const u=uv.getX(i),v=uv.getY(i);uv.setXY(i,side>0?1-v:v,1-u);}p.castShadow=false;}}
+ // Dark lettering on a light body, light on a dark one, once a scheme has chosen the body colour; the type's own accent otherwise, as before.
+ const inkOnBody=(()=>{const k=new THREE.Color(c.paint);return .2126*k.r+.7152*k.g+.0722*k.b>.35?'#1f272e':'#e9eef2';})();
+ const regText=c.schemeReg||c.registration;
+ if(regText&&c.kind!=='flying-wing'){const z=c.body[Math.max(1,c.body.length-4)][0],width=Math.min(2.4,(c.body.at(-1)[0]-c.body[0][0])*.18);sideDecal('Airframe registration',aircraftDecalTexture(regText,{color:c.schemeNamed?inkOnBody:c.accent,background:'transparent',width:512,height:128}),z,width,Math.max(.16,width*.15),tail);}
+ // A scheme with words ("UNITED STATES OF AMERICA" on Air Force One) carries them along the forward fuselage, in the scheme's cheatline colour.
+ // A flying wing has no fuselage sides, so a scheme's number and words lie across its upper centre section, reading from the nose end (the house paint carries none).
+ function topDecal(name,texture,z,width,height){const mat=model.userData.ownMaterial(new THREE.MeshBasicMaterial({map:texture,transparent:true,depthWrite:false,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2})),pr=profile(z),dphi=Math.asin(Math.min(.95,width*.5/Math.max(.15,pr[0])));
+  conformingPatch(name,z+height*.5,z-height*.5,-dphi,dphi,mat,fuselage,.03).castShadow=false;}
+ if(c.kind==='flying-wing'&&c.schemeNamed){
+  if(c.schemeReg)topDecal('Airframe registration',aircraftDecalTexture(c.schemeReg,{color:inkOnBody,background:'transparent',width:512,height:128}),-1.1,2.2,.55);
+  if(c.schemeTitle)topDecal('Titling',aircraftDecalTexture(c.schemeTitle,{color:c.cheatline||inkOnBody,background:'transparent',width:2048,height:128}),1.1,5.4,5.4/16);
+ }
+ if(c.schemeTitle&&c.kind!=='flying-wing'&&c.kind!=='airliner'){const z0=c.body[0][0],L=c.body.at(-1)[0]-z0,at=c.titleAt||{},width=at.width??Math.min(L*.44,10),z=at.z??z0+L*(at.frac??.46);sideDecal('Titling',aircraftDecalTexture(c.schemeTitle,{color:c.cheatline||inkOnBody,background:'transparent',width:2048,height:128}),z,width,width/16,fuselage,at.phi);}
  // ctx.exports: whatever a decorator wants on the finished aircraft's userData (the airliners' doors and flight-deck outline). The airframe it decorates is wrapped by the damage adapter below, so its own userData is not what callers see.
  const ctx={model,config:c,materials,parts,group,box,tube,panel,skin,registerAnimation:fn=>animations.push(fn),THREE,exports:{}};c.decorate?.(ctx);
  // Merge primitive buffers within each named assembly without merging across hinges/strike roots.

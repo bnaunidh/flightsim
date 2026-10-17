@@ -44,6 +44,7 @@
 import * as THREE from '../../vendor/three.module.js';
 import { RUNWAY, parkingSlots } from '../../world/airport.js';
 import { heightAt } from '../../world/terrain.js';
+import { landedOnRunway } from '../landing-zone.js';
 import {
   field, cruiseSpeed, runwayFrame, RW, rw, flat, FT,
 } from '../../features/events/common.js';
@@ -202,7 +203,8 @@ const afoNormal = {
       hint: 'Gear down (G), flaps down (F). Smooth is the whole point.',
       targetLabel: 'Touchdown',
       target: () => RUNWAY.touchdown,
-      check: (ctx) => ctx.ac.onGround && ctx.ac.groundSpeed < 2.5 && ctx.ac.groundTime > 1.2,
+      // Three seconds down on the runway (the secret box, landing-zone.js): no stop needed.
+      check: landedOnRunway,
     },
     {
       id: 'taxi',
@@ -324,7 +326,8 @@ const afoAttack = {
       hint: 'Gear down (G), flaps down (F). High ground just short of the runway: stay on the approach lights or a touch above, wings level.',
       targetLabel: 'Touchdown',
       target: () => RUNWAY.touchdown,
-      check: (ctx) => ctx.ac.onGround && ctx.ac.groundSpeed < 2.5 && ctx.ac.groundTime > 1.2,
+      // Three seconds down on the runway (the secret box, landing-zone.js): no stop needed.
+      check: landedOnRunway,
     },
   ],
   failIf: () => afoInfo().failWhy,

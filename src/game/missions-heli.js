@@ -62,6 +62,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension } from './extensions.js';
 import { heightAt, platformAt, MAP } from '../world/terrain.js';
+import { landedOnPad } from './landing-zone.js';
 import { PADS } from '../world/pads.js';
 import { UNITS, SPEC } from '../aircraft/physics.js';
 import { parkingClearance, chaseViewClear } from '../aircraft/rotor-assist.js';
@@ -246,20 +247,25 @@ const assistOn = (ac) => !!ac && ac.hoverAssist !== false;
 const assistWords = (assisted, raw) => (ASSIST ? assisted : raw);
 
 /**
- * Down, stopped, not broken, and in the right place.
+ * Down, not broken, and in the right place — for three seconds.
  *
  * The aeroplane's landedAndStopped() wants a runway; a helicopter's whole
  * argument is that it does not need one. platformAt() means this is true of a
  * rig deck and a hospital roof as well as a patch of grass, with no second
  * version of the function — the deck is already the ground as far as
  * heightAt is concerned (terrain.js:239).
+ *
+ * The pad is a disc of the pad's own radius plus 8 m, as it always was, and
+ * the rule is the runways' (game/landing-zone.js, the owner 2026-10-16):
+ * three seconds on the ground inside it in one piece, a bounce under 0.3 s
+ * forgiven. It used to want a stop (under 2.2 m/s) and a second of it; a
+ * skid across the pad that stays on the pad is a landing now too.
+ *
+ * `key` names the place, so a pad that moves (the ship's deck) keeps one
+ * clock; a fixed site is keyed by where it is.
  */
-function landedAt(ctx, pos, radius) {
-  const ac = ctx.ac;
-  const t = ctx.data.lastTouchdown;
-  if (!ac.onGround || ac.groundSpeed > 2.2 || ac.groundTime < 1.0) return false;
-  if (t && t.crashed) return false;
-  return dist2D(ac.pos, pos) <= radius + 8;
+function landedAt(ctx, pos, radius, key) {
+  return landedOnPad(ctx, pos, radius + 8, key ? { key } : undefined);
 }
 
 /* ------------------------------------------------------------------ *
@@ -1251,7 +1257,7 @@ export const HELI_MISSIONS = [
           // A deck is a platform as far as heightAt is concerned, so being ON
           // one is exactly the question platformAt() answers.
           const p = platformAt(ctx.ac.pos.x, ctx.ac.pos.z);
-          return !!p && landedAt(ctx, d, 40);
+          return !!p && landedAt(ctx, d, 40, 'deck');
         },
       },
       {

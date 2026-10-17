@@ -24,6 +24,7 @@
 
 import { MISSIONS } from '../game/missions.js';
 import { STATUS } from '../game/runner.js';
+import { landedOnRunway } from '../game/landing-zone.js';
 
 /**
  * Clone `base` and lay `patch` over it. Steps are shallow-copied one by one
@@ -103,12 +104,15 @@ export function resumeAt(runner, def, index, { elapsed = 0 } = {}) {
 }
 
 /**
- * "Landed and stopped": the touchdown was not a crash, the wheels are down on
- * the ground and the aeroplane has rolled to a halt. The same test the
- * missions use for their 'home' steps.
+ * "Landed": the touchdown was not a crash and the aeroplane has been down
+ * inside a runway's secret box for three seconds — the same rule every
+ * mission landing uses (src/game/landing-zone.js, the owner 2026-10-16).
+ *
+ * The name is the old one ("and stopped") because chapter 1 imports it.
+ * It no longer waits for a stop: touch down long and fast anywhere on the
+ * runway, roll for three seconds, and the beat is done. The stop, the
+ * numbers and the centreline are what the landing grade scores.
  */
 export function landedAndStopped(ctx) {
-  const ac = ctx.ac;
-  const l = ctx.data.lastTouchdown;
-  return !!(l && !l.crashed && ac.onGround && ac.groundSpeed < 1.5 && ac.groundTime > 1.2);
+  return landedOnRunway(ctx);
 }

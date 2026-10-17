@@ -1830,6 +1830,12 @@ export class Menus {
           <label class="check"><input type="checkbox" data-set="reducedMotion"><span>Reduced motion (much less camera shake)</span></label>
           <label class="check"><input type="checkbox" data-set="highContrast"><span>High-contrast display</span></label>
           <label class="check"><input type="checkbox" data-set="largeText"><span>Larger text</span></label>
+          <label class="field"><span>HUD density</span>
+            <select data-set="hudDensity">
+              <option value="clean">Clean — information folds to small chips after a few seconds</option>
+              <option value="full">Full — every panel stays open</option>
+            </select></label>
+          <p class="hint">Clean keeps the world in view: the wind, the damage diagram, tips and the key hints show when they change, then fold away. Warnings, the objective, the instruments and the map always stay. A tap on a chip, or <kbd>H</kbd>, opens them again.</p>
         </div>
       </section>
     `);

@@ -41,6 +41,7 @@ const CSS = `
 .hsk-lock i:nth-child(3) { left: 0; bottom: 0; border-right: 0; border-top: 0; }
 .hsk-lock i:nth-child(4) { right: 0; bottom: 0; border-left: 0; border-top: 0; }
 .hsk-lock.is-locked { color: #ff3b30; }
+.gsk-box.is-under-lock i, .gsk-box.is-under-lock .gsk-tag { visibility: hidden; }
 .hsk-lock .hsk-lock-tag { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 5px; white-space: nowrap; padding: 1px 7px; border-radius: 4px;
   background: rgba(10,16,24,0.78); font: 800 11px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: 0.1em; color: inherit; }
 .hsk-lock .hsk-lock-bar { position: absolute; left: 6px; right: 6px; bottom: -3px; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.18); overflow: hidden; }
@@ -221,11 +222,33 @@ export function setLock(on, x = 0, y = 0, state = 'acquire', progress = 0, tag =
   const e = S.els;
   if (!e) return;
   e.lock.hidden = !on;
+  mergeGunBox(on, x, y);
   if (!on) return;
   e.lock.classList.toggle('is-locked', state === 'locked');
   e.lock.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
   e.lockBar.style.width = `${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%`;
   if (e.lockTag.textContent !== tag) e.lockTag.textContent = tag;
+}
+
+/*
+ * One lock marker on one target. The gunsight draws its own box on the
+ * same drone, so a practice run showed two sets of corner brackets 12 px
+ * apart and "LOCKED 760 m" twice. When the gun's box sits on our lock, its
+ * brackets and words step back (CSS below; the box is still there for the
+ * gunsight's own logic and its tests) and ours, which carry the missile's
+ * lock bar, are the one marker. Read from the two transforms, never laid out.
+ */
+let gunBox = null;
+function mergeGunBox(on, x, y) {
+  if (typeof document === 'undefined') return;
+  if (!gunBox || !gunBox.isConnected) gunBox = document.querySelector('.gsk-box');
+  if (!gunBox) return;
+  let merged = false;
+  if (on && !gunBox.hidden) {
+    const m = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec(gunBox.style.transform || '');
+    merged = !!m && Math.abs(Number(m[1]) - x) < 16 && Math.abs(Number(m[2]) - y) < 16;
+  }
+  if (gunBox.classList.contains('is-under-lock') !== merged) gunBox.classList.toggle('is-under-lock', merged);
 }
 
 /**

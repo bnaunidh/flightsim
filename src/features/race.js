@@ -609,7 +609,22 @@ html.is-touch-device .race-hud { transition: top 0.25s ease; }
 #ui.race-on .hud-objective, #ui.race-on .hud-boatarrow { display: none !important; }
 `;
 
+/*
+ * The "🏁 Races" button is a card in the HUD's right-hand stack (prio 3,
+ * information): fixed at 112 px it sat on the MASTER CAUTION lamp, on the
+ * damage diagram, on the iPad's instrument band and the phone's objective —
+ * and, being in the plug-in layer over the menus, on the pause screen. In
+ * the HUD it goes with the HUD, and in the Clean HUD it folds to the flag.
+ */
+function adoptSolo() {
+  const solo = G.els ? G.els.solo : null;
+  const stack = G.sim && G.sim.hud && G.sim.hud.stack;
+  if (!solo || !stack || typeof stack.add !== 'function' || solo.parentNode === stack.el) return;
+  stack.add(solo, { prio: 3.1, id: 'races', info: true });
+}
+
 function els() {
+  if (G.els) adoptSolo();
   if (G.els || typeof document === 'undefined') return G.els;
   injectStyle();
   if (!document.getElementById('ifs-race-style')) {
@@ -650,7 +665,7 @@ function els() {
   const solo = document.createElement('div');
   solo.className = 'race-solobar';
   solo.hidden = true;
-  solo.innerHTML = '<button type="button" class="race-solo-all" data-race-hub>🏁 Races</button>'
+  solo.innerHTML = '<button type="button" class="race-solo-all" data-race-hub>🏁<span class="race-solo-word"> Races</span></button>'
     + '<button type="button" class="race-solo-leave" data-race-leave hidden>✕ Leave race</button>';
   solo.addEventListener('click', (e) => {
     if (e.target.closest('[data-race-leave]')) {
@@ -659,6 +674,7 @@ function els() {
     } else if (e.target.closest('[data-race-hub]')) openHub();
   });
   layer.append(bar, res, solo);
+  adoptSolo();
   G.hub = buildHub(layer, hubApi());
   G.els = { bar, line: bar.querySelector('[data-race-line]'), arrow: bar.querySelector('.race-arrow b'), res, solo, soloAll: solo.querySelector('[data-race-hub]'), soloLeave: solo.querySelector('[data-race-leave]') };
   return G.els;
@@ -1067,7 +1083,10 @@ registerExtension({
       const idle = !st || st.s === RR.S.idle || st.s === RR.S.done;
       // Racing alone: only a way out of the race (with friends it is the badge's "🏁 Leave race").
       const racingSolo = !inGame() && !!st && (st.s === RR.S.grid || st.s === RR.S.go) && !!G.L && G.L.slot >= 0 && !G.L.fin && !G.L.out;
-      const show = freePlay(sim) && (idle || racingSolo) && !(sim.hud && sim.hud.hidden) && e.res.hidden && (!G.hub || G.hub.el.hidden);
+      // And not while a warning is up: nobody starts a race during PULL UP,
+      // and the column is the warnings' then.
+      const warned = !!(sim.warnings && typeof sim.warnings.showing === 'function' && sim.warnings.showing()) && !racingSolo;
+      const show = freePlay(sim) && (idle || racingSolo) && !(sim.hud && sim.hud.hidden) && e.res.hidden && (!G.hub || G.hub.el.hidden) && !warned;
       if (e.solo.hidden === show) e.solo.hidden = !show;
       if (e.soloLeave.hidden === racingSolo) e.soloLeave.hidden = !racingSolo;
       if (show && racingSolo) {

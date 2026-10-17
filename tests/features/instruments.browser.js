@@ -668,14 +668,40 @@ export async function check(sim, r, say = () => {}) {
       const hit = (a, b) => a && b && a.width && b.width && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
       const pr = rect('.wx-panel');
       const cr = rect('.wx-cmd');
-      const clashes = ['.minimap', '.hud-top', '.hud-right', '.hud-buttons', '.hud-left', '.hud-stall'].filter(
-        (sel) => hit(pr, rect(`#ui ${sel}`)) || hit(cr, rect(`#ui ${sel}`))
-      );
+      /*
+       * Against every card the right-hand stack holds as well as the HUD's
+       * own corners (ui/hud-stack.js): this only ever looked at the map and
+       * the HUD, which is how the meteor panel sat on PULL UP (the owner's
+       * screenshot) and the Races button on MASTER CAUTION with it green.
+       * The panel must also be the TOP card of the stack, and PULL UP in the
+       * centre lane, above the STALL slab and the banner.
+       */
+      sim.hud.setDamage({ leftWing: 0.5 });
+      sim.hud.setVital(110, 'warn');
+      sim.hud.notify('A notice in the stack', 'info', 30);
+      sim.hud.showBanner('Checkpoint 2 of 5', 'Keep going', 'good', 30);
+      run(sim, 0.3);
+      const others = [
+        '.minimap', '.hud-top', '.hud-buttons', '.hud-left', '.hud-stall', '.hud-banner', '.hud-right', '.hud-damage', '.hud-vital',
+        '.hud-toasts', '.mt-panel', '.wf-panel', '#fx-ev', '.race-solobar', '.co-ball', '.co-board', '.mp-badge',
+      ];
+      const clashes = others.filter((sel) => [...document.querySelectorAll(sel)].some((n) => {
+        if (n.closest('.wx-panel') || !n.getClientRects().length) return false;
+        const b = n.getBoundingClientRect();
+        return hit(pr, b) || hit(cr, b);
+      }));
+      const stackEl = document.querySelector('#ui .hud-rstack');
+      const firstCard = stackEl ? [...stackEl.children].find((n) => n.getClientRects().length) : null;
+      const onTop = !!firstCard && firstCard.classList.contains('wx-panel');
+      const inLane = !!document.querySelector('#ui .hud-center > .wx-cmd');
       r.ok(
-        'instruments: the warning panel and PULL UP sit clear of the map and the HUD',
-        pr && pr.width > 0 && cr && cr.width > 0 && clashes.length === 0,
-        clashes.join(', ') || (pr ? `panel ${Math.round(pr.top)}–${Math.round(pr.bottom)} px, ${window.innerWidth}x${window.innerHeight}` : 'no panel')
+        'instruments: the warning panel and PULL UP sit clear of the map, the HUD and every card in the right-hand stack',
+        pr && pr.width > 0 && cr && cr.width > 0 && clashes.length === 0 && onTop && inLane,
+        clashes.join(', ') || (pr ? `panel ${Math.round(pr.top)}–${Math.round(pr.bottom)} px, top card ${onTop}, PULL UP in the centre lane ${inLane}, ${window.innerWidth}x${window.innerHeight}` : 'no panel')
       );
+      sim.hud.setDamage(null);
+      sim.hud.setVital(null);
+      sim.hud.clearTransient();
       WM.demo = null;
       W.reset();
     }

@@ -31,7 +31,7 @@ import * as THREE from '../vendor/three.module.js';
 import { AIRPORT, MAP, addObstacleAt } from './terrain.js';
 import { buildingTexture, roofTexture } from '../render/textures.js';
 import { createAircraftModel } from '../aircraft/model-adapter.js';
-import { LIVERIES, schemeFor } from '../aircraft/liveries.js';
+import { AIRLINE_LIVERIES, schemeFor, wearsAirlinePaint } from '../aircraft/liveries.js';
 import { AIRCRAFT, specFor } from '../aircraft/types.js';
 import { serviceDoors, serviceDoorsFrom } from '../aircraft/extra/airliners.js';
 import { airportLayout, NOSE_STOP } from './airport-layout.js';
@@ -1027,7 +1027,7 @@ export class Apron {
    */
   buildParkedAircraft() {
     const lay = this.lay;
-    const painted = LIVERIES.filter((l) => !l.house);
+    const painted = AIRLINE_LIVERIES;
     const bakes = new Map();
     /*
      * Two paint schemes per type, not one per aeroplane. Each scheme is its
@@ -1040,6 +1040,8 @@ export class Apron {
       const k = perType.get(typeId) || 0;
       perType.set(typeId, k + 1);
       if (!painted.length) return null;
+      // A fighter or a racer keeps its own paint: house colours, not an airline's.
+      if (!wearsAirlinePaint(AIRCRAFT.find((a) => a.id === typeId))) return null;
       let hsh = 0;
       for (const ch of typeId) hsh = (hsh * 31 + ch.charCodeAt(0)) >>> 0;
       return painted[(hsh + (k % 2) * 2) % painted.length];

@@ -36,7 +36,7 @@
  * 19.6 degrees against the physics' 19.1.
  */
 import { hull, wing, roundNose, tubePath, turned } from './civil-kit.js';
-import { tailGroup, oleoLeg, windowRow, jetNacelle, seamOnSkin } from './civil-details.js';
+import { tailGroup, oleoLeg, windowRow, jetNacelle, seamOnSkin, fuselageLettering } from './civil-details.js';
 import { glazing, buildDoors } from './airliner-parts.js';
 
 export function buildMeridian(b) {
@@ -91,6 +91,8 @@ export function buildMeridian(b) {
     uv: UV,
   });
   b.addHull(h);
+  // The scheme's number and, when it has one, its title: decals on the fuselage, once a side (not painted into the shared skin).
+  fuselageLettering(b, h, { regAt: { z: 4.75, y: 0.22, w: 1.1 }, titleAt: { z: 1.2, y: 0.46, w: 2.8 } });
 
   /*
    * The flight deck: two windscreens either side of a centre post, then

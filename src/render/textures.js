@@ -472,25 +472,23 @@ export function airframeTexture(schemeOrBase = '#eef1f5', accentArg = '#c8102e')
   const accent = scheme.accent || '#c8102e';
   const cheatline = scheme.cheatline || 'rgba(30,44,74,0.85)';
   /*
-   * No registration means no registration painted.
+   * No lettering in this texture.
    *
-   * This fell back to 'N172SK' when the scheme did not name one, so the
-   * Skylark's tail number ended up on the fighter, the airliner and every
-   * other aeroplane that reached here without a registration of its own. The
-   * house schemes now say which number each type wears (liveries.js), and an
-   * empty string here means the fuselage is left blank rather than borrowing
-   * somebody else's identity. It stays in the cache key: with and without a
-   * marking are different pictures.
+   * It used to paint the registration (`scheme.reg`) and a titling line
+   * (`scheme.title`, "UNITED STATES OF AMERICA" on Air Force One) into this one
+   * 1024 x 1024 skin, which the civil builders put on EVERY surface: the
+   * fuselage lathe (u round the body, v nose to tail), the wings (u round the
+   * aerofoil, v spanwise) and the nacelles. A line of text at a constant y
+   * came out chopped at the fuselage's section joints and out of order on the
+   * left side, upside-down-ish on the right, and again as five tiny copies
+   * across the top of each wing and on the nacelles; the numbers on the
+   * Skylark, Courier and Tempest were not visible anywhere. Lettering is
+   * now a decal laid ON the fuselage, once per side, reading left to right
+   * from either (./lettersTexture below, and aircraft/models/civil-details.js
+   * fuselageLettering) — the way the fleet pack's aeroplanes and the airliners
+   * have always done it. `scheme.reg` and `scheme.title` are read there, not here.
    */
-  const reg = scheme.reg || '';
-  /*
-   * A titling line along the body — "UNITED STATES OF AMERICA" on the
-   * Air Force One scheme (aircraft/liveries.js), the only one that has ever
-   * asked for one. Nothing else paints it, so every other scheme is the
-   * same picture it always was.
-   */
-  const title = scheme.title || '';
-  const key = ['airframe', baseColor, accent, cheatline, reg, title].join('|');
+  const key = ['airframe', baseColor, accent, cheatline].join('|');
   return get(key, () => {
     const S = 1024;
     const c = canvas(S);
@@ -551,31 +549,6 @@ export function airframeTexture(schemeOrBase = '#eef1f5', accentArg = '#c8102e')
         ctx.fill();
       }
 
-    // Registration marking, for the schemes that have one.
-    if (reg) {
-      ctx.fillStyle = 'rgba(40,48,64,0.9)';
-      ctx.font = 'bold 44px Arial, sans-serif';
-      ctx.fillText(reg, S * 0.06, S * 0.42);
-    }
-
-    // The titling line, run the length of the body above the cheatline.
-    // Auto-fit: a registration is six characters, this is twenty-five, and
-    // the same 44px font would have run off both edges of the texture.
-    if (title) {
-      ctx.save();
-      ctx.fillStyle = cheatline;
-      ctx.textBaseline = 'middle';
-      const maxW = S * 0.86;
-      let fsize = 46;
-      ctx.font = `bold ${fsize}px Arial, sans-serif`;
-      while (fsize > 14 && ctx.measureText(title).width > maxW) {
-        fsize -= 2;
-        ctx.font = `bold ${fsize}px Arial, sans-serif`;
-      }
-      ctx.fillText(title, S * 0.07, S * 0.345);
-      ctx.restore();
-    }
-
     // Dirt streaks trailing back from panel gaps.
     const rnd = makeRandom(19);
     for (let i = 0; i < 160; i++) {
@@ -590,6 +563,35 @@ export function airframeTexture(schemeOrBase = '#eef1f5', accentArg = '#c8102e')
     }
 
     return finish(c, { aniso: 8 });
+  });
+}
+
+/**
+ * A transparent label for a decal laid on the fuselage: `text` in `color`,
+ * fitted to the canvas. Cached by text, colour and size, like every texture here.
+ * (The fleet pack has its own, aircraft-textures.js aircraftDecalTexture; this
+ * is the legacy builders' copy, so they do not import the whole pack.)
+ */
+export function lettersTexture(text, { color = '#1f272e', width = 512, height = 128 } = {}) {
+  const t = String(text || '').trim();
+  if (!t) throw new TypeError('lettersTexture needs some text.');
+  const w = Math.max(32, Math.min(2048, Math.round(width)));
+  const h = Math.max(16, Math.min(1024, Math.round(height)));
+  return get(['letters', t, color, w, h].join('|'), () => {
+    const c = canvas(w, h);
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const size = Math.min(h * 0.68, w / (Math.max(t.length, 1) * 0.66));
+    ctx.font = `600 ${size}px Arial, sans-serif`;
+    ctx.fillText(t, w * 0.5, h * 0.52, w * 0.93);
+    const tex = finish(c, { aniso: 8 });
+    tex.userData.text = t; // what it says, for the tests
+    // A label, not a tile: its edges must not bleed round to the other side.
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    return tex;
   });
 }
 

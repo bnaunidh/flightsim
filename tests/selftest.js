@@ -197,6 +197,10 @@ export async function runSelfTest(sim, opts = {}) {
   // pause-on-tab-hidden behaviour has to be off while it runs.
   const origAutoPause = sim.autoPauseOnHide;
   sim.autoPauseOnHide = false;
+  // The map loading screen holds every start from the menus for about three seconds, and the suite
+  // starts hundreds of flights. Its own check (features/loading-screens.browser.js) turns it on.
+  const origLoading = sim.loading ? sim.loading.enabled : null;
+  if (sim.loading) sim.loading.enabled = false;
   const ensureFlying = () => {
     if (sim.state === 'paused') sim.resume();
   };
@@ -1008,6 +1012,7 @@ export async function runSelfTest(sim, opts = {}) {
 
   // Restore what we changed.
   sim.autoPauseOnHide = origAutoPause;
+  if (sim.loading && origLoading != null) sim.loading.enabled = origLoading;
   sim.settings.flightMode = origMode;
   sim.settings.quality = origQuality;
   sim.aircraft.mode = origMode;

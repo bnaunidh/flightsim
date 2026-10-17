@@ -1106,7 +1106,7 @@ registerExtension({
     UI.build((id) => {
       if (id === 'hook') toggleHook(sim);
       else if (id === 'launch') salute(sim);
-    });
+    }, sim.hud && sim.hud.stack);
     import('../aircraft/types.js').then((m) => { AIRCRAFT_LIST = m.AIRCRAFT; }).catch(() => {});
     installStartChoice(sim);
     // The hint line: the carrier's words when it has some, the game's otherwise.

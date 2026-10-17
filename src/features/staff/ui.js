@@ -14,8 +14,14 @@
 import { extLayer } from '../../game/extensions.js';
 
 const CSS = `
+/*
+ * Above the airport's own prompt (.ap-prompt, airport-services.js) and the
+ * radio line, which both sit lower: the two prompts used to overlap by 25 px
+ * when taxiing in ("Press O to get out" over "Follow a yellow line…"). Both
+ * ride on the HUD's bottom lane (--bl-h, ui/hud.js updateLanes()).
+ */
 .of-prompt {
-  position: absolute; left: 50%; bottom: 330px; transform: translateX(-50%);
+  position: absolute; left: 50%; bottom: max(350px, calc(var(--bl-h, 0px) + 232px)); transform: translateX(-50%);
   background: rgba(12, 20, 34, 0.84); color: #f4f7fa;
   font: 600 15px/1.35 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   padding: 10px 18px; border-radius: 12px; max-width: min(520px, 86vw);
@@ -123,6 +129,10 @@ const CSS = `
  */
 @media (max-width: 620px) {
   .of-prompt, .of-root.of-walk .of-prompt { bottom: auto; top: 210px; font-size: 13px; }
+  /* A phone: the right-hand side under the objective is the HUD's stack, so
+     the prompt keeps to the left of it, under the airport's prompt. */
+  .of-prompt, .of-root.of-walk .of-prompt { left: 8px; transform: none; max-width: calc(100vw - 180px); top: 262px; text-align: left; }
+  .of-prompt.act:active { transform: scale(0.97); }
   .of-card { top: 100px; bottom: auto; left: 8px; width: auto; max-width: 132px; padding: 6px 8px; font-size: 12px; }
   .of-card .row { display: none; }
   .of-card h4 { margin: 0; font-size: 10px; }

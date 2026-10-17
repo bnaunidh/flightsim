@@ -1397,17 +1397,21 @@ const UI = { root: null, panel: null, title: null, line: null, warn: null, keys:
 const CSS = `
 #meteor-ui { position:absolute; inset:0; pointer-events:none; color:#f3f6fb; font-variant-numeric:tabular-nums; }
 #meteor-ui[hidden] { display:none; }
-#meteor-ui .mt-panel { position:absolute; right:16px; top:104px; min-width:196px; max-width:250px; padding:8px 12px 9px;
+/* The panel is a card in the HUD's right-hand stack (ui/hud-stack.js, prio 1), not in #meteor-ui:
+   the stack places it, under the warnings. Folded (.rs-chip), the second line and the keys go. */
+.mt-panel { padding:8px 12px 9px; color:#f3f6fb; font-variant-numeric:tabular-nums; pointer-events:none;
   background:rgba(12,20,34,0.74); border:1px solid rgba(255,170,90,0.5); border-radius:12px;
   -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); box-shadow:0 6px 24px rgba(0,0,0,0.3); font-size:13px; line-height:1.35; }
-#meteor-ui .mt-title { font-size:11px; font-weight:650; letter-spacing:0.12em; text-transform:uppercase; color:#ffbd7a; }
-#meteor-ui .mt-line { margin-top:2px; }
-#meteor-ui .mt-warn { margin-top:6px; padding:5px 8px; border-radius:8px; font-weight:620;
+.mt-panel[hidden] { display:none; }
+.mt-panel.rs-chip .mt-line + .mt-line, .mt-panel.rs-chip .mt-keys { display:none; }
+.mt-panel .mt-title { font-size:11px; font-weight:650; letter-spacing:0.12em; text-transform:uppercase; color:#ffbd7a; }
+.mt-panel .mt-line { margin-top:2px; }
+.mt-panel .mt-warn { margin-top:6px; padding:5px 8px; border-radius:8px; font-weight:620;
   background:rgba(255,120,60,0.2); border:1px solid rgba(255,140,80,0.6); color:#ffe6d4; }
-#meteor-ui .mt-warn.is-near { background:rgba(255,86,60,0.36); animation:mtPulse 0.5s ease-in-out infinite alternate; }
-#meteor-ui .mt-warn[hidden], #meteor-ui .mt-keys[hidden] { display:none; }
-#meteor-ui .mt-keys { margin-top:4px; font-size:11px; color:rgba(220,232,248,0.72); }
-#meteor-ui .mt-keys kbd { font:inherit; font-weight:700; padding:0 5px; border-radius:4px; border:1px solid rgba(255,255,255,0.35); }
+.mt-panel .mt-warn.is-near { background:rgba(255,86,60,0.36); animation:mtPulse 0.5s ease-in-out infinite alternate; }
+.mt-panel .mt-warn[hidden], .mt-panel .mt-keys[hidden] { display:none; }
+.mt-panel .mt-keys { margin-top:4px; font-size:11px; color:rgba(220,232,248,0.72); }
+.mt-panel .mt-keys kbd { font:inherit; font-weight:700; padding:0 5px; border-radius:4px; border:1px solid rgba(255,255,255,0.35); }
 #meteor-ui .mt-zap { position:absolute; right:18px; bottom:232px; width:74px; height:74px; border-radius:50%;
   pointer-events:auto; touch-action:none; -webkit-user-select:none; user-select:none; cursor:pointer;
   border:2px solid rgba(150,232,255,0.9); color:#fff; letter-spacing:0.08em;
@@ -1476,8 +1480,10 @@ html.reduce-flashing #meteor-ui .mt-ret::before { animation-duration: 2.4s; }
 #meteor-ui .mt-photo canvas, #meteor-ui .mt-photo .mt-noimg { display:block; width:240px; height:135px; background:#0f1a2c; }
 #meteor-ui .mt-photo .mt-cap { position:absolute; left:0; right:0; bottom:9px; text-align:center; font-size:14px; font-weight:650; }
 @keyframes mtPulse { from { transform:scale(1); } to { transform:scale(1.035); } }
-@media (prefers-reduced-motion: reduce) { #meteor-ui .mt-warn.is-near { animation:none; } }
-@media (max-width: 620px) { #meteor-ui .mt-panel { min-width:0; max-width:190px; font-size:12px; } #meteor-ui .mt-zap { width:64px; height:64px; bottom:214px; } }
+@media (prefers-reduced-motion: reduce) { .mt-panel .mt-warn.is-near { animation:none; } }
+html.reduce-flashing .mt-panel .mt-warn.is-near { animation-duration:1.6s; }
+html.reduce-motion .mt-panel .mt-warn.is-near { animation:none; }
+@media (max-width: 620px) { .mt-panel { font-size:12px; } #meteor-ui .mt-zap { width:64px; height:64px; bottom:214px; } }
 /* A phone upright: the weapons share one row (a plane that zaps has guns, so it has FIRE MSL and FLARES too (heatseek/hud.js), and the LOCK button above them):
    ZAP goes left of FLARES, clear of FIRE MSL and of the power bar it used to sit on. Measured at 390x844 (tests/features/gunsight.browser.js). */
 @media (max-width: 560px) { html.is-touch-device #meteor-ui .mt-zap:not(.is-desk) { right:160px; bottom:268px; width:60px; height:60px; } }
@@ -1501,6 +1507,11 @@ function buildUi(sim) {
   root.hidden = true;
   UI.root = root;
   UI.panel = el('div', 'mt-panel', root);
+  UI.panel.hidden = true;
+  // A card in the HUD's right-hand stack, under the warnings (prio 1); in
+  // the Node tests' mock game there is no HUD and it stays in the layer.
+  const stack = sim && sim.hud && sim.hud.stack;
+  if (stack && typeof stack.add === 'function') stack.add(UI.panel, { prio: 1, id: 'meteor', info: true });
   UI.title = el('div', 'mt-title', UI.panel);
   UI.line = el('div', 'mt-line', UI.panel);
   UI.line2 = el('div', 'mt-line', UI.panel);
@@ -1574,33 +1585,16 @@ function showPhotoCard(canvasEl, quality, dist) {
 }
 
 /**
- * Where the panel can go: at the right, under anything of the HUD's that
- * shares its column. It used to look only at the right-hand column; on a
- * touch screen the instruments are a strip across the top and the objective
- * card sits under it, and on an iPad (seen at 1024x768 and 768x1024, touch
- * emulated) the panel was printed over the right end of the strip and, in
- * portrait, over the objective's title. So anything the panel's own column
- * would cover, in the top half of the screen, pushes it down.
+ * The panel is placed by the HUD's right-hand stack now (it used to measure
+ * the HUD here twice a second, and the warnings' own measuring did not know
+ * about it: the two worked out the same pixel — the owner's screenshot).
+ * What is still measured here is the minimap, for the pinned reticles.
  */
-const PANEL_CLEAR = ['.hud-right', '.hud-buttons', '.hud-damage', '.hud-left', '.hud-objective', '.hud-waypoint'];
 function placePanel() {
   if (!UI.panel || typeof document.querySelector !== 'function') return;
-  const W = window.innerWidth || 1280;
-  const H = window.innerHeight || 720;
-  const x1 = W - 16;
-  const x0 = x1 - (UI.panel.offsetWidth || 220);
-  let bottom = 16;
-  for (const q of PANEL_CLEAR) {
-    const e = document.querySelector(q);
-    if (!e || !e.getBoundingClientRect) continue;
-    const r = e.getBoundingClientRect();
-    if (r.height > 0 && r.width > 0 && r.right > x0 && r.left < x1 && r.top < H * 0.5) bottom = Math.max(bottom, r.bottom);
-  }
-  const top = `${Math.round(bottom + 10)}px`;
-  if (UI.panel.style.top !== top) UI.panel.style.top = top;
   /*
-   * And where the minimap is, for the pinned reticles (see placeReticle).
-   * Measured here, twice a second with the rest, never per frame.
+   * Where the minimap is, for the pinned reticles (see placeReticle).
+   * Twice a second, never per frame.
    */
   const mm = document.querySelector('.minimap');
   const r = mm && mm.style.display !== 'none' && mm.getBoundingClientRect ? mm.getBoundingClientRect() : null;
@@ -1733,6 +1727,7 @@ function updateUi(sim, dt, photo) {
     return;
   }
   if (UI.root.hidden) UI.root.hidden = false;
+  if (UI.panel.hidden) UI.panel.hidden = false;
   const st = S.stats;
   const ac = player(sim);
   UI.placeT -= dt;
@@ -1785,7 +1780,11 @@ function updatePanelText(sim, st, ac) {
     }
   }
   setText(UI.line, 'line', line);
+  // The second line is news ("Photo taken — 60%"): in the Clean HUD the card
+  // opens with it for a few seconds, then folds back to the line that steers.
+  const news = UI.cache.line2 !== line2 && !!line2;
   setText(UI.line2, 'line2', line2);
+  if (news && sim.hud && sim.hud.stack) sim.hud.stack.poke(UI.panel);
 
   // The most urgent warning: a big one, or the next one into town.
   let warn = '';
@@ -1912,6 +1911,8 @@ function updateMarks(sim, dt, photo, st, ac) {
  */
 function hideUi() {
   if (UI.root && !UI.root.hidden) UI.root.hidden = true;
+  // The panel is in the HUD's stack, not under the root.
+  if (UI.panel && !UI.panel.hidden) UI.panel.hidden = true;
   for (let i = 0; i < UI.rets.length; i++) {
     const r = UI.rets[i];
     if (r.style.display !== 'none') {
@@ -2108,7 +2109,7 @@ registerExtension({
     if (typeof window !== 'undefined' && typeof window.setInterval === 'function') {
       window.setInterval(() => {
         try {
-          if (UI.root && !UI.root.hidden && !uiVisible(SIM)) UI.root.hidden = true;
+          if (UI.root && !UI.root.hidden && !uiVisible(SIM)) hideUi();
         } catch (e) {
           /* the stop hook still hides it */
         }

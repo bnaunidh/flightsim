@@ -241,12 +241,24 @@ export function showUnlockToast(hud, def) {
    * no-op.
    */
   if (entry && Array.isArray(hud.toasts)) {
-    setTimeout(() => {
+    /*
+     * But not while the HUD's own clock IS running (hud.overlaysAt, stamped
+     * every updateOverlays()): notices queue two at a time now, and one
+     * that waits its turn keeps its whole three seconds for when it shows.
+     * So this only ends it when nothing has ticked it for a while.
+     */
+    const check = () => {
       const i = hud.toasts.indexOf(entry);
       if (i < 0) return;
+      const now = typeof performance !== 'undefined' ? performance.now() : 0;
+      if (hud.overlaysAt && now - hud.overlaysAt < 600) {
+        setTimeout(check, 1000);
+        return;
+      }
       hud.toasts.splice(i, 1);
       entry.node.classList.add('is-out');
       setTimeout(() => entry.node.remove(), 400);
-    }, 3200);
+    };
+    setTimeout(check, 3200);
   }
 }

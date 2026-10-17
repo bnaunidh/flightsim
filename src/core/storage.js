@@ -47,6 +47,13 @@ export const DEFAULT_SETTINGS = {
   comicEffects: false,
   highContrast: false,
   largeText: false,
+  /*
+   * HUD density (Settings → Accessibility): 'clean' folds the informational
+   * cards (the wind, the damage diagram, tips, the key line) to chips a few
+   * seconds after they change, so the world is what you see — the owner's
+   * "so the map isn't clogged". 'full' keeps every panel open, as before.
+   */
+  hudDensity: 'clean',
   mouseFlying: false,
   invertMouse: false,
   sensitivity: 1,

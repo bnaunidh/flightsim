@@ -26,7 +26,8 @@ import { extLayer, registerExtension } from '../../game/extensions.js';
 import { isKey, keyName, rekey, bindingsVersion } from '../../flight/input.js';
 
 const CSS = `
-#fx-ev { position: absolute; right: 16px; top: 110px; width: min(310px, 80vw); display: flex; flex-direction: column; gap: 8px;
+/* A card in the HUD's right-hand stack (ui/hud-stack.js, prio 1): the stack places it, under the warnings. */
+#fx-ev { display: flex; flex-direction: column; gap: 8px;
   font-family: var(--font, -apple-system, 'Segoe UI', Roboto, sans-serif); color: var(--text, #eaf1fb); pointer-events: none; }
 #fx-ev[hidden], #fx-ev [hidden] { display: none !important; }
 #fx-ev .fx-card, #fx-ev .fx-meter, #fx-ev .fx-guide { background: var(--panel, rgba(12, 20, 34, 0.8)); border: 1px solid var(--panel-line, rgba(140, 180, 230, 0.2));
@@ -75,15 +76,11 @@ const CSS = `
 #fx-ev .fx-guide-text { font-size: 12.5px; line-height: 1.3; }
 #fx-ev .fx-guide-text b { display: block; font-size: 13.5px; }
 @keyframes fxIn { from { opacity: 0; transform: translateX(12px); } }
-/* The card sits under the wind panel (which ends near 96 px), not at 34%:
-   at 34% of an 800 px screen a hijack card with its code and its button ran
-   down over the minimap. Up here there is room for three answers above it. */
-/* Narrow and portrait screens: the game's centre banner reaches across to
-   the right edge there, and at 34% the card sat on top of it (seen at
-   768 x 1024). Just under the wind panel is clear of the banner, the
-   objective and the subtitles. */
+/* It used to sit at a fixed 110 px (128 on narrow screens), under where the
+   wind panel happened to end; with warnings lit, its card was printed over
+   both master lamps and the PULL UP row, and its guide ran onto the minimap.
+   The stack has it now. Narrow screens: the column is narrower, so is the type. */
 @media (max-width: 900px) {
-  #fx-ev { top: 128px; right: 10px; width: min(280px, 64vw); }
   #fx-ev .fx-text { font-size: 13px; }
   #fx-ev .fx-icon { flex-basis: 40px; width: 40px; height: 30px; }
 }
@@ -134,9 +131,23 @@ const state = {
   cardKey: '', meterKey: '', meterValue: -1, meterTone: '', guideKey: '', guideRot: 999,
 };
 
+/*
+ * Into the HUD's right-hand stack, as soon as there is a HUD to have one
+ * (prio 1, the mission's group: under the warnings, over the notices and
+ * the wind). Never folded — a card can be the question you have to answer.
+ */
+function adopt() {
+  const stack = simRef && simRef.hud && simRef.hud.stack;
+  if (!root || !stack || typeof stack.add !== 'function' || root.parentNode === stack.el) return;
+  stack.add(root, { prio: 1.1, id: 'event', chip: false });
+}
+
 function ensure(sim) {
   if (sim) simRef = sim;
-  if (root) return root;
+  if (root) {
+    adopt();
+    return root;
+  }
   if (typeof document === 'undefined' || !document.head) return null;
   const style = document.createElement('style');
   style.id = 'fx-ev-style';
@@ -174,6 +185,7 @@ function ensure(sim) {
       <div class="fx-guide-text"><b data-fx-glabel></b><span data-fx-gsub></span></div>
     </div>`;
   extLayer().appendChild(root);
+  adopt();
   for (const k of ['card', 'icon', 'who', 'text', 'row', 'xpdr', 'code', 'btn', 'choices', 'c0', 'c1', 'c2', 'meter', 'mlabel', 'mvalue', 'mfill', 'guide', 'arrow', 'glabel', 'gsub']) {
     el[k] = root.querySelector(`[data-fx-${k}]`);
   }

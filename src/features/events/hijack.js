@@ -54,6 +54,7 @@
 import * as THREE from '../../vendor/three.module.js';
 import { heightAt, isOnRunway2, obstacleAt } from '../../world/terrain.js';
 import * as AP from '../../world/airport.js';
+import { LandingDwell, landingState, runwayZones } from '../../game/landing-zone.js';
 import * as Prog from '../../game/progression.js';
 import { Escort, escortType } from './escort.js';
 import { createPoliceCar, createVan, createStairs, createPerson, createPillar, pulsePillar, posePersonAt, disposeEventPerson } from './vehicles.js';
@@ -93,6 +94,8 @@ function fresh() {
     flew: false,
     touchAtStart: null,
     touch: null,
+    // The secret runway box's three-second clock (game/landing-zone.js).
+    landDwell: new LandingDwell(),
     answers: {},
     answeredN: 0,
     // The conversation.
@@ -2396,6 +2399,8 @@ export function updateHijack(sim, dt) {
     if (H.siren) H.siren.set(0, dt);
     if (H.drone) H.drone.set(0, dt);
     if (H.jet) H.jet.set(0, dt);
+    // A crash never counts as a landing, whatever the clock had.
+    H.landDwell.reset();
     if (!H.quiet) {
       H.quiet = true;
       H.pending = null;
@@ -2420,7 +2425,13 @@ export function updateHijack(sim, dt) {
     // moment late did it, measured — was "landed", and the story ran to
     // "you followed the fighters to the remote runway" with the jumbo
     // parked at the start of the runway and nobody having flown anywhere.
-    if (H.flew && H.touch && ac.onGround && ac.groundTime > 1 && ac.groundSpeed < 30) {
+    //
+    // Or three seconds down inside a runway's secret box, however fast: the
+    // rule every "land on the runway" shares (game/landing-zone.js, the owner
+    // 2026-10-16). A jumbo that lands at 140 knots takes twenty seconds to
+    // come under 30 m/s, and the step said "land", not "slow down".
+    const boxed = H.landDwell.update(dt, landingState(ac, runwayZones(), H.touch));
+    if (H.flew && H.touch && ((ac.onGround && ac.groundTime > 1 && ac.groundSpeed < 30) || boxed)) {
       if (H.version === 'real') startStop(sim);
       else startTaxi(sim);
     }

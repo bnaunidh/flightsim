@@ -35,7 +35,8 @@
 import * as THREE from '../vendor/three.module.js';
 import { RUNWAY } from '../world/airport.js';
 import { DELIVERY_PAD } from '../world/scenery.js';
-import { heightAt, isOnRunway2 } from '../world/terrain.js';
+import { heightAt } from '../world/terrain.js';
+import { landedOnRunway, landedOnPad, inZone } from './landing-zone.js';
 import { UNITS } from '../aircraft/physics.js';
 import { Pursuer } from './pursuer.js';
 import { HELI_MISSIONS, HELI_FREE } from './missions-heli.js';
@@ -196,9 +197,12 @@ function nearestPhoto(ctx) {
 }
 
 /**
- * Down, stopped, and on the runway you were sent to.
+ * Down on the runway you were sent to — three seconds of it, in one piece.
  *
- * The last term is new and it is the whole point of the function. This asked
+ * (It was "down, stopped, and on the runway"; the stop went on 2026-10-16,
+ * see below and game/landing-zone.js. The position term stays.)
+ *
+ * The position term was new once and it is the whole point of the function. This asked
  * only whether you had touched down without crashing and come to a stop, with
  * no position term at all — so eight missions that say "land on runway zero
  * nine", clear you to land and put an arrow on the touchdown zone completed
@@ -216,20 +220,22 @@ function nearestPhoto(ctx) {
  * happen has no way of knowing what the game is waiting for.
  */
 function landedAndStopped(ctx) {
+  /*
+   * The secret runway box and the three-second rule (game/landing-zone.js,
+   * the owner 2026-10-16): three seconds down in one piece inside either
+   * runway's hidden box is a landing, however fast and however long. The
+   * name stays because eleven steps say it; "stopped" is now only what the
+   * grade likes, never what the step waits for.
+   *
+   * Either runway counts, as it did: the crosswind runway is a real runway
+   * that these maps all have, and landing on it is the right answer in a
+   * strong crosswind — which is what the Storm Approach mission is about.
+   */
+  if (landedOnRunway(ctx)) return true;
   const ac = ctx.ac;
   const t = ctx.data.lastTouchdown;
   const stopped = !!t && !t.crashed && ac.onGround && ac.groundSpeed < 2.5 && ac.groundTime > 1.2;
-  if (!stopped) return false;
-  /*
-   * Either runway counts.
-   *
-   * `onRunway` on the grade is computed from the main strip alone, and the
-   * crosswind runway is a real runway that these maps all have — landing on
-   * it is the correct answer in a strong crosswind, which is precisely what
-   * the Storm Approach mission is about. Refusing it would have replaced one
-   * wrong answer with another.
-   */
-  if (t.onRunway || isOnRunway2(ac.pos.x, ac.pos.z, 8)) return true;
+  if (!stopped || inZone(ac.pos)) return false;
   if (!ctx.data.saidOffRunway) {
     ctx.data.saidOffRunway = true;
     ctx.sim.hud.notify('Safely down — but not on the runway. Take off and come round again.', 'warn', 6);
@@ -753,12 +759,10 @@ export const MISSIONS = [
         hint: 'Full flaps, low power, and let it settle. Below 300 feet per minute.',
         targetLabel: 'Landing pad',
         target: () => DELIVERY_PAD.clone(),
-        check: (ctx) =>
-          ctx.ac.onGround &&
-          ctx.ac.groundSpeed < 3 &&
-          ctx.ac.pos.distanceTo(DELIVERY_PAD) < 260 &&
-          !!ctx.data.lastTouchdown &&
-          !ctx.data.lastTouchdown.crashed,
+        // Three seconds down on the cay's strip, in one piece — the same rule
+        // as a runway (game/landing-zone.js), on the 260 m the stop used to
+        // be asked inside. No stop: a landing is a landing.
+        check: (ctx) => landedOnPad(ctx, DELIVERY_PAD, 260, { key: 'cay-strip', needTouchdown: true }),
       },
       {
         id: 'back',

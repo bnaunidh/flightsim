@@ -33,6 +33,7 @@
 import * as THREE from '../../vendor/three.module.js';
 import { RUNWAY } from '../../world/airport.js';
 import { heightAt } from '../../world/terrain.js';
+import { landedOnRunway } from '../landing-zone.js';
 import { AIRCRAFT, getAircraft } from '../../aircraft/types.js';
 import { schemeFor } from '../../aircraft/liveries.js';
 import {
@@ -317,7 +318,8 @@ const ESCORT_NORMAL = {
       hint: 'Gear down (G), flaps down (F). Any landing on the runway counts.',
       targetLabel: 'Touchdown',
       target: () => RUNWAY.touchdown,
-      check: (ctx) => ctx.ac.onGround && ctx.ac.groundSpeed < 2.5 && ctx.ac.groundTime > 1.2,
+      // Three seconds down on the runway (the secret box, landing-zone.js): no stop needed.
+      check: landedOnRunway,
     },
   ],
   failIf: () => {
@@ -640,7 +642,8 @@ const ESCORT_ATTACK = {
       hint: 'Gear down (G), flaps down (F).',
       targetLabel: 'Touchdown',
       target: () => RUNWAY.touchdown,
-      check: (ctx) => ctx.ac.onGround && ctx.ac.groundSpeed < 2.5 && ctx.ac.groundTime > 1.2,
+      // Three seconds down on the runway (the secret box, landing-zone.js): no stop needed.
+      check: landedOnRunway,
     },
   ],
   failIf: () => {

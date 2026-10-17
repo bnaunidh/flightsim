@@ -125,6 +125,11 @@ const CSS = /* css */ `
 #sz-tracker li .sz-meter { display: block; height: 3px; margin-top: 4px; border-radius: 2px; background: rgba(255,255,255,0.12); overflow: hidden; width: 100%; }
 #sz-tracker li .sz-meter i { display: block; height: 100%; background: #ffbf47; width: 0; }
 #sz-tracker li .sz-note { display: block; font-size: 11px; color: #9fb2cc; font-weight: 500; }
+/* In the HUD's right-hand stack it is a card like the others: there only while it is on, and folded to its step. */
+.hud-rstack > #sz-tracker:not(.on) { display: none !important; }
+.hud-rstack > #sz-tracker { opacity: 1; }
+#sz-tracker.rs-chip .sz-ttitle, #sz-tracker.rs-chip li:not(.is-active) { display: none; }
+#sz-tracker.rs-chip .sz-tbox { padding: 6px 10px; }
 .is-touch-device #sz-tracker { top: 30%; width: 200px; }
 @media (max-width: 720px) { #sz-tracker { width: 190px; left: 8px; } #sz-tracker li { font-size: 11.5px; } }
 `;
@@ -165,6 +170,7 @@ export function installStoryUi(sim) {
     trackerItems: [],
     trackerTitle: '',
     trackerT: 0,
+    trackerKey: '',
     pauseBlock: null,
     briefTimer: null,
     briefKey: null,
@@ -596,7 +602,16 @@ export function installStoryUi(sim) {
   function tracker() {
     if (U.tracker) return U.tracker;
     const el = h(`<div id="sz-tracker"><div class="sz-tbox"><div class="sz-ttitle" data-ttitle></div><ol data-tlist></ol></div></div>`);
-    extLayer().appendChild(el);
+    /*
+     * A card in the HUD's right-hand stack (ui/hud-stack.js), with the
+     * mission's other panels: on the left at 38% it ran into the smoke chip,
+     * the helicopter's card and the missile panel, and on a phone the story's
+     * own coach. Information: in the Clean HUD it folds to the step you are on
+     * a few seconds after a step changes (.rs-chip, below).
+     */
+    const stack = sim.hud && sim.hud.stack;
+    if (stack && typeof stack.add === 'function') stack.add(el, { prio: 1.6, id: 'story', info: true });
+    else extLayer().appendChild(el);
     U.tracker = el;
     return el;
   }
@@ -607,6 +622,14 @@ export function installStoryUi(sim) {
   }
   function renderTracker() {
     const el = tracker();
+    // A step changed (not just a meter moving): the whole list for a few
+    // seconds, then (in the Clean HUD) only the step you are on.
+    const key = `${U.trackerTitle}|${U.trackerItems.map((it) => `${it.state}:${it.text}`).join('|')}`;
+    if (key !== U.trackerKey) {
+      U.trackerKey = key;
+      const stack = sim.hud && sim.hud.stack;
+      if (stack && el.parentNode === stack.el) stack.poke(el);
+    }
     el.querySelector('[data-ttitle]').textContent = U.trackerTitle || (D.chapter ? `Chapter ${D.chapter.n} · ${D.chapter.title}` : '');
     el.querySelector('[data-tlist]').innerHTML = U.trackerItems.map((it) => `<li class="is-${it.state || 'todo'}"><span class="sz-dot"></span><span style="flex:1;min-width:0">${esc(it.text)}${it.note ? `<span class="sz-note">${esc(it.note)}</span>` : ''}${it.meter != null ? `<span class="sz-meter"><i style="width:${Math.round(Math.max(0, Math.min(1, it.meter)) * 100)}%"></i></span>` : ''}</span></li>`).join('');
   }

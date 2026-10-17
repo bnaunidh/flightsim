@@ -740,19 +740,20 @@ function acknowledge() {
 /* ------------------------------------------------------------------ */
 
 const CSS = `
-.wx { position: absolute; inset: 0; pointer-events: none; font-family: inherit; }
-.wx[hidden], .wx [hidden] { display: none !important; }
+.wx { position: absolute; inset: 0; pointer-events: none; font-family: inherit; z-index: 33; }
+.wx[hidden], .wx [hidden], .wx-panel[hidden], .wx-panel [hidden] { display: none !important; }
 /*
- * Down the right-hand side, under whatever the HUD has put at the top of that
- * column and above whatever it has put at the bottom. The top here is only the
- * starting guess: placePanel() measures the real layout once a second and
- * moves it, because that column holds something different on a laptop, a
- * portrait iPad (the objective box reaches into it), a phone, the boat and
- * the helicopter, and with the damage diagram on.
+ * The panel is the top card of the HUD's right-hand stack (ui/hud-stack.js,
+ * prio 0): CSS puts it there and puts every other card under it, so nothing
+ * is measured and nothing can cover it. It used to be absolute at 112 px and
+ * moved by a once-a-second measurement that did not know about the meteor
+ * panel, the fire panel, the event cards or the Races button — the owner's
+ * screenshot was the meteor panel computing the same pixel and sitting on
+ * PULL UP. The stack also never folds or holds it back.
  */
 .wx-panel {
-  position: absolute; right: 16px; top: 112px; width: 216px;
   display: flex; flex-direction: column; gap: 5px;
+  pointer-events: none; font-family: inherit;
 }
 .wx-lamps { display: flex; gap: 6px; }
 .wx-lamp {
@@ -760,7 +761,7 @@ const CSS = `
   pointer-events: auto; cursor: pointer; -webkit-appearance: none; appearance: none;
   font-family: inherit; font-weight: 800; font-size: 11px; line-height: 1.08;
   letter-spacing: 0.08em; text-align: center; text-transform: uppercase;
-  background: rgba(12, 20, 32, 0.74); color: rgba(255, 255, 255, 0.26);
+  background: rgba(12, 20, 32, 0.74); color: rgba(255, 255, 255, 0.5); /* dim, but readable over a bright sky */
   border: 1px solid rgba(140, 180, 230, 0.22);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   touch-action: manipulation;
@@ -786,12 +787,17 @@ const CSS = `
 .wx-row.is-caution b { color: #ffd67e; }
 .wx-row.is-advisory b { color: #cfeeff; }
 .wx-row.is-acked { opacity: 0.74; }
-.wx-foot { font-size: 11.5px; color: rgba(226, 236, 246, 0.9); text-align: right; text-shadow: 0 1px 3px #000; }
+/* On the same dark glass as the rows: over a bright sky the bare text was
+   11.5 px with a one-pixel shadow and nothing behind it. */
+.wx-foot {
+  align-self: flex-end; padding: 3px 9px; border-radius: 8px;
+  background: rgba(8, 13, 22, 0.78); font-size: 11.5px; color: rgba(226, 236, 246, 0.92);
+}
 /*
- * 36% and not higher: the HUD's own STALL / TOO SLOW slab sits at 30% and the
- * notifications stack down from 96 px, and at 27% this landed on both —
- * measured at 1024x768, TERRAIN at 55 kt put "TOO SLOW" and "TERRAIN" in the
- * same forty pixels.
+ * In the HUD's centre lane (hud.js addCallout()), first, over the STALL slab
+ * and the banner: the lane stacks them, so none of them can be printed over
+ * another again (TERRAIN inside "Checkpoint 2 of 5", measured). Its own
+ * position is for the Node tests' mock game, which has no HUD.
  */
 .wx-cmd {
   position: absolute; left: 50%; top: 36%; transform: translateX(-50%);
@@ -805,96 +811,51 @@ const CSS = `
   font-size: 46px; font-weight: 800; letter-spacing: 0.02em; color: #f4f8fc;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
 }
-.wx.is-contrast .wx-row, .wx.is-contrast .wx-lamp { background: #000; }
-.wx.is-contrast .wx-row span { color: #fff; }
-.wx.is-large .wx-row b { font-size: 18px; }
-.wx.is-large .wx-row span { font-size: 14px; }
-.wx.is-short .wx-row span { display: none; }
+.wx-panel.is-contrast .wx-row, .wx-panel.is-contrast .wx-lamp, .wx-panel.is-contrast .wx-foot { background: #000; }
+.wx-panel.is-contrast .wx-row span { color: #fff; }
+.wx-panel.is-large .wx-row b { font-size: 18px; }
+.wx-panel.is-large .wx-row span { font-size: 14px; }
+.wx-panel.is-short .wx-row span { display: none; }
+/* Reduce flashing (on by default): no on/off blink, a slow soft breath
+   instead (a fifth darker, 0.4 a second). Reduced motion: steady. */
+html.reduce-flashing .wx-lamp.is-lit { animation: wxSoft 2.4s ease-in-out infinite; }
+@keyframes wxSoft { 50% { filter: brightness(0.8); } }
+html.reduce-motion .wx-lamp.is-lit { animation: none; }
+@media (prefers-reduced-motion: reduce) { .wx-lamp.is-lit { animation: none; } }
 @media (max-width: 760px), (pointer: coarse) {
-  .wx-panel { right: 10px; top: 170px; width: 196px; }
   .wx-cmd { font-size: 28px; }
 }
-/*
- * A phone: measured at 375x812, the objective box ends at 158 px and the
- * coaching line starts at 450, so the panel goes between them (placePanel
- * finds that) and the big command goes below it, clear of both.
- */
+/* A phone: the column is 156 px, so the lamps and rows step down. */
 @media (max-width: 560px) {
-  .wx-panel { top: 170px; right: 6px; width: 150px; gap: 4px; }
+  .wx-panel { gap: 4px; }
   .wx-lamp { min-height: 34px; font-size: 9.5px; }
   .wx-row b { font-size: 12.5px; }
   .wx-row span { display: none; }
-  .wx-cmd { top: 41%; font-size: 22px; padding: 6px 14px; }
+  .wx-cmd { font-size: 22px; padding: 6px 14px; }
   .wx-cmd.is-callout { font-size: 34px; }
 }
 `;
 
 const MAX_ROWS = 4;
 
-/*
- * The persistent bits of the HUD that can share the panel's column. Not the
- * toasts, the subtitles or the coaching line: they come and go, and a panel
- * that jumped every time a notification appeared would be worse than one
- * that is briefly overlapped by it.
- */
-const OBSTACLES = [
-  '.hud-right', '.hud-buttons', '.hud-top', '.hud-damage', '.hud-left', '.hud-rotor',
-  '.minimap', '.touch-pads', '.touch-throttle', '.touch-stick', '.touch-rudder',
-  '.touch-lever', '.hud-bottom',
-].map((c) => `#ui ${c}`).join(', ');
-
 /**
- * Where the panel goes and how many lines it has room for — measured, once a
- * second, not assumed.
- *
- * The column is the panel's own CSS width against the right edge. Its top is
- * just under the lowest thing already in that column in the top part of the
- * screen; its floor is just above the highest thing below that. Rows are
- * whatever fits between, so the panel never runs into the minimap or the
- * touch controls and "+2 more" tells the truth. Measured this replaces a
- * fixed 112 px, which on a portrait iPad (767x1024) put the panel over the
- * right-hand 33 px of the objective box.
+ * How many lines the panel has room for, from the height of the column it
+ * is the top card of (ui/hud-stack.js room(): from the column's top to just
+ * above the minimap or the thumb controls). Room is kept for a few folded
+ * cards under it, so "+2 more" still tells the truth and the mission's own
+ * card is not pushed off the bottom. The stack does the placing; this only
+ * counts lines.
  */
-function placePanel(sim, ui) {
-  if (typeof window === 'undefined' || typeof document === 'undefined' || !document.querySelectorAll) return;
+function fitRows(sim, ui) {
+  if (typeof window === 'undefined') return;
+  const stack = sim && sim.hud && sim.hud.stack;
   const H = window.innerHeight || 768;
-  const Wd = window.innerWidth || 1024;
-  let width = 216;
-  let right = 16;
-  try {
-    const cs = getComputedStyle(ui.panel);
-    width = parseFloat(cs.width) || width;
-    right = parseFloat(cs.right) || right;
-  } catch (e) {
-    /* keep the desktop numbers */
-  }
-  const colR = Wd - right;
-  const colL = colR - width;
-  let top = 12;
-  let floor = H - 10;
-  const els = document.querySelectorAll(OBSTACLES);
-  const rects = ui.rects || (ui.rects = []);
-  rects.length = 0;
-  for (let i = 0; i < els.length; i++) {
-    const r = els[i].getBoundingClientRect();
-    if (!r.width || !r.height || r.right <= colL || r.left >= colR) continue;
-    rects.push(r);
-    if (r.top < H * 0.4) top = Math.max(top, r.bottom + 10);
-  }
-  for (let i = 0; i < rects.length; i++) {
-    if (rects[i].top >= top) floor = Math.min(floor, rects[i].top - 10);
-  }
-  top = Math.round(top);
-  if (top !== ui.top) {
-    ui.top = top;
-    ui.panel.style.top = `${top}px`;
-  }
-  // Lamps and the footer, then rows: a title and one or two lines of hint,
-  // or the title alone where the hint is hidden.
-  const narrow = Wd <= 560;
+  const room = stack && typeof stack.room === 'function' ? stack.room() : H * 0.5;
+  const narrow = (window.innerWidth || 1024) <= 560;
   const rowH = ui.short || narrow ? 30 : 62;
-  const room = floor - top - (narrow ? 38 : 45) - 22;
-  ui.maxRows = Math.max(1, Math.min(MAX_ROWS, Math.floor(room / (rowH + 5))));
+  const reserve = 3 * 34;
+  const fit = room - (narrow ? 38 : 45) - 26 - reserve;
+  ui.maxRows = Math.max(1, Math.min(MAX_ROWS, Math.floor(fit / (rowH + 5))));
 }
 
 function buildUi(sim) {
@@ -960,9 +921,17 @@ function buildUi(sim) {
   foot.className = 'wx-foot';
   foot.hidden = true;
   panel.appendChild(foot);
-  root.appendChild(cmd);
-  root.appendChild(panel);
   layer.appendChild(root);
+  // The big command goes in the HUD's centre lane, above the STALL slab and
+  // the banner (hud.js addCallout()); without a HUD it stays in the root.
+  const hud = sim && sim.hud;
+  if (hud && typeof hud.addCallout === 'function') hud.addCallout(cmd, 0);
+  else root.appendChild(cmd);
+  // The top of the HUD's right-hand stack; without a HUD (the Node tests'
+  // mock game) it stays in the layer as before.
+  const stack = sim && sim.hud && sim.hud.stack;
+  if (stack && typeof stack.add === 'function') stack.add(panel, { prio: 0, id: 'warnings', chip: false });
+  else root.appendChild(panel);
 
   /*
    * The autopilot's own button on the tray. Pressing it to turn the autopilot
@@ -976,7 +945,7 @@ function buildUi(sim) {
     root, cmd, panel, warnLamp, cautLamp, rows, foot,
     shown: false, cmdId: null, cmdCallout: null, cmdSense: null, moreN: -1, footAck: null,
     lampW: null, lampC: null, contrast: null, large: null,
-    fitAt: -1e9, maxRows: MAX_ROWS, short: null, top: null, rects: null,
+    fitAt: -1e9, maxRows: MAX_ROWS, short: null,
   };
   return W.ui;
 }
@@ -1055,7 +1024,9 @@ function echoed(sim, id) {
   }
   const ts = hud.toasts;
   if (!Array.isArray(ts)) return false;
-  for (let i = 0; i < ts.length; i++) {
+  // Only the notices actually on screen: the HUD shows two and queues the
+  // rest (ui/hud.js notify()), and a queued "Low fuel" says nothing yet.
+  for (let i = 0; i < Math.min(ts.length, 2); i++) {
     const n = ts[i] && ts[i].node;
     if (n && ts[i].life > 0 && re.test(n.textContent || '')) return true;
   }
@@ -1085,8 +1056,9 @@ function drawUi(sim, show) {
     if (short !== ui.short) {
       ui.short = short;
       ui.root.classList.toggle('is-short', short);
+      ui.panel.classList.toggle('is-short', short);
     }
-    placePanel(sim, ui);
+    fitRows(sim, ui);
   }
   let n = 0;
   let total = 0;
@@ -1176,6 +1148,8 @@ function drawUi(sim, show) {
     ui.large = !!st.largeText;
     ui.root.classList.toggle('is-contrast', ui.contrast);
     ui.root.classList.toggle('is-large', ui.large);
+    ui.panel.classList.toggle('is-contrast', ui.contrast);
+    ui.panel.classList.toggle('is-large', ui.large);
   }
   const vis = show && (total > 0 || !!cmdId || !!callout);
   if (vis !== ui.shown) {
@@ -1188,6 +1162,12 @@ function hideUi() {
   if (!W.ui) return;
   W.ui.shown = false;
   setHidden(W.ui.root, true);
+  // The panel lives in the HUD's stack, and the command in its centre lane,
+  // not under the root any more. (cmdId forgotten, so drawUi() shows it
+  // again when it comes back.)
+  setHidden(W.ui.panel, true);
+  setHidden(W.ui.cmd, true);
+  W.ui.cmdId = undefined;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1379,6 +1359,9 @@ registerExtension({
     sim.warnings = {
       isActive: (id) => !!(W.E.alerts[id] && W.E.alerts[id].on),
       active: () => R.ORDER.filter((id) => W.E.alerts[id].on),
+      // Is the panel on screen (something lit and not echoed)? The Races
+      // button stands down while it is.
+      showing: () => !!(W.ui && W.ui.panel && !W.ui.panel.hidden),
       acknowledge: () => acknowledge(),
       trafficLevel: (e) => R.tcasLevelOf(W.tcasOut, e),
       startFire: () => startFire(),

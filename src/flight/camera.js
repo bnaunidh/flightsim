@@ -12,7 +12,7 @@ import { heightAt, OBSTACLES } from '../world/terrain.js';
 import { RUNWAY } from '../world/airport.js';
 import { SPEC } from '../aircraft/physics.js';
 import { boomClear } from '../vehicles/driving.js';
-import { dim, CAPS, shakeClock } from '../render/flash-safety.js';
+import { dim, CAPS, shakeClock, FLASH } from '../render/flash-safety.js';
 
 export const VIEWS = ['cockpit', 'chase', 'orbit', 'wing', 'tower'];
 export const VIEW_LABELS = {
@@ -529,6 +529,22 @@ export class CameraRig {
       const speed = ac.vel.length();
       const carried = speed > LAG_SPEED ? 1 - LAG_SPEED / speed : 0;
       if (carried > 0) accel.addScaledVector(ac.vel, c * carried);
+      /*
+       * Reduce flashing: a wreck sliding away at 30-60 m/s is not followed.
+       * The camera that chases a skidding wreck is a metre or two off the
+       * grass moving as fast as it does, and a texture that crosses the whole
+       * screen in a few frames is a flicker by WCAG's measure over most of it
+       * (tests/flicker-probe.js: 48-75% of a 10-degree field on the pack's
+       * jets skidding after a belly-flop or a wall, all of it the ground). So
+       * with the switch on a crashed aeroplane stops the camera where it is,
+       * braking in a fraction of a second, and it keeps looking at the wreck as
+       * it slides on. The instant replay (features/breakup.js) is the way to see
+       * the rest of it up close.
+       */
+      if (ac.crashed && FLASH.reduce) {
+        accel.set(0, 0, 0);
+        this.chaseVel.multiplyScalar(Math.exp(-Math.min(dt, 0.05) * 14));
+      }
       this.chaseVel.addScaledVector(accel, Math.min(dt, 0.05));
       this.chasePos.addScaledVector(this.chaseVel, Math.min(dt, 0.05));
       // Never clip through the ground.

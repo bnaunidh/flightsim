@@ -40,6 +40,7 @@ const M = await import(new URL('features/crashes/motion.js', root));
 const MK = await import(new URL('features/crashes/marks.js', root));
 const H = await import(new URL('game/happenings.js', root));
 const DIS = await import(new URL('game/disasters.js', root));
+const { FLASH } = await import(new URL('render/flash-safety.js', root));
 
 let pass = 0;
 let fail = 0;
@@ -108,13 +109,32 @@ const TRAINER = M.dimsFrom([
   { part: 'rightWing', pos: V(6.1, 0.3, -0.5) },
   { part: 'tail', pos: V(0, -0.1, 4.6) },
   { part: 'fuselage', pos: V(0, -0.8, 0.3) },
-]);
-const JUMBO = M.dimsFrom(null, { nose: -16.8, tail: 20.77, span: 35.8 });
+], null, { scale: 1, bodyRadius: 1, finHeight: 0.95 });
+const JUMBO = M.dimsFrom(null, { nose: -16.8, tail: 20.77, span: 35.8 }, { scale: 2.5244, bodyRadius: 1.003, finHeight: 2.397 });
 ok('motion: sizes come from the strike points', Math.abs(TRAINER.semi - 6.1) < 1e-6 && Math.abs(TRAINER.r - 0.8) < 1e-6 && TRAINER.L > 7, JSON.stringify(TRAINER));
 ok('motion: …or from the plan when there are none', Math.abs(JUMBO.semi - 17.9) < 1e-6 && JUMBO.L > 37, JSON.stringify(JUMBO));
+{
+  const a320 = { scale: 2.5244, bodyRadius: 1.003, finHeight: 2.397, power: { kind: 'jet', x: 2.278, y: -0.931, radius: 0.416 } };
+  const d = M.dimsFrom([{ part: 'fuselage', pos: V(0, -2.07, 0) }], { nose: -16.8, tail: 20.77, span: 35.8 }, a320);
+  ok('motion: an airliner on its belly is on its underwing engines (they hang 1.3 m below the belly), and on its back on its fin', d.r > 3.3 && d.r < 3.6 && d.top > 7.5 && d.top < 8.3, `lies at ${d.r.toFixed(2)} m up on its belly, ${d.top.toFixed(2)} m on its fin`);
+  const f = M.dimsFrom([{ part: 'fuselage', pos: V(0, -0.82, 0) }], { nose: -8, tail: 8, span: 13 }, { scale: 1, bodyRadius: 2, finHeight: 3.05, power: { kind: 'jet', x: 0, y: -0.02, radius: 0.55 } });
+  ok('motion: a fighter (engine in the body) lies on its belly as it always did', Math.abs(f.r - 0.82) < 1e-6, `${f.r}`);
+}
 const hilly = (x, z) => 12 + Math.sin(x / 40) * 3 + Math.cos(z / 55) * 2;
 const sea = () => 0;
+/*
+ * Run with Reduce flashing on (the default: the turns are slower, so nothing
+ * spins faster than SPIN_MAX rad/s in front of the crash cam) and off (the
+ * cartoon as it was: a trainer goes over one and a half times, a wing clip
+ * spins twice round). The spin rate is the cause of the 25-42% of a
+ * 10-degree field the flicker probe measured on the small aeroplanes' crash
+ * scenes; features/breakup.browser.js holds the result on the real renderer.
+ */
+const SPIN_MAX = 5;
+const reduceWas = FLASH.reduce;
+for (const reduce of [true, false])
 for (const [label, dims] of [['trainer', TRAINER], ['jumbo', JUMBO]]) {
+  FLASH.reduce = reduce;
   for (const kind of K.KIND_IDS) {
     const ground = kind === 'splash' ? sea : hilly;
     const att = attitude(kind === 'noseplant' ? -45 : 0, kind === 'wingclip' ? -40 : kind === 'cartwheel' ? 55 : 0, 70);
@@ -128,10 +148,15 @@ for (const [label, dims] of [['trainer', TRAINER], ['jumbo', JUMBO]]) {
     let finite = true;
     let normal = true;
     let prev = p0.clone();
+    let prevQ = s.quat.clone();
+    let spin = 0;
     let firstJump = 0;
     while (!s.done && t < 5) {
       t += 1 / 60;
       M.poseAt(s, t);
+      // How fast it turns, once it has blended out of the pose it hit in (the first 0.2 s).
+      if (t > 0.2) spin = Math.max(spin, prevQ.angleTo(s.quat) * 60);
+      prevQ = s.quat.clone();
       const jump = s.pos.distanceTo(prev);
       if (t < 1.5 / 60) firstJump = jump;
       maxJump = Math.max(maxJump, jump);
@@ -140,7 +165,8 @@ for (const [label, dims] of [['trainer', TRAINER], ['jumbo', JUMBO]]) {
       finite = finite && [s.pos.x, s.pos.y, s.pos.z].every(Number.isFinite);
       normal = normal && Math.abs(s.quat.length() - 1) < 1e-4;
     }
-    const tag = `motion: ${label} ${kind}`;
+    const tag = `motion: ${label} ${kind}${reduce ? '' : ' (Reduce flashing off)'}`;
+    if (reduce) ok(`${tag} never turns faster than ${SPIN_MAX} rad/s (Reduce flashing on)`, spin <= SPIN_MAX, `${spin.toFixed(2)} rad/s at its fastest`);
     ok(`${tag} is over by ${M.CRASH_SECONDS}s, before the debrief`, s.done && t <= M.CRASH_SECONDS + 0.02, `${t.toFixed(2)} s`);
     ok(`${tag} stays a real place and a real rotation`, finite && normal);
     // A cartwheel is the fastest thing here: 34 m/s along the ground at most,
@@ -156,17 +182,25 @@ for (const [label, dims] of [['trainer', TRAINER], ['jumbo', JUMBO]]) {
     if (kind === 'cartwheel') {
       const up = V(0, 1, 0).applyQuaternion(s.quat);
       ok(`${tag} ends upside down`, up.y < -0.8, `up.y ${up.y.toFixed(2)}`);
-      const want = dims.semi > 9 ? 1 : 2;
+      // On its back it rests on the top of its fin, not in it: 5-12 m of an airliner's fin ended in the ground,
+      // 1.4-2.5 m of a fighter's (the crash sweep, finding 7).
+      const finTop = V(0, dims.top, 0).applyQuaternion(s.quat).add(s.pos);
+      ok(`${tag}: …on the top of its fin, not buried in it`, finTop.y - ground(finTop.x, finTop.z) > -0.3, `${(finTop.y - ground(finTop.x, finTop.z)).toFixed(2)} m over the ground (fin ${dims.top.toFixed(1)} m up)`);
+      const want = dims.semi > 9 || reduce ? 1 : 2;
       ok(`${tag}: a wing tip hits the ground ${want === 1 ? 'on the way over' : 'at least twice on the way'}`, s.slams >= want, `${s.slams}`);
     }
     if (kind === 'wingclip') {
       const f0 = V(0, 0, -1).applyQuaternion(att.q).setY(0).normalize();
-      ok(`${tag} spins round (it faces somewhere else at the end)`, s.slams >= 2, `${s.slams} turns`);
+      const turns = reduce ? 1 : 2;
+      ok(`${tag} spins round (it faces somewhere else at the end)`, s.slams >= turns, `${s.slams} turns`);
+      const f1 = V(0, 0, -1).applyQuaternion(s.quat).setY(0).normalize();
+      ok(`${tag} ends turned right round (half a turn, Reduce flashing on)`, f0.angleTo(f1) > 2.4 || !reduce, `${((f0.angleTo(f1) * 180) / Math.PI).toFixed(0)} degrees`);
       void f0;
     }
     if (kind === 'splash') ok(`${tag} ends afloat`, s.pos.y > -dims.r * 0.3 && s.pos.y < dims.r * 1.2, `${s.pos.y.toFixed(2)} m`);
   }
 }
+FLASH.reduce = reduceWas;
 
 /* ---- 4. the marks ------------------------------------------------------ */
 {

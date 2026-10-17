@@ -74,7 +74,7 @@ export function TYPES(base) {
       callsign: 'Harrison',
       plan: { ...HARRISON_PLAN },
       /** Drawn by ../models/tpose-harrison.js, not by the fleet pack or model.js. */
-      buildModel: (opts) => buildTPoseHarrison(opts.type),
+      buildModel: (opts) => buildTPoseHarrison(opts.type, opts.livery),
       shape: {
         ...base.TRAINER_SHAPE,
         scale: s,

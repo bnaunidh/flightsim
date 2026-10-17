@@ -135,7 +135,7 @@ const S = {
   swamped: false,
   /** The last few plans, newest last (stats.lastPlan is the newest). */
   plans: [],
-  stats: { breaks: 0, pieces: 0, peak: 0, ms: 0, msMax: 0, idleFrames: 0, lastPlan: null, lastMs: 0, survivable: 0, npc: 0, slowmo: 0, replays: 0, sinks: 0, wrecksSunk: 0, rafts: 0, culled: 0 },
+  stats: { breaks: 0, pieces: 0, peak: 0, ms: 0, msMax: 0, idleFrames: 0, lastPlan: null, lastMs: 0, survivable: 0, npc: 0, slowmo: 0, replays: 0, sinks: 0, wrecksSunk: 0, wrecksLanded: 0, rafts: 0, culled: 0 },
 };
 
 const _v = new THREE.Vector3();
@@ -465,7 +465,14 @@ function watchModel(model) {
       const x = w.elements[12];
       const y = w.elements[13];
       const z = w.elements[14];
-      if (model.userData.breakupNpc && live() && heightAt(x, z) < 0 && y < 6) sinkingWreck(model, w.clone(), { owner: 'npc' });
+      if (model.userData.breakupNpc && live()) {
+        const ground = heightAt(x, z);
+        if (ground < 0 && y < 6) sinkingWreck(model, w.clone(), { owner: 'npc' });
+        // Down on the ground: it stays there. Traffic retires an aeroplane that was knocked out of the
+        // sky at a metre above the ground and its model went with it, leaving only whatever had been
+        // torn off in the air (a wing tip): no airframe, no fire (the crash sweep, finding 3).
+        else if (ground >= 0 && y - ground < 14) restingWreck(model, w.clone());
+      }
     } catch (e) {
       /* the wreck is decoration */
     }
@@ -644,6 +651,10 @@ function crashed(sim, c) {
     normal.normalize();
   } else groundNormal(world.x, world.z, normal);
   hit.normal = normal;
+  // The tail struck the ground (a nose-high landing, a rotation too far): the rear fuselage, so the fin and
+  // BOTH tailplanes next to it share the blow. The centre line is a tie between the tailplanes, and one of them
+  // alone came off, on one side only (the crash sweep, finding 8). A helicopter's tail rotor is its own zone.
+  if (contact.part === 'tail') hit.zones = ['rear'];
   // The touching point's own velocity (the aeroplane's, plus its turning).
   const arm = world.clone().sub(ac.pos);
   hit.velocity = vel.clone().add(omega.clone().cross(arm));
@@ -724,6 +735,16 @@ function onDamage(d) {
   }
 }
 
+/** The zones a knock on each of the flight model's parts can have touched, outermost first (see planBreak). */
+const KNOCK_ZONES = {
+  leftWing: ['wingOuterL', 'wingInnerL'],
+  rightWing: ['wingOuterR', 'wingInnerR'],
+  tail: ['fin', 'tailplaneL', 'tailplaneR', 'rear'],
+  nose: ['nose'],
+  gear: ['gearN', 'gearL', 'gearR'],
+  fuselage: ['core', 'nose', 'rear'],
+};
+
 function damaged(sim, d) {
   if (!sim || !sim.aircraft || !sim.model || sim.mode === 'drive') return;
   const ac = sim.aircraft;
@@ -736,6 +757,8 @@ function damaged(sim, d) {
     normal: groundNormal(d.point.x, d.point.z, new THREE.Vector3()),
     energy,
     survivable: true,
+    // Which part the flight model says it was: a wing's tip, not whatever zone the point happens to be nearest.
+    zones: KNOCK_ZONES[d.part] || null,
     bodyVel: ac.vel.clone(),
     omega: ac.omega.clone().applyQuaternion(ac.quat),
     owner: 'player',
@@ -1431,6 +1454,23 @@ function stepNpcs(dt) {
   }
 }
 
+/**
+ * What is left of an aeroplane that came down on the ground and was tidied
+ * away by its owner (traffic.js retireCraft, ambient/flyers.js): baked into
+ * one piece that settles where it lies and burns for a while — the same
+ * piece the sea's wreck is, on land.
+ */
+function restingWreck(model, world) {
+  const piece = sinkingWreck(model, world, { owner: 'npc', kind: 'wreck', stat: 'wrecksLanded' });
+  if (!piece) return null;
+  piece.fuel = true;
+  if (S.fx) {
+    const size = clamp(0.5 + piece.body.size.length() * 0.08, 0.8, 3.2);
+    S.fx.fire((o) => (piece.gone ? false : (o.copy(piece.group.position), (o.y += 0.3), true)), 14 + Math.random() * 6, size);
+  }
+  return piece;
+}
+
 /** A wreck left where something went into the sea, sinking slowly as one piece. */
 function sinkingWreck(model, world, opts = {}) {
   let baked = null;
@@ -1461,7 +1501,7 @@ function sinkingWreck(model, world, opts = {}) {
   const piece = { group: baked.group, body, zones: [opts.kind || 'wreck'], owner: opts.owner || 'npc', born: S.clock, far: false, engine: false, fuel: false, rotorBlade: false, model: null };
   body.piece = piece;
   addPiece(piece);
-  S.stats.wrecksSunk++;
+  S.stats[opts.stat || 'wrecksSunk']++;
   return piece;
 }
 
@@ -1553,6 +1593,15 @@ function recordPre(sim, dt) {
   S.preAcc += dt;
   if (S.preAcc < 1 / REPLAY.hz) return;
   S.preAcc = 0;
+  /*
+   * A jump, not a flight: the aeroplane was put somewhere else (Back to runway, the spawn picker, a taxi skip,
+   * the owner's teleport — ac.reset all of them, none of which starts a new mode). The poses kept from before
+   * it are somewhere else, and a crash within the next 1.5 s began its replay with the airframe at its OLD
+   * place: the camera 9.4 km from the wreck for the first 2.5 s, then a jump (the crash sweep, finding 9).
+   * No aeroplane moves 80 m in a thirtieth of a second.
+   */
+  const last = S.pre[(S.preHead + PRE_N - 1) % PRE_N];
+  if (last.t > -1e8 && last.pos.distanceToSquared(model.position) > 80 * 80) for (const q of S.pre) q.t = -1e9;
   const f = S.pre[S.preHead];
   S.preHead = (S.preHead + 1) % PRE_N;
   f.t = S.clockPre;

@@ -632,7 +632,8 @@ export function placePopup(menu, anchor, { margin = 8, gap = 8 } = {}) {
   const onRight = (a.left + a.right) / 2 > W / 2;
   const upFirst = (a.top + a.bottom) / 2 > H / 2;
   const clampX = (x) => Math.max(margin, Math.min(W - margin - w, x));
-  const clampY = (y) => Math.max(margin, Math.min(H - margin - h, y));
+  // Clamped with the height the menu will have: a menu cut down to scroll is `hh`, not `h`, tall (the repair round: with `h` a phone's Summon menu went to y = 8, over the badge's own chips).
+  const clampY = (y, hh) => Math.max(margin, Math.min(H - margin - hh, y));
   const xUnder = clampX(onRight ? a.right - w : a.left);
   const room = {
     up: a.top - gap - margin,
@@ -658,7 +659,7 @@ export function placePopup(menu, anchor, { margin = 8, gap = 8 } = {}) {
   }
   let [x, y] = at[how](hh);
   x = Math.max(margin, Math.min(W - margin - w, x));
-  y = Math.max(margin, Math.min(H - margin - hh, how === 'side' ? y : clampY(y)));
+  y = how === 'side' ? Math.max(margin, Math.min(H - margin - hh, y)) : clampY(y, hh);
   st.left = `${Math.round(x - box.left)}px`;
   st.top = `${Math.round(y - box.top)}px`;
   st.visibility = '';
@@ -676,7 +677,26 @@ export function placePopup(menu, anchor, { margin = 8, gap = 8 } = {}) {
  * never settle.
  */
 const TRANSIENT_HUD = /\bhud-(toast|toasts|subtitle|subtitle-who|subtitle-text|coach|banner|controls-card|papi)\b/;
-const KEEP_CLEAR_EXTRA = ['.touch-layer > *', '.fun-chip', '.ej-col > .ej-btn', '.ej-col > *', '.wf-panel', '.race-solobar', '[data-owner-chip]'];
+/*
+ * The repair round of scuffs #4 (a checker on phones): '.touch-layer > *'
+ * alone missed the boat's engine lever — five detents stacked are 260 px,
+ * more than 60% of a 390 px screen, so the lever was thrown out as "too big
+ * to be HUD" and the badge sat on SLOW and STOP. Its buttons, one by one,
+ * are never too big.
+ */
+const KEEP_CLEAR_EXTRA = ['.touch-layer > *', '.touch-layer button', '.fun-chip', '.ej-col > .ej-btn', '.ej-col > *', '.wf-panel', '.race-solobar', '[data-owner-chip]'];
+/*
+ * The "Tap here to get out" door (../staff/ui.js setPrompt) is the only way
+ * out of a vehicle on a touch screen, and on a phone on its side it sits
+ * along the top, where the one-row badge went: a tap on it turned PvP on.
+ * It comes and goes (it lights up when the vehicle stops), so its place is
+ * kept free while it has words at all, lit or not, and the badge does not
+ * jump the moment it lights up; and kept at least PROMPT_MIN_W wide, for
+ * the longer lines (a runaway's rule, a job's hint) that appear in the same
+ * place.
+ */
+const PROMPT_SEL = '.of-prompt';
+const PROMPT_MIN_W = 240;
 
 export function buildHud(ctrl, layer) {
   const el = h(`
@@ -930,6 +950,12 @@ export function buildHud(ctrl, layer) {
      */
     place(sim) {
       const t = typeof performance !== 'undefined' ? performance.now() : 0;
+      // The HUD's right-hand stack ends above the badge when it is docked
+      // over the minimap there (--mp-dock, styles/main.css .hud-rstack).
+      if (el.hidden && typeof document !== 'undefined' && badge._dock) {
+        badge._dock = '';
+        document.documentElement.style.removeProperty('--mp-dock');
+      }
       if (t - placedAt < 1000 || el.hidden || typeof document === 'undefined') return;
       placedAt = t;
       const W = window.innerWidth;
@@ -940,7 +966,14 @@ export function buildHud(ctrl, layer) {
       const shown = mm && mm.visible && !mm._offstage && mm.el && mm.el.style && mm.el.style.display !== 'none';
       const canvas = shown && mm.canvas;
       const r = canvas && canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : null;
-      const avoid = hud.keepClear(t, W, H);
+      /*
+       * The minimap is kept clear too, not only docked to. On a small phone
+       * (667x375, 740x360, 568x320) the row slid back over it — 4230 px² of
+       * a 96 px map — because the map was only ever the dock's anchor, and
+       * the badge's own count said it covered nothing.
+       */
+      const avoid = hud.keepClear(t, W, H).slice();
+      if (r && r.width > 20 && r.height > 20) avoid.push(r);
       const pad = 6;
       const search = (bw, bh) => {
         const overlap = (x, y) => {
@@ -1010,6 +1043,14 @@ export function buildHud(ctrl, layer) {
       const { bw, bh } = pick;
       hud.placed = { x: pick.x, y: pick.y, w: bw, h: bh, covers: Math.round(pick.o), compact, form: pick.f };
       const pos = { left: pick.x, top: pick.y, menuUp: pick.y + bh / 2 > H / 2 };
+      // Docked low on the right (over a bottom-right minimap): the HUD's right-hand stack ends above it
+      // (--mp-dock, styles/main.css .hud-rstack).
+      const dock = pos.menuUp && pick.x + bw / 2 > W / 2 ? `${Math.round(H - pos.top + 8)}px` : '';
+      if (badge._dock !== dock) {
+        badge._dock = dock;
+        if (dock) document.documentElement.style.setProperty('--mp-dock', dock);
+        else document.documentElement.style.removeProperty('--mp-dock');
+      }
       const key = `${pos.left}|${pos.top}|${pos.menuUp}|${bh}|${bw}`;
       hud.menuUp = !!pos.menuUp;
       if (badge._pos === key) return;
@@ -1045,7 +1086,26 @@ export function buildHud(ctrl, layer) {
         if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) < 0.05) continue;
         boxes.push(b);
       }
+      const door = hud.promptBox(W, H);
+      if (door) boxes.push(door);
       return boxes;
+    },
+    /** The get-out prompt's place (PROMPT_SEL), lit or not, while it has words; null when there is none. */
+    promptBox(W, H) {
+      if (typeof document === 'undefined') return null;
+      const p = document.querySelector(PROMPT_SEL);
+      if (!p || !p.isConnected || !p.textContent.trim()) return null;
+      const cs = getComputedStyle(p);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return null;
+      // Its parent folded away (the on-foot layer hidden): nothing there.
+      if (!p.offsetParent && cs.position !== 'fixed') return null;
+      const b = p.getBoundingClientRect();
+      if (b.width < 2 || b.height < 2 || b.right <= 0 || b.left >= W || b.bottom <= 0 || b.top >= H) return null;
+      const w = Math.min(W, Math.max(b.width, PROMPT_MIN_W));
+      const cx = (b.left + b.right) / 2;
+      const left = Math.max(0, cx - w / 2);
+      const right = Math.min(W, cx + w / 2);
+      return { left, right, top: b.top, bottom: b.bottom, width: right - left, height: b.height, door: true };
     },
     /** Open `m` (the chat menu, or a feature's menu on the chip row) where all of it can be seen: placePopup, off the badge. */
     popup(m) {

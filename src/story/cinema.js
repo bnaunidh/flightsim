@@ -57,15 +57,26 @@ const CSS = `
 #sz-cinema .sz-card .sz-foot { display: block; margin-top: 14px; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: #ffbf47; font-weight: 700; }
 #sz-cinema .sz-card.is-ready .sz-main { color: #7ee8b2; }
 
-#sz-cinema .sz-chip { position: absolute; left: 50%; bottom: 7%; transform: translateX(-50%); opacity: 0; transition: opacity 0.4s ease;
+/*
+ * Clear of the HUD's controls: the caption chip, the lower third and the
+ * dialogue box sit above the bottom lane the HUD measures (--bl-wide, the
+ * top of the highest control across the middle of the screen: the engine
+ * strip, the thumb pads, the stick — ui/hud.js updateLanes()). At their old
+ * fixed places the box sat on the engine strip and covered the PAPI pill,
+ * and on a tablet it covered the stick and the throttle.
+ */
+#sz-cinema .sz-chip { position: absolute; left: 50%; bottom: max(7%, calc(var(--bl-wide, 0px) + 10px)); transform: translateX(-50%); opacity: 0; transition: opacity 0.4s ease;
   font: 800 13px/1 var(--font, sans-serif); letter-spacing: 0.16em; text-transform: uppercase; white-space: nowrap; text-shadow: 0 1px 10px rgba(0,0,0,0.8); }
 #sz-cinema .sz-chip.on { opacity: 1; }
-#sz-cinema .sz-third { position: absolute; left: 4%; bottom: 14%; opacity: 0; transition: opacity 0.4s ease; padding: 8px 14px 8px 12px;
+/* U (the player's clean shot, ui/hud.js setCleanShot()) takes the caption and the lower third too. */
+html.ui-clean #sz-cinema .sz-chip, html.ui-clean #sz-cinema .sz-third { opacity: 0 !important; }
+#sz-cinema .sz-third { position: absolute; left: 4%; bottom: max(14%, calc(var(--bl-wide, 0px) + 116px)); opacity: 0; transition: opacity 0.4s ease; padding: 8px 14px 8px 12px;
   background: linear-gradient(90deg, rgba(7,7,10,0.9), rgba(7,7,10,0)); border-left: 3px solid #ffbf47;
   font: 700 14px/1.2 var(--font, sans-serif); letter-spacing: 0.14em; text-transform: uppercase; }
 #sz-cinema .sz-third.on { opacity: 1; }
 
-#sz-cinema .sz-dlg { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); width: min(760px, 92vw);
+#sz-cinema .sz-dlg { position: absolute; left: 50%; bottom: max(60px, calc(var(--bl-wide, 0px) + 14px)); transform: translateX(-50%);
+  width: min(760px, calc(100vw - 24px)); box-sizing: border-box;
   display: flex; align-items: flex-end; gap: 12px; opacity: 0; transition: opacity 0.4s ease; }
 #sz-cinema .sz-dlg.on { opacity: 1; }
 #sz-cinema .sz-dlg .sz-por { width: 76px; height: 76px; flex: none; border-radius: 50%; overflow: hidden; background: #0b1220;
@@ -73,8 +84,12 @@ const CSS = `
 #sz-cinema .sz-dlg .sz-por canvas { width: 100%; height: 100%; display: block; }
 #sz-cinema .sz-dlg .sz-box { flex: 1; min-width: 0; background: rgba(6,10,18,0.86); border: 1px solid rgba(140,180,230,0.22); border-radius: 12px;
   padding: 9px 14px 11px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-#sz-cinema .sz-dlg .sz-who { font-size: 11.5px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 3px; display: flex; gap: 8px; align-items: baseline; }
-#sz-cinema .sz-dlg .sz-who small { font-weight: 600; letter-spacing: 0.04em; text-transform: none; color: #9fb2cc; }
+/* The name and the role wrap inside the box: "LARK · you · Harbourlight
+   Charter" on one unbreakable flex line ran off the right of a narrow window. */
+#sz-cinema .sz-dlg .sz-who { font-size: 11.5px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 3px;
+  display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; min-width: 0; }
+#sz-cinema .sz-dlg .sz-who small { font-weight: 600; letter-spacing: 0.04em; text-transform: none; color: #9fb2cc; min-width: 0; overflow-wrap: anywhere; }
+#sz-cinema .sz-dlg .sz-text { overflow-wrap: break-word; }
 #sz-cinema .sz-dlg .sz-text { font-size: 17px; line-height: 1.38; color: #eaf1fb; }
 #sz-cinema .sz-dlg.is-range .sz-text { font-family: var(--mono, ui-monospace, Menlo, monospace); letter-spacing: 0.04em; color: #ffd6d6; }
 #sz-cinema .sz-dlg.is-room .sz-box { border-color: rgba(255,191,71,0.35); }
@@ -84,7 +99,8 @@ const CSS = `
   font: 700 12px/1 var(--font, sans-serif); letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; }
 #sz-cinema .sz-skip.on { opacity: 1; }
 #sz-cinema .sz-skip:focus-visible { outline: 2px solid #fff; }
-@media (max-width: 720px) { #sz-cinema .sz-dlg .sz-por { width: 56px; height: 56px; } #sz-cinema .sz-dlg .sz-text { font-size: 15px; } }
+@media (max-width: 720px) { #sz-cinema .sz-dlg { gap: 8px; } #sz-cinema .sz-dlg .sz-por { width: 56px; height: 56px; } #sz-cinema .sz-dlg .sz-text { font-size: 15px; } }
+@media (max-width: 480px) { #sz-cinema .sz-dlg .sz-por { width: 44px; height: 44px; } #sz-cinema .sz-dlg .sz-box { padding: 7px 10px 9px; } #sz-cinema .sz-dlg .sz-text { font-size: 14px; } }
 @media (prefers-reduced-motion: reduce) { #sz-cinema .sz-bar, #sz-cinema .sz-card, #sz-cinema .sz-chip, #sz-cinema .sz-third, #sz-cinema .sz-dlg, #sz-cinema .sz-fade { transition: none; } }
 `;
 
@@ -179,6 +195,16 @@ function maybeHide() {
 export function bars(kind) {
   const e = build();
   C.bars = kind || null;
+  /*
+   * The HUD makes room for the bars instead of being covered by them:
+   * html[data-cine] insets the HUD's wrapper by the bars' height (main.css),
+   * so the airspeed, the objective's title, the wind, the engine strip and
+   * the dock all step inside the picture rather than lose 24 px under it.
+   */
+  if (typeof document !== 'undefined' && document.documentElement && document.documentElement.dataset) {
+    if (kind) document.documentElement.dataset.cine = kind;
+    else delete document.documentElement.dataset.cine;
+  }
   if (!e) return;
   e.root.classList.toggle('bars-big', kind === 'big');
   e.root.classList.toggle('bars-thin', kind === 'thin');
@@ -297,6 +323,9 @@ function showNextLine() {
   e.dlg.classList.toggle('is-range', l.who === 'range');
   e.dlg.classList.toggle('is-room', !l.radio);
   e.dlg.classList.add('on');
+  // While a story line is up it IS the subtitle: the HUD's radio line (the
+  // tower, say) steps out rather than print a second line under the box.
+  if (typeof document !== 'undefined' && document.documentElement) document.documentElement.classList.add('sz-talking');
   show();
   // The radio: the game's own formant chatter, muted or not as the player
   // has it. Its subtitle is off because the box above IS the subtitle.
@@ -314,6 +343,7 @@ function clearLine() {
   const e = C.el;
   C.dlg = null;
   if (e) e.dlg.classList.remove('on');
+  if (typeof document !== 'undefined' && document.documentElement) document.documentElement.classList.remove('sz-talking');
 }
 
 /* ------------------------------------------------------------ cutscenes */

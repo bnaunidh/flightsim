@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v68';
+const CACHE_VERSION = 'island-flight-v69';
 
 const PRECACHE = [
   './',
@@ -75,6 +75,7 @@ const PRECACHE = [
   'src/audio/music.js',
 
   'src/game/runner.js',
+  'src/game/landing-zone.js',
   'src/game/missions.js',
   'src/game/tutorial.js',
   'src/game/markers.js',
@@ -141,6 +142,7 @@ const PRECACHE = [
   'src/ui/hud-boat.js',
   'src/ui/hud-drive.js',
   'src/ui/hud-rotor.js',
+  'src/ui/hud-stack.js',
   'src/vehicles/driving.js',
   'src/world/pads.js',
   'src/world/roads.js',
@@ -254,6 +256,7 @@ const PRECACHE = [
   'src/features/eject/profiles.js',
   'src/features/eject/ui.js',
   'src/features/runaway.js',
+  'src/features/landing-zones.js',
   'src/features/tpose.js',
   'src/features/uniforms.js',
   'src/features/wasted.js',
@@ -384,6 +387,11 @@ const PRECACHE = [
   'src/features/gunsight.js',
   'src/features/gunsight/hud.js',
   'src/features/gunsight/rules.js',
+  // The map loading screen (its pictures are in OPTIONAL below).
+  'src/features/loading-screens.js',
+  'src/ui/loading-screen.js',
+  'src/ui/loading-tips.js',
+  'src/ui/loading-focus.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 
@@ -395,11 +403,49 @@ const PRECACHE = [
   'assets/models/skyhook.glb',
   'assets/models/courier-van.glb',
   'assets/models/kestrel-launch.glb',
+  // Added by tools/sync-precache.mjs.
+  'src/features/mpskin.js',
 ];
 
 // Files that are useful but not required for the game to run. If one of these
 // fails to cache, offline play still works.
-const OPTIONAL = ['assets/atc/manifest.json', 'tests/selftest.js', 'README.md'];
+const OPTIONAL = [
+  'assets/atc/manifest.json',
+  'tests/selftest.js',
+  'README.md',
+  // The map loading screens' pictures (src/features/loading-screens.js): 30 JPEGs, under 250 KB each.
+  // A map whose picture is missing shows its gradient instead, so these are not required.
+  'assets/loading/kestrel.jpg',
+  'assets/loading/meadow.jpg',
+  'assets/loading/atoll.jpg',
+  'assets/loading/fjord.jpg',
+  'assets/loading/ember.jpg',
+  'assets/loading/airbase.jpg',
+  'assets/loading/gateway.jpg',
+  'assets/loading/northwatch.jpg',
+  'assets/loading/condor.jpg',
+  'assets/loading/sennen.jpg',
+  'assets/loading/skerries.jpg',
+  'assets/loading/longbank.jpg',
+  'assets/loading/drovers.jpg',
+  'assets/loading/cape.jpg',
+  'assets/loading/cullen.jpg',
+  'assets/loading/kestrel-port.jpg',
+  'assets/loading/stacks.jpg',
+  'assets/loading/rigs.jpg',
+  'assets/loading/archipelago.jpg',
+  'assets/loading/town.jpg',
+  'assets/loading/carriergroup.jpg',
+  'assets/loading/coastroad.jpg',
+  'assets/loading/delta.jpg',
+  'assets/loading/firewatch.jpg',
+  'assets/loading/harbour.jpg',
+  'assets/loading/ravencrag.jpg',
+  'assets/loading/lagoon.jpg',
+  'assets/loading/meridian.jpg',
+  'assets/loading/mountainpass.jpg',
+  'assets/loading/stormcoast.jpg',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

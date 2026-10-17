@@ -56,6 +56,11 @@ import { check as worldScale } from './world-scale.browser.js';
 import { check as mapsKitB } from './maps-kit-b.browser.js';
 import { check as comic } from './comic.browser.js';
 import { check as story } from './story.browser.js';
+import { check as loadingScreens } from './loading-screens.browser.js';
+import { check as skins } from './skins.browser.js';
+import { check as crashSweep } from './crash-sweep.browser.js';
+import { check as landingZone } from './landing-zone.browser.js';
+import { check as hudStack } from './hud-stack.browser.js';
 
 export const CHECKS = [
   { id: 'airport', check: airport },
@@ -66,6 +71,8 @@ export const CHECKS = [
   { id: 'crashes', check: crashes },
   // After crashes: the break points, the pieces, the replay and the slow sinking at sea.
   { id: 'breakup', check: breakup },
+  // After breakup: the crash sweep's findings on the real game — every crash under the flicker probe, sea debris, a wreck on land, the replay after a teleport.
+  { id: 'crash-sweep', check: crashSweep },
   { id: 'airliners', check: airliners },
   { id: 'fighters', check: fighters },
   { id: 'events', check: events },
@@ -92,6 +99,8 @@ export const CHECKS = [
   { id: 'quality', check: quality },
   // After quality: how big things are — a house beside the aeroplane and the altitude line's height over the ground (the owner's "200 ft houses").
   { id: 'world-scale', check: worldScale },
+  // After quality (it builds every aeroplane in every paint): the skins sweep's findings — the pack's tails and numbers, the civil models' lettering, who is handed which paint.
+  { id: 'skins', check: skins },
   { id: 'traffic', check: traffic },
   // After traffic: every aircraft in one list — collisions with all of them, and all of them on the minimap.
   { id: 'sky', check: sky },
@@ -125,9 +134,18 @@ export const CHECKS = [
   // After achievements (it notes the story's medals): STORY MODE — the Story card, chapter 1
   // played to the end by a scripted pilot, and leave-then-Continue at a checkpoint.
   { id: 'story', check: story },
+  // After story (it plays chapter 1's landing from its own clean save, which this puts back): the secret
+  // runway box — three seconds down in it is a landing, in the story, a mission and a delivery; the grass is not.
+  { id: 'landing-zone', check: landingZone },
+  // After story: the HUD's right-hand stack, its centre lane, the Clean HUD and chapter 1's ring
+  // (the owner's 2026-10-16 screenshot of four cards on top of each other).
+  { id: 'hud-stack', check: hudStack },
   // After everything that flies: KIT-B — where a Free Flight starts (the picker), the ambient
   // population and the emergency scene, on Gateway and The Big Burn.
   { id: 'maps-kit-b', check: mapsKitB },
+  // The map loading screen, about three seconds, in front of every way into a map. It switches
+  // itself on for its own checks (the suite runs with it off) and puts the map back.
+  { id: 'loading-screens', check: loadingScreens },
   // Last: it rebinds keys through Settings (and puts the player's back after).
   { id: 'keybinds', check: keybinds },
 ];

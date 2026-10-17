@@ -195,7 +195,8 @@ export async function check(sim, r, say) {
     await sim.startMode('mission', { id: 'meteor-shower' });
     airborne();
     frames(10);
-    const panel = document.querySelector('#meteor-ui .mt-panel');
+    // The panel is a card in the HUD's right-hand stack now (ui/hud-stack.js), not under #meteor-ui.
+    const panel = document.querySelector('.mt-panel');
     const panelText = panel ? panel.textContent : '';
     r.ok('minimap ghosts: the shower says "stardust", never "gold stars" (which the chart’s stars are not)', !/gold stars/i.test(stepText) && !/gold stars/i.test(panelText) && /stardust/i.test(panelText), `${stepText.slice(0, 80)} || ${panelText.slice(0, 80)}`);
     quit();

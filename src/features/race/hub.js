@@ -38,8 +38,12 @@ export const HUB_CSS = `
 .race-hub button.primary { background: var(--accent); color: #0b1220; border-color: var(--accent); }
 .race-hub .race-btns { display: flex; gap: 8px; justify-content: flex-end; }
 .mp-racecard .race-list .race-list-btns { grid-column: 2 / 4; display: flex; gap: 6px; flex-wrap: wrap; }
-/* Top right, under the wind: bottom centre is the van's turn arrow's ("nothing else is allowed to live there", main.css). */
-.race-solobar { position: fixed; right: 16px; top: 112px; z-index: 30; pointer-events: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+/* A card in the HUD's right-hand stack (ui/hud-stack.js; race.js adoptSolo()): the stack places it.
+   Folded in the Clean HUD (.rs-chip), it is the flag alone. */
+.race-solobar { pointer-events: none; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.race-solobar button { pointer-events: auto; }
+.race-solobar.rs-chip .race-solo-word { display: none; }
+.race-solobar.rs-chip button.race-solo-all { min-height: 30px; padding: 4px 9px; font-size: 14px; }
 .race-solobar[hidden] { display: none !important; }
 .race-solobar button { background: rgba(10, 17, 30, 0.82); white-space: nowrap; }
 .race-solobar button[hidden] { display: none; }

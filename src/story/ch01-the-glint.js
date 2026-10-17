@@ -332,18 +332,35 @@ function updateCole(sim, dt) {
 /* the world bits: the gap, the cliff light, the observatory               */
 /* ====================================================================== */
 
+/** A Retry or Continue past the Eye: the saved state says it was flown, so the ring goes. */
+function dropPassedGate() {
+  if (!K.eyePassed || !K.eyeGate) return;
+  try {
+    K.eyeGate.dispose(K.propsSim && K.propsSim.scene);
+  } catch (e) {
+    /* gone */
+  }
+  K.eyeGate = null;
+}
+
 function addProps(sim) {
   clearProps(sim);
+  K.propsSim = sim;
   // "Through the Eye": a marked gap in the squall wall, 2.2 km ahead of the air start.
+  // Not again once it has been flown: a Retry or Continue past it (eyePassed
+  // is saved) rebuilt a fresh cyan ring that checkProps() could never pass.
   const h = (CHASE_SPAWN.headingDeg * Math.PI) / 180;
   const gatePos = new THREE.Vector3(CHASE_SPAWN.pos.x + Math.sin(h) * 2200, 1600, CHASE_SPAWN.pos.z - Math.cos(h) * 2200);
-  try {
-    const gate = new RingGate(gatePos, CHASE_SPAWN.headingDeg, 150);
-    gate.setActive(true);
-    sim.scene.add(gate.group);
-    K.eyeGate = gate;
-  } catch (e) {
-    K.eyeGate = null;
+  K.eyeGate = null;
+  if (!K.eyePassed) {
+    try {
+      const gate = new RingGate(gatePos, CHASE_SPAWN.headingDeg, 150);
+      gate.setActive(true);
+      sim.scene.add(gate.group);
+      K.eyeGate = gate;
+    } catch (e) {
+      K.eyeGate = null;
+    }
   }
   // The faint light in Condor's west cliff: the first thing that pays off in chapter 12.
   let lx = -720;
@@ -405,13 +422,18 @@ function clearProps(sim) {
 
 function checkProps(sim, dt) {
   const ac = sim.aircraft;
-  if (K.eyeGate && !K.eyePassed) {
+  if (K.eyeGate) {
+    // Kept ticking after the pass, so it can fade: through it, it fades and
+    // shrinks out (RingGate.fadeOut) and is gone, instead of hanging green
+    // in the sky for the rest of the chapter.
     K.eyeGate.update(dt, sim.camera.position);
-    if (K.eyeGate.test(ac.pos)) {
+    if (!K.eyePassed && K.eyeGate.test(ac.pos)) {
       K.eyePassed = true;
-      K.eyeGate.markPassed();
+      const reduced = !!(sim.settings && sim.settings.reducedMotion);
+      K.eyeGate.fadeOut(sim.scene, 0.8, { reduced });
       K.api.style('through-the-eye', 'Through the Eye');
     }
+    if (K.eyeGate && K.eyeGate.done) K.eyeGate = null;
   }
   if (K.cliffLight && !K.secretFound && ac.pos.distanceTo(K.cliffLight.position) < 200) {
     K.secretFound = true;
@@ -618,6 +640,7 @@ export const CHASE = adapt(
       K.eyePassed = !!state.eyePassed;
       K.secretFound = !!state.secretFound;
       K.fileFound = !!state.fileFound;
+      dropPassedGate();
       const m = meteors(ctx.sim);
       if (!m) return;
       if (state.giantSpawned) {
@@ -806,6 +829,7 @@ export const LAND = {
     K.eyePassed = !!state.eyePassed || K.eyePassed;
     K.secretFound = !!state.secretFound || K.secretFound;
     K.fileFound = !!state.fileFound || K.fileFound;
+    dropPassedGate();
   },
 };
 

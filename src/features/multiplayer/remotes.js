@@ -26,7 +26,7 @@
 import * as THREE from '../../vendor/three.module.js';
 import { createAircraftModel, syncAircraftModel, groundOffsetFor } from '../../aircraft/model-adapter.js';
 import { getAircraft, specFor } from '../../aircraft/types.js';
-import { schemeFor } from '../../aircraft/liveries.js';
+import { findLivery } from '../../aircraft/liveries.js';
 import { createBoat, createCar, updateVehicleModel } from '../../vehicles/models.js';
 import { VEHICLES } from '../../vehicles/surface.js';
 import { Track, Smoother, RotSmoother, LEAD_K } from './interp.js';
@@ -461,6 +461,12 @@ function standinGeometry() {
 export class Remotes {
   constructor() {
     this.players = new Map();
+    /**
+     * Each player's chosen paint, by player id: a livery id they sent (features/mpskin.js, 'skin:paint').
+     * Absent means they sent none (an older copy of the game, or not yet), and the remote is drawn in
+     * their player colour as it always was.
+     */
+    this.paints = new Map();
     this.root = null;
     this.own = null;
     this.pool = new Map();
@@ -587,7 +593,22 @@ export class Remotes {
     return p.lod;
   }
 
+  /**
+   * Their paint arrived: the livery id they fly in. A change redraws them (their model is rebuilt on the
+   * next frame, in the new paint), and the same one again costs nothing.
+   */
+  setPaint(id, livery) {
+    const want = typeof livery === 'string' ? livery : '';
+    if ((this.paints.get(id) || '') === want) return false;
+    if (want) this.paints.set(id, want);
+    else this.paints.delete(id);
+    const p = this.players.get(id);
+    if (p) this._release(p);
+    return true;
+  }
+
   remove(id) {
+    this.paints.delete(id);
     const p = this.players.get(id);
     if (!p) return;
     this._release(p);
@@ -609,10 +630,13 @@ export class Remotes {
    */
   dropPlayers() {
     for (const id of [...this.players.keys()]) this.remove(id);
+    // Numbered afresh: a paint heard for the old number is nobody's. Everyone sends theirs again within seconds (mpskin.js).
+    this.paints.clear();
   }
 
   clear() {
     for (const id of [...this.players.keys()]) this.remove(id);
+    this.paints.clear();
     for (const m of this.pool.values()) disposeModel(m);
     this.pool.clear();
     if (this._lodMats) for (const m of this._lodMats.values()) m.dispose();
@@ -659,7 +683,18 @@ export class Remotes {
     p.modelKey = '';
   }
 
-  _build(kind, type, colour, livery = 'house') {
+  /**
+   * The scheme a remote aeroplane is painted in. In the paint its pilot chose (a named livery, once their
+   * game has said so — mpskin's 'skin:paint' event or mplook's shared looks) with their player colour as
+   * its accent (scuffs #9); with the factory colours picked or nothing heard, in their player colour — the
+   * eight a ten-year-old can tell apart across a sky. The colour is still on their name tag and the map dot.
+   */
+  _schemeFor(colour, paint) {
+    const l = paint ? findLivery(paint) : null;
+    return l && !l.house && l.id === paint ? { ...l, accent: colour } : schemeIn(colour);
+  }
+
+  _build(kind, type, colour, paint = '') {
     if (kind === 'boat' || kind === 'car') {
       const m = kind === 'boat' ? createBoat() : createCar();
       tintVehicle(m, colour);
@@ -667,9 +702,7 @@ export class Remotes {
       return m;
     }
     const t = getAircraft(type);
-    // Their hangar livery, if they picked one, with their colour as its accent; house colours is the lobby's "your plane's colour".
-    const scheme = livery && livery !== 'house' ? { ...schemeFor(t, livery), accent: colour } : schemeIn(colour);
-    const model = createAircraftModel({ type: t, livery: scheme });
+    const model = createAircraftModel({ type: t, livery: this._schemeFor(colour, paint) });
     // How far the picture drops so the wheels meet the ground — measured once per type, as main.js does for yours.
     if (!this.offsets.has(t.id)) {
       let off = 0;
@@ -688,13 +721,17 @@ export class Remotes {
   _ensureModel(p, snap, sim) {
     const kind = snap.game === 'boat' || snap.game === 'car' ? snap.game : 'air';
     const type = kind === 'air' ? (snap.type || 'skylark') : kind;
-    let livery = 'house';
-    try {
-      livery = (kind === 'air' && this.liveryOf && this.liveryOf(p.id)) || 'house';
-    } catch (e) {
-      livery = 'house';
+    // The paint they fly in: the 'skin:paint' event (mpskin.js) first, else the host's shared looks (mplook.js).
+    let paint = kind === 'air' ? this.paints.get(p.id) || '' : '';
+    if (!paint && kind === 'air') {
+      try {
+        const l = this.liveryOf && this.liveryOf(p.id);
+        if (l && l !== 'house') paint = l;
+      } catch (e) {
+        paint = '';
+      }
     }
-    const key = `${kind}:${type}:${p.colour}:${livery}`;
+    const key = `${kind}:${type}:${p.colour}:${paint}`;
     if (p.model && p.modelKey === key && p.model.parent) return p.model;
     this._release(p);
     const root = this._root(sim);
@@ -703,7 +740,7 @@ export class Remotes {
     if (model) this.pool.delete(key);
     else {
       try {
-        model = this._build(kind, type, p.colour, livery);
+        model = this._build(kind, type, p.colour, paint);
       } catch (err) {
         console.warn('[mp] could not build a model for', type, err);
         return null;

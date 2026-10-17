@@ -56,6 +56,8 @@ import './mpworld.js';
 import './pilot-mp.js';
 // What friends see of you that the snapshot does not carry: your smoke, your livery, and "away" while you are paused (scuffs #8-#10).
 import './mplook.js';
+// Your hangar paint on everybody else's screen: one small versioned event (the skins sweep, finding 4).
+import './mpskin.js';
 // Carrier ops: the hook, the wires, the meatball, the catapults, and military flights starting on the ship.
 import './carrier-ops.js';
 // After carrier-ops: where a Free Flight starts by aircraft class — a gate, the GA apron, the flight
@@ -85,7 +87,14 @@ import './owner.js';
 // The owner's toys, in the hour: the troll menu, the disaster trolls, teleport on the map and taking aircraft over (./owner/*.js).
 import './owner/trolls.js';
 import './owner/teleport.js';
+// The secret runway boxes every "land on the runway" step counts three seconds in (game/landing-zone.js),
+// drawn only for a developer: ?lzdebug, or the Dev panel's "Landing hitboxes".
+import './landing-zones.js';
 // Crash physics: every model breaks at its own break points, nearest the hit first, the pieces as
 // rigid bodies; the slow-motion beat and the instant replay. Last, so every other feature's crash
 // handling (./crashes.js's choreography, ./sky.js's knock) has run before it breaks anything.
 import './breakup.js';
+// The map loading screen, about three seconds, in front of every way into a map (Free Flight, a
+// mission, a Story chapter, a multiplayer join, a boat or a van). Last, so its wrapper on the
+// game's startMode is the outermost one, over everything above that waits to be started.
+import './loading-screens.js';

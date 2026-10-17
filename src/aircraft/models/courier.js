@@ -17,7 +17,7 @@
  * Gear contact points, eye, scale, wing tips and strike points unchanged.
  */
 import { hull, wing, roundNose, tubePath, turned } from './civil-kit.js';
-import { tailGroup, oleoLeg, tailBumper } from './civil-details.js';
+import { tailGroup, oleoLeg, tailBumper, fuselageLettering } from './civil-details.js';
 
 export function buildCourier(b) {
   const { S, m } = b;
@@ -55,6 +55,8 @@ export function buildCourier(b) {
     ],
   });
   b.addHull(h);
+  // The scheme's number and, when it has one, its title: decals on the fuselage, once a side (not painted into the shared skin).
+  fuselageLettering(b, h, { regAt: { z: 2.6, y: 0.1, w: 1.0 }, titleAt: { z: -0.1, y: -0.12, w: 2.0 } });
   /*
    * The firewall, seen only from the cockpit — the Skylark has had one since
    * its rebuild and this one did not. From the pilot's eye every ray more

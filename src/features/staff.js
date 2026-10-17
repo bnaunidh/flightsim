@@ -356,7 +356,7 @@ const WEATHER0 = { isNight: false, cond: { cloud: 0 } };
 
 function buildPlane(sim, type = airlinerType()) {
   if (!type) return null;
-  const painted = (LIV.LIVERIES || []).filter((l) => !l.house);
+  const painted = LIV.AIRLINE_LIVERIES || (LIV.LIVERIES || []).filter((l) => !l.house && !l.special);
   const scheme = painted.length ? painted[2 % painted.length] : LIV.schemeFor ? LIV.schemeFor(type, 'house') : null;
   const model = MA.createAircraftModel({ type, livery: scheme });
   model.name = 'staff:airliner';

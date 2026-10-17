@@ -126,6 +126,7 @@ const HELI_CSS = `
 .hud-heli-hu { font-size: 11px; color: var(--text-dim); }
 .hud-heli-vs { font-size: 12px; color: var(--text-dim); font-family: var(--mono); margin-top: 2px; text-align: right; }
 .hud-heli-say { font-size: 12px; line-height: 1.3; margin-top: 4px; color: #e4edf8; }
+.hud.is-clean.is-heli-hush .hud-heli-say { display: none; }
 .hud-heli-land { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; }
 .hud-heli-land[hidden] { display: none; }
 .hud-heli-land b { font-size: 10px; letter-spacing: 0.1em; color: var(--text-dim); font-weight: 600; }
@@ -445,6 +446,8 @@ const ROTOR = {
     if (want === !!this._rotorActive) return;
     this._rotorActive = want;
     if (want) this._buildRotor();
+    // On a touchscreen the right-hand stack starts under this card (hud.js useTouchLayout()).
+    if (want && this._watchHeli) this._watchHeli();
     this.wrap.classList.toggle('is-rotor', want);
     if (!want) {
       this.wrap.classList.remove('is-rotorhover');
@@ -464,7 +467,13 @@ const ROTOR = {
     // little in the air on a helicopter, so it stops being advertised.
     const hint = this.wrap.querySelector('.hud-keyhint');
     if (hint) {
-      if (this._cruiseHint == null) this._cruiseHint = hint.innerHTML;
+      // The aeroplane's own words, without the eject feature's span (it puts
+      // its own back, once: eject/ui.js setKeyLine()).
+      if (this._cruiseHint == null) {
+        const copy = hint.cloneNode(true);
+        for (const sp of copy.querySelectorAll('.ej-keys')) sp.remove();
+        this._cruiseHint = copy.innerHTML;
+      }
       hint.innerHTML = want
         ? 'Collective: <kbd>Shift</kbd>/<kbd>↑</kbd> up · <kbd>Ctrl</kbd>/<kbd>↓</kbd> down '
           + '· Cyclic: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · Tail rotor: <kbd>Q</kbd>/<kbd>E</kbd> · Assist: <kbd>F</kbd>'
@@ -501,7 +510,7 @@ const ROTOR = {
    * The card: state, height, vertical speed, the next thing to press, and
    * the landing light. Every write is change-gated.
    */
-  _paintHeliCard(sim, r) {
+  _paintHeliCard(sim, r, dt = 0) {
     if (!this.heliCard) return;
     const ac = sim.aircraft;
     /*
@@ -539,6 +548,14 @@ const ROTOR = {
       this.heliState.classList.toggle('is-good', words[2] === 'good');
       this.heliState.classList.toggle('is-warn', words[2] === 'warn');
       this.heliSay.textContent = (touch && TOUCH_SAY[key]) || rekey(words[1], 'heli');
+      // The sentence is read when it changes; in the Clean HUD it folds away
+      // after a few seconds, the state word and the height stay.
+      this._heliSayT = 6;
+      if (this.wrap) this.wrap.classList.remove('is-heli-hush');
+    }
+    if (this._heliSayT > 0) {
+      this._heliSayT -= dt || 0;
+      if (this._heliSayT <= 0 && this.wrap) this.wrap.classList.add('is-heli-hush');
     }
 
     // Height above whatever is underneath — sea, rock, roof or deck. The same
@@ -706,7 +723,7 @@ const ROTOR = {
 
     this.setRotorMode(r.groundKts);
     this._paintRescue(sim);
-    this._paintHeliCard(sim, r);
+    this._paintHeliCard(sim, r, dt);
     if (this.assistChip) {
       /*
        * What the equipment is DOING, not whether it is fitted. This read

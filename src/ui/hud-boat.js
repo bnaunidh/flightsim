@@ -95,20 +95,10 @@ const BOAT_CSS = `
   font-size: 17px; text-align: center; pointer-events: none;
 }
 /*
- * The toasts open at 96 px, which in the boat — where the objective sits
- * lower to clear the heading ribbon — is exactly where the arrow is: the
- * "Tap Shift to go faster" notice at the start of every trip covered it.
- * Measured at 1280x800: arrow 138-184 px, and at 190 the first toast still
- * began at 182. At 206 they clear it.
- *
- * .hud-toasts carries its own is-boat/is-touch (mirrored in enter()/leave()
- * below and in main.js), not .hud's — it is a sibling of .hud, appended
- * straight to #ui (hud.js's build()), so an achievement toast still shows
- * once the boat (or any other game) has hidden the aeroplane's own HUD.
+ * (The toasts used to need a boat-only place here — 206, 226, 290 px — to
+ * clear the boat's arrow. They are a card in the right-hand stack now
+ * (ui/hud-stack.js), which the arrow never reaches.)
  */
-@media (min-width: 621px) {
-  .hud-toasts.is-boat { top: 206px; }
-}
 /*
  * The radio line. It sits 118 px up to clear the aeroplane's bottom strip,
  * which the boat hides; there it was drawn across the launch's stern for
@@ -120,25 +110,17 @@ const BOAT_CSS = `
  * the chart.
  */
 @media (min-width: 901px) {
-  .hud.is-boat:not(.is-touch) .hud-subtitle { bottom: 52px; }
+  .hud.is-boat:not(.is-touch) .hud-subtitle { bottom: max(52px, calc(var(--bl-h, 0px) + 12px)); }
 }
 @media (max-width: 720px) {
   .hud.is-boat .hud-boatkeys { display: none; }
   .hud.is-boat .hud-boatarrow { font-size: 12px; }
 }
 /*
- * The wind box and the shout. The objective is centred and min(560px, 52vw)
- * wide and the wind box is pinned top right, and in the boat the objective
- * sits 30 px lower to clear the compass tape, level with the wind box.
- * Measured at 1024x768: objective 246-778 px across, wind box from 689 —
- * the rose was drawn over the end of the first line of every instruction.
- * At 1180 they still overlapped by 25 px; from 1280 up they do not. Below
- * that the wind box drops under the shout, and the toasts under it.
+ * (The wind box used to drop to 130 px here below 1260 px, under the boat's
+ * lower objective. It is in the right-hand stack now, and main.css keeps the
+ * objective narrower than the gap between the stacks at any width.)
  */
-@media (max-width: 1260px) {
-  .hud.is-boat:not(.is-touch) .hud-right { top: 130px; }
-  .hud-toasts.is-boat:not(.is-touch) { top: 226px; }
-}
 /*
  * On an iPad. On a touch screen .hud-left is a four-column strip across the
  * top under the buttons, and the boat panel wears .hud-left — but the boat's
@@ -159,14 +141,10 @@ const BOAT_CSS = `
 .hud.is-touch.is-boat .hud-boatpanel .hud-lever-detents { margin-top: 2px; }
 .hud.is-touch.is-boat .hud-top { top: 140px; }
 /*
- * And on a touch screen the wind box sits at y74, which is now the strip:
- * measured 849-1168 x 74-162, across the lever and the end of the shout.
- * On a phone the stylesheet already hides it; on a tablet in the boat it
- * goes too (the Gale's words say which way the wind is), and the toasts
- * open under the arrow instead of on it (arrow 232-278, toasts from 206).
+ * And on a touch screen the wind box goes (the Gale's words say which way
+ * the wind is; on a phone the stylesheet already hides it).
  */
 .hud.is-touch.is-boat .hud-right { display: none; }
-.hud-toasts.is-touch.is-boat { top: 290px; }
 `;
 
 let cssInjected = false;
@@ -407,9 +385,6 @@ export class BoatHud {
     this.active = true;
     this.sim = sim || null;
     this.hud.wrap.classList.add('is-boat');
-    // toastLayer is a sibling of wrap, not a descendant (hud.js's build()),
-    // so the .hud-toasts.is-boat rules above need it mirrored here too.
-    this.hud.toastLayer.classList.add('is-boat');
     this.panel.style.display = '';
     this.ribbon.style.display = '';
     if (this.sea) this.sea.style.display = '';
@@ -445,7 +420,6 @@ export class BoatHud {
     this.active = false;
     if (!this.built) return;
     this.hud.wrap.classList.remove('is-boat');
-    this.hud.toastLayer.classList.remove('is-boat');
     this.panel.style.display = 'none';
     this.ribbon.style.display = 'none';
     if (this.sea) this.sea.style.display = 'none';

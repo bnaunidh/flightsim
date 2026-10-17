@@ -24,6 +24,9 @@ import { extLayer } from '../../game/extensions.js';
 const CSS = `
 .co-root { position: fixed; inset: 0; pointer-events: none; z-index: 31; font-family: var(--font, system-ui, sans-serif); }
 .co-root.co-off { display: none; }
+/* The ball and the board are cards in the HUD's right-hand stack (ui/hud-stack.js, prio 1),
+   placed by it under the warnings; at a fixed 34% they ran onto whatever else was down there. */
+.co-ball.co-off, .co-board.co-off { display: none !important; }
 .co-ball { position: absolute; right: 16px; top: 34%; width: 150px; padding: 8px 10px 9px; border-radius: 14px;
   background: rgba(10,16,26,.74); border: 1px solid rgba(150,190,235,.28); color: #e9f1fb; display: none;
   box-shadow: 0 4px 18px rgba(0,0,0,.35); }
@@ -62,6 +65,7 @@ html.reduce-flashing .co-ball.is-waveoff .co-wo, html.reduce-flashing .co-ball.i
 .co-why { margin-top: 6px; font: 600 12px/1.35 var(--font, system-ui); color: #dbe6f2; }
 .co-stop { margin-top: 5px; font: 600 11px/1.3 var(--font, system-ui); color: #9fb4cc; font-variant-numeric: tabular-nums; }
 .co-greenie { display: flex; gap: 3px; margin-top: 8px; }
+.co-board.rs-chip .co-why, .co-board.rs-chip .co-stop, .co-board.rs-chip .co-greenie { display: none; }
 .co-greenie i { width: 16px; height: 16px; border-radius: 3px; font: 800 8px/16px var(--font, system-ui); text-align: center; color: #10161f; font-style: normal; }
 .co-g-OKs, .co-g-OK { background: #3fcf6e; } .co-g-OKs { box-shadow: inset 0 -3px 0 #1d7a3c; }
 .co-g-F { background: #f2cf3c; } .co-g-NG { background: #8a5a2b; color: #fff !important; } .co-g-B { background: #5aa9ff; } .co-g-WO { background: #d84b4b; color: #fff !important; }
@@ -110,8 +114,11 @@ const el = (tag, cls, html) => {
   return n;
 };
 
-/** Build once. `onPress(id)` gets 'hook' and 'launch'. */
-export function build(onPress) {
+/**
+ * Build once. `onPress(id)` gets 'hook' and 'launch'. `stack` is the HUD's
+ * right-hand stack (sim.hud.stack): the ball and the board join it.
+ */
+export function build(onPress, stack = null) {
   if (UI.root) return true;
   if (typeof document === 'undefined' || !document.body) return false;
   UI.onPress = onPress;
@@ -158,11 +165,24 @@ export function build(onPress) {
 
   extLayer().appendChild(root);
   UI.root = root;
+  if (stack && typeof stack.add === 'function') {
+    // The ball is the landing aid in the groove: never folded. The board is
+    // the result of the pass: folds to its grade if the column is full.
+    stack.add(ball, { prio: 1.4, id: 'carrier-ball', chip: false });
+    stack.add(board, { prio: 1.45, id: 'carrier-board' });
+  }
   return true;
 }
 
 export function setGate(off) {
-  if (UI.root) UI.root.classList.toggle('co-off', !!off);
+  if (!UI.root) return;
+  const want = !!off;
+  if (UI.last.gate === want) return;
+  UI.last.gate = want;
+  UI.root.classList.toggle('co-off', want);
+  // The ball and the board are in the HUD's stack, not under the root.
+  if (UI.ball) UI.ball.classList.toggle('co-off', want);
+  if (UI.board) UI.board.classList.toggle('co-off', want);
 }
 
 /* ---- The HOOK lamp, in the HUD's chip row ---- */

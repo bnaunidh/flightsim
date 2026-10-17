@@ -10,7 +10,9 @@ import { helicopterReflectionEnvironment } from './helicopter.js';
 const cache = new Map();
 const clamp = (x, a=0, b=1) => Math.max(a,Math.min(b,x));
 const militaryFinish = config => config.matte === true || ['fighter','naval','flying-wing','military','stealth','bomber','jet-fighter'].includes(config.kind);
-const minimalLivery = config => config.minimalLivery === true || militaryFinish(config);
+// A named airline scheme (config.schemeNamed, from the game's livery picker) is a request for stripes and a coloured tail,
+// so it lifts the plain look a military finish gets by default; the matte finish itself (roughness, reflections) stays.
+const minimalLivery = config => config.minimalLivery === true || (militaryFinish(config) && !config.schemeNamed);
 const hash = text => { let value=2166136261; for(const c of String(text)) value=Math.imul(value^c.charCodeAt(0),16777619); return value>>>0; };
 function random(seed) { let n=seed>>>0; return()=>{n=(Math.imul(n,1664525)+1013904223)>>>0;return n/4294967296;}; }
 function color(value, fallback='#e7e9e5') { return new THREE.Color(value??fallback).getStyle(); }
@@ -100,7 +102,8 @@ function addMottle(ctx,w,h,seed,count=3200) {
 }
 function paintAircraftSkin(config) {
   const base=color(config.paint),accent=color(config.accent,'#465866');
-  const key=`Aircraft_skin_${base}_${accent}_${config.kind||'general'}_${minimalLivery(config)}_${config.id||''}`;
+  const cheat=typeof config.cheatline==='string'?config.cheatline:null;
+  const key=`Aircraft_skin_${base}_${accent}_${config.kind||'general'}_${minimalLivery(config)}_${config.id||''}_${cheat||''}`;
   return canvasTexture(key,512,1024,(ctx,w,h)=>{
     ctx.fillStyle=base;ctx.fillRect(0,0,w,h);
     // A quiet underside tone makes the round section readable without baking light.
@@ -108,7 +111,8 @@ function paintAircraftSkin(config) {
     // Aircraft paint stripes are longitudinal; no repeated labels are wrapped here.
     for(const u of(minimalLivery(config)?[]:[.25,.75])) {
       ctx.fillStyle=accent;ctx.fillRect((u-.022)*w,h*.15,w*.044,h*.78);
-      ctx.fillStyle='rgba(238,239,229,.6)';ctx.fillRect((u-.038)*w,h*.15,w*.008,h*.78);
+      // The scheme's own cheatline runs beside the stripe when it has one.
+      ctx.fillStyle=cheat||'rgba(238,239,229,.6)';ctx.fillRect((u-.038)*w,h*.15,w*(cheat?.014:.008),h*.78);
       ctx.fillStyle=rgba(config.accent??'#465866',.4);ctx.fillRect((u+.032)*w,h*.18,w*.009,h*.73);
     }
     // Matte anti-glare patch sits across the UV seam on the U=0 upper nose.
@@ -220,6 +224,8 @@ export function createAircraftMaterials(model,config={}) {
     skin:surface('skin',paintAircraftSkin(config)),
     wing:surface('wing',paintFlyingSurface(config,false)),
     tail:surface('tail',paintFlyingSurface(config,true)),
+    // The fin and rudder in the scheme's tail colour; without one they share the tailplane's material, as they always did.
+    fin:config.tailColor!=null?surface('tail',paintFlyingSurface({...config,paint:config.tailColor},true)):null,
     accent:own(new THREE.MeshStandardMaterial({name:'Aircraft_livery_accent',color:config.accent??'#465866',roughness:matte?.62:.43,metalness:.12,envMap:environment,envMapIntensity:.4})),
     metal:own(new THREE.MeshStandardMaterial({name:'Aircraft_bare_metal',color:0x929c9f,metalness:.82,roughness:.32,envMap:environment,envMapIntensity:.8})),
     dark:own(new THREE.MeshStandardMaterial({name:'Aircraft_dark_hardware',color:0x222a2d,metalness:.3,roughness:.57})),
@@ -232,6 +238,7 @@ export function createAircraftMaterials(model,config={}) {
     light:own(new THREE.MeshStandardMaterial({name:'Aircraft_navigation_lamp',color:0xf9edc7,emissive:0xffefbd,emissiveIntensity:1.2,roughness:.2})),
     hot:own(new THREE.MeshBasicMaterial({name:'Aircraft_afterburner',color:0xe99355,transparent:true,opacity:.78,depthWrite:false,toneMapped:false}))
   };
+  materials.fin||=materials.tail;
   return materials;
 }
 
@@ -242,12 +249,14 @@ export function createAircraftMaterials(model,config={}) {
 export function aircraftDecalTexture(text,{color:ink='#252f34',background='transparent',width=512,height=128}={}) {
   if(typeof text!=='string'||!text.trim())throw new TypeError('Aircraft decal text must be nonempty.');
   width=Math.max(32,Math.min(2048,Math.round(width)));height=Math.max(16,Math.min(1024,Math.round(height)));
-  return canvasTexture(`Aircraft_decal_${text}_${ink}_${background}_${width}_${height}`,width,height,(ctx,w,h)=>{
+  const map=canvasTexture(`Aircraft_decal_${text}_${ink}_${background}_${width}_${height}`,width,height,(ctx,w,h)=>{
     ctx.clearRect(0,0,w,h);if(background!=='transparent'){ctx.fillStyle=background;ctx.fillRect(0,0,w,h);}
     ctx.fillStyle=ink;ctx.textAlign='center';ctx.textBaseline='middle';
     const size=Math.min(h*.68,w/(Math.max(text.length,1)*.66));ctx.font=`600 ${size}px Arial, sans-serif`;
     ctx.fillText(text,w*.5,h*.52,w*.93);
   });
+  map.userData.text=text; // what it says, for the tests
+  return map;
 }
 
 /** Replacement materials for detached/crumpled sections. No injury imagery.

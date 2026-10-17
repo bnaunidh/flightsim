@@ -44,6 +44,14 @@ const H = 1 / 90;
 export const SINK_DEPTH = 2.2;
 /** Water's grip on a body going down: sets how slowly it sinks (about 0.3 m/s). */
 const SINK_DRAG = 4.8;
+/**
+ * ...and on one going down FAST: water's drag grows with the speed, so a piece
+ * that comes in at 40-60 m/s is stopped inside a couple of metres and bobs back,
+ * rather than ploughing ten metres down before the slow drag above can hold it
+ * (the whole of a crashed aeroplane's debris was frozen on the sea floor of its
+ * own momentum inside a second, floating pieces and all: the crash sweep, finding 2).
+ */
+const SINK_DRAG_FAST = 1.0;
 
 const _r = new THREE.Vector3();
 const _w = new THREE.Vector3();
@@ -55,6 +63,15 @@ const _b = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _qi = new THREE.Quaternion();
 const SURF = { y: 0, nx: 0, ny: 1, nz: 0, kind: 'ground' };
+// The surface under one corner of a big piece (see stepGround).
+const CORNER = { y: 0, nx: 0, ny: 1, nz: 0, kind: 'ground' };
+const _nc = new THREE.Vector3();
+/**
+ * A piece this big (half its box diagonal, metres) is not on one plane: a
+ * 25 m wing or a fuselage section on a hillside has its ends on different
+ * slopes. Under it, the ground is read at each corner.
+ */
+const BIG_PIECE = 2.5;
 
 /**
  * @param o.size    Vector3, the piece's box (metres)
@@ -97,6 +114,8 @@ export function makeBody(o) {
     heavy: o.heavy || 0,
     drift: new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize().multiplyScalar(0.35),
     wetT: 0,
+    // Seconds since it last touched the ground: a thin piece rocking on an edge touches it only part of the time.
+    airT: 0,
     bubbleT: 0,
     sunkT: 0,
     restitution: o.restitution == null ? 0.18 : o.restitution,
@@ -197,8 +216,20 @@ function substep(b, env) {
   // once it has gone to the bottom, or — light debris — once the sea has
   // had it for a good while: until then it bobs and drifts.
   const still = b.vel.lengthSq() < 0.09 && b.omega.lengthSq() < 0.09;
+  if (b.contacts > 0) b.airT = 0;
+  else b.airT += H;
+  /*
+   * "Supported" is touching the ground now or a moment ago. A gear leg rocking
+   * on its edge at 0.1 m/s and 15 degrees a second touches it on most
+   * substeps and not on the others, and reset the clock every time it did not:
+   * it never slept, for two minutes, and cost a physics step every frame
+   * (the crash sweep, finding 6). And a piece that is nearly still on the
+   * ground loses what is left of its turning, as a heavy thing does.
+   */
+  const resting = b.contacts > 0 || b.airT < 0.25;
+  if (resting && !b.wet && still && b.contacts > 0) b.omega.multiplyScalar(Math.exp(-7 * H));
   if (b.sunk) b.sleepT += H;
-  else if (b.contacts > 0 && !b.wet && still) b.sleepT += H;
+  else if (resting && !b.wet && still) b.sleepT += H;
   else if (b.wet && b.light && b.wetT > 60 && still) b.sleepT += H;
   else b.sleepT = 0;
   if (b.sleepT > 0.6) {
@@ -218,26 +249,37 @@ function stepGround(b, s, env) {
   let sx = 0;
   let sy = 0;
   let sz = 0;
+  const big = b.radius > BIG_PIECE;
   for (let i = 0; i < 24; i += 3) {
     _r.set(b.hull[i], b.hull[i + 1], b.hull[i + 2]).applyQuaternion(b.quat);
     _w.copy(_r).add(b.pos);
-    // The ground plane through the surface under the centre.
-    const planeY = s.y - (s.nx * (_w.x - b.pos.x) + s.nz * (_w.z - b.pos.z)) / Math.max(0.2, s.ny);
-    const depth = (planeY - _w.y) * _n.y;
+    let planeY;
+    let nrm = _n;
+    if (big) {
+      // The ground right under this corner, with its own slope: a plane through the centre put
+      // the ends of a big piece 1-4 m into a hillside (the crash sweep, finding 4).
+      env.surface(_w.x, _w.z, CORNER);
+      planeY = CORNER.y;
+      nrm = _nc.set(CORNER.nx, CORNER.ny, CORNER.nz).normalize();
+    } else {
+      // The ground plane through the surface under the centre.
+      planeY = s.y - (s.nx * (_w.x - b.pos.x) + s.nz * (_w.z - b.pos.z)) / Math.max(0.2, s.ny);
+    }
+    const depth = (planeY - _w.y) * nrm.y;
     if (depth <= 0) continue;
     contacts++;
     if (depth > maxDepth) maxDepth = depth;
     _vp.copy(b.omega).cross(_r).add(b.vel);
-    const vn = _vp.dot(_n);
+    const vn = _vp.dot(nrm);
     if (vn < 0) {
       if (-vn > hitSpeed) hitSpeed = -vn;
       const e = -vn > 1.2 ? b.restitution : 0;
-      const j = (-(1 + e) * vn) / kAlong(b, _r, _n);
-      applyImpulse(b, _r, _t.copy(_n).multiplyScalar(j));
+      const j = (-(1 + e) * vn) / kAlong(b, _r, nrm);
+      applyImpulse(b, _r, _t.copy(nrm).multiplyScalar(j));
       // Coulomb friction against the sliding left after it.
       _vp.copy(b.omega).cross(_r).add(b.vel);
-      const vnn = _vp.dot(_n);
-      _vp.addScaledVector(_n, -vnn);
+      const vnn = _vp.dot(nrm);
+      _vp.addScaledVector(nrm, -vnn);
       const vt = _vp.length();
       if (vt > 1e-6) {
         _t.copy(_vp).multiplyScalar(1 / vt);
@@ -331,7 +373,7 @@ function stepWater(b, s, env) {
   const dh = Math.exp(-1.7 * f * H);
   b.vel.x *= dh;
   b.vel.z *= dh;
-  b.vel.y *= Math.exp(-SINK_DRAG * f * H);
+  b.vel.y *= Math.exp(-(SINK_DRAG + SINK_DRAG_FAST * Math.abs(b.vel.y)) * f * H);
   b.omega.multiplyScalar(Math.exp(-2.6 * f * H));
   // Afloat: the swell lifts it, and the wind and the tide take it along.
   if (buoy > 1 && f < 0.95) {
@@ -349,8 +391,11 @@ function stepWater(b, s, env) {
   }
   // Gone under: once its highest corner is a couple of metres down it stops
   // there, still faintly visible — or on the sea bed where that is higher.
+  // Only once its air has run out (buoy under 1, which light debris never
+  // reaches): a piece that came in fast and is down there for a moment is
+  // still rising, and was frozen in place and culled before it could float.
   const floorY = Number.isFinite(s.floor) ? s.floor + (b.pos.y - minY) : -Infinity;
-  if (maxY < level - SINK_DEPTH || b.pos.y < floorY) {
+  if ((maxY < level - SINK_DEPTH && buoy < 1) || b.pos.y < floorY) {
     if (b.pos.y < floorY) b.pos.y = floorY;
     b.vel.set(0, 0, 0);
     b.omega.set(0, 0, 0);

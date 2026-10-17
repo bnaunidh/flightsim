@@ -180,7 +180,7 @@ function handleCrash(sim, c) {
   const overWater = gh < 0 && !platformAt(ac.pos.x, ac.pos.z);
   const surface = groundAt(ac.pos.x, ac.pos.z);
   const contact = c.contact || {};
-  const dims = dimsFrom(SPEC && SPEC.hardPoints, sim.aircraftType && sim.aircraftType.plan);
+  const dims = dimsFrom(SPEC && SPEC.hardPoints, sim.aircraftType && sim.aircraftType.plan, sim.aircraftType && sim.aircraftType.shape);
   const info = {
     size: dims.semi,
     reason: c.reason,
@@ -448,14 +448,27 @@ function cancelScript() {
  * A320 nose-first took the worst field from 16% (v61, the aeroplane in one
  * piece) to 25%, over the line (tests/flicker-probe.js, the v62 check). How much of the
  * picture they cover goes with the square of how close the camera is; one
- * and a half times as far back took the same crash to 14% — under what it
- * was before there were any pieces — and shows more of where they land.
+ * and a half times as far back took that crash to 14%. The crash sweep (v64)
+ * found the cartoon crashes of the fighters, the racer and the small tourers
+ * over the line at 1.5x, mostly with the sparks and the cloud close to the
+ * camera: twice as far back puts every aeroplane and every kind of crash
+ * under it (tests/features/crash-sweep.browser.js holds all 96), and the
+ * instant replay stands back by the same two (breakup.js REPLAY.backReduced).
  */
-export const CRASH_CAM_BACK_REDUCED = 1.5;
+export const CRASH_CAM_BACK_REDUCED = 2;
+/** How far the crash cam stands from the biggest aeroplanes before that multiplier, metres. */
+export const CRASH_CAM_MAX = 110;
+/** And from the smallest (a man in a T-pose, a trainer): the cartoon cloud is the same size whatever it covers, and at 16 m (32 with the multiplier) T-Pose Harrison's cartwheel measured 24%. */
+export const CRASH_CAM_MIN = 24;
+
+/** How far the crash cam stands from an aeroplane of these dimensions (`reduce`: Reduce flashing). */
+export function crashCamDistance(dims, reduce = FLASH.reduce) {
+  const d = clamp(dims.L * 1.5 + dims.semi * 0.9 + 10, CRASH_CAM_MIN, CRASH_CAM_MAX);
+  return reduce ? d * CRASH_CAM_BACK_REDUCED : d;
+}
 
 function camDistance(dims) {
-  const d = clamp(dims.L * 1.5 + dims.semi * 0.9 + 10, 16, 110);
-  return FLASH.reduce ? d * CRASH_CAM_BACK_REDUCED : d;
+  return crashCamDistance(dims);
 }
 
 const viewOf = (sim) => (sim && sim.rig && typeof sim.rig.mode === 'string' ? sim.rig.mode : null);
@@ -820,7 +833,7 @@ export function stageCrash(sim, kind) {
   if (!spot) return null;
   const hdg = ((ac.heading || 0) * Math.PI) / 180;
   const surface = st.water ? 0 : groundAt(spot.x, spot.z);
-  const dims = dimsFrom(SPEC && SPEC.hardPoints, sim.aircraftType && sim.aircraftType.plan);
+  const dims = dimsFrom(SPEC && SPEC.hardPoints, sim.aircraftType && sim.aircraftType.plan, sim.aircraftType && sim.aircraftType.shape);
   ac.quat.setFromEuler(new THREE.Euler((st.pitch * Math.PI) / 180, -hdg, (-st.bank * Math.PI) / 180, 'YXZ'));
   const lift = st.water ? 0.4 : st.up || dims.r + (st.bank ? Math.sin((Math.abs(st.bank) * Math.PI) / 180) * dims.semi * 0.8 : 0);
   ac.pos.set(spot.x, surface + lift, spot.z);

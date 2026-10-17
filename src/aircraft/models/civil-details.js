@@ -5,6 +5,8 @@
  */
 import * as THREE from '../../vendor/three.module.js';
 import { wing, tubePath, turned, plainUV } from './civil-kit.js';
+import { skinPatch, mergeGeometries } from './airliner-parts.js';
+import { lettersTexture } from '../../render/textures.js';
 
 const X = new THREE.Vector3(1, 0, 0);
 
@@ -301,4 +303,73 @@ export function tailBumper(b, hull, z, y, len = 0.35) {
   const top0 = hull.botAt(z - len) + 0.03;
   const top1 = hull.botAt(z + len * 0.4) + 0.03;
   b.put(tubePath([[0, top0, z - len], [0, y + 0.025, z], [0, top1, z + len * 0.4]], 0.025, 6), b.m.metal);
+}
+
+/**
+ * The scheme's lettering, laid ON the fuselage: its registration and, for a
+ * scheme with words, a titling line ("UNITED STATES OF AMERICA" on Air Force
+ * One), each as a decal once per side that reads left to right from either
+ * (the u flip), a shade out of the skin so it neither buries in the hull's
+ * facets nor fights it for the depth buffer. This replaces painting them
+ * into the shared airframe skin (render/textures.js airframeTexture), which
+ * wrapped them round the fuselage lathe in pieces and repeated them across
+ * the wings and nacelles.
+ *
+ * regAt / titleAt: { z, y, w } — the centre station, the height above the
+ * axis and the length along the body, in shape units. The label's height
+ * follows its texture (a quarter of w for a registration, a sixteenth for a
+ * title). A type that gives no spot for one gets none of it.
+ *
+ * Returns the meshes it added (for the tests).
+ */
+export function fuselageLettering(b, hull, { regAt = null, titleAt = null } = {}) {
+  const scheme = b.scheme || {};
+  const out = [];
+  const reg = typeof scheme.reg === 'string' && scheme.reg.trim() ? scheme.reg.trim() : '';
+  const title = typeof scheme.title === 'string' && scheme.title.trim() ? scheme.title.trim() : '';
+  const k = new THREE.Color(scheme.base || '#eef1f5');
+  const light = 0.2126 * k.r + 0.7152 * k.g + 0.0722 * k.b > 0.35;
+  const ink = light ? '#1f272e' : '#e9eef2';
+  // A grid as coarse as the patch can be: the Meridian and the Tempest are within 30 triangles of their 6000 budget
+  // (tests/features/civil.mjs). Four steps along the body and one across; across, a label a quarter of a metre
+  // tall sags 2-3 cm off a round fuselage, inside the 4 cm it stands out and the polygon offset.
+  if (reg && regAt) out.push(lettering(b, hull, 'Airframe registration', lettersTexture(reg, { color: ink, width: 512, height: 128 }), regAt, 0.25, 4, 1));
+  if (title && titleAt) {
+    const titleInk = typeof scheme.cheatline === 'string' ? scheme.cheatline : ink;
+    out.push(lettering(b, hull, 'Titling', lettersTexture(title, { color: titleInk, width: 2048, height: 128 }), titleAt, 1 / 16, 6, 1));
+  }
+  return out;
+}
+
+function lettering(b, hull, name, texture, at, aspect, nu = 6, nv = 1) {
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+    toneMapped: true,
+  });
+  const height = at.w * aspect;
+  const parts = [];
+  for (const side of [1, -1]) {
+    const s0 = hull.angleAt(at.z, at.y + height / 2);
+    const s1 = hull.angleAt(at.z, at.y - height / 2);
+    const quad = [[at.z - at.w / 2, s0], [at.z + at.w / 2, s0], [at.z + at.w / 2, s1], [at.z - at.w / 2, s1]];
+    const g = skinPatch(hull, quad, side, at.lift ?? 0.02, nu, nv, null);
+    // u runs nose to tail along the patch, v top to bottom: the label wants
+    // u along the text (tail to nose on the starboard side, which is where the
+    // reader's left is) and v up.
+    const uv = g.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, side > 0 ? 1 - uv.getX(i) : uv.getX(i), 1 - uv.getY(i));
+    parts.push(g);
+  }
+  const mesh = new THREE.Mesh(mergeGeometries(parts), mat);
+  mesh.name = name;
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  mesh.userData.lettering = true;
+  b.root.add(mesh);
+  return mesh;
 }

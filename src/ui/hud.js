@@ -11,6 +11,7 @@ import { UNITS } from '../aircraft/physics.js';
 import { icon } from './icons.js';
 import { clamp } from '../core/noise.js';
 import { installRotorHud, rotorSpeedWord } from './hud-rotor.js';
+import { HudStack } from './hud-stack.js';
 import { SPEC } from '../aircraft/physics.js';
 import { rekey, keyName, shortKey, bindingsVersion, HELI_MAP } from '../flight/input.js';
 
@@ -101,6 +102,19 @@ const OBJECTIVE_OPEN_MIN = 6;
 const OBJECTIVE_OPEN_MAX = 14;
 // A radio line fades out over this long rather than blinking off.
 const SUBTITLE_FADE = 0.45;
+// Notices on screen at once, and how many may wait behind them.
+const TOASTS_SHOWN = 2;
+const TOASTS_KEPT = 6;
+// The controls along the bottom that the radio line and the dialogue box
+// must sit above (updateLanes()). Persistent things only: not the coaching
+// line, not the prompts — those sit above the radio line themselves.
+const LANE = [
+  '#ui .hud-bottom', '#ui .hud-chevron', '#ui .hud-papi', '#ui .hud-boatkeys', '#ui .hud-buttons', '#ui .minimap',
+  '#ui .touch-stick', '#ui .touch-throttle', '#ui .touch-pads', '#ui .touch-rudder', '#ui .touch-lever',
+  '#ui .touch-wheel', '#ui .touch-pedals', '.ej-btn.is-on',
+].join(', ');
+// The touchscreen action buttons that share the right-hand column (updateLanes()).
+const ACTIONS = '.mt-zap, .wf-drop, .co-btn.is-on, .gsk-btn, .hsk-btn, .afo-action, .tp-col';
 
 export class Hud {
   constructor(root, { onAction } = {}) {
@@ -263,6 +277,7 @@ export class Hud {
     this.waypoint.style.display = 'none';
     top.appendChild(this.waypoint);
     wrap.appendChild(top);
+    this.topLane = top;
 
     /* ---- Weather + wind, top right ---- */
     const right = el('div', 'hud-panel hud-right');
@@ -279,10 +294,22 @@ export class Hud {
     windInfo.appendChild(this.weatherText);
     right.appendChild(this.windRose);
     right.appendChild(windInfo);
-    wrap.appendChild(right);
-    // Under the wind, which is the quietest corner of the screen until
-    // something is actually wrong with the aeroplane.
-    wrap.appendChild(this.damagePanel);
+    this.weatherCard = right;
+    /*
+     * The right-hand column is one stack (hud-stack.js): the wind, the
+     * damage diagram, the patient's pulse, the notices and every feature's
+     * card (the warnings, the meteor and fire panels, the event cards, the
+     * carrier's ball, the Races button) go INTO it and CSS stacks them.
+     * Wind and damage are information: in the Clean HUD they fold to a chip
+     * a few seconds after they change. A tap opens a chip again.
+     */
+    this.stack = new HudStack(wrap);
+    this.stack.add(this.damagePanel, { prio: 3, id: 'damage', info: true });
+    this.stack.add(right, { prio: 3.9, id: 'weather', info: true });
+    right.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.stack.poke(right);
+    });
 
     /* ---- Engine strip, bottom left ---- */
     const bottom = el('div', 'hud-panel hud-bottom');
@@ -324,6 +351,7 @@ export class Hud {
     const chips = el('div', 'hud-chips');
     this.gearChip = el('div', 'hud-chip', 'GEAR DOWN');
     this.flapChip = el('div', 'hud-chip', 'FLAPS 0');
+    this.flapChip.dataset.chip = 'flaps';
     this.brakeChip = el('div', 'hud-chip', 'BRAKES');
     this.modeChip = el('div', 'hud-chip', 'EASY MODE');
     // Trim, shown only once it has been touched. A chip that always reads
@@ -341,6 +369,8 @@ export class Hud {
     chips.appendChild(this.apChip);
     bottomContent.appendChild(chips);
     bottom.appendChild(bottomContent);
+    // A tap on the strip wakes its key line and chips in the Clean HUD.
+    bottom.addEventListener('click', () => this.wakeBottom());
 
     /*
      * The autopilot's own bugs: heading, speed and climb/descend rate, each
@@ -452,10 +482,20 @@ export class Hud {
       if (e.key === 'Escape' && this.trayOpen) this.setTrayOpen(false);
     });
 
-    /* ---- Centre overlays ---- */
+    /* ---- Centre overlays ----
+     *
+     * The callouts in the middle of the screen are one lane, a flex column:
+     * the warnings' big command (PULL UP, TERRAIN — warnings.js puts it in
+     * with addCallout()), then the STALL slab, then the banner. They had a
+     * top of their own each (36%, 30%, 34%), so a PULL UP during a
+     * "Checkpoint 2 of 5" banner was printed inside it, red on red. Now they
+     * cannot overlap, and the banner waits while a command is up.
+     */
+    this.center = el('div', 'hud-center');
+    wrap.appendChild(this.center);
     this.stallWarn = el('div', 'hud-stall', 'STALL — LOWER THE NOSE');
     this.stallWarn.style.display = 'none';
-    wrap.appendChild(this.stallWarn);
+    this.addCallout(this.stallWarn, 1);
 
     this.papiHint = el('div', 'hud-papi', '');
     this.papiHint.style.display = 'none';
@@ -486,7 +526,7 @@ export class Hud {
 
     this.banner = el('div', 'hud-banner');
     this.banner.style.display = 'none';
-    wrap.appendChild(this.banner);
+    this.addCallout(this.banner, 2);
 
     this.controlsCard = el('div', 'hud-controls-card');
     this.controlsCard.style.display = 'none';
@@ -536,23 +576,108 @@ export class Hud {
     this.root.appendChild(this.toastLayer);
   }
 
+  /**
+   * Put a callout in the centre lane, in order (0 the warnings' command, 1
+   * the STALL slab, 2 the banner, anything else after). The lane stacks
+   * them; nothing positions itself.
+   */
+  addCallout(node, order = 3) {
+    if (!node || !this.center) return node;
+    node.dataset.lane = String(order);
+    const after = [...this.center.children].find((c) => Number(c.dataset.lane) > order);
+    this.center.insertBefore(node, after || null);
+    if (order === 0) this.calloutCmd = node;
+    return node;
+  }
+
+  /** Is the warnings' big command (PULL UP...) on screen? The banner waits for it. */
+  commandUp() {
+    const c = this.calloutCmd;
+    return !!(c && !c.hidden && c.style.display !== 'none');
+  }
+
+  /*
+   * Where the notices go. While the HUD is up they are a card in the
+   * right-hand stack (prio 2: under the warnings and the mission's own
+   * panel, over the wind), where they never cover the objective, the
+   * waypoint arrow or a touch band again. While it is down — a debrief, a
+   * menu, the rocket's own game — they go back to being the HUD's sibling,
+   * top centre over everything, so an achievement that unlocks as a mission
+   * ends is still seen (the reason toastLayer left the wrap in the first
+   * place). Moved only when that changes.
+   */
+  placeToasts() {
+    const inStack = !!this.enabled;
+    const layer = this.toastLayer;
+    if (!layer || !this.stack) return;
+    layer.classList.toggle('is-loose', !inStack);
+    if (inStack) {
+      if (layer.parentNode !== this.stack.el) this.stack.add(layer, { prio: 2, id: 'notices', chip: false });
+    } else if (layer.parentNode !== this.root) {
+      this.root.appendChild(layer);
+    }
+  }
+
+  /**
+   * The touchscreen layout (main.js, once, when it adds .is-touch). The
+   * column starts under the instrument band — and the helicopter's card,
+   * which hangs under the band's right-hand end — so it watches their sizes.
+   * And the autopilot's HDG/SPD/VS bugs, which on a touchscreen floated on
+   * their own at the top right (where the damage diagram also went: 76x52
+   * of one over the other on an iPad), become a card in the column.
+   */
+  useTouchLayout() {
+    if (!this.stack) return;
+    this.stack.add(this.apBugs, { prio: 1.2, id: 'autopilot', chip: false });
+    const left = this.wrap.querySelector(':scope > .hud-left');
+    this.stack.watchBand([left, this.wrap.querySelector(':scope > .hud-top'), this.wrap.querySelector(':scope > .hud-buttons')]);
+    this._watchHeli = () => {
+      const heli = this.wrap.querySelector('.hud-heli');
+      if (heli && !heli._rsWatched) {
+        heli._rsWatched = true;
+        this.stack.watchBand([heli]);
+      }
+    };
+    this._watchHeli();
+  }
+
   setVisible(v) {
     this.enabled = v;
     this.wrap.style.display = v && !this.hidden ? '' : 'none';
+    this.placeToasts();
   }
 
   /**
    * Hide every overlay for a clean view out of the window. Kept separate from
    * setVisible so that leaving a menu does not undo it.
+   *
+   * Clean means clean: the notices are in the stack, so they go with the
+   * rest — and they are HELD, not run down, while the interface is hidden
+   * (updateOverlays()), so one that arrives during a cutscene or a clean
+   * shot is read afterwards instead of expiring unseen.
    */
   setHidden(hidden) {
     this.hidden = hidden;
     this.wrap.style.display = this.enabled && !hidden ? '' : 'none';
+    if (!hidden) this.setCleanShot(false);
     return hidden;
   }
 
+  /** U: the player's clean shot (a cutscene hiding the HUD is not one). */
   toggleHidden() {
-    return this.setHidden(!this.hidden);
+    const hidden = this.setHidden(!this.hidden);
+    this.setCleanShot(hidden);
+    return hidden;
+  }
+
+  /*
+   * html.ui-clean while the player has hidden the interface with U, so the
+   * pieces that live outside the HUD's wrapper (the story's caption chip and
+   * lower third) go too: "hides everything" meant everything.
+   */
+  setCleanShot(on) {
+    if (typeof document === 'undefined' || !document.documentElement) return;
+    document.documentElement.classList.toggle('ui-clean', !!on);
   }
 
   setHighContrast(on) {
@@ -564,6 +689,28 @@ export class Hud {
 
   setLargeText(on) {
     this.wrap.classList.toggle('is-large', !!on);
+  }
+
+  /**
+   * HUD density (Settings → Accessibility). 'clean', the default: the
+   * information folds away a few seconds after it changes — the wind and the
+   * damage diagram to chips in the right-hand stack, the key line and the
+   * chips that only say "normal" (GEAR DOWN, FLAPS 0, EASY MODE) out of the
+   * engine strip — and comes back when it changes, on H, or on a tap. 'full'
+   * is everything open, as it was. Warnings, the objective, the instruments
+   * and the minimap are the same in both.
+   */
+  setDensity(d) {
+    this.density = d === 'full' ? 'full' : 'clean';
+    this.wrap.classList.toggle('is-clean', this.density === 'clean');
+    if (this.stack) this.stack.setDensity(this.density);
+    this.wakeBottom();
+  }
+
+  /** The engine strip's key line and quiet chips, back for `seconds`. */
+  wakeBottom(seconds = 6) {
+    this._quietT = seconds;
+    if (this.wrap.classList.contains('is-quiet')) this.wrap.classList.remove('is-quiet');
   }
 
   setSubtitlesEnabled(on) {
@@ -591,8 +738,10 @@ export class Hud {
     this.controlsCard.innerHTML = html;
     this.controlsCard.style.display = '';
     // Help is "what do I press" and "what am I doing": the folded objective
-    // opens with the keys.
+    // opens with the keys, and so does every chip in the right-hand stack.
     this.showObjective();
+    if (this.stack) this.stack.openAll(8);
+    this.wakeBottom(8);
   }
 
   hideControls() {
@@ -646,14 +795,17 @@ export class Hud {
   clearTransient() {
     this.banner.style.display = 'none';
     this.bannerTimer = 0;
+    this.bannerHeld = false;
     this.subtitle.style.display = 'none';
     this.subtitle.classList.remove('is-out');
     this.subtitleTimer = 0;
     this.subtitleFade = 0;
-    // A new flight starts with its objective open, however the last one ended.
+    // A new flight starts with its objective open, however the last one ended
+    // — and with the key line and every chip showing, for a few seconds.
     this.objectiveHover = false;
     this.objectiveOpen = false;
     this.showObjective();
+    this.wakeBottom();
     for (const t of this.toasts) t.node.remove();
     this.toasts.length = 0;
     this.setCoach(null);
@@ -721,17 +873,24 @@ export class Hud {
       return;
     }
     let worst = 0;
+    let worse = false;
     for (const k in this.damageZones) {
       const v = damage[k] || 0;
       if (v > worst) worst = v;
       const band = v < 0.06 ? 0 : v < 0.35 ? 1 : v < 0.7 ? 2 : 3;
       const z = this.damageZones[k];
       if (z.dataset.band === String(band)) continue;
+      if (band > Number(z.dataset.band || 0)) worse = true;
       z.dataset.band = String(band);
       z.setAttribute('class', band === 0 ? '' : band === 1 ? 'is-light' : band === 2 ? 'is-hurt' : 'is-bad');
     }
-    // The panel appears the moment anything is wrong and stays for the flight.
+    const top = worst < 0.06 ? 0 : worst < 0.35 ? 1 : worst < 0.7 ? 2 : 3;
+    if (p.dataset.worst !== String(top)) p.dataset.worst = String(top);
+    // The panel appears the moment anything is wrong and stays for the flight:
+    // the whole diagram for a few seconds after each new hit, then (in the
+    // Clean HUD) a chip in the stack that keeps the worst colour.
     if (worst > 0.06 && p.hidden) p.hidden = false;
+    else if (worse && this.stack) this.stack.poke(p);
   }
 
   /**
@@ -828,10 +987,28 @@ export class Hud {
       }
     }
     if (this.bannerTimer > 0) {
-      this.bannerTimer -= dt;
-      if (this.bannerTimer <= 0) this.banner.style.display = 'none';
+      // Held, not run down, while PULL UP or TERRAIN has the middle of the
+      // screen; it comes back with the time it had left.
+      if (this.commandUp()) {
+        if (this.banner.style.display !== 'none') this.banner.style.display = 'none';
+        this.bannerHeld = true;
+      } else {
+        if (this.bannerHeld) {
+          this.bannerHeld = false;
+          this.banner.style.display = '';
+        }
+        this.bannerTimer -= dt;
+        if (this.bannerTimer <= 0) this.banner.style.display = 'none';
+      }
     }
-    for (let i = this.toasts.length - 1; i >= 0; i--) {
+    /*
+     * Only the notices on screen count down: two at a time (main.css hides
+     * the rest), the others wait their turn with their whole time left —
+     * and none of them while the interface is hidden (setHidden()).
+     */
+    this.overlaysAt = typeof performance !== 'undefined' ? performance.now() : 0;
+    const showing = this.hidden ? 0 : Math.min(TOASTS_SHOWN, this.toasts.length);
+    for (let i = showing - 1; i >= 0; i--) {
       this.toasts[i].life -= dt;
       if (this.toasts[i].life <= 0) {
         this.toasts[i].node.classList.add('is-out');
@@ -840,6 +1017,7 @@ export class Hud {
         this.toasts.splice(i, 1);
       }
     }
+    if (this.stack) this.stack.tick(dt);
     if (this.objectiveOpen && !this.objectiveHover) {
       this.objectiveT -= dt;
       // Not the automatic fold for a passenger (see update()'s own note by
@@ -851,6 +1029,91 @@ export class Hud {
     if (this._keyHintT <= 0) {
       this._keyHintT = 0.25;
       this.syncKeyHint();
+    }
+    if (this._quietT > 0) {
+      this._quietT -= dt;
+      if (this._quietT <= 0) this.wrap.classList.add('is-quiet');
+    }
+    this._laneT = (this._laneT || 0) - dt;
+    if (this._laneT <= 0) {
+      this._laneT = 0.5;
+      this.updateLanes();
+    }
+  }
+
+  /**
+   * The bottom lane: how far up the radio line, the coaching line and the
+   * story's dialogue box have to sit to clear the controls under them.
+   *
+   * Each of those had a fixed `bottom` (118, 224, 60 px...), and the things
+   * under them change size: the engine strip grows 70 px upward when the
+   * autopilot's bugs come on, the van has its turn chevron, the boat its
+   * engine lever, a touchscreen its pads and its stick. Measured: a two-line
+   * call over the van's chevron (129x44), over the autopilot's +/- buttons,
+   * over the boat's FULL/HALF. So the lane is measured — the top of the
+   * highest control under the line's own span — and written as two custom
+   * properties on <html>: --bl-h for the radio line's span, --bl-wide for
+   * the screen's middle 92% (the dialogue box). Twice a second and whenever
+   * a line goes up, a dozen rectangles; CSS does the rest (main.css,
+   * cinema.js) with max(its old place, the lane).
+   */
+  updateLanes() {
+    if (typeof document === 'undefined' || typeof window === 'undefined' || !document.querySelectorAll) return;
+    const W = window.innerWidth || 1024;
+    const H = window.innerHeight || 768;
+    let x0;
+    let x1;
+    if (this.subtitle.style.display !== 'none') {
+      const r = this.subtitle.getBoundingClientRect();
+      x0 = r.left;
+      x1 = r.right;
+    }
+    if (!(x1 > x0)) {
+      const w = Math.min(720, W * 0.78);
+      x0 = (W - w) / 2;
+      x1 = (W + w) / 2;
+    }
+    const tops = [H, H];
+    const spans = [[x0, x1], [W * 0.04, W * 0.96]];
+    for (const n of document.querySelectorAll(LANE)) {
+      if (!n.getClientRects().length) continue;
+      const r = n.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4 || r.top < H * 0.55 || r.top >= H) continue;
+      for (let k = 0; k < 2; k++) {
+        if (r.right > spans[k][0] && r.left < spans[k][1]) tops[k] = Math.min(tops[k], r.top);
+      }
+    }
+    const bl = Math.max(0, Math.round(H - tops[0]));
+    const wide = Math.max(0, Math.round(H - tops[1]));
+    if (bl !== this._bl || wide !== this._blWide) {
+      this._bl = bl;
+      this._blWide = wide;
+      const st = document.documentElement.style;
+      st.setProperty('--bl-h', `${bl}px`);
+      st.setProperty('--bl-wide', `${wide}px`);
+    }
+    /*
+     * And the floor of the right-hand stack over a touchscreen's action
+     * buttons (ZAP, DROP WATER, HOOK/LAUNCH, the gun and missile buttons),
+     * which stand above the throttle in the same column while their mission
+     * needs them: --rs-act, the stack stops above the highest one.
+     */
+    let act = 0;
+    const se = this.stack && this.stack.el;
+    if (se) {
+      const sr = se.getBoundingClientRect();
+      for (const n of document.querySelectorAll(ACTIONS)) {
+        if (!n.getClientRects().length) continue;
+        const r = n.getBoundingClientRect();
+        if (r.width < 4 || r.height < 4 || r.right <= sr.left || r.left >= sr.right || r.top < H * 0.3) continue;
+        act = Math.max(act, Math.round(H - r.top + 8));
+      }
+    }
+    if (act !== this._act) {
+      this._act = act;
+      if (act) document.documentElement.style.setProperty('--rs-act', `${act}px`);
+      else document.documentElement.style.removeProperty('--rs-act');
+      if (this.stack) this.stack.roomPx = 0;
     }
   }
 
@@ -864,6 +1127,13 @@ export class Hud {
   syncKeyHint() {
     const h = this.keyHintEl;
     if (!h) return;
+    // A different line (another game's keys, a feature's) is worth reading:
+    // it shows for a few seconds in the Clean HUD.
+    const said = h.textContent;
+    if (said !== this._keyHintSaid) {
+      if (this._keyHintSaid !== undefined) this.wakeBottom();
+      this._keyHintSaid = said;
+    }
     /*
      * Key by key, in place: the line has other people's elements in it (the
      * eject feature's span), which rewriting the whole of it would detach.
@@ -880,12 +1150,34 @@ export class Hud {
 
   notify(text, kind = 'info', duration = 4.2) {
     const t = el('div', `hud-toast is-${kind}`, rekey(text));
-    this.toastLayer.appendChild(t);
-    const entry = { node: t, life: duration };
-    this.toasts.push(entry);
-    // Keep the stack short.
-    while (this.toasts.length > 4) {
-      const old = this.toasts.shift();
+    const entry = { node: t, life: duration, kind };
+    /*
+     * Two on screen and the rest queued (TOASTS_SHOWN), newest last. A
+     * warning or a failure goes ahead of the information still waiting, so
+     * "Stall!" is never stuck behind "Minimap range 4 km".
+     */
+    let at = this.toasts.length;
+    if (kind === 'warn' || kind === 'bad') {
+      for (let i = TOASTS_SHOWN; i < this.toasts.length; i++) {
+        const k = this.toasts[i].kind;
+        if (k !== 'warn' && k !== 'bad') {
+          at = i;
+          break;
+        }
+      }
+    }
+    const before = this.toasts[at] ? this.toasts[at].node : null;
+    this.toastLayer.insertBefore(t, before && before.parentNode === this.toastLayer ? before : null);
+    this.toasts.splice(at, 0, entry);
+    // Keep the queue short: the oldest information still waiting goes
+    // first, never a notice somebody is reading or an achievement.
+    while (this.toasts.length > TOASTS_KEPT) {
+      let drop = -1;
+      for (let i = this.toasts.length - 1; i >= TOASTS_SHOWN; i--) {
+        if (this.toasts[i].kind === 'info' && this.toasts[i] !== entry) drop = i;
+      }
+      if (drop < 0) drop = 0;
+      const [old] = this.toasts.splice(drop, 1);
       old.node.remove();
     }
     // Handed back so a caller whose toast can land outside the only state
@@ -899,8 +1191,9 @@ export class Hud {
   showBanner(title, subtitle, kind = 'good', duration = 3.6) {
     this.banner.className = `hud-banner is-${kind}`;
     this.banner.innerHTML = `<div class="hud-banner-title">${title}</div><div class="hud-banner-sub">${subtitle || ''}</div>`;
-    this.banner.style.display = '';
     this.bannerTimer = duration;
+    this.bannerHeld = this.commandUp();
+    this.banner.style.display = this.bannerHeld ? 'none' : '';
   }
 
   setSubtitle(text, who, duration) {
@@ -914,6 +1207,8 @@ export class Hud {
     // to read — the fallback timings (no audio yet) are a flat 3 to 4 s,
     // which is not long enough for a two-line clearance.
     this.subtitleTimer = Math.max(2.4, duration || 3.5, text ? readSeconds(text) : 0);
+    // Above whatever is under its span right now, before it is ever drawn.
+    this.updateLanes();
   }
 
   /**
@@ -927,14 +1222,20 @@ export class Hud {
     if (!this.hazard) {
       this.hazard = el('div', 'hud-hazard');
       this.hazard.style.display = 'none';
-      this.wrap.appendChild(this.hazard);
+      // In the top lane, under the waypoint arrow, not on top of it: at a
+      // fixed 96 px it covered the arrow that says the same thing.
+      (this.topLane || this.wrap).appendChild(this.hazard);
     }
     if (!text) {
       this.hazard.style.display = 'none';
+      this.waypoint.classList.remove('is-arrow-only');
       return;
     }
     this.hazard.innerHTML = text;
     this.hazard.style.display = '';
+    // The hazard line names it and says how far: the arrow keeps pointing,
+    // its own words would only say it twice.
+    this.waypoint.classList.add('is-arrow-only');
   }
 
   /**
@@ -962,6 +1263,8 @@ export class Hud {
       this.vital.appendChild(this.vitalTrace);
       this.vital.appendChild(txt);
       this.wrap.appendChild(this.vital);
+      // The mission's own card: under the warnings, never folded away.
+      if (this.stack) this.stack.add(this.vital, { prio: 1.5, id: 'vital', chip: false });
       this._vitalPhase = 0;
     }
     if (bpm == null) {
@@ -1343,6 +1646,17 @@ export class Hud {
       this.weatherText.textContent = wx;
       this.lastValues.wx = wx;
     }
+    /*
+     * The wind card is information: it opens for a few seconds when the
+     * weather changes or the wind picks up or drops by a band (5 kt), and
+     * otherwise sits folded as "18 kt" and the needle — not on every gust,
+     * and not every time the words change because the aeroplane turned.
+     */
+    const band = `${wx}|${Math.round(w.windSpeedKts / 5)}`;
+    if (this.lastValues.wxBand !== band) {
+      if (this.lastValues.wxBand !== undefined && this.stack) this.stack.poke(this.weatherCard);
+      this.lastValues.wxBand = band;
+    }
 
     // --- Bars and chips ---
     // Change-gated like everything else here — this panel is repainted sixty
@@ -1430,7 +1744,20 @@ export class Hud {
       this.stallWarn.classList.toggle('is-hard', ac.stalled);
     }
 
-    if (sim.papiHint && !r.onGround) {
+    /*
+     * The glide-path pill only on an approach: pointed at the runway (09,
+     * the way the lights face) and under 1,500 ft over the ground. The
+     * lights answer anywhere west of the field within 12 km, so it read
+     * "Too high — ease off and descend" through every meteor run, fire and
+     * free flight that happened to start out there.
+     */
+    // And not while the coaching line is already saying it ("Too high —
+    // ease the power off with Ctrl"): the same words twice in the middle of
+    // a short window was the owner's clogged centre column.
+    const coachSaysIt = this.coach.style.display !== 'none' && /^Too (high|low)/.test(this.lastValues.coach || '');
+    const papiOn = !!sim.papiHint && !r.onGround && r.aglFt < 1500 && !coachSaysIt
+      && Math.abs(((r.heading - 90 + 540) % 360) - 180) < 40;
+    if (papiOn) {
       this.papiHint.style.display = '';
       this.papiHint.textContent = sim.papiHint.text;
       this.papiHint.className = `hud-papi is-${sim.papiHint.state}`;

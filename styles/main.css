@@ -146,6 +146,20 @@ html, body {
 /* ================================ HUD =================================== */
 
 .hud { position: absolute; inset: 0; font-variant-numeric: tabular-nums; }
+/*
+ * The story's letterbox (story/cinema.js bars()): the HUD steps inside the
+ * picture instead of losing its edges under the bars — every panel is
+ * placed against this wrapper, so insetting it by the bars' height moves
+ * the instruments, the objective, the stack, the engine strip, the dock and
+ * the touch controls together. (The minimap lives beside the wrapper, so it
+ * gets the same inset as a margin.) 5.2% and 12.5% are the bars' heights.
+ */
+html[data-cine="thin"] #ui > .hud { top: 5.2vh; bottom: 5.2vh; }
+html[data-cine="big"] #ui > .hud { top: 12.5vh; bottom: 12.5vh; }
+html[data-cine="thin"] #ui > .minimap { margin: 5.2vh 0; }
+html[data-cine="big"] #ui > .minimap { margin: 12.5vh 0; }
+/* While a story line is up, its dialogue box is the subtitle (cinema.js). */
+html.sz-talking .hud-subtitle { visibility: hidden; }
 .hud.is-large { font-size: 118%; }
 
 .hud-panel {
@@ -204,7 +218,13 @@ html, body {
   top: 16px;
   left: 50%;
   transform: translateX(-50%);
-  width: min(560px, 52vw);
+  /*
+   * Never wider than the room between the two corners: the right-hand stack
+   * is --rs-w wide at 16 px in, and the instruments on the left are about
+   * the same. At a 1024 px window the 560 px objective ran 89 px under the
+   * wind card ("...keep it in th"), and every right-hand card after it.
+   */
+  width: min(560px, 52vw, calc(100vw - 2 * (var(--rs-w, 248px) + 32px)));
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -315,6 +335,115 @@ html, body {
 .hud-weather { font-size: 11px; color: var(--accent-2); margin-top: 3px; }
 
 /*
+ * ---- The right-hand stack (ui/hud-stack.js) -------------------------------
+ *
+ * Every card down the right-hand side is a child of this one flex column:
+ * the warnings, the mission's own panels (meteor, fire, events, the carrier's
+ * ball, the patient), the notices, and the wind, the damage diagram and the
+ * Races button. The column puts each under the one above it; nothing
+ * measures, so nothing can land on anything else at any size. Priority is
+ * the DOM order (hud-stack.js add()): warnings at the top.
+ *
+ *   --rs-top     where the column starts (desktop: the corner; a touchscreen
+ *                adds --rs-dy, measured under the instrument band)
+ *   --rs-bottom  what it must stop above: the minimap and the dock on a
+ *                computer, the thumb controls on a tablet, the coaching and
+ *                radio lines on a phone (they span the screen there)
+ *   --rs-w       its width, which every open card fills
+ *
+ * The cards keep their own looks. What changes is that none of them is
+ * positioned any more (the !important is the point: a dozen older `top:` and
+ * `right:` rules for these cards, in here and in the features' own CSS,
+ * must not be able to pull one out of the column again).
+ */
+.hud { --rs-w: 248px; --rs-top: 16px; --rs-bottom: 68px; }
+.hud.has-minimap { --rs-bottom: 308px; }
+@media (max-width: 900px) { .hud { --rs-w: 220px; } }
+.hud.is-touch { --rs-w: 216px; --rs-top: 12px; --rs-bottom: 214px; }
+@media (max-width: 560px) {
+  .hud, .hud.is-touch { --rs-w: 156px; }
+  /* Above the coaching line, which spans a phone and rides the bottom lane. */
+  .hud.is-touch { --rs-top: 6px; --rs-bottom: max(376px, calc(var(--bl-h, 0px) + 172px)); }
+}
+.hud-rstack {
+  position: absolute;
+  right: 16px;
+  top: var(--rs-top);
+  width: var(--rs-w);
+  max-height: calc(100% - var(--rs-top) - var(--rs-dy, 0px) - max(var(--rs-bottom), var(--mp-dock, 0px), var(--rs-act, 0px)));
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  pointer-events: none;
+  transform: translateY(var(--rs-dy, 0px));
+  transition: transform 0.24s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.hud.is-touch .hud-rstack { right: 12px; }
+@media (max-width: 560px) { .hud.is-touch .hud-rstack { right: 6px; } }
+.hud-rstack > * {
+  position: relative !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  margin: 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  flex: none;
+}
+/* A chip, and the cards that are small anyway, sit against the right edge. */
+.hud-rstack > .rs-chip,
+.hud-rstack > .hud-damage,
+.hud-rstack > .race-solobar { align-self: flex-end; }
+/* Waiting for room (the column would run into the minimap): off screen. */
+.hud-rstack > .rs-wait { display: none !important; }
+/* The realistic cockpit fades the wind card out (is-minimal, below); in the
+   column it would leave a card-sized hole, so there it goes altogether. */
+.hud.is-minimal .hud-rstack > .hud-right { display: none; }
+
+/* Motion: arrive from the right edge; fold and unfold with a short settle.
+   Only while the game owns the clock and nobody asked for less motion
+   (hud-stack.js adds .rs-anim). Transform and opacity only. */
+.hud-rstack.rs-anim > * { animation: rsIn 0.24s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.hud-rstack.rs-anim > .rs-chip { animation: rsFold 0.2s cubic-bezier(0.2, 0.7, 0.2, 1); }
+@keyframes rsIn { from { opacity: 0; transform: translateX(14px); } }
+@keyframes rsFold { from { opacity: 0.4; transform: scale(0.97); } }
+
+/* ---- the cards, open and folded ---- */
+
+/* The wind: open, the rose and three lines; folded, the needle and "18 kt from 250°". */
+.hud-rstack > .hud-right { cursor: pointer; }
+.hud-rstack > .hud-right .hud-windinfo { min-width: 0; }
+.hud-rstack > .hud-right.rs-chip { gap: 7px; padding: 4px 11px 4px 5px; border-radius: 99px; }
+.hud-right.rs-chip .hud-windrose { width: 26px; height: 26px; }
+.hud-right.rs-chip .hud-windneedle { font-size: 15px; }
+.hud-right.rs-chip .hud-windrose-label,
+.hud-right.rs-chip .hud-windtext,
+.hud-right.rs-chip .hud-weather,
+.hud-right.rs-chip .hud-sea { display: none; }
+.hud-right.rs-chip .hud-winddetail { font-size: 11.5px; color: #d6e2f2; white-space: nowrap; }
+
+/* The damage diagram: open, the plan view; folded, a small one and the word. */
+.hud-rstack > .hud-damage.rs-chip { display: flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: 99px; }
+.hud-damage.rs-chip svg { width: 22px; height: 22px; margin: 0; }
+.hud-damage.rs-chip .hud-damage-label { margin: 0; font-size: 9.5px; }
+
+/* The patient: the trace goes, the number stays. */
+.hud-vital.rs-chip .hud-vital-trace { display: none; }
+
+/* The notices, inside the column: left-aligned, compact, a line or two. */
+.hud-rstack > .hud-toasts .hud-toast { text-align: left; padding: 7px 12px; font-size: 12.5px; line-height: 1.35; }
+.hud-rstack > .hud-toasts .ach-toast span { font-size: 13px; }
+
+/* A phone's column is narrow: every card's type steps down a little. */
+@media (max-width: 560px) {
+  .hud-rstack > .hud-toasts .hud-toast { padding: 6px 9px; font-size: 11.5px; }
+  .hud-rstack > .hud-right { padding: 6px 8px; gap: 6px; }
+}
+
+/*
  * The power and fuel strip, slimmed the same way: 340x108 at 1280x720 on the
  * runway, now 309x90. Every bar, hint and chip is still there; the gaps
  * between them, the bar thickness and the chip padding are what went. The
@@ -340,6 +469,16 @@ html, body {
 .hud-keyhint kbd { font-size: 9.5px; padding: 0 3px; border-bottom-width: 1px; }
 
 .hud-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+/*
+ * The Clean HUD (hud.js setDensity()): a few seconds into a flight, or after
+ * the key line changes, the engine strip keeps its bars and the chips that
+ * say something is not the usual — GEAR UP or moving, flaps out, brakes on,
+ * the autopilot, trim, the hook — and lets the key line and GEAR DOWN /
+ * FLAPS 0 / EASY MODE go. H, a tap on the strip, or a new key line brings
+ * them back.
+ */
+.hud.is-clean.is-quiet .hud-keyhint { display: none; }
+.hud.is-clean.is-quiet .hud-chips > .hud-chip:not(.is-warn):not(.is-on):not(.is-blink):not(.co-hook):not([data-chip="flaps"].is-good) { display: none; }
 .hud-chip {
   font-size: 9.5px;
   letter-spacing: 0.05em;
@@ -474,7 +613,7 @@ html, body {
  */
 .hud-coach {
   position: absolute;
-  bottom: 224px;
+  bottom: max(224px, calc(var(--bl-h, 0px) + 118px)); /* clear of the radio line at its tallest, wherever the lane puts it (hud.js updateLanes()) */
   left: 50%;
   transform: translateX(-50%);
   padding: 9px 20px;
@@ -499,23 +638,33 @@ html, body {
 }
 .hud.is-contrast .hud-coach { background: #000; border-color: #ffe95c; color: #fff; }
 
+/*
+ * The notices. While the HUD is up they are a card in the right-hand stack
+ * (ui/hud-stack.js; the stack's own rules are at the end of this file), two
+ * at a time with the rest queued (hud.js notify()). While it is down — a
+ * debrief, a menu, the rocket's own game — hud.js puts them back here as
+ * .is-loose: a sibling of .hud, top centre, stacked above .menu-layer (which
+ * sets no z-index of its own) so a toast that lands as a debrief opens stays
+ * crisp, not blurred behind the menu layer's backdrop-filter.
+ */
 .hud-toasts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+.hud-toasts:empty { display: none; }
+.hud-toasts.is-loose {
   position: absolute;
   left: 50%;
   top: 96px;
   transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
   align-items: center;
   width: min(520px, 60vw);
-  /* A sibling of .hud now (hud.js's build()), not a child of it, so it is
-     never taken down by wrap's own display:none — and stacked above
-     .menu-layer (which sets no z-index of its own) so a toast that lands
-     right as a debrief dialog opens stays crisp, not blurred behind the
-     menu layer's backdrop-filter. */
   z-index: 20;
 }
+/* Two on screen; the rest wait their turn (hud.js counts only these down). */
+.hud-toasts > .hud-toast:not(.is-out) ~ .hud-toast:not(.is-out) ~ .hud-toast:not(.is-out) { display: none; }
 .hud-toast {
   padding: 8px 16px;
   border-radius: 10px;
@@ -534,7 +683,7 @@ html, body {
 
 .hud-subtitle {
   position: absolute;
-  bottom: 118px;
+  bottom: max(118px, calc(var(--bl-h, 0px) + 12px)); /* above the controls under it (hud.js updateLanes()) */
   left: 50%;
   transform: translateX(-50%);
   width: min(720px, 78vw);
@@ -574,7 +723,7 @@ html, body {
   .hud.has-minimap .hud-subtitle { width: min(720px, calc(100vw - 440px)); }
 }
 @media (max-width: 900px) {
-  .hud.has-minimap .hud-subtitle { width: min(720px, 78vw); bottom: 312px; }
+  .hud.has-minimap .hud-subtitle { width: min(720px, 78vw); bottom: max(312px, calc(var(--bl-h, 0px) + 12px)); }
 }
 /*
  * And on a tablet it stops short of the thumb pads. At 1024x768 the radio line
@@ -606,6 +755,52 @@ html, body {
 .hud-banner-title { font-size: 26px; font-weight: 680; letter-spacing: -0.01em; }
 .hud-banner-sub { font-size: 14px; color: var(--text-dim); margin-top: 4px; }
 @keyframes bannerIn { from { opacity: 0; transform: translateX(-50%) scale(0.92); } }
+
+/*
+ * The centre lane (hud.js addCallout()): the warnings' command, the STALL
+ * slab and the banner, in that order, one under the other. Each had its own
+ * top (36%, 30%, 34%) and PULL UP was printed inside the banner. The lane
+ * is no wider than the gap between the right-hand stack and its mirror, so
+ * a callout never runs into the warnings either.
+ */
+.hud-center {
+  position: absolute;
+  left: 50%;
+  top: 30%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 2 * (var(--rs-w, 248px) + 28px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.hud-center:empty { display: none; }
+.hud-center > * {
+  position: relative !important;
+  left: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+}
+.hud-center > .hud-stall, .hud-center > .wx-cmd { transform: none !important; }
+.hud-center > .hud-banner { transform: none; animation-name: bannerInLane; }
+@keyframes bannerInLane { from { opacity: 0; transform: scale(0.92); } }
+/* A phone: the right-hand stack takes the right side under the objective, so
+   the lane keeps to the left of it rather than centring across it. */
+@media (max-width: 560px) {
+  .hud-center {
+    left: 8px; top: 34%; transform: none; align-items: flex-start;
+    max-width: calc(100vw - var(--rs-w, 156px) - 24px);
+  }
+  .hud-center > * { text-align: left; }
+  .hud-center > .hud-banner { padding: 10px 16px; }
+  .hud-center > .hud-banner .hud-banner-title { font-size: 19px; }
+}
 
 .hud-controls-card {
   position: absolute;
@@ -1134,6 +1329,24 @@ body.is-large { font-size: 18px; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001s !important; transition-duration: 0.05s !important; }
 }
+/*
+ * The HUD's looping alarms under Reduce flashing (on by default) and the
+ * game's own Reduced motion. None of them was over three a second, but
+ * none of them read the setting either (only the meteor reticle and the
+ * carrier's lights did). Reduce flashing: the same alarm, breathing slowly
+ * instead of pulsing. Reduced motion: still, in its alarm colour.
+ */
+html.reduce-flashing .hud-stall,
+html.reduce-flashing .hud-damage path.is-bad,
+html.reduce-flashing .hud-vital.is-bad,
+html.reduce-flashing .minimap.is-alert { animation-duration: 2.4s; }
+html.reduce-motion .hud-stall,
+html.reduce-motion .hud-damage path.is-bad,
+html.reduce-motion .hud-vital.is-bad,
+html.reduce-motion .minimap.is-alert,
+html.reduce-motion .hud-rstack > *,
+html.reduce-motion .hud-center > * { animation: none; }
+html.reduce-motion .hud-rstack, html.reduce-motion .hud-rstack > * { transition: none; }
 
 /* ========================= Small screens ================================ */
 
@@ -1158,7 +1371,7 @@ body.is-large { font-size: 18px; }
   .hud.is-touch .hud-top { top: 232px; }
   /* The coach line has to clear the touch controls, not sit under them. */
   .hud-coach { bottom: auto; top: 108px; font-size: 14px; padding: 8px 14px; }
-  .hud-toasts { top: 130px; width: 84vw; }
+  .hud-toasts.is-loose { top: 130px; width: 84vw; }
   .brand { flex-direction: column; align-items: flex-start; }
 }
 
@@ -1560,6 +1773,14 @@ body.is-large { font-size: 18px; }
   .hud.is-touch.is-boat .touch-rudder { left: 232px; transform: none; }
 }
 /*
+ * The boat's rudder bar beside the wheel, not centred: centred on an upright
+ * iPad (768) it ran 63 px under the boat's CRASH STOP pad, which steps in to
+ * right: 136px to clear the engine lever.
+ */
+@media (min-width: 561px) and (min-height: 461px) {
+  .hud.is-touch.is-boat .touch-rudder { left: 168px; transform: none; }
+}
+/*
  * The map moves to the top-left corner on a touch device — and it never did.
  *
  * This was written `.hud.is-touch .minimap`, and the minimap is not inside the
@@ -1572,9 +1793,20 @@ body.is-large { font-size: 18px; }
  * exactly this reason — the menus hit the same wall and solved it this way.
  */
 html.is-touch-device .minimap { top: 8px; left: 8px; right: auto; bottom: auto; }
-/* And the objective panel steps aside for it, the way the instrument strip
-   already does — it is centred and wide, and ran straight under the map. */
-.hud.is-touch.has-minimap .hud-top { padding-left: 138px; }
+/*
+ * And the objective sits between the map's column and the right-hand stack
+ * (ui/hud-stack.js), centred in what is left. It stepped aside for the map
+ * with a 138 px padding before, and nothing stopped its right-hand end: on
+ * an upright iPad (768) it ran 43 px into the column the warnings use.
+ */
+.hud.is-touch .hud-top {
+  left: 16px;
+  right: calc(var(--rs-w, 216px) + 24px);
+  width: auto;
+  transform: none;
+}
+.hud.is-touch.has-minimap .hud-top { left: 138px; }
+.hud.is-touch .hud-objective { max-width: 520px; }
 .hud.is-touch .hud-tray { right: 12px; top: 62px; bottom: auto; }
 .hud.is-touch .hud-taxi-skip { padding: 12px 16px; font-size: 14px; }
 
@@ -2009,6 +2241,10 @@ html.is-touch-device .minimap { top: 8px; left: 8px; right: auto; bottom: auto; 
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 .hud-hazard b { color: #fff; letter-spacing: 0.12em; margin-right: 4px; }
+/* In the top lane (hud.js setHazard()), under the arrow, which then points without repeating it. */
+.hud-top > .hud-hazard { position: static; transform: none; max-width: 100%; white-space: normal; text-align: center; }
+.hud-waypoint.is-arrow-only .hud-waypoint-text { display: none; }
+.hud-waypoint.is-arrow-only { padding: 5px 8px; }
 
 /* A switch and a slider per sound source, on one line. */
 .sound-row {
@@ -2123,7 +2359,8 @@ html.is-touch-device .minimap { top: 8px; left: 8px; right: auto; bottom: auto; 
 .hud-vital.is-warn .hud-vital-value { color: #ffc95e; }
 .hud-vital.is-bad .hud-vital-value { color: #ff7a5e; }
 .hud-vital-unit { font-size: 11px; color: #7f8ea3; margin-left: 3px; font-weight: 600; }
-@media (max-width: 560px) { .hud-vital { top: 150px; right: 10px; transform: scale(0.85); } }
+/* On a phone the trace goes: the number and its colour say it. */
+@media (max-width: 560px) { .hud-vital { padding: 6px 10px; } .hud-vital-trace { display: none; } }
 
 /* ---- Saved Free Flight setups ------------------------------------------- */
 .free-slots { margin-top: 14px; }
@@ -2662,11 +2899,11 @@ html.is-touch-device .slot-clear {
   .hud.is-touch .hud-coach {
     /* Above the radio at its TALLEST. A three-line clearance is 98px, and
        at 268 the coaching line was sitting inside it. */
-    top: auto; bottom: 330px; left: 8px; right: 8px;
+    top: auto; bottom: max(330px, calc(var(--bl-h, 0px) + 114px)); left: 8px; right: 8px;
     transform: none; max-width: none; font-size: 12px; text-align: center;
   }
   .hud.is-touch .hud-subtitle {
-    bottom: 216px; left: 8px; right: 8px;
+    bottom: max(216px, calc(var(--bl-h, 0px) + 12px)); left: 8px; right: 8px;
     /* width: auto, or the 78vw from the wider rules kept it 304 px wide and
        pinned left, stopping 70 px short of the coach line above it. */
     width: auto;
@@ -2683,8 +2920,10 @@ html.is-touch-device .slot-clear {
   .hud.is-touch .hud-objective.is-chip { max-width: 100%; padding: 5px 10px; }
   .hud.is-touch .hud-objective.is-chip .hud-objective-text { display: block; }
   /* Under the band the objective is already clear of the map, so it does not
-     need to step aside for it too: that left it 240 px wide and off-centre. */
-  .hud.is-touch.has-minimap .hud-top { padding-left: 0; }
+     need to step aside for it too: that left it 240 px wide and off-centre.
+     Full width: the right-hand stack starts under it here (hud-stack.js). */
+  .hud.is-touch.has-minimap .hud-top { padding-left: 0; left: 6px; }
+  .hud.is-touch .hud-objective { max-width: none; }
   /* The strip starts after the map with a real gap, not against it. */
   .hud.is-touch .hud-left { left: 100px; }
   /* The old content, not the panel itself — see the rule above (it is not
@@ -2747,7 +2986,7 @@ html.is-touch-device .slot-clear {
    * other things that talk to you.
    */
   .hud.is-touch .hud-papi {
-    bottom: 380px; left: 8px; right: 8px;
+    bottom: max(380px, calc(var(--bl-h, 0px) + 164px)); left: 8px; right: 8px;
     width: auto; transform: none; text-align: center;
   }
 
@@ -2928,6 +3167,9 @@ html.is-touch-device .slot-clear {
 @media (max-width: 760px) {
   .hud-ribbon { width: auto; padding: 0 10px; height: 26px; }
   .hud-ribbon-canvas { display: none; }
+  /* A phone: the bearing alone sat on the boat's panel (centred over the
+     band between the map and the dock); the panel's own heading row says it. */
+  .hud.is-touch .hud-ribbon { display: none; }
   .hud.is-boat .hud-top { top: 40px; }
   .hud-boatpanel .hud-row.is-depth .hud-value { font-size: 27px; }
   .hud-lever-detent { font-size: 8px; padding: 4px 1px; }

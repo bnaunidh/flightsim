@@ -179,9 +179,19 @@ function flightLimbs(rig, U, skin) {
  * opts.flight (Harrison only): the flying T-Pose Harrison — jointed arms with
  * wrists and pointed feet (see flightLimbs). On foot he keeps his stiff T.
  */
+/** Relative luminance (0..1) of a 0xRRGGBB shirt, to choose the T that shows on it. */
+function shirtLum(hex) {
+  const r = ((hex >> 16) & 255) / 255;
+  const g = ((hex >> 8) & 255) / 255;
+  const b = (hex & 255) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
 export function createUniformPerson(id, opts = {}) {
-  const U = UNIFORMS[id];
-  if (!U) return null;
+  const U0 = UNIFORMS[id];
+  if (!U0) return null;
+  // `opts.shirt` / `opts.trousers` re-colour a uniform (T-Pose Harrison takes the hangar's paint: aircraft/models/tpose-harrison.js).
+  const U = opts.shirt != null || opts.trousers != null ? { ...U0, shirt: opts.shirt ?? U0.shirt, trousers: opts.trousers ?? U0.trousers } : U0;
   const P = prims();
   const seed = shortHairSeed(opts.seed || 5);
   const skin = U.skin ?? SKIN_TONES[seed % SKIN_TONES.length];
@@ -305,9 +315,10 @@ export function createUniformPerson(id, opts = {}) {
     helmet(0xd4252a, WHITE);
     boots(0x1a1a1a);
   } else if (id === 'harrison') {
-    // The big white T on his chest.
-    chest.push(part(P.box, WHITE, 0, 0.37, -0.132, 0, 0, 0, 0.17, 0.04, 0.012));
-    chest.push(part(P.box, WHITE, 0, 0.27, -0.132, 0, 0, 0, 0.042, 0.17, 0.012));
+    // The big white T on his chest (dark on a light shirt, which a paint can give him).
+    const tee = shirtLum(U.shirt) > 0.55 ? 0x1f272e : WHITE;
+    chest.push(part(P.box, tee, 0, 0.37, -0.132, 0, 0, 0, 0.17, 0.04, 0.012));
+    chest.push(part(P.box, tee, 0, 0.27, -0.132, 0, 0, 0, 0.042, 0.17, 0.012));
     // Spiky hair and cool shades.
     for (let k = 0; k < 7; k++) {
       const a = (k / 7) * Math.PI * 2;

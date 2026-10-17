@@ -23,7 +23,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { heightAt } from '../world/terrain.js';
-import { dim, CAPS } from '../render/flash-safety.js';
+import { dim, CAPS, FLASH } from '../render/flash-safety.js';
 
 const DEBRIS = 16;
 const SPARKS = 90;
@@ -398,11 +398,26 @@ export class Wreck {
 
     /* ---- Water: rings spreading, foam lingering ---- */
     if (this.inWater) {
-      for (const r of this.rings) {
+      for (let i = 0; i < this.rings.length; i++) {
+        const r = this.rings[i];
         const age = this.t - r.delay;
         if (age <= 0) continue;
         const radius = 3 + age * r.speed;
         r.mesh.scale.setScalar(radius);
+        /*
+         * Reduce flashing: ONE ring. Three bright rings, 26, 41 and 56 m/s,
+         * set off 0.55 s apart, all cross the same stretch of sea inside half
+         * a second at 20-60 m out, and each one is a bright band that comes
+         * and goes: six reversals of more than WCAG's 10% in half a second,
+         * over 10% of a 10-degree field, for a camera ten metres from the
+         * splash (the crash sweep: a fighter ditching, the real crash, with
+         * the cartoon off, 24-32% of the field; with the wreck hidden, 0.2%).
+         * One ring is one flash.
+         */
+        if (FLASH.reduce && i > 0) {
+          r.mesh.material.opacity = 0;
+          continue;
+        }
         // Thin as they grow, and gone by the time they are a hundred metres out.
         r.mesh.material.opacity = Math.max(0, 0.55 * (1 - radius / 130));
       }

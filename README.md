@@ -5,8 +5,11 @@ Kestrel Island, learn to fly in the tutorial, complete three missions, and land
 in anything from a blue-bird day to a thunderstorm.
 
 Built with three.js. **Every texture and every sound in the game is generated in
-code at load time** — there are no image or audio files to download, which is why
-the whole thing is a few hundred kilobytes and works identically offline.
+code at load time** — there are no audio files to download and no textures, which
+is why the whole thing is a few hundred kilobytes and works identically offline.
+The one exception is the picture on each map's loading screen
+(`assets/loading/<map>.jpg`, see *Loading screens* below), rendered from the game
+itself.
 
 ---
 
@@ -211,6 +214,32 @@ src/
     menus.js            start screen, missions, settings, credits, debrief
     credits.js          asset credits and licences
 ```
+
+---
+
+## Loading screens
+
+Starting a flight from the menus puts up a full-screen picture of the map you are
+going to, its name in big letters, what you are flying, a tip (in your own keys)
+and a slim progress bar. It stays about three seconds, or as long as the map takes
+to build if that is longer; any key or tap skips it after one second. It covers
+Free Flight, the lessons, missions, Story chapters, multiplayer joins and the boat
+and the van, and it is not shown for a restart on the same map. It makes no sound,
+and nothing on it flashes: it fades in and out slowly, and the slow zoom on the
+picture stops with Settings → reduced motion.
+
+- The code is `src/features/loading-screens.js` (when, and what the bar means),
+  `src/ui/loading-screen.js` (the screen) and `src/ui/loading-tips.js` (the tips).
+- A browser driven by a robot (the test suites) skips it. `?loading=1` in the
+  address forces it on, `?loading=0` off, and `sim.loading.enabled` is the switch.
+- A map that is built from OpenStreetMap says so with `osm: true` (or its own
+  `attribution` line) in `maps.js`, and its screen shows "© OpenStreetMap contributors".
+- The pictures are made from the game by `tools/loading-art/`: `capture.mjs` renders
+  each map's camera spot (`spots.mjs`) in golden light, `pack.py` grades them and
+  fits each in 250 KB. `capture.mjs` also records where each picture's subject is
+  (`src/ui/loading-focus.js`, generated) so a phone held upright crops round the
+  aeroplane, boat or van. A new map needs a spot in `spots.mjs`, and
+  `tests/features/loading-screens.mjs` fails until it has its picture.
 
 ---
 
