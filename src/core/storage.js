@@ -63,6 +63,8 @@ export const DEFAULT_SETTINGS = {
    * 'classic' is the ring with range ticks, as before.
    */
   crosshair: 'square',
+  /* The minimap's dashed approach lines out from every runway end (Settings → Accessibility). */
+  runwayLines: true,
   mouseFlying: false,
   invertMouse: false,
   sensitivity: 1,

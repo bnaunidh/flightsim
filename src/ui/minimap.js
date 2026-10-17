@@ -1747,6 +1747,65 @@ export class Minimap {
       ctx.lineWidth = pass === 0 ? rw : Math.max(1, rw * 0.3);
       ctx.stroke();
     }
+    if (this.runwayLines !== false) this.drawApproachLines(g);
+  }
+
+  /**
+   * The approach lines: each runway's centreline carried on, dashed, ten
+   * kilometres out past both ends, with a tick every nautical mile, so lining
+   * up from far out is a matter of putting the aeroplane on the line. Real
+   * charts draw them; the owner asked for them ("on the minimap u can toggle
+   * lines that show the runway") — Settings → Accessibility turns them off.
+   */
+  drawApproachLines(g) {
+    const { ctx, k, mx, my } = g;
+    const OUT = 10000;
+    const NM = 1852;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(242, 246, 250, 0.55)';
+    ctx.lineWidth = 1;
+    ctx.lineCap = 'butt';
+    const dash = Math.max(3, 300 * k);
+    ctx.setLineDash([dash, dash]);
+    ctx.beginPath();
+    const ticks = [];
+    for (let i = 0; i < 2; i++) {
+      const R = i === 0 ? AIRPORT.runway : AIRPORT.runway2;
+      if (!R) continue;
+      const alongX = i === 0 || Math.abs(((R.headingDeg ?? 180) % 180) - 90) < 45;
+      const h = R.length / 2;
+      for (const s of [-1, 1]) {
+        const a0 = h;
+        const a1 = h + OUT;
+        if (alongX) {
+          ctx.moveTo(mx(R.cx + s * a0), my(R.cz));
+          ctx.lineTo(mx(R.cx + s * a1), my(R.cz));
+        } else {
+          ctx.moveTo(mx(R.cx), my(R.cz + s * a0));
+          ctx.lineTo(mx(R.cx), my(R.cz + s * a1));
+        }
+        for (let d = NM; d <= OUT; d += NM) ticks.push({ alongX, x: alongX ? R.cx + s * (h + d) : R.cx, z: alongX ? R.cz : R.cz + s * (h + d) });
+      }
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (k * NM > 6) {
+      const t = Math.max(2.5, 4 * (g.ts || 1));
+      ctx.beginPath();
+      for (const p of ticks) {
+        const x = mx(p.x);
+        const y = my(p.z);
+        if (p.alongX) {
+          ctx.moveTo(x, y - t);
+          ctx.lineTo(x, y + t);
+        } else {
+          ctx.moveTo(x - t, y);
+          ctx.lineTo(x + t, y);
+        }
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   /**
@@ -1944,7 +2003,9 @@ export class Minimap {
       this._drawnBodies++;
       // Who it is, for anybody in the story, when the map is zoomed in enough to read.
       if (!plain && named) {
-        const nm = e.bodyName || e.name;
+        let nm = e.bodyName || e.name;
+        // A generic passer-by ("a sightseeing helicopter") reads just "Helicopter" — the owner's ask; story names stay.
+        if (nm && e.rotor && /^an? /i.test(String(nm))) nm = 'Helicopter';
         if (nm) label(ctx, String(nm), x, y - 8 * ts, col, ts * 0.9);
       }
       // Height difference for the ones that matter: anything the system has

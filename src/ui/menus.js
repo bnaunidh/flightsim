@@ -1840,6 +1840,7 @@ export class Menus {
               <option value="square">Mini square — turns red when something you can shoot is under it</option>
               <option value="classic">Classic ring with range ticks</option>
             </select></label>
+          <label class="check"><input type="checkbox" data-set="runwayLines"><span>Runway approach lines on the minimap (dashed, a tick every nautical mile)</span></label>
           <p class="hint">Clean keeps the world in view: the wind, the damage diagram, tips and the key hints show when they change, then fold away. Warnings, the objective, the instruments and the map always stay. A tap on a chip, or <kbd>H</kbd>, opens them again.</p>
         </div>
       </section>
