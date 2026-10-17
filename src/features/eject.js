@@ -605,6 +605,8 @@ function walkControl(sim) {
       ? 'Safe on the ground! Tap here to fly again'
       : `Safe! ${kbd('walkForward', sim)}${kbd('walkLeft', sim)}${kbd('walkBack', sim)}${kbd('walkRight', sim)} walk · ${kbd('flyAgain', sim)} fly again`,
     promptAction: again,
+    // Shown for five seconds after landing, then it fades — the owner's ask; Enter (or the Fly again button) still works.
+    promptFor: 5,
     buttons: WALK_BUTTONS,
     onButton: (id) => {
       if (id === 'again') again();

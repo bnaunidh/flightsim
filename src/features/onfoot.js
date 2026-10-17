@@ -953,7 +953,8 @@ function walkFrame(sim, dt) {
     S.promptEnter = e.enter;
     UI.setPrompt(promptFor(sim, e.label), enterFromPrompt);
   } else if (ctl && ctl.prompt) {
-    UI.setPrompt(ctl.prompt, ctl.promptAction || null);
+    // `promptFor`: a control's line that only needs saying once (seconds on foot), then fades.
+    UI.setPrompt(ctl.promptFor > 0 && S.since >= ctl.promptFor ? '' : ctl.prompt, ctl.promptAction || null);
   } else if (S.hint) {
     UI.setPrompt(S.hint);
   } else if (S.since < 6) {
