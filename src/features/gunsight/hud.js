@@ -28,6 +28,14 @@ const CSS = `
 .gsk-sight.is-inrange .gsk-ring { stroke: #7dffa0; opacity: 1; }
 .gsk-sight.is-idle .gsk-ring { opacity: 0.55; }
 .gsk-sight.is-idle .gsk-tick { display: none; }
+/* The mini square (Settings → Crosshair): no ring, no ticks; red while a target is under it. */
+.gsk-sight .gsk-sq { display: none; fill: none; stroke: #eafff0; stroke-width: 1.8; }
+.gsk-sight.is-square .gsk-ring, .gsk-sight.is-square .gsk-tick { display: none; }
+.gsk-sight.is-square .gsk-sq { display: inline; }
+.gsk-sight.is-square .gsk-dot { r: 1.4; }
+.gsk-sight.is-square.is-hot .gsk-sq { stroke: #ff3b30; stroke-width: 2.2; }
+.gsk-sight.is-square.is-hot .gsk-dot { fill: #ff3b30; }
+html.xhair-square .hsk-seeker { display: none !important; }
 .gsk-pip { position: fixed; left: 0; top: 0; width: 30px; height: 30px; margin: -15px 0 0 -15px; will-change: transform; overflow: visible;
   filter: drop-shadow(0 0 1px rgba(0,0,0,0.85)); }
 .gsk-pip circle { fill: none; stroke: #ffe27a; stroke-width: 1.8; }
@@ -104,7 +112,7 @@ export function ensureHud(handlers = {}) {
     const c = Math.cos(a);
     ticks += `<line class="gsk-tick" x1="${(s * 26).toFixed(2)}" y1="${(-c * 26).toFixed(2)}" x2="${(s * 31).toFixed(2)}" y2="${(-c * 31).toFixed(2)}"/>`;
   }
-  const sight = svg('gsk-sight is-idle', root, `<circle class="gsk-ring" r="21"/><circle class="gsk-dot" r="2.2"/>${ticks}`, '-32 -32 64 64');
+  const sight = svg('gsk-sight is-idle', root, `<circle class="gsk-ring" r="21"/><rect class="gsk-sq" x="-7" y="-7" width="14" height="14" rx="1.5"/><circle class="gsk-dot" r="2.2"/>${ticks}`, '-32 -32 64 64');
   sight.hidden = true;
   const pip = svg('gsk-pip', root, '<circle r="6.5"/><line x1="0" y1="-12" x2="0" y2="-9"/><line x1="0" y1="12" x2="0" y2="9"/><line x1="-12" y1="0" x2="-9" y2="0"/><line x1="12" y1="0" x2="9" y2="0"/>', '-15 -15 30 30');
   pip.hidden = true;
@@ -143,13 +151,13 @@ export function show(on) {
 }
 
 /** The ring and dot where the nose points. `idle`: no target, so the ticks are not drawn. */
-export function setSight(on, x = 0, y = 0, { idle = true, lit = 0, inRange = false } = {}) {
+export function setSight(on, x = 0, y = 0, { idle = true, lit = 0, inRange = false, square = false, hot = false } = {}) {
   const e = S.els;
   if (!e) return;
   e.sight.hidden = !on;
   if (!on) return;
   e.sight.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
-  const cls = `gsk-sight${idle ? ' is-idle' : ''}${inRange ? ' is-inrange' : ''}`;
+  const cls = `gsk-sight${idle ? ' is-idle' : ''}${inRange ? ' is-inrange' : ''}${square ? ' is-square' : ''}${square && hot ? ' is-hot' : ''}`;
   if (e.sight.className !== cls) e.sight.className = cls;
   if (lit !== S.tickLit) {
     S.tickLit = lit;
@@ -213,6 +221,8 @@ export function snapshot() {
     sightShown: up && !e.sight.hidden,
     idle: up && !e.sight.hidden && /is-idle/.test(e.sight.className || ''),
     inRange: up && !e.sight.hidden && /is-inrange/.test(e.sight.className || ''),
+    square: up && !e.sight.hidden && /is-square/.test(e.sight.className || ''),
+    hot: up && !e.sight.hidden && /is-hot/.test(e.sight.className || ''),
     ticksLit: e.ticks.filter((t) => t.classList.contains('is-lit')).length,
     pipperShown: up && !e.pip.hidden,
     pipperFar: up && !e.pip.hidden && /is-far/.test(e.pip.className || ''),

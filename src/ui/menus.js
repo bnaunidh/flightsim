@@ -1835,6 +1835,11 @@ export class Menus {
               <option value="clean">Clean — information folds to small chips after a few seconds</option>
               <option value="full">Full — every panel stays open</option>
             </select></label>
+          <label class="field"><span>Crosshair</span>
+            <select data-set="crosshair">
+              <option value="square">Mini square — turns red when something you can shoot is under it</option>
+              <option value="classic">Classic ring with range ticks</option>
+            </select></label>
           <p class="hint">Clean keeps the world in view: the wind, the damage diagram, tips and the key hints show when they change, then fold away. Warnings, the objective, the instruments and the map always stay. A tap on a chip, or <kbd>H</kbd>, opens them again.</p>
         </div>
       </section>

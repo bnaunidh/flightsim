@@ -192,6 +192,42 @@ function toScreen(pos, cam, w, h, out) {
   return out;
 }
 
+/** Settings → Crosshair: the mini square unless the player chose the classic ring. Also hides the heat-seeker's dashed ring. */
+function crosshairSquare(sim) {
+  const sq = !(sim && sim.settings && sim.settings.crosshair === 'classic');
+  if (typeof document !== 'undefined' && S.sqClass !== sq) {
+    S.sqClass = sq;
+    document.documentElement.classList.toggle('xhair-square', sq);
+  }
+  return sq;
+}
+
+/**
+ * Something you can shoot right under the crosshair: any gun target inside its
+ * gun's reach that sits on the gun line, within a small cone around the nose
+ * (wider for a big target close up: its own angular size plus about 1.5°).
+ * Measured along the nose, not on the screen, so the chase camera's offset
+ * cannot make it lie.
+ */
+function underSight(sim) {
+  const ac = sim.aircraft;
+  for (const c of S.cands) {
+    if (!c || !c.pos) continue;
+    const dx = c.pos.x - ac.pos.x;
+    const dy = c.pos.y - ac.pos.y;
+    const dz = c.pos.z - ac.pos.z;
+    const range = Math.hypot(dx, dy, dz);
+    if (range < 1) continue;
+    const gun = G.gunFor(c);
+    if (!gun || range > gun.range) continue;
+    const cos = (dx * _fwd.x + dy * _fwd.y + dz * _fwd.z) / range;
+    if (cos <= 0) continue;
+    const off = Math.acos(Math.min(1, cos));
+    if (off <= Math.atan((c.radius || 6) / range) + 0.026) return true;
+  }
+  return false;
+}
+
 function paint(sim) {
   const ac = sim.aircraft;
   const cam = sim.camera;
@@ -211,9 +247,11 @@ function paint(sim) {
   _v.set(ac.pos.x, ac.pos.y, ac.pos.z).addScaledVector(_fwd, G.AIM_DIST);
   toScreen(_v, cam, w, h, SCR);
   const nose = { x: SCR.x, y: SCR.y, on: SCR.front && SCR.inside };
+  const square = crosshairSquare(sim);
+  const hot = square && nose.on && underSight(sim);
 
   if (!tgt) {
-    UI.setSight(nose.on, nose.x, nose.y, { idle: true, lit: 0, inRange: false });
+    UI.setSight(nose.on, nose.x, nose.y, { idle: true, lit: 0, inRange: false, square, hot });
     UI.setPipper(false);
     UI.setBox(false);
     UI.setArrow(false);
@@ -226,7 +264,7 @@ function paint(sim) {
   const lead = G.leadAim({ pos: ac.pos, vel: ac.vel }, { pos: tgt.pos, vel: tgt.vel }, gun);
   S.lead = lead;
   const ticks = G.rangeTicks(lead.range, gun);
-  UI.setSight(nose.on, nose.x, nose.y, { idle: false, lit: ticks.lit, inRange: ticks.inRange });
+  UI.setSight(nose.on, nose.x, nose.y, { idle: false, lit: ticks.lit, inRange: ticks.inRange, square, hot });
 
   // The pipper: where the nose must point.
   if (lead.ok) {

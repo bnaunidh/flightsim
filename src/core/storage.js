@@ -54,6 +54,15 @@ export const DEFAULT_SETTINGS = {
    * "so the map isn't clogged". 'full' keeps every panel open, as before.
    */
   hudDensity: 'clean',
+  /*
+   * The gun crosshair (Settings → Accessibility): 'square' is a small square
+   * that turns red while something you can shoot is under it — the owner's
+   * "make the crosshair a mini square you can toggle, and if you look at
+   * something shootable like a player … it becomes red" — and it also hides
+   * the heat-seeker's big dashed ring ("i dont like that circle").
+   * 'classic' is the ring with range ticks, as before.
+   */
+  crosshair: 'square',
   mouseFlying: false,
   invertMouse: false,
   sensitivity: 1,
