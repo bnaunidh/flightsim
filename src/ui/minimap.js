@@ -1642,6 +1642,18 @@ export class Minimap {
       ctx.stroke();
     }
 
+    // Plug-ins' marks that belong UNDER the aircraft — the wildfire's burning
+    // cells (wildfire.js sets this) — so a plane over a fire is never hidden by it.
+    if (typeof this.underlay === 'function') {
+      ctx.save();
+      try {
+        this.underlay();
+      } catch (e) {
+        /* a plug-in's mark is never worth breaking the map */
+      }
+      ctx.restore();
+    }
+
     // Everybody else in the sky, and on the water.
     this.drawTraffic(g);
     // Pins other features put down (runaway.js: "YOU", on foot).

@@ -1148,8 +1148,18 @@ function update(sim, dt) {
     W.hud.setVisible(showHud);
     if (showHud && ac) W.hud.update(dt, hudModel(sim));
   }
+  // The fire goes on the minimap UNDER the aircraft (drawn by the minimap before its traffic), not on top of them.
+  const mmap = sim.minimap;
   if (W.live) {
-    drawOnMinimap(sim, g, W.fill && t && t.litres < t.capacity * 0.9 ? W.fill : null, W.hasTarget ? W.target : null, sc && sc.line);
+    const fill = W.fill && t && t.litres < t.capacity * 0.9 ? W.fill : null;
+    const tgt = W.hasTarget ? W.target : null;
+    const line = sc && sc.line;
+    if (mmap) {
+      mmap.underlay = () => drawOnMinimap(sim, g, fill, tgt, line);
+      mmap.underlay.wildfire = true;
+    }
+  } else if (mmap && mmap.underlay && mmap.underlay.wildfire) {
+    mmap.underlay = null;
   }
   let near = 0;
   if (W.live && g && g.burning) {
