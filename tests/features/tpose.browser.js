@@ -224,11 +224,11 @@ export async function checkHarrison(sim, r, say = () => {}) {
   const ap0 = sim.autopilot.engaged;
   let apFlips = 0;
   const apWas = { v: ap0 };
-  sim.tap('KeyP');
+  sim.tap('KeyY');
   run(0.1);
-  sim.tap('KeyP');
+  sim.tap('KeyY');
   run(0.1);
-  sim.tap('KeyP');
+  sim.tap('KeyY');
   let at1000 = null;
   const lit = new Set();
   let vap = false;
@@ -247,31 +247,31 @@ export async function checkHarrison(sim, r, say = () => {}) {
     `1000 kt after ${at1000 === null ? '—' : at1000.toFixed(1)} s (${(ac.vel.length() * KT).toFixed(0)} kt), autopilot flipped ${apFlips} times`);
   r.ok('tpose: through the sound barrier — a vapour cone, then a shock cone, the boom; no OVERSPEED',
     vap && shock && H.events.includes('boom') && !lit.has('overspeed') && !ac.crashed, `warnings seen: ${[...lit].join(', ') || 'none'}`);
-  sim.tap('KeyP');
+  sim.tap('KeyY');
   run(0.1);
-  sim.tap('KeyP');
+  sim.tap('KeyY');
   run(0.1);
-  sim.tap('KeyP');
+  sim.tap('KeyY');
   run(0.2);
   const easing = H.moves.mode;
   run(14);
   r.ok('tpose: P P P again — he eases back down to his own speeds', easing === 'ease' && H.moves.mode === 'off' && ac.vel.length() * KT < 560 && PH.SPEC.vne * KT < 720,
     `${easing} -> ${H.moves.mode}, ${(ac.vel.length() * KT).toFixed(0)} kt, red line ${(PH.SPEC.vne * KT).toFixed(0)} kt`);
-  sim.tap('KeyP');
+  sim.tap('KeyY');
   run(0.2);
   const notYet = sim.autopilot.engaged;
   run(0.5);
   const apOn = sim.autopilot.engaged;
-  sim.tap('KeyP');
+  sim.tap('KeyY');
   run(0.8);
   r.ok('tpose: a single P is still the autopilot (after a moment, in case two more follow)', notYet === ap0 && apOn === !ap0 && sim.autopilot.engaged === ap0,
     `at 0.2 s ${notYet}, at 0.7 s ${apOn}, after another P ${sim.autopilot.engaged}`);
   // The throttle to idle stops it too.
-  sim.tap('KeyP');
+  sim.tap('KeyY');
   run(0.1);
-  sim.tap('KeyP');
+  sim.tap('KeyY');
   run(0.1);
-  sim.tap('KeyP');
+  sim.tap('KeyY');
   run(3);
   sim.input.throttleTarget = 0;
   run(1);

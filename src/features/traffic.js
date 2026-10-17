@@ -2763,8 +2763,8 @@ function tagFor(c) {
   tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, sizeAttenuation: false, fog: false });
   const sp = new THREE.Sprite(mat);
-  // Screen-sized (sizeAttenuation off): about 5% of the view's height.
-  sp.scale.set(0.22, 0.055, 1);
+  // Screen-sized (sizeAttenuation off): a small pill, about 4% of the view's height.
+  sp.scale.set(0.18, 0.045, 1);
   sp.center.set(0.5, 0);
   sp.renderOrder = 10;
   sp.userData.canvas = canvas;
@@ -2783,18 +2783,39 @@ function paintTag(c) {
   const g = cv.getContext('2d');
   if (!g || !g.clearRect) return;
   g.clearRect(0, 0, 256, 64);
-  g.textAlign = 'center';
-  g.lineJoin = 'round';
-  g.font = '700 26px "Helvetica Neue", Arial, sans-serif';
-  g.lineWidth = 5;
-  g.strokeStyle = 'rgba(8, 14, 24, 0.75)';
-  g.fillStyle = '#ffe89a';
-  g.strokeText(c.callsign, 128, 27);
-  g.fillText(c.callsign, 128, 27);
-  g.font = '500 20px "Helvetica Neue", Arial, sans-serif';
-  g.fillStyle = '#eef3f8';
-  g.strokeText(c.activity, 128, 54);
-  g.fillText(c.activity, 128, 54);
+  // One small, calm pill — the owner's "make the nametags more clean": white
+  // name, the activity quieter beside it, no glow and no outline on the letters.
+  const name = String(c.callsign || '');
+  const act = String(c.activity || '');
+  g.font = '650 22px "Helvetica Neue", Arial, sans-serif';
+  const wn = g.measureText ? g.measureText(name).width : name.length * 12;
+  g.font = '500 17px "Helvetica Neue", Arial, sans-serif';
+  const wa = act && g.measureText ? g.measureText(act).width : act.length * 9;
+  const gap = act ? 10 : 0;
+  const w = Math.min(248, wn + gap + wa + 24);
+  const x0 = 128 - w / 2;
+  const y0 = 18;
+  const h = 30;
+  const r = 15;
+  g.beginPath();
+  g.moveTo(x0 + r, y0);
+  g.arcTo(x0 + w, y0, x0 + w, y0 + h, r);
+  g.arcTo(x0 + w, y0 + h, x0, y0 + h, r);
+  g.arcTo(x0, y0 + h, x0, y0, r);
+  g.arcTo(x0, y0, x0 + w, y0, r);
+  g.closePath();
+  g.fillStyle = 'rgba(14, 20, 30, 0.62)';
+  g.fill();
+  g.textBaseline = 'middle';
+  g.textAlign = 'left';
+  g.font = '650 22px "Helvetica Neue", Arial, sans-serif';
+  g.fillStyle = '#f4f7fb';
+  g.fillText(name, x0 + 12, y0 + h / 2 + 1);
+  if (act) {
+    g.font = '500 17px "Helvetica Neue", Arial, sans-serif';
+    g.fillStyle = 'rgba(214, 224, 236, 0.78)';
+    g.fillText(act, x0 + 12 + wn + gap, y0 + h / 2 + 1);
+  }
   sp.material.map.needsUpdate = true;
 }
 

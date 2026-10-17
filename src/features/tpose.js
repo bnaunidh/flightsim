@@ -76,7 +76,7 @@ if (!ACTIONS.harrisonSpin) {
   ACTIONS.harrisonSpin = { label: 'T-Pose Harrison: spin climb (press again to stop)', group: 'Flying', ctx: ['plane'], default: ['KeyT'] };
 }
 if (!ACTIONS.harrisonBoost) {
-  ACTIONS.harrisonBoost = { label: 'T-Pose Harrison: 1000 kt boost (press 3 times)', group: 'Flying', ctx: ['plane'], default: ['KeyP'], presses: 3, shares: 'autopilot' };
+  ACTIONS.harrisonBoost = { label: 'T-Pose Harrison: 1000 kt turbo boost (press 3 times)', group: 'Flying', ctx: ['plane'], default: ['KeyY'], presses: 3, shares: 'autopilot' };
 }
 
 /** The follow view's standoff for him, metres (the game's is 17 and 5.2). */

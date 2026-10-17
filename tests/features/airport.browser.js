@@ -295,8 +295,8 @@ export async function check(sim, r, say = () => {}) {
       S.prompt.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
       r.ok(`airport (${tag}): a tap on the prompt calls the crew`, tappable && S.state === 'calling', `tappable ${tappable}, state ${S.state}`);
     } else {
-      sim.key('KeyY', true);
-      sim.key('KeyY', false);
+      sim.key('KeyP', true);
+      sim.key('KeyP', false);
       r.ok(`airport (${tag}): Y calls the crew`, S.state === 'calling', `state ${S.state}`);
     }
     let waited = 0;
@@ -310,8 +310,8 @@ export async function check(sim, r, say = () => {}) {
     const light = !!(sim.apron.spare && sim.apron.spare.light);
     const p0 = ac.pos.clone();
     const h0 = ac.heading;
-    sim.key('KeyY', true);
-    sim.key('KeyY', false);
+    sim.key('KeyP', true);
+    sim.key('KeyP', false);
     r.ok(`airport (${tag}): Y again starts the pushback`, S.state === 'pushback', `state ${S.state}`);
     waited = 0;
     while (S.state === 'pushback' && waited < 120) {
@@ -432,20 +432,20 @@ export async function check(sim, r, say = () => {}) {
     const ac = sim.aircraft;
     park.run(sim);
     sim.step(1.5);
-    sim.key('KeyY', true);
-    sim.key('KeyY', false);
+    sim.key('KeyP', true);
+    sim.key('KeyP', false);
     let waited = 0;
     while (S.state === 'calling' && waited < 90) {
       sim.step(1);
       waited++;
     }
-    sim.key('KeyY', true);
-    sim.key('KeyY', false);
+    sim.key('KeyP', true);
+    sim.key('KeyP', false);
     const pushing = S.state === 'pushback';
     sim.step(3);
     const p1 = ac.pos.clone();
-    sim.key('KeyY', true);
-    sim.key('KeyY', false);
+    sim.key('KeyP', true);
+    sim.key('KeyP', false);
     const stoppedState = S.state;
     sim.step(2);
     const drift = Math.hypot(ac.pos.x - p1.x, ac.pos.z - p1.z);

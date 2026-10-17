@@ -90,7 +90,7 @@ export const ACTIONS = {
   help: { label: 'Show controls', group: 'Game', ctx: NOT_ROCKET, default: ['KeyH'] },
   hideUi: { label: 'Hide / show the whole interface', group: 'View', ctx: NOT_ROCKET, default: ['KeyU'] },
   guide: { label: 'Guidance lines to the target', group: 'View', ctx: NOT_ROCKET, default: ['KeyN'] },
-  autopilot: { label: 'Autopilot on / off', group: 'Flying', ctx: AIR, default: ['KeyP'] },
+  autopilot: { label: 'Autopilot on / off', group: 'Flying', ctx: AIR, default: ['KeyY'] },
   // Free look. These share the arrow keys with the throttle: whichever one is
   // listening depends on whether free look is switched on, and the throttle
   // always has Shift and Ctrl regardless.

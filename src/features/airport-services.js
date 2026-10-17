@@ -33,7 +33,7 @@ import { registerActions, isKey, keyName } from '../flight/input.js';
 
 /* Y, in the one registry: Settings → Controls → Missions & events. */
 registerActions({
-  services: { label: 'Ground crew: call them / push back / stop (on a stand)', group: 'Missions & events', ctx: ['plane', 'foot'], default: ['KeyY'] },
+  services: { label: 'Ground crew: call them / push back / stop (on a stand)', group: 'Missions & events', ctx: ['plane', 'foot'], default: ['KeyP'] },
 });
 import { airportLayout, standAt, standApproach, standTaken, standFits, pavedIn, NOSE_STOP } from '../world/airport-layout.js';
 import { estimateInfo } from '../world/apron.js';

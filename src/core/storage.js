@@ -65,6 +65,8 @@ export const DEFAULT_SETTINGS = {
   crosshair: 'square',
   /* The minimap's dashed approach lines out from every runway end (Settings → Accessibility). */
   runwayLines: true,
+  /* The big PULL UP / TERRAIN words in the middle of the screen (Settings → Accessibility). Off: the warning card still shows. */
+  bigWarnings: false,
   mouseFlying: false,
   invertMouse: false,
   sensitivity: 1,

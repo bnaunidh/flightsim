@@ -270,6 +270,7 @@ class Game {
     this.minimap = new Minimap(document.getElementById('ui'));
     this.minimap.toggle(this.settings.minimap !== false);
     this.minimap.runwayLines = this.settings.runwayLines !== false;
+    if (typeof document !== 'undefined') document.documentElement.classList.toggle('no-big-warnings', !this.settings.bigWarnings);
     // The class is applied once the HUD exists — it is built a few lines down.
     this.prog = Prog.load();
     this.autopilot = new Autopilot();
@@ -2181,6 +2182,8 @@ class Game {
       this.hud.setDensity(value);
     } else if (path === 'runwayLines') {
       this.minimap.runwayLines = value !== false;
+    } else if (path === 'bigWarnings') {
+      document.documentElement.classList.toggle('no-big-warnings', !value);
     } else if (path === 'guidance') {
       this.navGuide.setEnabled(value);
       this.hud.setGuideActive(value);

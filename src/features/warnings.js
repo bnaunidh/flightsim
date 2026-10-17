@@ -799,6 +799,8 @@ const CSS = `
  * another again (TERRAIN inside "Checkpoint 2 of 5", measured). Its own
  * position is for the Node tests' mock game, which has no HUD.
  */
+/* The big words in the middle (PULL UP, TERRAIN…): off unless Settings asks for them — the owner's "remove the big text"; the warning card and its sound stay. */
+html.no-big-warnings .wx-cmd { display: none !important; }
 .wx-cmd {
   position: absolute; left: 50%; top: 36%; transform: translateX(-50%);
   padding: 8px 24px; border-radius: 14px; white-space: nowrap;

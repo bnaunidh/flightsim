@@ -79,7 +79,7 @@ const named = {
 };
 const missing = Object.entries(named).filter(([, id]) => !ACTIONS[id]).map(([k]) => k);
 ok('every key named in the request is an action', missing.length === 0, missing.join(', ') || Object.keys(named).length + ' found');
-const want = { getOut: 'KeyO', eject: 'Enter', flyAgain: 'Enter', selfDestruct: 'Backspace', smoke: 'KeyT', pvpFire: 'Space', rocketAction: 'Space', eventChoice1: 'Digit8', eventSquawk: 'Digit7', help: 'KeyH', ackWarnings: 'KeyR', services: 'KeyY', zap: 'KeyZ', mpPlayers: 'Tab', mpChat1: 'Digit3', heliUp: 'ShiftLeft', carGo: 'KeyW', boatStop: 'Space' };
+const want = { getOut: 'KeyO', eject: 'Enter', flyAgain: 'Enter', selfDestruct: 'Backspace', smoke: 'KeyT', pvpFire: 'Space', rocketAction: 'Space', eventChoice1: 'Digit8', eventSquawk: 'Digit7', help: 'KeyH', ackWarnings: 'KeyR', services: 'KeyP', zap: 'KeyZ', mpPlayers: 'Tab', mpChat1: 'Digit3', heliUp: 'ShiftLeft', carGo: 'KeyW', boatStop: 'Space' };
 const moved = Object.entries(want).filter(([id, code]) => !ACTIONS[id] || !ACTIONS[id].default.includes(code)).map(([id, c]) => `${id} (${c})`);
 ok('defaults are what they always were', moved.length === 0, moved.join(', ') || 'unchanged');
 
