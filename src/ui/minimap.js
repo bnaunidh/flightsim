@@ -1759,14 +1759,15 @@ export class Minimap {
    */
   drawApproachLines(g) {
     const { ctx, k, mx, my } = g;
-    const OUT = 10000;
+    const OUT = 3000; // a short line, just off the island (the owner: "it only should go a bit off the island")
     const NM = 1852;
     ctx.save();
     ctx.strokeStyle = 'rgba(242, 246, 250, 0.55)';
     ctx.lineWidth = 1;
     ctx.lineCap = 'butt';
-    const dash = Math.max(3, 300 * k);
-    ctx.setLineDash([dash, dash]);
+    // Small dashes close together (the owner: "little dashed ones close toghter").
+    const dash = Math.max(1.5, 45 * k);
+    ctx.setLineDash([dash, dash * 0.8]);
     ctx.beginPath();
     const ticks = [];
     for (let i = 0; i < 2; i++) {
@@ -1789,7 +1790,7 @@ export class Minimap {
     }
     ctx.stroke();
     ctx.setLineDash([]);
-    if (k * NM > 6) {
+    if (false && k * NM > 6) {
       const t = Math.max(2.5, 4 * (g.ts || 1));
       ctx.beginPath();
       for (const p of ticks) {
