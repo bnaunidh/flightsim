@@ -65,6 +65,8 @@ if (anchor < 0 || anchor > end) throw new Error('sw.js: could not find the three
 const block =
   '  // Added by tools/sync-precache.mjs.\n' + missing.map((f) => `  '${f}',\n`).join('');
 let out = src.slice(0, anchor) + block + src.slice(anchor);
-out = out.replace(/const CACHE_VERSION = 'island-flight-v(\d+)';/, (_, n) => `const CACHE_VERSION = 'island-flight-v${Number(n) + 1}';`);
+// Versions: a big update is a whole number (v70), a small one a point release (v69.1, v69.2) — the owner's rule.
+// The automatic bump adds a point release; a big update sets the whole number by hand.
+out = out.replace(/const CACHE_VERSION = 'island-flight-v(\d+)(?:\.(\d+))?';/, (_, a, b) => `const CACHE_VERSION = 'island-flight-v${a}.${Number(b || 0) + 1}';`);
 writeFileSync(SW, out);
 console.log(`Added them and bumped CACHE_VERSION.`);
