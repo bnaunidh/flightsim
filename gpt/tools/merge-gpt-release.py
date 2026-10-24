@@ -238,7 +238,7 @@ def port_devmode(dst, rep):
     p = os.path.join(dst, 'src/game/progression.js'); s = read(p)
     if 'DEV_CODE' in s: return rep.skip('already present')
     mine = read(os.path.join(MINE, 'src/game/progression.js'))
-    const = slice_between(mine, "/**\n * Dev mode.", "export const DEV_CODE = 'DEV1234';", 'dev const') + "export const DEV_CODE = 'DEV1234';"
+    const = slice_between(mine, "/**\n * Dev mode.", "export const DEV_CODE_HASH = 'a78f8128f2109434daf14d867c665d97a242909409b29bc0a965111d8a4a9f80';", 'dev const') + "export const DEV_CODE_HASH = 'a78f8128f2109434daf14d867c665d97a242909409b29bc0a965111d8a4a9f80';"
     funcs = slice_between(mine, "/** Is the workbench open? */", "export function costOf(aircraftId) {", 'dev funcs')
     if 'export const MILITARY_CODE' not in s: return rep.fail('MILITARY_CODE anchor missing')
     i = s.index('export const MILITARY_CODE'); j = s.index('\n', s.index(';', i))

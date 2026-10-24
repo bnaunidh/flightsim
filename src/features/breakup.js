@@ -27,6 +27,29 @@
  * engines burn and smoke where they lie, with the odd secondary pop
  * (./breakup/fx.js). The existing fireball and smoke column are untouched.
  *
+ * THE BEAMNG BAR (v71; the owner, 2026-10-23: "need to be a lot better"):
+ * the impact depends on speed, angle and WHERE it hits, and the airframe
+ * itself is no longer left standing where the flight model stopped. planBreak
+ * now reads the impact's kind (classifyImpact: a wingtip catch, a belly
+ * slide, nose-in, a tail strike, the sea, a wall) and what is left of the
+ * player's aeroplane after the break-up becomes a rigid body on its OWN
+ * contact points (./breakup/airframe.js, startHull/stepHull): the surface
+ * takes hold of the point that touched the way that kind of impact does, so
+ * a caught wing tip throws it into a yaw and a roll over the tip, a belly
+ * slides on under friction, sparks flying, until it stops, nose-in it
+ * pitches over, and flat and fast into the sea it SKIPS before it goes in and
+ * the slow sink takes it where it stops. (The pack's aeroplanes keep their
+ * own crash body, and are given the same catch.) The pieces let go in the
+ * plan's ORDER — the touched zone at once, the rest as the blow runs through
+ * the airframe — riding on it until their moment; a zone the blow nearly
+ * tore off HANGS by what is left of its spar or pylon (hingeFor/hangPose)
+ * and tears away at its time or at the next hard bounce. Fuel burns where a
+ * tank split, on the airframe as well as on the pieces. Every kick, spin
+ * and drift comes from the recording's SEED (sim.crashSeed pins it), so the
+ * same crash is the same crash — tests/features/crash-physics.mjs holds two
+ * of them equal to the last digit. The wreck's smoke and firelight follow
+ * the sliding airframe (wreck.js follow), live and in the replay.
+ *
  * SURVIVABLE DAMAGE. With the damage model on (Settings: "Damage instead of
  * crashes"), a knock that does not end the flight can still take a piece:
  * an outer wing, the fin, a tailplane, an engine. The flight model reads what
@@ -67,9 +90,11 @@ import { isKey, keyName } from '../flight/input.js';
 import { heightAt, platformAt, isPaved, obstacleAt } from '../world/terrain.js';
 import { SPEC, EVENTS } from '../aircraft/physics.js';
 import { AIRCRAFT, getAircraft } from '../aircraft/types.js';
-import { ZONES, CORE, frameFor, refineFrame, layoutFor, planBreak, lostFrom } from '../game/breakup.js';
+import { ZONES, CORE, frameFor, refineFrame, layoutFor, planBreak, lostFrom, rng } from '../game/breakup.js';
 import { surveyModel, classifyModel, classifyModelSteps, breakZones, deformZones, restoreModel, disposePiece, isBroken, bakeWhole } from '../game/breakup-mesh.js';
-import { makeBody, stepBody } from '../game/breakup-body.js';
+import { makeBody, stepBody, catchPoint } from '../game/breakup-body.js';
+import { hullOf, hingeFor, hangPose, attachedPose, JOLT_TEARS, SINK_HANDOFF } from './breakup/airframe.js';
+import { COMIC } from '../render/comic.js';
 import { BreakupFx } from './breakup/fx.js';
 import { onBodyHit, BODY } from './sky.js';
 import { renderedHeight } from './explosions.js';
@@ -132,6 +157,17 @@ const S = {
   clock: 0,
   /** The player's aeroplane going down slowly in the sea (startSink). */
   sink: null,
+  /**
+   * THE AIRFRAME AS A BODY after the crash (stepHull): what is left of the
+   * player's aeroplane sliding, cartwheeling or nosing over on its own
+   * contact points (./breakup/airframe.js hullOf) — the pack's aeroplanes
+   * have a body of their own and keep it. null when nothing is sliding.
+   */
+  hull: null,
+  /** Seed of the crash being recorded (every kick and spin in it comes from it, so the same crash is the same crash). */
+  seed: 0,
+  /** Seconds since the hit (game time): what the pieces' moments are counted in, so two identical crashes release alike. */
+  crashT: 0,
   /** Life rafts, each with somebody in it, bobbing where an aeroplane went in. */
   rafts: [],
   /** Aircraft hit in the sky, watched until they are down: { body, model, sink } */
@@ -245,6 +281,29 @@ const ENV = {
     S.fx.bubbles(x, z, 2, Math.min(3, b.radius * 0.6));
     if (Math.random() < 0.12) S.fx.foam(x, z, Math.min(2.5, 0.5 + b.radius * 0.3));
   },
+};
+
+/** The same world for the airframe itself: a longer shower of sparks along a belly slide, and every bounce is felt. */
+const ENV_HULL = {
+  surface,
+  obstacle: ENV.obstacle,
+  onScrape(b, x, y, z, speed, kind) {
+    if (!S.fx) return;
+    if (kind === 'paved' || kind === 'deck') S.fx.sparks(x, y, z, speed, Math.min(10, 4 + Math.round(speed * 0.1)), b.vel);
+    else S.fx.dust(x, y, z, Math.min(3, 0.8 + b.radius * 0.1), 3);
+  },
+  onImpact(b, x, y, z, speed, kind) {
+    if (S.fx) {
+      if (kind === 'paved' || kind === 'deck') S.fx.sparks(x, y, z, speed, Math.min(16, 4 + Math.round(speed * 0.6)));
+      S.fx.dust(x, y, z, Math.min(4, 1 + b.radius * 0.12), kind === 'paved' ? 3 : 6, kind === 'paved' ? [0.45, 0.44, 0.42] : null);
+    }
+    const sim = S.sim;
+    if (sim && sim.rig && typeof sim.rig.kick === 'function' && !S.replay) sim.rig.kick(clamp(speed / 14, 0.15, 1));
+  },
+  onSplash(b, x, z, speed) {
+    if (S.fx) S.fx.splash(x, z, speed, Math.min(4, 1 + b.radius * 0.1));
+  },
+  onBubble: ENV.onBubble,
 };
 
 /* ------------------------------------------------------------------ *
@@ -489,11 +548,24 @@ export function breakModel(sim, model, type, hit) {
     energy: hit.energy,
     survivable: !!hit.survivable,
     gearDown: hit.gearDown == null ? 1 : hit.gearDown,
+    surface: hit.surface,
+    midair: !!hit.midair,
+    zones: hit.zones,
+    zone: hit.zone,
   }, asg.boxes);
+  // Every number a crash draws comes from its seed: the same crash twice is the same crash (the replay's).
+  const rand = rng(hit.seed != null ? hit.seed : S.seed || ((S.clock * 1000) | 0));
   // Low quality: fewer, bigger pieces — a tip that broke off on its own stays on its wing.
   let pieces = plan.pieces;
-  if (S.quality === 'low') pieces = mergeForLow(layout, pieces);
-  const made = layout.soft ? [] : breakZones(asg, pieces, { rotorBlades: S.quality === 'low' ? 2 : 4 });
+  let delays = plan.delays;
+  if (S.quality === 'low') {
+    const merged = mergeForLow(layout, pieces);
+    delays = merged.map((p) => plan.delays[plan.pieces.findIndex((q) => q[0] === p[0])] || 0);
+    pieces = merged;
+  }
+  // What tears off and what hangs on by a thread are cut from the model alike; the hanging ones stay with it a while.
+  const hangs = layout.soft || hit.survivable ? [] : plan.hangs;
+  const made = layout.soft ? [] : breakZones(asg, [...pieces, ...hangs.map((h) => h.zones)], { rotorBlades: S.quality === 'low' ? 2 : 4 });
   if (!layout.soft) deformZones(asg, plan.actions, { point: pLocal, normal: toLocal(hit.normal || _v.set(0, 1, 0)) });
   watchModel(model);
   // Out into the world.
@@ -508,12 +580,18 @@ export function breakModel(sim, model, type, hit) {
   const out = [];
   // The first burning piece always catches again a moment later; the rest may.
   let popped = false;
+  let shareGone = 0;
   for (const p of made) {
     const world = p.com.clone().applyQuaternion(quat).add(pos);
     p.group.position.copy(world);
     p.group.quaternion.copy(quat);
     p.group.matrixAutoUpdate = true;
     const e = Math.max(...p.zones.map((z) => (plan.actions.find((a) => a.zone === z) || { e: 0 }).e), 0);
+    // Which of the plan's pieces this is: a torn-off one (with its moment), or a hanging one.
+    const key = p.zones[0];
+    const hang = hangs.find((h) => h.zone === key) || null;
+    const pi = pieces.findIndex((q) => q[0] === key);
+    const delay = hang ? hang.delay : pi >= 0 ? delays[pi] || 0 : 0;
     // What it was doing, plus a shove out from the airframe and off the ground.
     const arm = world.clone().sub(centre);
     const v = bodyVel.clone().multiplyScalar(0.78).add(_v.copy(omega).cross(arm));
@@ -522,8 +600,8 @@ export function breakModel(sim, model, type, hit) {
     const kick = 1.5 + Math.sqrt(e) * 0.45;
     v.addScaledVector(out2, kick);
     if (hit.normal) v.addScaledVector(hit.normal, 1 + Math.sqrt(e) * 0.35);
-    v.add(_v.set(Math.random() - 0.5, Math.random() * 0.6, Math.random() - 0.5).multiplyScalar(kick));
-    const spin = omega.clone().add(_v.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(2 + Math.sqrt(e) * 0.5));
+    v.add(_v.set(rand() - 0.5, rand() * 0.6, rand() - 0.5).multiplyScalar(kick));
+    const spin = omega.clone().add(_v.set(rand() - 0.5, rand() - 0.5, rand() - 0.5).multiplyScalar(2 + Math.sqrt(e) * 0.5));
     if (p.rotorBlade) {
       // A blade leaves along its own line of flight, turning end over end.
       const tang = _w.set(-arm.z, 0, arm.x);
@@ -531,6 +609,7 @@ export function breakModel(sim, model, type, hit) {
       spin.y += 14;
     }
     const share = clamp(p.tris / totalTris, 0.03, 0.45);
+    shareGone += share;
     // At sea: a tip, a tailplane, a blade, a leg is light enough to float and
     // drift; anything with an engine or a section of fuselage in it floats on
     // its air for a while and then goes down slowly, heavy end first.
@@ -546,34 +625,62 @@ export function breakModel(sim, model, type, hit) {
       light,
       heavy: p.zones.includes('nose') || p.engine ? -1 : p.zones.includes('rear') ? 1 : 0,
       maxSpin: spinCap(p.size),
+      rand,
     });
-    const piece = { group: p.group, body, zones: p.zones, owner: hit.owner || 'player', born: S.clock, far: false, engine: p.engine, fuel: p.fuel, rotorBlade: p.rotorBlade, model };
+    const piece = { group: p.group, body, zones: p.zones, owner: hit.owner || 'player', born: S.clock, far: false, engine: p.engine, fuel: p.fuel, rotorBlade: p.rotorBlade, model, attach: null };
     body.piece = piece;
+    /*
+     * Not yet: a piece whose moment is after the hit rides on the airframe
+     * until then (its pose from the airframe's, ./breakup/airframe.js
+     * attachedPose), and a hanging one swings on its seam (hangPose) until
+     * it tears — at its time, or at the next hard jolt the airframe takes.
+     * The kick it was given is kept for the moment it lets go.
+     */
+    if ((delay > 0 || hang) && !p.rotorBlade) {
+      piece.attach = {
+        local: new THREE.Matrix4().makeTranslation(p.com.x, p.com.y, p.com.z),
+        com: p.com.clone(),
+        release: S.crashT + delay + (hang ? hang.t : 0),
+        hangFrom: hang ? S.crashT + delay : null,
+        hinge: hang ? hingeFor(layout.frame, hang.zone, p.com, rand) : null,
+        kick: v.clone().sub(bodyVel),
+        spin: spin.clone().sub(omega),
+        hang: !!hang,
+      };
+    }
     addPiece(piece);
     out.push(piece);
     // Fire where the fuel and the engines are, and something catching later.
     if (S.fx && (p.engine || p.fuel) && !p.rotorBlade) {
       const size = clamp(0.5 + p.size.length() * 0.12, 0.6, 3.2);
-      S.fx.fire((o) => (piece.gone || piece.body.sunk ? false : (o.copy(piece.group.position), (o.y += 0.2), true)), 10 + Math.random() * 10, size);
-      if (!popped || Math.random() < 0.8) {
+      S.fx.fire((o) => (piece.gone || piece.body.sunk ? false : (o.copy(piece.group.position), (o.y += 0.2), true)), 10 + rand() * 10, size);
+      if (!popped || rand() < 0.8) {
         popped = true;
-        S.fx.later(0.7 + Math.random() * 2.6, (o) => (piece.gone ? false : (o.copy(piece.group.position), true)), size * 0.9, () => {
+        S.fx.later(0.7 + rand() * 2.6, (o) => (piece.gone ? false : (o.copy(piece.group.position), true)), size * 0.9, () => {
           if (sim && sim.rig && typeof sim.rig.kick === 'function' && piece.owner === 'player') sim.rig.kick(0.3);
         });
       }
     }
   }
-  // The airframe burns where a wing came off it.
+  // The airframe burns where a wing came off it, and where a tank split that stayed on it (plan.fuel).
   if (S.fx && !layout.soft) {
     const f = layout.frame;
+    const s = model.getWorldScale(_s).x || 1;
+    const burnAt = (local, life, size) => {
+      local.multiplyScalar(1 / s);
+      S.fx.fire((o) => (model.parent ? (o.copy(local).applyMatrix4(model.matrixWorld), true) : false), life, size);
+    };
+    const gone = new Set(made.flatMap((p) => p.zones));
     for (const p of made) {
       const inner = p.zones.find((z) => z === 'wingInnerL' || z === 'wingInnerR');
       if (!inner || !f.wing) continue;
       const side = ZONES[inner].side;
-      const local = new THREE.Vector3(side * f.wing.rootX, f.wing.y, (f.wing.rootLE + f.wing.rootTE) / 2);
-      const s = model.getWorldScale(_s).x || 1;
-      local.multiplyScalar(1 / s);
-      S.fx.fire((o) => (model.parent ? (o.copy(local).applyMatrix4(model.matrixWorld), true) : false), 14, clamp(f.L * 0.05, 0.8, 2.6));
+      burnAt(new THREE.Vector3(side * f.wing.rootX, f.wing.y, (f.wing.rootLE + f.wing.rootTE) / 2), 14, clamp(f.L * 0.05, 0.8, 2.6));
+    }
+    for (const z of plan.fuel || []) {
+      const b = asg.boxes[z];
+      if (gone.has(z) || !b) continue;
+      burnAt(new THREE.Vector3((b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2), 12, clamp(f.L * 0.04, 0.6, 2.2));
     }
   }
   // The fleet's own crash body is made of what is still on: tell it.
@@ -592,7 +699,10 @@ export function breakModel(sim, model, type, hit) {
     type: type ? type.id : typeOf(model)?.id || null,
     energy: Math.round(plan.energy * 10) / 10,
     hitZone: plan.hitZone,
+    mode: plan.mode ? plan.mode.mode : null,
     pieces: pieces.map((p) => p.join('+')),
+    delays: delays.map((d) => Math.round(d * 100) / 100),
+    hangs: hangs.map((h) => `${h.zones.join('+')}~${Math.round(h.t * 100) / 100}`),
     actions: plan.actions.map((a) => `${a.zone}:${a.action}`),
     ms: Math.round(ms * 10) / 10,
     cached: !!cached,
@@ -600,7 +710,7 @@ export function breakModel(sim, model, type, hit) {
   // The last few, for the tests and the console (a mid-air breaks two at once).
   S.plans.push(S.stats.lastPlan);
   if (S.plans.length > 6) S.plans.shift();
-  return { plan, pieces: out, asg };
+  return { plan, pieces: out, asg, shareGone, mass };
 }
 
 function mergeForLow(layout, pieces) {
@@ -723,6 +833,8 @@ function clearPieces() {
 /** The player's aeroplane as built, and nothing broken left in the world. */
 function resetAll(sim) {
   S.lastRes = null;
+  S.hull = null;
+  S.hullPending = null;
   endReplay(sim, false);
   endSink();
   clearRafts(sim);
@@ -808,7 +920,9 @@ function crashed(sim, c) {
   const omega = omegaBody.applyQuaternion(ac.quat);
   const kind = contact.surfaceKind || (heightAt(world.x, world.z) < 0 && world.y < 4 ? 'water' : 'ground');
   const normal = new THREE.Vector3();
-  const hit = { world, bodyVel: vel, omega, owner: 'player', gearDown: ac.gearPos == null ? 1 : ac.gearPos };
+  const hit = { world, bodyVel: vel, omega, owner: 'player', gearDown: ac.gearPos == null ? 1 : ac.gearPos, midair: !contact.worldPoint };
+  // What it hit, for the impact's kind (planBreak classifyImpact).
+  hit.surface = kind === 'water' ? 'water' : kind === 'aircraft' ? 'aircraft' : kind === 'concrete' && !contact.part ? 'wall' : 'ground';
   if (kind === 'water') normal.set(0, 1, 0);
   else if (kind === 'aircraft') {
     // Another aircraft: the blow comes from it, at the speed the two closed,
@@ -845,11 +959,14 @@ function crashed(sim, c) {
   // every one of them carries its time from the hit (the replay plays them
   // back at that time and not before).
   openRecording(sim, c.reason || '');
+  hit.seed = S.seed;
   const res = breakModel(sim, model, sim.aircraftType, hit);
   if (!res) {
     S.rec = null;
     return;
   }
+  // What is left of it goes on as a body of its own: sliding, cartwheeling, nosing over — or skipping off the sea.
+  startHull(sim, res, hit, quiet);
   // Where it touched: what flies up from the surface.
   if (S.fx) {
     const e = res.plan.energy;
@@ -878,12 +995,148 @@ function crashed(sim, c) {
   }
   trackPieces(sim, res.pieces);
   S.lastRes = res;
-  // At sea it does not stop there: it floats a while, then slowly goes down.
+  // At sea it does not stop there: it floats a while, then slowly goes down —
+  // from where it stops skipping and sliding across it (the sink waits while the body runs; stepHull hands over).
   if (kind === 'water' || (heightAt(world.x, world.z) < 0 && !platformAt(world.x, world.z) && world.y < 6)) startSink(sim, res);
 }
 
 function slowMoWanted(sim) {
   return !(sim.settings && sim.settings.crashSlowMo === false);
+}
+
+/* ------------------------------------------------------------------ *
+ * The airframe as a body: what is left of it slides, cartwheels, noses over
+ * or skips off the sea on its own contact points (./breakup/airframe.js).
+ * ------------------------------------------------------------------ */
+
+/** Which crashes the body runs for: the player's own model (the pack's aeroplanes have one of their own), the real crash, not a mayday's gentle arrival. */
+function hullWanted(sim, model, quiet) {
+  if (quiet || COMIC.on) return false;
+  if (!model || (model.userData && model.userData.fleetBridge)) return false;
+  if (sim.mode === 'drive' || sim.riding) return false;
+  return true;
+}
+
+function startHull(sim, res, hit, quiet) {
+  S.hull = null;
+  const model = sim.model;
+  const ac = sim.aircraft;
+  const plan = res.plan;
+  const mode = plan.mode || { mode: 'belly', grip: 0.15, restitution: 0.1 };
+  if (!hullWanted(sim, model, quiet)) {
+    // The pack's own crash body: give it the catch the impact's kind calls for, once it exists (its crash begins on the same event as ours).
+    if (model && model.userData && model.userData.fleetBridge && mode.mode !== 'midair' && mode.mode !== 'knock') {
+      S.hullPending = { model, point: hit.world.clone(), normal: hit.normal.clone(), mode, tries: 3 };
+    }
+    return null;
+  }
+  const gone = new Set(res.pieces.flatMap((p) => p.zones));
+  const hull = hullOf(res.asg, res.asg.layout, gone);
+  if (!hull) return null;
+  const pos = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  modelPose(model, pos, quat);
+  const comWorld = hull.com.clone().applyQuaternion(quat).add(pos);
+  const massLeft = res.mass * clamp(1 - res.shareGone, 0.3, 1);
+  const body = makeBody({
+    position: comWorld,
+    quaternion: quat,
+    velocity: hit.bodyVel.clone(),
+    omega: hit.omega.clone(),
+    mass: massLeft,
+    size: hull.size,
+    hull: hull.points,
+    float: 1.3,
+    heavy: -1,
+    maxSpin: spinCap(hull.size),
+    restitution: 0.12,
+    // An airframe skips off the sea at most twice (a wing tip three times): it is heavy, and it breaks.
+    skipMax: 2,
+    // ...and only when it comes to the water near level and shallow, and low: a ditching aeroplane does not
+    // bounce off the sea like a stone. Wing low it is the tip that goes in (the sea's drag takes it from there).
+    skip: { maxSteep: 0.2, restitution: 0.35, level: 0.94 },
+    rand: rng(S.seed ^ 0x5bd1e995),
+  });
+  // The surface takes hold of the point that touched, the way this kind of impact does. (Not the sea: the water's own
+  // contact takes it — a skip off it fast and flat, straight in otherwise — see breakup-body.js stepWater.)
+  if (mode.mode !== 'midair' && mode.mode !== 'water') catchPoint(body, hit.world, hit.normal, mode.grip, mode.restitution);
+  S.hull = { body, model, ac, com: hull.com, zones: hull.zones, t: 0, mode: mode.mode, water: hit.surface === 'water', res, skips: 0, dist: 0, start: comWorld.clone() };
+  S.stats.hulls = (S.stats.hulls || 0) + 1;
+  return S.hull;
+}
+
+const _hp = new THREE.Vector3();
+const _hq = new THREE.Quaternion();
+
+function stepHull(sim, dt) {
+  // The pack's body: the catch, once.
+  const pend = S.hullPending;
+  if (pend) {
+    const u = pend.model.userData;
+    if (u.crashBody && typeof u.applyCrashImpulse === 'function') {
+      try {
+        const b = u.crashBody;
+        _v.copy(pend.point).sub(b.position);
+        _w.copy(b.angularVelocity).cross(_v).add(b.velocity);
+        const vn = _w.dot(pend.normal);
+        _w.addScaledVector(pend.normal, -vn);
+        // Along the surface: the grip's share of the point's speed, against it; into it: nothing extra (its own solver stops it).
+        const j = _w.multiplyScalar(-pend.mode.grip * b.massKg * 0.25);
+        if (j.lengthSq() > 1e-6) u.applyCrashImpulse(j, pend.point);
+      } catch (e) {
+        /* its solver is its own */
+      }
+      S.hullPending = null;
+    } else if (--pend.tries <= 0) S.hullPending = null;
+  }
+  const h = S.hull;
+  if (!h) return;
+  const { body, model, ac } = h;
+  if (!model.parent || !ac || !ac.crashed) {
+    S.hull = null;
+    return;
+  }
+  h.t += dt;
+  const wasSkips = body.skips;
+  stepBody(body, dt, ENV_HULL);
+  if (body.skips > wasSkips) {
+    h.skips = body.skips;
+    S.stats.skips = (S.stats.skips || 0) + 1;
+    if (sim.rig && typeof sim.rig.kick === 'function' && !S.replay) sim.rig.kick(0.5);
+  }
+  h.dist = body.pos.distanceTo(h.start);
+  // The aeroplane is where its body is (the game draws the model from the aeroplane).
+  _hp.copy(h.com).applyQuaternion(body.quat).negate().add(body.pos);
+  ac.pos.copy(_hp);
+  ac.quat.copy(body.quat);
+  if (ac.vel) ac.vel.copy(body.vel);
+  if (ac.omega) ac.omega.copy(body.omega).applyQuaternion(_hq.copy(body.quat).invert());
+  ac.onGround = body.contacts > 0 || body.sleeping;
+  ac.groundSpeed = Math.hypot(body.vel.x, body.vel.z);
+  ac.vs = body.vel.y;
+  model.position.copy(_hp);
+  model.quaternion.copy(body.quat);
+  if (!model.matrixAutoUpdate) model.updateMatrix();
+  model.updateMatrixWorld(true);
+  // The game's wreck (its smoke, its firelight) comes along; the scorch stays where it hit.
+  if (sim.wreck && typeof sim.wreck.follow === 'function' && !S.replay) sim.wreck.follow(_hp);
+  // Done: at rest on land it is a wreck where it lies; in the sea the slow sink takes it from here.
+  if (body.sleeping && !body.wet) {
+    S.hull = null;
+    return;
+  }
+  if (body.wet || h.water) {
+    const slow = body.vel.length() < SINK_HANDOFF.speed && body.inWater;
+    if (slow || h.t > SINK_HANDOFF.maxT || body.sunk) {
+      S.hull = null;
+      if (!S.sink && S.lastRes) startSink(sim, S.lastRes);
+      // From here, now: its own float-and-sink clock starts where the body left it.
+      if (S.sink) {
+        S.sink.delay = 0.05;
+        S.sink.t = 0;
+      }
+    }
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -999,12 +1252,81 @@ function onSkyHit(sim, b, info) {
 /** Seconds a piece that has gone under stays faintly visible before it is cleared away. */
 export const SUNK_SHOWN_S = 15;
 
+const _am = new THREE.Matrix4();
+const _ap = new THREE.Vector3();
+const _aq = new THREE.Quaternion();
+
+/**
+ * The pose of the airframe a piece is still on: the sliding body's when the
+ * player's wreck has one, the model's otherwise. Fills `out` (position and
+ * rotation, no scale); false when the airframe is gone.
+ */
+function airframeMatrix(p, out) {
+  const h = S.hull;
+  if (h && p.owner === 'player' && h.model === p.model) {
+    _ap.copy(h.com).applyQuaternion(h.body.quat).negate().add(h.body.pos);
+    return out.compose(_ap, h.body.quat, _s.set(1, 1, 1));
+  }
+  const m = p.model;
+  if (!m || !m.parent) return false;
+  m.updateMatrixWorld(true);
+  m.matrixWorld.decompose(_ap, _aq, _s);
+  return out.compose(_ap, _aq, _s.set(1, 1, 1));
+}
+
+/** A piece that was riding on the airframe lets go now, with what the airframe was doing plus the kick it was given. */
+function release(p, jolt = false) {
+  const a = p.attach;
+  if (!a) return;
+  p.attach = null;
+  const b = p.body;
+  b.pos.copy(p.group.position);
+  b.quat.copy(p.group.quaternion);
+  const h = S.hull;
+  if (h && p.owner === 'player' && h.model === p.model) {
+    _v.copy(b.pos).sub(h.body.pos);
+    b.vel.copy(h.body.omega).cross(_v).add(h.body.vel);
+    b.omega.copy(h.body.omega);
+  } else {
+    const ac = S.sim && S.sim.aircraft;
+    if (p.owner === 'player' && ac && ac.vel) b.vel.copy(ac.vel);
+    else b.vel.set(0, 0, 0);
+    b.omega.set(0, 0, 0);
+  }
+  // A piece torn off by a jolt is thrown by it; one that simply gave way falls away with half its kick.
+  const k = jolt ? 1 : a.hang ? 0.5 : 0.85;
+  b.vel.addScaledVector(a.kick, k);
+  b.omega.addScaledVector(a.spin, k);
+  const w = b.omega.length();
+  if (w > b.maxSpin) b.omega.multiplyScalar(b.maxSpin / w);
+  b.sleeping = false;
+  b.sleepT = 0;
+  S.stats.released = (S.stats.released || 0) + 1;
+  if (a.hang) S.stats.torn = (S.stats.torn || 0) + 1;
+}
+
 function stepPieces(sim, dt) {
   const cam = sim && sim.camera ? sim.camera.position : null;
+  // A hard bounce of the airframe tears off what was hanging on by a thread.
+  const jolt = !!(S.hull && S.hull.body.lastHit > JOLT_TEARS && S.hull.t > 0.15);
   for (let i = S.pieces.length - 1; i >= 0; i--) {
     const p = S.pieces[i];
     const b = p.body;
     p.far = !!(cam && cam.distanceToSquared(b.pos) > 1200 * 1200);
+    if (p.attach) {
+      const a = p.attach;
+      if (!airframeMatrix(p, _am)) {
+        // The airframe has gone (its owner tidied it away): it falls where it is.
+        release(p);
+      } else {
+        const hangT = a.hangFrom == null ? 0 : S.crashT - a.hangFrom;
+        attachedPose(_am, a, hangT, p.group.position, p.group.quaternion);
+        b.pos.copy(p.group.position);
+        b.quat.copy(p.group.quaternion);
+        if (S.crashT >= a.release || (jolt && (a.hang ? hangT > 0 : true))) release(p, jolt && a.hang);
+      }
+      continue;
+    }
     if (!b.sleeping) {
       stepBody(b, dt, ENV);
       p.group.position.copy(b.pos);
@@ -1323,7 +1645,7 @@ function startSink(sim, res) {
 
 function stepSink(sim, dt) {
   // Hit in the air over the sea and come down into it afterwards: it sinks too.
-  if (!S.sink && S.lastRes && sim.aircraft && sim.aircraft.crashed && sim.model && sim.model.visible && sim.mode !== 'drive') {
+  if (!S.sink && !S.hull && S.lastRes && sim.aircraft && sim.aircraft.crashed && sim.model && sim.model.visible && sim.mode !== 'drive') {
     const p = sim.aircraft.pos;
     if (p.y < 3 && heightAt(p.x, p.z) < 0 && !platformAt(p.x, p.z)) startSink(sim, S.lastRes);
   }
@@ -1334,6 +1656,8 @@ function stepSink(sim, dt) {
     endSink();
     return;
   }
+  // The airframe is still skipping or sliding across the water as a body of its own: the sink waits for it.
+  if (S.hull && S.hull.model === model) return;
   k.t += dt;
   if (k.t < k.delay) return;
   if (!k.started) {
@@ -1717,7 +2041,7 @@ function stepVehicle(sim) {
 
 /** The wrapper every frame's time goes through: slow motion, the pieces, the replay. */
 function frame(sim, dt, inner, args) {
-  const busy = S.pieces.length || S.slow.left > 0 || S.slow.ease > 0 || S.replay || (S.fx && S.fx.busy) || S.rec || S.sink || S.rafts.length || S.npcs.length;
+  const busy = S.pieces.length || S.slow.left > 0 || S.slow.ease > 0 || S.replay || (S.fx && S.fx.busy) || S.rec || S.sink || S.hull || S.hullPending || S.rafts.length || S.npcs.length;
   if (!busy) {
     // Nothing broken anywhere: the cost of this whole feature is this line,
     // and keeping the last second and a half of the flight for a replay.
@@ -1740,9 +2064,13 @@ function frame(sim, dt, inner, args) {
   const t0 = now();
   // The replay owns the clock while it plays: the broken world stands still
   // and the recording does not run on with a gap in it.
-  if (!S.replay) S.clock += gdt;
+  if (!S.replay) {
+    S.clock += gdt;
+    S.crashT += gdt;
+  }
   const running = sim.state === 'flying' || sim.state === 'debrief';
   if (running && !S.replay) {
+    stepHull(sim, gdt);
     stepPieces(sim, gdt);
     stepSink(sim, gdt);
     stepNpcs(gdt);
@@ -1875,8 +2203,12 @@ function seeded(seed) {
 function openRecording(sim, reason) {
   const ac = sim.aircraft;
   const inWater = heightAt(ac.pos.x, ac.pos.z) < 0 && ac.pos.y < 4;
+  // The crash's seed: a fixed one when a test or a shared replay asks for it (sim.crashSeed), otherwise fresh.
+  S.seed = sim.crashSeed != null ? sim.crashSeed >>> 0 : (Math.random() * 0x7fffffff) | 0;
+  S.crashT = 0;
   S.rec = {
     t0: S.clock,
+    seed: S.seed,
     reason,
     model: sim.model,
     pre: preFrames(),
@@ -1945,7 +2277,9 @@ function record(sim, dt) {
     if (tr.piece.gone) continue;
     tr.frames.push({ t, pos: tr.piece.group.position.clone(), quat: tr.piece.group.quaternion.clone() });
   }
-  const still = r.tracks.every((tr) => tr.piece.gone || tr.piece.body.sleeping);
+  // Still: every piece at rest — and the airframe too, which may slide on long after its pieces have stopped
+  // (a belly slide throws none at all): the replay ran out at three seconds with it halfway down the runway.
+  const still = r.tracks.every((tr) => tr.piece.gone || tr.piece.body.sleeping) && !(S.hull && S.hull.model === r.model);
   if (t >= REPLAY.post || (still && t > 3)) r.done = true;
 }
 
@@ -2229,8 +2563,11 @@ function wreckSeek(t) {
     R.wreckT = 0;
   }
   let guard = 0;
+  const follows = typeof w.follow === 'function' && r.frames.length > 1;
   while (R.wreckT < t - 1e-6 && guard++ < 4000) {
     const h = Math.min(1 / 30, t - R.wreckT);
+    // The wreck followed the sliding airframe live; it follows the recording of it here.
+    if (follows && sample(r.frames, R.wreckT, _rp, _rq)) w.follow(_rp);
     w.step(h);
     R.wreckT += h;
   }
@@ -2735,12 +3072,15 @@ export function breakupDebug() {
     SLOWMO,
     REPLAY,
     plans: S.plans.slice(),
-    pieces: S.pieces.map((p) => ({ zones: p.zones.join('+'), owner: p.owner, asleep: p.body.sleeping, wet: p.body.wet, sunk: p.body.sunk, y: Math.round(p.body.pos.y * 10) / 10, x: Math.round(p.body.pos.x), z: Math.round(p.body.pos.z), engine: p.engine, fuel: p.fuel })),
+    pieces: S.pieces.map((p) => ({ zones: p.zones.join('+'), owner: p.owner, asleep: p.body.sleeping, attached: !!p.attach, hanging: !!(p.attach && p.attach.hang), wet: p.body.wet, sunk: p.body.sunk, skips: p.body.skips, y: Math.round(p.body.pos.y * 10) / 10, x: Math.round(p.body.pos.x), z: Math.round(p.body.pos.z), engine: p.engine, fuel: p.fuel })),
     stats: { ...S.stats, alive: S.pieces.length, awake: S.pieces.filter((p) => !p.body.sleeping).length, fx: S.fx ? { ...S.fx.stats, busy: S.fx.busy } : null },
     replaying: !!S.replay,
     replay: S.replay ? { t: S.replay.t, start: S.replay.start, end: S.replay.end, paused: S.replay.paused, fxCursor: S.replay.fxCursor, wreckT: S.replay.wreckT, seeks: S.replay.seeks, wreckHeld: !!(S.replay.wreck && S.replay.wreck.held) } : null,
     recording: S.rec ? { t0: S.rec.t0, done: S.rec.done, sealed: S.rec.sealed, frames: S.rec.frames.length, tracks: S.rec.tracks.length, fx: S.rec.fx.length, pre: S.rec.pre.length, wreck: S.rec.wreck ? { inWater: S.rec.wreck.inWater } : null } : null,
     canReplay: canReplay(),
+    hull: S.hull ? { t: Math.round(S.hull.t * 100) / 100, mode: S.hull.mode, zones: S.hull.zones.length, points: S.hull.body.hull.length / 3, speed: Math.round(S.hull.body.vel.length() * 10) / 10, dist: Math.round(S.hull.dist * 10) / 10, skips: S.hull.skips, contacts: S.hull.body.contacts, wet: S.hull.body.wet, asleep: S.hull.body.sleeping, pos: S.hull.body.pos.toArray().map((v) => Math.round(v * 10) / 10) } : null,
+    attached: S.pieces.filter((p) => p.attach).map((p) => ({ zones: p.zones.join('+'), hang: p.attach.hang, release: Math.round((p.attach.release - S.crashT) * 100) / 100 })),
+    seed: S.seed,
     sink: S.sink ? { t: S.sink.t, started: S.sink.started, hidden: S.sink.hidden, floatT: S.sink.floatT, settleT: S.sink.settleT, sinkT: S.sink.sinkT, delay: S.sink.delay, heavy: S.sink.heavy, L: S.sink.L, belly: S.sink.belly, draft: S.sink.draft, inT: S.sink.settle ? S.sink.settle.inT : null, inAt: S.sink.settle ? S.sink.delay + S.sink.settle.inT : null } : null,
     rafts: S.rafts.map((r) => ({ x: Math.round(r.group.position.x), y: Math.round(r.group.position.y * 100) / 100, z: Math.round(r.group.position.z), person: !!r.person })),
     npcs: S.npcs.map((n) => ({ id: n.body.id, sinking: !!n.sink })),

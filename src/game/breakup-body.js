@@ -21,6 +21,24 @@
  *
  *   const b = makeBody({ position, quaternion, velocity, omega, mass, size, float })
  *   stepBody(b, dt, env)
+ *   catchPoint(b, point, normal, grip, restitution)
+ *                       the surface takes hold of a point of the body: the
+ *                       speed into it comes back by `restitution`, `grip` of
+ *                       the speed along it is taken at once. A wing tip that
+ *                       digs in (grip high) throws the body into a yaw and a
+ *                       roll over that tip — the cartwheel; a belly (grip low)
+ *                       slides on. Deterministic.
+ *
+ * THE HULL: a piece is its box's eight corners; the whole airframe (the
+ * player's wreck, features/breakup.js) hands in its own points — the nose,
+ * the tail, the wing tips, the fin top, the belly — so what touches the
+ * ground is what would. `o.hull` is any list of local points.
+ *
+ * SKIPPING: fast and flat into the water a body skips off it like a stone —
+ * SKIP.restitution of the speed into the water comes back, a share of the
+ * speed along it is lost — up to SKIP.max times (a tumbling wing tip at 60
+ * m/s; an airframe ditched flat at speed) before it goes in. Steep in, it
+ * goes straight under (and bobs back).
  *
  * env:
  *   surface(x, z, out)  fill `out` with { y, nx, ny, nz, kind, floor } — kind
@@ -52,6 +70,8 @@ const SINK_DRAG = 4.8;
  * own momentum inside a second, floating pieces and all: the crash sweep, finding 2).
  */
 const SINK_DRAG_FAST = 1.0;
+/** Skipping off the water: fast enough along it, flat enough into it, this much comes back, this many times. */
+export const SKIP = { minAlong: 12, maxSteep: 0.3, restitution: 0.55, alongKeep: 0.78, max: 3 };
 
 const _r = new THREE.Vector3();
 const _w = new THREE.Vector3();
@@ -80,6 +100,13 @@ const BIG_PIECE = 2.5;
  * @param o.floatT  seconds its air keeps it up (default: from its size)
  * @param o.heavy   -1 nose (-z) heavy, +1 tail heavy, 0 neither: which end goes under first
  * @param o.maxSpin the fastest it may turn over, rad/s (default 30)
+ * @param o.hull    the body's own contact points, local metres: [[x,y,z], ...] or Vector3s (default: the box's corners)
+ * @param o.rand    a random source (0..1) for the drift; the same one gives the same drift
+ * @param o.noSkip  true: never skips off the water (a wreck left lying on it)
+ * @param o.skipMax how many times it may skip (default SKIP.max; an airframe fewer than a wing tip)
+ * @param o.skip    { maxSteep, restitution, level } for this body (default SKIP's; level: how upright it must
+ *                  arrive, the y of its up axis — a whole airframe skips only near level and stays low, a wing
+ *                  low it is the tip that goes in and it does not bounce)
  */
 export function makeBody(o) {
   const size = o.size || new THREE.Vector3(1, 0.3, 1);
@@ -87,14 +114,26 @@ export function makeBody(o) {
   const sy = Math.max(0.08, size.y);
   const sz = Math.max(0.08, size.z);
   const mass = Math.max(5, o.mass || 100);
-  const hull = new Float32Array(24);
-  let i = 0;
-  // The corners, pulled in a touch: a box's corners are sharper than a wing's.
-  for (const x of [-0.45, 0.45]) for (const y of [-0.45, 0.45]) for (const z of [-0.45, 0.45]) {
-    hull[i++] = x * sx;
-    hull[i++] = y * sy;
-    hull[i++] = z * sz;
+  let hull;
+  if (Array.isArray(o.hull) && o.hull.length >= 4) {
+    hull = new Float32Array(o.hull.length * 3);
+    let i = 0;
+    for (const p of o.hull) {
+      hull[i++] = p.isVector3 ? p.x : p[0];
+      hull[i++] = p.isVector3 ? p.y : p[1];
+      hull[i++] = p.isVector3 ? p.z : p[2];
+    }
+  } else {
+    hull = new Float32Array(24);
+    let i = 0;
+    // The corners, pulled in a touch: a box's corners are sharper than a wing's.
+    for (const x of [-0.45, 0.45]) for (const y of [-0.45, 0.45]) for (const z of [-0.45, 0.45]) {
+      hull[i++] = x * sx;
+      hull[i++] = y * sy;
+      hull[i++] = z * sz;
+    }
   }
+  const rand = typeof o.rand === 'function' ? o.rand : Math.random;
   return {
     pos: (o.position || new THREE.Vector3()).clone(),
     quat: (o.quaternion || new THREE.Quaternion()).clone().normalize(),
@@ -112,7 +151,16 @@ export function makeBody(o) {
     // Air pockets: a few seconds for a small piece, much longer for a big one.
     floatT: o.floatT != null ? o.floatT : Math.min(40, 3 + Math.max(sx, sy, sz) * 0.9),
     heavy: o.heavy || 0,
-    drift: new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize().multiplyScalar(0.35),
+    drift: new THREE.Vector3(rand() - 0.5, 0, rand() - 0.5).normalize().multiplyScalar(0.35),
+    skips: 0,
+    noSkip: !!o.noSkip,
+    skipMax: o.skipMax > 0 ? Math.min(SKIP.max, o.skipMax) : SKIP.max,
+    skipSteep: o.skip && o.skip.maxSteep > 0 ? Math.min(SKIP.maxSteep, o.skip.maxSteep) : SKIP.maxSteep,
+    skipBack: o.skip && o.skip.restitution >= 0 ? Math.min(SKIP.restitution, o.skip.restitution) : SKIP.restitution,
+    skipLevel: o.skip && o.skip.level > 0 ? o.skip.level : 0,
+    // Whether any of it was in the water on the last step (a skip is the moment it comes back to it).
+    inWater: false,
+    lastHit: 0,
     wetT: 0,
     // Seconds since it last touched the ground: a thin piece rocking on an edge touches it only part of the time.
     airT: 0,
@@ -155,6 +203,40 @@ function kAlong(b, r, dir) {
   invIWorld(b, _a);
   _b.copy(_a).cross(r);
   return b.invMass + _b.dot(dir);
+}
+
+/**
+ * The surface takes hold of the body at `point` (world): see the header.
+ * `normal` points out of the surface. Returns the impulse's size, kg m/s.
+ */
+export function catchPoint(b, point, normal, grip = 0.5, restitution = 0) {
+  _n.copy(normal).normalize();
+  _r.copy(point).sub(b.pos);
+  _vp.copy(b.omega).cross(_r).add(b.vel);
+  const vn = _vp.dot(_n);
+  let j = 0;
+  if (vn < 0) {
+    // The speed into the surface stops (and some comes back).
+    const jn = (-(1 + Math.max(0, restitution)) * vn) / kAlong(b, _r, _n);
+    applyImpulse(b, _r, _t.copy(_n).multiplyScalar(jn));
+    j += jn;
+  }
+  if (grip > 0) {
+    _vp.copy(b.omega).cross(_r).add(b.vel);
+    _vp.addScaledVector(_n, -_vp.dot(_n));
+    const vt = _vp.length();
+    if (vt > 1e-6) {
+      _t.copy(_vp).multiplyScalar(1 / vt);
+      const jt = (Math.min(1, grip) * vt) / kAlong(b, _r, _t);
+      applyImpulse(b, _r, _t.multiplyScalar(-jt));
+      j += jt;
+    }
+  }
+  const w = b.omega.length();
+  if (w > b.maxSpin) b.omega.multiplyScalar(b.maxSpin / w);
+  b.sleeping = false;
+  b.sleepT = 0;
+  return j;
 }
 
 export function stepBody(b, dt, env) {
@@ -250,20 +332,24 @@ function stepGround(b, s, env) {
   let sy = 0;
   let sz = 0;
   const big = b.radius > BIG_PIECE;
-  for (let i = 0; i < 24; i += 3) {
+  const H3 = b.hull.length;
+  for (let i = 0; i < H3; i += 3) {
     _r.set(b.hull[i], b.hull[i + 1], b.hull[i + 2]).applyQuaternion(b.quat);
     _w.copy(_r).add(b.pos);
-    let planeY;
+    // The ground plane through the surface under the centre.
+    let planeY = s.y - (s.nx * (_w.x - b.pos.x) + s.nz * (_w.z - b.pos.z)) / Math.max(0.2, s.ny);
     let nrm = _n;
     if (big) {
       // The ground right under this corner, with its own slope: a plane through the centre put
-      // the ends of a big piece 1-4 m into a hillside (the crash sweep, finding 4).
+      // the ends of a big piece 1-4 m into a hillside (the crash sweep, finding 4). Only for a
+      // corner that could be touching: one well above the plane (by more than a steep hillside
+      // could make up over its distance from the centre) is in the air whatever the slope, and
+      // the whole airframe's hull has eighty corners, most of them up on the wings and the back.
+      const far = Math.hypot(_w.x - b.pos.x, _w.z - b.pos.z);
+      if (_w.y - planeY > far * 0.7 + 0.5) continue;
       env.surface(_w.x, _w.z, CORNER);
       planeY = CORNER.y;
       nrm = _nc.set(CORNER.nx, CORNER.ny, CORNER.nz).normalize();
-    } else {
-      // The ground plane through the surface under the centre.
-      planeY = s.y - (s.nx * (_w.x - b.pos.x) + s.nz * (_w.z - b.pos.z)) / Math.max(0.2, s.ny);
     }
     const depth = (planeY - _w.y) * nrm.y;
     if (depth <= 0) continue;
@@ -299,9 +385,10 @@ function stepGround(b, s, env) {
     b.pos.addScaledVector(_n, maxDepth * 0.85);
     // Rolling resistance: a piece on the ground stops turning over.
     b.omega.multiplyScalar(Math.exp(-2.2 * H));
+    b.lastHit = hitSpeed;
     if (hitSpeed > 3 && env.onImpact) env.onImpact(b, b.pos.x, s.y, b.pos.z, hitSpeed, s.kind);
     if (!b.landed) b.landed = true;
-  }
+  } else b.lastHit = 0;
   b.lastKind = s.kind;
   b.scrapeT -= H;
   if (scrape > 3.5 && env.onScrape && b.scrapeT <= 0) {
@@ -312,6 +399,8 @@ function stepGround(b, s, env) {
 
 function stepWater(b, s, env) {
   const level = s.y;
+  // Off the ground and into the sea: the last bounce on land is not a jolt any more (it tore what hung on at once).
+  b.lastHit = 0;
   if (b.sunk) {
     b.vel.set(0, 0, 0);
     b.omega.set(0, 0, 0);
@@ -325,7 +414,8 @@ function stepWater(b, s, env) {
   let cz = 0;
   let minY = Infinity;
   let maxY = -Infinity;
-  for (let i = 0; i < 24; i += 3) {
+  const H3 = b.hull.length;
+  for (let i = 0; i < H3; i += 3) {
     _r.set(b.hull[i], b.hull[i + 1], b.hull[i + 2]).applyQuaternion(b.quat);
     const y = b.pos.y + _r.y;
     if (y < minY) minY = y;
@@ -339,13 +429,35 @@ function stepWater(b, s, env) {
     }
   }
   const f = Math.min(1, Math.max(0, (level - minY) / Math.max(0.05, maxY - minY)));
-  if (f > 0 && !b.wet) {
+  const arriving = f > 0 && !b.inWater;
+  if (arriving && !b.wet) {
     b.wet = true;
     if (env.onSplash) env.onSplash(b, b.pos.x, b.pos.z, Math.max(0, -b.vel.y) + b.vel.length() * 0.3);
   }
+  b.inWater = f > 0;
   b.contacts = 0;
   if (b.wet) b.wetT += H;
   if (f <= 0) return;
+  // Coming to the water fast and flat: it skips off it, like a stone.
+  if (arriving && !b.noSkip && b.skips < b.skipMax && b.vel.y < 0) {
+    const along = Math.hypot(b.vel.x, b.vel.z);
+    const steep = -b.vel.y / Math.max(1e-6, Math.hypot(along, b.vel.y));
+    const level = !b.skipLevel || _r.set(0, 1, 0).applyQuaternion(b.quat).y >= b.skipLevel;
+    if (along >= SKIP.minAlong && steep <= b.skipSteep && level) {
+      b.skips++;
+      b.vel.y = -b.vel.y * b.skipBack + 0.4;
+      b.vel.x *= SKIP.alongKeep;
+      b.vel.z *= SKIP.alongKeep;
+      // The slap flattens it a little, and it keeps turning over the way it was.
+      b.omega.multiplyScalar(0.7);
+      if (b.skips > 1 && env.onSplash) env.onSplash(b, b.pos.x, b.pos.z, along * 0.4);
+      // Clear of the surface, so the lift below does not add to the skip.
+      b.pos.y += Math.max(0, level - minY) + 0.02;
+      b.inWater = false;
+      b.wetT = 0;
+      return;
+    }
+  }
   // The air in it, running out: floats while it lasts, then slowly less than
   // floats. Light debris never runs out.
   let buoy = b.float;

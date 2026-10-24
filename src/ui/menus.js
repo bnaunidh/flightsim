@@ -2240,12 +2240,21 @@ export class Menus {
       }
       if (e.target.closest('[data-dev-enter]')) {
         const p = this.prog || Prog.load();
-        const r = Prog.enterDevCode(p, s.querySelector('[data-dev-code]').value);
-        s.querySelector('[data-code-msg]').textContent = r.ok
-          ? r.warn || 'Dev mode on — the workbench is at the bottom of this page.'
-          : r.why;
-        if (r.ok) s.querySelector('[data-dev-code]').value = '';
-        render();
+        const box = s.querySelector('[data-dev-code]');
+        const msg = s.querySelector('[data-code-msg]');
+        const typed = box.value;
+        // The doors are hashed like the hangar's codes (progression.js), so
+        // the answer comes back a moment later rather than at once.
+        this._doorCheck = Prog.enterDevCode(p, typed).then((r) => {
+          msg.textContent = r.ok
+            ? r.warn || 'Dev mode on — the workbench is at the bottom of this page.'
+            : r.why;
+          if (r.ok && box.value === typed) box.value = '';
+          render();
+        }, (err) => {
+          console.warn('[hangar] could not check that word', err);
+          msg.textContent = 'That is not the word';
+        });
         return;
       }
       const extRun = e.target.closest('[data-dev-ext-run]');
@@ -2263,18 +2272,25 @@ export class Menus {
       }
       if (e.target.closest('[data-mil-enter]')) {
         const p = this.prog || Prog.load();
-        const r = Prog.enterPasscode(p, s.querySelector('[data-mil-code]').value);
-        s.querySelector('[data-code-msg]').textContent = r.ok
-          ? r.warn || 'Access granted — the military hangar is open, and stays open.'
-          : r.why;
-        if (r.ok) s.querySelector('[data-mil-code]').value = '';
-        render();
-        this.syncFleetLocks && this.syncFleetLocks();
-        this.syncMissionLocks && this.syncMissionLocks();
-        this.syncMapLocks && this.syncMapLocks();
-        // The start screen's "N missions" denominator excludes hidden ones, so
-        // it has to be recomputed too or it keeps advertising the old total.
-        this._lastProgress && this.syncProgress(this._lastProgress);
+        const box = s.querySelector('[data-mil-code]');
+        const msg = s.querySelector('[data-code-msg]');
+        const typed = box.value;
+        this._doorCheck = Prog.enterPasscode(p, typed).then((r) => {
+          msg.textContent = r.ok
+            ? r.warn || 'Access granted — the military hangar is open, and stays open.'
+            : r.why;
+          if (r.ok && box.value === typed) box.value = '';
+          render();
+          this.syncFleetLocks && this.syncFleetLocks();
+          this.syncMissionLocks && this.syncMissionLocks();
+          this.syncMapLocks && this.syncMapLocks();
+          // The start screen's "N missions" denominator excludes hidden ones, so
+          // it has to be recomputed too or it keeps advertising the old total.
+          this._lastProgress && this.syncProgress(this._lastProgress);
+        }, (err) => {
+          console.warn('[hangar] could not check that word', err);
+          msg.textContent = 'That is not the word';
+        });
         return;
       }
       if (e.target.closest('[data-redeem]')) {

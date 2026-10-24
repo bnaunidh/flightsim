@@ -331,6 +331,14 @@ export async function check(sim, r, say) {
   {
     const ac = sim.aircraft;
     r.ok('breakup: into the sea — it starts its slow sink', !!D().sink, JSON.stringify(D().sink));
+    // v71: flat and fast into the sea the airframe skips and slides across it first, as a body of its own
+    // (D().hull); the slow sink's clock starts where it stops. Wait for that hand-over (a few seconds at most).
+    let waited = 0;
+    while (D().hull && waited < 8) {
+      sim.step(0.25);
+      waited += 0.25;
+    }
+    r.ok('breakup: it skipped and slid across the water first, then the body handed over to the sink within a few seconds', !D().hull && waited < 8 && (D().stats.skips || 0) >= 1, `handed over after ${waited.toFixed(2)} s; ${D().stats.skips || 0} skips so far`);
     sim.step(2.6);
     r.ok('breakup: it is afloat after the splash', ac.pos.y > -2.5 && ac.pos.y < 2, `${ac.pos.y.toFixed(2)} m`);
     sim.step(1);
@@ -385,6 +393,8 @@ export async function check(sim, r, say) {
       noDebrief();
       const ac = sim.aircraft;
       const s0 = D().sink;
+      // The airframe's skip and slide across the water first (v71): the sink's clock starts after it.
+      for (let w = 0; D().hull && w < 32; w++) sim.step(0.25);
       // Where it is in going down (its own pose's phase) and its highest point.
       const phases = [];
       const tops = [];

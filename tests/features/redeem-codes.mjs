@@ -286,5 +286,51 @@ const nodeHash = (s) => createHash('sha256').update(String(s).trim().toLowerCase
   }
 }
 
+/* ---- 6. The two doors (military hangar, workbench) are hashed too ---- */
+{
+  // Same scheme, same tool: no served JavaScript carries a plaintext
+  // passcode constant, and the fingerprints shipped are real ones.
+  ok('no served script exports a plaintext MILITARY_CODE / DEV_CODE', (() => {
+    const served = [];
+    const walk = (d) => {
+      for (const f of readdirSync(d)) {
+        if (['.git', '.claude', 'node_modules', 'tests', 'download', 'vendor'].includes(f)) continue;
+        const p = join(d, f);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (/\.(js|mjs|html)$/.test(f)) served.push(p);
+      }
+    };
+    walk(ROOT);
+    const bad = served.filter((f) => /export const (MILITARY|DEV)_CODE = /.test(readFileSync(f, 'utf8')));
+    return bad.length === 0 ? true : bad.join(', ');
+  })() === true);
+  // The doors are async now. A served menu that still reads `r.ok` straight
+  // off the call gets a Promise, prints "undefined" and never says yes — the
+  // ChatGPT edition shipped exactly that once. Every call site must wait.
+  {
+    const sites = [];
+    for (const f of ['src/ui/menus.js', 'gpt/src/ui/menus.js']) {
+      const text = readFileSync(join(ROOT, f), 'utf8');
+      for (const m of text.matchAll(/^.*Prog\.(enterPasscode|enterDevCode)\(.*$/gm)) {
+        if (!/\.then\(|await /.test(m[0])) sites.push(`${f}: ${m[1]}`);
+      }
+    }
+    ok('every served hangar call to a door waits for its answer (no sync r.ok on a Promise)', sites.length === 0, sites.join('; '));
+  }
+  ok('both doors are 64-hex fingerprints, and different ones', Prog.isCodeHash(Prog.MILITARY_CODE_HASH) && Prog.isCodeHash(Prog.DEV_CODE_HASH) && Prog.MILITARY_CODE_HASH !== Prog.DEV_CODE_HASH);
+  const word = `door-${randomUUID().slice(0, 8)}`;
+  ok('a test-only word opens a door handed in, hashed the same way the tool hashes it',
+    (await Prog.enterPasscode({ militaryUnlocked: false }, word.toUpperCase(), nodeHash(word))).ok === true
+    && (await Prog.enterDevCode({ devUnlocked: false }, word, nodeHash(word))).ok === true
+    && (await Prog.enterPasscode({ militaryUnlocked: false }, word)).ok === false);
+  try {
+    const out = execFileSync(process.execPath, [join(ROOT, 'tools/hash-code.mjs'), '--passcode=military'], { cwd: ROOT, encoding: 'utf8', input: `${word}\n`, stdio: ['pipe', 'pipe', 'pipe'] });
+    const m = /export const MILITARY_CODE_HASH = '([0-9a-f]{64})';/.exec(out);
+    ok('tools/hash-code.mjs --passcode=military prints the replacement line, hashed like the game', !!m && m[1] === nodeHash(word), out.trim().slice(0, 100));
+  } catch (e) {
+    ok('tools/hash-code.mjs --passcode runs', false, String(e.message || e).slice(0, 200));
+  }
+}
+
 console.log(`\n${n - fails}/${n} passed`);
 process.exit(fails ? 1 : 0);

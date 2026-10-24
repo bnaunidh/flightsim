@@ -6,6 +6,7 @@
  *   node tools/hash-code.mjs --credits=2500 --note="For the class"
  *   node tools/hash-code.mjs --rank=mod --note="Appointed"
  *   node tools/hash-code.mjs --prefix --note="Ask the CEO"
+ *   node tools/hash-code.mjs --passcode=military     (or --passcode=dev)
  *
  * It asks for the code word at the prompt (typing is not echoed, and the word
  * is never a command-line argument, so it does not land in the shell history),
@@ -24,6 +25,11 @@
  * It prints a line for PREFIXES instead of CODES; `--max=<n>` caps what one
  * such code may pay.
  *
+ * `--passcode=military` / `--passcode=dev` makes the line for one of the two
+ * DOORS instead (MILITARY_CODE_HASH / DEV_CODE_HASH in progression.js): the
+ * word that opens the military hangar or the workbench. Same hashing; the
+ * printed line replaces the one in the file, and the old word stops working.
+ *
  * With stdin piped (`echo word | node tools/hash-code.mjs --credits=100`), the
  * first line of stdin is the word; the terminal prompt is only for a terminal.
  */
@@ -37,7 +43,7 @@ const opt = (k) => {
   return a.includes('=') ? a.slice(a.indexOf('=') + 1) : '';
 };
 if (opt('help') !== null || args.includes('-h')) {
-  console.log('node tools/hash-code.mjs [--credits=<n> | --rank=<founder|admin|mod> | --prefix [--max=<n>]] [--note="..."]');
+  console.log('node tools/hash-code.mjs [--credits=<n> | --rank=<founder|admin|mod> | --prefix [--max=<n>] | --passcode=<military|dev>] [--note="..."]');
   process.exit(0);
 }
 
@@ -70,6 +76,20 @@ async function main() {
     process.exit(2);
   }
   if (/\s/.test(text)) console.error('Note: the word has spaces inside it; players will have to type them too.');
+
+  const door = opt('passcode');
+  if (door !== null) {
+    const name = { military: 'MILITARY_CODE_HASH', dev: 'DEV_CODE_HASH' }[String(door).trim().toLowerCase()];
+    if (!name) {
+      console.error(`Unknown door "${door}". One of: military, dev.`);
+      process.exit(2);
+    }
+    const dhash = await codeHash(text);
+    console.log(`\nReplace the ${name} line in src/game/progression.js with:\n`);
+    console.log(`export const ${name} = '${dhash}';`);
+    console.log('\nThe word itself is not saved anywhere. Tell it to whoever should have it; the old word stops working.');
+    return;
+  }
 
   if (opt('prefix') !== null) {
     if (/\d/.test(text)) {

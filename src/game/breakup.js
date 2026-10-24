@@ -105,6 +105,49 @@ export const TRANSMIT_FADE = 250;
 /** The zone the airframe IS: it never comes off, everything else hangs on it. */
 export const CORE = 'core';
 
+/*
+ * THE BEAMNG BAR (the owner, 2026-10-23: "metal bends/crumples progressively,
+ * parts hang by threads before tearing, deformation persists"). Three things
+ * make a break-up read as structure giving way rather than a model exploding:
+ *
+ *   ORDER     the zone that touched goes first; the blow runs on through the
+ *             airframe at CRACK_SPEED metres a second, so a zone further from
+ *             the contact lets go later (plan.delays, seconds after the hit).
+ *   HANGING   a zone the blow nearly tore off — HANG.from of its strength and
+ *             up — comes off its seam but stays on the airframe, swinging on
+ *             what is left of its spar or pylon, and tears away a moment
+ *             later (plan.hangs: HANG.tMin..HANG.tMax seconds, sooner the
+ *             nearer it came to tearing at once). Only a BLOW hangs a part;
+ *             a scrape grinds it (a 75 m/s belly slide leaves the tailplanes
+ *             on). Only wings, tails and podded engines hang: a propeller
+ *             bends, a leg folds, a fuselage section crushes or breaks.
+ *   MODE      where it hit and how steeply (classifyImpact) tunes the plan a
+ *             little — nose-in breaks the forward fuselage at the cockpit
+ *             seam, a tail strike the tail cone, a wing caught hard tears at
+ *             the root — and tells features/breakup.js what the airframe does
+ *             next (cartwheel, belly slide, nose-over, skip off the water).
+ */
+export const CRACK_SPEED = 60;
+export const DELAY_MAX = 0.45;
+export const HANG = { from: 0.55, blowShare: 0.5, tMin: 0.3, tMax: 1.6 };
+/** Per-mode strength scaling of the seam the mode is about (the zone that touched). */
+export const MODE_TUNE = {
+  nose: { nose: 0.7 },
+  tail: { rear: 0.75 },
+  wingtip: { root: 0.7, rootFrom: 60 },
+};
+
+/** A small seeded random (0..1): the same seed gives the same crash, so a replay's crash is the recording's crash. */
+export function rng(seed) {
+  let a = (Number(seed) || 0) >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -681,6 +724,68 @@ export function impactEnergy(vel, normal) {
 }
 
 /**
+ * How an impact reads — what a spectator would call it, and what the
+ * airframe does next. Pure: from the zone that touched, how steeply it came
+ * in and what it touched.
+ *
+ *   hitZone   the zone that touched (planBreak's)
+ *   steep     closing / speed, 0 (a graze) .. 1 (square on)
+ *   speed     m/s at the contact
+ *   hit.surface   'ground' | 'water' | 'wall' | 'aircraft' (default ground)
+ *   hit.survivable, hit.midair
+ *
+ * Returns { mode, side, steep, grip, restitution, skip }:
+ *   mode   'knock'    a survivable touch: nothing to choreograph
+ *          'midair'   came apart in the air: a tumble all the way down
+ *          'water'    into the sea (skip: true for a fast, flat arrival that skips off it)
+ *          'wall'     a building or another aircraft: a hard stop and a drop
+ *          'rotor'    a helicopter's blades struck something
+ *          'wingtip'  a wing caught the ground: it digs in, the airframe yaws
+ *                     and rolls over it (side: -1 left, +1 right)
+ *          'nose'     nose-in: the forward fuselage takes it, and it pitches over
+ *          'tail'     a tail strike: the tail cone, and the nose slaps down
+ *          'gear'     a hard arrival on the wheels
+ *          'belly'    a belly slide: friction and sparks until it stops
+ *   grip   how much of the speed ALONG the surface the contact takes at once
+ *          (a tip that digs in takes most of it; a belly slides)
+ *   restitution  how much of the speed INTO the surface comes back
+ */
+export function classifyImpact(layout, hitZone, steep, speed, hit = {}) {
+  const Z = ZONES[hitZone] || ZONES[CORE];
+  const surface = hit.surface || 'ground';
+  const side = Z.side || 0;
+  const out = (mode, grip, restitution, extra = {}) => ({ mode, side, steep, speed, grip, restitution, skip: false, ...extra });
+  if (hit.survivable) return out('knock', 0, 0);
+  if (hit.midair) return out('midair', 0, 0);
+  if (surface === 'water') return out('water', 0.3, steep < 0.25 && speed > 25 ? 0.45 : 0.05, { skip: steep < 0.25 && speed > 25 });
+  if (surface === 'wall' || surface === 'aircraft') return out('wall', 0.6, 0.25);
+  if (Z.kind === 'rotor') return out('rotor', 0.2, 0.1);
+  if (Z.kind === 'engine') {
+    // A propeller or an engine in the nose IS the nose; a podded one scrapes along, or digs in when it comes in steeply.
+    const e = (layout.frame.engines || []).find((q) => q.id === hitZone);
+    if (e && (e.nose || e.buried)) return steep > 0.45 ? out('nose', 0.65, 0.06) : out('belly', 0.15, 0.1);
+    return steep > 0.6 ? out('nose', 0.5, 0.08) : out('belly', 0.2, 0.1);
+  }
+  if (Z.kind === 'wing') return out('wingtip', /Outer/.test(hitZone) ? 0.6 : 0.45, 0.12);
+  if (Z.kind === 'tail' || (hitZone === 'rear' && Array.isArray(hit.zones) && hit.zones[0] === 'rear')) return out('tail', 0.3, 0.2);
+  if (hitZone === 'nose') return steep > 0.45 ? out('nose', 0.65, 0.06) : out('belly', 0.15, 0.1);
+  if (Z.kind === 'gear') {
+    /*
+     * A leg that is out takes a hard arrival on its wheels. One that is up is only the nearest zone to the
+     * point that touched: the belly took it — or, for a leg out under the wing (the Harrier's outriggers,
+     * near its tips), the wing did, and a wing that catches throws the airframe round like any other.
+     */
+    const w = layout.frame.wing;
+    const px = Array.isArray(hit.point) ? Math.abs(hit.point[0]) : 0;
+    const outOnWing = !!w && side !== 0 && px > Math.max(w.rootX || 0, 0.5 * (w.tipX || 0));
+    if (hit.gearDown != null && hit.gearDown < 0.5) return outOnWing ? out('wingtip', 0.45, 0.12) : out('belly', 0.15, 0.1);
+    return out('gear', 0.05, 0.15);
+  }
+  if (hitZone === 'rear') return steep > 0.6 ? out('tail', 0.3, 0.2) : out('belly', 0.15, 0.1);
+  return out('belly', 0.15, 0.1);
+}
+
+/**
  * hit (all in body metres, body axes):
  *   point     [x, y, z] where it touched
  *   normal    [x, y, z] the surface's normal, pointing out of the surface
@@ -749,6 +854,16 @@ export function planBreak(layout, hit, boxes = null) {
     }
   }
   if (!hitZone) hitZone = nearestZone(layout, B, p) || CORE;
+  const mode = classifyImpact(layout, hitZone, steep, speed, hit);
+  // The seam the mode is about gives a little sooner (MODE_TUNE): the cockpit seam nose-in, the tail cone
+  // on a tail strike, the wing root when a wing has caught the ground hard.
+  const tune = {};
+  const MT = MODE_TUNE[mode.mode];
+  if (MT) {
+    if (MT.nose && hitZone === 'nose') tune.nose = MT.nose;
+    if (MT.rear && hitZone === 'rear') tune.rear = MT.rear;
+    if (MT.root && blow >= MT.rootFrom) tune[mode.side < 0 ? 'wingInnerL' : 'wingInnerR'] = MT.root;
+  }
   // How far the blow travels through the airframe, metres: a clip stays in
   // the tip it clipped, a square blow at the same place goes on up the spar.
   let reach = f.L * clamp(0.15 + 0.7 * Math.sqrt((blow + 0.25 * scrape) / 1000), 0.15, 1.3);
@@ -820,7 +935,7 @@ export function planBreak(layout, hit, boxes = null) {
       continue;
     }
     if (Z.kind === 'gear') {
-      if (e >= Z.detach && gearOut > 0.5 && !hit.survivable) actions.push({ zone: id, action: 'detach', amount: 1, e });
+      if (e >= Z.detach && gearOut > 0.5 && !hit.survivable) actions.push({ zone: id, action: 'detach', amount: 1, e, delay: id === hitZone ? 0 : clamp((dist[id] || 0) / CRACK_SPEED, 0.02, DELAY_MAX) });
       else if (e >= Z.fold) actions.push({ zone: id, action: 'fold', amount: clamp((e - Z.fold) / (Z.fold * 3), 0.35, 1), e, hidden: gearOut < 0.5 });
       continue;
     }
@@ -830,14 +945,66 @@ export function planBreak(layout, hit, boxes = null) {
     // 13, a fin 16) are for it. Without this a 32 J/kg landing (8 m/s down) took both tailplanes and a wing
     // tip off a short jet from the wheels, three metres away.
     // (Fading out as the blow becomes a real crash: past TRANSMIT_FADE J/kg everything near the touch goes, as it always did.)
-    const detachAt = id === hitZone ? Z.detach : Z.detach * (1 + (TRANSMIT - 1) * clamp(1 - blow / TRANSMIT_FADE, 0, 1));
-    if (e >= detachAt && canDetach) actions.push({ zone: id, action: 'detach', amount: 1, e });
+    const detachAt = (tune[id] || 1) * (id === hitZone ? Z.detach : Z.detach * (1 + (TRANSMIT - 1) * clamp(1 - blow / TRANSMIT_FADE, 0, 1)));
+    // Seconds after the hit this zone lets go: the touched zone at once, the rest as the blow runs to them.
+    const delay = id === hitZone ? 0 : clamp((dist[id] || 0) / CRACK_SPEED, 0.02, DELAY_MAX);
+    if (e >= detachAt && canDetach) actions.push({ zone: id, action: 'detach', amount: 1, e, delay });
     else if (e >= Z.bend) {
+      // Nearly torn off by the BLOW (not ground off by a scrape): it hangs by what is left, and tears later.
+      const blowPart = id === hitZone ? blow : blowAt[id] || 0;
+      const hangs = canDetach && !hit.survivable && Number.isFinite(detachAt) && e >= detachAt * HANG.from && blowPart >= HANG.blowShare * e && hangKind(f, id);
+      if (hangs) {
+        const near = clamp((e - detachAt * HANG.from) / (detachAt * (1 - HANG.from)), 0, 1);
+        actions.push({ zone: id, action: 'hang', amount: 1, e, delay, t: HANG.tMax - (HANG.tMax - HANG.tMin) * near });
+        continue;
+      }
       const amount = clamp((e - Z.bend) / Math.max(1, (Number.isFinite(Z.detach) ? Z.detach : Z.bend * 6) - Z.bend), 0.15, 1);
       actions.push({ zone: id, action: id === 'nose' || id === CORE || id === 'rear' ? 'crush' : 'bend', amount, e });
     }
   }
-  return { energy: E, blow, scrape, closing, tangent, steep, hitZone, reach, actions, pieces: piecesOf(layout, actions, local) };
+  const pieces = piecesOf(layout, actions, local);
+  // The order they come away in: a piece lets go when its first zone does.
+  const delays = pieces.map((piece) => Math.min(...piece.map((z) => {
+    const a = actions.find((q) => q.zone === z && q.action === 'detach');
+    return a ? a.delay : DELAY_MAX;
+  })));
+  const hangs = hangsOf(layout, actions, pieces);
+  // Where the fuel is and the tank has gone: torn off, or crushed and bent hard enough to split.
+  const fuel = [];
+  for (const a of actions) if (ZONES[a.zone] && ZONES[a.zone].fuel && (a.action === 'detach' || a.action === 'hang' || ((a.action === 'bend' || a.action === 'crush') && a.amount >= 0.5))) fuel.push(a.zone);
+  return { energy: E, blow, scrape, closing, tangent, steep, hitZone, reach, mode, actions, pieces, delays, hangs, fuel, dist };
+}
+
+/** Which zones can hang by a thread: wings, tails and podded (not propeller, not buried) engines. */
+function hangKind(f, id) {
+  const Z = ZONES[id];
+  if (!Z) return false;
+  if (Z.kind === 'wing' || Z.kind === 'tail') return true;
+  if (Z.kind === 'engine') {
+    const e = f.engines.find((q) => q.id === id);
+    return !!e && !e.prop && !e.nose && !e.buried;
+  }
+  return false;
+}
+
+/**
+ * The hanging pieces: a zone with a 'hang' action that no detached piece is
+ * taking with it, plus whatever hangs on it that is not going anywhere by
+ * itself. [{ zones, zone, t, delay }], t the seconds it hangs before tearing.
+ */
+function hangsOf(layout, actions, pieces) {
+  const taken = new Set();
+  for (const p of pieces) for (const z of p) taken.add(z);
+  const hanging = actions.filter((a) => a.action === 'hang' && !taken.has(a.zone));
+  const out = [];
+  for (const a of hanging) {
+    // A zone hanging under another hanging zone is part of that one's piece, not its own.
+    if (hanging.some((h) => h !== a && layout.descendants(h.zone).includes(a.zone))) continue;
+    // It takes with it whatever hangs on it that is not flying off by itself.
+    const zones = [a.zone, ...layout.descendants(a.zone).filter((d) => !taken.has(d))];
+    out.push({ zones, zone: a.zone, t: a.t, delay: a.delay });
+  }
+  return out;
 }
 
 /**

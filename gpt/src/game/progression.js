@@ -62,15 +62,22 @@ const FREE = ['skylark', 'courier', 'harrier'];
  * that flying the bomber is a thing you were let into rather than a thing you
  * wandered into. Whoever runs the game decides who gets told the word.
  *
- * Typed case-insensitively, so `mc1234` and `MC1234` are the same door.
+ * Typed case-insensitively: upper or lower case opens the same door.
  *
  * It opens ONCE. `militaryUnlocked` lives in the saved progression and is
  * never cleared — not by finishing, not by crashing, not by "Reset
  * everything", which only touches settings, keys and mission progress. Being
  * let in is a thing that happened to you, not a score you can lose, so the
  * game must never make a kid go and ask for the word a second time.
+ *
+ * The word itself is NOT in this file any more: only its fingerprint is —
+ * SHA-256 of the word trimmed and lower-cased, the same scheme as the hangar's
+ * CODES below (codeHash) — so reading the source no longer hands anyone the
+ * door. Whoever was told the word types it exactly as before. To change it:
+ * `node tools/hash-code.mjs --passcode=military`, type the new word, and
+ * paste the printed line here.
  */
-export const MILITARY_CODE = 'MC1234';
+export const MILITARY_CODE_HASH = '3ec50afbd4c5890ffe3fbab91c62d1fdc58d192f6b88b85be4bc9065a443889b';
 
 /**
  * Dev mode.
@@ -84,8 +91,21 @@ export const MILITARY_CODE = 'MC1234';
  * the work in the real game at all. Neither is any good.
  *
  * Same rules as the military code: case-insensitive, opens once, stays open.
+ * Same scheme as the military door: only the fingerprint lives here
+ * (`node tools/hash-code.mjs --passcode=dev` makes a new one).
  */
-export const DEV_CODE = 'DEV1234';
+export const DEV_CODE_HASH = 'a78f8128f2109434daf14d867c665d97a242909409b29bc0a965111d8a4a9f80';
+
+/**
+ * Does `raw` open the door whose fingerprint is `hash`? Trimmed and
+ * case-insensitive, exactly as the hangar's codes are, so `word`, ` WORD `
+ * and `Word` are one word. A door with no fingerprint (not 64 hex) opens for
+ * nothing, rather than for everything.
+ */
+async function isTheWord(raw, hash) {
+  if (!isCodeHash(hash)) return false;
+  return (await codeHash(raw)) === hash;
+}
 
 function blank() {
   return {
@@ -182,8 +202,14 @@ export function needsPasscode(p, type) {
   return !!(type && type.military) && !p.militaryUnlocked;
 }
 
-export function enterPasscode(p, raw) {
-  if (String(raw || '').trim().toUpperCase() !== MILITARY_CODE) {
+/**
+ * Try a word at the military door. Asynchronous because the fingerprint is
+ * (codeHash: crypto.subtle, or the plain-JavaScript SHA-256 on a plain-http
+ * classroom address). `hash` is the door to check against — the shipped
+ * fingerprint unless a test hands in its own.
+ */
+export async function enterPasscode(p, raw, hash = MILITARY_CODE_HASH) {
+  if (!(await isTheWord(raw, hash))) {
     return { ok: false, why: 'That is not the word' };
   }
   p.militaryUnlocked = true;
@@ -207,8 +233,9 @@ export function isDev(p) {
   return !!(p && p.devUnlocked);
 }
 
-export function enterDevCode(p, raw) {
-  if (String(raw || '').trim().toUpperCase() !== DEV_CODE) {
+/** Try a word at the workbench door; see enterPasscode. */
+export async function enterDevCode(p, raw, hash = DEV_CODE_HASH) {
+  if (!(await isTheWord(raw, hash))) {
     return { ok: false, why: 'That is not the word' };
   }
   p.devUnlocked = true;
@@ -216,6 +243,91 @@ export function enterDevCode(p, raw) {
     return { ok: true, warn: 'Open for now — this browser would not save it, so you may have to enter it again.' };
   }
   return { ok: true };
+}
+
+/**
+ * SHA-256 in plain JavaScript, for the places crypto.subtle is missing — a
+ * phone opening the game over a plain-http LAN address in a classroom is not
+ * a secure context, and it should still be able to type a code. Byte-for-byte
+ * the same answer as crypto.subtle (the same code as src/game/progression.js), so which one ran never matters.
+ */
+const SHA_K = new Uint32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+]);
+
+export function sha256Hex(input) {
+  const msg = typeof input === 'string' ? new TextEncoder().encode(input) : new Uint8Array(input);
+  const len = msg.length;
+  // Pad to a multiple of 64 bytes: 0x80, zeros, then the bit length as 64 bits.
+  const padded = new Uint8Array(((len + 9 + 63) >> 6) << 6);
+  padded.set(msg);
+  padded[len] = 0x80;
+  const dv = new DataView(padded.buffer);
+  const bits = len * 8;
+  dv.setUint32(padded.length - 8, Math.floor(bits / 0x100000000));
+  dv.setUint32(padded.length - 4, bits >>> 0);
+
+  const H = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+  const W = new Uint32Array(64);
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  for (let off = 0; off < padded.length; off += 64) {
+    for (let i = 0; i < 16; i++) W[i] = dv.getUint32(off + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(W[i - 15], 7) ^ rotr(W[i - 15], 18) ^ (W[i - 15] >>> 3);
+      const s1 = rotr(W[i - 2], 17) ^ rotr(W[i - 2], 19) ^ (W[i - 2] >>> 10);
+      W[i] = (W[i - 16] + s0 + W[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + SHA_K[i] + W[i]) >>> 0;
+      const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0;
+      d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;
+    H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
+  }
+  let out = '';
+  for (let i = 0; i < 8; i++) out += H[i].toString(16).padStart(8, '0');
+  return out;
+}
+
+/**
+ * The fingerprint of a typed code: SHA-256 of it trimmed and lower-cased, as
+ * hex. Case-insensitive because nobody types a code the way it was written
+ * down, and the SAME normalisation the owner's tool uses, or a code would
+ * work in the tool and fail in the game. crypto.subtle when the page has it,
+ * the plain-JavaScript version when it does not.
+ */
+export async function codeHash(raw) {
+  const text = String(raw == null ? '' : raw).trim().toLowerCase();
+  const bytes = new TextEncoder().encode(text);
+  const subtle = globalThis.crypto && globalThis.crypto.subtle;
+  if (subtle && typeof subtle.digest === 'function') {
+    try {
+      const buf = await subtle.digest('SHA-256', bytes);
+      return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) {
+      // Fall through to the plain version: an odd browser, not a wrong code.
+    }
+  }
+  return sha256Hex(bytes);
+}
+
+/** True if `s` has the shape of a code fingerprint — 64 hex characters. */
+export function isCodeHash(s) {
+  return typeof s === 'string' && /^[0-9a-f]{64}$/.test(s);
 }
 
 export function leaveDev(p) {

@@ -33,6 +33,7 @@ import { check as instruments } from './instruments.browser.js';
 import { check as keybinds } from './keybinds.browser.js';
 import { check as maps } from './maps.browser.js';
 import { check as menus } from './menus.browser.js';
+import { check as uiPolish } from './ui-polish.browser.js';
 import { check as multiplayer } from './multiplayer.browser.js';
 import { check as multiplayerList2 } from './multiplayer-list2.browser.js';
 import { check as multiplayerList3 } from './multiplayer-list3.browser.js';
@@ -111,6 +112,8 @@ export const CHECKS = [
   // After maps: the missions spread over them — each moved one starts on its island, three flown to the end.
   { id: 'mission-maps', check: missionMaps },
   { id: 'menus', check: menus },
+  // After menus: the deck — the start screen's and the HUD's glass, radius, motion and touch sizes, and html.fx-low on Low.
+  { id: 'ui-polish', check: uiPolish },
   // After menus: every way of turning sound off, and that it stays off (nothing played out loud).
   { id: 'sound', check: sound },
   { id: 'onfoot', check: onfoot },

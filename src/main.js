@@ -325,6 +325,7 @@ class Game {
     this.hud.setLargeText(this.settings.largeText);
     this.hud.setDensity(this.settings.hudDensity);
     document.documentElement.classList.toggle('reduce-motion', !!this.settings.reducedMotion);
+    this.syncFxTier();
     this.hud.setMuted(this.settings.muted);
     this.hud.setVisible(false);
 
@@ -2218,6 +2219,7 @@ class Game {
     for (let i = 0; i < parts.length - 1; i++) obj = obj[parts[i]];
     obj[parts[parts.length - 1]] = value;
     saveSettings(this.settings);
+    if (path === 'quality') this.syncFxTier();
 
     if (path.startsWith('volumes.')) {
       this.audio.setVolume(parts[1], value);
@@ -2496,6 +2498,19 @@ class Game {
   }
 
   /** The menu's "Auto": probe now, write the tier, rebuild. */
+  /**
+   * html.fx-low while the quality tier is Low: styles/main.css turns every
+   * backdrop blur under the interface off and gives the glass a solid
+   * translucent back instead. A classroom Chromebook pays for a blur on
+   * every frame the menu or the HUD is up; the colours and the layout cost
+   * nothing. Follows the tier wherever it is written: start-up, Settings,
+   * and the Auto probe's pick.
+   */
+  syncFxTier() {
+    if (typeof document === 'undefined' || !document.documentElement) return;
+    document.documentElement.classList.toggle('fx-low', this.settings.quality === 'low');
+  }
+
   chooseAutoQuality() {
     const s = this.settings;
     s.qualityAuto = true;
@@ -2508,6 +2523,7 @@ class Game {
     s.qualityAutoPicked = picked;
     s.quality = picked;
     saveSettings(s);
+    this.syncFxTier();
     if (this.menus && this.menus.syncSettings) this.menus.syncSettings(s);
     const label = { low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra' }[picked];
     if (picked === this.qualityBuilt) {

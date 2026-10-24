@@ -293,6 +293,27 @@ export class Wreck {
     this.blastSpeed = speed;
   }
 
+  /**
+   * The wreck has moved on: the airframe slides, cartwheels or skips after
+   * the hit (features/breakup.js), and a smoke column standing a hundred
+   * metres behind it looked like the wrong crash. The smoke still to come
+   * rises from here and the firelight comes along; the scorch stays where it
+   * hit, and what has already been thrown keeps flying.
+   */
+  follow(pos) {
+    if (!this.active || !this.origin) return;
+    this.origin.copy(pos);
+    this.light.position.set(pos.x, pos.y + 4, pos.z);
+    const arr = this.smoke.geo.attributes.position.array;
+    for (let i = 0; i < this.smoke.state.length; i++) {
+      if (this.smoke.state[i].age >= 0) continue;
+      arr[i * 3] = pos.x;
+      arr[i * 3 + 1] = pos.y + 1;
+      arr[i * 3 + 2] = pos.z;
+    }
+    this.smoke.geo.attributes.position.needsUpdate = true;
+  }
+
   /** The fuel catching, a beat after the splash. Water crashes only. */
   detonate() {
     this.blown = true;

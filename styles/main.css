@@ -34,6 +34,26 @@
   --good: #4fd684;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
   --radius: 16px;
+  /* The deck (see "The deck — demo polish" at the end of this file). */
+  --glass: rgba(10, 17, 30, 0.6);
+  --glass-strong: rgba(14, 24, 42, 0.78);
+  --glass-hud: rgba(10, 17, 30, 0.78);
+  --glass-solid: rgba(10, 17, 30, 0.92);
+  --glass-line: rgba(160, 195, 240, 0.16);
+  --glass-hi: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --r-1: 10px;
+  --r-2: 14px;
+  --r-3: 20px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --dur-1: 150ms;
+  --dur-2: 200ms;
+  --dur-3: 250ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
@@ -4583,4 +4603,214 @@ body:has(.hud.is-touch.is-rotorhover) .race-solobar { left: 8px; right: auto; to
   .screen-hangar .hs-arrow { width: 48px; height: 48px; }
   .hs-hint { display: none; }
   .hangar-rest { padding: 16px 12px 22px; }
+}
+
+/* =========================================================================
+   The deck — demo polish (2026-10-24)
+   =========================================================================
+   A quick pass over the two things the class sees most: the start screen and
+   the HUD. Not the redesign (.claude/devtools/briefs/ui-redesign.md); the
+   same screens, the same buttons, the same keys — made to look like one set.
+
+   One language, written as tokens at the top of this file (:root):
+     glass       --glass / --glass-strong / --glass-hud, with --glass-line
+                 for the edge and --glass-hi for the light along the top
+     radius      --r-1 10 px (chips, small buttons) · --r-2 14 px (panels,
+                 cards' icons, HUD buttons) · --r-3 20 px (the big cards)
+     spacing     --sp-1 … --sp-6: 4 · 8 · 12 · 16 · 24 · 32
+     motion      --dur-1 150 ms (press) · --dur-2 200 ms (hover, screens) ·
+                 --dur-3 250 ms (fade); one ease, --ease
+     type        display clamp(28–46) · card 18 · body 14 · caption 12 ·
+                 label 10.5 upper-case
+
+   Low quality is a classroom Chromebook: html.fx-low (main.js syncFxTier())
+   turns EVERY backdrop blur under the interface off and gives the glass a
+   solid translucent back instead. Same layout, same colours, none of the
+   per-frame blur cost. Reduce motion keeps its meaning: no screen fade.
+   ========================================================================= */
+
+/* ---- The glass ---------------------------------------------------------- */
+.screen-main .card-btn,
+.screen-main .brand-mark,
+.menu-bar,
+.pause-card {
+  background: var(--glass);
+  border-color: var(--glass-line);
+  box-shadow: var(--glass-hi);
+  backdrop-filter: blur(12px) saturate(1.15);
+  -webkit-backdrop-filter: blur(12px) saturate(1.15);
+}
+.hud-panel,
+.hud-objective,
+.hud-btn,
+.hud-waypoint,
+.hud-toast,
+.hud-subtitle {
+  border-color: var(--glass-line);
+  box-shadow: var(--glass-hi), 0 12px 32px rgba(0, 0, 0, 0.38);
+}
+.hud-panel, .hud-objective, .hud-btn { background: var(--glass-hud); }
+
+/* Low quality: no blur anywhere under the interface — solid translucent glass. */
+html.fx-low .ui-root *,
+html.fx-low .ui-root *::before,
+html.fx-low .ui-root *::after,
+html.fx-low .menu-layer {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+/* The solid back comes from swapping the TOKENS, not from new selectors: an
+   `html.fx-low .hud-btn` rule out-ranks `.hud-btn.is-on`, `.hud-btn:hover`,
+   `.hud.is-contrast .hud-panel` and `.hud.is-touch .hud-bottom`, so on Low a
+   lit button went dark, high contrast lost its black and a phone grew a dark
+   bar along the bottom. The three panels the deck does not tint get the
+   solid back through :where(), which adds no weight over their states. */
+html.fx-low {
+  --glass: var(--glass-solid);
+  --glass-strong: rgba(14, 24, 42, 0.95);
+  --glass-hud: var(--glass-solid);
+}
+html.fx-low :where(.hud-waypoint, .hud-toast, .hud-subtitle) { background: var(--glass-solid); }
+html.fx-low .menu-layer {
+  background: linear-gradient(180deg, rgba(7, 12, 21, 0.5) 0%, rgba(7, 12, 21, 0.62) 55%, rgba(7, 12, 21, 0.78) 100%);
+}
+
+/* ---- Radius and motion, one scale -------------------------------------- */
+.hud-panel, .hud-objective, .hud-btn, .mission-card, .map-card, .fleet-card, .pause-card { border-radius: var(--r-2); }
+.hud-toast, .hud-chip, .ghost, button.primary, .tab { border-radius: var(--r-1); }
+.hud-chip { padding: 3px 8px; }
+.hud-btn, .ghost, button.primary, .tab, .credit-pill, .switcher button:where(.switch-btn) {
+  transition: transform var(--dur-1) var(--ease), background var(--dur-2) var(--ease),
+    border-color var(--dur-2) var(--ease), color var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
+}
+.hud-btn:active, .ghost:active, button.primary:active, .switcher button:where(.switch-btn):active, .credit-pill:active { transform: scale(0.97); }
+.hud-panel, .hud-objective { transition: opacity var(--dur-3) var(--ease), background var(--dur-2) var(--ease); }
+
+/* A screen arrives with a short fade (opacity only: nothing moves, nothing
+   a test measures changes). Not under Reduce motion. */
+.menu-layer > .screen:not([hidden]) { animation: screenIn var(--dur-2) var(--ease); }
+@keyframes screenIn { from { opacity: 0; } to { opacity: 1; } }
+html.reduce-motion .menu-layer > .screen:not([hidden]) { animation: none; }
+
+/* ---- The bar ------------------------------------------------------------ */
+.menu-bar { padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: 8px; }
+.switcher { border-radius: var(--r-2); }
+.switcher button:where(.switch-btn) { min-height: 38px; border-radius: var(--r-1); }
+.credit-pill { min-height: 38px; }
+
+/* ---- The start screen --------------------------------------------------- */
+.screen-main { padding-top: clamp(20px, 5vh, 48px); }
+.screen-main .brand { gap: var(--sp-5); margin-bottom: var(--sp-6); }
+.screen-main .brand-mark {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-3);
+  border: 1px solid var(--glass-line);
+  flex: none;
+}
+.screen-main .brand h1 { font-size: clamp(28px, 4.8vw, 46px); font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; }
+.screen-main .tagline { font-size: 15.5px; margin-top: 6px; }
+
+.screen-main .main-nav { gap: var(--sp-3); grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); }
+.screen-main .card-btn {
+  min-height: 76px;
+  padding: var(--sp-4) 18px;
+  gap: var(--sp-4);
+  border-radius: var(--r-3);
+  transition: transform var(--dur-2) var(--ease), border-color var(--dur-2) var(--ease),
+    box-shadow var(--dur-2) var(--ease), background var(--dur-2) var(--ease);
+}
+.screen-main .card-btn:hover {
+  transform: translateY(-2px);
+  background: var(--glass-strong);
+  box-shadow: var(--glass-hi), 0 14px 34px rgba(0, 0, 0, 0.4);
+}
+.screen-main .card-btn:active { transform: translateY(0) scale(0.985); transition-duration: var(--dur-1); }
+.screen-main .card-btn:focus-visible { outline: 2px solid var(--game-accent); outline-offset: 3px; }
+.screen-main .card-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: var(--r-2);
+  background: color-mix(in srgb, var(--game-accent) 16%, transparent);
+  transition: background var(--dur-2) var(--ease);
+}
+.screen-main .card-btn:hover .card-icon { background: color-mix(in srgb, var(--game-accent) 26%, transparent); }
+.screen-main .card-icon .icon { width: 26px; height: 26px; }
+.screen-main .card-body { gap: 4px; min-width: 0; }
+.screen-main .card-body strong { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; line-height: 1.2; }
+.screen-main .card-body em { font-size: 13px; line-height: 1.35; }
+
+/* What is under the cards is secondary: smaller, quieter, pills. */
+.screen-main .main-foot { margin-top: var(--sp-6); opacity: 0.9; }
+.screen-main .foot-links { gap: var(--sp-2); margin-top: var(--sp-3); }
+.screen-main .foot-links .ghost { border-radius: 999px; padding: 8px 14px; min-height: 36px; }
+.screen-main .tiny { font-size: 12px; }
+
+/* ---- Mission, map and aircraft cards: one hover, one press -------------- */
+.mission-card, .map-card, .fleet-card {
+  border-color: var(--glass-line);
+  box-shadow: var(--glass-hi);
+  transition: transform var(--dur-2) var(--ease), border-color var(--dur-2) var(--ease),
+    box-shadow var(--dur-2) var(--ease), background var(--dur-2) var(--ease);
+}
+.mission-card:hover, .map-card:hover, .fleet-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: var(--glass-hi), 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+.map-card:active, .fleet-card:active { transform: translateY(0) scale(0.985); transition-duration: var(--dur-1); }
+.mission-card .primary, .map-card .primary, .fleet-card .primary { min-height: 40px; }
+
+/* ---- The HUD: less to read, the same to know ---------------------------- */
+.hud-label { font-weight: 600; letter-spacing: 0.08em; }
+.hud-value { font-weight: 660; }
+.hud-keyhint { opacity: 0.85; }
+/* Once the Clean HUD has gone quiet, the engine strip steps back a little
+   so the objective and the instruments are what the eye lands on. Never in
+   the realistic cockpit, where the strip is already out of the way. */
+.hud.is-clean.is-quiet:not(.is-minimal) .hud-bottom { opacity: 0.86; }
+.hud.is-clean.is-quiet:not(.is-minimal) .hud-bottom:hover { opacity: 1; }
+.hud-rstack > .rs-chip { transition: opacity var(--dur-3) var(--ease); }
+
+/* ---- Touch: nothing under 44 px ----------------------------------------- */
+@media (pointer: coarse) {
+  .ghost, button.primary, .tab, .credit-pill, .hud-btn,
+  .switcher button:where(.switch-btn), .screen-main .card-btn, .screen-main .foot-links .ghost { min-height: 44px; }
+  .hud-btn { min-width: 44px; }
+  .mission-card .primary, .map-card .primary, .fleet-card .primary { min-height: 44px; }
+}
+
+/* ---- Phones ------------------------------------------------------------- */
+/* Portrait: one column of cards, the brand on one line to save height. */
+@media (max-width: 620px) {
+  .screen-main { padding-top: var(--sp-4); }
+  .screen-main .brand { flex-direction: row; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); }
+  .screen-main .brand-mark { width: 56px; height: 56px; }
+  .screen-main .brand-mark svg { width: 42px; height: 42px; }
+  .screen-main .brand h1 { font-size: 26px; }
+  .screen-main .tagline { font-size: 13.5px; margin-top: 3px; }
+  .screen-main .main-nav { grid-template-columns: 1fr; gap: var(--sp-2); }
+  .screen-main .card-btn { min-height: 64px; padding: var(--sp-3) 14px; border-radius: var(--r-2); }
+  .screen-main .card-icon { width: 40px; height: 40px; }
+  .screen-main .card-icon .icon { width: 22px; height: 22px; }
+  .screen-main .card-body strong { font-size: 16px; }
+  .screen-main .card-body em { font-size: 12.5px; }
+  .screen-main .main-foot { margin-top: var(--sp-4); }
+}
+/* Landscape: short, not narrow — the mark goes, the cards go two across and
+   their blurbs keep to one line. */
+@media (max-height: 460px) {
+  .screen-main { padding-top: var(--sp-2); }
+  .screen-main .brand { margin-bottom: var(--sp-3); gap: var(--sp-3); }
+  .screen-main .brand-mark { display: none; }
+  .screen-main .brand h1 { font-size: 24px; }
+  .screen-main .tagline { font-size: 13px; margin-top: 2px; }
+  .screen-main .main-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
+  .screen-main .card-btn { min-height: 56px; padding: 10px 12px; gap: var(--sp-3); border-radius: var(--r-2); }
+  .screen-main .card-icon { width: 36px; height: 36px; }
+  .screen-main .card-body strong { font-size: 15px; }
+  .screen-main .card-body em { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .screen-main .main-foot { margin-top: var(--sp-3); }
 }

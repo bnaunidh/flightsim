@@ -70,15 +70,22 @@ const FREE = ['skylark', 'courier', 'harrier'];
  * that flying the bomber is a thing you were let into rather than a thing you
  * wandered into. Whoever runs the game decides who gets told the word.
  *
- * Typed case-insensitively, so `mc1234` and `MC1234` are the same door.
+ * Typed case-insensitively: upper or lower case opens the same door.
  *
  * It opens ONCE. `militaryUnlocked` lives in the saved progression and is
  * never cleared — not by finishing, not by crashing, not by "Reset
  * everything", which only touches settings, keys and mission progress. Being
  * let in is a thing that happened to you, not a score you can lose, so the
  * game must never make a kid go and ask for the word a second time.
+ *
+ * The word itself is NOT in this file any more: only its fingerprint is —
+ * SHA-256 of the word trimmed and lower-cased, the same scheme as the hangar's
+ * CODES below (codeHash) — so reading the source no longer hands anyone the
+ * door. Whoever was told the word types it exactly as before. To change it:
+ * `node tools/hash-code.mjs --passcode=military`, type the new word, and
+ * paste the printed line here.
  */
-export const MILITARY_CODE = 'MC1234';
+export const MILITARY_CODE_HASH = '3ec50afbd4c5890ffe3fbab91c62d1fdc58d192f6b88b85be4bc9065a443889b';
 
 /**
  * Dev mode.
@@ -92,8 +99,21 @@ export const MILITARY_CODE = 'MC1234';
  * the work in the real game at all. Neither is any good.
  *
  * Same rules as the military code: case-insensitive, opens once, stays open.
+ * Same scheme as the military door: only the fingerprint lives here
+ * (`node tools/hash-code.mjs --passcode=dev` makes a new one).
  */
-export const DEV_CODE = 'DEV1234';
+export const DEV_CODE_HASH = 'a78f8128f2109434daf14d867c665d97a242909409b29bc0a965111d8a4a9f80';
+
+/**
+ * Does `raw` open the door whose fingerprint is `hash`? Trimmed and
+ * case-insensitive, exactly as the hangar's codes are, so `word`, ` WORD `
+ * and `Word` are one word. A door with no fingerprint (not 64 hex) opens for
+ * nothing, rather than for everything.
+ */
+async function isTheWord(raw, hash) {
+  if (!isCodeHash(hash)) return false;
+  return (await codeHash(raw)) === hash;
+}
 
 function blank() {
   return {
@@ -417,8 +437,14 @@ export function needsPasscode(p, type) {
   return !!(type && type.military) && !p.militaryUnlocked;
 }
 
-export function enterPasscode(p, raw) {
-  if (String(raw || '').trim().toUpperCase() !== MILITARY_CODE) {
+/**
+ * Try a word at the military door. Asynchronous because the fingerprint is
+ * (codeHash: crypto.subtle, or the plain-JavaScript SHA-256 on a plain-http
+ * classroom address). `hash` is the door to check against — the shipped
+ * fingerprint unless a test hands in its own.
+ */
+export async function enterPasscode(p, raw, hash = MILITARY_CODE_HASH) {
+  if (!(await isTheWord(raw, hash))) {
     return { ok: false, why: 'That is not the word' };
   }
   p.militaryUnlocked = true;
@@ -442,8 +468,9 @@ export function isDev(p) {
   return !!(p && p.devUnlocked);
 }
 
-export function enterDevCode(p, raw) {
-  if (String(raw || '').trim().toUpperCase() !== DEV_CODE) {
+/** Try a word at the workbench door; see enterPasscode. */
+export async function enterDevCode(p, raw, hash = DEV_CODE_HASH) {
+  if (!(await isTheWord(raw, hash))) {
     return { ok: false, why: 'That is not the word' };
   }
   p.devUnlocked = true;

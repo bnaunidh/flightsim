@@ -340,6 +340,35 @@ ok('one dear plane: a mix of missions gets it about as fast as before; sticking 
   res['priciest plane'].m.n / res['priciest plane'].b.n <= 1.25 && res['priciest plane'].a.n / res['priciest plane'].b.n <= 1.5,
   `a mix ${(res['priciest plane'].m.n / res['priciest plane'].b.n).toFixed(2)}×, easy-first ${(res['priciest plane'].a.n / res['priciest plane'].b.n).toFixed(2)}×`);
 
+/* ---- 10. the two doors are hashed, not written down ------------------- */
+
+{
+  // The military hangar and the workbench used to sit behind plaintext words
+  // in progression.js. Now only fingerprints ship (the CODES scheme), and a
+  // test-only word, hashed by the game's own codeHash(), opens a door handed
+  // in — exactly as the shipped one does for whoever knows the real word.
+  ok('no plaintext passcode is exported', typeof Prog.MILITARY_CODE === 'undefined' && typeof Prog.DEV_CODE === 'undefined');
+  ok('both doors ship as 64-hex SHA-256 fingerprints', Prog.isCodeHash(Prog.MILITARY_CODE_HASH) && Prog.isCodeHash(Prog.DEV_CODE_HASH)
+    && Prog.MILITARY_CODE_HASH !== Prog.DEV_CODE_HASH);
+  const word = `door-${Math.random().toString(36).slice(2, 8)}`;
+  const door = await Prog.codeHash(word);
+  const fresh = () => ({ ...Prog.load(), militaryUnlocked: false, devUnlocked: false });
+  let w = fresh();
+  const yes = await Prog.enterPasscode(w, `  ${word.toUpperCase()} `, door);
+  ok('a test-only word opens the military door, in any case, with spaces around it', yes.ok === true && w.militaryUnlocked === true, JSON.stringify(yes));
+  w = fresh();
+  const no = await Prog.enterPasscode(w, `${word}x`, door);
+  ok('a near miss is refused with the usual sentence and opens nothing', no.ok === false && no.why === 'That is not the word' && !w.militaryUnlocked);
+  w = fresh();
+  const dev = await Prog.enterDevCode(w, word, door);
+  const devNo = await Prog.enterDevCode(fresh(), word);
+  ok('the workbench door works the same way, and the test word does not open the SHIPPED one', dev.ok === true && w.devUnlocked === true && devNo.ok === false);
+  const blankDoor = await Prog.enterPasscode(fresh(), word, 'not-a-hash');
+  ok('a door with no fingerprint opens for nothing rather than for everything', blankDoor.ok === false);
+  const srcText = (await import('node:fs')).readFileSync(new URL('src/game/progression.js', root), 'utf8');
+  ok('progression.js has no plaintext passcode constant left', !/export const (MILITARY|DEV)_CODE = /.test(srcText) && /MILITARY_CODE_HASH = '[0-9a-f]{64}'/.test(srcText));
+}
+
 /* ---- the table --------------------------------------------------------- */
 
 console.log('\nDifficulty ranks:  ' + Prog.DIFFICULTIES.map((d) => `${d.rank} ${d.label} (${d.pay})`).join(' · '));

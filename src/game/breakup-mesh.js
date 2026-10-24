@@ -871,7 +871,7 @@ export function deformZones(asg, actions, hit = {}) {
   const rec = recordFor(asg.survey.model);
   let moved = 0;
   for (const a of actions) {
-    if (a.action === 'detach' || a.action === 'shake' || a.hidden) continue;
+    if (a.action === 'detach' || a.action === 'hang' || a.action === 'shake' || a.hidden) continue;
     if (rec.removed.has(a.zone) || !asg.index.has(a.zone)) continue;
     const d = { zone: a.zone, action: a.action, amount: a.amount, point: hit.point || [0, 0, 0], normal: hit.normal || [0, 1, 0], seed: rec.deformed.size + 1 };
     const fn = deformer(asg.layout.frame, d);

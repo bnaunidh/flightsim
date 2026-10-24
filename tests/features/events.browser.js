@@ -602,6 +602,39 @@ async function checks(sim, r, say) {
     r.ok('dev: back at the menu, nothing is left running', FE.hijackInfo().phase === 'idle');
   }
 
+  // The workbench door in the hangar: hashed now (progression.js
+  // DEV_CODE_HASH), so the box answers a moment later — and a made-up word
+  // gets the same sentence as always, opening nothing.
+  {
+    const Prog = await import('../../src/game/progression.js');
+    const menus = sim.menus;
+    const hangar = menus && menus.screens && menus.screens.hangar;
+    const box = hangar && hangar.querySelector('[data-dev-code]');
+    const enter = hangar && hangar.querySelector('[data-dev-enter]');
+    const msg = hangar && hangar.querySelector('[data-code-msg]');
+    r.ok('dev door: no plaintext passcode in the module, only fingerprints',
+      typeof Prog.DEV_CODE === 'undefined' && typeof Prog.MILITARY_CODE === 'undefined' && Prog.isCodeHash(Prog.DEV_CODE_HASH) && Prog.isCodeHash(Prog.MILITARY_CODE_HASH));
+    if (box && enter && msg && menus.prog) {
+      const was = !!menus.prog.devUnlocked;
+      try {
+        menus.prog.devUnlocked = false;
+        msg.textContent = '';
+        box.value = `not-the-word-${Math.random().toString(36).slice(2, 7)}`;
+        enter.click();
+        const pending = menus._doorCheck && typeof menus._doorCheck.then === 'function';
+        if (pending) await menus._doorCheck;
+        r.ok('dev door: a made-up word is checked asynchronously and refused with the usual sentence',
+          pending && msg.textContent === 'That is not the word' && !menus.prog.devUnlocked, `pending ${pending}, msg "${msg.textContent}", dev ${menus.prog.devUnlocked}`);
+      } finally {
+        menus.prog.devUnlocked = was;
+        box.value = '';
+        menus.syncProgression && menus.syncProgression(menus.prog);
+      }
+    } else {
+      r.ok('dev door: the hangar screen has the passcode box', false, `hangar ${!!hangar} box ${!!box} enter ${!!enter}`);
+    }
+  }
+
   r.ok('events: both features still live at the end', live(), JSON.stringify(extStatus()));
   r.ok('events: nothing left over in the scene',
     sim.scene.children.filter((o) => o.name && (o.name === 'police-car' || o.name === 'police-van' || o.name === 'police-stairs'
