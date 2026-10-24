@@ -45,7 +45,10 @@
  * on by default; never during a mayday or on foot), and an INSTANT REPLAY —
  * one key (` by default, in the key registry under View) or the button on
  * the crash screen — that plays the last seconds again from just before the
- * hit, slower, with the camera orbiting the wreck.
+ * hit, slower, with the camera orbiting the wreck. Everything in it is keyed
+ * to replay time: the pieces, the fire, the smoke, the scorch and the debris
+ * appear at the moment they did and not before, scrubbing forwards or back
+ * (see "The instant replay" below), with a bar to pause, step and drag.
  *
  * SCHOOL-SAFE: nobody is ever hurt. The cockpit is in the centre zone, which
  * never comes away; crews of aircraft you hit come down under parachutes
@@ -73,7 +76,7 @@ import { renderedHeight } from './explosions.js';
 import { createUniformPerson, uniformFor } from './uniforms.js';
 import { CRASH_SECONDS, dimsFrom } from './crashes/motion.js';
 import { syncAircraftModel } from '../aircraft/model-adapter.js';
-import { FLASH } from '../render/flash-safety.js';
+import { FLASH, FlashGate } from '../render/flash-safety.js';
 import { warmImpactShaders } from '../fleet/aircraft-impact.js';
 
 /** Pieces in the world at once, by quality. */
@@ -703,6 +706,7 @@ function addPiece(piece) {
   S.pieces.push(piece);
   S.stats.pieces++;
   if (S.pieces.length > S.stats.peak) S.stats.peak = S.pieces.length;
+  trackLater(piece);
 }
 
 function dropPiece(p) {
@@ -837,8 +841,15 @@ function crashed(sim, c) {
     // A mayday's controlled arrival: wrecked, but gently.
     hit.energy = Math.min(hit.energy == null ? 30 : hit.energy, 30);
   }
+  // The recording opens NOW, before the first piece and the first spark, so
+  // every one of them carries its time from the hit (the replay plays them
+  // back at that time and not before).
+  openRecording(sim, c.reason || '');
   const res = breakModel(sim, model, sim.aircraftType, hit);
-  if (!res) return;
+  if (!res) {
+    S.rec = null;
+    return;
+  }
   // Where it touched: what flies up from the surface.
   if (S.fx) {
     const e = res.plan.energy;
@@ -865,7 +876,7 @@ function crashed(sim, c) {
     S.slow.ease = SLOWMO.ease;
     S.stats.slowmo++;
   }
-  startRecording(sim, res.pieces, c.reason || '');
+  trackPieces(sim, res.pieces);
   S.lastRes = res;
   // At sea it does not stop there: it floats a while, then slowly goes down.
   if (kind === 'water' || (heightAt(world.x, world.z) < 0 && !platformAt(world.x, world.z) && world.y < 6)) startSink(sim, res);
@@ -1727,7 +1738,9 @@ function frame(sim, dt, inner, args) {
   const gdt = dt * scale;
   const out = inner.call(sim, gdt, ...args);
   const t0 = now();
-  S.clock += gdt;
+  // The replay owns the clock while it plays: the broken world stands still
+  // and the recording does not run on with a gap in it.
+  if (!S.replay) S.clock += gdt;
   const running = sim.state === 'flying' || sim.state === 'debrief';
   if (running && !S.replay) {
     stepPieces(sim, gdt);
@@ -1736,7 +1749,8 @@ function frame(sim, dt, inner, args) {
     stepRafts(gdt);
     record(sim, gdt);
   }
-  if (S.fx && running) S.fx.update(S.replay ? dt * REPLAY.speed : gdt, sim.camera);
+  // The effects: live they run on the game's clock; in a replay, playReplay steps them to its own.
+  if (S.fx && running && !S.replay) S.fx.update(gdt, sim.camera);
   if (S.replay) playReplay(sim, dt);
   recordPre(sim, gdt);
   const ms = now() - t0;
@@ -1747,6 +1761,30 @@ function frame(sim, dt, inner, args) {
 
 /* ------------------------------------------------------------------ *
  * The instant replay
+ *
+ * Everything the replay shows is keyed to REPLAY TIME, counted from the
+ * moment of the hit (negative before it). The recording is opened on the
+ * crash frame BEFORE anything is broken or lit, and from then on it keeps:
+ *
+ *   - the airframe's pose, and every piece's, at REPLAY.hz;
+ *   - every effect the break-up makes — sparks, dust, spray, fire, pops —
+ *     as a timed event (S.fx is wrapped: recordFx);
+ *   - what the game's own wreck (src/game/wreck.js: the fireball, the smoke
+ *     column, the debris, the scorch) was started with, so the replay can
+ *     run it again from the hit on its own clock.
+ *
+ * While a replay plays the live fire, smoke and wreck are put aside
+ * (snapshots) and given back at the end exactly as they were. Before the
+ * hit nothing of the crash is shown — no scorch, no smoke, no pieces off
+ * (they ride on the airframe where they were) — and scrubbing to any time,
+ * forwards or back, rebuilds the world as it was at that time (seekReplay).
+ * Owner, 2026-10-17: "the replay showed the crash damage (wreck, smoke,
+ * scorch) BEFORE the crash happened" — this is the fix.
+ *
+ * Controls: a bar at the bottom (−2 s, pause / play, +2 s, a scrubber you
+ * can drag, close) that works with a mouse or a finger, and while it plays
+ * Space pauses, ← → step two seconds, Escape closes (replay-only keys: they
+ * exist only while a replay is on; the registry's keys are for flying).
  * ------------------------------------------------------------------ */
 
 /**
@@ -1793,34 +1831,106 @@ function preFrames() {
   return out;
 }
 
-function startRecording(sim, pieces, reason) {
-  const model = sim.model;
-  const pos = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-  modelPose(model, pos, quat);
-  const inv = new THREE.Matrix4().compose(pos, quat, new THREE.Vector3(1, 1, 1)).invert();
+/** The effects the replay records and plays again (the methods of BreakupFx). `later` is not one: its pop is recorded when it goes off. */
+const FX_RECORDED = ['sparks', 'dust', 'splash', 'bubbles', 'foam', 'pop', 'fire'];
+
+/**
+ * Wrap a BreakupFx so that, while a recording is open, every effect it is
+ * asked for is written down with its replay time. Nothing is recorded while
+ * a replay is playing (those are the recorded effects coming back).
+ */
+function recordFx(fx) {
+  if (!fx || fx.__recorded) return fx;
+  for (const name of FX_RECORDED) {
+    const orig = fx[name];
+    if (typeof orig !== 'function') continue;
+    fx[name] = function recorded(...args) {
+      const r = S.rec;
+      // A vector handed in (a body's velocity) is copied: it goes on changing after the call.
+      if (r && !r.done && !S.replay && r.fx) r.fx.push({ t: S.clock - r.t0, name, args: args.map((a) => (a && a.isVector3 ? a.clone() : a)) });
+      return orig.apply(this, args);
+    };
+  }
+  fx.__recorded = true;
+  return fx;
+}
+
+/** A small seeded random, so the replay's wreck is the same wreck every time it is scrubbed back to. */
+function seeded(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Open the recording at the moment of the hit — before the break-up, before
+ * the first spark — so that every effect from here on carries its time from
+ * it, and keep what the game's wreck is started with (main.js starts it on
+ * the same CRASH event, with this same test for water).
+ */
+function openRecording(sim, reason) {
+  const ac = sim.aircraft;
+  const inWater = heightAt(ac.pos.x, ac.pos.z) < 0 && ac.pos.y < 4;
   S.rec = {
     t0: S.clock,
     reason,
-    model,
+    model: sim.model,
     pre: preFrames(),
-    frames: [{ t: 0, pos, quat }],
-    tracks: pieces.map((p) => ({
-      piece: p,
-      // Where it sat on the airframe: before it breaks, the replay keeps it there.
-      attach: inv.clone().multiply(new THREE.Matrix4().compose(p.group.position, p.group.quaternion, new THREE.Vector3(1, 1, 1))),
-      frames: [{ t: 0, pos: p.group.position.clone(), quat: p.group.quaternion.clone() }],
-    })),
+    frames: [],
+    tracks: [],
+    fx: [],
+    wreck: { pos: ac.pos.clone(), vel: ac.vel.clone(), inWater, seed: (Math.random() * 0x7fffffff) | 0 },
     acc: 0,
     done: false,
+    sealed: false,
     at: Date.now(),
   };
   for (const f of S.pre) f.t = -1e9;
 }
 
+/**
+ * The break-up has happened: the airframe's pose at the hit, and a track for
+ * every piece in the world. The pieces that have just come off carry where
+ * they sat on the airframe, so before the hit the replay keeps them there;
+ * a piece that was already lying about (a wing tip lost earlier) holds its
+ * first pose instead.
+ */
+function trackPieces(sim, pieces) {
+  const r = S.rec;
+  if (!r) return;
+  const pos = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  modelPose(sim.model, pos, quat);
+  r.frames.push({ t: 0, pos, quat });
+  const inv = new THREE.Matrix4().compose(pos, quat, new THREE.Vector3(1, 1, 1)).invert();
+  const fresh = new Set(pieces || []);
+  for (const p of S.pieces) {
+    if (p.gone || r.tracks.some((tr) => tr.piece === p)) continue;
+    r.tracks.push({
+      piece: p,
+      attach: fresh.has(p) ? inv.clone().multiply(new THREE.Matrix4().compose(p.group.position, p.group.quaternion, new THREE.Vector3(1, 1, 1))) : null,
+      born: 0,
+      frames: [{ t: 0, pos: p.group.position.clone(), quat: p.group.quaternion.clone() }],
+    });
+  }
+  r.sealed = true;
+}
+
+/** A piece made while the recording is open (something else hit, a wreck left at sea): tracked from when it was born. */
+function trackLater(piece) {
+  const r = S.rec;
+  if (!r || r.done || !r.sealed || S.replay) return;
+  const t = S.clock - r.t0;
+  r.tracks.push({ piece, attach: null, born: t, frames: [{ t, pos: piece.group.position.clone(), quat: piece.group.quaternion.clone() }] });
+}
+
 function record(sim, dt) {
   const r = S.rec;
-  if (!r || r.done) return;
+  if (!r || r.done || !r.sealed) return;
   r.acc += dt;
   const t = S.clock - r.t0;
   if (r.acc < 1 / REPLAY.hz && t < REPLAY.post) return;
@@ -1870,8 +1980,55 @@ function sample(frames, t, pos, quat) {
 
 export function canReplay() {
   const r = S.rec;
-  return !!(r && r.frames.length > 3 && r.model && r.model.parent);
+  return !!(r && r.sealed && r.frames.length > 3 && r.model && r.model.parent);
 }
+
+/** Seconds a seek button or arrow key jumps. */
+export const REPLAY_STEP = 2;
+
+/**
+ * Scrubbing must not become a strobe. A seek that lands just after a flash
+ * (the hit's fireball light, a ditching's fuel catching, a pop) shows that
+ * flash again — so dragging the bar back and forth over the hit, or tapping
+ * « » quickly, would flash it as fast as a finger moves. With Reduce
+ * flashing on (the default), a seek that would show a flash sooner than the
+ * flash gap after the last one, in REAL time, shows it without its flash:
+ * the fire and smoke are there, the light and the pop's flare are not.
+ */
+const REPLAY_FLASH_WINDOW = 0.5;
+const _replayFlash = new FlashGate();
+
+function wallSeconds() {
+  return now() / 1000;
+}
+
+/** Replay times at which something flashes: the hit, the fuel catching at sea, each pop. */
+function flashMoments(r) {
+  if (r._flashes && r._flashes.n === r.fx.length) return r._flashes.t;
+  const t = [0];
+  if (r.wreck && r.wreck.inWater) t.push(0.85);
+  for (const e of r.fx) if (e.name === 'pop') t.push(e.t);
+  r._flashes = { n: r.fx.length, t };
+  return t;
+}
+
+/** The flash moment whose window `t` lies in, or null. */
+function flashAt(r, t) {
+  for (const f of flashMoments(r)) if (t >= f && t < f + REPLAY_FLASH_WINDOW) return f;
+  return null;
+}
+
+/** Set the wreck's flash (and the pops') on or off for what the replay shows now. */
+function replayFlashes(R, on) {
+  R.quiet = !on;
+  if (R.wreck) R.wreck.flashScale = on ? 1 : 0;
+}
+
+const _rp = new THREE.Vector3();
+const _rq = new THREE.Quaternion();
+const _rm = new THREE.Matrix4();
+const _rm2 = new THREE.Matrix4();
+const _rlook = new THREE.Vector3();
 
 /** Start the replay. `fromDebrief`: the crash screen is put away and comes back after. */
 export function startReplay(sim, fromDebrief = false) {
@@ -1901,8 +2058,32 @@ export function startReplay(sim, fromDebrief = false) {
   // The airframe may have gone under and been put away since (the crash
   // screen offers the replay for two minutes, the sink hides it after one):
   // the replay shows it all the same, and puts it away again after.
-  S.replay = { t: pre, start: pre, end, centre, radius, ang, fromDebrief, saved: new Map(), fov: cam ? cam.fov : 60, model: r.model, modelVisible: r.model.visible };
+  S.replay = {
+    t: pre, start: pre, end, centre, radius, ang, fromDebrief, saved: new Map(), fov: cam ? cam.fov : 60, model: r.model, modelVisible: r.model.visible,
+    paused: false,
+    fxCursor: 0,
+    fxSnap: null,
+    wreck: null,
+    wreckSnap: null,
+    wreckT: null,
+    seeks: 0,
+    quiet: false,
+  };
+  const R = S.replay;
+  // The live fire and smoke, and the game's wreck, are put aside for the duration.
+  if (S.fx && typeof S.fx.snapshot === 'function') {
+    R.fxSnap = S.fx.snapshot();
+    S.fx.clear();
+  }
+  const wreck = sim.wreck;
+  if (wreck && typeof wreck.snapshot === 'function' && typeof wreck.step === 'function') {
+    R.wreck = wreck;
+    R.wreckSnap = wreck.snapshot();
+    wreck.held = true;
+  }
   r.model.visible = true;
+  // Pieces the recording never saw (none, normally) stay where they lie.
+  seekReplay(sim, pre);
   if (fromDebrief && sim.menus && typeof sim.menus.hide === 'function') sim.menus.hide();
   showLabel(true);
   S.stats.replays++;
@@ -1921,6 +2102,14 @@ export function endReplay(sim, showDebriefAgain = true) {
     p.group.quaternion.copy(p.body.quat);
     p.group.visible = true;
   }
+  // The live fire and smoke back, and the wreck — unless a restart has cleared it meanwhile (then it owns it).
+  if (S.fx && R.fxSnap && typeof S.fx.restore === 'function') S.fx.restore(R.fxSnap);
+  if (R.wreck) {
+    if (R.wreck.held) R.wreck.restore(R.wreckSnap);
+    R.wreck.held = false;
+    R.wreck.flashScale = 1;
+  }
+  if (S.fx) S.fx.noFlare = false;
   sim = sim || S.sim;
   if (sim && sim.camera) {
     sim.camera.fov = R.fov;
@@ -1936,6 +2125,159 @@ export function endReplay(sim, showDebriefAgain = true) {
   }
 }
 
+/** Pause or resume the replay. Returns the new paused state, or null when nothing is playing. */
+export function pauseReplay(sim, on) {
+  const R = S.replay;
+  if (!R) return null;
+  R.paused = on == null ? !R.paused : !!on;
+  syncBar();
+  return R.paused;
+}
+
+/**
+ * Jump to replay time `t` (seconds from the hit; negative before it) and
+ * rebuild the world as it was then: the airframe and the pieces from their
+ * tracks, the effects from the recorded events played again up to `t`, the
+ * wreck run again from the hit. Forwards or back, the same answer.
+ */
+export function seekReplay(sim, t) {
+  const R = S.replay;
+  if (!R) return false;
+  sim = sim || S.sim;
+  const from = R.t;
+  R.t = clamp(Number(t) || 0, R.start, R.end);
+  R.seeks++;
+  const r = S.rec;
+  const f = r ? flashAt(r, R.t) : null;
+  if (f === null) replayFlashes(R, true);
+  else if (flashAt(r, from) !== f) replayFlashes(R, !FLASH.reduce || _replayFlash.allow(wallSeconds()));
+  if (S.fx) S.fx.noFlare = !!R.quiet;
+  fxSeek(R.t);
+  if (S.fx) S.fx.noFlare = false;
+  wreckSeek(R.t);
+  poseAt(R.t);
+  syncBar();
+  return true;
+}
+
+/** Step the break-up effects by dt in slices their integrator is happy with (it clamps a step at 0.1 s). */
+function stepFx(dt) {
+  if (!S.fx) return;
+  let left = dt;
+  while (left > 1e-6) {
+    const h = Math.min(1 / 30, left);
+    S.fx.update(h, S.sim && S.sim.camera);
+    left -= h;
+  }
+}
+
+/** Emit every recorded effect up to time t, in order, from where the cursor stands. */
+function fxEmitUpTo(t) {
+  const R = S.replay;
+  const r = S.rec;
+  if (!R || !r || !S.fx) return;
+  const ev = r.fx;
+  while (R.fxCursor < ev.length && ev[R.fxCursor].t <= t) {
+    const e = ev[R.fxCursor++];
+    try {
+      S.fx[e.name](...e.args);
+    } catch (err) {
+      /* an effect that cannot be played again is left out */
+    }
+  }
+}
+
+/** The effects as they were at time t: cleared, then every event up to t played again with the time between them run. */
+function fxSeek(t) {
+  const R = S.replay;
+  const r = S.rec;
+  if (!R || !r || !S.fx) return;
+  S.fx.clear();
+  R.fxCursor = 0;
+  if (t < 0) return;
+  let at = 0;
+  const ev = r.fx;
+  while (R.fxCursor < ev.length && ev[R.fxCursor].t <= t) {
+    const e = ev[R.fxCursor];
+    if (e.t - at > 1 / 60) {
+      stepFx(e.t - at);
+      at = e.t;
+    }
+    fxEmitUpTo(e.t);
+  }
+  if (t - at > 1e-6) stepFx(t - at);
+}
+
+/**
+ * The game's wreck as it was at time t: hidden before the hit; from the hit,
+ * started again with what it was started with (the same random numbers each
+ * time) and stepped to t — forwards from where it stands, or from the start
+ * when t is behind it.
+ */
+function wreckSeek(t) {
+  const R = S.replay;
+  const r = S.rec;
+  const w = R && R.wreck;
+  if (!w || !r || !r.wreck) return;
+  if (t < 0) {
+    w.hide();
+    R.wreckT = null;
+    return;
+  }
+  if (R.wreckT == null || t < R.wreckT) {
+    w.start(r.wreck.pos, r.wreck.vel, r.wreck.inWater, seeded(r.wreck.seed));
+    R.wreckT = 0;
+  }
+  let guard = 0;
+  while (R.wreckT < t - 1e-6 && guard++ < 4000) {
+    const h = Math.min(1 / 30, t - R.wreckT);
+    w.step(h);
+    R.wreckT += h;
+  }
+}
+
+/** The airframe and every piece where the recording has them at time t. Allocates nothing. */
+function poseAt(t) {
+  const r = S.rec;
+  if (!r || !r.model) return;
+  // The airframe: before the hit from the moments kept before it, after from the recording.
+  if (t < 0 && r.pre.length) {
+    if (!sample(r.pre, t, _rp, _rq) || t > r.pre[r.pre.length - 1].t) {
+      // Between the last kept moment and the hit itself.
+      const a = r.pre[r.pre.length - 1];
+      const b = r.frames[0];
+      const k = clamp((t - a.t) / (b.t - a.t || 1), 0, 1);
+      _rp.copy(a.pos).lerp(b.pos, k);
+      _rq.copy(a.quat).slerp(b.quat, k);
+    }
+  } else sample(r.frames, t, _rp, _rq);
+  const model = r.model;
+  if (model.matrixAutoUpdate) {
+    model.position.copy(_rp);
+    model.quaternion.copy(_rq);
+    model.updateMatrixWorld(true);
+  } else {
+    const sc = model.getWorldScale(_s);
+    model.matrix.compose(_rp, _rq, sc);
+    model.matrixWorldNeedsUpdate = true;
+    model.updateMatrixWorld(true);
+  }
+  // Each piece: on the airframe until its moment, then along its track; one born later (not off this
+  // airframe — something else hit, a wreck left at sea) is not there yet before its moment.
+  _rm.compose(_rp, _rq, _s.set(1, 1, 1));
+  for (const tr of r.tracks) {
+    const p = tr.piece;
+    if (p.gone) continue;
+    if (!tr.attach && t < tr.born) {
+      p.group.visible = false;
+      continue;
+    }
+    if (t < 0 && tr.attach) _rm2.multiplyMatrices(_rm, tr.attach).decompose(p.group.position, p.group.quaternion, _s);
+    else sample(tr.frames, t, p.group.position, p.group.quaternion);
+    p.group.visible = true;
+  }
+}
+
 function playReplay(sim, dt) {
   const R = S.replay;
   const r = S.rec;
@@ -1944,83 +2286,244 @@ function playReplay(sim, dt) {
     endReplay(sim, true);
     return;
   }
-  R.t += dt * REPLAY.speed;
-  if (R.t > R.end + 0.4) {
-    endReplay(sim, true);
-    return;
+  if (!R.paused) {
+    const adv = dt * REPLAY.speed;
+    const was = flashAt(r, R.t);
+    R.t += adv;
+    const f = flashAt(r, R.t);
+    if (f === null) replayFlashes(R, true);
+    else if (f !== was) {
+      // Played into a flash: it shows (the recording's own pace), and counts as the last one.
+      replayFlashes(R, true);
+      if (FLASH.reduce) _replayFlash.last = wallSeconds();
+    }
+    if (R.t > R.end + 0.4) {
+      endReplay(sim, true);
+      return;
+    }
+    // Forwards: the effects whose moment has come, then the ones alive move on; the wreck steps to the same time.
+    fxEmitUpTo(R.t);
+    stepFx(adv);
+    wreckSeek(Math.min(R.t, R.end));
   }
-  const t = R.t;
-  // The airframe: before the hit from the moments kept before it, after from the recording.
-  const pos = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-  if (t < 0 && r.pre.length) sample(r.pre.concat([{ t: 0, pos: r.frames[0].pos, quat: r.frames[0].quat }]), t, pos, quat);
-  else sample(r.frames, t, pos, quat);
-  const model = r.model;
-  if (model.matrixAutoUpdate) {
-    model.position.copy(pos);
-    model.quaternion.copy(quat);
-    model.updateMatrixWorld(true);
-  } else {
-    const sc = model.getWorldScale(_s);
-    model.matrix.compose(pos, quat, sc);
-    model.matrixWorldNeedsUpdate = true;
-    model.updateMatrixWorld(true);
-  }
-  // Each piece: on the airframe until its moment, then along its track.
-  _m.compose(pos, quat, _s.set(1, 1, 1));
-  for (const tr of r.tracks) {
-    const p = tr.piece;
-    if (p.gone) continue;
-    if (t < 0) {
-      new THREE.Matrix4().multiplyMatrices(_m, tr.attach).decompose(p.group.position, p.group.quaternion, _s);
-    } else sample(tr.frames, t, p.group.position, p.group.quaternion);
-    p.group.visible = true;
-  }
-  // The camera, orbiting.
+  const t = Math.min(R.t, R.end);
+  poseAt(t);
+  // The camera, orbiting — from the airframe towards where it all ended up.
   const cam = sim.camera;
   if (cam) {
-    R.ang += dt * 0.32;
-    const look = pos.clone().lerp(R.centre, clamp((t - R.start) / Math.max(0.5, R.end - R.start), 0, 1) * 0.6);
-    const x = look.x + Math.cos(R.ang) * R.radius;
-    const z = look.z + Math.sin(R.ang) * R.radius;
-    let y = Math.max(look.y, surface(look.x, look.z, {}).y) + R.radius * 0.38 + 2;
+    if (!R.paused) R.ang += dt * 0.32;
+    _rlook.copy(_rp).lerp(R.centre, clamp((t - R.start) / Math.max(0.5, R.end - R.start), 0, 1) * 0.6);
+    const x = _rlook.x + Math.cos(R.ang) * R.radius;
+    const z = _rlook.z + Math.sin(R.ang) * R.radius;
+    let y = Math.max(_rlook.y, surface(_rlook.x, _rlook.z, {}).y) + R.radius * 0.38 + 2;
     const g = surface(x, z, {}).y;
     if (y < g + 4) y = g + 4;
     cam.position.set(x, y, z);
-    cam.lookAt(look);
+    cam.lookAt(_rlook);
     cam.fov = 55;
     cam.updateProjectionMatrix();
   }
-  if (S.bar) S.bar.style.width = `${Math.round(100 * clamp((t - R.start) / (R.end - R.start || 1), 0, 1))}%`;
+  syncBar();
+}
+
+/* ---- the replay's own screen: a tag at the top, a bar of controls at the bottom ---- */
+
+function syncBar() {
+  const R = S.replay;
+  if (!R || !S.bar) return;
+  const k = clamp((R.t - R.start) / (R.end - R.start || 1), 0, 1);
+  S.bar.style.width = `${Math.round(1000 * k) / 10}%`;
+  if (S.ui) {
+    if (S.ui.pause) {
+      S.ui.pause.textContent = R.paused ? '▶' : '❚❚';
+      const label = `${R.paused ? 'Play' : 'Pause'}${S.ui.pauseKey ? ` (${S.ui.pauseKey})` : ''}`;
+      S.ui.pause.setAttribute('aria-label', label);
+      S.ui.pause.title = label;
+    }
+    if (S.ui.time) S.ui.time.textContent = `${R.t < 0 ? '−' : '+'}${Math.abs(R.t).toFixed(1)} s`;
+  }
+}
+
+/** Replay time for a point on the track, 0..1 across it. */
+function trackTime(k) {
+  const R = S.replay;
+  if (!R) return 0;
+  return R.start + clamp(k, 0, 1) * (R.end - R.start);
+}
+
+function buildUi() {
+  const el = document.createElement('div');
+  el.className = 'breakup-replay-label';
+  Object.assign(el.style, {
+    position: 'absolute', left: '50%', top: '12%', transform: 'translateX(-50%)',
+    padding: '6px 18px 10px', borderRadius: '10px', font: '800 14px/1.2 system-ui, sans-serif',
+    letterSpacing: '0.18em', color: '#fff', background: 'rgba(200,40,40,0.88)',
+    border: '2px solid rgba(255,255,255,0.85)', pointerEvents: 'none', display: 'none', zIndex: '41',
+  });
+  el.textContent = 'INSTANT REPLAY';
+  const track = document.createElement('div');
+  Object.assign(track.style, { position: 'absolute', left: '10px', right: '10px', bottom: '3px', height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,0.3)', overflow: 'hidden' });
+  const bar = document.createElement('div');
+  Object.assign(bar.style, { height: '100%', width: '0%', background: '#fff' });
+  track.appendChild(bar);
+  el.appendChild(track);
+  extLayer().appendChild(el);
+  S.label = el;
+  S.bar = bar;
+
+  // The controls: big enough for a thumb (44 px), and they take the pointer (the layer does not).
+  const ui = document.createElement('div');
+  ui.className = 'breakup-replay-bar';
+  Object.assign(ui.style, {
+    position: 'absolute', left: '50%', bottom: 'max(14%, calc(env(safe-area-inset-bottom, 0px) + 72px))', transform: 'translateX(-50%)',
+    width: 'min(560px, 92vw)', display: 'none', alignItems: 'center', gap: '4px', padding: '6px', borderRadius: '14px',
+    background: 'rgba(14,16,20,0.78)', border: '1px solid rgba(255,255,255,0.25)', color: '#fff',
+    font: '700 15px/1 system-ui, sans-serif', pointerEvents: 'auto', zIndex: '42', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none',
+  });
+  const button = (what, text, label) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.replay = what;
+    b.textContent = text;
+    b.setAttribute('aria-label', label);
+    b.title = label;
+    Object.assign(b.style, {
+      minWidth: '44px', height: '44px', padding: '0 10px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.3)',
+      background: 'rgba(255,255,255,0.1)', color: '#fff', font: 'inherit', fontSize: '16px', cursor: 'pointer', touchAction: 'manipulation',
+    });
+    ui.appendChild(b);
+    return b;
+  };
+  const back = button('back', '«', `Back ${REPLAY_STEP} s (←)`);
+  const pause = button('pause', '❚❚', 'Pause (Space)');
+  const fwd = button('fwd', '»', `Forward ${REPLAY_STEP} s (→)`);
+  const scrub = document.createElement('div');
+  scrub.dataset.replay = 'track';
+  scrub.setAttribute('role', 'slider');
+  scrub.setAttribute('aria-label', 'Replay time');
+  Object.assign(scrub.style, { flex: '1', height: '44px', display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '0 4px', touchAction: 'none' });
+  const rail = document.createElement('div');
+  Object.assign(rail.style, { position: 'relative', width: '100%', height: '8px', borderRadius: '4px', background: 'rgba(255,255,255,0.25)', overflow: 'hidden', pointerEvents: 'none' });
+  const fill = document.createElement('div');
+  Object.assign(fill.style, { height: '100%', width: '0%', background: '#ff5a5a' });
+  rail.appendChild(fill);
+  // The moment of the hit, marked on the rail.
+  const hit = document.createElement('div');
+  Object.assign(hit.style, { position: 'absolute', top: '0', bottom: '0', width: '2px', background: 'rgba(255,255,255,0.9)', left: '0%' });
+  rail.appendChild(hit);
+  scrub.appendChild(rail);
+  ui.appendChild(scrub);
+  const time = document.createElement('span');
+  Object.assign(time.style, { minWidth: '46px', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontSize: '12px', opacity: '0.9' });
+  ui.appendChild(time);
+  const close = button('close', '✕', 'Close the replay (Esc)');
+  extLayer().appendChild(ui);
+
+  // Mirror the top bar onto the rail's fill: one source of truth (S.bar).
+  const mirror = new MutationObserver(() => { fill.style.width = bar.style.width; });
+  mirror.observe(bar, { attributes: true, attributeFilter: ['style'] });
+
+  const seekBy = (d) => {
+    if (!S.replay) return;
+    seekReplay(S.sim, S.replay.t + d);
+  };
+  back.addEventListener('click', () => seekBy(-REPLAY_STEP));
+  fwd.addEventListener('click', () => seekBy(REPLAY_STEP));
+  pause.addEventListener('click', () => pauseReplay(S.sim));
+  close.addEventListener('click', () => endReplay(S.sim, true));
+  // Drag the rail: pointer events work for a mouse and a finger alike.
+  let dragging = false;
+  let wasPaused = false;
+  const at = (ev) => {
+    const rect = rail.getBoundingClientRect();
+    return rect.width > 0 ? (ev.clientX - rect.left) / rect.width : 0;
+  };
+  scrub.addEventListener('pointerdown', (ev) => {
+    if (!S.replay) return;
+    dragging = true;
+    wasPaused = S.replay.paused;
+    S.replay.paused = true;
+    try { scrub.setPointerCapture(ev.pointerId); } catch (e) { /* no capture: moves still arrive while over it */ }
+    seekReplay(S.sim, trackTime(at(ev)));
+    ev.preventDefault();
+  });
+  scrub.addEventListener('pointermove', (ev) => {
+    if (!dragging || !S.replay) return;
+    seekReplay(S.sim, trackTime(at(ev)));
+  });
+  const release = () => {
+    if (!dragging) return;
+    dragging = false;
+    if (S.replay) S.replay.paused = wasPaused;
+    syncBar();
+  };
+  scrub.addEventListener('pointerup', release);
+  scrub.addEventListener('pointercancel', release);
+  scrub.addEventListener('lostpointercapture', release);
+
+  S.ui = { el: ui, back, pause, fwd, scrub, rail, fill, hit, time, close };
 }
 
 function showLabel(on) {
   try {
     if (!S.label) {
       if (!on) return;
-      const el = document.createElement('div');
-      el.className = 'breakup-replay-label';
-      Object.assign(el.style, {
-        position: 'absolute', left: '50%', top: '12%', transform: 'translateX(-50%)',
-        padding: '6px 18px 10px', borderRadius: '10px', font: '800 14px/1.2 system-ui, sans-serif',
-        letterSpacing: '0.18em', color: '#fff', background: 'rgba(200,40,40,0.88)',
-        border: '2px solid rgba(255,255,255,0.85)', pointerEvents: 'none', display: 'none', zIndex: '41',
-      });
-      el.textContent = 'INSTANT REPLAY';
-      const track = document.createElement('div');
-      Object.assign(track.style, { position: 'absolute', left: '10px', right: '10px', bottom: '3px', height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,0.3)', overflow: 'hidden' });
-      const bar = document.createElement('div');
-      Object.assign(bar.style, { height: '100%', width: '0%', background: '#fff' });
-      track.appendChild(bar);
-      el.appendChild(track);
-      extLayer().appendChild(el);
-      S.label = el;
-      S.bar = bar;
+      buildUi();
     }
     S.label.style.display = on ? 'block' : 'none';
+    if (S.ui) {
+      S.ui.el.style.display = on ? 'flex' : 'none';
+      if (on && S.replay) {
+        const R = S.replay;
+        labelBarKeys(S.sim);
+        S.ui.hit.style.left = `${Math.round(1000 * clamp((0 - R.start) / (R.end - R.start || 1), 0, 1)) / 10}%`;
+        syncBar();
+      }
+    }
   } catch (e) {
     /* no page: the replay still plays */
   }
+}
+
+/**
+ * The replay's own keys, only while one plays (registry actions, so Settings
+ * can move them; their defaults share Space, the arrows and Esc with flying,
+ * which is a designed share: they listen only while a replay is on). Returns
+ * true when the key was one of them.
+ */
+const REPLAY_KEYS = ['replayPause', 'replayBack', 'replayForward', 'replayClose'];
+function replayKey(sim, code) {
+  if (!S.replay) return false;
+  if (isKey(sim, 'replayPause', code)) {
+    pauseReplay(sim);
+    return true;
+  }
+  if (isKey(sim, 'replayBack', code)) {
+    seekReplay(sim, S.replay.t - REPLAY_STEP);
+    return true;
+  }
+  if (isKey(sim, 'replayForward', code)) {
+    seekReplay(sim, S.replay.t + REPLAY_STEP);
+    return true;
+  }
+  if (isKey(sim, 'replayClose', code)) {
+    endReplay(sim, true);
+    return true;
+  }
+  return false;
+}
+
+/** The bar's tooltips name the keys the player actually has. */
+function labelBarKeys(sim) {
+  if (!S.ui) return;
+  const set = (b, text) => {
+    b.title = text;
+    b.setAttribute('aria-label', text);
+  };
+  set(S.ui.back, `Back ${REPLAY_STEP} s (${keyName('replayBack', sim)})`);
+  set(S.ui.fwd, `Forward ${REPLAY_STEP} s (${keyName('replayForward', sim)})`);
+  set(S.ui.close, `Close the replay (${keyName('replayClose', sim)})`);
+  S.ui.pauseKey = keyName('replayPause', sim);
 }
 
 /* ------------------------------------------------------------------ *
@@ -2051,7 +2554,7 @@ function wrapDebrief(sim) {
     try {
       S.lastDebrief = opts;
       if (live() && o && canReplay() && Date.now() - S.rec.at < 120000 && Array.isArray(o.actions) && !o.actions.some((a) => a && a.breakupReplay)) {
-        o = { ...o, actions: [...o.actions, { label: `Watch the replay (${keyName('crashReplay', sim)})`, breakupReplay: true, onClick: () => startReplay(sim, true) }] };
+        o = { ...o, actions: [...o.actions, { label: sim.touch ? 'Watch the replay' : `Watch the replay (${keyName('crashReplay', sim)})`, breakupReplay: true, onClick: () => startReplay(sim, true) }] };
       }
     } catch (e) {
       o = opts;
@@ -2093,6 +2596,11 @@ registerExtension({
       ctx: ['plane', 'heli'],
       default: ['Backquote'],
     },
+    // While a replay plays only (the bar at the bottom has a button for each).
+    replayPause: { label: 'Instant replay: pause / play', group: 'View', ctx: ['plane', 'heli'], default: ['Space'] },
+    replayBack: { label: `Instant replay: back ${REPLAY_STEP} seconds`, group: 'View', ctx: ['plane', 'heli'], default: ['ArrowLeft'] },
+    replayForward: { label: `Instant replay: forward ${REPLAY_STEP} seconds`, group: 'View', ctx: ['plane', 'heli'], default: ['ArrowRight'] },
+    replayClose: { label: 'Instant replay: close', group: 'View', ctx: ['plane', 'heli'], default: ['Escape'] },
   },
 
   install(sim) {
@@ -2108,9 +2616,16 @@ registerExtension({
     // The replay key on the crash screen, where the game's keys are not listened to.
     if (typeof window !== 'undefined' && window.addEventListener) {
       window.addEventListener('keydown', (ev) => {
-        if (!live() || !S.sim || S.sim.state !== 'debrief') return;
+        if (!live() || !S.sim) return;
         const t = ev.target;
         if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
+        // While a replay plays, in any state: Space, the arrows and Escape are the replay's.
+        if (S.replay && !ev.repeat && replayKey(S.sim, ev.code)) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          return;
+        }
+        if (S.sim.state !== 'debrief') return;
         if (isKey(S.sim, 'crashReplay', ev.code)) {
           if (S.replay) endReplay(S.sim, true);
           else if (!startReplay(S.sim, true)) return;
@@ -2131,7 +2646,7 @@ registerExtension({
     // A new world: nothing of the old one's wreck belongs in it.
     resetAll(sim);
     if (S.fx) S.fx.dispose();
-    S.fx = new BreakupFx(group, S.quality);
+    S.fx = recordFx(new BreakupFx(group, S.quality));
     if (S.group && sim.scene && S.group.parent !== sim.scene) sim.scene.add(S.group);
     clearZoneCache();
     S.warmPending = true;
@@ -2177,7 +2692,10 @@ registerExtension({
   },
 
   key(sim, code, down) {
-    if (!down || !isKey(sim, 'crashReplay', code)) return false;
+    if (!down) return false;
+    // The replay's own keys (handled on the window, where the crash screen's keys live too): the game must not act on them.
+    if (S.replay && REPLAY_KEYS.some((a) => isKey(sim, a, code))) return true;
+    if (!isKey(sim, 'crashReplay', code)) return false;
     if (S.replay) {
       endReplay(sim, true);
       return true;
@@ -2220,6 +2738,8 @@ export function breakupDebug() {
     pieces: S.pieces.map((p) => ({ zones: p.zones.join('+'), owner: p.owner, asleep: p.body.sleeping, wet: p.body.wet, sunk: p.body.sunk, y: Math.round(p.body.pos.y * 10) / 10, x: Math.round(p.body.pos.x), z: Math.round(p.body.pos.z), engine: p.engine, fuel: p.fuel })),
     stats: { ...S.stats, alive: S.pieces.length, awake: S.pieces.filter((p) => !p.body.sleeping).length, fx: S.fx ? { ...S.fx.stats, busy: S.fx.busy } : null },
     replaying: !!S.replay,
+    replay: S.replay ? { t: S.replay.t, start: S.replay.start, end: S.replay.end, paused: S.replay.paused, fxCursor: S.replay.fxCursor, wreckT: S.replay.wreckT, seeks: S.replay.seeks, wreckHeld: !!(S.replay.wreck && S.replay.wreck.held) } : null,
+    recording: S.rec ? { t0: S.rec.t0, done: S.rec.done, sealed: S.rec.sealed, frames: S.rec.frames.length, tracks: S.rec.tracks.length, fx: S.rec.fx.length, pre: S.rec.pre.length, wreck: S.rec.wreck ? { inWater: S.rec.wreck.inWater } : null } : null,
     canReplay: canReplay(),
     sink: S.sink ? { t: S.sink.t, started: S.sink.started, hidden: S.sink.hidden, floatT: S.sink.floatT, settleT: S.sink.settleT, sinkT: S.sink.sinkT, delay: S.sink.delay, heavy: S.sink.heavy, L: S.sink.L, belly: S.sink.belly, draft: S.sink.draft, inT: S.sink.settle ? S.sink.settle.inT : null, inAt: S.sink.settle ? S.sink.delay + S.sink.settle.inT : null } : null,
     rafts: S.rafts.map((r) => ({ x: Math.round(r.group.position.x), y: Math.round(r.group.position.y * 100) / 100, z: Math.round(r.group.position.z), person: !!r.person })),
@@ -2242,5 +2762,8 @@ export function breakupDebug() {
     npcSinks: () => S.npcs.map((n) => (n.sink ? { t: n.sink.t, phase: n.sink.last ? n.sink.last.phase : null, pitch: n.sink.last ? n.sink.last.pitch : null } : null)),
     startReplay,
     endReplay,
+    seekReplay,
+    pauseReplay,
+    REPLAY_STEP,
   };
 }

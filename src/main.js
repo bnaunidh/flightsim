@@ -8,7 +8,8 @@
 
 import * as THREE from './vendor/three.module.js';
 
-import { warmTextures, setTextureAnisotropy, asphaltTexture, asphaltNormal } from './render/textures.js';
+import { warmTextures, setTextureAnisotropy, setTextureTier, asphaltTexture, asphaltNormal } from './render/textures.js';
+import { resetSurfaces, updateSurfaces, setFieldWetness } from './render/surfaces.js';
 import { PostFX } from './render/post.js';
 import { pickTier, probeFrames, isTier, tierRank, asHighMs } from './render/quality-probe.js';
 import { DynamicResolution, pixelRatioCap } from './render/dyn-res.js';
@@ -217,6 +218,10 @@ class Game {
     this.post = new PostFX(this.renderer);
     // The aeroplanes' paint: clearcoat on High and Ultra (render/paint.js).
     setPaintTier(q);
+    // The texture sizes follow the tier (render/textures.js setTextureTier):
+    // set before anything is drawn, so nothing is drawn twice.
+    setTextureTier(q);
+    resetSurfaces(q);
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 60000);
@@ -953,6 +958,11 @@ class Game {
       this.post.setEnabled(quality === 'high' || quality === 'ultra');
     }
     setPaintTier(quality);
+    // Glass, cladding and tarmac (render/surfaces.js): the tier decides whether
+    // they reflect the sky's environment map or Low's analytic one, and the
+    // registry of the old world's materials is dropped here.
+    setTextureTier(quality);
+    resetSurfaces(quality);
     yield next('Filling the sea…');
     this.ocean = t('ocean', () => new Ocean(this.scene, quality));
     yield next('Laying the runway…');
@@ -1585,6 +1595,12 @@ class Game {
     } else if (def.weather) {
       this.weather.load(def.weather);
     }
+    // A new flight starts with the field as wet as its weather: rain chosen
+    // on the menu has been falling for a while, and clear skies after a
+    // stormy flight are dry ones, not four minutes of drying from the last
+    // flight's storm (render/surfaces.js; the slow ramp is for weather that
+    // changes while you fly).
+    setFieldWetness((this.weather.cond && this.weather.cond.rain) || 0);
 
     // Spawn.
     // Starting on the stand is opt-in, so the tutorial, the missions and every
@@ -4325,7 +4341,11 @@ class Game {
         if (this.ocean.boatView) this.ocean.boatView(v.pos);
       }
       if (this.seamarks) this.seamarks.update(dt, this.weather);
-      if (this.scenery) this.scenery.update(dt, this.weather);
+      if (this.scenery) {
+        this.scenery.update(dt, this.weather);
+        if (this.scenery.lod) this.scenery.lod(this.camera.position);
+      }
+      updateSurfaces(this.weather, dt);
       if (this.clouds) this.clouds.update(dt, this.weather, this.camera.position);
       if (this.rain) this.rain.update(dt, this.weather, this.camera.position, v.vel);
       /*
@@ -4649,6 +4669,7 @@ class Game {
         this.weather.update(dt);
         if (this.ocean) this.ocean.update(dt, this.weather);
         if (this.sky) this.sky.update(this.weather);
+        updateSurfaces(this.weather, dt);
       }
       if (this.state === 'flying') extUpdate(this, dt);
       input.endFrame();
@@ -4795,6 +4816,8 @@ class Game {
     this.sky.followTarget(focus);
     this.ocean.follow(focus);
     this.ocean.update(dt, this.weather);
+    // Wet tarmac after rain, glass glinting at a low sun (render/surfaces.js).
+    updateSurfaces(this.weather, dt);
     this.airport.update(dt, this.weather);
     this.apron.update(dt, this.weather);
     this.updateArmedFailures(dt);
@@ -4950,6 +4973,7 @@ class Game {
     this._hadTornado = this.tornado.active;
     if (this.touch) this.touch.update(this.aircraft.readouts(), this);
     this.scenery.update(dt, this.weather);
+    this.scenery.lod(this.camera.position);
     if (this.seamarks) this.seamarks.update(dt, this.weather);
     this.features.update(dt, this.weather);
     this.clouds.update(dt, this.weather, focus);

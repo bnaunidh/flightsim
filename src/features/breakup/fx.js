@@ -236,7 +236,9 @@ export class BreakupFx {
   pop(x, y, z, size = 1) {
     this.stats.pops++;
     // Reduce flashing: one flare per gap, dimmed; the rest glow dully.
-    const flare = this.popGate.allow(this.clock);
+    // `noFlare`: the instant replay is re-emitting this pop for a scrub that
+    // came back to it too soon after the last flash (see breakup.js seekReplay).
+    const flare = !this.noFlare && this.popGate.allow(this.clock);
     const bright = FLASH.reduce ? CAPS.blastSprite * (flare ? 1 : 0.25) : 1;
     if (flare) this.stats.popFlares++;
     if (bright > this.stats.popBright) this.stats.popBright = bright;
@@ -276,6 +278,48 @@ export class BreakupFx {
     }
     this.emitters.length = 0;
     this.pops.length = 0;
+  }
+
+  /**
+   * Everything alive right now, as plain data — so the instant replay can
+   * clear the pools, play the recorded effects again on its own clock, and
+   * then put the live fire and smoke back exactly as they were (../breakup.js
+   * startReplay / endReplay). The emitters' `at` closures are shared, which
+   * is right: they read where a piece IS.
+   */
+  snapshot() {
+    return {
+      clock: this.clock,
+      pools: this.pools.map((pool) => ({
+        alive: pool.alive,
+        cursor: pool.cursor,
+        visible: pool.pts.visible,
+        p: pool.p.map((q) => ({ ...q })),
+      })),
+      emitters: this.emitters.map((e) => ({ ...e, p: e.p.clone() })),
+      pops: this.pops.map((q) => ({ ...q, p: q.p.clone() })),
+    };
+  }
+
+  /** Put a snapshot() back. The next update() redraws the attributes from it. */
+  restore(snap) {
+    if (!snap) return false;
+    this.clock = snap.clock;
+    this.pools.forEach((pool, i) => {
+      const k = snap.pools[i];
+      if (!k) return;
+      pool.alive = k.alive;
+      pool.cursor = k.cursor;
+      pool.pts.visible = k.visible;
+      for (let j = 0; j < pool.p.length && j < k.p.length; j++) Object.assign(pool.p[j], k.p[j]);
+      // A particle put back dead must not keep drawing at its old alpha.
+      const A = pool.geo.attributes.aAlpha.array;
+      for (let j = 0; j < pool.p.length; j++) if (!pool.p[j].alive) A[j] = 0;
+      pool.geo.attributes.aAlpha.needsUpdate = true;
+    });
+    this.emitters = snap.emitters.map((e) => ({ ...e, p: e.p.clone() }));
+    this.pops = snap.pops.map((q) => ({ ...q, p: q.p.clone() }));
+    return true;
   }
 
   update(dt, camera) {

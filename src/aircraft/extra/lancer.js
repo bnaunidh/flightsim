@@ -468,6 +468,7 @@ export function TYPES(base) {
         maxGearSpeed: 125,
         // Indicated: 622 kt, under Air Massimo's 700 (it keeps the hangar's top "Top").
         vne: 320,
+        ceiling: 60000, // service ceiling, ft (published); above it the air thins faster (physics.js ceilingFactor)
       },
     },
   ];

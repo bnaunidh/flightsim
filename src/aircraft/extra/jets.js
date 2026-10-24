@@ -361,6 +361,7 @@ export function TYPES(base) {
         CD0: 0.022, k: 0.042, Clda: 0.065,
         thrustMax: 62000, fuelCapacity: 6000, fuelBurnMax: 0.6,
         gearDragArea: 2.6, maxGearSpeed: 115, vne: 175,
+        ceiling: 41000, // service ceiling, ft (published); above it the air thins faster (physics.js ceilingFactor)
       }),
     },
 
@@ -401,6 +402,7 @@ export function TYPES(base) {
         Cmq: -40.0,
         thrustMax: 71000, fuelCapacity: 7000, fuelBurnMax: 0.62,
         gearDragArea: 2.7, maxGearSpeed: 115, vne: 175,
+        ceiling: 39800, // service ceiling, ft (published); above it the air thins faster (physics.js ceilingFactor)
       }),
     },
 
@@ -437,6 +439,7 @@ export function TYPES(base) {
         CD0: 0.021, k: 0.038, Clda: 0.095,
         thrustMax: 80000, fuelCapacity: 18000, fuelBurnMax: 0.75,
         gearDragArea: 3.0, maxGearSpeed: 120, vne: 185,
+        ceiling: 43100, // service ceiling, ft (published); above it the air thins faster (physics.js ceilingFactor)
       }),
     },
 
@@ -472,7 +475,8 @@ export function TYPES(base) {
         mass: 23000, wingArea: 118, wingSpan: 64.75, chord: 7.6,
         CD0: 0.021, k: 0.038, Clda: 0.1,
         thrustMax: 83000, fuelCapacity: 19000, fuelBurnMax: 0.8,
-        gearDragArea: 3.1, maxGearSpeed: 120, vne: 185,
+        gearDragArea: 3.1, maxGearSpeed: 120, vne: 175, // 340 kt indicated, the A350's published Vmo (it was 360)
+        ceiling: 43100, // service ceiling, ft (published); above it the air thins faster (physics.js ceilingFactor)
       }),
     },
 
@@ -508,7 +512,8 @@ export function TYPES(base) {
         mass: 25500, wingArea: 124, wingSpan: 64.8, chord: 7.9,
         CD0: 0.021, k: 0.038, Clda: 0.1,
         thrustMax: 92000, fuelCapacity: 22000, fuelBurnMax: 0.9,
-        gearDragArea: 3.3, maxGearSpeed: 120, vne: 185,
+        gearDragArea: 3.3, maxGearSpeed: 120, vne: 170, // 330 kt indicated, the 777's published Vmo (it was 360)
+        ceiling: 43100, // service ceiling, ft (published); above it the air thins faster (physics.js ceilingFactor)
       }),
     },
 
@@ -588,7 +593,8 @@ export function TYPES(base) {
         fuelBurnMax: 0.45,
         gearDragArea: 1.8,
         maxGearSpeed: 100,
-        vne: 160,
+        vne: 147, // 286 kt indicated, the Q400's published Vmo (it was 311)
+        ceiling: 27000, // service ceiling, ft (published); above it the air thins faster (physics.js ceilingFactor)
       },
     },
 
@@ -638,6 +644,7 @@ export function TYPES(base) {
         CD0: 0.02, k: 0.055, Clda: 0.07, Cnb: 0.12, Cnr: -0.18,
         thrustMax: 86000, fuelCapacity: 9000, fuelBurnMax: 1.1,
         gearDragArea: 2.4, maxGearSpeed: 120, vne: 230,
+        ceiling: 60000, // service ceiling, ft (published); above it the air thins faster (physics.js ceilingFactor)
       }),
     },
   ];

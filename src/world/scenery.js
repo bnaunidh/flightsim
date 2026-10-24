@@ -8,7 +8,8 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { heightAt, scatter, MAP, ISLANDS, addObstacleAt, getFlat, flatAt, padWeight, AIRPORT, CORRIDOR, CORRIDOR2 } from './terrain.js';
-import { buildingTexture, roofTexture, foamTexture, asphaltTexture, asphaltNormal, hangarTexture } from '../render/textures.js';
+import { buildingTexture, buildingNightTexture, roofTexture, foamTexture, asphaltTexture, asphaltNormal, hangarTexture, claddingNormal } from '../render/textures.js';
+import { glassMaterial, metalMaterial } from '../render/surfaces.js';
 import { createFishingBoat } from '../fleet/maritime.js';
 import { makeRandom } from '../core/noise.js';
 import { buildPads, updatePads, padsOf } from './pads.js';
@@ -738,7 +739,7 @@ export function addTown(group, spots, opts = {}) {
   if (!spots.length) return { houses: 0, blocks: 0, towers: 0, tallest: 0, lampMat: null, nightMats: [] };
   // `solid: false` for buildings you are meant to land among (the delivery
   // pad's huts); `roofTints` for thatch; `meshName` prefixes the meshes.
-  const { solid = true, roofTints = ROOF_TINTS, meshName: name = 'town' } = opts;
+  const { solid = true, roofTints = ROOF_TINTS, meshName: name = 'town', quality = 'high' } = opts;
   // Materials whose windows light up after dark; Scenery.update switches them.
   const nightMats = [];
   const plan = spots.map((s, i) => {
@@ -1082,13 +1083,28 @@ export function addTown(group, spots, opts = {}) {
   const hw = walls.mesh(houseMat, { name: `${name}-house-walls` });
   if (hw) group.add(hw);
   blockWalls.forEach((bb, v) => {
-    const m = bb.mesh(new THREE.MeshStandardMaterial({ map: buildingTexture(v ? 3 : 0), vertexColors: true, roughness: 0.85, metalness: 0.02, envMapIntensity: 0.6 }), { name: `${name}-block-walls` });
+    // A third of the windows lit after dark (buildingNightTexture, the same
+    // seed as the day map so the lit panes are real panes).
+    const bm = new THREE.MeshStandardMaterial({
+      map: buildingTexture(v ? 3 : 0),
+      vertexColors: true,
+      roughness: 0.85,
+      metalness: 0.02,
+      envMapIntensity: 0.6,
+      emissive: new THREE.Color(0xffffff),
+      emissiveMap: buildingNightTexture(v ? 3 : 0),
+      emissiveIntensity: 0,
+    });
+    nightMats.push(bm);
+    const m = bb.mesh(bm, { name: `${name}-block-walls` });
     if (m) group.add(m);
   });
   const tm = trims.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0.02, flatShading: true, envMapIntensity: 0.6 }), { name: `${name}-roofs` });
   if (tm) group.add(tm);
   const houses = plan.filter((b) => b.kind === 'house');
   const blocks = plan.filter((b) => b.kind === 'block');
+  // AC units, water tanks, vents and masts on the flat roofs.
+  const rooftops = addRooftopDetail(group, plan, { quality, name, top });
 
   /* ---- towers ---- */
   const towers = plan.filter((b) => b.kind === 'tower');
@@ -1110,7 +1126,8 @@ export function addTown(group, spots, opts = {}) {
   if (towers.length) {
     const tex = towerFacadeTexture();
     tex.repeat.set(2, 6);
-    const glass = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.28, metalness: 0.55, envMapIntensity: 1.1 });
+    // A glass tower reflects the sky (render/surfaces.js glassMaterial).
+    const glass = glassMaterial({ map: tex, roughness: 0.22, metalness: 0.55 });
     // Lit panes after dark: a city at night is its windows.
     const night = towerFacadeTexture(true);
     night.repeat.copy(tex.repeat);
@@ -1157,9 +1174,155 @@ export function addTown(group, spots, opts = {}) {
     tallest: towers.reduce((m, b) => Math.max(m, b.h), 0),
     lampMat: lights ? lights.material : null,
     nightMats,
+    rooftops,
     facts,
   };
 }
+
+/**
+ * What stands on a flat roof: the air-conditioning units, a water tank on
+ * some, extract vents, and on the towers an aerial mast. The one thing that
+ * tells a block of flats from a cardboard box, seen from the circuit.
+ *
+ * Instanced: four meshes for the whole town whatever its size. Density by
+ * tier — Low gets the AC units only (one draw call, and the thing most
+ * worth having), Medium adds the tanks and vents, High and Ultra more of
+ * each. Every piece is planted on the roof slab the block already has,
+ * clear of its plant room, in the block's own frame.
+ */
+export function addRooftopDetail(group, plan, { quality = 'high', name = 'town', top } = {}) {
+  const tierN = quality === 'low' ? 0 : quality === 'medium' ? 1 : quality === 'ultra' ? 3 : 2;
+  const ac = [];
+  const tanks = [];
+  const vents = [];
+  const masts = [];
+  const hash = (a, b, c) => {
+    const v = Math.sin(a * 12.9898 + b * 78.233 + c * 37.719) * 43758.5453;
+    return v - Math.floor(v);
+  };
+  plan.forEach((b, bi) => {
+    if (b.kind !== 'block' && b.kind !== 'tower') return;
+    const { s } = b;
+    const cr = Math.cos(s.rot);
+    const sr = Math.sin(s.rot);
+    const P = (lx, lz) => [s.x + cr * lx + sr * lz, s.z - sr * lx + cr * lz];
+    const T = top(b);
+    if (b.kind === 'block') {
+      // The roof slab's top is 0.85 m over the eaves; the plant room sits at
+      // ox, 0.3 w by 0.34 d. The units go on the other side of it.
+      const y = T + 0.85;
+      const ox = (b.q - 0.5) * b.w * 0.4;
+      const side = ox >= 0 ? -1 : 1;
+      const nAc = Math.min(6, 1 + tierN + Math.floor(hash(bi, 1, 1) * 2));
+      const rowX = side * b.w * 0.27;
+      for (let i = 0; i < nAc; i++) {
+        const lz = (-0.5 + (i + 0.5) / nAc) * b.d * 0.7;
+        const [x, z] = P(rowX + (hash(bi, i, 2) - 0.5) * b.w * 0.08, lz);
+        ac.push({ x, y, z, rot: s.rot, sx: 1.2 + hash(bi, i, 3) * 0.8 });
+      }
+      if (tierN >= 1 && hash(bi, 4, 4) < (tierN >= 2 ? 0.5 : 0.35)) {
+        const [x, z] = P(-side * b.w * 0.3, -side * b.d * 0.28);
+        tanks.push({ x, y, z, rot: s.rot });
+      }
+      if (tierN >= 1) {
+        const nV = 2 + tierN;
+        for (let i = 0; i < nV; i++) {
+          const lx = (hash(bi, i, 5) - 0.5) * b.w * 0.5;
+          const lz = (hash(bi, i, 6) - 0.5) * b.d * 0.6;
+          // Not inside the plant room.
+          if (Math.abs(lx - ox) < b.w * 0.18) continue;
+          const [x, z] = P(lx, lz);
+          vents.push({ x, y, z, rot: s.rot });
+        }
+      }
+    } else {
+      // The tower: its crown (0.62 of the footprint) stands on the roof; the
+      // units ring it on the roof outside, the mast goes on the crown.
+      const y = T;
+      const ch = 6 + b.q * 10;
+      const nAc = Math.min(8, 2 + tierN * 2);
+      for (let i = 0; i < nAc; i++) {
+        const a = (i / nAc) * Math.PI * 2 + 0.3;
+        const [x, z] = P(Math.cos(a) * b.w * 0.4, Math.sin(a) * b.d * 0.4);
+        ac.push({ x, y, z, rot: s.rot + a, sx: 1.4 + hash(bi, i, 7) * 0.8 });
+      }
+      if (tierN >= 1) {
+        const [x, z] = P(b.w * 0.12, -b.d * 0.1);
+        masts.push({ x, y: y + ch, z, h: 5 + hash(bi, 8, 8) * 9 });
+        if (tierN >= 2 && hash(bi, 9, 9) < 0.5) {
+          const [x2, z2] = P(-b.w * 0.14, b.d * 0.12);
+          masts.push({ x: x2, y: y + ch, z: z2, h: 3 + hash(bi, 10, 10) * 4 });
+        }
+      }
+    }
+  });
+
+  const d = new THREE.Object3D();
+  const made = [];
+  const _m = new THREE.Matrix4();
+  // Parts at offsets, merged into one geometry (the Batch keeps a colour
+  // attribute the materials here ignore).
+  const parts = (list) => {
+    const bt = new Batch();
+    for (const [geo, x, y, z] of list) {
+      bt.add(geo, _m.makeTranslation(x, y, z), 0xffffff);
+      geo.dispose();
+    }
+    return bt.geometry();
+  };
+  const make = (list, geo, mat, pose, label) => {
+    if (!list.length) return null;
+    const m = new THREE.InstancedMesh(geo, mat, list.length);
+    m.name = `${name}-${label}`;
+    m.castShadow = true;
+    m.receiveShadow = false;
+    list.forEach((it, i) => {
+      pose(it);
+      d.updateMatrix();
+      m.setMatrixAt(i, d.matrix);
+    });
+    m.instanceMatrix.needsUpdate = true;
+    m.computeBoundingSphere();
+    m.frustumCulled = true;
+    group.add(m);
+    made.push(m);
+    return m;
+  };
+  // The cladding's sheen on the units and the masts; dull paint on the rest.
+  const steel = metalMaterial({ color: 0xb9bec3, roughness: 0.55, metalness: 0.5 });
+  const dull = new THREE.MeshStandardMaterial({ color: 0x7f848a, roughness: 0.85, metalness: 0.1 });
+  // An AC unit: a box with a fan ring on top, 1.6 m square, 1.1 m high.
+  const acGeo = parts([
+    [new THREE.BoxGeometry(1.6, 1.0, 1.6), 0, 0.5, 0],
+    [new THREE.CylinderGeometry(0.55, 0.55, 0.18, 12), 0, 1.07, 0],
+    [new THREE.CylinderGeometry(0.42, 0.42, 0.02, 12), 0, 1.17, 0],
+  ]);
+  make(ac, acGeo, steel, (it) => { d.position.set(it.x, it.y, it.z); d.rotation.set(0, it.rot, 0); d.scale.set(it.sx, 1, 1); }, 'rooftop-ac');
+  // A water tank: a 2.6 m drum on four short legs, with a lid.
+  const tankGeo = parts([
+    [new THREE.CylinderGeometry(1.3, 1.3, 2.4, 14), 0, 2.0, 0],
+    [new THREE.CylinderGeometry(1.36, 1.36, 0.12, 14), 0, 3.26, 0],
+    [new THREE.BoxGeometry(0.16, 0.8, 0.16), 0.85, 0.4, 0.85],
+    [new THREE.BoxGeometry(0.16, 0.8, 0.16), -0.85, 0.4, 0.85],
+    [new THREE.BoxGeometry(0.16, 0.8, 0.16), 0.85, 0.4, -0.85],
+    [new THREE.BoxGeometry(0.16, 0.8, 0.16), -0.85, 0.4, -0.85],
+  ]);
+  make(tanks, tankGeo, dull, (it) => { d.position.set(it.x, it.y, it.z); d.rotation.set(0, it.rot, 0); d.scale.set(1, 1, 1); }, 'rooftop-tanks');
+  // A vent: a short pipe with a cowl.
+  const ventGeo = parts([
+    [new THREE.CylinderGeometry(0.22, 0.22, 1.1, 8), 0, 0.55, 0],
+    [new THREE.CylinderGeometry(0.4, 0.3, 0.3, 8), 0, 1.2, 0],
+  ]);
+  make(vents, ventGeo, dull, (it) => { d.position.set(it.x, it.y, it.z); d.rotation.set(0, it.rot, 0); d.scale.set(1, 1, 1); }, 'rooftop-vents');
+  // A mast: a tapered pole with a cross-arm, scaled to its height.
+  const mastGeo = parts([
+    [new THREE.CylinderGeometry(0.06, 0.14, 1, 6), 0, 0.5, 0],
+    [new THREE.BoxGeometry(0.9, 0.05, 0.05), 0, 0.8, 0],
+  ]);
+  make(masts, mastGeo, steel, (it) => { d.position.set(it.x, it.y, it.z); d.rotation.set(0, 0, 0); d.scale.set(1, it.h, 1); }, 'rooftop-masts');
+  return { ac: ac.length, tanks: tanks.length, vents: vents.length, masts: masts.length, meshes: made };
+}
+
 
 /**
  * The streets a town was laid out along, drawn: one ribbon mesh, draped on
@@ -3286,7 +3449,7 @@ function addEstate(group, cfg) {
       const [hx, hz] = turnedHalf(b.w, b.d, rot);
       addObstacleAt(b.x, b.z, hx * 2, hz * 2, b.lo - 0.3, b.y + b.h - b.lo + b.w * 0.12 + 0.6, 'You flew into a warehouse');
     });
-    const wall = wallB.mesh(new THREE.MeshStandardMaterial({ map: hangarTexture(), vertexColors: true, roughness: 0.6, metalness: 0.3, envMapIntensity: 0.7 }), { name: 'estate-sheds' });
+    const wall = wallB.mesh(metalMaterial({ map: hangarTexture(), normalMap: claddingNormal(), normalScale: 0.6, vertexColors: true, roughness: 0.55, metalness: 0.45 }), { name: 'estate-sheds' });
     roof.instanceMatrix.needsUpdate = true;
     roof.castShadow = true;
     group.add(wall, roof);
@@ -3475,7 +3638,7 @@ export class Scenery {
 
     // The town, in whatever flat land this map has near the field.
     const plan = planTown(cfg.town, density);
-    this.town = addTown(this.group, plan.spots, { ...(plan.cfg || {}), avoid: padsOf(MAP) });
+    this.town = addTown(this.group, plan.spots, { ...(plan.cfg || {}), avoid: padsOf(MAP), quality });
     this.streets = addStreets(this.group, plan.streets || []);
     this.town.streets = (plan.streets || []).length;
 
@@ -3577,6 +3740,35 @@ export class Scenery {
         }
       }
       this.group.add(m);
+    }
+  }
+
+  /**
+   * Detail by distance. The rooftop plant is small (an AC unit is 1.6 m):
+   * from 2.5 km it is under a pixel and its four draw calls (and their
+   * shadow passes) buy nothing, so they are switched off until the viewer
+   * is nearer. One distance test a frame, against the town's centre.
+   */
+  lod(viewerPos) {
+    const rt = this.town && this.town.rooftops;
+    if (!rt || !rt.meshes.length || !viewerPos) return;
+    if (!this._townCentre) {
+      const c = new THREE.Vector3();
+      let n = 0;
+      for (const m of rt.meshes) {
+        if (m.boundingSphere) {
+          c.add(m.boundingSphere.center);
+          n++;
+        }
+      }
+      this._townCentre = n ? c.multiplyScalar(1 / n) : c;
+      this._townRadius = rt.meshes.reduce((r, m) => Math.max(r, m.boundingSphere ? m.boundingSphere.radius : 0), 0);
+    }
+    const d = viewerPos.distanceTo(this._townCentre) - this._townRadius;
+    const want = d < 2500;
+    if (want !== this._rooftopsOn) {
+      this._rooftopsOn = want;
+      for (const m of rt.meshes) m.visible = want;
     }
   }
 

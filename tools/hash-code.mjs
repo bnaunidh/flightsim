@@ -5,6 +5,7 @@
  *   node tools/hash-code.mjs
  *   node tools/hash-code.mjs --credits=2500 --note="For the class"
  *   node tools/hash-code.mjs --rank=mod --note="Appointed"
+ *   node tools/hash-code.mjs --prefix --note="Ask the CEO"
  *
  * It asks for the code word at the prompt (typing is not echoed, and the word
  * is never a command-line argument, so it does not land in the shell history),
@@ -15,6 +16,13 @@
  * The amount or rank sits beside the hash; nothing about the word is kept.
  * The hash is made by the game's own codeHash(), so what works here works in
  * the hangar's box — same trimming, same lower-casing.
+ *
+ * `--prefix` makes a PATTERN code instead: the word is a prefix players follow
+ * with an amount (PREFIX500, PREFIX1.5K, PREFIX2M — progression.js PREFIXES
+ * and parseCodeAmount), so one entry pays whatever number is typed after it.
+ * A prefix has no digits in it (the game splits the code at the first digit).
+ * It prints a line for PREFIXES instead of CODES; `--max=<n>` caps what one
+ * such code may pay.
  *
  * With stdin piped (`echo word | node tools/hash-code.mjs --credits=100`), the
  * first line of stdin is the word; the terminal prompt is only for a terminal.
@@ -29,7 +37,7 @@ const opt = (k) => {
   return a.includes('=') ? a.slice(a.indexOf('=') + 1) : '';
 };
 if (opt('help') !== null || args.includes('-h')) {
-  console.log('node tools/hash-code.mjs [--credits=<n> | --rank=<founder|admin|mod>] [--note="..."]');
+  console.log('node tools/hash-code.mjs [--credits=<n> | --rank=<founder|admin|mod> | --prefix [--max=<n>]] [--note="..."]');
   process.exit(0);
 }
 
@@ -62,6 +70,31 @@ async function main() {
     process.exit(2);
   }
   if (/\s/.test(text)) console.error('Note: the word has spaces inside it; players will have to type them too.');
+
+  if (opt('prefix') !== null) {
+    if (/\d/.test(text)) {
+      console.error('A prefix cannot have a digit in it: the game splits a code at its first digit, so everything from there on would be read as the amount.');
+      process.exit(2);
+    }
+    let max = opt('max');
+    if (max !== null && max !== '') {
+      max = Math.round(Number(String(max).replace(/[,_\s]/g, '')));
+      if (!Number.isFinite(max) || max <= 0) {
+        console.error(`"${opt('max')}" is not a cap above zero.`);
+        process.exit(2);
+      }
+    } else max = null;
+    let pnote = opt('note');
+    if (pnote === null) pnote = (await ask('Note shown when one is redeemed (e.g. "Ask the CEO"): ')).trim();
+    pnote = String(pnote || '').trim() || 'Code accepted';
+    const phash = await codeHash(text);
+    const q = JSON.stringify(pnote).replace(/'/g, "\\'").replace(/^"|"$/g, "'");
+    console.log('\nPaste this line into PREFIXES in src/game/progression.js:\n');
+    console.log(`  '${phash}': { note: ${q}${max ? `, max: ${max}` : ''} },`);
+    console.log('\nPlayers type the prefix followed by an amount — 500, 1.5K, 2M, 1B (K/M/B, up to two decimals, a whole number of credits, at most a billion).');
+    console.log('Each exact amount works once per player. The word itself is not saved anywhere. Keep it somewhere private.');
+    return;
+  }
 
   let credits = opt('credits');
   let rank = opt('rank');

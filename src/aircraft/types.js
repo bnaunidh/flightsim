@@ -210,7 +210,7 @@ export const AIRCRAFT = [
       finSweep: 0.62,
       wheelR: { nose: 0.2, main: 0.235 },
     },
-    aero: { ...TRAINER_AERO },
+    aero: { ...TRAINER_AERO, ceiling: 14000 }, // service ceiling, ft (a 172's); above it the air thins faster (physics.js ceilingFactor)
   },
 
   {
@@ -279,6 +279,7 @@ export const AIRCRAFT = [
       fuelBurnMax: 0.021,
       maxGearSpeed: 88,
       vne: 104,
+      ceiling: 18500, // service ceiling, ft (a Bonanza's); above it the air thins faster (physics.js ceilingFactor)
     },
   },
 
@@ -370,6 +371,7 @@ export const AIRCRAFT = [
       gearDragArea: 2.4,
       maxGearSpeed: 105,
       vne: 168,
+      ceiling: 37000, // service ceiling, ft (a 50-seat regional jet's); above it the air thins faster (physics.js ceilingFactor)
     },
   },
 
@@ -473,6 +475,7 @@ export const AIRCRAFT = [
       gearDragArea: 3.4,
       maxGearSpeed: 128,
       vne: 300,
+      ceiling: 59000, // service ceiling, ft (a Mirage 2000's); above it the air thins faster (physics.js ceilingFactor)
     },
   },
 
@@ -554,6 +557,7 @@ export const AIRCRAFT = [
       gearDragArea: 1.4,
       maxGearSpeed: 115,
       vne: 220,
+      ceiling: 42000, // service ceiling, ft (an A-7's); above it the air thins faster (physics.js ceilingFactor)
     },
   },
 
@@ -676,6 +680,7 @@ export const AIRCRAFT = [
       gearDragArea: 2.0,
       maxGearSpeed: 110,
       vne: 175,
+      ceiling: 28300, // service ceiling, ft (a P-3 Orion's, the hurricane hunter it is built on); above it the air thins faster (physics.js ceilingFactor)
     },
   },
 
@@ -796,6 +801,7 @@ export const AIRCRAFT = [
       gearDragArea: 1.6,
       maxGearSpeed: 130,
       vne: 235,
+      ceiling: 50000, // service ceiling, ft (the B-2's); above it the air thins faster (physics.js ceilingFactor)
     },
   },
 
@@ -913,6 +919,7 @@ export const AIRCRAFT = [
       gearDragArea: 0.2,
       maxGearSpeed: 200,
       vne: 140,
+      ceiling: 23000, // service ceiling, ft (an H125's); above it the air thins faster (physics.js ceilingFactor)
     },
   },
 ];
@@ -1008,6 +1015,8 @@ export function performanceFor(id) {
     stallLanding: kt(vs(landing)),
     vne: kt(a.vne),
     thrustToWeight: +(a.thrustMax / W).toFixed(2),
+    // The published service ceiling (feet) the physics fades the air above; null when a type has none.
+    ceilingFt: Number.isFinite(a.ceiling) && a.ceiling > 0 ? a.ceiling : null,
     // Still-air endurance at full power, which is the pessimistic case.
     enduranceMin: Math.round(a.fuelCapacity / a.fuelBurnMax / 60),
   };

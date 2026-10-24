@@ -157,6 +157,7 @@ export function TYPES(base) {
         gearDragArea: 3.0,
         maxGearSpeed: 128,
         vne: 310,
+        ceiling: 65000, // service ceiling, ft (the Raptor's); above it the air thins faster (physics.js ceilingFactor)
       },
     },
 
@@ -238,6 +239,7 @@ export function TYPES(base) {
         gearDragArea: 2.6,
         maxGearSpeed: 120,
         vne: 268,
+        ceiling: 50000, // service ceiling, ft (the F-35B's); above it the air thins faster (physics.js ceilingFactor)
       },
     },
 
@@ -318,6 +320,7 @@ export function TYPES(base) {
         gearDragArea: 3.0,
         maxGearSpeed: 125,
         vne: 278,
+        ceiling: 50000, // service ceiling, ft (the Hornet's); above it the air thins faster (physics.js ceilingFactor)
       },
     },
 
@@ -395,6 +398,7 @@ export function TYPES(base) {
         gearDragArea: 3.0,
         maxGearSpeed: 130,
         vne: 360,
+        ceiling: 75000, // service ceiling, ft (above every real aeroplane here: the fastest thing in the game); above it the air thins faster (physics.js ceilingFactor)
       },
     },
   ];

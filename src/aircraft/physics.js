@@ -73,6 +73,36 @@ const SKY_CEILING_PULL = 0.15;
 const SKY_CEILING_NOTE_FT = 100;
 
 /**
+ * Each type's own ceiling (types.js `ceiling`, the published service ceiling
+ * in feet). The exponential atmosphere above gives a jet thrust in proportion
+ * to density and nothing else, so with the thrust-to-weight these aeroplanes
+ * carry for the 1,100 m strip the trainer could climb to 26,000 ft and an
+ * A320 to 52,000 — a 172 stops near 14,000 and an A320 near 39,000. Real
+ * engines lose more than density on the way up (a piston engine's power falls
+ * faster than the air thins; a turbofan runs out of margin), and what every
+ * pilot meets above the service ceiling is the same thing: the air the wing
+ * and the engine can use runs out faster than the altimeter suggests.
+ *
+ * So above CEILING_FADE.from × the ceiling the density the flight model uses
+ * is scaled down, linearly, to CEILING_FADE.floor of itself at
+ * CEILING_FADE.to × the ceiling, and held there. Below 1.05 × the ceiling
+ * nothing changes at all. Thrust (∝ density), lift and the indicated airspeed
+ * all read the same density, so the aeroplane runs out of climb, then has to
+ * fly nearer its stalling angle to hold height, then cannot — never a wall,
+ * never a bounce. tests/features/aircraft-specs.mjs works out where every
+ * type's climb runs out and holds it to within a band of the published figure.
+ * A type with no ceiling (none in the roster) is left as it was.
+ */
+export const CEILING_FADE = { from: 1.05, to: 1.25, floor: 0.35 };
+export function ceilingFactor(altFt, ceilingFt) {
+  if (!(ceilingFt > 0) || !(altFt > 0)) return 1;
+  const a = altFt / ceilingFt;
+  if (a <= CEILING_FADE.from) return 1;
+  if (a >= CEILING_FADE.to) return CEILING_FADE.floor;
+  return 1 - (1 - CEILING_FADE.floor) * ((a - CEILING_FADE.from) / (CEILING_FADE.to - CEILING_FADE.from));
+}
+
+/**
  * The aeroplane currently being flown, and the numbers that describe it.
  *
  * These are `let`, not `const`, and every module that imports them gets a live
@@ -649,9 +679,13 @@ export class Aircraft {
     this.emit(EVENTS.ENGINE_STOP, { reason });
   }
 
-  /** Air density at the current altitude (ISA-ish). */
+  /**
+   * Air density at the current altitude (ISA-ish) — and above this type's
+   * service ceiling, thinner still (ceilingFactor): less thrust, less lift,
+   * a stall closer at hand, which is what a ceiling is.
+   */
   get density() {
-    return RHO0 * Math.exp(-Math.max(0, this.pos.y) / 8500);
+    return RHO0 * Math.exp(-Math.max(0, this.pos.y) / 8500) * ceilingFactor(this.pos.y * FT, SPEC.ceiling);
   }
 
   /** Main entry point. dt is clamped and sub-stepped by the caller. */

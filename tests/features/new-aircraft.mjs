@@ -67,7 +67,8 @@ const REAL = {
   b787: { span: 60.12, length: 62.81, longHaul: true, map: 'kestrel' },
   a350: { span: 64.75, length: 66.8, longHaul: true, map: 'kestrel' },
   b777: { span: 64.8, length: 73.86, longHaul: true, map: 'kestrel' },
-  q400: { span: 28.42, length: 32.83, longHaul: false, map: 'kestrel', prop: true },
+  // The Q400's published Vmo is 286 kt; the propliner is held to it (docs/aircraft-specs.md).
+  q400: { span: 28.42, length: 32.83, longHaul: false, map: 'kestrel', prop: true, vne: [270, 300] },
   // The needle nose puts the flight deck 9 m back; the indicated limit is a
   // supersonic airliner's, not a subsonic one's.
   concorde: { span: 25.6, length: 61.66, longHaul: false, map: 'kestrel', deck: 10, vne: [400, 480] },

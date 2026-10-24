@@ -82,6 +82,21 @@ export class Wreck {
     this.group.visible = false;
     this.active = false;
     this.t = 0;
+    /*
+     * Held: the instant replay (features/breakup.js) has taken the wreck
+     * over and is stepping it to its own clock, so the game's update() must
+     * not advance it. clear() lets go (a restart owns the wreck again).
+     */
+    this.held = false;
+    /** The random numbers start() and detonate() draw; a replay seeds them so a re-run is the same wreck. */
+    this.rand = Math.random;
+    /**
+     * How much of the impact/blast FLASH the firelight shows (the burn after
+     * it is untouched). 1 normally; the instant replay drops it to 0 when a
+     * scrub would land on the flash again too soon after the last one, so
+     * dragging the bar back and forth over the hit cannot strobe it.
+     */
+    this.flashScale = 1;
 
     /* ---- Debris: small pieces of aeroplane ---- */
     const debrisMat = new THREE.MeshStandardMaterial({ color: 0x6a6f76, roughness: 0.8, metalness: 0.35 });
@@ -185,12 +200,18 @@ export class Wreck {
    * @param {THREE.Vector3} vel how fast it was going, which sets how far things fly
    * @param {boolean} inWater a splash instead of a fire
    */
-  start(pos, vel, inWater) {
+  start(pos, vel, inWater, rand = Math.random) {
     this.active = true;
     this.inWater = inWater;
     this.t = 0;
     this.group.visible = true;
     this.origin = pos.clone();
+    this.rand = typeof rand === 'function' ? rand : Math.random;
+    const R = this.rand;
+    // A fresh start: no flame tint carried over from an earlier ditching (it
+    // turned a new splash orange before its fuel caught), no tumble carried
+    // over from earlier debris (a replay re-run would differ each scrub).
+    this._tintTo = undefined;
     const speed = Math.min(90, vel.length());
 
     // Debris flies out along the direction of travel, mostly forwards and up.
@@ -200,6 +221,7 @@ export class Wreck {
       const a = (i / this.debris.length) * Math.PI * 2;
       d.mesh.visible = true;
       d.mesh.position.copy(pos);
+      d.mesh.rotation.set(0, 0, 0);
       d.rest = false;
       d.vel
         .set(Math.cos(a) * 6, 4 + (i % 4) * 3.5, Math.sin(a) * 6)
@@ -214,20 +236,20 @@ export class Wreck {
     for (let i = 0; i < SPARKS; i++) {
       const s = this.fire.state[i];
       s.age = 0;
-      const a = Math.random() * Math.PI * 2;
+      const a = R() * Math.PI * 2;
       if (inWater) {
         // A splash is a narrow column that goes *up*, not a ball that goes
         // out: most of the water leaves near-vertically and falls straight
         // back, and the faster you hit, the higher it throws.
         const column = i < SPARKS * 0.55;
-        const spread = column ? 1.5 + Math.random() * 4 : 8 + Math.random() * 20;
-        const up = column ? 26 + Math.random() * 26 + speed * 0.22 : 9 + Math.random() * 12;
-        s.life = column ? 2.6 + Math.random() * 1.6 : 1.5 + Math.random() * 0.9;
+        const spread = column ? 1.5 + R() * 4 : 8 + R() * 20;
+        const up = column ? 26 + R() * 26 + speed * 0.22 : 9 + R() * 12;
+        s.life = column ? 2.6 + R() * 1.6 : 1.5 + R() * 0.9;
         s.vel.set(Math.cos(a) * spread, up, Math.sin(a) * spread);
       } else {
         s.life = 1.1 + (i % 7) * 0.34;
-        const up = 6 + Math.random() * 14;
-        s.vel.set(Math.cos(a) * (4 + Math.random() * 12), up, Math.sin(a) * (4 + Math.random() * 12));
+        const up = 6 + R() * 14;
+        s.vel.set(Math.cos(a) * (4 + R() * 12), up, Math.sin(a) * (4 + R() * 12));
       }
       this.fire.geo.attributes.position.setXYZ(i, pos.x, pos.y, pos.z);
     }
@@ -235,7 +257,7 @@ export class Wreck {
       const s = this.smoke.state[i];
       s.age = -i * 0.09; // staggered, so the column builds rather than appears
       s.life = 9 + (i % 6) * 2.4;
-      s.vel.set((Math.random() - 0.5) * 2.4, 3 + Math.random() * 3.5, (Math.random() - 0.5) * 2.4);
+      s.vel.set((R() - 0.5) * 2.4, 3 + R() * 3.5, (R() - 0.5) * 2.4);
       this.smoke.geo.attributes.position.setXYZ(i, pos.x, pos.y + 1, pos.z);
     }
 
@@ -276,6 +298,7 @@ export class Wreck {
     this.blown = true;
     const pos = this.origin;
     const speed = this.blastSpeed || 40;
+    const R = this.rand || Math.random;
 
     // Re-seed most of the sparks as a fireball: fast, wide and short-lived,
     // which is what distinguishes an explosion from a fountain.
@@ -283,10 +306,10 @@ export class Wreck {
       if (i % 5 === 0) continue; // leave some spray still falling back
       const s = this.fire.state[i];
       s.age = 0;
-      s.life = 0.7 + Math.random() * 1.1;
-      const a = Math.random() * Math.PI * 2;
-      const el = Math.random() * Math.PI * 0.5;
-      const v = 14 + Math.random() * 26 + speed * 0.14;
+      s.life = 0.7 + R() * 1.1;
+      const a = R() * Math.PI * 2;
+      const el = R() * Math.PI * 0.5;
+      const v = 14 + R() * 26 + speed * 0.14;
       s.vel.set(Math.cos(a) * Math.cos(el) * v, Math.sin(el) * v * 1.15 + 4, Math.sin(a) * Math.cos(el) * v);
       this.fire.geo.attributes.position.setXYZ(i, pos.x, pos.y + 0.6, pos.z);
     }
@@ -295,7 +318,7 @@ export class Wreck {
       const s = this.smoke.state[i];
       s.age = -i * 0.05;
       s.life = 11 + (i % 6) * 2.6;
-      s.vel.set((Math.random() - 0.5) * 3.4, 4 + Math.random() * 4.5, (Math.random() - 0.5) * 3.4);
+      s.vel.set((R() - 0.5) * 3.4, 4 + R() * 4.5, (R() - 0.5) * 3.4);
       this.smoke.geo.attributes.position.setXYZ(i, pos.x, pos.y + 1.4, pos.z);
     }
     /*
@@ -317,9 +340,112 @@ export class Wreck {
 
   clear() {
     this.active = false;
+    this.held = false;
     this.group.visible = false;
     this.light.intensity = 0;
     for (const d of this.debris) d.mesh.visible = false;
+  }
+
+  /**
+   * Everything that moves, so the instant replay can run the wreck again from
+   * the hit on its own clock and then put the live one back exactly as it
+   * was (features/breakup.js startReplay / endReplay). Plain data, nothing
+   * shared with the live wreck.
+   */
+  snapshot() {
+    const points = (set) => ({
+      pos: set.geo.attributes.position.array.slice(),
+      size: set.geo.attributes.aSize.array.slice(),
+      alpha: set.geo.attributes.aAlpha.array.slice(),
+      state: set.state.map((st) => ({ age: st.age, life: st.life, vel: st.vel.clone() })),
+    });
+    return {
+      active: this.active,
+      visible: this.group.visible,
+      t: this.t,
+      inWater: this.inWater,
+      origin: this.origin ? this.origin.clone() : null,
+      blastAt: this.blastAt,
+      blown: this.blown,
+      blastSpeed: this.blastSpeed,
+      tintTo: this._tintTo,
+      rand: this.rand,
+      fireTint: this.fire.points.material.uniforms.uTint.value.clone(),
+      fire: points(this.fire),
+      smoke: points(this.smoke),
+      debris: this.debris.map((d) => ({ pos: d.mesh.position.clone(), rot: d.mesh.rotation.clone(), visible: d.mesh.visible, vel: d.vel.clone(), spin: d.spin.clone(), rest: d.rest })),
+      mark: { pos: this.mark.position.clone(), scale: this.mark.scale.x, color: this.mark.material.color.getHex(), opacity: this.mark.material.opacity },
+      rings: this.rings.map((r) => ({ pos: r.mesh.position.clone(), scale: r.mesh.scale.x, opacity: r.mesh.material.opacity, visible: r.mesh.visible })),
+      foam: { pos: this.foam.position.clone(), scale: this.foam.scale.x, opacity: this.foam.material.opacity, visible: this.foam.visible },
+      light: { pos: this.light.position.clone(), color: this.light.color.getHex(), intensity: this.light.intensity },
+    };
+  }
+
+  /** Put a snapshot() back. Nothing happens if the wreck was cleared meanwhile (a restart owns it then). */
+  restore(snap) {
+    if (!snap) return false;
+    const points = (set, data) => {
+      set.geo.attributes.position.array.set(data.pos);
+      set.geo.attributes.aSize.array.set(data.size);
+      set.geo.attributes.aAlpha.array.set(data.alpha);
+      for (let i = 0; i < set.state.length && i < data.state.length; i++) {
+        set.state[i].age = data.state[i].age;
+        set.state[i].life = data.state[i].life;
+        set.state[i].vel.copy(data.state[i].vel);
+      }
+      set.geo.attributes.position.needsUpdate = true;
+      set.geo.attributes.aSize.needsUpdate = true;
+      set.geo.attributes.aAlpha.needsUpdate = true;
+    };
+    this.active = snap.active;
+    this.group.visible = snap.visible;
+    this.t = snap.t;
+    this.inWater = snap.inWater;
+    this.origin = snap.origin ? snap.origin.clone() : this.origin;
+    this.blastAt = snap.blastAt;
+    this.blown = snap.blown;
+    this.blastSpeed = snap.blastSpeed;
+    this._tintTo = snap.tintTo;
+    this.rand = snap.rand || Math.random;
+    this.fire.points.material.uniforms.uTint.value.copy(snap.fireTint);
+    points(this.fire, snap.fire);
+    points(this.smoke, snap.smoke);
+    this.debris.forEach((d, i) => {
+      const k = snap.debris[i];
+      if (!k) return;
+      d.mesh.position.copy(k.pos);
+      d.mesh.rotation.copy(k.rot);
+      d.mesh.visible = k.visible;
+      d.vel.copy(k.vel);
+      d.spin.copy(k.spin);
+      d.rest = k.rest;
+    });
+    this.mark.position.copy(snap.mark.pos);
+    this.mark.scale.setScalar(snap.mark.scale);
+    this.mark.material.color.setHex(snap.mark.color);
+    this.mark.material.opacity = snap.mark.opacity;
+    this.rings.forEach((r, i) => {
+      const k = snap.rings[i];
+      if (!k) return;
+      r.mesh.position.copy(k.pos);
+      r.mesh.scale.setScalar(k.scale);
+      r.mesh.material.opacity = k.opacity;
+      r.mesh.visible = k.visible;
+    });
+    this.foam.position.copy(snap.foam.pos);
+    this.foam.scale.setScalar(snap.foam.scale);
+    this.foam.material.opacity = snap.foam.opacity;
+    this.foam.visible = snap.foam.visible;
+    this.light.position.copy(snap.light.pos);
+    this.light.color.setHex(snap.light.color);
+    this.light.intensity = snap.light.intensity;
+    return true;
+  }
+
+  /** Out of sight without being cleared: the replay, before the moment it hit. */
+  hide() {
+    this.group.visible = false;
+    this.light.intensity = 0;
   }
 
   /**
@@ -344,6 +470,12 @@ export class Wreck {
   }
 
   update(dt) {
+    if (this.held) return;
+    this.step(dt);
+  }
+
+  /** One step of the wreck's own clock, held or not (the replay drives it through here). */
+  step(dt) {
     if (!this.active) return;
     this.t += dt;
 
@@ -485,7 +617,7 @@ export class Wreck {
         : 0
       : Math.max(0, 1 - this.t / 30);
     this.light.intensity = dim(
-      3200 * flash + 900 * burn * (0.7 + Math.sin(this.t * 11) * 0.15 + Math.sin(this.t * 3.7) * 0.15),
+      3200 * flash * this.flashScale + 900 * burn * (0.7 + Math.sin(this.t * 11) * 0.15 + Math.sin(this.t * 3.7) * 0.15),
       CAPS.blastLight
     );
   }

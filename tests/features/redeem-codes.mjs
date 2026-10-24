@@ -19,6 +19,12 @@
  *      hashes to a shipped code.
  *   4. The plain-JavaScript SHA-256 (for pages without crypto.subtle) agrees
  *      with node:crypto, byte for byte, on a spread of inputs.
+ *   5. PATTERN CODES (progression.js PREFIXES): a code is a hashed PREFIX
+ *      followed by an AMOUNT — digits, up to two decimals, an optional K/M/B.
+ *      The shipped table is hashes only (and empty); a test-only prefix pays
+ *      the amount typed after it, every exact amount once, in any case; the
+ *      amount grammar accepts and refuses exactly what it should; and the
+ *      tool's --prefix mode prints the entry for it.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
@@ -186,6 +192,97 @@ const nodeHash = (s) => createHash('sha256').update(String(s).trim().toLowerCase
     ok('codeHash() without crypto.subtle gives the same fingerprint', h === nodeHash('fallback path'));
   } finally {
     Object.defineProperty(globalThis, 'crypto', { value: saved, configurable: true, writable: true });
+  }
+}
+
+/* ---- 5. Pattern codes: PREFIX + AMOUNT -------------------------- */
+{
+  const pkeys = Object.keys(Prog.PREFIXES);
+  ok('PREFIXES: every shipped key is a 64-hex fingerprint, each with a note', pkeys.every((k) => Prog.isCodeHash(k) && Prog.PREFIXES[k] && typeof Prog.PREFIXES[k].note === 'string'), `${pkeys.length} entries`);
+  ok('PREFIXES: the table is frozen', Object.isFrozen(Prog.PREFIXES));
+  ok('PREFIXES: the cap is a billion', Prog.CODE_AMOUNT_MAX === 1000000000);
+
+  // The amount grammar.
+  const AMOUNTS = [
+    ['500', 500], ['1.5K', 1500], ['1.5k', 1500], ['1.25K', 1250], ['2M', 2000000], ['1B', 1000000000], ['0.5K', 500],
+    ['1000000000', 1000000000], ['1.1k', 1100], ['12.34M', 12340000], ['7', 7],
+    ['1.255K', null], ['0', null], ['0.0', null], ['500.5', null], ['1.5', null], ['1.2345K', null], ['1.01B', null], ['2B', null],
+    ['1000000001', null], ['', null], ['abc', null], ['1.', null], ['.5', null], ['1,000', null], ['1 000', null], ['1e3', null], ['-5', null], ['5KK', null],
+  ];
+  const wrong = AMOUNTS.filter(([t, want]) => Prog.parseCodeAmount(t) !== want).map(([t, want]) => `${t}→${Prog.parseCodeAmount(t)} (want ${want})`);
+  ok('amount: digits, up to two decimals, K/M/B; whole credits only, above zero, at most a billion', wrong.length === 0, wrong.join(', ') || `${AMOUNTS.length} cases`);
+  ok('split: at the first digit; no digit or a leading digit is not a pattern code',
+    JSON.stringify(Prog.splitPatternCode(' Sky1.5k ')) === JSON.stringify({ prefix: 'Sky', amount: 1500 }) && Prog.splitPatternCode('sky') === null && Prog.splitPatternCode('5sky') === null && Prog.splitPatternCode('sky1.255k') === null);
+
+  // A test-only prefix (letters only: a prefix cannot hold a digit).
+  const letters = () => Array.from(randomUUID().replace(/[^a-f-]/g, '')).join('');
+  const PREFIX = `tp-${letters()}-${letters()}`;
+  const ph = await Prog.codeHash(PREFIX);
+  ok('a prefix hashes like a whole code (trimmed, lower-cased)', ph === nodeHash(PREFIX.toUpperCase()));
+  const prefixes = { [ph]: { note: 'Ask the CEO' } };
+  const codes = {};
+  const p = wallet();
+  const r1 = await Prog.redeem(p, `${PREFIX}500`, codes, prefixes);
+  ok('PREFIX500 pays 500, with the prefix\'s note', r1.ok && r1.credits === 500 && r1.rank === null && r1.note === 'Ask the CEO' && p.credits === 1000 && p.earned === 1400, JSON.stringify(r1));
+  const r2 = await Prog.redeem(p, `  ${PREFIX.toUpperCase()}1.5K  `, codes, prefixes);
+  ok('PREFIX1.5K pays 1,500 — a different amount is a different code; case and spaces do not matter', r2.ok && r2.credits === 1500 && p.credits === 2500, JSON.stringify(r2));
+  const r3 = await Prog.redeem(p, `${PREFIX}500`, codes, prefixes);
+  ok('the same exact code again is "already used"', !r3.ok && r3.why === 'You have already used that one' && p.credits === 2500, JSON.stringify(r3));
+  const r4 = await Prog.redeem(p, `${PREFIX}0.5k`, codes, prefixes);
+  ok('PREFIX0.5K is the same code as PREFIX500 (the normalised code is stamped), so it is "already used" too', !r4.ok && r4.why === 'You have already used that one' && p.credits === 2500, JSON.stringify(r4));
+  const r4b = await Prog.redeem(p, `${PREFIX} 500`, codes, prefixes);
+  const r4c = await Prog.redeem(p, `${PREFIX}\t0.5K`, codes, prefixes);
+  ok('a space between the prefix and the amount is the same code too (no second pay-out)', !r4b.ok && r4b.why === 'You have already used that one' && !r4c.ok && r4c.why === 'You have already used that one' && p.credits === 2500, JSON.stringify([r4b, r4c]));
+  const r5 = await Prog.redeem(p, `${PREFIX}1.25K`, codes, prefixes);
+  ok('PREFIX1.25K pays 1,250', r5.ok && r5.credits === 1250 && p.credits === 3750, JSON.stringify(r5));
+  const refused = [];
+  for (const amt of ['1.255K', '0', '500.5', '2B', '1.01B', '1.5', '']) {
+    const q = wallet();
+    const r = await Prog.redeem(q, `${PREFIX}${amt}`, codes, prefixes);
+    refused.push([amt, r.ok, r.why, q.credits, q.redeemed.length]);
+  }
+  ok('three decimals, zero, a fraction of a credit, over a billion, or no amount at all: "That code does not work", nothing changes',
+    refused.every(([, k, why, c, red]) => !k && why === 'That code does not work' && c === 500 && red === 0), JSON.stringify(refused));
+  const r6 = await Prog.redeem(wallet(), `${PREFIX}1B`, codes, prefixes);
+  ok('PREFIX1B pays exactly a billion, the most a code may', r6.ok && r6.credits === 1000000000, JSON.stringify(r6));
+  const r7 = await Prog.redeem(wallet(), `nope-${letters()}500`, codes, prefixes);
+  ok('an unknown prefix with a good amount does not work', !r7.ok && r7.why === 'That code does not work');
+  const r8 = await Prog.redeem(wallet(), `${ph}500`, codes, prefixes);
+  ok('the prefix\'s hash is not the prefix', !r8.ok && r8.why === 'That code does not work');
+  ok('the wallet keeps fingerprints only — never the prefix, never the typed code',
+    p.redeemed.length === 3 && p.redeemed.every(Prog.isCodeHash) && !JSON.stringify(p).toLowerCase().includes(PREFIX.toLowerCase())
+      && p.redeemed[0] === nodeHash(`${PREFIX}500`) && p.redeemed[1] === nodeHash(`${PREFIX}1500`), JSON.stringify(p.redeemed));
+
+  // A per-prefix cap, when the owner sets one.
+  const capped = { [ph]: { note: 'Small change', max: 2000 } };
+  const r9 = await Prog.redeem(wallet(), `${PREFIX}2K`, codes, capped);
+  const r10 = await Prog.redeem(wallet(), `${PREFIX}2.5K`, codes, capped);
+  ok('an entry\'s `max` caps what one of its codes may pay', r9.ok && r9.credits === 2000 && !r10.ok && r10.why === 'That code does not work');
+
+  // A whole code wins over a pattern read of the same text.
+  const wholeWord = `${PREFIX}777`;
+  const both = { [await Prog.codeHash(wholeWord)]: { credits: 42, note: 'The whole word' } };
+  const r11 = await Prog.redeem(wallet(), wholeWord, both, prefixes);
+  ok('a text that is a whole code in CODES pays as that code, not as prefix + amount', r11.ok && r11.credits === 42 && r11.note === 'The whole word', JSON.stringify(r11));
+
+  // The default tables are the shipped ones.
+  const r12 = await Prog.redeem(wallet(), `${PREFIX}500`);
+  ok('against the shipped tables a test-only prefix does not work', !r12.ok && r12.why === 'That code does not work');
+
+  // The tool's --prefix mode prints the entry.
+  try {
+    const out = execFileSync(process.execPath, [join(ROOT, 'tools/hash-code.mjs'), '--prefix', '--note=Ask the CEO', '--max=5000'], { cwd: ROOT, encoding: 'utf8', input: `${PREFIX}\n`, stdio: ['pipe', 'pipe', 'pipe'] });
+    ok('tools/hash-code.mjs --prefix prints a PREFIXES line with the prefix\'s fingerprint, the note and the cap',
+      out.includes('PREFIXES') && out.includes(`'${ph}': { note: 'Ask the CEO', max: 5000 },`) && !out.toLowerCase().includes(PREFIX.toLowerCase()), out.trim().split('\n')[2]);
+    let bad = '';
+    try {
+      execFileSync(process.execPath, [join(ROOT, 'tools/hash-code.mjs'), '--prefix', '--note=x'], { cwd: ROOT, encoding: 'utf8', input: 'has9digit\n', stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch (e) {
+      bad = String(e.stderr || '');
+    }
+    ok('…and refuses a prefix with a digit in it', /digit/.test(bad), bad.trim().slice(0, 80));
+  } catch (e) {
+    ok('tools/hash-code.mjs --prefix runs', false, String(e.message || e).slice(0, 200));
   }
 }
 

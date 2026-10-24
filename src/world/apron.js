@@ -29,7 +29,8 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { AIRPORT, MAP, addObstacleAt } from './terrain.js';
-import { buildingTexture, roofTexture } from '../render/textures.js';
+import { buildingTexture, buildingNightTexture, roofTexture } from '../render/textures.js';
+import { glassMaterial } from '../render/surfaces.js';
 import { createAircraftModel } from '../aircraft/model-adapter.js';
 import { airlinesFor, schemeFor, wearsAirlinePaint } from '../aircraft/liveries.js';
 import { AIRCRAFT, specFor } from '../aircraft/types.js';
@@ -477,7 +478,8 @@ export class Apron {
       paint: layer(vcMaterial({ roughness: 0.9 }), 'paint'),
       vehicle: vcMaterial({ roughness: 0.55, metalness: 0.25 }),
       hose: new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.8 }),
-      wall: new THREE.MeshStandardMaterial({ map: buildingTexture(0), roughness: 0.82, metalness: 0.05 }),
+      // The landside offices light a third of their windows after dark (update()).
+      wall: new THREE.MeshStandardMaterial({ map: buildingTexture(0), roughness: 0.82, metalness: 0.05, emissive: new THREE.Color(0xffffff), emissiveMap: buildingNightTexture(0), emissiveIntensity: 0 }),
       // Both sides: the vault overhangs the glass, and from the apron you
       // look up at its underside.
       roof: new THREE.MeshStandardMaterial({ map: roofTexture(), roughness: 0.9, side: THREE.DoubleSide }),
@@ -556,14 +558,8 @@ export class Apron {
       const g0 = ELEV + (kind === 'club' ? 1.0 : 2.6);
       const gy = g0 + gh / 2;
       const tex = glazingTextures();
-      const mat = new THREE.MeshStandardMaterial({
-        map: tex.day,
-        emissiveMap: tex.night,
-        emissive: new THREE.Color(0xffffff),
-        emissiveIntensity: 0,
-        roughness: 0.15,
-        metalness: 0.35,
-      });
+      // Curtain wall: the sky and the apron in it (render/surfaces.js).
+      const mat = glassMaterial({ map: tex.day, emissiveMap: tex.night, roughness: 0.1, metalness: 0.7 });
       const panes = new Batch();
       const pane = (len, x, z, ry) => {
         const g = new THREE.PlaneGeometry(len, gh);
@@ -1797,6 +1793,7 @@ export class Apron {
       this.night = night;
       if (this.glassMat) this.glassMat.emissiveIntensity = night ? 0.9 : 0;
       if (this.boardMat) this.boardMat.emissiveIntensity = night ? 1.0 : 0.2;
+      if (this.mats && this.mats.wall) this.mats.wall.emissiveIntensity = night ? 1.1 : 0;
     }
     // Beacons flash once a second; brighter at night. (With Reduce flashing
     // they swell at the same rate instead of snapping on — flash-safety.js.)

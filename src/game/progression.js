@@ -506,6 +506,83 @@ export const CODES = Object.freeze({
 });
 
 /**
+ * Pattern codes: a PREFIX the owner chooses, followed by the AMOUNT it pays.
+ *
+ * One hashed word that pays whatever number is typed after it, so the owner
+ * does not have to make (and remember) a separate code for 500, for 1,000
+ * and for 2,500 — `PREFIX500` pays 500, `PREFIX1.5K` pays 1,500,
+ * `PREFIX2M` pays two million. The game splits what was typed at its FIRST
+ * DIGIT: everything before it is the prefix (so a prefix has no digits in
+ * it), everything from it on is the amount. The prefix is hashed the same way
+ * a whole code is (trimmed, lower-cased, SHA-256) and looked up here; the
+ * amount is read by parseCodeAmount() below.
+ *
+ * Each exact code — this prefix with THIS amount — works once per player:
+ * the wallet stamps the fingerprint of the normalised code (lower-cased
+ * prefix followed by the amount as a plain number, so `PREFIX0.5K` and
+ * `PREFIX500` are one code, not two). A different amount is a different code.
+ *
+ * As with CODES, the words themselves are not here and never will be. Make an
+ * entry with `node tools/hash-code.mjs --prefix` and paste the printed line.
+ *
+ * Shape: '<64 hex>': { note: '<why>' }
+ *    or: '<64 hex>': { note: '<why>', max: <the most one code may pay> }
+ */
+export const PREFIXES = Object.freeze({
+  // Nothing shipped. The owner adds their own entries here, privately.
+});
+
+/** The most any pattern code may pay, whatever the owner's entry says. */
+export const CODE_AMOUNT_MAX = 1000000000;
+
+/**
+ * The amount part of a pattern code, as a whole number of credits — or null
+ * when it is not one.
+ *
+ *   digits, an optional '.' with one or two decimals, an optional K / M / B
+ *   (thousand / million / billion, either case); no suffix is a plain number.
+ *
+ *   500 → 500   1.5K → 1500   1.25K → 1250   2M → 2000000   1B → 1000000000
+ *
+ * Refused: three or more decimals (1.255K), an amount that does not come to a
+ * whole credit (1.5 with no suffix, 1.2345K), zero, and anything over a
+ * billion. The arithmetic is done in whole hundredths so 1.1K is exactly 1100
+ * and never 1100.0000000000002.
+ */
+export function parseCodeAmount(text) {
+  const s = String(text == null ? '' : text).trim();
+  const m = /^(\d{1,12})(?:\.(\d{1,2}))?([kmb])?$/i.exec(s);
+  if (!m) return null;
+  const whole = Number(m[1]);
+  const frac = m[2] ? Number(m[2].padEnd(2, '0')) : 0;
+  const mult = { k: 1e3, m: 1e6, b: 1e9 }[(m[3] || '').toLowerCase()] || 1;
+  const hundredths = (whole * 100 + frac) * mult;
+  if (!Number.isSafeInteger(hundredths) || hundredths % 100 !== 0) return null;
+  const amount = hundredths / 100;
+  if (amount <= 0 || amount > CODE_AMOUNT_MAX) return null;
+  return amount;
+}
+
+/**
+ * A typed code split into its prefix and its amount, or null when it has no
+ * such shape (no digit in it, or it starts with one — a prefix is at least a
+ * letter). Nothing here says whether the prefix is a real one.
+ */
+export function splitPatternCode(raw) {
+  const typed = String(raw == null ? '' : raw).trim();
+  const i = typed.search(/\d/);
+  if (i <= 0) return null;
+  const amount = parseCodeAmount(typed.slice(i));
+  if (amount === null) return null;
+  // Trimmed: "WORD 500" is the same code as "WORD500" (the hash trims the
+  // prefix anyway), so it must stamp the same fingerprint, or a space would
+  // let one code pay twice.
+  const prefix = typed.slice(0, i).trim();
+  if (!prefix) return null;
+  return { prefix, amount };
+}
+
+/**
  * SHA-256 in plain JavaScript, for the places crypto.subtle is missing — a
  * phone opening the game over a plain-http LAN address in a classroom is not
  * a secure context, and it should still be able to type a code. Byte-for-byte
@@ -617,7 +694,9 @@ export function formatCredits(n) {
 
 /**
  * Redeem a typed code against `table` (the shipped CODES unless a test hands
- * in its own). Asynchronous, because the hash is.
+ * in its own) and, failing that, as a pattern code against `prefixes` (the
+ * shipped PREFIXES): a known prefix followed by an amount. Asynchronous,
+ * because the hash is.
  *
  * The answers are the same three sentences the box has always shown — a blank,
  * a word that is not a code, a code already used — and a pay-out says what it
@@ -626,22 +705,39 @@ export function formatCredits(n) {
  *
  * The `redeemed` list remembers the fingerprint, never the word.
  */
-export async function redeem(p, raw, table = CODES) {
+export async function redeem(p, raw, table = CODES, prefixes = PREFIXES) {
   const typed = String(raw || '').trim();
   if (!typed) return { ok: false, why: 'Type a code first' };
 
+  const own = (t, k) => !!t && typeof t === 'object' && Object.prototype.hasOwnProperty.call(t, k) && t[k] && typeof t[k] === 'object';
   const hash = await codeHash(typed);
-  const entry = table && Object.prototype.hasOwnProperty.call(table, hash) ? table[hash] : null;
-  if (!entry || typeof entry !== 'object') return { ok: false, why: 'That code does not work' };
+  let entry = own(table, hash) ? table[hash] : null;
+  // The fingerprint the wallet keeps: the whole code's, or for a pattern code
+  // the normalised code's (lower-cased prefix, then the amount as a number).
+  let stamp = hash;
+  if (!entry) {
+    // Not a whole code: perhaps a prefix with an amount after it (PREFIXES).
+    const pat = splitPatternCode(typed);
+    if (pat) {
+      const ph = await codeHash(pat.prefix);
+      const pe = own(prefixes, ph) ? prefixes[ph] : null;
+      const cap = pe && Number.isFinite(Number(pe.max)) && Number(pe.max) > 0 ? Math.min(Number(pe.max), CODE_AMOUNT_MAX) : CODE_AMOUNT_MAX;
+      if (pe && pat.amount <= cap) {
+        entry = { credits: pat.amount, note: pe.note };
+        stamp = await codeHash(`${pat.prefix.toLowerCase()}${pat.amount}`);
+      }
+    }
+  }
+  if (!entry) return { ok: false, why: 'That code does not work' };
 
   if (!Array.isArray(p.redeemed)) p.redeemed = [];
-  if (p.redeemed.includes(hash)) return { ok: false, why: 'You have already used that one' };
+  if (p.redeemed.includes(stamp)) return { ok: false, why: 'You have already used that one' };
 
   const amount = Math.max(0, Math.round(Number(entry.credits) || 0));
   const rank = typeof entry.rank === 'string' && entry.rank ? entry.rank : null;
   if (!amount && !rank) return { ok: false, why: 'That code does not work' };
 
-  p.redeemed.push(hash);
+  p.redeemed.push(stamp);
   if (amount) {
     p.credits += amount;
     p.earned += amount;

@@ -26,7 +26,8 @@
  *   - the roof-pad buildings: no daylight under their walls (2.6 m) and no
  *     window cut by the ground (901 of 1,062 points along their feet)
  *   - the lighthouse door is on its plinth, not inside it
- *   - the town draws in at most seven meshes (twelve)
+ *   - the town draws in at most four meshes, plus at most four instanced
+ *     rooftop-detail meshes (twelve)
  *
  * Exits non-zero on any failure.
  */
@@ -363,9 +364,17 @@ for (const map of M.MAPS) {
     facedTotal[0] += faced;
     facedTotal[1] += total;
     if (total && faced / total < 0.9) faults.facing.push(`${map.id}: ${faced}/${total}`);
+    // Four merged meshes (house walls, two of block walls, the trims), plus
+    // the rooftop detail: at most four INSTANCED meshes (AC units, tanks,
+    // vents, masts — scenery.js addRooftopDetail), one draw call each.
     let meshes = 0;
-    sc.group.traverse((o) => { if (o.isMesh && /^town-/.test(o.name)) meshes++; });
-    if (meshes > 4) faults.draws.push(`${map.id}: ${meshes} town meshes`);
+    let rooftop = 0;
+    sc.group.traverse((o) => {
+      if (!o.isMesh || !/^town-/.test(o.name)) return;
+      if (/^town-rooftop-/.test(o.name)) rooftop += o.isInstancedMesh ? 1 : 100;
+      else meshes++;
+    });
+    if (meshes > 4 || rooftop > 4) faults.draws.push(`${map.id}: ${meshes} town meshes, ${rooftop} rooftop`);
   }
 
   /* ---- roof-pad buildings ---- */
@@ -431,7 +440,7 @@ ok('no window is more than 1.5x out of shape', faults.stretch.length === 0, list
 ok('every town wall reaches the ground all along its foot', faults.feet.length === 0, list('feet', 'all'));
 ok('the roof-pad buildings stand on the ground with their windows out of it', faults.pads.length === 0, list('pads', `${padSamples} points along their feet`));
 ok('the lighthouse door is on its plinth', faults.lighthouse.length === 0, list('lighthouse', 'every map'));
-ok('the town draws in at most four meshes (towers apart)', faults.draws.length === 0, list('draws', 'every map'));
+ok('the town draws in at most four meshes plus four instanced rooftop meshes (towers apart)', faults.draws.length === 0, list('draws', 'every map'));
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);

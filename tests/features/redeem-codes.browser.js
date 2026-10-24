@@ -58,6 +58,15 @@ export async function check(sim, r, say) {
     const b = await Prog.redeem(p, word, table);
     r.ok('redeem: a test-only hash pays out once from the amount beside it, then is refused',
       a.ok && a.credits === 1234 && p.credits === 1244 && !b.ok && b.why === 'You have already used that one', JSON.stringify([a, b]));
+    // A pattern code: a test-only PREFIX, then the amount typed after it.
+    const prefix = `tp-${Math.random().toString(36).replace(/[0-9]/g, '').slice(2)}`;
+    const prefixes = { [await Prog.codeHash(prefix)]: { note: 'Ask the CEO' } };
+    const c = await Prog.redeem(p, `${prefix.toUpperCase()}1.5K`, table, prefixes);
+    const d = await Prog.redeem(p, `${prefix}1500`, table, prefixes);
+    const e = await Prog.redeem(p, `${prefix}1.255K`, table, prefixes);
+    r.ok('redeem: PREFIX1.5K pays 1,500 once (PREFIX1500 is the same code), and 1.255K does not work',
+      c.ok && c.credits === 1500 && c.note === 'Ask the CEO' && p.credits === 2744 && !d.ok && d.why === 'You have already used that one' && !e.ok && e.why === 'That code does not work', JSON.stringify([c, d, e]));
+    r.ok('redeem: the shipped PREFIXES table is fingerprints only, frozen', Object.keys(Prog.PREFIXES).every(Prog.isCodeHash) && Object.isFrozen(Prog.PREFIXES));
   } finally {
     if (keep === null) localStorage.removeItem(saveKey); else localStorage.setItem(saveKey, keep);
   }

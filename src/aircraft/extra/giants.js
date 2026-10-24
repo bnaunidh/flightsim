@@ -373,6 +373,7 @@ export function TYPES(base) {
         Clda: 0.1, Cmq: -34.0,
         thrustMax: 66000, fuelCapacity: 15000, fuelBurnMax: 0.7,
         gearDragArea: 3.2, maxGearSpeed: 120, vne: 170,
+        ceiling: 35000, // service ceiling, ft (published); above it the air thins faster (physics.js ceilingFactor)
       }),
     },
 
@@ -412,6 +413,7 @@ export function TYPES(base) {
         Clda: 0.1,
         thrustMax: 72000, fuelCapacity: 20000, fuelBurnMax: 0.9,
         gearDragArea: 3.4, maxGearSpeed: 120, vne: 175,
+        ceiling: 40000, // service ceiling, ft (about; Boeing gives none); above it the air thins faster (physics.js ceilingFactor)
       }),
     },
 
@@ -453,6 +455,7 @@ export function TYPES(base) {
         Clda: 0.14,
         thrustMax: 74000, fuelCapacity: 24000, fuelBurnMax: 1.0,
         gearDragArea: 4.2, maxGearSpeed: 115, vne: 165,
+        ceiling: 36000, // service ceiling, ft (11,000 m, published); above it the air thins faster (physics.js ceilingFactor)
       }),
     },
 
@@ -495,6 +498,7 @@ export function TYPES(base) {
         Clda: 0.11,
         thrustMax: 69000, fuelCapacity: 20000, fuelBurnMax: 0.85,
         gearDragArea: 3.6, maxGearSpeed: 120, vne: 170,
+        ceiling: 35700, // service ceiling, ft (published); above it the air thins faster (physics.js ceilingFactor)
       }),
     },
   ];

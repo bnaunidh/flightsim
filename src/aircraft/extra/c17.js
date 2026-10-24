@@ -201,6 +201,7 @@ export function TYPES(base) {
         idleRpm: 0.12,
         thrustMax: 102000, fuelCapacity: 20000, fuelBurnMax: 0.85,
         gearDragArea: 3.6, maxGearSpeed: 125, vne: 170,
+        ceiling: 45000, // service ceiling, ft (published); above it the air thins faster (physics.js ceilingFactor)
       }),
     },
   ];

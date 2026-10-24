@@ -307,6 +307,7 @@ export function TYPES(base) {
         gearDragArea: 2.6,
         maxGearSpeed: 115,
         vne: 175,
+        ceiling: 39100, // service ceiling, ft (published); above it the air thins faster (physics.js ceilingFactor)
       },
     },
 
@@ -362,6 +363,7 @@ export function TYPES(base) {
         gearDragArea: 3.2,
         maxGearSpeed: 120,
         vne: 190,
+        ceiling: 45100, // service ceiling, ft (published); above it the air thins faster (physics.js ceilingFactor)
       },
     },
 
@@ -417,7 +419,8 @@ export function TYPES(base) {
         fuelBurnMax: 1.0,
         gearDragArea: 3.6,
         maxGearSpeed: 120,
-        vne: 185,
+        vne: 175, // 340 kt indicated: the A380's published Vmo (it was 360)
+        ceiling: 43000, // service ceiling, ft (published); above it the air thins faster (physics.js ceilingFactor)
       },
     },
   ];

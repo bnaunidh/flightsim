@@ -32,9 +32,13 @@ import {
   asphaltTexture,
   asphaltNormal,
   buildingTexture,
+  buildingNightTexture,
   hangarTexture,
+  claddingNormal,
   roofTexture,
+  puddleRoughness,
 } from '../render/textures.js';
+import { glassMaterial, metalMaterial, registerWetSurface } from '../render/surfaces.js';
 import { airportLayout, onAirportPavement, pavedIn, standSlot } from './airport-layout.js';
 import { Batch, vcMaterial, instanced, settle, glowPoints, canvas, canvasTexture, trs, trse, yawOf, layer } from './airport-kit.js';
 import { fireEngineGeometry, carGeometry } from './airport-vehicles.js';
@@ -158,7 +162,7 @@ export function towerViewpoint() {
 
 /** Asphalt whose texture is laid in world metres, so every slab joins up. */
 function pavementMaterial(which = 'pavement') {
-  return layer(
+  const mat = layer(
     new THREE.MeshStandardMaterial({
       map: asphaltTexture(),
       normalMap: asphaltNormal(),
@@ -168,6 +172,8 @@ function pavementMaterial(which = 'pavement') {
     }),
     which
   );
+  // Goes dark and glossy in the rain (render/surfaces.js).
+  return registerWetSurface(mat, { puddles: puddleRoughness() });
 }
 
 /*
@@ -348,9 +354,11 @@ export class Airport {
       metal: vcMaterial({ roughness: 0.45, metalness: 0.55 }),
       paint: layer(vcMaterial({ roughness: 0.9 }), 'paint'),
       lamps: vcMaterial({ roughness: 0.4, emissive: new THREE.Color(0xfff1d0), emissiveIntensity: 0 }),
-      wall: new THREE.MeshStandardMaterial({ map: buildingTexture(2), roughness: 0.85 }),
-      wallWarm: new THREE.MeshStandardMaterial({ map: buildingTexture(3), roughness: 0.85 }),
-      clad: new THREE.MeshStandardMaterial({ map: hangarTexture(), roughness: 0.68, metalness: 0.35, side: THREE.DoubleSide }),
+      // The office walls light their windows after dark (setLightsOn).
+      wall: new THREE.MeshStandardMaterial({ map: buildingTexture(2), roughness: 0.85, emissive: new THREE.Color(0xffffff), emissiveMap: buildingNightTexture(2), emissiveIntensity: 0 }),
+      wallWarm: new THREE.MeshStandardMaterial({ map: buildingTexture(3), roughness: 0.85, emissive: new THREE.Color(0xffffff), emissiveMap: buildingNightTexture(3), emissiveIntensity: 0 }),
+      // Profiled steel: its ribs in relief, the sky in it (render/surfaces.js).
+      clad: metalMaterial({ map: hangarTexture(), normalMap: claddingNormal(), normalScale: 0.7, roughness: 0.5, metalness: 0.55, side: THREE.DoubleSide }),
       roof: new THREE.MeshStandardMaterial({ map: roofTexture(), roughness: 0.9 }),
     };
     // Batches everything static on the field draws into.
@@ -417,6 +425,16 @@ export class Airport {
     // Depth bias only — see LAYER. The mesh, its size and its height are as
     // they always were.
     layer(rwMat, 'runway');
+    // Wet after rain: darker, a sheen, puddles in the dips (render/surfaces.js).
+    // The puddle map is a square tile; the runway's UVs run 0..1 across its
+    // width and 0..1 along its whole length, so the shared tile stretched
+    // every puddle into a mirror streak a hundred metres long. Its own copy
+    // (same image, no second upload) repeats along the length instead, a
+    // third as often as square would be: puddles a few metres across that
+    // lie a little long, the way water stands in the wheel tracks.
+    const rwPuddles = puddleRoughness().clone();
+    rwPuddles.repeat.set(1, Math.max(1, Math.round(RUNWAY.length / (RUNWAY.halfWidth * 2 * 3))));
+    registerWetSurface(rwMat, { puddles: rwPuddles });
     this.runwayMat = rwMat;
     const rgeo = new THREE.PlaneGeometry(RUNWAY.halfWidth * 2, RUNWAY.length);
     rgeo.rotateX(-Math.PI / 2);
@@ -686,14 +704,8 @@ export class Airport {
     railGeo.dispose();
 
     // Cab glass: wider at the top, as above.
-    const cabMat = new THREE.MeshPhysicalMaterial({
-      color: 0x9fd8ef,
-      roughness: 0.05,
-      metalness: 0.25,
-      transparent: true,
-      opacity: 0.5,
-      side: THREE.DoubleSide,
-    });
+    // The cab's glass reflects the sky (render/surfaces.js glassMaterial).
+    const cabMat = glassMaterial({ color: 0x9fd8ef, roughness: 0.06, metalness: 0.3, opacity: 0.55, side: THREE.DoubleSide });
     const cab = new THREE.Mesh(new THREE.CylinderGeometry(9.4 * k, 7.6 * k, 7, 16, 1, true), cabMat);
     cab.position.set(TX, ELEV + TOWER_H + 3.4, TZ);
     cab.castShadow = true;
@@ -763,10 +775,7 @@ export class Airport {
 
   /** A glass box (the small tower's cab). */
   addGlassBox(w, h, d, x, y, z) {
-    const m = new THREE.Mesh(
-      new THREE.BoxGeometry(w, h, d),
-      new THREE.MeshPhysicalMaterial({ color: 0x9fd8ef, roughness: 0.05, metalness: 0.25, transparent: true, opacity: 0.55 })
-    );
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), glassMaterial({ color: 0x9fd8ef, roughness: 0.06, metalness: 0.3, opacity: 0.6 }));
     m.position.set(x, y, z);
     this.group.add(m);
     const roomMat = new THREE.MeshBasicMaterial({ color: 0x9fd0a8, transparent: true, opacity: 0.12 });
@@ -1521,6 +1530,9 @@ export class Airport {
     if (this.pools) this.pools.visible = on;
     this.mats.lamps.emissiveIntensity = on ? 1.4 : 0;
     if (this.signMat) this.signMat.emissiveIntensity = on ? 0.9 : 0;
+    // The offices' windows, a third of them lit (buildingNightTexture).
+    this.mats.wall.emissiveIntensity = on ? 1.1 : 0;
+    this.mats.wallWarm.emissiveIntensity = on ? 1.1 : 0;
     // Somebody is on duty up there whatever the hour, and at night you can
     // see them.
     if (this.towerRoom) this.towerRoom.opacity = on ? 0.4 : 0.12;

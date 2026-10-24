@@ -221,9 +221,31 @@ export async function check(sim, r, say) {
       seen.push(sim.camera.position.clone());
     }
     r.ok('breakup: the camera keeps going round', seen[0].distanceTo(seen[5]) > 2);
+    // Keyed to replay time (the owner's bug: the wreck, smoke and scorch showed before the crash).
+    const bar = document.querySelector('.breakup-replay-bar');
+    r.ok('breakup: the replay has its control bar — back, pause, forward, a scrubber, close — big enough for a finger',
+      !!bar && bar.style.display !== 'none' && ['back', 'pause', 'fwd', 'track', 'close'].every((k) => bar.querySelector(`[data-replay="${k}"]`))
+        && [...bar.querySelectorAll('button')].every((b) => b.getBoundingClientRect().height >= 40 || parseInt(b.style.height, 10) >= 44),
+      bar ? [...bar.querySelectorAll('[data-replay]')].map((b) => b.dataset.replay).join(',') : 'no bar');
+    const wreck = sim.wreck;
+    D().seekReplay(sim, -1.0);
+    const fxBefore = D().S.fx.busy;
+    const wreckBefore = wreck.group.visible;
+    const onFrame = D().S.rec.tracks.filter((tr) => tr.attach && !tr.piece.gone).every((tr) => tr.piece.group.visible && tr.piece.group.position.distanceTo(sim.model.position) < ((sim.aircraftType && sim.aircraftType.aero.wingSpan) || 11));
+    r.ok('breakup: scrubbed to a second before the hit, there is no fire, no smoke, no wreck (no scorch, no column) and every piece is still on the airframe', !fxBefore && !wreckBefore && onFrame && wreck.held, `fx ${fxBefore}, wreck shown ${wreckBefore}, on the airframe ${onFrame}`);
+    D().seekReplay(sim, 1.5);
+    r.ok('breakup: scrubbed forward to +1.5 s, the wreck is there at 1.5 s of its own clock and the effects have played up to then', wreck.group.visible && Math.abs(wreck.t - 1.5) < 0.01 && D().replay.fxCursor > 0, `wreck t ${wreck.t.toFixed(2)}, ${D().replay.fxCursor} effects`);
+    bar.querySelector('[data-replay="pause"]').click();
+    const tHeld = D().replay.t;
+    sim.step(0.5);
+    r.ok('breakup: the pause button holds the replay (a tap on a phone, Space on a keyboard)', D().replay.paused && D().replay.t === tHeld);
+    bar.querySelector('[data-replay="pause"]').click();
+    bar.querySelector('[data-replay="back"]').click();
+    r.ok('breakup: the back button steps two seconds back (to the start of the pre-roll at the earliest)', !D().replay.paused && Math.abs(D().replay.t - Math.max(D().replay.start, tHeld - D().REPLAY_STEP)) < 1e-6, `${D().replay.t.toFixed(2)} (start ${D().replay.start.toFixed(2)})`);
     key(I.codesFor('crashReplay', sim)[0]);
     sim.step(0.2);
     r.ok('breakup: the key again ends it, and the label goes', !D().replaying && (!label || label.style.display === 'none'));
+    r.ok('breakup: …the control bar goes with it and the wreck is the game\'s again', bar.style.display === 'none' && !wreck.held);
     const pp = D().pieces;
     const atBodies = D().S.pieces.every((p) => p.group.position.distanceTo(p.body.pos) < 0.01);
     r.ok('breakup: the pieces are back where they lie', atBodies, `${pp.length} pieces`);

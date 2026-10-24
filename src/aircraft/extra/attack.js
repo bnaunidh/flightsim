@@ -111,6 +111,7 @@ export function TYPES(base) {
         gearDragArea: 2.0,
         maxGearSpeed: 110,
         vne: 170,
+        ceiling: 45000, // service ceiling, ft (published); above it the air thins faster (physics.js ceilingFactor)
       },
     },
   ];
