@@ -30,6 +30,20 @@ const fragmentShader = /* glsl */ `
   uniform float uStars;
   uniform float uOvercast;
   uniform float uFlash;
+  // Light scattering toward a low sun (all tiers, see update()): the horizon
+  // turns from the warm side to a cooler dusk on the far side, and a wide
+  // forward-scatter lobe in the same colour the fog takes when you look
+  // that way, so distant land and sky meet without a seam.
+  uniform vec3 uHorizonAway;
+  uniform vec3 uHaze;
+  uniform float uHazeK;
+  // The dome's own tight halo round the sun; turned down where bloom adds one.
+  uniform float uGlow;
+  // The moon: how visible (night, cloud), how full (0 new .. 1 full), and
+  // which side is lit (+1 waxing, -1 waning).
+  uniform float uMoon;
+  uniform float uMoonPhase;
+  uniform float uMoonWax;
 
   float hash(vec3 p) {
     p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419));
@@ -41,26 +55,37 @@ const fragmentShader = /* glsl */ `
     vec3 dir = normalize(vDir);
     float h = clamp(dir.y, -1.0, 1.0);
 
+    // The horizon's colour by azimuth. uHorizonAway equals uHorizon unless
+    // the sun is low, so at midday and at night this is the old gradient.
+    vec3 sunH = normalize(vec3(uSunDir.x, 0.0, uSunDir.z) + vec3(1e-5, 0.0, 0.0));
+    vec3 dirH = normalize(vec3(dir.x, 0.0, dir.z) + vec3(1e-5, 0.0, 0.0));
+    float toward = pow(max(0.0, 0.5 + 0.5 * dot(dirH, sunH)), 1.5);
+    vec3 horizon = mix(uHorizonAway, uHorizon, toward);
+
     // Base gradient: strong compression near the horizon like real haze.
     float t = pow(clamp(h, 0.0, 1.0), 0.42);
-    vec3 col = mix(uHorizon, uTop, t);
+    vec3 col = mix(horizon, uTop, t);
 
     // Below the horizon fade to a slightly darker haze (seen over the ocean).
     if (h < 0.0) {
-      col = mix(uHorizon, uHorizon * 0.72, clamp(-h * 2.2, 0.0, 1.0));
+      col = mix(horizon, horizon * 0.72, clamp(-h * 2.2, 0.0, 1.0));
     }
 
     // Horizon haze: a bright band just above the skyline, like real aerial
     // perspective. This is most of what makes a sky read as "outdoors".
     float haze = exp(-abs(h) * 9.0);
-    col = mix(col, uHorizon * 1.12, haze * 0.55);
+    col = mix(col, horizon * 1.12, haze * 0.55);
 
     // Sun disc, bloom and a wide forward-scatter glow.
     float sd = max(dot(dir, normalize(uSunDir)), 0.0);
-    float glow = pow(sd, 4.0) * 0.22 + pow(sd, 32.0) * 0.5 + pow(sd, 400.0) * 1.6;
+    float glow = pow(sd, 4.0) * 0.22 + (pow(sd, 32.0) * 0.5 + pow(sd, 400.0) * 1.6) * uGlow;
     float disc = smoothstep(0.9986, 0.9995, sd);
     col += uSunColor * glow * (1.0 - uOvercast * 0.8);
     col += uSunColor * disc * 6.0 * (1.0 - uOvercast);
+
+    // Mie scattering toward a low sun: wide, hugging the horizon. Zero when
+    // the sun is high or down (uHaze is black then).
+    col += uHaze * pow(sd, uHazeK) * exp(-abs(h) * 3.0);
 
     /*
      * The moon, opposite the sun at night — so that when the sun is under the
@@ -73,10 +98,28 @@ const fragmentShader = /* glsl */ `
      * the sun's own height. At night that is below the horizon, and the moon
      * was drawn down in the dark water where nobody ever saw it.
      */
-    if (uStars > 0.001) {
-      float md = max(dot(dir, normalize(-uSunDir)), 0.0);
-      col += vec3(0.85, 0.88, 1.0) * smoothstep(0.9990, 0.9997, md) * 2.2 * uStars;
-      col += vec3(0.5, 0.55, 0.7) * pow(md, 300.0) * 0.5 * uStars;
+    /*
+     * And its phase. Today's real phase (Weather.moonPhase): the lit part is
+     * bounded by the terminator, an ellipse across the disc, so a crescent
+     * is a crescent; the dark part keeps a trace of earthshine; and the glow
+     * round it grows with how full it is. A full moon also washes the
+     * fainter stars out (uStars, update()).
+     */
+    if (uMoon > 0.001) {
+      vec3 mDir = normalize(-uSunDir);
+      float md = max(dot(dir, mDir), 0.0);
+      if (md > 0.99) {
+        vec3 mRight = normalize(cross(mDir, vec3(0.0, 1.0, 0.0)) + vec3(1e-5, 0.0, 0.0));
+        vec3 mUp = cross(mRight, mDir);
+        vec2 q = vec2(dot(dir, mRight), dot(dir, mUp)) / 0.036;
+        float r = length(q);
+        float discM = smoothstep(1.0, 0.8, r);
+        float edge = (1.0 - 2.0 * uMoonPhase) * sqrt(max(0.0, 1.0 - q.y * q.y));
+        float lit = smoothstep(edge - 0.1, edge + 0.1, q.x * uMoonWax);
+        col = mix(col, col * 0.35, discM * uMoon);
+        col += vec3(0.85, 0.88, 1.0) * discM * (lit * 2.2 + 0.05) * uMoon;
+      }
+      col += vec3(0.5, 0.55, 0.7) * pow(md, 300.0) * 0.5 * uMoon * (0.25 + 0.75 * uMoonPhase);
     }
 
     // Star field: quantise the direction into cells and light a few of them.
@@ -102,9 +145,27 @@ const fragmentShader = /* glsl */ `
   }
 `;
 
+/*
+ * Light scattering toward a low sun (update()): the colour the horizon goes
+ * on the side away from the sun at dusk, and scratch vectors for the
+ * camera's heading. Module-level so update() allocates nothing.
+ */
+const DUSK_AWAY = new THREE.Color(0x8f86ad);
+const _fwd = new THREE.Vector3();
+const _awayFog = new THREE.Color();
+const _hazeFog = new THREE.Color();
+
+function smooth(e0, e1, x) {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
+
 export class SkyDome {
-  constructor(scene, { shadows = true, shadowMapSize = 2048 } = {}) {
+  constructor(scene, { shadows = true, shadowMapSize = 2048, camera = null, glow = 1 } = {}) {
     this.scene = scene;
+    // The view the fog colour follows (light scattering, update()). Without
+    // one the fog is the preset's, as it always was.
+    this.camera = camera;
 
     this.uniforms = {
       uTop: { value: new THREE.Color(0x2f6fd0) },
@@ -114,6 +175,13 @@ export class SkyDome {
       uStars: { value: 0 },
       uOvercast: { value: 0 },
       uFlash: { value: 0 },
+      uHorizonAway: { value: new THREE.Color(0xbcd7f2) },
+      uHaze: { value: new THREE.Color(0x000000) },
+      uHazeK: { value: 5 },
+      uGlow: { value: glow },
+      uMoon: { value: 0 },
+      uMoonPhase: { value: 1 },
+      uMoonWax: { value: 1 },
     };
 
     const geo = new THREE.SphereGeometry(1, 40, 24);
@@ -166,6 +234,7 @@ export class SkyDome {
 
     this._sunDir = new THREE.Vector3();
     this._envSignature = '';
+    this.viewFog = { color: new THREE.Color(0xbcd7f2), density: 0.000018 };
   }
 
   /**
@@ -295,7 +364,14 @@ export class SkyDome {
     this.uniforms.uHorizon.value.copy(p.horizon);
     this.uniforms.uSunColor.value.copy(p.sun);
     this.uniforms.uSunDir.value.copy(this._sunDir);
-    this.uniforms.uStars.value = weather.isNight ? 1 - weather.cond.cloud * 0.95 : 0;
+    // The moon is as visible as it always was; the stars now also answer to
+    // its phase — a full moon leaves about a third of them, a new moon all.
+    const moonUp = weather.isNight ? 1 - weather.cond.cloud * 0.95 : 0;
+    const phase = typeof weather.moonPhase === 'number' ? weather.moonPhase : 1;
+    this.uniforms.uMoon.value = moonUp;
+    this.uniforms.uMoonPhase.value = phase;
+    this.uniforms.uMoonWax.value = weather.moonWaxing === false ? -1 : 1;
+    this.uniforms.uStars.value = moonUp * (0.35 + 0.65 * (1 - phase));
     this.uniforms.uOvercast.value = weather.cond.cloud;
     // Lightning washes the whole sky and the sunlight: the biggest flash in
     // the game, so with Reduce flashing on it is a fraction of the strength.
@@ -311,6 +387,45 @@ export class SkyDome {
 
     this.scene.fog.color.copy(p.fogColor);
     this.scene.fog.density = p.fogDensity;
+
+    /*
+     * Light scattering toward a low sun, at no shader cost.
+     *
+     * With the sun a few degrees up, the air toward it glows: the sun's
+     * colour, scattered forward. Away from it the horizon goes a cooler dusk.
+     * The dome draws both per pixel (uHorizonAway, uHaze); the fog can only
+     * be one colour per frame, so it takes the dome's horizon colour at the
+     * camera's own heading, and thickens a little toward the sun, so distant
+     * hills and the sea go hazy-gold that way and stay clear the other.
+     * Weighted down by cloud: an overcast sunset has no low sun to see.
+     */
+    const el = weather.timeInfo.sunElev;
+    const low = smooth(-6, 0, el) * (1 - smooth(8, 25, el)) * (1 - weather.cond.cloud * 0.85);
+    const u = this.uniforms;
+    u.uHorizonAway.value.copy(p.horizon).lerp(DUSK_AWAY, 0.5 * low);
+    u.uHaze.value.copy(p.sun).multiplyScalar(0.5 * low);
+    u.uHazeK.value = 5;
+    if (low > 0.001 && this.camera) {
+      this.camera.getWorldDirection(_fwd);
+      const fx = _fwd.x;
+      const fz = _fwd.z;
+      const fl = Math.hypot(fx, fz) || 1;
+      const sx = this._sunDir.x;
+      const sz = this._sunDir.z;
+      const sl = Math.hypot(sx, sz) || 1;
+      const toward = Math.pow(Math.max(0, 0.5 + 0.5 * ((fx * sx + fz * sz) / (fl * sl))), 1.5);
+      // The lobe at the horizon straight ahead: dot(heading, sun direction).
+      const sd = Math.max(0, (fx * sx + fz * sz) / fl);
+      const lobe = Math.pow(sd, u.uHazeK.value);
+      _awayFog.copy(p.fogColor).lerp(DUSK_AWAY, 0.5 * low);
+      _hazeFog.copy(p.sun).multiplyScalar(0.5 * low * lobe);
+      this.scene.fog.color.copy(_awayFog).lerp(p.fogColor, toward).add(_hazeFog);
+      this.scene.fog.density = p.fogDensity * (1 + 2.4 * low * lobe);
+    }
+    // What the clouds fade into (clouds.js viewFog): this, before anything
+    // later in the frame (the in-cloud whiteout) takes the fog over.
+    this.viewFog.color.copy(this.scene.fog.color);
+    this.viewFog.density = this.scene.fog.density;
 
     // Environment lighting follows the sky, but only rebuilds when the sky
     // itself has meaningfully changed — and never more than once every couple

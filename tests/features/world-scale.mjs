@@ -454,6 +454,22 @@ console.log(`INFO  the towns stand ${span(all.townGround)} above the sea: why th
     a320: ['Airbus A320', 37.57, 35.8],
     b747: ['Boeing 747-400', 70.6, 64.4],
     a380: ['Airbus A380', 72.7, 79.75],
+    // new-aircraft (aircraft/extra/jets.js, giants.js)
+    b737: ['Boeing 737 MAX 8', 39.52, 35.92],
+    a321: ['Airbus A321neo', 44.51, 35.8],
+    b787: ['Boeing 787-9', 62.81, 60.12],
+    a350: ['Airbus A350-900', 66.8, 64.75],
+    b777: ['Boeing 777-300ER', 73.86, 64.8],
+    q400: ['Dash 8 Q400', 32.83, 28.42],
+    concorde: ['Concorde', 61.66, 25.6],
+    belugaxl: ['Airbus BelugaXL', 63.1, 60.3],
+    dreamlifter: ['Boeing 747-400LCF', 71.68, 64.44],
+    an225: ['Antonov An-225', 84.0, 88.4],
+    c5: ['Lockheed C-5M', 75.31, 67.89],
+    c17: ['Boeing C-17A', 53.04, 51.75],
+    a10: ['Fairchild A-10C', 16.26, 17.53],
+    // ...and the swing-wing bomber (aircraft/extra/lancer.js): its span with the wings forward, as parked.
+    b1b: ['Rockwell B-1B Lancer', 44.5, 41.67],
   };
   // Air Massimo is a made-up racer (21.5 m long, a 9.7 m wing: nothing real
   // to hold it to); T-Pose Harrison is a person flying with his arms out, a
@@ -473,7 +489,8 @@ console.log(`INFO  the towns stand ${span(all.townGround)} above the sea: why th
       lines.push(`${a.name} ${L.toFixed(1)}x${S.toFixed(1)} (made up; not held to a counterpart)`);
       continue;
     }
-    if (L < 6 || L > 80 || S < 7 || S > 85) bad.push(`${a.name}: ${L.toFixed(1)} m long, ${S.toFixed(1)} m span`);
+    // Up to the An-225, the largest aeroplane ever built (84 m by 88 m).
+    if (L < 6 || L > 86 || S < 7 || S > 90) bad.push(`${a.name}: ${L.toFixed(1)} m long, ${S.toFixed(1)} m span`);
     const r = REAL[a.id];
     if (!r) {
       bad.push(`${a.name}: no real counterpart listed here`);
@@ -485,7 +502,7 @@ console.log(`INFO  the towns stand ${span(all.townGround)} above the sea: why th
     if (rl < 0.6 || rl > 1.5 || rs < 0.6 || rs > 1.5) bad.push(`${a.name}: ${rl.toFixed(2)} x the ${r[0]}'s length, ${rs.toFixed(2)} x its span`);
     if (a.id === 'skylark') trainer = { rl, rs };
   }
-  ok(`aircraft: every drawn plan 6-80 m long and 7-85 m across, and within 0.6-1.5 of its real counterpart (${TY.AIRCRAFT.length} types; the made-up Massimo and the T-Pose joke printed, not held)`, bad.length === 0, bad.join('; ') || `${lines.length - SKIP.size} compared`);
+  ok(`aircraft: every drawn plan 6-86 m long and 7-90 m across, and within 0.6-1.5 of its real counterpart (${TY.AIRCRAFT.length} types; the made-up Massimo and the T-Pose joke printed, not held)`, bad.length === 0, bad.join('; ') || `${lines.length - SKIP.size} compared`);
   ok('the trainer is a Cessna 172 to within 15% (length and span)', !!trainer && Math.abs(trainer.rl - 1) <= 0.15 && Math.abs(trainer.rs - 1) <= 0.15, trainer ? `length x${trainer.rl.toFixed(2)}, span x${trainer.rs.toFixed(2)}` : 'no skylark');
   for (const l of lines) console.log(`INFO  ${l}`);
 }

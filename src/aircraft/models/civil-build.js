@@ -25,6 +25,7 @@
  * tests/features/civil.mjs measures that they are.
  */
 import * as THREE from '../../vendor/three.module.js';
+import { paintMaterial } from '../../render/paint.js';
 import {
   airframeTexture,
   airframeNormal,
@@ -275,14 +276,8 @@ function thinWhenNear(mesh, near, far, floor) {
  * ------------------------------------------------------------------ */
 
 function paint(map, { roughness = 0.36, metalness = 0.4, color = 0xffffff } = {}) {
-  return new THREE.MeshStandardMaterial({
-    map,
-    normalMap: airframeNormal(),
-    normalScale: new THREE.Vector2(0.5, 0.5),
-    roughness,
-    metalness,
-    color,
-  });
+  // Paint over metal, with a clearcoat on High and Ultra (render/paint.js).
+  return paintMaterial(map, { roughness, metalness, color, normalMap: airframeNormal() });
 }
 
 /** Window glass that stands out from this scheme's base paint (see below). */

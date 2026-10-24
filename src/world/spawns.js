@@ -182,11 +182,40 @@ export const CHOICES = Object.freeze({
   ],
 });
 
-/** The refs a class tries on a map, overrides first, the runway last. */
-export function candidatesFor(mapId, cls) {
+/**
+ * The refs a class tries on a map, overrides first, the runway last.
+ *
+ * A type that says how much runway it needs (`minRunway`, the giants in
+ * aircraft/extra/giants.js) changes two things, and only for itself:
+ *   - on a map whose main runway is shorter, it starts in the air offshore
+ *     (300 m up, lined up for 09) — a stand it could never take off from is
+ *     no start at all;
+ *   - where no stand fits it (the An-225 is 88 m across, the C-5 75 m long
+ *     on 74 m stands), the open apron of a hub comes before the runway.
+ * A type marked `carrier: false` (the B-1B Lancer, aircraft/extra/lancer.js:
+ * 42 m across, no hook, no catapult bar) never starts on the carrier's deck;
+ * the rest of its class's list is unchanged.
+ * `type` is optional; without one the lists are exactly as before.
+ */
+export function candidatesFor(mapId, cls, type = null) {
   const over = SPAWNS[mapId] && SPAWNS[mapId][cls];
-  const list = over || SPAWN_DEFAULTS[cls] || SPAWN_DEFAULTS.light;
-  return [...list, 'runway'];
+  let list = over || SPAWN_DEFAULTS[cls] || SPAWN_DEFAULTS.light;
+  if (type && type.carrier === false) list = list.filter((ref) => ref !== 'carrier');
+  const need = type && Number(type.minRunway);
+  if (!need) return [...list, 'runway'];
+  const pre = runwayLength() < need ? [{ hover: 'offshore', agl: 300 }] : [];
+  return [...pre, ...list, { apron: 'open' }, 'runway'];
+}
+
+/** The loaded map's main runway, metres (the one every runway start and hover start uses). */
+export function runwayLength() {
+  return (RUNWAY && RUNWAY.length) || (AIRPORT && AIRPORT.runway && AIRPORT.runway.length) || 0;
+}
+
+/** True when this type needs more runway than the loaded map's main one. */
+export function needsLongerRunway(type) {
+  const need = type && Number(type.minRunway);
+  return !!need && runwayLength() < need;
 }
 
 /* ------------------------------------------------------------------ */
@@ -538,7 +567,7 @@ export function resolveSpawn(mapId, cls, opts = {}) {
   const ctx = opts.ctx || {};
   const choice = opts.choice || 'auto';
   let refs;
-  if (choice === 'auto') refs = candidatesFor(mapId, cls);
+  if (choice === 'auto') refs = candidatesFor(mapId, cls, size.type);
   else refs = [...refsForChoice(cls, choice), 'runway'];
   const tried = [];
   const rnd = opts.random === true ? Math.random : typeof opts.random === 'function' ? opts.random : null;
@@ -600,6 +629,8 @@ export function spawnChoices(mapId, cls, opts = {}) {
     }
   } else {
     for (const c of CHOICES[cls] || []) {
+      // No carrier entry for a type that never goes to sea (candidatesFor).
+      if (size.type && size.type.carrier === false && c.refs.includes('carrier')) continue;
       let any = false;
       for (const ref of c.refs) if (resolveRef(ref, size, ctx).length) { any = true; break; }
       if (!any) continue;

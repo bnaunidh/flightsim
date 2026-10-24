@@ -61,8 +61,15 @@ export async function check(sim, r, say) {
     say && say('rocket: the switcher and the front page');
     const st = ext.extStatus().find((e) => e.id === 'rocket');
     r.ok('rocket: the feature is registered and live', !!st && st.live, JSON.stringify(st));
+    const shownGames = await import('../../src/ui/shown-games.js');
     const bar = [...menus.bar.querySelectorAll('.switcher [data-game]')].map((b) => b.dataset.game);
-    r.ok('rocket: a fifth game in the bar, after the four', bar.length === 5 && bar[4] === 'rocket' && ['flight', 'heli', 'boat', 'car'].every((g) => bar.includes(g)), bar.join(' '));
+    if (shownGames.gameShown('rocket')) {
+      r.ok('rocket: a fifth game in the bar, after the four', bar.length === 5 && bar[4] === 'rocket' && ['flight', 'heli', 'boat', 'car'].every((g) => bar.includes(g)), bar.join(' '));
+    } else {
+      // The class-demo switch (shown-games.js) keeps the extras off the bar;
+      // the rocket still has its front page, reached by switchGame().
+      r.ok('rocket: with the extras hidden, no Rocket button on the bar', !bar.includes('rocket') && !menus.bar.querySelector('[data-game="rocket"]'), bar.join(' '));
+    }
 
     // Before anything: what the scene and the camera look like.
     const before = {
@@ -73,7 +80,8 @@ export async function check(sim, r, say) {
       model: sim.model.visible,
     };
 
-    menus.bar.querySelector('[data-game="rocket"]').click();
+    const rocketBtn = menus.bar.querySelector('[data-game="rocket"]');
+    if (rocketBtn) rocketBtn.click(); else sim.switchGame('rocket');
     const main = menus.screens.main;
     r.ok('rocket: pressing Rocket goes to its own front page, not into a launch', sim.state === 'menu' && menus.currentGame === 'rocket' && menus.current === 'main' && menus.root.dataset.game === 'rocket', `state ${sim.state}, game ${menus.currentGame}, screen ${menus.current}`);
     const hero = main.querySelector('.brand h1').textContent;

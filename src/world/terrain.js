@@ -19,6 +19,7 @@ import {
   terrainSplatNoise,
   groundNormal,
 } from '../render/textures.js';
+import { cloudShadow } from './clouds.js';
 
 /**
  * Airport geometry. Heading 090 means the runway points east (+X).
@@ -1901,6 +1902,56 @@ function buildChunk(centerX, centerZ, size, segments, materialFactory) {
   return mesh;
 }
 
+/*
+ * Medium and up: two additions to the terrain shader, injected only there so
+ * Low's shader source is byte-for-byte what it always was.
+ *
+ *   Cloud shadows. clouds.js paints each puff's footprint (cast along the
+ *   sun) into a small texture round the aeroplane; here it takes that much
+ *   off the SUN's light only, inside three's own directional-light loop, so
+ *   the sky still lights a hillside under a cloud. A fade at the texture's
+ *   edge hides where it stops.
+ *
+ *   Cliffs that do not smear. The rock layer is projected straight down like
+ *   everything else, which stretches it into streaks on a steep face. Where
+ *   the ground is steep it is also sampled on two upright planes (world X–Y
+ *   and Z–Y, in metres), blended by which way the face looks, and that
+ *   replaces the smeared sample by how steep it is and how much rock there
+ *   is (vBlend.z). Two texture reads, and only where there is rock.
+ */
+const RICH_VERTEX_COMMON = '\nvarying vec2 vCloudXZ;\nvarying vec3 vCliffN;';
+const RICH_VERTEX_BEGIN = `
+  vec4 richWorld = modelMatrix * vec4(transformed, 1.0);
+  vCloudXZ = richWorld.xz;
+  vCliffN = normalize(objectNormal);`;
+const RICH_FRAGMENT_COMMON = `
+         varying vec2 vCloudXZ;
+         varying vec3 vCliffN;
+         uniform sampler2D uCloudShadow;
+         uniform vec4 uCloudXform;`;
+// After texRock is sampled, before the layers are blended.
+const RICH_FRAGMENT_ROCK = `
+        if (vBlend.z > 0.02) {
+          float steep = smoothstep(0.86, 0.55, vCliffN.y);
+          if (steep > 0.0) {
+            vec2 wx = vec2(vCloudXZ.y, vGroundY) / 38.0;
+            vec2 wz = vec2(vCloudXZ.x, vGroundY) / 38.0;
+            vec2 aw = abs(vCliffN.xz) + 1e-3;
+            aw /= (aw.x + aw.y);
+            vec4 side = texture2D(uRock, wx) * aw.x + texture2D(uRock, wz) * aw.y;
+            side.rgb *= uTintRock;
+            texRock = mix(texRock, side, steep);
+          }
+        }`;
+const RICH_FRAGMENT_SHADE = `
+        vec2 cloudUv = (vCloudXZ - uCloudXform.xy) * uCloudXform.z + 0.5;
+        float cloudEdge = smoothstep(0.5, 0.4, max(abs(cloudUv.x - 0.5), abs(cloudUv.y - 0.5)));
+        float cloudShade = 1.0 - texture2D(uCloudShadow, cloudUv).r * uCloudXform.w * cloudEdge;`;
+const LIGHTS_WITH_CLOUD_SHADE = THREE.ShaderChunk.lights_fragment_begin.replace(
+  'getDirectionalLightInfo( directionalLight, directLight );',
+  'getDirectionalLightInfo( directionalLight, directLight );\n\t\tdirectLight.color *= cloudShade;'
+);
+
 /**
  * Where the terrain stops being drawn: sea level, while the camera is above it.
  *
@@ -1932,7 +1983,8 @@ export function seaCut(renderer, scene, camera) {
  * Terrain material: three procedural textures blended per-vertex by
  * height + slope, with a low-frequency tint to hide the tiling.
  */
-function makeTerrainMaterial() {
+function makeTerrainMaterial(quality = 'high') {
+  const rich = quality !== 'low';
   const grass = grassTexture();
   const sand = sandTexture();
   const rock = rockTexture();
@@ -2025,7 +2077,7 @@ function makeTerrainMaterial() {
         vec4 texRock  = mix(texture2D(uRock, uvA), texture2D(uRock, uvB), mask);
         texGrass.rgb *= uTintGrass;
         texSand.rgb  *= uTintSand;
-        texRock.rgb  *= uTintRock;
+        texRock.rgb  *= uTintRock;/*RICH_ROCK*/
         vec4 blended  = texSand * vBlend.x + texGrass * vBlend.y + texRock * vBlend.z;
         // Large-scale tint breaks up the repeating pattern.
         float tint = texture2D(uSplat, vMapUv * 0.012).r;
@@ -2052,7 +2104,23 @@ function makeTerrainMaterial() {
         diffuseColor *= blended;
         `
       );
+    if (rich) {
+      shader.uniforms.uCloudShadow = { value: cloudShadow.texture };
+      shader.uniforms.uCloudXform = { value: cloudShadow.xform };
+      shader.vertexShader = shader.vertexShader
+        .replace('varying float vGroundY;', 'varying float vGroundY;' + RICH_VERTEX_COMMON)
+        .replace('vGroundY = position.y;', 'vGroundY = position.y;' + RICH_VERTEX_BEGIN);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('uniform vec2 uSnow;', 'uniform vec2 uSnow;' + RICH_FRAGMENT_COMMON)
+        .replace('/*RICH_ROCK*/', RICH_FRAGMENT_ROCK)
+        .replace('diffuseColor *= blended;', 'diffuseColor *= blended;' + RICH_FRAGMENT_SHADE)
+        .replace('#include <lights_fragment_begin>', LIGHTS_WITH_CLOUD_SHADE);
+    } else {
+      shader.fragmentShader = shader.fragmentShader.replace('/*RICH_ROCK*/', '');
+    }
   };
+  // Low and the richer tiers patch different shaders from this one function.
+  mat.customProgramCacheKey = () => (rich ? 'terrain-rich' : 'terrain');
   return mat;
 }
 
@@ -2060,7 +2128,7 @@ export function createTerrain(scene, quality = 'high') {
   const group = new THREE.Group();
   group.name = 'terrain';
   const detail = quality === 'low' ? 0.55 : quality === 'medium' ? 0.78 : quality === 'ultra' ? 1.4 : 1;
-  const mat = makeTerrainMaterial();
+  const mat = makeTerrainMaterial(quality);
   const factory = () => mat;
 
   for (const c of MAP.chunks) {

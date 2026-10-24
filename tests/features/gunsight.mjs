@@ -115,9 +115,9 @@ const between = (a, b) => a + rng() * (b - a);
 
 /* --------------------------------------------------------- 2. who has guns -- */
 {
-  const want = new Set(['vanguard', 'osprey', 'nightjar', 'f22', 'f35b', 'fa18']);
+  const want = new Set(['vanguard', 'osprey', 'nightjar', 'f22', 'f35b', 'fa18', 'a10']);
   const got = AIRCRAFT.filter((t) => G.hasGuns(t, 'flight')).map((t) => t.id);
-  ok('exactly the six military jets have guns', got.length === want.size && got.every((id) => want.has(id)), got.join(', '));
+  ok('exactly the seven military jets have guns', got.length === want.size && got.every((id) => want.has(id)), got.join(', '));
   const never = AIRCRAFT.filter((t) => /airliner|trainer|tourer|helicopter|racer/i.test(`${t.class}`) || ['massimo', 'tpose', 'harrier'].includes(t.id)).filter((t) => !want.has(t.id));
   ok('no airliner, trainer, tourer, helicopter, Air Massimo or T-Pose Harrison has any', never.length >= 8 && never.every((t) => !G.hasGuns(t, 'flight')), never.map((t) => t.id).join(', '));
   ok('it is the heat-seekers\' own rule: the same list, type for type', AIRCRAFT.every((t) => G.hasGuns(t, 'flight') === HSK.carriesMissiles({ aircraftType: t, game: t.id === 'harrier' ? 'heli' : 'flight' })));

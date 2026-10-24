@@ -92,6 +92,10 @@ export const ZONES = {
   engineR2: { label: 'Right outer engine', kind: 'engine', side: 1, bend: 1.5, detach: 40, engine: true, fuel: true, survivable: true },
   rotor: { label: 'Main rotor blades', kind: 'rotor', bend: 0.6, detach: 2.5, survivable: false },
   tailRotor: { label: 'Tail rotor', kind: 'rotor', bend: 1, detach: 4, survivable: true },
+  // Six-engined (the An-225, aircraft/extra/giants.js): the third each side.
+  // Last, so every zone before keeps its index in ZONE_IDS.
+  engineL3: { label: 'Left outermost engine', kind: 'engine', side: -1, bend: 1.5, detach: 40, engine: true, fuel: true, survivable: true },
+  engineR3: { label: 'Right outermost engine', kind: 'engine', side: 1, bend: 1.5, detach: 40, engine: true, fuel: true, survivable: true },
 };
 export const ZONE_IDS = Object.keys(ZONES);
 /** How much harder than its own strength a blow must reach a zone it only travelled to, to take it off (see planBreak). */
@@ -154,16 +158,17 @@ export function bodyAt(frame, z) {
 }
 
 function engineIds(list) {
-  // count 1 -> engine; 2 -> engineL/R; more -> engineL1 (inboard), engineL2 ...
+  // count 1 -> engine; 2 -> engineL/R; more -> engineL1 (inboard), engineL2,
+  // engineL3 (the An-225's six) ...
   const left = list.filter((e) => e.x < -0.01).sort((a, b) => b.x - a.x);
   const right = list.filter((e) => e.x > 0.01).sort((a, b) => a.x - b.x);
   const mid = list.filter((e) => Math.abs(e.x) <= 0.01);
   if (list.length === 1) list[0].id = 'engine';
   else {
     if (left.length === 1) left[0].id = 'engineL';
-    else left.forEach((e, i) => (e.id = `engineL${Math.min(2, i + 1)}`));
+    else left.forEach((e, i) => (e.id = `engineL${Math.min(3, i + 1)}`));
     if (right.length === 1) right[0].id = 'engineR';
-    else right.forEach((e, i) => (e.id = `engineR${Math.min(2, i + 1)}`));
+    else right.forEach((e, i) => (e.id = `engineR${Math.min(3, i + 1)}`));
     // Two on the centreline (rare): the first is "engine", the rest join it.
     mid.forEach((e) => (e.id = 'engine'));
   }

@@ -700,7 +700,21 @@ function restoreAudio(sim) {
 
 /** The CRASH event, for an aeroplane that may or may not have anyone in it. */
 function onCrash(sim) {
-  if (S.phase === 'idle') return;
+  if (S.phase === 'idle') {
+    /*
+     * You got OUT and walked (onfoot.js), and the aeroplane you left rolled on
+     * and hit something: you are safe, so it is news, not an ending (the owner,
+     * 2026-10-17: "if i escape the plane and it still crashes i dont needa
+     * reset"). The wreck burns where it fell; the crash screen stays away
+     * (crashDebriefUnlessEjected below).
+     */
+    if (onFoot.active) {
+      const ac = sim.aircraft;
+      const where = ac && ac.pos && onFoot.walker ? `${Math.round(Math.hypot(ac.pos.x - onFoot.walker.x, ac.pos.z - onFoot.walker.z))} m away` : 'where you left it';
+      banner(sim, 'Your plane crashed', `Nobody was in it — you were out and on foot. It came to grief ${where}.`, 'good', 4.5);
+    }
+    return;
+  }
   S.planeDown = true;
   const ac = sim.aircraft;
   if (S.sd.state !== 'boom') {
@@ -1049,7 +1063,8 @@ registerExtension({
       const inner = sim.showCrashDebrief;
       sim._ejectDebrief = true;
       sim.showCrashDebrief = function crashDebriefUnlessEjected(...args) {
-        if (S.phase !== 'idle') return undefined;
+        // Under a canopy, or out and walking: the aeroplane's crash is not yours to reset for.
+        if (S.phase !== 'idle' || onFoot.active) return undefined;
         return inner.apply(this, args);
       };
     }

@@ -751,3 +751,7 @@ const massimo = {
 export const DEFINITIONS = [f22, fa18, f35b, massimo];
 /** Every one of them is drawn by the pack: model.js has no twin canted fins. */
 export const DRAWS = DEFINITIONS.map((d) => d.id);
+// The afterburner and the hot nozzle, for the B-1B's four (./lancer.js).
+export { flame, hotMaterial };
+/** The helpers, for the attack jet (./attack.js) built the same way. */
+export { plate as fighterPlate, face, boxLoft, pipe, rect, mirror, driveFlames, petals, cantFins };

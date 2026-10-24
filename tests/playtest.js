@@ -558,6 +558,16 @@ export async function runPlaytest(sim, { verbose = false } = {}) {
   for (const id of (await import('../src/aircraft/types.js')).AIRCRAFT.map((a) => a.id) /* was a
     five-id literal, already missing tempest and nightjar before either was
     added — a hardcoded fleet list is stale the moment the fleet changes */) {
+    // A giant (aircraft/extra/giants.js) needs more runway than most maps
+    // have, on purpose; this circuit flies whatever map is loaded, so it is
+    // flown on Gateway's 3,800 m by tests/features/new-aircraft.browser.js.
+    const { getAircraft } = await import('../src/aircraft/types.js');
+    const { RUNWAY } = await import('../src/world/airport.js');
+    const t = getAircraft(id);
+    if (t.minRunway && RUNWAY.length < t.minRunway) {
+      r.note('aircraft', `${id} needs a long runway`, `${t.minRunway} m wanted, ${RUNWAY.length} m here — flown on Gateway by new-aircraft.browser.js`);
+      continue;
+    }
     await flyCircuit(sim, id, r);
   }
   say('failures');

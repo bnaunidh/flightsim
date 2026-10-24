@@ -253,10 +253,29 @@ function words(r, sim) {
   }
 }
 
+/**
+ * How much fuel is in the tanks at a STAND or in a hangar when nobody asked:
+ * 35-60%, settled by the stand and the aircraft (the same every time, so a
+ * player learns their aeroplane), so the bowser has something to do during
+ * "Fuelling and loading" and the FUEL bar visibly fills (the owner,
+ * 2026-10-17: "i spawn with full fuel" made fuelling pointless). Everywhere
+ * else — the runway, airborne, the water, a pad — the tanks are full, as
+ * they always were. A fuel the start options name (opts.fuel) always wins.
+ */
+export const STAND_FUEL = Object.freeze({ min: 0.35, max: 0.6 });
+export function spawnFuel(r, typeId, optFuel) {
+  if (optFuel != null) return Math.max(0.05, Math.min(1, optFuel));
+  if (!r || !parked(r.kind)) return 1;
+  let h = 2166136261;
+  for (const ch of `${r.id || r.label || r.kind}|${typeId || ''}`) h = (h ^ ch.charCodeAt(0)) * 16777619 >>> 0;
+  const u = (h % 1000) / 999;
+  return Math.round((STAND_FUEL.min + u * (STAND_FUEL.max - STAND_FUEL.min)) * 100) / 100;
+}
+
 function place(sim, r, opts) {
   const ac = sim.aircraft;
   if (!ac) return false;
-  const fuel = opts.fuel != null ? Math.max(0.05, Math.min(1, opts.fuel)) : 1;
+  const fuel = spawnFuel(r, sim.aircraftType && sim.aircraftType.id, opts.fuel);
   if (r.kind === 'hover') {
     V.set(r.x, 0, r.z);
     ac.reset({ pos: V, headingDeg: r.headingDeg, speed: r.speed || 60, altAGL: r.agl || 150, engineOn: true, fuel });

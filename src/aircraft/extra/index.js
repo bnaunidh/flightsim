@@ -24,7 +24,18 @@
 import { TYPES as FIGHTERS } from './fighters.js';
 import { TYPES as AIRLINERS } from './airliners.js';
 import { TYPES as TPOSE } from './tpose.js';
+// new-aircraft (2026-10-16): the popular airliners. After ./airliners.js,
+// whose geometry and door tables they register into.
+import { TYPES as JETS } from './jets.js';
+// ...and the giants (BelugaXL, Dreamlifter, An-225, C-5).
+import { TYPES as GIANTS } from './giants.js';
+// ...and the B-1B Lancer, the swing-wing bomber (owner: "also note: add b1 lancers").
+import { TYPES as LANCER } from './lancer.js';
+// ...and the C-17 Globemaster III (owner: "Boeing C-17 Globemaster III ... rear cargo ramp").
+import { TYPES as C17 } from './c17.js';
+// ...and the A-10 Thunderbolt II (owner: "Fairchild A-10 Thunderbolt II ... slow & tough").
+import { TYPES as ATTACK } from './attack.js';
 
 export function extraAircraft(base) {
-  return [...FIGHTERS(base), ...AIRLINERS(base), ...TPOSE(base)];
+  return [...FIGHTERS(base), ...AIRLINERS(base), ...TPOSE(base), ...JETS(base), ...GIANTS(base), ...LANCER(base), ...C17(base), ...ATTACK(base)];
 }

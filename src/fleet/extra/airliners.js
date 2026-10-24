@@ -58,7 +58,7 @@ import * as THREE from '../../vendor/three.module.js';
 import { addInstanced } from '../common.js';
 import { aircraftDecalTexture } from '../aircraft-textures.js';
 import { AIRLINER_GEOMETRY as GEO } from '../../aircraft/extra/airliners.js';
-import { hull } from '../../aircraft/models/civil-kit.js';
+import { hull, turned } from '../../aircraft/models/civil-kit.js';
 import {
   piecewise, loftFuselage, placeFuselage, splitByZ, liveryTexture, airlinerMaterials, glazing,
   windowRows, buildDoors, turbofan, registration, meshOf, remapUV, DECAL,
@@ -608,7 +608,11 @@ function dress(ctx, S) {
   // cheatline colour, and registration() flips it per side so it reads
   // left-to-right from both. Sixteen to one: the decal texture fits twenty
   // or so characters at about two thirds of its width.
-  const title = named && typeof scheme.title === 'string' && scheme.title.trim() ? scheme.title.trim() : null;
+  // ...and now every airline's name (aircraft/liveries.js `titling`), as the
+  // real ones wear it: the airliner models read `titling`, nothing else does,
+  // so a Skylark in Abyssinia colours stays a plain flying-school aeroplane.
+  const words = named ? [scheme.title, scheme.titling].find((w) => typeof w === 'string' && w.trim()) : null;
+  const title = words ? words.trim() : null;
   if (title && S.title) {
     const ink = typeof line === 'string' ? line : light ? '#1f272e' : '#e9eef2';
     const tex3 = aircraftDecalTexture(title, { color: ink, background: 'transparent', width: 2048, height: 128 });
@@ -628,6 +632,13 @@ function dress(ctx, S) {
     finMat.name = 'Aircraft_livery_tail';
   }
   paintFin(ctx, finMat);
+  // The airline's mark on the fin (aircraft/liveries.js `emblem`): a
+  // geometric device of the game's own, in the body colour on the tail
+  // colour, one each side, where every real airline puts its own.
+  if (named && scheme.emblem) finEmblem(ctx, scheme.emblem, { ink: base, tail: tailColour != null ? tailColour : accent });
+  // Flap-track fairings: the canoes under the trailing edge every airliner
+  // wing carries (not a turboprop's hinged flaps, not Concorde's delta).
+  if (S.flapTracks !== false) flapTrackFairings(ctx, M.nacelle);
 
   // Antennas: blade aerials on the crown and under the belly, and the pitot
   // probes either side of the nose below the flight deck.
@@ -669,6 +680,191 @@ function dress(ctx, S) {
 /* ------------------------------------------------------------------ *
  * The aeroplanes.
  * ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ *
+ * The airline's mark on the fin, and the flap-track fairings
+ * ------------------------------------------------------------------ */
+
+const emblems = new Map();
+/**
+ * A fin emblem, drawn once per style and ink: 'stripes' (three slanted
+ * bars), 'globe' (a circle with its meridians), 'star' (four points), 'wave'
+ * (a swept band), 'sun' (a disc with short rays), 'moon' (a crescent and a
+ * dot). Geometric and original: no real airline's logo is drawn or copied.
+ */
+function emblemTexture(style, ink) {
+  const key = `airliner-emblem|${style}|${ink}`;
+  if (emblems.has(key)) return emblems.get(key);
+  const S = 256;
+  const c = document.createElement('canvas');
+  c.width = S;
+  c.height = S;
+  const g = c.getContext('2d');
+  if (g && typeof g.clearRect === 'function') {
+    g.clearRect(0, 0, S, S);
+    g.fillStyle = ink;
+    g.strokeStyle = ink;
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    const cx = S / 2;
+    const cy = S / 2;
+    if (style === 'stripes') {
+      g.lineWidth = S * 0.11;
+      for (let i = -1; i <= 1; i++) {
+        g.beginPath();
+        g.moveTo(cx + i * S * 0.2 - S * 0.14, cy + S * 0.3);
+        g.lineTo(cx + i * S * 0.2 + S * 0.14, cy - S * 0.3);
+        g.stroke();
+      }
+    } else if (style === 'globe') {
+      g.lineWidth = S * 0.07;
+      g.beginPath();
+      g.arc(cx, cy, S * 0.34, 0, Math.PI * 2);
+      g.stroke();
+      g.lineWidth = S * 0.05;
+      for (const k of [0.12, 0.34]) {
+        g.beginPath();
+        g.ellipse(cx, cy, S * k, S * 0.34, 0, 0, Math.PI * 2);
+        g.stroke();
+      }
+      g.beginPath();
+      g.moveTo(cx - S * 0.34, cy);
+      g.lineTo(cx + S * 0.34, cy);
+      g.stroke();
+    } else if (style === 'star') {
+      g.beginPath();
+      const R = S * 0.4;
+      const r = S * 0.12;
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+        const d = i % 2 ? r : R;
+        g.lineTo(cx + Math.cos(a) * d, cy + Math.sin(a) * d);
+      }
+      g.closePath();
+      g.fill();
+    } else if (style === 'wave') {
+      g.lineWidth = S * 0.12;
+      g.beginPath();
+      g.moveTo(S * 0.1, cy + S * 0.18);
+      g.bezierCurveTo(S * 0.35, cy - S * 0.35, S * 0.6, cy + S * 0.4, S * 0.9, cy - S * 0.2);
+      g.stroke();
+      g.lineWidth = S * 0.06;
+      g.beginPath();
+      g.moveTo(S * 0.18, cy + S * 0.36);
+      g.bezierCurveTo(S * 0.42, cy - S * 0.12, S * 0.62, cy + S * 0.5, S * 0.84, cy + S * 0.06);
+      g.stroke();
+    } else if (style === 'sun') {
+      g.beginPath();
+      g.arc(cx, cy, S * 0.2, 0, Math.PI * 2);
+      g.fill();
+      g.lineWidth = S * 0.06;
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        g.beginPath();
+        g.moveTo(cx + Math.cos(a) * S * 0.27, cy + Math.sin(a) * S * 0.27);
+        g.lineTo(cx + Math.cos(a) * S * 0.4, cy + Math.sin(a) * S * 0.4);
+        g.stroke();
+      }
+    } else {
+      // moon
+      g.beginPath();
+      g.arc(cx, cy, S * 0.36, 0, Math.PI * 2);
+      g.fill();
+      g.globalCompositeOperation = 'destination-out';
+      g.beginPath();
+      g.arc(cx + S * 0.16, cy - S * 0.08, S * 0.3, 0, Math.PI * 2);
+      g.fill();
+      g.globalCompositeOperation = 'source-over';
+      g.beginPath();
+      g.arc(cx + S * 0.24, cy - S * 0.22, S * 0.06, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  t.name = key;
+  emblems.set(key, t);
+  return t;
+}
+
+/**
+ * The emblem on both sides of the (single, centred) fin: a quad bent to
+ * the fin's taper from half to 85% of its height, over the forward part of
+ * the chord ahead of the rudder, 3 cm proud of the painted shell with a
+ * deeper decal offset than the paint's, so it wins the depth test over it.
+ */
+function finEmblem(ctx, style, { ink }) {
+  const fc = ctx.config.fin;
+  const fin = ctx.parts.verticalFin;
+  if (!fc || !fin || fc.mirror || fc.x) return null;
+  const tex = emblemTexture(style, css(ink));
+  const mat = ctx.model.userData.ownMaterial(new THREE.MeshBasicMaterial({
+    name: 'Airliner_fin_emblem', map: tex, transparent: true, depthWrite: false, toneMapped: true,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+  }));
+  const t0 = 0.5;
+  const t1 = 0.85;
+  const chordAt = (t) => mix(fc.rootChord, fc.tipChord, t);
+  const size = Math.min(fc.height * (t1 - t0), chordAt((t0 + t1) / 2) * 0.5);
+  const tMid = (t0 + t1) / 2;
+  const tHalf = size / fc.height / 2;
+  for (const side of [1, -1]) {
+    const geo = new THREE.PlaneGeometry(1, 1, 1, 3);
+    const p = geo.attributes.position;
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < p.count; i++) {
+      const u = p.getX(i) + 0.5; // 0 forward .. 1 aft (the emblem reads the same from both sides)
+      const t = tMid + p.getY(i) * tHalf * 2;
+      const ch = chordAt(t);
+      const th = mix(fc.thickness || 0.14, 0.045, t);
+      const le = fc.rootZ + fc.sweep * t;
+      const zc = le + ch * 0.42;
+      p.setXYZ(i, side * (th * 0.57 + 0.034), fc.rootY + fc.height * t, zc + (u - 0.5) * size);
+      uv.setXY(i, side > 0 ? u : 1 - u, uv.getY(i));
+    }
+    geo.computeVertexNormals();
+    const m = meshOf(ctx, 'Tail emblem', geo, mat, fin);
+    m.castShadow = false;
+  }
+  return mat;
+}
+
+/** css colour string of anything THREE.Color takes (the kit's, repeated: it is not exported). */
+function css(c) {
+  try {
+    return '#' + new THREE.Color(c).getHexString();
+  } catch (e) {
+    return '#f4f6f8';
+  }
+}
+
+/**
+ * Flap-track fairings: the canoes under the trailing edge that carry the
+ * flap tracks, two a side on a narrow-body and three on a wide-body, each
+ * a lathe along the chord hanging from the underside and running past the
+ * trailing edge. Sized from the local chord, as the real ones scale.
+ */
+function flapTrackFairings(ctx, mat) {
+  const w = ctx.config.wing;
+  if (!w || w.flaps === false) return;
+  const span2 = 2 * (w.rootX + w.span);
+  const at = span2 > 45 ? [0.3, 0.5, 0.68] : [0.33, 0.6];
+  for (const side of [-1, 1]) {
+    const parent = ctx.parts[side < 0 ? 'leftWing' : 'rightWing'];
+    if (!parent) continue;
+    for (const f of at) {
+      const x = w.rootX + w.span * f;
+      const wa = wingAt(w, x);
+      const L = wa.chord * 0.5;
+      const d = Math.max(0.3, Math.min(1.1, wa.chord * 0.1));
+      const z0 = wa.te - L * 0.68;
+      const geo = turned([[0.02 * d, z0], [0.5 * d, z0 + 0.3 * L], [0.5 * d, z0 + 0.6 * L], [0.15 * d, z0 + L], [0.001, z0 + L + 0.02]], 10, { vBand: 0.5 });
+      geo.translate(side * x, wa.under - 0.22 * d, 0);
+      meshOf(ctx, 'Flap track fairing', geo, mat, parent);
+    }
+  }
+}
 
 const A = GEO.a320;
 const B = GEO.b747;
@@ -1106,3 +1302,5 @@ export const DRAWS = ['a320', 'b747', 'a380'];
 /** For tests and the hangar: each type's fuselage, deck and door specification, in metres. */
 export const AIRLINER_SPECS = { a320: A320, b747: B747, a380: A380 };
 export { dress as dressAirliner, refitLeg as refitAirlinerLeg, st as hullStation, ell as ellipseStation, bodyOf, ringsBetween };
+// The construction helpers, for the airliners drawn since (./jets.js, ./giants.js).
+export { plate, wingAt, trailingEdgeFill, paintFin, bodyLeg, levelBogies, tyres, bogie, oleo, findByName };

@@ -146,7 +146,7 @@ const rng = () => {
 
 /* ------------------------------------------------------- 2. who carries them -- */
 {
-  const want = new Set(['vanguard', 'osprey', 'nightjar', 'f22', 'f35b', 'fa18']);
+  const want = new Set(['vanguard', 'osprey', 'nightjar', 'f22', 'f35b', 'fa18', 'a10']);
   const got = AIRCRAFT.filter((t) => HSK.carriesMissiles({ aircraftType: t, game: t.id === 'harrier' ? 'heli' : 'flight' })).map((t) => t.id);
   ok('exactly the military aeroplanes carry them', got.length === want.size && got.every((id) => want.has(id)), got.join(', '));
   const never = AIRCRAFT.filter((t) => /airliner|trainer|tourer|helicopter|racer/i.test(`${t.class}`) || ['massimo', 'tpose', 'harrier'].includes(t.id)).filter((t) => !want.has(t.id));
@@ -198,7 +198,7 @@ const rng = () => {
 /* ---------------------------------------------------------------- 4. pylons -- */
 {
   const mil = AIRCRAFT.filter((t) => isMilitary(t) && t.id !== 'harrier');
-  ok('six military models', mil.length === 6, mil.map((t) => t.id).join(', '));
+  ok('seven military models', mil.length === 7, mil.map((t) => t.id).join(', '));
   for (const t of mil) {
     const model = createAircraftModel({ type: t, livery: t.livery });
     const rig = Fly.buildPylons(model, t, 3);

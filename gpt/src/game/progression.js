@@ -248,36 +248,18 @@ export function buy(p, aircraftId) {
  * once each, and whoever runs the game decides who is told about them.
  */
 /**
- * Codes, named so the name says what it is worth.
+ * Codes. RETIRED, all of them.
  *
- * The convention is `<whoever><amount>`: doritofc1k is a thousand credits,
- * doritofc1m is a million, doritofc1b is a billion, kestrel500 is five
- * hundred. The amount is PARSED OUT OF THE NAME rather than written beside
- * it, so the two can never disagree — a code called 1m cannot quietly be
- * worth 1000, which is exactly the sort of thing that goes unnoticed for
- * months and then makes someone feel cheated.
- *
- * Only codes on this list work. The suffix decides the amount; it does not
- * mint credits on its own, or anyone could type `me99b` and help themselves.
- *
- * To add one: put the name on the list with a note. Nothing else.
+ * This copy of the game is served from the same address as the main one and
+ * shares its save (the same localStorage key), so a plaintext list here would
+ * pay out into the real game. The words that used to be listed here leaked and
+ * have been retired everywhere; the main game now keeps only SHA-256
+ * fingerprints (src/game/progression.js CODES). In this copy no code works.
  */
-const CREDIT_CODES = {
-  doritofc1k: 'For Dorito',
-  doritofc1m: 'For Dorito, seriously',
-  doritofc1b: 'For Dorito, absurdly',
-  firstsolo300: 'Your first solo',
-  kestrel500: 'Island hopper',
-  tornado800: 'You went and looked',
-  classof29_1500: 'For the class that tested it',
-};
+const CREDIT_CODES = Object.freeze({});
 
-/** Rank grants, which are appointed rather than earned. */
-const RANK_CODES = {
-  FOUNDER: { rank: 'founder', note: 'There is one' },
-  ADMIN: { rank: 'admin', note: 'Appointed' },
-  MOD: { rank: 'mod', note: 'Appointed' },
-};
+/** Rank grants: none, for the same reason. */
+const RANK_CODES = Object.freeze({});
 
 /**
  * How much a suffix multiplies by. Thousand, million, billion, and that is

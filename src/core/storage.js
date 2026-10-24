@@ -7,7 +7,18 @@ const SETTINGS_KEY = 'islandsim.settings.v1';
 const PROGRESS_KEY = 'islandsim.progress.v1';
 
 export const DEFAULT_SETTINGS = {
+  /*
+   * Graphics. `quality` is ALWAYS a concrete tier — low, medium, high or
+   * ultra — because nineteen modules compare it with those words. "Auto" is
+   * the separate flag beside it: on for a new install, where a short
+   * frame-time probe at the first boot picks the tier
+   * (render/quality-probe.js) and remembers what it picked, so later boots
+   * do not probe again. A save from before Auto existed has no `qualityAuto`
+   * key and keeps the tier its player chose (see coerceQuality).
+   */
   quality: 'high',
+  qualityAuto: true,
+  qualityAutoPicked: null,
   // Which of the five places you are flying. See world/maps.js.
   map: 'kestrel',
   flightMode: 'simplified',
@@ -244,9 +255,36 @@ const MIGRATIONS = [
   { rev: 'damageRev', keys: ['damageModel'] },
 ];
 
+const QUALITY_TIERS = ['low', 'medium', 'high', 'ultra'];
+
+/**
+ * Make the graphics settings obey their contract, whatever the save holds.
+ *
+ *   - A save from before Auto existed (no `qualityAuto` key) is a player who
+ *     chose their tier, or lived with the default: either way it is kept,
+ *     and Auto stays off until they ask for it.
+ *   - `quality` is always a tier. 'auto' written there (by anything) means
+ *     Auto: the flag goes on and the tier is the one already picked, or High
+ *     until a probe picks one. Any other non-tier is High.
+ *   - `qualityAutoPicked` is a tier or null; with Auto on, `quality` follows
+ *     it, so the boot builds the world at the tier the probe chose.
+ *
+ * Pure: mutates and returns `s`. `saved` is the raw save (null when none).
+ */
+export function coerceQuality(s, saved) {
+  if (saved && typeof saved === 'object' && !('qualityAuto' in saved)) s.qualityAuto = false;
+  if (!QUALITY_TIERS.includes(s.qualityAutoPicked)) s.qualityAutoPicked = null;
+  if (s.quality === 'auto') s.qualityAuto = true;
+  s.qualityAuto = s.qualityAuto === true;
+  if (s.qualityAuto && s.qualityAutoPicked) s.quality = s.qualityAutoPicked;
+  if (!QUALITY_TIERS.includes(s.quality)) s.quality = 'high';
+  return s;
+}
+
 export function loadSettings() {
   const s = read(SETTINGS_KEY, DEFAULT_SETTINGS);
   const saved = readRaw(SETTINGS_KEY);
+  coerceQuality(s, saved);
   if (!saved) return s;
   let changed = false;
   for (const m of MIGRATIONS) {

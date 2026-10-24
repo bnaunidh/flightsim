@@ -17,6 +17,7 @@
  */
 
 import * as THREE from '../vendor/three.module.js';
+import { paintMaterial } from '../render/paint.js';
 import {
   airframeTexture,
   airframeNormal,
@@ -147,14 +148,8 @@ function loft(sections, profile) {
 }
 
 function metalMaterial(map, { roughness = 0.42, metalness = 0.35, color = 0xffffff } = {}) {
-  return new THREE.MeshStandardMaterial({
-    map,
-    normalMap: airframeNormal(),
-    normalScale: new THREE.Vector2(0.5, 0.5),
-    roughness,
-    metalness,
-    color,
-  });
+  // Paint over metal, with a clearcoat on High and Ultra (render/paint.js).
+  return paintMaterial(map, { roughness, metalness, color, normalMap: airframeNormal() });
 }
 
 /**

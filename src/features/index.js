@@ -6,8 +6,16 @@
 
 import './airport-services.js';
 import './airliners.js';
+// After airliners: the giants (aircraft/extra/giants.js) say where the long runways are.
+import './giants.js';
 import './stovl.js';
+// The B-1B Lancer's swing wing and afterburners (aircraft/swing-wing.js): before carrier-ops, whose
+// hook and catapult keys ([ and ]) it shares — a Lancer has neither.
+import './swing-wing.js';
+// The C-17's cargo ramp (fleet/extra/c17.js userData.cargo): the key, the panel, the speed rule.
+import './cargo-ramp.js';
 import './warnings.js';
+import './bird-strike.js';
 import './explosions.js';
 import './crashes.js';
 import './meteor.js';

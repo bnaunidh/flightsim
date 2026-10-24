@@ -21,6 +21,7 @@
 
 import { GAME_UI } from '../../ui/game-ui.js';
 import { GAMES, MISSION_CATEGORIES } from '../../ui/menus.js';
+import { gameShown } from '../../ui/shown-games.js';
 import { ROCKETS, ROCKET_IDS } from './physics.js';
 import { GOALS, ROCKET_MISSIONS } from './flights.js';
 
@@ -131,8 +132,11 @@ export function installRocketMenu(sim, api) {
   }
 
   // 2. The fifth button, on the bar that was built before we got here.
+  //    Unless the menus are not offering it (shown-games.js): then no button,
+  //    and no card on More either — the rocket still runs for whoever calls
+  //    switchGame('rocket'), it is just not on the doors.
   const bar = menus.bar && menus.bar.querySelector('.switcher');
-  if (bar && !bar.querySelector('[data-game="rocket"]')) {
+  if (gameShown('rocket') && bar && !bar.querySelector('[data-game="rocket"]')) {
     const b = document.createElement('button');
     b.className = 'switch-btn';
     b.dataset.game = 'rocket';
@@ -165,7 +169,7 @@ export function installRocketMenu(sim, api) {
   // 3b. And on the More screen's list of the other games, so it can be found
   //     from there as well as from the bar.
   const more = menus.screens.more && menus.screens.more.querySelector('[data-more-games]');
-  if (more && !more.querySelector('[data-rk-more]')) {
+  if (gameShown('rocket') && more && !more.querySelector('[data-rk-more]')) {
     const b = document.createElement('button');
     b.className = 'game-card';
     b.dataset.rkMore = '';

@@ -45,13 +45,25 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension } from '../game/extensions.js';
-import { performanceFor } from '../aircraft/types.js';
+import { performanceFor, AIRCRAFT } from '../aircraft/types.js';
 import { heightAt } from '../world/terrain.js';
 import { AIRLINER_GEOMETRY } from '../aircraft/extra/airliners.js';
 import * as PROG from '../game/progression.js';
 
 export const AIRLINER_IDS = Object.freeze(Object.keys(AIRLINER_GEOMETRY));
 const MINE = new Set(AIRLINER_IDS);
+
+/*
+ * The airliners added since these three (aircraft/extra/jets.js, giants.js)
+ * register their geometry in AIRLINER_GEOMETRY and carry their own sale row
+ * and take-off flap on the roster entry (`price`, `why`, `takeoffFlaps`), so
+ * adding one never means editing the tables below.
+ */
+function fromRoster(key) {
+  const out = {};
+  for (const t of AIRCRAFT) if (MINE.has(t.id) && t[key] != null) out[t.id] = t[key];
+  return out;
+}
 
 /** True when the aeroplane being flown is one of the three. */
 export function isAirliner(sim) {
@@ -184,7 +196,7 @@ function seatPanel(sim) {
  * ahead of the wheels. tests/features/airliners.mjs flies it. The flaps
  * lever still works as it always did.
  */
-export const TAKEOFF_FLAPS = Object.freeze({ a320: 1, b747: 2, a380: 2 });
+export const TAKEOFF_FLAPS = Object.freeze({ ...fromRoster('takeoffFlaps'), a320: 1, b747: 2, a380: 2 });
 
 function setTakeoffFlaps(sim, ac) {
   const id = sim.aircraftType.id;
@@ -225,8 +237,9 @@ function setTakeoffFlaps(sim, ac) {
  * progression.js itself make this a no-op. Fenced, because a throw at import
  * would take features/index.js, and the game, with it.
  */
-export const PRICES = Object.freeze({ a320: 600, b747: 1200, a380: 1600 });
+export const PRICES = Object.freeze({ ...fromRoster('price'), a320: 600, b747: 1200, a380: 1600 });
 const WHY = {
+  ...fromRoster('why'),
   a320: 'The airliner you have probably flown on',
   b747: 'The Jumbo, hump and all',
   a380: 'Two decks, four engines, twenty-two wheels',

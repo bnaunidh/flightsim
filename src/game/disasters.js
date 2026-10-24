@@ -104,8 +104,24 @@ export const NATURAL_EVENTS = [
     warn: 'BIRD STRIKE — engine damaged',
     kind: 'bad',
     apply(sim) {
-      sim.audio.available && sim.audio.alerts.thud && sim.audio.alerts.thud();
-      if (!sim.aircraft.failures.roughEngine) sim.toggleFailure('roughEngine');
+      const hit = () => {
+        sim.audio.available && sim.audio.alerts.thud && sim.audio.alerts.thud();
+        if (!sim.aircraft.failures.roughEngine) sim.toggleFailure('roughEngine');
+      };
+      /*
+       * features/bird-strike.js, when it is live and you are flying: the flock
+       * appears ahead first and this runs when the lead bird meets the engine,
+       * under half a second later, with the warning — main.js holds its own
+       * back while the strike is pending. Otherwise, as it always was: at once.
+       */
+      const bs = sim.birdStrike;
+      const warn = this.warn;
+      if (bs && typeof bs.begin === 'function' && bs.begin(sim, () => {
+        hit();
+        if (sim.hud && typeof sim.hud.notify === 'function') sim.hud.notify(warn, 'warn', 5);
+        if (sim.audio && sim.audio.available && sim.audio.alerts && sim.audio.alerts.caution) sim.audio.alerts.caution();
+      })) return;
+      hit();
     },
   },
   {

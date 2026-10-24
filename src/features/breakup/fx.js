@@ -130,6 +130,23 @@ export class BreakupFx {
     this.stats = { emitted: 0, spark: 0, dust: 0, spray: 0, fire: 0, smoke: 0, bubble: 0, foam: 0, pops: 0, popFlares: 0, popBright: 0, peakAlive: 0 };
   }
 
+  /**
+   * Compile the two particle shaders now, with the scene's own lights and
+   * fog, so the first crash does not do it (a hidden object is not compiled,
+   * hence the moment of visibility). Idempotent and cheap once compiled.
+   */
+  warm(renderer, camera, scene) {
+    if (!renderer || typeof renderer.compile !== 'function' || !camera) return false;
+    const was = this.pools.map((pool) => pool.pts.visible);
+    try {
+      for (const pool of this.pools) pool.pts.visible = true;
+      for (const pool of this.pools) renderer.compile(pool.pts, camera, scene || undefined);
+      return true;
+    } finally {
+      this.pools.forEach((pool, i) => (pool.pts.visible = was[i]));
+    }
+  }
+
   /** Is anything going on at all? */
   get busy() {
     return this.pools[0].alive + this.pools[1].alive > 0 || this.emitters.length > 0 || this.pops.length > 0;

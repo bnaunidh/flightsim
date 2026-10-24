@@ -976,6 +976,16 @@ export function specFor(id) {
     // This is not a cheat to paper over the aerodynamics; it is the piece of
     // equipment the aerodynamics makes necessary.
     yawDamper: t.shape.power.kind === 'jet',
+    /*
+     * The engine's idle, as a fraction of full power: 0.18 for every type
+     * that does not say (what physics.js always had). A big high-bypass
+     * turbofan idles at a twentieth of its thrust, and at 0.18 the C-17's
+     * four (aircraft/extra/c17.js: 102 kN) pushed 21 kN against brakes that
+     * are a viscous 3 kN per metre a second a wheel, so it crept down the
+     * runway at 3.4 m/s with the brakes full on and never counted as
+     * stopped. physics.js reads it in the three places the idle lives.
+     */
+    idleRpm: Number.isFinite(t.aero.idleRpm) ? t.aero.idleRpm : 0.18,
     ...pointsFor(t.shape, t.aero),
   };
 }

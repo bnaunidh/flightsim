@@ -9,6 +9,10 @@
 import * as THREE from './vendor/three.module.js';
 
 import { warmTextures, setTextureAnisotropy, asphaltTexture, asphaltNormal } from './render/textures.js';
+import { PostFX } from './render/post.js';
+import { pickTier, probeFrames, isTier, tierRank, asHighMs } from './render/quality-probe.js';
+import { DynamicResolution, pixelRatioCap } from './render/dyn-res.js';
+import { setPaintTier } from './render/paint.js';
 import { Weather } from './world/weather.js';
 import { SkyDome } from './world/sky.js';
 import { createTerrain, heightAt, AIRPORT, applyMap, MAP, clearObstacles, clearPlatforms, harbourBerth, harbourMouth, flatSurfaceAt } from './world/terrain.js';
@@ -192,9 +196,10 @@ class Game {
      * It is not the default and never will be: the class flies this on iPads.
      */
     const q = this.settings.quality;
-    this.renderer.setPixelRatio(
-      Math.min(window.devicePixelRatio || 1, q === 'ultra' ? 3 : q === 'high' ? 2 : 1.25)
-    );
+    // Dynamic resolution (render/dyn-res.js): the tier's cap times a scale
+    // that drops while the frame rate is low and recovers when it is not.
+    this.dynRes = new DynamicResolution();
+    this.renderer.setPixelRatio(pixelRatioCap(q, window.devicePixelRatio));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -207,6 +212,11 @@ class Game {
     } catch (e) {
       /* a card that will not answer keeps the safe default */
     }
+    // Bloom and the colour grade (render/post.js). Switched on per tier by
+    // buildWorld; its targets only exist while it is on (High and Ultra).
+    this.post = new PostFX(this.renderer);
+    // The aeroplanes' paint: clearcoat on High and Ultra (render/paint.js).
+    setPaintTier(q);
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 60000);
@@ -556,6 +566,27 @@ class Game {
     document.addEventListener('visibilitychange', () => {
       if (this.autoPauseOnHide && document.hidden && this.state === 'flying') this.pause();
     });
+
+    // Graphics "Auto", first boot only: time the real frame behind the
+    // loading screen and drop to a lighter tier if this computer needs one.
+    //
+    // Not in an automated browser (navigator.webdriver: the headless Chrome
+    // the test suites drive, each with a fresh profile). There the probe
+    // would time frames on a Mac shared with other test Chromes and could
+    // pick Medium or Low at random, so every browser suite would run at a
+    // tier nobody chose. They keep High, the tier they were written against,
+    // as loading-screens.js skips its pictures for them. `?autoq=1` runs the
+    // probe anyway, to test this path itself.
+    const automated = typeof navigator !== 'undefined' && navigator.webdriver && !/[?&]autoq=1\b/.test(location.search);
+    if (this.settings.qualityAuto && !this.settings.qualityAutoPicked && !automated) {
+      setLoad(0.97, 'Checking what this computer can draw…');
+      await this.frame();
+      try {
+        this.autoQualityAtBoot();
+      } catch (err) {
+        console.warn('[quality] the Auto probe failed; keeping', this.settings.quality, err);
+      }
+    }
 
     setLoad(1, 'Ready for take-off');
     await this.frame();
@@ -910,10 +941,20 @@ class Game {
       new SkyDome(this.scene, {
         shadows: quality !== 'low',
         shadowMapSize: quality === 'ultra' ? 4096 : quality === 'high' ? 2048 : 1024,
+        camera: this.camera,
+        // The dome's own halo round the sun is turned down where bloom draws one.
+        glow: quality === 'high' || quality === 'ultra' ? 0.55 : 1,
       })
     );
+    // Bloom and grade: High and Ultra. Off frees its targets; on makes them
+    // at the next frame, at the drawing buffer's size.
+    if (this.post) {
+      this.post.setEnabled(false);
+      this.post.setEnabled(quality === 'high' || quality === 'ultra');
+    }
+    setPaintTier(quality);
     yield next('Filling the sea…');
-    this.ocean = t('ocean', () => new Ocean(this.scene));
+    this.ocean = t('ocean', () => new Ocean(this.scene, quality));
     yield next('Laying the runway…');
     this.airport = t('airport', () => new Airport(this.scene));
     // The terminal, the air bridges, the parked aeroplanes and the vehicles.
@@ -991,15 +1032,28 @@ class Game {
     this.seamarks = t('seamarks', () => new SeaMarks(this.scene, quality));
     yield next('Gathering the clouds…');
     this.clouds = t('clouds', () => new CloudField(this.scene, quality));
+    // Distant clouds fade into the sky's own fog, haze toward a low sun included.
+    this.clouds.viewFog = this.sky.viewFog;
     yield next('Checking the weather…');
     this.rain = t('rain', () => new Rain(this.scene, quality));
     // Image-based lighting from the sky. Do this after the world exists so the
     // aeroplane, sea and buildings all pick it up.
+    //
+    // Not on Low. The environment map is a cube render plus a filter chain at
+    // build time, again every couple of seconds as the sky changes, and a
+    // handful of extra texture reads in every lit pixel of the frame. Low
+    // takes the fallback the sky already has for a card that cannot make one:
+    // no environment, and the hemisphere light at its full strength in its
+    // place (sky.js update(): envReady stays false).
     yield next('Lighting the world…');
-    try {
-      this.sky.buildEnvironment(this.renderer, this.scene);
-    } catch (err) {
-      console.warn('Could not build the environment map:', err);
+    if (quality === 'low') {
+      this.scene.environment = null;
+    } else {
+      try {
+        this.sky.buildEnvironment(this.renderer, this.scene);
+      } catch (err) {
+        console.warn('Could not build the environment map:', err);
+      }
     }
 
     this.worldGroups = [
@@ -1112,7 +1166,17 @@ class Game {
       // A mayday writes its own words. "Crashed" is not one of them: you
       // declared an emergency, the aeroplane came down and people came for
       // you, and calling that a crash reads as being told off for it.
-      if (!this.bracing && !this.braceRescueT) {
+      // …and nor is "Crashed" the word when you were not in it: out on foot or under a canopy,
+      // the eject feature says what happened to the empty aeroplane, in its own words.
+      const outOfIt = (() => {
+        try {
+          const k = extKeyContext(this);
+          return k === 'foot' || k === 'chute';
+        } catch (e) {
+          return false;
+        }
+      })();
+      if (!this.bracing && !this.braceRescueT && !outOfIt) {
         this.hud.showBanner('Crashed', c.reason, 'bad', 6);
       }
       /*
@@ -2118,6 +2182,21 @@ class Game {
   /* ------------------------------------------------------------------ */
 
   applySetting(path, value) {
+    /*
+     * Graphics quality. `settings.quality` is always a concrete tier — the
+     * nineteen modules that read it compare it with 'low', 'high', 'ultra'.
+     * "Auto" is its own flag: choosing it probes this computer now and writes
+     * the tier it picks, in this same tick. Any concrete tier switches Auto
+     * off. Anything else is ignored rather than saved.
+     */
+    if (path === 'quality') {
+      if (value === 'auto') {
+        this.chooseAutoQuality();
+        return;
+      }
+      if (!isTier(value)) return;
+      this.settings.qualityAuto = false;
+    }
     const parts = path.split('.');
     let obj = this.settings;
     for (let i = 0; i < parts.length - 1; i++) obj = obj[parts[i]];
@@ -2313,27 +2392,114 @@ class Game {
     // requestAnimationFrame, so the callback never ran and the world was never
     // rebuilt. From the outside that looks exactly like the game freezing the
     // moment you choose something. `frame()` already does this for loading.
-    this.afterPaint(() => {
-      this.buildWorld(quality);
-      this.renderer.shadowMap.enabled = quality !== 'low';
-      this.renderer.setPixelRatio(
-        Math.min(window.devicePixelRatio || 1, quality === 'ultra' ? 3 : quality === 'high' ? 2 : 1.25)
-      );
-      /*
-       * And the textures with it.
-       *
-       * Switching to Ultra from inside the game used to drop the pixel ratio
-       * to 1.25 — 'ultra' is not 'high', so the old test took the low branch
-       * and the best setting in the game rendered at less than half the
-       * resolution of the one below it.
-       */
-      try {
-        setTextureAnisotropy(quality === 'ultra' ? this.renderer.capabilities.getMaxAnisotropy() : 4);
-      } catch (e) {
-        /* a card that will not answer keeps the safe default */
-      }
-      this.sky.update(this.weather);
+    this.afterPaint(() => this.applyQualityNow(quality));
+  }
+
+  /** Rebuild the world at `quality`, now. rebuildQuality() runs this after a paint. */
+  applyQualityNow(quality) {
+    this.buildWorld(quality);
+    this.renderer.shadowMap.enabled = quality !== 'low';
+    // A new world is a new cost: the dynamic resolution starts again from full.
+    if (this.dynRes) this.dynRes.reset();
+    this.renderer.setPixelRatio(pixelRatioCap(quality, window.devicePixelRatio));
+    /*
+     * And the textures with it.
+     *
+     * Switching to Ultra from inside the game used to drop the pixel ratio
+     * to 1.25 — 'ultra' is not 'high', so the old test took the low branch
+     * and the best setting in the game rendered at less than half the
+     * resolution of the one below it.
+     */
+    try {
+      setTextureAnisotropy(quality === 'ultra' ? this.renderer.capabilities.getMaxAnisotropy() : 4);
+    } catch (e) {
+      /* a card that will not answer keeps the safe default */
+    }
+    this.sky.update(this.weather);
+  }
+
+  /**
+   * Time what a frame costs on this computer, as it is drawn right now, and
+   * say which tier that means. A one-pixel read after each frame waits for
+   * the GPU, so the probe sees the whole frame and not just the CPU's half.
+   * The time is converted to "what High would cost" when another tier is
+   * built (quality-probe.js TIER_COST), because the thresholds are High's.
+   */
+  probeQuality() {
+    const gl = this.renderer.getContext();
+    const px = new Uint8Array(4);
+    const res = probeFrames(() => this.renderFrame(), {
+      sync: () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px),
     });
+    const built = this.qualityBuilt || this.settings.quality;
+    const highMs = asHighMs(res.avgMs, built);
+    const dpr = window.devicePixelRatio || 1;
+    const picked = pickTier(highMs, dpr);
+    this.qualityProbe = {
+      picked,
+      built,
+      avgMs: Math.round(res.avgMs * 100) / 100,
+      highMs: Math.round(highMs * 100) / 100,
+      frames: res.frames,
+      ms: Math.round(res.totalMs),
+      dpr,
+    };
+    console.info(
+      `[quality] Auto: ${res.frames} frames at ${built}, ${this.qualityProbe.avgMs} ms (about ${this.qualityProbe.highMs} ms at high) -> ${picked}`
+    );
+    return this.qualityProbe;
+  }
+
+  /**
+   * First boot with Auto on: the world is built at High (the default), the
+   * aeroplane is on the runway behind the loading screen, so time real
+   * frames of that. A lower pick rebuilds now; a higher one (Ultra) is saved
+   * and builds at the next start, like the antialias change.
+   */
+  autoQualityAtBoot() {
+    const ac = this.aircraft;
+    ac.reset({ ...RUNWAY_START, engineOn: true });
+    syncAircraftModel(this.model, ac);
+    this.sky.update(this.weather);
+    this.sky.followTarget(ac.pos);
+    this.ocean.follow(ac.pos);
+    this.ocean.update(0, this.weather);
+    this.clouds.update(0, this.weather, ac.pos);
+    // The chase view's spot, near enough: behind and above, looking along.
+    const h = THREE.MathUtils.degToRad(ac.readouts().heading || 90);
+    this.camera.position.set(ac.pos.x - Math.sin(h) * 22, ac.pos.y + 6, ac.pos.z + Math.cos(h) * 22);
+    this.camera.lookAt(ac.pos.x + Math.sin(h) * 60, ac.pos.y + 2, ac.pos.z - Math.cos(h) * 60);
+    const res = this.probeQuality();
+    const s = this.settings;
+    s.qualityAutoPicked = res.picked;
+    s.quality = res.picked;
+    if (tierRank(res.picked) < tierRank(this.qualityBuilt)) this.applyQualityNow(res.picked);
+    saveSettings(s);
+    if (this.menus && this.menus.syncSettings) this.menus.syncSettings(s);
+    return res;
+  }
+
+  /** The menu's "Auto": probe now, write the tier, rebuild. */
+  chooseAutoQuality() {
+    const s = this.settings;
+    s.qualityAuto = true;
+    let picked = s.qualityAutoPicked || s.quality;
+    try {
+      picked = this.probeQuality().picked;
+    } catch (err) {
+      console.warn('[quality] the Auto probe failed; keeping', picked, err);
+    }
+    s.qualityAutoPicked = picked;
+    s.quality = picked;
+    saveSettings(s);
+    if (this.menus && this.menus.syncSettings) this.menus.syncSettings(s);
+    const label = { low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra' }[picked];
+    if (picked === this.qualityBuilt) {
+      if (this.hud) this.hud.notify(`Auto: ${label} suits this computer`, 'info', 3);
+    } else {
+      this.rebuildQuality(picked);
+      if (this.hud) this.hud.notify(`Auto picked ${label} for this computer`, 'info', 3);
+    }
   }
 
   /**
@@ -2667,6 +2833,8 @@ class Game {
     this.activeEvents = this.activeEvents || {};
     this.activeEvents[id] = ev.duration || 8;
     this.menus.syncNatural(this.activeEvents);
+    // A bird strike whose flock is still on its way warns when it hits (features/bird-strike.js), not now.
+    if (id === 'birdStrike' && this.birdStrike && this.birdStrike.pending) return;
     this.hud.notify(ev.warn, ev.kind === 'bad' ? 'warn' : 'warn', 5);
     if (this.audio.available) this.audio.alerts.caution && this.audio.alerts.caution();
   }
@@ -4891,8 +5059,24 @@ class Game {
   step(seconds = 1, dt = 1 / 60) {
     const n = Math.max(1, Math.round(seconds / dt));
     for (let i = 0; i < n; i++) this.update(dt);
-    this.renderer.render(this.scene, this.camera);
+    this.renderFrame();
     return this.snapshot();
+  }
+
+  /**
+   * Draw one frame of the world the way this tier draws it: High and Ultra
+   * through the bloom and grade (render/post.js), Low and Medium with the
+   * single renderer.render() they always had. The frame loop, step() and the
+   * Auto quality probe all come through here; the hangar's podium does not.
+   */
+  renderFrame() {
+    const post = this.post;
+    if (post && post.enabled) {
+      if (this.weather) post.setLook(this.weather.look());
+      post.render(this.scene, this.camera);
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   /** Compact state dump for tests. */
@@ -5005,7 +5189,7 @@ class Game {
         // The hangar's podium is drawn INSTEAD of the island while it is open
         // (ui/hangar-showcase.js): it covers the window, so the world behind
         // it would be a whole frame drawn for nobody.
-        if (!this.menus.drawView || !this.menus.drawView(this.renderer, dt)) this.renderer.render(this.scene, this.camera);
+        if (!this.menus.drawView || !this.menus.drawView(this.renderer, dt)) this.renderFrame();
       } catch (err) {
         console.error(err);
         if (!this._errored) {
@@ -5021,6 +5205,15 @@ class Game {
         this.fpsFrames = 0;
         this.fpsTime = 0;
         this.menus.updateFps(this.fps);
+        // Dynamic resolution, in flight only: the menus draw the world
+        // behind a blurred sheet, and that is not the frame being held.
+        if (this.dynRes && this.state === 'flying' && !document.hidden) {
+          const r = this.dynRes.tick(this.fps);
+          if (r.changed) {
+            this.renderer.setPixelRatio(pixelRatioCap(this.qualityBuilt || this.settings.quality, window.devicePixelRatio) * r.scale);
+            console.debug(`[quality] ${this.fps} fps: resolution scale ${r.scale}`);
+          }
+        }
       }
     };
     tick();

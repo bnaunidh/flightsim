@@ -265,11 +265,16 @@ console.table(results.checks);
 
 ## Licence
 
-Code and generated assets: **CC0 1.0** (public domain) — copy it, change it,
-share it, use it in your own projects.
+© thankdapro. Plain-language licence in [`LICENSE`](LICENSE): anyone may use,
+copy, change and build on the game **with credit to thankdapro**; it may
+**not** be used in Roblox games or as Roblox assets.
 
 Bundled three.js (`src/vendor/three.module.js`) remains under its own **MIT**
 licence; the full text is in `src/vendor/three.LICENSE`.
+
+Inspired by PTFS (Pilot Training Flight Simulator) and the Google Earth flight
+simulator. All airlines in the game are parody and not affiliated with any real
+company.
 
 Full asset-by-asset credits are in the in-game **Credits & licences** screen.
 

@@ -65,7 +65,7 @@ import { heightAt, platformAt, isPaved, obstacleAt } from '../world/terrain.js';
 import { SPEC, EVENTS } from '../aircraft/physics.js';
 import { AIRCRAFT, getAircraft } from '../aircraft/types.js';
 import { ZONES, CORE, frameFor, refineFrame, layoutFor, planBreak, lostFrom } from '../game/breakup.js';
-import { surveyModel, classifyModel, breakZones, deformZones, restoreModel, disposePiece, isBroken, bakeWhole } from '../game/breakup-mesh.js';
+import { surveyModel, classifyModel, classifyModelSteps, breakZones, deformZones, restoreModel, disposePiece, isBroken, bakeWhole } from '../game/breakup-mesh.js';
 import { makeBody, stepBody } from '../game/breakup-body.js';
 import { BreakupFx } from './breakup/fx.js';
 import { onBodyHit, BODY } from './sky.js';
@@ -74,6 +74,7 @@ import { createUniformPerson, uniformFor } from './uniforms.js';
 import { CRASH_SECONDS, dimsFrom } from './crashes/motion.js';
 import { syncAircraftModel } from '../aircraft/model-adapter.js';
 import { FLASH } from '../render/flash-safety.js';
+import { warmImpactShaders } from '../fleet/aircraft-impact.js';
 
 /** Pieces in the world at once, by quality. */
 export const PIECE_CAP = { low: 10, medium: 16, high: 24, ultra: 32 };
@@ -135,8 +136,21 @@ const S = {
   swamped: false,
   /** The last few plans, newest last (stats.lastPlan is the newest). */
   plans: [],
+  /**
+   * THE ZONE CACHE: the player's aeroplane surveyed and classified AHEAD of
+   * the crash, a few milliseconds a frame while you fly (stepZoneCache), so
+   * the crash frame only plans and splits. `asg` is the finished survey for
+   * `model` in the state `key` names (gear, flaps); `job` the one being built.
+   */
+  zc: { model: null, key: '', asg: null, job: null, ms: 0, frames: 0, worst: 0, hits: 0, misses: 0, builds: 0 },
+  /** The renderer whose shaders have been warmed for the crash (warmShaders), and whether a warm is due. */
+  warmed: null,
+  warmPending: false,
   stats: { breaks: 0, pieces: 0, peak: 0, ms: 0, msMax: 0, idleFrames: 0, lastPlan: null, lastMs: 0, survivable: 0, npc: 0, slowmo: 0, replays: 0, sinks: 0, wrecksSunk: 0, wrecksLanded: 0, rafts: 0, culled: 0 },
 };
+
+/** Milliseconds a frame the background survey may take. */
+export const ZONE_CACHE = { budgetMs: 3, settle: 0.02 };
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
@@ -240,8 +254,8 @@ function typeOf(model, typeId) {
   return (id && AIRCRAFT.find((t) => t.id === id)) || null;
 }
 
-/** The zones of this model, as drawn now. */
-function zonesOf(sim, model, type) {
+/** The survey's first half: the model walked, its frame and layout worked out. */
+function zonesBegin(sim, model, type) {
   const skip = new Set();
   if (sim && sim.cockpit) skip.add(sim.cockpit);
   // The heat-seekers on their pylons (src/features/heatseek.js) are hung on the model but are not airframe.
@@ -251,7 +265,157 @@ function zonesOf(sim, model, type) {
   const t = type || typeOf(model) || getAircraft();
   const frame = refineFrame(frameFor(t, config), survey);
   const layout = layoutFor(frame);
+  return { survey, layout };
+}
+
+/** The zones of this model, as drawn now. */
+function zonesOf(sim, model, type) {
+  const { survey, layout } = zonesBegin(sim, model, type);
   return classifyModel(survey, layout);
+}
+
+/* ------------------------------------------------------------------ *
+ * The zone cache
+ * ------------------------------------------------------------------ */
+
+/**
+ * What the cached survey depends on besides the model: the gear and the flaps,
+ * whose meshes are baked where they were when surveyed. A leg surveyed up
+ * and broken off down would come away folded into the wing.
+ */
+function zoneKey(sim) {
+  const ac = sim && sim.aircraft;
+  const gear = ac && ac.gearPos != null ? ac.gearPos : 1;
+  const flaps = (ac && ac.flaps) || 0;
+  return `${Math.round(gear)}|${Math.round(flaps * 2)}`;
+}
+
+/** Is the aeroplane between states (gear travelling), so a survey now would be wrong soon? */
+function zoneKeyUnsettled(sim) {
+  const ac = sim && sim.aircraft;
+  if (!ac || ac.gearPos == null) return false;
+  return Math.abs(ac.gearPos - Math.round(ac.gearPos)) > ZONE_CACHE.settle;
+}
+
+/** The cut geometries a survey made that no mesh took: let them go. */
+function dropZones(asg) {
+  if (!asg) return;
+  for (const it of asg.items) {
+    const g = it.geo;
+    if (g && g !== it.e.geometry && g.userData && g.userData.breakupCut) {
+      try {
+        g.dispose();
+      } catch (e) {
+        /* never uploaded */
+      }
+    }
+  }
+}
+
+function clearZoneCache() {
+  const zc = S.zc;
+  dropZones(zc.asg);
+  zc.asg = null;
+  zc.job = null;
+  zc.key = '';
+  zc.model = null;
+}
+
+/**
+ * A few milliseconds of the survey, every frame the player's aeroplane is
+ * whole: the cache is built within a second or two of a spawn, and again when
+ * the gear or the flaps settle somewhere new. Nothing here on a frame when
+ * the cache is current.
+ */
+function stepZoneCache(sim) {
+  const zc = S.zc;
+  const model = sim && sim.model;
+  const ac = sim && sim.aircraft;
+  if (!model || !ac || ac.crashed || sim.mode === 'drive' || S.replay || isBroken(model)) return;
+  if (zc.model !== model) {
+    clearZoneCache();
+    zc.model = model;
+  }
+  const key = zoneKey(sim);
+  if (!zc.job) {
+    if (zc.asg && zc.key === key) return;
+    if (zoneKeyUnsettled(sim)) return;
+    const t0 = now();
+    try {
+      const { survey, layout } = zonesBegin(sim, model, sim.aircraftType);
+      zc.job = { key, steps: classifyModelSteps(survey, layout), ms: 0, frames: 0, worst: 0 };
+    } catch (e) {
+      zc.job = null;
+      return;
+    }
+    const took = now() - t0;
+    zc.job.ms += took;
+    zc.job.worst = Math.max(zc.job.worst, took);
+    zc.job.frames++;
+    return;
+  }
+  const job = zc.job;
+  const t0 = now();
+  let r;
+  try {
+    do {
+      r = job.steps.next();
+    } while (!r.done && now() - t0 < ZONE_CACHE.budgetMs);
+  } catch (e) {
+    zc.job = null;
+    return;
+  }
+  const took = now() - t0;
+  job.ms += took;
+  // The dearest frame of the build (a single big mesh can run past the budget; the tests watch it).
+  job.worst = Math.max(job.worst, took);
+  job.frames++;
+  if (!r.done) return;
+  dropZones(zc.asg);
+  zc.asg = r.value;
+  zc.key = job.key;
+  zc.job = null;
+  zc.ms = job.ms;
+  zc.frames = job.frames;
+  zc.worst = job.worst;
+  zc.builds++;
+}
+
+/** The cached survey for this model if it is current, taken (it is about to be consumed by a break). */
+function takeCachedZones(sim, model) {
+  const zc = S.zc;
+  if (!zc.asg || zc.model !== model || isBroken(model)) return null;
+  if (sim && sim.model === model && zc.key !== zoneKey(sim)) return null;
+  const asg = zc.asg;
+  zc.asg = null;
+  zc.key = '';
+  return asg;
+}
+
+/**
+ * Compile the crash's own shaders now, not on the frame of the crash: the
+ * break-up's two particle materials and the wreck's. Everything else the
+ * crash draws is a material the world already uses (and the model pack's
+ * impact dust and scuffs, warmImpactShaders), and the lights are the
+ * same before and after (wreck.js keeps its firelight in the scene for that
+ * reason), so no other program is new on that frame.
+ */
+function warmShaders(sim) {
+  S.warmPending = false;
+  const r = sim && sim.renderer;
+  if (!r || !sim.camera || !sim.scene || typeof r.compile !== 'function') return false;
+  try {
+    if (S.fx && typeof S.fx.warm === 'function') S.fx.warm(r, sim.camera, sim.scene);
+    if (sim.wreck && typeof sim.wreck.warm === 'function') sim.wreck.warm(r, sim.camera, sim.scene);
+    // The model pack's own impact dust and contact scuffs (fleet/aircraft-impact.js), drawn on the first touch.
+    warmImpactShaders(r, sim.camera, sim.scene);
+    S.warmed = r;
+    S.stats.warms = (S.stats.warms || 0) + 1;
+    return true;
+  } catch (e) {
+    /* a renderer that cannot precompile compiles on first use instead */
+    return false;
+  }
 }
 
 /** Body-metre point of a world point on this model. */
@@ -305,7 +469,10 @@ function poseLikeAircraft(model, ac) {
 export function breakModel(sim, model, type, hit) {
   if (!model || !model.isObject3D) return null;
   const t0 = now();
-  const asg = zonesOf(sim, model, type);
+  const cached = takeCachedZones(sim, model);
+  if (cached) S.zc.hits++;
+  else S.zc.misses++;
+  const asg = cached || zonesOf(sim, model, type);
   const layout = asg.layout;
   model.updateMatrixWorld(true);
   _q.copy(model.getWorldQuaternion(new THREE.Quaternion()));
@@ -425,6 +592,7 @@ export function breakModel(sim, model, type, hit) {
     pieces: pieces.map((p) => p.join('+')),
     actions: plan.actions.map((a) => `${a.zone}:${a.action}`),
     ms: Math.round(ms * 10) / 10,
+    cached: !!cached,
   };
   // The last few, for the tests and the console (a mid-air breaks two at once).
   S.plans.push(S.stats.lastPlan);
@@ -502,6 +670,8 @@ function unwatch(model) {
  */
 function putBack(model) {
   restoreModel(model);
+  // As built again: a survey of what it was before is no longer of it.
+  if (S.zc.model === model) clearZoneCache();
   const u = model && model.userData;
   if (u && u.fleetBridge && typeof u.resetDamage === 'function') {
     try {
@@ -722,6 +892,8 @@ const DAMAGE_WORDS = {
   engineL2: 'Left engine gone — she swings left, hold right rudder',
   engineR1: 'Right engine gone — she swings right, hold left rudder',
   engineR2: 'Right engine gone — she swings right, hold left rudder',
+  engineL3: 'Left engine gone — she swings left, hold right rudder',
+  engineR3: 'Right engine gone — she swings right, hold left rudder',
   tailRotor: 'Tail rotor gone — she will spin, land now',
 };
 
@@ -1961,6 +2133,8 @@ registerExtension({
     if (S.fx) S.fx.dispose();
     S.fx = new BreakupFx(group, S.quality);
     if (S.group && sim.scene && S.group.parent !== sim.scene) sim.scene.add(S.group);
+    clearZoneCache();
+    S.warmPending = true;
   },
 
   startMode(sim) {
@@ -1969,6 +2143,15 @@ registerExtension({
     S.quality = (sim.settings && sim.settings.quality) || S.quality;
     ensureListener(sim);
     wrapDebrief(sim);
+    clearZoneCache();
+    /*
+     * The shaders are warmed on the first frame of the flight, not here: the
+     * aeroplane (with its landing light) and the world are all in place by
+     * then, so the programs compiled are the ones the frames will use. A
+     * compile of a dozen objects whose programs are already cached is a few
+     * map lookups, so it is done for every flight.
+     */
+    S.warmPending = true;
   },
 
   stop(sim) {
@@ -1989,6 +2172,8 @@ registerExtension({
       putBack(m);
       unwatch(m);
     }
+    if (S.warmPending) warmShaders(sim);
+    stepZoneCache(sim);
   },
 
   key(sim, code, down) {
@@ -2041,6 +2226,15 @@ export function breakupDebug() {
     npcs: S.npcs.map((n) => ({ id: n.body.id, sinking: !!n.sink })),
     slow: { ...S.slow },
     zonesOf: (model, type) => zonesOf(S.sim, model || (S.sim && S.sim.model), type),
+    zoneCache: { model: !!S.zc.model, ready: !!S.zc.asg, building: !!S.zc.job, key: S.zc.key, ms: S.zc.ms, frames: S.zc.frames, worst: S.zc.worst, hits: S.zc.hits, misses: S.zc.misses, builds: S.zc.builds },
+    /** Finish the background survey now (the tests), returning whether one is ready. */
+    precompute: () => {
+      for (let i = 0; i < 10000 && S.sim && (S.zc.job || !S.zc.asg); i++) stepZoneCache(S.sim);
+      return !!S.zc.asg;
+    },
+    warmShaders: () => warmShaders(S.sim),
+    clearZoneCache,
+    ZONE_CACHE,
     breakModel: (model, type, hit) => breakModel(S.sim, model, type, hit),
     putBack: (model) => putBack(model),
     trackNpc: (body, model) => trackNpc(body, model),

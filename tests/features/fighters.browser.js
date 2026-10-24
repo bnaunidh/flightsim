@@ -6,7 +6,7 @@
  * runway, and that T in the F-35B really reaches the hover through the
  * extension layer and back out again.
  */
-const IDS = ['f22', 'f35b', 'fa18', 'massimo'];
+const IDS = ['f22', 'f35b', 'fa18', 'massimo', 'a10'];
 
 export async function check(sim, r, say) {
   let Stovl = null;

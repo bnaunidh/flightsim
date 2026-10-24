@@ -298,7 +298,8 @@ function reading(sim, dt, kind) {
      * The strike shows up as a new entry in sim.activeEvents (triggerNatural).
      */
     const ev = sim.activeEvents;
-    const bird = !!(ev && ev.birdStrike > 0);
+    // …and not before the birds have actually arrived (features/bird-strike.js flies them in first).
+    const bird = !!(ev && ev.birdStrike > 0) && !(sim.birdStrike && sim.birdStrike.pending);
     if (bird && !W.birdWas && r.airborne && !r.crashed) startFire();
     W.birdWas = bird;
 

@@ -24,6 +24,8 @@ import { handlingFor, ROLL_SHARE_MAX } from './damage-handling.js';
 import { heightAt, isPaved, isOnRunway, isOnAnyRunway, obstacleAt, platformAt, AIRPORT } from '../world/terrain.js';
 
 const RHO0 = 1.225;
+/** The engine's idle as a fraction of full power: the type's (types.js specFor idleRpm), 0.18 when it does not say. */
+const idleRpm = () => (Number.isFinite(SPEC.idleRpm) ? SPEC.idleRpm : 0.18);
 /**
  * Easy flying, a wing tip gone: the wing leveller holds this much bank
  * (radians, 5 degrees) down on that side rather than level — you see her
@@ -296,7 +298,7 @@ export class Aircraft {
     for (const k in this.damage) this.damage[k] = 0;
     this.lost = null;
     this._hitCool = 0;
-    this.rpm = engineOn ? 0.18 : 0;
+    this.rpm = engineOn ? idleRpm() : 0;
     this.fuel = SPEC.fuelCapacity * fuel;
     this.crashed = false;
     this.crashReason = '';
@@ -665,14 +667,15 @@ export class Aircraft {
       this.starting -= dt;
       if (this.starting <= 0) {
         this.engineOn = true;
-        this.rpm = 0.18;
+        this.rpm = idleRpm();
       }
     }
     if (this.fuel <= 0 && this.engineOn) this.stopEngine('fuel');
     if (this.failures.engine && this.engineOn) this.stopEngine('failure');
 
     const collective = clamp(this.controls.throttle, 0, 1);
-    const targetRpm = this.engineOn ? 0.18 + collective * 0.82 : 0;
+    const idle = idleRpm();
+    const targetRpm = this.engineOn ? idle + collective * (1 - idle) : 0;
     // Engines spool with lag; spin-down is slower than spin-up.
     const spool = targetRpm > this.rpm ? 2.4 : 1.1;
     this.rpm += (targetRpm - this.rpm) * Math.min(1, dt * spool);

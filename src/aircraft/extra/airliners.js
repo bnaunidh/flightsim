@@ -110,12 +110,12 @@ export const AIRLINER_GEOMETRY = {
  * and tail are). The shape cannot say: its nose point is pinned inside the
  * fuselage (above), 6.5 m short of an A320's radome and 14 m short of a 747's.
  */
-function planFrom(g) {
+export function planFrom(g) {
   return { nose: g.noseZ, tail: +(g.noseZ + g.length).toFixed(2), span: g.span };
 }
 
 /** The physics shape, worked out from the metres above. */
-function shapeFrom(g, base, extra) {
+export function shapeFrom(g, base, extra) {
   const s = g.belly / 0.82;
   const bodyLength = g.tailStrike.z / (3.95 * s);
   // z-like numbers in the shape are multiplied by scale AND bodyLength by the
@@ -193,7 +193,7 @@ function shapeFrom(g, base, extra) {
  * above 240 kt. At 0.14, with Cmq -30, all three hold within 0.4 deg/s from
  * 120 to 320 kt, which is where the Meridian already sat.
  */
-function inertias(mass, g) {
+export function inertias(mass, g) {
   const r = (v) => Math.round((mass * v * v) / 1000) * 1000;
   const pitch = 0.14 * g.length;
   const roll = 0.13 * g.span;

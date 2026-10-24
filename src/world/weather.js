@@ -35,8 +35,42 @@ export const PRESETS = [
   { id: 'storm', name: 'Storm Front', time: 'sunset', condition: 'stormy', wind: 26, dir: 350, hint: 'Hard mode. Strong crosswind.' },
 ];
 
+/**
+ * Today's moon. Days since a known new moon (2000-01-06 18:14 UTC), modulo
+ * the synodic month, gives its age; the lit fraction of the disc follows from
+ * that. Taken at local noon so it holds still for the whole of a day's play.
+ *   illum   0 new .. 1 full
+ *   waxing  true for the first half of the cycle (lit on the right)
+ */
+const SYNODIC_DAYS = 29.530588853;
+const NEW_MOON_MS = Date.UTC(2000, 0, 6, 18, 14);
+export function moonPhaseAt(ms) {
+  const days = (ms - NEW_MOON_MS) / 86400000;
+  const age = ((days % SYNODIC_DAYS) + SYNODIC_DAYS) % SYNODIC_DAYS;
+  return {
+    age,
+    illum: (1 - Math.cos((2 * Math.PI * age) / SYNODIC_DAYS)) / 2,
+    waxing: age < SYNODIC_DAYS / 2,
+  };
+}
+
+function todaysNoon(now = Date.now()) {
+  const d = new Date(now);
+  d.setHours(12, 0, 0, 0);
+  return d.getTime();
+}
+
 export class Weather {
   constructor() {
+    /*
+     * The moon's phase, seeded per day: a real calendar's moon, so the night
+     * sky is not the same every night. The sky reads it for the shape of the
+     * moon and how many stars it washes out (sky.js).
+     */
+    const moon = moonPhaseAt(todaysNoon());
+    this.moonPhase = moon.illum;
+    this.moonWaxing = moon.waxing;
+
     this.time = 'day';
     this.condition = 'clear';
     this.windSpeedKts = 4;
@@ -344,6 +378,39 @@ export class Weather {
       fogDensity: c.fog,
       fogColor: horizon.clone().lerp(new THREE.Color(0xffffff), this.isNight ? 0 : 0.08),
     };
+  }
+
+  /**
+   * The colour grade and glow for this weather — read every frame by the
+   * bloom pass at High and Ultra (render/post.js). Gentle on purpose: warmer
+   * at sunset, cooler and flatter as the cloud thickens, a touch of punch on
+   * a clear day. `threshold` is in display terms: a clear midday needs a
+   * value over 1 to glow, so only the sun's disc and its glints do; at night
+   * the runway and town lights do.
+   */
+  look() {
+    const o = this._look || (this._look = {});
+    const over = clamp((this.cond.cloud - 0.3) / 0.7, 0, 1);
+    const k = over * over * (3 - 2 * over);
+    let warmth;
+    let contrast;
+    let saturation;
+    let bloom;
+    let threshold;
+    if (this.time === 'sunset') {
+      warmth = 0.55; contrast = 1.06; saturation = 1.08; bloom = 0.55; threshold = 0.9;
+    } else if (this.isNight) {
+      warmth = -0.15; contrast = 1.05; saturation = 0.97; bloom = 0.9; threshold = 0.62;
+    } else {
+      warmth = 0.04; contrast = 1.03; saturation = 1.05; bloom = 0.35; threshold = 1.0;
+    }
+    o.warmth = lerp(warmth, this.isNight ? -0.2 : -0.3, k);
+    o.contrast = lerp(contrast, 0.95, k);
+    o.saturation = lerp(saturation, 0.85, k);
+    o.bloom = bloom * (1 + this.lightningFlash * 0.5);
+    o.threshold = threshold;
+    o.knee = 0.25;
+    return o;
   }
 
   /** Kid-friendly summary of the wind relative to a runway heading. */

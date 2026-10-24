@@ -58,7 +58,7 @@
  */
 
 import * as THREE from '../vendor/three.module.js';
-import { registerExtension, extLayer, extStatus } from '../game/extensions.js';
+import { registerExtension, extLayer, extStatus, extKeyContext } from '../game/extensions.js';
 import { heightAt, platformAt, MAP } from '../world/terrain.js';
 import { SPEC, EVENTS } from '../aircraft/physics.js';
 import { findEvent, SELECTABLE_EVENTS } from '../game/disasters.js';
@@ -169,6 +169,16 @@ function onCrash(c) {
   }
 }
 
+/** Were you out of the aeroplane when it crashed (walking, or hanging under a parachute)? */
+function outOfIt(sim) {
+  try {
+    const k = extKeyContext(sim);
+    return k === 'foot' || k === 'chute';
+  } catch (e) {
+    return false;
+  }
+}
+
 function handleCrash(sim, c) {
   if (!sim || !sim.aircraft || sim.mode === 'drive') return;
   const ac = sim.aircraft;
@@ -199,7 +209,9 @@ function handleCrash(sim, c) {
   const caption = comic ? pickCaption(kind, C.lastCaption) : '';
   if (comic) C.lastCaption = caption;
   const title = titleFor(kind, vehicle, comic);
-  const quiet = !!(sim.bracing || sim.braceRescueT);
+  // Quiet too when you were not in it (out on foot, or under a canopy): the eject feature says
+  // what became of the empty aeroplane, and a red "Crash landing" or a crash cam is not yours.
+  const quiet = !!(sim.bracing || sim.braceRescueT) || outOfIt(sim);
   C.crash = { kind, caption, title, reason: c.reason || '', vehicle, quiet, comic, x: ac.pos.x, z: ac.pos.z, real: now() };
   C.stats.crashes++;
   C.stats.byKind[kind] = (C.stats.byKind[kind] || 0) + 1;

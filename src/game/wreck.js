@@ -149,10 +149,22 @@ export class Wreck {
     this.group.add(this.mark);
 
     /* ---- Firelight ---- */
+    /*
+     * The light hangs on the SCENE, not on the (hidden) group. three.js counts
+     * the lights it can see when it builds every lit shader, and a point light
+     * that only appears when the wreck group is shown changed that count on the
+     * frame of the crash: 144 materials — the whole island — recompiled at
+     * once, 0.7-1.3 s of freeze on every device (the owner's "huge freeze every
+     * time I crash"). Always in the scene at zero intensity, it costs nothing
+     * and the shaders are compiled for it from the first frame, the same way
+     * explosions.js keeps its fx-light. clear() still turns it off.
+     */
     this.light = new THREE.PointLight(0xff6a20, 0, 220, 2);
-    this.group.add(this.light);
+    this.light.name = 'wreck-light';
+    this.light.position.set(0, -5000, 0);
 
     scene.add(this.group);
+    scene.add(this.light);
   }
 
   makePoints(count, map, additive) {
@@ -308,6 +320,27 @@ export class Wreck {
     this.group.visible = false;
     this.light.intensity = 0;
     for (const d of this.debris) d.mesh.visible = false;
+  }
+
+  /**
+   * Compile the wreck's shaders (the fire and smoke points, the debris, the
+   * rings and marks) while the world loads, not on the frame of the first
+   * crash. The group is shown for the call because compile() only visits
+   * what is visible. Nothing is drawn. Idempotent.
+   */
+  warm(renderer, camera, scene) {
+    if (!renderer || typeof renderer.compile !== 'function' || !camera) return false;
+    const wasGroup = this.group.visible;
+    const wasDebris = this.debris.map((d) => d.mesh.visible);
+    try {
+      this.group.visible = true;
+      for (const d of this.debris) d.mesh.visible = true;
+      renderer.compile(this.group, camera, scene || this.scene);
+      return true;
+    } finally {
+      this.group.visible = wasGroup;
+      this.debris.forEach((d, i) => (d.mesh.visible = wasDebris[i]));
+    }
   }
 
   update(dt) {

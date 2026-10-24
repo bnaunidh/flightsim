@@ -40,14 +40,16 @@ const { AIRCRAFT, getAircraft, specFor, performanceFor } = await import(SRC + 'a
 const { createAircraftModel, groundOffsetFor } = await import(SRC + 'aircraft/model-adapter.js');
 const { Weather } = await import(SRC + 'world/weather.js');
 const Terrain = await import(SRC + 'world/terrain.js');
-const Fleet = await import(SRC + 'fleet/extra/fighters.js');
+// The jets' models and the A-10's (fleet/extra/attack.js), through the pack's own list.
+const FleetIndex = await import(SRC + 'fleet/extra/index.js');
+const Fleet = { DEFINITIONS: FleetIndex.EXTRA_DEFINITIONS, DRAWS: FleetIndex.EXTRA_DRAWS };
 const Stovl = await import(SRC + 'features/stovl.js');
 const Ext = await import(SRC + 'game/extensions.js');
 Terrain.applyMap('kestrel');
 
 const KT = 1.94384;
 const STEP = 1 / 120;
-const IDS = ['f22', 'f35b', 'fa18', 'massimo'];
+const IDS = ['f22', 'f35b', 'fa18', 'massimo', 'a10'];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 const results = [];
@@ -65,6 +67,8 @@ const REAL = {
   // The Hornet's published 12.31 m includes wingtip missiles; none are drawn.
   fa18: { span: 11.43, length: 17.07, military: true, category: 'military', hook: true },
   massimo: { span: null, length: null, military: false, category: 'special' },
+  // The A-10 (aircraft/extra/attack.js): the slow, straight-winged one.
+  a10: { span: 17.53, length: 16.26, military: true, category: 'military' },
 };
 for (const id of IDS) {
   const t = AIRCRAFT.find((a) => a.id === id);

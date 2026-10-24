@@ -32,6 +32,8 @@ import { SEA_DEPTH } from '../render/depth-layers.js';
 
 /** Scratch transform for the birds' per-frame matrices, so the loop allocates nothing. */
 const _bird = new THREE.Object3D();
+/** The ambient flock's wingspan, metres (a real gull is 1.4; see buildBirds). */
+export const AMBIENT_BIRD_SPAN = 1.8;
 
 /**
  * An sRGB colour (as written, as in CSS) to the linear value a vertex colour
@@ -589,21 +591,24 @@ export class MapFeatures {
    * four-triangle chevrons, and a per-frame loop that writes their matrices
    * from a flat Float32Array without allocating anything.
    *
-   * Drawn a little larger than life (a 2.6 m span against a real gull's
-   * 1.4 m), because at the distance a pilot sees them from, life size is
-   * one pixel.
+   * Drawn a little larger than life (AMBIENT_BIRD_SPAN, 1.8 m, against a
+   * real gull's 1.4 m), because at the distance a pilot sees them from, life
+   * size is one pixel. They were 2.6 m, which flown past up close read as
+   * "fat" (the owner, 2026-10-22); the bird-strike flock is life size.
    */
   buildBirds(cfg, density) {
     const n = Math.max(4, Math.round((cfg.count || 30) * Math.min(1, density + 0.3)));
     const rnd = makeRandom(cfg.seed || 7331);
     // Nose along +X, wings swept back and up a little; scaling y at run time
-    // changes the dihedral, which reads as a wingbeat.
+    // changes the dihedral, which reads as a wingbeat. The silhouette is 2.6 m
+    // across as written, and scaled to AMBIENT_BIRD_SPAN.
+    const k = AMBIENT_BIRD_SPAN / 2.6;
     const v = [
       0.7, 0, 0, -0.35, 0.35, -1.3, -0.1, 0, 0,
       0.7, 0, 0, -0.1, 0, 0, -0.35, 0.35, 1.3,
       -0.1, 0, 0, -0.55, 0.05, -0.12, -0.55, 0.05, 0.12,
       0.7, 0, 0, -0.1, -0.08, 0, -0.1, 0, 0,
-    ];
+    ].map((x) => x * k);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
     geo.computeVertexNormals();

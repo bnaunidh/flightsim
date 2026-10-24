@@ -8,6 +8,12 @@
  * trademarks and this game is published on a public site. Renaming them is a
  * one-line change per entry if that is ever wanted.
  *
+ * The names are parody and must stay clearly different from any real airline's
+ * name or callsign: never the real name, never a retired one (Continental was
+ * a real airline — its scheme is "Ununited" now), never its logo. Colours are
+ * fine on their own. tests/features/parody-names.mjs holds the list of real
+ * names none of these may match; the credits screen says they are parody.
+ *
  * The tail is a SEPARATE material rather than part of the shared texture, and
  * that is not a stylistic choice — it is forced by the geometry. The fuselage
  * is a lathe whose UVs run u=around, v=nose-to-tail, and the wings are lofted
@@ -35,16 +41,26 @@ export const LIVERIES = [
     cheatline: 'rgba(232,180,10,0.9)',
     tail: 0x0b8a3e,
     reg: 'ET-ABY',
+    titling: 'ABYSSINIA AIR',
+    emblem: 'stripes',
+    fleet: ['b737', 'b787', 'a350', 'b777', 'q400', 'meridian'],
   },
   {
+    // The id stays 'continental' (it is in saved hangars and multiplayer
+    // keys); the NAME was "Continental States", and Continental was a real
+    // airline whose marks United still owns, so it is now the United parody
+    // from the owner's safe-companies table. Same two blues, same grey belly.
     id: 'continental',
-    name: 'Continental States',
+    name: 'Ununited',
     blurb: 'Two blues and a grey belly',
     base: '#dfe4ea',
     accent: '#1a4f8a',
     cheatline: 'rgba(13,47,86,0.92)',
     tail: 0x0d2f56,
-    reg: 'N480CS',
+    reg: 'N480UU',
+    titling: 'UNUNITED',
+    emblem: 'globe',
+    fleet: ['b737', 'b777', 'b787', 'a320', 'a321', 'meridian'],
   },
   {
     id: 'liberty',
@@ -55,6 +71,9 @@ export const LIVERIES = [
     cheatline: 'rgba(20,52,120,0.9)',
     tail: 0xc8102e,
     reg: 'N711LB',
+    titling: 'LIBERTY AIR',
+    emblem: 'star',
+    fleet: ['b737', 'a320', 'a321', 'b787', 'b777', 'meridian'],
   },
   {
     id: 'bleuciel',
@@ -65,6 +84,10 @@ export const LIVERIES = [
     cheatline: 'rgba(200,20,40,0.9)',
     tail: 0x12306b,
     reg: 'F-BCLX',
+    titling: 'BLEU CIEL',
+    emblem: 'wave',
+    // The A380 and Concorde: flown once, remembered for it.
+    fleet: ['a320', 'a321', 'a350', 'b777', 'b787', 'a380', 'concorde', 'meridian'],
   },
   {
     id: 'bharat',
@@ -75,6 +98,9 @@ export const LIVERIES = [
     cheatline: 'rgba(31,122,68,0.9)',
     tail: 0xe8721f,
     reg: 'VT-BHA',
+    titling: 'BHARAT AIR',
+    emblem: 'sun',
+    fleet: ['a320', 'a321', 'b787', 'b777', 'a350', 'b747', 'meridian'],
   },
   {
     id: 'nightfreight',
@@ -85,6 +111,9 @@ export const LIVERIES = [
     cheatline: 'rgba(232,163,60,0.5)',
     tail: 0x24282d,
     reg: 'N90NF',
+    titling: 'NIGHT FREIGHT',
+    emblem: 'moon',
+    fleet: ['b747', 'b777', 'q400', 'meridian'],
   },
   /*
    * "Air Force One" (src/game/extra/afo.js). A VC-25-style scheme — white
@@ -118,6 +147,31 @@ export const LIVERIES = [
  * Not the house colours, which are no scheme, and not a `special` one.
  */
 export const AIRLINE_LIVERIES = Object.freeze(LIVERIES.filter((l) => !l.house && !l.special));
+
+/**
+ * The airlines a type may be painted for when the world paints it for
+ * itself (an apron, the traffic): each scheme's `fleet` is the types the
+ * airline it is styled after really flies (2026-10-23 brief: "parody-airline
+ * fleets only on types those real airlines fly"), so a Night Freight 787 or
+ * an Abyssinia A380 never appears. A light aeroplane (a trainer, a tourer,
+ * which wear airline paint as a flying-school or feeder would) may wear any
+ * of them. An airliner no airline lists — the giants: a Beluga, an An-225 —
+ * gets an empty list, and its caller keeps the house colours.
+ *
+ * Also what a scheme carries besides its colours, read by the airliner
+ * models (src/fleet/extra/airliners.js dress()) and nothing else:
+ *   titling   the airline's name along the forward fuselage, above the
+ *             windows, as every real one wears it (`title` is Air Force
+ *             One's, which the light aeroplanes paint too; this is not)
+ *   emblem    the mark on the fin: 'stripes' | 'globe' | 'star' | 'wave' |
+ *             'sun' | 'moon' — geometric, the game's own, never a real logo
+ */
+export function airlinesFor(type) {
+  if (!type) return AIRLINE_LIVERIES;
+  const airliner = type.category === 'airliner' || String(type.class || '').toLowerCase() === 'airliner';
+  if (!airliner) return AIRLINE_LIVERIES;
+  return AIRLINE_LIVERIES.filter((l) => Array.isArray(l.fleet) && l.fleet.includes(type.id));
+}
 
 /**
  * Does this type wear an airline's colours when the world paints it for

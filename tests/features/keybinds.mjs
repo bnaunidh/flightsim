@@ -263,6 +263,50 @@ ok('a feature registered later still gets the key the player saved for it', inp3
 inp3.dispose();
 I.useInput(inp);
 
+/* ---------------- 4. keys saved before a default moved ---------------- */
+
+// v69.3 moved the autopilot P -> Y, the ground crew Y -> P and Harrison's boost
+// P -> Y. A set saved before then (no version in it) still has the OLD defaults:
+// after the move P would call the pushback AND the autopilot.
+const V1 = { ...I.defaultBindings(), autopilot: ['KeyP'], services: ['KeyY'], harrisonBoost: ['KeyP'], eject: ['Backspace'], throttleUp: ['KeyW'] };
+delete V1._v;
+store.set('islandsim.bindings.v1', JSON.stringify(V1));
+const inp4 = new I.Input(dom);
+ok('migration: an old saved set is version 1; the live one is newer', I.savedVersion(V1) === 1 && I.BINDINGS_VERSION >= 2, `${I.savedVersion(V1)} -> ${I.BINDINGS_VERSION}`);
+ok('migration: a saved autopilot still on its OLD default (P) moves to the new one (Y)', inp4.bindings.autopilot.join() === 'KeyY', inp4.bindings.autopilot.join());
+ok('migration: the ground crew / pushback saved on Y moves to P', inp4.bindings.services.join() === 'KeyP', inp4.bindings.services.join());
+ok('migration: Harrison\'s boost saved on P moves to Y (it shares the autopilot\'s key by design)', inp4.bindings.harrisonBoost.join() === 'KeyY', inp4.bindings.harrisonBoost.join());
+ok('migration: so P no longer does two things at the stand', !inp4.conflicts().services && !inp4.conflicts().autopilot, JSON.stringify(inp4.conflicts()).slice(0, 200));
+ok('migration: keys the player genuinely changed are kept exactly (eject on Backspace, power on W)', inp4.bindings.eject.join() === 'Backspace' && inp4.bindings.throttleUp.join() === 'KeyW', `${inp4.bindings.eject} ${inp4.bindings.throttleUp}`);
+ok('migration: the Input says what it moved', Array.isArray(inp4._migrated) && ['autopilot', 'services', 'harrisonBoost'].every((k) => inp4._migrated.includes(k)) && inp4._migrated.length === 3, inp4._migrated.join(','));
+const written = JSON.parse(store.get('islandsim.bindings.v1'));
+ok('migration: the moved set is written back at once, stamped with the version, so it happens exactly once', written._v === I.BINDINGS_VERSION && written.autopilot.join() === 'KeyY' && written.services.join() === 'KeyP', JSON.stringify({ _v: written._v, autopilot: written.autopilot, services: written.services }));
+inp4.dispose();
+// The next visit reads the stamped set: nothing moves again, nothing is undone.
+const inp5 = new I.Input(dom);
+ok('migration: the next visit moves nothing (already at the version)', inp5._migrated.length === 0 && inp5.bindings.autopilot.join() === 'KeyY' && inp5.bindings.services.join() === 'KeyP', `${inp5._migrated.length} moved`);
+inp5.dispose();
+// A player who, at the new version, deliberately puts the autopilot back on P keeps it.
+const V2 = { ...I.defaultBindings(), autopilot: ['KeyP'], services: ['KeyO'], _v: I.BINDINGS_VERSION };
+store.set('islandsim.bindings.v1', JSON.stringify(V2));
+const inp6 = new I.Input(dom);
+ok('migration: a set saved at the current version is left alone, even where it looks like an old default', inp6.bindings.autopilot.join() === 'KeyP' && inp6.bindings.services.join() === 'KeyO' && inp6._migrated.length === 0, `${inp6.bindings.autopilot} ${inp6.bindings.services}`);
+inp6.dispose();
+// A set saved at version 1 for a feature that registers AFTER the Input is built still comes up to date.
+store.set('islandsim.bindings.v1', JSON.stringify({ eject: ['Backspace'], lateMover: ['KeyP'] }));
+const inp7 = new I.Input(dom);
+I.registerActions({ lateMover: { label: 'A late one whose default moved', group: 'Fun Stuff', ctx: ['plane'], default: ['KeyY'] } });
+ok('migration: migrateBinding moves only what equals an OLD default, nothing else', I.migrateBinding('autopilot', ['KeyP'], 1).join() === 'KeyY' && I.migrateBinding('autopilot', ['KeyO'], 1).join() === 'KeyO' && I.migrateBinding('autopilot', ['KeyP'], I.BINDINGS_VERSION).join() === 'KeyP' && I.migrateBinding('autopilot', null, 1) === null, '');
+ok('migration: a feature adopted after the game started reads the already-migrated set (its own saved key kept when it is not an old default)', inp7.bindings.lateMover && inp7.bindings.lateMover.join() === 'KeyP' && inp7.bindings.eject.join() === 'Backspace', String(inp7.bindings.lateMover));
+inp7.dispose();
+// Reset all: back to the defaults, and stamped.
+store.set('islandsim.bindings.v1', JSON.stringify(V1));
+const inp8 = new I.Input(dom);
+inp8.resetBindings();
+ok('migration: Reset all keys writes the defaults at the current version', JSON.parse(store.get('islandsim.bindings.v1'))._v === I.BINDINGS_VERSION && inp8.bindings.autopilot.join() === 'KeyY', '');
+inp8.dispose();
+I.useInput(inp);
+
 /* ---------------- report ---------------- */
 
 const failed = results.filter((r) => !r.pass);

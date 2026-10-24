@@ -1,10 +1,12 @@
 /**
  * Ocean.
  *
- * Two stacked planes with scrolling procedural normal maps give convincing
- * wave motion for almost no cost, and a foam band traced along each island's
- * real coastline (found by searching the terrain height function for the
- * zero-elevation contour) sells the shoreline.
+ * One plane with its own shader (render/ocean-material.js): fresnel sky
+ * reflection, depth-coloured water read from a baked height texture of the
+ * map, a sun glitter path, three octaves of waves in world metres that never
+ * tile, shore foam and whitecaps. A foam band traced along each island's real
+ * coastline (found by searching the terrain height function for the
+ * zero-elevation contour) sharpens the surf line on top of it.
  *
  * Also the sea's furniture and the sea as seen from a boat: the channel
  * buoys and harbour-head posts (buildBuoys) with halos for the dark
@@ -18,6 +20,7 @@ import { waterNormal, foamTexture } from '../render/textures.js';
 import { heightAt, ISLANDS, PALETTE, MAP, channelMarks, harbourBerth } from './terrain.js';
 import { setSeaFurniture } from '../vehicles/surface.js';
 import { SEA_DEPTH } from '../render/depth-layers.js';
+import { createOceanMaterial, buildDepthField } from '../render/ocean-material.js';
 
 /**
  * Sea plane size. Deliberately inside the camera's 60 km far plane even at the
@@ -25,13 +28,12 @@ import { SEA_DEPTH } from '../render/depth-layers.js';
  */
 const SEA_SIZE = 56000;
 /**
- * The sea follows the aeroplane in whole steps. Both wave layers tile an exact
- * whole number of times per step, so the pattern is continuous across a jump
- * and the surface does not visibly snap as you fly.
+ * The sea follows the aeroplane in whole steps. The waves are drawn in world
+ * metres (the shader reads the world position, not the plane's UVs), so the
+ * step is only there to keep the far edge from creeping every frame; any
+ * size is seamless.
  */
-const FOLLOW_STEP = 2000;
-const TILE_A = 250; // metres per wave tile, coarse layer
-const TILE_B = 500; // metres per wave tile, fine layer
+const FOLLOW_STEP = 500;
 /*
  * The boat's near sea: a 360 m patch of fine ripples that follows the boat,
  * in 12 m tiles. See buildRipples().
@@ -92,14 +94,20 @@ function crestImage() {
   crestCanvas = c;
   return c;
 }
-// Scratch colours for update(), which runs every frame and used to allocate
-// three THREE.Colors each time it did.
+// Scratch colours and vectors for update(), which runs every frame and used
+// to allocate three THREE.Colors each time it did.
 const _base = new THREE.Color();
 const _tint = new THREE.Color();
 const _swell = new THREE.Color();
-const SUNSET_SEA = new THREE.Color(0x3a3550);
+const _dir = new THREE.Vector3();
+const SUNSET_SEA = new THREE.Color(0x2b3d78);
 /** Moonlight on the near sea's crests at night: see update(). */
 const NIGHT_CRESTS = new THREE.Color(0x1c2c40);
+/** The moon's light on the water, as a glitter path and a faint body light. */
+const MOONLIGHT = new THREE.Color(0x8fa4c8);
+/** Wet sand showing through the last metre of water. */
+const SANDY = new THREE.Color(0xb9a77c);
+const WHITE = new THREE.Color(0xffffff);
 
 let glowTex = null;
 
@@ -164,89 +172,40 @@ function lampGlow(list, px) {
 }
 
 export class Ocean {
-  constructor(scene) {
+  constructor(scene, quality = 'high') {
     this.group = new THREE.Group();
     this.group.name = 'ocean';
+    this.quality = quality;
 
-    const nrm1 = waterNormal().clone();
-    nrm1.needsUpdate = true;
-    nrm1.wrapS = nrm1.wrapT = THREE.RepeatWrapping;
-    // Big tiles and a different scale per layer: the ocean fills most of the
-    // screen, so any visible repeat is glaring. Both repeats divide the follow
-    // step exactly (see FOLLOW_STEP).
-    nrm1.repeat.set(SEA_SIZE / TILE_A, SEA_SIZE / TILE_A);
-    const nrm2 = waterNormal().clone();
-    nrm2.needsUpdate = true;
-    nrm2.wrapS = nrm2.wrapT = THREE.RepeatWrapping;
-    // Mirrored rather than rotated. A rotation would look good but would break
-    // the whole-tile follow step, and a lurching sea is far worse than a
-    // slightly less varied one.
-    nrm2.repeat.set(-SEA_SIZE / TILE_B, SEA_SIZE / TILE_B);
-    nrm2.offset.set(0.31, 0.57);
-
-    // Water is a dielectric: metalness stays at zero. Treating it as
-    // half-metal turns the surface into a tinted mirror that ignores its own
-    // colour, blows out to white wherever the sky is bright, and leaves
-    // nothing on screen at all if the environment map ever hiccups.
     // Colours come from the map: turquoise round the atoll, near-black off the
     // fjords, slate grey under the volcano.
     this.pal = PALETTE;
-    this.deepMat = new THREE.MeshStandardMaterial({
-      color: this.pal.deepWater,
-      roughness: 0.14,
-      metalness: 0,
-      normalMap: nrm1,
-      normalScale: new THREE.Vector2(0.5, 0.5),
-      envMapIntensity: 1.0,
-      ...SEA_DEPTH.deep,
-    });
+    /*
+     * The depth field: the height field sampled into a small texture of the
+     * map, once per build, so the shader can colour the water by how deep it
+     * is and put the foam at the beach (render/ocean-material.js).
+     */
+    this.depthField = null;
+    try {
+      this.depthField = buildDepthField(quality, { foamWeight: (x, z) => this.bandWeight(x, z) });
+    } catch (e) {
+      console.warn('No depth field for the sea; a flat deep sea instead:', e);
+    }
+    this.deepMat = createOceanMaterial(quality, this.depthField);
+    this.u = this.deepMat.uniforms;
     // A few segments rather than a single quad. Two triangles spanning tens of
     // kilometres give the rasteriser absurd screen-space derivatives near the
     // horizon, which is where the shading used to fall apart.
-    const deep = new THREE.Mesh(new THREE.PlaneGeometry(SEA_SIZE, SEA_SIZE, 24, 24), this.deepMat);
+    const deep = new THREE.Mesh(new THREE.PlaneGeometry(SEA_SIZE, SEA_SIZE, 32, 32), this.deepMat);
     deep.rotation.x = -Math.PI / 2;
     deep.receiveShadow = false;
+    deep.name = 'sea';
     this.group.add(deep);
     this.deep = deep;
 
-    this.swellMat = new THREE.MeshStandardMaterial({
-      color: this.pal.swell,
-      roughness: 0.1,
-      metalness: 0,
-      envMapIntensity: 1.1,
-      normalMap: nrm2,
-      normalScale: new THREE.Vector2(0.85, 0.85),
-      transparent: true,
-      opacity: 0.42,
-      depthWrite: false,
-      /*
-       * Eight centimetres above the deep layer is less than the depth buffer
-       * can tell apart past about a kilometre (near 0.4 m, far 60 km: the
-       * step is ~0.5 m at 1.8 km), so out there this layer lost the depth
-       * test to the one under it in blocks — measured from 590 m up over the
-       * Skerries, stair-stepped dark rectangles across half the sea, and they
-       * vanished with this layer hidden. It is offset in depth so that it
-       * always sits on the deep layer (render/depth-layers.js: the deep one is pushed
-       * further back than this). It used to be pulled TOWARDS the camera
-       * instead, which also put it in front of every beach within four depth
-       * steps of the sea — 60 m at 10 km — and the beaches strobed blue.
-       */
-      ...SEA_DEPTH.band,
-    });
-    // Same size as the deep layer. When it was smaller there was a hard ring
-    // 20 km out where the sea abruptly changed colour.
-    const swell = new THREE.Mesh(new THREE.PlaneGeometry(SEA_SIZE, SEA_SIZE, 24, 24), this.swellMat);
-    swell.rotation.x = -Math.PI / 2;
-    swell.position.y = 0.08;
-    this.group.add(swell);
-    this.swell = swell;
-
-    this.nrm1 = nrm1;
-    this.nrm2 = nrm2;
     this.t = 0;
 
     this.foamMats = [];
-    this.shallowMats = [];
     for (const isl of ISLANDS) {
       /*
        * Only the ones that have a coast.
@@ -255,15 +214,15 @@ export class Ocean {
        * island radii, and an island that is entirely inland — a hill placed
        * on top of a bigger island, which is how Kestrel's relief is built —
        * has no crossing at all, so every ray runs to the far limit and the
-       * result is a perfect 1.9R ring of surf and turquoise shallows drawn
-       * at sea level underneath the grass. It is buried and nobody has ever
-       * seen it, which is exactly why it went unnoticed: two extra meshes
-       * and 128 more coastline bisections per inland hill, for a ring inside
-       * a hill.
+       * result is a perfect 1.9R ring of surf drawn at sea level underneath
+       * the grass. It is buried and nobody has ever seen it, which is exactly
+       * why it went unnoticed: an extra mesh and 128 more coastline
+       * bisections per inland hill, for a ring inside a hill.
        */
       if (!this.hasCoast(isl)) continue;
-      // Shallows first (wider, underneath), then the foam line on top.
-      this.group.add(this.buildShallows(isl));
+      // The foam line along the coast. The turquoise shelf under it used to
+      // be a second traced band; the shader now reads it from the depth
+      // field, continuously, with no edge and nothing drawn over a harbour.
       this.group.add(this.buildFoam(isl));
     }
     this._coast = null;
@@ -394,45 +353,6 @@ export class Ocean {
     geo.setIndex(idx);
     geo.computeVertexNormals();
     return geo;
-  }
-
-  /**
-   * Shallow water: a wide turquoise band hugging each coast, fading out to deep
-   * blue. Real islands have this reef shelf and it is the single biggest thing
-   * that makes tropical water look tropical.
-   */
-  buildShallows(isl) {
-    const geo = this.traceCoast(isl, -30, 260, 0.24, 0.2, 96);
-    // Fade to transparent on the seaward edge using vertex alpha via UV.v.
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0x4fd6c8,
-      transparent: true,
-      opacity: 0.42,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      // RGBA vertex colour: white, with the harbour fade in the alpha.
-      vertexColors: true,
-      // On the sea, behind the beach (render/depth-layers.js).
-      ...SEA_DEPTH.band,
-    });
-    mat.onBeforeCompile = (shader) => {
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <alphatest_fragment>',
-        `#include <alphatest_fragment>
-         // vUv.y runs 0 at the shore to 1 out to sea.
-         float shelf = 1.0 - smoothstep(0.0, 0.85, vMapUv.y);
-         diffuseColor.a *= shelf;
-         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.18, 0.45, 0.62), vMapUv.y * 0.8);`
-      );
-    };
-    // The replacement above needs a map for vMapUv to exist.
-    mat.map = foamTexture();
-    mat.map.needsUpdate = true;
-    this.shallowMats.push(mat);
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.name = 'shallows';
-    mesh.renderOrder = 1;
-    return mesh;
   }
 
   /** Trace the coastline and build a translucent foam band along it. */
@@ -863,7 +783,12 @@ export class Ocean {
       opacity: 0.55,
       depthWrite: false,
       vertexColors: true,
+      // On the deep layer, as the old swell layer was (render/depth-layers.js).
+      ...SEA_DEPTH.band,
     });
+    // The translucent layer over the deep sea, for anything that asks for it
+    // by the old name.
+    this.swellMat = this.rippleMat;
     // Radial fade in the vertex alpha, so the patch has no edge.
     const geo = new THREE.PlaneGeometry(RIPPLE_SIZE, RIPPLE_SIZE, 16, 16);
     geo.rotateX(-Math.PI / 2);
@@ -909,8 +834,6 @@ export class Ocean {
   follow(pos) {
     this.deep.position.x = Math.round(pos.x / FOLLOW_STEP) * FOLLOW_STEP;
     this.deep.position.z = Math.round(pos.z / FOLLOW_STEP) * FOLLOW_STEP;
-    this.swell.position.x = this.deep.position.x;
-    this.swell.position.z = this.deep.position.z;
   }
 
   /** Release every GPU resource this ocean owns. */
@@ -921,6 +844,9 @@ export class Ocean {
         for (const key of ['map', 'normalMap']) {
           if (o.material[key]) o.material[key].dispose();
         }
+        // The sea shader's own textures (its cloned normal map, foam and depth field).
+        const own = o.material.userData && o.material.userData.textures;
+        if (own) for (const t of own) t && t.dispose();
         o.material.dispose();
       }
     });
@@ -930,28 +856,64 @@ export class Ocean {
   update(dt, weather) {
     this.t += dt;
     const windScale = 0.4 + weather.windSpeedKts / 26;
-    this.nrm1.offset.x = (this.t * 0.0035 * windScale) % 1;
-    this.nrm1.offset.y = (this.t * 0.0021 * windScale) % 1;
-    this.nrm2.offset.x = (-this.t * 0.008 * windScale) % 1;
-    this.nrm2.offset.y = (this.t * 0.0052 * windScale) % 1;
-
-    const chop = 0.42 + weather.cond.turb * 0.75;
-    this.deepMat.normalScale.set(chop, chop);
-    this.swellMat.normalScale.set(chop * 1.5, chop * 1.5);
-
-    // Water colour follows the sky.
     const p = weather.palette();
-    _base.set(this.pal.deepWater);
-    if (weather.isNight) _base.multiplyScalar(0.22);
-    else if (weather.time === 'sunset') _base.lerp(SUNSET_SEA, 0.35);
+    const night = weather.isNight;
+    const sunset = weather.time === 'sunset';
+    const cloud = weather.cond.cloud;
+    const turb = weather.cond.turb;
     const boat = this.boatMode;
-    // From a boat the horizon wash is what turns the sea grey (see
-    // buildRipples), so it is roughly halved there.
-    const wash = (0.18 + weather.cond.cloud * 0.22) * (boat ? 0.55 : 1);
-    this.deepMat.color.copy(_base).lerp(p.horizon, wash);
+    const u = this.u;
+
+    /*
+     * The sea shader's weather (render/ocean-material.js).
+     *
+     * Waves steepen with the turbulence and the wind, and travel with the
+     * wind. The sky it reflects is the dome's own gradient. The glitter path
+     * is the sun's by day and the moon's by night; under an overcast it is
+     * broad and dull, the way a grey day's sea is. The water's own colour is
+     * the map's deep blue, lit by the daylight and dimmed to nearly nothing
+     * at night (the moon is not a sun), warmed a little at sunset.
+     */
+    u.uTime.value = this.t;
+    u.uChop.value = THREE.MathUtils.clamp(0.45 + turb * 0.7 + weather.windSpeedKts / 45, 0.35, 1.35) * (boat ? 1.1 : 1);
+    const wind = weather.windVector();
+    const wl = Math.hypot(wind.x, wind.z);
+    if (wl > 0.05) u.uWindDir.value.set(wind.x / wl, wind.z / wl);
+    u.uSkyTop.value.copy(p.top);
+    u.uSkyHorizon.value.copy(p.horizon);
+    weather.sunDirection(_dir);
+    if (night) {
+      // The moon stands opposite the sun (sky.js), so above the horizon.
+      _dir.negate();
+      u.uLightColor.value.copy(MOONLIGHT);
+      u.uGlint.value = 0.55 * (1 - cloud * 0.9);
+    } else {
+      u.uLightColor.value.copy(p.sun);
+      u.uGlint.value = (p.sunIntensity / 3.1) * (1 - cloud * 0.85) * (sunset ? 1.4 : 1);
+    }
+    if (_dir.y < 0.02) _dir.y = 0.02;
+    u.uLightDir.value.copy(_dir).normalize();
+    u.uGlintRough.value = 0.055 + turb * 0.07 + cloud * 0.12;
+    const daylight = night ? 0.12 : sunset ? 0.8 : 1;
+    u.uBodyLight.value = daylight * (1 - cloud * 0.35);
+    _base.set(this.pal.deepWater);
+    if (sunset) _base.lerp(SUNSET_SEA, 0.25);
+    u.uDeep.value.copy(_base);
+    // The shelf takes the light's colour too: amber at sunset, nothing much at night.
+    const sh = this.pal.shallow;
+    u.uShallow.value.setRGB(sh[0], sh[1], sh[2]);
+    if (sunset) u.uShallow.value.lerp(p.sun, 0.35);
+    u.uSandy.value.copy(SANDY);
+    u.uFoamColor.value.copy(p.horizon).lerp(WHITE, night ? 0.2 : 0.75).multiplyScalar(night ? 0.35 : 1);
+    u.uCaps.value = THREE.MathUtils.smoothstep(turb, 0.3, 1) * 0.55 + THREE.MathUtils.smoothstep(weather.windSpeedKts, 14, 32) * 0.3;
+
+    // What the boat's near patch of ripples is tinted from (see below): the
+    // map's own swell blue over its deep blue, greyed only by the cloud. It
+    // used to start from the horizon colour, which is what made the sea
+    // beside the boat grey.
     _swell.set(this.pal.swell);
-    this.swellMat.color.copy(p.horizon).lerp(_swell, boat ? 0.75 : 0.45);
-    this.swellMat.opacity = (0.3 + weather.cond.cloud * 0.2) * (boat ? 0.6 : 1);
+    _tint.copy(_base).lerp(_swell, 0.5).lerp(p.horizon, cloud * 0.3);
+    _tint.multiplyScalar(daylight);
 
     if (this.ripples) {
       this.ripples.visible = boat;
@@ -967,10 +929,10 @@ export class Ocean {
         // water close to rather than as a disc laid on it. The crest map
         // averages about 0.68 in linear light, so the colour under it is
         // lifted by as much again or the patch is a dark disc round her.
-        _tint.copy(this.swellMat.color).lerp(_base, 0.35);
-        if (this.rippleCrest) _tint.multiplyScalar(1.45);
+        if (this.rippleCrest) _tint.multiplyScalar(1.1);
         this.rippleMat.color.copy(_tint);
-        this.rippleMat.opacity = weather.isNight ? 0.55 : 0.7;
+        // Thinner than it was: the sea under it now has ripples of its own.
+        this.rippleMat.opacity = weather.isNight ? 0.4 : 0.34;
         /*
          * At night, moonlight on the crests. The near sea is lit by the
          * scene's lights like everything else, and at two in the morning
@@ -1006,15 +968,11 @@ export class Ocean {
       this.berthGlow.material.opacity = dark * 0.9;
     }
 
-    const sh = this.pal.shallow;
-    for (const m of this.shallowMats) {
-      const night = weather.isNight ? 0.35 : 1;
-      m.color.setRGB(sh[0] * night, sh[1] * night, sh[2] * night);
-      m.opacity = (0.46 - weather.cond.cloud * 0.16) * night;
-    }
+    // The traced surf line: thinner than it was, since the shader now washes
+    // the beach too, and dim at night.
     for (const f of this.foamMats) {
       f.tex.offset.y = (this.t * 0.06) % 1;
-      f.mat.opacity = 0.45 + 0.25 * Math.sin(this.t * 1.3) + weather.cond.turb * 0.25;
+      f.mat.opacity = (0.3 + 0.18 * Math.sin(this.t * 1.3) + weather.cond.turb * 0.25) * (night ? 0.35 : 1);
     }
   }
 }

@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v69.7';
+const CACHE_VERSION = 'island-flight-v70';
 
 const PRECACHE = [
   './',
@@ -392,6 +392,17 @@ const PRECACHE = [
   'src/ui/loading-screen.js',
   'src/ui/loading-tips.js',
   'src/ui/loading-focus.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/bird-strike.js',
+  'src/ui/shown-games.js',
+  // Added by tools/sync-precache.mjs.
+  'src/render/ocean-material.js',
+  // Added by tools/sync-precache.mjs.
+  'src/render/paint.js',
+  'src/render/post.js',
+  'src/render/quality-probe.js',
+  // Added by tools/sync-precache.mjs.
+  'src/render/dyn-res.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 
@@ -405,6 +416,27 @@ const PRECACHE = [
   'assets/models/kestrel-launch.glb',
   // Added by tools/sync-precache.mjs.
   'src/features/mpskin.js',
+
+  // new-aircraft: the popular airliners and the giants. (CACHE_VERSION is
+  // left for the release to bump.)
+  'src/aircraft/extra/jet-shapes.js',
+  'src/aircraft/extra/jets.js',
+  'src/aircraft/extra/giants.js',
+  'src/fleet/extra/jets.js',
+  'src/fleet/extra/giants.js',
+  'src/features/giants.js',
+  // ...and the B-1B Lancer: its numbers, its swing wing, its model, its keys and panel.
+  'src/aircraft/extra/lancer.js',
+  'src/aircraft/swing-wing.js',
+  'src/fleet/extra/lancer.js',
+  'src/features/swing-wing.js',
+  // ...and the C-17 Globemaster III: its numbers, its model with the cargo ramp, the ramp's key and panel.
+  'src/aircraft/extra/c17.js',
+  'src/fleet/extra/c17.js',
+  'src/features/cargo-ramp.js',
+  // ...and the A-10 Thunderbolt II.
+  'src/aircraft/extra/attack.js',
+  'src/fleet/extra/attack.js',
 ];
 
 // Files that are useful but not required for the game to run. If one of these

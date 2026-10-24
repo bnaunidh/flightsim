@@ -45,6 +45,7 @@ export const UNLOCKS = [
   { aircraft: 'fa18', cost: 1800, why: 'Built for the carrier', military: true },
   { aircraft: 'f35b', cost: 2600, why: 'It can stop in mid-air', military: true },
   { aircraft: 'f22', cost: 3400, why: 'The quickest of the real jets', military: true },
+  { aircraft: 'a10', cost: 2400, why: 'Slow, tough, and that gun', military: true },
   { aircraft: 'massimo', cost: 3600, why: 'The fastest thing in the game' },
 ];
 
@@ -480,57 +481,114 @@ export function buy(p, aircraftId) {
  * The class asked for discount codes you get by asking the CEO, which is a
  * lovely idea and costs nothing to honour: these are just words that pay out
  * once each, and whoever runs the game decides who is told about them.
+ *
+ * The words themselves are NOT in this file, or anywhere else in the game.
+ * This file is public JavaScript — anyone can open it in the browser — and a
+ * list of code words here is a list of free credits for whoever reads it,
+ * which is exactly how a friend once handed themselves a billion. What is kept
+ * here is each code's SHA-256 fingerprint and what it grants. Typing a code
+ * hashes it and looks the hash up; a hash cannot be turned back into the word.
+ *
+ * The amount or rank sits beside the hash rather than being read out of the
+ * code's name: a name that said what it paid was the second half of the leak,
+ * because a word that ends in "1b" tells anyone who sees it over a shoulder
+ * precisely what it is worth.
+ *
+ * To add a code: `node tools/hash-code.mjs`, type the word and what it should
+ * be worth, and paste the printed line in below. Nothing else. Every code that
+ * was on the old plaintext list has been retired — none of them works now.
+ *
+ * Shape: '<64 hex>': { credits: <number>, note: '<why>' }
+ *    or: '<64 hex>': { rank: 'founder' | 'admin' | 'mod', note: '<why>' }
  */
-/**
- * Codes, named so the name says what it is worth.
- *
- * The convention is `<whoever><amount>`: doritofc1k is a thousand credits,
- * doritofc1m is a million, doritofc1b is a billion, kestrel500 is five
- * hundred. The amount is PARSED OUT OF THE NAME rather than written beside
- * it, so the two can never disagree — a code called 1m cannot quietly be
- * worth 1000, which is exactly the sort of thing that goes unnoticed for
- * months and then makes someone feel cheated.
- *
- * Only codes on this list work. The suffix decides the amount; it does not
- * mint credits on its own, or anyone could type `me99b` and help themselves.
- *
- * To add one: put the name on the list with a note. Nothing else.
- */
-const CREDIT_CODES = {
-  doritofc1k: 'For Dorito',
-  doritofc1m: 'For Dorito, seriously',
-  doritofc1b: 'For Dorito, absurdly',
-  firstsolo300: 'Your first solo',
-  kestrel500: 'Island hopper',
-  tornado800: 'You went and looked',
-  classof29_1500: 'For the class that tested it',
-};
-
-/** Rank grants, which are appointed rather than earned. */
-const RANK_CODES = {
-  FOUNDER: { rank: 'founder', note: 'There is one' },
-  ADMIN: { rank: 'admin', note: 'Appointed' },
-  MOD: { rank: 'mod', note: 'Appointed' },
-};
+export const CODES = Object.freeze({
+  // Nothing shipped. The owner adds their own entries here, privately.
+});
 
 /**
- * How much a suffix multiplies by. Thousand, million, billion, and that is
- * where it stops — there is nothing in the game that costs more than a
- * billion credits, so a `t` would only be a number with no meaning behind it.
+ * SHA-256 in plain JavaScript, for the places crypto.subtle is missing — a
+ * phone opening the game over a plain-http LAN address in a classroom is not
+ * a secure context, and it should still be able to type a code. Byte-for-byte
+ * the same answer as crypto.subtle (tests/features/redeem-codes.mjs checks it
+ * against node:crypto), so which one ran never matters.
  */
-const SCALES = { k: 1e3, m: 1e6, b: 1e9 };
+const SHA_K = new Uint32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+]);
+
+export function sha256Hex(input) {
+  const msg = typeof input === 'string' ? new TextEncoder().encode(input) : new Uint8Array(input);
+  const len = msg.length;
+  // Pad to a multiple of 64 bytes: 0x80, zeros, then the bit length as 64 bits.
+  const padded = new Uint8Array(((len + 9 + 63) >> 6) << 6);
+  padded.set(msg);
+  padded[len] = 0x80;
+  const dv = new DataView(padded.buffer);
+  const bits = len * 8;
+  dv.setUint32(padded.length - 8, Math.floor(bits / 0x100000000));
+  dv.setUint32(padded.length - 4, bits >>> 0);
+
+  const H = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+  const W = new Uint32Array(64);
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  for (let off = 0; off < padded.length; off += 64) {
+    for (let i = 0; i < 16; i++) W[i] = dv.getUint32(off + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(W[i - 15], 7) ^ rotr(W[i - 15], 18) ^ (W[i - 15] >>> 3);
+      const s1 = rotr(W[i - 2], 17) ^ rotr(W[i - 2], 19) ^ (W[i - 2] >>> 10);
+      W[i] = (W[i - 16] + s0 + W[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + SHA_K[i] + W[i]) >>> 0;
+      const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0;
+      d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;
+    H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
+  }
+  let out = '';
+  for (let i = 0; i < 8; i++) out += H[i].toString(16).padStart(8, '0');
+  return out;
+}
 
 /**
- * Read the payout off the end of a code name.
- *
- * `1k` → a thousand, `1m` → a million, `1b` → a billion, `2500` → itself.
- * Returns 0 if the name does not end in a number, which is how a rank code or
- * a typo fails safely rather than paying out something arbitrary.
+ * The fingerprint of a typed code: SHA-256 of it trimmed and lower-cased, as
+ * hex. Case-insensitive because nobody types a code the way it was written
+ * down, and the SAME normalisation the owner's tool uses, or a code would
+ * work in the tool and fail in the game. crypto.subtle when the page has it,
+ * the plain-JavaScript version when it does not.
  */
-export function creditsInName(name) {
-  const m = String(name).toLowerCase().match(/(\d+)([kmb]?)$/);
-  if (!m) return 0;
-  return Number(m[1]) * (SCALES[m[2]] || 1);
+export async function codeHash(raw) {
+  const text = String(raw == null ? '' : raw).trim().toLowerCase();
+  const bytes = new TextEncoder().encode(text);
+  const subtle = globalThis.crypto && globalThis.crypto.subtle;
+  if (subtle && typeof subtle.digest === 'function') {
+    try {
+      const buf = await subtle.digest('SHA-256', bytes);
+      return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) {
+      // Fall through to the plain version: an odd browser, not a wrong code.
+    }
+  }
+  return sha256Hex(bytes);
+}
+
+/** True if `s` has the shape of a code fingerprint — 64 hex characters. */
+export function isCodeHash(s) {
+  return typeof s === 'string' && /^[0-9a-f]{64}$/.test(s);
 }
 
 /**
@@ -557,29 +615,38 @@ export function formatCredits(n) {
   return at(1e9, 'B');
 }
 
-export function redeem(p, raw) {
-  // Case-insensitive, because nobody types a code the way it was written down.
+/**
+ * Redeem a typed code against `table` (the shipped CODES unless a test hands
+ * in its own). Asynchronous, because the hash is.
+ *
+ * The answers are the same three sentences the box has always shown — a blank,
+ * a word that is not a code, a code already used — and a pay-out says what it
+ * was for. Nothing about the result reveals which codes exist: a retired code
+ * and a made-up one get the same answer.
+ *
+ * The `redeemed` list remembers the fingerprint, never the word.
+ */
+export async function redeem(p, raw, table = CODES) {
   const typed = String(raw || '').trim();
   if (!typed) return { ok: false, why: 'Type a code first' };
-  const key = typed.toLowerCase();
-  const upper = typed.toUpperCase();
 
-  const creditNote = Object.keys(CREDIT_CODES).find((k) => k.toLowerCase() === key);
-  const rankCode = RANK_CODES[upper];
-  if (!creditNote && !rankCode) return { ok: false, why: 'That code does not work' };
+  const hash = await codeHash(typed);
+  const entry = table && Object.prototype.hasOwnProperty.call(table, hash) ? table[hash] : null;
+  if (!entry || typeof entry !== 'object') return { ok: false, why: 'That code does not work' };
 
-  const stamp = creditNote ? creditNote.toLowerCase() : upper;
-  if (p.redeemed.includes(stamp)) return { ok: false, why: 'You have already used that one' };
-  p.redeemed.push(stamp);
+  if (!Array.isArray(p.redeemed)) p.redeemed = [];
+  if (p.redeemed.includes(hash)) return { ok: false, why: 'You have already used that one' };
 
-  if (creditNote) {
-    const amount = creditsInName(creditNote);
+  const amount = Math.max(0, Math.round(Number(entry.credits) || 0));
+  const rank = typeof entry.rank === 'string' && entry.rank ? entry.rank : null;
+  if (!amount && !rank) return { ok: false, why: 'That code does not work' };
+
+  p.redeemed.push(hash);
+  if (amount) {
     p.credits += amount;
     p.earned += amount;
-    save(p);
-    return { ok: true, credits: amount, rank: null, note: CREDIT_CODES[creditNote] };
   }
-  p.grantedRank = rankCode.rank;
+  if (rank) p.grantedRank = rank;
   save(p);
-  return { ok: true, credits: 0, rank: rankCode.rank, note: rankCode.note };
+  return { ok: true, credits: amount, rank, note: entry.note || 'Code accepted' };
 }

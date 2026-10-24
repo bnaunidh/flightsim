@@ -122,8 +122,69 @@ class PuffBatch {
 
 const RANGE = 9000;
 
+/*
+ * Cloud shadows on the ground (Graphics Medium and up).
+ *
+ * Each puff's footprint, projected down along the sun onto sea level, is
+ * splatted into a small single-channel texture centred on the aeroplane,
+ * twice a second; the overcast decks add a drifting noise layer that moves
+ * with the decks themselves. terrain.js samples it in its existing shader
+ * patch and takes it off the SUN's light only — the sky still lights a
+ * shadowed hillside, as it does outdoors.
+ *
+ * Shared, not per field: the terrain material is built before the clouds
+ * in buildWorld, so both hold this one object. `xform` is
+ * (origin x, origin z, 1 / size, strength); strength 0 switches it off.
+ */
+const SHADOW_N = 128;
+const SHADOW_SIZE = 16000; // metres across
+const SHADOW_TEXEL = SHADOW_SIZE / SHADOW_N;
+export const cloudShadow = (() => {
+  const data = new Uint8Array(SHADOW_N * SHADOW_N);
+  const texture = new THREE.DataTexture(data, SHADOW_N, SHADOW_N, THREE.RedFormat, THREE.UnsignedByteType);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.generateMipmaps = false;
+  texture.name = 'cloud-shadow';
+  texture.needsUpdate = true;
+  return { data, texture, xform: new THREE.Vector4(0, 0, 1 / SHADOW_SIZE, 0), size: SHADOW_SIZE, n: SHADOW_N };
+})();
+const _acc = new Float32Array(SHADOW_N * SHADOW_N);
+const _sun = new THREE.Vector3();
+
+/** Smooth value noise, 0..1, for the overcast decks' shadow. */
+function hash2(ix, iz) {
+  let h = (ix * 374761393 + iz * 668265263) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function vnoise(x, z) {
+  const ix = Math.floor(x);
+  const iz = Math.floor(z);
+  const fx = x - ix;
+  const fz = z - iz;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uz = fz * fz * (3 - 2 * fz);
+  const a = hash2(ix, iz);
+  const b = hash2(ix + 1, iz);
+  const c = hash2(ix, iz + 1);
+  const d = hash2(ix + 1, iz + 1);
+  return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz;
+}
+
 export class CloudField {
   constructor(scene, quality = 'high') {
+    // Cloud shadows: Medium and up. Low never touches the texture.
+    this.shadows = quality !== 'low';
+    this._shadowT = Infinity;
+    cloudShadow.xform.w = 0;
+    /*
+     * The fog these clouds fade into. main.js points it at the sky's own
+     * (sky.js update(): the colour follows the view toward a low sun), so a
+     * distant cloud and the sky behind it agree. Null: the preset's fog.
+     */
+    this.viewFog = null;
     const maxPerBatch = quality === 'low' ? 90 : quality === 'medium' ? 170 : quality === 'ultra' ? 460 : 280;
     this.batches = [1, 2, 3].map((seed) => new PuffBatch(cloudTexture(seed), maxPerBatch));
     this.group = new THREE.Group();
@@ -278,14 +339,15 @@ export class CloudField {
       b.shades[puff.index] = puff.shade * (1 - cover * 0.55);
     }
 
+    const fog = this.viewFog;
     for (const b of this.batches) {
       b.markDirty();
       b.material.uniforms.uSunTint.value.copy(p.sun).lerp(new THREE.Color(0xffffff), 0.45);
       b.material.uniforms.uBaseTint.value
         .copy(p.horizon)
         .lerp(new THREE.Color(weather.isNight ? 0x0d1420 : 0x8792a3), 0.55 + cover * 0.25);
-      b.material.uniforms.uFogColor.value.copy(p.fogColor);
-      b.material.uniforms.uFogDensity.value = p.fogDensity;
+      b.material.uniforms.uFogColor.value.copy(fog ? fog.color : p.fogColor);
+      b.material.uniforms.uFogDensity.value = fog ? fog.density : p.fogDensity;
       b.material.uniforms.uFlash.value = dim(weather.lightningFlash, CAPS.lightning) * 0.7;
     }
 
@@ -315,6 +377,94 @@ export class CloudField {
         camPos.z + ((wind.z * this.t * 0.6) % 2000)
       );
     });
+
+    if (this.shadows) {
+      this._shadowT += dt;
+      if (this._shadowT >= 0.5) {
+        this._shadowT = 0;
+        this.paintShadows(weather, camPos, wanted, deckOpacity);
+      }
+    }
+  }
+
+  /**
+   * Repaint the cloud-shadow texture (see cloudShadow). Twice a second is
+   * plenty: the texture is anchored in the world, not to the screen, so only
+   * the clouds' own drift — a few metres a second — waits for the next one.
+   */
+  paintShadows(weather, camPos, wanted, deckOpacity) {
+    const cs = cloudShadow;
+    weather.sunDirection(_sun);
+    // Only a sun well up casts a useful cloud shadow: at sunset they are
+    // kilometres long and the light is all sky; at night there is no sun.
+    const el = Math.asin(clamp(_sun.y, -1, 1)) * 57.2958;
+    const sunK = clamp((el - 6) / 18, 0, 1);
+    const strength = weather.isNight ? 0 : sunK * clamp(0.62 + weather.cond.cloud * 0.2, 0, 0.82);
+    cs.xform.w = strength;
+    if (strength <= 0) return;
+    // Anchor to whole texels so the pattern does not crawl as the aeroplane moves.
+    const ox = Math.round(camPos.x / SHADOW_TEXEL) * SHADOW_TEXEL;
+    const oz = Math.round(camPos.z / SHADOW_TEXEL) * SHADOW_TEXEL;
+    cs.xform.x = ox;
+    cs.xform.y = oz;
+    const N = SHADOW_N;
+    const half = SHADOW_SIZE / 2;
+    const acc = _acc;
+    acc.fill(0);
+    // Shadow on sea level, cast along the sun: a cloud at height y lands
+    // y / tan(elevation) down-sun of where it floats.
+    const k = 1 / Math.max(0.2, _sun.y);
+    const sx = -_sun.x * k;
+    const sz = -_sun.z * k;
+    for (let i = 0; i < wanted && i < this.puffs.length; i++) {
+      const puff = this.puffs[i];
+      const b = this.batches[puff.batch];
+      const a = b.alphas[puff.index];
+      const sc = b.scales[puff.index * 2];
+      if (a <= 0 || sc <= 0) continue;
+      const y = b.offsets[puff.index * 3 + 1];
+      const gx = b.offsets[puff.index * 3] + sx * y;
+      const gz = b.offsets[puff.index * 3 + 2] + sz * y;
+      // The puff texture fills roughly the middle two-thirds of its quad.
+      const r = sc * 0.34;
+      const cx = (gx - ox + half) / SHADOW_TEXEL;
+      const cz = (gz - oz + half) / SHADOW_TEXEL;
+      const rt = r / SHADOW_TEXEL;
+      const x0 = Math.max(0, Math.floor(cx - rt));
+      const x1 = Math.min(N - 1, Math.ceil(cx + rt));
+      const z0 = Math.max(0, Math.floor(cz - rt));
+      const z1 = Math.min(N - 1, Math.ceil(cz + rt));
+      if (x0 > x1 || z0 > z1) continue;
+      const inv = 1 / (rt * rt);
+      for (let tz = z0; tz <= z1; tz++) {
+        const dz = tz + 0.5 - cz;
+        for (let tx = x0; tx <= x1; tx++) {
+          const dx = tx + 0.5 - cx;
+          const q = 1 - (dx * dx + dz * dz) * inv;
+          if (q > 0) acc[tz * N + tx] += q * q * a * 1.4;
+        }
+      }
+    }
+    // The overcast decks: a soft drifting mottle, moving with the decks.
+    const deck = deckOpacity > 0.01 ? deckOpacity : 0;
+    const wind = weather.windVector();
+    const dwx = wind.x * this.t * 0.6;
+    const dwz = wind.z * this.t * 0.6;
+    const data = cs.data;
+    for (let tz = 0; tz < N; tz++) {
+      const wz = oz - half + (tz + 0.5) * SHADOW_TEXEL;
+      for (let tx = 0; tx < N; tx++) {
+        const j = tz * N + tx;
+        let v = 1 - Math.exp(-acc[j]);
+        if (deck) {
+          const wx = ox - half + (tx + 0.5) * SHADOW_TEXEL;
+          const n = vnoise((wx - dwx) / 1400, (wz - dwz) / 1400) * 0.65 + vnoise((wx - dwx) / 520, (wz - dwz) / 520) * 0.35;
+          v = Math.max(v, clamp((n - 0.42) * 2.2, 0, 1) * deck);
+        }
+        data[j] = Math.round(clamp(v, 0, 1) * 255);
+      }
+    }
+    cs.texture.needsUpdate = true;
   }
 
   /** 0..1 how deep inside cloud the given altitude is — drives the whiteout. */

@@ -8,6 +8,49 @@ const ZERO = { x: 0, y: 0, z: 0 };
 const HARD_SURFACES = new Set(['asphalt', 'concrete', 'metal', 'obstacle', 'wall', 'carrier-ramp']);
 const WALL_SURFACES = new Set(['obstacle', 'wall', 'carrier-ramp']);
 
+/*
+ * The two impact shaders (the dust-and-sparks points, the contact scuff) as
+ * PROTOTYPES that are never disposed: every pool and scuff is a clone, so they
+ * share one compiled program, and warmImpactShaders() compiles that program
+ * while the flight loads. Before, each first impact of a flight compiled them
+ * afresh on the crash frame (the previous flight's materials were disposed,
+ * and with them the programs): tens of milliseconds of hitch on a Chromebook,
+ * on exactly the frame the aeroplane hits.
+ */
+const DUST_PROTO = new THREE.ShaderMaterial({
+  uniforms: { viewportHeight: { value: 720 } }, transparent: true, depthWrite: false,
+  vertexShader: `attribute vec3 aColor; attribute float aAlpha; attribute float aSize; varying vec3 tint; varying float alpha; uniform float viewportHeight;
+    void main(){ vec4 mv=modelViewMatrix*vec4(position,1.); gl_Position=projectionMatrix*mv;
+    gl_PointSize=clamp(aSize*viewportHeight*.5/max(.1,-mv.z),1.,110.); tint=aColor; alpha=aAlpha; }`,
+  fragmentShader: `varying vec3 tint; varying float alpha;
+    void main(){ float r=length(gl_PointCoord-.5)*2.; float a=alpha*(1.-smoothstep(.15,1.,r)); if(a<.005)discard;
+    gl_FragColor=vec4(tint,a); #include <tonemapping_fragment>\n #include <colorspace_fragment> }`.replace('; #include', ';\n#include'),
+});
+const SCUFF_PROTO = new THREE.ShaderMaterial({
+  uniforms: { opacity: { value: .5 } }, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  vertexShader: 'varying vec2 uvMark; void main(){uvMark=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+  fragmentShader: `varying vec2 uvMark; uniform float opacity; void main(){vec2 p=(uvMark-.5)*2.; float grain=fract(sin(dot(floor(uvMark*120.),vec2(12.9898,78.233)))*43758.5453);
+    float a=(1.-smoothstep(.2,1.,length(p*vec2(.8,1.))))*(.45+.55*grain)*opacity; if(a<.015)discard; gl_FragColor=vec4(vec3(.075,.078,.075),a);}`,
+});
+
+/** Compile the impact shaders now (hidden objects are not compiled, hence the moment of visibility). Idempotent and cheap once compiled. */
+export function warmImpactShaders(renderer, camera, scene) {
+  if (!renderer || typeof renderer.compile !== 'function' || !camera) return false;
+  const pts = new THREE.BufferGeometry();
+  for (const [name, width] of [['position', 3], ['aColor', 3], ['aAlpha', 1], ['aSize', 1]]) pts.setAttribute(name, new THREE.BufferAttribute(new Float32Array(width), width));
+  const plane = new THREE.PlaneGeometry(1, 1);
+  const g = new THREE.Group();
+  g.add(new THREE.Points(pts, DUST_PROTO), new THREE.Mesh(plane, SCUFF_PROTO));
+  try {
+    renderer.compile(g, camera, scene || undefined);
+    return true;
+  } finally {
+    pts.dispose();
+    plane.dispose();
+  }
+}
+
 /** Attach impact response to an already finished aircraft. The caller advances
  * updateImpact, resetImpact and disposeImpact alongside the model lifecycle.
  * Normal impulses on terrain belong to common's contact solver. This module
@@ -64,15 +107,7 @@ export function attachAircraftImpact(model, config = {}) {
     if (!pool) {
       const geometry = new THREE.BufferGeometry();
       for (const [name, width] of [['position', 3], ['aColor', 3], ['aAlpha', 1], ['aSize', 1]]) geometry.setAttribute(name, new THREE.BufferAttribute(new Float32Array(capacity * width), width));
-      const material = new THREE.ShaderMaterial({
-        uniforms: { viewportHeight: { value: 720 } }, transparent: true, depthWrite: false,
-        vertexShader: `attribute vec3 aColor; attribute float aAlpha; attribute float aSize; varying vec3 tint; varying float alpha; uniform float viewportHeight;
-          void main(){ vec4 mv=modelViewMatrix*vec4(position,1.); gl_Position=projectionMatrix*mv;
-          gl_PointSize=clamp(aSize*viewportHeight*.5/max(.1,-mv.z),1.,110.); tint=aColor; alpha=aAlpha; }`,
-        fragmentShader: `varying vec3 tint; varying float alpha;
-          void main(){ float r=length(gl_PointCoord-.5)*2.; float a=alpha*(1.-smoothstep(.15,1.,r)); if(a<.005)discard;
-          gl_FragColor=vec4(tint,a); #include <tonemapping_fragment>\n #include <colorspace_fragment> }`.replace('; #include', ';\n#include'),
-      });
+      const material = DUST_PROTO.clone();
       const mesh = new THREE.Points(geometry, material); mesh.name = 'Impact dust and brief metal sparks'; mesh.frustumCulled = false;
       pool = { mesh, geometry, material }; parent.add(mesh);
     } else if (pool.mesh.parent !== parent) parent.add(pool.mesh);
@@ -97,13 +132,8 @@ export function attachAircraftImpact(model, config = {}) {
     if (severity < .025) return;
     const parent = selection.part.nodes.find(visible); if (!parent) return;
     const geometry = new THREE.PlaneGeometry(1, 1);
-    const material = new THREE.ShaderMaterial({
-      uniforms: { opacity: { value: Math.min(.76, .18 + severity * .6) } }, transparent: true, depthWrite: false, side: THREE.DoubleSide,
-      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-      vertexShader: 'varying vec2 uvMark; void main(){uvMark=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
-      fragmentShader: `varying vec2 uvMark; uniform float opacity; void main(){vec2 p=(uvMark-.5)*2.; float grain=fract(sin(dot(floor(uvMark*120.),vec2(12.9898,78.233)))*43758.5453);
-        float a=(1.-smoothstep(.2,1.,length(p*vec2(.8,1.))))*(.45+.55*grain)*opacity; if(a<.015)discard; gl_FragColor=vec4(vec3(.075,.078,.075),a);}`,
-    });
+    const material = SCUFF_PROTO.clone();
+    material.uniforms.opacity.value = Math.min(.76, .18 + severity * .6);
     const mark = new THREE.Mesh(geometry, material); mark.name = `Contact scuff: ${selection.id}`;
     // UserData marks are carried by the same physical part if it later detaches.
     mark.userData.impactDecoration = true;

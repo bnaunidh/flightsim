@@ -142,7 +142,11 @@ export async function check(sim, r, say = () => {}) {
           r.ok(`${tag}: wears the scheme's registration (${scheme.reg})`, regTexts.length === 1 && regTexts[0] === scheme.reg, regTexts.join(',') || 'no registration decal');
           const titles = decals(model, 'Titling');
           const titleTexts = [...new Set(titles.map(textOf))];
-          if (scheme.title) r.ok(`${tag}: carries the title (${scheme.title})`, titleTexts.length === 1 && titleTexts[0] === scheme.title, titleTexts.join(',') || 'no Titling decal');
+          // The airliner models also write the airline's own name (liveries.js
+          // `titling`) along the forward fuselage; nothing else reads it, so a
+          // Skylark in an airline's colours stays a plain flying-school aeroplane.
+          const words = scheme.title || (AIRLINERS.includes(id) ? scheme.titling : null);
+          if (words) r.ok(`${tag}: carries the title (${words})`, titleTexts.length === 1 && titleTexts[0] === words, titleTexts.join(',') || 'no Titling decal');
           else r.ok(`${tag}: carries no title (the scheme has none)`, titles.length === 0, `${titles.length} titling meshes`);
           r.ok(`${tag}: every decal reads left to right the right way up, from both sides`, [...regs, ...titles].every((m) => reads(model, m)), `${regs.length + titles.length} decals`);
           if (id !== 'nightjar') {
@@ -226,7 +230,12 @@ export async function check(sim, r, say = () => {}) {
     }
     r.ok('skins: an ambient airliner is never given the Air Force One paint (so never "Air Force One 47" on the radio)', leaked === 0 && seen.size === 6, `${leaked} bad of 400; ${seen.size} airlines used`);
     const civil = TY.AIRCRAFT.filter((t) => L.wearsAirlinePaint(t)).map((t) => t.id).sort();
-    r.ok('skins: airline paints are for airliners and the civil light aeroplanes only', civil.join() === ['a320', 'b747', 'a380', 'courier', 'meridian', 'skylark', 'tempest'].sort().join(), civil.join(','));
+    // The airliners (the three, the jets and the giants of aircraft/extra) and the civil
+    // light aeroplanes; never the military ones (the C-17, the C-5, the B-1B, the A-10).
+    // Which airline the world paints on which airliner is airlinesFor's (tests/features/fleets.mjs).
+    const civilWant = ['a320', 'b747', 'a380', 'b737', 'a321', 'b787', 'a350', 'b777', 'q400', 'concorde', 'belugaxl', 'dreamlifter', 'an225',
+      'courier', 'meridian', 'skylark', 'tempest'].sort().join();
+    r.ok('skins: airline paints are for airliners and the civil light aeroplanes only', civil.join() === civilWant, civil.join(','));
     const parked = (sim.apron && sim.apron.parked) || [];
     const badParked = parked.filter((p) => {
       const [tid, lid] = String(p.key).split('|');

@@ -171,6 +171,82 @@ export const BOAT_MAP = Object.freeze({ rollLeft: 'boatLeft', rollRight: 'boatRi
 const STORAGE_KEY = 'islandsim.bindings.v1';
 const LOOK_ACTIONS = ['lookUp', 'lookDown', 'lookLeft', 'lookRight'];
 
+/*
+ * SAVED KEYS FROM BEFORE A DEFAULT MOVED.
+ *
+ * save() keeps EVERY binding, the ones the player never touched included. So
+ * when v69.3 moved the autopilot from P to Y and gave P to the ground crew
+ * (services), anyone who had ever saved their settings kept autopilot = P:
+ * one press of P at the stand called the pushback AND switched the autopilot
+ * on, and the POWER bar climbed while the tug pushed (the owner, 2026-10-17).
+ *
+ * The saved set carries a version (BINDINGS_VERSION, under `_v` in the same
+ * object; a plain array-only object is version 1). On load, a saved binding
+ * that still equals an action's OLD default is moved to the NEW one, once; a
+ * binding the player genuinely changed (anything else) is kept exactly. The
+ * whole saved object is migrated, not only the actions registered so far, so
+ * a feature that registers after the game started (_adopt) finds its keys
+ * already moved: the order the features load in does not matter.
+ *
+ * To move a default again: bump BINDINGS_VERSION and add a row
+ * { v: <the new version>, action, from: [old default], to: [new default] }.
+ */
+export const BINDINGS_VERSION = 2;
+export const MIGRATIONS = Object.freeze([
+  { v: 2, action: 'autopilot', from: ['KeyP'], to: ['KeyY'] },
+  { v: 2, action: 'services', from: ['KeyY'], to: ['KeyP'] },
+  { v: 2, action: 'harrisonBoost', from: ['KeyP'], to: ['KeyY'] },
+]);
+const VERSION_KEY = '_v';
+
+/** The saved set's version: 1 for one saved before versions were kept. */
+export function savedVersion(saved) {
+  const v = saved && saved[VERSION_KEY];
+  return Number.isInteger(v) && v > 0 ? v : 1;
+}
+
+/** Are these the same keys, in order? */
+function sameKeys(a, b) {
+  return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((c, i) => c === b[i]);
+}
+
+/**
+ * The keys `action` should have, given what was saved for it at version
+ * `fromV`: the saved keys moved on by every migration newer than that whose
+ * OLD default they still equal; otherwise exactly what was saved.
+ * `codes` may be null (nothing saved for it) — null comes back.
+ */
+export function migrateBinding(action, codes, fromV) {
+  if (!Array.isArray(codes)) return codes;
+  let out = codes;
+  for (const m of MIGRATIONS) {
+    if (m.v <= fromV || m.action !== action) continue;
+    if (sameKeys(out, m.from)) out = m.to.slice();
+  }
+  return out;
+}
+
+/**
+ * A whole saved set brought up to BINDINGS_VERSION: { bindings, moved }, where
+ * `moved` lists the actions whose keys changed. Pure: the saved object is not
+ * touched.
+ */
+export function migrateSaved(saved) {
+  const fromV = savedVersion(saved);
+  const out = {};
+  const moved = [];
+  for (const k in saved || {}) {
+    if (k === VERSION_KEY) continue;
+    const v = saved[k];
+    if (!Array.isArray(v)) continue;
+    const next = migrateBinding(k, v, fromV);
+    out[k] = next;
+    if (next !== v) moved.push(k);
+  }
+  out[VERSION_KEY] = BINDINGS_VERSION;
+  return { bindings: out, moved };
+}
+
 /** The one live Input (main.js makes exactly one); null in node tests. */
 let LIVE_INPUT = null;
 /** For the tests and the console: make this Input the one the hints and features ask. */
@@ -641,22 +717,41 @@ export class Input {
     return false;
   }
 
-  /** A feature registered after the game started: its saved keys, or its defaults. */
+  /**
+   * A feature registered after the game started: its saved keys (brought up
+   * to date if they were saved before its default moved), or its defaults.
+   */
   _adopt(id) {
+    // load() brought the whole saved set up to date, this feature's keys with it.
     const saved = this._saved && this._saved[id];
     this.bindings[id] = Array.isArray(saved) ? saved.filter((c) => typeof c === 'string') : [...ACTIONS[id].default];
     this._noteChange();
   }
 
   load() {
+    /** The version the saved set was read at, and the actions the read moved on (for Settings and the tests). */
+    this._savedVersion = BINDINGS_VERSION;
+    this._migrated = [];
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
-          this._saved = parsed;
+          const fromV = savedVersion(parsed);
+          const { bindings: saved, moved } = migrateSaved(parsed);
+          this._saved = saved;
+          this._savedVersion = fromV;
+          this._migrated = moved;
           for (const k in this.bindings) {
-            if (Array.isArray(parsed[k])) this.bindings[k] = parsed[k].filter((c) => typeof c === 'string');
+            if (Array.isArray(saved[k])) this.bindings[k] = saved[k].filter((c) => typeof c === 'string');
+          }
+          // Written back at once, so the move happens exactly once.
+          if (fromV < BINDINGS_VERSION) {
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+            } catch (e) {
+              /* storage blocked: it is migrated again next time, to the same keys */
+            }
           }
         }
       }
@@ -674,8 +769,9 @@ export class Input {
   save() {
     this._noteChange();
     try {
-      const out = { ...(this._saved || {}), ...this.bindings };
+      const out = { ...(this._saved || {}), ...this.bindings, [VERSION_KEY]: BINDINGS_VERSION };
       this._saved = out;
+      this._savedVersion = BINDINGS_VERSION;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(out));
     } catch (e) {
       /* ignore */

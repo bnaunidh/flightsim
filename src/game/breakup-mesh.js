@@ -420,6 +420,20 @@ export function cutGeometry(g, M, planes) {
  *           breaking needs clean edges)
  */
 export function classifyModel(survey, layout, opts = {}) {
+  const steps = classifyModelSteps(survey, layout, opts);
+  let r = steps.next();
+  while (!r.done) r = steps.next();
+  return r.value;
+}
+
+/**
+ * The same, one mesh at a time: a generator that yields after every entry it
+ * has classified (and cut), and returns the record when it is done. The crash
+ * feature runs it a few milliseconds a frame in the background while you fly,
+ * so the survey is ready before you hit anything (features/breakup.js). The
+ * result is identical to classifyModel()'s, which is this run to the end.
+ */
+export function* classifyModelSteps(survey, layout, opts = {}) {
   const zones = layout.zones;
   const index = new Map(zones.map((z, i) => [z, i]));
   const planes = opts.cut === false ? [] : cutPlanes(layout);
@@ -485,6 +499,7 @@ export function classifyModel(survey, layout, opts = {}) {
       }
     }
     items.push({ e, geo: g, zone });
+    yield;
   }
   return { survey, layout, zones, index, items, boxes, counts };
 }
@@ -505,7 +520,7 @@ EMPTY.userData.breakupEmpty = true;
  * triangles round if the matrix mirrors, as a wing drawn with scale.x = -1
  * does, or they would all face inwards.
  */
-export function subsetGeometry(g, keep, bake = null) {
+export function subsetGeometry(g, keep, bake = null, bounds = true) {
   const n = triCount(g);
   const groups = g.groups && g.groups.length ? g.groups.slice().sort((p, q) => p.start - q.start) : [{ start: 0, count: n * 3, materialIndex: 0 }];
   const tris = [];
@@ -519,16 +534,22 @@ export function subsetGeometry(g, keep, bake = null) {
   }
   if (!tris.length) return null;
   const flip = !!(bake && bake.determinant() < 0);
-  const remap = new Map();
+  /*
+   * Old vertex -> new vertex, as a flat table rather than a Map: an airliner
+   * breaks into a hundred of these on the crash frame, and the lookup is the
+   * hottest line in it.
+   */
+  const V = g.attributes.position.count;
+  const remap = new Int32Array(V).fill(-1);
   const verts = [];
   const idx = new Uint32Array(tris.length * 3);
   for (let i = 0; i < tris.length; i++) {
     for (let k = 0; k < 3; k++) {
       const v = triVert(g, tris[i], k);
-      let m = remap.get(v);
-      if (m === undefined) {
+      let m = remap[v];
+      if (m < 0) {
         m = verts.length;
-        remap.set(v, m);
+        remap[v] = m;
         verts.push(v);
       }
       idx[i * 3 + (flip && k ? 3 - k : k)] = m;
@@ -539,24 +560,94 @@ export function subsetGeometry(g, keep, bake = null) {
     const src = g.attributes[name];
     const { raw, stride, offset, size } = rawOf(src);
     const arr = new raw.constructor(verts.length * size);
-    for (let i = 0; i < verts.length; i++) {
-      const base = verts[i] * stride + offset;
-      for (let k = 0; k < size; k++) arr[i * size + k] = raw[base + k];
+    if (size === 3 && stride === 3 && offset === 0) {
+      for (let i = 0; i < verts.length; i++) {
+        const base = verts[i] * 3;
+        const o = i * 3;
+        arr[o] = raw[base];
+        arr[o + 1] = raw[base + 1];
+        arr[o + 2] = raw[base + 2];
+      }
+    } else {
+      for (let i = 0; i < verts.length; i++) {
+        const base = verts[i] * stride + offset;
+        for (let k = 0; k < size; k++) arr[i * size + k] = raw[base + k];
+      }
     }
     const attr = new THREE.BufferAttribute(arr, size, src.normalized);
-    if (bake && name === 'position') attr.applyMatrix4(bake);
-    if (bake && name === 'normal' && !src.normalized && arr instanceof Float32Array) {
-      attr.applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(bake));
-    }
+    if (bake && name === 'position') bakePositions(attr, bake);
+    if (bake && name === 'normal' && !src.normalized && arr instanceof Float32Array) bakeNormals(attr, bake);
     out.setAttribute(name, attr);
   }
   out.setIndex(new THREE.BufferAttribute(verts.length > 65535 ? idx : new Uint16Array(idx), 1));
   for (const gr of outGroups) out.addGroup(gr.start, gr.count, gr.materialIndex);
-  out.computeBoundingBox();
-  out.computeBoundingSphere();
+  if (bounds) {
+    out.computeBoundingBox();
+    out.computeBoundingSphere();
+  }
   // Which source triangle each new one is, in order: so a zone list can follow it.
   out.userData.keptTris = tris;
   return out;
+}
+
+/**
+ * attr.applyMatrix4(m) without the per-vertex accessor and Vector3 round
+ * trip, for the affine matrices a model's parts have (the bottom row 0 0 0 1,
+ * so three's own w comes out as exactly 1 and the sums are the same sums).
+ * Anything else goes through three.
+ */
+function bakePositions(attr, m) {
+  const e = m.elements;
+  const a = attr.array;
+  if (!(a instanceof Float32Array) || attr.itemSize !== 3 || e[3] !== 0 || e[7] !== 0 || e[11] !== 0 || e[15] !== 1) {
+    attr.applyMatrix4(m);
+    return;
+  }
+  for (let i = 0; i < a.length; i += 3) {
+    const x = a[i];
+    const y = a[i + 1];
+    const z = a[i + 2];
+    a[i] = e[0] * x + e[4] * y + e[8] * z + e[12];
+    a[i + 1] = e[1] * x + e[5] * y + e[9] * z + e[13];
+    a[i + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
+  }
+  attr.needsUpdate = true;
+}
+
+/** attr.applyNormalMatrix(normal matrix of m), the same way: the normal matrix, then normalised. */
+function bakeNormals(attr, m) {
+  const nm = new THREE.Matrix3().getNormalMatrix(m);
+  const a = attr.array;
+  if (!(a instanceof Float32Array) || attr.itemSize !== 3) {
+    attr.applyNormalMatrix(nm);
+    return;
+  }
+  const e = nm.elements;
+  for (let i = 0; i < a.length; i += 3) {
+    const x = a[i];
+    const y = a[i + 1];
+    const z = a[i + 2];
+    const nx = e[0] * x + e[3] * y + e[6] * z;
+    const ny = e[1] * x + e[4] * y + e[7] * z;
+    const nz = e[2] * x + e[5] * y + e[8] * z;
+    const l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+    a[i] = nx / l;
+    a[i + 1] = ny / l;
+    a[i + 2] = nz / l;
+  }
+  attr.needsUpdate = true;
+}
+
+/** Which zone indices an item has any triangle (or copy) in, once per item. */
+function zonesPresent(it) {
+  let p = it.present;
+  if (p && p.of === it.zone) return p;
+  p = new Set();
+  const z = it.zone;
+  for (let t = 0; t < z.length; t++) p.add(z[t]);
+  p.of = z;
+  it.present = p;
+  return p;
 }
 
 /* ------------------------------------------------------------------ *
@@ -621,9 +712,18 @@ export function breakZones(asg, pieces, opts = {}) {
       const group = new THREE.Group();
       group.name = `breakup:${piece.join('+')}${isRotor ? `:${blade}` : ''}`;
       let tris = 0;
+      // The piece's extent in body metres, grown as its meshes are baked (so no second pass over them).
+      const box = new THREE.Box3();
       for (const it of asg.items) {
         const e = it.e;
         if (e.effect || e.kind === 'sprite') continue;
+        // Nothing of this mesh is in the piece: the common case, settled without a look at its triangles.
+        let any = false;
+        for (const z of zonesPresent(it)) if (set.has(z)) {
+          any = true;
+          break;
+        }
+        if (!any) continue;
         if (e.kind === 'instanced') {
           if (isRotor) continue;
           const ks = [];
@@ -635,6 +735,8 @@ export function breakZones(asg, pieces, opts = {}) {
           im.userData.sharedGeometry = true;
           im.castShadow = e.obj.castShadow;
           im.frustumCulled = false;
+          im.computeBoundingBox();
+          box.union(im.boundingBox);
           group.add(im);
           continue;
         }
@@ -651,9 +753,12 @@ export function breakZones(asg, pieces, opts = {}) {
           const ang = Math.atan2(_w.z - rotor.z, _w.x - rotor.x) + Math.PI;
           return Math.floor((ang / (Math.PI * 2)) * blades) % blades === blade;
         };
-        const sub = subsetGeometry(g, keep, e.M);
+        // Baked into body metres here; its bounds are worked out once it has been centred below.
+        const sub = subsetGeometry(g, keep, e.M, false);
         if (!sub) continue;
         tris += triCount(sub);
+        sub.computeBoundingBox();
+        box.union(sub.boundingBox);
         const mesh = new THREE.Mesh(sub, e.obj.material);
         mesh.name = e.obj.name || 'piece';
         mesh.castShadow = e.obj.castShadow;
@@ -662,7 +767,6 @@ export function breakZones(asg, pieces, opts = {}) {
       }
       if (!group.children.length) continue;
       // Centre the piece on itself.
-      const box = new THREE.Box3().setFromObject(group);
       const com = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
       const shift = new THREE.Matrix4().makeTranslation(-com.x, -com.y, -com.z);
@@ -676,7 +780,20 @@ export function breakZones(asg, pieces, opts = {}) {
           // Its bounds were worked out (and kept) before the shift.
           ch.computeBoundingBox();
           ch.computeBoundingSphere();
-        } else ch.geometry.translate(-com.x, -com.y, -com.z);
+        } else {
+          // A translation moves only the positions (a normal is unchanged by one): the flat loop, then the
+          // bounds once, in place of geometry.translate()'s matrix pass over positions AND normals.
+          const a = ch.geometry.attributes.position.array;
+          for (let i = 0; i < a.length; i += 3) {
+            a[i] -= com.x;
+            a[i + 1] -= com.y;
+            a[i + 2] -= com.z;
+          }
+          ch.geometry.attributes.position.needsUpdate = true;
+          ch.geometry.boundingBox.min.sub(com);
+          ch.geometry.boundingBox.max.sub(com);
+          ch.geometry.computeBoundingSphere();
+        }
       }
       out.push({
         group,
@@ -782,14 +899,15 @@ function applyDeform(asg, rec, d, fn) {
     // Deformed on a geometry of its own (the cut one), never the shared one.
     if (!rec.owned.has(o.geometry)) {
       let mine = it.geo;
-      let zones = it.zone;
       if (!(it.geo !== e.geometry && it.geo.userData.breakupCut)) {
-        mine = subsetGeometry(it.geo, () => true);
-        zones = Uint8Array.from(mine.userData.keptTris, (t) => it.zone[t]);
+        // The whole mesh, triangle for triangle, so the zone list is still its zone list: three's
+        // clone() copies the arrays natively, where re-indexing it through subsetGeometry() walked
+        // every vertex in script (a 30,000-triangle helicopter paid tens of milliseconds for that).
+        mine = it.geo.clone();
+        mine.userData = { ...mine.userData, breakupClone: true };
       }
       setGeometry(rec, o, mine);
       it.geo = o.geometry;
-      it.zone = zones;
     }
     const g = o.geometry;
     if (g === EMPTY) continue;
@@ -811,12 +929,69 @@ function applyDeform(asg, rec, d, fn) {
       }
     }
     pos.needsUpdate = true;
-    if (g.attributes.normal) g.computeVertexNormals();
+    if (g.attributes.normal && moved) refreshNormals(g, mark);
     g.computeBoundingBox();
     g.computeBoundingSphere();
   }
   void L;
   return moved;
+}
+
+/**
+ * The normals of the triangles that moved, recomputed the way three's
+ * computeVertexNormals() does it. A model's meshes are mostly unindexed, so
+ * every vertex is one triangle's and its normal IS that face's: only the
+ * faces with a marked vertex need doing, where the whole-mesh recompute
+ * walked a 30,000-triangle helicopter skin to bend a few hundred of them.
+ * An indexed mesh shares vertices between faces, so it takes the whole pass.
+ */
+function refreshNormals(g, mark) {
+  if (g.index) {
+    g.computeVertexNormals();
+    return;
+  }
+  const pos = g.attributes.position.array;
+  const nor = g.attributes.normal;
+  const out = nor.array;
+  if (!(pos instanceof Float32Array) || !(out instanceof Float32Array) || nor.itemSize !== 3 || g.attributes.position.itemSize !== 3) {
+    g.computeVertexNormals();
+    return;
+  }
+  const n = Math.floor(pos.length / 9);
+  for (let t = 0; t < n; t++) {
+    const a = t * 3;
+    if (!mark[a] && !mark[a + 1] && !mark[a + 2]) continue;
+    const i = a * 3;
+    const ax = pos[i];
+    const ay = pos[i + 1];
+    const az = pos[i + 2];
+    const bx = pos[i + 3];
+    const by = pos[i + 4];
+    const bz = pos[i + 5];
+    const cx = pos[i + 6];
+    const cy = pos[i + 7];
+    const cz = pos[i + 8];
+    // cb × ab, as three does: (c - b) × (a - b).
+    const cbx = cx - bx;
+    const cby = cy - by;
+    const cbz = cz - bz;
+    const abx = ax - bx;
+    const aby = ay - by;
+    const abz = az - bz;
+    let nx = cby * abz - cbz * aby;
+    let ny = cbz * abx - cbx * abz;
+    let nz = cbx * aby - cby * abx;
+    const l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+    nx /= l;
+    ny /= l;
+    nz /= l;
+    for (let k = 0; k < 3; k++) {
+      out[i + k * 3] = nx;
+      out[i + k * 3 + 1] = ny;
+      out[i + k * 3 + 2] = nz;
+    }
+  }
+  nor.needsUpdate = true;
 }
 
 /**

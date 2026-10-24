@@ -126,7 +126,7 @@ import { registerExtension } from '../game/extensions.js';
 import * as Prog from '../game/progression.js';
 import { createAircraftModel, groundOffsetFor } from '../aircraft/model-adapter.js';
 import { specFor, performanceFor } from '../aircraft/types.js';
-import { AIRLINE_LIVERIES, schemeFor } from '../aircraft/liveries.js';
+import { AIRLINE_LIVERIES, airlinesFor, schemeFor } from '../aircraft/liveries.js';
 import { heightAt, isOnRunway, isOnRunway2, AIRPORT, MAP } from '../world/terrain.js';
 import { buildField, runwayFor, groundY, alongR2, holdPoint } from './traffic/field.js';
 import * as PL from './traffic/planner.js';
@@ -283,8 +283,10 @@ function shortName(type) {
  * airliner in it was "Air Force One 47" on the radio and the traffic tag).
  * `rand` is the generator to draw from; null when there is no scheme to give.
  */
-export function pickAirlineScheme(rand = T.rand) {
-  const painted = AIRLINE_LIVERIES;
+export function pickAirlineScheme(rand = T.rand, type = null) {
+  // With a type: only the airlines that fly it (liveries.js airlinesFor); null
+  // when none does, and the caller keeps the house colours.
+  const painted = type ? airlinesFor(type) : AIRLINE_LIVERIES;
   return painted.length ? painted[Math.min(painted.length - 1, Math.floor(rand() * painted.length))] : null;
 }
 
@@ -294,7 +296,7 @@ function makeCraft(type, idx, home) {
   let scheme = null;
   let brand = shortName(type);
   if (perf.cat === 'airliner') {
-    const l = pickAirlineScheme();
+    const l = pickAirlineScheme(T.rand, type);
     if (l) {
       scheme = l;
       brand = String(l.name).replace(/\s+(Air|States)$/i, '');

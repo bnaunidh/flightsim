@@ -18,6 +18,9 @@ import { check as crashes } from './crashes.browser.js';
 import { check as breakup } from './breakup.browser.js';
 import { check as events } from './events.browser.js';
 import { check as airliners } from './airliners.browser.js';
+import { check as newAircraft } from './new-aircraft.browser.js';
+import { check as lancer } from './lancer.browser.js';
+import { check as c17 } from './c17.browser.js';
 import { check as afo } from './afo.browser.js';
 import { check as afoPresident } from './afo-president.browser.js';
 import { check as heatSeekers } from './heat-seekers.browser.js';
@@ -59,6 +62,9 @@ import { check as story } from './story.browser.js';
 import { check as loadingScreens } from './loading-screens.browser.js';
 import { check as skins } from './skins.browser.js';
 import { check as crashSweep } from './crash-sweep.browser.js';
+import { check as crashFreeze } from './crash-freeze.browser.js';
+import { check as birdStrike } from './bird-strike.browser.js';
+import { check as walkAway } from './walk-away.browser.js';
 import { check as landingZone } from './landing-zone.browser.js';
 import { check as hudStack } from './hud-stack.browser.js';
 
@@ -73,7 +79,19 @@ export const CHECKS = [
   { id: 'breakup', check: breakup },
   // After breakup: the crash sweep's findings on the real game — every crash under the flicker probe, sea debris, a wreck on land, the replay after a teleport.
   { id: 'crash-sweep', check: crashSweep },
+  // After the sweep: the crash FRAME itself — no shader recompiles, the zone survey built ahead, under 50 ms.
+  { id: 'crash-freeze', check: crashFreeze },
+  // The bird strike's flock: in first, the hit under half a second later, once.
+  { id: 'bird-strike', check: birdStrike },
+  // Out on foot, the empty aeroplane's crash is news, not a reset.
+  { id: 'walk-away', check: walkAway },
   { id: 'airliners', check: airliners },
+  // After airliners: the ten added by new-aircraft, each flown round a circuit on its own map.
+  { id: 'new-aircraft', check: newAircraft },
+  // The B-1B Lancer: its swing wing, its keys and panel, a circuit on Kestrel, Mach 1 at 40,000 ft.
+  { id: 'lancer', check: lancer },
+  // The C-17 Globemaster III: its cargo ramp (key, panel, the speed rule) and a circuit on Kestrel.
+  { id: 'c17', check: c17 },
   { id: 'fighters', check: fighters },
   { id: 'events', check: events },
   // After events: Air Force One is the same mission-roles/afo-combat shape, driven the same way.
