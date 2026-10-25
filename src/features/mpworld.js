@@ -57,7 +57,7 @@ import { EVENTS } from '../aircraft/physics.js';
 import { TIMES, CONDITIONS } from '../world/weather.js';
 import { heightAt } from '../world/terrain.js';
 import { createAircraftModel, syncAircraftModel, groundOffsetFor } from '../aircraft/model-adapter.js';
-import { getAircraft, specFor } from '../aircraft/types.js';
+import { getAircraft, specFor, isHelicopter } from '../aircraft/types.js';
 import { schemeFor } from '../aircraft/liveries.js';
 import * as Prog from '../game/progression.js';
 import { clearTraffic, spawnTraffic } from './traffic.js';
@@ -616,7 +616,7 @@ function fallbackHooks(sim) {
     ac.on(EVENTS.CRASH, () => {
       if (!inGame() || crashesHere()) return;
       const map = sim.settings ? sim.settings.map : null;
-      emitHappening({ type: 'crash', kind: 'bonk', vehicle: sim.aircraftType && sim.aircraftType.id === 'harrier' ? 'heli' : 'plane', x: Math.round(ac.pos.x), z: Math.round(ac.pos.z), map });
+      emitHappening({ type: 'crash', kind: 'bonk', vehicle: isHelicopter(sim.aircraftType) ? 'heli' : 'plane', x: Math.round(ac.pos.x), z: Math.round(ac.pos.z), map });
     });
   }
   if (!W.wrapped && typeof sim.triggerNatural === 'function' && !sim.triggerNatural.__happenings) {

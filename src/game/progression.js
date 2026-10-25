@@ -47,6 +47,15 @@ export const UNLOCKS = [
   { aircraft: 'f22', cost: 3400, why: 'The quickest of the real jets', military: true },
   { aircraft: 'a10', cost: 2400, why: 'Slow, tough, and that gun', military: true },
   { aircraft: 'massimo', cost: 3600, why: 'The fastest thing in the game' },
+  // The helicopter wave (aircraft/extra/helis.js). Nothing under 600, the
+  // cheapest aeroplane: tests/features/credits.mjs wants three runs or more.
+  { aircraft: 'r44', cost: 600, why: 'Two blades and no forgiveness' },
+  { aircraft: 'bell407', cost: 700, why: 'The light single, done properly' },
+  { aircraft: 'h145', cost: 900, why: 'The air ambulance' },
+  { aircraft: 'aw139', cost: 1400, why: 'A hoist, five blades and the legs for the sea' },
+  { aircraft: 'uh60', cost: 1800, why: 'Eleven troops and a canted tail', military: true },
+  { aircraft: 'ch47', cost: 2600, why: 'Two rotors, a ramp, nothing lifts more', military: true },
+  { aircraft: 'ah64', cost: 3000, why: 'The gun follows the sight', military: true },
 ];
 
 /*

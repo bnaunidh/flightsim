@@ -24,7 +24,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { createAircraftModel as createLegacyModel, glowSprite } from './model.js';
 import { getAircraft, DEFAULT_AIRCRAFT_ID } from './types.js';
-import { strobeLevel } from '../render/flash-safety.js';
+import { strobeLevel, blinkLevel } from '../render/flash-safety.js';
 // BLENDER MODELS: the Skyhook from tools/blender/, when it loaded.
 import { blenderAircraftModel } from '../vehicles/blender-models.js';
 
@@ -384,12 +384,25 @@ function updateLights(rig, dt, ac, weather) {
         ? 0.55
         : 0.18
     : 0.5;
-  const on = ac.engineOn !== false || (ac.rpm || 0) > 0.05;
+  // A wreck's lamps go out with it. The ground rules below (strobes only
+  // rolling fast or airborne, the dimmer taxi light under 15 m/s) read
+  // onGround and the ground speed, and a bouncing, sliding wreck crosses both
+  // every few frames: the landing spot stepped between its two brightnesses
+  // over the ground round an A380 nosing in, a flicker the crash sweep counts.
+  const on = !ac.crashed && (ac.engineOn !== false || (ac.rpm || 0) > 0.05);
   const L = rig.lights;
-  // Double flash: two quick pulses, then a gap. It reads as an aeroplane from
-  // a long way off in a way that a steady blink does not.
-  // With Reduce flashing, one soft, dimmer pulse instead (render/flash-safety.js).
+  // The real patterns. Strobes: a double flash (two quick pulses, then a
+  // gap), which reads as an aeroplane from a long way off in a way a steady
+  // blink does not — and only once the aeroplane is on the runway or in the
+  // air, as the checklist has it (on the apron they would blind the ramp).
+  // Beacon: a hard red blink about 45 a minute, on whenever an engine runs.
+  // With Reduce flashing, both become soft pulses at the same rate
+  // (render/flash-safety.js).
+  const onGround = ac.onGround !== false;
+  const gs = ac.groundSpeed || 0;
   const flash = strobeLevel(rig.t, 1.4, 0.06, 0.1);
+  const strobesOn = on && (!onGround || gs > 15);
+  const beacon = blinkLevel(rig.t, 1.3, 0.28);
   const set = (sprite, lit) => {
     sprite.material.opacity = lit * dark * 0.95;
     sprite.scale.setScalar(sprite.userData.baseScale * (0.55 + dark * 0.45) * (0.85 + lit * 0.3));
@@ -397,12 +410,15 @@ function updateLights(rig, dt, ac, weather) {
   };
   set(L.navLeft, on ? 1 : 0);
   set(L.navRight, on ? 1 : 0);
-  set(L.tail, on ? 0.8 : 0);
-  set(L.strobeL, on ? flash : 0);
-  set(L.strobeR, on ? flash : 0);
-  set(L.beacon, on ? 0.4 + 0.6 * Math.abs(Math.sin(rig.t * 2.2)) : 0);
+  // The tail light is the aft white strobe on a jet: it flashes with the wing tips.
+  set(L.tail, on ? (strobesOn ? 0.4 + 0.6 * flash : 0.4) : 0);
+  set(L.strobeL, strobesOn ? flash : 0);
+  set(L.strobeR, strobesOn ? flash : 0);
+  set(L.beacon, on ? beacon : 0);
+  // Landing lights with the gear; on the ground, rolling slowly, the same
+  // lamp is the taxi light: dimmer, and it stays on the tarmac ahead.
   const gearDown = (ac.gearPos ?? 1) > 0.5;
-  const landing = on && gearDown ? 1 : 0;
+  const landing = on && gearDown ? (onGround && gs < 15 ? 0.55 : 1) : 0;
   set(L.landing, landing);
   rig.spot.intensity = landing * (0.4 + dark * 2.6) * 90;
 }

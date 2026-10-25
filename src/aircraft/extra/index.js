@@ -35,7 +35,9 @@ import { TYPES as LANCER } from './lancer.js';
 import { TYPES as C17 } from './c17.js';
 // ...and the A-10 Thunderbolt II (owner: "Fairchild A-10 Thunderbolt II ... slow & tough").
 import { TYPES as ATTACK } from './attack.js';
+// ...and the helicopter wave: Bell 407, H145, R44, AW139, UH-60, CH-47, AH-64 (owner, 2026-10-21/23).
+import { TYPES as HELIS } from './helis.js';
 
 export function extraAircraft(base) {
-  return [...FIGHTERS(base), ...AIRLINERS(base), ...TPOSE(base), ...JETS(base), ...GIANTS(base), ...LANCER(base), ...C17(base), ...ATTACK(base)];
+  return [...FIGHTERS(base), ...AIRLINERS(base), ...TPOSE(base), ...JETS(base), ...GIANTS(base), ...LANCER(base), ...C17(base), ...ATTACK(base), ...HELIS(base)];
 }

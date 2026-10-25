@@ -103,26 +103,31 @@ const between = (a, b) => a + rng() * (b - a);
 {
   const A = Input.ACTIONS;
   const k = A.lockOn;
-  ok('lockOn is an action: ctx ["plane"], group "Weapons", default Home', !!k && JSON.stringify(k.ctx) === '["plane"]' && k.group === 'Weapons' && k.default.length === 1 && k.default[0] === 'Home', JSON.stringify(k));
+  ok('lockOn is an action: ctx ["plane","heli"] (the Apache has a gun), group "Weapons", default Home', !!k && JSON.stringify(k.ctx) === '["plane","heli"]' && k.group === 'Weapons' && k.default.length === 1 && k.default[0] === 'Home', JSON.stringify(k));
   const sharing = Object.entries(A).filter(([id, a]) => id !== 'lockOn' && a.default.includes('Home')).map(([id]) => id);
   ok('no other action in any game defaults to the lock key', sharing.length === 0, sharing.join(', ') || 'Home is nobody else\'s');
   const clashes = Input.findConflicts(Input.defaultBindings());
   ok('no two default keys clash anywhere in the registry (the lock key, the fire key and the flares key included)', Object.keys(clashes).length === 0, JSON.stringify(clashes).slice(0, 200));
   ok('the lock key is in the aeroplane\'s Weapons group next to fire and flares', Input.groupedActions('plane').some((g) => g.id === 'Weapons' && ['fireMissile', 'flares', 'lockOn'].every((id) => g.items.some((i) => i.key === id))));
-  ok('...and a helicopter\'s key list does not have it (no guns there)', !('lockOn' in Input.actionsFor('heli')));
+  ok('...and the helicopter\'s key list has it too (the Apache carries a gun), with no clash there', 'lockOn' in Input.actionsFor('heli') && !Object.keys(Input.findConflicts(Input.defaultBindings(), 'heli')).length);
   ok('the key is not one the hand-written key code uses (a plug-in key goes through isKey)', extensions().some((e) => e.id === 'gunsight' && typeof e.key === 'function'));
 }
 
 /* --------------------------------------------------------- 2. who has guns -- */
 {
-  const want = new Set(['vanguard', 'osprey', 'nightjar', 'f22', 'f35b', 'fa18', 'a10']);
+  // The seven military jets — and the Apache, the one helicopter with a gun
+  // (aircraft/extra/helis.js `guns: true`, demo-helis 2026-10-24).
+  const want = new Set(['vanguard', 'osprey', 'nightjar', 'f22', 'f35b', 'fa18', 'a10', 'ah64']);
   const got = AIRCRAFT.filter((t) => G.hasGuns(t, 'flight')).map((t) => t.id);
-  ok('exactly the seven military jets have guns', got.length === want.size && got.every((id) => want.has(id)), got.join(', '));
+  ok('exactly the seven military jets and the Apache have guns', got.length === want.size && got.every((id) => want.has(id)), got.join(', '));
   const never = AIRCRAFT.filter((t) => /airliner|trainer|tourer|helicopter|racer/i.test(`${t.class}`) || ['massimo', 'tpose', 'harrier'].includes(t.id)).filter((t) => !want.has(t.id));
-  ok('no airliner, trainer, tourer, helicopter, Air Massimo or T-Pose Harrison has any', never.length >= 8 && never.every((t) => !G.hasGuns(t, 'flight')), never.map((t) => t.id).join(', '));
-  ok('it is the heat-seekers\' own rule: the same list, type for type', AIRCRAFT.every((t) => G.hasGuns(t, 'flight') === HSK.carriesMissiles({ aircraftType: t, game: t.id === 'harrier' ? 'heli' : 'flight' })));
-  ok('a military jet in the helicopter game has none', AIRCRAFT.filter((t) => isMilitary(t)).every((t) => !G.hasGuns(t, 'heli')));
-  ok('a designer can mark a special type `guns: true` (a meteor hunter) and `guns: false`', G.hasGuns({ id: 'hunter', class: 'Tourer', guns: true }, 'flight') && !G.hasGuns({ id: 'x', class: 'Fighter', guns: false }, 'flight') && !G.hasGuns({ id: 'hunter', guns: true }, 'heli'));
+  ok('no airliner, trainer, tourer, other helicopter, Air Massimo or T-Pose Harrison has any', never.length >= 8 && never.every((t) => !G.hasGuns(t, 'flight')), never.map((t) => t.id).join(', '));
+  const rotorcraft = AIRCRAFT.filter((t) => t.shape && t.shape.power && t.shape.power.rotor);
+  ok('it is the heat-seekers\' own rule for every aeroplane: the same list, type for type', AIRCRAFT.filter((t) => !rotorcraft.includes(t)).every((t) => G.hasGuns(t, 'flight') === HSK.carriesMissiles({ aircraftType: t, game: 'flight' })));
+  ok('no helicopter carries heat-seekers, the military ones included', rotorcraft.length >= 8 && rotorcraft.every((t) => !HSK.carriesMissiles({ aircraftType: t, game: 'heli' }) && !HSK.carriesMissiles({ aircraftType: t, game: 'flight' }) && !G.militaryJet(t, 'flight')), rotorcraft.map((t) => t.id).join(', '));
+  ok('the Apache has its gun in the helicopter game too; no other helicopter does', G.hasGuns(getAircraft('ah64'), 'heli') && rotorcraft.filter((t) => t.id !== 'ah64').every((t) => !G.hasGuns(t, 'heli') && !G.hasGuns(t, 'flight')));
+  ok('a military jet in the helicopter game has none', AIRCRAFT.filter((t) => isMilitary(t) && !(t.shape && t.shape.power && t.shape.power.rotor)).every((t) => !G.hasGuns(t, 'heli')));
+  ok('a designer can mark a special type `guns: true` (a meteor hunter, in either game) and `guns: false`', G.hasGuns({ id: 'hunter', class: 'Tourer', guns: true }, 'flight') && !G.hasGuns({ id: 'x', class: 'Fighter', guns: false }, 'flight') && G.hasGuns({ id: 'hunter', guns: true }, 'heli'));
   ok('no type is missing: nothing and null have none', !G.hasGuns(null) && !G.hasGuns(undefined) && !G.hasGuns({}));
   // The zapper asks the same rule about the aeroplane being flown.
   const mk = (id, game = 'flight') => ({ aircraft: {}, aircraftType: getAircraft(id), game });

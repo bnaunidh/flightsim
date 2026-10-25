@@ -25,6 +25,7 @@ import * as THREE from '../../vendor/three.module.js';
 import { extLayer, registerExtension } from '../../game/extensions.js';
 import { multiplayer } from '../multiplayer.js';
 import { COMIC, wordFor } from '../../render/comic.js';
+import { isHelicopter } from '../../aircraft/types.js';
 
 export const mp = multiplayer;
 export const ch = multiplayer.events;
@@ -80,7 +81,9 @@ export function ride(sim) {
   const ac = sim.aircraft;
   if (!ac || !ac.pos) return null;
   const type = sim.aircraftType ? sim.aircraftType.id : 'skylark';
-  return { kind: 'air', heli: type === 'harrier', obj: ac, pos: ac.pos, vel: ac.vel, quat: ac.quat, onGround: !!ac.onGround, model: sim.model || null, radius: radiusOfModel(sim.model, `air:${type}`), type };
+  // Any rotorcraft, not only the Skyhook: a knocked-down Apache comes back in a
+  // hover like the Skyhook does (pvp.js), not at a plane's 260 m and cruise speed.
+  return { kind: 'air', heli: isHelicopter(sim.aircraftType), obj: ac, pos: ac.pos, vel: ac.vel, quat: ac.quat, onGround: !!ac.onGround, model: sim.model || null, radius: radiusOfModel(sim.model, `air:${type}`), type };
 }
 
 const FWD = new THREE.Vector3();

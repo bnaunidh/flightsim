@@ -269,7 +269,8 @@ export function finishModel(model,{update=()=>{},reset=()=>{},dispose=()=>{}}={}
       torque.divide(body.inertia).applyQuaternion(body.quaternion);body.angularVelocity.add(torque);body.wake();},
     airframeDamage:{activeParts:0},crashBody:null,crashRetired:false,beginCrash,updateCrash,updateDebris,resetDamage,
     update(dt,state={}){if(s.disposed)return;if(!Number.isFinite(dt)||dt<0)throw new RangeError('dt must be finite seconds >=0.');
-      if(s.crash)updateCrash(dt);else if(!s.crashRetired)update(dt,state||{});updateDebris(dt);},
+      // userData.hullDriven: the game's own airframe body (src/features/breakup.js) is sliding, cartwheeling or skipping this model and poses it itself; this body stands aside (its contacts, dents and debris still run).
+      if(s.crash){if(!model.userData.hullDriven)updateCrash(dt);}else if(!s.crashRetired)update(dt,state||{});updateDebris(dt);},
     dispose(){if(s.disposed)return;resetDamage();dispose();s.disposed=true;
       for(const instance of s.instances)instance.dispose();for(const geometry of s.geometries)geometry.dispose();for(const material of s.materials)material.dispose();}
   });return model;

@@ -57,6 +57,7 @@ const BB = await imp('game/breakup-body.js');
 const AF = await imp('features/breakup/airframe.js');
 const F = await imp('features/breakup.js');
 const { Wreck } = await imp('game/wreck.js');
+const FS = await imp('render/flash-safety.js');
 TER.applyMap(TER.MAP.id);
 
 let pass = 0;
@@ -468,12 +469,35 @@ ok('world: a flat spot on land, a paved one and open sea for the crashes', !!lan
   ok('hanging: pieces that let go later were never counted as free before their moment', s[1].pieces === s[s.length - 1].pieces || s[s.length - 1].pieces <= s[1].pieces, `${s[1].pieces} -> ${s[s.length - 1].pieces}`);
 }
 
-/* ---- 5f. the pack's aeroplanes keep their own body ---- */
+/* ---- 5f. the pack's aeroplanes get the same body (v70.2 gave them a catch impulse on their own sliding body only) — with Reduce flashing off ---- */
+{
+  // With Reduce flashing on (the default) they keep v70.2's catch on their own body: the sliding pack wreck failed the crash sweep's flash probe (features/breakup.js packHullAllowed).
+  FS.setReduceFlashing(true);
+  const simR = makeSim('vanguard', 17);
+  const sR = crash(simR, runway, { vel: [60, -3, 0], gear: 0, part: 'fuselage', reason: 'You landed with the wheels up' }, 2);
+  ok('pack, Reduce flashing on: the Vanguard keeps its own crash body (no airframe hull, not hull-driven) — v70.2 as shipped', F.PACK_HULL_WITH_REDUCED_FLASHING || (!sR[1].hull && !simR.model.userData.hullDriven), `hull ${sR[1].hull}, hullDriven ${simR.model.userData.hullDriven}`);
+  FS.setReduceFlashing(false);
+}
 {
   const sim = makeSim('vanguard', 17);
   const fleet = !!sim.model.userData.fleetBridge;
-  const s = crash(sim, land, { vel: [60, -3, 0], gear: 0, part: 'fuselage' }, 1);
-  ok('pack: a fleet-pack aeroplane (the Vanguard) breaks up but is not given our body — it has its own', !fleet || (!s[1].hull && !D().S.hull), `fleet ${fleet}, hull ${s[1].hull}`);
+  const s = crash(sim, runway, { vel: [60, -3, 0], gear: 0, part: 'fuselage', reason: 'You landed with the wheels up' }, 12);
+  const plan0 = D().stats.lastPlan;
+  const s1 = at(s, 1);
+  const last = s[s.length - 1];
+  ok('pack: a fleet-pack aeroplane (the Vanguard) is drawn by the pack, and its wheels-up arrival is a belly slide with OUR body', fleet && plan0.mode === 'belly' && s[1].hull, `fleet ${fleet}, mode ${plan0.mode}, hull ${s[1].hull}`);
+  ok('pack: the pack\'s own body stands aside while ours runs (userData.hullDriven), and the model is posed from the aeroplane', sim.model.userData.hullDriven === true && sim.model.position.distanceTo(sim.aircraft.pos) < 0.01, `hullDriven ${sim.model.userData.hullDriven}, model-aircraft ${f2(sim.model.position.distanceTo(sim.aircraft.pos))} m`);
+  ok('pack: it slides on tens of metres in the first second and comes to rest down the runway', s1.pos.distanceTo(s[0].pos) > 25 && last.speed < 0.5 && last.pos.distanceTo(s[0].pos) > 60 && !last.hull, `${f1(s1.pos.distanceTo(s[0].pos))} m at 1 s; ${f1(last.pos.distanceTo(s[0].pos))} m, ${f1(last.speed)} m/s, hull ${last.hull}`);
+  ok('pack: never through the ground, never flung into the air', s.every((q) => q.pos.y > runway.h - 1.5 && q.pos.y < runway.h + 12), `y ${f1(Math.min(...s.map((q) => q.pos.y)))}..${f1(Math.max(...s.map((q) => q.pos.y)))}`);
+  // And a wing tip caught: the cartwheel, on an airliner.
+  const sim2 = makeSim('a320', 21);
+  const w = crash(sim2, land, { vel: [55, -6, 0], bank: 0.5, speed: 60, part: 'leftWing', reason: 'The left wing hit the ground' }, 4);
+  const yaw0 = yawOf(w[0].quat);
+  let turned = 0;
+  for (const q of w) turned = Math.max(turned, Math.abs(((yawOf(q.quat) - yaw0 + Math.PI * 3) % (Math.PI * 2)) - Math.PI));
+  ok('pack: an A320 catching a wing tip is thrown round over it (more than 30 degrees of yaw) on our body, not slid straight on', D().stats.lastPlan.mode === 'wingtip' && w[1].hull && turned > Math.PI / 6, `mode ${D().stats.lastPlan.mode}, hull ${w[1].hull}, turned ${Math.round((turned * 180) / Math.PI)} deg`);
+  ok('pack: it does not go through the ground', w.every((q) => q.pos.y > land.h - 2), `lowest ${f1(Math.min(...w.map((q) => q.pos.y)))} (ground ${f1(land.h)})`);
+  FS.setReduceFlashing(true);
 }
 
 /* ---- 6. budgets ------------------------------------------------------------------ */

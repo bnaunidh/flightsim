@@ -420,7 +420,14 @@ export class BreakupFx {
           continue;
         }
         if (p.kind === 'foam') p.y = 0.12;
-        A[i] = K.alpha * (p.kind === 'smoke' || p.kind === 'dust' || p.kind === 'foam' ? Math.sin(Math.min(1, f * 1.4) * Math.PI) : Math.pow(1 - f, 1.3));
+        // Flame (fire and a pop's) with Reduce flashing: swells in over the first
+        // quarter of its life instead of arriving at full strength. A burning
+        // wreck that slides or falls lays its flame down along the way, and
+        // every particle that switched on at full brightness was a step up in
+        // the flicker probe's eyes (tests/flicker-probe.js); a pop's peak is
+        // softer for it too.
+        const attack = FLASH.reduce && (p.kind === 'fire' || p.kind === 'pop') ? Math.min(1, f * 4) : 1;
+        A[i] = K.alpha * attack * (p.kind === 'smoke' || p.kind === 'dust' || p.kind === 'foam' ? Math.sin(Math.min(1, f * 1.4) * Math.PI) : Math.pow(1 - f, 1.3));
         // Flame cools from yellow to red as it rises.
         const cool = p.kind === 'fire' || p.kind === 'pop' ? f : 0;
         C[i * 3] = p.r;

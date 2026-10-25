@@ -134,6 +134,9 @@ export function buildCourier(b) {
       fold: { axis: [0, 0, 1], angle: -side * 1.52 },
       door: 'outboard',
       doorWidth: 0.26,
+      // The well's door, flush in the wing's underside (inside the skin when
+      // shut: civil.mjs reads a plate hanging under the root as daylight), hinged outboard.
+      bay: { y: topY - 0.03, width: 0.34 },
     });
   }
   oleoLeg(b, {
@@ -145,6 +148,9 @@ export function buildCourier(b) {
     strut: 0.04,
     steer: true,
     fold: { axis: [1, 0, 0], angle: -1.5 },
+    // The pair in the belly either side of the well, ending ahead of the
+    // wing root (the leading edge is at z -0.9).
+    bay: { y: -0.58, width: 0.2, z: -1.3, len: 0.6 },
   });
 
   /* ---------------- Details ---------------- */

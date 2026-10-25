@@ -77,6 +77,9 @@ const NEVER_ARMED = /^(harrier|massimo|tpose)$/;
  */
 export function militaryJet(type, game = 'flight') {
   if (!type || game === 'heli') return false;
+  // A rotor is never a jet: the military helicopters (UH-60, CH-47, AH-64)
+  // carry no heat-seekers whatever the hangar calls them.
+  if (type.shape && type.shape.power && type.shape.power.rotor) return false;
   return isMilitary(type) && !NEVER_ARMED.test(String(type.id || ''));
 }
 
@@ -87,9 +90,13 @@ export function militaryJet(type, game = 'flight') {
  * the sight and the lock key all ask.
  */
 export function hasGuns(type, game = 'flight') {
-  if (!type || game === 'heli') return false;
+  if (!type) return false;
   if (type.guns === false) return false;
+  // A designer's `guns: true` wins, helicopter game or not: the Apache's
+  // chain gun is the one gun a rotorcraft here carries, and it follows this
+  // sight and the PvP rules like every other.
   if (type.guns === true) return true;
+  if (game === 'heli') return false;
   return militaryJet(type, game);
 }
 

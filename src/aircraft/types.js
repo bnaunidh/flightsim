@@ -153,8 +153,13 @@ function pointsFor(shape, aero) {
     ],
     hardPoints: [
       {
-        pos: new THREE.Vector3(0, -0.9 * s, noseZ),
-        what: shape.power.kind === 'jet' ? 'The nose struck the ground' : 'The propeller struck the ground',
+        // How far under the CG the nose's lowest point is: 0.9 bodies for
+        // every type that does not say; a tall-standing helicopter whose
+        // nose tip is well up (the Chinook's cockpit floor) says so with
+        // `hardNoseY`, or a run-on landing's rock onto the front wheels
+        // read as a nose strike (measured 2026-10-24: -6.7 degrees).
+        pos: new THREE.Vector3(0, (Number.isFinite(shape.hardNoseY) ? shape.hardNoseY : -0.9) * s, noseZ),
+        what: shape.power.kind === 'jet' ? 'The nose struck the ground' : shape.power.rotor ? 'The nose struck the ground' : 'The propeller struck the ground',
         // Which section of the model took it. Named here, beside the point
         // itself, so the two can never drift apart.
         part: 'nose',
@@ -933,6 +938,13 @@ AIRCRAFT.push(...extraAircraft({ TRAINER_SHAPE, TRAINER_AERO }));
 
 export const DEFAULT_AIRCRAFT_ID = 'skylark';
 
+/** Is this type a helicopter — a rotor instead of a wing? The one test every feature should ask. */
+export function isHelicopter(type) {
+  if (!type) return false;
+  if (type.shape && type.shape.power && type.shape.power.rotor) return true;
+  return /heli|rotor/.test(String(type.class || '').toLowerCase());
+}
+
 export function getAircraft(id) {
   const found = AIRCRAFT.find((a) => a.id === id);
   if (found) return found;
@@ -977,6 +989,21 @@ export function specFor(id) {
      * from here already; the flight model never asked for it.
      */
     rotorRadius: (t.shape && t.shape.power && t.shape.power.propRadius) || 4.2,
+    /*
+     * The rest of the rotor, for the air model in rotor-assist.js (rotorAir)
+     * and the models: where the hub is (metres above the CG), which way it
+     * turns seen from above (+1 anticlockwise, the American way; -1 the
+     * French/Russian way), how many blades, how fast, and where the
+     * retreating blade stalls (m/s; the Skyhook's ROTOR_TUNE.stallAt when a
+     * type does not say). `tandem` is the Chinook: two rotors, counter-
+     * rotating, no tail rotor and no torque to hold.
+     */
+    rotorHubY: ((t.shape.power && t.shape.power.y) ?? 1.3) * (t.shape.scale || 1),
+    rotorDir: (t.shape.power && t.shape.power.dir) || 1,
+    rotorBlades: (t.shape.power && t.shape.power.blades) || 4,
+    rotorHz: (t.shape.power && t.shape.power.hz) || 6.5,
+    rotorTandem: !!(t.shape.power && t.shape.power.tandem),
+    rotorStallAt: t.aero.rotorStallAt || 0,
     // A yaw damper, which is what a real swept-wing jet has and a light single
     // does not. Without one the fighter's Dutch roll sits at a damping ratio
     // of about 0.06 — it wallows from wingtip to wingtip and never settles.

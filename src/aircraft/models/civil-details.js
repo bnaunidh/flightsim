@@ -101,6 +101,26 @@ export function oleoLeg(b, o) {
   const w = b.addWheel(rec, [axle.x, axle.y, axle.z], o.R, o.width, { steer: !!o.steer, twin });
   const wheels = [w];
   const holder = w.holder;
+  /*
+   * The well's doors, hinged at the bay's edges in the skin (`bay.y`, the
+   * belly or wing underside there): a nose bay's pair swinging down either
+   * side of the leg, a main bay's one door on its outboard edge. They open
+   * while the leg travels and shut at both ends (civil-build.js updateCivil).
+   * `bay: { y, len?, width? }`; only on a leg that folds.
+   */
+  if (o.bay && o.fold && typeof b.addBayDoor === 'function') {
+    const y = o.bay.y;
+    const len0 = o.bay.len ?? Math.max(o.R * 2.8, len * 0.9);
+    const z = o.bay.z ?? (top.z + axle.z) / 2;
+    if (o.steer) {
+      const hw = o.bay.width ?? o.R * 1.1;
+      for (const s of [-1, 1]) b.addBayDoor({ hinge: [top.x + s * hw, y, z], width: hw, length: len0, sign: s });
+    } else {
+      const side = Math.sign(top.x) || 1;
+      const hw = o.bay.width ?? Math.max(o.R * 1.6, Math.abs(axle.x - top.x) + o.R * 0.8);
+      b.addBayDoor({ hinge: [Math.max(Math.abs(top.x), Math.abs(axle.x)) * side + side * o.R * 0.6, y, z], width: hw, length: len0, sign: side });
+    }
+  }
   if (o.door) {
     // A gear door riding on the leg: the panel that closes the well.
     const w = o.doorWidth ?? o.R * 1.5;
@@ -266,10 +286,14 @@ export function jetNacelle(b, { at, radius: r, length: L, pylonTo, pylonZ }) {
   // Inside of the lip, turning in to the throat.
   const inner = turned([[r * 0.74, L * 0.3], [r * 0.86, 0]], 14);
   bat.place(inner, m.dark, { p: [x, y, z] });
-  // Fan face and spinner.
+  // Fan face and spinner — and the fan itself, turning with the engine, a
+  // little ahead of the dark face so the blades read against it.
   const fan = new THREE.CircleGeometry(r * 0.75, 14);
-  bat.place(fan, m.grey, { p: [x, y, z + L * 0.3], r: [Math.PI, 0, 0] });
+  bat.place(fan, m.dark, { p: [x, y, z + L * 0.3], r: [Math.PI, 0, 0] });
   bat.place(turned([[0, -0.2 * r], [r * 0.16, -0.08 * r], [r * 0.26, 0.08 * r]], 12, { closeEnds: true }), m.metal, { p: [x, y, z + L * 0.3] });
+  if (typeof b.addFan === 'function') b.addFan({ at: [x, y, z + L * 0.3 - 0.03], radius: r * 0.74, blades: 14 });
+  // The thrust reverser: the aft of the cowl as a sleeve that slides back on the landing roll.
+  if (typeof b.addReverser === 'function') b.addReverser({ at: [x, y, z], radius: r, length: L });
   // Core and exhaust plug, behind the cowl.
   const core = turned([[r * 0.66, 0], [r * 0.5, L * 0.3]], 14);
   if (!m.hot) {

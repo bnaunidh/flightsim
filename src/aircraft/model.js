@@ -34,6 +34,7 @@ import { buildCourier } from './models/courier.js';
 import { buildMeridian } from './models/meridian.js';
 import { buildTempest } from './models/tempest.js';
 import { buildSkyhook } from './models/skyhook.js';
+import { HELI_BUILDERS } from './models/helis.js';
 
 /**
  * The civil types with an airframe of their own, by type id. ('harrier' is
@@ -45,6 +46,8 @@ const CIVIL = {
   meridian: buildMeridian,
   tempest: buildTempest,
   harrier: buildSkyhook,
+  // The helicopter wave (models/helis.js), drawn the same way.
+  ...HELI_BUILDERS,
 };
 
 /**

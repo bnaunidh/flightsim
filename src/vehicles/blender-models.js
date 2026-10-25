@@ -893,7 +893,10 @@ function heliStateFor(ac, weather, dt, A, st) {
   const running = !!ac.engineOn || (ac.rpm || 0) > 0.05;
   const airborne = ac.onGround === false;
   const nr = Number.isFinite(ac.propBlur) ? clamp(ac.propBlur, 0, 1) : running ? 1 : 0;
-  const target = !ac.engineOn && airborne ? Math.max(nr, 0.86) : nr;
+  // (physics.js now publishes the rotor's own speed through propBlur —
+  // rotorNr, rotor-assist.js — so an autorotation is drawn at the speed it
+  // is really turning; the 0.86 floor is for a flight model without it.)
+  const target = !ac.engineOn && airborne && !Number.isFinite(ac.rotorNr) ? Math.max(nr, 0.86) : nr;
   if (A.nr === undefined) A.nr = target;
   const rate = running ? (A.nr < target ? 0.25 : 0.9) : 0.22;
   A.nr += (target - A.nr) * clamp(dt * rate, 0, 1);

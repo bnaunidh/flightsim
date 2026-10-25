@@ -299,7 +299,9 @@ export function frameFromShape(type) {
       spanX: ((S.hSpan || 1.5) + 0.3) * s * 1.15,
     };
   const rotor = rotorcraft ? { x: 0, y: (P.y || 1.2) * s, z: (P.z || 0) * s, r: (P.propRadius || 4) * s, hubR: 0.5 * s } : null;
-  const tailRotor = rotorcraft
+  // A tandem (the Chinook) has no tail rotor: its two discs turn opposite
+  // ways and cancel each other's torque, so there is no such zone to lose.
+  const tailRotor = rotorcraft && !P.tandem
     ? { x: 0.25 * s, y: (S.finHeight ? S.finHeight * 0.6 : 0.9) * s, z: (fin(S.finZ) ? S.finZ : 3.2) * s, r: 0.9 * s }
     : null;
   return finishFrame({

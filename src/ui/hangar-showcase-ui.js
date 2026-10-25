@@ -381,7 +381,9 @@ export function installHangarShowcase(menus, screen, kit) {
     if (prev && prev !== 'hangar') ui.from = prev;
     ui.rebuildOrder();
     // Open on the aeroplane you have chosen — the helicopter, from Rotors.
-    const want = menus.currentGame === 'heli' ? 'harrier' : menus.chosenAircraft || 'skylark';
+    // (A chosen helicopter of any type stays chosen; the Skyhook is the Rotors page's default.)
+    const chosenType = AIRCRAFT.find((a) => a.id === menus.chosenAircraft);
+    const want = menus.currentGame === 'heli' && !(chosenType && chosenType.shape && chosenType.shape.power && chosenType.shape.power.rotor) ? 'harrier' : menus.chosenAircraft || 'skylark';
     ui.id = null;
     ui.select(ui.order.includes(want) ? want : ui.order[0], 0);
     screen.scrollTop = 0;

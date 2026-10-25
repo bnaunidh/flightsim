@@ -221,6 +221,8 @@ export function buildTempest(b) {
       width: 0.17,
       strut: 0.055,
       fold: { axis: [1, 0, 0], angle: -1.45 },
+      // The well's door under the wing root, hinged outboard.
+      bay: { y: -0.72, width: 0.42 },
     });
   }
   oleoLeg(b, {
@@ -232,6 +234,8 @@ export function buildTempest(b) {
     strut: 0.045,
     steer: true,
     fold: { axis: [1, 0, 0], angle: 1.45 },
+    // The pair in the belly either side of the well.
+    bay: { y: -0.7, width: 0.22 },
   });
 
   /* ---------------- Research kit ---------------- */

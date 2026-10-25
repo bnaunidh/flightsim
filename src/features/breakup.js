@@ -103,6 +103,7 @@ import { CRASH_SECONDS, dimsFrom } from './crashes/motion.js';
 import { syncAircraftModel } from '../aircraft/model-adapter.js';
 import { FLASH, FlashGate } from '../render/flash-safety.js';
 import { warmImpactShaders } from '../fleet/aircraft-impact.js';
+import { warmHiddenParts } from '../fleet/aircraft-realism.js';
 
 /** Pieces in the world at once, by quality. */
 export const PIECE_CAP = { low: 10, medium: 16, high: 24, ultra: 32 };
@@ -471,6 +472,8 @@ function warmShaders(sim) {
     if (sim.wreck && typeof sim.wreck.warm === 'function') sim.wreck.warm(r, sim.camera, sim.scene);
     // The model pack's own impact dust and contact scuffs (fleet/aircraft-impact.js), drawn on the first touch.
     warmImpactShaders(r, sim.camera, sim.scene);
+    // The aeroplane's parts that are hidden at rest (spoilers, doors, sleeves: fleet/aircraft-realism.js), which the flight itself never drew.
+    if (sim.model) warmHiddenParts(r, sim.model, sim.camera, sim.scene);
     S.warmed = r;
     S.stats.warms = (S.stats.warms || 0) + 1;
     return true;
@@ -787,6 +790,8 @@ function putBack(model) {
   if (S.zc.model === model) clearZoneCache();
   const u = model && model.userData;
   if (u && u.fleetBridge && typeof u.resetDamage === 'function') {
+    // The pack's own body may pose it again: our airframe body has let go.
+    u.hullDriven = false;
     try {
       u.resetDamage();
     } catch (e) {
@@ -1009,10 +1014,36 @@ function slowMoWanted(sim) {
  * or skips off the sea on its own contact points (./breakup/airframe.js).
  * ------------------------------------------------------------------ */
 
-/** Which crashes the body runs for: the player's own model (the pack's aeroplanes have one of their own), the real crash, not a mayday's gentle arrival. */
+/**
+ * Which crashes the body runs for: the player's model, the real crash, not a
+ * mayday's gentle arrival. The pack's aeroplanes too: they have a body of
+ * their own (fleet/common.js createGroundBody), which slides on friction and
+ * nothing else, so a Vanguard that caught a wing tip slid on in one piece
+ * where a Skylark cartwheeled. Now the same airframe body takes both, and
+ * the pack's stands aside while it does (userData.hullDriven, read by
+ * fleet/common.js update and aircraft-game-bridge.js) — its dents, scuffs
+ * and crushed skin still happen on the hit, as before.
+ */
+/**
+ * The pack's aeroplanes take this body only with Reduce flashing off, for
+ * now. Measured by the crash sweep (tests/features/crash-sweep.browser.js,
+ * Reduce flashing on, Comic effects off): with the body, a Massimo, an F-22
+ * or an A380 that bonks the tower or noses in flickered over 25-65% of a
+ * 10-degree field in three runs of four (WCAG's line is 25%), against 3-17%
+ * on v70.2 — the wreck now falls and slides on near the stopped camera, fire
+ * and all, where the pack's own body left it on the tower. Until that is
+ * solved they keep v70.2's catch impulse on their own body with the switch
+ * on (the default); with it off they slide and cartwheel like the rest.
+ */
+export const PACK_HULL_WITH_REDUCED_FLASHING = false;
+function packHullAllowed() {
+  return PACK_HULL_WITH_REDUCED_FLASHING || !FLASH.reduce;
+}
+
 function hullWanted(sim, model, quiet) {
   if (quiet || COMIC.on) return false;
-  if (!model || (model.userData && model.userData.fleetBridge)) return false;
+  if (!model) return false;
+  if (model.userData && model.userData.fleetBridge && !packHullAllowed()) return false;
   if (sim.mode === 'drive' || sim.riding) return false;
   return true;
 }
@@ -1024,7 +1055,7 @@ function startHull(sim, res, hit, quiet) {
   const plan = res.plan;
   const mode = plan.mode || { mode: 'belly', grip: 0.15, restitution: 0.1 };
   if (!hullWanted(sim, model, quiet)) {
-    // The pack's own crash body: give it the catch the impact's kind calls for, once it exists (its crash begins on the same event as ours).
+    // The pack's own crash body, when ours is not taking it (see packHullAllowed): give it the catch the impact's kind calls for, once it exists (its crash begins on the same event as ours). v70.2's behaviour.
     if (model && model.userData && model.userData.fleetBridge && mode.mode !== 'midair' && mode.mode !== 'knock') {
       S.hullPending = { model, point: hit.world.clone(), normal: hit.normal.clone(), mode, tries: 3 };
     }
@@ -1033,6 +1064,24 @@ function startHull(sim, res, hit, quiet) {
   const gone = new Set(res.pieces.flatMap((p) => p.zones));
   const hull = hullOf(res.asg, res.asg.layout, gone);
   if (!hull) return null;
+  // A pack aeroplane: from here its own body stands aside and this one poses the model (see hullWanted).
+  if (model.userData && model.userData.fleetBridge) {
+    model.userData.hullDriven = true;
+    // main.js hears the crash first, so on water the pack has already started
+    // its own sinking (aircraft-game-bridge.js beginGameAircraftCrash): it
+    // took the model's matrix over and parked an oil film and a bubble pool in
+    // the scene. This body sinks the wreck itself (startSink): give it back.
+    const gc = model.userData.gameCrash;
+    if (gc && gc.sinking) {
+      try {
+        gc.sinking.userData.dispose();
+        gc.sinking.removeFromParent();
+      } catch (e) {
+        /* the pack's effect is its own */
+      }
+      gc.sinking = null;
+    }
+  }
   const pos = new THREE.Vector3();
   const quat = new THREE.Quaternion();
   modelPose(model, pos, quat);
@@ -1069,7 +1118,7 @@ const _hp = new THREE.Vector3();
 const _hq = new THREE.Quaternion();
 
 function stepHull(sim, dt) {
-  // The pack's body: the catch, once.
+  // The pack's body: the catch, once (only when ours is not taking the wreck, see packHullAllowed).
   const pend = S.hullPending;
   if (pend) {
     const u = pend.model.userData;

@@ -158,9 +158,12 @@ for (const id of IDS) {
    * with hubs, oleos, torque links and doors on a jumbo. Measured 7.0k on the
    * A320 and 13.4-13.5k on the 747 and A380; a hero model of that size draws
    * in well under a millisecond on the hangar's turntable (counted in
-   * scratchpad/shots/airliners/*.json). 15,000 keeps the lid on.
+   * scratchpad/shots/airliners/*.json). 15,000 kept the lid on; the realism
+   * layer (fleet/aircraft-realism.js: slats, spoilers, bay doors, a
+   * translating sleeve per turbofan) adds 150-400 a type, and the A380 was
+   * at 14,964 already, so the lid is 16,000 now.
    */
-  ok(`${id}: under 15,000 triangles`, tris < 15000, `${Math.round(tris)}`);
+  ok(`${id}: under 16,000 triangles`, tris < 16000, `${Math.round(tris)}`);
   const fg = model.userData.flightGeometry;
   const b = fg.bounds;
   const span = b.max[0] - b.min[0];
@@ -578,7 +581,10 @@ for (const id of IDS) {
       meshes++;
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) mats.add(m.uuid);
     });
-    const lid = { a320: 90, b747: 125, a380: 135 }[id];
+    // The realism layer (fleet/aircraft-realism.js) hangs a hinge group per
+    // moving part — two spoiler sets, two slats, four bay doors, a reverser
+    // sleeve per turbofan, one heat haze — so each lid carries ten more.
+    const lid = { a320: 100, b747: 135, a380: 145 }[id];
     ok(`${id}: under ${lid} draws and 26 materials`, meshes < lid && mats.size <= 26, `${meshes} meshes, ${mats.size} materials`);
   }
 

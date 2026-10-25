@@ -31,8 +31,9 @@ import {
   airframeNormal,
   propTexture,
 } from '../../render/textures.js';
-import { Batch, blade, turned, tubePath } from './civil-kit.js';
+import { Batch, blade, turned, tubePath, naThick, naCamber } from './civil-kit.js';
 import { strobeLevel, blinkLevel } from '../../render/flash-safety.js';
+import { seatDoorsOnSkin } from '../bay-door-seat.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -355,9 +356,17 @@ export class Builder {
     this.surfaces = []; // { kind, obj, q0 }
     this.props = []; // { spin, disc, dir, blades, angle }
     this.rotor = null;
+    // Every rotor on the machine (a Chinook has two); `rotor` is the first.
+    this.rotors = [];
     this.gear = { legs: [], wheels: [], steer: [] };
     this.nozzles = [];
     this.lamps = {};
+    // The moving parts a real aeroplane has besides its control surfaces
+    // (see addSpoiler, addBayDoor, addReverser, addFan): one group each.
+    this.spoilers = []; // { obj, sign }
+    this.bayDoors = []; // { obj, sign }
+    this.reversers = []; // { obj, travel }
+    this.fans = []; // { obj }
     this.hullMeshes = [];
     // Per-frame work a type adds for itself (the Meridian's doors), run
     // after the shared update; and what it publishes on the model (doors,
@@ -448,7 +457,16 @@ export class Builder {
    * up under collective, and above a certain speed the blades give way to a
    * blur disc — the same trick as the propellers, laid flat.
    */
-  addRotor({ hub, radius, blades = 4, chord = 0.24, droop = -0.035, cone = 0.05, tilt = 0.08, hz = 6.5, tail = null }) {
+  /*
+   * `dir` is the turning sense seen from above (+1 anticlockwise, the
+   * American way; -1 clockwise: French and Russian machines, and the aft
+   * rotor of a tandem). `flap` is how far the blades flap once a turn with
+   * the airspeed (blowback), radians at 40 m/s, drawn while the blades are
+   * drawn. `tail.fenestron` draws the tail rotor inside a shroud; `tail.cant`
+   * leans its axis (radians, the Black Hawk's 20 degrees). `rootCut` keeps
+   * the blade roots clear of a big hub.
+   */
+  addRotor({ hub, radius, blades = 4, chord = 0.24, droop = -0.035, cone = 0.05, tilt = 0.08, hz = 6.5, dir = 1, flap = 0.03, rootCut = 0.3, hubR = 0.2, tail = null }) {
     const head = new THREE.Group();
     head.name = 'rotor head';
     head.position.set(hub[0], hub[1], hub[2]);
@@ -467,7 +485,7 @@ export class Builder {
       const coner = new THREE.Group();
       arm.add(coner);
       coners.push(coner);
-      const g = blade({ r0: 0.3, r1: radius, chord, rootChord: chord * 0.8, tipChord: chord * 0.9, twistRoot: 0.14, twistTip: 0.03, t: 0.12, stations: 5 });
+      const g = blade({ r0: rootCut, r1: radius, chord, rootChord: chord * 0.8, tipChord: chord * 0.9, twistRoot: 0.14 * dir, twistTip: 0.03 * dir, t: 0.12, stations: 5 });
       g.applyMatrix4(lay);
       const mesh = new THREE.Mesh(g, this.m.blade);
       mesh.castShadow = true;
@@ -475,27 +493,51 @@ export class Builder {
     }
     // Hub, grips and pitch links: they turn with the blades.
     const hb = new Batch('rotor hub');
-    hb.add(new THREE.CylinderGeometry(0.2, 0.24, 0.16, 12), this.m.grey);
+    const hs = hubR / 0.2;
+    hb.add(new THREE.CylinderGeometry(hubR, hubR * 1.2, 0.16 * hs, 12), this.m.grey);
     for (let i = 0; i < blades; i++) {
       const a = (i / blades) * Math.PI * 2;
-      hb.place(new THREE.BoxGeometry(0.42, 0.09, 0.14), this.m.metal, { p: [Math.cos(a) * 0.3, 0, -Math.sin(a) * 0.3], r: [0, a, 0] });
+      // Grip and pitch link, out to where the blade root starts.
+      hb.place(new THREE.BoxGeometry(rootCut * 1.4, 0.09 * hs, 0.14 * hs), this.m.metal, { p: [Math.cos(a) * rootCut * 0.95, 0, -Math.sin(a) * rootCut * 0.95], r: [0, a, 0] });
+      hb.place(new THREE.CylinderGeometry(0.018 * hs, 0.018 * hs, 0.22 * hs, 5), this.m.dark, { p: [Math.cos(a + 0.35) * rootCut * 0.8, -0.14 * hs, -Math.sin(a + 0.35) * rootCut * 0.8] });
     }
-    hb.place(new THREE.CylinderGeometry(0.06, 0.1, 0.16, 8), this.m.grey, { p: [0, 0.14, 0] });
+    hb.place(new THREE.CylinderGeometry(0.06 * hs, 0.1 * hs, 0.16 * hs, 8), this.m.grey, { p: [0, 0.14 * hs, 0] });
     hb.build(spin);
     // The disc turns with the head (its ghost blades go round) and leans
-    // with it. From the cabin, right under it, it thins to a third.
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(radius, 40), blurMaterial(rotorBlur()));
+    // with it. From the cabin, right under it, it thins to a third. It is a
+    // shallow cone, the way a loaded rotor is (coning), not a flat plate.
+    const discGeo = new THREE.CircleGeometry(radius, 40);
+    {
+      const pos = discGeo.attributes.position;
+      const tc = Math.tan(cone * 0.7);
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        pos.setZ(i, Math.hypot(x, y) * tc);
+      }
+      discGeo.computeVertexNormals();
+    }
+    const disc = new THREE.Mesh(discGeo, blurMaterial(rotorBlur()));
     disc.name = 'rotor disc';
     disc.rotation.x = -Math.PI / 2;
     disc.visible = false;
     thinWhenNear(disc, 3, 7, 0.35);
     spin.add(disc);
     this.root.add(head);
-    const R = { head, spin, blades: bladeGroup, coners, disc, droop, cone, tilt, hz, tail: null, tailBlades: null, tailDisc: null, tailCount: 2 };
+    const R = { head, spin, blades: bladeGroup, coners, disc, droop, cone, tilt, hz, dir, flap, tail: null, tailBlades: null, tailDisc: null, tailCount: 2, tailDir: 1 };
     if (tail) {
       const tg = new THREE.Group();
       tg.name = 'tail rotor';
       tg.position.set(tail.at[0], tail.at[1], tail.at[2]);
+      // A canted tail rotor (the Black Hawk's leans 20 degrees to lift a little).
+      if (tail.cant) tg.rotation.z = tail.cant;
+      // A fenestron: the fan inside a shroud in the fin.
+      if (tail.fenestron) {
+        const shroud = new Batch('fenestron shroud');
+        shroud.add(new THREE.TorusGeometry(tail.radius + 0.07, 0.07, 6, 28).rotateY(Math.PI / 2), this.m.tail);
+        shroud.add(new THREE.CylinderGeometry(0.11, 0.11, 0.2, 10).rotateZ(Math.PI / 2), this.m.grey);
+        shroud.build(tg);
+      }
       const tspin = new THREE.Group();
       tg.add(tspin);
       const tb = new THREE.Group();
@@ -504,7 +546,7 @@ export class Builder {
       const tailBladeMat = new THREE.MeshStandardMaterial({ map: tailBladeTexture(), roughness: 0.5, metalness: 0.2 });
       const n = tail.blades || 2;
       for (let i = 0; i < n; i++) {
-        const g = blade({ r0: 0.05, r1: tail.radius, chord: tail.chord || 0.12, twistRoot: 0.3, twistTip: 0.12, t: 0.1, stations: 4 });
+        const g = blade({ r0: tail.fenestron ? 0.1 : 0.05, r1: tail.radius, chord: tail.chord || 0.12, twistRoot: 0.3, twistTip: 0.12, t: 0.1, stations: 4 });
         // Chord fore-and-aft, turning about X.
         tbat.place(g, tailBladeMat, { r: [(i / n) * Math.PI * 2, 0, 0], q: new THREE.Quaternion().setFromEuler(new THREE.Euler((i / n) * Math.PI * 2, Math.PI / 2, 0, 'XYZ')) });
       }
@@ -521,8 +563,10 @@ export class Builder {
       R.tailBlades = tb;
       R.tailDisc = tdisc;
       R.tailCount = n;
+      R.tailDir = tail.dir || 1;
     }
-    this.rotor = R;
+    if (!this.rotor) this.rotor = R;
+    this.rotors.push(R);
     return R;
   }
 
@@ -637,6 +681,127 @@ export class Builder {
   }
 
   /**
+   * A spoiler panel lying on the wing's upper surface, hinged along its
+   * forward edge. `stations` are the wing's own ({ s, chord, le, y, thick? },
+   * see civil-kit wing()), `t` and `m` its thickness and camber, so the
+   * panel sits on the very surface the wing was lofted to; s0..s1 along the
+   * span, e0..e1 of the chord. `side` 'right' | 'left'. One quad.
+   */
+  addSpoiler({ stations, s0, s1, e0 = 0.6, e1 = 0.74, t = 0.11, m = 0, side = 'right' }) {
+    const sx = side === 'left' ? -1 : 1;
+    const at = (s) => {
+      let i = 0;
+      while (i < stations.length - 2 && stations[i + 1].s < s) i++;
+      const a = stations[i];
+      const b = stations[i + 1];
+      const k = clamp((s - a.s) / Math.max(1e-6, b.s - a.s), 0, 1);
+      return { chord: lerp(a.chord, b.chord, k), le: lerp(a.le, b.le, k), y: lerp(a.y, b.y, k), thick: lerp(a.thick ?? 1, b.thick ?? 1, k) };
+    };
+    const upper = (s, e) => {
+      const w = at(s);
+      return new THREE.Vector3(sx * s, w.y + w.chord * (naCamber(e, m) + naThick(e, t * w.thick)) + 0.012, w.le + w.chord * e);
+    };
+    const p00 = upper(s0, e0);
+    const p10 = upper(s1, e0);
+    const pivot = p00.clone();
+    const dir = p10.clone().sub(pivot).normalize();
+    const g = new THREE.Group();
+    g.name = `${side} spoiler`;
+    g.position.copy(pivot);
+    g.quaternion.setFromUnitVectors(X_AXIS, dir);
+    const inv = g.quaternion.clone().invert();
+    const corners = [p00, p10, upper(s1, e1), upper(s0, e1)].map((p) => p.sub(pivot).applyQuaternion(inv));
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(corners.flatMap((p) => [p.x, p.y, p.z]), 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
+    // Upper face out: the port side is the mirror, so its winding flips.
+    geo.setIndex(sx > 0 ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]);
+    geo.computeVertexNormals();
+    const mat = this.m.spoiler || (this.m.spoiler = Object.assign(this.m.matte.clone(), { side: THREE.DoubleSide, name: 'civil_spoiler' }));
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = 'spoiler panel';
+    mesh.castShadow = true;
+    g.add(mesh);
+    this.root.add(g);
+    // Trailing edge up is a turn about the hinge: negative on the right, where local X points outboard; positive on the left.
+    // Flat on the wing until it rises: hidden (no draw call) until then, see updateCivil.
+    g.visible = false;
+    this.spoilers.push({ obj: g, sign: -sx, restQ: g.quaternion.clone() });
+    return g;
+  }
+
+  /**
+   * A wheel-well door hinged along one edge at `hinge` (aircraft coordinates,
+   * the edge running fore-and-aft), `width` across, `length` along, swinging
+   * down and out. `sign` +1 for a door whose hinge is on its +x edge (a right
+   * main's outboard door, a nose bay's starboard door), -1 the other way.
+   * Open while the gear travels, shut at both ends — see updateCivil.
+   */
+  addBayDoor({ hinge, width, length, sign = 1, mat = null }) {
+    const g = new THREE.Group();
+    g.name = 'bay door';
+    g.position.set(hinge[0], hinge[1], hinge[2]);
+    const geo = new THREE.BoxGeometry(width, 0.025, length);
+    geo.translate(-sign * width * 0.5, 0, 0);
+    const mesh = new THREE.Mesh(geo, mat || this.m.body);
+    mesh.name = 'bay door panel';
+    mesh.castShadow = true;
+    g.add(mesh);
+    this.root.add(g);
+    // Shut until the gear moves: hidden until then (updateCivil shows it while it is open). Seated on the skin at finish().
+    g.visible = false;
+    this.bayDoors.push({ obj: g, sign });
+    return g;
+  }
+
+  /**
+   * A turbofan's thrust reverser: the aft part of the fan cowl as a sleeve
+   * that slides aft on the landing roll, uncovering a dark cascade. `at` is
+   * the cowl's front centre, `radius` and `length` the cowl's (jetNacelle).
+   */
+  addReverser({ at, radius: r, length: L }) {
+    const [x, y, z] = at;
+    // The cascade: static, a touch proud of the cowl, under the sleeve's forward part when stowed.
+    this.put(turned([[r * 1.012, L * 0.44], [r * 0.985, L * 0.57]], 14), this.m.dark, { p: [x, y, z] });
+    const g = new THREE.Group();
+    g.name = 'reverser sleeve';
+    g.position.set(x, y, z);
+    const sleeve = turned([[r * 1.035, L * 0.44], [r * 1.03, L * 0.6], [r * 0.93, L * 0.8]], 14);
+    const mesh = new THREE.Mesh(sleeve, this.m.nacelle || this.m.body);
+    mesh.name = 'reverser sleeve skin';
+    mesh.castShadow = true;
+    g.add(mesh);
+    this.root.add(g);
+    this.reversers.push({ obj: g, travel: L * 0.15, z0: z });
+    return g;
+  }
+
+  /**
+   * The fan behind a turbofan's intake, spinning with the engine: a ring of
+   * blades as one mesh, turning about local Z at `at` (the fan face centre).
+   */
+  addFan({ at, radius: r, blades = 12 }) {
+    const g = new THREE.Group();
+    g.name = 'fan';
+    g.position.set(at[0], at[1], at[2]);
+    const bat = new Batch('fan');
+    // Two triangles a blade, both faces drawn: the fan is seen from ahead and, through the bypass, from behind.
+    const mat = this.m.fan || (this.m.fan = Object.assign(this.m.metal.clone(), { side: THREE.DoubleSide, name: 'civil_fan' }));
+    for (let k = 0; k < blades; k++) {
+      const a = (k / blades) * Math.PI * 2;
+      const geo = new THREE.PlaneGeometry(r * 0.1, r * 0.6);
+      geo.translate(0, r * 0.42, 0);
+      geo.rotateY(0.45);
+      geo.rotateZ(a);
+      bat.add(geo, mat);
+    }
+    bat.build(g, { castShadow: false });
+    this.root.add(g);
+    this.fans.push({ obj: g });
+    return g;
+  }
+
+  /**
    * Finish: merge the static parts, hang the landing light, wire update().
    * `spot` is where the landing light's beam starts.
    */
@@ -644,6 +809,13 @@ export class Builder {
     const S = this.S;
     this.static.build(this.root);
     for (const rec of this.gear.legs) rec.bat.build(rec.leg);
+    // The wheel-well doors onto the skin that is really above them (bay-door-seat.js): the legs, the doors and the other moving parts are not skin.
+    if (this.bayDoors.length) {
+      const notSkin = new Set();
+      for (const rec of this.gear.legs) rec.leg.traverse((o) => notSkin.add(o));
+      for (const list of [this.bayDoors, this.spoilers, this.reversers, this.fans]) for (const d of list) d.obj.traverse((o) => notSkin.add(o));
+      seatDoorsOnSkin(this.root, this.bayDoors, (o) => notSkin.has(o) || !!(o.material && o.material.transparent));
+    }
 
     // See model.js buildCivil: a parked aeroplane can be built without it.
     let landingSpot = null;
@@ -663,10 +835,22 @@ export class Builder {
       surfaces: this.surfaces,
       props: this.props,
       rotor: this.rotor,
+      rotors: this.rotors,
       gear: this.gear,
       lamps: this.lamps,
       landingSpot,
       nozzles: this.nozzles,
+      spoilers: this.spoilers,
+      bayDoors: this.bayDoors,
+      reversers: this.reversers,
+      fans: this.fans,
+      // The spoilers' and reversers' own positions (0..1), the wheels' own
+      // spin (rad/s) and how long the aeroplane has been off the ground.
+      spoiler: 0,
+      reverser: 0,
+      wheelOmega: 0,
+      fanAngle: 0,
+      airborneT: 0,
       wheelAngle: 0,
       strobeT: 0,
       spool: -1,
@@ -762,15 +946,28 @@ function updateCivil(st, dt, ac, weather) {
     }
   }
 
-  /* The rotor: spools up and down like a turbine, not like a light switch. */
-  const R = st.rotor;
-  if (R) {
-    if (st.spool < 0) st.spool = running ? (onGround ? 0.25 : 1) : 0;
-    const target = running ? 1 : 0;
-    const rate = target > st.spool ? 0.35 : 0.12; // ~3 s up, ~8 s to wind down
-    st.spool = st.spool + clamp(target - st.spool, -rate * dt, rate * dt);
-    const w = st.spool * R.hz * Math.PI * 2;
-    R.spin.rotation.y = (R.spin.rotation.y + Math.min(w, visRev(R.coners.length) * Math.PI * 2) * dt) % (Math.PI * 2);
+  /* The rotor(s): spool up and down like a turbine, not like a light switch. */
+  const rotors = st.rotors || (st.rotor ? [st.rotor] : null);
+  if (rotors && rotors.length) {
+    /*
+     * The rotor's own speed when the flight model says (ac.rotor.nr, from
+     * rotor-assist.js): engine out, a windmilling rotor keeps turning, and
+     * the blades on screen must too. Without it, the old spool: ~3 s up,
+     * ~8 s to wind down.
+     */
+    const RR = ac.rotor;
+    const nrKnown = RR && Number.isFinite(RR.nr);
+    if (st.spool < 0) st.spool = nrKnown ? clamp(RR.nr, 0, 1.1) : running ? (onGround ? 0.25 : 1) : 0;
+    if (nrKnown) {
+      st.spool = lerp(st.spool, clamp(RR.nr, 0, 1.1), clamp(dt * 4, 0, 1));
+    } else {
+      const target = running ? 1 : 0;
+      const rate = target > st.spool ? 0.35 : 0.12;
+      st.spool = st.spool + clamp(target - st.spool, -rate * dt, rate * dt);
+    }
+    // What the blades are lifting: the collective the rotor is actually at
+    // (assist and all) when it is published, the engine's rpm otherwise.
+    const coll = RR && Number.isFinite(RR.collective) ? clamp(RR.collective, 0, 1) : clamp(rpm, 0, 1);
     /*
      * Blades while it winds up, the disc once it is turning — and the disc
      * is dark enough to see (blurTexture). It was switched on this spool
@@ -780,27 +977,46 @@ function updateCivil(st, dt, ac, weather) {
      * can see, on the ground at idle and in the hover.
      */
     const blur = clamp((st.spool - 0.3) / 0.45, 0, 1);
-    R.blades.visible = blur < 0.97;
-    R.disc.visible = blur > 0.01;
-    R.disc.userData.opacity = blur;
-    // Blades droop at rest and cone up with collective.
-    const cone = lerp(R.droop, lerp(0.02, R.cone, clamp(rpm, 0, 1)), clamp(st.spool * 1.6, 0, 1));
-    for (let i = 0; i < R.coners.length; i++) R.coners[i].rotation.z = cone;
-    // The disc leans the way the cyclic is pushed — the reason it moves.
-    // controls.pitch is +1 for stick BACK (input.js: pitchUp), and a turn
-    // about +X by a positive angle lifts the front of the disc, so the lean
-    // is +pitch. It was -pitch: pushing forward tipped the disc BACK, its
-    // front 0.67 m higher than its back measured 3.75 m either side of the
-    // hub (tests/features/civil.mjs now measures it that way).
-    // Rolling right (+1) needs the right side down: a negative turn about Z.
-    const tilt = R.tilt * clamp(st.spool * 2, 0, 1);
-    R.head.rotation.x = lerp(R.head.rotation.x, pitch * tilt, ease);
-    R.head.rotation.z = lerp(R.head.rotation.z, -roll * tilt, ease);
-    if (R.tail) {
-      R.tail.rotation.x = (R.tail.rotation.x + Math.min(w * 5.2, visRev(R.tailCount) * Math.PI * 2) * dt) % (Math.PI * 2);
-      R.tailBlades.visible = blur < 0.97;
-      R.tailDisc.visible = blur > 0.01;
-      R.tailDisc.userData.opacity = blur;
+    const flapV = clamp(groundSpeed / 40, 0, 1);
+    for (let k = 0; k < rotors.length; k++) {
+      const R = rotors[k];
+      const w = st.spool * R.hz * Math.PI * 2;
+      const dir = R.dir || 1;
+      R.spin.rotation.y = (R.spin.rotation.y + dir * Math.min(w, visRev(R.coners.length) * Math.PI * 2) * dt) % (Math.PI * 2);
+      R.blades.visible = blur < 0.97;
+      R.disc.visible = blur > 0.01;
+      R.disc.userData.opacity = blur;
+      /*
+       * Blades droop at rest and cone up with the collective — and FLAP:
+       * once a turn, the blade coming forward into the airflow lifts and the
+       * one going back drops (blowback), and the whole disc leans back the
+       * faster it flies. Each blade's own azimuth, so two blades a turn
+       * apart are a turn apart.
+       */
+      const cone = lerp(R.droop, lerp(0.02, R.cone, coll), clamp(st.spool * 1.6, 0, 1));
+      const flapAmp = (R.flap || 0) * flapV * clamp(st.spool * 1.6, 0, 1);
+      const n = R.coners.length;
+      for (let i = 0; i < n; i++) {
+        const psi = R.spin.rotation.y + (i / n) * Math.PI * 2;
+        R.coners[i].rotation.z = cone + flapAmp * Math.cos(psi);
+      }
+      // The disc leans the way the cyclic is pushed — the reason it moves.
+      // controls.pitch is +1 for stick BACK (input.js: pitchUp), and a turn
+      // about +X by a positive angle lifts the front of the disc, so the lean
+      // is +pitch. It was -pitch: pushing forward tipped the disc BACK, its
+      // front 0.67 m higher than its back measured 3.75 m either side of the
+      // hub (tests/features/civil.mjs now measures it that way).
+      // Rolling right (+1) needs the right side down: a negative turn about Z.
+      // And the blowback: the disc flaps back a little with the airspeed.
+      const tilt = R.tilt * clamp(st.spool * 2, 0, 1);
+      R.head.rotation.x = lerp(R.head.rotation.x, pitch * tilt + flapAmp * 0.5, ease);
+      R.head.rotation.z = lerp(R.head.rotation.z, -roll * tilt, ease);
+      if (R.tail) {
+        R.tail.rotation.x = (R.tail.rotation.x + (R.tailDir || 1) * Math.min(w * 5.2, visRev(R.tailCount) * Math.PI * 2) * dt) % (Math.PI * 2);
+        R.tailBlades.visible = blur < 0.97;
+        R.tailDisc.visible = blur > 0.01;
+        R.tailDisc.userData.opacity = blur;
+      }
     }
   }
 
@@ -852,6 +1068,54 @@ function updateCivil(st, dt, ac, weather) {
     L.leg.quaternion.setFromAxisAngle(L.axis, (1 - g) * L.angle);
     L.leg.visible = g > 0.02;
   }
+  /* The wheel-well doors: open while a leg travels, shut once it is stowed
+   * and shut again once it is down and locked. */
+  if (st.bayDoors.length) {
+    const open = st.retractable ? clamp(Math.min(g, 1 - g) * 8, 0, 1) : 0;
+    for (let i = 0; i < st.bayDoors.length; i++) {
+      const d = st.bayDoors[i];
+      d.obj.rotation.z = lerp(d.obj.rotation.z, d.sign * open * 1.45, ease);
+      // Shut, it lies flush under the skin: hidden, so it costs no draw call (as in fleet/aircraft-realism.js).
+      d.obj.visible = Math.abs(d.obj.rotation.z) > 0.01;
+    }
+  }
+  if (onGround) st.airborneT = 0;
+  else st.airborneT += dt;
+  /* Spoilers: ground spoilers full on the landing roll with the throttle
+   * closed (the auto-spoilers); in the air the brakes are the speedbrake. */
+  if (st.spoilers.length) {
+    const throttle = num(c.throttle, 0);
+    const brakes = num(c.brakes, 0);
+    let want = 0;
+    if (onGround && groundSpeed > 18 && throttle < 0.3) want = 1;
+    else if (!onGround && brakes > 0.2 && st.airborneT > 1) want = 0.5;
+    const rate = want > st.spoiler ? 0.8 : 1.2;
+    st.spoiler = dt > 0 ? st.spoiler + clamp(want - st.spoiler, -rate * dt, rate * dt) : want;
+    // About the hinge line itself (the group's own X), not rotation.x — that turns about the parent's X and swings a swept hinge off the wing.
+    for (let i = 0; i < st.spoilers.length; i++) {
+      const sp = st.spoilers[i];
+      sp.angle = sp.sign * st.spoiler * 0.85;
+      sp.obj.quaternion.copy(sp.restQ).multiply(st.qTmp.setFromAxisAngle(X_AXIS, sp.angle));
+      sp.obj.visible = st.spoiler > 1e-3;
+    }
+  }
+  /* Reversers: out on the roll with the brakes on, in again below taxi speed. */
+  if (st.reversers.length) {
+    const brakes = num(c.brakes, 0);
+    let want = st.reverser;
+    if (onGround && groundSpeed > 25 && brakes > 0.25) want = 1;
+    if (!onGround || groundSpeed < 17 || brakes < 0.05) want = 0;
+    st.reverser = dt > 0 ? st.reverser + clamp(want - st.reverser, -dt / 1.2, dt / 1.2) : want;
+    for (let i = 0; i < st.reversers.length; i++) {
+      const r = st.reversers[i];
+      r.obj.position.z = r.z0 + r.travel * st.reverser;
+    }
+  }
+  /* The fans turn with the engine. */
+  if (st.fans.length) {
+    st.fanAngle = (st.fanAngle + rpm * 120 * dt) % (Math.PI * 2);
+    for (let i = 0; i < st.fans.length; i++) st.fans[i].obj.rotation.z = st.fanAngle;
+  }
   /*
    * Squash: the oleos give under the aeroplane's weight.
    *
@@ -870,7 +1134,14 @@ function updateCivil(st, dt, ac, weather) {
   const acPos = ac.pos;
   const acQuat = ac.quat;
   const height = num(ac.agl, NaN);
-  if (onGround && !ac.crashed && acPos && acQuat && Number.isFinite(height) && Number.isFinite(acPos.y)) {
+  const wc = ac.wheelCompression;
+  const sc0 = st.shape.scale;
+  if (onGround && !ac.crashed && wc && Number.isFinite(wc.nose) && Number.isFinite(wc.left) && Number.isFinite(wc.right)) {
+    // The flight model's own strut travel, per leg (physics.js writes it each step): exact, and it moves with the springs.
+    sq[0] = clamp(wc.nose / sc0, 0, st.contacts[0].travel * 1.25);
+    sq[1] = clamp(wc.left / sc0, 0, st.contacts[1].travel * 1.25);
+    sq[2] = clamp(wc.right / sc0, 0, st.contacts[2].travel * 1.25);
+  } else if (onGround && !ac.crashed && acPos && acQuat && Number.isFinite(height) && Number.isFinite(acPos.y)) {
     const sc = st.shape.scale;
     const groundY = acPos.y - height;
     for (let i = 0; i < 3; i++) {
@@ -895,11 +1166,18 @@ function updateCivil(st, dt, ac, weather) {
 
   const steerAng = -yaw * 0.5 * clamp(1 - groundSpeed / 40, 0.15, 1);
   for (let i = 0; i < st.gear.steer.length; i++) st.gear.steer[i].rotation.y = steerAng;
-  if (onGround && groundSpeed > 0.01 && st.gear.wheels.length) {
-    st.wheelAngle = (st.wheelAngle + (groundSpeed / st.gear.wheels[0].R) * dt) % (Math.PI * 2000);
-    for (let i = 0; i < st.gear.wheels.length; i++) {
-      const w = st.gear.wheels[i];
-      w.obj.rotation.x = -st.wheelAngle * (st.gear.wheels[0].R / w.R);
+  /* Wheels: at the ground speed on the ground; in the air they wind down on
+   * their own over a few seconds instead of stopping dead at lift-off. */
+  if (st.gear.wheels.length) {
+    const R0 = st.gear.wheels[0].R;
+    if (onGround) st.wheelOmega = groundSpeed / R0;
+    else st.wheelOmega *= dt > 0 ? Math.exp(-dt / 3.5) : 0;
+    if (st.wheelOmega > 0.01) {
+      st.wheelAngle = (st.wheelAngle + st.wheelOmega * dt) % (Math.PI * 2000);
+      for (let i = 0; i < st.gear.wheels.length; i++) {
+        const w = st.gear.wheels[i];
+        w.obj.rotation.x = -st.wheelAngle * (R0 / w.R);
+      }
     }
   }
 
@@ -912,14 +1190,26 @@ function updateCivil(st, dt, ac, weather) {
   const beacon = blinkLevel(st.strobeT, 1.1, 0.35 / 1.1);
   const L = st.lamps;
   const agl = num(ac.agl, 0);
-  const wantLanding = running && ((ac.gearDown ?? num(ac.gearPos, 1) > 0.5) || agl < 400);
+  // A wreck's lamps go out with it (see model-adapter.js updateLights: the strobe and taxi-light ground rules would flicker on a bouncing wreck).
+  const lampsOn = running && !ac.crashed;
+  const wantLanding = lampsOn && ((ac.gearDown ?? num(ac.gearPos, 1) > 0.5) || agl < 400);
+  // Strobes once on the runway or in the air, as the checklist has it; on the
+  // apron they stay off (they would blind the ramp). On the ground, slow, the
+  // landing lamp is the taxi light: on, dimmer.
+  const strobesOn = lampsOn && (!onGround || groundSpeed > 15);
+  const taxi = onGround && groundSpeed < 15;
   for (const k in L) {
     const s = L[k];
-    let on = running;
+    let on = lampsOn;
     let lit = 1;
-    if (k === 'strobeL' || k === 'strobeR') lit = strobe;
-    else if (k === 'beacon' || k === 'beacon2') lit = beacon;
-    else if (k === 'landing') on = wantLanding;
+    if (k === 'strobeL' || k === 'strobeR') {
+      lit = strobe;
+      on = strobesOn;
+    } else if (k === 'beacon' || k === 'beacon2') lit = beacon;
+    else if (k === 'landing') {
+      on = wantLanding;
+      if (taxi) lit = 0.55;
+    }
     s.visible = on && lit > 0.01;
     const boost = k === 'landing' ? 1.6 : 1;
     s.scale.setScalar(s.userData.baseScale * (0.55 + dark * 0.75) * boost);

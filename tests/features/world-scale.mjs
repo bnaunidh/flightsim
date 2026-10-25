@@ -470,6 +470,14 @@ console.log(`INFO  the towns stand ${span(all.townGround)} above the sea: why th
     a10: ['Fairchild A-10C', 16.26, 17.53],
     // ...and the swing-wing bomber (aircraft/extra/lancer.js): its span with the wings forward, as parked.
     b1b: ['Rockwell B-1B Lancer', 44.5, 41.67],
+    // ...and the helicopter wave (aircraft/extra/helis.js): length rotors turning, rotor diameter.
+    bell407: ['Bell 407', 12.7, 10.67],
+    h145: ['Airbus H145', 13.64, 11.0],
+    r44: ['Robinson R44', 11.66, 10.06],
+    aw139: ['Leonardo AW139', 16.66, 13.8],
+    uh60: ['Sikorsky UH-60M', 19.76, 16.36],
+    ch47: ['Boeing CH-47F', 30.1, 18.3],
+    ah64: ['Boeing AH-64D', 17.73, 14.63],
   };
   // Air Massimo is a made-up racer (21.5 m long, a 9.7 m wing: nothing real
   // to hold it to); T-Pose Harrison is a person flying with his arms out, a

@@ -42,6 +42,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { clamp } from '../core/noise.js';
+const lerp = (a, b, t) => a + (b - a) * t;
 import { heightAt, platformAt, PLATFORMS, OBSTACLES } from '../world/terrain.js';
 import { PADS } from '../world/pads.js';
 
@@ -538,7 +539,132 @@ export const ROTOR_TUNE = {
    */
   dragScale: 0.72,
   stallAt: 62,
+
+  /*
+   * THE AIR THE ROTOR WORKS IN (demo-helis, 2026-10-24). Four things a real
+   * rotor does that the disc above did not, each a multiplier on the lift
+   * that rotorAir() works out once a step and both physics.js (the force)
+   * and collectiveFor() (the hold that inverts it) read — so the height
+   * hold can never disagree with the lift about what the ground is doing.
+   *
+   *  GROUND EFFECT. Within about one rotor diameter of the ground the
+   *  downwash is squeezed and the disc lifts more for the same pitch: up to
+   *  geGain at the skids (hub about half a radius up), nothing at a hub
+   *  height of 2 R. Real IGE figures run 10-25% at R/2; this is the gentler
+   *  end, because the height hold has to fly through it without a bump.
+   *
+   *  TRANSLATIONAL LIFT. Flying out of its own downwash the rotor gets
+   *  ettlGain more lift, fading in between ettlLo and ettlHi m/s (14-25 kt).
+   *  It was a straight line to 24 m/s; this is the S-curve a pilot feels as
+   *  the shudder-and-climb of ETL.
+   *
+   *  VORTEX RING STATE. Sinking fast (vrsVsLo..vrsVsHi m/s of descent) with
+   *  power on and little airspeed (none above vrsGsHi) the disc settles into
+   *  its own downwash and loses up to vrsLoss of its lift, with a buffet.
+   *  The way out is airspeed (push forward) or the lever down — pulling more
+   *  pitch deepens it, which is why the loss does not depend on the lever
+   *  here (the hold would invert that into pulling harder). Scaled by the
+   *  difficulty: the whole thing on Realistic, half on Normal, a quarter on
+   *  Easy — the assisted descent profile (landSinkMax 9 m/s) only grazes
+   *  its onset, so a child's vertical landing shudders and says so on the
+   *  card, and a sim fan who drops at 11 m/s vertically gets the real thing.
+   *
+   *  THE ROTOR'S OWN SPEED (NR). Governed at 1 with the engine running.
+   *  Engine out, it is driven by the air coming UP through the disc — the
+   *  descent, and a flare's forward speed turned up through a nose-high
+   *  disc — and bled by the blade pitch the lever asks for: autorotation.
+   *  Lift goes with NR squared, and the upflow adds nrInflowColl of
+   *  collective per nrInflowRef m/s of inflow (the induced angle of attack
+   *  that makes a windmilling rotor lift at all). Lever down keeps NR;
+   *  flare to arrest the descent and spin it up; pull at the bottom to
+   *  cushion on what is stored in the blades. With the assist on it flies
+   *  the whole thing (see autorotation in rotorAssist); off, it is yours.
+   *
+   *  RETREATING BLADE STALL at speed is the airframe's `rotorStallAt`
+   *  (types.js, per type; the Skyhook's is stallAt above), with a nose-up
+   *  and roll-away moment and a vibration scaled by rbsMoment, on top of
+   *  the drag rise it always had.
+   */
+  geGain: 0.14,
+  ettlLo: 7, // m/s
+  ettlHi: 13, // m/s
+  ettlGain: 0.11,
+  vrsVsLo: 7, // m/s of descent
+  vrsVsHi: 12, // m/s
+  vrsGsLo: 6, // m/s of airspeed: fully in below
+  vrsGsHi: 12, // m/s: none above
+  vrsLoss: 0.35,
+  vrsBuffet: 0.5, // of full-stick moment, fully in: a wobble a pilot feels, at a few radians a second
+  // 1/s: engine on, NR comes up to 95% in about 3 s (the old visual spool's
+  // 3 s). It was 0.35/s, which is 8.6 s to 95%: from a cold start a pilot
+  // holding the lever full sat on the ground for 5.4 s after the engine came
+  // on (0.9 s before this wave) — the card says "hold Shift until she lifts"
+  // and nothing happened (checker, 2026-10-24).
+  nrSpool: 1.0,
+  nrInflowRef: 10, // m/s of upflow
+  nrGain: 0.6, // 1/s per nrInflowRef of upflow, times the room left to 1.12
+  nrBleed: 0.04, // 1/s at flat pitch
+  nrCollBleed: 0.25, // 1/s more at full lever: a Bell 206 class rotor holds about 1 MJ against 300 kW at the hover, so the lever left up after a failure bleeds it at ~0.16/s
+  nrInflowColl: 0.35, // collective the upflow is worth, per nrInflowRef
+  autoColl: 0.08, // the lever the assist flies the glide at
+  autoSpeed: 25, // m/s along the nose it holds in the glide (49 kt)
+  autoFlareH: 45, // m under the skids: the flare begins
+  autoPullH: 20, // m: level and pull — the sink profile takes the lever
+  autoFlarePitch: 0.26, // radians, the envelope's 15 degrees
+  autoFlareLowH: 8, // m: the flare is held down to here, then eased level
+  autoDecel: 0.95, // m/s^2: the arrival's sink profile
+  autoRunOnH: 3, // m: under this the sink is held, not slowed further
+  autoRunOnVs: 1.5, // m/s: the run-on touchdown (300 ft/min, firm)
+  rbsMoment: 0.03, // of the disc thrust times the arm, fully stalled
 };
+
+/**
+ * Lift multiplier for the ground, from the hub's height over it: geGain at
+ * z = R/2 (about the skids), 1 at 2 R and above. Pure, so settleOnGear()
+ * can ask it for the parked machine.
+ */
+export function groundEffectFactor(hubHeight, R) {
+  const z = Math.max(0.1, hubHeight);
+  const t = clamp(1 - z / (2 * R), 0, 1);
+  return 1 + ROTOR_TUNE.geGain * t * t * (1 / 0.5625); // t = 0.75 at R/2 → geGain exactly
+}
+
+/** How hard vortex ring state and retreating blade stall bite at this difficulty. */
+export function realismScale(ac) {
+  const d = ac && ac.difficulty;
+  return d === 'realistic' ? 1 : d === 'easy' ? 0.25 : 0.5;
+}
+
+const AIR_UP = new THREE.Vector3();
+/**
+ * The air at the rotor this step: { ge, ettl, vrs, eff, inflow }, cached on
+ * the Aircraft (ac._rotorAir), worked out once by rotorAssist() and read by
+ * physics.js and collectiveFor(). `inflow` is the air coming up through the
+ * disc, m/s, body up axis (positive in a descent or a flare).
+ */
+export function rotorAir(ac, SPEC) {
+  const T = ROTOR_TUNE;
+  const A = ac._rotorAir || (ac._rotorAir = { ge: 1, ettl: 1, vrs: 0, eff: 1, inflow: 0 });
+  const R = SPEC.rotorRadius || 4.2;
+  const hubY = Number.isFinite(SPEC.rotorHubY) ? SPEC.rotorHubY : 1.6;
+  A.ge = groundEffectFactor(ac.agl + hubY, R);
+  const V = ac.airspeed || 0;
+  A.ettl = 1 + T.ettlGain * smoothstep(T.ettlLo, T.ettlHi, V);
+  const up = ac.up(AIR_UP);
+  // The machine's velocity through the air (physics.js _airRel: velocity less
+  // the wind), when physics has worked it out; its ground velocity before.
+  const air = ac._airRel || ac.vel;
+  const rx = air.x;
+  const ry = air.y;
+  const rz = air.z;
+  A.inflow = -(rx * up.x + ry * up.y + rz * up.z);
+  const horiz = Math.hypot(rx, rz);
+  const sink = smoothstep(T.vrsVsLo, T.vrsVsHi, -ac.vel.y);
+  const slow = 1 - smoothstep(T.vrsGsLo, T.vrsGsHi, horiz);
+  A.vrs = ac.engineOn && !ac.onGround ? sink * slow * realismScale(ac) : 0;
+  A.eff = A.ge * A.ettl * (1 - A.vrs * T.vrsLoss);
+  return A;
+}
 
 /**
  * Rotor thrust as a multiple of the empty machine's weight at sea level, for a
@@ -563,9 +689,43 @@ export function collectiveForLift(r) {
  */
 function leverCollective(ac, S, dt) {
   const T = ROTOR_TUNE;
-  const want = ac.engineOn ? T.leverIdle + clamp(ac.controls.throttle, 0, 1) * (1 - T.leverIdle) : 0;
+  // Engine out, the lever is still the blade pitch (autorotation needs it
+  // down, then pulled at the bottom); the idle's share of it goes with the
+  // engine. The lift itself goes with NR squared, so a stopped rotor is
+  // still a stopped rotor whatever the lever says.
+  const want = (ac.engineOn ? T.leverIdle : 0) + clamp(ac.controls.throttle, 0, 1) * (1 - T.leverIdle);
   S.lever += (want - S.lever) * Math.min(1, dt * T.collSpool);
-  return ac.engineOn ? S.lever : Math.min(S.lever, ac.rpm);
+  return S.lever;
+}
+
+/**
+ * The rotor's speed, NR, as a share of governed, and the collective the
+ * upflow through a windmilling disc is worth. See THE ROTOR'S OWN SPEED in
+ * ROTOR_TUNE. `S.nr` is the state; `ac.rotorNr` the published copy that
+ * physics.js and the models read.
+ */
+function rotorSpeed(ac, S, dt, coll) {
+  const T = ROTOR_TUNE;
+  if (S.nr == null) S.nr = ac.engineOn ? 1 : 0;
+  if (ac.engineOn) {
+    S.nr += (1 - S.nr) * Math.min(1, dt * T.nrSpool);
+  } else {
+    const air = ac._rotorAir;
+    const inflow = air ? Math.max(0, air.inflow) : 0;
+    const drive = (inflow / T.nrInflowRef) * T.nrGain * Math.max(0, 1.12 - S.nr);
+    const bleed = (T.nrBleed + clamp(coll, 0, 1) * T.nrCollBleed) * S.nr;
+    // On the skids the blades simply wind down.
+    S.nr = clamp(S.nr + (ac.onGround ? -bleed - 0.15 * S.nr : drive - bleed) * dt, 0, 1.12);
+  }
+  ac.rotorNr = S.nr;
+  return S.nr;
+}
+
+/** Collective the upflow is worth on a windmilling rotor (0 with the engine running). */
+function inflowCollective(ac) {
+  if (ac.engineOn) return 0;
+  const air = ac._rotorAir;
+  return air ? clamp((Math.max(0, air.inflow) / ROTOR_TUNE.nrInflowRef) * ROTOR_TUNE.nrInflowColl, 0, 0.5) : 0;
 }
 
 /*
@@ -581,12 +741,22 @@ export function collectiveFor(ac, SPEC, aUp) {
   const vs = ac.vel.y;
   const discArea = Math.PI * SPEC.rotorRadius * SPEC.rotorRadius;
   const discDrag = 0.5 * ac.density * vs * Math.abs(vs) * discArea * ROTOR_TUNE.discCD;
-  const ettl = 1 + clamp(ac.airspeed / 24, 0, 1) * 0.11;
+  // The air at the rotor (ground effect, translational lift, vortex ring),
+  // as physics.js applies it; worked out here too for a caller that asks
+  // before the first step.
+  const air = ac._rotorAir || rotorAir(ac, SPEC);
   const rough = ac.failures && ac.failures.roughEngine ? 0.45 : 1;
+  const nr = Number.isFinite(ac.rotorNr) ? Math.max(0.3, ac.rotorNr) : 1;
   const upY = ac.up(UP_TMP).y;
   const need = mTot * (G + aUp) + discDrag;
-  const have = SPEC.mass * G * (ac.density / RHO0) * ettl * Math.max(0.5, upY) * rough;
-  return collectiveForLift(need / have);
+  const have = SPEC.mass * G * (ac.density / RHO0) * air.eff * Math.max(0.5, upY) * rough * nr * nr;
+  // Less what the upflow already gives a windmilling disc — taken off the
+  // UNCLAMPED inverse, or a pull past the top of the curve read as 1 minus
+  // the inflow and the autorotation's cushion stopped at 0.86 of the lever
+  // (measured in headless Chrome, 2026-10-24).
+  const r = need / have;
+  const raw = r <= 1 ? r * 0.5 : 0.5 + (r - 1) / (2 * (ROTOR_TUNE.maxLift - 1));
+  return clamp(raw - inflowCollective(ac), 0, 1);
 }
 const UP_TMP = new THREE.Vector3();
 
@@ -790,6 +960,8 @@ export function rotorAssist(ac, SPEC, dt) {
     S.leanSaturated = false;
     S.lastRequest = 0;
     S.lever = ac.engineOn ? T.leverIdle + clamp(ac.controls.throttle, 0, 1) * (1 - T.leverIdle) : 0;
+    S.nr = ac.engineOn ? 1 : 0;
+    S.autoT = 0;
   }
 
   /*
@@ -819,6 +991,10 @@ export function rotorAssist(ac, SPEC, dt) {
 
   const lever = leverCollective(ac, S, dt);
   const skidH = heightAboveSkids(ac, S, SPEC);
+  // The air at the disc this step, and the rotor's own speed through it.
+  rotorAir(ac, SPEC);
+  const nr = rotorSpeed(ac, S, dt, lever + S.collective);
+  const inflowColl = inflowCollective(ac);
   /*
    * Resting on its skids with the lever at idle. Nothing in the attitude
    * loop or the ground stop below may touch a machine parked like this: see
@@ -843,10 +1019,25 @@ export function rotorAssist(ac, SPEC, dt) {
    * the argument the fade below was written to stop. The envelope at the end
    * runs either way.
    */
-  const on = !!SPEC.rotor && ac.hoverAssist !== false && !ac.autopilotOn && ac.engineOn && !ac.crashed;
+  const assist = !!SPEC.rotor && ac.hoverAssist !== false && !ac.autopilotOn && !ac.crashed;
+  /*
+   * Autorotation, flown by the assist: engine out, in the air, the rotor
+   * still turning. It lowers the lever to the glide setting, holds autoSpeed
+   * along the nose (a glide needs airspeed: a vertical autorotation comes
+   * down at twice the rate and has nothing to flare with), and from
+   * autoFlareH flies the gentle-arrival sink profile on the lever with the
+   * nose coming up to trade the speed for lift — the same profile a landing
+   * under power uses, so the ground arrives at the same gentle rate. With
+   * the assist off the pilot does all of it: lever down, nose down, flare,
+   * pull. The drift loop, the spot hold and the heading hold stand down (a
+   * glide is not a hover); the attitude loop flies the pitch target below.
+   */
+  const auto = assist && !ac.engineOn && !ac.onGround && nr > 0.15;
+  const on = assist && (ac.engineOn || auto);
   // The hover regime's share: drift damping, wind trim and the heading hold.
-  const auth = on ? hoverAuthority(ac.groundSpeed) : 0;
+  const auth = on && !auto ? hoverAuthority(ac.groundSpeed) : 0;
   const live = auth > 0.01;
+  S.autoT = auto ? (S.autoT || 0) + dt : 0;
 
   /* ---------------------------------------------------------- height --- */
   /*
@@ -873,7 +1064,60 @@ export function rotorAssist(ac, SPEC, dt) {
    * climbed at 12 m/s to 228 m with the panel saying HOVER ASSIST; that was
    * the first thing every new pilot found.
    */
-  if (!on || held || ac.onGround) {
+  let arriving = false;
+  let autoPitch = 0;
+  if (auto) {
+    S.still = 0;
+    S.heldY = null;
+    S.hhI = 0;
+    S.floorClimb = false;
+    S.spot = null;
+    // Forward speed along the nose, for the glide and the flare.
+    const vFwd = driftFwd;
+    if (skidH > T.autoFlareH) {
+      // The glide: lever to the autorotation setting, nose for autoSpeed.
+      S.leverWant = T.autoColl;
+      autoPitch = clamp((vFwd - T.autoSpeed) * 0.06, -0.26, 0.26);
+    } else {
+      /*
+       * The arrival, in the order a pilot flies it. FLARE first: from
+       * autoFlareH the nose comes up (to the envelope's 15 degrees at the
+       * glide speed) with the lever still down, so the forward speed goes
+       * up through the disc — the descent slows and NR builds instead of
+       * bleeding. Then LEVEL AND PULL: under autoPullH the gentle landing's
+       * own sink profile takes the lever, cushioning on what the blades
+       * have stored, and the nose eases level for the skids (the tail guard
+       * touches at nineteen degrees; see models/skyhook.js).
+       */
+      const room = Math.max(0, skidH);
+      if (skidH > T.autoPullH) {
+        S.leverWant = T.autoColl;
+      } else {
+        /*
+         * Its own profile: decelerate at autoDecel down to autoRunOnH, then
+         * hold autoRunOnVs to the ground — a run-on touchdown at a steady
+         * metre and a half a second. A powered landing's profile ends at
+         * 0.6 m/s and asks for its hardest pull in the last four metres,
+         * which is exactly where a windmilling rotor has the least to give:
+         * measured, the lever hit its stop at 4 m with NR at 0.84 and the
+         * sink ran away again to 4.7 m/s at the ground.
+         */
+        const sinkMax = Math.min(T.landSinkMax, Math.sqrt(T.autoRunOnVs * T.autoRunOnVs + 2 * T.autoDecel * Math.max(0, room - T.autoRunOnH)));
+        const vErr = -sinkMax - ac.vs;
+        const want = collectiveFor(ac, SPEC, clamp(T.autoDecel + vErr * T.hhVk, 0, T.hhAMax));
+        S.leverWant = vErr > -0.5 ? Math.max(T.autoColl, want) : T.autoColl;
+      }
+      // The full flare from 20 m/s up: the speed the glide actually settles at.
+      const speedFrac = clamp(vFwd / 20, 0, 1.2);
+      // Held to autoFlareLowH, then eased level for the skids by 2.5 m.
+      // (Level by the last metre and a half: a tail-low touch on wheels
+      // far aft rocks a long machine onto its nose — the Chinook, measured.)
+      const flare = Math.min(T.autoFlarePitch * speedFrac, lerp(0.0, T.autoFlarePitch, smoothstep(1.5, T.autoFlareLowH, skidH)));
+      autoPitch = vFwd > 3 ? flare : 0;
+    }
+    S.collective = clamp(S.leverWant - lever, -1, 1);
+    arriving = skidH <= T.autoFlareH && S.collective > 0.005;
+  } else if (!on || held || ac.onGround) {
     S.still = 0;
     S.heldY = null;
     S.leverWant = null;
@@ -889,11 +1133,12 @@ export function rotorAssist(ac, SPEC, dt) {
       S.hhI = 0;
     }
   }
-  let arriving = false;
   let gated = false;
   let edge = false;
   let floorUp = false;
-  if (S.heldY !== null) {
+  if (auto) {
+    /* flown above */
+  } else if (S.heldY !== null) {
     // Over the ground ahead: see aheadS. Looked at ten times a second.
     S.aheadT = (S.aheadT || 0) - dt;
     if (S.aheadT <= 0) {
@@ -1134,6 +1379,11 @@ export function rotorAssist(ac, SPEC, dt) {
     } else {
       S.leanSaturated = false;
     }
+    // Autorotation: the glide's nose, wings level (see `auto` above).
+    if (auto) {
+      tgtPitch = autoPitch;
+      tgtBank = 0;
+    }
     // See pedalBank: the pedal at speed banks her into the turn.
     const wCruise = 1 - auth;
     if (wCruise > 0.001 && !ac.onGround) tgtBank += clamp(ac.controls.yaw, -1, 1) * T.pedalBank * wCruise;
@@ -1343,7 +1593,17 @@ export function rotorAssist(ac, SPEC, dt) {
   R.drift = Math.hypot(driftFwd, driftRight);
   R.hoverAuth = auth;
   R.assistOn = ac.hoverAssist !== false;
-  R.assistActive = on && (S.heldY !== null || live || arriving);
+  R.assistActive = on && (S.heldY !== null || live || arriving || auto);
+  // The air at the rotor and the rotor itself, for the card and the tests.
+  const AIR = ac._rotorAir;
+  R.nr = nr;
+  R.autorotating = !ac.engineOn && !ac.onGround && nr > 0.15;
+  R.autoAssist = auto;
+  R.autoFlare = auto && skidH <= T.autoFlareH;
+  R.vrs = AIR ? AIR.vrs : 0;
+  R.groundEffect = AIR ? AIR.ge - 1 : 0;
+  R.translationalLift = AIR ? AIR.ettl - 1 : 0;
+  R.inflow = AIR ? AIR.inflow : 0;
   R.holdingHeight = S.heldY !== null;
   R.holdingSpot = !!S.spot;
   R.heldY = S.heldY;
@@ -1364,17 +1624,32 @@ export function rotorAssist(ac, SPEC, dt) {
    * correction the hold is adding on its own never grows into a hidden
    * integrator that runs to its stop and drops the machine.
    */
+  /*
+   * Engine off on the skids (an autorotation just ended): the lever comes
+   * down, as a pilot lowers it after touchdown. Left where the cushion's pull
+   * trimmed it — full, measured — the next engine start lifted her off on a
+   * full lever and climbed at 8-11 m/s (checker, 2026-10-24).
+   */
+  const leverDown = assist && !ac.engineOn && ac.onGround && !held && cmd > 0.005;
   R.trimRequest =
     S.leverWant !== null && on && !held
       ? clamp((leverFor(S.leverWant) - clamp(cmd, 0, 1)) * T.leverFollow, -2, 2)
-      : 0;
+      : leverDown
+        ? -clamp(cmd * T.leverFollow, 0.3, 2)
+        : 0;
   S.lastRequest = R.trimRequest;
   R.collective = coll;
   R.collectivePilot = clamp(lever, 0, 1);
   publishHoverPoint(R, ac, SPEC);
   R.heightAbove = skidH;
+  // For the rotor sound (audio/vehicles.js): this type's blade-pass rate at
+  // governed NR — an R44's two blades at 408 rpm thump at 13.6 Hz, a Black
+  // Hawk's four at 258 rpm at 17.2, the Skyhook's 26.7.
+  R.bladePassHz = (SPEC.rotorHz || 6.5) * (SPEC.rotorBlades || 4);
 
-  S.lift = rotorLiftRatio(coll);
+  // What the blades lift: the pitch they are at plus what the upflow gives a
+  // windmilling disc, at the speed the rotor is actually turning.
+  S.lift = rotorLiftRatio(clamp(coll + inflowColl, 0, 1)) * nr * nr;
   return S;
 }
 

@@ -23,7 +23,7 @@ export function createGameAircraft(options = {}, legacyFactory) {
     if (sinking) { sinking.userData.dispose(); sinking.removeFromParent(); }
     model.userData.gameCrash = null;
   }
-  model.userData.resetDamage = () => { clearWater(); reset(); };
+  model.userData.resetDamage = () => { clearWater(); model.userData.hullDriven = false; reset(); };
   model.userData.update = (dt, ac = {}, weather = {}) => {
     if (ended) return;
     if (ac.crashed === false && model.userData.gameCrash) model.userData.resetDamage();
@@ -31,6 +31,8 @@ export function createGameAircraft(options = {}, legacyFactory) {
     const state = { rpm: ac.rpm ?? 0, gear: ac.gearPos ?? ac.gear ?? 1, flaps: ac.flaps ?? 0,
       pitch: control.pitch ?? 0, roll: control.roll ?? 0, yaw: control.yaw ?? 0,
       onGround: !!ac.onGround, groundSpeed: ac.groundSpeed ?? 0, brakes: control.brakes ?? 0,
+      // For the realism layer (fleet/aircraft-realism.js): the levers at idle on the roll arm the ground spoilers; the air speed gates the speedbrake.
+      throttle: control.throttle ?? 0, airspeed: ac.airspeed ?? 0, agl: ac.agl ?? 0,
       suspension: compression ? [compression.nose ?? 0, compression.left ?? 0, compression.right ?? 0] : ac.suspension ?? 0,
       night: !!weather.isNight, lights: ac.engineOn !== false || ac.rpm > .05,
       worldVelocity: ac.vel ?? { x: 0, y: 0, z: 0 }, camera: model.userData.gameCamera,
@@ -46,12 +48,20 @@ export function createGameAircraft(options = {}, legacyFactory) {
     const crash = model.userData.gameCrash;
     const previousPosition = crash && ac.pos ? ac.pos.clone() : null;
     const previousVelocity = crash && ac.vel ? ac.vel.clone() : null;
-    if (crash?.sinking) {
+    /*
+     * The game's own airframe body (src/features/breakup.js) can take the
+     * wreck: it slides, cartwheels, noses over and skips off the sea on the
+     * airframe's own contact points, and writes the aeroplane and this model
+     * from that each frame. While it does, neither this body nor the pack's
+     * sinking may pose the model, and the aeroplane's readouts are its.
+     */
+    const hullDriven = !!model.userData.hullDriven;
+    if (crash?.sinking && !hullDriven) {
       // Sinking owns the aircraft transform; common advances detached pieces only.
       model.userData.updateDebris(dt); model.userData.updateImpact(dt);
       crash.sinking.userData.update(dt, { camera: model.userData.gameCamera });
     } else update(dt, state);
-    if (crash && ac.pos && ac.quat) {
+    if (crash && ac.pos && ac.quat && !hullDriven) {
       model.getWorldPosition(ac.pos); model.getWorldQuaternion(ac.quat);
       const body = model.userData.crashBody;
       if (body) { ac.vel?.copy(body.velocity); ac.omega?.copy(body.angularVelocity).applyQuaternion(ac.quat.clone().invert()); }
@@ -137,11 +147,14 @@ export function beginGameAircraftCrash(model, ac, event = {}, { groundHeight = 0
   }
   const crash = { water, sinking: null, groundHeight, reason: event.reason ?? 'Impact' };
   model.userData.gameCrash = crash;
+  // The heat haze behind the nozzles goes out with the engines. The model's own animation stops for the crash, so a haze left on would hang behind the wreck as it was, rippling frozen in the air (fleet/aircraft-realism.js).
+  for (const h of model.userData.realism?.haze || []) { h.node.visible = false; h.node.scale.setScalar(1e-4); }
   const report = model.userData.impact({ worldPoint: point, worldNormal: normal, worldVelocity: velocity, worldAngularVelocity: angular,
     partId, surfaceKind: water ? 'water' : event.surfaceKind ?? 'asphalt',
     groundHeight: water ? (() => NaN) : groundHeight, forceCrash: true, deferCrash: water, debrisParent: model.parent });
   crash.report = report;
-  if (water) {
+  // The game's airframe body may already have the wreck (features/breakup.js, on the same crash event): then it skips and sinks it, not this.
+  if (water && !model.userData.hullDriven) {
     const sinking = createSinkingEffect({ duration: 18 }); model.parent.add(sinking);
     sinking.userData.start({ aircraft: model, duration: 18 }); crash.sinking = sinking;
   }

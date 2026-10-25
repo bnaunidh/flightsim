@@ -50,7 +50,8 @@ import * as UI from './gunsight/hud.js';
  * touch screen.
  */
 registerActions({
-  lockOn: { label: 'Lock on: pick the next target in front (guns and missiles)', group: 'Weapons', ctx: ['plane'], default: ['Home'] },
+  // In the helicopter too, since the Apache carries a gun (rules.js hasGuns); the sight itself only shows where there is one.
+  lockOn: { label: 'Lock on: pick the next target in front (guns and missiles)', group: 'Weapons', ctx: ['plane', 'heli'], default: ['Home'] },
 });
 
 const S = {
@@ -85,7 +86,9 @@ function say(text, kind = 'info', secs = 2.5) {
  * ------------------------------------------------------------------ */
 
 function flyingPlane(sim) {
-  return !!(sim && sim.state === 'flying' && sim.aircraft && sim.mode !== 'drive' && sim.game !== 'heli' && !sim.aircraft.crashed && !(sim.walking && sim.walking.active) && !sim.riding);
+  // The helicopter game has no guns — except in a helicopter that carries one (the Apache; rules.js hasGuns).
+  const heliOk = sim && (sim.game !== 'heli' || G.hasGuns(sim.aircraftType, sim.game));
+  return !!(sim && sim.state === 'flying' && sim.aircraft && sim.mode !== 'drive' && heliOk && !sim.aircraft.crashed && !(sim.walking && sim.walking.active) && !sim.riding);
 }
 
 /** A gun aboard: a military jet's own, or the paint pellets while PvP is on for me. */

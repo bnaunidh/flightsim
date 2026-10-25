@@ -105,11 +105,13 @@ for (const t of T.AIRCRAFT) {
   const person = typeof t.buildModel === 'function';
   const wingOnly = !!t.shape.flyingWing || (b.config && b.config.kind === 'flying-wing');
   const want = ['nose', 'core', 'rear', 'gearL', 'gearR'];
-  if (rotor) want.push('rotor', 'tailRotor');
+  const tandem = !!(t.shape.power && t.shape.power.tandem);
+  if (rotor) want.push('rotor', ...(tandem ? [] : ['tailRotor']));
   else want.push('wingInnerL', 'wingOuterL', 'wingInnerR', 'wingOuterR');
   if (!wingOnly) want.push('fin', 'tailplaneL', 'tailplaneR');
   if (!rotor) want.push('gearN');
   const missing = want.filter((z) => !zs.includes(z));
+  if (tandem) ok(`zones: ${t.id} (tandem) has no tail rotor zone`, !zs.includes('tailRotor'), zs.join(' '));
   ok(`zones: ${t.id} has every break zone of its kind`, !missing.length, missing.length ? `missing ${missing.join(', ')}; has ${zs.join(' ')}` : zs.join(' '));
   if (!rotor && !person) {
     const engines = zs.filter((z) => /^engine/.test(z)).length;
@@ -130,7 +132,9 @@ for (const t of T.AIRCRAFT) {
   const must = ['nose', 'core', 'rear'];
   if (!rotor && !person) must.push('wingInnerL', 'wingOuterL', 'wingInnerR', 'wingOuterR', 'gearL', 'gearR');
   if (frame.tail && !person) must.push('fin');
-  if (rotor) must.push('rotor', 'tailRotor', 'gearL', 'gearR');
+  if (rotor) must.push('rotor', 'gearL', 'gearR');
+  // A tandem (the Chinook) has two main rotors and no tail rotor.
+  if (rotor && !(t.shape.power && t.shape.power.tandem)) must.push('tailRotor');
   const empty = must.filter((id) => !has(id));
   ok(`drawn: ${t.id} — every zone it should have has triangles`, !empty.length, empty.length ? `empty: ${empty.join(', ')}` : Object.entries(asg.counts).map(([k, v]) => `${k}:${v}`).join(' '));
   const bx = asg.boxes;

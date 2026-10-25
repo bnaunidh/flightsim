@@ -1425,11 +1425,21 @@ export class RotorSound {
      * 0.86 because a freewheeling rotor keeps turning on the air going up
      * through it.
      */
-    const nrTarget = powered ? 1 : 0.86;
-    const nrRate = powered ? (this.nr < nrTarget ? 0.25 : 0.9) : 0.22;
+    // When the flight model publishes the rotor's own speed (rotor-assist.js
+    // rotorSpeed: ac.rotor.nr — engine out, it is driven by the air coming up
+    // through the disc and bled by the lever), the sound follows it, so an
+    // autorotation sounds like the NR it is really at; otherwise the old
+    // guess, 0.86 freewheeling.
+    const RR = ac.rotor;
+    const nrKnown = RR && Number.isFinite(RR.nr);
+    const nrTarget = nrKnown ? clamp(RR.nr, 0, 1.05) : powered ? 1 : 0.86;
+    const nrRate = powered ? (this.nr < nrTarget ? 0.25 : 0.9) : nrKnown ? 0.9 : 0.22;
     this.nr += (nrTarget - this.nr) * clamp(dt * nrRate, 0, 1);
     if (!powered && this.nr < 0.05) this.nr = Math.max(0, this.nr - dt * 0.02);
     const nr = clamp(this.nr, 0, 1.05);
+    // This type's blade-pass rate (ac.rotor.bladePassHz, from its rotor's
+    // speed and blade count); the Skyhook's 26.67 Hz when nothing says.
+    const mainHz = RR && RR.bladePassHz > 0 ? RR.bladePassHz : MAIN_BLADE_PASS_HZ;
 
     // Turbine spool: faster than the rotor, slower than a piston.
     const n1Target = powered ? 0.45 + coll * 0.55 : 0;
@@ -1441,8 +1451,8 @@ export class RotorSound {
 
     // Blade-pass frequencies follow NR and nothing else. At nr = 1 these are
     // 26.67 Hz and 70.0 Hz exactly.
-    const bladeHz = clamp(MAIN_BLADE_PASS_HZ * nr, 0.4, 60);
-    const tailHz = clamp(TAIL_BLADE_PASS_HZ * nr, 1, 150);
+    const bladeHz = clamp(mainHz * nr, 0.4, 60);
+    const tailHz = clamp(TAIL_BLADE_PASS_HZ * (mainHz / MAIN_BLADE_PASS_HZ) * nr, 1, 150);
     const smooth = 0.2;
     this.bladeOsc.frequency.setTargetAtTime(bladeHz, t, smooth);
     this.thump.frequency.setTargetAtTime(bladeHz, t, smooth);

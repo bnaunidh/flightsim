@@ -167,6 +167,11 @@ function injectHeliCss() {
  */
 const HELI_WORDS = {
   engine: ['ENGINE OFF', 'Press I to start the engine.', 'warn'],
+  // Engine out in the air, the rotor still turning (rotor-assist.js: NR).
+  auto: ['AUTOROTATION', 'Engine out. The assist has the lever down and the nose on 50 kt; it flares and pulls at the bottom. Keep the stick still.', 'warn'],
+  autoOff: ['AUTOROTATION', 'Engine out. Lower the collective to keep the rotor turning, nose down for 50 kt, flare at 100 ft and pull the lever at the bottom.', 'warn'],
+  // Sinking fast into the rotor's own downwash with little airspeed.
+  vortex: ['VORTEX RING', 'Sinking into your own downwash. Push W for airspeed or lower the lever — pulling more makes it worse.', 'warn'],
   off: ['ASSIST OFF', 'No help at all. The lever and the stick are all yours. F turns the assist back on.', 'warn'],
   ground: ['ON THE GROUND', 'Hold Shift to raise the collective until she lifts.', ''],
   climbing: ['CLIMBING', 'Let go of Shift and the assist stops the climb and holds the height.', ''],
@@ -193,6 +198,9 @@ const HELI_WORDS = {
 const TOUCH_SAY = {
   // The pad beside the lever reads START while the engine is off (ui/touch.js).
   engine: 'Tap START to start the engine.',
+  auto: 'Engine out. The assist has the lever down and the nose on 50 kt; it flares and pulls at the bottom. Keep the stick still.',
+  autoOff: 'Engine out. Slide the lever down to keep the rotor turning, nose down for 50 kt, flare low and slide the lever up at the bottom.',
+  vortex: 'Sinking into your own downwash. Push the stick forward for airspeed or slide the lever down.',
   off: 'No help at all. The lever and the stick are all yours. Switch the assist back on in Settings.',
   ground: 'Slide the lever up until she lifts.',
   climbing: 'Let go of the lever and the assist stops the climb and holds the height.',
@@ -527,7 +535,9 @@ const ROTOR = {
     const R = ac.rotor || {};
 
     let key;
-    if (!ac.engineOn) key = 'engine';
+    if (!ac.engineOn && R.autorotating) key = ac.hoverAssist === false ? 'autoOff' : 'auto';
+    else if (!ac.engineOn) key = 'engine';
+    else if ((R.vrs || 0) > 0.25) key = 'vortex';
     else if (sim.autopilot && sim.autopilot.engaged) key = 'autopilot';
     else if (ac.hoverAssist === false) key = 'off';
     else if (r.onGround) key = 'ground';

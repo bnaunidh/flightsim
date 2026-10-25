@@ -19,7 +19,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { getAircraft, specFor, DEFAULT_AIRCRAFT_ID } from './types.js';
 import { clamp, lerp } from '../core/noise.js';
-import { rotorAssist, ROTOR_TUNE } from './rotor-assist.js';
+import { rotorAssist, ROTOR_TUNE, groundEffectFactor, realismScale } from './rotor-assist.js';
 import { handlingFor, ROLL_SHARE_MAX } from './damage-handling.js';
 import { heightAt, isPaved, isOnRunway, isOnAnyRunway, obstacleAt, platformAt, AIRPORT } from '../world/terrain.js';
 
@@ -367,6 +367,7 @@ export class Aircraft {
     this.wheelLoad = 0;
     this.sideScrub = 0;
     this._groundLong = 0;
+    this.wheelCompression = { nose: 0, left: 0, right: 0 };
 
     if (this._spawnOnGround) this.settleOnGear();
   }
@@ -441,8 +442,11 @@ export class Aircraft {
     // Along body -Z at the CG; update()'s thrust at u = 0 with nothing broken.
     const thrust = this.rpm * SPEC.thrustMax * rhoRatio * (simple ? 1.12 : 1) || 0;
     // Along body +Y; the hover assist adds no collective on the ground.
+    // (In ground effect, on its skids: rotor-assist.js groundEffectFactor, the
+    // same multiplier update() applies through rotorAir.)
     const lift = SPEC.rotor
       ? Math.min(clamp(this.rpm, 0, 1) * 2.0, ROTOR_TUNE.maxLift) * SPEC.mass * G * rhoRatio
+        * groundEffectFactor((SPEC.rotorHubY || 1.6) + this.agl, SPEC.rotorRadius || 4.2)
       : 0;
     const LEG_CAP = 160000; // update() clamps each leg's force to this
     let lever = 1;
@@ -1331,11 +1335,19 @@ export class Aircraft {
        * the force here are one function.
        */
       const rotor = (this._rotorLift || 0) * hoverThrust * (rho / RHO0) * rough;
-      // Translational lift: a rotor is measurably more efficient once it flies
-      // out of its own downwash, which is why a helicopter that will not lift
-      // vertically can often run along the ground and get away.
-      const ettl = 1 + clamp(V / 24, 0, 1) * 0.11;
-      fy += rotor * ettl;
+      /*
+       * The air at the disc (rotor-assist.js rotorAir, worked out by the
+       * assist this step): ground effect near the surface, translational
+       * lift once it flies out of its own downwash — which is why a
+       * helicopter that will not lift vertically can often run along the
+       * ground and get away — and the lift lost in vortex ring state.
+       */
+      const AIR = this._rotorAir;
+      const eff = AIR ? AIR.eff : 1 + clamp(V / 24, 0, 1) * 0.11;
+      fy += rotor * eff;
+      // Vortex ring state shakes the machine: the disc working in its own
+      // recirculating wake. A buffet in all three axes, in the moments below.
+      this._vrs = AIR ? AIR.vrs : 0;
       // The disc drags as it is tilted into the airflow.
       /*
        * Rotor drag opposes the way you are actually going.
@@ -1366,7 +1378,12 @@ export class Aircraft {
       // The airframe's own two numbers; see ROTOR_TUNE.dragScale. (They
       // were 46 m/s and full drag outside the old easy-mode computer, which
       // made the same machine 15 kt slower on the hardest setting.)
-      const bladeStall = 1 + clamp((V - ROTOR_TUNE.stallAt) / 22, 0, 1) * 2.4;
+      // Per type (types.js aero.rotorStallAt, m/s): a Black Hawk's blades
+      // run out of lift forty knots later than an R44's.
+      const stallAt = SPEC.rotorStallAt || ROTOR_TUNE.stallAt;
+      const rbs = clamp((V - stallAt) / 22, 0, 1);
+      this._rbs = rbs;
+      const bladeStall = 1 + rbs * 2.4;
       const rd = clamp(V, 0, 60) * SPEC.rotorDrag * 0.5 * bladeStall * ROTOR_TUNE.dragScale;
       if (V > 0.15) {
         // Same body-frame airflow direction the drag above uses: (v, w, -u).
@@ -1535,7 +1552,10 @@ export class Aircraft {
     if (SPEC.rotor) {
       const collective = clamp(this._rotorColl || 0, 0, 1);
       // Enough authority to be crisp in the hover, without being twitchy.
-      const disc = (0.35 + collective * 0.65) * SPEC.mass * G;
+      // At the speed the rotor is turning: engine out, the cyclic goes soft
+      // as NR decays (rotor-assist.js rotorSpeed), which is what it does.
+      const nr = Number.isFinite(this.rotorNr) ? clamp(this.rotorNr, 0, 1.12) : 1;
+      const disc = (0.35 + collective * 0.65) * SPEC.mass * G * nr * nr;
       /*
        * Two bugs lived in these six lines, and both were invisible in a
        * straight-line hover, which is the only way anybody ever tested it.
@@ -1572,6 +1592,33 @@ export class Aircraft {
       this._t.x -= this.omega.x * SPEC.Ixx * ROTOR_TUNE.dampPitch;
       this._t.z -= this.omega.z * SPEC.Izz * ROTOR_TUNE.dampRoll;
       this._t.y -= this.omega.y * SPEC.Iyy * ROTOR_TUNE.dampYaw;
+      /*
+       * Retreating blade stall: past rotorStallAt the blade going backwards
+       * through the air runs out of lift first, so the disc lifts more on
+       * the advancing side and flaps back — the nose comes up and the
+       * machine rolls towards the retreating blade (the left, on a rotor
+       * turning anticlockwise seen from above; rotorDir), with a vibration.
+       * Scaled by the difficulty like the vortex ring (realismScale).
+       */
+      const real = realismScale(this);
+      const rbs = (this._rbs || 0) * real;
+      if (rbs > 0.001 && !this.onGround) {
+        const tt = weather.time_s || 0;
+        const shake = Math.sin(tt * 41) * Math.sin(tt * 5.3);
+        const arm = disc * ROTOR_TUNE.rbsMoment * rbs;
+        this._t.x += arm * SPEC.rotorPitchArm * (1 + 0.5 * shake);
+        this._t.z += arm * SPEC.rotorRollArm * (SPEC.rotorDir || 1) * (1 + 0.5 * shake);
+      }
+      const vrs = this._vrs || 0;
+      if (vrs > 0.001 && !this.onGround) {
+        const tt = weather.time_s || 0;
+        const b = disc * ROTOR_TUNE.vrsBuffet * vrs;
+        // Slow enough (3-6 rad/s) that the attitude actually wobbles; a
+        // faster shake only hums in the integrator.
+        this._t.x += Math.sin(tt * 5.3) * Math.sin(tt * 1.7 + 1) * b * SPEC.rotorPitchArm;
+        this._t.z += Math.sin(tt * 4.1 + 2) * Math.sin(tt * 1.3) * b * SPEC.rotorRollArm;
+        this._t.y += Math.sin(tt * 3.7 + 1) * b * 0.3 * SPEC.rotorYawArm;
+      }
     }
 
     // Propeller torque and P-factor: the aeroplane pulls left at high power.
@@ -1671,6 +1718,11 @@ export class Aircraft {
     this.wheelLoad = 0;
     this.sideScrub = 0;
     this._groundLong = 0;
+    // How far each oleo is pressed in this step (metres, by leg name), for
+    // the drawn struts: the models used to guess it from the pose, or not at
+    // all. Zeroed here and written in the contact loop below.
+    const wc = this.wheelCompression || (this.wheelCompression = { nose: 0, left: 0, right: 0 });
+    wc.nose = wc.left = wc.right = 0;
     let maxImpact = 0;
     const wasOnGround = this.onGround;
 
@@ -1720,6 +1772,9 @@ export class Aircraft {
         const damping = clamp(-gp.c * vN, -spring * 0.85, spring * 1.4 + 3000);
         let N = clamp(spring + damping, 0, 160000);
         this.wheelLoad += N;
+        // The strut's travel for the model, capped a little past its stop (the
+        // drawn oleo bottoms out where the real one does).
+        if (gp.name && gp.name in wc) wc[gp.name] = Math.min(pen, travel * 1.25);
         maxImpact = Math.max(maxImpact, -vN);
 
         const force = new THREE.Vector3(0, N, 0);
@@ -1996,8 +2051,10 @@ export class Aircraft {
      * blurring the disc by collective made the blades appear to stop every
      * time the lever came down — including during every descent to a hover.
      */
+    // (Engine out, the rotor keeps turning as long as the air drives it:
+    // rotorNr, from rotor-assist.js. The blades on screen follow it.)
     this.propBlur = SPEC.rotor
-      ? (this.engineOn ? 1 : clamp(this.rpm * 2, 0, 1))
+      ? (Number.isFinite(this.rotorNr) ? clamp(this.rotorNr, 0, 1) : this.engineOn ? 1 : clamp(this.rpm * 2, 0, 1))
       : clamp((this.rpm - 0.25) / 0.5, 0, 1);
 
     if (this.ias > SPEC.vne) {

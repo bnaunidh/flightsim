@@ -213,6 +213,12 @@ export function buildMeridian(b) {
     b.addSurface('flap', w.surfaces.flapIn);
     b.addSurface('flap', w.surfaces.flapOut);
     b.addSurface(side === 'right' ? 'aileronR' : 'aileronL', w.surfaces.aileron);
+    // Spoilers: a panel over each flap, ahead of its hinge, on the upper
+    // surface — ground spoilers on the roll, speedbrakes in the air.
+    for (const cut of cuts) {
+      if (!/^flap/.test(cut.name)) continue;
+      b.addSpoiler({ stations: wingStations, s0: cut.s0 + 0.08, s1: cut.s1 - 0.08, e0: cut.hinge - 0.15, e1: cut.hinge - 0.02, t: 0.11, m: 0.015, side });
+    }
     // Winglet: up from the tip, swept and canted out a little.
     const sx = side === 'right' ? 1 : -1;
     const tipC = teTip - leAt(tipX);
@@ -270,6 +276,8 @@ export function buildMeridian(b) {
       fold: { axis: [0, 0, 1], angle: -side * 1.5 },
       door: 'outboard',
       doorWidth: 0.36,
+      // The well's door in the belly fairing, hinged outboard.
+      bay: { y: yAt(Math.abs(x)) - 0.14, width: 0.5 },
     });
   }
   // The nose leg's aft doors stay open with the gear down (the forward pair
@@ -287,6 +295,8 @@ export function buildMeridian(b) {
     fold: { axis: [1, 0, 0], angle: 1.45 },
     door: 'front',
     doorWidth: 0.3,
+    // The forward pair in the belly, hinged either side of the well.
+    bay: { y: -0.8, width: 0.26 },
   });
 
   /* ---------------- Details ---------------- */

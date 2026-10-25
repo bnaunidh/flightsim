@@ -37,8 +37,9 @@ import { CloudField } from './world/clouds.js';
 import { Rain } from './world/precip.js';
 
 import { Aircraft, EVENTS, UNITS, SPEC, applyAircraft } from './aircraft/physics.js';
-import { getAircraft, specFor } from './aircraft/types.js';
+import { getAircraft, specFor, isHelicopter } from './aircraft/types.js';
 import { createAircraftModel, syncAircraftModel, crashAircraftModel, clampSinking, eyeFor, groundOffsetFor, setFleetModels } from './aircraft/model-adapter.js';
+import { setModelQuality } from './aircraft/model-quality.js';
 import { createCockpit } from './aircraft/cockpit.js';
 import { TouchControls, isTouchDevice } from './ui/touch.js';
 
@@ -140,6 +141,8 @@ class Game {
     this.settings = loadSettings();
     // Before anything builds an aeroplane, say which set of models to use.
     setFleetModels(this.settings.fleetModels);
+    // ...and which tier it is built for (the heat haze behind a jet is High and up).
+    setModelQuality(this.settings.quality);
     // Before anything flashes. On unless the player has switched it off.
     setReduceFlashing(this.settings.reduceFlashing !== false);
     // Off unless the player has switched Comic effects on.
@@ -1586,7 +1589,7 @@ class Game {
 
     // Light the right half of the switcher. The helicopter is an aircraft
     // type rather than a mode, so the bar has to be told which one you are in.
-    this.menus.setGame(this.aircraftType && this.aircraftType.id === 'harrier' ? 'heli' : 'flight');
+    this.menus.setGame(isHelicopter(this.aircraftType) ? 'heli' : 'flight');
 
     // Weather.
     if (mode === 'free') {
@@ -2491,6 +2494,8 @@ class Game {
     const s = this.settings;
     s.qualityAutoPicked = res.picked;
     s.quality = res.picked;
+    // The models' tier (the heat haze is High and up) and html.fx-low follow the pick now, not at the next start.
+    this.syncFxTier();
     if (tierRank(res.picked) < tierRank(this.qualityBuilt)) this.applyQualityNow(res.picked);
     saveSettings(s);
     if (this.menus && this.menus.syncSettings) this.menus.syncSettings(s);
@@ -2507,6 +2512,8 @@ class Game {
    * and the Auto probe's pick.
    */
   syncFxTier() {
+    // The models read the tier too (the heat haze behind a jet hides below High).
+    setModelQuality(this.settings.quality);
     if (typeof document === 'undefined' || !document.documentElement) return;
     document.documentElement.classList.toggle('fx-low', this.settings.quality === 'low');
   }
@@ -4225,7 +4232,7 @@ class Game {
      */
     if (id === 'heli') {
       this.menus.chosenAircraft = 'harrier';
-    } else if (id === 'flight' && this.menus.chosenAircraft === 'harrier') {
+    } else if (id === 'flight' && isHelicopter(getAircraft(this.menus.chosenAircraft))) {
       // Coming back from the helicopter must not silently leave you in it.
       this.menus.chosenAircraft = 'skylark';
     }

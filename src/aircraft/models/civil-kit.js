@@ -519,12 +519,12 @@ export function hull(def) {
  * Aerofoils and lofted surfaces
  * ------------------------------------------------------------------ */
 
-/** NACA 4-digit thickness at chord fraction x (fraction of chord). */
-function naThick(x, t) {
+/** NACA 4-digit thickness at chord fraction x (fraction of chord). Exported for the spoilers (civil-build.js addSpoiler), which lie on this surface. */
+export function naThick(x, t) {
   return 5 * t * (0.2969 * Math.sqrt(x) - 0.126 * x - 0.3516 * x * x + 0.2843 * x ** 3 - 0.1036 * x ** 4);
 }
 /** NACA 4-digit camber line, maximum camber m at 40% chord. */
-function naCamber(x, m) {
+export function naCamber(x, m) {
   if (!m) return 0;
   return x < 0.4 ? (m / 0.16) * (0.8 * x - x * x) : (m / 0.36) * (0.2 + 0.8 * x - x * x);
 }

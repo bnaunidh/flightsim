@@ -8,6 +8,8 @@ import {makeModel,finishModel,addBox,addCylinder,addSphere,addInstanced,tubeBetw
 import {createAircraftDamageAdapter} from './aircraft-upgrades.js';
 import {createAircraftMaterials,aircraftDecalTexture} from './aircraft-textures.js';
 import {attachAircraftImpact} from './aircraft-impact.js';
+// Spoilers, slats, Fowler travel, bay doors, reversers, wheel spin-down and heat haze, for every type at once.
+import {applyRealism} from './aircraft-realism.js';
 const clamp=THREE.MathUtils.clamp, V=(p)=>new THREE.Vector3(...p);
 const mix=(a,b,t)=>a+(b-a)*t;
 export function buildAircraft(config,options={}) {
@@ -128,6 +130,8 @@ export function buildAircraft(config,options={}) {
  if(c.schemeTitle&&c.kind!=='flying-wing'&&c.kind!=='airliner'){const z0=c.body[0][0],L=c.body.at(-1)[0]-z0,at=c.titleAt||{},width=at.width??Math.min(L*.44,10),z=at.z??z0+L*(at.frac??.46);sideDecal('Titling',aircraftDecalTexture(c.schemeTitle,{color:c.cheatline||inkOnBody,background:'transparent',width:2048,height:128}),z,width,width/16,fuselage,at.phi);}
  // ctx.exports: whatever a decorator wants on the finished aircraft's userData (the airliners' doors and flight-deck outline). The airframe it decorates is wrapped by the damage adapter below, so its own userData is not what callers see.
  const ctx={model,config:c,materials,parts,group,box,tube,panel,skin,registerAnimation:fn=>animations.push(fn),THREE,exports:{}};c.decorate?.(ctx);
+ // After the type's own decoration (an airliner's turbofans are what the reversers ride on), before the static batching (each part is a group of its own, so it stays a hinge).
+ try{ctx.exports.realism=applyRealism(ctx,{wheels,engines,controlNodes});}catch(e){console.warn(`The ${c.id} realism layer failed; the airframe stands without it.`,e);}
  // Merge primitive buffers within each named assembly without merging across hinges/strike roots.
  function batchStatic(parent){
   for(const child of [...parent.children])if(child.isGroup)batchStatic(child);
