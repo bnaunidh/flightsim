@@ -23,6 +23,11 @@
  * The airliners (their own decorator, fleet/extra/airliners.js) are held to
  * the same checks, so nothing that fixed the others can break them.
  *
+ *  10  (wave 10, the skins lane) the paint at this quality tier: the livery
+ *      canvas is the tier's size (airliner-kit liverySizeFor), a clearcoat
+ *      on High and Ultra only, the fan cowls in the airline's cowl skin,
+ *      bare metal as metal, the name's decal at its layout's proportion.
+ *
  * `check(sim, r, say)`, as tests/features/index.js expects.
  */
 
@@ -388,6 +393,101 @@ export async function check(sim, r, say = () => {}) {
       const h2 = rem._build('air', 'tpose', '#4fd684', '');
       built.push(h, h2);
       r.ok('skins: T-Pose Harrison as a remote takes the player colour (it was green shirt and blue trousers for everybody)', colourOf(h) !== colourOf(h2));
+    }
+
+    /* ---- 10. wave 10: the paint at this tier -------------------------------------------- */
+    say('skins: the paint at this tier');
+    try {
+      const KIT = await import('../../src/fleet/extra/airliner-kit.js');
+      const PAINT = await import('../../src/render/paint.js');
+      const tier = TEX.textureTier();
+      const want = KIT.liverySizeFor(tier);
+      const clear = PAINT.paintHasClearcoat();
+      const matNamed = (model, name) => {
+        let found = null;
+        model.traverse((o) => {
+          if (found || !o.isMesh) return;
+          for (const m of [].concat(o.material)) if (m && m.name === name) found = m;
+        });
+        return found;
+      };
+      const named = (model, re) => {
+        const out = [];
+        model.traverse((o) => {
+          if (o.isMesh && re.test(o.name)) out.push(o);
+        });
+        return out;
+      };
+      /** How many distinct colours a 24 x 12 grid of samples off the livery canvas finds. */
+      const shades = (map) => {
+        const img = map && map.image;
+        if (!img || typeof img.getContext !== 'function') return -1;
+        const g = img.getContext('2d', { willReadFrequently: true });
+        const set = new Set();
+        for (let i = 0; i < 24; i++) {
+          for (let j = 0; j < 12; j++) {
+            const d = g.getImageData(Math.floor(((i + 0.5) / 24) * img.width), Math.floor(((j + 0.5) / 12) * img.height), 1, 1).data;
+            set.add((d[0] >> 3) + ',' + (d[1] >> 3) + ',' + (d[2] >> 3));
+          }
+        }
+        return set.size;
+      };
+      for (const lid of ['house', ...L.AIRLINE_LIVERIES.map((l) => l.id)]) {
+        const { scheme, model } = build('a320', lid);
+        const skin = matNamed(model, 'Airliner_livery');
+        const img = skin && skin.map && skin.map.image;
+        r.ok(`skins: a320 in ${lid}: the livery is drawn at this tier's size (${tier}: ${want.join('x')})`, !!img && img.width === want[0] && img.height === want[1], img ? `${img.width}x${img.height}` : 'no skin');
+        r.ok(`skins: a320 in ${lid}: the paint ${clear ? 'wears a clearcoat (High/Ultra)' : 'is a plain material (Low/Medium: no clearcoat)'}`,
+          !!skin && (clear ? skin.isMeshPhysicalMaterial && skin.clearcoat > 0 : !skin.isMeshPhysicalMaterial), skin ? skin.type : 'none');
+        const n = shades(skin && skin.map);
+        r.ok(`skins: a320 in ${lid}: the livery canvas is painted, not a flat colour (${n} shades sampled)`, n >= 6, String(n));
+        const fans = named(model, /^Fan cowl$/);
+        r.ok(`skins: a320 in ${lid}: both fan cowls wear the cowl skin`, fans.length === 2 && fans.every((f) => f.material.name === 'Airliner_cowl' && f.material.map), `${fans.length} cowls`);
+        // The ring is at the FRONT of the cowl (by the lip), not at the nozzle:
+        // read the cowl skin at the v the front of the cowl has, the way the
+        // GPU does (a flipped texture reads row (1 - v)).
+        if (scheme.style && scheme.style.cowlBand && fans[0]) {
+          const f = fans[0];
+          const map = f.material.map;
+          const img = map.image;
+          const gc = img.getContext('2d', { willReadFrequently: true });
+          const pos = f.geometry.attributes.position;
+          const uvs = f.geometry.attributes.uv;
+          let zMin = Infinity;
+          let zMax = -Infinity;
+          for (let i = 0; i < pos.count; i++) {
+            zMin = Math.min(zMin, pos.getZ(i));
+            zMax = Math.max(zMax, pos.getZ(i));
+          }
+          // v runs along the cowl in step with z, lip (0) to nozzle (1): the
+          // vertices are few, so check that, then read 13.5% back (the ring).
+          let lin = 0;
+          for (let i = 0; i < pos.count; i++) lin = Math.max(lin, Math.abs(uvs.getY(i) - (pos.getZ(i) - zMin) / (zMax - zMin)));
+          const best = { v: lin < 0.03 ? 0.135 : NaN };
+          const row = (v) => Math.min(img.height - 1, Math.max(0, Math.floor((map.flipY ? 1 - v : v) * img.height)));
+          const at = (v) => Array.from(gc.getImageData(2, row(v), 1, 1).data.slice(0, 3));
+          const hexOf = String(scheme.style.cowlBand).replace('#', '');
+          const want = [0, 2, 4].map((k) => parseInt(hexOf.slice(k, k + 2), 16)); // sRGB, as the canvas holds it
+          const got = at(best.v);
+          const near = Math.abs(got[0] - want[0]) + Math.abs(got[1] - want[1]) + Math.abs(got[2] - want[2]) < 60;
+          r.ok(`skins: a320 in ${lid}: the cowl ring is at the front of the cowl, by the lip`, near, `rgb ${got.join(',')} at v 0.135; v off z-linear by ${lin.toFixed(3)}`);
+          // The reverser sleeve wears the same skin and carries on the cowl's v for its z.
+          const sleeve = named(model, /^Reverser sleeve skin$/)[0];
+          if (sleeve) {
+            const sp = sleeve.geometry.attributes.position;
+            const su = sleeve.geometry.attributes.uv;
+            let front = null;
+            for (let i = 0; i < sp.count; i++) if (!front || sp.getZ(i) < front.z) front = { z: sp.getZ(i), v: su.getY(i) };
+            const vCowl = (front.z - zMin) / (zMax - zMin);
+            r.ok(`skins: a320 in ${lid}: the reverser sleeve carries on the cowl's paint (no ring of its own)`, Math.abs(front.v - vCowl) < 0.05, `sleeve front v ${front.v.toFixed(2)}, cowl there ${vCowl.toFixed(2)}`);
+          }
+        }
+        if (scheme.style && scheme.style.metal) r.ok(`skins: a320 in ${lid}: bare metal is metal`, !!skin && skin.metalness > 0.6, skin ? `metalness ${skin.metalness}` : 'none');
+        const title = named(model, /^Titling$/)[0];
+        if (scheme.titling) r.ok(`skins: a320 in ${lid}: the name's decal is ${scheme.style && scheme.style.layout === 'billboard' ? 'ten' : 'sixteen'} to one`, !!title && title.material.map.image.width === (scheme.style && scheme.style.layout === 'billboard' ? 1280 : 2048), title ? String(title.material.map.image.width) : 'none');
+      }
+    } catch (e) {
+      r.ok('skins: the paint at this tier (checks ran)', false, String((e && e.stack) || e).slice(0, 200));
     }
 
     r.ok('skins: nothing warned while all those aeroplanes were built', warns.length === 0, warns.slice(0, 2).join(' | '));

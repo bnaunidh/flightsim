@@ -91,8 +91,8 @@ export function TYPES(base) {
         'Two huge engines, a diamond wing and nozzles that steer the thrust. The quickest of the real jets '
         + 'to answer the stick, and the fastest — so be gentle with it until you know it.',
       stats: { speed: 5, handling: 5, ease: 2 },
-      livery: '#8e959c',
-      accent: '#5b636b',
+      livery: '#858c93', // the two-tone grey of a stealth fighter (upper), FS 36251-ish
+      accent: '#5e666e',
       callsign: 'Raptor zero one',
       stores: 2,
       plan: { nose: -10.75, tail: 8.05, span: 13.56 },
@@ -171,7 +171,7 @@ export function TYPES(base) {
         'It can stop in mid-air. Press T and the nozzle swings down: it hovers, lands on a pad and takes off '
         + 'straight up. Over 60 knots the hover switches itself off and it flies like any other jet.',
       stats: { speed: 4, handling: 3, ease: 3 },
-      livery: '#6e757c',
+      livery: '#656c73', // the darker all-over grey of the newer stealth jet
       accent: '#484e55',
       callsign: 'Lightning three five',
       stores: 2,

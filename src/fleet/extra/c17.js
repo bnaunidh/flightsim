@@ -422,7 +422,7 @@ C17.fuselage.rings = [
 
 const c17 = {
   id: 'c17', name: 'Boeing C-17 Globemaster III', kind: 'airliner', massKg: 26000,
-  paint: '#6f777f', accent: '#4a5157', registration: 'GM-317', bodySegments: 8,
+  paint: '#6c7279', accent: '#4a5157', registration: 'GM-317', bodySegments: 8,
   body: bodyOf(C17.fuselage.stations),
   wing: {
     rootX: 1.5, span: G.tip.x - 1.5, rootZ: G.wingZ, rootY: 3.6,

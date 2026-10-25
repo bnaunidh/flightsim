@@ -59,6 +59,7 @@ import { addInstanced } from '../common.js';
 import { aircraftDecalTexture } from '../aircraft-textures.js';
 import { AIRLINER_GEOMETRY as GEO } from '../../aircraft/extra/airliners.js';
 import { hull, turned } from '../../aircraft/models/civil-kit.js';
+import { textureTier } from '../../render/textures.js';
 import {
   piecewise, loftFuselage, placeFuselage, splitByZ, liveryTexture, airlinerMaterials, glazing,
   windowRows, buildDoors, turbofan, registration, meshOf, remapUV, DECAL,
@@ -506,6 +507,9 @@ function dress(ctx, S) {
   const line = named && typeof scheme.cheatline === 'string' ? scheme.cheatline : null;
   const tailColour = named && scheme.tail != null ? scheme.tail : null;
   const reg = (named && scheme.reg) || (scheme && scheme.reg) || c.registration;
+  // The airline's layout (aircraft/liveries.js `style`): belly and cowl
+  // colours, the cheatline's bands, bare metal, the name's weight.
+  const style = named && scheme.style && typeof scheme.style === 'object' ? scheme.style : null;
   const F = S.fuselage;
   const along = piecewise(F.alongKnots);
   const h = loftFuselage({ ...F, along });
@@ -526,9 +530,9 @@ function dress(ctx, S) {
   const bays = ng ? [{ z0: ng[2] - 1.6 * (c.gear.noseRadius || 0.4) - 0.3, z1: ng[2] + 2.4 * (c.gear.noseRadius || 0.4), halfWidth: 1.5 * (c.gear.noseRadius || 0.4), w: h.section(ng[2]).w }] : [];
   const tex = liveryTexture({
     key: c.id, base, accent, line, along, vAt: vMain, cabinZ: S.cabinZ, bellyY: S.bellyY, z0: first.z, z1: last.z,
-    laps: S.laps, cheat: S.cheat, doors: painted, radomeZ: S.radomeZ, bays,
+    laps: S.laps, cheat: S.cheat, doors: painted, radomeZ: S.radomeZ, bays, style,
   });
-  const M = airlinerMaterials(model, { livery: tex, base });
+  const M = airlinerMaterials(model, { livery: tex, base, style });
   placeFuselage(ctx, h, F.cuts, M.skin);
   if (hump) {
     const [front, back] = splitByZ(hump.geometry, [F.cuts[0]]);
@@ -602,7 +606,9 @@ function dress(ctx, S) {
     return 0.2126 * k.r + 0.7152 * k.g + 0.0722 * k.b > 0.35;
   })();
   if (reg) {
-    const tex2 = aircraftDecalTexture(reg, { color: light ? '#1f272e' : '#e9eef2', background: 'transparent', width: 512, height: 128 });
+    // A registration is lettered in a plain medium-weight sans, spaced out,
+    // as the real ones are stencilled.
+    const tex2 = aircraftDecalTexture(reg, { color: light ? '#1f272e' : '#e9eef2', background: 'transparent', width: 512, height: 128, weight: 600, spacing: 0.08 });
     registration(ctx, h, { text: reg, z: S.reg.z, y: S.reg.y, width: S.reg.w, texture: tex2 }, pieceOf(S.reg.z));
   }
   // The titling line a scheme may carry — "UNITED STATES OF AMERICA" on Air
@@ -619,10 +625,19 @@ function dress(ctx, S) {
   const words = named ? [scheme.title, scheme.titling].find((w) => typeof w === 'string' && w.trim()) : null;
   const title = words ? words.trim() : null;
   if (title && S.title) {
-    const ink = typeof line === 'string' ? line : light ? '#1f272e' : '#e9eef2';
-    const tex3 = aircraftDecalTexture(title, { color: ink, background: 'transparent', width: 2048, height: 128 });
+    // The name in the airline's own ink and weight (style.titleInk,
+    // titleWeight, titleSpacing), else the cheatline colour; a 'billboard'
+    // layout sets it taller (ten to one rather than sixteen), as a freight
+    // or low-cost airline does.
+    const ink = (style && style.titleInk) || (typeof line === 'string' ? line : light ? '#1f272e' : '#e9eef2');
+    const billboard = !!(style && style.layout === 'billboard');
+    const ratio = billboard ? 10 : 16;
+    const tex3 = aircraftDecalTexture(title, {
+      color: ink, background: 'transparent', width: 128 * ratio, height: 128,
+      weight: (style && style.titleWeight) || 700, spacing: style && typeof style.titleSpacing === 'number' ? style.titleSpacing : 0.04,
+    });
     const tz = S.title.z;
-    registration(ctx, h, { text: title, z: tz, y: S.title.y, width: S.title.w, height: S.title.w / 16, texture: tex3, name: 'Titling' }, pieceOf(tz));
+    registration(ctx, h, { text: title, z: tz, y: S.title.y, width: S.title.w, height: S.title.w / ratio, texture: tex3, name: 'Titling' }, pieceOf(tz));
   }
 
   // The fin in the scheme's tail colour, or the accent. Its own material
@@ -640,7 +655,10 @@ function dress(ctx, S) {
   // The airline's mark on the fin (aircraft/liveries.js `emblem`): a
   // geometric device of the game's own, in the body colour on the tail
   // colour, one each side, where every real airline puts its own.
-  if (named && scheme.emblem) finEmblem(ctx, scheme.emblem, { ink: base, tail: tailColour != null ? tailColour : accent });
+  if (named && scheme.emblem) {
+    const inks = Array.isArray(style && style.emblemInks) && style.emblemInks.length ? style.emblemInks : [base];
+    finEmblem(ctx, scheme.emblem, { inks, tail: tailColour != null ? tailColour : accent });
+  }
   // Flap-track fairings: the canoes under the trailing edge every airliner
   // wing carries (not a turboprop's hinged flaps, not Concorde's delta).
   if (S.flapTracks !== false) flapTrackFairings(ctx, M.nacelle);
@@ -692,19 +710,26 @@ function dress(ctx, S) {
 
 const emblems = new Map();
 /**
- * A fin emblem, drawn once per style and ink: 'stripes' (three slanted
- * bars), 'globe' (a circle with its meridians), 'star' (four points), 'wave'
- * (a swept band), 'sun' (a disc with short rays), 'moon' (a crescent and a
+ * A fin emblem, drawn once per style, inks and tier: 'stripes' (three
+ * slanted bars, each in its own ink when three are given), 'compass' (a
+ * ring round a four-point rose), 'star' (eight points), 'wave' (a swept
+ * band over a thinner one, the second ink for the thin one), 'sun' (a disc
+ * with short rays, the second ink for the rays), 'moon' (a crescent and a
  * dot). Geometric and original: no real airline's logo is drawn or copied.
+ * ('globe' is kept as a name for the compass: the saved id of an older
+ * scheme, and a circle with meridians was too near a real mark.)
  */
-function emblemTexture(style, ink) {
-  const key = `airliner-emblem|${style}|${ink}`;
+function emblemTexture(style, inks) {
+  const tier = textureTier();
+  const key = `airliner-emblem|${style}|${inks.join(',')}|${tier}`;
   if (emblems.has(key)) return emblems.get(key);
-  const S = 256;
+  const S = tier === 'high' || tier === 'ultra' ? 512 : 256;
   const c = document.createElement('canvas');
   c.width = S;
   c.height = S;
   const g = c.getContext('2d');
+  const ink = inks[0];
+  const inkAt = (i) => inks[Math.min(i, inks.length - 1)];
   if (g && typeof g.clearRect === 'function') {
     g.clearRect(0, 0, S, S);
     g.fillStyle = ink;
@@ -716,26 +741,35 @@ function emblemTexture(style, ink) {
     if (style === 'stripes') {
       g.lineWidth = S * 0.11;
       for (let i = -1; i <= 1; i++) {
+        g.strokeStyle = inks.length >= 3 ? inkAt(i + 1) : ink;
         g.beginPath();
         g.moveTo(cx + i * S * 0.2 - S * 0.14, cy + S * 0.3);
         g.lineTo(cx + i * S * 0.2 + S * 0.14, cy - S * 0.3);
         g.stroke();
       }
-    } else if (style === 'globe') {
-      g.lineWidth = S * 0.07;
+    } else if (style === 'compass' || style === 'globe') {
+      // A compass rose: a ring, four long points and four short between.
+      g.lineWidth = S * 0.055;
       g.beginPath();
-      g.arc(cx, cy, S * 0.34, 0, Math.PI * 2);
+      g.arc(cx, cy, S * 0.4, 0, Math.PI * 2);
       g.stroke();
-      g.lineWidth = S * 0.05;
-      for (const k of [0.12, 0.34]) {
-        g.beginPath();
-        g.ellipse(cx, cy, S * k, S * 0.34, 0, 0, Math.PI * 2);
-        g.stroke();
+      g.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+        const d = i % 2 ? S * 0.1 : S * 0.33;
+        g.lineTo(cx + Math.cos(a) * d, cy + Math.sin(a) * d);
       }
+      g.closePath();
+      g.fill();
+      g.fillStyle = inkAt(1);
       g.beginPath();
-      g.moveTo(cx - S * 0.34, cy);
-      g.lineTo(cx + S * 0.34, cy);
-      g.stroke();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 - Math.PI / 4;
+        const d = i % 2 ? S * 0.06 : S * 0.2;
+        g.lineTo(cx + Math.cos(a) * d, cy + Math.sin(a) * d);
+      }
+      g.closePath();
+      g.fill();
     } else if (style === 'star') {
       g.beginPath();
       const R = S * 0.4;
@@ -753,6 +787,7 @@ function emblemTexture(style, ink) {
       g.moveTo(S * 0.1, cy + S * 0.18);
       g.bezierCurveTo(S * 0.35, cy - S * 0.35, S * 0.6, cy + S * 0.4, S * 0.9, cy - S * 0.2);
       g.stroke();
+      g.strokeStyle = inkAt(1);
       g.lineWidth = S * 0.06;
       g.beginPath();
       g.moveTo(S * 0.18, cy + S * 0.36);
@@ -762,6 +797,7 @@ function emblemTexture(style, ink) {
       g.beginPath();
       g.arc(cx, cy, S * 0.2, 0, Math.PI * 2);
       g.fill();
+      g.strokeStyle = inkAt(1);
       g.lineWidth = S * 0.06;
       for (let i = 0; i < 12; i++) {
         const a = (i / 12) * Math.PI * 2;
@@ -799,11 +835,12 @@ function emblemTexture(style, ink) {
  * the chord ahead of the rudder, 3 cm proud of the painted shell with a
  * deeper decal offset than the paint's, so it wins the depth test over it.
  */
-function finEmblem(ctx, style, { ink }) {
+function finEmblem(ctx, style, { ink, inks }) {
   const fc = ctx.config.fin;
   const fin = ctx.parts.verticalFin;
   if (!fc || !fin || fc.mirror || fc.x) return null;
-  const tex = emblemTexture(style, css(ink));
+  const list = Array.isArray(inks) && inks.length ? inks : [ink];
+  const tex = emblemTexture(style, list.map((c) => css(c)));
   const mat = ctx.model.userData.ownMaterial(new THREE.MeshBasicMaterial({
     name: 'Airliner_fin_emblem', map: tex, transparent: true, depthWrite: false, toneMapped: true,
     polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,

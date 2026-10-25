@@ -362,6 +362,14 @@ export function applyRealism(ctx, rig) {
       const sleeve = new THREE.CylinderGeometry(R * 1.005, R * 0.9, L * 0.27, 14, 1, true);
       sleeve.rotateX(Math.PI / 2);
       sleeve.translate(cfg.x, cfg.y, zf + L * 0.575);
+      // The cowl's skin runs v along the cowl (airliner-kit turbofan: lip 0.04 L
+      // to nozzle 0.7 L); the sleeve takes the same v for its z, so it carries
+      // on the cowl's paint (no ring of its own, the grime at the back).
+      {
+        const sp = sleeve.attributes.position;
+        const su = sleeve.attributes.uv;
+        for (let i = 0; i < su.count; i++) su.setY(i, Math.min(1, Math.max(0, (sp.getZ(i) - (zf + 0.04 * L)) / (0.66 * L))));
+      }
       dyn('Reverser sleeve skin', sleeve, cowl.material, g);
       out.reversers.push({ node: g, cascade: cg, travel: L * 0.16 });
     }

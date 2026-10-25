@@ -357,10 +357,10 @@ export function fuselageLettering(b, hull, { regAt = null, titleAt = null } = {}
   // A grid as coarse as the patch can be: the Meridian and the Tempest are within 30 triangles of their 6000 budget
   // (tests/features/civil.mjs). Four steps along the body and one across; across, a label a quarter of a metre
   // tall sags 2-3 cm off a round fuselage, inside the 4 cm it stands out and the polygon offset.
-  if (reg && regAt) out.push(lettering(b, hull, 'Airframe registration', lettersTexture(reg, { color: ink, width: 512, height: 128 }), regAt, 0.25, 4, 1));
+  if (reg && regAt) out.push(lettering(b, hull, 'Airframe registration', lettersTexture(reg, { color: ink, width: 512, height: 128, weight: 600, spacing: 0.08 }), regAt, 0.25, 4, 1));
   if (title && titleAt) {
     const titleInk = typeof scheme.cheatline === 'string' ? scheme.cheatline : ink;
-    out.push(lettering(b, hull, 'Titling', lettersTexture(title, { color: titleInk, width: 2048, height: 128 }), titleAt, 1 / 16, 6, 1));
+    out.push(lettering(b, hull, 'Titling', lettersTexture(title, { color: titleInk, width: 2048, height: 128, weight: 700, spacing: 0.06 }), titleAt, 1 / 16, 6, 1));
   }
   return out;
 }

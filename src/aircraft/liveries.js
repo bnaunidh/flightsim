@@ -44,6 +44,19 @@ export const LIVERIES = [
     titling: 'ABYSSINIA AIR',
     emblem: 'stripes',
     fleet: ['b737', 'b787', 'a350', 'b777', 'q400', 'meridian'],
+    // Inspired by the kind of airline that paints its flag's colours along the
+    // body: three bands (green, gold, red) for the cheatline, the green of the
+    // fin carried onto the engine cowls with a gold ring, a mid-grey belly.
+    style: {
+      layout: 'cheatline',
+      bands: ['#0b8a3e', '#e8b40a', '#d9231f'],
+      belly: '#aeb6bd',
+      cowl: '#0b8a3e',
+      cowlBand: '#e8b40a',
+      emblemInks: ['#e8b40a', '#f4f6f8', '#d9231f'],
+      titleWeight: 700,
+      titleSpacing: 0.05,
+    },
   },
   {
     // The id stays 'continental' (it is in saved hangars and multiplayer
@@ -59,8 +72,20 @@ export const LIVERIES = [
     tail: 0x0d2f56,
     reg: 'N480UU',
     titling: 'UNUNITED',
-    emblem: 'globe',
+    emblem: 'compass',
     fleet: ['b737', 'b777', 'b787', 'a320', 'a321', 'meridian'],
+    // White over a deep-blue belly that rises to a gold pinstripe, navy fin
+    // and cowls: the two-blues-and-gold look, with a compass for a mark (the
+    // owner's table: "globe swapped for a compass").
+    style: {
+      layout: 'two-tone',
+      belly: '#1a4f8a',
+      pinstripe: '#d4a62a',
+      cowl: '#0d2f56',
+      cowlBand: '#d4a62a',
+      titleWeight: 700,
+      titleSpacing: 0.08,
+    },
   },
   {
     id: 'liberty',
@@ -74,6 +99,19 @@ export const LIVERIES = [
     titling: 'LIBERTY AIR',
     emblem: 'star',
     fleet: ['b737', 'a320', 'a321', 'b787', 'b777', 'meridian'],
+    // Bare polished metal with a thin red-over-blue cheatline, a red fin
+    // with the star, and bare-metal cowls: the classic American-style
+    // "silver bird". Metal is metal here (airliner-kit airlinerMaterials).
+    style: {
+      layout: 'metal',
+      metal: true,
+      bands: ['#c8102e', '#143478'],
+      cowl: '#c9ced3',
+      emblemInks: ['#f4f6f8'],
+      titleWeight: 700,
+      titleSpacing: 0.06,
+      titleInk: '#12306b',
+    },
   },
   {
     id: 'bleuciel',
@@ -88,6 +126,17 @@ export const LIVERIES = [
     emblem: 'wave',
     // The A380 and Concorde: flown once, remembered for it.
     fleet: ['a320', 'a321', 'a350', 'b777', 'b787', 'a380', 'concorde', 'meridian'],
+    // Eurowhite: a clean white body with no cheatline, the name in navy, a
+    // navy fin with the sweep (white over red), grey belly, white cowls.
+    style: {
+      layout: 'eurowhite',
+      belly: '#b4bcc4',
+      cowl: null,
+      emblemInks: ['#f7f8fa', '#c8142a'],
+      titleWeight: 600,
+      titleSpacing: 0.1,
+      titleInk: '#12306b',
+    },
   },
   {
     id: 'bharat',
@@ -101,6 +150,21 @@ export const LIVERIES = [
     titling: 'BHARAT AIR',
     emblem: 'sun',
     fleet: ['a320', 'a321', 'b787', 'b777', 'a350', 'b747', 'meridian'],
+    // A warm white body, a saffron band above the windows with a thin red
+    // line under it, saffron fin carrying the sun in deep red, red cowls with
+    // a saffron ring.
+    style: {
+      layout: 'cheatline',
+      bands: ['#e8721f', '#b3121b'],
+      bandWeights: [3, 1],
+      belly: '#b9bfc5',
+      cowl: '#b3121b',
+      cowlBand: '#e8721f',
+      emblemInks: ['#b3121b'],
+      titleWeight: 700,
+      titleSpacing: 0.06,
+      titleInk: '#b3121b',
+    },
   },
   {
     id: 'nightfreight',
@@ -114,6 +178,18 @@ export const LIVERIES = [
     titling: 'NIGHT FREIGHT',
     emblem: 'moon',
     fleet: ['b747', 'b777', 'q400', 'meridian'],
+    // Charcoal all over with an amber billboard name, black belly, amber
+    // ring on charcoal cowls; the soot shows on a dark freighter.
+    style: {
+      layout: 'billboard',
+      belly: '#1f2327',
+      cowl: '#24282d',
+      cowlBand: '#e8a33c',
+      emblemInks: ['#e8a33c'],
+      titleWeight: 800,
+      titleSpacing: 0.12,
+      titleInk: '#e8a33c',
+    },
   },
   /*
    * "Air Force One" (src/game/extra/afo.js). A VC-25-style scheme — white
@@ -134,6 +210,17 @@ export const LIVERIES = [
     tail: 0x1c365e,
     reg: 'SAM 42',
     title: 'UNITED STATES OF AMERICA',
+    // White over a light-blue belly that rises to the navy cheatline; light
+    // blue cowls. Inspired by the VC-25's two-tone, our own art, no seal.
+    style: {
+      layout: 'two-tone',
+      belly: '#7fa9d6',
+      pinstripe: '#c9a227',
+      cowl: '#7fa9d6',
+      titleWeight: 600,
+      titleSpacing: 0.14,
+      titleInk: '#1c365e',
+    },
     // Story-only: the hangar offers it (the player may fly it), but nothing
     // draws it at random. A random pick put the President's paint on the
     // second parked A380 and one ambient airliner in seven, and a callsign of
@@ -163,8 +250,26 @@ export const AIRLINE_LIVERIES = Object.freeze(LIVERIES.filter((l) => !l.house &&
  *   titling   the airline's name along the forward fuselage, above the
  *             windows, as every real one wears it (`title` is Air Force
  *             One's, which the light aeroplanes paint too; this is not)
- *   emblem    the mark on the fin: 'stripes' | 'globe' | 'star' | 'wave' |
+ *   emblem    the mark on the fin: 'stripes' | 'compass' | 'star' | 'wave' |
  *             'sun' | 'moon' — geometric, the game's own, never a real logo
+ *   style     how the paint is laid out (fleet/extra/airliner-kit.js
+ *             liveryTexture, airlinerMaterials; all optional, all data):
+ *     layout      'cheatline' (a band under the windows), 'eurowhite' (a
+ *                 plain body, the name does the work), 'two-tone' (the belly
+ *                 colour rises to the cheatline), 'billboard' (a dark body,
+ *                 big name), 'metal' (bare polished skin, a thin cheatline)
+ *     bands       the cheatline as a list of colours, top to bottom, instead
+ *                 of one accent band and a line
+ *     bandWeights the bands' relative heights (equal if not set)
+ *     belly       the belly colour (css); a greyer shade of the body if not set
+ *     pinstripe   a thin line where the belly colour meets the body (two-tone)
+ *     metal       true for bare metal: the material is metal, the skin brushed
+ *     cowl        the engine fan cowls' colour (css); the body colour if null
+ *     cowlBand    a ring round the front of each cowl
+ *     emblemInks  the mark's colours (one, or one per part of it); the body
+ *                 colour if not set
+ *     titleWeight, titleSpacing, titleInk   the name's weight (400-900),
+ *                 letter spacing (em) and colour (the cheatline's if not set)
  */
 export function airlinesFor(type) {
   if (!type) return AIRLINE_LIVERIES;

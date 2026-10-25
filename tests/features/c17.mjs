@@ -97,7 +97,8 @@ model.traverse((o) => {
     draws++;
   }
 });
-ok('c17: under 15,000 triangles and 110 draws, hold and all', tris < 15000 && draws < 110, `${Math.round(tris)} triangles, ${draws} meshes`);
+// (114: the four fan cowls each wear their own skin — airliner-kit cowlTexture — so one draw apiece more than the 110 measured before.)
+ok('c17: under 15,000 triangles and 114 draws, hold and all', tris < 15000 && draws < 114, `${Math.round(tris)} triangles, ${draws} meshes`);
 
 // Shut by default; opens in its time; the toe meets the ground; shuts again.
 const step = (s) => model.userData.update(s, { rpm: 0, gearPos: 1, gearDown: true, onGround: true }, {});

@@ -31,6 +31,8 @@
 import * as THREE from '../../vendor/three.module.js';
 import { addInstanced } from '../common.js';
 import { helicopterReflectionEnvironment } from '../helicopter.js';
+import { textureTier } from '../../render/textures.js';
+import { paintHasClearcoat } from '../../render/paint.js';
 import { hull, turned } from '../../aircraft/models/civil-kit.js';
 import {
   piecewise, splitByZ, skinPatch, remapUV, glazing, buildDoors, mergeGeometries, orientOutward,
@@ -48,6 +50,7 @@ const mix = (a, b, t) => a + (b - a) * t;
  * ------------------------------------------------------------------ */
 
 const textures = new Map();
+let texturesTier = null;
 
 /** css colour string of anything THREE.Color takes. */
 const css = (c, fallback) => {
@@ -68,20 +71,69 @@ function luma(c) {
   const k = new THREE.Color(c);
   return 0.2126 * k.r + 0.7152 * k.g + 0.0722 * k.b;
 }
+/** A seeded generator, so the weathering on one paint is the same every build. */
+function seeded(text) {
+  let n = 2166136261;
+  for (const ch of String(text)) n = Math.imul(n ^ ch.charCodeAt(0), 16777619);
+  n >>>= 0;
+  return () => {
+    n = (Math.imul(n, 1664525) + 1013904223) >>> 0;
+    return n / 4294967296;
+  };
+}
+
+/**
+ * How big a livery is drawn, along x round, per quality tier. A school
+ * Chromebook on Low gets a quarter of the pixels of High (and of what every
+ * tier used to get); Ultra gets more than twice High's. Every line width
+ * and streak count in liveryTexture scales with the width, so the paint
+ * reads the same at every size, only sharper.
+ */
+export function liverySizeFor(tier = textureTier()) {
+  if (tier === 'low') return [1024, 256];
+  if (tier === 'medium') return [1536, 384];
+  if (tier === 'ultra') return [3072, 768];
+  return [2048, 512];
+}
+
+/** A tier change drops every livery of the old size, so nothing is kept at two sizes. */
+function tierCache() {
+  const tier = textureTier();
+  if (texturesTier !== tier) {
+    for (const t of textures.values()) if (t && typeof t.dispose === 'function') t.dispose();
+    textures.clear();
+    texturesTier = tier;
+  }
+  return tier;
+}
+
+/** The scheme's style block (aircraft/liveries.js `style`), or an empty one. */
+function styleOf(style) {
+  return style && typeof style === 'object' ? style : {};
+}
 
 /**
  * The livery, painted for one airframe: along (canvas x) by round (canvas
- * y, roof at the top, belly at the bottom). Cached by type and colours —
- * the shared cache, like the pack's own skins; models do not own it.
+ * y, roof at the top, belly at the bottom). Cached by type, colours, style
+ * and tier — the shared cache, like the pack's own skins; models do not
+ * own it.
  *
- * paint = { base, accent, line, key, width, height, along(z), vAt(z, y),
- *           cheat: { y0, y1, z0, z1 }, doors: [...], extra(ctx, W, H, U, V) }
+ * paint = { base, accent, line, key, style, along(z), vAt(z, y), cabinZ, bellyY,
+ *           z0, z1, laps, cheat: { y0, y1, z0, z1 }, radomeZ, doors: [...],
+ *           bays: [...], extra(ctx, W, H, U, V) }
+ *
+ * `style` is the airline's layout (aircraft/liveries.js documents it):
+ * which kind of cheatline, the belly colour, bare metal. Without one the
+ * paint is the default airliner: one accent band and a fine line under the
+ * windows, a grey belly.
  */
 export function liveryTexture(p) {
-  const key = `airliner-livery|${p.key}|${p.base}|${p.accent}|${p.line}`;
+  const tier = tierCache();
+  const st = styleOf(p.style);
+  const key = `airliner-livery|${p.key}|${p.base}|${p.accent}|${p.line}|${tier}|${JSON.stringify(p.style || null)}`;
   if (textures.has(key)) return textures.get(key);
-  const W = p.width || 2048;
-  const H = p.height || 512;
+  const [W, H] = p.width ? [p.width, p.height || p.width / 4] : liverySizeFor(tier);
+  const k = W / 2048; // line widths and streak counts are set for High and scaled
   const canvas = document.createElement('canvas');
   canvas.width = W;
   canvas.height = H;
@@ -91,23 +143,71 @@ export function liveryTexture(p) {
   const base = css(p.base, '#f4f6f8');
   const accent = css(p.accent, '#c4122f');
   const dark = luma(base) < 0.35;
+  const metal = st.metal === true || st.layout === 'metal';
+  const layout = st.layout || 'cheatline';
+  const rnd = seeded(key);
   g.fillStyle = base;
   g.fillRect(0, 0, W, H);
-  // A belly a shade greyer than the paint, as most airlines leave it, with
-  // a soft edge: from the wing root line down.
+
+  // Bare metal: each skin sheet between two frames rolled a shade apart,
+  // and a fine brushed grain along the body. Paint hides this; metal shows it.
+  if (metal) {
+    for (let z = p.z0; z < p.z1; z += 1.6) {
+      const t = rnd();
+      g.fillStyle = t < 0.5 ? `rgba(255,255,255,${(0.03 + t * 0.08).toFixed(3)})` : `rgba(20,24,30,${(0.02 + (t - 0.5) * 0.09).toFixed(3)})`;
+      g.fillRect(U(z), 0, U(z + 1.6) - U(z) + 1, H);
+    }
+    g.lineWidth = 1;
+    for (let y = 0; y < H; y += 2) {
+      g.strokeStyle = `rgba(${rnd() < 0.5 ? '255,255,255' : '30,34,40'},${(0.02 + rnd() * 0.05).toFixed(3)})`;
+      g.beginPath();
+      g.moveTo(0, y + 0.5);
+      g.lineTo(W, y + 0.5);
+      g.stroke();
+    }
+  }
+
+  // The belly: the airline's colour with a crisp paint line, or (no style)
+  // a shade greyer than the paint with a soft edge, as most leave it.
   const zMid = p.cabinZ;
   const bellyTop = V(zMid, p.bellyY);
-  const grad = g.createLinearGradient(0, bellyTop - H * 0.02, 0, H);
-  const belly = blend(base, dark ? '#000000' : '#9aa3ab', dark ? 0.25 : 0.32);
-  grad.addColorStop(0, base);
-  grad.addColorStop(0.08, belly);
-  grad.addColorStop(1, blend(belly, '#6b737b', 0.15));
-  g.fillStyle = grad;
-  g.fillRect(0, bellyTop - H * 0.02, W, H);
+  let bellyEdge = bellyTop; // where the belly colour stops, for the grime below
+  if (layout === 'two-tone' && p.cheat) {
+    // The belly colour rises to the cheatline, with a pinstripe on the join.
+    const c = p.cheat;
+    const t0 = V(zMid, c.y1);
+    const t1 = V(zMid, c.y0);
+    const belly = css(st.belly, blend(base, '#9aa3ab', 0.32));
+    g.fillStyle = belly;
+    g.fillRect(0, t1, W, H - t1);
+    bellyEdge = t1;
+    if (p.line) {
+      g.fillStyle = p.line;
+      g.fillRect(U(c.z0), t0 + (t1 - t0) * 0.55, U(c.z1) - U(c.z0), (t1 - t0) * 0.45);
+    }
+    if (st.pinstripe) {
+      g.fillStyle = css(st.pinstripe, '#d4a62a');
+      g.fillRect(0, t1 - Math.max(1.5, (t1 - t0) * 0.14), W, Math.max(1.5, (t1 - t0) * 0.14));
+    }
+  } else if (st.belly) {
+    g.fillStyle = css(st.belly, '#9aa3ab');
+    g.fillRect(0, bellyTop, W, H - bellyTop);
+    // A fine darker line on the paint edge, as a masked line leaves.
+    g.fillStyle = dark ? 'rgba(255,255,255,0.08)' : 'rgba(20,30,40,0.12)';
+    g.fillRect(0, bellyTop, W, Math.max(1, k));
+  } else {
+    const grad = g.createLinearGradient(0, bellyTop - H * 0.02, 0, H);
+    const belly = blend(base, dark ? '#000000' : '#9aa3ab', dark ? 0.25 : 0.32);
+    grad.addColorStop(0, base);
+    grad.addColorStop(0.08, belly);
+    grad.addColorStop(1, blend(belly, '#6b737b', 0.15));
+    g.fillStyle = grad;
+    g.fillRect(0, bellyTop - H * 0.02, W, H);
+  }
   // Panel seams: frames across, lap joints along. Barely there, but the
   // skin reads as metal rather than plastic close up.
-  g.strokeStyle = dark ? 'rgba(255,255,255,0.05)' : 'rgba(20,30,40,0.07)';
-  g.lineWidth = 1;
+  g.strokeStyle = dark ? 'rgba(255,255,255,0.05)' : `rgba(20,30,40,${metal ? 0.11 : 0.07})`;
+  g.lineWidth = Math.max(1, k);
   for (let z = p.z0 + 1.6; z < p.z1 - 0.5; z += 1.6) {
     g.beginPath();
     g.moveTo(U(z), 0);
@@ -121,39 +221,76 @@ export function liveryTexture(p) {
     g.lineTo(W, r);
     g.stroke();
   }
-  // The cheatline: an accent band below the windows and a fine second line
-  // under it, swept up at the front where it starts behind the flight deck
-  // and cut off at a slant where the tail cone rises.
-  if (p.cheat) {
+  // Access panels on the belly and the lower side: a few small rectangles.
+  g.strokeStyle = dark ? 'rgba(255,255,255,0.07)' : 'rgba(20,30,40,0.1)';
+  for (let i = 0; i < 7; i++) {
+    const z = p.z0 + (0.2 + rnd() * 0.6) * (p.z1 - p.z0);
+    const w = (0.5 + rnd() * 0.6) * k * 40;
+    const hh = (0.4 + rnd() * 0.5) * k * 28;
+    g.strokeRect(U(z), bellyTop + rnd() * (H - bellyTop - hh), w, hh);
+  }
+
+  // The cheatline. Default: an accent band below the windows and a fine
+  // second line under it, swept up at the front where it starts behind the
+  // flight deck and cut off at a slant where the tail cone rises. With
+  // `bands`, the same shape in those colours top to bottom (weights
+  // `bandWeights`); 'metal' and 'billboard' lay it thin; 'eurowhite' and
+  // 'two-tone' have none (the belly and the name do the work).
+  if (p.cheat && layout !== 'eurowhite' && layout !== 'two-tone') {
     const c = p.cheat;
-    const t0 = V(zMid, c.y1);
-    const t1 = V(zMid, c.y0);
+    let t0 = V(zMid, c.y1);
+    let t1 = V(zMid, c.y0);
+    const mid = (t0 + t1) / 2;
+    const bands = Array.isArray(st.bands) && st.bands.length ? st.bands : null;
+    // The spec's band is sized for one accent stripe (25 cm on an A320): a
+    // flag of two or three colours is laid wider, as the real ones are; a
+    // bare-metal or billboard body carries a narrower line.
+    const half = (t1 - t0) * (layout === 'metal' ? 0.3 : layout === 'billboard' ? 0.18 : bands ? 0.9 : 0.5);
+    t0 = mid - half;
+    t1 = mid + half;
     const sweep = (t1 - t0) * 1.2;
     const x0 = U(c.z0);
     const x1 = U(c.z1);
-    g.fillStyle = accent;
-    g.beginPath();
-    g.moveTo(x0 + sweep, t0);
-    g.lineTo(x1, t0);
-    g.lineTo(x1 - sweep, t1);
-    g.lineTo(x0, t1);
-    g.closePath();
-    g.fill();
-    const l0 = t1 + (t1 - t0) * 0.3;
-    const l1 = l0 + Math.max(2, (t1 - t0) * 0.28);
-    g.fillStyle = p.line || blend(accent, base, 0.35);
-    g.beginPath();
-    g.moveTo(x0 + sweep * 1.6, l0);
-    g.lineTo(x1 - sweep * 1.3, l0);
-    g.lineTo(x1 - sweep * 1.6, l1);
-    g.lineTo(x0 + sweep * 1.3, l1);
-    g.closePath();
-    g.fill();
+    const band = (top, bot, colour, inset = 0) => {
+      g.fillStyle = colour;
+      g.beginPath();
+      g.moveTo(x0 + sweep + inset, top);
+      g.lineTo(x1 - inset * 0.8, top);
+      g.lineTo(x1 - sweep - inset * 0.8, bot);
+      g.lineTo(x0 + inset, bot);
+      g.closePath();
+      g.fill();
+    };
+    if (bands) {
+      const ws = bands.map((_, i) => (Array.isArray(st.bandWeights) && st.bandWeights[i] > 0 ? st.bandWeights[i] : 1));
+      const total = ws.reduce((a, b) => a + b, 0);
+      let y = t0;
+      bands.forEach((colour, i) => {
+        const hgt = ((t1 - t0) * ws[i]) / total;
+        band(y, y + hgt + (i < bands.length - 1 ? 0.5 : 0), css(colour, accent));
+        y += hgt;
+      });
+    } else {
+      band(t0, t1, accent);
+      const l0 = t1 + (t1 - t0) * 0.3;
+      const l1 = l0 + Math.max(2 * k, (t1 - t0) * 0.28);
+      g.fillStyle = p.line || blend(accent, base, 0.35);
+      g.beginPath();
+      g.moveTo(x0 + sweep * 1.6, l0);
+      g.lineTo(x1 - sweep * 1.3, l0);
+      g.lineTo(x1 - sweep * 1.6, l1);
+      g.lineTo(x0 + sweep * 1.3, l1);
+      g.closePath();
+      g.fill();
+    }
   }
-  // The radome joint, just ahead of the windscreen.
+  // The radome: composite, not metal, so a shade apart from the skin, with
+  // its joint just ahead of the windscreen.
   if (p.radomeZ !== undefined) {
+    g.fillStyle = metal ? 'rgba(120,126,132,0.55)' : dark ? 'rgba(255,255,255,0.04)' : 'rgba(40,50,60,0.05)';
+    g.fillRect(0, 0, U(p.radomeZ), H);
     g.strokeStyle = dark ? 'rgba(255,255,255,0.12)' : 'rgba(20,30,40,0.18)';
-    g.lineWidth = 1.5;
+    g.lineWidth = 1.5 * k;
     g.beginPath();
     g.moveTo(U(p.radomeZ), 0);
     g.lineTo(U(p.radomeZ), H);
@@ -173,7 +310,7 @@ export function liveryTexture(p) {
     const rx = Math.min((xb - xa) * 0.3, U(d.z + 0.12) - U(d.z));
     const ry = Math.min(Math.abs(bot - top) * 0.3, Math.abs(Vd(d.z, d.y) - Vd(d.z, d.y - 0.12)));
     g.strokeStyle = dark ? 'rgba(230,236,240,0.4)' : 'rgba(28,36,44,0.62)';
-    g.lineWidth = Math.max(1.6, W / 1100);
+    g.lineWidth = Math.max(1.6 * k, W / 1100);
     roundRect(g, xa, top, xb - xa, bot - top, rx, ry);
     g.stroke();
     if (d.kind === 'passenger' && d.porthole !== false) {
@@ -190,7 +327,16 @@ export function liveryTexture(p) {
       g.fillStyle = dark ? 'rgba(230,236,240,0.35)' : 'rgba(28,36,44,0.45)';
       const hx = xa + (xb - xa) * 0.72;
       const hy = top + Math.abs(bot - top) * 0.55;
-      g.fillRect(hx - (xb - xa) * 0.09, hy - 1.5, (xb - xa) * 0.18, 3);
+      g.fillRect(hx - (xb - xa) * 0.09, hy - 1.5 * k, (xb - xa) * 0.18, 3 * k);
+    }
+    // Rain runs off the bottom corners of a door and leaves a faint trail aft.
+    for (const x of [xa, xb]) {
+      const len = (0.02 + rnd() * 0.03) * W;
+      const grad = g.createLinearGradient(x, bot, x + len, bot);
+      grad.addColorStop(0, dark ? 'rgba(235,238,240,0.12)' : 'rgba(60,62,66,0.14)');
+      grad.addColorStop(1, 'rgba(60,62,66,0)');
+      g.fillStyle = grad;
+      g.fillRect(x, bot, len, Math.max(1, 1.5 * k));
     }
   }
   // The nose gear bay, shut: the pair of forward doors as a seam round the
@@ -203,17 +349,118 @@ export function liveryTexture(p) {
     const xb = U(bay.z1);
     const rows = Math.max(3, (bay.halfWidth / (Math.PI * bay.w)) * H);
     g.strokeStyle = dark ? 'rgba(230,236,240,0.3)' : 'rgba(28,36,44,0.5)';
-    g.lineWidth = Math.max(1.4, W / 1400);
-    g.strokeRect(xa, H - rows, xb - xa, rows - 1.5);
+    g.lineWidth = Math.max(1.4 * k, W / 1400);
+    g.strokeRect(xa, H - rows, xb - xa, rows - 1.5 * k);
     g.beginPath();
-    g.moveTo(xa, H - 1.5);
-    g.lineTo(xb, H - 1.5);
+    g.moveTo(xa, H - 1.5 * k);
+    g.lineTo(xb, H - 1.5 * k);
     g.stroke();
+    // Grime: the gear doors and the belly behind them are the dirtiest part
+    // of any airliner (spray off the wheels, hydraulic mist). A smear over
+    // the doors and streaks trailing aft from their seams.
+    g.fillStyle = dark ? 'rgba(200,196,190,0.07)' : 'rgba(58,52,46,0.16)';
+    g.fillRect(xa - (xb - xa) * 0.1, H - rows * 1.3, (xb - xa) * 1.4, rows * 1.3);
+    const n = Math.round(14 * k) + 4;
+    for (let i = 0; i < n; i++) {
+      const x = xb - (xb - xa) * rnd() * 0.3;
+      const y = H - rows * (0.1 + rnd() * 1.6);
+      const len = (0.03 + rnd() * 0.12) * W;
+      const grad = g.createLinearGradient(x, y, x + len, y);
+      grad.addColorStop(0, dark ? `rgba(210,206,200,${(0.06 + rnd() * 0.08).toFixed(3)})` : `rgba(52,48,44,${(0.1 + rnd() * 0.12).toFixed(3)})`);
+      grad.addColorStop(1, 'rgba(52,48,44,0)');
+      g.fillStyle = grad;
+      g.fillRect(x, y, len, Math.max(1, (0.6 + rnd() * 1.8) * k));
+    }
+  }
+  // General belly grime: a little darker towards the tail, where the wheels
+  // throw it, lighter dust on a dark body.
+  {
+    const grad = g.createLinearGradient(0, bellyEdge, 0, H);
+    grad.addColorStop(0, 'rgba(50,46,42,0)');
+    grad.addColorStop(1, dark ? 'rgba(190,186,180,0.06)' : 'rgba(50,46,42,0.1)');
+    g.fillStyle = grad;
+    g.fillRect(U(p.z0 + (p.z1 - p.z0) * 0.3), bellyEdge, W, H - bellyEdge);
+  }
+  // The APU exhaust at the tip of the tail cone sooted the last few metres
+  // of the cone's upper half.
+  {
+    const x1 = W;
+    const x0 = W - W * 0.06;
+    const grad = g.createLinearGradient(x0, 0, x1, 0);
+    grad.addColorStop(0, 'rgba(40,38,36,0)');
+    grad.addColorStop(0.6, dark ? 'rgba(40,38,36,0.18)' : 'rgba(40,38,36,0.12)');
+    grad.addColorStop(1, dark ? 'rgba(30,28,26,0.32)' : 'rgba(40,38,36,0.26)');
+    g.fillStyle = grad;
+    g.fillRect(x0, 0, x1 - x0, H * 0.42);
+    const n = Math.round(8 * k) + 3;
+    for (let i = 0; i < n; i++) {
+      const y = H * (0.02 + rnd() * 0.36);
+      const len = (0.02 + rnd() * 0.05) * W;
+      const s2 = g.createLinearGradient(W - len, y, W, y);
+      s2.addColorStop(0, 'rgba(40,38,36,0)');
+      s2.addColorStop(1, `rgba(40,38,36,${(0.1 + rnd() * 0.16).toFixed(3)})`);
+      g.fillStyle = s2;
+      g.fillRect(W - len, y, len, Math.max(1, (0.8 + rnd() * 1.6) * k));
+    }
   }
   if (p.extra) p.extra(g, W, H, U, V);
   const t = new THREE.CanvasTexture(canvas);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;
+  t.name = key;
+  textures.set(key, t);
+  return t;
+}
+
+/**
+ * The engine fan cowl's skin: u round the cowl, v along it from the lip (0)
+ * to the fan nozzle (1). The airline's cowl colour, a ring near the front
+ * (`cowlBand`), the split line where the two cowl halves meet, and a little
+ * exhaust grime at the back. Cached by colours and tier.
+ */
+export function cowlTexture({ colour, band = null, metal = false } = {}) {
+  const tier = tierCache();
+  const key = `airliner-cowl|${colour}|${band}|${metal}|${tier}`;
+  if (textures.has(key)) return textures.get(key);
+  const small = tier === 'low';
+  const W = small ? 128 : 256;
+  const H = small ? 32 : 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const g = canvas.getContext('2d');
+  const base = css(colour, '#f4f6f8');
+  const dark = luma(base) < 0.35;
+  g.fillStyle = base;
+  g.fillRect(0, 0, W, H);
+  if (metal) {
+    const rnd = seeded(key);
+    for (let x = 0; x < W; x += 2) {
+      g.fillStyle = `rgba(${rnd() < 0.5 ? '255,255,255' : '30,34,40'},${(0.02 + rnd() * 0.06).toFixed(3)})`;
+      g.fillRect(x, 0, 2, H);
+    }
+  }
+  if (band) {
+    g.fillStyle = css(band, '#d4a62a');
+    g.fillRect(0, H * 0.1, W, H * 0.07);
+  }
+  // The cowl split line, and the latches along the bottom of it.
+  g.fillStyle = dark ? 'rgba(255,255,255,0.1)' : 'rgba(20,30,40,0.14)';
+  g.fillRect(0, H * 0.56, W, 1);
+  g.fillRect(0, H * 0.3, W, 1);
+  // Heat and oil mist leave the back of the cowl a shade dirtier.
+  const grad = g.createLinearGradient(0, H * 0.78, 0, H);
+  grad.addColorStop(0, 'rgba(45,42,40,0)');
+  grad.addColorStop(1, dark ? 'rgba(190,186,180,0.08)' : 'rgba(45,42,40,0.14)');
+  g.fillStyle = grad;
+  g.fillRect(0, H * 0.78, W, H * 0.22);
+  const t = new THREE.CanvasTexture(canvas);
+  // Canvas row 0 is v = 0, the lip: drawn top-down from the lip, so the ring
+  // sits at the front and the grime at the back (flipped, as a CanvasTexture
+  // is by default, the ring was at the nozzle and the grime on the lip).
+  t.flipY = false;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
   t.name = key;
   textures.set(key, t);
   return t;
@@ -268,6 +515,13 @@ function cabinWindowTexture() {
  * The airliner material set, owned by the model (disposed with it). The
  * textures are the shared cache's.
  *
+ * PAINT IS PAINT (render/paint.js): the skin and the cowls are a dielectric
+ * coat over metal, with a clearcoat on High and Ultra and a plain
+ * MeshStandardMaterial on Low and Medium — the clearcoat is a second
+ * specular lobe in every pixel of the aeroplane, and a school laptop does
+ * not need it. A bare-metal scheme (`style.metal`) is metal: high
+ * metalness, low roughness, a thin clearcoat at most.
+ *
  * DECALS NEVER Z-FIGHT. Everything laid on the skin — windscreen frames,
  * glass, wipers, cabin windows — sits a few centimetres out along the
  * normal, but a few centimetres is less than the depth buffer can tell apart
@@ -280,19 +534,33 @@ function cabinWindowTexture() {
  */
 export const DECAL = { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
 
-export function airlinerMaterials(model, { livery, base, interior = '#59626b' } = {}) {
+export function airlinerMaterials(model, { livery, base, style = null, interior = '#59626b' } = {}) {
   const own = (m) => model.userData.ownMaterial(m);
   const env = helicopterReflectionEnvironment();
+  const st = styleOf(style);
   const dark = luma(css(base, '#f4f6f8')) < 0.35;
+  const metal = st.metal === true || st.layout === 'metal';
+  const clear = paintHasClearcoat();
+  /** A painted (or bare-metal) surface: physical with a clearcoat on High+, standard below. */
+  const paint = (name, props, { clearcoat, clearcoatRoughness }) => {
+    if (!clear) return own(new THREE.MeshStandardMaterial({ name, ...props }));
+    return own(new THREE.MeshPhysicalMaterial({ name, ...props, clearcoat, clearcoatRoughness }));
+  };
+  const skinLook = metal
+    ? { roughness: 0.3, metalness: 0.78, envMapIntensity: 1.0 }
+    : { roughness: dark ? 0.5 : 0.38, metalness: dark ? 0.2 : 0.1, envMapIntensity: 0.6 };
+  const skinCoat = metal ? { clearcoat: 0.12, clearcoatRoughness: 0.3 } : { clearcoat: 0.35, clearcoatRoughness: 0.22 };
+  const cowlColour = st.cowl ? css(st.cowl, base) : css(base, '#f4f6f8');
+  // Bare-metal cowls on a bare-metal scheme whose cowl colour is a light grey.
+  const cowlMetal = metal && luma(cowlColour) > 0.6;
   return {
-    skin: own(new THREE.MeshPhysicalMaterial({
-      name: 'Airliner_livery', map: livery, color: 0xffffff, roughness: dark ? 0.5 : 0.38, metalness: dark ? 0.2 : 0.1,
-      clearcoat: 0.35, clearcoatRoughness: 0.22, envMap: env, envMapIntensity: 0.6,
-    })),
-    nacelle: own(new THREE.MeshPhysicalMaterial({
-      name: 'Airliner_nacelle', color: new THREE.Color(css(base, '#f4f6f8')), roughness: 0.34, metalness: 0.12,
-      clearcoat: 0.4, clearcoatRoughness: 0.2, envMap: env, envMapIntensity: 0.6,
-    })),
+    skin: paint('Airliner_livery', { map: livery, color: 0xffffff, ...skinLook, envMap: env }, skinCoat),
+    nacelle: paint('Airliner_nacelle', { color: new THREE.Color(css(base, '#f4f6f8')), roughness: 0.34, metalness: 0.12, envMap: env, envMapIntensity: 0.6 }, { clearcoat: 0.4, clearcoatRoughness: 0.2 }),
+    // The fan cowls: the airline's cowl colour, ring and grime (cowlTexture).
+    cowl: paint('Airliner_cowl', {
+      map: cowlTexture({ colour: cowlColour, band: st.cowlBand ? css(st.cowlBand, '#d4a62a') : null, metal: cowlMetal }),
+      color: 0xffffff, roughness: cowlMetal ? 0.28 : 0.34, metalness: cowlMetal ? 0.8 : 0.12, envMap: env, envMapIntensity: cowlMetal ? 1.0 : 0.6,
+    }, { clearcoat: cowlMetal ? 0.1 : 0.4, clearcoatRoughness: 0.2 }),
     lip: own(new THREE.MeshStandardMaterial({ name: 'Airliner_intake_lip', color: 0xc9ced3, metalness: 0.92, roughness: 0.22, envMap: env, envMapIntensity: 1.1 })),
     duct: own(new THREE.MeshStandardMaterial({ name: 'Airliner_duct', color: 0x2a3036, metalness: 0.35, roughness: 0.6 })),
     core: own(new THREE.MeshStandardMaterial({ name: 'Airliner_core_cowl', color: 0x8d949a, metalness: 0.7, roughness: 0.36, envMap: env, envMapIntensity: 0.7 })),
@@ -483,7 +751,18 @@ export function turbofan(ctx, group, e, mats, { segments = 18 } = {}) {
   const small = Math.max(10, segments - 6);
   meshOf(ctx, 'Inlet duct', T([[0.8 * R, fanZ], p(0.83, 0.06)]), mats.duct, group);
   meshOf(ctx, 'Intake lip', T([p(0.83, 0.06), p(0.875, 0.01), p(0.93, 0.003), p(0.975, 0.04)]), mats.lip, group);
-  meshOf(ctx, 'Fan cowl', T([p(0.975, 0.04), p(1.0, 0.17), p(0.975, 0.42), p(0.865, 0.7)]), mats.nacelle, group);
+  // The fan cowl wears the airline's cowl skin (cowlTexture): v runs along
+  // it from the lip (0) to the nozzle (1), so the ring and the grime land
+  // where they belong; turned() gave it one band of v.
+  const cowl = T([p(0.975, 0.04), p(1.0, 0.17), p(0.975, 0.42), p(0.865, 0.7)]);
+  {
+    const pos = cowl.attributes.position;
+    const uv = cowl.attributes.uv;
+    const z0 = zf + 0.04 * L;
+    const z1 = zf + 0.7 * L;
+    for (let i = 0; i < uv.count; i++) uv.setY(i, clamp((pos.getZ(i) - z0) / (z1 - z0), 0, 1));
+  }
+  meshOf(ctx, 'Fan cowl', cowl, mats.cowl || mats.nacelle, group);
   const face = new THREE.CircleGeometry(0.8 * R, segments);
   face.rotateY(Math.PI);
   face.translate(0, 0, fanZ + 0.02);

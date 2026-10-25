@@ -246,14 +246,21 @@ export function createAircraftMaterials(model,config={}) {
  * Texture itself is shared and survives model disposal. This never paints labels
  * over a fuselage UV wrap or stamps a registration on every unrelated component.
  */
-export function aircraftDecalTexture(text,{color:ink='#252f34',background='transparent',width=512,height=128}={}) {
+export function aircraftDecalTexture(text,{color:ink='#252f34',background='transparent',width=512,height=128,weight=600,spacing=0}={}) {
   if(typeof text!=='string'||!text.trim())throw new TypeError('Aircraft decal text must be nonempty.');
   width=Math.max(32,Math.min(2048,Math.round(width)));height=Math.max(16,Math.min(1024,Math.round(height)));
-  const map=canvasTexture(`Aircraft_decal_${text}_${ink}_${background}_${width}_${height}`,width,height,(ctx,w,h)=>{
+  weight=Math.max(100,Math.min(900,Math.round(Number(weight)||600)));spacing=Math.max(0,Math.min(.5,Number(spacing)||0));
+  // `weight` (100-900) and `spacing` (em, as letter spacing) are the airline's own: a freighter's billboard
+  // name is heavy and wide, a registration medium and stencil-spaced. Browsers without canvas letterSpacing
+  // (Firefox before 2024) draw the text unspaced, at the same size.
+  const map=canvasTexture(`Aircraft_decal_${text}_${ink}_${background}_${width}_${height}_${weight}_${spacing}`,width,height,(ctx,w,h)=>{
     ctx.clearRect(0,0,w,h);if(background!=='transparent'){ctx.fillStyle=background;ctx.fillRect(0,0,w,h);}
     ctx.fillStyle=ink;ctx.textAlign='center';ctx.textBaseline='middle';
-    const size=Math.min(h*.68,w/(Math.max(text.length,1)*.66));ctx.font=`600 ${size}px Arial, sans-serif`;
-    ctx.fillText(text,w*.5,h*.52,w*.93);
+    const n=Math.max(text.length,1),size=Math.min(h*.68,w/(n*(.66+spacing)));ctx.font=`${weight} ${size}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+    if(spacing>0&&'letterSpacing' in ctx){try{ctx.letterSpacing=`${(spacing*size).toFixed(2)}px`;}catch(e){/* an older canvas keeps the plain spacing */}}
+    // Letter spacing is added after each glyph, the last too: nudge left by half of one so the word stays centred.
+    const nudge=spacing>0&&'letterSpacing' in ctx?spacing*size*.5:0;
+    ctx.fillText(text,w*.5+nudge,h*.52,w*.93);
   });
   map.userData.text=text; // what it says, for the tests
   return map;

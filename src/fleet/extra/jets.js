@@ -166,6 +166,119 @@ function sharklets(ctx, m, { out = 0.57, rise = 0.62, h = 2.45, lean = 0.28 } = 
 }
 
 /**
+ * Raked wing tips (787, 777-300ER): no fin at all — the last few metres of
+ * the wing sweep back harder than the rest of the leading edge and run out
+ * to a point, flat in the plane of the wing.
+ *
+ * The core lofts a wing as one straight taper, so the rake cannot be in it:
+ * the type's `wing` stops at the START of the rake (rakedWing() below keeps
+ * the leading and trailing edges where the full trapezoid had them), and the
+ * tip is lofted from that station out to the real tip, `rake` metres further
+ * out, its leading edge swept `sweepDeg`, its trailing edge carrying the
+ * wing's own on, meeting in a short `tipChord`.
+ *
+ * It is lofted with the core's own section (aircraft-core segment(): the same
+ * NACA thickness over the chord), so where it leaves the wing it IS the
+ * wing's tip section — no slab standing proud of a wing that thins to a
+ * blade at its edges — and it thins on out to a third of that at the point.
+ * Its paint carries on from the wing's: the core's wing segments have their
+ * span coordinate rescaled to the whole wing, rake included, so the coloured
+ * tip band lands at the real tip as it did on the full trapezoid, not 2-3 m
+ * inboard of a white tip. The wing-tip lamps (the game's sprites and the
+ * core's own lens) are moved to the real tip; the lamps and the plan are
+ * what the tests read.
+ */
+const WING_SEGMENTS = new Set([
+  'Main wing airfoil', 'Root trailing fairing', 'Control separator', 'Wingtip trailing cap',
+  'Outboard aileron', 'Inboard flap', 'Fixed inboard trailing edge',
+]);
+const naca = (e) => Math.max(0.045, 10 * (0.2969 * Math.sqrt(e) - 0.126 * e - 0.3516 * e * e + 0.2843 * e ** 3 - 0.1015 * e ** 4));
+
+function rakedTips(ctx, m, { rake, sweepDeg, tipChord = 0.35, curl = 0 }) {
+  const w = ctx.config.wing;
+  const x0 = w.rootX + w.span; // where the rake starts
+  const x1 = x0 + rake; // the real tip
+  const full = w.span + rake; // the whole wing, root to real tip
+  const a = wingAt(w, x0);
+  const teSlope = (w.sweep + w.tipChord - w.rootChord) / w.span; // the trailing edge's own sweep, m per m
+  const leTip = a.le + rake * Math.tan((sweepDeg * Math.PI) / 180);
+  const teTip = Math.max(leTip + tipChord, a.te + rake * teSlope);
+  // On the wing's own dihedral line, plus any curl up at the very tip.
+  const yLine = a.mid + ((w.dihedral || 0) / w.span) * rake;
+  const yTip = yLine + curl;
+  const th0 = w.tipThickness || 0.045; // the core's thickness at the end of its taper
+  const th1 = th0 * 0.35;
+  const k = w.span / full;
+  for (const s of [-1, 1]) {
+    const wing = ctx.parts[s < 0 ? 'leftWing' : 'rightWing'];
+    if (!wing) continue;
+    // The wing's own paint along the whole span (see above).
+    wing.traverse((o) => {
+      const uv = o.isMesh && !o.isInstancedMesh && WING_SEGMENTS.has(o.name) && o.geometry.attributes.uv;
+      if (!uv) return;
+      for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * k);
+      uv.needsUpdate = true;
+    });
+    const geo = new THREE.BoxGeometry(1, 1, 1, 4, 1, 6);
+    const p = geo.attributes.position;
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < p.count; i++) {
+      const f = p.getX(i) + 0.5; // 0 at the wing, 1 at the point
+      const e = p.getZ(i) + 0.5; // 0 at the leading edge, 1 at the trailing
+      const x = mix(x0 - 0.02, x1, f);
+      const z = mix(mix(a.le, leTip, f), mix(a.te, teTip, f), e);
+      const y = mix(a.mid, yLine, f) + curl * f * f + p.getY(i) * mix(th0, th1, f) * naca(e);
+      p.setXYZ(i, s * x, y, z);
+      uv.setXY(i, Math.min(1, (x - w.rootX) / full), e);
+    }
+    if (s < 0) {
+      // Mirrored in x, so wound inside out: turn every triangle back (as the core does).
+      const ix = geo.index.array;
+      for (let i = 0; i < ix.length; i += 3) { const t = ix[i + 1]; ix[i + 1] = ix[i + 2]; ix[i + 2] = t; }
+    }
+    geo.computeVertexNormals();
+    meshOf(ctx, 'Raked tip', geo, m.wing, wing);
+    // The core's navigation lens, hung at the end of ITS wing: out to the real tip.
+    wing.traverse((o) => {
+      if (!o.isInstancedMesh || o.name !== 'Navigation lamp') return;
+      const mat = new THREE.Matrix4();
+      o.getMatrixAt(0, mat);
+      const pos = new THREE.Vector3();
+      const q = new THREE.Quaternion();
+      const sc = new THREE.Vector3();
+      mat.decompose(pos, q, sc);
+      o.setMatrixAt(0, mat.compose(pos.set(s * (x1 - 0.03), yTip + 0.015, leTip + tipChord * 0.3), q, sc));
+      o.instanceMatrix.needsUpdate = true;
+    });
+  }
+  // The game's lamps on the real tip, not where the trapezoid ends.
+  const lamps = ctx.exports.lamps;
+  if (lamps) {
+    lamps.navLeft = [-x1, yTip + 0.04, leTip + 0.1];
+    lamps.navRight = [x1, yTip + 0.04, leTip + 0.1];
+    lamps.strobeL = [-x1, yTip, teTip - 0.1];
+    lamps.strobeR = [x1, yTip, teTip - 0.1];
+  }
+}
+
+/**
+ * A wing spec cut short by `rake` metres for rakedTips(): the same leading
+ * edge, trailing edge and dihedral line as the full one, ending where the
+ * rake begins.
+ */
+function rakedWing(w, rake) {
+  const f = (w.span - rake) / w.span;
+  return {
+    ...w,
+    span: w.span - rake,
+    sweep: w.sweep * f,
+    dihedral: w.dihedral * f,
+    tipChord: mix(w.rootChord, w.tipChord, f),
+    tipThickness: mix(w.thickness, w.tipThickness, f),
+  };
+}
+
+/**
  * The A350's sharklet: no corner where it leaves the wing — three panels
  * bending up out of the tip through about eighty degrees.
  */
@@ -432,11 +545,13 @@ const b787 = {
   id: 'b787', name: 'Boeing 787-9 Dreamliner', kind: 'airliner', massKg: 22000,
   paint: '#f3f5f8', accent: '#0b3d7a', registration: 'N787IF', bodySegments: 8,
   body: bodyOf(B787.fuselage.stations),
-  wing: {
+  // The trapezoid stops 2.6 m short of the tip: the rest is the raked tip
+  // (rakedTips in decorate), which reaches G787.tip.x.
+  wing: rakedWing({
     rootX: 2.6, span: G787.tip.x - 2.6, rootZ: G787.wingZ, rootY: -2.0,
     rootChord: 8.0, tipChord: 1.6, sweep: 19.2, dihedral: G787.tip.y + 2.0,
     thickness: 1.3, tipThickness: 0.22, flaps: true, struts: false,
-  },
+  }, 2.6),
   tail: {
     rootX: 1.0, span: 8.9, rootZ: 24.2, rootY: 1.4,
     rootChord: 6.0, tipChord: 1.8, sweep: 6.0, dihedral: 1.0, thickness: 0.5, tipThickness: 0.12,
@@ -454,6 +569,8 @@ const b787 = {
   decorate(ctx) {
     const { M } = dress(ctx, B787);
     trailingEdgeFill(ctx, 9.8, 3.0, 0.5);
+    // The raked tip: the last 2.6 m swept back at 55 degrees to a point, curling up a little.
+    rakedTips(ctx, ctx.materials, { rake: 2.6, sweepDeg: 55, tipChord: 0.4, curl: 0.25 });
     for (const e of ctx.config.engines) chevrons(ctx, e, M.nacelle, 16);
     refitLeg(ctx, 'noseGear', { kind: 'dual', track: 0.74, r: G787.nose.r, width: 0.34, oleo: 0.15, mats: M });
     const bogies = [];
@@ -573,11 +690,13 @@ const b777 = {
   id: 'b777', name: 'Boeing 777-300ER', kind: 'airliner', massKg: 25500,
   paint: '#f4f6f8', accent: '#0f5f4a', registration: 'N777IF', bodySegments: 8,
   body: bodyOf(B777.fuselage.stations),
-  wing: {
+  // The -300ER's raked tip extensions, 2 m a side, are lofted by
+  // rakedTips (decorate); the trapezoid stops where they start.
+  wing: rakedWing({
     rootX: 2.9, span: G777.tip.x - 2.9, rootZ: G777.wingZ, rootY: -2.2,
     rootChord: 9.0, tipChord: 1.9, sweep: 21.5, dihedral: G777.tip.y + 2.2,
     thickness: 1.5, tipThickness: 0.25, flaps: true, struts: false,
-  },
+  }, 2.0),
   tail: {
     rootX: 1.0, span: 9.75, rootZ: 28.8, rootY: 1.6,
     rootChord: 6.8, tipChord: 2.2, sweep: 7.0, dihedral: 1.1, thickness: 0.55, tipThickness: 0.13,
@@ -595,6 +714,7 @@ const b777 = {
   decorate(ctx) {
     const { M } = dress(ctx, B777);
     trailingEdgeFill(ctx, 10.0, 3.6, 0.6);
+    rakedTips(ctx, ctx.materials, { rake: 2.0, sweepDeg: 60, tipChord: 0.4 });
     const F = B777.fuselage.stations;
     bladeTail(ctx, F[F.length - 1], M.skin, 1.8, 1.0);
     refitLeg(ctx, 'noseGear', { kind: 'dual', track: 0.8, r: G777.nose.r, width: 0.37, oleo: 0.16, mats: M });
@@ -674,7 +794,11 @@ const q400 = {
       [-2.9, 0.15, 0.06, 1.38], [-2.2, 0.62, 0.2, 1.36], [-1.0, 0.82, 0.26, 1.35],
       [0.4, 0.82, 0.26, 1.35], [1.4, 0.6, 0.18, 1.36], [2.2, 0.18, 0.06, 1.38],
     ], along, M.skin);
-    dorsalFin(ctx, h, 6.2, 9.7, 0.42, ctx.materials.accent);
+    // The long dorsal fin: on the Q400 it runs forward from the fin's
+    // leading edge over the rear cabin (5.6 m, ahead of the rear door at
+    // 9.6), a wedge rising from the crown to meet the fin a third of the way
+    // up. (It was a 3.5 m, 0.4 m sliver.)
+    dorsalFin(ctx, h, 5.4, 11.0, 1.55, ctx.materials.accent);
     for (const e of ctx.config.engines) nacelleFairing(ctx, e, M.nacelle);
     refitLeg(ctx, 'noseGear', { kind: 'dual', track: 0.44, r: GQ4.nose.r, width: 0.22, oleo: 0.1, mats: M });
     for (const id of ['leftGear', 'rightGear']) {
@@ -762,6 +886,9 @@ const CONCORDE = specOf(GCC, {
   laps: [1.15, -0.6],
   cheat: { y0: 0.0, y1: 0.12, z0: -21.0, z1: 24.0 },
   reg: { z: 21.5, y: 0.65, w: 1.8 },
+  // The titling band: above the small windows on the forward cabin, as the
+  // real one carried its airline's name (it had none here before wave 10).
+  title: { z: -12.0, y: 0.82, w: 11 },
   windows: [{ y: 0.32, z0: -19.4, z1: 10.6, pitch: 0.5, w: 0.16, ht: 0.24, skip: [[3.9, 5.1]] }],
   doors: [
     { id: '#1', z: -20.6, y: 0.1, w: 0.76, h: 1.68, kind: 'passenger', sill: -0.75 },

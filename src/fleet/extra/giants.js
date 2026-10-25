@@ -499,7 +499,7 @@ const C5 = specOf(GC5, {
 
 const c5 = {
   id: 'c5', name: 'Lockheed C-5 Galaxy', kind: 'airliner', massKg: 27000,
-  paint: '#7b848d', accent: '#4d555d', registration: 'GX-05', bodySegments: 8,
+  paint: '#6e747b', accent: '#4d555d', registration: 'GX-05', bodySegments: 8,
   body: bodyOf(C5.fuselage.stations),
   wing: {
     rootX: 1.5, span: GC5.tip.x - 1.5, rootZ: GC5.wingZ, rootY: 4.0,

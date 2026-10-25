@@ -728,9 +728,12 @@ export function airframeTexture(schemeOrBase = '#eef1f5', accentArg = '#c8102e')
    * fuselageLettering) — the way the fleet pack's aeroplanes and the airliners
    * have always done it. `scheme.reg` and `scheme.title` are read there, not here.
    */
-  const key = ['airframe', baseColor, accent, cheatline].join('|');
+  // Sized to the tier (the older civil models: Skylark, Courier, Meridian,
+  // Tempest): half the side on Low, so a Chromebook draws a quarter of the
+  // pixels; the key carries the tier, so a change redraws it.
+  const S = textureTierName === 'low' ? 512 : 1024;
+  const key = ['airframe', baseColor, accent, cheatline, S].join('|');
   return get(key, () => {
-    const S = 1024;
     const c = canvas(S);
     const ctx = c.getContext('2d');
     ctx.fillStyle = baseColor;
@@ -759,8 +762,9 @@ export function airframeTexture(schemeOrBase = '#eef1f5', accentArg = '#c8102e')
     ctx.restore();
 
     // Panel lines.
+    const k = S / 1024;
     ctx.strokeStyle = 'rgba(90,95,105,0.45)';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.5 * k;
     for (let i = 1; i < 10; i++) {
       ctx.beginPath();
       ctx.moveTo((i * S) / 10, 0);
@@ -777,29 +781,29 @@ export function airframeTexture(schemeOrBase = '#eef1f5', accentArg = '#c8102e')
     // Rivets along the panel lines.
     ctx.fillStyle = 'rgba(120,126,136,0.5)';
     for (let i = 1; i < 10; i++)
-      for (let y = 6; y < S; y += 18) {
+      for (let y = 6 * k; y < S; y += 18 * k) {
         ctx.beginPath();
-        ctx.arc((i * S) / 10, y, 1.4, 0, Math.PI * 2);
+        ctx.arc((i * S) / 10, y, 1.4 * k, 0, Math.PI * 2);
         ctx.fill();
       }
     for (let i = 1; i < 8; i++)
-      for (let x = 6; x < S; x += 18) {
+      for (let x = 6 * k; x < S; x += 18 * k) {
         ctx.beginPath();
-        ctx.arc(x, (i * S) / 8, 1.4, 0, Math.PI * 2);
+        ctx.arc(x, (i * S) / 8, 1.4 * k, 0, Math.PI * 2);
         ctx.fill();
       }
 
     // Dirt streaks trailing back from panel gaps.
     const rnd = makeRandom(19);
-    for (let i = 0; i < 160; i++) {
+    for (let i = 0; i < 160 * k; i++) {
       const x = rnd() * S;
       const y = rnd() * S;
-      const len = 40 + rnd() * 90;
+      const len = (40 + rnd() * 90) * k;
       const g = ctx.createLinearGradient(x, y, x + len, y);
       g.addColorStop(0, 'rgba(70,70,74,0.16)');
       g.addColorStop(1, 'rgba(70,70,74,0)');
       ctx.fillStyle = g;
-      ctx.fillRect(x, y, len, 1 + rnd() * 3);
+      ctx.fillRect(x, y, len, (1 + rnd() * 3) * k);
     }
 
     return finish(c, { aniso: 8 });
@@ -812,21 +816,36 @@ export function airframeTexture(schemeOrBase = '#eef1f5', accentArg = '#c8102e')
  * (The fleet pack has its own, aircraft-textures.js aircraftDecalTexture; this
  * is the legacy builders' copy, so they do not import the whole pack.)
  */
-export function lettersTexture(text, { color = '#1f272e', width = 512, height = 128 } = {}) {
+export function lettersTexture(text, { color = '#1f272e', width = 512, height = 128, weight = 600, spacing = 0 } = {}) {
   const t = String(text || '').trim();
   if (!t) throw new TypeError('lettersTexture needs some text.');
   const w = Math.max(32, Math.min(2048, Math.round(width)));
   const h = Math.max(16, Math.min(1024, Math.round(height)));
-  return get(['letters', t, color, w, h].join('|'), () => {
+  // `weight` (100-900) and `spacing` (em) as the fleet pack's decal has them
+  // (fleet/aircraft-textures.js aircraftDecalTexture): a registration is
+  // medium and stencil-spaced, a name heavier. Same key shape, so a default
+  // ask is the same texture it always was.
+  const wt = Math.max(100, Math.min(900, Math.round(Number(weight) || 600)));
+  const sp = Math.max(0, Math.min(0.5, Number(spacing) || 0));
+  return get(['letters', t, color, w, h, ...(wt !== 600 || sp > 0 ? [wt, sp] : [])].join('|'), () => {
     const c = canvas(w, h);
     const ctx = c.getContext('2d');
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = color;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const size = Math.min(h * 0.68, w / (Math.max(t.length, 1) * 0.66));
-    ctx.font = `600 ${size}px Arial, sans-serif`;
-    ctx.fillText(t, w * 0.5, h * 0.52, w * 0.93);
+    const size = Math.min(h * 0.68, w / (Math.max(t.length, 1) * (0.66 + sp)));
+    ctx.font = `${wt} ${size}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+    let nudge = 0;
+    if (sp > 0 && 'letterSpacing' in ctx) {
+      try {
+        ctx.letterSpacing = `${(sp * size).toFixed(2)}px`;
+        nudge = sp * size * 0.5; // the spacing after the last letter, halved, so the word stays centred
+      } catch (e) {
+        /* an older canvas keeps the plain spacing */
+      }
+    }
+    ctx.fillText(t, w * 0.5 + nudge, h * 0.52, w * 0.93);
     const tex = finish(c, { aniso: 8 });
     tex.userData.text = t; // what it says, for the tests
     // A label, not a tile: its edges must not bleed round to the other side.

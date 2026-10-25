@@ -491,7 +491,7 @@ export function TYPES(base) {
         'through, a T-tail as tall as a six-storey building and twenty-eight wheels. Heavy and steady — ' +
         'it flies like a building would.',
       stats: { speed: 2, handling: 1, ease: 2 },
-      livery: '#7b848d',
+      livery: '#6e747b', // the same airlifter grey as the C-17
       accent: '#4d555d',
       callsign: 'Galaxy zero five',
       price: 2800,

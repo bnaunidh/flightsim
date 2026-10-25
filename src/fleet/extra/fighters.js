@@ -368,7 +368,7 @@ function weaponBays(ctx) {
  * ------------------------------------------------------------------ */
 const f22 = {
   id: 'f22', name: 'F-22 Raptor', kind: 'fighter', massKg: 6400,
-  paint: '#8e959c', accent: '#5b636b', registration: 'AF 22-01', bodySegments: 8,
+  paint: '#858c93', accent: '#5e666e', registration: 'AF 22-01', bodySegments: 8,
   body: [
     [-10.75, 0.03, 0.03, -0.04], [-10.15, 0.30, 0.22, -0.04], [-9.15, 0.55, 0.42, -0.02],
     [-7.75, 0.78, 0.62, 0.02], [-6.25, 0.92, 0.76, 0.04], [-5.15, 1.0, 0.84, 0.0],
@@ -458,7 +458,10 @@ const fa18 = {
     [-5.6, 0.62, 0.74, 0.06], [-4.1, 0.66, 0.76, 0.04], [-2.6, 0.8, 0.74, 0], [-0.4, 1.1, 0.7, 0],
     [2.1, 1.18, 0.62, 0], [4.2, 1.12, 0.52, 0], [5.6, 1.04, 0.45, 0], [6.2, 0.98, 0.42, 0],
   ],
-  wing: { rootX: 1.0, span: 4.715, rootZ: -1.65, rootY: -0.02, rootChord: 4.27, tipChord: 1.69, sweep: 2.37,
+  // The Hornet's wing is barely swept: a 20 degree leading edge (1.72 m
+  // over the panel; it was drawn at 27) and a trailing edge near enough
+  // square to the body, so the tip chord is a wide 2.3 m with the rail on it.
+  wing: { rootX: 1.0, span: 4.715, rootZ: -1.65, rootY: -0.02, rootChord: 4.27, tipChord: 2.32, sweep: 1.72,
     dihedral: -0.24, thickness: 0.24, tipThickness: 0.06, flaps: true, struts: false },
   tail: { rootX: 0.95, span: 2.35, rootZ: 3.3, rootY: -0.05, rootChord: 2.6, tipChord: 1.0, sweep: 2.1, dihedral: -0.1, thickness: 0.12 },
   fin: { x: 1.0, rootZ: 0.2, rootY: 0.42, height: 2.65, rootChord: 3.3, tipChord: 1.25, sweep: 2.0, mirror: true, thickness: 0.15 },
@@ -482,7 +485,7 @@ const fa18 = {
        */
       plate(ctx, `${side} leading-edge extension`, mirror([
         [0.52, 0.24, -7.1], [0.95, 0.22, -5.5], [1.35, 0.16, -4.0], [1.72, 0.08, -2.55],
-        [2.12, -0.05, -1.1], [0.95, 0.0, -0.8], [0.5, 0.2, -5.8],
+        [2.12, -0.05, -1.24], [0.95, 0.0, -0.9], [0.5, 0.2, -5.8],
       ], s), 0.08, m.wing, wing);
       // D-shaped intakes tucked under the LEX, with their splitter plates.
       const g = ctx.group(`${side}Intake`, `${side} intake under the LEX`, 50, 'fuselage', parts.fuselage);
@@ -561,7 +564,7 @@ const fa18 = {
  * ------------------------------------------------------------------ */
 const f35b = {
   id: 'f35b', name: 'F-35B Lightning II', kind: 'fighter', massKg: 6500,
-  paint: '#6e757c', accent: '#484e55', registration: 'VM 35', bodySegments: 8,
+  paint: '#656c73', accent: '#484e55', registration: 'VM 35', bodySegments: 8,
   body: [
     [-9.15, 0.03, 0.03, -0.04], [-8.55, 0.3, 0.24, -0.04], [-7.55, 0.55, 0.46, -0.02], [-6.35, 0.74, 0.64, 0.02],
     [-4.85, 0.86, 0.78, 0.04], [-3.85, 1.05, 0.86, 0.0], [-2.95, 1.45, 0.92, -0.06], [-1.15, 1.55, 0.94, -0.06],

@@ -63,7 +63,7 @@ const DESC = {
     main: { x: 2.86, z: 1.0, r: 0.57 },
     tip: { x: 17.25, y: 0.17 },
     wingZ: -4.2,
-    engines: [{ x: 4.85, y: -2.09, z: -3.4, r: 1.05, length: 3.6 }],
+    engines: [{ x: 4.85, y: -2.09, z: -3.4, r: 1.1, length: 3.6 }], // LEAP-1B: a 1.76 m fan in a 2.2 m cowl, 0.4 m off the ground
     // Over the Boeing nose's own eye (12 cm higher, 1 cm nearer the glass):
     // the glareshield's sill cut the view 8 degrees under the horizon, where
     // a 3-degree approach puts the runway; 14.5 now, with 15.5 of sky above.
@@ -80,7 +80,7 @@ const DESC = {
     main: { x: 3.795, z: 1.3, r: 0.6 },
     tip: { x: 17.05, y: -0.1 },
     wingZ: -3.42,
-    engines: [{ x: 5.75, y: -2.35, z: -2.2, r: 1.15, length: 3.9 }],
+    engines: [{ x: 5.75, y: -2.35, z: -2.2, r: 1.24, length: 3.9 }], // LEAP-1A / PW1100G: a 2 m fan in a 2.5 m cowl
   },
   b787: {
     span: 60.12,
@@ -90,7 +90,7 @@ const DESC = {
     main: { x: 4.915, z: 1.6, r: 0.635 },
     tip: { x: 30.06, y: 1.65 },
     wingZ: -7.4,
-    engines: [{ x: 9.7, y: -2.6, z: -6.1, r: 1.65, length: 5.6 }],
+    engines: [{ x: 9.7, y: -2.6, z: -6.1, r: 1.76, length: 5.6 }], // GEnx: a 2.82 m fan in a 3.5 m cowl (r 1.65 drew it a size small)
   },
   a350: {
     span: 64.75,

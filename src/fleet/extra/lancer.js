@@ -35,7 +35,7 @@
 import * as THREE from '../../vendor/three.module.js';
 import { LANCER_GEOMETRY as G, LANCER_WING as W, panelPoint, autoSweep } from '../../aircraft/extra/lancer.js';
 import { wing as foil } from '../../aircraft/models/civil-kit.js';
-import { loftFuselage, placeFuselage, meshOf, piecewise, glazing, airlinerMaterials, DECAL } from './airliner-kit.js';
+import { loftFuselage, placeFuselage, meshOf, piecewise, glazing, airlinerMaterials, DECAL, liverySizeFor } from './airliner-kit.js';
 import { plate, refitAirlinerLeg as refitLeg, levelBogies, bodyOf } from './airliners.js';
 import { flame, hotMaterial } from './fighters.js';
 import { aircraftDecalTexture } from '../aircraft-textures.js';
@@ -78,10 +78,12 @@ function blend(a, b, t) {
  * — its cheatline. Shared by colours, like the pack's own skins.
  */
 function skinTexture(base, accent, line, along) {
-  const key = `lancer|${base}|${accent}|${line}`;
+  // Drawn at the quality tier's livery size (airliner-kit liverySizeFor:
+  // Low a quarter of High's pixels); the key carries it, so a tier change
+  // draws a fresh one and the old size is not kept.
+  const [Wd, H] = liverySizeFor();
+  const key = `lancer|${base}|${accent}|${line}|${Wd}`;
   if (textures.has(key)) return textures.get(key);
-  const Wd = 2048;
-  const H = 512;
   const canvas = document.createElement('canvas');
   canvas.width = Wd;
   canvas.height = H;
@@ -101,7 +103,7 @@ function skinTexture(base, accent, line, along) {
   g.fillRect(U(-22.3), H * 0.75, Wd, H * 0.25);
   // Panel seams: frames round the body every 1.5 m, two lap joints along it.
   g.strokeStyle = dark ? 'rgba(255,255,255,0.07)' : 'rgba(20,30,40,0.1)';
-  g.lineWidth = 1.5;
+  g.lineWidth = 1.5 * (Wd / 2048);
   for (let z = -21; z < 19; z += 1.5) {
     g.beginPath();
     g.moveTo(U(z), 0);
@@ -116,7 +118,7 @@ function skinTexture(base, accent, line, along) {
   }
   // The weapon bays and the crew hatch, on the belly (v near 0 is the bottom row).
   g.strokeStyle = dark ? 'rgba(235,240,245,0.22)' : 'rgba(25,32,40,0.45)';
-  g.lineWidth = 2.5;
+  g.lineWidth = 2.5 * (Wd / 2048);
   for (const [z0, z1] of [[-13.2, -8.4], [-6.8, -2.2], [3.6, 8.2]]) {
     g.strokeRect(U(z0), H - H * 0.075, U(z1) - U(z0), H * 0.07);
     g.beginPath();

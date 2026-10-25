@@ -46,8 +46,8 @@ const a10 = {
   gear: { nose: [0.35, -1.3, -5.0], main: [2.62, -1.15, 0.9], noseRadius: 0.3, mainRadius: 0.45,
     noseAttach: [0.35, -0.5, -4.85], mainAttach: [2.62, -0.5, 0.8], retractable: true, dualMain: false, doors: false },
   engines: [
-    { id: 'leftEngine', kind: 'jet', x: -1.4, y: 1.15, z: 3.3, radius: 0.62, length: 3.4, dependsOn: 'fuselage' },
-    { id: 'rightEngine', kind: 'jet', x: 1.4, y: 1.15, z: 3.3, radius: 0.62, length: 3.4, dependsOn: 'fuselage' },
+    { id: 'leftEngine', kind: 'jet', x: -1.62, y: 1.15, z: 3.3, radius: 0.62, length: 3.4, dependsOn: 'fuselage' },
+    { id: 'rightEngine', kind: 'jet', x: 1.62, y: 1.15, z: 3.3, radius: 0.62, length: 3.4, dependsOn: 'fuselage' },
   ],
   eye: [0, 1.05, -5.3], hook: false,
   decorate(ctx) {
@@ -59,16 +59,19 @@ const a10 = {
       const eg = parts[`${side}Engine`];
       // The core's pylon reaches down to the wing; the A-10's is a short
       // one from the nacelle's inner face down onto the fuselage's flank.
+      // The nacelles sit 1.62 m off the centreline (3.2 m apart, a clear
+      // gap of air between each and the body, as on the real one; at 1.4
+      // they touched the spine).
       if (eg) {
         for (const c of [...eg.children]) if (c.name === 'Engine support pylon') c.removeFromParent();
         boxLoft(ctx, `${side} engine pylon`, [
           mirror([[0.66, 0.5, 2.3], [0.66, 0.5, 4.4], [0.66, 0.86, 4.2], [0.66, 0.86, 2.55]], s),
-          mirror([[1.1, 0.72, 2.3], [1.1, 0.72, 4.4], [1.1, 1.05, 4.2], [1.1, 1.05, 2.55]], s),
+          mirror([[1.2, 0.78, 2.3], [1.2, 0.78, 4.4], [1.2, 1.1, 4.2], [1.2, 1.1, 2.55]], s),
         ], m.skin, eg, { capStart: false, capEnd: false });
         // The hot core behind the fan: a dull glow at power.
         const core = new THREE.Mesh(ctx.model.userData.ownGeometry(new THREE.CircleGeometry(0.3, 10)), hot);
         core.name = `${side} exhaust core`;
-        core.position.set(s * 1.4, 1.15, 3.3 + 1.7 - 0.02);
+        core.position.set(s * 1.62, 1.15, 3.3 + 1.7 - 0.02);
         core.castShadow = false;
         eg.add(core);
       }

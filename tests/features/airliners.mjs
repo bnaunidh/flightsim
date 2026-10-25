@@ -584,8 +584,11 @@ for (const id of IDS) {
     // The realism layer (fleet/aircraft-realism.js) hangs a hinge group per
     // moving part — two spoiler sets, two slats, four bay doors, a reverser
     // sleeve per turbofan, one heat haze — so each lid carries ten more.
-    const lid = { a320: 100, b747: 135, a380: 145 }[id];
-    ok(`${id}: under ${lid} draws and 26 materials`, meshes < lid && mats.size <= 26, `${meshes} meshes, ${mats.size} materials`);
+    // The fan cowls wear their own skin (airliner-kit cowlTexture: the
+    // airline's cowl colour, ring and grime): one more material, and one
+    // more draw per engine, so the four-engined lids carry four more.
+    const lid = { a320: 102, b747: 139, a380: 149 }[id];
+    ok(`${id}: under ${lid} draws and 27 materials`, meshes < lid && mats.size <= 27, `${meshes} meshes, ${mats.size} materials`);
   }
 
   /* The crash itself, through the same strike() the game's impact() calls:

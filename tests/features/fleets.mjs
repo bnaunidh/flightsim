@@ -38,7 +38,7 @@ const airliners = T.AIRCRAFT.filter((t) => t.category === 'airliner' || String(t
  * ------------------------------------------------------------------ */
 for (const l of L.AIRLINE_LIVERIES) {
   ok(`${l.id}: has a fleet of roster types, a name to wear and a mark for the fin`,
-    Array.isArray(l.fleet) && l.fleet.length >= 3 && l.fleet.every((id) => ids.has(id)) && typeof l.titling === 'string' && l.titling.length > 3 && ['stripes', 'globe', 'star', 'wave', 'sun', 'moon'].includes(l.emblem),
+    Array.isArray(l.fleet) && l.fleet.length >= 3 && l.fleet.every((id) => ids.has(id)) && typeof l.titling === 'string' && l.titling.length > 3 && ['stripes', 'compass', 'star', 'wave', 'sun', 'moon'].includes(l.emblem),
     `fleet ${(l.fleet || []).join(',')}; titling ${l.titling}; emblem ${l.emblem}`);
   ok(`${l.id}: every type in its fleet is an airliner (no fighters in airline colours)`, (l.fleet || []).every((id) => airliners.some((t) => t.id === id)), (l.fleet || []).filter((id) => !airliners.some((t) => t.id === id)).join(','));
   ok(`${l.id}: the name on the side is its own, not a real airline's`, !/\b(ethiopian|united|american|air france|air india|fedex|ups|delta|lufthansa|emirates)\b/i.test(l.titling));

@@ -83,8 +83,8 @@ export const AIRLINER_GEOMETRY = {
     tip: { x: 31.35, y: 1.35 },
     wingZ: -12.57,
     engines: pair([
-      { x: 11.9, y: -3.05, z: -5.9, r: 1.35, length: 4.6 },
-      { x: 21.15, y: -1.74, z: 1.82, r: 1.35, length: 4.6 },
+      { x: 11.9, y: -3.05, z: -5.9, r: 1.42, length: 4.6 }, // CF6-80C2: a 2.36 m fan in a 2.85 m cowl
+      { x: 21.15, y: -1.74, z: 1.82, r: 1.42, length: 4.6 },
     ]),
     eye: [-0.55, 3.55, -27.4],
   },
