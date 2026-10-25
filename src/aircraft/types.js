@@ -21,6 +21,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { extraAircraft } from './extra/index.js';
+import { hasReversers, hasSpoilers } from './systems.js';
 
 /**
  * The trainer's aero numbers, which every other aeroplane is described as a
@@ -1029,6 +1030,11 @@ export function specFor(id) {
      * stopped. physics.js reads it in the three places the idle lives.
      */
     idleRpm: Number.isFinite(t.aero.idleRpm) ? t.aero.idleRpm : 0.18,
+    // The pilot's levers this type really has (systems.js): reversers on the
+    // airliners and heavies, spoilers / a speedbrake on those and the fast
+    // jets, neither on the light aeroplanes or the helicopters.
+    reversers: hasReversers(t),
+    spoilers: hasSpoilers(t),
     ...pointsFor(t.shape, t.aero),
   };
 }

@@ -6,7 +6,7 @@
  *   - LICENSE at the root: copyright thankdapro, use/copy/change/share with
  *     credit and nothing else (the Roblox ban is gone — the owner, 2026-10-24:
  *     Roblox games and assets are allowed with credit), three.js stays MIT,
- *     and a section for the SCP Foundation content to come (CC BY-SA 3.0 by
+ *     and a section for the SCP Foundation content (CC BY-SA 3.0 by
  *     the SCP Wiki community, scpwiki.com);
  *   - the credits screen carries "© thankdapro", "You may copy the game —
  *     please give us credit (thankdapro)", the SCP line, the inspiration line
@@ -37,7 +37,7 @@ ok('LICENSE: anyone may use, copy, change, share and build on it with credit to 
 ok('LICENSE: credit is the only condition — Roblox games and assets are allowed, the old ban is gone', /Roblox or any other platform/.test(lic) && !/may not use this game/.test(lic) && !/No exceptions/.test(lic) && !/not[\s\S]{0,40}in a Roblox game/.test(lic));
 ok('LICENSE: you may not claim it or drop the credit', /may not claim you made it/.test(lic) && /remove the credit to thankdapro/.test(lic));
 ok('LICENSE: three.js stays MIT', /three\.js[\s\S]*MIT licence/.test(lic) && /three\.LICENSE/.test(lic));
-ok('LICENSE: SCP Foundation content (none yet) is CC BY-SA 3.0 by the SCP Wiki community', /SCP FOUNDATION CONTENT/.test(lic) && /none in the game yet/.test(lic) && /CC BY-SA 3\.0/.test(lic) && /scpwiki\.com/.test(lic) && /creativecommons\.org\/licenses\/by-sa\/3\.0/.test(lic));
+ok('LICENSE: SCP Foundation content (the Site, the Class-D transfer) is CC BY-SA 3.0 by the SCP Wiki community', /SCP FOUNDATION CONTENT/.test(lic) && /Site-91 North/.test(lic) && /Class-D transfer/.test(lic) && !/none in the game yet/.test(lic) && /CC BY-SA 3\.0/.test(lic) && /scpwiki\.com/.test(lic) && /creativecommons\.org\/licenses\/by-sa\/3\.0/.test(lic));
 ok('LICENSE: no warranty', /no warranty/i.test(lic));
 ok('LICENSE: carries the inspiration and parody lines', lic.includes('Inspired by PTFS (Pilot Training Flight Simulator) and the Google Earth') && lic.includes('parody and not affiliated'));
 
@@ -47,7 +47,7 @@ ok('credits screen: the inspiration line, exactly', credits.includes(INSPIRED));
 ok('credits screen: the parody line, exactly', credits.includes(PARODY));
 ok('credits screen: "You may copy the game — please give us credit (thankdapro)", exactly', credits.includes('You may copy the game — please give us\n    credit (thankdapro)') || credits.includes('You may copy the game — please give us credit (thankdapro)'));
 ok('credits screen: with credit to thankdapro, Roblox allowed (no "not" line), points at LICENSE', /with credit to thankdapro/.test(credits) && /in Roblox games and\s+assets too/.test(credits) && !/not<\/strong> be used in Roblox/.test(credits) && !/not for Roblox/.test(credits) && /<code>LICENSE<\/code>/.test(credits));
-ok('credits screen: the SCP Foundation line — none yet, CC BY-SA 3.0, the SCP Wiki community, scpwiki.com', /SCP Foundation-based content \(none yet/.test(credits) && /CC BY-SA 3\.0/.test(credits) && /SCP Wiki/.test(credits) && /href="https:\/\/scpwiki\.com"/.test(credits));
+ok('credits screen: the SCP Foundation line — the Site and the transfer, CC BY-SA 3.0, the SCP Wiki community, scpwiki.com', /SCP Foundation-based content \(the Site on Nunatak Reach/.test(credits) && !/none yet/.test(credits) && /CC BY-SA 3\.0/.test(credits) && /SCP Wiki/.test(credits) && /href="https:\/\/scpwiki\.com"/.test(credits));
 ok('credits screen: nothing is called CC0 or public domain any more (the FAA references aside)',
   !/CC0/.test(credits) && (credits.match(/public domain/gi) || []).length === 2 && !/\(public domain\)/.test(credits));
 

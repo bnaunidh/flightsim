@@ -25,6 +25,7 @@ import * as THREE from '../vendor/three.module.js';
 import { createAircraftModel as createLegacyModel, glowSprite } from './model.js';
 import { getAircraft, DEFAULT_AIRCRAFT_ID } from './types.js';
 import { strobeLevel, blinkLevel } from '../render/flash-safety.js';
+import { resolveLamps } from './systems.js';
 // BLENDER MODELS: the Skyhook from tools/blender/, when it loaded.
 import { blenderAircraftModel } from '../vehicles/blender-models.js';
 
@@ -416,17 +417,24 @@ function updateLights(rig, dt, ac, weather) {
     sprite.scale.setScalar(sprite.userData.baseScale * (0.55 + dark * 0.45) * (0.85 + lit * 0.3));
     sprite.visible = lit > 0.02;
   };
-  set(L.navLeft, on ? 1 : 0);
-  set(L.navRight, on ? 1 : 0);
-  // The tail light is the aft white strobe on a jet: it flashes with the wing tips.
-  set(L.tail, on ? (strobesOn ? 0.4 + 0.6 * flash : 0.4) : 0);
-  set(L.strobeL, strobesOn ? flash : 0);
-  set(L.strobeR, strobesOn ? flash : 0);
-  set(L.beacon, on ? beacon : 0);
   // Landing lights with the gear; on the ground, rolling slowly, the same
-  // lamp is the taxi light: dimmer, and it stays on the tarmac ahead.
+  // lamp is the taxi light: dimmer, and it stays on the tarmac ahead. That
+  // is the automatic logic; the pilot's switches (aircraft/systems.js
+  // resolveLamps: ac.lights, 'auto' | 'on' | 'off' per lamp) have the last word.
   const gearDown = (ac.gearPos ?? 1) > 0.5;
-  const landing = on && gearDown ? (onGround && gs < 15 ? 0.55 : 1) : 0;
+  const taxiing = onGround && gs < 15;
+  const want = resolveLamps(ac.lights, {
+    nav: on ? 1 : 0, beacon: on ? 1 : 0, strobe: strobesOn ? 1 : 0,
+    landing: on && gearDown && !taxiing ? 1 : 0, taxi: on && gearDown && taxiing ? 1 : 0,
+  }, { crashed: !!ac.crashed });
+  set(L.navLeft, want.nav);
+  set(L.navRight, want.nav);
+  // The tail light is the aft white strobe on a jet: it flashes with the wing tips.
+  set(L.tail, want.nav ? (want.strobe ? 0.4 + 0.6 * flash : 0.4) : 0);
+  set(L.strobeL, want.strobe * flash);
+  set(L.strobeR, want.strobe * flash);
+  set(L.beacon, want.beacon * beacon);
+  const landing = Math.max(want.landing, want.taxi * 0.55);
   set(L.landing, landing);
   rig.spot.intensity = landing * (0.4 + dark * 2.6) * 90;
 }

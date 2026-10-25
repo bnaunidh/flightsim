@@ -56,6 +56,9 @@ export const LIVERIES = [
       emblemInks: ['#e8b40a', '#f4f6f8', '#d9231f'],
       titleWeight: 700,
       titleSpacing: 0.05,
+      // The fin's green, not the cheatline's gold: gold on a white body was
+      // the one title in the fleet you could not read from the apron.
+      titleInk: '#0b8a3e',
     },
   },
   {
@@ -192,6 +195,343 @@ export const LIVERIES = [
     },
   },
   /*
+   * The owner's safe-parody table (briefs/next-week.md, "SAFE PARODY
+   * COMPANIES", 2026-10-22): the real airline's colours, which colour alone
+   * does not own, under a new name, with the game's own mark where the real
+   * one puts its logo — the fin, and the name along the body — and nowhere
+   * else (no engine, belly or winglet marks: ours have none either). Each
+   * flies only the roster types the airline it is styled after really flies
+   * (`fleet`), and the freight ones only the freighters. `callsign` is the
+   * brand the radio reads (traffic.js): never a real callsign.
+   */
+  {
+    // KLM-style: sky blue over white, a tulip for the crown.
+    id: 'krd',
+    name: 'Kanal Royal Dutch Air',
+    callsign: 'Kanal',
+    blurb: 'Sky blue over white, a tulip on the tail',
+    base: '#f4f7fa',
+    accent: '#39b4e6',
+    cheatline: 'rgba(10,59,110,0.9)',
+    tail: 0x39b4e6,
+    reg: 'PH-KRD',
+    titling: 'KANAL ROYAL DUTCH',
+    emblem: 'tulip',
+    fleet: ['b737', 'b777', 'b787', 'a321', 'meridian'],
+    style: {
+      layout: 'crown',
+      crown: '#39b4e6',
+      pinstripe: '#0a3b6e',
+      belly: '#d6dde4',
+      cowl: '#39b4e6',
+      emblemInks: ['#f4f7fa', '#0a3b6e'],
+      titleWeight: 700,
+      titleSpacing: 0.08,
+      titleInk: '#f4f7fa',
+    },
+  },
+  {
+    // Delta-style: white over a navy belly, a red fin — a wave-triangle, not a widget.
+    id: 'riverdelta',
+    name: 'Riverdelta Air',
+    callsign: 'Riverdelta',
+    blurb: 'White over navy, a red tail',
+    base: '#f6f7f9',
+    accent: '#003a70',
+    cheatline: 'rgba(0,58,112,0.9)',
+    tail: 0xc8102e,
+    reg: 'N917RD',
+    titling: 'RIVERDELTA',
+    emblem: 'wavetri',
+    fleet: ['b737', 'a320', 'a321', 'a350', 'meridian'],
+    style: {
+      layout: 'two-tone',
+      belly: '#003a70',
+      pinstripe: '#c8102e',
+      cowl: '#003a70',
+      emblemInks: ['#f6f7f9', '#8a0a1f'],
+      titleWeight: 800,
+      titleSpacing: 0.1,
+      titleInk: '#003a70',
+    },
+  },
+  {
+    // Emirates-style: a plain white body, gold titles, a red fin with a falcon.
+    id: 'desertpearl',
+    name: 'Desert Pearl Airlines',
+    callsign: 'Desert Pearl',
+    blurb: 'White, gold lettering, a red fin',
+    base: '#f8f8f6',
+    accent: '#c8a24a',
+    cheatline: 'rgba(200,162,74,0.9)',
+    tail: 0xd71920,
+    reg: 'A6-DPL',
+    titling: 'DESERT PEARL',
+    emblem: 'falcon',
+    fleet: ['a380', 'b777', 'a350', 'meridian'],
+    style: {
+      layout: 'eurowhite',
+      belly: '#c9ced3',
+      cowl: null,
+      emblemInks: ['#c8a24a', '#f8f8f6'],
+      titleWeight: 600,
+      titleSpacing: 0.14,
+      titleInk: '#b8902f',
+    },
+  },
+  {
+    // Etihad-style: warm sand over white, a geometric lattice on the fin.
+    id: 'sandline',
+    name: 'Sandline Air',
+    callsign: 'Sandline',
+    blurb: 'Warm sand and gold, a lattice tail',
+    base: '#f7f4ee',
+    accent: '#c9a66b',
+    cheatline: 'rgba(160,120,70,0.9)',
+    tail: 0xb08d57,
+    reg: 'A6-SLN',
+    titling: 'SANDLINE',
+    emblem: 'lattice',
+    fleet: ['a320', 'a321', 'a350', 'b787', 'b777', 'a380', 'meridian'],
+    style: {
+      layout: 'two-tone',
+      belly: '#c9a66b',
+      pinstripe: '#7a5a30',
+      cowl: '#b08d57',
+      emblemInks: ['#f7f4ee', '#e3cfa6', '#7a5a30'],
+      titleWeight: 600,
+      titleSpacing: 0.12,
+      titleInk: '#7a5a30',
+    },
+  },
+  {
+    // DHL-style freighter: yellow all over, red billboard name, red speed lines on the fin.
+    id: 'dashfreight',
+    name: 'Dash Freight',
+    callsign: 'Dash Freight',
+    blurb: 'Yellow all over with red lettering — a freighter',
+    base: '#ffcc00',
+    accent: '#d40511',
+    cheatline: 'rgba(212,5,17,0.9)',
+    tail: 0xffcc00,
+    reg: 'D-ADSF',
+    titling: 'DASH FREIGHT',
+    emblem: 'speedlines',
+    fleet: ['b737', 'b747', 'b777', 'meridian'],
+    style: {
+      layout: 'billboard',
+      belly: '#b38f00',
+      cowl: '#ffcc00',
+      cowlBand: '#d40511',
+      emblemInks: ['#d40511'],
+      titleWeight: 900,
+      titleSpacing: 0.1,
+      titleInk: '#d40511',
+    },
+  },
+  {
+    // FedEx-style freighter with the tones swapped: white, green and purple, a boxed arrow.
+    id: 'flexship',
+    name: 'FlexShip Express',
+    callsign: 'FlexShip',
+    blurb: 'White, green and purple — a freighter',
+    base: '#f7f8fa',
+    accent: '#1f8a4c',
+    cheatline: 'rgba(77,20,140,0.9)',
+    tail: 0x1f8a4c,
+    reg: 'N77FS',
+    titling: 'FLEXSHIP',
+    emblem: 'arrowbox',
+    fleet: ['b777', 'q400', 'meridian'],
+    style: {
+      layout: 'billboard',
+      belly: '#c4c9cf',
+      cowl: '#1f8a4c',
+      cowlBand: '#4d148c',
+      emblemInks: ['#f7f8fa', '#4d148c'],
+      titleWeight: 900,
+      titleSpacing: 0.06,
+      titleInk: '#4d148c',
+    },
+  },
+  {
+    // UPS-style freighter: white over brown, a gold pinstripe, a parcel badge on the fin.
+    // The table said "shield with a box"; the real mark IS a shield, so ours is
+    // a hexagon badge round a parcel — the brown is a registered colour mark
+    // for delivery, so the shapes carry the difference (brief, 2026-10-22).
+    id: 'parcelbrown',
+    name: 'Parcel Brown Express',
+    callsign: 'Parcel Brown',
+    blurb: 'White over brown, a gold stripe — a freighter',
+    base: '#f6f4f0',
+    accent: '#351c15',
+    cheatline: 'rgba(53,28,21,0.9)',
+    tail: 0x351c15,
+    reg: 'N58PB',
+    titling: 'PARCEL BROWN EXPRESS',
+    emblem: 'parcel',
+    fleet: ['b747', 'meridian'],
+    style: {
+      layout: 'two-tone',
+      belly: '#351c15',
+      pinstripe: '#ffb500',
+      cowl: '#351c15',
+      cowlBand: '#ffb500',
+      emblemInks: ['#ffb500', '#351c15'],
+      titleWeight: 700,
+      titleSpacing: 0.08,
+      titleInk: '#351c15',
+    },
+  },
+  {
+    // British Airways-style: white over a navy belly, the ribbon redrawn as a sea wave.
+    id: 'royalisles',
+    name: 'Royal Isles Airways',
+    callsign: 'Royal Isles',
+    blurb: 'White over navy, a red-and-white wave on the tail',
+    base: '#f7f8fa',
+    accent: '#075aaa',
+    cheatline: 'rgba(7,90,170,0.9)',
+    tail: 0x0d2f6b,
+    reg: 'G-RIAW',
+    titling: 'ROYAL ISLES AIRWAYS',
+    emblem: 'seawave',
+    fleet: ['a320', 'a321', 'a350', 'a380', 'b777', 'b787', 'concorde', 'meridian'],
+    style: {
+      layout: 'two-tone',
+      belly: '#0d2f6b',
+      pinstripe: '#eb2226',
+      cowl: '#0d2f6b',
+      emblemInks: ['#eb2226', '#f7f8fa'],
+      titleWeight: 600,
+      titleSpacing: 0.12,
+      titleInk: '#0d2f6b',
+    },
+  },
+  {
+    // Turkish Airlines-style: white, a red fin with a standing crane, navy titles.
+    id: 'bosphorus',
+    name: 'Bosphorus Air',
+    callsign: 'Bosphorus',
+    blurb: 'White with a red fin and a crane',
+    base: '#f7f8fa',
+    accent: '#c70a0c',
+    cheatline: 'rgba(199,10,12,0.9)',
+    tail: 0xc70a0c,
+    reg: 'TC-BOS',
+    titling: 'BOSPHORUS',
+    emblem: 'crane',
+    fleet: ['a320', 'a321', 'a350', 'b737', 'b777', 'b787', 'meridian'],
+    style: {
+      layout: 'eurowhite',
+      belly: '#b9bfc5',
+      cowl: null,
+      emblemInks: ['#f7f8fa'],
+      titleWeight: 700,
+      titleSpacing: 0.1,
+      titleInk: '#1b1f5c',
+    },
+  },
+  {
+    // Qatar Airways-style: light grey, a maroon fin with a leaping antelope.
+    id: 'pearlgulf',
+    name: 'Pearl Gulf Airways',
+    callsign: 'Pearl Gulf',
+    blurb: 'Pearl grey with a maroon fin',
+    base: '#d4d6d9',
+    accent: '#5c0632',
+    cheatline: 'rgba(92,6,50,0.9)',
+    tail: 0x5c0632,
+    reg: 'A7-PGA',
+    titling: 'PEARL GULF',
+    emblem: 'antelope',
+    fleet: ['a320', 'a350', 'a380', 'b777', 'b787', 'meridian'],
+    style: {
+      layout: 'eurowhite',
+      belly: '#a9adb2',
+      cowl: '#5c0632',
+      emblemInks: ['#d4d6d9'],
+      titleWeight: 600,
+      titleSpacing: 0.14,
+      titleInk: '#5c0632',
+    },
+  },
+  {
+    // Japan Airlines-style: white, a red fin, black titles; a rising sun with a crane in flight.
+    id: 'risingcrane',
+    name: 'Rising Crane Air',
+    callsign: 'Rising Crane',
+    blurb: 'White with a red fin and a rising sun',
+    base: '#f8f8f8',
+    accent: '#b60005',
+    cheatline: 'rgba(182,0,5,0.9)',
+    tail: 0xb60005,
+    reg: 'JA801C',
+    titling: 'RISING CRANE',
+    emblem: 'suncrane',
+    fleet: ['b737', 'b777', 'b787', 'a350', 'meridian'],
+    style: {
+      layout: 'eurowhite',
+      belly: '#bfc3c7',
+      cowl: null,
+      emblemInks: ['#f8f8f8', '#ffd166'],
+      titleWeight: 700,
+      titleSpacing: 0.1,
+      titleInk: '#1a1a1a',
+    },
+  },
+  {
+    // Spirit-style: a lighter yellow all over, black lettering, an exclamation mark.
+    id: 'spit',
+    name: 'Spit Air',
+    callsign: 'Spit',
+    blurb: 'Bright yellow all over, black lettering',
+    base: '#ffe73a',
+    accent: '#1a1a1a',
+    cheatline: 'rgba(26,26,26,0.9)',
+    tail: 0xffe73a,
+    reg: 'N52SP',
+    titling: 'SPIT AIR',
+    emblem: 'bang',
+    fleet: ['a320', 'a321', 'meridian'],
+    style: {
+      layout: 'billboard',
+      belly: '#c9b31f',
+      cowl: '#ffe73a',
+      cowlBand: '#1a1a1a',
+      emblemInks: ['#1a1a1a'],
+      titleWeight: 900,
+      titleSpacing: 0.14,
+      titleInk: '#1a1a1a',
+    },
+  },
+  {
+    // The owner's own: ocean teal over white, a ring horizon on the fin. Original.
+    id: 'oversea',
+    name: 'OverSea Airways',
+    callsign: 'OverSea',
+    blurb: 'White over ocean teal — the island\'s own airline',
+    base: '#f5f8fa',
+    accent: '#0f6e8c',
+    cheatline: 'rgba(15,110,140,0.9)',
+    tail: 0x0f6e8c,
+    reg: 'N70SA',
+    titling: 'OVERSEA AIRWAYS',
+    emblem: 'horizon',
+    fleet: ['a320', 'a321', 'b737', 'b787', 'a350', 'b777', 'q400', 'meridian'],
+    style: {
+      layout: 'two-tone',
+      belly: '#0f6e8c',
+      pinstripe: '#f2b84b',
+      cowl: '#0f6e8c',
+      cowlBand: '#f2b84b',
+      emblemInks: ['#f5f8fa', '#f2b84b'],
+      titleWeight: 700,
+      titleSpacing: 0.1,
+      titleInk: '#0f6e8c',
+    },
+  },
+  /*
    * "Air Force One" (src/game/extra/afo.js). A VC-25-style scheme — white
    * over a light-blue belly, the title the real one wears, a dark blue tail
    * — but an invented tail code, never one of the two real aircraft's: this
@@ -235,6 +575,22 @@ export const LIVERIES = [
  */
 export const AIRLINE_LIVERIES = Object.freeze(LIVERIES.filter((l) => !l.house && !l.special));
 
+/** Every fin mark the airliner models can draw (fleet/extra/airliners.js emblemTexture). */
+export const EMBLEMS = Object.freeze([
+  'stripes', 'compass', 'star', 'wave', 'sun', 'moon',
+  'tulip', 'wavetri', 'falcon', 'lattice', 'speedlines', 'arrowbox', 'parcel', 'seawave', 'crane', 'antelope', 'suncrane', 'bang', 'horizon',
+]);
+
+/** The paint layouts liveryTexture knows. */
+export const LAYOUTS = Object.freeze(['cheatline', 'eurowhite', 'two-tone', 'billboard', 'metal', 'crown']);
+
+/** The brand an ambient aeroplane's radio call starts with: "Kanal four two", "Night Freight one five". */
+export function radioBrand(livery) {
+  if (!livery) return '';
+  if (typeof livery.callsign === 'string' && livery.callsign.trim()) return livery.callsign.trim();
+  return String(livery.name || '').replace(/\s+(Air|States)$/i, '');
+}
+
 /**
  * The airlines a type may be painted for when the world paints it for
  * itself (an apron, the traffic): each scheme's `fleet` is the types the
@@ -250,14 +606,22 @@ export const AIRLINE_LIVERIES = Object.freeze(LIVERIES.filter((l) => !l.house &&
  *   titling   the airline's name along the forward fuselage, above the
  *             windows, as every real one wears it (`title` is Air Force
  *             One's, which the light aeroplanes paint too; this is not)
+ *   callsign  the brand the radio reads for an ambient aeroplane ("Kanal
+ *             four two"); the name with a trailing Air/States dropped if unset
  *   emblem    the mark on the fin: 'stripes' | 'compass' | 'star' | 'wave' |
- *             'sun' | 'moon' — geometric, the game's own, never a real logo
+ *             'sun' | 'moon' | 'tulip' | 'wavetri' | 'falcon' | 'lattice' |
+ *             'speedlines' | 'arrowbox' | 'parcel' | 'seawave' | 'crane' |
+ *             'antelope' | 'suncrane' | 'bang' | 'horizon' — geometric, the
+ *             game's own, never a real logo (EMBLEMS below is the list)
  *   style     how the paint is laid out (fleet/extra/airliner-kit.js
  *             liveryTexture, airlinerMaterials; all optional, all data):
  *     layout      'cheatline' (a band under the windows), 'eurowhite' (a
  *                 plain body, the name does the work), 'two-tone' (the belly
  *                 colour rises to the cheatline), 'billboard' (a dark body,
- *                 big name), 'metal' (bare polished skin, a thin cheatline)
+ *                 big name), 'metal' (bare polished skin, a thin cheatline),
+ *                 'crown' (the upper body in `crown`, down to the window
+ *                 line, over a pale belly: the sky-blue-over-white look)
+ *     crown       the upper body's colour (crown layout); the accent if not set
  *     bands       the cheatline as a list of colours, top to bottom, instead
  *                 of one accent band and a line
  *     bandWeights the bands' relative heights (equal if not set)

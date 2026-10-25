@@ -189,6 +189,24 @@ export function liveryTexture(p) {
       g.fillStyle = css(st.pinstripe, '#d4a62a');
       g.fillRect(0, t1 - Math.max(1.5, (t1 - t0) * 0.14), W, Math.max(1.5, (t1 - t0) * 0.14));
     }
+  } else if (layout === 'crown' && p.cheat) {
+    // The crown: the airline's colour from the roof down to the bottom of
+    // the window line (where a cheatline would sit), a pinstripe on the
+    // join, the belly pale below it — the sky-blue-over-white look.
+    const c = p.cheat;
+    const t1 = V(zMid, c.y0);
+    const t0 = V(zMid, c.y1);
+    if (st.belly) {
+      g.fillStyle = css(st.belly, '#9aa3ab');
+      g.fillRect(0, bellyTop, W, H - bellyTop);
+    }
+    g.fillStyle = css(st.crown, accent);
+    g.fillRect(0, 0, W, t1);
+    if (st.pinstripe) {
+      g.fillStyle = css(st.pinstripe, '#0a3b6e');
+      g.fillRect(0, t1 - Math.max(1.5, (t1 - t0) * 0.2), W, Math.max(1.5, (t1 - t0) * 0.2));
+    }
+    bellyEdge = Math.max(bellyEdge, t1);
   } else if (st.belly) {
     g.fillStyle = css(st.belly, '#9aa3ab');
     g.fillRect(0, bellyTop, W, H - bellyTop);
@@ -236,7 +254,7 @@ export function liveryTexture(p) {
   // `bands`, the same shape in those colours top to bottom (weights
   // `bandWeights`); 'metal' and 'billboard' lay it thin; 'eurowhite' and
   // 'two-tone' have none (the belly and the name do the work).
-  if (p.cheat && layout !== 'eurowhite' && layout !== 'two-tone') {
+  if (p.cheat && layout !== 'eurowhite' && layout !== 'two-tone' && layout !== 'crown') {
     const c = p.cheat;
     let t0 = V(zMid, c.y1);
     let t1 = V(zMid, c.y0);

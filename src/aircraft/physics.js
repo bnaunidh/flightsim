@@ -19,9 +19,38 @@
 import * as THREE from '../vendor/three.module.js';
 import { getAircraft, specFor, DEFAULT_AIRCRAFT_ID } from './types.js';
 import { clamp, lerp } from '../core/noise.js';
+import { defaultLights, spoilerTarget, reverseDemand, reverseShare, REVERSE_EFFICIENCY } from './systems.js';
 import { rotorAssist, ROTOR_TUNE, groundEffectFactor, realismScale } from './rotor-assist.js';
 import { handlingFor, ROLL_SHARE_MAX } from './damage-handling.js';
-import { heightAt, isPaved, isOnRunway, isOnAnyRunway, obstacleAt, platformAt, AIRPORT } from '../world/terrain.js';
+
+/**
+ * What the tyres can get out of the ground: cornering grip, rolling drag and
+ * the braking a wheel may use, as fractions of the wheel load.
+ *
+ *   tarmac   0.92 side, 0.55 brake; a wet runway takes 30% of the cornering
+ *   grass    0.75 side, 0.40 brake, and three times the rolling drag
+ *   ice      the Site's airstrip and the frozen lake on Nunatak Reach: under
+ *            half the cornering grip and 0.2 of the load in brakes —
+ *            "braking action poor", the way a real report of an ice runway
+ *            reads. Measured in the browser (tests/features/scp-snow.browser.js,
+ *            the Courier at 32 m/s, brakes full on from the touchdown): 172 m
+ *            to stop on tarmac, about 550 m on ice, on an 1,100 m strip.
+ *            0.42 of side grip rather than a third: at 0.3 a nine-knot
+ *            crosswind slid it 70 m off the strip on the roll, which is a
+ *            skating rink, not a runway. It still weathervanes into any
+ *            crosswind and follows its nose, so the rudder matters there.
+ *
+ * One pure function, so the numbers can be read in node without a flight.
+ */
+export function surfaceGrip(paved, ice, rain = 0) {
+  if (ice) return { muSide: 0.42, muRoll: 0.012, brake: 0.2, kind: 'ice' };
+  // A wet runway really is more slippery.
+  const wet = 1 - 0.3 * Math.max(0, Math.min(1, rain || 0));
+  return paved
+    ? { muSide: 0.92 * wet, muRoll: 0.022, brake: 0.55, kind: 'tarmac' }
+    : { muSide: 0.75 * wet, muRoll: 0.075, brake: 0.4, kind: 'grass' };
+}
+import { heightAt, isPaved, iceAt, isOnRunway, isOnAnyRunway, obstacleAt, platformAt, AIRPORT } from '../world/terrain.js';
 
 const RHO0 = 1.225;
 /** The engine's idle as a fraction of full power: the type's (types.js specFor idleRpm), 0.18 when it does not say. */
@@ -167,6 +196,18 @@ export class Aircraft {
     // Holds the aeroplane still while you read the briefing; releases itself as
     // soon as you add power.
     this.parkingBrake = true;
+    /*
+     * The pilot's own switches (aircraft/systems.js): each exterior lamp
+     * 'auto' | 'on' | 'off'; the speedbrake lever (0, 0.5, 1) and whether the
+     * ground spoilers are armed, with the spoilers' animated position; the
+     * reverser lever (0, 0.5, 1). Read by the models for the picture and
+     * by update() for the drag, the lift and the thrust.
+     */
+    this.lights = defaultLights();
+    this.speedbrake = 0;
+    this.spoilersArmed = true;
+    this.spoilerPos = 0;
+    this.reverse = 0;
 
     this.engineOn = false;
     /**
@@ -339,6 +380,12 @@ export class Aircraft {
     this.flaps = 0;
     this.flapsTarget = 0;
     this.trim = 0;
+    this.lights = defaultLights();
+    this.speedbrake = 0;
+    this.spoilersArmed = true;
+    this.spoilerPos = 0;
+    this.reverse = 0;
+    this._rollFwd = null;
     this._rollHeading = altAGL === null ? headingDeg : null;
     this.lastTouchdown = null;
     this.airborneTime = 0;
@@ -713,7 +760,16 @@ export class Aircraft {
 
     const collective = clamp(this.controls.throttle, 0, 1);
     const idle = idleRpm();
-    const targetRpm = this.engineOn ? idle + collective * (1 - idle) : 0;
+    // The reversers (systems.js): the cascades want their own share of power,
+    // and stow themselves airborne, when the power lever goes forward, or at
+    // the end of the roll (the forward ground speed from the last step). A
+    // type without them (SPEC.reversers: the light aeroplanes, the fighters,
+    // the helicopters) never has the lever out at all.
+    if (!SPEC.reversers) this.reverse = 0;
+    const rev = reverseDemand({ onGround: this.onGround, throttle: this.controls.throttle, reverse: this.reverse, forwardSpeed: this._rollFwd ?? this.groundSpeed });
+    if (rev.stow) this.reverse = 0;
+    const demand = rev.power > 0 ? Math.max(collective, rev.power) : collective;
+    const targetRpm = this.engineOn ? idle + demand * (1 - idle) : 0;
     // Engines spool with lag; spin-down is slower than spin-up.
     const spool = targetRpm > this.rpm ? 2.4 : 1.1;
     this.rpm += (targetRpm - this.rpm) * Math.min(1, dt * spool);
@@ -754,6 +810,16 @@ export class Aircraft {
 
     // Flaps run out slowly, like an electric flap motor.
     this.flaps += clamp(this.flapsTarget - this.flaps, -dt / 3, dt / 3);
+    // Spoilers: the lever, or the armed ground spoilers on the landing roll
+    // (systems.js spoilerTarget); power advanced on the ground stows them.
+    // A type without them (SPEC.spoilers: the light aeroplanes, Concorde, the
+    // helicopters) keeps them at nothing.
+    if (!SPEC.spoilers) this.speedbrake = 0;
+    const sp = SPEC.spoilers
+      ? spoilerTarget({ onGround: this.onGround, groundSpeed: this.groundSpeed, throttle: this.controls.throttle, lever: this.speedbrake, armed: this.spoilersArmed })
+      : { target: 0, stow: false };
+    if (sp.stow) this.speedbrake = 0;
+    this.spoilerPos += clamp(sp.target - this.spoilerPos, -dt / 1.2, dt / 0.8);
 
     // The parking brake lets go as soon as real power goes in.
     if (this.parkingBrake && (this.controls.throttle > 0.15 || this.controls.brakes > 0.5)) {
@@ -1227,8 +1293,14 @@ export class Aircraft {
     this.buffet = aerodynamicStall ? clamp((aAbs - aStall) * 6, 0, 1) : 0;
 
     const gearDrag = SPEC.gearDragArea * this.gearPos * 0.02;
+    // Spoilers out: panels standing up in the airflow. Drag of about a
+    // half-flap setting at FULL, and a tenth of the lift spoiled — enough to
+    // come down and slow at once, which is what the lever is for, and on the
+    // landing roll enough to put the weight on the wheels for the brakes.
+    const spoiled = SPEC.rotor || !SPEC.spoilers ? 0 : this.spoilerPos;
+    CL *= 1 - 0.12 * spoiled;
     const CD =
-      SPEC.CD0 + (this.failures.icing ? 0.022 : 0) + flapCD + SPEC.k * CL * CL + gearDrag + Math.abs(this.beta) * 0.36;
+      SPEC.CD0 + (this.failures.icing ? 0.022 : 0) + flapCD + SPEC.k * CL * CL + gearDrag + Math.abs(this.beta) * 0.36 + 0.028 * spoiled;
 
     /*
      * What the damage does to the wing.
@@ -1255,9 +1327,16 @@ export class Aircraft {
     const rough = this.failures.roughEngine ? 0.45 : 1;
     // A hit up front costs you power, and at the top end costs you the engine
     // (and an engine that has come off costs you its share): H.thrust.
-    const thrust = H
+    let thrust = H
       ? this.rpm * SPEC.thrustMax * (rho / RHO0) * propEff * rough * H.thrust * (simple ? 1.12 : 1)
       : this.rpm * SPEC.thrustMax * (rho / RHO0) * propEff * rough * (simple ? 1.12 : 1);
+    // Reverse: the same engine, the cascades turning the jet forward, at
+    // the efficiency the real ones manage — so it really slows the roll.
+    // It fades out as the roll ends (systems.js reverseShare), so held at a
+    // standstill it does not blow the aeroplane backwards down the runway.
+    // The forward ground speed is the ground velocity along the nose.
+    this._rollFwd = -(this._revVel || (this._revVel = new THREE.Vector3())).copy(this.vel).applyQuaternion(this._invQ).z;
+    if (this.reverse > 0 && this.onGround && !SPEC.rotor && SPEC.reversers) thrust = -Math.abs(thrust) * REVERSE_EFFICIENCY * reverseShare(this._rollFwd);
 
     // Body-frame aerodynamic force.
     //
@@ -1798,10 +1877,10 @@ export class Aircraft {
         const vSide = hv.dot(sideDir);
 
         const paved = isPaved(world.x, world.z);
-        // A wet runway really is more slippery.
-        const wet = 1 - 0.3 * weather.cond.rain;
-        const muSide = (paved ? 0.92 : 0.75) * wet;
-        const muRoll = paved ? 0.022 : 0.075;
+        const ice = iceAt(world.x, world.z);
+        const grip = surfaceGrip(paved, ice, weather.cond.rain);
+        const muSide = grip.muSide;
+        const muRoll = grip.muRoll;
         // Braking is limited by the physical tip-over condition: the nose-down
         // moment it makes about the nose wheel can never exceed the moment the
         // aeroplane's own weight makes the other way. This is the real limit a
@@ -1810,7 +1889,7 @@ export class Aircraft {
         // 0.7 keeps a real margin below the tipping moment rather than sitting
         // exactly on it. Still gives roughly half-g braking, which is plenty.
         const tipLimit = (0.7 * SPEC.mass * G * 1.15) / 1.5 / 2; // per braked wheel
-        const brakeCap = gp.brake ? Math.min(N * (paved ? 0.55 : 0.4), tipLimit) : 0;
+        const brakeCap = gp.brake ? Math.min(N * grip.brake, tipLimit) : 0;
         const brakeMu = N > 1 ? (brakeInput * brakeCap) / N : 0;
 
         // Tyre friction, impulse limited. Two rules keep this stable:
@@ -2389,6 +2468,12 @@ export class Aircraft {
       flaps: this.flaps,
       flapStep: this.flapStep(),
       parkingBrake: this.parkingBrake,
+      // The pilot's switches (systems.js), for the pills and the touch sheets.
+      speedbrake: this.speedbrake,
+      spoilerPos: this.spoilerPos,
+      spoilersArmed: this.spoilersArmed,
+      reverse: this.reverse,
+      lights: this.lights,
     };
   }
 }

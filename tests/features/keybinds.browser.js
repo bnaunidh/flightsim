@@ -9,7 +9,7 @@
  *   - Esc while a cap is waiting cancels (and does not unpause the game);
  *   - Eject onto Backspace asks "This key already does Self-destruct — swap
  *     them?"; Swap moves Self-destruct to Enter;
- *   - Get out onto Insert (a free key: the backslash is the heat-seekers' now) just takes it; Start engine onto End
+ *   - Get out onto F9 (a free key: the backslash is the heat-seekers' now) just takes it; Start engine onto F10
  *     (the quotes, ; and -/= are taken: the drag chute and, since v61, the
  *     autopilot's heading and speed);
  *   - Smoke onto G asks about Landing gear; Cancel leaves both alone;
@@ -17,7 +17,7 @@
  *     the self-destruct cover (not the seat), and Backspace twice ejects —
  *     every message naming the new key;
  *   - parked, O no longer gets you out and \ does, and the prompts say \;
- *   - the coach says "Press End to start the engine", and the H card lists the
+ *   - the coach says "Press F10 to start the engine", and the H card lists the
  *     moved keys;
  *   - walking, Settings opens on the On foot group;
  *   - Reset Flying keys, then Reset all keys, put everything back.
@@ -128,10 +128,10 @@ export async function check(sim, r, say) {
     r.ok('keybinds: Swap them — eject is on Backspace, self-destruct on Enter, no clash marked', inp.bindings.eject.join() === 'Backspace' && inp.bindings.selfDestruct.join() === 'Enter'
       && /Backspace/.test(cap('eject').textContent) && /Enter/.test(cap('selfDestruct').textContent) && !S().querySelector('.keymap-row.is-clash'), `eject ${inp.bindings.eject} · self-destruct ${inp.bindings.selfDestruct}`);
 
-    // A free key: Get out onto Insert, Start engine onto End (the backslash is the heat-seekers', Home the lock key, Delete the HUD mode).
-    rebind('getOut', 'Insert');
-    rebind('starter', 'End');
-    r.ok('keybinds: a free key is simply taken (Get out → Insert, Start engine → End)', inp.bindings.getOut.join() === 'Insert' && inp.bindings.starter.join() === 'End' && /is now/.test(ask().textContent), `${inp.bindings.getOut} ${inp.bindings.starter}: ${ask().textContent}`);
+    // A free key: Get out onto F9, Start engine onto F10 (Insert and End are the ATC request and the reversers now, the backslash the heat-seekers', Home the lock key, Delete the HUD mode).
+    rebind('getOut', 'F9');
+    rebind('starter', 'F10');
+    r.ok('keybinds: a free key is simply taken (Get out → F9, Start engine → F10)', inp.bindings.getOut.join() === 'F9' && inp.bindings.starter.join() === 'F10' && /is now/.test(ask().textContent), `${inp.bindings.getOut} ${inp.bindings.starter}: ${ask().textContent}`);
 
     // A clash, cancelled: Smoke onto G.
     rebind('smoke', 'KeyG');
@@ -167,21 +167,21 @@ export async function check(sim, r, say) {
     run(2.2);
     const pr = () => (document.querySelector('.of-prompt') || {}).innerHTML || '';
     const prompt = pr();
-    r.ok('keybinds: parked, the prompt says "Press Insert to get out"', /Press <kbd>Insert<\/kbd> to get out/.test(prompt), prompt);
+    r.ok('keybinds: parked, the prompt says "Press F9 to get out"', /Press <kbd>F9<\/kbd> to get out/.test(prompt), prompt);
     tap('KeyO');
     run(0.3);
     const outOnO = OF.active;
-    tap('Insert');
+    tap('F9');
     run(0.5);
-    r.ok('keybinds: O no longer gets you out; Insert does', !outOnO && OF.active, `O → ${outOnO}, Insert → ${OF.active}`);
+    r.ok('keybinds: O no longer gets you out; F9 does', !outOnO && OF.active, `O → ${outOnO}, F9 → ${OF.active}`);
     // Walking: Settings opens on the On foot group.
     toControls();
     const firstOnFoot = (S().querySelector('details[data-keygroup]') || {}).dataset;
     r.ok('keybinds: paused while walking, Settings opens on the On foot keys', firstOnFoot && firstOnFoot.keygroup === 'On foot' && S().querySelector('details[data-keygroup="On foot"]').open, firstOnFoot && firstOnFoot.keygroup);
     backToFlying();
-    tap('Insert');
+    tap('F9');
     run(0.5);
-    r.ok('keybinds: Insert gets you back in', !OF.active, `walking ${OF.active}`);
+    r.ok('keybinds: F9 gets you back in', !OF.active, `walking ${OF.active}`);
 
     // The coach names the moved starter.
     const ac = sim.aircraft;
@@ -189,13 +189,13 @@ export async function check(sim, r, say) {
     ac.rpm = 0;
     run(0.3);
     const coach = sim.hud.coach ? sim.hud.coach.innerHTML : '';
-    r.ok('keybinds: the coach says "Press End to start the engine"', /Press <kbd>End<\/kbd> to start the engine/.test(coach), coach);
+    r.ok('keybinds: the coach says "Press F10 to start the engine"', /Press <kbd>F10<\/kbd> to start the engine/.test(coach), coach);
     tap('KeyI');
     run(0.2);
     const noStart = !ac.engineOn;
-    tap('End');
+    tap('F10');
     run(0.4);
-    r.ok('keybinds: I no longer starts the engine; End does', noStart && (ac.engineOn || ac.starting || ac.rpm > 0), `I → ${!noStart}, End → ${ac.engineOn}`);
+    r.ok('keybinds: I no longer starts the engine; F10 does', noStart && (ac.engineOn || ac.starting || ac.rpm > 0), `I → ${!noStart}, F10 → ${ac.engineOn}`);
 
     // H: the card names the player's keys.
     tap('KeyH');
@@ -203,14 +203,14 @@ export async function check(sim, r, say) {
     const card = sim.hud.controlsCard ? sim.hud.controlsCard.textContent : '';
     tap('KeyH');
     run(0.1);
-    r.ok('keybinds: the H card lists Eject on Backspace, Start engine on End, and Get out on Insert', /Eject[^]*?Backspace/.test(card) && /Start \/ stop engine\s*End/.test(card) && /Get out \/ get in\s*Insert/.test(card), card.slice(0, 200));
+    r.ok('keybinds: the H card lists Eject on Backspace, Start engine on F10, and Get out on F9', /Eject[^]*?Backspace/.test(card) && /Start \/ stop engine\s*F10/.test(card) && /Get out \/ get in\s*F9/.test(card), card.slice(0, 200));
 
     /* ---------------- reset ---------------- */
     toControls();
     openGroup('Flying');
     const rf = S().querySelector('[data-reset-group="Flying"]');
     if (rf) rf.click();
-    r.ok('keybinds: Reset Flying keys — eject, self-destruct and the starter are back; Get out is not (it is On foot)', inp.bindings.eject.join() === 'Enter,NumpadEnter' && inp.bindings.selfDestruct.join() === 'Backspace' && inp.bindings.starter.join() === 'KeyI' && inp.bindings.getOut.join() === 'Insert', `eject ${inp.bindings.eject} · getOut ${inp.bindings.getOut}`);
+    r.ok('keybinds: Reset Flying keys — eject, self-destruct and the starter are back; Get out is not (it is On foot)', inp.bindings.eject.join() === 'Enter,NumpadEnter' && inp.bindings.selfDestruct.join() === 'Backspace' && inp.bindings.starter.join() === 'KeyI' && inp.bindings.getOut.join() === 'F9', `eject ${inp.bindings.eject} · getOut ${inp.bindings.getOut}`);
     const ra = S().querySelector('[data-reset-keys]');
     if (ra) ra.click();
     const all = Object.keys(I.ACTIONS).every((id) => JSON.stringify(inp.bindings[id]) === JSON.stringify(I.ACTIONS[id].default));

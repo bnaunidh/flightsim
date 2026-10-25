@@ -357,11 +357,12 @@ export async function threeGameChecks(sim, r, say = () => {}, opts = {}) {
   const MAPS = Maps ? Maps.MAPS : [];
   const NEW_MAPS = ['sennen', 'skerries', 'longbank', 'drovers', 'cape', 'cullen', 'kestrel-port', 'stacks', 'rigs'];
 
-  // Measured 2026-09-13: 18 maps — 9 flight, 3 boat, 3 car, 3 heli.
+  // Measured 2026-09-13: 18 maps — 9 flight, 3 boat, 3 car, 3 heli. Ten
+  // flight maps since Nunatak Reach (the snow map) joined on 2026-10-25.
   const byGame = (g) => MAPS.filter((m) => (m.game || 'flight') === g).length;
   r.ok(
-    'every game has maps of its own, and the flight nine are untouched',
-    MAPS.length >= 18 && byGame('flight') === 9 && byGame('boat') >= 3 && byGame('car') >= 3 && byGame('heli') >= 3,
+    'every game has maps of its own, and the flight ten are untouched',
+    MAPS.length >= 18 && byGame('flight') === 10 && byGame('boat') >= 3 && byGame('car') >= 3 && byGame('heli') >= 3,
     `${MAPS.length} maps — ${byGame('flight')} flight, ${byGame('boat')} boat, ${byGame('car')} car, ${byGame('heli')} heli`
   );
   // mapsForGame() decides what a child is offered. A boat offered Ironhead Air
@@ -374,7 +375,7 @@ export async function threeGameChecks(sim, r, say = () => {}, opts = {}) {
       const b = Maps.mapsForGame('boat').map((m) => m.id);
       const c = Maps.mapsForGame('car').map((m) => m.id);
       const h = Maps.mapsForGame('heli').map((m) => m.id);
-      return f.length === 9 && !f.includes('longbank') && !f.includes('drovers')
+      return f.length === 10 && f.includes('nunatak') && !f.includes('longbank') && !f.includes('drovers')
         && b.includes('sennen') && b.includes('skerries') && b.includes('longbank') && !b.includes('drovers')
         && c.includes('drovers') && c.includes('cape') && c.includes('cullen') && !c.includes('sennen')
         && h.includes('stacks') && h.includes('rigs') && !h.includes('longbank');

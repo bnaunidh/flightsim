@@ -84,6 +84,12 @@ export const TOUCH_COVERAGE = Object.freeze({
   apVsDown: card('the autopilot card\'s climb rate −', "'apVsDown'"),
   apVsUp: card('the autopilot card\'s climb rate +', "'apVsUp'"),
 
+  // The pilot's switches (features/pilot-systems.js): the sheets press their keys; the pills undo them.
+  lights: sheet('SYSTEMS → LIGHTS (every lamp\'s preset; the LIGHTS card sets each lamp)'),
+  spoilers: sheet('SYSTEMS → SPEEDBRAKE in the air; GROUND → SPOILERS: ARMED on the ground'),
+  reversers: sheet('GROUND → REVERSERS: idle / MAX / stow'),
+  atcRequest: sheet('SYSTEMS → RADIO (ATC): the menu\'s four requests are buttons'),
+
   /* ---- the helicopter ---- */
   heliForward: stick('the stick, pushed up (cyclic forward)'),
   heliBack: stick('the stick, pulled down (cyclic back)'),

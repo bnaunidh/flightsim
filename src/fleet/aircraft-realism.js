@@ -451,7 +451,8 @@ export function applyRealism(ctx, rig) {
 
     // Spoilers: ground spoilers full on a landing roll with the levers at idle; the brakes are the speedbrake in the air.
     let wantSp = 0;
-    if (onGround && gs > 18 && throttle < 0.3) wantSp = 1;
+    if (Number.isFinite(state.spoilers)) wantSp = clamp(state.spoilers, 0, 1); // the pilot's lever and the armed ground spoilers (aircraft/systems.js)
+    else if (onGround && gs > 18 && throttle < 0.3) wantSp = 1;
     else if (!onGround && brakes > 0.2 && st.airborneT > 1) wantSp = 0.5;
     const spRate = wantSp > st.spoiler ? 0.8 : 1.2;
     st.spoiler += clamp(wantSp - st.spoiler, -spRate * dt, spRate * dt);
@@ -481,8 +482,11 @@ export function applyRealism(ctx, rig) {
 
     // Reversers: out on the roll with the brakes on, back in below taxi speed.
     let wantRev = st.reverser;
-    if (onGround && gs > 25 && brakes > 0.25) wantRev = 1;
-    if (!onGround || gs < 17 || brakes < 0.05) wantRev = 0;
+    if (Number.isFinite(state.reverse)) wantRev = state.reverse > 0 ? 1 : 0; // the pilot's reverser lever (aircraft/systems.js)
+    else {
+      if (onGround && gs > 25 && brakes > 0.25) wantRev = 1;
+      if (!onGround || gs < 17 || brakes < 0.05) wantRev = 0;
+    }
     st.reverser += clamp(wantRev - st.reverser, -dt / 1.2, dt / 1.2);
     for (const r of out.reversers) {
       r.node.position.z = r.travel * st.reverser;

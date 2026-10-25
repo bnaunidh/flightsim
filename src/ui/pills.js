@@ -23,7 +23,10 @@ export const MIN_SHOW_MS = 1500;
  * @param {object} s
  *   onGround, parkingBrake, pushing, engineOn, gearPos (0 up … 1 down),
  *   aglFt, speedKts, vsFpm, touch (true on a touchscreen),
- *   keys: { power, services, gear } — the player's key names for the hints
+ *   speedbrake (the lever, 0 / 0.5 / 1), spoilerPos (0..1), spoilersArmed,
+ *   reverse (0 / 0.5 / 1), lightsPreset (the preset's label, or null for auto)
+ *   — the pilot's switches (aircraft/systems.js, features/pilot-systems.js)
+ *   keys: { power, services, gear, spoilers, reversers, lights } — the player's key names for the hints
  * @returns {Array<{id, level, icon, text, how, action}>} at most MAX_PILLS, worst first
  */
 export function pillsFor(s = {}) {
@@ -58,6 +61,57 @@ export function pillsFor(s = {}) {
       text: 'Parking brake on',
       how: touch ? 'tap to release' : `${k.power || 'Shift'} (power) releases it`,
       action: 'releaseBrake',
+    });
+  }
+  // The pilot's switches (features/pilot-systems.js owns the actions).
+  const rev = Number(s.reverse) || 0;
+  if (rev > 0) {
+    out.push({
+      id: 'reverse',
+      level: s.onGround && Number(s.speedKts) < 12 ? 'warn' : 'info',
+      icon: 'brake',
+      text: rev >= 1 ? 'MAX reverse' : 'Idle reverse',
+      how: touch ? 'tap to stow' : `${k.reversers || 'End'} stows them`,
+      action: 'reverseStow',
+    });
+  }
+  const sb = Number(s.speedbrake) || 0;
+  if (!s.onGround && sb > 0) {
+    out.push({
+      id: 'speedbrake',
+      level: 'info',
+      icon: 'brake',
+      text: sb >= 1 ? 'Speedbrake FULL' : 'Speedbrake ½',
+      how: touch ? 'tap to retract' : `${k.spoilers || 'PageDown'} cycles it`,
+      action: 'speedbrakeIn',
+    });
+  } else if (s.onGround && Number(s.spoilerPos) > 0.3) {
+    out.push({
+      id: 'groundSpoilers',
+      level: 'info',
+      icon: 'brake',
+      text: 'Ground spoilers up',
+      how: touch ? 'tap to lower' : 'power stows them',
+      action: 'spoilersDown',
+    });
+  } else if (!s.onGround && s.spoilersArmed === false && Number(s.gearPos) > 0.5 && Number(s.aglFt) < 2500) {
+    out.push({
+      id: 'spoilersArm',
+      level: 'warn',
+      icon: 'warning',
+      text: 'Spoilers not armed',
+      how: touch ? 'tap to arm' : 'tap to arm them',
+      action: 'spoilersArm',
+    });
+  }
+  if (s.lightsPreset) {
+    out.push({
+      id: 'lights',
+      level: 'info',
+      icon: 'plane',
+      text: `Lights: ${s.lightsPreset}`,
+      how: touch ? 'tap for auto' : `${k.lights || 'PageUp'} cycles them`,
+      action: 'lightsAuto',
     });
   }
   out.sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level]);

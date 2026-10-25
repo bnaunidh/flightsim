@@ -29,6 +29,7 @@ import { clamp, lerp } from '../core/noise.js';
 import { getAircraft, DEFAULT_AIRCRAFT_ID } from './types.js';
 import { Builder, glowSprite } from './models/civil-build.js';
 import { strobeLevel } from '../render/flash-safety.js';
+import { resolveLamps } from './systems.js';
 import { buildSkylark } from './models/skylark.js';
 import { buildCourier } from './models/courier.js';
 import { buildMeridian } from './models/meridian.js';
@@ -1143,14 +1144,21 @@ export function createAircraftModel(opts = {}) {
     // The double flash, or with Reduce flashing one soft, dimmer pulse (flash-safety.js).
     const strobe = strobeLevel(state.strobeT, 1.3, 0.06, 0.07);
     const running = ac.engineOn || ac.rpm > 0.05;
-    state.lights.navLeft.visible = running;
-    state.lights.navRight.visible = running;
-    state.lights.tail.visible = running;
-    state.lights.strobeL.visible = running && strobe > 0.01;
-    state.lights.strobeR.visible = running && strobe > 0.01;
-    const wantLanding = running && (ac.gearDown || ac.agl < 400);
-    state.lights.landing.visible = wantLanding;
-    state.landingSpot.intensity = wantLanding ? 190 * (0.25 + dark * 0.75) : 0;
+    // The automatic logic, then the pilot's switches (aircraft/systems.js resolveLamps).
+    const taxiing = !!ac.onGround && (ac.groundSpeed || 0) < 15;
+    const autoLanding = running && (ac.gearDown || ac.agl < 400);
+    const want = resolveLamps(ac.lights, {
+      nav: running ? 1 : 0, beacon: running ? 1 : 0, strobe: running ? 1 : 0,
+      landing: autoLanding && !taxiing ? 1 : 0, taxi: autoLanding && taxiing ? 1 : 0,
+    }, { crashed: !!ac.crashed });
+    state.lights.navLeft.visible = want.nav > 0;
+    state.lights.navRight.visible = want.nav > 0;
+    state.lights.tail.visible = want.nav > 0;
+    state.lights.strobeL.visible = want.strobe > 0 && strobe > 0.01;
+    state.lights.strobeR.visible = want.strobe > 0 && strobe > 0.01;
+    const wantLanding = Math.max(want.landing, want.taxi * 0.55);
+    state.lights.landing.visible = wantLanding > 0;
+    state.landingSpot.intensity = wantLanding * 190 * (0.25 + dark * 0.75);
 
     for (const k in state.lights) {
       const l = state.lights[k];

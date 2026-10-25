@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v72.2';
+const CACHE_VERSION = 'island-flight-v73';
 
 const PRECACHE = [
   './',
@@ -257,6 +257,7 @@ const PRECACHE = [
   'src/features/eject/ui.js',
   'src/features/runaway.js',
   'src/features/landing-zones.js',
+  'src/features/scp-site.js',
   'src/features/tpose.js',
   'src/features/uniforms.js',
   'src/features/wasted.js',
@@ -326,6 +327,7 @@ const PRECACHE = [
   'src/features/events/afo-combat.js',
   'src/features/events/afo.js',
   'src/game/extra/afo.js',
+  'src/game/extra/scp.js',
   'src/game/roles/afo-lead.js',
   // Added by tools/sync-precache.mjs.
   'src/features/sky.js',
@@ -442,6 +444,9 @@ const PRECACHE = [
   'src/ui/hangar-shelves.js',
   // Added by tools/sync-precache.mjs.
   'src/ui/touch-coverage.js',
+  // Added by tools/sync-precache.mjs.
+  'src/aircraft/systems.js',
+  'src/features/pilot-systems.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 
@@ -484,7 +489,7 @@ const OPTIONAL = [
   'assets/atc/manifest.json',
   'tests/selftest.js',
   'README.md',
-  // The map loading screens' pictures (src/features/loading-screens.js): 30 JPEGs, under 250 KB each.
+  // The map loading screens' pictures (src/features/loading-screens.js): 31 JPEGs, under 250 KB each.
   // A map whose picture is missing shows its gradient instead, so these are not required.
   'assets/loading/kestrel.jpg',
   'assets/loading/meadow.jpg',
@@ -494,6 +499,7 @@ const OPTIONAL = [
   'assets/loading/airbase.jpg',
   'assets/loading/gateway.jpg',
   'assets/loading/northwatch.jpg',
+  'assets/loading/nunatak.jpg',
   'assets/loading/condor.jpg',
   'assets/loading/sennen.jpg',
   'assets/loading/skerries.jpg',

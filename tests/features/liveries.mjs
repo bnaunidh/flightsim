@@ -70,8 +70,9 @@ const materialNamed = (model, name) => {
 /* ------------------------------------------------------------------ *
  * The schemes' style blocks
  * ------------------------------------------------------------------ */
-const LAYOUTS = ['cheatline', 'eurowhite', 'two-tone', 'billboard', 'metal'];
-const EMBLEMS = ['stripes', 'compass', 'star', 'wave', 'sun', 'moon'];
+const LAYOUTS = L.LAYOUTS;
+const EMBLEMS = L.EMBLEMS;
+ok('the module lists its layouts and marks, with the crown layout and the parody table\'s thirteen marks among them', LAYOUTS.includes('crown') && EMBLEMS.length === 19 && EMBLEMS.includes('tulip') && EMBLEMS.includes('horizon'));
 const schemes = L.LIVERIES.filter((l) => !l.house);
 for (const l of schemes) {
   const st = l.style;
@@ -82,7 +83,10 @@ for (const l of schemes) {
     st ? `${st.layout}; ${colours.length} colours` : 'no style');
   if (l.emblem) ok(`${l.id}: its mark is one of the game's own (${l.emblem})`, EMBLEMS.includes(l.emblem));
   ok(`${l.id}: the cheatline bands, if any, are two or three colours`, !st || !st.bands || (st.bands.length >= 2 && st.bands.length <= 3));
+  if (st && st.layout === 'crown') ok(`${l.id}: a crown layout names its crown colour`, hex(st.crown));
 }
+ok('one scheme wears the crown layout (the sky-blue-over-white airline)', schemes.filter((l) => l.style && l.style.layout === 'crown').map((l) => l.id).join() === 'krd');
+ok('abyssinia: the title is in the fin\'s green (readable on white), not the cheatline\'s gold', L.findLivery('abyssinia').style.titleInk === '#0b8a3e');
 ok('exactly one scheme is bare metal (the silver-bird airline), and its material is asked for', schemes.filter((l) => l.style && l.style.metal).map((l) => l.id).join() === 'liberty');
 ok('the United-style scheme carries a compass, not a globe (a circle with meridians was too near a real mark)', L.findLivery('continental').emblem === 'compass');
 
@@ -94,7 +98,7 @@ const REAL = [
   'Air France', 'Spirit', 'United', 'Continental', 'British Airways', 'Speedbird', 'Turkish', 'Qatar', 'Japan Airlines', 'JAL',
   'Ethiopian', 'American', 'Lufthansa', 'Ryanair', 'Southwest', 'easyJet', 'Air Canada', 'Qantas', 'Virgin', 'Alaska', 'JetBlue',
   'Frontier', 'Cathay', 'ANA', 'Korean Air', 'Iberia', 'Aeroflot', 'Finnair', 'Swiss', 'Austrian', 'TAP', 'Hawaiian', 'Allegiant',
-  'WestJet', 'Pan Am', 'TWA', 'Northwest', 'US Airways', 'Eastern', 'Boeing', 'Airbus',
+  'WestJet', 'Pan Am', 'TWA', 'Northwest', 'US Airways', 'Eastern', 'Boeing', 'Airbus', 'Speedbird', 'Dynasty', 'Skyteam', 'Oneworld',
 ];
 const word = (text, real) => new RegExp(`(^|[^A-Za-z])${real.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^A-Za-z])`, 'i').test(text);
 {
@@ -217,6 +221,8 @@ PAINT.setPaintTier('high');
         const m = build(id, l.id);
         n++;
         const skin = materialNamed(m, 'Airliner_livery');
+        const emb = meshesNamed(m, /^Tail emblem$/);
+        if (skin && emb.length !== 2) bad.push(`${id}/${l.id}: ${emb.length} fin marks`);
         // The Meridian is the game's own model (aircraft/models/meridian.js), not the
         // kit's: its paint is render/textures.js airframeTexture, its lettering decals.
         if (skin) {

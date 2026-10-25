@@ -14,6 +14,8 @@ import './stovl.js';
 import './swing-wing.js';
 // The C-17's cargo ramp (fleet/extra/c17.js userData.cargo): the key, the panel, the speed rule.
 import './cargo-ramp.js';
+// The pilot's switches: lights, speedbrake/spoilers, reversers, the ATC request menu.
+import './pilot-systems.js';
 import './warnings.js';
 import './bird-strike.js';
 import './explosions.js';
@@ -31,6 +33,9 @@ import './wasted.js';
 import './knockdown.js';
 import './runaway.js';
 import './staff.js';
+// Nunatak Reach's Site and ice (SCP Foundation content, CC BY-SA 3.0 — see LICENSE): the compound, the
+// ice sheets, the de-icing truck, and the Class-D transfer's people (staff/person.js figures).
+import './scp-site.js';
 import './maps-retired.js';
 import './flight-events.js';
 import './multiplayer.js';

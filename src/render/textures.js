@@ -1345,6 +1345,25 @@ export function rainStreakTexture() {
   });
 }
 
+/**
+ * A snowflake: a soft white dot, slightly brighter in the middle, for the
+ * snow that falls on Nunatak Reach (world/precip.js). One texture for every
+ * flake; the shader stretches the rain streak and leaves this round.
+ */
+export function snowflakeTexture() {
+  return get('snowflake', () => {
+    const c = canvas(32, 32);
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(16, 16, 1, 16, 16, 15);
+    g.addColorStop(0, 'rgba(255,255,255,0.95)');
+    g.addColorStop(0.45, 'rgba(240,246,255,0.6)');
+    g.addColorStop(1, 'rgba(230,240,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 32, 32);
+    return finish(c);
+  });
+}
+
 /** Windshield rain / spray overlay drawn in the cockpit view. */
 export function dropletTexture() {
   return get('droplets', () => {

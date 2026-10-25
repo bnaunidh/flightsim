@@ -312,6 +312,41 @@ export function flatSurfaceAt(x, z) {
   return f && FLAT_W > 0.5 ? f.surface : null;
 }
 
+/**
+ * How far into a flat's blend skirt its made surface still counts, as the
+ * flat's weight there: 0.98 is about the first twelfth of the skirt (9 m on
+ * a 110 m blend). flatSurfaceAt()'s 0.5 reaches half way down the skirt —
+ * right for "what is this ground" questions, wrong for tyres: 55 m of ice
+ * on the snow beside the strip, and 130 m of it up the lake's banks.
+ */
+const SURFACE_CORE = 0.98;
+
+/** The flat whose made surface is under the wheels here, or null (the skirt is natural ground). */
+function coreFlatAt(x, z) {
+  if (!FLATS.length) return null;
+  const f = flatAt(x, z);
+  return f && FLAT_W >= SURFACE_CORE ? f : null;
+}
+
+/**
+ * Standing on ice: a flat surfaced 'ice' (Nunatak Reach's Site airstrip and
+ * its frozen lake). The wheel-contact code asks this every contact point, so
+ * it is the same bounding-box reject flatAt does, and nothing is allocated.
+ * A lake is round (features/scp-site.js draws it as the disc inside its
+ * rectangle), so only the disc is ice; the rectangle's corners are snow.
+ */
+export function iceAt(x, z) {
+  const f = coreFlatAt(x, z);
+  if (!f || f.surface !== 'ice') return false;
+  if (f.kind === 'lake') {
+    const r = Math.min(f.x1 - f.x0, f.z1 - f.z0) / 2 + 4;
+    const dx = x - f.cx;
+    const dz = z - f.cz;
+    return dx * dx + dz * dz <= r * r;
+  }
+  return true;
+}
+
 /** Median of nine samples over a rectangle — one spike cannot move it. */
 function medianGround(x0, x1, z0, z1) {
   const s = [];
@@ -1825,6 +1860,16 @@ export function isPaved(x, z) {
    * test here on every world build (src/world/airport.js).
    */
   if (pavedExtra && pavedExtra(x, z)) return true;
+  /*
+   * Authored made ground: a quay, a yard, the Site's ice strip. Levelled and
+   * surfaced by the map, so the tyres roll on it as on a runway (ice keeps
+   * its own grip rule — iceAt(), read by the same contact code).
+   */
+  if (FLATS.length) {
+    // The made surface itself, not its skirt (see SURFACE_CORE).
+    const f = coreFlatAt(x, z);
+    if (f && (f.surface === 'tarmac' || (f.surface === 'ice' && iceAt(x, z)))) return true;
+  }
   return false;
 }
 

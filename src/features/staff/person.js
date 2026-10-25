@@ -41,10 +41,18 @@ export const OUTFITS = {
   police: { shirt: 0x1f2d4a, trousers: 0x1b2438, shoes: 0x141414, vest: 0xd2f51c, stripe: 0xdfe6ea, cap: 0x1b2438, band: 0xf4f6f8 },
   tactical: { shirt: 0x30353d, trousers: 0x2a2f36, shoes: 0x141414, vest: 0x3d444d, helmet: 0x262b31 },
   hijacker: { shirt: 0x7d838c, trousers: 0x3b5f8a, shoes: 0xe8e8e8 },
+  /*
+   * Class-D personnel (features/scp-site.js, the Class-D transfer): the
+   * orange jumpsuit, top and bottom one colour, plain black boots. Nothing
+   * else — no restraints, no marks; they walk where they are taken and that
+   * is the whole of what is shown. (SCP Foundation content by the SCP Wiki
+   * community, CC BY-SA 3.0, scpwiki.com.)
+   */
+  classd: { shirt: 0xf07a1c, trousers: 0xe8701a, shoes: 0x1c1c1c },
 };
 
 /** Outfits with long sleeves: the forearm is the shirt, not skin. */
-const LONG_SLEEVES = new Set(['pilot', 'police', 'tactical', 'hijacker']);
+const LONG_SLEEVES = new Set(['pilot', 'police', 'tactical', 'hijacker', 'classd']);
 
 /* ------------------------------------------------------------------ */
 /* Merging parts into one vertex-coloured geometry                      */

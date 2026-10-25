@@ -979,6 +979,152 @@ export const MAPS = [
     weather: { time: 'day', cond: 'clear', windSpeedKts: 12, windDirDeg: 270 },
     features: { birds: { cx: 0, cz: 0, count: 36, radius: 900, height: 190 } },
   },
+  /**
+   * Nunatak Reach.
+   *
+   * One idea: snow. Every other map is green, dry or tropical; this is the
+   * cold one — a white plain under a line of black crags (a nunatak is a
+   * rock that stands up through the ice), a frozen lake sunk in the plain,
+   * snow falling out of the overcast, and the northern lights after dark.
+   *
+   * Two places to land. Caribou Forward Operating Base is the airfield at the
+   * origin: a joint-forces strip on the plain with shelters and revetments,
+   * open to everybody (it is not behind the passcode — the class asked for
+   * somewhere snowy to fly, not for another locked door). Across the sound,
+   * on Sentinel Island, is the SCP Foundation's northern site: a fenced
+   * compound with guard towers, searchlights and closed blast doors, and an
+   * ICE airstrip beside it. Ice is where braking goes to die: the tyres get
+   * about a third of their grip, the HUD says "braking action poor", and a
+   * long landing floats on to the far end. The Class-D transfer mission
+   * (game/extra/scp.js) flies between the two.
+   *
+   * The site itself is built by src/features/scp-site.js from the `scp`
+   * block below; the flats here are what it stands on (the yard is levelled
+   * concrete, the strip is ice — terrain.js flatSurfaceAt()).
+   *
+   * SCP Foundation content by the SCP Wiki community, CC BY-SA 3.0,
+   * scpwiki.com — see LICENSE.
+   */
+  {
+    id: 'nunatak',
+    waters: {
+      harbour: { island: 0, bearingDeg: 200, length: 240, width: 180, mouthWidth: 66, depth: 6, wallW: 26, quayW: 30, blend: 150 },
+    },
+    name: 'Nunatak Reach',
+    subtitle: 'Arctic · snow, a frozen lake, and an ice runway at the Site',
+    blurb:
+      'A white plain under black crags, snow in the air and the northern lights after dark. Caribou Base '
+      + 'has the long runway; across the sound the SCP Foundation keeps its northern Site behind a fence, '
+      + 'with an airstrip of ice beside it. Braking action poor.',
+    difficulty: 3,
+    difficultyLabel: 'Icy',
+    seaFloor: -48,
+    airport: {
+      elev: 36,
+      headingDeg: 90,
+      runway: { cx: 0, cz: 0, length: 2600, halfWidth: 30 },
+      // East of the fuel farm the layout puts at x ~ 970 on a strip this long.
+      runway2: { cx: 1150, cz: -60, length: 1400, halfWidth: 23, headingDeg: 180 },
+      pad: { x0: -1600, x1: 1600, z0: -900, z1: 900, blend: 400 },
+      pad2: { x0: 1020, x1: 1280, z0: -980, z1: 860, blend: 300 },
+    },
+    corridor2: { halfWidth: 200, blend: 180, fadeFrom: 1100, length: 1700 },
+    islands: [
+      { name: 'Caribou Plain', cx: 0, cz: 700, radius: 4000, peak: 46, seed: 701, profile: 'plains' },
+      // The nunataks: a line of crags north of the plain, each its own
+      // ridge so the skyline has summits on it.
+      { name: 'Black Nunatak', cx: -1400, cz: -3300, radius: 760, peak: 330, seed: 709, profile: 'ridge' },
+      { name: 'Raven Nunatak', cx: -200, cz: -3700, radius: 680, peak: 290, seed: 713, profile: 'ridge' },
+      { name: 'Knife Nunatak', cx: 1100, cz: -3350, radius: 620, peak: 350, seed: 719, profile: 'ridge' },
+      { name: 'The Shoulder', cx: -600, cz: -3100, radius: 1500, peak: 90, seed: 727, profile: 'hills' },
+      // Sentinel Island, the Foundation's: a low snowy table across the
+      // sound with one crag at its back.
+      { name: 'Sentinel Island', cx: 4600, cz: -3300, radius: 2300, peak: 48, seed: 733, profile: 'plains' },
+      { name: 'Sentinel Crag', cx: 5900, cz: -4300, radius: 620, peak: 260, seed: 739, profile: 'ridge' },
+      { name: 'Hare Island', cx: -4800, cz: 2600, radius: 900, peak: 60, seed: 743, profile: 'hills' },
+    ],
+    chunks: [
+      { cx: 0, cz: -400, size: 11000, segments: 240 },
+      { cx: 4800, cz: -3400, size: 6400, segments: 128 },
+      { cx: -4800, cz: 2600, size: 2600, segments: 64 },
+    ],
+    palette: {
+      // Snow from the waterline up: the snow term in the terrain shader
+      // covers everything above the line, and the line is under the sea.
+      grass: [0.86, 0.9, 0.94],
+      sand: [0.9, 0.9, 0.9],
+      rock: [0.5, 0.52, 0.56],
+      deepWater: 0x0c2334,
+      swell: 0x244d6a,
+      shallow: [0.3, 0.52, 0.6],
+      nightSky: 0x7f94b8,
+      snow: [-90, -40],
+    },
+    outpost: { cx: 4550, cz: -2800, elev: 50, halfLen: 560, halfWidth: 34, blend: 140 },
+    /*
+     * Authored level ground (terrain.js resolveFlats). The Site's yard and
+     * its ice strip share one elevation so the taxi from the strip to the
+     * gate is level — 50 m, where the natural ground under the strip runs
+     * 50-57 m and under the yard 37-48 m (measured in node). The lake is
+     * sunk five to eight metres below the plain round it (natural ground
+     * 50-53 m), which is what a frozen lake is.
+     */
+    flats: [
+      { id: 'site-yard', name: 'Site yard', kind: 'yard', x0: 4300, x1: 4800, z0: -3420, z1: -2840, blend: 110, surface: 'tarmac', elev: 50 },
+      { id: 'site-strip', name: 'Site airstrip', kind: 'strip', x0: 3990, x1: 5110, z0: -2834, z1: -2766, blend: 110, surface: 'ice', elev: 50, clear: true },
+      { id: 'frozen-lake', name: 'Lake Nunatak', kind: 'lake', x0: -2500, x1: -1600, z0: 1750, z1: 2750, blend: 260, surface: 'ice', elev: 45, clear: true },
+    ],
+    /*
+     * The Site (src/features/scp-site.js reads this). Everything in metres
+     * from the yard's own frame: the fence is the yard's rectangle, the
+     * blast door faces south across the apron to the strip.
+     */
+    scp: {
+      name: 'Site-91 North',
+      cx: 4550, cz: -3140,
+      // The fence. The main block sits just inside its south side, so the
+      // walk from the gate stand to the blast door is about 65 m.
+      yard: { x0: 4330, x1: 4770, z0: -3300, z1: -2990 },
+      door: { x: 4550, z: -3030 },
+      gate: { x: 4550, z: -2962, headingDeg: 0 },
+      strip: { cx: 4550, cz: -2800, halfLen: 550, halfWidth: 30, headingDeg: 90 },
+      lake: { cx: -2050, cz: 2250 },
+      // Where the Class-D wait at Caribou: a holding hut by the first stand.
+      holding: { x: -520, z: -420 },
+    },
+    scenery: {
+      flora: 'snow',
+      pads: [
+        { id: 'hospital', name: 'Caribou Medical', x: 2300, z: 2300, kind: 'roof', above: 20, r: 11 },
+        { id: 'sentinel', name: 'Sentinel Strip Pad', x: 5330, z: -2800, kind: 'ground', r: 12 },
+        { id: 'lake', name: 'Lake Shore Pad', x: -1330, z: 2250, kind: 'ground', r: 12 },
+        { id: 'field', name: 'Caribou Base Pad', x: -520, z: -150, kind: 'ground', r: 11 },
+      ],
+      coastTrees: 360,
+      coastTreeHeight: 10,
+      hillTrees: 700,
+      hillTreeHeight: 13,
+      hillCentre: [-400, -2900],
+      hillRadius: 2400,
+      hillBand: [40, 220],
+      town: { cx: 2300, cz: 2300, radius: 420, count: 30, minH: 4, maxH: 60 },
+      lighthouse: [-3250, 500],
+      // The crate's target is Hare Island, not the Site's strip (the ring would be painted on the ice).
+      deliveryPad: [-4800, 2600],
+      padTrees: 24,
+      boats: 2,
+      base: { cx: 0, cz: 0, shelters: 6, revetments: 4, walls: 10, spread: 560, radarOffset: 800 },
+    },
+    // Snow falls here instead of rain, out of any cloud (world/precip.js).
+    precip: 'snow',
+    weather: { time: 'day', cond: 'cloudy', windSpeedKts: 12, windDirDeg: 300 },
+    features: {
+      // The northern lights, kept subtle: a slow green curtain, dimmer than
+      // Aurora Fjords' (render/flash-safety: the curtains move at a fifth of a
+      // radian a second, nothing here flashes).
+      aurora: { colour: 0x3fd98f, colour2: 0x5a6cff, height: 2800, intensity: 0.55 },
+    },
+  },
   /* ---- new maps end ---- */
 
   /* ==================================================================== *

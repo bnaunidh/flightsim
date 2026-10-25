@@ -31,11 +31,16 @@ THIRD-PARTY CODE
 
 SCP FOUNDATION CONTENT
 
-  There is none in the game yet; some is planned. Anything in the game that
-  is based on the SCP Foundation — the names, the articles, the logo, anything
-  taken or adapted from the SCP Wiki (scpwiki.com) — is the work of the SCP
-  Wiki community and is licensed under Creative Commons Attribution-ShareAlike
-  3.0 (CC BY-SA 3.0), not under this licence. If you copy or change that part
+  The game has some: the SCP Foundation's Site-91 North on the Nunatak Reach
+  map, its signs and the three-arrows mark on them, and the Class-D transfer
+  mission (src/features/scp-site.js, src/game/extra/scp.js, and the map and
+  outfit entries that go with them — each is marked with this credit:
+  "SCP Foundation content by the SCP Wiki community, CC BY-SA 3.0,
+  scpwiki.com"). Anything in the game that is based on the SCP Foundation —
+  the names, the articles, the logo, anything taken or adapted from the SCP
+  Wiki (scpwiki.com) — is the work of the SCP Wiki community and is licensed
+  under Creative Commons Attribution-ShareAlike 3.0 (CC BY-SA 3.0), not under
+  this licence. If you copy or change that part
   of the game, the CC BY-SA 3.0 terms apply to it: credit the SCP Wiki and its
   authors, and share your version of that content under the same licence.
   https://creativecommons.org/licenses/by-sa/3.0/

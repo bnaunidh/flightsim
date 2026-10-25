@@ -124,8 +124,9 @@ const NEW = ['gateway', 'northwatch', 'condor'];
 const ids = MAPS.map((m) => m.id);
 ok('every map id is unique', new Set(ids).size === ids.length, `${ids.length} maps`);
 const flight = M.mapsForGame('flight').map((m) => m.id);
-// tests/selftest-three-games.js asserts exactly nine, and says why.
-ok('the flight game still offers exactly nine maps', flight.length === 9, flight.join(' '));
+// tests/selftest-three-games.js asserts the same count, and says why. Ten
+// since Nunatak Reach (the snow map, 2026-10-25) joined the nine.
+ok('the flight game still offers exactly ten maps', flight.length === 10, flight.join(' '));
 for (const id of NEW) ok(`${id} is on the map list`, ids.includes(id));
 
 /** Every map id named in the missions and the tests, read out of the source. */
@@ -517,6 +518,8 @@ for (const map of MAPS) {
     scenery.group.traverse((o) => {
       // Trees only: the hospital signs are vertex-coloured too, and unlit.
       if (!o.isInstancedMesh || !o.material.vertexColors || o.material.map || o.material.isMeshBasicMaterial) return;
+      // Nunatak Reach's trees are white on top on purpose (snow, scenery.js dustWithSnow).
+      if (/^trees:snow-/.test(o.name)) return;
       const c = o.geometry.attributes.color;
       if (!c) return;
       let g = 0;

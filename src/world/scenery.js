@@ -167,7 +167,7 @@ let treeCache = null;
 const BARK = [0.36, 0.27, 0.19];
 const PALM_BARK = [0.55, 0.45, 0.33];
 const PALM_BARK2 = [0.45, 0.36, 0.26];
-function treeGeometry(kind = 0) {
+function treeGeometry(kind = 0, snow = false) {
   const parts = [];
   const trunk = (topR, botR, h, y, lean = 0, sides = 6) => {
     const g = new THREE.CylinderGeometry(topR, botR, h, sides, 1, true);
@@ -257,7 +257,33 @@ function treeGeometry(kind = 0) {
   }
   const g = mergeParts(parts);
   g.computeVertexNormals();
+  if (snow) dustWithSnow(g, kind);
   return g;
+}
+
+/**
+ * Snow on the trees (Nunatak Reach, FLORA.snow). Every upward-facing bit of
+ * canopy is blended towards a cold white by how much it faces the sky, so
+ * the skirts of a conifer carry snow on top and stay dark underneath, and a
+ * lump of broadleaf is white on its crown. Bark is left alone: it is told
+ * apart by colour (brown, red at or above green), which is how the trunk
+ * and the leaves already differ in the merged mesh. Linear colours, like
+ * the rest (tests/features/maps.mjs skips `trees:snow-*` in its green check).
+ */
+function dustWithSnow(g, kind) {
+  const col = g.attributes.color;
+  const nrm = g.attributes.normal;
+  const [sr, sg, sb] = linearRGB([0.9, 0.93, 0.98]);
+  for (let i = 0; i < col.count; i++) {
+    const r = col.getX(i);
+    const gr = col.getY(i);
+    if (r >= gr * 0.95) continue;
+    const up = Math.max(0, nrm.getY(i));
+    // Palm fronds (kind 0) are thin sheets; a dusting, not a cap.
+    const k = (kind === 0 ? 0.35 : 0.85) * Math.pow(up, 0.6);
+    col.setXYZ(i, r + (sr - r) * k, gr + (sg - gr) * k, col.getZ(i) + (sb - col.getZ(i)) * k);
+  }
+  col.needsUpdate = true;
 }
 
 /**
@@ -290,6 +316,18 @@ export const FLORA = {
     hill: [0, 0.02, 0.8, 0.06, 0.12, 0],
     pad: [0, 0.06, 0.6, 0.2, 0.14, 0],
   },
+  /*
+   * Snow: conifer and birch under snow (Nunatak Reach). `snow: true` dusts
+   * every tree's canopy white on top — see dustWithSnow(). Two species,
+   * because a cold plain grows few, and no scrub: under snow a knee-high
+   * bush is a bump.
+   */
+  snow: {
+    coast: [0, 0, 0.7, 0, 0.3, 0],
+    hill: [0, 0, 0.86, 0, 0.14, 0],
+    pad: [0, 0, 0.7, 0, 0.3, 0],
+    snow: true,
+  },
   arid: {
     coast: [0.06, 0, 0, 0.72, 0, 0.22],
     hill: [0, 0.04, 0.06, 0.64, 0, 0.26],
@@ -318,7 +356,7 @@ export function floraOf(mapDef) {
  * is deliberately narrower than the canopy, because clipping a frond is not
  * the same as hitting the trunk.
  */
-function addTrees(group, spots, height = 9, mix = [0.7, 0.15, 0.05, 0.1], solid = true) {
+function addTrees(group, spots, height = 9, mix = [0.7, 0.15, 0.05, 0.1], solid = true, snow = false) {
   const total = mix.reduce((a, b) => a + b, 0) || 1;
   const buckets = [[], [], [], [], [], []];
   // The fall-through species is the last one this mix actually grows. It was
@@ -365,14 +403,15 @@ function addTrees(group, spots, height = 9, mix = [0.7, 0.15, 0.05, 0.1], solid 
     });
     // One geometry per species per world build, shared by the coast, the
     // hills and the pad groves: it was built afresh for each of the three.
-    let geo = treeCache && treeCache.get(kind);
+    const cacheKey = snow ? `snow:${kind}` : kind;
+    let geo = treeCache && treeCache.get(cacheKey);
     if (!geo) {
-      geo = treeGeometry(kind);
-      if (treeCache) treeCache.set(kind, geo);
+      geo = treeGeometry(kind, snow);
+      if (treeCache) treeCache.set(cacheKey, geo);
     }
     const inst = new THREE.InstancedMesh(geo, mat, list.length);
     // Named so tests/features/world-scale.mjs can find the trees.
-    inst.name = `trees:${['palm', 'broadleaf', 'conifer', 'scrub', 'birch', 'thorn'][kind]}`;
+    inst.name = `trees:${snow ? 'snow-' : ''}${['palm', 'broadleaf', 'conifer', 'scrub', 'birch', 'thorn'][kind]}`;
     inst.castShadow = true;
     inst.receiveShadow = false;
     // How tall this species is relative to the grove's nominal height.
@@ -3613,7 +3652,7 @@ export class Scenery {
     });
     // Coast: whatever grows by the sea in this climate — see FLORA.
     const flora = floraOf(MAP);
-    addTrees(this.group, coast, cfg.coastTreeHeight, flora.coast);
+    addTrees(this.group, coast, cfg.coastTreeHeight, flora.coast, true, !!flora.snow);
 
     // Denser stands up on the higher ground.
     const upland = scatter({
@@ -3627,7 +3666,7 @@ export class Scenery {
       maxSlope: 0.7,
     });
     // High ground: the climate's upland mix.
-    addTrees(this.group, upland, cfg.hillTreeHeight, flora.hill);
+    addTrees(this.group, upland, cfg.hillTreeHeight, flora.hill, true, !!flora.snow);
 
     // A military base, on the maps that have one.
     this.base = addAirBase(this.group, cfg.base);
@@ -3655,7 +3694,7 @@ export class Scenery {
       avoidAirport: false,
     });
     // Round the delivery pad, and NOT solid — landing there is the mission.
-    addTrees(this.group, padTrees, cfg.coastTreeHeight, flora.pad, false);
+    addTrees(this.group, padTrees, cfg.coastTreeHeight, flora.pad, false, !!flora.snow);
 
     /*
      * On land, wherever the map meant.

@@ -33,6 +33,8 @@ export function createGameAircraft(options = {}, legacyFactory) {
       onGround: !!ac.onGround, groundSpeed: ac.groundSpeed ?? 0, brakes: control.brakes ?? 0,
       // For the realism layer (fleet/aircraft-realism.js): the levers at idle on the roll arm the ground spoilers; the air speed gates the speedbrake.
       throttle: control.throttle ?? 0, airspeed: ac.airspeed ?? 0, agl: ac.agl ?? 0,
+      // The pilot's levers (aircraft/systems.js): the spoilers' position and the reverser detent; undefined on an aeroplane without them (the traffic).
+      spoilers: Number.isFinite(ac.spoilerPos) ? ac.spoilerPos : undefined, reverse: Number.isFinite(ac.reverse) ? ac.reverse : undefined,
       suspension: compression ? [compression.nose ?? 0, compression.left ?? 0, compression.right ?? 0] : ac.suspension ?? 0,
       night: !!weather.isNight, lights: ac.engineOn !== false || ac.rpm > .05,
       worldVelocity: ac.vel ?? { x: 0, y: 0, z: 0 }, camera: model.userData.gameCamera,

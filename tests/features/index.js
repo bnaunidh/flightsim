@@ -28,6 +28,7 @@ import { check as gunsight } from './gunsight.browser.js';
 import { check as fighters } from './fighters.browser.js';
 import { check as cockpits } from './cockpits.browser.js';
 import { check as fire } from './fire.browser.js';
+import { check as scpSnow } from './scp-snow.browser.js';
 import { check as fun } from './fun.browser.js';
 import { check as smokeClouds } from './smoke-clouds.browser.js';
 import { check as instruments } from './instruments.browser.js';
@@ -176,6 +177,9 @@ export const CHECKS = [
   // After everything that flies: KIT-B — where a Free Flight starts (the picker), the ambient
   // population and the emergency scene, on Gateway and The Big Burn.
   { id: 'maps-kit-b', check: mapsKitB },
+  // After maps-kit-b (it borrows a map too, and puts it back): the snow lane — Nunatak Reach, the
+  // ice under the wheels, the Site and the Class-D transfer, flown start to finish.
+  { id: 'scp-snow', check: scpSnow },
   // The map loading screen, about three seconds, in front of every way into a map. It switches
   // itself on for its own checks (the suite runs with it off) and puts the map back.
   { id: 'loading-screens', check: loadingScreens },

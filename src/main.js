@@ -92,7 +92,7 @@ import {
 import { clamp } from './core/noise.js';
 import { setReduceFlashing, shakeClock } from './render/flash-safety.js';
 import { setComicEffects } from './render/comic.js';
-import { extInstall, extBuildWorld, extUpdate, extCamera, extStartMode, extStop, extensions, extKeyContext } from './game/extensions.js';
+import { extInstall, extBuildWorld, extUpdate, extCamera, extStartMode, extStop, extensions, extKeyContext, extHudAction, extTouchState } from './game/extensions.js';
 // Every plug-in feature registers itself on import. See ./features/index.js.
 import './features/index.js';
 import { noteLiftoff, noteTouchdown, noteArrested, noteCeiling, noteMissionComplete } from './features/achievements/index.js';
@@ -2131,6 +2131,9 @@ class Game {
         break;
       }
       default:
+        // A pill's or a sheet's action a feature owns and no key does (the
+        // lights back to auto, the reversers stowed: features/pilot-systems.js).
+        if (extHudAction(this, a)) break;
         // A feature's action (the ground crew's P, say) from a touch sheet:
         // pressed exactly the way its key would be, so it honours Settings.
         if (ACTIONS[a]) {
@@ -2159,6 +2162,8 @@ class Game {
       rotor: !!SPEC.rotor,
       assist: !!(ac && ac.hoverAssist !== false),
       brace: this.state === 'flying' && this.braceAvailable(),
+      // The features' own switches (lights, spoilers, reversers, the radio: features/pilot-systems.js).
+      ...extTouchState(this),
     };
   }
 

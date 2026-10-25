@@ -126,7 +126,7 @@ import { registerExtension } from '../game/extensions.js';
 import * as Prog from '../game/progression.js';
 import { createAircraftModel, groundOffsetFor } from '../aircraft/model-adapter.js';
 import { specFor, performanceFor } from '../aircraft/types.js';
-import { AIRLINE_LIVERIES, airlinesFor, schemeFor } from '../aircraft/liveries.js';
+import { AIRLINE_LIVERIES, airlinesFor, schemeFor, radioBrand } from '../aircraft/liveries.js';
 import { heightAt, isOnRunway, isOnRunway2, AIRPORT, MAP } from '../world/terrain.js';
 import { buildField, runwayFor, groundY, alongR2, holdPoint } from './traffic/field.js';
 import * as PL from './traffic/planner.js';
@@ -299,7 +299,8 @@ function makeCraft(type, idx, home) {
     const l = pickAirlineScheme(T.rand, type);
     if (l) {
       scheme = l;
-      brand = String(l.name).replace(/\s+(Air|States)$/i, '');
+      // The scheme's own radio brand (liveries.js radioBrand: 'Kanal', 'Night Freight'), never a real callsign.
+      brand = radioBrand(l);
     }
   }
   if (!scheme) scheme = schemeFor(type, 'house');

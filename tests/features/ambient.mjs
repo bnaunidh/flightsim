@@ -118,7 +118,7 @@ const maps = MAPS.filter((m) => !only || m.id === only);
 /* 1. Data                                                             */
 /* ------------------------------------------------------------------ */
 
-ok('ambient: all 30 map ids have data', MAPS.every((m) => AM.AMBIENT[m.id]), MAPS.filter((m) => !AM.AMBIENT[m.id]).map((m) => m.id).join(',') || 'all');
+ok('ambient: all 31 map ids have data', MAPS.every((m) => AM.AMBIENT[m.id]), MAPS.filter((m) => !AM.AMBIENT[m.id]).map((m) => m.id).join(',') || 'all');
 ok('ambient: no data for a map that does not exist', AM.AMBIENT_IDS.every((id) => MAPS.some((m) => m.id === id)), AM.AMBIENT_IDS.filter((id) => !MAPS.some((m) => m.id === id)).join(','));
 ok('ambient: DENSITY is low 0.2, medium 0.5, high 1, ultra 1.5', AM.DENSITY.low === 0.2 && AM.DENSITY.medium === 0.5 && AM.DENSITY.high === 1 && AM.DENSITY.ultra === 1.5);
 ok('ambient: AIR_CAP is 1, 2, 3, 4', AM.AIR_CAP.low === 1 && AM.AIR_CAP.medium === 2 && AM.AIR_CAP.high === 3 && AM.AIR_CAP.ultra === 4);

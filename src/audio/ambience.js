@@ -6,6 +6,7 @@
  */
 
 import { clamp, lerp } from '../core/noise.js';
+import { MAP } from '../world/terrain.js';
 
 export class Ambience {
   constructor(mixer) {
@@ -243,7 +244,9 @@ export class Ambience {
     this.whistleFilter.frequency.setTargetAtTime(2200 + speedN * 2200, t, 0.25);
 
     /* Rain: louder inside (it drums on the shell) and faster when flying fast. */
-    const rain = weather.cond.rain;
+    // On a snow map (Nunatak Reach, `precip: 'snow'`) the same weather falls
+    // as snow, and snow is quiet: a blizzard must not hiss like a downpour.
+    const rain = MAP && MAP.precip === 'snow' ? 0 : weather.cond.rain;
     const rainSpeed = 1 + clamp(v / 60, 0, 1.2);
     this.rainGain.gain.setTargetAtTime(rain * (inside ? 0.16 : 0.3) * rainSpeed * 0.8, t, 0.3);
     this.rainBP.frequency.setTargetAtTime(2600 + rain * 1800, t, 0.3);

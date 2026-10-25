@@ -225,15 +225,15 @@ export async function check(sim, r, say = () => {}) {
     const special = L.LIVERIES.filter((l) => l.special).map((l) => l.id);
     r.ok('skins: the Air Force One paint is flagged story-only, and the hangar still offers it', special.includes('potus') && L.LIVERIES.some((l) => l.id === 'potus'), special.join(','));
     r.ok('skins: the random airline schemes are the real airlines, not the house colours, not a story-only one',
-      L.AIRLINE_LIVERIES.length === 6 && L.AIRLINE_LIVERIES.every((l) => !l.house && !l.special), L.AIRLINE_LIVERIES.map((l) => l.id).join(','));
+      L.AIRLINE_LIVERIES.length === 19 && L.AIRLINE_LIVERIES.every((l) => !l.house && !l.special), L.AIRLINE_LIVERIES.map((l) => l.id).join(','));
     let leaked = 0;
     const seen = new Set();
-    for (let i = 0; i < 400; i++) {
+    for (let i = 0; i < 1200; i++) {
       const l = TR.pickAirlineScheme(Math.random);
       if (!l || l.special || l.house) leaked++;
       else seen.add(l.id);
     }
-    r.ok('skins: an ambient airliner is never given the Air Force One paint (so never "Air Force One 47" on the radio)', leaked === 0 && seen.size === 6, `${leaked} bad of 400; ${seen.size} airlines used`);
+    r.ok('skins: an ambient airliner is never given the Air Force One paint (so never "Air Force One 47" on the radio)', leaked === 0 && seen.size === L.AIRLINE_LIVERIES.length, `${leaked} bad of 1200; ${seen.size} airlines used`);
     const civil = TY.AIRCRAFT.filter((t) => L.wearsAirlinePaint(t)).map((t) => t.id).sort();
     // The airliners (the three, the jets and the giants of aircraft/extra) and the civil
     // light aeroplanes; never the military ones (the C-17, the C-5, the B-1B, the A-10).

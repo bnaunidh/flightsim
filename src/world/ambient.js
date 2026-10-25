@@ -157,6 +157,14 @@ export const AMBIENT = Object.freeze({
     air: [plane('patrol', 'tempest', 'field', 5000, 900), heli('sar', 'harbour', 1500, 300)],
     airport: { types: ['f22', 'fa18'], n: 3 },
   },
+  nunatak: {
+    // Caribou Base's trucks on their loop; the plain is otherwise empty, which is the point of it.
+    ground: [{ kind: 'truck', n: 4, on: { loop: 'base', r: 700 } }, car(4, 'streets')],
+    water: [boats('patrol', 1, 'harbour', 800)],
+    // A transport shuttling between the base and the Site's strip, and the rescue helicopter.
+    air: [transit('transport', 'tempest', 'outpost', 'base', 1100), heli('sar', 'town', 1400, 300)],
+    airport: { types: ['courier', 'tempest'], n: 2 },
+  },
   condor: {
     ground: [car(8, 'streets')],
     water: [boats('trawler', 3, 'harbour', 800)],

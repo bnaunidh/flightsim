@@ -38,7 +38,7 @@ const airliners = T.AIRCRAFT.filter((t) => t.category === 'airliner' || String(t
  * ------------------------------------------------------------------ */
 for (const l of L.AIRLINE_LIVERIES) {
   ok(`${l.id}: has a fleet of roster types, a name to wear and a mark for the fin`,
-    Array.isArray(l.fleet) && l.fleet.length >= 3 && l.fleet.every((id) => ids.has(id)) && typeof l.titling === 'string' && l.titling.length > 3 && ['stripes', 'compass', 'star', 'wave', 'sun', 'moon'].includes(l.emblem),
+    Array.isArray(l.fleet) && l.fleet.length >= 2 && l.fleet.every((id) => ids.has(id)) && typeof l.titling === 'string' && l.titling.length > 3 && L.EMBLEMS.includes(l.emblem),
     `fleet ${(l.fleet || []).join(',')}; titling ${l.titling}; emblem ${l.emblem}`);
   ok(`${l.id}: every type in its fleet is an airliner (no fighters in airline colours)`, (l.fleet || []).every((id) => airliners.some((t) => t.id === id)), (l.fleet || []).filter((id) => !airliners.some((t) => t.id === id)).join(','));
   ok(`${l.id}: the name on the side is its own, not a real airline's`, !/\b(ethiopian|united|american|air france|air india|fedex|ups|delta|lufthansa|emirates)\b/i.test(l.titling));
@@ -50,10 +50,14 @@ ok('every airline has a different mark on its fin', marks.size === L.AIRLINE_LIV
  * Who flies what
  * ------------------------------------------------------------------ */
 const names = (list) => list.map((l) => l.id).sort().join(',');
-ok('a 787 goes to the airlines that fly it, and never to the freight company', names(L.airlinesFor(T.getAircraft('b787'))).includes('abyssinia') && !L.airlinesFor(T.getAircraft('b787')).some((l) => l.id === 'nightfreight'), names(L.airlinesFor(T.getAircraft('b787'))));
-ok('a 747 goes to Night Freight and Bharat, not to the A320 operators', names(L.airlinesFor(T.getAircraft('b747'))) === 'bharat,nightfreight', names(L.airlinesFor(T.getAircraft('b747'))));
-ok('a Q400 goes to the regional operators only', names(L.airlinesFor(T.getAircraft('q400'))) === 'abyssinia,nightfreight', names(L.airlinesFor(T.getAircraft('q400'))));
-ok('the A380 and Concorde fly for Bleu Ciel alone', names(L.airlinesFor(T.getAircraft('a380'))) === 'bleuciel' && names(L.airlinesFor(T.getAircraft('concorde'))) === 'bleuciel');
+const FREIGHT = ['nightfreight', 'dashfreight', 'flexship', 'parcelbrown'];
+ok('a 787 goes to the airlines that fly it, and never to a freight company', names(L.airlinesFor(T.getAircraft('b787'))).includes('abyssinia') && !L.airlinesFor(T.getAircraft('b787')).some((l) => FREIGHT.includes(l.id)), names(L.airlinesFor(T.getAircraft('b787'))));
+ok('a 747 goes to the freight companies that fly one and Bharat, not to the A320 operators', names(L.airlinesFor(T.getAircraft('b747'))) === 'bharat,dashfreight,nightfreight,parcelbrown', names(L.airlinesFor(T.getAircraft('b747'))));
+ok('a Q400 goes to the regional and feeder operators only', names(L.airlinesFor(T.getAircraft('q400'))) === 'abyssinia,flexship,nightfreight,oversea', names(L.airlinesFor(T.getAircraft('q400'))));
+ok('the A380 flies for the airlines that really fly one, and Concorde for the two that flew it', names(L.airlinesFor(T.getAircraft('a380'))) === 'bleuciel,desertpearl,pearlgulf,royalisles,sandline' && names(L.airlinesFor(T.getAircraft('concorde'))) === 'bleuciel,royalisles', names(L.airlinesFor(T.getAircraft('a380'))) + ' / ' + names(L.airlinesFor(T.getAircraft('concorde'))));
+ok('the low-cost parody flies the A320 family only', names(L.airlinesFor(T.getAircraft('a320'))).includes('spit') && !L.airlinesFor(T.getAircraft('b737')).some((l) => l.id === 'spit') && !L.airlinesFor(T.getAircraft('b777')).some((l) => l.id === 'spit'));
+ok('the parcel freighter flies the 747 and the feeder only', names(L.airlinesFor(T.getAircraft('b747'))).includes('parcelbrown') && L.findLivery('parcelbrown').fleet.join() === 'b747,meridian');
+ok('nineteen airlines fly, and the radio brand of each is its own', L.AIRLINE_LIVERIES.length === 19 && new Set(L.AIRLINE_LIVERIES.map((l) => L.radioBrand(l))).size === 19, L.AIRLINE_LIVERIES.map((l) => L.radioBrand(l)).join(', '));
 for (const id of ['belugaxl', 'dreamlifter', 'an225']) {
   ok(`${id}: no airline flies it — it keeps its house colours`, L.airlinesFor(T.getAircraft(id)).length === 0);
 }

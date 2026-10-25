@@ -16,6 +16,7 @@ import { SPEC } from '../aircraft/physics.js';
 import { rekey, keyName, shortKey, bindingsVersion, HELI_MAP } from '../flight/input.js';
 import { TouchdownCard } from './touchdown.js';
 import { PillLane, pillsFor } from './pills.js';
+import { lightPresetOf } from '../aircraft/systems.js';
 import { DestRibbon } from './ribbon.js';
 import { conditionsWords, DENSITY_SHORT } from './conditions.js';
 
@@ -1921,7 +1922,10 @@ export class Hud {
         const v = bindingsVersion();
         if (this._pillKeysV !== v) {
           this._pillKeysV = v;
-          this._pillKeys = { power: keyName('throttleUp', sim), services: keyName('services', sim), gear: keyName('gear', sim) };
+          this._pillKeys = {
+            power: keyName('throttleUp', sim), services: keyName('services', sim), gear: keyName('gear', sim),
+            spoilers: keyName('spoilers', sim), reversers: keyName('reversers', sim), lights: keyName('lights', sim),
+          };
         }
         this.pills.set(pillsFor({
           onGround: !!r.onGround,
@@ -1934,6 +1938,15 @@ export class Hud {
           vsFpm: r.vsFpm,
           touch: this.wrap.classList.contains('is-touch'),
           keys: this._pillKeys,
+          // The pilot's switches (aircraft/systems.js): the lever positions, and the lights' preset when off auto.
+          speedbrake: r.speedbrake,
+          spoilerPos: r.spoilerPos,
+          spoilersArmed: r.spoilersArmed,
+          reverse: r.reverse,
+          lightsPreset: (() => {
+            const p = lightPresetOf(r.lights);
+            return !r.lights || (p && p.id === 'auto') ? null : p ? p.label : 'SET BY HAND';
+          })(),
         }));
       } else this.pills.clear();
     }

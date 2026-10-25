@@ -40,6 +40,9 @@
  *                                     // the feature's keys, in the one registry (flight/input.js)
  *     keyContext(sim) {},             // 'foot' | 'chute' | 'rocket' while this feature has the
  *                                     //   keys, else null — which game's keys the hints name
+ *     hudAction(sim, action) {},      // a HUD pill's or a touch sheet's action that is not a key:
+ *                                     //   return true when it was yours (main.js hudAction)
+ *     touchState(sim) {},             // fields for the touch sheets' words and lights (main.js touchState)
  *     devActions: [{ label, hint, run(sim) }],   // buttons in the Dev mode panel
  *     code(sim, typed) {},            // a code typed in the hangar's "Got a code?" box:
  *                                     //   null if it is not this feature's, or a promise
@@ -202,6 +205,21 @@ export async function extCode(sim, typed) {
 }
 
 /** Every Dev-mode action any feature offers, for the settings panel. */
+/** A pill's or a sheet's action: the first feature that says it was its own wins. */
+export function extHudAction(sim, action) {
+  return each('hudAction', (e) => e.hudAction(sim, action) === true);
+}
+
+/** Every feature's fields for the touch sheets, merged. */
+export function extTouchState(sim) {
+  const out = {};
+  each('touchState', (e) => {
+    const s = e.touchState(sim);
+    if (s && typeof s === 'object') Object.assign(out, s);
+  });
+  return out;
+}
+
 export function extDevActions() {
   const out = [];
   for (const e of extensions()) {

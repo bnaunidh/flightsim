@@ -4,7 +4,7 @@
  *   node tests/features/spawns.mjs            every map
  *   node tests/features/spawns.mjs gateway    one map
  *
- * No page. For every one of the 30 maps, the real airfield is built the way
+ * No page. For every one of the 31 maps, the real airfield is built the way
  * main.js builds it (Airport + Apron with a stub scene, so the obstacle boxes
  * and the airport's own parked aeroplanes are real) and the pads are built,
  * then every class — airliner, light, military, heli, water, open — is
@@ -113,7 +113,7 @@ const REP = {
 };
 const fallbacks = [];
 const maps = MAPS.filter((m) => !only || m.id === only);
-ok('30 maps to check', only ? maps.length === 1 : maps.length === 30, `${maps.length}`);
+ok('31 maps to check', only ? maps.length === 1 : maps.length === 31, `${maps.length}`);
 
 const D2R = Math.PI / 180;
 for (const m of maps) {

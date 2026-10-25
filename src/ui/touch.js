@@ -360,6 +360,10 @@ export class TouchControls {
       noseRight: this.sheetButton(G, 'RIGHT ▶', 'pushNoseRight'),
     };
     this.parkBtn = this.sheetButton(G, 'PARKING BRAKE', 'parkingBrake', { wide: true });
+    // The pilot's levers on the ground (features/pilot-systems.js): the
+    // reversers (idle / MAX / stowed) and arming the ground spoilers.
+    this.reverseBtn = this.sheetButton(G, 'REVERSERS', 'reversers');
+    this.armBtn = this.sheetButton(G, 'SPOILERS: ARMED', 'spoilers');
 
     const Y = this.buildSheet('systems', 'Systems', '');
     this.apBtn = this.sheetButton(Y, 'AUTOPILOT', 'autopilot', { wide: true });
@@ -372,6 +376,12 @@ export class TouchControls {
     this.sheetButton(Y, 'LOOK BEHIND (hold)', 'lookBehind', { hold: true, wide: true });
     this.braceBtn = this.sheetButton(Y, 'MAYDAY — DECLARE AN EMERGENCY', 'brace', { wide: true });
     this.braceBtn.hidden = true;
+    // The pilot's switches (features/pilot-systems.js): every lamp's preset,
+    // the speedbrake lever (aeroplane only), the radio menu.
+    this.lightsBtn = this.sheetButton(Y, 'LIGHTS: AUTO', 'lights');
+    this.radioBtn = this.sheetButton(Y, 'RADIO (ATC)', 'atcRequest');
+    this.speedbrakeBtn = this.sheetButton(Y, 'SPEEDBRAKE', 'spoilers', { wide: true });
+    this.speedbrakeBtn.classList.add('is-wing');
     this.sheetButton(Y, 'MAP', 'minimap');
     this.sheetButton(Y, 'MAP RANGE', 'minimapRange');
     // The H card opens in the middle of the screen, under a sheet: the sheet steps away for it.
@@ -657,6 +667,35 @@ export class TouchControls {
     if (this.assistBtn.hidden !== !st.rotor) this.assistBtn.hidden = !st.rotor;
     lit(this.assistBtn, st.rotor && st.assist);
     if (this.braceBtn.hidden !== !st.brace) this.braceBtn.hidden = !st.brace;
+    // The pilot's switches (features/pilot-systems.js touchState).
+    if (this.lightsBtn) {
+      text(this.lightsBtn, `LIGHTS: ${st.lights || 'AUTO'}`);
+      lit(this.lightsBtn, st.lightsAuto === false);
+    }
+    if (this.radioBtn) lit(this.radioBtn, !!st.radioOpen);
+    if (this.speedbrakeBtn) {
+      const sb = st.speedbrake || 0;
+      // Only on a type that has one (features/pilot-systems.js touchState: not the light aeroplanes).
+      const wing = !st.rotor && st.hasSpoilers !== false;
+      if (this.speedbrakeBtn.hidden !== !wing) this.speedbrakeBtn.hidden = !wing;
+      text(this.speedbrakeBtn, sb >= 1 ? 'SPEEDBRAKE: FULL (tap: in)' : sb > 0 ? 'SPEEDBRAKE: ½ (tap: full)' : 'SPEEDBRAKE: IN (tap: ½)');
+      lit(this.speedbrakeBtn, sb > 0);
+    }
+    if (this.reverseBtn) {
+      const rv = st.reverse || 0;
+      text(this.reverseBtn, rv >= 1 ? 'REVERSE: MAX (tap: stow)' : rv > 0 ? 'REVERSE: IDLE (tap: MAX)' : 'REVERSERS (tap: idle)');
+      lit(this.reverseBtn, rv > 0);
+      // A type without reversers (the light aeroplanes, the fighters) does not offer a dead button.
+      const has = st.hasReversers !== false;
+      if (this.reverseBtn.hidden !== !has) this.reverseBtn.hidden = !has;
+    }
+    if (this.armBtn) {
+      const has = st.hasSpoilers !== false;
+      if (this.armBtn.hidden !== !has) this.armBtn.hidden = !has;
+      const up = (st.spoilerPos || 0) > 0.3;
+      text(this.armBtn, up ? 'SPOILERS: UP' : st.spoilersArmed ? 'SPOILERS: ARMED (tap: disarm)' : 'SPOILERS: OFF (tap: arm)');
+      lit(this.armBtn, up || !!st.spoilersArmed);
+    }
   }
 
   /** Reflect the aeroplane's state back onto the pads. */

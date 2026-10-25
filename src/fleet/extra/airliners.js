@@ -715,7 +715,8 @@ const emblems = new Map();
  * ring round a four-point rose), 'star' (eight points), 'wave' (a swept
  * band over a thinner one, the second ink for the thin one), 'sun' (a disc
  * with short rays, the second ink for the rays), 'moon' (a crescent and a
- * dot). Geometric and original: no real airline's logo is drawn or copied.
+ * dot), and the parody airlines' marks in parodyEmblem() below. Geometric
+ * and original: no real airline's logo is drawn or copied.
  * ('globe' is kept as a name for the compass: the saved id of an older
  * scheme, and a circle with meridians was too near a real mark.)
  */
@@ -806,8 +807,7 @@ function emblemTexture(style, inks) {
         g.lineTo(cx + Math.cos(a) * S * 0.4, cy + Math.sin(a) * S * 0.4);
         g.stroke();
       }
-    } else {
-      // moon
+    } else if (style === 'moon') {
       g.beginPath();
       g.arc(cx, cy, S * 0.36, 0, Math.PI * 2);
       g.fill();
@@ -819,6 +819,12 @@ function emblemTexture(style, inks) {
       g.beginPath();
       g.arc(cx + S * 0.24, cy - S * 0.22, S * 0.06, 0, Math.PI * 2);
       g.fill();
+    } else if (!parodyEmblem(g, style, S, inkAt)) {
+      // An unknown name: a plain disc rather than nothing, so a scheme with a
+      // typo still has a mark where the airline's would be.
+      g.beginPath();
+      g.arc(cx, cy, S * 0.3, 0, Math.PI * 2);
+      g.fill();
     }
   }
   const t = new THREE.CanvasTexture(c);
@@ -827,6 +833,254 @@ function emblemTexture(style, inks) {
   t.name = key;
   emblems.set(key, t);
   return t;
+}
+
+/**
+ * The parody airlines' marks (aircraft/liveries.js, the owner's safe-
+ * companies table): each a few strokes of plain geometry in the scheme's
+ * inks, drawn into the S-pixel square `g`, and none of them a real airline's
+ * logo or a tracing of one — a tulip (not a crown), a triangle cut by a wave
+ * (not a widget), a hexagon badge round a parcel (not a shield), a half-sun
+ * with a crane in flight above it (not a crane in a ring). Returns false for
+ * a name it does not know.
+ */
+function parodyEmblem(g, style, S, inkAt) {
+  const cx = S / 2;
+  const cy = S / 2;
+  const X = (x) => cx + x * S;
+  const Y = (y) => cy + y * S;
+  const stroke = (ink, w) => {
+    g.strokeStyle = ink;
+    g.lineWidth = w * S;
+  };
+  const dot = (x, y, r, ink) => {
+    g.fillStyle = ink;
+    g.beginPath();
+    g.arc(X(x), Y(y), r * S, 0, Math.PI * 2);
+    g.fill();
+  };
+  const poly = (pts, ink) => {
+    g.fillStyle = ink;
+    g.beginPath();
+    pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))));
+    g.closePath();
+    g.fill();
+  };
+  const line = (pts, ink, w) => {
+    stroke(ink, w);
+    g.beginPath();
+    pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))));
+    g.stroke();
+  };
+  switch (style) {
+    case 'tulip': {
+      // The bloom: three pointed petals on a cup; a stem with two leaves.
+      g.fillStyle = inkAt(0);
+      g.beginPath();
+      g.moveTo(X(-0.24), Y(-0.02));
+      g.lineTo(X(-0.22), Y(-0.34));
+      g.lineTo(X(-0.09), Y(-0.18));
+      g.lineTo(X(0), Y(-0.42));
+      g.lineTo(X(0.09), Y(-0.18));
+      g.lineTo(X(0.22), Y(-0.34));
+      g.lineTo(X(0.24), Y(-0.02));
+      g.quadraticCurveTo(X(0.2), Y(0.14), X(0), Y(0.14));
+      g.quadraticCurveTo(X(-0.2), Y(0.14), X(-0.24), Y(-0.02));
+      g.closePath();
+      g.fill();
+      line([[0, 0.14], [0, 0.42]], inkAt(1), 0.05);
+      stroke(inkAt(1), 0.05);
+      g.beginPath();
+      g.moveTo(X(0), Y(0.34));
+      g.quadraticCurveTo(X(-0.16), Y(0.3), X(-0.24), Y(0.16));
+      g.moveTo(X(0), Y(0.3));
+      g.quadraticCurveTo(X(0.16), Y(0.28), X(0.22), Y(0.12));
+      g.stroke();
+      return true;
+    }
+    case 'wavetri': {
+      // A triangle cut across by a wave: the lower part in the second ink.
+      poly([[0, -0.38], [-0.38, 0.3], [0.38, 0.3]], inkAt(0));
+      g.save();
+      g.beginPath();
+      g.moveTo(X(0), Y(-0.38));
+      g.lineTo(X(-0.38), Y(0.3));
+      g.lineTo(X(0.38), Y(0.3));
+      g.closePath();
+      g.clip();
+      g.fillStyle = inkAt(1);
+      g.beginPath();
+      g.moveTo(X(-0.5), Y(0.08));
+      g.bezierCurveTo(X(-0.2), Y(-0.14), X(0.1), Y(0.26), X(0.5), Y(0.02));
+      g.lineTo(X(0.5), Y(0.5));
+      g.lineTo(X(-0.5), Y(0.5));
+      g.closePath();
+      g.fill();
+      g.restore();
+      return true;
+    }
+    case 'falcon': {
+      // A falcon in the stoop, seen from below: swept wings, a fanned tail, the head at the point.
+      line([[-0.42, -0.3], [0, 0.08], [0.42, -0.3]], inkAt(0), 0.13);
+      poly([[0, -0.04], [-0.1, -0.3], [0.1, -0.3]], inkAt(0));
+      dot(0, 0.17, 0.075, inkAt(0));
+      dot(-0.02, 0.15, 0.022, inkAt(1));
+      return true;
+    }
+    case 'lattice': {
+      // A lattice of diamonds in three shades, the corners left open.
+      const d = 0.13;
+      for (let r = -2; r <= 2; r++) {
+        for (let c = -1; c <= 1; c++) {
+          if (Math.abs(r) === 2 && c !== 0) continue;
+          const x = c * d * 2 + (r % 2 ? d : 0);
+          if (Math.abs(x) > 0.3) continue;
+          const y = r * d;
+          poly([[x, y - d], [x + d * 0.95, y], [x, y + d], [x - d * 0.95, y]], inkAt(((r + c + 4) % 3)));
+        }
+      }
+      return true;
+    }
+    case 'speedlines': {
+      // Three tapered lines, slanted a little, fast.
+      g.save();
+      g.translate(cx, cy);
+      g.rotate(-0.17);
+      g.translate(-cx, -cy);
+      for (const [y, l] of [[-0.2, 0.5], [0, 0.7], [0.2, 0.58]]) {
+        poly([[-l / 2, y], [l / 2, y - 0.05], [l / 2, y + 0.05]], inkAt(0));
+      }
+      g.restore();
+      return true;
+    }
+    case 'arrowbox': {
+      // A box with an arrow straight through it.
+      stroke(inkAt(0), 0.07);
+      g.beginPath();
+      g.rect(X(-0.24), Y(-0.22), 0.48 * S, 0.44 * S);
+      g.stroke();
+      line([[-0.42, 0], [0.26, 0]], inkAt(1), 0.07);
+      poly([[0.2, -0.14], [0.44, 0], [0.2, 0.14]], inkAt(1));
+      return true;
+    }
+    case 'parcel': {
+      // A hexagon badge round a parcel with its tape.
+      const hex = [];
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        hex.push([Math.cos(a) * 0.42, Math.sin(a) * 0.42]);
+      }
+      poly(hex, inkAt(0));
+      poly([[-0.18, -0.14], [0.18, -0.14], [0.18, 0.2], [-0.18, 0.2]], inkAt(1));
+      poly([[-0.03, -0.14], [0.03, -0.14], [0.03, 0.2], [-0.03, 0.2]], inkAt(0));
+      line([[-0.18, -0.04], [0.18, -0.04]], inkAt(0), 0.025);
+      return true;
+    }
+    case 'seawave': {
+      // A breaking wave: a rolling crest in the first ink, its foam line in the second.
+      stroke(inkAt(0), 0.13);
+      g.beginPath();
+      g.moveTo(X(-0.42), Y(0.3));
+      g.bezierCurveTo(X(-0.1), Y(0.26), X(0.2), Y(-0.44), X(0.42), Y(-0.16));
+      g.bezierCurveTo(X(0.5), Y(0.02), X(0.3), Y(0.08), X(0.2), Y(-0.04));
+      g.stroke();
+      stroke(inkAt(1), 0.05);
+      g.beginPath();
+      g.moveTo(X(-0.34), Y(0.38));
+      g.bezierCurveTo(X(-0.02), Y(0.36), X(0.26), Y(-0.24), X(0.4), Y(-0.08));
+      g.stroke();
+      return true;
+    }
+    case 'crane': {
+      // A crane standing: body, a long straight neck, the head and beak, two legs, a tail.
+      g.fillStyle = inkAt(0);
+      g.beginPath();
+      g.ellipse(X(0.04), Y(0.04), 0.2 * S, 0.11 * S, 0, 0, Math.PI * 2);
+      g.fill();
+      line([[-0.12, 0], [-0.15, -0.3]], inkAt(0), 0.05);
+      dot(-0.15, -0.31, 0.05, inkAt(0));
+      poly([[-0.18, -0.33], [-0.3, -0.27], [-0.18, -0.28]], inkAt(0));
+      line([[0.02, 0.13], [-0.02, 0.42]], inkAt(0), 0.025);
+      line([[0.1, 0.13], [0.12, 0.42]], inkAt(0), 0.025);
+      poly([[0.22, 0], [0.36, -0.1], [0.26, 0.08]], inkAt(0));
+      return true;
+    }
+    case 'antelope': {
+      // An antelope mid-leap: the body, a stretched neck, curved horns, legs out fore and aft.
+      g.fillStyle = inkAt(0);
+      g.beginPath();
+      g.ellipse(X(0), Y(0.02), 0.21 * S, 0.1 * S, -0.3, 0, Math.PI * 2);
+      g.fill();
+      line([[0.14, -0.04], [0.27, -0.22]], inkAt(0), 0.07);
+      g.beginPath();
+      g.ellipse(X(0.3), Y(-0.25), 0.075 * S, 0.045 * S, -0.5, 0, Math.PI * 2);
+      g.fill();
+      stroke(inkAt(0), 0.03);
+      g.beginPath();
+      g.moveTo(X(0.28), Y(-0.29));
+      g.quadraticCurveTo(X(0.2), Y(-0.46), X(0.1), Y(-0.42));
+      g.moveTo(X(0.31), Y(-0.3));
+      g.quadraticCurveTo(X(0.26), Y(-0.48), X(0.16), Y(-0.46));
+      g.stroke();
+      line([[0.12, 0.06], [0.32, 0.2]], inkAt(0), 0.035);
+      line([[0.1, 0.08], [0.28, 0.28]], inkAt(0), 0.035);
+      line([[-0.14, 0.06], [-0.36, 0.22]], inkAt(0), 0.035);
+      line([[-0.16, 0.08], [-0.34, 0.3]], inkAt(0), 0.035);
+      line([[-0.2, -0.02], [-0.3, -0.1]], inkAt(0), 0.03);
+      return true;
+    }
+    case 'suncrane': {
+      // A half-sun on the horizon, and a crane in flight above it.
+      g.save();
+      g.beginPath();
+      g.rect(0, 0, S, Y(0.14));
+      g.clip();
+      dot(0, 0.14, 0.26, inkAt(1));
+      g.restore();
+      poly([[-0.4, 0.14], [0.4, 0.14], [0.4, 0.18], [-0.4, 0.18]], inkAt(1));
+      stroke(inkAt(0), 0.06);
+      g.beginPath();
+      g.moveTo(X(-0.36), Y(-0.16));
+      g.quadraticCurveTo(X(-0.18), Y(-0.4), X(0), Y(-0.24));
+      g.quadraticCurveTo(X(0.18), Y(-0.4), X(0.36), Y(-0.16));
+      g.stroke();
+      line([[0, -0.24], [0.03, -0.06]], inkAt(0), 0.035);
+      line([[0, -0.24], [-0.1, -0.3]], inkAt(0), 0.03);
+      return true;
+    }
+    case 'bang': {
+      // An exclamation mark, leaning forward.
+      g.save();
+      g.translate(cx, cy);
+      g.rotate(0.14);
+      g.translate(-cx, -cy);
+      poly([[-0.1, -0.42], [0.1, -0.42], [0.06, 0.14], [-0.06, 0.14]], inkAt(0));
+      dot(0, 0.32, 0.09, inkAt(0));
+      g.restore();
+      return true;
+    }
+    case 'horizon': {
+      // A ring, a sea line through its lower third, a gull above the line.
+      stroke(inkAt(0), 0.07);
+      g.beginPath();
+      g.arc(cx, cy, 0.37 * S, 0, Math.PI * 2);
+      g.stroke();
+      g.save();
+      g.beginPath();
+      g.arc(cx, cy, 0.34 * S, 0, Math.PI * 2);
+      g.clip();
+      stroke(inkAt(1), 0.055);
+      g.beginPath();
+      g.moveTo(X(-0.4), Y(0.14));
+      for (let i = 0; i < 4; i++) g.quadraticCurveTo(X(-0.3 + i * 0.2), Y(0.14 + (i % 2 ? 0.07 : -0.07)), X(-0.2 + i * 0.2), Y(0.14));
+      g.stroke();
+      g.restore();
+      line([[-0.14, -0.12], [0, -0.04], [0.14, -0.12]], inkAt(0), 0.05);
+      return true;
+    }
+    default:
+      return false;
+  }
 }
 
 /**

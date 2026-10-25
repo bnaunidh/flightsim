@@ -32,6 +32,6 @@ export async function check(sim, r, say) {
   r.ok('legal: the credits screen carries the parody line, exactly', text.includes('All airlines are parody and not affiliated with any real company.'));
   r.ok('legal: the credits screen names the licence terms — credit thankdapro, Roblox allowed, LICENSE', /with credit to thankdapro/.test(text) && /in Roblox games and\s+assets too/.test(text) && !/not be used in Roblox/.test(text) && !/not for Roblox/.test(text) && /LICENSE/.test(text));
   r.ok('legal: the credits screen says you may copy the game and asks for credit, exactly', /You may copy the game — please give us\s+credit \(thankdapro\)\./.test(text));
-  r.ok('legal: the credits screen carries the SCP Foundation line — none yet, CC BY-SA 3.0, the SCP Wiki community', /SCP Foundation-based content \(none yet/.test(text) && /CC BY-SA 3\.0/.test(text) && /SCP Wiki/.test(text) && /scpwiki\.com/.test(text));
+  r.ok('legal: the credits screen carries the SCP Foundation line — the Site and the transfer, CC BY-SA 3.0, the SCP Wiki community', /SCP Foundation-based content \(the Site on Nunatak Reach/.test(text) && /CC BY-SA 3\.0/.test(text) && /SCP Wiki/.test(text) && /scpwiki\.com/.test(text));
   r.ok('legal: nothing on the credits screen is called CC0 any more', !/CC0/.test(text));
 }

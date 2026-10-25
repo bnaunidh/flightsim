@@ -29,6 +29,7 @@ export const FOCUS = {
   "meridian": [34, 41],
   "mountainpass": [34, 43],
   "northwatch": [58, 44],
+  "nunatak": [49, 46],
   "ravencrag": [58, 42],
   "rigs": [34, 42],
   "sennen": [34, 42],

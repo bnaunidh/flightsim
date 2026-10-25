@@ -33,6 +33,7 @@ import {
 } from '../../render/textures.js';
 import { Batch, blade, turned, tubePath, naThick, naCamber } from './civil-kit.js';
 import { strobeLevel, blinkLevel } from '../../render/flash-safety.js';
+import { resolveLamps } from '../systems.js';
 import { seatDoorsOnSkin } from '../bay-door-seat.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -1087,7 +1088,8 @@ function updateCivil(st, dt, ac, weather) {
     const throttle = num(c.throttle, 0);
     const brakes = num(c.brakes, 0);
     let want = 0;
-    if (onGround && groundSpeed > 18 && throttle < 0.3) want = 1;
+    if (Number.isFinite(ac.spoilerPos)) want = clamp(ac.spoilerPos, 0, 1); // the pilot's lever and the armed ground spoilers (physics.js, systems.js)
+    else if (onGround && groundSpeed > 18 && throttle < 0.3) want = 1;
     else if (!onGround && brakes > 0.2 && st.airborneT > 1) want = 0.5;
     const rate = want > st.spoiler ? 0.8 : 1.2;
     st.spoiler = dt > 0 ? st.spoiler + clamp(want - st.spoiler, -rate * dt, rate * dt) : want;
@@ -1103,8 +1105,11 @@ function updateCivil(st, dt, ac, weather) {
   if (st.reversers.length) {
     const brakes = num(c.brakes, 0);
     let want = st.reverser;
-    if (onGround && groundSpeed > 25 && brakes > 0.25) want = 1;
-    if (!onGround || groundSpeed < 17 || brakes < 0.05) want = 0;
+    if (Number.isFinite(ac.reverse)) want = ac.reverse > 0 ? 1 : 0; // the pilot's reverser lever (physics.js, systems.js)
+    else {
+      if (onGround && groundSpeed > 25 && brakes > 0.25) want = 1;
+      if (!onGround || groundSpeed < 17 || brakes < 0.05) want = 0;
+    }
     st.reverser = dt > 0 ? st.reverser + clamp(want - st.reverser, -dt / 1.2, dt / 1.2) : want;
     for (let i = 0; i < st.reversers.length; i++) {
       const r = st.reversers[i];
@@ -1198,24 +1203,33 @@ function updateCivil(st, dt, ac, weather) {
   // landing lamp is the taxi light: on, dimmer.
   const strobesOn = lampsOn && (!onGround || groundSpeed > 15);
   const taxi = onGround && groundSpeed < 15;
+  // That is the automatic logic; the pilot's switches (aircraft/systems.js
+  // resolveLamps: ac.lights, 'auto' | 'on' | 'off' per lamp) have the last word.
+  const want = resolveLamps(ac.lights, {
+    nav: lampsOn ? 1 : 0, beacon: lampsOn ? 1 : 0, strobe: strobesOn ? 1 : 0,
+    landing: wantLanding && !taxi ? 1 : 0, taxi: wantLanding && taxi ? 1 : 0,
+  }, { crashed: !!ac.crashed });
+  const landingLit = Math.max(want.landing, want.taxi * 0.55);
   for (const k in L) {
     const s = L[k];
-    let on = lampsOn;
+    let on = want.nav > 0;
     let lit = 1;
     if (k === 'strobeL' || k === 'strobeR') {
       lit = strobe;
-      on = strobesOn;
-    } else if (k === 'beacon' || k === 'beacon2') lit = beacon;
-    else if (k === 'landing') {
-      on = wantLanding;
-      if (taxi) lit = 0.55;
+      on = want.strobe > 0;
+    } else if (k === 'beacon' || k === 'beacon2') {
+      lit = beacon;
+      on = want.beacon > 0;
+    } else if (k === 'landing') {
+      on = landingLit > 0;
+      lit = landingLit;
     }
     s.visible = on && lit > 0.01;
     const boost = k === 'landing' ? 1.6 : 1;
     s.scale.setScalar(s.userData.baseScale * (0.55 + dark * 0.75) * boost);
     s.material.opacity = (0.35 + dark * 0.65) * lit;
   }
-  if (st.landingSpot) st.landingSpot.intensity = wantLanding ? 190 * (0.25 + dark * 0.75) : 0;
+  if (st.landingSpot) st.landingSpot.intensity = landingLit * 190 * (0.25 + dark * 0.75);
 }
 
 export { X_AXIS, Y_AXIS, Z_AXIS };

@@ -43,11 +43,19 @@ ok('there are airline schemes to check', schemes.length >= 5, `${schemes.length}
 
 const hits = [];
 for (const l of schemes) {
-  for (const text of [l.name, brandOf(l.name)]) {
+  for (const text of [l.name, brandOf(l.name), l.callsign, L.radioBrand ? L.radioBrand(l) : null].filter(Boolean)) {
     for (const real of REAL) if (word(text, real)) hits.push(`${l.id}: "${text}" matches ${real}`);
   }
 }
-ok('no livery name, and no radio brand read off it, is a real airline\'s name or callsign', hits.length === 0, hits.join('; '));
+ok('no livery name, radio callsign or radio brand read off it is a real airline\'s name or callsign', hits.length === 0, hits.join('; '));
+
+// The owner's safe-parody table (briefs/next-week.md): every company on it is in the game, under its table name.
+const TABLE = ['Kanal Royal Dutch Air', 'Riverdelta Air', 'Desert Pearl Airlines', 'Sandline Air', 'Dash Freight', 'FlexShip Express', 'Parcel Brown Express',
+  'Royal Isles Airways', 'Bosphorus Air', 'Pearl Gulf Airways', 'Rising Crane Air', 'Spit Air', 'OverSea Airways', 'Abyssinia Air', 'Ununited'];
+const missing = TABLE.filter((name) => !schemes.some((l) => l.name === name));
+ok('every company on the owner\'s safe-parody table flies', missing.length === 0, missing.join(', ') || TABLE.length + ' companies');
+ok('the radio brand is the scheme\'s callsign when it has one, else the name without a trailing Air', L.radioBrand(L.findLivery('krd')) === 'Kanal' && L.radioBrand(L.findLivery('nightfreight')) === 'Night Freight' && L.radioBrand(L.findLivery('abyssinia')) === 'Abyssinia');
+ok('no radio brand is longer than two words (it is read with a number after it)', schemes.filter((l) => !l.special).every((l) => L.radioBrand(l).split(/\s+/).length <= 2), schemes.filter((l) => !l.special).map((l) => L.radioBrand(l)).join(', '));
 
 const cont = L.findLivery ? L.findLivery('continental') : L.LIVERIES.find((l) => l.id === 'continental');
 ok('the former "Continental States" is the United parody, Ununited, under its old id', !!cont && cont.name === 'Ununited' && cont.id === 'continental' && cont.accent === '#1a4f8a', cont ? cont.name : 'missing');

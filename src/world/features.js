@@ -323,6 +323,7 @@ export class MapFeatures {
     this.plumes = [];
     this.craterLights = [];
     this.auroraMats = [];
+    this.auroraIntensity = 1;
     this.fallMaps = [];
     this.reefMats = [];
     /** Night lamps on anything built here (the bridge), one material each. */
@@ -1041,6 +1042,7 @@ export class MapFeatures {
    * they only come out at night.
    */
   buildAurora(cfg) {
+    this.auroraIntensity = Number.isFinite(cfg.intensity) ? Math.max(0, Math.min(1, cfg.intensity)) : 1;
     const colour = new THREE.Color(cfg.colour || 0x4dffa8);
     const colour2 = new THREE.Color(cfg.colour2 || 0x7a5cff);
     for (let i = 0; i < 4; i++) {
@@ -1367,7 +1369,8 @@ export class MapFeatures {
 
     // Aurora: night only, brought up and down gently so it does not snap on.
     if (this.auroraMats.length) {
-      const want = night ? 1 : weather && weather.time === 'sunset' ? 0.35 : 0;
+      // A map may ask for a quieter sky (`aurora.intensity`, Nunatak Reach 0.55).
+      const want = (night ? 1 : weather && weather.time === 'sunset' ? 0.35 : 0) * this.auroraIntensity;
       for (const m of this.auroraMats) {
         m.uniforms.uTime.value = this.t;
         const cur = m.uniforms.uOpacity.value;

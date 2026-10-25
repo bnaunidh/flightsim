@@ -1,14 +1,29 @@
 /**
- * Rain.
+ * Rain — and snow.
  *
  * A block of streaks that follows the camera. The streaks fall with gravity,
  * lean with the wind and are stretched along their velocity, which makes them
  * read correctly whether you are parked on the apron or cruising at 100 knots.
+ *
+ * SNOW (Nunatak Reach, `precip: 'snow'` on the map): the same block, but the
+ * drops are round white flakes that fall at two metres a second, drift with
+ * the wind and barely stretch, and they fall out of ANY cloud — a cloudy
+ * sky there is a snowy one, a rainy or stormy one a blizzard — so the map's
+ * default weather snows without having to be 'rainy', which would also have
+ * wet the runway and played rain on the speakers. Snow is quiet.
  */
 
 import * as THREE from '../vendor/three.module.js';
-import { rainStreakTexture } from '../render/textures.js';
+import { rainStreakTexture, snowflakeTexture } from '../render/textures.js';
 import { makeRandom } from '../core/noise.js';
+import { MAP } from './terrain.js';
+
+/** How hard it is snowing on a snow map: cloud past half is light snow, rain is heavy. */
+export function snowIntensity(weather, map = MAP) {
+  if (!map || map.precip !== 'snow' || !weather || !weather.cond) return 0;
+  const c = weather.cond;
+  return Math.min(1, Math.max(c.rain || 0, ((c.cloud || 0) - 0.45) * 1.4));
+}
 
 const vert = /* glsl */ `
   attribute vec3 iPos;
@@ -86,25 +101,39 @@ export class Rain {
 
     this.geo = geo;
     this._vel = new THREE.Vector3();
+    /** 'rain' or 'snow' — which texture the material holds right now. */
+    this.kind = 'rain';
+  }
+
+  /** Swap the drops for flakes (or back). Once per change, not per frame. */
+  setKind(kind) {
+    if (kind === this.kind) return;
+    this.kind = kind;
+    this.material.uniforms.uMap.value = kind === 'snow' ? snowflakeTexture() : rainStreakTexture();
   }
 
   update(dt, weather, camPos, aircraftVel) {
-    const intensity = weather.cond.rain;
+    const snow = snowIntensity(weather);
+    const intensity = snow > 0 ? snow : weather.cond.rain;
     this.mesh.visible = intensity > 0.02;
     if (!this.mesh.visible) return;
+    this.setKind(snow > 0 ? 'snow' : 'rain');
 
     // Rain velocity relative to the viewer: gravity + wind - own motion.
+    // Snow: a slow fall, and the wind carries it rather than leaning it.
     const wind = weather.windVector();
-    this._vel.set(wind.x, -16 - intensity * 9, wind.z);
+    if (snow > 0) this._vel.set(wind.x * 0.7, -2.2 - snow * 1.3, wind.z * 0.7);
+    else this._vel.set(wind.x, -16 - intensity * 9, wind.z);
     if (aircraftVel) this._vel.sub(aircraftVel);
     const speed = Math.max(4, this._vel.length());
 
     this.material.uniforms.uVel.value.copy(this._vel).normalize();
-    this.material.uniforms.uOpacity.value = 0.25 + intensity * 0.55;
-    // Faster relative motion → longer streaks.
-    this.material.uniforms.uWidth.value = 0.05;
+    this.material.uniforms.uOpacity.value = snow > 0 ? 0.45 + snow * 0.4 : 0.25 + intensity * 0.55;
+    // Faster relative motion → longer streaks. A flake is a dot, and only
+    // a fast aeroplane draws it out.
+    this.material.uniforms.uWidth.value = snow > 0 ? 0.11 : 0.05;
 
-    const stretch = Math.min(9, 0.7 + speed * 0.055);
+    const stretch = snow > 0 ? Math.min(2.2, 0.16 + speed * 0.02) : Math.min(9, 0.7 + speed * 0.055);
     for (let i = 0; i < this.count; i++) {
       const o = i * 3;
       this.positions[o] += this._vel.x * dt;
