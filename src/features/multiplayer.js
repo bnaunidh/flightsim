@@ -132,7 +132,7 @@ import { applyMap, heightAt } from '../world/terrain.js';
 import { refreshRunways } from '../world/airport.js';
 import { refreshApronElevation } from '../world/apron.js';
 import { getMap, mapsForGame } from '../world/maps.js';
-import { AIRCRAFT, getAircraft, performanceFor } from '../aircraft/types.js';
+import { AIRCRAFT, getAircraft, performanceFor, isHelicopter } from '../aircraft/types.js';
 import { VEHICLES } from '../vehicles/surface.js';
 import * as Prog from '../game/progression.js';
 import { saveSettings } from '../core/storage.js';
@@ -140,11 +140,12 @@ import { icon } from '../ui/icons.js';
 import {
   PROTO, MAX_PLAYERS, STATE_HZ, QUICK_CHAT, COLOURS, GAMES, LOBBY_MAX, CODE_GAME_MAX, BUMP_DEFAULT, BUMP_RULES, BUMP_SHORT, bumpRule,
   slotId, codeId, normaliseCode, shownCode, playerPeerId, randomToken, CODE_EXAMPLE, seatToken, lobbyName, worldName, lobbyLabel, readPrivateCount, pdirId, pdirOf, readPlayer,
-  lobbyMap, worldMap,
+  lobbyMap, worldMap, worldId,
   cleanName, parseServerName, randomCallSign, randomServerName, serverNameFor, mapNameFor,
   escapeHtml, encodeState, safeColour,
 } from './multiplayer/protocol.js';
 import { Signaling, PUBLIC_BACKEND, LAN_UNKNOWN, findNetHash, detectLanServer } from './multiplayer/signaling.js';
+import { CloudNet, CloudWatch, probeLobbyServer, lobbyServerUrl, CLOUD_CONNECT_MS } from './multiplayer/transport.js';
 import { Net, RELAY_SERVERS } from './multiplayer/link.js';
 import { HostSession, ClientSession, Prober, claimSlot, claimCode, claimPdir, FREEZE_MS } from './multiplayer/session.js';
 import { LobbyMember, LobbyWatch, PrivateWatch } from './multiplayer/lobby.js';
@@ -267,8 +268,13 @@ class Multiplayer {
     this._screenHiddenAt = null;
     this._restoreGameMap = null;
     this._dots = NO_DOTS;
-    /** Set by the tests to swap the network for fakes: { backend, hash, WebSocketImpl }. */
+    /** Set by the tests to swap the network for fakes: { backend, hash, WebSocketImpl, lobby: { url, WebSocketImpl, fetchImpl } }. */
     this.override = null;
+    /**
+     * The cloud lobby this player is in, if the world lobby went through the
+     * lobby server (transport.js, server/): { net, url }. Null tab to tab.
+     */
+    this.cloud = null;
     this.log = [];
     /* Lobbies. */
     this.lobby = null;
@@ -365,6 +371,130 @@ class Multiplayer {
     if (this.override && this.override.WebSocketImpl) opts.WebSocketImpl = this.override.WebSocketImpl;
     if (token) opts.token = token;
     return new Signaling(this.worldBackend(), opts);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* The cloud lobby server (transport.js, server/)                    */
+  /* ---------------------------------------------------------------- */
+
+  /** The lobby server's address, or '': the test's override, else ?lobby=, else config.js. A test override with no `lobby` means none. */
+  lobbyUrl() {
+    if (this.override) return lobbyServerUrl(this.override.lobby && this.override.lobby.url ? this.override.lobby.url : '');
+    return lobbyServerUrl();
+  }
+
+  /**
+   * The lobby server's address if it is there and speaks this version, else
+   * null — in which case the world lobbies go tab to tab, as always. Asked
+   * of /health, remembered a minute (transport.js probeLobbyServer).
+   */
+  async cloudReady() {
+    const url = this.lobbyUrl();
+    if (!url) return null;
+    const o = (this.override && this.override.lobby) || {};
+    try {
+      const info = await probeLobbyServer(url, { fetchImpl: o.fetchImpl });
+      return info && info.ok ? url : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  makeCloudNet(url) {
+    const o = (this.override && this.override.lobby) || {};
+    return new CloudNet(url, { WebSocketImpl: o.WebSocketImpl, fetchImpl: o.fetchImpl });
+  }
+
+  /**
+   * World lobby n through the lobby server. Resolves 'joined' (in, or the
+   * join said its own word and stopped), 'cancelled' (Back was pressed), or
+   * 'fallback': the server was not reachable, refused the line before the
+   * welcome, or runs another version — and joinLobby goes on the tab-to-tab
+   * way without a word, since the player asked for World n, not for a kind
+   * of network. Only "full" and "that username is taken" are the room's own
+   * answers, said as a lobby would say them.
+   */
+  async joinCloudLobby(n, flow, ui, wanted) {
+    const url = await this.cloudReady();
+    if (!wanted()) return 'cancelled';
+    if (!url) return 'fallback';
+    const target = worldId(n);
+    const net = this.makeCloudNet(url);
+    const client = new ClientSession({
+      net, target, profile: this.profile, seat: this.seat, connectMs: CLOUD_CONNECT_MS,
+      onEvent: (type, ...args) => this.onSessionEvent(type, ...args),
+      onPhase: (step) => {
+        if (this.joinFlow === flow && flow.step(step)) this.paintJoin(flow);
+      },
+    });
+    this.client = client;
+    this._cancelLobby = () => client.leave();
+    if (flow.step('connecting')) this.paintJoin(flow);
+    let welcome;
+    try {
+      welcome = await client.start();
+    } catch (err) {
+      if (this.client === client) this.client = null;
+      net.destroy();
+      if (!wanted() || (err && err.code === 'left')) {
+        ui.status('');
+        return 'cancelled';
+      }
+      const code = err && err.code;
+      if (['ice', 'timeout', 'signaling', 'dropped', 'gone', 'rtc', 'version', 'denied', 'refused', 'busy'].includes(code)) {
+        this.note(`cloud lobby ${n}: ${code}; going tab to tab`);
+        return 'fallback';
+      }
+      flow.fail(code);
+      this.note(`cloud lobby ${n} refused: ${code}`);
+      this.lobbyRefused(n, err, true);
+      return 'joined';
+    } finally {
+      this._cancelLobby = null;
+    }
+    if (!wanted()) {
+      client.leave();
+      if (this.client === client) this.client = null;
+      net.destroy();
+      return 'cancelled';
+    }
+    if (client.ended) {
+      this.client = null;
+      net.destroy();
+      return 'fallback';
+    }
+    if (this.lobbyWatch) this.lobbyWatch.stop();
+    this.lobbyWatch = null;
+    if (this.worldWatch) this.worldWatch.stop();
+    this.worldWatch = null;
+    this.cloud = { net, url };
+    this.role = 'client';
+    this.wake();
+    this.meId = welcome.you;
+    this.server = { ...welcome.server, cloud: true };
+    this.events.attach(client, 'client', welcome.you);
+    this.syncSelf();
+    this.ready = false;
+    this.remotes.clear();
+    for (const p of welcome.players) if (p.id !== this.meId) this.remotes.add(p.id, p);
+    flow.joined('client');
+    if (welcome.server.map && this.sim.settings && this.sim.settings.map !== welcome.server.map) {
+      flow.island('loading', mapNameFor(welcome.server.map));
+      this.paintJoin(flow);
+      await new Promise((res) => setTimeout(res, 16));
+      if (this.role !== 'client' || this.client !== client) return 'joined';
+    }
+    await this.enterWithRide(welcome.server, welcome.at, welcome.weather);
+    flow.island('in');
+    if (this.role !== 'client' || this.client !== client) return 'joined';
+    this._islandEarly = null;
+    this.ready = true;
+    flow.ready();
+    ui.status('');
+    this.showHud();
+    this.note(`in world lobby ${n} (${welcome.server.map}) as player ${this.meId}, over the lobby server — ${flow.summary()}`);
+    this.toast(`You’re in ${lobbyLabel(n, true)} · ${worldName(n)} — on ${mapNameFor(welcome.server.map)}${welcome.name !== this.profile.name ? `, as ${welcome.name}` : ''}`, 'good', 5);
+    return 'joined';
   }
 
   /** The world lobbies are on the same server as the Wi-Fi ones — then one socket does both. */
@@ -657,6 +787,20 @@ class Multiplayer {
       // As the Wi-Fi row: "Looking…" at once, and Join works before the list has answered.
       if (typeof RTCPeerConnection === 'function') ui.worlds(LobbyWatch.looking({ world: true }));
       await this.ensureBackend();
+      // The lobby server, when there is one (transport.js): the five rows from one GET, no WebRTC needed.
+      const cloudUrl = await this.cloudReady();
+      if (cloudUrl && this.lobbyScreenOpen && !this.worldWatch) {
+        this._worldFails = 0;
+        ui.worldNet('Over Cloudflare', false);
+        this.worldWatch = new CloudWatch({
+          net: this.makeCloudNet(cloudUrl),
+          onChange: (list) => this.lobbyScreen && this.lobbyScreen.worlds(list),
+          active: () => typeof document === 'undefined' || document.visibilityState !== 'hidden',
+        });
+        ui.worlds(this.worldWatch.lobbies);
+        this.worldWatch.start();
+        return;
+      }
       if (typeof RTCPeerConnection !== 'function') {
         ui.worldNet('This browser can’t do multiplayer', true);
         ui.worlds(null);
@@ -757,15 +901,23 @@ class Multiplayer {
    * from the Boat page, the van from the Car page.
    */
 
-  /** Everything this player can bring: every aeroplane they can fly, the helicopter, the boat and the car. */
+  /**
+   * Everything this player can bring: every aeroplane they can fly, every
+   * helicopter they can fly (the Skyhook always, and the seven of the
+   * helicopter wave — aircraft/extra/helis.js — by the hangar's own rules),
+   * the boat and the car. Planes first, then the rotorcraft, in the
+   * hangar's order.
+   */
   rides() {
     const sim = this.sim;
     const prog = sim && (sim.prog || (sim.menus && sim.menus.prog));
-    const canFly = (t) => t.id === 'skylark' || !prog || (!Prog.needsPasscode(prog, t) && !(Array.isArray(prog.unlocked) && !Prog.isUnlocked(prog, t.id)));
-    const planes = AIRCRAFT.filter((t) => t.id !== 'harrier' && canFly(t)).map((t) => ({ game: 'flight', type: t.id, name: t.name, kind: 'plane' }));
+    const canFly = (t) => t.id === 'skylark' || t.id === 'harrier' || !prog || (!Prog.needsPasscode(prog, t) && !(Array.isArray(prog.unlocked) && !Prog.isUnlocked(prog, t.id)));
+    const flyable = AIRCRAFT.filter(canFly);
+    const planes = flyable.filter((t) => !isHelicopter(t)).map((t) => ({ game: 'flight', type: t.id, name: t.name, kind: 'plane' }));
+    const helis = flyable.filter((t) => isHelicopter(t)).map((t) => ({ game: 'heli', type: t.id, name: `${t.name} helicopter`, kind: 'heli' }));
     return [
       ...planes,
-      { game: 'heli', type: 'harrier', name: `${getAircraft('harrier').name} helicopter`, kind: 'heli' },
+      ...helis,
       { game: 'boat', type: 'boat', name: VEHICLES.boat.name, kind: 'boat' },
       { game: 'car', type: 'car', name: VEHICLES.car.name, kind: 'car' },
     ];
@@ -773,10 +925,40 @@ class Multiplayer {
 
   /** The ride a game's own menu is about. */
   rideFor(game) {
-    if (game === 'heli') return { game: 'heli', type: 'harrier' };
+    if (game === 'heli') return { game: 'heli', type: this.myHeli() };
     if (game === 'boat' || game === 'car') return { game, type: game };
     const r = this.profile && this.profile.ride;
     return { game: 'flight', type: r && r.game === 'flight' && this.rides().some((x) => x.type === r.type) ? r.type : this.myAircraft() };
+  }
+
+  /**
+   * The helicopter this player flies: the one picked on the lobby screen, else
+   * the one picked in the Hangar (Rotors), else the one they are in now, else
+   * the Skyhook — the first of those that is a helicopter they can fly. Used
+   * to be 'harrier' flat, which kept the seven new rotorcraft out of every
+   * helicopter server and race.
+   */
+  myHeli() {
+    const sim = this.sim;
+    const r = this.profile && this.profile.ride;
+    const menu = sim && sim.menus && sim.menus.chosenAircraft;
+    const now = sim && sim.aircraftType && isHelicopter(sim.aircraftType) ? sim.aircraftType.id : null;
+    let helis = null;
+    for (const id of [r && r.game === 'heli' ? r.type : null, menu, now]) {
+      if (!id || id === 'harrier') continue;
+      const t = getAircraft(id);
+      if (!t || t.id !== id || !isHelicopter(t)) continue;
+      helis = helis || this.rides().filter((x) => x.game === 'heli').map((x) => x.type);
+      if (helis.includes(id)) return id;
+    }
+    return 'harrier';
+  }
+
+  /** Is this ride a helicopter of the hangar's — { game: 'heli', type } with a rotorcraft's type? */
+  isHeliRide(ride) {
+    if (!ride || ride.game !== 'heli' || typeof ride.type !== 'string') return false;
+    const t = getAircraft(ride.type);
+    return !!(t && t.id === ride.type && isHelicopter(t));
   }
 
   /** The ride picked on the lobby screen — or, until one is, the one the game you came from is about. */
@@ -920,6 +1102,17 @@ class Multiplayer {
     try {
       await this.ensureBackend();
       if (!wanted()) return;
+      /*
+       * A world lobby goes through the lobby server when one is configured
+       * and answering (config.js, transport.js, server/): one WebSocket over
+       * 443, no host, no WebRTC. Anything short of a welcome — none
+       * configured, not answering, another version — and it goes on below,
+       * tab to tab, saying nothing about it.
+       */
+      if (world) {
+        const r = await this.joinCloudLobby(n, flow, ui, wanted);
+        if (r !== 'fallback' || !wanted()) return;
+      }
       if (typeof RTCPeerConnection !== 'function') {
         flow.fail('nortc');
         ui.status('This browser has no WebRTC, which multiplayer needs.', 'bad');
@@ -2135,7 +2328,8 @@ class Multiplayer {
         } catch (e) {
           base = {};
         }
-        const aircraft = server.game === 'heli' ? 'harrier' : ride && ride.game === 'flight' ? ride.type : this.myAircraft();
+        // A helicopter server: the helicopter this player picked (any of the hangar's rotorcraft), not the Skyhook flat.
+        const aircraft = server.game === 'heli' ? (this.isHeliRide(ride) ? ride.type : this.myHeli()) : ride && ride.game === 'flight' ? ride.type : this.myAircraft();
         /*
          * The AI aeroplanes are the host's (list 2, "the same planes"): the host
          * runs them — in Dev mode only, as in single player — and everybody else
@@ -2625,7 +2819,7 @@ class Multiplayer {
     if (!sim) return null;
     if (sim.mode === 'drive' && sim.vehicle) return { game: sim.vehicle.spec && sim.vehicle.spec.kind === 'car' ? 'car' : 'boat', type: sim.vehicle.spec && sim.vehicle.spec.kind === 'car' ? 'car' : 'boat' };
     const type = sim.aircraftType ? sim.aircraftType.id : 'skylark';
-    return { game: type === 'harrier' ? 'heli' : 'flight', type };
+    return { game: isHelicopter(sim.aircraftType) ? 'heli' : 'flight', type };
   }
 
   /**
@@ -2734,6 +2928,12 @@ class Multiplayer {
     this.reconnecting = false;
     this.hostSockets = [];
     this.client = null;
+    if (this.cloud) {
+      // The line to the lobby server: the client's "bye" has been queued on it; let it go after a moment.
+      const net = this.cloud.net;
+      setTimeout(() => net.destroy(), 300);
+      this.cloud = null;
+    }
     this.ready = false;
     this.meId = null;
     this.server = null;
@@ -2898,7 +3098,8 @@ class Multiplayer {
     const type = sim.aircraftType ? sim.aircraftType.id : 'skylark';
     return encodeState({
       id: this.meId, seq: this._seq, t, pos: ac.pos, quat: ac.quat, vel: still ? STILL : ac.vel,
-      game: type === 'harrier' ? 'heli' : 'flight', type,
+      // Any rotorcraft is the helicopter game's, not the Skyhook alone: everybody else draws and treats it as one.
+      game: isHelicopter(sim.aircraftType) ? 'heli' : 'flight', type,
       gearDown: ac.gearDown, gearPos: ac.gearPos, flaps: ac.flaps, throttle: c.throttle, rpm: ac.rpm,
       pitch: c.pitch, roll: c.roll, yaw: c.yaw, brakes: (c.brakes || 0) > 0.1,
       onGround: ac.onGround, engineOn: ac.engineOn, crashed: ac.crashed, lights: ac.engineOn || ac.rpm > 0.05,

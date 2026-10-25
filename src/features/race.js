@@ -36,6 +36,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extLayer } from '../game/extensions.js';
 import { heightAt } from '../world/terrain.js';
+import { getAircraft, isHelicopter } from '../aircraft/types.js';
 import * as RR from './race/rules.js';
 import { buildCourse, paintCourse, drawGates } from './race/draw.js';
 import { HUB_CSS, buildHub, mountLobbyCard } from './race/hub.js';
@@ -307,12 +308,28 @@ export async function raceAlone(sim, courseId = RR.COURSE.id) {
       }
     }
   } else {
-    let aircraft = 'harrier';
+    /*
+     * The helicopter race: the helicopter this player flies — the one they are
+     * in, or picked (multiplayer.js myHeli: any of the hangar's rotorcraft),
+     * the Skyhook if none. It used to be the Skyhook flat, which kept the
+     * seven new rotorcraft off the Skyhook Sprint.
+     */
+    const myHeli = () => {
+      try {
+        if (game === 'heli' && sim.aircraftType && isHelicopter(sim.aircraftType)) return sim.aircraftType.id;
+        const r = mp.ride ? mp.ride() : null;
+        if (r && r.game === 'heli' && isHelicopter(getAircraft(r.type))) return r.type;
+        return mp.myHeli ? mp.myHeli() : 'harrier';
+      } catch (e) {
+        return 'harrier';
+      }
+    };
+    let aircraft = myHeli();
     if (course.vehicle === 'plane') {
       aircraft = 'skylark';
       try {
         const r = mp.ride ? mp.ride() : null;
-        if (game === 'heli' || (r && r.game === 'heli' && sim.state !== 'flying')) aircraft = 'harrier';
+        if (game === 'heli' || (r && r.game === 'heli' && sim.state !== 'flying')) aircraft = myHeli();
         else if (game === 'flight' && sim.aircraftType) aircraft = sim.aircraftType.id;
         else if (r && r.game === 'flight') aircraft = r.type;
         else if (mp.myAircraft) aircraft = mp.myAircraft();
@@ -324,7 +341,7 @@ export async function raceAlone(sim, courseId = RR.COURSE.id) {
       mp.install(sim);
       mp.borrowMap(course.map);
     }
-    sim.game = aircraft === 'harrier' ? 'heli' : 'flight';
+    sim.game = isHelicopter(getAircraft(aircraft)) ? 'heli' : 'flight';
     if (sim.menus && sim.menus.setGame) sim.menus.setGame(sim.game);
     let base = {};
     try {
@@ -1032,6 +1049,13 @@ registerExtension({
             return mp.rideFor ? mp.rideFor('flight').type : null;
           } catch (e) {
             return null;
+          }
+        }, heli: () => {
+          // The helicopter the Skyhook Sprint's pick taps on the screen: theirs, not the Skyhook flat.
+          try {
+            return mp.rideFor ? mp.rideFor('heli').type : 'harrier';
+          } catch (e) {
+            return 'harrier';
           }
         } });
       } catch (e) {

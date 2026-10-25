@@ -198,15 +198,16 @@ export class MapLoading {
     if (g === 'boat' || g === 'car') {
       return { mapId, game: g, vehicle: (VEHICLES[g] || VEHICLES.boat).name, kicker: 'Multiplayer' };
     }
-    let id = g === 'heli' ? 'harrier' : ride && ride.game === 'flight' && ride.type ? ride.type : null;
+    // The ride, if it is one of the game's own kind: a helicopter server takes the helicopter picked (any of the hangar's rotorcraft).
+    let id = ride && ride.game === g && ride.type && (g === 'heli') === isRotor(getAircraft(ride.type)) ? ride.type : null;
     if (!id) {
       try {
-        id = mp && mp.myAircraft ? mp.myAircraft() : null;
+        id = g === 'heli' ? (mp && mp.myHeli ? mp.myHeli() : 'harrier') : mp && mp.myAircraft ? mp.myAircraft() : null;
       } catch (e) {
         id = null;
       }
     }
-    const type = getAircraft(id || 'skylark');
+    const type = getAircraft(id || (g === 'heli' ? 'harrier' : 'skylark'));
     return { mapId, game: isRotor(type) ? 'heli' : 'flight', vehicle: type.name, kicker: 'Multiplayer' };
   }
 

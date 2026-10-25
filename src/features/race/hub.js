@@ -50,7 +50,7 @@ export const HUB_CSS = `
 .race-solobar button.race-solo-leave { font-size: 12.5px; min-height: 34px; padding: 5px 12px; opacity: 0.85; }
 `;
 
-const GAME_NAME = { flight: 'an aeroplane', heli: 'the Skyhook', car: 'the car', boat: 'the boat' };
+const GAME_NAME = { flight: 'an aeroplane', heli: 'a helicopter', car: 'the car', boat: 'the boat' };
 
 /** A course's one-line description: who it is for, where, how long. */
 function aboutLine(c) {
@@ -133,7 +133,30 @@ export function buildHub(layer, api) {
 
 /* ---- the Multiplayer screen ------------------------------------------------------------------------ */
 
-const RIDE_FOR = { plane: null, car: 'car:car', boat: 'boat:boat', heli: 'heli:harrier' };
+/** The ride chip a race's pick taps: the car's, the boat's; the helicopter's is whichever helicopter is theirs (rideChipFor). */
+const RIDE_FOR = { plane: null, car: 'car:car', boat: 'boat:boat', heli: null };
+
+/**
+ * The chip for a course's ride on the Multiplayer screen. The helicopter race
+ * takes any of the hangar's rotorcraft, so its chip is the player's own
+ * helicopter (api.heli(), multiplayer.js rideFor('heli')), else the one
+ * already lit, else the first helicopter on the screen.
+ */
+function rideChipFor(section, course, api) {
+  if (course.vehicle === 'heli') {
+    let mine = null;
+    try {
+      mine = api.heli ? api.heli() : null;
+    } catch (e) {
+      mine = null;
+    }
+    return (mine && section.querySelector(`[data-mp-ride="heli:${mine}"]`))
+      || section.querySelector('[data-mp-ride^="heli:"].is-on')
+      || section.querySelector('[data-mp-ride^="heli:"]');
+  }
+  const want = RIDE_FOR[course.vehicle];
+  return want ? section.querySelector(`[data-mp-ride="${want}"]`) : null;
+}
 
 /**
  * The Multiplayer screen's race card, made into the Races card. The Ring
@@ -181,8 +204,7 @@ export function mountLobbyCard(section, api) {
     if (pick) {
       e.stopPropagation();
       const c = RR.courseById(pick.dataset.racePick);
-      const want = RIDE_FOR[c.vehicle];
-      const rideBtn = want && section.querySelector(`[data-mp-ride="${want}"]`);
+      const rideBtn = rideChipFor(section, c, api);
       if (rideBtn) rideBtn.click();
       const tile = section.querySelector(`[data-mp-private-map="${c.map}"]`);
       if (tile) tile.click();

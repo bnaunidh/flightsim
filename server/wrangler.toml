@@ -1,0 +1,34 @@
+# Island Flight Sim — lobby server (Cloudflare Workers + Durable Objects).
+#
+# PLACEHOLDERS ONLY. No account id, no API token, no key lives in this repo:
+# `npx wrangler deploy` run by the owner, logged in to their own Cloudflare
+# account in the browser, fills in what it needs. See README.md in this folder.
+
+name = "island-lobby"            # the Worker's name: its address becomes https://island-lobby.<your-subdomain>.workers.dev
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Plain settings the game reads (no secrets here — everything in [vars] is public).
+[vars]
+MAX_PLAYERS = "16"               # the room's own cap; the game's protocol caps it further (lobby.js, top of file)
+TICK_HZ = "15"                   # relay tick: snapshots go out to each player at most this often
+SPEED_CAP_MPS = "900"            # a snapshot faster than this (m/s) is not believed
+CONNECTS_PER_MIN = "120"         # WebSocket joins a minute from one address (a classroom is ONE address)
+LIST_PER_MIN = "600"             # reads of /lobbies a minute from one address (30 lobby screens at one read / 4 s)
+ALLOWED_ORIGIN = "*"             # narrow to the game's address once known, e.g. "https://bnaunidh.github.io"
+
+[durable_objects]
+bindings = [
+  { name = "LOBBY", class_name = "Lobby" },
+  { name = "DIRECTORY", class_name = "Directory" },
+]
+
+# Durable Objects need one migration that names their classes. New classes
+# are added in a new tag; this one never changes.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Lobby", "Directory"]
+
+# The free plan has everything this needs: Workers (100k requests a day),
+# Durable Objects with SQLite storage, WebSockets. Nothing here turns on a
+# paid feature.

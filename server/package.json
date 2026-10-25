@@ -1,0 +1,12 @@
+{
+  "name": "island-lobby-server",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Island Flight Sim lobby server: a Cloudflare Worker + Durable Objects relay. Not served to players; see README.md.",
+  "type": "module",
+  "scripts": {
+    "deploy": "npx wrangler deploy",
+    "dev": "npx wrangler dev",
+    "test": "node ../tests/features/cf-lobby.mjs"
+  }
+}
