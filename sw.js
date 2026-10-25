@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v71.2';
+const CACHE_VERSION = 'island-flight-v72';
 
 const PRECACHE = [
   './',
@@ -421,6 +421,25 @@ const PRECACHE = [
   'src/ui/pills.js',
   'src/ui/ribbon.js',
   'src/ui/touchdown.js',
+  // Added by tools/sync-precache.mjs.
+  'src/aircraft/cockpit/canopy.js',
+  'src/aircraft/cockpit/common.js',
+  'src/aircraft/cockpit/families.js',
+  'src/aircraft/cockpit/gauges.js',
+  'src/aircraft/cockpit/generic.js',
+  'src/aircraft/cockpit/light.js',
+  'src/aircraft/cockpit/paint.js',
+  'src/aircraft/cockpit/panel-canvas.js',
+  'src/aircraft/cockpit/space.js',
+  // Added by tools/sync-precache.mjs.
+  'src/aircraft/cockpit/deck-skin.js',
+  'src/aircraft/cockpit/displays.js',
+  'src/aircraft/cockpit/flightdeck.js',
+  'src/aircraft/cockpit/heli.js',
+  'src/aircraft/cockpit/jet.js',
+  'src/aircraft/cockpit/kit.js',
+  // Added by tools/sync-precache.mjs.
+  'src/ui/hangar-shelves.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

@@ -357,9 +357,17 @@ function addLights(model) {
   }
 
   // A real spot, so the landing light actually puts something on the runway.
+  //
+  // From the nose, not from halfway along it. Half the nose was right beside
+  // the pilot in the jets (0.1 m ahead of the Hornet's eye, 1.3 m behind the
+  // Nightjar's), so the beam lit the cockpit's own panel from inside — a
+  // white blot across the screens — where no fuselage can stop it (the spot
+  // casts no shadow). From the tip the beam only meets what is ahead. The
+  // same for an airliner whose lamp is on the wing root: its glow stays
+  // there (the sprite), its beam starts ahead of the flight deck, or it
+  // floodlit the panel from eleven metres behind.
   const spot = new THREE.SpotLight(0xfff0c8, 0, 260, 0.34, 0.45, 1.2);
-  const lp = lights.landing.position;
-  spot.position.set(own.landing ? lp.x : 0, own.landing ? lp.y : y, own.landing ? lp.z : nose * 0.5);
+  spot.position.set(0, y - 0.3, nose + Math.min(1, (tail - nose) * 0.04));
   const target = new THREE.Object3D();
   target.position.set(0, -0.3, nose - 60);
   model.add(target);

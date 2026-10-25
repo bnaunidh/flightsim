@@ -609,6 +609,16 @@ export class Input {
     this.freeLook = false;
     /** Seconds since you last moved your head, used to ease it back forward. */
     this._lookIdle = 0;
+    /**
+     * Head look with a finger: in the cockpit view (main.js sets
+     * `touchLook` while it is up), a finger dragged across the picture
+     * itself — not on a control — turns your head the way the mouse does with
+     * free look on. It needs no setting: a touch screen has no mouse to free.
+     * The head stays where the finger leaves it while it is down, and eases
+     * back to straight ahead after, unless free look is on.
+     */
+    this.touchLook = false;
+    this._lookFinger = null;
 
     // Smoothed control outputs. `leverHeld` is true while a hand is on the
     // throttle or collective — a key held, a trigger pulled, a thumb on the
@@ -697,6 +707,26 @@ export class Input {
       if (e.button === 2) this.rightDown = false;
     };
     this._onContext = (e) => e.preventDefault();
+    this._onLookDown = (e) => {
+      if (e.pointerType !== 'touch' || !this.touchLook || this._lookFinger || e.target !== this.dom) return;
+      this._lookFinger = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    };
+    this._onLookMove = (e) => {
+      const f = this._lookFinger;
+      if (!f || e.pointerId !== f.id) return;
+      const dx = e.clientX - f.x;
+      const dy = e.clientY - f.y;
+      f.x = e.clientX;
+      f.y = e.clientY;
+      // The mouse's way round: swipe right to look right, up to look up. A
+      // full swipe across a tablet (~1000 px) turns the head about 110 degrees.
+      this.lookYaw = clamp(this.lookYaw - dx * 0.0019, -2.4, 2.4);
+      this.lookPitch = clamp(this.lookPitch - dy * 0.0019, -1.0, 0.75);
+      this._lookIdle = 0;
+    };
+    this._onLookUp = (e) => {
+      if (this._lookFinger && e.pointerId === this._lookFinger.id) this._lookFinger = null;
+    };
 
     window.addEventListener('keydown', this._onKeyDown, { passive: false });
     window.addEventListener('keyup', this._onKeyUp);
@@ -705,6 +735,10 @@ export class Input {
     window.addEventListener('mousedown', this._onMouseDown);
     window.addEventListener('mouseup', this._onMouseUp);
     this.dom.addEventListener('contextmenu', this._onContext);
+    window.addEventListener('pointerdown', this._onLookDown, { passive: true });
+    window.addEventListener('pointermove', this._onLookMove, { passive: true });
+    window.addEventListener('pointerup', this._onLookUp, { passive: true });
+    window.addEventListener('pointercancel', this._onLookUp, { passive: true });
   }
 
   /**
@@ -1020,6 +1054,9 @@ export class Input {
         this.lookYaw = lerp(this.lookYaw, 0, back);
         this.lookPitch = lerp(this.lookPitch, 0, back);
       }
+    } else if (this._lookFinger && this.touchLook) {
+      // A finger is turning the head: it stays where the finger has it.
+      this._lookIdle = 0;
     } else {
       /*
        * Free look is off, so the head always comes back to straight ahead.
@@ -1141,6 +1178,10 @@ export class Input {
     window.removeEventListener('mousemove', this._onMouseMove);
     window.removeEventListener('mousedown', this._onMouseDown);
     window.removeEventListener('mouseup', this._onMouseUp);
+    window.removeEventListener('pointerdown', this._onLookDown);
+    window.removeEventListener('pointermove', this._onLookMove);
+    window.removeEventListener('pointerup', this._onLookUp);
+    window.removeEventListener('pointercancel', this._onLookUp);
     this.dom.removeEventListener('contextmenu', this._onContext);
   }
 }

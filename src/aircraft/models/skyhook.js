@@ -23,14 +23,12 @@
 import * as THREE from '../../vendor/three.module.js';
 import { hull, wing, roundNose, tubePath, turned } from './civil-kit.js';
 
-export function buildSkyhook(b) {
-  const { S, m } = b;
-  const P = S.power;
-  const hubY = P.y ?? 1.28;
-  const hubZ = P.z ?? 0.1;
-  const R = P.propRadius;
-
-  /* ---------------- Pod and boom: one hull ---------------- */
+/**
+ * The pod and boom: one hull, in shape units. Its own function so the
+ * cockpit can cut its room to the same windows when the Blender model draws
+ * the outside (that model is the same machine, and has no hull of its own).
+ */
+export function skyhookHull() {
   const stations = [
     ...roundNose(-2.15, 0.95, { w: 0.64, top: 0.62, bot: -0.52, yc: 0.02, nT: 2.2, nB: 2.4 }, { y: -0.12 }, 6, 0.85),
     { z: -0.9, w: 0.68, top: 0.72, bot: -0.54, yc: 0.04, nT: 2.4, nB: 2.6 },
@@ -41,7 +39,7 @@ export function buildSkyhook(b) {
     { z: 5.0, w: 0.1, top: 0.44, bot: 0.22, yc: 0.33, nT: 2.0, nB: 2.0 },
     { z: 5.35, w: 0.06, top: 0.41, bot: 0.27, yc: 0.34, nT: 2.0, nB: 2.0 },
   ];
-  const h = hull({
+  return hull({
     stations,
     radial: 10,
     maxStep: 0.45,
@@ -53,6 +51,17 @@ export function buildSkyhook(b) {
       { z0: -0.12, z1: 0.62, from: 'roofEdge', to: 'belt' }, // rear doors
     ],
   });
+}
+
+export function buildSkyhook(b) {
+  const { S, m } = b;
+  const P = S.power;
+  const hubY = P.y ?? 1.28;
+  const hubZ = P.z ?? 0.1;
+  const R = P.propRadius;
+
+  /* ---------------- Pod and boom: one hull ---------------- */
+  const h = skyhookHull();
   b.addHull(h);
 
   /* ---------------- Engine deck, mast, exhausts ---------------- */

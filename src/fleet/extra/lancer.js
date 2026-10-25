@@ -330,7 +330,11 @@ const lancer = {
     meshOf(ctx, 'Windscreen frames', gz.frames, M.frame, parts.nose).castShadow = false;
     meshOf(ctx, 'Flight deck glass', gz.glass, M.glass, parts.nose).castShadow = false;
     if (gz.wipers) meshOf(ctx, 'Windscreen wipers', gz.wipers, M.wiper, parts.nose);
-    ctx.exports.flightDeck = { panes: gz.outlines, eye: [...c.eye], on: 'nose' };
+    // The hull and the panes in its own (z, s) go with the outline, so the
+    // flight deck inside is cut on exactly these lines (cockpit/flightdeck.js),
+    // as the airliners' are. (The hull is not enumerable: userData is JSON-copied.)
+    ctx.exports.flightDeck = { panes: gz.outlines, eye: [...c.eye], on: 'nose', quads: gz.quads, unit: 1 };
+    Object.defineProperty(ctx.exports.flightDeck, 'hull', { value: h, enumerable: false });
 
     /* The glove, the pins, the swing. */
     for (const s of [-1, 1]) glove(ctx, s, ctx.materials.wing);

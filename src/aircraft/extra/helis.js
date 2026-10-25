@@ -267,7 +267,7 @@ export function TYPES(base) {
       shape: heliShape(base, {
         length: Gm.uh60.length, halfSpan: 1.6, cgH: Gm.uh60.cgH, nose: 6.2, main: [1.35, -2.6], wheelR: { nose: 0.25, main: 0.4 },
         power: { propRadius: Gm.uh60.R, y: Gm.uh60.hubY, z: Gm.uh60.hubZ, blades: 4, hz: Gm.uh60.hz, dir: 1 },
-        eye: [-0.55, 0.5, -4.6], stiffness: 1.2, hardNoseY: -0.65,
+        eye: [-0.55, 0.15, -4.6], stiffness: 1.2, hardNoseY: -0.65,
       }),
       aero: heliAero(base, { mass: 7500, length: Gm.uh60.length, R: Gm.uh60.R, rates: { roll: 50, pitch: 35, yaw: 50 }, vneKt: 193, ceiling: 19000, fuel: 1360, burn: 0.14 }),
     },
@@ -290,7 +290,7 @@ export function TYPES(base) {
       shape: heliShape(base, {
         length: Gm.ch47.length, halfSpan: 1.9, cgH: Gm.ch47.cgH, nose: -3.0, main: [1.9, 5.1], wheelR: { nose: 0.4, main: 0.4 },
         power: { propRadius: Gm.ch47.R, y: Gm.ch47.hubY, z: Gm.ch47.hubZ, blades: 3, hz: Gm.ch47.hz, dir: 1, tandem: true },
-        eye: [-0.55, 0.55, -5.4], stiffness: 1.3, hardNoseY: -0.45,
+        eye: [-0.55, 0.25, -5.4], stiffness: 1.3, hardNoseY: -0.45,
       }),
       aero: heliAero(base, { mass: 15000, length: Gm.ch47.length, R: Gm.ch47.R, rates: { roll: 40, pitch: 30, yaw: 42 }, vneKt: 170, ceiling: 20000, fuel: 3914, burn: 0.3 }),
     },

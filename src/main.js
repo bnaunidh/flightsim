@@ -211,6 +211,10 @@ class Game {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.12;
     this.renderer.shadowMap.enabled = this.settings.quality !== 'low';
+    // The cockpits cut the exterior's insides away from a camera inside them
+    // with clipping planes on the materials (aircraft/cockpit/kit.js
+    // carveFromInside); a material without planes costs nothing for this.
+    this.renderer.localClippingEnabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // Only the renderer knows what the card will give. See setTextureAnisotropy.
     try {
@@ -278,11 +282,12 @@ class Game {
       livery: schemeFor(this.aircraftType, this.settings.livery),
     });
     this.scene.add(this.model);
-    this.cockpit = createCockpit({ highContrast: this.settings.highContrast, type: this.aircraftType });
+    this.cockpit = createCockpit({ highContrast: this.settings.highContrast, type: this.aircraftType, model: this.model });
     this.model.add(this.cockpit);
     this.cockpit.visible = false;
 
     this.rig = new CameraRig(this.camera, this.aircraft);
+    this.rig.cockpitPitchDeg = (this.cockpit && this.cockpit.userData.viewPitchDeg) || 0;
     this.rig.reducedMotion = this.settings.reducedMotion;
 
     this.navGuide = new NavGuide(this.scene);
@@ -1594,6 +1599,9 @@ class Game {
     // Light the right half of the switcher. The helicopter is an aircraft
     // type rather than a mode, so the bar has to be told which one you are in.
     this.menus.setGame(isHelicopter(this.aircraftType) ? 'heli' : 'flight');
+    // The hangar's "Recently flown" row (ui/hangar-showcase-ui.js), whatever
+    // screen started this flight — Free Flight, a mission, the story, a lobby.
+    if (this.aircraftType && this.menus.noteFlown) this.menus.noteFlown(this.aircraftType.id);
 
     // Weather.
     if (mode === 'free') {
@@ -2617,7 +2625,7 @@ class Game {
       livery: schemeFor(this.aircraftType, this.settings.livery),
     });
     this.scene.add(this.model);
-    this.cockpit = createCockpit({ highContrast: this.settings.highContrast, type: this.aircraftType });
+    this.cockpit = createCockpit({ highContrast: this.settings.highContrast, type: this.aircraftType, model: this.model });
     // The airframe is scaled to size; the cockpit is not. There is one
     // instrument panel and the pilot is the same size in every aeroplane,
     // so it is counter-scaled back to life size.
@@ -2677,6 +2685,8 @@ class Game {
       const drawnY = this.model.userData.fleetBridge ? this.model.userData.groundOffsetY || 0 : 0;
       this.rig.eye.set(eye[0], eye[1] + drawnY, eye[2]);
       this.rig.realisticCockpit = !!this.settings.realisticCockpit;
+      // How far down this cockpit's view looks (its screens may sit low).
+      this.rig.cockpitPitchDeg = this.cockpit.userData.viewPitchDeg || 0;
       /*
        * The follow view's standoff, fitted to the aeroplane just drawn (see
        * chaseScaleFor): 1 for the Skylark and the jets, 1.64 for the Meridian,
@@ -4874,6 +4884,21 @@ class Game {
     const focus = (this.riding && this.riding.pos) || ac.pos;
     this.sky.update(this.weather);
     this.sky.followTarget(focus);
+    /*
+     * In the cockpit the sun's shadow map is pulled in round the pilot's
+     * eye (sky.js setShadowReach), so the canopy bow, the window frames and
+     * the glareshield throw sharp shadows across the panel. Centred on the
+     * eye, not the aeroplane: the 747's flight deck is 27 m ahead of its
+     * centre of gravity, outside a 16 m reach.
+     */
+    if (this.sky.setShadowReach) {
+      const seated = this.rig && this.rig.mode === 'cockpit' && this.cockpit && this.cockpit.visible && !this.riding;
+      if (seated && this.rig.eye) {
+        this._shadowEye = (this._shadowEye || new THREE.Vector3()).copy(this.rig.eye).applyQuaternion(ac.quat).add(ac.pos);
+        this.sky.setShadowReach(16);
+        this.sky.followTarget(this._shadowEye);
+      } else this.sky.setShadowReach(150);
+    }
     this.ocean.follow(focus);
     this.ocean.update(dt, this.weather);
     // Wet tarmac after rain, glass glinting at a low sun (render/surfaces.js).
@@ -5067,7 +5092,21 @@ class Game {
     // the field of view and whether the overlay repeats the instruments — not
     // whether the aeroplane has an interior.
     this.cockpit.visible = inCockpit;
-    if (inCockpit) this.cockpit.userData.update(dt, ac, this.weather);
+    if (inCockpit) this.cockpit.userData.update(dt, ac, this.weather, this);
+    // What of the outside cannot be seen from the seat is not drawn while
+    // you are in it (aircraft/cockpit/kit.js insideOnly) — in it, not just in
+    // the cockpit mode: a feature's own camera (an ejection, a replay) may be
+    // looking at the aeroplane from outside meanwhile.
+    if (this.cockpit.userData.viewing) {
+      let seated = inCockpit && !!this.rig.eye;
+      if (seated) {
+        this._seatEye = (this._seatEye || new THREE.Vector3()).copy(this.rig.eye).applyQuaternion(ac.quat).add(ac.pos);
+        seated = this.camera.position.distanceToSquared(this._seatEye) < 4;
+      }
+      this.cockpit.userData.viewing(seated);
+    }
+    // A finger dragged across the picture looks round the cockpit (input.js).
+    this.input.touchLook = inCockpit;
     this.audio.setInterior(inCockpit);
 
     if (!extCamera(this, dt)) {
@@ -5106,6 +5145,8 @@ class Game {
       // Not for a passenger (this.riding): the rails would run from the parked
       // aeroplane under the President's seat, drawn over the cabin's walls.
       const wantRails = this.state === 'flying' && style !== 'beacon' && !this.riding;
+      // From the seat the panel and the window frames hide the rails.
+      if (this.navGuide.setOccluded) this.navGuide.setOccluded(this.rig && this.rig.mode === 'cockpit' && this.cockpit && this.cockpit.visible);
       this.navGuide.update(
         dt,
         wantRails ? guideTarget : null,

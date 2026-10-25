@@ -490,7 +490,11 @@ export class CameraRig {
       const headYaw = lookBehind ? Math.PI : lookYaw - THREE.MathUtils.degToRad(bank) * 0.12;
       // A pilot looks a little down, over the nose: level, the cabin roof filled
       // the top ~40% of the screen and the panel sat behind the HUD.
-      const headPitch = COCKPIT_PITCH + lookPitch + clamp(ac.gLoad - 1, -0.4, 0.4) * -0.06;
+      // The cockpit may ask for its own (cockpit userData.viewPitchDeg, set
+      // by main.js): an airliner's screens sit lower under its big windows
+      // than a light aeroplane's dials do, and the realistic view must show them.
+      const basePitch = this.cockpitPitchDeg > 0 ? -THREE.MathUtils.degToRad(this.cockpitPitchDeg) : COCKPIT_PITCH;
+      const headPitch = basePitch + lookPitch + clamp(ac.gLoad - 1, -0.4, 0.4) * -0.06;
       const q = this._q.setFromEuler(new THREE.Euler(headPitch, headYaw, 0, 'YXZ'));
       cam.quaternion.copy(this._targetQ).multiply(q);
       const want = this.realisticCockpit ? REALISTIC_FOV : this.baseFov + clamp(ac.airspeed / 90, 0, 1) * 4;

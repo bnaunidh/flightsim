@@ -130,7 +130,9 @@ export function buildMeridian(b) {
   b.put(deck.frames, m.darkDecal);
   b.put(deck.glass, m.glassDecal);
   if (deck.wipers) b.put(deck.wipers, m.darkDecal);
-  b.flightDeck = { panes: deck.outlines.map((p) => ({ ...p, corners: p.corners.map((c) => c.map((v) => +(v * unit).toFixed(3))) })) };
+  // The panes in the hull's own (z, s) too, in shape units like the hull
+  // (model.userData.cabinHull), for the flight deck inside.
+  b.flightDeck = { panes: deck.outlines.map((p) => ({ ...p, corners: p.corners.map((c) => c.map((v) => +(v * unit).toFixed(3))) })), quads: deck.quads, unit };
 
   // Cabin windows on the skin, a door at each end each side.
   const winY = 0.2;

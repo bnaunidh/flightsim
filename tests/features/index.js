@@ -26,6 +26,7 @@ import { check as afoPresident } from './afo-president.browser.js';
 import { check as heatSeekers } from './heat-seekers.browser.js';
 import { check as gunsight } from './gunsight.browser.js';
 import { check as fighters } from './fighters.browser.js';
+import { check as cockpits } from './cockpits.browser.js';
 import { check as fire } from './fire.browser.js';
 import { check as fun } from './fun.browser.js';
 import { check as smokeClouds } from './smoke-clouds.browser.js';
@@ -33,6 +34,7 @@ import { check as instruments } from './instruments.browser.js';
 import { check as keybinds } from './keybinds.browser.js';
 import { check as maps } from './maps.browser.js';
 import { check as menus } from './menus.browser.js';
+import { check as hangar } from './hangar.browser.js';
 import { check as uiPolish } from './ui-polish.browser.js';
 import { check as multiplayer } from './multiplayer.browser.js';
 import { check as multiplayerList2 } from './multiplayer-list2.browser.js';
@@ -95,6 +97,8 @@ export const CHECKS = [
   // The C-17 Globemaster III: its cargo ramp (key, panel, the speed rule) and a circuit on Kestrel.
   { id: 'c17', check: c17 },
   { id: 'fighters', check: fighters },
+  // After fighters: every family's cockpit on the model the game draws — screens live, shadows in, a finger to look round.
+  { id: 'cockpits', check: cockpits },
   { id: 'events', check: events },
   // After events: Air Force One is the same mission-roles/afo-combat shape, driven the same way.
   { id: 'afo', check: afo },
@@ -113,6 +117,8 @@ export const CHECKS = [
   // After maps: the missions spread over them — each moved one starts on its island, three flown to the end.
   { id: 'mission-maps', check: missionMaps },
   { id: 'menus', check: menus },
+  // After menus: the organised hangar — shelves, search, sort, filters, favourites, recently flown, New.
+  { id: 'hangar', check: hangar },
   // After menus: the deck — the start screen's and the HUD's glass, radius, motion and touch sizes, and html.fx-low on Low.
   { id: 'ui-polish', check: uiPolish },
   // After menus: every way of turning sound off, and that it stays off (nothing played out loud).

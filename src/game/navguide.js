@@ -185,6 +185,25 @@ export class NavGuide {
   }
 
   /**
+   * From the seat, the cockpit is in front of the rails.
+   *
+   * Drawn without the depth test (so the rails glow over hills between you
+   * and the target), they ran from the wingtips straight across the panel,
+   * the screens and the window frames — two cyan stripes painted over the
+   * flight deck. In the cockpit view they take the depth test: the panel and
+   * the frames hide them, the windows show them.
+   */
+  setOccluded(on) {
+    const want = !!on;
+    if (this._occluded === want) return;
+    this._occluded = want;
+    for (const r of [this.left, this.right]) {
+      r.mat.depthTest = want;
+      r.mat.needsUpdate = true;
+    }
+  }
+
+  /**
    * @param {THREE.Vector3|null} target where to point, or null to hide
    * @param {THREE.Vector3} from the aeroplane's position
    * @param {THREE.Quaternion} quat the aeroplane's attitude

@@ -116,7 +116,8 @@ ok(`no feature, game or HUD hard-codes a key (${files.length} files read)`, stra
 // box, the search box, the tray) — never a game key. List them so a new one
 // is a decision, not an accident.
 // (owner/teleport.js: the owner's teleport picker — a height slider whose Enter teleports and whose Esc shuts it; it stops its keys reaching the game.)
-const FORM_KEYS = new Set(['src/ui/briefing.js', 'src/ui/menus.js', 'src/ui/hud.js', 'src/features/multiplayer/ui.js', 'src/features/multiplayer/lobbyui.js', 'src/features/owner.js', 'src/features/owner/teleport.js']);
+// (ui/hangar-showcase-ui.js: the hangar's search box — Enter puts the first match on the podium; only while typing in that box, the menu is open and no flight has the keys.)
+const FORM_KEYS = new Set(['src/ui/briefing.js', 'src/ui/menus.js', 'src/ui/hud.js', 'src/features/multiplayer/ui.js', 'src/features/multiplayer/lobbyui.js', 'src/features/owner.js', 'src/features/owner/teleport.js', 'src/ui/hangar-showcase-ui.js']);
 const formHits = [];
 for (const f of files) {
   const s = readFileSync(new URL(f, root), 'utf8');

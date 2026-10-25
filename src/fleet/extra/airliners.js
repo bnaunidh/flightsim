@@ -570,7 +570,12 @@ function dress(ctx, S) {
   });
   ctx.registerAnimation((dt) => doors.update(dt));
   ctx.exports.doors = doors;
-  ctx.exports.flightDeck = { panes: gz.outlines, eye: [...c.eye], on: S.flightDeckOn === 'upper' ? 'upper deck' : 'nose' };
+  // The hull and the panes in its own (z, s) go with the outline, so the
+  // flight deck inside can be cut on exactly these lines (cockpit/flightdeck.js).
+  // (The hull is not enumerable: a model's userData is JSON-copied when it
+  // is cloned, and the hull carries its whole geometry.)
+  ctx.exports.flightDeck = { panes: gz.outlines, eye: [...c.eye], on: S.flightDeckOn === 'upper' ? 'upper deck' : 'nose', quads: gz.quads, unit: 1 };
+  Object.defineProperty(ctx.exports.flightDeck, 'hull', { value: deck, enumerable: false });
   // The fuselage as one thing, for whoever measures the aeroplane (the
   // ground crew's jobs): its skin is three pieces, so its longest mesh is
   // only the cabin.

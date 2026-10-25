@@ -60,7 +60,11 @@ const CIVIL = {
 function buildCivil(type, S, scheme, build, opts = {}) {
   const b = new Builder(type, S, scheme);
   const out = build(b) || {};
-  return b.finish({ spot: out.spot, landingLight: opts.landingLight !== false });
+  const root = b.finish({ spot: out.spot, landingLight: opts.landingLight !== false });
+  // The fuselage it was lofted from, so the cockpit can be built to match
+  // its windows from inside (aircraft/cockpit/canopy.js glazingOf).
+  if (out.hull) root.userData.cabinHull = out.hull;
+  return root;
 }
 
 /** NACA-style aerofoil outline, chord along +X, thickness along +Y. */

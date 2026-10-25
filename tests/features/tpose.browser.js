@@ -97,8 +97,12 @@ export async function checkHarrison(sim, r, say = () => {}) {
   run(1.5);
   const ac = sim.aircraft;
   let bad = [];
+  // His model, not the cockpit hung on it (hidden for him: eject.js), whose
+  // warning lamps are named for what they warn of ("lamp tyre").
+  const cockpitParts = new Set();
+  if (sim.cockpit) sim.cockpit.traverse((o) => cockpitParts.add(o));
   sim.model.traverse((o) => {
-    if (o.isMesh && /board|wheel|tyre|rocket|flame|nozzle|deck/i.test(o.name)) bad.push(o.name);
+    if (o.isMesh && !cockpitParts.has(o) && /board|wheel|tyre|rocket|flame|nozzle|deck/i.test(o.name)) bad.push(o.name);
   });
   let lo = Infinity;
   let hi = -Infinity;

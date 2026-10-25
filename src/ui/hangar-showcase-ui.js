@@ -2,10 +2,13 @@
  * The hangar's showroom: the screen around the podium.
  *
  * hangar-showcase.js draws the room and the aeroplane; this is everything you
- * press — the category tabs, the arrows, the card with the name, the one-line
- * description, the four bars, the paint, and the button that either flies it
- * or buys it. It is a file of its own so menus.js (worked on by several people
- * at once) only gains the lines that plug it in.
+ * press — the shelf chips, the search box, the sort and the filters, the
+ * arrows, the card with the name, the one-line description, the four bars,
+ * the paint, the star, and the button that either flies it or buys it. Under
+ * the podium: your favourites, what you flew last, and every aircraft on the
+ * shelf you are looking at as a card you can tap. It is a file of its own so
+ * menus.js (worked on by several people at once) only gains the lines that
+ * plug it in.
  *
  * Nothing three.js is imported here. The 3D half is loaded the first time the
  * hangar opens, so the menu boots no slower and tests/features/menus.mjs can
@@ -13,19 +16,37 @@
  *
  * WHAT IS KEPT
  * The rest of the hangar is still underneath, a scroll away: rank, the list of
- * every aeroplane (now a way to put one on the podium), the military passcode,
- * the "Got a code?" box and Dev mode — same elements, same handlers.
+ * every aeroplane under the five picker headings (a way to put one on the
+ * podium), the military passcode, the "Got a code?" box and Dev mode — same
+ * elements, same handlers. Buying and unlocking go through progression.js
+ * exactly as before; this screen only decides what is shown and in what order.
+ *
+ * ORGANISATION (v71 wishlist, "organize hangar A LOT more")
+ * The eight shelves, the search, the sorts, the filters, "New" and what is
+ * remembered are all in hangar-shelves.js, which is pure and tested in Node.
  */
 
 import { AIRCRAFT, performanceFor } from '../aircraft/types.js';
 import { LIVERIES, schemeFor } from '../aircraft/liveries.js';
 import * as Prog from '../game/progression.js';
 import { icon } from './icons.js';
+import {
+  shelve, shelfDef, isNew, visibleFleet, keyStats, SORTS, SORT_IDS, FILTERS, FILTER_IDS, idList, STORE_KEYS,
+} from './hangar-shelves.js';
 
 const LOCK_SVG =
   '<svg class="icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" ' +
   'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<rect x="5" y="10.5" width="14" height="10" rx="2.2"/><path d="M8.2 10.5V7.6a3.8 3.8 0 0 1 7.6 0v2.9"/></svg>';
+
+const STAR_SVG = (filled) =>
+  `<svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" ` +
+  'stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M12 3.2l2.7 5.6 6.1.8-4.4 4.3 1.1 6.1L12 17.1 6.5 20l1.1-6.1L3.2 9.6l6.1-.8Z"/></svg>';
+
+const SEARCH_SVG =
+  '<svg class="icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10.6" cy="10.6" r="6.2"/><path d="m15.2 15.2 5 5"/></svg>';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
@@ -73,6 +94,21 @@ export function statsFor(type) {
   };
 }
 
+/** performanceFor, fenced: a type the flight model cannot size yet still gets a card. */
+function perfOf(id) {
+  try {
+    return performanceFor(id) || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+/** The thumbnail on a card: this wide, in CSS pixels. Drawn at up to 2x. */
+const ART_W = 176;
+const ART_H = 110;
+/** Show the dots under the podium only while there are few enough to tell apart. */
+const MAX_DOTS = 14;
+
 /**
  * Plug the showroom into the hangar screen.
  *
@@ -82,13 +118,25 @@ export function statsFor(type) {
  *                         imported back so the two files cannot form a cycle
  */
 export function installHangarShowcase(menus, screen, kit) {
-  const { catIcon, aircraftCategory, groupByCategory, aircraftThumbnail, catStyle } = kit;
+  const { catIcon, aircraftCategory, aircraftThumbnail, catStyle } = kit;
   const host = screen.querySelector('[data-showcase-host]');
   if (!host) return null;
 
   host.innerHTML = `
     <div class="hs" data-showcase>
-      <div class="hs-tabs" role="tablist" aria-label="Kinds of aircraft" data-hs-tabs></div>
+      <div class="hs-tabs" role="tablist" aria-label="Shelves" data-hs-tabs></div>
+      <div class="hs-tools" data-hs-tools>
+        <label class="hs-search" data-hs-search-wrap>
+          ${SEARCH_SVG}
+          <input type="search" data-hs-search placeholder="Find an aircraft" aria-label="Find an aircraft"
+            autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+        </label>
+        <div class="hs-filters" role="group" aria-label="Show" data-hs-filters></div>
+        <label class="hs-sort">
+          <span>Sort</span>
+          <select data-hs-sort aria-label="Sort the aircraft">${SORTS.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join('')}</select>
+        </label>
+      </div>
       <div class="hs-main">
         <div class="hs-stage" data-hs-stage>
           <div class="hs-fallback" data-hs-fallback hidden></div>
@@ -102,7 +150,10 @@ export function installHangarShowcase(menus, screen, kit) {
           </div>
         </div>
         <aside class="hs-card" data-hs-card aria-live="polite">
-          <div class="hs-kicker"><span class="hs-cat" data-hs-cat></span><span class="hs-class" data-hs-class></span><span class="hs-count" data-hs-count></span></div>
+          <div class="hs-kicker">
+            <span class="hs-cat" data-hs-cat></span><span class="hs-class" data-hs-class></span><span class="hs-count" data-hs-count></span>
+            <button type="button" class="hs-star" data-hs-fav aria-pressed="false" aria-label="Favourite" title="Favourite — keep it in the row above the fleet">${STAR_SVG(false)}</button>
+          </div>
           <h3 class="hs-name" data-hs-name></h3>
           <p class="hs-line" data-hs-line></p>
           <div class="hs-pills" data-hs-pills></div>
@@ -116,20 +167,57 @@ export function installHangarShowcase(menus, screen, kit) {
           </div>
         </aside>
       </div>
+      <section class="hs-strip" data-hs-strip="favourites" hidden>
+        <h4 class="hs-strip-title">${STAR_SVG(true)} Favourites</h4>
+        <div class="hs-strip-row" data-hs-strip-row="favourites"></div>
+      </section>
+      <section class="hs-strip" data-hs-strip="recent" hidden>
+        <h4 class="hs-strip-title">${icon('restart', 16)} Recently flown</h4>
+        <div class="hs-strip-row" data-hs-strip-row="recent"></div>
+      </section>
+      <section class="hs-fleet" data-hs-fleet>
+        <header class="hs-fleet-head">
+          <h4 class="hs-fleet-title" data-hs-fleet-title>All aircraft</h4>
+          <span class="hs-fleet-count" data-hs-fleet-count></span>
+        </header>
+        <div class="hs-grid" data-hs-grid></div>
+        <p class="hs-empty" data-hs-empty hidden>
+          <span data-hs-empty-text></span>
+          <button type="button" class="ghost" data-hs-clear>Show them all</button>
+        </p>
+      </section>
       <button type="button" class="hs-more" data-hs-more>Rank, codes and the full list ${icon('chevronRight', 16)}</button>
     </div>`;
 
   const $ = (sel) => host.querySelector(sel);
   const stage = $('[data-hs-stage]');
+  const storage = (() => {
+    try {
+      return typeof localStorage !== 'undefined' ? localStorage : null;
+    } catch (e) {
+      return null;
+    }
+  })();
+  const favs = idList(STORE_KEYS.favourites, storage, 40);
+  const recent = idList(STORE_KEYS.recent, storage, 8);
+  const sortStore = idList(STORE_KEYS.sort, storage, 1);
 
   const ui = {
     id: null,
     order: [],
+    shown: [],
+    shelves: [],
     groups: [],
+    shelf: 'all',
+    query: '',
+    filter: 'all',
+    sort: SORT_IDS.includes(sortStore.get()[0]) ? sortStore.get()[0] : 'shelf',
     from: 'main',
     showcase: null,
     loading: null,
     failed: false,
+    favs,
+    recent,
   };
   menus.showcaseUi = ui;
 
@@ -137,33 +225,126 @@ export function installHangarShowcase(menus, screen, kit) {
   const livery = () => (menus.settingsRef && menus.settingsRef.livery) || 'house';
   const typeOf = (id) => AIRCRAFT.find((a) => a.id === id);
   const owned = (id) => Prog.isUnlocked(prog(), id);
+  const rosterIndex = (id) => AIRCRAFT.findIndex((a) => a.id === id);
+  const ctx = () => ({ catOf: aircraftCategory, owned, costOf: Prog.costOf, credits: prog().credits, perfFor: perfOf, rosterIndex });
 
-  /** What can be shown: everything but what the passcode still hides. */
+  /** What can be shown: everything but what the passcode still hides — then the shelf, the search, the filter, the sort. */
   ui.rebuildOrder = () => {
     const p = prog();
-    const shown = AIRCRAFT.filter((a) => !Prog.needsPasscode(p, a));
-    ui.groups = groupByCategory('aircraft', shown, aircraftCategory);
-    ui.order = ui.groups.flatMap((g) => g.items.map((a) => a.id));
-    if (ui.id && !ui.order.includes(ui.id)) ui.id = null;
+    ui.shown = AIRCRAFT.filter((a) => !Prog.needsPasscode(p, a));
+    ui.shelves = shelve(ui.shown, aircraftCategory);
+    ui.groups = ui.shelves;
+    if (ui.shelf !== 'all' && !ui.shelves.some((g) => g.def.id === ui.shelf)) ui.shelf = 'all';
+    ui.order = visibleFleet(ui.shown, { shelf: ui.shelf, query: ui.query, filter: ui.filter, sort: ui.sort }, ctx()).map((a) => a.id);
+    if (ui.id && !ui.shown.some((a) => a.id === ui.id)) ui.id = null;
   };
 
-  const groupOf = (id) => ui.groups.find((g) => g.items.some((a) => a.id === id));
+  const groupOf = (id) => ui.shelves.find((g) => g.items.some((a) => a.id === id));
+  const shelfIdOf = (id) => {
+    const g = groupOf(id);
+    return g ? g.def.id : 'special';
+  };
+
+  /* ---------------- the pictures on the cards ---------------- */
+
+  /*
+   * One small canvas per aircraft and paint, drawn from the Free Flight card's
+   * plan view and shrunk: forty cards of the full 600x380 picture would be
+   * thirty-odd megabytes on a Chromebook. Copies for the strips are drawn from
+   * the cached one. The cache empties when the paint changes or the hangar
+   * closes.
+   */
+  const artCache = new Map();
+  let artLivery = null;
+  const dpr = () => Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
+  const artFor = (type) => {
+    if (artLivery !== livery()) {
+      artCache.clear();
+      artLivery = livery();
+    }
+    let c = artCache.get(type.id);
+    if (c) return c;
+    try {
+      const big = aircraftThumbnail(type, livery());
+      const k = dpr();
+      c = document.createElement('canvas');
+      c.width = Math.round(ART_W * k);
+      c.height = Math.round(ART_H * k);
+      c.className = 'hs-art';
+      const g = c.getContext('2d');
+      // Fit the whole plan view in, centred: the picture is 300x190, the slot is wider than that.
+      const s = Math.min(c.width / big.width, c.height / big.height);
+      const w = big.width * s;
+      const h = big.height * s;
+      g.drawImage(big, (c.width - w) / 2, (c.height - h) / 2, w, h);
+      artCache.set(type.id, c);
+    } catch (e) {
+      c = null;
+    }
+    return c;
+  };
+  const artCopy = (type) => {
+    const src = artFor(type);
+    if (!src) return null;
+    const c = document.createElement('canvas');
+    c.width = src.width;
+    c.height = src.height;
+    c.className = 'hs-art';
+    c.getContext('2d').drawImage(src, 0, 0);
+    return c;
+  };
+  let artToken = 0;
+  /**
+   * Fill the empty art slots a few at a time, so a Chromebook does not stall
+   * drawing forty pictures at once. On a timer rather than requestAnimationFrame:
+   * the game's own loop owns rAF, and a hidden tab (or the test harness, which
+   * freezes rAF) would otherwise leave the cards blank.
+   */
+  const fillArt = (slots) => {
+    const token = ++artToken;
+    const queue = [...slots];
+    const step = () => {
+      if (token !== artToken) return;
+      for (let i = 0; i < 6 && queue.length; i++) {
+        const slot = queue.shift();
+        const type = typeOf(slot.dataset.hsArt);
+        if (!type) continue;
+        const c = slot.dataset.hsArtCopy ? artCopy(type) : artFor(type);
+        if (c) {
+          slot.innerHTML = '';
+          slot.appendChild(c);
+        }
+      }
+      if (queue.length) setTimeout(step, 16);
+    };
+    step();
+  };
 
   /* ---------------- painting the screen ---------------- */
 
+  let tabsScrolledFor = null;
   const paintTabs = () => {
-    const cur = groupOf(ui.id);
-    $('[data-hs-tabs]').innerHTML = ui.groups
-      .map((g) => {
-        const mine = g.items.filter((a) => owned(a.id)).length;
-        const on = cur && cur.def.id === g.def.id;
-        return `<button type="button" class="hs-tab${on ? ' is-on' : ''}" role="tab" aria-selected="${on}" data-hs-tab="${esc(g.def.id)}" style="${catStyle(g.def)}">
-          <span class="hs-tab-icon">${catIcon(g.def.icon, 18)}</span><span class="hs-tab-label">${esc(g.def.label)}</span><b>${mine}/${g.items.length}</b>
-        </button>`;
-      })
-      .join('');
-    // Keep the lit tab in view on a phone, where the row scrolls sideways —
-    // by hand, because scrollIntoView would scroll the whole screen too.
+    const all = ui.shelf === 'all';
+    const allBtn = `<button type="button" class="hs-tab is-all${all ? ' is-on' : ''}" role="tab" aria-selected="${all}" data-hs-tab="all">
+        <span class="hs-tab-label">All</span><b>${ui.shown.length}</b></button>`;
+    $('[data-hs-tabs]').innerHTML =
+      allBtn +
+      ui.shelves
+        .map((g) => {
+          const mine = g.items.filter((a) => owned(a.id)).length;
+          const on = ui.shelf === g.def.id;
+          const fresh = g.items.some((a) => isNew(a.id));
+          return `<button type="button" class="hs-tab${on ? ' is-on' : ''}" role="tab" aria-selected="${on}" data-hs-tab="${esc(g.def.id)}" style="${catStyle(g.def)}" title="${esc(g.def.blurb)}">
+            <span class="hs-tab-icon">${catIcon(g.def.icon, 18)}</span><span class="hs-tab-label">${esc(g.def.label)}</span><b>${mine}/${g.items.length}</b>${fresh ? '<i class="hs-tab-new" aria-label="Has new aircraft"></i>' : ''}
+          </button>`;
+        })
+        .join('');
+    // Keep the lit chip in view on a phone, where the row scrolls sideways —
+    // by hand, because scrollIntoView would scroll the whole screen too. Only
+    // when the lit chip changes: reading scrollWidth forces a layout of the
+    // whole showroom, and paint() runs on every key typed in the search box.
+    if (tabsScrolledFor === ui.shelf) return;
+    tabsScrolledFor = ui.shelf;
     const row = $('[data-hs-tabs]');
     const lit = row.querySelector('.is-on');
     if (lit && row.scrollWidth > row.clientWidth) {
@@ -171,13 +352,28 @@ export function installHangarShowcase(menus, screen, kit) {
     }
   };
 
+  const paintTools = () => {
+    $('[data-hs-filters]').innerHTML = FILTERS.map(
+      (f) => `<button type="button" class="hs-filter${ui.filter === f.id ? ' is-on' : ''}" data-hs-filter="${f.id}" aria-pressed="${ui.filter === f.id}">${esc(f.label)}</button>`
+    ).join('');
+    const sel = $('[data-hs-sort]');
+    if (sel.value !== ui.sort) sel.value = ui.sort;
+    const box = $('[data-hs-search]');
+    if (box.value !== ui.query) box.value = ui.query;
+  };
+
   const paintDots = () => {
-    const g = groupOf(ui.id);
-    $('[data-hs-dots]').innerHTML = g
-      ? g.items
-          .map((a) => `<button type="button" class="hs-dot${a.id === ui.id ? ' is-on' : ''}${owned(a.id) ? '' : ' is-locked'}" data-hs-dot="${a.id}" aria-label="${esc(a.name)}"></button>`)
-          .join('')
-      : '';
+    const dots = $('[data-hs-dots]');
+    if (ui.order.length > MAX_DOTS) {
+      dots.innerHTML = '';
+      return;
+    }
+    dots.innerHTML = ui.order
+      .map((id) => {
+        const a = typeOf(id);
+        return a ? `<button type="button" class="hs-dot${a.id === ui.id ? ' is-on' : ''}${owned(a.id) ? '' : ' is-locked'}" data-hs-dot="${a.id}" aria-label="${esc(a.name)}"></button>` : '';
+      })
+      .join('');
   };
 
   const bar = (label, s) => `
@@ -195,6 +391,15 @@ export function installHangarShowcase(menus, screen, kit) {
       style="--sw-a:${sch.base};--sw-b:${sch.accent};--sw-c:${tail}"><span></span></button>`;
   };
 
+  const paintStar = () => {
+    const btn = $('[data-hs-fav]');
+    const on = !!ui.id && favs.has(ui.id);
+    btn.classList.toggle('is-on', on);
+    btn.setAttribute('aria-pressed', String(on));
+    btn.innerHTML = STAR_SVG(on);
+    btn.title = on ? 'A favourite — press to take it out of the row' : 'Favourite — keep it in the row above the fleet';
+  };
+
   const paintCard = () => {
     const type = typeOf(ui.id);
     if (!type) return;
@@ -207,7 +412,7 @@ export function installHangarShowcase(menus, screen, kit) {
     host.style.setProperty('--hs-accent', (g && g.def.colour) || '#58c6ff');
     $('[data-hs-cat]').innerHTML = g ? `${catIcon(g.def.icon, 14)} ${esc(g.def.label)}` : '';
     $('[data-hs-class]').textContent = type.class || '';
-    $('[data-hs-count]').textContent = `${idx + 1} of ${ui.order.length}`;
+    $('[data-hs-count]').textContent = idx >= 0 ? `${idx + 1} of ${ui.order.length}` : '';
     $('[data-hs-name]').textContent = type.name;
     $('[data-hs-line]').textContent = oneLine(type.blurb);
     const chosen = menus.chosenAircraft === type.id;
@@ -215,10 +420,12 @@ export function installHangarShowcase(menus, screen, kit) {
       (mine
         ? `<span class="hs-pill is-yours">${icon('check', 14)} Yours</span>`
         : `<span class="hs-pill is-locked">${LOCK_SVG} Locked</span>`) +
+      (isNew(type.id) ? '<span class="hs-pill is-new">New</span>' : '') +
       (chosen && mine ? '<span class="hs-pill is-chosen">Your pick</span>' : '') +
       `<span class="hs-pill">${esc(s.ease.text)}</span>`;
     $('[data-hs-stats]').innerHTML =
       bar('Speed', s.speed) + bar('Agility', s.agility) + bar('Size', s.size) + bar('Range', s.range);
+    paintStar();
 
     // The button that matters: fly it, or how to get it.
     const actions = $('[data-hs-actions]');
@@ -256,10 +463,13 @@ export function installHangarShowcase(menus, screen, kit) {
     $('[data-hs-q]').hidden = mine;
 
     // Arrows wrap round, so they never grey out — but say where they go.
-    const prev = typeOf(ui.order[(idx - 1 + ui.order.length) % ui.order.length]);
-    const next = typeOf(ui.order[(idx + 1) % ui.order.length]);
+    const n = ui.order.length;
+    const prev = n ? typeOf(ui.order[(idx - 1 + n) % n]) : null;
+    const next = n ? typeOf(ui.order[(idx + 1) % n]) : null;
     $('[data-hs-prev]').title = prev ? `Previous: ${prev.name}` : '';
     $('[data-hs-next]').title = next ? `Next: ${next.name}` : '';
+    $('[data-hs-prev]').hidden = n < 2;
+    $('[data-hs-next]').hidden = n < 2;
     screen.dataset.hsAircraft = type.id;
     paintFallback();
   };
@@ -279,10 +489,84 @@ export function installHangarShowcase(menus, screen, kit) {
     }
   };
 
+  /** One card in the fleet grid. */
+  const fleetCard = (type) => {
+    const p = prog();
+    const mine = owned(type.id);
+    const cost = Prog.costOf(type.id);
+    const afford = !mine && !!cost && p.credits >= cost;
+    const g = groupOf(type.id);
+    const ks = keyStats(type, perfOf(type.id));
+    const cls = ['hs-fleet-card', type.id === ui.id ? 'is-on' : '', mine ? 'is-owned' : 'is-locked', afford ? 'can-buy' : '', favs.has(type.id) ? 'is-fav' : ''].filter(Boolean).join(' ');
+    const foot = mine
+      ? `<span class="hs-fc-price is-yours">${icon('check', 13)} Yours</span>`
+      : cost
+        ? `<span class="hs-fc-price${afford ? ' can-buy' : ''}">${LOCK_SVG} ${cost.toLocaleString()} cr</span>`
+        : `<span class="hs-fc-price is-soon">${LOCK_SVG} Not for sale yet</span>`;
+    return `<button type="button" class="${cls}" data-hs-pick="${esc(type.id)}" style="${g ? catStyle(g.def) : ''}" aria-pressed="${type.id === ui.id}">
+      <span class="hs-fc-art" data-hs-art="${esc(type.id)}"></span>
+      <span class="hs-fc-badges">${isNew(type.id) ? '<span class="hs-badge is-new">New</span>' : ''}${favs.has(type.id) ? `<span class="hs-badge is-fav">${STAR_SVG(true)}</span>` : ''}</span>
+      <span class="hs-fc-name">${esc(type.name)}</span>
+      <span class="hs-fc-sub">${g ? `<span class="hs-fc-shelf">${catIcon(g.def.icon, 12)} ${esc(g.def.label)}</span>` : ''}<span>${esc(type.class || '')}</span></span>
+      <span class="hs-fc-stats">
+        <span><b>${esc(ks.speed.value)}</b><i>${ks.speed.label}</i></span>
+        <span><b>${esc(ks.size.value)}</b><i>${ks.size.label}</i></span>
+        <span><b>${esc(ks.fuel.value)}</b><i>${ks.fuel.label}</i></span>
+      </span>
+      <span class="hs-fc-foot">${foot}</span>
+    </button>`;
+  };
+
+  /** One small tile in a strip (favourites, recently flown). */
+  const stripTile = (type) => {
+    const mine = owned(type.id);
+    const g = groupOf(type.id);
+    return `<button type="button" class="hs-tile${type.id === ui.id ? ' is-on' : ''}${mine ? '' : ' is-locked'}" data-hs-pick="${esc(type.id)}" style="${g ? catStyle(g.def) : ''}" title="${esc(type.name)}">
+      <span class="hs-fc-art" data-hs-art="${esc(type.id)}" data-hs-art-copy="1"></span>
+      <span class="hs-tile-name">${esc(type.name)}</span>
+    </button>`;
+  };
+
+  const paintStrips = () => {
+    const shownIds = new Set(ui.shown.map((a) => a.id));
+    const paintOne = (name, ids) => {
+      const sec = $(`[data-hs-strip="${name}"]`);
+      const row = $(`[data-hs-strip-row="${name}"]`);
+      const list = ids.filter((id) => shownIds.has(id)).map(typeOf).filter(Boolean);
+      sec.hidden = !list.length;
+      row.innerHTML = list.map(stripTile).join('');
+      return row.querySelectorAll('[data-hs-art]');
+    };
+    const slots = [...paintOne('favourites', favs.get()), ...paintOne('recent', recent.get())];
+    return slots;
+  };
+
+  const paintGrid = () => {
+    const grid = $('[data-hs-grid]');
+    const list = ui.order.map(typeOf).filter(Boolean);
+    const def = ui.shelf === 'all' ? null : shelfDef(ui.shelf);
+    $('[data-hs-fleet-title]').textContent = def ? def.label : 'All aircraft';
+    const filterWord = ui.filter === 'all' ? '' : ` · ${FILTERS.find((f) => f.id === ui.filter).label.toLowerCase()}`;
+    $('[data-hs-fleet-count]').textContent = `${list.length} of ${ui.shown.length}${filterWord}`;
+    grid.innerHTML = list.map(fleetCard).join('');
+    const empty = $('[data-hs-empty]');
+    empty.hidden = list.length > 0;
+    if (!list.length) {
+      const where = def ? ` on the ${def.label} shelf` : '';
+      const what = ui.filter === 'owned' ? ' that is yours' : ui.filter === 'locked' ? ' still locked' : ui.filter === 'afford' ? ' you can afford yet' : '';
+      $('[data-hs-empty-text]').textContent = ui.query.trim()
+        ? `Nothing called “${ui.query.trim()}”${where}${what}.`
+        : `Nothing${where}${what}.`;
+    }
+    return grid.querySelectorAll('[data-hs-art]');
+  };
+
   const paint = () => {
     paintTabs();
+    paintTools();
     paintDots();
     paintCard();
+    fillArt([...paintStrips(), ...paintGrid()]);
   };
 
   /* ---------------- the 3D half ---------------- */
@@ -332,8 +616,10 @@ export function installHangarShowcase(menus, screen, kit) {
 
   /** Put this aeroplane on the podium. dir: +1 from the right, -1 from the left, 0 up through the floor. */
   ui.select = (id, dir = 0) => {
-    if (!ui.order.length) ui.rebuildOrder();
-    if (!ui.order.includes(id)) id = ui.order[0];
+    if (!ui.order.length && !ui.shown.length) ui.rebuildOrder();
+    // Anything the passcode allows can go on the podium, even from outside the
+    // current shelf or search (the full list below, a favourite, a recent).
+    if (!ui.shown.some((a) => a.id === id)) id = ui.order[0] || (ui.shown[0] && ui.shown[0].id);
     if (!id) return;
     const changed = id !== ui.id;
     ui.id = id;
@@ -341,12 +627,12 @@ export function installHangarShowcase(menus, screen, kit) {
     if (changed || !ui.showcase) putOnPodium(dir);
   };
 
-  /** Next (+1) or previous (-1), round the whole fleet. */
+  /** Next (+1) or previous (-1), round what is on show. */
   ui.step = (dir) => {
     if (!ui.order.length) return;
     const i = ui.order.indexOf(ui.id);
     const n = ui.order.length;
-    ui.select(ui.order[(i + dir + n) % n], dir);
+    ui.select(ui.order[i < 0 ? 0 : (i + dir + n) % n], dir);
   };
 
   /** A click in the full list below: show it, and scroll back up to it. */
@@ -355,11 +641,66 @@ export function installHangarShowcase(menus, screen, kit) {
     screen.scrollTo ? screen.scrollTo({ top: 0, behavior: 'smooth' }) : (screen.scrollTop = 0);
   };
 
+  /** After the shelf, search, filter or sort changed: keep the podium on something that is shown. */
+  const refilter = () => {
+    ui.rebuildOrder();
+    if (ui.order.length && !ui.order.includes(ui.id)) {
+      // Prefer your own aeroplane on this shelf, else the first match.
+      const pick = ui.order.find((id) => id === menus.chosenAircraft) || ui.order.find((id) => owned(id)) || ui.order[0];
+      ui.select(pick, 0);
+      return;
+    }
+    paint();
+  };
+
+  ui.setShelf = (id) => {
+    ui.shelf = id === 'all' || ui.shelves.some((g) => g.def.id === id) ? id : 'all';
+    refilter();
+  };
+  ui.setQuery = (q) => {
+    ui.query = String(q || '');
+    refilter();
+  };
+  ui.setFilter = (f) => {
+    ui.filter = FILTER_IDS.includes(f) ? f : 'all';
+    refilter();
+  };
+  ui.setSort = (s) => {
+    ui.sort = SORT_IDS.includes(s) ? s : 'shelf';
+    sortStore.set([ui.sort]);
+    refilter();
+  };
+  ui.clearFilters = () => {
+    ui.shelf = 'all';
+    ui.query = '';
+    ui.filter = 'all';
+    refilter();
+  };
+
+  /** Star or unstar one. Answers whether it is a favourite now. */
+  ui.toggleFavourite = (id = ui.id) => {
+    if (!id || !typeOf(id)) return false;
+    const on = favs.toggle(id);
+    paint();
+    return on;
+  };
+
+  /**
+   * A flight started in this aircraft: main.js startMode() says so, whatever
+   * screen started it — Free Flight, a mission, the story, multiplayer.
+   */
+  ui.noteFlown = (id) => {
+    if (!id || !typeOf(id)) return;
+    recent.bump(id);
+    if (menus.current === 'hangar') fillArt(paintStrips());
+  };
+  menus.noteFlown = ui.noteFlown;
+
   /** Whatever changed credits, ownership or the passcode: repaint. */
   ui.sync = () => {
     const before = ui.order.join();
     ui.rebuildOrder();
-    if (!ui.id) ui.id = ui.order[0];
+    if (!ui.id) ui.id = ui.order[0] || (ui.shown[0] && ui.shown[0].id) || null;
     if (menus.current === 'hangar') {
       paint();
       if (ui.showcase && ui.showcase.current) putOnPodium(0);
@@ -375,10 +716,19 @@ export function installHangarShowcase(menus, screen, kit) {
     const layer = menus.layer;
     if (layer) layer.classList.toggle('is-showcase', name === 'hangar');
     if (name !== 'hangar') {
-      if (prev === 'hangar' && ui.showcase) ui.showcase.release();
+      if (prev === 'hangar') {
+        if (ui.showcase) ui.showcase.release();
+        artCache.clear();
+        artToken++;
+      }
       return;
     }
     if (prev && prev !== 'hangar') ui.from = prev;
+    // Every visit starts on the whole fleet; the sort you chose is kept.
+    tabsScrolledFor = null;
+    ui.shelf = 'all';
+    ui.query = '';
+    ui.filter = 'all';
     ui.rebuildOrder();
     // Open on the aeroplane you have chosen — the helicopter, from Rotors.
     // (A chosen helicopter of any type stays chosen; the Skyhook is the Rotors page's default.)
@@ -399,17 +749,64 @@ export function installHangarShowcase(menus, screen, kit) {
     $('[data-hs-msg]').textContent = text;
   };
 
+  /** The stage back into view when a card further down was tapped (a phone: the podium is above the fold). */
+  const showStage = () => {
+    const r = stage.getBoundingClientRect();
+    const H = (typeof window !== 'undefined' && window.innerHeight) || 0;
+    if (H && (r.top < 0 || r.bottom > H)) {
+      try {
+        stage.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (e) {
+        /* an old browser: stay where we are */
+      }
+    }
+  };
+
+  /*
+   * Typing: the grid and the chips follow every key, the podium only once the
+   * typing pauses. Swapping the 3D model on each letter ("b", "bo", "boe"…)
+   * cost ~190 ms a key at a 4x-throttled Chromebook and flickered the podium.
+   */
+  let queryTimer = 0;
+  host.addEventListener('input', (e) => {
+    if (!e.target.closest('[data-hs-search]')) return;
+    ui.query = String(e.target.value || '');
+    ui.rebuildOrder();
+    paint();
+    clearTimeout(queryTimer);
+    const q = ui.query;
+    queryTimer = setTimeout(() => {
+      if (menus.current === 'hangar' && ui.query === q && ui.order.length && !ui.order.includes(ui.id)) refilter();
+    }, 300);
+  });
+  host.addEventListener('change', (e) => {
+    if (e.target.closest('[data-hs-sort]')) ui.setSort(e.target.value);
+  });
+  host.addEventListener('keydown', (e) => {
+    // Enter in the search box: the first match goes on the podium.
+    if (e.key === 'Enter' && e.target.closest('[data-hs-search]') && ui.order.length) {
+      e.preventDefault();
+      ui.select(ui.order[0], 0);
+    }
+  });
+
   host.addEventListener('click', (e) => {
     const t = e.target;
     if (t.closest('[data-hs-prev]')) return ui.step(-1);
     if (t.closest('[data-hs-next]')) return ui.step(1);
     const tab = t.closest('[data-hs-tab]');
-    if (tab) {
-      const g = ui.groups.find((x) => x.def.id === tab.dataset.hsTab);
-      if (!g) return;
-      // Your own aeroplane in that row if you have one, else the first.
-      const pick = g.items.find((a) => a.id === menus.chosenAircraft) || g.items.find((a) => owned(a.id)) || g.items[0];
-      return ui.select(pick.id, 0);
+    if (tab) return ui.setShelf(tab.dataset.hsTab);
+    const filt = t.closest('[data-hs-filter]');
+    if (filt) return ui.setFilter(filt.dataset.hsFilter);
+    if (t.closest('[data-hs-clear]')) return ui.clearFilters();
+    if (t.closest('[data-hs-fav]')) return void ui.toggleFavourite(ui.id);
+    const pick = t.closest('[data-hs-pick]');
+    if (pick) {
+      const a = ui.order.indexOf(ui.id);
+      const b = ui.order.indexOf(pick.dataset.hsPick);
+      ui.select(pick.dataset.hsPick, b > a ? 1 : b < a ? -1 : 0);
+      showStage();
+      return;
     }
     const dot = t.closest('[data-hs-dot]');
     if (dot) {
@@ -430,7 +827,7 @@ export function installHangarShowcase(menus, screen, kit) {
       if (menus.settingsRef) menus.settingsRef.livery = id;
       const sel = menus.screens.settings && menus.screens.settings.querySelector('[data-set="livery"]');
       if (sel) sel.value = id;
-      paintCard();
+      paint();
       if (ui.showcase) ui.showcase.repaint(livery(), !owned(ui.id));
       paintFallback();
       return;
@@ -492,11 +889,12 @@ export function installHangarShowcase(menus, screen, kit) {
       ? { ...base, aircraft: id }
       : { ...base, aircraft: id, failures: {}, events: {}, randomDisasters: false };
     menus.hooks.onClick && menus.hooks.onClick('fly');
+    recent.bump(id);
     menus.hooks.startFree(setup);
     return true;
   };
 
-  /* Keys: ← and → browse while the hangar is up and nothing is being typed in. */
+  /* Keys: ← and → browse while the hangar is up and nothing is being typed in; / jumps to the search box. */
   window.addEventListener('keydown', (e) => {
     if (menus.current !== 'hangar' || !menus.isOpen) return;
     const el = e.target;
@@ -504,6 +902,10 @@ export function installHangarShowcase(menus, screen, kit) {
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       e.preventDefault();
       ui.step(e.key === 'ArrowLeft' ? -1 : 1);
+    } else if (e.key === '/') {
+      e.preventDefault();
+      const box = $('[data-hs-search]');
+      if (box) box.focus({ preventScroll: true });
     }
   });
 

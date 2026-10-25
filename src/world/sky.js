@@ -349,6 +349,29 @@ export class SkyDome {
     }
   }
 
+  /**
+   * How far round its centre the sun's shadow map reaches (metres, each way).
+   *
+   * 150 everywhere but the cockpit. From the seat, the shadows that matter
+   * are the canopy bow across the panel, the window posts on the glareshield,
+   * the glareshield's own edge over the screens — centimetres across, and at
+   * 150 m a texel of the shadow map is 30 cm (medium) or 15 (high), so the
+   * cockpit was either all in shadow or all in sun. Pulled in to 16 m round
+   * the pilot's eye, a texel is 1.6 to 3 cm. The normal bias is in world
+   * units, so it scales with it, or every thin part would cast nothing.
+   */
+  setShadowReach(d) {
+    if (!this.sun.shadow || this._reach === d) return;
+    this._reach = d;
+    const cam = this.sun.shadow.camera;
+    cam.left = -d;
+    cam.right = d;
+    cam.top = d;
+    cam.bottom = -d;
+    cam.updateProjectionMatrix();
+    this.sun.shadow.normalBias = d >= 150 ? 0.6 : Math.max(0.025, 0.6 * (d / 150) * 0.6);
+  }
+
   /** Keep the shadow frustum centred on the aircraft. */
   followTarget(pos) {
     this.sunTarget.position.copy(pos);

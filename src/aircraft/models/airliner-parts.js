@@ -296,10 +296,14 @@ export function glazing(h, panes, { frame = 0.07, frameOff = 0.012, glassOff = 0
   const glass = [];
   const wipers = [];
   const outlines = [];
+  // Each pane in the hull's own (z, s), right side, with its frame's width:
+  // what the cockpit cuts its window openings on (cockpit/flightdeck.js).
+  const quads = [];
   const P = new THREE.Vector3();
   const N = new THREE.Vector3();
   for (const pane of panes) {
     const quad = pane.corners.map((c) => cornerZS(h, c));
+    quads.push({ name: pane.name, quad, frame: pane.frame ?? frame, glassOff, frameOff });
     const outer = offsetQuad(h, quad, pane.frame ?? frame);
     for (const side of [1, -1]) {
       frames.push(skinPatch(h, outer, side, frameOff, frameGrid[0], frameGrid[1]));
@@ -342,6 +346,7 @@ export function glazing(h, panes, { frame = 0.07, frameOff = 0.012, glassOff = 0
     glass: mergeGeometries(glass),
     wipers: wipers.length ? mergeGeometries(wipers.map(toNonIndexedSafe)) : null,
     outlines,
+    quads,
   };
 }
 

@@ -455,6 +455,16 @@ export function hull(def) {
     section,
     zMin,
     zMax,
+    /*
+     * The glass, as the lines it was cut along: which windows, on which
+     * named lines, between which stations. The cockpit (aircraft/cockpit/
+     * canopy.js) cuts its interior on exactly these, so the window frames
+     * seen from the seat are the windows drawn outside.
+     */
+    glazing: {
+      lines: Object.fromEntries(lineDefs.map((L) => [L.name, L.at])),
+      windows: (def.windows || []).map((w) => ({ z0: w.z0, z1: w.z1, from: w.from ?? 'top', to: w.to, side: w.side || 'both' })),
+    },
     /** Half-width of the skin at height y above the axis, at station z. */
     halfWidthAt(z, y) {
       const c = section(z);
