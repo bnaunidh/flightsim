@@ -250,7 +250,11 @@ export const AIRCRAFT = [
       retractable: true,
       main: { x: 1.5, y: -1.5, z: 0.5 },
       power: { kind: 'prop', count: 1, propRadius: 1.15, z: -2.7 },
-      eye: [-0.24, 0.44, -0.05],
+      // 10 cm higher and 35 cm nearer the windscreen than the trainer's seat
+      // (the Courier's cabin runs further forward): the sill's frame cut the
+      // view 3.5 degrees under the horizon, where a 3-degree approach puts
+      // the runway; the cowl drops 9 degrees away now (wave-8 cockpit check).
+      eye: [-0.24, 0.537, -0.37],
       /*
        * Drawing only (models/courier.js); the flight model reads none of
        * these. The tail was the trainer's, 0.9 m further forward than the
@@ -344,7 +348,12 @@ export const AIRCRAFT = [
       gearStiffness: 1.7,
       power: { kind: 'jet', count: 2, x: 2.8, y: -0.76, z: 0.1, radius: 0.34, length: 0.75 },
       canopy: 'airliner',
-      eye: [-0.3, 0.3, -1.5],
+      // 8.6 cm lower and 2 cm nearer the glass than first placed: the eye sat
+      // above the windscreen's top at the captain's seat (2.5 degrees of sky);
+      // 13.5 of sky and 11.5 of nose-drop now (the wave-8 cockpit check).
+      // 15 cm nearer gave 14.5 of nose-drop but put the screens wholly under
+      // the bottom of the default view (cockpits.mjs holds them in it).
+      eye: [-0.3, 0.258, -1.51],
     },
     aero: {
       ...TRAINER_AERO,

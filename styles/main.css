@@ -1596,6 +1596,63 @@ html.reduce-motion .hud-rstack, html.reduce-motion .hud-rstack > * { transition:
 .touch-pad.is-off,
 .touch-pad.is-on.is-off { background: var(--panel); border-color: var(--panel-line); color: var(--text); opacity: 0.45; }
 .touch-pad:active { transform: scale(0.96); }
+/* The two pads that open a sheet (ui/touch.js buildSheets): lit while it is open. */
+.touch-pad.is-sheet.is-on { background: rgba(88, 198, 255, 0.28); border-color: rgba(124, 199, 255, 0.75); color: var(--text); }
+
+/* ---- The GROUND and SYSTEMS sheets (ui/touch.js buildSheets) ------------
+   Placed by placeSheet(), which measures the stick, the pads and the rudder:
+   left/width/bottom/max-height are inline. Only the look lives here.      */
+.touch-sheet {
+  position: absolute;
+  left: 8px;
+  bottom: 180px;
+  width: min(520px, calc(100% - 16px));
+  max-height: 50vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 12px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--panel-line);
+  background: rgba(10, 16, 26, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  touch-action: pan-y;
+  z-index: 8;
+}
+.touch-sheet[hidden] { display: none; }
+.touch-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.touch-sheet-head strong { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); }
+.touch-sheet-close {
+  width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--panel-line);
+  background: var(--panel); color: var(--text); display: grid; place-items: center; cursor: pointer; flex: 0 0 auto;
+}
+.touch-sheet-close svg { width: 18px; height: 18px; }
+.touch-sheet-note { margin: 0 0 8px; font-size: 12px; line-height: 1.35; color: var(--text-dim); }
+.touch-sheet-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.touch-sheet-label { grid-column: 1 / -1; margin-top: 4px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); }
+.touch-sheet-btn {
+  min-height: 48px; padding: 6px 8px; border-radius: 12px; border: 1px solid var(--panel-line);
+  background: var(--panel); color: var(--text); font-size: 12px; font-weight: 640; letter-spacing: 0.02em; line-height: 1.2;
+  display: grid; place-items: center; text-align: center; cursor: pointer;
+  -webkit-user-select: none; user-select: none; touch-action: manipulation;
+}
+.touch-sheet-btn.is-wide { grid-column: 1 / -1; }
+.touch-sheet-btn.is-on { background: var(--accent); border-color: var(--accent); color: #0b1220; }
+.touch-sheet-btn.is-off { opacity: 0.45; }
+.touch-sheet-btn.is-held, .touch-sheet-btn:active { transform: scale(0.97); }
+.touch-sheet-btn[hidden] { display: none; }
+.hud.is-contrast .touch-sheet { background: #000; border-color: #fff; }
+/* The stand prompt (features/airport-services.js) steps aside while a sheet
+   is open: on an iPad it sat across the sheet's title. The sheet's crew
+   button says the same thing. Opacity, so the feature's own visibility
+   bookkeeping (inline) is untouched. */
+html.has-touch-sheet .ap-prompt { opacity: 0 !important; pointer-events: none !important; }
+/* The on-foot feature's "get out" prompt (features/staff/ui.js) too: on an
+   upright phone and an iPad it sat over the SYSTEMS sheet's AUTOPILOT
+   button, so a tap meant for the autopilot got you out of the aeroplane. */
+html.has-touch-sheet .of-prompt { opacity: 0 !important; pointer-events: none !important; }
 
 /* Rudder: a wide strip along the bottom middle, where a thumb can reach it. */
 .touch-rudder {
@@ -1793,6 +1850,21 @@ html.reduce-motion .hud-rstack, html.reduce-motion .hud-rstack > * { transition:
    steps left to sit beside the wheel instead (232-462, the wheel ends at 222). */
 @media (max-height: 460px) {
   .hud.is-touch.is-boat .touch-rudder { left: 232px; transform: none; }
+  /* A phone on its side: the rudder bar, centred, ran 4 px under the pads on
+     a 667-wide phone (443-585 against 220-447); a little narrower it clears
+     them everywhere, and it is still 173 px wide at the narrowest. */
+  .hud.is-touch:not(.is-boat) .touch-rudder { width: min(230px, 26vw); }
+}
+@media (max-height: 460px) and (min-width: 760px) {
+  /* A phone on its side has width to spare and no height: the pads (seven in
+     an aeroplane on the ground, with GROUND and SYSTEMS) go three to a row,
+     so they are three rows tall (172 px), not four, and stay clear of the
+     right-hand stack. Fixed 62 px tracks (1fr let SYSTEMS stretch them to
+     72) plus 8 px gaps: 202 wide, 560-762 on 844, clear of the rudder bar
+     (312-531). Narrower than 760 the three columns would reach the bar, so
+     two columns stay. */
+  .hud.is-touch .touch-pads { grid-template-columns: repeat(3, 62px); gap: 8px; }
+  .hud.is-touch .touch-pad { min-width: 0; width: 62px; padding: 0 3px; font-size: 11px; }
 }
 /*
  * The boat's rudder bar beside the wheel, not centred: centred on an upright
@@ -2799,7 +2871,29 @@ html.is-touch-device .slot-clear {
   pointer-events: none;
   z-index: 7;
 }
-.hud-choice-row { display: flex; align-items: center; gap: 12px; }
+.hud-choice-row {
+  display: flex; align-items: center; gap: 12px; text-align: left;
+  /* A button, so a touch screen can answer by tapping the row (ui/hud.js
+     setEmergencyChoice); on a desk it looks exactly as the two lines did
+     (no padding, no minimum height: the card is the size it always was). */
+  padding: 0; margin: 0; border: 0; border-radius: 10px;
+  background: none; color: inherit; font: inherit; cursor: pointer;
+}
+.hud.is-touch .hud-choice { pointer-events: auto; }
+.hud.is-touch .hud-choice kbd { display: none; }
+.hud.is-touch .hud-choice-row { min-height: 44px; border: 1px solid var(--panel-line); background: rgba(255, 255, 255, 0.06); padding: 8px 12px; }
+/*
+ * On a touch screen the card takes taps, so it must not sit on a control.
+ * At bottom: 22% it covered the top of the pads on an upright phone (18 px
+ * over BRAKES) and, on a 667 x 375 phone on its side, the middle of GEAR
+ * and BRAKES — a tap on either answered the mayday instead. Upright and on
+ * a tablet: above the eject column and the pads (both end 232 px up).
+ * On its side: right of the stick, left of the pads, above the rudder.
+ */
+.hud.is-touch .hud-choice { bottom: 240px; }
+@media (max-height: 460px) {
+  .hud.is-touch .hud-choice { left: 158px; bottom: 78px; transform: none; max-width: min(300px, calc(100% - 458px)); padding: 10px 12px; }
+}
 .hud-choice kbd {
   min-width: 30px;
   height: 30px;

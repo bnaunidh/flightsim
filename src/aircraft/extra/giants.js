@@ -182,11 +182,18 @@ function an225Fuselage() {
   // a corner given above the skin has nowhere to go but the top centreline,
   // and the pane folds into a zig-zag (seen in the game, 2026-10-16).
   const panes = [
-    { name: 'Windscreen', wiper: true, corners: [{ z: -33.9, x: 0.08 }, { z: -33.7, y: 2.35 }, { z: -32.95, y: 2.85 }, { z: -33.05, x: 0.08 }] },
+    // The windscreen's inboard corners run further up and down the forehead
+    // than its outboard ones: cut only between the side corners, the glass in
+    // front of the captain (x -0.65) was 15 cm tall between its frames, and
+    // his eye line met the frame, not the sky (the wave-8 cockpit check).
+    { name: 'Windscreen', wiper: true, corners: [{ z: -34.15, x: 0.08 }, { z: -33.7, y: 2.35 }, { z: -32.95, y: 2.85 }, { z: -32.75, x: 0.08 }] },
     { name: 'Side window', corners: [{ z: -33.5, y: 2.4 }, { z: -32.3, y: 2.6 }, { z: -32.35, y: 3.12 }, { z: -32.85, y: 2.95 }] },
     { name: 'Rear side window', corners: [{ z: -32.15, y: 2.65 }, { z: -31.35, y: 2.8 }, { z: -31.45, y: 3.4 }, { z: -32.15, y: 3.25 }] },
   ];
-  return { stations, panes, eye: [-0.65, 2.92, -31.9], radomeZ: -34.4, k: 1.8, tailZ: 48.0 };
+  // The eye 5 cm lower and 45 cm nearer the glass than first drawn: it sat
+  // at the windscreen's top (the overhead hung into the top third of the
+  // picture); 13 degrees of sky and 10 of nose-drop now (wave-8 cockpit check).
+  return { stations, panes, eye: [-0.65, 2.87, -32.35], radomeZ: -34.4, k: 1.8, tailZ: 48.0 };
 }
 
 /** C-5: a rounded visor nose, the flight deck above the cargo floor, gear pods, a ramp tail under a T-tail. */
@@ -214,11 +221,15 @@ function c5Fuselage() {
   ];
   // As the An-225's: every side corner below the crown at its station.
   const panes = [
-    { name: 'Windscreen', wiper: true, corners: [{ z: -28.45, x: 0.08 }, { z: -28.25, y: 2.1 }, { z: -27.5, y: 2.65 }, { z: -27.6, x: 0.08 }] },
+    // Inboard corners further up and down the forehead, as the An-225's.
+    { name: 'Windscreen', wiper: true, corners: [{ z: -28.7, x: 0.08 }, { z: -28.25, y: 2.1 }, { z: -27.5, y: 2.65 }, { z: -27.3, x: 0.08 }] },
     { name: 'Side window', corners: [{ z: -28.05, y: 2.15 }, { z: -27.0, y: 2.35 }, { z: -27.05, y: 2.85 }, { z: -27.45, y: 2.72 }] },
     { name: 'Rear side window', corners: [{ z: -26.9, y: 2.38 }, { z: -26.2, y: 2.48 }, { z: -26.25, y: 3.0 }, { z: -26.9, y: 2.92 }] },
   ];
-  return { stations, panes, eye: [-0.62, 2.7, -26.6], radomeZ: -29.3, k: 1.75, tailZ: 44.81 };
+  // The eye 5 cm lower and 30 cm nearer the glass than first drawn: the
+  // windscreen's top was a degree over the eye line; 14 degrees of sky and
+  // 10 of nose-drop now (the wave-8 cockpit check).
+  return { stations, panes, eye: [-0.62, 2.65, -26.9], radomeZ: -29.3, k: 1.75, tailZ: 44.81 };
 }
 
 /*

@@ -32,7 +32,15 @@ global.document = {
   createElement: () => ({
     getContext: () =>
       new Proxy(
-        { measureText: (t) => ({ width: String(t).length * 6 }) },
+        {
+          measureText: (t) => ({ width: String(t).length * 6 }),
+          // As the browser's: a negative corner radius throws (the C-17's
+          // panel once came out with a negative height, and its deck fell
+          // back to the generic cockpit in the game while this stub said ok).
+          roundRect: (x, y, w, h, r) => {
+            if (!(r >= 0)) throw new RangeError(`Radius value ${r} is negative.`);
+          },
+        },
         { get: (o, k) => (k in o ? o[k] : () => ({ addColorStop() {}, data: new Uint8ClampedArray(4) })), set: () => true }
       ),
     width: 0,
@@ -763,7 +771,10 @@ for (const id of [...JETS, ...AIRLINERS, ...HELIS].filter((i) => !ONLY || ONLY.i
     const seen = [];
     const leak = clearFraction(eye, skin, opaque, 0.002, seen);
     if (DEBUG && seen.length) console.log(id, 'skin seen:', seen.slice(0, 12).map((p) => model.worldToLocal(p.clone()).toArray().map((v) => v.toFixed(2)).join(',')).join('  '));
-    ok(`${id}: no daylight through the flight deck's walls`, leak <= 0.01, `${(leak * 100).toFixed(1)}% of ${skin.length} skin points seen straight through`);
+    // A deck that is panes and frames from end to end (the An-225's, its
+    // windscreen running 1.4 m down the forehead) leaves no wall outside the
+    // frames' margins to sample; the panes themselves are checked above.
+    ok(`${id}: no daylight through the flight deck's walls`, skin.length === 0 || leak <= 0.01, skin.length ? `${(leak * 100).toFixed(1)}% of ${skin.length} skin points seen straight through` : 'no wall outside the panes to sample');
     // The room is as wide as the real aeroplane's nose lets it be: measured at
     // the eye, between 45 % and 100 % of the published fuselage width (the
     // pilots sit in the nose's taper; an upper-deck cockpit on the hump).
@@ -950,6 +961,150 @@ for (const id of [...JETS, ...AIRLINERS, ...HELIS].filter((i) => !ONLY || ONLY.i
     if (ctl.collective) moved.push(['collective', ctl.collective.rotation.x > 0.3]);
     ok(`${id}: the controls move with the pilot's hands`, moved.length >= 2 && moved.every(([, m]) => m), moved.map(([n, m]) => `${n}:${m}`).join(' '));
     ok(`${id}: no NaN after flying`, nanCount(cockpit) === 0);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 8. The view out of the windscreen (the wave-8 cockpit check)
+ *
+ * From the pilot's eye, straight ahead: how many degrees of clear glass
+ * there are above the eye line before the windscreen's top frame (or the
+ * overhead panel, the HUD's projector) crosses the view, and how far the
+ * view drops below it before the glareshield, the sill's frame or the nose
+ * gets in the way. The An-225's windscreen top sat AT the eye (the overhead
+ * hung into the top third of the picture); the C-17's nose came up 5
+ * degrees under the horizon, where a 3-degree approach puts the runway.
+ *
+ * Measured as the checker measured it: rays from the eye, half a degree
+ * apart, against everything opaque in the cockpit and the exterior's own
+ * skin beyond the glass (its front faces, more than 1.2 m out — the carved
+ * parts round the eye are clipped away in the renderer), with the exterior
+ * in its seated state (userData.viewing). Five yaws across the windscreen,
+ * the median, so one post or wiper does not decide it.
+ *
+ * The bands are the cockpit view's; the realistic view (16 cm back, 2 cm
+ * lower) gets 3 degrees of slack. Every eye stays 10 cm clear of the room.
+ * ------------------------------------------------------------------ */
+const { VIEW_PITCH_MAX } = await import(SRC + 'aircraft/cockpit/flightdeck.js');
+/** Least clear windscreen above the eye line / least nose-drop below it, degrees, cockpit view. */
+const VIEW_BANDS = {
+  // Wave 9 moved these eyes (and widened four giants' windscreen inboard
+  // corners); measured after the move, a degree or two under what they give.
+  an225: { above: 12, below: 9 }, // was 0 / 0: the eye sat at the windscreen's top
+  c5: { above: 13, below: 9 }, // was 1 / 6.5
+  c17: { above: 11, below: 10 }, // was 6 / 5
+  b1b: { above: 8, below: 6 }, // was 2.5 / 2: the slender nose allows no more
+  concorde: { above: 9, below: 7 }, // was 4.5 / 2: the visor's small panes
+  b737: { above: 14, below: 13 }, // was 27 / 8
+  q400: { above: 11, below: 10 }, // was 26 / 7.5
+  meridian: { above: 12, below: 10 }, // was 2.5 / 12
+  courier: { above: 17, below: 8 }, // was 18 / 3.5
+  // Unchanged, held where they were.
+  b747: { above: 20, below: 14 },
+  dreamlifter: { above: 20, below: 14 },
+  a320: { above: 22, below: 9 },
+  a321: { above: 22, below: 9 },
+  a380: { above: 27, below: 13 },
+  b777: { above: 22, below: 9 },
+  belugaxl: { above: 21, below: 9 },
+  skylark: { above: 19, below: 7 },
+  // Not held: the 787 and the A350. From the captain's seat (x -0.76) the
+  // sweep meets the deck skin 1.7-2 m out at every pitch — the smooth nose's
+  // windscreen cut-out wants a look of its own (their panes' lower edges are
+  // open to the sky, cockpits.mjs above, so it is the cut at the eye's x).
+};
+
+/** { above, below } for the view from `from`, degrees; `near` the closest cockpit surface. */
+function viewOut(s, from) {
+  const { model, cockpit } = s;
+  const ud = cockpit.userData;
+  const opaque = opaqueOf(cockpit);
+  const ext = [];
+  model.traverse((o) => {
+    if (!o.isMesh || o.userData.seeThrough) return;
+    const mat = Array.isArray(o.material) ? o.material[0] : o.material;
+    if (mat && mat.transparent) return;
+    for (let p = o; p; p = p.parent) if (!p.visible || p === cockpit) return;
+    ext.push(o);
+  });
+  const fwd = new THREE.Vector3();
+  const first = (pitchDeg, yawDeg) => {
+    const p = (pitchDeg * Math.PI) / 180;
+    const y = (yawDeg * Math.PI) / 180;
+    fwd.set(Math.sin(y) * Math.cos(p), Math.sin(p), -Math.cos(p) * Math.cos(y)).transformDirection(model.matrixWorld);
+    ray.set(from, fwd);
+    ray.near = 0.01;
+    ray.far = 8;
+    if (ray.intersectObjects(opaque, false).length) return true;
+    return ray.intersectObjects(ext, false).some((h) => h.distance > 1.2);
+  };
+  // The first angle from which the view stays blocked for 2 degrees (four
+  // steps): a wiper blade or a post is seen past; a frame, and the skin
+  // behind it, is not.
+  const sweep = (sgn, yaw) => {
+    let run = 0;
+    let start = 60;
+    for (let a = 0; a <= 62; a += 0.5) {
+      if (!first(sgn * a, yaw)) {
+        run = 0;
+        continue;
+      }
+      if (!run) start = a;
+      if (++run >= 4) return start;
+    }
+    return 60;
+  };
+  const med = (xs) => xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+  const yaws = [-6, -3, 0, 3, 6];
+  return { above: med(yaws.map((y) => sweep(1, y))), below: med(yaws.map((y) => sweep(-1, y))), near: nearest(from, meshesOf(cockpit)).d, viewPitch: ud.viewPitchDeg || 8 };
+}
+
+for (const [id, band] of Object.entries(VIEW_BANDS).filter(([i]) => !ONLY || ONLY.includes(i))) {
+  let s;
+  try {
+    s = seated(id);
+  } catch (e) {
+    ok(`${id}: builds`, false, e && e.message);
+    continue;
+  }
+  const ud = s.cockpit.userData;
+  if (ud.viewing) ud.viewing(true);
+  try {
+    for (const [view, from, slack] of [['cockpit view', s.eye, 0], ['realistic cockpit', s.eye.clone().add(REALISTIC_OFFSET), 3]]) {
+      const v = viewOut(s, from);
+      ok(`${id} (${view}): ${band.above - slack}+ degrees of clear windscreen above the eye line`, v.above >= band.above - slack, `${v.above} degrees`);
+      ok(`${id} (${view}): the nose drops ${band.below - slack}+ degrees below the eye line (a 3-degree approach shows the runway over the glareshield)`, v.below >= band.below - slack, `${v.below} degrees`);
+      ok(`${id} (${view}): the eye is 10 cm clear of the room`, v.near >= 0.1, `${v.near.toFixed(3)} m`);
+    }
+  } finally {
+    if (ud.viewing) ud.viewing(false);
+  }
+  // The default view looks down at most VIEW_PITCH_MAX degrees: at 20 the
+  // 747's and the Q400's horizons sat a fifth of the way down the picture.
+  ok(`${id}: the default cockpit view looks down at most ${VIEW_PITCH_MAX} degrees`, (ud.viewPitchDeg || 8) <= VIEW_PITCH_MAX, `${(ud.viewPitchDeg || 8).toFixed(1)} degrees`);
+  // ...and the screens are still in it. The airliner panel hangs under the
+  // windscreen's sill, so an eye moved up or forward for the view over the
+  // nose looks down on it more steeply: with the 15-degree cap, eyes moved
+  // that far (wave 9's first C-17, 737, Q400 and Meridian eyes) left the
+  // captain's PFD 0-40 % inside the bottom of the picture, where v72 showed
+  // all of it. Vertical field of view: 68 degrees at rest in the cockpit
+  // view, 56 in the realistic one (flight/camera.js).
+  const pfd = [];
+  s.cockpit.traverse((o) => {
+    if (o.isMesh && o.name === 'display captain PFD') pfd.push(o);
+  });
+  if (pfd.length) {
+    const box = new THREE.Box3();
+    for (const o of pfd) box.expandByObject(o);
+    const zc = (box.min.z + box.max.z) / 2;
+    const vp = ud.viewPitchDeg || 8;
+    for (const [view, from, half, need] of [['cockpit view', s.eye, 34, 0.9], ['realistic cockpit', s.eye.clone().add(REALISTIC_OFFSET), 28, 0.6]]) {
+      const down = (y) => (Math.atan2(from.y - y, from.z - zc) * 180) / Math.PI;
+      const top = down(box.max.y);
+      const bot = down(box.min.y);
+      const inView = Math.max(0, Math.min(1, (vp + half - top) / (bot - top)));
+      ok(`${id} (${view}): the captain's PFD is in the default view (${need * 100}%+ of it)`, inView >= need, `${(inView * 100).toFixed(0)}% (${top.toFixed(0)}-${bot.toFixed(0)} degrees down, the picture's bottom edge ${(vp + half).toFixed(0)})`);
+    }
   }
 }
 

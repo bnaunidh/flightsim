@@ -7,20 +7,16 @@ This is written in plain language on purpose. It is the whole licence.
 WHAT YOU MAY DO
 
   You may use this game, copy it, share it, change it, and build your own
-  things from it — for fun, for school, or for a project of your own — as long
-  as you give credit to thankdapro. A line such as
+  things from it — for fun, for school, for a project of your own, or for a
+  game or asset on Roblox or any other platform — as long as you give credit
+  to thankdapro. A line such as
 
       "Based on Island Flight Simulator by thankdapro"
 
-  somewhere people can see it (your credits, your README, your page) is enough.
-  Keep this licence file with any copy of the code you pass on.
+  somewhere people can see it (your credits, your README, your game's page)
+  is enough. Keep this licence file with any copy of the code you pass on.
 
 WHAT YOU MAY NOT DO
-
-  You may not use this game, its code, its models, its artwork, its sounds or
-  any part of it in a Roblox game, as a Roblox asset, or in anything sold or
-  distributed on the Roblox platform. That includes porting it, recreating it,
-  or using parts of it there. No exceptions.
 
   You may not claim you made it, or remove the credit to thankdapro.
 
@@ -32,6 +28,17 @@ THIRD-PARTY CODE
   three.js (src/vendor/three.module.js) is not ours. It is by Ricardo Cabello
   (mrdoob) and the three.js contributors under the MIT licence; its full text
   is in src/vendor/three.LICENSE and it stays under that licence.
+
+SCP FOUNDATION CONTENT
+
+  There is none in the game yet; some is planned. Anything in the game that
+  is based on the SCP Foundation — the names, the articles, the logo, anything
+  taken or adapted from the SCP Wiki (scpwiki.com) — is the work of the SCP
+  Wiki community and is licensed under Creative Commons Attribution-ShareAlike
+  3.0 (CC BY-SA 3.0), not under this licence. If you copy or change that part
+  of the game, the CC BY-SA 3.0 terms apply to it: credit the SCP Wiki and its
+  authors, and share your version of that content under the same licence.
+  https://creativecommons.org/licenses/by-sa/3.0/
 
 NO WARRANTY
 

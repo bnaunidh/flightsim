@@ -66,6 +66,14 @@ const S = {
   t: 0,
   scan: 0,
   push: null,
+  /*
+   * Which way round the next push swings: 'auto' (the way that ends facing
+   * the runway's start), 'noseLeft' or 'noseRight'. A touch screen's ground
+   * sheet (ui/touch.js) sets it; the keyboard has no key for it and keeps
+   * 'auto'. Read when the push is planned, so changing it mid-push does
+   * nothing until the next one.
+   */
+  pushPref: 'auto',
   prompt: null,
   // True while the prompt is kept off screen (paused, a menu, HUD hidden).
   away: false,
@@ -498,7 +506,15 @@ function planPush(sim) {
    */
   const want = departureHeading();
   const d = ((((h0 - want) % 360) + 540) % 360) - 180;
-  const first = d >= 0 ? 1 : -1;
+  /*
+   * Which way round first: the way that ends facing the runway's start, or
+   * the way the player asked for on the touch screen's ground sheet
+   * (S.pushPref). Turn +1 is tail right, so the nose swings to the
+   * aeroplane's LEFT. The other way round is still tried if the asked-for
+   * way is not clear anywhere — a push into the aeroplane next door is not
+   * a preference anyone has.
+   */
+  const first = S.pushPref === 'noseLeft' ? 1 : S.pushPref === 'noseRight' ? -1 : d >= 0 ? 1 : -1;
   const P = {
     p0: { x: ac.pos.x, z: ac.pos.z },
     h0,
@@ -506,6 +522,7 @@ function planPush(sim) {
     r0,
     straight: 4,
     turn: first,
+    pref: S.pushPref,
     total: 4,
     s: 0,
     lastH: h0,
@@ -1086,10 +1103,25 @@ registerExtension({
   ],
 });
 
-/** For the tests. */
+/** The ways a push can swing (S.pushPref): see planPush(). */
+export const PUSH_PREFS = Object.freeze(['auto', 'noseLeft', 'noseRight']);
+
+/** Ask for the next push to end with the nose left, right, or the tug's choice ('auto'). Anything else is 'auto'. */
+export function setPushPref(pref) {
+  S.pushPref = PUSH_PREFS.includes(pref) ? pref : 'auto';
+  return S.pushPref;
+}
+
+export function pushPref() {
+  return S.pushPref;
+}
+
+/** For the tests (and main.js hudAction, for the touch screen's ground sheet). */
 export const __airportServices = {
   S,
   planPush,
+  setPushPref,
+  pushPref,
   pushPose,
   standUnder,
   playerInfo,

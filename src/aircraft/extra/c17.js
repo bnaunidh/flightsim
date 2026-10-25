@@ -83,7 +83,12 @@ function c17Fuselage() {
     { name: 'Side window', corners: [{ z: -21.2, y: 2.15 }, { z: -20.3, y: 2.35 }, { z: -20.35, y: 2.95 }, { z: -20.7, y: 2.8 }] },
     { name: 'Rear side window', corners: [{ z: -20.2, y: 2.4 }, { z: -19.5, y: 2.5 }, { z: -19.55, y: 3.1 }, { z: -20.2, y: 3.0 }] },
   ];
-  return { stations, panes, eye: [-0.6, 2.7, -20.0], radomeZ: -22.6, k: 1.7, tailZ: 29.04 };
+  // The eye 15 cm higher and 15 cm nearer the glass than first drawn: the
+  // nose came up 5 degrees under the horizon, where a 3-degree approach puts
+  // the runway; it drops 11.5 degrees away now (the wave-8 cockpit check).
+  // No nearer: 30 cm nearer gave 12.5 but sank the screens (which sit on
+  // the sill's low side corners) out of the bottom of the default view.
+  return { stations, panes, eye: [-0.6, 2.85, -20.15], radomeZ: -22.6, k: 1.7, tailZ: 29.04 };
 }
 
 const GLOBEMASTER = c17Fuselage();

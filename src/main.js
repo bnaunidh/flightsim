@@ -43,7 +43,7 @@ import { setModelQuality } from './aircraft/model-quality.js';
 import { createCockpit } from './aircraft/cockpit.js';
 import { TouchControls, isTouchDevice } from './ui/touch.js';
 
-import { Input, keyLabel, HELI_MAP, BOAT_MAP, actionsFor, CONTEXT_GROUP } from './flight/input.js';
+import { Input, keyLabel, HELI_MAP, BOAT_MAP, actionsFor, CONTEXT_GROUP, ACTIONS, codesFor } from './flight/input.js';
 import { CameraRig, VIEW_LABELS, CHASE_BACK, CHASE_UP, chaseScaleFor } from './flight/camera.js';
 
 import { GameAudio } from './audio/index.js';
@@ -102,6 +102,18 @@ import { __airportServices } from './features/airport-services.js';
 const KTS = UNITS.KTS;
 const FT = UNITS.FT;
 const FPM = UNITS.FPM;
+
+/**
+ * The key a touch sheet presses for an action: the player's first binding,
+ * or the default when they have unbound it (a button with nothing behind it
+ * is worse than one that does what it says).
+ */
+function firstCodeFor(action) {
+  const codes = codesFor(action);
+  if (codes && codes.length) return codes[0];
+  const a = ACTIONS[action];
+  return a && a.default && a.default[0] ? a.default[0] : null;
+}
 
 /** Bumped whenever the game changes. Printed on boot so you can tell at a
  *  glance whether a browser is running a stale cached copy. */
@@ -322,6 +334,9 @@ class Game {
       this.touch = new TouchControls(this.hud.wrap, {
         input: this.input,
         onAction: (a) => this.hudAction(a),
+        // The sheets' hold buttons (trim, look behind) and what they show.
+        onHold: (a, down) => this.holdAction(a, down),
+        state: () => this.touchState(),
       });
       this.hud.wrap.classList.add('is-touch');
       // The right-hand stack's touch layout (ui/hud.js): under the band.
@@ -2070,7 +2085,81 @@ class Game {
         );
         break;
       }
+      /*
+       * The touch screen's sheets (ui/touch.js buildSheets): the GROUND
+       * sheet's pushback direction and parking brake, the SYSTEMS sheet's
+       * assist and trim reset, and the mayday card's two answers. Each is
+       * the same rule as its key, so there is one rule and not two.
+       */
+      case 'emergencyLand':
+        this.chooseBrace('land');
+        break;
+      case 'emergencyCircle':
+        this.chooseBrace('circle');
+        break;
+      case 'heliAssist':
+        if (SPEC.rotor && this.aircraft) this.setHeliAssist(this.aircraft.hoverAssist === false, true);
+        break;
+      case 'trimReset':
+        this.input.trimInput = 0;
+        this.hud.notify('Trim back to neutral', 'info', 1.4);
+        break;
+      case 'parkingBrake': {
+        const ac = this.aircraft;
+        if (!ac || !ac.onGround) {
+          this.hud.notify('The parking brake is for the ground', 'info', 2);
+          break;
+        }
+        if (!ac.parkingBrake && ac.groundSpeed > 1.5) {
+          this.hud.notify('Stop first, then set the parking brake', 'warn', 2.4);
+          break;
+        }
+        ac.parkingBrake = !ac.parkingBrake;
+        this.hud.notify(ac.parkingBrake ? 'Parking brake on — power releases it' : 'Parking brake released', 'info', 1.8);
+        break;
+      }
+      case 'pushAuto':
+      case 'pushNoseLeft':
+      case 'pushNoseRight': {
+        const pref = a === 'pushAuto' ? 'auto' : a === 'pushNoseLeft' ? 'noseLeft' : 'noseRight';
+        __airportServices.setPushPref(pref);
+        this.hud.notify(
+          pref === 'auto' ? 'Pushback: the tug picks the way, towards the runway' : `Pushback: nose to the ${pref === 'noseLeft' ? 'left' : 'right'}`,
+          'info',
+          2
+        );
+        break;
+      }
+      default:
+        // A feature's action (the ground crew's P, say) from a touch sheet:
+        // pressed exactly the way its key would be, so it honours Settings.
+        if (ACTIONS[a]) {
+          const code = firstCodeFor(a);
+          if (code) this.tap(code);
+        }
+        break;
     }
+  }
+
+  /** A touch sheet's hold button (trim, look behind): the action's key held down, then let go. */
+  holdAction(a, down) {
+    const code = firstCodeFor(a);
+    if (code) this.key(code, !!down);
+  }
+
+  /** What the touch sheets show (ui/touch.js syncSheets): the crew's state, the push's way round, the switches. */
+  touchState() {
+    const ac = this.aircraft;
+    const S = __airportServices.S;
+    return {
+      crew: S.state,
+      pushPref: S.pushPref,
+      parkingBrake: !!(ac && ac.parkingBrake),
+      autopilot: !!(this.autopilot && this.autopilot.engaged),
+      rotor: !!SPEC.rotor,
+      assist: !!(ac && ac.hoverAssist !== false),
+      brace: this.state === 'flying' && this.braceAvailable(),
+    };
   }
 
   /** Hide the whole interface for a clean shot. U is the way back. */
@@ -3585,10 +3674,12 @@ class Game {
     this.hud.setAutopilot(true, this.autopilot.status(this.activeTarget), this.autopilot);
     this.braceChoice = null;
     this.hud.setEmergencyChoice([
-      { key: '1', label: 'Attempt to land', hint: 'Line up with the runway and fly it down' },
-      { key: '2', label: 'Circle the airport', hint: 'Hold overhead and wait for help' },
+      { key: '1', label: 'Attempt to land', hint: 'Line up with the runway and fly it down', action: 'emergencyLand' },
+      { key: '2', label: 'Circle the airport', hint: 'Hold overhead and wait for help', action: 'emergencyCircle' },
     ]);
-    this.hud.showBanner('Mayday declared', 'Choose: 1 to attempt a landing, 2 to circle.', 'bad', 6);
+    // A touch sheet (SYSTEMS has the MAYDAY button) would sit over the card that asks the question.
+    if (this.touch && this.touch.closeSheets) this.touch.closeSheets();
+    this.hud.showBanner('Mayday declared', this.touch ? 'Tap one: attempt a landing, or circle.' : 'Choose: 1 to attempt a landing, 2 to circle.', 'bad', 6);
     this.audio.available && this.audio.alerts.caution && this.audio.alerts.caution();
   }
 

@@ -956,13 +956,22 @@ export class Hud {
       this.emergencyChoice.hidden = true;
       return;
     }
+    // Each row is a button: on a touch screen there is no 1 or 2 to press,
+    // so the row itself is the answer (`action` goes to onAction).
     this.emergencyChoice.innerHTML = options
       .map(
         (o) =>
-          `<div class="hud-choice-row"><kbd>${o.key}</kbd>`
-          + `<span><strong>${o.label}</strong><em>${o.hint}</em></span></div>`
+          `<button type="button" class="hud-choice-row"${o.action ? ` data-choice="${o.action}"` : ''}><kbd>${o.key}</kbd>`
+          + `<span><strong>${o.label}</strong><em>${o.hint}</em></span></button>`
       )
       .join('');
+    for (const b of this.emergencyChoice.querySelectorAll('button[data-choice]')) {
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        b.blur();
+        this.onAction(b.dataset.choice);
+      });
+    }
     this.emergencyChoice.hidden = false;
   }
 

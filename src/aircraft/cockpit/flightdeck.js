@@ -34,6 +34,9 @@ import { Display, DisplayBus, readFlight, paintPFD, paintND, paintEICAS, paintSy
 import { cockpitMaterials, roundedBox, loft, polygon, part, bezel, crewSeat, sideStick, centreStick, thrustLever, switchPanelMaterial, mergeStatic, carveExterior, insideOnly } from './kit.js';
 import { deckSkin, revealsAndGlass } from './deck-skin.js';
 
+/** The most the cockpit view looks down by default, degrees (see viewPitchDeg below). */
+export const VIEW_PITCH_MAX = 15;
+
 /* ------------------------------------------------------------------ *
  * Per-type character
  *
@@ -349,7 +352,13 @@ export function buildFlightDeck(ctx) {
    * ================================================================ */
   const tilt = -0.12;
   const yTop = yG - 0.125;
-  const yBot = E.y - 0.86;
+  // The panel's bottom: 86 cm under the eye, and never less than 35 cm under
+  // its top. The glareshield sits on the LOWEST corner of the windscreen's
+  // sill, and on the blunt-nosed giants (C-17, An-225, C-5) that corner wraps
+  // far down the side: the C-17's panel came out 9 cm tall, and with its eye
+  // raised in wave 9 its height went negative — the canvas threw on a
+  // negative corner radius and the deck fell back to the generic cockpit.
+  const yBot = Math.min(E.y - 0.86, yTop - Math.max(0.35, C.du + 0.12));
   const pMid = (yTop + yBot) / 2;
   const halfAt = (y) => Math.max(0.3, Math.min(glareHalf, wallX(zPanel, y) - 0.012));
   const right = [];
@@ -782,11 +791,17 @@ export function buildFlightDeck(ctx) {
   group.userData.bus = bus;
   // The view looks down far enough that the screens are in it, in the
   // realistic cockpit's narrower view too (its half-height is 28 degrees):
-  // the row's middle about 21 degrees under the middle of the picture.
+  // the row's middle about 21 degrees under the middle of the picture — but
+  // never more than 15 degrees down. At the old cap of 20 (the 747 and the
+  // Q400, whose screens hang deepest under their eyes) the horizon sat a
+  // fifth of the way down from the top of the picture and the runway, on a
+  // 3-degree approach, well above the middle: too much glareshield, too
+  // little sky. Their screens' lower rows sit at the bottom edge of the
+  // realistic view now; a glance down (look pitch) reads them.
   {
     const rowY = panel.group.position.y + dv * Math.cos(tilt);
     const down = (Math.atan2(E.y - rowY, E.z - zPanel) * 180) / Math.PI;
-    group.userData.viewPitchDeg = clamp(down - 21, 8, 20);
+    group.userData.viewPitchDeg = clamp(down - 21, 8, VIEW_PITCH_MAX);
   }
   group.userData.family = 'airliner';
   group.userData.builder = `airliner:${id}`;

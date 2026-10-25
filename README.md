@@ -266,11 +266,16 @@ console.table(results.checks);
 ## Licence
 
 © thankdapro. Plain-language licence in [`LICENSE`](LICENSE): anyone may use,
-copy, change and build on the game **with credit to thankdapro**; it may
-**not** be used in Roblox games or as Roblox assets.
+copy, change, share and build on the game — in Roblox games and assets too —
+**with credit to thankdapro**. You may copy the game; please give us credit
+(thankdapro).
 
 Bundled three.js (`src/vendor/three.module.js`) remains under its own **MIT**
 licence; the full text is in `src/vendor/three.LICENSE`.
+
+Any SCP Foundation-based content (none yet; coming later) is **CC BY-SA 3.0**
+by the SCP Wiki community ([scpwiki.com](https://scpwiki.com)), not under the
+game licence.
 
 Inspired by PTFS (Pilot Training Flight Simulator) and the Google Earth flight
 simulator. All airlines in the game are parody and not affiliated with any real

@@ -6,7 +6,10 @@
  * the whole game is a few hundred kilobytes and works offline.
  *
  * Everything the game makes is thankdapro's, under the plain-language LICENSE
- * at the root (credit thankdapro; never in Roblox). The two lines at the end —
+ * at the root (credit thankdapro — that is the whole condition; the owner
+ * dropped the Roblox clause on 2026-10-24). Any SCP Foundation-based content,
+ * when it comes, is the SCP Wiki community's under CC BY-SA 3.0. The two
+ * lines at the end —
  * what inspired it, and that the airlines are parody — are the owner's words
  * and the legal pass's; the footer of the front page carries them too.
  */
@@ -33,7 +36,7 @@ export const CREDITS_HTML = `
     <table class="credit-table">
       <thead><tr><th>Asset</th><th>Creator</th><th>Licence</th><th>How it is made</th></tr></thead>
       <tbody>
-        <tr><td>Runway, taxiway and apron surfaces, painted markings, runway numbers</td><td>Island Flight Simulator project</td><td>Game licence — credit thankdapro, not for Roblox (<code>LICENSE</code>)</td><td>Canvas 2D + value noise — <code>src/render/textures.js</code></td></tr>
+        <tr><td>Runway, taxiway and apron surfaces, painted markings, runway numbers</td><td>Island Flight Simulator project</td><td>Game licence — credit thankdapro (<code>LICENSE</code>)</td><td>Canvas 2D + value noise — <code>src/render/textures.js</code></td></tr>
         <tr><td>Grass, sand, rock, terrain blending</td><td>Island Flight Simulator project</td><td>Game licence (<code>LICENSE</code>)</td><td>Fractal value noise, per-vertex blend weights</td></tr>
         <tr><td>Ocean surface and foam</td><td>Island Flight Simulator project</td><td>Game licence (<code>LICENSE</code>)</td><td>Height-field → normal-map conversion</td></tr>
         <tr><td>Aircraft paint, panel lines, rivets, registration</td><td>Island Flight Simulator project</td><td>Game licence (<code>LICENSE</code>)</td><td>Canvas 2D</td></tr>
@@ -91,10 +94,12 @@ export const CREDITS_HTML = `
   <div class="credit-block">
     <h3>This game</h3>
     <p class="credit-copyright">&copy; thankdapro</p>
-    <p>Island Flight Simulator is made by <strong>thankdapro</strong>. Anyone may use it, copy it, change it and
-    build on it <strong>with credit to thankdapro</strong>. It may <strong>not</strong> be used in Roblox games or
-    as Roblox assets. The plain-language licence is the <code>LICENSE</code> file in the source. The bundled
-    three.js library stays under its own MIT licence.</p>
+    <p>Island Flight Simulator is made by <strong>thankdapro</strong>. You may copy the game — please give us
+    credit (thankdapro). Anyone may use it, copy it, change it, share it and build on it, in Roblox games and
+    assets too, <strong>with credit to thankdapro</strong>. The plain-language licence is the <code>LICENSE</code>
+    file in the source. The bundled three.js library stays under its own MIT licence.</p>
+    <p class="credit-scp">Any SCP Foundation-based content (none yet — coming later) is CC BY-SA 3.0 by the SCP Wiki
+    community (<a href="https://scpwiki.com" target="_blank" rel="noopener">scpwiki.com</a>), not under the game licence.</p>
     <p class="credit-inspired">Inspired by PTFS (Pilot Training Flight Simulator) and the Google Earth flight simulator.</p>
     <p class="credit-parody">All airlines are parody and not affiliated with any real company.</p>
   </div>

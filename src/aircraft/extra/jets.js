@@ -64,6 +64,13 @@ const DESC = {
     tip: { x: 17.25, y: 0.17 },
     wingZ: -4.2,
     engines: [{ x: 4.85, y: -2.09, z: -3.4, r: 1.05, length: 3.6 }],
+    // Over the Boeing nose's own eye (12 cm higher, 1 cm nearer the glass):
+    // the glareshield's sill cut the view 8 degrees under the horizon, where
+    // a 3-degree approach puts the runway; 14.5 now, with 15.5 of sky above.
+    // No nearer: 15 cm nearer (and 10 higher) gave 15.5 of nose-drop but
+    // put the screens, which hang under the sill, half out of the bottom of
+    // the default view (cockpits.mjs holds them in it).
+    eye: [-0.5, 0.8, -15.66],
   },
   a321: {
     span: 35.8,
@@ -115,6 +122,12 @@ const DESC = {
     wingZ: -2.3,
     // Turboprops: the propeller plane is z, the nacelle runs back from it.
     engines: [{ x: 4.39, y: 0.75, z: -4.6, r: 0.62, length: 6.2, prop: 2.055, blades: 6 }],
+    // Over the stretched Boeing nose's eye, 8 cm higher and 10 cm further
+    // back: its panes shrink with the fuselage (72 % of a 737's) but the
+    // pilot does not, and the sill's frame cut the view 7.5 degrees under the
+    // horizon; 11.5 now, 12 of sky above. Further back than the template so
+    // the screens, 38 cm in front of the eye there, stay in the default view.
+    eye: [-0.358, 0.56, -12.96],
   },
   // Hand-drawn (see concordeFuselage below): the main hull starts at the
   // droop-nose hinge; the needle nose ahead of it is its own loft that tilts.
@@ -170,11 +183,17 @@ function concordeFuselage() {
     st(-24.5, 0.55, -1.42, 1.12, -0.35),
   ];
   const panes = [
-    { name: 'Windscreen', wiper: true, corners: [{ z: -24.38, x: 0.06 }, { z: -24.28, y: 0.48 }, { z: -23.88, y: 0.82 }, { z: -23.98, x: 0.06 }] },
+    // Inboard corners a little further down and up the nose than the
+    // outboard ones, so the glass in front of the pilot is taller than the
+    // 20 cm it was between its frames (the wave-8 cockpit check).
+    { name: 'Windscreen', wiper: true, corners: [{ z: -24.5, x: 0.06 }, { z: -24.28, y: 0.48 }, { z: -23.88, y: 0.82 }, { z: -23.78, x: 0.06 }] },
     { name: 'Side window', corners: [{ z: -24.18, y: 0.5 }, { z: -23.5, y: 0.6 }, { z: -23.52, y: 1.0 }, { z: -23.8, y: 0.86 }] },
     { name: 'Rear side window', corners: [{ z: -23.38, y: 0.62 }, { z: -22.95, y: 0.66 }, { z: -23.0, y: 1.05 }, { z: -23.38, y: 1.06 }] },
   ];
-  return { stations, cone, panes, eye: [-0.42, 0.72, -22.95], radomeZ: -24.5, k: 0.75, tailZ: 29.66 };
+  // The eye 45 cm nearer the glass than first drawn: Concorde's panes are
+  // small (the visor's), and from 1.4 m back they gave 4.5 degrees of sky
+  // and 2 of nose-drop; 10 and 8 from 1 m (the wave-8 cockpit check).
+  return { stations, cone, panes, eye: [-0.42, 0.72, -23.4], radomeZ: -24.5, k: 0.75, tailZ: 29.66 };
 }
 const CONCORDE = concordeFuselage();
 DESC.concorde.fuselage = CONCORDE;

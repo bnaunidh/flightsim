@@ -37,9 +37,20 @@ export function isTouchDevice() {
 }
 
 export class TouchControls {
-  constructor(host, { input, onAction } = {}) {
+  /**
+   * @param {HTMLElement} host  the HUD wrapper
+   * @param {object} o
+   *   input     the game's Input (this writes into input.touch)
+   *   onAction  (action) => void — a pad or a sheet button pressed once
+   *   onHold    (action, down) => void — a sheet's hold button (trim, look behind)
+   *   state     () => { crew, pushPref, parkingBrake, autopilot, rotor, assist, brace }
+   *             what the sheets show, read a few times a second while one is open
+   */
+  constructor(host, { input, onAction, onHold, state } = {}) {
     this.input = input;
     this.onAction = onAction || (() => {});
+    this.onHold = onHold || (() => {});
+    this.stateFn = typeof state === 'function' ? state : null;
     this.state = {
       pitch: 0,
       roll: 0,
@@ -68,6 +79,7 @@ export class TouchControls {
     this.buildThrottle();
     this.buildRudder();
     this.buildPads();
+    this.buildSheets();
     host.appendChild(this.layer);
   }
 
@@ -294,6 +306,357 @@ export class TouchControls {
     this.dropPad = tap('DROP', 'drop');
     this.dropPad.hidden = true;
     tap(icon('camera', 18), 'camera');
+    this.pads = pads;
+  }
+
+  /* ------------------------------------------------------------ sheets -- */
+
+  /*
+   * Everything else a thumb needs, in two sheets instead of twenty pads.
+   *
+   * The owner (2026-10-24): "update mobile controls so u can do pushback
+   * etc". The pads above are the four things you reach for every minute;
+   * the rest of the aeroplane — the ground crew and the tug, which way the
+   * push swings, the parking brake, the autopilot, the trim wheel, looking
+   * behind, the map, the mayday — had a key each and no button at all, so
+   * on an iPad none of it existed. Two more pads open two sheets:
+   *
+   *   GROUND    on the ground, in an aeroplane: the crew (fuel, bags,
+   *             catering, boarding come with them), PUSH BACK / STOP PUSH,
+   *             which way the nose ends up, the parking brake.
+   *   SYSTEMS   aeroplane and helicopter: autopilot, the helicopter's
+   *             assist, trim (held, like the wheel), look behind (held), the
+   *             mayday when one is on offer, the map, its range, the H card.
+   *
+   * A button presses the action's own key (main.js hudAction's default
+   * branch), so Settings → Controls and the features' own rules apply
+   * unchanged. Hold buttons hold the key down and let it go, and every hold
+   * is released when the sheet closes or the layer hides: an invisible
+   * finger on the trim wheel is how you end up in a loop.
+   *
+   * Where a sheet sits is measured, not guessed (placeSheet): in the gap
+   * between the stick and the pads when there is one (a tablet, a phone on
+   * its side), else across the screen above the pads (a phone held upright).
+   * It never lands on a pad, the stick, the throttle or the rudder.
+   * tests/features/touch-coverage.mjs lists every action's touch control.
+   */
+  buildSheets() {
+    this.openSheet = null;
+    this._holds = new Set();
+    this.sheets = {};
+    this.sheetPads = {};
+    this.groundPad = this.sheetPad('GROUND', 'ground');
+    // Aeroplane only: the helicopter has no tug and no stand (main.css hides .is-wing in the rotor).
+    this.groundPad.classList.add('is-wing');
+    this.groundPad.hidden = true;
+    this.systemsPad = this.sheetPad('SYSTEMS', 'systems');
+
+    const G = this.buildSheet('ground', 'Ground ops', 'The crew brings fuel, bags, catering and boarding, then the tug pushes you back.');
+    this.crewBtn = this.sheetButton(G, 'CALL CREW', 'services', { wide: true });
+    this.sheetLabel(G, 'Push back with the nose to the…');
+    this.pushBtns = {
+      noseLeft: this.sheetButton(G, '◀ LEFT', 'pushNoseLeft'),
+      auto: this.sheetButton(G, 'RUNWAY (AUTO)', 'pushAuto'),
+      noseRight: this.sheetButton(G, 'RIGHT ▶', 'pushNoseRight'),
+    };
+    this.parkBtn = this.sheetButton(G, 'PARKING BRAKE', 'parkingBrake', { wide: true });
+
+    const Y = this.buildSheet('systems', 'Systems', '');
+    this.apBtn = this.sheetButton(Y, 'AUTOPILOT', 'autopilot', { wide: true });
+    this.assistBtn = this.sheetButton(Y, 'STABILITY ASSIST', 'heliAssist', { wide: true });
+    this.assistBtn.hidden = true;
+    this.sheetLabel(Y, 'Trim (hold)');
+    this.sheetButton(Y, '▼ NOSE DOWN', 'trimDown', { hold: true });
+    this.sheetButton(Y, 'NEUTRAL', 'trimReset');
+    this.sheetButton(Y, 'NOSE UP ▲', 'trimUp', { hold: true });
+    this.sheetButton(Y, 'LOOK BEHIND (hold)', 'lookBehind', { hold: true, wide: true });
+    this.braceBtn = this.sheetButton(Y, 'MAYDAY — DECLARE AN EMERGENCY', 'brace', { wide: true });
+    this.braceBtn.hidden = true;
+    this.sheetButton(Y, 'MAP', 'minimap');
+    this.sheetButton(Y, 'MAP RANGE', 'minimapRange');
+    // The H card opens in the middle of the screen, under a sheet: the sheet steps away for it.
+    this.sheetButton(Y, 'CONTROLS', 'help', { closes: true });
+
+    this._onResize = () => {
+      if (this.openSheet) this.placeSheet(this.sheets[this.openSheet]);
+    };
+  }
+
+  /** A pad in the grid that opens a sheet (lit while it is open). */
+  sheetPad(label, id) {
+    const b = el('button', 'touch-pad is-sheet', label);
+    b.type = 'button';
+    b.dataset.sheet = id;
+    b.setAttribute('aria-expanded', 'false');
+    b.addEventListener('click', (e) => {
+      e.preventDefault();
+      b.blur();
+      this.toggleSheet(id);
+    });
+    this.pads.appendChild(b);
+    this.sheetPads[id] = b;
+    return b;
+  }
+
+  buildSheet(id, title, note) {
+    const s = el('div', 'touch-sheet');
+    s.dataset.sheet = id;
+    s.hidden = true;
+    s.setAttribute('role', 'group');
+    s.setAttribute('aria-label', title);
+    const head = el('div', 'touch-sheet-head');
+    head.appendChild(el('strong', null, title));
+    const close = el('button', 'touch-sheet-close', icon('close', 18));
+    close.type = 'button';
+    close.setAttribute('aria-label', `Close ${title}`);
+    close.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.closeSheets();
+    });
+    head.appendChild(close);
+    s.appendChild(head);
+    if (note) s.appendChild(el('p', 'touch-sheet-note', note));
+    const grid = el('div', 'touch-sheet-grid');
+    s.appendChild(grid);
+    s.grid = grid;
+    this.layer.appendChild(s);
+    this.sheets[id] = s;
+    return s;
+  }
+
+  sheetLabel(sheet, text) {
+    const l = el('div', 'touch-sheet-label', text);
+    sheet.grid.appendChild(l);
+    return l;
+  }
+
+  /**
+   * A sheet button for `action`. A plain one presses it on click; a `hold`
+   * one holds its key from finger down to finger up. `data-act` carries the
+   * action id, which is what tests/features/touch-coverage.mjs reads.
+   */
+  sheetButton(sheet, label, action, { wide = false, hold = false, closes = false } = {}) {
+    const b = el('button', `touch-sheet-btn${wide ? ' is-wide' : ''}${hold ? ' is-hold' : ''}`, label);
+    b.type = 'button';
+    b.dataset.act = action;
+    if (hold) {
+      let id = null;
+      const set = (on) => {
+        if (on === this._holds.has(action)) return;
+        if (on) this._holds.add(action);
+        else this._holds.delete(action);
+        b.classList.toggle('is-held', on);
+        this.onHold(action, on);
+      };
+      b.addEventListener('pointerdown', (e) => {
+        if (id !== null || b.getAttribute('aria-disabled') === 'true') return;
+        e.preventDefault();
+        id = e.pointerId;
+        try {
+          b.setPointerCapture(id);
+        } catch (err) {
+          /* a synthetic pointer in a test has nothing to capture */
+        }
+        set(true);
+      });
+      const off = (e) => {
+        if (id !== null && e && e.pointerId !== undefined && e.pointerId !== id) return;
+        id = null;
+        set(false);
+      };
+      b.addEventListener('pointerup', off);
+      b.addEventListener('pointercancel', off);
+      b.addEventListener('pointerleave', off);
+      b.addEventListener('lostpointercapture', off);
+      b._release = () => off(null);
+    } else {
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        b.blur();
+        if (b.getAttribute('aria-disabled') === 'true') return;
+        if (closes) this.closeSheets();
+        this.onAction(action);
+      });
+    }
+    sheet.grid.appendChild(b);
+    return b;
+  }
+
+  toggleSheet(id) {
+    if (this.openSheet === id) {
+      this.closeSheets();
+      return;
+    }
+    this.closeSheets();
+    const s = this.sheets[id];
+    if (!s) return;
+    this.openSheet = id;
+    s.hidden = false;
+    const pad = this.sheetPads[id];
+    if (pad) {
+      pad.classList.add('is-on');
+      pad.setAttribute('aria-expanded', 'true');
+    }
+    if (this.stateFn) this.syncSheets(this.stateFn());
+    this.placeSheet(s);
+    this._markOpen();
+    window.addEventListener('resize', this._onResize);
+  }
+
+  /** Every sheet away, every held key let go. */
+  closeSheets() {
+    this.releaseHolds();
+    if (!this.openSheet) return;
+    const s = this.sheets[this.openSheet];
+    if (s) s.hidden = true;
+    const pad = this.sheetPads[this.openSheet];
+    if (pad) {
+      pad.classList.remove('is-on');
+      pad.setAttribute('aria-expanded', 'false');
+    }
+    this.openSheet = null;
+    this._markOpen();
+    window.removeEventListener('resize', this._onResize);
+  }
+
+  releaseHolds() {
+    if (!this._holds || !this._holds.size) return;
+    for (const s of Object.values(this.sheets)) {
+      for (const b of s.querySelectorAll('.touch-sheet-btn.is-hold')) if (b._release) b._release();
+    }
+    // Belt and braces: anything a button did not report, let go of here.
+    for (const a of [...this._holds]) {
+      this._holds.delete(a);
+      this.onHold(a, false);
+    }
+  }
+
+  /**
+   * Where the sheet goes, measured against the controls that are actually
+   * on screen right now. Beside: in the gap between the stick (or the wheel)
+   * and the pads, when that gap is wide enough for a sheet worth having
+   * (or a little narrower, when there is no room above), above the rudder.
+   * Above: across the screen, over the top edge of every control (pads,
+   * stick, throttle, eject), when it is not (a phone held upright). Its height stops under the
+   * objective banner where it can; the banner is words, the pads are not.
+   */
+  placeSheet(s) {
+    if (!s || s.hidden) return;
+    const L = this.layer.getBoundingClientRect();
+    if (L.width < 2 || L.height < 2) return;
+    const box = (n) => {
+      if (!n || n.hidden) return null;
+      const r = n.getBoundingClientRect();
+      return r.width > 1 && r.height > 1 ? r : null;
+    };
+    const stick = box(this.stick);
+    const pads = box(this.pads);
+    const rudder = box(this.layer.querySelector('.touch-rudder'));
+    const lever = box(this.leverEl) || box(this.throttleEl);
+    const pedals = box(this.layer.querySelector('.touch-pedals'));
+    const wheel = box(this.layer.querySelector('.touch-wheel'));
+    const leftEdge = Math.max(stick ? stick.right : 0, wheel ? wheel.right : 0);
+    const rightEdge = Math.min(pads ? pads.left : L.right, lever ? lever.left : L.right, pedals ? pedals.left : L.right);
+    const gap = rightEdge - leftEdge;
+    /*
+     * Under the objective banner when that leaves a sheet worth reading
+     * (260 px); on a phone on its side it does not, and a sheet 150 px tall
+     * that scrolls is worse than one over the banner's words for a moment.
+     * Then it stops under the dock instead.
+     */
+    const topLimit = (bottom) => {
+      const obj = this.layer.parentElement && this.layer.parentElement.querySelector(':scope > .hud-top');
+      const r = obj ? obj.getBoundingClientRect() : null;
+      const under = r && r.height > 1 ? r.bottom - L.top + 8 : 72;
+      return L.height - bottom - under >= 260 ? under : 64;
+    };
+    /*
+     * The eject column (features/eject/ui.js) is a fixed layer above the
+     * whole HUD, on the left above the stick: a sheet under it had its MAP
+     * button under EJECT on an upright phone. It is a control like the
+     * others, so the sheet keeps off it rather than hiding it.
+     */
+    const eject = box(document.querySelector('.ej-col'));
+    /*
+     * Above: the sheet is the screen's whole width, so it has to clear the
+     * top of every control, not just the pads (on a phone on its side the
+     * stick and the throttle are taller than the pads in a helicopter).
+     */
+    const tops = [pads, rudder, stick, lever, pedals, wheel, eject].filter(Boolean).map((r) => r.top);
+    const aboveBottom = tops.length ? L.bottom - Math.min(...tops) + 8 : 180;
+    const aboveRoom = L.height - aboveBottom - 8;
+    /*
+     * Beside when the gap is wide; also when it is narrower but going above
+     * leaves no room (a 667 x 375 or 640 x 360 phone on its side: the gap is
+     * 254-281 px, and "above" put the sheet's head, close button and all,
+     * 43-58 px off the top of the screen).
+     */
+    const beside = gap >= 300 || (gap >= 220 && aboveRoom < 260);
+    let left, width, bottom;
+    if (beside) {
+      width = Math.min(520, gap - 16);
+      left = leftEdge - L.left + 8 + Math.max(0, (gap - 16 - width) / 2);
+      // Above the rudder, which is the lowest thing in the gap.
+      bottom = rudder ? L.bottom - rudder.top + 10 : 80;
+    } else {
+      left = 8;
+      width = L.width - 16;
+      bottom = aboveBottom;
+    }
+    // Never taller than the screen above it: the head (and its close button) stays on screen.
+    const room = Math.max(0, L.height - bottom - 8);
+    const maxH = Math.min(room, Math.max(150, L.height - bottom - topLimit(bottom)));
+    const put = (k, v) => {
+      if (s.style[k] !== v) s.style[k] = v;
+    };
+    put('right', 'auto');
+    put('left', `${Math.round(left)}px`);
+    put('width', `${Math.round(width)}px`);
+    put('bottom', `${Math.round(bottom)}px`);
+    put('maxHeight', `${Math.round(maxH)}px`);
+  }
+
+  /** While a sheet is open the stand prompt ("tap here for the ground crew") steps aside: the sheet says the same with a bigger button. */
+  _markOpen() {
+    if (typeof document === 'undefined' || !document.documentElement) return;
+    document.documentElement.classList.toggle('has-touch-sheet', !!this.openSheet);
+  }
+
+  /** The sheets' words and lights, from main.js touchState(). Writes on change only. */
+  syncSheets(st) {
+    if (!st) return;
+    const text = (b, t) => {
+      if (b && b.textContent !== t) b.textContent = t;
+    };
+    const lit = (b, on) => {
+      if (b && b.classList.contains('is-on') !== !!on) b.classList.toggle('is-on', !!on);
+    };
+    const able = (b, on) => {
+      if (!b) return;
+      const want = on ? 'false' : 'true';
+      if (b.getAttribute('aria-disabled') !== want) {
+        b.setAttribute('aria-disabled', want);
+        b.classList.toggle('is-off', !on);
+      }
+    };
+    const CREW = {
+      onStand: ['CALL THE GROUND CREW', true],
+      calling: ['CREW ON THE WAY…', false],
+      serviced: ['PUSH BACK', true],
+      pushback: ['STOP THE PUSH', true],
+      pushed: ['TUG IS CLEAR — TAXI OUT', false],
+    };
+    const c = CREW[st.crew] || ['STOP ON A STAND FOR THE CREW', false];
+    text(this.crewBtn, c[0]);
+    able(this.crewBtn, c[1]);
+    lit(this.crewBtn, st.crew === 'pushback');
+    for (const k in this.pushBtns) lit(this.pushBtns[k], (st.pushPref || 'auto') === k);
+    text(this.parkBtn, st.parkingBrake ? 'PARKING BRAKE — ON (tap to release)' : 'PARKING BRAKE — OFF (tap to set)');
+    lit(this.parkBtn, st.parkingBrake);
+    lit(this.apBtn, st.autopilot);
+    if (this.assistBtn.hidden !== !st.rotor) this.assistBtn.hidden = !st.rotor;
+    lit(this.assistBtn, st.rotor && st.assist);
+    if (this.braceBtn.hidden !== !st.brace) this.braceBtn.hidden = !st.brace;
   }
 
   /** Reflect the aeroplane's state back onto the pads. */
@@ -328,6 +691,31 @@ export class TouchControls {
     }
     // Only offered when there is something to drop.
     if (this.dropPad) this.dropPad.hidden = !(sim && sim.hasCargo);
+    /*
+     * The sheets' pads. GROUND is an aeroplane-on-the-ground thing; SYSTEMS
+     * is for anything that flies. Neither means anything in the van or the
+     * boat (their own controls are in hud-drive.js and hud-boat.js), and a
+     * sheet whose pad has just gone closes with it: a GROUND sheet left open
+     * after take-off would be a stale page of ground-crew buttons.
+     */
+    if (this.groundPad) {
+      const ctx = this.input ? this.input.context : 'plane';
+      const vehicle = this.mode === 'drive' || !!this._boatMode;
+      const ground = !vehicle && ctx === 'plane' && !!ac.onGround;
+      if (this.groundPad.hidden === ground) this.groundPad.hidden = !ground;
+      const systems = !vehicle && (ctx === 'plane' || ctx === 'heli');
+      if (this.systemsPad.hidden === systems) this.systemsPad.hidden = !systems;
+      if ((this.openSheet === 'ground' && !ground) || (this.openSheet === 'systems' && !systems)) this.closeSheets();
+      if (this.openSheet && this.stateFn) {
+        // A few times a second is plenty for words on a sheet.
+        this._sheetTick = (this._sheetTick || 0) + 1;
+        if (this._sheetTick % 8 === 0) {
+          this.syncSheets(this.stateFn());
+          // What it has to keep clear of changes in flight (the eject column, the pads): writes only on change.
+          this.placeSheet(this.sheets[this.openSheet]);
+        }
+      }
+    }
     if (this.gearPad) this.gearPad.classList.toggle('is-on', ac.gearDown);
     if (this.flapPad) {
       const step = ac.flapStep || 0;
@@ -385,7 +773,8 @@ export class TouchControls {
     // Pads that mean nothing on a boat. The brake pad stays but changes what
     // it says, because on a boat the emergency is the same gesture with a
     // different name.
-    for (const p of [this.gearPad, this.flapPad, this.enginePad]) if (p) p.hidden = want;
+    for (const p of [this.gearPad, this.flapPad, this.enginePad, this.groundPad, this.systemsPad]) if (p) p.hidden = want;
+    if (want) this.closeSheets();
     // main.js calls this straight after setMode('drive') (driving.js), so the
     // van's 'HAND' has to survive it, or the van's pad read BRAKES.
     if (this.brakePad) this.brakePad.textContent = want ? 'CRASH STOP' : this.mode === 'drive' ? 'HAND' : 'BRAKES';
@@ -454,6 +843,7 @@ export class TouchControls {
   }
 
   setVisible(on) {
+    if (!on) this.closeSheets();
     this.layer.style.display = on ? '' : 'none';
   }
 }

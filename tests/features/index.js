@@ -71,6 +71,7 @@ import { check as walkAway } from './walk-away.browser.js';
 import { check as landingZone } from './landing-zone.browser.js';
 import { check as hudStack } from './hud-stack.browser.js';
 import { check as hudWins } from './hud-wins.browser.js';
+import { check as touchCoverage } from './touch-coverage.browser.js';
 
 export const CHECKS = [
   { id: 'airport', check: airport },
@@ -171,6 +172,7 @@ export const CHECKS = [
   // After hud-stack: the HUD quick wins — the touchdown card, the state pills, the
   // destination ribbon and beacon, the conditions chip and Full / Clean / Photo.
   { id: 'hud-wins', check: hudWins },
+  { id: 'touch-coverage', check: touchCoverage },
   // After everything that flies: KIT-B — where a Free Flight starts (the picker), the ambient
   // population and the emergency scene, on Gateway and The Big Burn.
   { id: 'maps-kit-b', check: mapsKitB },

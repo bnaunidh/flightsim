@@ -707,9 +707,11 @@ export function installDriveTouch(touch) {
     for (const w of this.driveWidgets) w.node.style.display = driving ? w.on : 'none';
     // The flight pads are gear, flaps, engine and drop. None of them mean
     // anything in a van; the camera button does, so it is the one that stays.
-    for (const p of [this.enginePad, this.gearPad, this.flapPad, this.dropPad]) {
+    // The GROUND and SYSTEMS sheets (ui/touch.js buildSheets) are the aeroplane's too.
+    for (const p of [this.enginePad, this.gearPad, this.flapPad, this.dropPad, this.groundPad, this.systemsPad]) {
       if (p) p.style.display = driving ? 'none' : '';
     }
+    if (driving && this.closeSheets) this.closeSheets();
     // The one flight pad that survives: it is the wheel brakes in the air and
     // the handbrake on the ground, and it is the same key either way.
     if (this.brakePad) this.brakePad.textContent = driving ? 'HAND' : 'BRAKES';

@@ -158,7 +158,12 @@ export const LANCER_GEOMETRY = (() => {
     tail,
     // The fixed glove, starboard: the root along the body and the outer edge at the pin.
     glove: { rootX: 1.45, rootLe: -12.5, rootTe: 7.6, outX: 5.85, outLe: -2.95, outTe: 4.1, y: -0.12, rootThick: 0.95, outThick: 0.6 },
-    eye: [-0.55, 0.92, -18.15],
+    // 10 cm inboard (the seats 0.9 m apart, as in the real one's tight
+    // cockpit), 5 cm higher and 75 cm nearer the glass than first drawn:
+    // from 2 m back the raked windscreen gave 2.5 degrees of sky; 9 of sky
+    // and 7 of nose-drop now, as much as the slender nose allows (the
+    // wave-8 cockpit check).
+    eye: [-0.45, 0.97, -18.9],
     stations: STATIONS,
     strike,
     spanSpread: spanAt(LANCER_WING.min),

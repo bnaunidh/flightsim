@@ -176,7 +176,16 @@ blackout, controls).
   at the nose tip now (model-adapter.js addLights). The lamp sprite stays where the model puts it.
 - Airliner screens sit low under the big windows, so a cockpit may set `userData.viewPitchDeg` (how far down
   the cockpit view looks; camera.js `cockpitPitchDeg`): the airliners work it out so the realistic view
-  holds the screens (A320 about 14, 747 20); everything else keeps 8.
+  holds the screens (A320 about 14), capped at 15 (`VIEW_PITCH_MAX`; at the old cap of 20 the 747's and
+  the Q400's horizons sat a fifth of the way down the picture); everything else keeps 8.
+- The eye sits where the exterior's config says (`eye` in src/aircraft/extra/*.js, types.js for the civil
+  kit): the wave-9 views lane moved the An-225, C-5, C-17, B-1B, Concorde, 737, Q400, Meridian and Courier
+  eyes (and widened four giants' windscreen inboard corners) so each has 8+ degrees of clear windscreen
+  above the eye line and the nose drops away 8+ degrees below it. tests/features/cockpits.mjs holds the
+  bands (`VIEW_BANDS`) and measures them the way the checker did: rays from the eye, 0.5 degrees apart.
+  It also holds the captain's PFD in the default view (90 % of it in the cockpit view, 60 % in the
+  realistic one): the panel hangs under the sill, so an eye pushed far forward or up for the view over
+  the nose loses the screens off the bottom of the picture (the first C-17/737/Q400/Meridian moves did).
 - Cost: screens repaint only when what they show changed (a signature of the numbers they draw, at least
   once a second), at their own rates, on 3/4-size canvases; only parts big enough to see cast shadows.
 

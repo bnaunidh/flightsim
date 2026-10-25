@@ -322,7 +322,10 @@ const lancer = {
 
     /* The flight deck: two pilots side by side, a windscreen and two side windows each. */
     const panes = [
-      { name: 'Windscreen', wiper: true, corners: [{ z: -20.35, x: 0.08 }, { z: -20.15, y: 0.5 }, { z: -19.35, y: 1.02 }, { z: -19.6, x: 0.08 }] },
+      // The inboard corners run further down and up the nose than the
+      // outboard ones: cut level with them, the glass in front of the pilot
+      // was 24 cm tall between its frames (the wave-8 cockpit check).
+      { name: 'Windscreen', wiper: true, corners: [{ z: -20.75, x: 0.08 }, { z: -20.15, y: 0.5 }, { z: -19.35, y: 1.02 }, { z: -19.3, x: 0.08 }] },
       { name: 'Side window', corners: [{ z: -20.0, y: 0.48 }, { z: -19.0, y: 0.52 }, { z: -19.05, y: 1.08 }, { z: -19.3, y: 1.04 }] },
       { name: 'Rear side window', corners: [{ z: -18.85, y: 0.53 }, { z: -18.25, y: 0.55 }, { z: -18.3, y: 1.12 }, { z: -18.85, y: 1.12 }] },
     ];
