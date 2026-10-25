@@ -49,6 +49,7 @@ import { performanceFor, AIRCRAFT } from '../aircraft/types.js';
 import { heightAt } from '../world/terrain.js';
 import { AIRLINER_GEOMETRY } from '../aircraft/extra/airliners.js';
 import * as PROG from '../game/progression.js';
+import { FLASH } from '../render/flash-safety.js';
 
 export const AIRLINER_IDS = Object.freeze(Object.keys(AIRLINER_GEOMETRY));
 const MINE = new Set(AIRLINER_IDS);
@@ -94,6 +95,44 @@ const _aim = new THREE.Vector3();
  * for them this changes nothing.
  */
 const rigCam = { pos: new THREE.Vector3(), mode: null };
+/*
+ * Reduce flashing (render/flash-safety.js, on by default) and a crash: the
+ * point the stretch scales about, held where it was when the aeroplane
+ * crashed.
+ *
+ * The rig stops its own camera where it is for a wreck (flight/camera.js) but
+ * keeps easing its look-at point onto the wreck, which is right: the picture
+ * stays and the wreck stays in it. Stretched about that moving point, though,
+ * the camera is `k * rig - (k - 1) * lookAt`, so every metre the look-at
+ * point moves is k - 1 metres (and 1.4 times that in height) of camera travel
+ * the other way. An A380 that has nosed in pitches slowly over its nose, its
+ * centre rising under two metres a second; k is 3 for it, and the camera sank
+ * at a steady six metres a second for the whole of the crash, 120 m above a
+ * shoreline, so the ground slid across the picture: 25-42% of a 10-degree
+ * field flashing in the crash sweep (tests/features/crash-sweep.browser.js,
+ * WCAG's line is 25%; the F-22, with no stretch, 4-8%). Scaled about the
+ * held point the camera moves only as the rig's does — braking with it in
+ * the first half second, then still — and the aim below still follows the
+ * rig's live look-at, so the wreck stays in the middle. With the switch off
+ * nothing here changes.
+ *
+ * Held still, 22-28% still flickered: the stretched follow view of an
+ * airliner that has nosed in is 120 m straight above it, and from there the
+ * wreck's own footprint — the painted fin and the pieces turning over, the
+ * engines burning, the dust and smoke over the ground round them — fills a
+ * 10-degree field (measured with the camera frozen outright, and again with
+ * the particles and the shadows off: 15% was the wreck and its pieces alone).
+ * How much of the picture that covers falls with the square of the distance,
+ * so, as the comic crash cam already does with the switch on
+ * (features/crashes.js CRASH_CAM_BACK_REDUCED), the stretched view stands
+ * further back from a wreck: CRASH_BACK_REDUCED times, eased in over
+ * CRASH_BACK_EASE seconds of the rig's clock as a pull-back rather than a
+ * cut. 1.5 times (184 m) measured 8.5-13% in three quiet runs, and the F-22's
+ * glow and dust at the same distance 4-10%.
+ */
+const held = { on: false, target: new THREE.Vector3(), t0: 0, retarget: false };
+export const CRASH_BACK_REDUCED = 1.5;
+export const CRASH_BACK_EASE = 0.6;
 
 function stretchView(sim, camera) {
   const rig = sim.rig;
@@ -117,9 +156,38 @@ function stretchView(sim, camera) {
   // The rig aims the chase view at its own lagged `lookAt` and the other two
   // straight at the aeroplane; stretching along that line keeps whatever the
   // rig was pointing at exactly where it was on screen.
-  if (rig.mode === 'chase') _target.copy(rig.lookAt);
-  else _target.copy(sim.aircraft.pos);
-  _off.subVectors(camera.position, _target).multiplyScalar(k);
+  let back = 1;
+  if (rig.mode === 'chase') {
+    if (sim.aircraft.crashed && FLASH.reduce) {
+      if (!held.on) {
+        held.on = true;
+        held.target.copy(rig.lookAt);
+        held.t0 = rig.t || 0;
+      } else if (held.retarget) {
+        /*
+         * The rig started its view again over the wreck (the instant replay
+         * closing, the comic crash cam ending: rig.initialised = false), so
+         * its camera and look-at point were put somewhere new. Scaled about
+         * the point held from before, the view came back 21 m from the
+         * A380's centre after a nose-in replay instead of 110 m (measured);
+         * hold the new look-at point instead. Already stood back: the snap
+         * is a cut anyway, so no second ease.
+         */
+        held.target.copy(rig.lookAt);
+      }
+      held.retarget = false;
+      _target.copy(held.target);
+      const u = Math.min(1, Math.max(0, ((rig.t || 0) - held.t0) / CRASH_BACK_EASE));
+      back = 1 + (CRASH_BACK_REDUCED - 1) * u * u * (3 - 2 * u);
+    } else {
+      held.on = false;
+      _target.copy(rig.lookAt);
+    }
+  } else {
+    held.on = false;
+    _target.copy(sim.aircraft.pos);
+  }
+  _off.subVectors(camera.position, _target).multiplyScalar(k * back);
   /*
    * And a little higher than straight scaling gives. Stretched evenly the
    * 747's follow view sat 15 m up with a fin whose tip is 13.5 m up, so the
@@ -311,6 +379,8 @@ function installCamera(sim) {
     if (!stretchBroken) {
       try {
         mine = isAirliner(sim) && STRETCHED.has(this.mode);
+        // A view started again: a crash's held point (stretchView) is stale.
+        if (!this.initialised) held.retarget = true;
         // Hand the wing view back its own unstretched position to ease from.
         if (mine && rigCam.mode === this.mode) this.camera.position.copy(rigCam.pos);
       } catch (e) {

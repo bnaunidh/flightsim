@@ -9,7 +9,7 @@
  *   - Esc while a cap is waiting cancels (and does not unpause the game);
  *   - Eject onto Backspace asks "This key already does Self-destruct — swap
  *     them?"; Swap moves Self-destruct to Enter;
- *   - Get out onto Insert (a free key: the backslash is the heat-seekers' now) just takes it; Start engine onto Delete
+ *   - Get out onto Insert (a free key: the backslash is the heat-seekers' now) just takes it; Start engine onto End
  *     (the quotes, ; and -/= are taken: the drag chute and, since v61, the
  *     autopilot's heading and speed);
  *   - Smoke onto G asks about Landing gear; Cancel leaves both alone;
@@ -17,7 +17,7 @@
  *     the self-destruct cover (not the seat), and Backspace twice ejects —
  *     every message naming the new key;
  *   - parked, O no longer gets you out and \ does, and the prompts say \;
- *   - the coach says "Press Delete to start the engine", and the H card lists the
+ *   - the coach says "Press End to start the engine", and the H card lists the
  *     moved keys;
  *   - walking, Settings opens on the On foot group;
  *   - Reset Flying keys, then Reset all keys, put everything back.
@@ -128,10 +128,10 @@ export async function check(sim, r, say) {
     r.ok('keybinds: Swap them — eject is on Backspace, self-destruct on Enter, no clash marked', inp.bindings.eject.join() === 'Backspace' && inp.bindings.selfDestruct.join() === 'Enter'
       && /Backspace/.test(cap('eject').textContent) && /Enter/.test(cap('selfDestruct').textContent) && !S().querySelector('.keymap-row.is-clash'), `eject ${inp.bindings.eject} · self-destruct ${inp.bindings.selfDestruct}`);
 
-    // A free key: Get out onto Insert, Start engine onto Delete (the backslash is the heat-seekers', Home the lock key).
+    // A free key: Get out onto Insert, Start engine onto End (the backslash is the heat-seekers', Home the lock key, Delete the HUD mode).
     rebind('getOut', 'Insert');
-    rebind('starter', 'Delete');
-    r.ok('keybinds: a free key is simply taken (Get out → Insert, Start engine → Delete)', inp.bindings.getOut.join() === 'Insert' && inp.bindings.starter.join() === 'Delete' && /is now/.test(ask().textContent), `${inp.bindings.getOut} ${inp.bindings.starter}: ${ask().textContent}`);
+    rebind('starter', 'End');
+    r.ok('keybinds: a free key is simply taken (Get out → Insert, Start engine → End)', inp.bindings.getOut.join() === 'Insert' && inp.bindings.starter.join() === 'End' && /is now/.test(ask().textContent), `${inp.bindings.getOut} ${inp.bindings.starter}: ${ask().textContent}`);
 
     // A clash, cancelled: Smoke onto G.
     rebind('smoke', 'KeyG');
@@ -189,13 +189,13 @@ export async function check(sim, r, say) {
     ac.rpm = 0;
     run(0.3);
     const coach = sim.hud.coach ? sim.hud.coach.innerHTML : '';
-    r.ok('keybinds: the coach says "Press Delete to start the engine"', /Press <kbd>Delete<\/kbd> to start the engine/.test(coach), coach);
+    r.ok('keybinds: the coach says "Press End to start the engine"', /Press <kbd>End<\/kbd> to start the engine/.test(coach), coach);
     tap('KeyI');
     run(0.2);
     const noStart = !ac.engineOn;
-    tap('Delete');
+    tap('End');
     run(0.4);
-    r.ok('keybinds: I no longer starts the engine; Delete does', noStart && (ac.engineOn || ac.starting || ac.rpm > 0), `I → ${!noStart}, Delete → ${ac.engineOn}`);
+    r.ok('keybinds: I no longer starts the engine; End does', noStart && (ac.engineOn || ac.starting || ac.rpm > 0), `I → ${!noStart}, End → ${ac.engineOn}`);
 
     // H: the card names the player's keys.
     tap('KeyH');
@@ -203,7 +203,7 @@ export async function check(sim, r, say) {
     const card = sim.hud.controlsCard ? sim.hud.controlsCard.textContent : '';
     tap('KeyH');
     run(0.1);
-    r.ok('keybinds: the H card lists Eject on Backspace, Start engine on Delete, and Get out on Insert', /Eject[^]*?Backspace/.test(card) && /Start \/ stop engine\s*Delete/.test(card) && /Get out \/ get in\s*Insert/.test(card), card.slice(0, 200));
+    r.ok('keybinds: the H card lists Eject on Backspace, Start engine on End, and Get out on Insert', /Eject[^]*?Backspace/.test(card) && /Start \/ stop engine\s*End/.test(card) && /Get out \/ get in\s*Insert/.test(card), card.slice(0, 200));
 
     /* ---------------- reset ---------------- */
     toControls();

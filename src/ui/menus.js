@@ -1840,6 +1840,7 @@ export class Menus {
             <select data-set="hudDensity">
               <option value="clean">Clean — information folds to small chips after a few seconds</option>
               <option value="full">Full — every panel stays open</option>
+              <option value="photo">Photo — only the warnings, the radio and the buttons</option>
             </select></label>
           <label class="field"><span>Crosshair</span>
             <select data-set="crosshair">

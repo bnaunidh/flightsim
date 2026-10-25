@@ -96,6 +96,100 @@ export async function check(sim, r, say) {
       r.ok(`${id}: takes off inside the 1,100 m runway`, !ac.crashed && at15 !== null && at15 < 1020,
         ac.crashed ? ac.crashReason : `15 m up at ${at15 === null ? 'never' : Math.round(at15)} m from brake release`);
     }
+
+    /*
+     * The stretched follow view and a crash, with Reduce flashing (the
+     * default) and without. The rig stops its own camera for a wreck; the
+     * stretch used to scale about the rig's moving look-at point and turned
+     * the A380's slow pitch-over into a steady 6 m/s camera descent (25-42%
+     * of a 10-degree field in the crash sweep). Now it scales about a point
+     * held at the crash, and stands CRASH_BACK_REDUCED times further back,
+     * eased in over CRASH_BACK_EASE s. With the switch off it follows the
+     * wreck as it always did.
+     */
+    say('airliners: the follow view and a crash');
+    {
+      const cr = await import('../../src/features/crashes.js');
+      const AL = await import('../../src/features/airliners.js');
+      const reduceWas = sim.settings.reduceFlashing;
+      const comicWas = sim.settings.comicEffects;
+      const noDebrief = () => clearTimeout(sim._crashDebriefT);
+      const crashWatched = async (reduce) => {
+        sim.applySetting('reduceFlashing', reduce);
+        sim.applySetting('comicEffects', false);
+        await sim.startMode('free', { aircraft: 'a380', airborne: true, time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 0 });
+        sim.step(0.3);
+        sim.rig.setMode('chase');
+        sim.step(1);
+        const staged = cr.stageCrash(sim, 'noseplant');
+        noDebrief();
+        sim.rig.initialised = false;
+        sim.step(1 / 60);
+        noDebrief();
+        const d0 = sim.camera.position.distanceTo(sim.rig.lookAt);
+        sim.step(AL.CRASH_BACK_EASE + 0.9);
+        noDebrief();
+        const d1 = sim.camera.position.distanceTo(sim.rig.lookAt);
+        const last = sim.camera.position.clone();
+        const from = last.clone();
+        let moved = 0;
+        for (let i = 0; i < 30; i++) {
+          sim.step(1 / 30);
+          noDebrief();
+          moved = Math.max(moved, sim.camera.position.distanceTo(last));
+          last.copy(sim.camera.position);
+        }
+        // Net travel over that second, not the largest step: a piece landing
+        // kicks the rig's shake (stretched with the view, a few tenths of a
+        // metre and back), which is not the camera going anywhere.
+        const drift = sim.camera.position.distanceTo(from);
+        // The instant replay closing starts the rig's view again over the
+        // wreck (rig.initialised = false): the stretch must scale about the
+        // new look-at point, not the one held from before (that left the
+        // A380's view 21 m from its centre, inside the wreck).
+        let dReplay = null;
+        let offLine = null;
+        const BU = await import('../../src/features/breakup.js');
+        if (reduce && BU.canReplay() && BU.startReplay(sim, false)) {
+          for (let i = 0; i < 900 && BU.breakupDebug().replaying; i++) {
+            sim.step(1 / 30);
+            noDebrief();
+          }
+          if (BU.breakupDebug().replaying) BU.endReplay(sim, false);
+          sim.step(1 / 30);
+          noDebrief();
+          dReplay = sim.camera.position.distanceTo(sim.aircraft.pos);
+          // On the rig's own line through its look-at point, stood back
+          // k x CRASH_BACK_REDUCED (level parts only: the height is lifted
+          // and floored). Scaled about the stale point it is off that line by
+          // (k x back - 1) times however far the wreck's centre went.
+          const s = AL.viewScale('a380') * AL.CRASH_BACK_REDUCED;
+          const ux = sim.camera.position.x - sim.rig.lookAt.x;
+          const uz = sim.camera.position.z - sim.rig.lookAt.z;
+          const vx = (sim.rig.chasePos.x - sim.rig.lookAt.x) * s;
+          const vz = (sim.rig.chasePos.z - sim.rig.lookAt.z) * s;
+          offLine = Math.hypot(ux - vx, uz - vz);
+        }
+        return { staged: !!staged, crashed: !!sim.aircraft.crashed, d0, d1, moved, drift, dReplay, offLine };
+      };
+      try {
+        const on = await crashWatched(true);
+        r.ok('a380: with Reduce flashing the follow view stands still for the wreck (the stretch no longer turns the look-at point’s drift into camera travel)',
+          on.staged && on.crashed && on.drift < 0.75, `${on.staged ? 'crashed' : 'no crash staged'}; went ${on.drift.toFixed(2)} m in the second from 1.5 s after the crash (it used to sink about 6 m/s; largest step ${on.moved.toFixed(3)} m)`);
+        r.ok(`a380: …and has stood back ${AL.CRASH_BACK_REDUCED}x from the wreck by then`,
+          on.staged && Math.abs(on.d1 / on.d0 - AL.CRASH_BACK_REDUCED) < 0.15, `${on.d0.toFixed(1)} m on the first frame, ${on.d1.toFixed(1)} m after ${(AL.CRASH_BACK_EASE + 0.9).toFixed(1)} s (${(on.d1 / on.d0).toFixed(2)}x)`);
+        r.ok('a380: …and after the instant replay the follow view comes back stood off from the wreck, not inside it',
+          on.dReplay !== null && on.dReplay > 0.6 * on.d0 && on.dReplay < 3 * on.d0 && on.offLine < 3,
+          on.dReplay === null ? 'no replay' : `${on.dReplay.toFixed(1)} m from the wreck's centre after the replay (first frame ${on.d0.toFixed(1)} m), ${on.offLine.toFixed(2)} m off the rig's line`);
+        const off = await crashWatched(false);
+        r.ok('a380: …with it off the follow view goes with the wreck as it always did', off.staged && off.crashed && off.moved > 0.01 && Math.abs(off.d1 / off.d0 - 1) < 0.2,
+          `moved ${off.moved.toFixed(3)} m a frame; ${off.d0.toFixed(1)} m then ${off.d1.toFixed(1)} m (${(off.d1 / off.d0).toFixed(2)}x)`);
+      } finally {
+        noDebrief();
+        if (sim.settings.reduceFlashing !== reduceWas) sim.applySetting('reduceFlashing', reduceWas !== false);
+        if (sim.settings.comicEffects !== comicWas) sim.applySetting('comicEffects', comicWas === true);
+      }
+    }
   } finally {
     sim.override = null;
     sim.autoPauseOnHide = autoPause;

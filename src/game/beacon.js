@@ -37,16 +37,24 @@ function beamTexture() {
 }
 
 export class Beacon {
-  constructor(scene) {
+  /**
+   * @param {object} [opts]
+   * @param {boolean} [opts.soft]  the destination's beacon: one shell, warm
+   *   and faint, so it says "over there" without competing with the
+   *   guidance beacon (and costs one draw call less — it is on in every
+   *   mission, on every tier).
+   */
+  constructor(scene, { soft = false } = {}) {
     this.group = new THREE.Group();
-    this.group.name = 'beacon';
+    this.group.name = soft ? 'beacon-destination' : 'beacon';
     this.group.visible = false;
     this.t = 0;
+    this.soft = soft;
 
     const tex = beamTexture();
     // Two shells, counter-rotating, so it shimmers instead of sitting still.
     this.shells = [];
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < (soft ? 1 : 2); i++) {
       const geo = new THREE.CylinderGeometry(
         RADIUS * (1 - i * 0.35),
         RADIUS * (1.25 - i * 0.3),
@@ -57,9 +65,9 @@ export class Beacon {
       );
       const mat = new THREE.MeshBasicMaterial({
         map: tex.clone(),
-        color: 0x62e0ff,
+        color: soft ? 0xffd9a0 : 0x62e0ff,
         transparent: true,
-        opacity: 0.34 - i * 0.1,
+        opacity: soft ? 0.17 : 0.34 - i * 0.1,
         depthWrite: false,
         side: THREE.DoubleSide,
         blending: THREE.AdditiveBlending,
@@ -77,9 +85,9 @@ export class Beacon {
     this.ring = new THREE.Mesh(
       ringGeo,
       new THREE.MeshBasicMaterial({
-        color: 0x7dffb4,
+        color: soft ? 0xffd9a0 : 0x7dffb4,
         transparent: true,
-        opacity: 0.5,
+        opacity: soft ? 0.3 : 0.5,
         depthWrite: false,
         side: THREE.DoubleSide,
       })
@@ -106,6 +114,14 @@ export class Beacon {
     for (const s of this.shells) s.mesh.rotation.y += s.spin * dt;
     // A slow pulse, and the ground ring breathes with it.
     const pulse = 0.78 + Math.sin(this.t * 1.7) * 0.22;
+    if (this.soft) {
+      // Slower and fainter: a landmark, not a call for attention.
+      const p = 0.85 + Math.sin(this.t * 0.9) * 0.15;
+      this.shells[0].mesh.material.opacity = 0.17 * p;
+      this.ring.material.opacity = 0.3 * p;
+      this.ring.scale.setScalar(1 + Math.sin(this.t * 0.9) * 0.04);
+      return;
+    }
     this.shells[0].mesh.material.opacity = 0.34 * pulse;
     this.shells[1].mesh.material.opacity = 0.24 * pulse;
     this.ring.material.opacity = 0.5 * pulse;

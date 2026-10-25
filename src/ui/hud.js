@@ -14,6 +14,10 @@ import { installRotorHud, rotorSpeedWord } from './hud-rotor.js';
 import { HudStack } from './hud-stack.js';
 import { SPEC } from '../aircraft/physics.js';
 import { rekey, keyName, shortKey, bindingsVersion, HELI_MAP } from '../flight/input.js';
+import { TouchdownCard } from './touchdown.js';
+import { PillLane, pillsFor } from './pills.js';
+import { DestRibbon } from './ribbon.js';
+import { conditionsWords, DENSITY_SHORT } from './conditions.js';
 
 const KTS = UNITS.KTS;
 const FT = UNITS.FT;
@@ -111,7 +115,7 @@ const TOASTS_KEPT = 6;
 const LANE = [
   '#ui .hud-bottom', '#ui .hud-chevron', '#ui .hud-papi', '#ui .hud-boatkeys', '#ui .hud-buttons', '#ui .minimap',
   '#ui .touch-stick', '#ui .touch-throttle', '#ui .touch-pads', '#ui .touch-rudder', '#ui .touch-lever',
-  '#ui .touch-wheel', '#ui .touch-pedals', '.ej-btn.is-on',
+  '#ui .touch-wheel', '#ui .touch-pedals', '.ej-btn.is-on', '#ui .hud-pills',
 ].join(', ');
 // The touchscreen action buttons that share the right-hand column (updateLanes()).
 const ACTIONS = '.mt-zap, .wf-drop, .co-btn.is-on, .gsk-btn, .hsk-btn, .afo-action, .tp-col';
@@ -266,6 +270,14 @@ export class Hud {
     this.taxi.appendChild(taxiWords);
     this.taxi.appendChild(this.taxiSkip);
     this.taxi.style.display = 'none';
+    /*
+     * The destination ribbon (ribbon.js): a slim heading tape with the
+     * target marked, above the objective, only while a mission or job gives
+     * you somewhere to go. It stands in for the arrow pill below, which
+     * hides while the tape is up (update()).
+     */
+    this.dest = new DestRibbon();
+    top.appendChild(this.dest.el);
     top.appendChild(this.objective);
     top.appendChild(this.taxi);
 
@@ -289,6 +301,10 @@ export class Hud {
     this.windText = el('div', 'hud-windtext', 'Air is calm');
     this.windDetail = el('div', 'hud-winddetail', '0 kt from 090°');
     this.weatherText = el('div', 'hud-weather', 'Clear · Midday');
+    // The folded card's one line, in plain words (conditions.js): "Midday ·
+    // clear skies · light breeze". Shown by CSS only while the card is a chip.
+    this.wxChip = el('div', 'hud-wxchip', 'Midday · clear skies · light breeze');
+    windInfo.appendChild(this.wxChip);
     windInfo.appendChild(this.windText);
     windInfo.appendChild(this.windDetail);
     windInfo.appendChild(this.weatherText);
@@ -436,6 +452,11 @@ export class Hud {
 
     this.btnPause = mkBtn('pause', 'pause', 'Pause (Esc)', dock);
     this.btnCamera = mkBtn('camera', 'camera', 'Change camera (C)', dock);
+    // HUD mode, Full / Clean / Photo (conditions.js). In the dock, not the
+    // tray: it is the touch control for the mode key, and Photo hides most
+    // of the screen, so the way back must stay in sight.
+    this.btnHud = mkBtn('hud', 'hudMode', `HUD mode: Full / Clean / Photo (${keyName('hudMode')})`, dock);
+    this.btnHud.classList.add('hud-btn-mode');
     this.btnMore = el('button', 'hud-btn');
     this.btnMore.innerHTML = icon('more', 20);
     this.btnMore.title = 'More';
@@ -527,6 +548,16 @@ export class Hud {
     this.banner = el('div', 'hud-banner');
     this.banner.style.display = 'none';
     this.addCallout(this.banner, 2);
+
+    // The touchdown card (touchdown.js): under the banner's place in the
+    // centre lane, so it can never land on a warning.
+    this.touchdown = new TouchdownCard();
+    this.addCallout(this.touchdown.el, 2.5);
+
+    // The state pills (pills.js): one lane at the bottom centre, at most
+    // two, each a button. The radio and coaching lines sit above it
+    // (updateLanes() measures it like any other control).
+    this.pills = new PillLane(wrap, (a) => this.onAction(a));
 
     this.controlsCard = el('div', 'hud-controls-card');
     this.controlsCard.style.display = 'none';
@@ -701,9 +732,22 @@ export class Hud {
    * and the minimap are the same in both.
    */
   setDensity(d) {
-    this.density = d === 'full' ? 'full' : 'clean';
-    this.wrap.classList.toggle('is-clean', this.density === 'clean');
-    if (this.stack) this.stack.setDensity(this.density);
+    this.density = d === 'full' ? 'full' : d === 'photo' ? 'photo' : 'clean';
+    const photo = this.density === 'photo';
+    // Photo is the Clean HUD with almost everything hidden by CSS (is-photo):
+    // the warnings, the centre lane, the radio line and the dock stay.
+    this.wrap.classList.toggle('is-clean', this.density !== 'full');
+    this.wrap.classList.toggle('is-photo', photo);
+    // On <html> too, for the minimap, which is not inside the wrapper.
+    if (typeof document !== 'undefined' && document.documentElement) {
+      document.documentElement.classList.toggle('hud-photo', photo);
+    }
+    if (this.stack) this.stack.setDensity(this.density === 'full' ? 'full' : 'clean');
+    if (this.btnHud) {
+      this.btnHud.classList.toggle('is-on', photo);
+      this.btnHud.dataset.mode = this.density;
+      this.btnHud.setAttribute('aria-label', `HUD mode: ${DENSITY_SHORT[this.density]} (${keyName('hudMode')} cycles Full / Clean / Photo)`);
+    }
     this.wakeBottom();
   }
 
@@ -796,6 +840,8 @@ export class Hud {
     this.banner.style.display = 'none';
     this.bannerTimer = 0;
     this.bannerHeld = false;
+    if (this.touchdown) this.touchdown.hide();
+    if (this.pills) this.pills.clear();
     this.subtitle.style.display = 'none';
     this.subtitle.classList.remove('is-out');
     this.subtitleTimer = 0;
@@ -1018,6 +1064,7 @@ export class Hud {
       }
     }
     if (this.stack) this.stack.tick(dt);
+    if (this.touchdown) this.touchdown.update(dt, this.commandUp());
     if (this.objectiveOpen && !this.objectiveHover) {
       this.objectiveT -= dt;
       // Not the automatic fold for a passenger (see update()'s own note by
@@ -1073,24 +1120,44 @@ export class Hud {
       x0 = (W - w) / 2;
       x1 = (W + w) / 2;
     }
-    const tops = [H, H];
-    const spans = [[x0, x1], [W * 0.04, W * 0.96]];
+    // tops[2]: the same span as the radio line's, without the state pills
+    // themselves — it is where the pills stand (--bl-ctl), and they must
+    // not measure their own top.
+    // The pills' own span, not the radio line's: on a phone held sideways the
+    // radio line is nearly the screen's width and took in the flight stick at
+    // the far left, which lifted the pills into the objective mid-screen.
+    let p0 = W / 2 - 170;
+    let p1 = W / 2 + 170;
+    if (this.pills && this.pills.el && this.pills.el.getClientRects().length) {
+      const pr = this.pills.el.getBoundingClientRect();
+      if (pr.right - pr.left > 4) {
+        p0 = pr.left;
+        p1 = pr.right;
+      }
+    }
+    const tops = [H, H, H];
+    const spans = [[x0, x1], [W * 0.04, W * 0.96], [p0, p1]];
     for (const n of document.querySelectorAll(LANE)) {
       if (!n.getClientRects().length) continue;
       const r = n.getBoundingClientRect();
       if (r.width < 4 || r.height < 4 || r.top < H * 0.55 || r.top >= H) continue;
-      for (let k = 0; k < 2; k++) {
+      const pills = n.classList.contains('hud-pills');
+      for (let k = 0; k < 3; k++) {
+        if (k === 2 && pills) continue;
         if (r.right > spans[k][0] && r.left < spans[k][1]) tops[k] = Math.min(tops[k], r.top);
       }
     }
     const bl = Math.max(0, Math.round(H - tops[0]));
     const wide = Math.max(0, Math.round(H - tops[1]));
-    if (bl !== this._bl || wide !== this._blWide) {
+    const ctl = Math.max(0, Math.round(H - tops[2]));
+    if (bl !== this._bl || wide !== this._blWide || ctl !== this._blCtl) {
       this._bl = bl;
       this._blWide = wide;
+      this._blCtl = ctl;
       const st = document.documentElement.style;
       st.setProperty('--bl-h', `${bl}px`);
       st.setProperty('--bl-wide', `${wide}px`);
+      st.setProperty('--bl-ctl', `${ctl}px`);
     }
     /*
      * And the floor of the right-hand stack over a touchscreen's action
@@ -1186,6 +1253,20 @@ export class Hud {
     // it sitting at full life forever — see achievements/ui.js's
     // showUnlockToast(), the one caller that needs this.
     return entry;
+  }
+
+  /**
+   * The touchdown card (touchdown.js): rate at touchdown, grade, stars and
+   * your best in this aeroplane. `aircraft` is the type ({ id, name }).
+   * Waits for a PULL UP like the banner does — a card over a command is the
+   * class of bug the centre lane exists to prevent.
+   */
+  showTouchdown(g, aircraft) {
+    if (!this.touchdown || !g || g.crashed) return null;
+    const out = this.touchdown.show(g, { id: aircraft && aircraft.id, name: aircraft && aircraft.name });
+    // Held (not dropped) while a command is up: updateOverlays() brings it back.
+    if (this.commandUp() && this.touchdown.el) this.touchdown.el.style.display = 'none';
+    return out;
   }
 
   showBanner(title, subtitle, kind = 'good', duration = 3.6) {
@@ -1646,6 +1727,12 @@ export class Hud {
       this.weatherText.textContent = wx;
       this.lastValues.wx = wx;
     }
+    // The folded card's plain words, changing with the 5 kt band, not the gust.
+    const words = conditionsWords({ timeLabel: w.timeInfo.label, condLabel: w.cond.label, windKts: Math.round(w.windSpeedKts / 5) * 5 });
+    if (this.lastValues.wxWords !== words) {
+      this.wxChip.textContent = words;
+      this.lastValues.wxWords = words;
+    }
     /*
      * The wind card is information: it opens for a few seconds when the
      * weather changes or the wind picks up or drops by a band (5 kt), and
@@ -1767,9 +1854,20 @@ export class Hud {
 
     // --- Waypoint arrow ---
     const target = sim.activeTarget;
+    /*
+     * The destination ribbon (ribbon.js) takes the target while a mission
+     * or job names one, with the mission's final destination marked too
+     * when that is somewhere else. The arrow pill below stands down while
+     * the tape is up: same place, same distance, said once.
+     */
+    if (this.dest) {
+      const runner = sim.runner;
+      const dest = target && runner && runner.status === 'running' && runner.destination ? runner.destination() : null;
+      this.dest.update(r.heading, ac.pos, target, dest);
+    }
     // In beacon-only mode the shaft of light *is* the guidance, so the arrow
     // stands down rather than duplicating it.
-    const arrowWanted = (sim.settings?.guideStyle || 'arrow') !== 'beacon';
+    const arrowWanted = (sim.settings?.guideStyle || 'arrow') !== 'beacon' && !(this.dest && this.dest.shown);
     if (target && arrowWanted) {
       const dx = target.pos.x - ac.pos.x;
       const dz = target.pos.z - ac.pos.z;
@@ -1805,6 +1903,30 @@ export class Hud {
       }
     } else {
       this.waypoint.style.display = 'none';
+    }
+
+    // --- State pills, bottom centre (pills.js) ---
+    if (this.pills) {
+      const plane = !sim.input || sim.input.context === 'plane';
+      if (plane && !sim.riding && !this.hidden) {
+        const v = bindingsVersion();
+        if (this._pillKeysV !== v) {
+          this._pillKeysV = v;
+          this._pillKeys = { power: keyName('throttleUp', sim), services: keyName('services', sim), gear: keyName('gear', sim) };
+        }
+        this.pills.set(pillsFor({
+          onGround: !!r.onGround,
+          parkingBrake: !!r.parkingBrake,
+          pushing: !!sim.pushingBack,
+          engineOn: !!r.engineOn,
+          gearPos: r.gearPos,
+          aglFt: r.aglFt,
+          speedKts: r.iasKts,
+          vsFpm: r.vsFpm,
+          touch: this.wrap.classList.contains('is-touch'),
+          keys: this._pillKeys,
+        }));
+      } else this.pills.clear();
     }
 
     // --- Timers ---

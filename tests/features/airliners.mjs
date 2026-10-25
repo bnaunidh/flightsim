@@ -1087,6 +1087,10 @@ for (const id of IDS) {
   report.push(`${id}: take-off ${to.at15} m to 15 m (lift-off ${to.lift} m, ${Math.round(to.liftKt)} kt; realistic ${toReal.at15} m; flaps 1 ${toF1.at15} m; with the game's flaps ${preset} ${toSet.at15} m), landing ${Math.round(ld.from15)} m from 15 m (roll ${Math.round(ld.roll)} m)`);
 }
 
+// Reduce flashing and a crash: the stretched follow view holds still and stands back (src/features/airliners.js stretchView; measured in tests/features/crash-sweep.browser.js).
+ok('seizure safety: with Reduce flashing the stretched follow view stands back from a wreck (at least 1.4x), eased in over under a second', FEATURE.CRASH_BACK_REDUCED >= 1.4 && FEATURE.CRASH_BACK_REDUCED <= 2.5 && FEATURE.CRASH_BACK_EASE > 0.2 && FEATURE.CRASH_BACK_EASE <= 1,
+  `${FEATURE.CRASH_BACK_REDUCED}x over ${FEATURE.CRASH_BACK_EASE} s`);
+
 console.log('\n' + report.join('\n'));
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

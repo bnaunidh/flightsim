@@ -33,6 +33,10 @@ const P = {
   soundOn: '<path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4Z"/><path d="M15.5 9.4a3.8 3.8 0 0 1 0 5.2M18.2 6.9a7.4 7.4 0 0 1 0 10.2"/>',
   soundOff: '<path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4Z"/><path d="m16 10 5 4M21 10l-5 4"/>',
   help: '<circle cx="12" cy="12" r="8.6"/><path d="M9.5 9.6a2.6 2.6 0 0 1 5 .9c0 1.8-2.5 2-2.5 3.6"/><circle cx="12" cy="17.2" r="0.9" fill="currentColor" stroke="none"/>',
+  /* The HUD mode button (Full / Clean / Photo): a screen with a readout. */
+  hud: '<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M7 9.2h4.4M7 12.6h3"/><circle cx="16" cy="12.4" r="2.1"/>',
+  /* The parking-brake pill: a P in a ring. */
+  brake: '<circle cx="12" cy="12" r="8.6"/><path d="M9.6 16.2V7.8h3a2.7 2.7 0 0 1 0 5.4h-3"/>',
   more: '<circle cx="5.5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.5" fill="currentColor" stroke="none"/>',
   close: '<path d="m6 6 12 12M18 6 6 18"/>',
 

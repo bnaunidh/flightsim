@@ -308,7 +308,8 @@ try {
   const heliClose = document.querySelector('.race-hub [data-race-hub-close]');
   if (heliClose) heliClose.click();
   await frames(1);
-  ok('back in free play in the Skyhook on Harrier Flats: the 🏁 button says "Races", and the card offers "Race the hoops" at the top', heliSolo && /Races/.test(heliSolo) && !/hoops/.test(heliSolo) && heliHere && /Race the hoops/.test(heliHere), { heliSolo, heliHere });
+  // Since v71 the card's top button for the race right here is the one phrase "🏁 Race now" (race/hub.js hereLine), for every ride; the course's own cta ("Race the hoops") is the lobby card's.
+  ok('back in free play in the Skyhook on Harrier Flats: the 🏁 button says "Races", and the card offers "Race now" at the top (the Sprint is right here)', heliSolo && /Races/.test(heliSolo) && !/hoops/.test(heliSolo) && heliHere && /Race now/.test(heliHere) && /Skyhook Sprint/.test(heliHere), { heliSolo, heliHere });
 
   // ---- 3. The car, from the Races card ---------------------------------------------------
   document.querySelector('[data-race-hub]').click();
@@ -328,7 +329,7 @@ try {
   const carClose = document.querySelector('.race-hub [data-race-hub-close]');
   if (carClose) carClose.click();
   await frames(1);
-  ok('in the car on Fenwick the 🏁 button says "Races", and the card offers "Race the streets"', carSolo && /Races/.test(carSolo) && carHere && /Race the streets/.test(carHere), { carSolo, carHere });
+  ok('in the car on Fenwick the 🏁 button says "Races", and the card offers "Race now" (the Grand Prix is right here)', carSolo && /Races/.test(carSolo) && carHere && /Race now/.test(carHere) && /Fenwick Grand Prix/.test(carHere), { carSolo, carHere });
 
   // ---- 4. The boat, from the Multiplayer screen's Races card ("Race alone") ---------------
   let lobbyCard = null;

@@ -69,6 +69,7 @@ import { AtcDirector } from './game/atc-director.js';
 import { CargoCrate, PracticeBomb } from './game/markers.js';
 import { NavGuide } from './game/navguide.js';
 import { Beacon } from './game/beacon.js';
+import { nextDensity, DENSITY_WORDS } from './ui/conditions.js';
 import { Minimap } from './ui/minimap.js';
 import { Pursuer } from './game/pursuer.js';
 import * as Prog from './game/progression.js';
@@ -96,6 +97,7 @@ import { extInstall, extBuildWorld, extUpdate, extCamera, extStartMode, extStop,
 import './features/index.js';
 import { noteLiftoff, noteTouchdown, noteArrested, noteCeiling, noteMissionComplete } from './features/achievements/index.js';
 import { viewScale as airlinerViewScale } from './features/airliners.js';
+import { __airportServices } from './features/airport-services.js';
 
 const KTS = UNITS.KTS;
 const FT = UNITS.FT;
@@ -285,6 +287,10 @@ class Game {
 
     this.navGuide = new NavGuide(this.scene);
     this.beacon = new Beacon(this.scene);
+    // A soft beacon over the mission's final destination (ui/ribbon.js marks
+    // it on the tape; this is the same place out of the window). Only while
+    // a mission or job gives you somewhere to go — see the guidance block.
+    this.destBeacon = new Beacon(this.scene, { soft: true });
     this.minimap = new Minimap(document.getElementById('ui'));
     this.minimap.toggle(this.settings.minimap !== false);
     this.minimap.runwayLines = this.settings.runwayLines !== false;
@@ -326,6 +332,9 @@ class Game {
     this.hud.setSubtitlesEnabled(this.settings.subtitles);
     this.hud.setHighContrast(this.settings.highContrast);
     this.hud.setLargeText(this.settings.largeText);
+    // Photo is for the moment, not the next visit: a shared classroom device
+    // must not open on a HUD with no objective, no instruments and no map.
+    if (this.settings.hudDensity === 'photo') this.settings.hudDensity = 'clean';
     this.hud.setDensity(this.settings.hudDensity);
     document.documentElement.classList.toggle('reduce-motion', !!this.settings.reducedMotion);
     this.syncFxTier();
@@ -1103,18 +1112,13 @@ class Game {
       if (g.crashed) return;
       this.progress = recordLanding(this.progress, g);
       this.menus.syncProgress(this.progress);
-      const words = {
-        perfect: ['Perfect landing!', 'You barely felt that. Textbook.'],
-        good: ['Good landing', 'Smooth and on the centreline.'],
-        firm: ['Firm landing', 'A bit of a bump, but perfectly safe.'],
-        rough: ['Rough landing', 'That was heavy — try to arrive more slowly next time.'],
-      };
-      const [title, sub] = words[g.quality] || words.good;
-      this.hud.showBanner(
-        `${title} · ${g.score}/100`,
-        `${sub} Descent rate ${Math.abs(g.vsFpm)} ft/min${g.onRunway ? '' : ' · not on the runway'}`,
-        g.quality === 'rough' ? 'warn' : 'good'
-      );
+      /*
+       * The touchdown card (ui/touchdown.js): the rate of descent at the
+       * moment the wheels touched, a grade word, stars, and your best in this
+       * aeroplane. It replaces the "Perfect landing! · 85/100" banner, which
+       * said the same number in a sentence nobody read twice.
+       */
+      this.hud.showTouchdown(g, this.aircraftType);
       this.audio.available && (g.quality === 'rough' ? this.audio.alerts.uiBack() : this.audio.alerts.checkpoint());
       this.atc.onTouchdown(g);
       const wind = this.weather.windDescription(RUNWAY.headingDeg);
@@ -2014,6 +2018,22 @@ class Game {
       case 'help':
         this.hud.toggleControls(this.input.bindings, keyLabel, this.helpActions());
         break;
+      case 'hudMode':
+        this.cycleHudMode();
+        break;
+      /*
+       * The state pills' undo buttons (ui/pills.js). On a touchscreen the
+       * pill IS the control: "Parking brake on — tap to release".
+       */
+      case 'releaseBrake':
+        if (this.aircraft && this.aircraft.parkingBrake) {
+          this.aircraft.parkingBrake = false;
+          this.hud.notify('Parking brake released', 'info', 1.8);
+        }
+        break;
+      case 'stopPush':
+        if (__airportServices.S.state === 'pushback') __airportServices.stopPush(this);
+        break;
       case 'brace':
         this.braceForImpact();
         break;
@@ -2051,6 +2071,21 @@ class Game {
     if (!this.minimap) return;
     this.minimap.setSuppressed(!!this.hud.hidden);
     this.minimap.setFaulty(this.instrumentBlackout > 0);
+  }
+
+  /**
+   * HUD mode: Full → Clean → Photo → Full (ui/conditions.js), from the key,
+   * the dock button or a pill. The same setting as Settings → Accessibility
+   * → HUD density, so the select follows and the choice is remembered.
+   */
+  cycleHudMode() {
+    const d = nextDensity(this.settings.hudDensity || 'clean');
+    this.settings.hudDensity = d;
+    saveSettings(this.settings);
+    this.hud.setDensity(d);
+    this.menus.syncSettings(this.settings);
+    this.hud.notify(DENSITY_WORDS[d], 'info', 2.4);
+    return d;
   }
 
   toggleHideUi() {
@@ -3233,6 +3268,7 @@ class Game {
       if (!this.dropCargo()) this.hud.notify('Nothing to drop right now', 'info', 2);
     }
     if (input.pressed('help')) this.hud.toggleControls(this.input.bindings, keyLabel, this.helpActions());
+    if (input.pressed('hudMode')) this.hudAction('hudMode');
     if (input.pressed('guide')) this.toggleGuide();
     if (input.pressed('autopilot')) this.toggleAutopilot();
     if (input.pressed('heliAssist') && SPEC.rotor) this.setHeliAssist(ac.hoverAssist === false, true);
@@ -4664,6 +4700,7 @@ class Game {
         }
         if (input.pressed('minimap')) this.hudAction('minimap');
         if (input.pressed('help')) this.hud.toggleControls(this.input.bindings, keyLabel, this.helpActions());
+        if (input.pressed('hudMode')) this.hudAction('hudMode');
         // Paused means paused. The boat used to carry on out to sea while the
         // menu was up, so you came back to it somewhere else entirely.
         this.updateDrive(dt);
@@ -5082,6 +5119,20 @@ class Game {
         this.beacon.setTarget(wantBeacon ? guideTarget : null);
         this.beacon.update(dt);
       }
+      /*
+       * The destination's own soft beacon: where the mission ends, so you can
+       * see the place from the moment you set off. Only while a mission or
+       * job is running (a free flight has no destination), and not on top of
+       * the main beacon when that already stands on the same spot.
+       */
+      if (this.destBeacon) {
+        const running = this.state === 'flying' && !this.riding && this.runner.status === 'running';
+        const dest = running && this.runner.destination ? this.runner.destination() : null;
+        const covered = dest && this.beacon && this.beacon.group.visible && guideTarget
+          && Math.hypot(dest.pos.x - guideTarget.x, dest.pos.z - guideTarget.z) < 60;
+        this.destBeacon.setTarget(dest && !covered ? dest.pos : null);
+        this.destBeacon.update(dt);
+      }
     }
 
     this.audio.update(dt, ac, this.weather, this.cloudImmersion);
@@ -5092,6 +5143,8 @@ class Game {
       this.hud.setMissionClock(
         def && def.timeLimit ? def.timeLimit - this.runner.elapsed : null
       );
+      // For the state pills (ui/pills.js): is the tug pushing us back?
+      this.pushingBack = __airportServices.S.state === 'pushback';
       this.hud.update(dt, this);
       extUpdate(this, dt);
     }

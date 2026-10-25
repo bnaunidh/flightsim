@@ -88,6 +88,10 @@ export const ACTIONS = {
   drop: { label: 'Release cargo / drop water', group: 'Missions & events', ctx: AIR, default: ['KeyX'] },
   pause: { label: 'Pause / menu', group: 'Game', ctx: ALL, default: ['Escape'] },
   help: { label: 'Show controls', group: 'Game', ctx: NOT_ROCKET, default: ['KeyH'] },
+  // Full / Clean / Photo (ui/conditions.js). Every letter is spoken for (H is
+  // the controls card), so this takes Delete: on every keyboard, in nobody's
+  // way, and the dock has a button for it. Settings → Controls moves it.
+  hudMode: { label: 'HUD mode: Full / Clean / Photo', group: 'View', ctx: ['plane', 'heli', 'boat', 'car'], default: ['Delete'] },
   hideUi: { label: 'Hide / show the whole interface', group: 'View', ctx: NOT_ROCKET, default: ['KeyU'] },
   guide: { label: 'Guidance lines to the target', group: 'View', ctx: NOT_ROCKET, default: ['KeyN'] },
   autopilot: { label: 'Autopilot on / off', group: 'Flying', ctx: AIR, default: ['KeyY'] },

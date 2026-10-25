@@ -249,6 +249,40 @@ export class MissionRunner {
     return null;
   }
 
+  /**
+   * Where the mission ends: the last step that names a place. The ribbon
+   * marks it and a soft beacon stands over it, so "where am I going" has an
+   * answer from the first step, not only once the step before it is done.
+   * Null when no step names anywhere, or the mission is not running.
+   */
+  destination() {
+    if (this.status !== STATUS.RUNNING || !this.def || !this.def.steps) return null;
+    // Asked twice a frame (the soft beacon in main.js, the ribbon in hud.js):
+    // the same frame gets the same answer without walking the steps again.
+    if (this._destMemo && this._destMemo.def === this.def && this._destMemo.data === this.data && this._destMemo.at === this.elapsed && this._destMemo.step === this.stepIndex) {
+      return this._destMemo.out;
+    }
+    const out = this._destination();
+    this._destMemo = { def: this.def, data: this.data, at: this.elapsed, step: this.stepIndex, out };
+    return out;
+  }
+
+  _destination() {
+    const ctx = this.ctx();
+    for (let i = this.def.steps.length - 1; i >= 0; i--) {
+      const s = this.def.steps[i];
+      if (!s.target) continue;
+      let t = null;
+      try {
+        t = s.target(ctx);
+      } catch (e) {
+        t = null;
+      }
+      if (t) return { pos: t, label: s.targetLabel || 'Destination' };
+    }
+    return null;
+  }
+
   update(dt) {
     if (this.status !== STATUS.RUNNING) return;
     this.elapsed += dt;
