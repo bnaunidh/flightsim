@@ -87,6 +87,23 @@ own Reset, and **Reset all keys** puts everything back. The hints on screen and
 the `H` card always name your keys. Mouse flying and gamepads are supported
 too (Settings → Flying).
 
+### Flight sticks, throttles and rudder pedals
+
+Every controller plugged in is read at once — a sidestick, a throttle quadrant
+and a set of pedals each show up as their own device. Press a button on each
+one first (browsers only list a controller after it has been used). An Xbox or
+PlayStation pad works exactly as before. Recognised sim gear gets a built-in
+profile: the **Thrustmaster TCA Sidestick Airbus** and **TCA Quadrant Airbus**
+(two thrust levers with the IDLE / CL / FLX-MCT / TOGA detents, reverse below
+idle, engine master switches), **Thrustmaster pedals** (rudder and two toe
+brakes that brake each side), and best guesses for joystick-with-throttle
+sets and yokes. **Settings → Controls → Controllers** lists every device with
+live meters; *Assign* and move the lever you want for roll, pitch, rudder,
+throttle (one lever or engine 1 / engine 2), the toe brakes, the speedbrake
+or the flaps; invert, deadzone, curve, calibrate; and bind any button to any
+action by pressing it. It is saved per device; *Reset to defaults* puts the
+profile back. The code is `src/flight/controllers.js`.
+
 **How do I slow down?** Hold `Ctrl` (or `↓`) to reduce power. `Space` is the
 wheel brakes and only works on the ground. `F` lowers the flaps, which lets you
 fly slowly on the approach.

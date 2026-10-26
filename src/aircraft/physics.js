@@ -376,6 +376,9 @@ export class Aircraft {
     this.stalled = false;
     this.controls.throttle = 0;
     this.controls.brakes = 0;
+    this.controls.brakeL = null;
+    this.controls.brakeR = null;
+    this.controls.thrustSplit = 0;
     this.parkingBrake = speed === 0;
     this.flaps = 0;
     this.flapsTarget = 0;
@@ -832,6 +835,16 @@ export class Aircraft {
     const brakeInput = this.failures.brakes
       ? 0
       : Math.max(this.controls.brakes, this.parkingBrake ? 1 : 0);
+    /*
+     * Toe brakes (flight/controllers.js: rudder pedals): each main wheel its
+     * own side's pedal, so one pedal pressed turns the aeroplane on the
+     * ground. Null — the keyboard, a gamepad, the touch button — is one brake
+     * for both wheels, exactly as before.
+     */
+    const toe = Number.isFinite(this.controls.brakeL) && Number.isFinite(this.controls.brakeR);
+    const park = this.parkingBrake ? 1 : 0;
+    this._brakeL = this.failures.brakes ? 0 : toe ? Math.max(this.controls.brakeL, park) : brakeInput;
+    this._brakeR = this.failures.brakes ? 0 : toe ? Math.max(this.controls.brakeR, park) : brakeInput;
 
     // ---- Relative wind ------------------------------------------------
     const wind = weather.windVector(this._tmp);
@@ -1609,6 +1622,22 @@ export class Aircraft {
     this._t.set(Cm * qS * c * aeroFade, Cn * qS * b * aeroFade, Cl * qS * b * aeroFade);
     // An engine gone from one side: the others push the nose round towards it.
     if (H && H.yawArm) this._t.y += thrust * H.yawArm;
+    /*
+     * Split thrust levers (a throttle quadrant: controls.thrustSplit is
+     * engine 2's lever minus engine 1's). The engine model is one spool at
+     * the levers' average; on a twin with its engines out on the wings the
+     * difference is a yaw — more on the right swings the nose left — which
+     * is how a real one is steered on the ground with differential power,
+     * and what an engine-out practice feels like. The engines sit about a
+     * third of the way out along each wing.
+     */
+    const split = Number(this.controls.thrustSplit) || 0;
+    if (split && SPEC.reversers && !SPEC.rotor && thrust > 0) {
+      const idle = idleRpm();
+      const avg = clamp(this.controls.throttle, 0, 1);
+      const share = clamp((split * (1 - idle)) / Math.max(0.05, 2 * idle + 2 * avg * (1 - idle)), -1, 1);
+      this._t.y += thrust * share * 0.32 * (SPEC.wingSpan || 30) * 0.5;
+    }
 
     /*
      * Cyclic and tail rotor — control that works when standing still.
@@ -1890,7 +1919,8 @@ export class Aircraft {
         // exactly on it. Still gives roughly half-g braking, which is plenty.
         const tipLimit = (0.7 * SPEC.mass * G * 1.15) / 1.5 / 2; // per braked wheel
         const brakeCap = gp.brake ? Math.min(N * grip.brake, tipLimit) : 0;
-        const brakeMu = N > 1 ? (brakeInput * brakeCap) / N : 0;
+        const wheelBrake = gp.pos.x < -0.05 ? this._brakeL : gp.pos.x > 0.05 ? this._brakeR : brakeInput;
+        const brakeMu = N > 1 ? (wheelBrake * brakeCap) / N : 0;
 
         // Tyre friction, impulse limited. Two rules keep this stable:
         //   1. The force is proportional to slip velocity near zero rather than

@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v73.2';
+const CACHE_VERSION = 'island-flight-v73.3';
 
 const PRECACHE = [
   './',
@@ -63,6 +63,7 @@ const PRECACHE = [
   'src/fleet/effects.js',
 
   'src/flight/input.js',
+  'src/flight/controllers.js',
   'src/flight/autopilot.js',
   'src/flight/camera.js',
 
@@ -85,6 +86,7 @@ const PRECACHE = [
 
   'src/ui/hud.js',
   'src/ui/menus.js',
+  'src/ui/controllers-panel.js',
   'src/ui/credits.js',
 
 
@@ -447,6 +449,7 @@ const PRECACHE = [
   // Added by tools/sync-precache.mjs.
   'src/aircraft/systems.js',
   'src/features/pilot-systems.js',
+  'src/features/controllers-hud.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

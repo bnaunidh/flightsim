@@ -33,6 +33,7 @@ import { check as fun } from './fun.browser.js';
 import { check as smokeClouds } from './smoke-clouds.browser.js';
 import { check as instruments } from './instruments.browser.js';
 import { check as keybinds } from './keybinds.browser.js';
+import { check as controllers } from './controllers.browser.js';
 import { check as maps } from './maps.browser.js';
 import { check as menus } from './menus.browser.js';
 import { check as hangar } from './hangar.browser.js';
@@ -183,6 +184,8 @@ export const CHECKS = [
   // The map loading screen, about three seconds, in front of every way into a map. It switches
   // itself on for its own checks (the suite runs with it off) and puts the map back.
   { id: 'loading-screens', check: loadingScreens },
+  // Real sim gear: a fake TCA sidestick + quadrant + pedals (flight/controllers.js).
+  { id: 'controllers', check: controllers },
   // Last: it rebinds keys through Settings (and puts the player's back after).
   { id: 'keybinds', check: keybinds },
 ];

@@ -16,6 +16,8 @@ import './swing-wing.js';
 import './cargo-ramp.js';
 // The pilot's switches: lights, speedbrake/spoilers, reversers, the ATC request menu.
 import './pilot-systems.js';
+// Sim gear on the HUD: the connect notice, the "move each lever" check, the thrust detents (flight/controllers.js).
+import './controllers-hud.js';
 import './warnings.js';
 import './bird-strike.js';
 import './explosions.js';

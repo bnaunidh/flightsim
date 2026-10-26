@@ -18,6 +18,7 @@
  */
 
 import { clamp, lerp } from '../core/noise.js';
+import { Controllers } from './controllers.js';
 
 /*
  * The games a key can belong to. Two actions may share a key when they never
@@ -593,6 +594,16 @@ export class Input {
     this.pressedThisFrame = new Set();
     this.mouseEnabled = false;
     this.gamepadEnabled = true;
+    /**
+     * Every connected controller (flight/controllers.js): the standard pads
+     * still go through the Xbox layout below; sim gear (a sidestick, a
+     * throttle quadrant, rudder pedals) through its profile. `hw` is that
+     * gear's state this frame, for main.js (the levers, the masters).
+     */
+    this.controllers = new Controllers();
+    this.hw = null;
+    /** The hardware thrust lever owns the throttle once it has moved (see update()). */
+    this._hwThr = { own: false, anchor: null, last: null, movedT: 99 };
     this.sensitivity = 1;
     this.invertMouse = false;
 
@@ -938,6 +949,16 @@ export class Input {
     this.throttleTarget = Math.max(0, Math.min(1, this.throttleTarget + d));
   }
 
+  /**
+   * Let go of the throttle from sim gear's thrust lever (a new flight, a
+   * reset): the power stays what the game set until the lever next moves.
+   */
+  releaseHardwareLevers() {
+    const H = this._hwThr;
+    H.own = false;
+    H.anchor = H.last;
+  }
+
   /** A key free look uses (so, while it is on, the camera's). */
   _isLookCode(code) {
     for (const id of LOOK_ACTIONS) {
@@ -972,11 +993,23 @@ export class Input {
     this.mouse.y = 0;
   }
 
+  /**
+   * The first pad with the standard (Xbox / PlayStation) layout — what the
+   * van and the old flight code read. Sim gear is not one: a throttle
+   * quadrant's second axis read as a stick's would be the rudder.
+   */
   gamepad() {
-    if (!this.gamepadEnabled || !navigator.getGamepads) return null;
-    const pads = navigator.getGamepads();
-    for (const p of pads) if (p && p.connected) return p;
-    return null;
+    const pads = this.gamepads();
+    return pads.length ? pads[0] : null;
+  }
+
+  /** Every standard-layout pad connected (each one reads the Xbox layout, as one pad always did). */
+  gamepads() {
+    if (!this.gamepadEnabled || typeof navigator === 'undefined' || !navigator.getGamepads) return [];
+    const C = this.controllers;
+    if (!C) return [];
+    if (!C._scannedFrame) C.scan();
+    return C.standardPads();
   }
 
   /**
@@ -1091,46 +1124,107 @@ export class Input {
       pitchIn = clamp(pitchIn - this.mouse.y * 1.6, -1, 1);
     }
 
-    const pad = this.gamepad();
+    /*
+     * Every controller. Sim gear first (flight/controllers.js: its profile or
+     * the player's own setup), then each standard pad through the game's
+     * original Xbox layout, unchanged — one pad reads exactly as it always
+     * has; a second simply adds to it.
+     */
+    const C = this.gamepadEnabled ? this.controllers : null;
+    // Switched off with a button held: its action's key comes up, not stuck down.
+    if (!C && this.controllers && this.controllers._down.size) this.controllers.releaseAll();
+    const hw = C ? C.poll(dt) : null;
+    if (C) C._scannedFrame = true;
+    this.hw = hw && hw.any ? hw : null;
+    const pads = this.gamepads();
+    if (C) C._scannedFrame = false;
     let padThrottle = null;
-    if (pad) {
-      const dz = (v) => (Math.abs(v) < 0.12 ? 0 : v);
-      rollIn = clamp(rollIn + dz(pad.axes[0] || 0), -1, 1);
-      pitchIn = clamp(pitchIn - dz(pad.axes[1] || 0), -1, 1);
-      yawIn = clamp(yawIn + dz(pad.axes[2] || 0), -1, 1);
-      // Triggers as throttle (standard mapping puts them on buttons 6/7).
-      const rt = pad.buttons[7] ? pad.buttons[7].value : 0;
-      const lt = pad.buttons[6] ? pad.buttons[6].value : 0;
-      if (rt > 0.02 || lt > 0.02) padThrottle = clamp(this.throttleTarget + (rt - lt) * dt * 1.2, 0, 1);
+    if (pads.length) {
+      const edges = { gear: false, camera: false, brakes: false, pause: false, drop: false };
       this.padButtons = this.padButtons || {};
-      const edge = (i) => {
-        const now = pad.buttons[i] && pad.buttons[i].pressed;
-        const was = this.padButtons[i];
-        this.padButtons[i] = now;
-        return now && !was;
-      };
-      this.padEdges = {
-        gear: edge(0),
-        camera: edge(3),
-        brakes: pad.buttons[1] && pad.buttons[1].pressed,
-        pause: edge(9),
-        drop: edge(2),
-      };
+      pads.forEach((pad, n) => {
+        const dz = (v) => (Math.abs(v) < 0.12 ? 0 : v);
+        rollIn = clamp(rollIn + dz(pad.axes[0] || 0), -1, 1);
+        pitchIn = clamp(pitchIn - dz(pad.axes[1] || 0), -1, 1);
+        yawIn = clamp(yawIn + dz(pad.axes[2] || 0), -1, 1);
+        // Triggers as throttle (standard mapping puts them on buttons 6/7).
+        const rt = pad.buttons[7] ? pad.buttons[7].value : 0;
+        const lt = pad.buttons[6] ? pad.buttons[6].value : 0;
+        if (rt > 0.02 || lt > 0.02) padThrottle = clamp((padThrottle ?? this.throttleTarget) + (rt - lt) * dt * 1.2, 0, 1);
+        const edge = (i) => {
+          const k = n ? `${n}:${i}` : i;
+          const now = pad.buttons[i] && pad.buttons[i].pressed;
+          const was = this.padButtons[k];
+          this.padButtons[k] = now;
+          return now && !was;
+        };
+        edges.gear = edge(0) || edges.gear;
+        edges.camera = edge(3) || edges.camera;
+        edges.brakes = !!(pad.buttons[1] && pad.buttons[1].pressed) || edges.brakes;
+        edges.pause = edge(9) || edges.pause;
+        edges.drop = edge(2) || edges.drop;
+      });
+      this.padEdges = edges;
     } else {
       this.padEdges = null;
     }
 
-    // Move the smoothed controls toward the input.
-    for (const [key, target] of [['pitch', pitchIn], ['roll', rollIn], ['yaw', yawIn]]) {
-      const cur = this.out[key];
-      if (Math.abs(target) > 0.01) {
-        this.out[key] = clamp(cur + Math.sign(target) * rate * dt * (0.4 + Math.abs(target)), -1, 1);
-        // Do not overshoot a partial analogue input.
-        if (Math.abs(this.out[key]) > Math.abs(target) && Math.abs(target) < 0.98) this.out[key] = target;
+    // Sim gear's stick, rudder and thrust levers (null: no device has that axis).
+    const hwAxis = { pitch: 0, roll: 0, yaw: 0 };
+    let hwLever = false;
+    if (this.hw) {
+      if (hw.roll !== null) hwAxis.roll = hw.roll;
+      if (hw.pitch !== null) hwAxis.pitch = hw.pitch;
+      if (hw.yaw !== null) hwAxis.yaw = hw.yaw;
+      /*
+       * The thrust lever is a lever: where it is, is the power. But the
+       * keyboard, the touch slider, a spawn in the air and the autopilot all
+       * set the power too, and a lever that rewrote it every frame would make
+       * all of them dead. So it owns the throttle once it has MOVED (from
+       * where it sat when something else last set the power), and lets go
+       * the moment a key or a finger takes over — the way a real
+       * sim's hardware lever "picks up" the throttle.
+       */
+      const H = this._hwThr;
+      H.movedT += dt;
+      if (hw.throttle !== null) {
+        if (H.last !== null && Math.abs(hw.throttle - H.last) > 0.004) H.movedT = 0;
+        H.last = hw.throttle;
+        if (H.anchor === null) H.anchor = hw.throttle;
+        if (!H.own && Math.abs(hw.throttle - H.anchor) > 0.03) H.own = true;
+        if (H.own) {
+          padThrottle = hw.throttle;
+          hwLever = H.movedT < 0.8;
+        }
       } else {
-        this.out[key] = Math.abs(cur) < 0.02 ? 0 : cur - Math.sign(cur) * Math.min(Math.abs(cur), center * dt);
+        H.own = false;
+        H.anchor = null;
+        H.last = null;
       }
     }
+
+    // Move the smoothed controls toward the input.
+    /*
+     * The keyboard's, the touch stick's and the pads' part is smoothed (the
+     * keys snap, real controls do not); a sim stick or pedals are real
+     * controls already, so their part goes straight on top. With no sim gear
+     * `_smooth` IS the output, exactly as before.
+     */
+    const sm = this._smooth || (this._smooth = { pitch: 0, roll: 0, yaw: 0 });
+    for (const [key, target] of [['pitch', pitchIn], ['roll', rollIn], ['yaw', yawIn]]) {
+      // Something outside wrote the output (a test, a feature): carry on from it.
+      if (!hwAxis[key] && this._hwLast && this.out[key] !== this._hwLast[key]) sm[key] = this.out[key];
+      const cur = sm[key];
+      if (Math.abs(target) > 0.01) {
+        sm[key] = clamp(cur + Math.sign(target) * rate * dt * (0.4 + Math.abs(target)), -1, 1);
+        // Do not overshoot a partial analogue input.
+        if (Math.abs(sm[key]) > Math.abs(target) && Math.abs(target) < 0.98) sm[key] = target;
+      } else {
+        sm[key] = Math.abs(cur) < 0.02 ? 0 : cur - Math.sign(cur) * Math.min(Math.abs(cur), center * dt);
+      }
+      this.out[key] = hwAxis[key] ? clamp(sm[key] + hwAxis[key], -1, 1) : sm[key];
+    }
+    this._hwLast = { pitch: this.out.pitch, roll: this.out.roll, yaw: this.out.yaw };
 
     // Throttle: held keys ramp it, gamepad triggers set it.
     if (padThrottle !== null) this.throttleTarget = padThrottle;
@@ -1152,15 +1246,39 @@ export class Input {
     const down = throttleKey('throttleDown', arrowsFree);
     if (up) this.throttleTarget = clamp(this.throttleTarget + dt * 0.62, 0, 1);
     if (down) this.throttleTarget = clamp(this.throttleTarget - dt * 0.62, 0, 1);
+    // A key or a finger on the power: the hardware lever lets go until it moves again.
+    const touchThr = !!(this.touch && this.touch.throttle !== null && this.touch.throttle !== undefined);
+    if ((up || down || touchThr) && this._hwThr.own) {
+      this._hwThr.own = false;
+      this._hwThr.anchor = this._hwThr.last;
+    }
     this.out.throttle = lerp(this.out.throttle, this.throttleTarget, clamp(dt * 6, 0, 1));
-    this.out.leverHeld = up || down || padThrottle !== null
-      || !!(this.touch && this.touch.throttle !== null && this.touch.throttle !== undefined);
+    // A standard pad's triggers are a hand on the lever whenever they are in; a sim lever only while it is moving.
+    const padHeld = padThrottle !== null && !(this._hwThr.own && !pads.some((p) => (p.buttons[7] && p.buttons[7].value > 0.02) || (p.buttons[6] && p.buttons[6].value > 0.02)));
+    this.out.leverHeld = up || down || padHeld || hwLever || touchThr;
+    // Split thrust levers (engine 2 minus engine 1) and the reverse range below idle, for main.js.
+    this.out.thrustSplit = this.hw && this._hwThr.own ? this.hw.split || 0 : 0;
 
     const braking =
       this.held('brakes') ||
       (this.padEdges && this.padEdges.brakes) ||
-      !!(this.touch && this.touch.brakes);
-    this.out.brakes = lerp(this.out.brakes, braking ? 1 : 0, clamp(dt * 9, 0, 1));
+      !!(this.touch && this.touch.brakes) ||
+      !!(this.hw && this.hw.brakeHold);
+    const brakeTo = braking ? 1 : 0;
+    // Toe brakes are analogue and per side: the harder one is "the brakes", each side its own wheel.
+    if (this.hw && this.hw.brakes !== null) {
+      const k = clamp(dt * 9, 0, 1);
+      this._toe = this._toe || { l: 0, r: 0 };
+      this._toe.l = lerp(this._toe.l, Math.max(this.hw.brakeL, brakeTo), k);
+      this._toe.r = lerp(this._toe.r, Math.max(this.hw.brakeR, brakeTo), k);
+      this.out.brakeL = this._toe.l;
+      this.out.brakeR = this._toe.r;
+      this.out.brakes = Math.max(this._toe.l, this._toe.r);
+    } else {
+      this.out.brakeL = null;
+      this.out.brakeR = null;
+      this.out.brakes = lerp(this.out.brakes, brakeTo, clamp(dt * 9, 0, 1));
+    }
 
     return this.out;
   }

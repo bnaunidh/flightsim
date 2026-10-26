@@ -44,6 +44,8 @@ import { createCockpit } from './aircraft/cockpit.js';
 import { TouchControls, isTouchDevice } from './ui/touch.js';
 
 import { Input, keyLabel, HELI_MAP, BOAT_MAP, actionsFor, CONTEXT_GROUP, ACTIONS, codesFor } from './flight/input.js';
+import { reverseDetent } from './flight/controllers.js';
+import { mountControllersPanel } from './ui/controllers-panel.js';
 import { CameraRig, VIEW_LABELS, CHASE_BACK, CHASE_UP, chaseScaleFor } from './flight/camera.js';
 
 import { GameAudio } from './audio/index.js';
@@ -594,6 +596,13 @@ class Game {
     this.menus.syncMap(this.settings.map || 'kestrel');
     this.input.freeLook = !!this.settings.freeLook;
     this.menus.syncFreeLook(this.input.freeLook);
+    // Settings → Controls → Controllers: the sim gear's own page (ui/controllers-panel.js).
+    try {
+      const host = this.menus.screens.settings && this.menus.screens.settings.querySelector('[data-controllers]');
+      if (host) this.controllersPanel = mountControllersPanel(host, this.input.controllers);
+    } catch (e) {
+      console.warn('Controllers panel did not mount', e);
+    }
 
     window.addEventListener('resize', () => this.onResize());
     window.addEventListener('pointerdown', () => this.unlockAudio(), { once: false });
@@ -1750,6 +1759,9 @@ class Game {
     this.aircraft.difficulty = this.settings.difficulty || 'normal';
     this.aircraft.hoverAssist = this.settings.heliAssist !== false;
     this.input.out.throttle = this.aircraft.controls.throttle;
+    // A new flight's power is the spawn's: sim gear's thrust lever picks it up when it next moves.
+    this.input.releaseHardwareLevers();
+    this._hwSys = null;
 
     // Camera: cockpit for the tutorial (you learn the instruments), chase otherwise.
     this.rig.setMode(mode === 'tutorial' ? 'chase' : 'chase');
@@ -1811,6 +1823,8 @@ class Game {
     extStop(this, 'airport');
     this.aircraft.reset({ ...RUNWAY_START, engineOn: true });
     this.input.throttleTarget = 0;
+    this.input.releaseHardwareLevers();
+    this._hwSys = null;
     this.atc.reset();
     this.removeCrate();
     this.hud.clearTransient();
@@ -3320,6 +3334,93 @@ class Game {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+  }
+
+  /**
+   * Sim gear's levers and switches (flight/controllers.js through input.hw):
+   * the reverse range below the thrust levers' idle, the speedbrake and flap
+   * levers, the engine master switches, the parking brake and the autopilot
+   * disconnect buttons. The levers act when they MOVE, so the keys and the
+   * touch buttons for the same things keep working beside them.
+   */
+  applyControllers() {
+    const hw = this.input.hw;
+    const ac = this.aircraft;
+    const H = this._hwSys || (this._hwSys = { rev: false, sb: null, flap: null, revWarn: 0 });
+    if (!hw || !ac || ac.crashed) {
+      H.sb = H.flap = null;
+      return;
+    }
+    const wings = !SPEC.rotor;
+    // Reverse: a thrust lever pulled back through idle.
+    if (wings && hw.reverse !== null) {
+      const want = reverseDetent(hw.reverse, H.rev ? ac.reverse : 0);
+      if (want > 0) {
+        if (!SPEC.reversers) {
+          if (!H.revWarn) this.hud.notify('This aeroplane has no thrust reversers', 'info', 2);
+          H.revWarn = 1;
+        } else if (!ac.onGround) {
+          if (!H.revWarn) this.hud.notify('Reversers are locked out in the air — land first', 'warn', 2.4);
+          H.revWarn = 1;
+        } else if (ac.reverse !== want && (ac.reverse > 0 || (ac.groundSpeed || 0) >= 1)) {
+          ac.reverse = want;
+          H.rev = true;
+          this.hud.notify(want >= 1 ? 'MAX reverse' : 'Idle reverse', 'info', 1.6);
+        }
+      } else {
+        H.revWarn = 0;
+        if (H.rev && ac.reverse > 0) {
+          ac.reverse = 0;
+          this.hud.notify('Reversers stowed', 'info', 1.4);
+        }
+        H.rev = false;
+      }
+    }
+    // The speedbrake lever: its position is the lever's, once it moves.
+    if (wings && hw.speedbrake !== null) {
+      if (H.sb === null) H.sb = hw.speedbrake;
+      else if (Math.abs(hw.speedbrake - H.sb) > 0.04) {
+        H.sb = hw.speedbrake;
+        if (SPEC.spoilers) {
+          const was = ac.speedbrake || 0;
+          ac.speedbrake = hw.speedbrake < 0.06 ? 0 : Math.min(1, hw.speedbrake);
+          if ((was > 0) !== (ac.speedbrake > 0)) this.hud.notify(ac.speedbrake > 0 ? 'Speedbrake out' : 'Speedbrake in', 'info', 1.4);
+        }
+      }
+    } else H.sb = null;
+    // The flap lever: four positions, each with a margin so a lever resting between two does not flap them up and down.
+    if (wings && hw.flaps !== null) {
+      const f = hw.flaps * 3;
+      const step = H.flap !== null && Math.abs(f - H.flap) < 0.62 ? H.flap : Math.round(f);
+      if (H.flap === null) H.flap = step;
+      else if (step !== H.flap) {
+        H.flap = step;
+        if (step !== ac.flapStep()) {
+          const s = ac.setFlaps(step);
+          this.audio.available && this.audio.ambience.playFlaps();
+          this.hud.notify(s ? `Flaps ${s * 10}°` : 'Flaps up', 'info', 1.8);
+        }
+      }
+    } else H.flap = null;
+    // Engine masters: a switch to ON starts the engine; both OFF stops it.
+    const m = hw.masters;
+    if (m && m.known && m.changed) {
+      if (m.anyOn && !ac.engineOn && !(ac.starting > 0)) this.pressStarter(true);
+      else if (!m.anyOn && ac.engineOn) this.pressStarter(true);
+    }
+    if (hw.edges.parkingBrake) {
+      if (ac.parkingBrake) {
+        ac.parkingBrake = false;
+        this.hud.notify('Parking brake released', 'info', 1.8);
+      } else if (ac.onGround && (ac.groundSpeed || 0) < 1.5) {
+        ac.parkingBrake = true;
+        this.hud.notify('Parking brake set', 'info', 1.8);
+      } else this.hud.notify('Stop first — the parking brake is for standing still', 'info', 2);
+    }
+    if (hw.edges.apDisconnect) {
+      if (this.autopilot.engaged) this.toggleAutopilot(false);
+      else this.hud.notify(`Autopilot is off — ${codesFor('autopilot').length ? keyLabel(codesFor('autopilot')[0]) : 'its key'} engages it`, 'info', 2);
+    }
   }
 
   handleDiscreteInput() {
@@ -4891,6 +4992,11 @@ class Game {
       ac.controls.yaw = yaw;
       ac.controls.throttle = throttle;
       ac.controls.brakes = ctrl.brakes;
+      // Toe brakes, each side its own wheel (null: one brake for both, as always).
+      ac.controls.brakeL = ctrl.brakeL ?? null;
+      ac.controls.brakeR = ctrl.brakeR ?? null;
+      // Split thrust levers: engine 2 minus engine 1 (the physics turns it into yaw on a twin).
+      ac.controls.thrustSplit = this.autopilot.engaged ? 0 : ctrl.thrustSplit || 0;
       // A hand on the lever (the helicopter's height hold must not mistake
       // its own follow-up for the pilot), and whether the autopilot is the
       // pilot (the helicopter's assist stands down while it is).
@@ -4912,6 +5018,7 @@ class Game {
       this.input.update(dt, { simple: true });
     }
     this.handleDiscreteInput();
+    if (this.state === 'flying') this.applyControllers();
 
     this.weather.update(dt);
 

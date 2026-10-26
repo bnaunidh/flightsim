@@ -1735,7 +1735,7 @@ export class Menus {
           <label class="check"><input type="checkbox" data-set="invertMouse"><span>Invert mouse up/down</span></label>
           <label class="field"><span>Mouse / stick sensitivity <b data-out="sensitivity"></b></span>
             <input type="range" min="0.3" max="2" step="0.1" data-set="sensitivity"></label>
-          <label class="check"><input type="checkbox" data-set="gamepad"><span>Use a gamepad if one is plugged in</span></label>
+          <label class="check"><input type="checkbox" data-set="gamepad"><span>Use game controllers if they are plugged in — gamepads, flight sticks, yokes, throttles and rudder pedals (Controls → Controllers sets them up)</span></label>
           <label class="check"><input type="checkbox" data-set="showHints"><span>Repeat hints if I get stuck</span></label>
           <label class="check"><input type="checkbox" data-set="guidance"><span>Show guidance to the runway or target (N)</span></label>
           <label class="field"><span>Show it as</span>
@@ -1825,6 +1825,7 @@ export class Menus {
         </div>
 
         <div class="tab-body" data-panel="controls" hidden>
+          <div class="ctl-host" data-controllers></div>
           <p class="hint">Click a key, then press the new key you want to use. <kbd>Esc</kbd> cancels.</p>
           <div class="keymap-ask" data-keymap-ask hidden></div>
           <div class="keymap" data-keymap></div>
