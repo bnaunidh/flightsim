@@ -12,6 +12,8 @@ import './stovl.js';
 // The B-1B Lancer's swing wing and afterburners (aircraft/swing-wing.js): before carrier-ops, whose
 // hook and catapult keys ([ and ]) it shares — a Lancer has neither.
 import './swing-wing.js';
+// The fast jets' sense of speed: faint air streaks past the camera above ~450 kt, High and Ultra only.
+import './speed-feel.js';
 // The C-17's cargo ramp (fleet/extra/c17.js userData.cargo): the key, the panel, the speed rule.
 import './cargo-ramp.js';
 // The pilot's switches: lights, speedbrake/spoilers, reversers, the ATC request menu.

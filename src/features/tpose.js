@@ -79,8 +79,13 @@ if (!ACTIONS.harrisonBoost) {
   ACTIONS.harrisonBoost = { label: 'T-Pose Harrison: 1000 kt turbo boost (press 3 times)', group: 'Flying', ctx: ['plane'], default: ['KeyY'], presses: 3, shares: 'autopilot' };
 }
 
-/** The follow view's standoff for him, metres (the game's is 17 and 5.2). */
-const CHASE = { back: 8, up: 2.6 };
+/**
+ * The follow view's standoff for him, metres (the game's is 17 and 5.2). It
+ * was 8 and 2.6, from where in cruise (with the follow view's speed
+ * allowance and lag) he filled 13% of the picture's width — a man is 3.5 m
+ * across. The camera audit (tests/features/cams.browser.js) wants 18%.
+ */
+const CHASE = { back: 5.6, up: 1.8 };
 /** The spin camera: behind him and below, metres. */
 const SPIN_CAM = { back: 15, below: 5.5 };
 const HINT_KEY = 'islandsim.harrison.hint.v1';

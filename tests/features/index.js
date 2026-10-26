@@ -74,6 +74,7 @@ import { check as landingZone } from './landing-zone.browser.js';
 import { check as hudStack } from './hud-stack.browser.js';
 import { check as hudWins } from './hud-wins.browser.js';
 import { check as touchCoverage } from './touch-coverage.browser.js';
+import { check as cams } from './cams.browser.js';
 
 export const CHECKS = [
   { id: 'airport', check: airport },
@@ -100,6 +101,8 @@ export const CHECKS = [
   // The C-17 Globemaster III: its cargo ramp (key, panel, the speed rule) and a circuit on Kestrel.
   { id: 'c17', check: c17 },
   { id: 'fighters', check: fighters },
+  // After fighters: every type's Follow, Orbit, Wing and Tower views — the whole airframe on screen, the lens outside it.
+  { id: 'cams', check: cams },
   // After fighters: every family's cockpit on the model the game draws — screens live, shadows in, a finger to look round.
   { id: 'cockpits', check: cockpits },
   { id: 'events', check: events },

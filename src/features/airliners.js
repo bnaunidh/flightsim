@@ -81,7 +81,13 @@ export function viewScale(id) {
   return g ? Math.max(1, g.length / 24) : 1;
 }
 
-const STRETCHED = new Set(['chase', 'orbit', 'wing']);
+/*
+ * Only the follow view now. The orbit and wing views size themselves to the
+ * airframe in the rig (flight/camera.js setFrame), for every type alike;
+ * stretched again here they stood three times too far off the three
+ * airliners. The follow view's fit (main.js) is still made through this.
+ */
+const STRETCHED = new Set(['chase']);
 const _target = new THREE.Vector3();
 const _off = new THREE.Vector3();
 const _aim = new THREE.Vector3();
@@ -139,20 +145,6 @@ function stretchView(sim, camera) {
   rigCam.pos.copy(camera.position);
   rigCam.mode = rig.mode;
   const k = viewScale(sim.aircraftType.id);
-  if (rig.mode === 'wing') {
-    /*
-     * Bolted to the wing rather than eased towards it. The rig's own wing
-     * view lags its target by speed / 9 — 6.7 m at 60 m/s, which is nothing
-     * on a trainer and, stretched three times, left the A380's camera 20 m
-     * behind the wing instead of over it. At the rig's offset times k it sits
-     * a metre or two above the outboard wing: the window-seat view.
-     */
-    _off.set(6.6 * k, 0.6 * k, 1.4 * k).applyQuaternion(sim.aircraft.quat);
-    camera.position.copy(sim.aircraft.pos).add(_off);
-    camera.lookAt(sim.aircraft.pos);
-    camera.updateProjectionMatrix();
-    return;
-  }
   // The rig aims the chase view at its own lagged `lookAt` and the other two
   // straight at the aeroplane; stretching along that line keeps whatever the
   // rig was pointing at exactly where it was on screen.

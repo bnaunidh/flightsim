@@ -46,7 +46,7 @@ import { TouchControls, isTouchDevice } from './ui/touch.js';
 import { Input, keyLabel, HELI_MAP, BOAT_MAP, actionsFor, CONTEXT_GROUP, ACTIONS, codesFor } from './flight/input.js';
 import { reverseDetent } from './flight/controllers.js';
 import { mountControllersPanel } from './ui/controllers-panel.js';
-import { CameraRig, VIEW_LABELS, CHASE_BACK, CHASE_UP, chaseScaleFor } from './flight/camera.js';
+import { CameraRig, VIEW_LABELS, CHASE_BACK, CHASE_UP, chaseScaleFor, drawnPoints, airframeFrame, VIEW_TUNE } from './flight/camera.js';
 
 import { GameAudio } from './audio/index.js';
 
@@ -2511,7 +2511,12 @@ class Game {
         this.setAircraft(id);
       }
       this.menus.repaintFleetArt && this.menus.repaintFleetArt(value);
-      this.hud.notify(`Repainted — ${findLivery(value).name}`, 'info', 3);
+      // A type with a paint of its own (Marine One: liveries.js TYPE_SCHEMES)
+      // is not repainted; saying "Repainted — Kanal" over it was a lie.
+      const own = this.aircraftType && this.aircraftType.fixedLivery;
+      this.hud.notify(own
+        ? `${findLivery(value).name} saved for the others — ${this.aircraftType.name} keeps its own paint`
+        : `Repainted — ${findLivery(value).name}`, 'info', 3);
     } else if (path === 'difficulty') {
       this.applyDifficulty(value);
       // The helicopter assist box follows the dial on the same screen.
@@ -2816,10 +2821,20 @@ class Game {
        * chaseAlone is the bare fit, for if the stretch never happens.
        */
       const stretch = airlinerViewScale(this.aircraftType.id);
-      const fit = stretch > 1 ? chaseScaleFor(this.model, stretch, 1.4) : chaseScaleFor(this.model);
-      this.rig.chaseBack = CHASE_BACK * fit;
-      this.rig.chaseUp = CHASE_UP * fit;
-      const alone = stretch > 1 ? chaseScaleFor(this.model) : 0;
+      // The drawn vertices once, for all three fits below (camera.js drawnPoints).
+      const pts = drawnPoints(this.model);
+      const fit = stretch > 1 ? chaseScaleFor(this.model, stretch, 1.4, pts) : chaseScaleFor(this.model, 1, 1, pts);
+      const tune = VIEW_TUNE[this.aircraftType.id] || null;
+      const nearer = (tune && tune.chase) || 1;
+      this.rig.chaseBack = CHASE_BACK * fit * nearer;
+      this.rig.chaseUp = CHASE_UP * fit * nearer;
+      // The airframe's size and middle, for every outside view (camera.js setFrame).
+      this.rig.setFrame(airframeFrame(this.model, pts), { drawnY, tune });
+      // Stretched by features/airliners.js, which has its own crash pull-back (camera.js crashBack).
+      this.rig.chaseStretched = stretch > 1;
+      // ...and by how much, for the narrow-screen pull-back (camera.js narrowK).
+      this.rig.chaseStretchK = stretch > 1 ? stretch : 1;
+      const alone = stretch > 1 ? chaseScaleFor(this.model, 1, 1, pts) : 0;
       this.rig.chaseAlone = alone ? { back: CHASE_BACK * alone, up: CHASE_UP * alone } : null;
     }
     if (this.hud) this.hud.setAircraftName(this.aircraftType.name);
@@ -5495,7 +5510,12 @@ class Game {
     // told to pull the power right off, each a long way under its own
     // never-exceed (603, 700 and 369 kt). Now it is 80% of the type's own
     // never-exceed, never under 150, so the Skylark (80% = 128) keeps its 150.
-    if (kts > Math.max(150, 0.8 * SPEC.vne * KTS)) return 'Far too fast — ease the power right off with <kbd>Ctrl</kbd> and level the wings';
+    // ...except a fast jet in its afterburners under its red line (aircraft/
+    // reheat.js): its q-limit holds it at 92-97% of it, flat out on purpose,
+    // and past the red line the game's own OVERSPEED still speaks (as the
+    // B-1B's dash, features/swing-wing.js).
+    const dashing = SPEC.reheat && ac.rpm > 0.85 && ac.ias < SPEC.vne;
+    if (!dashing && kts > Math.max(150, 0.8 * SPEC.vne * KTS)) return 'Far too fast — ease the power right off with <kbd>Ctrl</kbd> and level the wings';
     if (kts < 52) return 'Too slow! Add power with <kbd>Shift</kbd> and lower the nose with <kbd>W</kbd>';
     if (ac.stalled) return 'Push the nose down with <kbd>W</kbd> and add power';
     if (ac.airborneTime < 8) return 'Climbing — keep the nose just above the horizon';

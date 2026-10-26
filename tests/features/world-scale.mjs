@@ -478,6 +478,7 @@ console.log(`INFO  the towns stand ${span(all.townGround)} above the sea: why th
     uh60: ['Sikorsky UH-60M', 19.76, 16.36],
     ch47: ['Boeing CH-47F', 30.1, 18.3],
     ah64: ['Boeing AH-64D', 17.73, 14.63],
+    vh3d: ['Sikorsky VH-3D Sea King', 22.15, 18.9],
   };
   // Air Massimo is a made-up racer (21.5 m long, a 9.7 m wing: nothing real
   // to hold it to); T-Pose Harrison is a person flying with his arms out, a

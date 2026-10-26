@@ -163,6 +163,13 @@ export const HELI_GEOMETRY = {
   ch47: { length: 15.9, R: 9.15, blades: 3, hz: 3.75, hubY: 1.9, hubZ: -3.4, aftHubY: 3.6, aftHubZ: 8.54, tandem: true, cgH: 1.9, kind: 'quad' },
   /* AH-64 Apache: 15.5 m with the tail rotor, 14.63 m four-blade rotor at 289 rpm, tailwheel gear, stub wings, the gun under the nose. */
   ah64: { length: 15.5, R: 7.315, blades: 4, hz: 4.82, hubY: 1.97, hubZ: -0.65, tailR: 1.395, tailBlades: 4, cgH: 1.9, kind: 'tailwheel' },
+  /*
+   * VH-3D Sea King, Marine One: 16.69 m fuselage, an 18.9 m five-blade rotor
+   * at 203 rpm, a 3.23 m five-blade tail rotor, 4.72 m to the top of the
+   * head; twin mains in the sponsons 3.96 m apart and a tail wheel 7.18 m
+   * behind them (Sikorsky S-61 / SH-3 published figures).
+   */
+  vh3d: { length: 16.7, R: 9.45, blades: 5, hz: 3.383, hubY: 2.95, hubZ: -1.1, tailR: 1.615, tailBlades: 5, cgH: 1.75, kind: 'tailwheel' },
 };
 
 export function TYPES(base) {
@@ -200,7 +207,7 @@ export function TYPES(base) {
       accent: '#d1281e',
       callsign: 'Medic one four five',
       stores: 4,
-      plan: { nose: -5.75, tail: 7.30, span: 11.00 },
+      plan: { nose: -5.75, tail: 7.25, span: 11.00 },
       shape: heliShape(base, {
         length: Gm.h145.length, halfSpan: 1.45, cgH: Gm.h145.cgH, nose: -1.5, main: [1.2, 0.8], wheelR: { nose: 0.2, main: 0.2 },
         power: { propRadius: Gm.h145.R, y: Gm.h145.hubY, z: Gm.h145.hubZ, blades: 4, hz: Gm.h145.hz, dir: -1 },
@@ -240,7 +247,7 @@ export function TYPES(base) {
       accent: '#f4f4f2',
       callsign: 'Rescue one three nine',
       stores: 6,
-      plan: { nose: -6.98, tail: 9.10, span: 13.79 },
+      plan: { nose: -6.98, tail: 9.20, span: 13.79 },
       shape: heliShape(base, {
         length: Gm.aw139.length, halfSpan: 1.75, cgH: Gm.aw139.cgH, nose: -3.9, main: [1.52, 0.9], wheelR: { nose: 0.26, main: 0.33 },
         power: { propRadius: Gm.aw139.R, y: Gm.aw139.hubY, z: Gm.aw139.hubZ, blades: 5, hz: Gm.aw139.hz, dir: 1 },
@@ -250,6 +257,8 @@ export function TYPES(base) {
     },
     {
       id: 'uh60',
+      // Flat olive drab, no stripes (liveries.js schemeFor, civil-build.js civilMaterials).
+      paint: { plain: true, finish: 'matte' },
       name: 'UH-60 Black Hawk',
       class: 'Helicopter',
       category: 'helicopter',
@@ -263,7 +272,7 @@ export function TYPES(base) {
       accent: '#2b3328',
       callsign: 'Hawk two six',
       stores: 6,
-      plan: { nose: -9.48, tail: 10.57, span: 16.35 },
+      plan: { nose: -9.48, tail: 10.63, span: 16.35 },
       shape: heliShape(base, {
         length: Gm.uh60.length, halfSpan: 1.6, cgH: Gm.uh60.cgH, nose: 6.2, main: [1.35, -2.6], wheelR: { nose: 0.25, main: 0.4 },
         power: { propRadius: Gm.uh60.R, y: Gm.uh60.hubY, z: Gm.uh60.hubZ, blades: 4, hz: Gm.uh60.hz, dir: 1 },
@@ -273,6 +282,8 @@ export function TYPES(base) {
     },
     {
       id: 'ch47',
+      // Flat olive drab, no stripes (liveries.js schemeFor, civil-build.js civilMaterials).
+      paint: { plain: true, finish: 'matte' },
       name: 'CH-47 Chinook',
       class: 'Helicopter',
       category: 'helicopter',
@@ -296,6 +307,8 @@ export function TYPES(base) {
     },
     {
       id: 'ah64',
+      // Flat olive drab, no stripes (liveries.js schemeFor, civil-build.js civilMaterials).
+      paint: { plain: true, finish: 'matte' },
       name: 'AH-64 Apache',
       class: 'Helicopter',
       category: 'helicopter',
@@ -310,13 +323,45 @@ export function TYPES(base) {
       accent: '#2b3328',
       callsign: 'Apache one one',
       stores: 4,
-      plan: { nose: -7.96, tail: 10.30, span: 14.62 },
+      plan: { nose: -7.96, tail: 10.16, span: 14.62 },
       shape: heliShape(base, {
         length: Gm.ah64.length, halfSpan: 2.6, wingY: -0.1, cgH: Gm.ah64.cgH, nose: 8.6, main: [1.0, -1.95], wheelR: { nose: 0.22, main: 0.38 },
         power: { propRadius: Gm.ah64.R, y: Gm.ah64.hubY, z: Gm.ah64.hubZ, blades: 4, hz: Gm.ah64.hz, dir: 1 },
         eye: [-0.0, 0.7, -3.4], stiffness: 1.2, hardNoseY: -0.7,
       }),
       aero: heliAero(base, { mass: 7500, length: Gm.ah64.length, R: Gm.ah64.R, rates: { roll: 60, pitch: 40, yaw: 55 }, vneKt: 197, ceiling: 20000, fuel: 1420, burn: 0.15 }),
+    },
+    /*
+     * Marine One (owner, 2026-10-25: "make Marine One"): the presidential
+     * VH-3D Sea King, in its own fixed paint (`fixedLivery`, liveries.js
+     * TYPE_SCHEMES) the way the President's 747 only ever wears the Air Force
+     * One scheme. Gated as Air Force One is: no passcode (it is not a weapon
+     * of war and carries none), bought in the hangar like the 747, and never
+     * drawn at random by an apron or the traffic. The numbers are the Sea
+     * King's: 144 kt, a 14,700 ft ceiling, 8.2 t (between the 5.4 t empty
+     * weight and the 9.75 t maximum), two T58 turbines' worth of fuel burn.
+     */
+    {
+      id: 'vh3d',
+      name: 'Marine One',
+      class: 'Helicopter',
+      category: 'helicopter',
+      fixedLivery: 'marine-one',
+      blurb:
+        'The presidential Sea King: a boat hull, five big blades, two turbines on the roof and the white top over '
+        + 'dark green. Heavy, unhurried and very steady. Set it down on the pad as if the whole country were watching.',
+      stats: { speed: 3, handling: 2, ease: 3 },
+      livery: '#22352a',
+      accent: '#c9a227',
+      callsign: 'Marine One',
+      stores: 6,
+      plan: { nose: -10.11, tail: 10.99, span: 18.89 },
+      shape: heliShape(base, {
+        length: Gm.vh3d.length, halfSpan: 2.0, cgH: Gm.vh3d.cgH, nose: 6.3, main: [1.98, -0.9], wheelR: { nose: 0.26, main: 0.33 },
+        power: { propRadius: Gm.vh3d.R, y: Gm.vh3d.hubY, z: Gm.vh3d.hubZ, blades: 5, hz: Gm.vh3d.hz, dir: 1 },
+        eye: [-0.55, 0.3, -5.2], stiffness: 1.25, hardNoseY: -0.5,
+      }),
+      aero: heliAero(base, { mass: 8200, length: Gm.vh3d.length, R: Gm.vh3d.R, rates: { roll: 45, pitch: 32, yaw: 45 }, vneKt: 144, ceiling: 14700, fuel: 2400, burn: 0.17 }),
     },
   ];
 }

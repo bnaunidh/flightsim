@@ -695,8 +695,45 @@ const HOUSE_REGS = {
   nightjar: 'NJ-02',
 };
 
+/*
+ * Schemes that belong to ONE type and are never offered to any other: the
+ * presidential Sea King's white top over dark green (aircraft/extra/helis.js
+ * 'vh3d', `fixedLivery`). Like the Air Force One paint above it is the
+ * game's own art — the colours and the title the real one wears, a gold
+ * star roundel of our own on the door, no seal, no real serial — and, like
+ * it, nothing ever draws it at random: it is not in LIVERIES, so neither an
+ * apron nor the traffic nor the Settings list can hand it out.
+ */
+export const TYPE_SCHEMES = Object.freeze([
+  {
+    id: 'marine-one',
+    name: 'Marine One',
+    blurb: 'White top over dark green, flies the Commander in Chief',
+    base: '#22352a',
+    accent: '#c9a227',
+    // The titling ink (civil-details.js fuselageLettering reads the cheatline).
+    cheatline: '#f2f1ea',
+    tail: null,
+    reg: null,
+    title: 'UNITED STATES OF AMERICA',
+    upper: '#f3f2ec',
+    upperTo: 0.6,
+    pinstripe: '#b8962e',
+    special: true,
+  },
+]);
+
 export function findLivery(id) {
-  return LIVERIES.find((l) => l.id === id) || LIVERIES[0];
+  return LIVERIES.find((l) => l.id === id) || TYPE_SCHEMES.find((l) => l.id === id) || LIVERIES[0];
+}
+
+/** The paints this type may be shown in: its own fixed scheme alone, or every scheme. */
+export function liveriesFor(type) {
+  if (type && type.fixedLivery) {
+    const own = TYPE_SCHEMES.find((l) => l.id === type.fixedLivery);
+    if (own) return [own];
+  }
+  return LIVERIES;
 }
 
 /**
@@ -707,8 +744,19 @@ export function findLivery(id) {
  * by default and stops the picker overwriting the fleet's own identity.
  */
 export function schemeFor(type, liveryId) {
+  // A type with a scheme of its own (Marine One) wears it whatever is picked,
+  // the way the President's 747 is only ever in the Air Force One paint.
+  if (type && type.fixedLivery) {
+    const own = TYPE_SCHEMES.find((l) => l.id === type.fixedLivery);
+    if (own) return own;
+  }
   const l = findLivery(liveryId);
-  if (l.house || !type) {
+  // A scheme that belongs to one type is never worn by another.
+  if (l.house || !type || TYPE_SCHEMES.includes(l)) {
+    // `paint` (helicopters: aircraft/extra/helis.js) says how the house colours
+    // are laid on — `plain` (no stripes) for a service machine, `finish:
+    // 'matte'` for the flat paint an army helicopter wears.
+    const paint = (type && type.paint) || {};
     return {
       id: 'house',
       name: 'House colours',
@@ -717,6 +765,8 @@ export function schemeFor(type, liveryId) {
       cheatline: 'rgba(30,44,74,0.85)',
       tail: null, // null means "leave the fin in the body colour"
       reg: (type && HOUSE_REGS[type.id]) || null, // null means "paint no number"
+      ...(paint.plain ? { plain: true } : {}),
+      ...(paint.finish ? { finish: paint.finish } : {}),
     };
   }
   return l;

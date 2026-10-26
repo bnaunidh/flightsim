@@ -732,17 +732,42 @@ export function airframeTexture(schemeOrBase = '#eef1f5', accentArg = '#c8102e')
   // Tempest): half the side on Low, so a Chromebook draws a quarter of the
   // pixels; the key carries the tier, so a change redraws it.
   const S = textureTierName === 'low' ? 512 : 1024;
-  const key = ['airframe', baseColor, accent, cheatline, S].join('|');
+  /*
+   * Two optional words a helicopter's paint uses (aircraft/extra/helis.js
+   * `paint`, carried through liveries.js schemeFor):
+   *   plain    no swooping stripes: a service machine is one colour all
+   *            over (the olive drab of the Black Hawk, Chinook and Apache).
+   *   upper    a second colour over the top of the body, down to `upperTo`
+   *            of the way from the belly (v, 0..1) with a thin `pinstripe`
+   *            where they meet: the white top over dark green of the
+   *            presidential Sea King. Implies plain.
+   */
+  const upper = typeof scheme.upper === 'string' ? scheme.upper : '';
+  const upperTo = Number.isFinite(scheme.upperTo) ? scheme.upperTo : 0.7;
+  const plain = !!scheme.plain || !!upper;
+  const pin = typeof scheme.pinstripe === 'string' ? scheme.pinstripe : '';
+  const key = ['airframe', baseColor, accent, cheatline, S, ...(plain ? ['plain', upper, upperTo, pin] : [])].join('|');
   return get(key, () => {
     const c = canvas(S);
     const ctx = c.getContext('2d');
     ctx.fillStyle = baseColor;
     ctx.fillRect(0, 0, S, S);
+    if (upper) {
+      // Canvas y 0 is v 1 (the roof): the upper colour from the top down.
+      const yb = Math.round(S * (1 - upperTo));
+      ctx.fillStyle = upper;
+      ctx.fillRect(0, 0, S, yb);
+      if (pin) {
+        ctx.fillStyle = pin;
+        ctx.fillRect(0, yb, S, Math.max(2, Math.round(S * 0.006)));
+      }
+    }
     // Subtle metal mottling (very low contrast).
     tileNoise(ctx, S, S, noiseTile(64, 3, { octaves: 3, seed: 3 }), S, { alpha: 0.12, mode: 'overlay' });
 
     // Livery: two swooping accent stripes across the middle band.
     ctx.save();
+    if (plain) ctx.globalAlpha = 0;
     ctx.fillStyle = accent;
     ctx.beginPath();
     ctx.moveTo(0, S * 0.56);
@@ -763,7 +788,9 @@ export function airframeTexture(schemeOrBase = '#eef1f5', accentArg = '#c8102e')
 
     // Panel lines.
     const k = S / 1024;
-    ctx.strokeStyle = 'rgba(90,95,105,0.45)';
+    // On a plain (service) scheme the lines are recessed shadow, not a
+    // lighter grid drawn over dark paint.
+    ctx.strokeStyle = plain ? 'rgba(10,14,12,0.32)' : 'rgba(90,95,105,0.45)';
     ctx.lineWidth = 1.5 * k;
     for (let i = 1; i < 10; i++) {
       ctx.beginPath();
@@ -779,7 +806,7 @@ export function airframeTexture(schemeOrBase = '#eef1f5', accentArg = '#c8102e')
     }
 
     // Rivets along the panel lines.
-    ctx.fillStyle = 'rgba(120,126,136,0.5)';
+    ctx.fillStyle = plain ? 'rgba(10,14,12,0.3)' : 'rgba(120,126,136,0.5)';
     for (let i = 1; i < 10; i++)
       for (let y = 6 * k; y < S; y += 18 * k) {
         ctx.beginPath();
@@ -849,6 +876,48 @@ export function lettersTexture(text, { color = '#1f272e', width = 512, height = 
     const tex = finish(c, { aniso: 8 });
     tex.userData.text = t; // what it says, for the tests
     // A label, not a tile: its edges must not bleed round to the other side.
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    return tex;
+  });
+}
+
+/**
+ * A star roundel of the game's own: a gold five-pointed star on a navy disc
+ * inside a gold ring — the mark on the presidential helicopter's door
+ * (aircraft/models/helis.js, the VH-3D). Deliberately no seal, no eagle, no
+ * words: an emblem of ours, not anybody's official one.
+ */
+export function starRoundelTexture(size = 256) {
+  const n = Math.max(64, Math.min(512, Math.round(size)));
+  return get(['roundel', n].join('|'), () => {
+    const c = canvas(n);
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, n, n);
+    const r = n / 2;
+    ctx.fillStyle = '#c9a227';
+    ctx.beginPath();
+    ctx.arc(r, r, r * 0.98, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#1b2a4a';
+    ctx.beginPath();
+    ctx.arc(r, r, r * 0.84, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#e8d58a';
+    ctx.lineWidth = Math.max(1, n * 0.012);
+    ctx.beginPath();
+    ctx.arc(r, r, r * 0.76, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#d9b543';
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const rr = i % 2 ? r * 0.27 : r * 0.62;
+      if (i) ctx.lineTo(r + Math.cos(a) * rr, r + Math.sin(a) * rr);
+      else ctx.moveTo(r + Math.cos(a) * rr, r + Math.sin(a) * rr);
+    }
+    ctx.closePath();
+    ctx.fill();
+    const tex = finish(c, { aniso: 4 });
     tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
     return tex;
   });

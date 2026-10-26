@@ -1610,11 +1610,22 @@ export class Hud {
      * can never disagree.
      */
     const ias = Math.round(rotor ? r.groundKts : r.iasKts);
-    if (this.lastValues.ias !== ias) {
+    /*
+     * The Mach number, for the types built to go past it (the burners'
+     * profiles, aircraft/reheat.js, and the B-1B's swing wing): from Mach
+     * 0.5, in place of the speed word, to two places — "Mach 1.42 ·
+     * supersonic". Knots say nothing up high, where 300 indicated is twice
+     * the speed of sound.
+     */
+    const machType = !rotor && !!(SPEC.reheat || (sim && sim.aircraftType && sim.aircraftType.swingWing));
+    const mach = machType && ac && ac.mach >= 0.5 ? Math.round(ac.mach * 100) / 100 : 0;
+    if (this.lastValues.ias !== ias || this.lastValues.mach !== mach) {
       this.speedValue.textContent = fmt(ias);
       this.lastValues.ias = ias;
+      this.lastValues.mach = mach;
       let word;
-      if (rotor) word = rotorSpeedWord(ias);
+      if (mach) word = `Mach ${mach.toFixed(2)}${mach >= 1 ? ' · supersonic' : ''}`;
+      else if (rotor) word = rotorSpeedWord(ias);
       else {
         word = 'stopped';
         if (ias > 150) word = 'very fast';

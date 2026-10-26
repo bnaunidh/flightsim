@@ -2,7 +2,7 @@
  * THE SKYHOOK ON A PHONE AND AN IPAD — the helicopter's HUD loaded the way
  * a touch device loads it, measured for fit.
  *
- *   node tests/features/heli-touch.playtest.mjs [--url=http://127.0.0.1:8931/] [--shots=dir]
+ *   node tests/features/heli-touch.playtest.mjs [--url=http://127.0.0.1:8931/] [--shots=dir] [--aircraft=vh3d]
  *
  * The in-page heli playtest (heli-playtest.browser.js) runs at whatever size
  * the window is and can only put the `is-touch` class on; the game decides it
@@ -217,7 +217,7 @@ const START = `
   if (typeof sim.applyDifficulty === 'function') sim.applyDifficulty('normal');
   if (sim.settings) sim.settings.heliAssist = true;
   if (typeof sim.switchGame === 'function') sim.switchGame('heli');
-  await sim.startMode('free', { aircraft: 'harrier', time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 250 });
+  await sim.startMode('free', { aircraft: ${JSON.stringify(String(arg('aircraft', 'harrier')))}, time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 250 });
   for (let i = 0; i < 30; i++) sim.step(1 / 30);
   return { touch: !!sim.touch, isTouch: !!(sim.hud && sim.hud.wrap.classList.contains('is-touch')), rotor: !!(sim.hud && sim.hud.wrap.classList.contains('is-rotor')) };
 `;

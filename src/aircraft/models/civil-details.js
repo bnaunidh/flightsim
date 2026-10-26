@@ -365,6 +365,14 @@ export function fuselageLettering(b, hull, { regAt = null, titleAt = null } = {}
   return out;
 }
 
+/**
+ * Any flat mark laid on the hull, once per side (a roundel on a door): the
+ * same patch as the lettering, `at` = { z, y, w }, height w * aspect.
+ */
+export function skinDecal(b, hull, name, texture, at, aspect = 1, nu = 4, nv = 2) {
+  return lettering(b, hull, name, texture, at, aspect, nu, nv);
+}
+
 function lettering(b, hull, name, texture, at, aspect, nu = 6, nv = 1) {
   const mat = new THREE.MeshBasicMaterial({
     map: texture,

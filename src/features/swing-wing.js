@@ -13,10 +13,11 @@
  *             Shared by design with the carrier's hook and catapult keys: a
  *             Lancer never goes to sea (no hook, no catapult). Settings →
  *             Controls → Flying, like every key.
- *   the panel the wing's angle and mode on a little gauge, AUTO / MANUAL, the
+ *   the panel one line: the wing's angle, AUTO / MANUAL and two small
+ *             buttons with their keys; under it, only when it matters, the
  *             Mach number, AB when the burners are lit, and the radar
- *             altitude when it is down low and fast — with two buttons for a
- *             touch screen. Steady colours only: nothing here flashes.
+ *             altitude when it is down low and fast. The buttons are a touch
+ *             screen's way in. Steady colours only: nothing here flashes.
  *   the model where the wing is drawn and whether the burners show
  *             (userData.sweepRig, src/fleet/extra/lancer.js)
  *   the words the wing's advice (flaps up first, too slow for the sweep),
@@ -30,7 +31,6 @@
 import { registerExtension, extLayer } from '../game/extensions.js';
 import { registerActions, isKey, keyName, bindingsVersion } from '../flight/input.js';
 import { SwingWing, wrapUpdate } from '../aircraft/swing-wing.js';
-import { LANCER_WING } from '../aircraft/extra/lancer.js';
 import { AIRCRAFT } from '../aircraft/types.js';
 import { SPEC } from '../aircraft/physics.js';
 import * as PROG from '../game/progression.js';
@@ -114,34 +114,45 @@ function updateRig(sim, on) {
 }
 
 /* --- the panel --- */
+/*
+ * Slimmed like the cargo ramp's (owner, 2026-10-25: the ramp card was "too
+ * big", and this one was its twin): one line — "Wings 25° AUTO" and the two
+ * small buttons with their keys on keycaps — and a second only when it has
+ * something to say: the Mach number and the burners once past Mach 0.5 or
+ * lit, LOW LEVEL when low and fast. The top-view gauge went: the number in
+ * the line is the sweep, and the model shows the wing.
+ */
 const CSS = `
-.swing-panel { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); width: 136px;
-  padding: 9px 10px 10px; border-radius: 14px; background: rgba(12,20,34,.78);
+.swing-panel { position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
+  padding: 5px 5px 5px 9px; border-radius: 16px; background: rgba(12,20,34,.72);
   border: 1px solid var(--panel-line, rgba(140,180,230,.18)); color: var(--text, #eaf1fb);
-  font: 600 12px/1.25 var(--font, system-ui, sans-serif); backdrop-filter: blur(8px);
+  font: 600 12px/1.2 var(--font, system-ui, sans-serif); backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px); display: none; user-select: none; }
 .swing-panel.is-shown { display: block; }
-.swing-head { display: flex; justify-content: space-between; align-items: baseline; }
-.swing-head span { color: var(--text-dim, #9fb2cc); font-size: 10.5px; letter-spacing: .08em; }
-.swing-head b { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.swing-mode { display: inline-block; margin-top: 4px; padding: 1px 6px; border-radius: 6px; font-size: 10px;
+.swing-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; white-space: nowrap; }
+.swing-head > span:first-child { color: var(--text-dim, #9fb2cc); }
+.swing-head b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.swing-mode { padding: 1px 4px; border-radius: 5px; font-size: 9.5px;
   font-weight: 800; letter-spacing: .06em; background: rgba(88,198,255,.16); color: #bfe6ff; }
 .swing-mode.is-manual { background: rgba(255,194,71,.18); color: #ffe6b3; }
-.swing-gauge { position: relative; height: 34px; margin: 6px 0 4px; }
-.swing-gauge svg { width: 100%; height: 100%; display: block; }
-.swing-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; }
-.swing-btn { pointer-events: auto; padding: 6px 0 5px; border-radius: 9px; border: 1px solid rgba(140,180,230,.35);
-  background: rgba(88,198,255,.10); color: inherit; cursor: pointer; font: 800 11px/1 var(--font, system-ui, sans-serif);
-  touch-action: manipulation; }
-.swing-btn small { display: block; margin-top: 2px; font-size: 9.5px; font-weight: 600; opacity: .7; }
-.swing-read { display: flex; justify-content: space-between; margin-top: 7px; font-variant-numeric: tabular-nums; }
-.swing-read b { font-size: 14px; font-weight: 800; }
-.swing-ab { padding: 1px 6px; border-radius: 6px; font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
+/* On a narrow column (a phone) the two buttons wrap under the line, to the right, rather than off the screen. */
+.swing-btns { display: inline-flex; gap: 3px; margin-left: auto; }
+.swing-btn { pointer-events: auto; display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 7px;
+  border-radius: 99px; border: 1px solid rgba(140,180,230,.35); background: rgba(88,198,255,.10); color: inherit;
+  cursor: pointer; font: 700 11px/1 var(--font, system-ui, sans-serif); touch-action: manipulation; }
+.swing-btn:hover { background: rgba(88,198,255,.18); }
+.swing-btn kbd { font: 700 10px/1 var(--mono, ui-monospace, monospace); min-width: 14px; padding: 2px 4px 1px;
+  text-align: center; border-radius: 5px; border: 1px solid rgba(255,255,255,.22); border-bottom-width: 2px;
+  background: rgba(255,255,255,.08); color: #eaf1fb; }
+.swing-btn kbd:empty { display: none; }
+.swing-read { display: none; align-items: center; gap: 6px; margin: 4px 0 1px; font-variant-numeric: tabular-nums; }
+.swing-read.is-on { display: flex; }
+.swing-read b { font-size: 12px; font-weight: 800; }
+.swing-ab { padding: 1px 5px; border-radius: 5px; font-size: 9.5px; font-weight: 800; letter-spacing: .06em;
   color: #9fb2cc; background: rgba(255,255,255,.07); }
 .swing-ab.is-lit { color: #1b1206; background: #ffb347; }
-.swing-low { display: none; margin-top: 5px; font-size: 10.5px; font-weight: 700; color: #c9ffdd; text-align: center; }
+.swing-low { display: none; margin: 4px 0 1px; font-size: 10.5px; font-weight: 700; color: #c9ffdd; }
 .swing-low.is-on { display: block; }
-@media (max-width: 700px) { .swing-panel { right: 8px; width: 122px; } }
 /*
  * The coach's "Far too fast — ease the power right off" is 80% of a type's red
  * line (main.js coachHint), which for the Lancer is 500 kt: its whole low-level
@@ -150,43 +161,10 @@ const CSS = `
  * OVERSPEED warning still speaks.
  */
 body.swing-dash .hud-coach { display: none !important; }
-@media (max-height: 560px) { .swing-panel { top: 64px; transform: none; padding: 7px 8px 8px; } .swing-gauge { height: 26px; } }
-/*
- * In the HUD's right-hand column (ui/hud-stack.js), which places it: on its own
- * it sat on the notices, and on a phone held sideways ran down over the STOP
- * pad. On a short screen it keeps the sweep, the mode and the two buttons; the
- * gauge and the Mach line go (the number in the head is the sweep).
- */
-.hud-rstack > .swing-panel { transform: none; }
-.hud-rstack > .swing-panel { position: relative; }
+/* In the HUD's right-hand column (ui/hud-stack.js), which places it, against its right edge like a chip. */
+.hud-rstack > .swing-panel { transform: none; position: relative; align-self: flex-end; }
 .hud-rstack > .swing-panel:not(.is-shown) { display: none !important; }
-@media (max-height: 560px) {
-  .hud-rstack > .swing-panel { padding: 6px 8px 7px; }
-  .hud-rstack > .swing-panel .swing-gauge,
-  .hud-rstack > .swing-panel .swing-read,
-  .hud-rstack > .swing-panel .swing-btn small { display: none; }
-  /* AUTO / MANUAL beside the sweep in the head, not on a line of its own. */
-  .hud-rstack > .swing-panel .swing-mode { position: absolute; top: 6px; left: 58px; margin: 0; }
-  .hud-rstack > .swing-panel .swing-btn { padding: 7px 0; }
-}
 `;
-
-/** The gauge: a top view of one wing on its pin, drawn at the sweep. Static art plus one rotated line. */
-function gaugeSvg() {
-  const D = LANCER_WING.detents;
-  const ticks = D.map((d) => {
-    const r = (d * Math.PI) / 180;
-    const x = 10 + Math.cos(r) * 100;
-    const y = 4 + Math.sin(r) * 28;
-    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.6" fill="rgba(159,178,204,.7)"/>`;
-  }).join('');
-  return `<svg viewBox="0 0 116 34" aria-hidden="true">
-    <rect x="0" y="0" width="12" height="34" rx="4" fill="rgba(255,255,255,.12)"/>
-    ${ticks}
-    <line class="swing-arm" x1="10" y1="4" x2="106" y2="30" stroke="#eaf1fb" stroke-width="4" stroke-linecap="round"/>
-    <circle cx="10" cy="4" r="3" fill="#58c6ff"/>
-  </svg>`;
-}
 
 function buildUi(sim) {
   if (ui || typeof document === 'undefined') return ui;
@@ -196,13 +174,7 @@ function buildUi(sim) {
   const panel = document.createElement('div');
   panel.className = 'swing-panel';
   panel.innerHTML = `
-    <div class="swing-head"><span>WINGS</span><b class="swing-deg">15°</b></div>
-    <span class="swing-mode">AUTO</span>
-    <div class="swing-gauge">${gaugeSvg()}</div>
-    <div class="swing-btns">
-      <button class="swing-btn" type="button" data-dir="-1" aria-label="Wings forward">FWD<small class="swing-kf"></small></button>
-      <button class="swing-btn" type="button" data-dir="1" aria-label="Wings back">BACK<small class="swing-kb"></small></button>
-    </div>
+    <div class="swing-head"><span>Wings</span><b class="swing-deg">15°</b><span class="swing-mode">AUTO</span><span class="swing-btns"><button class="swing-btn" type="button" data-dir="-1" aria-label="Wings forward">Fwd<kbd class="swing-kf"></kbd></button><button class="swing-btn" type="button" data-dir="1" aria-label="Wings back">Back<kbd class="swing-kb"></kbd></button></span></div>
     <div class="swing-read"><b class="swing-mach">M 0.00</b><span class="swing-ab">AB</span></div>
     <div class="swing-low"></div>`;
   extLayer().appendChild(panel);
@@ -216,7 +188,7 @@ function buildUi(sim) {
     });
   }
   ui = {
-    panel, deg: q('.swing-deg'), mode: q('.swing-mode'), arm: q('.swing-arm'), mach: q('.swing-mach'), ab: q('.swing-ab'),
+    panel, deg: q('.swing-deg'), mode: q('.swing-mode'), read: q('.swing-read'), mach: q('.swing-mach'), ab: q('.swing-ab'),
     low: q('.swing-low'), kf: q('.swing-kf'), kb: q('.swing-kb'),
     touch: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches,
   };
@@ -227,8 +199,9 @@ function buildUi(sim) {
 function syncKeys(sim) {
   if (!ui || ui.keysVer === bindingsVersion()) return;
   ui.keysVer = bindingsVersion();
-  ui.kf.textContent = ui.touch ? 'tap' : keyName('wingsForward', sim);
-  ui.kb.textContent = ui.touch ? 'tap' : keyName('wingsBack', sim);
+  // Keycaps: the keys that do it. None on a touch screen (the buttons are tapped).
+  ui.kf.textContent = ui.touch ? '' : keyName('wingsForward', sim);
+  ui.kb.textContent = ui.touch ? '' : keyName('wingsBack', sim);
 }
 
 function press(sim, dir) {
@@ -268,9 +241,8 @@ function updateUi(sim, on) {
   ui.deg.textContent = `${deg}°`;
   ui.mode.textContent = wing.mode === 'auto' ? 'AUTO' : 'MANUAL';
   ui.mode.classList.toggle('is-manual', wing.mode !== 'auto');
-  const r = (wing.sweep * Math.PI) / 180;
-  ui.arm.setAttribute('x2', (10 + Math.cos(r) * 100).toFixed(1));
-  ui.arm.setAttribute('y2', (4 + Math.sin(r) * 28).toFixed(1));
+  // The second line only when it has something to say.
+  ui.read.classList.toggle('is-on', lit || mach >= 50);
   ui.mach.textContent = `M ${(mach / 100).toFixed(2)}`;
   ui.ab.classList.toggle('is-lit', lit);
   ui.low.classList.toggle('is-on', low >= 0);

@@ -55,7 +55,7 @@ const HSK = await import(SRC + 'features/heatseek.js');
 
 TER.applyMap(TER.MAP.id);
 
-const WAVE = ['bell407', 'h145', 'r44', 'aw139', 'uh60', 'ch47', 'ah64'];
+const WAVE = ['bell407', 'h145', 'r44', 'aw139', 'uh60', 'ch47', 'ah64', 'vh3d'];
 const only = process.argv.slice(2).filter((a) => !a.startsWith('-'));
 const IDS = only.length ? only : WAVE;
 
@@ -142,7 +142,7 @@ function liftTo(ac, p, h) {
 console.log('\n--- the roster ---');
 {
   const ids = T.AIRCRAFT.map((a) => a.id);
-  ok('the seven are in the roster, after the Skyhook', WAVE.every((id) => ids.includes(id)) && ids.indexOf('harrier') < ids.indexOf('bell407'), ids.filter((id) => WAVE.includes(id)).join(', '));
+  ok('the wave (and Marine One) are in the roster, after the Skyhook', WAVE.every((id) => ids.includes(id)) && ids.indexOf('harrier') < ids.indexOf('bell407'), ids.filter((id) => WAVE.includes(id)).join(', '));
   ok('no id clashes with the fleet pack or anything else', new Set(ids).size === ids.length);
   const text = readFileSync(new URL('../../src/aircraft/extra/helis.js', import.meta.url), 'utf8') + readFileSync(new URL('../../src/aircraft/models/helis.js', import.meta.url), 'utf8');
   ok('nothing a player reads in the wave\'s files says "kid"', !/\bkids?\b/i.test(text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')));
@@ -158,7 +158,7 @@ for (const id of IDS) {
     spec.rotorRadius === Gm.R && spec.rotorBlades === Gm.blades && Math.abs(spec.rotorHz - Gm.hz) < 1e-6 && spec.rotorTandem === !!Gm.tandem, `${spec.rotorRadius} / ${spec.rotorBlades} / ${spec.rotorHz}`);
   ok(`${id}: the retreating blade stalls at 0.86 of the red line (${f1(spec.rotorStallAt * KT)} of ${f1(spec.vne * KT)} kt)`, Math.abs(spec.rotorStallAt / spec.vne - 0.86) < 0.01);
   const feel = RA.describeRotorFeel(spec);
-  const rates = { r44: [85, 55, 75], bell407: [72, 48, 68], h145: [62, 42, 60], aw139: [55, 38, 55], uh60: [50, 35, 50], ch47: [40, 30, 42], ah64: [60, 40, 55] }[id];
+  const rates = { r44: [85, 55, 75], bell407: [72, 48, 68], h145: [62, 42, 60], aw139: [55, 38, 55], uh60: [50, 35, 50], ch47: [40, 30, 42], ah64: [60, 40, 55], vh3d: [45, 32, 45] }[id];
   ok(`${id}: the arms produce the rates they were solved for (roll ${rates[0]}, pitch ${rates[1]}, yaw ${rates[2]} deg/s)`,
     Math.abs(feel.rollRateDegPerSec - rates[0]) < 1.5 && Math.abs(feel.pitchRateDegPerSec - rates[1]) < 1.5 && Math.abs(feel.yawRateDegPerSec - rates[2]) < 1.5,
     `${feel.rollRateDegPerSec} / ${feel.pitchRateDegPerSec} / ${feel.yawRateDegPerSec}`);
@@ -173,7 +173,13 @@ for (const id of IDS) {
     && !HSK.carriesMissiles({ aircraftType: t, game: 'flight' }) && !HSK.carriesMissiles({ aircraftType: t, game: 'heli' }));
   ok(`${id}: for sale in the hangar at a price (${Prog.costOf(id)} credits)`, Prog.costOf(id) > 0 && Prog.UNLOCKS.some((u) => u.aircraft === id && !!u.military === mil));
   const scheme = schemeFor(t, 'house');
-  ok(`${id}: wears a registration of its own in house colours`, !!(scheme && scheme.reg && scheme.reg !== 'N172SK'), scheme && scheme.reg);
+  if (t.fixedLivery) {
+    // Marine One: its own fixed paint whatever is picked, titled, no number of a real airframe.
+    ok(`${id}: wears its own fixed scheme whatever livery is picked (${scheme && scheme.name})`,
+      ['house', 'skyhook', 'potus', 'kanal'].every((l) => schemeFor(t, l) === scheme) && scheme.id === t.fixedLivery && !!scheme.title, scheme && scheme.id);
+  } else {
+    ok(`${id}: wears a registration of its own in house colours`, !!(scheme && scheme.reg && scheme.reg !== 'N172SK'), scheme && scheme.reg);
+  }
 }
 
 /* ================================================================== *

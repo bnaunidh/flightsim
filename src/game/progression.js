@@ -56,6 +56,8 @@ export const UNLOCKS = [
   { aircraft: 'uh60', cost: 1800, why: 'Eleven troops and a canted tail', military: true },
   { aircraft: 'ch47', cost: 2600, why: 'Two rotors, a ramp, nothing lifts more', military: true },
   { aircraft: 'ah64', cost: 3000, why: 'The gun follows the sight', military: true },
+  // Marine One: bought like the President's 747 (b747 above), no passcode.
+  { aircraft: 'vh3d', cost: 1500, why: 'The President\'s helicopter' },
 ];
 
 /*

@@ -9,8 +9,10 @@
  *              above 165 kt with it open it closes itself — the real C-17
  *              drops cargo with the ramp open at about 130-150 kt, and
  *              nothing here is allowed to be a way to lose the aeroplane
- *   the panel  RAMP, the state, a bar as it moves, and ONE button for a
- *              touch screen (every new action needs one). Steady colours.
+ *   the panel  one line: "Cargo ramp · Closed" and a small Open button with
+ *              its keycap; a thin bar only while it moves, the speed rule
+ *              only after a refusal. On a touch screen a pad among the
+ *              others instead (every new action needs one). Steady colours.
  *   the words  once each, through the HUD's own notes
  *
  * Nothing here is written for the C-17 by name: a type with `cargoRamp:
@@ -80,42 +82,58 @@ export function pressRamp(sim) {
   if (r.action === 'opening') cargo.open();
   else if (r.action === 'closing') cargo.close();
   notify(sim, r.note, r.kind || 'info');
+  // The speed rule on the card, only now that it has mattered.
+  if (S.ui) S.ui.noteT = r.action === 'refused' ? NOTE_S : 0;
   S.last = r.action;
   return r.action;
 }
 
 /* --- the panel --- */
+/*
+ * One line in the right-hand column (owner, 2026-10-25: "too big"): "Cargo
+ * ramp · Closed" and a small Open button with the key on a keycap. A thin
+ * bar under it only while the ramp is moving; "Under 150 kt in the air" only
+ * after an open has been refused, for a few seconds. It was a 136 px card of
+ * four rows — heading, state badge, bar, a full-width button and a note —
+ * every second of every C-17 flight.
+ */
 const CSS = `
-.ramp-panel { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); width: 136px;
-  padding: 9px 10px 10px; border-radius: 14px; background: rgba(12,20,34,.78);
+.ramp-panel { position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
+  padding: 5px 5px 5px 10px; border-radius: 99px; background: rgba(12,20,34,.72);
   border: 1px solid var(--panel-line, rgba(140,180,230,.18)); color: var(--text, #eaf1fb);
-  font: 600 12px/1.25 var(--font, system-ui, sans-serif); backdrop-filter: blur(8px);
+  font: 600 12px/1.2 var(--font, system-ui, sans-serif); backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px); display: none; user-select: none; }
 .ramp-panel.is-shown { display: block; }
-.ramp-head { display: flex; justify-content: space-between; align-items: baseline; }
-.ramp-head span { color: var(--text-dim, #9fb2cc); font-size: 10.5px; letter-spacing: .08em; }
-.ramp-state { display: inline-block; margin-top: 4px; padding: 1px 6px; border-radius: 6px; font-size: 10px;
-  font-weight: 800; letter-spacing: .06em; background: rgba(255,255,255,.08); color: #c9d4e2; }
-.ramp-state.is-open { background: rgba(88,198,255,.16); color: #bfe6ff; }
-.ramp-state.is-moving { background: rgba(255,194,71,.18); color: #ffe6b3; }
-.ramp-bar { position: relative; height: 6px; margin: 8px 0 6px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
-.ramp-bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #58c6ff; border-radius: 3px; }
-.ramp-btn { pointer-events: auto; display: block; width: 100%; padding: 7px 0 6px; border-radius: 9px; border: 1px solid rgba(140,180,230,.35);
-  background: rgba(88,198,255,.10); color: inherit; cursor: pointer; font: 800 11px/1 var(--font, system-ui, sans-serif);
+/* On a narrow column (a phone held upright) the button wraps under the line, to the right, rather than off the screen. */
+.ramp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; white-space: nowrap; }
+.ramp-name { color: var(--text-dim, #9fb2cc); font-weight: 600; }
+.ramp-dot { color: var(--text-dim, #9fb2cc); opacity: .7; }
+.ramp-state { font-weight: 700; color: #dfe7f1; }
+.ramp-state.is-open { color: #bfe6ff; }
+.ramp-state.is-moving { color: #ffe6b3; }
+.ramp-btn { pointer-events: auto; margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 4px 3px 9px; border-radius: 99px; border: 1px solid rgba(140,180,230,.35);
+  background: rgba(88,198,255,.10); color: inherit; cursor: pointer; font: 700 11.5px/1 var(--font, system-ui, sans-serif);
   touch-action: manipulation; }
-.ramp-btn small { display: block; margin-top: 2px; font-size: 9.5px; font-weight: 600; opacity: .7; }
-.ramp-note { margin-top: 6px; font-size: 10px; color: var(--text-dim, #9fb2cc); text-align: center; }
-@media (max-width: 700px) { .ramp-panel { right: 8px; width: 122px; } }
-@media (max-height: 560px) { .ramp-panel { top: 64px; transform: none; padding: 7px 8px 8px; } }
-/* In the HUD's right-hand column (ui/hud-stack.js), which places it: no centring of its own. */
-.hud-rstack > .ramp-panel { transform: none; }
+.ramp-btn:hover { background: rgba(88,198,255,.18); }
+.ramp-btn kbd { font: 700 10px/1 var(--mono, ui-monospace, monospace); min-width: 16px; padding: 2px 4px 1px;
+  text-align: center; border-radius: 5px; border: 1px solid rgba(255,255,255,.22); border-bottom-width: 2px;
+  background: rgba(255,255,255,.08); color: #eaf1fb; }
+.ramp-btn kbd:empty { display: none; }
+.ramp-bar { display: none; position: relative; height: 3px; margin: 5px 6px 1px 0; border-radius: 2px; background: rgba(255,255,255,.1); overflow: hidden; }
+.ramp-panel.is-moving .ramp-bar { display: block; }
+.ramp-bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #58c6ff; border-radius: 2px; }
+.ramp-note { margin: 4px 6px 1px 0; font-size: 10.5px; color: #ffe6b3; }
+.ramp-note[hidden] { display: none; }
+.ramp-panel.has-note, .ramp-panel.is-moving { border-radius: 14px; }
+/* In the HUD's right-hand column (ui/hud-stack.js), which places it: no centring of its own,
+   and against the right edge like a chip rather than stretched to the column. */
+.hud-rstack > .ramp-panel { transform: none; align-self: flex-end; }
 .hud-rstack > .ramp-panel:not(.is-shown) { display: none !important; }
-@media (max-height: 560px) {
-  .hud-rstack > .ramp-panel { padding: 6px 8px 7px; }
-  .hud-rstack > .ramp-panel .ramp-bar { margin: 5px 0 4px; }
-  .hud-rstack > .ramp-panel .ramp-note { display: none; }
-}
 `;
+
+/** Seconds the "under 150 kt" line stays after a refused open. */
+const NOTE_S = 4;
 
 function buildUi(sim) {
   if (S.ui || typeof document === 'undefined') return S.ui;
@@ -125,11 +143,9 @@ function buildUi(sim) {
   const panel = document.createElement('div');
   panel.className = 'ramp-panel';
   panel.innerHTML = `
-    <div class="ramp-head"><span>RAMP</span></div>
-    <span class="ramp-state">CLOSED</span>
+    <div class="ramp-row"><span class="ramp-name">Cargo ramp</span><span class="ramp-dot" aria-hidden="true">·</span><span class="ramp-state">Closed</span><button class="ramp-btn" type="button" aria-label="Cargo ramp open or close"><span class="ramp-act">Open</span><kbd class="ramp-key"></kbd></button></div>
     <div class="ramp-bar"><i></i></div>
-    <button class="ramp-btn" type="button" aria-label="Cargo ramp open or close">OPEN<small class="ramp-key"></small></button>
-    <div class="ramp-note">Under ${RAMP_OPEN_KT} kt in the air</div>`;
+    <div class="ramp-note" hidden>Under ${RAMP_OPEN_KT} kt in the air</div>`;
   extLayer().appendChild(panel);
   joinStack(sim, panel);
   const q = (s) => panel.querySelector(s);
@@ -140,7 +156,7 @@ function buildUi(sim) {
     if (flying(sim)) pressRamp(sim);
   });
   S.ui = {
-    panel, state: q('.ramp-state'), bar: q('.ramp-bar i'), btn, key: q('.ramp-key'),
+    panel, state: q('.ramp-state'), bar: q('.ramp-bar i'), btn, act: q('.ramp-act'), key: q('.ramp-key'), note: q('.ramp-note'), noteT: 0,
     touch: !!sim.touch || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches),
     pad: null,
   };
@@ -198,7 +214,8 @@ function syncKeys(sim) {
   const ui = S.ui;
   if (!ui || ui.keysVer === bindingsVersion()) return;
   ui.keysVer = bindingsVersion();
-  ui.key.textContent = ui.touch ? 'tap' : keyName('cargoRamp', sim);
+  // The keycap: the key that does it. None on a touch screen (the button is tapped).
+  ui.key.textContent = ui.touch ? '' : keyName('cargoRamp', sim);
 }
 
 function updateUi(sim, on) {
@@ -216,23 +233,29 @@ function updateUi(sim, on) {
   const cargo = cargoOf(sim);
   const state = cargo ? cargo.state : 'closed';
   const pct = Math.round((cargo ? cargo.amount() : 0) * 100);
-  const key = `${state}|${pct}`;
+  const noted = ui.noteT > 0;
+  const key = `${state}|${pct}|${noted}`;
   if (key === S.shown) return;
   S.shown = key;
+  const moving = state === 'opening' || state === 'closing';
+  ui.panel.classList.toggle('is-moving', moving);
+  ui.panel.classList.toggle('has-note', noted);
+  if (ui.note.hidden === noted) ui.note.hidden = !noted;
   if (ui.pad) {
     ui.pad.textContent = cargo && cargo.target > 0.5 ? 'CLOSE RAMP' : 'OPEN RAMP';
     ui.pad.classList.toggle('is-on', state !== 'closed');
   }
-  ui.state.textContent = state.toUpperCase();
+  ui.state.textContent = state.charAt(0).toUpperCase() + state.slice(1);
   ui.state.classList.toggle('is-open', state === 'open');
-  ui.state.classList.toggle('is-moving', state === 'opening' || state === 'closing');
+  ui.state.classList.toggle('is-moving', moving);
   ui.bar.style.width = `${pct}%`;
-  ui.btn.firstChild.textContent = cargo && cargo.target > 0.5 ? 'CLOSE' : 'OPEN';
+  ui.act.textContent = cargo && cargo.target > 0.5 ? 'Close' : 'Open';
 }
 
 function off() {
   S.shown = '';
   S.shutSaid = false;
+  if (S.ui) S.ui.noteT = 0;
   if (S.ui) S.ui.panel.classList.remove('is-shown');
   if (S.ui && S.ui.pad) S.ui.pad.hidden = true;
 }
@@ -249,7 +272,8 @@ registerExtension({
   stop() {
     off();
   },
-  update(sim) {
+  update(sim, dt) {
+    if (S.ui && S.ui.noteT > 0) S.ui.noteT = Math.max(0, S.ui.noteT - (Number.isFinite(dt) ? dt : 1 / 60));
     if (!hasRamp(sim)) {
       if (S.ui && S.ui.panel.classList.contains('is-shown')) off();
       return;

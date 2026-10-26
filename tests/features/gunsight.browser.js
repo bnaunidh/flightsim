@@ -266,7 +266,16 @@ export async function check(sim, r, say = () => {}) {
     r.ok('gunsight: fire goes to the locked drone', res.ok && hs.stats.fired === before + 1 && res.missile.cand.ref === dA.body, JSON.stringify({ ok: res.ok }));
     for (let i = 0; i < 100 && hs.liveMissiles().length; i++) steps(0.1);
     steps(1.2);
-    r.ok('gunsight: the drone is down and the gunsight lets the lock go on its own', !dA.alive && !gs.designated && hs.prefer === null && !gs.snapshot().boxShown, `designated ${gs.designated && gs.designated.id}, prefer ${hs.prefer}`);
+    /*
+     * The box may be up again by now — on drone B, if the seeker has found it
+     * by itself (which the next check wants): B flies at the edge of the
+     * seeker's 10 degrees here, and a tenth of a second either way in the
+     * missile's flight decides it (the camera audit's new follow view moved
+     * when the lock loop above saw its red box, by one frame). What must not
+     * be boxed is the drone that is gone.
+     */
+    const onB = hs.lock.target && hs.lock.target.ref !== dA.body;
+    r.ok('gunsight: the drone is down and the gunsight lets the lock go on its own', !dA.alive && !gs.designated && hs.prefer === null && (!gs.snapshot().boxShown || onB), `designated ${gs.designated && gs.designated.id}, prefer ${hs.prefer}, box ${gs.snapshot().boxShown}, seeker on ${hs.lock.target ? hs.lock.target.id : 'nothing'}`);
     // After a loss, the seeker finds targets by itself again.
     behind(dB, 1200);
     for (let i = 0; i < 25; i++) steps(0.1);

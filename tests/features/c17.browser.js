@@ -107,18 +107,33 @@ export async function check(sim, r, say) {
     r.ok('c17: follow camera stands clear of the tail', d > g.tail + 4, `${d.toFixed(1)} m back, tail ${g.tail} m`);
 
     const panel = document.querySelector('.ramp-panel');
-    r.ok('ramp: the panel is up: RAMP, CLOSED, an OPEN button', !!panel && panel.classList.contains('is-shown') && /CLOSED/.test(panel.textContent) && /OPEN/.test(panel.textContent),
+    r.ok('ramp: the card is up: "Cargo ramp · Closed" and an Open button', !!panel && panel.classList.contains('is-shown') && /Cargo ramp/.test(panel.textContent) && /Closed/.test(panel.textContent) && /Open/.test(panel.querySelector('.ramp-btn').textContent),
       panel ? panel.textContent.replace(/\s+/g, ' ').trim().slice(0, 80) : 'no panel');
+    {
+      // The owner: "too big". One line, the key on a keycap, no bar and no speed rule at rest.
+      const b = panel.getBoundingClientRect();
+      const key = panel.querySelector('.ramp-btn kbd');
+      const bar = panel.querySelector('.ramp-bar');
+      const note = panel.querySelector('.ramp-note');
+      const W = innerWidth;
+      const H = innerHeight;
+      r.ok('ramp: the card is one compact line (under 44 px tall, under 260 px wide) and on screen',
+        b.height > 10 && b.height < 44 && b.width < 260 && b.left >= 0 && b.right <= W && b.top >= 0 && b.bottom <= H, `${Math.round(b.width)}x${Math.round(b.height)} at ${Math.round(b.left)},${Math.round(b.top)} of ${W}x${H}`);
+      r.ok('ramp: the button shows the key on a keycap', !!key && key.textContent.trim().length > 0 && getComputedStyle(key).display !== 'none', key ? key.textContent : 'no keycap');
+      r.ok('ramp: no progress bar and no speed rule while it is still', !!bar && bar.getClientRects().length === 0 && !!note && note.getClientRects().length === 0);
+    }
     r.ok('ramp: shut at the start', cargo && cargo.state === 'closed' && cargo.amount() === 0);
     notes.length = 0;
     tap('Digit6');
     sim.step(0.5);
     r.ok('ramp: 6 on the ground starts it down, and says so', cargo.state === 'opening' && cargo.amount() > 0 && notes.some((n) => /Ramp coming down/.test(n)), `${cargo.state} ${cargo.amount().toFixed(2)}; ${notes.join(' | ')}`);
     sim.step(0.5);
-    r.ok('ramp: the panel follows it: OPENING, the bar part way, the button now CLOSE', /OPENING/.test(panel.textContent) && /CLOSE/.test(panel.textContent) && parseFloat(panel.querySelector('.ramp-bar i').style.width) > 0,
+    r.ok('ramp: the card follows it: Opening, a thin bar part way, the button now Close', /Opening/.test(panel.textContent) && /Close/.test(panel.querySelector('.ramp-btn').textContent) && parseFloat(panel.querySelector('.ramp-bar i').style.width) > 0
+      && panel.querySelector('.ramp-bar').getClientRects().length > 0 && panel.querySelector('.ramp-bar').getBoundingClientRect().height <= 4,
       panel.textContent.replace(/\s+/g, ' ').trim().slice(0, 80));
     sim.step(9);
-    r.ok('ramp: down in about eight seconds, the toe on the tarmac', cargo.state === 'open' && cargo.isOpen && /OPEN/.test(panel.textContent) && !/OPENING/.test(panel.textContent), `${cargo.state} ${cargo.amount()}`);
+    r.ok('ramp: down in about eight seconds, the toe on the tarmac', cargo.state === 'open' && cargo.isOpen && /Open\b/.test(panel.querySelector('.ramp-state').textContent) && !/Opening/.test(panel.textContent), `${cargo.state} ${cargo.amount()}`);
+    r.ok('ramp: the bar goes once it has stopped moving', panel.querySelector('.ramp-bar').getClientRects().length === 0);
     {
       // The toe: the end of the ramp deck, in the world, over the runway.
       const deck = cargo.nodes.ramp.children.find((c) => c.name === 'Ramp deck');
@@ -176,6 +191,10 @@ export async function check(sim, r, say) {
     tap('Digit6');
     sim.step(0.3);
     r.ok('ramp: at 210 kt in the air, 6 is refused, with the reason', cargo.state === 'closed' && notes.some((n) => /Too fast for the ramp/.test(n)), `${(ac.ias * KT).toFixed(0)} kt; ${notes.join(' | ')}`);
+    {
+      const note = panel.querySelector('.ramp-note');
+      r.ok('ramp: ...and only now the card says "Under 150 kt in the air"', !!note && note.getClientRects().length > 0 && /Under 150 kt in the air/.test(note.textContent));
+    }
     ac.reset({ pos: ac.pos.clone(), headingDeg: 90, speed: 62, altAGL: 600, engineOn: true, gearDown: false });
     ac.pos.y = M.terrain.heightAt(ac.pos.x, ac.pos.z) + 600;
     ac.setFlaps(2);

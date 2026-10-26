@@ -54,6 +54,7 @@ const HELIS = {
   uh60: { title: 'UH-60M', glass: true, tandem: false },
   ch47: { title: 'CH-47F', glass: true, tandem: false },
   ah64: { title: 'AH-64E', glass: true, tandem: true },
+  vh3d: { title: 'VH-3D', glass: false, tandem: false },
 };
 
 export function buildHeliCockpit(ctx) {

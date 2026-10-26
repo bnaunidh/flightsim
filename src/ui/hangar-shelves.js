@@ -96,7 +96,7 @@ export function shelve(types, catOf) {
  * release lands, move the line: everything a release introduces is "New"
  * until the release after that.
  */
-export const NEW_SINCE_V70 = Object.freeze(['bell407', 'h145', 'r44', 'aw139', 'uh60', 'ch47', 'ah64']);
+export const NEW_SINCE_V70 = Object.freeze(['bell407', 'h145', 'r44', 'aw139', 'uh60', 'ch47', 'ah64', 'vh3d']);
 const NEW_SET = new Set(NEW_SINCE_V70);
 
 export function isNew(id) {

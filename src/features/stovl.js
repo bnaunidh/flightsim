@@ -868,6 +868,21 @@ const CSS = `
  * "shoot upwards and fly off". The panel above says what to do instead.
  */
 body.stovl-hovering .hud-stall, body.stovl-hovering .hud-coach { display: none !important; }
+/*
+ * Off, it is one small pill — HOVER and its key on a keycap — rather than a
+ * 132 px card with a full-width button (the owner's "too big", 2026-10-25,
+ * said of the cargo ramp's twin). The instrument (lever, height, up/down,
+ * speed) opens only while the hover is working, when it is the thing to fly by.
+ */
+.stovl-btn small { display: inline-block; }
+.stovl-btn small:empty { display: none; }
+.stovl-hint:empty { display: none; }
+.stovl-panel:not(.is-live) { width: auto; padding: 4px; border-radius: 99px; }
+.stovl-panel:not(.is-live) .stovl-btn { display: inline-flex; align-items: center; gap: 6px; width: auto;
+  padding: 4px 5px 4px 11px; border-radius: 99px; font-size: 11.5px; }
+.stovl-panel:not(.is-live) .stovl-btn small { margin: 0; font: 700 10px/1 var(--mono, ui-monospace, monospace); padding: 2px 4px 1px;
+  border-radius: 5px; border: 1px solid rgba(255,255,255,.22); border-bottom-width: 2px; background: rgba(255,255,255,.08); opacity: 1; }
+.stovl-panel:not(.is-live) .stovl-hint { margin: 4px 6px 2px; max-width: 150px; }
 `;
 
 function buildUi(sim) {
@@ -878,7 +893,7 @@ function buildUi(sim) {
   const panel = document.createElement('div');
   panel.className = 'stovl-panel';
   panel.innerHTML = `
-    <button class="stovl-btn" type="button" aria-label="Hover on or off"><span class="stovl-state">HOVER</span><small>press ${keyName('stovlHover', sim)}</small></button>
+    <button class="stovl-btn" type="button" aria-label="Hover on or off"><span class="stovl-state">HOVER</span><small>${keyName('stovlHover', sim)}</small></button>
     <div class="stovl-body">
       <div class="stovl-lever"><div class="stovl-band"></div><div class="stovl-knob"></div></div>
       <div class="stovl-read">
@@ -905,7 +920,7 @@ function buildUi(sim) {
     kt: q('.stovl-kt'), speed: q('.stovl-speed'), speedFill: q('.stovl-speed i'), hint: q('.stovl-hint'), move: q('.stovl-move'),
     touch: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches,
   };
-  if (ui.touch) ui.btn.querySelector('small').textContent = 'tap';
+  if (ui.touch) ui.btn.querySelector('small').textContent = '';
   syncKeys(sim);
   return ui;
 }
@@ -915,7 +930,7 @@ function syncKeys(sim) {
   if (!ui || ui.keysVer === bindingsVersion()) return;
   ui.keysVer = bindingsVersion();
   const k = (a) => `<kbd>${keyName(a, sim)}</kbd>`;
-  if (!ui.touch) ui.btn.querySelector('small').textContent = `press ${keyName('stovlHover', sim)}`;
+  if (!ui.touch) ui.btn.querySelector('small').textContent = keyName('stovlHover', sim);
   ui.move.innerHTML = ui.touch
     ? 'Stick: slide about<br>Rudder: turn'
     : `${k('pitchDown')}${k('rollLeft')}${k('pitchUp')}${k('rollRight')} slide · ${k('yawLeft')}${k('yawRight')} turn<br>${k('pitchDown')}+${k('throttleUp')} fly away`;

@@ -22,6 +22,7 @@ import { clamp, lerp } from '../core/noise.js';
 import { defaultLights, spoilerTarget, reverseDemand, reverseShare, REVERSE_EFFICIENCY } from './systems.js';
 import { rotorAssist, ROTOR_TUNE, groundEffectFactor, realismScale } from './rotor-assist.js';
 import { handlingFor, ROLL_SHARE_MAX } from './damage-handling.js';
+import { reheatFor, burnerShare, reheatEff, waveDrag, machOf, ceilingBurner } from './reheat.js';
 
 /**
  * What the tyres can get out of the ground: cornering grip, rolling drag and
@@ -150,6 +151,8 @@ export let SPEC = specFor(DEFAULT_AIRCRAFT_ID);
 export function applyAircraft(id) {
   TYPE = getAircraft(id);
   SPEC = specFor(TYPE.id);
+  // The fast jets' afterburners and sound barrier (./reheat.js); null for every other type.
+  SPEC.reheat = reheatFor(TYPE.id);
   return TYPE;
 }
 
@@ -1312,8 +1315,22 @@ export class Aircraft {
     // landing roll enough to put the weight on the wheels for the brakes.
     const spoiled = SPEC.rotor || !SPEC.spoilers ? 0 : this.spoilerPos;
     CL *= 1 - 0.12 * spoiled;
+    /*
+     * The fast jets (./reheat.js): the sound barrier's drag at this Mach
+     * number, and how lit the afterburners are. Both 0 for every other type,
+     * so their arithmetic is exactly what it was.
+     */
+    const RH = SPEC.reheat;
+    const mach = machOf(V, this.pos.y);
+    const waveCD = RH ? waveDrag(RH, mach) : 0;
+    this.mach = mach;
+    // ...faded out across the service-ceiling band (ceilingBurner), so a jet's
+    // climb still runs out where ceilingFactor says, not at the top of the sky.
+    this.burner = RH && this.engineOn && !SPEC.rotor
+      ? burnerShare(this.rpm, SPEC.vne > 0 ? this.ias / SPEC.vne : 0, RH) * ceilingBurner(ceilingFactor(this.pos.y * FT, SPEC.ceiling), CEILING_FADE.floor)
+      : 0;
     const CD =
-      SPEC.CD0 + (this.failures.icing ? 0.022 : 0) + flapCD + SPEC.k * CL * CL + gearDrag + Math.abs(this.beta) * 0.36 + 0.028 * spoiled;
+      SPEC.CD0 + waveCD + (this.failures.icing ? 0.022 : 0) + flapCD + SPEC.k * CL * CL + gearDrag + Math.abs(this.beta) * 0.36 + 0.028 * spoiled;
 
     /*
      * What the damage does to the wing.
@@ -1333,7 +1350,9 @@ export class Aircraft {
     const sideForce = qS * SPEC.CYb * this.beta * aeroFade;
 
     // Thrust falls off with forward speed like a fixed-pitch propeller.
-    const propEff = clamp(1 - 0.5 * (u / 100), 0.12, 1);
+    // ...unless the afterburners are lit: then a jet's law (./reheat.js).
+    const propLaw = clamp(1 - 0.5 * (u / 100), 0.12, 1);
+    const propEff = this.burner > 0 ? reheatEff(RH, { ab: this.burner, M: mach, sigma: Math.exp(-Math.max(0, this.pos.y) / 8500), propEff: propLaw }) : propLaw;
     // A rough engine still runs — it just cannot make full power, which is a
     // far more interesting problem than one that has stopped: you can still
     // fly, you just have to decide where you are going to get to.

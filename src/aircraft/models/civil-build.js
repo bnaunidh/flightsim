@@ -298,8 +298,18 @@ function glassFor(scheme) {
 
 export function civilMaterials(scheme) {
   const skin = airframeTexture(scheme);
-  const body = paint(skin, { roughness: 0.36, metalness: 0.4 });
-  const matte = paint(skin, { roughness: 0.55, metalness: 0.25 });
+  /*
+   * `finish: 'matte'` (an army helicopter's flat paint, liveries.js schemeFor
+   * from the type's `paint`): no gloss and no clearcoat. Olive drab with an
+   * airliner's shine on it read as a plastic kit.
+   */
+  const flat = scheme.finish === 'matte';
+  const unshine = (m) => {
+    if (flat && 'clearcoat' in m) m.clearcoat = 0;
+    return m;
+  };
+  const body = unshine(paint(skin, flat ? { roughness: 0.8, metalness: 0.08 } : { roughness: 0.36, metalness: 0.4 }));
+  const matte = unshine(paint(skin, flat ? { roughness: 0.86, metalness: 0.05 } : { roughness: 0.55, metalness: 0.25 }));
   const tail = scheme.tail ? paint(skin, { roughness: 0.38, metalness: 0.35, color: scheme.tail }) : body;
   const tailMatte = scheme.tail ? paint(skin, { roughness: 0.55, metalness: 0.25, color: scheme.tail }) : matte;
   return {
@@ -322,7 +332,11 @@ export function civilMaterials(scheme) {
      * fixed that and made the Skyhook's (#2f4a63) vanish the same way. So a
      * dark scheme gets pale, sky-reflecting glass and a light one dark glass.
      */
-    glass: glassFor(scheme),
+    glass: flat
+      ? // Tinted, as service canopies are: the pale sky-glass a dark airliner
+        // scheme gets looked like a toy's windows in olive drab.
+        new THREE.MeshStandardMaterial({ name: 'glass', color: 0x34465a, roughness: 0.07, metalness: 0.62 })
+      : glassFor(scheme),
     rubber: new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.92, metalness: 0 }),
     metal: new THREE.MeshStandardMaterial({ color: 0xb9bec4, roughness: 0.32, metalness: 0.8 }),
     hub: new THREE.MeshStandardMaterial({ color: 0xd5d9de, roughness: 0.35, metalness: 0.65 }),
@@ -535,8 +549,26 @@ export class Builder {
       // A fenestron: the fan inside a shroud in the fin.
       if (tail.fenestron) {
         const shroud = new Batch('fenestron shroud');
-        shroud.add(new THREE.TorusGeometry(tail.radius + 0.07, 0.07, 6, 28).rotateY(Math.PI / 2), this.m.tail);
-        shroud.add(new THREE.CylinderGeometry(0.11, 0.11, 0.2, 10).rotateZ(Math.PI / 2), this.m.grey);
+        // The duct is a thick ring with rounded lips (a lathe of its section,
+        // axis along X), set into the fin: a torus read as a hoop stuck on.
+        const ri = tail.radius + 0.03;
+        const ro = tail.radius + 0.3;
+        const ht = 0.19;
+        const prof = [];
+        for (let k = 0; k <= 6; k++) {
+          const a = Math.PI / 2 + (k / 6) * Math.PI; // the inner lip, round
+          prof.push(new THREE.Vector2(ri + 0.05 + Math.cos(a) * 0.05, Math.sin(a) * ht * 0.95));
+        }
+        prof.push(new THREE.Vector2(ro, -ht * 0.8), new THREE.Vector2(ro, ht * 0.8));
+        prof.push(prof[0].clone());
+        const duct = new THREE.LatheGeometry(prof.reverse(), 30).rotateZ(Math.PI / 2);
+        shroud.add(duct, this.m.tail);
+        // The hub on its stator vanes, still while the fan turns.
+        shroud.add(new THREE.CylinderGeometry(0.13, 0.13, 0.26, 12).rotateZ(Math.PI / 2), this.m.grey);
+        for (let k = 0; k < 3; k++) {
+          const a = -Math.PI / 2 + (k - 1) * 0.55;
+          shroud.place(new THREE.BoxGeometry(0.03, ri - 0.12, 0.05), this.m.grey, { p: [0.07, Math.sin(a) * (ri / 2 + 0.06), -Math.cos(a) * (ri / 2 + 0.06)], r: [a + Math.PI / 2, 0, 0] });
+        }
         shroud.build(tg);
       }
       const tspin = new THREE.Group();
@@ -549,7 +581,10 @@ export class Builder {
       for (let i = 0; i < n; i++) {
         const g = blade({ r0: tail.fenestron ? 0.1 : 0.05, r1: tail.radius, chord: tail.chord || 0.12, twistRoot: 0.3, twistTip: 0.12, t: 0.1, stations: 4 });
         // Chord fore-and-aft, turning about X.
-        tbat.place(g, tailBladeMat, { r: [(i / n) * Math.PI * 2, 0, 0], q: new THREE.Quaternion().setFromEuler(new THREE.Euler((i / n) * Math.PI * 2, Math.PI / 2, 0, 'XYZ')) });
+        // `tail.angles` (radians) places the blades unevenly: the Apache's
+        // scissor tail rotor, two two-blade rotors set 55 degrees apart.
+        const ang = Array.isArray(tail.angles) && tail.angles.length === n ? tail.angles[i] : (i / n) * Math.PI * 2;
+        tbat.place(g, tailBladeMat, { r: [ang, 0, 0], q: new THREE.Quaternion().setFromEuler(new THREE.Euler(ang, Math.PI / 2, 0, 'XYZ')) });
       }
       tbat.add(new THREE.CylinderGeometry(0.06, 0.06, 0.14, 8).rotateZ(Math.PI / 2), this.m.grey);
       tbat.build(tb);

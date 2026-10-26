@@ -26,7 +26,7 @@
 import * as THREE from '../../vendor/three.module.js';
 import { createAircraftModel, syncAircraftModel, groundOffsetFor } from '../../aircraft/model-adapter.js';
 import { getAircraft, specFor } from '../../aircraft/types.js';
-import { findLivery } from '../../aircraft/liveries.js';
+import { findLivery, schemeFor } from '../../aircraft/liveries.js';
 import { createBoat, createCar, updateVehicleModel } from '../../vehicles/models.js';
 import { VEHICLES } from '../../vehicles/surface.js';
 import { Track, Smoother, RotSmoother, LEAD_K } from './interp.js';
@@ -702,7 +702,10 @@ export class Remotes {
       return m;
     }
     const t = getAircraft(type);
-    const model = createAircraftModel({ type: t, livery: this._schemeFor(colour, paint) });
+    // A type with a paint of its own (Marine One, aircraft/extra/helis.js `fixedLivery`) wears it on
+    // every screen, not its pilot's general paint pick or their player colour.
+    const livery = t && t.fixedLivery ? schemeFor(t, paint) : this._schemeFor(colour, paint);
+    const model = createAircraftModel({ type: t, livery });
     // How far the picture drops so the wheels meet the ground — measured once per type, as main.js does for yours.
     if (!this.offsets.has(t.id)) {
       let off = 0;

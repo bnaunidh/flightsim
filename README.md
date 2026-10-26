@@ -207,11 +207,12 @@ src/
     precip.js           rain
   aircraft/
     physics.js          6-DOF flight model, landing gear, scoring
+    reheat.js           the fast jets' afterburners, sound barrier and q-limit
     model.js            the aeroplane, lofted from aerofoil sections
     cockpit.js          cockpit interior and the live instrument panel
   flight/
     input.js            the one key registry (every game's and feature's keys), mouse, gamepad
-    camera.js           cockpit / follow / orbit / wing / tower views
+    camera.js           cockpit / follow / orbit / wing / tower / flyby views, sized to each airframe
   audio/
     index.js            facade over the whole audio system
     mixer.js            AudioContext, five volume buses, noise sources

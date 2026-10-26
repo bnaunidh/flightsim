@@ -63,6 +63,7 @@ export const FAMILY = Object.freeze({
   uh60: 'heli',
   ch47: 'heli',
   ah64: 'heli',
+  vh3d: 'heli',
 });
 
 /** For an aeroplane added later and not listed above: guess from its class. */

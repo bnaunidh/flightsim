@@ -15,7 +15,7 @@
  *
  * tests/features/heli-fleet.mjs is the same wave in node, in detail.
  */
-const WAVE = ['bell407', 'h145', 'r44', 'aw139', 'uh60', 'ch47', 'ah64'];
+const WAVE = ['bell407', 'h145', 'r44', 'aw139', 'uh60', 'ch47', 'ah64', 'vh3d'];
 const KEYS = { Shift: ['ShiftLeft', 'Shift'], Ctrl: ['ControlLeft', 'Control'], W: ['KeyW', 'w'] };
 
 export async function check(sim, r, say = () => {}) {

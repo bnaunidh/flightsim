@@ -27,7 +27,7 @@
  */
 
 import { AIRCRAFT, performanceFor } from '../aircraft/types.js';
-import { LIVERIES, schemeFor } from '../aircraft/liveries.js';
+import { LIVERIES, schemeFor, liveriesFor } from '../aircraft/liveries.js';
 import * as Prog from '../game/progression.js';
 import { icon } from './icons.js';
 import {
@@ -383,11 +383,13 @@ export function installHangarShowcase(menus, screen, kit) {
       <span class="hs-stat-text">${esc(s.text)}</span>
     </div>`;
 
-  const swatch = (type, l) => {
+  const swatch = (type, l, fixed = false) => {
     const sch = schemeFor(type, l.id);
-    const tail = sch.tail != null ? `#${sch.tail.toString(16).padStart(6, '0')}` : sch.accent;
-    const on = livery() === l.id;
-    return `<button type="button" class="hs-swatch${on ? ' is-on' : ''}" role="radio" aria-checked="${on}" data-hs-livery="${l.id}" title="${esc(l.name)} — ${esc(l.blurb)}"
+    const tail = sch.tail != null ? `#${sch.tail.toString(16).padStart(6, '0')}` : sch.upper || sch.accent;
+    const on = fixed || livery() === l.id;
+    // A fixed scheme's one swatch is shown chosen and carries no livery id, so a tap changes nothing.
+    const what = fixed ? 'data-hs-fixed aria-disabled="true"' : `data-hs-livery="${l.id}"`;
+    return `<button type="button" class="hs-swatch${on ? ' is-on' : ''}" role="radio" aria-checked="${on}" ${what} title="${esc(l.name)} — ${esc(l.blurb)}"
       style="--sw-a:${sch.base};--sw-b:${sch.accent};--sw-c:${tail}"><span></span></button>`;
   };
 
@@ -452,8 +454,12 @@ export function installHangarShowcase(menus, screen, kit) {
     }
 
     // Paint: house colours plus the airlines, the same list as Settings.
-    $('[data-hs-swatches]').innerHTML = LIVERIES.map((l) => swatch(type, l)).join('');
-    const cur = LIVERIES.find((l) => l.id === livery()) || LIVERIES[0];
+    // A type with a scheme of its own (Marine One) shows that one paint,
+    // chosen and not choosable: the game's livery setting never touches it.
+    const fixed = !!type.fixedLivery;
+    const paints = liveriesFor(type);
+    $('[data-hs-swatches]').innerHTML = paints.map((l) => swatch(type, l, fixed)).join('');
+    const cur = fixed ? paints[0] : LIVERIES.find((l) => l.id === livery()) || LIVERIES[0];
     $('[data-hs-paint-name]').textContent = cur.name;
 
     // The lock badge on the stage, over the silhouette.

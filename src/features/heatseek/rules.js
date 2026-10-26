@@ -96,7 +96,7 @@ export function angleDeg(a, b) {
  * ------------------------------------------------------------------ */
 
 /** Names that are never a target, whatever else a body says about itself. */
-const NEVER_NAME = /air\s*force\s*one|\baf1\b|potus|airliner|rescue|ambulance|medevac|passenger|traffic|tower|civil/i;
+const NEVER_NAME = /air\s*force\s*one|\baf1\b|potus|marine\s*one|airliner|rescue|ambulance|medevac|passenger|traffic|tower|civil/i;
 /**
  * Aeroplane type ids that are airliners (and Air Force One is a 747) — and
  * the airliners and freighters added since (aircraft/extra/jets.js,
@@ -104,7 +104,8 @@ const NEVER_NAME = /air\s*force\s*one|\baf1\b|potus|airliner|rescue|ambulance|me
  * people however grey it is. And the B-1B Lancer (lancer.js), which is unarmed and
  * has no flares: nothing to shoot back with, so nothing to be shot at for.
  */
-const NEVER_TYPE = /^(b747|a320|a380|meridian|b7\d\d|a3\d\d|q400|concorde|belugaxl|dreamlifter|an225|c5|c17|b1b)$/i;
+// ...and Marine One (vh3d), the President's helicopter, on the same footing as Air Force One.
+const NEVER_TYPE = /^(b747|a320|a380|meridian|b7\d\d|a3\d\d|q400|concorde|belugaxl|dreamlifter|an225|c5|c17|b1b|vh3d)$/i;
 
 /**
  * May a heat-seeker lock this? A body is described by what the sky list
