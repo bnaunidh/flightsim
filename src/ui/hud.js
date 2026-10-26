@@ -714,6 +714,13 @@ export class Hud {
         heli._rsWatched = true;
         this.stack.watchBand([heli]);
       }
+      // The hover strip too: it appears and goes with is-rotorhover, and the
+      // column starts under it (hud-stack.js touchTop()).
+      const strip = this.rotorPanel;
+      if (strip && !strip._rsWatched) {
+        strip._rsWatched = true;
+        this.stack.watchBand([strip]);
+      }
     };
     this._watchHeli();
   }

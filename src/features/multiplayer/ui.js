@@ -167,6 +167,24 @@ const CSS = `
 .is-touch-device .mp-hud .mp-badge.is-compact.is-stack button { padding: 5px 8px; font-size: 12.5px; }
 .mp-badge.is-compact.is-stack .mp-bext { flex-wrap: wrap; }
 .mp-badge.is-compact.is-stack .mp-bcode { max-width: none; }
+/*
+ * ...and where even the column covers something (a small phone on its side:
+ * 667x375, 740x360, 812x375, 568x320 — the instrument band, the objective,
+ * the map and the button tray leave no 507 px strip and no 190x127 box; the
+ * row lay over the minimap and the column over the cruise readings and the
+ * smoke chip, multiplayer.scuffs.playtest.mjs #4r and #12), one small pill:
+ * the connection dot and a ⋯ that opens the column, on a tap, for as long as
+ * it is wanted. The lobby's name and head-count are in the line at the top
+ * already (scuffs #11), and come back here when it is open. Closed, it is
+ * about 64 px and covers nothing; open, it is a menu.
+ */
+.mp-badge .mp-more { display: none; }
+.mp-badge.is-pill .mp-more { display: inline-block; margin-left: 2px; }
+.is-touch-device .mp-hud .mp-badge.is-pill .mp-more { padding: 3px 10px; font-size: 15px; line-height: 1; }
+.mp-badge.is-pill:not(.is-open) .mp-brow [data-mp-badge-text] { display: none; }
+.mp-badge.is-pill:not(.is-open) { flex-direction: row; align-items: center; }
+.mp-badge.is-pill:not(.is-open) .mp-bact, .mp-badge.is-pill:not(.is-open) .mp-bext { display: none; }
+.mp-badge.is-pill.is-open .mp-more { background: rgba(88, 198, 255, 0.22); border-color: rgba(88, 198, 255, 0.55); }
 .mp-list {
   position: absolute; left: 50%; top: 18%; transform: translateX(-50%); width: min(440px, 92vw); z-index: 2;
   max-height: 70vh; overflow-y: auto;
@@ -702,7 +720,7 @@ export function buildHud(ctrl, layer) {
   const el = h(`
     <div class="mp-hud" hidden>
       <div class="mp-badge">
-        <div class="mp-brow"><span class="mp-dot"></span><span data-mp-badge-text></span></div>
+        <div class="mp-brow"><span class="mp-dot"></span><span data-mp-badge-text></span><button class="mp-more" data-mp-more aria-expanded="false" aria-label="Players, Chat and the lobby's buttons" title="Players, Chat and the lobby's buttons">⋯</button></div>
         <div class="mp-bcode" data-mp-badge-code hidden></div>
         <div class="mp-bact">
           <span class="mp-keys">${keysLine()}</span>
@@ -778,6 +796,21 @@ export function buildHud(ctrl, layer) {
       repaint();
       return;
     }
+    if (e.target.closest('[data-mp-more]')) {
+      const open = !badge.classList.contains('is-open');
+      badge.classList.toggle('is-open', open);
+      e.target.closest('[data-mp-more]').setAttribute('aria-expanded', String(open));
+      if (open) {
+        // Opened where it was put; kept on the screen if the column is wider than the pill.
+        const b = badge.getBoundingClientRect();
+        const W = window.innerWidth;
+        if (b.right > W - 4) badge.style.left = `${Math.max(4, Math.round(W - 4 - b.width))}px`;
+      } else {
+        badge._pos = '';
+        placedAt = -Infinity;
+      }
+      return;
+    }
     if (e.target.closest('[data-mp-players]')) {
       listPinned = !listPinned;
       hud.syncList();
@@ -819,6 +852,17 @@ export function buildHud(ctrl, layer) {
     }
   };
   el.addEventListener('click', onClick);
+  // A phone turned or a window resized: placed again a quarter-second later,
+  // once the HUD it keeps clear of has moved for the new size (the smoke chip
+  // places itself on the next frame, fun/ui.js), not on the next of its
+  // once-a-second turns, which could measure the old layout.
+  if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('resize', () => {
+      const now = typeof performance !== 'undefined' ? performance.now() : 0;
+      placedAt = Math.min(placedAt, now - 750);
+      hudNodesAt = -Infinity;
+    });
+  }
   // The troll menu's duration slider: no repaint while the finger is on it.
   const onInput = (e) => {
     if (ctrl.ownerMenu && typeof ctrl.ownerMenu.input === 'function') ctrl.ownerMenu.input(e);
@@ -957,6 +1001,8 @@ export function buildHud(ctrl, layer) {
         document.documentElement.style.removeProperty('--mp-dock');
       }
       if (t - placedAt < 1000 || el.hidden || typeof document === 'undefined') return;
+      // The pill opened on a tap: left where it is, open, until it is closed again.
+      if (badge.classList.contains('is-open') && badge.classList.contains('is-pill')) return;
       placedAt = t;
       const W = window.innerWidth;
       const H = window.innerHeight;
@@ -1020,16 +1066,39 @@ export function buildHud(ctrl, layer) {
           }
           if (best && best.o === 0) break;
         }
+        // Nothing along the edges is free (a boat on a phone on its side: the
+        // compass ribbon, the boat panel, the objective and the lever take
+        // every edge; the pill sat on the ribbon, 1,159 px², scuffs #12): any
+        // free place on a 12 px grid, top rows first. Only when every edge
+        // place covers something, so at most once a second on a small phone.
+        // The pill only: it is the last form tried and about 64 px, while the
+        // 507 px row, the column or a laptop's card found free in the middle
+        // of the screen would sit over the aeroplane itself (nothing in the
+        // keep-clear list guards the view), where an edge spot that covers a
+        // little, and the next form, did better.
+        if (best && best.o > 0 && badge.classList.contains('is-pill')) {
+          scan: for (let y = 4; y + bh <= H - 4; y += 12) {
+            for (let x = 4; x + bw <= W - 4; x += 12) {
+              if (overlap(x, y) === 0) {
+                best = { x, y, o: 0 };
+                break scan;
+              }
+            }
+          }
+        }
         return best || { x: Math.max(8, W - 16 - bw), y: 16, o: Infinity };
       };
       // The shapes it can take: on a short touch screen one row first, then a narrow column; elsewhere the usual card.
       const setForm = (f) => {
         const c = f !== 'full';
-        const s = f === 'stack';
+        const s = f === 'stack' || f === 'pill';
+        const p = f === 'pill';
         if (badge.classList.contains('is-compact') !== c) badge.classList.toggle('is-compact', c);
         if (badge.classList.contains('is-stack') !== s) badge.classList.toggle('is-stack', s);
+        if (badge.classList.contains('is-pill') !== p) badge.classList.toggle('is-pill', p);
+        if (!p && badge.classList.contains('is-open')) badge.classList.remove('is-open');
       };
-      const forms = compact ? ['row', 'stack'] : ['full'];
+      const forms = compact ? ['row', 'stack', 'pill'] : ['full'];
       let pick = null;
       for (const f of forms) {
         setForm(f);

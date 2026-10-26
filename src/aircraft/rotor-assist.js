@@ -45,6 +45,7 @@ import { clamp } from '../core/noise.js';
 const lerp = (a, b, t) => a + (b - a) * t;
 import { heightAt, platformAt, PLATFORMS, OBSTACLES } from '../world/terrain.js';
 import { PADS } from '../world/pads.js';
+import { ROLLOVER } from './types.js';
 
 const G = 9.80665;
 const RHO0 = 1.225;
@@ -843,6 +844,10 @@ function rotorTouchdown(ac, S, g) {
   const level = clamp(1 - Math.abs(g.bank) / 18, 0, 1);
   const speedOk = clamp(1 - ac.groundSpeed / 3, 0, 1);
   const score = Math.round((smooth * 52 + centred * 20 + level * 16 + speedOk * 12) * (onPad ? 1 : 0.85));
+  // Set down tipped over (the aeroplane's "A wing hit the ground first"):
+  // a helicopter has no wing, it rolls over on to its rotor (types.js
+  // ROLLOVER, replay QA R6). Bank is positive right side down.
+  if (g.crashed && /wing hit the ground/i.test(g.reason || '')) g.reason = g.bank > 0 ? ROLLOVER.right : ROLLOVER.left;
   g.onRunway = onPad;
   if (onPad) g.centreline = Math.round(d * 10) / 10;
   g.score = clamp(score, 0, 100);

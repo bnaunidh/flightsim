@@ -344,10 +344,17 @@ if (J) {
   for (const t of TYPES.AIRCRAFT) {
     try {
       const p = J.planeProfile(t, MA.createAircraftModel({ type: t }));
-      // T-Pose Harrison is a man on a 3 m board, not an aeroplane: he is
-      // held to being more than a metre and a half long instead.
-      const minLen = t.shape && t.shape.tpose ? 1.5 : 4;
-      if (!(p.len > minLen && p.nose > 0 && p.tail < 0 && p.halfWidth >= 0.35 && p.halfWidth < 4 && p.halfSpan > p.halfWidth)) {
+      // T-Pose Harrison is a man, not an aeroplane: he is held to being
+      // more than a metre and a half long instead. And since he lost his
+      // board (bd44ac4, 2026-09-30: he floats head-first) his body is all
+      // there is to measure across, 0.19 m either side of his middle — a
+      // person's half-width, not a fuselage's 0.35. Getting out of him
+      // looks for a spot from halfWidth + 0.7 m out (onfoot.js), beside
+      // him, which is right; he is held to 0.12 m (a torso) instead.
+      const harrison = !!(t.shape && t.shape.tpose);
+      const minLen = harrison ? 1.5 : 4;
+      const minHw = harrison ? 0.12 : 0.35;
+      if (!(p.len > minLen && p.nose > 0 && p.tail < 0 && p.halfWidth >= minHw && p.halfWidth < 4 && p.halfSpan > p.halfWidth)) {
         odd.push(`${t.id} len ${p.len.toFixed(1)} nose ${p.nose.toFixed(1)} tail ${p.tail.toFixed(1)} hw ${p.halfWidth.toFixed(2)}`);
       }
     } catch (e) {

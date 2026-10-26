@@ -116,6 +116,11 @@ const HELI_CSS = `
    (A phone, under 621 px, already puts the objective at y232.) */
 @media (min-width: 621px) {
   .hud.is-touch.is-rotorhover .hud-top { top: 188px; }
+  /* Side by side with the card, so its right-hand end stops short of it: the
+     card is 236 px wide at 8 px from the edge (the strip's right), wider than
+     the stack's column the objective otherwise clears (--rs-w + 24), and on
+     an iPad the two overlapped by 5 px down their whole height. */
+  .hud.is-touch.is-rotorhover .hud-top { right: max(calc(var(--rs-w, 216px) + 24px), 252px); }
 }
 .hud-heli-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .hud-heli-state { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: var(--accent); }

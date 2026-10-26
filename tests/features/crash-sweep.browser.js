@@ -162,6 +162,11 @@ export async function check(sim, r, say = () => {}) {
         sim.scene.add(m);
         m.position.set(at.x, g + 1.2, at.z);
         m.updateMatrixWorld(true);
+        // As breakup.js onSkyHit does for a knocked aeroplane: it is tracked first (trackNpc, which marks
+        // userData.breakupNpc, the flag the "tidied away" hook looks for), then broken. Calling breakModel
+        // alone, as this check used to, left the model unmarked, so it could never leave a wreck: the check
+        // failed on every build since it was written, while the game's own path was fine.
+        D().trackNpc({ pos: m.position, vel: new THREE.Vector3(10, -2, 0) }, m);
         D().breakModel(m, type, { world: m.position.clone().add(new THREE.Vector3(0, -1, 0)), normal: new THREE.Vector3(0, 1, 0), energy: 600, bodyVel: new THREE.Vector3(10, -2, 0), owner: 'npc' });
         sim.step(1);
         const before = D().S.stats.wrecksLanded;

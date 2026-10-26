@@ -110,6 +110,23 @@ async function checkWithComic(sim, r, say) {
     if (kind !== 'splash') r.ok(`crashes: ${kind} — a cartoon poof, not the fireball`, !sim.wreck.active && !sim.wreck.group.visible);
   }
 
+  /* ---- a helicopter's staged crashes, in a helicopter's words ------------- */
+  // The side strikes are a rollover on to the rotor (types.js ROLLOVER); a
+  // splash still says the sea (it names the fuselage, whose hard point is the belly).
+  {
+    const said = {};
+    for (const kind of ['wingclip', 'cartwheel', 'splash']) {
+      await free({ aircraft: 'harrier' });
+      sim.step(0.3);
+      cr.stageCrash(sim, kind);
+      noDebrief();
+      said[kind] = (C.crash && C.crash.reason) || sim.aircraft.crashReason || '';
+    }
+    r.ok('crashes: a helicopter rolls over on to its rotor (no wing tip), and its splash is still the sea',
+      /rolled over to the left/.test(said.wingclip) && /rolled over to the right/.test(said.cartwheel) && !/wing/i.test(said.wingclip + said.cartwheel) && /sea/i.test(said.splash),
+      JSON.stringify(said));
+  }
+
   /* ---- a pause in the middle of the crash cam puts everything back -------- */
   {
     await free();

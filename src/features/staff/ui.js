@@ -145,6 +145,24 @@ const CSS = `
   .of-btns { width: 168px; right: 12px; }
 }
 /*
+ * A phone (or a small tablet) on its side, in the aeroplane: the rule at the
+ * top puts the prompt above the bottom lane plus 232 px, and a touchscreen's
+ * bottom lane is the thumb controls, 150 px of a 390 px screen. So "Tap here
+ * to get out", the only way out on a touchscreen, sat at y -34 to 8 on an
+ * 844 x 390 phone, off the top of the screen (multiplayer.scuffs.playtest.mjs
+ * #4r, every landscape size). Here it stands just above the controls along
+ * the bottom middle, between the two thumbs. On foot keeps its own place
+ * (.of-walk, above), and its own width: :not(.of-walk) keeps this rule's
+ * max-width off the walker's prompt too.
+ */
+@media (max-height: 500px) {
+  html.is-touch-device .of-root:not(.of-walk) .of-prompt {
+    top: auto; bottom: 74px; left: 50%; right: auto; transform: translateX(-50%);
+    max-width: min(420px, calc(100vw - 340px)); text-align: center;
+  }
+  html.is-touch-device .of-root:not(.of-walk) .of-prompt.act:active { transform: translateX(-50%) scale(0.97); }
+}
+/*
  * Nothing of ours over the pause screen or a menu. This layer sits above the
  * menus (z-index 30 against their 10), so the walking controls stayed on top
  * of the pause screen: in a 390 x 700 touch frame, paused while walking, the

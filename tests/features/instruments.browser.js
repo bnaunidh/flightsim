@@ -653,6 +653,14 @@ export async function check(sim, r, say = () => {}) {
     run(sim, 0.5, null, () => holdVs(sim, 0, 90));
     sim.override = null;
     {
+      // The big PULL UP words have been OFF by default since v69.3 (the
+      // owner's call; Settings → Accessibility, html.no-big-warnings hides
+      // .wx-cmd). This check is about WHERE they sit when a player has them
+      // on, so it turns them on for itself and puts the setting back: with
+      // them off, .wx-cmd measured 0x0 and the check failed on a layout that
+      // was fine.
+      const bigWas = sim.settings.bigWarnings;
+      if (!bigWas) sim.applySetting('bigWarnings', true);
       const WM = (await import('../../src/features/warnings.js')).__warnings.W;
       for (const id of ['pullup', 'gear', 'bankangle', 'lowFuel', 'tcasTA']) {
         WM.E.alerts[id].on = true;
@@ -704,6 +712,7 @@ export async function check(sim, r, say = () => {}) {
       sim.hud.clearTransient();
       WM.demo = null;
       W.reset();
+      if (!bigWas) sim.applySetting('bigWarnings', false);
     }
 
     // Acknowledge: R silences, the lamp stays while the condition does.
@@ -799,9 +808,15 @@ export async function check(sim, r, say = () => {}) {
     sim.toggleAutopilot(true);
     run(sim, 2);
     w3 = watch(sim);
-    sim.tap('KeyP');
+    // The autopilot's key, as bound: it moved from P to Y on 2026-10-23
+    // (P at the stand called the pushback too; src/flight/input.js
+    // MIGRATIONS), and this check kept pressing P, so the autopilot simply
+    // stayed on. Asked of the bindings, not hard-coded, so it follows them.
+    const IN = await import('../../src/flight/input.js');
+    const apKey = (IN.codesFor('autopilot', sim) || [])[0] || 'KeyY';
+    sim.tap(apKey);
     run(sim, 2, w3);
-    r.ok('instruments: no AUTOPILOT OFF alarm when you switch it off yourself (P)', !sim.autopilot.engaged && !w3.seen.has('apOff'), [...w3.seen].join(', ') || 'clear');
+    r.ok(`instruments: no AUTOPILOT OFF alarm when you switch it off yourself (${apKey.replace(/^Key/, '')})`, !sim.autopilot.engaged && !w3.seen.has('apOff'), [...w3.seen].join(', ') || 'clear');
 
     /* ---------------- 3. The helicopter ---------------- */
     log('helicopter');

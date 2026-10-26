@@ -15,15 +15,68 @@
  * Exit code 1 if anything fails.
  */
 
-// The DOM stub from the brief: enough for canvas textures and the overlay layer.
-globalThis.document = {
-  createElement: () => ({
+// A stand-in DOM. It used to be the brief's two-line stub (canvas + body),
+// but makeSim() installs EVERY registered extension, and some of them (the
+// wildfire HUD, for one) mount a style sheet and an overlay in install().
+// With no document.head the suite died at the first makeSim() with a
+// TypeError and none of the explosion/meteor checks below it ever ran. This
+// element takes whatever a HUD does to it and remembers nothing it has to.
+function fakeEl(tag = 'div') {
+  const kids = new Map();
+  const el = {
+    tagName: String(tag).toUpperCase(),
+    style: { setProperty() {}, removeProperty() {} },
+    dataset: {},
+    children: [],
+    childNodes: [],
+    parentNode: null,
+    hidden: false,
+    className: '',
+    textContent: '',
+    innerHTML: '',
+    value: '',
+    classList: { toggle() {}, add() {}, remove() {}, contains: () => false },
     getContext: () => new Proxy({}, { get: () => () => ({ addColorStop() {}, data: new Uint8ClampedArray(4) }) }),
     width: 0,
     height: 0,
-    style: {},
-  }),
-  body: { appendChild() {} },
+    addEventListener() {},
+    removeEventListener() {},
+    setAttribute() {},
+    getAttribute: () => null,
+    removeAttribute() {},
+    setPointerCapture() {},
+    focus() {},
+    blur() {},
+    appendChild(c) { el.children.push(c); if (c && typeof c === 'object') c.parentNode = el; return c; },
+    append(...cs) { for (const c of cs) el.appendChild(c); },
+    prepend(...cs) { for (const c of cs) el.appendChild(c); },
+    insertBefore(c) { return el.appendChild(c); },
+    removeChild(c) { const i = el.children.indexOf(c); if (i >= 0) el.children.splice(i, 1); return c; },
+    remove() { if (el.parentNode) el.parentNode.removeChild(el); el.parentNode = null; },
+    contains: () => false,
+    closest: () => null,
+    querySelector(sel) { if (!kids.has(sel)) kids.set(sel, fakeEl()); return kids.get(sel); },
+    querySelectorAll: () => [],
+    getBoundingClientRect: () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }),
+    get firstElementChild() { return el.children[0] || null; },
+    get lastElementChild() { return el.children[el.children.length - 1] || null; },
+  };
+  // <template>: whatever innerHTML it is given comes back as one element.
+  if (el.tagName === 'TEMPLATE') el.content = { get firstElementChild() { return fakeEl(); }, querySelector: () => fakeEl(), querySelectorAll: () => [] };
+  return el;
+}
+globalThis.document = {
+  createElement: (t) => fakeEl(t),
+  createElementNS: (_ns, t) => fakeEl(t),
+  createTextNode: (t) => ({ textContent: String(t) }),
+  body: fakeEl('body'),
+  head: fakeEl('head'),
+  documentElement: fakeEl('html'),
+  getElementById: () => null,
+  querySelector: () => null,
+  querySelectorAll: () => [],
+  addEventListener() {},
+  removeEventListener() {},
 };
 
 /*
@@ -56,7 +109,7 @@ function ok(name, pass, detail = '') {
   return !!pass;
 }
 
-let THREE, Terrain, FX, MET, MIS, ALL, EXT, MARK, TYPES, RUN, CM;
+let THREE, Terrain, FX, MET, MIS, ALL, EXT, MARK, TYPES, RUN, CM, FS;
 try {
   THREE = await import(src('vendor/three.module.js'));
   Terrain = await import(src('world/terrain.js'));
@@ -69,10 +122,28 @@ try {
   TYPES = await import(src('aircraft/types.js'));
   RUN = await import(src('game/runner.js'));
   CM = await import(src('render/comic.js'));
+  FS = await import(src('render/flash-safety.js'));
   ok('every module imports and links in node', true);
 } catch (err) {
   ok('every module imports and links in node', false, err && err.stack);
   process.exit(1);
+}
+
+// A stand-in window, set only after the imports so no module picks its
+// browser path at load time; the HUDs that place things on screen read it per frame.
+if (typeof globalThis.window === 'undefined') {
+  globalThis.window = {
+    innerWidth: 1280,
+    innerHeight: 720,
+    devicePixelRatio: 1,
+    addEventListener() {},
+    removeEventListener() {},
+    matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    getComputedStyle: () => ({ getPropertyValue: () => '' }),
+    requestAnimationFrame: () => 0,
+    cancelAnimationFrame() {},
+    setTimeout, clearTimeout, setInterval, clearInterval,
+  };
 }
 
 Terrain.applyMap('kestrel');
@@ -88,7 +159,8 @@ function makeSim() {
     scene: new THREE.Scene(),
     camera: new THREE.PerspectiveCamera(65, 16 / 9, 0.1, 60000),
     settings: { quality: 'high', reducedMotion: false, showHints: false },
-    weather: { windVector: (o) => o.set(4, 0, 1) },
+    // Like the real Weather.windVector(out = this._wind): the out vector is optional.
+    weather: { _wind: new THREE.Vector3(), windVector(o = this._wind) { return o.set(4, 0, 1); } },
     kicks: [],
     notes: [],
     said: [],
@@ -289,6 +361,17 @@ ok('sound takes 1 s to go 340 m and 5 s to go 1.7 km', FX.soundDelay(340) === 1 
   setHeading(sim, 90, 0);
   chaseCam(sim);
   const base = 1;
+  /*
+   * The full flash is what you get with Settings -> Reduce flashing switched
+   * OFF; it is ON by default (render/flash-safety.js), and then the blast's
+   * light on the world and the sky is CAPS.blastLight of it. These two checks
+   * were written before that switch existed and read the default, so they
+   * measured the capped flash (sky 1.01, light 374) against the full flash's
+   * bar. The full flash is checked with the switch off, and the capped one
+   * with it on: dimmer, but still a flash and still a light.
+   */
+  const was = FS.FLASH.reduce;
+  FS.setReduceFlashing(false);
   FX.explode(sim, V(-100, Terrain.heightAt(-100, 0), 0), { size: 1 });
   frame(sim, 1 / 60, false);
   const lit = sim.sky.hemi.intensity;
@@ -297,8 +380,27 @@ ok('sound takes 1 s to go 340 m and 5 s to go 1.7 km', FX.soundDelay(340) === 1 
   const kicked = sim.kicks.slice();
   ok('a close blast brightens the sky for a moment', lit > base + 0.2, `hemisphere ${base} -> ${lit.toFixed(2)}`);
   ok('and lights the ground with a real light', light > 1000, `point light ${Math.round(light)}`);
+  {
+    FS.setReduceFlashing(true);
+    const simR = makeSim();
+    simR.aircraft.pos.set(-300, 300, 0);
+    setHeading(simR, 90, 0);
+    chaseCam(simR);
+    run(simR, 1, 1 / 30); // past the gate's gap after the blast above
+    FX.explode(simR, V(-100, Terrain.heightAt(-100, 0), 0), { size: 1 });
+    frame(simR, 1 / 60, false);
+    const litR = simR.sky.hemi.intensity;
+    const lightR = FX.explosionStats().light;
+    ok('with Reduce flashing on, the same blast still lights the ground, at most its cap of the full light',
+      lightR > 0 && lightR <= light * FS.CAPS.blastLight * 1.05, `point light ${Math.round(lightR)} of ${Math.round(light)} (cap ${FS.CAPS.blastLight})`);
+    ok('with Reduce flashing on, the sky brightens less than with it off', litR >= base && litR - base < (lit - base) * 0.5,
+      `hemisphere ${base} -> ${litR.toFixed(2)} (off: ${lit.toFixed(2)})`);
+    run(simR, 16, 1 / 30);
+    FS.setReduceFlashing(false);
+  }
   ok('and shakes the camera when the wave arrives', kicked.some((k) => k > 0.2), kicked.map((k) => k.toFixed(2)).join(', '));
   run(sim, 14, 1 / 30);
+  FS.setReduceFlashing(was);
   ok('the light is off again once it has burned down', FX.explosionStats().light === 0, FX.explosionStats().light);
   sim.kicks.length = 0;
   FX.explode(sim, V(4000, 0, 3000), { size: 1 });
@@ -742,11 +844,22 @@ function particleFill(sim, fade = FX.FADE) {
 }
 
 {
-  // The zapper.
+  // The zapper. It needs a plane with guns (gunsight/rules.js hasGuns); the
+  // stand-in game flies a Skylark, which has none, so first that, then the
+  // Osprey CV that Meteor Shower and Guard the Town hand you.
   const sim = makeSim();
   const key = hook('meteor').key;
   sim.meteors.begin({ mode: 'shower' }, null);
   const ac = sim.aircraft;
+  {
+    const fwd0 = V(0, 0, -1).applyQuaternion(ac.quat);
+    const m0 = sim.meteors.spawn({ target: ac.pos.clone().addScaledVector(fwd0, 1500), az: ac.heading + 180, dive: 5, speed: 150, T: 0.01, burn: false, radius: 3, size: 1.5 });
+    m0.pos.copy(ac.pos).addScaledVector(fwd0, 1500);
+    ok('in a plane without guns the zapper says so and pops nothing', sim.meteors.zap() === false && m0.active && sim.meteors.stats.zapped === 0
+      && sim.notes.includes(MET.NO_GUNS_HINT), sim.notes.slice(-2).join(' | '));
+    sim.meteors.begin({ mode: 'shower' }, null);
+  }
+  sim.aircraftType = TYPES.getAircraft('osprey');
   const fwd = V(0, 0, -1).applyQuaternion(ac.quat);
   const ahead = ac.pos.clone().addScaledVector(fwd, 1500);
   ok('nothing ahead: the zap misses', sim.meteors.zap() === false);
@@ -861,6 +974,8 @@ function particleFill(sim, fade = FX.FADE) {
   // Guard the Town.
   const def = ALL.findMission('meteor-town');
   const sim = makeSim();
+  // The game puts you in the mission's aeroplane (the Osprey: guns); the stand-in does not.
+  sim.aircraftType = TYPES.getAircraft(def.aircraft);
   const tp = def.spawn.pos;
   sim.aircraft.pos.set(tp.x, 820, tp.z);
   // Holding station over the town (speed 0), so every rock comes to it.
@@ -893,6 +1008,7 @@ function particleFill(sim, fade = FX.FADE) {
   const sim2 = makeSim();
   let failed = null;
   sim2.runner.onFail = (f) => { failed = f.reason; };
+  sim2.aircraftType = TYPES.getAircraft(def.aircraft);
   sim2.aircraft.pos.set(tp.x, 820, tp.z);
   setHeading(sim2, 45, 0);
   sim2.runner.start(def);
@@ -1040,3 +1156,7 @@ if (failed.length) {
   for (const f of failed) console.log(`  FAILED: ${f.name} ${f.detail}`);
   process.exit(1);
 }
+// Every extension is installed now (see the stand-in DOM above), and some
+// keep timers of their own running (the multiplayer HUD's): without this the
+// suite printed its result and then never exited.
+process.exit(0);

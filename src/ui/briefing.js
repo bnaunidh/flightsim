@@ -423,10 +423,12 @@ function praiseSentence(mission, result, stars) {
 
 const FAIL_ADVICE = [
   [/sea|water|ditch|ocean/i, 'The sea has no runway. Watch the altitude number on the left: if it is falling below 500 feet and you are not over the airfield, hold Shift for power and gently pull back with S.'],
+  // Before the hills: a side strike "hit the ground" too, and it is a wing or a rotor, not a hill.
+  [/rotor|rolled over/i, 'The helicopter tipped over and its rotor blades hit the ground. Close to the ground keep it level, slow right down and let it settle straight down gently.'],
+  [/wing|bank|roll/i, 'A wing touched first. In the last few seconds, level the wings with A and D and let the aeroplane settle flat.'],
   [/hill|terrain|ground|mountain|tree/i, 'Kestrel\'s hills reach about 1,000 feet, so stay at 1,500 feet or higher until you are lined up with the valley on the runway centre line.'],
   [/stall/i, 'A stall means the wing has run out of air. Push the nose down with W and add power with Shift — the wing starts flying again within a second or two.'],
   [/fast/i, 'You arrived far too quickly. Start pulling the power off with Ctrl while you are still a long way out, so you cross the runway edge at about 65 knots.'],
-  [/wing|bank|roll/i, 'A wing touched first. In the last few seconds, level the wings with A and D and let the aeroplane settle flat.'],
   [/fuel/i, 'You ran the tanks dry. Cruise at about three quarters power rather than full, and check the fuel bar at the bottom left every few minutes.'],
   [/time|late/i, 'The clock beat you. Point the nose straight at the next target rather than wandering, and climb while you are already heading the right way.'],
   [/down far too fast|hard|sink/i, 'You came down too hard. When the runway fills the windscreen, ease back on S and hold it — that flare turns a heavy arrival into a gentle one.'],

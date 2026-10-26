@@ -19,18 +19,22 @@
  *            for a few seconds when it changes, then folds to a chip.
  *     chip   false for a card that must never fold (the warnings, a card
  *            with buttons to answer).
+ *     keep   true for a card that must never wait off screen either (a card
+ *            with buttons to answer). Warnings (prio 0) always stay.
  *   poke(el, s)    it changed: open it again for `s` seconds.
  *   openAll(s)     H (help), or a tap: every chip opens for a while.
  *
  * Only about three cards are open at once, by priority; the rest fold to a
  * one-line chip, and if even that will not fit above the minimap the lowest
- * chips wait off screen. Warnings are never folded and never waited.
+ * chips wait off screen, then (last resort) the lowest cards that never
+ * fold. Warnings, and cards with answers (`keep`), are never waited.
  *
  * What JavaScript does here is decide classes (which card is a chip), a few
  * times a second and whenever a card changes size. It never positions a
  * card. The one thing it measures, on a touchscreen only, is where the
- * instrument band ends, because the helicopter's card hangs under it — and
- * that from a ResizeObserver, when it changes, never on a timer.
+ * instrument band ends, because the helicopter's card hangs under it — from
+ * a ResizeObserver when it changes, and again with each chip decision (in
+ * the same layout pass), so a card that moved host is not missed.
  *
  * Motion: a card that arrives slides in from the right edge; when one goes
  * or folds, the cards under it glide to their new places (FLIP, transform
@@ -75,6 +79,18 @@ export class HudStack {
     el.className = 'hud-rstack';
     this.el = el;
     if (host && host.appendChild) host.appendChild(el);
+    // The column's room, as a box the browser lays out (styles/main.css
+    // .rs-room-probe: the column's own top and max-height, as a height). The
+    // column's max-height is calc(100% - ...), and getComputedStyle hands
+    // that back as the calc() text, not pixels: parseFloat() of it is NaN,
+    // so room() fell back to half the window. At 1280x713 that was 33 px
+    // short of the real room; at 1280x560, 44 px MORE than the real room,
+    // so the wind card never folded and sat on the minimap.
+    const probe = document.createElement('div');
+    probe.className = 'rs-room-probe';
+    probe.setAttribute('aria-hidden', 'true');
+    this.probe = probe;
+    if (host && host.appendChild) host.appendChild(probe);
     if (typeof ResizeObserver !== 'undefined') {
       this.ro = new ResizeObserver(() => this.onResize());
       this.ro.observe(el);
@@ -102,13 +118,13 @@ export class HudStack {
    * Join the stack. Inserted in priority order, so the DOM order IS the
    * reading order (and the order of the cards on screen).
    */
-  add(el, { prio = 2, id = '', info = false, chip = true, open = OPEN_INFO } = {}) {
+  add(el, { prio = 2, id = '', info = false, chip = true, keep = false, open = OPEN_INFO } = {}) {
     if (!el || !this.el) return el;
     let c = this.cards.find((k) => k.el === el);
     if (!c) {
-      c = { el, prio, id, info, chip, openFor: open, openT: open, wasOn: false, chipped: false };
+      c = { el, prio, id, info, chip, keep, openFor: open, openT: open, wasOn: false, chipped: false };
       this.cards.push(c);
-    } else Object.assign(c, { prio, id, info, chip });
+    } else Object.assign(c, { prio, id, info, chip, keep });
     this.cards.sort((a, b) => a.prio - b.prio);
     const i = this.cards.indexOf(c);
     const next = this.cards.slice(i + 1).find((k) => k.el.parentNode === this.el);
@@ -185,7 +201,8 @@ export class HudStack {
   /** The column's height in px: from its top down to the minimap or the controls. */
   room() {
     if (!this.roomPx && this.el && typeof getComputedStyle === 'function') {
-      const v = parseFloat(getComputedStyle(this.el).maxHeight);
+      const p = this.probe && this.probe.isConnected && this.probe.getBoundingClientRect ? this.probe.getBoundingClientRect().height : NaN;
+      const v = Number.isFinite(p) && p > 0 ? p : parseFloat(getComputedStyle(this.el).maxHeight);
       this.roomPx = Number.isFinite(v) && v > 0 ? v : (typeof window !== 'undefined' ? window.innerHeight * 0.5 : 400);
     }
     return this.roomPx || 400;
@@ -204,6 +221,13 @@ export class HudStack {
     if (!this.el) return;
     this.dirty = false;
     if (this.el.classList.contains('rs-anim') !== live()) this.el.classList.toggle('rs-anim');
+    // On a touchscreen, where the column starts (under the band) is checked
+    // here too, not only from the ResizeObserver: a card in the band that
+    // moved host or grew a line between two observer deliveries left the
+    // column 7-15 px into the helicopter's card. Same layout pass as the
+    // scrollHeight read below, so it costs a few rects four times a second,
+    // on touch only.
+    if (this.host && this.host.classList && this.host.classList.contains('is-touch')) this.touchTop();
     // A card held back last time is measured as if it were not: the column
     // is re-decided from scratch (in one task, so nothing is painted between).
     for (const c of this.cards) this.setWait(c, false);
@@ -237,6 +261,19 @@ export class HudStack {
         continue;
       }
       const wait = [...on].reverse().find((c) => c.prio >= 1 && canChip(c) && !c.waiting);
+      if (!wait) break;
+      this.setWait(wait, true);
+    }
+    // Every chip is folded and held back and the column STILL runs into the
+    // minimap: the cards that never fold (the patient's pulse, the notices,
+    // a pilot-systems panel) wait too, from the bottom, so a low card never
+    // lands on the minimap. Only the warnings (prio 0) and a card marked
+    // `keep` (one with answers to tap) always stay. The 1280x713 "everything
+    // at once" case in tests/features/hud-stack.browser.js: warnings 179 px +
+    // the radio call 184 px already fill the 356 px column, and the pulse and
+    // the notices used to hang 60 px over the minimap.
+    for (let k = 0; k < on.length && this.el.scrollHeight > room + 1; k++) {
+      const wait = [...on].reverse().find((c) => c.prio >= 1 && !c.keep && !c.waiting);
       if (!wait) break;
       this.setWait(wait, true);
     }
@@ -324,6 +361,7 @@ export class HudStack {
       if (this._dy) {
         this._dy = 0;
         this.el.style.removeProperty('--rs-dy');
+        if (this.probe) this.probe.style.removeProperty('--rs-dy');
       }
       return;
     }
@@ -335,7 +373,12 @@ export class HudStack {
     const x0 = W - right - width;
     const x1 = W - right;
     let bottom = top0;
-    const sel = ':scope > .hud-left, :scope > .hud-left .hud-heli, :scope > .hud-buttons, :scope > .hud-top > *, :scope > .hud-ribbon, :scope > .hud-boatarrow';
+    // The helicopter's hover strip (.hud-rotor, a band across the top on a
+    // touchscreen) and its card, which hangs under the strip in a hover and
+    // under the cruise rows otherwise: missing here, the column started under
+    // the button tray and the Races chip sat on the strip's WIND row on an
+    // iPad (tests/features/heli-touch.playtest.mjs).
+    const sel = ':scope > .hud-left, :scope > .hud-left .hud-heli, :scope > .hud-rotor, :scope > .hud-rotor .hud-heli, :scope > .hud-buttons, :scope > .hud-top > *, :scope > .hud-ribbon, :scope > .hud-boatarrow';
     for (const n of host.querySelectorAll(sel)) {
       if (!n.getClientRects().length) continue;
       const r = n.getBoundingClientRect();
@@ -347,6 +390,7 @@ export class HudStack {
     if (dy !== this._dy) {
       this._dy = dy;
       this.el.style.setProperty('--rs-dy', `${dy}px`);
+      if (this.probe) this.probe.style.setProperty('--rs-dy', `${dy}px`);
       this.roomPx = 0;
       this.dirty = true;
     }

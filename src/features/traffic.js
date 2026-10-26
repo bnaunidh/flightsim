@@ -604,6 +604,9 @@ function startLeg(c, leg, s = 0) {
   // push, too.
   c.holdT = leg.pauseBefore != null ? leg.pauseBefore : leg.kind === 'takeoff' ? 3 : 0;
   if (leg.kind === 'approach') c.onApproach = true;
+  // A long way on along the runway (A BACK-TAXI), remembered through the roll.
+  if (leg.kind === 'lineup') c.backTaxi = legSeconds(leg) > BACKTAXI_S;
+  else if (leg.kind !== 'takeoff') c.backTaxi = false;
   // Rolling: the holding point it left is free for the next one.
   if (leg.kind === 'takeoff') c.depConn = null;
   // Off the connector and on to the taxiway: the exit is free again.
@@ -781,7 +784,8 @@ function atGate(sim, c) {
     // An exit it can taxi home from, and that nobody is waiting at or heading for.
     const app = planArrival(c);
     noteTime(performance.now() - t0, true, 'approach');
-    if (app.ok) {
+    // ...and not on to a runway a back-taxi will still have when it gets there (A BACK-TAXI).
+    if (app.ok && !backTaxiInTheWay(c, app.legs[0])) {
       startLeg(c, app.legs[0]);
       c.exitX = app.exit;
       c.state = 'moving';
@@ -1008,6 +1012,61 @@ function soonestArrival(except) {
     best = Math.min(best, left / Math.max(o.v, 20));
   }
   return best;
+}
+
+/*
+ * A BACK-TAXI. Kestrel's hangar-1 is east of 18/36, and the only way out to
+ * runway 09 that does not cross 18/36 on the taxiway is the connector at
+ * x 430, a kilometre from the threshold: whoever lives there lines up by
+ * driving most of the runway (planner.js now does it at taxiway speed, not
+ * the line-up's 6 m/s, which made it three minutes). The departure clearance
+ * looks at arrivals already on final; one still on its way to the gate was
+ * then cleared at the gate (nobody else on final) on to a runway the
+ * back-taxi was still on, and went round — four minutes lost a cycle, and
+ * the node check's open sky saw two departures in twenty minutes, not three.
+ *
+ * Now an arrival at the gate is not cleared on to a runway a back-taxi will
+ * still be on (or rolling down) when it wants it: it flies a 360 and asks
+ * again, which costs a minute, not a whole go-around. (Holding the
+ * departure at the holding point instead was tried and measured worse: the
+ * soak's Sennen kept a landed Courier waiting 217 s behind one.)
+ */
+/** Seconds a leg takes at its planned speeds from distance s0 to s1 along it. */
+function legSeconds(L, s0 = 0, s1 = Infinity) {
+  const p = L && L.path;
+  if (!p || !p.n) return 0;
+  let t = 0;
+  for (let i = 1; i < p.n; i++) {
+    const a = Math.max(s0, p.s[i - 1]);
+    const b = Math.min(s1, p.s[i]);
+    if (b <= a) continue;
+    t += (b - a) / Math.max(0.5, 0.5 * (p.vmax[i] + p.vmax[i - 1]));
+  }
+  return t;
+}
+/** A line-up longer than this is a back-taxi (an ordinary one is 10-25 s). */
+const BACKTAXI_S = 45;
+
+/**
+ * Would approach leg `A` meet the runway still held by one that back-taxied
+ * on to it? Its lining up, its pause and its roll to where it lets go of the
+ * runway, against this arrival's time to the point on final where it must
+ * have the runway (sLock) — or go round. Only for a back-taxi: an ordinary
+ * line-up is cleared with no arrival due for two minutes (departureClear),
+ * and is as it was.
+ */
+function backTaxiInTheWay(c, A) {
+  const o = T.runwayOwner;
+  if (!o || o === c || !o.leg || !o.backTaxi || !A || A.sLock == null) return false;
+  let t = 0;
+  if (o.leg.kind === 'lineup') {
+    t += legSeconds(o.leg, o.s);
+    const tk = o.legs.find((l) => l.kind === 'takeoff');
+    t += 3 + (tk ? legSeconds(tk, 0, tk.sRelease != null ? tk.sRelease : Infinity) : 30);
+  } else if (o.leg.kind === 'takeoff') {
+    t += Math.max(0, o.holdT || 0) + legSeconds(o.leg, o.s, o.leg.sRelease != null ? o.leg.sRelease : Infinity);
+  } else return false;
+  return t + 10 > legSeconds(A, 0, A.sLock);
 }
 
 /**

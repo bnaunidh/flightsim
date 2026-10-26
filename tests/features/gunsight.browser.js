@@ -394,7 +394,10 @@ export async function check(sim, r, say = () => {}) {
     sim.hud.notify = realNotify;
     const ui = document.getElementById('meteor-ui');
     const zapBtn = ui && ui.querySelector('.mt-zap');
-    const keysLine = ui && ui.querySelector('.mt-keys');
+    // The panel is a card in the HUD's right-hand stack (src/ui/hud-stack.js,
+    // since the one-stack HUD), not inside #meteor-ui any more: looked for in
+    // #meteor-ui, the keys line was never found ("no keys line").
+    const keysLine = document.querySelector('.mt-panel .mt-keys');
     r.ok('gunsight: in a Courier the zap key pops nothing, and says it calmly: "You need a plane with guns to shoot meteors."', sim.meteors.stats.zapped === zc && rock3.active && noteLog.includes('You need a plane with guns to shoot meteors.'), JSON.stringify({ zapped: sim.meteors.stats.zapped, noteLog }));
     r.ok('gunsight: ...no ZAP button, and the panel says the same sentence instead of "Press Z"', (!zapBtn || zapBtn.hidden) && !!keysLine && !keysLine.hidden && /plane with guns/.test(keysLine.textContent) && !/Press/.test(keysLine.textContent), keysLine ? keysLine.textContent : 'no keys line');
     r.ok('gunsight: ...and the "ZAP" lock reticle is not drawn on the rock ahead', !Array.from(document.querySelectorAll('#meteor-ui .mt-ret.is-lock')).some((e) => vis(e) && e.style.display !== 'none'));
@@ -415,7 +418,8 @@ export async function check(sim, r, say = () => {}) {
         r.ok('gunsight: Guard the Town: the Osprey flies it (six seconds in, flying, above its stall)', !ac().crashed && ac().vel.length() > 55 && sim.runner.status === 'running', `${ac().vel.length().toFixed(0)} m/s, ${sim.runner.status}`);
         const zb = document.querySelector('#meteor-ui .mt-zap');
         const touch = html.contains('is-touch-device');
-        r.ok('gunsight: ...and the panel offers the zap (Z or the button), not the "no guns" line', !!document.querySelector('#meteor-ui .mt-keys') && !/plane with guns/.test(document.querySelector('#meteor-ui .mt-keys').textContent) && (touch ? zb && !zb.hidden : true));
+        const kl = document.querySelector('.mt-panel .mt-keys'); // in the HUD stack, not #meteor-ui
+        r.ok('gunsight: ...and the panel offers the zap (Z or the button), not the "no guns" line', !!kl && !/plane with guns/.test(kl.textContent) && (touch ? zb && !zb.hidden : true), kl ? kl.textContent : 'no keys line');
       }
       if (id === 'meteor-dodge') {
         const z1 = sim.meteors.stats.zapped;

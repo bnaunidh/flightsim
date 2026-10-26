@@ -718,5 +718,52 @@ const horizMoved = (ac, from) => Math.hypot(ac.pos.x - from.x, ac.pos.z - from.z
   if (i >= 0) TER.OBSTACLES.splice(i, 1);
 }
 
+{
+  /*
+   * Replay QA R6: a helicopter that rolled over read "The left wing tip hit
+   * the ground". A rotorcraft's side strike points say what happened to a
+   * helicopter; they stay the same points with the same parts (the breakup
+   * zones, the crash kinds and the model's strike points key off `part`),
+   * and every fixed-wing type keeps its wing tips.
+   */
+  const TY = await import(SRC + 'aircraft/types.js');
+  const bad = [];
+  let helis = 0;
+  for (const a of TY.AIRCRAFT) {
+    const hp = TY.specFor(a.id).hardPoints;
+    const L = hp.find((h) => h.part === 'leftWing');
+    const R = hp.find((h) => h.part === 'rightWing');
+    if (!L || !R) { bad.push(`${a.id}: no side points`); continue; }
+    if (TY.isHelicopter(a)) {
+      helis++;
+      if (/wing/i.test(L.what + R.what) || !/rolled over to the left/.test(L.what) || !/rolled over to the right/.test(R.what) || !/rotor/.test(L.what + R.what)) bad.push(`${a.id}: "${L.what}" / "${R.what}"`);
+    } else if (!/left wing tip/.test(L.what) || !/right wing tip/.test(R.what)) bad.push(`${a.id}: "${L.what}" / "${R.what}"`);
+  }
+  ok('a helicopter rolls over and strikes its rotor (no wing tip); every aeroplane keeps its wing tips; the parts are unchanged', helis >= 5 && bad.length === 0, bad.join('; ') || `${helis} helicopters`);
+}
+
+{
+  /*
+   * The same words for a helicopter set down tipped over: the touchdown
+   * grade said "A wing hit the ground first" (physics.js, past 22 degrees of
+   * bank) for a Skyhook too. The rotor's re-score (rotor-assist.js) gives it
+   * the rollover on the low side; an aeroplane keeps its wing.
+   */
+  const ac = spawn();
+  ac.update(STEP, weather);
+  const R = ac.gradeTouchdown(150, 30, 0);
+  const L = ac.gradeTouchdown(150, -30, 0);
+  P.applyAircraft('skylark');
+  const pl = new P.Aircraft();
+  pl.reset({ ...RUNWAY_START, engineOn: true });
+  pl.settleOnGear();
+  pl.update(STEP, weather);
+  const W = pl.gradeTouchdown(150, 30, 0);
+  ok('a helicopter set down tipped over rolls over on the low side (no wing); an aeroplane keeps "a wing hit the ground"',
+    R.crashed && /rolled over to the right/.test(R.reason) && L.crashed && /rolled over to the left/.test(L.reason) && !/wing/i.test(R.reason + L.reason) && W.crashed && /wing hit the ground/i.test(W.reason),
+    `${R.reason} | ${L.reason} | ${W.reason}`);
+  P.applyAircraft('harrier');
+}
+
 console.log(`\nheli: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

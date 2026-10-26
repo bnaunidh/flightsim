@@ -86,6 +86,14 @@ export async function check(sim, r, say) {
     for (const [id, map] of Object.entries(MOVED)) {
       const m = MIS.findMission(id);
       if (!m) continue;
+      /*
+       * A Dev-passcode mission (Hijack: By the Book) is refused on its first
+       * frame without the passcode (its failIf, which is the gate) — the
+       * test profile has none, so it read "runner failed". Open the door the
+       * way events.browser.js does, for this mission only, and shut it after.
+       */
+      const devWas = !!(sim.prog && sim.prog.devUnlocked);
+      if (m.devOnly && sim.prog) sim.prog.devUnlocked = true;
       try {
         if (m.roles) await sim.startMode('mission', { id, role: m.roles[0].id });
         else await sim.startAnyMission(id);
@@ -108,6 +116,7 @@ export async function check(sim, r, say) {
         r.ok(`mission maps: ${id} starts on ${map}`, false, String(err && err.message).slice(0, 200));
       }
       quit();
+      if (sim.prog) sim.prog.devUnlocked = devWas;
     }
 
     /* ---- 3. two of them flown to the end by the scripted pilot ---- */

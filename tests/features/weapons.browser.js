@@ -198,10 +198,16 @@ export async function check(sim, r, say) {
     });
     r.ok('weapons: the rocks are one instanced mesh in the scene', rocks.length === 1 && rocks[0].isInstancedMesh);
     const ui = document.getElementById('meteor-ui');
-    r.ok('weapons: the meteor panel is on screen', !!ui && !ui.hidden && /Stardust/.test(ui.textContent), ui ? ui.textContent.slice(0, 80) : 'no #meteor-ui');
+    // The panel is a card in the HUD's right-hand stack (src/ui/hud-stack.js,
+    // since the one-stack HUD), not inside #meteor-ui any more, which keeps
+    // only the ZAP button and the reticles. Looked for in #meteor-ui, its
+    // text, keys line and BIG ONE warning were never found (the same stale
+    // place the gunsight check was fixed for in 0c2b32b).
+    const panel = document.querySelector('.mt-panel');
+    r.ok('weapons: the meteor panel is on screen', !!ui && !ui.hidden && !!panel && !panel.hidden && /Stardust/.test(panel.textContent), panel ? panel.textContent.slice(0, 80) : 'no .mt-panel');
     const zapBtn = ui && ui.querySelector('.mt-zap');
     const touch = document.documentElement.classList.contains('is-touch-device');
-    const keysLine = ui && ui.querySelector('.mt-keys');
+    const keysLine = panel && panel.querySelector('.mt-keys');
     if (touch) r.ok('weapons: on a touch screen there is a ZAP button', !!zapBtn && !zapBtn.hidden);
     else {
       r.ok('weapons: on a keyboard the ZAP button stays off the minimap and the panel says Z', !!zapBtn && zapBtn.hidden && !!keysLine && /Z/.test(keysLine.textContent),
@@ -222,7 +228,7 @@ export async function check(sim, r, say) {
     const big = sim.meteors.spawnLander(true);
     step(0.3);
     const markerOn = big && big.marker >= 0;
-    const warnEl = ui && ui.querySelector('.mt-warn');
+    const warnEl = panel && panel.querySelector('.mt-warn'); // in the HUD-stack card too
     r.ok('weapons: a big one gets a light where it lands and a countdown', markerOn && warnEl && !warnEl.hidden && /BIG ONE/.test(warnEl.textContent), warnEl ? warnEl.textContent : '');
 
     /* ---------------- Photograph the Big One ---------------- */
@@ -312,7 +318,8 @@ export async function check(sim, r, say) {
     try {
       sim.quitToMenu('main');
       const ui = document.getElementById('meteor-ui');
-      r.ok('weapons: back at the menu, the meteors and their panel are gone', !sim.meteors.active && (!ui || ui.hidden) && FX.explosionStats().blasts === 0);
+      const pnl = document.querySelector('.mt-panel'); // the HUD-stack card
+      r.ok('weapons: back at the menu, the meteors and their panel are gone', !sim.meteors.active && (!ui || ui.hidden) && (!pnl || pnl.hidden) && FX.explosionStats().blasts === 0);
     } catch (err) {
       r.ok('weapons: can get back to the menu', false, String(err && err.message));
     }

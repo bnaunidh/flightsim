@@ -136,12 +136,14 @@ export function beginGameAircraftCrash(model, ac, event = {}, { groundHeight = 0
   const normal = event.worldNormal?.clone() ?? new THREE.Vector3(0, 1, 0);
   const sample = typeof groundHeight === 'function' ? groundHeight(point.x, point.z) : groundHeight;
   const water = event.surfaceKind === 'water' || (sample < 0 && point.y < 3);
-  let partId = event.partId;
+  // No part (null from main.js when there is no contact) is "the nearest one": undefined, never null, for impact().
+  let partId = event.partId ?? undefined;
   if (partId && !model.userData.strikePoints[partId]) partId = undefined;
   if (!partId) {
     const reason = event.reason ?? '';
-    if (/left wing/i.test(reason)) partId = 'leftWing';
-    else if (/right wing/i.test(reason)) partId = 'rightWing';
+    // (A helicopter's side strike is "rolled over to the left/right": types.js ROLLOVER.)
+    if (/left wing|rolled over to the left/i.test(reason)) partId = 'leftWing';
+    else if (/right wing|rolled over to the right/i.test(reason)) partId = 'rightWing';
     else if (/nose/i.test(reason)) partId = 'nose';
     else if (/tail/i.test(reason)) partId = 'tail';
     else if (/belly|wheels up/i.test(reason)) partId = 'fuselage';
@@ -151,6 +153,11 @@ export function beginGameAircraftCrash(model, ac, event = {}, { groundHeight = 0
   model.userData.gameCrash = crash;
   // The heat haze behind the nozzles goes out with the engines. The model's own animation stops for the crash, so a haze left on would hang behind the wreck as it was, rippling frozen in the air (fleet/aircraft-realism.js).
   for (const h of model.userData.realism?.haze || []) { h.node.visible = false; h.node.scale.setScalar(1e-4); }
+  // No contact at all (main.js hands over a null point and part: an overspeed break-up, a Dev or mission crash) and no part in the words:
+  // there is nothing for a part to be "nearest" to, only the aeroplane's middle. The pack's impact is skipped, as v74.1 did (it threw
+  // there), because the search through every part's bounds plus the strike cost 31-39 ms on the A380's crash frame (crash-freeze.browser.js:
+  // 13 ms with it skipped, 55 ms with it run), and the game's own break-up (features/breakup.js) already makes the wreck.
+  if (!partId && !event.worldPoint) { crash.report = { ignored: true, reason: 'no contact' }; return true; }
   const report = model.userData.impact({ worldPoint: point, worldNormal: normal, worldVelocity: velocity, worldAngularVelocity: angular,
     partId, surfaceKind: water ? 'water' : event.surfaceKind ?? 'asphalt',
     groundHeight: water ? (() => NaN) : groundHeight, forceCrash: true, deferCrash: water, debrisParent: model.parent });

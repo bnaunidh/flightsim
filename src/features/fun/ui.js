@@ -140,6 +140,11 @@ export class FunHud {
     if (touch) this.chip.classList.add('is-touch-fun');
     this.placeT = 0;
     this.last = '';
+    // A phone turned (or a window resized): placed again on the next frame,
+    // not up to a second later. The multiplayer badge places itself round
+    // this chip a quarter-second after a resize (multiplayer/ui.js), and with
+    // the chip still where the old layout had it, the badge sat on it.
+    if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('resize', () => { this.placeT = 0; });
   }
 
   setVisible(on) {

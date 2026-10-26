@@ -787,6 +787,79 @@ for (const [id, fleet] of [...IDS.map((i) => [i, false]), ['meridian', true]]) {
   }
 }
 
+/* A crash that names no part. main.js hands the bridge `c.contact && c.contact.part`,
+ * which is null when there is no contact; the bridge passed that null on, and
+ * impact() threw "Unknown impact part null" — "The fleet crash could not start"
+ * in the self-test's console, on the pack aeroplanes. No part is "find the
+ * nearest one", the same as undefined. */
+{
+  ADAPTER.setFleetModels(true);
+  let model;
+  try {
+    model = ADAPTER.createAircraftModel({ type: T.getAircraft('meridian') });
+  } finally {
+    ADAPTER.setFleetModels(false);
+  }
+  const scene = new THREE.Scene();
+  scene.add(model);
+  model.position.set(0, 14, 0);
+  model.updateMatrixWorld(true);
+  const ac = { pos: model.position.clone(), quat: model.quaternion.clone(), vel: new THREE.Vector3(0, -1, -70), omega: new THREE.Vector3(), crashed: true, controls: {} };
+  let err = null;
+  let began = false;
+  const warn = console.warn;
+  console.warn = (...a) => { err = err || a.map(String).join(' '); };
+  try {
+    began = ADAPTER.crashAircraftModel(model, ac, { reason: 'You flew into the control tower', partId: null, worldVelocity: ac.vel.clone(), worldAngularVelocity: new THREE.Vector3(), worldPoint: model.position.clone() }, { groundHeight: 0 });
+  } catch (e) {
+    err = String(e && e.message);
+  } finally {
+    console.warn = warn;
+  }
+  const report = model.userData.gameCrash && model.userData.gameCrash.report;
+  ok('pack Meridian: a crash with no part named (partId null) starts the fleet crash at the nearest part, without "Unknown impact part"',
+    began && !!report && !err, err || `${report && report.action} ${report && report.partId}`);
+  model.userData.dispose();
+  model.removeFromParent();
+}
+
+/* A crash with no contact at all: main.js hands over a null point AND a null
+ * part (an overspeed break-up, a Dev or mission crash). There is nothing to be
+ * "nearest" to, and the search through every part plus the strike cost
+ * 31-39 ms on the A380's crash frame (crash-freeze.browser.js), so the pack's
+ * impact is skipped, as v74.1 did — but quietly now, with no "could not start"
+ * warning, and the fleet crash state still begins. */
+{
+  ADAPTER.setFleetModels(true);
+  let model;
+  try {
+    model = ADAPTER.createAircraftModel({ type: T.getAircraft('meridian') });
+  } finally {
+    ADAPTER.setFleetModels(false);
+  }
+  const scene = new THREE.Scene();
+  scene.add(model);
+  model.position.set(0, 14, 0);
+  model.updateMatrixWorld(true);
+  const ac = { pos: model.position.clone(), quat: model.quaternion.clone(), vel: new THREE.Vector3(0, -1, -70), omega: new THREE.Vector3(), crashed: true, controls: {} };
+  let err = null;
+  let began = false;
+  const warn = console.warn;
+  console.warn = (...a) => { err = err || a.map(String).join(' '); };
+  try {
+    began = ADAPTER.crashAircraftModel(model, ac, { reason: 'Crash with no contact', partId: null, worldPoint: null, worldVelocity: ac.vel.clone(), worldAngularVelocity: new THREE.Vector3() }, { groundHeight: 0 });
+  } catch (e) {
+    err = String(e && e.message);
+  } finally {
+    console.warn = warn;
+  }
+  const report = model.userData.gameCrash && model.userData.gameCrash.report;
+  ok('pack Meridian: a crash with no contact (point and part null) begins the fleet crash and skips the pack impact, with no warning',
+    began && !err && !!report && report.ignored === true && report.reason === 'no contact', err || JSON.stringify(report));
+  model.userData.dispose();
+  model.removeFromParent();
+}
+
 /* Air Force One: the 747 in the 'potus' scheme (aircraft/liveries.js) keeps
  * its look — white over the scheme's blue band and line, the dark blue fin,
  * SAM 42, and the titling line, which the pack's old skin painted and the

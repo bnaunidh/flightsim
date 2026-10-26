@@ -76,6 +76,13 @@ const KEYS = {
 };
 
 export async function check(sim, r, say = () => {}) {
+  // The autopilot's key, as bound: it moved from P to Y on 2026-10-23 (P at
+  // the stand called the pushback too; src/flight/input.js MIGRATIONS), and
+  // this check kept pressing P, so the autopilot never engaged. Asked of the
+  // bindings, not hard-coded, so it follows them (as instruments.browser.js).
+  const apCode = ((await import('../../src/flight/input.js')).codesFor('autopilot', sim) || [])[0] || 'KeyY';
+  KEYS.AP = [apCode, apCode.replace(/^Key/, '').toLowerCase()];
+  const apName = apCode.replace(/^Key/, '');
   const press = (k) => window.dispatchEvent(new KeyboardEvent('keydown', { code: KEYS[k][0], key: KEYS[k][1], bubbles: true }));
   const release = (k) => window.dispatchEvent(new KeyboardEvent('keyup', { code: KEYS[k][0], key: KEYS[k][1], bubbles: true }));
   const allUp = () => {
@@ -992,11 +999,11 @@ export async function check(sim, r, say = () => {}) {
      * autopilot took a 13 m hover forward at 25 m/s and up at 4.5 m/s to
      * 222 m in 40 s. On a helicopter it holds what it has.
      */
-    say('heli playtest: P in the hover, then at speed');
+    say(`heli playtest: ${apName} in the hover, then at speed`);
     await flyingAt(13);
     run(2);
     const pP = ac().pos.clone();
-    tapKey('P');
+    tapKey('AP');
     const apCard = card();
     let farP = 0;
     let highP = 0;
@@ -1005,7 +1012,7 @@ export async function check(sim, r, say = () => {}) {
       highP = Math.max(highP, Math.abs(ac().pos.y - pP.y));
     });
     r.ok(
-      'P in the hover engages the autopilot, which holds the hover where it was',
+      `${apName} in the hover engages the autopilot, which holds the hover where it was`,
       !!(sim.autopilot && sim.autopilot.engaged) && /AUTOPILOT/.test(apCard) && farP < 3 && highP < 1.5 && !ac().crashed,
       `autopilot ${sim.autopilot && sim.autopilot.engaged ? 'engaged' : 'OFF'}, card "${apCard}", ${f1(farP)} m and ${f1(highP)} m of height in 20 s`
     );
@@ -1017,7 +1024,7 @@ export async function check(sim, r, say = () => {}) {
     face(90);
     hold(['W'], 6);
     run(0.5);
-    tapKey('P');
+    tapKey('AP');
     const yAp = ac().pos.y;
     const hAp = ac().heading;
     const gsAp = ac().groundSpeed;
@@ -1028,7 +1035,7 @@ export async function check(sim, r, say = () => {}) {
       dhAp = Math.max(dhAp, hdgDiff(ac().heading, hAp));
     });
     r.ok(
-      'P at speed holds the height and the heading and keeps going',
+      `${apName} at speed holds the height and the heading and keeps going`,
       !!(sim.autopilot && sim.autopilot.engaged) && dyAp < 6 && dhAp < 5 && ac().groundSpeed > 15 && !ac().crashed,
       `engaged at ${f1(gsAp)} m/s; 20 s: height within ${f1(dyAp)} m, heading within ${f1(dhAp)} deg, ${f1(ac().groundSpeed)} m/s, "${sim.autopilot && sim.autopilot.status(null)}"`
     );

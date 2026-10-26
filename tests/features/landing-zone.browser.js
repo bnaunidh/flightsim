@@ -7,11 +7,18 @@
  * Every landing here is a real one: the aeroplane is put a few metres over
  * the runway, long and fast, sinking gently, and the flight model's own
  * wheel contact makes the touchdown (and grades it). Then nobody touches the
- * brakes. The step must finish three seconds after the wheels touch, with
- * the aeroplane still rolling fast.
+ * brakes. The step must finish LANDING_RULE.hold seconds after the wheels
+ * touch, with the aeroplane still rolling fast.
+ *
+ * The rule was three seconds when this was written; the owner then made it
+ * none (2026-10-16, "you land you land": LANDING_RULE.hold = 0, and the node
+ * suite landing-zone.mjs was changed with it). This check still asked for
+ * three, so every landing that counted at once ("done 0.00 s later") read
+ * as a failure. It now reads the rule: at once today, three seconds again
+ * if the rule ever goes back — never before the wheels touch, never late.
  *
  *   - Story chapter 1, step 3 ("Land on the numbers and stop. Runway 09"),
- *     on Condor Rock: touch down long and fast, roll three seconds, done.
+ *     on Condor Rock: touch down long and fast, touch down (the rule's hold, at once today), done.
  *   - A normal mission landing (Island Circuit) and a delivery (Mango Cay
  *     Delivery, "Land on runway 09 and bring the aeroplane to a stop"), the
  *     same way.
@@ -120,7 +127,10 @@ export async function check(sim, r, say) {
   };
   const fmt = (o) => `touched ${o.tdAt == null ? 'never' : `at x ${o.x.toFixed(0)}, ${o.td ? `${o.td.vsFpm} fpm ${o.td.speedKts} kt` : ''}`}; `
     + `${o.after == null ? 'not done' : `done ${o.after.toFixed(2)} s later at ${o.gs.toFixed(1)} m/s`}${o.crashed ? ' CRASHED' : ''}`;
-  const threeSeconds = (o) => !o.crashed && o.td && !o.td.crashed && o.after != null && o.after >= 2.9 && o.after <= 3.4;
+  // The rule's own hold (0 today: the moment the wheels touch in the box), a frame or a bounce's grace late at most.
+  const HOLD = LZ.LANDING_RULE.hold;
+  const holdWords = HOLD > 0 ? `${HOLD} s` : 'at once';
+  const countsOnTime = (o) => !o.crashed && o.td && !o.td.crashed && o.after != null && o.after >= Math.max(0, HOLD - 0.1) && o.after <= HOLD + 0.4;
 
   try {
     /* ---- the box is secret ---------------------------------------------- */
@@ -162,8 +172,8 @@ export async function check(sim, r, say) {
     const RW = AP.RUNWAY;
     // Long: 450 m past the aiming point, two-thirds of the way down a 1,100 m runway. Fast: 38 m/s, 74 kt.
     const c = touchDownAndRoll({ x: RW.touchdown.x + 450, z: RW.cz + 4, until: () => status() !== 'running' });
-    r.ok('landing zone: Island Circuit — touched down long and fast, it completes three seconds later, still rolling',
-      onLand && threeSeconds(c) && status() === 'complete' && c.gs > 15 && c.x > RW.touchdown.x + 300, fmt(c));
+    r.ok(`landing zone: Island Circuit — touched down long and fast, it completes ${HOLD > 0 ? `${holdWords} later` : 'at once'}, still rolling`,
+      onLand && countsOnTime(c) && status() === 'complete' && c.gs > 15 && c.x > RW.touchdown.x + 300, fmt(c));
     r.ok('landing zone: ...and the landing was graded as always (the grade is the score, not the gate)', !!c.td && typeof c.td.score === 'number' && c.td.onRunway === true,
       c.td ? JSON.stringify({ score: c.td.score, onRunway: c.td.onRunway, quality: c.td.quality }) : 'no grade');
     sim.quitToMenu('missions');
@@ -194,8 +204,8 @@ export async function check(sim, r, say) {
     sim.step(0.3, 1 / 30);
     const dLand = toStep('land');
     const d = touchDownAndRoll({ x: AP.RUNWAY.touchdown.x + 400, z: AP.RUNWAY.cz - 5, speed: 40, until: () => status() !== 'running' });
-    r.ok('landing zone: the delivery ("bring the aeroplane to a stop") completes three seconds after a long, fast touchdown, no stop',
-      dLand && threeSeconds(d) && status() === 'complete' && d.gs > 15, fmt(d));
+    r.ok(`landing zone: the delivery ("bring the aeroplane to a stop") completes ${HOLD > 0 ? `${holdWords} after` : 'at'} a long, fast touchdown, no stop`,
+      dLand && countsOnTime(d) && status() === 'complete' && d.gs > 15, fmt(d));
     sim.quitToMenu('missions');
 
     /* ---- Story chapter 1, step 3 ---------------------------------------- */
@@ -219,8 +229,8 @@ export async function check(sim, r, say) {
       speed: 38,
       until: () => !(sim.runner.def && sim.runner.def.id === 'story-ch01-land' && status() === 'running' && stepId() === 'land'),
     });
-    r.ok('landing zone: Story ch1 step 3 ("Land on the numbers and stop. Runway 09") on Condor Rock — long, fast, three seconds of roll, done',
-      sLand && idx === 2 && /Runway 09/.test(text) && sim.settings.map === 'condor' && threeSeconds(s) && s.gs > 15,
+    r.ok(`landing zone: Story ch1 step 3 ("Land on the numbers and stop. Runway 09") on Condor Rock — long, fast, ${HOLD > 0 ? `${holdWords} of roll` : 'the touchdown'}, done`,
+      sLand && idx === 2 && /Runway 09/.test(text) && sim.settings.map === 'condor' && countsOnTime(s) && s.gs > 15,
       `${up ? '' : 'never started; '}step ${idx} "${text.slice(0, 40)}" on ${sim.settings.map}: ${fmt(s)}`);
     // The beat is over: the chapter goes on to its finale.
     for (let i = 0; i < 20; i++) {

@@ -851,7 +851,14 @@ export function stageCrash(sim, kind) {
   ac.pos.set(spot.x, surface + lift, spot.z);
   ac.vel.set(Math.sin(hdg) * st.fwd, -st.down, -Math.cos(hdg) * st.fwd);
   const contact = { part: st.part, surfaceKind: st.surface, worldPoint: ac.pos.clone() };
-  ac.crash(st.reason, contact);
+  // A helicopter's strike points say it in its own words (types.js ROLLOVER:
+  // it rolled over and the rotor struck the ground, not a wing tip).
+  const rotor = !!(sim.aircraftType && sim.aircraftType.shape && sim.aircraftType.shape.power && sim.aircraftType.shape.power.rotor);
+  // Only for the strikes whose words are the aeroplane's (the wing tips, the
+  // propeller): a splash names the fuselage too, and must still say the sea.
+  const own = st.part === 'leftWing' || st.part === 'rightWing' || st.part === 'nose';
+  const hp = rotor && own && !st.water && SPEC && SPEC.hardPoints ? SPEC.hardPoints.find((h) => h.part === st.part) : null;
+  ac.crash(hp && hp.what ? hp.what : st.reason, contact);
   return kind;
 }
 

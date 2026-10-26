@@ -283,13 +283,25 @@ export function planTaxiOut(field, perf, slot, dir, connector = null) {
  * before it starts. Returns { legs, ok, why } — `ok` false when this
  * aeroplane cannot get off this runway in the length there is.
  */
+/** Speed along the runway on a back-track, m/s (see planDeparture). */
+export const BACKTRACK_V = 10;
+
 export function planDeparture(field, perf, dir, connector = null) {
   const rw = runwayFor(field, dir);
   const cx = connector == null ? rw.depConnector : connector;
   const lu = lineupDraft(field, rw, perf, cx);
   const lp = lu.draft.finish();
   groundify(lp);
-  lp.setSpeeds(() => Math.min(perf.taxi, 6), { v0: 0, vEnd: 0, accel: 0.7, decel: 1.0, latAccel: 1.4 });
+  /*
+   * A back-track (a way on from a connector without the runway it needs
+   * ahead of it: Kestrel's hangar-1 to 09, a kilometre) taxis the empty
+   * runway at a brisk 10 m/s (about 20 knots, what crews backtrack at)
+   * rather than the line-up's walking pace: at 6 m/s it held the runway for
+   * three minutes, and the arrival behind it went round (traffic.js, A
+   * BACK-TAXI). The turns are the turns either way (latAccel), and the start
+   * and the stop are as before.
+   */
+  lp.setSpeeds(() => (lu.backtrack ? BACKTRACK_V : Math.min(perf.taxi, 6)), { v0: 0, vEnd: 0, accel: 0.7, decel: 1.0, latAccel: 1.4 });
   const x0 = lp.x[lp.n - 1];
 
   // The roll and the climb-out, on the centreline and straight on.

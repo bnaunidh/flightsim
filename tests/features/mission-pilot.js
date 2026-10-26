@@ -128,12 +128,28 @@ export async function flyMission(sim, id, { role = undefined, maxSeconds = undef
     const floorY = ground(ac.pos.x, ac.pos.z);
     if (!B.glide && !ac.onGround && ac.pos.y - floorY < 60 && !B.glider) wantVs = Math.max(wantVs, 2);
     if (B.glider && !B.flare && !ac.onGround) {
-      // No engine: the nose holds the SPEED, not the height. Slow → nose
-      // down; fast → nose up. Height takes care of itself along the glide.
+      /*
+       * No engine: the nose holds the SPEED, not the height. Slow → nose
+       * down; fast → nose up. Height takes care of itself along the glide.
+       *
+       * Through the ATTITUDE: the speed asks for a pitch a few degrees
+       * either side of the glide's own (about 4 degrees nose down), and the
+       * stick flies that pitch. The first cut put the speed error straight
+       * on the stick; 28 m/s fast at the engine failure was full back
+       * stick, a zoom to 70 degrees nose up, a stall, a dive to 85 down and
+       * round again every 14 s (the speed never under 18 or over 56 m/s)
+       * until a dive met the rising ground short of Meadow's runway — the
+       * dead-stick pilot never finished there (it fails the same at the
+       * commit that wrote it).
+       */
       const spdErr = ac.ias - B.gliderSpd;
-      B.I = Math.max(-0.3, Math.min(0.3, B.I + spdErr * dt * 0.01));
-      o.pitch = Math.max(-0.5, Math.min(0.6, spdErr * 0.03 + B.I - ac.omega.x * 0.5));
+      B.I = Math.max(-4, Math.min(4, B.I + spdErr * dt * 0.05));
+      const wantPitch = Math.max(-14, Math.min(8, -4 + spdErr * 0.8 + B.I));
+      const pitchDeg = typeof ac.pitchAngleDeg === 'function' ? ac.pitchAngleDeg() : 0;
+      o.pitch = Math.max(-0.5, Math.min(0.5, (wantPitch - pitchDeg) * 0.05 - ac.omega.x * 0.8));
     } else {
+      if (B.glider && B.I > 0.5) B.I = 0.5;
+      if (B.glider && B.I < -0.4) B.I = -0.4;
       B.I = Math.max(-0.4, Math.min(0.5, B.I + (wantVs - ac.vs) * dt * 0.03));
       o.pitch = rolling ? (ac.ias > vRotate ? 0.5 : 0)
         : ac.onGround ? 0

@@ -139,7 +139,7 @@ const state = {
 function adopt() {
   const stack = simRef && simRef.hud && simRef.hud.stack;
   if (!root || !stack || typeof stack.add !== 'function' || root.parentNode === stack.el) return;
-  stack.add(root, { prio: 1.1, id: 'event', chip: false });
+  stack.add(root, { prio: 1.1, id: 'event', chip: false, keep: true });
 }
 
 function ensure(sim) {

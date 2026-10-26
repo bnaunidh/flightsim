@@ -397,7 +397,19 @@ html.sz-talking .hud-subtitle { visibility: hidden; }
   gap: 6px;
   pointer-events: none;
   transform: translateY(var(--rs-dy, 0px));
-  transition: transform 0.24s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+/* The column's own glide down under the touch band: only with .rs-anim, like
+   every other motion here (hud-stack.js live(): not under Reduce motion, not
+   while a test owns the clock). Unconditional, a test that measured right
+   after the band grew found the column still a quarter-second short of its
+   place, on the button tray (heli-touch.playtest.mjs, iPad, 3,813 px²). */
+.hud-rstack.rs-anim { transition: transform 0.24s cubic-bezier(0.2, 0.7, 0.2, 1); }
+/* The column's room as a laid-out height, for hud-stack.js room(): the same
+   top and the same floor as the column's max-height above. Keep the two in step. */
+.rs-room-probe {
+  position: absolute; right: 0; width: 0; visibility: hidden; pointer-events: none;
+  top: var(--rs-top);
+  height: calc(100% - var(--rs-top) - var(--rs-dy, 0px) - max(var(--rs-bottom), var(--mp-dock, 0px), var(--rs-act, 0px)));
 }
 .hud.is-touch .hud-rstack { right: 12px; }
 @media (max-width: 560px) { .hud.is-touch .hud-rstack { right: 6px; } }

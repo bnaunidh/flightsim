@@ -101,6 +101,12 @@ const TRAINER_SHAPE = {
   retractable: false,
 };
 
+/** A rotorcraft's side strike, in its own words: it rolled over and the rotor struck the ground. */
+export const ROLLOVER = {
+  left: 'The helicopter rolled over to the left and the rotor struck the ground',
+  right: 'The helicopter rolled over to the right and the rotor struck the ground',
+};
+
 /**
  * Ground-contact and strike points, worked out from the shape so the drawn
  * aeroplane and the flown one always agree.
@@ -165,8 +171,11 @@ function pointsFor(shape, aero) {
         // itself, so the two can never drift apart.
         part: 'nose',
       },
-      { pos: new THREE.Vector3(-tipX, tipY, -0.5 * s), what: 'The left wing tip hit the ground', part: 'leftWing' },
-      { pos: new THREE.Vector3(tipX, tipY, -0.5 * s), what: 'The right wing tip hit the ground', part: 'rightWing' },
+      // A helicopter has no wing: the same two side points are where it goes
+      // over on its side and the blades dig in (replay QA R6). Same points,
+      // same parts, so every check that names a part still finds them.
+      { pos: new THREE.Vector3(-tipX, tipY, -0.5 * s), what: shape.power.rotor ? ROLLOVER.left : 'The left wing tip hit the ground', part: 'leftWing' },
+      { pos: new THREE.Vector3(tipX, tipY, -0.5 * s), what: shape.power.rotor ? ROLLOVER.right : 'The right wing tip hit the ground', part: 'rightWing' },
       { pos: new THREE.Vector3(0, -0.12 * s, tailZ), what: 'The tail struck the ground', part: 'tail' },
       { pos: new THREE.Vector3(0, -0.82 * s, 0.3 * s), what: 'The belly hit the ground', part: 'fuselage' },
     ],
