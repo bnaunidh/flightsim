@@ -565,7 +565,7 @@ export const CODES = Object.freeze({
  *    or: '<64 hex>': { note: '<why>', max: <the most one code may pay> }
  */
 export const PREFIXES = Object.freeze({
-  // Nothing shipped. The owner adds their own entries here, privately.
+  'befede35d5bf88da6e7f44a8377497aaaf4b0af2b2fd21e28b404136b63267af': { note: 'Owner credits' },
 });
 
 /** The most any pattern code may pay, whatever the owner's entry says. */
