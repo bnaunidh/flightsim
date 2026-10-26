@@ -207,6 +207,7 @@ import {
 } from '../world/terrain.js';
 import { PADS, nearestPad } from '../world/pads.js';
 import { SPEC } from '../aircraft/physics.js';
+import { chartColours, landColour, iceShapes, onIce, ICE_RGB } from './chart-palette.js';
 
 const SIZE = 190;
 const FONT = '"Helvetica Neue", Arial, sans-serif';
@@ -798,15 +799,14 @@ class Chart {
    */
   colours() {
     const pal = PALETTE || NO_OPTS;
-    if (this._cols && this._pal === pal) return this._cols;
+    if (this._cols && this._pal === pal && this._flats === FLATS) return this._cols;
     this._pal = pal;
-    const c = this._cols || (this._cols = { SAND: [0, 0, 0], GRASS: [0, 0, 0], ROCK: [0, 0, 0], LAND: [0, 0, 0] });
-    tintInto(c.SAND, 176, 158, 118, pal.sand);
-    tintInto(c.GRASS, 74, 104, 62, pal.grass);
-    tintInto(c.ROCK, 124, 116, 104, pal.rock);
-    // The boat chart's land is one flat buff. A chart's land is not the
-    // subject; it is the thing the water stops at.
-    tintInto(c.LAND, 198, 184, 152, pal.sand);
+    this._flats = FLATS;
+    // The terrain's own palette, snow line and all (chart-palette.js): a snow
+    // map's chart is white, not green with a grey tint.
+    const c = chartColours(pal);
+    c.ice = iceShapes(FLATS);
+    this._cols = c;
     return c;
   }
 
@@ -832,7 +832,10 @@ class Chart {
     const t0 = budgetMs < Infinity && typeof performance !== 'undefined' ? performance.now() : 0;
     const half = this.extent / 2;
     const step = this.extent / TILE;
-    const { SAND, GRASS, ROCK, LAND } = this.colours();
+    const C = this.colours();
+    const { LAND } = C;
+    const ice = C.ice;
+    const px = this._px || (this._px = [0, 0, 0]);
     const bathy = this.kind === 'bathy';
     let end = Math.min(TILE, this.row + rows);
     if (!this.strip || this.strip.height < end - this.row) {
@@ -905,28 +908,29 @@ class Chart {
           r = 22 + (1 - k) * 26;
           g = 58 + (1 - k) * 40;
           b = 84 + (1 - k) * 34;
+        } else if (ice.length && onIce(ice, x, z)) {
+          // A frozen lake or an ice strip: pale ice, barely shaded.
+          r = ICE_RGB[0];
+          g = ICE_RGB[1];
+          b = ICE_RGB[2];
         } else {
-          const beach = Math.min(1, h / 14);
-          const high = Math.min(1, Math.max(0, (h - 130) / 420));
-          const lo0 = SAND[0] + (GRASS[0] - SAND[0]) * beach;
-          const lo1 = SAND[1] + (GRASS[1] - SAND[1]) * beach;
-          const lo2 = SAND[2] + (GRASS[2] - SAND[2]) * beach;
-          r = lo0 + (ROCK[0] - lo0) * high;
-          g = lo1 + (ROCK[1] - lo1) * high;
-          b = lo2 + (ROCK[2] - lo2) * high;
           /*
-           * Hillshade, lit from the north-west, off the two neighbours this
-           * loop has already sampled: the pixel to the west on this row and
-           * the pixel to the north on the last one. The first pixel of a row
-           * and the first row of the chart have no neighbour, and take the
-           * flat value — one pixel at the edge of the sea.
+           * Land, from the map's palette (chart-palette.js): sand to grass
+           * with height, rock on the high ground and the crags, the snow
+           * band over it all where the map has one. The slope to the two
+           * neighbours this loop has already sampled — west on this row,
+           * north on the last — lights it from the north-west; the first
+           * pixel of a row and the first row take the flat value.
            */
           const dWest = hasWest ? h - west : 0;
           const dNorth = hasNorth ? h - this.prevRow[i] : 0;
-          const shade = 1 + Math.max(-0.42, Math.min(0.42, (dWest + dNorth) / (step * 0.5)));
-          r *= shade;
-          g *= shade;
-          b *= shade;
+          // Low-frequency raggedness for the snow line, in world metres the
+          // way the shader's splat noise is — only where there is a snow line.
+          const n = C.snow ? 0.5 + 0.28 * Math.sin(x * 0.0061 + 1.3) * Math.cos(z * 0.0047 - 0.7) + 0.2 * Math.sin((x + z) * 0.0023) : 0.5;
+          landColour(h, (dWest + dNorth) / step, C, px, n);
+          r = px[0];
+          g = px[1];
+          b = px[2];
         }
         west = h;
         const o = ((j - this.row) * TILE + i) * 4;

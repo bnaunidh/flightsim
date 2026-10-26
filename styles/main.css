@@ -683,6 +683,25 @@ html.sz-talking .hud-subtitle { visibility: hidden; }
   width: min(520px, 60vw);
   z-index: 20;
 }
+/*
+ * In the menus (hud.js placeLoose): in the empty middle of the top bar, so a
+ * notice never sits on a screen's title or its buttons — one at a time there;
+ * or, where the bar has no room for it (a phone), along the bottom.
+ */
+.hud-toasts.is-loose.is-in-bar {
+  top: var(--toast-y, 30px);
+  left: var(--toast-x, 50%);
+  transform: translate(-50%, -50%);
+  width: var(--toast-w, 420px);
+  max-width: calc(100vw - 24px);
+}
+.hud-toasts.is-in-bar > .hud-toast { padding: 7px 14px; font-size: 13px; line-height: 1.3; }
+.hud-toasts.is-in-bar > .hud-toast:not(.is-out) ~ .hud-toast:not(.is-out) { display: none; }
+.hud-toasts.is-loose.is-low {
+  top: auto;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: min(520px, calc(100vw - 24px));
+}
 /* Two on screen; the rest wait their turn (hud.js counts only these down). */
 .hud-toasts > .hud-toast:not(.is-out) ~ .hud-toast:not(.is-out) ~ .hud-toast:not(.is-out) { display: none; }
 .hud-toast {
@@ -2777,6 +2796,15 @@ html.is-touch-device .minimap { top: 8px; left: 8px; right: auto; bottom: auto; 
   stroke-width: 1.2;
   transition: fill 220ms ease;
 }
+/* A helicopter's rotor discs: drawn round it, never coloured. */
+.hud-damage circle.dmg-rotor {
+  fill: none;
+  stroke: rgba(180, 205, 235, 0.42);
+  stroke-width: 1;
+  stroke-dasharray: 3 2.5;
+}
+.hud-damage circle.dmg-rotor.is-small { stroke-dasharray: none; stroke-width: 0.8; }
+.hud-damage.rs-chip circle.dmg-rotor { stroke-dasharray: none; stroke-width: 1.6; }
 .hud-damage path.is-light { fill: rgba(255, 194, 71, 0.45); }
 .hud-damage path.is-hurt { fill: rgba(255, 140, 60, 0.75); }
 .hud-damage path.is-bad {
@@ -4423,6 +4451,25 @@ body:has(.hud.is-touch.is-rotorhover) .race-solobar { left: 8px; right: auto; to
 }
 .screen-hangar .hs-tab.is-on .hs-tab-icon,
 .screen-hangar .hs-tab.is-on b { color: #07101b; }
+/* The shelf the aircraft on show is on, when it is not the selected one (All,
+   a search, a favourite): ringed in its colour, with a bar under it. */
+.screen-hangar .hs-tab.is-here:not(.is-on) {
+  position: relative;
+  border-color: var(--cat);
+  background: color-mix(in srgb, var(--cat) 16%, rgba(9, 15, 26, 0.86));
+  box-shadow: inset 0 0 0 1px var(--cat), 0 4px 16px var(--cat-soft);
+}
+.screen-hangar .hs-tab.is-here:not(.is-on) .hs-tab-label { color: #fff; }
+.screen-hangar .hs-tab.is-here:not(.is-on)::after {
+  content: '';
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  bottom: -1px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--cat);
+}
 
 /* The stage: an empty box the podium is framed in, and the controls over it. */
 .hs-main {
@@ -4466,15 +4513,39 @@ body:has(.hud.is-touch.is-rotorhover) .race-solobar { left: 8px; right: auto; to
 .screen-hangar .hs-arrow:active { transform: translateY(-50%) scale(0.93); }
 .screen-hangar .hs-arrow.is-prev { left: 4px; }
 .screen-hangar .hs-arrow.is-next { right: 4px; }
+/* Where an arrow goes: said beside it, on the stage, on hover or focus —
+   never a title tooltip hanging over the card's buttons. */
+.hs-arrow-tip {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(8, 13, 22, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #e6eef8;
+  font-size: 12.5px;
+  font-weight: 620;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.hs-arrow-tip:empty { display: none; }
+.hs-arrow.is-prev .hs-arrow-tip { left: calc(100% + 8px); }
+.hs-arrow.is-next .hs-arrow-tip { right: calc(100% + 8px); }
+.screen-hangar .hs-arrow:hover .hs-arrow-tip,
+.screen-hangar .hs-arrow:focus-visible .hs-arrow-tip { opacity: 1; }
+@media (hover: none) { .hs-arrow-tip { display: none; } }
 .hs-under {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 4px;
+  bottom: 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 9px;
   pointer-events: none;
 }
 .hs-dots { display: flex; gap: 8px; pointer-events: auto; }
@@ -4490,7 +4561,26 @@ body:has(.hud.is-touch.is-rotorhover) .race-solobar { left: 8px; right: auto; to
 }
 .screen-hangar .hs-dot.is-locked { background: rgba(255, 255, 255, 0.12); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.34); }
 .screen-hangar .hs-dot.is-on { width: 28px; background: var(--hs-accent); box-shadow: none; }
-.hs-hint { margin: 0; font-size: 12px; color: rgba(214, 226, 242, 0.72); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9); }
+/*
+ * The hint under the podium: on its own small plate, a clear gap under the
+ * dots, never wider than the stage (owner, Oct 25: it was clipped and ran into
+ * the dots). Where the stage is short it goes, as it does on a phone.
+ */
+.hs-hint {
+  margin: 0;
+  max-width: calc(100% - 140px);
+  padding: 3px 11px;
+  border-radius: 999px;
+  background: rgba(6, 10, 18, 0.58);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
+  color: rgba(222, 232, 245, 0.86);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-height: 700px) { .hs-hint { display: none; } }
 .hs-lock {
   position: absolute;
   top: 10px;
@@ -4543,6 +4633,7 @@ body:has(.hud.is-touch.is-rotorhover) .race-solobar { left: 8px; right: auto; to
   border-top: 3px solid var(--hs-accent);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
 }
+.hs-card { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.28) transparent; }
 .hs-card > * { flex-shrink: 0; }
 .hs-kicker {
   display: flex;
@@ -4615,12 +4706,30 @@ body:has(.hud.is-touch.is-rotorhover) .race-solobar { left: 8px; right: auto; to
 }
 @keyframes hs-grow { from { transform: scaleX(0); } }
 .hs-stat-text { grid-column: 2; font-size: 12px; color: var(--text-dim); }
-.hs-paint { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 12px; }
+/*
+ * The paint: the label over a grid of swatches that always fits the card
+ * (owner, Oct 25: the rows were cut off at the bottom of the card at
+ * 2000x1068). Up to three rows show; more scroll inside the grid, with a
+ * scrollbar you can see, rather than running out of the card.
+ */
+.hs-paint { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 6px; }
 .hs-label { font-size: 13px; font-weight: 650; }
-.hs-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.hs-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
+  gap: 6px;
+  max-height: calc(3 * 28px + 2 * 6px + 6px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 3px;
+  margin: -3px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+}
 .screen-hangar .hs-swatch {
-  width: 30px;
-  height: 30px;
+  justify-self: center;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.2);
@@ -4629,7 +4738,49 @@ body:has(.hud.is-touch.is-rotorhover) .race-solobar { left: 8px; right: auto; to
 }
 .screen-hangar .hs-swatch:hover { border-color: rgba(255, 255, 255, 0.6); }
 .screen-hangar .hs-swatch.is-on { border-color: #fff; box-shadow: 0 0 0 3px var(--hs-accent); }
-.hs-paint-name { grid-column: 2; font-size: 12px; color: var(--text-dim); }
+.hs-paint-name { font-size: 12px; color: var(--text-dim); min-height: 1.3em; }
+.hs-paint-name.is-preview { color: #e6eef8; }
+/*
+ * Beside the podium (every layout but the phone's): the card was 10 to 130
+ * px taller than its room — a Chromebook's 1366 x 768, a laptop's 1280 x
+ * 800, even 2000 x 1068 with a three-line blurb (the A320's) — so the
+ * paint's last rows sat under its bottom edge. Here each bar's words sit
+ * beside the bar instead of under it, the card's spacing closes up a little,
+ * and the swatches go two rows of slightly smaller ones: the whole card
+ * fits, paint and all. Phones (the narrow layout, where the screen scrolls)
+ * are not touched.
+ */
+@media (min-width: 761px) {
+  .hs-card { gap: 9px; padding: 16px 18px 14px; }
+  .hs-stats { gap: 6px; }
+  /* The words' column as wide as the longest ("Fuel for 6 h 40 min"), so the bars line up. */
+  .hs-stat { grid-template-columns: 58px minmax(0, 1fr) 104px; gap: 0 10px; }
+  .hs-stat-text { grid-column: 3; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hs-swatches {
+    grid-template-columns: repeat(auto-fill, minmax(25px, 1fr));
+    gap: 5px;
+    max-height: calc(2 * 25px + 5px + 6px);
+  }
+  .screen-hangar .hs-swatch { width: 25px; height: 25px; }
+}
+/* And on a short one (768 to 860 px tall) the longest names and blurbs —
+   "Boeing 787 Dreamliner" on two lines, a four-line blurb — set a size down. */
+@media (min-width: 761px) and (max-height: 860px) {
+  .hs-name { font-size: 26px; }
+  .hs-line { font-size: 13.5px; line-height: 1.35; }
+}
+/* Shorter still: a Chromebook's 1366 x 768 inside the browser's own bars
+   leaves 650 to 720 px. The spacing closes up again and the buttons slim. */
+@media (min-width: 761px) and (max-height: 760px) {
+  .hs-card { gap: 7px; padding: 12px 16px 10px; }
+  .hs-name { font-size: 24px; }
+  .hs-line { font-size: 13px; line-height: 1.3; }
+  .hs-stats { gap: 3px; }
+  .screen-hangar .hs-actions { gap: 6px; }
+  .screen-hangar .hs-actions .primary.big { padding: 10px; font-size: 17px; }
+  .screen-hangar .hs-choose { padding: 7px 14px; }
+  .hs-msg { font-size: 12.5px; line-height: 1.3; }
+}
 .screen-hangar .hs-more {
   justify-self: center;
   display: inline-flex;
@@ -4707,7 +4858,9 @@ body:has(.hud.is-touch.is-rotorhover) .race-solobar { left: 8px; right: auto; to
  * as cards: picture, name, three numbers, price or lock. Everything here is a
  * target of 44px or more, and nothing blurs or animates per frame.
  */
-.screen-hangar .hs-tab.is-all { padding-left: 15px; }
+/* All has no shelf colour of its own (catStyle() is per shelf), so lit it
+   was a transparent chip with near-black text: invisible on the dark screen. */
+.screen-hangar .hs-tab.is-all { padding-left: 15px; --cat: #dbe6f4; --cat-soft: rgba(219, 230, 244, 0.16); --cat-line: rgba(219, 230, 244, 0.42); }
 .hs-tab-new {
   width: 8px;
   height: 8px;
@@ -4880,6 +5033,8 @@ body:has(.hud.is-touch.is-rotorhover) .race-solobar { left: 8px; right: auto; to
 .hs-fleet { display: grid; gap: 8px; }
 .hs-fleet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 0 2px; }
 .hs-fleet-count { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.hs-fleet-blurb { flex: 1; min-width: 0; font-size: 12.5px; color: #c9d7ea; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hs-fleet-blurb:empty { display: none; }
 .hs-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));

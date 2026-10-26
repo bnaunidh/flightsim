@@ -143,6 +143,10 @@ function decal(ctx, h, { z, y, width, height, texture, name }, parent) {
     const m = meshOf(ctx, name, g, mat, parent);
     m.castShadow = false;
   }
+  // REAL MODELS: the same decal painted onto a real model's skin (src/aircraft/real-models.js), on the
+  // hull it was laid on, the same way round on both sides as these two patches.
+  const paint = ctx.exports.realPaint;
+  if (paint && paint.decals) paint.decals.push({ texture, z, y, w: width, h: height, hump: h === paint.hump, mirror: false });
 }
 
 /** A title along a hull: the kit's registration(), wide and flat, reading left to right from both sides. */

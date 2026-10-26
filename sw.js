@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v73.4';
+const CACHE_VERSION = 'island-flight-v74';
 
 const PRECACHE = [
   './',
@@ -453,6 +453,11 @@ const PRECACHE = [
   // Added by tools/sync-precache.mjs.
   'src/aircraft/reheat.js',
   'src/features/speed-feel.js',
+  // Added by tools/sync-precache.mjs.
+  'src/ui/chart-palette.js',
+  'src/ui/damage-planform.js',
+  'src/world/airport-markings.js',
+  'src/world/terminal-look.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 
@@ -487,6 +492,11 @@ const PRECACHE = [
   // ...and the A-10 Thunderbolt II.
   'src/aircraft/extra/attack.js',
   'src/fleet/extra/attack.js',
+  // REAL MODELS: the code only. The files themselves (assets/models/real/*.glb,
+  // 0.1-1.1 MB each) are NOT in this list on purpose -- one is fetched when that
+  // aeroplane is first picked, and the cache-first handler below keeps it, so a
+  // type seen once flies in its real skin offline too.
+  'src/aircraft/real-models.js',
 ];
 
 // Files that are useful but not required for the game to run. If one of these

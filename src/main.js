@@ -39,6 +39,7 @@ import { Rain } from './world/precip.js';
 import { Aircraft, EVENTS, UNITS, SPEC, applyAircraft } from './aircraft/physics.js';
 import { getAircraft, specFor, isHelicopter } from './aircraft/types.js';
 import { createAircraftModel, syncAircraftModel, crashAircraftModel, clampSinking, eyeFor, groundOffsetFor, setFleetModels } from './aircraft/model-adapter.js';
+import { realModelInterior, setRealModelCamera, setRealModels } from './aircraft/real-models.js';
 import { setModelQuality } from './aircraft/model-quality.js';
 import { createCockpit } from './aircraft/cockpit.js';
 import { TouchControls, isTouchDevice } from './ui/touch.js';
@@ -157,6 +158,8 @@ class Game {
     this.settings = loadSettings();
     // Before anything builds an aeroplane, say which set of models to use.
     setFleetModels(this.settings.fleetModels);
+    // ...and whether the airliners wear their real models (aircraft/real-models.js).
+    setRealModels(this.settings.realModels !== false);
     // ...and which tier it is built for (the heat haze behind a jet is High and up).
     setModelQuality(this.settings.quality);
     // Before anything flashes. On unless the player has switched it off.
@@ -294,6 +297,8 @@ class Game {
     this.model = createAircraftModel({
       type: this.aircraftType,
       livery: schemeFor(this.aircraftType, this.settings.livery),
+      // REAL MODELS: the player's own aeroplane fetches its real skin (aircraft/real-models.js).
+      realModel: true,
     });
     this.scene.add(this.model);
     this.cockpit = createCockpit({ highContrast: this.settings.highContrast, type: this.aircraftType, model: this.model });
@@ -301,6 +306,8 @@ class Game {
     this.cockpit.visible = false;
 
     this.rig = new CameraRig(this.camera, this.aircraft);
+    // REAL MODELS: the camera their from-inside test reads (a seat in a parked aeroplane's cabin, a replay).
+    setRealModelCamera(this.camera);
     this.rig.cockpitPitchDeg = (this.cockpit && this.cockpit.userData.viewPitchDeg) || 0;
     this.rig.reducedMotion = this.settings.reducedMotion;
 
@@ -2461,6 +2468,14 @@ class Game {
     } else if (path === 'minimap') {
       this.minimap.toggle(!!value);
       this.syncMinimapClass();
+    } else if (path === 'realModels') {
+      // As the model set below: rebuilt now, so the switch shows at once.
+      setRealModels(value !== false);
+      if (this.aircraftType) {
+        const id = this.aircraftType.id;
+        this.aircraftType = null;
+        this.setAircraft(id);
+      }
     } else if (path === 'fleetModels') {
       // Rebuild the aeroplane so the change is visible now rather than at the
       // next flight — a model option that does not change the model is broken
@@ -2736,6 +2751,8 @@ class Game {
     this.model = createAircraftModel({
       type: this.aircraftType,
       livery: schemeFor(this.aircraftType, this.settings.livery),
+      // REAL MODELS: the player's own aeroplane fetches its real skin (aircraft/real-models.js).
+      realModel: true,
     });
     this.scene.add(this.model);
     this.cockpit = createCockpit({ highContrast: this.settings.highContrast, type: this.aircraftType, model: this.model });
@@ -5311,6 +5328,8 @@ class Game {
     // whether the aeroplane has an interior.
     this.cockpit.visible = inCockpit;
     if (inCockpit) this.cockpit.userData.update(dt, ac, this.weather, this);
+    // REAL MODELS: from the seat the procedural flight deck and its window cut-outs are drawn, not the real skin.
+    realModelInterior(this.model, inCockpit);
     // What of the outside cannot be seen from the seat is not drawn while
     // you are in it (aircraft/cockpit/kit.js insideOnly) — in it, not just in
     // the cockpit mode: a feature's own camera (an ejection, a replay) may be

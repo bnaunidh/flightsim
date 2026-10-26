@@ -3407,7 +3407,8 @@ function addEstate(group, cfg) {
   const vz = Math.cos(rot);
   const W = (u, v) => [cfg.cx + ux * u + vx * v, cfg.cz + uz * u + vz * v];
   const nSheds = cfg.sheds ?? 7;
-  const nParks = cfg.parks ?? 3;
+  // The car parks follow the map's own flag (maps.js `parking`), like the airfield's.
+  const nParks = MAP && MAP.parking === true ? cfg.parks ?? 3 : 0;
   const nHotels = cfg.hotels ?? 2;
   const SHED = 56;
   const PARK = 72;

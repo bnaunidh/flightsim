@@ -28,6 +28,8 @@ import { strobeLevel, blinkLevel } from '../render/flash-safety.js';
 import { resolveLamps } from './systems.js';
 // BLENDER MODELS: the Skyhook from tools/blender/, when it loaded.
 import { blenderAircraftModel } from '../vehicles/blender-models.js';
+// REAL MODELS: a downloaded airframe worn over the fleet model, when that type's file is here (real-models.js).
+import { wearRealModel } from './real-models.js';
 
 /**
  * The pack is loaded eagerly at module scope so there is no first-frame stall
@@ -177,6 +179,12 @@ export function createAircraftModel(opts = {}) {
         inner(dt, ac, weather);
         updateLights(rig, dt, ac, weather);
       };
+    }
+    // REAL MODELS: the skin goes on over all of the above (or never, silently).
+    try {
+      wearRealModel(model, type, opts);
+    } catch (e) {
+      console.warn(`The real ${type.id} model could not be worn; keeping the built-in one.`, e);
     }
     return model;
   } catch (e) {

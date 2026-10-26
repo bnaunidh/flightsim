@@ -473,7 +473,8 @@ export class HangarShowcase {
     }
     const type = getAircraft(id);
     const t0 = performance.now();
-    const model = createAircraftModel({ type, livery: schemeFor(type, livery) });
+    // REAL MODELS: the hangar is one of the places a type's real model is fetched for (aircraft/real-models.js).
+    const model = createAircraftModel({ type, livery: schemeFor(type, livery), realModel: true });
     try {
       if (model.userData.update) model.userData.update(0, PARKED, DAYLIGHT);
     } catch (e) {
@@ -577,6 +578,23 @@ export class HangarShowcase {
       mats: new Map(),
       anim: null,
       used: performance.now(),
+    };
+    // A real model that arrives after this was built: the same studio dimming,
+    // and the locked silhouette if it is locked (aircraft/real-models.js calls this).
+    model.userData.onRealSkin = (skin) => {
+      skin.traverse((o) => {
+        if (!o.isMesh) return;
+        const m = o.material;
+        if (m && m.envMap && typeof m.envMapIntensity === 'number' && !(m.userData && m.userData.studioDimmed)) {
+          m.envMapIntensity *= STUDIO_ENV;
+          m.userData = m.userData || {};
+          m.userData.studioDimmed = true;
+        }
+        if (e.silhouette) {
+          e.mats.set(o, o.material);
+          o.material = this.silMat;
+        }
+      });
     };
     this.cache.set(k, e);
     this.counters.built++;

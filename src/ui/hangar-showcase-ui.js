@@ -142,8 +142,8 @@ export function installHangarShowcase(menus, screen, kit) {
           <div class="hs-fallback" data-hs-fallback hidden></div>
           <div class="hs-lock" data-hs-lock hidden></div>
           <div class="hs-q" data-hs-q aria-hidden="true" hidden>?</div>
-          <button type="button" class="hs-arrow is-prev" data-hs-prev aria-label="Previous aircraft">${icon('chevronLeft', 30)}</button>
-          <button type="button" class="hs-arrow is-next" data-hs-next aria-label="Next aircraft">${icon('chevronRight', 30)}</button>
+          <button type="button" class="hs-arrow is-prev" data-hs-prev aria-label="Previous aircraft">${icon('chevronLeft', 30)}<span class="hs-arrow-tip" aria-hidden="true"></span></button>
+          <button type="button" class="hs-arrow is-next" data-hs-next aria-label="Next aircraft">${icon('chevronRight', 30)}<span class="hs-arrow-tip" aria-hidden="true"></span></button>
           <div class="hs-under">
             <div class="hs-dots" data-hs-dots></div>
             <p class="hs-hint" data-hs-hint>Drag to spin it · swipe or press ← → for the next one</p>
@@ -152,7 +152,7 @@ export function installHangarShowcase(menus, screen, kit) {
         <aside class="hs-card" data-hs-card aria-live="polite">
           <div class="hs-kicker">
             <span class="hs-cat" data-hs-cat></span><span class="hs-class" data-hs-class></span><span class="hs-count" data-hs-count></span>
-            <button type="button" class="hs-star" data-hs-fav aria-pressed="false" aria-label="Favourite" title="Favourite — keep it in the row above the fleet">${STAR_SVG(false)}</button>
+            <button type="button" class="hs-star" data-hs-fav aria-pressed="false" aria-label="Favourite — keep it in the row above the fleet">${STAR_SVG(false)}</button>
           </div>
           <h3 class="hs-name" data-hs-name></h3>
           <p class="hs-line" data-hs-line></p>
@@ -178,6 +178,7 @@ export function installHangarShowcase(menus, screen, kit) {
       <section class="hs-fleet" data-hs-fleet>
         <header class="hs-fleet-head">
           <h4 class="hs-fleet-title" data-hs-fleet-title>All aircraft</h4>
+          <span class="hs-fleet-blurb" data-hs-fleet-blurb></span>
           <span class="hs-fleet-count" data-hs-fleet-count></span>
         </header>
         <div class="hs-grid" data-hs-grid></div>
@@ -327,26 +328,40 @@ export function installHangarShowcase(menus, screen, kit) {
     const all = ui.shelf === 'all';
     const allBtn = `<button type="button" class="hs-tab is-all${all ? ' is-on' : ''}" role="tab" aria-selected="${all}" data-hs-tab="all">
         <span class="hs-tab-label">All</span><b>${ui.shown.length}</b></button>`;
+    /*
+     * Owner (Oct 25): "if u show it should show which category is in". The
+     * shelf the aircraft on the podium belongs to is marked whatever is
+     * selected — in All, in a search, from a favourite — with a ring in its
+     * colour and a bar under it ("is-here"); when that shelf is the one
+     * selected it is simply the lit chip.
+     */
+    const hereG = ui.id ? groupOf(ui.id) : null;
+    const here = hereG ? hereG.def.id : null;
     $('[data-hs-tabs]').innerHTML =
       allBtn +
       ui.shelves
         .map((g) => {
           const mine = g.items.filter((a) => owned(a.id)).length;
           const on = ui.shelf === g.def.id;
+          const isHere = here === g.def.id;
           const fresh = g.items.some((a) => isNew(a.id));
-          return `<button type="button" class="hs-tab${on ? ' is-on' : ''}" role="tab" aria-selected="${on}" data-hs-tab="${esc(g.def.id)}" style="${catStyle(g.def)}" title="${esc(g.def.blurb)}">
+          // No title tooltip: a native one hangs under the chip over the search
+          // box. The blurb is the fleet heading's subtitle when the shelf is open.
+          return `<button type="button" class="hs-tab${on ? ' is-on' : ''}${isHere ? ' is-here' : ''}" role="tab" aria-selected="${on}"${isHere ? ' aria-current="true"' : ''} data-hs-tab="${esc(g.def.id)}" style="${catStyle(g.def)}" aria-label="${esc(g.def.label)}: ${mine} of ${g.items.length} yours${isHere ? ' — the one on show is on this shelf' : ''}">
             <span class="hs-tab-icon">${catIcon(g.def.icon, 18)}</span><span class="hs-tab-label">${esc(g.def.label)}</span><b>${mine}/${g.items.length}</b>${fresh ? '<i class="hs-tab-new" aria-label="Has new aircraft"></i>' : ''}
           </button>`;
         })
         .join('');
-    // Keep the lit chip in view on a phone, where the row scrolls sideways —
-    // by hand, because scrollIntoView would scroll the whole screen too. Only
-    // when the lit chip changes: reading scrollWidth forces a layout of the
-    // whole showroom, and paint() runs on every key typed in the search box.
-    if (tabsScrolledFor === ui.shelf) return;
-    tabsScrolledFor = ui.shelf;
+    // Keep the lit chip (or, in All, the marked one) in view on a phone, where
+    // the row scrolls sideways — by hand, because scrollIntoView would scroll
+    // the whole screen too. Only when it changes: reading scrollWidth forces a
+    // layout of the whole showroom, and paint() runs on every key typed in the
+    // search box.
+    const key = `${ui.shelf}|${here}`;
+    if (tabsScrolledFor === key) return;
+    tabsScrolledFor = key;
     const row = $('[data-hs-tabs]');
-    const lit = row.querySelector('.is-on');
+    const lit = row.querySelector('.is-on:not(.is-all)') || row.querySelector('.is-here');
     if (lit && row.scrollWidth > row.clientWidth) {
       row.scrollLeft = Math.max(0, lit.offsetLeft - (row.clientWidth - lit.offsetWidth) / 2);
     }
@@ -389,7 +404,7 @@ export function installHangarShowcase(menus, screen, kit) {
     const on = fixed || livery() === l.id;
     // A fixed scheme's one swatch is shown chosen and carries no livery id, so a tap changes nothing.
     const what = fixed ? 'data-hs-fixed aria-disabled="true"' : `data-hs-livery="${l.id}"`;
-    return `<button type="button" class="hs-swatch${on ? ' is-on' : ''}" role="radio" aria-checked="${on}" ${what} title="${esc(l.name)} — ${esc(l.blurb)}"
+    return `<button type="button" class="hs-swatch${on ? ' is-on' : ''}" role="radio" aria-checked="${on}" ${what} aria-label="${esc(l.name)} — ${esc(l.blurb)}" data-hs-swname="${esc(l.name)}"
       style="--sw-a:${sch.base};--sw-b:${sch.accent};--sw-c:${tail}"><span></span></button>`;
   };
 
@@ -399,7 +414,7 @@ export function installHangarShowcase(menus, screen, kit) {
     btn.classList.toggle('is-on', on);
     btn.setAttribute('aria-pressed', String(on));
     btn.innerHTML = STAR_SVG(on);
-    btn.title = on ? 'A favourite — press to take it out of the row' : 'Favourite — keep it in the row above the fleet';
+    btn.setAttribute('aria-label', on ? 'A favourite — press to take it out of the row' : 'Favourite — keep it in the row above the fleet');
   };
 
   const paintCard = () => {
@@ -460,7 +475,10 @@ export function installHangarShowcase(menus, screen, kit) {
     const paints = liveriesFor(type);
     $('[data-hs-swatches]').innerHTML = paints.map((l) => swatch(type, l, fixed)).join('');
     const cur = fixed ? paints[0] : LIVERIES.find((l) => l.id === livery()) || LIVERIES[0];
-    $('[data-hs-paint-name]').textContent = cur.name;
+    const pn = $('[data-hs-paint-name]');
+    delete pn.dataset.chosen;
+    pn.classList.remove('is-preview');
+    pn.textContent = cur.name;
 
     // The lock badge on the stage, over the silhouette.
     const lock = $('[data-hs-lock]');
@@ -472,8 +490,18 @@ export function installHangarShowcase(menus, screen, kit) {
     const n = ui.order.length;
     const prev = n ? typeOf(ui.order[(idx - 1 + n) % n]) : null;
     const next = n ? typeOf(ui.order[(idx + 1) % n]) : null;
-    $('[data-hs-prev]').title = prev ? `Previous: ${prev.name}` : '';
-    $('[data-hs-next]').title = next ? `Next: ${next.name}` : '';
+    /*
+     * Where the arrows go, said on the stage beside each arrow on hover or
+     * focus (main.css .hs-arrow-tip) — not as a title tooltip, which the
+     * browser hangs under the pointer, over "Make it my aeroplane".
+     */
+    const tip = (btn, word, t) => {
+      btn.setAttribute('aria-label', t ? `${word}: ${t.name}` : `${word} aircraft`);
+      const s2 = btn.querySelector('.hs-arrow-tip');
+      if (s2) s2.textContent = t ? t.name : '';
+    };
+    tip($('[data-hs-prev]'), 'Previous', prev);
+    tip($('[data-hs-next]'), 'Next', next);
     $('[data-hs-prev]').hidden = n < 2;
     $('[data-hs-next]').hidden = n < 2;
     screen.dataset.hsAircraft = type.id;
@@ -527,7 +555,7 @@ export function installHangarShowcase(menus, screen, kit) {
   const stripTile = (type) => {
     const mine = owned(type.id);
     const g = groupOf(type.id);
-    return `<button type="button" class="hs-tile${type.id === ui.id ? ' is-on' : ''}${mine ? '' : ' is-locked'}" data-hs-pick="${esc(type.id)}" style="${g ? catStyle(g.def) : ''}" title="${esc(type.name)}">
+    return `<button type="button" class="hs-tile${type.id === ui.id ? ' is-on' : ''}${mine ? '' : ' is-locked'}" data-hs-pick="${esc(type.id)}" style="${g ? catStyle(g.def) : ''}" aria-label="${esc(type.name)}">
       <span class="hs-fc-art" data-hs-art="${esc(type.id)}" data-hs-art-copy="1"></span>
       <span class="hs-tile-name">${esc(type.name)}</span>
     </button>`;
@@ -552,6 +580,7 @@ export function installHangarShowcase(menus, screen, kit) {
     const list = ui.order.map(typeOf).filter(Boolean);
     const def = ui.shelf === 'all' ? null : shelfDef(ui.shelf);
     $('[data-hs-fleet-title]').textContent = def ? def.label : 'All aircraft';
+    $('[data-hs-fleet-blurb]').textContent = def ? def.blurb : '';
     const filterWord = ui.filter === 'all' ? '' : ` · ${FILTERS.find((f) => f.id === ui.filter).label.toLowerCase()}`;
     $('[data-hs-fleet-count]').textContent = `${list.length} of ${ui.shown.length}${filterWord}`;
     grid.innerHTML = list.map(fleetCard).join('');
@@ -774,6 +803,31 @@ export function installHangarShowcase(menus, screen, kit) {
    * cost ~190 ms a key at a 4x-throttled Chromebook and flickered the podium.
    */
   let queryTimer = 0;
+  /*
+   * A paint's name, on hover or focus, in the line under the swatches — where
+   * the title tooltip used to hang over the card's own buttons.
+   */
+  const paintName = (on) => {
+    const line = $('[data-hs-paint-name]');
+    if (!line) return;
+    if (on && on.dataset.hsSwname) {
+      if (line.dataset.chosen == null) line.dataset.chosen = line.textContent;
+      line.textContent = on.dataset.hsSwname;
+      line.classList.add('is-preview');
+    } else if (line.dataset.chosen != null) {
+      line.textContent = line.dataset.chosen;
+      delete line.dataset.chosen;
+      line.classList.remove('is-preview');
+    }
+  };
+  for (const ev of ['pointerover', 'focusin']) host.addEventListener(ev, (e) => paintName(e.target.closest && e.target.closest('[data-hs-swname]')));
+  for (const ev of ['pointerout', 'focusout']) {
+    host.addEventListener(ev, (e) => {
+      const to = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('[data-hs-swname]') : null;
+      paintName(to);
+    });
+  }
+
   host.addEventListener('input', (e) => {
     if (!e.target.closest('[data-hs-search]')) return;
     ui.query = String(e.target.value || '');

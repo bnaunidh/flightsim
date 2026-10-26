@@ -18,6 +18,7 @@ import { TouchdownCard } from './touchdown.js';
 import { PillLane, pillsFor } from './pills.js';
 import { lightPresetOf } from '../aircraft/systems.js';
 import { DestRibbon } from './ribbon.js';
+import { damagePlanform } from './damage-planform.js';
 import { conditionsWords, DENSITY_SHORT } from './conditions.js';
 
 const KTS = UNITS.KTS;
@@ -199,16 +200,17 @@ export class Hud {
      */
     this.damagePanel = el('div', 'hud-damage');
     this.damagePanel.hidden = true;
+    /*
+     * The plan view is the aircraft you are flying (damage-planform.js): a
+     * flying wing for the B-2, an ogival delta for Concorde, the swing wing
+     * for the B-1B, a cabin, boom and rotor disc for a helicopter. Drawn as
+     * the generic airliner until the first type is known (setDamageShape).
+     */
     this.damagePanel.innerHTML = `
-      <svg viewBox="0 0 80 80" aria-hidden="true">
-        <path data-zone="leftWing"  d="M38 34 L6 44 L6 50 L38 46 Z"/>
-        <path data-zone="rightWing" d="M42 34 L74 44 L74 50 L42 46 Z"/>
-        <path data-zone="nose"      d="M40 6 L45 20 L35 20 Z"/>
-        <path data-zone="fuselage"  d="M35 20 L45 20 L45 58 L35 58 Z"/>
-        <path data-zone="tail"      d="M33 58 L47 58 L47 64 L41 68 L39 68 L33 64 Z"/>
-      </svg>
+      <svg viewBox="0 0 80 80" aria-hidden="true" data-dmg-plan>${damagePlanform(null).svg}</svg>
       <span class="hud-damage-label">DAMAGE</span>
     `;
+    this.damageShapeId = 'generic';
     this.damageZones = {};
     this.damagePanel.querySelectorAll('[data-zone]').forEach((z) => {
       this.damageZones[z.dataset.zone] = z;
@@ -645,8 +647,51 @@ export class Hud {
     layer.classList.toggle('is-loose', !inStack);
     if (inStack) {
       if (layer.parentNode !== this.stack.el) this.stack.add(layer, { prio: 2, id: 'notices', chip: false });
-    } else if (layer.parentNode !== this.root) {
-      this.root.appendChild(layer);
+      layer.classList.remove('is-in-bar', 'is-low');
+      layer.style.removeProperty('--toast-x');
+      layer.style.removeProperty('--toast-y');
+      layer.style.removeProperty('--toast-w');
+    } else {
+      if (layer.parentNode !== this.root) this.root.appendChild(layer);
+      this.placeLoose();
+    }
+  }
+
+  /**
+   * Where a notice goes while the HUD is down (a menu, a debrief): never over
+   * a screen's title or its buttons. In the menus the top bar has an empty
+   * middle between the game switcher and the credits, and the notice sits in
+   * it; where that gap is too narrow (a phone) it sits at the bottom of the
+   * screen instead. With no menu bar showing (the rocket's own game) it keeps
+   * the top-centre place it always had. Measured only when a notice arrives
+   * or the layer moves, never per frame.
+   */
+  placeLoose() {
+    const layer = this.toastLayer;
+    if (!layer || typeof document === 'undefined' || !document.querySelector) return;
+    const bars = document.querySelectorAll('.menu-bar');
+    let bar = null;
+    for (const b of bars) {
+      const r = b.getBoundingClientRect ? b.getBoundingClientRect() : null;
+      if (r && r.width > 0 && r.height > 0) {
+        bar = { el: b, r };
+        break;
+      }
+    }
+    layer.classList.remove('is-in-bar', 'is-low');
+    if (!bar) return;
+    const sw = bar.el.querySelector('.switcher');
+    const pill = bar.el.querySelector('.credit-pill');
+    const a = sw ? sw.getBoundingClientRect().right : bar.r.left;
+    const b = pill ? pill.getBoundingClientRect().left : bar.r.right;
+    const gap = b - a - 24;
+    if (gap >= 300) {
+      layer.classList.add('is-in-bar');
+      layer.style.setProperty('--toast-x', `${Math.round((a + b) / 2)}px`);
+      layer.style.setProperty('--toast-y', `${Math.round(bar.r.top + bar.r.height / 2)}px`);
+      layer.style.setProperty('--toast-w', `${Math.round(Math.min(560, gap))}px`);
+    } else {
+      layer.classList.add('is-low');
     }
   }
 
@@ -912,9 +957,40 @@ export class Hud {
    * every frame and writing the same class sixty times a second is how a
    * panel like this ends up costing more than the scene behind it.
    */
-  setDamage(damage) {
+  /**
+   * Draw the damage diagram as `type`'s planform. Cheap to call every time:
+   * it only rebuilds when the type changes, and keeps each zone's colour.
+   */
+  setDamageShape(type) {
+    const p = this.damagePanel;
+    const id = (type && type.id) || 'generic';
+    if (!p || id === this.damageShapeId) return;
+    const svg = p.querySelector('[data-dmg-plan]');
+    if (!svg) return;
+    const plan = damagePlanform(type);
+    this.damageShapeId = id;
+    svg.innerHTML = plan.svg;
+    svg.dataset.kind = plan.kind;
+    p.dataset.planform = plan.kind;
+    const was = this.damageZones || {};
+    this.damageZones = {};
+    svg.querySelectorAll('[data-zone]').forEach((z) => {
+      const old = was[z.dataset.zone];
+      if (old && old.dataset.band) {
+        z.dataset.band = old.dataset.band;
+        const c = old.getAttribute('class');
+        if (c) z.setAttribute('class', c);
+      }
+      this.damageZones[z.dataset.zone] = z;
+    });
+  }
+
+  setDamage(damage, type = undefined) {
     const p = this.damagePanel;
     if (!p) return;
+    // The aircraft's own outline: handed in, or the one being flown.
+    const t = type !== undefined ? type : this._sim && this._sim.aircraftType;
+    if (t !== undefined) this.setDamageShape(t);
     if (!damage) {
       if (!p.hidden) p.hidden = true;
       return;
@@ -1257,11 +1333,32 @@ export class Hud {
       const [old] = this.toasts.splice(drop, 1);
       old.node.remove();
     }
-    // Handed back so a caller whose toast can land outside the only state
-    // that ticks `life` down (updateOverlays(), run from main.js only while
-    // state === 'flying') can give it its own real-clock expiry instead of
-    // it sitting at full life forever — see achievements/ui.js's
-    // showUnlockToast(), the one caller that needs this.
+    /*
+     * A real-clock expiry for every notice, not just the achievements'.
+     * `life` only counts down in updateOverlays(), which runs while flying —
+     * so a notice raised in the menus ("Locked — unlock it for 500 credits"
+     * from the Free Flight picker) sat over the Hangar's title for as long as
+     * you stayed in the menus. This ends it on time when nothing is ticking
+     * it, and leaves it alone while the HUD's own clock is running (a notice
+     * waiting its turn keeps its whole time for when it shows).
+     */
+    if (typeof setTimeout === 'function') {
+      const end = () => {
+        const i = this.toasts.indexOf(entry);
+        if (i < 0) return;
+        const now = typeof performance !== 'undefined' ? performance.now() : 0;
+        if (this.overlaysAt && now - this.overlaysAt < 600) {
+          setTimeout(end, 1000);
+          return;
+        }
+        this.toasts.splice(i, 1);
+        t.classList.add('is-out');
+        setTimeout(() => t.remove(), 400);
+      };
+      setTimeout(end, duration * 1000 + 250);
+    }
+    if (this.toastLayer.classList.contains('is-loose')) this.placeLoose();
+    // Handed back so a caller can still end it early or check on it.
     return entry;
   }
 
@@ -1578,6 +1675,9 @@ export class Hud {
 
   /** Main per-frame refresh. */
   update(dt, sim) {
+    this._sim = sim;
+    // A new aircraft mid-flight (the hangar, a mission swap): its own outline.
+    if (this.damagePanel && !this.damagePanel.hidden) this.setDamageShape(sim.aircraftType);
     const ac = sim.aircraft;
     const r = ac.readouts();
     const w = sim.weather;

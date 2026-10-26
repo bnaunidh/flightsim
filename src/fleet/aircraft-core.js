@@ -161,6 +161,8 @@ export function buildAircraft(config,options={}) {
  for(const e of engines)if(e.config.kind==='prop')hardPoints.push({pos:[e.config.x,e.config.y-e.config.propRadius,e.config.z-.05],what:'The propeller struck the ground',partId:e.id+'Propeller'});
  Object.assign(aircraft.userData,{aircraftId:c.id,config:c,controls:controlNodes,parts:{...parts,surfaces:controlNodes,gear:wheels,engines,glassMat:materials.glass,type:options.type||{id:c.id},shape:{scale:1,eye:c.eye}},flightGeometry:{units:'metres',scale:1,gearPoints:contactPoints,hardPoints,eye:c.eye||[0,.5,-1],wingSpan:c.wing?2*(c.wing.rootX+c.wing.span):bounds.max.x-bounds.min.x,bounds:{min:bounds.min.toArray(),max:bounds.max.toArray()}},materials});
  Object.assign(aircraft.userData,ctx.exports);
+ // ...and the airliners' paint for a real model (src/aircraft/real-models.js), which is not enumerable (not JSON-copied with the userData).
+ if(ctx.exports.realPaint)Object.defineProperty(aircraft.userData,'realPaint',{value:ctx.exports.realPaint,enumerable:false,configurable:true});
  attachAircraftImpact(aircraft,c);
  aircraft.userData.update=(dt,state={})=>{if(disposed)return;if(!Number.isFinite(dt)||dt<0)throw new RangeError('Aircraft dt must be nonnegative seconds.');if(!aircraft.userData.crashBody&&!aircraft.userData.crashRetired)animate(dt,state);damageUpdate(dt,state);aircraft.userData.updateImpact?.(dt);};
  aircraft.userData.resetDamage=()=>{if(disposed)return;aircraft.userData.resetImpact?.();damageReset();for(const[n,s]of restTransforms){n.position.copy(s.position);n.quaternion.copy(s.quaternion);n.scale.copy(s.scale);n.visible=s.visible;}time=0;animate(0,{rpm:0,gear:1});};

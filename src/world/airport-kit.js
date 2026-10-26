@@ -169,6 +169,37 @@ export class Batch {
     return this;
   }
 
+  /**
+   * A painted line on the ground along a polyline of world [x, z] points,
+   * `w` wide, at height y: one flat quad a segment, facing up. Curves are
+   * just more points.
+   */
+  strip(pts, w, y, color) {
+    const h = w / 2;
+    for (let i = 1; i < pts.length; i++) {
+      const [ax, az] = pts[i - 1];
+      const [bx, bz] = pts[i];
+      const dx = bx - ax;
+      const dz = bz - az;
+      const L = Math.hypot(dx, dz);
+      if (L < 1e-4) continue;
+      // Overlap each joint by half a width so a curve has no notches.
+      const ex = (dx / L) * (i > 1 ? h : 0);
+      const ez = (dz / L) * (i > 1 ? h : 0);
+      const nx = (-dz / L) * h;
+      const nz = (dx / L) * h;
+      const a = [ax - ex + nx, y, az - ez + nz];
+      const b = [ax - ex - nx, y, az - ez - nz];
+      const c = [bx - nx, y, bz - nz];
+      const d = [bx + nx, y, bz + nz];
+      // Wound to face up whichever way the line runs.
+      const up = (b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0]) < 0;
+      if (up) this.quad(a, b, c, d, [0, 0, 1, 1], color);
+      else this.quad(a, d, c, b, [0, 0, 1, 1], color);
+    }
+    return this;
+  }
+
   /** A straight tube between two points (a rail, a hose, a strut). */
   tube(ax, ay, az, bx, by, bz, r, color, seg = 6) {
     const dx = bx - ax;
@@ -407,7 +438,15 @@ export function bakeModel(root) {
   const inst = new THREE.Matrix4();
 
   const visible = (o) => {
-    for (let p = o; p && p !== root; p = p.parent) if (!p.visible) return false;
+    for (let p = o; p && p !== root; p = p.parent) {
+      if (!p.visible) return false;
+      // REAL MODELS (aircraft/real-models.js): a downloaded skin is left out. Its
+      // procedural airframe underneath is only moved to a render layer, so a bake
+      // that kept both drew the aeroplane twice over (a parked 737: 7,400
+      // triangles became 16,900, the two shells fighting); the procedural one is
+      // what the doors and the stands are measured from, as before.
+      if (p.userData && typeof p.userData.realModel === 'string') return false;
+    }
     return true;
   };
   const push = (geo, matrix, material, start, count) => {

@@ -605,11 +605,13 @@ function dress(ctx, S) {
     const k = new THREE.Color(base);
     return 0.2126 * k.r + 0.7152 * k.g + 0.0722 * k.b > 0.35;
   })();
+  const decals = []; // the number and the name, for a real model's paint (realPaint below)
   if (reg) {
     // A registration is lettered in a plain medium-weight sans, spaced out,
     // as the real ones are stencilled.
     const tex2 = aircraftDecalTexture(reg, { color: light ? '#1f272e' : '#e9eef2', background: 'transparent', width: 512, height: 128, weight: 600, spacing: 0.08 });
     registration(ctx, h, { text: reg, z: S.reg.z, y: S.reg.y, width: S.reg.w, texture: tex2 }, pieceOf(S.reg.z));
+    decals.push({ texture: tex2, z: S.reg.z, y: S.reg.y, w: S.reg.w, h: S.reg.w * 0.25 });
   }
   // The titling line a scheme may carry — "UNITED STATES OF AMERICA" on Air
   // Force One (aircraft/liveries.js), the only one that has ever asked for
@@ -638,7 +640,22 @@ function dress(ctx, S) {
     });
     const tz = S.title.z;
     registration(ctx, h, { text: title, z: tz, y: S.title.y, width: S.title.w, height: S.title.w / ratio, texture: tex3, name: 'Titling' }, pieceOf(tz));
+    decals.push({ texture: tex3, z: tz, y: S.title.y, w: S.title.w, h: S.title.w / ratio });
   }
+  /*
+   * REAL MODELS (src/aircraft/real-models.js): everything a downloaded
+   * airframe needs to wear this same paint — the livery's own (z, y) -> (u, v)
+   * map, the window rows, the flight-deck panes and the decals above — so it
+   * can be painted onto that model's skin instead of these meshes. Not
+   * enumerable: a model's userData is JSON-copied when it is cloned.
+   */
+  Object.defineProperty(ctx.exports, 'realPaint', {
+    value: {
+      texture: tex, along, vAt: vMain, vHump, hull: h, hump, windows: S.windows, panes: gz.outlines, decals,
+      tail: tailColour, accent, base, cowl: style && style.cowl ? style.cowl : base,
+    },
+    enumerable: false,
+  });
 
   // The fin in the scheme's tail colour, or the accent. Its own material
   // either way: the paint is a shell a few millimetres proud of the core's

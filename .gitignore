@@ -16,3 +16,6 @@ PROMPT-MAPS-AND-MODELS.md
 
 # Worktrees the parallel builders run in. Their work lives on branches.
 .claude/
+
+# Python bytecode from tools/real-models
+__pycache__/

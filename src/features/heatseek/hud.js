@@ -55,7 +55,7 @@ const CSS = `
 .hsk-diamond { position: fixed; left: 0; top: 0; width: 34px; height: 34px; margin: -17px 0 0 -17px; border: 3px solid #ff4a3a; transform-origin: center; will-change: transform; }
 .hsk-diamond b { position: absolute; left: 50%; top: 100%; transform: translateX(-50%) rotate(-45deg); margin-top: 12px; white-space: nowrap; font: 800 12px/1 system-ui, -apple-system, 'Segoe UI', sans-serif; color: #fff;
   text-shadow: 0 0 4px rgba(0,0,0,0.9), 0 0 2px #000; }
-.hsk-alert { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); max-width: min(88vw, 560px); text-align: center; padding: 9px 18px; border-radius: 10px;
+.hsk-alert { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); box-sizing: border-box; width: max-content; max-width: min(calc(100vw - 24px), 560px); overflow-wrap: anywhere; text-align: center; padding: 9px 18px; border-radius: 10px;
   background: rgba(120, 18, 12, 0.82); border: 2px solid #ff5a4a; color: #fff; font: 800 17px/1.25 system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: 0.04em;
   box-shadow: 0 6px 22px rgba(0,0,0,0.4); }
 .hsk-alert small { display: block; font: 600 12px/1.3 system-ui, sans-serif; letter-spacing: 0.02em; opacity: 0.9; margin-top: 3px; }
@@ -299,7 +299,25 @@ export function setAlert(text, sub = '') {
   if (e.alert.__html !== html) {
     e.alert.__html = html;
     e.alert.innerHTML = html;
+    keepOnScreen(e.alert);
   }
+}
+
+/**
+ * Owner (Oct 25): the "MISSILE LAUNCH — break right…" notice was cut off at
+ * the left edge. Centred on 50% it cannot be — unless something it lives in
+ * is offset or scaled — so after every new text it is measured, and nudged
+ * back inside the screen by however much it is out. Only on a text change.
+ */
+export function keepOnScreen(node, margin = 8) {
+  if (!node || typeof node.getBoundingClientRect !== 'function' || typeof innerWidth !== 'number') return 0;
+  node.style.marginLeft = '';
+  const r = node.getBoundingClientRect();
+  let dx = 0;
+  if (r.left < margin) dx = margin - r.left;
+  else if (r.right > innerWidth - margin) dx = innerWidth - margin - r.right;
+  if (dx) node.style.marginLeft = `${Math.round(dx)}px`;
+  return dx;
 }
 
 /**

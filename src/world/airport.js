@@ -42,6 +42,7 @@ import { glassMaterial, metalMaterial, registerWetSurface } from '../render/surf
 import { airportLayout, onAirportPavement, pavedIn, standSlot } from './airport-layout.js';
 import { Batch, vcMaterial, instanced, settle, glowPoints, canvas, canvasTexture, trs, trse, yawOf, layer } from './airport-kit.js';
 import { fireEngineGeometry, carGeometry } from './airport-vehicles.js';
+import { taxiMarkings } from './airport-markings.js';
 
 export { airportLayout } from './airport-layout.js';
 
@@ -213,58 +214,122 @@ export function officeFloors(mesh, floorY) {
 /* ------------------------------------------------------------------ */
 
 /**
- * Every sign on the field in one texture: 4 x 8 cells of 256 x 64.
- * Styles are the real ones: mandatory is white on red, location is yellow on
- * black with a yellow border, direction is black on yellow.
+ * The face of a taxiway sign, in metres: how wide it is for its height.
+ * One panel is 3.2 x 0.9 (2.2 x 0.6 on a strip); a sign made of several
+ * panels side by side — a location panel next to a direction panel, the
+ * array at a junction — is that many panels wide.
+ */
+export function signSize(s) {
+  const n = s.segments ? s.segments.length : 1;
+  const per = s.small ? 2.2 : 3.2;
+  return { w: (s.segments ? per * 0.82 : per) * n, h: s.small ? 0.6 : 0.9 };
+}
+
+/**
+ * Every sign on the field in one texture, at 96 pixels a sign's height (64
+ * before: the letters went soft a wingspan away). Each sign gets a cell as
+ * wide as its own face's proportions, packed into rows 1536 wide, so a
+ * three-panel junction array is not squeezed into a one-panel cell.
+ *
+ * Styles are the real ones (ICAO Annex 14 / FAA AC 150/5340-18): mandatory
+ * is white on red with the letters outlined in black; location is yellow on
+ * black with a yellow border; direction is black on yellow, with its arrow.
  */
 function signAtlas(signs) {
-  const W = 1024;
-  const H = 512;
-  const c = canvas(W, H);
-  const ctx = c.getContext('2d');
-  const cells = [];
+  const W = 1536;
+  const CH = 96;
   const style = {
     mandatory: ['#c8201c', '#ffffff'],
-    location: ['#15171a', '#f2c200'],
-    direction: ['#f2c200', '#15171a'],
+    location: ['#121417', '#f2c200'],
+    direction: ['#f2c200', '#121417'],
     plate: ['#e9ecee', '#1d2a36'],
     number: ['#e9ecee', '#1d2a36'],
   };
-  const arrow = (x, y, dir, col) => {
+  // Lay the cells out first, then size the canvas to them.
+  const place = [];
+  let x = 0;
+  let y = 0;
+  for (const s of signs) {
+    let w;
+    if (s.kind === 'plate' || s.kind === 'number') w = s.kind === 'number' ? CH : Math.min(W, Math.round((CH * s.w) / s.h));
+    else {
+      const z = signSize(s);
+      w = Math.min(W, Math.round((CH * z.w) / z.h));
+    }
+    if (x + w > W) {
+      x = 0;
+      y += CH;
+    }
+    place.push({ x, y, w });
+    x += w;
+  }
+  const H = y + CH;
+  const c = canvas(W, H);
+  const ctx = c.getContext('2d');
+  const arrow = (ax, ay, dir, col, k = 1) => {
     ctx.fillStyle = col;
     ctx.beginPath();
-    const s = 18;
-    if (dir === 'left') { ctx.moveTo(x - s, y); ctx.lineTo(x + s * 0.4, y - s); ctx.lineTo(x + s * 0.4, y + s); }
-    else if (dir === 'right') { ctx.moveTo(x + s, y); ctx.lineTo(x - s * 0.4, y - s); ctx.lineTo(x - s * 0.4, y + s); }
-    else if (dir === 'up') { ctx.moveTo(x, y - s); ctx.lineTo(x - s, y + s * 0.5); ctx.lineTo(x + s, y + s * 0.5); }
-    else { ctx.moveTo(x, y + s); ctx.lineTo(x - s, y - s * 0.5); ctx.lineTo(x + s, y - s * 0.5); }
+    const sz = 22 * k;
+    const st = 7 * k;
+    // A shafted arrow, the shape on real signs.
+    const R = (pts) => {
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]);
+    };
+    if (dir === 'left' || dir === 'right') {
+      const sx = dir === 'left' ? -1 : 1;
+      R([[ax + sx * sz, ay], [ax, ay - sz * 0.8], [ax, ay - st / 2], [ax - sx * sz, ay - st / 2], [ax - sx * sz, ay + st / 2], [ax, ay + st / 2], [ax, ay + sz * 0.8]]);
+    } else {
+      const sy = dir === 'up' ? -1 : 1;
+      R([[ax, ay + sy * sz], [ax - sz * 0.8, ay], [ax - st / 2, ay], [ax - st / 2, ay - sy * sz], [ax + st / 2, ay - sy * sz], [ax + st / 2, ay], [ax + sz * 0.8, ay]]);
+    }
     ctx.closePath();
     ctx.fill();
   };
-  signs.forEach((s, i) => {
-    if (i >= 32) return;
-    const cx = (i % 4) * 256;
-    const cy = Math.floor(i / 4) * 64;
-    const [bg, fg] = style[s.kind] || style.plate;
+  /** One panel, in the box (px, py, pw, CH). */
+  const panel = (seg, px, py, pw) => {
+    const [bg, fg] = style[seg.kind] || style.plate;
     ctx.fillStyle = bg;
-    ctx.fillRect(cx, cy, 256, 64);
-    if (s.kind === 'location') {
+    ctx.fillRect(px, py, pw, CH);
+    if (seg.kind === 'location') {
       ctx.strokeStyle = fg;
-      ctx.lineWidth = 5;
-      ctx.strokeRect(cx + 6, cy + 6, 244, 52);
+      ctx.lineWidth = 6;
+      ctx.strokeRect(px + 9, py + 9, pw - 18, CH - 18);
     }
-    ctx.fillStyle = fg;
-    // A hangar's number fills the square in the middle of its cell.
-    ctx.font = s.kind === 'number' ? 'bold 58px Arial, Helvetica, sans-serif' : 'bold 40px Arial, Helvetica, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const tx = s.arrow ? cx + 150 : cx + 128;
-    ctx.fillText(s.text, tx, cy + 35, s.kind === 'number' ? 60 : 200);
-    if (s.arrow) arrow(cx + 44, cy + 32, s.arrow, fg);
-    const sq = s.kind === 'number';
-    cells.push({ u0: (cx + (sq ? 96 : 0)) / W, u1: (cx + (sq ? 160 : 256)) / W, v0: 1 - (cy + 64) / H, v1: 1 - cy / H });
+    const font = seg.kind === 'number' ? 'bold 84px Arial, Helvetica, sans-serif' : 'bold 58px Arial, Helvetica, sans-serif';
+    ctx.font = font;
+    const hasArrow = !!seg.arrow;
+    const tx = hasArrow ? (seg.arrow === 'left' ? px + pw * 0.6 : px + pw * 0.4) : px + pw / 2;
+    const maxW = (hasArrow ? pw * 0.62 : pw - 28) || 10;
+    if (seg.kind === 'mandatory') {
+      // Outlined, the way the white letters on a red sign are.
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = '#1a0a08';
+      ctx.strokeText(seg.text, tx, py + CH / 2 + 3, maxW);
+    }
+    ctx.fillStyle = fg;
+    ctx.fillText(seg.text, tx, py + CH / 2 + 3, maxW);
+    if (hasArrow) {
+      const ax = seg.arrow === 'left' ? px + pw * 0.17 : seg.arrow === 'right' ? px + pw * 0.83 : px + pw * 0.83;
+      arrow(ax, py + CH / 2, seg.arrow, fg);
+    }
+  };
+  const cells = [];
+  signs.forEach((s, i) => {
+    const p = place[i];
+    if (s.segments) {
+      // A junction array: panels side by side, a thin black rule between.
+      const pw = p.w / s.segments.length;
+      s.segments.forEach((seg, k) => panel(seg, p.x + k * pw, p.y, pw));
+      ctx.fillStyle = '#121417';
+      for (let k = 1; k < s.segments.length; k++) ctx.fillRect(p.x + k * pw - 2, p.y, 4, CH);
+    } else panel(s, p.x, p.y, p.w);
+    cells.push({ u0: p.x / W, u1: (p.x + p.w) / W, v0: 1 - (p.y + CH) / H, v1: 1 - p.y / H });
   });
   const tex = canvasTexture(c);
+  tex.anisotropy = 4;
   return { tex, cells };
 }
 
@@ -378,6 +443,8 @@ export class Airport {
     this.glowCol = [];
     this.glowPosS = [];
     this.glowColS = [];
+    this.glowPosT = [];
+    this.glowColT = [];
     // Light fixtures (the bright dots themselves), for one InstancedMesh.
     this.fixtures = [];
 
@@ -522,33 +589,40 @@ export class Airport {
     }
 
     /* ---- paint ---- */
+    /*
+     * Every line a pilot follows on the ground (airport-markings.js): the
+     * taxiway's centreline, stopping short of any runway it crosses; the
+     * lead-on and lead-off curves from each connector onto the runway
+     * centreline, both ways; the fillets into the parallel taxiway at each
+     * T; double yellow edge lines broken where pavement opens off them; and
+     * a holding position at every runway entry — each connector, and both
+     * sides of every crossing of the crosswind runway.
+     */
     const paint = this.b.paint;
     const Y = ELEV + 0.075;
     const yellow = 0xd9c02a;
-    const F = lay.frame;
-    if (lay.taxiway) {
-      const t = lay.taxiway;
-      // Centreline, the whole length.
-      paint.flat(t.u1 - t.u0 - 4, 0.45, F.x((t.u0 + t.u1) / 2), Y, F.z(t.w), yellow);
-      // Edge lines, both sides.
-      for (const e of [-1, 1]) paint.flat(t.u1 - t.u0, 0.25, F.x((t.u0 + t.u1) / 2), Y, F.z(t.w + e * (t.width / 2 - 0.6)), yellow);
-    }
-    for (const c of lay.connectors) {
-      const wa = lay.runway.halfWidth + 1;
-      const wb = lay.taxiway.w;
-      paint.flat(0.45, wb - wa, F.x(c.u), Y, F.z((wa + wb) / 2), yellow);
-      /*
-       * The holding position: two solid lines on the taxiway side and two
-       * dashed on the runway side. You may cross it from the dashed side
-       * (vacating the runway) but never from the solid side without a
-       * clearance — the one bit of paint every pilot is taught first.
-       */
-      const hw = lay.taxiway.width / 2 - 0.5;
-      const hwv = c.hold.w;
-      for (const k of [0, 1]) paint.flat(hw * 2, 0.3, F.x(c.u), Y, F.z(hwv + 0.8 + k * 0.9), yellow);
-      for (const k of [0, 1]) {
-        for (let d = -hw; d < hw - 0.6; d += 2.0) paint.flat(1.1, 0.3, F.x(c.u + d + 0.55), Y, F.z(hwv - 0.8 - k * 0.9), yellow);
-      }
+    const M = taxiMarkings(lay);
+    this.markings = M;
+    // A lead-on line is painted in its pieces: broken over the runway's own
+    // white markings, which take precedence (airport-markings.js runwayWhite).
+    for (const ln of M.lines) for (const pts of ln.pieces || [ln.pts]) paint.strip(pts, ln.w, ln.kind === 'lead' ? Y + 0.002 : Y, yellow);
+    /*
+     * The holding position: two solid lines on the taxiway side and two
+     * dashed on the runway side. You may cross it from the dashed side
+     * (vacating the runway) but never from the solid side without a
+     * clearance — the one bit of paint every pilot is taught first.
+     */
+    for (const h of M.holds) {
+      const L = (o, a0, a1) => {
+        // From a0 to a1 along the hold line, `o` metres toward the runway.
+        const x0 = h.x + h.ax * a0 + h.nx * o;
+        const z0 = h.z + h.az * a0 + h.nz * o;
+        const x1 = h.x + h.ax * a1 + h.nx * o;
+        const z1 = h.z + h.az * a1 + h.nz * o;
+        paint.strip([[x0, z0], [x1, z1]], 0.3, Y + 0.001, yellow);
+      };
+      for (const k of [0, 1]) L(-(0.8 + k * 0.9), -h.half, h.half);
+      for (const k of [0, 1]) for (let d = -h.half; d < h.half - 0.6; d += 2.0) L(0.8 + k * 0.9, d, d + 1.1);
     }
     // The stand lead-ins, numbers and stop bars are drawn by apron.js.
   }
@@ -1253,20 +1327,24 @@ export class Airport {
         g.dispose();
         return;
       }
-      const w = s.small ? 2.2 : 3.2;
-      const h = s.small ? 0.6 : 0.9;
+      const { w, h } = signSize(s);
       const y = ELEV + (s.small ? 0.8 : 1.1);
       const yaw = yawOf(s.facingDeg); // the reader's heading
       // The frame: a black box on two legs.
       vc.box(w + 0.2, h + 0.2, 0.3, s.x, y, s.z, 0x15171a, yaw);
-      for (const e of [-0.35, 0.35]) {
+      const legs = s.segments && s.segments.length > 2 ? [-0.4, 0, 0.4] : [-0.35, 0.35];
+      for (const e of legs) {
         const lx = s.x + Math.cos(yaw) * e * w;
         const lz = s.z - Math.sin(yaw) * e * w;
         vc.box(0.12, y - ELEV - h / 2, 0.12, lx, ELEV + (y - ELEV - h / 2) / 2, lz, 0x5c6168);
       }
-      // Two faces, so it reads from both directions the same way round.
+      // Two faces, so it reads from both directions the same way round —
+      // except a sign with an arrow, whose arrow would point the wrong way
+      // from behind: its back is the plain black of its frame, as on a real
+      // field (the pilot coming the other way has an array of his own).
       const c = cells[i];
-      for (const back of [0, 1]) {
+      const arrowed = !!(s.arrow || (s.segments && s.segments.some((g) => g.arrow)));
+      for (const back of arrowed ? [0] : [0, 1]) {
         const g = new THREE.PlaneGeometry(w, h);
         cellUV(g, c);
         // A plane faces +Z, and turning it by `yaw` points it back down the
@@ -1330,16 +1408,18 @@ export class Airport {
    */
   glow(x, y, z, hex, small = false) {
     const c = new THREE.Color(hex);
-    const pos = small ? this.glowPosS : this.glowPos;
-    const col = small ? this.glowColS : this.glowCol;
+    // 'tiny': the lights set flush in the taxiway, a point each, not a pool.
+    const tiny = small === 'tiny';
+    const pos = tiny ? this.glowPosT : small ? this.glowPosS : this.glowPos;
+    const col = tiny ? this.glowColT : small ? this.glowColS : this.glowCol;
     pos.push(x, y, z);
     col.push(c.r, c.g, c.b);
   }
 
   /** One light: a bright dot at night, and its halo. */
-  light(x, y, z, hex, r = 0.42) {
+  light(x, y, z, hex, r = 0.42, inset = false) {
     this.fixtures.push({ x, y, z, hex, r });
-    this.glow(x, y, z, hex, r < 0.4);
+    this.glow(x, y, z, hex, inset ? 'tiny' : r < 0.4);
   }
 
   buildLighting() {
@@ -1408,11 +1488,22 @@ export class Airport {
       edge(p.x0 - m, p.z0 - m, p.x0 - m, p.z1 + m, -1, 0);
       edge(p.x1 + m, p.z0 - m, p.x1 + m, p.z1 + m, 1, 0);
     }
-    // Stop bars: a row of red across every connector at its holding point.
-    const F = lay.frame;
-    for (const c of lay.connectors) {
-      const hw = lay.taxiway.width / 2 - 1;
-      for (let d = -hw; d <= hw + 0.01; d += 3) this.light(F.x(c.u + d), ELEV + 0.3, F.z(c.hold.w + 2.2), 0xff2a1a, 0.22);
+    // Stop bars: a row of red across every runway entry at its hold, on the
+    // taxiway side of the paint — the connectors' and the crossings' alike.
+    const M = this.markings;
+    if (M) {
+      for (const h of M.holds) {
+        const hw = h.half - 0.5;
+        for (let d = -hw; d <= hw + 0.01; d += 3) this.light(h.x + h.ax * d - h.nx * 2.2, ELEV + 0.3, h.z + h.az * d - h.nz * 2.2, 0xff2a1a, 0.22);
+      }
+      /*
+       * Taxiway centreline lights: green, set flush in the paint, every 15 m
+       * on the straight and closer round the curves; green and yellow by turns
+       * from the runway centreline to the hold (the exit lights). Small
+       * fixtures and small halos, in the same instanced mesh and Points as
+       * every other light on the field — no draw calls of their own.
+       */
+      for (const l of M.lights) this.light(l.x, ELEV + 0.12, l.z, l.hex, 0.16, true);
     }
 
     const pos = this.fixtures;
@@ -1444,6 +1535,11 @@ export class Airport {
       const small = glowPoints(this.glowPosS, this.glowColS, 2.6, { opacity: 0.9, name: 'glow-small' });
       small.frustumCulled = true;
       this.glowGroup.add(small);
+    }
+    if (this.glowPosT.length) {
+      const tiny = glowPoints(this.glowPosT, this.glowColT, 1.1, { opacity: 0.95, name: 'glow-inset' });
+      tiny.frustumCulled = true;
+      this.glowGroup.add(tiny);
     }
     this.glowGroup.visible = false;
     this.group.add(this.glowGroup);

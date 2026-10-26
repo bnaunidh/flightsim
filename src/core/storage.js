@@ -114,6 +114,8 @@ export const DEFAULT_SETTINGS = {
    * the new shapes have some volume in them.
    */
   fleetModels: false,
+  // REAL MODELS: the downloaded airframes worn over the airliners (aircraft/real-models.js). On; off draws the built-in ones.
+  realModels: true,
   /*
    * Which way that switch was last set *by the game* rather than by a person.
    *

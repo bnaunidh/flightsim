@@ -43,7 +43,13 @@ function walk(dir, keep) {
   if (!existsSync(dir)) return;
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
-    if (statSync(p).isDirectory()) walk(p, keep);
+    // assets/models/real/ is NOT precached on purpose: the real airliner models
+    // (src/aircraft/real-models.js) are fetched only when that aeroplane is
+    // picked, and the service worker keeps each one once seen (runtime cache).
+    if (statSync(p).isDirectory()) {
+      if (relative(ROOT, p).split('\\').join('/') === 'assets/models/real') continue;
+      walk(p, keep);
+    }
     else if (keep(name)) found.push(relative(ROOT, p).split('\\').join('/'));
   }
 }

@@ -391,6 +391,15 @@ function ladder(cls) {
 const hasType = (id) => AIRCRAFT.some((a) => a.id === id);
 
 /**
+ * Does this map's airfield get a car park? The per-site flag in world data
+ * (maps.js `parking`). A map that does not say is not given one: car parks
+ * are for commercial airports, and those are listed.
+ */
+export function hasParking(map) {
+  return !!(map && map.parking === true);
+}
+
+/**
  * Drawn wingspan and length of a roster type.
  *
  * From the type's `plan` where it has one — the drawn aeroplane from above,
@@ -756,8 +765,42 @@ function buildLayout() {
     const r = F.rect(cu - twyHalf, cu + twyHalf, hw - 0.5, twyW - twyHalf);
     if (!groundOk(F.rect(cu - twyHalf, cu + twyHalf, hw + 2, twyW - twyHalf), PAVE_UP, PAVE_DOWN, 8)) continue;
     cn++;
-    connectors.push({ id: `A${cn}`, u: cu, rect: r, hold: { u: cu, w: hw + T.holdDist } });
+    /*
+     * A connector that lies on the crosswind runway (Nunatak's A5) is that
+     * runway's own pavement between the two: kept, for anything that routes
+     * by connector, but flagged, so nothing paints a taxiway on it.
+     */
+    const onRunway = runways.length > 1 && overlaps(F.rect(cu - 1, cu + 1, hw + 1, twyW - twyHalf - 1), runways[1], 0);
+    connectors.push({ id: `A${cn}`, u: cu, rect: r, hold: { u: cu, w: hw + T.holdDist }, onRunway });
     pavement.push({ kind: 'connector', ...r });
+  }
+
+  /*
+   * Where the parallel taxiway crosses the crosswind runway. On 21 of the 31
+   * maps it does, and nothing on the taxiway said so: no holding position,
+   * no sign, the yellow centreline painted straight across the runway. Each
+   * crossing is a runway entry like a connector's, from both sides: a hold
+   * `holdDist` short of the runway's edge on each side, where it is still
+   * taxiway.
+   */
+  const crossings = [];
+  if (r2 && runways[1]) {
+    const rw = runways[1];
+    const alongX = Math.abs((((r2.headingDeg ?? 180) % 180) - 90)) < 45;
+    if (!alongX && overlaps(rw, taxiway.rect, 0)) {
+      const ru0 = rw.x0 - R.cx;
+      const ru1 = rw.x1 - R.cx;
+      const h2 = r2.headingDeg ?? 180;
+      const n1 = Math.round((((h2 % 360) + 360) % 360) / 10) || 36;
+      const n2 = Math.round(((((h2 + 180) % 360) + 360) % 360) / 10) || 36;
+      const name = [n1, n2].sort((a, b) => a - b).map((n) => String(n).padStart(2, '0')).join('-');
+      const holds = [];
+      for (const [u, dir] of [[ru0 - T.holdDist, 1], [ru1 + T.holdDist, -1]]) {
+        // dir: the way a pilot at this hold faces the runway, along +u or -u.
+        if (u > tu0 + 4 && u < tu1 - 4) holds.push({ u, w: twyW, dir });
+      }
+      crossings.push({ id: 'R2', name, u0: ru0, u1: ru1, holds });
+    }
   }
 
   /* ---- apron ---- */
@@ -985,9 +1028,16 @@ function buildLayout() {
     } else dropped.push('fire station');
   }
 
-  /* car park */
+  /*
+   * Car park. Only where the map says this is a commercial airport
+   * (`parking: true` in maps.js, owner Oct 25): an air base, the Site, a
+   * remote strip, a heliport or a seaplane bay has nobody driving in to catch
+   * a flight, and a car park full of cars there read as a shopping centre.
+   * Its size is the template's, so it is sized to the field.
+   */
+  const parking = hasParking(MAP);
   let carPark = null;
-  {
+  if (parking) {
     const c = T.carPark;
     const uPref = anchorU(c.at, c.width);
     const w0Pref = Math.max(anchorW(c.front), behindTwy);
@@ -1038,9 +1088,39 @@ function buildLayout() {
       // Mandatory sign at the hold line, on the pilot's left as they face the
       // runway: heading south from a north apron, left is east (+u), so -side.
       const lx = F.x(c.u - side * (twyHalf + 7));
-      signs.push({ kind: 'mandatory', text: rwName, x: lx, z: F.z(c.hold.w + 2), facingDeg: F.towardDeg, small });
+      if (c.onRunway) continue;
+      // If the left is taken (a hillside, other pavement), the right; then closer in.
+      const alts = [[side, 7], [-side, 4], [side, 4]].map(([e, d]) => ({ x: F.x(c.u - e * (twyHalf + d)), z: F.z(c.hold.w + 2) }));
+      signs.push({ kind: 'mandatory', text: rwName, x: lx, z: F.z(c.hold.w + 2), facingDeg: F.towardDeg, small, entry: c.id, alts });
       // Location sign at the junction, on the left of a pilot leaving the runway.
       signs.push({ kind: 'location', text: c.id, x: F.x(c.u + side * (twyHalf + 7)), z: F.z(twyW - twyHalf - 8), facingDeg: F.awayDeg, small });
+    }
+    /*
+     * Junction arrays on the parallel taxiway, before each connector, for a
+     * pilot coming either way: where you are (A, yellow on black) and which
+     * way the exit is (A2 and an arrow, black on yellow), the location panel
+     * on the side away from the turn — the board every real T has. On the
+     * pilot's left, 22 m short of the junction.
+     */
+    for (const c of connectors) {
+      for (const dir of [1, -1]) {
+        const left = -dir * side;
+        const u = c.u - dir * (twyHalf + 22);
+        if (u < tu0 + 4 || u > tu1 - 4) continue;
+        const arrow = left < 0 ? 'left' : 'right';
+        const loc = { kind: 'location', text: taxiway.id };
+        const go = { kind: 'direction', text: c.id, arrow };
+        signs.push({ kind: 'array', segments: arrow === 'left' ? [go, loc] : [loc, go], text: `${taxiway.id} ${c.id}`, x: F.x(u), z: F.z(twyW + left * (twyHalf + 7)), facingDeg: dir > 0 ? 90 : 270, small, junction: c.id });
+      }
+    }
+    // At each crossing of the crosswind runway: its name in white on red,
+    // both sides of the taxiway, at the hold — where a pilot stops.
+    for (const x of crossings) {
+      for (const h of x.holds) {
+        for (const e of [-1, 1]) {
+          signs.push({ kind: 'mandatory', text: x.name, x: F.x(h.u - h.dir * 2), z: F.z(twyW + e * (twyHalf + 6)), facingDeg: h.dir > 0 ? 90 : 270, small, hold: x.id });
+        }
+      }
     }
     // Direction boards on the parallel taxiway at the apron's two corners.
     // `facingDeg` is the heading of the pilot who reads it.
@@ -1049,9 +1129,25 @@ function buildLayout() {
     // Keep them off the pavement and off buildings.
     for (let i = signs.length - 1; i >= 0; i--) {
       const s = signs[i];
-      const r = rect(s.x - 2, s.x + 2, s.z - 1, s.z + 1);
-      const bad = runwayHit(r, 3) || pavement.some((p) => overlaps(r, p, 0.5)) || buildings.some((b) => overlaps(r, b.rect, 1)) || !groundOk(r, 1.2, 1.2, 2);
-      if (bad) signs.splice(i, 1);
+      // As wide as the board (a junction array is two panels), along x for
+      // a sign read east or west, along z for one read north or south.
+      const half = s.segments ? (s.small ? 1.9 : 2.7) * s.segments.length * 0.82 + 0.5 : 2;
+      const ew = s.facingDeg === 90 || s.facingDeg === 270;
+      const badAt = (x, z) => {
+        const r = ew ? rect(x - 1, x + 1, z - half, z + half) : rect(x - half, x + half, z - 1, z + 1);
+        return runwayHit(r, 3) || pavement.some((p) => overlaps(r, p, 0.5)) || buildings.some((b) => overlaps(r, b.rect, 1)) || !groundOk(r, 1.2, 1.2, 2);
+      };
+      if (!badAt(s.x, s.z)) {
+        delete s.alts;
+        continue;
+      }
+      // A sign that must be there (the runway's, at a hold) tries its other places.
+      const alt = (s.alts || []).find((a) => !badAt(a.x, a.z));
+      delete s.alts;
+      if (alt) {
+        s.x = alt.x;
+        s.z = alt.z;
+      } else signs.splice(i, 1);
     }
   }
 
@@ -1109,6 +1205,7 @@ function buildLayout() {
     runways,
     taxiway,
     connectors,
+    crossings,
     apron: { rect: block.apron, u0: block.apU0, u1: block.apU1, w0: block.apW0, w1: block.apW1 },
     pavement,
     terminal: {
@@ -1136,6 +1233,7 @@ function buildLayout() {
     fire,
     fuel,
     carPark,
+    parking,
     floods,
     signs,
     windsock,
@@ -1162,8 +1260,8 @@ function emptyLayout(cls, military, elev, R, dropped) {
     bridges: false, holdDist: 20,
     frame: new Frame(R.cx, R.cz, -1),
     runway: { cx: R.cx, cz: R.cz, length: R.length, halfWidth: R.halfWidth },
-    runways: [], taxiway: null, connectors: [], apron: null, pavement: [], terminal: null, tower: null,
-    stands: [], hangars: [], fire: null, fuel: null, carPark: null, floods: [], signs: [], windsock: null, edgeStep: 30,
+    runways: [], taxiway: null, connectors: [], crossings: [], apron: null, pavement: [], terminal: null, tower: null,
+    stands: [], hangars: [], fire: null, fuel: null, carPark: null, parking: hasParking(MAP), floods: [], signs: [], windsock: null, edgeStep: 30,
     buildings: [], slots: [], undrawn: new Set(), padDepth: 0, dropped, shift: 0, shrink: 0,
   };
 }

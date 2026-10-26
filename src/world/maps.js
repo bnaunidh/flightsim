@@ -116,6 +116,8 @@
 export const MAPS = [
   {
     id: 'kestrel',
+    // Parking lots (owner, Oct 25): a commercial airport: a car park sized to the field.
+    parking: true,
     name: 'Kestrel Island',
     subtitle: 'Tropical · gentle hills',
     blurb:
@@ -263,6 +265,8 @@ export const MAPS = [
 
   {
     id: 'meadow',
+    // Parking lots (owner, Oct 25): a commercial airport: a car park sized to the field.
+    parking: true,
     waters: { harbour: { island: 0, bearingDeg: 250, length: 250, width: 190, mouthWidth: 70, depth: 6, wallW: 26, quayW: 32, blend: 150 } },
     name: 'Harrier Flats',
     subtitle: 'Grassland · almost no hills',
@@ -321,6 +325,8 @@ export const MAPS = [
 
   {
     id: 'atoll',
+    // Parking lots (owner, Oct 25): a commercial airport: a car park sized to the field.
+    parking: true,
     waters: { harbour: { island: 0, bearingDeg: 150, length: 240, width: 180, mouthWidth: 68, depth: 5, wallW: 24, quayW: 30, blend: 150, shelfTop: -6 } },
     name: 'Coral Atoll',
     subtitle: 'Reef chain · long water crossings',
@@ -385,6 +391,8 @@ export const MAPS = [
 
   {
     id: 'fjord',
+    // Parking lots (owner, Oct 25): a commercial airport: a car park sized to the field.
+    parking: true,
     waters: { harbour: { island: 0, bearingDeg: 250, length: 240, width: 180, mouthWidth: 64, depth: 6, wallW: 26, quayW: 30, blend: 160, shelfTop: -9 } },
     name: 'Aurora Fjords',
     subtitle: 'Cold · steep ridges and narrow water',
@@ -448,6 +456,8 @@ export const MAPS = [
 
   {
     id: 'ember',
+    // Parking lots (owner, Oct 25): a commercial airport: a car park sized to the field.
+    parking: true,
     waters: { harbour: { island: 0, bearingDeg: 240, length: 240, width: 180, mouthWidth: 66, depth: 6, wallW: 26, quayW: 30, blend: 160 } },
     name: 'Ember Isle',
     subtitle: 'Volcanic · a mountain on your doorstep',
@@ -561,6 +571,8 @@ export const MAPS = [
    */
   {
     id: 'airbase',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     waters: { harbour: { island: 0, bearingDeg: 300, length: 260, width: 200, mouthWidth: 72, depth: 6, wallW: 28, quayW: 34, blend: 160 } },
     name: 'Ironhead Air Base',
     subtitle: 'Military · long concrete, high desert',
@@ -686,6 +698,8 @@ export const MAPS = [
    */
   {
     id: 'gateway',
+    // Parking lots (owner, Oct 25): a commercial airport: a car park sized to the field.
+    parking: true,
     waters: {
       harbour: { island: 1, bearingDeg: 250, length: 260, width: 200, mouthWidth: 74, depth: 7, wallW: 28, quayW: 34, blend: 160 },
       shoals: [
@@ -787,6 +801,8 @@ export const MAPS = [
    */
   {
     id: 'northwatch',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     waters: {
       harbour: { island: 0, bearingDeg: 125, length: 250, width: 190, mouthWidth: 70, depth: 7, wallW: 26, quayW: 32, blend: 150 },
     },
@@ -894,6 +910,8 @@ export const MAPS = [
    */
   {
     id: 'condor',
+    // Parking lots (owner, Oct 25): a commercial airport: a car park sized to the field.
+    parking: true,
     waters: {
       harbour: { island: 2, bearingDeg: 205, length: 240, width: 180, mouthWidth: 66, depth: 6, wallW: 26, quayW: 30, blend: 150 },
       shoals: [
@@ -1007,6 +1025,8 @@ export const MAPS = [
    */
   {
     id: 'nunatak',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     waters: {
       harbour: { island: 0, bearingDeg: 200, length: 240, width: 180, mouthWidth: 66, depth: 6, wallW: 26, quayW: 30, blend: 150 },
     },
@@ -1146,6 +1166,8 @@ export const MAPS = [
 
   {
     id: 'sennen',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     name: 'Sennen Cove',
     subtitle: 'Home water · a stone harbour under a headland',
     blurb:
@@ -1258,6 +1280,8 @@ export const MAPS = [
 
   {
     id: 'skerries',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     name: 'The Skerries',
     subtitle: 'Hard · rock, and one lane through it',
     blurb:
@@ -1364,6 +1388,8 @@ export const MAPS = [
 
   {
     id: 'longbank',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     name: 'Longbank Sands',
     subtitle: 'Navigation · one thin channel across a great shallow bank',
     blurb:
@@ -1485,6 +1511,8 @@ export const MAPS = [
    */
   {
     id: 'drovers',
+    // Parking lots (owner, Oct 25): a commercial airport: a car park sized to the field.
+    parking: true,
     game: 'car',
     name: "Drover's Flat",
     subtitle: 'Farmland · villages, a relay and a ferry quay',
@@ -1608,6 +1636,8 @@ export const MAPS = [
    */
   {
     id: 'cape',
+    // Parking lots (owner, Oct 25): a commercial airport: a car park sized to the field.
+    parking: true,
     game: 'car',
     name: 'Cape Vessel',
     subtitle: 'Peninsula · one road over the spine',
@@ -1746,6 +1776,8 @@ export const MAPS = [
    */
   {
     id: 'cullen',
+    // Parking lots (owner, Oct 25): a commercial airport: a car park sized to the field.
+    parking: true,
     game: 'car',
     name: 'Cullen Sands',
     subtitle: 'Two islands · one causeway',
@@ -1871,6 +1903,8 @@ export const MAPS = [
    */
   {
     id: 'kestrel-port',
+    // Parking lots (owner, Oct 25): a commercial airport: a car park sized to the field.
+    parking: true,
     game: 'heli',
     name: 'Port Kestrel',
     subtitle: 'Harbour town · the same island, the other side of the hill',
@@ -1998,6 +2032,8 @@ export const MAPS = [
    */
   {
     id: 'stacks',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     game: 'heli',
     name: 'The Stacks',
     subtitle: 'Sea stacks · nowhere to land but the tops',
@@ -2141,6 +2177,8 @@ export const MAPS = [
    */
   {
     id: 'rigs',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     game: 'heli',
     name: 'Ironhead Deep',
     subtitle: 'Open water · eight decks and one shore',
@@ -2253,6 +2291,8 @@ export const MAPS = [
   /* archipelago — archipelago-map.js, 450 m strip sited on Current Cay, 0.9 m of levelling */
   {
     id: 'archipelago',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     name: 'Sable Archipelago',
     subtitle: 'A dozen cays · reefs and gates',
     blurb: 'A whole necklace of little islands scattered across bright water. Some gaps between them are wide open — race straight through. Others hide a reef just under the surface, so you have to read the water and find the gate before you get there. Watch the pale patches: that is the bottom coming up to meet you.',
@@ -2378,6 +2418,8 @@ export const MAPS = [
   /* town — car-map-2-town.js, 450 m strip sited on Fenwick Island, 1.4 m of levelling */
   {
     id: 'town',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     name: 'Fenwick',
     subtitle: 'Town · streets, a square and a ring road',
     blurb: 'A real town: winding streets, a square in the middle and a ring road all the way round it. Every corner is a choice — the short way through the middle, or the long way round on the ring. Deliveries are waiting all over town.',
@@ -2628,6 +2670,8 @@ export const MAPS = [
   /* carriergroup — carriergroup.map.js, 450 m strip sited on Task Force Base, 4 m of levelling */
   {
     id: 'carriergroup',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     name: 'Task Force Resolute',
     subtitle: 'Carrier group · deck to deck, out at sea',
     blurb: 'One big aircraft carrier and four small escort ships, alone on open water. Every deck out here is tiny next to the carrier — come in slow, line up early, and do not rush the last few metres.',
@@ -2705,6 +2749,8 @@ export const MAPS = [
   /* coastroad — coastroad.js, 450 m strip sited on Cormorant Isle, 2.7 m of levelling */
   {
     id: 'coastroad',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     name: 'Cormorant Coast',
     subtitle: 'Coastal · one long shoreline road',
     blurb: 'Drive the road that hugs the edge of the island. The sea is right there on one side, a green bank rises on the other, and the road bends every few hundred metres — so ease off before every corner.',
@@ -2779,6 +2825,8 @@ export const MAPS = [
   /* delta — delta-map.js, 450 m strip sited on Crane Spit, 0.6 m of levelling */
   {
     id: 'delta',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     name: 'Brackwater Delta',
     subtitle: 'River delta · braided channels, shifting bar',
     blurb: 'The river falls apart into a hundred little channels before it reaches the sea. Almost all of it is too shallow to float a boot in — but one channel stays deep enough for you, all the way out past the shifting bar at the mouth. Watch your depth gauge, not just the water.',
@@ -2911,6 +2959,8 @@ export const MAPS = [
   /* firewatch — firewatch.map.js */
   {
     id: 'firewatch',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     name: 'Firewatch Ridge',
     subtitle: 'Forest fire · a ridge, a bay, and a line to hold',
     blurb: 'A wildfire is burning along the ridge above the bay. Fly out over the water, dip your bucket, and drop it on the line the crews are holding before the fire gets down to the trees near the base. Short hops, fast turns — that is the whole job.',
@@ -3014,6 +3064,8 @@ export const MAPS = [
   /* harbour — harbour-map.js, 450 m strip sited on Spindrift Reef, 1.6 m of levelling */
   {
     id: 'harbour',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     name: 'Cutter Bay',
     subtitle: 'Working harbour · breakwater and a marked channel',
     blurb: 'A busy little harbour behind a long stone breakwater. Follow the buoys round its tip — cut the corner and you will find the rocks the hard way — then it is calm water all the way to the fuel jetty. Moorings, a fishing fleet and a lighthouse watch the gap.',
@@ -3122,6 +3174,8 @@ export const MAPS = [
   /* ravencrag — heli-map-rescue.js, 450 m strip sited on Sentinel Knoll, 1.9 m of levelling */
   {
     id: 'ravencrag',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     name: 'Raven Crag',
     subtitle: 'Mountain rescue · a valley, a wall, and thin air at the top',
     blurb: 'A green valley squeezed between two grey mountains. The rescue base sits safe on the valley floor, a tiny ledge waits high on the eastern wall for the jobs nobody else will take, and somewhere up in the rocks near the top a climber has gone through the snow into a crack in the ice. The wind gets much worse the higher you go — believe the gauge, not the view.',
@@ -3219,6 +3273,8 @@ export const MAPS = [
   /* lagoon — lagoon-map.js, 450 m strip sited on Pass Motu, 0.7 m of levelling */
   {
     id: 'lagoon',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     name: 'Coral Lagoon',
     subtitle: 'Reef ring · calm water, two gaps to the sea',
     blurb: 'A ring of coral wraps all the way round a bright, glassy lagoon. One pass is marked with buoys; the other is yours to find. Miss either one and the coral heads will stop your boat cold. The friendliest map in the game, and the prettiest.',
@@ -3361,6 +3417,8 @@ export const MAPS = [
   /* meridian — meridian-city.heli-map.js, 450 m strip sited on Meridian Island, 1.4 m of levelling */
   {
     id: 'meridian',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     name: 'Meridian City',
     subtitle: 'City · rooftops, a hospital and one very tall tower',
     blurb: 'A whole city of roofs to land on: an easy plaza to start on, a hospital pad by the park, four ordinary rooftops at four different heights, and one very tall tower with a pad right on top. Come in slow — the streets between the buildings are canyons, not runways.',
@@ -3442,6 +3500,8 @@ export const MAPS = [
   /* mountainpass — mountainpass.map.js, 450 m strip sited on Trailhead Flats, 6.6 m of levelling */
   {
     id: 'mountainpass',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     name: 'Saddleback Pass',
     subtitle: 'Mountain pass · switchbacks up and over',
     blurb: 'Climb a real mountain the long way round! Wind up hairpin turn after hairpin turn, hold your line through the high shoulder, then wind all the way back down the far side. The steepest drive in the game.',
@@ -3532,6 +3592,8 @@ export const MAPS = [
   /* stormcoast — stormcoast.map.js, 450 m strip sited on Squall Head, 4.9 m of levelling */
   {
     id: 'stormcoast',
+    // Parking lots (owner, Oct 25): no car park: not a commercial airport (military, remote strip, heliport, seaplane bay or outpost).
+    parking: false,
     name: 'Squall Head',
     subtitle: 'Storm coast · open water, one bay home',
     blurb: 'Grey water in every direction and wind that never lets up. Squall Head has exactly one calm place to land a boat — a small bay tucked behind the point. Everywhere else on this coast is rock. Watch the swell, mind the reefs, and get home before the weather does.',

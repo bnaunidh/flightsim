@@ -39,7 +39,9 @@ import { airportLayout, NOSE_STOP } from './airport-layout.js';
 import { OFFICE_TILE, officeFloors } from './airport.js';
 import { Batch, vcMaterial, instanced, glowPoints, canvas, canvasTexture, trs, trse, yawOf, bakeModel, layer } from './airport-kit.js';
 import * as V from './airport-vehicles.js';
+import { wearRealVehicle } from '../aircraft/real-models.js';
 import { blinkLevel } from '../render/flash-safety.js';
+import { glazingTextures as curtainWall, channelLetters, TILE_W_M } from './terminal-look.js';
 
 /*
  * Field elevation, read once at import — which was Kestrel's, on every map.
@@ -526,7 +528,8 @@ export class Apron {
     const kind = lay.military ? 'ops' : lay.shape === 'strip' ? 'club' : 'terminal';
     const WHITE = 0xe8ecef;
     const STEEL = 0xa8b0b8;
-    const FIN = 0xc9ced3;
+    // The fins in a mid steel grey: white, they lit up into a grid at night.
+    const FIN = 0x8e979e;
 
     // The hall: textured walls (the offices, landside); the glass goes over
     // the front and, on the terminal and the clubhouse, round both ends.
@@ -557,21 +560,32 @@ export class Apron {
       const gh = H - (kind === 'club' ? 2.2 : 4.6);
       const g0 = ELEV + (kind === 'club' ? 1.0 : 2.6);
       const gy = g0 + gh / 2;
-      const tex = glazingTextures();
+      /*
+       * The curtain wall (terminal-look.js): dark tinted glass by day; by
+       * night only the open rooms lit — gate lounges upstairs, a few shops
+       * below — with their ceiling lights, the columns dark against them
+       * and the floor slab between. Two storeys over the glass's height,
+       * sixteen 6 m bays to a repeat, the bays on the fins' lines. On Low,
+       * the same at half the pixels.
+       */
+      const tex = curtainWall(this.quality === 'low');
       // Curtain wall: the sky and the apron in it (render/surfaces.js).
-      const mat = glassMaterial({ map: tex.day, emissiveMap: tex.night, roughness: 0.1, metalness: 0.7 });
+      const mat = glassMaterial({ map: tex.day, emissiveMap: tex.night, roughness: 0.12, metalness: 0.62 });
+      mat.emissive = new THREE.Color(0xffffff);
+      mat.emissiveIntensity = 0;
       const panes = new Batch();
-      const pane = (len, x, z, ry) => {
+      const pane = (len, x, z, ry, u0 = 0) => {
         const g = new THREE.PlaneGeometry(len, gh);
         const uv = g.attributes.uv;
-        for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * len) / 6, (uv.getY(i) * gh) / 9);
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + (uv.getX(i) * len) / TILE_W_M, uv.getY(i));
         panes.add(g, trs(x, gy, z, ry), 0xffffff);
         g.dispose();
       };
       // A plane looks down +Z. The front glass looks away from the building (-dz); the ends look out along X.
+      // The ends start part-way into the pattern, so they are not the front's first bays again.
       pane(W - 0.4, cx, zFront - dz * 0.1, dz < 0 ? 0 : Math.PI);
-      pane(D - 0.4, r.x0 - 0.1, zMid, -Math.PI / 2);
-      pane(D - 0.4, r.x1 + 0.1, zMid, Math.PI / 2);
+      pane(D - 0.4, r.x0 - 0.1, zMid, -Math.PI / 2, 0.375);
+      pane(D - 0.4, r.x1 + 0.1, zMid, Math.PI / 2, 0.6875);
       const glass = panes.mesh(mat, { cast: false, name: 'terminal-glass' });
       glass.geometry.deleteAttribute('color');
       this.group.add(glass);
@@ -589,6 +603,17 @@ export class Apron {
       if (kind === 'terminal') band(2.6, ELEV + 1.3, 0.7);
       band(kind === 'club' ? 1.0 : 2.0, ELEV + H - (kind === 'club' ? 0.5 : 0.6), 1.2);
 
+      /*
+       * The upper floor's slab edge, carried across the glass and round both
+       * ends: the line that says this is two floors, not one wall of tiles.
+       * It stands 0.45 m proud, so it throws a shadow line by day.
+       */
+      if (kind !== 'ops') {
+        const ys = g0 + gh / 2;
+        const t = 0.45;
+        vc.box(W + 0.2, 0.55, t, cx, ys, zFront - dz * (t / 2 + 0.1), 0xd3d8dc);
+        for (const [ex, s2] of [[r.x0, -1], [r.x1, 1]]) vc.box(t, 0.55, D - 0.6, ex + s2 * (t / 2 + 0.1), ys, zMid, 0xd3d8dc);
+      }
       // Fins: a steel mullion every bay, standing proud of the glass.
       if (kind === 'terminal') {
         const finD = 0.7;
@@ -788,7 +813,8 @@ export class Apron {
     // A plane looks down +Z; each board looks away from the building.
     const faceFront = dz < 0 ? 0 : Math.PI;
     const faceBack = dz < 0 ? Math.PI : 0;
-    board(0, bw, bh, cx, signFront.y + bh / 2 + 0.25, signFront.z, faceFront, 1);
+    // Airside, the name is in letters on the roof (roofLetters, below), not on a board.
+    this.roofLetters(label, cx, signFront.y, signFront.z, faceFront, kind === 'terminal' ? Math.min(W * 0.72, 120) : Math.min(W * 0.8, 40), kind === 'terminal' ? 4.2 : 1.8);
     if (signBack) board(0, bw, bh, cx, signBack.y + bh / 2 + 0.25, signBack.z, faceBack, 1);
     else board(0, 12.8, 1.6, cx, ELEV + 7.6, zBack + dz * 5.2, faceBack, 1);
     for (const k of this.kerbSigns || []) board(k.row, 9, 1.125, k.x, k.y, k.z, faceBack, 1);
@@ -797,6 +823,79 @@ export class Apron {
     bm.geometry.deleteAttribute('color');
     this.group.add(bm);
     this.boardMat = mat;
+  }
+
+  /**
+   * The airport's name in channel letters along the roof's edge
+   * (terminal-look.js): each letter its own lit face with a dark return,
+   * standing on a slim raceway — two dark rails behind them — so from the
+   * apron they read as letters on the roofline, and after dark as lit
+   * letters with a soft halo on the fascia behind (backlit), not a box.
+   * `maxW` and `maxH` bound it: a long name is set smaller, never wider.
+   */
+  roofLetters(text, cx, yBase, z, ry, maxW, maxH) {
+    const { tex, aspect } = channelLetters(text);
+    let h = maxH;
+    let w = h * aspect;
+    if (w > maxW) {
+      w = maxW;
+      h = w / aspect;
+    }
+    const y = yBase + h / 2 + 0.55;
+    // A plane looks down +Z; `ry` turns it away from the building. 0.6 m out
+    // in front of the fascia it stands on.
+    const fx = Math.sin(ry);
+    const fz = Math.cos(ry);
+    const mat = new THREE.MeshStandardMaterial({
+      map: tex,
+      emissiveMap: tex,
+      emissive: new THREE.Color(0xfff6e6),
+      // A little by day too: white letters on a bright sky would otherwise
+      // read grey whenever the sun is behind the building.
+      emissiveIntensity: 0.3,
+      alphaTest: 0.5,
+      roughness: 0.45,
+      metalness: 0.2,
+    });
+    const g = new THREE.PlaneGeometry(w, h);
+    const letters = new THREE.Mesh(g, mat);
+    letters.position.set(cx + fx * 0.6, y, z + fz * 0.6);
+    letters.rotation.y = ry;
+    letters.name = 'terminal-name-letters';
+    letters.castShadow = false;
+    this.group.add(letters);
+    this.lettersMat = mat;
+    // The raceway: two dark rails just behind, the letters' fixings.
+    const vc = this.b.vc;
+    for (const k of [-0.22, 0.22]) vc.box(w * 0.98, 0.18, 0.18, cx + fx * 0.42, y + k * h, z + fz * 0.42, 0x23282d, ry);
+    // Short brackets from the rails back to the roof edge.
+    for (let i = -2; i <= 2; i++) {
+      const ox = (i / 4) * w * 0.9;
+      vc.box(0.12, h * 0.6, 0.5, cx + Math.cos(ry) * ox + fx * 0.2, y, z - Math.sin(ry) * ox + fz * 0.2, 0x23282d, ry);
+    }
+    // At night, a halo on the fascia behind the letters: they are lit from behind.
+    // Faded at every edge, and no taller than the letters and a little: it is
+    // light on the fascia, not a lit panel standing up against the sky.
+    const c = canvas(256, 32);
+    const ctx = c.getContext('2d');
+    for (let x = 0; x < 256; x += 2) {
+      const ex = Math.min(1, Math.min(x, 256 - x) / 40);
+      const gy = ctx.createLinearGradient(0, 0, 0, 32);
+      gy.addColorStop(0, 'rgba(255, 236, 205, 0)');
+      gy.addColorStop(0.5, `rgba(255, 240, 215, ${(0.4 * ex).toFixed(3)})`);
+      gy.addColorStop(1, 'rgba(255, 236, 205, 0)');
+      ctx.fillStyle = gy;
+      ctx.fillRect(x, 0, 2, 32);
+    }
+    const haloMat = layer(new THREE.MeshBasicMaterial({ map: canvasTexture(c), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }), 'decal');
+    const halo = new THREE.Mesh(new THREE.PlaneGeometry(w * 1.06, h * 1.35), haloMat);
+    halo.position.set(cx + fx * 0.3, y, z + fz * 0.3);
+    halo.rotation.y = ry;
+    halo.visible = false;
+    halo.name = 'terminal-name-halo';
+    this.group.add(halo);
+    this.lettersHalo = halo;
+    this.nameLetters = { text, w, h, x: letters.position.x, y, z: letters.position.z };
   }
 
   /* ---------------------------------------------------- stand markings -- */
@@ -884,44 +983,71 @@ export class Apron {
   buildStandSigns() {
     const lay = this.lay;
     const T = lay.terminal;
-    if (!T || !lay.bridges) return;
-    const list = lay.stands.filter((s) => s.bridge);
-    if (!list.length) return;
     const F = lay.frame;
+    const list = T && lay.bridges ? lay.stands.filter((s) => s.bridge) : [];
+    // Every stand without a bridge gets a stand board on a post instead.
+    const remote = lay.stands.filter((s) => !list.includes(s));
+    if (!list.length && !remote.length) return;
     const n = list.length;
-    // Gate signs: 256 x 64 cells, four to a row. Boards: 128 x 192, eight.
+    /*
+     * Gate and stand signs: yellow on black, the standard (owner, Oct 25:
+     * "standardized yellow-on-black gate/stand signs at real heights, lit
+     * at night"), at 128 pixels high — twice what they were. Gate signs
+     * 512 x 128, four to a row; stand boards 256 x 128, eight; docking
+     * boards 128 x 192, sixteen.
+     */
+    const W = 2048;
     const gRows = Math.ceil(n / 4);
-    const bRows = Math.ceil(n / 8);
-    const W = 1024;
-    const H = gRows * 64 + bRows * 192;
+    const sRows = Math.ceil(remote.length / 8);
+    const bRows = Math.ceil(n / 16);
+    const H = Math.max(64, gRows * 128 + sRows * 128 + bRows * 192);
     const c = canvas(W, H);
     const ctx = c.getContext('2d');
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, W, H);
     const gateCells = [];
+    const standCells = [];
     const boardCells = [];
     const cell = (x, y, w, h) => ({ u0: x / W, u1: (x + w) / W, v0: 1 - (y + h) / H, v1: 1 - y / H });
+    const YEL = '#f6c51e';
+    const BLK = '#0e1013';
     list.forEach((st, i) => {
-      const gx = (i % 4) * 256;
-      const gy = Math.floor(i / 4) * 64;
-      // GATE, then the number on a yellow block: read left to right.
-      ctx.fillStyle = '#16191d';
-      ctx.fillRect(gx, gy, 256, 64);
+      const gx = (i % 4) * 512;
+      const gy = Math.floor(i / 4) * 128;
+      ctx.fillStyle = BLK;
+      ctx.fillRect(gx, gy, 512, 128);
+      ctx.strokeStyle = YEL;
+      ctx.lineWidth = 6;
+      ctx.strokeRect(gx + 8, gy + 8, 496, 112);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#f4f4f4';
-      ctx.font = 'bold 34px Arial, Helvetica, sans-serif';
-      ctx.fillText('GATE', gx + 92, gy + 34, 160);
-      ctx.fillStyle = '#f2c53d';
-      ctx.fillRect(gx + 184, gy + 8, 64, 48);
-      ctx.fillStyle = '#16191d';
-      ctx.font = 'bold 40px Arial, Helvetica, sans-serif';
-      ctx.fillText(String(st.number), gx + 216, gy + 34, 60);
-      gateCells.push(cell(gx, gy, 256, 64));
-      const bx = (i % 8) * 128;
-      const by = gRows * 64 + Math.floor(i / 8) * 192;
+      ctx.fillStyle = YEL;
+      ctx.font = 'bold 54px Arial, Helvetica, sans-serif';
+      ctx.fillText('GATE', gx + 170, gy + 68, 250);
+      ctx.font = 'bold 92px Arial, Helvetica, sans-serif';
+      ctx.fillText(String(st.number), gx + 392, gy + 70, 200);
+      gateCells.push(cell(gx, gy, 512, 128));
+      const bx = (i % 16) * 128;
+      const by = gRows * 128 + sRows * 128 + Math.floor(i / 16) * 192;
       drawBoardIdle(ctx, bx, by, st.number);
       boardCells.push(cell(bx, by, 128, 192));
+    });
+    remote.forEach((st, i) => {
+      const sx = (i % 8) * 256;
+      const sy = gRows * 128 + Math.floor(i / 8) * 128;
+      ctx.fillStyle = BLK;
+      ctx.fillRect(sx, sy, 256, 128);
+      ctx.strokeStyle = YEL;
+      ctx.lineWidth = 6;
+      ctx.strokeRect(sx + 8, sy + 8, 240, 112);
+      ctx.fillStyle = YEL;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = 'bold 30px Arial, Helvetica, sans-serif';
+      ctx.fillText('STAND', sx + 128, sy + 34, 220);
+      ctx.font = 'bold 66px Arial, Helvetica, sans-serif';
+      ctx.fillText(String(st.number), sx + 128, sy + 84, 220);
+      standCells.push(cell(sx, sy, 256, 128));
     });
     const tex = canvasTexture(c);
     const faces = new Batch();
@@ -956,6 +1082,24 @@ export class Apron {
       put(boardCells[i], bw, bh, F.x(st.u), by, zFace(bz - 0.19));
       this.boards.set(st, { x: F.x(st.u), y: by, z: zFace(bz - 0.21), w: bw, h: bh });
     });
+    /*
+     * A remote stand's board: on a post at the head of the stand, beside the
+     * lead-in line, facing the aeroplane coming in — STAND and its number,
+     * at a pilot's eye height (2.6 m; 1.6 m on the strip's light stands).
+     */
+    remote.forEach((st, i) => {
+      const light = st.size === 'light';
+      const bw = light ? 1.6 : 2.4;
+      const bh = bw / 2;
+      const yB = ELEV + (light ? 1.6 : 2.6);
+      const x = F.x(st.u + (light ? 4.2 : 7));
+      const wPost = st.noseW + (light ? 2.5 : 4);
+      vc.box(0.14, yB - ELEV, 0.14, x, ELEV + (yB - ELEV) / 2, zFace(wPost + 0.12), 0x5c6168);
+      vc.box(bw + 0.16, bh + 0.16, 0.12, x, yB, zFace(wPost + 0.04), 0x15171a);
+      put(standCells[i], bw, bh, x, yB, zFace(wPost - 0.03));
+    });
+    // Lit: unshaded, a little under full white by day so they are not
+    // glaring, which reads as a sign lit from inside after dark.
     const mat = new THREE.MeshBasicMaterial({ map: tex, color: 0xe6e6e6 });
     const m = faces.mesh(mat, { cast: false, receive: false, name: 'gate-signs' });
     if (m) {
@@ -963,6 +1107,7 @@ export class Apron {
       this.group.add(m);
     }
     // The live board: one more face, moved to whichever stand is in use.
+    if (!list.length) return;
     const live = canvas(128, 192);
     this.dockCanvas = live;
     this.dockTex = canvasTexture(live);
@@ -1316,11 +1461,20 @@ export class Apron {
       const wRot = T.front - 3.2;
       const x = F.x(u);
       const z = F.z(wRot);
-      // Rotunda, a link into the building, and its column.
-      vc.cyl(2.5, 2.5, 3.8, x, ELEV + ROT_FLOOR - 0.6, z, 0xd9dde1, 14);
-      vc.cyl(2.7, 2.7, 0.4, x, ELEV + ROT_FLOOR + 3.2, z, 0x8d949c, 14);
+      /*
+       * The rotunda: a round glazed drum the tunnel swings about, on one
+       * column, with a fixed link into the building. A band of dark glass
+       * round it, a roof cap and a skirt under the floor.
+       */
+      vc.cyl(2.5, 2.5, 3.8, x, ELEV + ROT_FLOOR - 0.6, z, 0xd9dde1, 16);
+      vc.cyl(2.53, 2.53, 1.5, x, ELEV + ROT_FLOOR + 0.55, z, 0x24323d, 16);
+      vc.cyl(2.75, 2.75, 0.4, x, ELEV + ROT_FLOOR + 3.2, z, 0x8d949c, 16);
+      // (The skirt stops 3 cm under the drum: a cap in the drum's own floor would fight it.)
+      vc.cyl(2.2, 2.6, 0.5, x, ELEV + ROT_FLOOR - 1.13, z, 0x8d949c, 16);
       vc.box(3.2, 3.2, 3.6, x, ELEV + ROT_FLOOR + 1.3, F.z(T.front - 1.4), 0xd9dde1);
+      vc.box(3.24, 1.2, 3.0, x, ELEV + ROT_FLOOR + 1.35, F.z(T.front - 1.4), 0x24323d);
       vc.cyl(0.7, 0.9, ROT_FLOOR - 0.6, x, ELEV, z, 0x8d949c, 10);
+      vc.cyl(1.1, 1.3, 0.32, x, ELEV - 0.05, z, 0x5c6168, 10);
       // Gate number on the rotunda's canopy, readable from the apron.
       const home = { x: F.x(st.u + lay.side * (offset - 3)), y: ELEV + ROT_FLOOR + 1.2, z: F.z(wRot - 13) };
       const b = {
@@ -1338,6 +1492,11 @@ export class Apron {
       if (st.parked) this.dockTo(b, st.parked);
       this.bridges.push(b);
     }
+  }
+
+  /** Every instanced part of the bridges, for posing, culling and updates. */
+  bridgeParts() {
+    return [this.bridgeTunnel, this.bridgeTunnelB, this.bridgeTunnelC, this.bridgeCollar, this.bridgeCab, this.bridgeLeg, this.bridgeBogie].filter(Boolean);
   }
 
   /** Aim a bridge's cab at an aeroplane's front left door. */
@@ -1376,10 +1535,30 @@ export class Apron {
     const pitch = Math.atan2(ey - sy, Math.hypot(ex - sx, ez - sz));
     _e.set(pitch, yaw, 0, 'YXZ');
     _q.setFromEuler(_e);
-    _v.set(sx, sy, sz);
-    _s.set(1, 1, Math.max(0.5, len));
-    _m.compose(_v, _q, _s);
-    this.bridgeTunnel.setMatrixAt(b.slot, _m);
+    /*
+     * Telescoping: A (narrowest) from the rotunda, B over it, C (widest) up
+     * to the cab. They overlap a fifth of the length each, whatever it is,
+     * so stretched out to a 747's door or pulled back to the terminal there
+     * are always three sections and two joints showing.
+     */
+    const ux = (ex - sx) / (len || 1);
+    const uy = (ey - sy) / (len || 1);
+    const uz = (ez - sz) / (len || 1);
+    const put = (mesh, slot, from, frac) => {
+      _v.set(sx + ux * len * from, sy + uy * len * from, sz + uz * len * from);
+      _s.set(1, 1, Math.max(0.3, len * frac));
+      _m.compose(_v, _q, _s);
+      mesh.setMatrixAt(slot, _m);
+    };
+    put(this.bridgeTunnel, b.slot, 0, 0.44);
+    put(this.bridgeTunnelB, b.slot, 0.3, 0.44);
+    put(this.bridgeTunnelC, b.slot, 0.58, 0.42);
+    _s.set(1, 1, 1);
+    for (const [k, at] of [[0, 0.3], [1, 0.58]]) {
+      _v.set(sx + ux * len * at, sy + uy * len * at, sz + uz * len * at);
+      _m.compose(_v, _q, _s);
+      this.bridgeCollar.setMatrixAt(b.slot * 2 + k, _m);
+    }
     trs(cx, cy, cz, cabYaw, 1, 1, 1, _m);
     this.bridgeCab.setMatrixAt(b.slot, _m);
     // The leg, two-thirds of the way out, down to the ground.
@@ -1405,6 +1584,8 @@ export class Apron {
       const geo = def.geo();
       const mat = def.mat === 'hose' ? M.hose : M.vehicle;
       const m = instanced(geo, mat, list.length, { name: `ground:${kind}`, cast: def.cast !== false });
+      // REAL MODELS: the tug, the baggage tractor and the carts in their real shapes, when that file is here (aircraft/real-models.js).
+      wearRealVehicle(m, kind);
       list.forEach((s, i) => {
         m.setMatrixAt(i, s.m);
         if (def.colour) m.setColorAt(i, col.set(s.colour || 0xffffff));
@@ -1414,33 +1595,79 @@ export class Apron {
       this.group.add(m);
       this.meshes[kind] = m;
     }
-    // Bridges: four parts, one InstancedMesh each.
+    /*
+     * Bridges (owner, Oct 25: "Jet bridges blocky → telescoping tunnels
+     * with glass, rotunda, wheel bogie, cab with bellows"): three tunnel
+     * sections that slide into one another — the narrowest at the rotunda,
+     * the widest at the cab, where the drive column is — each with a band of
+     * glass down both sides, a dark roof and a skirt; a collar where each
+     * one comes out of the next; the cab with its own glass, a canopy and a
+     * concertina bellows at the door; the lift column on a four-wheeled
+     * bogie. One InstancedMesh a part, as before (the sections and the
+     * collars are the new ones).
+     */
     if (this.bridges.length) {
       const n = this.bridges.length;
-      const tb = new Batch();
-      tb.box(3.0, 2.9, 1, 0, 0, -0.5, 0xe6e9ec);
-      for (const s of [-1, 1]) tb.box(0.04, 0.8, 1, s * 1.51, 0.35, -0.5, 0x2f3d4a);
-      tb.box(3.1, 0.2, 1, 0, 1.5, -0.5, 0x8d949c);
-      this.bridgeTunnel = instanced(tb.geometry(), M.vehicle, n, { name: 'bridge-tunnel' });
+      const GLASS = 0x2a3a46;
+      const SKIN = 0xe6e9ec;
+      const STEEL = 0x8d949c;
+      /** One section: w x h, along local -Z from 0 to -1 (scaled to its length). */
+      const section = (w, h) => {
+        const b = new Batch();
+        b.box(w, h, 1, 0, 0, -0.5, SKIN);
+        // The glass, both sides: a band most of the height.
+        for (const sd of [-1, 1]) b.box(0.04, h * 0.42, 1, sd * (w / 2 + 0.01), h * 0.08, -0.5, GLASS);
+        // A darker roof and a skirt along the floor.
+        b.box(w + 0.06, 0.16, 1, 0, h / 2, -0.5, STEEL);
+        b.box(w + 0.04, 0.22, 1, 0, -h / 2 + 0.05, -0.5, 0x6b7279);
+        return b.geometry();
+      };
+      this.bridgeTunnel = instanced(section(2.7, 2.62), M.vehicle, n, { name: 'bridge-tunnel-a' });
+      this.bridgeTunnelB = instanced(section(2.96, 2.84), M.vehicle, n, { name: 'bridge-tunnel-b' });
+      this.bridgeTunnelC = instanced(section(3.22, 3.06), M.vehicle, n, { name: 'bridge-tunnel-c' });
+      // Collars: where a narrower section enters a wider one, a steel ring.
+      const col = new Batch();
+      col.box(3.3, 0.2, 0.35, 0, 1.5, 0, STEEL);
+      col.box(3.3, 0.2, 0.35, 0, -1.47, 0, STEEL);
+      for (const sd of [-1, 1]) col.box(0.18, 3.0, 0.35, sd * 1.6, 0, 0, STEEL);
+      this.bridgeCollar = instanced(col.geometry(), M.vehicle, n * 2, { name: 'bridge-collar' });
+      // The cab: glass on its sides and front corners, a canopy, and the
+      // bellows — a concertina of frames stepping out toward the door.
       const cb = new Batch();
-      cb.box(3.6, 3.4, 3.2, 0, 0, 0, 0xe6e9ec);
-      cb.box(3.9, 3.6, 0.8, 0, 0, -1.9, 0x3b4148); // bellows at the door
-      cb.box(3.7, 0.25, 3.6, 0, 1.8, -0.2, 0x8d949c); // canopy
-      for (const s of [-1, 1]) cb.box(0.04, 1.2, 1.4, s * 1.81, 0.5, 0.3, 0x2f3d4a);
+      cb.box(3.6, 3.4, 3.2, 0, 0, 0, SKIN);
+      for (const sd of [-1, 1]) {
+        cb.box(0.04, 1.5, 2.6, sd * 1.81, 0.35, 0.1, GLASS);
+        cb.box(0.9, 1.5, 0.04, sd * 1.25, 0.35, -1.61, GLASS);
+      }
+      for (let k = 0; k < 4; k++) {
+        const g = 0.08 + k * 0.06;
+        cb.box(3.5 + g * 2, 3.3 + g * 2, 0.16, 0, -0.02, -1.72 - k * 0.2, k % 2 ? 0x2c3137 : 0x3b4148);
+      }
+      cb.box(3.9, 3.6, 0.14, 0, 0, -2.6, 0x23282d); // the bumper frame on the door
+      cb.box(3.8, 0.25, 3.8, 0, 1.82, -0.35, STEEL); // canopy
+      cb.box(3.6, 0.3, 0.12, 0, -1.55, 1.62, 0x6b7279);
       this.bridgeCab = instanced(cb.geometry(), M.vehicle, n, { name: 'bridge-cab' });
+      // The lift column: two rams in sleeves, a cross-beam under the tunnel.
       const lb = new Batch();
-      for (const s of [-0.45, 0.45]) lb.box(0.35, 1, 0.35, s, 0.5, 0, 0x8d949c);
-      lb.box(1.4, 0.15, 0.5, 0, 0.98, 0, 0x5c6168);
+      for (const sd of [-0.55, 0.55]) {
+        lb.cyl(0.16, 0.16, 1, sd, 0, 0, 0xb9bfc5, 8);
+        lb.box(0.42, 0.45, 0.42, sd, 0.22, 0, STEEL);
+      }
+      lb.box(1.7, 0.18, 0.55, 0, 0.97, 0, 0x5c6168);
       this.bridgeLeg = instanced(lb.geometry(), M.vehicle, n, { name: 'bridge-leg' });
+      // The bogie: a chassis, four wheels, and the drive box between them.
       const bb = new Batch();
-      bb.box(3.0, 0.4, 1.2, 0, 0.75, 0, 0x5c6168);
-      for (const s of [-1.1, 1.1]) {
-        bb.cyl(0.5, 0.5, 0.4, s, 0.5, 0, 0x17191c, 10, { matrix: trse(s, 0.5, 0, 0, 0, Math.PI / 2) });
+      bb.box(2.9, 0.42, 1.5, 0, 0.78, 0, 0x5c6168);
+      bb.box(1.0, 0.6, 1.1, 0, 1.2, 0, 0x4a5056);
+      for (const sx of [-1.15, 1.15]) {
+        for (const sz of [-0.48, 0.48]) {
+          bb.cyl(0.46, 0.46, 0.34, sx, 0.46, sz, 0x17191c, 12, { matrix: trse(sx, 0.46, sz, 0, 0, Math.PI / 2) });
+        }
       }
       this.bridgeBogie = instanced(bb.geometry(), M.vehicle, n, { name: 'bridge-bogie' });
-      this.group.add(this.bridgeTunnel, this.bridgeCab, this.bridgeLeg, this.bridgeBogie);
+      this.group.add(this.bridgeTunnel, this.bridgeTunnelB, this.bridgeTunnelC, this.bridgeCollar, this.bridgeCab, this.bridgeLeg, this.bridgeBogie);
       for (const b of this.bridges) this.poseBridge(b);
-      for (const m of [this.bridgeTunnel, this.bridgeCab, this.bridgeLeg, this.bridgeBogie]) m.instanceMatrix.needsUpdate = true;
+      for (const m of this.bridgeParts()) m.instanceMatrix.needsUpdate = true;
     }
     /*
      * Culling. The vehicles move, so their instances' own bounds are no use;
@@ -1458,7 +1685,7 @@ export class Apron {
       const z1 = Math.max(r.z1, t.z1) + 60;
       const sphere = new THREE.Sphere(new THREE.Vector3((x0 + x1) / 2, ELEV + 5, (z0 + z1) / 2), Math.hypot(x1 - x0, z1 - z0) / 2);
       const all = Object.values(this.meshes);
-      if (this.bridgeTunnel) all.push(this.bridgeTunnel, this.bridgeCab, this.bridgeLeg, this.bridgeBogie);
+      if (this.bridgeTunnel) all.push(...this.bridgeParts());
       for (const m of all) {
         m.boundingSphere = sphere.clone();
         m.frustumCulled = true;
@@ -1791,7 +2018,9 @@ export class Apron {
     const night = !!(weather && (weather.isNight || (weather.cond && weather.cond.cloud > 0.8)));
     if (night !== this.night) {
       this.night = night;
-      if (this.glassMat) this.glassMat.emissiveIntensity = night ? 0.9 : 0;
+      if (this.glassMat) this.glassMat.emissiveIntensity = night ? 1.0 : 0;
+      if (this.lettersMat) this.lettersMat.emissiveIntensity = night ? 1.25 : 0.3;
+      if (this.lettersHalo) this.lettersHalo.visible = night;
       if (this.boardMat) this.boardMat.emissiveIntensity = night ? 1.0 : 0.2;
       if (this.mats && this.mats.wall) this.mats.wall.emissiveIntensity = night ? 1.1 : 0;
     }
@@ -1832,7 +2061,7 @@ export class Apron {
       }
       if (b.dirty && this.bridgeTunnel) {
         this.poseBridge(b);
-        for (const m of [this.bridgeTunnel, this.bridgeCab, this.bridgeLeg, this.bridgeBogie]) m.instanceMatrix.needsUpdate = true;
+        for (const m of this.bridgeParts()) m.instanceMatrix.needsUpdate = true;
       }
     }
   }

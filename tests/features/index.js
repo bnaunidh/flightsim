@@ -10,6 +10,7 @@
 import { check as aircrew } from './aircrew.browser.js';
 import { check as airFuel } from './air-fuel.browser.js';
 import { check as airport } from './airport.browser.js';
+import { check as airportLook } from './airport-look.browser.js';
 import { check as boatPlaytest } from './boat-playtest.browser.js';
 import { check as brace } from './brace.browser.js';
 import { check as carPlaytest } from './car-playtest.browser.js';
@@ -37,6 +38,7 @@ import { check as controllers } from './controllers.browser.js';
 import { check as maps } from './maps.browser.js';
 import { check as menus } from './menus.browser.js';
 import { check as hangar } from './hangar.browser.js';
+import { check as realModels } from './real-models.browser.js';
 import { check as uiPolish } from './ui-polish.browser.js';
 import { check as multiplayer } from './multiplayer.browser.js';
 import { check as multiplayerList2 } from './multiplayer-list2.browser.js';
@@ -78,6 +80,7 @@ import { check as cams } from './cams.browser.js';
 
 export const CHECKS = [
   { id: 'airport', check: airport },
+  { id: 'airport-look', check: airportLook },
   { id: 'boat-playtest', check: boatPlaytest },
   { id: 'brace', check: brace },
   { id: 'car-playtest', check: carPlaytest },
@@ -125,6 +128,8 @@ export const CHECKS = [
   { id: 'menus', check: menus },
   // After menus: the organised hangar — shelves, search, sort, filters, favourites, recently flown, New.
   { id: 'hangar', check: hangar },
+  // After the hangar: the real airliner models — worn when picked, off from the seat and in a crash, on the podium, offline, Low's cost.
+  { id: 'real-models', check: realModels },
   // After menus: the deck — the start screen's and the HUD's glass, radius, motion and touch sizes, and html.fx-low on Low.
   { id: 'ui-polish', check: uiPolish },
   // After menus: every way of turning sound off, and that it stays off (nothing played out loud).

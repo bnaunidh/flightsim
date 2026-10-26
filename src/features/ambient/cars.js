@@ -24,6 +24,7 @@ import { Batch, instanced } from '../../world/airport-kit.js';
 import { fireEngineGeometry } from '../../world/airport-vehicles.js';
 import { sampleLane, signalGreen } from './lanes.js';
 import { makeRandom } from '../../core/noise.js';
+import { wearRealVehicle } from '../../aircraft/real-models.js';
 
 /** Metres: the real shape up to here. */
 export const CAR_NEAR = 400;
@@ -201,6 +202,8 @@ export class CarLayer {
     for (const [kind, n] of byKind) {
       const geo = kind === 'firetruck' ? fireEngineGeometry() : carShape(kind, KINDS[kind].colour);
       const m = instanced(geo, this.mat, n, { cast: this.shadows, receive: false, name: `ambient-${kind}` });
+      // REAL MODELS: the road traffic in its real shapes, when that file is here (aircraft/real-models.js).
+      wearRealVehicle(m, kind);
       m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
       m.instanceColor.setUsage(THREE.DynamicDrawUsage);
       m.frustumCulled = false;
