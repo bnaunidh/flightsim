@@ -538,7 +538,7 @@ export function buy(p, aircraftId) {
  *    or: '<64 hex>': { rank: 'founder' | 'admin' | 'mod', note: '<why>' }
  */
 export const CODES = Object.freeze({
-  // Nothing shipped. The owner adds their own entries here, privately.
+  '937c639df2646d6f81627904d91595934673c6528c61a5225a236b566498e9ed': { credits: 2000, note: 'Thanks for flying!' },
 });
 
 /**
