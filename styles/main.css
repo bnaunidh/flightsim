@@ -1129,6 +1129,9 @@ button.primary.big { width: 100%; padding: 14px; font-size: 16px; margin-top: 10
 .mission-sub { font-size: 12px; color: var(--text-dim); }
 .mission-card p { margin: 0; font-size: 14px; line-height: 1.45; color: #d3dfef; }
 .mission-learn { font-size: 12.5px !important; color: var(--accent) !important; }
+/* "Recommended aircraft: …" (game/mission-aircraft.js). */
+.mission-card .mission-craft { font-size: 12.5px; color: var(--text-dim); }
+.mission-craft b { color: #eaf1fb; font-weight: 700; }
 .mission-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .mission-best { font-size: 12px; color: var(--text-dim); }
 .mission-best .ok { color: var(--good); }

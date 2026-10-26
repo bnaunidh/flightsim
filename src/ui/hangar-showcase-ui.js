@@ -28,6 +28,7 @@
 
 import { AIRCRAFT, performanceFor } from '../aircraft/types.js';
 import { LIVERIES, schemeFor, liveriesFor } from '../aircraft/liveries.js';
+import { fontStack, faceFor } from '../render/airline-fonts.js';
 import * as Prog from '../game/progression.js';
 import { icon } from './icons.js';
 import {
@@ -479,6 +480,7 @@ export function installHangarShowcase(menus, screen, kit) {
     delete pn.dataset.chosen;
     pn.classList.remove('is-preview');
     pn.textContent = cur.name;
+    letterPaintName(pn, cur.name);
 
     // The lock badge on the stage, over the silhouette.
     const lock = $('[data-hs-lock]');
@@ -813,9 +815,11 @@ export function installHangarShowcase(menus, screen, kit) {
     if (on && on.dataset.hsSwname) {
       if (line.dataset.chosen == null) line.dataset.chosen = line.textContent;
       line.textContent = on.dataset.hsSwname;
+      letterPaintName(line, line.textContent);
       line.classList.add('is-preview');
     } else if (line.dataset.chosen != null) {
       line.textContent = line.dataset.chosen;
+      letterPaintName(line, line.textContent);
       delete line.dataset.chosen;
       line.classList.remove('is-preview');
     }
@@ -971,4 +975,21 @@ export function installHangarShowcase(menus, screen, kit) {
 
   ui.rebuildOrder();
   return ui;
+}
+
+/**
+ * The paint's name under the swatches, in that airline's own lettering
+ * (aircraft/liveries.js style.titleFont, render/airline-fonts.js): the
+ * hangar says "Desert Pearl Airlines" in the serif its fuselage wears.
+ * The house colours, and a scheme with no face, keep the interface's font.
+ */
+function letterPaintName(el, name) {
+  if (!el || !el.style) return;
+  const l = LIVERIES.find((x) => x.name === name);
+  const f = l && l.style && l.style.titleFont;
+  const face = f ? faceFor(f) : null;
+  el.style.fontFamily = face ? fontStack(f) : '';
+  el.style.fontStyle = face && face.style === 'italic' ? 'italic' : '';
+  el.style.fontWeight = face ? String(face.weight) : '';
+  el.dataset.font = face ? face.family : '';
 }

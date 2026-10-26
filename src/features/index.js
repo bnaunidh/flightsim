@@ -51,6 +51,9 @@ import './traffic.js';
 // water, helicopters and light aeroplanes in the sky (solid sky bodies, so the minimap draws them),
 // and airport traffic asked of traffic.js under its own runway rules.
 import './ambient.js';
+// After ambient: life on the airfield — ramp crews, passengers at the stairs, the terminal kerb, base guards,
+// and service vehicles on an apron loop (life/plan.js), in free flight and missions.
+import './world-life.js';
 // After ambient: the emergency scene (a cordon, crews and helicopters round an incident), raised by
 // a mission's `scenes` or by any feature; it thins the ambient population round itself.
 import './emergency-scene.js';

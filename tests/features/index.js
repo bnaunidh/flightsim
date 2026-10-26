@@ -70,6 +70,8 @@ import { check as loadingScreens } from './loading-screens.browser.js';
 import { check as skins } from './skins.browser.js';
 import { check as crashSweep } from './crash-sweep.browser.js';
 import { check as crashFreeze } from './crash-freeze.browser.js';
+import { check as replayQa } from './replay-qa.browser.js';
+import { check as missionAircraft } from './mission-aircraft.browser.js';
 import { check as birdStrike } from './bird-strike.browser.js';
 import { check as walkAway } from './walk-away.browser.js';
 import { check as landingZone } from './landing-zone.browser.js';
@@ -92,6 +94,8 @@ export const CHECKS = [
   { id: 'crash-sweep', check: crashSweep },
   // After the sweep: the crash FRAME itself — no shader recompiles, the zone survey built ahead, under 50 ms.
   { id: 'crash-freeze', check: crashFreeze },
+  // After crash-freeze: the instant replay attacked — every way of crashing, flown in, on six types, and its bar on this screen.
+  { id: 'replay-qa', check: replayQa },
   // The bird strike's flock: in first, the hit under half a second later, once.
   { id: 'bird-strike', check: birdStrike },
   // Out on foot, the empty aeroplane's crash is news, not a reset.
@@ -125,6 +129,8 @@ export const CHECKS = [
   { id: 'maps', check: maps },
   // After maps: the missions spread over them — each moved one starts on its island, three flown to the end.
   { id: 'mission-maps', check: missionMaps },
+  // After mission-maps: each mission in the aircraft it is written for, and the card that says which.
+  { id: 'mission-aircraft', check: missionAircraft },
   { id: 'menus', check: menus },
   // After menus: the organised hangar — shelves, search, sort, filters, favourites, recently flown, New.
   { id: 'hangar', check: hangar },

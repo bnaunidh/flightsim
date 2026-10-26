@@ -133,6 +133,34 @@ function cloneNode(source,instances) {
   copy.renderOrder=source.renderOrder;copy.matrixAutoUpdate=false;copy.matrix.copy(source.matrix);
   for(const child of source.children)copy.add(cloneNode(child,instances));return copy;
 }
+/*
+ * The crash body's contact points: the drawing's every vertex was one, and an
+ * airliner has thousands — an A380 sliding on its own body after a wing-tip
+ * crash (Reduce flashing on, the default: breakup.js leaves the pack's
+ * aeroplanes their own body then) cost 110-175 ms a frame, five terrain
+ * samples a point, four steps a frame (the replay QA, 2026-10-25). Only the
+ * outside of the shape can touch the ground, so it is kept as: the extreme
+ * point in each of 98 directions (the nose, the tail, the wing tips, the fin
+ * top, the belly's lowest) and one point, the outermost, in each cell of a
+ * coarse grid over the box, so a belly or a wing lying flat still rests on
+ * many. A few hundred points; the box (and so the centre and the inertia,
+ * worked out before this) is the same, because its extremes are kept.
+ */
+const SUPPORT_MAX=320,SUPPORT_DIRS=(()=>{const out=[],n=98,g=Math.PI*(3-Math.sqrt(5));
+  for(let i=0;i<n;i++){const y=1-(i+.5)*2/n,r=Math.sqrt(1-y*y),a=i*g;out.push(new THREE.Vector3(Math.cos(a)*r,y,Math.sin(a)*r));}return out;})();
+export function supportPoints(points,cells=9) {
+  if(points.length<=SUPPORT_MAX)return points;
+  const keep=new Set();
+  for(const d of SUPPORT_DIRS){let best=-1,bd=-Infinity;for(let i=0;i<points.length;i++){const v=points[i].dot(d);if(v>bd){bd=v;best=i;}}if(best>=0)keep.add(best);}
+  const box=new THREE.Box3().setFromPoints(points),size=box.getSize(new THREE.Vector3()),c=box.getCenter(new THREE.Vector3());
+  const cell=Math.max(size.x,size.y,size.z)/cells||1,grid=new Map();
+  for(let i=0;i<points.length;i++){const p=points[i];
+    const k=`${Math.floor((p.x-box.min.x)/cell)},${Math.floor((p.y-box.min.y)/cell)},${Math.floor((p.z-box.min.z)/cell)}`;
+    const far=(p.x-c.x)**2/(size.x*size.x+1e-6)+(p.y-c.y)**2/(size.y*size.y+1e-6)+(p.z-c.z)**2/(size.z*size.z+1e-6);
+    const g=grid.get(k);if(!g||far>g.far)grid.set(k,{i,far});}
+  for(const g of grid.values())keep.add(g.i);
+  return [...keep].sort((a,b)=>a-b).slice(0,SUPPORT_MAX*2).map(i=>points[i]);
+}
 function boxInertia(points,mass) {
   const size=new THREE.Box3().setFromPoints(points).getSize(new THREE.Vector3());
   return new THREE.Vector3(size.y**2+size.z**2,size.x**2+size.z**2,size.x**2+size.y**2).multiplyScalar(mass/12).max(new THREE.Vector3(.001,.001,.001));
@@ -216,6 +244,7 @@ export function finishModel(model,{update=()=>{},reset=()=>{},dispose=()=>{}}={}
     if(!finiteV(center))throw new RangeError('Invalid local centre of mass.');
     points=points.map(p=>p.sub(center).multiplyScalar(opts.scale));
     const inertia=opts.inertia?vec(opts.inertia):boxInertia(points,opts.massKg);
+    points=supportPoints(points);
     const ground=createGroundBody({...opts,points,inertia,position:poseState?.position||center.clone().applyMatrix4(model.matrixWorld),
       quaternion:poseState?.quaternion||pose.quaternion,velocity:poseState?.velocity||vec(opts.worldVelocity),
       angularVelocity:poseState?.angularVelocity||vec(opts.worldAngularVelocity)});

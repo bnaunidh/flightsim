@@ -2208,6 +2208,40 @@ function preFrames() {
   return out;
 }
 
+/**
+ * The kept poses that really lead into the hit: newest first, back for as
+ * long as each is one flying step from the next (no aeroplane covers 80 m in
+ * a thirtieth of a second). recordPre forgets the ring on a jump between two
+ * kept poses, but not on one between the last kept pose and the hit itself:
+ * a crash on the very frame after a teleport — every staged crash (Dev mode's
+ * "Show me a crash" puts the aeroplane over a field and crashes it at once),
+ * a reset into the side of a hill — kept the poses from where it was before,
+ * and the replay flew the airframe a second and a half there, kilometres
+ * off, then jumped it to the wreck (the replay QA, 2026-10-25, R1).
+ *
+ * When nothing joins up, the pre-roll is the way it arrived: back along the
+ * velocity it hit with, in the attitude it hit in — which is exactly what a
+ * staged crash is, an aeroplane put in that pose at that speed.
+ */
+export function joinPre(frames, hitPos, hitQuat, vel) {
+  const JUMP = 80;
+  let from = frames.length;
+  let next = hitPos;
+  while (from > 0 && frames[from - 1].pos.distanceTo(next) <= JUMP) {
+    from--;
+    next = frames[from].pos;
+  }
+  const kept = frames.slice(from);
+  if (kept.length >= 2) return kept;
+  const out = [];
+  const n = Math.round(REPLAY.pre * REPLAY.hz);
+  for (let i = n; i >= 1; i--) {
+    const t = -i / REPLAY.hz;
+    out.push({ t, pos: hitPos.clone().addScaledVector(vel, t), quat: hitQuat.clone() });
+  }
+  return out;
+}
+
 /** The effects the replay records and plays again (the methods of BreakupFx). `later` is not one: its pop is recorded when it goes off. */
 const FX_RECORDED = ['sparks', 'dust', 'splash', 'bubbles', 'foam', 'pop', 'fire'];
 
@@ -2255,12 +2289,19 @@ function openRecording(sim, reason) {
   // The crash's seed: a fixed one when a test or a shared replay asks for it (sim.crashSeed), otherwise fresh.
   S.seed = sim.crashSeed != null ? sim.crashSeed >>> 0 : (Math.random() * 0x7fffffff) | 0;
   S.crashT = 0;
+  const hitPos = new THREE.Vector3();
+  const hitQuat = new THREE.Quaternion();
+  if (sim.model) modelPose(sim.model, hitPos, hitQuat);
+  else {
+    hitPos.copy(ac.pos);
+    hitQuat.copy(ac.quat);
+  }
   S.rec = {
     t0: S.clock,
     seed: S.seed,
     reason,
     model: sim.model,
-    pre: preFrames(),
+    pre: joinPre(preFrames(), hitPos, hitQuat, ac.vel),
     frames: [],
     tracks: [],
     fx: [],
@@ -2451,6 +2492,8 @@ export function startReplay(sim, fromDebrief = false) {
     wreckT: null,
     seeks: 0,
     quiet: false,
+    // Where the airframe lies in the live world: poseAt moves it, and closing early left it there (R2).
+    livePose: { pos: r.model.position.clone(), quat: r.model.quaternion.clone(), matrix: r.model.matrix.clone(), auto: r.model.matrixAutoUpdate },
   };
   const R = S.replay;
   // The live fire and smoke, and the game's wreck, are put aside for the duration.
@@ -2478,7 +2521,18 @@ export function endReplay(sim, showDebriefAgain = true) {
   if (!R) return;
   S.replay = null;
   showLabel(false);
-  if (R.model) R.model.visible = R.modelVisible;
+  if (R.model) {
+    R.model.visible = R.modelVisible;
+    // The airframe back where it lies (the replay posed it at whatever time it was closed on).
+    const L = R.livePose;
+    if (L) {
+      R.model.position.copy(L.pos);
+      R.model.quaternion.copy(L.quat);
+      if (!L.auto) R.model.matrix.copy(L.matrix);
+      R.model.matrixWorldNeedsUpdate = true;
+      R.model.updateMatrixWorld(true);
+    }
+  }
   // Pieces back where their bodies are.
   for (const p of S.pieces) {
     p.group.position.copy(p.body.pos);
@@ -3145,6 +3199,8 @@ export function breakupDebug() {
     clearZoneCache,
     ZONE_CACHE,
     breakModel: (model, type, hit) => breakModel(S.sim, model, type, hit),
+    flashMoments,
+    joinPre,
     putBack: (model) => putBack(model),
     trackNpc: (body, model) => trackNpc(body, model),
     spawnRaft: (x, z, yaw, L) => spawnRaft(S.sim, x, z, yaw, L),

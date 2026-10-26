@@ -17,10 +17,13 @@
  *     fence and the gate barrier are solid where they are drawn; the gate
  *     stand on the apron is open ground
  *   - the mission: on the flight list under 'events', borrows the snow map,
- *     starts on a stand at the base, and runs start to finish against the
- *     real step checks with a fake aeroplane — boarding (the walk, in
- *     scaled time), take-off, crossing, the ice landing, the taxi to the T,
- *     the handover walk — and its score lands in 0..100
+ *     flown in the C-17, starts on a stand at the base with room for its
+ *     wing, nose in to the buildings, and runs start to finish against the
+ *     real step checks with a fake aeroplane — boarding (the walk to the
+ *     foot of the cargo ramp, waiting there while it is up, then up it into
+ *     the hold), the pushback, the taxi to runway 09, take-off, crossing,
+ *     the ice landing, the taxi to the T, the handover walk out of the hold
+ *     and down the ramp — and its score lands in 0..100
  *   - the "braking action poor" note is said once when the wheels are on ice
  *   - the attribution: every SCP-based file carries the CC BY-SA credit, and
  *     the licence, the README and the credits screen say the content exists
@@ -238,11 +241,11 @@ ok('the terrain mesh is within the usual budget (≤ 120k vertices)', map.chunks
  * ================================================================== */
 
 const def = Missions.findMission('classd-transfer');
-ok('the Class-D transfer is on the flight missions list, under events, on the snow map, in the Courier',
-  def && Missions.missionsFor('flight').includes(def) && def.category === 'events' && def.map === 'nunatak' && def.aircraft === 'courier' && !def.military);
-ok('it has a briefing: a name, a blurb, what it teaches, a par time and six steps in order',
+ok('the Class-D transfer is on the flight missions list, under events, on the snow map, in the C-17 (the owner: "Class-D transfer -> C-17")',
+  def && Missions.missionsFor('flight').includes(def) && def.category === 'events' && def.map === 'nunatak' && def.aircraft === 'c17' && !def.military);
+ok('it has a briefing: a name, a blurb, what it teaches, a par time and eight steps in the order a departure from a stand goes — board, push back, taxi, take off',
   def && def.name && def.blurb.length > 80 && def.reward && def.parTime > 0
-  && def.steps.map((s) => s.id).join(',') === 'board,depart,cross,land,taxi,handover', def && def.steps.map((s) => s.id).join(','));
+  && def.steps.map((s) => s.id).join(',') === 'board,pushback,taxi-out,depart,cross,land,gate,handover', def && def.steps.map((s) => s.id).join(','));
 ok('every step tells the pilot what to do and gives a hint', def.steps.every((s) => s.text && s.hint));
 
 {
@@ -251,18 +254,24 @@ ok('every step tells the pilot what to do and gives a hint', def.steps.every((s)
   const lay = Layout.airportLayout();
   const spawn = def.spawn;
   const sp = spawn.pos;
-  ok('the mission starts on the base\'s first stand, on the levelled airfield', lay.stands.length > 0 && Math.hypot(sp.x - lay.stands[0].x, sp.z - lay.stands[0].z) < 1 && Math.abs(T.heightAt(sp.x, sp.z) - T.AIRPORT.elev) < 0.3,
-    `${sp.x.toFixed(0)},${sp.z.toFixed(0)} heading ${spawn.headingDeg}`);
+  const tst = Site.transferStand();
+  ok('the mission starts on a stand at the base, on the levelled airfield, nose in to the buildings (the stand\'s own heading)', !!tst && Math.hypot(sp.x - tst.x, sp.z - tst.z) < 1 && spawn.headingDeg === tst.headingDeg && Math.abs(T.heightAt(sp.x, sp.z) - T.AIRPORT.elev) < 0.3,
+    `${sp.x.toFixed(0)},${sp.z.toFixed(0)} heading ${spawn.headingDeg}, stand ${tst && tst.number}`);
+  // The C-17's wing (51.75 m) is wider than a stand (44 m): the one it starts on has empty stands either side of it.
+  const clash = lay.stands.filter((q) => q !== tst && Layout.standTaken(q) && Math.hypot(q.x - tst.x, q.z - tst.z) < 26 + 4 + (q.maxSpan || 40) / 2);
+  ok('…one whose neighbours\' aeroplanes are clear of the C-17\'s wing tips', !!tst && !Layout.standTaken(tst) && clash.length === 0, clash.map((q) => q.number).join(', ') || `stand ${tst && tst.number}`);
 
-  // A fake aeroplane and a fake sim, enough for the checks and the feature.
+  // A fake aeroplane and a fake sim, enough for the checks and the feature: a C-17, with its cargo ramp (fleet/extra/c17.js userData.cargo).
   const ac = { pos: new THREE.Vector3(sp.x, T.AIRPORT.elev, sp.z), heading: spawn.headingDeg, groundSpeed: 0, onGround: true, groundTime: 5, airborneTime: 0, agl: 0, crashed: false };
   const said = [];
-  const sim = { ...b.sim, aircraft: ac, hud: { notify: (t) => said.push(t) }, notify: (t) => said.push(t), speak: (t) => said.push(`radio: ${t}`), audio: null, state: 'flying' };
+  let rampAmt = 0;
+  const cargo = { amount: () => rampAmt, open() { rampAmt = 1; }, close() { rampAmt = 0; }, get isOpen() { return rampAmt > 0.97; } };
+  const sim = { ...b.sim, aircraft: ac, aircraftType: { id: 'c17', cargoRamp: true }, model: { userData: { cargo } }, hud: { notify: (t) => said.push(t) }, notify: (t) => said.push(t), speak: (t) => said.push(`radio: ${t}`), audio: null, state: 'flying' };
   const ext = Ext.extensions().find((e) => e.id === 'scp-site');
   ext.install(sim);
   ext.startMode(sim, 'mission', { id: def.id });
   let elapsed = 0;
-  const ctx = { sim, ac, data: {}, runner: { stepIndex: 0, elapsed: 0 }, get elapsed() { return elapsed; } };
+  const ctx = { sim, ac, data: {}, runner: { stepIndex: 0, elapsed: 0, stepElapsed: 0 }, get elapsed() { return elapsed; } };
   const run = (seconds, dt = 1 / 20) => {
     for (let t = 0; t < seconds; t += dt) {
       elapsed += dt;
@@ -275,22 +284,32 @@ ok('every step tells the pilot what to do and gives a hint', def.steps.every((s)
   let st = Site.transferState();
   ok('onStart: six people step out of the van — two escort, four Class-D in orange', st && st.people.length === 6 && st.people.filter((p) => p.kind === 'classd').length === 4 && st.people.every((p) => p.p.name === `person:${p.kind}`),
     st && st.people.map((p) => p.kind).join(' '));
-  ok('board: not done before anyone has reached the door', step('board').check(ctx) === false);
-  const far = Site.transferState().people.map((p) => Math.hypot(p.x - ac.pos.x, p.z - ac.pos.z));
+  const gv = Site.groundVehicles();
+  const ramp0 = Site.rampOf(sim);
+  ok('the van is parked off the C-17\'s left side, level with the foot of its ramp, and not in the way of the wing', !!gv.van && !!ramp0 && Math.hypot(gv.van.x - ramp0.foot.x, gv.van.z - ramp0.foot.z) < 40 && Math.hypot(gv.van.x - ac.pos.x, gv.van.z - ac.pos.z) > 26,
+    gv.van ? `${Math.hypot(gv.van.x - ramp0.foot.x, gv.van.z - ramp0.foot.z).toFixed(0)} m from the ramp` : 'no van');
+  ok('board: not done before anyone has reached the ramp', step('board').check(ctx) === false);
+  const far = Site.transferState().people.map((p) => Math.hypot(p.x - ramp0.foot.x, p.z - ramp0.foot.z));
   run(8);
-  const nearer = Site.transferState().people.map((p) => Math.hypot(p.x - ac.pos.x, p.z - ac.pos.z));
-  ok('the walk: everybody is closer to the aeroplane after eight seconds, at a walking pace', nearer.every((d, i) => d < far[i] - 6 && d > far[i] - 16), `${far[0].toFixed(0)} → ${nearer[0].toFixed(0)} m`);
+  const nearer = Site.transferState().people.map((p) => Math.hypot(p.x - ramp0.foot.x, p.z - ramp0.foot.z));
+  ok('the walk: everybody is closer to the ramp after eight seconds, at a walking pace', nearer.every((d, i) => d < far[i] - 6 && d > far[i] - 16), `${far[0].toFixed(0)} → ${nearer[0].toFixed(0)} m`);
   // Nobody walks up to a moving aeroplane.
   ac.groundSpeed = 4;
   const before = Site.transferState().people.map((p) => p.x + p.z);
   run(2);
   ok('…and they stop while the aeroplane is rolling', Site.transferState().people.every((p, i) => Math.abs(p.x + p.z - before[i]) < 0.01));
   ac.groundSpeed = 0;
+  // The ramp is still up: they walk to its foot and wait there.
+  run(40);
+  const waiting = Site.transferState();
+  ok('with the ramp up they wait at its foot: nobody climbs it, nobody goes aboard', !!waiting && waiting.people.every((w) => !w.done && !w.climb && w.p.visible) && Math.hypot(waiting.people[0].x - ramp0.foot.x, waiting.people[0].z - ramp0.foot.z) < 1,
+    waiting ? waiting.people.map((w) => Math.hypot(w.x - ramp0.foot.x, w.z - ramp0.foot.z).toFixed(1)).join(' ') : 'no walk');
+  ok('…and the step is not done', step('board').check(ctx) === false);
+  // Ramp down (6, or RAMP): up it they go.
+  cargo.open();
   let boarded = false;
-  // The route: nobody walks through the de-icing truck or the aeroplane, and
-  // nobody goes aboard (vanishes) anywhere but at the door.
-  const gv = Site.groundVehicles();
-  const door0 = Site.doorPointOf(ac);
+  // The route: nobody walks through the de-icing truck or the aeroplane but up its ramp, and
+  // nobody goes aboard (vanishes) anywhere but inside the hold, at the floor's height.
   const h0 = (spawn.headingDeg || 0) * Math.PI / 180;
   const local = (x, z, cx, cz) => {
     const dx = x - cx;
@@ -300,6 +319,7 @@ ok('every step tells the pilot what to do and gives a hint', def.steps.every((s)
   };
   const clashes = [];
   const vanishedAt = [];
+  let highest = 0;
   const seen = new Set();
   for (let i = 0; i < 1800 && !boarded; i++) {
     run(0.1);
@@ -307,27 +327,57 @@ ok('every step tells the pilot what to do and gives a hint', def.steps.every((s)
     if (T0) {
       for (const w of T0.people) {
         const a = local(w.x, w.z, ac.pos.x, ac.pos.z);
-        if (Math.abs(a.across) < 1.0 && a.along > -5.2 && a.along < 3.2) clashes.push(`#${w.i} in the fuselage`);
+        // In the fuselage (3.5 m either side of the centre line, nose to tail) other than on the ramp's line and in the hold.
+        // Behind the hinge (12.5 m aft) is the ramp and the open door, nothing to walk into.
+        const onRampLine = Math.abs(a.across) < 1.4 && a.along < -6;
+        if (!w.done && Math.abs(a.across) < 3.5 && a.along > -12.5 && a.along < 22 && !onRampLine) clashes.push(`#${w.i} in the fuselage`);
         if (gv.deicer) {
           const t = local(w.x, w.z, gv.deicer.x, gv.deicer.z);
           if (Math.abs(t.across) < 1.5 && Math.abs(t.along) < 4) clashes.push(`#${w.i} in the de-icer`);
         }
-        if (w.done && !seen.has(w.i)) { seen.add(w.i); vanishedAt.push(Math.hypot(w.x - door0.x, w.z - door0.z)); }
+        if (!w.done) highest = Math.max(highest, w.p.position.y - ramp0.ground);
+        if (w.done && !seen.has(w.i)) { seen.add(w.i); vanishedAt.push({ d: Math.hypot(w.x - ramp0.inside.x, w.z - ramp0.inside.z), y: w.p.position.y - ramp0.ground }); }
       }
     }
     boarded = step('board').check(ctx);
   }
-  ok('board: completes once all six have reached the door, and they are gone aboard', boarded && ctx.data.boarded && !Site.transferState(), `${elapsed.toFixed(0)} s`);
-  ok('…walking round the aeroplane and the de-icing truck, not through them', clashes.length === 0, clashes.slice(0, 4).join('; ') || `van at ${gv.van && gv.van.x.toFixed(0)},${gv.van && gv.van.z.toFixed(0)}`);
-  ok('…each goes aboard at the door, in turn (no one vanishes short of it)', vanishedAt.length === 6 && vanishedAt.every((d) => d < 1.6), vanishedAt.map((d) => d.toFixed(1)).join(' '));
-  ok('…with a word to the pilot', said.some((t) => /aboard/i.test(t)));
+  ok('board: completes once all six have walked up the ramp, and they are gone aboard', boarded && ctx.data.boarded && !Site.transferState(), `${elapsed.toFixed(0)} s`);
+  ok('…walking round the aeroplane and the de-icing truck, not through them, and up the ramp on its centre line', clashes.length === 0, clashes.slice(0, 4).join('; ') || `van at ${gv.van && gv.van.x.toFixed(0)},${gv.van && gv.van.z.toFixed(0)}`);
+  ok('…each goes aboard INSIDE the hold, up on the cargo floor (no one vanishes at the foot of the ramp)', vanishedAt.length === 6 && vanishedAt.every((v) => v.d < 0.5 && Math.abs(v.y - ramp0.rise) < 0.05), vanishedAt.map((v) => `${v.d.toFixed(1)} m, ${v.y.toFixed(2)} up`).join(' · '));
+  ok('…climbing the ramp to the floor\'s height (2.2 m) as they go', Math.abs(highest - ramp0.rise) < 0.05 && ramp0.rise > 2, `${highest.toFixed(2)} m`);
+  ok('…the loadmaster raises the ramp behind them, with a word to the pilot', rampAmt === 0 && said.some((t) => /aboard/i.test(t) && /ramp/i.test(t)), said.slice(-2).join(' | '));
 
+  // Push back: a finished push (airport-services' own count), or the aeroplane well off its stand.
   ctx.runner.stepIndex = 1;
+  const AS = await import(SRC + 'features/airport-services.js');
+  // Into the step however the boarding ended (the Dev panel's skip mid-walk): the tug's hold goes, and the walk.
+  AS.setServicesHold('test hold');
+  step('pushback').enter(ctx);
+  ok('pushback: entering it lifts the tug\'s hold (a skipped boarding left every push refused)', AS.__airportServices.S.hold == null && !Site.transferState(), String(AS.__airportServices.S.hold));
+  ok('pushback: not done on the stand', step('pushback').check(ctx) === false);
+  AS.__airportServices.S.pushes = (AS.__airportServices.S.pushes || 0) + 1;
+  ok('pushback: done once the tug has finished a push', step('pushback').check(ctx) === true);
+  AS.__airportServices.S.pushes -= 1;
+  ac.pos.set(tst.x + 30, T.AIRPORT.elev, tst.z + 60);
+  ok('…or once the aeroplane is well clear of its stand on the ground, however it got there', step('pushback').check(ctx) === true);
+
+  ctx.runner.stepIndex = 2;
+  ok('taxi-out: not done on the apron', step('taxi-out').check(ctx) === false);
+  // The arrow: onto the runway by the taxiway nearest the stand (A2 at Caribou), not the long way past the hangar.
+  const entry = step('taxi-out').target(ctx);
+  ok('taxi-out: the arrow points at the runway where the nearest taxiway meets it', T.isOnAnyRunway(entry.x, entry.z, 0) && Math.abs(entry.x - tst.x) < 200, `${entry.x.toFixed(0)},${entry.z.toFixed(0)} (stand at x ${tst.x.toFixed(0)})`);
+  ac.pos.set(entry.x + 30, T.AIRPORT.elev, entry.z);
+  ac.heading = 180;
+  ok('taxi-out: on the runway but across it is not lined up', step('taxi-out').check(ctx) === false);
+  ac.heading = 92;
+  ok('taxi-out: done on runway 09, lined up facing east', step('taxi-out').check(ctx) === true);
+
+  ctx.runner.stepIndex = 3;
   ok('depart: not done on the ground', step('depart').check(ctx) === false);
   ac.onGround = false; ac.airborneTime = 5; ac.agl = 80;
   ok('depart: done once airborne and climbing', step('depart').check(ctx) === true);
 
-  ctx.runner.stepIndex = 2;
+  ctx.runner.stepIndex = 4;
   ac.pos.set(1500, 400, -800); ac.agl = 350;
   ok('cross: not done half way', step('cross').check(ctx) === false);
   ac.pos.set(map.scp.strip.cx - 2000, 400, map.scp.strip.cz + 300); ac.agl = 340;
@@ -335,7 +385,7 @@ ok('every step tells the pilot what to do and gives a hint', def.steps.every((s)
   ac.pos.set(map.scp.strip.cx - 1500, 80, map.scp.strip.cz); ac.agl = 30;
   ok('cross: done for a low arrival too (it asked for 400 ft and a low approach was stuck here for good)', step('cross').check(ctx) === true);
 
-  ctx.runner.stepIndex = 3;
+  ctx.runner.stepIndex = 5;
   const zone = Scp.stripZone();
   ok('the landing box is the strip plus the usual shoulders, at the strip\'s level', zone && zone.elev === 50 && zone.halfLength === map.scp.strip.halfLen + 60 && zone.halfWidth === map.scp.strip.halfWidth + 15);
   // Down on the grass beside the strip: never.
@@ -354,7 +404,7 @@ ok('every step tells the pilot what to do and gives a hint', def.steps.every((s)
   run(1);
   ok('"braking action poor" is said once when the wheels are on the ice', said.filter((t) => /braking action poor/i.test(t)).length === 1, said.join(' | '));
 
-  ctx.runner.stepIndex = 4;
+  ctx.runner.stepIndex = 6;
   // The roll ran out half way down the strip: that is where the stop is read.
   ac.groundSpeed = 1; ac.pos.set(map.scp.strip.cx + 300, 50, map.scp.strip.cz);
   def.tick(ctx, 0.05);
@@ -370,16 +420,29 @@ ok('every step tells the pilot what to do and gives a hint', def.steps.every((s)
     ctx.data.iceStop = keep;
   }
   ac.groundSpeed = 6;
-  ok('taxi: not done while rolling', step('taxi').check(ctx) === false);
+  ok('gate: not done while rolling', step('gate').check(ctx) === false);
   ac.groundSpeed = 0; ac.groundTime = 4; ac.pos.set(map.scp.gate.x + 3, 50, map.scp.gate.z - 2); ac.heading = 0;
-  ok('taxi: done stopped on the T', step('taxi').check(ctx) === true);
+  ok('gate: done stopped on the T', step('gate').check(ctx) === true);
 
-  ctx.runner.stepIndex = 5;
+  ctx.runner.stepIndex = 7;
   const info2 = Site.siteInfo();
   // An aeroplane parked at the edge of the T's circle, off to the west: the
   // straight line from its door to the blast door would cross the fence.
   ac.pos.set(map.scp.gate.x - 22, 50, map.scp.gate.z + 8); ac.heading = 20;
-  ok('handover: the first ask starts the walk to the blast door', step('handover').check(ctx) === false && ctx.data.unloading && Site.transferState() && Site.transferState().label === 'handover');
+  ok('handover: with the ramp up nobody gets out', step('handover').check(ctx) === false && !ctx.data.unloading && !Site.transferState());
+  cargo.open();
+  ok('handover: ramp down, the first ask starts the walk to the blast door', step('handover').check(ctx) === false && ctx.data.unloading && Site.transferState() && Site.transferState().label === 'handover');
+  {
+    // Out of the hold, one at a time, and down the ramp.
+    const R1 = Site.rampOf(sim);
+    const W = Site.transferState();
+    const inHold = W.people.every((w) => !w.p.visible && Math.hypot(w.x - R1.inside.x, w.z - R1.inside.z) < 0.01);
+    run(1.0);
+    const out1 = W.people.filter((w) => w.p.visible).length;
+    run(2.6);
+    const onRamp = W.people.filter((w) => w.p.visible && w.p.position.y > R1.ground + 0.2).length;
+    ok('…they come out of the hold one after another and walk down the ramp', inHold && out1 === 1 && onRamp >= 1, `${out1} out after 1 s, ${onRamp} on the ramp`);
+  }
   let done = false;
   const arm = (() => { let a = null; b.ext.traverse((o) => { if (o.name === 'scp-gate-arm') a = o; }); return a; })();
   let armUp = 0;

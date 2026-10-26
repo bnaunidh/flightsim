@@ -66,6 +66,31 @@ const idleRpm = () => (Number.isFinite(SPEC.idleRpm) ? SPEC.idleRpm : 0.18);
 export const DAMAGE_LEAN = 0.087;
 const G = 9.80665;
 const KTS = 1.94384; // m/s → knots
+/**
+ * The parking brake HOLDS. The tyre's brake is a viscous force, 3000 N·s/m a
+ * wheel below its grip (settleOnGear), which holds nothing at zero speed: an
+ * aeroplane at idle crept until that force grew to match its idle thrust —
+ * 1.7 m/s on the Vanguard, and a four-engined C-17 parked on its stand at
+ * Caribou crept 2 m/s and rising, into the building in front of it, while its
+ * passengers walked out to board (the Class-D transfer, 2026-10-25). With the
+ * parking brake set the slip gain is this many seconds a metre of the wheel's
+ * load instead (never less than the 3000): the creep is millimetres a second
+ * and the tyres take the idle thrust at the ground, which is what the spawn
+ * pose was balanced for. Power still releases it.
+ */
+const PARK_GAIN = 5;
+/**
+ * A tyre's cornering stiffness grows with the load on it; it was 2600 N·s/m a
+ * wheel whatever stood on it, which is a light aeroplane's. Under an airliner
+ * that is nothing: the tyres slid sideways in every turn and, nose wheel hard
+ * over at walking pace, an A320 turned on a 97 m circle, a C-17 on 205 m and
+ * an A380 on 265 m (real ones: about 22, 27 and 40 m) — none of them could
+ * taxi round a corner onto a taxiway (measured 2026-10-25, the Class-D
+ * transfer's C-17 leaving its stand). Now it is this many seconds a metre of
+ * the wheel's load, never less than the 2600: the light aeroplanes, whose
+ * wheels carry under 4,300 N, are exactly as they were.
+ */
+const SIDE_GAIN = 0.6;
 const FPM = 196.85; // m/s → feet per minute
 const FT = 3.28084;
 
@@ -1951,12 +1976,18 @@ export class Aircraft {
         //      the aeroplane but can never reverse it or add energy.
         const impulseCap = (SPEC.mass * 0.6) / Math.max(dt, 1 / 240);
         const sideF = clamp(
-          -vSide * 2600,
+          -vSide * Math.max(2600, N * SIDE_GAIN),
           -Math.min(N * muSide, Math.abs(vSide) * impulseCap),
           Math.min(N * muSide, Math.abs(vSide) * impulseCap)
         );
         const rollLimit = Math.min(N * (muRoll + brakeMu), Math.abs(vRoll) * impulseCap);
-        const rollF = clamp(-vRoll * 3000, -rollLimit, rollLimit);
+        // The parking brake's hold (PARK_GAIN): aeroplanes only (a helicopter on its skids or wheels is as it
+        // was), and never more than stops this wheel's share of the mass in one step, or a stiff gain on four
+        // or five contacts chatters (a Skyhook landed on Last Light's ledge with it set slid off at 31 m/s).
+        const parkHold = this.parkingBrake && !SPEC.rotor;
+        const rollGain = parkHold ? Math.max(3000, N * PARK_GAIN) : 3000;
+        const rollCap = parkHold ? Math.min(rollLimit, (Math.abs(vRoll) * SPEC.mass * 0.8) / (Math.max(1, SPEC.gearPoints.length) * Math.max(dt, 1 / 240))) : rollLimit;
+        const rollF = clamp(-vRoll * rollGain, -rollCap, rollCap);
         force.addScaledVector(sideDir, sideF);
         force.addScaledVector(rollDir, rollF);
         this.sideScrub += Math.abs(vSide) * clamp(N / 12000, 0, 1);

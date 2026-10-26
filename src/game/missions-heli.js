@@ -859,7 +859,7 @@ export const HELI_MISSIONS = [
     difficulty: 'Easy',
     icon: '⌒',
     map: 'kestrel-port',
-    aircraft: 'harrier',
+    aircraft: 'h145',
     blurb:
       'A walker above Cormorant Cove has gone over on her ankle. There is level grass enough to land on, just. '
       + 'Put it down beside her, wait while she is loaded, and take her to the hospital pad.',
@@ -882,7 +882,7 @@ export const HELI_MISSIONS = [
           );
         },
         atc: {
-          text: 'Skyhook three, Rescue Coordination. Walker with a broken ankle on Cormorant Cove, she is not going anywhere. No rush, fly it properly.',
+          text: 'Medic one, Rescue Coordination. Walker with a broken ankle on Cormorant Cove, she is not going anywhere. No rush, fly it properly.',
           voice: 'approach',
         },
         targetLabel: 'Cormorant Cove',
@@ -939,7 +939,7 @@ export const HELI_MISSIONS = [
             'It will want more collective than it did on the way out. That is the extra weight.'
           );
         },
-        atc: { text: 'Skyhook three lifting, one aboard, routing to St Brendan.', voice: 'pilot' },
+        atc: { text: 'Medic one lifting, one aboard, routing to St Brendan.', voice: 'pilot' },
         get targetLabel() {
           return siteName(null, 'hospital');
         },
@@ -951,7 +951,7 @@ export const HELI_MISSIONS = [
     onComplete: (ctx) => {
       unload(ctx);
       clearHeliProps(ctx.sim);
-      ctx.sim.speak('Skyhook three, she is with the doctors. Nicely flown.', 'tower');
+      ctx.sim.speak('Medic one, she is with the doctors. Nicely flown.', 'tower');
     },
     score: (ctx) => {
       const l = ctx.data.lastTouchdown;
@@ -981,7 +981,7 @@ export const HELI_MISSIONS = [
      * the briefing's distance and direction are worked out, not typed.
      */
     map: 'carriergroup',
-    aircraft: 'harrier',
+    aircraft: 'aw139',
     blurb:
       'A crewman is in the water sixty metres astern of a fishing boat, out among the task force. There is nowhere to '
       + 'land and nothing to land on. Hold a hover over him at sixty feet while the winch does the rest — then take him to the hospital ship.',
@@ -1003,7 +1003,7 @@ export const HELI_MISSIONS = [
         },
         hint: 'Follow the beacon. The orange strobe in the water is your man.',
         atc: {
-          text: 'Skyhook three, Rescue Coordination. Man in the water off a fishing boat. Launch, launch, launch.',
+          text: 'Rescue three, Rescue Coordination. Man in the water off a fishing boat. Launch, launch, launch.',
           voice: 'approach',
           urgency: 1,
         },
@@ -1021,7 +1021,7 @@ export const HELI_MISSIONS = [
             'Watch the drift, not the sea. Stop the machine first, then hold the height. Ten seconds.'
           ),
         atc: {
-          text: 'Skyhook three, Rescue Coordination. Swimmer is sixty metres off her stern, you are cleared to winch.',
+          text: 'Rescue three, Rescue Coordination. Swimmer is sixty metres off her stern, you are cleared to winch.',
           voice: 'approach',
         },
         label: 'The swimmer',
@@ -1046,7 +1046,7 @@ export const HELI_MISSIONS = [
         },
         hint: 'Follow the arrow. The pad has a big white H on it.',
         get atc() {
-          return { text: `Skyhook three, survivor recovered, routing to ${siteName(null, 'hospital')}.`, voice: 'pilot' };
+          return { text: `Rescue three, survivor recovered, routing to ${siteName(null, 'hospital')}.`, voice: 'pilot' };
         },
         get targetLabel() {
           return siteName(null, 'hospital');
@@ -1066,7 +1066,7 @@ export const HELI_MISSIONS = [
     onComplete: (ctx) => {
       unload(ctx);
       clearHeliProps(ctx.sim);
-      ctx.sim.speak('Skyhook three, he is ashore and he is fine. That is what this machine is for.', 'tower');
+      ctx.sim.speak('Rescue three, he is ashore and he is fine. That is what this machine is for.', 'tower');
     },
     score: (ctx) => {
       const l = ctx.data.lastTouchdown;
@@ -1089,7 +1089,7 @@ export const HELI_MISSIONS = [
     difficulty: 'Hard',
     icon: '▲',
     map: 'stacks',
-    aircraft: 'harrier',
+    aircraft: 'aw139',
     blurb:
       'A climber is stuck on top of Gannet Stack with a broken wrist, and their kit is all over the little '
       + 'pad up there. There is wind spilling over the rock and nowhere to land. The winch is the only way.',
@@ -1114,7 +1114,7 @@ export const HELI_MISSIONS = [
           );
         },
         atc: {
-          text: 'Skyhook three, Rescue Coordination. Climber on top of Gannet Stack, winch job, the pad up there is covered in their kit so there is nowhere to put you down. Wind is eighteen over the top.',
+          text: 'Rescue three, Rescue Coordination. Climber on top of Gannet Stack, winch job, the pad up there is covered in their kit so there is nowhere to put you down. Wind is eighteen over the top.',
           voice: 'approach',
           urgency: 1,
         },
@@ -1172,7 +1172,7 @@ export const HELI_MISSIONS = [
       if (landedAt(ctx, siteAt(ctx, 'hospital'), siteRadius('hospital')) && ctx.elapsed > 60) {
         ctx.data.gaveUp = true;
         ctx.sim.speak(
-          'Skyhook three is back on the ground, no survivor aboard. Understood. The lifeboat will try from the water.',
+          'Rescue three is back on the ground, no survivor aboard. Understood. The lifeboat will try from the water.',
           'tower',
           1
         );
@@ -1184,7 +1184,7 @@ export const HELI_MISSIONS = [
       unload(ctx);
       clearHeliProps(ctx.sim);
       if (!ctx.data.gaveUp) {
-        ctx.sim.speak('Skyhook three, he is in the ambulance. That was flown properly.', 'tower');
+        ctx.sim.speak('Rescue three, he is in the ambulance. That was flown properly.', 'tower');
       }
     },
     score: (ctx) => {
@@ -1211,7 +1211,7 @@ export const HELI_MISSIONS = [
     difficulty: 'Hard',
     icon: '⬢',
     map: 'rigs',
-    aircraft: 'harrier',
+    aircraft: 'aw139',
     blurb:
       'A crewman has been hurt out in open water, on a deck, at night, in rain, with twenty knots of '
       + 'wind across it. Get out there, get down on the deck, and bring him in.',
@@ -1229,7 +1229,7 @@ export const HELI_MISSIONS = [
         text: 'Lift off and fly out to the deck. It is dark and it is raining — fly the instruments.',
         hint: 'The beacon is the only thing out there. Hold a height and let it come to you.',
         atc: {
-          text: 'Skyhook three, Rescue Coordination. Casualty on the deck, wind two seven zero at twenty, deck lights are on for you.',
+          text: 'Rescue three, Rescue Coordination. Casualty on the deck, wind two seven zero at twenty, deck lights are on for you.',
           voice: 'approach',
           urgency: 1,
         },
@@ -1281,7 +1281,7 @@ export const HELI_MISSIONS = [
             'Off the side of the deck and let it fall away a little — that is how you get flying speed.'
           );
         },
-        atc: { text: 'Skyhook three off the deck, one aboard, inbound St Brendan.', voice: 'pilot' },
+        atc: { text: 'Rescue three off the deck, one aboard, inbound St Brendan.', voice: 'pilot' },
         get targetLabel() {
           return siteName(null, 'hospital');
         },
@@ -1293,7 +1293,7 @@ export const HELI_MISSIONS = [
     onComplete: (ctx) => {
       unload(ctx);
       clearHeliProps(ctx.sim);
-      ctx.sim.speak('Skyhook three, ambulance has him. Well done in that weather.', 'tower');
+      ctx.sim.speak('Rescue three, ambulance has him. Well done in that weather.', 'tower');
     },
     score: (ctx) => {
       const l = ctx.data.lastTouchdown;
@@ -1339,7 +1339,7 @@ export const HELI_MISSIONS = [
      * Kestrel still says Needle Rock and Gannet Point.
      */
     map: 'ravencrag',
-    aircraft: 'harrier',
+    aircraft: 'h145',
     blurb:
       'Two calls at once — one high on the mountain wall, one far down the valley — and forty minutes of daylight left. Both if '
       + 'you are quick and nothing goes wrong. One, if you are honest about the time. Your call.',
@@ -1369,7 +1369,7 @@ export const HELI_MISSIONS = [
         hint: 'Decide now and commit. Flying half way to one and changing your mind costs you both.',
         get atc() {
           return {
-            text: `Skyhook three, two jobs and one of you. Climber on ${siteName(null, 'ledge')}, walker at ${siteName(null, 'eastshore')}. We are losing the light in about ten minutes. Your call, and we will back whichever you make.`,
+            text: `Rescue three, two jobs and one of you. Climber on ${siteName(null, 'ledge')}, walker at ${siteName(null, 'eastshore')}. We are losing the light in about ten minutes. Your call, and we will back whichever you make.`,
             voice: 'approach',
             urgency: 1,
           };
@@ -1414,8 +1414,8 @@ export const HELI_MISSIONS = [
           const left = Math.max(0, 600 - ctx.elapsed);
           ctx.sim.speak(
             left > 230
-              ? 'Skyhook three, that is one. There is time for the other if you go now.'
-              : 'Skyhook three, that is one. The light is nearly gone — shutting down here is a good answer.',
+              ? 'Rescue three, that is one. There is time for the other if you go now.'
+              : 'Rescue three, that is one. The light is nearly gone — shutting down here is a good answer.',
             'tower',
             1
           );
@@ -1493,7 +1493,7 @@ export const HELI_MISSIONS = [
       ctx.data.padSit = onPad ? (ctx.data.padSit || 0) + dt : 0;
       if (ctx.data.padSit > 15) {
         ctx.data.stopHere = true;
-        ctx.sim.speak('Skyhook three is shutting down. One is better than none, and you knew it.', 'tower', 1);
+        ctx.sim.speak('Rescue three is shutting down. One is better than none, and you knew it.', 'tower', 1);
       }
     },
     onComplete: (ctx) => {
@@ -1546,7 +1546,7 @@ export const HELI_MISSIONS = [
      * and the sea round the island all turn up as places to go.
      */
     map: 'meridian',
-    aircraft: 'harrier',
+    aircraft: 'aw139',
     blurb:
       'No mission and no clock. Sit on the hospital roof in Meridian City and wait. When a call comes in, go and get them. '
       + 'The only number is how many people you have brought home.',
@@ -1653,7 +1653,7 @@ export const HELI_MISSIONS = [
           5
         );
         ctx.sim.hud.setObjective('On call', 'Wait on the pad. The radio will tell you where to go.');
-        ctx.sim.speak('Skyhook three, received, they are with the doctors. Stand by.', 'tower');
+        ctx.sim.speak('Rescue three, received, they are with the doctors. Stand by.', 'tower');
       }
     },
     onComplete: (ctx) => {
@@ -1756,7 +1756,7 @@ function newCall(ctx) {
     what,
     wet,
     where: `${km} km ${dir} of the hospital`,
-    radio: `Skyhook three, Rescue Coordination. ${what}, ${km} kilometres ${dir} of the hospital. Launch when you are ready.`,
+    radio: `Rescue three, Rescue Coordination. ${what}, ${km} kilometres ${dir} of the hospital. Launch when you are ready.`,
   };
 }
 

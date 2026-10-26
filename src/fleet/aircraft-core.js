@@ -163,6 +163,8 @@ export function buildAircraft(config,options={}) {
  Object.assign(aircraft.userData,ctx.exports);
  // ...and the airliners' paint for a real model (src/aircraft/real-models.js), which is not enumerable (not JSON-copied with the userData).
  if(ctx.exports.realPaint)Object.defineProperty(aircraft.userData,'realPaint',{value:ctx.exports.realPaint,enumerable:false,configurable:true});
+ // ...and the airline's fin mark, to be laid on a real model's fin (fleet/extra/airliners.js finMark), likewise.
+ if(ctx.exports.finMark)Object.defineProperty(aircraft.userData,'finMark',{value:ctx.exports.finMark,enumerable:false,configurable:true});
  attachAircraftImpact(aircraft,c);
  aircraft.userData.update=(dt,state={})=>{if(disposed)return;if(!Number.isFinite(dt)||dt<0)throw new RangeError('Aircraft dt must be nonnegative seconds.');if(!aircraft.userData.crashBody&&!aircraft.userData.crashRetired)animate(dt,state);damageUpdate(dt,state);aircraft.userData.updateImpact?.(dt);};
  aircraft.userData.resetDamage=()=>{if(disposed)return;aircraft.userData.resetImpact?.();damageReset();for(const[n,s]of restTransforms){n.position.copy(s.position);n.quaternion.copy(s.quaternion);n.scale.copy(s.scale);n.visible=s.visible;}time=0;animate(0,{rpm:0,gear:1});};

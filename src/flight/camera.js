@@ -897,6 +897,24 @@ export class CameraRig {
         dist *= nk;
         up *= nk;
       }
+      /*
+       * Starting the view again over a wreck (the instant replay closing, the
+       * comic crash cam ending: initialised = false) stands it behind the
+       * wreck's heading and up the world's up, not the airframe's. A wreck
+       * can lie on its back or with its nose in the air, and "behind and above"
+       * in its own axes then put the camera under it or in it: an A380 that
+       * had rolled onto its back after a nose-in came back with the follow
+       * view 40 m from its centre, inside the wing (airliners.browser.js).
+       * Only a wreck more than about 70 degrees off upright: one still more
+       * or less on its belly keeps the view it always had.
+       */
+      if (ac.crashed && !this.initialised && _desired.set(0, 1, 0).applyQuaternion(ac.quat).y < 0.3) {
+        back.y = 0;
+        if (back.lengthSq() < 0.04) back.set(0, 1, 0).applyQuaternion(ac.quat).setY(0);
+        if (back.lengthSq() < 1e-6) back.set(0, 0, 1);
+        back.normalize();
+        upV.set(0, 1, 0);
+      }
       const aimC = this.frame ? this.aimPoint(ac) : pos;
       const desired = _desired
         .copy(aimC)

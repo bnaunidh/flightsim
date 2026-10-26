@@ -57,6 +57,7 @@
 import * as THREE from '../../vendor/three.module.js';
 import { addInstanced } from '../common.js';
 import { aircraftDecalTexture } from '../aircraft-textures.js';
+import { drawEmblem } from './emblems.js';
 import { AIRLINER_GEOMETRY as GEO } from '../../aircraft/extra/airliners.js';
 import { hull, turned } from '../../aircraft/models/civil-kit.js';
 import { textureTier } from '../../render/textures.js';
@@ -637,6 +638,8 @@ function dress(ctx, S) {
     const tex3 = aircraftDecalTexture(title, {
       color: ink, background: 'transparent', width: 128 * ratio, height: 128,
       weight: (style && style.titleWeight) || 700, spacing: style && typeof style.titleSpacing === 'number' ? style.titleSpacing : 0.04,
+      // The airline's own typeface (aircraft/liveries.js style.titleFont, render/airline-fonts.js).
+      font: (style && style.titleFont) || null,
     });
     const tz = S.title.z;
     registration(ctx, h, { text: title, z: tz, y: S.title.y, width: S.title.w, height: S.title.w / ratio, texture: tex3, name: 'Titling' }, pieceOf(tz));
@@ -727,13 +730,10 @@ function dress(ctx, S) {
 
 const emblems = new Map();
 /**
- * A fin emblem, drawn once per style, inks and tier: 'stripes' (three
- * slanted bars, each in its own ink when three are given), 'compass' (a
- * ring round a four-point rose), 'star' (eight points), 'wave' (a swept
- * band over a thinner one, the second ink for the thin one), 'sun' (a disc
- * with short rays, the second ink for the rays), 'moon' (a crescent and a
- * dot), and the parody airlines' marks in parodyEmblem() below. Geometric
- * and original: no real airline's logo is drawn or copied.
+ * A fin emblem, drawn once per style, inks and tier: the airline's mark
+ * (./emblems.js drawEmblem — filled Bézier silhouettes with clean negative
+ * space, the game's own drawings, never a real airline's logo) in its inks
+ * on a transparent square, 512 px on High and Ultra, 256 below.
  * ('globe' is kept as a name for the compass: the saved id of an older
  * scheme, and a circle with meridians was too near a real mark.)
  */
@@ -746,101 +746,14 @@ function emblemTexture(style, inks) {
   c.width = S;
   c.height = S;
   const g = c.getContext('2d');
-  const ink = inks[0];
-  const inkAt = (i) => inks[Math.min(i, inks.length - 1)];
   if (g && typeof g.clearRect === 'function') {
     g.clearRect(0, 0, S, S);
-    g.fillStyle = ink;
-    g.strokeStyle = ink;
-    g.lineCap = 'round';
-    g.lineJoin = 'round';
-    const cx = S / 2;
-    const cy = S / 2;
-    if (style === 'stripes') {
-      g.lineWidth = S * 0.11;
-      for (let i = -1; i <= 1; i++) {
-        g.strokeStyle = inks.length >= 3 ? inkAt(i + 1) : ink;
-        g.beginPath();
-        g.moveTo(cx + i * S * 0.2 - S * 0.14, cy + S * 0.3);
-        g.lineTo(cx + i * S * 0.2 + S * 0.14, cy - S * 0.3);
-        g.stroke();
-      }
-    } else if (style === 'compass' || style === 'globe') {
-      // A compass rose: a ring, four long points and four short between.
-      g.lineWidth = S * 0.055;
-      g.beginPath();
-      g.arc(cx, cy, S * 0.4, 0, Math.PI * 2);
-      g.stroke();
-      g.beginPath();
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
-        const d = i % 2 ? S * 0.1 : S * 0.33;
-        g.lineTo(cx + Math.cos(a) * d, cy + Math.sin(a) * d);
-      }
-      g.closePath();
-      g.fill();
-      g.fillStyle = inkAt(1);
-      g.beginPath();
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2 - Math.PI / 4;
-        const d = i % 2 ? S * 0.06 : S * 0.2;
-        g.lineTo(cx + Math.cos(a) * d, cy + Math.sin(a) * d);
-      }
-      g.closePath();
-      g.fill();
-    } else if (style === 'star') {
-      g.beginPath();
-      const R = S * 0.4;
-      const r = S * 0.12;
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
-        const d = i % 2 ? r : R;
-        g.lineTo(cx + Math.cos(a) * d, cy + Math.sin(a) * d);
-      }
-      g.closePath();
-      g.fill();
-    } else if (style === 'wave') {
-      g.lineWidth = S * 0.12;
-      g.beginPath();
-      g.moveTo(S * 0.1, cy + S * 0.18);
-      g.bezierCurveTo(S * 0.35, cy - S * 0.35, S * 0.6, cy + S * 0.4, S * 0.9, cy - S * 0.2);
-      g.stroke();
-      g.strokeStyle = inkAt(1);
-      g.lineWidth = S * 0.06;
-      g.beginPath();
-      g.moveTo(S * 0.18, cy + S * 0.36);
-      g.bezierCurveTo(S * 0.42, cy - S * 0.12, S * 0.62, cy + S * 0.5, S * 0.84, cy + S * 0.06);
-      g.stroke();
-    } else if (style === 'sun') {
-      g.beginPath();
-      g.arc(cx, cy, S * 0.2, 0, Math.PI * 2);
-      g.fill();
-      g.strokeStyle = inkAt(1);
-      g.lineWidth = S * 0.06;
-      for (let i = 0; i < 12; i++) {
-        const a = (i / 12) * Math.PI * 2;
-        g.beginPath();
-        g.moveTo(cx + Math.cos(a) * S * 0.27, cy + Math.sin(a) * S * 0.27);
-        g.lineTo(cx + Math.cos(a) * S * 0.4, cy + Math.sin(a) * S * 0.4);
-        g.stroke();
-      }
-    } else if (style === 'moon') {
-      g.beginPath();
-      g.arc(cx, cy, S * 0.36, 0, Math.PI * 2);
-      g.fill();
-      g.globalCompositeOperation = 'destination-out';
-      g.beginPath();
-      g.arc(cx + S * 0.16, cy - S * 0.08, S * 0.3, 0, Math.PI * 2);
-      g.fill();
-      g.globalCompositeOperation = 'source-over';
-      g.beginPath();
-      g.arc(cx + S * 0.24, cy - S * 0.22, S * 0.06, 0, Math.PI * 2);
-      g.fill();
-    } else if (!parodyEmblem(g, style, S, inkAt)) {
+    if (!drawEmblem(g, style, S, inks)) {
       // An unknown name: a plain disc rather than nothing, so a scheme with a
       // typo still has a mark where the airline's would be.
+      g.fillStyle = inks[0];
       g.beginPath();
-      g.arc(cx, cy, S * 0.3, 0, Math.PI * 2);
+      g.arc(S / 2, S / 2, S * 0.3, 0, Math.PI * 2);
       g.fill();
     }
   }
@@ -853,258 +766,23 @@ function emblemTexture(style, inks) {
 }
 
 /**
- * The parody airlines' marks (aircraft/liveries.js, the owner's safe-
- * companies table): each a few strokes of plain geometry in the scheme's
- * inks, drawn into the S-pixel square `g`, and none of them a real airline's
- * logo or a tracing of one — a tulip (not a crown), a triangle cut by a wave
- * (not a widget), a hexagon badge round a parcel (not a shield), a half-sun
- * with a crane in flight above it (not a crane in a ring). Returns false for
- * a name it does not know.
- */
-function parodyEmblem(g, style, S, inkAt) {
-  const cx = S / 2;
-  const cy = S / 2;
-  const X = (x) => cx + x * S;
-  const Y = (y) => cy + y * S;
-  const stroke = (ink, w) => {
-    g.strokeStyle = ink;
-    g.lineWidth = w * S;
-  };
-  const dot = (x, y, r, ink) => {
-    g.fillStyle = ink;
-    g.beginPath();
-    g.arc(X(x), Y(y), r * S, 0, Math.PI * 2);
-    g.fill();
-  };
-  const poly = (pts, ink) => {
-    g.fillStyle = ink;
-    g.beginPath();
-    pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))));
-    g.closePath();
-    g.fill();
-  };
-  const line = (pts, ink, w) => {
-    stroke(ink, w);
-    g.beginPath();
-    pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))));
-    g.stroke();
-  };
-  switch (style) {
-    case 'tulip': {
-      // The bloom: three pointed petals on a cup; a stem with two leaves.
-      g.fillStyle = inkAt(0);
-      g.beginPath();
-      g.moveTo(X(-0.24), Y(-0.02));
-      g.lineTo(X(-0.22), Y(-0.34));
-      g.lineTo(X(-0.09), Y(-0.18));
-      g.lineTo(X(0), Y(-0.42));
-      g.lineTo(X(0.09), Y(-0.18));
-      g.lineTo(X(0.22), Y(-0.34));
-      g.lineTo(X(0.24), Y(-0.02));
-      g.quadraticCurveTo(X(0.2), Y(0.14), X(0), Y(0.14));
-      g.quadraticCurveTo(X(-0.2), Y(0.14), X(-0.24), Y(-0.02));
-      g.closePath();
-      g.fill();
-      line([[0, 0.14], [0, 0.42]], inkAt(1), 0.05);
-      stroke(inkAt(1), 0.05);
-      g.beginPath();
-      g.moveTo(X(0), Y(0.34));
-      g.quadraticCurveTo(X(-0.16), Y(0.3), X(-0.24), Y(0.16));
-      g.moveTo(X(0), Y(0.3));
-      g.quadraticCurveTo(X(0.16), Y(0.28), X(0.22), Y(0.12));
-      g.stroke();
-      return true;
-    }
-    case 'wavetri': {
-      // A triangle cut across by a wave: the lower part in the second ink.
-      poly([[0, -0.38], [-0.38, 0.3], [0.38, 0.3]], inkAt(0));
-      g.save();
-      g.beginPath();
-      g.moveTo(X(0), Y(-0.38));
-      g.lineTo(X(-0.38), Y(0.3));
-      g.lineTo(X(0.38), Y(0.3));
-      g.closePath();
-      g.clip();
-      g.fillStyle = inkAt(1);
-      g.beginPath();
-      g.moveTo(X(-0.5), Y(0.08));
-      g.bezierCurveTo(X(-0.2), Y(-0.14), X(0.1), Y(0.26), X(0.5), Y(0.02));
-      g.lineTo(X(0.5), Y(0.5));
-      g.lineTo(X(-0.5), Y(0.5));
-      g.closePath();
-      g.fill();
-      g.restore();
-      return true;
-    }
-    case 'falcon': {
-      // A falcon in the stoop, seen from below: swept wings, a fanned tail, the head at the point.
-      line([[-0.42, -0.3], [0, 0.08], [0.42, -0.3]], inkAt(0), 0.13);
-      poly([[0, -0.04], [-0.1, -0.3], [0.1, -0.3]], inkAt(0));
-      dot(0, 0.17, 0.075, inkAt(0));
-      dot(-0.02, 0.15, 0.022, inkAt(1));
-      return true;
-    }
-    case 'lattice': {
-      // A lattice of diamonds in three shades, the corners left open.
-      const d = 0.13;
-      for (let r = -2; r <= 2; r++) {
-        for (let c = -1; c <= 1; c++) {
-          if (Math.abs(r) === 2 && c !== 0) continue;
-          const x = c * d * 2 + (r % 2 ? d : 0);
-          if (Math.abs(x) > 0.3) continue;
-          const y = r * d;
-          poly([[x, y - d], [x + d * 0.95, y], [x, y + d], [x - d * 0.95, y]], inkAt(((r + c + 4) % 3)));
-        }
-      }
-      return true;
-    }
-    case 'speedlines': {
-      // Three tapered lines, slanted a little, fast.
-      g.save();
-      g.translate(cx, cy);
-      g.rotate(-0.17);
-      g.translate(-cx, -cy);
-      for (const [y, l] of [[-0.2, 0.5], [0, 0.7], [0.2, 0.58]]) {
-        poly([[-l / 2, y], [l / 2, y - 0.05], [l / 2, y + 0.05]], inkAt(0));
-      }
-      g.restore();
-      return true;
-    }
-    case 'arrowbox': {
-      // A box with an arrow straight through it.
-      stroke(inkAt(0), 0.07);
-      g.beginPath();
-      g.rect(X(-0.24), Y(-0.22), 0.48 * S, 0.44 * S);
-      g.stroke();
-      line([[-0.42, 0], [0.26, 0]], inkAt(1), 0.07);
-      poly([[0.2, -0.14], [0.44, 0], [0.2, 0.14]], inkAt(1));
-      return true;
-    }
-    case 'parcel': {
-      // A hexagon badge round a parcel with its tape.
-      const hex = [];
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
-        hex.push([Math.cos(a) * 0.42, Math.sin(a) * 0.42]);
-      }
-      poly(hex, inkAt(0));
-      poly([[-0.18, -0.14], [0.18, -0.14], [0.18, 0.2], [-0.18, 0.2]], inkAt(1));
-      poly([[-0.03, -0.14], [0.03, -0.14], [0.03, 0.2], [-0.03, 0.2]], inkAt(0));
-      line([[-0.18, -0.04], [0.18, -0.04]], inkAt(0), 0.025);
-      return true;
-    }
-    case 'seawave': {
-      // A breaking wave: a rolling crest in the first ink, its foam line in the second.
-      stroke(inkAt(0), 0.13);
-      g.beginPath();
-      g.moveTo(X(-0.42), Y(0.3));
-      g.bezierCurveTo(X(-0.1), Y(0.26), X(0.2), Y(-0.44), X(0.42), Y(-0.16));
-      g.bezierCurveTo(X(0.5), Y(0.02), X(0.3), Y(0.08), X(0.2), Y(-0.04));
-      g.stroke();
-      stroke(inkAt(1), 0.05);
-      g.beginPath();
-      g.moveTo(X(-0.34), Y(0.38));
-      g.bezierCurveTo(X(-0.02), Y(0.36), X(0.26), Y(-0.24), X(0.4), Y(-0.08));
-      g.stroke();
-      return true;
-    }
-    case 'crane': {
-      // A crane standing: body, a long straight neck, the head and beak, two legs, a tail.
-      g.fillStyle = inkAt(0);
-      g.beginPath();
-      g.ellipse(X(0.04), Y(0.04), 0.2 * S, 0.11 * S, 0, 0, Math.PI * 2);
-      g.fill();
-      line([[-0.12, 0], [-0.15, -0.3]], inkAt(0), 0.05);
-      dot(-0.15, -0.31, 0.05, inkAt(0));
-      poly([[-0.18, -0.33], [-0.3, -0.27], [-0.18, -0.28]], inkAt(0));
-      line([[0.02, 0.13], [-0.02, 0.42]], inkAt(0), 0.025);
-      line([[0.1, 0.13], [0.12, 0.42]], inkAt(0), 0.025);
-      poly([[0.22, 0], [0.36, -0.1], [0.26, 0.08]], inkAt(0));
-      return true;
-    }
-    case 'antelope': {
-      // An antelope mid-leap: the body, a stretched neck, curved horns, legs out fore and aft.
-      g.fillStyle = inkAt(0);
-      g.beginPath();
-      g.ellipse(X(0), Y(0.02), 0.21 * S, 0.1 * S, -0.3, 0, Math.PI * 2);
-      g.fill();
-      line([[0.14, -0.04], [0.27, -0.22]], inkAt(0), 0.07);
-      g.beginPath();
-      g.ellipse(X(0.3), Y(-0.25), 0.075 * S, 0.045 * S, -0.5, 0, Math.PI * 2);
-      g.fill();
-      stroke(inkAt(0), 0.03);
-      g.beginPath();
-      g.moveTo(X(0.28), Y(-0.29));
-      g.quadraticCurveTo(X(0.2), Y(-0.46), X(0.1), Y(-0.42));
-      g.moveTo(X(0.31), Y(-0.3));
-      g.quadraticCurveTo(X(0.26), Y(-0.48), X(0.16), Y(-0.46));
-      g.stroke();
-      line([[0.12, 0.06], [0.32, 0.2]], inkAt(0), 0.035);
-      line([[0.1, 0.08], [0.28, 0.28]], inkAt(0), 0.035);
-      line([[-0.14, 0.06], [-0.36, 0.22]], inkAt(0), 0.035);
-      line([[-0.16, 0.08], [-0.34, 0.3]], inkAt(0), 0.035);
-      line([[-0.2, -0.02], [-0.3, -0.1]], inkAt(0), 0.03);
-      return true;
-    }
-    case 'suncrane': {
-      // A half-sun on the horizon, and a crane in flight above it.
-      g.save();
-      g.beginPath();
-      g.rect(0, 0, S, Y(0.14));
-      g.clip();
-      dot(0, 0.14, 0.26, inkAt(1));
-      g.restore();
-      poly([[-0.4, 0.14], [0.4, 0.14], [0.4, 0.18], [-0.4, 0.18]], inkAt(1));
-      stroke(inkAt(0), 0.06);
-      g.beginPath();
-      g.moveTo(X(-0.36), Y(-0.16));
-      g.quadraticCurveTo(X(-0.18), Y(-0.4), X(0), Y(-0.24));
-      g.quadraticCurveTo(X(0.18), Y(-0.4), X(0.36), Y(-0.16));
-      g.stroke();
-      line([[0, -0.24], [0.03, -0.06]], inkAt(0), 0.035);
-      line([[0, -0.24], [-0.1, -0.3]], inkAt(0), 0.03);
-      return true;
-    }
-    case 'bang': {
-      // An exclamation mark, leaning forward.
-      g.save();
-      g.translate(cx, cy);
-      g.rotate(0.14);
-      g.translate(-cx, -cy);
-      poly([[-0.1, -0.42], [0.1, -0.42], [0.06, 0.14], [-0.06, 0.14]], inkAt(0));
-      dot(0, 0.32, 0.09, inkAt(0));
-      g.restore();
-      return true;
-    }
-    case 'horizon': {
-      // A ring, a sea line through its lower third, a gull above the line.
-      stroke(inkAt(0), 0.07);
-      g.beginPath();
-      g.arc(cx, cy, 0.37 * S, 0, Math.PI * 2);
-      g.stroke();
-      g.save();
-      g.beginPath();
-      g.arc(cx, cy, 0.34 * S, 0, Math.PI * 2);
-      g.clip();
-      stroke(inkAt(1), 0.055);
-      g.beginPath();
-      g.moveTo(X(-0.4), Y(0.14));
-      for (let i = 0; i < 4; i++) g.quadraticCurveTo(X(-0.3 + i * 0.2), Y(0.14 + (i % 2 ? 0.07 : -0.07)), X(-0.2 + i * 0.2), Y(0.14));
-      g.stroke();
-      g.restore();
-      line([[-0.14, -0.12], [0, -0.04], [0.14, -0.12]], inkAt(0), 0.05);
-      return true;
-    }
-    default:
-      return false;
-  }
-}
-
-/**
- * The emblem on both sides of the (single, centred) fin: a quad bent to
- * the fin's taper from half to 85% of its height, over the forward part of
- * the chord ahead of the rudder, 3 cm proud of the painted shell with a
- * deeper decal offset than the paint's, so it wins the depth test over it.
+ * The emblem on both sides of the (single, centred) fin.
+ *
+ * Sized as an airline sizes its tail mark — as big as the fin will take: a
+ * square patch centred just under half way up and 45% back along the chord
+ * (its ink ahead of the rudder hinge), grown until its top edge would span
+ * 80% of the fin's chord at that height or it is 66% of the fin's height. Each
+ * side is a quad bent to the fin's sweep, 3 cm proud of the paint with a
+ * deeper decal offset than the paint's, so it wins the depth test; drawn
+ * from both faces, since a quad's winding is the same on both sides of the
+ * fin and the right-hand one used to face inwards — culled, the mark was on
+ * one side only.
+ *
+ * finMarkQuads() does the laying out from a fin PROFILE (root and tip
+ * height, leading edge and chord at each, half thickness at each), so the
+ * same mark can be laid on a real model's fin (aircraft/real-models.js),
+ * whose fin is not where the procedural one is: `userData.finMark.fit()`
+ * reads the real fin's vertices into a profile and hands back the quads.
  */
 function finEmblem(ctx, style, { ink, inks }) {
   const fc = ctx.config.fin;
@@ -1113,34 +791,167 @@ function finEmblem(ctx, style, { ink, inks }) {
   const list = Array.isArray(inks) && inks.length ? inks : [ink];
   const tex = emblemTexture(style, list.map((c) => css(c)));
   const mat = ctx.model.userData.ownMaterial(new THREE.MeshBasicMaterial({
-    name: 'Airliner_fin_emblem', map: tex, transparent: true, depthWrite: false, toneMapped: true,
+    name: 'Airliner_fin_emblem', map: tex, transparent: true, depthWrite: false, toneMapped: true, side: THREE.DoubleSide,
     polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
   }));
-  const t0 = 0.5;
-  const t1 = 0.85;
-  const chordAt = (t) => mix(fc.rootChord, fc.tipChord, t);
-  const size = Math.min(fc.height * (t1 - t0), chordAt((t0 + t1) / 2) * 0.5);
-  const tMid = (t0 + t1) / 2;
-  const tHalf = size / fc.height / 2;
+  // The procedural fin: a box tapering from root to tip, flat-sided, painted
+  // in a shell 14% thicker than the core (paintFin).
+  const profile = {
+    y0: fc.rootY, y1: fc.rootY + fc.height,
+    le0: fc.rootZ, le1: fc.rootZ + fc.sweep,
+    ch0: fc.rootChord, ch1: fc.tipChord,
+    th0: (fc.thickness || 0.14) * 0.57 + 0.004, th1: 0.045 * 0.57 + 0.004,
+    airfoil: false,
+  };
+  for (const q of finMarkQuads(profile, mat)) {
+    const m = meshOf(ctx, 'Tail emblem', q, mat, fin);
+    m.castShadow = false;
+  }
+  // For a real model's fin (aircraft/real-models.js): the same mark, fitted to it.
+  Object.defineProperty(ctx.exports, 'finMark', {
+    value: { style, material: mat, fit: (skin, meshes) => realFinMark(skin, meshes, mat, profile, ctx.model.userData.ownGeometry) },
+    enumerable: false,
+  });
+  return mat;
+}
+
+/** The half thickness of a symmetrical aerofoil at chord fraction c, as a share of its greatest (NACA 00xx). */
+function aerofoilShare(c) {
+  const t = (x) => 0.2969 * Math.sqrt(x) - 0.126 * x - 0.3516 * x * x + 0.2843 * x ** 3 - 0.1015 * x ** 4;
+  return Math.max(0.2, t(Math.min(1, Math.max(0, c))) / t(0.3));
+}
+
+/**
+ * The two quads of a fin mark from a fin profile: { y0, y1 } root and tip
+ * heights, { le0, le1 } leading edge z at each, { ch0, ch1 } chord at each,
+ * { th0, th1 } the half thickness at each (the greatest, for an aerofoil),
+ * `airfoil` true when the thickness follows the chord (a real fin) rather
+ * than a flat side (the procedural box). Geometry in the fin's frame.
+ */
+function finMarkQuads(P, mat) {
+  const H = Math.max(0.5, P.y1 - P.y0);
+  const chordAt = (t) => mix(P.ch0, P.ch1, t);
+  const tc = 0.46;
+  let size = 0.5 * H;
+  for (let k = 0; k < 8; k++) size = Math.min(0.66 * H, 0.8 * chordAt(Math.min(1, tc + size / H / 2)));
+  const tHalf = size / H / 2;
+  const out = [];
   for (const side of [1, -1]) {
-    const geo = new THREE.PlaneGeometry(1, 1, 1, 3);
+    const geo = new THREE.PlaneGeometry(1, 1, 2, 4);
     const p = geo.attributes.position;
     const uv = geo.attributes.uv;
     for (let i = 0; i < p.count; i++) {
       const u = p.getX(i) + 0.5; // 0 forward .. 1 aft (the emblem reads the same from both sides)
-      const t = tMid + p.getY(i) * tHalf * 2;
+      const t = tc + p.getY(i) * tHalf * 2;
       const ch = chordAt(t);
-      const th = mix(fc.thickness || 0.14, 0.045, t);
-      const le = fc.rootZ + fc.sweep * t;
-      const zc = le + ch * 0.42;
-      p.setXYZ(i, side * (th * 0.57 + 0.034), fc.rootY + fc.height * t, zc + (u - 0.5) * size);
+      const le = mix(P.le0, P.le1, t);
+      // Centred 45% back along the chord: the mark's ink (0.84 of the patch) stays ahead of the rudder hinge.
+      const zc = le + ch * 0.45;
+      const z = zc + (u - 0.5) * size;
+      const half = mix(P.th0, P.th1, t) * (P.airfoil ? aerofoilShare((z - le) / Math.max(0.1, ch)) : 1);
+      p.setXYZ(i, side * (half + 0.03), mix(P.y0, P.y1, t), z);
       uv.setXY(i, side > 0 ? u : 1 - u, uv.getY(i));
     }
     geo.computeVertexNormals();
-    const m = meshOf(ctx, 'Tail emblem', geo, mat, fin);
-    m.castShadow = false;
+    out.push(geo);
   }
-  return mat;
+  out.size = size;
+  return out;
+}
+
+/**
+ * The mark on a real model's fin. `meshes` are the skin's fin pieces
+ * (role 'fin'); their vertices, in the skin's frame, give the fin's root and
+ * tip bands — leading edge, chord and greatest half thickness at each — and
+ * the quads are laid on that profile. Null when the pieces do not read as
+ * one centred fin (twin fins, nothing found): the fin stays plain.
+ */
+function realFinMark(skin, meshes, mat, fallback, own) {
+  if (!skin || !Array.isArray(meshes) || !meshes.length) return null;
+  skin.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(skin.matrixWorld).invert();
+  const m = new THREE.Matrix4();
+  const v = new THREE.Vector3();
+  const pts = [];
+  for (const o of meshes) {
+    const pos = o.geometry && o.geometry.attributes && o.geometry.attributes.position;
+    if (!pos) continue;
+    m.multiplyMatrices(inv, o.matrixWorld);
+    const step = Math.max(1, Math.floor(pos.count / 4000));
+    for (let i = 0; i < pos.count; i += step) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(m);
+      pts.push(v.x, v.y, v.z);
+    }
+  }
+  const n = pts.length / 3;
+  if (n < 12) return null;
+  // Only the upright part: within a couple of metres of the centre plane.
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  let xs = 0;
+  for (let i = 0; i < n; i++) {
+    const x = pts[i * 3];
+    xs += x;
+    if (Math.abs(x) > 2.5) continue;
+    y0 = Math.min(y0, pts[i * 3 + 1]);
+    y1 = Math.max(y1, pts[i * 3 + 1]);
+  }
+  if (!(y1 - y0 > 1) || Math.abs(xs / n) > 0.5) return null;
+  // The root band is taken a fifth of the way up (the fillet into the body is below it), the tip band at the top.
+  const H = y1 - y0;
+  const band = (yc, w) => {
+    let le = Infinity;
+    let te = -Infinity;
+    let th = 0;
+    let hits = 0;
+    for (let i = 0; i < n; i++) {
+      const y = pts[i * 3 + 1];
+      if (Math.abs(y - yc) > w) continue;
+      const x = Math.abs(pts[i * 3]);
+      if (x > 2.5) continue;
+      const z = pts[i * 3 + 2];
+      le = Math.min(le, z);
+      te = Math.max(te, z);
+      th = Math.max(th, x);
+      hits++;
+    }
+    return hits >= 3 ? { le, ch: te - le, th } : null;
+  };
+  const pick = (yc) => band(yc, H * 0.06) || band(yc, H * 0.12) || band(yc, H * 0.2);
+  const ra = y0 + H * 0.2;
+  const rb = y1 - H * 0.05;
+  const r0 = pick(ra);
+  const r1 = pick(rb);
+  if (!r0 || !r1 || r0.ch < 0.5 || r1.ch <= 0.1) return null;
+  // The bands are at ra and rb; extend linearly to the profile's own root and tip.
+  const k0 = (y0 + H * 0.12 - ra) / (rb - ra);
+  const k1 = (y1 - ra) / (rb - ra);
+  const lin = (a, b, k) => a + (b - a) * k;
+  // Usable chord: ahead of the rudder hinge, as on the procedural fin (76% of it).
+  const profile = {
+    y0: y0 + H * 0.12,
+    y1,
+    le0: lin(r0.le, r1.le, k0),
+    le1: lin(r0.le, r1.le, k1),
+    ch0: Math.max(0.5, lin(r0.ch, r1.ch, k0)),
+    ch1: Math.max(0.3, lin(r0.ch, r1.ch, k1)),
+    th0: Math.max(0.02, lin(r0.th, r1.th, k0)),
+    th1: Math.max(0.015, lin(r0.th, r1.th, k1)),
+    airfoil: true,
+  };
+  const group = new THREE.Group();
+  group.name = 'Real fin emblem';
+  for (const q of finMarkQuads(profile, mat)) {
+    const mesh = new THREE.Mesh(typeof own === 'function' ? own(q) : q, mat);
+    mesh.name = 'Tail emblem (real fin)';
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.renderOrder = 2;
+    group.add(mesh);
+  }
+  group.userData.profile = profile;
+  group.userData.fallback = fallback;
+  return group;
 }
 
 /** css colour string of anything THREE.Color takes (the kit's, repeated: it is not exported). */

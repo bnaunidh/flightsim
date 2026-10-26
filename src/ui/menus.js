@@ -4,6 +4,7 @@
  */
 
 import { MISSIONS } from '../game/missions.js';
+import { allowedFor } from '../game/mission-aircraft.js';
 import { icon } from './icons.js';
 import { AIRCRAFT, performanceFor } from '../aircraft/types.js';
 import { NATURAL_EVENTS, SELECTABLE_EVENTS } from '../game/disasters.js';
@@ -336,6 +337,19 @@ function fold(s) {
 
 function attr(s) {
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+/**
+ * The mission card's aircraft line (game/mission-aircraft.js, the owner's
+ * audit): "Recommended aircraft: C-17 Globemaster III", and the others it
+ * takes. '' for a boat or a car. Exported for game-ui.js's cards.
+ */
+export function craftLineHtml(m) {
+  const ids = allowedFor(m);
+  if (!ids.length || (m && (m.vehicle === 'boat' || m.vehicle === 'car'))) return '';
+  const name = (id) => attr((AIRCRAFT.find((a) => a.id === id) || { name: id }).name);
+  const also = ids.slice(1).map(name);
+  return `<p class="mission-craft" data-craft="${attr(m.id)}">Recommended aircraft: <b>${name(ids[0])}</b>${also.length ? ` <span>· also ${also.join(' or ')}</span>` : ''}</p>`;
 }
 
 /**
@@ -964,6 +978,7 @@ export class Menus {
         </div>
         <p>${m.blurb || ''}</p>
         <p class="mission-learn">${m.reward || ''}</p>
+        ${craftLineHtml(m)}
         <div class="mission-foot">
           <span class="mission-best" data-best="${m.id}"></span>
           <button class="primary" data-start="${m.id}">Fly this mission</button>

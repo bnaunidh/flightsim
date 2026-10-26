@@ -186,14 +186,14 @@ PAINT.setPaintTier('high');
     return lo < 0.05 && hi > 0.95;
   })());
   const title = meshesNamed(painted, /^Titling$/)[0];
-  ok('abyssinia: the name is lettered heavy (weight 700) and spaced, sixteen to one', !!title && /_700_0\.05$/.test(title.material.map.name) && title.material.map.image.width === 2048, title ? title.material.map.name : 'none');
+  ok('abyssinia: the name is lettered heavy (weight 700) and spaced, sixteen to one, in its own face (Kanit)', !!title && /_700_0\.05_Kanit\/600\/normal$/.test(title.material.map.name) && title.material.map.image.width === 2048, title ? title.material.map.name : 'none');
   const pylons = meshesNamed(painted, /^Engine pylon$/);
   ok('abyssinia: the pylons keep the body colour (no cowl skin smeared on them)', pylons.length === 0 || pylons.every((p) => p.material.name !== 'Airliner_cowl'));
   dispose(painted);
 
   const freight = build('b747', 'nightfreight');
   const ft = meshesNamed(freight, /^Titling$/)[0];
-  ok('nightfreight (billboard): the name is taller — ten to one, weight 800, in amber', !!ft && ft.material.map.image.width === 1280 && /_800_0\.12$/.test(ft.material.map.name) && /#e8a33c/.test(ft.material.map.name), ft ? ft.material.map.name : 'none');
+  ok('nightfreight (billboard): the name is taller — ten to one, weight 800, in amber, condensed (Oswald)', !!ft && ft.material.map.image.width === 1280 && /_800_0\.12_Oswald\/600\/normal$/.test(ft.material.map.name) && /#e8a33c/.test(ft.material.map.name), ft ? ft.material.map.name : 'none');
   const reg = meshesNamed(freight, /^Airframe registration$/)[0];
   ok('nightfreight: the registration is light on a dark body, medium weight, stencil-spaced', !!reg && /#e9eef2/.test(reg.material.map.name) && /_600_0\.08$/.test(reg.material.map.name), reg ? reg.material.map.name : 'none');
   dispose(freight);

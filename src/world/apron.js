@@ -1305,9 +1305,15 @@ export class Apron {
       }
       this.addCrew(p.tg, { full: true, bridge: st.bridge, stand: st });
     }
-    // A spare crew, out of sight, for whoever lands next and asks for one.
-    if (lay.stands.length && !lay.military) {
-      this.spare = this.addCrew(null, { full: true, spare: true });
+    /*
+     * A spare crew, out of sight, for whoever lands next and asks for one.
+     * The air bases too, now (the owner, 2026-10-25: the Class-D transfer's
+     * C-17 is pushed back off a stand at Caribou FOB): there it is the tug,
+     * the power cart and the fuel bowser only (callCrew, `light`) — no
+     * stairs, catering or baggage train on a military apron.
+     */
+    if (lay.stands.length) {
+      this.spare = this.addCrew(null, { full: true, spare: true, military: !!lay.military });
     }
     // The follow-me van, doing laps of the apron.
     if (lay.apron) {
@@ -1417,8 +1423,12 @@ export class Apron {
     const le = I.wingLE(0.45 * I.halfSpan);
     out.hoseTo = local(tg, 0.45 * I.halfSpan, le.y - 0.2, le.z + 1.0);
     out.gpu = p(-(I.hw + 2.2), I.noseZ + 3, 90);
-    // The baggage loop: ahead of the loader, between it and the terminal.
-    const lz0 = I.noseZ - 7;
+    // The baggage loop: ahead of the loader, toward the terminal — but kept
+    // behind the nose line (2.5 m ahead of the nose, its corners 4): it used
+    // to run 8.5 m ahead, out into the airside road under the bridges, where
+    // the spare crew drives in and the service vehicles go round
+    // (features/life/plan.js), and a train crossed the road at every gate.
+    const lz0 = I.noseZ - 2.5;
     const lz1 = Math.max(lz0 + 6, I.holdZ - 5);
     const lx0 = I.hw + 2.5;
     const lx1 = I.hw + 7.5;
@@ -1862,7 +1872,7 @@ export class Apron {
      * belt loader and a baggage train round a four-seat Skylark buried it so
      * deep in trucks it could not be seen at all.
      */
-    c.light = info.halfSpan * 2 < 18;
+    c.light = info.halfSpan * 2 < 18 || !!c.opts.military;
     const order = c.light ? ['tug', 'gpu', 'fuelTruck'] : ['tug', 'gpu', 'stairTruck', 'beltLoader', 'cateringTruck', 'fuelTruck'];
     order.forEach((kind, i) => {
       const pose = c.poses[kind];

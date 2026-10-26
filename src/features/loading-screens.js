@@ -43,6 +43,7 @@ import { LoadingScreen } from '../ui/loading-screen.js';
 import { nextTip, tipsFor, renderTip } from '../ui/loading-tips.js';
 import { getMap } from '../world/maps.js';
 import { getAircraft } from '../aircraft/types.js';
+import { pickMissionAircraft } from '../game/mission-aircraft.js';
 import { VEHICLES } from '../vehicles/surface.js';
 import { keyName } from '../flight/input.js';
 import { FOCUS } from '../ui/loading-focus.js';
@@ -165,8 +166,13 @@ export class MapLoading {
     const sim = this.sim;
     const def = sim.defForMode(mode, opts);
     const mapId = getMap(def.map || sim.settings.map).id;
-    // Mirrors startMode: the mission's aeroplane, else the one asked for, else the helicopter in the helicopter game, else the trainer.
-    const want = def.aircraft || opts.aircraft || (sim.game === 'heli' ? 'harrier' : 'skylark');
+    // Mirrors startMode: the type the mission takes (game/mission-aircraft.js: the one asked for or picked in the
+    // hangar if it accepts it — a UH-60 on Man Overboard, not the AW139 it recommends), else the mission's
+    // aeroplane, else the one asked for, else the helicopter in the helicopter game, else the trainer.
+    const picked = mode === 'mission'
+      ? pickMissionAircraft(def, { asked: opts.aircraft, current: (sim.menus && sim.menus.chosenAircraft) || (sim.settings && sim.settings.aircraft) })
+      : null;
+    const want = picked || def.aircraft || opts.aircraft || (sim.game === 'heli' ? 'harrier' : 'skylark');
     const type = getAircraft(want);
     return {
       mapId,

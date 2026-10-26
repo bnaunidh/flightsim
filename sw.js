@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v74';
+const CACHE_VERSION = 'island-flight-v74.1';
 
 const PRECACHE = [
   './',
@@ -78,6 +78,7 @@ const PRECACHE = [
   'src/game/runner.js',
   'src/game/landing-zone.js',
   'src/game/missions.js',
+  'src/game/mission-aircraft.js',
   'src/game/tutorial.js',
   'src/game/markers.js',
   'src/game/atc-director.js',
@@ -497,6 +498,30 @@ const PRECACHE = [
   // aeroplane is first picked, and the cache-first handler below keeps it, so a
   // type seen once flies in its real skin offline too.
   'src/aircraft/real-models.js',
+  // AIRLINE LETTERING: the OFL faces each airline's name is lettered in
+  // (src/render/airline-fonts.js, assets/fonts/FONTS.md), about 230 KB in all.
+  'src/render/airline-fonts.js',
+  // ...and the airlines' fin marks, drawn as brand marks (src/fleet/extra/emblems.js).
+  'src/fleet/extra/emblems.js',
+  // WORLD LIFE: people on the airfield and the apron's service vehicles on their rounds.
+  'src/features/world-life.js',
+  'src/features/life/plan.js',
+  'src/features/life/people.js',
+  'src/features/life/vans.js',
+  'assets/fonts/archivo-black-400-normal.woff2',
+  'assets/fonts/barlow-condensed-700-normal.woff2',
+  'assets/fonts/cinzel-700-normal.woff2',
+  'assets/fonts/exo-2-700-italic.woff2',
+  'assets/fonts/jost-600-normal.woff2',
+  'assets/fonts/jost-700-normal.woff2',
+  'assets/fonts/kanit-600-normal.woff2',
+  'assets/fonts/league-spartan-700-normal.woff2',
+  'assets/fonts/lora-600-italic.woff2',
+  'assets/fonts/montserrat-700-normal.woff2',
+  'assets/fonts/montserrat-800-normal.woff2',
+  'assets/fonts/oswald-600-normal.woff2',
+  'assets/fonts/playfair-display-700-normal.woff2',
+  'assets/fonts/titillium-web-700-normal.woff2',
 ];
 
 // Files that are useful but not required for the game to run. If one of these

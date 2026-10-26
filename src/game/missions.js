@@ -43,6 +43,7 @@ import { HELI_MISSIONS, HELI_FREE } from './missions-heli.js';
 import { BOAT_MISSIONS, BOAT_PATROL } from './missions-boat.js';
 import { CAR_JOBS, ISLAND_ROADS } from './jobs.js';
 import { EXTRA_MISSIONS } from './extra/index.js';
+import { applyMissionAircraft } from './mission-aircraft.js';
 
 const ELEV = RUNWAY.elev;
 const ft = (m) => m * UNITS.FT;
@@ -725,25 +726,38 @@ export const MISSIONS = [
    * ------------------------------------------------------------------ */
   {
     id: 'medevac',
+    /*
+     * Flown in the H145, the air ambulance (the owner, 2026-10-25: "medevac
+     * -> H145"; game/mission-aircraft.js). It was the trainer, landing on the
+     * cay's 260 m strip in the dark; an air ambulance lands on the pad next
+     * to the patient, which is the job. So it is on the helicopter's board.
+     */
+    game: 'heli',
+    aircraft: 'h145',
     name: 'Night Medevac',
     short: 'Night pickup in fog',
     difficulty: 'Hard',
     icon: '✚',
     blurb:
-      'Someone is hurt on Mango Cay and the fog has come in after dark. Fly out, get down on the pad, ' +
+      'Someone is hurt on Mango Cay and the fog has come in after dark. Take the air ambulance out, get down on the pad, ' +
       'and bring them back to the airfield.',
     reward: 'Teaches instrument flying, night approaches and staying calm in bad visibility.',
     weather: { time: 'night', condition: 'rainy', windSpeedKts: 11, windDirDeg: 130 },
     spawn: RUNWAY_START,
-    timeLimit: 720,
-    parTime: 480,
+    // Fifteen minutes, not the trainer's twelve: two landings, on a pad and a runway, in the dark (a helicopter
+    // flown the way the steps say took 553 s to reach the runway, and ran out at 720 s coming down onto it).
+    timeLimit: 900,
+    parTime: 540,
     steps: [
       {
         id: 'go',
-        text: 'Take off and head for Mango Cay. It is dark, so fly the instruments, not the window.',
-        hint: 'The attitude indicator is your horizon now. Keep the wings level on it.',
-        atc: { text: 'Skylark one seven two, medical flight, cleared for immediate departure runway zero nine.', voice: 'tower' },
-        check: (ctx) => ctx.ac.airborneTime > 4 && ft(ctx.ac.agl) > 250,
+        text: 'Lift off and head for Mango Cay. It is dark, so fly the instruments, not the window.',
+        hint: 'Raise the collective (Shift) to climb. The attitude indicator is your horizon now: keep it level.',
+        atc: { text: 'Medic one, Kestrel Tower, medical flight, cleared for immediate departure, north-east to Mango Cay.', voice: 'tower' },
+        // The arrow on the cay from the start; off the ground and climbing is the step (a helicopter is not flying at 250 ft yet when it is on its way).
+        targetLabel: 'Mango Cay',
+        target: () => DELIVERY_PAD.clone(),
+        check: (ctx) => ctx.ac.airborneTime > 4 && ft(ctx.ac.agl) > 100,
       },
       {
         id: 'out',
@@ -756,13 +770,13 @@ export const MISSIONS = [
       {
         id: 'pickup',
         text: 'Get down on the pad. Slowly — you cannot see much and there is nowhere else to go.',
-        hint: 'Full flaps, low power, and let it settle. Below 300 feet per minute.',
+        hint: 'Slow right down and come to a hover over the pad, then ease the collective down (Ctrl) and let it settle.',
         targetLabel: 'Landing pad',
         target: () => DELIVERY_PAD.clone(),
-        // Three seconds down on the cay's strip, in one piece — the same rule
-        // as a runway (game/landing-zone.js), on the 260 m the stop used to
-        // be asked inside. No stop: a landing is a landing.
-        check: (ctx) => landedOnPad(ctx, DELIVERY_PAD, 260, { key: 'cay-strip', needTouchdown: true }),
+        // Three seconds down on the pad, in one piece (game/landing-zone.js), within the 260 m the
+        // trainer's strip landing was asked inside. No touchdown asked for: a helicopter's landing is not
+        // one (the runner's touchdown is an aeroplane's), as on every pad of the helicopter's missions.
+        check: (ctx) => landedOnPad(ctx, DELIVERY_PAD, 260, { key: 'cay-pad' }),
       },
       {
         id: 'back',
@@ -772,37 +786,27 @@ export const MISSIONS = [
           ctx.data.aboard = true;
           ctx.sim.hud.notify('Patient aboard — watch their heart rate', 'info', 5);
         },
-        atc: { text: 'Skylark one seven two, patient aboard, returning to the field.', voice: 'pilot' },
+        atc: { text: 'Medic one, patient aboard, returning to the field.', voice: 'pilot' },
         /*
-         * Line up over the island, not out at sea.
-         *
-         * This used to aim 1,500 m past the western threshold and accept you
-         * anywhere from 850 m to 4,200 m west of it, with no requirement to be
-         * pointing at the runway at all. The seabed starts at 2,550 m west — so
-         * the arrow led you across the field and out towards the coast, and
-         * the box you had to reach extended two kilometres over open water. In
-         * daylight you would see that. This is the mission that happens at
-         * night, in rain, with the sea black and the horizon gone, which is
-         * exactly when you would follow an arrow down into it.
-         *
-         * Now the fix sits over land, and you have to arrive pointing at the
-         * runway — which is what "line up" means.
+         * Back to the field. In the trainer this was a lined-up final
+         * approach to runway 09 from over the island (not out over the black
+         * sea west of it, which the arrow once led you into). An air
+         * ambulance needs no runway and no line-up: it comes back to the
+         * field over land all the way from the cay, and puts down by the
+         * runway's touchdown markers, where the ambulance waits.
          */
-        targetLabel: 'Final approach',
-        target: () => RUNWAY.thresholdWest.clone().add(new THREE.Vector3(-1200, 200, 0)),
-        check: (ctx) =>
-          ctx.ac.pos.x < RUNWAY.thresholdWest.x - 250 &&
-          ctx.ac.pos.distanceTo(RUNWAY.touchdown) < 3600 &&
-          Math.abs(ctx.ac.pos.z) < 900 &&
-          Math.abs(((ctx.ac.heading - 90 + 540) % 360) - 180) < 55,
+        targetLabel: 'Kestrel airfield',
+        target: () => RUNWAY.touchdown.clone().add(new THREE.Vector3(0, 120, 0)),
+        check: (ctx) => Math.hypot(ctx.ac.pos.x - RUNWAY.touchdown.x, ctx.ac.pos.z - RUNWAY.touchdown.z) < 700,
       },
       {
         id: 'land',
-        text: 'Land. Gently — this is the bit that matters.',
-        hint: 'Aim for less than 200 feet per minute at touchdown.',
+        text: 'Land by the runway markers. Gently — this is the bit that matters.',
+        hint: 'Come to a hover first, then down slowly: less than 200 feet per minute at touchdown.',
         targetLabel: 'Touchdown zone',
         target: () => RUNWAY.touchdown,
-        check: landedAndStopped,
+        // Three seconds down on the runway, in one piece — a helicopter's landing, no aeroplane's touchdown.
+        check: (ctx) => landedOnRunway(ctx, { needTouchdown: false }),
       },
     ],
     /*
@@ -868,8 +872,8 @@ export const MISSIONS = [
       const bpm = Math.round(ctx.data.bpm || 96);
       ctx.sim.speak(
         bpm < 130
-          ? 'Skylark one seven two, ambulance is on the apron. Thank you — that was good flying.'
-          : 'Skylark one seven two, ambulance is on the apron. They are stable. You gave them a rough ride.',
+          ? 'Medic one, the ambulance is at the runway. Thank you — that was good flying.'
+          : 'Medic one, the ambulance is at the runway. They are stable. You gave them a rough ride.',
         'tower'
       );
     },
@@ -889,6 +893,13 @@ export const MISSIONS = [
   {
     id: 'chaser',
     name: 'Storm Chaser',
+    /*
+     * Flown in the Tempest WR-4, the weather-research twin built to be flown
+     * into storms (the owner, 2026-10-25: missions fly fitting aircraft;
+     * game/mission-aircraft.js). It was whatever you last flew, usually the
+     * trainer, and the radio called you Skylark.
+     */
+    aircraft: 'tempest',
     /*
      * Drover's Flat: open farmland, villages and a long flat horizon — tornado
      * country (the owner: "use different maps for different missions"). Its
@@ -913,7 +924,7 @@ export const MISSIONS = [
         id: 'find',
         text: 'There is a tornado on the ground ahead. Find it — the marker on the HUD points the way.',
         hint: 'It is rated on the Enhanced Fujita scale. Whatever it says, treat it with respect.',
-        atc: { text: 'Skylark one seven two, tornado is on the ground, confirmed. Readings when able.', voice: 'tower' },
+        atc: { text: 'Tempest research one, tornado is on the ground, confirmed. Readings when able.', voice: 'tower' },
         enter: (ctx) => {
           // A middling one: dangerous, survivable, and it will not sit still.
           ctx.sim.tornadoEF = 2;
@@ -986,7 +997,7 @@ export const MISSIONS = [
       return null;
     },
     onComplete: (ctx) => {
-      ctx.sim.speak('Skylark one seven two, readings received. Nobody expected you to get all three.', 'tower');
+      ctx.sim.speak('Tempest research one, readings received. Nobody expected you to get all three.', 'tower');
     },
     score: (ctx) => {
       const l = ctx.data.lastTouchdown;
@@ -1549,6 +1560,9 @@ export const MISSIONS = [
  * is the one field that makes the switcher at the top of the menu actually
  * change the screen behind it.
  */
+// Each mission's aircraft: the recommended type from the one table (./mission-aircraft.js), the owner's audit.
+applyMissionAircraft(MISSIONS);
+
 export const gameOf = (m) => m.game || (m.vehicle === 'boat' ? 'boat' : m.vehicle === 'car' ? 'car' : 'flight');
 export const missionsFor = (game) => MISSIONS.filter((m) => gameOf(m) === (game || 'flight'));
 

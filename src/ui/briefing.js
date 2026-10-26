@@ -25,6 +25,8 @@
 import { TIMES, CONDITIONS } from '../world/weather.js';
 import { RUNWAY } from '../world/airport.js';
 import { maxPayout, payLine } from '../game/progression.js';
+import { recommendedLine } from '../game/mission-aircraft.js';
+import { AIRCRAFT } from '../aircraft/types.js';
 
 function h(html) {
   const t = document.createElement('template');
@@ -526,6 +528,8 @@ export class BriefingScreen {
     const pay = payOf(mission);
     const xp = xpOf(mission);
     const diff = String(mission.difficulty || 'Easy');
+    // "Recommended aircraft: …" (game/mission-aircraft.js, the owner's audit).
+    const craft = recommendedLine(mission, (id) => (AIRCRAFT.find((a) => a.id === id) || {}).name);
 
     let delay = 0;
     const step = () => `style="--d:${(delay += 0.07).toFixed(2)}s"`;
@@ -625,6 +629,13 @@ export class BriefingScreen {
               <p class="brief-note">${esc(SKY_WORDS[w.condition])}</p>
               <p class="brief-note">${esc(wind.text)}</p>
             </div>
+
+            ${craft
+              ? `<div class="brief-card reveal" ${step()}>
+              <h4 class="brief-h">Aircraft</h4>
+              <p class="brief-note brief-craft">${esc(craft)}</p>
+            </div>`
+              : ''}
 
             <div class="brief-card reveal" ${step()}>
               <h4 class="brief-h">What you earn</h4>

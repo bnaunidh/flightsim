@@ -41,7 +41,7 @@ import { MAPS } from '../world/maps.js';
 import { icon } from './icons.js';
 import { MISSIONS, gameOf } from '../game/missions.js';
 import * as Prog from '../game/progression.js';
-import { categoryItemData, groupByCategory, missionCategory, payLineHtml } from './menus.js';
+import { categoryItemData, groupByCategory, missionCategory, payLineHtml, craftLineHtml } from './menus.js';
 
 const NUMBER_WORDS = [
   'No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
@@ -267,6 +267,7 @@ export function installGameUi(menus, hooks = {}) {
         </div>
         <p>${m.blurb || ''}</p>
         <p class="mission-learn">${m.reward || ''}</p>
+        ${craftLineHtml(m)}
         <div class="mission-foot">
           <span class="mission-best" data-best="${m.id}"></span>
           <button class="primary" data-start="${m.id}">${gameId === 'car' ? 'Take this job' : 'Start'}</button>

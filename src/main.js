@@ -9,6 +9,7 @@
 import * as THREE from './vendor/three.module.js';
 
 import { warmTextures, setTextureAnisotropy, setTextureTier, asphaltTexture, asphaltNormal } from './render/textures.js';
+import { loadAirlineFonts } from './render/airline-fonts.js';
 import { resetSurfaces, updateSurfaces, setFieldWetness } from './render/surfaces.js';
 import { PostFX } from './render/post.js';
 import { pickTier, probeFrames, isTier, tierRank, asHighMs } from './render/quality-probe.js';
@@ -63,6 +64,7 @@ const GAME_IDS = ['flight', 'boat', 'car', 'heli'];
 
 import { MissionRunner, STATUS } from './game/runner.js';
 import { MISSIONS, findMission, FREE_FLIGHT, RUNWAY_START, missionsFor, gameOf, FREE_FOR, missionStartFuel } from './game/missions.js';
+import { pickMissionAircraft } from './game/mission-aircraft.js';
 import { withRole, currentRole } from './game/roles/roles.js';
 import { BOAT_MISSIONS, BOAT_PATROL, findBoatMission, boatSpawnFor, clearBoatProps } from './game/missions-boat.js';
 import { CAR_JOBS, findJob, jobsFor, lengthNote, ISLAND_ROADS, IslandRoads, resolveSpawn } from './game/jobs.js';
@@ -255,6 +257,10 @@ class Game {
     // BLENDER MODELS: fetched and parsed while the textures paint. Never
     // rejects; a vehicle whose file fails keeps the model it had before.
     const blenderModels = preloadVehicleModels();
+    // AIRLINE LETTERING (render/airline-fonts.js): the OFL faces each airline's
+    // name is lettered in, fetched while the textures paint, so the parked
+    // airliners and the first aeroplane are lettered in them first time.
+    const airlineFonts = loadAirlineFonts();
     setLoad(0.04, 'Painting textures…');
     await warmTextures((p, label) => setLoad(0.04 + p * 0.5, `Painting ${label.toLowerCase()}…`));
 
@@ -281,6 +287,9 @@ class Game {
     // BLENDER MODELS: in before the world (the apron) and the first aircraft
     // are built, but a slow disk holds the menu up 1.5 s at most.
     await Promise.race([blenderModels, new Promise((r) => setTimeout(r, 1500))]);
+    // The lettering likewise, 2 s at most: a name drawn before its face is in
+    // letters itself again when it arrives (fleet/aircraft-textures.js).
+    await Promise.race([airlineFonts, new Promise((r) => setTimeout(r, 2000))]);
     this.buildWorld(this.settings.quality);
 
     setLoad(0.82, 'Rolling out the aeroplane…');
@@ -1617,8 +1626,17 @@ class Game {
      * allow for that. It did not, and pressing Heli from a cold start threw
      * before a single frame was drawn.
      */
+    /*
+     * A mission flies in a type it was written for (game/mission-aircraft.js,
+     * the owner's audit): the one asked for, or the one picked on the Free
+     * Flight screen, if it accepts that; else its recommended one. A
+     * mission that is not listed, and every other mode, keeps the order
+     * below.
+     */
+    const missionAc = mode === 'mission' ? pickMissionAircraft(def, { asked: opts.aircraft, current: (this.menus && this.menus.chosenAircraft) || (this.settings && this.settings.aircraft) }) : null;
     const wantAc =
-      def.aircraft
+      missionAc
+      || def.aircraft
       || opts.aircraft
       || (this.game === 'heli' ? 'harrier' : null)
       || (this.aircraftType && this.aircraftType.id);

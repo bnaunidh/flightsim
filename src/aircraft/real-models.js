@@ -217,9 +217,11 @@ function dress(model, id, tpl) {
     tpl.uv = true;
   }
   const mats = paint ? materialsFor(model, paint, id) : plainMaterialsFor(model);
+  const finPieces = [];
   skin.traverse((o) => {
     if (!o.isMesh) return;
     const role = o.parent && o.parent !== skin ? o.parent.name : o.name;
+    if (role === 'fin') finPieces.push(o);
     const m = mats[role] || mats.wing;
     o.material = m;
     o.castShadow = !m.transparent;
@@ -240,6 +242,16 @@ function dress(model, id, tpl) {
     }
   });
   model.add(skin);
+  // The airline's mark on the real fin (fleet/extra/airliners.js finMark): laid on this fin's own
+  // shape, a child of the skin so it shows and hides with it. A fin it cannot read stays plain.
+  if (paint && ud.finMark && typeof ud.finMark.fit === 'function' && finPieces.length) {
+    try {
+      const mark = ud.finMark.fit(skin, finPieces);
+      if (mark) skin.add(mark);
+    } catch (e) {
+      /* the fin keeps its paint, without the mark */
+    }
+  }
   const rm = { id, state: 'on', skin, hidden, flaps, flapsOut: false, on: false, struck: false, inside: false, dead: false };
   ud.realModel = rm;
   ud.realSkin = skin;

@@ -283,6 +283,28 @@ function setPrompt(html, action = null) {
   if (!el) return;
   if (html) el.innerHTML = html;
   el.classList.toggle('on', !!html);
+  placePrompt();
+}
+
+/*
+ * On a phone the prompt sits at a fixed 168 px, "under the objective" — which
+ * is where Free Flight's objective ends. A mission's is lower and taller (its
+ * clock and steps): on a phone held upright the Class-D transfer's "Parked on
+ * stand 4. Press P or tap here" lay over the step that says to lower the ramp
+ * (objective 146-209 px, prompt from 168; checker, 2026-10-26). So, while it
+ * is up on a narrow screen, it goes below the objective when that reaches
+ * further down. One measurement on show and every half second after (scan).
+ */
+function placePrompt() {
+  const el = S.prompt;
+  if (!el || typeof window === 'undefined') return;
+  let top = '';
+  if (S.said && window.innerWidth <= 560) {
+    const obj = S.sim && S.sim.hud && S.sim.hud.objective;
+    const b = obj && obj.getBoundingClientRect ? obj.getBoundingClientRect() : null;
+    if (b && b.height > 0 && b.bottom + 8 > 168) top = `${Math.round(b.bottom + 8)}px`;
+  }
+  if (el.style.top !== top) el.style.top = top;
 }
 
 function say(sim, text, kind = 'info', seconds = 4) {
@@ -353,7 +375,7 @@ function playerInfo(sim) {
 function standUnder(sim) {
   const ac = sim.aircraft;
   if (!ac || !ac.onGround || ac.crashed) return null;
-  // No crew to offer (the air base keeps its own).
+  // No crew to offer (world/apron.js keeps one on every field with stands; this is a field without).
   if (!sim.apron || !sim.apron.spare) return null;
   const st = standAt(ac.pos.x, ac.pos.z, 3);
   if (!st || standTaken(st) || S.busy.has(st)) return null;
@@ -950,6 +972,13 @@ function callCrew(sim) {
 
 function startPush(sim) {
   if (S.state !== 'serviced') return false;
+  // Not with the cargo ramp down (an airlifter's: fleet/extra/c17.js), nor while a mission says to wait (setServicesHold).
+  const cargo = sim.model && sim.model.userData && sim.model.userData.cargo;
+  const rampDown = cargo && (typeof cargo.amount === 'function' ? cargo.amount() > 0.02 : !!cargo.isOpen);
+  if (rampDown || S.hold) {
+    say(sim, rampDown ? 'The tug will not push with the cargo ramp down — close it first.' : S.hold, 'warn', 4);
+    return false;
+  }
   S.push = planPush(sim);
   S.state = 'pushback';
   if (sim.apron && sim.apron.showDocking) sim.apron.showDocking(null);
@@ -974,6 +1003,7 @@ function stopPush(sim) {
 
 function finishPush(sim, early) {
   S.state = 'pushed';
+  S.pushes = (S.pushes || 0) + 1;
   S.t = 0;
   if (sim.apron && sim.apron.dismissCrew) sim.apron.dismissCrew();
   setPrompt('');
@@ -1006,6 +1036,8 @@ registerExtension({
   startMode(sim) {
     S.sim = sim;
     reset(sim);
+    S.pushes = 0;
+    S.hold = null;
     syncPromptVisibility();
   },
 
@@ -1033,6 +1065,7 @@ registerExtension({
     if (S.scan <= 0) {
       S.scan = 0.5;
       scan(sim);
+      placePrompt();
     }
     tick(sim, dt);
   },
@@ -1114,6 +1147,25 @@ export function setPushPref(pref) {
 
 export function pushPref() {
   return S.pushPref;
+}
+
+/**
+ * A mission's "not yet" for the pushback (game/extra/scp.js: while the
+ * Class-D are still walking out to board): the words to say when one is
+ * asked for, or null to allow it again. Cleared by every new flight.
+ */
+export function setServicesHold(words) {
+  S.hold = words ? String(words) : null;
+}
+
+/**
+ * Where the ground crew is with your aeroplane: 'idle', 'onStand', 'calling',
+ * 'serviced', 'pushback' or 'pushed' (for a mission's step, game/extra/scp.js),
+ * and how many pushes have finished this flight (a mission that asks for one
+ * cannot miss the twenty seconds 'pushed' lasts).
+ */
+export function servicesState() {
+  return { state: S.state, pushes: S.pushes || 0, stand: S.stand ? S.stand.number : null };
 }
 
 /** For the tests (and main.js hudAction, for the touch screen's ground sheet). */

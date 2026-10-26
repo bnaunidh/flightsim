@@ -4,6 +4,7 @@
  * Final suite: 146/146. Target-device transparency performance not checked. */
 import * as THREE from '../vendor/three.module.js';
 import { helicopterReflectionEnvironment } from './helicopter.js';
+import { canvasFont, fontKey, fontReady, whenFontsLoaded } from '../render/airline-fonts.js';
 
 // All artwork is generated here. Shared texture/environment cache is deliberately
 // not owned by individual aircraft; the caller disposes only returned materials.
@@ -246,23 +247,46 @@ export function createAircraftMaterials(model,config={}) {
  * Texture itself is shared and survives model disposal. This never paints labels
  * over a fuselage UV wrap or stamps a registration on every unrelated component.
  */
-export function aircraftDecalTexture(text,{color:ink='#252f34',background='transparent',width=512,height=128,weight=600,spacing=0}={}) {
+export function aircraftDecalTexture(text,{color:ink='#252f34',background='transparent',width=512,height=128,weight=600,spacing=0,font=null}={}) {
   if(typeof text!=='string'||!text.trim())throw new TypeError('Aircraft decal text must be nonempty.');
   width=Math.max(32,Math.min(2048,Math.round(width)));height=Math.max(16,Math.min(1024,Math.round(height)));
   weight=Math.max(100,Math.min(900,Math.round(Number(weight)||600)));spacing=Math.max(0,Math.min(.5,Number(spacing)||0));
   // `weight` (100-900) and `spacing` (em, as letter spacing) are the airline's own: a freighter's billboard
   // name is heavy and wide, a registration medium and stencil-spaced. Browsers without canvas letterSpacing
   // (Firefox before 2024) draw the text unspaced, at the same size.
-  const map=canvasTexture(`Aircraft_decal_${text}_${ink}_${background}_${width}_${height}_${weight}_${spacing}`,width,height,(ctx,w,h)=>{
+  // `font` ({ family, weight, style }: aircraft/liveries.js style.titleFont) is the airline's own typeface
+  // (render/airline-fonts.js). Its key is only in the cache key when it is set, so a registration or a
+  // scheme with none is the same texture it always was.
+  const fk=fontKey(font);
+  const paint=(ctx,w,h)=>{
     ctx.clearRect(0,0,w,h);if(background!=='transparent'){ctx.fillStyle=background;ctx.fillRect(0,0,w,h);}
     ctx.fillStyle=ink;ctx.textAlign='center';ctx.textBaseline='middle';
-    const n=Math.max(text.length,1),size=Math.min(h*.68,w/(n*(.66+spacing)));ctx.font=`${weight} ${size}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+    const n=Math.max(text.length,1);let size=Math.min(h*.68,w/(n*(.66+spacing)));
+    ctx.font=fk?canvasFont(font,size):`${weight} ${size}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
     if(spacing>0&&'letterSpacing' in ctx){try{ctx.letterSpacing=`${(spacing*size).toFixed(2)}px`;}catch(e){/* an older canvas keeps the plain spacing */}}
+    // A face of its own is measured, not guessed: a condensed one fills its band taller, a wide serif
+    // is brought down to fit (fillText's maxWidth would squash it instead, and a squashed serif is the
+    // first thing that looks cheap). Never taller than the band.
+    if(fk&&typeof ctx.measureText==='function'){
+      const m=ctx.measureText(text),tw=m&&m.width;
+      if(tw>0){const fit=Math.min(h*.7,size*(w*.92)/tw);if(Math.abs(fit-size)>.5){size=fit;ctx.font=canvasFont(font,size);if(spacing>0&&'letterSpacing' in ctx){try{ctx.letterSpacing=`${(spacing*size).toFixed(2)}px`;}catch(e){/* as above */}}}}
+    }
     // Letter spacing is added after each glyph, the last too: nudge left by half of one so the word stays centred.
     const nudge=spacing>0&&'letterSpacing' in ctx?spacing*size*.5:0;
     ctx.fillText(text,w*.5+nudge,h*.52,w*.93);
-  });
+  };
+  const key=`Aircraft_decal_${text}_${ink}_${background}_${width}_${height}_${weight}_${spacing}${fk?`_${fk}`:''}`;
+  const fresh=!cache.has(key);
+  const map=canvasTexture(key,width,height,paint);
   map.userData.text=text; // what it says, for the tests
+  if(fk){
+    map.userData.font=fk;
+    // Lettered before the face was in (a slow disk, or main.js's wait ran out): letter it again when it is.
+    if(fresh&&!fontReady(font)){
+      map.userData.fallback=true;
+      whenFontsLoaded(()=>{const c=map.image,ctx=c&&c.getContext&&c.getContext('2d');if(!ctx)return;paint(ctx,c.width,c.height);map.userData.fallback=false;map.needsUpdate=true;});
+    }
+  }
   return map;
 }
 

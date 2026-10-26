@@ -116,7 +116,27 @@ export const CREDITS_HTML = `
 
   <div class="credit-block">
     <h3>Typography</h3>
-    <p>System font stack only (<code>-apple-system, Segoe UI, Roboto, Helvetica, Arial</code>). No web fonts are downloaded, so text renders instantly and offline.</p>
+    <p>The interface uses the system font stack (<code>-apple-system, Segoe UI, Roboto, Helvetica, Arial</code>), so text renders instantly.
+    The airlines&rsquo; names on the aeroplanes are lettered in twelve open-source typefaces, bundled in <code>assets/fonts/</code> and cached for offline play:</p>
+    <table class="credit-table">
+      <thead><tr><th>Typeface</th><th>Designers</th><th>Licence</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr><td>Montserrat (700, 800)</td><td>Julieta Ulanovsky and the Montserrat Project Authors</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+        <tr><td>Jost (600, 700)</td><td>Owen Earl (indestructible type*)</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+        <tr><td>League Spartan (700)</td><td>The League of Moveable Type and the League Spartan Project Authors</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+        <tr><td>Playfair Display (700)</td><td>Claus Eggers Sørensen and the Playfair Project Authors</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+        <tr><td>Cinzel (700)</td><td>Natanael Gama and the Cinzel Project Authors</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+        <tr><td>Oswald (600)</td><td>Vernon Adams, Kalapi Gajjar, Cyreal and the Oswald Project Authors</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+        <tr><td>Barlow Condensed (700)</td><td>Jeremy Tribby and the Barlow Project Authors</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+        <tr><td>Exo 2 (700 italic)</td><td>Natanael Gama and the Exo 2 Project Authors</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+        <tr><td>Titillium Web (700)</td><td>Accademia di Belle Arti di Urbino and the Titillium Web Project Authors</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+        <tr><td>Archivo Black (400)</td><td>Omnibus-Type and the Archivo Project Authors</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+        <tr><td>Kanit (600)</td><td>Cadson Demak and the Kanit Project Authors</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+        <tr><td>Lora (600 italic)</td><td>Cyreal and the Lora Project Authors</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+      </tbody>
+    </table>
+    <p class="tiny">All under the SIL Open Font License, Version 1.1 &mdash; free to bundle and redistribute with the game, not sold on their own.
+    Each airline is lettered in the face nearest the feel of the lettering it is a parody of, never in a real airline&rsquo;s own typeface. List in <code>assets/fonts/FONTS.md</code>.</p>
   </div>
 
   <div class="credit-block">

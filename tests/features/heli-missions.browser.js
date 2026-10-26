@@ -1,5 +1,6 @@
 /**
- * EVERY SKYHOOK MISSION, FLOWN BY DOING WHAT IT SAYS.
+ * EVERY HELICOPTER MISSION, FLOWN BY DOING WHAT IT SAYS (the Skyhook, the AW139
+ * and the H145 since the missions went to fitting aircraft, 2026-10-25).
  *
  * A key-driven pilot that reads the mission's own current step and its own
  * target — the same arrow and beacon a player follows — and does what the
@@ -40,7 +41,7 @@ const KEYS = {
   E: ['KeyE', 'e'],
 };
 
-export const MISSION_IDS = ['firstlight', 'covepickup', 'overboard', 'stackrescue', 'nightdeck', 'lastlight', 'oncall'];
+export const MISSION_IDS = ['firstlight', 'covepickup', 'overboard', 'stackrescue', 'nightdeck', 'lastlight', 'oncall', 'medevac'];
 
 export async function check(sim, r, say = () => {}, opts = {}) {
   const ids = opts.ids || MISSION_IDS;
@@ -405,7 +406,9 @@ export async function check(sim, r, say = () => {}, opts = {}) {
           await flyTo(target, 4);
           await landHere();
           await tick(3);
-        } else if (sid === 'out' || sid === 'choose') {
+        } else if (sid === 'out' || sid === 'choose' || sid === 'go' || sid === 'back') {
+          // Night Medevac (the H145's since 2026-10-25): "Lift off and head for Mango Cay", "Take them home".
+          if (sid === 'back' && ac().onGround) await liftOff(45);
           await liftOff(45);
           // The Ledge's hint: "The top of the stack is two hundred metres up.
           // Hold Shift on the way and arrive above the rock, not beside it."
@@ -417,7 +420,7 @@ export async function check(sim, r, say = () => {}, opts = {}) {
           }
           if (t) await flyTo(target, 60, true);
           else await tick(1);
-        } else if (sid === 'land') {
+        } else if (sid === 'land' || sid === 'pickup') {
           if (ac().onGround) await liftOff(30);
           await flyTo(target, 4);
           await landHere();

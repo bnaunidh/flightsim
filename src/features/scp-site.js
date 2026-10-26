@@ -25,7 +25,7 @@
  *                has along its edges, and the frozen lake on the plain.
  *   The weather  ground fog over the yard, drifting; the snow itself is
  *                world/precip.js (`precip: 'snow'` on the map).
- *   De-icing     a de-icing truck parked by the first stand at the base, with
+ *   De-icing     a de-icing truck parked by the transfer's stand at the base, with
  *                its boom up: cheap (nine boxes), and it says "cold" the
  *                moment you see the apron.
  *
@@ -38,9 +38,11 @@
  *     only while the game's audio is running and not muted (the owner's
  *     rule: sound is off unless the player switched it on);
  *   - walks the people of the Class-D transfer (game/extra/scp.js): the
- *     escort and four Class-D in orange, from the van to your door at the
- *     base, and from your door to the blast door at the Site. Simple
- *     figures (staff/person.js), walking; nothing else is shown.
+ *     escort and four Class-D in orange, from the van up the C-17's cargo
+ *     ramp into its hold at the base, and out of it, down the ramp and to
+ *     the blast door at the Site (the side door, for an aircraft with no
+ *     ramp). Simple figures (staff/person.js), walking; nothing else
+ *     is shown.
  *
  * Spooky atmosphere only. No creatures, nothing behind the doors, nothing
  * happens to anybody.
@@ -49,7 +51,8 @@
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension } from '../game/extensions.js';
 import { MAP, heightAt, addObstacleAt, iceAt, FLATS } from '../world/terrain.js';
-import { airportLayout } from '../world/airport-layout.js';
+import { airportLayout, standTaken } from '../world/airport-layout.js';
+import { C17_RAMP } from '../aircraft/extra/c17.js';
 import { FLASH, CAPS } from '../render/flash-safety.js';
 import { createPerson, posePerson, disposePerson } from './staff/person.js';
 
@@ -719,37 +722,82 @@ function buildSite(group, cfg, quality) {
   return built;
 }
 
-/** The base's first stand (where the mission starts), or null. */
-function firstStand() {
+/**
+ * The C-17 the transfer is flown in (game/mission-aircraft.js): its span and
+ * length, rounded up, for the stand it parks on and the vehicles round it.
+ */
+export const TRANSFER_CRAFT = Object.freeze({ id: 'c17', halfSpan: 26, noseZ: -22, tailZ: 27 });
+/** Where the C-17's wheels meet the ground, in its model's frame (aircraft/extra/c17.js DESC.c17.ground). */
+const C17_WHEELS_Y = -4.5;
+
+/**
+ * The stand the transfer starts on: the first one at the base with room for
+ * the C-17. Every stand at Caribou is a medium one (44 m apart, for a 38 m
+ * wing), so it is the first EMPTY stand whose wing tips clear the aeroplanes
+ * parked on the stands either side by four metres — the wing reaches over
+ * the empty stands next door, as wide-bodies do on a fighter apron. The base's
+ * first stand when none has room (or there is no layout), as before.
+ */
+export function transferStand() {
+  let lay = null;
   try {
-    const lay = airportLayout();
-    return (lay && lay.stands && lay.stands[0]) || null;
+    lay = airportLayout();
   } catch (e) {
     return null;
   }
+  const stands = (lay && lay.stands) || [];
+  if (!stands.length) return null;
+  const reach = TRANSFER_CRAFT.halfSpan + 4;
+  /*
+   * A stand the base MEANS to fill counts as filled whether or not this
+   * detail level drew its jet (standTaken leaves those out): on Low no
+   * parked aeroplane is drawn, every stand looked free, and the transfer
+   * started on stand 1 instead of stand 4 — 26 m west of taxiway A2, so the
+   * push (which ends facing west) pointed away from the taxiway the arrow
+   * showed, the words said "west, left at the first taxiway" (A1, 460 m
+   * on, past the hangar), and a pilot turning back for A2 swung the C-17
+   * into the van (checker, 2026-10-26). One stand at every detail level.
+   */
+  const filled = (st) => standTaken(st) || !!st.occupant;
+  const fits = (st) => {
+    if (filled(st)) return false;
+    for (const q of stands) {
+      if (q === st || !filled(q)) continue;
+      // The neighbour's aeroplane, at most its stand's own half-span out from its middle.
+      const half = (q.maxSpan || q.pitch || 40) / 2;
+      if (Math.hypot(q.x - st.x, q.z - st.z) < reach + half) return false;
+    }
+    return true;
+  };
+  return stands.find(fits) || stands[0];
+}
+
+/** World point at body (x right, z aft) of an aeroplane standing at (px, pz) facing headingDeg. */
+function bodyPoint(px, pz, headingDeg, bx, bz) {
+  const h = (headingDeg || 0) * D2R;
+  const fx = Math.sin(h);
+  const fz = -Math.cos(h);
+  const rx = Math.cos(h);
+  const rz = Math.sin(h);
+  return { x: px + rx * bx - fx * bz, z: pz + rz * bx - fz * bz };
 }
 
 /**
- * A de-icing truck by the first stand of the base: a cab, a tank, a boom up
+ * A de-icing truck by the transfer's stand at the base: a cab, a tank, a boom up
  * on a knuckle and the basket at the end of it. Four meshes (paint, dark,
  * tank, glass). Returns where it stands, or null if the field has no
  * stands to park it by.
  */
 function buildDeicer(group) {
-  let lay = null;
-  try {
-    lay = airportLayout();
-  } catch (e) {
-    lay = null;
-  }
-  const st = lay && lay.stands && lay.stands[0];
+  const st = transferStand();
   if (!st) return null;
   const h = (st.headingDeg || 0) * D2R;
-  // Beside the stand, off its right-hand side, facing the same way.
-  const rx = Math.cos(h);
-  const rz = Math.sin(h);
-  const x = st.x + rx * 26;
-  const z = st.z + rz * 26;
+  // Off the C-17's right wing tip and a little ahead of it, facing the same way:
+  // clear of the wing, and of every way the tug can swing it off the stand
+  // (measured: 15 m from the nearest point of the push either way round).
+  const at = bodyPoint(st.x, st.z, st.headingDeg, TRANSFER_CRAFT.halfSpan + 12, -10);
+  const x = at.x;
+  const z = at.z;
   const y = heightAt(x, z);
   const t = new THREE.Group();
   t.name = 'deicing-truck';
@@ -784,32 +832,29 @@ function buildDeicer(group) {
 }
 
 /**
- * The van the Class-D arrive in, parked beside the stand: a dark box van
- * with a barred rear window. Three meshes. Where the transfer's people step
- * out of.
+ * The van the Class-D arrive in, parked by the stand: a dark box van with a
+ * barred rear window. Three meshes. Where the transfer's people step out of.
  *
- * On the stand's LEFT, behind the wing, rear doors towards the aeroplane:
- * the passengers board by the left-hand door, and the de-icer is on the
- * right. It used to stand ten metres beyond the de-icer, so the column
- * walked through the truck and through the fuselage to reach the door (and
- * the van sat four metres from the next stand's aeroplane).
+ * Off the C-17's LEFT side, level with the foot of its cargo ramp and well
+ * outboard of the tailplane, rear doors towards the ramp: the column walks
+ * straight across to the ramp and up it. Not behind the aeroplane, where it
+ * stood in the way of the tug: a pushback goes straight back from the stand
+ * and swings the tail round one way or the other, and the van stood where
+ * either swing put the tail (measured: the van here is 6 m from the nearest
+ * point of either push).
  */
 function buildVan(group, at) {
   if (!at) return null;
-  const h = (at.headingDeg || 0) * D2R;
-  const rx = Math.cos(h);
-  const rz = Math.sin(h);
-  const fx = Math.sin(h);
-  const fz = -Math.cos(h);
-  // Twenty metres left (the Courier's wing reaches 6.4) and five aft.
-  const x = at.x - rx * 20 - fx * 5;
-  const z = at.z - rz * 20 - fz * 5;
+  const P = bodyPoint(at.x, at.z, at.headingDeg, -(TRANSFER_CRAFT.halfSpan + 8), C17_RAMP.rampEnd + 1.5);
+  const foot = bodyPoint(at.x, at.z, at.headingDeg, 0, C17_RAMP.rampEnd + 1.5);
+  const x = P.x;
+  const z = P.z;
   const y = heightAt(x, z);
   const v = new THREE.Group();
   v.name = 'transfer-van';
   v.position.set(x, y, z);
-  // Side-on to the stand, rear doors (+Z in its frame) facing it.
-  v.rotation.y = -h + Math.PI / 2;
+  // Rear doors (+Z in its frame) facing the ramp.
+  v.rotation.y = Math.atan2(foot.x - x, foot.z - z);
   const body = new THREE.MeshStandardMaterial({ color: 0x2b2f35, roughness: 0.6, metalness: 0.3 });
   body.name = 'body';
   const glass = new THREE.MeshStandardMaterial({ color: 0x15202a, roughness: 0.2, metalness: 0.3 });
@@ -847,22 +892,64 @@ function person(outfit, seed) {
  * front and back. `onArrive(i)` as each gets there; `vanish` hides them
  * there (boarding). Clears any walk already going.
  */
-function startWalk(sim, from, target, { vanish = false, label = '', via = null } = {}) {
+function startWalk(sim, from, target, { vanish = false, label = '', via = null, ramp = null } = {}) {
   endWalk();
   const group = S.group || sim.scene;
   const people = [];
   const kinds = ['tactical', 'classd', 'classd', 'classd', 'classd', 'tactical'];
+  // Down a ramp: they come out of the hold one after another, from inside, and walk down it to its foot first.
+  const down = ramp && ramp.mode === 'down' ? ramp.geom() : null;
   kinds.forEach((kind, i) => {
     const p = person(kind, 31 + i * 7);
     const side = i % 2 ? 0.95 : -0.95;
-    const x = from.x + side + (Math.random() - 0.5) * 0.4;
-    const z = from.z + i * 1.5;
-    p.position.set(x, heightAt(x, z), z);
+    let x = from.x + side + (Math.random() - 0.5) * 0.4;
+    let z = from.z + i * 1.5;
+    if (down) {
+      x = down.inside.x;
+      z = down.inside.z;
+    }
+    p.position.set(x, down ? down.floorY : heightAt(x, z), z);
+    if (down) p.visible = false;
     group.add(p);
-    people.push({ p, kind, i, x, z, speed: kind === 'tactical' ? WALK.guard : WALK.classd, behind: i * 1.5, side, done: false, pastVia: !via });
+    people.push({
+      p, kind, i, x, z, speed: kind === 'tactical' ? WALK.guard : WALK.classd, behind: i * 1.5, side, done: false, pastVia: !via,
+      // Up the ramp: climbing it once at its foot; down it: still to come out (from `out` seconds), or on the way down.
+      climb: false, out: down ? i * 1.6 : 0, descending: !!down,
+    });
   });
-  S.transfer = { people, target, vanish, label, via, from: { x: from.x, z: from.z }, phase: 'walking', arrived: 0, t: 0 };
+  S.transfer = { people, target, vanish, label, via, ramp, from: { x: from.x, z: from.z }, phase: 'walking', arrived: 0, t: 0 };
   return S.transfer;
+}
+
+/**
+ * The C-17's cargo ramp where the aeroplane stands now: its foot on the
+ * ground behind the tail, the point inside the hold the people walk to
+ * (or come out of), and the cargo floor's height there. `open` while the
+ * ramp is fully down (model userData.cargo); null for an aircraft with no
+ * ramp (then the people use the side door, doorPointOf).
+ */
+export function rampOf(sim) {
+  const ac = sim && sim.aircraft;
+  const cargo = sim && sim.model && sim.model.userData && sim.model.userData.cargo;
+  if (!ac || !ac.pos || !cargo || !(sim.aircraftType && sim.aircraftType.cargoRamp)) return null;
+  const foot = bodyPoint(ac.pos.x, ac.pos.z, ac.heading, 0, C17_RAMP.rampEnd + 1.2);
+  const hinge = bodyPoint(ac.pos.x, ac.pos.z, ac.heading, 0, C17_RAMP.hingeZ);
+  const inside = bodyPoint(ac.pos.x, ac.pos.z, ac.heading, 0, C17_RAMP.hingeZ - 4);
+  const g = heightAt(foot.x, foot.z);
+  // The cargo floor's height over the ground the wheels stand on (the hinge's: the floor runs level forward of it).
+  const rise = C17_RAMP.floorY - C17_WHEELS_Y;
+  const amount = typeof cargo.amount === 'function' ? cargo.amount() : cargo.isOpen ? 1 : 0;
+  const moving = (ac.groundSpeed || 0) > 0.8 || !ac.onGround;
+  return { foot, hinge, inside, ground: g, floorY: g + rise, rise, open: amount > 0.97, amount, moving };
+}
+
+/** Height of a walker at (x, z) on the ramp (up from its foot to the hinge) or in the hold, from the ramp's geometry. */
+function rampHeight(geom, x, z) {
+  const ax = geom.hinge.x - geom.foot.x;
+  const az = geom.hinge.z - geom.foot.z;
+  const L2 = ax * ax + az * az || 1;
+  const k = ((x - geom.foot.x) * ax + (z - geom.foot.z) * az) / L2;
+  return geom.ground + geom.rise * Math.max(0, Math.min(1, k));
 }
 
 function endWalk() {
@@ -899,8 +986,43 @@ function stepWalk(dt) {
   const hold = end.moving;
   let allDone = true;
   let rank = 0;
+  const geom = T.ramp ? T.ramp.geom() : null;
   for (const w of T.people) {
     if (w.done) continue;
+    /*
+     * The ramp (the C-17). Up: the head of the queue, at the foot, walks up
+     * it into the hold and goes aboard there — not at the foot. Down: each
+     * comes out of the hold in turn and walks down it to the foot, then on
+     * with the column.
+     */
+    if (geom && (w.climb || w.descending)) {
+      allDone = false;
+      if (w.descending && T.t < w.out) continue;
+      const to = w.climb ? geom.inside : geom.foot;
+      const ex = to.x - w.x;
+      const ez = to.z - w.z;
+      const dist = Math.hypot(ex, ez);
+      const speed = hold && w.climb ? 0 : Math.min(w.speed * 0.8, dist / Math.max(dt, 1e-3));
+      if (speed > 0 && dist > 1e-3) {
+        w.x += (ex / dist) * speed * dt;
+        w.z += (ez / dist) * speed * dt;
+        w.p.rotation.y = Math.atan2(-ex, -ez);
+      }
+      w.p.visible = true;
+      w.p.position.set(w.x, rampHeight(geom, w.x, w.z), w.z);
+      posePerson(w.p, dt, { speed });
+      if (dist < 0.3) {
+        if (w.climb) {
+          w.climb = false;
+          w.done = true;
+          T.arrived++;
+          w.p.visible = false;
+        } else {
+          w.descending = false;
+        }
+      }
+      continue;
+    }
     const tgt = w.pastVia ? end : T.via;
     // A slot behind the lead and to one side, so they arrive as a column.
     // Boarding is a queue: your place is behind the people still waiting,
@@ -930,7 +1052,12 @@ function stepWalk(dt) {
     // the rest in a short queue behind). Boarding: the head of the queue,
     // at the door, goes aboard.
     const toTarget = Math.hypot(end.x - w.x, end.z - w.z);
-    const there = T.vanish ? behind === 0 && dist < 0.6 && !hold : dist < 0.6 && toTarget < ARRIVED + w.behind + 1.5;
+    const there = T.vanish ? behind === 0 && dist < 0.6 && !hold && !end.wait : dist < 0.6 && toTarget < ARRIVED + w.behind + 1.5;
+    if (there && T.vanish && geom && T.ramp.mode === 'up') {
+      // At the foot of the ramp: up it (the next one steps up to the foot behind).
+      w.climb = true;
+      continue;
+    }
     if (there) {
       w.done = true;
       T.arrived++;
@@ -1024,7 +1151,7 @@ registerExtension({
     if (!cfg) return;
     S.site = { ...cfg, ...buildSite(group, cfg, quality) };
     S.deicer = buildDeicer(group);
-    S.van = buildVan(group, firstStand() || (cfg.holding ? { x: cfg.holding.x, z: cfg.holding.z, headingDeg: 90 } : null));
+    S.van = buildVan(group, transferStand() || (cfg.holding ? { x: cfg.holding.x, z: cfg.holding.z, headingDeg: 90 } : null));
     S.built = true;
   },
 
@@ -1122,26 +1249,48 @@ export function doorPointOf(ac) {
   };
 }
 
-/** Walk the escort and the Class-D from the van to the aircraft's door; they board (vanish) there. */
+/**
+ * Where the people board: the foot of the cargo ramp when the aircraft has
+ * one (the C-17) — held there until the ramp is right down and nothing is
+ * moving — else the side door.
+ */
+export function boardPointOf(sim) {
+  const g = rampOf(sim);
+  if (!g) return doorPointOf(sim && sim.aircraft);
+  // Moving: everybody stands still. Ramp not down yet: they walk to its foot and wait there.
+  return { x: g.foot.x, z: g.foot.z, moving: g.moving, wait: !g.open };
+}
+
+/**
+ * Walk the escort and the Class-D from the van to the aircraft: to the foot
+ * of the C-17's ramp and up it into the hold, one at a time, where they go
+ * aboard (vanish). The side door for an aircraft with no ramp.
+ */
 export function beginBoarding(sim) {
   const van = S.van;
   const from = van ? { x: van.rearX, z: van.rearZ } : (() => {
-    const d = doorPointOf(sim.aircraft);
+    const d = boardPointOf(sim);
     return d ? { x: d.x + 24, z: d.z + 10 } : { x: 0, z: 0 };
   })();
-  return startWalk(sim, from, () => doorPointOf(sim.aircraft), { vanish: true, label: 'boarding' });
+  const ramp = rampOf(sim) ? { mode: 'up', geom: () => rampOf(sim) } : null;
+  return startWalk(sim, from, () => boardPointOf(sim), { vanish: true, label: 'boarding', ramp });
 }
 
-/** Walk them from the aircraft's door to the blast door, where they stop and wait. */
+/**
+ * Walk them from the aircraft to the blast door, where they stop and wait:
+ * out of the hold and down the ramp first (the C-17), else from the door.
+ */
 export function beginHandover(sim) {
-  const d = doorPointOf(sim.aircraft) || { x: 0, z: 0 };
+  const g = rampOf(sim);
+  const d = g ? { x: g.foot.x, z: g.foot.z } : doorPointOf(sim.aircraft) || { x: 0, z: 0 };
   const cfg = MAP.scp;
   const door = cfg ? { x: cfg.door.x, z: cfg.door.z + 4, moving: false } : d;
   // Through the gate, not the fence: first to a spot on the apron in line
   // with the gap, then in file to the door (the barrier lifts for them).
   const Y = cfg && cfg.yard;
   const via = cfg && Y ? { x: cfg.gate.x, z: Y.z1 + 8 } : null;
-  return startWalk(sim, d, () => door, { vanish: false, label: 'handover', via });
+  const ramp = g ? { mode: 'down', geom: () => rampOf(sim) } : null;
+  return startWalk(sim, d, () => door, { vanish: false, label: 'handover', via, ramp });
 }
 
 /** Take the people away (a mission ending early). */

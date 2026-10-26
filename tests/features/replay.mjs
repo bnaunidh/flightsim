@@ -198,6 +198,8 @@ function attachedOk(sim) {
   const liveFx = fxState();
   const livePieces = piecePoses();
   const liveWreck = wreckPose(w);
+  const liveFrame = () => { sim.model.updateMatrixWorld(true); return sim.model.matrixWorld.elements.map((v) => Math.round(v * 1000) / 1000).join(','); };
+  const liveModel = liveFrame();
   ok('land: live, seven seconds on, the fire still burns and the wreck stands (what a replay must not disturb)', liveFx.busy && w.active && w.group.visible && Math.abs(w.t - 7) < 0.2, `fx busy ${liveFx.busy}, wreck t ${f2(w.t)}`);
 
   /* ---- 2. before the hit ---- */
@@ -271,8 +273,10 @@ function attachedOk(sim) {
   const flash2 = { scale: w.flashScale, light: w.light.intensity, noFlare: D().S.fx.noFlare };
   ok('land: a scrub onto the hit flashes it; straight back and onto it again does not (the fire is there, the flash is not)',
     flash1.scale === 1 && flash2.scale === 0 && flash2.light < flash1.light && w.group.visible && flash2.noFlare === false, `${JSON.stringify(flash1)} then ${JSON.stringify(flash2)}`);
-  D().seekReplay(sim, 1.0);
-  ok('land: …and off the flash the firelight is whole again', w.flashScale === 1);
+  // Off every flash window: the hit's and each pop's (a pop can fall at +1 s, and then the seek lands in it — the flake this was).
+  const offFlash = [1.0, 1.25, 1.5, 1.75, 2.0, 2.25].find((t) => !D().flashMoments(D().S.rec).some((f) => t >= f && t < f + 0.5));
+  D().seekReplay(sim, offFlash);
+  ok('land: …and off the flash the firelight is whole again', w.flashScale === 1, `at +${offFlash} s`);
   const vecArgs = D().S.rec.fx.flatMap((e) => e.args.filter((a) => a && a.isVector3));
   const liveVecs = new Set([sim.aircraft.vel, ...D().S.pieces.map((p) => p.body.vel)]);
   ok('land: a velocity handed to an effect is recorded as a copy (the body goes on moving)', vecArgs.every((v) => !liveVecs.has(v)), `${vecArgs.length} vectors`);
@@ -311,6 +315,13 @@ function attachedOk(sim) {
   ok('land: closed early: the live fire and smoke are back as they were', JSON.stringify(fxState()) === JSON.stringify(liveFx), `${JSON.stringify(fxState())} vs ${JSON.stringify(liveFx)}`);
   ok('land: …the wreck is back where it stood, at its own time, and no longer held', !w.held && JSON.stringify(wreckPose(w)) === JSON.stringify(liveWreck), `t ${f2(w.t)}`);
   ok('land: …and the pieces lie where they lay', JSON.stringify(piecePoses()) === JSON.stringify(livePieces));
+  // R2 (the replay QA): the airframe stayed wherever the replay had it — in the air, if it was closed in the pre-roll.
+  ok('land: …and the airframe lies where it lay (the replay posed it; closed early it was left there)', liveFrame() === liveModel);
+  D().startReplay(sim, false);
+  D().seekReplay(sim, -1.0);
+  const inAir = liveFrame();
+  D().endReplay(sim, false);
+  ok('land: …closed in the pre-roll too: not left in the air where the replay had it', inAir !== liveModel && liveFrame() === liveModel);
   ok('land: …and the game\'s update() moves the wreck again', (() => { const t0 = w.t; sim.wreck.update(0.1); return Math.abs(w.t - t0 - 0.1) < 1e-9; })());
   ok('land: after the replay the keys are the game\'s again', ext.key(sim, 'Space', true) === false);
 
@@ -371,6 +382,51 @@ function attachedOk(sim) {
   ok('sea: the slow sink stands still while the replay plays (the broken world is paused)', sinkDuring === liveSink);
   D().endReplay(sim, false);
   ok('sea: the live splash and sink are given back', JSON.stringify(fxState()) === JSON.stringify(liveFx) && JSON.stringify(wreckPose(w)) === JSON.stringify(liveWreck) && !w.held);
+  ext.stop(sim);
+}
+
+/* ====================================================================== */
+/* R1 (the replay QA, 2026-10-25): a crash on the frame after a teleport  */
+/* ====================================================================== */
+{
+  // Dev mode's "Show me a crash" (crashes.js stageCrash) puts the aeroplane over a field and crashes it on the
+  // same frame; so does a reset into a hillside. The ring of poses kept from before it was somewhere else, and
+  // the replay flew the airframe a second and a half THERE, then jumped it to the wreck.
+  const sim = makeSim('skylark');
+  const group = new THREE.Group();
+  sim.scene.add(group);
+  ext.install(sim);
+  ext.buildWorld(sim, group);
+  ext.startMode(sim);
+  const land = spot(false);
+  const ac = sim.aircraft;
+  // Two seconds of flying 2 km away.
+  ac.reset({ pos: new THREE.Vector3(land.x - 2000, land.h + 300, land.z), headingDeg: 90, speed: 50, altAGL: 300, engineOn: true });
+  for (let i = 0; i < 60; i++) {
+    ac.pos.x += 50 / 30;
+    frame(sim);
+  }
+  const was = ac.pos.clone();
+  // Put down over the spot, and crashed there at once.
+  ac.pos.set(land.x, land.h + 0.5, land.z);
+  ac.vel.set(42, -4, 0);
+  syncModel(sim);
+  ac.on(P.EVENTS.CRASH, () => sim.wreck.start(ac.pos, ac.vel, false));
+  ac.crash('The belly hit the ground', { worldPoint: ac.pos.clone().setY(land.h), part: 'fuselage', surfaceKind: 'ground' });
+  const pre = D().S.rec ? D().S.rec.pre : [];
+  const far = pre.filter((f) => f.pos.distanceTo(was) < 200).length;
+  ok('R1: a crash on the frame after a teleport keeps no pose from where it was before', pre.length > 0 && far === 0, `${pre.length} poses, ${far} near the old place`);
+  let jumps = 0;
+  const chain = [...pre, D().S.rec.frames[0]];
+  for (let i = 1; i < chain.length; i++) if (chain[i].pos.distanceTo(chain[i - 1].pos) > 80) jumps++;
+  ok('R1: …and its pre-roll is the way it arrived, along the velocity it hit with: a second and a half, unbroken', pre.length >= 40 && pre[0].t <= -1.45 && jumps === 0 && Math.abs(pre[pre.length - 1].pos.y - (land.h + 0.5 + 4 / 30)) < 0.2, `${pre.length} poses from ${pre.length ? f2(pre[0].t) : '-'} s, ${jumps} jumps`);
+  // A pre-roll that does join up is kept as it was flown.
+  const J = D().joinPre;
+  const mk = (t, x) => ({ t, pos: new THREE.Vector3(x, 10, 0), quat: new THREE.Quaternion() });
+  const flown = [mk(-1, 0), mk(-0.5, 25), mk(-0.03, 49)];
+  ok('R1: joinPre keeps a pre-roll that leads into the hit untouched', J(flown, new THREE.Vector3(50, 10, 0), new THREE.Quaternion(), new THREE.Vector3(50, 0, 0)).length === 3);
+  const broken = [mk(-1, -3000), mk(-0.5, -2975), mk(-0.03, 49)];
+  ok('R1: …and cuts one at the jump (the newest poses after it are kept, when there are two or more)', J([...broken, mk(-0.01, 50)], new THREE.Vector3(51, 10, 0), new THREE.Quaternion(), new THREE.Vector3(50, 0, 0)).length === 2);
   ext.stop(sim);
 }
 

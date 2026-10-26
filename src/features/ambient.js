@@ -24,7 +24,8 @@
  *            only if settings.traffic !== false: parked aeroplanes that start
  *            up, fly their circuits and come back, under traffic's own runway
  *            rules, playerOnSlot and "your runway", unchanged. Nothing is
- *            dropped straight onto the final a player may be flying.
+ *            dropped straight onto the final a player may be flying. They go
+ *            in sequence, about a minute apart, and one fewer after dark.
  *
  * TIERS  settings.quality: DENSITY scales the ground and water counts,
  * AIR_CAP and AIRPORT_CAP cap the flyers and the airport.
@@ -53,7 +54,7 @@ import { buildLanes, routeAround, routeBetween, routeArrays, seaKeepOuts, neares
 import { CarLayer } from './ambient/cars.js';
 import { BoatLayer } from './ambient/boats.js';
 import { HeliFlyer, PlaneFlyer } from './ambient/flyers.js';
-import { spawnTraffic, trafficState } from './traffic.js';
+import { spawnTraffic, trafficState, _nudge as nudgeTraffic } from './traffic.js';
 import { multiplayer } from './multiplayer.js';
 import { makeRandom } from '../core/noise.js';
 
@@ -411,7 +412,17 @@ function spawnAirport(sim, counts) {
     return;
   }
   const types = ap.types || [];
-  for (let i = 0; i < ap.n; i++) {
+  /*
+   * After dark, one movement fewer (never none): an airfield is quieter at
+   * night. And never all at once: each departure is given its own slot in a
+   * sequence (below), so they start up, taxi, hold short and go one after
+   * another, about a minute apart — and come back round to land in turn —
+   * instead of all starting up together two seconds into the flight.
+   */
+  const night = !!(sim.weather && sim.weather.isNight);
+  const n = night && ap.n > 1 ? ap.n - 1 : ap.n;
+  let slot = 0;
+  for (let i = 0; i < n; i++) {
     const type = types.length ? types[i % types.length] : null;
     /*
      * Leave the apron room for everybody else who asks the traffic for an
@@ -437,8 +448,16 @@ function spawnAirport(sim, counts) {
     A.traffic.asked++;
     let r = spawnTraffic(sim, how, type);
     if (!r.ok && type) r = spawnTraffic(sim, how, null);
-    if (r.ok) A.traffic.spawned++;
-    else A.traffic.refused.push(`${type || 'any'}: ${r.why}`);
+    if (r.ok) {
+      A.traffic.spawned++;
+      // Its place in the sequence: the first starts up in ~10 s, each next 50-75 s after.
+      try {
+        nudgeTraffic(r.id, { timer: 8 + slot * 50 + A.rnd() * (slot ? 25 : 6) });
+      } catch (e) {
+        /* it leaves when traffic.js says */
+      }
+      slot++;
+    } else A.traffic.refused.push(`${type || 'any'}: ${r.why}`);
   }
 }
 
@@ -724,6 +743,8 @@ const API = {
   setAmbient: (level) => setAmbient(A.sim, level),
   thinAround,
   unthin,
+  /** The circles thinAround keeps clear, live ({ x, z, r }; the airfield's people too, features/world-life.js). */
+  thinZones: () => A.thin,
   placeOf: (ref) => placeOf(ref, A.sim),
   flyers: ambientFlyers,
   data: AMBIENT,

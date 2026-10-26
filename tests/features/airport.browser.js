@@ -189,8 +189,9 @@ export async function check(sim, r, say = () => {}) {
   }
 
   /*
-   * An air base keeps its own crews and has none spare for a visitor, so
-   * there is nothing more to drive there: check it offers none, and stop.
+   * A field with no spare crew (none with stands has none now: the air bases
+   * got one for the Class-D transfer's pushback, 2026-10-25) has nothing
+   * more to drive: check it offers none, and stop.
    */
   if (!sim.apron.spare) {
     park.run(sim);
