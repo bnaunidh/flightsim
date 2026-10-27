@@ -139,7 +139,7 @@ export async function check(sim, r, say) {
       shown(gearPill) && gearPill.classList.contains('is-bad') && /Gear up/.test(gearPill.textContent) && first === gearPill,
       `${gearPill ? gearPill.textContent : 'no pill'}; agl ${last && Math.round(last.aglFt)} ft, ${last && Math.round(last.iasKts)} kt, ${last && Math.round(last.vsFpm)} ft/min, gearPos ${last && last.gearPos}`
     );
-    r.ok('hud wins: a free flight has no destination ribbon and no destination beacon', !sim.hud.dest.shown && !(sim.destBeacon && sim.destBeacon.group.visible), `ribbon ${sim.hud.dest.shown} beacon ${sim.destBeacon && sim.destBeacon.group.visible}`);
+    r.ok('hud wins: a free flight has the heading tape but no target on it, and no destination beacon', sim.hud.dest.shown && !sim.hud.dest.hasTarget && !(sim.destBeacon && sim.destBeacon.group.visible), `tape ${sim.hud.dest.shown} target ${sim.hud.dest.hasTarget} beacon ${sim.destBeacon && sim.destBeacon.group.visible}`);
     quit();
 
     /* ---- 3. the destination ribbon and beacon ---- */

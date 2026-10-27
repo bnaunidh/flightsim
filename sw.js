@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v74.7';
+const CACHE_VERSION = 'island-flight-v74.8';
 
 const PRECACHE = [
   './',
@@ -475,6 +475,19 @@ const PRECACHE = [
   'src/world/vehicle-footprints.js',
   // Added by tools/sync-precache.mjs.
   'src/ui/touch-modes.js',
+  // Added by tools/sync-precache.mjs: the live map (src/features/livemap/).
+  'src/features/livemap/airspace.js',
+  'src/features/livemap/chart.js',
+  'src/features/livemap/chart-worker.js',
+  'src/features/livemap/geo.js',
+  'src/features/livemap/livemap.js',
+  'src/features/livemap/nav.js',
+  'src/features/livemap/places.js',
+  'src/features/livemap/render.js',
+  'src/features/livemap/shade.js',
+  'src/features/livemap/where.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/cockpit-cam.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

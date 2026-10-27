@@ -15,10 +15,10 @@
  *               worldmap/outstation.js), and Fly here.
  *   The ground  worldmap/stream.js, built round the camera in a worker, inside
  *               the tier's budget, far tiles unloaded.
- *   The map     5 (rebindable, `worldMap`), the MAP button on the HUD, or the
- *               pause screen: the sea, every field with its code and runway,
- *               where you are, and a destination. Solo: the game pauses while
- *               it is open.
+ *   The map     the full-screen live map (features/livemap/: 5, the MAP
+ *               button on the HUD, the minimap, or the pause screen) — the
+ *               sea, every field, where you are, DIRECT TO and a destination.
+ *               It never pauses the flight.
  *   The trip    a destination puts the guidance (the HUD arrow, the minimap's
  *               mark, the autopilot's heading) on that field's approach, then
  *               its runway; a full stop there is an arrival. Long legs are
@@ -26,7 +26,7 @@
  */
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extLayer } from '../game/extensions.js';
-import { registerActions, isKey, keyName } from '../flight/input.js';
+import { registerActions, isKey } from '../flight/input.js';
 import * as Terrain from '../world/terrain.js';
 import { MAP, makeTerrainMaterial, setPavedExtra } from '../world/terrain.js';
 import { registerExtraMap } from '../world/maps.js';
@@ -47,8 +47,8 @@ import { setNavField, navField, landingDir, papiFor } from '../world/navfield.js
 import { icon } from '../ui/icons.js';
 import { setExtraRunways } from '../ui/minimap.js';
 
+// The map key (`worldMap`, 5) is the live map's now, on every map (features/livemap/livemap.js).
 registerActions({
-  worldMap: { label: 'World map (World Map preview)', group: 'Game', ctx: ['plane', 'heli'], default: ['Digit5'] },
   // Shares 6 with the airlifters' cargo ramp, which wins in an airlifter (key() below).
   timeWarp: { label: 'Sim rate 1x / 2x / 4x in cruise (World Map preview)', group: 'Game', ctx: ['plane', 'heli'], default: ['Digit6'] },
 });
@@ -71,16 +71,12 @@ const S = {
   dest: null,
   arrivedT: 0,
   ui: null,
-  overlay: null,
-  chart: null,
-  chartAsked: false,
   pick: HUB_ID,
   horizon: null,
   flora: null,
   nav: null,
   warp: { want: 1, k: 1, why: '' },
   perf: { frames: 0, total: 0, max: 0, over4: 0, over8: 0 },
-  pausedForMap: false,
   builtFor: null,
   onBuilt: [],
 };
@@ -264,23 +260,7 @@ function prewarm(sim, roots) {
   S.prewarm = { ms: performance.now() - t0, textures: tex.size, shown: flipped.length };
 }
 
-/** The world map's picture: heights over the whole sea, from the tile worker once a session. */
-function askChart() {
-  if (S.chart || S.chartAsked || !S.stream || !S.stream.worker) return;
-  S.chartAsked = true;
-  const w = S.stream.worker;
-  const box = chartBox();
-  const onMsg = (ev) => {
-    const m = ev.data;
-    if (!m || m.op !== 'chart') return;
-    w.removeEventListener('message', onMsg);
-    if (m.heights) S.chart = { box, w: m.w, h: m.h, heights: m.heights, img: null };
-    if (S.overlay && S.overlay.open) S.overlay.draw();
-  };
-  w.addEventListener('message', onMsg);
-  w.postMessage({ op: 'chart', gen: -2, box, w: 512, h: 512 });
-}
-
+/** The sea in one square: every island and a margin (the card's sketch). */
 export function chartBox() {
   let x0 = Infinity;
   let x1 = -Infinity;
@@ -328,7 +308,8 @@ function worldTarget(sim) {
   _tgt.set(r.x, r.y, r.z);
   const km = Math.hypot(ac.pos.x - S.dest.x, ac.pos.z - S.dest.z) / 1000;
   const label = r.stage === 'final' ? `${S.dest.code} runway ${r.runway}` : `${S.dest.code} ${S.dest.name} · ${km.toFixed(0)} km`;
-  return { pos: _tgt, label };
+  // `wp`: the trip's guidance, which a DIRECT TO on the live map flies over (livemap.js wireGuidance).
+  return { pos: _tgt, label, wp: true };
 }
 
 export function setDestination(sim, id) {
@@ -553,7 +534,7 @@ const CSS = `
   font: 600 13px var(--font, system-ui), sans-serif; text-align: left; cursor: pointer; }
 .wp-picks button em { font-style: normal; opacity: 0.7; font-weight: 500; white-space: nowrap; }
 .wp-picks button[aria-checked="true"] { border-color: var(--accent, #4aa3ff); background: rgba(74,163,255,0.16); }
-.wp-picks button:focus-visible, .wp-ov button:focus-visible { outline: 2px solid var(--accent, #4aa3ff); outline-offset: 2px; }
+.wp-picks button:focus-visible { outline: 2px solid var(--accent, #4aa3ff); outline-offset: 2px; }
 .wp-hudcard { display: flex; align-items: center; gap: 8px; align-self: flex-end; pointer-events: auto; font: 600 13px var(--font, system-ui), sans-serif; color: #fff; }
 .wp-hudcard button { min-height: 36px; min-width: 44px; padding: 6px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.22);
   background: rgba(12,20,32,0.72); color: #fff; font: inherit; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -563,33 +544,9 @@ const CSS = `
 .wp-hudcard .wp-warp[aria-pressed="true"] { border-color: #ffd166; color: #ffd166; }
 .wp-hudcard .wp-warp.is-off { opacity: 0.6; }
 .wp-hudcard .wp-rate { font-variant-numeric: tabular-nums; min-width: 2ch; }
-.wp-picks h4, .wp-ov .wp-list h4 { margin: 8px 0 0; font: 700 11px/1.2 var(--font, system-ui), sans-serif; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.7; }
+.wp-picks h4 { margin: 8px 0 0; font: 700 11px/1.2 var(--font, system-ui), sans-serif; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.7; }
 .wp-picks { max-height: 320px; overflow: auto; }
-.wp-ov { position: fixed; inset: 0; z-index: 80; display: grid; grid-template-columns: 1fr minmax(260px, 340px); background: #dfe8ee; color: #1d2a33;
   font: 500 14px var(--font, system-ui), sans-serif; pointer-events: auto; }
-.wp-ov[hidden] { display: none; }
-.wp-ov canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
-.wp-ov .wp-side { background: #f6f3ec; border-left: 1px solid #c9c3b4; padding: 16px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
-.wp-ov h2 { margin: 0; font-size: 18px; }
-.wp-ov .wp-tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; padding: 3px 7px; border-radius: 5px; background: #ffd166; color: #23180a; }
-.wp-ov .wp-list { display: flex; flex-direction: column; gap: 6px; }
-.wp-ov .wp-list button { min-height: 44px; text-align: left; border-radius: 10px; border: 1px solid #cfc8b8; background: #fffdf7; color: inherit; font: inherit; padding: 8px 10px; cursor: pointer; }
-.wp-ov .wp-list button.is-sel { border-color: #2b6cb0; box-shadow: 0 0 0 2px rgba(43,108,176,0.25); }
-.wp-ov .wp-list small { display: block; opacity: 0.75; font-weight: 500; }
-.wp-ov .wp-info { line-height: 1.45; }
-.wp-ov .wp-btns { display: flex; flex-wrap: wrap; gap: 8px; }
-.wp-ov .wp-btns button { min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1px solid #2b6cb0; background: #2b6cb0; color: #fff; font: 600 14px var(--font, system-ui), sans-serif; cursor: pointer; }
-.wp-ov .wp-btns button.ghost { background: transparent; color: #2b6cb0; }
-.wp-ov .wp-close { position: absolute; top: 12px; left: 12px; min-width: 44px; min-height: 44px; border-radius: 10px; border: 1px solid #9aa7b0; background: #fffdf7; font: 700 16px sans-serif; cursor: pointer; }
-.wp-ov .wp-zoom { position: absolute; bottom: 14px; left: 12px; display: flex; gap: 6px; }
-.wp-ov .wp-zoom button { min-width: 44px; min-height: 44px; border-radius: 10px; border: 1px solid #9aa7b0; background: #fffdf7; font: 700 18px sans-serif; cursor: pointer; }
-.wp-ov .wp-note { font-size: 12.5px; opacity: 0.8; }
-@media (max-width: 720px) { .wp-ov { grid-template-columns: 1fr; grid-template-rows: 1fr auto; } .wp-ov .wp-side { max-height: 46vh; border-left: 0; border-top: 1px solid #c9c3b4; } }
-@media (prefers-color-scheme: dark) {
-  .wp-ov { background: #182430; color: #e8eef2; }
-  .wp-ov .wp-side { background: #1f2c38; border-color: #33475a; }
-  .wp-ov .wp-list button, .wp-ov .wp-close, .wp-ov .wp-zoom button { background: #253645; border-color: #3d5468; color: #e8eef2; }
-}
 `;
 
 function injectStyle() {
@@ -798,340 +755,17 @@ function pauseButton(sim) {
 }
 
 /* ------------------------------------------------------------------ */
-/* The world map                                                        */
+/* The world map: the live map's (features/livemap/livemap.js)          */
 /* ------------------------------------------------------------------ */
 
-function overlay(sim) {
-  if (S.overlay) return S.overlay;
-  injectStyle();
-  const root = document.createElement('div');
-  root.className = 'wp-ov';
-  root.hidden = true;
-  root.setAttribute('role', 'dialog');
-  root.setAttribute('aria-label', 'World map');
-  root.innerHTML = `
-    <div style="position:relative;min-height:0">
-      <canvas data-wp-canvas></canvas>
-      <button type="button" class="wp-close" data-wp-close aria-label="Close the map">✕</button>
-      <div class="wp-zoom"><button type="button" data-wp-zoom="1" aria-label="Zoom in">+</button><button type="button" data-wp-zoom="-1" aria-label="Zoom out">−</button></div>
-    </div>
-    <aside class="wp-side">
-      <div><span class="wp-tag">PREVIEW</span></div>
-      <h2>${WORLD_PREVIEW_TITLE}</h2>
-      <div class="wp-note" data-wp-count></div>
-      <div class="wp-list" data-wp-list></div>
-      <div class="wp-info" data-wp-info></div>
-      <div class="wp-btns" data-wp-btns></div>
-      <p class="wp-note" data-wp-tip></p>
-    </aside>`;
-  document.body.appendChild(root);
-  const cv = root.querySelector('[data-wp-canvas]');
-  const O = {
-    root,
-    cv,
-    open: false,
-    sel: null,
-    view: null,
-    draw: () => drawMap(sim, O),
-  };
-  root.addEventListener('click', (e) => {
-    if (e.target.closest('[data-wp-close]')) return closeMap(sim);
-    const z = e.target.closest('[data-wp-zoom]');
-    if (z) {
-      zoomBy(O, Number(z.dataset.wpZoom) > 0 ? 1.5 : 1 / 1.5);
-      return O.draw();
-    }
-    const pick = e.target.closest('[data-wp-sel]');
-    if (pick) {
-      O.sel = airportById(pick.dataset.wpSel);
-      return fillSide(sim, O);
-    }
-    const b = e.target.closest('[data-wp-do]');
-    if (b) {
-      const what = b.dataset.wpDo;
-      if (what === 'dest' && O.sel) setDestination(sim, O.sel.id);
-      else if (what === 'clear') setDestination(sim, null);
-      else if (what === 'start' && O.sel) {
-        closeMap(sim);
-        choosePreview(sim, O.sel.id);
-        return;
-      }
-      fillSide(sim, O);
-      O.draw();
-    }
-  });
-  // Drag to pan, wheel or pinch to zoom.
-  let drag = null;
-  cv.addEventListener('pointerdown', (e) => {
-    drag = { x: e.clientX, y: e.clientY, moved: 0 };
-    cv.setPointerCapture && cv.setPointerCapture(e.pointerId);
-  });
-  cv.addEventListener('pointermove', (e) => {
-    if (!drag || !O.view) return;
-    const dx = e.clientX - drag.x;
-    const dy = e.clientY - drag.y;
-    drag.moved += Math.abs(dx) + Math.abs(dy);
-    drag.x = e.clientX;
-    drag.y = e.clientY;
-    O.view.cx -= dx / O.view.s;
-    O.view.cz -= dy / O.view.s;
-    O.draw();
-  });
-  cv.addEventListener('pointerup', (e) => {
-    if (drag && drag.moved < 6 && O.view) {
-      // A tap: the field nearest it, if any is close.
-      const r = cv.getBoundingClientRect();
-      const wx = O.view.cx + (e.clientX - r.left - r.width / 2) / O.view.s;
-      const wz = O.view.cz + (e.clientY - r.top - r.height / 2) / O.view.s;
-      const { airport, distM } = nearestAirport(wx, wz);
-      if (airport && distM * O.view.s < 40) {
-        O.sel = airport;
-        fillSide(sim, O);
-        O.draw();
-      }
-    }
-    drag = null;
-  });
-  cv.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    zoomBy(O, e.deltaY < 0 ? 1.25 : 1 / 1.25);
-    O.draw();
-  }, { passive: false });
-  // Its own keys while open: the game's are paused.
-  window.addEventListener('keydown', (e) => {
-    if (!O.open) return;
-    if (isKey(sim, 'pause', e.code) || isKey(sim, 'worldMap', e.code)) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      closeMap(sim);
-    }
-  }, true);
-  window.addEventListener('resize', () => O.open && O.draw());
-  S.overlay = O;
-  return O;
-}
-
-function zoomBy(O, k) {
-  if (!O.view) return;
-  O.view.s = Math.min(O.view.max, Math.max(O.view.min, O.view.s * k));
-}
-
+/** Open the full-screen live map. It never pauses: the flight carries on behind it. */
 export function openMap(sim) {
-  if (!active()) return false;
-  const O = overlay(sim);
-  if (sim.state === 'flying' && !(sim.multiplayer && sim.multiplayer.active)) {
-    sim.pause();
-    S.pausedForMap = sim.state === 'paused';
-  } else S.pausedForMap = false;
-  O.open = true;
-  O.root.hidden = false;
-  if (!O.sel) O.sel = S.dest || nearestAirport(sim.aircraft.pos.x, sim.aircraft.pos.z).airport;
-  O.view = null;
-  askChart();
-  fillSide(sim, O);
-  O.draw();
-  const first = O.root.querySelector('[data-wp-close]');
-  first && first.focus && first.focus();
-  return true;
+  if (!active() || !sim.liveMap) return false;
+  return sim.liveMap.open();
 }
 
 export function closeMap(sim) {
-  const O = S.overlay;
-  if (!O || !O.open) return;
-  O.open = false;
-  O.root.hidden = true;
-  if (S.pausedForMap && sim.state === 'paused') sim.resume();
-  S.pausedForMap = false;
-}
-
-function fillSide(sim, O) {
-  const ac = sim.aircraft;
-  const st = store();
-  const dep = departure();
-  const list = O.root.querySelector('[data-wp-list]');
-  list.innerHTML = byRegion().map(({ region, airports }) => `<h4>${region.name}</h4>` + airports.map((a) => {
-    const d = Math.hypot(ac.pos.x - a.x, ac.pos.z - a.z);
-    const tags = [a.id === dep.id ? 'started here' : '', st.visited.includes(a.id) ? 'visited' : '', S.dest && S.dest.id === a.id ? 'destination' : ''].filter(Boolean).join(' · ');
-    return `<button type="button" data-wp-sel="${a.id}" class="${O.sel && O.sel.id === a.id ? 'is-sel' : ''}">
-      <b>${a.code}</b> ${a.name}<small>${(d / 1000).toFixed(0)} km · about ${Math.max(1, Math.round(etaMin(sim, d)))} min · ${kindWord(a).toLowerCase()}, ${fmtM(a.length)}${tags ? ' · ' + tags : ''}</small></button>`;
-  }).join('')).join('');
-  O.root.querySelector('[data-wp-count]').textContent = `${st.visited.length} of ${AIRPORTS.length} airports visited`;
-  const a = O.sel;
-  const info = O.root.querySelector('[data-wp-info]');
-  const btns = O.root.querySelector('[data-wp-btns]');
-  if (!a) {
-    info.textContent = '';
-    btns.innerHTML = '';
-    return;
-  }
-  const d = Math.hypot(ac.pos.x - a.x, ac.pos.z - a.z);
-  const hdg = Math.round(headingTo(ac.pos.x, ac.pos.z, a.x, a.z));
-  const town = PREVIEW.towns.find((t) => t.airport === a.id);
-  info.innerHTML = `<b>${a.name}</b> (${a.code}) on ${a.place}<br>
-    Runway 09/27 · ${fmtM(a.length)} × ${a.halfWidth * 2} m${a.surface && a.surface !== 'tarmac' ? ` ${a.surface}` : ''} · field ${Math.round(a.elev * 3.28084)} ft<br>
-    ${a.kind === 'hub' ? (a.length >= 3000 ? 'International: heavies (A380, 747, C-17), airliners, jets and light aircraft' : 'International: airliners, jets and light aircraft')
-      : a.kind === 'regional' ? 'Regional: airliners and light aircraft' : a.kind === 'remote' ? 'Remote outpost: a long runway for long-haul jets, nothing else for 150 km'
-      : 'Strip: light aircraft and helicopters'}${a.parking ? ' · car park' : ''}<br>
-    ${regionName(a)}<br>
-    ${town ? `Town: ${town.name}` : ''}<br>
-    ${(d / 1000).toFixed(1)} km away, heading ${String(hdg).padStart(3, '0')}° · about ${Math.max(1, Math.round(etaMin(sim, d)))} min`;
-  const isDest = S.dest && S.dest.id === a.id;
-  btns.innerHTML = [
-    sim.mode === 'free' ? (isDest ? '<button type="button" class="ghost" data-wp-do="clear">Clear destination</button>' : '<button type="button" data-wp-do="dest">Fly here</button>') : '',
-    a.id !== dep.id ? '<button type="button" class="ghost" data-wp-do="start">Start a flight here</button>' : '',
-  ].join('');
-  O.root.querySelector('[data-wp-tip]').textContent = sim.mode === 'free'
-    ? `Long leg? Climb to height and engage the autopilot (${keyName('autopilot', sim)}): it holds the course to your destination. Close the map with ${keyName('worldMap', sim)} or Esc.`
-    : 'Destinations are for Free Flight.';
-}
-
-function regionName(a) {
-  const r = (PREVIEW.regions || []).find((g) => g.id === a.region);
-  return r ? `${r.name} — ${r.blurb}` : '';
-}
-
-function chartImage(g, ch) {
-  if (ch.img) return ch.img;
-  if (typeof document === 'undefined') return null;
-  const c = document.createElement('canvas');
-  c.width = ch.w;
-  c.height = ch.h;
-  const x = c.getContext('2d');
-  if (!x || !x.createImageData) return null;
-  const im = x.createImageData(ch.w, ch.h);
-  const H = ch.heights;
-  for (let j = 0; j < ch.h; j++) {
-    for (let i = 0; i < ch.w; i++) {
-      const h = H[j * ch.w + i];
-      const k = (j * ch.w + i) * 4;
-      if (h <= 0) {
-        const t = Math.min(1, -h / 60);
-        im.data[k] = 150 - 70 * t; im.data[k + 1] = 200 - 60 * t; im.data[k + 2] = 220 - 30 * t;
-      } else {
-        const e = H[j * ch.w + Math.min(ch.w - 1, i + 1)] - H[Math.max(0, j - 1) * ch.w + i];
-        const sh = Math.max(0.6, Math.min(1.25, 1 - e * 0.01));
-        const t = Math.min(1, h / 500);
-        im.data[k] = (156 + 60 * t) * sh; im.data[k + 1] = (182 + 20 * t) * sh; im.data[k + 2] = (120 + 60 * t) * sh;
-      }
-      im.data[k + 3] = 255;
-    }
-  }
-  x.putImageData(im, 0, 0);
-  ch.img = c;
-  return c;
-}
-
-function drawMap(sim, O) {
-  const cv = O.cv;
-  const r = cv.getBoundingClientRect();
-  const dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
-  const W = Math.max(50, Math.round(r.width * dpr));
-  const H = Math.max(50, Math.round(r.height * dpr));
-  if (cv.width !== W) cv.width = W;
-  if (cv.height !== H) cv.height = H;
-  const g = cv.getContext('2d');
-  if (!g) return;
-  const box = chartBox();
-  if (!O.view) {
-    const fit = Math.min(r.width / (box.x1 - box.x0), r.height / (box.z1 - box.z0));
-    O.view = { cx: (box.x0 + box.x1) / 2, cz: (box.z0 + box.z1) / 2, s: fit, min: fit * 0.6, max: fit * 80 };
-  }
-  const v = O.view;
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const X = (x) => r.width / 2 + (x - v.cx) * v.s;
-  const Z = (z) => r.height / 2 + (z - v.cz) * v.s;
-  g.fillStyle = '#7fb6cf';
-  g.fillRect(0, 0, r.width, r.height);
-  const img = S.chart ? chartImage(g, S.chart) : null;
-  if (img) {
-    g.imageSmoothingEnabled = true;
-    g.drawImage(img, X(box.x0), Z(box.z0), (box.x1 - box.x0) * v.s, (box.z1 - box.z0) * v.s);
-  } else {
-    for (const i of PREVIEW.islands) {
-      g.fillStyle = i.profile === 'flat' ? '#e2d7a4' : '#a9c38c';
-      g.beginPath();
-      g.arc(X(i.cx), Z(i.cz), Math.max(2, i.radius * v.s * 0.92), 0, Math.PI * 2);
-      g.fill();
-    }
-  }
-  // A 50 km grid, faint.
-  g.strokeStyle = 'rgba(20,40,60,0.12)';
-  g.lineWidth = 1;
-  g.beginPath();
-  for (let x = Math.ceil(box.x0 / 50000) * 50000; x < box.x1; x += 50000) { g.moveTo(X(x), Z(box.z0)); g.lineTo(X(x), Z(box.z1)); }
-  for (let z = Math.ceil(box.z0 / 50000) * 50000; z < box.z1; z += 50000) { g.moveTo(X(box.x0), Z(z)); g.lineTo(X(box.x1), Z(z)); }
-  g.stroke();
-  const ac = sim.aircraft;
-  // The route.
-  if (S.dest && ac) {
-    g.strokeStyle = '#d6336c';
-    g.lineWidth = 2.5;
-    g.setLineDash([8, 6]);
-    g.beginPath();
-    g.moveTo(X(ac.pos.x), Z(ac.pos.z));
-    g.lineTo(X(S.dest.x), Z(S.dest.z));
-    g.stroke();
-    g.setLineDash([]);
-  }
-  // Region names, then island names once zoomed in.
-  g.font = '700 12px system-ui, sans-serif';
-  g.fillStyle = 'rgba(20,40,60,0.55)';
-  for (const rg of PREVIEW.regions || []) g.fillText(rg.name.toUpperCase(), X(rg.cx) - 40, Z(rg.cz) - 26);
-  g.font = '500 11px system-ui, sans-serif';
-  g.fillStyle = 'rgba(30,40,30,0.75)';
-  for (const i of PREVIEW.islands) {
-    if (v.s < 0.004 || (i.radius < 1200 && v.s < 0.012)) continue;
-    if (AIRPORTS.some((a) => a.place === i.name)) continue;
-    g.fillText(i.name, X(i.cx) + 6, Z(i.cz) + i.radius * v.s + 12);
-  }
-  // The fields.
-  const st = store();
-  for (const a of AIRPORTS) {
-    const sel = O.sel && O.sel.id === a.id;
-    const L = Math.max(14, a.length * v.s);
-    g.fillStyle = '#20262c';
-    g.fillRect(X(a.x) - L / 2, Z(a.z) - 3, L, 6);
-    g.strokeStyle = sel ? '#2b6cb0' : '#ffffff';
-    g.lineWidth = sel ? 3 : 1.5;
-    g.strokeRect(X(a.x) - L / 2 - 2, Z(a.z) - 5, L + 4, 10);
-    g.font = '700 13px system-ui, sans-serif';
-    g.fillStyle = '#10161c';
-    const label = `${a.code}${st.visited.includes(a.id) ? ' ✓' : ''}`;
-    g.fillText(label, X(a.x) + L / 2 + 8, Z(a.z) + 4);
-    g.font = '500 11px system-ui, sans-serif';
-    g.fillText(a.name, X(a.x) + L / 2 + 8, Z(a.z) + 18);
-  }
-  // You, as an arrow along your heading.
-  if (ac) {
-    const hdg = ac.readouts ? ac.readouts().heading : 0;
-    const a = (hdg * Math.PI) / 180;
-    const px = X(ac.pos.x);
-    const pz = Z(ac.pos.z);
-    g.save();
-    g.translate(px, pz);
-    g.rotate(a);
-    g.fillStyle = '#ffcc00';
-    g.strokeStyle = '#1a1a1a';
-    g.lineWidth = 1.5;
-    g.beginPath();
-    g.moveTo(0, -12);
-    g.lineTo(8, 9);
-    g.lineTo(0, 4);
-    g.lineTo(-8, 9);
-    g.closePath();
-    g.fill();
-    g.stroke();
-    g.restore();
-  }
-  // A scale bar.
-  const km = v.s * 10000 > 160 ? 5 : v.s * 10000 > 60 ? 10 : v.s * 10000 > 24 ? 20 : 50;
-  const px = km * 1000 * v.s;
-  g.fillStyle = 'rgba(255,255,255,0.85)';
-  g.fillRect(r.width - px - 26, r.height - 34, px + 16, 22);
-  g.fillStyle = '#10161c';
-  g.fillRect(r.width - px - 18, r.height - 20, px, 3);
-  g.font = '600 11px system-ui, sans-serif';
-  g.fillText(`${km} km`, r.width - px - 18, r.height - 24);
+  if (sim && sim.liveMap) sim.liveMap.close();
 }
 
 /* ------------------------------------------------------------------ */
@@ -1283,10 +917,7 @@ registerExtension({
       cycleWarp(sim);
       return true;
     }
-    if (!down || !active() || !isKey(sim, 'worldMap', code)) return false;
-    if (S.overlay && S.overlay.open) closeMap(sim);
-    else openMap(sim);
-    return true;
+    return false;
   },
   devActions: [
     { label: 'World preview: tile stats', hint: 'Streamed terrain numbers in the console', run: () => console.info('[world-preview]', S.stream && S.stream.stats()) },

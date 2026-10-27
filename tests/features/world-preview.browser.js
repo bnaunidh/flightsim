@@ -33,10 +33,9 @@
  *   - SIM RATE: blocked on the runway, 2x and 4x in an autopilot cruise at
  *     height (twice and four times the ground a frame), back to 1x under
  *     3,000 ft; the RATE button is in the HUD
- *   - the world map opens (5 / the HUD's MAP button / the pause screen),
- *     pauses solo flight, lists every field by region with an ETA; a
- *     destination puts the guidance on that field; it closes and the flight
- *     resumes
+ *   - the world map (the live map: 5 / the HUD's MAP button / the pause
+ *     screen) opens without pausing, lists every field by region with an
+ *     ETA; a destination puts the guidance on that field; 5 closes it
  *   - a destination inside 60 km set on the departure's runway leaves the
  *     radio with the departure, whose tower clears the take-off
  * The map, the quality and Free Flight are put back afterwards.
@@ -485,13 +484,37 @@ export async function check(sim, r, say = () => {}) {
       sim.step(0.2);
       const opened = wp.openMap();
       await wait(100);
-      const ov = document.querySelector('.wp-ov');
-      const listed = ov ? ov.querySelectorAll('[data-wp-sel]').length : 0;
-      const groups = ov ? ov.querySelectorAll('.wp-list h4').length : 0;
-      const eta = ov ? /about \d+ min/.test(ov.querySelector('[data-wp-list]').textContent) : false;
-      r.ok('world preview: the world map opens, pauses solo flight, lists every field by region with distance and ETA', opened && ov && !ov.hidden && sim.state === 'paused' && listed === wp.airports().length && groups === wp.regions().length && eta,
-        `open ${opened}, state ${sim.state}, ${listed} fields in ${groups} regions, ETA ${eta}`);
-      wp.setDestination('farwatch');
+      const ov = document.querySelector('.lm');
+      const listed = ov ? ov.querySelectorAll('[data-lm-place^="apt:"]').length : 0;
+      const groups = ov ? ov.querySelectorAll('.lm-places h5').length : 0;
+      const eta = ov ? /about \d+ min/.test(ov.querySelector('[data-lm-places]').textContent) : false;
+      const p0 = sim.aircraft.pos.clone();
+      sim.step(1);
+      const flew = sim.aircraft.pos.distanceTo(p0);
+      r.ok('world preview: the world map opens WITHOUT pausing (the flight carries on behind it), lists every field by region with distance and ETA',
+        opened && ov && !ov.hidden && sim.state === 'flying' && flew > 20 && listed === wp.airports().length && groups >= wp.regions().length && eta,
+        `open ${opened}, state ${sim.state}, flew ${flew.toFixed(0)} m in 1 s, ${listed} fields under ${groups} headings, ETA ${eta}`);
+      // The trip's destination is set from the map's card, as the old world map's was (the checker, w18:
+      // the live map had lost every way to set one but APPROACH).
+      const fw = sim.liveMap.waypoints().find((w) => w.kind === 'airport' && w.ref === 'farwatch');
+      if (fw) sim.liveMap.select(fw);
+      await wait(20);
+      const destBtn = ov && ov.querySelector('[data-lm-act="dest"]');
+      if (destBtn) destBtn.click();
+      await wait(20);
+      const viaCard = wp.destination() && wp.destination().id;
+      const noBtn = ov && ov.querySelector('[data-lm-act="nodest"]');
+      if (noBtn) noBtn.click();
+      await wait(20);
+      const cleared = !wp.destination();
+      r.ok('world preview: a field\'s card on the map sets it as the destination (DESTINATION), and NO DESTINATION clears it', !!destBtn && viaCard === 'farwatch' && !!noBtn && cleared,
+        `button ${!!destBtn}, destination ${viaCard}, clear button ${!!noBtn}, cleared ${cleared}`);
+      if (destBtn) {
+        sim.liveMap.select(fw);
+        await wait(20);
+        const b2 = ov.querySelector('[data-lm-act="dest"]');
+        if (b2) b2.click();
+      } else wp.setDestination('farwatch');
       wp.closeMap();
       await wait(50);
       sim.step(0.2);
@@ -502,10 +525,12 @@ export async function check(sim, r, say = () => {}) {
       r.ok('world preview: the HUD shows the MAP button and the trip', !!card && !card.hidden && /XFWT/.test(card.textContent), card ? card.textContent.trim() : 'no card');
       window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit5', bubbles: true }));
       await wait(50);
-      const byKey = ov && !ov.hidden && sim.state === 'paused';
+      const byKey = ov && !ov.hidden && sim.state === 'flying';
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Digit5', bubbles: true }));
       window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit5', bubbles: true }));
       await wait(50);
-      r.ok('world preview: 5 opens and closes it', byKey && ov.hidden && sim.state === 'flying', `opened ${byKey}, now hidden ${ov && ov.hidden}, state ${sim.state}`);
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Digit5', bubbles: true }));
+      r.ok('world preview: 5 opens and closes it, and the flight never pauses', byKey && ov.hidden && sim.state === 'flying', `opened ${byKey}, now hidden ${ov && ov.hidden}, state ${sim.state}`);
       wp.setDestination(null);
     }
 

@@ -692,6 +692,8 @@ export class Input {
      * menu or Settings.
      */
     this.freeLook = false;
+    /** The full-screen live map is open (features/livemap): the mouse is the map's, not the stick's. */
+    this.mapOpen = false;
     /** Seconds since you last moved your head, used to ease it back forward. */
     this._lookIdle = 0;
     /**
@@ -768,6 +770,8 @@ export class Input {
 
     this._onMouseMove = (e) => {
       if (!this.mouseEnabled && !this.rightDown && !this.freeLook) return;
+      // The full-screen live map is open: the mouse is the map's (features/livemap), the keys and a joystick still fly.
+      if (this.mapOpen) return;
       const dx = e.movementX || 0;
       const dy = e.movementY || 0;
       // Holding the right button looks around — but only when free look is
@@ -1146,6 +1150,16 @@ export class Input {
     // Arrow keys swing your head around the cockpit. They only do this while
     // free look is on; otherwise they stay on the throttle, where beginners
     // find them.
+    // A joystick's hat switch looks round, held (the TCA sidestick's thumb hat:
+    // flight/controllers.js reads it), whether or not free look is on, and the
+    // head comes back when it is let go — as on a real sim's view hat.
+    const hat = this.hw && this.hw.hat;
+    const hatOn = !!(hat && (hat.x || hat.y));
+    if (hatOn) {
+      this.lookYaw = clamp(this.lookYaw - hat.x * 1.8 * dt, -2.4, 2.4);
+      this.lookPitch = clamp(this.lookPitch + hat.y * 1.8 * dt, -1.0, 0.75);
+      this._lookIdle = 0;
+    }
     if (this.freeLook) {
       const lookRate = 1.5 * dt;
       let moved = false;
@@ -1155,7 +1169,7 @@ export class Input {
       if (this.held('lookDown')) { this.lookPitch -= lookRate; moved = true; }
       this.lookYaw = clamp(this.lookYaw, -2.4, 2.4);
       this.lookPitch = clamp(this.lookPitch, -1.0, 0.75);
-      this._lookIdle = moved ? 0 : this._lookIdle + dt;
+      this._lookIdle = moved || hatOn ? 0 : this._lookIdle + dt;
       // Ease the head back to straight ahead once you stop looking around, so
       // you never end up flying an approach staring at the side window.
       if (this._lookIdle > 1.6) {
@@ -1163,8 +1177,8 @@ export class Input {
         this.lookYaw = lerp(this.lookYaw, 0, back);
         this.lookPitch = lerp(this.lookPitch, 0, back);
       }
-    } else if (this._lookFinger && this.touchLook) {
-      // A finger is turning the head: it stays where the finger has it.
+    } else if ((this._lookFinger && this.touchLook) || hatOn) {
+      // A finger, or the hat, is turning the head: it stays where it is held.
       this._lookIdle = 0;
     } else {
       /*

@@ -299,7 +299,8 @@ function buildUi(sim) {
 
   const radio = document.createElement('div');
   radio.className = 'ps-card ps-radio';
-  radio.innerHTML = `<div class="ps-head"><span>${icon('radio', 14)} RADIO</span><button class="ps-close" type="button" aria-label="Close the radio menu">${icon('close', 14)}</button></div>
+  // The frequency you are on: the approach of the control zone you are in (features/livemap/airspace.js).
+  radio.innerHTML = `<div class="ps-head"><span>${icon('radio', 14)} RADIO <b class="ps-freq" hidden></b></span><button class="ps-close" type="button" aria-label="Close the radio menu">${icon('close', 14)}</button></div>
     <div class="ps-grid">${ATC_REQUESTS.map((r) => `<button class="ps-btn" type="button" data-atc="${r.id}">${r.label.toUpperCase()}<small>${r.words}</small></button>`).join('')}</div>
     <div class="ps-note"><span class="ps-rkey"></span> again sends the one that fits</div>`;
   radio.querySelector('.ps-close').addEventListener('click', (e) => {
@@ -316,7 +317,7 @@ function buildUi(sim) {
   extLayer().appendChild(lights);
   extLayer().appendChild(radio);
   S.ui = {
-    lights, radio, preset: lights.querySelector('.ps-preset'), lkey: lights.querySelector('.ps-lkey'), rkey: radio.querySelector('.ps-rkey'),
+    lights, radio, freq: radio.querySelector('.ps-freq'), preset: lights.querySelector('.ps-preset'), lkey: lights.querySelector('.ps-lkey'), rkey: radio.querySelector('.ps-rkey'),
     lamps: Object.fromEntries(LAMP_KINDS.map((k) => [k, lights.querySelector(`[data-lamp="${k}"]`)])),
     picks: Object.fromEntries(ATC_REQUESTS.map((r) => [r.id, radio.querySelector(`[data-atc="${r.id}"]`)])),
     touch: !!(sim && sim.touch) || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches),
@@ -357,6 +358,11 @@ function syncLights(sim, force = false) {
 function syncRadio(sim, force = false) {
   const ui = S.ui;
   if (!ui || !S.radioOpen) return;
+  const fq = sim && sim.airspace && typeof sim.airspace.label === 'function' ? sim.airspace.label() : '';
+  if (ui.freq && ui.freq.textContent !== fq) {
+    ui.freq.textContent = fq;
+    ui.freq.hidden = !fq;
+  }
   const ctx = radioContext(sim);
   const pick = suggestedRequest(ctx);
   if (!force && ui.pick === pick) return;

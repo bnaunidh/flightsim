@@ -61,6 +61,15 @@ export const AXIS_ROLES = Object.freeze([
 ]);
 export const ROLE = Object.freeze(Object.fromEntries(AXIS_ROLES.map((r) => [r.id, r])));
 
+/** A POV hat axis value → { x, y } (right and up positive), from its eight positions -1, -5/7 … 1 (clockwise from up). */
+export function hatDir(v) {
+  const k = ((Math.round(((v + 1) * 7) / 2) % 8) + 8) % 8;
+  const a = (k * Math.PI) / 4;
+  const x = Math.round(Math.sin(a) * 1000) / 1000;
+  const y = Math.round(Math.cos(a) * 1000) / 1000;
+  return { x: Math.abs(x) < 1e-3 ? 0 : x, y: Math.abs(y) < 1e-3 ? 0 : y };
+}
+
 /**
  * What a button can do besides pressing an action's key. `brakes` is the
  * game's own action, but held from a button it is the wheel brakes directly
@@ -566,6 +575,8 @@ export class Controllers {
       edges: { parkingBrake: false, apDisconnect: false },
       masters: { changed: false, anyOn: false, known: false },
       thrustDevice: null,
+      /** A hat switch (POV): { x, y } in -1..1 (right and up positive), 0, 0 when centred; null with none. */
+      hat: null,
     };
   }
 
@@ -908,6 +919,27 @@ export class Controllers {
     return this.devices.filter((d) => d.cfg.mode === 'standard').map((d) => d.pad);
   }
 
+  /**
+   * A hat switch, if this device has one. Browsers report a POV hat as ONE
+   * axis (Chrome puts it at HID index 9 — the TCA sidestick's thumb hat):
+   * eight positions spread over -1..1 clockwise from up (-1 up, -5/7 up
+   * right, -3/7 right ... 1 up left) and about 9/7 when centred. The axis is
+   * known by that centred value (no stick or lever ever reads it), so no
+   * profile has to name it. Returns { x, y } or null.
+   */
+  _hatOf(d) {
+    const map = this._hatAxis || (this._hatAxis = new Map());
+    let i = map.get(d.key);
+    if (i == null) {
+      i = d.axes.findIndex((v) => Math.abs(v) > 1.05 && Math.abs(v) < 1.6);
+      if (i < 0) return null;
+      map.set(d.key, i);
+    }
+    const v = d.axes[i];
+    if (!Number.isFinite(v) || Math.abs(v) > 1.05) return { x: 0, y: 0 };
+    return hatDir(v);
+  }
+
   /** One role's live value on one device (Settings' meters), or null. */
   roleValue(d, role) {
     const a = d && d.cfg.axes[role];
@@ -938,6 +970,15 @@ export class Controllers {
       }
     }
     for (const r of ['roll', 'pitch', 'yaw', 'speedbrake', 'flaps']) if (pick[r]) st[r] = pick[r].v;
+    // The hat (POV) switch: the look-around on a sidestick (input.js turns it into free look).
+    for (const d of this.devices) {
+      if (d.cfg.mode !== 'mapped') continue;
+      const h = this._hatOf(d);
+      if (h) {
+        st.hat = h;
+        if (h.x || h.y) break;
+      }
+    }
 
     // Thrust: two levers if any device has them (then a single lever elsewhere is ignored), else one.
     const inRev = {};

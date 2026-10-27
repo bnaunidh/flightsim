@@ -114,10 +114,12 @@ const m2 = R.markerOffset(150);
 const m3 = R.markerOffset(-150);
 ok('ribbon: the marker sits at 2.2 px a degree and clamps to the edge when the place is behind you', Math.abs(m1.px - 44) < 0.01 && !m1.behind && m2.behind && m3.behind && m2.px === -m3.px && m2.px > 0, JSON.stringify([m1, m2, m3]));
 const rib = new R.DestRibbon();
-ok('ribbon: no target, no ribbon (a free flight has nowhere to go)', (() => {
+ok('ribbon: a free flight has the heading tape (the compass) but no target marker or name', (() => {
   rib.update(90, here, null, null);
-  return !rib.shown;
+  return rib.shown === !!rib.el && !rib.hasTarget;
 })(), '');
+ok('ribbon: the heading box reads three digits, 360 for north', R.headingText(87.4) === '087' && R.headingText(0) === '360' && R.headingText(359.6) === '360' && R.headingText(-90) === '270', [87.4, 0, 359.6, -90].map(R.headingText).join(' '));
+ok('ribbon: ticks every 5 degrees, longer every 10, labelled every 30', R.tickKind(5) === 'minor' && R.tickKind(10) === 'mid' && R.tickKind(30) === 'major' && R.tickKind(-30) === 'major' && R.tickKind(355) === 'minor', [5, 10, 30, -30, 355].map(R.tickKind).join(' '));
 
 /* ---------------- 4. the conditions words and the HUD modes ---------------- */
 const C = await load('src/ui/conditions.js');

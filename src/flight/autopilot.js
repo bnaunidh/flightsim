@@ -50,9 +50,29 @@ const M_TO_FT = 3.28084;
 const SAFE_AGL_FT = 500;
 /** How far the player has to move a control before it counts as taking over. */
 const TAKEOVER = 0.14;
+/** The fastest the commanded bank may change, degrees a second (a gentle roll into and out of a turn). */
+export const ROLL_IN_DPS = 6;
+/**
+ * NAV over high ground. A DIRECT TO is a straight line over whatever is in
+ * the way, and the 500 ft floor below only knew the ground under the wheels:
+ * flown at 1,900 ft at Fjord's 2,750 ft ridge, the A320, the Skylark and an
+ * F-22 on Ember all flew into the hill in NAV with PULL UP sounding (the
+ * checker, w18). So while it follows a route it looks this many seconds
+ * ahead, along where it is going and where it is turning to, and climbs to
+ * clear the highest of it by the floor and a margin, at up to
+ * NAV_TERRAIN_FPM (or a NAV_TERRAIN_GRADIENT climb, for a fast jet; only the
+ * polite 800 under NAV_TERRAIN_SPEED_K x the stall speed, so it never trades
+ * the hill for a stall) — then comes back down to the height it was holding.
+ */
+export const NAV_TERRAIN_LOOK_S = Object.freeze([4, 8, 12, 16, 20, 25, 30, 40, 50, 60]);
+export const NAV_TERRAIN_MARGIN_FT = 300;
+export const NAV_TERRAIN_FPM = 2500;
+export const NAV_TERRAIN_GRADIENT = 0.12;
+export const NAV_TERRAIN_SPEED_K = 1.4;
 
 const _fwd = new THREE.Vector3();
 const _to = new THREE.Vector3();
+const _nav = new THREE.Vector3();
 
 /*
  * The helicopter's numbers. It flies low and slow on purpose — 150 ft over
@@ -83,10 +103,16 @@ const _heliWant = { vs: 0, hdg: null, speed: 0, hover: false, x: null, z: null, 
  * the fighters' wings +/-6-23 degrees at 180-549 kt.
  */
 export const AP_GAIN_REF = 1.3;
+/** The clean stall speed (m/s, sea level) from the type's wing, or 0 when it has no wing to say. */
+export function stallMs(spec = SPEC) {
+  if (!spec || !(spec.mass > 0) || !(spec.wingArea > 0)) return 0;
+  const clMax = Math.max(0.6, (spec.CL0 || 0) + (spec.CLa || 5) * (spec.alphaStall || 0.26));
+  return Math.sqrt((2 * spec.mass * 9.81) / (1.225 * spec.wingArea * clMax));
+}
+
 export function apGain(iasMs, spec = SPEC, tasMs = iasMs) {
   if (!spec || !(spec.mass > 0) || !(spec.wingArea > 0)) return 1;
-  const clMax = Math.max(0.6, (spec.CL0 || 0) + (spec.CLa || 5) * (spec.alphaStall || 0.26));
-  const vs = Math.sqrt((2 * spec.mass * 9.81) / (1.225 * spec.wingArea * clMax));
+  const vs = stallMs(spec);
   const ref = AP_GAIN_REF * vs;
   // IAS x TAS for the height loop: a vertical speed is the TRUE speed times the climb angle.
   const v2 = Math.max(0, iasMs || 0) * Math.max(0, tasMs || 0);
@@ -119,6 +145,17 @@ export class Autopilot {
     this._iSpd = 0;
     /** Set when a mode has finished its job and given the aeroplane back. */
     this.handedBack = null;
+    /**
+     * NAV: a route to follow (features/livemap — DIRECT TO and the flight
+     * plan): `{ steer(ac) -> {x, z} | null, label(), onHeadingSelected() }`.
+     * Followed in the two modes that hold a height (hold, level), so the
+     * height it holds is unchanged; the lateral mode is then 'NAV', and
+     * 'HDG' otherwise — the words a real autopilot's mode line uses.
+     */
+    this.nav = null;
+    this.lateral = 'HDG';
+    /** NAV is climbing over high ground ahead of the route (NAV_TERRAIN_LOOK_S). */
+    this.terrainClimb = false;
   }
 
   setMode(id) {
@@ -144,6 +181,11 @@ export class Autopilot {
   setSelectedHeading(deg) {
     const h = ((Math.round(deg) % 360) + 360) % 360;
     this.selectedHeadingDeg = h;
+    // Dialling a heading in NAV is selecting HDG (a real autopilot's heading knob): the route waits.
+    if (this.lateral === 'NAV' && this.nav && typeof this.nav.onHeadingSelected === 'function') {
+      this.nav.onHeadingSelected();
+      this.lateral = 'HDG';
+    }
     if (this.mode === 'hold' || this.mode === 'level') {
       this.holdHeadingDeg = h;
       return { applied: true, heading: h };
@@ -382,6 +424,8 @@ export class Autopilot {
       this._iSpd = 0;
     }
     this.engaged = on;
+    // The bank command starts from the bank it was handed (update()).
+    this._wantBank = NaN;
     return this.engaged;
   }
 
@@ -424,6 +468,20 @@ export class Autopilot {
       this._brisk = !!plan.brisk;
     }
 
+    /* ---- NAV: the route from the live map, in the modes that hold a height ---- */
+    const navPt = this.nav && (this.mode === 'hold' || this.mode === 'level') ? this.nav.steer(ac) : null;
+    if (navPt) {
+      _nav.set(navPt.x, ac.pos.y, navPt.z);
+      target = _nav;
+      // The heading bug follows the aeroplane in NAV (a real FCU's): a nudge selects HDG from where it points now.
+      this.selectedHeadingDeg = Math.round(r.heading) % 360;
+    } else if (this.lateral === 'NAV') {
+      // The route ended or was cleared: hold the heading it is on now, not the one it was engaged on.
+      this.holdHeadingDeg = r.heading;
+      this.selectedHeadingDeg = Math.round(r.heading) % 360;
+    }
+    this.lateral = navPt ? 'NAV' : 'HDG';
+
     if (SPEC.rotor) return this._rotorUpdate(dt, ac, target, r);
 
     /* ---- Where do we want to be pointing? ---- */
@@ -438,8 +496,15 @@ export class Autopilot {
 
     /* ---- Roll: turn towards the target, never steeply ---- */
     // A 25 degree bank is a comfortable rate-one turn in this aeroplane.
-    const wantBankDeg = clamp(hdgErr * 0.8, -25, 25);
     const bankNowDeg = (ac.bankAngleRad() * 180) / Math.PI;
+    // ...and rolled into at no more than ROLL_IN_DPS: a big heading change (a DIRECT TO behind
+    // you) stepped the command 0 → 25 at once, and a fighter overshot to 35 degrees in half a
+    // second (tests/features/livemap-nav.mjs). A steady bank or hold is unchanged.
+    const wantBankRaw = clamp(hdgErr * 0.8, -25, 25);
+    if (!Number.isFinite(this._wantBank)) this._wantBank = clamp(bankNowDeg, -25, 25);
+    const slew = ROLL_IN_DPS * dt;
+    this._wantBank += clamp(wantBankRaw - this._wantBank, -slew, slew);
+    const wantBankDeg = this._wantBank;
     // At speed, the same loop gain as slow (apGain): unscheduled, it rocked the fighters'
     // wings +/-6-23 degrees at 180-549 kt (tests/features/shake.mjs).
     const kr = apGain(r.iasKts / KTS);
@@ -460,6 +525,16 @@ export class Autopilot {
     // height instead.
     const floorFt = this.mode === 'approach' ? 185 : SAFE_AGL_FT;
     if (r.aglFt < floorFt) wantAlt = Math.max(wantAlt, r.altFt + (floorFt - r.aglFt));
+    // NAV over high ground: clear the highest ground ahead (NAV_TERRAIN_LOOK_S above).
+    let terrainClimb = false;
+    if (navPt) {
+      const clearFt = this._navGroundAheadFt(dt, ac, navPt) + SAFE_AGL_FT + NAV_TERRAIN_MARGIN_FT;
+      if (clearFt > wantAlt) {
+        wantAlt = clearFt;
+        terrainClimb = true;
+      }
+    } else this._navGround = null;
+    this.terrainClimb = terrainClimb;
     const altErrFt = wantAlt - r.altFt;
     // Aim for a vertical speed proportional to the error, capped so it is
     // always a gentle ride.
@@ -482,7 +557,15 @@ export class Autopilot {
         : this._brisk
           ? -(this.selectedVsFpm || 1200)
           : -700;
-    const upLimit = this._brisk ? this.selectedVsFpm || 1200 : 800;
+    // Over high ground in NAV: NAV_TERRAIN_FPM, or a 12% climb gradient if that is more (a jet at 400 kt).
+    // ...but never at the cost of the speed: under NAV_TERRAIN_SPEED_K x the stall speed it climbs at the polite rate.
+    const vStall = stallMs(SPEC);
+    const terrainFast = terrainClimb && !(vStall > 0 && r.iasKts / KTS < vStall * NAV_TERRAIN_SPEED_K);
+    const upLimit = terrainFast
+      ? Math.max(NAV_TERRAIN_FPM, Math.hypot(ac.vel.x, ac.vel.z) * NAV_TERRAIN_GRADIENT * 196.85, this.selectedVsFpm || 0)
+      : this._brisk
+        ? this.selectedVsFpm || 1200
+        : 800;
     const wantVsFpm = clamp(altErrFt * 1.6 + (this._ffFpm || 0), downLimit, upLimit);
     const vsErr = (wantVsFpm - r.vsFpm) / 1000;
     this._iAlt = clamp(this._iAlt + vsErr * dt * 0.35, -0.35, 0.35);
@@ -507,6 +590,34 @@ export class Autopilot {
     const yaw = clamp(ac.beta * 1.6, -0.5, 0.5);
 
     return { pitch, roll, yaw, throttle };
+  }
+
+  /**
+   * The highest ground (feet, sea level at least) NAV will be over in the next
+   * NAV_TERRAIN_LOOK_S: along the way it is going, and along the way to the
+   * point it is steering for (where a turn takes it). Sampled four times a
+   * second — twenty height samples — and held in between.
+   */
+  _navGroundAheadFt(dt, ac, navPt) {
+    const g = this._navGround || (this._navGround = { t: 1, ft: 0 });
+    g.t += dt;
+    if (g.t < 0.25) return g.ft;
+    g.t = 0;
+    const vx = ac.vel.x;
+    const vz = ac.vel.z;
+    const gs = Math.hypot(vx, vz);
+    const bx = navPt.x - ac.pos.x;
+    const bz = navPt.z - ac.pos.z;
+    const bl = Math.hypot(bx, bz) || 1;
+    let m = Math.max(0, heightAt(ac.pos.x, ac.pos.z));
+    if (gs > 1) {
+      for (const t of NAV_TERRAIN_LOOK_S) {
+        const d = gs * t;
+        m = Math.max(m, heightAt(ac.pos.x + vx * t, ac.pos.z + vz * t), heightAt(ac.pos.x + (bx / bl) * d, ac.pos.z + (bz / bl) * d));
+      }
+    }
+    g.ft = m * M_TO_FT;
+    return g.ft;
   }
 
   /**
@@ -564,13 +675,15 @@ export class Autopilot {
     if (SPEC.rotor && this.mode === 'hold' && (this._heliArriving || (!target && this._heliHover))) {
       return `AUTO · HOVER · ${alt}`;
     }
+    const nav = this.lateral === 'NAV' && this.nav ? `NAV ${this.nav.label()} · ${this.terrainClimb ? 'TERRAIN · ' : ''}` : '';
     if (this.mode === 'level') {
-      if (this.levelOff) return `AUTO · LEVEL ${alt}`;
+      if (this.levelOff) return `AUTO · ${nav}LEVEL ${alt}`;
       const up = this.targetAltFt > this._lastAltFt;
-      return `AUTO · ${up ? 'CLIMBING' : 'DESCENDING'} TO ${alt}`;
+      return `AUTO · ${nav}${up ? 'CLIMBING' : 'DESCENDING'} TO ${alt}`;
     }
     if (this.mode === 'approach') return this._repositioning ? `AUTO · POSITIONING · ${alt}` : `AUTO · APPROACH · ${alt}`;
     if (this.mode === 'field') return `AUTO · TO FIELD · ${alt}`;
+    if (nav) return `AUTO · ${nav}${alt}`;
     return target ? `AUTO · ${alt} · to target` : `AUTO · ${alt}`;
   }
 }

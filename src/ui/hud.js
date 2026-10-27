@@ -1633,6 +1633,44 @@ export class Hud {
   }
 
   /**
+   * The heading tape's other markers (ribbon.js): the nearest airport (the
+   * live map's fields), where the wind comes from, the sun. Worked out four
+   * times a second; the tape moves them every frame.
+   */
+  tapeMarks(sim, ac, dt) {
+    const m = this._tapeMarks || (this._tapeMarks = { airport: null, windFromDeg: 0, windKts: 0, sunDeg: NaN, t: 1 });
+    m.t += dt || 0;
+    if (m.t < 0.25) return m;
+    m.t = 0;
+    const w = sim.weather;
+    m.windFromDeg = w && Number.isFinite(w.windDirDeg) ? w.windDirDeg : 0;
+    m.windKts = w && Number.isFinite(w.windSpeedKts) ? w.windSpeedKts : 0;
+    m.sunDeg = NaN;
+    if (w && typeof w.sunDirection === 'function') {
+      const v = w.sunDirection(this._sunV || (this._sunV = {
+        x: 0, y: 0, z: 0,
+        set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; },
+        normalize() { const l = Math.hypot(this.x, this.y, this.z) || 1; this.x /= l; this.y /= l; this.z /= l; return this; },
+      }));
+      // Only while it is up.
+      if (v && v.y > -0.02) m.sunDeg = ((Math.atan2(v.x, -v.z) * 180) / Math.PI + 360) % 360;
+    }
+    m.airport = null;
+    const P = sim.liveMap && typeof sim.liveMap.places === 'function' ? sim.liveMap.places() : null;
+    if (P && P.airports && P.airports.length && ac) {
+      let best = Infinity;
+      for (const a of P.airports) {
+        const d = (a.x - ac.pos.x) ** 2 + (a.z - ac.pos.z) ** 2;
+        if (d < best) {
+          best = d;
+          m.airport = { x: a.x, z: a.z, label: `${a.code} ${a.name}` };
+        }
+      }
+    }
+    return m;
+  }
+
+  /**
    * Show or hide the autopilot chip, and light its button. `ap` (the
    * Autopilot instance) is optional — pass it to keep the HDG/SPD/VS bugs
    * under the chip in step; leave it out (as a plain disengage does) and the
@@ -1654,7 +1692,9 @@ export class Hud {
       return;
     }
     this.apBugs.style.display = '';
-    this.apHdgBug.val.textContent = `HDG ${String(Math.round(ap.selectedHeadingDeg)).padStart(3, '0')}°`;
+    // NAV (a DIRECT TO or a route from the live map): the waypoint it is flying to, in place of the heading bug.
+    const nav = ap.lateral === 'NAV' && ap.nav && typeof ap.nav.label === 'function' ? ap.nav.label() : '';
+    this.apHdgBug.val.textContent = nav ? `NAV ${nav}` : `HDG ${String(Math.round(ap.selectedHeadingDeg)).padStart(3, '0')}°`;
     this.apSpdBug.val.textContent = `SPD ${Math.round(ap.selectedSpeedKts)}`;
     this.apVsBug.val.textContent = `VS ${Math.round(ap.selectedVsFpm)}`;
   }
@@ -2004,7 +2044,7 @@ export class Hud {
     if (this.dest) {
       const runner = sim.runner;
       const dest = target && runner && runner.status === 'running' && runner.destination ? runner.destination() : null;
-      this.dest.update(r.heading, ac.pos, target, dest);
+      this.dest.update(r.heading, ac.pos, target, dest, this.tapeMarks(sim, ac, dt));
     }
     // In beacon-only mode the shaft of light *is* the guidance, so the arrow
     // stands down rather than duplicating it.

@@ -85,6 +85,11 @@ import { check as cams } from './cams.browser.js';
 import { check as tomReady } from './tom-ready.browser.js';
 import { check as shake } from './shake.browser.js';
 import { check as ownerCalls } from './owner-calls.browser.js';
+import { check as livemap } from './livemap.browser.js';
+import { check as livemapNav } from './livemap-nav.browser.js';
+import { check as where } from './where.browser.js';
+import { check as airspace } from './airspace.browser.js';
+import { check as cockpitCam } from './cockpit-cam.browser.js';
 
 export const CHECKS = [
   { id: 'airport', check: airport },
@@ -220,6 +225,16 @@ export const CHECKS = [
   // After tom-ready: the owner's w17 calls — the radio's Z and fn F8, an A380 at a Gateway gate, the
   // minimap stepping aside on a small screen, Butter (puts the map back).
   { id: 'owner-calls', check: ownerCalls },
+  // The full-screen live map (5, or tap the minimap): it never pauses; the chart, its level of detail.
+  { id: 'livemap', check: livemap },
+  // After livemap: DIRECT TO, the flight plan and NAV — a pin, a fix by name, a typed position, the approach offered.
+  { id: 'livemap-nav', check: livemapNav },
+  // The heading tape in every flight and NOW ENTERING an island (Kestrel → Mango Cay), not in the Photo HUD.
+  { id: 'where', check: where },
+  // The control zones: leaving Kestrel's, entering Mango Strip's — the banner, the check-in, the radio card's frequency.
+  { id: 'airspace', check: airspace },
+  // The cockpit camera: numpad snaps, the wheel's zoom, a TCA sidestick's hat looking round, the look remembered per aircraft.
+  { id: 'cockpit-cam', check: cockpitCam },
   // Last: it rebinds keys through Settings (and puts the player's back after).
   { id: 'keybinds', check: keybinds },
 ];

@@ -223,6 +223,42 @@ const KNOCK_REF = 23;
 /** Seconds: how quickly the cockpit view's head follows the g. */
 const G_HEAD_TAU = 0.25;
 
+/*
+ * THE NATURAL HEAD (the owner, 2026-10-26: "new cockpit cam"). In the seat:
+ *   - it looks into a turn: by the turn RATE (a rate-one turn, 3 deg/s,
+ *     about 5 degrees; never more than HEAD_INTO_MAX), eased over
+ *     HEAD_INTO_TAU, so it leads the turn the way a pilot's eyes do;
+ *   - it leans a little against the bank (HEAD_TILT of it, at most
+ *     HEAD_TILT_MAX), the way a head keeps the horizon, eased over
+ *     HEAD_TILT_TAU;
+ *   - free look (mouse drag, keys, a finger, a joystick's hat) is eased over
+ *     LOOK_TAU, and a snap view (left, right, back, up, the panel) over
+ *     SNAP_TAU — no jumps;
+ *   - zoom: a field of view between ZOOM_MIN and ZOOM_MAX (wheel, pinch,
+ *     keys), eased.
+ * Every one of these is under 1 Hz: none of it is shake, and the shake caps
+ * (render/flash-safety.js, tests/features/shake.mjs) are untouched.
+ */
+const HEAD_INTO_PER_DPS = 1.6;
+const HEAD_INTO_MAX = 10;
+const HEAD_INTO_TAU = 0.7;
+const HEAD_TILT = 0.08;
+const HEAD_TILT_MAX = 4;
+const HEAD_TILT_TAU = 0.6;
+const LOOK_TAU = 0.08;
+const SNAP_TAU = 0.25;
+export const ZOOM_MIN = 35;
+export const ZOOM_MAX = 90;
+/** The snap views, as head yaw (positive left) and pitch (positive up), radians. */
+export const SNAPS = Object.freeze({
+  front: { yaw: 0, pitch: 0 },
+  left: { yaw: THREE.MathUtils.degToRad(80), pitch: THREE.MathUtils.degToRad(-4) },
+  right: { yaw: THREE.MathUtils.degToRad(-80), pitch: THREE.MathUtils.degToRad(-4) },
+  back: { yaw: THREE.MathUtils.degToRad(160), pitch: THREE.MathUtils.degToRad(-2) },
+  up: { yaw: 0, pitch: THREE.MathUtils.degToRad(35) },
+  panel: { yaw: 0, pitch: THREE.MathUtils.degToRad(-22) },
+});
+
 /** A wreck with Reduce flashing: the follow view (CameraRig.crashBack) and the other outside views (crashEase) stand at least CRASH_K x standoff + CRASH_ADD m off, eased over CRASH_EASE s. */
 const CRASH_K = 2;
 const CRASH_ADD = 10;
@@ -583,8 +619,13 @@ export class CameraRig {
     this._tmp4 = new THREE.Vector3();
     this._q = new THREE.Quaternion();
     this._targetQ = new THREE.Quaternion();
+    this._headEuler = new THREE.Euler();
     this.initialised = false;
     this.baseFov = 68;
+    /** The cockpit head (THE NATURAL HEAD above): snap view, zoom, and the eased state. */
+    this.snap = 'front';
+    this.zoomFov = null;
+    this._head = { yaw: 0, pitch: 0, into: 0, tilt: 0, sy: 0, sp: 0, lastHdg: null };
     /**
      * The airframe being viewed (airframeFrame(), set by main.js per type
      * through setFrame()): what the orbit, wing and tower views size
@@ -655,12 +696,46 @@ export class CameraRig {
     this.mode = m;
     this.initialised = false;
     this._gHead = null;
+    if (this._head) this._head.lastHdg = null;
   }
 
   cycle() {
     const i = VIEWS.indexOf(this.mode);
     this.setMode(VIEWS[(i + 1) % VIEWS.length]);
     return this.mode;
+  }
+
+  /**
+   * A snap view in the cockpit (SNAPS): eased there, held until another
+   * snap, 'front', or pressing the same one again. Returns the snap now.
+   */
+  snapTo(name) {
+    if (!SNAPS[name]) return this.snap;
+    this.snap = this.snap === name && name !== 'front' ? 'front' : name;
+    return this.snap;
+  }
+
+  /** Zoom the cockpit view: k > 1 in (narrower), k < 1 out. Returns the field of view it is going to. */
+  zoomBy(k) {
+    const now = this.zoomFov != null ? this.zoomFov : this.camera.fov;
+    this.zoomFov = THREE.MathUtils.clamp(now / (k || 1), ZOOM_MIN, ZOOM_MAX);
+    return this.zoomFov;
+  }
+
+  /** Straight ahead, the aeroplane's own field of view. */
+  resetLook() {
+    this.snap = 'front';
+    this.zoomFov = null;
+  }
+
+  /** What to remember for this aeroplane (features/cockpit-cam.js), and to put back. */
+  get lookState() {
+    return { snap: this.snap, zoomFov: this.zoomFov };
+  }
+
+  set lookState(v) {
+    this.snap = v && SNAPS[v.snap] ? v.snap : 'front';
+    this.zoomFov = v && Number.isFinite(v.zoomFov) ? THREE.MathUtils.clamp(v.zoomFov, ZOOM_MIN, ZOOM_MAX) : null;
   }
 
   /**
@@ -1003,9 +1078,26 @@ export class CameraRig {
       cam.position.y += wy * PANEL_D + sy * 0.5;
       cam.position.z += wz * PANEL_D + sz * 0.5;
       this._targetQ.copy(ac.quat);
-      // Head movement: glance into the turn a little, plus free look.
+      // Head movement (THE NATURAL HEAD above): into the turn by its rate, a
+      // little against the bank, free look and the snap views eased.
       const bank = ac.bankAngleDeg();
-      const headYaw = lookBehind ? Math.PI : lookYaw - THREE.MathUtils.degToRad(bank) * 0.12;
+      const H = this._head;
+      const ease = (tau) => 1 - Math.exp(-Math.max(0, dt) / tau);
+      const hdgNow = (Math.atan2(ac.vel.x, -ac.vel.z) * 180) / Math.PI;
+      let rate = 0;
+      if (H.lastHdg != null && dt > 0 && ac.airspeed > 15 && !ac.onGround) rate = (((hdgNow - H.lastHdg + 540) % 360) - 180) / dt;
+      H.lastHdg = hdgNow;
+      const intoWant = -THREE.MathUtils.degToRad(clamp(rate * HEAD_INTO_PER_DPS, -HEAD_INTO_MAX, HEAD_INTO_MAX));
+      H.into += (intoWant - H.into) * ease(HEAD_INTO_TAU);
+      // Banked right (positive), the head rolls back a little to the left (positive z), towards the horizon.
+      const tiltWant = THREE.MathUtils.degToRad(clamp(bank * HEAD_TILT, -HEAD_TILT_MAX, HEAD_TILT_MAX));
+      H.tilt += (tiltWant - H.tilt) * ease(HEAD_TILT_TAU);
+      const sn = SNAPS[this.snap] || SNAPS.front;
+      H.sy += (sn.yaw - H.sy) * ease(SNAP_TAU);
+      H.sp += (sn.pitch - H.sp) * ease(SNAP_TAU);
+      H.yaw += (lookYaw - H.yaw) * ease(LOOK_TAU);
+      H.pitch += (lookPitch - H.pitch) * ease(LOOK_TAU);
+      const headYaw = lookBehind ? Math.PI : H.yaw + H.sy + H.into;
       // A pilot looks a little down, over the nose: level, the cabin roof filled
       // the top ~40% of the screen and the panel sat behind the HUD.
       // The cockpit may ask for its own (cockpit userData.viewPitchDeg, set
@@ -1016,11 +1108,13 @@ export class CameraRig {
       // g does not jiggle the whole view at speed.
       const gWant = clamp((ac.gLoad || 1) - 1, -0.4, 0.4);
       this._gHead = this._gHead == null ? gWant : this._gHead + (gWant - this._gHead) * (1 - Math.exp(-Math.max(0, dt) / G_HEAD_TAU));
-      const headPitch = basePitch + lookPitch + this._gHead * -0.06;
-      const q = this._q.setFromEuler(new THREE.Euler(headPitch, headYaw, 0, 'YXZ'));
+      const headPitch = basePitch + H.pitch + (lookBehind ? 0 : H.sp) + this._gHead * -0.06;
+      const q = this._q.setFromEuler(this._headEuler.set(headPitch, headYaw, lookBehind ? 0 : H.tilt, 'YXZ'));
       cam.quaternion.copy(this._targetQ).multiply(q);
-      const want = (this.realisticCockpit ? REALISTIC_FOV : this.baseFov + clamp(ac.airspeed / 90, 0, 1) * 4) + this.speedFov(ac) * 0.5;
-      cam.fov = lerp(cam.fov, want, clamp(dt * 3, 0, 1));
+      const auto = (this.realisticCockpit ? REALISTIC_FOV : this.baseFov + clamp(ac.airspeed / 90, 0, 1) * 4) + this.speedFov(ac) * 0.5;
+      // A zoom the pilot chose wins, eased a little quicker than the speed's own widening.
+      const want = this.zoomFov != null ? this.zoomFov : auto;
+      cam.fov = lerp(cam.fov, want, clamp(dt * (this.zoomFov != null ? 6 : 3), 0, 1));
       cam.near = 0.08;
     } else if (this.mode === 'chase') {
       // Behind and above, blended between body-axis and velocity-axis so the

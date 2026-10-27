@@ -20,6 +20,8 @@ import './cargo-ramp.js';
 import './pilot-systems.js';
 // Sim gear on the HUD: the connect notice, the "move each lever" check, the thrust detents (flight/controllers.js).
 import './controllers-hud.js';
+// The cockpit view's snap views (numpad), zoom (wheel, pinch, * and /) and the last look per aircraft.
+import './cockpit-cam.js';
 import './warnings.js';
 import './bird-strike.js';
 import './explosions.js';
@@ -117,6 +119,15 @@ import './breakup.js';
 // World Map — Preview: its own card in the map picker (one sea, five airports, ground streamed round
 // the camera, a world map and a destination). Not on the roster; nothing runs until it is picked.
 import './world-preview.js';
+// The full-screen live map on every map (5, or tap the minimap): never pauses, a chart by zoom level.
+import './livemap/livemap.js';
+// DIRECT TO and a flight plan on the live map, flown by the autopilot in NAV. After the preview, so
+// its guidance wraps the preview's trip (a DIRECT TO flies over a destination).
+import './livemap/nav.js';
+// "NOW ENTERING" an island, "WELCOME TO" a field after a flight: a title under the heading tape.
+import './livemap/where.js';
+// Each field's control zone: ENTERING AIRSPACE · the frequency, the approach controller's hand-off.
+import './livemap/airspace.js';
 // The map loading screen, about three seconds, in front of every way into a map (Free Flight, a
 // mission, a Story chapter, a multiplayer join, a boat or a van). Last, so its wrapper on the
 // game's startMode is the outermost one, over everything above that waits to be started.

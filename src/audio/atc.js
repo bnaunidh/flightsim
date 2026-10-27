@@ -52,6 +52,14 @@ export function setRadioField(name) {
   radioField = name || 'Kestrel';
 }
 /**
+ * Whose approach control you are talking to (features/livemap/airspace.js:
+ * the control zone you are in), or null for the generic "Island Approach".
+ */
+let approachField = null;
+export function setApproachField(name) {
+  approachField = name || null;
+}
+/**
  * What to put above the subtitle for this voice.
  *
  * Takes either the key or the voice object, because `transmit` has the key and
@@ -61,6 +69,7 @@ export function voiceLabel(voice) {
   const v = typeof voice === 'string' ? VOICES[voice] : voice;
   if (v === VOICES.tower) return `${radioField} Tower`;
   if (v === VOICES.ground) return `${radioField} Ground`;
+  if (v === VOICES.approach && approachField) return `${approachField} Approach`;
   return (v && v.label) || 'Radio';
 }
 
