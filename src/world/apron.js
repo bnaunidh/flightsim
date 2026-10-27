@@ -39,6 +39,7 @@ import { airportLayout, NOSE_STOP } from './airport-layout.js';
 import { OFFICE_TILE, officeFloors } from './airport.js';
 import { Batch, vcMaterial, instanced, glowPoints, canvas, canvasTexture, trs, trse, yawOf, bakeModel, layer } from './airport-kit.js';
 import * as V from './airport-vehicles.js';
+import { FOOT as V_FOOT } from './vehicle-footprints.js';
 import { wearRealVehicle } from '../aircraft/real-models.js';
 import { blinkLevel } from '../render/flash-safety.js';
 import { glazingTextures as curtainWall, channelLetters, TILE_W_M } from './terminal-look.js';
@@ -2055,8 +2056,14 @@ export class Apron {
     // The follow-me van.
     const fm = this.followMe;
     if (fm && this.meshes.followMe) {
-      fm.d += dt * 5.5;
+      // It stops for anybody walking in its path (features/life/crowd.js), like every apron vehicle.
+      fm.v = this.easeSpeed(fm.v ?? 5.5, this.yieldAhead(fm.path, fm.d, 'followMe', 6 + (5.5 * 5.5) / 4) ? 0 : 5.5, dt);
+      fm.d += dt * fm.v;
       const s = fm.path.sample(fm.d, this._p || (this._p = { x: 0, z: 0, yaw: 0 }));
+      fm.pos = fm.pos || { x: 0, z: 0, yaw: 0 };
+      fm.pos.x = s.x;
+      fm.pos.z = s.z;
+      fm.pos.yaw = s.yaw;
       trs(s.x, ELEV, s.z, s.yaw, 1, 1, 1, _m);
       this.set('followMe', fm.slot, _m);
       this.moveBeacon(fm.beacon, s.x, ELEV + 2.1, s.z);
@@ -2076,18 +2083,65 @@ export class Apron {
     }
   }
 
+  /**
+   * Anybody walking in this vehicle's path, from its front bumper to `look`
+   * metres on? (`peopleNear` is world-life's hash of the apron's people,
+   * features/life/crowd.js; with nobody about, nobody is in the way.)
+   */
+  yieldAhead(path, d, kind, look) {
+    if (!this.peopleNear) return false;
+    const f = V_FOOT[kind] || V_FOOT.tug;
+    const q = this._y || (this._y = { x: 0, z: 0, yaw: 0 });
+    const n = Math.max(1, Math.ceil(look / 1.2));
+    for (let k = 0; k <= n; k++) {
+      path.sample(d - f.z0 + (look * k) / n, q);
+      if (this.peopleNear(q.x, q.z, f.hw + 0.9)) return true;
+    }
+    return false;
+  }
+
+  /** Towards a speed at 2 m/s² up and 2.5 down. */
+  easeSpeed(v, want, dt) {
+    return v < want ? Math.min(want, v + 2 * dt) : Math.max(want, v - 2.5 * dt);
+  }
+
+  /** Every apron vehicle that is moving, as boxes for the people to keep clear of (life/crowd.js MoverSet). */
+  moversInto(M) {
+    for (const c of this.crews) {
+      const tr = c.train;
+      if (tr && tr.pos && c.state === 'working') {
+        M.add('tractor', tr.pos.x, tr.pos.z, tr.pos.yaw, tr.v ?? tr.speed, tr.path, tr.d, 1);
+        for (const q of tr.carts || []) M.add('cart', q.x, q.z, q.yaw, tr.v ?? tr.speed);
+      }
+      if (c.state === 'arriving' && c.moves) {
+        for (const mv of c.moves) if (!mv.done && mv.d >= 0 && mv.pos) M.add(mv.kind, mv.pos.x, mv.pos.z, mv.pos.yaw, mv.v ?? CREW_SPEED, mv.path, mv.d, 1);
+      }
+    }
+    const fm = this.followMe;
+    if (fm && fm.pos) M.add('followMe', fm.pos.x, fm.pos.z, fm.pos.yaw, fm.v ?? 5.5, fm.path, fm.d, 1);
+  }
+
   stepTrain(c, dt) {
     const tr = c.train;
-    tr.d += dt * tr.speed;
+    tr.v = this.easeSpeed(tr.v ?? tr.speed, this.yieldAhead(tr.path, tr.d, 'tractor', 6 + (tr.speed * tr.speed) / 4) ? 0 : tr.speed, dt);
+    tr.d += dt * tr.v;
     const p = this._p || (this._p = { x: 0, z: 0, yaw: 0 });
     tr.path.sample(tr.d, p);
     trs(p.x, ELEV, p.z, p.yaw, 1, 1, 1, _m);
     this.set('tractor', c.v.tractor, _m);
     this.moveBeacon(c.beacons.tractor, p.x, ELEV + 2.15, p.z);
+    tr.pos = tr.pos || { x: 0, z: 0, yaw: 0 };
+    tr.pos.x = p.x;
+    tr.pos.z = p.z;
+    tr.pos.yaw = p.yaw;
+    if (!tr.carts) tr.carts = c.v.carts.map(() => ({ x: 0, z: 0, yaw: 0 }));
     for (let i = 0; i < c.v.carts.length; i++) {
       tr.path.sample(tr.d - 3.1 - i * 2.9, p);
       trs(p.x, ELEV, p.z, p.yaw, 1, 1, 1, _m);
       this.set('cart', c.v.carts[i], _m);
+      tr.carts[i].x = p.x;
+      tr.carts[i].z = p.z;
+      tr.carts[i].yaw = p.yaw;
     }
   }
 
@@ -2097,7 +2151,9 @@ export class Apron {
     const p = this._p || (this._p = { x: 0, z: 0, yaw: 0 });
     for (const mv of c.moves) {
       if (mv.done) continue;
-      mv.d += dt * CREW_SPEED;
+      // On its way in: it stops for anybody walking in its path.
+      mv.v = mv.d < 0 ? CREW_SPEED : this.easeSpeed(mv.v ?? CREW_SPEED, this.yieldAhead(mv.path, mv.d, mv.kind, 6 + (CREW_SPEED * CREW_SPEED) / 4) ? 0 : CREW_SPEED, dt);
+      mv.d += dt * mv.v;
       if (mv.d < 0) {
         all = false;
         continue;
@@ -2112,6 +2168,10 @@ export class Apron {
       mv.path.sample(mv.d, p);
       trs(p.x, ELEV, p.z, p.yaw, 1, 1, 1, _m);
       this.set(mv.kind, mv.slot, _m);
+      mv.pos = mv.pos || { x: 0, z: 0, yaw: 0 };
+      mv.pos.x = p.x;
+      mv.pos.z = p.z;
+      mv.pos.yaw = p.yaw;
       if (mv.kind === 'tug') this.moveBeacon(c.beacons.tug, p.x, ELEV + 2.6, p.z);
     }
     if (all) {

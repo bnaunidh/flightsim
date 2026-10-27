@@ -78,6 +78,36 @@ export const STAND_SIZES = Object.freeze({
 /** Gap kept between any two buildings, and between a building and pavement. */
 const GAP = 6;
 
+/**
+ * CODE F (wave 18, owner: "make sure taxi bigger btw so big planes arent
+ * cooked"). The hubs are the fields that offer the big jets a gate, a stand
+ * or the open apron (A380 79.8 m across, BelugaXL, 747, C-17, An-225, C-5),
+ * so their taxiways are laid out to ICAO's Code F numbers:
+ *   width        44 m of paving: the 25 m taxiway and its shoulders, the
+ *                yellow centreline in the middle, the blue edge lights out at
+ *                the new edge (airport.js lights every pavement's edge);
+ *   objectClear  51 m from the taxiway's centreline to any building — the
+ *                hangars and the fire station that stood 25 m in front of it
+ *                (an A380's wing reaches 40 m, an An-225's 44);
+ *   signClear    50 m from the centreline to a runway's red sign beside the
+ *                taxiway or a connector, so no wing passes over one; the
+ *                information signs (location, direction, the junction
+ *                arrays) 66 m on the runway side (infoClear), out of a
+ *                pushing-back jumbo's swing too; and none in the sweep of a big
+ *                jet as it turns at a junction (turnR, the turn's radius;
+ *                `sweep` how far its wingtip-to-wingtip, nose-to-tail outline
+ *                reaches): an information sign there slides along the taxiway
+ *                or goes, a red one steps out beside its hold;
+ *   turn pads    at both ends of the runway, the runway widened by padHalf
+ *                each side for its last padLen metres (and 15 m past the end),
+ *                so a jumbo can turn round at the end without a wheel on the grass;
+ *   the parallel taxiway runs on 40 m past the end connectors, so the turn into
+ *                them stays on the paving.
+ * Smaller fields keep their own numbers (Kestrel's are fixed, see the header)
+ * and are never offered a big jet's gate or taxi start (world/spawns.js).
+ */
+export const CODE_F = Object.freeze({ width: 44, objectClear: 51, signClear: 50, infoClear: 66, sweep: 60, turnR: 26, padHalf: 22, padLen: 140 });
+
 /*
  * How far the ground may stray from field elevation under made ground.
  * Pavement is drawn 5 cm above the field, so ground more than 4 cm higher
@@ -340,9 +370,11 @@ function template(shape, L, hw) {
   }
   return {
     shape: 'hub',
-    twy: { w: 170, width: 30, half: L / 2 - 150 },
+    // Code F: 44 m of paving (CODE_F above); the apron starts at its edge, 7 m further out than it did;
+    // the taxiway runs on 40 m past the end connectors (it stopped 10 m past their middle).
+    twy: { w: 170, width: CODE_F.width, half: L / 2 - 120 },
     connectors: [-(L / 2 - 160), -L / 4, 0, L / 4, L / 2 - 160],
-    apron: { u0: -700, u1: 500, w0: 185, depth: 121 },
+    apron: { u0: -700, u1: 500, w0: 170 + CODE_F.width / 2, depth: 121 },
     terminal: { depth: 56, H: 26, name: 'terminal', minLen: 400, maxLen: 1060 },
     // 62 m to the gallery, 76 m to the cab roof: a big airport's tower (most
     // are 50 to 90 m). It was 84 (98 m), with the regional one, above.
@@ -783,6 +815,27 @@ function buildLayout() {
   }
 
   /*
+   * Code F turn pads (CODE_F): the last padLen metres of each end of the main
+   * runway widened by padHalf each side, and 15 m past its end, where the
+   * ground allows — so a big jet backtracking to the end can turn round on
+   * paving. Laid as made ground beside the runway; the runway's own surface
+   * and lights are untouched.
+   */
+  if (shape === 'hub') {
+    for (const e of [-1, 1]) {
+      const ua = e < 0 ? -L / 2 - 15 : L / 2 - CODE_F.padLen;
+      const ub = e < 0 ? -L / 2 + CODE_F.padLen : L / 2 + 15;
+      for (const [w0, w1] of [[-(hw + CODE_F.padHalf), -hw + 0.5], [hw - 0.5, hw + CODE_F.padHalf]]) {
+        const pr = F.rect(ua, ub, w0, w1);
+        if (groundOk(pr, PAVE_UP, PAVE_DOWN, 10)) pavement.push({ kind: 'turnpad', ...pr });
+      }
+      // Past the end, the runway's width and the pads'.
+      const over = F.rect(e < 0 ? -L / 2 - 15 : L / 2 - 0.5, e < 0 ? -L / 2 + 0.5 : L / 2 + 15, -(hw + CODE_F.padHalf), hw + CODE_F.padHalf);
+      if (groundOk(over, PAVE_UP, PAVE_DOWN, 10)) pavement.push({ kind: 'turnpad', ...over });
+    }
+  }
+
+  /*
    * Where the parallel taxiway crosses the crosswind runway. On 21 of the 31
    * maps it does, and nothing on the taxiway said so: no holding position,
    * no sign, the yellow centreline painted straight across the runway. Each
@@ -940,6 +993,9 @@ function buildLayout() {
     return w;
   })();
   const behindTwy = twyW + twyHalf + 3;
+  // A Code F field keeps every building out of the big jets' wings along the taxiway.
+  const codeF = shape === 'hub';
+  const objMin = codeF ? twyW + CODE_F.objectClear : behindTwy;
   const eastOf = block.apU1;
   const westOf = block.apU0;
   // Where a template's `at` and `front` land on this field.
@@ -952,7 +1008,7 @@ function buildLayout() {
   const hangars = [];
   for (const h of T.hangars) {
     const uPref = anchorU(h.at, h.width);
-    const w0Pref = Math.max(anchorW(h.front), behindTwy);
+    const w0Pref = Math.max(anchorW(h.front), behindTwy, objMin);
     // The door leaves slide out past the walls, a quarter of the width each
     // side, so the site has to be half as wide again as the building.
     const runoff = h.width * 1.5;
@@ -1024,7 +1080,7 @@ function buildLayout() {
   {
     const f = T.fire;
     const uPref = anchorU(f.at, f.width);
-    const w0Pref = Math.max(anchorW(f.front), behindTwy);
+    const w0Pref = Math.max(anchorW(f.front), behindTwy, objMin);
     const s = site(f.width, f.depth, uPref, w0Pref, wLimit(w0Pref, f.depth));
     if (s) {
       fire = { ...f, u: s.u, w0: s.w0, rect: s.rect };
@@ -1061,7 +1117,7 @@ function buildLayout() {
   {
     const f = T.fuel;
     const uPref = anchorU(f.at, f.width);
-    const w0Pref = Math.max(anchorW(f.front), behindTwy);
+    const w0Pref = Math.max(anchorW(f.front), behindTwy, objMin);
     const s = site(f.width, f.depth, uPref, w0Pref, wLimit(w0Pref, f.depth));
     if (s) {
       fuel = { ...f, u: s.u, w0: s.w0, rect: s.rect };
@@ -1091,16 +1147,19 @@ function buildLayout() {
   {
     const rwName = '09-27';
     const small = shape === 'strip';
+    // How far beside the paving a sign stands: 7 m, or on a Code F field out of every wing (CODE_F.signClear).
+    const sOff = (d) => (codeF ? Math.max(d, CODE_F.signClear - twyHalf) : d);
+    const iOff = (d) => (codeF ? Math.max(d, CODE_F.infoClear - twyHalf) : d);
     for (const c of connectors) {
       // Mandatory sign at the hold line, on the pilot's left as they face the
       // runway: heading south from a north apron, left is east (+u), so -side.
-      const lx = F.x(c.u - side * (twyHalf + 7));
+      const lx = F.x(c.u - side * (twyHalf + sOff(7)));
       if (c.onRunway) continue;
-      // If the left is taken (a hillside, other pavement), the right; then closer in.
-      const alts = [[side, 7], [-side, 4], [side, 4]].map(([e, d]) => ({ x: F.x(c.u - e * (twyHalf + d)), z: F.z(c.hold.w + 2) }));
+      // If the left is taken (a hillside, other pavement), the right; then closer in (never under a wing on Code F).
+      const alts = [[side, 7], [-side, 4], [side, 4]].map(([e, d]) => ({ x: F.x(c.u - e * (twyHalf + sOff(d))), z: F.z(c.hold.w + 2) }));
       signs.push({ kind: 'mandatory', text: rwName, x: lx, z: F.z(c.hold.w + 2), facingDeg: F.towardDeg, small, entry: c.id, alts });
       // Location sign at the junction, on the left of a pilot leaving the runway.
-      signs.push({ kind: 'location', text: c.id, x: F.x(c.u + side * (twyHalf + 7)), z: F.z(twyW - twyHalf - 8), facingDeg: F.awayDeg, small });
+      signs.push({ kind: 'location', text: c.id, x: F.x(c.u + side * (twyHalf + sOff(7))), z: F.z(twyW - twyHalf - iOff(8)), facingDeg: F.awayDeg, small });
     }
     /*
      * Junction arrays on the parallel taxiway, before each connector, for a
@@ -1117,7 +1176,7 @@ function buildLayout() {
         const arrow = left < 0 ? 'left' : 'right';
         const loc = { kind: 'location', text: taxiway.id };
         const go = { kind: 'direction', text: c.id, arrow };
-        signs.push({ kind: 'array', segments: arrow === 'left' ? [go, loc] : [loc, go], text: `${taxiway.id} ${c.id}`, x: F.x(u), z: F.z(twyW + left * (twyHalf + 7)), facingDeg: dir > 0 ? 90 : 270, small, junction: c.id });
+        signs.push({ kind: 'array', segments: arrow === 'left' ? [go, loc] : [loc, go], text: `${taxiway.id} ${c.id}`, x: F.x(u), z: F.z(twyW + left * (twyHalf + iOff(7))), facingDeg: dir > 0 ? 90 : 270, small, junction: c.id });
       }
     }
     // At each crossing of the crosswind runway: its name in white on red,
@@ -1125,14 +1184,76 @@ function buildLayout() {
     for (const x of crossings) {
       for (const h of x.holds) {
         for (const e of [-1, 1]) {
-          signs.push({ kind: 'mandatory', text: x.name, x: F.x(h.u - h.dir * 2), z: F.z(twyW + e * (twyHalf + 6)), facingDeg: h.dir > 0 ? 90 : 270, small, hold: x.id });
+          signs.push({ kind: 'mandatory', text: x.name, x: F.x(h.u - h.dir * 2), z: F.z(twyW + e * (twyHalf + sOff(6))), facingDeg: h.dir > 0 ? 90 : 270, small, hold: x.id });
         }
       }
     }
     // Direction boards on the parallel taxiway at the apron's two corners.
     // `facingDeg` is the heading of the pilot who reads it.
-    signs.push({ kind: 'direction', text: 'APRON', arrow: side < 0 ? 'left' : 'right', x: F.x(block.apU0 - 10), z: F.z(twyW - twyHalf - 7), facingDeg: 90, small });
-    signs.push({ kind: 'location', text: 'A', x: F.x(block.apU1 + 10), z: F.z(twyW - twyHalf - 7), facingDeg: 270, small });
+    signs.push({ kind: 'direction', text: 'APRON', arrow: side < 0 ? 'left' : 'right', x: F.x(block.apU0 - 10), z: F.z(twyW - twyHalf - iOff(7)), facingDeg: 90, small });
+    signs.push({ kind: 'location', text: 'A', x: F.x(block.apU1 + 10), z: F.z(twyW - twyHalf - iOff(7)), facingDeg: 270, small });
+    /*
+     * Code F: out of the wings' sweep. A big jet turning at a junction (from
+     * the taxiway into a connector or out of it, either way, radius
+     * CODE_F.turnR) sweeps its wing over everything within turnR + signClear
+     * of the turn's centre — the inside corners on the runway side and the
+     * apron side. A sign there slides along the taxiway away from the
+     * junction until it is clear, or goes.
+     */
+    if (codeF) {
+      const R = CODE_F.turnR;
+      const keep = R + CODE_F.sweep;
+      const centres = [];
+      // The line-up's turn from a connector on to the runway centreline (traffic/field.js lineupDraft).
+      const RL = Math.min(hw + 6, 22);
+      for (const c of connectors) {
+        for (const e of [-1, 1]) {
+          centres.push({ u: c.u + e * R, w: twyW - R, keep });
+          centres.push({ u: c.u + e * R, w: twyW + R, keep });
+          centres.push({ u: c.u + e * RL, w: RL, keep: RL + CODE_F.sweep });
+        }
+      }
+      // Where the taxiway crosses the crosswind runway: a line-up from the taxiway's hold turns on to it towards the main runway.
+      for (const x of crossings) {
+        for (const uc of [x.u0 + R, x.u1 - R]) centres.push({ u: uc, w: twyW - R, keep });
+      }
+      const swept = (x, z) => {
+        const u = x - F.cx;
+        const w = (z - F.cz) * side;
+        return centres.some((q) => Math.hypot(u - q.u, w - q.w) < q.keep);
+      };
+      for (let i = signs.length - 1; i >= 0; i--) {
+        const sg = signs[i];
+        // A runway's red sign stays at its hold (the one a pilot must not miss), signClear out from the paving.
+        if (sg.kind === 'mandatory') continue;
+        if (!swept(sg.x, sg.z)) continue;
+        // Along the taxiway, away from the nearest junction, in 10 m steps.
+        const u0 = sg.x - F.cx;
+        const near = connectors.reduce((a, c) => (Math.abs(c.u - u0) < Math.abs(a.u - u0) ? c : a), connectors[0] || { u: 0 });
+        const away = u0 >= near.u ? 1 : -1;
+        let moved = false;
+        for (let k = 1; k <= 16 && !moved; k++) {
+          const x = sg.x + away * 10 * k;
+          if (!swept(x, sg.z) && x - F.cx > tu0 && x - F.cx < tu1) {
+            sg.x = x;
+            if (sg.alts) sg.alts = sg.alts.map((q) => ({ x: q.x + away * 10 * k, z: q.z }));
+            moved = true;
+          }
+        }
+        if (!moved) signs.splice(i, 1);
+      }
+      /*
+       * A crossing's hold that falls inside a junction (the Air Base's 18-36
+       * hold, 14 m from A4): its red signs stay at the hold — frangible, a
+       * metre tall, under the engines — but a big jet turning at that
+       * junction passes over them, and they say so (`inTurn`).
+       */
+      for (const sg of signs) {
+        if (sg.kind !== 'mandatory' || !sg.hold) continue;
+        const u = sg.x - F.cx;
+        if (connectors.some((c) => Math.abs(c.u - u) < twyHalf + 40)) sg.inTurn = true;
+      }
+    }
     // Keep them off the pavement and off buildings.
     for (let i = signs.length - 1; i >= 0; i--) {
       const s = signs[i];
@@ -1200,6 +1321,8 @@ function buildLayout() {
     mapId: MAP && MAP.id,
     cls,
     shape,
+    // Code F taxiways (CODE_F): the field that offers the big jets their gates.
+    codeF,
     military,
     kestrelShape,
     paveBox,

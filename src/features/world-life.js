@@ -34,6 +34,7 @@ import { makeRandom } from '../core/noise.js';
 import { planLife, PEOPLE_CAP } from './life/plan.js';
 import { Crowd } from './life/people.js';
 import { VanFleet, Route } from './life/vans.js';
+import { makeWalkers, ApronLife } from './life/crowd.js';
 
 const TIERS = ['low', 'medium', 'high', 'ultra'];
 
@@ -59,6 +60,7 @@ const L = {
   walkers: [],
   crowd: null,
   vans: null,
+  life: null,
   aircraft: [],
   time: null,
   stats: { ms: new Float32Array(600), n: 0, msMax: 0, frames: 0, msSum: 0, waits: 0 },
@@ -88,6 +90,8 @@ function levelFor(sim, mode) {
 function clear() {
   if (L.crowd) L.crowd.dispose();
   if (L.vans) L.vans.dispose();
+  if (L.life && L.life.apron) L.life.apron.peopleNear = null;
+  L.life = null;
   L.crowd = null;
   L.vans = null;
   L.walkers = [];
@@ -118,41 +122,8 @@ function populate(sim) {
   });
   const elev = AIRPORT.elev;
   const shadows = tierOf(sim) === 'high' || tierOf(sim) === 'ultra';
-  // The walkers, as the runtime moves them.
-  L.walkers = L.plan.walkers.map((p, i) => {
-    const route = new Route(p.path, p.mode === 'loop');
-    const w0 = {
-      role: p.role,
-      outfit: p.outfit,
-      mode: p.mode,
-      route,
-      speed: p.speed || 1.2,
-      d: p.mode === 'cycle' ? p.d0 || 0 : p.d0 || 0,
-      d0: p.d0 || 0,
-      dir: 1,
-      wait: 0,
-      pause: p.pause || 2,
-      rest: p.rest || 20,
-      bag: !!p.bag,
-      zone: p.zone ?? null,
-      look: i * 7 + 3,
-      x: p.path[0].x,
-      y: elev + (p.path[0].y || 0),
-      z: p.path[0].z,
-      yaw: p.yaw || 0,
-      baseYaw: p.yaw || 0,
-      walk: rnd() * 6,
-      shift: rnd() * 6,
-      turn: 4 + rnd() * 12,
-      moving: false,
-      hidden: false,
-      held: false,
-      slotN: -1,
-      caseN: -1,
-      _s: { x: 0, y: 0, z: 0, yaw: p.yaw || 0 },
-    };
-    return w0;
-  });
+  // The walkers, as the runtime moves them (life/crowd.js: they keep out of each other's and the vehicles' way).
+  L.walkers = makeWalkers(L.plan.walkers, elev, rnd, Route);
   if (L.walkers.length) {
     // Low: the two-mesh figure (life/people.js simpleGeometries) — the budget's share.
     L.crowd = new Crowd(L.walkers.length, { shadows, rnd, simple: tierOf(sim) === 'low' });
@@ -164,6 +135,11 @@ function populate(sim) {
     L.vans = new VanFleet(L.plan.vans, elev, { shadows });
     L.group.add(L.vans.group);
   }
+  // People and vehicles stepped together: the vans, the apron crews' baggage
+  // trains, the spare crew driving in and the follow-me van all stop for
+  // people, and people wait for them (wave 18).
+  L.life = new ApronLife({ walkers: L.walkers, vans: L.vans, apron: ap, obs: L.plan.obs, elev });
+  L.life.onWait = () => L.stats.waits++;
   L.stats.n = 0;
   L.stats.frames = 0;
   L.stats.msSum = 0;
@@ -192,80 +168,6 @@ function aircraftAbout(sim) {
     }
   }
   return out;
-}
-
-function stepWalkers(dt, aircraft) {
-  for (const w of L.walkers) {
-    // Held: an aeroplane is near. Stand still where you are.
-    let held = false;
-    for (const c of aircraft) {
-      const dx = w.x - c.x;
-      const dz = w.z - c.z;
-      if (dx * dx + dz * dz < c.r * c.r) {
-        held = true;
-        break;
-      }
-    }
-    if (held && !w.held) L.stats.waits++;
-    w.held = held;
-    w.shift += dt * 0.6;
-    if (w.mode === 'idle') {
-      // Now and then a look round, and back.
-      w.turn -= dt;
-      if (w.turn < 0) {
-        w.turn = 5 + ((w.look * 13) % 11);
-        w.yaw = w.yaw === w.baseYaw ? w.baseYaw + (w.look % 2 ? 0.5 : -0.5) : w.baseYaw;
-      }
-      w.moving = false;
-      continue;
-    }
-    const s = w._s;
-    const R = w.route;
-    let v = held ? 0 : w.speed;
-    if (w.mode === 'pingpong') {
-      if (w.wait > 0) {
-        w.wait -= dt;
-        v = 0;
-      } else if (v > 0) {
-        w.d += w.dir * v * dt;
-        if (w.d >= R.length || w.d <= 0) {
-          w.d = Math.max(0, Math.min(R.length, w.d));
-          w.dir = -w.dir;
-          w.wait = w.pause;
-        }
-      }
-    } else if (w.mode === 'loop') {
-      w.d += v * dt;
-    } else if (w.mode === 'cycle') {
-      if (w.wait > 0) {
-        w.wait -= dt;
-        if (w.wait <= 0) w.d = w.d0;
-        w.hidden = true;
-        w.moving = false;
-        continue;
-      }
-      // Off the route either side is out of sight: queued behind the door, or through it.
-      if (w.d >= 0 || !held) w.d += v * dt;
-      if (w.d > R.length) {
-        w.wait = w.rest;
-        w.hidden = true;
-        continue;
-      }
-      w.hidden = w.d < 0;
-      if (w.hidden) {
-        w.moving = false;
-        continue;
-      }
-    }
-    R.sample(w.d, s);
-    w.x = s.x;
-    w.y = AIRPORT.elev + s.y;
-    w.z = s.z;
-    w.yaw = w.mode === 'pingpong' && w.dir < 0 ? s.yaw + Math.PI : s.yaw;
-    w.moving = v > 0 && !(w.mode === 'pingpong' && w.wait > 0);
-    // About 1.8 radians of leg swing a metre (a 1.4 m stride).
-    if (w.moving) w.walk += v * dt * 2.25;
-  }
 }
 
 /**
@@ -396,6 +298,7 @@ registerExtension({
     group.name = 'ext:world-life';
     L.crowd = null;
     L.vans = null;
+    L.life = null;
     L.walkers = [];
     // The terminal's landside forecourt: paved, under the kerb canopy.
     try {
@@ -435,14 +338,11 @@ registerExtension({
     // The time of day changed under us (a story's cut to night): plan again.
     if (w && w.time && w.time !== L.time) populate(sim);
     const aircraft = aircraftAbout(sim);
-    stepWalkers(dt, aircraft);
-    const cleared = keepClear(sim);
     const cam = sim.camera ? sim.camera.position : PV;
+    if (L.life) L.life.step(dt, aircraft, cam, !!(w && w.isNight));
+    const cleared = keepClear(sim);
     if (L.crowd) L.crowd.draw(L.walkers, cam);
-    if (L.vans) {
-      L.vans.setVisible(!cleared.vans);
-      if (!cleared.vans) L.vans.step(dt, aircraft, L.walkers, !!(w && w.isNight));
-    }
+    if (L.vans) L.vans.setVisible(!cleared.vans);
     const ms = performance.now() - t0;
     const S = L.stats;
     S.frames++;
@@ -487,6 +387,7 @@ function state() {
     roles,
     vans: L.vans ? L.vans.list.map((v) => ({ kind: v.kind, d: Math.round(v.d), v: +v.v.toFixed(2), yielding: v.yielding, x: Math.round(v.pos.x), z: Math.round(v.pos.z) })) : [],
     vanYields: L.vans ? L.vans.stats.yields : 0,
+    crowd: L.life ? { ...L.life.stats } : null,
     waits: L.stats.waits,
     why: L.plan ? L.plan.why.slice() : [],
     cap: PEOPLE_CAP,

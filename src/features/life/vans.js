@@ -16,7 +16,12 @@
  * MANNERS. Each looks ahead along its route: anything in the way within
  * its braking distance — an aeroplane (yours or the traffic, with its
  * wingspan round it), somebody walking, the vehicle in front — and it slows
- * to a stop and waits; nothing is ever driven through.
+ * to a stop and waits; nothing is ever driven through. Somebody walking is
+ * looked for the whole width of its body and a margin, every 1.2 m from its
+ * front bumper to the end of its braking distance (life/crowd.js
+ * pathBlocked, against the people's spatial hash), and while it brakes its
+ * brake lights are on (wave 18: they used to look at three points ahead and
+ * drive through anybody between them).
  */
 
 import * as THREE from '../../vendor/three.module.js';
@@ -24,6 +29,7 @@ import { Batch, vcMaterial, glowPoints } from '../../world/airport-kit.js';
 import * as V from '../../world/airport-vehicles.js';
 import { wearRealVehicle } from '../../aircraft/real-models.js';
 import { blinkLevel } from '../../render/flash-safety.js';
+import { pathBlocked } from './crowd.js';
 
 const _m = new THREE.Matrix4();
 const _p = new THREE.Vector3();
@@ -133,6 +139,9 @@ export class VanFleet {
       wait: 0,
       yielding: false,
       pos: { x: 0, y: 0, z: 0, yaw: 0 },
+      // Where its carts are (a baggage train), for the people to keep clear of.
+      carts: v.kind === 'baggage' ? Array.from({ length: KINDS.baggage.carts }, () => ({ x: 0, y: 0, z: 0, yaw: 0 })) : [],
+      braking: false,
       i,
     }));
     const count = (k) => this.list.filter((v) => v.kind === k).length;
@@ -173,6 +182,17 @@ export class VanFleet {
       this.beacons.frustumCulled = false;
       this.group.add(this.beacons);
     }
+    // Brake lights: two red glows at the back of each, on while it brakes or waits.
+    const bpos = new Array(this.list.length * 6).fill(0);
+    for (let i = 1; i < bpos.length; i += 3) bpos[i] = -1e4;
+    const bcol = [];
+    for (let i = 0; i < this.list.length * 2; i++) bcol.push(1, 0.08, 0.05);
+    this.brakes = this.list.length ? glowPoints(bpos, bcol, 0.9, { opacity: 0.95, name: 'life:brakes' }) : null;
+    if (this.brakes) {
+      this.brakes.geometry.attributes.position.setUsage(THREE.DynamicDrawUsage);
+      this.brakes.frustumCulled = false;
+      this.group.add(this.brakes);
+    }
     // Slots per kind.
     const next = {};
     for (const v of this.list) {
@@ -195,6 +215,8 @@ export class VanFleet {
       // Look ahead: the next 6 + v² / 2a metres of the route (braking at 2 m/s²) and the vehicle's own length.
       const look = 6 + (v.speed * v.speed) / 4 + KINDS[v.kind].L / 2;
       let blocked = false;
+      // Anybody in its path, its width and a margin, all the way to the end of its braking distance.
+      if (people && typeof people.any === 'function') blocked = pathBlocked(v.route, v.d, v.dir, v.kind === 'baggage' ? 'tractor' : v.kind, look, people);
       for (let k = 1; k <= 3 && !blocked; k++) {
         v.route.sample(v.d + v.dir * look * (k / 3), a);
         for (const c of aircraft) {
@@ -203,7 +225,7 @@ export class VanFleet {
             break;
           }
         }
-        if (!blocked) {
+        if (!blocked && people && typeof people.any !== 'function') {
           for (const p of people) {
             if (p.hidden) continue;
             if (Math.abs(a.x - p.x) < 2.6 && Math.abs(a.z - p.z) < 2.6) {
@@ -228,6 +250,7 @@ export class VanFleet {
       const want = blocked ? 0 : v.speed;
       // 2 m/s² either way.
       v.v = v.v < want ? Math.min(want, v.v + 2 * dt) : Math.max(want, v.v - 2.5 * dt);
+      v.braking = blocked || v.v < want - 0.05 || v.v < 0.1;
       if (v.mode === 'pingpong') {
         if (v.wait > 0) {
           v.wait -= dt;
@@ -253,7 +276,16 @@ export class VanFleet {
       this.beacons.material.opacity = (night ? 1 : 0.75) * lit;
       this.beacons.geometry.attributes.position.needsUpdate = true;
     }
+    if (this.brakes) this.brakes.geometry.attributes.position.needsUpdate = true;
     for (const m of Object.values(this.meshes)) m.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Every vehicle and cart as a box, for the people (life/crowd.js MoverSet). */
+  moversInto(M) {
+    for (const v of this.list) {
+      M.add(v.kind === 'baggage' ? 'tractor' : v.kind, v.pos.x, v.pos.z, v.pos.yaw, v.v, v.route, v.d, v.dir);
+      for (const c of v.carts) M.add('cart', c.x, c.z, c.yaw, v.v);
+    }
   }
 
   place(v) {
@@ -271,7 +303,12 @@ export class VanFleet {
       const a = this._a;
       for (let i = 0; i < KINDS.baggage.carts; i++) {
         v.route.sample(v.d - v.dir * (3.1 + i * 2.9), a);
-        set(this.meshes.cart, v.slot * KINDS.baggage.carts + i, a.x, a.z, v.mode === 'pingpong' && v.dir < 0 ? a.yaw + Math.PI : a.yaw);
+        const cy = v.mode === 'pingpong' && v.dir < 0 ? a.yaw + Math.PI : a.yaw;
+        set(this.meshes.cart, v.slot * KINDS.baggage.carts + i, a.x, a.z, cy);
+        const c = v.carts[i];
+        c.x = a.x;
+        c.z = a.z;
+        c.yaw = cy;
       }
     } else if (v.kind === 'cateringTruck') {
       set(this.meshes.cateringTruck, v.slot, p.x, p.z, p.yaw);
@@ -284,6 +321,18 @@ export class VanFleet {
       const c = Math.cos(p.yaw);
       const attr = this.beacons.geometry.attributes.position;
       attr.setXYZ(v.i, p.x + c * b[0] + s * b[2], y + b[1], p.z - s * b[0] + c * b[2]);
+    }
+    if (this.brakes) {
+      // The tail of the last thing it pulls (the bus's own back, a train's tractor), 0.9 m up.
+      const tail = { baggage: 1.4, fuelTruck: 4.7, bus: 6.75, cateringTruck: 4.2 }[v.kind] || 3;
+      const half = v.kind === 'baggage' ? 0.6 : 1.05;
+      const s = Math.sin(p.yaw);
+      const c = Math.cos(p.yaw);
+      const attr = this.brakes.geometry.attributes.position;
+      for (let k = 0; k < 2; k++) {
+        const lx = (k ? 1 : -1) * half;
+        attr.setXYZ(v.i * 2 + k, p.x + c * lx + s * tail, v.braking ? y + 0.9 : -1e4, p.z - s * lx + c * tail);
+      }
     }
   }
 
@@ -303,5 +352,6 @@ export class VanFleet {
     if (this.beacons) {
       this.beacons.geometry.dispose();
     }
+    if (this.brakes) this.brakes.geometry.dispose();
   }
 }

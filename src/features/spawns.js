@@ -42,7 +42,7 @@ import * as THREE from '../vendor/three.module.js';
 import { registerExtension } from '../game/extensions.js';
 import { MAP, AIRPORT } from '../world/terrain.js';
 import { airportLayout } from '../world/airport-layout.js';
-import { spawnClassOf, resolveSpawn, spawnChoices, CLASSES } from '../world/spawns.js';
+import { spawnClassOf, resolveSpawn, spawnChoices, CLASSES, isBigJet, bigJetNote, fieldTakesBigJets } from '../world/spawns.js';
 import { getAircraft, AIRCRAFT } from '../aircraft/types.js';
 import { SPEC } from '../aircraft/physics.js';
 import { keyLabel } from '../flight/input.js';
@@ -400,7 +400,9 @@ registerExtension({
     if (r.kind === 'carrier') return skip('resolved to the carrier without startAt carrier; left on the runway');
     if (r.kind === 'runway') {
       if (r.fallback && sim.hud && typeof sim.hud.notify === 'function') {
-        sim.hud.notify('Nowhere free to start there — lined up on the runway instead.', 'info', 3.4);
+        // A big jet on a field whose taxiways cannot take it says so (wave 18, Code F: world/spawns.js isBigJet).
+        const why = isBigJet(type) && !fieldTakesBigJets() ? bigJetNote(type) : 'Nowhere free to start there — lined up on the runway instead.';
+        sim.hud.notify(why, 'info', 3.8);
       }
       return skip(r.fallback ? 'nothing was clear; runway' : 'the runway choice');
     }

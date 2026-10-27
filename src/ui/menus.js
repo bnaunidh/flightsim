@@ -19,6 +19,7 @@ import { loadFreePresets, saveFreePresets, MAX_FREE_PRESETS } from '../core/stor
 import * as Prog from '../game/progression.js';
 import { isHiddenAircraft, visibleAircraftId } from '../core/edition.js';
 import { LIVERIES, schemeFor } from '../aircraft/liveries.js';
+import { liveryOf } from '../core/plane-paint.js';
 // The hangar's showroom: tabs, arrows, the card, the podium (hangar-showcase-ui.js).
 import { installHangarShowcase } from './hangar-showcase-ui.js';
 // Which games the menus offer at all (the class-demo switch: aeroplane + helicopter).
@@ -1286,21 +1287,24 @@ export class Menus {
     const time = s.querySelector('[data-time]');
     const cond = s.querySelector('[data-cond]');
     // A plan view on each card, drawn from that aeroplane's own shape data.
-    this.repaintFleetArt = (liveryId) => {
+    // PAINT PER PLANE (wave 18): each card in that aeroplane's own paint
+    // (core/plane-paint.js). Given a type id, only that card is redrawn.
+    this.repaintFleetArt = (onlyTypeId) => {
       for (const a of AIRCRAFT) {
+        if (onlyTypeId && AIRCRAFT.some((b) => b.id === onlyTypeId) && a.id !== onlyTypeId) continue;
         const host = s.querySelector(`[data-fleet-art="${a.id}"]`);
         if (!host) continue;
         host.innerHTML = '';
         // Same reason as the numbers: one shape that cannot be drawn is an
         // empty frame on one card, not a menu that never finished building.
         try {
-          host.appendChild(aircraftThumbnail(a, liveryId));
+          host.appendChild(aircraftThumbnail(a, liveryOf(this.settingsRef, a.id)));
         } catch (err) {
           console.warn(`[menus] could not draw ${a.id}:`, err);
         }
       }
     };
-    this.repaintFleetArt(this.settingsRef ? this.settingsRef.livery : 'house');
+    this.repaintFleetArt();
     // Show which of the fleet you have actually earned.
     this.syncFleetLocks = () => {
       for (const a of AIRCRAFT) {
@@ -1733,7 +1737,7 @@ export class Menus {
         </div>
 
         <div class="tab-body" data-panel="flight">
-          <label class="field"><span>Airline livery</span>
+          <label class="field"><span>Airline livery — this aeroplane</span>
             <select data-set="livery">
               ${LIVERIES.map((l) => `<option value="${l.id}">${l.name} — ${l.blurb}</option>`).join('')}
             </select>
@@ -1752,7 +1756,7 @@ export class Menus {
           <label class="check"><input type="checkbox" data-set="heliAssist"><span>Helicopter stability assist — let go of the controls and it holds its height, levels out and stops over the ground (F in the helicopter). On for Easy and Normal, off for Realistic.</span></label>
           <label class="check"><input type="checkbox" data-set="mouseFlying"><span>Fly with the mouse (click the sky to capture the pointer)</span></label>
           <label class="check"><input type="checkbox" data-set="invertMouse"><span>Invert mouse up/down</span></label>
-          <label class="field"><span>Mouse sensitivity <b data-out="sensitivity"></b> <small>(a flight stick's feel is its Curve, in Controls → Controllers)</small></span>
+          <label class="field"><span>Mouse &amp; touch sensitivity <b data-out="sensitivity"></b> <small>(a flight stick's feel is its Curve, in Controls → Controllers)</small></span>
             <input type="range" min="0.3" max="2" step="0.1" data-set="sensitivity"></label>
           <label class="check"><input type="checkbox" data-set="gamepad"><span>Use game controllers if they are plugged in — gamepads, flight sticks, yokes, throttles and rudder pedals (Controls → Controllers sets them up)</span></label>
           <label class="check"><input type="checkbox" data-set="showHints"><span>Repeat hints if I get stuck</span></label>
@@ -1845,6 +1849,21 @@ export class Menus {
         </div>
 
         <div class="tab-body" data-panel="controls" hidden>
+          <div class="touch-fly-set">
+            <label class="field"><span>Touch flying <small>(phones and tablets)</small></span>
+              <select data-set="touchFlying">
+                <option value="auto">Automatic — drag anywhere on a phone, the stick on a tablet</option>
+                <option value="stick">Stick — the fixed stick under your left thumb</option>
+                <option value="drag">Drag anywhere — put a finger down on the left of the screen and steer</option>
+                <option value="tilt">Tilt — steer by tilting the phone</option>
+              </select></label>
+            <label class="field"><span>Tilt sensitivity <b data-out="tiltSensitivity"></b></span>
+              <input type="range" min="0.5" max="2" step="0.1" data-set="tiltSensitivity"></label>
+            <button type="button" class="ghost" data-tilt-level>Level the tilt — the way you hold it now is straight and level</button>
+            <p class="hint">Drag anywhere follows the sensitivity on the Flying tab. Pull back (drag down, or tip the
+            top of the phone towards you) to climb, like the stick. The throttle, the rudder and the buttons stay
+            where they are.</p>
+          </div>
           <div class="ctl-host" data-controllers></div>
           <p class="hint">Click a key, then press the new key you want to use. <kbd>Esc</kbd> cancels.</p>
           <div class="keymap-ask" data-keymap-ask hidden></div>
@@ -1893,6 +1912,11 @@ export class Menus {
         this.hooks.resetKeys();
         this.askKey('Every key is back to how it started.', null, 'good');
         this.renderKeymap();
+        return;
+      }
+      if (e.target.closest('[data-tilt-level]')) {
+        // A tap: on iOS this is also where the motion permission is asked for.
+        if (this.hooks.onTiltLevel) this.hooks.onTiltLevel();
         return;
       }
       if (e.target.closest('[data-reset-all]')) {
@@ -2782,6 +2806,8 @@ export class Menus {
     const get = (path) => path.split('.').reduce((o, k) => (o ? o[k] : undefined), settings);
     s.querySelectorAll('[data-set]').forEach((node) => {
       let v = get(node.dataset.set);
+      // The paint select is the paint of the aeroplane you are in (core/plane-paint.js).
+      if (node.dataset.set === 'livery') v = liveryOf(settings, (this.paintTypeId && this.paintTypeId()) || settings.aircraft);
       if (v === undefined) return;
       // The graphics select shows "Auto" while Auto is on, whichever tier it picked.
       if (node.dataset.set === 'quality' && settings.qualityAuto) v = 'auto';

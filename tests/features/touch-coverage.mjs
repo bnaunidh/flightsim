@@ -132,7 +132,7 @@ ok('it starts as auto (the tug\'s choice, towards the runway)', X.pushPref() ===
 ok('nose left and nose right are remembered', X.setPushPref('noseLeft') === 'noseLeft' && X.pushPref() === 'noseLeft' && X.setPushPref('noseRight') === 'noseRight');
 ok('anything else is auto', X.setPushPref('sideways') === 'auto' && X.setPushPref(null) === 'auto');
 const svcSrc = read('src/features/airport-services.js');
-ok('planPush tries the asked-for way first, and still the other way when that one is blocked', /S\.pushPref === 'noseLeft' \? 1 : S\.pushPref === 'noseRight' \? -1/.test(svcSrc) && /for \(const turn of \[first, -first\]\)/.test(svcSrc));
+ok('planPush tries the asked-for way first, and still the other way when that one is blocked', /S\.pushPref === 'noseLeft' \? 1 : S\.pushPref === 'noseRight' \? -1/.test(svcSrc) && /for \(const turn of (found \? \[\] : )?\[first, -first\]\)/.test(svcSrc));
 
 /* ---------------- report ---------------- */
 

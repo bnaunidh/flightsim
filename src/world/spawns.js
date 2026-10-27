@@ -229,6 +229,31 @@ export function needsLongerRunway(type) {
 /* The aircraft's size                                                 */
 /* ------------------------------------------------------------------ */
 
+/**
+ * A big jet (wave 18): 50 m across or 60 m long and more — the A380, the
+ * BelugaXL, the 747, the C-17, the An-225, the C-5. Only a Code F field
+ * (world/airport-layout.js CODE_F: the hubs) gives one a gate, a stand, a
+ * hangar, the open apron or a taxi start; anywhere else it is lined up on the
+ * runway, and told why (bigJetNote).
+ */
+export function isBigJet(type) {
+  const t = typeof type === 'string' ? getAircraft(type) : type;
+  if (!t) return false;
+  const z = sizeOf(t);
+  return z.span >= 50 || z.length >= 60;
+}
+
+/** The word for a big jet lined up on the runway because this field's taxiways are too small for it. */
+export function bigJetNote(type, mapName = (MAP && MAP.name) || 'this field') {
+  const t = typeof type === 'string' ? getAircraft(type) : type;
+  return `The ${(t && t.name) || 'aeroplane'} is too big for ${mapName}'s taxiways and gates — lined up on the runway instead.`;
+}
+
+/** Does this field take big jets on the ground (Code F taxiways)? */
+export function fieldTakesBigJets(lay = safeLayout()) {
+  return !!(lay && lay.codeF);
+}
+
 /** Span, length and nose offset for a type (the plan first, the aero after). */
 export function sizeOf(type) {
   const t = typeof type === 'string' ? getAircraft(type) : type || getAircraft();
@@ -408,8 +433,14 @@ export function noseInPoint(noseX, noseZ, headingDeg, noseOffset) {
   return { x: noseX - fx * back, z: noseZ - fz * back };
 }
 
+/** A big jet on a field that is not Code F: no ground start of any kind (isBigJet). */
+function bigJetBarred(size, lay) {
+  return !!(size && size.type && isBigJet(size.type) && !fieldTakesBigJets(lay));
+}
+
 function standPoints(ref, size, lay) {
   const out = [];
+  if (bigJetBarred(size, lay)) return out;
   const stands = (lay && lay.stands) || [];
   const want = ref.stand;
   for (const st of stands) {
@@ -433,6 +464,7 @@ function standPoints(ref, size, lay) {
 
 function hangarPoints(size, lay) {
   const out = [];
+  if (bigJetBarred(size, lay)) return out;
   for (const h of (lay && lay.hangars) || []) {
     if (h.parked || (h.occupant && !(lay.undrawn && lay.undrawn.has(h)))) continue;
     const s = h.slot;

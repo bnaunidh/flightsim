@@ -143,16 +143,27 @@ ok('mpskin: the kind is defined, for anyone to send (it is their own paint)', ch
   Object.defineProperty(ch, 'active', { configurable: true, get: () => true });
   ch.send = (k, d) => fake.send(k, d);
   try {
-    const sim = { settings: { livery: 'abyssinia' } };
+    // PAINT PER PLANE (wave 18): settings.liveries per type; the flown type's paint is sent.
+    const sim = { aircraftType: { id: 'b747' }, settings: { aircraft: 'b747', liveries: { b747: 'abyssinia', skylark: 'liberty' } } };
     MS.__test.S.sent = null;
     ok('mpskin: it says its paint when a game begins', MS.__test.say(sim) === true && sent.length === 1 && sent[0][0] === 'skin:paint' && sent[0][1].l === 'abyssinia' && sent[0][1].v === 1);
     ok('mpskin: …and not again every frame', MS.__test.say(sim) === false && sent.length === 1);
-    sim.settings.livery = 'potus';
+    sim.settings.liveries.b747 = 'potus';
     ok('mpskin: a changed paint goes out at once', MS.__test.say(sim) === true && sent.length === 2 && sent[1][1].l === 'potus');
     MS.__test.S.at -= MS.RESEND_SECONDS + 0.1;
     ok(`mpskin: …and it is said again every ${MS.RESEND_SECONDS} seconds whatever, for the packet that was lost`, MS.__test.say(sim) === true && sent.length === 3);
-    sim.settings.livery = 'not-a-livery';
+    sim.aircraftType = { id: 'skylark' };
+    ok('mpskin: paint per plane: switching aeroplane sends THAT plane\'s paint at once (the payload shape unchanged)', MS.__test.say(sim) === true && sent.at(-1)[1].l === 'liberty' && Object.keys(sent.at(-1)[1]).sort().join() === 'l,v');
+    sim.aircraftType = { id: 'c172' };
+    ok('mpskin: paint per plane: an aeroplane never painted is sent in its own colours', MS.__test.say(sim) === true && sent.at(-1)[1].l === 'house');
+    sim.aircraftType = { id: 'b747' };
+    sim.settings.liveries.b747 = 'not-a-livery';
+    MS.__test.S.sent = null;
     ok('mpskin: a paint setting from some other version of the game is sent as the factory colours, never as itself', MS.__test.say(sim) === true && sent.at(-1)[1].l === 'house');
+    // An older copy keeps one paint for all, and sends it the same way: it still reads as a paint here.
+    ok('mpskin: an older copy\'s single-livery message is still read', MS.cleanPaint({ v: 1, l: 'potus' })?.l === 'potus');
+    const oldSim = { settings: { livery: 'potus' } };
+    ok('mpskin: an unmigrated single-paint settings object is still sent as its paint', MS.__test.mine(oldSim) === 'potus');
     MS.__test.S.sent = null;
   } finally {
     ch.send = realSend;

@@ -208,7 +208,7 @@ export function routeClear(obs, pts, half, closed = false) {
  * and why (a route that was not clear, a cap reached).
  */
 export function planLife({ lay, parked = [], crews = [], bridges = [], entrances = null, ground = () => 0, tier = 'high', time = 'day', condition = 'clear', rnd = Math.random, level = 1 } = {}) {
-  const out = { walkers: [], vans: [], bounds: null, why: [] };
+  const out = { walkers: [], vans: [], bounds: null, why: [], obs: { circles: [], rects: [] } };
   if (!lay || !lay.apron || !lay.frame) {
     out.why.push('no apron on this map');
     return out;
@@ -217,6 +217,8 @@ export function planLife({ lay, parked = [], crews = [], bridges = [], entrances
   const tf = timeFactor(time, condition) * level;
   const cap = Math.max(0, Math.round(PEOPLE_CAP[T] * Math.min(1, level)));
   const obs = apronObstacles(lay, parked, crews, bridges);
+  // The runtime keeps everybody's side-steps out of these too (life/crowd.js Statics).
+  out.obs = obs;
   const W = out.walkers;
   const F = lay.frame;
   const term = lay.terminal && lay.terminal.rect ? lay.terminal : null;
@@ -241,12 +243,12 @@ export function planLife({ lay, parked = [], crews = [], bridges = [], entrances
     const zone = p.stand ? p.stand.id || p.stand.number : null;
     // 1. Dispatcher: forward of the nose on the left, clear of the power cart, facing the flight deck.
     const disp = at(tg, -(I.hw + 4.4), I.noseZ + 0.6);
-    if (spotClear(obs, disp, p)) add({ role: 'dispatcher', outfit: OUTFIT.hivis, mode: 'idle', path: [disp], yaw: yawTo(disp, at(tg, 0, I.noseZ + 3)), zone });
+    if (spotClear(obs, disp, p)) add({ tg, skip: [], role: 'dispatcher', outfit: OUTFIT.hivis, mode: 'idle', path: [disp], yaw: yawTo(disp, at(tg, 0, I.noseZ + 3)), zone });
     // 2. Wing walker: off the left wingtip, outboard of the cone, facing forward.
     if (nCrew >= 2) {
       const tipZ = Number.isFinite(I.wingTipZ) ? I.wingTipZ : I.noseZ + (I.tailZ - I.noseZ) * 0.55;
       const ww = at(tg, -(I.halfSpan + 3.2), tipZ + 1);
-      if (spotClear(obs, ww, p)) add({ role: 'wingwalker', outfit: OUTFIT.hivisOrange, mode: 'idle', path: [ww], yaw: yawTo(ww, at(tg, -(I.halfSpan + 3.2), tipZ - 10)), zone });
+      if (spotClear(obs, ww, p)) add({ tg, skip: [], role: 'wingwalker', outfit: OUTFIT.hivisOrange, mode: 'idle', path: [ww], yaw: yawTo(ww, at(tg, -(I.halfSpan + 3.2), tipZ - 10)), zone });
     }
     // 3. Loader: from the foot of the belt to the back of the baggage train's round, and back, on the right.
     if (nCrew >= 3 && P && P.beltLoader) {
@@ -257,15 +259,15 @@ export function planLife({ lay, parked = [], crews = [], bridges = [], entrances
       const a = at(tg, lf.x, lf.z + 1.2);
       const b = at(tg, lf.x + 1.5, lf.z + 5.5);
       const route = [a, b];
-      if (routeClearPeople(obs, route, p, { skip: ['beltLoader'] })) add({ role: 'loader', outfit: OUTFIT.hivis, mode: 'pingpong', path: route, speed: WALK.crew, pause: 3, zone });
-      else if (spotClear(obs, a, p, ['beltLoader'])) add({ role: 'loader', outfit: OUTFIT.hivis, mode: 'idle', path: [a], yaw: yawTo(a, bl), zone });
+      if (routeClearPeople(obs, route, p, { skip: ['beltLoader'] })) add({ tg, skip: ['beltLoader'], role: 'loader', outfit: OUTFIT.hivis, mode: 'pingpong', path: route, speed: WALK.crew, pause: 3, zone });
+      else if (spotClear(obs, a, p, ['beltLoader'])) add({ tg, skip: ['beltLoader'], role: 'loader', outfit: OUTFIT.hivis, mode: 'idle', path: [a], yaw: yawTo(a, bl), zone });
     }
     // 4. Fueller: at the back of the bowser, on the right wing, watching the hose.
     if (nCrew >= 4 && P && P.fuelTruck) {
       const ft = P.fuelTruck;
       const h = (ft.heading * Math.PI) / 180;
       const f = { x: ft.x - Math.sin(h) * 5.6, y: 0, z: ft.z + Math.cos(h) * 5.6 };
-      if (spotClear(obs, f, p, ['fuelTruck'])) add({ role: 'fueller', outfit: OUTFIT.hivis, mode: 'idle', path: [f], yaw: yawTo(f, P.hoseTo || ft), zone });
+      if (spotClear(obs, f, p, ['fuelTruck'])) add({ tg, skip: ['fuelTruck'], role: 'fueller', outfit: OUTFIT.hivis, mode: 'idle', path: [f], yaw: yawTo(f, P.hoseTo || ft), zone });
     }
     // 5. Passengers: by the stair truck's steps.
     if (nPax > 0 && P && P.stairTruck && !c.light) {
@@ -280,7 +282,7 @@ export function planLife({ lay, parked = [], crews = [], bridges = [], entrances
         const L = pathLength(route);
         for (let i = 0; i < nPax; i++) {
           if (!add({
-            role: 'pax', outfit: OUTFIT.civvy, mode: 'cycle', path: board ? route.slice().reverse() : route, speed: WALK.pax * (0.85 + rnd() * 0.3),
+            tg, skip: ['stairTruck'], role: 'pax', outfit: OUTFIT.civvy, mode: 'cycle', path: board ? route.slice().reverse() : route, speed: WALK.pax * (0.85 + rnd() * 0.3),
             d0: -i * spacing, rest: 25 + rnd() * 20, length: L, bag: rnd() < 0.7, zone, board,
           })) break;
         }
@@ -299,7 +301,7 @@ export function planLife({ lay, parked = [], crews = [], bridges = [], entrances
       const a = (k / 12) * Math.PI * 2;
       ring.push(at(tg, Math.cos(a) * r, cz + Math.sin(a) * r * 0.75));
     }
-    if (routeClearPeople(obs, ring, p, { closed: true })) add({ role: 'pilot', outfit: OUTFIT.pilot, mode: 'loop', path: ring, speed: WALK.pilot, zone: p.stand ? p.stand.number : null });
+    if (routeClearPeople(obs, ring, p, { closed: true })) add({ tg, skip: [], role: 'pilot', outfit: OUTFIT.pilot, mode: 'loop', path: ring, speed: WALK.pilot, zone: p.stand ? p.stand.number : null });
   }
 
   /* --- the kerb, or a flying club's veranda --- */
@@ -372,10 +374,10 @@ export function planLife({ lay, parked = [], crews = [], bridges = [], entrances
       const I = tg.info;
       // The crew chief at the nose, the guard pacing a line ahead of it.
       const chief = at(tg, -(I.hw + 3.4), I.noseZ - 1.2);
-      if (spotClear(obs, chief, p)) add({ role: 'chief', outfit: OUTFIT.chief, mode: 'idle', path: [chief], yaw: yawTo(chief, at(tg, 0, I.noseZ + 2)), zone: p.stand ? p.stand.number : null });
+      if (spotClear(obs, chief, p)) add({ tg, skip: [], role: 'chief', outfit: OUTFIT.chief, mode: 'idle', path: [chief], yaw: yawTo(chief, at(tg, 0, I.noseZ + 2)), zone: p.stand ? p.stand.number : null });
       const a = at(tg, -(I.halfSpan + 2), I.noseZ - 4);
       const b = at(tg, I.halfSpan + 2, I.noseZ - 4);
-      if (routeClearPeople(obs, [a, b], p)) add({ role: 'guard', outfit: OUTFIT.guard, mode: 'pingpong', path: [a, b], speed: WALK.guard, pause: 5, zone: p.stand ? p.stand.number : null });
+      if (routeClearPeople(obs, [a, b], p)) add({ tg, skip: [], role: 'guard', outfit: OUTFIT.guard, mode: 'pingpong', path: [a, b], speed: WALK.guard, pause: 5, zone: p.stand ? p.stand.number : null });
     }
   }
 

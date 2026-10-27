@@ -3,6 +3,8 @@
  * Everything lives in localStorage, so it survives offline and needs no server.
  */
 
+import { migrateLiveries } from './plane-paint.js';
+
 const SETTINGS_KEY = 'islandsim.settings.v1';
 const PROGRESS_KEY = 'islandsim.progress.v1';
 
@@ -174,8 +176,21 @@ export const DEFAULT_SETTINGS = {
    */
   crashSlowMo: true,
   aircraft: 'skylark',
-  /** Which airline paint scheme. 'house' means each type's own colours. */
-  livery: 'house',
+  /**
+   * Which airline paint each aeroplane wears: { [aircraft type id]: livery id }.
+   * A type with no entry wears 'house' (its own colours). Was ONE global
+   * `livery` for every type until wave 18; see core/plane-paint.js.
+   */
+  liveries: {},
+  /*
+   * Touch flying (Settings → Controls, ui/touch-modes.js): 'auto' is Drag
+   * anywhere on a phone and the fixed Stick on a tablet; or 'stick', 'drag',
+   * 'tilt'. The tilt's sensitivity, and its "level" ({ roll, pitch } degrees
+   * the way the phone was held when LEVEL was pressed; null: the first reading).
+   */
+  touchFlying: 'auto',
+  tiltSensitivity: 1,
+  tiltLevel: null,
   atcChatter: true,
   // 'radio' (synthesised, no TTS) | 'speech' (browser TTS) | 'recordings'
   atcVoice: 'radio',
@@ -287,8 +302,12 @@ export function loadSettings() {
   const s = read(SETTINGS_KEY, DEFAULT_SETTINGS);
   const saved = readRaw(SETTINGS_KEY);
   coerceQuality(s, saved);
+  // Never share the defaults' own object: painting one plane would paint the default.
+  s.liveries = { ...(s.liveries && typeof s.liveries === 'object' ? s.liveries : {}) };
+  // One paint for every plane → a paint per plane (only the selected one keeps the old paint).
+  const paintMoved = migrateLiveries(s, saved);
   if (!saved) return s;
-  let changed = false;
+  let changed = paintMoved;
   for (const m of MIGRATIONS) {
     if (saved[m.rev] === DEFAULT_SETTINGS[m.rev]) continue;
     for (const k of m.keys) s[k] = DEFAULT_SETTINGS[k];

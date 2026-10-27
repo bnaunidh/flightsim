@@ -637,6 +637,42 @@ export function resolveMode(sim) {
 }
 
 /**
+ * HEIGHTS NEXT TO TRAFFIC (wave 18; the owner's screenshot: "-200 ft" next to
+ * an aeroplane on the ground). A body is on the ground for the map when it
+ * says so OR when it is within ON_GROUND_M of the ground or deck under it —
+ * a parked or taxiing aeroplane that does not report it (or reports it a
+ * frame late) was drawn as flying, with its height below yours beside it.
+ * Nothing on the ground gets a height: it is a dot. The reference is the
+ * same point on both: the aircraft's own position (its middle), yours and
+ * theirs, rounded to the hundred feet.
+ */
+export const ON_GROUND_M = 10;
+
+/** The surface under (x, z): a deck or a roof pad, else the ground (the sea's surface, never its floor). */
+export function surfaceUnder(x, z) {
+  const p = platformAt(x, z);
+  if (p && Number.isFinite(p.y)) return p.y;
+  return Math.max(0, heightAt(x, z));
+}
+
+/** On the ground, for the map: as it says, or near enough the surface under it. */
+export function onGroundForMap(e, ground = surfaceUnder) {
+  if (!e || !e.pos) return false;
+  if (e.onGround) return true;
+  if (!Number.isFinite(e.pos.y)) return false;
+  return e.pos.y - ground(e.pos.x, e.pos.z) < ON_GROUND_M;
+}
+
+/** The words beside another aircraft: its height against yours, or null (on the ground, or you are on the water or the road). */
+export function heightTag(e, craft, ground = surfaceUnder) {
+  if (!e || !e.pos || !craft || !Number.isFinite(e.pos.y) || !Number.isFinite(craft.y)) return null;
+  if (craft.kind === 'boat' || craft.kind === 'car') return null;
+  if (onGroundForMap(e, ground)) return null;
+  const ft = Math.round(((e.pos.y - craft.y) * 3.28084) / 100) * 100;
+  return ft === 0 ? 'same height' : `${ft > 0 ? '+' : '\u2212'}${Math.abs(ft).toLocaleString('en-GB')} ft`;
+}
+
+/**
  * You, whatever you are sitting in, in the one shape the map needs.
  *
  * The old file read `sim.aircraft` directly in eleven places. Three of the
@@ -1975,7 +2011,7 @@ export class Minimap {
       if (dx * dx + dy * dy > edge * edge) continue;
       const kind = (sky && i < n1 && e.kind) || 'traffic';
       const plain = kind === 'traffic';
-      if (e.onGround) {
+      if (onGroundForMap(e)) {
         if (span > 6000) continue;
         // On the ground: a small dot, grey for the traffic, in its colour for anybody in the story.
         ctx.fillStyle = plain ? 'rgba(170, 180, 190, 0.7)' : kind === 'enemy' ? '#ff5a4a' : kind === 'friend' ? '#7dffb4' : '#9fdcff';
@@ -2050,10 +2086,9 @@ export class Minimap {
       }
       // Height difference for the ones that matter: anything the system has
       // flagged, anybody in the story, and otherwise the first few.
-      if ((lvl > 0 || !plain || tagged < 3) && Number.isFinite(e.pos.y) && craft.kind !== 'boat' && craft.kind !== 'car') {
+      const txt = lvl > 0 || !plain || tagged < 3 ? heightTag(e, craft) : null;
+      if (txt) {
         tagged++;
-        const ft = Math.round(((e.pos.y - craft.y) * 3.28084) / 100) * 100;
-        const txt = ft === 0 ? 'same height' : `${ft > 0 ? '+' : '−'}${Math.abs(ft).toLocaleString('en-GB')} ft`;
         label(ctx, txt, x, y + 12 * ts, col, ts * 0.95);
       }
     }

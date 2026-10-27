@@ -80,6 +80,9 @@ import { Minimap } from './ui/minimap.js';
 import { Pursuer } from './game/pursuer.js';
 import * as Prog from './game/progression.js';
 import { schemeFor, findLivery } from './aircraft/liveries.js';
+import { liveryOf, setLiveryOf } from './core/plane-paint.js';
+import { resolveTouchFlying, isPhoneScreen } from './ui/touch-modes.js';
+import { isBigJet, bigJetNote, fieldTakesBigJets } from './world/spawns.js';
 import { TaxiRun } from './game/taxi.js';
 import { Wreck } from './game/wreck.js';
 import { Tornado } from './world/tornado.js';
@@ -308,7 +311,7 @@ class Game {
     // one frame in the wrong paint is still one frame in the wrong paint.
     this.model = createAircraftModel({
       type: this.aircraftType,
-      livery: schemeFor(this.aircraftType, this.settings.livery),
+      livery: schemeFor(this.aircraftType, liveryOf(this.settings, this.aircraftType && this.aircraftType.id)),
       // REAL MODELS: the player's own aeroplane fetches its real skin (aircraft/real-models.js).
       realModel: true,
     });
@@ -358,6 +361,13 @@ class Game {
         // The sheets' hold buttons (trim, look behind) and what they show.
         onHold: (a, down) => this.holdAction(a, down),
         state: () => this.touchState(),
+        // Touch flying (Settings → Controls): Drag anywhere starts only on the picture.
+        surface: canvas,
+        onNotice: (text) => this.hud && this.hud.notify(text, 'info', 3.5),
+        onLevel: (level) => {
+          this.settings.tiltLevel = level;
+          saveSettings(this.settings);
+        },
       });
       this.hud.wrap.classList.add('is-touch');
       // The right-hand stack's touch layout (ui/hud.js): under the band.
@@ -369,6 +379,7 @@ class Game {
        * it is false on plenty of machines that have a touchscreen.
        */
       document.documentElement.classList.add('is-touch-device');
+      this.applyTouchFlying();
     }
     this.hud.setSubtitlesEnabled(this.settings.subtitles);
     this.hud.setHighContrast(this.settings.highContrast);
@@ -415,6 +426,14 @@ class Game {
       startMission: (id) => this.startAnyMission(id),
       startFree: (opts) => this.startMode('free', opts),
       onSetting: (path, value) => this.applySetting(path, value),
+      // Settings → Controls → Level the tilt (and, on iOS, the motion permission, from this tap).
+      onTiltLevel: () => {
+        const t = this.touch;
+        if (!t || !t.setFlyMode) return this.hud && this.hud.notify('Tilt is for phones and tablets', 'info', 3);
+        if (t.flyMode !== 'tilt') return this.hud && this.hud.notify('Choose Tilt under Touch flying first', 'info', 3);
+        if (t._tiltNeedsAsk) t.askTilt();
+        else t.levelTilt();
+      },
       // Settings → Accessibility: the seizure warning again (ui/safety-intro.js).
       showSafetyIntro: () => this.showSafetyIntro({ skipIntro: true }),
       onPauseAction: (a) => this.pauseAction(a),
@@ -607,6 +626,10 @@ class Game {
      * house colours however the aeroplane was actually painted.
      */
     this.menus.settingsRef = this.settings;
+    // PAINT PER PLANE: the Settings paint select follows the aeroplane you are in,
+    // and the fleet cards are redrawn now that each can read its own paint.
+    this.menus.paintTypeId = () => (this.aircraftType && this.aircraftType.id) || this.settings.aircraft;
+    this.menus.repaintFleetArt && this.menus.repaintFleetArt();
     this.prog = this.menus.prog;
     this.menus.syncProgression && this.menus.syncProgression(this.prog);
     this.menus.syncFleetLocks && this.menus.syncFleetLocks();
@@ -1695,7 +1718,23 @@ class Game {
     // existing test still begin lined up on the runway.
     // A helicopter does not taxi from a gate; it starts on a pad (below).
     const heliStart = !!SPEC.rotor;
-    const wantsTaxi = mode === 'free' && !heliStart && (opts.taxi ?? this.settings.startAtGate);
+    let wantsTaxi = mode === 'free' && !heliStart && (opts.taxi ?? this.settings.startAtGate);
+    /*
+     * CODE F (wave 18): the taxi start's route is a small field's (game/taxi.js,
+     * Kestrel's apron and taxiway). A big jet never gets it: on a Code F field
+     * (the hubs) it starts at a gate the spawner has driven its wings and
+     * wheels out of (tests/features/taxi-codef.mjs); anywhere else, lined up
+     * on the runway with a word why.
+     */
+    let bigJetWord = null;
+    if (wantsTaxi && isBigJet(this.aircraftType)) {
+      wantsTaxi = false;
+      if (fieldTakesBigJets()) opts = { ...opts, taxi: false, startAt: opts.startAt && opts.startAt !== 'runway' ? opts.startAt : 'gate' };
+      else {
+        opts = { ...opts, taxi: false };
+        bigJetWord = bigJetNote(this.aircraftType);
+      }
+    }
     const spawn = def.spawn || RUNWAY_START;
     const airborne = mode === 'free' ? !!opts.airborne : spawn.altAGL != null;
     if (mode === 'free' && airborne) {
@@ -1856,6 +1895,7 @@ class Game {
 
     this.state = 'flying';
     if (wantsTaxi) this.taxi.start();
+    if (bigJetWord && this.hud) this.hud.notify(bigJetWord, 'info', 4);
     this.clock.getDelta();
     // Nobody is a passenger until a feature says so for this flight.
     this.riding = null;
@@ -2400,6 +2440,61 @@ class Game {
   /* Settings                                                            */
   /* ------------------------------------------------------------------ */
 
+  /**
+   * One aeroplane's paint changed (core/plane-paint.js): rebuild the game
+   * aeroplane only if it IS that type, and redraw that type's fleet card.
+   */
+  repaintPlane(typeId, value) {
+    /*
+     * Repainting means rebuilding the model.
+     *
+     * setAircraft early-returns when the id is unchanged, so it cannot do
+     * this job — choosing a new scheme for the aeroplane you are already in
+     * would silently do nothing. Forcing the type to null makes the rebuild
+     * run for real.
+     */
+    // Before the first flight there is no aeroplane built to repaint (the
+    // hangar's paint swatches are pressed from a cold start) — this threw.
+    const flying = !!this.aircraftType && this.aircraftType.id === typeId;
+    if (flying) {
+      this.aircraftType = null;
+      this.setAircraft(typeId);
+    }
+    this.menus && this.menus.repaintFleetArt && this.menus.repaintFleetArt(typeId);
+    this.syncPaintSelect();
+    if (!this.hud) return;
+    const type = getAircraft(typeId);
+    // A type with a paint of its own (Marine One: liveries.js TYPE_SCHEMES)
+    // is not repainted; saying "Repainted — Kanal" over it was a lie.
+    const name = type ? type.name : typeId;
+    this.hud.notify(type && type.fixedLivery
+      ? `${name} keeps its own paint`
+      : `${name} repainted — ${findLivery(value).name}`, 'info', 3);
+  }
+
+  /**
+   * Settings → Controls → Touch flying, onto the touch layer: Stick, Drag
+   * anywhere (the default on a phone) or Tilt (ui/touch-modes.js).
+   */
+  applyTouchFlying() {
+    if (!this.touch || !this.touch.setFlyMode) return null;
+    const w = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const h = typeof window !== 'undefined' ? window.innerHeight : 768;
+    const mode = resolveTouchFlying(this.settings.touchFlying, { phone: isPhoneScreen(w, h), tilt: !this.touch.tiltUnavailable });
+    return this.touch.setFlyMode(mode, {
+      sens: Number(this.settings.sensitivity) || 1,
+      tiltSens: Number(this.settings.tiltSensitivity) || 1,
+      level: this.settings.tiltLevel || null,
+    });
+  }
+
+  /** Settings → Flying → Airline livery shows the paint of the aeroplane you are in. */
+  syncPaintSelect() {
+    const scr = this.menus && this.menus.screens && this.menus.screens.settings;
+    const sel = scr && scr.querySelector('[data-set="livery"]');
+    if (sel) sel.value = liveryOf(this.settings, (this.aircraftType && this.aircraftType.id) || this.settings.aircraft);
+  }
+
   applySetting(path, value) {
     /*
      * Graphics quality. `settings.quality` is always a concrete tier — the
@@ -2415,6 +2510,31 @@ class Game {
       }
       if (!isTier(value)) return;
       this.settings.qualityAuto = false;
+    }
+    /*
+     * PAINT PER PLANE (wave 18). 'livery' (Settings → Flying → Airline livery)
+     * is the paint of the aeroplane you are in; 'liveries.<type>' (the hangar's
+     * swatches) is the paint of the one on show. Either way only that one type
+     * is repainted — there is no single paint for the whole fleet any more.
+     */
+    if (path === 'touchFlying' || path === 'tiltSensitivity') {
+      this.settings[path] = path === 'tiltSensitivity' ? Number(value) || 1 : value;
+      saveSettings(this.settings);
+      if (path === 'touchFlying' && this.touch) this.touch.tiltUnavailable = false;
+      const got = this.applyTouchFlying();
+      if (path === 'touchFlying' && this.hud && got) {
+        const say = { stick: 'Touch flying: the stick', drag: 'Touch flying: drag anywhere on the left to steer', tilt: 'Touch flying: tilt the phone to steer — LEVEL sets straight and level' };
+        this.hud.notify(say[got] || '', 'info', 3);
+      }
+      return;
+    }
+    if (path === 'livery' || path.startsWith('liveries.')) {
+      const typeId = path === 'livery' ? (this.aircraftType && this.aircraftType.id) || this.settings.aircraft : path.slice('liveries.'.length);
+      if (!typeId) return;
+      setLiveryOf(this.settings, typeId, value);
+      saveSettings(this.settings);
+      this.repaintPlane(typeId, value);
+      return;
     }
     const parts = path.split('.');
     let obj = this.settings;
@@ -2550,29 +2670,6 @@ class Game {
         this.hud.notify('Cockpit view — press C to look from outside again', 'info', 3);
       }
       if (this.hud) this.hud.setMinimal(!!value && this.rig && this.rig.mode === 'cockpit');
-    } else if (path === 'livery') {
-      /*
-       * Repainting means rebuilding the model.
-       *
-       * setAircraft early-returns when the id is unchanged, so it cannot do
-       * this job — choosing a new scheme for the aeroplane you are already in
-       * would silently do nothing. Forcing the type to null makes the rebuild
-       * run for real.
-       */
-      // Before the first flight there is no aeroplane built to repaint (the
-      // hangar's paint swatches are pressed from a cold start) — this threw.
-      if (this.aircraftType) {
-        const id = this.aircraftType.id;
-        this.aircraftType = null;
-        this.setAircraft(id);
-      }
-      this.menus.repaintFleetArt && this.menus.repaintFleetArt(value);
-      // A type with a paint of its own (Marine One: liveries.js TYPE_SCHEMES)
-      // is not repainted; saying "Repainted — Kanal" over it was a lie.
-      const own = this.aircraftType && this.aircraftType.fixedLivery;
-      this.hud.notify(own
-        ? `${findLivery(value).name} saved for the others — ${this.aircraftType.name} keeps its own paint`
-        : `Repainted — ${findLivery(value).name}`, 'info', 3);
     } else if (path === 'difficulty') {
       this.applyDifficulty(value);
       // The helicopter assist box follows the dial on the same screen.
@@ -2611,6 +2708,8 @@ class Game {
       this.input.invertMouse = value;
     } else if (path === 'sensitivity') {
       this.input.sensitivity = value;
+      // Drag anywhere follows the same sensitivity.
+      this.applyTouchFlying();
     } else if (path === 'gamepad') {
       this.input.gamepadEnabled = value;
     }
@@ -2791,11 +2890,12 @@ class Game {
 
     this.model = createAircraftModel({
       type: this.aircraftType,
-      livery: schemeFor(this.aircraftType, this.settings.livery),
+      livery: schemeFor(this.aircraftType, liveryOf(this.settings, this.aircraftType && this.aircraftType.id)),
       // REAL MODELS: the player's own aeroplane fetches its real skin (aircraft/real-models.js).
       realModel: true,
     });
     this.scene.add(this.model);
+    this.syncPaintSelect();
     this.cockpit = createCockpit({ highContrast: this.settings.highContrast, type: this.aircraftType, model: this.model });
     // The airframe is scaled to size; the cockpit is not. There is one
     // instrument panel and the pilot is the same size in every aeroplane,

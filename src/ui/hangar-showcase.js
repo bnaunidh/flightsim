@@ -726,7 +726,8 @@ export class HangarShowcase {
     if (!this.ready || !this.current) return;
     const id = this.current.id;
     const old = this.current;
-    for (const e of [...this.cache.values()]) if (e !== old && e.livery !== livery) this.dispose(e);
+    // Only this aeroplane's other paints go: the neighbours prefetched in their own paints stay.
+    for (const e of [...this.cache.values()]) if (e !== old && e.id === id && e.livery !== livery) this.dispose(e);
     const e = this.entry(id, livery);
     if (e === old) return;
     this.setLocked(e, locked);
@@ -739,7 +740,8 @@ export class HangarShowcase {
 
   /** Build these quietly, one a frame, after the arrival has finished. */
   prefetch(ids, livery) {
-    this.queue = ids.filter(Boolean).map((id) => ({ id, livery }));
+    // `livery` is one paint for all, or (paint per plane) a function of the type id.
+    this.queue = ids.filter(Boolean).map((id) => ({ id, livery: typeof livery === 'function' ? livery(id) : livery }));
   }
 
   /* ---------------- input ---------------- */

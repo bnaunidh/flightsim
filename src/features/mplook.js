@@ -35,6 +35,7 @@ import { registerExtension } from '../game/extensions.js';
 import { multiplayer as mp } from './multiplayer.js';
 import { getAircraft } from '../aircraft/types.js';
 import { LIVERIES } from '../aircraft/liveries.js';
+import { currentLivery } from '../core/plane-paint.js';
 import { SMOKE_COLOURS, smokeLight } from './fun/smoke.js';
 import { SmokeTrail, rainbowAt, linearRGB } from './fun/fx.js';
 import { smokeNow } from './fun.js';
@@ -107,7 +108,9 @@ export function myLook(sim = K.sim) {
   }
   const away = !!sim && (sim.state === 'paused' || (typeof document !== 'undefined' && document.hidden === true));
   const ci = SMOKE_COLOURS.findIndex((c) => c.id === smoke.colour);
-  const l = sim && sim.settings && LIVERY_IDS.has(sim.settings.livery) ? sim.settings.livery : 'house';
+  // PAINT PER PLANE: the paint of the aeroplane being flown (core/plane-paint.js).
+  const paint = sim && sim.settings ? currentLivery(sim) : 'house';
+  const l = LIVERY_IDS.has(paint) ? paint : 'house';
   const inPlane = !!sim && sim.mode !== 'drive';
   return { s: !!smoke.on && !away && inPlane, c: ci < 0 ? 0 : ci, l: inPlane ? l : 'house', p: away };
 }

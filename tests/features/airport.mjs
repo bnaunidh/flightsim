@@ -72,7 +72,7 @@ function slotRect(s) {
   };
 }
 
-const faults = { slots: [], sea: [], runway: [], taxiway: [], level: [], overlap: [], build: [], obstacle: [], budget: [], pave: [], boards: [], cull: [], pushEnd: [], pushSweep: [], pushWay: [], parkedFit: [] };
+const faults = { slots: [], sea: [], runway: [], taxiway: [], level: [], overlap: [], build: [], obstacle: [], budget: [], pave: [], boards: [], cull: [], pushEnd: [], pushSweep: [], pushWay: [], pushRun: [], parkedFit: [] };
 let totalSlots = 0;
 let minSlots = Infinity;
 let parkedChecked = 0;
@@ -182,6 +182,7 @@ function nearAt(ox, oz, hd, info, p, m) {
   return Math.abs(lx) < info.halfSpan + m && lz > info.noseZ - m && lz < info.tailZ + m;
 }
 let toTaxiway = 0;
+const runBlocked = [];
 let trafficPushes = 0;
 /** Span and length of a roster type, the airfield's idea of it. */
 function sizeOf(id) {
@@ -289,6 +290,34 @@ function checkPushes(m, lay, withTraffic = false) {
         }
       }
       if (hit) faults.pushSweep.push(hit);
+      /*
+       * The taxi after it (wave 18, Code F): straight ahead along the line
+       * the push ends on, as far as the last parked aeroplane, the wing
+       * (tip to tip), the nose and the tail stay 1 m clear of every parked
+       * aeroplane — wherever the feature says its line is clear (P.runClear);
+       * and a big jet on a Code F field always gets such a line.
+       */
+      const far = 2000;
+      const fx = Math.sin(end.h * D2R);
+      const fz = -Math.cos(end.h * D2R);
+      let runHit = null;
+      for (let s = 0; s <= far && !runHit; s += 4) {
+        const pose = { x: end.x + fx * s, z: end.z + fz * s, h: end.h };
+        const pts = sweepPoints(info, pose);
+        const wing = [];
+        for (let j = 0; j <= 16; j++) wing.push({ x: pts[2].x + ((pts[3].x - pts[2].x) * j) / 16, z: pts[2].z + ((pts[3].z - pts[2].z) * j) / 16 });
+        for (const p of pts.slice(0, 2).concat(wing)) {
+          const o = lay.stands.find((q) => q !== st && LAYM.standTaken(q) && nearParked(q, p, 1));
+          const e = !o && others.find((x) => nearAt(x.t.pos.x, x.t.pos.z, x.t.heading, APR.estimateInfo(x.t.typeId), p, 1));
+          if (o || e) {
+            runHit = `${tag}: ${s} m along the line it was pushed onto, the wing over the ${o ? `${o.occupant} on stand ${o.number}` : `traffic's ${e.t.typeId} on stand ${e.st.number}`}`;
+            break;
+          }
+        }
+      }
+      if (runHit && P.runClear) faults.pushRun.push(runHit);
+      if (runHit) runBlocked.push(runHit);
+      if (lay.codeF && (typeId === 'b747' || typeId === 'a380') && (!P.runClear || runHit)) faults.pushRun.push(`${tag}: a big jet on a Code F field without a clear line to taxi along (${runHit || 'none found'})`);
     }
   }
   PUSH.S.info = null;
@@ -467,6 +496,9 @@ ok('and ends facing the start of the runway the tower gives out, or the other wa
   faults.pushWay.slice(0, 6).join(', ') || `${flips.length} of ${pushes} swing the other way for room${flips.length ? ': ' + flips.slice(0, 6).join(', ') : ''}`);
 ok('and nothing it swings (nose, tail, wingtips) comes within 1 m of a parked aeroplane', faults.pushSweep.length === 0,
   faults.pushSweep.slice(0, 8).join(', ') || `clear; ${pushes} pushes, ${trafficPushes} of them with the traffic (${[...trafficTypes].join(', ')}) parked on every other free stand; ${toTaxiway} turn on the taxiway to stay clear`);
+
+ok('and the line it is pushed onto is clear ahead for its wings wherever any line is (a big jet on a Code F field: always)', faults.pushRun.length === 0,
+  faults.pushRun.slice(0, 6).join(', ') || `${pushes - runBlocked.length} of ${pushes} have a clear line ahead; the rest have none anywhere: ${runBlocked.slice(0, 3).join(', ') || 'none'}`);
 
 /* ---- Kestrel: what other code is written against ---- */
 Terrain.applyMap('kestrel');

@@ -444,7 +444,7 @@ try {
   ok('#2 "Reset on the runway" and "Return to the airfield": A and B at least 9 m apart (were 0 m)', dRestart >= 9 && dHome >= 9, { dRestart, dHome });
 
   /* #8, #9 — smoke and livery */
-  await A.eval(`pt.airborne(0, 0, 90, 300); sim.settings.livery = 'abyssinia'; await pt.sleep(400); pt.FUN.__test.toggleSmoke(sim); return pt.FUN.smokeNow();`);
+  await A.eval(`pt.airborne(0, 0, 90, 300); sim.settings.liveries = { ...(sim.settings.liveries || {}), [sim.aircraftType.id]: 'abyssinia' }; await pt.sleep(400); pt.FUN.__test.toggleSmoke(sim); return pt.FUN.smokeNow();`);
   await B.eval('pt.airborne(-160, 30, 90, 300); return 1;');
   await sleep(3500);
   const seesA = await B.eval(`const p = mp.remotes.players.get(0); const d = pt.LK.lookDebug(); const t = d.trails.find((x) => x.id === 0); return { key: p && p.modelKey, puffs: t ? t.live : 0, look: d.looks && d.looks['0'] };`);

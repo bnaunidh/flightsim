@@ -20,7 +20,7 @@ export async function check(sim, r, say = () => {}) {
   }
   const p = sim.prog || menus.prog;
   const saved = p ? { credits: p.credits, unlocked: [...p.unlocked], mil: p.militaryUnlocked } : null;
-  const livery0 = sim.settings ? sim.settings.livery : undefined;
+  const livery0 = sim.settings ? JSON.stringify(sim.settings.liveries || {}) : undefined;
   try {
     say('marine one: the hangar');
     p.militaryUnlocked = false;
@@ -38,14 +38,14 @@ export async function check(sim, r, say = () => {}) {
     const sw = $$('[data-hs-swatches] .hs-swatch');
     r.ok('marine one: one paint, its own, shown chosen and not choosable', sw.length === 1 && sw[0].hasAttribute('data-hs-fixed') && !sw[0].hasAttribute('data-hs-livery') && sw[0].classList.contains('is-on')
       && /Marine One/.test($('[data-hs-paint-name]').textContent), `${sw.length} swatch(es), "${$('[data-hs-paint-name]').textContent}"`);
-    const before = sim.settings && sim.settings.livery;
+    const before = sim.settings && JSON.stringify(sim.settings.liveries || {});
     if (sw[0]) sw[0].click();
-    r.ok('marine one: tapping it leaves the game\'s livery setting alone', !sim.settings || sim.settings.livery === before, `${before} → ${sim.settings && sim.settings.livery}`);
+    r.ok('marine one: tapping it leaves the game\'s livery setting alone', !sim.settings || JSON.stringify(sim.settings.liveries || {}) === before, `${before} → ${sim.settings && JSON.stringify(sim.settings.liveries)}`);
     const buy = $('[data-hs-buy]') || $('.hs-buy');
     r.ok('marine one: locked behind credits, like the 747', !!buy && /credits/i.test(buy.textContent) && !/passcode|military/i.test($('[data-hs-msg]').textContent), buy && buy.textContent.trim());
 
     say('marine one: free flight');
-    if (sim.settings) sim.settings.livery = 'kanal';
+    if (sim.settings) sim.settings.liveries = { ...(sim.settings.liveries || {}), vh3d: 'liberty' };
     await sim.startMode('free', { aircraft: 'vh3d', time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 250 });
     for (let i = 0; i < 20; i++) sim.step(1 / 30);
     const title = sim.model && sim.model.getObjectByName('Titling');
@@ -59,6 +59,6 @@ export async function check(sim, r, say = () => {}) {
       p.militaryUnlocked = saved.mil;
       menus.syncProgression && menus.syncProgression(p);
     }
-    if (sim.settings && livery0 !== undefined) sim.settings.livery = livery0;
+    if (sim.settings && livery0 !== undefined) sim.settings.liveries = JSON.parse(livery0);
   }
 }

@@ -793,6 +793,8 @@ export class Input {
     };
     this._onContext = (e) => e.preventDefault();
     this._onLookDown = (e) => {
+      // A finger flying the floating stick (ui/touch.js, Drag anywhere) is not a look.
+      if (e.__flyClaimed) return;
       if (e.pointerType !== 'touch' || !this.touchLook || this._lookFinger || e.target !== this.dom) return;
       this._lookFinger = { id: e.pointerId, x: e.clientX, y: e.clientY };
     };

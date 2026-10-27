@@ -20,6 +20,7 @@
  */
 
 import { icon } from './icons.js';
+import { dragAxes, tiltAxes, holdAngles, dragClaims, DRAG_RADIUS, TOUCH_KEEP } from './touch-modes.js';
 
 const el = (tag, cls, html) => {
   const n = document.createElement(tag);
@@ -36,6 +37,17 @@ export function isTouchDevice() {
   );
 }
 
+/** How far the screen is turned (0 portrait; 90 / 270 landscape), wherever the browser says it. */
+function screenAngle() {
+  try {
+    if (typeof screen !== 'undefined' && screen.orientation && Number.isFinite(screen.orientation.angle)) return screen.orientation.angle;
+  } catch (e) {
+    /* older browsers */
+  }
+  const o = typeof window !== 'undefined' ? Number(window.orientation) : 0;
+  return Number.isFinite(o) ? (o + 360) % 360 : 0;
+}
+
 export class TouchControls {
   /**
    * @param {HTMLElement} host  the HUD wrapper
@@ -45,8 +57,15 @@ export class TouchControls {
    *   onHold    (action, down) => void — a sheet's hold button (trim, look behind)
    *   state     () => { crew, pushPref, parkingBrake, autopilot, rotor, assist, brace }
    *             what the sheets show, read a few times a second while one is open
+   *   surface   the game's canvas: Drag anywhere starts only on the picture itself
+   *   onNotice  (text) => void — a word for the player (tilt unavailable, levelled)
+   *   onLevel   (level) => void — the tilt was levelled: save it
    */
-  constructor(host, { input, onAction, onHold, state } = {}) {
+  constructor(host, { input, onAction, onHold, state, surface, onNotice, onLevel } = {}) {
+    this.surface = surface || null;
+    this.onNotice = onNotice || (() => {});
+    this.onLevel = onLevel || (() => {});
+    this._visible = true;
     this.input = input;
     this.onAction = onAction || (() => {});
     this.onHold = onHold || (() => {});
@@ -80,7 +99,249 @@ export class TouchControls {
     this.buildRudder();
     this.buildPads();
     this.buildSheets();
+    this.buildFlyModes();
     host.appendChild(this.layer);
+  }
+
+  /* ------------------------------------------------ touch flying modes -- */
+
+  /*
+   * Settings → Controls → Touch flying (ui/touch-modes.js has the maths):
+   *   stick  the fixed stick above, as it always was;
+   *   drag   a floating stick wherever a finger lands on the left 55% of the
+   *          PICTURE — never on a button, a sheet, a card or the map, which
+   *          are all elements over the canvas and keep their taps;
+   *   tilt   the gyroscope, with a LEVEL button where the stick was.
+   * They write the same state.roll / state.pitch / state.stickHeld the stick
+   * does, so the aeroplane, the helicopter and the boat (roll only) all fly
+   * by them with nothing else changed, and the throttle, the rudder and the
+   * pads keep working under other fingers at the same time.
+   */
+  buildFlyModes() {
+    this.flyMode = 'stick';
+    this.flyOpts = { sens: 1, tiltSens: 1, level: null };
+    const float = el('div', 'touch-float');
+    const fknob = el('div', 'touch-float-knob');
+    float.appendChild(fknob);
+    float.hidden = true;
+    this.layer.appendChild(float);
+    this.floatEl = float;
+    this.floatKnob = fknob;
+    const lvl = el('button', 'touch-tilt-level', 'LEVEL');
+    lvl.type = 'button';
+    lvl.hidden = true;
+    lvl.setAttribute('aria-label', 'Level the tilt: the way you hold the phone now is straight and level');
+    lvl.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (this._tiltNeedsAsk) this.askTilt();
+      else this.levelTilt();
+    });
+    this.layer.appendChild(lvl);
+    this.levelBtn = lvl;
+    this._drag = null;
+    const axes = {};
+    this._onDragDown = (e) => {
+      if (this.flyMode !== 'drag' || this.mode === 'drive' || !this._visible) return;
+      const width = (typeof window !== 'undefined' && window.innerWidth) || 0;
+      if (!dragClaims({ target: e.target, surface: this.surface, x: e.clientX, width, busy: !!this._drag, pointerType: e.pointerType, pressable: (t) => this.pressable(t) })) return;
+      // The map keeps its patch of screen even where it lets taps through to the picture.
+      if (this.overKept(e.clientX, e.clientY)) return;
+      // Ours: the cockpit's finger look (flight/input.js) leaves this finger alone.
+      e.__flyClaimed = true;
+      this._drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY };
+      float.style.left = `${e.clientX}px`;
+      float.style.top = `${e.clientY}px`;
+      fknob.style.transform = '';
+      float.hidden = false;
+      float.classList.add('is-held');
+      this.state.stickHeld = true;
+      this.state.roll = 0;
+      this.state.pitch = 0;
+      if (e.cancelable) e.preventDefault();
+    };
+    this._onDragMove = (e) => {
+      const d = this._drag;
+      if (!d || e.pointerId !== d.id) return;
+      dragAxes(e.clientX - d.x0, e.clientY - d.y0, { radius: DRAG_RADIUS, sens: this.flyOpts.sens, boat: !!this._boatMode }, axes);
+      fknob.style.transform = `translate(${axes.kx}px, ${axes.ky}px)`;
+      this.state.roll = axes.roll;
+      this.state.pitch = axes.pitch;
+      if (e.cancelable) e.preventDefault();
+    };
+    this._onDragUp = (e) => {
+      const d = this._drag;
+      if (!d || e.pointerId !== d.id) return;
+      this.endDrag();
+    };
+    const tilt = {};
+    this._onTilt = (e) => {
+      if (e.beta == null || e.gamma == null) return;
+      this._tiltSeen = true;
+      if (this.flyMode !== 'tilt') return;
+      const angle = screenAngle();
+      this._tiltLast = { beta: e.beta, gamma: e.gamma, angle };
+      if (!this.flyOpts.level) this.levelTilt(true);
+      if (this.mode === 'drive' || !this._visible) return;
+      tiltAxes(e.beta, e.gamma, angle, { level: this.flyOpts.level, sens: this.flyOpts.tiltSens, boat: !!this._boatMode }, tilt);
+      this.state.roll = tilt.roll;
+      this.state.pitch = tilt.pitch;
+      this.state.stickHeld = tilt.held;
+    };
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      // Capture: before the cockpit's finger look (a bubbling listener on window) sees the same finger.
+      window.addEventListener('pointerdown', this._onDragDown, { capture: true, passive: false });
+      window.addEventListener('pointermove', this._onDragMove, { capture: true, passive: false });
+      window.addEventListener('pointerup', this._onDragUp, true);
+      window.addEventListener('pointercancel', this._onDragUp, true);
+    }
+  }
+
+  /**
+   * Can this element be pressed? Then it keeps its finger. Only the HUD's own
+   * readouts over the picture (inside the HUD, not pressable) let a finger
+   * through to the floating stick; anything outside the HUD (a menu, a dialog)
+   * keeps it too.
+   */
+  pressable(t) {
+    if (!t || !t.closest) return true;
+    if (t.closest(TOUCH_KEEP)) return true;
+    const hud = this.layer && this.layer.parentElement;
+    if (!hud || !hud.contains(t)) return true;
+    for (let n = t; n && n !== hud; n = n.parentElement) {
+      try {
+        if (getComputedStyle(n).cursor === 'pointer') return true;
+      } catch (e) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Is (x, y) on the minimap or the dock, drawn or not tappable? */
+  overKept(x, y) {
+    const hud = this.layer && this.layer.parentElement;
+    const root = (hud && hud.parentElement) || (typeof document !== 'undefined' ? document : null);
+    if (!root || !root.querySelectorAll) return false;
+    for (const n of root.querySelectorAll('.minimap, .hud-buttons')) {
+      if (!n.getClientRects || !n.getClientRects().length) continue;
+      const b = n.getBoundingClientRect();
+      if (x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) return true;
+    }
+    return false;
+  }
+
+  endDrag() {
+    this._drag = null;
+    if (this.floatEl) {
+      this.floatEl.hidden = true;
+      this.floatEl.classList.remove('is-held');
+    }
+    if (this.flyMode === 'drag') {
+      this.state.stickHeld = false;
+      this.state.roll = 0;
+      this.state.pitch = 0;
+    }
+  }
+
+  /**
+   * Change how the stick is flown. `opts`: sens (the mouse & touch
+   * sensitivity), tiltSens, level ({ roll, pitch } or null). Returns the mode
+   * it is really in (Tilt with no gyroscope comes back as 'drag', later).
+   */
+  setFlyMode(mode, opts = {}) {
+    Object.assign(this.flyOpts, opts);
+    const want = mode === 'drag' || mode === 'tilt' ? mode : 'stick';
+    if (want !== this.flyMode) {
+      // Leave nothing held from the way it was flown a moment ago.
+      this.endDrag();
+      this.state.stickHeld = false;
+      this.state.roll = 0;
+      this.state.pitch = 0;
+      if (this.flyMode === 'tilt') this.stopTilt();
+      this.flyMode = want;
+    }
+    this.layer.classList.toggle('fly-stick', want === 'stick');
+    this.layer.classList.toggle('fly-drag', want === 'drag');
+    this.layer.classList.toggle('fly-tilt', want === 'tilt');
+    if (this.levelBtn) this.levelBtn.hidden = want !== 'tilt';
+    if (want === 'tilt') this.startTilt();
+    return this.flyMode;
+  }
+
+  /** Tilt on: ask for the motion permission where the browser wants a tap for it (iOS). */
+  startTilt() {
+    if (this._tiltOn) return;
+    const DOE = typeof window !== 'undefined' ? window.DeviceOrientationEvent : undefined;
+    if (!DOE) return this.tiltFails('No tilt sensor on this device — flying with Drag anywhere instead.');
+    if (typeof DOE.requestPermission === 'function' && !this._tiltGranted) {
+      // iOS: only from a tap. The LEVEL button asks for it until it is given.
+      this._tiltNeedsAsk = true;
+      if (this.levelBtn) this.levelBtn.textContent = 'TAP TO TILT';
+      return;
+    }
+    this.listenTilt();
+  }
+
+  /** From a tap: the iOS motion permission. */
+  askTilt() {
+    const DOE = typeof window !== 'undefined' ? window.DeviceOrientationEvent : undefined;
+    if (!DOE || typeof DOE.requestPermission !== 'function') return this.listenTilt();
+    let p;
+    try {
+      p = DOE.requestPermission();
+    } catch (e) {
+      return this.tiltFails('Tilt needs the motion sensor — flying with Drag anywhere instead.');
+    }
+    Promise.resolve(p).then((r) => {
+      if (r === 'granted') {
+        this._tiltGranted = true;
+        this._tiltNeedsAsk = false;
+        if (this.levelBtn) this.levelBtn.textContent = 'LEVEL';
+        this.listenTilt();
+      } else this.tiltFails('Motion access was not allowed — flying with Drag anywhere instead.');
+    }, () => this.tiltFails('Motion access was not allowed — flying with Drag anywhere instead.'));
+  }
+
+  listenTilt() {
+    if (this._tiltOn || typeof window === 'undefined') return;
+    this._tiltOn = true;
+    this._tiltSeen = false;
+    window.addEventListener('deviceorientation', this._onTilt);
+    // Nothing from the sensor in two seconds (a laptop, a sensor switched off): Drag anywhere.
+    clearTimeout(this._tiltWatch);
+    this._tiltWatch = setTimeout(() => {
+      if (this.flyMode === 'tilt' && !this._tiltSeen) this.tiltFails('No tilt sensor readings — flying with Drag anywhere instead.');
+    }, 2000);
+  }
+
+  stopTilt() {
+    clearTimeout(this._tiltWatch);
+    if (this._tiltOn && typeof window !== 'undefined') window.removeEventListener('deviceorientation', this._onTilt);
+    this._tiltOn = false;
+    this._tiltNeedsAsk = false;
+    if (this.levelBtn) this.levelBtn.textContent = 'LEVEL';
+  }
+
+  tiltFails(why) {
+    this.stopTilt();
+    this.tiltUnavailable = true;
+    this.setFlyMode('drag');
+    this.onNotice(why);
+  }
+
+  /** The way the phone is held now is straight and level. */
+  levelTilt(quiet = false) {
+    const t = this._tiltLast;
+    if (!t) {
+      if (!quiet) this.onNotice('Hold the phone the way you want to fly, then press LEVEL.');
+      return null;
+    }
+    const h = holdAngles(t.beta, t.gamma, t.angle);
+    this.flyOpts.level = { roll: Math.round(h.roll * 10) / 10, pitch: Math.round(h.pitch * 10) / 10 };
+    this.onLevel(this.flyOpts.level);
+    if (!quiet) this.onNotice('Tilt levelled — this is straight and level now.');
+    return this.flyOpts.level;
   }
 
   /* ------------------------------------------------------------- stick -- */
@@ -559,7 +820,14 @@ export class TouchControls {
       const r = n.getBoundingClientRect();
       return r.width > 1 && r.height > 1 ? r : null;
     };
-    const stick = box(this.stick);
+    let stick = box(this.stick);
+    // Drag anywhere / Tilt: no fixed stick, but the left thumb still works down there (a floating
+    // ring, or LEVEL): keep the sheet off the same corner the stick would have had.
+    if (!stick && this.flyMode && this.flyMode !== 'stick' && this.mode !== 'drive') {
+      const lv = box(this.levelBtn);
+      const size = Math.min(148, L.height * 0.4);
+      stick = { left: L.left + 8, right: Math.max(L.left + 8 + size, lv ? lv.right : 0), top: Math.min(L.bottom - 8 - size, lv ? lv.top : Infinity), bottom: L.bottom - 8 };
+    }
     const pads = box(this.pads);
     const rudder = box(this.layer.querySelector('.touch-rudder'));
     const lever = box(this.leverEl) || box(this.throttleEl);
@@ -883,6 +1151,14 @@ export class TouchControls {
 
   setVisible(on) {
     if (!on) this.closeSheets();
+    this._visible = !!on;
+    // A finger flying the floating stick when the menu comes up lets go.
+    if (!on) this.endDrag();
+    if (!on && this.flyMode === 'tilt') {
+      this.state.stickHeld = false;
+      this.state.roll = 0;
+      this.state.pitch = 0;
+    }
     this.layer.style.display = on ? '' : 'none';
   }
 }

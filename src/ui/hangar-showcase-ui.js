@@ -28,6 +28,7 @@
 
 import { AIRCRAFT, performanceFor } from '../aircraft/types.js';
 import { LIVERIES, schemeFor, liveriesFor } from '../aircraft/liveries.js';
+import { liveryOf, setLiveryOf } from '../core/plane-paint.js';
 import { fontStack, faceFor } from '../render/airline-fonts.js';
 import * as Prog from '../game/progression.js';
 import { icon } from './icons.js';
@@ -224,7 +225,8 @@ export function installHangarShowcase(menus, screen, kit) {
   menus.showcaseUi = ui;
 
   const prog = () => menus.prog || Prog.load();
-  const livery = () => (menus.settingsRef && menus.settingsRef.livery) || 'house';
+  // PAINT PER PLANE (wave 18): the paint of the aeroplane on show, or of the one asked about.
+  const livery = (typeId = ui.id) => liveryOf(menus.settingsRef, typeId);
   const typeOf = (id) => AIRCRAFT.find((a) => a.id === id);
   const owned = (id) => Prog.isUnlocked(prog(), id);
   const rosterIndex = (id) => AIRCRAFT.findIndex((a) => a.id === id);
@@ -257,17 +259,14 @@ export function installHangarShowcase(menus, screen, kit) {
    * closes.
    */
   const artCache = new Map();
-  let artLivery = null;
   const dpr = () => Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
   const artFor = (type) => {
-    if (artLivery !== livery()) {
-      artCache.clear();
-      artLivery = livery();
-    }
-    let c = artCache.get(type.id);
+    // Each card in its own aeroplane's paint, cached by type AND paint.
+    const key = `${type.id}|${livery(type.id)}`;
+    let c = artCache.get(key);
     if (c) return c;
     try {
-      const big = aircraftThumbnail(type, livery());
+      const big = aircraftThumbnail(type, livery(type.id));
       const k = dpr();
       c = document.createElement('canvas');
       c.width = Math.round(ART_W * k);
@@ -279,7 +278,8 @@ export function installHangarShowcase(menus, screen, kit) {
       const w = big.width * s;
       const h = big.height * s;
       g.drawImage(big, (c.width - w) / 2, (c.height - h) / 2, w, h);
-      artCache.set(type.id, c);
+      for (const k of artCache.keys()) if (k.startsWith(`${type.id}|`)) artCache.delete(k);
+      artCache.set(key, c);
     } catch (e) {
       c = null;
     }
@@ -646,7 +646,7 @@ export function installHangarShowcase(menus, screen, kit) {
     if (!ui.showcase || !ui.order.length) return;
     const i = ui.order.indexOf(ui.id);
     const n = ui.order.length;
-    ui.showcase.prefetch([ui.order[(i + 1) % n], ui.order[(i - 1 + n) % n]], livery());
+    ui.showcase.prefetch([ui.order[(i + 1) % n], ui.order[(i - 1 + n) % n]], (id) => livery(id));
   };
 
   /* ---------------- moving about ---------------- */
@@ -881,16 +881,16 @@ export function installHangarShowcase(menus, screen, kit) {
     const sw = t.closest('[data-hs-livery]');
     if (sw) {
       const id = sw.dataset.hsLivery;
-      if (id === livery()) return;
-      // The same door as Settings → Flying → Airline livery, so the two agree.
+      const typeId = ui.id;
+      if (!typeId || id === livery(typeId)) return;
+      // PAINT PER PLANE: the paint is for THIS aeroplane, the one on show, and no other.
       try {
-        menus.hooks.onSetting && menus.hooks.onSetting('livery', id);
+        if (menus.hooks.onSetting) menus.hooks.onSetting(`liveries.${typeId}`, id);
+        else if (menus.settingsRef) setLiveryOf(menus.settingsRef, typeId, id);
       } catch (err) {
         console.warn('[hangar] repainting the game aeroplane failed', err);
       }
-      if (menus.settingsRef) menus.settingsRef.livery = id;
-      const sel = menus.screens.settings && menus.screens.settings.querySelector('[data-set="livery"]');
-      if (sel) sel.value = id;
+      if (menus.settingsRef && livery(typeId) !== id) setLiveryOf(menus.settingsRef, typeId, id);
       paint();
       if (ui.showcase) ui.showcase.repaint(livery(), !owned(ui.id));
       paintFallback();

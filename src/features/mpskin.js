@@ -34,17 +34,19 @@
  * re-forms numbers everybody afresh, and the packet may be the one that was
  * lost. Fifteen bytes.
  *
- * ONE PAINT FOR ALL, FOR NOW. Paint is a single global setting (settings.livery:
- * the Skylark, the 747 and the F-22 all wear what is picked). `mine()` below is
- * the one place that says which paint this tab flies in, so the queued
- * Customise job, which saves a paint per aeroplane type, changes that function
- * and the receiving side (remotes.js _ensureModel reads the paint by player,
- * and a player flies one type at a time) and nothing on the wire.
+ * PAINT PER PLANE (wave 18). Paint is saved per aeroplane type now
+ * (settings.liveries, core/plane-paint.js) and `mine()` below sends the paint
+ * of the aeroplane this tab is flying — a player flies one type at a time, so
+ * the receiving side (remotes.js _ensureModel reads the paint by player) and
+ * the wire are exactly what they were: `{ v: 1, l }`. An older copy that still
+ * keeps one paint for all sends that one paint the same way, and is drawn in
+ * it; switching aircraft changes `l`, which goes out at once.
  */
 
 import { registerExtension } from '../game/extensions.js';
 import { multiplayer } from './multiplayer.js';
 import { LIVERIES } from '../aircraft/liveries.js';
+import { currentLivery } from '../core/plane-paint.js';
 
 const ch = multiplayer.events;
 
@@ -71,7 +73,7 @@ const clock = () => (typeof performance !== 'undefined' ? performance.now() : Da
 
 /** What this tab flies in, as an id this copy knows. */
 function mine(sim) {
-  const id = String((sim && sim.settings && sim.settings.livery) || 'house');
+  const id = String(currentLivery(sim) || 'house');
   return KNOWN.has(id) ? id : 'house';
 }
 

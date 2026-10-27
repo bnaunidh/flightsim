@@ -555,6 +555,8 @@ function planPush(sim) {
     flipped: false,
     toTaxiway: false,
     clear: true,
+    // The line it ends on is clear ahead for its wings (runClear below).
+    runClear: false,
   };
   const setLane = (laneW, minStraight = 4) => {
     P.straight = Math.max(minStraight, w0 - PUSH_RADIUS - laneW);
@@ -564,7 +566,28 @@ function planPush(sim) {
   const own = S.stand || standAt(ac.pos.x, ac.pos.z, 3);
   const blockers = pushBlockers(lay, own);
   let found = false;
-  for (const turn of [first, -first]) {
+  /*
+   * And the taxi after it (wave 18, Code F): the swing being clear is not
+   * enough if the line it ends on is not. At Gateway the apron lane is 21 m
+   * from the tails of the aeroplanes parked on the stands, so a 747, an A380
+   * or a C-17 pushed off stand 11 ended clear, facing the runway, with its
+   * wing over the fin of the one on stand 7 two hundred metres ahead. So the
+   * first lane, the asked-for way round, where the swing AND the run ahead
+   * along it keep both wingtips clear of every parked aeroplane — further
+   * back, onto the Code F taxiway, for a big jet. Only if there is no such
+   * lane does it fall back to the swing alone, as it always did.
+   */
+  for (let lane = lane0; lane >= laneMin - 0.01; lane -= 4) {
+    P.turn = first;
+    setLane(lane);
+    if (pushClear(P, lay, info, blockers) && runClear(P, info, blockers)) {
+      found = true;
+      P.toTaxiway = lane < lane0 - 0.01;
+      P.runClear = true;
+      break;
+    }
+  }
+  for (const turn of found ? [] : [first, -first]) {
     for (let lane = lane0; lane >= laneMin - 0.01; lane -= 4) {
       P.turn = turn;
       setLane(lane);
@@ -717,6 +740,49 @@ function pushClear(P, lay, info, blockers) {
     }
   }
   return true;
+}
+
+/**
+ * After the push: straight ahead along the line it ends on, as far as the
+ * last parked aeroplane that way, do the wingtips, the wing between them,
+ * the nose and the tail keep CLEARANCE from every parked aeroplane? (The
+ * taxi out, which follows that line before it turns for the runway.)
+ */
+const _run = { x: 0, z: 0, h: 0 };
+const _runPts = [{ x: 0, z: 0 }, { x: 0, z: 0 }, { x: 0, z: 0 }, { x: 0, z: 0 }];
+function runClear(P, info, blockers) {
+  if (!blockers.length) return true;
+  pushPose(P, P.total, _end);
+  const fx = Math.sin(_end.h * D2R);
+  const fz = -Math.cos(_end.h * D2R);
+  // As far ahead as the furthest corner of any parked aeroplane.
+  let far = 0;
+  for (const b of blockers) {
+    for (const cx of [b.x0, b.x1]) for (const cz of [b.z0, b.z1]) far = Math.max(far, (cx - _end.x) * fx + (cz - _end.z) * fz);
+  }
+  far = Math.min(far + 4, 2000);
+  for (let s = 0; s <= far; s += 4) {
+    _run.x = _end.x + fx * s;
+    _run.z = _end.z + fz * s;
+    _run.h = _end.h;
+    const pts = sweepPoints(info, _run, _runPts);
+    for (let k = 0; k < 4; k++) if (inBlocker(pts[k].x, pts[k].z, blockers)) return false;
+    // Along the wing, tip to tip, every 4 m.
+    const n = Math.max(2, Math.ceil(Math.hypot(pts[3].x - pts[2].x, pts[3].z - pts[2].z) / 4));
+    for (let j = 1; j < n; j++) {
+      const t = j / n;
+      if (inBlocker(pts[2].x + (pts[3].x - pts[2].x) * t, pts[2].z + (pts[3].z - pts[2].z) * t, blockers)) return false;
+    }
+  }
+  return true;
+}
+
+function inBlocker(x, z, blockers) {
+  for (let i = 0; i < blockers.length; i++) {
+    const b = blockers[i];
+    if (x > b.x0 - CLEARANCE && x < b.x1 + CLEARANCE && z > b.z0 - CLEARANCE && z < b.z1 + CLEARANCE) return true;
+  }
+  return false;
 }
 
 /** Where the aeroplane is s metres into the push: { x, z, h }. */
