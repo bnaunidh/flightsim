@@ -123,7 +123,14 @@ export function makeDef(P) {
     // No fixed terrain: worldmap/stream.js lays it round the camera.
     chunks: [],
     streamTerrain: true,
+    // Forests, farmland, heath and marsh (worldmap/landcover.js), painted by worldmap/world-terrain.js.
+    landcover: true,
     flats: deepCopy(P.flats),
+    // The ground's shape (terrain.js relief, rivers, lakes): where it must stay calm, and the waters.
+    calm: deepCopy(P.calm || []),
+    rivers: deepCopy(P.rivers || []),
+    lakes: deepCopy(P.lakes || []),
+    bridges: deepCopy(P.bridges || []),
     waters: { roads: deepCopy(P.roads) },
     palette: deepCopy(P.palette),
     scenery: deepCopy(P.scenery),

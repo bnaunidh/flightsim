@@ -21,11 +21,16 @@
  * night. The hub's town is built by Scenery itself, as every map's is.
  */
 import * as THREE from '../../vendor/three.module.js';
-import { addObstacleAt, heightAt } from '../terrain.js';
+import { addObstacleAt, addPlatform, heightAt } from '../terrain.js';
 import { runwayTexture, asphaltNormal } from '../../render/textures.js';
 import { Batch, vcMaterial, layer, glowPoints } from '../airport-kit.js';
-import { planTown, addTown } from '../scenery.js';
+import { planTown, addTown, treeGeometry } from '../scenery.js';
 import { papiFor } from '../navfield.js';
+import { styleOf } from './personas.js';
+import * as LOOK from './field-look.js';
+
+/** The share of a town's buildings built at each tier (the World Map's towns are all built at load). */
+export const TOWN_SHARE = Object.freeze({ low: 0.45, medium: 0.7, high: 1, ultra: 1.15 });
 
 /** How far away each piece is still drawn, by graphics quality. */
 export const SHOW_RANGE = Object.freeze({ low: 14000, medium: 20000, high: 26000, ultra: 32000 });
@@ -149,28 +154,26 @@ export function buildField(a, quality = 'medium') {
   if (twy) b.flat(twy.x1 - twy.x0, 0.3, (twy.x0 + twy.x1) / 2, 0.07, (twy.z0 + twy.z1) / 2, 0xd9c02a);
 
   const night = [];
+  // In the style of the map whose airport this is (worldmap/personas.js, field-look.js).
+  const st = styleOf(a);
   for (const s of plan.buildings) {
     const w = s.x1 - s.x0;
     const d = s.z1 - s.z0;
     const cx = (s.x0 + s.x1) / 2;
     const cz = (s.z0 + s.z1) / 2;
-    if (s.kind === 'terminal') {
-      b.box(w, s.h, d, cx, s.h / 2, cz, C.wall);
-      // A band of glass along the airside face, and the roof.
-      b.box(w * 0.96, s.h * 0.42, 0.4, cx, s.h * 0.55, s.z1 + 0.2, C.glass);
-      b.box(w + 2, 0.8, d + 2, cx, s.h + 0.4, cz, C.roof);
-      night.push([cx, s.h * 0.55, s.z1 + 1.5, w * 0.9]);
-    } else if (s.kind === 'tower') {
-      b.box(w, s.h, d, cx, s.h / 2, cz, C.tower);
-      b.box(w + 3.5, 4.2, d + 3.5, cx, s.h + 2.1, cz, C.glass);
-      b.box(w + 4.5, 0.6, d + 4.5, cx, s.h + 4.5, cz, C.roof);
-      night.push([cx, s.h + 2.1, cz, 2]);
-    } else {
-      b.box(w, s.h, d, cx, s.h / 2, cz, C.hangar);
-      b.box(w * 0.86, s.h * 0.78, 0.3, cx, s.h * 0.39, s.z1 + 0.15, 0x8f959b);
-    }
-    addObstacleAt(a.x + cx, a.z + cz, w + 1, d + 1, a.elev - 1, s.h + (s.kind === 'tower' ? 6 : 1.5), `You flew into the ${s.kind} at ${a.name}`);
+    if (s.kind === 'terminal') LOOK.terminal(b, s, st, night);
+    else if (s.kind === 'tower') LOOK.tower(b, s, st, night);
+    else if (s.kind === 'fire station') {
+      b.box(w, s.h, d, cx, s.h / 2, cz, st.wall);
+      for (let x = s.x0 + 4; x < s.x1 - 3; x += 8) b.box(6, s.h * 0.7, 0.3, x, s.h * 0.35, s.z1 + 0.15, 0xb8322a);
+      b.box(w + 0.6, 0.6, d + 0.6, cx, s.h + 0.3, cz, st.roofCol);
+    } else LOOK.hangar(b, s, st);
+    addObstacleAt(a.x + cx, a.z + cz, w + 1, d + 1, a.elev - 1, s.h + (s.kind === 'tower' ? 8 : 4), `You flew into the ${s.kind} at ${a.name}`);
   }
+  // Its own landmarks: the air base's shelters, the radomes, the silos, the lighthouse on the headland...
+  const dressed = LOOK.dress(b, a, night);
+  // And an apron in use: airliners on the stands, bridges at the big fields, floodlights.
+  LOOK.apronDressing(b, a, st, night);
   for (const t of plan.tanks) {
     b.cyl(t.r, t.r, t.h, t.x, 0, t.z, C.tank, 16);
     addObstacleAt(a.x + t.x, a.z + t.z, t.r * 2, t.r * 2, a.elev - 1, t.h + 1, `You flew into the fuel tanks at ${a.name}`);
@@ -207,7 +210,11 @@ export function buildField(a, quality = 'medium') {
   b.cyl(0.12, 0.16, 7, plan.sock.x, 0, plan.sock.z, 0xd8d8d8, 6);
   b.cyl(0.55, 0.35, 3.6, plan.sock.x + 1.8, 6.6, plan.sock.z, C.sock, 8, { rz: Math.PI / 2 });
   const mesh = b.mesh(vcMaterial({ roughness: 0.82 }), { cast: quality !== 'low', receive: true, name: 'field' });
-  if (mesh) g.add(mesh);
+  // Vertex colours, no texture: the UVs are dead weight (a sixth of the field's memory).
+  if (mesh) {
+    mesh.geometry.deleteAttribute('uv');
+    g.add(mesh);
+  }
 
   // Night: steady lights. Edges every 60 m, white; thresholds green; ends red. No flashing.
   const pos = [];
@@ -226,7 +233,7 @@ export function buildField(a, quality = 'medium') {
     put(L / 2 + 1, 0.4, v, 0x37e05a);
   }
   if (twy) for (let u = twy.x0; u <= twy.x1; u += 45) put(u, 0.4, (twy.z0 + twy.z1) / 2 + 9, 0x3a7dff);
-  for (const [x, y, z] of night) put(x, y, z, 0xffe2a8);
+  for (const [x, y, z, , c] of night) put(x, y, z, c || 0xffe2a8);
   const lights = glowPoints(pos, col, 3.2, { name: 'field-lights' });
   lights.visible = false;
   g.add(lights);
@@ -247,7 +254,99 @@ export function buildField(a, quality = 'medium') {
     g.add(lens);
     g.userData.papi = { lens, lights: papi, whites: [-1, -1] };
   }
+  // The palms of a tropical field, one instanced mesh.
+  const palms = palmGroves(dressed.palms, quality);
+  if (palms) g.add(palms);
+  // The carrier group lying off the air base, seen from the other fields (the
+  // ship itself, with its deck, is built only round the field you start from).
+  if (a.carrier && (a.landmarks || []).some((l) => l.kind === 'escort')) {
+    const cg = farCarrierMesh();
+    cg.position.set(a.carrier.x - a.x, -a.elev, a.carrier.z - a.z);
+    cg.updateMatrix();
+    g.add(cg);
+    // A deck you can land on (no wires: those are the ship you start from), and an island you cannot fly through.
+    addPlatform(a.carrier.x, a.carrier.z, 360, 1500, 104, `${a.name} carrier group`);
+    addObstacleAt(a.carrier.x + 122, a.carrier.z + 115, 67, 145, 104, 160, `You flew into the carrier off ${a.name}`);
+  }
   g.userData.plan = plan;
+  g.userData.airport = a;
+  return g;
+}
+
+let palmGeo = null;
+let palmMat = null;
+function palmGroves(list, quality) {
+  if (!list || !list.length) return null;
+  if (!palmGeo) {
+    palmGeo = treeGeometry(0);
+    palmMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
+    palmMat.userData.shared = true;
+  }
+  const m = new THREE.InstancedMesh(palmGeo, palmMat, list.length);
+  const d = new THREE.Object3D();
+  list.forEach(([x, z, h], i) => {
+    d.position.set(x, -0.3, z);
+    d.rotation.set(0, (x * 0.37 + z * 0.11) % 6.28, 0);
+    d.scale.setScalar(h);
+    d.updateMatrix();
+    m.setMatrixAt(i, d.matrix);
+  });
+  m.name = 'field-palms';
+  m.castShadow = quality !== 'low';
+  return m;
+}
+
+let farCarrierGeo = null;
+let farCarrierMat = null;
+/** The carrier as one grey mesh, the same size as carrier.js's (5x a real ship: 1,500 x 360 m, deck 104 m). */
+function farCarrierMesh() {
+  if (!farCarrierGeo) {
+    farCarrierGeo = LOOK.carrierProxyGeometry({ length: 1500, width: 360, y: 104 });
+    farCarrierMat = new THREE.MeshLambertMaterial({ color: 0x5d646c });
+    farCarrierMat.userData.shared = true;
+  }
+  const m = new THREE.Mesh(farCarrierGeo, farCarrierMat);
+  m.name = 'field-carrier-group';
+  m.matrixAutoUpdate = false;
+  return m;
+}
+
+/**
+ * The field you start from: airport.js and apron.js build its runway,
+ * buildings, stands and lights; this adds its persona's own landmarks (the
+ * air base's shelters, Northwatch's radomes, Harrier Flats' silos, a
+ * lighthouse on the headland, the carrier group's escorts...), the same ones
+ * buildField draws when it is someone else's field. Null if it has none.
+ */
+export function buildDressing(a, quality = 'medium') {
+  if (!(a.extras && a.extras.length) && !(a.landmarks && a.landmarks.length)) return null;
+  const g = new THREE.Group();
+  g.name = `world-dressing ${a.code}`;
+  g.position.set(a.x, a.elev, a.z);
+  const b = new Batch();
+  const night = [];
+  const dressed = LOOK.dress(b, a, night);
+  const mesh = b.mesh(vcMaterial({ roughness: 0.82 }), { cast: quality !== 'low', receive: true, name: 'dressing' });
+  if (mesh) {
+    mesh.geometry.deleteAttribute('uv');
+    g.add(mesh);
+  }
+  const palms = palmGroves(dressed.palms, quality);
+  if (palms) g.add(palms);
+  if (night.length) {
+    const pos = [];
+    const col = [];
+    const c = new THREE.Color();
+    for (const [x, y, z, , hex] of night) {
+      pos.push(x, y, z);
+      c.set(hex || 0xffe2a8);
+      col.push(c.r, c.g, c.b);
+    }
+    const lights = glowPoints(pos, col, 3.2, { name: 'dressing-lights' });
+    lights.visible = false;
+    g.add(lights);
+    g.userData.lights = lights;
+  }
   g.userData.airport = a;
   return g;
 }
@@ -296,24 +395,41 @@ export function buildOutstations(data, departureId, quality = 'medium') {
   const towns = [];
   const density = quality === 'low' ? 0.35 : quality === 'medium' ? 0.65 : quality === 'ultra' ? 1.8 : 1;
   const hub = data.airports[0];
+  /*
+   * Every town is built now, behind the loading screen, and hidden until it
+   * is in reach: building one in flight is a few hundred milliseconds on a
+   * Chromebook, a hitch that is worse than the memory it would save.
+   */
+  const buildTown = (rec) => {
+    const t = rec.town;
+    const tb = performance.now();
+    // A city's downtown where the plan gives it towers (scenery.js layTown): a grid round the centre, taller to the middle.
+    // Fewer buildings on the lighter tiers (laying a town out is quadratic in its size, and every town is built at load).
+    const count = Math.max(Math.min(t.count, 12), Math.round(t.count * (TOWN_SHARE[quality] || 1)));
+    const cfg = { cx: t.cx, cz: t.cz, radius: t.radius, count, minH: Math.max(1.5, t.elev - 25), maxH: t.elev + 45, ...(t.towers ? { towers: Math.max(2, Math.round(t.towers * (TOWN_SHARE[quality] || 1))), towerMaxH: t.towerMaxH } : {}) };
+    try {
+      const plan = planTown(cfg, density);
+      rec.built = addTown(rec.group, plan.spots, { ...(plan.cfg || {}), quality, meshName: `town-${t.airport || t.name}` });
+      for (const m of rec.built.nightMats || []) m.emissiveIntensity = Math.max(0, glow);
+    } catch (err) {
+      console.warn(`[world-preview] the town of ${t.name} could not be built`, err);
+      rec.built = { houses: 0, blocks: 0, nightMats: [] };
+    }
+    rec.ms = performance.now() - tb;
+  };
   for (const t of data.towns) {
     if (t.airport === hub.id) continue; // Scenery builds the hub's own town
     const tg = new THREE.Group();
     tg.name = `world-town ${t.name}`;
-    const cfg = { cx: t.cx, cz: t.cz, radius: t.radius, count: t.count, minH: Math.max(1.5, t.elev - 25), maxH: t.elev + 45 };
-    let built = null;
-    try {
-      const plan = planTown(cfg, density);
-      built = addTown(tg, plan.spots, { ...(plan.cfg || {}), quality, meshName: `town-${t.airport}` });
-    } catch (err) {
-      console.warn(`[world-preview] the town of ${t.name} could not be built`, err);
-    }
     group.add(tg);
-    towns.push({ group: tg, town: t, built });
-    timing.towns[t.name] = Math.round(performance.now() - t0) - timing.fields - Object.values(timing.towns).reduce((x, y) => x + y, 0);
+    towns.push({ group: tg, town: t, built: null });
   }
   const range = SHOW_RANGE[quality] || SHOW_RANGE.medium;
   let glow = -1;
+  for (const rec of towns) {
+    buildTown(rec);
+    timing.towns[rec.town.name] = rec.ms ? Math.round(rec.ms) : 0;
+  }
   return {
     group,
     fields,
@@ -332,7 +448,7 @@ export function buildOutstations(data, departureId, quality = 'medium') {
       const want = isNight ? 1.15 : dusk ? 0.45 : 0;
       for (const t of towns) {
         const d = cam ? Math.hypot(cam.x - t.town.cx, cam.z - t.town.cz) : 0;
-        t.group.visible = d < range;
+        t.group.visible = d < range && !!t.built;
       }
       if (want !== glow) {
         glow = want;

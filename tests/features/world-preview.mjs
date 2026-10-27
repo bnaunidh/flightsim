@@ -226,6 +226,237 @@ for (const r of PV.checkNetwork()) ok(`network: ${r.rule}`, r.pass, r.detail);
 }
 
 /* ================================================================== *
+ * Unique airports: each field is one of our maps' airports
+ * (owner, Oct 26: "not a horrible copy paste of the others")
+ * ================================================================== */
+{
+  const PS = await import(SRC + 'world/worldmap/personas.js');
+  const LOOK = await import(SRC + 'world/worldmap/field-look.js');
+  const KIT = await import(SRC + 'world/airport-kit.js');
+  const hashes = D.airports.map((a) => PS.lookHash(a));
+  const uniq = new Set(hashes);
+  ok('no two fields look alike: the look hash (layout, building style, landmarks) of every field is its own', uniq.size === D.airports.length,
+    D.airports.map((a, i) => `${a.code} ${hashes[i]}`).join(' '));
+  const froms = D.airports.map((a) => a.from);
+  const realMaps = froms.every((f) => M.getMap(f) && M.getMap(f).id === f);
+  ok('every field is one of our hand-made maps\' airports, 14 or more different ones', realMaps && new Set(froms).size >= 14 && D.airports.every((a) => PS.PERSONAS[a.id] && PS.STYLES[PS.PERSONAS[a.id].style]),
+    D.airports.map((a) => `${a.code}=${a.from}`).join(' '));
+  const cold = new Set(['skerries', 'nunatak', 'northwatch', 'fjord']);
+  const warm = new Set(['lagoon', 'atoll', 'ember', 'airbase', 'archipelago']);
+  const band = (a) => (D.regions.find((g) => g.id === a.region) || {}).band;
+  const wrongBand = D.airports.filter((a) => (band(a) === 'cold' && !cold.has(a.from)) || (band(a) === 'tropical' && !warm.has(a.from)));
+  const aldermere = PV.airportById('aldermere');
+  const sandmere = PV.airportById('sandmere');
+  ok('cold maps in the north, tropical in the south; Gateway is the capital\'s hub with its concourse; the air base has its shelters and the carrier group offshore; a mountain field on the mainland',
+    wrongBand.length === 0 && aldermere.from === 'gateway' && aldermere.kind === 'hub' && (aldermere.extras || []).some((e) => e.kind === 'concourse')
+      && sandmere.from === 'airbase' && (sandmere.extras || []).filter((e) => e.kind === 'shelters').length >= 4 && (sandmere.landmarks || []).filter((l) => l.kind === 'escort').length === 2 && !!sandmere.carrier
+      && D.airports.some((a) => a.region === 'westreach' && a.from === 'condor'),
+    wrongBand.map((a) => `${a.code} ${a.from} in ${band(a)}`).join(', ') || 'all in their bands');
+  const names = D.airports.map((a) => a.name);
+  const radios = names.map((n) => n.split(' ')[0]);
+  ok('every field has its own name and its own radio word (the map\'s, unless it clashed)', new Set(names).size === names.length && new Set(radios).size === radios.length && names.every((n) => !NM.isDenied(n)),
+    radios.join(' '));
+  ok('the small grass and gravel strips stay small: no hub buildings, nothing over 26 m', D.airports.filter((a) => a.kind === 'ga').every((a) => a.layout.cls !== 'hub' && (a.extras || []).every((e) => e.h <= 26 && !['concourse', 'multistorey', 'cargo', 'warehouses', 'shelters'].includes(e.kind))),
+    D.airports.filter((a) => a.kind === 'ga').map((a) => `${a.code} ${(a.extras || []).map((e) => e.kind).join('+') || 'none'}`).join(', '));
+  // Every extra on its field's level ground, clear of the paving (half an A380's span), the runway strip and every building.
+  const bad = [];
+  for (const a of D.airports) {
+    PV.setDeparture(a.id);
+    T.applyMap(def);
+    const lay = a.layout;
+    const pave = lay.pavement || [];
+    const blds = [lay.terminal, lay.tower, lay.fire, lay.fuel, lay.carPark, ...(lay.hangars || [])].filter(Boolean);
+    const ex = a.extras || [];
+    ex.forEach((e, i) => {
+      for (const [x, z] of [[e.x0, e.z0], [e.x1, e.z0], [e.x0, e.z1], [e.x1, e.z1], [(e.x0 + e.x1) / 2, (e.z0 + e.z1) / 2]]) {
+        if (Math.abs(T.heightAt(a.x + x, a.z + z) - a.elev) > 0.35) bad.push(`${a.code} ${e.kind} off level`);
+        if (a.x + x < a.site.x0 || a.x + x > a.site.x1 || a.z + z < a.site.z0 || a.z + z > a.site.z1) bad.push(`${a.code} ${e.kind} off its site`);
+      }
+      const near = (r, g) => e.x0 < r.x1 + g && e.x1 > r.x0 - g && e.z0 < r.z1 + g && e.z1 > r.z0 - g;
+      if (pave.some((p) => near(p, 44))) bad.push(`${a.code} ${e.kind} within 44 m of paving`);
+      if (blds.some((b) => near(b, 12))) bad.push(`${a.code} ${e.kind} on a building`);
+      if (e.z0 < a.halfWidth + 130 && e.z1 > -a.halfWidth - 85) bad.push(`${a.code} ${e.kind} in the runway strip`);
+      if (ex.some((f, j) => j !== i && near(f, 4))) bad.push(`${a.code} ${e.kind} on another extra`);
+    });
+    for (const L of a.landmarks || []) {
+      if (L.kind === 'escort') {
+        if (!(T.groundHeightAt(L.x, L.z) < -12)) bad.push(`${a.code} escort aground`);
+      } else {
+        const h = T.heightAt(L.x, L.z);
+        if (!(h > 1.5) || Math.abs(h - L.y) > 1.5) bad.push(`${a.code} ${L.kind} not on its ground (${h.toFixed(1)} vs ${L.y})`);
+        if (Math.abs(L.z - a.z) < 700 && Math.abs(L.x - a.x) < a.length / 2 + 7000) bad.push(`${a.code} ${L.kind} in the approach lanes`);
+      }
+    }
+  }
+  ok('every field\'s landmarks stand level on its site, clear of paving, runway strip and buildings; lighthouses on dry ground off the lanes; escorts in deep water', bad.length === 0,
+    bad.slice(0, 6).join('; ') || `${D.airports.reduce((n, a) => n + (a.extras || []).length + (a.landmarks || []).length, 0)} landmarks`);
+  // Each field draws in its own style, and stays cheap.
+  T.clearObstacles();
+  T.clearPlatforms();
+  const calls = [];
+  let styled = 0;
+  const colours = new Set();
+  for (const a of D.airports) {
+    const g = OS.buildField(a, 'low');
+    let n = 0;
+    g.traverse((o) => { if (o.isMesh || o.isPoints || o.isInstancedMesh) n++; });
+    calls.push(n);
+    const field = g.children.find((o) => o.name === 'field');
+    if (field) {
+      const c = field.geometry.attributes.color.array;
+      const sig = [];
+      for (let k = 0; k < c.length; k += 3 * 997) sig.push(Math.round(c[k] * 20));
+      colours.add(sig.join(','));
+      styled++;
+    }
+  }
+  ok('every other field is drawn in its own style (its vertex colours differ from every other), in 5 draw calls or fewer', styled === D.airports.length && colours.size === D.airports.length && Math.max(...calls) <= 5,
+    `${colours.size} distinct of ${styled}; draw calls ${calls.join(' ')}`);
+  T.clearObstacles();
+  T.clearPlatforms();
+}
+
+/* ---- the landmarks never get in the way of a stand, a pushback or a taxi ---- */
+{
+  const APR = await import(SRC + 'world/apron.js');
+  const F = await import(SRC + 'features/traffic/field.js');
+  const P = await import(SRC + 'features/traffic/planner.js');
+  const LOOK = await import(SRC + 'world/worldmap/field-look.js');
+  const KIT = await import(SRC + 'world/airport-kit.js');
+  const lines = [];
+  let worse = 0;
+  let fields = 0;
+  const t0 = performance.now();
+  for (const a of D.airports) {
+    PV.setDeparture(a.id);
+    T.applyMap(def);
+    A.refreshRunways();
+    APR.refreshApronElevation();
+    const count = () => {
+      const field = F.buildField();
+      if (!field.ok) return { ok: false, why: field.why, n: 0 };
+      let n = 0;
+      for (const type of P.typesFor(field)) {
+        const perf = P.perfFor(type);
+        for (const dir of [1, -1]) n += field.slots.filter((x) => P.slotUsable(field, perf, x, dir)).length;
+      }
+      return { ok: true, n };
+    };
+    T.clearObstacles();
+    T.clearPlatforms();
+    new A.Airport({ add() {} });
+    new APR.Apron({ add() {} }, 'low');
+    const before = count();
+    LOOK.dress(new KIT.Batch(), a, []);
+    const after = count();
+    if (before.ok) fields++;
+    if (after.n < before.n || before.ok !== after.ok) worse++;
+    lines.push(`${a.code} ${before.ok ? before.n : 'no traffic (' + before.why + ')'}${after.n !== before.n ? ' -> ' + after.n : ''}`);
+  }
+  T.clearObstacles();
+  T.clearPlatforms();
+  ok('at every field, its landmarks take no stand, pushback or taxi route from any aircraft (the traffic planner, with and without them)', worse === 0 && fields >= 8,
+    `${lines.join(', ')} (${Math.round(performance.now() - t0)} ms)`);
+}
+
+/* ================================================================== *
+ * Short strips: no runway start for a type that cannot take off there
+ * (checker, wave 17b: an A320 on Gull Cay's 580 m)
+ * ================================================================== */
+{
+  const SPW = await import(SRC + 'world/spawns.js');
+  const TY = await import(SRC + 'aircraft/types.js');
+  const TO = await import(SRC + 'aircraft/takeoff-runs.js');
+  const G = await import(SRC + 'features/giants.js');
+  const a320 = TY.getAircraft('a320');
+  const sky = TY.getAircraft('skylark');
+  const at = (id) => { PV.setDeparture(id); T.applyMap(def); A.refreshRunways(); };
+  at('gull');
+  const ch = SPW.spawnChoices(PV.WORLD_PREVIEW_ID, 'airliner', { type: a320 }).map((c) => c.id);
+  const auto = SPW.resolveSpawn(PV.WORLD_PREVIEW_ID, 'airliner', { type: a320, choice: 'auto' });
+  const asked = SPW.resolveSpawn(PV.WORLD_PREVIEW_ID, 'airliner', { type: a320, choice: 'air' });
+  const skyCh = SPW.spawnChoices(PV.WORLD_PREVIEW_ID, 'light', { type: sky }).map((c) => c.id);
+  const line = G.shortRunwayLine(a320, { airborne: true });
+  ok('Gull Cay (580 m): an A320 is not offered the runway, starts in the air, and is told why and where to go', !ch.includes('runway') && ch.includes('air') && auto.kind === 'hover' && asked.kind === 'hover' && /580 m/.test(line) && /Haven|Marram|Farhold|Aldermere/.test(line),
+    `choices ${ch.join(' ')}; auto ${auto.kind}; "${line}"`);
+  ok('Gull Cay: a Skylark still gets its runway start', skyCh.includes('runway') && TO.takeoffNeedM(sky, 'tarmac') < 580, `choices ${skyCh.join(' ')}, needs ${TO.takeoffNeedM(sky)} m`);
+  at('haven');
+  const hv = SPW.spawnChoices(PV.WORLD_PREVIEW_ID, 'airliner', { type: a320 }).map((c) => c.id);
+  ok('Haven (2,800 m): the A320 keeps its runway start', hv.includes('runway') && !hv.includes('air'), hv.join(' '));
+  // Every field: a runway start only for a type whose run fits.
+  let wrong = [];
+  for (const a of D.airports) {
+    at(a.id);
+    for (const t of TY.AIRCRAFT) {
+      if (t.class === 'Helicopter') continue;
+      const cls = SPW.spawnClassOf(t);
+      const list = SPW.spawnChoices(PV.WORLD_PREVIEW_ID, cls, { type: t });
+      const offered = list.some((c) => c.id === 'runway');
+      const need = Math.max(TO.takeoffNeedM(t, a.surface), Number(t.minRunway) || 0);
+      if (offered !== (a.length >= need)) wrong.push(`${a.code} ${t.id} offered ${offered} (needs ${need} m of ${a.length})`);
+      // Nor a stand, gate or hangar on a strip it cannot fly out of (checker, wave 18: Brackwater offered an A320 "Gate").
+      const ground = list.filter((c) => c.id !== 'auto' && c.id !== 'air' && c.id !== 'carrier' && c.kind !== 'pad');
+      if (a.length < need && cls !== 'water' && ground.length) wrong.push(`${a.code} ${t.id} offered ${ground.map((c) => c.id).join('+')} on a strip it cannot leave`);
+    }
+  }
+  ok('every field offers the runway start (or a stand or gate) only to the types that can take off from it', wrong.length === 0, wrong.slice(0, 4).join('; ') || `${D.airports.length} fields`);
+  // The regular maps keep exactly what they had: The Stacks' 420 m strip still offers an A320 its runway.
+  T.applyMap('stacks');
+  A.refreshRunways();
+  const st = SPW.spawnChoices('stacks', 'airliner', { type: a320 }).map((c) => c.id);
+  ok('the regular maps are unchanged (The Stacks still lists the runway for an A320)', st.includes('runway') && !st.includes('air') && SPW.runwayNeedM(a320) === 0, st.join(' '));
+  T.applyMap(def);
+  // The table is the flight model's.
+  const TOOL = await import(new URL('../../tools/takeoff-runs.mjs', import.meta.url).href);
+  const measured = await TOOL.measureRuns();
+  const drift = Object.entries(measured).filter(([id, m]) => m != null && Math.abs(m - (TO.TAKEOFF_RUN_M[id] || 0)) > m * 0.15);
+  ok('the take-off runs table is the flight model\'s (within 15%; tools/takeoff-runs.mjs --write)', drift.length === 0 && Object.keys(measured).length >= 20,
+    drift.map(([id, m]) => `${id} measured ${m}, table ${TO.TAKEOFF_RUN_M[id]}`).join('; ') || `${Object.keys(measured).length} types`);
+  PV.setDeparture('haven');
+  T.applyMap(def);
+  A.refreshRunways();
+}
+
+/* ================================================================== *
+ * The carrier is not ground (owner, Oct 26: a terrain-textured box)
+ * ================================================================== */
+{
+  const CB = await import(SRC + 'world/carrier-berth.js');
+  const CV = { y: 104, hw: 180, hd: 750 }; // carrier.js DECK: 5x a 300 x 72 m ship, deck 20.8 m x 5
+  const lines = [];
+  let boxes = 0;
+  let wet = 0;
+  for (const a of D.airports) {
+    PV.setDeparture(a.id);
+    T.applyMap(def);
+    A.refreshRunways();
+    T.clearPlatforms();
+    const b = CB.chooseBerth({ map: def, airport: T.AIRPORT, heightAt: T.heightAt });
+    // The deck, registered the way carrier.js registers it.
+    T.addPlatform(b.x, b.z, CV.hw * 2, CV.hd * 2, CV.y, 'test carrier');
+    let deep = b.why === 'map';
+    for (const fx of [-1, 0, 1]) for (const fz of [-1, -0.5, 0, 0.5, 1]) if (!(T.groundHeightAt(b.x + fx * CV.hw, b.z + fz * CV.hd) < -12)) deep = false;
+    if (deep) wet++;
+    // The ground tile over the ship, built on this thread with the deck registered (the stream's prime).
+    const tile = TL.buildTileData(T, Math.floor(b.x / 2048) * 2048 + 1024, Math.floor(b.z / 2048) * 2048 + 1024, 2048, 32);
+    let hi = -Infinity;
+    if (tile) {
+      for (let k = 0; k < tile.pos.length / 3; k++) {
+        const x = Math.floor(b.x / 2048) * 2048 + 1024 + tile.pos[k * 3];
+        const z = Math.floor(b.z / 2048) * 2048 + 1024 + tile.pos[k * 3 + 2];
+        if (Math.abs(x - b.x) <= CV.hw && Math.abs(z - b.z) <= CV.hd) hi = Math.max(hi, tile.pos[k * 3 + 1]);
+      }
+    }
+    if (hi > 0) boxes++;
+    lines.push(`${a.code} ${b.why} ${tile ? `ground ${hi.toFixed(0)} m` : 'all sea'}`);
+    ok(`${a.code} the carrier's deck is still where the wheels land`, Math.abs(T.heightAt(b.x, b.z) - CV.y) < 1e-6 && T.groundHeightAt(b.x, b.z) < -12, `heightAt ${T.heightAt(b.x, b.z).toFixed(1)}, ground ${T.groundHeightAt(b.x, b.z).toFixed(1)}`);
+    T.clearPlatforms();
+  }
+  ok('every field\'s carrier is moored in deep water at its authored berth', wet === D.airports.length, lines.join(', '));
+  ok('no streamed ground tile is raised to the carrier\'s deck (the "terrain box")', boxes === 0, `${boxes} boxes`);
+}
+
+/* ================================================================== *
  * Tier spacing vs Kestrel's own chunk
  * ================================================================== */
 {
@@ -392,6 +623,378 @@ const PHY = await import(SRC + 'aircraft/physics.js');
 const PLANMOD = await import(new URL('../../tools/worldmap/world-plan.mjs', import.meta.url).href);
 const WPF = await import(SRC + 'features/world-preview.js');
 
+/* ================================================================== *
+ * Real land cover (owner, Oct 26: "maps sad as hell" — flat green carpet)
+ * ================================================================== */
+{
+  const LC = await import(SRC + 'world/worldmap/landcover.js');
+  const FL = await import(SRC + 'world/worldmap/flora.js');
+  PV.setDeparture('haven');
+  T.applyMap(def);
+  const cov = LC.coverFor(T);
+  const stats = (x0, x1, z0, z1, step = 250) => {
+    const acc = [0, 0, 0, 0, 0, 0, 0, 0];
+    const hs = [];
+    let n = 0;
+    let steep = 0;
+    for (let x = x0; x < x1; x += step) {
+      for (let z = z0; z < z1; z += step) {
+        const h = T.groundHeightAt(x, z);
+        if (h < 1.5) continue;
+        const sl = Math.hypot(T.groundHeightAt(x + 20, z) - T.groundHeightAt(x - 20, z), T.groundHeightAt(x, z + 20) - T.groundHeightAt(x, z - 20)) / 40;
+        const c = cov(x, z, h, sl);
+        for (let i = 0; i < 8; i++) acc[i] += c[i];
+        hs.push(h);
+        if (sl > 0.15) steep++;
+        n++;
+      }
+    }
+    hs.sort((a, b) => a - b);
+    return { n, f: acc.map((v) => v / n), p10: hs[Math.floor(n * 0.1)], p50: hs[Math.floor(n * 0.5)], p90: hs[Math.floor(n * 0.9)], steep: steep / n };
+  };
+  const main = stats(-170000, -130000, -5000, 35000);
+  const line = (k, s) => `${k}: farm ${(s.f[3] * 100).toFixed(0)}%, forest ${(s.f[4] * 100).toFixed(0)}%, heath ${(s.f[5] * 100).toFixed(0)}%, marsh ${(s.f[6] * 100).toFixed(0)}%, town ${(s.f[7] * 100).toFixed(1)}%, ground ${s.p10.toFixed(0)}/${s.p50.toFixed(0)}/${s.p90.toFixed(0)} m`;
+  ok('the mainland is a patchwork, not a carpet: farmland, forest and heath each a real share; towns on it', main.f[3] > 0.15 && main.f[4] > 0.25 && main.f[5] > 0.03 && main.f[7] > 0.001, line('mainland', main));
+  ok('the mainland has relief: rolling hills (the middle half spans 120 m or more), not one flat plain', main.p90 - main.p10 >= 120 && main.steep > 0.01, `${line('mainland', main)}, ${(main.steep * 100).toFixed(1)}% steeper than 15%`);
+  const north = stats(-50000, -34000, -146000, -130000);
+  const south = stats(104000, 113000, 83000, 92000);
+  ok('the climate by latitude: heath and rock in the cold north, little farming; the tropics farmed and wooded', north.f[5] > 0.35 && north.f[3] < 0.2 && south.f[3] + south.f[4] > 0.4,
+    `${line('Eider Island', north)}; ${line('Frigate Island', south)}`);
+  // Beaches of different widths: the sand band's top along the coast varies.
+  let narrow = 0;
+  let wide = 0;
+  for (let i = 0; i < 400; i++) {
+    const x = -150000 + Math.cos(i) * 23500;
+    const z = 12000 + Math.sin(i) * 23500;
+    const c = LC.coverAt(x, z, 6, 0.02, false, new Float32Array(8));
+    if (c[0] > 0.6) wide++;
+    else if (c[0] < 0.1) narrow++;
+  }
+  ok('beaches vary: wide sandy bays and narrow shingle strips round the same coast', narrow > 40 && wide > 40, `at 6 m up: ${wide} sandy, ${narrow} past the sand, of 400`);
+  // Cliffs where the plan has them.
+  const cliffIsl = D.islands.filter((i) => i.cliff);
+  let cliffs = 0;
+  for (const isl of cliffIsl) {
+    let best = 0;
+    for (let a = 0; a < 64; a++) {
+      for (let r = isl.radius * 0.5; r < isl.radius * 1.45; r += 10) {
+        const x = isl.cx + Math.cos((a / 64) * 6.283) * r;
+        const z = isl.cz + Math.sin((a / 64) * 6.283) * r;
+        const g = Math.abs(T.groundHeightAt(x + 8, z) - T.groundHeightAt(x - 8, z)) / 16;
+        if (T.groundHeightAt(x, z) > -2 && T.groundHeightAt(x, z) < 30) best = Math.max(best, g);
+      }
+    }
+    if (best > 1) cliffs++;
+  }
+  ok('the cold north\'s rocks and the Sound\'s stacks stand on cliffs (a coast steeper than 45 degrees)', cliffIsl.length >= 6 && cliffs >= cliffIsl.length * 0.7, `${cliffs} of ${cliffIsl.length} cliff islands`);
+  // Rivers run downhill to the sea in a channel; lakes sit in their bowls.
+  const R = D.rivers || [];
+  const L = D.lakes || [];
+  const bad = [];
+  for (const r of R) {
+    for (let i = 1; i < r.path.length; i++) if (r.path[i][2] > r.path[i - 1][2] + 1e-6) bad.push(`${r.name} rises at ${i}`);
+    const last = r.path[r.path.length - 1];
+    if (last[2] !== 0 || T.groundHeightAt(last[0], last[1]) > -0.5) bad.push(`${r.name} does not reach the sea`);
+    for (let i = 2; i < r.path.length - 3; i += 3) {
+      const [x, z, lv] = r.path[i];
+      if (!(T.groundHeightAt(x, z) < lv - 1)) bad.push(`${r.name} no channel at ${i}`);
+      for (const a of D.airports) {
+        if (Math.abs(z - a.z) < 900 && Math.abs(x - a.x) < a.length / 2 + 8000) bad.push(`${r.name} in ${a.code}'s lanes at ${i}`);
+        const st = a.site;
+        if (x > st.x0 && x < st.x1 && z > st.z0 && z < st.z1) bad.push(`${r.name} on ${a.code}'s site at ${i}`);
+      }
+      for (const t of D.towns) if (Math.hypot(x - t.cx, z - t.cz) < t.radius) bad.push(`${r.name} through ${t.name} at ${i}`);
+    }
+  }
+  for (const l of L) {
+    if (!(T.groundHeightAt(l.x, l.z) < l.level - 2)) bad.push(`${l.name} has no bowl`);
+    for (let a = 0; a < 12; a++) if (T.groundHeightAt(l.x + Math.cos(a) * (l.r + 300), l.z + Math.sin(a) * (l.r + 300)) < l.level) bad.push(`${l.name} spills at ${a}`);
+  }
+  ok('rivers run downhill in a channel to the sea, clear of every runway, site, town and road; lakes sit in their bowls', R.length >= 5 && L.length >= 4 && bad.length === 0,
+    bad.slice(0, 5).join('; ') || `${R.length} rivers (${R.reduce((s2, r) => s2 + r.path.length, 0)} points), ${L.length} lakes`);
+  // The forests have trees in them, densely, and the cards fill them.
+  const ctx = FL.floraContext(D);
+  T.clearPlatforms();
+  let best = { cell: null, trees: 0, cards: 0 };
+  for (const [ix, iz] of [[-73, 2], [-72, 5], [-74, 6], [-71, 1], [-66, 3]]) {
+    const trees = FL.placeCell(T, ctx, ix, iz, 400);
+    const cards = FL.placeCell(T, ctx, ix, iz, 2400, 'cards');
+    const n = trees ? trees.length / 6 : 0;
+    const m = cards ? cards.length / 6 : 0;
+    if (m > best.cards) best = { cell: `${ix}:${iz}`, trees: n, cards: m };
+  }
+  ok('a forest cell has its trees and, between them, a thousand tree cards or more', best.trees > 150 && best.cards > 1000, JSON.stringify(best));
+  const shipped = M.getMap(PV.WORLD_PREVIEW_ID);
+  ok('the land cover is the World Map\'s only: no regular map asks for it', M.MAPS.every((m) => !m.landcover && !m.calm && !m.rivers) && !!shipped.landcover, `${M.MAPS.length} maps`);
+}
+
+/* ================================================================== *
+ * Towns and highways (owner: "such a nice town not even a highway")
+ * ================================================================== */
+{
+  PV.setDeparture('haven');
+  T.applyMap(def);
+  A.refreshRunways();
+  const roads = D.roads;
+  const net = roads.filter((r) => r.kind);
+  const hw = roads.filter((r) => r.kind === 'highway');
+  const rings = roads.filter((r) => r.kind === 'ring');
+  // Connectivity: every town on the mainland reachable from the capital along the roads.
+  const ends = (r) => [r.path[0], r.path[r.path.length - 1]];
+  const nodes = [];
+  const nodeOf = (x, z) => {
+    let n = nodes.find((q) => Math.hypot(q.x - x, q.z - z) < 70);
+    if (!n) nodes.push((n = { x, z, adj: new Set() }));
+    return n;
+  };
+  for (const r of roads) {
+    if (r.kind === 'ring') {
+      const n = nodeOf(r.ring.x, r.ring.z);
+      for (const q of nodes) if (q !== n && Math.hypot(q.x - n.x, q.z - n.z) < r.ring.r + 60) { q.adj.add(n); n.adj.add(q); }
+      continue;
+    }
+    const [a, b] = ends(r).map((p) => nodeOf(p[0], p[1]));
+    a.adj.add(b);
+    b.adj.add(a);
+  }
+  // Rings join whatever ends at them (done after all the ends are known).
+  for (const r of rings) {
+    const n = nodeOf(r.ring.x, r.ring.z);
+    for (const q of nodes) if (q !== n && Math.hypot(q.x - n.x, q.z - n.z) < r.ring.r + 60) { q.adj.add(n); n.adj.add(q); }
+  }
+  const townNode = (t) => nodes.filter((n) => Math.hypot(n.x - t.cx, n.z - t.cz) < t.radius * 1.1);
+  // A town joins every road that reaches it (its own streets run between them).
+  for (const t of D.towns) {
+    const tn = townNode(t);
+    for (const a of tn) for (const b of tn) if (a !== b) a.adj.add(b);
+  }
+  const reach = (from) => {
+    const seen = new Set(from);
+    const q = [...from];
+    while (q.length) for (const m of q.shift().adj) if (!seen.has(m)) { seen.add(m); q.push(m); }
+    return seen;
+  };
+  const mainTowns = D.towns.filter((t) => Math.hypot(t.cx + 150000, t.cz - 12000) < 30000 || ['Aldermere', 'Highfold'].includes(t.name));
+  const fromCap = reach(townNode(D.towns.find((t) => t.name === 'Aldermere')));
+  const cut = mainTowns.filter((t) => !townNode(t).some((n) => fromCap.has(n)));
+  ok('every town on the mainland is joined to the capital by road', mainTowns.length >= 7 && cut.length === 0, cut.map((t) => t.name).join(', ') || `${mainTowns.length} towns`);
+  const hwLen = hw.reduce((s2, r) => s2 + r.path.reduce((a, p, i, ar) => a + (i ? Math.hypot(p[0] - ar[i - 1][0], p[1] - ar[i - 1][1]) : 0), 0), 0) / 2000;
+  ok('a dual-carriageway highway (two carriageways) runs between the towns and their fields, with roundabouts where it meets a town', hw.length >= 8 && hw.length % 2 === 0 && hwLen > 30 && rings.length >= hw.length / 2,
+    `${hw.length / 2} highways, ${hwLen.toFixed(1)} km, ${rings.length} roundabouts, ${net.filter((r) => r.kind === 'road').length} country roads`);
+  // Grades, and keep-outs.
+  const bad = [];
+  for (const r of net) {
+    for (let i = 1; i < r.path.length; i++) {
+      const run = Math.hypot(r.path[i][0] - r.path[i - 1][0], r.path[i][1] - r.path[i - 1][1]);
+      if (run > 1 && Math.abs(r.path[i][2] - r.path[i - 1][2]) / run > 0.075) bad.push(`${r.name} ${((Math.abs(r.path[i][2] - r.path[i - 1][2]) / run) * 100).toFixed(1)}% at ${i}`);
+      const [x, z] = r.path[i];
+      for (const a of D.airports) {
+        if (Math.abs(z - a.z) < 700 && Math.abs(x - a.x) < a.length / 2 + 6000) bad.push(`${r.name} in ${a.code}'s lanes`);
+      }
+    }
+  }
+  ok('no network road steeper than 7.5%, none in any runway\'s approach lanes', bad.length === 0, bad.slice(0, 4).join('; ') || `${net.length} roads`);
+  // Bridges at every river crossing: the deck is what the wheels touch, the river stays under it.
+  const B = D.bridges || [];
+  const bb = [];
+  for (const b of B) {
+    const mx = (b.ax + b.bx) / 2;
+    const mz = (b.az + b.bz) / 2;
+    if (Math.abs(T.heightAt(mx, mz) - b.y) > 0.01) bb.push(`${b.road} deck ${T.heightAt(mx, mz).toFixed(1)} vs ${b.y}`);
+    if (!(T.groundHeightAt(mx, mz) < b.level)) bb.push(`${b.road} river filled under the bridge`);
+    if (b.y < b.level + 7.5) bb.push(`${b.road} deck too low`);
+  }
+  ok('a bridge where a road crosses a river: a deck the wheels land on, 7.5 m or more over the water, the channel open under it', B.length >= 2 && bb.length === 0, bb.slice(0, 4).join('; ') || `${B.length} decks over ${[...new Set(B.map((b) => b.river))].join(', ')}`);
+  /*
+   * And the road stays ON the deck the whole way across (checker, wave 18):
+   * the deck is one straight span, and Larkhollow's highway bent 13 m off it
+   * mid-river, so half the carriageway ran over the river bed under the water.
+   * Every 4 m of every road: inside a river's channel only on a deck, and
+   * between a bridge's ends its tarmac and verge (roads.js PAVED_HALF + VERGE)
+   * inside the deck's width.
+   */
+  {
+    const RD = await import(SRC + 'world/roads.js');
+    const edge = RD.PAVED_HALF + RD.VERGE;
+    const wet = [];
+    const off = [];
+    const inChannel = (x, z) => {
+      for (const rv of D.rivers || []) {
+        const p = rv.path;
+        for (let k = 1; k < p.length; k++) {
+          const ax = p[k - 1][0];
+          const az = p[k - 1][1];
+          const ex = p[k][0] - ax;
+          const ez = p[k][1] - az;
+          const l2 = ex * ex + ez * ez || 1;
+          const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / l2));
+          const hw = p[k - 1][3] || rv.halfWidth;
+          if (Math.hypot(ax + ex * t - x, az + ez * t - z) < hw) return rv.name;
+        }
+      }
+      return null;
+    };
+    for (const r of roads) {
+      const p = r.path;
+      for (let i = 1; i < p.length; i++) {
+        const L = Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]);
+        const n = Math.max(1, Math.ceil(L / 4));
+        for (let k = 0; k < n; k++) {
+          const x = p[i - 1][0] + ((p[i][0] - p[i - 1][0]) * k) / n;
+          const z = p[i - 1][1] + ((p[i][1] - p[i - 1][1]) * k) / n;
+          const rv = inChannel(x, z);
+          if (rv && !T.bridgeAt(x, z)) wet.push(`${r.name} in ${rv} at (${Math.round(x)}, ${Math.round(z)})`);
+        }
+      }
+    }
+    for (const b of B) {
+      const r = roads.find((q) => q.name === b.road);
+      if (!r) {
+        off.push(`${b.road}: no such road`);
+        continue;
+      }
+      const ia = r.path.findIndex((q) => Math.hypot(q[0] - b.ax, q[1] - b.az) < 1);
+      const ib = r.path.findIndex((q) => Math.hypot(q[0] - b.bx, q[1] - b.bz) < 1);
+      if (ia < 0 || ib < ia) {
+        off.push(`${b.road}: the deck's ends are not on the road`);
+        continue;
+      }
+      const dx = b.bx - b.ax;
+      const dz = b.bz - b.az;
+      const len = Math.hypot(dx, dz);
+      let worst = 0;
+      for (let i = ia; i <= ib; i++) worst = Math.max(worst, Math.abs((r.path[i][0] - b.ax) * dz - (r.path[i][1] - b.az) * dx) / len);
+      if (worst > b.halfWidth - edge) off.push(`${b.road} ${worst.toFixed(1)} m off its deck's line (the deck is ${b.halfWidth} m each side, the road ${edge})`);
+    }
+    ok('every road stays on its bridge across the river: never in a river channel off a deck, the carriageway inside the deck\'s width', wet.length === 0 && off.length === 0,
+      [...off, ...wet].slice(0, 4).join('; ') || `${roads.length} roads every 4 m, ${B.length} decks`);
+  }
+  /*
+   * Junctions meet, and the two sides of a dual carriageway stay side by side
+   * (checker, wave 18): up Larkhollow's hill the eastbound was profiled from
+   * the valley and the westbound from the town, and arrived 53 m apart, a
+   * cliff between them and under the roundabout; the high street met the
+   * other roundabout 8 m up a step.
+   */
+  {
+    const steps = [];
+    for (const g of rings) {
+      const ry = g.path[0][2];
+      for (const r of roads) {
+        if (r === g) continue;
+        for (const p of [r.path[0], r.path[r.path.length - 1]]) {
+          if (Math.hypot(p[0] - g.ring.x, p[1] - g.ring.z) < g.ring.r + 60 && Math.abs(p[2] - ry) > 0.6) steps.push(`${r.name} meets ${g.name} ${(p[2] - ry).toFixed(1)} m off`);
+        }
+      }
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let k = 0; k < 48; k++) {
+        const h = T.heightAt(g.ring.x + Math.cos((k / 48) * Math.PI * 2) * g.ring.r, g.ring.z + Math.sin((k / 48) * Math.PI * 2) * g.ring.r);
+        lo = Math.min(lo, h);
+        hi = Math.max(hi, h);
+      }
+      if (hi - lo > 2.5) steps.push(`${g.name}'s ring is ${(hi - lo).toFixed(1)} m out of level`);
+    }
+    const apart = [];
+    for (const e of hw.filter((r) => /eastbound/.test(r.name))) {
+      const w = hw.find((r) => r.name === e.name.replace('eastbound', 'westbound'));
+      if (!w || w.path.length !== e.path.length) {
+        apart.push(`${e.name}: no matching westbound`);
+        continue;
+      }
+      const n = e.path.length;
+      let worst = 0;
+      for (let i = 0; i < n; i++) worst = Math.max(worst, Math.abs(e.path[i][2] - w.path[n - 1 - i][2]));
+      if (worst > 1) apart.push(`${e.name.replace(' (eastbound)', '')}: the two sides ${worst.toFixed(1)} m apart`);
+    }
+    ok('every road meets its roundabout at the roundabout\'s height, each ring is level, and a dual carriageway\'s two sides stay level with each other', steps.length === 0 && apart.length === 0,
+      [...steps, ...apart].slice(0, 4).join('; ') || `${rings.length} roundabouts, ${hw.length / 2} highways`);
+  }
+  // Towns: the capital a city with a downtown; villages laid along streets.
+  const SC = await import(SRC + 'world/scenery.js');
+  const cap = D.towns.find((t) => t.name === 'Aldermere');
+  const plan = SC.planTown({ cx: cap.cx, cz: cap.cz, radius: cap.radius, count: cap.count, minH: cap.elev - 25, maxH: cap.elev + 45, towers: cap.towers, towerMaxH: cap.towerMaxH }, 1);
+  const kinds = {};
+  for (const sp of plan.spots) kinds[sp.kind || 'house'] = (kinds[sp.kind || 'house'] || 0) + 1;
+  ok('the capital is a city: hundreds of buildings, a downtown of towers, streets (and ten villages in the country)', plan.spots.length >= 350 && (kinds.tower || 0) >= 15 && plan.streets.length >= 12 && D.towns.filter((t) => t.village).length >= 8,
+    `${plan.spots.length} buildings ${JSON.stringify(kinds)}, ${plan.streets.length} streets; villages ${D.towns.filter((t) => t.village).map((t) => t.name).join(', ')}`);
+  // The ambient cars drive the highways too.
+  const LN = await import(SRC + 'features/ambient/lanes.js');
+  const lanesNet = LN.buildLanes({ streets: [], roads, loops: [], town: null });
+  const onHw = lanesNet.lanes.filter((l) => l.meta && /highway/.test(l.meta.name || '')).length;
+  ok('the ambient cars have lanes on the highways and the roundabouts', lanesNet.lanes.length > roads.length && (onHw > 0 || lanesNet.lanes.length >= roads.length * 2), `${lanesNet.lanes.length} lanes from ${roads.length} roads`);
+  /*
+   * ...and there ARE cars (checker, wave 18): the World Map is not one of the
+   * 30 maps in world/ambient.js, so it had no population and the lanes were
+   * empty. Every tier puts vehicles on them, and they land on the highways.
+   */
+  {
+    const AMB = await import(SRC + 'world/ambient.js');
+    const { CarLayer } = await import(SRC + 'features/ambient/cars.js');
+    const per = {};
+    for (const q of ['low', 'medium', 'high', 'ultra']) per[q] = AMB.countsFor(PV.WORLD_PREVIEW_ID, q).ground.reduce((s2, g) => s2 + g.count, 0);
+    const layer = new CarLayer(new THREE.Group(), lanesNet, { shadows: false });
+    for (const g of AMB.countsFor(PV.WORLD_PREVIEW_ID, 'high').ground) layer.populate(g.kind, g.count, { laneKinds: g.on === 'roads' ? ['road'] : ['street', 'road'] });
+    const onHwy = layer.cars.filter((c) => c.lane >= 0 && /highway/.test(lanesNet.lanes[c.lane].name || '')).length;
+    const notRegular = M.MAPS.every((m) => AMB.ambientFor(m.id) !== AMB.ambientFor(PV.WORLD_PREVIEW_ID)) && !AMB.AMBIENT_IDS.includes(PV.WORLD_PREVIEW_ID);
+    ok('the World Map has traffic on its roads: cars, vans, lorries and buses at every tier, some on the highways (the regular maps\' populations untouched)', per.low >= 10 && per.low < per.high && layer.cars.length === per.high && onHwy > 0 && notRegular,
+      `${JSON.stringify(per)} vehicles by tier, ${onHwy} of ${layer.cars.length} placed on the highways`);
+    layer.dispose();
+  }
+}
+
+/* ================================================================== *
+ * Real scenery models (owner: "we need more models"): CC0, small, placed
+ * ================================================================== */
+{
+  const PR = await import(SRC + 'world/worldmap/props.js');
+  const GLB = await import(SRC + 'vehicles/glb.js');
+  const { readFileSync, statSync } = await import('node:fs');
+  PV.setDeparture('haven');
+  T.applyMap(def);
+  const placed = PR.placeProps(T, D);
+  const counts = Object.fromEntries(Object.entries(placed).map(([k, v]) => [k, v.length]));
+  const bad = [];
+  for (const [k, list] of Object.entries(placed)) {
+    for (const p of list) {
+      const [x, , z] = p;
+      for (const a of D.airports) if (Math.abs(z - a.z) < 900 && Math.abs(x - a.x) < a.length / 2 + 7000) bad.push(`${k} in ${a.code}'s lanes`);
+      if (k !== 'pier-section' && T.flatAt(x, z)) bad.push(`${k} on a field or town`);
+    }
+  }
+  ok('the scenery models stand where they belong: every kind placed, none in a runway\'s lanes or on a field or town', PR.PROP_MODELS.every((m) => counts[m] > 0) && bad.length === 0,
+    bad.slice(0, 4).join('; ') || JSON.stringify(counts));
+  let total = 0;
+  const lines = [];
+  let parsed = 0;
+  for (const m of PR.PROP_MODELS) {
+    const file = new URL(`../../assets/models/scenery/${m}.glb`, import.meta.url);
+    const buf = readFileSync(file);
+    total += statSync(file).size;
+    const { stats } = GLB.parseGLB(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length));
+    let colours = false;
+    GLB.parseGLB(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length)).scene.traverse((o) => { if (o.geometry && o.geometry.attributes.color) colours = true; });
+    if (stats.triangles <= 2000 && colours) parsed++;
+    lines.push(`${m} ${stats.triangles} tris`);
+  }
+  const lic = readFileSync(new URL('../../assets/models/LICENSES.md', import.meta.url), 'utf8');
+  const cred = readFileSync(new URL('../../src/ui/credits.js', import.meta.url), 'utf8');
+  ok('every model is a small vertex-coloured CC0 file the game\'s own reader takes, credited with its source', parsed === PR.PROP_MODELS.length && total < 1e6 && PR.PROP_MODELS.every((m) => lic.includes(`scenery/${m}.glb`)) && (cred.match(/polyhaven\.com\/a\//g) || []).length >= 5,
+    `${lines.join(', ')}; ${(total / 1024).toFixed(0)} KB in all`);
+  // Drawn only near the camera.
+  const props = new PR.Props({ placed, quality: 'low' });
+  const g = new THREE.BoxGeometry(1, 1, 1);
+  for (const m of PR.PROP_MODELS) props.setModel(m, g);
+  const pole = placed['utility-pole'][0];
+  props.update({ x: pole[0], z: pole[2] }, 1);
+  const near = props.stats().drawn;
+  props.update({ x: 0, z: 190000 }, 1);
+  const far = props.stats().drawn;
+  ok('only the props near the camera are drawn (a few, not thousands), none from far out at sea', near['utility-pole'] > 0 && Object.values(near).every((n) => n <= PR.PROP_TIERS.low.max) && Object.values(far).every((n) => n === 0),
+    `near a pole: ${JSON.stringify(near)}; at sea: ${JSON.stringify(far)}`);
+  props.dispose();
+}
+
 /* ---- the sea is deterministic, and is the plan ---- */
 {
   const again = PLANMOD.fillerIslands();
@@ -523,8 +1126,32 @@ const WPF = await import(SRC + 'features/world-preview.js');
   NF.setNavField(WPF.navFor(PV.airportById('frigate'), 260));
   atc.cool = 0;
   atc.update(0.1);
-  const handover = said.find((x) => /contact Frigate Tower/.test(x) && /two seven/.test(x));
-  ok('the tower is the field you are at: name, runway into the wind, a handover', atc.field === 'Frigate' && atc.runwayCall === 'two seven' && !!handover, `${atc.field} / ${atc.runwayCall} / "${handover || said.join(' | ')}"`);
+  const frigateRadio = PV.airportById('frigate').name.split(' ')[0];
+  const handover = said.find((x) => new RegExp(`contact ${frigateRadio} Tower`).test(x) && /two seven/.test(x));
+  ok('the tower is the field you are at: name, runway into the wind, a handover', atc.field === frigateRadio && atc.runwayCall === 'two seven' && !!handover, `${atc.field} / ${atc.runwayCall} / "${handover || said.join(' | ')}"`);
+  // The take-off clearance is not lost to the pause after the last call (checker, wave 17b).
+  {
+    const hv = PV.airportById('haven');
+    NF.setNavField(WPF.navFor(hv, 80));
+    const ac = fakeSim.aircraft;
+    const was = { ...ac, pos: ac.pos.clone(), controls: { ...ac.controls } };
+    ac.pos.set(hv.x - hv.length / 2 + 80, hv.elev, hv.z);
+    ac.onGround = true;
+    ac.airborneTime = 0;
+    ac.controls.throttle = 1;
+    atc.reset();
+    atc._navId = hv.id;
+    atc.said.start = true;
+    atc.cool = 4; // the ground's call a moment ago
+    said.length = 0;
+    atc.update(0.1);
+    const early = said.some((x) => /cleared for take-off/.test(x));
+    for (let i = 0; i < 60; i++) atc.update(0.1);
+    const later = said.some((x) => /cleared for take-off/.test(x));
+    ok('the take-off clearance waits for the pause after the last call and is then given (not lost)', !early && later, `during the pause ${early}, after it ${later}: ${said.join(' | ')}`);
+    Object.assign(ac, was);
+    NF.setNavField(WPF.navFor(PV.airportById('frigate'), 260));
+  }
   NF.setNavField(null);
   ok('with no field named the tower is the map\'s, as on every other map', atc.field === (M.getMap(PV.WORLD_PREVIEW_ID).name.split(' ')[0]) && atc.runwayCall === 'zero nine', `${atc.field} / ${atc.runwayCall}`);
 
@@ -664,6 +1291,31 @@ function A_refresh() { A.refreshRunways(); }
   }
   ok('tier-scaled: Low very sparse, more at Medium, more again at High, never over the pool', counts.low.drawn > 0 && counts.low.drawn < counts.medium.drawn && counts.medium.drawn < counts.high.drawn && counts.low.drawn <= 600 && Object.values(counts).every((c) => c.drawn <= c.cap),
     Object.entries(counts).map(([q, c]) => `${q} ${c.drawn} of ${c.cap}`).join(', '));
+  // The worker dies mid-session: the trees fall back to this thread like the ground does (checker, wave 17b).
+  {
+    const fr = PV.airportById('frigate');
+    let clock = 0;
+    const listeners = [];
+    const deadWorker = { postMessage() {}, addEventListener(t, f) { listeners.push(f); }, removeEventListener() {} };
+    const f = new FL.Flora({ treeGeometry: () => new THREE.BoxGeometry(), ctx, T, worker: deadWorker, quality: 'medium', now: () => clock });
+    for (let i = 0; i < 5; i++) f.update({ x: fr.x + 2500, z: fr.z - 2500 }, null, 1e9);
+    const stuck = f.stats();
+    clock += FL.WORKER_TIMEOUT_MS + 100;
+    for (let i = 0; i < 30; i++) f.update({ x: fr.x + 2500, z: fr.z - 2500 }, null, 1e9);
+    const after = f.stats();
+    f.dispose();
+    // And when the ground says it has given up on the shared worker.
+    let ok2 = true;
+    const g = new FL.Flora({ treeGeometry: () => new THREE.BoxGeometry(), ctx, T, worker: deadWorker, quality: 'medium', now: () => 0, workerOk: () => ok2 });
+    g.update({ x: fr.x + 2500, z: fr.z - 2500 }, null, 1e9);
+    ok2 = false;
+    for (let i = 0; i < 30; i++) g.update({ x: fr.x + 2500, z: fr.z - 2500 }, null, 1e9);
+    const viaGround = g.stats();
+    g.dispose();
+    ok('a terrain worker that dies mid-session: the trees are planted here instead (timeout, or the ground giving up on it)',
+      stuck.drawn === 0 && stuck.pending > 0 && after.drawn > 0 && after.pending === 0 && after.cpuCells > 0 && viaGround.drawn > 0 && viaGround.pending === 0,
+      `waiting ${stuck.pending} cells, after the timeout ${after.drawn} trees (${after.cpuCells} cells here); ground gave up: ${viaGround.drawn} trees`);
+  }
   ok('trees are solid round a low aeroplane, and taken away when it climbs; far cells are dropped', Object.values(counts).every((c) => c.solid > 0 && c.freed === c.solid && c.keptOld === 0),
     Object.entries(counts).map(([q, c]) => `${q} ${c.solid} solid, ${c.freed} freed, ${c.keptOld} old cells kept`).join(', '));
 }

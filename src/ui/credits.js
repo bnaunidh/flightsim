@@ -77,6 +77,20 @@ export const CREDITS_HTML = `
   </div>
 
   <div class="credit-block">
+    <h3>Scenery models on the World Map (CC0)</h3>
+    <table class="credit-table">
+      <thead><tr><th>In the game</th><th>Model and creator</th><th>Licence</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr><td>Coastal rock faces</td><td>&ldquo;Rock Face 01&rdquo; by Dario Barresi (Poly Haven)</td><td><a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0 1.0</a></td><td><a href="https://polyhaven.com/a/rock_face_01" target="_blank" rel="noopener">polyhaven.com</a></td></tr>
+        <tr><td>Boulders</td><td>&ldquo;Boulder 01&rdquo; by Rico Cilliers (Poly Haven)</td><td><a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0 1.0</a></td><td><a href="https://polyhaven.com/a/boulder_01" target="_blank" rel="noopener">polyhaven.com</a></td></tr>
+        <tr><td>Quiver trees</td><td>&ldquo;Quiver Tree 01&rdquo; by Rico Cilliers, James Ray Cock and Dario Barresi (Poly Haven)</td><td><a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0 1.0</a></td><td><a href="https://polyhaven.com/a/quiver_tree_01" target="_blank" rel="noopener">polyhaven.com</a></td></tr>
+        <tr><td>Harbour piers</td><td>&ldquo;Modular Wooden Pier&rdquo; by Rico Cilliers (Poly Haven)</td><td><a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0 1.0</a></td><td><a href="https://polyhaven.com/a/modular_wooden_pier" target="_blank" rel="noopener">polyhaven.com</a></td></tr>
+        <tr><td>Roadside poles</td><td>&ldquo;Modular Electricity Poles&rdquo; by James Ray Cock (Poly Haven)</td><td><a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0 1.0</a></td><td><a href="https://polyhaven.com/a/modular_electricity_poles" target="_blank" rel="noopener">polyhaven.com</a></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="credit-block">
     <h3>Sound</h3>
     <table class="credit-table">
       <thead><tr><th>Asset</th><th>Creator</th><th>Licence</th><th>How it is made</th></tr></thead>

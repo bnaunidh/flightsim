@@ -542,6 +542,15 @@ const TILE_ROWS_PER_FRAME = 20;
  * building behind one already on screen. See Chart.slice.
  */
 const SLICE_BUDGET_MS = 3;
+/*
+ * The World Map — Preview's ground costs more a sample (relief, rivers, a
+ * hundred km of road) and a jet crosses a window in seconds, so the chart
+ * was sampling at its full 3 ms nearly every frame: measured at Low, Mach 2
+ * at 150 m over the mainland, 2.4 ms of the frame's p95. It gets half the
+ * time there (the whole-map picture covers a window still filling in).
+ */
+const sliceBudget = () => (MAP && MAP.streamTerrain ? 1.4 : SLICE_BUDGET_MS);
+const sliceRows = () => (MAP && MAP.streamTerrain ? 10 : TILE_ROWS_PER_FRAME);
 /**
  * How many finished 512² charts to keep. Each is 1 MiB of canvas. Two is
  * enough for the only switch anyone makes in a lesson — fly out, take the
@@ -1348,15 +1357,15 @@ export class Minimap {
       // Recentre while the widest range that uses it still fits inside.
       const w = this.windowChart(m.chart, m.window, craft, m.window / 2 - m.windowUpTo / 2);
       if (m.chart === 'bathy') {
-        if (!w.done) w.slice(TILE_ROWS_PER_FRAME, SLICE_BUDGET_MS);
+        if (!w.done) w.slice(sliceRows(), sliceBudget());
         return w;
       }
-      if (!w.done) w.slice(TILE_ROWS_PER_FRAME, SLICE_BUDGET_MS);
+      if (!w.done) w.slice(sliceRows(), sliceBudget());
       else if (!this.windows[m.chart].next) {
         // Nothing else to do: build the whole-map picture in the background,
         // for zooming out and for the fallback below.
         const wh = this.wholeChart(m.chart, true);
-        if (!wh.done) wh.slice(TILE_ROWS_BACKGROUND, SLICE_BUDGET_MS / 2);
+        if (!wh.done) wh.slice(TILE_ROWS_BACKGROUND, sliceBudget() / 2);
       }
       /*
        * A sharp window that is still being sampled, or that a fast aeroplane
@@ -1370,7 +1379,7 @@ export class Minimap {
       return whole && whole.done ? whole : w;
     }
     const c = this.wholeChart(m.chart, true);
-    if (!c.done) c.slice(TILE_ROWS_PER_FRAME, SLICE_BUDGET_MS);
+    if (!c.done) c.slice(sliceRows(), sliceBudget());
     return c;
   }
 
@@ -1467,7 +1476,7 @@ export class Minimap {
     if (b.next) {
       if (b.nextFor !== id) b.next = null;
       else {
-        b.next.slice(TILE_ROWS_BACKGROUND, SLICE_BUDGET_MS / 2);
+        b.next.slice(TILE_ROWS_BACKGROUND, sliceBudget() / 2);
         if (b.next.done) {
           b.cur = b.next;
           b.next = null;

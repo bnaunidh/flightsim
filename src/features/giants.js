@@ -16,8 +16,10 @@
  */
 
 import { registerExtension } from '../game/extensions.js';
-import { needsLongerRunway, runwayLength } from '../world/spawns.js';
+import { needsLongerRunway, runwayLength, runwayNeedM } from '../world/spawns.js';
 import { MAPS } from '../world/maps.js';
+import { MAP } from '../world/terrain.js';
+import { AIRPORTS as WORLD_FIELDS, departure as worldDeparture } from '../world/worldmap/preview.js';
 
 /**
  * "Gateway International (3,800 m)": the maps anyone can pick whose main
@@ -37,12 +39,27 @@ export function longRunwayWords(need = 2000) {
 
 /** The line a giant gets on a short map: where it is, what it needs, where to go. */
 export function shortRunwayLine(type, { airborne }) {
-  const need = Math.round(type.minRunway / 100) * 100;
+  const needM = runwayNeedM(type) || type.minRunway;
+  const need = Math.round(needM / 100) * 100;
   const have = Math.round(runwayLength() / 10) * 10;
-  const where = longRunwayWords(type.minRunway);
+  const where = MAP && MAP.worldPreview ? worldFieldWords(needM) : longRunwayWords(needM);
   return airborne
     ? `The ${type.name} needs about ${need.toLocaleString('en-GB')} m of runway and this one is ${have.toLocaleString('en-GB')} m, so you start in the air. To take off in it, fly from ${where}.`
     : `The ${type.name} needs about ${need.toLocaleString('en-GB')} m of runway — this one is only ${have.toLocaleString('en-GB')} m, so it will not get airborne here. Try ${where}.`;
+}
+
+/**
+ * On the World Map: the fields long enough, nearest first, at most two —
+ * "Haven International (2,800 m, 30 km)".
+ */
+export function worldFieldWords(need) {
+  const here = worldDeparture();
+  const ok = WORLD_FIELDS.filter((a) => a.length >= need && (!here || a.id !== here.id))
+    .map((a) => ({ a, d: here ? Math.hypot(a.x - here.x, a.z - here.z) : 0 }))
+    .sort((p, q) => p.d - q.d)
+    .slice(0, 2)
+    .map(({ a, d }) => `${a.name} (${a.length.toLocaleString('en-GB')} m, ${Math.round(d / 1000)} km)`);
+  return ok.length ? ok.join(' or ') : 'a longer runway';
 }
 
 const S = { said: null, last: null };
@@ -54,7 +71,7 @@ registerExtension({
     S.said = null;
     if (mode === 'drive') return;
     const type = sim && sim.aircraftType;
-    if (!type || !type.minRunway || !needsLongerRunway(type)) return;
+    if (!type || !runwayNeedM(type) || !needsLongerRunway(type)) return;
     const ac = sim.aircraft;
     const airborne = !!(ac && !ac.onGround);
     S.said = { type: type.id, airborne };

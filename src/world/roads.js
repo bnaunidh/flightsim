@@ -32,7 +32,8 @@
  * height field is a real algorithm and this is not it.
  */
 
-import { heightAt, padWeight, isPaved, resolveFlats, AIRPORT, OBSTACLES, MAP } from './terrain.js';
+import { heightAt, groundHeightAt, padWeight, isPaved, resolveFlats, AIRPORT, OBSTACLES, MAP } from './terrain.js';
+import { tierFor as streamTierFor, LEAF as STREAM_LEAF } from './worldmap/stream.js';
 import { MAPS } from './maps.js';
 import { smoothstep } from '../core/noise.js';
 
@@ -1585,6 +1586,38 @@ export function drawnGroundSampler(terrainGroup, roads, roadMesh = null) {
   };
 }
 
+/**
+ * The World Map's ground as its nearest streamed tiles draw it (worldmap/
+ * tiles.js): a regular grid of groundHeightAt every LEAF / seg metres,
+ * triangulated the same way (the diagonal from +x to +z), so a road in a
+ * cutting is lifted onto the triangles that would otherwise cover it.
+ */
+function streamSampler(quality) {
+  const sp = STREAM_LEAF / streamTierFor(quality || 'medium').seg;
+  const cache = new Map();
+  const V = (i, j) => {
+    const key = i * 1000003 + j;
+    let y = cache.get(key);
+    if (y === undefined) {
+      y = groundHeightAt(i * sp, j * sp);
+      cache.set(key, y);
+    }
+    return y;
+  };
+  return (x, z) => {
+    const ix = Math.floor(x / sp);
+    const iy = Math.floor(z / sp);
+    const u = x / sp - ix;
+    const v = z / sp - iy;
+    if (u + v <= 1) {
+      const ha = V(ix, iy);
+      return ha + (V(ix + 1, iy) - ha) * u + (V(ix, iy + 1) - ha) * v;
+    }
+    const hc = V(ix + 1, iy + 1);
+    return hc + (V(ix, iy + 1) - hc) * (1 - u) + (V(ix + 1, iy) - hc) * (1 - v);
+  };
+}
+
 /** heightAt at a terrain vertex, remembered: a road crosses the same quads. */
 function heightVertexY(chunks) {
   const cache = new Map();
@@ -1734,7 +1767,8 @@ export function roadRibbon(THREE, roads, { lift = 0.06, tex = null, nrm = null, 
   if (!roads || !roads.length) return null;
   const chunks = (MAP && MAP.chunks) || [];
   const detail = TERRAIN_DETAIL[quality] || 1;
-  const drawn = chunks.length ? meshSampler(chunks, detail, heightVertexY(chunks)) : null;
+  // The World Map's ground is streamed tiles (worldmap/stream.js), not chunks: its nearest tiles' grid, at this tier.
+  const drawn = chunks.length ? meshSampler(chunks, detail, heightVertexY(chunks)) : MAP && MAP.streamTerrain ? streamSampler(quality) : null;
   // At build time the mesh is not in hand, so sit on whichever is higher: the
   // true ground, or the triangle the high-detail mesh will draw there.
   const groundY = (x, z) => {
@@ -1782,7 +1816,43 @@ export function roadRibbon(THREE, roads, { lift = 0.06, tex = null, nrm = null, 
   };
   /** Is this point on the tarmac of a road OTHER than `self`? Where it is,
    *  this road's paint would be drawn across that one's. */
+  // The World Map's network is long: there the other roads' segments are binned once, and each station
+  // asks its own square's (the same answer; the walk over every road's every point was most of a second).
+  let otherGrid = null;
+  if (MAP && MAP.streamTerrain) {
+    otherGrid = new Map();
+    const reach = P + 3;
+    roads.forEach((rd, ri) => {
+      const p = rd.path;
+      for (let k = 1; k < p.length; k++) {
+        for (let gx = Math.floor((Math.min(p[k - 1][0], p[k][0]) - reach) / 256); gx <= Math.floor((Math.max(p[k - 1][0], p[k][0]) + reach) / 256); gx++) {
+          for (let gz = Math.floor((Math.min(p[k - 1][1], p[k][1]) - reach) / 256); gz <= Math.floor((Math.max(p[k - 1][1], p[k][1]) + reach) / 256); gz++) {
+            const key = gx * 100003 + gz;
+            let c = otherGrid.get(key);
+            if (!c) otherGrid.set(key, (c = []));
+            c.push(rd, p[k - 1][0], p[k - 1][1], p[k][0], p[k][1]);
+          }
+        }
+      }
+    });
+  }
   const onOther = (self, x, z) => {
+    if (otherGrid) {
+      const c = otherGrid.get(Math.floor(x / 256) * 100003 + Math.floor(z / 256));
+      if (!c) return false;
+      for (let i = 0; i < c.length; i += 5) {
+        if (c[i] === self) continue;
+        const ax = c[i + 1];
+        const az = c[i + 2];
+        const ex = c[i + 3] - ax;
+        const ez = c[i + 4] - az;
+        const l2 = ex * ex + ez * ez;
+        let t = l2 > 0 ? ((x - ax) * ex + (z - az) * ez) / l2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        if (Math.hypot(ax + ex * t - x, az + ez * t - z) < P + 1.5) return true;
+      }
+      return false;
+    }
     for (const rd of roads) {
       if (rd === self) continue;
       const b = boxOf(rd);
@@ -1811,7 +1881,8 @@ export function roadRibbon(THREE, roads, { lift = 0.06, tex = null, nrm = null, 
       const ez = p[k][1] - az;
       const len = Math.hypot(ex, ez);
       if (len < 0.01) continue;
-      const m = Math.max(1, Math.ceil(len / RIBBON_STEP));
+      // The World Map's network is a hundred and fifty kilometres: half the stations there (its curves are gentle).
+      const m = Math.max(1, Math.ceil(len / (MAP && MAP.streamTerrain ? RIBBON_STEP * 2 : RIBBON_STEP)));
       for (let j = 0; j < m; j++) st.push({ x: ax + (ex * j) / m, z: az + (ez * j) / m, dx: ex / len, dz: ez / len, vtx: j === 0 });
     }
     const lastP = p[p.length - 1];
@@ -1924,7 +1995,9 @@ export function roadRibbon(THREE, roads, { lift = 0.06, tex = null, nrm = null, 
     };
     pointAt.i = 0;
     const total = st[st.length - 1].s;
-    for (let s0 = GAP * 0.5; s0 + DASH < total; s0 += DASH + GAP) {
+    // A carriageway of the World Map's highway is one way: no centre line (and its 100 km were a fifth of the build).
+    const oneWay = rd.kind === 'highway' || rd.kind === 'ring';
+    for (let s0 = GAP * 0.5; !oneWay && s0 + DASH < total; s0 += DASH + GAP) {
       const a = pointAt(s0);
       const b = pointAt(s0 + DASH);
       if (a.bad || b.bad) continue;

@@ -21,6 +21,8 @@
  * tile's texture joins its neighbour's.
  */
 
+import { coverFor } from './landcover.js';
+
 export const UV_METRES = 10000;
 
 function smoothstep(a, b, x) {
@@ -37,9 +39,11 @@ export function sampleRows(T, cx, cz, size, seg, out, r0, r1) {
   const step = size / seg;
   const x0 = cx - size / 2 - step;
   const z0 = cz - size / 2 - step;
+  // The ground, never a deck on it (terrain.js groundHeightAt: the carrier's deck is not terrain).
+  const h = T.groundHeightAt || T.heightAt;
   for (let j = r0; j < r1; j++) {
     const z = z0 + j * step;
-    for (let i = 0; i < W; i++) out[j * W + i] = T.heightAt(x0 + i * step, z);
+    for (let i = 0; i < W; i++) out[j * W + i] = h(x0 + i * step, z);
   }
 }
 
@@ -60,7 +64,7 @@ export function* sampleSteps(T, cx, cz, size, seg, rows = 4) {
  * sea by more than half a metre: nothing to draw (the sea is drawn over the
  * sea floor and the terrain shader discards what is under it anyway).
  */
-export function assemble(heights, cx, cz, size, seg, flatAt = null) {
+export function assemble(heights, cx, cz, size, seg, flatAt = null, cover = null) {
   const W = seg + 3;
   const N = seg + 1;
   const step = size / seg;
@@ -73,6 +77,11 @@ export function assemble(heights, cx, cz, size, seg, flatAt = null) {
   const pos = new Float32Array(count * 3);
   const nrm = new Float32Array(count * 3);
   const blend = new Float32Array(count * 3);
+  // What covers the ground (worldmap/landcover.js): farmland, forest, scrub, marsh. Only where the map asks for it.
+  // Bytes, 0..255 for 0..1 (normalised attributes): a fifth of the floats' upload, for a cover nobody can tell to 0.4%.
+  const cov = cover ? new Uint8Array(count * 4) : null;
+  const urb = cover ? new Uint8Array(count) : null;
+  const B = (v) => (v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255));
   const uv = new Float32Array(count * 2);
   const H = (i, j) => heights[(j + 1) * W + (i + 1)];
   let k = 0;
@@ -92,6 +101,20 @@ export function assemble(heights, cx, cz, size, seg, flatAt = null) {
       nrm[k * 3 + 1] = inv;
       nrm[k * 3 + 2] = -dz * inv;
       const slope = Math.hypot(dx, dz);
+      if (cov) {
+        const c = cover(cx + lx, cz + lz, h, slope);
+        blend[k * 3] = c[0];
+        blend[k * 3 + 1] = c[1];
+        blend[k * 3 + 2] = c[2];
+        cov[k * 4] = B(c[3]);
+        cov[k * 4 + 1] = B(c[4]);
+        cov[k * 4 + 2] = B(c[5]);
+        cov[k * 4 + 3] = B(c[6]);
+        urb[k] = B(c[7]);
+        uv[k * 2] = (cx + lx) / UV_METRES;
+        uv[k * 2 + 1] = -(cz + lz) / UV_METRES;
+        continue;
+      }
       let sand = 1 - smoothstep(2, 30, h);
       let rock = Math.min(1, Math.max(0, smoothstep(0.3, 0.95, slope) * 0.9 + smoothstep(150, 300, h) * 0.5));
       let grass = Math.min(1, Math.max(0, 1 - sand - rock));
@@ -119,10 +142,14 @@ export function assemble(heights, cx, cz, size, seg, flatAt = null) {
       nrm[k * 3 + c] = nrm[src * 3 + c];
       blend[k * 3 + c] = blend[src * 3 + c];
     }
+    if (cov) {
+      for (let c = 0; c < 4; c++) cov[k * 4 + c] = cov[src * 4 + c];
+      urb[k] = urb[src];
+    }
     uv[k * 2] = uv[src * 2];
     uv[k * 2 + 1] = uv[src * 2 + 1];
   }
-  return { pos, nrm, blend, uv, maxH, count };
+  return cov ? { pos, nrm, blend, uv, cover: cov, urban: urb, maxH, count } : { pos, nrm, blend, uv, maxH, count };
 }
 
 /** The grid indices round the edge, anticlockwise, `4 * seg` of them. */
@@ -176,5 +203,5 @@ export function buildTileData(T, cx, cz, size, seg) {
   let r = gen.next();
   while (!r.done) r = gen.next();
   const flat = T.flatSurfaceAt ? (x, z) => !!T.flatSurfaceAt(x, z) : null;
-  return assemble(r.value, cx, cz, size, seg, flat);
+  return assemble(r.value, cx, cz, size, seg, flat, coverFor(T));
 }

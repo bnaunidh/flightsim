@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v74.8';
+const CACHE_VERSION = 'island-flight-v74.9';
 
 const PRECACHE = [
   './',
@@ -488,6 +488,21 @@ const PRECACHE = [
   'src/features/livemap/where.js',
   // Added by tools/sync-precache.mjs.
   'src/features/cockpit-cam.js',
+  // Added by the WORLD lane (w18).
+  'assets/models/scenery/boulder.glb',
+  'assets/models/scenery/pier-section.glb',
+  'assets/models/scenery/quiver-tree.glb',
+  'assets/models/scenery/rock-face.glb',
+  'assets/models/scenery/utility-pole.glb',
+  'src/aircraft/takeoff-runs.js',
+  'src/world/worldmap/field-look.js',
+  'src/world/worldmap/landcover.js',
+  'src/world/worldmap/network-look.js',
+  'src/world/worldmap/personas.js',
+  'src/world/worldmap/props.js',
+  'src/world/worldmap/tree-cards.js',
+  'src/world/worldmap/waters.js',
+  'src/world/worldmap/world-terrain.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

@@ -2813,11 +2813,15 @@ function layTown(cfg, count, pool) {
 
   /* ---- what has to be kept clear ---- */
   const roadSegs = [];
+  // The World Map's network is thousands of segments across 400 km: only those that can matter to this
+  // town (every test against them is a few metres to a few hundred) — laying a town out walked them all.
+  const near2 = MAP.worldPreview ? (R * 1.6 + 400) ** 2 : Infinity;
   for (const r of (MAP.waters && MAP.waters.roads) || []) {
     const hw = r.halfWidth || 18;
     for (let i = 1; i < r.path.length; i++) {
       const a = r.path[i - 1];
       const b = r.path[i];
+      if (near2 < Infinity && segDist2(cx, cz, a[0], a[1], b[0], b[1]) > near2) continue;
       roadSegs.push([a[0], a[1], b[0], b[1], hw]);
     }
   }

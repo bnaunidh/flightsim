@@ -313,8 +313,26 @@ export const AMBIENT = Object.freeze({
 /** The 30 ids the data cover, for the tests. */
 export const AMBIENT_IDS = Object.freeze(Object.keys(AMBIENT));
 
+/*
+ * The World Map — Preview (worldmap/preview.js, id 'world-preview') is not one
+ * of the 30 maps above — it is not on the roster — so it had no entry and
+ * nothing at all drove its 150 km of highways, country roads and high
+ * streets (checker, wave 18; the owner asked for "cars on them"). Its own
+ * population: the road network's lanes (sim.roads, MAP.waters.roads) and
+ * the start town's streets. Cars are spread over the whole network and only
+ * the ones within CAR_FAR of the camera are drawn, so the count is what the
+ * frame pays for whatever the network's length.
+ */
+const WORLD_PREVIEW_AMBIENT = Object.freeze({
+  ground: [car(80, 'streets+roads'), vans(10, 'streets+roads'), { kind: 'truck', n: 10, on: 'roads' }, { kind: 'bus', n: 4, on: 'streets+roads' }],
+  water: [],
+  air: [],
+  airport: null,
+});
+
 /** The entry for a map, or an empty one. */
 export function ambientFor(mapId) {
+  if (mapId === 'world-preview') return WORLD_PREVIEW_AMBIENT;
   return AMBIENT[mapId] || { ground: [], water: [], air: [], airport: null };
 }
 

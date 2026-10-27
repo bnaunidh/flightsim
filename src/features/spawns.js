@@ -42,7 +42,7 @@ import * as THREE from '../vendor/three.module.js';
 import { registerExtension } from '../game/extensions.js';
 import { MAP, AIRPORT } from '../world/terrain.js';
 import { airportLayout } from '../world/airport-layout.js';
-import { spawnClassOf, resolveSpawn, spawnChoices, CLASSES, isBigJet, bigJetNote, fieldTakesBigJets } from '../world/spawns.js';
+import { spawnClassOf, resolveSpawn, spawnChoices, CLASSES, isBigJet, bigJetNote, fieldTakesBigJets, needsLongerRunway } from '../world/spawns.js';
 import { getAircraft, AIRCRAFT } from '../aircraft/types.js';
 import { SPEC } from '../aircraft/physics.js';
 import { keyLabel } from '../flight/input.js';
@@ -377,8 +377,15 @@ registerExtension({
   startMode(sim, mode, opts) {
     S.decided = null;
     S.madeRoom = null;
-    if (mode !== 'free' || !opts || !opts.startAt) return;
-    let id = String(opts.startAt);
+    if (mode !== 'free' || !opts) return;
+    /*
+     * A World Map strip too short for this type to take off from (Gull Cay's
+     * 580 m with an airliner): never the runway, whatever the saved choice
+     * said — in the air, lined up, and features/giants.js says why.
+     */
+    const tooShort = !!(MAP && MAP.worldPreview && !opts.airborne && !SPEC.rotor && sim.aircraftType && needsLongerRunway(sim.aircraftType));
+    if (!opts.startAt && !tooShort) return;
+    let id = tooShort && (!opts.startAt || opts.startAt === 'runway') ? 'air' : String(opts.startAt);
     const skip = (why) => {
       S.decided = { startAt: id, placed: false, why };
     };
@@ -396,6 +403,16 @@ registerExtension({
     const ctx = ctxNow(sim);
     let r = resolveSpawn(MAP.id, cls, { type, choice: id, random: true, ctx });
     if (r.kind === 'runway' && r.fallback) r = makeRoom(sim, cls, type, id, ctx) || r;
+    /*
+     * And not as the fallback, nor on a stand (checker, wave 18): an A320
+     * with "Gate" saved, on Brackwater's 700 m grass, found no stand it
+     * fitted and was lined up on the strip it can never leave — and on a
+     * stand it would be parked at it. In the air instead.
+     */
+    if (tooShort && r.kind !== 'hover' && r.kind !== 'carrier' && r.kind !== 'water') {
+      id = 'air';
+      r = resolveSpawn(MAP.id, cls, { type, choice: 'air', random: false, ctx });
+    }
     S.last = r;
     if (r.kind === 'carrier') return skip('resolved to the carrier without startAt carrier; left on the runway');
     if (r.kind === 'runway') {

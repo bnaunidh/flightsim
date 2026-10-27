@@ -1134,7 +1134,8 @@ class Game {
     yield next('Laying the roads…');
     if (this.roads && this.roads.list.length) {
       this.roadMesh = t('roads', () =>
-        roadRibbon(THREE, this.roads.list, { tex: asphaltTexture(), nrm: asphaltNormal() })
+        // The World Map's streamed ground is drawn at the tier's own spacing (roads.js streamSampler); every other map as before.
+        roadRibbon(THREE, this.roads.list, { tex: asphaltTexture(), nrm: asphaltNormal(), ...(MAP && MAP.streamTerrain ? { quality, lift: 0.25 } : {}) })
       );
       if (this.roadMesh) this.scene.add(this.roadMesh);
     }

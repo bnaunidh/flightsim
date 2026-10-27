@@ -51,3 +51,20 @@ The source downloads are not in this repository. To rebuild a file, put the
 download in `~/Desktop/flightsim-models-inbox/<folder>/` and run
 `node tools/real-models/ref.mjs <id>` then `python3 tools/real-models/process.py <id>`
 (the vehicles: `python3 tools/real-models/vehicles.py`).
+
+## Scenery models (CC0 1.0) — `scenery/`
+
+Every file in `scenery/` is a derivative of a model published by Poly Haven
+under **CC0 1.0** (public domain, <https://creativecommons.org/publicdomain/zero/1.0/>);
+credited anyway, here and on the Credits screen. **Changes made for the game**
+(`tools/scenery-models/process.py`, Blender): pieces joined, decimated to
+500-1,800 triangles, the diffuse texture baked into vertex colours, textures
+and UVs removed, one plain material.
+
+| File | Model | Creator | Source |
+|---|---|---|---|
+| `scenery/rock-face.glb` | "Rock Face 01" | Dario Barresi | https://polyhaven.com/a/rock_face_01 |
+| `scenery/boulder.glb` | "Boulder 01" | Rico Cilliers | https://polyhaven.com/a/boulder_01 |
+| `scenery/quiver-tree.glb` | "Quiver Tree 01" | Rico Cilliers, James Ray Cock, Dario Barresi | https://polyhaven.com/a/quiver_tree_01 |
+| `scenery/pier-section.glb` | "Modular Wooden Pier" (section 02) | Rico Cilliers | https://polyhaven.com/a/modular_wooden_pier |
+| `scenery/utility-pole.glb` | "Modular Electricity Poles" (pole, crossarm, insulators, cap) | James Ray Cock | https://polyhaven.com/a/modular_electricity_poles |

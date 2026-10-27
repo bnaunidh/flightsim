@@ -35,6 +35,7 @@
  */
 import * as THREE from '../../vendor/three.module.js';
 import { sampleSteps, assemble, buildTileData, tileIndex } from './tiles.js';
+import { coverFor } from './landcover.js';
 
 export const LEAF = 2048;
 export const LEVELS = 4;
@@ -85,6 +86,39 @@ function sharedWorker() {
     SHARED_WORKER = null;
   }
   return SHARED_WORKER;
+}
+
+/**
+ * A second worker for the tree cards (worldmap/tree-cards.js): a cell of
+ * cards is tens of milliseconds of sampling, and on the ground's own worker
+ * it would queue in front of the tiles. Made once a session, loaded with the
+ * map each build (initWorker). Null where there are no workers.
+ */
+let CARD_WORKER;
+export function cardWorker() {
+  if (WORKER_DEAD) return null;
+  if (CARD_WORKER !== undefined) return CARD_WORKER;
+  CARD_WORKER = null;
+  try {
+    if (typeof Worker === 'function' && typeof window !== 'undefined') {
+      CARD_WORKER = new Worker(new URL('./terrain-worker.js', import.meta.url), { type: 'module' });
+      CARD_WORKER.addEventListener('error', () => { CARD_WORKER = null; });
+    }
+  } catch (e) {
+    CARD_WORKER = null;
+  }
+  return CARD_WORKER;
+}
+
+/** Load a world build's map (and its trees' context) into a worker: what the ground's own constructor does for its worker. */
+export function initWorker(w, gen, def, flora) {
+  if (!w) return false;
+  try {
+    w.postMessage({ op: 'init', gen, def: plainDef(def), flora });
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 let GEN = 0;
@@ -248,6 +282,8 @@ export class TerrainStream {
       g.setAttribute('position', new THREE.BufferAttribute(data.pos, 3));
       g.setAttribute('normal', new THREE.BufferAttribute(data.nrm, 3));
       g.setAttribute('aBlend', new THREE.BufferAttribute(data.blend, 3));
+      if (data.cover) g.setAttribute('aCover', new THREE.BufferAttribute(data.cover, 4, true));
+      if (data.urban) g.setAttribute('aUrban', new THREE.BufferAttribute(data.urban, 1, true));
       g.setAttribute('uv', new THREE.BufferAttribute(data.uv, 2));
       g.setIndex(new THREE.BufferAttribute(this.index.slice(), 1));
       const half = t.size / 2;
@@ -265,7 +301,7 @@ export class TerrainStream {
       this.group.add(m);
       t.mesh = m;
       t.state = 'ready';
-      t.bytes = data.count * 44 + this.index.length * this.index.BYTES_PER_ELEMENT;
+      t.bytes = data.count * (data.cover ? 49 : 44) + this.index.length * this.index.BYTES_PER_ELEMENT;
       this.counts.built++;
     }
     this.counts.maxMeshMs = Math.max(this.counts.maxMeshMs, this.now() - t0);
@@ -317,7 +353,8 @@ export class TerrainStream {
         const t = this.cpuJob.t;
         this.cpuJob = null;
         const flat = this.T.flatSurfaceAt ? (x, z) => !!this.T.flatSurfaceAt(x, z) : null;
-        this.arrived.push({ t, data: assemble(r.value, t.cx, t.cz, t.size, this.tier.seg, flat) });
+        if (this._cover === undefined) this._cover = coverFor(this.T);
+        this.arrived.push({ t, data: assemble(r.value, t.cx, t.cz, t.size, this.tier.seg, flat, this._cover) });
         this.counts.cpuTiles++;
         this.request();
       }

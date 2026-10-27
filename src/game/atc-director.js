@@ -83,8 +83,19 @@ export class AtcDirector {
     this.lastCondition = null;
   }
 
+  /*
+   * A call that has not been made yet, and can be made NOW. Every once() is
+   * followed by say(), and say() is silent during the pause after the last
+   * call (cool); marking the call made while it was suppressed lost it for
+   * good — the take-off clearance most of all: open the throttle within a
+   * few seconds of the ground's engine-start call and the tower never
+   * cleared you (checker, wave 17b). So while the frequency is busy nothing
+   * is marked, and the call goes out once the pause is over, if it still
+   * applies.
+   */
   once(key) {
     if (this.said[key]) return false;
+    if (this.cool > 0) return false;
     this.said[key] = true;
     return true;
   }

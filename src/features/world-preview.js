@@ -37,10 +37,46 @@ import {
   WORLD_PREVIEW_ID, WORLD_PREVIEW_TITLE, PREVIEW, AIRPORTS, airportById, previewDef, setDeparture, departure,
   nearestAirport, headingTo, legM, HUB_ID,
 } from '../world/worldmap/preview.js';
-import { TerrainStream, tierFor as streamTier } from '../world/worldmap/stream.js';
-import { buildOutstations, pavedTest, towerLens } from '../world/worldmap/outstation.js';
+import { TerrainStream, tierFor as streamTier, cardWorker, initWorker } from '../world/worldmap/stream.js';
+import { buildOutstations, pavedTest, towerLens, buildDressing } from '../world/worldmap/outstation.js';
+import { carrierProxyGeometry } from '../world/worldmap/field-look.js';
 import { Horizon } from '../world/worldmap/horizon.js';
 import { Flora, floraContext } from '../world/worldmap/flora.js';
+import { makeWorldTerrainMaterial } from '../world/worldmap/world-terrain.js';
+import { buildWaters } from '../world/worldmap/waters.js';
+import { buildNetworkLook } from '../world/worldmap/network-look.js';
+import { Props, placeProps, PROP_MODELS } from '../world/worldmap/props.js';
+import { parseGLB } from '../vehicles/glb.js';
+
+/** The CC0 scenery models (worldmap/props.js), fetched once a session: name -> geometry (null if it would not load). */
+let PROP_GEOS = null;
+function propModels() {
+  if (PROP_GEOS) return PROP_GEOS;
+  PROP_GEOS = Promise.all(PROP_MODELS.map((n) => fetch(new URL(`../../assets/models/scenery/${n}.glb`, import.meta.url).href)
+    .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`))))
+    .then((b) => {
+      let g = null;
+      parseGLB(b).scene.traverse((o) => {
+        if (!g && o.geometry) g = o.geometry;
+      });
+      return [n, g];
+    })
+    .catch((e) => {
+      console.warn(`[world-preview] scenery model ${n} did not load`, e);
+      return [n, null];
+    })));
+  return PROP_GEOS;
+}
+import { cardGeometry, cardMaterial } from '../world/worldmap/tree-cards.js';
+
+/** The tree cards' reach and density per tier: Low keeps a small, light patch round the camera. */
+export const CARD_TIERS = Object.freeze({
+  // Low: none — the Chromebooks' frame time (the forest floor's own colour and the real trees carry the woods there).
+  low: Object.freeze({ radius: 0, perCell: 0, shadows: false }),
+  medium: Object.freeze({ radius: 1200, perCell: 1600, shadows: false }),
+  high: Object.freeze({ radius: 1800, perCell: 2400, shadows: false }),
+  ultra: Object.freeze({ radius: 2600, perCell: 3200, shadows: false }),
+});
 import { treeGeometry } from '../world/scenery.js';
 import { setRenderOrigin } from '../render/render-origin.js';
 import { setNavField, navField, landingDir, papiFor } from '../world/navfield.js';
@@ -144,10 +180,27 @@ function teardown(sim) {
   if (S.stream) S.stream.dispose();
   if (S.horizon) S.horizon.dispose();
   if (S.flora) S.flora.dispose();
+  if (S.cards) S.cards.dispose();
+  if (S.props) S.props.dispose();
+  S.props = null;
+  S.cards = null;
   S.stream = null;
   S.horizon = null;
   S.flora = null;
   S.out = null;
+  S.dressing = null;
+  if (S.waters) {
+    S.waters.geometry.dispose();
+    S.waters.material.dispose();
+    S.waters = null;
+  }
+  if (S.network) {
+    S.network.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) o.material.dispose();
+    });
+    S.network = null;
+  }
   S.builtFor = null;
   S.nav = null;
   setExtraRunways([]);
@@ -167,6 +220,26 @@ function teardown(sim) {
   if (S.ui && S.ui.card) S.ui.card.hidden = true;
 }
 
+/**
+ * The coach line says nothing on the World Map. The wrapper has to be the
+ * OUTERMOST: carrier-ops wraps sim.coachHint too, with the carrier's own
+ * lines ("WAVE OFF — full power...") ahead of the game's, and when it wrapped
+ * after this the carrier's coaching came straight through (checker, wave 18).
+ * So: wrapped at install and again at every flight's start if anything has
+ * wrapped it since. `_carrier` is carried over so carrier-ops never wraps a
+ * second copy of itself over this.
+ */
+function muteCoach(sim) {
+  if (typeof sim.coachHint !== 'function' || sim.coachHint._worldPreview) return;
+  const own = sim.coachHint;
+  const wrapped = function coachHint(ac) {
+    return active() ? null : own.call(sim, ac);
+  };
+  wrapped._worldPreview = true;
+  if (own._carrier) wrapped._carrier = true;
+  sim.coachHint = wrapped;
+}
+
 /** The Tower view: every field's tower here (camera.js towerLens), the start field's balcony anywhere else. */
 function setTowers(sim) {
   if (sim && sim.rig) sim.rig.towers = active() ? PREVIEW.airports.map(towerLens).filter(Boolean) : null;
@@ -178,7 +251,8 @@ function buildWorld(sim, group) {
   if (!active()) return;
   const q = sim.settings.quality || 'medium';
   const t0 = performance.now();
-  const mat = makeTerrainMaterial(q);
+  // terrain.js's ground with the land cover painted on (worldmap/world-terrain.js).
+  const mat = makeWorldTerrainMaterial(q);
   const fctx = floraContext(PREVIEW);
   S.stream = new TerrainStream({ T: Terrain, material: mat, group, quality: q, def: MAP, flora: fctx });
   // A 400 km sea: the floating origin for drawing (render/render-origin.js), and a far plane out to the horizon's islands.
@@ -187,19 +261,53 @@ function buildWorld(sim, group) {
     sim.camera.far = FAR_M;
     sim.camera.updateProjectionMatrix();
   }
-  S.horizon = new Horizon({ heightAt: Terrain.heightAt, islands: PREVIEW.islands, hideWithin: streamTier(q).range });
+  // The rivers and lakes (terrain.js carves their beds; worldmap/waters.js lays the water).
+  S.waters = buildWaters(PREVIEW.rivers || [], PREVIEW.lakes || []);
+  if (S.waters) group.add(S.waters);
+  // The network's bridges and roundabout islands (the tarmac is main.js's road ribbon).
+  const rings = ((MAP.waters && MAP.waters.roads) || []).filter((r) => r.ring).map((r) => r.ring);
+  S.network = buildNetworkLook(Terrain.shapeBridges(), rings, Terrain.groundHeightAt);
+  if (S.network) group.add(S.network);
+  // The real scenery models: rocks, boulders, quiver trees, piers, poles (worldmap/props.js).
+  S.props = new Props({ placed: placeProps(Terrain, PREVIEW), quality: q });
+  group.add(S.props.group);
+  const props = S.props;
+  propModels().then((list) => {
+    if (S.props !== props) return;
+    for (const [n, g] of list) props.setModel(n, g);
+  });
+  S.horizon = new Horizon({ heightAt: Terrain.groundHeightAt, islands: PREVIEW.islands, hideWithin: streamTier(q).range });
   group.add(S.horizon.mesh);
   S.flora = new Flora({
     treeGeometry, ctx: fctx, T: Terrain, worker: S.stream.worker && !S.stream.workerFailed ? S.stream.worker : null, gen: S.stream.gen,
     quality: q, addObstacle: Terrain.addObstacle, obstacles: Terrain.OBSTACLES,
+    // When the ground gives up on the shared worker, so do the trees (and plant here instead).
+    workerOk: () => !!(S.stream && S.stream.worker && !S.stream.workerFailed),
   });
   group.add(S.flora.group);
+  // And the woods between them: tree cards, dense, close in, only in the forests (worldmap/tree-cards.js).
+  // On a worker of their own, so a forest's thousands never queue in front of the ground's tiles.
+  if (CARD_TIERS[q] && CARD_TIERS[q].radius > 0) {
+    const cardMat = cardMaterial();
+    const cw = S.stream.worker && !S.stream.workerFailed ? cardWorker() : null;
+    const cardsOn = initWorker(cw, S.stream.gen, MAP, fctx);
+    S.cards = new Flora({
+      treeGeometry, ctx: fctx, T: Terrain, worker: cardsOn ? cw : null, gen: S.stream.gen,
+      quality: q, workerOk: () => !!(S.stream && S.stream.worker && !S.stream.workerFailed),
+      layer: { id: 'cards', mode: 'cards', tiers: CARD_TIERS, geometry: cardGeometry, material: () => cardMat, solid: false },
+    });
+    group.add(S.cards.group);
+  } else S.cards = null;
   // The ground the first frame needs, now, behind the loading screen.
   const r = RUNWAY;
   S.stream.prime(r.thresholdWest.x + 80, r.elev + 60, r.thresholdWest.z);
   const t1 = performance.now();
   const dep = departure();
   S.out = buildOutstations(PREVIEW, dep.id, q);
+  // The field you start from is airport.js's; its own landmarks (the persona's
+  // shelters, radomes, silos, lighthouse...: worldmap/personas.js) are these.
+  S.dressing = buildDressing(dep, q);
+  if (S.dressing) S.out.group.add(S.dressing);
   console.debug(`[wp] ground ${Math.round(t1 - t0)} ms (${S.stream.counts.primed} tiles), other fields and towns ${Math.round(performance.now() - t1)} ms`, S.out.timing || '');
   group.add(S.out.group);
   // The tyres: the main field's layout (airport.js set it) and the other fields' made ground.
@@ -212,7 +320,7 @@ function buildWorld(sim, group) {
   Terrain.setOtherRunways(others.map((a) => ({ cx: a.x, cz: a.z, length: a.length, halfWidth: a.halfWidth })));
   // The landing aids at whichever field you are at (updateNav, every frame).
   sim.navPapi = (pos, mainHint) => navPapi(pos, mainHint);
-  prewarm(sim, [S.out.group, S.flora.group, S.horizon.mesh]);
+  prewarm(sim, [S.out.group, S.flora.group, S.cards && S.cards.group, S.horizon.mesh, S.waters, S.network, S.props && S.props.group]);
   S.builtFor = { id: dep.id, quality: q, ms: performance.now() - t0 };
   const waiting = S.onBuilt.splice(0);
   for (const f of waiting) {
@@ -369,14 +477,56 @@ function checkArrival(sim, dt) {
  * (it is a speck by then); close in it is exactly as it was.
  */
 const CARRIER_RANGE = Object.freeze({ low: 9000, medium: 14000, high: 20000, ultra: 26000 });
+/*
+ * Past that range the ship is not gone: a grey hull, deck and island, one
+ * mesh and one draw call, the same size and in the same place, out to
+ * CARRIER_FAR (owner, Oct 26: the carrier must show from a sensible distance,
+ * not pop in at 9 km). Under the range it is hidden and the real ship drawn.
+ */
+const CARRIER_FAR = 60000;
+function carrierProxy(sim) {
+  const c = sim.carrier;
+  if (!c || !c.group || !sim.scene) return null;
+  if (S.carrierProxy && S.carrierProxy.userData.for === c) return S.carrierProxy;
+  if (S.carrierProxy) disposeCarrierProxy();
+  const deck = { length: c.halfDepth * 2, width: c.halfWidth * 2, y: c.deckY };
+  const m = new THREE.Mesh(carrierProxyGeometry(deck), new THREE.MeshLambertMaterial({ color: 0x5d646c }));
+  m.name = 'wp:carrier-far';
+  m.userData.for = c;
+  m.position.copy(c.group.position);
+  m.rotation.copy(c.group.rotation);
+  m.visible = false;
+  m.matrixAutoUpdate = false;
+  m.updateMatrix();
+  sim.scene.add(m);
+  S.carrierProxy = m;
+  return m;
+}
+function disposeCarrierProxy() {
+  const m = S.carrierProxy;
+  if (!m) return;
+  if (m.parent) m.parent.remove(m);
+  m.geometry.dispose();
+  m.material.dispose();
+  S.carrierProxy = null;
+}
 function farCarrier(sim, cam, force = null) {
   const c = sim.carrier && sim.carrier.group;
   if (!c) return;
   const layer = S.carrierLayer || (S.carrierLayer = sim.scene && sim.scene.getObjectByName('ext:carrier-ops'));
   const range = CARRIER_RANGE[(S.builtFor && S.builtFor.quality) || 'medium'] || CARRIER_RANGE.medium;
-  const on = force != null ? force : Math.hypot(cam.x - c.position.x, cam.z - c.position.z) < range;
+  const d = cam ? Math.hypot(cam.x - c.position.x, cam.z - c.position.z) : 0;
+  const on = force != null ? force : d < range;
   if (c.visible !== on) c.visible = on;
   if (layer && layer.visible !== on) layer.visible = on;
+  // The far ship: only on the preview, only between the range and CARRIER_FAR.
+  if (force != null) {
+    disposeCarrierProxy();
+    return;
+  }
+  const px = carrierProxy(sim);
+  const far = !on && d < CARRIER_FAR;
+  if (px && px.visible !== far) px.visible = far;
 }
 
 /* ------------------------------------------------------------------ */
@@ -819,6 +969,15 @@ registerExtension({
     S.ui = S.ui || {};
     S.ui.mapCard = buildCard(sim);
     syncCardForGame(sim);
+    /*
+     * No instructor on the World Map (owner, Oct 26: "remove instructor from
+     * worldmap"). The coach line ("Hold Shift for full power", "Follow the
+     * PAPI lights", the carrier's own hints) is the tutorial voice; the
+     * preview is for flying where you like. The warnings (features/
+     * warnings.js), the tower and the approach calls are not the coach and
+     * stay. The regular maps keep it exactly as it was.
+     */
+    muteCoach(sim);
     // The guidance: the runner's target when a mission names one, otherwise the trip's.
     const R = sim.runner;
     if (R && typeof R.activeTarget === 'function' && !R._wpWrapped) {
@@ -838,15 +997,28 @@ registerExtension({
       destination: () => S.dest,
       airports: () => AIRPORTS,
       outstations: () => S.out,
+      dressing: () => S.dressing,
+      waters: () => S.waters,
+      network: () => S.network,
+      props: () => S.props,
+      /** How many carrier symbols the open world map drew. */
+      mapShips: () => (S.overlay ? S.overlay.ships || 0 : 0),
       stream: () => S.stream,
       visited: () => store().visited.slice(),
       horizon: () => S.horizon,
       flora: () => S.flora,
+      cards: () => S.cards,
       navField: () => navField(),
       warp: () => ({ ...S.warp, blocked: warpBlocked(sim), scale: sim.timeScale || 1 }),
       cycleWarp: () => cycleWarp(sim),
       regions: () => PREVIEW.regions,
       prewarmed: () => S.prewarm || null,
+      /** The carrier as seen from a camera at `pos` (the tests): which of the ship and the far ship is drawn. */
+      carrierFrom: (pos) => {
+        farCarrier(sim, pos);
+        const far = S.carrierProxy;
+        return { ship: !!(sim.carrier && sim.carrier.group.visible), far: !!(far && far.visible), far3d: far || null };
+      },
       perf: (reset = false) => {
         const p = { ...S.perf, mean: S.perf.frames ? S.perf.total / S.perf.frames : 0 };
         if (reset) S.perf = { frames: 0, total: 0, max: 0, over4: 0, over8: 0 };
@@ -858,6 +1030,8 @@ registerExtension({
     buildWorld(sim, group);
   },
   startMode(sim, mode, opts) {
+    // Outermost again, in case another feature (carrier-ops) wrapped the coach after us.
+    muteCoach(sim);
     setTowers(sim);
     if (!active()) {
       S.dest = null;
@@ -896,7 +1070,13 @@ registerExtension({
     if (S.stream && cam) S.stream.update(dt, cam.x, cam.y, cam.z);
     if (S.horizon && cam) S.horizon.update(cam, 1.2);
     if (S.flora && cam) S.flora.update(cam, sim.state === 'flying' ? sim.aircraft : null, 1.2);
+    if (S.cards && cam) S.cards.update(cam, null, 0.8);
+    if (S.props && cam) S.props.update(cam, dt);
     if (S.out) S.out.update(dt, sim.weather, cam);
+    if (S.dressing && S.dressing.userData.lights) {
+      const w = sim.weather;
+      S.dressing.userData.lights.visible = !!(w && (w.isNight || w.time === 'sunset' || w.time === 'dusk'));
+    }
     if (cam) farCarrier(sim, cam);
     // What the world's own streaming cost this frame (the tests and the dev overlay).
     const w = performance.now() - w0;

@@ -160,6 +160,8 @@ export function applyMap(idOrDef) {
   // applyMap is already called from four places and one of them would be
   // forgotten.
   resolveFlats();
+  // The World Map's relief, rivers and lakes (nothing on any other map).
+  resolveShape(MAP);
   // Harbours, channels, shoals and roads: bounding boxes and, for the nine
   // flight maps, the harbour's position on a coastline that is made of noise.
   // Once per map load, not once per sample.
@@ -332,8 +334,9 @@ function flatWeight(f, x, z) {
 export function flatAt(x, z) {
   let best = null;
   let bw = 0;
-  for (let i = 0; i < FLATS.length; i++) {
-    const f = FLATS[i];
+  const list = FLAT_GRID ? FLAT_GRID.get(Math.floor(x / FLAT_CELL) * 100003 + Math.floor(z / FLAT_CELL)) || NO_FLATS : FLATS;
+  for (let i = 0; i < list.length; i++) {
+    const f = list[i];
     if (x < f.bx0 || x > f.bx1 || z < f.bz0 || z > f.bz1) continue;
     const w = flatWeight(f, x, z);
     if (w > bw) { bw = w; best = f; }
@@ -466,8 +469,26 @@ export function resolveFlats() {
 
   RESOLVING = false;
   FLATS = out;
+  // Binned when there are many (the World Map's sixty-odd: runways, sites, towns, villages), like the islands.
+  FLAT_GRID = null;
+  if (FLATS.length > 24) {
+    FLAT_GRID = new Map();
+    for (const f of FLATS) {
+      for (let i = Math.floor(f.bx0 / FLAT_CELL); i <= Math.floor(f.bx1 / FLAT_CELL); i++) {
+        for (let j = Math.floor(f.bz0 / FLAT_CELL); j <= Math.floor(f.bz1 / FLAT_CELL); j++) {
+          const key = i * 100003 + j;
+          let l = FLAT_GRID.get(key);
+          if (!l) FLAT_GRID.set(key, (l = []));
+          l.push(f);
+        }
+      }
+    }
+  }
   return FLATS;
 }
+const FLAT_CELL = 4096;
+let FLAT_GRID = null;
+const NO_FLATS = Object.freeze([]);
 
 /**
  * Solid structures you can fly into.
@@ -790,9 +811,109 @@ export function resolveWaters(map) {
       rd._z0 = z0 - reach;
       rd._z1 = z1 + reach;
     }
-  }
+    /*
+     * The World Map's network is a hundred kilometres of road in a few long
+     * polylines, whose bounding boxes cover whole islands: every sample on
+     * the mainland would walk every segment of the highway. So there the
+     * segments are binned (ROAD_CELL squares, each segment in every square
+     * its reach touches) and roadHeight asks only its own square's.
+     */
+    w._segGrid = map && map.worldPreview ? roadSegGrid(R) : null;
+  } else w._segGrid = null;
 
   w._ready = true;
+}
+
+const ROAD_CELL = 512;
+function roadSegGrid(R) {
+  const grid = new Map();
+  R.forEach((rd, ri) => {
+    const reach = (rd.halfWidth || 26) + (rd.blend || 55);
+    const p = rd.path;
+    for (let k = 1; k < p.length; k++) {
+      const i0 = Math.floor((Math.min(p[k - 1][0], p[k][0]) - reach) / ROAD_CELL);
+      const i1 = Math.floor((Math.max(p[k - 1][0], p[k][0]) + reach) / ROAD_CELL);
+      const j0 = Math.floor((Math.min(p[k - 1][1], p[k][1]) - reach) / ROAD_CELL);
+      const j1 = Math.floor((Math.max(p[k - 1][1], p[k][1]) + reach) / ROAD_CELL);
+      for (let i = i0; i <= i1; i++) {
+        for (let j = j0; j <= j1; j++) {
+          const key = i * 100003 + j;
+          let c = grid.get(key);
+          if (!c) grid.set(key, (c = []));
+          c.push(ri, k);
+        }
+      }
+    }
+  });
+  return grid;
+}
+
+/** Is path segment k (from point k-1 to k) on one of this road's bridges? */
+function onBridge(rd, k) {
+  const B = rd.bridges;
+  if (!B) return false;
+  for (let i = 0; i < B.length; i++) if (k > B[i][0] && k <= B[i][1]) return true;
+  return false;
+}
+
+/** roadHeight over the binned segments (the World Map; see resolveWaters). Bridges leave the river alone. */
+function roadHeightGrid(h, x, z, R, grid) {
+  const cell = grid.get(Math.floor(x / ROAD_CELL) * 100003 + Math.floor(z / ROAD_CELL));
+  if (!cell) return h;
+  let bestW = 0;
+  let bestY = h;
+  // Per road: nearest segment, inverse-square weighted height, as roadHeight.
+  let ri = -1;
+  let near = Infinity;
+  let nearK = 0;
+  let sum = 0;
+  let wsum = 0;
+  const flush = () => {
+    if (ri < 0) return;
+    const rd = R[ri];
+    const hw = rd.halfWidth || 18;
+    const blend = rd.blend || 55;
+    const d = Math.sqrt(near);
+    if (d <= hw + blend && !onBridge(rd, nearK)) {
+      const y = wsum > 0 ? sum / wsum : h;
+      const w = 1 - smoothstep(hw, hw + blend, d);
+      if (w > bestW) {
+        bestW = w;
+        bestY = y;
+      }
+    }
+  };
+  for (let c = 0; c < cell.length; c += 2) {
+    if (cell[c] !== ri) {
+      flush();
+      ri = cell[c];
+      near = Infinity;
+      nearK = 0;
+      sum = 0;
+      wsum = 0;
+    }
+    const p = R[ri].path;
+    const k = cell[c + 1];
+    const ax = p[k - 1][0];
+    const az = p[k - 1][1];
+    const ex = p[k][0] - ax;
+    const ez = p[k][1] - az;
+    const len2 = ex * ex + ez * ez;
+    let t = len2 > 0 ? ((x - ax) * ex + (z - az) * ez) / len2 : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const qx = ax + ex * t - x;
+    const qz = az + ez * t - z;
+    const d2 = qx * qx + qz * qz;
+    if (d2 < near) {
+      near = d2;
+      nearK = k;
+    }
+    const wk = 1 / (d2 + 400);
+    sum += lerp(p[k - 1][2] ?? h, p[k][2] ?? h, t) * wk;
+    wsum += wk;
+  }
+  flush();
+  return bestW > 0 ? lerp(h, bestY, bestW) : h;
 }
 
 /**
@@ -989,6 +1110,7 @@ function harbourHeight(h, x, z) {
 function roadHeight(h, x, z) {
   const R = MAP.waters && MAP.waters.roads;
   if (!R || !R.length) return h;
+  if (MAP.waters._segGrid) return roadHeightGrid(h, x, z, R, MAP.waters._segGrid);
   /*
    * Never on the runway.
    *
@@ -1591,14 +1713,261 @@ function laneWidth(halfWidth, along) {
   return Math.max(210, halfWidth * (0.72 + 0.5 * wobble(along, 0.0011, 0.8)));
 }
 
+/* ==================================================================== *
+ * The World Map's own shape: relief, eroded ranges, cliffs, rivers, lakes.
+ *
+ * Owner, Oct 26: "maps sad as hell" — the islands were flat, every one of
+ * them. These terms exist only for islands and maps that carry the numbers
+ * (worldmap/preview-data.js: an island's `relief`, `erode`, `cliff`; the
+ * map's `calm`, `rivers`, `lakes`), which no regular map does, so the nine
+ * flight maps and the rest come out of heightAt exactly as before.
+ *
+ *   relief  rolling country on a plains island: broad hills and valleys up
+ *           to `relief` metres, faded out over the coast and to nothing in
+ *           the CALM zones — every field's runway lanes, its site, every
+ *           town and every road (tools/worldmap/preview-layout.mjs writes
+ *           them), so the placement rules and the level ground are kept;
+ *   erode   a ridge or a hill island's range made to rise to its middle and
+ *           cut by sharp ridged gullies, instead of a flat-topped table;
+ *   cliff   a coast that rises `cliff` metres in a few tens of metres;
+ *   rivers  polylines with a water level at each point (falling to the sea),
+ *           the ground cut to a bed below it and banks either side;
+ *   lakes   a level, a radius, the ground cut to a bowl under it.
+ * ==================================================================== */
+let CALM = [];
+let CALM_GRID = null;
+const CALM_CELL = 4096;
+let RIVERS = [];
+let LAKES = [];
+/** Road bridges' decks (World Map): what the wheels touch over a river; the ground under them stays the river's. */
+let BRIDGES = [];
+const RELIEF_NOISE = { octaves: 4, gain: 0.5, seed: 0 };
+const ERODE_NOISE = { octaves: 3, gain: 0.55, seed: 0 };
+const CLIFF_NOISE = { octaves: 2, seed: 77 };
+
+function resolveShape(map) {
+  CALM = [];
+  CALM_GRID = null;
+  RIVERS = [];
+  LAKES = [];
+  BRIDGES = [];
+  RIVER_GRID = null;
+  if (!map || !map.worldPreview) return;
+  for (const b of map.bridges || []) {
+    const r = b.halfWidth + 1;
+    BRIDGES.push({ ...b, bx0: Math.min(b.ax, b.bx) - r, bx1: Math.max(b.ax, b.bx) + r, bz0: Math.min(b.az, b.bz) - r, bz1: Math.max(b.az, b.bz) + r });
+  }
+  for (const c of map.calm || []) {
+    if (c.ax != null) {
+      const r = c.r + c.blend;
+      CALM.push({ ...c, seg: true, bx0: Math.min(c.ax, c.bx) - r, bx1: Math.max(c.ax, c.bx) + r, bz0: Math.min(c.az, c.bz) - r, bz1: Math.max(c.az, c.bz) + r });
+    } else CALM.push({ ...c, seg: false, bx0: c.x0 - c.blend, bx1: c.x1 + c.blend, bz0: c.z0 - c.blend, bz1: c.z1 + c.blend });
+  }
+  // Binned, like the islands: the network's calm corridors are hundreds of entries.
+  if (CALM.length > 24) {
+    CALM_GRID = new Map();
+    for (const c of CALM) {
+      for (let i = Math.floor(c.bx0 / CALM_CELL); i <= Math.floor(c.bx1 / CALM_CELL); i++) {
+        for (let j = Math.floor(c.bz0 / CALM_CELL); j <= Math.floor(c.bz1 / CALM_CELL); j++) {
+          const key = i * 100003 + j;
+          let l = CALM_GRID.get(key);
+          if (!l) CALM_GRID.set(key, (l = []));
+          l.push(c);
+        }
+      }
+    }
+  }
+  for (const r of map.rivers || []) {
+    const reach = r.halfWidth + r.bank;
+    let bx0 = Infinity;
+    let bx1 = -Infinity;
+    let bz0 = Infinity;
+    let bz1 = -Infinity;
+    for (const p of r.path) {
+      bx0 = Math.min(bx0, p[0]); bx1 = Math.max(bx1, p[0]);
+      bz0 = Math.min(bz0, p[1]); bz1 = Math.max(bz1, p[1]);
+    }
+    RIVERS.push({ ...r, bx0: bx0 - reach, bx1: bx1 + reach, bz0: bz0 - reach, bz1: bz1 + reach });
+  }
+  for (const l of map.lakes || []) LAKES.push({ ...l, reach: l.r + (l.bank || 260) });
+  for (const l of LAKES) Object.assign(l, { bx0: l.x - l.reach, bx1: l.x + l.reach, bz0: l.z - l.reach, bz1: l.z + l.reach });
+  // The rivers' segments binned (a river's box covers half the mainland; a sample asks only its own square's).
+  RIVER_GRID = new Map();
+  RIVERS.forEach((r, ri) => {
+    const reach = r.halfWidth + r.bank;
+    const p = r.path;
+    for (let k = 1; k < p.length; k++) {
+      for (let i = Math.floor((Math.min(p[k - 1][0], p[k][0]) - reach) / RIVER_CELL); i <= Math.floor((Math.max(p[k - 1][0], p[k][0]) + reach) / RIVER_CELL); i++) {
+        for (let j = Math.floor((Math.min(p[k - 1][1], p[k][1]) - reach) / RIVER_CELL); j <= Math.floor((Math.max(p[k - 1][1], p[k][1]) + reach) / RIVER_CELL); j++) {
+          const key = i * 100003 + j;
+          let c = RIVER_GRID.get(key);
+          if (!c) RIVER_GRID.set(key, (c = []));
+          c.push(ri, k);
+        }
+      }
+    }
+  });
+}
+const RIVER_CELL = 1024;
+let RIVER_GRID = null;
+
+/** How calm the ground must be here, 0..1 (1: no relief at all). */
+export function calmAt(x, z) {
+  let w = 0;
+  const list = CALM_GRID ? CALM_GRID.get(Math.floor(x / CALM_CELL) * 100003 + Math.floor(z / CALM_CELL)) || [] : CALM;
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i];
+    if (x < c.bx0 || x > c.bx1 || z < c.bz0 || z > c.bz1) continue;
+    let k;
+    if (c.seg) {
+      const dx = c.bx - c.ax;
+      const dz = c.bz - c.az;
+      const l2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((x - c.ax) * dx + (z - c.az) * dz) / l2));
+      const d = Math.hypot(x - c.ax - dx * t, z - c.az - dz * t);
+      k = 1 - smoothstep(c.r, c.r + c.blend, d);
+    } else {
+      const inX = smoothstep(c.x0 - c.blend, c.x0, x) * (1 - smoothstep(c.x1, c.x1 + c.blend, x));
+      const inZ = smoothstep(c.z0 - c.blend, c.z0, z) * (1 - smoothstep(c.z1, c.z1 + c.blend, z));
+      k = inX * inZ;
+    }
+    if (k > w) {
+      w = k;
+      if (w >= 1) return 1;
+    }
+  }
+  return w;
+}
+
+/** Rolling country on a plains island: broad hills, wide valleys, flat where it must be. */
+function relief(x, z, isl, m) {
+  const inland = smoothstep(0.1, 0.55, m);
+  if (inland <= 0) return 0;
+  const calm = calmAt(x, z);
+  if (calm >= 1) return 0;
+  RELIEF_NOISE.seed = isl.seed * 5 + 1;
+  const n = fbm(x / 5200, z / 5200, RELIEF_NOISE);
+  const rolling = smoothstep(0.24, 0.8, n);
+  return inland * isl.relief * Math.pow(rolling, 1.3) * (1 - calm);
+}
+
+/** A range that rises to its middle, with ridged gullies cut down its sides. */
+function eroded(local, x, z, isl, inland) {
+  const d = Math.min(1, Math.hypot(x - isl.cx, z - isl.cz) / isl.radius);
+  const dome = 1 - d * d;
+  ERODE_NOISE.seed = isl.seed * 11 + 3;
+  const r = 1 - Math.abs(fbm(x / 1100, z / 1100, ERODE_NOISE) - 0.5) * 2;
+  const g = 1 - Math.abs(fbm(x / 360 + 9, z / 360, ERODE_NOISE) - 0.5) * 2;
+  return local * (0.5 + 0.5 * dome) + inland * isl.erode * (Math.pow(r, 2.2) * 0.75 + Math.pow(g, 3) * 0.25 - 0.32);
+}
+
+/** Rivers and lakes into the ground: a bed under the water, banks up to the land. */
+function carveWaters(h, x, z) {
+  const cell = RIVER_GRID ? RIVER_GRID.get(Math.floor(x / RIVER_CELL) * 100003 + Math.floor(z / RIVER_CELL)) : null;
+  for (let c = 0; cell && c < cell.length;) {
+    const ri = cell[c];
+    const r = RIVERS[ri];
+    const p = r.path;
+    let best = Infinity;
+    let lv = 0;
+    // This river's segments in this square (they are listed together).
+    for (; c < cell.length && cell[c] === ri; c += 2) {
+      const k = cell[c + 1];
+      const ax = p[k - 1][0];
+      const az = p[k - 1][1];
+      const dx = p[k][0] - ax;
+      const dz = p[k][1] - az;
+      const l2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
+      const d = Math.hypot(x - ax - dx * t, z - az - dz * t);
+      if (d < best) {
+        best = d;
+        lv = p[k - 1][2] + (p[k][2] - p[k - 1][2]) * t;
+      }
+    }
+    const reach = r.halfWidth + r.bank;
+    if (best >= reach) continue;
+    const bed = lv - r.depth;
+    // The channel: the bed across the water, then the bank rising to the land.
+    const k = smoothstep(r.halfWidth * 0.6, reach, best);
+    const cut = bed + (Math.max(h, lv + 0.6) - bed) * k;
+    if (cut < h) h = cut;
+  }
+  for (let i = 0; i < LAKES.length; i++) {
+    const l = LAKES[i];
+    if (x < l.bx0 || x > l.bx1 || z < l.bz0 || z > l.bz1) continue;
+    const d = Math.hypot(x - l.x, z - l.z);
+    if (d >= l.reach) continue;
+    const bowl = l.level - l.depth * (1 - smoothstep(0, l.r, d) * 0.7);
+    const k = smoothstep(l.r * 0.92, l.reach, d);
+    const cut = bowl + (Math.max(h, l.level + 0.6) - bowl) * k;
+    if (cut < h) h = cut;
+  }
+  return h;
+}
+
+/** The bridge deck under this point, or null (World Map). */
+export function bridgeAt(x, z) {
+  for (let i = 0; i < BRIDGES.length; i++) {
+    const b = BRIDGES[i];
+    if (x < b.bx0 || x > b.bx1 || z < b.bz0 || z > b.bz1) continue;
+    const dx = b.bx - b.ax;
+    const dz = b.bz - b.az;
+    const l2 = dx * dx + dz * dz || 1;
+    const t = ((x - b.ax) * dx + (z - b.az) * dz) / l2;
+    if (t < 0 || t > 1) continue;
+    const d = Math.abs((x - b.ax) * dz - (z - b.az) * dx) / Math.sqrt(l2);
+    if (d <= b.halfWidth) return b;
+  }
+  return null;
+}
+
+/** The World Map's bridges as resolved (the feature draws their structure). */
+export function shapeBridges() {
+  return BRIDGES;
+}
+
+/** The World Map's rivers and lakes, as applyMap resolved them (worldmap/waters.js draws them). */
+export function shapeWaters() {
+  return { rivers: RIVERS, lakes: LAKES };
+}
+
+/** True while groundHeightAt is sampling: the decks are not ground. */
+let SKIP_DECKS = false;
+
+/**
+ * The ground and sea floor only — no carrier deck or rig on top.
+ *
+ * What a terrain MESH is built from. heightAt answers "what do the wheels
+ * touch", which over a carrier is the 104 m flight deck; a ground mesh built
+ * from that is a 360 x 1,500 m plateau of grass and cliff standing in the sea
+ * with the ship buried inside it (World Map — Preview, owner playtest Oct 26:
+ * the streamed tiles primed on the main thread after the carrier registered
+ * its deck). Physics keeps heightAt; anything that draws the ground uses this.
+ */
+export function groundHeightAt(x, z) {
+  if (!PLATFORMS.length && !BRIDGES.length) return heightAt(x, z);
+  SKIP_DECKS = true;
+  try {
+    return heightAt(x, z);
+  } finally {
+    SKIP_DECKS = false;
+  }
+}
+
 export function heightAt(x, z) {
   // A deck wins over whatever is underneath it — that is the point of a deck.
   // Not, however, while the authored flats are being measured: a carrier
   // moored across a quay would hand the quay a twenty-metre deck height and
   // bury the harbour under it for the rest of the session.
-  if (PLATFORMS.length && !RESOLVING) {
+  if (PLATFORMS.length && !RESOLVING && !SKIP_DECKS) {
     const p = platformAt(x, z);
     if (p) return p.y;
+  }
+  // A road bridge's deck, the same way (World Map: the river stays under it).
+  if (BRIDGES.length && !RESOLVING && !SKIP_DECKS) {
+    const b = bridgeAt(x, z);
+    if (b) return b.y;
   }
 
   /*
@@ -1639,6 +2008,8 @@ export function heightAt(x, z) {
         const inland = smoothstep(0.02, 0.6, m);
         local =
           lerp(-4, 22, smoothstep(0, 0.3, m)) + inland * hills * isl.peak * 0.85 + inland * detail * 5;
+        // World Map: rolling country, down to the level ground the fields, towns and roads need.
+        if (isl.relief) local += relief(x, z, isl, m);
         break;
       }
       case 'flat': {
@@ -1656,6 +2027,8 @@ export function heightAt(x, z) {
           lerp(-8, 34, smoothstep(0, 0.2, m)) +
           inland * (Math.pow(ridge, 1.5) * isl.peak * 1.05 + hills * isl.peak * 0.3) +
           inland * detail * 15;
+        // World Map: a range that rises to its middle, cut by gullies, not a table.
+        if (isl.erode) local = eroded(local, x, z, isl, inland);
         break;
       }
       case 'cone': {
@@ -1710,13 +2083,19 @@ export function heightAt(x, z) {
           lerp(-4, 26, smoothstep(0, 0.28, m)) +
           inland * (hills * isl.peak * 0.55 + Math.pow(ridge, 2.2) * isl.peak * 0.75) +
           inland * detail * 9;
+        if (isl.erode) local = eroded(local, x, z, isl, inland);
       }
     }
 
     // Islands are far apart, so max() keeps each coastline clean.
-    const candidate = lerp(SEA_FLOOR, local, smoothstep(0, 0.16, m));
+    let candidate = lerp(SEA_FLOOR, local, smoothstep(0, 0.16, m));
+    // World Map: a coast that is a cliff rather than a slope.
+    if (isl.cliff) candidate += isl.cliff * smoothstep(0.095, 0.13, m) * (0.55 + 0.45 * fbm(x / 600, z / 600, CLIFF_NOISE));
     if (candidate > h) h = candidate;
   }
+
+  // World Map: rivers and lakes, cut into the ground (their water is drawn by worldmap/waters.js).
+  if (RIVERS.length || LAKES.length) h = carveWaters(h, x, z);
 
   if (padW > 0) h = lerp(h, AIRPORT.elev, padW);
 

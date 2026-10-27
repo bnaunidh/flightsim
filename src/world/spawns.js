@@ -49,6 +49,7 @@ import { PADS } from './pads.js';
 import { chooseBerth } from './carrier-berth.js';
 import { DECK } from './carrier.js';
 import { getAircraft, performanceFor } from '../aircraft/types.js';
+import { takeoffNeedM } from '../aircraft/takeoff-runs.js';
 
 /** Every class, in the order spawnClassOf() decides them. */
 export const CLASSES = Object.freeze(['heli', 'airliner', 'military', 'water', 'open', 'light']);
@@ -205,13 +206,35 @@ export const CHOICES = Object.freeze({
  * `type` is optional; without one the lists are exactly as before.
  */
 export function candidatesFor(mapId, cls, type = null) {
-  const over = SPAWNS[mapId] && SPAWNS[mapId][cls];
+  // A World Map field is one of our maps' airports (worldmap/personas.js): that map's own
+  // aeroplane starts (Gateway's contact stands, the air base's carrier). The helicopters keep
+  // the World Map's pads, which are the field's and the heliports round it.
+  const from = cls !== 'heli' && MAP && MAP.worldPreview && MAP._departure && MAP._departure.from;
+  const key = from && SPAWNS[from] ? from : mapId;
+  const over = SPAWNS[key] && SPAWNS[key][cls];
   let list = over || SPAWN_DEFAULTS[cls] || SPAWN_DEFAULTS.light;
   if (type && type.carrier === false) list = list.filter((ref) => ref !== 'carrier');
-  const need = type && Number(type.minRunway);
-  if (!need) return [...list, 'runway'];
-  const pre = runwayLength() < need ? [{ hover: 'offshore', agl: 300 }] : [];
+  const giant = type && Number(type.minRunway);
+  // On the World Map a short strip is too short for most things (runwayNeedM): in the air instead.
+  const need = runwayNeedM(type);
+  const pre = need && runwayLength() < need ? [{ hover: 'offshore', agl: 300 }] : [];
+  if (!giant) return [...pre, ...list, 'runway'];
   return [...pre, ...list, { apron: 'open' }, 'runway'];
+}
+
+/**
+ * The runway a type needs before it is offered a runway start, metres.
+ *
+ * The giants' own `minRunway` everywhere (aircraft/extra/giants.js). On the
+ * World Map — Preview also the type's measured take-off run
+ * (aircraft/takeoff-runs.js): its fields run from 580 m grass strips to
+ * 3.8 km internationals, and an A320 on Gull Cay's 580 m could never leave
+ * it (checker, wave 17b). The regular maps keep exactly what they had.
+ */
+export function runwayNeedM(type) {
+  const giant = (type && Number(type.minRunway)) || 0;
+  if (!(MAP && MAP.worldPreview) || !type) return giant;
+  return Math.max(giant, takeoffNeedM(type, AIRPORT && AIRPORT.surface));
 }
 
 /** The loaded map's main runway, metres (the one every runway start and hover start uses). */
@@ -221,7 +244,7 @@ export function runwayLength() {
 
 /** True when this type needs more runway than the loaded map's main one. */
 export function needsLongerRunway(type) {
-  const need = type && Number(type.minRunway);
+  const need = runwayNeedM(type);
   return !!need && runwayLength() < need;
 }
 
@@ -703,6 +726,8 @@ export function resolveSpawn(mapId, cls, opts = {}) {
 /** The refs a picker choice id means for a class. */
 export function refsForChoice(cls, id) {
   if (id === 'runway') return [];
+  // In the air, lined up: what a runway start becomes where the runway is too short for the type.
+  if (id === 'air') return [{ hover: 'offshore', agl: 300 }];
   if (id === 'auto') return candidatesFor(MAP && MAP.id, cls).slice(0, -1);
   if (id.startsWith('pad:')) return [{ pad: id.slice(4) }];
   const c = (CHOICES[cls] || []).find((q) => q.id === id);
@@ -733,9 +758,12 @@ export function spawnChoices(mapId, cls, opts = {}) {
       if (out.length >= max - 1) break;
     }
   } else {
+    // A World Map strip too short for the type: nothing on its ground either (a stand there is a start it can never fly out of).
+    const short = !!(MAP && MAP.worldPreview && size.type && needsLongerRunway(size.type));
     for (const c of CHOICES[cls] || []) {
       // No carrier entry for a type that never goes to sea (candidatesFor).
       if (size.type && size.type.carrier === false && c.refs.includes('carrier')) continue;
+      if (short && cls !== 'water' && !c.refs.includes('carrier')) continue;
       let any = false;
       for (const ref of c.refs) if (resolveRef(ref, size, ctx).length) { any = true; break; }
       if (!any) continue;
@@ -743,6 +771,9 @@ export function spawnChoices(mapId, cls, opts = {}) {
       if (out.length >= max - 1) break;
     }
   }
-  out.push({ id: 'runway', label: 'Runway 09 (lined up)', kind: 'runway' });
+  // A runway the type cannot take off from is not offered (the World Map's short strips): in the air instead.
+  if (cls !== 'heli' && MAP && MAP.worldPreview && size.type && needsLongerRunway(size.type)) {
+    out.push({ id: 'air', label: `In the air (the ${runwayLength()} m strip is too short)`, kind: 'hover' });
+  } else out.push({ id: 'runway', label: 'Runway 09 (lined up)', kind: 'runway' });
   return out.slice(0, max);
 }

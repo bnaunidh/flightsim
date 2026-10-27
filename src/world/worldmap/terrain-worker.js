@@ -12,7 +12,7 @@
  *   { op: 'init', gen, def }                       load the map
  *   { op: 'tile', gen, key, cx, cz, size, seg }    → { key, gen, data | null }
  *   { op: 'chart', box, w, h }                     → { heights } for the world map's picture
- *   { op: 'flora', gen, key, ix, iz, perCell }     → { trees } a cell's trees (worldmap/flora.js)
+ *   { op: 'flora', gen, key, ix, iz, perCell, layer, mode } → { trees, layer } a cell's trees or tree cards (worldmap/flora.js)
  *
  * `gen` is the world build the request belongs to; the stream throws away an
  * answer for a world that has been rebuilt since.
@@ -49,15 +49,15 @@ self.onmessage = async (ev) => {
       return;
     }
     if (msg.op === 'flora') {
-      const trees = FLORA_CTX ? placeCell(T, FLORA_CTX, msg.ix, msg.iz, msg.perCell) : null;
-      self.postMessage({ op: 'flora', gen: msg.gen, key: msg.key, ix: msg.ix, iz: msg.iz, trees }, trees ? [trees.buffer] : []);
+      const trees = FLORA_CTX ? placeCell(T, FLORA_CTX, msg.ix, msg.iz, msg.perCell, msg.mode || 'trees') : null;
+      self.postMessage({ op: 'flora', gen: msg.gen, key: msg.key, ix: msg.ix, iz: msg.iz, trees, layer: msg.layer || null }, trees ? [trees.buffer] : []);
       return;
     }
     if (msg.op === 'tile') {
       const t0 = performance.now();
       const data = buildTileData(T, msg.cx, msg.cz, msg.size, msg.seg);
       const ms = performance.now() - t0;
-      const transfer = data ? [data.pos.buffer, data.nrm.buffer, data.blend.buffer, data.uv.buffer] : [];
+      const transfer = data ? [data.pos.buffer, data.nrm.buffer, data.blend.buffer, data.uv.buffer, ...(data.cover ? [data.cover.buffer, data.urban.buffer] : [])] : [];
       self.postMessage({ op: 'tile', gen: msg.gen, key: msg.key, data, ms }, transfer);
     }
   } catch (err) {

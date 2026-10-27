@@ -31,15 +31,24 @@
  * kilometres from its mesh's own origin (see render/render-origin.js).
  */
 import * as THREE from '../../vendor/three.module.js';
+import { coverAt, forestNoise } from './landcover.js';
 
 export const CELL = 2048;
 export const ORIGIN_SNAP = 16384;
 
+/*
+ * Wave 18 (owner: "sparse single trees"): the trees stand where the land
+ * cover says forest (worldmap/landcover.js), densely, and a few along the
+ * hedges and in the heath; from far off the forest floor's own colour
+ * carries the woods, so the instanced trees are only needed close in. Low
+ * stays light for the school Chromebooks: a tight radius and the counts
+ * the frame-time runs allow.
+ */
 export const TIERS = Object.freeze({
-  low: Object.freeze({ radius: 2200, perCell: 36, shadows: false }),
-  medium: Object.freeze({ radius: 3300, perCell: 80, shadows: false }),
-  high: Object.freeze({ radius: 4600, perCell: 120, shadows: true }),
-  ultra: Object.freeze({ radius: 6000, perCell: 160, shadows: true }),
+  low: Object.freeze({ radius: 1300, perCell: 70, shadows: false }),
+  medium: Object.freeze({ radius: 2400, perCell: 220, shadows: false }),
+  high: Object.freeze({ radius: 3600, perCell: 400, shadows: true }),
+  ultra: Object.freeze({ radius: 5000, perCell: 600, shadows: true }),
 });
 
 export function tierFor(q) {
@@ -75,7 +84,8 @@ function rng(seed) {
  * Float32Array of [x, y, z, height, rot, species] (world metres), or null
  * when the cell has no land at all.
  */
-export function placeCell(T, ctx, ix, iz, perCell) {
+export function placeCell(T, ctx, ix, iz, perCell, mode = 'trees') {
+  const cards = mode === 'cards';
   const x0 = ix * CELL;
   const z0 = iz * CELL;
   const isl = (ctx.islands || []).filter((i) => {
@@ -83,13 +93,16 @@ export function placeCell(T, ctx, ix, iz, perCell) {
     return i.cx + r > x0 && i.cx - r < x0 + CELL && i.cz + r > z0 && i.cz - r < z0 + CELL;
   });
   if (!isl.length) return null;
-  // The hub's island and its hill have Scenery's own groves.
+  // Islands that bring their own trees (none since the land cover: the hub's too follows its forests).
   const skip = new Set(ctx.skipIslands || []);
+  const cov = new Float32Array(8);
   const roads = (ctx.roads || []).filter((r) => r.box && r.box[1] > x0 - 40 && r.box[0] < x0 + CELL + 40 && r.box[3] > z0 - 40 && r.box[2] < z0 + CELL + 40);
   const lanes = (ctx.airports || []).filter((a) => Math.abs(a.z - (z0 + CELL / 2)) < CELL / 2 + 500 && Math.abs(a.x - (x0 + CELL / 2)) < CELL / 2 + a.length / 2 + 3500);
   const R = rng(((ix * 73856093) ^ (iz * 19349663) ^ 0x5bd1e995) >>> 0);
+  // The ground, not a deck standing on it (no trees on the carrier).
+  const gh = T.groundHeightAt || T.heightAt;
   const out = [];
-  const tries = perCell * 3;
+  const tries = cards ? Math.round(perCell * 1.8) : perCell * 3;
   for (let k = 0; k < tries && out.length / 6 < perCell; k++) {
     const x = x0 + R() * CELL;
     const z = z0 + R() * CELL;
@@ -104,21 +117,23 @@ export function placeCell(T, ctx, ix, iz, perCell) {
       if (d < best) { best = d; home = i; }
     }
     if (!home || best > 1.45 || skip.has(home.name)) continue;
+    // Cards stand only in forest: most of the sea of tries is thrown out here, before any height is asked.
+    if (cards && forestNoise(x, z) < 0.31) continue;
     let lane = false;
     for (const a of lanes) if (Math.abs(z - a.z) < 420 && Math.abs(x - a.x) < a.length / 2 + 3200) lane = true;
     if (lane) continue;
-    const h = T.heightAt(x, z);
+    const h = gh(x, z);
     if (h < 2.5 || h > 620) continue;
-    // Groves: a slow noise of where woods are, from the cell's own numbers.
-    const wood = 0.5 + 0.5 * Math.sin(x * 0.0021 + home.seed) * Math.cos(z * 0.0017 - home.seed * 0.7);
-    const altK = h < 12 ? 0.75 : h < 260 ? 1 : 1 - (h - 260) / 360;
-    const profileK = home.profile === 'flat' ? 0.8 : home.profile === 'cone' ? 0.35 : home.profile === 'ridge' ? 0.7 : 1;
-    if (r1 > wood * altK * profileK) continue;
-    const gx = T.heightAt(x + 6, z) - T.heightAt(x - 6, z);
-    const gz = T.heightAt(x, z + 6) - T.heightAt(x, z - 6);
+    const gx = gh(x + 6, z) - gh(x - 6, z);
+    const gz = gh(x, z + 6) - gh(x, z - 6);
     const slope = Math.hypot(gx, gz) / 12;
     if (slope > 0.5) continue;
     if (T.flatAt && T.flatAt(x, z)) continue;
+    // Where the land cover has woods: densely in a forest, a few in the heath and along the farmland, odd ones elsewhere.
+    const c = coverAt(x, z, h, slope, false, cov);
+    // The cards fill the forests only (worldmap/tree-cards.js), as densely as the tier allows.
+    const want = cards ? c[4] * 0.99 + c[5] * 0.04 : c[4] * 0.97 + c[5] * 0.07 + c[3] * 0.025 + c[6] * 0.05 + c[1] * 0.015;
+    if (r1 > want) continue;
     let onRoad = false;
     for (const rd of roads) {
       const p = rd.path;
@@ -144,7 +159,7 @@ export function placeCell(T, ctx, ix, iz, perCell) {
       q -= mix[s];
       kind = s;
     }
-    const nominal = h > 200 ? 11 : 9.5;
+    const nominal = cards ? (h > 200 ? 15 : 17) : h > 200 ? 11 : 9.5;
     const height = nominal * (0.7 + r3 * 0.6) * SHAPE[kind].h;
     out.push(x, h, z, height, r1 * 6.2832 + r3 * 3.1, kind);
   }
@@ -161,11 +176,13 @@ export function floraContext(D) {
       for (const p of r.path) b = [Math.min(b[0], p[0]), Math.max(b[1], p[0]), Math.min(b[2], p[1]), Math.max(b[3], p[1])];
       return { halfWidth: r.halfWidth, path: r.path.map((p) => [p[0], p[1]]), box: b };
     }),
-    skipIslands: D.islands.slice(0, 2).map((i) => i.name),
+    skipIslands: [],
   };
 }
 
-const _d = new THREE.Object3D();
+/** A cell the worker has not answered in this long: the worker is given up on (stream.js uses the same). */
+export const WORKER_TIMEOUT_MS = 4000;
+
 const _c = new THREE.Color();
 
 export class Flora {
@@ -180,8 +197,15 @@ export class Flora {
    * @param {Function} [o.addObstacle] terrain.js addObstacle (solid trees round the aeroplane)
    * @param {object[]} [o.obstacles]   terrain.js OBSTACLES
    */
-  constructor({ treeGeometry, ctx, T = null, worker = null, gen = 0, quality = 'medium', addObstacle = null, obstacles = null, now = () => performance.now() }) {
-    this.tier = tierFor(quality);
+  constructor({ treeGeometry, ctx, T = null, worker = null, gen = 0, quality = 'medium', addObstacle = null, obstacles = null, now = () => performance.now(), workerOk = null, layer = null }) {
+    /*
+     * `layer` makes this pool something other than the real trees: the tree
+     * cards (worldmap/tree-cards.js) are { id: 'cards', mode: 'cards', tiers,
+     * geometry(kind), material(kind), solid: false }. Its requests to the
+     * shared worker carry the id, so two pools never take each other's cells.
+     */
+    this.layer = layer;
+    this.tier = layer && layer.tiers ? layer.tiers[quality] || layer.tiers.medium : tierFor(quality);
     this.ctx = ctx;
     this.T = T;
     this.worker = worker;
@@ -190,17 +214,21 @@ export class Flora {
     this.addObstacle = addObstacle;
     this.obstacles = obstacles;
     this.cells = new Map();
-    this.pending = new Set();
+    /** Cells asked of the worker: key → when. */
+    this.pending = new Map();
+    /** The ground's own verdict on the shared worker (stream.js abandonWorker): false = it has given up on it. */
+    this.workerOk = workerOk;
     this.group = new THREE.Group();
-    this.group.name = 'world-flora';
+    this.group.name = layer ? `world-flora-${layer.id}` : 'world-flora';
     this.origin = { x: NaN, z: NaN };
     this.span = Math.ceil(this.tier.radius / CELL) * 2 + 2;
-    const maxCells = this.span * this.span;
+    // The most cells a circle of the tier's radius can touch (not the whole square round it): the pool's memory.
+    const maxCells = Math.min(this.span * this.span, Math.ceil(Math.PI * (this.tier.radius / CELL + 1.5) ** 2));
     this.meshes = SPECIES.map((name, kind) => {
-      const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, side: kind === 0 ? THREE.DoubleSide : THREE.FrontSide });
+      const mat = layer ? layer.material(kind) : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, side: kind === 0 ? THREE.DoubleSide : THREE.FrontSide });
       const cap = Math.ceil(maxCells * this.tier.perCell * (kind === 0 || kind === 1 || kind === 2 ? 0.8 : 0.45));
-      const m = new THREE.InstancedMesh(treeGeometry(kind), mat, cap);
-      m.name = `world-trees:${name}`;
+      const m = new THREE.InstancedMesh(layer ? layer.geometry(kind) : treeGeometry(kind), mat, cap);
+      m.name = `world-${layer ? layer.id : 'trees'}:${name}`;
       m.count = 0;
       m.castShadow = this.tier.shadows;
       m.receiveShadow = false;
@@ -223,13 +251,28 @@ export class Flora {
 
   onMessage(m) {
     if (!m || m.op !== 'flora' || m.gen !== this.gen) return;
+    if ((m.layer || null) !== (this.layer ? this.layer.id : null)) return;
     this.pending.delete(m.key);
     if (m.error) {
-      this.worker = null;
+      this.abandonWorker();
       return;
     }
     this.counts.workerCells++;
     this.arrive(m.key, m.ix, m.iz, m.trees);
+  }
+
+  /*
+   * The worker is gone (it threw, stopped answering, or the ground gave up on
+   * it): what it still owes is planted here instead, inside the frame budget,
+   * the same as the ground's own fallback (stream.js). Before this, a worker
+   * that failed mid-session left its three cells pending for ever and no tree
+   * was ever planted again (checker, wave 17b).
+   */
+  abandonWorker() {
+    if (this.worker && this._onMsg) this.worker.removeEventListener('message', this._onMsg);
+    this.worker = null;
+    this.pending.clear();
+    this.counts.abandoned = (this.counts.abandoned || 0) + 1;
   }
 
   arrive(key, ix, iz, trees) {
@@ -238,32 +281,42 @@ export class Flora {
     this.dirty = true;
   }
 
-  /** Each species' matrices and colours for a cell, relative to the pool's origin. */
+  /**
+   * Each species' matrices and colours for a cell, relative to the cell's own
+   * corner, made once (straight from the numbers: a turn about Y and a
+   * uniform scale, no Object3D). The pool's origin is added when they are
+   * copied in (refill), so the origin moving on (every 16 km) costs two adds
+   * a tree, not a rebuild of every matrix: that rebuild was a 170-330 ms
+   * frame at Mach 2 with the tree cards' thousands a cell.
+   */
   blocksFor(c) {
-    if (c.blocks && c.ox === this.origin.x && c.oz === this.origin.z) return c.blocks;
+    if (c.blocks) return c.blocks;
     const per = SPECIES.map(() => []);
     const t = c.trees;
     for (let i = 0; i < t.length; i += 6) per[t[i + 5]].push(i);
+    const bx = c.ix * CELL;
+    const bz = c.iz * CELL;
     c.blocks = per.map((list) => {
       const m = new Float32Array(list.length * 16);
       const col = new Float32Array(list.length * 3);
-      list.forEach((i, n) => {
+      for (let n = 0; n < list.length; n++) {
+        const i = list[n];
         const h = t[i + 3];
-        _d.position.set(t[i] - this.origin.x, t[i + 1] - 0.4, t[i + 2] - this.origin.z);
-        _d.rotation.set(0, t[i + 4], 0);
-        _d.scale.set(h, h, h);
-        _d.updateMatrix();
-        _d.matrix.toArray(m, n * 16);
+        const cs = Math.cos(t[i + 4]) * h;
+        const sn = Math.sin(t[i + 4]) * h;
+        const o = n * 16;
+        m[o] = cs; m[o + 2] = -sn;
+        m[o + 5] = h;
+        m[o + 8] = sn; m[o + 10] = cs;
+        m[o + 12] = t[i] - bx; m[o + 13] = t[i + 1] - 0.4; m[o + 14] = t[i + 2] - bz; m[o + 15] = 1;
         const q = ((Math.sin(t[i] * 3.17 + t[i + 2] * 7.61) * 9631.7) % 1 + 1) % 1;
         const l = 0.88 + q * 0.24;
         col[n * 3] = l * (0.97 + q * 0.06);
         col[n * 3 + 1] = l;
         col[n * 3 + 2] = l * (1.03 - q * 0.08);
-      });
+      }
       return { m, col, n: list.length };
     });
-    c.ox = this.origin.x;
-    c.oz = this.origin.z;
     return c.blocks;
   }
 
@@ -304,15 +357,21 @@ export class Flora {
       }
     }
     const t0 = this.now();
+    if (this.worker) {
+      let stale = this.workerOk && !this.workerOk();
+      for (const at of this.pending.values()) if (t0 - at > WORKER_TIMEOUT_MS) stale = true;
+      if (stale) this.abandonWorker();
+    }
     for (const w of want) {
       if (this.cells.has(w.key) || this.pending.has(w.key)) continue;
       if (this.worker) {
         if (this.pending.size >= 3) break;
-        this.pending.add(w.key);
-        this.worker.postMessage({ op: 'flora', gen: this.gen, key: w.key, ix: w.ix, iz: w.iz, perCell: this.tier.perCell });
-      } else if (this.T) {
+        this.pending.set(w.key, t0);
+        this.worker.postMessage({ op: 'flora', gen: this.gen, key: w.key, ix: w.ix, iz: w.iz, perCell: this.tier.perCell, layer: this.layer ? this.layer.id : null, mode: this.layer ? this.layer.mode : 'trees' });
+      } else if (this.T && !(this.layer && this.layer.mode === 'cards')) {
+        // (No cards without the worker: thousands a cell is too much for the frame. The forest floor carries the woods.)
         if (this.now() - t0 > budgetMs) break;
-        this.arrive(w.key, w.ix, w.iz, placeCell(this.T, this.ctx, w.ix, w.iz, this.tier.perCell));
+        this.arrive(w.key, w.ix, w.iz, placeCell(this.T, this.ctx, w.ix, w.iz, this.tier.perCell, this.layer ? this.layer.mode : 'trees'));
         this.counts.cpuCells++;
       }
     }
@@ -331,7 +390,16 @@ export class Flora {
         const room = mesh.instanceMatrix.count - fill[kind];
         const n = Math.min(b.n, room);
         if (n <= 0) return;
-        mesh.instanceMatrix.array.set(n === b.n ? b.m : b.m.subarray(0, n * 16), fill[kind] * 16);
+        const arr = mesh.instanceMatrix.array;
+        const at = fill[kind] * 16;
+        arr.set(n === b.n ? b.m : b.m.subarray(0, n * 16), at);
+        // From the cell's corner to the pool's origin.
+        const dx = c.ix * CELL - this.origin.x;
+        const dz = c.iz * CELL - this.origin.z;
+        for (let k = 0; k < n; k++) {
+          arr[at + k * 16 + 12] += dx;
+          arr[at + k * 16 + 14] += dz;
+        }
         mesh.instanceColor.array.set(n === b.n ? b.col : b.col.subarray(0, n * 3), fill[kind] * 3);
         fill[kind] += n;
         trees += n;
@@ -340,8 +408,16 @@ export class Flora {
     this.meshes.forEach((m, kind) => {
       m.count = fill[kind];
       m.visible = fill[kind] > 0;
-      m.instanceMatrix.needsUpdate = true;
-      m.instanceColor.needsUpdate = true;
+      // Upload only what is used: the pool is sized for the most cells there could be, and sending
+      // all of it every refill was megabytes a second at Mach 2 (the tree cards especially).
+      if (fill[kind] > 0) {
+        m.instanceMatrix.clearUpdateRanges();
+        m.instanceMatrix.addUpdateRange(0, fill[kind] * 16);
+        m.instanceColor.clearUpdateRanges();
+        m.instanceColor.addUpdateRange(0, fill[kind] * 3);
+        m.instanceMatrix.needsUpdate = true;
+        m.instanceColor.needsUpdate = true;
+      }
     });
     this.dirty = false;
     this.counts.cells = this.cells.size;
@@ -352,6 +428,7 @@ export class Flora {
 
   /** Solid trunks in the cells round a low aeroplane (scenery.js's rule: over 4 m, a trunk box a quarter of the canopy). */
   makeSolid(ac) {
+    if (this.layer && this.layer.solid === false) return;
     const low = ac.agl != null ? ac.agl < 220 : true;
     const ix = Math.floor(ac.pos.x / CELL);
     const iz = Math.floor(ac.pos.z / CELL);

@@ -48,7 +48,7 @@ export const AIRPORTS = [
   {
     id: 'haven', code: 'XHVN', name: 'Haven International', place: 'Haven Island', region: 'sound', kind: 'hub',
     x: 0, z: 0, length: 2800, halfWidth: 23, prevailingDeg: 80, parking: true,
-    town: { name: 'Haven', dx: 2600, dz: -2300, radius: 520, count: 56 },
+    town: { name: 'Haven', dx: 2600, dz: -2300, radius: 680, count: 160, towers: 6, towerMaxH: 64 },
   },
   {
     id: 'gull', code: 'XGUL', name: 'Gull Cay Strip', place: 'Gull Cay', region: 'sound', kind: 'ga',
@@ -58,28 +58,28 @@ export const AIRPORTS = [
   {
     id: 'tern', code: 'XTRN', name: 'Tern Field', place: 'Tern Island', region: 'sound', kind: 'regional',
     x: -14000, z: -26000, length: 1300, halfWidth: 15, prevailingDeg: 80, parking: true,
-    town: { name: 'Tern Harbour', dx: 1500, dz: -1350, radius: 360, count: 28 },
+    town: { name: 'Tern Harbour', dx: 1500, dz: -1350, radius: 430, count: 48 },
   },
   {
     id: 'marram', code: 'XMRM', name: 'Marram Regional', place: 'Marram Point', region: 'sound', kind: 'regional',
     x: -40000, z: 20000, length: 2400, halfWidth: 23, prevailingDeg: 85, parking: true,
-    town: { name: 'Marram', dx: 1900, dz: -1650, radius: 420, count: 36 },
+    town: { name: 'Marram', dx: 1900, dz: -1650, radius: 540, count: 70 },
   },
   {
     id: 'farhold', code: 'XFHD', name: 'Farhold International', place: 'Farhold Island', region: 'sound', kind: 'hub',
     x: 42000, z: -40000, length: 2600, halfWidth: 23, prevailingDeg: 70, parking: true,
-    town: { name: 'Farhold', dx: -2200, dz: -2400, radius: 560, count: 60 },
+    town: { name: 'Farhold', dx: -2200, dz: -2400, radius: 740, count: 180, towers: 8, towerMaxH: 80 },
   },
   // Westreach, the mainland.
   {
     id: 'aldermere', code: 'XALD', name: 'Aldermere International', place: 'Westreach', region: 'westreach', kind: 'hub',
     x: -128000, z: 20000, length: 3800, halfWidth: 30, prevailingDeg: 75, parking: true, capital: true,
-    town: { name: 'Aldermere', dx: 2600, dz: -2900, radius: 1000, count: 130 },
+    town: { name: 'Aldermere', dx: 2600, dz: -2900, radius: 1350, count: 420, towers: 24, towerMaxH: 170 },
   },
   {
     id: 'highfold', code: 'XHFR', name: 'Highfold Regional', place: 'Highfold Vale', region: 'westreach', kind: 'regional',
     x: -165000, z: 30000, length: 2300, halfWidth: 23, prevailingDeg: 80, parking: true,
-    town: { name: 'Highfold', dx: -1700, dz: -2100, radius: 420, count: 36 },
+    town: { name: 'Highfold', dx: -1700, dz: -2100, radius: 540, count: 75 },
   },
   {
     id: 'saltmarsh', code: 'XSMS', name: 'Saltmarsh Strip', place: 'Saltmarsh Point', region: 'westreach', kind: 'ga', surface: 'grass',
@@ -90,7 +90,7 @@ export const AIRPORTS = [
   {
     id: 'frigate', code: 'XFRG', name: 'Frigate Bay Regional', place: 'Frigate Island', region: 'sunstring', kind: 'regional',
     x: 108000, z: 88000, length: 2300, halfWidth: 23, prevailingDeg: 85, parking: true,
-    town: { name: 'Frigate Bay', dx: 1600, dz: -1700, radius: 380, count: 32 },
+    town: { name: 'Frigate Bay', dx: 1600, dz: -1700, radius: 480, count: 58 },
   },
   {
     id: 'mangrove', code: 'XMGV', name: 'Mangrove Cay Strip', place: 'Mangrove Cay', region: 'sunstring', kind: 'ga', surface: 'grass',
@@ -100,13 +100,13 @@ export const AIRPORTS = [
   {
     id: 'conch', code: 'XCNC', name: 'Conch Island Field', place: 'Conch Island', region: 'sunstring', kind: 'ga',
     x: 72000, z: 58000, length: 1000, halfWidth: 15, prevailingDeg: 80, parking: false,
-    town: { name: 'Conch Harbour', dx: 1000, dz: -1100, radius: 300, count: 20 },
+    town: { name: 'Conch Harbour', dx: 1000, dz: -1100, radius: 340, count: 30 },
   },
   // The Northern Skerries: the westerlies, so runway 27 most days.
   {
     id: 'eider', code: 'XEDR', name: 'Eider Bay Regional', place: 'Eider Island', region: 'skerries', kind: 'regional',
     x: -42000, z: -138000, length: 1450, halfWidth: 23, prevailingDeg: 260, parking: true,
-    town: { name: 'Eider Bay', dx: 1500, dz: -1800, radius: 380, count: 30 },
+    town: { name: 'Eider Bay', dx: 1500, dz: -1800, radius: 460, count: 52 },
   },
   {
     id: 'petrel', code: 'XPTL', name: 'Petrel Skerry Strip', place: 'Petrel Skerry', region: 'skerries', kind: 'ga', surface: 'gravel',
@@ -117,7 +117,7 @@ export const AIRPORTS = [
   {
     id: 'sandmere', code: 'XSDM', name: 'Sandmere International', place: 'Sandmere', region: 'sands', kind: 'hub',
     x: -62000, z: 150000, length: 3200, halfWidth: 30, prevailingDeg: 90, parking: true,
-    town: { name: 'Sandmere', dx: 2500, dz: -2600, radius: 760, count: 84 },
+    town: { name: 'Sandmere', dx: 2500, dz: -2600, radius: 880, count: 140, towers: 4, towerMaxH: 60 },
   },
   {
     id: 'dune', code: 'XDUN', name: 'Dune Cay Strip', place: 'Dune Cay', region: 'sands', kind: 'ga', surface: 'grass',
@@ -235,6 +235,24 @@ function clashes(list, x, z, r) {
   return false;
 }
 
+/*
+ * Wave 18 (owner, Oct 26: "maps sad as hell", flat uniform carpets): the
+ * shape each island gets on top of its profile (terrain.js: relief, erode,
+ * cliff). Big plains roll in hills up to `relief` metres (the mainland most,
+ * 240 m), flattened again round every field's lanes, its site, the towns and
+ * the roads (the layout tool's calm zones); the ranges and the hills rise to
+ * their middles and are cut by gullies; the cold north's rocks and the
+ * Sound's lone stacks stand on cliffs. Deterministic, from the island alone.
+ */
+export function shapeIsland(isl) {
+  const out = { ...isl };
+  if (isl.profile === 'plains' && isl.radius >= 2800) out.relief = Math.round(Math.min(320, Math.max(35, isl.radius * 0.0135)));
+  if (isl.profile === 'ridge' || isl.profile === 'hills') out.erode = Math.round(isl.peak * (isl.profile === 'ridge' ? 0.26 : 0.2));
+  const cold = isl.region === 'skerries' || isl.region === 'outposts';
+  if ((isl.profile === 'ridge' || isl.profile === 'hills') && (cold || isl.region === 'sound') && isl.radius <= 3000) out.cliff = 22 + (isl.seed % 7) * 4;
+  return out;
+}
+
 /** The seeded islands. Deterministic: same plan, same sea. */
 export function fillerIslands(hand = HAND) {
   const out = [];
@@ -275,7 +293,7 @@ export function fillerIslands(hand = HAND) {
       const nm = makeName(R(), band, taken);
       if (isDenied(nm.name)) continue;
       taken.add(nm.name);
-      const isl = { name: nm.name, cx: x, cz: z, radius: r, peak, seed: seedNo++, profile, region: f.region };
+      const isl = shapeIsland({ name: nm.name, cx: x, cz: z, radius: r, peak, seed: seedNo++, profile, region: f.region });
       placed.push(isl);
       out.push(isl);
       made++;
@@ -304,6 +322,6 @@ export const PLAN = {
   },
   regions: REGIONS,
   airports: AIRPORTS,
-  islands: [...HAND, ...fillerIslands(HAND)],
+  islands: [...HAND.map(shapeIsland), ...fillerIslands(HAND)],
   heliports: HELIPORTS,
 };

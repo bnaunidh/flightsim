@@ -194,6 +194,39 @@ export async function check(sim, r, say = () => {}) {
     }
     say(`builds: ${builds.map((m) => Math.round(m)).join(', ')} ms`);
 
+    /* ---- no instructor on the World Map (owner, Oct 26), the warnings and the tower kept ---- */
+    {
+      await chooseAndWait(sim, wp, 'haven');
+      await sim.startMode('free', { loadingScreen: false, aircraft: 'skylark' });
+      sim.step(0.2);
+      const ac = sim.aircraft;
+      const lines = [];
+      // Engine off on the runway, then rolling, then low and slow in the air: each a coach line on the regular maps.
+      ac.engineOn = false;
+      ac.rpm = 0;
+      lines.push(sim.coachHint(ac));
+      ac.engineOn = true;
+      ac.rpm = 0.6;
+      lines.push(sim.coachHint(ac));
+      sim.step(0.1);
+      const coachEl = document.querySelector('.hud-coach');
+      const shown = coachEl && coachEl.style.display !== 'none' && coachEl.textContent.trim();
+      const warnings = await import('../../src/features/warnings.js').catch(() => null);
+      r.ok('world preview: no instructor — the coach line says nothing on the World Map (the tower and the warnings stay)', lines.every((l) => l == null) && !shown && !!sim.atc && sim.atc.field === 'Haven' && !!warnings,
+        `lines ${JSON.stringify(lines)}, HUD coach "${shown || ''}", tower ${sim.atc && sim.atc.field}`);
+      sim.quitToMenu && sim.quitToMenu();
+      // And the regular maps keep it.
+      sim.setMap('kestrel');
+      await wait(2500);
+      await sim.startMode('free', { loadingScreen: false, aircraft: 'skylark' });
+      sim.step(0.2);
+      sim.aircraft.engineOn = false;
+      sim.aircraft.rpm = 0;
+      const k = sim.coachHint(sim.aircraft);
+      r.ok('world preview: the regular maps keep their coach line', /start the engine/.test(k || ''), `Kestrel: "${k}"`);
+      sim.quitToMenu && sim.quitToMenu();
+    }
+
     /* ---- the heliports, from the field nearest each ---- */
     for (const [from, padId] of [['aldermere', 'aldermere-hospital'], ['aldermere', 'westmost-rig'], ['eider', 'eider-lifeboat'], ['dune', 'sentinel-rig']]) {
       await chooseAndWait(sim, wp, from);
@@ -209,6 +242,25 @@ export async function check(sim, r, say = () => {}) {
       r.ok(`world preview: a helicopter starts on ${pad ? pad.name : padId} (${pad ? pad.kind : '?'}), offered from ${from}`, listed.includes(`pad:${padId}`) && d < 3 && Math.abs(h.pos.y - pad.pos.y) < 3 && !h.crashed,
         `listed ${listed.includes(`pad:${padId}`)} (${listed.join(' ')}), ${d.toFixed(1)} m from it, height ${h.pos.y.toFixed(1)} on a ${pad ? pad.pos.y.toFixed(1) : '?'} m pad, crashed ${h.crashed}`);
       sim.quitToMenu && sim.quitToMenu();
+    }
+    /* ---- a strip too short for the type: never its runway, whatever choice is saved (checker, wave 18) ---- */
+    {
+      await chooseAndWait(sim, wp, 'saltmarsh');
+      const strip = wp.airports().find((a) => a.id === 'saltmarsh');
+      const got = [];
+      for (const choice of ['auto', 'gate', 'remote', 'air']) {
+        await flyFromScreen(sim, 'a320', 'airliner', choice);
+        for (let i = 0; i < 4; i++) {
+          sim.step(0.25);
+          await wait(10);
+        }
+        const ac = sim.aircraft;
+        const onStrip = Math.abs(ac.pos.z - strip.z) <= strip.halfWidth + 20 && Math.abs(ac.pos.x - strip.x) <= strip.length / 2 + 60;
+        got.push({ choice, ok: !ac.onGround && !onStrip && !ac.crashed && ac.pos.y > strip.elev + 150, at: `${ac.onGround ? 'on the ground' : 'airborne'} ${Math.round(ac.pos.y)} m` });
+        sim.quitToMenu && sim.quitToMenu();
+        await wait(30);
+      }
+      r.ok(`world preview: an A320 at ${strip.name} (${strip.length} m) starts in the air with any saved start, never on the strip`, got.every((g) => g.ok), got.map((g) => `${g.choice}: ${g.at}`).join(', '));
     }
     sim.menus.chosenAircraft = before.aircraft;
 
@@ -232,10 +284,105 @@ export async function check(sim, r, say = () => {}) {
           const z = t.cz + p.getZ(k);
           if (Math.abs(p.getX(k)) > t.size / 2 + 1 || Math.abs(p.getZ(k)) > t.size / 2 + 1) continue;
           if (k >= (s.tier.seg + 1) ** 2) continue; // the skirt
-          worst = Math.max(worst, Math.abs(T.heightAt(x, z) - p.getY(k)));
+          worst = Math.max(worst, Math.abs(T.groundHeightAt(x, z) - p.getY(k)));
         }
       }
-      r.ok('world preview: the tile worker\'s ground is the game\'s heightAt', n > 0 && worst < 0.01, `${n} tiles, worst ${worst.toFixed(4)} m (worker ${s.stats().worker})`);
+      r.ok('world preview: the tile worker\'s ground is the game\'s ground (heightAt without the decks)', n > 0 && worst < 0.01, `${n} tiles, worst ${worst.toFixed(4)} m (worker ${s.stats().worker})`);
+
+      /* ---- the carrier (owner, Oct 26: "something is wrong with the carrier" — a terrain-textured box) ---- */
+      {
+        const c = sim.carrier;
+        const CV = await import('../../src/world/carrier.js');
+        let up = 0;
+        let worstDeck = -Infinity;
+        let inFoot = 0;
+        for (const t of s.tiles.values()) {
+          if (!t.mesh) continue;
+          const pa = t.mesh.geometry.attributes.position;
+          const core = (s.tier.seg + 1) ** 2;
+          for (let k = 0; k < Math.min(core, pa.count); k++) {
+            const x = t.cx + pa.getX(k);
+            const z = t.cz + pa.getZ(k);
+            if (Math.abs(x - c.pos.x) > c.halfWidth + 40 || Math.abs(z - c.pos.z) > c.halfDepth + 40) continue;
+            inFoot++;
+            worstDeck = Math.max(worstDeck, pa.getY(k));
+            if (pa.getY(k) > 0) up++;
+          }
+        }
+        r.ok('world preview: carrier — no streamed ground under the ship rises out of the sea (it is not a terrain box)', up === 0,
+          `${inFoot} ground vertices under the deck, highest ${Number.isFinite(worstDeck) ? worstDeck.toFixed(1) : 'none'} m, ${up} above the sea`);
+        let deep = true;
+        for (const fx of [-1, 0, 1]) for (const fz of [-1, -0.5, 0, 0.5, 1]) if (!(T.groundHeightAt(c.pos.x + fx * c.halfWidth, c.pos.z + fz * c.halfDepth) < -12)) deep = false;
+        const dep = wp.airports().find((a) => a.id === 'haven');
+        const dField = Math.hypot(c.pos.x - dep.x, c.pos.z - dep.z);
+        r.ok('world preview: carrier — moored in deep water off the start field, the deck the wheels land on at the ship\'s deck height', deep && dField > 3000 && dField < 12000 && Math.abs(T.heightAt(c.pos.x, c.pos.z) - CV.DECK.y) < 0.01 && Math.abs(c.deckY - CV.DECK.y) < 0.01,
+          `at (${c.pos.x}, ${c.pos.z}), ${(dField / 1000).toFixed(1)} km from ${dep.code}, deck ${T.heightAt(c.pos.x, c.pos.z).toFixed(1)} m, deep ${deep}`);
+        // Its own materials, not the ground's: no terrain material anywhere in the ship.
+        const tileMat = [...s.tiles.values()].find((t) => t.mesh) ? [...s.tiles.values()].find((t) => t.mesh).mesh.material : null;
+        let shipMeshes = 0;
+        let terrainMat = 0;
+        c.group.traverse((o) => {
+          if (!o.isMesh) return;
+          shipMeshes++;
+          const ms = Array.isArray(o.material) ? o.material : [o.material];
+          if (ms.some((m) => m === tileMat || (m && m.userData && m.userData.terrain))) terrainMat++;
+        });
+        const camAt = sim.camera.position;
+        r.ok('world preview: carrier — the real ship is drawn (its own grey hull and deck, not the island shader)', shipMeshes > 20 && terrainMat === 0 && c.group.parent === sim.scene,
+          `${shipMeshes} meshes, ${terrainMat} with the terrain material, visible ${c.group.visible} from ${(Math.hypot(camAt.x - c.pos.x, camAt.z - c.pos.z) / 1000).toFixed(1)} km`);
+        // From far off: the real ship is hidden and the one-mesh far ship stands in, the same size, out to 60 km.
+        const seen = {};
+        for (const km of [3, 25, 45, 80]) {
+          const v = wp.carrierFrom({ x: c.pos.x - km * 1000, y: 900, z: c.pos.z });
+          let size = 0;
+          if (v.far3d) {
+            v.far3d.geometry.computeBoundingBox();
+            const bb = v.far3d.geometry.boundingBox;
+            size = bb.max.z - bb.min.z;
+          }
+          seen[km] = { ship: v.ship, far: v.far, size: Math.round(size) };
+        }
+        wp.carrierFrom(sim.camera.position);
+        r.ok('world preview: carrier — shows from a distance: the ship close in, a far ship of the same length out to 60 km, nothing past it',
+          seen[3].ship && !seen[3].far && !seen[25].ship && seen[25].far && seen[45].far && !seen[80].far && Math.abs(seen[25].size - c.halfDepth * 2) / (c.halfDepth * 2) < 0.08,
+          JSON.stringify(seen));
+        // A carrier start puts a jet on its deck.
+        await flyFromScreen(sim, 'fa18', 'military', 'carrier');
+        for (let i = 0; i < 6; i++) {
+          sim.step(0.25);
+          await wait(10);
+        }
+        const j = sim.aircraft;
+        const onDeck = Math.abs(j.pos.x - c.pos.x) <= c.halfWidth && Math.abs(j.pos.z - c.pos.z) <= c.halfDepth;
+        r.ok('world preview: carrier — a carrier start puts the jet on the deck, on its wheels at deck height', onDeck && Math.abs(j.pos.y - CV.DECK.y) < 4 && !j.crashed,
+          `at (${j.pos.x.toFixed(0)}, ${j.pos.y.toFixed(1)}, ${j.pos.z.toFixed(0)}), deck ${CV.DECK.y} m, crashed ${j.crashed}`);
+        // No instructor at the ship either: the carrier's own coaching ("WAVE OFF — full power...") is the
+        // coach line too, and came through when carrier-ops wrapped the coach after the World Map did (checker, wave 18).
+        {
+          const D = sim.carrierOps.deck;
+          const fr = sim.carrierOps.frame;
+          const said = new Set();
+          let carrierHad = 0;
+          for (const rng of [3000, 1500, 800, 400]) {
+            const p = D.atStation(fr, fr.touchdownS - rng, 0);
+            j.reset({ pos: new j.pos.constructor(p.x, 0, p.z), headingDeg: fr.landingHeadingDeg, speed: 70, altAGL: null, engineOn: true, fuel: 1 });
+            j.pos.y = fr.deckY + rng * 0.06;
+            for (let i = 0; i < 20; i++) {
+              sim.step(1 / 30);
+              said.add(String(sim.coachHint(j)));
+              if (sim.carrierOps.coach()) carrierHad++;
+            }
+          }
+          r.ok('world preview: carrier — no coach line on the approach to the ship either (the carrier\'s own coaching is muted too)', said.size === 1 && said.has('null') && carrierHad > 0,
+            `coach said ${[...said].join(' | ')}; the carrier had a line on ${carrierHad} frames`);
+        }
+        const ops = sim.scene.getObjectByName('ext:carrier-ops');
+        r.ok('world preview: carrier — its wires, catapults and lens (carrier ops) are built for it', !!ops && ops.children.length > 0 && ops.visible, ops ? `${ops.children.length} parts, visible ${ops.visible}` : 'no carrier-ops layer');
+        sim.quitToMenu && sim.quitToMenu();
+        await wait(50);
+        await sim.startMode('free', { loadingScreen: false, aircraft: 'skylark' });
+        for (let i = 0; i < 10; i++) sim.step(0.1);
+      }
 
       /* ---- the horizon ---- */
       const hz = wp.horizon();
@@ -276,7 +423,8 @@ export async function check(sim, r, say = () => {}) {
       sim.speak = os;
       const out = fr.x - fr.length / 2 - ac.pos.x;
       const onSlope = Math.abs(ac.pos.y - fr.elev - Math.max(0, out) * Math.tan((3 * Math.PI) / 180));
-      r.ok('world preview: far field — the tower hands over to Frigate and clears you to land', sim.atc.field === 'Frigate' && said.some((x) => /contact Frigate Tower/.test(x)) && said.some((x) => /cleared to land runway zero nine/.test(x)),
+      const frRadio = fr.name.split(' ')[0];
+      r.ok(`world preview: far field — the tower hands over to ${frRadio} (Frigate Island) and clears you to land`, sim.atc.field === frRadio && said.some((x) => new RegExp(`contact ${frRadio} Tower`).test(x)) && said.some((x) => /cleared to land runway zero nine/.test(x)),
         said.slice(-3).join(' | '));
       r.ok('world preview: far field — the approach autopilot flies Frigate\'s centreline down the slope and hands back', !sim.autopilot.engaged && !ac.crashed && out > 300 && out < 4000 && onSlope < 45 && maxOff < 60 && wp.navField().code === 'XFRG',
         `handed back after ${t} s, ${Math.round(out)} m short, ${onSlope.toFixed(0)} m off the slope, at most ${maxOff.toFixed(0)} m off the centreline in the last 5 km`);
@@ -355,6 +503,45 @@ export async function check(sim, r, say = () => {}) {
       r.ok('world preview: the floating origin draws the same picture whatever the origin, 130 km out', same && differs, lines.join('; '));
     }
 
+    /* ---- the world dressed: land cover, waters, network, the field's persona, the scenery models (wave 18) ---- */
+    {
+      await chooseAndWait(sim, wp, 'aldermere');
+      await sim.startMode('free', { loadingScreen: false, airborne: true, aircraft: 'skylark' });
+      for (let i = 0; i < 20; i++) {
+        sim.step(0.1);
+        await wait(20);
+      }
+      const s = wp.stream();
+      const tiles = [...s.tiles.values()].filter((t) => t.mesh);
+      const withCover = tiles.filter((t) => t.mesh.geometry.attributes.aCover && t.mesh.geometry.attributes.aUrban).length;
+      r.ok('world preview: the streamed ground carries its land cover and is drawn with the World Map\'s own material', tiles.length > 0 && withCover === tiles.length && !!s.material.userData.worldTerrain,
+        `${withCover} of ${tiles.length} tiles with cover`);
+      const wt = wp.waters();
+      const net = wp.network();
+      r.ok('world preview: rivers and lakes are drawn; the network\'s bridges and roundabouts stand', !!wt && wt.userData.rivers >= 5 && wt.userData.lakes >= 4 && !!net && net.userData.bridges >= 2 && net.userData.rings >= 8,
+        `${wt && wt.userData.rivers} rivers, ${wt && wt.userData.lakes} lakes; ${net && net.userData.bridges} bridge decks, ${net && net.userData.rings} roundabouts`);
+      const dep = wp.dressing();
+      const iron = wp.outstations().fields.find((f) => f.userData.airport.id === 'sandmere');
+      r.ok('world preview: the start field wears its persona\'s landmarks; the air base shows its carrier group from afar', !!dep && dep.children.length > 0 && !!iron && !!iron.getObjectByName('field-carrier-group') && sim.atc.field === 'Gateway',
+        `start-field dressing ${dep ? dep.children.length : 0} parts, Ironhead carrier ${!!(iron && iron.getObjectByName('field-carrier-group'))}, tower "${sim.atc.field}"`);
+      // The scenery models: loaded, and drawn round a roadside pole.
+      const pr = wp.props();
+      for (let i = 0; i < 100 && pr.stats().models < 5; i++) await wait(50);
+      const PRM = await import('../../src/world/worldmap/props.js');
+      const pole = pr.placed['utility-pole'][0];
+      pr.update({ x: pole[0], y: 200, z: pole[2] }, 1);
+      const st = pr.stats();
+      r.ok('world preview: the CC0 scenery models load and stand round the camera (roadside poles here)', st.models === PRM.PROP_MODELS.length && st.drawn['utility-pole'] > 0, JSON.stringify(st));
+      pr.update(sim.camera.position, 1);
+      // Traffic on the roads (checker, wave 18: the World Map had no ambient population, so not one car).
+      const amb = sim.ambient ? sim.ambient.state() : null;
+      const moving = sim.ambient ? sim.ambient.vehicles().filter((v) => !v.parked && v.lane >= 0) : [];
+      const T0 = await import('../../src/world/terrain.js');
+      const onRoad = moving.filter((v) => Math.abs(v.py - T0.heightAt(v.px, v.pz)) < 2.5).length;
+      r.ok('world preview: cars, vans and lorries drive the World Map\'s roads, on the ground', !!amb && amb.mapId === 'world-preview' && moving.length >= 10 && onRoad === moving.length,
+        amb ? `${amb.cars} vehicles on ${amb.lanes} lanes, ${onRoad} of ${moving.length} moving ones on the ground` : 'no ambient');
+    }
+
     /* ---- performance, per tier ---- */
     const tiers = {};
     for (const q of ['low', 'medium', 'high']) {
@@ -367,7 +554,18 @@ export async function check(sim, r, say = () => {}) {
       const kb = await carry(sim, { x: -9000, z: 400 }, { x: 9000, z: 400 }, { speed: 250, everyHole: 1e9 });
       sim.quitToMenu && sim.quitToMenu();
       const geoBefore = sim.renderer.info.memory.geometries;
-      const heapBefore = performance.memory ? performance.memory.usedJSHeapSize : 0;
+      // The heap's floor, not one reading: a single sample lands anywhere in the collector's saw-tooth
+      // (the same flying read -301 MB and +418 MB on two runs). The least of a few, a beat apart.
+      const heapFloor = async () => {
+        if (!performance.memory) return 0;
+        let m = Infinity;
+        for (let i = 0; i < 6; i++) {
+          await wait(250);
+          m = Math.min(m, performance.memory.usedJSHeapSize);
+        }
+        return m;
+      };
+      const heapBefore = await heapFloor();
       await chooseAndWait(sim, wp, 'aldermere');
       if (sim.qualityBuilt !== q) {
         const done = wp.whenBuilt();
@@ -376,6 +574,8 @@ export async function check(sim, r, say = () => {}) {
       }
       await sim.startMode('free', { loadingScreen: false, aircraft: 'skylark' });
       for (let i = 0; i < 30; i++) sim.step(1 / 60);
+      // The world as built (wave 18: towns, villages, highways, forests — a bigger world), before any flying.
+      const heapBuilt = await heapFloor();
       wp.perf(true);
       longTasks = [];
       let maxMeshes = 0;
@@ -410,7 +610,8 @@ export async function check(sim, r, say = () => {}) {
         maxMeshes, cap: st.maxTiles, maxTrees, treeCap: fl.capacity, bytes: st.bytes, workMean: work.mean, workMax: work.max,
         long: longTasks.length, worstLong: Math.round(Math.max(0, ...longTasks)),
         geo: sim.renderer.info.memory.geometries - geoBefore,
-        heap: performance.memory ? (performance.memory.usedJSHeapSize - heapBefore) / 1e6 : 0,
+        heap: performance.memory ? ((await heapFloor()) - heapBuilt) / 1e6 : 0,
+        world: performance.memory ? (heapBuilt - heapBefore) / 1e6 : 0,
       };
       tiers[q] = res;
       const hitch = (ts, med) => ts.filter((t) => t > Math.max(50, med * 3)).length / ts.length;
@@ -431,8 +632,10 @@ export async function check(sim, r, say = () => {}) {
       r.ok(`world preview: ${q}, the ground under and ahead of the aircraft drawn all the way`, m2.holes + cr.holes === 0 && m2.checks + cr.checks > 20, `${m2.holes + cr.holes} holes in ${m2.checks + cr.checks} checks`);
       r.ok(`world preview: ${q}, tile meshes and trees inside the tier's caps the whole way`, maxMeshes <= st.maxTiles && maxTrees <= fl.capacity,
         `most ${maxMeshes} of ${st.maxTiles} meshes, ${(st.bytes / 1e6).toFixed(1)} MB now, ${st.evicted} unloaded; most ${maxTrees} trees of ${fl.capacity}`);
-      r.ok(`world preview: ${q}, memory after the flying is bounded`, res.geo < 500 && res.heap < 200,
-        `geometries +${res.geo}, heap +${res.heap.toFixed(0)} MB`);
+      // Flying 20 km at Mach 2 and 15 km of cruise must not grow it (streaming frees what it loads); the
+      // world itself (over Kestrel's) stays under a ceiling a school Chromebook's tab can hold.
+      r.ok(`world preview: ${q}, memory after the flying is bounded`, res.geo < 500 && res.heap < 200 && res.world < 350,
+        `geometries +${res.geo}, heap +${res.heap.toFixed(0)} MB over the flying, the World Map +${res.world.toFixed(0)} MB over Kestrel`);
       sim.quitToMenu && sim.quitToMenu();
     }
     sim.settings.quality = before.quality;
