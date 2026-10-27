@@ -10,7 +10,7 @@
  *      Before the fix he grew and shrank by 19-39% and jumped up to 13 degrees.
  *   2. The World Map — Preview, Harrison 44 km out, Tower view: a lens within
  *      12 km of him, inside the sky dome and over the sea (the owner's black
- *      void), the five fields' towers known to the rig.
+ *      void), every field's tower known to the rig (5 in wave 16, 16 since the bigger world).
  *   3. The seizure warning, put up as Settings does: the standard wording and
  *      "Possible seizure warning", both switches are the game's own settings
  *      (Reduce flashing on), flipping one flips the game's, Enter continues
@@ -83,7 +83,7 @@ export async function check(sim, r, say) {
       const onSea = sea ? Math.max(Math.abs(c.x - sea.position.x), Math.abs(c.z - sea.position.z)) < half * 0.9 : false;
       const towers = (sim.rig.towers || []).length;
       r.ok('shake: World Map — Preview, Harrison 44 km out, Tower view: a lens within 12 km of him, inside the sky dome, over the sea',
-        c.distanceTo(a2.pos) < 12000 && inDome && onSea && towers === 5,
+        c.distanceTo(a2.pos) < 12000 && inDome && onSea && towers >= 5,
         `${(c.distanceTo(a2.pos) / 1000).toFixed(1)} km off, in the dome ${inDome}, over the sea ${onSea}, ${towers} towers`);
       if (sim.state !== 'menu' && sim.quitToMenu) sim.quitToMenu();
       if (before.map && before.map !== sim.settings.map) sim.setMap(before.map);

@@ -4,7 +4,7 @@
  *   /opt/homebrew/bin/node tools/worldmap/preview-layout.mjs          measure, check, write
  *   /opt/homebrew/bin/node tools/worldmap/preview-layout.mjs --check  measure and check only
  *
- * The PLAN below is what a person decides: which islands, where each field
+ * The PLAN (tools/worldmap/world-plan.mjs) is what a person decides: which islands, where each field
  * goes, how long its runway is, which way the wind usually blows, what kind of
  * field it is. Everything that has to be MEASURED is measured here from the
  * real height field and written out as numbers, so the game never guesses:
@@ -50,76 +50,10 @@ const NM = await import(SRC + 'world/worldmap/names.js');
 const CHECK_ONLY = process.argv.includes('--check');
 
 /* ------------------------------------------------------------------ */
-/* The plan                                                            */
+/* The plan: tools/worldmap/world-plan.mjs                             */
 /* ------------------------------------------------------------------ */
 
-/*
- * x is east, z is south (north is -z), metres from the hub's runway centre.
- * Every runway is 09/27, and the sea's prevailing wind is the trade wind out
- * of the east-north-east (070-085), so every runway points within 20 degrees
- * of it: you take off and land into the wind on 09 most days.
- */
-const PLAN = {
-  seaFloor: -60,
-  weather: { time: 'day', cond: 'clear', windSpeedKts: 8, windDirDeg: 80 },
-  palette: {
-    grass: [0.98, 1.0, 0.96], sand: [1.0, 0.98, 0.94], rock: [0.98, 0.97, 1.0],
-    deepWater: 0x0f3a63, swell: 0x2f78a6, shallow: [0.3, 0.8, 0.76], nightSky: 0x9fb8d8,
-  },
-  airports: [
-    {
-      id: 'haven', code: 'XHVN', name: 'Haven International', place: 'Haven Island', kind: 'hub',
-      x: 0, z: 0, length: 2800, halfWidth: 23, prevailingDeg: 80, parking: true,
-      town: { name: 'Haven', dx: 2600, dz: -2300, radius: 520, count: 56 },
-    },
-    {
-      id: 'gull', code: 'XGUL', name: 'Gull Cay Strip', place: 'Gull Cay', kind: 'ga',
-      x: 30000, z: 6000, length: 580, halfWidth: 10, prevailingDeg: 75, parking: false,
-      town: { name: 'Gull Harbour', dx: 380, dz: -760, radius: 230, count: 12 },
-    },
-    {
-      id: 'tern', code: 'XTRN', name: 'Tern Field', place: 'Tern Island', kind: 'regional',
-      x: -14000, z: -26000, length: 1300, halfWidth: 15, prevailingDeg: 80, parking: true,
-      town: { name: 'Tern Harbour', dx: 1500, dz: -1350, radius: 360, count: 28 },
-    },
-    {
-      id: 'marram', code: 'XMRM', name: 'Marram Regional', place: 'Marram Point', kind: 'regional',
-      x: -40000, z: 20000, length: 2400, halfWidth: 23, prevailingDeg: 85, parking: true,
-      town: { name: 'Marram', dx: 1900, dz: -1650, radius: 420, count: 36 },
-    },
-    {
-      id: 'farhold', code: 'XFHD', name: 'Farhold International', place: 'Farhold Island', kind: 'hub',
-      x: 42000, z: -40000, length: 2600, halfWidth: 23, prevailingDeg: 70, parking: true,
-      town: { name: 'Farhold', dx: -2200, dz: -2400, radius: 560, count: 60 },
-    },
-  ],
-  /*
-   * The islands. Each field's own island is centred a little off its runway
-   * so the runway ends near a shore and both approaches come in over water or
-   * low ground; the hills stand to the sides of the lanes.
-   */
-  islands: [
-    { name: 'Haven Island', cx: 1500, cz: -900, radius: 5600, peak: 22, seed: 211, profile: 'plains' },
-    { name: 'Haven Downs', cx: -2400, cz: 3900, radius: 1300, peak: 150, seed: 223, profile: 'hills' },
-    { name: 'Signal Hill', cx: 3800, cz: -4600, radius: 1100, peak: 140, seed: 227, profile: 'hills' },
-    { name: 'Gull Cay', cx: 30200, cz: 5600, radius: 1900, peak: 6, seed: 307, profile: 'flat' },
-    { name: 'Tern Island', cx: -13800, cz: -26700, radius: 3300, peak: 22, seed: 401, profile: 'plains' },
-    { name: 'Tern Fell', cx: -12600, cz: -29600, radius: 1000, peak: 230, seed: 409, profile: 'hills' },
-    { name: 'Marram Point', cx: -39800, cz: 19000, radius: 4200, peak: 20, seed: 503, profile: 'plains' },
-    { name: 'Farhold Island', cx: 42200, cz: -40900, radius: 6000, peak: 26, seed: 601, profile: 'plains' },
-    { name: 'Farhold Peaks', cx: 45600, cz: -46200, radius: 2100, peak: 380, seed: 607, profile: 'ridge' },
-    // Between them, so there is always something on the horizon.
-    { name: 'Cinder Peak', cx: 19000, cz: -21000, radius: 2600, peak: 880, seed: 701, profile: 'cone', crater: 110, craterRadius: 360 },
-    { name: 'Pelican Rocks', cx: -22000, cz: 7000, radius: 700, peak: 90, seed: 711, profile: 'hills' },
-    { name: 'Sand Cay', cx: 14000, cz: 16000, radius: 900, peak: 5, seed: 713, profile: 'flat' },
-    { name: 'Skua Holm', cx: -52000, cz: -6000, radius: 1200, peak: 140, seed: 717, profile: 'ridge' },
-    { name: 'Shell Reef', cx: 6000, cz: 34000, radius: 800, peak: 5, seed: 719, profile: 'flat' },
-    { name: 'Heron Isle', cx: -30000, cz: -46000, radius: 1500, peak: 160, seed: 723, profile: 'hills' },
-    { name: 'Kittiwake Rock', cx: 24000, cz: -54000, radius: 600, peak: 120, seed: 729, profile: 'ridge' },
-    { name: 'Lantern Island', cx: 52000, cz: -12000, radius: 1400, peak: 120, seed: 733, profile: 'hills' },
-    { name: 'Driftwood Cay', cx: -8000, cz: 24000, radius: 1000, peak: 6, seed: 739, profile: 'flat' },
-  ],
-};
+const { PLAN } = await import('./world-plan.mjs');
 
 /* ------------------------------------------------------------------ */
 /* Measuring                                                           */
@@ -132,20 +66,42 @@ const median = (a) => {
 
 function dataFrom(plan, airports, flats, roads, towns) {
   return {
-    version: 1,
+    version: 2,
     seaFloor: plan.seaFloor,
+    regions: plan.regions,
     islands: plan.islands,
     flats,
     roads,
     towns,
     airports,
+    heliports: heliportsFor(plan, airports, towns),
     palette: plan.palette,
     weather: plan.weather,
-    scenery: sceneryFor(airports, towns),
+    scenery: sceneryFor(airports, towns, heliportsFor(plan, airports, towns)),
   };
 }
 
-function sceneryFor(airports, towns) {
+/** The pads that are not at a field, in world space (a `near` pad is placed off its field's town). */
+function heliportsFor(plan, airports, towns) {
+  return (plan.heliports || []).map((h) => {
+    let x = h.x;
+    let z = h.z;
+    if (h.near) {
+      const t = towns.find((q) => q.airport === h.near);
+      const a = airports.find((q) => q.id === h.near);
+      const c = t || { cx: a.x, cz: a.z, radius: 0 };
+      x = Math.round(c.cx + Math.sign(h.dx || 1) * (c.radius + Math.abs(h.dx || 0) * 0.2) + (h.dx || 0) * 0.8);
+      z = Math.round(c.cz + (h.dz || 0));
+    }
+    const out = { id: h.id, name: h.name, region: h.region, kind: h.kind, r: h.r, x, z };
+    if (h.role) out.role = h.role;
+    if (h.above != null) out.above = h.above;
+    if (h.elev != null) out.elev = h.elev;
+    return out;
+  });
+}
+
+function sceneryFor(airports, towns, heliports = []) {
   const hub = airports[0];
   const ht = towns.find((t) => t.airport === hub.id);
   return {
@@ -165,7 +121,14 @@ function sceneryFor(airports, towns) {
     deliveryPad: [14000, 16000],
     padTrees: 60,
     boats: 3,
-    pads: airports.map((a) => ({ id: `field-${a.id}`, name: `${a.name} Pad`, x: a.pad.x, z: a.pad.z, kind: 'ground', r: 12 })),
+    pads: [
+      ...airports.map((a) => ({ id: `field-${a.id}`, name: `${a.name} Pad`, x: a.pad.x, z: a.pad.z, kind: 'ground', r: 12 })),
+      ...heliports.map((h) => {
+        const p = { id: h.id, name: h.name, x: h.x, z: h.z, kind: h.kind, r: h.r };
+        for (const k of ['role', 'above', 'elev']) if (h[k] != null) p[k] = h[k];
+        return p;
+      }),
+    ],
   };
 }
 
@@ -236,7 +199,7 @@ function measure(plan) {
   const flatsOf = (aps) => {
     const out = [];
     for (const a of aps) {
-      out.push({ id: `rwy-${a.id}`, name: `${a.name} runway`, kind: 'runway', x0: a.x - a.length / 2, x1: a.x + a.length / 2, z0: a.z - a.halfWidth, z1: a.z + a.halfWidth, blend: 4, surface: 'tarmac', elev: a.elev, clear: true });
+      out.push({ id: `rwy-${a.id}`, name: `${a.name} runway`, kind: 'runway', x0: a.x - a.length / 2, x1: a.x + a.length / 2, z0: a.z - a.halfWidth, z1: a.z + a.halfWidth, blend: 4, surface: a.surface || 'tarmac', elev: a.elev, clear: true });
       out.push({ id: `site-${a.id}`, name: a.name, kind: 'airfield', ...a.site, blend: 260, surface: 'grass', elev: a.elev, clear: true });
     }
     for (const t of towns) {
@@ -368,25 +331,29 @@ for (const a of data.airports) {
     if (!r.pass) fails++;
     lines.push(`${r.pass ? 'ok  ' : 'FAIL'}  ${r.airport} ${r.rule} — ${r.detail}`);
   }
-  // The field must look the same whichever field was loaded.
-  let worst = 0;
-  let worstAt = '';
+  if (process.argv.includes('--debug')) console.log(a.code, lay.cls, lay.shape, JSON.stringify(lay.dropped).slice(0, 600));
+}
+// Every field's site and lanes must be the same ground whichever field was loaded.
+{
+  const samples = [];
   for (const b of data.airports) {
-    if (b.id === a.id) continue;
-    const samples = [];
-    applyData(data, a.id);
     for (let x = b.x - b.length / 2 - 6000; x <= b.x + b.length / 2 + 6000; x += 100) {
-      for (let z = b.z - 900; z <= b.z + 900; z += 100) samples.push([x, z, T.heightAt(x, z)]);
-    }
-    applyData(data, b.id);
-    for (const [x, z, h] of samples) {
-      const d = Math.abs(T.heightAt(x, z) - h);
-      if (d > worst) { worst = d; worstAt = `at ${x}, ${z} (${b.code}'s lanes; ${h.toFixed(1)} m with ${a.code} loaded)`; }
+      for (let z = b.z - 900; z <= b.z + 900; z += 100) samples.push([x, z, b.code]);
     }
   }
-  lines.push(`${worst < 0.01 ? 'ok  ' : 'FAIL'}  ${a.code} its lanes and site are the same ground whichever field is loaded — worst ${worst.toFixed(3)} m ${worstAt}`);
-  if (process.argv.includes('--debug')) console.log(a.code, lay.cls, lay.shape, JSON.stringify(lay.dropped).slice(0, 600));
-  if (worst >= 0.01) fails++;
+  applyData(data, data.airports[0].id);
+  const ref = samples.map(([x, z]) => T.heightAt(x, z));
+  for (const a of data.airports.slice(1)) {
+    applyData(data, a.id);
+    let worst = 0;
+    let worstAt = '';
+    samples.forEach(([x, z, code], i) => {
+      const d = Math.abs(T.heightAt(x, z) - ref[i]);
+      if (d > worst) { worst = d; worstAt = `at ${x}, ${z} (${code}'s lanes; ${ref[i].toFixed(1)} m with ${data.airports[0].code} loaded)`; }
+    });
+    lines.push(`${worst < 0.01 ? 'ok  ' : 'FAIL'}  ${a.code} loaded: every field's lanes and site are the same ground — worst ${worst.toFixed(3)} m ${worstAt}`);
+    if (worst >= 0.01) fails++;
+  }
 }
 for (const r of PV.checkNetwork(data)) {
   if (!r.pass) fails++;

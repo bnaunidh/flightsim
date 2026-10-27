@@ -12,6 +12,7 @@ import { RUNWAY } from '../world/airport.js';
 import { isOnAnyRunway, MAP, AIRPORT } from '../world/terrain.js';
 import { UNITS } from '../aircraft/physics.js';
 import { setRadioField } from '../audio/atc.js';
+import { navField, thresholdOf, runwayWords, onFieldRunway } from '../world/navfield.js';
 
 const ft = (m) => m * UNITS.FT;
 
@@ -49,11 +50,16 @@ export class AtcDirector {
    * Francisco was the same class of mistake as the callsign.
    */
   get field() {
+    // On the World Map, the field you are at (world/navfield.js).
+    const nf = navField();
+    if (nf) return nf.radio;
     return (MAP && MAP.name ? String(MAP.name).split(' ')[0] : 'Kestrel');
   }
 
   /** "zero nine", "two seven", from the runway this map actually has. */
   get runwayCall() {
+    const nf = navField();
+    if (nf) return runwayWords(nf.dir);
     const deg = (AIRPORT && AIRPORT.headingDeg) || 90;
     const n = Math.round(((deg % 360) + 360) % 360 / 10) || 36;
     const words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
@@ -101,8 +107,21 @@ export class AtcDirector {
      * it is speaking for, and it is asked every frame anyway.
      */
     if (this._radioField !== this.field) {
+      const was = this._radioField;
       this._radioField = this.field;
       setRadioField(this._radioField);
+      // A handover between World Map fields: the next field's tower is a new
+      // frequency, and its calls (the clearance, final) have not been made.
+      const nf = navField();
+      if (nf && was && nf.id !== this._navId) {
+        this._navId = nf.id;
+        for (const k of ['start', 'clearance', 'final', 'shortfinal']) this.said[k] = false;
+        const ac0 = this.sim.aircraft;
+        if (ac0 && !ac0.onGround && !ac0.crashed) {
+          this.cool = 0;
+          this.say(`${this.callsign}, contact ${nf.radio} Tower. ${nf.name}, runway ${runwayWords(nf.dir)}.`, 'approach');
+        }
+      }
     }
     const sim = this.sim;
     const ac = sim.aircraft;
@@ -142,9 +161,13 @@ export class AtcDirector {
      * Three conditions now: on a runway, pointing along it, and using real
      * power rather than taxi power.
      */
-    const lined =
-      isOnAnyRunway(ac.pos.x, ac.pos.z, 12) &&
-      Math.abs(((ac.readouts().heading - RUNWAY.headingDeg + 540) % 360) - 180) < 25;
+    const NF = navField();
+    // Along the runway either way (09 or 27) on a named field; on 09 as always elsewhere.
+    const offEast = NF ? Math.abs(((ac.readouts().heading - 90 + 540) % 360) - 180) : 0;
+    const lined = NF
+      ? onFieldRunway(NF, ac.pos.x, ac.pos.z, 12) && (offEast < 25 || offEast > 155)
+      : isOnAnyRunway(ac.pos.x, ac.pos.z, 12) &&
+        Math.abs(((ac.readouts().heading - RUNWAY.headingDeg + 540) % 360) - 180) < 25;
     if (ac.onGround && lined && ac.controls.throttle > 0.6 && this.once('clearance')) {
       this.say(
         `${this.callsign}, ${this.field} Tower, ${windCall(w)}, runway ${this.runwayCall}, cleared for take-off.`,
@@ -161,11 +184,23 @@ export class AtcDirector {
     }
 
     // Joining final: within 6 km, west of the field, below 2,000 ft, pointing east.
-    const toTouchdown = ac.pos.distanceTo(RUNWAY.touchdown);
-    const headingOk = Math.abs(((ac.heading - 90 + 540) % 360) - 180) < 45;
+    // The aiming point and the way in: the named field's, landing into the wind, or runway 09.
+    let toTouchdown;
+    let headingOk;
+    let shortSide;
+    if (NF) {
+      const t = thresholdOf(NF);
+      toTouchdown = Math.hypot(ac.pos.x - t.touchX, ac.pos.y - NF.elev, ac.pos.z - NF.cz);
+      headingOk = Math.abs(((ac.heading - (NF.dir > 0 ? 90 : 270) + 540) % 360) - 180) < 45;
+      shortSide = NF.dir * (t.touchX - ac.pos.x) > 0;
+    } else {
+      toTouchdown = ac.pos.distanceTo(RUNWAY.touchdown);
+      headingOk = Math.abs(((ac.heading - 90 + 540) % 360) - 180) < 45;
+      shortSide = ac.pos.x < RUNWAY.touchdown.x;
+    }
     if (
       !ac.onGround &&
-      ac.pos.x < RUNWAY.touchdown.x &&
+      shortSide &&
       toTouchdown < 6000 &&
       ft(ac.alt) < 2200 &&
       headingOk &&

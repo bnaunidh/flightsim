@@ -38,6 +38,7 @@ import * as THREE from '../vendor/three.module.js';
 import { waterNormal, foamTexture } from './textures.js';
 import { heightAt, MAP } from '../world/terrain.js';
 import { SEA_DEPTH } from './depth-layers.js';
+import { RENDER_ORIGIN } from './render-origin.js';
 
 /**
  * The depth texture: the height field, sampled over the map's chunks (which
@@ -147,6 +148,7 @@ const FRAG = /* glsl */ `
   uniform sampler2D uFoamMap;
   uniform sampler2D uDepthMap;
   uniform vec4 uDepthXform;   // origin x, origin z, 1/size, has field
+  uniform vec2 uRenderOrigin;
   uniform vec3 uDeep;
   uniform vec3 uShallow;
   uniform vec3 uSandy;
@@ -170,7 +172,9 @@ const FRAG = /* glsl */ `
     vec3 toCam = cameraPosition - vWorld;
     float dist = length(toCam);
     vec3 V = toCam / max(dist, 1e-3);
-    vec2 p = vWorld.xz;
+    // The pattern is in world metres: the draw's floating origin added back
+    // (render/render-origin.js; zero except far out on the World Map).
+    vec2 p = vWorld.xz + uRenderOrigin;
     float t = uTime;
     vec2 w = uWindDir;
     vec2 wp = vec2(-w.y, w.x);
@@ -282,6 +286,7 @@ export function createOceanMaterial(quality = 'high', field = null) {
       uFoamMap: { value: null },
       uDepthMap: { value: null },
       uDepthXform: { value: new THREE.Vector4(0, 0, 1, 0) },
+      uRenderOrigin: RENDER_ORIGIN,
       uDeep: { value: new THREE.Color(0x123a5e) },
       uShallow: { value: new THREE.Color(0.31, 0.84, 0.78) },
       uSandy: { value: new THREE.Color(0xb9a77c) },

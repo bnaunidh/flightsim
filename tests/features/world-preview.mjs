@@ -174,8 +174,13 @@ for (const r of PV.checkNetwork()) ok(`network: ${r.rule}`, r.pass, r.detail);
   }
   ok('the other fields\' taxiways, aprons and car parks read as made ground', hit === n && !paved(15000, -15000), `${hit}/${n}`);
   let rwy = 0;
-  for (const a of others) if (T.isPaved(a.x, a.z) && T.isPaved(a.x + a.length / 2 - 5, a.z)) rwy++;
-  ok('the other fields\' runways roll as tarmac (their flats)', rwy === others.length, `${rwy}/${others.length}`);
+  const pavedFields = others.filter((a) => !a.surface || a.surface === 'tarmac');
+  for (const a of pavedFields) if (T.isPaved(a.x, a.z) && T.isPaved(a.x + a.length / 2 - 5, a.z)) rwy++;
+  ok('the other fields\' paved runways roll as tarmac (their flats)', rwy === pavedFields.length, `${rwy}/${pavedFields.length}`);
+  const rough = others.filter((a) => a.surface === 'grass' || a.surface === 'gravel');
+  let asSurface = 0;
+  for (const a of rough) if (T.flatSurfaceAt(a.x, a.z) === a.surface && !T.isPaved(a.x, a.z)) asSurface++;
+  ok('the grass and gravel strips roll as grass and gravel, not tarmac', rough.length >= 2 && asSurface === rough.length, `${asSurface}/${rough.length}: ${rough.map((a) => `${a.code} ${a.surface}`).join(', ')}`);
 }
 
 /* ================================================================== *
@@ -270,11 +275,15 @@ for (const r of PV.checkNetwork()) ok(`network: ${r.rule}`, r.pass, r.detail);
     clock = 0;
     const s = new ST.TerrainStream({ T: fake, material: new THREE.MeshBasicMaterial(), group, quality: q, useWorker: false, now: () => clock });
     const tier = ST.TIERS[q];
-    const from = PV.airportById('marram');
-    const to = PV.airportById('farhold');
+    // The longest airliner leg in the sea, at airliner speed; then across the
+    // mainland at Mach 2 at 150 m (the worst case for the stream: all land,
+    // the fastest ground); then a short hop at Skylark speed.
+    const from = PV.airportById('sandmere');
+    const to = PV.airportById('farwatch');
     const hop = PV.airportById('haven');
-    // Real time per frame for the clock the stream budgets against: measured, then advanced.
-    const legs = [[from, to, 230, 3000], [to, hop, 120, 1500]];
+    const wW = { x: -198000, z: 12000 };
+    const wE = { x: -102000, z: 12000 };
+    const legs = [[from, to, 250, 11000], [wW, wE, 680, 150], [PV.airportById("marram"), hop, 120, 600]];
     let maxTiles = 0;
     let maxBytes = 0;
     let holes = 0;
@@ -286,6 +295,7 @@ for (const r of PV.checkNetwork()) ok(`network: ${r.rule}`, r.pass, r.detail);
     const allowed = Math.ceil(tier.budgetMs / SAMPLE_MS) + slice;
     s.prime(from.x, 900, from.z, 1e9);
     for (const [a, b, speed, alt] of legs) {
+      if (a !== from) s.prime(a.x, alt, a.z, 1e9);
       const dist = Math.hypot(b.x - a.x, b.z - a.z);
       const dt = 1 / 60;
       const n = Math.ceil(dist / speed / dt);
@@ -319,14 +329,14 @@ for (const r of PV.checkNetwork()) ok(`network: ${r.rule}`, r.pass, r.detail);
     let fineNearStart = 0;
     let beyond = 0;
     for (const t of s.tiles.values()) {
-      if (t.level <= 1 && Math.hypot(t.cx - from.x, t.cz - from.z) < 10000) fineNearStart++;
+      if (t.level <= 1 && (Math.hypot(t.cx - from.x, t.cz - from.z) < 10000 || Math.hypot(t.cx - to.x, t.cz - to.z) < 10000)) fineNearStart++;
       const dx = Math.max(0, Math.abs(t.cx - hop.x) - t.size / 2);
       const dz = Math.max(0, Math.abs(t.cz - hop.z) - t.size / 2);
       if (Math.hypot(dx, dz) > tier.range * 1.3) beyond++;
     }
-    ok(`stream ${q}: memory bounded through a ${(PV.legM(from, to) / 1000).toFixed(0)} km long haul and a hop back`, maxTiles <= tier.maxTiles && maxBytes < tier.maxTiles * 260e3,
+    ok(`stream ${q}: memory bounded through a ${(PV.legM(from, to) / 1000).toFixed(0)} km long haul, Mach 2 at 150 m over the mainland and a hop`, maxTiles <= tier.maxTiles && maxBytes < tier.maxTiles * 260e3,
       `${frames} frames, most meshes ${maxTiles}/${tier.maxTiles}, most bytes ${(maxBytes / 1e6).toFixed(1)} MB, built ${st.built}, unloaded ${st.evicted}`);
-    ok(`stream ${q}: far tiles unloaded`, fineNearStart === 0 && beyond === 0, `${fineNearStart} fine tiles left round ${from.code}, ${beyond} beyond ${(tier.range * 1.3 / 1000).toFixed(0)} km`);
+    ok(`stream ${q}: far tiles unloaded`, fineNearStart === 0 && beyond === 0, `${fineNearStart} fine tiles left round ${from.code} or ${to.code}, ${beyond} beyond ${(tier.range * 1.3 / 1000).toFixed(0)} km`);
     ok(`stream ${q}: per-frame work inside the budget`, lateFrames === 0,
       `worst frame ${worstSamples} samples = ${(worstSamples * SAMPLE_MS).toFixed(1)} ms at 40 us a sample (budget ${tier.budgetMs} ms + one slice), ${lateFrames} over of ${frames}`);
     ok(`stream ${q}: no holes under the aircraft once caught up`, holes === 0, `${holes} holes`);
@@ -368,6 +378,329 @@ for (const r of PV.checkNetwork()) ok(`network: ${r.rule}`, r.pass, r.detail);
       `${asked.length} asked of it (${owed} still unbuilt), failed over ${s.workerFailed}, ${stuck} stuck, ${st.cpuTiles} built here since, ${meshes} meshes in the group for ${st.meshes} tiles`);
     s.dispose();
   }
+}
+
+/* ================================================================== *
+ * Wave 17: the bigger world
+ * ================================================================== */
+const NF = await import(SRC + 'world/navfield.js');
+const HZ = await import(SRC + 'world/worldmap/horizon.js');
+const FL = await import(SRC + 'world/worldmap/flora.js');
+const RO = await import(SRC + 'render/render-origin.js');
+const AP = await import(SRC + 'flight/autopilot.js');
+const PHY = await import(SRC + 'aircraft/physics.js');
+const PLANMOD = await import(new URL('../../tools/worldmap/world-plan.mjs', import.meta.url).href);
+const WPF = await import(SRC + 'features/world-preview.js');
+
+/* ---- the sea is deterministic, and is the plan ---- */
+{
+  const again = PLANMOD.fillerIslands();
+  const shipped = D.islands.slice(D.islands.length - again.length);
+  const same = JSON.stringify(again) === JSON.stringify(shipped) && JSON.stringify(PLANMOD.fillerIslands()) === JSON.stringify(again);
+  ok('the seeded islands come out the same every time, and are the ones that shipped', same, `${again.length} generated, ${D.islands.length} in all`);
+  const names = new Set(D.islands.map((i) => i.name));
+  ok('every island name is unique', names.size === D.islands.length, `${names.size}/${D.islands.length}`);
+  const words = [...D.airports.map((a) => a.name), ...D.towns.map((t) => t.name), ...(D.heliports || []).map((h) => h.name)];
+  ok('every field, town and heliport name is clear of the deny-list', words.every((w) => !NM.isDenied(w)), `${words.length} names`);
+  const realBrands = /\b(kingfisher|emirates|qantas|ryanair|lufthansa|delta|united|american|british|virgin|easyjet|jetblue|southwest|cathay|etihad|qatar)\b/i;
+  ok('no real airline or brand in any name', words.every((w) => !realBrands.test(w)), '');
+  const byRegion = WPF.byRegion();
+  ok('the start picker\'s order: every field once, under its region', byRegion.reduce((n, g) => n + g.airports.length, 0) === D.airports.length && byRegion.length === D.regions.length,
+    byRegion.map((g) => `${g.region.name}: ${g.airports.map((a) => a.code).join(' ')}`).join('; '));
+}
+
+/* ---- heliports ---- */
+{
+  PV.setDeparture('haven');
+  T.applyMap(def);
+  const pads = D.scenery.pads;
+  const extra = pads.filter((p) => !p.id.startsWith('field-'));
+  let bad = [];
+  for (const p of pads) {
+    const g = T.heightAt(p.x, p.z);
+    if (p.kind === 'deck' ? g > -5 : g < 1) bad.push(`${p.id} ground ${g.toFixed(1)}`);
+    if (T.isOnAnyRunway(p.x, p.z, 40)) bad.push(`${p.id} on a runway`);
+  }
+  ok('every pad stands where its kind says (decks over open water, the rest on dry land), none on a runway', bad.length === 0 && pads.length === D.airports.length + extra.length,
+    `${pads.length} pads (${extra.map((p) => `${p.name} ${p.kind}`).join(', ')}) ${bad.join('; ')}`);
+}
+
+/* ---- the field you are at ---- */
+{
+  const f = { cx: 1000, cz: 500, elev: 20, length: 2000, halfWidth: 23 };
+  let papiOk = true;
+  const lines = [];
+  for (const dir of [1, -1]) {
+    const F = { ...f, dir };
+    const t = NF.thresholdOf(F);
+    for (const [deg, want] of [[3, 2], [2.2, 0], [3.8, 4]]) {
+      const d = 5000;
+      const pos = { x: t.touchX - dir * d, y: F.elev + Math.tan((deg * Math.PI) / 180) * d, z: F.cz };
+      const w = NF.papiFor(F, pos).whites;
+      lines.push(`${dir > 0 ? '09' : '27'} ${deg}° → ${w}`);
+      if (w !== want) papiOk = false;
+    }
+    // From the wrong side: no lights for you.
+    if (NF.papiFor(F, { x: t.touchX + dir * 3000, y: F.elev + 150, z: F.cz }).approaching) papiOk = false;
+  }
+  ok('the PAPI works for any field, either direction (two white, two red on 3 degrees)', papiOk, lines.join(', '));
+
+  // Nearest, with hysteresis; the destination inside 60 km.
+  const A = (id) => PV.airportById(id);
+  const mid = { x: (A('haven').x + A('gull').x) / 2, z: (A('haven').z + A('gull').z) / 2 };
+  const n1 = WPF.pickNav(mid.x - 500, mid.z, A('haven'), null);
+  const n2 = WPF.pickNav(mid.x + 500, mid.z, A('haven'), null);
+  const n3 = WPF.pickNav(A('gull').x - 3000, A('gull').z, A('haven'), null);
+  const n4 = WPF.pickNav(A('haven').x + 5000, 0, A('haven'), A('tern'));
+  ok('the field you are at: the nearest, not flicking over half way, the destination inside 60 km', n1.id === 'haven' && n2.id === 'haven' && n3.id === 'gull' && n4.id === 'tern',
+    `${n1.code}, ${n2.code}, ${n3.code}, ${n4.code}`);
+  // A destination inside 60 km set while still at the departure (checker, wave 17: Haven's
+  // tower was handed to Gull's on Haven's runway, and Haven never cleared the take-off).
+  const onRw = WPF.pickNav(A('haven').x - 1000, A('haven').z, A('haven'), A('gull'));
+  const offEnd = WPF.pickNav(A('haven').x + A('haven').length / 2 + 1000, A('haven').z, A('haven'), A('gull'));
+  const away = WPF.pickNav(A('haven').x + A('haven').length / 2 + 2500, A('haven').z, A('haven'), A('gull'));
+  const atDest = WPF.pickNav(A('gull').x, A('gull').z, A('haven'), A('gull'));
+  ok('a destination inside 60 km does not take the tower of the field you are still at', onRw.id === 'haven' && offEnd.id === 'haven' && away.id === 'gull' && atDest.id === 'gull',
+    `on Haven's runway ${onRw.code}, 1 km off its end ${offEnd.code}, 2.5 km off ${away.code}, at Gull ${atDest.code}`);
+
+  // The approach autopilot, flown from every field's gate, both directions:
+  // a target on the centreline ahead, a height on the slope, and a hand-back near the threshold.
+  const ap = new AP.Autopilot();
+  ap.setMode('approach');
+  const bad = [];
+  for (const a of D.airports) {
+    for (const dir of [1, -1]) {
+      const F = WPF.navFor(a, dir > 0 ? 80 : 260);
+      NF.setNavField(F);
+      const t = NF.thresholdOf(F);
+      const at = (out, y, off = 0) => ({ pos: new THREE.Vector3(t.x - dir * out, F.elev + y, F.cz + off), vel: new THREE.Vector3(dir * 70, 0, 0), agl: y, groundSpeed: 70, readouts: () => ({}) });
+      ap.handedBack = null;
+      const p1 = ap.planFor(at(9000, 460));
+      const p2 = ap.planFor(at(4000, 4000 * Math.tan(3 * Math.PI / 180), 300));
+      ap.handedBack = null;
+      const p3 = ap.planFor(at(1500, 1500 * Math.tan(3 * Math.PI / 180)));
+      const hb = ap.handedBack;
+      const aheadOk = p1 && Math.sign(p1.target.x - (t.x - dir * 9000)) === dir && Math.abs(p1.target.z - F.cz) < 1;
+      const slopeOk = p2 && Math.abs(p2.altFt / 3.28084 - (F.elev + 4000 * Math.tan(3 * Math.PI / 180))) < 2 && p2.feedForwardFpm < 0;
+      if (!aheadOk || !slopeOk || p3 !== null || !hb) bad.push(`${a.code} ${dir > 0 ? '09' : '27'}`);
+    }
+  }
+  NF.setNavField(null);
+  ok('the approach autopilot flies every field\'s centreline and glide slope, both directions, and hands back at the threshold', bad.length === 0, bad.join(', ') || `${D.airports.length * 2} approaches`);
+
+  // How far out it tells main.js (gear at 7 km, flap under 6 and 3.5): along the centreline once
+  // lined up, the straight distance before that. Checker, wave 17: engaged abeam a field 30 km
+  // north of its threshold, it read 2 km out and put the gear and full flap out at 216 kt.
+  {
+    const F = WPF.navFor(PV.airportById('eider'), 80);
+    NF.setNavField(F);
+    const t = NF.thresholdOf(F);
+    const fly = (dx, dz, vx, vz) => {
+      ap.handedBack = null;
+      ap.planFor({ pos: new THREE.Vector3(t.x + dx, F.elev + 1500, F.cz + dz), vel: new THREE.Vector3(vx, 0, vz), agl: 1500, groundSpeed: 110, readouts: () => ({}) });
+      return ap.approachOut;
+    };
+    const abeam = fly(-2000, -30000, 110, 0);
+    const lined = fly(-5000, 200, 110, 0);
+    NF.setNavField(null);
+    ok('the approach\'s "how far out" is the distance to the threshold until lined up (no gear and flap 30 km abeam)', abeam > 29000 && Math.abs(lined - 5000) < 1,
+      `abeam 30 km: ${Math.round(abeam)} m out; lined up 5 km: ${Math.round(lined)} m`);
+  }
+
+  // The tower names the field you are at, its runway, and hands you over.
+  const said = [];
+  const fakeSim = {
+    aircraft: { pos: new THREE.Vector3(), onGround: false, crashed: false, engineOn: true, airborneTime: 10, controls: { throttle: 0.3 }, heading: 90, readouts: () => ({ heading: 90 }), fuel: 160, alt: 3000, agl: 3000, vs: 0 },
+    weather: { windDirDeg: 80, windSpeedKts: 8, condition: 'clear', windDescription: () => ({ cross: 0 }) },
+    aircraftType: { callsign: 'Skylark one seven two' },
+    speak: (t) => said.push(t),
+    cloudImmersion: 0,
+  };
+  const { AtcDirector } = await import(SRC + 'game/atc-director.js');
+  NF.setNavField(WPF.navFor(PV.airportById('haven'), 80));
+  const atc = new AtcDirector(fakeSim);
+  atc.update(0.1);
+  NF.setNavField(WPF.navFor(PV.airportById('frigate'), 260));
+  atc.cool = 0;
+  atc.update(0.1);
+  const handover = said.find((x) => /contact Frigate Tower/.test(x) && /two seven/.test(x));
+  ok('the tower is the field you are at: name, runway into the wind, a handover', atc.field === 'Frigate' && atc.runwayCall === 'two seven' && !!handover, `${atc.field} / ${atc.runwayCall} / "${handover || said.join(' | ')}"`);
+  NF.setNavField(null);
+  ok('with no field named the tower is the map\'s, as on every other map', atc.field === (M.getMap(PV.WORLD_PREVIEW_ID).name.split(' ')[0]) && atc.runwayCall === 'zero nine', `${atc.field} / ${atc.runwayCall}`);
+
+  // A landing on another field's runway is a runway landing.
+  PV.setDeparture('haven');
+  T.applyMap(def);
+  A_refresh();
+  const fr = PV.airportById('frigate');
+  T.setOtherRunways([{ cx: fr.x, cz: fr.z, length: fr.length, halfWidth: fr.halfWidth }]);
+  const on = T.isOnAnyRunway(fr.x + 300, fr.z + 5) && !T.isOnAnyRunway(fr.x, fr.z + 200);
+  T.setOtherRunways([]);
+  const offAgain = !T.isOnAnyRunway(fr.x + 300, fr.z + 5);
+  ok('another field\'s runway counts as a runway while the preview says so, and not after', on && offAgain, `on ${on}, cleared ${offAgain}`);
+}
+function A_refresh() { A.refreshRunways(); }
+
+/* ---- the floating origin for drawing ---- */
+{
+  RO.setRenderOrigin(null);
+  const off = RO.originFor(250000, 250000);
+  RO.setRenderOrigin({});
+  const near = RO.originFor(20000, 10000);
+  const far = RO.originFor(-187654, 143210);
+  const scene = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera();
+  const child = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial());
+  child.position.set(-187000, 100, 143000);
+  scene.add(child);
+  cam.position.set(-187654, 900, 143210);
+  scene.updateMatrixWorld();
+  cam.updateMatrixWorld();
+  const viewBefore = new THREE.Matrix4().multiplyMatrices(cam.matrixWorldInverse, child.matrixWorld).elements.slice();
+  const moved = RO.beginRender(scene, cam);
+  scene.updateMatrixWorld();
+  const gpuWorld = new THREE.Vector3().setFromMatrixPosition(child.matrixWorld);
+  const camGpu = cam.position.clone();
+  const viewDuring = new THREE.Matrix4().multiplyMatrices(cam.matrixWorldInverse, child.matrixWorld).elements;
+  const uni = RO.RENDER_ORIGIN.value.clone();
+  RO.endRender(scene, cam);
+  const back = cam.position.x === -187654 && cam.position.z === 143210 && scene.position.lengthSq() === 0 && RO.RENDER_ORIGIN.value.lengthSq() === 0
+    && new THREE.Vector3().setFromMatrixPosition(child.matrixWorld).x === -187000;
+  let worst = 0;
+  for (let i = 0; i < 16; i++) worst = Math.max(worst, Math.abs(viewBefore[i] - viewDuring[i]));
+  ok('the floating origin: off on other maps, none within 24 km, a 4 km grid point beyond', off.x === 0 && off.z === 0 && near.x === 0 && near.z === 0 && far.x % 4096 === 0 && far.z % 4096 === 0 && Math.hypot(far.x + 187654, far.z - 143210) < 4096,
+    `off (${off.x}, ${off.z}); 22 km (${near.x}, ${near.z}); 235 km (${far.x}, ${far.z})`);
+  ok('during a draw at 235 km the GPU sees small numbers (camera and mesh within 4 km of 0) and the same view; after it, everything is back',
+    moved && Math.hypot(camGpu.x, camGpu.z) < 4096 && Math.abs(gpuWorld.x) < 6000 && worst < 1e-6 && back && uni.x === far.x,
+    `camera at (${camGpu.x.toFixed(0)}, ${camGpu.z.toFixed(0)}), mesh at (${gpuWorld.x.toFixed(0)}, ${gpuWorld.z.toFixed(0)}), view matrix change ${worst.toExponential(1)}, restored ${back}`);
+  // float32 at the furthest coast without and with the origin.
+  const ulp = (v) => { const f = new Float32Array([v]); const i = new Int32Array(f.buffer); const g = new Float32Array(1); const j = new Int32Array(g.buffer); j[0] = i[0] + 1; return g[0] - f[0]; };
+  const edge = 199000;
+  ok('float32 steps: 1.6 cm at the edge of the sea, under 0.5 mm with the origin', ulp(edge) > 0.01 && ulp(4096 * 0.71) < 0.0005, `${(ulp(edge) * 100).toFixed(2)} cm at 199 km, ${(ulp(4096 * 0.71) * 1000).toFixed(2)} mm at 2.9 km`);
+  RO.setRenderOrigin(null);
+}
+
+/* ---- the horizon ---- */
+{
+  PV.setDeparture('haven');
+  T.applyMap(def);
+  const tier = ST.TIERS.low;
+  const hz = new HZ.Horizon({ heightAt: T.heightAt, islands: D.islands, hideWithin: tier.range });
+  let left = 1;
+  for (let i = 0; i < 400 && left; i++) left = hz.build(1e9);
+  let worst = 0;
+  for (let k = 0; k < D.islands.length; k += 7) {
+    for (const [x, h, z] of hz.shapes[k]) worst = Math.max(worst, Math.abs(T.heightAt(x, z) - h));
+  }
+  const hub = PV.airportById('haven');
+  const shown = hz.shownFrom(hub.x, hub.z);
+  const nearOnes = shown.filter((i) => Math.hypot(i.cx - hub.x, i.cz - hub.z) - i.radius * 1.45 < tier.range);
+  const pos = hz.geometry.attributes.position;
+  ok('the horizon: every island as one shape in one geometry, sampled from the height field', left === 0 && hz.built === D.islands.length && worst < 1e-6 && pos.count === D.islands.length * hz.per && hz.geometry.index.count / 3 < 25000,
+    `${hz.built} islands, ${pos.count} vertices, ${hz.geometry.index.count / 3} triangles, worst sample ${worst.toExponential(1)} m`);
+  ok('from the hub at Low, the islands past the streamed ground are on the horizon, none that the ground already draws', shown.length >= 40 && nearOnes.length === 0,
+    `${shown.length} of ${D.islands.length} as shapes from ${hub.code}, ${nearOnes.length} inside ${tier.range / 1000} km`);
+  hz.dispose();
+}
+
+/* ---- trees on every island ---- */
+{
+  PV.setDeparture('haven');
+  T.applyMap(def);
+  const ctx = FL.floraContext(D);
+  const once = FL.placeCell(T, ctx, -62, 9, 80);
+  const twice = FL.placeCell(T, ctx, -62, 9, 80);
+  ok('a cell\'s trees are the same every time (seeded by the cell)', once && twice && once.length === twice.length && once.every((v, i) => v === twice[i]), `${once ? once.length / 6 : 0} trees in cell -62,9`);
+  // Plant every cell of a few islands in each region and check where they stood.
+  const stats = {};
+  const problems = [];
+  const fieldsAndLanes = D.airports;
+  let cells = 0;
+  for (const g of D.regions) {
+    const isl = D.islands.filter((i) => i.region === g.id && i.radius > 1500).slice(0, 3);
+    const st = (stats[g.id] = { trees: 0, palms: 0, conifers: 0 });
+    for (const i of isl) {
+      for (let ix = Math.floor((i.cx - i.radius) / FL.CELL); ix <= Math.floor((i.cx + i.radius) / FL.CELL); ix++) {
+        for (let iz = Math.floor((i.cz - i.radius) / FL.CELL); iz <= Math.floor((i.cz + i.radius) / FL.CELL); iz++) {
+          const t = FL.placeCell(T, ctx, ix, iz, 80);
+          cells++;
+          if (!t) continue;
+          for (let k = 0; k < t.length; k += 6) {
+            const x = t[k];
+            const z = t[k + 2];
+            st.trees++;
+            if (t[k + 5] === 0) st.palms++;
+            if (t[k + 5] === 2) st.conifers++;
+            if (T.heightAt(x, z) < 2) problems.push(`in the sea at ${x.toFixed(0)}, ${z.toFixed(0)}`);
+            if (T.flatAt(x, z)) problems.push(`on made ground at ${x.toFixed(0)}, ${z.toFixed(0)}`);
+            for (const a of fieldsAndLanes) if (Math.abs(z - a.z) < 400 && Math.abs(x - a.x) < a.length / 2 + 3000) problems.push(`in ${a.code}'s lanes`);
+          }
+        }
+      }
+    }
+  }
+  const lines = Object.entries(stats).map(([k, v]) => `${k} ${v.trees} (${v.palms} palms, ${v.conifers} conifers)`);
+  ok('trees on the islands of every region', Object.values(stats).every((v) => v.trees > 50), lines.join(', '));
+  ok('none in the sea, on a field, a town or a road, or in a runway\'s lanes', problems.length === 0, problems.slice(0, 4).join('; ') || `${cells} cells planted`);
+  ok('the region\'s own trees: palms in the south, conifers and no palms in the north', stats.sands.palms > stats.sands.trees * 0.3 && stats.skerries.palms === 0 && stats.skerries.conifers > stats.skerries.trees * 0.3,
+    `${lines.join(', ')}`);
+  const counts = {};
+  for (const q of ['low', 'medium', 'high']) {
+    const f = new FL.Flora({ treeGeometry: () => new THREE.BoxGeometry(), ctx, T, quality: q, addObstacle: T.addObstacle, obstacles: T.OBSTACLES });
+    const fr = PV.airportById('frigate');
+    const ac = { pos: new THREE.Vector3(fr.x + 2500, 60, fr.z - 2500), agl: 40 };
+    for (let i = 0; i < 60; i++) f.update({ x: ac.pos.x, z: ac.pos.z }, ac, 1e9);
+    const s1 = f.stats();
+    const solidBefore = T.OBSTACLES.length;
+    ac.agl = 900;
+    f.update({ x: ac.pos.x, z: ac.pos.z }, ac, 1e9);
+    const solidAfter = T.OBSTACLES.length;
+    counts[q] = { drawn: s1.drawn, cap: s1.capacity, solid: s1.solid, freed: solidBefore - solidAfter };
+    // Move off 40 km: every cell of the old place dropped.
+    for (let i = 0; i < 5; i++) f.update({ x: fr.x + 42000, z: fr.z }, null, 1e9);
+    counts[q].after = f.stats().cells;
+    counts[q].keptOld = [...f.cells.values()].filter((c) => Math.abs(c.ix * FL.CELL - fr.x) < 10000).length;
+    f.dispose();
+  }
+  ok('tier-scaled: Low very sparse, more at Medium, more again at High, never over the pool', counts.low.drawn > 0 && counts.low.drawn < counts.medium.drawn && counts.medium.drawn < counts.high.drawn && counts.low.drawn <= 600 && Object.values(counts).every((c) => c.drawn <= c.cap),
+    Object.entries(counts).map(([q, c]) => `${q} ${c.drawn} of ${c.cap}`).join(', '));
+  ok('trees are solid round a low aeroplane, and taken away when it climbs; far cells are dropped', Object.values(counts).every((c) => c.solid > 0 && c.freed === c.solid && c.keptOld === 0),
+    Object.entries(counts).map(([q, c]) => `${q} ${c.solid} solid, ${c.freed} freed, ${c.keptOld} old cells kept`).join(', '));
+}
+
+/* ---- sim rate ---- */
+{
+  const fakeAc = (o = {}) => ({ crashed: false, onGround: false, pos: new THREE.Vector3(0, 3500, 60000), groundSpeed: 230, fuelFraction: () => 0.6, readouts: () => ({ aglFt: o.aglFt ?? 11000, vsFpm: o.vsFpm ?? 0 }), ...o });
+  M.registerExtraMap(def);
+  T.applyMap(def);
+  const sim = { mode: 'free', state: 'flying', aircraft: fakeAc(), autopilot: { engaged: true, mode: 'hold' }, warnings: { active: () => [] }, hud: { notify() {} }, instrumentBlackout: 0 };
+  const cases = [
+    ['cruise on the autopilot', {}, ''],
+    ['autopilot off', { autopilot: { engaged: false, mode: 'hold' } }, 'autopilot'],
+    ['on an approach', { autopilot: { engaged: true, mode: 'approach' } }, 'approach'],
+    ['low over the ground', { aircraft: fakeAc({ readouts: () => ({ aglFt: 2400, vsFpm: 0 }) }) }, '3,000'],
+    ['a warning lit', { warnings: { active: () => ['stall'] } }, 'warning'],
+    ['in a game with friends', { multiplayer: { active: true } }, 'friends'],
+    ['on the ground', { aircraft: fakeAc({ onGround: true }) }, 'air'],
+    ['a mission', { mode: 'mission' }, 'Free Flight'],
+  ];
+  const bad = [];
+  for (const [name, o, want] of cases) {
+    const why = WPF.warpBlocked({ ...sim, ...o });
+    if (want ? !why.includes(want) : why !== '') bad.push(`${name}: "${why}"`);
+  }
+  ok('sim rate only in a steady autopilot cruise: blocked on the approach, low, with a warning, with friends, on the ground', bad.length === 0, bad.join('; ') || `${cases.length} cases`);
+  // The rate goes up only as far as 1 km of ground a real second.
+  const s2 = { ...sim, aircraft: fakeAc({ groundSpeed: 680 }), timeScale: 1 };
+  WPF.cycleWarp(s2);
+  const fighter = s2.timeScale;
+  const s3 = { ...sim, aircraft: fakeAc({ groundSpeed: 230 }), timeScale: 1 };
+  WPF.cycleWarp(s3);
+  const k2 = s3.timeScale;
+  WPF.cycleWarp(s3);
+  const k4 = s3.timeScale;
+  ok('2x then 4x for an airliner; a Mach 2 jet stays at 1x (no more than 1 km of ground a second)', k2 === 2 && k4 === 4 && fighter === 1, `airliner ${k2}x, ${k4}x; Mach 2 ${fighter}x`);
+  WPF.cycleWarp(s3);
 }
 
 const fails = results.filter((r) => !r.pass);

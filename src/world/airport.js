@@ -502,6 +502,15 @@ export class Airport {
     const rwPuddles = puddleRoughness().clone();
     rwPuddles.repeat.set(1, Math.max(1, Math.round(RUNWAY.length / (RUNWAY.halfWidth * 2 * 3))));
     registerWetSurface(rwMat, { puddles: rwPuddles });
+    // A grass or gravel strip (only the World Map preview has any: AIRPORT.surface):
+    // the strip's own colour, no painted tarmac, and no asphalt shoulders below.
+    const rough = AIRPORT.surface === 'grass' || AIRPORT.surface === 'gravel';
+    if (rough) {
+      rwMat.map = null;
+      rwMat.normalMap = null;
+      rwMat.roughness = 1;
+      rwMat.color.set(AIRPORT.surface === 'gravel' ? 0x8c8576 : 0x6f8a4a);
+    }
     this.runwayMat = rwMat;
     const rgeo = new THREE.PlaneGeometry(RUNWAY.halfWidth * 2, RUNWAY.length);
     rgeo.rotateX(-Math.PI / 2);
@@ -530,7 +539,7 @@ export class Airport {
       shoulders.add(g, trs(cx, ELEV + 0.02, cz), 0xffffff, 0);
       g.dispose();
     };
-    addShoulder(RUNWAY.cx, RUNWAY.cz, RUNWAY.length + 40, shW);
+    if (!rough) addShoulder(RUNWAY.cx, RUNWAY.cz, RUNWAY.length + 40, shW);
 
     /*
      * The crosswind runway, 18/36.

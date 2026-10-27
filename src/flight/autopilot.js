@@ -18,6 +18,7 @@ import { clamp } from '../core/noise.js';
 import { AIRPORT, heightAt } from '../world/terrain.js';
 import { SPEC } from '../aircraft/physics.js';
 import { rotorAutopilot } from '../aircraft/rotor-assist.js';
+import { navField, thresholdOf } from '../world/navfield.js';
 
 /**
  * What you can ask it to do. "Hold" is what it always did; the other two are
@@ -192,13 +193,18 @@ export class Autopilot {
       }
       return { target: null, altFt: this.selectedAltFt, brisk: true };
     }
+    // The World Map preview names the field you are at (world/navfield.js);
+    // every other map has none, and flies the loaded airport as it always did.
+    const NF = navField();
     if (this.mode === 'field') {
       // Overhead the field at 2,000 ft, which is where you would join.
+      if (NF) return { target: new THREE.Vector3(NF.cx, NF.elev, NF.cz), altFt: (NF.elev + 610) * 3.28084 };
       return {
         target: new THREE.Vector3(AIRPORT.runway.cx, AIRPORT.elev, AIRPORT.runway.cz),
         altFt: (AIRPORT.elev + 610) * 3.28084,
       };
     }
+    if (this.mode === 'approach' && NF) return this.approachTo(ac, NF);
     if (this.mode === 'approach') {
       // How far west of the threshold we are. Runway 09 is flown eastbound, so
       // the approach lies along -X from the threshold.
@@ -271,6 +277,54 @@ export class Autopilot {
       };
     }
     return null;
+  }
+
+  /**
+   * The approach to a named field, either direction (world/navfield.js): the
+   * same platform, slope, hand-backs and go-round as the loaded airport's,
+   * with the threshold, the centreline and which way you fly it read from
+   * the field. `dir` +1 is runway 09 (flown eastbound, the approach west of
+   * the threshold), -1 runway 27.
+   */
+  approachTo(ac, F) {
+    const dir = F.dir || 1;
+    const thr = thresholdOf({ ...F, dir });
+    const out = dir * (thr.x - ac.pos.x);
+    const PLATFORM_M = 460;
+    const course = dir > 0 ? 90 : 270;
+    const hdg = (Math.atan2(ac.vel.x, -ac.vel.z) * 180) / Math.PI;
+    const offCourse = Math.abs(((hdg - course + 540) % 360) - 180);
+    const off = Math.abs(ac.pos.z - F.cz);
+    const inbound = offCourse < 50 && off < 2200;
+    // How far out, for the wheels and the flaps (main.js): along the
+    // centreline once lined up, the straight distance to the threshold until
+    // then, so an approach engaged abeam a field 30 km off does not put the
+    // gear and full flap out at cruise speed (a 400 km sea makes that easy).
+    this.approachOut = inbound ? out : Math.max(out, Math.hypot(thr.x - ac.pos.x, ac.pos.z - F.cz));
+    const wantM = inbound ? F.elev + Math.min(Math.max(0, out) * Math.tan(3 * DEG), PLATFORM_M) : F.elev + PLATFORM_M;
+    const highBy = ac.pos.y - wantM;
+    this._highBy = highBy;
+    if (out < 400) {
+      if (ac.agl < 210 && off < 150) {
+        this.handedBack = highBy > 120
+          ? `Runway ahead, but you are ${Math.round(highBy)} m high — go around or lose it fast`
+          : 'Established on the approach — landing is yours';
+        return null;
+      }
+      return { target: new THREE.Vector3(thr.x - dir * 9000, F.elev, F.cz), altFt: (F.elev + 460) * 3.28084, repositioning: true };
+    }
+    if (ac.agl < 62 && off < 120) {
+      this.handedBack = 'Runway ahead — landing is yours';
+      return null;
+    }
+    if (out < 2600 && Math.abs(highBy) < 45 && off < 120) {
+      this.handedBack = 'Established on the approach — landing is yours';
+      return null;
+    }
+    const ahead = dir > 0 ? Math.min(thr.x, ac.pos.x + 1500) : Math.max(thr.x, ac.pos.x - 1500);
+    const onSlope = inbound && Math.max(0, out) * Math.tan(3 * DEG) < PLATFORM_M;
+    const slopeFpm = onSlope ? -ac.groundSpeed * Math.tan(3 * DEG) * 196.85 : 0;
+    return { target: new THREE.Vector3(ahead, F.elev, F.cz), altFt: wantM * 3.28084, feedForwardFpm: slopeFpm };
   }
 
   /** @returns {boolean} whether it is now engaged */

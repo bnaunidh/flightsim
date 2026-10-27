@@ -4,8 +4,58 @@
  * measured from the height field (see that tool). Road points are [x, z, y].
  */
 export const PREVIEW_DATA = {
- "version": 1,
+ "version": 2,
  "seaFloor": -60,
+ "regions": [
+  {
+   "id": "sound",
+   "name": "Haven Sound",
+   "band": "temperate",
+   "blurb": "The hub and its short hops",
+   "cx": 0,
+   "cz": -5000
+  },
+  {
+   "id": "westreach",
+   "name": "Westreach",
+   "band": "temperate",
+   "blurb": "A mainland: mountains, a volcano and the capital",
+   "cx": -150000,
+   "cz": 15000
+  },
+  {
+   "id": "sunstring",
+   "name": "The Sunstring",
+   "band": "tropical",
+   "blurb": "An archipelago chain of reefs and palms",
+   "cx": 120000,
+   "cz": 105000
+  },
+  {
+   "id": "skerries",
+   "name": "The Northern Skerries",
+   "band": "cold",
+   "blurb": "Cold, rocky and steep",
+   "cx": -30000,
+   "cz": -150000
+  },
+  {
+   "id": "sands",
+   "name": "The Southern Sands",
+   "band": "tropical",
+   "blurb": "Flat sandy cays and one big field",
+   "cx": -50000,
+   "cz": 160000
+  },
+  {
+   "id": "outposts",
+   "name": "The Far Outposts",
+   "band": "cold",
+   "blurb": "A long-haul diversion field and the rigs",
+   "cx": 170000,
+   "cz": -150000
+  }
+ ],
  "islands": [
   {
    "name": "Haven Island",
@@ -14,7 +64,8 @@ export const PREVIEW_DATA = {
    "radius": 5600,
    "peak": 22,
    "seed": 211,
-   "profile": "plains"
+   "profile": "plains",
+   "region": "sound"
   },
   {
    "name": "Haven Downs",
@@ -23,7 +74,8 @@ export const PREVIEW_DATA = {
    "radius": 1300,
    "peak": 150,
    "seed": 223,
-   "profile": "hills"
+   "profile": "hills",
+   "region": "sound"
   },
   {
    "name": "Signal Hill",
@@ -32,7 +84,8 @@ export const PREVIEW_DATA = {
    "radius": 1100,
    "peak": 140,
    "seed": 227,
-   "profile": "hills"
+   "profile": "hills",
+   "region": "sound"
   },
   {
    "name": "Gull Cay",
@@ -41,7 +94,8 @@ export const PREVIEW_DATA = {
    "radius": 1900,
    "peak": 6,
    "seed": 307,
-   "profile": "flat"
+   "profile": "flat",
+   "region": "sound"
   },
   {
    "name": "Tern Island",
@@ -50,7 +104,8 @@ export const PREVIEW_DATA = {
    "radius": 3300,
    "peak": 22,
    "seed": 401,
-   "profile": "plains"
+   "profile": "plains",
+   "region": "sound"
   },
   {
    "name": "Tern Fell",
@@ -59,7 +114,8 @@ export const PREVIEW_DATA = {
    "radius": 1000,
    "peak": 230,
    "seed": 409,
-   "profile": "hills"
+   "profile": "hills",
+   "region": "sound"
   },
   {
    "name": "Marram Point",
@@ -68,7 +124,8 @@ export const PREVIEW_DATA = {
    "radius": 4200,
    "peak": 20,
    "seed": 503,
-   "profile": "plains"
+   "profile": "plains",
+   "region": "sound"
   },
   {
    "name": "Farhold Island",
@@ -77,7 +134,8 @@ export const PREVIEW_DATA = {
    "radius": 6000,
    "peak": 26,
    "seed": 601,
-   "profile": "plains"
+   "profile": "plains",
+   "region": "sound"
   },
   {
    "name": "Farhold Peaks",
@@ -86,7 +144,8 @@ export const PREVIEW_DATA = {
    "radius": 2100,
    "peak": 380,
    "seed": 607,
-   "profile": "ridge"
+   "profile": "ridge",
+   "region": "sound"
   },
   {
    "name": "Cinder Peak",
@@ -97,7 +156,8 @@ export const PREVIEW_DATA = {
    "seed": 701,
    "profile": "cone",
    "crater": 110,
-   "craterRadius": 360
+   "craterRadius": 360,
+   "region": "sound"
   },
   {
    "name": "Pelican Rocks",
@@ -106,7 +166,8 @@ export const PREVIEW_DATA = {
    "radius": 700,
    "peak": 90,
    "seed": 711,
-   "profile": "hills"
+   "profile": "hills",
+   "region": "sound"
   },
   {
    "name": "Sand Cay",
@@ -115,7 +176,8 @@ export const PREVIEW_DATA = {
    "radius": 900,
    "peak": 5,
    "seed": 713,
-   "profile": "flat"
+   "profile": "flat",
+   "region": "sound"
   },
   {
    "name": "Skua Holm",
@@ -124,7 +186,8 @@ export const PREVIEW_DATA = {
    "radius": 1200,
    "peak": 140,
    "seed": 717,
-   "profile": "ridge"
+   "profile": "ridge",
+   "region": "sound"
   },
   {
    "name": "Shell Reef",
@@ -133,7 +196,8 @@ export const PREVIEW_DATA = {
    "radius": 800,
    "peak": 5,
    "seed": 719,
-   "profile": "flat"
+   "profile": "flat",
+   "region": "sound"
   },
   {
    "name": "Heron Isle",
@@ -142,7 +206,8 @@ export const PREVIEW_DATA = {
    "radius": 1500,
    "peak": 160,
    "seed": 723,
-   "profile": "hills"
+   "profile": "hills",
+   "region": "sound"
   },
   {
    "name": "Kittiwake Rock",
@@ -151,7 +216,8 @@ export const PREVIEW_DATA = {
    "radius": 600,
    "peak": 120,
    "seed": 729,
-   "profile": "ridge"
+   "profile": "ridge",
+   "region": "sound"
   },
   {
    "name": "Lantern Island",
@@ -160,7 +226,8 @@ export const PREVIEW_DATA = {
    "radius": 1400,
    "peak": 120,
    "seed": 733,
-   "profile": "hills"
+   "profile": "hills",
+   "region": "sound"
   },
   {
    "name": "Driftwood Cay",
@@ -169,7 +236,650 @@ export const PREVIEW_DATA = {
    "radius": 1000,
    "peak": 6,
    "seed": 739,
-   "profile": "flat"
+   "profile": "flat",
+   "region": "sound"
+  },
+  {
+   "name": "Westreach",
+   "cx": -150000,
+   "cz": 12000,
+   "radius": 24000,
+   "peak": 24,
+   "seed": 811,
+   "profile": "plains",
+   "region": "westreach"
+  },
+  {
+   "name": "Aldermere Plain",
+   "cx": -126800,
+   "cz": 19300,
+   "radius": 6200,
+   "peak": 18,
+   "seed": 813,
+   "profile": "plains",
+   "region": "westreach"
+  },
+  {
+   "name": "Highfold Vale",
+   "cx": -165000,
+   "cz": 29200,
+   "radius": 5200,
+   "peak": 16,
+   "seed": 817,
+   "profile": "plains",
+   "region": "westreach"
+  },
+  {
+   "name": "Saltmarsh Point",
+   "cx": -175800,
+   "cz": 51600,
+   "radius": 2400,
+   "peak": 6,
+   "seed": 819,
+   "profile": "flat",
+   "region": "westreach"
+  },
+  {
+   "name": "Highfold Range",
+   "cx": -158000,
+   "cz": -9000,
+   "radius": 9000,
+   "peak": 1450,
+   "seed": 821,
+   "profile": "ridge",
+   "region": "westreach"
+  },
+  {
+   "name": "Greyspine Fells",
+   "cx": -136000,
+   "cz": -12000,
+   "radius": 6000,
+   "peak": 1050,
+   "seed": 823,
+   "profile": "ridge",
+   "region": "westreach"
+  },
+  {
+   "name": "Mount Calder",
+   "cx": -180000,
+   "cz": 4000,
+   "radius": 5200,
+   "peak": 1650,
+   "seed": 827,
+   "profile": "cone",
+   "crater": 150,
+   "craterRadius": 520,
+   "region": "westreach"
+  },
+  {
+   "name": "Frigate Island",
+   "cx": 108800,
+   "cz": 87300,
+   "radius": 4300,
+   "peak": 20,
+   "seed": 911,
+   "profile": "plains",
+   "region": "sunstring"
+  },
+  {
+   "name": "Mangrove Cay",
+   "cx": 145200,
+   "cz": 124600,
+   "radius": 2000,
+   "peak": 6,
+   "seed": 913,
+   "profile": "flat",
+   "region": "sunstring"
+  },
+  {
+   "name": "Conch Island",
+   "cx": 72400,
+   "cz": 57400,
+   "radius": 2900,
+   "peak": 18,
+   "seed": 917,
+   "profile": "plains",
+   "region": "sunstring"
+  },
+  {
+   "name": "Eider Island",
+   "cx": -41500,
+   "cz": -138800,
+   "radius": 4500,
+   "peak": 22,
+   "seed": 1011,
+   "profile": "plains",
+   "region": "skerries"
+  },
+  {
+   "name": "Eider Crags",
+   "cx": -38000,
+   "cz": -146500,
+   "radius": 2200,
+   "peak": 520,
+   "seed": 1013,
+   "profile": "ridge",
+   "region": "skerries"
+  },
+  {
+   "name": "Petrel Skerry",
+   "cx": 22300,
+   "cz": -168400,
+   "radius": 2400,
+   "peak": 14,
+   "seed": 1017,
+   "profile": "plains",
+   "region": "skerries"
+  },
+  {
+   "name": "Sandmere",
+   "cx": -61000,
+   "cz": 149400,
+   "radius": 7000,
+   "peak": 6,
+   "seed": 1111,
+   "profile": "flat",
+   "region": "sands"
+  },
+  {
+   "name": "Dune Cay",
+   "cx": -4800,
+   "cz": 175600,
+   "radius": 2000,
+   "peak": 5,
+   "seed": 1113,
+   "profile": "flat",
+   "region": "sands"
+  },
+  {
+   "name": "Farwatch Island",
+   "cx": 172500,
+   "cz": -168600,
+   "radius": 5000,
+   "peak": 22,
+   "seed": 1211,
+   "profile": "plains",
+   "region": "outposts"
+  },
+  {
+   "name": "Farwatch Tor",
+   "cx": 176500,
+   "cz": -175000,
+   "radius": 1500,
+   "peak": 420,
+   "seed": 1213,
+   "profile": "ridge",
+   "region": "outposts"
+  },
+  {
+   "name": "Heron Point",
+   "cx": -122800,
+   "cz": -21200,
+   "radius": 1000,
+   "peak": 15,
+   "seed": 2001,
+   "profile": "plains",
+   "region": "westreach"
+  },
+  {
+   "name": "Samphire Holm",
+   "cx": -185700,
+   "cz": 66600,
+   "radius": 2150,
+   "peak": 19,
+   "seed": 2002,
+   "profile": "plains",
+   "region": "westreach"
+  },
+  {
+   "name": "Saltmarsh Holm",
+   "cx": -186600,
+   "cz": -32200,
+   "radius": 2000,
+   "peak": 225,
+   "seed": 2003,
+   "profile": "ridge",
+   "region": "westreach"
+  },
+  {
+   "name": "Clover Island",
+   "cx": -148300,
+   "cz": 57300,
+   "radius": 750,
+   "peak": 170,
+   "seed": 2004,
+   "profile": "hills",
+   "region": "westreach"
+  },
+  {
+   "name": "Thrift Rock",
+   "cx": -149100,
+   "cz": 64600,
+   "radius": 2100,
+   "peak": 22,
+   "seed": 2005,
+   "profile": "plains",
+   "region": "westreach"
+  },
+  {
+   "name": "Sunfish Cay",
+   "cx": 187800,
+   "cz": 151500,
+   "radius": 1950,
+   "peak": 5,
+   "seed": 2006,
+   "profile": "flat",
+   "region": "sunstring"
+  },
+  {
+   "name": "Sandpiper Island",
+   "cx": 69100,
+   "cz": 67200,
+   "radius": 1450,
+   "peak": 6,
+   "seed": 2007,
+   "profile": "flat",
+   "region": "sunstring"
+  },
+  {
+   "name": "Kingfisher Cay",
+   "cx": 164100,
+   "cz": 130900,
+   "radius": 1200,
+   "peak": 6,
+   "seed": 2008,
+   "profile": "flat",
+   "region": "sunstring"
+  },
+  {
+   "name": "Egret Isle",
+   "cx": 95600,
+   "cz": 58500,
+   "radius": 2050,
+   "peak": 26,
+   "seed": 2009,
+   "profile": "plains",
+   "region": "sunstring"
+  },
+  {
+   "name": "Gull Island",
+   "cx": 67900,
+   "cz": 31400,
+   "radius": 1450,
+   "peak": 251,
+   "seed": 2010,
+   "profile": "hills",
+   "region": "sunstring"
+  },
+  {
+   "name": "Shell Isle",
+   "cx": 53800,
+   "cz": 51900,
+   "radius": 1600,
+   "peak": 4,
+   "seed": 2011,
+   "profile": "flat",
+   "region": "sunstring"
+  },
+  {
+   "name": "Sunfish Island",
+   "cx": 83500,
+   "cz": 73200,
+   "radius": 850,
+   "peak": 25,
+   "seed": 2012,
+   "profile": "plains",
+   "region": "sunstring"
+  },
+  {
+   "name": "Parrot Island",
+   "cx": 132900,
+   "cz": 126800,
+   "radius": 950,
+   "peak": 106,
+   "seed": 2013,
+   "profile": "hills",
+   "region": "sunstring"
+  },
+  {
+   "name": "Driftwood Atoll",
+   "cx": 127000,
+   "cz": 116700,
+   "radius": 1750,
+   "peak": 229,
+   "seed": 2014,
+   "profile": "hills",
+   "region": "sunstring"
+  },
+  {
+   "name": "Frigate Isle",
+   "cx": 59400,
+   "cz": 43800,
+   "radius": 850,
+   "peak": 15,
+   "seed": 2015,
+   "profile": "plains",
+   "region": "sunstring"
+  },
+  {
+   "name": "Booby Isle",
+   "cx": 168700,
+   "cz": 158200,
+   "radius": 1650,
+   "peak": 5,
+   "seed": 2016,
+   "profile": "flat",
+   "region": "sunstring"
+  },
+  {
+   "name": "Kingfisher Reef",
+   "cx": 196400,
+   "cz": 159800,
+   "radius": 1150,
+   "peak": 6,
+   "seed": 2017,
+   "profile": "flat",
+   "region": "sunstring"
+  },
+  {
+   "name": "Wolf Holm",
+   "cx": 7000,
+   "cz": -185700,
+   "radius": 850,
+   "peak": 162,
+   "seed": 2018,
+   "profile": "hills",
+   "region": "skerries"
+  },
+  {
+   "name": "Fulmar Holm",
+   "cx": -127200,
+   "cz": -140800,
+   "radius": 2250,
+   "peak": 377,
+   "seed": 2019,
+   "profile": "ridge",
+   "region": "skerries"
+  },
+  {
+   "name": "Stonechat Rock",
+   "cx": -49100,
+   "cz": -108600,
+   "radius": 2150,
+   "peak": 616,
+   "seed": 2020,
+   "profile": "ridge",
+   "region": "skerries"
+  },
+  {
+   "name": "Stonechat Island",
+   "cx": -122700,
+   "cz": -159100,
+   "radius": 1900,
+   "peak": 341,
+   "seed": 2021,
+   "profile": "ridge",
+   "region": "skerries"
+  },
+  {
+   "name": "Wolf Head",
+   "cx": -104900,
+   "cz": -128200,
+   "radius": 2450,
+   "peak": 332,
+   "seed": 2022,
+   "profile": "ridge",
+   "region": "skerries"
+  },
+  {
+   "name": "Raven Rock",
+   "cx": -23000,
+   "cz": -187000,
+   "radius": 700,
+   "peak": 227,
+   "seed": 2023,
+   "profile": "hills",
+   "region": "skerries"
+  },
+  {
+   "name": "Tundra Island",
+   "cx": 20700,
+   "cz": -175300,
+   "radius": 900,
+   "peak": 286,
+   "seed": 2024,
+   "profile": "ridge",
+   "region": "skerries"
+  },
+  {
+   "name": "Merlin Skerry",
+   "cx": 55700,
+   "cz": -155500,
+   "radius": 1850,
+   "peak": 565,
+   "seed": 2025,
+   "profile": "ridge",
+   "region": "skerries"
+  },
+  {
+   "name": "Shearwater Holm",
+   "cx": 34200,
+   "cz": -127100,
+   "radius": 1100,
+   "peak": 117,
+   "seed": 2026,
+   "profile": "hills",
+   "region": "skerries"
+  },
+  {
+   "name": "Skua Island",
+   "cx": -8400,
+   "cz": -183200,
+   "radius": 1600,
+   "peak": 613,
+   "seed": 2027,
+   "profile": "ridge",
+   "region": "skerries"
+  },
+  {
+   "name": "Petrel Holm",
+   "cx": 3100,
+   "cz": -119400,
+   "radius": 2150,
+   "peak": 94,
+   "seed": 2028,
+   "profile": "hills",
+   "region": "skerries"
+  },
+  {
+   "name": "Egret Atoll",
+   "cx": -17800,
+   "cz": 127200,
+   "radius": 1550,
+   "peak": 22,
+   "seed": 2029,
+   "profile": "plains",
+   "region": "sands"
+  },
+  {
+   "name": "Gull Atoll",
+   "cx": -56200,
+   "cz": 135300,
+   "radius": 800,
+   "peak": 5,
+   "seed": 2030,
+   "profile": "flat",
+   "region": "sands"
+  },
+  {
+   "name": "Egret Cay",
+   "cx": -107100,
+   "cz": 161300,
+   "radius": 2600,
+   "peak": 7,
+   "seed": 2031,
+   "profile": "flat",
+   "region": "sands"
+  },
+  {
+   "name": "Mangrove Island",
+   "cx": -118700,
+   "cz": 192600,
+   "radius": 2850,
+   "peak": 5,
+   "seed": 2032,
+   "profile": "flat",
+   "region": "sands"
+  },
+  {
+   "name": "Hibiscus Reef",
+   "cx": -100000,
+   "cz": 176900,
+   "radius": 2450,
+   "peak": 6,
+   "seed": 2033,
+   "profile": "flat",
+   "region": "sands"
+  },
+  {
+   "name": "Starfish Cay",
+   "cx": 37400,
+   "cz": 190200,
+   "radius": 1050,
+   "peak": 6,
+   "seed": 2034,
+   "profile": "flat",
+   "region": "sands"
+  },
+  {
+   "name": "Palm Atoll",
+   "cx": -23200,
+   "cz": 180200,
+   "radius": 1950,
+   "peak": 4,
+   "seed": 2035,
+   "profile": "flat",
+   "region": "sands"
+  },
+  {
+   "name": "Parrot Isle",
+   "cx": 32400,
+   "cz": 184900,
+   "radius": 2000,
+   "peak": 5,
+   "seed": 2036,
+   "profile": "flat",
+   "region": "sands"
+  },
+  {
+   "name": "Eider Skerry",
+   "cx": 114300,
+   "cz": -164700,
+   "radius": 1700,
+   "peak": 243,
+   "seed": 2037,
+   "profile": "ridge",
+   "region": "outposts"
+  },
+  {
+   "name": "Eider Holm",
+   "cx": 123900,
+   "cz": -194300,
+   "radius": 550,
+   "peak": 178,
+   "seed": 2038,
+   "profile": "hills",
+   "region": "outposts"
+  },
+  {
+   "name": "Raven Skerry",
+   "cx": 171600,
+   "cz": -125300,
+   "radius": 850,
+   "peak": 184,
+   "seed": 2039,
+   "profile": "hills",
+   "region": "outposts"
+  },
+  {
+   "name": "Guillemot Head",
+   "cx": 189900,
+   "cz": -183300,
+   "radius": 1350,
+   "peak": 94,
+   "seed": 2040,
+   "profile": "hills",
+   "region": "outposts"
+  },
+  {
+   "name": "Skua Rock",
+   "cx": 141300,
+   "cz": -142300,
+   "radius": 500,
+   "peak": 211,
+   "seed": 2041,
+   "profile": "hills",
+   "region": "outposts"
+  },
+  {
+   "name": "Beacon Island",
+   "cx": -60800,
+   "cz": 47100,
+   "radius": 1050,
+   "peak": 6,
+   "seed": 2042,
+   "profile": "flat",
+   "region": "sound"
+  },
+  {
+   "name": "Wren Holm",
+   "cx": 74000,
+   "cz": -22200,
+   "radius": 1000,
+   "peak": 206,
+   "seed": 2043,
+   "profile": "hills",
+   "region": "sound"
+  },
+  {
+   "name": "Kittiwake Isle",
+   "cx": 85300,
+   "cz": 16400,
+   "radius": 1100,
+   "peak": 4,
+   "seed": 2044,
+   "profile": "flat",
+   "region": "sound"
+  },
+  {
+   "name": "Dunlin Island",
+   "cx": 79800,
+   "cz": 83800,
+   "radius": 1600,
+   "peak": 220,
+   "seed": 2045,
+   "profile": "hills",
+   "region": "sound"
+  },
+  {
+   "name": "Plover Isle",
+   "cx": 16600,
+   "cz": 68700,
+   "radius": 700,
+   "peak": 557,
+   "seed": 2046,
+   "profile": "ridge",
+   "region": "sound"
+  },
+  {
+   "name": "Shingle Holm",
+   "cx": -56300,
+   "cz": -86900,
+   "radius": 1000,
+   "peak": 434,
+   "seed": 2047,
+   "profile": "ridge",
+   "region": "sound"
   }
  ],
  "flats": [
@@ -304,6 +1014,292 @@ export const PREVIEW_DATA = {
    "clear": true
   },
   {
+   "id": "rwy-aldermere",
+   "name": "Aldermere International runway",
+   "kind": "runway",
+   "x0": -129900,
+   "x1": -126100,
+   "z0": 19970,
+   "z1": 20030,
+   "blend": 4,
+   "surface": "tarmac",
+   "elev": 32.5,
+   "clear": true
+  },
+  {
+   "id": "site-aldermere",
+   "name": "Aldermere International",
+   "kind": "airfield",
+   "x0": -130500,
+   "x1": -125500,
+   "z0": 19020,
+   "z1": 20170,
+   "blend": 260,
+   "surface": "grass",
+   "elev": 32.5,
+   "clear": true
+  },
+  {
+   "id": "rwy-highfold",
+   "name": "Highfold Regional runway",
+   "kind": "runway",
+   "x0": -166150,
+   "x1": -163850,
+   "z0": 29977,
+   "z1": 30023,
+   "blend": 4,
+   "surface": "tarmac",
+   "elev": 33.5,
+   "clear": true
+  },
+  {
+   "id": "site-highfold",
+   "name": "Highfold Regional",
+   "kind": "airfield",
+   "x0": -166750,
+   "x1": -163250,
+   "z0": 29020,
+   "z1": 30163,
+   "blend": 260,
+   "surface": "grass",
+   "elev": 33.5,
+   "clear": true
+  },
+  {
+   "id": "rwy-saltmarsh",
+   "name": "Saltmarsh Strip runway",
+   "kind": "runway",
+   "x0": -176350,
+   "x1": -175650,
+   "z0": 51988,
+   "z1": 52012,
+   "blend": 4,
+   "surface": "grass",
+   "elev": 12,
+   "clear": true
+  },
+  {
+   "id": "site-saltmarsh",
+   "name": "Saltmarsh Strip",
+   "kind": "airfield",
+   "x0": -176950,
+   "x1": -175050,
+   "z0": 51380,
+   "z1": 52152,
+   "blend": 260,
+   "surface": "grass",
+   "elev": 12,
+   "clear": true
+  },
+  {
+   "id": "rwy-frigate",
+   "name": "Frigate Bay Regional runway",
+   "kind": "runway",
+   "x0": 106850,
+   "x1": 109150,
+   "z0": 87977,
+   "z1": 88023,
+   "blend": 4,
+   "surface": "tarmac",
+   "elev": 32,
+   "clear": true
+  },
+  {
+   "id": "site-frigate",
+   "name": "Frigate Bay Regional",
+   "kind": "airfield",
+   "x0": 106250,
+   "x1": 109750,
+   "z0": 87020,
+   "z1": 88163,
+   "blend": 260,
+   "surface": "grass",
+   "elev": 32,
+   "clear": true
+  },
+  {
+   "id": "rwy-mangrove",
+   "name": "Mangrove Cay Strip runway",
+   "kind": "runway",
+   "x0": 144675,
+   "x1": 145325,
+   "z0": 124988,
+   "z1": 125012,
+   "blend": 4,
+   "surface": "grass",
+   "elev": 12.5,
+   "clear": true
+  },
+  {
+   "id": "site-mangrove",
+   "name": "Mangrove Cay Strip",
+   "kind": "airfield",
+   "x0": 144075,
+   "x1": 145925,
+   "z0": 124380,
+   "z1": 125152,
+   "blend": 260,
+   "surface": "grass",
+   "elev": 12.5,
+   "clear": true
+  },
+  {
+   "id": "rwy-conch",
+   "name": "Conch Island Field runway",
+   "kind": "runway",
+   "x0": 71500,
+   "x1": 72500,
+   "z0": 57985,
+   "z1": 58015,
+   "blend": 4,
+   "surface": "tarmac",
+   "elev": 30.5,
+   "clear": true
+  },
+  {
+   "id": "site-conch",
+   "name": "Conch Island Field",
+   "kind": "airfield",
+   "x0": 70900,
+   "x1": 73100,
+   "z0": 57380,
+   "z1": 58155,
+   "blend": 260,
+   "surface": "grass",
+   "elev": 30.5,
+   "clear": true
+  },
+  {
+   "id": "rwy-eider",
+   "name": "Eider Bay Regional runway",
+   "kind": "runway",
+   "x0": -42725,
+   "x1": -41275,
+   "z0": -138023,
+   "z1": -137977,
+   "blend": 4,
+   "surface": "tarmac",
+   "elev": 32,
+   "clear": true
+  },
+  {
+   "id": "site-eider",
+   "name": "Eider Bay Regional",
+   "kind": "airfield",
+   "x0": -43325,
+   "x1": -40675,
+   "z0": -138620,
+   "z1": -137837,
+   "blend": 260,
+   "surface": "grass",
+   "elev": 32,
+   "clear": true
+  },
+  {
+   "id": "rwy-petrel",
+   "name": "Petrel Skerry Strip runway",
+   "kind": "runway",
+   "x0": 21625,
+   "x1": 22375,
+   "z0": -168012,
+   "z1": -167988,
+   "blend": 4,
+   "surface": "gravel",
+   "elev": 32.5,
+   "clear": true
+  },
+  {
+   "id": "site-petrel",
+   "name": "Petrel Skerry Strip",
+   "kind": "airfield",
+   "x0": 21025,
+   "x1": 22975,
+   "z0": -168620,
+   "z1": -167848,
+   "blend": 260,
+   "surface": "grass",
+   "elev": 32.5,
+   "clear": true
+  },
+  {
+   "id": "rwy-sandmere",
+   "name": "Sandmere International runway",
+   "kind": "runway",
+   "x0": -63600,
+   "x1": -60400,
+   "z0": 149970,
+   "z1": 150030,
+   "blend": 4,
+   "surface": "tarmac",
+   "elev": 12,
+   "clear": true
+  },
+  {
+   "id": "site-sandmere",
+   "name": "Sandmere International",
+   "kind": "airfield",
+   "x0": -64200,
+   "x1": -59800,
+   "z0": 149020,
+   "z1": 150170,
+   "blend": 260,
+   "surface": "grass",
+   "elev": 12,
+   "clear": true
+  },
+  {
+   "id": "rwy-dune",
+   "name": "Dune Cay Strip runway",
+   "kind": "runway",
+   "x0": -5300,
+   "x1": -4700,
+   "z0": 175988,
+   "z1": 176012,
+   "blend": 4,
+   "surface": "grass",
+   "elev": 12,
+   "clear": true
+  },
+  {
+   "id": "site-dune",
+   "name": "Dune Cay Strip",
+   "kind": "airfield",
+   "x0": -5900,
+   "x1": -4100,
+   "z0": 175380,
+   "z1": 176152,
+   "blend": 260,
+   "surface": "grass",
+   "elev": 12,
+   "clear": true
+  },
+  {
+   "id": "rwy-farwatch",
+   "name": "Farwatch Field runway",
+   "kind": "runway",
+   "x0": 170500,
+   "x1": 173500,
+   "z0": -168023,
+   "z1": -167977,
+   "blend": 4,
+   "surface": "tarmac",
+   "elev": 32.5,
+   "clear": true
+  },
+  {
+   "id": "site-farwatch",
+   "name": "Farwatch Field",
+   "kind": "airfield",
+   "x0": 169900,
+   "x1": 174100,
+   "z0": -168980,
+   "z1": -167837,
+   "blend": 260,
+   "surface": "grass",
+   "elev": 32.5,
+   "clear": true
+  },
+  {
    "id": "town-haven",
    "name": "Haven",
    "kind": "town",
@@ -366,6 +1362,149 @@ export const PREVIEW_DATA = {
    "blend": 240,
    "surface": "grass",
    "elev": 35,
+   "clear": false
+  },
+  {
+   "id": "town-aldermere",
+   "name": "Aldermere",
+   "kind": "town",
+   "x0": -126200,
+   "x1": -124600,
+   "z0": 16300,
+   "z1": 17900,
+   "blend": 240,
+   "surface": "grass",
+   "elev": 32,
+   "clear": false
+  },
+  {
+   "id": "town-highfold",
+   "name": "Highfold",
+   "kind": "town",
+   "x0": -167036,
+   "x1": -166364,
+   "z0": 27564,
+   "z1": 28236,
+   "blend": 240,
+   "surface": "grass",
+   "elev": 32,
+   "clear": false
+  },
+  {
+   "id": "town-saltmarsh",
+   "name": "Saltmarsh",
+   "kind": "town",
+   "x0": -175692,
+   "x1": -175308,
+   "z0": 50908,
+   "z1": 51292,
+   "blend": 240,
+   "surface": "grass",
+   "elev": 12,
+   "clear": false
+  },
+  {
+   "id": "town-frigate",
+   "name": "Frigate Bay",
+   "kind": "town",
+   "x0": 109296,
+   "x1": 109904,
+   "z0": 85996,
+   "z1": 86604,
+   "blend": 240,
+   "surface": "grass",
+   "elev": 34,
+   "clear": false
+  },
+  {
+   "id": "town-mangrove",
+   "name": "Mangrove Landing",
+   "kind": "town",
+   "x0": 145224,
+   "x1": 145576,
+   "z0": 124024,
+   "z1": 124376,
+   "blend": 240,
+   "surface": "grass",
+   "elev": 13,
+   "clear": false
+  },
+  {
+   "id": "town-conch",
+   "name": "Conch Harbour",
+   "kind": "town",
+   "x0": 72760,
+   "x1": 73240,
+   "z0": 56660,
+   "z1": 57140,
+   "blend": 240,
+   "surface": "grass",
+   "elev": 30,
+   "clear": false
+  },
+  {
+   "id": "town-eider",
+   "name": "Eider Bay",
+   "kind": "town",
+   "x0": -40804,
+   "x1": -40196,
+   "z0": -140104,
+   "z1": -139496,
+   "blend": 240,
+   "surface": "grass",
+   "elev": 36,
+   "clear": false
+  },
+  {
+   "id": "town-petrel",
+   "name": "Petrel Wick",
+   "kind": "town",
+   "x0": 22316,
+   "x1": 22684,
+   "z0": -169084,
+   "z1": -168716,
+   "blend": 240,
+   "surface": "grass",
+   "elev": 30,
+   "clear": false
+  },
+  {
+   "id": "town-sandmere",
+   "name": "Sandmere",
+   "kind": "town",
+   "x0": -60108,
+   "x1": -58892,
+   "z0": 146792,
+   "z1": 148008,
+   "blend": 240,
+   "surface": "grass",
+   "elev": 13,
+   "clear": false
+  },
+  {
+   "id": "town-dune",
+   "name": "Dune Cay",
+   "kind": "town",
+   "x0": -4776,
+   "x1": -4424,
+   "z0": 175024,
+   "z1": 175376,
+   "blend": 240,
+   "surface": "grass",
+   "elev": 13,
+   "clear": false
+  },
+  {
+   "id": "town-farwatch",
+   "name": "Farwatch Station",
+   "kind": "town",
+   "x0": 173192,
+   "x1": 173608,
+   "z0": -169708,
+   "z1": -169292,
+   "blend": 240,
+   "surface": "grass",
+   "elev": 37,
    "clear": false
   }
  ],
@@ -934,6 +2073,1124 @@ export const PREVIEW_DATA = {
      35
     ]
    ]
+  },
+  {
+   "airport": "aldermere",
+   "name": "Aldermere road",
+   "halfWidth": 18,
+   "blend": 60,
+   "path": [
+    [
+     -127010,
+     19693,
+     32.5
+    ],
+    [
+     -127010,
+     19577,
+     32.5
+    ],
+    [
+     -127010,
+     19461,
+     32.5
+    ],
+    [
+     -127010,
+     19345,
+     32.5
+    ],
+    [
+     -127010,
+     19228,
+     32.5
+    ],
+    [
+     -127010,
+     19112,
+     32.5
+    ],
+    [
+     -127010,
+     18996,
+     32.5
+    ],
+    [
+     -127010,
+     18880,
+     32.4
+    ],
+    [
+     -126933,
+     18795,
+     32.3
+    ],
+    [
+     -126857,
+     18710,
+     32.2
+    ],
+    [
+     -126780,
+     18626,
+     32.1
+    ],
+    [
+     -126703,
+     18541,
+     32.1
+    ],
+    [
+     -126627,
+     18456,
+     32.2
+    ],
+    [
+     -126550,
+     18371,
+     32.4
+    ],
+    [
+     -126473,
+     18287,
+     32.8
+    ],
+    [
+     -126397,
+     18202,
+     33
+    ],
+    [
+     -126320,
+     18117,
+     32.9
+    ],
+    [
+     -126243,
+     18032,
+     32.7
+    ],
+    [
+     -126167,
+     17948,
+     32.4
+    ],
+    [
+     -126090,
+     17863,
+     32.2
+    ],
+    [
+     -126013,
+     17778,
+     32.1
+    ],
+    [
+     -125937,
+     17693,
+     32
+    ],
+    [
+     -125860,
+     17609,
+     32
+    ],
+    [
+     -125783,
+     17524,
+     32
+    ],
+    [
+     -125707,
+     17439,
+     32
+    ],
+    [
+     -125630,
+     17354,
+     32
+    ],
+    [
+     -125553,
+     17270,
+     32
+    ],
+    [
+     -125477,
+     17185,
+     32
+    ],
+    [
+     -125400,
+     17100,
+     32
+    ]
+   ]
+  },
+  {
+   "airport": "highfold",
+   "name": "Highfold road",
+   "halfWidth": 18,
+   "blend": 60,
+   "path": [
+    [
+     -164020,
+     29693,
+     33.5
+    ],
+    [
+     -164020,
+     29577,
+     33.5
+    ],
+    [
+     -164020,
+     29461,
+     33.5
+    ],
+    [
+     -164020,
+     29345,
+     33.5
+    ],
+    [
+     -164020,
+     29228,
+     33.6
+    ],
+    [
+     -164020,
+     29112,
+     33.8
+    ],
+    [
+     -164020,
+     28996,
+     34.1
+    ],
+    [
+     -164020,
+     28880,
+     34.6
+    ],
+    [
+     -164132,
+     28839,
+     35.1
+    ],
+    [
+     -164243,
+     28798,
+     35.4
+    ],
+    [
+     -164355,
+     28758,
+     35.5
+    ],
+    [
+     -164467,
+     28717,
+     35.4
+    ],
+    [
+     -164578,
+     28676,
+     35.1
+    ],
+    [
+     -164690,
+     28635,
+     34.8
+    ],
+    [
+     -164802,
+     28594,
+     34.5
+    ],
+    [
+     -164913,
+     28553,
+     34.3
+    ],
+    [
+     -165025,
+     28513,
+     34.1
+    ],
+    [
+     -165137,
+     28472,
+     33.8
+    ],
+    [
+     -165248,
+     28431,
+     33.2
+    ],
+    [
+     -165360,
+     28390,
+     32.6
+    ],
+    [
+     -165472,
+     28349,
+     32
+    ],
+    [
+     -165583,
+     28308,
+     31.6
+    ],
+    [
+     -165695,
+     28268,
+     31.3
+    ],
+    [
+     -165807,
+     28227,
+     31.1
+    ],
+    [
+     -165918,
+     28186,
+     31.1
+    ],
+    [
+     -166030,
+     28145,
+     31.2
+    ],
+    [
+     -166142,
+     28104,
+     31.4
+    ],
+    [
+     -166253,
+     28063,
+     31.6
+    ],
+    [
+     -166365,
+     28023,
+     31.8
+    ],
+    [
+     -166477,
+     27982,
+     31.9
+    ],
+    [
+     -166588,
+     27941,
+     32
+    ],
+    [
+     -166700,
+     27900,
+     32
+    ]
+   ]
+  },
+  {
+   "airport": "saltmarsh",
+   "name": "Saltmarsh road",
+   "halfWidth": 18,
+   "blend": 60,
+   "path": [
+    [
+     -176087,
+     51757,
+     12
+    ],
+    [
+     -176087,
+     51654,
+     12
+    ],
+    [
+     -176087,
+     51550,
+     12
+    ],
+    [
+     -176087,
+     51447,
+     12
+    ],
+    [
+     -176087,
+     51343,
+     12
+    ],
+    [
+     -176087,
+     51240,
+     12
+    ],
+    [
+     -175989,
+     51217,
+     12
+    ],
+    [
+     -175891,
+     51193,
+     12
+    ],
+    [
+     -175793,
+     51170,
+     12
+    ],
+    [
+     -175696,
+     51147,
+     12
+    ],
+    [
+     -175598,
+     51123,
+     12
+    ],
+    [
+     -175500,
+     51100,
+     12
+    ]
+   ]
+  },
+  {
+   "airport": "frigate",
+   "name": "Frigate Bay road",
+   "halfWidth": 18,
+   "blend": 60,
+   "path": [
+    [
+     108980,
+     87693,
+     32
+    ],
+    [
+     108980,
+     87577,
+     32
+    ],
+    [
+     108980,
+     87461,
+     32
+    ],
+    [
+     108980,
+     87345,
+     32
+    ],
+    [
+     108980,
+     87228,
+     32
+    ],
+    [
+     108980,
+     87112,
+     31.9
+    ],
+    [
+     108980,
+     86996,
+     31.9
+    ],
+    [
+     108980,
+     86880,
+     32.1
+    ],
+    [
+     109058,
+     86808,
+     32.4
+    ],
+    [
+     109135,
+     86735,
+     32.8
+    ],
+    [
+     109213,
+     86663,
+     33.3
+    ],
+    [
+     109290,
+     86590,
+     33.7
+    ],
+    [
+     109368,
+     86518,
+     33.9
+    ],
+    [
+     109445,
+     86445,
+     34
+    ],
+    [
+     109523,
+     86373,
+     34
+    ],
+    [
+     109600,
+     86300,
+     34
+    ]
+   ]
+  },
+  {
+   "airport": "mangrove",
+   "name": "Mangrove Landing road",
+   "halfWidth": 18,
+   "blend": 60,
+   "path": [
+    [
+     144916,
+     124757,
+     12.5
+    ],
+    [
+     144916,
+     124654,
+     12.5
+    ],
+    [
+     144916,
+     124550,
+     12.5
+    ],
+    [
+     144916,
+     124447,
+     12.6
+    ],
+    [
+     144916,
+     124343,
+     12.6
+    ],
+    [
+     144916,
+     124240,
+     12.7
+    ],
+    [
+     145013,
+     124232,
+     12.7
+    ],
+    [
+     145110,
+     124224,
+     12.8
+    ],
+    [
+     145206,
+     124216,
+     12.9
+    ],
+    [
+     145303,
+     124208,
+     13
+    ],
+    [
+     145400,
+     124200,
+     13
+    ]
+   ]
+  },
+  {
+   "airport": "conch",
+   "name": "Conch Harbour road",
+   "halfWidth": 18,
+   "blend": 60,
+   "path": [
+    [
+     71891,
+     57757,
+     30.5
+    ],
+    [
+     71891,
+     57654,
+     30.5
+    ],
+    [
+     71891,
+     57550,
+     30.6
+    ],
+    [
+     71891,
+     57447,
+     30.6
+    ],
+    [
+     71891,
+     57343,
+     30.8
+    ],
+    [
+     71891,
+     57240,
+     30.9
+    ],
+    [
+     72002,
+     57206,
+     31
+    ],
+    [
+     72113,
+     57172,
+     31.2
+    ],
+    [
+     72224,
+     57138,
+     31.2
+    ],
+    [
+     72335,
+     57104,
+     31.2
+    ],
+    [
+     72446,
+     57070,
+     31.1
+    ],
+    [
+     72556,
+     57036,
+     30.9
+    ],
+    [
+     72667,
+     57002,
+     30.6
+    ],
+    [
+     72778,
+     56968,
+     30.3
+    ],
+    [
+     72889,
+     56934,
+     30.1
+    ],
+    [
+     73000,
+     56900,
+     30
+    ]
+   ]
+  },
+  {
+   "airport": "eider",
+   "name": "Eider Bay road",
+   "halfWidth": 18,
+   "blend": 60,
+   "path": [
+    [
+     -41489,
+     -138208,
+     32
+    ],
+    [
+     -41489,
+     -138318,
+     32
+    ],
+    [
+     -41489,
+     -138429,
+     31.9
+    ],
+    [
+     -41489,
+     -138539,
+     31.7
+    ],
+    [
+     -41489,
+     -138650,
+     31.5
+    ],
+    [
+     -41489,
+     -138760,
+     31.3
+    ],
+    [
+     -41407,
+     -138847,
+     31.3
+    ],
+    [
+     -41324,
+     -138933,
+     31.6
+    ],
+    [
+     -41242,
+     -139020,
+     32
+    ],
+    [
+     -41159,
+     -139107,
+     32.6
+    ],
+    [
+     -41077,
+     -139193,
+     33.2
+    ],
+    [
+     -40994,
+     -139280,
+     33.8
+    ],
+    [
+     -40912,
+     -139367,
+     34.4
+    ],
+    [
+     -40830,
+     -139453,
+     35
+    ],
+    [
+     -40747,
+     -139540,
+     35.5
+    ],
+    [
+     -40665,
+     -139627,
+     35.8
+    ],
+    [
+     -40582,
+     -139713,
+     35.9
+    ],
+    [
+     -40500,
+     -139800,
+     36
+    ]
+   ]
+  },
+  {
+   "airport": "petrel",
+   "name": "Petrel Wick road",
+   "halfWidth": 18,
+   "blend": 60,
+   "path": [
+    [
+     21909,
+     -168243,
+     32.5
+    ],
+    [
+     21909,
+     -168346,
+     32.5
+    ],
+    [
+     21909,
+     -168450,
+     32.5
+    ],
+    [
+     21909,
+     -168553,
+     32.4
+    ],
+    [
+     21909,
+     -168657,
+     32.3
+    ],
+    [
+     21909,
+     -168760,
+     32
+    ],
+    [
+     22008,
+     -168783,
+     31.6
+    ],
+    [
+     22106,
+     -168807,
+     31.1
+    ],
+    [
+     22205,
+     -168830,
+     30.7
+    ],
+    [
+     22303,
+     -168853,
+     30.3
+    ],
+    [
+     22402,
+     -168877,
+     30.1
+    ],
+    [
+     22500,
+     -168900,
+     30
+    ]
+   ]
+  },
+  {
+   "airport": "sandmere",
+   "name": "Sandmere road",
+   "halfWidth": 18,
+   "blend": 60,
+   "path": [
+    [
+     -61010,
+     149693,
+     12
+    ],
+    [
+     -61010,
+     149577,
+     12
+    ],
+    [
+     -61010,
+     149461,
+     12
+    ],
+    [
+     -61010,
+     149345,
+     12
+    ],
+    [
+     -61010,
+     149228,
+     12
+    ],
+    [
+     -61010,
+     149112,
+     12
+    ],
+    [
+     -61010,
+     148996,
+     11.9
+    ],
+    [
+     -61010,
+     148880,
+     11.9
+    ],
+    [
+     -60926,
+     148798,
+     12
+    ],
+    [
+     -60842,
+     148716,
+     12
+    ],
+    [
+     -60758,
+     148633,
+     12.1
+    ],
+    [
+     -60674,
+     148551,
+     12.2
+    ],
+    [
+     -60591,
+     148469,
+     12.3
+    ],
+    [
+     -60507,
+     148387,
+     12.5
+    ],
+    [
+     -60423,
+     148304,
+     12.7
+    ],
+    [
+     -60339,
+     148222,
+     12.9
+    ],
+    [
+     -60255,
+     148140,
+     13.1
+    ],
+    [
+     -60171,
+     148058,
+     13.1
+    ],
+    [
+     -60087,
+     147976,
+     13.1
+    ],
+    [
+     -60003,
+     147893,
+     13.1
+    ],
+    [
+     -59919,
+     147811,
+     13
+    ],
+    [
+     -59836,
+     147729,
+     13
+    ],
+    [
+     -59752,
+     147647,
+     13
+    ],
+    [
+     -59668,
+     147564,
+     13
+    ],
+    [
+     -59584,
+     147482,
+     13
+    ],
+    [
+     -59500,
+     147400,
+     13
+    ]
+   ]
+  },
+  {
+   "airport": "dune",
+   "name": "Dune Cay road",
+   "halfWidth": 18,
+   "blend": 60,
+   "path": [
+    [
+     -5091,
+     175851,
+     12
+    ],
+    [
+     -5091,
+     175749,
+     12
+    ],
+    [
+     -5091,
+     175647,
+     12
+    ],
+    [
+     -5091,
+     175546,
+     12
+    ],
+    [
+     -5091,
+     175444,
+     12
+    ],
+    [
+     -5091,
+     175342,
+     12
+    ],
+    [
+     -5091,
+     175240,
+     12
+    ],
+    [
+     -4993,
+     175232,
+     12.2
+    ],
+    [
+     -4895,
+     175224,
+     12.4
+    ],
+    [
+     -4796,
+     175216,
+     12.6
+    ],
+    [
+     -4698,
+     175208,
+     12.8
+    ],
+    [
+     -4600,
+     175200,
+     13
+    ]
+   ]
+  },
+  {
+   "airport": "farwatch",
+   "name": "Farwatch Station road",
+   "halfWidth": 18,
+   "blend": 60,
+   "path": [
+    [
+     171835,
+     -168377,
+     32.5
+    ],
+    [
+     171835,
+     -168483,
+     32.5
+    ],
+    [
+     171835,
+     -168589,
+     32.5
+    ],
+    [
+     171835,
+     -168695,
+     32.6
+    ],
+    [
+     171835,
+     -168802,
+     32.8
+    ],
+    [
+     171835,
+     -168908,
+     33.2
+    ],
+    [
+     171835,
+     -169014,
+     34
+    ],
+    [
+     171835,
+     -169120,
+     34.7
+    ],
+    [
+     171947,
+     -169147,
+     35.2
+    ],
+    [
+     172059,
+     -169174,
+     35.2
+    ],
+    [
+     172170,
+     -169201,
+     34.7
+    ],
+    [
+     172282,
+     -169229,
+     34
+    ],
+    [
+     172394,
+     -169256,
+     33.4
+    ],
+    [
+     172506,
+     -169283,
+     33.2
+    ],
+    [
+     172618,
+     -169310,
+     33.5
+    ],
+    [
+     172729,
+     -169337,
+     34.1
+    ],
+    [
+     172841,
+     -169364,
+     34.8
+    ],
+    [
+     172953,
+     -169391,
+     35.4
+    ],
+    [
+     173065,
+     -169419,
+     36
+    ],
+    [
+     173176,
+     -169446,
+     36.5
+    ],
+    [
+     173288,
+     -169473,
+     36.8
+    ],
+    [
+     173400,
+     -169500,
+     37
+    ]
+   ]
   }
  ],
  "towns": [
@@ -981,6 +3238,105 @@ export const PREVIEW_DATA = {
    "radius": 560,
    "count": 60,
    "elev": 35
+  },
+  {
+   "airport": "aldermere",
+   "name": "Aldermere",
+   "cx": -125400,
+   "cz": 17100,
+   "radius": 1000,
+   "count": 130,
+   "elev": 32
+  },
+  {
+   "airport": "highfold",
+   "name": "Highfold",
+   "cx": -166700,
+   "cz": 27900,
+   "radius": 420,
+   "count": 36,
+   "elev": 32
+  },
+  {
+   "airport": "saltmarsh",
+   "name": "Saltmarsh",
+   "cx": -175500,
+   "cz": 51100,
+   "radius": 240,
+   "count": 12,
+   "elev": 12
+  },
+  {
+   "airport": "frigate",
+   "name": "Frigate Bay",
+   "cx": 109600,
+   "cz": 86300,
+   "radius": 380,
+   "count": 32,
+   "elev": 34
+  },
+  {
+   "airport": "mangrove",
+   "name": "Mangrove Landing",
+   "cx": 145400,
+   "cz": 124200,
+   "radius": 220,
+   "count": 12,
+   "elev": 13
+  },
+  {
+   "airport": "conch",
+   "name": "Conch Harbour",
+   "cx": 73000,
+   "cz": 56900,
+   "radius": 300,
+   "count": 20,
+   "elev": 30
+  },
+  {
+   "airport": "eider",
+   "name": "Eider Bay",
+   "cx": -40500,
+   "cz": -139800,
+   "radius": 380,
+   "count": 30,
+   "elev": 36
+  },
+  {
+   "airport": "petrel",
+   "name": "Petrel Wick",
+   "cx": 22500,
+   "cz": -168900,
+   "radius": 230,
+   "count": 12,
+   "elev": 30
+  },
+  {
+   "airport": "sandmere",
+   "name": "Sandmere",
+   "cx": -59500,
+   "cz": 147400,
+   "radius": 760,
+   "count": 84,
+   "elev": 13
+  },
+  {
+   "airport": "dune",
+   "name": "Dune Cay",
+   "cx": -4600,
+   "cz": 175200,
+   "radius": 220,
+   "count": 12,
+   "elev": 13
+  },
+  {
+   "airport": "farwatch",
+   "name": "Farwatch Station",
+   "cx": 173400,
+   "cz": -169500,
+   "radius": 260,
+   "count": 12,
+   "elev": 37
   }
  ],
  "airports": [
@@ -989,6 +3345,7 @@ export const PREVIEW_DATA = {
    "code": "XHVN",
    "name": "Haven International",
    "place": "Haven Island",
+   "region": "sound",
    "kind": "hub",
    "x": 0,
    "z": 0,
@@ -1167,6 +3524,7 @@ export const PREVIEW_DATA = {
    "code": "XGUL",
    "name": "Gull Cay Strip",
    "place": "Gull Cay",
+   "region": "sound",
    "kind": "ga",
    "x": 30000,
    "z": 6000,
@@ -1312,6 +3670,7 @@ export const PREVIEW_DATA = {
    "code": "XTRN",
    "name": "Tern Field",
    "place": "Tern Island",
+   "region": "sound",
    "kind": "regional",
    "x": -14000,
    "z": -26000,
@@ -1462,6 +3821,7 @@ export const PREVIEW_DATA = {
    "code": "XMRM",
    "name": "Marram Regional",
    "place": "Marram Point",
+   "region": "sound",
    "kind": "regional",
    "x": -40000,
    "z": 20000,
@@ -1640,6 +4000,7 @@ export const PREVIEW_DATA = {
    "code": "XFHD",
    "name": "Farhold International",
    "place": "Farhold Island",
+   "region": "sound",
    "kind": "hub",
    "x": 42000,
    "z": -40000,
@@ -1812,6 +4173,1824 @@ export const PREVIEW_DATA = {
     "x": 42000,
     "z": -33500
    }
+  },
+  {
+   "id": "aldermere",
+   "code": "XALD",
+   "name": "Aldermere International",
+   "place": "Westreach",
+   "region": "westreach",
+   "kind": "hub",
+   "x": -128000,
+   "z": 20000,
+   "length": 3800,
+   "halfWidth": 30,
+   "prevailingDeg": 75,
+   "parking": true,
+   "capital": true,
+   "elev": 32.5,
+   "site": {
+    "x0": -130500,
+    "x1": -125500,
+    "z0": 19020,
+    "z1": 20170
+   },
+   "pad": {
+    "x": -130050,
+    "z": 19860
+   },
+   "apron": {
+    "x": -127010,
+    "z": 19693
+   },
+   "layout": {
+    "cls": "hub",
+    "dropped": [],
+    "pavement": [
+     {
+      "kind": "taxiway",
+      "x0": -1750,
+      "x1": 1750,
+      "z0": -185,
+      "z1": -155
+     },
+     {
+      "kind": "connector",
+      "x0": -1755,
+      "x1": -1725,
+      "z0": -155,
+      "z1": -29
+     },
+     {
+      "kind": "connector",
+      "x0": -965,
+      "x1": -935,
+      "z0": -155,
+      "z1": -29
+     },
+     {
+      "kind": "connector",
+      "x0": -15,
+      "x1": 15,
+      "z0": -155,
+      "z1": -29
+     },
+     {
+      "kind": "connector",
+      "x0": 935,
+      "x1": 965,
+      "z0": -155,
+      "z1": -29
+     },
+     {
+      "kind": "connector",
+      "x0": 1725,
+      "x1": 1755,
+      "z0": -155,
+      "z1": -29
+     },
+     {
+      "kind": "apron",
+      "x0": -700,
+      "x1": 500,
+      "z0": -306,
+      "z1": -185
+     },
+     {
+      "kind": "lead",
+      "x0": -891,
+      "x1": -781,
+      "z0": -195,
+      "z1": -185
+     },
+     {
+      "kind": "lead",
+      "x0": -1071,
+      "x1": -961,
+      "z0": -195,
+      "z1": -185
+     },
+     {
+      "kind": "lead",
+      "x0": 795,
+      "x1": 865,
+      "z0": -195,
+      "z1": -185
+     },
+     {
+      "kind": "drive",
+      "x0": 622,
+      "x1": 678,
+      "z0": -200,
+      "z1": -185
+     }
+    ],
+    "terminal": {
+     "x0": -695,
+     "x1": 365,
+     "z0": -365,
+     "z1": -309,
+     "h": 26
+    },
+    "tower": {
+     "x0": 415,
+     "x1": 435,
+     "z0": -362,
+     "z1": -342,
+     "h": 62
+    },
+    "hangars": [
+     {
+      "x0": -891,
+      "x1": -781,
+      "z0": -285,
+      "z1": -195,
+      "h": 32
+     },
+     {
+      "x0": -1071,
+      "x1": -961,
+      "z0": -285,
+      "z1": -195,
+      "h": 32
+     },
+     {
+      "x0": 795,
+      "x1": 865,
+      "z0": -255,
+      "z1": -195,
+      "h": 22
+     }
+    ],
+    "fire": {
+     "x0": 620,
+     "x1": 680,
+     "z0": -226,
+     "z1": -200,
+     "h": 8
+    },
+    "fuel": {
+     "x0": 1060,
+     "x1": 1170,
+     "z0": -295,
+     "z1": -225,
+     "tanks": 4,
+     "r": 11,
+     "h": 16
+    },
+    "carPark": {
+     "x0": 890,
+     "x1": 1050,
+     "z0": -295,
+     "z1": -205
+    },
+    "windsock": {
+     "x": -1850,
+     "z": -93
+    }
+   },
+   "carrier": {
+    "x": -128000,
+    "z": 26500
+   }
+  },
+  {
+   "id": "highfold",
+   "code": "XHFR",
+   "name": "Highfold Regional",
+   "place": "Highfold Vale",
+   "region": "westreach",
+   "kind": "regional",
+   "x": -165000,
+   "z": 30000,
+   "length": 2300,
+   "halfWidth": 23,
+   "prevailingDeg": 80,
+   "parking": true,
+   "elev": 33.5,
+   "site": {
+    "x0": -166750,
+    "x1": -163250,
+    "z0": 29020,
+    "z1": 30163
+   },
+   "pad": {
+    "x": -166300,
+    "z": 29867
+   },
+   "apron": {
+    "x": -164020,
+    "z": 29693
+   },
+   "layout": {
+    "cls": "hub",
+    "dropped": [],
+    "pavement": [
+     {
+      "kind": "taxiway",
+      "x0": -1000,
+      "x1": 1000,
+      "z0": -185,
+      "z1": -155
+     },
+     {
+      "kind": "connector",
+      "x0": -1005,
+      "x1": -975,
+      "z0": -155,
+      "z1": -22
+     },
+     {
+      "kind": "connector",
+      "x0": -590,
+      "x1": -560,
+      "z0": -155,
+      "z1": -22
+     },
+     {
+      "kind": "connector",
+      "x0": -15,
+      "x1": 15,
+      "z0": -155,
+      "z1": -22
+     },
+     {
+      "kind": "connector",
+      "x0": 560,
+      "x1": 590,
+      "z0": -155,
+      "z1": -22
+     },
+     {
+      "kind": "connector",
+      "x0": 975,
+      "x1": 1005,
+      "z0": -155,
+      "z1": -22
+     },
+     {
+      "kind": "apron",
+      "x0": -700,
+      "x1": 500,
+      "z0": -306,
+      "z1": -185
+     },
+     {
+      "kind": "lead",
+      "x0": -901,
+      "x1": -791,
+      "z0": -195,
+      "z1": -185
+     },
+     {
+      "kind": "lead",
+      "x0": 539,
+      "x1": 649,
+      "z0": -195,
+      "z1": -185
+     },
+     {
+      "kind": "lead",
+      "x0": 785,
+      "x1": 855,
+      "z0": -195,
+      "z1": -185
+     },
+     {
+      "kind": "drive",
+      "x0": 692,
+      "x1": 748,
+      "z0": -200,
+      "z1": -185
+     }
+    ],
+    "terminal": {
+     "x0": -695,
+     "x1": 365,
+     "z0": -365,
+     "z1": -309,
+     "h": 26
+    },
+    "tower": {
+     "x0": 415,
+     "x1": 435,
+     "z0": -362,
+     "z1": -342,
+     "h": 62
+    },
+    "hangars": [
+     {
+      "x0": -901,
+      "x1": -791,
+      "z0": -285,
+      "z1": -195,
+      "h": 32
+     },
+     {
+      "x0": 539,
+      "x1": 649,
+      "z0": -285,
+      "z1": -195,
+      "h": 32
+     },
+     {
+      "x0": 785,
+      "x1": 855,
+      "z0": -255,
+      "z1": -195,
+      "h": 22
+     }
+    ],
+    "fire": {
+     "x0": 690,
+     "x1": 750,
+     "z0": -226,
+     "z1": -200,
+     "h": 8
+    },
+    "fuel": {
+     "x0": 1090,
+     "x1": 1200,
+     "z0": -295,
+     "z1": -225,
+     "tanks": 4,
+     "r": 11,
+     "h": 16
+    },
+    "carPark": {
+     "x0": 920,
+     "x1": 1080,
+     "z0": -295,
+     "z1": -205
+    },
+    "windsock": {
+     "x": -1100,
+     "z": -89
+    }
+   },
+   "carrier": {
+    "x": -165000,
+    "z": 36500
+   }
+  },
+  {
+   "id": "saltmarsh",
+   "code": "XSMS",
+   "name": "Saltmarsh Strip",
+   "place": "Saltmarsh Point",
+   "region": "westreach",
+   "kind": "ga",
+   "surface": "grass",
+   "x": -176000,
+   "z": 52000,
+   "length": 700,
+   "halfWidth": 12,
+   "prevailingDeg": 80,
+   "parking": false,
+   "elev": 12,
+   "site": {
+    "x0": -176950,
+    "x1": -175050,
+    "z0": 51380,
+    "z1": 52152
+   },
+   "pad": {
+    "x": -176500,
+    "z": 51878
+   },
+   "apron": {
+    "x": -176087,
+    "z": 51757
+   },
+   "layout": {
+    "cls": "regional",
+    "dropped": [],
+    "pavement": [
+     {
+      "kind": "taxiway",
+      "x0": -240,
+      "x1": 240,
+      "z0": -107,
+      "z1": -83
+     },
+     {
+      "kind": "connector",
+      "x0": -242,
+      "x1": -218,
+      "z0": -83,
+      "z1": -11
+     },
+     {
+      "kind": "connector",
+      "x0": -12,
+      "x1": 12,
+      "z0": -83,
+      "z1": -11
+     },
+     {
+      "kind": "connector",
+      "x0": 218,
+      "x1": 242,
+      "z0": -83,
+      "z1": -11
+     },
+     {
+      "kind": "apron",
+      "x0": -65,
+      "x1": 164,
+      "z0": -190,
+      "z1": -106
+     },
+     {
+      "kind": "lead",
+      "x0": -187,
+      "x1": -123,
+      "z0": -170,
+      "z1": -107
+     },
+     {
+      "kind": "lead",
+      "x0": 184,
+      "x1": 232,
+      "z0": -170,
+      "z1": -107
+     },
+     {
+      "kind": "drive",
+      "x0": 366,
+      "x1": 402,
+      "z0": -150,
+      "z1": -107
+     }
+    ],
+    "terminal": {
+     "x0": -60,
+     "x1": 86,
+     "z0": -231,
+     "z1": -193,
+     "h": 24
+    },
+    "tower": {
+     "x0": 96,
+     "x1": 112,
+     "z0": -214,
+     "z1": -198,
+     "h": 40
+    },
+    "hangars": [
+     {
+      "x0": -187,
+      "x1": -123,
+      "z0": -226,
+      "z1": -170,
+      "h": 22
+     },
+     {
+      "x0": 184,
+      "x1": 232,
+      "z0": -210,
+      "z1": -170,
+      "h": 16
+     }
+    ],
+    "fire": {
+     "x0": 364,
+     "x1": 404,
+     "z0": -172,
+     "z1": -150,
+     "h": 8
+    },
+    "fuel": {
+     "x0": 344,
+     "x1": 404,
+     "z0": -230,
+     "z1": -186,
+     "tanks": 3,
+     "r": 7,
+     "h": 12
+    },
+    "carPark": null,
+    "windsock": {
+     "x": -300,
+     "z": -48
+    }
+   },
+   "carrier": {
+    "x": -176000,
+    "z": 58500
+   }
+  },
+  {
+   "id": "frigate",
+   "code": "XFRG",
+   "name": "Frigate Bay Regional",
+   "place": "Frigate Island",
+   "region": "sunstring",
+   "kind": "regional",
+   "x": 108000,
+   "z": 88000,
+   "length": 2300,
+   "halfWidth": 23,
+   "prevailingDeg": 85,
+   "parking": true,
+   "elev": 32,
+   "site": {
+    "x0": 106250,
+    "x1": 109750,
+    "z0": 87020,
+    "z1": 88163
+   },
+   "pad": {
+    "x": 106700,
+    "z": 87867
+   },
+   "apron": {
+    "x": 108980,
+    "z": 87693
+   },
+   "layout": {
+    "cls": "hub",
+    "dropped": [],
+    "pavement": [
+     {
+      "kind": "taxiway",
+      "x0": -1000,
+      "x1": 1000,
+      "z0": -185,
+      "z1": -155
+     },
+     {
+      "kind": "connector",
+      "x0": -1005,
+      "x1": -975,
+      "z0": -155,
+      "z1": -22
+     },
+     {
+      "kind": "connector",
+      "x0": -590,
+      "x1": -560,
+      "z0": -155,
+      "z1": -22
+     },
+     {
+      "kind": "connector",
+      "x0": -15,
+      "x1": 15,
+      "z0": -155,
+      "z1": -22
+     },
+     {
+      "kind": "connector",
+      "x0": 560,
+      "x1": 590,
+      "z0": -155,
+      "z1": -22
+     },
+     {
+      "kind": "connector",
+      "x0": 975,
+      "x1": 1005,
+      "z0": -155,
+      "z1": -22
+     },
+     {
+      "kind": "apron",
+      "x0": -700,
+      "x1": 500,
+      "z0": -306,
+      "z1": -185
+     },
+     {
+      "kind": "lead",
+      "x0": -901,
+      "x1": -791,
+      "z0": -195,
+      "z1": -185
+     },
+     {
+      "kind": "lead",
+      "x0": 539,
+      "x1": 649,
+      "z0": -195,
+      "z1": -185
+     },
+     {
+      "kind": "lead",
+      "x0": 785,
+      "x1": 855,
+      "z0": -195,
+      "z1": -185
+     },
+     {
+      "kind": "drive",
+      "x0": 692,
+      "x1": 748,
+      "z0": -200,
+      "z1": -185
+     }
+    ],
+    "terminal": {
+     "x0": -695,
+     "x1": 365,
+     "z0": -365,
+     "z1": -309,
+     "h": 26
+    },
+    "tower": {
+     "x0": 415,
+     "x1": 435,
+     "z0": -362,
+     "z1": -342,
+     "h": 62
+    },
+    "hangars": [
+     {
+      "x0": -901,
+      "x1": -791,
+      "z0": -285,
+      "z1": -195,
+      "h": 32
+     },
+     {
+      "x0": 539,
+      "x1": 649,
+      "z0": -285,
+      "z1": -195,
+      "h": 32
+     },
+     {
+      "x0": 785,
+      "x1": 855,
+      "z0": -255,
+      "z1": -195,
+      "h": 22
+     }
+    ],
+    "fire": {
+     "x0": 690,
+     "x1": 750,
+     "z0": -226,
+     "z1": -200,
+     "h": 8
+    },
+    "fuel": {
+     "x0": 1090,
+     "x1": 1200,
+     "z0": -295,
+     "z1": -225,
+     "tanks": 4,
+     "r": 11,
+     "h": 16
+    },
+    "carPark": {
+     "x0": 920,
+     "x1": 1080,
+     "z0": -295,
+     "z1": -205
+    },
+    "windsock": {
+     "x": -1100,
+     "z": -89
+    }
+   },
+   "carrier": {
+    "x": 108000,
+    "z": 94500
+   }
+  },
+  {
+   "id": "mangrove",
+   "code": "XMGV",
+   "name": "Mangrove Cay Strip",
+   "place": "Mangrove Cay",
+   "region": "sunstring",
+   "kind": "ga",
+   "surface": "grass",
+   "x": 145000,
+   "z": 125000,
+   "length": 650,
+   "halfWidth": 12,
+   "prevailingDeg": 85,
+   "parking": false,
+   "elev": 12.5,
+   "site": {
+    "x0": 144075,
+    "x1": 145925,
+    "z0": 124380,
+    "z1": 125152
+   },
+   "pad": {
+    "x": 144525,
+    "z": 124878
+   },
+   "apron": {
+    "x": 144916,
+    "z": 124757
+   },
+   "layout": {
+    "cls": "regional",
+    "dropped": [],
+    "pavement": [
+     {
+      "kind": "taxiway",
+      "x0": -215,
+      "x1": 215,
+      "z0": -107,
+      "z1": -83
+     },
+     {
+      "kind": "connector",
+      "x0": -217,
+      "x1": -193,
+      "z0": -83,
+      "z1": -11
+     },
+     {
+      "kind": "connector",
+      "x0": -12,
+      "x1": 12,
+      "z0": -83,
+      "z1": -11
+     },
+     {
+      "kind": "connector",
+      "x0": 193,
+      "x1": 217,
+      "z0": -83,
+      "z1": -11
+     },
+     {
+      "kind": "apron",
+      "x0": -54,
+      "x1": 159,
+      "z0": -190,
+      "z1": -106
+     },
+     {
+      "kind": "lead",
+      "x0": -181,
+      "x1": -117,
+      "z0": -170,
+      "z1": -107
+     },
+     {
+      "kind": "lead",
+      "x0": 164,
+      "x1": 212,
+      "z0": -200,
+      "z1": -107
+     },
+     {
+      "kind": "drive",
+      "x0": 346,
+      "x1": 382,
+      "z0": -150,
+      "z1": -107
+     }
+    ],
+    "terminal": {
+     "x0": -49,
+     "x1": 81,
+     "z0": -231,
+     "z1": -193,
+     "h": 24
+    },
+    "tower": {
+     "x0": 91,
+     "x1": 107,
+     "z0": -214,
+     "z1": -198,
+     "h": 40
+    },
+    "hangars": [
+     {
+      "x0": -181,
+      "x1": -117,
+      "z0": -226,
+      "z1": -170,
+      "h": 22
+     },
+     {
+      "x0": 164,
+      "x1": 212,
+      "z0": -240,
+      "z1": -200,
+      "h": 16
+     }
+    ],
+    "fire": {
+     "x0": 344,
+     "x1": 384,
+     "z0": -172,
+     "z1": -150,
+     "h": 8
+    },
+    "fuel": {
+     "x0": 324,
+     "x1": 384,
+     "z0": -230,
+     "z1": -186,
+     "tanks": 3,
+     "r": 7,
+     "h": 12
+    },
+    "carPark": null,
+    "windsock": {
+     "x": -275,
+     "z": -48
+    }
+   },
+   "carrier": {
+    "x": 145000,
+    "z": 131500
+   }
+  },
+  {
+   "id": "conch",
+   "code": "XCNC",
+   "name": "Conch Island Field",
+   "place": "Conch Island",
+   "region": "sunstring",
+   "kind": "ga",
+   "x": 72000,
+   "z": 58000,
+   "length": 1000,
+   "halfWidth": 15,
+   "prevailingDeg": 80,
+   "parking": false,
+   "elev": 30.5,
+   "site": {
+    "x0": 70900,
+    "x1": 73100,
+    "z0": 57380,
+    "z1": 58155
+   },
+   "pad": {
+    "x": 71350,
+    "z": 57875
+   },
+   "apron": {
+    "x": 71891,
+    "z": 57757
+   },
+   "layout": {
+    "cls": "regional",
+    "dropped": [],
+    "pavement": [
+     {
+      "kind": "taxiway",
+      "x0": -390,
+      "x1": 390,
+      "z0": -107,
+      "z1": -83
+     },
+     {
+      "kind": "connector",
+      "x0": -392,
+      "x1": -368,
+      "z0": -83,
+      "z1": -14
+     },
+     {
+      "kind": "connector",
+      "x0": -12,
+      "x1": 12,
+      "z0": -83,
+      "z1": -14
+     },
+     {
+      "kind": "connector",
+      "x0": 368,
+      "x1": 392,
+      "z0": -83,
+      "z1": -14
+     },
+     {
+      "kind": "apron",
+      "x0": -216,
+      "x1": 111,
+      "z0": -190,
+      "z1": -106
+     },
+     {
+      "kind": "lead",
+      "x0": -338,
+      "x1": -274,
+      "z0": -170,
+      "z1": -107
+     },
+     {
+      "kind": "lead",
+      "x0": 341,
+      "x1": 389,
+      "z0": -170,
+      "z1": -107
+     },
+     {
+      "kind": "drive",
+      "x0": 283,
+      "x1": 319,
+      "z0": -150,
+      "z1": -107
+     }
+    ],
+    "terminal": {
+     "x0": -211,
+     "x1": 33,
+     "z0": -231,
+     "z1": -193,
+     "h": 24
+    },
+    "tower": {
+     "x0": 43,
+     "x1": 59,
+     "z0": -214,
+     "z1": -198,
+     "h": 40
+    },
+    "hangars": [
+     {
+      "x0": -338,
+      "x1": -274,
+      "z0": -226,
+      "z1": -170,
+      "h": 22
+     },
+     {
+      "x0": 341,
+      "x1": 389,
+      "z0": -210,
+      "z1": -170,
+      "h": 16
+     }
+    ],
+    "fire": {
+     "x0": 281,
+     "x1": 321,
+     "z0": -172,
+     "z1": -150,
+     "h": 8
+    },
+    "fuel": {
+     "x0": 491,
+     "x1": 551,
+     "z0": -220,
+     "z1": -176,
+     "tanks": 3,
+     "r": 7,
+     "h": 12
+    },
+    "carPark": null,
+    "windsock": {
+     "x": -450,
+     "z": -49
+    }
+   },
+   "carrier": {
+    "x": 72000,
+    "z": 64500
+   }
+  },
+  {
+   "id": "eider",
+   "code": "XEDR",
+   "name": "Eider Bay Regional",
+   "place": "Eider Island",
+   "region": "skerries",
+   "kind": "regional",
+   "x": -42000,
+   "z": -138000,
+   "length": 1450,
+   "halfWidth": 23,
+   "prevailingDeg": 260,
+   "parking": true,
+   "elev": 32,
+   "site": {
+    "x0": -43325,
+    "x1": -40675,
+    "z0": -138620,
+    "z1": -137837
+   },
+   "pad": {
+    "x": -42875,
+    "z": -138133
+   },
+   "apron": {
+    "x": -41489,
+    "z": -138208
+   },
+   "layout": {
+    "cls": "regional",
+    "dropped": [],
+    "pavement": [
+     {
+      "kind": "taxiway",
+      "x0": -615,
+      "x1": 615,
+      "z0": -107,
+      "z1": -83
+     },
+     {
+      "kind": "connector",
+      "x0": -617,
+      "x1": -593,
+      "z0": -83,
+      "z1": -22
+     },
+     {
+      "kind": "connector",
+      "x0": -12,
+      "x1": 12,
+      "z0": -83,
+      "z1": -22
+     },
+     {
+      "kind": "connector",
+      "x0": 593,
+      "x1": 617,
+      "z0": -83,
+      "z1": -22
+     },
+     {
+      "kind": "apron",
+      "x0": -260,
+      "x1": 100,
+      "z0": -190,
+      "z1": -106
+     },
+     {
+      "kind": "lead",
+      "x0": -387,
+      "x1": -323,
+      "z0": -170,
+      "z1": -107
+     },
+     {
+      "kind": "lead",
+      "x0": 385,
+      "x1": 433,
+      "z0": -170,
+      "z1": -107
+     },
+     {
+      "kind": "drive",
+      "x0": 317,
+      "x1": 353,
+      "z0": -150,
+      "z1": -107
+     }
+    ],
+    "terminal": {
+     "x0": -255,
+     "x1": 22,
+     "z0": -231,
+     "z1": -193,
+     "h": 24
+    },
+    "tower": {
+     "x0": 32,
+     "x1": 48,
+     "z0": -214,
+     "z1": -198,
+     "h": 40
+    },
+    "hangars": [
+     {
+      "x0": -387,
+      "x1": -323,
+      "z0": -226,
+      "z1": -170,
+      "h": 22
+     },
+     {
+      "x0": 385,
+      "x1": 433,
+      "z0": -210,
+      "z1": -170,
+      "h": 16
+     }
+    ],
+    "fire": {
+     "x0": 315,
+     "x1": 355,
+     "z0": -172,
+     "z1": -150,
+     "h": 8
+    },
+    "fuel": {
+     "x0": 635,
+     "x1": 695,
+     "z0": -220,
+     "z1": -176,
+     "tanks": 3,
+     "r": 7,
+     "h": 12
+    },
+    "carPark": {
+     "x0": 533,
+     "x1": 629,
+     "z0": -196,
+     "z1": -140
+    },
+    "windsock": {
+     "x": -675,
+     "z": -53
+    }
+   },
+   "carrier": {
+    "x": -42000,
+    "z": -131500
+   }
+  },
+  {
+   "id": "petrel",
+   "code": "XPTL",
+   "name": "Petrel Skerry Strip",
+   "place": "Petrel Skerry",
+   "region": "skerries",
+   "kind": "ga",
+   "surface": "gravel",
+   "x": 22000,
+   "z": -168000,
+   "length": 750,
+   "halfWidth": 12,
+   "prevailingDeg": 265,
+   "parking": false,
+   "elev": 32.5,
+   "site": {
+    "x0": 21025,
+    "x1": 22975,
+    "z0": -168620,
+    "z1": -167848
+   },
+   "pad": {
+    "x": 21475,
+    "z": -168122
+   },
+   "apron": {
+    "x": 21909,
+    "z": -168243
+   },
+   "layout": {
+    "cls": "regional",
+    "dropped": [],
+    "pavement": [
+     {
+      "kind": "taxiway",
+      "x0": -265,
+      "x1": 265,
+      "z0": -107,
+      "z1": -83
+     },
+     {
+      "kind": "connector",
+      "x0": -267,
+      "x1": -243,
+      "z0": -83,
+      "z1": -11
+     },
+     {
+      "kind": "connector",
+      "x0": -12,
+      "x1": 12,
+      "z0": -83,
+      "z1": -11
+     },
+     {
+      "kind": "connector",
+      "x0": 243,
+      "x1": 267,
+      "z0": -83,
+      "z1": -11
+     },
+     {
+      "kind": "apron",
+      "x0": -157,
+      "x1": 88,
+      "z0": -190,
+      "z1": -106
+     },
+     {
+      "kind": "lead",
+      "x0": -264,
+      "x1": -200,
+      "z0": -170,
+      "z1": -107
+     },
+     {
+      "kind": "lead",
+      "x0": 213,
+      "x1": 261,
+      "z0": -170,
+      "z1": -107
+     },
+     {
+      "kind": "drive",
+      "x0": 305,
+      "x1": 341,
+      "z0": -150,
+      "z1": -107
+     }
+    ],
+    "terminal": {
+     "x0": -152,
+     "x1": 10,
+     "z0": -231,
+     "z1": -193,
+     "h": 24
+    },
+    "tower": {
+     "x0": 20,
+     "x1": 36,
+     "z0": -214,
+     "z1": -198,
+     "h": 40
+    },
+    "hangars": [
+     {
+      "x0": -264,
+      "x1": -200,
+      "z0": -226,
+      "z1": -170,
+      "h": 22
+     },
+     {
+      "x0": 213,
+      "x1": 261,
+      "z0": -210,
+      "z1": -170,
+      "h": 16
+     }
+    ],
+    "fire": {
+     "x0": 303,
+     "x1": 343,
+     "z0": -172,
+     "z1": -150,
+     "h": 8
+    },
+    "fuel": {
+     "x0": 373,
+     "x1": 433,
+     "z0": -220,
+     "z1": -176,
+     "tanks": 3,
+     "r": 7,
+     "h": 12
+    },
+    "carPark": null,
+    "windsock": {
+     "x": -325,
+     "z": -48
+    }
+   },
+   "carrier": {
+    "x": 22000,
+    "z": -161500
+   }
+  },
+  {
+   "id": "sandmere",
+   "code": "XSDM",
+   "name": "Sandmere International",
+   "place": "Sandmere",
+   "region": "sands",
+   "kind": "hub",
+   "x": -62000,
+   "z": 150000,
+   "length": 3200,
+   "halfWidth": 30,
+   "prevailingDeg": 90,
+   "parking": true,
+   "elev": 12,
+   "site": {
+    "x0": -64200,
+    "x1": -59800,
+    "z0": 149020,
+    "z1": 150170
+   },
+   "pad": {
+    "x": -63750,
+    "z": 149860
+   },
+   "apron": {
+    "x": -61010,
+    "z": 149693
+   },
+   "layout": {
+    "cls": "hub",
+    "dropped": [],
+    "pavement": [
+     {
+      "kind": "taxiway",
+      "x0": -1450,
+      "x1": 1450,
+      "z0": -185,
+      "z1": -155
+     },
+     {
+      "kind": "connector",
+      "x0": -1455,
+      "x1": -1425,
+      "z0": -155,
+      "z1": -29
+     },
+     {
+      "kind": "connector",
+      "x0": -815,
+      "x1": -785,
+      "z0": -155,
+      "z1": -29
+     },
+     {
+      "kind": "connector",
+      "x0": -15,
+      "x1": 15,
+      "z0": -155,
+      "z1": -29
+     },
+     {
+      "kind": "connector",
+      "x0": 785,
+      "x1": 815,
+      "z0": -155,
+      "z1": -29
+     },
+     {
+      "kind": "connector",
+      "x0": 1425,
+      "x1": 1455,
+      "z0": -155,
+      "z1": -29
+     },
+     {
+      "kind": "apron",
+      "x0": -700,
+      "x1": 500,
+      "z0": -306,
+      "z1": -185
+     },
+     {
+      "kind": "lead",
+      "x0": -891,
+      "x1": -781,
+      "z0": -195,
+      "z1": -185
+     },
+     {
+      "kind": "lead",
+      "x0": -1071,
+      "x1": -961,
+      "z0": -195,
+      "z1": -185
+     },
+     {
+      "kind": "lead",
+      "x0": 795,
+      "x1": 865,
+      "z0": -195,
+      "z1": -185
+     },
+     {
+      "kind": "drive",
+      "x0": 622,
+      "x1": 678,
+      "z0": -200,
+      "z1": -185
+     }
+    ],
+    "terminal": {
+     "x0": -695,
+     "x1": 365,
+     "z0": -365,
+     "z1": -309,
+     "h": 26
+    },
+    "tower": {
+     "x0": 415,
+     "x1": 435,
+     "z0": -362,
+     "z1": -342,
+     "h": 62
+    },
+    "hangars": [
+     {
+      "x0": -891,
+      "x1": -781,
+      "z0": -285,
+      "z1": -195,
+      "h": 32
+     },
+     {
+      "x0": -1071,
+      "x1": -961,
+      "z0": -285,
+      "z1": -195,
+      "h": 32
+     },
+     {
+      "x0": 795,
+      "x1": 865,
+      "z0": -255,
+      "z1": -195,
+      "h": 22
+     }
+    ],
+    "fire": {
+     "x0": 620,
+     "x1": 680,
+     "z0": -226,
+     "z1": -200,
+     "h": 8
+    },
+    "fuel": {
+     "x0": 1060,
+     "x1": 1170,
+     "z0": -295,
+     "z1": -225,
+     "tanks": 4,
+     "r": 11,
+     "h": 16
+    },
+    "carPark": {
+     "x0": 890,
+     "x1": 1050,
+     "z0": -295,
+     "z1": -205
+    },
+    "windsock": {
+     "x": -1550,
+     "z": -93
+    }
+   },
+   "carrier": {
+    "x": -62000,
+    "z": 156500
+   }
+  },
+  {
+   "id": "dune",
+   "code": "XDUN",
+   "name": "Dune Cay Strip",
+   "place": "Dune Cay",
+   "region": "sands",
+   "kind": "ga",
+   "surface": "grass",
+   "x": -5000,
+   "z": 176000,
+   "length": 600,
+   "halfWidth": 12,
+   "prevailingDeg": 90,
+   "parking": false,
+   "elev": 12,
+   "site": {
+    "x0": -5900,
+    "x1": -4100,
+    "z0": 175380,
+    "z1": 176152
+   },
+   "pad": {
+    "x": -5450,
+    "z": 175878
+   },
+   "apron": {
+    "x": -5091,
+    "z": 175851
+   },
+   "layout": {
+    "cls": "regional",
+    "dropped": [],
+    "pavement": [
+     {
+      "kind": "taxiway",
+      "x0": -220,
+      "x1": 220,
+      "z0": -66,
+      "z1": -48
+     },
+     {
+      "kind": "connector",
+      "x0": -219,
+      "x1": -201,
+      "z0": -48,
+      "z1": -11
+     },
+     {
+      "kind": "connector",
+      "x0": -9,
+      "x1": 9,
+      "z0": -48,
+      "z1": -11
+     },
+     {
+      "kind": "connector",
+      "x0": 201,
+      "x1": 219,
+      "z0": -48,
+      "z1": -11
+     },
+     {
+      "kind": "apron",
+      "x0": -200,
+      "x1": 28,
+      "z0": -116,
+      "z1": -66
+     },
+     {
+      "kind": "lead",
+      "x0": 52,
+      "x1": 100,
+      "z0": -70,
+      "z1": -66
+     },
+     {
+      "kind": "lead",
+      "x0": 178,
+      "x1": 212,
+      "z0": -70,
+      "z1": -66
+     },
+     {
+      "kind": "drive",
+      "x0": 130,
+      "x1": 156,
+      "z0": -83,
+      "z1": -66
+     }
+    ],
+    "terminal": {
+     "x0": -195,
+     "x1": -28,
+     "z0": -137,
+     "z1": -119,
+     "h": 14
+    },
+    "tower": {
+     "x0": -18,
+     "x1": -6,
+     "z0": -134,
+     "z1": -122,
+     "h": 34
+    },
+    "hangars": [
+     {
+      "x0": 52,
+      "x1": 100,
+      "z0": -106,
+      "z1": -70,
+      "h": 14
+     },
+     {
+      "x0": 178,
+      "x1": 212,
+      "z0": -98,
+      "z1": -70,
+      "h": 11
+     }
+    ],
+    "fire": {
+     "x0": 128,
+     "x1": 158,
+     "z0": -101,
+     "z1": -83,
+     "h": 8
+    },
+    "fuel": {
+     "x0": 318,
+     "x1": 358,
+     "z0": -102,
+     "z1": -72,
+     "tanks": 3,
+     "r": 4.5,
+     "h": 9
+    },
+    "carPark": null,
+    "windsock": {
+     "x": -250,
+     "z": -30
+    }
+   },
+   "carrier": {
+    "x": -5000,
+    "z": 182500
+   }
+  },
+  {
+   "id": "farwatch",
+   "code": "XFWT",
+   "name": "Farwatch Field",
+   "place": "Farwatch Island",
+   "region": "outposts",
+   "kind": "remote",
+   "x": 172000,
+   "z": -168000,
+   "length": 3000,
+   "halfWidth": 23,
+   "prevailingDeg": 255,
+   "parking": false,
+   "elev": 32.5,
+   "site": {
+    "x0": 169900,
+    "x1": 174100,
+    "z0": -168980,
+    "z1": -167837
+   },
+   "pad": {
+    "x": 170350,
+    "z": -168133
+   },
+   "apron": {
+    "x": 171835,
+    "z": -168377
+   },
+   "layout": {
+    "cls": "hub",
+    "dropped": [],
+    "pavement": [
+     {
+      "kind": "taxiway",
+      "x0": -1350,
+      "x1": 1350,
+      "z0": -185,
+      "z1": -155
+     },
+     {
+      "kind": "connector",
+      "x0": -1355,
+      "x1": -1325,
+      "z0": -155,
+      "z1": -22
+     },
+     {
+      "kind": "connector",
+      "x0": -765,
+      "x1": -735,
+      "z0": -155,
+      "z1": -22
+     },
+     {
+      "kind": "connector",
+      "x0": -15,
+      "x1": 15,
+      "z0": -155,
+      "z1": -22
+     },
+     {
+      "kind": "connector",
+      "x0": 735,
+      "x1": 765,
+      "z0": -155,
+      "z1": -22
+     },
+     {
+      "kind": "connector",
+      "x0": 1325,
+      "x1": 1355,
+      "z0": -155,
+      "z1": -22
+     },
+     {
+      "kind": "apron",
+      "x0": -680,
+      "x1": 520,
+      "z0": -306,
+      "z1": -185
+     },
+     {
+      "kind": "lead",
+      "x0": -871,
+      "x1": -761,
+      "z0": -195,
+      "z1": -185
+     },
+     {
+      "kind": "lead",
+      "x0": -1051,
+      "x1": -941,
+      "z0": -195,
+      "z1": -185
+     },
+     {
+      "kind": "lead",
+      "x0": 815,
+      "x1": 885,
+      "z0": -195,
+      "z1": -185
+     },
+     {
+      "kind": "drive",
+      "x0": 642,
+      "x1": 698,
+      "z0": -200,
+      "z1": -185
+     }
+    ],
+    "terminal": {
+     "x0": -675,
+     "x1": 385,
+     "z0": -365,
+     "z1": -309,
+     "h": 26
+    },
+    "tower": {
+     "x0": 435,
+     "x1": 455,
+     "z0": -362,
+     "z1": -342,
+     "h": 62
+    },
+    "hangars": [
+     {
+      "x0": -871,
+      "x1": -761,
+      "z0": -285,
+      "z1": -195,
+      "h": 32
+     },
+     {
+      "x0": -1051,
+      "x1": -941,
+      "z0": -285,
+      "z1": -195,
+      "h": 32
+     },
+     {
+      "x0": 815,
+      "x1": 885,
+      "z0": -255,
+      "z1": -195,
+      "h": 22
+     }
+    ],
+    "fire": {
+     "x0": 640,
+     "x1": 700,
+     "z0": -226,
+     "z1": -200,
+     "h": 8
+    },
+    "fuel": {
+     "x0": 1060,
+     "x1": 1170,
+     "z0": -295,
+     "z1": -225,
+     "tanks": 4,
+     "r": 11,
+     "h": 16
+    },
+    "carPark": null,
+    "windsock": {
+     "x": -1450,
+     "z": -89
+    }
+   },
+   "carrier": {
+    "x": 172000,
+    "z": -161500
+   }
+  }
+ ],
+ "heliports": [
+  {
+   "id": "aldermere-hospital",
+   "name": "Aldermere General Hospital",
+   "region": "westreach",
+   "kind": "roof",
+   "r": 11,
+   "x": -122900,
+   "z": 17100,
+   "role": "hospital",
+   "above": 16
+  },
+  {
+   "id": "eider-lifeboat",
+   "name": "Eider Bay Lifeboat Station",
+   "region": "skerries",
+   "kind": "ground",
+   "r": 12,
+   "x": -39220,
+   "z": -139150
+  },
+  {
+   "id": "westmost-rig",
+   "name": "Westmost Platform",
+   "region": "westreach",
+   "kind": "deck",
+   "r": 13,
+   "x": -196000,
+   "z": -60000,
+   "elev": 26
+  },
+  {
+   "id": "sentinel-rig",
+   "name": "Sentinel Reef Platform",
+   "region": "sands",
+   "kind": "deck",
+   "r": 13,
+   "x": 40000,
+   "z": 192000,
+   "elev": 24
   }
  ],
  "palette": {
@@ -1918,6 +6097,130 @@ export const PREVIEW_DATA = {
     "z": -40133,
     "kind": "ground",
     "r": 12
+   },
+   {
+    "id": "field-aldermere",
+    "name": "Aldermere International Pad",
+    "x": -130050,
+    "z": 19860,
+    "kind": "ground",
+    "r": 12
+   },
+   {
+    "id": "field-highfold",
+    "name": "Highfold Regional Pad",
+    "x": -166300,
+    "z": 29867,
+    "kind": "ground",
+    "r": 12
+   },
+   {
+    "id": "field-saltmarsh",
+    "name": "Saltmarsh Strip Pad",
+    "x": -176500,
+    "z": 51878,
+    "kind": "ground",
+    "r": 12
+   },
+   {
+    "id": "field-frigate",
+    "name": "Frigate Bay Regional Pad",
+    "x": 106700,
+    "z": 87867,
+    "kind": "ground",
+    "r": 12
+   },
+   {
+    "id": "field-mangrove",
+    "name": "Mangrove Cay Strip Pad",
+    "x": 144525,
+    "z": 124878,
+    "kind": "ground",
+    "r": 12
+   },
+   {
+    "id": "field-conch",
+    "name": "Conch Island Field Pad",
+    "x": 71350,
+    "z": 57875,
+    "kind": "ground",
+    "r": 12
+   },
+   {
+    "id": "field-eider",
+    "name": "Eider Bay Regional Pad",
+    "x": -42875,
+    "z": -138133,
+    "kind": "ground",
+    "r": 12
+   },
+   {
+    "id": "field-petrel",
+    "name": "Petrel Skerry Strip Pad",
+    "x": 21475,
+    "z": -168122,
+    "kind": "ground",
+    "r": 12
+   },
+   {
+    "id": "field-sandmere",
+    "name": "Sandmere International Pad",
+    "x": -63750,
+    "z": 149860,
+    "kind": "ground",
+    "r": 12
+   },
+   {
+    "id": "field-dune",
+    "name": "Dune Cay Strip Pad",
+    "x": -5450,
+    "z": 175878,
+    "kind": "ground",
+    "r": 12
+   },
+   {
+    "id": "field-farwatch",
+    "name": "Farwatch Field Pad",
+    "x": 170350,
+    "z": -168133,
+    "kind": "ground",
+    "r": 12
+   },
+   {
+    "id": "aldermere-hospital",
+    "name": "Aldermere General Hospital",
+    "x": -122900,
+    "z": 17100,
+    "kind": "roof",
+    "r": 11,
+    "role": "hospital",
+    "above": 16
+   },
+   {
+    "id": "eider-lifeboat",
+    "name": "Eider Bay Lifeboat Station",
+    "x": -39220,
+    "z": -139150,
+    "kind": "ground",
+    "r": 12
+   },
+   {
+    "id": "westmost-rig",
+    "name": "Westmost Platform",
+    "x": -196000,
+    "z": -60000,
+    "kind": "deck",
+    "r": 13,
+    "elev": 26
+   },
+   {
+    "id": "sentinel-rig",
+    "name": "Sentinel Reef Platform",
+    "x": 40000,
+    "z": 192000,
+    "kind": "deck",
+    "r": 13,
+    "elev": 24
    }
   ]
  }

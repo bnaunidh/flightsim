@@ -25,6 +25,7 @@ import { addObstacleAt, heightAt } from '../terrain.js';
 import { runwayTexture, asphaltNormal } from '../../render/textures.js';
 import { Batch, vcMaterial, layer, glowPoints } from '../airport-kit.js';
 import { planTown, addTown } from '../scenery.js';
+import { papiFor } from '../navfield.js';
 
 /** How far away each piece is still drawn, by graphics quality. */
 export const SHOW_RANGE = Object.freeze({ low: 14000, medium: 20000, high: 26000, ultra: 32000 });
@@ -42,6 +43,15 @@ const C = {
   car: [0xb8bec4, 0x2f3a46, 0x8a1f24, 0xe6e6e0, 0x3a5a3a, 0x20262c],
   sock: 0xf06a1a,
 };
+
+const stripMats = {};
+function stripMaterial(surface) {
+  if (stripMats[surface]) return stripMats[surface];
+  const m = new THREE.MeshStandardMaterial({ color: surface === 'gravel' ? 0x8c8576 : 0x6f8a4a, roughness: 1, metalness: 0 });
+  m.userData.shared = true;
+  stripMats[surface] = m;
+  return m;
+}
 
 let runwayMat = null;
 function sharedRunwayMaterial() {
@@ -112,10 +122,12 @@ export function buildField(a, quality = 'medium') {
   const L = a.length;
   const hw = a.halfWidth;
 
-  // The runway, made exactly the way the main field makes its own.
+  // The runway, made exactly the way the main field makes its own; a grass
+  // or gravel strip is a mown or rolled strip with white edge markers instead.
+  const rough = a.surface === 'grass' || a.surface === 'gravel';
   const rgeo = new THREE.PlaneGeometry(hw * 2, L);
   rgeo.rotateX(-Math.PI / 2);
-  const runway = new THREE.Mesh(rgeo, sharedRunwayMaterial());
+  const runway = new THREE.Mesh(rgeo, rough ? stripMaterial(a.surface) : sharedRunwayMaterial());
   runway.rotation.y = Math.PI / 2;
   runway.position.set(0, 0.06, 0);
   runway.receiveShadow = true;
@@ -123,7 +135,11 @@ export function buildField(a, quality = 'medium') {
   g.add(runway);
 
   const b = new Batch();
-  b.flat(L + 40, hw * 2 + 28, 0, 0.02, 0, C.shoulder);
+  if (rough) {
+    // Edge markers every 90 m and a threshold bar of them at each end.
+    for (let u = -L / 2; u <= L / 2 + 0.1; u += 90) for (const v of [-hw - 1, hw + 1]) b.box(2.2, 0.35, 0.6, u, 0.18, v, 0xf2f2ee);
+    for (const end of [-1, 1]) for (let v = -hw + 2; v <= hw - 2; v += 4) b.box(0.6, 0.3, 2.2, end * (L / 2 - 4), 0.15, v, 0xf2f2ee);
+  } else b.flat(L + 40, hw * 2 + 28, 0, 0.02, 0, C.shoulder);
   for (const r of plan.paved) {
     const col = r.kind === 'apron' || r.kind === 'lead-in' ? C.concrete : r.kind === 'carpark' ? 0x3f4245 : C.asphalt;
     b.flat(r.x1 - r.x0, r.z1 - r.z0, (r.x0 + r.x1) / 2, r.kind === 'apron' ? 0.045 : 0.05, (r.z0 + r.z1) / 2, col);
@@ -171,6 +187,22 @@ export function buildField(a, quality = 'medium') {
       }
     }
   }
+  // The PAPI at each end: four boxes on the north side, 200 m in from the
+  // threshold (airport.js's spacing), lenses lit by update() for whoever is
+  // on the approach. Not at a grass or gravel strip.
+  const papi = [];
+  if (!rough) {
+    for (const end of [-1, 1]) {
+      const px = end * (L / 2 - 200);
+      const pz = -hw - 15;
+      for (let i = 0; i < 4; i++) {
+        const z = pz - i * 6;
+        b.box(2.4, 1.5, 1.6, px, 0.75, z, 0x2a2d33);
+        papi.push({ end, x: px - end * 1.3, z });
+      }
+    }
+  }
+
   // The windsock on its mast, south of the runway.
   b.cyl(0.12, 0.16, 7, plan.sock.x, 0, plan.sock.z, 0xd8d8d8, 6);
   b.cyl(0.55, 0.35, 3.6, plan.sock.x + 1.8, 6.6, plan.sock.z, C.sock, 8, { rz: Math.PI / 2 });
@@ -199,6 +231,22 @@ export function buildField(a, quality = 'medium') {
   lights.visible = false;
   g.add(lights);
   g.userData.lights = lights;
+  if (papi.length) {
+    const lens = new THREE.InstancedMesh(new THREE.CircleGeometry(0.62, 12), new THREE.MeshBasicMaterial({ color: 0xffffff }), papi.length);
+    lens.name = 'papi';
+    const m4 = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const one = new THREE.Vector3(1, 1, 1);
+    papi.forEach((p, i) => {
+      // Facing the approach: west for the 09 end (end -1), east for the 27 end.
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), p.end < 0 ? -Math.PI / 2 : Math.PI / 2);
+      lens.setMatrixAt(i, m4.compose(new THREE.Vector3(p.x, 0.85, p.z), q, one));
+      lens.setColorAt(i, new THREE.Color(0xff2d20));
+    });
+    lens.frustumCulled = false;
+    g.add(lens);
+    g.userData.papi = { lens, lights: papi, whites: [-1, -1] };
+  }
   g.userData.plan = plan;
   g.userData.airport = a;
   return g;
@@ -279,6 +327,7 @@ export function buildOutstations(data, departureId, quality = 'medium') {
         const d = cam ? Math.hypot(cam.x - a.x, cam.z - a.z) : 0;
         f.visible = d < range;
         if (f.userData.lights) f.userData.lights.visible = f.visible && (isNight || dusk || (weather && weather.cond && weather.cond.cloud > 0.8));
+        if (f.visible && f.userData.papi && cam) setPapi(f.userData.papi, a, cam);
       }
       const want = isNight ? 1.15 : dusk ? 0.45 : 0;
       for (const t of towns) {
@@ -291,6 +340,28 @@ export function buildOutstations(data, departureId, quality = 'medium') {
       }
     },
   };
+}
+
+/** Light a field's PAPI for an eye at `eye` (world metres): each end's own glide angle (world/navfield.js papiFor). */
+const _white = new THREE.Color(0xffffff);
+const _red = new THREE.Color(0xff2d20);
+export function setPapi(P, a, eye) {
+  let changed = false;
+  for (const end of [-1, 1]) {
+    const f = { cx: a.x, cz: a.z, elev: a.elev, length: a.length, halfWidth: a.halfWidth, dir: -end };
+    const w = papiFor(f, eye).whites;
+    const k = end < 0 ? 0 : 1;
+    if (P.whites[k] === w) continue;
+    P.whites[k] = w;
+    changed = true;
+    let n = 0;
+    P.lights.forEach((l, i) => {
+      if (l.end !== end) return;
+      P.lens.setColorAt(i, n++ < w ? _white : _red);
+    });
+  }
+  if (changed) P.lens.instanceColor.needsUpdate = true;
+  return P.whites;
 }
 
 /** Ground height under a field point, for the tests: the field's own level. */

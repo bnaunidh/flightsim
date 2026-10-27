@@ -85,6 +85,8 @@ import { Wreck } from './game/wreck.js';
 import { Tornado } from './world/tornado.js';
 import { NATURAL_EVENTS, findEvent, poolForMap, severityForMap } from './game/disasters.js';
 import { Autopilot } from './flight/autopilot.js';
+import { beginRender, endRender } from './render/render-origin.js';
+import { navField, thresholdOf } from './world/navfield.js';
 
 import {
   loadSettings,
@@ -4950,6 +4952,9 @@ class Game {
   }
 
   update(dt) {
+    // Sim rate (the World Map preview's 2x / 4x in a steady cruise): more game
+    // time a frame, never more than a fifteenth of a second of it. 1 everywhere else.
+    if (this.timeScale > 1 && this.state === 'flying') dt = Math.min(dt * this.timeScale, 1 / 15);
     this.input.context = this.keyContext();
     if (this.mode === 'drive' && this.vehicle) {
       /*
@@ -5050,7 +5055,8 @@ class Game {
           // steeply however hard you push, and no amount of elevator is a
           // substitute for putting the wheels and the flaps out.
           if (this.autopilot.mode === 'approach' && !SPEC.rotor) {
-            const out = -550 - ac.pos.x;
+            // How far out: from the named field's threshold on the World Map (world/navfield.js), Kestrel's 09 everywhere else.
+            const out = navField() && this.autopilot.approachOut != null ? this.autopilot.approachOut : -550 - ac.pos.x;
             if (out < 7000 && !ac.gearDown) ac.toggleGear();
             const wantFlap = out < 3500 ? 2 : out < 6000 ? 1 : 0;
             if (ac.flapStep() < wantFlap) ac.setFlaps(wantFlap);
@@ -5340,6 +5346,8 @@ class Game {
     this.rain.update(dt, this.weather, this.camera.position, ac.vel);
     this.cloudImmersion = this.clouds.cloudImmersion(focus.y, this.weather);
     this.papiHint = this.airport.updatePapi(ac.pos);
+    // A named field's own lights on the World Map (world/navfield.js); null everywhere else.
+    if (this.navPapi) this.papiHint = this.navPapi(ac.pos, this.papiHint);
 
     // Aeroplane + cockpit.
     // A crashing fleet model drives its own transform — see model-adapter.js.
@@ -5409,7 +5417,13 @@ class Game {
       // whole feature look broken, and lined up for take-off is exactly when a
       // beginner wants to know which way "straight ahead" is.
       if (!guideTarget && this.state === 'flying') {
-        guideTarget = ac.onGround ? RUNWAY.thresholdEast : RUNWAY.touchdown;
+        const nf = navField();
+        if (nf) {
+          // The field you are at on the World Map (world/navfield.js): its far end on the ground, its aiming point in the air.
+          const t = thresholdOf(nf);
+          _navGuide.set(ac.onGround ? nf.cx + nf.dir * (nf.length / 2) : t.touchX, nf.elev, nf.cz);
+          guideTarget = _navGuide;
+        } else guideTarget = ac.onGround ? RUNWAY.thresholdEast : RUNWAY.touchdown;
       }
       /*
        * Arrow, beacon, or both — the player's choice.
@@ -5490,11 +5504,17 @@ class Game {
   renderFrame() {
     this.keepBackdropRoundLens();
     const post = this.post;
-    if (post && post.enabled) {
-      if (this.weather) post.setLook(this.weather.look());
-      post.render(this.scene, this.camera);
-    } else {
-      this.renderer.render(this.scene, this.camera);
+    // The floating origin for the draw (render/render-origin.js): off unless the map asked for it.
+    const shifted = beginRender(this.scene, this.camera);
+    try {
+      if (post && post.enabled) {
+        if (this.weather) post.setLook(this.weather.look());
+        post.render(this.scene, this.camera);
+      } else {
+        this.renderer.render(this.scene, this.camera);
+      }
+    } finally {
+      if (shifted) endRender(this.scene, this.camera);
     }
   }
 
@@ -5680,6 +5700,7 @@ class Game {
   }
 }
 
+const _navGuide = new THREE.Vector3();
 const game = new Game();
 game.boot().catch((err) => {
   console.error(err);

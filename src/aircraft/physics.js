@@ -51,7 +51,7 @@ export function surfaceGrip(paved, ice, rain = 0) {
     ? { muSide: 0.92 * wet, muRoll: 0.022, brake: 0.55, kind: 'tarmac' }
     : { muSide: 0.75 * wet, muRoll: 0.075, brake: 0.4, kind: 'grass' };
 }
-import { heightAt, isPaved, iceAt, isOnRunway, isOnAnyRunway, obstacleAt, platformAt, AIRPORT } from '../world/terrain.js';
+import { heightAt, isPaved, iceAt, isOnRunway, isOnAnyRunway, otherRunwayAt, obstacleAt, platformAt, AIRPORT } from '../world/terrain.js';
 
 const RHO0 = 1.225;
 /** The engine's idle as a fraction of full power: the type's (types.js specFor idleRpm), 0.18 when it does not say. */
@@ -2362,7 +2362,9 @@ export class Aircraft {
     const a = AIRPORT || {};
     const r1 = a.runway ? Math.abs(this.pos.z - a.runway.cz) : Math.abs(this.pos.z);
     const r2 = a.runway2 ? Math.abs(this.pos.x - a.runway2.cx) : Infinity;
-    return Math.min(r1, r2);
+    // Another field's runway (the World Map preview), when that is the one under the wheels.
+    const o = otherRunwayAt(this.pos.x, this.pos.z, 30);
+    return o ? Math.min(r1, r2, Math.abs(this.pos.z - o.cz)) : Math.min(r1, r2);
   }
 
   gradeTouchdown(vsFpm, bank, centreline) {

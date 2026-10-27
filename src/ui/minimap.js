@@ -421,6 +421,10 @@ export function runwayProximity(x, z, headingDeg) {
 
 /** Runways beyond the loaded airport's own, all along X: [{ cx, cz, length }]. Empty on every roster map. */
 let EXTRA_RUNWAYS = [];
+/** Other fields' runways on the chart now (for the tests). */
+export function extraRunways() {
+  return EXTRA_RUNWAYS.slice();
+}
 export function setExtraRunways(list) {
   EXTRA_RUNWAYS = Array.isArray(list) ? list.map((r) => ({ cx: r.cx, cz: r.cz, length: r.length })) : [];
 }
@@ -1763,10 +1767,11 @@ export class Minimap {
     for (let pass = 0; pass < 2; pass++) {
       ctx.lineCap = 'butt';
       ctx.beginPath();
-      for (let i = 0; i < 2; i++) {
-        const R = i === 0 ? AIRPORT.runway : AIRPORT.runway2;
+      for (let i = 0; i < 2 + EXTRA_RUNWAYS.length; i++) {
+        // The loaded airport's two, then other fields' (09/27) on a map that has them (setExtraRunways).
+        const R = i === 0 ? AIRPORT.runway : i === 1 ? AIRPORT.runway2 : EXTRA_RUNWAYS[i - 2];
         if (!R) continue;
-        const alongX = i === 0 || Math.abs(((R.headingDeg ?? 180) % 180) - 90) < 45;
+        const alongX = i !== 1 || Math.abs(((R.headingDeg ?? 180) % 180) - 90) < 45;
         const h = R.length / 2;
         if (alongX) {
           ctx.moveTo(mx(R.cx - h), my(R.cz));
@@ -1804,10 +1809,10 @@ export class Minimap {
     ctx.setLineDash([dash, dash * 0.8]);
     ctx.beginPath();
     const ticks = [];
-    for (let i = 0; i < 2; i++) {
-      const R = i === 0 ? AIRPORT.runway : AIRPORT.runway2;
+    for (let i = 0; i < 2 + EXTRA_RUNWAYS.length; i++) {
+      const R = i === 0 ? AIRPORT.runway : i === 1 ? AIRPORT.runway2 : EXTRA_RUNWAYS[i - 2];
       if (!R) continue;
-      const alongX = i === 0 || Math.abs(((R.headingDeg ?? 180) % 180) - 90) < 45;
+      const alongX = i !== 1 || Math.abs(((R.headingDeg ?? 180) % 180) - 90) < 45;
       const h = R.length / 2;
       for (const s of [-1, 1]) {
         const a0 = h;

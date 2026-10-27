@@ -155,6 +155,12 @@ export const SPAWNS = Object.freeze({
   meridian: {
     heli: [{ pad: 'plaza' }, { pad: 'field' }, { pad: 'hospital' }, { pad: 'roof' }],
   },
+  // The World Map preview: the departure's own pad, the rigs (out at sea,
+  // there is no field near them to start from), then the nearest pads of any
+  // kind (its pads are listed nearest the departure first: worldmap/preview.js).
+  'world-preview': {
+    heli: [{ pad: 'field' }, { pad: 'deck' }, { pad: 'any' }],
+  },
 });
 
 /** The picker's named choices, by class: id → the refs that choice means. */

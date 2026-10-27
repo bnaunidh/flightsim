@@ -20,6 +20,7 @@ import {
   groundNormal,
 } from '../render/textures.js';
 import { cloudShadow } from './clouds.js';
+import { RENDER_ORIGIN } from '../render/render-origin.js';
 
 /**
  * Airport geometry. Heading 090 means the runway points east (+X).
@@ -147,6 +148,7 @@ export function applyMap(idOrDef) {
   MAP = typeof idOrDef === 'string' ? getMap(idOrDef) : idOrDef;
   SEA_FLOOR = MAP.seaFloor;
   ISLANDS = MAP.islands;
+  buildIslandGrid();
   AIRPORT = MAP.airport || KESTREL_AIRPORT;
   PALETTE = MAP.palette;
   // A map that says nothing about its approach corridors gets the numbers the
@@ -163,6 +165,50 @@ export function applyMap(idOrDef) {
   // Once per map load, not once per sample.
   resolveWaters(MAP);
   return MAP;
+}
+
+/*
+ * A big sea's islands, binned.
+ *
+ * heightAt asks every island in turn, and on the nine maps that is three to
+ * eighteen cheap distance checks. The World Map preview's sea has eighty
+ * islands over 400 km, and most of any sample's eighty checks are against
+ * islands a hundred kilometres away. So past ISLAND_GRID_MIN islands they are
+ * binned into ISLAND_CELL squares by the box their coast can reach (1.45 R,
+ * islandField's own cut-off), and a sample asks only its own square's list.
+ * The answer is the same number: the islands left out are exactly the ones
+ * islandField would have returned 0 for, and heightAt takes the max over the
+ * rest, which does not care about order. Maps with fewer islands never build
+ * a grid and run the loop they always ran.
+ */
+const ISLAND_GRID_MIN = 24;
+const ISLAND_CELL = 8192;
+let ISLAND_GRID = null;
+const NO_ISLANDS = Object.freeze([]);
+function buildIslandGrid() {
+  ISLAND_GRID = null;
+  const list = ISLANDS || [];
+  if (list.length < ISLAND_GRID_MIN) return;
+  const cells = new Map();
+  for (const isl of list) {
+    const r = isl.radius * 1.45;
+    const i0 = Math.floor((isl.cx - r) / ISLAND_CELL);
+    const i1 = Math.floor((isl.cx + r) / ISLAND_CELL);
+    const k0 = Math.floor((isl.cz - r) / ISLAND_CELL);
+    const k1 = Math.floor((isl.cz + r) / ISLAND_CELL);
+    for (let i = i0; i <= i1; i++) {
+      for (let k = k0; k <= k1; k++) {
+        const key = i * 65536 + k;
+        let c = cells.get(key);
+        if (!c) cells.set(key, (c = []));
+        c.push(isl);
+      }
+    }
+  }
+  ISLAND_GRID = cells;
+}
+function islandsNear(x, z) {
+  return ISLAND_GRID.get(Math.floor(x / ISLAND_CELL) * 65536 + Math.floor(z / ISLAND_CELL)) || NO_ISLANDS;
 }
 
 /**
@@ -1571,8 +1617,9 @@ export function heightAt(x, z) {
 
   let h = SEA_FLOOR;
 
-  for (let i = 0; i < ISLANDS.length; i++) {
-    const isl = ISLANDS[i];
+  const isles = ISLAND_GRID ? islandsNear(x, z) : ISLANDS;
+  for (let i = 0; i < isles.length; i++) {
+    const isl = isles[i];
     const m = islandField(x, z, isl);
     if (m <= 0.0001) continue;
 
@@ -1805,9 +1852,27 @@ export function isOnRunway2(x, z, margin = 0) {
   );
 }
 
+/*
+ * Other fields' runways, 09/27, on a map that has more than one airport (the
+ * World Map preview sets them: features/world-preview.js). Empty on every
+ * other map, so the test below is one length check there.
+ */
+let OTHER_RUNWAYS = [];
+export function setOtherRunways(list) {
+  OTHER_RUNWAYS = Array.isArray(list) ? list.map((r) => ({ cx: r.cx, cz: r.cz, length: r.length, halfWidth: r.halfWidth })) : [];
+}
+/** The other field's runway under this point, or null. */
+export function otherRunwayAt(x, z, margin = 0) {
+  for (let i = 0; i < OTHER_RUNWAYS.length; i++) {
+    const r = OTHER_RUNWAYS[i];
+    if (Math.abs(z - r.cz) <= r.halfWidth + margin && Math.abs(x - r.cx) <= r.length / 2 + margin) return r;
+  }
+  return null;
+}
+
 /** On either runway — what landing scoring and the ATC should ask. */
 export function isOnAnyRunway(x, z, margin = 0) {
-  return isOnRunway(x, z, margin) || isOnRunway2(x, z, margin);
+  return isOnRunway(x, z, margin) || isOnRunway2(x, z, margin) || (OTHER_RUNWAYS.length > 0 && !!otherRunwayAt(x, z, margin));
 }
 
 /**
@@ -1964,10 +2029,10 @@ function buildChunk(centerX, centerZ, size, segments, materialFactory) {
  *   replaces the smeared sample by how steep it is and how much rock there
  *   is (vBlend.z). Two texture reads, and only where there is rock.
  */
-const RICH_VERTEX_COMMON = '\nvarying vec2 vCloudXZ;\nvarying vec3 vCliffN;';
+const RICH_VERTEX_COMMON = '\nvarying vec2 vCloudXZ;\nvarying vec3 vCliffN;\nuniform vec2 uRenderOrigin;';
 const RICH_VERTEX_BEGIN = `
   vec4 richWorld = modelMatrix * vec4(transformed, 1.0);
-  vCloudXZ = richWorld.xz;
+  vCloudXZ = richWorld.xz + uRenderOrigin;
   vCliffN = normalize(objectNormal);`;
 const RICH_FRAGMENT_COMMON = `
          varying vec2 vCloudXZ;
@@ -2152,6 +2217,8 @@ export function makeTerrainMaterial(quality = 'high') {
     if (rich) {
       shader.uniforms.uCloudShadow = { value: cloudShadow.texture };
       shader.uniforms.uCloudXform = { value: cloudShadow.xform };
+      // World metres for the patterns, whatever the draw's floating origin (render/render-origin.js).
+      shader.uniforms.uRenderOrigin = RENDER_ORIGIN;
       shader.vertexShader = shader.vertexShader
         .replace('varying float vGroundY;', 'varying float vGroundY;' + RICH_VERTEX_COMMON)
         .replace('vGroundY = position.y;', 'vGroundY = position.y;' + RICH_VERTEX_BEGIN);

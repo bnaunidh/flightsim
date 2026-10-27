@@ -9,13 +9,15 @@
  * that CAN land: a playable preview of the open world, behind its own card in
  * the map picker, that replaces nothing.
  *
- * HOW IT FITS IN ONE FRAME. The plan's own precision rule is that nothing
- * simulated or drawn is more than 64 km from the origin. The preview sea is a
- * 120 km box round the hub (every airport within 60 km of it), so it needs no
- * rebase at all: three.js composes each mesh's matrix with the camera's in
- * doubles, the chunks are positioned at their own centres, and float32 at
- * 60 km is 4 mm. One map definition, loaded the way every map is (applyMap,
- * buildWorld), with two differences:
+ * HOW IT FITS IN ONE FRAME. The sea is a 400 km box round the hub (wave 17;
+ * it was 120 km). The simulation is in JavaScript numbers, float64, so it
+ * needs no rebase. Drawing does: three.js composes each mesh's matrix with
+ * the camera's in doubles and every tile, field and tree pool sits at its own
+ * local origin, but the shaders' world-space sums are float32, 1.6 cm a step
+ * at 200 km. So the draw has a floating origin (render/render-origin.js):
+ * for the length of each frame the scene is moved so the camera is near
+ * (0, 0), and put back afterwards. One map definition, loaded the way every
+ * map is (applyMap, buildWorld), with two differences:
  *
  *   - its terrain has no fixed chunks. The ground is streamed in tiles round
  *     the camera (worldmap/stream.js) inside a per-tier time budget, with
@@ -111,8 +113,9 @@ export function makeDef(P) {
     name: '',
     subtitle: '',
     blurb:
-      'One big sea with five airports on its islands — a hub, two short hops, a grass strip and ' +
-      'a long haul over open water. A preview of the World Map: the ground streams in as you fly.',
+      `A 400 km sea in six regions — a mainland with mountains and a capital, an archipelago, cold northern rocks, ` +
+      `flat sandy cays and a remote outpost — with ${P.airports.length} airports from grass strips to long-haul internationals. ` +
+      'A preview of the World Map: the ground streams in as you fly.',
     difficulty: 2,
     difficultyLabel: 'Open sea',
     seaFloor: P.seaFloor,
@@ -161,10 +164,23 @@ export function setDepartureOn(d, id) {
     elev: a.elev,
     headingDeg: 90,
     runway: { cx: a.x, cz: a.z, length: a.length, halfWidth: a.halfWidth },
+    // A grass or gravel strip is drawn as one by airport.js (nothing else reads it).
+    surface: a.surface || 'tarmac',
     // No pad: the field's level ground is an authored flat (see the header),
     // which is the same whichever field is loaded.
     pad: null,
   };
+  // The helipads: the departure's own pad is THE field pad (spawns.js's
+  // { pad: 'field' }, the helicopter's first choice), then every other pad
+  // nearest first, so the Free Flight picker's few entries are the ones
+  // round where you are starting rather than the hub's.
+  const src = ((d._data || PREVIEW).scenery || {}).pads || [];
+  if (d.scenery && src.length) {
+    const mine = `field-${a.id}`;
+    d.scenery.pads = src
+      .map((p) => (p.id === mine ? { ...p, id: 'field', name: `${a.name} Pad` } : { ...p }))
+      .sort((p, q) => (p.id === 'field' ? -1 : q.id === 'field' ? 1 : Math.hypot(p.x - a.x, p.z - a.z) - Math.hypot(q.x - a.x, q.z - a.z)));
+  }
   if (a.carrier) d.carrier = { x: a.carrier.x, z: a.carrier.z };
   else delete d.carrier;
   // The bounding boxes terrain.js caches on the waters block are per map, and
@@ -289,22 +305,39 @@ export function checkAirport(T, a, opts = {}) {
   return out;
 }
 
-/** Rules about the network as a whole: spacing, short hops, one long haul, precision. */
+/** Rules about the network as a whole: size, regions, spacing, the mix of fields, the long hauls. */
 export function checkNetwork(D = PREVIEW) {
   const out = [];
   const add = (rule, pass, detail) => out.push({ rule, airport: '*', pass: !!pass, detail });
   const A = D.airports;
   const byCode = (c) => A.find((x) => x.code === c);
-  add('3 to 5 airports', A.length >= 3 && A.length <= 5, `${A.length}`);
+  add('14 to 18 airports', A.length >= 14 && A.length <= 18, `${A.length}`);
+  add('50 islands or more', D.islands.length >= 50, `${D.islands.length}`);
+  // The sea's size: the box round every island.
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let z0 = Infinity;
+  let z1 = -Infinity;
+  for (const i of D.islands) {
+    x0 = Math.min(x0, i.cx - i.radius); x1 = Math.max(x1, i.cx + i.radius);
+    z0 = Math.min(z0, i.cz - i.radius); z1 = Math.max(z1, i.cz + i.radius);
+  }
+  add('a sea about 400 km across (350 km or more each way)', x1 - x0 >= 350000 && z1 - z0 >= 350000,
+    `${((x1 - x0) / 1000).toFixed(0)} x ${((z1 - z0) / 1000).toFixed(0)} km`);
+  add('everything inside 200 km of the middle on both axes', Math.max(-x0, x1, -z0, z1) <= 200000,
+    `furthest coast ${(Math.max(-x0, x1, -z0, z1) / 1000).toFixed(1)} km`);
+  const regions = D.regions || [];
+  const withFields = regions.filter((g) => A.some((a) => a.region === g.id));
+  add('five regions or more, each with a field', regions.length >= 5 && withFields.length === regions.length,
+    regions.map((g) => `${g.name} ${A.filter((a) => a.region === g.id).length}`).join(', '));
+  add('every island belongs to a region', D.islands.every((i) => regions.some((g) => g.id === i.region)), '');
   let minPair = Infinity;
-  let maxPair = 0;
-  let pairs = [];
+  const pairs = [];
   for (let i = 0; i < A.length; i++) {
     for (let j = i + 1; j < A.length; j++) {
       const d = legM(A[i], A[j]);
       pairs.push({ a: A[i].code, b: A[j].code, km: d / 1000 });
       minPair = Math.min(minPair, d);
-      maxPair = Math.max(maxPair, d);
     }
   }
   add('fields spaced apart (20 km or more)', minPair >= 20000, `closest pair ${(minPair / 1000).toFixed(1)} km`);
@@ -312,12 +345,38 @@ export function checkNetwork(D = PREVIEW) {
   const short = A.slice(1).filter((b) => legM(hub, b) >= 20000 && legM(hub, b) <= 40000);
   add('short hops from the hub (20-40 km, 6-10 min in a Skylark)', short.length >= 2,
     short.map((b) => `${b.code} ${(legM(hub, b) / 1000).toFixed(1)} km`).join(', '));
-  add('one long haul (90 km or more, both ends airliner fields)', pairs.some((p) => p.km >= 90 &&
-    [p.a, p.b].every((c) => (byCode(c).length >= 1600))), pairs.filter((p) => p.km >= 90).map((p) => `${p.a}-${p.b} ${p.km.toFixed(1)} km`).join(', ') || 'none');
-  let far = 0;
-  for (const a of A) far = Math.max(far, Math.hypot(a.x, a.z) + a.length / 2);
-  add('every field within 60 km of the origin (float32 under 4 mm)', far <= 60000, `farthest runway end ${(far / 1000).toFixed(1)} km`);
+  const big = A.filter((a) => a.length >= 3000 && a.halfWidth * 2 >= 45 && a.kind === 'hub');
+  add('two or three big internationals (3,000 m by 45 m or more: A380, 747, C-17)', big.length >= 2 && big.length <= 3,
+    big.map((a) => `${a.code} ${a.length} x ${a.halfWidth * 2} m`).join(', '));
+  const regional = A.filter((a) => a.kind === 'regional');
+  add('several regionals (four or more)', regional.length >= 4, regional.map((a) => a.code).join(' '));
+  const strips = A.filter((a) => a.kind === 'ga');
+  const unpaved = strips.filter((a) => a.surface === 'grass' || a.surface === 'gravel');
+  add('light-aircraft strips (four or more, two or more of them grass or gravel)', strips.length >= 4 && unpaved.length >= 2,
+    strips.map((a) => `${a.code} ${a.length} m ${a.surface || 'tarmac'}`).join(', '));
+  const remote = A.filter((a) => a.kind === 'remote');
+  const remoteOk = remote.filter((r) => r.length >= 2800 && A.every((b) => b === r || legM(r, b) >= 140000));
+  add('a remote long-haul-only field (2,800 m, 140 km or more from every other field)', remote.length >= 1 && remoteOk.length === remote.length,
+    remote.map((r) => `${r.code} ${r.length} m, nearest ${(Math.min(...A.filter((b) => b !== r).map((b) => legM(r, b))) / 1000).toFixed(0)} km`).join(', ') || 'none');
+  const airliner = (c) => byCode(c).length >= 1600;
+  const longest = pairs.filter((p) => airliner(p.a) && airliner(p.b)).sort((a, b) => b.km - a.km)[0];
+  add('a long haul of 300 km or more between airliner fields', longest && longest.km >= 300, longest ? `${longest.a}-${longest.b} ${longest.km.toFixed(1)} km` : 'none');
+  const pads = (D.heliports || []);
+  add('heliports away from the fields (three or more)', pads.length >= 3, pads.map((p) => `${p.name} (${p.kind})`).join(', '));
   const codes = new Set(A.map((a) => a.code));
   add('codes unique and X-prefixed', codes.size === A.length && A.every((a) => /^X[A-Z]{3}$/.test(a.code)), [...codes].join(' '));
+  const ids = new Set(A.map((a) => a.id));
+  add('ids unique', ids.size === A.length, '');
   return out;
+}
+
+/** The region a point is in: the nearest region whose field or island is nearest. */
+export function regionAt(x, z, D = PREVIEW) {
+  let best = null;
+  let bd = Infinity;
+  for (const i of D.islands) {
+    const d = Math.hypot(x - i.cx, z - i.cz) - i.radius;
+    if (d < bd) { bd = d; best = i.region; }
+  }
+  return (D.regions || []).find((g) => g.id === best) || null;
 }

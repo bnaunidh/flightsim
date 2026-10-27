@@ -121,6 +121,7 @@ export const TOUCH_COVERAGE = Object.freeze({
   wingsForward: feature('src/features/swing-wing.js', 'the Lancer\'s wing-sweep panel: tap forward', 'ui.kf'),
   cargoRamp: feature('src/features/cargo-ramp.js', 'the OPEN RAMP pad the airlifters add to the pads', 'ramp-pad'),
   worldMap: feature('src/features/world-preview.js', 'the MAP button the World Map preview puts in the HUD column (and World map on the pause screen)', 'wp-mapchip'),
+  timeWarp: feature('src/features/world-preview.js', 'the RATE button beside the World Map preview\'s MAP button in the HUD column (1x / 2x / 4x)', 'wp-warp'),
   ackWarnings: feature('src/features/warnings.js', 'tap either master light to silence it', 'tap to silence'),
   zap: feature('src/features/meteor.js', 'the ZAP button in Meteor mode', 'mt-zap'),
   getOut: feature('src/features/onfoot.js', 'the prompt is the button: tap it to get out or back in', 'enterFromPrompt'),

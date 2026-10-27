@@ -12,11 +12,15 @@
  *   { op: 'init', gen, def }                       load the map
  *   { op: 'tile', gen, key, cx, cz, size, seg }    → { key, gen, data | null }
  *   { op: 'chart', box, w, h }                     → { heights } for the world map's picture
+ *   { op: 'flora', gen, key, ix, iz, perCell }     → { trees } a cell's trees (worldmap/flora.js)
  *
  * `gen` is the world build the request belongs to; the stream throws away an
  * answer for a world that has been rebuilt since.
  */
 import { buildTileData } from './tiles.js';
+import { placeCell } from './flora.js';
+
+let FLORA_CTX = null;
 
 let T = null;
 const ready = import('../terrain.js').then((m) => {
@@ -29,6 +33,7 @@ self.onmessage = async (ev) => {
     await ready;
     if (msg.op === 'init') {
       T.applyMap(msg.def);
+      FLORA_CTX = msg.flora || null;
       if (T.clearPlatforms) T.clearPlatforms();
       self.postMessage({ op: 'init', gen: msg.gen, ok: true });
       return;
@@ -41,6 +46,11 @@ self.onmessage = async (ev) => {
         for (let i = 0; i < w; i++) heights[j * w + i] = T.heightAt(box.x0 + ((i + 0.5) * (box.x1 - box.x0)) / w, z);
       }
       self.postMessage({ op: 'chart', gen: msg.gen, w, h, heights }, [heights.buffer]);
+      return;
+    }
+    if (msg.op === 'flora') {
+      const trees = FLORA_CTX ? placeCell(T, FLORA_CTX, msg.ix, msg.iz, msg.perCell) : null;
+      self.postMessage({ op: 'flora', gen: msg.gen, key: msg.key, ix: msg.ix, iz: msg.iz, trees }, trees ? [trees.buffer] : []);
       return;
     }
     if (msg.op === 'tile') {

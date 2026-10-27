@@ -37,14 +37,28 @@ import {
   WORLD_PREVIEW_ID, WORLD_PREVIEW_TITLE, PREVIEW, AIRPORTS, airportById, previewDef, setDeparture, departure,
   nearestAirport, headingTo, legM, HUB_ID,
 } from '../world/worldmap/preview.js';
-import { TerrainStream } from '../world/worldmap/stream.js';
+import { TerrainStream, tierFor as streamTier } from '../world/worldmap/stream.js';
 import { buildOutstations, pavedTest, towerLens } from '../world/worldmap/outstation.js';
+import { Horizon } from '../world/worldmap/horizon.js';
+import { Flora, floraContext } from '../world/worldmap/flora.js';
+import { treeGeometry } from '../world/scenery.js';
+import { setRenderOrigin } from '../render/render-origin.js';
+import { setNavField, navField, landingDir, papiFor } from '../world/navfield.js';
 import { icon } from '../ui/icons.js';
 import { setExtraRunways } from '../ui/minimap.js';
 
 registerActions({
   worldMap: { label: 'World map (World Map preview)', group: 'Game', ctx: ['plane', 'heli'], default: ['Digit5'] },
+  // Shares 6 with the airlifters' cargo ramp, which wins in an airlifter (key() below).
+  timeWarp: { label: 'Sim rate 1x / 2x / 4x in cruise (World Map preview)', group: 'Game', ctx: ['plane', 'heli'], default: ['Digit6'] },
 });
+
+/** The camera's far plane on the preview: the horizon's islands are out to here. The game's own is 60 km. */
+const FAR_M = 110000;
+const GAME_FAR_M = 60000;
+/** Sim rates offered, and the most ground the sim may cover a real second at any of them. */
+const WARP_STEPS = [1, 2, 4];
+const WARP_MAX_MS = 1000;
 
 const KT = 1.94384;
 const STORE_KEY = 'islandsim.worldpreview.v1';
@@ -61,6 +75,11 @@ const S = {
   chart: null,
   chartAsked: false,
   pick: HUB_ID,
+  horizon: null,
+  flora: null,
+  nav: null,
+  warp: { want: 1, k: 1, why: '' },
+  perf: { frames: 0, total: 0, max: 0, over4: 0, over8: 0 },
   pausedForMap: false,
   builtFor: null,
   onBuilt: [],
@@ -125,12 +144,30 @@ export function whenBuilt() {
 /* The world                                                           */
 /* ------------------------------------------------------------------ */
 
-function teardown() {
+function teardown(sim) {
   if (S.stream) S.stream.dispose();
+  if (S.horizon) S.horizon.dispose();
+  if (S.flora) S.flora.dispose();
   S.stream = null;
+  S.horizon = null;
+  S.flora = null;
   S.out = null;
   S.builtFor = null;
+  S.nav = null;
   setExtraRunways([]);
+  Terrain.setOtherRunways([]);
+  setNavField(null);
+  setRenderOrigin(null);
+  setWarp(sim, 1, '');
+  if (sim) {
+    farCarrier(sim, null, true);
+    S.carrierLayer = null;
+    sim.navPapi = null;
+    if (sim.camera && sim.camera.far !== GAME_FAR_M) {
+      sim.camera.far = GAME_FAR_M;
+      sim.camera.updateProjectionMatrix();
+    }
+  }
   if (S.ui && S.ui.card) S.ui.card.hidden = true;
 }
 
@@ -140,13 +177,27 @@ function setTowers(sim) {
 }
 
 function buildWorld(sim, group) {
-  teardown();
+  teardown(sim);
   setTowers(sim);
   if (!active()) return;
   const q = sim.settings.quality || 'medium';
   const t0 = performance.now();
   const mat = makeTerrainMaterial(q);
-  S.stream = new TerrainStream({ T: Terrain, material: mat, group, quality: q, def: MAP });
+  const fctx = floraContext(PREVIEW);
+  S.stream = new TerrainStream({ T: Terrain, material: mat, group, quality: q, def: MAP, flora: fctx });
+  // A 400 km sea: the floating origin for drawing (render/render-origin.js), and a far plane out to the horizon's islands.
+  setRenderOrigin({});
+  if (sim.camera) {
+    sim.camera.far = FAR_M;
+    sim.camera.updateProjectionMatrix();
+  }
+  S.horizon = new Horizon({ heightAt: Terrain.heightAt, islands: PREVIEW.islands, hideWithin: streamTier(q).range });
+  group.add(S.horizon.mesh);
+  S.flora = new Flora({
+    treeGeometry, ctx: fctx, T: Terrain, worker: S.stream.worker && !S.stream.workerFailed ? S.stream.worker : null, gen: S.stream.gen,
+    quality: q, addObstacle: Terrain.addObstacle, obstacles: Terrain.OBSTACLES,
+  });
+  group.add(S.flora.group);
   // The ground the first frame needs, now, behind the loading screen.
   const r = RUNWAY;
   S.stream.prime(r.thresholdWest.x + 80, r.elev + 60, r.thresholdWest.z);
@@ -159,8 +210,13 @@ function buildWorld(sim, group) {
   const others = PREVIEW.airports.filter((a) => a.id !== dep.id);
   const outPaved = pavedTest(others);
   setPavedExtra((x, z) => pavedIn(airportLayout(), x, z) || outPaved(x, z));
-  // The terrain warning knows the other fields' approaches too.
-  setExtraRunways(others.map((a) => ({ cx: a.x, cz: a.z, length: a.length })));
+  // The terrain warning and the minimap know the other fields' runways too,
+  // and a landing on one is a landing on a runway (terrain.js isOnAnyRunway).
+  setExtraRunways(others.map((a) => ({ cx: a.x, cz: a.z, length: a.length, halfWidth: a.halfWidth })));
+  Terrain.setOtherRunways(others.map((a) => ({ cx: a.x, cz: a.z, length: a.length, halfWidth: a.halfWidth })));
+  // The landing aids at whichever field you are at (updateNav, every frame).
+  sim.navPapi = (pos, mainHint) => navPapi(pos, mainHint);
+  prewarm(sim, [S.out.group, S.flora.group, S.horizon.mesh]);
   S.builtFor = { id: dep.id, quality: q, ms: performance.now() - t0 };
   const waiting = S.onBuilt.splice(0);
   for (const f of waiting) {
@@ -170,6 +226,42 @@ function buildWorld(sim, group) {
       /* a waiter that throws is its own problem */
     }
   }
+}
+
+/**
+ * Upload every texture and compile every shader the other fields, their
+ * towns, the trees and the horizon will need, now, behind the loading screen.
+ * They are hidden until you are near them, and three compiles a program and
+ * uploads a texture the first frame something using it is drawn: measured at
+ * Low flying across the mainland, that was a run of 130 ms frames each time a
+ * new town came into range, which is a stutter you see.
+ */
+function prewarm(sim, roots) {
+  const R = sim.renderer;
+  if (!R || !sim.camera) return;
+  const t0 = performance.now();
+  const flipped = [];
+  const tex = new Set();
+  for (const root of roots) {
+    if (!root) continue;
+    root.traverse((o) => {
+      if (!o.visible) {
+        flipped.push(o);
+        o.visible = true;
+      }
+      const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      for (const m of mats) for (const k in m) if (m[k] && m[k].isTexture) tex.add(m[k]);
+    });
+  }
+  try {
+    for (const t of tex) R.initTexture(t);
+    for (const root of roots) if (root) R.compile(root, sim.camera, sim.scene);
+  } catch (e) {
+    /* a renderer that will not: they compile on first sight, as before */
+  } finally {
+    for (const o of flipped) o.visible = false;
+  }
+  S.prewarm = { ms: performance.now() - t0, textures: tex.size, shown: flipped.length };
 }
 
 /** The world map's picture: heights over the whole sea, from the tile worker once a session. */
@@ -186,7 +278,7 @@ function askChart() {
     if (S.overlay && S.overlay.open) S.overlay.draw();
   };
   w.addEventListener('message', onMsg);
-  w.postMessage({ op: 'chart', gen: -2, box, w: 220, h: 220 });
+  w.postMessage({ op: 'chart', gen: -2, box, w: 512, h: 512 });
 }
 
 export function chartBox() {
@@ -286,6 +378,166 @@ function checkArrival(sim, dt) {
   syncCard(sim);
 }
 
+/*
+ * The carrier, out of sight.
+ *
+ * The ship and the jets on its deck are three hundred draw calls, and on the
+ * nine maps it is never far away. On a 400 km sea it is a dot 30 km off that
+ * still cost all three hundred: measured at Low over the mainland, it was more
+ * than half of every frame's draw calls. Past the tier's range it is hidden
+ * (it is a speck by then); close in it is exactly as it was.
+ */
+const CARRIER_RANGE = Object.freeze({ low: 9000, medium: 14000, high: 20000, ultra: 26000 });
+function farCarrier(sim, cam, force = null) {
+  const c = sim.carrier && sim.carrier.group;
+  if (!c) return;
+  const layer = S.carrierLayer || (S.carrierLayer = sim.scene && sim.scene.getObjectByName('ext:carrier-ops'));
+  const range = CARRIER_RANGE[(S.builtFor && S.builtFor.quality) || 'medium'] || CARRIER_RANGE.medium;
+  const on = force != null ? force : Math.hypot(cam.x - c.position.x, cam.z - c.position.z) < range;
+  if (c.visible !== on) c.visible = on;
+  if (layer && layer.visible !== on) layer.visible = on;
+}
+
+/* ------------------------------------------------------------------ */
+/* The field you are at: radio, approach, landing aids                 */
+/* ------------------------------------------------------------------ */
+
+/** The navfield record for an airport, landing into this wind. */
+export function navFor(a, windDirDeg = 80) {
+  return {
+    id: a.id, code: a.code, name: a.name, radio: a.name.split(' ')[0],
+    cx: a.x, cz: a.z, elev: a.elev, length: a.length, halfWidth: a.halfWidth, dir: landingDir(windDirDeg),
+  };
+}
+
+/** How far past a field's runway ends it is still "the field you are at", ahead of a destination. */
+const AT_FIELD_M = 1500;
+
+/**
+ * Which field the radio, the approach autopilot and the PAPI are working
+ * (world/navfield.js): the destination once you are within 60 km of it
+ * (unless you are at another field: AT_FIELD_M), otherwise the nearest field, changing only when another is clearly nearer
+ * (10% and 2 km), so the frequency does not flick back and forth half way.
+ */
+export function pickNav(x, z, current, dest) {
+  const { airport: near, distM } = nearestAirport(x, z);
+  // On a field, or just off its runway ends, that field's tower has you
+  // whatever the destination: a destination 30 km away set before take-off
+  // must not take the departure's radio, its take-off clearance and its
+  // approach away while you are still sitting on its runway.
+  const atOther = dest && near.id !== dest.id && distM < near.length / 2 + AT_FIELD_M;
+  if (dest && !atOther && Math.hypot(x - dest.x, z - dest.z) < 60000) return dest;
+  if (!current) return near;
+  if (near.id === current.id) return current;
+  const dc = Math.hypot(x - current.x, z - current.z);
+  return distM < dc * 0.9 - 2000 ? near : current;
+}
+
+function updateNav(sim) {
+  const ac = sim.aircraft;
+  if (!ac) return;
+  const w = (sim.weather && sim.weather.windDirDeg) ?? 80;
+  const a = pickNav(ac.pos.x, ac.pos.z, S.nav && airportById(S.nav.id), S.dest);
+  const dir = landingDir(w);
+  if (!S.nav || S.nav.id !== a.id || S.nav.dir !== dir) {
+    S.nav = navFor(a, w);
+    setNavField(S.nav);
+  }
+}
+
+/** The HUD's glide-path pill: the main field's own lights there, the field's own sums anywhere else. */
+function navPapi(pos, mainHint) {
+  const nf = navField();
+  if (!nf || !active()) return mainHint;
+  if (nf.id === departure().id && nf.dir > 0) return mainHint;
+  return papiFor(nf, pos).hint;
+}
+
+/* ------------------------------------------------------------------ */
+/* Sim rate: 1x, 2x, 4x in a steady cruise                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Why the sim rate cannot be raised now ('' when it can). The rule is
+ * "only when nothing is happening": the autopilot flying a cruise, well
+ * clear of the ground, nothing lit on the warning panel, not on the way in
+ * to land, solo. Any of those changing drops it straight back to 1x.
+ */
+export function warpBlocked(sim) {
+  const ac = sim.aircraft;
+  if (!active() || !ac) return 'Only on the World Map';
+  if (sim.mode !== 'free') return 'Free Flight only';
+  if (sim.state !== 'flying') return 'Only while flying';
+  if (sim.multiplayer && sim.multiplayer.active) return 'Not in a game with friends';
+  if (ac.crashed || ac.onGround) return 'Only in the air';
+  if (!sim.autopilot || !sim.autopilot.engaged) return 'Engage the autopilot first';
+  if (sim.autopilot.mode === 'approach') return 'Not on an approach';
+  if (sim.instrumentBlackout > 0 || sim.bracing) return 'Not in an emergency';
+  const r = ac.readouts();
+  if (r.aglFt < 3000) return 'Climb above 3,000 ft over the ground';
+  if (Math.abs(r.vsFpm) > 1500) return 'Level off or settle the climb first';
+  if (sim.warnings && typeof sim.warnings.active === 'function' && sim.warnings.active().length) return 'A warning is showing';
+  if (typeof ac.fuelFraction === 'function' && ac.fuelFraction() < 0.1) return 'Fuel is low';
+  if (S.dest && Math.hypot(ac.pos.x - S.dest.x, ac.pos.z - S.dest.z) < 25000) return 'Nearly there: on the way in';
+  return '';
+}
+
+/** The rate the cruise can take: no more than WARP_MAX_MS of ground a real second. */
+function warpCap(sim) {
+  const ac = sim.aircraft;
+  const gs = ac && ac.groundSpeed ? ac.groundSpeed : 0;
+  let k = WARP_STEPS[WARP_STEPS.length - 1];
+  while (k > 1 && gs * k > WARP_MAX_MS) k /= 2;
+  return k;
+}
+
+function setWarp(sim, k, why) {
+  const was = S.warp.k;
+  S.warp.k = k;
+  if (k === 1) S.warp.want = 1;
+  S.warp.why = why || '';
+  if (sim) sim.timeScale = k > 1 ? k : 1;
+  if (sim && was > 1 && k === 1 && why && sim.hud) sim.hud.notify(`Sim rate back to 1x — ${why.charAt(0).toLowerCase()}${why.slice(1)}`, 'info', 3);
+  syncWarpButton(sim);
+}
+
+/** The key and the button: the next rate up, round to 1x. */
+export function cycleWarp(sim) {
+  const why = warpBlocked(sim);
+  if (why && S.warp.k === 1) {
+    sim.hud && sim.hud.notify(`Sim rate stays at 1x — ${why.charAt(0).toLowerCase()}${why.slice(1)}`, 'info', 3);
+    syncWarpButton(sim);
+    return 1;
+  }
+  const i = WARP_STEPS.indexOf(S.warp.want);
+  const next = WARP_STEPS[(i + 1) % WARP_STEPS.length];
+  S.warp.want = next;
+  const k = Math.min(next, warpCap(sim));
+  setWarp(sim, k, '');
+  if (sim.hud) sim.hud.notify(k > 1 ? `Sim rate ${k}x — any warning, the approach or the ground puts it back to 1x` : 'Sim rate 1x', 'info', 3);
+  return k;
+}
+
+function updateWarp(sim) {
+  if (S.warp.k === 1 && S.warp.want === 1) return;
+  const why = warpBlocked(sim);
+  if (why) return setWarp(sim, 1, why);
+  const k = Math.min(S.warp.want, warpCap(sim));
+  if (k !== S.warp.k) setWarp(sim, k, '');
+}
+
+function syncWarpButton(sim) {
+  const b = S.ui && S.ui.card && S.ui.card.querySelector('[data-wp-warp]');
+  if (!b) return;
+  const txt = `${S.warp.k}x`;
+  const lab = b.querySelector('.wp-rate');
+  if (lab && lab.textContent !== txt) lab.textContent = txt;
+  b.setAttribute('aria-pressed', String(S.warp.k > 1));
+  const blocked = sim ? warpBlocked(sim) : '';
+  b.title = S.warp.k > 1 ? `Sim rate ${S.warp.k}x (tap for the next)` : blocked ? `Sim rate 1x — ${blocked}` : 'Sim rate: tap for 2x';
+  b.classList.toggle('is-off', !!blocked && S.warp.k === 1);
+}
+
 /* ------------------------------------------------------------------ */
 /* Styles                                                              */
 /* ------------------------------------------------------------------ */
@@ -308,6 +560,11 @@ const CSS = `
 .wp-hudcard .wp-destline { padding: 6px 10px; border-radius: 10px; background: rgba(12,20,32,0.62); font-variant-numeric: tabular-nums; }
 .wp-hudcard.is-chip .wp-destline, .wp-hudcard.is-chip .wp-word { display: none; }
 .wp-hudcard[hidden], .wp-hudcard .wp-destline[hidden] { display: none !important; }
+.wp-hudcard .wp-warp[aria-pressed="true"] { border-color: #ffd166; color: #ffd166; }
+.wp-hudcard .wp-warp.is-off { opacity: 0.6; }
+.wp-hudcard .wp-rate { font-variant-numeric: tabular-nums; min-width: 2ch; }
+.wp-picks h4, .wp-ov .wp-list h4 { margin: 8px 0 0; font: 700 11px/1.2 var(--font, system-ui), sans-serif; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.7; }
+.wp-picks { max-height: 320px; overflow: auto; }
 .wp-ov { position: fixed; inset: 0; z-index: 80; display: grid; grid-template-columns: 1fr minmax(260px, 340px); background: #dfe8ee; color: #1d2a33;
   font: 500 14px var(--font, system-ui), sans-serif; pointer-events: auto; }
 .wp-ov[hidden] { display: none; }
@@ -379,23 +636,13 @@ function drawSketch(cv) {
     g.fill();
   }
   const A = PREVIEW.airports;
-  g.strokeStyle = 'rgba(255,255,255,0.55)';
-  g.setLineDash && g.setLineDash([4, 4]);
-  g.lineWidth = 1.2;
-  g.beginPath();
-  for (let k = 1; k < A.length; k++) {
-    g.moveTo(X(A[0].x), Z(A[0].z));
-    g.lineTo(X(A[k].x), Z(A[k].z));
-  }
-  g.stroke();
-  g.setLineDash && g.setLineDash([]);
-  g.font = '600 11px system-ui, sans-serif';
+  g.font = '600 10px system-ui, sans-serif';
   for (const a of A) {
     g.fillStyle = '#1b1f24';
-    g.fillRect(X(a.x - a.length / 2) - 1, Z(a.z) - 2, Math.max(6, a.length * s) + 2, 4);
-    g.fillStyle = '#fff';
-    g.fillText(a.code, X(a.x) + 6, Z(a.z) - 6);
+    g.fillRect(X(a.x) - 3, Z(a.z) - 1.5, 6, 3);
   }
+  g.fillStyle = 'rgba(255,255,255,0.85)';
+  for (const r of PREVIEW.regions || []) g.fillText(r.name.replace(/^The /, ''), X(r.cx) - 24, Z(r.cz) - 8);
 }
 
 function buildCard(sim) {
@@ -410,13 +657,13 @@ function buildCard(sim) {
   const card = document.createElement('article');
   card.className = 'map-card wp-card';
   card.setAttribute('data-world-preview-card', '');
-  const picks = AIRPORTS.map((a) => `<button type="button" role="radio" data-wp-pick="${a.id}" aria-checked="${a.id === S.pick}">
-      <span>${a.code} · ${a.name}</span><em>${fmtM(a.length)}${st.visited.includes(a.id) ? ' · visited' : ''}</em></button>`).join('');
+  const picks = byRegion().map(({ region, airports }) => `<h4>${region.name}</h4>` + airports.map((a) => `<button type="button" role="radio" data-wp-pick="${a.id}" data-wp-region="${region.id}" aria-checked="${a.id === S.pick}">
+      <span>${a.code} · ${a.name}</span><em>${kindWord(a)} · ${fmtM(a.length)}${st.visited.includes(a.id) ? ' · visited' : ''}</em></button>`).join('')).join('');
   card.innerHTML = `
     <div class="map-art wp-art" aria-hidden="true"><canvas width="360" height="200"></canvas><span class="wp-badge">PREVIEW</span></div>
     <div class="map-text">
       <h3>${WORLD_PREVIEW_TITLE}</h3>
-      <span class="map-sub">One sea · ${AIRPORTS.length} airports · islands every few minutes</span>
+      <span class="map-sub">One 400 km sea · ${(PREVIEW.regions || []).length} regions · ${AIRPORTS.length} airports · ${PREVIEW.islands.length} islands</span>
       <span class="map-diff diff-2">●●○○○ Open sea</span>
       <p>${previewDef().blurb} The longest leg, ${longestLeg()}, is a proper long haul.</p>
       <div class="wp-picks" role="radiogroup" aria-label="Start at">${picks}</div>
@@ -452,6 +699,19 @@ function buildCard(sim) {
   return card;
 }
 
+/** The fields in the picker's order, under their regions. */
+export function byRegion() {
+  const regions = PREVIEW.regions || [{ id: 'all', name: 'Airports' }];
+  return regions.map((region) => ({ region, airports: AIRPORTS.filter((a) => (a.region || 'all') === region.id) })).filter((g) => g.airports.length);
+}
+
+function kindWord(a) {
+  if (a.kind === 'hub') return 'International';
+  if (a.kind === 'regional') return 'Regional';
+  if (a.kind === 'remote') return 'Long-haul outpost';
+  return a.surface === 'grass' ? 'Grass strip' : a.surface === 'gravel' ? 'Gravel strip' : 'Strip';
+}
+
 function longestLeg() {
   let best = null;
   for (let i = 0; i < AIRPORTS.length; i++) {
@@ -484,8 +744,11 @@ function hudCard(sim) {
   const el = document.createElement('div');
   el.className = 'wp-hudcard';
   el.hidden = true;
-  el.innerHTML = `<button type="button" class="wp-mapchip" data-wp-map aria-label="World map">${icon('map', 16)}<span class="wp-word">Map</span></button><span class="wp-destline" hidden></span>`;
+  el.innerHTML = `<button type="button" class="wp-mapchip" data-wp-map aria-label="World map">${icon('map', 16)}<span class="wp-word">Map</span></button>`
+    + `<button type="button" class="wp-warp" data-wp-warp aria-label="Sim rate" aria-pressed="false"><span class="wp-word">Rate</span><span class="wp-rate">1x</span></button>`
+    + '<span class="wp-destline" hidden></span>';
   el.querySelector('[data-wp-map]').addEventListener('click', () => openMap(sim));
+  el.querySelector('[data-wp-warp]').addEventListener('click', () => cycleWarp(sim));
   const stack = sim.hud && sim.hud.stack;
   if (stack && typeof stack.add === 'function') stack.add(el, { prio: 3.2, id: 'world-preview', info: true });
   else extLayer().appendChild(el);
@@ -686,12 +949,12 @@ function fillSide(sim, O) {
   const st = store();
   const dep = departure();
   const list = O.root.querySelector('[data-wp-list]');
-  list.innerHTML = AIRPORTS.map((a) => {
+  list.innerHTML = byRegion().map(({ region, airports }) => `<h4>${region.name}</h4>` + airports.map((a) => {
     const d = Math.hypot(ac.pos.x - a.x, ac.pos.z - a.z);
     const tags = [a.id === dep.id ? 'started here' : '', st.visited.includes(a.id) ? 'visited' : '', S.dest && S.dest.id === a.id ? 'destination' : ''].filter(Boolean).join(' · ');
     return `<button type="button" data-wp-sel="${a.id}" class="${O.sel && O.sel.id === a.id ? 'is-sel' : ''}">
-      <b>${a.code}</b> ${a.name}<small>${(d / 1000).toFixed(0)} km · ${fmtM(a.length)} runway${tags ? ' · ' + tags : ''}</small></button>`;
-  }).join('');
+      <b>${a.code}</b> ${a.name}<small>${(d / 1000).toFixed(0)} km · about ${Math.max(1, Math.round(etaMin(sim, d)))} min · ${kindWord(a).toLowerCase()}, ${fmtM(a.length)}${tags ? ' · ' + tags : ''}</small></button>`;
+  }).join('')).join('');
   O.root.querySelector('[data-wp-count]').textContent = `${st.visited.length} of ${AIRPORTS.length} airports visited`;
   const a = O.sel;
   const info = O.root.querySelector('[data-wp-info]');
@@ -705,8 +968,11 @@ function fillSide(sim, O) {
   const hdg = Math.round(headingTo(ac.pos.x, ac.pos.z, a.x, a.z));
   const town = PREVIEW.towns.find((t) => t.airport === a.id);
   info.innerHTML = `<b>${a.name}</b> (${a.code}) on ${a.place}<br>
-    Runway 09/27 · ${fmtM(a.length)} × ${a.halfWidth * 2} m · field ${Math.round(a.elev * 3.28084)} ft<br>
-    ${a.kind === 'hub' ? 'Airliners, jets and light aircraft' : a.kind === 'regional' ? 'Regional: airliners and light aircraft' : 'Grass-roots strip: light aircraft and helicopters'}${a.parking ? ' · car park' : ''}<br>
+    Runway 09/27 · ${fmtM(a.length)} × ${a.halfWidth * 2} m${a.surface && a.surface !== 'tarmac' ? ` ${a.surface}` : ''} · field ${Math.round(a.elev * 3.28084)} ft<br>
+    ${a.kind === 'hub' ? (a.length >= 3000 ? 'International: heavies (A380, 747, C-17), airliners, jets and light aircraft' : 'International: airliners, jets and light aircraft')
+      : a.kind === 'regional' ? 'Regional: airliners and light aircraft' : a.kind === 'remote' ? 'Remote outpost: a long runway for long-haul jets, nothing else for 150 km'
+      : 'Strip: light aircraft and helicopters'}${a.parking ? ' · car park' : ''}<br>
+    ${regionName(a)}<br>
     ${town ? `Town: ${town.name}` : ''}<br>
     ${(d / 1000).toFixed(1)} km away, heading ${String(hdg).padStart(3, '0')}° · about ${Math.max(1, Math.round(etaMin(sim, d)))} min`;
   const isDest = S.dest && S.dest.id === a.id;
@@ -717,6 +983,11 @@ function fillSide(sim, O) {
   O.root.querySelector('[data-wp-tip]').textContent = sim.mode === 'free'
     ? `Long leg? Climb to height and engage the autopilot (${keyName('autopilot', sim)}): it holds the course to your destination. Close the map with ${keyName('worldMap', sim)} or Esc.`
     : 'Destinations are for Free Flight.';
+}
+
+function regionName(a) {
+  const r = (PREVIEW.regions || []).find((g) => g.id === a.region);
+  return r ? `${r.name} — ${r.blurb}` : '';
 }
 
 function chartImage(g, ch) {
@@ -763,7 +1034,7 @@ function drawMap(sim, O) {
   const box = chartBox();
   if (!O.view) {
     const fit = Math.min(r.width / (box.x1 - box.x0), r.height / (box.z1 - box.z0));
-    O.view = { cx: (box.x0 + box.x1) / 2, cz: (box.z0 + box.z1) / 2, s: fit, min: fit * 0.6, max: fit * 24 };
+    O.view = { cx: (box.x0 + box.x1) / 2, cz: (box.z0 + box.z1) / 2, s: fit, min: fit * 0.6, max: fit * 80 };
   }
   const v = O.view;
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -783,12 +1054,12 @@ function drawMap(sim, O) {
       g.fill();
     }
   }
-  // A 20 km grid, faint.
+  // A 50 km grid, faint.
   g.strokeStyle = 'rgba(20,40,60,0.12)';
   g.lineWidth = 1;
   g.beginPath();
-  for (let x = Math.ceil(box.x0 / 20000) * 20000; x < box.x1; x += 20000) { g.moveTo(X(x), Z(box.z0)); g.lineTo(X(x), Z(box.z1)); }
-  for (let z = Math.ceil(box.z0 / 20000) * 20000; z < box.z1; z += 20000) { g.moveTo(X(box.x0), Z(z)); g.lineTo(X(box.x1), Z(z)); }
+  for (let x = Math.ceil(box.x0 / 50000) * 50000; x < box.x1; x += 50000) { g.moveTo(X(x), Z(box.z0)); g.lineTo(X(x), Z(box.z1)); }
+  for (let z = Math.ceil(box.z0 / 50000) * 50000; z < box.z1; z += 50000) { g.moveTo(X(box.x0), Z(z)); g.lineTo(X(box.x1), Z(z)); }
   g.stroke();
   const ac = sim.aircraft;
   // The route.
@@ -802,11 +1073,14 @@ function drawMap(sim, O) {
     g.stroke();
     g.setLineDash([]);
   }
-  // Island names, small.
+  // Region names, then island names once zoomed in.
+  g.font = '700 12px system-ui, sans-serif';
+  g.fillStyle = 'rgba(20,40,60,0.55)';
+  for (const rg of PREVIEW.regions || []) g.fillText(rg.name.toUpperCase(), X(rg.cx) - 40, Z(rg.cz) - 26);
   g.font = '500 11px system-ui, sans-serif';
   g.fillStyle = 'rgba(30,40,30,0.75)';
   for (const i of PREVIEW.islands) {
-    if (i.radius < 1200 && v.s < 0.004) continue;
+    if (v.s < 0.004 || (i.radius < 1200 && v.s < 0.012)) continue;
     if (AIRPORTS.some((a) => a.place === i.name)) continue;
     g.fillText(i.name, X(i.cx) + 6, Z(i.cz) + i.radius * v.s + 12);
   }
@@ -850,7 +1124,7 @@ function drawMap(sim, O) {
     g.restore();
   }
   // A scale bar.
-  const km = v.s * 10000 > 160 ? 5 : v.s * 10000 > 60 ? 10 : 20;
+  const km = v.s * 10000 > 160 ? 5 : v.s * 10000 > 60 ? 10 : v.s * 10000 > 24 ? 20 : 50;
   const px = km * 1000 * v.s;
   g.fillStyle = 'rgba(255,255,255,0.85)';
   g.fillRect(r.width - px - 26, r.height - 34, px + 16, 22);
@@ -932,6 +1206,18 @@ registerExtension({
       outstations: () => S.out,
       stream: () => S.stream,
       visited: () => store().visited.slice(),
+      horizon: () => S.horizon,
+      flora: () => S.flora,
+      navField: () => navField(),
+      warp: () => ({ ...S.warp, blocked: warpBlocked(sim), scale: sim.timeScale || 1 }),
+      cycleWarp: () => cycleWarp(sim),
+      regions: () => PREVIEW.regions,
+      prewarmed: () => S.prewarm || null,
+      perf: (reset = false) => {
+        const p = { ...S.perf, mean: S.perf.frames ? S.perf.total / S.perf.frames : 0 };
+        if (reset) S.perf = { frames: 0, total: 0, max: 0, over4: 0, over8: 0 };
+        return p;
+      },
     };
   },
   buildWorld(sim, group) {
@@ -955,10 +1241,15 @@ registerExtension({
       }
     }
     if (S.stream && sim.aircraft) S.stream.prime(sim.aircraft.pos.x, sim.aircraft.pos.y, sim.aircraft.pos.z, 500);
+    // The field you start at is the radio's from the first call.
+    S.nav = null;
+    updateNav(sim);
+    setWarp(sim, 1, '');
     syncCard(sim);
   },
   stop(sim) {
     closeMap(sim);
+    setWarp(sim, 1, '');
     syncCard(sim);
   },
   update(sim, dt) {
@@ -967,12 +1258,31 @@ registerExtension({
       return;
     }
     const cam = sim.camera && sim.camera.position;
+    const w0 = performance.now();
     if (S.stream && cam) S.stream.update(dt, cam.x, cam.y, cam.z);
+    if (S.horizon && cam) S.horizon.update(cam, 1.2);
+    if (S.flora && cam) S.flora.update(cam, sim.state === 'flying' ? sim.aircraft : null, 1.2);
     if (S.out) S.out.update(dt, sim.weather, cam);
+    if (cam) farCarrier(sim, cam);
+    // What the world's own streaming cost this frame (the tests and the dev overlay).
+    const w = performance.now() - w0;
+    S.perf.frames++;
+    S.perf.total += w;
+    if (w > S.perf.max) S.perf.max = w;
+    if (w > 4) S.perf.over4++;
+    if (w > 8) S.perf.over8++;
+    updateNav(sim);
+    updateWarp(sim);
     if (sim.mode === 'free') checkArrival(sim, dt);
     syncCard(sim);
   },
   key(sim, code, down) {
+    if (down && active() && isKey(sim, 'timeWarp', code)) {
+      // 6 is the airlifters' cargo ramp too; in an airlifter the ramp has it (the button still works).
+      if (sim.aircraftType && sim.aircraftType.cargoRamp) return false;
+      cycleWarp(sim);
+      return true;
+    }
     if (!down || !active() || !isKey(sim, 'worldMap', code)) return false;
     if (S.overlay && S.overlay.open) closeMap(sim);
     else openMap(sim);

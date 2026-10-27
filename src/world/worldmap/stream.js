@@ -40,10 +40,16 @@ export const LEAF = 2048;
 export const LEVELS = 4;
 export const ROOT = LEAF * 2 ** (LEVELS - 1);
 
-/** Per graphics quality. `seg` gives 64 / 51 / 43 / 32 m between vertices on a leaf (Kestrel's own chunk: 71 / 50 / 39 / 28). */
+/**
+ * Per graphics quality. `seg` gives 64 / 51 / 43 / 32 m between vertices on a leaf (Kestrel's own chunk: 71 / 50 / 39 / 28).
+ * Low and Medium's range and split distance were trimmed in wave 17 (30 km / 1.15 and 40 km / 1.3): over the
+ * mainland every tile in range is land, and at the old numbers Low wanted all 120 of its meshes with nothing
+ * spare to cover the tiles still coming. Now it wants at most about 100 there; past the range the horizon's
+ * islands (worldmap/horizon.js) carry on.
+ */
 export const TIERS = Object.freeze({
-  low: Object.freeze({ seg: 32, splitK: 1.15, range: 30000, budgetMs: 2, inFlight: 2, meshesPerFrame: 1, maxTiles: 120, primeMs: 900 }),
-  medium: Object.freeze({ seg: 40, splitK: 1.3, range: 40000, budgetMs: 3, inFlight: 3, meshesPerFrame: 2, maxTiles: 170, primeMs: 1200 }),
+  low: Object.freeze({ seg: 32, splitK: 1.05, range: 26000, budgetMs: 2, inFlight: 2, meshesPerFrame: 1, maxTiles: 120, primeMs: 900 }),
+  medium: Object.freeze({ seg: 40, splitK: 1.2, range: 36000, budgetMs: 3, inFlight: 3, meshesPerFrame: 2, maxTiles: 170, primeMs: 1200 }),
   high: Object.freeze({ seg: 48, splitK: 1.45, range: 50000, budgetMs: 4, inFlight: 4, meshesPerFrame: 2, maxTiles: 230, primeMs: 1500 }),
   ultra: Object.freeze({ seg: 64, splitK: 1.6, range: 55000, budgetMs: 5, inFlight: 4, meshesPerFrame: 3, maxTiles: 300, primeMs: 1800 }),
 });
@@ -94,7 +100,7 @@ export class TerrainStream {
    * @param {boolean} [o.useWorker=true]
    * @param {Function} [o.now]
    */
-  constructor({ T, material, group, quality = 'medium', def = null, useWorker = true, now = () => performance.now() }) {
+  constructor({ T, material, group, quality = 'medium', def = null, useWorker = true, flora = null, now = () => performance.now() }) {
     this.T = T;
     this.material = material;
     this.group = group;
@@ -112,7 +118,7 @@ export class TerrainStream {
     this.lastAt = null;
     this.sinceWant = 0;
     this.index = tileIndex(this.tier.seg);
-    this.counts = { built: 0, voids: 0, evicted: 0, workerTiles: 0, cpuTiles: 0, maxMeshMs: 0, maxCpuSliceMs: 0, primed: 0, primeMs: 0, cracks: 0 };
+    this.counts = { built: 0, voids: 0, evicted: 0, workerTiles: 0, cpuTiles: 0, maxMeshMs: 0, maxCpuSliceMs: 0, primed: 0, primeMs: 0, cracks: 0, meshDropped: 0 };
     this.lands = (T.ISLANDS || []).map((i) => ({ x: i.cx, z: i.cz, r: i.radius * 1.45 + 150 }));
     this.worker = useWorker ? sharedWorker() : null;
     this.workerReady = false;
@@ -130,7 +136,7 @@ export class TerrainStream {
       this.worker.addEventListener('message', this._onMsg);
       this.worker.addEventListener('error', this._onErr);
       try {
-        this.worker.postMessage({ op: 'init', gen: this.gen, def: plainDef(def || T.MAP) });
+        this.worker.postMessage({ op: 'init', gen: this.gen, def: plainDef(def || T.MAP), flora });
       } catch (e) {
         this.workerFailed = true;
       }
@@ -271,6 +277,7 @@ export class TerrainStream {
       this.group.remove(t.mesh);
       t.mesh.geometry.dispose();
       t.mesh = null;
+      this.counts.meshDropped++;
     }
     this.inFlight.delete(t.key);
     if (this.cpuJob && this.cpuJob.t === t) this.cpuJob = null;
@@ -326,10 +333,14 @@ export class TerrainStream {
     const t0 = this.now();
     this.wanted = this.want(x, y, z);
     this.wantedSet = new Set(this.wanted.map((w) => w.key));
+    // Somewhere new (a start, a teleport): what was on screen is not needed to cover anything here.
+    this.shown = new Set();
+    this.evict(x, z);
     for (const w of this.wanted) {
       if (this.now() - t0 > maxMs) break;
       const t = this.tile(w);
       if (t.state !== 'new') continue;
+      if (this.counts.built - this.counts.meshDropped >= this.tier.maxTiles) this.evict(x, z, 1);
       this.finish(t, buildTileData(this.T, t.cx, t.cz, t.size, this.tier.seg));
       this.counts.primed++;
     }
@@ -400,8 +411,12 @@ export class TerrainStream {
     this.shown = show;
   }
 
-  /** Keep memory inside the tier: dispose far, unwanted, hidden tiles. */
-  evict(x, z) {
+  /**
+   * Keep memory inside the tier: dispose far, unwanted, hidden tiles.
+   * `room` more meshes are about to be made (update() asks for one before
+   * each new mesh once the cap is reached, so the cap is never overshot).
+   */
+  evict(x, z, room = 0) {
     const far = this.tier.range * 1.3;
     for (const t of [...this.tiles.values()]) {
       if (t.state === 'building' || this.shown.has(t.key) || this.wantedSet.has(t.key)) continue;
@@ -418,9 +433,10 @@ export class TerrainStream {
       if (t.mesh) meshes++;
       else if (t.state === 'void') voids++;
     }
-    if (meshes > this.tier.maxTiles) {
+    const cap = this.tier.maxTiles - room;
+    if (meshes > cap) {
       const list = spare((t) => !!t.mesh);
-      while (meshes > this.tier.maxTiles && list.length) {
+      while (meshes > cap && list.length) {
         this.drop(list.shift());
         meshes--;
       }
@@ -466,6 +482,8 @@ export class TerrainStream {
     while (this.arrived.length && made < this.tier.meshesPerFrame) {
       const { t, data } = this.arrived.shift();
       if (this.tiles.get(t.key) !== t) continue;
+      // At the cap: make room first, so the count never goes over it.
+      if (data && this.counts.built - this.counts.meshDropped >= this.tier.maxTiles) this.evict(x, z, 1);
       this.finish(t, data);
       made++;
       changed = true;

@@ -167,7 +167,7 @@ let treeCache = null;
 const BARK = [0.36, 0.27, 0.19];
 const PALM_BARK = [0.55, 0.45, 0.33];
 const PALM_BARK2 = [0.45, 0.36, 0.26];
-function treeGeometry(kind = 0, snow = false) {
+export function treeGeometry(kind = 0, snow = false) {
   const parts = [];
   const trunk = (topR, botR, h, y, lean = 0, sides = 6) => {
     const g = new THREE.CylinderGeometry(topR, botR, h, sides, 1, true);
