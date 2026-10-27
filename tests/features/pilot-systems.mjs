@@ -227,10 +227,11 @@ const F = await imp('src/features/pilot-systems.js');
 const C = await imp('src/ui/touch-coverage.js');
 const PL = await imp('src/ui/pills.js');
 {
-  const want = { lights: 'PageUp', spoilers: 'PageDown', reversers: 'End', atcRequest: 'Insert' };
+  // w17: the radio is F8 first, then Z (shared by design with the Meteor zapper), then Insert.
+  const want = { lights: 'PageUp', spoilers: 'PageDown', reversers: 'End', atcRequest: 'F8' };
   const bad = Object.entries(want).filter(([id, key]) => !I.ACTIONS[id] || I.ACTIONS[id].default[0] !== key);
   ok('the four actions are in the registry with the navigation keys (every letter and digit was taken)', bad.length === 0, bad.map(([id]) => id).join(', ') || Object.keys(want).join(', '));
-  ok('the radio has F8 as a second key for a keyboard with no Insert', I.ACTIONS.atcRequest.default.includes('F8'));
+  ok('the radio has F8, the letter Z and Insert', I.ACTIONS.atcRequest.default.join() === 'F8,KeyZ,Insert', I.ACTIONS.atcRequest.default.join());
   ok('lights and the radio work in the helicopter too; the levers are the aeroplane\'s', I.ACTIONS.lights.ctx.includes('heli') && I.ACTIONS.atcRequest.ctx.includes('heli') && I.ACTIONS.spoilers.ctx.join() === 'plane' && I.ACTIONS.reversers.ctx.join() === 'plane');
   const clashes = I.findConflicts(I.defaultBindings());
   const mine = Object.keys(clashes).filter((k) => k in want);

@@ -43,6 +43,9 @@ export async function check(sim, r, say) {
   const inp = sim.input;
   const menus = sim.menus;
   const saved = JSON.stringify(inp.bindings);
+  // The key names as off a Mac: this check is about moving keys, and on a Mac
+  // (this headless Chrome says "Macintosh") F9 is named "fn F9" (w17).
+  I.setMacKeyboard(false);
   const wasAutoPause = sim.autoPauseOnHide;
   sim.autoPauseOnHide = false;
 
@@ -219,6 +222,7 @@ export async function check(sim, r, say) {
   } catch (err) {
     r.ok('keybinds: the check ran to the end', false, String(err && err.stack || err).slice(0, 300));
   } finally {
+    I.setMacKeyboard(null);
     try {
       inp.cancelCapture();
       const b = JSON.parse(saved);

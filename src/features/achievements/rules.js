@@ -13,6 +13,7 @@
  */
 
 import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID, ALL_LANDABLE_AIRCRAFT, ALL_MAP_IDS } from './data.js';
+import { isButter } from '../../ui/touchdown.js';
 
 const GOLD_SCORE = 90;
 const FIVE_GOLDS = 5;
@@ -67,7 +68,8 @@ export function applyEvent(store, type, payload = {}) {
 
     case 'touchdown': {
       if (payload.crashed) break;
-      if (Math.abs(Number(payload.vsFpm) || 0) < 60) unlock(store, 'butter-landing', out);
+      // What the touchdown card calls a Butter (under BUTTER_FPM, 120 ft/min), not a stricter number of its own.
+      if (isButter(payload.vsFpm)) unlock(store, 'butter-landing', out);
       if (payload.onRunway && Number(payload.crosswindKts) >= 12) unlock(store, 'crosswind-landing', out);
       if (payload.night) unlock(store, 'night-landing', out);
       if (payload.stormy) unlock(store, 'storm-landing', out);

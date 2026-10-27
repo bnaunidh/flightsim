@@ -134,9 +134,10 @@ const Rules = await imp('features/achievements/rules.js');
   s = Store.blank();
   ok('rules: a crashed touchdown unlocks nothing', applyEvent(s, 'touchdown', { crashed: true, vsFpm: 10 }).length === 0);
   s = Store.blank();
-  ok('rules: under 60 ft/min unlocks Butter', applyEvent(s, 'touchdown', { vsFpm: -45 }).includes('butter-landing'));
+  // w17: Butter is what the touchdown card calls Butter, under 120 ft/min (it wanted under 60).
+  ok('rules: under 120 ft/min unlocks Butter (the card\'s own Butter)', applyEvent(s, 'touchdown', { vsFpm: -100 }).includes('butter-landing'));
   s = Store.blank();
-  ok('rules: 60 ft/min exactly does not', !applyEvent(s, 'touchdown', { vsFpm: -60 }).includes('butter-landing'));
+  ok('rules: 120 ft/min exactly does not (the card says Smooth)', !applyEvent(s, 'touchdown', { vsFpm: -120 }).includes('butter-landing'));
   s = Store.blank();
   ok('rules: a crosswind landing on the runway unlocks Crab Walk', applyEvent(s, 'touchdown', { vsFpm: -200, onRunway: true, crosswindKts: 14 }).includes('crosswind-landing'));
   s = Store.blank();

@@ -203,11 +203,19 @@ const LOOK_ACTIONS = ['lookUp', 'lookDown', 'lookLeft', 'lookRight'];
  * To move a default again: bump BINDINGS_VERSION and add a row
  * { v: <the new version>, action, from: [old default], to: [new default] }.
  */
-export const BINDINGS_VERSION = 2;
+export const BINDINGS_VERSION = 3;
 export const MIGRATIONS = Object.freeze([
   { v: 2, action: 'autopilot', from: ['KeyP'], to: ['KeyY'] },
   { v: 2, action: 'services', from: ['KeyY'], to: ['KeyP'] },
   { v: 2, action: 'harrisonBoost', from: ['KeyP'], to: ['KeyY'] },
+  /*
+   * v3 (w17): the radio gets a letter, Z, beside F8 (a MacBook's F8 is
+   * Play/Pause without fn), and F8 is named first. `shares` lists the actions
+   * that may hold the new key too by design (the Meteor zapper: Z zaps while
+   * a zap mode runs, pilot-systems.js); any OTHER action the player saved on
+   * Z keeps it, and the radio just goes without (migrateSaved).
+   */
+  { v: 3, action: 'atcRequest', from: ['Insert', 'F8'], to: ['F8', 'KeyZ', 'Insert'], shares: ['zap'] },
 ]);
 const VERSION_KEY = '_v';
 
@@ -254,6 +262,17 @@ export function migrateSaved(saved) {
     const next = migrateBinding(k, v, fromV);
     out[k] = next;
     if (next !== v) moved.push(k);
+  }
+  // A key a migration ADDS (a row with `shares`; the v2 rows swapped keys)
+  // is only added where nobody else the player saved has it, bar the
+  // designed shares.
+  for (const m of MIGRATIONS) {
+    if (!Array.isArray(m.shares) || m.v <= fromV || !Array.isArray(out[m.action]) || moved.indexOf(m.action) < 0) continue;
+    const added = m.to.filter((c) => m.from.indexOf(c) < 0);
+    for (const c of added) {
+      const taken = Object.keys(out).some((id) => id !== m.action && id !== VERSION_KEY && !(m.shares || []).includes(id) && Array.isArray(out[id]) && out[id].indexOf(c) >= 0);
+      if (taken) out[m.action] = out[m.action].filter((x) => x !== c);
+    }
   }
   out[VERSION_KEY] = BINDINGS_VERSION;
   return { bindings: out, moved };
@@ -325,6 +344,13 @@ const PUNCT = {
  * would: the radio card said "Insert", the reversers "End".
  */
 const MAC_KEYS = { PageUp: 'fn ↑', PageDown: 'fn ↓', Home: 'fn ←', End: 'fn →', Delete: 'fn ⌫' };
+/*
+ * And the function keys. On a MacBook (and an Apple keyboard) F1-F12 are the
+ * brightness, Mission Control and media keys unless fn is held: F8 alone is
+ * Play/Pause, so "press F8 for the radio" started the music instead. On a
+ * Mac they are named "fn F8".
+ */
+for (let i = 1; i <= 12; i++) MAC_KEYS[`F${i}`] = `fn F${i}`;
 const NOT_ON_MAC = new Set(['Insert']);
 let macOverride = null;
 /** Tests: force the Mac names on (true), off (false), or back to detecting (null). */
@@ -434,9 +460,19 @@ export function kbd(action, sim, all = false) {
   return (all ? names : names.slice(0, 1)).map((s) => `<kbd class="k">${escapeKey(s)}</kbd>`).join('');
 }
 
-function shortNames(action, sim) {
+/**
+ * Every key of an action in its short form, de-duplicated, the way the hints
+ * name them (no Insert on a Mac when there is another). `keep(code)` may
+ * leave some out. "F8 or Z" is keyNames('atcRequest').slice(0, 2).join(' or ').
+ */
+export function keyNames(action, sim, keep = null) {
+  return shortNames(action, sim, keep);
+}
+
+function shortNames(action, sim, keep = null) {
   const out = [];
   let codes = codesFor(action, sim);
+  if (keep) codes = codes.filter((c) => keep(c));
   if (isMacKeyboard() && codes.some((c) => NOT_ON_MAC.has(c)) && codes.some((c) => !NOT_ON_MAC.has(c))) codes = codes.filter((c) => !NOT_ON_MAC.has(c));
   for (const c of codes) {
     const s = shortKey(c);

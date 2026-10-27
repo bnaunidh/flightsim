@@ -52,11 +52,11 @@ function ok(name, pass, detail = '') {
   const I = await load('src/flight/input.js');
   await load('src/features/pilot-systems.js'); // registers the lights, spoilers, reversers and radio keys
   I.setMacKeyboard(false);
-  ok('keys: off a Mac, the names are the keys\' own', I.shortKey('End') === 'End' && I.shortKey('PageUp') === 'PageUp' && I.keyName('atcRequest') === 'Insert' && I.keyName('hudMode') === 'Delete', `${I.shortKey('End')} ${I.keyName('atcRequest')}`);
+  ok('keys: off a Mac, the names are the keys\' own', I.shortKey('End') === 'End' && I.shortKey('PageUp') === 'PageUp' && I.keyName('atcRequest') === 'F8' && I.keyName('hudMode') === 'Delete', `${I.shortKey('End')} ${I.keyName('atcRequest')}`);
   I.setMacKeyboard(true);
   ok('keys: on a Mac, Page Up / Down, Home, End and Delete are named the fn way a MacBook reaches them', I.shortKey('PageUp') === 'fn ↑' && I.shortKey('PageDown') === 'fn ↓' && I.shortKey('Home') === 'fn ←' && I.shortKey('End') === 'fn →' && I.shortKey('Delete') === 'fn ⌫',
     ['PageUp', 'PageDown', 'Home', 'End', 'Delete'].map((c) => I.shortKey(c)).join(' '));
-  ok('keys: on a Mac the radio is named by F8, not Insert (a Mac has no Insert key)', I.keyName('atcRequest') === 'F8' && !/Insert/.test(I.kbd('atcRequest', null, true)), `${I.keyName('atcRequest')} / ${I.kbd('atcRequest', null, true)}`);
+  ok('keys: on a Mac the radio is named by fn F8, not Insert (a Mac has no Insert key; F8 alone is Play/Pause)', I.keyName('atcRequest') === 'fn F8' && !/Insert/.test(I.kbd('atcRequest', null, true)), `${I.keyName('atcRequest')} / ${I.kbd('atcRequest', null, true)}`);
   ok('keys: on a Mac the reversers, spoilers and lights read fn →, fn ↓, fn ↑', I.keyName('reversers') === 'fn →' && I.keyName('spoilers') === 'fn ↓' && I.keyName('lights') === 'fn ↑');
   ok('keys: an action bound ONLY to Insert still names it (nothing to fall back on)', I.keyName('atcRequest', { input: { bindings: { atcRequest: ['Insert'] } } }) === 'Insert');
   ok('keys: the Settings list names them the Mac way too', I.keyLabel('End') === 'fn →' && I.keyLabel('KeyG') === 'G');

@@ -74,6 +74,8 @@ export class HudStack {
     this.roomPx = 0;
     this.rects = new Map();
     this.dirty = true;
+    /** True while the minimap has stepped aside for the warnings and the answers (yieldMap). */
+    this.yielding = false;
     if (typeof document === 'undefined' || !document.createElement) return;
     const el = document.createElement('div');
     el.className = 'hud-rstack';
@@ -107,6 +109,7 @@ export class HudStack {
       : null;
     if (typeof window !== 'undefined' && window.addEventListener) {
       window.addEventListener('resize', () => {
+        this._noGain = null;
         this.roomPx = 0;
         this.touchTop();
         this.dirty = true;
@@ -277,6 +280,104 @@ export class HudStack {
       if (!wait) break;
       this.setWait(wait, true);
     }
+    this.yieldMap(on);
+    this.holdBackKeeps(on);
+  }
+
+  /*
+   * Two cards of answers at once and the column still too short, with the
+   * map already out of the way (or with nothing to gain from it, an upright
+   * phone): the warnings, an event card AND the radio card on a phone ran
+   * 140 px past the column, the radio's buttons under the stick (landscape)
+   * or off the bottom of the screen and under the pads (upright). The lowest
+   * of them (the radio, 1.3, under the event, 1.1) waits, as it did before it
+   * was a `keep` card, until there is room; one card of answers always shows.
+   */
+  holdBackKeeps(on) {
+    for (let k = 0; k < on.length && this.el.scrollHeight > this.room() + 1; k++) {
+      const keeps = on.filter((c) => c.keep && c.prio >= 1 && !c.waiting);
+      if (keeps.length < 2) break;
+      this.setWait(keeps[keeps.length - 1], true);
+    }
+  }
+
+  /*
+   * SPACE IS TIGHT: THE MINIMAP STEPS ASIDE (the owner's call, 2026-10-26).
+   *
+   * On a small screen (a landscape phone, a small Chromebook window) the
+   * cards that never wait — the warnings (PULL UP, ENGINE FIRE) and a card
+   * with answers to tap — can be taller than the column, and they hung over
+   * the minimap, or off the bottom of the screen and over the throttle. While
+   * one of them is showing and they do not fit, the minimap fades out and the
+   * column takes its room (.hud.rs-yield, html.hud-map-yield: styles/main.css
+   * lets the column run down to the dock, and on a landscape phone moves it
+   * into the map's corner, top left). When the warnings and the answers have
+   * gone, or they fit above the map again, the map comes back. A big screen
+   * never gets here: the warnings and the answers fit in its column.
+   */
+  urgentHeight(on) {
+    let h = 0;
+    let n = 0;
+    for (const c of on) {
+      if (c.waiting || !(c.prio < 1 || c.keep)) continue;
+      h += c.el.getBoundingClientRect().height;
+      n++;
+    }
+    return n ? h + 6 * (n - 1) : 0;
+  }
+
+  yieldMap(on) {
+    if (!this.host || !this.host.classList) return;
+    const need = this.urgentHeight(on);
+    if (!this.yielding) {
+      const size = typeof window !== 'undefined' ? `${window.innerWidth}x${window.innerHeight}` : '';
+      if (need > 0 && need > this.room() + 1 && this._noGain !== size) {
+        // Only where the map's room is room the column can use: on an upright
+        // phone the map is in the other corner, and hiding it gains nothing.
+        const before = this.room();
+        this.setYield(true);
+        if (this.room() <= before + 1) {
+          this.setYield(false);
+          this._noGain = size;
+          return;
+        }
+        // The column is taller now: decide the chips again for the new room, in this same task.
+        if (!this._again) {
+          this._again = true;
+          try { this.refresh(); } finally { this._again = false; }
+        }
+      }
+      return;
+    }
+    if (need <= 0) {
+      this.setYield(false);
+      return;
+    }
+    // Still something urgent up: would it fit above the map again? Measured
+    // with the map's room in this same task, so nothing is painted between.
+    // Staying aside is no change, so it leaves `dirty` as it found it: the
+    // off-and-on again marked it dirty, and the column was laid out from
+    // scratch (two forced layouts) every frame instead of four times a second.
+    const wasDirty = this.dirty;
+    this.setYield(false);
+    // Where the band ends over the column's own place (not measured while aside).
+    if (this.host.classList.contains('is-touch')) this.touchTop();
+    const mapRoom = this.room();
+    const fits = this.urgentHeight(on) + 8 < mapRoom;
+    if (!fits) {
+      this.setYield(true);
+      this.dirty = wasDirty;
+    } else this.dirty = true;
+  }
+
+  setYield(v) {
+    v = !!v;
+    if (this.yielding === v) return;
+    this.yielding = v;
+    this.host.classList.toggle('rs-yield', v);
+    if (typeof document !== 'undefined' && document.documentElement) document.documentElement.classList.toggle('hud-map-yield', v);
+    this.roomPx = 0;
+    this.dirty = true;
   }
 
   setChip(c, on) {
@@ -365,6 +466,13 @@ export class HudStack {
       }
       return;
     }
+    // Stood aside (yieldMap) the column is in the map's corner, where the band
+    // is not over it and --rs-dy is not used. Measured there, the band came
+    // out as 0 px, the column went back to the right with it, ON the band
+    // (667x375, PULL UP in the Photo run: warnings at y 12 over the
+    // instruments), and stood aside and back every refresh. Measured only in
+    // the column's own place (yieldMap re-measures before it comes back).
+    if (this.yielding) return;
     const W = window.innerWidth;
     const cs = typeof getComputedStyle === 'function' ? getComputedStyle(this.el) : null;
     const right = cs ? parseFloat(cs.right) || 12 : 12;

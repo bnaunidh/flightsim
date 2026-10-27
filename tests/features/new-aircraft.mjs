@@ -454,7 +454,7 @@ for (const id of IDS) {
       const cls = SP.spawnClassOf(type);
       const r = SP.resolveSpawn(mid, cls, { type, ctx: { layout: lay, traffic: [] } });
       const finite = [r.x, r.y, r.z, r.headingDeg].every(Number.isFinite);
-      const clear = SP.clearReasons({ x: r.x, z: r.z, headingDeg: r.headingDeg, kind: r.kind, span: r.span, agl: r.agl }, { traffic: [] });
+      const clear = SP.clearReasons({ x: r.x, z: r.z, headingDeg: r.headingDeg, kind: r.kind, span: r.span, nose: r.nose, tail: r.tail, agl: r.agl }, { traffic: [] });
       const short = SP.needsLongerRunway(type);
       lines.push(`${id} ${r.kind}${r.fallback ? ' (fallback)' : ''} ${r.label}`);
       ok(`${mid} x ${id}: the airliner class, a finite clear start`, cls === 'airliner' && finite && (r.kind === 'runway' || clear.length === 0), `${r.kind} ${r.label} ${clear.join('; ')}`);

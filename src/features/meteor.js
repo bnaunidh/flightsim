@@ -2031,6 +2031,8 @@ export function updateMeteorMode(sim, dt) {
 export const API = {
   get active() { return S.active; },
   get mode() { return S.mode; },
+  /** A zap mode is running: Z is the zapper's (the radio shares Z and leaves it then: pilot-systems.js). */
+  get zapping() { return !!(S.active && S.cfg && S.cfg.zapper); },
   get stats() { return S.stats; },
   get lastPhoto() { return S.lastPhoto; },
   begin: (cfg, id) => begin(SIM, cfg, id),

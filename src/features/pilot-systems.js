@@ -25,7 +25,7 @@
  *               director's once() so the automatic call does not repeat it.
  */
 import { registerExtension, extLayer } from '../game/extensions.js';
-import { registerActions, isKey, keyName, bindingsVersion } from '../flight/input.js';
+import { registerActions, isKey, keyName, keyNames, bindingsVersion } from '../flight/input.js';
 import { __airportServices } from './airport-services.js';
 import { isOnAnyRunway } from '../world/terrain.js';
 import { RUNWAY } from '../world/airport.js';
@@ -40,7 +40,16 @@ registerActions({
   lights: { label: 'Exterior lights: AUTO / nav+beacon / taxi / all on / all off', group: 'Flying', ctx: AIR, default: ['PageUp'] },
   spoilers: { label: 'Speedbrake lever (in the air) / arm the ground spoilers (on the ground)', group: 'Flying', ctx: ['plane'], default: ['PageDown'] },
   reversers: { label: 'Thrust reversers: idle reverse / MAX / stow (on the ground)', group: 'Flying', ctx: ['plane'], default: ['End'] },
-  atcRequest: { label: 'Radio: request pushback / taxi / take-off / landing', group: 'Missions & events', ctx: AIR, default: ['Insert', 'F8'] },
+  /*
+   * The radio: F8, and Z beside it (w17). A MacBook's F8 is Play/Pause
+   * unless fn is held (the hints say "fn F8" there), and a Chromebook's F8
+   * position is a system key too, so a plain letter opens it everywhere.
+   * Every letter already means something in the cockpit; Z is the Meteor
+   * zapper's, which only listens while a zap mode is running — and then Z
+   * zaps and the radio is F8 (handleKey below). Insert stays for a full
+   * keyboard. Saved keys from before move on (input.js MIGRATIONS v3).
+   */
+  atcRequest: { label: 'Radio: request pushback / taxi / take-off / landing', group: 'Missions & events', ctx: AIR, default: ['F8', 'KeyZ', 'Insert'] },
 });
 
 /** How long the controller takes to answer a request, seconds. */
@@ -175,6 +184,22 @@ function deliver(sim) {
   if (ans.mark) d.said[ans.mark] = true;
 }
 
+/** Is this key the Meteor zapper's right now (a zap mode running, Z on both)? Then it zaps, and the radio leaves it. */
+function zapperHas(sim, code) {
+  const m = sim && sim.meteors;
+  return !!(m && m.zapping && isKey(sim, 'zap', code));
+}
+
+/**
+ * The radio's keys as a hint names them: "F8 or Z" ("fn F8 or Z" on a Mac),
+ * the first two, without Insert on a Mac (it has none) and without the
+ * zapper's key while it is zapping.
+ */
+export function radioKeyName(sim) {
+  const names = keyNames('atcRequest', sim, (c) => !zapperHas(sim, c));
+  return names.length ? names.slice(0, 2).join(' or ') : '—';
+}
+
 /** The ATC key: open the menu; pressed again while it is open, send the request that fits the moment. */
 export function pressRadio(sim) {
   if (!inCockpit(sim)) return null;
@@ -191,7 +216,11 @@ function openRadio(sim) {
   if (!S.ui) return;
   S.radioOpen = true;
   syncRadio(sim, true);
-  joinStack(sim, S.ui.radio, { prio: 1.3, id: 'radio', chip: false });
+  // `keep`: a card of answers to tap, like an event's, is never held back
+  // off screen. On a landscape phone the column had no room for it at all
+  // (Z or the RADIO button opened it, invisibly); now the minimap steps
+  // aside for it there (ui/hud-stack.js yieldMap).
+  joinStack(sim, S.ui.radio, { prio: 1.3, id: 'radio', chip: false, keep: true });
   S.ui.radio.classList.add('is-shown');
 }
 
@@ -229,6 +258,10 @@ const CSS = `
 .ps-note { margin-top: 6px; font-size: 10px; color: var(--text-dim, #9fb2cc); }
 .hud-rstack > .ps-card:not(.is-shown) { display: none !important; }
 @media (max-width: 700px) { .ps-card { width: 150px; } }
+/* An upright phone's column is ~156 px: PUSHBACK and TAXI side by side needed
+   157 px of the card's 134 and ran 12 px past it, off the edge of a 375 px
+   screen. One request a row there. */
+@media (max-width: 440px) { .ps-radio .ps-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-height: 560px) { .ps-card { padding: 6px 8px 7px; } .ps-card .ps-note { display: none; } }
 `;
 
@@ -294,10 +327,11 @@ function buildUi(sim) {
 
 function syncKeys(sim) {
   const ui = S.ui;
-  if (!ui || ui.keysVer === bindingsVersion()) return;
-  ui.keysVer = bindingsVersion();
+  const ver = `${bindingsVersion()}|${sim && sim.meteors && sim.meteors.zapping ? 1 : 0}`;
+  if (!ui || ui.keysVer === ver) return;
+  ui.keysVer = ver;
   ui.lkey.textContent = ui.touch ? 'LIGHTS on the sheet' : keyName('lights', sim);
-  ui.rkey.textContent = ui.touch ? 'RADIO on the sheet' : keyName('atcRequest', sim);
+  ui.rkey.textContent = ui.touch ? 'RADIO on the sheet' : radioKeyName(sim);
 }
 
 function syncLights(sim, force = false) {
@@ -436,7 +470,7 @@ export function handleKey(sim, code, down, e) {
     if (down && !repeat) pressLights(sim);
     return true;
   }
-  if (isKey(sim, 'atcRequest', code)) {
+  if (isKey(sim, 'atcRequest', code) && !zapperHas(sim, code)) {
     if (down && !repeat) pressRadio(sim);
     return true;
   }

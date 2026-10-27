@@ -27,7 +27,8 @@
  *   light     everything else — Trainer, Tourer, Racer, special
  *
  * CLEAR. A point is clear when it is not inside an obstacle box (margin
- * span/2 + 5 m), not on a stand the airport has parked its own aeroplane on,
+ * span/2 + 5 m; on a stand, the aeroplane's own nose-to-tail plan with 5 m
+ * round it: footprintOf), not on a stand the airport has parked its own aeroplane on,
  * not within span/2 + 5 m of any traffic aeroplane, not on a runway (unless
  * it IS the runway fallback), and dry and level for its kind — land, a deck
  * or roof platform, or water at least 3 m deep for the water class.
@@ -288,12 +289,18 @@ export function clearReasons(pt, ctx = {}) {
   // Solid things, with the aircraft's half span and a margin round them, at
   // its own height: a hangar's lintel over the door is above a parked trainer,
   // and a rig's plant module or a hospital's walls end UNDER the pad on top.
+  // On a stand, an obstacle the square catches is asked again against the
+  // aeroplane's own plan (see footprintHits): the square round the middle of
+  // an A380 (45 m each way) reached the floodlight masts at the back of the
+  // apron, ahead of its nose, on every heavy gate at Gateway.
   if (pt.kind !== 'hover') {
     const top = y + 8;
+    const plan = pt.kind === 'stand' ? footprintOf(pt) : null;
     for (let i = 0; i < OBSTACLES.length; i++) {
       const o = OBSTACLES[i];
       if (o.y0 > top || o.y1 <= y + 0.5) continue;
       if (x >= o.x0 - m && x <= o.x1 + m && z >= o.z0 - m && z <= o.z1 + m) {
+        if (plan && !footprintHits(plan, o)) continue;
         out.push(`inside ${o.what || 'an obstacle'} (+${m.toFixed(0)} m)`);
         break;
       }
@@ -318,6 +325,63 @@ export function clearReasons(pt, ctx = {}) {
     }
   }
   return out;
+}
+
+/*
+ * THE PLAN OF A NOSE-IN AEROPLANE. A stand start knows exactly where the
+ * aeroplane is: its heading, and from the type's plan how far the nose is
+ * ahead of the origin and the tail behind it. Its outline from above is then
+ * a rectangle, nose to tail by wingtip to wingtip, which holds every part of
+ * it (the wing, the tailplane, the engines); CLEAR_MARGIN is kept all round.
+ * The square test above is a disc's worth of span round the middle, which
+ * for a long, wide aeroplane reaches well past its nose. Only a stand point
+ * with a nose and a tail is asked this way; everything else keeps the square.
+ */
+export function footprintOf(pt) {
+  if (!pt || !Number.isFinite(pt.headingDeg) || !Number.isFinite(pt.nose) || !Number.isFinite(pt.tail)) return null;
+  const h = pt.headingDeg * D2R;
+  return {
+    x: pt.x, z: pt.z,
+    fx: Math.sin(h), fz: -Math.cos(h),
+    // Along the nose (forward +): from the tail to the nose tip, plus the margin.
+    a0: -pt.tail - CLEAR_MARGIN, a1: -pt.nose + CLEAR_MARGIN,
+    // Across: half the span plus the margin.
+    b: (pt.span || 12) / 2 + CLEAR_MARGIN,
+  };
+}
+
+/** Does an obstacle box (x0..x1, z0..z1) overlap the plan? Separating axes: the box's two and the plan's two. */
+export function footprintHits(p, o) {
+  const rx = -p.fz;
+  const rz = p.fx;
+  // The plan's corners, for the box's axes.
+  let minX = Infinity; let maxX = -Infinity; let minZ = Infinity; let maxZ = -Infinity;
+  for (const a of [p.a0, p.a1]) {
+    for (const b of [-p.b, p.b]) {
+      const cx = p.x + p.fx * a + rx * b;
+      const cz = p.z + p.fz * a + rz * b;
+      if (cx < minX) minX = cx;
+      if (cx > maxX) maxX = cx;
+      if (cz < minZ) minZ = cz;
+      if (cz > maxZ) maxZ = cz;
+    }
+  }
+  if (maxX < o.x0 || minX > o.x1 || maxZ < o.z0 || minZ > o.z1) return false;
+  // The box's corners, for the plan's axes.
+  let a0 = Infinity; let a1 = -Infinity; let b0 = Infinity; let b1 = -Infinity;
+  for (const cx of [o.x0, o.x1]) {
+    for (const cz of [o.z0, o.z1]) {
+      const dx = cx - p.x;
+      const dz = cz - p.z;
+      const a = dx * p.fx + dz * p.fz;
+      const b = dx * rx + dz * rz;
+      if (a < a0) a0 = a;
+      if (a > a1) a1 = a;
+      if (b < b0) b0 = b;
+      if (b > b1) b1 = b;
+    }
+  }
+  return !(a1 < p.a0 || a0 > p.a1 || b1 < -p.b || b0 > p.b);
 }
 
 export function isClear(pt, ctx = {}) {
@@ -542,6 +606,9 @@ function finish(p, size, cls, ref, fallback) {
     padId: p.padId || null,
     handoff: p.handoff || null,
     span: size.span,
+    // The plan along the heading (clearReasons' footprint on a stand).
+    nose: size.nose,
+    tail: size.tail,
     fallback: !!fallback,
   };
 }
@@ -576,7 +643,7 @@ export function resolveSpawn(mapId, cls, opts = {}) {
     const pts = resolveRef(ref, size, ctx);
     const clear = [];
     for (const p of pts) {
-      const reasons = clearReasons({ ...p, span: size.span, length: size.length }, ctx);
+      const reasons = clearReasons({ ...p, span: size.span, length: size.length, nose: size.nose, tail: size.tail }, ctx);
       if (reasons.length) tried.push({ ref, label: p.label, why: reasons.join('; ') });
       else clear.push(p);
     }

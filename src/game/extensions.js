@@ -132,7 +132,7 @@ export function extInstall(sim) {
   const onKey = (down) => (ev) => {
     if (!sim || sim.state !== 'flying') return;
     const t = ev.target;
-    if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
+    if (t && (/^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName) || t.isContentEditable)) return;
     const consumed = each('key', (e) => e.key(sim, ev.code, down, ev));
     if (consumed) {
       ev.preventDefault();

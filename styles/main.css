@@ -416,6 +416,39 @@ html.is-replaying .hud-coach { visibility: hidden; }
 }
 .hud.is-touch .hud-rstack { right: 12px; }
 @media (max-width: 560px) { .hud.is-touch .hud-rstack { right: 6px; } }
+/*
+ * SPACE IS TIGHT (hud-stack.js yieldMap, the owner's call): while the
+ * warnings or a card with answers do not fit, the minimap fades out and the
+ * column takes its room. A big screen never gets the class.
+ *   - Desktop and a small Chromebook window: the column runs down to the dock,
+ *     past where the map was (its floor is the no-map one).
+ *   - A landscape phone: the right-hand column has no room at all between the
+ *     instrument band and the throttle, so it moves into the map's corner, top
+ *     left, above the stick; the Fun chip there steps aside too. The cards
+ *     tighten up a little (the answers side by side, the warnings' hint line
+ *     dropped) so the answers are on screen and clear of every control.
+ */
+#ui > .minimap { transition: opacity 0.25s ease, visibility 0s linear 0s; }
+html.hud-map-yield #ui > .minimap { opacity: 0; visibility: hidden; transition: opacity 0.25s ease, visibility 0s linear 0.25s; }
+.hud.has-minimap.rs-yield:not(.is-touch) { --rs-bottom: 68px; }
+@media (max-height: 460px) {
+  .hud.is-touch.rs-yield { --rs-yield-w: min(var(--rs-w), 192px); --rs-yield-floor: 156px; }
+  .hud.is-touch.rs-yield .hud-rstack {
+    left: 8px; right: auto; top: 6px; transform: none; width: var(--rs-yield-w);
+    max-height: calc(100% - 6px - var(--rs-yield-floor));
+  }
+  .hud.is-touch.rs-yield .rs-room-probe { top: 6px; height: calc(100% - 6px - var(--rs-yield-floor)); }
+  /* The objective steps right of the column (it sat right of the map, at 138 px). */
+  .hud.is-touch.rs-yield .hud-top, .hud.is-touch.has-minimap.rs-yield .hud-top { left: calc(var(--rs-yield-w) + 16px); }
+  html.hud-map-yield .fun-chip.is-touch-fun { opacity: 0; visibility: hidden; pointer-events: none; }
+  /* The bail-out / eject handle sits above the stick, where the column now ends:
+     it moves beside the stick, under the left thumb still, for as long. */
+  html.is-touch-device.hud-map-yield .ej-col { left: 156px; bottom: 12px; }
+  .hud.is-touch.rs-yield .hud-rstack > .wx-panel .wx-foot { display: none; }
+  .hud.is-touch.rs-yield .hud-rstack #fx-ev .fx-card { padding: 8px 10px; }
+  .hud.is-touch.rs-yield .hud-rstack #fx-ev .fx-choices { flex-direction: row; flex-wrap: wrap; margin-top: 6px; }
+  .hud.is-touch.rs-yield .hud-rstack #fx-ev .fx-choice { flex: 1 1 78px; min-width: 0; padding: 6px 8px; gap: 6px; }
+}
 .hud-rstack > * {
   position: relative !important;
   top: auto !important;

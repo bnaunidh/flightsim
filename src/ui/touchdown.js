@@ -15,8 +15,16 @@
  * the player-facing ones from the brief and are a little stricter at the top.
  */
 
+/**
+ * Under this many ft/min the card says "Butter" — and the Butter achievement
+ * unlocks on exactly that (achievements/rules.js isButter; its description
+ * names this number). They used to disagree: the card said Butter under 120
+ * and the achievement wanted under 60.
+ */
+export const BUTTER_FPM = 120;
+
 export const GRADES = [
-  { id: 'butter', word: 'Butter', max: 120, stars: 3, note: 'You barely felt that.' },
+  { id: 'butter', word: 'Butter', max: BUTTER_FPM, stars: 3, note: 'You barely felt that.' },
   { id: 'smooth', word: 'Smooth', max: 240, stars: 2, note: 'Easy and controlled.' },
   { id: 'firm', word: 'Firm', max: 400, stars: 1, note: 'A bump, but perfectly safe.' },
   { id: 'hard', word: 'Hard', max: 600, stars: 0, note: 'Arrive more slowly next time.' },
@@ -28,6 +36,11 @@ export function landingGrade(vsFpm) {
   const rate = Math.abs(Math.round(Number(vsFpm) || 0));
   const g = GRADES.find((k) => rate < k.max) || GRADES[GRADES.length - 1];
   return { ...g, rate };
+}
+
+/** Would the touchdown card call this landing a Butter? (The achievement asks the same.) */
+export function isButter(vsFpm) {
+  return landingGrade(vsFpm).id === 'butter';
 }
 
 /** Three stars as text: lit ones first, the rest dim. */

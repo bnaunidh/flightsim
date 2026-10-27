@@ -82,6 +82,7 @@ import { check as edition } from './edition.browser.js';
 import { check as cams } from './cams.browser.js';
 import { check as tomReady } from './tom-ready.browser.js';
 import { check as shake } from './shake.browser.js';
+import { check as ownerCalls } from './owner-calls.browser.js';
 
 export const CHECKS = [
   { id: 'airport', check: airport },
@@ -210,6 +211,9 @@ export const CHECKS = [
   // The owner's "the harrison shaking is gonna cause someone a seizure": Harrison at 549 kt on uneven
   // frames, the Tower view 44 km out on the World Map — Preview, and the first-run seizure warning (puts the map back).
   { id: 'shake', check: shake },
+  // After tom-ready: the owner's w17 calls — the radio's Z and fn F8, an A380 at a Gateway gate, the
+  // minimap stepping aside on a small screen, Butter (puts the map back).
+  { id: 'owner-calls', check: ownerCalls },
   // Last: it rebinds keys through Settings (and puts the player's back after).
   { id: 'keybinds', check: keybinds },
 ];

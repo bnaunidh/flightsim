@@ -126,7 +126,7 @@ for (const m of maps) {
     const finite = Number.isFinite(r.x) && Number.isFinite(r.y) && Number.isFinite(r.z) && Number.isFinite(r.headingDeg);
     ok(`${name}: resolves to a finite point`, finite, JSON.stringify({ x: r.x, y: r.y, z: r.z, h: r.headingDeg }));
     if (!finite) continue;
-    const reasons = SP.clearReasons({ x: r.x, z: r.z, headingDeg: r.headingDeg, kind: r.kind, span: r.span, stand: null, agl: r.agl }, { traffic: [] });
+    const reasons = SP.clearReasons({ x: r.x, z: r.z, headingDeg: r.headingDeg, kind: r.kind, span: r.span, nose: r.nose, tail: r.tail, stand: null, agl: r.agl }, { traffic: [] });
     ok(`${name}: the point is clear (${r.kind}, ${r.label})`, reasons.length === 0, reasons.join('; '));
     // Within a metre of the surface its kind needs.
     if (r.kind === 'water') {

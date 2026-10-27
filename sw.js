@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v74.4';
+const CACHE_VERSION = 'island-flight-v74.5';
 
 const PRECACHE = [
   './',

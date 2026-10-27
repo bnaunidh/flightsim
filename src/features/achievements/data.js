@@ -17,6 +17,7 @@
 import { UNLOCKS } from '../../game/progression.js';
 import { MAPS } from '../../world/maps.js';
 import { HIDDEN_AIRCRAFT } from '../../core/edition.js';
+import { BUTTER_FPM } from '../../ui/touchdown.js';
 
 /**
  * Free from the first flight — progression.js's own private FREE list,
@@ -51,7 +52,7 @@ function categoryAchievement(id, name, how, hidden = false, tier = 'bronze') {
 export const ACHIEVEMENTS = [
   /* ---- Flying --------------------------------------------------------- */
   { id: 'first-takeoff', name: 'Wheels Up', how: 'Take off for the first time.', glyph: 'wing', group: 'flying', tier: 'bronze' },
-  { id: 'butter-landing', name: 'Butter', how: 'Land at under 60 ft/min — the smoothest kind of landing.', glyph: 'feather', group: 'flying', tier: 'silver' },
+  { id: 'butter-landing', name: 'Butter', how: `Land at under ${BUTTER_FPM} ft/min — what the touchdown card calls a Butter.`, glyph: 'feather', group: 'flying', tier: 'silver' },
   { id: 'crosswind-landing', name: 'Crab Walk', how: 'Land safely on the runway in a strong crosswind.', glyph: 'windsock', group: 'flying', tier: 'silver' },
   { id: 'every-plane', name: 'Hangar Full', how: 'Land every aeroplane you can unlock.', glyph: 'hangar', group: 'flying', tier: 'gold', progress: { key: 'planes', target: ALL_LANDABLE_AIRCRAFT.length } },
   { id: 'every-map', name: 'Island Hopper', how: 'Land on every map in the game.', glyph: 'globe', group: 'flying', tier: 'gold', progress: { key: 'maps', target: ALL_MAP_IDS.length } },
