@@ -8,7 +8,7 @@
  */
 
 import * as THREE from '../vendor/three.module.js';
-import { dim, CAPS } from '../render/flash-safety.js';
+import { dim, CAPS, FLASH } from '../render/flash-safety.js';
 import { HEIGHT_FOG, heightFogDepth } from '../render/height-fog.js';
 
 const vertexShader = /* glsl */ `
@@ -415,7 +415,9 @@ export class SkyDome {
     // Lightning washes the whole sky and the sunlight: the biggest flash in
     // the game, so with Reduce flashing on it is a fraction of the strength.
     const flash = dim(weather.lightningFlash, CAPS.lightning);
-    this.uniforms.uFlash.value = flash;
+    // The dome is most of the frame, and on a dark storm sky even the dimmed
+    // wash swung 31% of the screen past WCAG's 0.10; half of it is 1.5%.
+    this.uniforms.uFlash.value = FLASH.reduce ? flash * 0.5 : flash;
 
     this.sun.color.copy(p.sun);
     // Dimmer through a fog bank, by its veil overhead.

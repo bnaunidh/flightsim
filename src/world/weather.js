@@ -11,7 +11,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { clamp, lerp } from '../core/noise.js';
-import { FLASH } from '../render/flash-safety.js';
+import { FLASH, CAPS, dim } from '../render/flash-safety.js';
 import { WxSystem, newSeed, climateFor, visibilityAt, windWords, visibilityWords, changeWords, VIS_OD } from './wx.js';
 
 export const TIMES = {
@@ -709,7 +709,7 @@ export class Weather {
     o.warmth = lerp(warmth, this.isNight ? -0.2 : -0.3, k);
     o.contrast = lerp(contrast, 0.95, k);
     o.saturation = lerp(saturation, 0.85, k);
-    o.bloom = bloom * (1 + this.lightningFlash * 0.5);
+    o.bloom = bloom * (1 + dim(this.lightningFlash, CAPS.lightning) * 0.5);
     o.threshold = threshold;
     o.knee = 0.25;
     return o;
