@@ -69,6 +69,7 @@ import { ChuteFlight, ChuteModel } from './eject/chute.js';
 import { DRAG_CHUTE, CHUTE_DEFAULT_KEY, applyChute, chuteBlocker, chuteWords, DragChuteModel } from './eject/dragchute.js';
 import { keyLabel } from '../flight/input.js';
 import * as UI from './eject/ui.js';
+import { isHiddenAircraft } from '../core/edition.js';
 
 const KT = 1.94384;
 const D2R = Math.PI / 180;
@@ -737,7 +738,10 @@ export function cannotSelfDestruct(sim) {
   const prof = profileFor(sim.aircraftType);
   if (!prof.selfDestruct && prof.ends) return 'Harrison is a person, not a plane — people don’t have a self-destruct!';
   if (!prof.selfDestruct) {
-    return 'This plane has no self-destruct — only the special ones do: the B-2, F-22, F-35B and Air Massimo.';
+    // (No Air Massimo on the thankdapro copy, core/edition.js.)
+    return isHiddenAircraft('massimo')
+      ? 'This plane has no self-destruct — only the special ones do: the B-2, F-22 and F-35B.'
+      : 'This plane has no self-destruct — only the special ones do: the B-2, F-22, F-35B and Air Massimo.';
   }
   const ac = sim.aircraft;
   if (ac.crashed) return 'Too late for that';

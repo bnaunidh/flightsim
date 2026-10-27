@@ -87,6 +87,22 @@ export function fieldPlan(a) {
   return { paved, buildings, tanks, carPark: lay.carPark ? { kind: 'carpark', ...lay.carPark } : null, sock };
 }
 
+/**
+ * Where the Tower view stands at field `a`, in the world: on the runway side
+ * of its tower's cab, just outside the glass (buildField draws the cab
+ * 3.5 m wider than the shaft), at the cab's height. Null for a field with no
+ * tower. camera.js CameraRig.towers; features/world-preview.js sets them.
+ */
+export function towerLens(a) {
+  const t = a && a.layout && a.layout.tower;
+  if (!t) return null;
+  const h = t.h || 20;
+  const cx = (t.x0 + t.x1) / 2;
+  const cz = (t.z0 + t.z1) / 2;
+  const out = (t.z1 - t.z0) / 2 + 4;
+  return { x: a.x + cx, y: a.elev + h + 1.5, z: a.z + cz + (cz < 0 ? out : -out), code: a.code };
+}
+
 /** One field, in a group at its runway centre. */
 export function buildField(a, quality = 'medium') {
   const g = new THREE.Group();

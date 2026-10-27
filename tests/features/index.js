@@ -78,8 +78,10 @@ import { check as landingZone } from './landing-zone.browser.js';
 import { check as hudStack } from './hud-stack.browser.js';
 import { check as hudWins } from './hud-wins.browser.js';
 import { check as touchCoverage } from './touch-coverage.browser.js';
+import { check as edition } from './edition.browser.js';
 import { check as cams } from './cams.browser.js';
 import { check as tomReady } from './tom-ready.browser.js';
+import { check as shake } from './shake.browser.js';
 
 export const CHECKS = [
   { id: 'airport', check: airport },
@@ -190,6 +192,8 @@ export const CHECKS = [
   // destination ribbon and beacon, the conditions chip and Full / Clean / Photo.
   { id: 'hud-wins', check: hudWins },
   { id: 'touch-coverage', check: touchCoverage },
+  // The two editions (core/edition.js): on thankdapro no screen shows T-Pose Harrison or Air Massimo; elsewhere both are there.
+  { id: 'edition', check: edition },
   // After everything that flies: KIT-B — where a Free Flight starts (the picker), the ambient
   // population and the emergency scene, on Gateway and The Big Burn.
   { id: 'maps-kit-b', check: mapsKitB },
@@ -203,6 +207,9 @@ export const CHECKS = [
   { id: 'controllers', check: controllers },
   // After controllers: the Tom-ready pass — an A321 at Gateway's gate, the crew, the push, the brakes, the replay (puts the map back).
   { id: 'tom-ready', check: tomReady },
+  // The owner's "the harrison shaking is gonna cause someone a seizure": Harrison at 549 kt on uneven
+  // frames, the Tower view 44 km out on the World Map — Preview, and the first-run seizure warning (puts the map back).
+  { id: 'shake', check: shake },
   // Last: it rebinds keys through Settings (and puts the player's back after).
   { id: 'keybinds', check: keybinds },
 ];

@@ -27,6 +27,7 @@
  */
 
 import * as THREE from '../../vendor/three.module.js';
+import { HIDDEN_AIRCRAFT } from '../../core/edition.js';
 
 export const DRAG_CHUTE = {
   CDA_PER_KG: 30 / 5200, // m² of drag area per kg of aeroplane
@@ -72,7 +73,10 @@ export function chuteBlocker(st) {
 export function chuteWords(why, key = '') {
   switch (why) {
     case 'none':
-      return 'No drag chute on this plane — only Air Massimo and T-Pose Harrison carry one.';
+      // (Neither of the two is on the thankdapro copy, core/edition.js, so there it does not name them.)
+      return HIDDEN_AIRCRAFT.has('massimo') && HIDDEN_AIRCRAFT.has('tpose')
+        ? 'No drag chute on this plane.'
+        : 'No drag chute on this plane — only Air Massimo and T-Pose Harrison carry one.';
     case 'air':
       return `The drag chute is for the landing roll — touch down first${key ? `, then press ${key}` : ''}.`;
     case 'slow':

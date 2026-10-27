@@ -19,6 +19,7 @@
 
 import { clamp, lerp } from '../core/noise.js';
 import { Controllers } from './controllers.js';
+import { HIDDEN_AIRCRAFT } from '../core/edition.js';
 
 /*
  * The games a key can belong to. Two actions may share a key when they never
@@ -163,6 +164,12 @@ export const ACTIONS = {
   carRight: { label: 'Steer right', group: 'Car', ctx: ['car'], default: ['KeyD', 'ArrowRight'] },
   carHandbrake: { label: 'Handbrake', group: 'Car', ctx: ['car'], default: ['Space'] },
 };
+/*
+ * Only Air Massimo and T-Pose Harrison carry a drag chute. On a copy with
+ * neither (core/edition.js: thankdapro) nothing has one, so its key is not
+ * in Settings either (features/eject.js copes with the action being absent).
+ */
+if (HIDDEN_AIRCRAFT.has('massimo') && HIDDEN_AIRCRAFT.has('tpose')) delete ACTIONS.dragChute;
 /** The actions declared above, which the game's own loop reads (as against a feature's). */
 for (const k in ACTIONS) ACTIONS[k].core = true;
 

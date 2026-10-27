@@ -14,6 +14,8 @@
  * you can feel is worth more than a number that goes up.
  */
 
+import { HIDDEN_AIRCRAFT } from '../core/edition.js';
+
 const KEY = 'islandsim.progression.v1';
 
 /**
@@ -58,7 +60,8 @@ export const UNLOCKS = [
   { aircraft: 'ah64', cost: 3000, why: 'The gun follows the sight', military: true },
   // Marine One: bought like the President's 747 (b747 above), no passcode.
   { aircraft: 'vh3d', cost: 1500, why: 'The President\'s helicopter' },
-];
+// Not in the shop on a copy without them (core/edition.js: Air Massimo on thankdapro); every row elsewhere.
+].filter((u) => !HIDDEN_AIRCRAFT.has(u.aircraft));
 
 /*
  * Yours from the start.

@@ -58,6 +58,7 @@ import { floorAt, groundAt, solidAt, WALK } from './staff/walk.js';
 import { heightAt } from '../world/terrain.js';
 import { planeProfile } from './staff/jobs.js';
 import * as TYPES from '../aircraft/types.js';
+import { isHiddenAircraft, STAND_IN } from '../core/edition.js';
 import { Ragdoll, GetUp, cleanRig, groundWorld } from './ragdoll.js';
 import { showWasted, wasted, endWasted, WASTED } from './wasted.js';
 import * as FootUI from './staff/ui.js';
@@ -150,6 +151,8 @@ function blank() {
 const profiles = new Map();
 /** An aeroplane type's measured profile, once per type (the walker's own solids use the same). */
 export function profileOf(typeId) {
+  // A remote on the other site in one this copy hides (core/edition.js) is drawn as the stand-in: hit like one.
+  if (isHiddenAircraft(typeId)) typeId = STAND_IN;
   let p = profiles.get(typeId);
   if (p === undefined) {
     const t = (TYPES.AIRCRAFT || []).find((a) => a && a.id === typeId) || null;
@@ -160,6 +163,7 @@ export function profileOf(typeId) {
 }
 
 function typeName(typeId) {
+  if (isHiddenAircraft(typeId)) typeId = STAND_IN;
   const t = (TYPES.AIRCRAFT || []).find((a) => a && a.id === typeId);
   return t ? t.name : 'aeroplane';
 }

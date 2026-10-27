@@ -37,7 +37,8 @@ import { Apron, refreshApronElevation } from './world/apron.js';
 import { CloudField } from './world/clouds.js';
 import { Rain } from './world/precip.js';
 
-import { Aircraft, EVENTS, UNITS, SPEC, applyAircraft } from './aircraft/physics.js';
+import { Aircraft, EVENTS, UNITS, SPEC, applyAircraft, frameSteps } from './aircraft/physics.js';
+import { showSafetyIntro, shouldShowAtBoot } from './ui/safety-intro.js';
 import { getAircraft, specFor, isHelicopter } from './aircraft/types.js';
 import { createAircraftModel, syncAircraftModel, crashAircraftModel, clampSinking, eyeFor, groundOffsetFor, setFleetModels } from './aircraft/model-adapter.js';
 import { realModelInterior, setRealModelCamera, setRealModels } from './aircraft/real-models.js';
@@ -412,6 +413,8 @@ class Game {
       startMission: (id) => this.startAnyMission(id),
       startFree: (opts) => this.startMode('free', opts),
       onSetting: (path, value) => this.applySetting(path, value),
+      // Settings → Accessibility: the seizure warning again (ui/safety-intro.js).
+      showSafetyIntro: () => this.showSafetyIntro({ skipIntro: true }),
       onPauseAction: (a) => this.pauseAction(a),
       onTrigger: (kind) => this.toggleFailure(kind),
       onNatural: (id) => this.triggerNatural(id),
@@ -674,10 +677,28 @@ class Game {
     this.loop();
 
     console.info(`[island-flight] build ${BUILD}`);
+    // First launch: the intro and the photosensitive seizure warning (ui/safety-intro.js).
+    if (shouldShowAtBoot()) this.showSafetyIntro();
     this.checkForStuckOverlays();
     // Small headless API so the flight model can be driven in tests.
     window.__sim = this;
     window.__build = BUILD;
+  }
+
+  /**
+   * The intro and the photosensitive seizure warning (ui/safety-intro.js):
+   * its two switches are the game's own settings, applied as they change and
+   * shown on the Settings page too. Resolves when Continue is pressed.
+   */
+  showSafetyIntro(opts = {}) {
+    return showSafetyIntro({
+      ...opts,
+      settings: this.settings,
+      apply: (path, value) => {
+        this.applySetting(path, value);
+        if (this.menus && this.menus.syncSettings) this.menus.syncSettings(this.settings);
+      },
+    });
   }
 
   /**
@@ -5073,11 +5094,14 @@ class Game {
     this.weather.update(dt);
 
     if (this.state === 'flying') {
-      // Fixed-step physics for consistent behaviour on any refresh rate.
-      const STEP = 1 / 120;
-      this.acc += Math.min(dt, 0.1);
-      let steps = 0;
-      while (this.acc >= STEP && steps < 12) {
+      // The flight model in equal steps of at most 1/120 s that add up to
+      // exactly this frame (physics.js frameSteps): the same behaviour on
+      // any refresh rate, and the aeroplane moves as far as the camera does.
+      // A whole-step accumulator moved it 1, 2 or 3 steps a frame: at 549 kt
+      // T-Pose Harrison jumped 2.3 m in front of a lens 6 m behind him.
+      const { n: nSteps, h: STEP } = frameSteps(dt);
+      this.acc = 0;
+      for (let steps = 0; steps < nSteps; steps++) {
         ac.update(STEP, this.weather);
         /*
          * Hover assist trim follow-up. The flight model asks, the input layer
@@ -5089,8 +5113,6 @@ class Game {
         if (ac.rotor && ac.rotor.trimRequest && !this.autopilot.engaged) {
           this.input.nudgeThrottle(ac.rotor.trimRequest * STEP);
         }
-        this.acc -= STEP;
-        steps++;
       }
       this.updateBrace(dt);
       // The engine key's "press again" window (pressStarter), in game time.
@@ -5466,12 +5488,36 @@ class Game {
    * Auto quality probe all come through here; the hangar's podium does not.
    */
   renderFrame() {
+    this.keepBackdropRoundLens();
     const post = this.post;
     if (post && post.enabled) {
       if (this.weather) post.setLook(this.weather.look());
       post.render(this.scene, this.camera);
     } else {
       this.renderer.render(this.scene, this.camera);
+    }
+  }
+
+  /**
+   * The sky dome (30 km) and the sea (56 km square) follow the aeroplane
+   * (sky.followTarget, ocean.follow). A lens far from it — the Tower view on
+   * the World Map — Preview, 44 km away, in the owner's 2026-10-26 screenshot
+   * — stood outside both: a BLACK sky, no sea. Wherever the camera is, each is
+   * moved under it once it is more than half way to its edge; a lens near
+   * the aeroplane (every normal view) never moves either.
+   */
+  keepBackdropRoundLens() {
+    const c = this.camera && this.camera.position;
+    if (!c) return;
+    const dome = this.sky && this.sky.mesh;
+    if (dome) {
+      const R = dome.scale.x || 30000;
+      if (Math.hypot(c.x - dome.position.x, c.z - dome.position.z) > R * 0.5) dome.position.set(c.x, 0, c.z);
+    }
+    const sea = this.ocean && this.ocean.deep;
+    if (sea && sea.geometry && sea.geometry.parameters) {
+      const half = (sea.geometry.parameters.width || 56000) / 2;
+      if (Math.max(Math.abs(c.x - sea.position.x), Math.abs(c.z - sea.position.z)) > half * 0.5) this.ocean.follow(c);
     }
   }
 

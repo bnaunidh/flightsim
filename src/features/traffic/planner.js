@@ -193,6 +193,7 @@ export function perfFor(type) {
  */
 const WANT = {
   // Ironhead is an air base: fast jets and the things that support them.
+  // (Air Massimo is not in the roster on the thankdapro copy, core/edition.js, so it is skipped there like any absent id.)
   military: ['f22', 'fa18', 'f35b', 'vanguard', 'osprey', 'massimo', 'nightjar', 'tempest'],
   // Three-kilometre runways: the airliners, with the odd light aeroplane.
   big: ['a320', 'b747', 'a380', 'meridian', 'tempest', 'courier'],

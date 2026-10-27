@@ -86,6 +86,20 @@ export const SCREEN_MAX = 0.12;
  */
 export const SHAKE_RATE = 0.3;
 
+/**
+ * The CONTINUOUS shake (the engine, the airframe's buffet, the transonic
+ * buffet, rolling on the ground) — with the switch on or off, in every view:
+ * an angle of view, never more than SHAKE_CAP_DEG, on sines of at most
+ * SHAKE_MAX_HZ. It used to be centimetres at 3-10 Hz whatever the lens's
+ * distance, so the closer the camera the bigger the angle (the owner,
+ * 2026-10-26, T-Pose Harrison at 549 kt: "the harrison shaking is gonna cause
+ * someone a seizure"). 0.15 degrees is about two pixels on a laptop.
+ * Knocks (a hard landing, a bang) may go over it for their half second, and
+ * still slow down under SHAKE_RATE with the switch on.
+ */
+export const SHAKE_CAP_DEG = 0.15;
+export const SHAKE_MAX_HZ = 3;
+
 /** The shake's clock: `t`, slowed with the switch on. */
 export function shakeClock(t) {
   return FLASH.reduce ? t * SHAKE_RATE : t;

@@ -59,6 +59,7 @@ import { heightAt } from '../world/terrain.js';
 import { createAircraftModel, syncAircraftModel, groundOffsetFor } from '../aircraft/model-adapter.js';
 import { getAircraft, specFor, isHelicopter } from '../aircraft/types.js';
 import { schemeFor } from '../aircraft/liveries.js';
+import { isHiddenAircraft, STAND_IN } from '../core/edition.js';
 import * as Prog from '../game/progression.js';
 import { clearTraffic, spawnTraffic } from './traffic.js';
 import { registerBody, unregisterBody, radiusOfType } from './sky.js';
@@ -679,8 +680,10 @@ ch.on('world:traffic', (d, from) => {
   W.stats.trafficIn++;
   const t = now();
   const seen = new Set();
-  for (const [id, type, x, y, z, h, v, vs, f] of d.a) {
+  for (const [id, sent, x, y, z, h, v, vs, f] of d.a) {
     seen.add(id);
+    // A host on the other site can have a type this copy does not (core/edition.js): drawn as the stand-in jet.
+    const type = isHiddenAircraft(sent) ? STAND_IN : sent;
     let m = W.mirror.get(id);
     if (!m) {
       m = { id, type, model: null, failed: false, x, y, z, h, v, vs, f, dx: x, dy: y, dz: z, dh: h, at: t, bank: 0, lastH: h, pos: new THREE.Vector3(x, y, z), body: null };

@@ -195,6 +195,37 @@ export function applyAircraft(id) {
   return TYPE;
 }
 
+/** True airspeed, m/s (250 kt), above which the hands-off height hold eases off (see the pitch leveller). */
+export const LEVEL_TAS = 129;
+
+/** The flight model's longest step, seconds (main.js steps it in pieces no longer than this). */
+export const PHYSICS_STEP = 1 / 120;
+/** The most pieces one frame is cut into (a frame is never stepped over 0.1 s). */
+export const MAX_STEPS = 12;
+
+/**
+ * How to step the flight model across one frame of `dt` seconds: `n` equal
+ * steps of `h`, so that the aeroplane always moves exactly as far as the
+ * frame's time — and the camera, which moves by `dt`, keeps up with it.
+ *
+ * The owner, 2026-10-26: "really shaky at this speed … the harrison shaking
+ * is gonna cause someone a seizure". The flight model used to be stepped a
+ * whole 1/120 s at a time out of an accumulator, so a frame moved the
+ * aeroplane by 1, 2 or 3 steps (rAF's dt is never exactly 2/120 s) while the
+ * follow camera moved by dt. At 549 kt a step is 2.3 m: T-Pose Harrison, 6 m
+ * in front of the lens, grew and shrank by 19-39% and jumped up to 13 degrees
+ * across the picture several times a second (tests/features/shake.mjs, 60, 120
+ * and 144 Hz). Cut into equal pieces of at most PHYSICS_STEP the aeroplane
+ * moves by dt every frame: 0.3%. A 1/60 or 1/30 s frame is still 2 or 4
+ * steps of exactly 1/120 s, as before.
+ */
+export function frameSteps(dt) {
+  const d = Math.min(Math.max(0, dt || 0), MAX_STEPS * PHYSICS_STEP);
+  if (!(d > 0)) return { n: 0, h: 0 };
+  const n = Math.min(MAX_STEPS, Math.max(1, Math.ceil(d / PHYSICS_STEP - 1e-9)));
+  return { n, h: d / n };
+}
+
 export const EVENTS = {
   TOUCHDOWN: 'touchdown',
   LIFTOFF: 'liftoff',
@@ -1197,8 +1228,22 @@ export class Aircraft {
             const wingAcc = Math.max(0.05, (0.5 * this.density * V * V * SPEC.wingArea * SPEC.chord * Math.abs(SPEC.Cmde)) / SPEC.Iyy);
             pitchAuth = wingAcc / (wingAcc + rotorAcc);
           }
+          /*
+           * ...and the height term eased off above LEVEL_TAS (true airspeed). A
+           * vertical speed is the true speed times the climb angle, and the
+           * elevator's bite grows with the dynamic pressure, so at a fixed
+           * gain the loop grew as TAS x q: hands off in the simplified mode
+           * (the default), measured over 12 s, Concorde at 350 kt and 11 km
+           * porpoised +/-5 degrees and diverged to +/-50 at 0.6 Hz, the F/A-18
+           * +/-17, the Nightjar +/-14, the F-22 and Harrison +/-4 at 550 kt
+           * (tests/features/shake.mjs). (LEVEL_TAS / TAS)^2 holds them all
+           * under 0.2 degrees, and at 250 kt true or slower — every take-off,
+           * approach and low cruise — the leveller is exactly as it was. The
+           * pitch-rate term is the damping and stays whole.
+           */
+          const kv = V > LEVEL_TAS ? (LEVEL_TAS / V) ** 2 : 1;
           elevator = clamp(
-            elevator - (this.vs * 0.085 + this.omega.x * 0.38) * pitchAuth * wingShare,
+            elevator - (this.vs * 0.085 * kv + this.omega.x * 0.38) * pitchAuth * wingShare,
             -1,
             1
           );

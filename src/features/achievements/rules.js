@@ -12,7 +12,7 @@
  * startMode) — see index.js for where each payload comes from.
  */
 
-import { ACHIEVEMENTS, ALL_LANDABLE_AIRCRAFT, ALL_MAP_IDS } from './data.js';
+import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID, ALL_LANDABLE_AIRCRAFT, ALL_MAP_IDS } from './data.js';
 
 const GOLD_SCORE = 90;
 const FIVE_GOLDS = 5;
@@ -59,8 +59,9 @@ export function applyEvent(store, type, payload = {}) {
   switch (type) {
     case 'liftoff': {
       unlock(store, 'first-takeoff', out);
-      if (payload.aircraft === 'tpose') unlock(store, 'tpose-up', out);
-      if (payload.aircraft === 'massimo' && Number(payload.speedKts) >= 140) unlock(store, 'massimo-fast', out);
+      // (Neither id is in the catalogue on the thankdapro copy, core/edition.js; ACHIEVEMENTS_BY_ID says so.)
+      if (payload.aircraft === 'tpose' && ACHIEVEMENTS_BY_ID.has('tpose-up')) unlock(store, 'tpose-up', out);
+      if (payload.aircraft === 'massimo' && ACHIEVEMENTS_BY_ID.has('massimo-fast') && Number(payload.speedKts) >= 140) unlock(store, 'massimo-fast', out);
       break;
     }
 

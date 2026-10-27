@@ -26,6 +26,7 @@
 import * as THREE from '../../vendor/three.module.js';
 import { createAircraftModel, syncAircraftModel, groundOffsetFor } from '../../aircraft/model-adapter.js';
 import { getAircraft, specFor } from '../../aircraft/types.js';
+import { isHiddenAircraft, STAND_IN } from '../../core/edition.js';
 import { findLivery, schemeFor } from '../../aircraft/liveries.js';
 import { createBoat, createCar, updateVehicleModel } from '../../vehicles/models.js';
 import { VEHICLES } from '../../vehicles/surface.js';
@@ -723,7 +724,9 @@ export class Remotes {
 
   _ensureModel(p, snap, sim) {
     const kind = snap.game === 'boat' || snap.game === 'car' ? snap.game : 'air';
-    const type = kind === 'air' ? (snap.type || 'skylark') : kind;
+    let type = kind === 'air' ? (snap.type || 'skylark') : kind;
+    // Somebody on the other site in an aeroplane this copy does not have (core/edition.js): a jet, not a crash or a Skylark at 900 km/h.
+    if (kind === 'air' && isHiddenAircraft(type)) type = STAND_IN;
     // The paint they fly in: the 'skin:paint' event (mpskin.js) first, else the host's shared looks (mplook.js).
     let paint = kind === 'air' ? this.paints.get(p.id) || '' : '';
     if (!paint && kind === 'air') {

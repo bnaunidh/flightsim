@@ -67,6 +67,31 @@ const KTS = 1.94384;
 const _heliOut = { pitch: 0, roll: 0, yaw: 0, throttle: 0 };
 const _heliWant = { vs: 0, hdg: null, speed: 0, hover: false, x: null, z: null, reset: false };
 
+/**
+ * The pitch and roll loops' gain at speed: 1 up to AP_GAIN_REF x this aeroplane's
+ * clean stall speed, then (ref / IAS)^2 — the elevator's bite grows with the
+ * dynamic pressure, so the same loop gain at every speed.
+ *
+ * The owner, 2026-10-26, T-Pose Harrison at 549 kt ("really shaky at this
+ * speed"). Hands off, the flight model is steady at 500+ kt (no hunting:
+ * tests/features/shake.mjs). The autopilot was not: its gains were the
+ * trainer's at any speed, so above ~150 kt in an airliner and at any speed in
+ * a fighter the elevator went from stop to stop and the nose porpoised —
+ * measured in the game, the A320 at 250 kt +/-12-19 degrees at 0.7 Hz, the
+ * fighters and Harrison +/-8-18 degrees at up to 2.9 Hz, and the roll loop rocked
+ * the fighters' wings +/-6-23 degrees at 180-549 kt.
+ */
+export const AP_GAIN_REF = 1.3;
+export function apGain(iasMs, spec = SPEC, tasMs = iasMs) {
+  if (!spec || !(spec.mass > 0) || !(spec.wingArea > 0)) return 1;
+  const clMax = Math.max(0.6, (spec.CL0 || 0) + (spec.CLa || 5) * (spec.alphaStall || 0.26));
+  const vs = Math.sqrt((2 * spec.mass * 9.81) / (1.225 * spec.wingArea * clMax));
+  const ref = AP_GAIN_REF * vs;
+  // IAS x TAS for the height loop: a vertical speed is the TRUE speed times the climb angle.
+  const v2 = Math.max(0, iasMs || 0) * Math.max(0, tasMs || 0);
+  return v2 > ref * ref ? clamp((ref * ref) / v2, 0.02, 1) : 1;
+}
+
 export class Autopilot {
   constructor() {
     this.engaged = false;
@@ -89,6 +114,7 @@ export class Autopilot {
     this.holdHeadingDeg = null;
     this.mode = 'hold';
     this._iAlt = 0;
+    this._iBank = 0;
     this._iSpd = 0;
     /** Set when a mode has finished its job and given the aeroplane back. */
     this.handedBack = null;
@@ -297,6 +323,8 @@ export class Autopilot {
       this.selectedSpeedKts = this.targetSpeedKts;
       this.holdHeadingDeg = r.heading;
       this._iAlt = 0;
+      this._iBank = 0;
+    this._iBank = 0;
       this._iSpd = 0;
     }
     this.engaged = on;
@@ -358,7 +386,14 @@ export class Autopilot {
     // A 25 degree bank is a comfortable rate-one turn in this aeroplane.
     const wantBankDeg = clamp(hdgErr * 0.8, -25, 25);
     const bankNowDeg = (ac.bankAngleRad() * 180) / Math.PI;
-    const roll = clamp((wantBankDeg - bankNowDeg) * 0.055 - ac.omega.z * 0.55, -0.7, 0.7);
+    // At speed, the same loop gain as slow (apGain): unscheduled, it rocked the fighters'
+    // wings +/-6-23 degrees at 180-549 kt (tests/features/shake.mjs).
+    const kr = apGain(r.iasKts / KTS);
+    // ...and a slow trim on the bank error, or the scheduled loop is too weak to hold a bank
+    // against the wing's own wish to level: an A320 at 250 kt stalled at 164 of a 180 turn.
+    const bankErr = wantBankDeg - bankNowDeg;
+    this._iBank = clamp((this._iBank || 0) + bankErr * 0.02 * kr * dt, -0.2, 0.2);
+    const roll = clamp((bankErr * 0.055 - ac.omega.z * 0.55) * kr + this._iBank, -0.7, 0.7);
 
     /* ---- Pitch: hold height, but never fly into the ground ---- */
     let wantAlt = this.targetAltFt;
@@ -399,7 +434,10 @@ export class Autopilot {
     this._iAlt = clamp(this._iAlt + vsErr * dt * 0.35, -0.35, 0.35);
     // Steeper banks need back pressure or the nose drops through the turn.
     const bankLoad = Math.abs(bankNowDeg) / 25;
-    let pitch = clamp(vsErr * 1.35 + this._iAlt - ac.omega.x * 0.5 + bankLoad * 0.06, -0.75, 0.85);
+    // At speed: the height loop scheduled (apGain, on IAS x TAS: high up, by IAS alone, Concorde
+    // still porpoised half a degree), the pitch-rate damper kept whole.
+    const kq = apGain(r.iasKts / KTS, SPEC, ac.airspeed);
+    let pitch = clamp((vsErr * 1.35 + this._iAlt + bankLoad * 0.06) * kq - ac.omega.x * 0.5, -0.75, 0.85);
 
     // Stall guard: whatever else is going on, do not pull into a stall.
     if (r.iasKts < 58) pitch = Math.min(pitch, 0.05);

@@ -22,6 +22,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { extraAircraft } from './extra/index.js';
 import { hasReversers, hasSpoilers } from './systems.js';
+import { HIDDEN_AIRCRAFT } from '../core/edition.js';
 
 /**
  * The trainer's aero numbers, which every other aeroplane is described as a
@@ -953,7 +954,13 @@ export const AIRCRAFT = [
  * into the array above so that adding an aeroplane is a new file, not an
  * edit to this one.
  */
-AIRCRAFT.push(...extraAircraft({ TRAINER_SHAPE, TRAINER_AERO }));
+AIRCRAFT.push(...extraAircraft({ TRAINER_SHAPE, TRAINER_AERO }).filter((t) => !HIDDEN_AIRCRAFT.has(t.id)));
+/*
+ * (The filter: the thankdapro copy of the game has no T-Pose Harrison and no
+ * Air Massimo — core/edition.js. Leaving them out of the roster itself takes
+ * them out of the hangar, the picker, the traffic and every list built from
+ * this one; elsewhere HIDDEN_AIRCRAFT is empty and nothing changes.)
+ */
 
 export const DEFAULT_AIRCRAFT_ID = 'skylark';
 
@@ -967,6 +974,8 @@ export function isHelicopter(type) {
 export function getAircraft(id) {
   const found = AIRCRAFT.find((a) => a.id === id);
   if (found) return found;
+  // Hidden on this copy (core/edition.js): a saved pick of one is the trainer, quietly — it is expected, not a bug.
+  if (HIDDEN_AIRCRAFT.has(id)) return AIRCRAFT[0];
   /*
    * Falling back to the trainer is right for a stale saved setting, but it
    * must not be silent. A mission asking for an aeroplane that does not exist

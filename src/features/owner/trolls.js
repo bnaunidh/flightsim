@@ -56,6 +56,7 @@ import { paintPink, scaleModel, harrisonFor, poseHarrison, DuckShower, forgetHar
 import { hostMayTroll, amStaffInGame, mayTroll, myRole, playerOf, rosterRole, byWho, placeOf, nameOf, isId, now, showTag, clearTag, dropTag, tickTag, injectOwnerStyle, tellWait, OWNER_GOLD } from './common.js';
 import { disasterMenu } from './disasters.js';
 import { armTeleport } from './teleport.js';
+import { isHiddenAircraft } from '../../core/edition.js';
 
 /** The trolls, in the order the menu shows them. `secs`: how long each lasts (0: a moment). */
 export const TROLLS = Object.freeze([
@@ -175,6 +176,8 @@ function arrive(d) {
   const troll = TROLLS[d.k];
   if (!troll) return;
   A.stats.in++;
+  // Sent from the other site, where he exists: nothing here to draw, so nothing to say (core/edition.js).
+  if (troll.id === 'harrison' && isHiddenAircraft('tpose')) return;
   const by = who(d.by);
   const target = who(d.t);
   feed(`🃏 <b>${esc(by.name)}</b> trolled <b>${esc(target.name)}</b>: ${esc(troll.name)}`, OWNER_GOLD);
@@ -531,7 +534,8 @@ export const MENU = { open: null, tab: 'trolls', secs: 30, dis: 'tornado' };
 disasterMenu.use(MENU);
 
 function trollRow(p) {
-  const btns = TROLLS.map((t, k) => `<button data-mp-own="troll:${k}:${p.id}" title="${esc(t.hint)}">${t.icon} ${esc(t.name)}</button>`).join('');
+  // Harrison-ify is not offered on a copy without him (core/edition.js). Filtered here, not in TROLLS: the index is what travels.
+  const btns = TROLLS.map((t, k) => (t.id === 'harrison' && isHiddenAircraft('tpose') ? '' : `<button data-mp-own="troll:${k}:${p.id}" title="${esc(t.hint)}">${t.icon} ${esc(t.name)}</button>`)).join('');
   return `<div class="mp-admrow mp-ownrow" data-mp-ownrow="${p.id}"><b class="mp-admintag mp-ownertag">🃏</b>${btns}`
     + `<button data-mp-own="tp:${p.id}" title="Then tap the map where ${esc(p.name)} should go, and pick a height">🗺 Teleport them</button>`
     + `<button class="mp-own-tab" data-mp-own="tab:dis:${p.id}" title="Send a natural disaster after ${esc(p.name)}">⚡ Disasters ▸</button></div>`;
@@ -653,6 +657,8 @@ export function trollsDebug() {
     /** The troll, here and now, as if the host had said so: { k | id, t, by }. */
     arrive: (d) => arrive({ k: typeof d.k === 'number' ? d.k : trollIndex(d.id), t: d.t ?? mp.meId, by: d.by ?? 0 }),
     send: sendTroll,
+    /** One player's row of troll buttons, as HTML (tests/features/edition.mjs reads it). */
+    row: (p) => trollRow(p),
     endAll: () => endAll(A.sim),
     act,
   };

@@ -16,6 +16,7 @@
 
 import { UNLOCKS } from '../../game/progression.js';
 import { MAPS } from '../../world/maps.js';
+import { HIDDEN_AIRCRAFT } from '../../core/edition.js';
 
 /**
  * Free from the first flight — progression.js's own private FREE list,
@@ -102,6 +103,11 @@ export const ACHIEVEMENTS = [
   { id: 'rank-captain', name: 'Captain', how: 'Reach the rank of Captain.', glyph: 'seal', group: 'progress', tier: 'silver' },
   { id: 'ten-flights', name: 'Frequent Flyer', how: 'Complete ten flights.', glyph: 'ticket', group: 'progress', tier: 'bronze', progress: { key: 'flights', target: 10 } },
   { id: 'full-house', name: 'Full House', how: 'Unlock every other achievement.', glyph: 'trophy', group: 'progress', hidden: true, tier: 'platinum' },
-];
+/*
+ * The two about T-Pose Harrison and Air Massimo, on a copy without them
+ * (core/edition.js: thankdapro): not on the page, not counted towards Full
+ * House. Everywhere else the whole list.
+ */
+].filter((a) => !((a.id === 'tpose-up' && HIDDEN_AIRCRAFT.has('tpose')) || (a.id === 'massimo-fast' && HIDDEN_AIRCRAFT.has('massimo'))));
 
 export const ACHIEVEMENTS_BY_ID = new Map(ACHIEVEMENTS.map((a) => [a.id, a]));

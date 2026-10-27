@@ -12,7 +12,7 @@ import { heightAt, OBSTACLES, obstacleAt } from '../world/terrain.js';
 import { RUNWAY } from '../world/airport.js';
 import { SPEC } from '../aircraft/physics.js';
 import { boomClear } from '../vehicles/driving.js';
-import { dim, CAPS, shakeClock, FLASH } from '../render/flash-safety.js';
+import { dim, CAPS, shakeClock, FLASH, SHAKE_CAP_DEG } from '../render/flash-safety.js';
 
 export const VIEWS = ['cockpit', 'chase', 'orbit', 'wing', 'tower', 'flyby'];
 export const VIEW_LABELS = {
@@ -164,6 +164,11 @@ export const CHASE_UP = 5.2;
  * turns more too, for a different reason.
  */
 const LAG_SPEED = 82;
+/** The follow view's aim: eased at this rate (1/s), trailing the lagged part of the speed by LOOK_LAG s, as it did at 60 Hz. */
+const LOOK_RATE = 8;
+const LOOK_LAG = (1 - 8 / 60) / 8;
+/** The follow spring's lead, seconds: the frame time it was tuned at (see the chase branch of update()). */
+const CHASE_LEAD = 1 / 60;
 /** The spring's steady lag, seconds: 2 / sqrt(k) for the chase spring's k = 42. */
 const LAG_TIME = 2 / Math.sqrt(42);
 /** How much of its own standoff a fitted airframe may lag in steady flight (setFrame). */
@@ -182,6 +187,41 @@ export function machBuffet(mach, ias) {
   if (!(mach > 0.88 && mach < 1.12)) return 0;
   return (1 - Math.abs(mach - 1) / 0.12) * 0.035 * clamp((ias || 0) / 160, 0.2, 1);
 }
+
+/*
+ * The continuous shake, as an ANGLE of view (render/flash-safety.js
+ * SHAKE_CAP_DEG / SHAKE_MAX_HZ). It was centimetres on sines of 3-10 Hz,
+ * whatever the distance: from the trainer's 17 m that is nothing, from 6 m
+ * behind T-Pose Harrison three times the angle, and a metre from a cockpit's
+ * panel half a degree. Now `vib` (the same engine + buffet + Mach + rolling
+ * as before) is degrees of view, VIB_GAIN a unit, eased over VIB_TAU so a
+ * buffet that comes and goes swells rather than snaps, never over the cap,
+ * and on the slow sway below — under 2.6 Hz with Reduce flashing on or off.
+ * Outside, the engine's own buzz fades out with speed (ENGINE_FADE_SPEED):
+ * a chase plane does not feel your engine.
+ */
+const VIB_GAIN = 1.9;
+/** In the seat it is your own airframe: three times as much, still under the cap (and CAPS.cockpitBuzz on top). */
+const VIB_GAIN_COCKPIT = 5.7;
+const VIB_TAU = 0.25;
+const ENGINE_FADE_SPEED = 120;
+/** The cockpit's panel, metres from the eye: what its shake is an angle of. */
+const PANEL_D = 1;
+/** [rad/s, phase, weight] — at most 16.3 rad/s (2.6 Hz); the weights of x and y together never pass 1. */
+const SWAY_X = [[16.3, 0, 0.42], [10.1, 1.3, 0.2], [5.9, 2.1, 0.08]];
+const SWAY_Y = [[15.1, 0.7, 0.42], [8.7, 2.4, 0.2], [4.3, 0.4, 0.08]];
+const SWAY_Z = [[13.7, 1.9, 0.42], [7.3, 0.2, 0.2], [3.1, 2.8, 0.08]];
+function sway(t, w) {
+  return Math.sin(t * w[0][0] + w[0][1]) * w[0][2] + Math.sin(t * w[1][0] + w[1][1]) * w[1][2] + Math.sin(t * w[2][0] + w[2][1]) * w[2][2];
+}
+/**
+ * A knock (kick()) is still metres, as it was — from the trainer's follow
+ * view in flight (23 m) or further. A nearer lens (Harrison's 6 m, the wing view of a small jet)
+ * takes its share of it, so the same knock is no bigger an angle.
+ */
+const KNOCK_REF = 23;
+/** Seconds: how quickly the cockpit view's head follows the g. */
+const G_HEAD_TAU = 0.25;
 
 /** A wreck with Reduce flashing: the follow view (CameraRig.crashBack) and the other outside views (crashEase) stand at least CRASH_K x standoff + CRASH_ADD m off, eased over CRASH_EASE s. */
 const CRASH_K = 2;
@@ -221,6 +261,23 @@ function surfaceAt(x, z) {
   const h = heightAt(x, z);
   return h > 0 ? h : 0;
 }
+
+/**
+ * The Tower view's reach. Further than this from every tower it stands on a
+ * SPOTTER's point instead: SPOT_LEAD ahead on the track and SPOT_SIDE off to
+ * one side, SPOT_UP over the ground or the sea, set up again (one cut) once
+ * the aeroplane is SPOT_FAR from it. The owner's screenshot, 2026-10-26, the
+ * World Map — Preview: T-Pose Harrison 44 km from the start field's tower, the
+ * view at its 8-degree zoom across the sea — outside the sky dome (30 km,
+ * round the aeroplane), so the sky was black, and the aeroplane nowhere.
+ */
+export const TOWER_RANGE = 8000;
+const SPOT_LEAD = 1500;
+const SPOT_SIDE = 1200;
+const SPOT_UP = 30;
+const SPOT_FAR = 8000;
+/** The start field's tower balcony (Kestrel's, the one every map has used), relative to RUNWAY.elev. */
+const TOWER_LENS = { x: 40, up: 29, z: -206 + 11 };
 
 /** The flyby view is set up this many seconds of flight ahead. */
 const FLYBY_S = 4.5;
@@ -507,6 +564,16 @@ export class CameraRig {
 
     this.shake = 0;
     this.shakeDecay = 0;
+    /** The continuous shake's eased amplitude (VIB_TAU). */
+    this._vibS = 0;
+    /**
+     * Every tower the Tower view may stand on, as world points {x, y, z}: null
+     * is the start field's balcony only (TOWER_LENS), as on every map. The
+     * World Map — Preview sets its five fields' (features/world-preview.js).
+     */
+    this.towers = null;
+    this._spot = null;
+    this._towerAt = null;
     this.t = 0;
     this._tmp = new THREE.Vector3();
     this._tmp2 = new THREE.Vector3();
@@ -587,6 +654,7 @@ export class CameraRig {
     if (!VIEWS.includes(m)) return;
     this.mode = m;
     this.initialised = false;
+    this._gHead = null;
   }
 
   cycle() {
@@ -808,6 +876,64 @@ export class CameraRig {
     if (lens.y < gh) lens.y = gh;
   }
 
+  /**
+   * Put the Tower view's lens in `out`: the nearest tower within TOWER_RANGE
+   * of the aeroplane, or else a spotter's point near it. True when it moved
+   * to a new place this frame (a clean cut: the zoom is set, not eased).
+   */
+  towerLens(ac, crashU, out) {
+    const aim = this.aimAt(ac, crashU);
+    const list = this.towers;
+    let best = null;
+    let bd = Infinity;
+    if (list && list.length) {
+      for (const t of list) {
+        const d = Math.hypot(t.x - aim.x, t.z - aim.z);
+        if (d < bd) { bd = d; best = t; }
+      }
+    } else {
+      best = this._homeTower || (this._homeTower = { x: 0, y: 0, z: 0 });
+      best.x = TOWER_LENS.x;
+      best.y = RUNWAY.elev + TOWER_LENS.up;
+      best.z = TOWER_LENS.z;
+      bd = Math.hypot(best.x - aim.x, best.z - aim.z);
+    }
+    const was = this._towerAt;
+    const fresh = !this.initialised;
+    this.initialised = true;
+    if (best && bd <= TOWER_RANGE) {
+      this._spot = null;
+      out.set(best.x, best.y, best.z);
+      this._towerAt = best;
+      return !fresh && was !== best;
+    }
+    // A spotter's point: ahead on the track, off to one side, over the ground.
+    let sp = this._spot;
+    if (!sp || fresh || Math.hypot(sp.x - aim.x, sp.z - aim.z) > SPOT_FAR) {
+      const v = ac.vel || { x: 0, z: 0 };
+      let fx = v.x;
+      let fz = v.z;
+      const fl = Math.hypot(fx, fz);
+      if (fl > 3) { fx /= fl; fz /= fl; } else {
+        const f = this._tmp4.set(0, 0, -1).applyQuaternion(ac.quat);
+        const l = Math.hypot(f.x, f.z) || 1;
+        fx = f.x / l;
+        fz = f.z / l;
+      }
+      const side = sp && sp.side ? -sp.side : 1;
+      sp = this._spot = { x: aim.x + fx * SPOT_LEAD - fz * SPOT_SIDE * side, z: aim.z + fz * SPOT_LEAD + fx * SPOT_SIDE * side, y: 0, side };
+      sp.y = surfaceAt(sp.x, sp.z) + SPOT_UP;
+      for (let k = 0; k < 8; k++) {
+        const o = obstacleAt(sp.x, sp.y, sp.z);
+        if (!o) break;
+        sp.y = o.y1 + 3;
+      }
+    }
+    out.set(sp.x, sp.y, sp.z);
+    this._towerAt = sp;
+    return !fresh && was !== sp;
+  }
+
   /** Add a one-off jolt (touchdown, crash, gust). */
   kick(amount) {
     if (this.reducedMotion) amount *= 0.25;
@@ -823,31 +949,43 @@ export class CameraRig {
     if (!(crashU > 0) || this.mode !== 'wing') this._wingHeld = null;
 
     // Continuous vibration: engine + buffet + rolling on the ground.
-    let vib = ac.rpm * 0.016 + ac.buffet * 0.06;
+    const inside = this.mode === 'cockpit';
+    const engineK = inside ? 1 : clamp(1 - (ac.airspeed || 0) / ENGINE_FADE_SPEED, 0.15, 1);
+    let vib = (ac.rpm || 0) * 0.016 * engineK + (ac.buffet || 0) * 0.06;
     if (ac.onGround && ac.groundSpeed > 1) vib += clamp(ac.groundSpeed / 60, 0, 1) * 0.03;
     // Through the sound barrier: a transonic buffet, strongest at Mach 1 and in
-    // thick air (machBuffet), gone by Mach 0.88 and 1.12. The same slow,
-    // flash-safe clock as every other shake below.
+    // thick air (machBuffet), gone by Mach 0.88 and 1.12.
     if (!ac.crashed) vib += machBuffet(ac.mach, ac.ias);
-    if (this.reducedMotion) vib *= 0.25;
+    this._vibS += (vib - this._vibS) * (1 - Math.exp(-Math.max(0, dt) / VIB_TAU));
+    // Degrees of view, never over the cap (see VIB_GAIN), whatever the switch.
+    let vibDeg = Math.min(SHAKE_CAP_DEG, Math.max(0, this._vibS) * (inside ? VIB_GAIN_COCKPIT : VIB_GAIN));
+    if (this.reducedMotion) vibDeg *= 0.25;
     /*
      * Reduce flashing (render/flash-safety.js). The eye is a metre from the
-     * panel in the cockpit, so the same centimetre of buzz that is nothing
-     * from the chase camera moves every edge of the cockpit about five pixels,
-     * eight to ten times a second: measured (tests/flicker-probe.js), 6% of
-     * the screen flickering in every cockpit flight. With the switch on the
-     * continuous buzz there is a tenth of that — under a pixel. Knocks (a
-     * hard landing, a bang) still shake as they did.
+     * panel in the cockpit, so the buzz moves every edge of the cockpit; with
+     * the switch on it is a tenth of what it is with it off (CAPS.cockpitBuzz)
+     * — under a pixel. Knocks (a hard landing, a bang) still shake as they did.
      */
-    if (this.mode === 'cockpit') vib = dim(vib, CAPS.cockpitBuzz);
-    this.shake = Math.max(0, this.shake - dt * 2.4);
+    if (inside) vibDeg = dim(vibDeg, CAPS.cockpitBuzz);
+    const vibTan = Math.tan(THREE.MathUtils.degToRad(vibDeg));
+    const wx = sway(this.t, SWAY_X) * vibTan;
+    const wy = sway(this.t, SWAY_Y) * vibTan;
+    const wz = sway(this.t, SWAY_Z) * vibTan;
 
-    const shakeAmp = vib + this.shake * 0.35;
-    // Reduce flashing: the same shake on a slower clock, under 3 Hz (flash-safety.js).
+    this.shake = Math.max(0, this.shake - dt * 2.4);
+    const knock = this.shake * 0.35;
+    // Reduce flashing: the same knock on a slower clock, under 3 Hz (flash-safety.js).
     const st = shakeClock(this.t);
-    const sx = Math.sin(st * 61) * shakeAmp + Math.sin(st * 27.3) * shakeAmp * 0.6;
-    const sy = Math.sin(st * 53.7 + 1.3) * shakeAmp + Math.sin(st * 19.1) * shakeAmp * 0.5;
-    const sz = Math.sin(st * 43.3 + 2.7) * shakeAmp * 0.5;
+    const sx = Math.sin(st * 61) * knock + Math.sin(st * 27.3) * knock * 0.6;
+    const sy = Math.sin(st * 53.7 + 1.3) * knock + Math.sin(st * 19.1) * knock * 0.5;
+    const sz = Math.sin(st * 43.3 + 2.7) * knock * 0.5;
+    /** Shake an outside lens looking at `at`: the sway as an angle from there, the knock by `share` (KNOCK_REF). */
+    const shakeLens = (lens, at, share) => {
+      const d = lens.distanceTo(at);
+      const k = share * Math.min(1, d / KNOCK_REF);
+      lens.x += wx * d + sx * k;
+      lens.y += wy * d + sy * k;
+    };
 
     const lookYaw = input ? input.lookYaw : 0;
     const lookPitch = input ? input.lookPitch : 0;
@@ -861,9 +999,9 @@ export class CameraRig {
       if (this.realisticCockpit) this._eyeTmp.add(REALISTIC_OFFSET);
       const eye = this._tmp.copy(this._eyeTmp).applyQuaternion(ac.quat).add(pos);
       cam.position.copy(eye);
-      cam.position.x += sx * 0.5;
-      cam.position.y += sy * 0.5;
-      cam.position.z += sz * 0.5;
+      cam.position.x += wx * PANEL_D + sx * 0.5;
+      cam.position.y += wy * PANEL_D + sy * 0.5;
+      cam.position.z += wz * PANEL_D + sz * 0.5;
       this._targetQ.copy(ac.quat);
       // Head movement: glance into the turn a little, plus free look.
       const bank = ac.bankAngleDeg();
@@ -874,7 +1012,11 @@ export class CameraRig {
       // by main.js): an airliner's screens sit lower under its big windows
       // than a light aeroplane's dials do, and the realistic view must show them.
       const basePitch = this.cockpitPitchDeg > 0 ? -THREE.MathUtils.degToRad(this.cockpitPitchDeg) : COCKPIT_PITCH;
-      const headPitch = basePitch + lookPitch + clamp(ac.gLoad - 1, -0.4, 0.4) * -0.06;
+      // The head sinks a little under g — eased (G_HEAD_TAU), so the flight model's step-to-step
+      // g does not jiggle the whole view at speed.
+      const gWant = clamp((ac.gLoad || 1) - 1, -0.4, 0.4);
+      this._gHead = this._gHead == null ? gWant : this._gHead + (gWant - this._gHead) * (1 - Math.exp(-Math.max(0, dt) / G_HEAD_TAU));
+      const headPitch = basePitch + lookPitch + this._gHead * -0.06;
       const q = this._q.setFromEuler(new THREE.Euler(headPitch, headYaw, 0, 'YXZ'));
       cam.quaternion.copy(this._targetQ).multiply(q);
       const want = (this.realisticCockpit ? REALISTIC_FOV : this.baseFov + clamp(ac.airspeed / 90, 0, 1) * 4) + this.speedFov(ac) * 0.5;
@@ -935,7 +1077,19 @@ export class CameraRig {
       // Critically-damped spring.
       const k = 42;
       const c = 2 * Math.sqrt(k);
-      const accel = _accel.subVectors(desired, this.chasePos).multiplyScalar(k);
+      /*
+       * ...stepped so that where it sits does not depend on the frame time
+       * (CHASE_LEAD). It used to be measured from where the lens WAS and then
+       * moved by this frame's dt, so it ran ahead of its own spring by its
+       * speed x dt: at 549 kt T-Pose Harrison's lens was 6.7 m behind him at
+       * 240 Hz, 3.1 m at 60, 1.6 m IN FRONT of him at 30 Hz — and every long
+       * frame (a hitch) threw it metres at him and back. Now it is measured
+       * from a pivot, the lens less CHASE_LEAD of its motion, which comes
+       * out exactly as it was at 60 Hz, at every frame rate.
+       */
+      const h = Math.min(dt, 0.05);
+      const pivot = this.chasePos.addScaledVector(this.chaseVel, h - CHASE_LEAD);
+      const accel = _accel.subVectors(desired, pivot).multiplyScalar(k);
       accel.addScaledVector(this.chaseVel, -c);
       // ...relative to what is left of the aeroplane's velocity once LAG_SPEED
       // of it has been taken off: nothing below that speed, so the trainer's
@@ -962,8 +1116,8 @@ export class CameraRig {
         accel.set(0, 0, 0);
         this.chaseVel.multiplyScalar(Math.exp(-Math.min(dt, 0.05) * 14));
       }
-      this.chaseVel.addScaledVector(accel, Math.min(dt, 0.05));
-      this.chasePos.addScaledVector(this.chaseVel, Math.min(dt, 0.05));
+      this.chaseVel.addScaledVector(accel, h);
+      this.chasePos.addScaledVector(this.chaseVel, CHASE_LEAD);
       // Never clip through the ground.
       const gh = heightAt(this.chasePos.x, this.chasePos.z) + 2.2;
       if (this.chasePos.y < gh) {
@@ -971,8 +1125,7 @@ export class CameraRig {
         this.chaseVel.y = Math.max(0, this.chaseVel.y);
       }
       cam.position.copy(this.chasePos);
-      cam.position.x += sx * 0.35;
-      cam.position.y += sy * 0.35;
+      shakeLens(cam.position, aimC, 0.35);
       if (SPEC.rotor) this.rotorBoom(ac, desired, dt);
       else this._boomK = 1;
       this.crashBack(ac, cam.position);
@@ -982,8 +1135,22 @@ export class CameraRig {
       // its own it trails by speed / 8, 26 m at 476 kt; with the camera now
       // 48 m back that aimed 14 degrees off Massimo and put it a third of the
       // way up to the top edge. Carried, it is 2.7 degrees — the Skylark's 1.8.
+      //
+      // Eased by the frame's time exactly (LOOK_RATE, LOOK_LAG): a lerp of
+      // dt x 8 trailed by (1 - 8 dt) / 8 of the lagged speed, so a long frame
+      // (a hitch) jerked the aim a few centimetres — from Harrison's 3 m, a
+      // fifth of a degree, at the rate the hitches came. The same trail as at
+      // 60 Hz, at any frame time.
       if (carried > 0) this.lookAt.addScaledVector(ac.vel, carried * dt);
-      this.lookAt.lerp(aimC, clamp(dt * 8, 0, 1));
+      {
+        const lagV = this._lookU || (this._lookU = new THREE.Vector3());
+        const err = this._lookE || (this._lookE = new THREE.Vector3());
+        lagV.copy(ac.vel).multiplyScalar(1 - carried);
+        err.subVectors(aimC, this.lookAt).addScaledVector(lagV, -dt);
+        const kL = Math.exp(-LOOK_RATE * Math.max(0, dt));
+        err.multiplyScalar(kL).addScaledVector(lagV, LOOK_LAG * (1 - kL));
+        this.lookAt.subVectors(aimC, err);
+      }
       /*
        * A separate scratch vector.
        *
@@ -1054,8 +1221,7 @@ export class CameraRig {
         cam.position.copy(this._wingHeld);
         this.standOff(cam.position, this.aimAt(ac, crashU), crashU);
       } else cam.position.copy(offset);
-      cam.position.x += sx * 0.3;
-      cam.position.y += sy * 0.3;
+      shakeLens(cam.position, this.aimAt(ac, crashU), 0.3);
       // Never clip through the ground (same as 'chase' and 'orbit' above) —
       // the offset is rotated by the aircraft's full orientation, so a low
       // bank/pitch/roll (a hovering helicopter, a steep turn near a hill, a
@@ -1137,8 +1303,9 @@ export class CameraRig {
       // glazed cab, whose cylinder is 8.5 m across at that height. The view was
       // through blue tinted glass in every direction with the roof overhead.
       // Standing just outside the cab on the runway side gives a clean view and
-      // still reads as the tower.
-      cam.position.set(40, RUNWAY.elev + 29, -206 + 11);
+      // still reads as the tower. Out of every tower's reach: a spotter's
+      // point near the aeroplane (towerLens, TOWER_RANGE).
+      const towerCut = this.towerLens(ac, crashU, cam.position);
       const aimT = this.aimAt(ac, crashU);
       cam.lookAt(aimT);
       const dist = cam.position.distanceTo(aimT);
@@ -1159,7 +1326,7 @@ export class CameraRig {
         if (!this._towerCut && cam.fov < wide) cam.fov = wide;
         this._towerCut = true;
       } else this._towerCut = false;
-      cam.fov = lerp(cam.fov, want, clamp(dt * 2, 0, 1));
+      cam.fov = towerCut ? want : lerp(cam.fov, want, clamp(dt * 2, 0, 1));
       cam.near = 0.5;
     }
 

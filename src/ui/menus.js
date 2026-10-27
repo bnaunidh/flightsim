@@ -17,6 +17,7 @@ import { MAPS } from '../world/maps.js';
 import { extDevActions, extCode } from '../game/extensions.js';
 import { loadFreePresets, saveFreePresets, MAX_FREE_PRESETS } from '../core/storage.js';
 import * as Prog from '../game/progression.js';
+import { isHiddenAircraft, visibleAircraftId } from '../core/edition.js';
 import { LIVERIES, schemeFor } from '../aircraft/liveries.js';
 // The hangar's showroom: tabs, arrows, the card, the podium (hangar-showcase-ui.js).
 import { installHangarShowcase } from './hangar-showcase-ui.js';
@@ -1366,7 +1367,7 @@ export class Menus {
 
       // The summary is the whole point of the bottom bar: you can see what you
       // are about to fly without going back through the tabs.
-      const ac = AIRCRAFT.find((a) => a.id === this.chosenAircraft);
+      const ac = AIRCRAFT.find((a) => a.id === this.chosenAircraft) || AIRCRAFT[0];
       const armed = [...s.querySelectorAll('[data-fail]:checked, [data-event]:checked')].length;
       s.querySelector('[data-summary]').innerHTML =
         `<strong>${ac.name}</strong> · ${startWords[this.chosenStart]} · ` +
@@ -1466,7 +1467,8 @@ export class Menus {
       cond.value = c.condition;
       wind.value = c.windSpeedKts;
       dir.value = c.windDirDeg;
-      this.chosenAircraft = c.aircraft || 'skylark';
+      // A slot saved in an aeroplane this copy does not have (core/edition.js) loads in the trainer.
+      this.chosenAircraft = visibleAircraftId(c.aircraft) || 'skylark';
       this.chosenStart = c.airborne ? 'air' : c.taxi ? 'gate' : 'runway';
       s.querySelectorAll('[data-aircraft]').forEach((n) =>
         n.classList.toggle('is-on', n.dataset.aircraft === this.chosenAircraft));
@@ -1518,8 +1520,10 @@ export class Menus {
         const b = document.createElement('button');
         b.className = 'slot' + (p ? ' is-filled' : '');
         b.dataset.slot = String(i);
+        // A slot saved in an aeroplane this copy does not have (core/edition.js) is named for the trainer it loads in.
+        const label = p && isHiddenAircraft(p.aircraft) ? AIRCRAFT[0].name : p && p.label;
         b.innerHTML = p
-          ? `<strong>${p.label}</strong><em>${p.summary}</em>`
+          ? `<strong>${label}</strong><em>${p.summary}</em>`
               + `<span class="slot-clear" data-slot-clear="${i}" role="button" aria-label="Clear slot ${i + 1}">\u00d7</span>`
           : `<strong>Slot ${i + 1}</strong><em>empty — save this setup here</em>`;
         host.appendChild(b);
@@ -1851,6 +1855,7 @@ export class Menus {
         <div class="tab-body" data-panel="access" hidden>
           <label class="check"><input type="checkbox" data-set="subtitles"><span>Show subtitles for radio calls</span></label>
           <label class="check"><input type="checkbox" data-set="reducedMotion"><span>Reduced motion (much less camera shake)</span></label>
+          <button type="button" class="ghost" data-safety-intro>Show the photosensitive seizure warning</button>
           <label class="check"><input type="checkbox" data-set="highContrast"><span>High-contrast display</span></label>
           <label class="check"><input type="checkbox" data-set="largeText"><span>Larger text</span></label>
           <label class="field"><span>HUD density</span>
@@ -1877,6 +1882,10 @@ export class Menus {
       if (tab) {
         s.querySelectorAll('.tab').forEach((t) => t.classList.toggle('is-on', t === tab));
         s.querySelectorAll('.tab-body').forEach((b) => (b.hidden = b.dataset.panel !== tab.dataset.tab));
+        return;
+      }
+      if (e.target.closest('[data-safety-intro]')) {
+        if (this.hooks.showSafetyIntro) this.hooks.showSafetyIntro();
         return;
       }
       if (e.target.closest('[data-reset-keys]')) {

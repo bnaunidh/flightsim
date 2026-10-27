@@ -339,7 +339,11 @@ if (V && V.flashPolice) {
   const off = wander(false);
   const on = wander(true);
   // A metre from the panel, 68 degrees over 713 px: a millimetre is 0.6 px.
-  ok('the cockpit buzz switched off is what it was (centimetres)', off > 0.01, `${(off * 1000).toFixed(1)} mm`);
+  // It used to be centimetres switched off (half a degree of the panel at
+  // 3-10 Hz); since the shake hotfix (tests/features/shake.mjs) it is an angle
+  // never over SHAKE_CAP_DEG with the switch on or off — still there, though.
+  const capRange = 2 * Math.tan((FS.SHAKE_CAP_DEG * Math.PI) / 180) * 1.0;
+  ok('the cockpit buzz switched off is still there, but within the comfort cap (millimetres)', off > 0.0002 && off <= capRange * 1.02, `${(off * 1000).toFixed(2)} mm, cap ${(capRange * 1000).toFixed(2)} mm`);
   ok('switched on, a tenth of it: under two millimetres, about a pixel', on <= off * CAPS.cockpitBuzz * 1.05 && on < 0.002, `${(on * 1000).toFixed(2)} mm`);
 
   // A jolt in the chase view (a hard landing, a bang): the shake alone is

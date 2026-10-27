@@ -38,7 +38,7 @@ import {
   nearestAirport, headingTo, legM, HUB_ID,
 } from '../world/worldmap/preview.js';
 import { TerrainStream } from '../world/worldmap/stream.js';
-import { buildOutstations, pavedTest } from '../world/worldmap/outstation.js';
+import { buildOutstations, pavedTest, towerLens } from '../world/worldmap/outstation.js';
 import { icon } from '../ui/icons.js';
 import { setExtraRunways } from '../ui/minimap.js';
 
@@ -134,8 +134,14 @@ function teardown() {
   if (S.ui && S.ui.card) S.ui.card.hidden = true;
 }
 
+/** The Tower view: every field's tower here (camera.js towerLens), the start field's balcony anywhere else. */
+function setTowers(sim) {
+  if (sim && sim.rig) sim.rig.towers = active() ? PREVIEW.airports.map(towerLens).filter(Boolean) : null;
+}
+
 function buildWorld(sim, group) {
   teardown();
+  setTowers(sim);
   if (!active()) return;
   const q = sim.settings.quality || 'medium';
   const t0 = performance.now();
@@ -932,6 +938,7 @@ registerExtension({
     buildWorld(sim, group);
   },
   startMode(sim, mode, opts) {
+    setTowers(sim);
     if (!active()) {
       S.dest = null;
       return;

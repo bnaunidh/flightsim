@@ -30,6 +30,7 @@
 
 import { createPerson, posePerson, disposePerson } from '../staff/person.js';
 import { createUniformPerson } from '../uniforms.js';
+import { isHiddenAircraft } from '../../core/edition.js';
 import { Ragdoll, GetUp, cleanRig, groundWorld } from '../ragdoll.js';
 import { floorAt } from '../staff/walk.js';
 
@@ -147,7 +148,8 @@ export class RemoteWalker {
     const nw = S[n - 1].walk;
     T.down = !!nw.down;
     T.knock = nw.knock;
-    T.outfit = nw.outfit || 'pilot';
+    // Harrison, walking about after jumping out of himself on the other site: a pilot on a copy without him (core/edition.js).
+    T.outfit = nw.outfit === 'harrison' && isHiddenAircraft('tpose') ? 'pilot' : nw.outfit || 'pilot';
     return true;
   }
 

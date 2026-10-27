@@ -54,10 +54,18 @@ import { eject } from './eject.js';
 import * as FootUI from './staff/ui.js';
 import { Moves, PressCounter, BOOST, SPIN, CEILING_M, isSpinSignal } from './tpose/moves.js';
 import * as UI from './tpose/ui.js';
+import { isHiddenAircraft } from '../core/edition.js';
 
 export const HARRISON_PRICE = 3601;
 
-try {
+/*
+ * Not on the thankdapro copy (core/edition.js): there he is not in the
+ * roster, and none of what follows — the shop row, his two keys in Settings,
+ * his touch buttons, his card, the dev action — is put in either.
+ */
+const ABSENT = isHiddenAircraft('tpose');
+
+if (!ABSENT) try {
   const rows = PROG.UNLOCKS;
   if (Array.isArray(rows) && !rows.some((u) => u && u.aircraft === 'tpose')) {
     rows.push({ aircraft: 'tpose', cost: HARRISON_PRICE, why: 'One km/h faster than Air Massimo' });
@@ -72,10 +80,10 @@ try {
  * copies ACTIONS' defaults. `harrisonBoost` shares the autopilot's key on
  * purpose (three quick presses): `presses` and `shares` say so.
  */
-if (!ACTIONS.harrisonSpin) {
+if (!ABSENT && !ACTIONS.harrisonSpin) {
   ACTIONS.harrisonSpin = { label: 'T-Pose Harrison: spin climb (press again to stop)', group: 'Flying', ctx: ['plane'], default: ['KeyT'] };
 }
-if (!ACTIONS.harrisonBoost) {
+if (!ABSENT && !ACTIONS.harrisonBoost) {
   ACTIONS.harrisonBoost = { label: 'T-Pose Harrison: 1000 kt turbo boost (press 3 times)', group: 'Flying', ctx: ['plane'], default: ['KeyY'], presses: 3, shares: 'autopilot' };
 }
 
@@ -516,7 +524,7 @@ function resetMoves(sim) {
   T.last.length = 0;
 }
 
-registerExtension({
+if (!ABSENT) registerExtension({
   id: 'tpose',
   install(sim) {
     T.sim = sim;

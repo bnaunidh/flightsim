@@ -19,6 +19,7 @@
 import * as THREE from '../../vendor/three.module.js';
 import { createAircraftModel, syncAircraftModel } from '../../aircraft/model-adapter.js';
 import { getAircraft } from '../../aircraft/types.js';
+import { isHiddenAircraft } from '../../core/edition.js';
 import { schemeFor } from '../../aircraft/liveries.js';
 import { heightAt } from '../../world/terrain.js';
 
@@ -104,6 +105,7 @@ const FAKE = {
 export function harrisonFor(key, group) {
   let h = harrisons.get(key);
   if (h && h.parent) return h;
+  if (isHiddenAircraft('tpose')) return null;
   const type = getAircraft('tpose');
   if (!type || type.id !== 'tpose' || !group) return null;
   if (!h) {
