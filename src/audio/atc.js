@@ -682,7 +682,7 @@ export class Radio {
       if (this.ctx.currentTime > this.busyUntil + 1.5) this.ambientChatter();
     }
     // Storms make the radio noticeably worse.
-    const noisy = weather && weather.condition === 'stormy';
+    const noisy = weather && (weather.effectiveCondition || weather.condition) === 'stormy';
     this.amDepth.gain.setTargetAtTime(noisy ? 0.12 : 0.04, this.ctx.currentTime, 0.5);
   }
 }

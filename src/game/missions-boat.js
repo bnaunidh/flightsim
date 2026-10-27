@@ -580,7 +580,8 @@ function spawnCasualty(ctx, kind, pos, { people = 0, heading = 0, sinking = fals
 /** How lively the sea is, 0 flat to 1 gale. Reused by the props and the tow. */
 function seaState(weather) {
   const wind = clamp((weather.windSpeedKts || 0) / 30, 0, 1);
-  const cond = weather.condition === 'stormy' ? 0.75 : weather.condition === 'rainy' ? 0.45 : 0.15;
+  const c = weather.effectiveCondition || weather.condition;
+  const cond = c === 'stormy' ? 0.75 : c === 'rainy' ? 0.45 : 0.15;
   return clamp(wind * 0.7 + cond * 0.6, 0, 1);
 }
 

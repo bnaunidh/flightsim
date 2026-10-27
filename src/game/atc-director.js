@@ -19,7 +19,13 @@ const ft = (m) => m * UNITS.FT;
 function windCall(weather) {
   const dir = String(Math.round(weather.windDirDeg / 10) * 10).padStart(3, '0');
   const digits = dir.split('').join(' ');
-  return `wind ${digits} at ${Math.round(weather.windSpeedKts)}`;
+  const kts = Math.round(weather.windSpeedKts);
+  // The rolled sky (world/wx.js) has gusts and, some days, poor visibility: the tower says both.
+  if (weather.isRandom && weather.describe) {
+    const d = weather.describe();
+    return `${d.windRadio}${d.vis ? `, ${d.vis}` : ''}`;
+  }
+  return `wind ${digits} at ${kts}`;
 }
 
 export class AtcDirector {
@@ -236,18 +242,21 @@ export class AtcDirector {
       );
     }
 
-    // Weather changes.
-    if (this.lastCondition && this.lastCondition !== w.condition && this.weatherCall <= 0) {
+    // Weather changes — the weather in force, so the rolled sky's phases (world/wx.js) are called too.
+    const cond = w.effectiveCondition || w.condition;
+    if (this.lastCondition && this.lastCondition !== cond && this.weatherCall <= 0) {
       const lines = {
         stormy: `All aircraft, ${this.field} Tower. Thunderstorm over the field, severe turbulence and wind shear. Use extreme caution.`,
         rainy: `All aircraft, ${this.field} Tower. Rain moving through, the runway is wet and braking may be poor.`,
         cloudy: `All aircraft, ${this.field} Tower. Cloud base is coming down, visibility reducing.`,
         clear: `All aircraft, ${this.field} Tower. Weather is clearing nicely, visibility good.`,
       };
-      this.say(lines[w.condition] || lines.clear, 'tower', w.condition === 'stormy' ? 1 : 0);
+      // And the rolled sky's visibility, when it is poor ("visibility 3 km in mist").
+      const d = w.isRandom && w.describe ? w.describe() : null;
+      this.say((lines[cond] || lines.clear) + (d && d.vis ? ` Now ${d.vis}, ${d.windRadio}.` : ''), 'tower', cond === 'stormy' ? 1 : 0);
       this.weatherCall = 30;
     }
-    this.lastCondition = w.condition;
+    this.lastCondition = cond;
 
     // Flying into cloud.
     if (sim.cloudImmersion > 0.55 && this.once('incloud')) {

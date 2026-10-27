@@ -97,12 +97,17 @@ export class GameAudio {
     this.radio.update(dt, weather);
     this.music.update(dt);
 
-    // Thunder follows the lightning flash.
-    if (weather.lightningFlash > 0.9 && this._lastFlash <= 0.9) {
+    // Thunder follows the lightning flash: a disaster's full-strength bolt,
+    // or one of the storm's own strikes (weather.thunderSeq) — those are soft
+    // flashes since wave 19 (never past 0.9), and none at all with Reduce
+    // flashing on, but the storm still thunders.
+    const struck = weather.thunderSeq != null && this._thunderSeq != null && weather.thunderSeq !== this._thunderSeq;
+    if ((weather.lightningFlash > 0.9 && this._lastFlash <= 0.9) || struck) {
       const distance = Math.random();
       setTimeout(() => this.ambience.playThunder(distance), 300 + distance * 3200);
     }
     this._lastFlash = weather.lightningFlash;
+    this._thunderSeq = weather.thunderSeq;
   }
 
   /**

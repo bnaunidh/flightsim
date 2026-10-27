@@ -128,6 +128,8 @@ import './livemap/nav.js';
 import './livemap/where.js';
 // Each field's control zone: ENTERING AIRSPACE · the frequency, the approach controller's hand-off.
 import './livemap/airspace.js';
+// The World Map's regional weather on the live map: a sun, cloud, rain, storm or fog icon per region.
+import './wx-map.js';
 // The map loading screen, about three seconds, in front of every way into a map (Free Flight, a
 // mission, a Story chapter, a multiplayer join, a boat or a van). Last, so its wrapper on the
 // game's startMode is the outermost one, over everything above that waits to be started.

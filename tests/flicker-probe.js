@@ -339,7 +339,7 @@ export async function setupScenario(sim, s) {
       sim._flickerRestore = null;
     };
   }
-  if (s.lightning != null && sim.weather) sim.weather._nextLightning = s.lightning;
+  if (s.lightning != null && sim.weather) { sim.weather._nextLightning = s.lightning; sim.weather._lightT = s.lightning; sim.weather._cellT = s.lightning; }
   // Diagnosis: try other Reduce-flashing caps (restored by runScenario).
   if (s.caps) {
     const FS = await import('../src/render/flash-safety.js');
@@ -384,7 +384,7 @@ export async function measure(sim, opts = {}) {
     }
   }
   if (warm > 0) sim.step(warm);
-  if (opts.lightning != null && sim.weather) sim.weather._nextLightning = opts.lightning;
+  if (opts.lightning != null && sim.weather) { sim.weather._nextLightning = opts.lightning; sim.weather._lightT = opts.lightning; sim.weather._cellT = opts.lightning; }
   const gl = sim.renderer.getContext();
   const W = gl.drawingBufferWidth;
   const H = gl.drawingBufferHeight;

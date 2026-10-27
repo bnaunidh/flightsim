@@ -11,6 +11,8 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { clamp, lerp } from '../core/noise.js';
+import { FLASH } from '../render/flash-safety.js';
+import { WxSystem, newSeed, climateFor, visibilityAt, windWords, visibilityWords, changeWords, VIS_OD } from './wx.js';
 
 export const TIMES = {
   day: { label: 'Midday', sunElev: 62, sunAzim: 135 },
@@ -18,12 +20,42 @@ export const TIMES = {
   night: { label: 'Night', sunElev: -14, sunAzim: 300 },
 };
 
+/*
+ * The fixed skies. Since wave 19 each also says what its clouds are made of
+ * (cu / tcu / cb / stratus / cirrus / scud — clouds.js), its visibility is
+ * read from its fog (wx.js visibilityAt), and none of them has a low mist.
+ * 'random' is the default (wx.js): it rolls a sky for the flight and moves
+ * it on in phases; its entry here is only what it looks like before the
+ * roll. It is LAST so the multiplayer index of the four older ones holds.
+ */
 export const CONDITIONS = {
-  clear: { label: 'Clear', cloud: 0.16, rain: 0, fog: 0.000018, turb: 0.12, gust: 0.1, cloudBase: 1150 },
-  cloudy: { label: 'Cloudy', cloud: 0.62, rain: 0, fog: 0.00006, turb: 0.32, gust: 0.25, cloudBase: 1050 },
-  rainy: { label: 'Rainy', cloud: 0.85, rain: 0.55, fog: 0.00014, turb: 0.5, gust: 0.4, cloudBase: 780 },
-  stormy: { label: 'Stormy', cloud: 1.0, rain: 1.0, fog: 0.00022, turb: 1.0, gust: 0.75, cloudBase: 560 },
+  clear: { label: 'Clear', cloud: 0.16, rain: 0, fog: 0.000018, turb: 0.12, gust: 0.1, cloudBase: 1150, cu: 0.22, cirrus: 0.25 },
+  cloudy: { label: 'Cloudy', cloud: 0.62, rain: 0, fog: 0.00006, turb: 0.32, gust: 0.25, cloudBase: 1050, cu: 0.8, tcu: 0.25, stratus: 0.35, cirrus: 0.1 },
+  rainy: { label: 'Rainy', cloud: 0.85, rain: 0.55, fog: 0.00014, turb: 0.5, gust: 0.4, cloudBase: 780, cu: 0.3, stratus: 0.95, scud: 0.5 },
+  stormy: { label: 'Stormy', cloud: 1.0, rain: 1.0, fog: 0.00022, turb: 1.0, gust: 0.75, cloudBase: 560, cu: 0.3, tcu: 0.6, cb: 1, stratus: 0.7, scud: 0.8, storm: 1 },
+  random: { label: 'Random', cloud: 0.24, rain: 0, fog: 0.000038, turb: 0.16, gust: 0.14, cloudBase: 1150, cu: 0.42, cirrus: 0.3 },
 };
+for (const c of Object.values(CONDITIONS)) {
+  for (const k of ['cu', 'tcu', 'cb', 'stratus', 'cirrus', 'scud', 'snow', 'mist', 'haze', 'hfA', 'storm']) if (c[k] == null) c[k] = 0;
+  c.hfH = 150;
+  c.base = c.cloudBase;
+  c.visM = visibilityAt(c, 0);
+}
+
+/** The Sky picker's order and words: Random first (the default), Clear always for a calm demo. */
+export const SKY_CHOICES = [
+  { id: 'random', label: 'Random — changes as you fly' },
+  { id: 'clear', label: 'Clear always' },
+  { id: 'cloudy', label: 'Cloudy' },
+  { id: 'rainy', label: 'Rainy' },
+  { id: 'stormy', label: 'Stormy' },
+];
+
+/** Ambient lightning: one soft flash per 20 s at most, never with Reduce flashing on. */
+export const LIGHTNING_MIN_GAP_S = 20;
+export const LIGHTNING_PEAK = 0.45;
+/** The glow inside a storm cell's cloud at its brightest (clouds.js uCellFlash). */
+export const CELL_FLASH_PEAK = 0.6;
 
 /** Ready-made combinations offered in the UI. */
 export const PRESETS = [
@@ -103,6 +135,132 @@ export class Weather {
     this._gustLeft = 0;
     /** Set by the game so it can tell the player a gust has arrived. */
     this.onGust = null;
+
+    /* ---- Random weather (wx.js) ---- */
+    /** The rolled sky while the condition is 'random'; null otherwise. */
+    this.wx = null;
+    /** Where the player is, for the regional weather and the approach hold (main.js observe()). */
+    this.obs = { x: 0, z: 0, hold: false };
+    /** Set by the game: the weather's news ({ kind: 'soon'|'start'|'done', ... }) for the HUD and the radio. */
+    this.onWxNews = null;
+    this._wxGustKts = 0;
+    this._wxGustLeft = 0;
+    this._wxNextGust = 20;
+    this._chosenKts = this.windSpeedKts;
+    this._chosenDir = this.windDirDeg;
+    this._lightT = LIGHTNING_MIN_GAP_S * 0.5;
+    this._lightRise = 0;
+    /** Lightning glowing inside the storm cells' clouds only (clouds.js); flash-safe like the rest. */
+    this.cellFlash = 0;
+    this._cellT = LIGHTNING_MIN_GAP_S * 0.5;
+    this._cellRise = 0;
+    /*
+     * The ONE gap every flash the weather makes keeps (the storm's own and
+     * the storm cells' glow alike): the owner's "max 1 soft flash per ~20 s"
+     * is for the screen, not for each source — a stormy sky has both, and
+     * on separate clocks they flashed 2 s apart. A disaster's bolt counts.
+     */
+    this._lastFlashAt = -Infinity;
+    /** Counts the storm's strikes, seen or not (Reduce flashing hides the flash, not the thunder) — audio/index.js. */
+    this.thunderSeq = 0;
+  }
+
+  /** May a flash start now: the last one, of any kind, LIGHTNING_MIN_GAP_S or more ago? */
+  _flashFree() {
+    return this.time_s - this._lastFlashAt >= LIGHTNING_MIN_GAP_S;
+  }
+
+  /** Is the sky the rolled, changing one? */
+  get isRandom() {
+    return this.condition === 'random';
+  }
+
+  /**
+   * Roll the sky for a flight (condition 'random' only; anything else clears
+   * it). `ctx`: { seed, map, regions, time } — the map's description and its
+   * usual wind decide the climate and the day's wind; `regions` (the World
+   * Map's) give each region its own weather. The same seed and map always
+   * give the same weather (tests/features/weather.mjs).
+   */
+  beginFlight(ctx = {}) {
+    if (!this.isRandom) {
+      this.wx = null;
+      return null;
+    }
+    /*
+     * A roll with no map named (the menu's sky at boot, the sky put back
+     * after a boat or a van job) is for the map the last one was: before,
+     * it was a temperate roll anywhere — fog on the tropical Kestrel, rain
+     * not snow on the Fjord — and on the World Map one sky for every region.
+     */
+    const map = 'map' in ctx ? ctx.map || null : this._lastMap || null;
+    const regions = 'regions' in ctx ? ctx.regions || null : this._lastRegions || null;
+    this._lastMap = map;
+    this._lastRegions = regions;
+    const mw = (map && map.weather) || {};
+    const seed = Number.isFinite(ctx.seed) ? ctx.seed >>> 0 : newSeed();
+    this.wx = new WxSystem({
+      seed,
+      climate: ctx.climate || climateFor(map),
+      time: this.time,
+      windKts: Number.isFinite(mw.windSpeedKts) ? mw.windSpeedKts : Math.max(4, this._chosenKts),
+      windDirDeg: Number.isFinite(mw.windDirDeg) ? mw.windDirDeg : this._chosenDir,
+      regions,
+    });
+    this.wxSeed = seed;
+    if (ctx.x != null) { this.obs.x = ctx.x; this.obs.z = ctx.z; }
+    this.wx.update(0, this.obs);
+    this._applyWxWind();
+    return this.wx;
+  }
+
+  /** Where the player is, and whether they are on an approach (the murk waits). */
+  observe(x, z, hold = false) {
+    this.obs.x = x;
+    this.obs.z = z;
+    this.obs.hold = !!hold;
+  }
+
+  _applyWxWind() {
+    const w = this.wx.wind;
+    this.windSpeedKts = w.kts;
+    this.windDirDeg = w.dirDeg;
+  }
+
+  /** The gust the rolled sky is blowing, kt (the peak a report would give). */
+  get gustKts() {
+    if (this.wx) return this.wx.wind.gustKts;
+    return this.windSpeedKts + (this.randomWinds ? this._gustKts : 0);
+  }
+
+  /** Visibility where the player is, metres (at `altM` above the sea). */
+  visibilityM(altM = 0) {
+    return visibilityAt(this.cond, altM);
+  }
+
+  /**
+   * The weather in words, for the card, the briefing and the radio:
+   * { label, word, wind ("wind 240 at 14 gusting 22"), windRadio, visM,
+   *   vis ("visibility 3 km in mist" or ''), change ("Weather changing: …"
+   *   or ''), random, seed }.
+   */
+  describe() {
+    const c = this.cond;
+    const visM = visibilityAt(c, 0);
+    const fc = this.wx ? this.wx.forecast() : null;
+    const soon = fc && (fc.blending || (fc.warned && fc.inS <= 300));
+    return {
+      label: c.label,
+      word: c.word || String(c.label || '').toLowerCase(),
+      wind: windWords(this.windDirDeg, this.windSpeedKts, this.gustKts),
+      windRadio: windWords(this.windDirDeg, this.windSpeedKts, this.gustKts, { radio: true }),
+      visM,
+      vis: visibilityWords(c, visM),
+      change: soon ? changeWords(fc) : '',
+      forecast: fc,
+      random: !!this.wx,
+      seed: this.wx ? this.wx.seed : null,
+    };
   }
 
   /**
@@ -162,6 +320,10 @@ export class Weather {
 
   /** Wind speed including any gust currently blowing through. */
   get effectiveWindKts() {
+    if (this.wx && this._wxGustLeft > 0) {
+      const f = Math.min(1, this._wxGustLeft / 2.5);
+      return this.windSpeedKts + this._wxGustKts * f;
+    }
     if (!this.randomWinds || this._gustLeft <= 0) return this.windSpeedKts;
     // Fast in, slow out — that is what a gust feels like.
     const f = Math.min(1, this._gustLeft / 2.5);
@@ -178,9 +340,17 @@ export class Weather {
   }
 
   get cond() {
-    const base = CONDITIONS[this._tempCond ? this._tempCond.id : this.condition];
-    if (this._tempCond && this._tempCond.overrides) return { ...base, ...this._tempCond.overrides };
-    return base;
+    if (this._tempCond) {
+      const base = CONDITIONS[this._tempCond.id];
+      if (this._tempCond.overrides) return { ...base, ...this._tempCond.overrides };
+      return base;
+    }
+    if (this.isRandom) {
+      // Rolled lazily for the menu's sky; a flight rolls its own (beginFlight).
+      if (!this.wx) this.beginFlight({});
+      return this.wx.cond;
+    }
+    return CONDITIONS[this.condition];
   }
 
   /**
@@ -211,7 +381,10 @@ export class Weather {
    * running, otherwise the base. Anything asking "is it stormy" wants this.
    */
   get effectiveCondition() {
-    return this._tempCond ? this._tempCond.id : this.condition;
+    if (this._tempCond) return this._tempCond.id;
+    // The rolled sky as one of the four older words, for whatever asks "is it stormy".
+    if (this.isRandom) return this.cond.bucket || 'clear';
+    return this.condition;
   }
 
   temporaryCondition(id, seconds, overrides = null) {
@@ -287,12 +460,29 @@ export class Weather {
 
   /** Random buffeting for the airframe, scaled by the condition. */
   turbulenceLevel() {
-    return this.cond.turb * this.turbulenceScale;
+    // Inside cloud the air is bumpy (main.js sets `immersion` from the clouds' whiteout).
+    return (this.cond.turb + (this.immersion || 0) * 0.3) * this.turbulenceScale;
   }
 
   update(dt) {
     this.time_s += dt;
-    if (this.randomWinds) this._updateRandomWinds(dt);
+    if (this.isRandom) {
+      if (!this.wx) this.beginFlight({});
+      const news = this.wx.update(dt, this.obs);
+      this._applyWxWind();
+      // The rolled sky's gusts: up to its reported gust, every so often.
+      this._wxNextGust -= dt;
+      if (this._wxNextGust <= 0) {
+        const spread = this.wx.wind.gustKts - this.wx.wind.kts;
+        this._wxNextGust = 12 + Math.random() * 30;
+        if (spread >= 3) {
+          this._wxGustKts = spread * (0.5 + Math.random() * 0.5);
+          this._wxGustLeft = 3 + Math.random() * 3;
+        }
+      }
+      if (this._wxGustLeft > 0) this._wxGustLeft -= dt;
+      if (news && this.onWxNews) this.onWxNews(news, this);
+    } else if (this.randomWinds) this._updateRandomWinds(dt);
 
     // Weather events run themselves down and put things back as they were.
     if (this._shear) {
@@ -321,20 +511,104 @@ export class Weather {
      * So the two disasters in the game whose whole point is a thunderstorm
      * were the two that never produced a single flash.
      */
-    if (this.effectiveCondition === 'stormy') {
-      this._nextLightning -= dt;
-      if (this._nextLightning <= 0) {
-        this.lightningFlash = 1;
-        this._nextLightning = 4 + Math.random() * 9;
+    // A disaster's bolt (full strength, set from outside) holds the weather's own flashes off too.
+    if (this.lightningFlash > LIGHTNING_PEAK + 0.01 && !this._ambientFlash) this._lastFlashAt = this.time_s;
+    if (this.effectiveCondition === 'stormy') this._updateLightning(dt);
+    else this._lightRise = 0;
+    // A storm's own strike fades softly (about half a second); a disaster's bolt as it always has.
+    this.lightningFlash = Math.max(0, this.lightningFlash - dt * (this._ambientFlash ? 0.9 : 3.2));
+    if (this.lightningFlash <= 0) this._ambientFlash = false;
+    this._updateCellFlash(dt);
+  }
+
+  /**
+   * Lightning inside the storm cells' own clouds — the towering, dark-based
+   * cumulonimbus clouds.js draws, near or far: a glow inside the cloud, not
+   * a wash over the sky. The same rules as the storm's: with Reduce flashing
+   * on, none; off, at most one per LIGHTNING_MIN_GAP_S, rising over a
+   * quarter of a second to CELL_FLASH_PEAK and fading over half a second.
+   */
+  _updateCellFlash(dt) {
+    this._cellT -= dt;
+    if (this._cellRise > 0) {
+      this._cellRise -= dt;
+      const k = 1 - Math.max(0, this._cellRise) / 0.25;
+      this.cellFlash = Math.max(this.cellFlash, CELL_FLASH_PEAK * k);
+    } else {
+      this.cellFlash = Math.max(0, this.cellFlash - dt * 1.2);
+    }
+    if (FLASH.reduce || (this.cond.cb || 0) < 0.5) return;
+    if (this._cellT <= 0 && this._cellRise <= 0) {
+      if (!this._flashFree()) {
+        // The storm flashed a moment ago: this glow waits its turn.
+        this._cellT = LIGHTNING_MIN_GAP_S - (this.time_s - this._lastFlashAt) + Math.random() * 8;
+        return;
+      }
+      this._cellT = LIGHTNING_MIN_GAP_S + Math.random() * 20;
+      this._cellRise = 0.25;
+      this._lastFlashAt = this.time_s;
+    }
+  }
+
+  /**
+   * Lightning inside the storm — flash-safe by construction (render/flash-
+   * safety.js; the owner's brief: "max 1 soft flash per ~20 s, never
+   * full-screen white, off when Reduce flashing is on").
+   *
+   * This read `this.condition`, the BASE weather, while Storm cell and
+   * Typhoon both work by setting a temporary condition over the top of it —
+   * so it asks effectiveCondition. It used to strike every 4 to 13 seconds
+   * at full strength in one frame; now a strike is at least
+   * LIGHTNING_MIN_GAP_S after the last, rises over a fifth of a second to
+   * LIGHTNING_PEAK and fades over about half a second, and with Reduce
+   * flashing on (the default) there is none at all — the storm is still
+   * dark, wet and rough. A disaster's own bolt (main.js) still sets
+   * lightningFlash itself, dimmed by flash-safety where it is drawn.
+   */
+  _updateLightning(dt) {
+    this._lightT -= dt;
+    if (this._lightRise > 0) {
+      this._lightRise -= dt;
+      const k = 1 - Math.max(0, this._lightRise) / 0.2;
+      if (this.lightningFlash <= LIGHTNING_PEAK * k) {
+        this.lightningFlash = LIGHTNING_PEAK * k;
+        this._ambientFlash = true;
       }
     }
-    this.lightningFlash = Math.max(0, this.lightningFlash - dt * 3.2);
+    if (this._lightT > 0) return;
+    if (FLASH.reduce) {
+      // A strike nobody sees: still the thunder (muted by default like every sound).
+      this._lightT = LIGHTNING_MIN_GAP_S + Math.random() * 15;
+      this.thunderSeq++;
+      return;
+    }
+    if (!this._flashFree()) {
+      // A storm cell glowed a moment ago: the strike waits its turn.
+      this._lightT = LIGHTNING_MIN_GAP_S - (this.time_s - this._lastFlashAt) + Math.random() * 6;
+      return;
+    }
+    this._lightT = LIGHTNING_MIN_GAP_S + Math.random() * 15;
+    this._lightRise = 0.2;
+    this._lastFlashAt = this.time_s;
+    this.thunderSeq++;
   }
 
   /** Colour palette derived from time of day + cloud cover. */
   palette() {
     const c = this.cond;
-    const overcast = c.cloud;
+    /*
+     * Above the random sky's deck (clouds.js: grey from under, sunlit from
+     * above) the sky is a clear one: main.js keeps `eyeY`, and from a few
+     * hundred metres over the top of a stratus layer its overcast and murk
+     * no longer wash the sky or dim the sun. The fixed skies as before.
+     */
+    let above = 0;
+    if (this.wx && !this._tempCond && (c.stratus || 0) > 0.3 && Number.isFinite(this.eyeY)) {
+      const top = (c.cloudBase || 800) + 380;
+      above = clamp((this.eyeY - top) / 400, 0, 1);
+      above = above * above * (3 - 2 * above);
+    }
+    const overcast = c.cloud * (1 - above);
     let top, horizon, sun, ground, ambient, sunIntensity, ambIntensity;
     if (this.time === 'day') {
       top = new THREE.Color(0x2f6fd0);
@@ -367,6 +641,34 @@ export class Weather {
     horizon = horizon.clone().lerp(grey, overcast * 0.6);
     sunIntensity *= lerp(1, 0.3, overcast);
     ambIntensity *= lerp(1, 0.85, overcast);
+    /*
+     * The rolled sky's murk (wx.js): a sky seen through haze, mist or rain
+     * goes the colour of the murk, lit by the sun — whitish by day, warm at
+     * sunset, dark at night — and the fog takes the same colour, so the
+     * ground fades into it rather than into blue. Only the random sky: the
+     * four fixed ones look exactly as they always have.
+     */
+    let fogColor = horizon.clone().lerp(new THREE.Color(0xffffff), this.isNight ? 0 : 0.08);
+    if (this.wx && !this._tempCond) {
+      const visU = c.fog > 0 ? Math.sqrt(VIS_OD) / c.fog : 1e5;
+      const m = clamp((Math.log(40000) - Math.log(visU)) / (Math.log(40000) - Math.log(2500)), 0, 1);
+      const murk = m * m * (3 - 2 * m) * (1 - above);
+      const haze = clamp(c.haze || 0, 0, 1);
+      const murkCol = this.isNight
+        ? new THREE.Color(0x182030)
+        : horizon.clone().lerp(sun, 0.22).lerp(new THREE.Color(0xe4e6e8), 0.4);
+      // Rain and a storm are dark murk, not white: under a thunderstorm the day goes grey.
+      if (!this.isNight) murkCol.lerp(new THREE.Color(0x5f6874), clamp((c.rain || 0) * 0.55 + (c.storm || 0) * 0.3, 0, 0.85));
+      if (haze > 0 && !this.isNight) {
+        // Haze: a pale, sunlit horizon and a washed-out blue overhead.
+        horizon.lerp(new THREE.Color(0xd9d3c3), haze * 0.45);
+        top.lerp(horizon, haze * 0.25);
+      }
+      top.lerp(murkCol, murk * 0.75);
+      horizon.lerp(murkCol, murk * 0.85);
+      fogColor = horizon.clone().lerp(murkCol, 0.4 + murk * 0.4);
+      sunIntensity *= lerp(1, 0.55, murk * (c.mist || 0.5));
+    }
     return {
       top,
       horizon,
@@ -376,7 +678,7 @@ export class Weather {
       sunIntensity,
       ambIntensity,
       fogDensity: c.fog,
-      fogColor: horizon.clone().lerp(new THREE.Color(0xffffff), this.isNight ? 0 : 0.08),
+      fogColor,
     };
   }
 
@@ -436,8 +738,9 @@ export class Weather {
       condition: this.condition,
       // Save the wind you chose, not whatever the random gusts have wandered
       // to — otherwise the setting creeps every time you play.
-      windSpeedKts: this.randomWinds ? this.baseWindKts : this.windSpeedKts,
-      windDirDeg: this.randomWinds ? this.baseWindDirDeg : this.windDirDeg,
+      // And with the rolled sky, the wind you set, not the day's.
+      windSpeedKts: this.isRandom ? this._chosenKts : this.randomWinds ? this.baseWindKts : this.windSpeedKts,
+      windDirDeg: this.isRandom ? this._chosenDir : this.randomWinds ? this.baseWindDirDeg : this.windDirDeg,
       randomWinds: this.randomWinds,
     };
   }
@@ -462,10 +765,17 @@ export class Weather {
           + `Known: ${Object.keys(CONDITIONS).join(', ')}`
       );
     }
+    const wasTime = this.time;
+    const wasCond = this.condition;
     if (data.time && TIMES[data.time]) this.time = data.time;
     if (data.condition && CONDITIONS[data.condition]) this.condition = data.condition;
     if (typeof data.windSpeedKts === 'number') this.windSpeedKts = clamp(data.windSpeedKts, 0, 40);
     if (typeof data.windDirDeg === 'number') this.windDirDeg = (data.windDirDeg + 360) % 360;
+    this._chosenKts = this.windSpeedKts;
+    this._chosenDir = this.windDirDeg;
+    // A different sky or time of day is a different roll; a fixed sky has none.
+    if (!this.isRandom || wasTime !== this.time || wasCond !== this.condition) this.wx = null;
+    if (this.isRandom && this.wx) this._applyWxWind();
     this.baseWindKts = this.windSpeedKts;
     this.baseWindDirDeg = this.windDirDeg;
     if (typeof data.randomWinds === 'boolean') this.setRandomWinds(data.randomWinds);

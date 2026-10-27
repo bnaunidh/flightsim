@@ -29,6 +29,7 @@
  *   addSelectionAction({ id, label, order, primary, visible, run })   a button on the card
  *   addMapState(fn(sim, st))                        draw state (the route)
  *   addPickSource(fn(sim) → waypoints)              more things a tap can pick
+ *   addMapLayer(fn(g, view, sim))                   drawn over the rest (the regional weather)
  */
 
 import { registerExtension, registerActions } from '../../game/extensions.js';
@@ -84,7 +85,7 @@ const S = {
 };
 
 /** What other modules plug in (nav.js). */
-const EXT = { panels: [], actions: [], states: [], picks: [] };
+const EXT = { panels: [], actions: [], states: [], picks: [], layers: [] };
 export function addMapPanel(p) {
   EXT.panels.push(p);
   EXT.panels.sort((a, b) => a.order - b.order);
@@ -92,6 +93,10 @@ export function addMapPanel(p) {
 export function addSelectionAction(a) {
   EXT.actions.push(a);
   EXT.actions.sort((x, y) => x.order - y.order);
+}
+/** A layer drawn over the map's own (the regional weather, features/wx-map.js): fn(g, view, sim). */
+export function addMapLayer(fn) {
+  EXT.layers.push(fn);
 }
 export function addMapState(fn) {
   EXT.states.push(fn);
@@ -847,6 +852,13 @@ function draw(sim) {
   const st = { me, pin: S.pin, sel: S.sel, carrier: carrierOf(sim), traffic: trafficOf(sim), plan: null, zone: null, reserved: reserved() };
   for (const f of EXT.states) f(sim, st);
   const stats = drawLayers(g, v, P, st, S.placer);
+  for (const f of EXT.layers) {
+    try {
+      f(g, v, sim);
+    } catch (e) {
+      /* a layer that cannot draw is a missing layer, not a missing map */
+    }
+  }
   stats.scale = drawFurniture(g, v);
   stats.tiles = C.tiles.size;
   stats.level = C.level;

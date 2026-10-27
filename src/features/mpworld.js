@@ -180,7 +180,8 @@ function wxNow(sim) {
   if (!w) return null;
   const tc = w._tempCond ? COND_IDS.indexOf(w._tempCond.id) : -1;
   return cleanWx({
-    t: Math.max(0, TIME_IDS.indexOf(w.time)), c: Math.max(0, COND_IDS.indexOf(w.condition)),
+    // The rolled sky goes out as the fixed one it looks like: a joiner's own roll would be a different sky.
+    t: Math.max(0, TIME_IDS.indexOf(w.time)), c: Math.max(0, COND_IDS.indexOf(w.condition === 'random' ? w.effectiveCondition : w.condition)),
     w: w.windSpeedKts, d: w.windDirDeg,
     tc, tl: w._tempCond ? w._tempCond.left : 0,
   });

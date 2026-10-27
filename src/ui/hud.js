@@ -1890,7 +1890,24 @@ export class Hud {
       this.windText.textContent = desc.text;
       this.lastValues.windText = desc.text;
     }
-    const detail = `${Math.round(w.windSpeedKts)} kt from ${String(Math.round(w.windDirDeg)).padStart(3, '0')}°`;
+    let detail = `${Math.round(w.windSpeedKts)} kt from ${String(Math.round(w.windDirDeg)).padStart(3, '0')}°`;
+    /*
+     * Random weather (world/wx.js): the gusts, the visibility when it is
+     * poor, and the notice of the next phase ("Weather changing: showers in
+     * ~2 min") — asked of the weather twice a second, not sixty times.
+     */
+    if (w.isRandom && w.describe) {
+      this._wxT = (this._wxT || 0) - 1;
+      if (this._wxT <= 0 || !this._wxD) {
+        this._wxT = 30;
+        this._wxD = w.describe();
+      }
+      const d = this._wxD;
+      const gust = Math.round(w.gustKts || 0);
+      if (gust - Math.round(w.windSpeedKts) >= 7) detail = `${Math.round(w.windSpeedKts)} kt, gusts ${gust}, from ${String(Math.round(w.windDirDeg)).padStart(3, '0')}°`;
+      if (d.vis) detail += ` · ${d.vis.replace(/^visibility /, 'vis ')}`;
+      if (d.change) detail += ` · ${d.change}`;
+    }
     if (this.lastValues.windDetail !== detail) {
       this.windDetail.textContent = detail;
       this.lastValues.windDetail = detail;

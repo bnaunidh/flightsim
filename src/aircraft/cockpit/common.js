@@ -254,7 +254,8 @@ export function rainMaterial({ depthTest = true } = {}) {
 }
 
 export function updateRain(mat, meshes, t, ac, weather) {
-  const rain = weather && weather.cond ? weather.cond.rain || 0 : 0;
+  // Rain, and the wet of flying through cloud (weather.immersion, main.js) or a fog bank.
+  const rain = weather && weather.cond ? Math.min(1, (weather.cond.rain || 0) + (weather.immersion || 0) * 0.35) : 0;
   const wet = rain > 0.01;
   for (const m of meshes) m.visible = wet;
   mat.opacity = rain * 0.55;

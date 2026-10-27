@@ -10,7 +10,7 @@ import { AIRCRAFT, performanceFor } from '../aircraft/types.js';
 import { NATURAL_EVENTS, SELECTABLE_EVENTS } from '../game/disasters.js';
 import { EF_SCALE } from '../world/tornado.js';
 import { AP_MODES } from '../flight/autopilot.js';
-import { PRESETS, TIMES, CONDITIONS } from '../world/weather.js';
+import { PRESETS, TIMES, CONDITIONS, SKY_CHOICES } from '../world/weather.js';
 import { ACTIONS, keyLabel, groupedActions } from '../flight/input.js';
 import { CREDITS_HTML } from './credits.js';
 import { MAPS } from '../world/maps.js';
@@ -24,6 +24,12 @@ import { liveryOf } from '../core/plane-paint.js';
 import { installHangarShowcase } from './hangar-showcase-ui.js';
 // Which games the menus offer at all (the class-demo switch: aeroplane + helicopter).
 import { gameShown } from './shown-games.js';
+
+/** A sky as a few words for a summary line: "random weather", "clear", "rainy". */
+function skySummary(id) {
+  if (id === 'random') return 'random weather';
+  return ((CONDITIONS[id] || CONDITIONS.clear).label || '').toLowerCase();
+}
 
 function h(html) {
   const t = document.createElement('template');
@@ -1127,7 +1133,8 @@ export class Menus {
       (p) => `<button class="preset" data-preset="${p.id}"><strong>${p.name}</strong><em>${p.hint}</em></button>`
     ).join('');
     const times = Object.entries(TIMES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
-    const conds = Object.entries(CONDITIONS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
+    // Random first (the default since wave 19: it rolls the day's weather and changes as you fly), then Clear always.
+    const conds = SKY_CHOICES.filter((c) => CONDITIONS[c.id]).map((c) => `<option value="${c.id}">${c.label}</option>`).join('');
 
     // Failures you arm before you go. Each one waits the number of minutes you
     // set, so you get to be somewhere interesting before it happens.
@@ -1356,6 +1363,8 @@ export class Menus {
       else if (cross < 4) msg = 'The wind is almost straight down the runway. Nice and easy.';
       else if (cross < 12) msg = `A gentle crosswind from the ${side} (${Math.round(cross)} kt across the runway).`;
       else msg = `A strong crosswind from the ${side} — ${Math.round(cross)} kt across the runway. Tricky!`;
+      // Random weather rolls the day's own wind (round the map's usual one) and changes as you fly.
+      if (cond.value === 'random') msg = 'Random weather picks the day\'s wind and sky for this map, and they change as you fly — every 8 to 20 minutes. Pick Clear always for a calm, steady day.';
       s.querySelector('[data-crosswind]').textContent = msg;
 
       // Fuel: shown as a share of the tanks *and* as the time it buys in this
@@ -1375,7 +1384,7 @@ export class Menus {
       const armed = [...s.querySelectorAll('[data-fail]:checked, [data-event]:checked')].length;
       s.querySelector('[data-summary]').innerHTML =
         `<strong>${ac.name}</strong> · ${startWords[this.chosenStart]} · ` +
-        `${CONDITIONS[cond.value].label.toLowerCase()}, ${wind.value} kt` +
+        `${skySummary(cond.value)}, ${wind.value} kt` +
         (fuelPct < 100 ? ` · <span class="sum-warn">${mins} min of fuel</span>` : '') +
         (armed ? ` · <span class="sum-warn">${armed} failure${armed > 1 ? 's' : ''} armed</span>` : '');
     };
@@ -1584,7 +1593,7 @@ export class Menus {
         ...cfg,
         label: `${ac ? ac.name : cfg.aircraft}`,
         summary:
-          `${CONDITIONS[cfg.condition].label.toLowerCase()}, ${cfg.windSpeedKts} kt`
+          `${skySummary(cfg.condition)}, ${cfg.windSpeedKts} kt`
           + `${startWords[this.chosenStart] ? ' · ' + startWords[this.chosenStart] : ''}`,
       };
       saveFreePresets(saved);
@@ -1700,7 +1709,7 @@ export class Menus {
           ...cfg,
           label: `${ac ? ac.name : cfg.aircraft}`,
           summary:
-            `${CONDITIONS[cfg.condition].label.toLowerCase()}, ${cfg.windSpeedKts} kt` +
+            `${skySummary(cfg.condition)}, ${cfg.windSpeedKts} kt` +
             `${startWords[this.chosenStart] ? ' · ' + startWords[this.chosenStart] : ''}`,
         };
         saveFreePresets(saved);

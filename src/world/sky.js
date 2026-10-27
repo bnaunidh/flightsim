@@ -9,6 +9,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { dim, CAPS } from '../render/flash-safety.js';
+import { HEIGHT_FOG, heightFogDepth } from '../render/height-fog.js';
 
 const vertexShader = /* glsl */ `
   varying vec3 vDir;
@@ -154,6 +155,7 @@ const DUSK_AWAY = new THREE.Color(0x8f86ad);
 const _fwd = new THREE.Vector3();
 const _awayFog = new THREE.Color();
 const _hazeFog = new THREE.Color();
+const _sunHaze = new THREE.Color();
 
 function smooth(e0, e1, x) {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
@@ -385,6 +387,20 @@ export class SkyDome {
 
     this.uniforms.uTop.value.copy(p.top);
     this.uniforms.uHorizon.value.copy(p.horizon);
+    /*
+     * Inside a fog bank (render/height-fog.js) the sky is the fog: veiled by
+     * the layer's depth along the horizon and 30° up from where the eye is.
+     * Climb out of the top and the blue comes back.
+     */
+    this.veil = 0;
+    if (HEIGHT_FOG.x > 0) {
+      const eye = this.camera ? this.camera.position.y : HEIGHT_FOG.z;
+      const vH = 1 - Math.exp(-heightFogDepth(HEIGHT_FOG.x, HEIGHT_FOG.y, eye, 0, 20000));
+      const vU = 1 - Math.exp(-heightFogDepth(HEIGHT_FOG.x, HEIGHT_FOG.y, eye, 0.5, 20000));
+      this.uniforms.uHorizon.value.lerp(p.fogColor, vH);
+      this.uniforms.uTop.value.lerp(p.fogColor, vU);
+      this.veil = vU;
+    }
     this.uniforms.uSunColor.value.copy(p.sun);
     this.uniforms.uSunDir.value.copy(this._sunDir);
     // The moon is as visible as it always was; the stars now also answer to
@@ -395,14 +411,15 @@ export class SkyDome {
     this.uniforms.uMoonPhase.value = phase;
     this.uniforms.uMoonWax.value = weather.moonWaxing === false ? -1 : 1;
     this.uniforms.uStars.value = moonUp * (0.35 + 0.65 * (1 - phase));
-    this.uniforms.uOvercast.value = weather.cond.cloud;
+    this.uniforms.uOvercast.value = Math.max(weather.cond.cloud, this.veil || 0);
     // Lightning washes the whole sky and the sunlight: the biggest flash in
     // the game, so with Reduce flashing on it is a fraction of the strength.
     const flash = dim(weather.lightningFlash, CAPS.lightning);
     this.uniforms.uFlash.value = flash;
 
     this.sun.color.copy(p.sun);
-    this.sun.intensity = p.sunIntensity + flash * 2.5;
+    // Dimmer through a fog bank, by its veil overhead.
+    this.sun.intensity = p.sunIntensity * (1 - 0.6 * (this.veil || 0)) + flash * 2.5;
     this.hemi.color.copy(p.ambient);
     this.hemi.groundColor.copy(p.ground);
     this.hemi.intensity = p.ambIntensity;
@@ -428,6 +445,17 @@ export class SkyDome {
     u.uHorizonAway.value.copy(p.horizon).lerp(DUSK_AWAY, 0.5 * low);
     u.uHaze.value.copy(p.sun).multiplyScalar(0.5 * low);
     u.uHazeK.value = 5;
+    /*
+     * Sun haze by day (the random sky's haze and mist, world/wx.js): the same
+     * forward-scatter lobe, wider and softer, round a sun that is well up —
+     * a hazy day's bright, milky glow round the sun and along the horizon
+     * under it. Zero on a clean day and on every fixed sky.
+     */
+    const hazy = weather.wx && !weather.isNight ? Math.min(1, (weather.cond.haze || 0) + (weather.cond.mist || 0) * 0.4) * (1 - weather.cond.cloud * 0.6) : 0;
+    if (hazy > 0.01 && low < 0.5) {
+      u.uHaze.value.add(_sunHaze.copy(p.sun).multiplyScalar(0.32 * hazy));
+      u.uHazeK.value = 5 - 2.5 * hazy;
+    }
     if (low > 0.001 && this.camera) {
       this.camera.getWorldDirection(_fwd);
       const fx = _fwd.x;

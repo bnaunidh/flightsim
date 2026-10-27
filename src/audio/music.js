@@ -947,7 +947,7 @@ export class Music {
     if (!this.def.pulseOn || this.pulseGate === false) p.pulse = 0;
     // Weather pushes the air voice: rain and storm raise it, clear air lowers
     // it, so the same scene sounds different in different weather for nothing.
-    const cond = this.weather && this.weather.condition;
+    const cond = this.weather && (this.weather.effectiveCondition || this.weather.condition);
     if (cond === 'rainy') p.air *= 1.35;
     else if (cond === 'stormy') p.air *= 1.7;
     else if (cond === 'clear') p.air *= 0.85;

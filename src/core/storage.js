@@ -194,7 +194,14 @@ export const DEFAULT_SETTINGS = {
   atcChatter: true,
   // 'radio' (synthesised, no TTS) | 'speech' (browser TTS) | 'recordings'
   atcVoice: 'radio',
-  weather: { time: 'day', condition: 'clear', windSpeedKts: 4, windDirDeg: 90 },
+  /*
+   * The Free Flight sky. 'random' since wave 19 (world/wx.js): each flight
+   * rolls the day's weather for the map and it changes in phases as you fly.
+   * 'clear' is "Clear always" in the picker, for a calm day (the class demo).
+   */
+  weather: { time: 'day', condition: 'random', windSpeedKts: 4, windDirDeg: 90 },
+  /** Revision of the sky default: a save from before it, still on the old default (clear), is moved to random once. */
+  weatherRev: 1,
 };
 
 export const DEFAULT_PROGRESS = {
@@ -314,8 +321,23 @@ export function loadSettings() {
     s[m.rev] = DEFAULT_SETTINGS[m.rev];
     changed = true;
   }
+  if (migrateWeather(s, saved)) changed = true;
   if (changed) write(SETTINGS_KEY, s);
   return s;
+}
+
+/**
+ * Random weather became the default (wave 19). A save from before it whose
+ * sky is still the old default — clear, or none — moves to random, once;
+ * any other sky a player picked stays. Picking Clear always afterwards
+ * sticks, because the revision is written with the move.
+ */
+export function migrateWeather(s, saved) {
+  if (!saved || saved.weatherRev === DEFAULT_SETTINGS.weatherRev) return false;
+  const was = saved.weather && saved.weather.condition;
+  if (!was || was === 'clear') s.weather = { ...(s.weather || DEFAULT_SETTINGS.weather), condition: 'random' };
+  s.weatherRev = DEFAULT_SETTINGS.weatherRev;
+  return true;
 }
 
 export function saveSettings(s) {

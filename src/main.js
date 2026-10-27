@@ -16,6 +16,7 @@ import { pickTier, probeFrames, isTier, tierRank, asHighMs } from './render/qual
 import { DynamicResolution, pixelRatioCap } from './render/dyn-res.js';
 import { setPaintTier } from './render/paint.js';
 import { Weather } from './world/weather.js';
+import { PHASES, changeWords, visibilityPhrase, obscuredBy } from './world/wx.js';
 import { SkyDome } from './world/sky.js';
 import { createTerrain, heightAt, AIRPORT, applyMap, MAP, clearObstacles, clearPlatforms, harbourBerth, harbourMouth, flatSurfaceAt } from './world/terrain.js';
 import { SeaMarks } from './world/seamarks.js';
@@ -109,6 +110,8 @@ import './features/index.js';
 import { noteLiftoff, noteTouchdown, noteArrested, noteCeiling, noteMissionComplete } from './features/achievements/index.js';
 import { viewScale as airlinerViewScale } from './features/airliners.js';
 import { __airportServices } from './features/airport-services.js';
+import { installHeightFog, setHeightFog, heightFogInstalled } from './render/height-fog.js';
+import { bankAt, visibilityAt, densityForVisibility } from './world/wx.js';
 
 const KTS = UNITS.KTS;
 const FT = UNITS.FT;
@@ -119,6 +122,39 @@ const FPM = UNITS.FPM;
  * or the default when they have unbound it (a button with nothing behind it
  * is worse than one that does what it says).
  */
+/**
+ * The random weather's seed for a test or a shared flight: ?wxseed=N on the
+ * address, or window.__wxSeed. Otherwise undefined, and every flight rolls
+ * its own (world/wx.js newSeed).
+ */
+function wxSeedOverride() {
+  try {
+    const q = new URLSearchParams(location.search).get('wxseed');
+    if (q != null && q !== '' && Number.isFinite(Number(q))) return Number(q) >>> 0;
+  } catch (e) {
+    /* no address bar (a test) */
+  }
+  return typeof window !== 'undefined' && Number.isFinite(window.__wxSeed) ? window.__wxSeed >>> 0 : undefined;
+}
+
+/**
+ * The glide-path hint with the visibility in it, when it is poor (under 6 km):
+ * "On the perfect glide path · vis 3 km in mist", or, further out than the
+ * eye can see, "… · runway not in sight yet (vis 900 metres) — fly the lights".
+ */
+function approachVisHint(hint, weather, ac) {
+  const vis = weather.visibilityM(Math.max(0, ac.pos.y));
+  if (vis >= 6000) return hint;
+  const nf = navField();
+  const fx = nf ? nf.cx : RUNWAY.cx;
+  const fz = nf ? nf.cz : RUNWAY.cz;
+  const dist = Math.hypot(ac.pos.x - fx, ac.pos.z - fz);
+  const why = obscuredBy(weather.cond);
+  const vp = `vis ${visibilityPhrase(vis)}${why ? ` ${why}` : ''}`;
+  const text = dist > vis ? `${hint.text} · runway not in sight yet (${vp}) — fly the lights` : `${hint.text} · ${vp}`;
+  return { ...hint, text, visM: vis };
+}
+
 function firstCodeFor(action) {
   const codes = codesFor(action);
   if (codes && codes.length) return codes[0];
@@ -164,6 +200,14 @@ function fatal(message, detail) {
 class Game {
   constructor() {
     this.settings = loadSettings();
+    /*
+     * The weather's low murk in every material's fog (render/height-fog.js),
+     * before the first material is drawn — on Medium and up. A Chromebook on
+     * Low keeps three's own fog untouched (not one instruction more a pixel)
+     * and gets the murk as an even fog as thick as the layer is at its height
+     * (update()), so the visibility is still the weather's.
+     */
+    if (this.settings.quality !== 'low') installHeightFog();
     // Before anything builds an aeroplane, say which set of models to use.
     setFleetModels(this.settings.fleetModels);
     // ...and whether the airliners wear their real models (aircraft/real-models.js).
@@ -284,8 +328,12 @@ class Game {
         Math.abs(rel) < 35 ? 'head-on' : Math.abs(rel) > 145 ? 'from behind' : rel < 0 ? 'from the left' : 'from the right';
       this.hud.notify(`Gust ${side} — ${kts} knots`, 'warn', 2.6);
     };
+    // Random weather's phases (world/wx.js): a notice before each change, the radio when it is murk.
+    this.weather.onWxNews = (news) => this.onWeatherNews(news);
     // Pick the saved map before anything reads the height field.
     applyMap(this.settings.map || 'kestrel');
+    // The menu's sky, when it is Random, is this map's own roll (world/wx.js climate), not a temperate one.
+    this.weather.beginFlight({ seed: wxSeedOverride(), map: MAP, regions: null });
     this.layRoads();
     // The field moved. Tell the modules that cached its height.
     refreshRunways();
@@ -1217,7 +1265,7 @@ class Game {
       noteTouchdown(this, g, {
         crosswindKts: wind.cross,
         night: this.weather.isNight,
-        stormy: this.weather.windSpeedKts >= 20 || /storm|rain/i.test(this.weather.condition || ''),
+        stormy: this.weather.windSpeedKts >= 20 || /storm|rain/i.test(this.weather.effectiveCondition || this.weather.condition || ''),
       });
     });
 
@@ -1707,6 +1755,13 @@ class Game {
     } else if (def.weather) {
       this.weather.load(def.weather);
     }
+    // Random weather rolls the day's sky for this map (world/wx.js); on the World Map each region its own.
+    this.weather.beginFlight({ seed: wxSeedOverride(), map: MAP, regions: this.wxRegions() });
+    // The day's weather in a line, as a Free Flight starts (the random sky's briefing).
+    if (mode === 'free' && this.weather.wx && this.hud) {
+      const d = this.weather.describe();
+      this.hud.notify(`Today: ${d.word} · ${d.wind}${d.vis ? ` · ${d.vis}` : ''} — it changes as you fly`, 'info', 6);
+    }
     // A new flight starts with the field as wet as its weather: rain chosen
     // on the menu has been falling for a while, and clear skies after a
     // stormy flight are dry ones, not four minutes of drying from the last
@@ -1836,8 +1891,11 @@ class Game {
         // "Wind 2 5 0 at 0" was the tower describing a calm (measured, the
         // kid playtest's calm start).
         const kts = Math.round(w.windSpeedKts);
+        // With the rolled sky, the tower gives the day's weather too: the gusts, and the visibility when it is poor.
+        const d = w.isRandom ? w.describe() : null;
+        const wx = d ? `${d.windRadio}${d.vis ? `, ${d.vis}` : ''}${d.word && d.label !== 'Clear' ? `, ${d.word}` : ''}` : (kts < 1 ? 'wind calm' : `wind ${dir} at ${kts}`);
         this.atc.say(
-          `${this.atc.callsign}, ${this.atc.field} Tower, ${kts < 1 ? 'wind calm' : `wind ${dir} at ${kts}`}. `
+          `${this.atc.callsign}, ${this.atc.field} Tower, ${wx}. `
             + 'Lift when you are ready and keep clear of the runway. Call us if you are going anywhere.',
           'tower'
         );
@@ -3246,12 +3304,15 @@ class Game {
       this.buildWorld(this.settings.quality);
       // Each map has weather that suits it; the player can still change it in
       // Free Flight afterwards.
+      // Except the two skies a player picks to keep: Random (it rolls this map's own weather) and Clear always.
+      const keep = this.weather.condition === 'random' || this.weather.condition === 'clear';
       this.weather.load({
         time: def.weather.time,
-        condition: def.weather.cond,
+        condition: keep ? this.weather.condition : def.weather.cond,
         windSpeedKts: def.weather.windSpeedKts,
         windDirDeg: def.weather.windDirDeg,
       });
+      this.weather.beginFlight({ seed: wxSeedOverride(), map: MAP, regions: this.wxRegions() });
       this.settings.weather = this.weather.serialize();
       saveSettings(this.settings);
       this.menus.syncSettings(this.settings);
@@ -5198,6 +5259,7 @@ class Game {
     this.handleDiscreteInput();
     if (this.state === 'flying') this.applyControllers();
 
+    if (this.weather.isRandom && ac) this.observeWeather(ac);
     this.weather.update(dt);
 
     if (this.state === 'flying') {
@@ -5264,6 +5326,8 @@ class Game {
     // set by src/game/roles/afo-president.js), many kilometres from the
     // parked aeroplane under the seat.
     const focus = (this.riding && this.riding.pos) || ac.pos;
+    // The eye's height, for the random sky over its own deck (weather.js palette()).
+    this.weather.eyeY = this.camera.position.y;
     this.sky.update(this.weather);
     this.sky.followTarget(focus);
     /*
@@ -5446,9 +5510,14 @@ class Game {
     this.clouds.update(dt, this.weather, focus);
     this.rain.update(dt, this.weather, this.camera.position, ac.vel);
     this.cloudImmersion = this.clouds.cloudImmersion(focus.y, this.weather);
+    // Light bumps inside cloud (weather.turbulenceLevel; the camera's shake caps still hold).
+    this.weather.immersion = this.cloudImmersion;
     this.papiHint = this.airport.updatePapi(ac.pos);
     // A named field's own lights on the World Map (world/navfield.js); null everywhere else.
     if (this.navPapi) this.papiHint = this.navPapi(ac.pos, this.papiHint);
+    // Poor visibility on the approach (the random sky's mist, fog or rain, world/wx.js): say it with the
+    // glide path, and say when the runway cannot be seen yet — the lights are the thing to fly.
+    if (this.papiHint && this.weather.isRandom) this.papiHint = approachVisHint(this.papiHint, this.weather, ac);
 
     // Aeroplane + cockpit.
     // A crashing fleet model drives its own transform — see model-adapter.js.
@@ -5499,6 +5568,29 @@ class Game {
       this.rig.update(dt, ac, this.input, this.weather);
       // Did anything stretch the airliner's follow view? See checkStretch().
       this.rig.checkStretch();
+    }
+
+    // The weather's low murk round the eye (render/height-fog.js): mist and fog
+    // lie in the valleys and on the water, in banks a few kilometres across.
+    {
+      const c = this.weather.cond;
+      let a = c.hfA || 0;
+      if (a > 0 && this.weather.wx) a *= 0.45 + 1.1 * bankAt(this.camera.position.x, this.camera.position.z, this.weather.wx.seed);
+      /*
+       * Low: no layer in the shaders, so an even fog as thick as the layer is
+       * at the eye's height. That is the world BUILT at Low too, not only a
+       * start-up at Low: a fresh Chromebook boots at High (Auto's default),
+       * installs the layer, and the probe then rebuilds at Low — which kept
+       * the layer's per-pixel work in every fogging shader. (Headless it was
+       * within noise; a booted-at-High Low is ~1.4 ms slower than a Low start
+       * in v74.8 too, for other reasons.)
+       */
+      const inShaders = heightFogInstalled() && this.qualityBuilt !== 'low';
+      setHeightFog(a, c.hfH, this.camera.position.y, inShaders);
+      if (a > 0 && !inShaders) {
+        const d = densityForVisibility(visibilityAt({ ...c, hfA: a }, this.camera.position.y));
+        if (d > this.scene.fog.density) this.scene.fog.density = d;
+      }
     }
 
     // Extra fog inside cloud gives a genuine whiteout.
@@ -5588,6 +5680,78 @@ class Game {
   /* Headless driver — used by the automated checks and handy for debugging.
      Advances the simulation by a fixed amount without waiting for frames.   */
   /* ------------------------------------------------------------------ */
+
+  /** The World Map's regions for the regional weather (world/wx.js), or null on an ordinary map. */
+  wxRegions() {
+    const wp = this.worldPreview;
+    try {
+      return wp && wp.active && wp.active() && wp.regions ? wp.regions() : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * Tell the rolled sky where the player is (its regions, the weather ahead)
+   * and whether they are on an approach: low, near a runway, in the air. A
+   * change that thickens the murk waits for them (world/wx.js WxTimeline),
+   * always after a warning, so fog never rolls in on short final.
+   */
+  observeWeather(ac) {
+    const nf = navField();
+    const fx = nf ? nf.cx : RUNWAY.cx;
+    const fz = nf ? nf.cz : RUNWAY.cz;
+    const near = Math.hypot(ac.pos.x - fx, ac.pos.z - fz) < 15000;
+    const hold = this.state === 'flying' && !ac.onGround && near && (ac.agl || 0) < 900;
+    this.weather.observe(ac.pos.x, ac.pos.z, hold);
+    // The weather ahead on the World Map, looked at every 45 s or so of flying.
+    const wx = this.weather.wx;
+    if (!wx || wx.lines.length < 2 || this.state !== 'flying' || ac.onGround) return;
+    this._wxAheadT = (this._wxAheadT || 0) - 1 / 60;
+    if (this._wxAheadT > 0) return;
+    this._wxAheadT = 45;
+    const hdg = (Math.atan2(ac.vel.x, -ac.vel.z) * 180) / Math.PI;
+    if (Math.hypot(ac.vel.x, ac.vel.z) < 30) return;
+    const a = wx.ahead(ac.pos.x, ac.pos.z, hdg, 35);
+    const key = a ? a.word : '';
+    if (a && key !== this._wxAheadSaid) {
+      const vis = visibilityPhrase(a.visM);
+      this.hud && this.hud.notify(`Weather ahead: ${a.word}, about ${a.km} km`, 'info', 5);
+      if (this.atc) this.atc.say(`${this.atc.callsign}, weather ahead: ${a.word} about ${a.km} kilometres on your track, visibility ${vis} in it.`, 'approach');
+    }
+    this._wxAheadSaid = key;
+  }
+
+  /**
+   * The rolled sky's news (world/wx.js): a notice a couple of minutes before
+   * each change ("Weather changing: showers in ~2 min") and the radio when
+   * fog or mist is on its way — warned first, always — or the change is in.
+   */
+  onWeatherNews(news) {
+    if (!news || this.state !== 'flying') return;
+    const w = this.weather;
+    const to = PHASES[news.to];
+    if (!to) return;
+    const atc = this.atc;
+    if (news.kind === 'soon') {
+      const fc = w.wx ? w.wx.forecast() : null;
+      this.hud && this.hud.notify(changeWords(fc), news.murk ? 'warn' : 'info', 6);
+      if (atc && (news.murk || to.rain > 0.4 || to.snow > 0.3 || to.storm > 0.5)) {
+        const mins = Math.max(1, Math.round(news.inS / 60));
+        const vis = visibilityPhrase(to.visM);
+        atc.say(
+          `All aircraft, ${atc.field} Tower. ${to.word[0].toUpperCase() + to.word.slice(1)} expected in about ${mins} minute${mins > 1 ? 's' : ''}, `
+            + `visibility reducing to ${vis}.${news.murk ? ' If you are landing, now is a good time.' : ''}`,
+          'tower',
+          news.murk ? 1 : 0
+        );
+      }
+    } else if (news.kind === 'done') {
+      const d = w.describe();
+      // The radio's own call comes from atc-director.js when the sky's word changes.
+      this.hud && this.hud.notify(`Weather now: ${d.word}${d.vis ? ` · ${d.vis}` : ''}`, 'info', 4);
+    }
+  }
 
   step(seconds = 1, dt = 1 / 60) {
     const n = Math.max(1, Math.round(seconds / dt));

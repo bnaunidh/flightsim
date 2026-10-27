@@ -20,9 +20,12 @@ import { MAP } from './terrain.js';
 
 /** How hard it is snowing on a snow map: cloud past half is light snow, rain is heavy. */
 export function snowIntensity(weather, map = MAP) {
-  if (!map || map.precip !== 'snow' || !weather || !weather.cond) return 0;
+  if (!weather || !weather.cond) return 0;
   const c = weather.cond;
-  return Math.min(1, Math.max(c.rain || 0, ((c.cloud || 0) - 0.45) * 1.4));
+  // Random weather's own snow (world/wx.js): it only rolls snow where it is cold.
+  const rolled = Math.min(1, c.snow || 0);
+  if (!map || map.precip !== 'snow') return rolled;
+  return Math.min(1, Math.max(rolled, c.rain || 0, ((c.cloud || 0) - 0.45) * 1.4));
 }
 
 const vert = /* glsl */ `
@@ -33,7 +36,10 @@ const vert = /* glsl */ `
   uniform float uWidth;
   void main() {
     vUv = uv;
-    vec4 mv = viewMatrix * vec4(iPos, 1.0);
+    // modelViewMatrix: on the World Map the floating origin (render/render-origin.js) moves the
+    // scene and the camera together for the draw; with viewMatrix alone the drops were left
+    // kilometres away from the camera there, and it never visibly rained.
+    vec4 mv = modelViewMatrix * vec4(iPos, 1.0);
     // Direction of travel in view space defines the streak's long axis.
     vec3 dirView = normalize((viewMatrix * vec4(uVel, 0.0)).xyz);
     vec2 along = normalize(dirView.xy + vec2(0.0001, 0.0001));

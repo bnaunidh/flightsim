@@ -116,7 +116,7 @@ function populate(sim) {
     ground: (x, z) => groundY(x, z) - AIRPORT.elev,
     tier: tierOf(sim),
     time: L.time,
-    condition: w.condition || 'clear',
+    condition: w.effectiveCondition || w.condition || 'clear',
     rnd,
     level: L.level,
   });
