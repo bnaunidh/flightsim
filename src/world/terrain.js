@@ -2028,7 +2028,7 @@ export function seaCut(renderer, scene, camera) {
  * Terrain material: three procedural textures blended per-vertex by
  * height + slope, with a low-frequency tint to hide the tiling.
  */
-function makeTerrainMaterial(quality = 'high') {
+export function makeTerrainMaterial(quality = 'high') {
   const rich = quality !== 'low';
   const grass = grassTexture();
   const sand = sandTexture();

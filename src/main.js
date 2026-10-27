@@ -5527,17 +5527,30 @@ class Game {
   coachHint(ac) {
     const r = ac.readouts();
     const kts = r.iasKts;
+    // The aeroplane's own speeds (ui/speed-bands.js): the Skylark's numbers were
+    // told to an A321 too — "lift off at 55 knots".
+    const B = this.hud && this.hud.speedBandsFor ? this.hud.speedBandsFor(this) : null;
+    const rot = B ? B.rotate : 52;
+    const lift = B ? B.liftOff : 55;
 
     if (ac.crashed) return 'Press <kbd>Esc</kbd> and choose <b>Restart</b> to try again';
     if (!ac.engineOn && ac.rpm < 0.05) return 'Press <kbd>I</kbd> to start the engine';
 
     if (ac.onGround) {
+      /*
+       * On a stand — parked, the crew working, being pushed — "Hold Shift for
+       * full power" is the one thing not to do: the C-17's Class-D transfer
+       * said it under "hold on the stand", and an airliner at a gate heard it
+       * beside the ground crew's prompt. The stand's own prompt speaks there.
+       */
+      const svc = __airportServices && __airportServices.S && __airportServices.S.state;
+      if ((svc === 'onStand' || svc === 'calling' || svc === 'serviced' || svc === 'pushback') && ac.engineOn) return null;
       // Rolling fast with the power already off: they want the brakes.
       if (r.throttle < 0.2 && ac.groundSpeed > 6) return 'Hold <kbd>Space</kbd> to brake';
       if (r.throttle < 0.85) return 'Hold <kbd>Shift</kbd> for full power';
-      if (kts > 52) return 'Now pull back gently on <kbd>S</kbd> to fly!';
-      if (kts > 12) return 'Keep straight with <kbd>Q</kbd> / <kbd>E</kbd> — lift off at 55 knots';
-      return 'Hold <kbd>Shift</kbd> — you need 55 knots to fly';
+      if (kts > rot) return 'Now pull back gently on <kbd>S</kbd> to fly!';
+      if (kts > 12) return `Keep straight with <kbd>Q</kbd> / <kbd>E</kbd> — lift off at ${lift} knots`;
+      return `Hold <kbd>Shift</kbd> — you need ${lift} knots to fly`;
     }
 
     // Airborne.
@@ -5553,7 +5566,7 @@ class Game {
     // B-1B's dash, features/swing-wing.js).
     const dashing = SPEC.reheat && ac.rpm > 0.85 && ac.ias < SPEC.vne;
     if (!dashing && kts > Math.max(150, 0.8 * SPEC.vne * KTS)) return 'Far too fast — ease the power right off with <kbd>Ctrl</kbd> and level the wings';
-    if (kts < 52) return 'Too slow! Add power with <kbd>Shift</kbd> and lower the nose with <kbd>W</kbd>';
+    if (kts < (B ? B.tooSlowAir(r.flapStep > 0) : 52)) return 'Too slow! Add power with <kbd>Shift</kbd> and lower the nose with <kbd>W</kbd>';
     if (ac.stalled) return 'Push the nose down with <kbd>W</kbd> and add power';
     if (ac.airborneTime < 8) return 'Climbing — keep the nose just above the horizon';
 
@@ -5567,8 +5580,8 @@ class Game {
       if (!r.gearDown) return 'Landing gear! Press <kbd>G</kbd> before you land';
       if (this.papiHint && this.papiHint.state === 'low') return 'Too low — add power with <kbd>Shift</kbd>';
       if (this.papiHint && this.papiHint.state === 'high') return 'Too high — ease the power off with <kbd>Ctrl</kbd>';
-      if (kts > 95) return 'Too fast to land — ease the power off with <kbd>Ctrl</kbd> (aim for 70 knots)';
-      if (r.flapStep === 0 && kts < 100) return 'Press <kbd>F</kbd> for flaps — they help you fly slowly';
+      if (kts > (B ? B.tooFastToLand : 95)) return `Too fast to land — ease the power off with <kbd>Ctrl</kbd> (aim for ${B ? B.approach : 70} knots)`;
+      if (r.flapStep === 0 && kts < (B ? B.tooFastToLand + 5 : 100)) return 'Press <kbd>F</kbd> for flaps — they help you fly slowly';
       if (r.aglFt < 60) return 'Ease back on <kbd>S</kbd> just before the wheels touch';
       return 'Follow the PAPI lights — two white, two red';
     }

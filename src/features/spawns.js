@@ -47,6 +47,7 @@ import { getAircraft, AIRCRAFT } from '../aircraft/types.js';
 import { SPEC } from '../aircraft/physics.js';
 import { keyLabel } from '../flight/input.js';
 import { multiplayer } from './multiplayer.js';
+import { takeCraft } from './traffic.js';
 import * as UI from './spawns/ui.js';
 
 const STORE = 'islandsim.startAt.v1';
@@ -119,6 +120,41 @@ function ctxNow(sim) {
     layout = null;
   }
   return { layout, traffic: Array.isArray(sim.traffic) ? sim.traffic : [], carrier: sim.carrier || null };
+}
+
+/*
+ * The airport's traffic parks on the same stands the player starts on, and it
+ * is started first. At Gateway an A321neo (44.5 m) fits only the four heavy
+ * gates; the airport parks its own jumbos on three, and a parked freighter of
+ * the traffic's sat on the fourth — so "Gate" put every A321 on the runway
+ * with "Nowhere free to start there", and there was no pushback to film.
+ * The player is who the airport is for: a traffic aeroplane that is only
+ * PARKED (not taxiing, not on the runway) in the way of the place asked for
+ * leaves (takeCraft, the owner's teleport's own exit), and the traffic fills
+ * the gap later somewhere the player is not (playerOnSlot). Never the
+ * airport's own parked aeroplanes, and never anything moving.
+ */
+function makeRoom(sim, cls, type, id, ctx) {
+  const traffic = Array.isArray(ctx.traffic) ? ctx.traffic : [];
+  const parked = traffic.filter((t) => t && t.pos && t.onGround && (t.phase === 'parked' || t.activity === 'parked') && !(Math.abs(t.speed || 0) > 0.3));
+  if (!parked.length) return null;
+  const rest = traffic.filter((t) => parked.indexOf(t) < 0);
+  const r = resolveSpawn(MAP.id, cls, { type, choice: id, random: true, ctx: { ...ctx, traffic: rest } });
+  if (!r || r.kind === 'runway') return null;
+  const reach = (t) => (r.span || 12) / 2 + 5 + (t.span || 12) / 2;
+  const inWay = parked.filter((t) => Math.hypot(t.pos.x - r.x, t.pos.z - r.z) < reach(t));
+  for (const t of inWay) {
+    try {
+      takeCraft(sim, t.id);
+    } catch (e) {
+      return null;
+    }
+  }
+  // Moved out of the way: check again against what is left, as the start would have.
+  const again = resolveSpawn(MAP.id, cls, { type, choice: id, random: false, ctx: ctxNow(sim) });
+  if (again.kind === 'runway') return null;
+  S.madeRoom = inWay.map((t) => t.callsign || t.id);
+  return again;
 }
 
 function mpJoining() {
@@ -204,7 +240,7 @@ const V = new THREE.Vector3();
 function keyName(sim, action) {
   const codes = sim && sim.input && sim.input.bindings && sim.input.bindings[action];
   const c = codes && codes[0];
-  if (!c) return action === 'starter' ? 'I' : 'Y';
+  if (!c) return action === 'starter' ? 'I' : 'P';
   try {
     return keyLabel(c);
   } catch (e) {
@@ -228,7 +264,9 @@ function words(r, sim) {
   const heli = !!SPEC.rotor;
   const rw = runwayNumber();
   const start = keyName(sim, 'starter');
-  const crew = keyName(sim, 'crew');
+  // The ground crew's action is 'services' (airport-services.js, P). There was no
+  // 'crew' action, so this said "Y calls the ground crew" and Y is the autopilot.
+  const crew = keyName(sim, 'services');
   switch (r.kind) {
     case 'stand':
       return heli
@@ -338,6 +376,7 @@ registerExtension({
 
   startMode(sim, mode, opts) {
     S.decided = null;
+    S.madeRoom = null;
     if (mode !== 'free' || !opts || !opts.startAt) return;
     let id = String(opts.startAt);
     const skip = (why) => {
@@ -354,7 +393,9 @@ registerExtension({
     if (id === 'airbase') id = 'base';
     const type = sim.aircraftType;
     const cls = spawnClassOf(type);
-    const r = resolveSpawn(MAP.id, cls, { type, choice: id, random: true, ctx: ctxNow(sim) });
+    const ctx = ctxNow(sim);
+    let r = resolveSpawn(MAP.id, cls, { type, choice: id, random: true, ctx });
+    if (r.kind === 'runway' && r.fallback) r = makeRoom(sim, cls, type, id, ctx) || r;
     S.last = r;
     if (r.kind === 'carrier') return skip('resolved to the carrier without startAt carrier; left on the runway');
     if (r.kind === 'runway') {
@@ -374,7 +415,7 @@ registerExtension({
 
 /** For the tests and the console. */
 export function spawnsState() {
-  return { installed: S.installed, last: S.last, decided: S.decided, placed: S.placed, choice: { ...loadChoice() }, picker: UI.pickerState(), classes: CLASSES };
+  return { installed: S.installed, last: S.last, decided: S.decided, madeRoom: S.madeRoom || null, placed: S.placed, choice: { ...loadChoice() }, picker: UI.pickerState(), classes: CLASSES };
 }
 
 const API = {

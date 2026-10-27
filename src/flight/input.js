@@ -308,8 +308,36 @@ const PUNCT = {
   Backslash: '\\', Minus: '-', Equal: '=', Backquote: '`', IntlBackslash: '\\',
 };
 
+/*
+ * A Mac keyboard has no Insert, Page Up / Down, Home, End or forward-Delete
+ * keys. A MacBook reaches the last five with fn and an arrow (fn ⌫ for
+ * Delete), which the browser reports as those very keys, and has no Insert
+ * at all. So on a Mac the hints name them the way a Mac user finds them, and
+ * an action bound to Insert and another key names the other one (the radio's
+ * F8). Found playing the game the way an A320 home-cockpit pilot on a Mac
+ * would: the radio card said "Insert", the reversers "End".
+ */
+const MAC_KEYS = { PageUp: 'fn ↑', PageDown: 'fn ↓', Home: 'fn ←', End: 'fn →', Delete: 'fn ⌫' };
+const NOT_ON_MAC = new Set(['Insert']);
+let macOverride = null;
+/** Tests: force the Mac names on (true), off (false), or back to detecting (null). */
+export function setMacKeyboard(on) {
+  macOverride = on == null ? null : !!on;
+}
+/** A Mac (not an iPad, which says "Macintosh" too but has a touch screen). */
+export function isMacKeyboard() {
+  if (macOverride !== null) return macOverride;
+  try {
+    const nav = globalThis.navigator;
+    return !!nav && /Macintosh|Mac OS X/.test(nav.userAgent || '') && !(nav.maxTouchPoints > 1);
+  } catch (e) {
+    return false;
+  }
+}
+
 export function keyLabel(code) {
   if (!code) return '—';
+  if (MAC_KEYS[code] && isMacKeyboard()) return MAC_KEYS[code];
   if (PUNCT[code]) return PUNCT[code];
   if (/^Numpad/.test(code)) return `Num ${code.slice(6)}`;
   return code
@@ -334,6 +362,7 @@ const SHORT = {
 };
 export function shortKey(code) {
   if (!code) return '—';
+  if (MAC_KEYS[code] && isMacKeyboard()) return MAC_KEYS[code];
   if (SHORT[code]) return SHORT[code];
   if (/^Key[A-Z]$/.test(code)) return code.slice(3);
   if (/^Digit\d$/.test(code)) return code.slice(5);
@@ -400,7 +429,9 @@ export function kbd(action, sim, all = false) {
 
 function shortNames(action, sim) {
   const out = [];
-  for (const c of codesFor(action, sim)) {
+  let codes = codesFor(action, sim);
+  if (isMacKeyboard() && codes.some((c) => NOT_ON_MAC.has(c)) && codes.some((c) => !NOT_ON_MAC.has(c))) codes = codes.filter((c) => !NOT_ON_MAC.has(c));
+  for (const c of codes) {
     const s = shortKey(c);
     if (out.indexOf(s) < 0) out.push(s);
   }

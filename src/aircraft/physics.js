@@ -91,6 +91,20 @@ const PARK_GAIN = 5;
  * wheels carry under 4,300 N, are exactly as they were.
  */
 const SIDE_GAIN = 0.6;
+/**
+ * The wheel brakes, the same way. A braked tyre's slip gain was the same
+ * 3000 N·s/m whatever stood on it, so under an airliner the brakes faded to
+ * nothing as it slowed: an A321neo with both toe brakes hard on went from
+ * 12 to 3 m/s in ten seconds and never stopped, idle thrust creeping it on
+ * (found on the landing roll and at the stand, w16-tom). Now, while a wheel's
+ * brake is on, it is this many seconds a metre of the wheel's load times the
+ * pedal, never less than the 3000 — the light aeroplanes (wheels under
+ * 5,000 N) are as they were — and capped like the parking brake's hold so it
+ * can never chatter. The most a brake can do (grip, tipping) is unchanged.
+ */
+const BRAKE_GAIN = 0.6;
+/** Ground speed (m/s, about 23 kt) under which the ground assist's held heading follows the pilot's steering. */
+const TAXI_FOLLOW = 12;
 const FPM = 196.85; // m/s → feet per minute
 const FT = 3.28084;
 
@@ -1845,7 +1859,22 @@ export class Aircraft {
         // Hold the heading the roll started on (the runway heading) and kill
         // sideways drift, so a light crosswind cannot quietly walk a beginner
         // off the centreline. A strong crosswind still wins.
-        if (this.groundSpeed > 2 && Math.abs(rudder) < 0.06 && this._rollHeading !== null) {
+        /*
+         * ...but the heading it holds is the one the PILOT last chose. It was
+         * the heading the roll began on, kept for the whole taxi: steer off a
+         * stand onto the taxiway with the pedals, let them go, and the assist
+         * swung her back towards the stand's heading (an A321 turned 12°
+         * right on the pedals, then went 2° LEFT under a right toe brake).
+         * While the rudder or a differential toe brake is steering, the held
+         * heading follows the nose; let go, and it holds the new one.
+         * Only at taxiing speeds (under TAXI_FOLLOW): faster than that, on the
+         * take-off roll, a dab of rudder is a correction, not a new course —
+         * following it left an A321 3.5° off the runway heading and 16 m off
+         * the centreline at rotation, where it used to come back (checker).
+         */
+        const toeSteer = Number.isFinite(this.controls.brakeL) && Number.isFinite(this.controls.brakeR) && Math.abs(this.controls.brakeL - this.controls.brakeR) > 0.1;
+        if (this._rollHeading !== null && (Math.abs(rudder) >= 0.06 || toeSteer) && this.groundSpeed < TAXI_FOLLOW) this._rollHeading = this.heading;
+        if (this.groundSpeed > 2 && Math.abs(rudder) < 0.06 && !toeSteer && this._rollHeading !== null) {
           const hdgErr = ((this.heading - this._rollHeading + 540) % 360) - 180;
           this._t.y += THREE.MathUtils.degToRad(clamp(hdgErr, -25, 25)) * 19000;
 
@@ -1985,8 +2014,9 @@ export class Aircraft {
         // was), and never more than stops this wheel's share of the mass in one step, or a stiff gain on four
         // or five contacts chatters (a Skyhook landed on Last Light's ledge with it set slid off at 31 m/s).
         const parkHold = this.parkingBrake && !SPEC.rotor;
-        const rollGain = parkHold ? Math.max(3000, N * PARK_GAIN) : 3000;
-        const rollCap = parkHold ? Math.min(rollLimit, (Math.abs(vRoll) * SPEC.mass * 0.8) / (Math.max(1, SPEC.gearPoints.length) * Math.max(dt, 1 / 240))) : rollLimit;
+        const braked = !parkHold && !SPEC.rotor && gp.brake && wheelBrake > 0.02;
+        const rollGain = parkHold ? Math.max(3000, N * PARK_GAIN) : braked ? Math.max(3000, N * BRAKE_GAIN * wheelBrake) : 3000;
+        const rollCap = parkHold || braked ? Math.min(rollLimit, (Math.abs(vRoll) * SPEC.mass * 0.8) / (Math.max(1, SPEC.gearPoints.length) * Math.max(dt, 1 / 240))) : rollLimit;
         const rollF = clamp(-vRoll * rollGain, -rollCap, rollCap);
         force.addScaledVector(sideDir, sideF);
         force.addScaledVector(rollDir, rollF);

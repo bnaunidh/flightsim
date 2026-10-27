@@ -114,6 +114,9 @@ import './landing-zones.js';
 // rigid bodies; the slow-motion beat and the instant replay. Last, so every other feature's crash
 // handling (./crashes.js's choreography, ./sky.js's knock) has run before it breaks anything.
 import './breakup.js';
+// World Map — Preview: its own card in the map picker (one sea, five airports, ground streamed round
+// the camera, a world map and a destination). Not on the roster; nothing runs until it is picked.
+import './world-preview.js';
 // The map loading screen, about three seconds, in front of every way into a map (Free Flight, a
 // mission, a Story chapter, a multiplayer join, a boat or a van). Last, so its wrapper on the
 // game's startMode is the outermost one, over everything above that waits to be started.

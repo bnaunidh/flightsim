@@ -79,6 +79,7 @@ import { check as hudStack } from './hud-stack.browser.js';
 import { check as hudWins } from './hud-wins.browser.js';
 import { check as touchCoverage } from './touch-coverage.browser.js';
 import { check as cams } from './cams.browser.js';
+import { check as tomReady } from './tom-ready.browser.js';
 
 export const CHECKS = [
   { id: 'airport', check: airport },
@@ -200,6 +201,8 @@ export const CHECKS = [
   { id: 'loading-screens', check: loadingScreens },
   // Real sim gear: a fake TCA sidestick + quadrant + pedals (flight/controllers.js).
   { id: 'controllers', check: controllers },
+  // After controllers: the Tom-ready pass — an A321 at Gateway's gate, the crew, the push, the brakes, the replay (puts the map back).
+  { id: 'tom-ready', check: tomReady },
   // Last: it rebinds keys through Settings (and puts the player's back after).
   { id: 'keybinds', check: keybinds },
 ];

@@ -61,6 +61,14 @@ export class AtcDirector {
   }
 
   reset() {
+    /*
+     * The field's name over the subtitles, now, not on the first update():
+     * a call made while the flight starts (the stand start's "Gateway Ground,
+     * you are on stand 11", features/spawns.js) went out under the last
+     * map's label — "KESTREL GROUND" over Gateway's words.
+     */
+    this._radioField = this.field;
+    setRadioField(this._radioField);
     this.said = {};
     this.cool = 0;
     this.landingCall = 0;

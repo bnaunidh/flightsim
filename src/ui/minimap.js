@@ -404,7 +404,25 @@ export function runwayProximity(x, z, headingDeg) {
     if (off > 35) continue;
     best = Math.min(best, Math.max(0, beyond) / 5000);
   }
+  // Other fields' runways (09/27), where a map has more than one airfield:
+  // the World Map preview's outstations (features/world-preview.js).
+  for (let i = 0; i < EXTRA_RUNWAYS.length; i++) {
+    const R = EXTRA_RUNWAYS[i];
+    const lat = z - R.cz;
+    if (Math.abs(lat) > 450) continue;
+    const beyond = Math.abs(x - R.cx) - R.length / 2;
+    if (beyond > 5000) continue;
+    const off = Math.abs(((((headingDeg - 90) % 180) + 270) % 180) - 90);
+    if (off > 35) continue;
+    best = Math.min(best, Math.max(0, beyond) / 5000);
+  }
   return best;
+}
+
+/** Runways beyond the loaded airport's own, all along X: [{ cx, cz, length }]. Empty on every roster map. */
+let EXTRA_RUNWAYS = [];
+export function setExtraRunways(list) {
+  EXTRA_RUNWAYS = Array.isArray(list) ? list.map((r) => ({ cx: r.cx, cz: r.cz, length: r.length })) : [];
 }
 
 /*

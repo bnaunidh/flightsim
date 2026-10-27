@@ -3688,15 +3688,33 @@ export const RETIRED_MAPS = Object.freeze({
   desertrun: 'drovers',
 });
 
+/**
+ * Maps that are not on the roster: the World Map preview
+ * (world/worldmap/preview.js). Registered at run time, when the player picks
+ * one, never at import — so a saved id naming one still boots the default map
+ * (the roster is what a fresh session knows, and maps-retired.js puts the
+ * saved setting right). Not in MAPS, so the flight game's list, the
+ * multiplayer map indexes and every test that walks MAPS are as they were.
+ */
+const EXTRA_MAPS = new Map();
+
+export function registerExtraMap(def) {
+  if (def && def.id && !MAPS.some((m) => m.id === def.id)) EXTRA_MAPS.set(def.id, def);
+  return def;
+}
+
 /** The id a saved id now means: itself, its replacement, or the default. */
 export function resolveMapId(id) {
   if (id && MAPS.some((m) => m.id === id)) return id;
+  if (id && EXTRA_MAPS.has(id)) return id;
   const next = id && RETIRED_MAPS[id];
   if (next && MAPS.some((m) => m.id === next)) return next;
   return DEFAULT_MAP_ID;
 }
 
 export function getMap(id) {
+  const extra = id && EXTRA_MAPS.get(id);
+  if (extra) return extra;
   const want = resolveMapId(id);
   return MAPS.find((m) => m.id === want) || MAPS[0];
 }

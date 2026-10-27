@@ -99,7 +99,7 @@ export const GAME_UI = {
        * aeroplane, on a turning podium, so it sits beside Free Flight.
        */
       { to: 'hangar', icon: 'hangar', title: 'Hangar', sub: 'Every aircraft on a spinning podium — pick one, or unlock it' },
-      { to: 'maps', icon: 'map', title: 'Choose Map', sub: 'Six places to fly, from flat grassland to a volcano' },
+      { to: 'maps', icon: 'map', title: 'Choose Map', sub: 'From flat grassland to a volcano, a big-city airport and a clifftop strip' },
       { to: 'multiplayer', icon: 'players', title: 'Multiplayer', sub: 'Fly with friends — five open lobbies, or a private match with a code' },
       { to: 'more', icon: 'more', title: 'More', sub: 'Your rank and leaderboard, settings and the other vehicles' },
     ],
@@ -427,7 +427,7 @@ export function installGameUi(menus, hooks = {}) {
           ? 'Every island has its own road network, generated from its own land. A place with no road worth driving is not offered.'
           : game === 'boat'
             ? 'Every island has its own coast. What changes is how much shelter it gives you.'
-            : 'Every map has the same runway, so everything you have learned still works. What changes is the land around it — and how much room it leaves you.';
+            : 'Every map has its own airfield, and everything you have learned works on each of them. What changes is the runway, the land around it — and how much room it leaves you.';
       }
     }
   };

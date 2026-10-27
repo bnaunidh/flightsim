@@ -656,10 +656,17 @@ function buildLayout() {
         }
       }
     }
-    // A flat that is somebody else's (a quay, a causeway, a depot).
+    // A flat that is somebody else's (a quay, a causeway, a depot). The
+    // airfield's own level ground (the World Map preview's sites, kind
+    // 'airfield' and 'runway') is what this layout is laid out on.
     const fx = [r.x0, (r.x0 + r.x1) / 2, r.x1];
     const fz = [r.z0, (r.z0 + r.z1) / 2, r.z1];
-    for (const x of fx) for (const z of fz) if (flatAt(x, z)) return true;
+    for (const x of fx) {
+      for (const z of fz) {
+        const f = flatAt(x, z);
+        if (f && f.kind !== 'airfield' && f.kind !== 'runway') return true;
+      }
+    }
     return false;
   };
   const runwayHit = (r, margin) => runways.some((rw) => overlaps(r, rw, margin));

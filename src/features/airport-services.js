@@ -1018,6 +1018,23 @@ function finishPush(sim, early) {
     say(sim, `Pushback complete. Tug is clear — engine on, brakes off, and ${way}.`, 'good', 6);
     radio(sim, `Pushback complete, tug is clear. Taxi to runway ${spoken(P.runway)} when ready.`);
   }
+  afterPushObjective(sim, early ? null : S.push);
+}
+
+/*
+ * The stand start's objective ("…engines off. I starts up; P calls the ground
+ * crew for a push back…", features/spawns.js) stayed on the panel after the
+ * push, still telling you to call the crew who had just left. Once pushed it
+ * says what is next. Only that text is replaced: a mission's own objective
+ * is the mission's.
+ */
+function afterPushObjective(sim, P) {
+  const hud = sim && sim.hud;
+  if (!hud || typeof hud.setObjective !== 'function' || !hud.objectiveText) return;
+  if (!/ground crew for a push back/.test(hud.objectiveText.textContent || '')) return;
+  const title = (hud.objectiveTitle && hud.objectiveTitle.textContent) || 'Free Flight';
+  const rw = P && P.runway ? `runway ${P.runway}` : 'the runway';
+  hud.setObjective(title, `Pushed back. ${sim.aircraft && sim.aircraft.engineOn ? 'Brakes off' : 'Start the engines, brakes off'}, and taxi to ${rw}.`);
 }
 
 registerExtension({

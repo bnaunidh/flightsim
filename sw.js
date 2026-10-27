@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v74.2';
+const CACHE_VERSION = 'island-flight-v74.3';
 
 const PRECACHE = [
   './',
@@ -459,8 +459,21 @@ const PRECACHE = [
   'src/ui/damage-planform.js',
   'src/world/airport-markings.js',
   'src/world/terminal-look.js',
+  // Added by tools/sync-precache.mjs.
+  'src/ui/speed-bands.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
+
+  // WORLD MAP — PREVIEW (features/world-preview.js): its own card in the map
+  // picker; the ground streams in tiles from a module worker.
+  'src/features/world-preview.js',
+  'src/world/worldmap/preview.js',
+  'src/world/worldmap/preview-data.js',
+  'src/world/worldmap/names.js',
+  'src/world/worldmap/stream.js',
+  'src/world/worldmap/tiles.js',
+  'src/world/worldmap/terrain-worker.js',
+  'src/world/worldmap/outstation.js',
 
   // BLENDER MODELS: the helicopter, van and launch (tools/blender/), and
   // the reader that draws them. 2.1 MB, the game's only model files.

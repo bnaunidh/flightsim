@@ -15,6 +15,8 @@ import { HudStack } from './hud-stack.js';
 import { SPEC } from '../aircraft/physics.js';
 import { rekey, keyName, shortKey, bindingsVersion, HELI_MAP } from '../flight/input.js';
 import { TouchdownCard } from './touchdown.js';
+import { speedBands, speedWord } from './speed-bands.js';
+import { performanceFor } from '../aircraft/types.js';
 import { PillLane, pillsFor } from './pills.js';
 import { lightPresetOf } from '../aircraft/systems.js';
 import { DestRibbon } from './ribbon.js';
@@ -867,6 +869,21 @@ export class Hud {
     if (this.taxiText.textContent !== text) this.taxiText.textContent = text;
     this.taxiHint.textContent = hint || '';
     this.taxiHint.style.display = hint ? '' : 'none';
+  }
+
+  /** ui/speed-bands.js for the aeroplane flown now (cached per type). */
+  speedBandsFor(sim) {
+    const id = sim && sim.aircraftType && sim.aircraftType.id;
+    if (this._bands && this._bandsId === id) return this._bands;
+    let perf = null;
+    try {
+      perf = id ? performanceFor(id) : null;
+    } catch (e) {
+      perf = null;
+    }
+    this._bandsId = id;
+    this._bands = speedBands(perf);
+    return this._bands;
   }
 
   setCoach(text) {
@@ -1726,26 +1743,20 @@ export class Hud {
      */
     const machType = !rotor && !!(SPEC.reheat || (sim && sim.aircraftType && sim.aircraftType.swingWing));
     const mach = machType && ac && ac.mach >= 0.5 ? Math.round(ac.mach * 100) / 100 : 0;
-    if (this.lastValues.ias !== ias || this.lastValues.mach !== mach) {
+    const still = !!(r.onGround && r.groundKts <= 1.5);
+    if (this.lastValues.ias !== ias || this.lastValues.mach !== mach || this.lastValues.still !== still) {
+      this.lastValues.still = still;
       this.speedValue.textContent = fmt(ias);
       this.lastValues.ias = ias;
       this.lastValues.mach = mach;
       let word;
       if (mach) word = `Mach ${mach.toFixed(2)}${mach >= 1 ? ' · supersonic' : ''}`;
       else if (rotor) word = rotorSpeedWord(ias);
-      else {
-        word = 'stopped';
-        if (ias > 150) word = 'very fast';
-        else if (ias > 110) word = 'fast';
-        else if (ias > 70) word = 'good cruising speed';
-        else if (ias > 52) word = 'flying speed';
-        else if (ias > 30) word = 'too slow to fly';
-        else if (ias > 3) word = 'rolling';
-      }
+      else word = speedWord(ias, this.speedBandsFor(sim), r.onGround, r.groundKts);
       this.speedWord.textContent = word;
       // Never amber on a helicopter: 40 kt is an ordinary way for this machine
       // to cross a bay, not an emergency.
-      this.speedValue.classList.toggle('is-warn', !rotor && ias > 0 && ias < 52 && !r.onGround);
+      this.speedValue.classList.toggle('is-warn', !rotor && ias > 0 && ias < this.speedBandsFor(sim).tooSlowAir(r.flapStep > 0) && !r.onGround);
     }
 
     /*
@@ -1909,7 +1920,9 @@ export class Hud {
       this.brakeChip.classList.toggle('is-on', brakesOn);
       this.lastValues.brakes = brakesOn;
     }
-    const modeText = ac.mode === 'simplified' ? 'EASY MODE' : 'REAL MODE';
+    // The difficulty chosen, by its own name: Normal flies the 'simplified'
+    // model too, so on Normal the chip said EASY MODE (w16-tom).
+    const modeText = ac.mode !== 'simplified' ? 'REAL MODE' : ac.difficulty === 'easy' ? 'EASY MODE' : 'NORMAL MODE';
     if (this.lastValues.mode !== modeText) {
       this.modeChip.textContent = modeText;
       this.lastValues.mode = modeText;

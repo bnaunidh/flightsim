@@ -180,6 +180,9 @@ html[data-cine="thin"] #ui > .minimap { margin: 5.2vh 0; }
 html[data-cine="big"] #ui > .minimap { margin: 12.5vh 0; }
 /* While a story line is up, its dialogue box is the subtitle (cinema.js). */
 html.sz-talking .hud-subtitle { visibility: hidden; }
+/* The instant replay's bar has the bottom middle (features/breakup.js showLabel). */
+html.is-replaying .hud-subtitle,
+html.is-replaying .hud-coach { visibility: hidden; }
 .hud.is-large { font-size: 118%; }
 
 .hud-panel {

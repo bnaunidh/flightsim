@@ -2823,7 +2823,13 @@ function tagFor(c) {
   canvas.height = 64;
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, sizeAttenuation: false, fog: false });
+  /*
+   * depthTest off: a label, not a thing in the world. With it on, a tag on
+   * an aeroplane parked behind a hangar was sliced by the roof line — half a
+   * pill standing in the sky (found from the runway at Gateway, w16-tom).
+   * Overlaps are dealt with by declutterTags() instead.
+   */
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, sizeAttenuation: false, fog: false });
   const sp = new THREE.Sprite(mat);
   // Screen-sized (sizeAttenuation off): a small pill, about 4% of the view's height.
   sp.scale.set(0.18, 0.045, 1);
@@ -2855,6 +2861,7 @@ function paintTag(c) {
   const wa = act && g.measureText ? g.measureText(act).width : act.length * 9;
   const gap = act ? 10 : 0;
   const w = Math.min(248, wn + gap + wa + 24);
+  c.tagW = w / 256;
   const x0 = 128 - w / 2;
   const y0 = 18;
   const h = 30;
@@ -2893,6 +2900,62 @@ function drawTag(c) {
   sp.position.set(c.x, c.y + c.perf.span * 0.15 + 2.5, c.z);
   // Fade out towards the far end so it does not pop.
   sp.material.opacity = clamp((TAG_FAR - c.dist) / 600, 0, 1);
+}
+
+/*
+ * Two tags on one patch of screen — two aeroplanes on neighbouring stands
+ * seen from the far end of the runway — were drawn one over the other, and
+ * neither could be read. The nearer one keeps its place; any tag it covers
+ * is hidden for that frame. Screen-sized sprites (sizeAttenuation off), so a
+ * tag's box in NDC is its scale times the projection's own focal terms.
+ */
+/*
+ * ...except from the seat. Without the depth test a tag on an aeroplane
+ * parked beside you was painted over the panel, the screens and the window
+ * frames — the very thing game/navguide.js setOccluded() fixed for the rails.
+ * In the cockpit view the tags take the depth test again: the frames hide
+ * them, the windows show them (w16-tom checker).
+ */
+export function tagsOccluded(list, seated) {
+  const want = !!seated;
+  let n = 0;
+  for (const c of list) {
+    const m = c && c.tag && c.tag.material;
+    if (!m || m.depthTest === want) continue;
+    m.depthTest = want;
+    m.needsUpdate = true;
+    n++;
+  }
+  return n;
+}
+
+const TAG_V = new THREE.Vector3();
+export function declutterTags(list, camera) {
+  if (!camera || !camera.projectionMatrix) return 0;
+  const P = camera.projectionMatrix.elements;
+  const sx = Math.abs(P[0]);
+  const sy = Math.abs(P[5]);
+  const shown = [];
+  for (const c of list) {
+    const sp = c.tag;
+    if (!sp || !sp.visible) continue;
+    TAG_V.copy(sp.position).project(camera);
+    if (!(TAG_V.z < 1)) continue;
+    const hw = (sp.scale.x * sx * (c.tagW || 0.6)) / 2;
+    const y0 = TAG_V.y + sp.scale.y * sy * (16 / 64);
+    const y1 = TAG_V.y + sp.scale.y * sy * (46 / 64);
+    shown.push({ c, x0: TAG_V.x - hw, x1: TAG_V.x + hw, y0, y1, d: c.dist || 0 });
+  }
+  shown.sort((a, b) => a.d - b.d);
+  const kept = [];
+  let hidden = 0;
+  for (const t of shown) {
+    if (kept.some((k) => t.x0 < k.x1 && t.x1 > k.x0 && t.y0 < k.y1 && t.y1 > k.y0)) {
+      t.c.tag.visible = false;
+      hidden++;
+    } else kept.push(t);
+  }
+  return hidden;
 }
 
 function ensureDots() {
@@ -3665,6 +3728,11 @@ registerExtension({
     for (const c of T.list) {
       drawCraft(sim, c, dt, cam);
       drawTag(c);
+    }
+    tagsOccluded(T.list, !!(sim.rig && sim.rig.mode === 'cockpit' && sim.cockpit && sim.cockpit.visible));
+    if (sim.camera) {
+      sim.camera.updateMatrixWorld();
+      T.tagsHidden = declutterTags(T.list, sim.camera);
     }
     drawDots(sim);
     hear(sim);

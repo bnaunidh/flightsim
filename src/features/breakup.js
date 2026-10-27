@@ -2911,6 +2911,10 @@ function showLabel(on) {
       buildUi();
     }
     S.label.style.display = on ? 'block' : 'none';
+    // The replay's bar sits where the radio subtitle and the coach do: the
+    // tower's "we have lost sight of you" ran under the buttons (w16-tom).
+    // They step out while it plays (styles/main.css, html.is-replaying).
+    if (typeof document !== 'undefined' && document.documentElement) document.documentElement.classList.toggle('is-replaying', !!on);
     if (S.ui) {
       S.ui.el.style.display = on ? 'flex' : 'none';
       if (on && S.replay) {
