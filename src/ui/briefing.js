@@ -25,7 +25,8 @@
 import { TIMES, CONDITIONS } from '../world/weather.js';
 import { RUNWAY } from '../world/airport.js';
 import { maxPayout, payLine } from '../game/progression.js';
-import { recommendedLine } from '../game/mission-aircraft.js';
+import { recommendedLine, pickMissionAircraft } from '../game/mission-aircraft.js';
+import { resolveSpeedText } from '../game/speed-text.js';
 import { AIRCRAFT } from '../aircraft/types.js';
 
 function h(html) {
@@ -522,8 +523,10 @@ export class BriefingScreen {
   build(mission, career, settings = 'normal') {
     const w = weatherOf(mission);
     const wind = windReport(w);
-    const lines = briefingLines(mission);
-    const objectives = objectiveList(mission.objectives, mission.steps);
+    // Speeds in the words are the recommended aeroplane's (game/speed-text.js).
+    const typeId = pickMissionAircraft(mission, {}) || 'skylark';
+    const lines = briefingLines(mission).map((l) => ({ ...l, text: resolveSpeedText(l.text, typeId) }));
+    const objectives = objectiveList(mission.objectives, mission.steps).map((o) => ({ ...o, text: resolveSpeedText(o.text, typeId) }));
     const optionals = optionalList(mission);
     const rank = rankView(career);
     const record = missionRecord(career, mission.id);

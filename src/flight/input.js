@@ -21,6 +21,11 @@ import { clamp, lerp } from '../core/noise.js';
 import { Controllers } from './controllers.js';
 import { HIDDEN_AIRCRAFT } from '../core/edition.js';
 
+/** A sim thrust lever this far forward (0..1) or less is at idle: it may take the throttle from there. */
+export const HW_IDLE = 0.03;
+/** ...or once it passes within this much of the power the game has set (a key, a spawn in the air). */
+export const HW_SYNC = 0.05;
+
 /*
  * The games a key can belong to. Two actions may share a key when they never
  * listen at the same time (W walks on foot and pitches the aeroplane); they
@@ -676,8 +681,10 @@ export class Input {
      */
     this.controllers = new Controllers();
     this.hw = null;
-    /** The hardware thrust lever owns the throttle once it has moved (see update()). */
-    this._hwThr = { own: false, anchor: null, last: null, movedT: 99 };
+    /** The hardware thrust lever owns the throttle once it has synced (armed) and moved (see update()). */
+    this._hwThr = { own: false, armed: false, waiting: false, anchor: null, last: null, movedT: 99 };
+    /** Engines on the aeroplane being flown (main.js setAircraft): one takes the further-forward lever. */
+    this.engineCount = 1;
     this.sensitivity = 1;
     this.invertMouse = false;
 
@@ -1036,7 +1043,19 @@ export class Input {
   releaseHardwareLevers() {
     const H = this._hwThr;
     H.own = false;
+    H.armed = false;
+    H.waiting = false;
     H.anchor = H.last;
+  }
+
+  /** A sim lever is being moved but has not synced yet (idle, or through the power set now): say so. */
+  get hwLeverWaiting() {
+    return !!this._hwThr.waiting;
+  }
+
+  /** The lever's power right now (0..1), or null without one. */
+  get hwLeverValue() {
+    return this._hwThr.last;
   }
 
   /** A key free look uses (so, while it is on, the camera's). */
@@ -1277,17 +1296,39 @@ export class Input {
        */
       const H = this._hwThr;
       H.movedT += dt;
+      H.waiting = false;
       if (hw.throttle !== null) {
-        if (H.last !== null && Math.abs(hw.throttle - H.last) > 0.004) H.movedT = 0;
-        H.last = hw.throttle;
-        if (H.anchor === null) H.anchor = hw.throttle;
-        if (!H.own && Math.abs(hw.throttle - H.anchor) > 0.03) H.own = true;
+        /*
+         * A single-engined aeroplane takes the further-forward of two
+         * levers (controllers.js throttleMax): one lever at the stop is full
+         * power, not half of it. A twin keeps the average and the split.
+         */
+        const v = this.engineCount > 1 || !(hw.throttleMax >= 0) ? hw.throttle : hw.throttleMax;
+        if (H.last !== null && Math.abs(v - H.last) > 0.004) H.movedT = 0;
+        H.last = v;
+        if (H.anchor === null) H.anchor = v;
+        const moved = Math.abs(v - H.anchor) > 0.03;
+        /*
+         * ...and it must SYNC before it takes over: at idle, or passing
+         * through the power the game has now. Tomm1z's Skylark rolled off
+         * its stand into the grass the moment the engine started, because
+         * the quadrant's levers had been moved (the connect-time "move each
+         * lever" card) and sat at climb power: owning the throttle from the
+         * first key press. A lever that has not synced is "waiting" (the
+         * HUD says "Move the throttle to idle to take control"), and a key
+         * on the power makes it wait again — so the keyboard and the lever
+         * never fight over the same number.
+         */
+        if (!H.armed && (v <= HW_IDLE || Math.abs(v - this.throttleTarget) < HW_SYNC)) H.armed = true;
+        if (!H.own && H.armed && moved) H.own = true;
+        if (!H.own && !H.armed && moved) H.waiting = true;
         if (H.own) {
-          padThrottle = hw.throttle;
+          padThrottle = v;
           hwLever = H.movedT < 0.8;
         }
       } else {
         H.own = false;
+        H.armed = false;
         H.anchor = null;
         H.last = null;
       }
@@ -1340,6 +1381,7 @@ export class Input {
     const touchThr = !!(this.touch && this.touch.throttle !== null && this.touch.throttle !== undefined);
     if ((up || down || touchThr) && this._hwThr.own) {
       this._hwThr.own = false;
+      this._hwThr.armed = false;
       this._hwThr.anchor = this._hwThr.last;
     }
     this.out.throttle = lerp(this.out.throttle, this.throttleTarget, clamp(dt * 6, 0, 1));

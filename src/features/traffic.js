@@ -200,7 +200,12 @@ const DIGITS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', '
 /* State                                                               */
 /* ------------------------------------------------------------------ */
 
+/** Seconds the field stays closed to departures after an ejection (a parachute coming down). */
+const EMERGENCY_HOLD_S = 120;
+
 const T = {
+  /** When the player ejected (T.time), -1 when they have not. */
+  ejectedAt: -1,
   sim: null,
   group: null,
   field: null,
@@ -810,6 +815,16 @@ function playerContext(sim) {
   const ctx = T.ctx;
   const ac = sim.aircraft;
   const f = T.field;
+  /*
+   * The field is closed for the player's emergency: the brace sequence
+   * (main.js bracing), and a parachute for EMERGENCY_HOLD_S after an
+   * ejection (features/eject.js) — not for ever, so a walk about the apron
+   * afterwards does not ground the airline.
+   */
+  const ejected = !!(sim.walking && sim.walking.ejected);
+  if (ejected && !(T.ejectedAt >= 0)) T.ejectedAt = T.time;
+  if (!ejected) T.ejectedAt = -1;
+  ctx.emergency = !!sim.bracing || (ejected && T.time - T.ejectedAt < EMERGENCY_HOLD_S);
   ctx.pos = ac ? ac.pos : null;
   ctx.vel = ac ? ac.vel : null;
   ctx.air = !!(ac && !ac.onGround && !ac.crashed);
@@ -1082,6 +1097,9 @@ function departureClear(c, L) {
   if (T.runwayOwner && !mine) return false;
   const ctx = T.ctx;
   if (ctx.playerUsingRunway) return false;
+  // A mayday, or a parachute coming down: "Everything else on the field is
+  // holding. The sky is yours." — and it is. Nobody lines up (Tomm1z, 9:01).
+  if (ctx.emergency) return false;
   /*
    * You have just taken off the same way and are still low over the far end:
    * wait for you to get clear rather than rolling a minute behind you and
@@ -3533,6 +3551,8 @@ export function trafficState() {
       runway2: T.ctx.runway2,
       runway2Parked: T.ctx.r2Parked,
       usingRunway: T.ctx.playerUsingRunway,
+      // The field is closed for the player's emergency (a mayday, a parachute coming down).
+      emergency: !!T.ctx.emergency,
     },
     stats: { ...T.stats },
     // R4: the tower's "hold position" is being said now, and for whom.
@@ -3608,6 +3628,8 @@ T.ctx = {
   onFinal: false,
   climbOut: 0,
   playerUsingRunway: false,
+  /** The field is closed for the player's emergency (a mayday, a parachute): no departures. */
+  emergency: false,
   taxiing: false,
   movedAt: -Infinity,
   runway2: false,

@@ -38,6 +38,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { createAircraftModel } from '../aircraft/model-adapter.js';
+import { warmShadersAsync } from '../render/shader-warm.js';
 import { getAircraft } from '../aircraft/types.js';
 import { schemeFor } from '../aircraft/liveries.js';
 
@@ -75,6 +76,10 @@ const PARKED = {
   crashed: false,
 };
 const DAYLIGHT = { isNight: false, cond: { cloud: 0.2 } };
+
+/** The studio's or an aeroplane's programs get this long (ms) to compile in the background before it is drawn regardless. */
+export const WARM_MAX_MS = 1500;
+const _clear = new THREE.Color();
 
 const easeOutCubic = (t) => 1 - (1 - t) ** 3;
 const easeInCubic = (t) => t * t * t;
@@ -295,7 +300,7 @@ export class HangarShowcase {
     this.accent = new THREE.Color(0x58c6ff);
     this.queue = [];
     this.wasActive = false;
-    this.counters = { built: 0, disposed: 0, buildMs: [], frameMs: [], frames: 0, skipped: 0 };
+    this.counters = { built: 0, disposed: 0, buildMs: [], frameMs: [], frames: 0, skipped: 0, warming: 0 };
     this._bindInput();
   }
 
@@ -597,6 +602,8 @@ export class HangarShowcase {
       });
     };
     this.cache.set(k, e);
+    // Its programs in the background; it is drawn once they are ready (render).
+    this.warm(e);
     this.counters.built++;
     this.counters.buildMs.push(+(performance.now() - t0).toFixed(1));
     if (this.counters.buildMs.length > 64) this.counters.buildMs.shift();
@@ -879,12 +886,33 @@ export class HangarShowcase {
 
   /** Compile a prefetched model's shaders now, so showing it does not stall. */
   compileQuietly(e) {
-    if (!this._renderer || !e) return;
+    this.warm(e);
+  }
+
+  /**
+   * An entry's programs, compiled in the background (render/shader-warm.js)
+   * and the entry drawn only once they are ready (`e.warmed`, read by
+   * render()). The podium's first frame used to draw the aeroplane straight
+   * away and pay for every one of its programs on the main thread — 1.3 s
+   * on opening the hangar in the Tomm1z profile, with the background warm
+   * only ever reaching the two prefetched neighbours. WARM_MAX_MS and it is
+   * drawn whatever happened, so a compile that fails cannot hide it.
+   */
+  warm(e) {
+    if (!e || e.warm) return e ? e.warm : null;
+    if (!this._renderer) return null;
+    e.warmed = false;
+    const done = () => {
+      e.warmed = true;
+    };
+    let p;
     try {
-      if (typeof this._renderer.compile === 'function') this._renderer.compile(e.holder, this.camera, this.scene);
+      p = warmShadersAsync(this._renderer, e.holder, this.camera, this.scene);
     } catch (err) {
-      /* it will compile when it is first drawn instead */
+      p = Promise.resolve(false);
     }
+    e.warm = Promise.race([p, new Promise((r) => setTimeout(r, WARM_MAX_MS))]).then(done, done);
+    return e.warm;
   }
 
   /** Aim the camera so the podium sits in the middle of the stage box. */
@@ -953,6 +981,36 @@ export class HangarShowcase {
       }
       this.tick(dt || 1 / 60);
       this.frame(W, H, rect);
+      /*
+       * The studio's own programs (the floor, the drum, the ring, the fog)
+       * on the first open, and each aeroplane's as it is built (warm()):
+       * compiled in the background, drawn once they are ready. Until the
+       * studio is, the stage is cleared to its own dark and nothing is drawn
+       * — a couple of frames, instead of the 1.3 s freeze the first frame
+       * used to be.
+       */
+      if (!this._sceneWarm) {
+        const done = () => {
+          this.sceneWarmed = true;
+        };
+        let p;
+        try {
+          p = warmShadersAsync(renderer, this.scene, this.camera, this.scene);
+        } catch (err) {
+          p = Promise.resolve(false);
+        }
+        this._sceneWarm = Promise.race([p, new Promise((r) => setTimeout(r, WARM_MAX_MS))]).then(done, done);
+      }
+      if (!this.sceneWarmed) {
+        this.counters.warming++;
+        renderer.getClearColor(_clear);
+        const alpha = renderer.getClearAlpha();
+        renderer.setClearColor(this.scene.background, 1);
+        renderer.clear();
+        renderer.setClearColor(_clear, alpha);
+        return true;
+      }
+      for (const e of [this.current, ...this.leaving]) if (e) e.holder.visible = e.warmed !== false;
       const exposure = renderer.toneMappingExposure;
       renderer.toneMappingExposure = 1;
       renderer.render(this.scene, this.camera);

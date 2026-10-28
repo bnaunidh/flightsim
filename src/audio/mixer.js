@@ -55,35 +55,58 @@ export class AudioMixer {
     this.failed = false;
   }
 
+  /**
+   * Make the context now, without a gesture, so the first key press does not
+   * pay for it: a browser lets an AudioContext be made at any time, it just
+   * stays suspended until ensure() resumes it from a gesture. Measured 100
+   * to 155 ms on the first press of a key (the Tomm1z profile). Harmless
+   * when it cannot: ensure() makes it later as before.
+   */
+  prewarm() {
+    if (this.ctx || this.failed) return !!this.ctx;
+    try {
+      this._build();
+      return !!this.ctx;
+    } catch (err) {
+      this.ctx = null;
+      return false;
+    }
+  }
+
+  _build() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) {
+      this.failed = true;
+      return;
+    }
+    this.ctx = new AC({ latencyHint: 'interactive' });
+    this.master = this.ctx.createGain();
+    this.master.gain.value = this.muted ? 0 : this.volumes.master;
+    // A gentle limiter keeps layered synthesis from clipping.
+    this.limiter = this.ctx.createDynamicsCompressor();
+    this.limiter.threshold.value = -8;
+    this.limiter.knee.value = 6;
+    this.limiter.ratio.value = 9;
+    this.limiter.attack.value = 0.004;
+    this.limiter.release.value = 0.16;
+    this.master.connect(this.limiter);
+    this.limiter.connect(this.ctx.destination);
+    for (const b of BUSES) {
+      const g = this.ctx.createGain();
+      g.gain.value = this.volumes[b];
+      g.connect(this.master);
+      this.buses[b] = g;
+    }
+    this.ready = true;
+  }
+
   /** Create (or resume) the context. Must be called from a user gesture. */
   async ensure() {
     if (this.failed) return false;
     try {
       if (!this.ctx) {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) {
-          this.failed = true;
-          return false;
-        }
-        this.ctx = new AC({ latencyHint: 'interactive' });
-        this.master = this.ctx.createGain();
-        this.master.gain.value = this.muted ? 0 : this.volumes.master;
-        // A gentle limiter keeps layered synthesis from clipping.
-        this.limiter = this.ctx.createDynamicsCompressor();
-        this.limiter.threshold.value = -8;
-        this.limiter.knee.value = 6;
-        this.limiter.ratio.value = 9;
-        this.limiter.attack.value = 0.004;
-        this.limiter.release.value = 0.16;
-        this.master.connect(this.limiter);
-        this.limiter.connect(this.ctx.destination);
-        for (const b of BUSES) {
-          const g = this.ctx.createGain();
-          g.gain.value = this.volumes[b];
-          g.connect(this.master);
-          this.buses[b] = g;
-        }
-        this.ready = true;
+        this._build();
+        if (this.failed) return false;
       }
       if (this.ctx.state === 'suspended') await this.ctx.resume();
       return true;

@@ -106,6 +106,11 @@ export class Ambience {
     this.interior = inside;
   }
 
+  /** How long the crash sound may last, seconds (tests/features/tomm1z.mjs holds playCrash to it). */
+  static get CRASH_SOUND_SECONDS() {
+    return 1.0;
+  }
+
   /** Wheels meeting the ground: thump plus a squeal that scales with impact. */
   playTouchdown(impact = 0.5, surface = 'paved') {
     const m = this.mixer;
@@ -201,18 +206,38 @@ export class Ambience {
     }
   }
 
+  /**
+   * The crash: a thump, a crunch and a little debris, all over inside a
+   * second. It was a 1.1 s square-wave growl sweeping 120 Hz down to 40 Hz
+   * with five "tearing metal" screeches (narrow bandpass noise, 700-3100 Hz)
+   * queued on timers after it — which is what Tomm1z heard at 3:00 when he
+   * clipped the terminal: "that's scary ... is this like a horror game?".
+   * No tone, nothing on a timer, nothing past CRASH_SOUND_SECONDS.
+   */
   playCrash() {
     const m = this.mixer;
     if (!m.ctx) return;
-    m.noiseBurst({ bus: 'alerts', duration: 1.2, gain: 0.75, type: 'lowpass', freq: 260, q: 0.8, attack: 0.002 });
-    m.noiseBurst({ bus: 'alerts', duration: 0.6, gain: 0.5, type: 'bandpass', freq: 2400, q: 0.7 });
-    m.tone({ bus: 'alerts', freq: 120, sweepTo: 40, duration: 1.1, gain: 0.3, type: 'square' });
-    // Tearing metal.
-    for (let i = 0; i < 5; i++) {
-      setTimeout(
-        () => m.noiseBurst({ bus: 'alerts', duration: 0.22, gain: 0.22, freq: 700 + Math.random() * 2400, q: 3 }),
-        120 + i * 130
-      );
+    const t = m.time;
+    m.noiseBurst({ bus: 'alerts', duration: 0.5, gain: 0.7, type: 'lowpass', freq: 160, q: 0.7, attack: 0.003, pink: true });
+    m.noiseBurst({ bus: 'alerts', duration: 0.32, gain: 0.32, type: 'bandpass', freq: 1100, q: 0.9, attack: 0.002 });
+    for (let i = 0; i < 3; i++) {
+      m.noiseBurst({ bus: 'alerts', when: t + 0.18 + i * 0.16, duration: 0.07, gain: 0.08, type: 'bandpass', freq: 1500 + i * 500, q: 4 });
+    }
+  }
+
+  /** Every loop to nothing: the menus and the debrief (audio/index.js hush). */
+  silence() {
+    if (!this.built) return;
+    const t = this.ctx.currentTime;
+    for (const g of [this.windGain, this.whistleGain, this.rainGain, this.rainBodyGain, this.rollGain, this.cabinGain]) {
+      if (!g || !g.gain) continue;
+      try {
+        g.gain.cancelScheduledValues(t);
+        g.gain.setValueAtTime(Math.max(0, g.gain.value), t);
+        g.gain.linearRampToValueAtTime(0, t + 0.25);
+      } catch (e) {
+        g.gain.value = 0;
+      }
     }
   }
 

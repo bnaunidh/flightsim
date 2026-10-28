@@ -897,8 +897,12 @@ export class Aircraft {
     if (sp.stow) this.speedbrake = 0;
     this.spoilerPos += clamp(sp.target - this.spoilerPos, -dt / 1.2, dt / 0.8);
 
-    // The parking brake lets go as soon as real power goes in.
-    if (this.parkingBrake && (this.controls.throttle > 0.15 || this.controls.brakes > 0.5)) {
+    // The parking brake lets go as soon as real power goes in — from a
+    // RUNNING engine. A thrust lever moved with the engine off (sim gear's
+    // connect-time "move each lever", a throttle quadrant knocked) used to
+    // release it, so the engine start found the stand brake already off and
+    // the idle creep took Tomm1z's Skylark into the grass (1:35-1:53).
+    if (this.parkingBrake && ((this.engineOn && this.controls.throttle > 0.15) || this.controls.brakes > 0.5)) {
       this.parkingBrake = false;
       // Remember which way we were pointing: the ground assist holds this.
       this._rollHeading = this.heading;

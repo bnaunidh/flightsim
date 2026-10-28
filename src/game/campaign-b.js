@@ -431,7 +431,7 @@ const ridgeDrop = {
   steps: [
     {
       id: 'depart',
-      text: 'Hold Shift for full power, lift off at 55 knots, and climb straight ahead down the valley.',
+      text: 'Hold Shift for full power, lift off at {Vr} knots, and climb straight ahead down the valley.',
       hint: 'Shift is power, S pulls the nose up. Do not turn yet — the valley is the safest place to climb.',
       atc: {
         text: 'Skylark one seven two, Kestrel Tower, cleared for take-off runway zero nine. The rangers are waiting on you.',
@@ -460,7 +460,7 @@ const ridgeDrop = {
     },
     {
       id: 'setup',
-      text: 'Come down to below 400 feet above the ridge and slow to about 70 knots. Fly along the flat ground, not at the hill.',
+      text: 'Come down to below 400 feet above the ridge and slow to about {Vdrop} knots. Fly along the flat ground, not at the hill.',
       hint: 'Ease the power back with Ctrl. Below 400 feet above the ground and inside 500 metres of the smoke.',
       atc: {
         text: 'Sea Bird, this is Ranger Station. We can hear you. The wind is swirling up here — come in from the east if you can.',
@@ -546,7 +546,7 @@ function fuelTick(ctx, dt) {
   if (ctx.elapsed > 20 && ac.controls.throttle > 0.7) d.throttleDiscipline = false;
   if (!ac.engineOn && !d.wentQuiet && !ac.onGround) {
     d.wentQuiet = true;
-    ctx.sim.notify('The engine has stopped. Lower the nose to 70 knots and glide it in — you have the height.', 'bad');
+    ctx.sim.notify('The engine has stopped. Lower the nose to {Vglide+5} knots and glide it in — you have the height.', 'bad');
   }
   if (ac.fuel < 3 && !d.warnedThree) {
     d.warnedThree = true;
@@ -568,7 +568,7 @@ const lowFuel = {
     { speaker: 'Dispatch', text: 'Skylark one seven two, your fuel gauge is dropping about four times faster than it should. You have a leak somewhere behind the engine.' },
     { speaker: 'Chief Pilot', text: 'Do not panic. Turn towards the island now and pull the power back to about sixty per cent — a slower aeroplane burns far less and still gets there.' },
     { speaker: 'Kestrel Tower', text: 'You are coming in from the east, so take runway two seven, straight in, into the wind. No circuit. The runway is yours.' },
-    { speaker: 'Chief Pilot', text: 'If it does go quiet on you, that is not the end. From 2,400 feet you can glide about two miles. Nose down to seventy knots and keep flying it.' },
+    { speaker: 'Chief Pilot', text: 'If it does go quiet on you, that is not the end. From 2,400 feet you can glide about two miles. Nose down to {Vglide+5} knots and keep flying it.' },
   ],
   pay: 900,
   xp: 240,
@@ -644,7 +644,7 @@ const lowFuel = {
     {
       id: 'land',
       text: 'Land on the runway and stop. There are no PAPI lights from this end — judge it by eye.',
-      hint: 'Aim at the near end of the tarmac, keep about 65 knots, and flare gently just before the wheels touch.',
+      hint: 'Aim at the near end of the tarmac, keep about {Vapp-5} knots, and flare gently just before the wheels touch.',
       targetLabel: 'Runway',
       target: () => new THREE.Vector3(350, ELEV, 0),
       check: (ctx) => landedAndStopped(ctx) && ctx.data.lastTouchdown.onRunway,
@@ -806,7 +806,7 @@ function deadStickTick(ctx, dt) {
   if (!ac.onGround && speed > 62 && speed < 74) d.glideSeconds = (d.glideSeconds || 0) + dt;
   if (d.noFlapPanic == null && ac.pos.x > -1200) d.noFlapPanic = ac.flapStep() === 0;
   if (!ac.onGround && speed < 55) {
-    sayOnce(ctx, 'slow', 'Too slow — lower the nose. Seventy knots glides furthest.', 'bad');
+    sayOnce(ctx, 'slow', 'Too slow — lower the nose. {Vglide+5} knots glides furthest.', 'bad');
   }
 }
 
@@ -818,12 +818,12 @@ const deadStick = {
   icon: '✖',
   blurb:
     'Somewhere over the water west of the island, the engine is going to stop. You will have plenty of height and the runway straight ahead. Glide it home and land — no engine, no second go.',
-  reward: 'Teaches the forced landing: hold 70 knots, trade height for distance, and leave the flaps alone until the runway is certain.',
+  reward: 'Teaches the forced landing: hold {Vglide+5} knots, trade height for distance, and leave the flaps alone until the runway is certain.',
   allowBrace: true, // an emergency story: brace stays on offer (main.js braceAvailable)
   briefing: [
     { speaker: 'Chief Pilot', text: 'Today we practise the one nobody wants: the engine stopping. You will be at 2,600 feet, three miles west, with the runway dead ahead.' },
-    { speaker: 'Chief Pilot', text: 'When it goes quiet, do not touch anything for a moment. Lower the nose until the speed reads seventy knots. That is the speed that glides furthest.' },
-    { speaker: 'Chief Pilot', text: 'From that height, seventy knots buys you about four miles of gliding. The runway is under three. You have the height — do not waste it wandering about.' },
+    { speaker: 'Chief Pilot', text: 'When it goes quiet, do not touch anything for a moment. Lower the nose until the speed reads {Vglide+5} knots. That is the speed that glides furthest.' },
+    { speaker: 'Chief Pilot', text: 'From that height, {Vglide+5} knots buys you about four miles of gliding. The runway is under three. You have the height — do not waste it wandering about.' },
     { speaker: 'Chief Pilot', text: 'Leave the flaps at zero until you are certain you will reach the tarmac. Flaps make you sink, and you cannot get that height back.' },
     { speaker: 'Kestrel Tower', text: 'Runway zero nine is clear and it is yours. Nothing else is moving. Take your time.' },
   ],
@@ -834,7 +834,7 @@ const deadStick = {
   optional: [
     {
       id: 'best-glide',
-      text: 'Hold between 62 and 74 knots for at least 45 seconds of the glide',
+      text: 'Hold between {Vglide-3} and {Vglide+9} knots for at least 45 seconds of the glide',
       check: (ctx) => (ctx.data.glideSeconds || 0) >= 45,
     },
     {
@@ -879,10 +879,10 @@ const deadStick = {
     },
     {
       id: 'failure',
-      text: 'The engine has stopped. Lower the nose with W until the speed reads 70 knots. The runway is straight ahead of you.',
-      hint: 'Nose down to 70 knots. Do not turn, do not touch the flaps — just point at the runway and glide.',
+      text: 'The engine has stopped. Lower the nose with W until the speed reads {Vglide+5} knots. The runway is straight ahead of you.',
+      hint: 'Nose down to {Vglide+5} knots. Do not turn, do not touch the flaps — just point at the runway and glide.',
       atc: {
-        text: 'Do not touch anything yet. Lower the nose until the speed reads seventy knots. The runway is straight ahead of you.',
+        text: 'Do not touch anything yet. Lower the nose until the speed reads {Vglide+5} knots. The runway is straight ahead of you.',
         voice: 'instructor',
         urgency: 1,
       },
@@ -892,7 +892,7 @@ const deadStick = {
         if (ctx.sim.audio && ctx.sim.audio.available && ctx.sim.audio.ambience.playFlaps) {
           ctx.sim.audio.ambience.playFlaps();
         }
-        ctx.sim.notify('Engine failure! Nose down to 70 knots and glide to the runway.', 'bad');
+        ctx.sim.notify('Engine failure! Nose down to {Vglide+5} knots and glide to the runway.', 'bad');
       },
       targetLabel: 'Runway 09',
       target: () => RUNWAY.touchdown,
@@ -900,7 +900,7 @@ const deadStick = {
     },
     {
       id: 'glide',
-      text: 'Hold 70 knots all the way to the runway. Aim a little way in from the near end.',
+      text: 'Hold {Vglide+5} knots all the way to the runway. Aim a little way in from the near end.',
       hint: 'Faster than 75 and you are wasting height. Slower than 65 and you are sinking. Keep it at 70.',
       atc: { text: 'Skylark one seven two, runway zero nine, cleared to land. The field is clear for you.', voice: 'tower' },
       targetLabel: 'Touchdown zone',
@@ -1029,7 +1029,7 @@ const searchRescue = {
     {
       id: 'launch',
       text: 'Take off from runway 09, then turn left and climb to about 900 feet. Head out to the coastguard cutter to the north-west.',
-      hint: 'Full power with Shift, up at 55 knots, then a left turn with A once you are past the end of the runway.',
+      hint: 'Full power with Shift, up at {Vr} knots, then a left turn with A once you are past the end of the runway.',
       atc: {
         text: 'Skylark one seven two, cleared for immediate take-off runway zero nine. Kestrel Guard is anchored north-west of the field and will be your marker.',
         voice: 'tower',
@@ -1041,7 +1041,7 @@ const searchRescue = {
     },
     {
       id: 'first-leg',
-      text: 'Fly the first search leg west through the three rings, at about 600 feet and 80 knots.',
+      text: 'Fly the first search leg west through the three rings, at about 600 feet and {Vdrop+10} knots.',
       hint: 'Straight and level, due west. This is what every leg after this one should look like.',
       atc: {
         text: 'Sea Bird, Kestrel Guard. We will work east of you. Fly your legs west and east and step north each time. Good hunting.',
@@ -1071,7 +1071,7 @@ const searchRescue = {
           return false;
         }
         if (ctx.ac.ias > 45) {
-          sayOnce(ctx, 'tooFast', 'Slow down to under 85 knots so you can see what is in the water.', 'warn');
+          sayOnce(ctx, 'tooFast', 'Slow down to under {Vdrop+15} knots so you can see what is in the water.', 'warn');
           return false;
         }
         d.foundAt = ctx.elapsed;
@@ -1432,7 +1432,7 @@ const captainsTest = {
     {
       id: 'rough',
       text: 'The engine is running rough and will only give you about half power. Keep the nose down, hold your speed, and fly it home flat.',
-      hint: 'Do not try to climb — you cannot, at this power. Point at the island, keep 80 knots, and let the height come off slowly.',
+      hint: 'Do not try to climb — you cannot, at this power. Point at the island, keep {Vdrop+10} knots, and let the height come off slowly.',
       atc: {
         text: 'Skylark one seven two, we have you on radar. Take your time. Runway zero nine is yours, and the fire crews are out.',
         voice: 'tower',

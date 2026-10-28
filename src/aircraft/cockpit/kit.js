@@ -35,6 +35,17 @@ import { mergeGeometries } from '../models/airliner-parts.js';
  *   frame   canopy / window frames (painted metal)
  *   seat    seat fabric or leather
  */
+/** The glareshield leather's base shade, and the luminance its palette tint is lifted to (tests/features/tomm1z-cockpit.mjs). */
+export const GLARE_LEATHER = '#6e6e6e';
+export const GLARE_TINT_LUM = 0.75;
+
+/** A palette colour as a TINT: its hue, lifted to luminance `lum` (linear), so the map carries the shade. */
+export function tintAt(hex, lum) {
+  const c = new THREE.Color(hex);
+  const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+  return l > 1e-4 ? c.multiplyScalar(lum / l) : c.setScalar(lum);
+}
+
 export function cockpitMaterials(p = {}) {
   const pal = {
     panel: '#2c3036',
@@ -53,7 +64,14 @@ export function cockpitMaterials(p = {}) {
   const DS = THREE.DoubleSide;
   const m = {
     panel: new THREE.MeshStandardMaterial({ map: panelMap, normalMap: panelN, normalScale: new THREE.Vector2(0.35, 0.35), color: new THREE.Color(pal.panel).multiplyScalar(2.6), roughness: 0.72, metalness: 0.08, side: DS }),
-    glare: new THREE.MeshStandardMaterial({ map: leatherTexture('#2a2a2a'), color: new THREE.Color(pal.glare).multiplyScalar(3), roughness: 0.96, metalness: 0, side: DS }),
+    // Dark-grey leather, not coal. The map's base was #2a2a2a (0.023 linear)
+    // under a colour of the palette's #22272c times three (0.06 linear): an
+    // albedo of 0.001, thirty times darker than the panel beside it — in a
+    // flight deck, where the fuselage shades it from the sun, that drew the
+    // glareshield as a black slab across the whole view (Tomm1z, 6:51:
+    // "look at what happened with the cockpit... a bit broken"). The palette
+    // now only TINTS (tintAt), and the leather carries the shade: 0.12.
+    glare: new THREE.MeshStandardMaterial({ map: leatherTexture(GLARE_LEATHER), color: tintAt(pal.glare, GLARE_TINT_LUM), roughness: 0.96, metalness: 0, side: DS }),
     trim: new THREE.MeshStandardMaterial({ map: panelMap, color: new THREE.Color(pal.trim).multiplyScalar(2.4), roughness: 0.86, metalness: 0.04, side: DS }),
     frame: new THREE.MeshStandardMaterial({ color: pal.frame, roughness: 0.48, metalness: 0.35, side: DS }),
     floor: new THREE.MeshStandardMaterial({ map: panelMap, color: new THREE.Color(pal.floor).multiplyScalar(2.2), roughness: 0.95, side: DS }),

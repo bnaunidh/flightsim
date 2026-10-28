@@ -144,6 +144,28 @@ export class MissionRunner {
     if (this.onStep) this.onStep(step, this.stepIndex, this.def.steps.length);
   }
 
+  /**
+   * Enter step `index` directly: a checkpoint's resume (game/checkpoint.js).
+   * Nothing before it is played and no onDone of a step that did not finish
+   * is called; the step itself begins as it would have (gates, enter, its
+   * radio call, onStep). Returns false if the index is not a step.
+   */
+  resumeAt(index) {
+    if (!this.def || this.status !== STATUS.RUNNING) return false;
+    if (!Number.isInteger(index) || index < 0 || index >= this.def.steps.length) return false;
+    this.stepIndex = index;
+    this.stepElapsed = 0;
+    this.hintTimer = 0;
+    const step = this.step;
+    this.buildGates(step);
+    if (step.enter) step.enter(this.ctx());
+    if (step.atc && this.sim.audio) {
+      this.sim.speak(step.atc.text, step.atc.voice || 'tower', step.atc.urgency || 0);
+    }
+    if (this.onStep) this.onStep(step, this.stepIndex, this.def.steps.length);
+    return true;
+  }
+
   skipStep() {
     // Not a button. The tutorial has no "skip" control and never had one — the
     // only Skip on screen is the taxi one, which teleports you to the threshold

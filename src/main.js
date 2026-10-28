@@ -15,6 +15,7 @@ import { PostFX } from './render/post.js';
 import { pickTier, probeFrames, isTier, tierRank, asHighMs } from './render/quality-probe.js';
 import { DynamicResolution, pixelRatioCap } from './render/dyn-res.js';
 import { setPaintTier } from './render/paint.js';
+import { warmShadersAsync, warmShadersChunked } from './render/shader-warm.js';
 import { Weather } from './world/weather.js';
 import { PHASES, changeWords, visibilityPhrase, obscuredBy } from './world/wx.js';
 import { SkyDome } from './world/sky.js';
@@ -47,7 +48,7 @@ import { setModelQuality } from './aircraft/model-quality.js';
 import { createCockpit } from './aircraft/cockpit.js';
 import { TouchControls, isTouchDevice } from './ui/touch.js';
 
-import { Input, keyLabel, HELI_MAP, BOAT_MAP, actionsFor, CONTEXT_GROUP, ACTIONS, codesFor } from './flight/input.js';
+import { Input, keyLabel, HELI_MAP, BOAT_MAP, actionsFor, CONTEXT_GROUP, ACTIONS, codesFor, HW_IDLE } from './flight/input.js';
 import { reverseDetent } from './flight/controllers.js';
 import { mountControllersPanel } from './ui/controllers-panel.js';
 import { CameraRig, VIEW_LABELS, CHASE_BACK, CHASE_UP, chaseScaleFor, drawnPoints, airframeFrame, VIEW_TUNE } from './flight/camera.js';
@@ -65,8 +66,10 @@ import { installGameUi } from './ui/game-ui.js';
 const GAME_IDS = ['flight', 'boat', 'car', 'heli'];
 
 import { MissionRunner, STATUS } from './game/runner.js';
+import * as Checkpoint from './game/checkpoint.js';
 import { MISSIONS, findMission, FREE_FLIGHT, RUNWAY_START, missionsFor, gameOf, FREE_FOR, missionStartFuel } from './game/missions.js';
 import { pickMissionAircraft } from './game/mission-aircraft.js';
+import { resolveSpeedText } from './game/speed-text.js';
 import { withRole, currentRole } from './game/roles/roles.js';
 import { BOAT_MISSIONS, BOAT_PATROL, findBoatMission, boatSpawnFor, clearBoatProps } from './game/missions-boat.js';
 import { CAR_JOBS, findJob, jobsFor, lengthNote, ISLAND_ROADS, IslandRoads, resolveSpawn } from './game/jobs.js';
@@ -114,6 +117,26 @@ import { installHeightFog, setHeightFog, heightFogInstalled } from './render/hei
 import { bankAt, visibilityAt, densityForVisibility } from './world/wx.js';
 
 const KTS = UNITS.KTS;
+/** The helicopter's stability assist moves the collective lever no faster than this (lever travel per second). */
+export const COLLECTIVE_EASE = 0.3;
+/** A new aeroplane's programs get this long (ms) to compile in the background before it is drawn regardless. */
+export const MODEL_WARM_MAX_MS = 4000;
+/** ...and starts once the scene's lights have been the same for two live frames, or after this many frames. */
+export const WARM_SETTLE_FRAMES = 12;
+
+/** The lights a draw of this scene would be keyed on: counts by type, and how many cast shadows. */
+function lightSignature(scene) {
+  const c = {};
+  scene.traverseVisible((o) => {
+    if (!o.isLight) return;
+    const k = o.type + (o.castShadow ? '+s' : '');
+    c[k] = (c[k] || 0) + 1;
+  });
+  return Object.keys(c)
+    .sort()
+    .map((k) => `${k}:${c[k]}`)
+    .join(',');
+}
 const FT = UNITS.FT;
 const FPM = UNITS.FPM;
 
@@ -165,6 +188,9 @@ function firstCodeFor(action) {
 /** Bumped whenever the game changes. Printed on boot so you can tell at a
  *  glance whether a browser is running a stale cached copy. */
 export const BUILD = 'v28 — a plug-in layer, so the wishlist can be built in parallel';
+
+/** localStorage: the once-only hints already shown (hintOnce). */
+export const HINTS_KEY = 'islandsim.hints.v1';
 
 const loadEl = document.getElementById('loading');
 const loadBar = document.getElementById('load-bar');
@@ -285,6 +311,15 @@ class Game {
     // carveFromInside); a material without planes costs nothing for this.
     this.renderer.localClippingEnabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    /*
+     * No shader info logs in play. With them on (three's default) every new
+     * program's first draw calls getProgramInfoLog, which waits for the
+     * driver to finish compiling it: the sync point under every hitch in the
+     * Tomm1z profile. Off, the compile still has to finish before the first
+     * draw, so the programs are warmed in the background instead
+     * (render/shader-warm.js); `?dev=1` keeps the logs for shader work.
+     */
+    this.renderer.debug.checkShaderErrors = /[?&]dev=1\b/.test(location.search);
     // Only the renderer knows what the card will give. See setTextureAnisotropy.
     try {
       setTextureAnisotropy(q === 'ultra' ? this.renderer.capabilities.getMaxAnisotropy() : 4);
@@ -345,6 +380,8 @@ class Game {
     // letters itself again when it arrives (fleet/aircraft-textures.js).
     await Promise.race([airlineFonts, new Promise((r) => setTimeout(r, 2000))]);
     this.buildWorld(this.settings.quality);
+    // The world's programs, compiled in the background behind the loading bar (render/shader-warm.js).
+    this.warmShaders(this.scene);
 
     setLoad(0.82, 'Rolling out the aeroplane…');
     await this.frame();
@@ -463,6 +500,12 @@ class Game {
     this.menus = new Menus(document.getElementById('ui'), {
       // The Rotors page's Tutorial is the helicopter's first lesson, not the aeroplane school.
       startTutorial: () => (this.game === 'heli' ? this.startAnyMission('firstlight') : this.startMode('tutorial')),
+      // "Resume your mission?" after a closed tab (game/checkpoint.js).
+      resumeMission: () => this.resumeCheckpoint(),
+      discardResume: () => {
+        this._resume = null;
+        this.clearCheckpoint();
+      },
       /*
        * One door for all four games.
        *
@@ -705,6 +748,21 @@ class Game {
     document.addEventListener('visibilitychange', () => {
       if (this.autoPauseOnHide && document.hidden && this.state === 'flying') this.pause();
     });
+    /*
+     * Ctrl+W closed Tomm1z's tab twice, mid-flight and mid-mission (Ctrl is
+     * "less power", W a game key). A page cannot refuse the browser's own
+     * shortcut; it can ask first while a flight is on (game/checkpoint.js
+     * guardUnload), and a running mission is checkpointed every few seconds
+     * so a reload offers to resume it. `unloadGuard()` is the same answer
+     * as data, for the checks.
+     */
+    window.addEventListener('beforeunload', (e) => {
+      if (!this.unloadGuard()) return undefined;
+      e.preventDefault();
+      // Chrome shows its own words; the string is for the browsers that still read one.
+      e.returnValue = 'A flight is in progress. Leave anyway?';
+      return e.returnValue;
+    });
 
     // Graphics "Auto", first boot only: time the real frame behind the
     // loading screen and drop to a lighter tier if this computer needs one.
@@ -727,6 +785,10 @@ class Game {
       }
     }
 
+    // The AudioContext, made now (suspended; the first gesture resumes it)
+    // rather than on the first click: its creation was a 100-155 ms stall on
+    // the first press of a key (tests/features/tomm1z.browser.js).
+    this.audio.mixer.prewarm();
     setLoad(1, 'Ready for take-off');
     await this.frame();
     if (loadEl) {
@@ -742,6 +804,12 @@ class Game {
 
     this.state = 'menu';
     this.menus.show('main');
+    // A mission a closed tab left behind (game/checkpoint.js): offer it.
+    try {
+      this.offerResume();
+    } catch (e) {
+      console.warn('[checkpoint] could not read the last checkpoint', e);
+    }
     this.setupPwa();
     this.aircraft.reset({ ...RUNWAY_START, engineOn: true });
     // The plug-in features. Each is fenced off from the others and from the
@@ -1420,7 +1488,8 @@ class Game {
       this.audio.music.setPhase(step.id);
     }
     const title = this.runner.def.name + (total > 1 ? ` · step ${i + 1} of ${total}` : '');
-    this.hud.setObjective(title, step.text);
+    // Speeds in the words are this aeroplane's (game/speed-text.js: "lift off at 55 knots" in an A321, before).
+    this.hud.setObjective(title, this.perType(step.text));
     if (i > 0) this.audio.available && this.audio.alerts.checkpoint();
   }
 
@@ -1433,11 +1502,12 @@ class Game {
         2.6
       );
     } else if (e.type === 'hint') {
-      this.hud.notify(`Hint: ${e.text}`, 'info', 6);
+      this.hud.notify(`Hint: ${this.perType(e.text)}`, 'info', 6);
     }
   }
 
   onMissionComplete(result) {
+    this.clearCheckpoint();
     const isTutorial = result.id === 'tutorial';
     if (isTutorial) {
       this.progress.tutorialComplete = true;
@@ -1523,6 +1593,7 @@ class Game {
   }
 
   onMissionFail(f) {
+    this.clearCheckpoint();
     this.audio.available && this.audio.alerts.failure();
     this.state = 'debrief';
     this.hud.setVisible(false);
@@ -1739,7 +1810,6 @@ class Game {
       this.setAircraft(wantAc);
       this.hud.setAircraftName(this.aircraftType.name);
     }
-
     // Light the right half of the switcher. The helicopter is an aircraft
     // type rather than a mode, so the bar has to be told which one you are in.
     this.menus.setGame(isHelicopter(this.aircraftType) ? 'heli' : 'flight');
@@ -1952,9 +2022,19 @@ class Game {
       );
     }
 
+    // The aeroplane's programs, compiled in the background with the scene as
+    // it now is (the weather and the time of day loaded above), before its
+    // first frame: setAircraft, startModelWarm — 1.5 s at most.
+    await this.awaitModelWarm();
+
     this.state = 'flying';
     if (wantsTaxi) this.taxi.start();
     if (bigJetWord && this.hud) this.hud.notify(bigJetWord, 'info', 4);
+    // The first flight ever: where the speed is (it pulses for a few seconds).
+    if (!heliStart && this.hintOnce('speedBox', 'Your speed is the top number in the box at the top left — the word under it says whether you are going fast enough to fly', 'info', 8)) {
+      this.hud.pointAt('speed', 8);
+    }
+    this._wasInCockpit = false;
     this.clock.getDelta();
     // Nobody is a passenger until a feature says so for this flight.
     this.riding = null;
@@ -2019,6 +2099,8 @@ class Game {
   }
 
   quitToMenu(screen = 'main') {
+    // Leaving by choice: nothing to resume (a closed tab never gets here, and keeps its checkpoint).
+    this.clearCheckpoint();
     extStop(this, 'menu');
     this.riding = null;
     this.clearPursuer();
@@ -2036,6 +2118,67 @@ class Game {
     this.menus.show(screen);
     if (this.audio.available && this.settings.music) this.audio.music.start();
     this.aircraft.reset({ ...RUNWAY_START, engineOn: true });
+  }
+
+  /** Would the browser ask before leaving right now? (game/checkpoint.js guardUnload) */
+  unloadGuard() {
+    return Checkpoint.guardUnload(this.state);
+  }
+
+  /** Write the mission checkpoint now, if there is one to write (game/checkpoint.js). Returns it, or null. */
+  saveCheckpoint() {
+    const cp = Checkpoint.captureCheckpoint(this);
+    if (cp) Checkpoint.saveCheckpoint(cp);
+    return cp;
+  }
+
+  /** The mission is over, abandoned or crashed: nothing to resume. */
+  clearCheckpoint() {
+    Checkpoint.clearCheckpoint();
+    if (this.menus && this.menus.syncResume) this.menus.syncResume(null);
+  }
+
+  /** On the main menu: "Resume your mission?" if a fresh checkpoint names a mission that still exists. */
+  offerResume() {
+    const cp = Checkpoint.loadCheckpoint();
+    const plan = Checkpoint.resumePlan(cp, findMission);
+    this._resume = plan ? { cp, plan } : null;
+    if (!plan) {
+      if (cp) Checkpoint.clearCheckpoint();
+      if (this.menus && this.menus.syncResume) this.menus.syncResume(null);
+      return null;
+    }
+    if (this.menus && this.menus.syncResume) this.menus.syncResume({ name: plan.name, where: Checkpoint.describe(plan, cp) });
+    return plan;
+  }
+
+  /**
+   * Resume the checkpointed mission: the same startMode() the menu made,
+   * then straight to the step you were on with the aeroplane where it was.
+   * The step starts afresh (see game/checkpoint.js for what is not kept).
+   */
+  async resumeCheckpoint() {
+    const R = this._resume || (this.offerResume() && this._resume);
+    if (!R) return false;
+    const { cp, plan } = R;
+    this._resume = null;
+    Checkpoint.clearCheckpoint();
+    if (this.menus && this.menus.syncResume) this.menus.syncResume(null);
+    await this.startMode(plan.mode, plan.opts);
+    if (this.runner.status !== STATUS.RUNNING || !this.runner.def) return false;
+    const ok = plan.stepIndex > 0 ? this.runner.resumeAt(plan.stepIndex) : true;
+    if (plan.pose && !plan.pose.onGround) {
+      try {
+        Checkpoint.applyPose(this, plan.pose);
+        this.taxi.stop();
+        this.input.releaseHardwareLevers();
+      } catch (e) {
+        console.warn('[checkpoint] the pose could not be put back; the step starts from the runway', e);
+      }
+    }
+    this.hud.notify(`Resumed: ${plan.name}, step ${plan.stepIndex + 1} of ${plan.steps}`, 'good', 5);
+    void cp;
+    return ok;
   }
 
   pause() {
@@ -2078,6 +2221,36 @@ class Game {
     this.state = 'flying';
     this.clock.getDelta();
     this.wakeAudio();
+  }
+
+  /**
+   * Compile an object's programs in the background (render/shader-warm.js).
+   * Fire and forget: the frame loop never waits on it.
+   */
+  warmShaders(object, opts = {}) {
+    if (!this.renderer || !this.camera || !object) return Promise.resolve(false);
+    // `chunked`: a few meshes per step on the timer, so no one frame pays for them all (the new aeroplane's).
+    const fn = opts.chunked ? warmShadersChunked : warmShadersAsync;
+    return fn(this.renderer, object, this.camera, this.scene, opts);
+  }
+
+  /**
+   * A real skin that has just arrived (aircraft/real-models.js dress, on its
+   * own promise, mid-flight on a first visit): held off the picture for the
+   * one or two frames its programs take to compile in the background, so
+   * its first frame is not the multi-second freeze of a GLB's worth of
+   * materials compiling at once. Called every frame before the draw; it
+   * acts once per skin.
+   */
+  warmRealSkin() {
+    const rm = this.model && this.model.userData && this.model.userData.realModel;
+    if (!rm || rm.state !== 'on' || !rm.skin || rm._warmed) return;
+    rm._warmed = true;
+    const skin = rm.skin;
+    skin.visible = false;
+    this.warmShaders(skin).then(() => {
+      if (rm.on && !rm.dead) skin.visible = true;
+    });
   }
 
   /**
@@ -2427,8 +2600,33 @@ class Game {
     const ac = this.aircraft;
     if (!ac.engineOn) {
       this._starterArm = 0;
+      /*
+       * A sim lever that is not at idle does not take power with the start:
+       * the power is idle, the lever lets go, and it takes over again only
+       * from idle (or by passing through idle). Tomm1z's Skylark rolled off
+       * stand 7 into the grass the moment the engine caught (1:35-1:53).
+       */
+      const H = this.input && this.input._hwThr;
+      if (H && H.own && (this.input.hwLeverValue || 0) > HW_IDLE) {
+        this.input.throttleTarget = 0;
+        this.input.out.throttle = 0;
+        ac.controls.throttle = 0;
+        this.input.releaseHardwareLevers();
+        this.hud.notify('Engine starting at idle — move the throttle lever to idle to take control', 'info', 4);
+        this._hwWaitSaid = 4;
+      }
       ac.startEngine();
       return true;
+    }
+    /*
+     * A helicopter on the pad with its rotor already turning: the first
+     * press says so instead of shutting it down. Tomm1z (8:10): "Wait,
+     * wasn't the engine already started?" — it was; I had stopped it.
+     */
+    if (SPEC.rotor && ac.onGround && !ac.crashed && !fromPad && !(this._starterArm > 0)) {
+      this._starterArm = 3;
+      this.hud.notify('The engine is already running — press I again within 3 s to shut it down', 'info', 3);
+      return false;
     }
     if (SPEC.rotor && !ac.onGround && !ac.crashed) {
       if (fromPad) {
@@ -2929,6 +3127,8 @@ class Game {
     if (this.aircraftType && this.aircraftType.id === want.id) return this.aircraftType;
     this.aircraftType = applyAircraft(want.id);
     const S = this.aircraftType.shape;
+    // A single's throttle is the further-forward of a quadrant's two levers (flight/input.js).
+    if (this.input) this.input.engineCount = (SPEC.power && SPEC.power.count) || 1;
 
     if (this.model) {
       this.scene.remove(this.model);
@@ -2991,6 +3191,26 @@ class Game {
     );
     this.model.add(this.cockpit);
     this.cockpit.visible = false;
+    /*
+     * Its programs, and the cockpit's, compiled in the background now rather
+     * than on the first frame and the first press of C — and the model kept
+     * OUT of the picture until they are ready (renderFrame): with it in, the
+     * very next frame drew it and paid for every program anyway, 180-250 ms
+     * on the Skylark, the A321 and the helicopter in the Tomm1z profile.
+     * startMode() waits for this (awaitModelWarm) before the flight begins.
+     */
+    this._modelWarm = this.model;
+    this._modelWarmAt = performance.now();
+    // What a live frame leaves out while the warm runs: its meshes (gathered
+    // at each draw — a real skin, a feature's add-on may arrive after this),
+    // NOT its lights. Hiding the whole model hid its landing lamp too, and a
+    // light more or less in the scene is a new program for every material in
+    // the world — 49 of them, compiled on the main thread in that one frame.
+    // Not started here: the programs depend on the lights in the scene, and
+    // startMode() is still changing them (the time of day, the weather, the
+    // airport's lamps settle on the next update). The first LIVE frame after
+    // starts it (renderFrame), when the scene is the one the draw will see.
+    this._modelWarmP = null;
 
     // How far the picture has to drop so the wheels meet the tarmac.
     // specFor rebuilds the flight spec from the same shape the physics uses,
@@ -3402,9 +3622,22 @@ class Game {
       // is misbehaving. Check on every load, and reload once as soon as a new
       // worker takes over — otherwise the page you are looking at keeps the
       // files it was given, and an update can appear to do nothing at all.
+      // ...but not on a first visit, and not in the middle of a flight
+      // (game/checkpoint.js swTakeover): the loop reloads on the menu.
+      const hadController = !!navigator.serviceWorker.controller;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (this._reloadingForUpdate) return;
+        const what = Checkpoint.swTakeover(hadController, this.state);
+        if (what === 'none') {
+          console.info('[sw] offline copy ready — this page already runs it');
+          return;
+        }
         this._reloadingForUpdate = true;
+        if (what === 'later') {
+          this._reloadOnMenu = true;
+          console.info('[sw] new version installed — it loads when this flight is over');
+          return;
+        }
         console.info('[sw] new version installed — reloading');
         location.reload();
       });
@@ -3472,12 +3705,18 @@ class Game {
   /* ------------------------------------------------------------------ */
 
   speak(text, voice = 'tower', urgency = 0) {
+    text = this.perType(text);
     if (this.audio.available) this.audio.radio.transmit(text, { voice, urgency });
     else this.hud.setSubtitle(text, voice, 4);
   }
 
   notify(text, kind = 'info') {
-    this.hud.notify(text, kind);
+    this.hud.notify(this.perType(text), kind);
+  }
+
+  /** A mission line with its speed tokens filled in for the aeroplane being flown (game/speed-text.js). */
+  perType(text) {
+    return resolveSpeedText(text, this.aircraftType && this.aircraftType.id);
   }
 
   /**
@@ -3655,6 +3894,41 @@ class Game {
     if (hw.edges.apDisconnect) {
       if (this.autopilot.engaged) this.toggleAutopilot(false);
       else this.hud.notify(`Autopilot is off — ${codesFor('autopilot').length ? keyLabel(codesFor('autopilot')[0]) : 'its key'} engages it`, 'info', 2);
+    }
+  }
+
+  /**
+   * A hint shown once per browser, ever: the first flight's "your speed is
+   * up there" (Tomm1z, 3:38: "where do I see my speed?") and the first
+   * cockpit view's "this is how you look round". Remembered in
+   * localStorage; a browser that will not remember shows it each session.
+   */
+  hintOnce(id, text, kind = 'info', seconds = 6) {
+    let seen = {};
+    try {
+      seen = JSON.parse(localStorage.getItem(HINTS_KEY) || '{}') || {};
+    } catch (e) {
+      seen = this._hintsSeen || {};
+    }
+    if (seen[id]) return false;
+    seen[id] = Date.now();
+    this._hintsSeen = seen;
+    try {
+      localStorage.setItem(HINTS_KEY, JSON.stringify(seen));
+    } catch (e) {
+      /* shown again next session */
+    }
+    this.hud.notify(text, kind, seconds);
+    return true;
+  }
+
+  /** Forget the once-only hints (Settings → Reset, and the checks). */
+  resetHints() {
+    this._hintsSeen = {};
+    try {
+      localStorage.removeItem(HINTS_KEY);
+    } catch (e) {
+      /* nothing to forget */
     }
   }
 
@@ -4143,6 +4417,25 @@ class Game {
     if (this.hud.btnBrace && this.hud.btnBrace.hidden === offer) this.hud.btnBrace.hidden = !offer;
     if (!this.bracing) return;
     const ac = this.aircraft;
+
+    /*
+     * Out of the aeroplane (features/eject.js): the escorts have nobody to
+     * escort and the script has nobody to talk to. They kept formation on
+     * the empty aeroplane in Tomm1z's video (9:01) while the tower carried
+     * on. The sequence ends here; the field stays closed for the parachute
+     * (features/traffic.js holds departures while the emergency is on).
+     */
+    if (this.walking && this.walking.ejected) {
+      const callOut = this.atc ? this.atc.callsign : 'Skylark one seven two';
+      const fieldOut = this.atc ? this.atc.field : 'Kestrel';
+      this.bracing = false;
+      this.braceOwnsEnding = false;
+      this.clearRescue();
+      this.clearChute();
+      this.autopilot.setEngaged(false, ac);
+      this.speak(`${callOut}, ${fieldOut} Tower. We see your parachute. The field stays closed until you are down.`, 'tower', 1);
+      return;
+    }
 
     /*
      * If the ground got there first, the sequence is over.
@@ -5240,6 +5533,12 @@ class Game {
       // its own follow-up for the pilot), and whether the autopilot is the
       // pilot (the helicopter's assist stands down while it is).
       ac.controls.leverHeld = !!ctrl.leverHeld;
+      // A sim lever being moved that has not synced yet: say how it takes over (once per few seconds).
+      if (this._hwWaitSaid > 0) this._hwWaitSaid -= dt;
+      if (this.input.hwLeverWaiting && !(this._hwWaitSaid > 0)) {
+        this._hwWaitSaid = 6;
+        this.hud.notify('Move the throttle lever to idle to take control', 'info', 3.2);
+      }
       ac.autopilotOn = this.autopilot.engaged;
       // Trim is the pilot's, and the autopilot must not inherit it — it flies
       // the elevator directly and would be fighting a bias it did not set.
@@ -5280,12 +5579,28 @@ class Game {
          * itself and the two would fight.
          */
         if (ac.rotor && ac.rotor.trimRequest && !this.autopilot.engaged) {
-          this.input.nudgeThrottle(ac.rotor.trimRequest * STEP);
+          /*
+           * ...and no faster than COLLECTIVE_EASE of the lever a second.
+           * Let go after a climb and the hold used to dump the lever from
+           * 100% to 18% inside a second and creep it back to the hover —
+           * Tomm1z (8:28): "when I let go of shift it just goes down". The
+           * assist's own correction still arrests the climb; the lever on
+           * screen now eases to where the hover is, as a real force-trim
+           * does. With the assist off the lever stays where it is left.
+           */
+          const cap = COLLECTIVE_EASE * STEP;
+          this.input.nudgeThrottle(clamp(ac.rotor.trimRequest * STEP, -cap, cap));
         }
       }
       this.updateBrace(dt);
       // The engine key's "press again" window (pressStarter), in game time.
       if (this._starterArm > 0) this._starterArm -= dt;
+      // A running mission's checkpoint, every few seconds (game/checkpoint.js).
+      this._cpT = (this._cpT || 0) + dt;
+      if (this._cpT >= Checkpoint.EVERY_S) {
+        this._cpT = 0;
+        if (this.runner.status === STATUS.RUNNING) this.saveCheckpoint();
+      }
       this.runner.update(dt);
       this.atc.update(dt);
       this.activeTarget = this.runner.activeTarget();
@@ -5546,8 +5861,17 @@ class Game {
     // whether the aeroplane has an interior.
     this.cockpit.visible = inCockpit;
     if (inCockpit) this.cockpit.userData.update(dt, ac, this.weather, this);
+    // A real skin just arrived: its programs first, its first frame after (warmRealSkin).
+    this.warmRealSkin();
     // REAL MODELS: from the seat the procedural flight deck and its window cut-outs are drawn, not the real skin.
     realModelInterior(this.model, inCockpit);
+    // The first time in the seat: how to look round (v74.8's free look; Tomm1z, 4:43: "I just wish I could move around the camera").
+    if (inCockpit && !this._wasInCockpit && this.state === 'flying') {
+      this.hintOnce('cockpitLook', this.touch
+        ? 'Look round the cockpit: drag a finger on the picture; pinch to zoom'
+        : 'Look round the cockpit: turn Free look on (Esc menu) and drag the mouse or use the arrow keys; a sidestick\'s hat works as it is; Numpad 4 / 6 / 2 / 5 snap left, right, panel, ahead', 'info', 9);
+    }
+    this._wasInCockpit = inCockpit;
     // What of the outside cannot be seen from the seat is not drawn while
     // you are in it (aircraft/cockpit/kit.js insideOnly) — in it, not just in
     // the cockpit mode: a feature's own camera (an ejection, a replay) may be
@@ -5660,7 +5984,10 @@ class Game {
       }
     }
 
-    this.audio.update(dt, ac, this.weather, this.cloudImmersion);
+    // Quiet unless a flight is on: the menus and the debrief get the music
+    // and nothing of the aeroplane (audio/index.js hush — the "horror game"
+    // sound Tomm1z heard in the menu after a crash).
+    this.audio.update(dt, ac, this.weather, this.cloudImmersion, this.state !== 'flying' && this.state !== 'paused');
     if (this.state === 'flying') {
       this.hud.setCoach(this.coachHint(ac));
       // The mission clock, if this one has a limit.
@@ -5766,11 +6093,30 @@ class Game {
    * single renderer.render() they always had. The frame loop, step() and the
    * Auto quality probe all come through here; the hangar's podium does not.
    */
-  renderFrame() {
+  renderFrame(live = false) {
     this.keepBackdropRoundLens();
     const post = this.post;
     // The floating origin for the draw (render/render-origin.js): off unless the map asked for it.
     const shifted = beginRender(this.scene, this.camera);
+    // An aeroplane whose programs are still compiling (setAircraft) stays out
+    // of a LIVE frame (the loop's); MODEL_WARM_MAX_MS and it is drawn whatever
+    // the state. step() draws it regardless: a check wants to see it now.
+    if (live) {
+      this._lastLiveFrameAt = performance.now();
+      this.startModelWarmWhenSettled();
+    }
+    const warming = live ? this.modelWarming() : null;
+    // Its meshes off every layer for this draw (the camera sees none of them;
+    // the shadow pass neither); its lights stay, so the scene's light count
+    // — and with it every program's key — is the one the flight will have.
+    const masked = [];
+    if (warming) {
+      warming.traverse((o) => {
+        if (o.isMesh || o.isSprite || o.isPoints || o.isLine) masked.push(o);
+      });
+    }
+    const masks = masked.map((o) => o.layers.mask);
+    for (const o of masked) o.layers.mask = 0;
     try {
       if (post && post.enabled) {
         if (this.weather) post.setLook(this.weather.look());
@@ -5779,8 +6125,95 @@ class Game {
         this.renderer.render(this.scene, this.camera);
       }
     } finally {
+      for (let i = 0; i < masked.length; i++) masked[i].layers.mask = masks[i];
       if (shifted) endRender(this.scene, this.camera);
     }
+  }
+
+  /**
+   * Start the new aeroplane's background compile (setAircraft), once, from a
+   * live frame: after update() has settled the scene's lights for this frame,
+   * so the programs made match the ones the draw asks for. Started with the
+   * old light set (inside startMode, before the weather loaded) every one of
+   * them was compiled again, on the main thread, on the first frame.
+   */
+  startModelWarm() {
+    const warming = this._modelWarm;
+    if (!warming || this._modelWarmP) return this._modelWarmP;
+    this._modelWarmP = this.warmShaders(warming, { show: [this.cockpit], chunked: true }).then(() => {
+      if (this._modelWarm === warming) this._modelWarm = null;
+    });
+    const waiter = this._onLiveFrame;
+    this._onLiveFrame = null;
+    if (waiter) waiter();
+    return this._modelWarmP;
+  }
+
+  /**
+   * From a live frame: start the warm once the lights in the scene have been
+   * the same for two frames running (a flight start is a few frames of the
+   * old aeroplane's lamps going and the field's settling, and a program is
+   * keyed on the light count), or after WARM_SETTLE_FRAMES regardless.
+   */
+  startModelWarmWhenSettled() {
+    if (!this._modelWarm || this._modelWarmP) return;
+    const sig = lightSignature(this.scene);
+    this._warmWaitFrames = (this._warmWaitFrames || 0) + 1;
+    if (sig === this._lightSig || this._warmWaitFrames > WARM_SETTLE_FRAMES) {
+      this._warmWaitFrames = 0;
+      this.startModelWarm();
+    }
+    this._lightSig = sig;
+  }
+
+  /** The model whose programs are still compiling in the background, or null (setAircraft, renderFrame). */
+  modelWarming() {
+    const m = this._modelWarm;
+    if (!m) return null;
+    if (performance.now() - (this._modelWarmAt || 0) > MODEL_WARM_MAX_MS) {
+      this._modelWarm = null;
+      return null;
+    }
+    return m;
+  }
+
+  /** Wait for the aeroplane's programs (setAircraft), MODEL_WARM_MAX_MS at most; the flight starts after. */
+  async awaitModelWarm() {
+    if (!this._modelWarm) return false;
+    // A live frame starts it once the lights have settled (startModelWarm-
+    // WhenSettled); without a live loop (a check's frozen one) it is started
+    // here at once.
+    if (!this._modelWarmP) {
+      // Is the loop live? A real animation frame inside 120 ms says so; a
+      // check's frozen loop (requestAnimationFrame stubbed) never answers.
+      const liveLoop = await new Promise((r) => {
+        let id = 0;
+        const t = setTimeout(() => {
+          try {
+            cancelAnimationFrame(id);
+          } catch (e) {
+            /* fine */
+          }
+          r(false);
+        }, 120);
+        id = requestAnimationFrame(() => {
+          clearTimeout(t);
+          r(true);
+        });
+      });
+      if (liveLoop && !this._modelWarmP) {
+        await new Promise((r) => {
+          this._onLiveFrame = r;
+          setTimeout(r, (WARM_SETTLE_FRAMES + 4) * 50);
+        });
+        this._onLiveFrame = null;
+      }
+      this.startModelWarm();
+    }
+    const left = Math.max(0, MODEL_WARM_MAX_MS - (performance.now() - (this._modelWarmAt || 0)));
+    await Promise.race([this._modelWarmP, new Promise((r) => setTimeout(r, left))]);
+    this._modelWarm = null;
+    return true;
   }
 
   /**
@@ -5927,6 +6360,12 @@ class Game {
         this.clock.getDelta();
         return;
       }
+      // An update that arrived mid-flight (setupPwa): loaded once you are back on the menu.
+      if (this._reloadOnMenu && this.state === 'menu') {
+        this._reloadOnMenu = false;
+        location.reload();
+        return;
+      }
       let dt = this.clock.getDelta();
       if (dt > 0.25) dt = 0.25; // after a tab switch, do not jump
       try {
@@ -5934,7 +6373,7 @@ class Game {
         // The hangar's podium is drawn INSTEAD of the island while it is open
         // (ui/hangar-showcase.js): it covers the window, so the world behind
         // it would be a whole frame drawn for nobody.
-        if (!this.menus.drawView || !this.menus.drawView(this.renderer, dt)) this.renderFrame();
+        if (!this.menus.drawView || !this.menus.drawView(this.renderer, dt)) this.renderFrame(true);
       } catch (err) {
         console.error(err);
         if (!this._errored) {

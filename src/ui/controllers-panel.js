@@ -239,7 +239,13 @@ export function mountControllersPanel(host, controllers) {
   /** The timer's step: read the devices, re-draw if they or their setup changed, else move the meters. */
   function tick(dt = 0.15) {
     if (!host.isConnected) return;
-    const visible = host.getClientRects().length > 0;
+    // Hidden by a `hidden` attribute up the tree (every screen that is not
+    // the one shown, Settings' other tabs): nothing to do, and no layout.
+    // This used to ask getClientRects() seven times a second, which forces
+    // a layout of the whole document whenever the menus have changed it —
+    // 560 ms in one tick while the hangar opened, in the Tomm1z profile.
+    const hiddenAbove = typeof host.closest === 'function' && host.closest('[hidden]');
+    const visible = !hiddenAbove && (typeof document === 'undefined' || document.visibilityState !== 'hidden');
     if (!visible && !C.detecting && !C.calibrating) return;
     C.scan();
     const keys = C.devices.map((d) => d.key).join('|');

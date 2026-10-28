@@ -83,6 +83,13 @@ import { check as touchCoverage } from './touch-coverage.browser.js';
 import { check as edition } from './edition.browser.js';
 import { check as cams } from './cams.browser.js';
 import { check as tomReady } from './tom-ready.browser.js';
+import { check as tomm1zLag } from './tomm1z-lag.browser.js';
+import { check as tomm1zSound } from './tomm1z-sound.browser.js';
+import { check as tomm1zThrottle } from './tomm1z-throttle.browser.js';
+import { check as tomm1zHeli } from './tomm1z-heli.browser.js';
+import { check as tomm1zAtc } from './tomm1z-atc.browser.js';
+import { check as tomm1zHints } from './tomm1z-hints.browser.js';
+import { check as tomm1zUnload } from './tomm1z-unload.browser.js';
 import { check as shake } from './shake.browser.js';
 import { check as ownerCalls } from './owner-calls.browser.js';
 import { check as livemap } from './livemap.browser.js';
@@ -219,6 +226,15 @@ export const CHECKS = [
   { id: 'controllers', check: controllers },
   // After controllers: the Tom-ready pass — an A321 at Gateway's gate, the crew, the push, the brakes, the replay (puts the map back).
   { id: 'tom-ready', check: tomReady },
+  // After tom-ready: the Tomm1z video pass (.claude/devtools/briefs/tomm1z-video.md) — the lag, the menu's sound, a quadrant lever on an engine start.
+  { id: 'tomm1z-lag', check: tomm1zLag },
+  { id: 'tomm1z-sound', check: tomm1zSound },
+  { id: 'tomm1z-throttle', check: tomm1zThrottle },
+  { id: 'tomm1z-heli', check: tomm1zHeli },
+  { id: 'tomm1z-atc', check: tomm1zAtc },
+  { id: 'tomm1z-hints', check: tomm1zHints },
+  // The mission checkpoint and the leave-page guard (puts the map back).
+  { id: 'tomm1z-unload', check: tomm1zUnload },
   // The owner's "the harrison shaking is gonna cause someone a seizure": Harrison at 549 kt on uneven
   // frames, the Tower view 44 km out on the World Map — Preview, and the first-run seizure warning (puts the map back).
   { id: 'shake', check: shake },

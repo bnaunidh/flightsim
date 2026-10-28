@@ -159,6 +159,13 @@ export class Radio {
    * It is the one voice in the game that does not pass through the mixer, so
    * turning the master gain down does nothing to it: muting has to say so.
    */
+  /** The flight is over: nothing queued is said, and the voice stops mid-word (audio/index.js hush). */
+  hush() {
+    this.queue = [];
+    this.chatterTimer = Math.max(this.chatterTimer, 8);
+    this.stopSpeech();
+  }
+
   stopSpeech() {
     if (this.mode !== 'speech' || typeof speechSynthesis === 'undefined') return;
     try {

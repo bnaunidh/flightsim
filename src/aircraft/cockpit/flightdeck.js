@@ -269,7 +269,19 @@ export function buildFlightDeck(ctx) {
       new THREE.Vector3(cx + glareHalf, yG, Math.max(sillR[1].z, zSill - 0.02) + 0.02),
     ];
     const back = front.map((v) => new THREE.Vector3(v.x, yG - 0.012, zLip));
-    part(group, loft(front, back, true), M.glare, 0, 0, 0, 'glareshield');
+    /*
+     * A flat shelf, so its normals are straight up. The loft's winding follows
+     * the sills' zig-zag (outboard, inboard, centre...), which left two thirds
+     * of the quads facing DOWN: drawn both-sided, the top was lit as an
+     * underside — the hemisphere's ground colour, no sun — and the whole
+     * glareshield was a black slab across the view in every airliner
+     * (Tomm1z, 6:51: "look at what happened with the cockpit... a bit broken").
+     */
+    const shelf = loft(front, back, true);
+    const sn = shelf.attributes.normal;
+    for (let i = 0; i < sn.count; i++) sn.setXYZ(i, 0, 1, 0);
+    sn.needsUpdate = true;
+    part(group, shelf, M.glare, 0, 0, 0, 'glareshield');
     const lip = part(group, new THREE.CylinderGeometry(0.03, 0.03, 2 * glareHalf, 16), M.glare, cx, yG - 0.03, zLip, 'glareshield lip');
     lip.rotation.z = Math.PI / 2;
     part(group, new THREE.PlaneGeometry(2 * glareHalf, 0.08), M.rubber, cx, yG - 0.07, zLip + 0.012, 'glareshield face').rotation.x = 0;
@@ -742,7 +754,8 @@ export function buildFlightDeck(ctx) {
   }
 
   /* ---- Merge what never moves ---- */
-  mergeStatic(group, (o) => o === panel.face || o === skinMesh || /window glass/.test(o.name));
+  // The glareshield stays its own mesh: a check finds it by name and reads its normals (tests/features/tomm1z-cockpit.mjs).
+  mergeStatic(group, (o) => o === panel.face || o === skinMesh || /window glass/.test(o.name) || o.name === 'glareshield');
 
   /* ================================================================ *
    * Live

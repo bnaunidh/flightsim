@@ -402,8 +402,8 @@ const CIRCUITS = {
   steps: [
     {
       id: 'depart',
-      text: 'Hold Shift for full power, keep straight with Q and E, and at 55 knots pull back gently on S.',
-      hint: 'Watch the speed on the left. Fifty five knots, then a small steady pull on S.',
+      text: 'Hold Shift for full power, keep straight with Q and E, and at {Vr} knots pull back gently on S.',
+      hint: 'Watch the speed on the left. {Vr} knots, then a small steady pull on S.',
       atc: {
         text: 'Skylark one seven two, Kestrel Tower, runway zero nine, cleared for take-off. Left hand circuit, one thousand feet.',
         voice: 'tower',
@@ -415,7 +415,7 @@ const CIRCUITS = {
     {
       id: 'lap1',
       text: 'Climb to 1,000 feet, turn left, and follow the two rings round to the runway. Land, then go straight round again.',
-      hint: 'Flaps down a step with F on the way in. Aim for 65 knots on final approach.',
+      hint: 'Flaps down a step with F on the way in. Aim for {Vapp-5} knots on final approach.',
       atc: { text: 'Skylark one seven two, cleared touch and go, runway zero nine.', voice: 'tower' },
       targetLabel: 'Next ring',
       gates: [
@@ -518,7 +518,7 @@ const ISLAND_CIRCUIT = {
   steps: [
     {
       id: 'depart',
-      text: 'Full power with Shift, pull back at 55 knots, and climb straight ahead to 1,500 feet.',
+      text: 'Full power with Shift, pull back at {Vr} knots, and climb straight ahead to 1,500 feet.',
       hint: 'Hold the nose just above the horizon and let the altimeter wind up.',
       atc: {
         text: 'Skylark one seven two, Kestrel Tower, runway zero nine cleared for take-off, wind one one zero at six.',
@@ -624,7 +624,7 @@ const DELIVERY = {
     {
       id: 'depart',
       text: 'The crate is loaded. Take off from runway 09, then turn right with D and head south-east.',
-      hint: 'Full power with Shift, pull back at 55 knots, then a gentle right turn once you are above 300 feet.',
+      hint: 'Full power with Shift, pull back at {Vr} knots, then a gentle right turn once you are above 300 feet.',
       atc: {
         text: 'Skylark one seven two, Kestrel Tower, cleared for take-off runway zero nine. Mango Cay is waiting on you.',
         voice: 'tower',
@@ -650,7 +650,7 @@ const DELIVERY = {
     {
       id: 'descend',
       text: 'Come down low over the island — below 500 feet above the ground — and slow down.',
-      hint: 'Ease the power back with Ctrl and let the nose drop a little. Around 70 knots is ideal for the drop.',
+      hint: 'Ease the power back with Ctrl and let the nose drop a little. Around {Vdrop} knots is ideal for the drop.',
       atc: {
         text: 'Sea Bird, this is Mango Cay village. We can hear you. Drop when you are ready, over.',
         voice: 'village',
@@ -694,7 +694,7 @@ const DELIVERY = {
     {
       id: 'land',
       text: 'Land on runway 09 and bring her to a stop.',
-      hint: 'Flaps down a step or two with F, 65 knots on final, and keep the PAPI at two white and two red.',
+      hint: 'Flaps down a step or two with F, {Vapp-5} knots on final, and keep the PAPI at two white and two red.',
       atc: { text: 'Skylark one seven two, cleared to land runway zero nine.', voice: 'tower' },
       targetLabel: 'Touchdown zone',
       target: () => RUNWAY.touchdown,
@@ -908,7 +908,7 @@ const NIGHT_RUN = {
     {
       id: 'depart',
       text: 'Take off from runway 09 — the white lights show you the edges — then turn right towards the lighthouse.',
-      hint: 'Keep between the two rows of lights. Pull back at 55 knots exactly as you do in daylight.',
+      hint: 'Keep between the two rows of lights. Pull back at {Vr} knots exactly as you do in daylight.',
       atc: {
         text: 'Skylark one seven two, Kestrel Tower, runway zero nine cleared for take-off. Runway and approach lights are on.',
         voice: 'tower',
@@ -937,7 +937,7 @@ const NIGHT_RUN = {
     },
     {
       id: 'descend',
-      text: 'Come down below 600 feet above the ground and slow to about 70 knots for the drop.',
+      text: 'Come down below 600 feet above the ground and slow to about {Vdrop} knots for the drop.',
       hint: 'Take the power off early. Descending at night is done in small steps, not one big dive.',
       targetLabel: 'Drop target',
       target: () => DELIVERY_PAD,
@@ -1065,7 +1065,7 @@ const MEDEVAC = {
     {
       id: 'depart',
       text: 'Take off from runway 09 and turn south-east for Mango Cay. Do not waste time.',
-      hint: 'Full power, 55 knots, pull back, then straight into the turn once you are above 300 feet.',
+      hint: 'Full power, {Vr} knots, pull back, then straight into the turn once you are above 300 feet.',
       atc: {
         text: 'Skylark one seven two, cleared for immediate take-off runway zero nine. Medical flight, you have priority.',
         voice: 'tower',
@@ -1103,7 +1103,7 @@ const MEDEVAC = {
     {
       id: 'cay-land',
       text: 'Land on the grass and stop. Aim for the white bars at the near end.',
-      hint: 'Flaps down with F, 60 knots over the threshold, then close the throttle and hold the nose up.',
+      hint: 'Flaps down with F, {Vthr} knots over the threshold, then close the throttle and hold the nose up.',
       atc: { text: 'Sea Bird, you are cleared to land. We can see you. Good luck.', voice: 'village' },
       targetLabel: 'Touchdown zone',
       target: () => CAY.touchdown16,

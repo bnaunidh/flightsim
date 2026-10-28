@@ -56,6 +56,14 @@ file on first load, so even without installing, a second visit works offline.
 
 ---
 
+**Closed the tab by accident?** (Ctrl+W is one key away from Ctrl, "less
+power".) The browser asks first while a flight is on, and a running mission or
+lesson is checkpointed every few seconds: the next visit within two hours shows
+**Resume your mission?** on the start screen — the same mission at the start of
+the step you were on, the aeroplane where it was. What the earlier steps had
+gathered is not kept; Free Flight has nothing to resume and the Story has its
+own save. The code is `src/game/checkpoint.js`.
+
 ## Controls
 
 | Action | Keys |
@@ -104,11 +112,26 @@ or the flaps; invert, deadzone, curve, calibrate; and bind any button to any
 action by pressing it. It is saved per device; *Reset to defaults* puts the
 profile back. The code is `src/flight/controllers.js`.
 
+A thrust lever takes the throttle only once it has **synced**: at idle, or
+passing through the power the game has set (a key, a spawn in the air). Until
+then the HUD says "Move the throttle lever to idle to take control", and an
+engine start never takes power from a lever sitting at climb — the aeroplane
+stays on its stand with the parking brake held. A key on the power makes the
+lever sync again, so the keyboard and the lever never fight. In a
+single-engined aeroplane the further-forward of a quadrant's two levers is the
+power (one lever at the stop is 100%, not half); a twin takes the average and
+flies the split. Pedals or a stick that rest a little off centre have that
+rest taken as their centre once they have sat still for a moment.
+
 **How do I slow down?** Hold `Ctrl` (or `↓`) to reduce power. `Space` is the
 wheel brakes and only works on the ground. `F` lowers the flaps, which lets you
 fly slowly on the approach.
 
 ---
+
+Mission words quote the aeroplane you are actually flying: "lift off at
+{Vr} knots" in the mission files becomes 55 in the Skylark and the airliner's
+own number in an airliner (`src/game/speed-text.js`).
 
 ## What is in the game
 

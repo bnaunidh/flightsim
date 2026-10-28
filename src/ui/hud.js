@@ -886,6 +886,21 @@ export class Hud {
     return this._bands;
   }
 
+  /**
+   * Point at a readout for a few seconds — the row pulses (styles/main.css
+   * .hud-row.is-pointed). 'speed' | 'altitude' | 'vs' | 'heading'. A new
+   * player's "where do I see my speed?" (main.js hintOnce).
+   */
+  pointAt(which, seconds = 6) {
+    const value = { speed: this.speedValue, altitude: this.altValue, vs: this.vsValue, heading: this.hdgValue }[which];
+    const row = value && value.closest ? value.closest('.hud-row') : null;
+    if (!row) return false;
+    row.classList.add('is-pointed');
+    clearTimeout(row._pointT);
+    row._pointT = setTimeout(() => row.classList.remove('is-pointed'), seconds * 1000);
+    return true;
+  }
+
   setCoach(text) {
     if (!text) {
       if (this.coach.style.display !== 'none') this.coach.style.display = 'none';

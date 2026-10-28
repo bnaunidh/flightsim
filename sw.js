@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v75.4';
+const CACHE_VERSION = 'island-flight-v75.5';
 
 const PRECACHE = [
   './',
@@ -509,6 +509,10 @@ const PRECACHE = [
   'src/features/wx-map.js',
   // Added by tools/sync-precache.mjs.
   'src/render/height-fog.js',
+  // Added by tools/sync-precache.mjs.
+  'src/game/checkpoint.js',
+  'src/game/speed-text.js',
+  'src/render/shader-warm.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 
@@ -626,23 +630,47 @@ const OPTIONAL = [
   'assets/loading/stormcoast.jpg',
 ];
 
+/**
+ * How many precache fetches run at once. The install used to fire every one
+ * of the ~600 files in a single Promise.all, each with `cache: 'reload'` —
+ * which bypasses the HTTP cache the page has just filled, so a first visit
+ * downloaded the whole game twice, all of it at once, while the player was
+ * already on the menu loading fonts, skins and the first aeroplane: the
+ * "400-file precache competing at first visit" of the Tomm1z pass
+ * (.claude/devtools/briefs/tomm1z-video.md). Now a few at a time, and
+ * `cache: 'no-cache'` (revalidate: a conditional request, the cached body
+ * when the server says it is unchanged), which is the same freshness
+ * guarantee without the second download.
+ */
+const PRECACHE_PARALLEL = 4;
+
+/** Run `fn` over `items`, at most `n` at a time, in order. */
+async function eachLimited(items, n, fn) {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, worker));
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE_VERSION);
       // addAll fails the whole install if one file 404s, so add individually
       // and report anything missing to the console instead of breaking install.
-      await Promise.all(
-        [...PRECACHE, ...OPTIONAL].map(async (url) => {
-          try {
-            const res = await fetch(new Request(url, { cache: 'reload' }));
-            if (res.ok) await cache.put(url, res);
-            else console.warn('[sw] could not precache', url, res.status);
-          } catch (err) {
-            console.warn('[sw] could not precache', url, err);
-          }
-        })
-      );
+      await eachLimited([...PRECACHE, ...OPTIONAL], PRECACHE_PARALLEL, async (url) => {
+        try {
+          const res = await fetch(new Request(url, { cache: 'no-cache' }));
+          if (res.ok) await cache.put(url, res);
+          else console.warn('[sw] could not precache', url, res.status);
+        } catch (err) {
+          console.warn('[sw] could not precache', url, err);
+        }
+      });
       self.skipWaiting();
     })()
   );

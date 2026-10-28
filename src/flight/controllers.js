@@ -531,6 +531,10 @@ function defaultDispatch(action, down) {
 
 /** An engine-master input that goes OFF within this long of going ON was a push-button, not a switch. */
 export const MOMENTARY_MS = 700;
+/** A centring axis still for this long (s) has shown where it rests. */
+export const REST_STILL_S = 1.5;
+/** ...if that is within this much of the middle; further out it is a hand on it, not an offset. */
+export const REST_MAX = 0.2;
 
 const ROLE_PRIO = { yaw: 2, throttle: 2, throttle1: 2, throttle2: 2 };
 
@@ -562,14 +566,52 @@ export class Controllers {
     /** Per device: the last value applied for the speedbrake / flaps levers (they act on a change). */
     this._detect = null;
     this._calib = null;
+    /**
+     * Per device axis: where a centring axis RESTS. Pedals and a stick are
+     * never quite at zero when nobody touches them (Tomm1z's TFRP pedals and
+     * the Ursa Minor stick: a few per cent of rudder and aileron, all the
+     * time, which is part of why the Skylark left its stand for the grass).
+     * The first time an axis sits still for REST_STILL_S within REST_MAX of
+     * the middle, that reading is its centre until it is calibrated
+     * properly; see restOf().
+     */
+    this._rest = new Map();
     this.state = this._emptyState();
     this.load();
+  }
+
+  /** The learned rest of a device's axis (null: none learned, or calibrated so none is needed). */
+  restOf(key, axis) {
+    const r = this._rest.get(`${key}|${axis}`);
+    return r && r.learned ? r.rest : null;
+  }
+
+  /** Watch a centring axis settle, and learn its rest once; returns the axis config to shape it with. */
+  _restCfg(d, a, dt) {
+    if (a.calibrated || (Number.isFinite(a.center) && a.center !== 0)) return a;
+    const id = `${d.key}|${a.axis}`;
+    const v = d.axes[a.axis];
+    let r = this._rest.get(id);
+    if (!r) {
+      r = { last: v, still: 0, rest: 0, learned: false };
+      this._rest.set(id, r);
+    }
+    if (!r.learned && Number.isFinite(dt) && dt > 0) {
+      if (Math.abs(v - r.last) < 0.01) r.still += dt;
+      else r.still = 0;
+      r.last = v;
+      if (r.still >= REST_STILL_S && Math.abs(v) <= REST_MAX) {
+        r.rest = Math.abs(v) > 0.005 ? v : 0;
+        r.learned = true;
+      }
+    }
+    return r.learned && r.rest ? { ...a, center: r.rest } : a;
   }
 
   _emptyState() {
     return {
       any: false, roll: null, pitch: null, yaw: null,
-      throttle: null, eng: null, split: 0, detents: null, reverse: null,
+      throttle: null, throttleMax: null, levers: 0, eng: null, split: 0, detents: null, reverse: null,
       brakeL: null, brakeR: null, brakes: null, brakeHold: false,
       speedbrake: null, flaps: null,
       edges: { parkingBrake: false, apDisconnect: false },
@@ -853,6 +895,8 @@ export class Controllers {
       if (!this.devices.some((x) => x.key === d.key)) {
         const first = !this.seen.has(d.key);
         this.seen.add(d.key);
+        // Plugged in (again): its axes' rests are learned afresh.
+        for (const k of [...this._rest.keys()]) if (k.startsWith(`${d.key}|`)) this._rest.delete(k);
         this.events.push({ type: 'connect', key: d.key, name: d.name, profile: d.cfg.profile.name, profileId: d.cfg.profile.id, first, roles: Object.keys(d.cfg.axes) });
       }
     }
@@ -966,7 +1010,9 @@ export class Controllers {
         if (!ROLE[role] || !a || !(a.axis >= 0 && a.axis < d.axes.length)) continue;
         const prio = Number.isFinite(a.prio) ? a.prio : ROLE_PRIO[role] || 2;
         if (pick[role] && pick[role].prio >= prio) continue;
-        pick[role] = { prio, d, a, v: shapeAxis(d.axes[a.axis], a, ROLE[role].kind) };
+        const kind = ROLE[role].kind;
+        const cfg = kind === 'centre' ? this._restCfg(d, a, dt) : a;
+        pick[role] = { prio, d, a, v: shapeAxis(d.axes[a.axis], cfg, kind) };
       }
     }
     for (const r of ['roll', 'pitch', 'yaw', 'speedbrake', 'flaps']) if (pick[r]) st[r] = pick[r].v;
@@ -997,6 +1043,15 @@ export class Controllers {
       const l2 = lev(p2, pick.throttle2 ? 'throttle2' : 'throttle1');
       st.eng = [l1.thrust, l2.thrust];
       st.throttle = (l1.thrust + l2.thrust) / 2;
+      /*
+       * The further-forward lever, for a single-engined aeroplane. The
+       * quadrant's two levers were averaged for every type: in the Skylark
+       * Tomm1z pushed ONE lever to the stop, as anyone flying a single would,
+       * and got "why is my power only at 50%?" (input.js picks this for a
+       * type with one engine; a twin keeps the average and the split).
+       */
+      st.throttleMax = Math.max(l1.thrust, l2.thrust);
+      st.levers = pick.throttle1 && pick.throttle2 ? 2 : 1;
       st.split = pick.throttle1 && pick.throttle2 ? l2.thrust - l1.thrust : 0;
       st.detents = [l1.detent, l2.detent];
       st.reverse = hasRev(p1) || hasRev(p2) ? Math.max(l1.reverse, l2.reverse) : null;
@@ -1004,6 +1059,8 @@ export class Controllers {
     } else if (pick.throttle) {
       const l = lev(pick.throttle, 'throttle');
       st.throttle = l.thrust;
+      st.throttleMax = l.thrust;
+      st.levers = 1;
       st.detents = [l.detent];
       st.reverse = hasRev(pick.throttle) ? l.reverse : null;
       st.thrustDevice = pick.throttle.d.key;

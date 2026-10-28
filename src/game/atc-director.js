@@ -13,6 +13,13 @@ import { isOnAnyRunway, MAP, AIRPORT } from '../world/terrain.js';
 import { UNITS } from '../aircraft/physics.js';
 import { setRadioField } from '../audio/atc.js';
 import { navField, thresholdOf, runwayWords, onFieldRunway } from '../world/navfield.js';
+import { keyNames } from '../flight/input.js';
+
+/** "Report your intentions" has been followed by how, this session. (resetAtcHowSaid: a test's.) */
+let howSaid = false;
+export function resetAtcHowSaid() {
+  howSaid = false;
+}
 
 const ft = (m) => m * UNITS.FT;
 
@@ -198,6 +205,24 @@ export class AtcDirector {
         `${this.callsign}, radar contact, climb at your discretion and report your intentions.`,
         'approach'
       );
+      /*
+       * ...and, the first time, HOW. Tomm1z (8:25): "How do I even report? I
+       * don't know how I do that." The radio key by name (Z, fn F8 on a
+       * Mac: features/pilot-systems.js's atcRequest), or the RADIO button
+       * on a touchscreen, once a session.
+       */
+      if (!howSaid) {
+        howSaid = true;
+        let names = [];
+        try {
+          names = keyNames('atcRequest', this.sim);
+        } catch (e) {
+          names = [];
+        }
+        const key = names.length ? names.slice(0, 2).join(' or ') : 'Z';
+        const how = this.sim.touch ? `tap RADIO on the sheet (or press ${key})` : `press ${key} for the radio`;
+        if (this.sim.hud && this.sim.hud.notify) this.sim.hud.notify(`To report your intentions: ${how}, then pick what you want to do`, 'info', 7);
+      }
     }
 
     // Joining final: within 6 km, west of the field, below 2,000 ft, pointing east.

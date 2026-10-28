@@ -842,6 +842,19 @@ export class Menus {
           </button>
         </nav>
 
+        <div class="resume-card" data-resume hidden role="status">
+          <span class="resume-icon" aria-hidden="true">${icon('missions', 22)}</span>
+          <span class="resume-body">
+            <small>Resume your mission?</small>
+            <strong data-resume-name></strong>
+            <em data-resume-where></em>
+          </span>
+          <span class="resume-actions">
+            <button class="primary" data-act="resume">Resume</button>
+            <button class="ghost" data-act="resume-discard">Start over</button>
+          </span>
+        </div>
+
         <a class="shoutout" data-shoutout href="https://youtu.be/GJmwWdPTWes" target="_blank" rel="noopener">
           <span class="shoutout-play" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
           <span class="shoutout-body">
@@ -880,6 +893,8 @@ export class Menus {
       else if (act === 'credits') this.show('credits');
       else if (act === 'install') this.hooks.install && this.hooks.install();
       else if (act === 'sound') this.hooks.toggleSound && this.hooks.toggleSound();
+      else if (act === 'resume') this.hooks.resumeMission && this.hooks.resumeMission();
+      else if (act === 'resume-discard') this.hooks.discardResume && this.hooks.discardResume();
     });
     this.screens.main = s;
     return s;
@@ -3132,6 +3147,24 @@ export class Menus {
    * screen change because the shapes are sized to their elements, and an
    * element that was hidden has no size to measure.
    */
+  /**
+   * The "Resume your mission?" card on the main screen (game/checkpoint.js):
+   * { name, where } shows it, null hides it.
+   */
+  syncResume(info) {
+    const card = this.screens.main && this.screens.main.querySelector('[data-resume]');
+    if (!card) return;
+    if (!info) {
+      card.hidden = true;
+      return;
+    }
+    const name = card.querySelector('[data-resume-name]');
+    const where = card.querySelector('[data-resume-where]');
+    if (name) name.textContent = info.name || '';
+    if (where) where.textContent = info.where || '';
+    card.hidden = false;
+  }
+
   /** Show whether free look is on, on the pause-menu button. */
   syncFreeLook(on) {
     const btn = this.root.querySelector('[data-freelook]');

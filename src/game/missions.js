@@ -272,8 +272,8 @@ export const MISSIONS = [
       },
       {
         id: 'rotate',
-        text: 'At 55 knots, pull back gently with S to lift off.',
-        hint: 'Watch the airspeed. When it passes 55, ease back on S.',
+        text: 'At {Vr} knots, pull back gently with S to lift off.',
+        hint: 'Watch the airspeed. When it passes {Vr}, ease back on S.',
         // agl is in metres.
         check: (ctx) => ctx.ac.agl > 10 && ctx.ac.airborneTime > 1.5,
       },
@@ -374,7 +374,7 @@ export const MISSIONS = [
       {
         id: 'load',
         text: 'The supply crate is loaded. Take off from runway 09 and turn north-east toward Mango Cay.',
-        hint: 'Full power with Shift, pull back at 55 knots, then turn left with A.',
+        hint: 'Full power with Shift, pull back at {Vr} knots, then turn left with A.',
         atc: {
           text: 'Skylark one seven two, Kestrel Tower, cleared for take-off runway zero nine. Mango Cay is waiting on you.',
           voice: 'tower',
@@ -560,10 +560,10 @@ export const MISSIONS = [
     steps: [
       {
         id: 'quit',
-        text: 'Your engine has just failed. Lower the nose and hold 65 knots — that is your best glide.',
-        hint: 'Too slow and you fall out of the sky; too fast and you arrive low. 65 knots gets you furthest.',
+        text: 'Your engine has just failed. Lower the nose and hold {Vglide} knots — that is your best glide.',
+        hint: 'Too slow and you fall out of the sky; too fast and you arrive low. {Vglide} knots gets you furthest.',
         atc: { text: 'Mayday, mayday — Skylark one seven two, engine failure, gliding to runway zero nine.', voice: 'pilot' },
-        targetLabel: 'Best glide, 65 kt',
+        targetLabel: 'Best glide, {Vglide} kt',
         enter: (ctx) => {
           /*
            * The failure is the mission — but only in the air.

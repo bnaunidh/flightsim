@@ -11,6 +11,21 @@ import { Alerts } from './alerts.js';
 import { Music } from './music.js';
 import { VehicleAudio } from './vehicles.js';
 
+/**
+ * A gain to exactly nothing inside a quarter of a second, whatever was
+ * scheduled on it (an engine's 1.6 s wind-down, a 2.6 s spool-down): the
+ * timeline is cleared first, so the ramp is the only thing left on it.
+ */
+export function rampOff(gain, t, seconds = 0.25) {
+  try {
+    gain.cancelScheduledValues(t);
+    gain.setValueAtTime(Math.max(0, gain.value), t);
+    gain.linearRampToValueAtTime(0, t + seconds);
+  } catch (e) {
+    gain.value = 0;
+  }
+}
+
 export class GameAudio {
   constructor() {
     this.mixer = new AudioMixer();
@@ -82,8 +97,68 @@ export class GameAudio {
     this.vehicles.setInterior(inside);
   }
 
-  update(dt, ac, weather, cloudImmersion) {
+  /**
+   * Nothing of the flight loops while there is no flight.
+   *
+   * Tomm1z's video (3:05-3:20): a crash into the terminal, "Main menu", and
+   * in the menu and Settings "What is that sound? ... Is this like a horror
+   * game?" What he heard: quitToMenu() stands the aeroplane back on the
+   * runway with its engine running and update() kept driving the engine
+   * synth at idle, the slipstream and breeze, the stall warner and the
+   * radio's background chatter (formant gibberish voices) behind the blurred
+   * menu — with nothing on screen to explain any of it. Now the engine, jet
+   * and rotor synths are stopped, the ambience is silenced, the warners are
+   * off and the radio's queue is dropped the moment the state leaves
+   * 'flying'; only the music plays in the menus. `hushed` is readable, so a
+   * test can check it as data.
+   */
+  hush() {
+    if (this.hushed) return;
+    this.hushed = true;
     if (!this.available) return;
+    this.engine.playStop();
+    this.jet.playStop();
+    this.vehicles.playStop();
+    // ...and their outputs to nothing inside a quarter of a second: the
+    // stops above are the sound of an engine winding down (1.6 s, 2.6 s),
+    // right in flight and wrong behind a menu.
+    const t = this.mixer.time;
+    for (const s of [this.engine, this.jet, this.vehicles.rotor]) {
+      if (s && s.out && s.out.gain) rampOff(s.out.gain, t);
+    }
+    this.ambience.silence();
+    this.alerts.setStall(false);
+    this.alerts.setGearWarning(false);
+    this.radio.hush();
+  }
+
+  /** What is still sounding, as numbers, for the checks (null before the first gesture). */
+  loopLevels() {
+    if (!this.available) return null;
+    const g = (n) => (n && n.gain ? +n.gain.value.toFixed(4) : 0);
+    return {
+      engine: g(this.engine.out),
+      jet: g(this.jet.out),
+      wind: g(this.ambience.windGain),
+      whistle: g(this.ambience.whistleGain),
+      rain: g(this.ambience.rainGain),
+      tyres: g(this.ambience.rollGain),
+      cabin: g(this.ambience.cabinGain),
+      stall: g(this.alerts.stallGain),
+      gearHorn: g(this.alerts.gearGain),
+      radioQueue: this.radio.queue ? this.radio.queue.length : 0,
+      hushed: !!this.hushed,
+    };
+  }
+
+  update(dt, ac, weather, cloudImmersion, quiet = false) {
+    if (!this.available) return;
+    if (quiet) {
+      this.hush();
+      this.music.update(dt);
+      return;
+    }
+    this.hushed = false;
     // Only one of them runs. A turbofan making piston noises was the single
     // most obviously wrong thing about flying the airliner.
     // Three instruments now, and exactly one of them runs. A helicopter
