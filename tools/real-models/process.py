@@ -159,6 +159,370 @@ def components(P, I):
     return roots[weld[I[:, 0]]]
 
 
+def _in_box(lo, hi, box, absx):
+    """A piece's bounds (lo, hi) inside box (x0, x1, y0, y1, z0, z1); absx: |x| (a piece across the centreline from 0)."""
+    x0, x1 = lo[0], hi[0]
+    if absx:
+        x0, x1 = (0.0 if lo[0] < 0 < hi[0] else min(abs(lo[0]), abs(hi[0]))), max(abs(lo[0]), abs(hi[0]))
+    b = box
+    return x0 >= b[0] and x1 <= b[1] and lo[1] >= b[2] and hi[1] <= b[3] and lo[2] >= b[4] and hi[2] <= b[5]
+
+
+def select_pieces(parts, rule):
+    """[(part index, triangle mask, side)] of the connected pieces wholly inside rule['box'] (source axes, after rot).
+    rule: box, absX (default True: both sides), maxW (widest a piece may be across x)."""
+    out = []
+    for k, q in enumerate(parts):
+        if rule.get('mats') and q['mat'] not in rule['mats']:
+            continue
+        if 'lab' not in q:
+            q['lab'] = components(q['P'], q['I'])
+        lab = q['lab']
+        v = q['P'][q['I']]
+        ul, inv = np.unique(lab, return_inverse=True)
+        lo = np.full((len(ul), 3), 1e9)
+        hi = np.full((len(ul), 3), -1e9)
+        np.minimum.at(lo, inv, v.min(1))
+        np.maximum.at(hi, inv, v.max(1))
+        for i in range(len(ul)):
+            if rule.get('maxW') and hi[i, 0] - lo[i, 0] > rule['maxW']:
+                continue
+            if _in_box(lo[i], hi[i], rule['box'], rule.get('absX', True)):
+                out.append((k, inv == i, 1 if lo[i, 0] + hi[i, 0] >= 0 else -1))
+    return out
+
+
+def drop_pieces(parts, rules, log):
+    """models.py `dropPieces`: whole connected pieces inside a box are left out (the source's pylons and racks)."""
+    n = 0
+    for rule in rules:
+        gone = {}
+        for k, m, _ in select_pieces(parts, rule):
+            gone[k] = gone[k] | m if k in gone else m
+        for k, m in gone.items():
+            q = parts[k]
+            q['I'] = q['I'][~m]
+            q['lab'] = q['lab'][~m]
+            n += int(m.sum())
+    if n:
+        log.append(f'dropped pieces: {n} triangles')
+
+
+def _rotate(P, p0, u, phi):
+    """Rodrigues: P rotated by phi about the axis through p0 along unit u."""
+    v = P - p0
+    c, s = np.cos(phi), np.sin(phi)
+    return p0 + v * c + np.cross(u, v) * s + u[None, :] * (v @ u)[:, None] * (1 - c)
+
+
+def _section(V, x):
+    """Where triangles V (n, 3, 3) cross the plane at this x: the crossing points (m, 3) and their segment midpoints/lengths."""
+    d = V[:, :, 0] - x
+    cross = (d.max(1) > 0) & (d.min(1) < 0)
+    pts, mids, lens = [], [], []
+    for t in np.where(cross)[0]:
+        q = []
+        for i in range(3):
+            k = (i + 1) % 3
+            if (d[t, i] > 0) != (d[t, k] > 0):
+                q.append(V[t, i] + (V[t, k] - V[t, i]) * (d[t, i] / (d[t, i] - d[t, k])))
+        if len(q) == 2:
+            pts += q
+            mids.append((q[0] + q[1]) / 2)
+            lens.append(np.linalg.norm(q[1] - q[0]))
+    if not pts:
+        return np.zeros((0, 3)), np.zeros((0, 3)), np.zeros(0)
+    return np.array(pts), np.array(mids), np.array(lens)
+
+
+def straighten_hinges(parts, rules, log):
+    """models.py `hinges`: control surfaces the source drew deflected (the A-10's flaps,
+    split ailerons and elevators all hang down), turned back to neutral.
+
+    Each rule picks the pieces of one surface (wholly inside its box, each side on
+    its own). Cut across at three stations along the span: the hinge is the nose of
+    the surface's section (its front-most points), the axis is fitted through the
+    three, and the chord to put it back on runs from the leading edge of the
+    surface ahead (searched in rule['le'] = (z0, z1)) to the hinge. Every piece
+    that spans most of the surface turns until its own section's centre lies on
+    that chord (a split aileron's two halves together, the nose box on its own);
+    the small ones (horns, fairings, end caps) turn with the biggest; plus
+    rule['trim'] degrees."""
+    for rule in rules:
+        sel = select_pieces(parts, rule)
+        trim = np.radians(rule.get('trim', 0.0))
+        for side in (-1, 1):
+            grp = [(k, m) for k, m, s in sel if s == side]
+            if not grp:
+                continue
+            tris = [parts[k]['P'][parts[k]['I'][m]] for k, m in grp]
+            spans = [np.ptp(t[:, :, 0]) for t in tris]
+            big = [i for i, sp in enumerate(spans) if sp >= 0.5 * max(spans)]
+            allT = np.concatenate([tris[i] for i in big])
+            x0, x1 = allT[:, :, 0].min(), allT[:, :, 0].max()
+            piv, wants = [], []
+            for f in (0.25, 0.5, 0.75):
+                xs = x0 + (x1 - x0) * f
+                pts, _, _ = _section(allT, xs)
+                if len(pts) < 3:
+                    continue
+                zf = pts[:, 2].min()
+                nose = pts[pts[:, 2] < zf + 0.06]
+                p = np.array([xs, nose[:, 1].mean(), zf + 0.5 * min(0.1, np.ptp(nose[:, 1]))])
+                # the leading edge of what is ahead, at this station
+                le = None
+                for k, q in enumerate(parts):
+                    mk = np.ones(len(q['I']), bool)
+                    for k2, m2 in grp:
+                        if k2 == k:
+                            mk &= ~m2
+                    if not mk.any():
+                        continue
+                    T = q['P'][q['I'][mk]]
+                    T = T[(T[:, :, 0].min(1) < xs) & (T[:, :, 0].max(1) > xs)]
+                    if not len(T):
+                        continue
+                    sp, _, _ = _section(T, xs)
+                    sp = sp[(sp[:, 2] > rule['le'][0]) & (sp[:, 2] < rule['le'][1]) & (np.abs(sp[:, 1] - p[1]) < 0.5)]
+                    if len(sp) and (le is None or sp[:, 2].min() < le[2]):
+                        le = sp[np.argmin(sp[:, 2])]
+                piv.append(p)
+                if le is not None:
+                    wants.append(np.arctan2(p[1] - le[1], p[2] - le[2]))
+            if len(piv) < 2 or not wants:
+                log.append(f'hinge {rule.get("name", "?")} {"LR"[side > 0]}: no hinge or leading edge found, left as drawn')
+                continue
+            piv = np.array(piv)
+            A_ = np.stack([piv[:, 0], np.ones(len(piv))], 1)
+            (dy, cy), *_ = np.linalg.lstsq(A_, piv[:, 1], rcond=None)
+            (dz, cz), *_ = np.linalg.lstsq(A_, piv[:, 2], rcond=None)
+            u = np.array([1.0, dy, dz])
+            u /= np.linalg.norm(u)
+            xm = (x0 + x1) / 2
+            p0 = np.array([xm, cy + dy * xm, cz + dz * xm])
+            want = float(np.median(wants)) + trim
+
+            def turn_for(T):
+                _, mids, lens = _section(T, xm)
+                if not len(lens):
+                    return None
+                cen = (mids * lens[:, None]).sum(0) / lens.sum()
+                have = np.arctan2(cen[1] - p0[1], cen[2] - p0[2])
+
+                def miss(a):
+                    c2 = _rotate(cen[None, :], p0, u, a)[0]
+                    return abs(np.arctan2(c2[1] - p0[1], c2[2] - p0[2]) - want)
+                return min((have - want, want - have), key=miss)
+            turns = {}
+            for i in big:
+                turns[i] = turn_for(tris[i])
+            known = [i for i in big if turns[i] is not None]
+            if not known:
+                continue
+            main = max(known, key=lambda i: len(tris[i]))
+            desc = []
+            for i, (k, m) in enumerate(grp):
+                phi = turns.get(i)
+                if phi is None:
+                    phi = turns[main]
+                q = parts[k]
+                ix = np.unique(q['I'][m])
+                q['P'] = q['P'].copy()
+                q['P'][ix] = _rotate(q['P'][ix], p0, u, phi)
+                if q['N'] is not None:
+                    q['N'] = q['N'].copy()
+                    q['N'][ix] = _rotate(q['N'][ix], np.zeros(3), u, phi)
+                if i in big:
+                    desc.append(f'{np.degrees(phi):+.1f}')
+            log.append(f'hinge {rule.get("name", "?")} {"LR"[side > 0]}: turned {", ".join(desc)} deg ({sum(int(m.sum()) for _, m in grp)} triangles, {len(grp)} pieces)')
+            if os.environ.get('HINGE_DEBUG'):
+                log.append(f'   axis {u.round(3)} p0 {p0.round(3)} chord {np.degrees(want):.1f} deg, pivots {piv.round(2).tolist()}')
+
+
+def _others_section(parts, grp, xs):
+    """The section at xs of every triangle not in grp [(part, mask)]."""
+    out = []
+    for k, q in enumerate(parts):
+        mk = np.ones(len(q['I']), bool)
+        for k2, m2 in grp:
+            if k2 == k:
+                mk &= ~m2
+        if not mk.any():
+            continue
+        T = q['P'][q['I'][mk]]
+        T = T[(T[:, :, 0].min(1) < xs) & (T[:, :, 0].max(1) > xs)]
+        if len(T):
+            sp, _, _ = _section(T, xs)
+            if len(sp):
+                out.append(sp)
+    return np.concatenate(out) if out else np.zeros((0, 3))
+
+
+def _loop_of(pts, i0):
+    """Section points come in pairs (one segment each); the ones joined to point i0 through shared ends."""
+    key = np.round(pts / 1e-4).astype(np.int64)
+    _, inv = np.unique(key, axis=0, return_inverse=True)
+    inv = inv.reshape(-1)
+    parent = np.arange(inv.max() + 1)
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    for a in range(0, len(inv) - 1, 2):
+        ra, rb = find(inv[a]), find(inv[a + 1])
+        parent[rb] = ra
+    roots = np.array([find(x) for x in inv])
+    return pts[roots == roots[i0]]
+
+
+def wedge_surfaces(parts, rules, log):
+    """models.py `wedges`: a control surface the source drew deflected and in pieces (the
+    A-10's split ailerons, open as speed brakes), left out and drawn again closed and
+    neutral: a plain wedge from the rear face of the wing ahead of it to a straight
+    trailing edge on that wing's chord line, as long as the source's surface is."""
+    for rule in rules:
+        for side in (-1, 1):
+            grp = [(k, m) for k, m, s in select_pieces(parts, rule) if s == side]
+            if not grp:
+                continue
+            V = np.concatenate([parts[k]['P'][parts[k]['I'][m]] for k, m in grp])
+            ax_ = np.abs(V[:, :, 0])
+            a0, a1 = ax_.min() + 0.005, ax_.max() - 0.005
+            rows = []
+            for a in np.linspace(a0 + 0.08, a1 - 0.08, 11):
+                xs = side * a
+                sp = _others_section(parts, grp, xs)
+                seg = sp.reshape(-1, 2, 3)
+                seg = seg[((seg[:, :, 2] > rule['le'][0]) & (seg[:, :, 2] < rule['le'][1])).all(1)]
+                sp = seg.reshape(-1, 3)
+                if len(sp) < 6:
+                    continue
+                # the wing's own outline: the loop of the section that holds the leading edge (a
+                # hinge bracket or a cap left behind the wing is a loop of its own)
+                sp = _loop_of(sp, np.argmin(sp[:, 2]))
+                le = sp[np.argmin(sp[:, 2])]
+                zr = sp[:, 2].max()
+                rear = sp[sp[:, 2] > zr - rule.get('face', 0.04)]
+                top = rear[np.argmax(rear[:, 1])]
+                bot = rear[np.argmin(rear[:, 1])]
+                mid = (top + bot) / 2
+                g, _, _ = _section(V, xs)
+                if not len(g):
+                    continue
+                L = float(np.max(np.linalg.norm(g[:, 1:] - mid[1:], axis=1)))
+                rows.append([a, le[1], le[2], top[1], top[2], bot[1], bot[2], L])
+            st = []
+            if len(rows) >= 3:
+                R_ = np.array(rows)
+                # stations where the rear face is not the run of the rest (a bracket, the tip's cap) are left out
+                ok = np.abs(R_[:, 4] - np.median(R_[:, 4])) < 0.03
+                R_ = R_[ok] if ok.sum() >= 2 else R_
+                A_ = np.stack([R_[:, 0], np.ones(len(R_))], 1)
+                coef = np.linalg.lstsq(A_, R_[:, 1:], rcond=None)[0]
+                for a in (a0, a1):
+                    leY, leZ, tY, tZ, bY, bZ, L = np.array([a, 1.0]) @ coef
+                    xs = side * a
+                    mid = np.array([(tY + bY) / 2, (tZ + bZ) / 2])
+                    if rule.get('teBelowLe') is not None:
+                        # the trailing edge level with the leading edge, less this: in line with the
+                        # flaps' trailing edge inboard (the line from the leading edge through the
+                        # rear face's middle rides up a cambered wing's, and stood the surface up)
+                        ty = leY - rule['teBelowLe']
+                        te = np.array([xs, ty, mid[1] + np.sqrt(max(L * L - (ty - mid[0]) ** 2, 0.0))])
+                    else:
+                        d = mid - np.array([leY, leZ])
+                        d /= np.linalg.norm(d)
+                        te = np.array([xs, mid[0] + d[0] * L, mid[1] + d[1] * L])
+                    st.append((np.array([xs, tY, tZ]), np.array([xs, bY, bZ]), te))
+                    if os.environ.get('HINGE_DEBUG'):
+                        log.append(f'   end {xs:.2f}: top {st[-1][0].round(2)} bot {st[-1][1].round(2)} te {st[-1][2].round(2)} ({len(R_)} stations)')
+            if len(st) < 2:
+                log.append(f'wedge {rule.get("name", "?")} {"LR"[side > 0]}: no wing ahead found, left as drawn')
+                continue
+            # drop the source's pieces
+            gone = {}
+            for k, m in grp:
+                gone[k] = gone[k] | m if k in gone else m
+            for k, m in gone.items():
+                parts[k]['I'] = parts[k]['I'][~m]
+                parts[k]['lab'] = parts[k]['lab'][~m]
+            (T0, B0, E0), (T1, B1, E1) = st  # inboard station first
+            P = np.array([T0, B0, E0, T1, B1, E1])
+            tris = [(0, 3, 5), (0, 5, 2), (1, 2, 5), (1, 5, 4), (0, 2, 1), (3, 4, 5)]
+            hints = [np.array([0, 1, 0]), np.array([0, 1, 0]), np.array([0, -1, 0]), np.array([0, -1, 0]),
+                     np.array([-side, 0, 0]), np.array([side, 0, 0])]
+            I = []
+            for t, h in zip(tris, hints):
+                v = P[list(t)]
+                n = np.cross(v[1] - v[0], v[2] - v[0])
+                I.append(t if n @ h >= 0 else (t[0], t[2], t[1]))
+            I = np.array(I, dtype=np.int64)
+            parts.append(dict(P=P, N=None, I=I, mat='synth', node=f'synth:{rule.get("name", "wedge")}', lab=np.arange(len(I))))
+            log.append(f'wedge {rule.get("name", "?")} {"LR"[side > 0]}: {sum(int(m.sum()) for _, m in grp)} triangles drawn again as a neutral wedge, '
+                       f'chord {np.linalg.norm(st[0][2][1:] - (st[0][0][1:] + st[0][1][1:]) / 2):.2f}..{np.linalg.norm(st[1][2][1:] - (st[1][0][1:] + st[1][1][1:]) / 2):.2f}')
+
+
+def bend_surfaces(parts, rules, log):
+    """models.py `bends`: a flap the source drew deflected as part of the wing's own piece
+    (the A-10's inboard flaps: the wing's skin runs on round the lowered flap), bent back.
+    Within rule['x'] (|x|), everything behind the cut (z > rule['cut']) turns about the
+    spanwise line where the cut meets the upper surface, until the flap's upper side
+    carries on the line of the wing's upper surface ahead of the cut."""
+    for rule in rules:
+        x0, x1 = rule['x']
+        cut = rule['cut']
+        for side in (-1, 1):
+            xs = side * rule.get('at', (x0 + x1) / 2)
+            seg = _others_section(parts, [], xs).reshape(-1, 2, 3)
+
+            def upper(z):
+                """The upper surface's height at z: the highest segment of the section across it."""
+                s_ = seg[(seg[:, :, 2].min(1) <= z) & (seg[:, :, 2].max(1) >= z)]
+                if not len(s_):
+                    return None
+                t = (z - s_[:, 0, 2]) / np.where(np.abs(s_[:, 1, 2] - s_[:, 0, 2]) > 1e-9, s_[:, 1, 2] - s_[:, 0, 2], 1)
+                return float((s_[:, 0, 1] + (s_[:, 1, 1] - s_[:, 0, 1]) * np.clip(t, 0, 1)).max())
+            yp = upper(cut)
+            ya = upper(cut - rule.get('ahead', 0.25))
+            pts = seg.reshape(-1, 3)
+            if yp is not None:  # the outline the upper surface at the cut is on (not a plate tucked under it)
+                pts = _loop_of(pts, np.argmin(np.abs(pts[:, 2] - cut) + np.abs(pts[:, 1] - yp)))
+            behind = pts[pts[:, 2] > cut + 0.02]
+            if yp is None or ya is None or not len(behind):
+                log.append(f'bend {rule.get("name", "?")} {"LR"[side > 0]}: nothing to bend')
+                continue
+            piv = np.array([xs, yp, cut])
+            up = np.array([xs, ya, cut - rule.get('ahead', 0.25)])
+            te = behind[np.argmax(behind[:, 2])]
+            want = np.arctan2(piv[1] - up[1], piv[2] - up[2])
+            have = np.arctan2(te[1] - piv[1], te[2] - piv[2])
+            u = np.array([1.0, 0, 0])
+            p0 = np.array([0.0, piv[1], piv[2]])
+
+            # turning about +x by phi takes a direction at angle a (atan2(y, z)) to a - phi
+            phi = (have - want) * rule.get('k', 1.0)
+            n = 0
+            for q in parts:
+                if rule.get('mats') and q['mat'] not in rule['mats']:
+                    continue
+                used = np.unique(q['I'])
+                Pu = q['P'][used]
+                m = (np.sign(Pu[:, 0]) == side) & (np.abs(Pu[:, 0]) >= x0) & (np.abs(Pu[:, 0]) <= x1) & (Pu[:, 2] > cut)
+                if not m.any():
+                    continue
+                ix = used[m]
+                q['P'] = q['P'].copy()
+                q['P'][ix] = _rotate(q['P'][ix], p0, u, phi)
+                if q['N'] is not None:
+                    q['N'] = q['N'].copy()
+                    q['N'][ix] = _rotate(q['N'][ix], np.zeros(3), u, phi)
+                n += int(m.sum())
+            log.append(f'bend {rule.get("name", "?")} {"LR"[side > 0]}: {n} vertices turned {np.degrees(phi):+.1f} deg about z {piv[2]:.2f}'
+                       f' (upper surface {np.degrees(want):.1f} deg, flap {np.degrees(have):.1f} deg)')
+
+
 def fix_winding(P, N, I, log, node):
     """Turn round any piece wound against its own normals.
 
@@ -316,6 +680,18 @@ def process(mid, view=None):
         N = p['nrm'] @ R.T if p['nrm'] is not None else None
         I = fix_winding(P, N, p['idx'], log, p['node'])
         parts.append(dict(P=P, N=N, I=I, mat=name, node=p['node']))
+    # the fit is measured on the source as drawn (a dropped centreline pylon is not the belly's depth)
+    fit_parts = [dict(q) for q in parts]
+    if cfg.get('dropPieces'):
+        drop_pieces(parts, cfg['dropPieces'], log)
+    if cfg.get('hinges'):
+        straighten_hinges(parts, cfg['hinges'], log)
+    if cfg.get('wedges'):
+        wedge_surfaces(parts, cfg['wedges'], log)
+    if cfg.get('bends'):
+        bend_surfaces(parts, cfg['bends'], log)
+    for q in parts:
+        q.pop('lab', None)
     allP = np.concatenate([q['P'] for q in parts])
     # A ground plane or a stray far vertex would wreck the fit: optional clip box (source units, after rotation).
     lo, hi = allP.min(0), allP.max(0)
@@ -350,7 +726,7 @@ def process(mid, view=None):
     Lz = Lgame / Ls  # first guess at the length scale, to find the game's station
     ratios = []
     for f in fr:
-        t_, b_ = slice_depth(parts, xc, [lo[2] + Ls * f])
+        t_, b_ = slice_depth(fit_parts, xc, [lo[2] + Ls * f])
         if t_ is None or t_ - b_ <= 0:
             continue
         zg = b['min'][2] + Lgame * f
@@ -365,13 +741,18 @@ def process(mid, view=None):
     plugs = cfg.get('plugs')
     if plugs:
         sz_body = sy
-        extra = Lgame - Ls * sy
+        if cfg.get('bodyZFrom'):
+            # the length scale the source has as the type it was drawn as (the A320 from the A321
+            # download: the wing, engines and tail as long as the A321's, only the cabin shorter)
+            rb = ref_of(cfg['bodyZFrom'])['bounds']
+            sz_body = (rb['max'][2] - rb['min'][2]) / Ls
+        extra = Lgame - Ls * sz_body
         lens = [(f1 - f0) * Ls for f0, f1 in plugs]
         anchor = cfg.get('plugAnchor')
         if anchor and len(plugs) == 2:
             # the source's point at fraction fa lands on the game's z: the first plug makes up the difference
             fa, za_ = anchor
-            e1 = (za_ - b['min'][2]) - fa * Ls * sy
+            e1 = (za_ - b["min"][2]) - fa * Ls * sz_body
             adds = [e1, extra - e1]
         else:
             adds = [extra * l_ / sum(lens) for l_ in lens]
@@ -406,7 +787,7 @@ def process(mid, view=None):
     # Belly on the game's belly at mid-cabin (a hump or a bubble above is the source's own).
     fA, fB = cfg.get('cabinAt', (0.25, 0.35))
     zA, zB = lo[2] + Ls * fA, lo[2] + Ls * fB
-    src_top, src_bot = slice_depth(parts, xc, np.linspace(zA, zB, 5))
+    src_top, src_bot = slice_depth(fit_parts, xc, np.linspace(zA, zB, 5))
     zmid_game = float(zmap((zA + zB) / 2))
     gtop, gbot, gw = prof.at(zmid_game)
     yoff = gbot - src_bot * sy + cfg.get('lift', 0.0)
@@ -426,6 +807,12 @@ def process(mid, view=None):
 
     # 4: roles
     eng = refine_engines(parts, ref['engines'] or [], cfg, log)
+    if cfg.get('engSym') and len(eng) == 2:
+        # a pair, measured alike: the one whose front was not pulled forward by something ahead of
+        # it (the A-10's left nacelle read 0.7 m longer than its right), mirrored onto the other
+        a_, b_ = sorted(eng, key=lambda e: -e['zf'])
+        b_.update(x=-a_['x'], y=a_['y'], radius=a_['radius'], zf=a_['zf'], za=a_['za'])
+        log.append(f"engines as a pair: both x ±{abs(a_['x']):.2f} y {a_['y']:.2f} r {a_['radius']:.2f} z {a_['zf']:.1f}..{a_['za']:.1f}")
     fin = ref.get('fin') or {}
     gear = ref.get('gear') or {}
     gp = ref.get('gearPoints') or []
@@ -457,6 +844,11 @@ def process(mid, view=None):
             d = np.sqrt((c[:, 0] / np.maximum(w, 0.05)) ** 2 + ((c[:, 1] - yc) / hy) ** 2)
             inside_len = (c[:, 2] >= prof.z[0] - 1.0) & (c[:, 2] <= prof.z[-1] + 1.5)
             body = inside_len & (d <= cfg.get('bodyD', 1.18))
+            if cfg.get('noseD') and wing.get('rootZ') is not None:
+                # Ahead of the wing's root there is no wing: where the download's flight deck stands
+                # proud of the game's profile (its crown over the windscreen), it is fuselage too.
+                # Sorted as wing, it came out as a row of wing-grey teeth over the windscreen.
+                body |= inside_len & (c[:, 2] < wing['rootZ'] - 1.0) & (d <= cfg['noseD'])
             if hump is not None:
                 ht, hb, hw = hump.at(c[:, 2])
                 hyc = (ht + hb) / 2
@@ -479,6 +871,8 @@ def process(mid, view=None):
                 dx, dy = c[:, 0] - e['x'], c[:, 1] - e['y']
                 r = np.hypot(dx, dy)
                 inn = (r <= e['radius'] * cfg.get('engR', 1.12)) & (c[:, 2] >= zf - cfg.get('engFront', 0.15)) & (c[:, 2] <= za + cfg.get('engBack', 0.3))
+                if cfg.get('engMats') is not None and q['mat'] not in cfg['engMats']:
+                    inn = np.zeros(len(I), bool)  # only the nacelles' own materials (not the fuselage between them)
                 if e.get('prop'):
                     # the propeller: a disc just ahead of the nacelle, out to the blade tips
                     pz = (c[:, 2] > zf - cfg.get('propAhead', 0.9)) & (c[:, 2] < zf + cfg.get('propBehind', 0.5))
@@ -489,6 +883,18 @@ def process(mid, view=None):
                 radial = np.stack([dx, dy], 1) / np.maximum(r[:, None], 1e-6)
                 outward = (n[:, 0] * radial[:, 0] + n[:, 1] * radial[:, 1])
                 s = engine_parts(r, outward, n, c, e['radius'], (zf + za) / 2)
+                if cfg.get('coreEnvelope') and inn.any():
+                    # a nacelle that tapers to its nozzle: its outside there is inside 0.55 of the
+                    # radius too, and sorted as core it came out in ragged dark teeth. Core is only
+                    # what sits well inside the nacelle's own outside there: per 10 cm station and
+                    # per 30 degrees round (the nacelle need not be centred on the axis measured).
+                    zb = np.floor(c[:, 2] / 0.1).astype(np.int64) * 16 + np.floor((np.arctan2(dy, dx) + np.pi) / (np.pi / 6)).astype(np.int64)
+                    ub, ib = np.unique(zb[inn], return_inverse=True)
+                    env = np.zeros(len(ub))
+                    np.maximum.at(env, ib, r[inn])
+                    k_ = np.searchsorted(ub, zb).clip(0, len(ub) - 1)
+                    envr = np.where(ub[k_] == zb, env[k_], np.inf)
+                    s = np.where((s == 'core') & (r > cfg['coreEnvelope'] * envr), 'cowl', s)
                 if e.get('prop') or cfg.get('boxEngines'):
                     s = np.where(s == 'core', 'core', 'cowl')
                 if cfg.get('boxEngines'):
@@ -497,7 +903,7 @@ def process(mid, view=None):
                 engm |= inn
             # landing gear the source models (the game draws its own, which moves)
             gearm = np.zeros(len(I), bool)
-            if gear:
+            if gear and cfg.get('gearCut', True):
                 nz = gear['nose'][2]
                 gearm |= (np.abs(c[:, 0]) < 1.2) & (np.abs(c[:, 2] - nz) < cfg.get('noseGearZ', 2.2)) & (c[:, 1] < bot - 0.05)
                 mx, mz = abs(gear['main'][0]), gear['main'][2]
@@ -674,9 +1080,10 @@ def write_glb(path, mid, meshes, extras):
     return total
 
 
-def cluster(P, N, I, cell):
+def cluster(P, N, I, cell, smooth=0):
     """Vertex clustering: every vertex snapped to the middle of its cell, triangles that collapse dropped,
-    normals recomputed per face and smoothed where faces meet within 35 degrees."""
+    normals recomputed per face -- flat, or (smooth = a crease angle in degrees) smoothed where faces
+    meet within that angle."""
     key = np.floor(P / cell).astype(np.int64)
     _, rep, inv = np.unique(key, axis=0, return_index=True, return_inverse=True)
     inv = inv.reshape(-1)
@@ -690,11 +1097,36 @@ def cluster(P, N, I, cell):
     J = np.unique(np.sort(J, 1), axis=0, return_index=True)[1]
     J = inv[I][ok][np.sort(J)]
     v = Pc[J]
-    fn = np.cross(v[:, 1] - v[:, 0], v[:, 2] - v[:, 0])
-    fn /= np.maximum(np.linalg.norm(fn, axis=1, keepdims=True), 1e-12)
-    # flat-shaded output: three vertices per face, each with the face's normal
+    fa = np.cross(v[:, 1] - v[:, 0], v[:, 2] - v[:, 0])  # twice the area, along the normal
+    fn = fa / np.maximum(np.linalg.norm(fa, axis=1, keepdims=True), 1e-12)
     Pf = v.reshape(-1, 3)
-    Nf = np.repeat(fn, 3, axis=0)
+    if smooth:
+        # Smooth where faces meet within `smooth` degrees, a crease elsewhere: each corner's
+        # normal is the area-weighted sum of the faces round its vertex that face its way.
+        # (Flat-shaded, a wing of 3 cm facets read as lumpy from the chase camera.)
+        cosk = np.cos(np.radians(smooth))
+        corner_v = J.reshape(-1)
+        corner_f = np.repeat(np.arange(len(J)), 3)
+        order = np.argsort(corner_v, kind='stable')
+        cv, cf = corner_v[order], corner_f[order]
+        starts = np.flatnonzero(np.r_[True, cv[1:] != cv[:-1]])
+        sizes = np.diff(np.r_[starts, len(cv)])
+        # every (corner, neighbour face) pair at the same vertex
+        rep = np.repeat(sizes, sizes)
+        grp_start = np.repeat(starts, sizes)
+        a_idx = np.repeat(np.arange(len(cv)), rep)
+        off = np.arange(len(a_idx)) - np.repeat(np.cumsum(rep) - rep, rep)
+        b_idx = np.repeat(grp_start, rep) + off
+        fa_, fb_ = cf[a_idx], cf[b_idx]
+        w = ((fn[fa_] * fn[fb_]).sum(1) >= cosk)[:, None] * fa[fb_]
+        acc = np.zeros((len(cv), 3))
+        np.add.at(acc, a_idx, w)
+        Nc = np.empty_like(acc)
+        Nc[order] = acc
+        Nf = Nc / np.maximum(np.linalg.norm(Nc, axis=1, keepdims=True), 1e-12)
+    else:
+        # flat-shaded output: three vertices per face, each with the face's normal
+        Nf = np.repeat(fn, 3, axis=0)
     If = np.arange(len(Pf)).reshape(-1, 3)
     key2 = np.concatenate([np.round(Pf / 1e-4).astype(np.int64), np.clip(np.round(Nf * 127), -127, 127).astype(np.int64)], 1)
     _, first, inv2 = np.unique(key2, axis=0, return_index=True, return_inverse=True)
@@ -706,7 +1138,7 @@ def run(mid, view=None):
     meshes = {r: merge(ch) for r, ch in out.items() if ch}
     if cfg.get('cluster'):
         before = sum(len(m[2]) for m in meshes.values())
-        meshes = {r: cluster(*m, cfg['cluster']) for r, m in meshes.items()}
+        meshes = {r: cluster(*m, cfg['cluster'], cfg.get('smooth', 0)) for r, m in meshes.items()}
         meshes = {r: m for r, m in meshes.items() if len(m[2])}
         print(f'    clustered at {cfg["cluster"] * 100:.0f} cm: {before} -> {sum(len(m[2]) for m in meshes.values())} triangles')
     allP = np.concatenate([m[0] for m in meshes.values()])

@@ -52,7 +52,15 @@ import { textureTier } from '../render/textures.js';
  */
 export const REAL_MODELS = {
   belugaxl: { file: 'belugaxl.glb', title: 'Airbus_beluga_xl', author: 'rylanmorris (@darkadoo)', url: 'https://sketchfab.com/3d-models/4aaa48591b434701966f95f75f7651ef' },
-  a321: { file: 'a321.glb', title: 'Airbus a321-271nx', author: 'piggyrockstar15', url: 'https://sketchfab.com/3d-models/ad5ce46a9082436d9049718f838f6ace' },
+  // slats: false -- the procedural slats, out for take-off, hung as a plank ahead of and below this
+  // download's wing (its leading edge is not where the game's wing puts them): under it they stay hidden.
+  // cowlBothSides -- the download's intake walls are wound inside out: drawn one-sided, the nacelle
+  // was see-through from ahead and the fan's blades seemed to stick out of it.
+  // ownDeckGlass -- its windscreen is its own glass (tools/real-models: the 'eyes' panes kept as
+  // glass): the procedural flight deck's panes, painted on as well, sat as a dark brow above it.
+  a321: { file: 'a321.glb', title: 'Airbus a321-271nx', author: 'piggyrockstar15', url: 'https://sketchfab.com/3d-models/ad5ce46a9082436d9049718f838f6ace', slats: false, cowlBothSides: true, ownDeckGlass: true },
+  // The A320: the same download, its cabin shortened ahead of and behind the wing (tools/real-models/models.py a320).
+  a320: { file: 'a320.glb', title: 'Airbus a321-271nx', author: 'piggyrockstar15', url: 'https://sketchfab.com/3d-models/ad5ce46a9082436d9049718f838f6ace', slats: false, cowlBothSides: true, ownDeckGlass: true },
   b737: { file: 'b737.glb', title: '737 MAX Lion Air', author: 'Sofyan Kurniawan (@sofyankurniawan)', url: 'https://sketchfab.com/3d-models/2747cad8b4c64122abe992c9ad1e8bd1' },
   b787: { file: 'b787.glb', title: 'Boeing 787-9', author: 'Nobilis 2 (@nobilishornet2)', url: 'https://sketchfab.com/3d-models/b6711e2e698e4e469675c1154a50b7a3' },
   a350: { file: 'a350.glb', title: 'Airbus A350', author: 'jhag (@jhag), based on the model by paperscan', url: 'https://sketchfab.com/3d-models/cfa2836ead8c4278a199a7d34a87f02e' },
@@ -60,7 +68,9 @@ export const REAL_MODELS = {
   a380: { file: 'a380.glb', title: 'Airbus A380', author: 'Brout (@davidbroutian)', url: 'https://sketchfab.com/3d-models/98d21f9c8104445f814cef47ef992889' },
   b747: { file: 'b747.glb', title: 'Boeing 747-8i', author: 'AF267 (@jsong.js.us), GeoFS team', url: 'https://sketchfab.com/3d-models/cd1977bedc32412fa1ce2cda23520b84' },
   q400: { file: 'q400.glb', title: 'Bombardier Dash Q400 - Qantas Link', author: 'Sofyan Kurniawan (@sofyankurniawan)', url: 'https://sketchfab.com/3d-models/5b13a73be7d74161a3a9f9ce982a8345' },
-  a10: { file: 'a10.glb', title: 'A-10 Thunderbolt II', author: 'AIRMAN Magazine (@AIRMANMagazine)', url: 'https://sketchfab.com/3d-models/9521ff6ba5d448958ea45a89e94ab23d' },
+  // skinBothSides -- stretches of its airframe (the tail cone above all) are drawn facing in, normals
+  // and all: one-sided, from behind the tail cone was an open shell with ragged edges.
+  a10: { file: 'a10.glb', title: 'A-10 Thunderbolt II', author: 'AIRMAN Magazine (@AIRMANMagazine)', url: 'https://sketchfab.com/3d-models/9521ff6ba5d448958ea45a89e94ab23d', skinBothSides: true },
   // Not Concorde: its download has an airline's titles and tail stripes MODELLED into the
   // airframe's geometry (not a texture), so no repaint can take them off. It keeps the game's own.
 };
@@ -196,8 +206,16 @@ const FLAP = /^(inboard |outboard |fowler |trailing edge )?flaps?$/i;
 /** Render layer the hidden procedural surfaces go to (nothing renders it). */
 const HIDDEN_LAYER = 31;
 
-function keepsOwn(o, top) {
-  for (let n = o; n && n !== top; n = n.parent) if (KEEP.test(n.name || '')) return true;
+/** The slats, for a type whose real wing's leading edge is not where the procedural one puts them. */
+const SLAT = /slats|leading edge slat/i;
+
+function keepsOwn(o, top, id) {
+  const noSlats = !!(REAL_MODELS[id] && REAL_MODELS[id].slats === false);
+  for (let n = o; n && n !== top; n = n.parent) {
+    const name = n.name || '';
+    if (noSlats && SLAT.test(name)) return false;
+    if (KEEP.test(name)) return true;
+  }
   return false;
 }
 
@@ -216,7 +234,7 @@ function dress(model, id, tpl) {
     skinUVs(tpl.root, paint);
     tpl.uv = true;
   }
-  const mats = paint ? materialsFor(model, paint, id) : plainMaterialsFor(model);
+  const mats = paint ? materialsFor(model, paint, id) : plainMaterialsFor(model, id);
   const finPieces = [];
   skin.traverse((o) => {
     if (!o.isMesh) return;
@@ -232,7 +250,7 @@ function dress(model, id, tpl) {
   const flaps = [];
   airframe.traverse((o) => {
     if (!(o.isMesh || o.isInstancedMesh) || o.isSprite) return;
-    if (keepsOwn(o, airframe)) return;
+    if (keepsOwn(o, airframe, id)) return;
     hidden.push([o, o.layers.mask]);
     for (let n = o; n && n !== airframe; n = n.parent) {
       if (FLAP.test(n.name || '')) {
@@ -448,8 +466,9 @@ function paintedSkin(paint, id) {
     g.rect(0, half, W, H);
     g.clip();
     g.translate(0, half);
-    // The flight deck's panes: dark glass in a black frame.
-    for (const pane of paint.panes || []) {
+    // The flight deck's panes: dark glass in a black frame (not over a real model's own windscreen).
+    const ownGlass = !!(REAL_MODELS[id] && REAL_MODELS[id].ownDeckGlass);
+    for (const pane of ownGlass ? [] : paint.panes || []) {
       if (pane.side !== 'right') continue;
       const pts = pane.corners.map(([, y, z]) => [U(z), V(z, y)]);
       g.beginPath();
@@ -609,6 +628,7 @@ function materialsFor(model, paint, id) {
   const cowl = cowlSrc ? own(plain(cowlSrc.clone())) : std({ color: 0xf0f2f4, roughness: 0.35, metalness: 0.12 });
   cowl.map = null;
   cowl.color = new THREE.Color(paint.cowl || paint.base || '#f0f2f4');
+  if (REAL_MODELS[id] && REAL_MODELS[id].cowlBothSides) cowl.side = THREE.DoubleSide;
   cowl.name = 'Real_cowl';
 
   const glassSrc = from('Airliner_flight_deck_glass');
@@ -638,7 +658,7 @@ function materialsFor(model, paint, id) {
  * paint averaged off their maps -- and the procedural glazing, nozzles and
  * dark hardware as they are.
  */
-function plainMaterialsFor(model) {
+function plainMaterialsFor(model, id) {
   const byName = new Map();
   model.traverse((o) => {
     if (o.isMesh && o.material && !Array.isArray(o.material) && !byName.has(o.material.name)) byName.set(o.material.name, o.material);
@@ -659,11 +679,19 @@ function plainMaterialsFor(model) {
   const skin = flat('Aircraft_skin', '#7e868d');
   const wing = flat('Aircraft_wing', '#7e868d');
   const fin = flat('Aircraft_tail', '#7e868d');
+  if (REAL_MODELS[id] && REAL_MODELS[id].skinBothSides) for (const m of [skin, wing, fin]) m.side = THREE.DoubleSide;
   const pick = (name, fb) => byName.get(name) || own(new THREE.MeshStandardMaterial(fb));
   const dark = pick('Aircraft_dark_hardware', { color: 0x222a2d, roughness: 0.57, metalness: 0.3 });
   const glazing = byName.get('Aircraft_reflective_glazing') || byName.get('Aircraft_glass') || byName.get('Airliner_flight_deck_glass');
   const glass = glazing ? own(Object.assign(glazing.clone(), { polygonOffset: false, side: THREE.FrontSide })) : own(new THREE.MeshStandardMaterial({ color: 0x173340, roughness: 0.1, metalness: 0.3 }));
-  const core = pick('Aircraft_hot_nozzle', { color: 0x3b332c, roughness: 0.5, metalness: 0.6 });
+  // Its own copy of the nozzle, never lit: the real nacelles' whole exhaust is 'core' (the
+  // download's ragged ring of turbine blades, not the procedural model's small recessed disc),
+  // and sharing the hot nozzle's glow under power it read as two orange flames on a turbofan.
+  const hot = byName.get('Aircraft_hot_nozzle');
+  const core = own(hot ? hot.clone() : new THREE.MeshStandardMaterial({ color: 0x3b332c, roughness: 0.5, metalness: 0.6 }));
+  if (core.emissive) core.emissive.setRGB(0, 0, 0);
+  core.emissiveIntensity = 0;
+  core.name = 'Real_core';
   return { skin_l: skin, skin_r: skin, fin, wing, cowl: skin, lip: pick('Aircraft_bare_metal', { color: 0x929c9f, roughness: 0.32, metalness: 0.82 }), duct: dark, core, metal: core, glass, window: glass, dark, prop: dark };
 }
 

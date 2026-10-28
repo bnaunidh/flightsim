@@ -215,6 +215,15 @@ for (const id of IDS) {
     if (/skin|wing surface|Fan cowl/i.test(o.name) && !/^Door /.test(o.name) && !/door/i.test(o.parent.name) && layerOf(o) !== 1) hiddenSkin++;
   });
   ok(`${id}: the procedural outside goes under it, its gear stays in view`, hiddenSkin > 0 && gearTotal > 0 && hiddenGear === 0, `${hiddenSkin} hidden, gear ${shownGear}/${gearTotal}`);
+  if (def.slats === false) {
+    // The procedural slats did not sit on this download's leading edge (a plank ahead of and below it, out for take-off).
+    const slats = [];
+    m.children[0].traverse((o) => {
+      if (!o.isMesh) return;
+      for (let n = o; n && n !== m; n = n.parent) if (/slats|leading edge slat/i.test(n.name || '')) return slats.push(o);
+    });
+    ok(`${id}: its procedural slats stay under the real wing`, slats.length > 0 && slats.every((o) => !o.layers.isEnabled(0)), `${slats.length} slat meshes`);
+  }
   const sprites = [];
   m.traverse((o) => o.isSprite && sprites.push(o));
   ok(`${id}: the lamps stay`, sprites.length >= 5 && sprites.every((s) => s.layers.mask === 1));
@@ -258,6 +267,292 @@ for (const id of IDS) {
   m.userData.update(1 / 60, { crashed: true, gearPos: 1, onGround: true }, {});
   ok(`${id}: a crashed aeroplane is drawn by the procedural model`, !rm.on);
   m.userData.dispose();
+}
+
+/* --------------------------------------------------------- the A-10 -- */
+// The download draws its flaps, split ailerons and elevators deflected well down, and carries
+// its own pylons and racks under the wings and the fuselage. Worn as it came, the tailplane read
+// from behind as two slabs with blocks under them, the wings drooped, and pylons the game does
+// not use hung beside the game's own stores. tools/real-models (models.py a10: hinges, wedges,
+// bends, dropPieces) puts the surfaces back to neutral and leaves the source's pylons out.
+if (IDS.includes('a10')) {
+  const parsed = parseGLB(read('assets/models/real/a10.glb'), { warn: () => {} });
+  parsed.scene.updateMatrixWorld(true);
+  const tris = [];
+  let verts = 0;
+  parsed.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    const p = o.geometry.attributes.position;
+    verts += p.count;
+    const idx = o.geometry.index ? o.geometry.index.array : null;
+    const n = idx ? idx.length : p.count;
+    const v = new THREE.Vector3();
+    for (let t = 0; t < n; t += 3) {
+      const tri = [];
+      for (let k = 0; k < 3; k++) tri.push(v.fromBufferAttribute(p, idx ? idx[t + k] : t + k).applyMatrix4(o.matrixWorld).toArray());
+      tris.push(tri);
+    }
+  });
+  /** Where the airframe crosses the plane x = const: points [y, z]. */
+  const section = (x) => {
+    const out = [];
+    for (const tri of tris) {
+      for (let k = 0; k < 3; k++) {
+        const a = tri[k];
+        const b = tri[(k + 1) % 3];
+        if ((a[0] - x) * (b[0] - x) < 0) {
+          const t = (x - a[0]) / (b[0] - a[0]);
+          out.push([a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
+        }
+      }
+    }
+    return out;
+  };
+  const type = T.getAircraft('a10');
+  const proc = A.createAircraftModel({ type });
+  const w = proc.userData.config.wing;
+  // The wing's underside, from the real wing itself (its lowest point between the leading and trailing edges).
+  const bad = [];
+  // Where the source's pylons hung (|x| 1.4-1.65, 3.45-3.7, 4.5-4.8, 5.6-5.75, game metres), clear of the gear pods (2.62).
+  for (const ax of [1.5, 3.55, 4.65, 5.68]) {
+    for (const s of [-1, 1]) {
+      const pts = section(s * ax).filter(([, z]) => z > w.rootZ - 1 && z < w.rootZ + w.rootChord + 1);
+      const wing = pts.filter(([y]) => y > -0.6);
+      const under = Math.min(...wing.map(([y]) => y));
+      const hang = pts.filter(([y]) => y < under - 0.12);
+      if (hang.length) bad.push(`x ${s * ax}: ${hang.length} edges ${(under - Math.min(...hang.map(([y]) => y))).toFixed(2)} m under the wing`);
+    }
+  }
+  ok('a10: none of the source\'s own pylons or racks hang under the wings (the game hangs its own stores)', bad.length === 0, bad.slice(0, 4).join('; '));
+  // The tailplane: thin and level, its trailing edge on its chord (the elevators were drawn ~20 degrees down).
+  const tailBad = [];
+  for (const ax of [0.9, 1.5, 2.2, 2.6]) {
+    for (const s of [-1, 1]) {
+      const pts = section(s * ax).filter(([y, z]) => z > 6.0 && y < 0.8);
+      if (pts.length < 4) {
+        tailBad.push(`x ${s * ax}: no tailplane`);
+        continue;
+      }
+      const le = pts.reduce((a, b) => (b[1] < a[1] ? b : a));
+      const te = pts.reduce((a, b) => (b[1] > a[1] ? b : a));
+      const depth = Math.max(...pts.map(([y]) => y)) - Math.min(...pts.map(([y]) => y));
+      if (depth > 0.4 || te[0] < le[0] - 0.12) tailBad.push(`x ${s * ax}: ${depth.toFixed(2)} m deep, trailing edge ${(le[0] - te[0]).toFixed(2)} m below the leading edge`);
+    }
+  }
+  ok('a10: the tailplane is thin and level, the elevators neutral (no slabs from behind)', tailBad.length === 0, tailBad.slice(0, 4).join('; '));
+  // The wing: the trailing edge on the chord's line, flaps and ailerons neutral (no droop from the side).
+  const wingBad = [];
+  for (const ax of [1.8, 3.6, 5.2, 6.2, 7.6]) {
+    for (const s of [-1, 1]) {
+      const pts = section(s * ax).filter(([y, z]) => z > w.rootZ - 1 && z < w.rootZ + w.rootChord + 1 && y > -0.75 && y < 0.8);
+      const le = pts.reduce((a, b) => (b[1] < a[1] ? b : a));
+      const te = pts.reduce((a, b) => (b[1] > a[1] ? b : a));
+      const top = Math.max(...pts.map(([y]) => y));
+      // a straight wing's trailing edge sits about level with its leading edge, well below its crown
+      if (te[0] < le[0] - 0.2 || te[0] > top - 0.05) wingBad.push(`x ${s * ax}: trailing edge ${(te[0] - le[0]).toFixed(2)} m from the leading edge's height`);
+    }
+  }
+  ok('a10: the wings\' trailing edges are on the chord (flaps and ailerons neutral, no droop)', wingBad.length === 0, wingBad.slice(0, 4).join('; '));
+  // ...and one line from root to tip: the ailerons drawn again from the leading edge through the
+  // middle of the wing's rear face rode up a cambered wing's and stood 0.3 m above the flaps' edge.
+  const stepBad = [];
+  for (const s of [-1, 1]) {
+    let last = null;
+    for (let ax = 3.0; ax <= 7.01; ax += 0.2) {
+      const pts = section(s * ax).filter(([y, z]) => z > w.rootZ - 1 && z < w.rootZ + w.rootChord + 1 && y > -0.75 && y < 0.8);
+      if (!pts.length) continue;
+      const le = pts.reduce((a, b) => (b[1] < a[1] ? b : a));
+      const te = pts.reduce((a, b) => (b[1] > a[1] ? b : a));
+      const rel = te[0] - le[0];
+      if (last !== null && Math.abs(rel - last) > 0.06) stepBad.push(`x ${(s * ax).toFixed(1)}: ${((rel - last) * 100).toFixed(0)} cm`);
+      last = rel;
+    }
+  }
+  ok('a10: the wings\' trailing edge is one line, flaps to ailerons (no step)', stepBad.length === 0, stepBad.slice(0, 4).join('; '));
+  ok('a10: smooth-shaded (vertices shared across faces, not three to every facet)', verts < 1.5 * tris.length, `${verts} vertices, ${tris.length} triangles`);
+  ok('a10: cheap enough for Low (under 32,000 triangles)', tris.length < 32000, `${tris.length}`);
+
+  // Worn: nothing of the procedural airframe is left in view but its gear, its lamps and its stores --
+  // and every store it keeps hangs from a pylon it keeps.
+  await R.loadRealModel('a10');
+  const m = A.createAircraftModel({ type, realModel: true });
+  const rm = m.userData.realModel;
+  const shown = [];
+  m.children[0].traverse((o) => {
+    if (!(o.isMesh || o.isInstancedMesh) || o.isSprite || !o.layers.isEnabled(0)) return;
+    shown.push(o.name);
+  });
+  const allowed = /tyres|oleo|landing gear|rocket pod|heat haze|missile|pylon store/i;
+  const stray = shown.filter((n) => !allowed.test(n));
+  ok('a10: worn, the procedural tail, fins, wings and engines are all under the skin (only gear and stores show)', !!rm && rm.on && stray.length === 0, stray.slice(0, 6).join(', '));
+  const pods = shown.filter((n) => /rocket pod$/.test(n)).length;
+  const podPylons = shown.filter((n) => /rocket pod pylon/.test(n)).length;
+  ok('a10: each rocket pod hangs from its own pylon, in view under the skin', pods === 2 && podPylons === 2, `${pods} pods, ${podPylons} pylons`);
+  m.userData.dispose();
+}
+
+/* ------------------------------------------- nothing is see-through -- */
+// Rays at the airframe: the first triangle a ray meets, front or back, must be one the game
+// draws (front-facing, or a material drawn both sides). A back face it would skip is a hole.
+// The A321neo download's intake walls are wound inside out (from ahead the fan's blades seemed
+// to stick out of the nacelle); the A-10's tail cone is drawn facing in (from behind, an open
+// shell with ragged edges).
+{
+  const holes = (m, origin, targets) => {
+    m.updateMatrixWorld(true);
+    const meshes = [];
+    m.userData.realModel.skin.traverse((o) => o.isMesh && meshes.push(o));
+    const rc = new THREE.Raycaster();
+    let n = 0;
+    let bad = 0;
+    for (const t of targets) {
+      const o = m.localToWorld(origin.clone());
+      rc.set(o, m.localToWorld(t.clone()).sub(o).normalize());
+      const seen = rc.intersectObjects(meshes, false)[0];
+      const sides = meshes.map((x) => x.material.side);
+      for (const x of meshes) x.material.side = THREE.DoubleSide;
+      const first = rc.intersectObjects(meshes, false)[0];
+      meshes.forEach((x, i) => (x.material.side = sides[i]));
+      if (!first) continue;
+      n++;
+      if (!seen || seen.distance > first.distance + 1e-3) bad++;
+    }
+    return [bad, n];
+  };
+  const grid = (cx, cy, z, rx, ry, k = 9) => {
+    const a = [];
+    for (let i = 0; i < k; i++) for (let j = 0; j < k; j++) a.push(new THREE.Vector3(cx + rx * ((2 * i) / (k - 1) - 1), cy + ry * ((2 * j) / (k - 1) - 1), z));
+    return a;
+  };
+  for (const id of ['a320', 'a321'].filter((k) => IDS.includes(k))) {
+    await R.loadRealModel(id);
+    const type = T.getAircraft(id);
+    const m = A.createAircraftModel({ type, realModel: true });
+    const out = [];
+    for (const s of [-1, 1]) {
+      const ex = 5.65 * s;
+      for (const [from, o] of [['ahead and outboard', new THREE.Vector3(ex + 5 * s, -1.3, -9)], ['ahead and inboard', new THREE.Vector3(ex - 3 * s, -1.3, -12)]]) {
+        const [bad, n] = holes(m, o, grid(ex, -1.75, -4.0, 0.9, 0.9));
+        // a ray or two grazing a seam is not a hole (the inside-out intake let half of them through)
+        if (bad > 2 || n < 40) out.push(`${s < 0 ? 'left' : 'right'} engine from ${from}: ${bad} of ${n} rays through`);
+      }
+    }
+    ok(`${id}: its nacelles are not see-through from ahead (the intake's walls drawn both sides)`, out.length === 0, out.join('; '));
+    m.userData.dispose();
+  }
+  if (IDS.includes('a10')) {
+    await R.loadRealModel('a10');
+    const m = A.createAircraftModel({ type: T.getAircraft('a10'), realModel: true });
+    const out = [];
+    for (const [from, o] of [['behind', new THREE.Vector3(0, 0.8, 14)], ['above and behind', new THREE.Vector3(1.5, 1.6, 10.5)]]) {
+      const [bad, n] = holes(m, o, grid(0, 0.3, 6.5, 0.45, 0.45));
+      if (bad || n < 40) out.push(`from ${from}: ${bad} of ${n} rays through`);
+    }
+    ok('a10: its tail cone is not an open shell from behind', out.length === 0, out.join('; '));
+    // The nozzles: the real exhaust is its own unlit copy, not the hot nozzle the engines light.
+    const core = [];
+    m.userData.realModel.skin.traverse((o) => o.isMesh && o.name === 'core' && core.push(o.material));
+    const hot = [];
+    m.traverse((o) => o.isMesh && o.material && o.material.name === 'Aircraft_hot_nozzle' && hot.push(o.material));
+    for (const h of hot) h.emissiveIntensity = 1.2; // full power (fleet/aircraft-core.js)
+    ok('a10: its real exhaust does not glow (a turbofan: the hot nozzle\'s orange read as two flames)',
+      core.length > 0 && core.every((c) => !hot.includes(c) && (c.emissiveIntensity === 0 || c.emissive.getHex() === 0)), `${core.length} core, ${hot.length} hot`);
+    for (const h of hot) h.emissiveIntensity = 0;
+    m.userData.dispose();
+  }
+}
+
+/* ---------------------------------- the A-10's nozzles, the A320 deck -- */
+{
+  /** Triangles of one role in a shipped file: centroid, unit normal, area. */
+  const trisOf = (id, role) => {
+    const g = parseGLB(read(`assets/models/real/${id}.glb`), { warn: () => {} });
+    g.scene.updateMatrixWorld(true);
+    const out = [];
+    g.scene.traverse((o) => {
+      if (!o.isMesh || o.name !== role) return;
+      const p = o.geometry.attributes.position;
+      const idx = o.geometry.index;
+      const n = idx ? idx.count : p.count;
+      const a = new THREE.Vector3();
+      const b = new THREE.Vector3();
+      const c = new THREE.Vector3();
+      for (let t = 0; t < n; t += 3) {
+        a.fromBufferAttribute(p, idx ? idx.getX(t) : t).applyMatrix4(o.matrixWorld);
+        b.fromBufferAttribute(p, idx ? idx.getX(t + 1) : t + 1).applyMatrix4(o.matrixWorld);
+        c.fromBufferAttribute(p, idx ? idx.getX(t + 2) : t + 2).applyMatrix4(o.matrixWorld);
+        const fn = b.clone().sub(a).cross(c.clone().sub(a));
+        const area = fn.length() / 2;
+        out.push({ c: a.clone().add(b).add(c).divideScalar(3), n: fn.normalize(), area });
+      }
+    });
+    return out;
+  };
+  if (IDS.includes('a10')) {
+    // Core is the nozzle inside; the nacelle's tapering outside there is cowl. Sorted by radius
+    // alone, the outside near the nozzle came out in ragged dark teeth: rays from all round each
+    // nacelle's back half, at its axis, must meet no core first.
+    const g = parseGLB(read('assets/models/real/a10.glb'), { warn: () => {} });
+    g.scene.updateMatrixWorld(true);
+    const meshes = [];
+    g.scene.traverse((o) => o.isMesh && meshes.push(o));
+    const rc = new THREE.Raycaster();
+    let rays = 0;
+    let core = 0;
+    for (const s of [-1, 1]) {
+      const box = new THREE.Box3();
+      const cowl = meshes.find((o) => o.name === 'cowl');
+      const p = cowl.geometry.attributes.position;
+      const v = new THREE.Vector3();
+      for (let i = 0; i < p.count; i++) if (v.fromBufferAttribute(p, i).applyMatrix4(cowl.matrixWorld).x * s > 0.5) box.expandByPoint(v);
+      const cx = (box.min.x + box.max.x) / 2;
+      const cy = (box.min.y + box.max.y) / 2;
+      const z0 = (box.min.z + box.max.z) / 2;
+      // up to the cowl's back edge (the core's own nozzle stands out behind it), and from the
+      // outboard side, above and below (not from inside the fuselage or the other nacelle)
+      for (let z = z0; z < box.max.z - 0.25; z += 0.06) {
+        for (let k = 0; k < 24; k++) {
+          const a = (k / 24) * Math.PI * 2;
+          if (s * Math.cos(a) < -0.3) continue;
+          const o = new THREE.Vector3(cx + 2.5 * Math.cos(a), cy + 2.5 * Math.sin(a), z);
+          rc.set(o, new THREE.Vector3(cx, cy, z).sub(o).normalize());
+          rc.far = 2.5;
+          const hit = rc.intersectObjects(meshes, false)[0];
+          if (!hit) continue;
+          rays++;
+          if (hit.object.name === 'core') core++;
+        }
+      }
+    }
+    ok('a10: from outside, its nacelles\' backs are cowl, not the nozzles\' dark core', rays > 300 && core === 0, `${core} of ${rays} rays meet core first`);
+  }
+  for (const id of ['a320', 'a321'].filter((k) => IDS.includes(k))) {
+    const w = A.createAircraftModel({ type: T.getAircraft(id) }).userData.config.wing;
+    // Ahead of the wing there is no wing: the flight deck's crown came out as wing-grey teeth.
+    const teeth = trisOf(id, 'wing').filter((t) => Math.abs(t.c.x) < 2.4 && t.c.z < w.rootZ - 1);
+    ok(`${id}: nothing ahead of the wing is painted as wing (the flight deck's crown is fuselage)`, teeth.length === 0, `${teeth.length} triangles`);
+    // The windscreen's front panes are the download's own glass, not a hole where they were left
+    // out: looking straight at them from ahead, either side of the centre post, rays meet glass.
+    {
+      const g = parseGLB(read(`assets/models/real/${id}.glb`), { warn: () => {} });
+      g.scene.updateMatrixWorld(true);
+      const meshes = [];
+      g.scene.traverse((o) => o.isMesh && meshes.push(o));
+      const glass = meshes.find((o) => o.name === 'glass');
+      const gb = new THREE.Box3().setFromObject(glass);
+      const rc = new THREE.Raycaster();
+      const met = [];
+      for (const x of [-0.45, -0.3, 0.3, 0.45]) {
+        for (const f of [0.4, 0.55, 0.7]) {
+          rc.set(new THREE.Vector3(x, gb.min.y + f * (gb.max.y - gb.min.y), gb.min.z - 6), new THREE.Vector3(0, 0, 1));
+          const hit = rc.intersectObjects(meshes, false)[0];
+          met.push(hit ? hit.object.name : 'nothing');
+        }
+      }
+      ok(`${id}: its windscreen has its front panes (looked at from ahead: glass)`, met.every((n) => n === 'glass'), met.join(','));
+    }
+    ok(`${id}: the procedural flight deck's panes are not painted on over its own windscreen`, R.REAL_MODELS[id].ownDeckGlass === true);
+  }
 }
 
 /* ------------------------------------------------------------ loader -- */

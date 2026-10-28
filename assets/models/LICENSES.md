@@ -19,13 +19,15 @@ texture and image removed — the aeroplanes are painted at run time with the
 game's own parody liveries, so no real airline, maker or military marking is
 shipped; landing gear, lights, propellers and cabin interiors removed (the game
 draws its own moving parts); geometry merged by part, rescaled and in places
-stretched to the game's airframes (a 777 cabin lengthened to the -300ER, wing
+stretched to the game's airframes (a 777 cabin lengthened to the -300ER, the
+A321neo's shortened to an A320, wing
 spans fitted); normals quantised.
 
 | File | Model | Creator | Source |
 |---|---|---|---|
 | `real/belugaxl.glb` | "Airbus_beluga_xl" | rylanmorris (@darkadoo) | https://sketchfab.com/3d-models/4aaa48591b434701966f95f75f7651ef |
 | `real/a321.glb` | "Airbus a321-271nx" | piggyrockstar15 | https://sketchfab.com/3d-models/ad5ce46a9082436d9049718f838f6ace |
+| `real/a320.glb` | "Airbus a321-271nx" (cabin shortened to the A320's) | piggyrockstar15 | https://sketchfab.com/3d-models/ad5ce46a9082436d9049718f838f6ace |
 | `real/b737.glb` | "737 MAX Lion Air" | Sofyan Kurniawan (@sofyankurniawan) | https://sketchfab.com/3d-models/2747cad8b4c64122abe992c9ad1e8bd1 |
 | `real/b787.glb` | "Boeing 787-9" | Nobilis 2 (@nobilishornet2) | https://sketchfab.com/3d-models/b6711e2e698e4e469675c1154a50b7a3 |
 | `real/a350.glb` | "Airbus A350" | jhag (@jhag), based on "A350 QTR" by paperscan | https://sketchfab.com/3d-models/cfa2836ead8c4278a199a7d34a87f02e |

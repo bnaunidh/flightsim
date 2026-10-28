@@ -18,14 +18,29 @@ image data only.
 game's axes, what to leave out, which source materials are what, and how to
 fit it (`fit: 'wing'` keeps the fuselage round and stretches only the wings to
 the span; `plugs` lengthens the cabin ahead of and behind the wing, as a
-stretched airliner is built). Every file comes out with NO images: the
-airliners are painted at run time with the game's own parody liveries.
+stretched airliner is built; `bodyZFrom` keeps a shortened one's wing and
+engines at the length the download was drawn at -- the A320 from the A321neo).
+A source drawn with its control surfaces deflected or its own pylons on has
+`hinges` / `wedges` / `bends` and `dropPieces` (the A-10; a wedge's
+`teBelowLe` keeps its trailing edge in line with the flaps'), and
+`coreEnvelope` keeps a tapering nacelle's outside out of its dark core.
+`noseD` keeps a flight deck that stands proud of the game's from being sorted
+as wing (the A320/A321neo). What the sort cannot mend is drawn both sides at
+run time (`real-models.js`: `cowlBothSides`, `skinBothSides`). Every file comes
+out with NO images: the airliners are painted at run time with the game's own
+parody liveries.
 
 Not shipped, and why:
 - Concorde: the download has an airline's titles and tail stripes modelled
   into the geometry (no repaint removes them).
 - F-16: no type in the roster it would stand for.
-- Cessna 172 (the Skylark): one untextured material with no glazing to tell
-  apart, over the game's oldest model (model.js), which is the one every
-  first flight uses; left for a pass of its own.
+- Cessna 172 (the Skylark): looked at again for v75 and still not shipped.
+  The download is a work in progress ("Cessna 172 (WIP)"): one material, no
+  glazing to tell apart, so the Skylark's per-plane liveries (stripes,
+  registration) would come out as one flat paint and its windows as body.
+  And the Skylark is drawn by the game's oldest model (model.js), not the
+  fleet kit: it has no fleet bridge, fuselage profile or hidden layer for
+  real-models.js to wear a skin over (ref.mjs reads nothing from it), so
+  shipping it means new plumbing in the first-flight plane. Not clearly
+  better than the procedural Skylark, so it keeps its own.
 - ATR 72: no ATR in the roster (the Q400 is the turboprop).

@@ -79,12 +79,19 @@ const a10 = {
       pipe(ctx, `${side} gear pod`, s * 2.62, -0.62, [[-0.4, 0.06], [0.1, 0.34], [1.5, 0.36], [2.5, 0.22], [3.0, 0.04]], m.skin, wing, 8);
       // Drooped wingtip.
       plate(ctx, `${side} drooped tip`, mirror([[8.55, 0.56, -1.55], [8.55, 0.56, 0.35], [8.76, 0.14, 0.25], [8.76, 0.14, -1.4]], s), 0.06, m.wing, wing);
-      // Three pylons a side, and a rocket pod on the inner one.
+      // Three pylons a side, and a rocket pod on the middle one (the inner one is where the
+      // heat-seeker pack hangs its missile: features/heatseek/fly.js stationsFor, 0.44 of the half-span).
       for (const x of [3.7, 4.7, 5.7]) {
         const t = (x - 0.74) / 8.025;
         const under = -0.45 + 0.55 * t - (0.5 - 0.28 * t) / 2;
-        plate(ctx, `${side} pylon`, mirror([[x, under + 0.02, -1.15], [x, under + 0.02, 0.35], [x, under - 0.42, 0.2], [x, under - 0.42, -0.95]], s), 0.1, m.skin, wing, 0);
-        if (x === 3.7) tube(`${side} rocket pod`, [s * x, under - 0.6, -1.7], [s * x, under - 0.6, 0.9], 0.19, m.dark, wing, 8);
+        // The rocket pod's own pylon is named for it and kept out of the wing's static batch: under
+        // the real skin (aircraft/real-models.js KEEP) the pod and the pylon it hangs from stay in
+        // view together. Its root runs a little further up, so it meets the real wing's underside too.
+        const pod = x === 4.7;
+        const root = under + (pod ? 0.08 : 0.02);
+        const py = plate(ctx, pod ? `${side} rocket pod pylon` : `${side} pylon`, mirror([[x, root, -1.15], [x, root, 0.35], [x, under - 0.42, 0.2], [x, under - 0.42, -0.95]], s), 0.1, m.skin, wing, 0);
+        if (pod && py) py.userData.dynamic = true;
+        if (pod) tube(`${side} rocket pod`, [s * x, under - 0.6, -1.7], [s * x, under - 0.6, 0.9], 0.19, m.dark, wing, 8);
       }
     }
     // The gun: the barrel cluster under the nose, the muzzle ahead of the tip.
