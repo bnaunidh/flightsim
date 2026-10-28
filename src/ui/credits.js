@@ -154,6 +154,13 @@ export const CREDITS_HTML = `
   </div>
 
   <div class="credit-block">
+    <h3>Shoutout</h3>
+    <p>Huge thanks to <strong>Tomm1z</strong>, who flew the game on his channel:
+      <a href="https://youtu.be/GJmwWdPTWes" target="_blank" rel="noopener">&ldquo;I Tried a Flight Simulator Made by My Viewer!&rdquo;</a>
+      (<a href="https://www.youtube.com/@Tomm1z-Real" target="_blank" rel="noopener">youtube.com/@Tomm1z-Real</a>).</p>
+  </div>
+
+  <div class="credit-block">
     <h3>This game</h3>
     <p class="credit-copyright">&copy; thankdapro</p>
     <p>Island Flight Simulator is made by <strong>thankdapro</strong>. You may copy the game — please give us

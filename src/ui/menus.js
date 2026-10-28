@@ -842,6 +842,15 @@ export class Menus {
           </button>
         </nav>
 
+        <a class="shoutout" data-shoutout href="https://youtu.be/GJmwWdPTWes" target="_blank" rel="noopener">
+          <span class="shoutout-play" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
+          <span class="shoutout-body">
+            <small>Featured on YouTube</small>
+            <strong>Tomm1z: &ldquo;I Tried a Flight Simulator Made by My Viewer!&rdquo;</strong>
+            <em>Thank you for flying with us, Tomm1z! Watch the video &rarr;</em>
+          </span>
+        </a>
+
         <div class="main-foot">
           <div class="stats" data-stats></div>
           <div class="foot-links">
