@@ -81,9 +81,19 @@ function loadChoice() {
   return S.choice;
 }
 
+/*
+ * With nothing saved, an aeroplane starts lined up on the runway (the owner,
+ * 2026-10-27: "on default u should be lined up"). Tomm1z's first flight began
+ * on stand 7 and went into the grass, then the terminal. Helicopters and
+ * seaplanes keep Auto (their pad, their water); every other choice stays in
+ * the picker.
+ */
+const LINED_UP_BY_DEFAULT = new Set(['light', 'airliner', 'military', 'open']);
+
 function choiceFor(cls) {
   const c = loadChoice()[cls];
-  return typeof c === 'string' && c ? c : 'auto';
+  if (typeof c === 'string' && c) return c;
+  return LINED_UP_BY_DEFAULT.has(cls) ? 'runway' : 'auto';
 }
 
 function saveChoice(cls, id) {

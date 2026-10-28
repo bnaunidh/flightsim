@@ -644,7 +644,8 @@ function paintHud(sim) {
     // The seeker's circle where the nose points.
     _v.copy(ac.pos).addScaledVector(forwardOf(ac.quat, _fwd), AIM_DIST);
     project(_v, cam, SCR);
-    UI.setSeeker(SCR.front && SCR.inside && left > 0, SCR.x, SCR.y, ringRadius(cam, hudCtx.h));
+    // Not on the ground: lined up on the runway it only cluttered the view (the owner's screenshot, 2026-10-27).
+    UI.setSeeker(SCR.front && SCR.inside && left > 0 && !ac.onGround, SCR.x, SCR.y, ringRadius(cam, hudCtx.h));
     // With a target picked by the lock key the gunsight draws the one box (./gunsight.js), in the colour this lock is in.
     if (lk.target && left > 0 && S.prefer === null) {
       project(lk.target.pos, cam, SCR);

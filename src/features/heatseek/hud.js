@@ -31,9 +31,11 @@ const CSS = `
 .hsk-panel .hsk-state { font: 700 11px/1.2 system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: 0.08em; color: #b9c6d4; text-transform: uppercase; }
 .hsk-panel.is-locked .hsk-state { color: #ff6a58; }
 .hsk-panel.is-empty .hsk-count { color: #ff9a8a; }
-.hsk-seeker { position: fixed; left: 0; top: 0; width: 80px; height: 80px; margin: -40px 0 0 -40px; border-radius: 50%; border: 1.5px dashed rgba(235, 245, 255, 0.55);
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.25); will-change: transform; }
-.hsk-seeker::after { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: rgba(235,245,255,0.8); }
+.hsk-seeker { position: fixed; left: 0; top: 0; width: 80px; height: 80px; margin: -40px 0 0 -40px; will-change: transform; color: rgba(225, 245, 235, 0.78);
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.55)); }
+.hsk-seeker svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.hsk-seeker .hsk-ring { fill: none; stroke: currentColor; stroke-width: 1.25; vector-effect: non-scaling-stroke; }
+.hsk-seeker .hsk-tick { stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .hsk-lock { position: fixed; left: 0; top: 0; width: 64px; height: 64px; margin: -32px 0 0 -32px; will-change: transform; color: #ffd24a; }
 .hsk-lock i { position: absolute; width: 16px; height: 16px; border: 3px solid currentColor; }
 .hsk-lock i:nth-child(1) { left: 0; top: 0; border-right: 0; border-bottom: 0; }
@@ -112,7 +114,15 @@ export function ensureHud(handlers = {}) {
   const flr = el('div', 'hsk-flr', panel, '');
   const state = el('div', 'hsk-state', panel, '');
   const keys = el('div', 'hsk-keys', panel, '');
-  const seeker = el('div', 'hsk-seeker', root);
+  // A fighter HUD's missile reticle, not a dashed hoop (the owner, 2026-10-27: "make this crosshair or smth
+  // better"): four thin arcs with a gap and an inward tick at each quarter, and a small winged pipper in the middle.
+  const arcs = [0, 90, 180, 270].map((a) => {
+    const r = 48, g = 9, p0 = ((a + g) * Math.PI) / 180, p1 = ((a + 90 - g) * Math.PI) / 180;
+    return `<path class="hsk-ring" d="M${(50 + r * Math.cos(p0)).toFixed(2)} ${(50 + r * Math.sin(p0)).toFixed(2)} A${r} ${r} 0 0 1 ${(50 + r * Math.cos(p1)).toFixed(2)} ${(50 + r * Math.sin(p1)).toFixed(2)}"/>`;
+  }).join('');
+  const ticks = [[50, 2, 50, 9], [98, 50, 91, 50], [50, 98, 50, 91], [2, 50, 9, 50]].map(([a, b, c, d]) => `<line class="hsk-tick" x1="${a}" y1="${b}" x2="${c}" y2="${d}"/>`).join('');
+  const pipper = '<circle cx="50" cy="50" r="1.6" fill="currentColor"/><line class="hsk-tick" x1="41" y1="50" x2="46" y2="50"/><line class="hsk-tick" x1="54" y1="50" x2="59" y2="50"/>';
+  const seeker = el('div', 'hsk-seeker', root, `<svg viewBox="0 0 100 100" aria-hidden="true">${arcs}${ticks}${pipper}</svg>`);
   seeker.hidden = true;
   const lock = el('div', 'hsk-lock', root, '<i></i><i></i><i></i><i></i><span class="hsk-lock-tag"></span><span class="hsk-lock-bar"><b></b></span>');
   lock.hidden = true;
