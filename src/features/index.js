@@ -37,6 +37,7 @@ import './tpose.js';
 import './wasted.js';
 // After wasted: anything that moves can knock you down now (a ragdoll), and WASTED shows it.
 import './knockdown.js';
+import './dev-console.js';
 import './runaway.js';
 import './staff.js';
 // Nunatak Reach's Site and ice (SCP Foundation content, CC BY-SA 3.0 — see LICENSE): the compound, the
