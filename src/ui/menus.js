@@ -3,6 +3,7 @@
  * setup, settings (with key remapping), credits, pause and the debrief.
  */
 
+import { speechVoices } from '../audio/atc.js';
 import { MISSIONS } from '../game/missions.js';
 import { allowedFor } from '../game/mission-aircraft.js';
 import { icon } from './icons.js';
@@ -1822,9 +1823,12 @@ export class Menus {
               <option value="speech">Your device's speech voice (text-to-speech)</option>
               <option value="recordings">Recordings I have added myself</option>
             </select></label>
+          <label class="field"><span>Speech voice</span>
+            <select data-set="atcSpeechVoice"><option value="auto">Best voice on this device (automatic)</option></select></label>
           <p class="hint">The default radio is built entirely from Web Audio — indistinct formant chatter through a
           real radio chain, with the words as subtitles. No text-to-speech and no AI voices. The speech option uses your
-          operating system's own voice; it is text-to-speech, which is why it is not the default. The third option plays
+          operating system's own voice; it is text-to-speech, which is why it is not the default. It picks the most natural
+          voice your device has (the ones marked "natural"), or choose one under Speech voice. The third option plays
           clips you put in <code>assets/atc/</code> yourself.</p>
           <label class="check"><input type="checkbox" data-set="atcChatter"><span>Background radio chatter from other aircraft</span></label>
           <label class="check"><input type="checkbox" data-set="muted"><span>Mute everything</span></label>
@@ -2779,11 +2783,41 @@ export class Menus {
     });
   }
 
+  /** The Speech voice list: the device's voices, best first (audio/atc.js speechVoices). */
+  fillSpeechVoices(s) {
+    const sel = s && s.querySelector('[data-set="atcSpeechVoice"]');
+    if (!sel) return;
+    const list = speechVoices();
+    const key = list.map((v) => v.id).join('|');
+    if (sel.dataset.filled === key) return;
+    sel.dataset.filled = key;
+    const keep = sel.value;
+    sel.innerHTML = '<option value="auto">Best voice on this device (automatic)</option>';
+    for (const v of list) {
+      const o = document.createElement('option');
+      o.value = v.id;
+      o.textContent = `${v.name}${v.natural ? ' — natural' : ''}${v.local ? '' : ' (needs internet)'}`;
+      sel.appendChild(o);
+    }
+    if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+    if (!this._voicesHooked && typeof speechSynthesis !== 'undefined' && speechSynthesis.addEventListener) {
+      this._voicesHooked = true;
+      // The list arrives late in Chrome: fill it again, then put the saved choice back.
+      speechSynthesis.addEventListener('voiceschanged', () => setTimeout(() => {
+        this._settingsSeen = settings;
+    this.fillSpeechVoices(s);
+        const want = this._settingsSeen ? this._settingsSeen.atcSpeechVoice : null;
+        if (want && [...sel.options].some((o) => o.value === want)) sel.value = want;
+      }, 0));
+    }
+  }
+
   syncSettings(settings) {
     // The settings difficulty changes what every mission pays.
     this.syncPayLines && this.syncPayLines();
     const s = this.screens.settings;
     const get = (path) => path.split('.').reduce((o, k) => (o ? o[k] : undefined), settings);
+    this.fillSpeechVoices(s);
     s.querySelectorAll('[data-set]').forEach((node) => {
       let v = get(node.dataset.set);
       // The paint select is the paint of the aeroplane you are in (core/plane-paint.js).

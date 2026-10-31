@@ -101,6 +101,24 @@ export async function check(sim, r, say = () => {}) {
     r.ok('…the card counts them', new RegExp(`Aboard\\s*${st1.saved} / 40`).test(cardText()) && new RegExp(`Cargo\\s*${st1.cargo} / 8`).test(cardText()), cardText().slice(0, 140));
     r.ok('…the figures are pooled under the cap for this detail level', st1.figures <= st1.poolMax, `${st1.figures} of ${st1.poolMax}`);
     r.ok('…still on the board step: the choice is yours', stepId() === 'board');
+    // The ramp shot (the owner, 2026-10-31: "there should be people loading in"): the Follow view frames the ramp.
+    {
+      const g = Site.rampOf(sim);
+      const cp = sim.rig.camera.position;
+      const dFoot = g ? Math.hypot(cp.x - g.foot.x, cp.z - g.foot.z) : 1e9;
+      const fwd = new THREE.Vector3();
+      sim.rig.camera.getWorldDirection(fwd);
+      const toFoot = g ? new THREE.Vector3(g.foot.x - cp.x, 0, g.foot.z - cp.z).normalize() : fwd;
+      r.ok('while boarding the Follow view frames the ramp: near its foot, looking at it', sim.rig.mode === 'chase' && sim.rig._shotOn && dFoot < 40 && fwd.x * toFoot.x + fwd.z * toFoot.z > 0.8,
+        `mode ${sim.rig.mode}, shot ${sim.rig._shotOn}, ${dFoot.toFixed(1)} m from the foot`);
+      let lit = 0;
+      let shown = 0;
+      for (const f of Esc.run().pool) if (f.p.visible) {
+        shown++;
+        f.p.traverse((o) => { if (o.isMesh && o.material && o.material.customProgramCacheKey && o.material.customProgramCacheKey() === 'lfo-person-lit') lit++; });
+      }
+      r.ok('…and the people running in wear the lit material (not black shapes at night)', shown > 0 && lit >= shown, `${shown} shown, ${lit} lit meshes`);
+    }
 
     /* ---- a sector goes ---- */
     say('scp-escape: a sector goes dark');
@@ -137,6 +155,7 @@ export async function check(sim, r, say = () => {}) {
     ac.reset({ pos: new THREE.Vector3(c.strip.cx - 300, 0, c.strip.cz), headingDeg: 240, speed: 85, altAGL: 150, engineOn: true, gearDown: false });
     frames(4);
     r.ok('airborne: the take-off step completes and the escape begins', stepId() === 'escape', stepId());
+    r.ok('…and the Follow view is back behind the aeroplane (the ramp shot let go)', !sim.rig._shotOn && sim.rig.shot !== null, `shot ${sim.rig._shotOn}`);
     // 5.4 km out, towards Caribou.
     ac.reset({ pos: new THREE.Vector3(c.cx - 4200, 0, c.cz + 3400), headingDeg: 240, speed: 90, altAGL: 600, engineOn: true, gearDown: false });
     frames(1);

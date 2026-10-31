@@ -144,6 +144,8 @@ function stretchView(sim, camera) {
   const rig = sim.rig;
   rigCam.pos.copy(camera.position);
   rigCam.mode = rig.mode;
+  // A mission's framed shot (CameraRig.shot: Last Flight Out's ramp) is already placed for this aeroplane.
+  if (rig._shotOn) return;
   const k = viewScale(sim.aircraftType.id);
   // The rig aims the chase view at its own lagged `lookAt` and the other two
   // straight at the aeroplane; stretching along that line keeps whatever the

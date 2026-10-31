@@ -3010,6 +3010,9 @@ class Game {
         'info',
         3.2
       );
+    } else if (path === 'atcSpeechVoice') {
+      this.audio.radio.speechVoice = value || 'auto';
+      if (this.audio.radio.mode === 'speech') this.audio.radio.transmit('Radio check, how do you read?', { voice: 'tower' });
     } else if (path === 'atcChatter') {
       this.audio.radio.backgroundChatter = value;
     } else if (path === 'flightMode') {
@@ -3899,6 +3902,7 @@ class Game {
     }
     this.audio.radio.backgroundChatter = this.settings.atcChatter;
     this.audio.radio.setMode(this.settings.atcVoice || 'radio');
+    this.audio.radio.speechVoice = this.settings.atcSpeechVoice || 'auto';
     if (this.settings.music && this.state === 'menu') this.audio.music.start();
   }
 

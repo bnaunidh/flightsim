@@ -637,6 +637,16 @@ export class CameraRig {
     /** The airframe's middle, in the aeroplane's frame (metres from the CG). */
     this.centre = new THREE.Vector3();
     this._aimC = new THREE.Vector3();
+    /**
+     * A framed shot a mission can ask for in the Follow view (null = none):
+     * a function (ac, out) that fills out.pos / out.look (and out.fov) and
+     * returns true while it wants the shot. Last Flight Out uses it to show
+     * the ramp while people board (features/scp-escape.js); any other view,
+     * or the function returning false, is the ordinary camera again.
+     */
+    this.shot = null;
+    this._shot = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: 55 };
+    this._shotOn = false;
     this._wingOff = new THREE.Vector3();
     this._wingWant = new THREE.Vector3();
   }
@@ -1116,7 +1126,21 @@ export class CameraRig {
       const want = this.zoomFov != null ? this.zoomFov : auto;
       cam.fov = lerp(cam.fov, want, clamp(dt * (this.zoomFov != null ? 6 : 3), 0, 1));
       cam.near = 0.08;
+    } else if (this.mode === 'chase' && typeof this.shot === 'function' && this.shot(ac, this._shot)) {
+      // A mission's framed shot: a cut to it, then eased to follow it.
+      const S = this._shot;
+      if (!this._shotOn) cam.position.copy(S.pos);
+      else cam.position.lerp(S.pos, clamp(dt * 2, 0, 1));
+      this._shotOn = true;
+      cam.lookAt(S.look);
+      cam.fov = lerp(cam.fov, S.fov || 55, clamp(dt * 3, 0, 1));
+      cam.near = 0.3;
     } else if (this.mode === 'chase') {
+      // Back from a framed shot: a cut to the ordinary Follow view, not a slow swing.
+      if (this._shotOn) {
+        this._shotOn = false;
+        this.initialised = false;
+      }
       // Behind and above, blended between body-axis and velocity-axis so the
       // camera does not spin wildly during aerobatics.
       const back = this._tmp.set(0, 0, 1).applyQuaternion(ac.quat);

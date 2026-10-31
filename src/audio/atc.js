@@ -79,6 +79,7 @@ export const VOICES = {
   approach: { f0: 122, spread: 13, radio: 0.95, rate: 1.14, label: 'Island Approach', tts: { pitch: 1.0, rate: 1.15 } },
   instructor: { f0: 148, spread: 15, radio: 0.28, rate: 0.98, label: 'Instructor', tts: { pitch: 1.15, rate: 0.95 } },
   traffic: { f0: 132, spread: 17, radio: 1.2, rate: 1.16, label: 'Cessna 4-2-Papa', tts: { pitch: 1.1, rate: 1.15 } },
+  pa: { f0: 110, spread: 8, radio: 0.6, rate: 0.9, label: 'Site PA', tts: { pitch: 1, rate: 0.95 } },
   village: { f0: 138, spread: 12, radio: 1.12, rate: 1.02, label: 'Mango Cay', tts: { pitch: 1.2, rate: 1.0 } },
 };
 
@@ -123,6 +124,108 @@ function syllabify(text) {
   return out;
 }
 
+/*
+ * The speech voice (the owner, 2026-10-31: "make tts voice better, less
+ * roboty"). The browser offers whatever voices the device has, and the old
+ * code took the FIRST local English one: on a Mac that is often "Albert" or
+ * another novelty voice, and on a Chromebook the old local voice. Now every
+ * voice is scored: the natural / neural / premium / enhanced voices first
+ * (Microsoft's "Natural" voices on Edge, Google's in Chrome, Apple's
+ * Premium and Enhanced downloads), then the known good plain ones, and the
+ * joke voices never. The speakers on the frequency are given different good
+ * voices rather than one voice pitched up and down, which is most of what
+ * made it sound robotic. Network voices (Google's, Microsoft's online ones)
+ * are used only while the device is online; offline it falls back to the
+ * best local one.
+ */
+const NOVELTY = /\b(albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|good news|hysterical|jester|organ|superstar|trinoids|whisper|wobble|zarvox|ralph|fred|junior|kathy|grandma|grandpa|rocko|shelley|flo|eddy|reed|sandy)\b|espeak|compact/i;
+const NATURAL = /natural|neural|premium|enhanced|siri|wavenet|journey|studio/i;
+const GOOD = /samantha|ava|allison|susan|zoe|evan|nathan|tom|daniel|karen|moira|tessa|serena|oliver|kate|fiona|rishi|aaron|nicky|jenny|aria|guy|davis|libby|sonia|ryan|natasha|william|google (us|uk) english/i;
+
+export function voiceScore(x, online = true) {
+  if (!x || !/^en([-_]|$)/i.test(x.lang || '')) return -1;
+  const name = `${x.name || ''} ${x.voiceURI || ''}`;
+  if (NOVELTY.test(name)) return -1;
+  if (!x.localService && !online) return -1;
+  let sc = 10;
+  if (NATURAL.test(name)) sc += 60;
+  if (/google/i.test(name)) sc += 30;
+  if (GOOD.test(name)) sc += 20;
+  if (/en[-_](us|gb)/i.test(x.lang)) sc += 5;
+  if (x.localService) sc += 2;
+  return sc;
+}
+
+export function isNatural(x) {
+  return !!x && (NATURAL.test(`${x.name || ''} ${x.voiceURI || ''}`) || /google/i.test(x.name || ''));
+}
+
+let rankedVoices = null;
+function ranked() {
+  if (rankedVoices || typeof speechSynthesis === 'undefined') return rankedVoices || [];
+  const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+  const all = speechSynthesis.getVoices() || [];
+  if (!all.length) return [];
+  rankedVoices = all
+    .map((x) => ({ x, sc: voiceScore(x, online) }))
+    .filter((e) => e.sc > 0)
+    .sort((a, b) => b.sc - a.sc)
+    .map((e) => e.x);
+  return rankedVoices;
+}
+if (typeof speechSynthesis !== 'undefined' && speechSynthesis.addEventListener) {
+  // Chrome fills the list late; going online or offline changes which voices are usable.
+  speechSynthesis.addEventListener('voiceschanged', () => (rankedVoices = null));
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online', () => (rankedVoices = null));
+    window.addEventListener('offline', () => (rankedVoices = null));
+  }
+}
+
+/** The speech voices the device has, best first (for the settings list). */
+export function speechVoices() {
+  return ranked().map((x) => ({ id: x.voiceURI, name: x.name, lang: x.lang, natural: isNatural(x), local: !!x.localService }));
+}
+
+/** Which of the good voices each speaker gets: the instructor the best, the others spread over the next few. */
+const SEAT = { instructor: 0, tower: 1, ground: 2, approach: 3, pa: 1, traffic: 4, village: 5 };
+
+export function voiceFor(v, chosen) {
+  const list = ranked();
+  if (!list.length) return null;
+  if (chosen && chosen !== 'auto') {
+    const c = list.find((x) => x.voiceURI === chosen);
+    if (c) return c;
+  }
+  const key = Object.keys(VOICES).find((k) => VOICES[k] === v) || 'tower';
+  // Keep to the natural voices when there are any, so nobody on the frequency gets a robotic one.
+  const nat = list.filter(isNatural);
+  const pool = nat.length >= 2 ? nat : list.slice(0, Math.max(1, Math.min(list.length, 6)));
+  return pool[(SEAT[key] ?? 1) % pool.length];
+}
+
+/**
+ * The words as a person on the radio says them. The subtitle keeps the
+ * written form; the voice gets this.
+ */
+const DIGIT = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'niner'];
+export function speakable(text) {
+  let t = String(text);
+  t = t.replace(/\bFL\s?(\d{2,3})\b/g, (_, n) => `flight level ${[...n].map((d) => DIGIT[d]).join(' ')}`);
+  t = t.replace(/(\d+)\s?kts?\b/gi, '$1 knots').replace(/(\d+)\s?ft\b/gi, '$1 feet').replace(/(\d+)\s?nm\b/gi, '$1 miles');
+  t = t.replace(/(\d+)\s?°/g, '$1 degrees');
+  // Wind: "wind two seven zero at one two".
+  t = t.replace(/\bwind\s+(\d{3})\s+at\s+(\d{1,2})\b/gi, (_, d, k) => `wind ${[...d].map((x) => DIGIT[x]).join(' ')} at ${[...k].map((x) => DIGIT[x]).join(' ')}`);
+  // Runways, headings, squawks and frequencies: digit by digit.
+  t = t.replace(/\b(runway|heading|squawk)\s+(\d{2,4})([LRC])?\b/gi, (_, w, n, side) => `${w} ${[...n].map((d) => DIGIT[d]).join(' ')}${side ? ` ${{ L: 'left', R: 'right', C: 'centre' }[side.toUpperCase()]}` : ''}`);
+  t = t.replace(/\b(\d{3})\.(\d{1,3})\b/g, (_, a, b) => `${[...a].map((d) => DIGIT[d]).join(' ')} decimal ${[...b].map((d) => DIGIT[d]).join(' ')}`);
+  // Written-out nines are said "niner" on the radio.
+  t = t.replace(/\bnine\b/gi, 'niner');
+  // Separators the eye reads but a voice would say or stumble on.
+  t = t.replace(/\s[·•|]\s/g, ', ').replace(/\s—\s|\s–\s/g, ', ');
+  return t;
+}
+
 export class Radio {
   constructor(mixer) {
     this.mixer = mixer;
@@ -135,6 +238,8 @@ export class Radio {
     this.onSubtitle = null;
     /** 'radio' (default, no TTS) | 'speech' (browser TTS) | 'recordings'. */
     this.mode = 'radio';
+    /** The speech mode's voice: 'auto' or a voiceURI the player picked (Settings → Sound). */
+    this.speechVoice = 'auto';
     /** Decoded clips keyed by line, if the player has supplied any. */
     this.clips = null;
   }
@@ -567,15 +672,14 @@ export class Radio {
     if (quiet) this.stopSpeech();
     else try {
       speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(String(text));
+      const u = new SpeechSynthesisUtterance(speakable(text));
       u.pitch = v.tts ? v.tts.pitch : 1;
       u.rate = v.tts ? v.tts.rate : 1;
       u.volume = Math.min(1, 0.9 * level);
-      // Prefer a local voice so it works with no network.
-      const pick = speechSynthesis
-        .getVoices()
-        .find((x) => x.localService && /en[-_]/i.test(x.lang));
+      const pick = voiceFor(v, this.speechVoice);
       if (pick) u.voice = pick;
+      // A natural (neural) voice sounds worse pitched: only the plain ones are shifted to tell the speakers apart.
+      if (pick && isNatural(pick)) u.pitch = 1;
       u.onend = () => {
         const end = this.ctx.currentTime + 0.03;
         this.squelch(end, 0.16, 0.22 * level * v.radio);

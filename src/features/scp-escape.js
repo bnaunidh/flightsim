@@ -56,8 +56,9 @@ import { registerExtension, extLayer } from '../game/extensions.js';
 import { registerActions, isKey, keyName, bindingsVersion } from '../flight/input.js';
 import { MAP, heightAt } from '../world/terrain.js';
 import { FLASH, CAPS, dim, blinkLevel, FlashSmoother } from '../render/flash-safety.js';
-import { createPerson, posePerson, disposePerson } from './staff/person.js';
+import { createPerson, posePerson, disposePerson, personMaterial } from './staff/person.js';
 import { rampOf, rampHeight, bodyPoint, holdGateOpen, setSiteLights, siteGroup } from './scp-site.js';
+import { C17_RAMP } from '../aircraft/extra/c17.js';
 import { pressRamp } from './cargo-ramp.js';
 import { debriefPayRow } from '../game/progression.js';
 
@@ -443,8 +444,36 @@ function buildDome(R, group) {
   R.column = col;
 }
 
+/*
+ * The people's own material: the shared person material (vertex colours),
+ * plus a little of each colour as light of its own, as if the apron's
+ * floodlights and the hold's lamps were on them. Without it, at night they
+ * were black shapes against the snow. One program; no light is added to the
+ * scene (a new light recompiles every material in it).
+ */
+let litMat = null;
+function litPersonMaterial() {
+  if (litMat) return litMat;
+  litMat = personMaterial().clone();
+  litMat.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace(
+      '#include <emissivemap_fragment>',
+      '#include <emissivemap_fragment>\n  totalEmissiveRadiance += diffuseColor.rgb * 0.42;'
+    );
+  };
+  litMat.customProgramCacheKey = () => 'lfo-person-lit';
+  return litMat;
+}
+
+function setFigureMaterial(p, from, to) {
+  p.traverse((o) => {
+    if (o.isMesh && o.material === from) o.material = to;
+  });
+}
+
 function person(kind, seed) {
   const p = createPerson({ outfit: kind, seed, lite: true });
+  setFigureMaterial(p, personMaterial(), litPersonMaterial());
   p.userData.anim = p.userData.anim || { t: 0, walk: 0, run: 0, air: 0, wave: 0, stop: 0, pointL: 0, pointR: 0, hello: 0, phase: Math.random() * 6 };
   p.visible = false;
   return p;
@@ -799,6 +828,140 @@ function lowTone(sim, { freq = 110, to = 70, duration = 1.6, gain = 0.05 } = {})
   }
 }
 
+/*
+ * The alarms (the owner, 2026-10-31: "add alarm noises"). All of them only
+ * when the player has sound on, through the environment bus they can turn
+ * down, quiet (a class plays this on laptops), faded with distance from the
+ * Site, and scheduled on the audio clock so a busy Chromebook keeps their
+ * rhythm. Every one is an oscillator: nothing is a sample.
+ *
+ *   the evacuation klaxon   a filtered sawtooth "whoop", rising, every 1.6 s
+ *                           while you are near the Site; every 1.0 s once
+ *                           the strip's sector has gone
+ *   a sector lost           three short low horn blasts
+ *   the warhead's last 30 s a pip a second near the Site, two a second in
+ *                           the last ten
+ *   the Site PA             spoken lines on the radio channel (sim.speak,
+ *                           voice 'pa'), which follow the player's voice
+ *                           setting like every other call
+ */
+export const ALARM = Object.freeze({
+  rangeM: 3200,
+  klaxonEvery: 1.6,
+  klaxonUrgentEvery: 1.0,
+  klaxonGain: 0.045,
+  hornGain: 0.05,
+  pipGain: 0.035,
+  pipFrom: 30,
+  pipFastFrom: 10,
+});
+
+function alarmBus(sim) {
+  if (!audioOk(sim)) return null;
+  const m = sim.audio.mixer;
+  return m.ctx ? { ctx: m.ctx, out: m.bus('environment') } : null;
+}
+
+/** One voice of an alarm: an oscillator through a low-pass, enveloped, at audio time `t`. */
+function alarmNote(A, t, { type = 'sawtooth', freq = 300, to = null, dur = 0.5, gain = 0.04, cutoff = 1800, attack = 0.03 } = {}) {
+  const o = A.ctx.createOscillator();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t);
+  if (to) o.frequency.exponentialRampToValueAtTime(to, t + dur * 0.85);
+  const f = A.ctx.createBiquadFilter();
+  f.type = 'lowpass';
+  f.frequency.value = cutoff;
+  f.Q.value = 0.7;
+  const g = A.ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), t + attack);
+  g.gain.setValueAtTime(Math.max(0.0002, gain), t + dur * 0.8);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(f);
+  f.connect(g);
+  g.connect(A.out);
+  o.start(t);
+  o.stop(t + dur + 0.05);
+}
+
+/** How loud the Site is from where the aeroplane is: 1 at the strip, 0 past ALARM.rangeM. */
+function alarmLevel(sim) {
+  const ac = sim && sim.aircraft;
+  if (!ac || !ac.pos) return 0;
+  const c = siteCentre();
+  const d = flat(ac.pos.x, ac.pos.z, c.x, c.z);
+  return Math.max(0, 1 - d / ALARM.rangeM);
+}
+
+/** The klaxon and the warhead's pips, from the mission's frame. */
+export function stepAlarms(R, sim, dt) {
+  const k = alarmLevel(sim);
+  R.klaxonT = (R.klaxonT || 0) - dt;
+  if (R.klaxonT <= 0) {
+    const urgent = R.lost >= SECTORS.length;
+    R.klaxonT = urgent ? ALARM.klaxonUrgentEvery : ALARM.klaxonEvery;
+    const A = k > 0.02 && !R.stripLost ? alarmBus(sim) : null;
+    if (A) {
+      const t = A.ctx.currentTime + 0.02;
+      alarmNote(A, t, { freq: 260, to: 640, dur: urgent ? 0.6 : 0.85, gain: ALARM.klaxonGain * k, cutoff: 1500 });
+      R.alarms = (R.alarms || 0) + 1;
+    }
+  }
+  if (R.blast || R.warhead > ALARM.pipFrom) return;
+  const every = R.warhead <= ALARM.pipFastFrom ? 0.5 : 1;
+  R.pipT = (R.pipT == null ? 0 : R.pipT) - dt;
+  if (R.pipT > 0) return;
+  R.pipT = every;
+  const A = k > 0.02 ? alarmBus(sim) : null;
+  if (A) {
+    alarmNote(A, A.ctx.currentTime + 0.02, { type: 'sine', freq: 1046, dur: 0.12, gain: ALARM.pipGain * Math.max(0.35, k), cutoff: 4000, attack: 0.005 });
+    R.alarms = (R.alarms || 0) + 1;
+  }
+}
+
+/** Three low horn blasts: a sector has gone. */
+export function sectorHorn(R, sim) {
+  const k = alarmLevel(sim);
+  const A = k > 0.02 ? alarmBus(sim) : null;
+  if (!A) return false;
+  const t0 = A.ctx.currentTime + 0.05;
+  for (let i = 0; i < 3; i++) alarmNote(A, t0 + i * 0.5, { type: 'square', freq: 220, dur: 0.36, gain: ALARM.hornGain * k, cutoff: 900 });
+  R.alarms = (R.alarms || 0) + 3;
+  return true;
+}
+
+/** A line on the Site's PA, if you are near enough to hear it. */
+function pa(R, sim, text) {
+  if (!sim || typeof sim.speak !== 'function' || alarmLevel(sim) <= 0.02) return false;
+  sim.speak(text, 'pa', 0.6);
+  (R.paSaid || (R.paSaid = [])).push(text);
+  return true;
+}
+
+/** The PA's warhead calls, once each. */
+export const PA_WARHEAD = [
+  [180, 'Attention. Alpha Warhead detonation in three minutes.'],
+  [120, 'Alpha Warhead detonation in two minutes.'],
+  [60, 'Alpha Warhead detonation in sixty seconds. All personnel to the aircraft.'],
+  [30, 'Thirty seconds.'],
+];
+
+export function stepPa(R, sim) {
+  if (!R.paStart && R.t > 1.5) {
+    R.paStart = true;
+    pa(R, sim, 'Attention all personnel. Containment breach in progress. Evacuate to the airstrip now.');
+  }
+  if (R.blast) return;
+  R.paWarhead = R.paWarhead || 0;
+  while (R.paWarhead < PA_WARHEAD.length && R.warhead <= PA_WARHEAD[R.paWarhead][0]) {
+    // Only the most recent call that is due: a late start does not read the whole list out.
+    const due = R.paWarhead;
+    R.paWarhead++;
+    if (R.paWarhead < PA_WARHEAD.length && R.warhead <= PA_WARHEAD[R.paWarhead][0]) continue;
+    pa(R, sim, PA_WARHEAD[due][1]);
+  }
+}
+
 function note(sim, text, kind = 'info', seconds = 4) {
   try {
     if (sim && sim.hud && sim.hud.notify) sim.hud.notify(text, kind, seconds);
@@ -814,10 +977,13 @@ function loseSector(R, sim, i) {
   // The Site's own lamps dim with each sector, to a glimmer when the strip's goes (eased there in stepLamps).
   R.siteWant = i >= SECTORS.length - 1 ? 0.12 : 1 - (R.lost / SECTORS.length) * 0.8;
   lowTone(sim, { freq: 110, to: 70, duration: 1.6, gain: 0.05 });
+  sectorHorn(R, sim);
   if (i >= SECTORS.length - 1) {
     note(sim, `Sector ${SECTORS[i]} lost — the strip is next. About ${STRIP_GRACE_S} seconds.`, 'warn', 6);
+    pa(R, sim, `Sector ${SECTORS[i]} containment lost. The airstrip is next. All aircraft depart now.`);
   } else {
     note(sim, `Sector ${SECTORS[i]} lost.`, 'warn', 3.5);
+    pa(R, sim, `Sector ${SECTORS[i]} containment lost.`);
   }
 }
 
@@ -1325,11 +1491,89 @@ export function escapeState() {
 /* The extension                                                       */
 /* ------------------------------------------------------------------ */
 
+/*
+ * The ramp shot. The Follow view looks forward from behind the tail, so the
+ * people boarding were specks under the wing. While the ramp is down and the
+ * aeroplane is standing, the Follow view (and only it: any other view is the
+ * player's choice) frames the ramp from its quarter on the Site's side, high
+ * enough to see the queue and the people running in. Rolling, or the ramp
+ * up, cuts back to the ordinary Follow view.
+ */
+export const RAMP_SHOT = Object.freeze({ side: 13, aft: 16, up: 6.5, fov: 50, maxSpeed: 4 });
+
+function rampShot(ac, out) {
+  const R = E.run;
+  const sim = E.sim;
+  if (!R || R.result || !sim || sim.state !== 'flying') return false;
+  if (!(R.phase === 'boarding' || R.phase === 'leaving') || !ac || !ac.onGround || (ac.groundSpeed || 0) > RAMP_SHOT.maxSpeed) return false;
+  const geom = rampOf(sim);
+  if (!geom) return false;
+  // The side the Site is on, so the people run in towards the camera's side of the ramp.
+  const c = siteCentre();
+  const h = (ac.heading || 0) * (Math.PI / 180);
+  const right = (c.x - ac.pos.x) * Math.cos(h) + (c.z - ac.pos.z) * Math.sin(h);
+  const side = right >= 0 ? 1 : -1;
+  const at = bodyPoint(ac.pos.x, ac.pos.z, ac.heading, side * RAMP_SHOT.side, C17_RAMP.rampEnd + RAMP_SHOT.aft);
+  const gy = heightAt(at.x, at.z);
+  out.pos.set(at.x, Math.max(gy, geom.ground) + RAMP_SHOT.up, at.z);
+  const mid = { x: (geom.foot.x * 2 + geom.hinge.x) / 3, z: (geom.foot.z * 2 + geom.hinge.z) / 3 };
+  out.look.set(mid.x, geom.ground + 1.6, mid.z);
+  out.fov = RAMP_SHOT.fov;
+  return true;
+}
+
+/** A warm pool of light on the snow at the ramp's foot (the hold's lights spilling out): one flat disc, no light source. */
+function buildRampGlow(R, group) {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0, depthWrite: false });
+  const tex = rampGlowTexture();
+  if (tex) mat.map = tex;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(14, 18), mat);
+  m.rotation.x = -Math.PI / 2;
+  m.renderOrder = 2;
+  m.name = 'lfo-ramp-glow';
+  m.visible = false;
+  group.add(m);
+  R.rampGlow = m;
+}
+
+let glowTex = null;
+function rampGlowTexture() {
+  if (glowTex || typeof document === 'undefined') return glowTex;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 64;
+  const g = cv.getContext('2d');
+  const grd = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(255,246,228,1)');
+  grd.addColorStop(0.55, 'rgba(255,246,228,0.45)');
+  grd.addColorStop(1, 'rgba(255,246,228,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  glowTex = new THREE.CanvasTexture(cv);
+  return glowTex;
+}
+
+function stepRampGlow(R, sim, dt) {
+  const m = R.rampGlow;
+  if (!m) return;
+  const geom = rampOf(sim);
+  const want = geom && !geom.moving ? 0.42 * geom.amount : 0;
+  m.material.opacity += (want - m.material.opacity) * Math.min(1, dt * 2);
+  m.visible = m.material.opacity > 0.01 && !!geom;
+  if (geom) {
+    const x = geom.foot.x + (geom.hinge.x - geom.foot.x) * 0.2;
+    const z = geom.foot.z + (geom.hinge.z - geom.foot.z) * 0.2;
+    m.position.set(x, geom.ground + 0.06, z);
+    m.rotation.z = -((sim.aircraft.heading || 0) * Math.PI) / 180;
+  }
+}
+
 function teardown() {
   const R = E.run;
   if (!R) return;
   for (const f of R.pool) {
     if (f.p.parent) f.p.parent.remove(f.p);
+    // Back to the shared material first: disposePerson frees the geometry of meshes that wear it.
+    if (litMat) setFigureMaterial(f.p, litMat, personMaterial());
     try { disposePerson(f.p); } catch (e) { /* gone */ }
   }
   for (const c of R.cartPool) if (c.mesh.parent) c.mesh.parent.remove(c.mesh);
@@ -1350,6 +1594,12 @@ function teardown() {
     R.column.parent.remove(R.column);
     R.column.material.dispose();
   }
+  if (R.rampGlow && R.rampGlow.parent) {
+    R.rampGlow.parent.remove(R.rampGlow);
+    R.rampGlow.material.dispose();
+    R.rampGlow.geometry.dispose();
+  }
+  if (E.sim && E.sim.rig && E.sim.rig.shot === rampShot) E.sim.rig.shot = null;
   if (E.sim && E.sim.weather && R.turbWas != null) E.sim.weather.turbulenceScale = R.turbWas;
   holdGateOpen(false);
   setSiteLights(1);
@@ -1364,6 +1614,8 @@ function ensureBuilt(R, sim) {
   R.group = group;
   buildLamps(R, group);
   buildDome(R, group);
+  buildRampGlow(R, group);
+  if (sim.rig) sim.rig.shot = rampShot;
   R.built = true;
   return true;
 }
@@ -1444,6 +1696,9 @@ registerExtension({
         R.result.why = 'strip';
       }
 
+      stepAlarms(R, sim, dt);
+      stepPa(R, sim);
+
       // The warhead.
       if (!R.blast) {
         R.warhead = Math.max(0, WARHEAD_S - R.t);
@@ -1462,6 +1717,7 @@ registerExtension({
     stepPeople(R, sim, dtv);
     stepLamps(R, sim, dtv);
     stepDome(R, dtv);
+    stepRampGlow(R, sim, dtv);
     updateUi(R, sim);
   },
 

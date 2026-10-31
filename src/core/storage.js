@@ -205,6 +205,8 @@ export const DEFAULT_SETTINGS = {
   atcChatter: true,
   // 'radio' (synthesised, no TTS) | 'speech' (browser TTS) | 'recordings'
   atcVoice: 'radio',
+  /** The speech mode's voice: 'auto' (the best the device has) or a voiceURI. */
+  atcSpeechVoice: 'auto',
   /*
    * The Free Flight sky. 'random' since wave 19 (world/wx.js): each flight
    * rolls the day's weather for the map and it changes in phases as you fly.
