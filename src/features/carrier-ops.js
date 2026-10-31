@@ -946,8 +946,24 @@ function update(sim, dt) {
     S.zone = z;
   }
 
-  draw(sim, dt);
+  /*
+   * The ship's own moving parts (the lens, the deflector, the steam, the
+   * gate) and the ball: every frame near the ship or in a pass, and four
+   * times a second from more than FAR_M away with nothing in hand — a
+   * Skylark over Kestrel, twenty kilometres from the carrier, paid for the
+   * deck's steam every frame (ui/frame-budget.js). The time still adds up,
+   * so nothing on the deck runs slow, only less often.
+   */
+  const far = S.mode === 'idle' && !S.pass && !S.arrest && !S.cat && Math.hypot(ac.pos.x - S.f.cx, ac.pos.z - S.f.cz) > FAR_M;
+  S.drawAcc = (S.drawAcc || 0) + dt;
+  if (far && S.drawAcc < 0.25) return;
+  const ddt = S.drawAcc;
+  S.drawAcc = 0;
+  draw(sim, ddt);
 }
+
+/** Beyond this (metres) the deck's dressing is updated four times a second, not every frame. */
+const FAR_M = 6000;
 
 function draw(sim, dt) {
   const ac = sim.aircraft;

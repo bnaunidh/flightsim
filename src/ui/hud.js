@@ -12,6 +12,7 @@ import { icon } from './icons.js';
 import { clamp } from '../core/noise.js';
 import { installRotorHud, rotorSpeedWord } from './hud-rotor.js';
 import { HudStack } from './hud-stack.js';
+import { HUD_TEXT_HZ, LANE_FALLBACK_S, RateGate } from './frame-budget.js';
 import { SPEC } from '../aircraft/physics.js';
 import { rekey, keyName, shortKey, bindingsVersion, HELI_MAP } from '../flight/input.js';
 import { TouchdownCard } from './touchdown.js';
@@ -22,6 +23,7 @@ import { lightPresetOf } from '../aircraft/systems.js';
 import { DestRibbon } from './ribbon.js';
 import { damagePlanform } from './damage-planform.js';
 import { conditionsWords, DENSITY_SHORT } from './conditions.js';
+import { touchWording } from './touch-words.js';
 
 const KTS = UNITS.KTS;
 const FT = UNITS.FT;
@@ -123,6 +125,11 @@ const LANE = [
 ].join(', ');
 // The touchscreen action buttons that share the right-hand column (updateLanes()).
 const ACTIONS = '.mt-zap, .wf-drop, .co-btn.is-on, .gsk-btn, .hsk-btn, .afo-action, .tp-col';
+// The same two lists without their state classes (.is-on): the elements are
+// found once per change of the tree (Hud.laneNodes) and the state is read
+// off each at measure time, so a button lighting up is not a new search.
+const LANE_ANY = LANE.replace('.ej-btn.is-on', '.ej-btn');
+const ACTIONS_ANY = ACTIONS.replace('.co-btn.is-on', '.co-btn');
 
 export class Hud {
   constructor(root, { onAction } = {}) {
@@ -477,6 +484,16 @@ export class Hud {
     });
     dock.appendChild(this.btnMore);
 
+    /*
+     * On an upright phone (main.css, 560 px and under) the dock is three
+     * buttons, not four: the HUD-mode button moves into the tray (this twin
+     * of it; the dock's own is hidden there), so the dock is 150 px again
+     * and the instrument band beside it is not under the pause button —
+     * the rival study's 390 px phone had PAUSE on the altitude readout.
+     */
+    this.btnHudTray = mkBtn('hud', 'hudMode', `HUD mode: Full / Clean / Photo (${keyName('hudMode')})`, tray, 'HUD mode');
+    this.btnHudTray.classList.add('hud-btn-mode', 'hud-btn-mode-tray');
+
     this.btnGuide = mkBtn('route', 'guide', 'Guidance lines on/off (N)', tray, 'Guidance');
     this.btnAuto = mkBtn('autopilot', 'autopilot', 'Autopilot on/off (P)', tray, 'Autopilot');
     this.btnCinematic = mkBtn('cinematic', 'hideUi', 'Hide the interface for a clean shot (U)', tray, 'Hide interface');
@@ -610,6 +627,8 @@ export class Hud {
 
     this.root.appendChild(wrap);
     this.root.appendChild(this.toastLayer);
+    // The lanes measure on change from here on (ui/frame-budget.js).
+    this.watchLanes();
   }
 
   /**
@@ -798,10 +817,11 @@ export class Hud {
       document.documentElement.classList.toggle('hud-photo', photo);
     }
     if (this.stack) this.stack.setDensity(this.density === 'full' ? 'full' : 'clean');
-    if (this.btnHud) {
-      this.btnHud.classList.toggle('is-on', photo);
-      this.btnHud.dataset.mode = this.density;
-      this.btnHud.setAttribute('aria-label', `HUD mode: ${DENSITY_SHORT[this.density]} (${keyName('hudMode')} cycles Full / Clean / Photo)`);
+    for (const b of [this.btnHud, this.btnHudTray]) {
+      if (!b) continue;
+      b.classList.toggle('is-on', photo);
+      b.dataset.mode = this.density;
+      b.setAttribute('aria-label', `HUD mode: ${DENSITY_SHORT[this.density]} (${keyName('hudMode')} cycles Full / Clean / Photo)`);
     }
     this.wakeBottom();
   }
@@ -857,14 +877,25 @@ export class Hud {
    * Show or clear the taxi strip.
    * @param {string|null} text  the instruction, or null to hide the strip
    */
+  /**
+   * A line as this player should read it: the player's own keys (rekey), and
+   * on a touchscreen the touch controls' names in place of the keys
+   * (ui/touch-words.js) — "Slide the throttle all the way up", not "Hold
+   * Shift", on a phone that has no Shift.
+   */
+  words(text) {
+    const t = rekey(text);
+    return this.wrap && this.wrap.classList.contains('is-touch') ? touchWording(t) : t;
+  }
+
   setTaxi(text, hint) {
     if (!text) {
       this.taxi.style.display = 'none';
       return;
     }
     // The player's keys, not the defaults the instructions were written with.
-    text = rekey(text);
-    hint = rekey(hint);
+    text = this.words(text);
+    hint = this.words(hint);
     this.taxi.style.display = '';
     if (this.taxiText.textContent !== text) this.taxiText.textContent = text;
     this.taxiHint.textContent = hint || '';
@@ -907,8 +938,8 @@ export class Hud {
       this.lastValues.coach = null;
       return;
     }
-    // "Press <kbd>I</kbd> to start the engine" names the key you have now.
-    text = rekey(text);
+    // "Press <kbd>I</kbd> to start the engine" names the key you have now — or, on a touchscreen, the ENGINE pad.
+    text = this.words(text);
     if (this.lastValues.coach !== text) {
       this.coach.innerHTML = text;
       this.lastValues.coach = text;
@@ -1092,8 +1123,8 @@ export class Hud {
   }
 
   setObjective(title, text) {
-    // "Press X to release the crate", with the player's X.
-    text = rekey(text);
+    // "Press X to release the crate", with the player's X (or the touch control).
+    text = this.words(text);
     let changed = false;
     if (this.lastValues.objTitle !== title) {
       this.objectiveTitle.textContent = title;
@@ -1208,12 +1239,19 @@ export class Hud {
     }
     this._laneT = (this._laneT || 0) - dt;
     if (this._laneT <= 0) {
-      // Twice a second; in Performance mode and on Low (main.js syncFxTier
-      // sets lowRate) every 1.5 s: a dozen forced layouts fewer a second on a
-      // Chromebook, where the profile showed these rectangles a sixth of the
-      // main thread's time in a climb.
+      // Twice a second AT MOST, and only when the HUD's tree or the window
+      // changed since the last measure (watchLanes: a MutationObserver and
+      // resize set _laneDirty), with a slow fallback for a control that
+      // moved under a CSS rule alone (LANE_FALLBACK_S; in Performance mode
+      // and on Low, main.js syncFxTier sets lowRate, twice that). Measured
+      // every half second whatever happened, these rectangles were a sixth
+      // of the main thread's time in a climb on a Chromebook.
       this._laneT = this.lowRate ? 1.5 : 0.5;
-      this.updateLanes();
+      this._laneFallbackT = (this._laneFallbackT ?? 0) - Math.max(this._laneT, dt);
+      if (this._laneDirty || this._laneFallbackT <= 0 || !this._laneObserved) {
+        this._laneFallbackT = this.lowRate ? LANE_FALLBACK_S * 2 : LANE_FALLBACK_S;
+        this.updateLanes();
+      }
     }
   }
 
@@ -1233,8 +1271,71 @@ export class Hud {
    * a line goes up, a dozen rectangles; CSS does the rest (main.css,
    * cinema.js) with max(its old place, the lane).
    */
+  /**
+   * The lanes are measured when something that can move a control changed:
+   * an element added or removed anywhere under <body> (a feature's button,
+   * a pill, the touch layer), a class on the HUD wrapper itself (is-touch,
+   * is-vehicle, the HUD modes), or the window's size. The observer only
+   * sets a flag; updateOverlays measures at its own pace. Where there is no
+   * MutationObserver (a bare test document) the lanes measure on the old
+   * clock.
+   */
+  watchLanes() {
+    if (this._laneObserved || typeof document === 'undefined' || typeof MutationObserver === 'undefined' || !document.body) return;
+    this._laneDirty = true;
+    this._laneNodes = null;
+    const dirty = () => {
+      this._laneDirty = true;
+      this._laneNodes = null;
+    };
+    // A text node swapped (el.textContent = ...) is a childList mutation
+    // too, and the HUD's numbers do that many times a second; a toast, a
+    // pill's text, a notice card are elements, and none of them is a
+    // control the lanes measure. Only an element that IS one of the lane's
+    // controls (or holds one) coming or going counts: matching one node
+    // against the list costs nothing, where a search of the whole document
+    // (5,900 nodes) for every toast cost the Chromebook 6 ms a second.
+    const concerns = (n) => {
+      if (n.nodeType !== 1 || typeof n.matches !== 'function') return false;
+      try {
+        return n.matches(LANE_ANY) || n.matches(ACTIONS_ANY) || !!n.querySelector(LANE_ANY) || !!n.querySelector(ACTIONS_ANY);
+      } catch (e) {
+        return true;
+      }
+    };
+    const onMutation = (records) => {
+      for (const m of records) {
+        if (m.type !== 'childList') return dirty();
+        for (const n of m.addedNodes) if (concerns(n)) return dirty();
+        for (const n of m.removedNodes) if (concerns(n)) return dirty();
+      }
+    };
+    try {
+      this._laneMo = new MutationObserver(onMutation);
+      this._laneMo.observe(document.body, { childList: true, subtree: true });
+      if (this.wrap) this._laneMo.observe(this.wrap, { attributes: true, attributeFilter: ['class'] });
+      if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('resize', dirty);
+      this._laneObserved = true;
+    } catch (e) {
+      this._laneObserved = false;
+    }
+  }
+
+  /** The elements updateLanes() measures, found again only after the tree changed (watchLanes). */
+  laneNodes() {
+    if (!this._laneNodes) {
+      this._laneNodes = {
+        lane: Array.from(document.querySelectorAll(LANE_ANY)),
+        act: Array.from(document.querySelectorAll(ACTIONS_ANY)),
+      };
+    }
+    return this._laneNodes;
+  }
+
   updateLanes() {
     if (typeof document === 'undefined' || typeof window === 'undefined' || !document.querySelectorAll) return;
+    this._laneDirty = false;
+    const nodes = this.laneNodes();
     const W = window.innerWidth || 1024;
     const H = window.innerHeight || 768;
     let x0;
@@ -1266,8 +1367,10 @@ export class Hud {
     }
     const tops = [H, H, H];
     const spans = [[x0, x1], [W * 0.04, W * 0.96], [p0, p1]];
-    for (const n of document.querySelectorAll(LANE)) {
-      if (!n.getClientRects().length) continue;
+    for (const n of nodes.lane) {
+      // The state classes a selector in LANE asks for, checked here so the list itself need not be found again.
+      if (n.classList.contains('ej-btn') && !n.classList.contains('is-on')) continue;
+      if (!n.isConnected || !n.getClientRects().length) continue;
       const r = n.getBoundingClientRect();
       if (r.width < 4 || r.height < 4 || r.top < H * 0.55 || r.top >= H) continue;
       const pills = n.classList.contains('hud-pills');
@@ -1298,8 +1401,9 @@ export class Hud {
     const se = this.stack && this.stack.el;
     if (se) {
       const sr = se.getBoundingClientRect();
-      for (const n of document.querySelectorAll(ACTIONS)) {
-        if (!n.getClientRects().length) continue;
+      for (const n of nodes.act) {
+        if (n.classList.contains('co-btn') && !n.classList.contains('is-on')) continue;
+        if (!n.isConnected || !n.getClientRects().length) continue;
         const r = n.getBoundingClientRect();
         if (r.width < 4 || r.height < 4 || r.right <= sr.left || r.left >= sr.right || r.top < H * 0.3) continue;
         act = Math.max(act, Math.round(H - r.top + 8));
@@ -1336,7 +1440,19 @@ export class Hud {
      * A bare <kbd> remembers the word it was written with; a feature's live
      * one (class="k") is already right and is left alone.
      */
-    for (const k of h.querySelectorAll('kbd:not([class])')) {
+    // The bare <kbd>s, found again only when the line itself changed (its
+    // text, or its children): four times a second this was a selector over
+    // the line's tree for the same six elements.
+    const sig = `${said}\u0000${h.childElementCount}`;
+    const first = h.firstElementChild;
+    const last = h.lastElementChild;
+    if (!this._keyHintKbds || this._keyHintSig !== sig || this._keyHintFirst !== first || this._keyHintLast !== last) {
+      this._keyHintSig = sig;
+      this._keyHintFirst = first;
+      this._keyHintLast = last;
+      this._keyHintKbds = Array.from(h.querySelectorAll('kbd:not([class])'));
+    }
+    for (const k of this._keyHintKbds) {
       if (k.dataset.k0 === undefined) k.dataset.k0 = k.textContent;
       const out = rekey(`<kbd>${k.dataset.k0}</kbd>`);
       const word = out.startsWith('<kbd>') ? out.slice(5, -6).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>') : k.dataset.k0;
@@ -1345,7 +1461,7 @@ export class Hud {
   }
 
   notify(text, kind = 'info', duration = 4.2) {
-    const t = el('div', `hud-toast is-${kind}`, rekey(text));
+    const t = el('div', `hud-toast is-${kind}`, this.words(text));
     const entry = { node: t, life: duration, kind };
     /*
      * Two on screen and the rest queued (TOASTS_SHOWN), newest last. A
@@ -1429,6 +1545,7 @@ export class Hud {
 
   setSubtitle(text, who, duration) {
     if (!this.subtitlesEnabled) return;
+    const wasUp = this.subtitle.style.display !== 'none' && !this.subtitle.classList.contains('is-out');
     this.subtitleWho.textContent = who || '';
     this.subtitleText.textContent = text;
     this.subtitle.style.display = '';
@@ -1439,7 +1556,11 @@ export class Hud {
     // which is not long enough for a two-line clearance.
     this.subtitleTimer = Math.max(2.4, duration || 3.5, text ? readSeconds(text) : 0);
     // Above whatever is under its span right now, before it is ever drawn.
-    this.updateLanes();
+    // A line replacing one already up keeps the lane it has and is measured
+    // at the next tick (ui/frame-budget.js): a busy frequency was a dozen
+    // rectangles per call.
+    if (wasUp) this._laneDirty = true;
+    else this.updateLanes();
   }
 
   /**
@@ -1696,10 +1817,20 @@ export class Hud {
    * bugs simply go away with the chip.
    */
   setAutopilot(on, label, ap) {
-    this.apChip.textContent = label || 'AUTOPILOT';
-    this.apChip.classList.toggle('is-on', !!on);
-    this.apChip.style.display = on ? '' : 'none';
-    if (this.btnAuto) this.btnAuto.classList.toggle('is-on', !!on);
+    // Called every frame the autopilot flies (main.js update): only a word
+    // that changed is written. The same label sixty times a second was four
+    // DOM writes a frame for nothing (ui/frame-budget.js).
+    const text = label || 'AUTOPILOT';
+    if (this._apText !== text) {
+      this._apText = text;
+      this.apChip.textContent = text;
+    }
+    if (this._apOn !== !!on) {
+      this._apOn = !!on;
+      this.apChip.classList.toggle('is-on', !!on);
+      this.apChip.style.display = on ? '' : 'none';
+      if (this.btnAuto) this.btnAuto.classList.toggle('is-on', !!on);
+    }
     this.setAutopilotBugs(on ? ap : null);
   }
 
@@ -1710,12 +1841,16 @@ export class Hud {
       this.apBugs.style.display = 'none';
       return;
     }
-    this.apBugs.style.display = '';
+    if (this.apBugs.style.display !== '') this.apBugs.style.display = '';
     // NAV (a DIRECT TO or a route from the live map): the waypoint it is flying to, in place of the heading bug.
     const nav = ap.lateral === 'NAV' && ap.nav && typeof ap.nav.label === 'function' ? ap.nav.label() : '';
-    this.apHdgBug.val.textContent = nav ? `NAV ${nav}` : `HDG ${String(Math.round(ap.selectedHeadingDeg)).padStart(3, '0')}°`;
-    this.apSpdBug.val.textContent = `SPD ${Math.round(ap.selectedSpeedKts)}`;
-    this.apVsBug.val.textContent = `VS ${Math.round(ap.selectedVsFpm)}`;
+    const hdg = nav ? `NAV ${nav}` : `HDG ${String(Math.round(ap.selectedHeadingDeg)).padStart(3, '0')}°`;
+    const spd = `SPD ${Math.round(ap.selectedSpeedKts)}`;
+    const vs = `VS ${Math.round(ap.selectedVsFpm)}`;
+    const b = this._apBugText || (this._apBugText = {});
+    if (b.hdg !== hdg) this.apHdgBug.val.textContent = b.hdg = hdg;
+    if (b.spd !== spd) this.apSpdBug.val.textContent = b.spd = spd;
+    if (b.vs !== vs) this.apVsBug.val.textContent = b.vs = vs;
   }
 
   /** Show or hide the key monitor. @returns {boolean} whether it is now on */
@@ -1783,6 +1918,16 @@ export class Hud {
     const rotor = !!SPEC.rotor;
     this.updateRotor(dt, sim, r);
 
+    /*
+     * The numbers, HUD_TEXT_HZ times a second on a live frame (ui/frame-
+     * budget.js). Every value below is change-gated already; this is the
+     * cost of READING them — readouts, the words, the comparisons — which
+     * was paid sixty times a second for a panel nobody can read faster than
+     * twenty. A driven check (sim.step()) is not a live frame and sees every
+     * update, so nothing a test measures moves.
+     */
+    const numbers = this._numGate || (this._numGate = new RateGate(HUD_TEXT_HZ));
+    if (numbers.due(dt, !!sim._liveFrame)) {
     // --- Numbers with plain-language captions ---
     /*
      * Indicated airspeed is a wing's number: it says how close the wing is to
@@ -1887,7 +2032,8 @@ export class Hud {
       this.hdgValue.textContent = String(hdg).padStart(3, '0');
       this.lastValues.hdg = hdg;
       const dirs = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
-      this.hdgWord.textContent = dirs[Math.round(hdg / 45) % 8];
+      const dir = dirs[Math.round(hdg / 45) % 8];
+      if (this.lastValues.hdgWord !== dir) this.hdgWord.textContent = this.lastValues.hdgWord = dir;
     }
 
     // --- Wind ---
@@ -2027,6 +2173,8 @@ export class Hud {
         this.lastValues.trim = trimText;
       }
     }
+
+    } // numbers
 
     // --- Stall + PAPI guidance ---
     /*

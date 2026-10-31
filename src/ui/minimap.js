@@ -206,6 +206,7 @@ import {
   platformAt,
 } from '../world/terrain.js';
 import { PADS, nearestPad } from '../world/pads.js';
+import { MINIMAP_HZ } from './frame-budget.js';
 import { SPEC } from '../aircraft/physics.js';
 import { chartColours, landColour, iceShapes, onIce, ICE_RGB } from './chart-palette.js';
 
@@ -1569,10 +1570,11 @@ export class Minimap {
     this._tgtT += dt;
     this._lookT += dt;
     this._measureT += dt;
-    // Thirty frames a second is plenty for a map, and on a 60 Hz screen it
-    // halves the cost.
+    // MINIMAP_HZ (ui/frame-budget.js) is plenty for a map: the chart under
+    // you moves a few pixels a second, and on a 60 Hz screen this is a
+    // quarter of the canvas work it was at thirty.
     this._acc += dt;
-    if (this._acc < 1 / 31) return;
+    if (this._acc < 1 / MINIMAP_HZ) return;
     this._acc = 0;
     try {
       this.frame(sim);

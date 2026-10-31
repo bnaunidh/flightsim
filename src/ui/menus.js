@@ -2895,8 +2895,10 @@ export class Menus {
   }
 
   updateFps(fps) {
-    const n = this.screens.settings.querySelector('[data-fps]');
-    if (n) n.textContent = fps;
+    // Once a second from the frame loop: the element is found once (ui/frame-budget.js).
+    let n = this._fpsEl;
+    if (!n || !n.isConnected) n = this._fpsEl = this.screens.settings.querySelector('[data-fps]');
+    if (n && n.textContent !== String(fps)) n.textContent = fps;
   }
 
   setPauseInfo(html) {
@@ -3093,6 +3095,10 @@ export class Menus {
     this.layer.hidden = false;
     for (const key in this.screens) this.screens[key].hidden = key !== name;
     this.current = name;
+    // The game switcher and the credits bar belong to the menus, not to the
+    // debrief: over the crash card it showed through from behind (the rival
+    // study's 390 px phone), one tap from leaving the flight you just lost.
+    if (this.bar) this.bar.hidden = name === 'debrief';
     // The hangar's podium starts and stops with its screen.
     if (this.showcaseUi) this.showcaseUi.onScreen(name, prev);
     // Credits and the lit game can both have changed since this screen was

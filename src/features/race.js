@@ -413,7 +413,8 @@ function release() {
  */
 function quiet(sim, on) {
   if (typeof document !== 'undefined') {
-    const ui = document.getElementById('ui');
+    // Every frame (step): the element is looked up once (ui/frame-budget.js).
+    const ui = G.ui && G.ui.isConnected ? G.ui : (G.ui = document.getElementById('ui'));
     if (ui && ui.classList.contains('race-on') !== on) ui.classList.toggle('race-on', on);
   }
   if (!sim) return;

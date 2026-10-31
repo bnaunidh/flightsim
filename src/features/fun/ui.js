@@ -186,7 +186,8 @@ export class FunHud {
   place(dt, root) {
     this.placeT -= dt;
     if (this.placeT > 0 || this.chip.hidden || !root) return;
-    this.placeT = 1;
+    // Every two seconds (ui/frame-budget.js): five rectangles a time.
+    this.placeT = 2;
     const H = window.innerHeight;
     let bottom = 8;
     let left = 16;

@@ -44,6 +44,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { parseGLB } from '../vehicles/glb.js';
 import { textureTier } from '../render/textures.js';
+import { fetchRetry } from '../core/load-retry.js';
 
 /**
  * Every real model, by roster id. `credit` is the CC BY attribution as the
@@ -119,7 +120,8 @@ export function realModelUrl(id) {
 }
 
 async function fetchBuffer(url) {
-  const res = await fetch(url);
+  // One retry on a dropped request (core/load-retry.js); a 404 is final.
+  const res = await fetchRetry(url);
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   return res.arrayBuffer();
 }

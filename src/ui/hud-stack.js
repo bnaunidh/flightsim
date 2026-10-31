@@ -44,6 +44,8 @@
  * whatever the test measures next.
  */
 
+import { STACK_FALLBACK_S } from './frame-budget.js';
+
 const OPEN_INFO = 6; // seconds an informational card stays open after it changes
 const MAX_OPEN = 3; // full cards at once; the rest fold
 const TICK = 0.25; // seconds between chip decisions (and only classes change)
@@ -51,17 +53,26 @@ const GLIDE = 'transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1)';
 
 const NATIVE_RAF = typeof window !== 'undefined' ? window.requestAnimationFrame : null;
 
+// The reduced-motion query, asked for once: matchMedia() four times a second
+// was most of this file's time in the demo profile (ui/frame-budget.js).
+let REDUCED = null;
+function reducedMotion() {
+  if (REDUCED === null) {
+    try {
+      REDUCED = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : false;
+    } catch (e) {
+      REDUCED = false; /* no media queries: no motion either */
+    }
+  }
+  return REDUCED ? REDUCED.matches : false;
+}
+
 function live() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return false;
   if (window.requestAnimationFrame !== NATIVE_RAF) return false;
   const root = document.documentElement;
   if (root && root.classList && root.classList.contains('reduce-motion')) return false;
-  try {
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
-  } catch (e) {
-    /* no media queries: no motion either */
-  }
-  return true;
+  return !reducedMotion();
 }
 
 export class HudStack {
@@ -94,9 +105,14 @@ export class HudStack {
     this.probe = probe;
     if (host && host.appendChild) host.appendChild(probe);
     if (typeof ResizeObserver !== 'undefined') {
-      this.ro = new ResizeObserver(() => this.onResize());
+      this.ro = new ResizeObserver((entries) => {
+        this.noteSizes(entries);
+        this.onResize();
+      });
       this.ro.observe(el);
     }
+    // Seconds until the layout is asked outright for which cards show (tick).
+    this.fallbackT = 0;
     // The touch band: where the column starts (see touchTop()). On the next
     // task, not in the callback: the column's own size follows from it, and
     // a size changed inside a ResizeObserver callback at the same depth is
@@ -136,6 +152,12 @@ export class HudStack {
     }
     el.classList.add('rs-card');
     if (el.dataset) el.dataset.rsPrio = String(Math.floor(prio));
+    // A card that starts hidden (a rule, a parent not yet shown) gets no
+    // first report from the observer — it reports when the box CHANGES, and
+    // 0 x 0 to 0 x 0 is no change — so shown() reads its state once, at the
+    // first refresh in a flight (not here: a layout read for every card
+    // added while the menu is being built cost the Chromebook 320 ms).
+    c.roSeen = false;
     if (this.ro) this.ro.observe(el);
     this.dirty = true;
     return el;
@@ -178,7 +200,14 @@ export class HudStack {
     this.refresh();
   }
 
-  /** Every frame from Hud.updateOverlays(); decides something four times a second. */
+  /**
+   * Every frame from Hud.updateOverlays(). Decides something when a card
+   * changed (dirty: it arrived, went, resized, or its timer ran out), at
+   * most four times a second; and, nothing having changed, once in
+   * STACK_FALLBACK_S with the layout asked outright (ui/frame-budget.js).
+   * Deciding every quarter second whatever happened was seven
+   * getClientRects() and a scrollHeight — a forced layout — each time.
+   */
   tick(dt) {
     if (!this.el) return;
     for (const c of this.cards) if (c.openT > 0) {
@@ -187,19 +216,46 @@ export class HudStack {
       if (before > 0 && c.openT <= 0 && c.info) this.dirty = true;
     }
     this.t -= dt;
+    this.fallbackT -= dt;
+    const fallback = this.fallbackT <= 0;
+    if (!this.dirty && !fallback) return;
     if (this.t > 0 && !this.dirty) return;
     // Half as often on a weak computer (lowRate: main.js syncFxTier); a change (dirty) still refreshes at once.
     this.t = this.lowRate ? TICK * 2 : TICK;
-    this.refresh();
+    if (fallback) this.fallbackT = this.lowRate ? STACK_FALLBACK_S * 2 : STACK_FALLBACK_S;
+    this.refresh(fallback);
   }
 
-  /** Is the card showing at all (its own hidden/display, or a CSS rule)? */
-  shown(c) {
+  /** The ResizeObserver's report: each card's own box, 0 x 0 while a rule hides it. */
+  noteSizes(entries) {
+    if (!entries) return;
+    for (const e of entries) {
+      const c = this.cards.find((k) => k.el === e.target);
+      if (!c) continue;
+      const r = e.contentRect || { width: 0, height: 0 };
+      const box = e.borderBoxSize && e.borderBoxSize[0];
+      c.roOn = (box ? box.inlineSize > 0 || box.blockSize > 0 : false) || r.width > 0 || r.height > 0;
+      c.roSeen = true;
+    }
+  }
+
+  /**
+   * Is the card showing at all (its own hidden/display, or a CSS rule)?
+   * From what the ResizeObserver last said of its box, which costs nothing;
+   * the layout itself is asked (`exact`) on the fallback pass, or for a
+   * card the observer has not reported on yet.
+   */
+  shown(c, exact = false) {
     const el = c.el;
     if (!el || el.parentNode !== this.el || el.hidden || (el.style && el.style.display === 'none')) return false;
+    if (!exact && c.roSeen) return c.roOn;
+
     // A stylesheet rule (`.hud.is-vehicle .hud-damage`, the touch layout's
     // `.hud-right`) hides some cards without touching the element itself.
-    return !el.getClientRects || el.getClientRects().length > 0;
+    const on = !el.getClientRects || el.getClientRects().length > 0;
+    c.roOn = on;
+    c.roSeen = true;
+    return on;
   }
 
   /** The column's height in px: from its top down to the minimap or the controls. */
@@ -221,7 +277,7 @@ export class HudStack {
    * past its floor, the lowest open cards fold, and then the lowest chips
    * wait (hidden) until there is room.
    */
-  refresh() {
+  refresh(exact = false) {
     if (!this.el) return;
     this.dirty = false;
     if (this.el.classList.contains('rs-anim') !== live()) this.el.classList.toggle('rs-anim');
@@ -237,7 +293,7 @@ export class HudStack {
     for (const c of this.cards) this.setWait(c, false);
     const on = [];
     for (const c of this.cards) {
-      const s = this.shown(c);
+      const s = this.shown(c, exact);
       if (s && !c.wasOn) {
         // Arrived (or came back): an informational card opens for a while.
         c.openT = Math.max(c.openT, c.openFor);
@@ -391,6 +447,11 @@ export class HudStack {
     if (!!c.waiting === on) return;
     c.waiting = on;
     c.el.classList.toggle('rs-wait', on);
+    // Its box just changed under us, and the observer reports after this
+    // task: until it does, shown() must ask the layout, not the last report
+    // (refresh un-waits every card before measuring; with the stale 0 x 0
+    // a held-back card was dropped from the column and left on the map).
+    c.roSeen = false;
   }
 
   /**

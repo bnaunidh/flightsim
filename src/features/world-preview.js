@@ -25,6 +25,7 @@
  *               an autopilot job: engage it at height and it holds the course.
  */
 import * as THREE from '../vendor/three.module.js';
+import { fetchRetry } from '../core/load-retry.js';
 import { registerExtension, extLayer } from '../game/extensions.js';
 import { registerActions, isKey } from '../flight/input.js';
 import * as Terrain from '../world/terrain.js';
@@ -52,7 +53,7 @@ import { parseGLB } from '../vehicles/glb.js';
 let PROP_GEOS = null;
 function propModels() {
   if (PROP_GEOS) return PROP_GEOS;
-  PROP_GEOS = Promise.all(PROP_MODELS.map((n) => fetch(new URL(`../../assets/models/scenery/${n}.glb`, import.meta.url).href)
+  PROP_GEOS = Promise.all(PROP_MODELS.map((n) => fetchRetry(new URL(`../../assets/models/scenery/${n}.glb`, import.meta.url).href)
     .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`))))
     .then((b) => {
       let g = null;

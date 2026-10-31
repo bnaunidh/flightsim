@@ -68,6 +68,7 @@ import { parseGLB, drawStats } from './glb.js';
 import { createBoatWater } from './blender-boat-water.js';
 import { strobeLevel } from '../render/flash-safety.js';
 import { lettersTexture } from '../render/textures.js';
+import { fetchRetry } from '../core/load-retry.js';
 
 /**
  * What each file must contain. `maxTriangles` is the budget the modeller was
@@ -158,7 +159,8 @@ export function blenderModelUrl(kind) {
 }
 
 async function fetchBuffer(url) {
-  const res = await fetch(url);
+  // One retry on a dropped request (core/load-retry.js); a 404 is final.
+  const res = await fetchRetry(url);
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   return res.arrayBuffer();
 }

@@ -308,6 +308,30 @@ export async function check(sim, r, say) {
 
     /* ---- what the pills already did still works beside the sheets ---- */
     r.ok('touch: the pills lane is still there for the stop-push and brake undo', !!wrap.querySelector('.hud-pills'));
+
+    /* ---- the rival study's phone (2026-10-30): the words, the pause button, the debrief ---- */
+    log('a phone\'s words and screens');
+    sim.hud.setCoach('Hold <kbd>Shift</kbd> for full power');
+    const coach = sim.hud.coach.innerHTML;
+    r.ok('touch: the coaching line never says "Hold Shift" on a touchscreen — it names the throttle', !/<kbd>|Shift/.test(coach) && /throttle/i.test(coach), coach);
+    sim.hud.setCoach(null);
+    const pauseBox = box(sim.hud.btnPause);
+    const altRow = sim.hud.altValue.closest('.hud-row') || sim.hud.altValue.parentElement;
+    const strip = wrap.querySelector('.hud-left');
+    const dockBox = box(wrap.querySelector('.hud-buttons'));
+    const onAlt = shown(sim.hud.btnPause) && shown(altRow) && hits(pauseBox, box(altRow));
+    const onStrip = shown(strip) && hits(dockBox, box(strip));
+    const vp2 = `${window.innerWidth}x${window.innerHeight}`;
+    r.ok(`touch (${vp2}): the pause button and its dock stand clear of the altitude readout and the instrument strip`, !onAlt && !onStrip, `pause ${fmt(pauseBox)}, dock ${fmt(dockBox)}, altitude ${fmt(box(altRow))}, strip ${strip ? fmt(box(strip)) : 'none'}`);
+    const wasState = sim.state;
+    sim.menus.show('debrief');
+    const bar = document.querySelector('.menu-bar');
+    const barShown = !!bar && shown(bar);
+    r.ok('touch: the game switcher and credits bar does not show through the crash / debrief card', !barShown, bar ? `bar hidden ${bar.hidden}, shown ${barShown}` : 'no bar');
+    sim.menus.show('main');
+    const barBack = !!bar && !bar.hidden;
+    sim.menus.hide();
+    r.ok('touch: ...and is back on the main menu', barBack, `state was ${wasState}`);
   } catch (e) {
     r.ok('touch: the check ran to the end', false, String(e && e.stack || e).slice(0, 400));
   } finally {

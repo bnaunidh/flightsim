@@ -15,6 +15,7 @@ import { PostFX } from './render/post.js';
 import { pickTier, probeFrames, isTier, tierRank, asHighMs } from './render/quality-probe.js';
 import { DynamicResolution, pixelRatioCap } from './render/dyn-res.js';
 import { detectWeakDevice, deviceFacts, PERF_MODE } from './render/weak-device.js';
+import { fetchRetry, retrying } from './core/load-retry.js';
 import { setPaintTier } from './render/paint.js';
 import { warmShadersAsync, warmShadersChunked } from './render/shader-warm.js';
 import { Weather } from './world/weather.js';
@@ -57,6 +58,7 @@ import { CameraRig, VIEW_LABELS, CHASE_BACK, CHASE_UP, chaseScaleFor, drawnPoint
 import { GameAudio } from './audio/index.js';
 
 import { Hud } from './ui/hud.js';
+import { MENU_RENDER_HZ } from './ui/frame-budget.js';
 import { BoatHud } from './ui/hud-boat.js';
 import { DriveHud } from './ui/hud-drive.js';
 import { installRotorHud } from './ui/hud-rotor.js';
@@ -229,10 +231,18 @@ function fatal(message, detail) {
   const box = document.getElementById('fatal');
   if (!box) return;
   box.hidden = false;
-  box.innerHTML = `<h2>Something went wrong</h2><p>${message}</p>${
+  box.innerHTML = `<div class="fatal-card"><h2>Something went wrong</h2><p class="fatal-line">${message}</p>${
     detail ? `<pre>${String(detail).slice(0, 900)}</pre>` : ''
-  }<p class="tiny">Try reloading the page. If it keeps happening, your browser may not support WebGL 2 —
-  Chrome, Edge, Firefox and Safari 16+ all do.</p>`;
+  }<button type="button" class="fatal-reload" data-fatal-reload>Reload</button><p class="tiny">If it keeps happening, your browser may not support WebGL 2 —
+  Chrome, Edge, Firefox and Safari 16+ all do.</p></div>`;
+  // The same big button as the bootstrap's screen (index.html): a dead end
+  // with no way back but the browser's own reload is what the rival study saw.
+  const btn = box.querySelector('[data-fatal-reload]');
+  if (btn) btn.addEventListener('click', () => {
+    window.__leavingOnPurpose = true;
+    if (window.__reloadPage) window.__reloadPage();
+    else location.reload();
+  });
   if (loadEl) loadEl.hidden = true;
 }
 
@@ -815,7 +825,10 @@ class Game {
      * as data, for the checks.
      */
     window.addEventListener('beforeunload', (e) => {
-      if (!this.unloadGuard()) return undefined;
+      // Not when the page is being reloaded on purpose: the Reload button of
+      // the failure screen (index.html __reloadPage, fatal()) after an error
+      // in a flight met "Leave site?" before it could do its one job.
+      if (window.__leavingOnPurpose || this._errored || !this.unloadGuard()) return undefined;
       e.preventDefault();
       // Chrome shows its own words; the string is for the browsers that still read one.
       e.returnValue = 'A flight is in progress. Leave anyway?';
@@ -4067,7 +4080,12 @@ class Game {
   loadFeatures({ lateJoin = true } = {}) {
     if (this._featuresLoading) return this._featuresLoading;
     const t0 = performance.now();
-    this._featuresLoading = import('./features/index.js')
+    // One retry on a dropped request (core/load-retry.js): the bundle is
+    // sixty-odd modules, and one of them cut short on a busy wifi used to
+    // mean a game with no plug-ins for the whole session.
+    this._featuresLoading = retrying(() => import('./features/index.js'), {
+      onRetry: (err) => console.warn('[features] the bundle failed to load; trying again…', err),
+    })
       .then(() => {
         // Before the menu (the suites' path) the boot installs them itself a
         // few lines on, with the world; after it, they join the standing one.
@@ -4107,7 +4125,7 @@ class Game {
           jobs.push(
             preloadVehicleModels({
               load: (url) =>
-                fetch(url)
+                fetchRetry(url)
                   .then((res) => {
                     if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
                     return res.arrayBuffer();
@@ -6839,6 +6857,24 @@ class Game {
     return null;
   }
 
+  /**
+   * Is this frame's draw skipped because a menu covers the view? True when
+   * the menu layer is up (the main menu, the pause card, the debrief) and
+   * less than a MENU_RENDER_HZ period has passed since the last draw. In a
+   * flight it is always false: every frame is drawn.
+   */
+  coveredFrameSkipped(dt) {
+    const covered = this.state !== 'flying' && this.menus && this.menus.layer && !this.menus.layer.hidden;
+    if (!covered) {
+      this._coverAcc = 1; // the first frame back is drawn at once
+      return false;
+    }
+    this._coverAcc = (this._coverAcc || 0) + dt;
+    if (this._coverAcc < 1 / MENU_RENDER_HZ) return true;
+    this._coverAcc = 0;
+    return false;
+  }
+
   loop() {
     const tick = () => {
       requestAnimationFrame(tick);
@@ -6856,12 +6892,21 @@ class Game {
       let dt = this.clock.getDelta();
       if (dt > 0.25) dt = 0.25; // after a tab switch, do not jump
       try {
+        // A LIVE frame (ui/frame-budget.js): the HUD's numbers are written at
+        // HUD_TEXT_HZ in it. step() — a check's clock — is never live and
+        // sees every update, as it always did.
+        this._liveFrame = true;
         this.update(dt);
         // The hangar's podium is drawn INSTEAD of the island while it is open
         // (ui/hangar-showcase.js): it covers the window, so the world behind
         // it would be a whole frame drawn for nobody.
-        if (!this.menus.drawView || !this.menus.drawView(this.renderer, dt)) this.renderFrame(true);
+        const drewView = this.menus.drawView && this.menus.drawView(this.renderer, dt);
+        // Behind a menu, the pause card or the debrief the island is a blurred
+        // backdrop: drawn at MENU_RENDER_HZ (ui/frame-budget.js), not every frame.
+        if (!drewView && !this.coveredFrameSkipped(dt)) this.renderFrame(true);
+        this._liveFrame = false;
       } catch (err) {
+        this._liveFrame = false;
         console.error(err);
         if (!this._errored) {
           this._errored = true;

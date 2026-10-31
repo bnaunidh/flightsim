@@ -143,6 +143,24 @@ ok('anything else is auto', X.setPushPref('sideways') === 'auto' && X.setPushPre
 const svcSrc = read('src/features/airport-services.js');
 ok('planPush tries the asked-for way first, and still the other way when that one is blocked', /S\.pushPref === 'noseLeft' \? 1 : S\.pushPref === 'noseRight' \? -1/.test(svcSrc) && /for \(const turn of (found \? \[\] : )?\[first, -first\]\)/.test(svcSrc));
 
+/* ---------------- 4. a phone's words and screens (the rival study, 2026-10-30) ---------------- */
+
+const TW = await load('src/ui/touch-words.js');
+ok('touch-words: "Hold Shift for full power" reads as the throttle on a touchscreen', TW.touchWording('Hold <kbd>Shift</kbd> for full power') === 'Slide the throttle all the way up for full power', TW.touchWording('Hold <kbd>Shift</kbd> for full power'));
+ok('touch-words: the engine, the gear, the flaps and the brakes name their pads', /ENGINE/.test(TW.touchWording('Press <kbd>I</kbd> to start the engine')) && /GEAR/.test(TW.touchWording('Landing gear! Press <kbd>G</kbd> before you land')) && /FLAPS/.test(TW.touchWording('Press <kbd>F</kbd> for flaps — they help you fly slowly')) && /BRAKES/.test(TW.touchWording('Hold <kbd>Space</kbd> to brake')));
+ok('touch-words: the stick and the rudder slider stand in for S, W, Q and E', TW.touchWording('Now pull back gently on <kbd>S</kbd> to fly!') === 'Now ease the stick back gently to fly!' && /rudder slider/.test(TW.touchWording('Keep straight with <kbd>Q</kbd> / <kbd>E</kbd> — lift off at 55 knots')) && /stick forward/.test(TW.touchWording('Too slow! Add power with <kbd>Shift</kbd> and lower the nose with <kbd>W</kbd>')));
+ok('touch-words: a key nobody translated is dropped with its verb, never shown', TW.touchWording('Press <kbd>V</kbd> to drop the crate') === 'Drop the crate' && !/<kbd>/.test(TW.touchWording('Trim nose up (<kbd>7</kbd>)')));
+ok('touch-words: a plain-text key in a toast ("press C", "press Esc", "press I again", "press 7 (or tap the button)") reads as the touch control too', (() => {
+  const lines = ['Cockpit view — press C to look from outside again', 'You hit the sea — press Esc to go back', 'Shut the engine down in flight? Press I again within 3 s', 'He is not looking — press 7 (or tap the button) to squawk 7500', 'Practice stores aboard — press X to drop one', 'Interface restored — press U to hide it again'];
+  const out = lines.map((l) => TW.touchWording(l));
+  return out.every((o) => !/\b(?:press|hold|tap) (?:Shift|Ctrl|Space|Esc|Enter|[A-Z0-9])(?![\w'’])/i.test(o) && !/<kbd>|the controls/.test(o)) && /camera button/.test(out[0]) && /ENGINE again/.test(out[2]) && /^He is not looking — tap the button to squawk 7500$/.test(out[3]) && TW.hasKeyWords('press I again');
+})(), JSON.stringify(['Cockpit view — press C to look from outside again', 'He is not looking — press 7 (or tap the button) to squawk 7500'].map((l) => TW.touchWording(l))));
+ok('touch-words: a line with no key in it is untouched', TW.touchWording('Gear is down') === 'Gear is down' && TW.touchWording('') === '' && TW.touchWording(null) === null);
+const hudSrc = read('src/ui/hud.js');
+ok('hud: the coach line, the toasts, the objective and the taxi strip go through words() (touch wording on .is-touch)', /words\(text\) \{[\s\S]{0,300}touchWording\(t\)/.test(hudSrc) && (hudSrc.match(/this\.words\(/g) || []).length >= 5 && !/text = rekey\(text\);\n    if \(this\.lastValues\.coach/.test(hudSrc));
+ok('menus: the game switcher and credits bar is hidden on the debrief', /if \(this\.bar\) this\.bar\.hidden = name === 'debrief';/.test(read('src/ui/menus.js')));
+ok('touch playtest: the rival study\'s screens are in the device list (740x360, 844x390, 1366x768)', /w: 740, h: 360/.test(read('tests/features/touch-coverage.playtest.mjs')) && /w: 844, h: 390/.test(read('tests/features/touch-coverage.playtest.mjs')) && /w: 1366, h: 768/.test(read('tests/features/touch-coverage.playtest.mjs')));
+
 /* ---------------- report ---------------- */
 
 let fails = 0;

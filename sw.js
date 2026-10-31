@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v76.0';
+const CACHE_VERSION = 'island-flight-v76.1';
 
 const PRECACHE = [
   './',
@@ -521,6 +521,10 @@ const PRECACHE = [
   // Added by tools/sync-precache.mjs.
   'src/features/scp-escape.js',
   'src/game/extra/scp-escape.js',
+  // The Nov 4 demo pass (frame budget, load reliability, touch wording).
+  'src/ui/frame-budget.js',
+  'src/core/load-retry.js',
+  'src/ui/touch-words.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

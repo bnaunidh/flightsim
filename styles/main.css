@@ -150,6 +150,30 @@ html, body {
    game as a near-black sheet, swallowing every click, at all times. */
 .fatal[hidden] { display: none; }
 .fatal h2 { margin: 0 0 10px; }
+/* The load-failure screen (index.html's bootstrap, main.js fatal()): one calm
+   line and a Reload button a thumb can hit — 56 px tall, the card's full
+   width on a phone. */
+.fatal-card { max-width: 420px; width: 100%; }
+.fatal-line { margin: 0 0 18px; color: var(--muted, #9fb2cc); font-size: 16px; line-height: 1.45; }
+.fatal-reload {
+  display: block;
+  width: 100%;
+  min-height: 56px;
+  padding: 14px 28px;
+  margin: 0 auto 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--accent, #7cc7ff);
+  color: #0b1220;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.fatal-reload:hover, .fatal-reload:focus-visible { filter: brightness(1.1); outline: 2px solid #fff; outline-offset: 2px; }
+.fatal-reload:active { transform: translateY(1px); }
 .fatal pre {
   text-align: left;
   max-width: 720px;
@@ -3089,10 +3113,18 @@ html.is-touch-device .slot-clear {
   .minimap-scale { font-size: 8px; bottom: 2px; }
 
   .hud.is-touch .hud-buttons { top: 6px; right: 6px; bottom: auto; gap: 6px; }
+  /*
+   * Three buttons in the dock, not four. The HUD-mode button made it 202 px
+   * wide, and the strip's `right: 162px` below was measured for 150: on a
+   * 390 px phone PAUSE sat on the altitude readout (the rival study,
+   * 2026-10-30). The mode button is in the tray here (hud.js btnHudTray).
+   */
+  .hud.is-touch .hud-buttons > .hud-btn-mode { display: none; }
+  .hud.is-touch .hud-tray .hud-btn-mode-tray { display: flex; }
 
   .hud.is-touch .hud-left {
-    /* The tray is 150px wide sitting at right:6, so the strip has to stop
-       before 219 or it runs underneath it. */
+    /* The dock is 150px wide sitting at right:6 (three 46 px buttons), so
+       the strip has to stop before 228 or it runs underneath it. */
     left: 96px; right: 162px; top: 6px;
     min-width: 0; width: auto;
     display: flex; gap: 6px; justify-content: center; padding: 6px 8px;
@@ -5753,6 +5785,9 @@ html.reduce-motion .menu-layer > .screen:not([hidden]) { animation: none; }
 }
 .hud-btn-mode { position: relative; }
 .hud-btn-mode[data-mode="clean"]::after { display: none; }
+/* The tray's twin of the HUD-mode button: only on an upright phone (the 560 px block). */
+.hud-btn-mode-tray { display: none; }
+.hud-btn-mode-tray::after { right: auto; left: 30px; bottom: 2px; }
 
 /* ---- Photo: only the warnings, the centre lane, the radio and the dock --
    A red pill ("Gear up — low and slow?") is a warning, so it stays. */

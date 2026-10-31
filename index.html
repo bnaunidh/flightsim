@@ -39,18 +39,75 @@
 
   <div id="fatal" class="fatal" hidden></div>
 
-  <script type="module" src="src/main.js"></script>
   <script>
-    // If the module fails to load at all (very old browser, bad path), say so.
-    window.addEventListener('error', function (e) {
-      if (e && e.target && e.target.tagName === 'SCRIPT') {
+    /*
+     * The bootstrap (src/core/load-retry.js says why): the game's modules are
+     * imported here, and a load that fails — one of the hundreds of module
+     * requests dropped on a busy wifi — is tried ONCE more after a short
+     * back-off before anything is said. When both tries fail, the screen
+     * says so in one calm line and gives a big Reload button (touch-sized),
+     * instead of a dead end.
+     *
+     * window.__bootLoad(importer) is the same code with the importer handed
+     * in, so a check can feed it one that fails once, or always
+     * (tests/features/load-retry.browser.js). window.__boot records what
+     * happened on this load.
+     */
+    (function () {
+      var BACKOFF_MS = 600;
+      var RETRIES = 1;
+      var boot = (window.__boot = { attempts: 0, retried: false, failed: false, errors: [] });
+      // Reload asked for on purpose (a Reload button): the flight guard
+      // (main.js 'beforeunload') stands aside, or a broken game would answer
+      // the button with the browser's "Leave site?" box.
+      window.__reloadPage = function () { window.__leavingOnPurpose = true; location.reload(); };
+      function showLoadFailure(err) {
+        boot.failed = true;
         var box = document.getElementById('fatal');
-        if (box) {
-          box.hidden = false;
-          box.innerHTML = '<h2>Could not load the game</h2><p>A game file failed to load. If you are running it from a folder, start a local web server first — see the README in the source ZIP.</p>';
-        }
+        var loading = document.getElementById('loading');
+        if (loading) loading.hidden = true;
+        if (!box) return;
+        box.hidden = false;
+        box.innerHTML =
+          '<div class="fatal-card">' +
+          '<h2>Could not load the game</h2>' +
+          '<p class="fatal-line">A file did not arrive — usually the wifi. Reloading fixes it.</p>' +
+          '<button type="button" class="fatal-reload" data-fatal-reload>Reload</button>' +
+          (location.protocol === 'file:' ? '<p class="tiny">Running from a folder? Start a local web server first — see the README in the source ZIP.</p>' : '') +
+          '</div>';
+        var btn = box.querySelector('[data-fatal-reload]');
+        if (btn) btn.addEventListener('click', function () { window.__reloadPage(); });
+        if (err) boot.errors.push(String((err && err.message) || err));
+        if (window.console && err) console.error('[boot] the game did not load:', err);
       }
-    }, true);
+      window.__showLoadFailure = showLoadFailure;
+      function bootLoad(importer, opts) {
+        var o = opts || {};
+        var retries = o.retries == null ? RETRIES : o.retries;
+        var backoff = o.backoffMs == null ? BACKOFF_MS : o.backoffMs;
+        var state = { attempts: 0, retried: false, failed: false, errors: [] };
+        var record = o.record || boot;
+        function attempt() {
+          state.attempts++;
+          record.attempts = state.attempts;
+          return Promise.resolve().then(importer).catch(function (err) {
+            state.errors.push(String((err && err.message) || err));
+            record.errors = state.errors.slice();
+            if (state.attempts <= retries) {
+              state.retried = record.retried = true;
+              if (window.console) console.warn('[boot] a game file failed to load; trying again…', err);
+              return new Promise(function (r) { setTimeout(r, backoff * state.attempts); }).then(attempt);
+            }
+            state.failed = record.failed = true;
+            if (o.onFail) o.onFail(err); else showLoadFailure(err);
+            throw err;
+          });
+        }
+        return attempt().then(function (m) { record.ok = true; return m; });
+      }
+      window.__bootLoad = bootLoad;
+      bootLoad(function () { return import('./src/main.js'); }).catch(function () { /* said on screen */ });
+    })();
   </script>
 </body>
 </html>

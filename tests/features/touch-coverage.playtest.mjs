@@ -240,7 +240,10 @@ const DEVICES = [
   // A small phone on its side (iPhone 8 / SE): the gap beside the stick is under 300 px, and the
   // sheet used to go above the pads — 43 px off the top of the screen, close button and all.
   { name: 'a small phone on its side', w: 667, h: 375 },
+  // The rival study's three (2026-10-30): the pause button sat on the altitude readout.
+  { name: 'a narrow phone on its side', w: 740, h: 360 },
   { name: 'an iPad', w: 1024, h: 768 },
+  { name: 'a Chromebook with a touchscreen', w: 1366, h: 768 },
 ];
 const shots = arg('shots');
 if (shots) mkdirSync(shots, { recursive: true });
