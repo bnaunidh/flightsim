@@ -52,7 +52,9 @@ Requires a browser with WebGL 2: Chrome, Edge, Firefox, or Safari 16+.
 
 Once installed it runs from your dock or home screen in its own window and works
 with no internet connection at all. The service worker (`sw.js`) caches every
-file on first load, so even without installing, a second visit works offline.
+file during your first visit — it starts once your first flight begins (or after
+half a minute on the menu), so the download never competes with the game loading
+— and from then on a second visit works offline, even without installing.
 
 ---
 

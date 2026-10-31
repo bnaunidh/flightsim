@@ -32,6 +32,22 @@ export class DynamicResolution {
   }
 
   /**
+   * The floor and the thresholds for a tier: Low (and Performance mode) may
+   * go down to half size and reacts a little sooner, so a weak computer
+   * trades sharpness for a steady frame rate before it hitches.
+   */
+  configure(quality, perfMode = false) {
+    const low = quality === 'low' || perfMode;
+    this.min = low ? 0.5 : 0.65;
+    this.slowFps = low ? 30 : 28;
+    this.fastFps = low ? 50 : 55;
+    this.down = low ? 0.15 : 0.1;
+    this.slowRuns = low ? 1 : 2;
+    this.reset();
+    return this;
+  }
+
+  /**
    * One second's frame rate. Returns the new scale, and `changed` says
    * whether it moved (so the renderer is only touched when it did).
    */
@@ -62,5 +78,6 @@ export class DynamicResolution {
 
 /** The pixel-ratio cap for a tier: a school laptop at 1.25, Ultra uncapped to 3. */
 export function pixelRatioCap(quality, dpr = 1) {
-  return Math.min(dpr || 1, quality === 'ultra' ? 3 : quality === 'high' ? 2 : 1.25);
+  // Low is for the computers that cannot afford a pixel more than the screen has: 1 (was 1.25).
+  return Math.min(dpr || 1, quality === 'ultra' ? 3 : quality === 'high' ? 2 : quality === 'low' ? 1 : 1.25);
 }

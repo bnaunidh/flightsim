@@ -121,8 +121,29 @@ export function extLayer() {
   return layerEl;
 }
 
+/*
+ * Installed ids. extInstall used to be called once, after boot, with every
+ * feature already imported. The features are now imported AFTER the menu is
+ * up (main.js: one dynamic import of features/index.js, so a slow connection
+ * reaches the menu in half the bytes), so it is called twice -- once at boot
+ * for the handful main.js imports itself, once when the bundle lands -- and
+ * only the newcomers are installed each time.
+ */
+const installed = new Set();
+let keysWired = false;
+
 export function extInstall(sim) {
-  each('install', (e) => e.install(sim));
+  const newcomers = [];
+  each('install', (e) => {
+    if (installed.has(e.id)) return;
+    installed.add(e.id);
+    newcomers.push(e);
+    e.install(sim);
+  });
+  // An extension with no install() is still "installed" for the late-join bookkeeping below.
+  for (const e of EXTENSIONS) installed.add(e.id);
+  if (keysWired) return newcomers;
+  keysWired = true;
   /*
    * One key listener for all of them, in the CAPTURE phase so it runs before
    * the game's own input. That is what lets a feature take the keys over —
@@ -151,6 +172,54 @@ export function extInstall(sim) {
   };
   window.addEventListener('keydown', onKey(true), true);
   window.addEventListener('keyup', onKey(false), true);
+  return newcomers;
+}
+
+/**
+ * The deferred feature bundle has landed (main.js featuresReady): install the
+ * newcomers, give each its world group in the world that is already standing
+ * (the menu's, or a flight's, if the player took off before the bundle came),
+ * and, when a mode is already running, tell them it started -- the same
+ * three calls a boot-time feature gets, in the same order. Returns the ids.
+ */
+export function extLateJoin(sim, THREE) {
+  const before = new Set(installed);
+  extInstall(sim);
+  // Every extension that was not there before, with or without an install().
+  const newcomers = EXTENSIONS.filter((e) => !before.has(e.id));
+  const ids = newcomers.map((e) => e.id);
+  if (sim && sim.scene && Array.isArray(sim.worldGroups)) {
+    for (const e of newcomers) {
+      if (broken.has(e.id) || typeof e.buildWorld !== 'function') continue;
+      try {
+        const g = new THREE.Group();
+        g.name = `ext:${e.id}`;
+        sim.scene.add(g);
+        sim.worldGroups.push(g);
+        e.buildWorld(sim, g);
+      } catch (err) {
+        broken.add(e.id);
+        console.error(`[ext] "${e.id}" threw in buildWorld() (late join) and has been switched off for this session:`, err);
+      }
+    }
+  }
+  if (sim && sim.mode && (sim.state === 'flying' || sim.state === 'paused')) {
+    for (const e of newcomers) {
+      if (broken.has(e.id) || typeof e.startMode !== 'function') continue;
+      try {
+        e.startMode(sim, sim.mode, sim.modeOpts || {});
+      } catch (err) {
+        broken.add(e.id);
+        console.error(`[ext] "${e.id}" threw in startMode() (late join) and has been switched off for this session:`, err);
+      }
+    }
+  }
+  return ids;
+}
+
+/** For the tests: which extensions have been installed so far. */
+export function extInstalled() {
+  return [...installed];
 }
 
 /** Returns the groups the features built, for the world to dispose later. */

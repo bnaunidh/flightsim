@@ -25,6 +25,7 @@
  */
 
 import { registerExtension } from '../../game/extensions.js';
+import { setAchievementNotes } from './notes.js';
 import * as Store from './store.js';
 import { applyEvent } from './rules.js';
 import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID } from './data.js';
@@ -229,3 +230,7 @@ registerExtension({
 
 /** For the tests and the console. */
 export const __test = { note, ensure, A, openScreen };
+
+// main.js reaches these through ./notes.js (no imports), so the first load
+// does not carry this feature and everything it imports before the menu.
+setAchievementNotes({ noteLiftoff, noteTouchdown, noteArrested, noteCeiling, noteMissionComplete });

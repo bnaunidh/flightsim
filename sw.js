@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v75.7';
+const CACHE_VERSION = 'island-flight-v75.8';
 
 const PRECACHE = [
   './',
@@ -516,6 +516,8 @@ const PRECACHE = [
   // Added by tools/sync-precache.mjs.
   'src/features/dev-console.js',
   'src/aircraft/cockpit/harrison.js',
+  'src/features/achievements/notes.js',
+  'src/render/weak-device.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 
@@ -645,7 +647,7 @@ const OPTIONAL = [
  * when the server says it is unchanged), which is the same freshness
  * guarantee without the second download.
  */
-const PRECACHE_PARALLEL = 4;
+const PRECACHE_PARALLEL = 3;
 
 /** Run `fn` over `items`, at most `n` at a time, in order. */
 async function eachLimited(items, n, fn) {
@@ -726,7 +728,22 @@ self.addEventListener('fetch', (event) => {
    */
   const isCode = /\.(js|css|html|webmanifest)$/.test(url.pathname) || req.mode === 'navigate';
 
-  if (isCode) {
+  /*
+   * ...that was the rule until the Chromebook pass (2026-10-30). Network-first
+   * code meant a REPEAT visit on a slow connection fetched every one of the
+   * ~440 modules again, each racing a 2.5 s timer: on a school Chromebook's
+   * wifi the second visit was as slow as the first, and worse, a module that
+   * lost its race came from the cache while its neighbour came fresh. The
+   * precache belongs to one CACHE_VERSION, activate() deletes every other
+   * cache, and deploy.sh refuses a release whose game files changed without a
+   * new CACHE_VERSION -- so a cached module IS the current module. Code is
+   * cache-first now, like everything else, and the browser's own byte-check of
+   * sw.js on every load (register + update) is what brings a new version in.
+   * A navigation (the page itself) stays network-first with the timer, so a
+   * new release is noticed on the next load and the old shell is still there
+   * when the wire is down.
+   */
+  if (req.mode === 'navigate') {
     event.respondWith(
       (async () => {
         const cache = await caches.open(CACHE_VERSION);
@@ -758,6 +775,7 @@ self.addEventListener('fetch', (event) => {
     (async () => {
       const cache = await caches.open(CACHE_VERSION);
       const hit = await cache.match(req, { ignoreSearch: true });
+      if (hit && isCode) return hit;       // code is pinned by CACHE_VERSION: no refresh, no second download
       if (hit) {
         // Refresh in the background so updates land on the next visit.
         event.waitUntil(

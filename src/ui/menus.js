@@ -1844,6 +1844,10 @@ export class Menus {
           <p class="hint">Auto times a few frames on this computer and picks the level that stays smooth (a school
           laptop gets Low or Medium). Changing the detail level rebuilds the island, which takes a couple of seconds.
           If the frame rate drops, the picture is drawn a little smaller for a while and sharpens again when it recovers.</p>
+          <label class="check check-perf"><input type="checkbox" data-set="performanceMode"><span>Performance mode — for Chromebooks and older laptops</span></label>
+          <p class="hint">Low detail, the picture drawn at the screen's own pixels (down to half size when the frame
+          rate drops) and the minimap redrawn ten times a second. On by itself on a Chromebook or a computer with
+          four cores or 4 GB or less; switch it off to get the detail level back.</p>
           <label class="check"><input type="checkbox" data-set="reduceFlashing"><span>Reduce flashing</span></label>
           <p class="hint">On by default. Keeps lightning, explosions, hits and strobe lights dim and soft, never more
           than three flashes a second, and calms the camera's shake and the engine's buzz in the cockpit — for anyone

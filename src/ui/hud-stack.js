@@ -188,7 +188,8 @@ export class HudStack {
     }
     this.t -= dt;
     if (this.t > 0 && !this.dirty) return;
-    this.t = TICK;
+    // Half as often on a weak computer (lowRate: main.js syncFxTier); a change (dirty) still refreshes at once.
+    this.t = this.lowRate ? TICK * 2 : TICK;
     this.refresh();
   }
 

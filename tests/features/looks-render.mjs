@@ -266,7 +266,7 @@ const SKY = await load('src/world/sky.js');
   d.reset();
   ok('dyn-res: a new tier starts again from full', d.scale === 1 && d.slow === 0);
   ok('dyn-res: junk frame rates are ignored', d.tick(NaN).changed === false && d.tick(0).changed === false && d.scale === 1);
-  ok('pixelRatioCap: a laptop at 1.25, High at 2, Ultra up to 3, never over the screen', D.pixelRatioCap('low', 2) === 1.25 && D.pixelRatioCap('medium', 1) === 1 && D.pixelRatioCap('high', 2) === 2 && D.pixelRatioCap('ultra', 3) === 3 && D.pixelRatioCap('ultra', 2) === 2);
+  ok('pixelRatioCap: Low at 1, Medium at 1.25, High at 2, Ultra up to 3, never over the screen', D.pixelRatioCap('low', 2) === 1 && D.pixelRatioCap('medium', 2) === 1.25 && D.pixelRatioCap('medium', 1) === 1 && D.pixelRatioCap('high', 2) === 2 && D.pixelRatioCap('ultra', 3) === 3 && D.pixelRatioCap('ultra', 2) === 2);
 }
 
 /* 9. the boot probe stays out of the test Chromes ------------------------ */

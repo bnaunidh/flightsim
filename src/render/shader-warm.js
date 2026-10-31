@@ -32,6 +32,44 @@ export function shaderWarmStats() {
 }
 
 /**
+ * three's renderer.compileAsync, minus its one way to throw. Its poll reads
+ * properties.get(material).currentProgram.isReady() every 10 ms, and a
+ * material DISPOSED while it waits (the world rebuilt by the Auto probe or a
+ * detail change, a hangar podium swapped, a skin thrown away) has no program
+ * any more: the poll threw "Cannot read properties of undefined (reading
+ * 'isReady')" from a timer, uncaught, and never resolved -- a console error
+ * on the hangar, and a real skin held hidden for good. Same compile, same
+ * wait; a material with no program left is simply not waited for.
+ */
+export function compileAsyncSafe(renderer, object, camera, scene) {
+  const materials = renderer.compile(object, camera, scene);
+  const props = renderer.properties;
+  if (!materials || typeof materials.forEach !== 'function' || !props) return Promise.resolve(object);
+  return new Promise((resolve) => {
+    const check = () => {
+      for (const m of [...materials]) {
+        let prog = null;
+        try {
+          prog = props.get(m).currentProgram;
+        } catch (e) {
+          prog = null;
+        }
+        let ready = true;
+        try {
+          ready = !prog || typeof prog.isReady !== 'function' || prog.isReady();
+        } catch (e) {
+          ready = true; // a program the driver lost: its first draw compiles it
+        }
+        if (ready) materials.delete(m);
+      }
+      if (materials.size === 0) resolve(object);
+      else setTimeout(check, 10);
+    };
+    check();
+  });
+}
+
+/**
  * Compile the programs of `object` (and everything under it, visible or
  * made visible for the duration) in the background. Resolves true when
  * they are ready, false if the renderer could not.
@@ -46,7 +84,7 @@ export function warmShadersAsync(renderer, object, camera, scene, { show = [] } 
   STATS.pending++;
   let p;
   try {
-    p = Promise.resolve(renderer[fn](object, camera, scene || undefined));
+    p = Promise.resolve(fn === 'compileAsync' && renderer.properties ? compileAsyncSafe(renderer, object, camera, scene || undefined) : renderer[fn](object, camera, scene || undefined));
   } catch (e) {
     p = Promise.reject(e);
   }

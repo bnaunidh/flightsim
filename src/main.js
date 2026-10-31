@@ -14,6 +14,7 @@ import { resetSurfaces, updateSurfaces, setFieldWetness } from './render/surface
 import { PostFX } from './render/post.js';
 import { pickTier, probeFrames, isTier, tierRank, asHighMs } from './render/quality-probe.js';
 import { DynamicResolution, pixelRatioCap } from './render/dyn-res.js';
+import { detectWeakDevice, deviceFacts, PERF_MODE } from './render/weak-device.js';
 import { setPaintTier } from './render/paint.js';
 import { warmShadersAsync, warmShadersChunked } from './render/shader-warm.js';
 import { Weather } from './world/weather.js';
@@ -30,7 +31,7 @@ import { SurfaceVehicle, VEHICLES, setTerrainProbes } from './vehicles/surface.j
 import { DriveInput, DriveCamera, DRIVE_VIEW_LABELS, installDriveTouch } from './vehicles/driving.js';
 import { createBoat, createCar, updateVehicleModel } from './vehicles/models.js';
 // BLENDER MODELS: the helicopter, van and launch from tools/blender/.
-import { preloadVehicleModels } from './vehicles/blender-models.js';
+import { preloadVehicleModels, blenderModelStatus, BLENDER_AIRCRAFT } from './vehicles/blender-models.js';
 import { Ocean } from './world/water.js';
 import { Airport, RUNWAY, refreshRunways } from './world/airport.js';
 import { Scenery, DELIVERY_PAD } from './world/scenery.js';
@@ -99,6 +100,7 @@ import { navField, thresholdOf } from './world/navfield.js';
 import {
   loadSettings,
   saveSettings,
+  hasSavedSettings,
   loadProgress,
   saveProgress,
   recordLanding,
@@ -108,12 +110,22 @@ import {
 import { clamp } from './core/noise.js';
 import { setReduceFlashing, shakeClock } from './render/flash-safety.js';
 import { setComicEffects } from './render/comic.js';
-import { extInstall, extBuildWorld, extUpdate, extCamera, extStartMode, extStop, extensions, extKeyContext, extHudAction, extTouchState } from './game/extensions.js';
+import { extInstall, extLateJoin, extBuildWorld, extUpdate, extCamera, extStartMode, extStop, extensions, extKeyContext, extHudAction, extTouchState } from './game/extensions.js';
 // Every plug-in feature registers itself on import. See ./features/index.js.
-import './features/index.js';
-import { noteLiftoff, noteTouchdown, noteArrested, noteCeiling, noteMissionComplete } from './features/achievements/index.js';
-import { viewScale as airlinerViewScale } from './features/airliners.js';
+/*
+ * THE FEATURES ARE NOT IMPORTED HERE ANY MORE. features/index.js (every
+ * plug-in, in order, and the Story) is one dynamic import in loadFeatures(),
+ * made the moment the menu is up: 1.2 MB of the 2.7 MB (gzipped) a first
+ * visit used to fetch before it could show anything, which on a school
+ * Chromebook's wifi was most of a minute. The three things main.js itself
+ * needs from a feature are below: two features that are cheap and the menu
+ * cannot do without, and the achievement notes through a no-import shim.
+ * Order matters: airport-services before airliners, as features/index.js
+ * has them.
+ */
+import { noteLiftoff, noteTouchdown, noteArrested, noteCeiling, noteMissionComplete } from './features/achievements/notes.js';
 import { __airportServices } from './features/airport-services.js';
+import { viewScale as airlinerViewScale } from './features/airliners.js';
 import { installHeightFog, setHeightFog, heightFogInstalled } from './render/height-fog.js';
 import { bankAt, visibilityAt, densityForVisibility } from './world/wx.js';
 
@@ -224,9 +236,16 @@ function fatal(message, detail) {
   if (loadEl) loadEl.hidden = true;
 }
 
+/** A headless/driven browser (the test suites), unless ?autoq=1 asks to be treated as a player. */
+function automatedBrowser() {
+  return typeof navigator !== 'undefined' && !!navigator.webdriver;
+}
+
 class Game {
   constructor() {
     this.settings = loadSettings();
+    // A weak computer's first boot: Low, Performance mode, no probe (render/weak-device.js).
+    this.applyWeakDeviceDefaults();
     /*
      * The weather's low murk in every material's fog (render/height-fog.js),
      * before the first material is drawn — on Medium and up. A Chromebook on
@@ -248,6 +267,25 @@ class Game {
     this.progress = loadProgress();
     this.state = 'loading';
     this.mode = null;
+    /*
+     * The plug-in features (features/index.js) arrive after the menu is up
+     * (loadFeatures). `featuresReady` resolves when they have installed;
+     * startMode and startDrive wait on it, so a flight never starts without
+     * its traffic, its loading screen and its ATC.
+     */
+    this._featuresIn = false;
+    /*
+     * The player's path: features and the offline copy after the menu. A
+     * driven browser (the test suites) keeps the old order -- every feature
+     * before the menu, the service worker at boot -- unless ?lazyfeatures=1
+     * asks it to take the player's path (tests/features/first-load.browser.js).
+     */
+    this.playerPath = !automatedBrowser() || /[?&]lazyfeatures=1\b/.test(location.search);
+    this.featuresReady = new Promise((resolve) => {
+      this._featuresResolve = resolve;
+    });
+    /** When installOffline() registered the service worker, or null. */
+    this.offlineInstalledAt = null;
     this.clock = new THREE.Clock();
     this._tmpV = new THREE.Vector3();
     this.acc = 0;
@@ -300,8 +338,8 @@ class Game {
     const q = this.settings.quality;
     // Dynamic resolution (render/dyn-res.js): the tier's cap times a scale
     // that drops while the frame rate is low and recovers when it is not.
-    this.dynRes = new DynamicResolution();
-    this.renderer.setPixelRatio(pixelRatioCap(q, window.devicePixelRatio));
+    this.dynRes = new DynamicResolution().configure(q, this.settings.performanceMode);
+    this.renderer.setPixelRatio(this.pixelCap(q));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -340,13 +378,13 @@ class Game {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 60000);
 
-    // BLENDER MODELS: fetched and parsed while the textures paint. Never
-    // rejects; a vehicle whose file fails keeps the model it had before.
-    const blenderModels = preloadVehicleModels();
-    // AIRLINE LETTERING (render/airline-fonts.js): the OFL faces each airline's
-    // name is lettered in, fetched while the textures paint, so the parked
-    // airliners and the first aeroplane are lettered in them first time.
-    const airlineFonts = loadAirlineFonts();
+    // BLENDER MODELS (2.1 MB of .glb) and the AIRLINE LETTERING (230 KB of
+    // fonts) used to be fetched here, before the menu. On a 1.5 Mbps school
+    // connection that alone was 12 s of loading bar for things the first
+    // flight in the Skylark never shows. They are fetched after the menu is
+    // up (loadFeatures); a vehicle built before its file arrives keeps its
+    // built-in model, a name drawn before its face is lettered again when
+    // the face lands (fleet/aircraft-textures.js whenFontsLoaded).
     setLoad(0.04, 'Painting textures…');
     await warmTextures((p, label) => setLoad(0.04 + p * 0.5, `Painting ${label.toLowerCase()}…`));
 
@@ -374,12 +412,16 @@ class Game {
     // The field moved. Tell the modules that cached its height.
     refreshRunways();
     refreshApronElevation();
-    // BLENDER MODELS: in before the world (the apron) and the first aircraft
-    // are built, but a slow disk holds the menu up 1.5 s at most.
-    await Promise.race([blenderModels, new Promise((r) => setTimeout(r, 1500))]);
-    // The lettering likewise, 2 s at most: a name drawn before its face is in
-    // letters itself again when it arrives (fleet/aircraft-textures.js).
-    await Promise.race([airlineFonts, new Promise((r) => setTimeout(r, 2000))]);
+    // Automated browsers (the test suites) get every feature before the menu,
+    // as they always did: 250 suites were written against a menu whose features
+    // are all in. A player gets the menu first (see loadFeatures below);
+    // `?lazyfeatures=1` makes a test browser take the player's path.
+    if (!this.playerPath) {
+      setLoad(0.6, 'Loading the features…');
+      // Import only: the world is not built yet, so the boot's own extInstall
+      // and extBuildWorld below take them in, as they always did.
+      await this.loadFeatures({ lateJoin: false });
+    }
     this.buildWorld(this.settings.quality);
     // The world's programs, compiled in the background behind the loading bar (render/shader-warm.js).
     this.warmShaders(this.scene);
@@ -440,6 +482,7 @@ class Game {
     this.input = new Input(canvas);
     this.hud = new Hud(document.getElementById('ui'), { onAction: (a) => this.hudAction(a) });
     this.syncMinimapClass();
+    this.syncFxTier();
     // On-screen controls, only where there is no keyboard to speak of.
     if (isTouchDevice()) {
       this.touch = new TouchControls(this.hud.wrap, {
@@ -831,6 +874,9 @@ class Game {
     // game: one that throws is switched off, never allowed to stop the loop.
     extInstall(this);
     this.loop();
+    // The rest of the game, now that there is a menu to look at (a no-op on
+    // the test suites' path, where the import above already resolved).
+    this.loadFeatures({ lateJoin: true });
 
     console.info(`[island-flight] build ${BUILD}`);
     // First launch: the intro and the photosensitive seizure warning (ui/safety-intro.js).
@@ -1686,6 +1732,20 @@ class Game {
   }
 
   async startMode(mode, opts = {}) {
+    /*
+     * Not before the features are in. The first call on a slow connection can
+     * come before features/index.js has landed (a Chromebook player who reads
+     * nothing and presses Take off): wait for it, then go through
+     * this.startMode AGAIN -- by then every feature has wrapped it (the
+     * loading screen, the "Start at" picker, the seats), and this inner
+     * method is reached a second time with the features in.
+     */
+    if (!this._featuresIn) {
+      await this.featuresReady;
+      return this.startMode(mode, opts);
+    }
+    // The first flight is when the offline copy starts to fetch (setupPwa says why).
+    this.installOffline('first-flight');
     await this.unlockAudio();
     this.wakeAudio();
     // Whatever you were driving, you are not driving it now. This is here
@@ -1764,6 +1824,13 @@ class Game {
 
     // Which aeroplane. Only Free Flight offers the choice — the tutorial and
     // the missions are written around the trainer's numbers.
+    // The Blender helicopter landed after its built-in stand-in was built
+    // (the vehicles load after the menu): build it again, or setAircraft's
+    // same-type shortcut would keep the stand-in for the whole session.
+    if (this.aircraftType && this.model && BLENDER_AIRCRAFT[this.aircraftType.id] && !this.model.userData.blenderModel) {
+      const st = blenderModelStatus();
+      if (st.enabled !== false && st[BLENDER_AIRCRAFT[this.aircraftType.id]] === 'ready') this.aircraftType = null;
+    }
     this.setAircraft(mode === 'free' ? opts.aircraft || 'skylark' : 'skylark');
     // setAircraft returns early when the type has not changed, so the name is
     // set here as well — otherwise flying the same aeroplane twice in a row
@@ -2865,11 +2932,18 @@ class Game {
      */
     if (path === 'quality') {
       if (value === 'auto') {
+        this.settings.performanceMode = false;
         this.chooseAutoQuality();
         return;
       }
       if (!isTier(value)) return;
       this.settings.qualityAuto = false;
+      // Any tier but Low is a way out of Performance mode too.
+      if (value !== 'low') this.settings.performanceMode = false;
+    }
+    if (path === 'performanceMode') {
+      this.setPerformanceMode(!!value);
+      return;
     }
     /*
      * PAINT PER PLANE (wave 18). 'livery' (Settings → Flying → Airline livery)
@@ -3075,6 +3149,108 @@ class Game {
     }
   }
 
+  /**
+   * The first boot of a weak computer (render/weak-device.js): Low, with
+   * Performance mode on, and no Auto probe. Asked once -- the answer is kept
+   * in settings.weakDevice -- and never of a save that already chose a tier.
+   * `?weak=1` forces it, `?weak=0` skips it (the tests and the harness).
+   */
+  applyWeakDeviceDefaults() {
+    const s = this.settings;
+    const params = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
+    const force = params.get('weak');
+    if (force === '0') return null;
+    if (s.weakDevice !== null && s.weakDevice !== undefined && force !== '1') return null;
+    // Only a first boot (or a save from before this existed that never picked a tier) is asked.
+    if (force !== '1' && hasSavedSettings() && !(s.qualityAuto && !s.qualityAutoPicked)) {
+      s.weakDevice = false;
+      return null;
+    }
+    let det;
+    try {
+      det = force === '1' ? { weak: true, reasons: ['forced'] } : detectWeakDevice(deviceFacts());
+    } catch (e) {
+      det = { weak: false, reasons: [] };
+    }
+    s.weakDevice = det.weak ? det.reasons : false;
+    if (det.weak) {
+      s.performanceMode = true;
+      s.performanceModePrev = 'auto';
+      s.qualityAuto = false;
+      s.qualityAutoPicked = 'low';
+      s.quality = 'low';
+      console.info(`[quality] a weak computer (${det.reasons.join(', ')}): Low with Performance mode, no probe`);
+    }
+    saveSettings(s);
+    return det;
+  }
+
+  /** The pixel ratio for a tier on this screen: pixelRatioCap, and never over 1 in Performance mode. */
+  pixelCap(quality) {
+    const cap = pixelRatioCap(quality, window.devicePixelRatio);
+    return this.settings.performanceMode ? Math.min(cap, PERF_MODE.pixelRatioMax) : cap;
+  }
+
+  /**
+   * Performance mode on: remember the tier (or Auto), go to Low, floor the
+   * resolution at half. Off: back to what it was (Auto probes again).
+   */
+  setPerformanceMode(on) {
+    const s = this.settings;
+    if (on) {
+      if (!s.performanceMode) s.performanceModePrev = s.qualityAuto ? 'auto' : s.quality;
+      s.performanceMode = true;
+      s.qualityAuto = false;
+      s.quality = 'low';
+      saveSettings(s);
+      this.syncFxTier();
+      if (this.dynRes) this.dynRes.configure('low', true);
+      if (this.renderer) this.renderer.setPixelRatio(this.pixelCap('low'));
+      if (this.menus && this.menus.syncSettings) this.menus.syncSettings(s);
+      if (this.hud) this.rebuildQuality('low');
+      return;
+    }
+    if (!s.performanceMode) {
+      saveSettings(s);
+      return;
+    }
+    s.performanceMode = false;
+    const prev = s.performanceModePrev || 'medium';
+    s.performanceModePrev = null;
+    if (prev === 'auto') {
+      saveSettings(s);
+      this.chooseAutoQuality();
+      if (this.menus && this.menus.syncSettings) this.menus.syncSettings(s);
+      return;
+    }
+    s.quality = isTier(prev) ? prev : 'medium';
+    saveSettings(s);
+    this.syncFxTier();
+    if (this.dynRes) this.dynRes.configure(s.quality, false);
+    if (this.renderer) this.renderer.setPixelRatio(this.pixelCap(s.quality));
+    if (this.menus && this.menus.syncSettings) this.menus.syncSettings(s);
+    if (this.hud) this.rebuildQuality(s.quality);
+  }
+
+  /**
+   * The minimap, every frame -- or ten times a second in Performance mode
+   * and on Low (render/weak-device.js PERF_MODE.minimapHz): its canvas is
+   * redrawn on every update, which on a Chromebook is a frame's worth of
+   * 2D work for a picture that does not change in 16 ms.
+   */
+  tickMinimap(dt) {
+    if (!this.minimap) return;
+    const slow = this.settings.performanceMode || (this.qualityBuilt || this.settings.quality) === 'low';
+    if (!slow) {
+      this.minimap.update(dt, this);
+      return;
+    }
+    this._minimapAcc = (this._minimapAcc || 0) + dt;
+    if (this._minimapAcc < 1 / PERF_MODE.minimapHz) return;
+    this.minimap.update(this._minimapAcc, this);
+    this._minimapAcc = 0;
+  }
+
   rebuildQuality(quality) {
     if (quality === this.qualityBuilt) return;
     this.hud.notify('Rebuilding the island…', 'info', 2.5);
@@ -3091,9 +3267,9 @@ class Game {
   applyQualityNow(quality) {
     this.buildWorld(quality);
     this.renderer.shadowMap.enabled = quality !== 'low';
-    // A new world is a new cost: the dynamic resolution starts again from full.
-    if (this.dynRes) this.dynRes.reset();
-    this.renderer.setPixelRatio(pixelRatioCap(quality, window.devicePixelRatio));
+    // A new world is a new cost: the dynamic resolution starts again from full, with the tier's floor.
+    if (this.dynRes) this.dynRes.configure(quality, this.settings.performanceMode);
+    this.renderer.setPixelRatio(this.pixelCap(quality));
     /*
      * And the textures with it.
      *
@@ -3185,6 +3361,13 @@ class Game {
   syncFxTier() {
     // The models read the tier too (the heat haze behind a jet hides below High).
     setModelQuality(this.settings.quality);
+    // The HUD's layout measurements (ui/hud.js updateLanes, ui/hud-stack.js
+    // tick) run at a lower rate on Low and in Performance mode.
+    if (this.hud) {
+      const low = !!this.settings.performanceMode || this.settings.quality === 'low';
+      this.hud.lowRate = low;
+      if (this.hud.stack) this.hud.stack.lowRate = low;
+    }
     if (typeof document === 'undefined' || !document.documentElement) return;
     document.documentElement.classList.toggle('fx-low', this.settings.quality === 'low');
   }
@@ -3790,18 +3973,28 @@ class Game {
         console.info('[sw] new version installed — reloading');
         location.reload();
       });
-      // Boot is async and takes a second or two, so the window 'load' event has
-      // usually already fired by the time we get here — registering on that
-      // event alone means it never happens and offline play silently breaks.
-      const register = () =>
-        navigator.serviceWorker
-          .register('sw.js')
-          .then((reg) => reg.update())
-          .catch((err) => {
-            console.warn('Offline support unavailable:', err);
-          });
-      if (document.readyState === 'complete') register();
-      else window.addEventListener('load', register, { once: true });
+      /*
+       * The registration itself is deferred: installOffline(). The worker's
+       * install fetches the whole game again (the precache, ~520 files), and
+       * on a first visit it used to start the moment the menu was up -- on a
+       * school Chromebook's wifi that is a minute of traffic competing with
+       * the first aeroplane's model, its skin and the fonts. Now it starts
+       * when the first flight starts (the player is busy, the picture is up),
+       * or after half a minute on the menu, or when the browser says it is
+       * idle. Offline play still works from the first visit on; it just does
+       * not fight the first flight for the wire.
+       */
+      if (!this.playerPath) {
+        this.installOffline('boot');
+      } else {
+        this._offlineTimer = setTimeout(() => this.installOffline('menu-idle'), 30000);
+        // ...or when the browser is idle AFTER the features, the vehicles and
+        // the fonts are in (loadFeatures): an idle callback on a bare menu
+        // fires within a second, which is the old "at boot" in disguise.
+        this.featuresReady.then(() => (this._binariesLoading || Promise.resolve())).then(() => {
+          if (typeof requestIdleCallback === 'function') requestIdleCallback(() => this.installOffline('idle'), { timeout: 45000 });
+        });
+      }
     }
 
     // Escape hatch. If a cached copy ever goes wrong, ?reset=1 throws away
@@ -3831,6 +4024,140 @@ class Game {
       this.menus.setInstalled();
     });
     if (window.matchMedia('(display-mode: standalone)').matches) this.menus.setInstalled();
+  }
+
+  /**
+   * Register the service worker (sw.js), once. Called from the first
+   * startMode / startDrive, the menu-idle timer or the idle callback,
+   * whichever is first (setupPwa says why it is not at boot); `why` is for
+   * the console. Safe to call any number of times, and a no-op where there is
+   * no service worker (file://, the native app, ?dev=1).
+   */
+  installOffline(why = 'asked') {
+    if (this.offlineInstalledAt) return this.offlineInstalledAt;
+    if (!/^https?:$/.test(location.protocol)) return null;
+    if (!('serviceWorker' in navigator)) return null;
+    if (new URLSearchParams(location.search).has('dev')) return null;
+    if (this._offlineTimer) {
+      clearTimeout(this._offlineTimer);
+      this._offlineTimer = null;
+    }
+    this.offlineInstalledAt = performance.now();
+    this.offlineInstalledWhy = why;
+    console.info(`[sw] registering the offline copy (${why})`);
+    navigator.serviceWorker
+      .register('sw.js')
+      .then((reg) => reg.update())
+      .catch((err) => {
+        console.warn('Offline support unavailable:', err);
+      });
+    return this.offlineInstalledAt;
+  }
+
+  /**
+   * Import the plug-in features (features/index.js, which pulls the Story
+   * too), install the newcomers into the world that is already standing
+   * (game/extensions.js extLateJoin), and only then fetch the Blender
+   * vehicles and the airline fonts. Resolves featuresReady. Once.
+   */
+  loadFeatures({ lateJoin = true } = {}) {
+    if (this._featuresLoading) return this._featuresLoading;
+    const t0 = performance.now();
+    this._featuresLoading = import('./features/index.js')
+      .then(() => {
+        // Before the menu (the suites' path) the boot installs them itself a
+        // few lines on, with the world; after it, they join the standing one.
+        const ids = lateJoin ? extLateJoin(this, THREE) : [];
+        // Their programs, as the boot's warm did for every feature it built:
+        // a few meshes at a time on the menu, not a compile at first sight in the air.
+        if (ids.length) this.warmLateFeatures(ids);
+        this._featuresIn = true;
+        this.featuresInAt = performance.now();
+        this._featuresResolve();
+        console.info(`[features] ${lateJoin ? ids.length + ' features joined' : 'bundle in'} after ${Math.round(performance.now() - t0)} ms`);
+      })
+      .catch((err) => {
+        // The game flies without its plug-ins rather than not at all.
+        // ...unless the page is already reloading for an update ('controllerchange'), which
+        // cuts the import short: that is the reload doing its job, not an error.
+        if (this._reloadingForUpdate) console.info('[features] the import was cut short by the update reload');
+        else console.error('[features] the feature bundle failed to load; flying without it', err);
+        this._featuresIn = true;
+        this._featuresResolve();
+      })
+      .then(() => {
+        // The big binaries, after the code: neither ever rejects (blender-models.js, airline-fonts.js).
+        const jobs = [];
+        try {
+          /*
+           * Fetched now, PARSED off the flight. Parsing the three .glb files
+           * is a few hundred ms of main thread on this Mac (224 ms in node)
+           * and about a second on a Celeron; before the Chromebook pass it was
+           * part of the loading bar. Now a player on slow wifi who takes off
+           * the moment the features are in would get it as a hitch some
+           * seconds into the first flight -- so the bytes wait for the menu,
+           * a pause or the debrief (offFlight), and the next start that wants
+           * a Blender vehicle gets it (startMode rebuilds the helicopter).
+           */
+          const gate = this.playerPath ? () => this.offFlight() : () => Promise.resolve();
+          jobs.push(
+            preloadVehicleModels({
+              load: (url) =>
+                fetch(url)
+                  .then((res) => {
+                    if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+                    return res.arrayBuffer();
+                  })
+                  .then((buf) => gate().then(() => buf)),
+            })
+          );
+        } catch (e) {
+          /* keeps the built-in vehicles */
+        }
+        try {
+          jobs.push(loadAirlineFonts());
+        } catch (e) {
+          /* keeps the fallback lettering */
+        }
+        this._binariesLoading = Promise.all(jobs).then(() => {
+          this.binariesInAt = performance.now();
+        });
+      });
+    return this._featuresLoading;
+  }
+
+  /**
+   * Compile the programs of the world groups the late features just built
+   * (extLateJoin names them `ext:<id>`). On the suites' path the boot's
+   * warmShaders(this.scene) covered them; the player's path builds them after
+   * that warm, so without this every visible feature object outside the
+   * menu's view compiled on its first frame in the flight. Chunked: on ANGLE
+   * the "async" compile is partly synchronous, and this runs on the menu.
+   * Resolves when all are warm.
+   */
+  warmLateFeatures(ids) {
+    const want = new Set((ids || []).map((id) => `ext:${id}`));
+    const groups = (this.worldGroups || []).filter((g) => g && want.has(g.name));
+    this.lateWarmGroups = groups.length;
+    // One group after another, so no frame waits on more than one chunk.
+    this._lateWarm = groups
+      .reduce((p, g) => p.then(() => (g.parent ? this.warmShaders(g, { chunked: true }) : false)), Promise.resolve())
+      .then(() => {
+        this.lateWarmAt = performance.now();
+        return groups.length;
+      });
+    return this._lateWarm;
+  }
+
+  /**
+   * Resolves when no flight is running (the menu, a pause, the debrief):
+   * where loadFeatures parks the work that would be a hitch in the air.
+   */
+  offFlight() {
+    return new Promise((resolve) => {
+      const check = () => (this.state === 'flying' ? setTimeout(check, 500) : resolve());
+      check();
+    });
   }
 
   async promptInstall() {
@@ -4770,6 +5097,12 @@ class Game {
   }
 
   startDrive(kind = 'boat', opts = {}) {
+    // As startMode: not before the features are in (see there).
+    if (!this._featuresIn) {
+      this.featuresReady.then(() => this.startDrive(kind, opts));
+      return;
+    }
+    this.installOffline('first-drive');
     const spec = VEHICLES[kind] || VEHICLES.boat;
     this.wakeAudio();
     this.menus.hide();
@@ -5598,7 +5931,7 @@ class Game {
          * trip, which for a game about reading the water is the one instrument
          * that had to work.
          */
-        if (this.minimap) this.minimap.update(dt, this);
+        this.tickMinimap(dt);
         // The runner, which this branch used to return before ever reaching —
         // which is why there has never been such a thing as a boat mission or
         // a car job, however many were written.
@@ -6112,7 +6445,7 @@ class Game {
         ac.quat,
         this.camera.position
       );
-      if (this.minimap) this.minimap.update(dt, this);
+      this.tickMinimap(dt);
       if (this.beacon) {
         const wantBeacon = this.state === 'flying' && style !== 'arrow' && this.navGuide.enabled && !this.riding;
         this.beacon.setTarget(wantBeacon ? guideTarget : null);
@@ -6544,7 +6877,7 @@ class Game {
         if (this.dynRes && this.state === 'flying' && !document.hidden) {
           const r = this.dynRes.tick(this.fps);
           if (r.changed) {
-            this.renderer.setPixelRatio(pixelRatioCap(this.qualityBuilt || this.settings.quality, window.devicePixelRatio) * r.scale);
+            this.renderer.setPixelRatio(this.pixelCap(this.qualityBuilt || this.settings.quality) * r.scale);
             console.debug(`[quality] ${this.fps} fps: resolution scale ${r.scale}`);
           }
         }

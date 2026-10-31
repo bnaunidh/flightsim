@@ -1208,7 +1208,11 @@ export class Hud {
     }
     this._laneT = (this._laneT || 0) - dt;
     if (this._laneT <= 0) {
-      this._laneT = 0.5;
+      // Twice a second; in Performance mode and on Low (main.js syncFxTier
+      // sets lowRate) every 1.5 s: a dozen forced layouts fewer a second on a
+      // Chromebook, where the profile showed these rectangles a sixth of the
+      // main thread's time in a climb.
+      this._laneT = this.lowRate ? 1.5 : 0.5;
       this.updateLanes();
     }
   }

@@ -1284,6 +1284,9 @@ button.primary.big { width: 100%; padding: 14px; font-size: 16px; margin-top: 10
 .field input[type='range'] { padding: 0; height: 26px; accent-color: var(--accent); }
 .check { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; font-size: 13.5px; }
 .check input { margin-top: 2px; accent-color: var(--accent); width: 17px; height: 17px; }
+/* Performance mode (Settings > Graphics): the one switch a Chromebook player is sent to, so a finger finds it. */
+.check.check-perf { min-height: 44px; align-items: center; font-weight: 600; }
+.check.check-perf input { margin-top: 0; width: 22px; height: 22px; }
 .hint { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; margin: 4px 0 16px; }
 
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }

@@ -21,6 +21,17 @@ export const DEFAULT_SETTINGS = {
   quality: 'high',
   qualityAuto: true,
   qualityAutoPicked: null,
+  /*
+   * Performance mode (Settings > Graphics; render/weak-device.js): Low plus
+   * a half-size resolution floor, one device pixel per CSS pixel and a
+   * 10 Hz minimap. On by itself at the first boot of a weak computer (a
+   * Chromebook, 4 cores or less, 4 GB or less, an entry GPU), where it also
+   * replaces the Auto probe. `weakDevice` is what that first boot found:
+   * null = not asked yet, false = a capable computer, else the reasons.
+   */
+  performanceMode: false,
+  performanceModePrev: null,
+  weakDevice: null,
   // Which of the five places you are flying. See world/maps.js.
   map: 'kestrel',
   flightMode: 'simplified',
@@ -303,6 +314,11 @@ export function coerceQuality(s, saved) {
   if (s.qualityAuto && s.qualityAutoPicked) s.quality = s.qualityAutoPicked;
   if (!QUALITY_TIERS.includes(s.quality)) s.quality = 'high';
   return s;
+}
+
+/** True when a settings save exists (this is not the first boot). */
+export function hasSavedSettings() {
+  return readRaw(SETTINGS_KEY) != null;
 }
 
 export function loadSettings() {
