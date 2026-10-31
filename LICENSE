@@ -32,9 +32,10 @@ THIRD-PARTY CODE
 SCP FOUNDATION CONTENT
 
   The game has some: the SCP Foundation's Site-91 North on the Nunatak Reach
-  map, its signs and the three-arrows mark on them, and the Class-D transfer
-  mission (src/features/scp-site.js, src/game/extra/scp.js, and the map and
-  outfit entries that go with them — each is marked with this credit:
+  map, its signs and the three-arrows mark on them, the Class-D transfer
+  mission and the Last Flight Out mission (src/features/scp-site.js,
+  src/game/extra/scp.js, src/features/scp-escape.js, src/game/extra/scp-escape.js,
+  and the map and outfit entries that go with them — each is marked with this credit:
   "SCP Foundation content by the SCP Wiki community, CC BY-SA 3.0,
   scpwiki.com"). Anything in the game that is based on the SCP Foundation —
   the names, the articles, the logo, anything taken or adapted from the SCP

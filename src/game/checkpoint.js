@@ -87,6 +87,10 @@ export function whyNot(sim) {
   if (!free) {
     if (!r || r.status !== 'running' || !r.def || !r.def.id) return 'no mission running';
     if (r.def.game === 'story') return 'the story has its own save';
+    // A mission whose whole point is a clock (Last Flight Out's warhead and
+    // breach, game/extra/scp-escape.js): a resume at "the start of the step"
+    // would be a run with no clock to beat. It says so, and starts over.
+    if (r.def.checkpoint === false) return 'this mission restarts from the top';
   }
   const ac = sim.aircraft;
   if (!ac || ac.crashed) return 'crashed';

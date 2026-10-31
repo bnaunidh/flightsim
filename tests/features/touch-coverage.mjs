@@ -77,6 +77,15 @@ for (const id of ids) {
   else if (!text.includes(needle)) unbacked.push(`${id}: ${c.file} has no "${needle}"`);
 }
 ok('every touch row names a file that really builds the control (the id or its needle is in the source)', unbacked.length === 0, unbacked.join('; ') || `${ids.length - desktopOnly.length} rows backed by source`);
+{
+  // Last Flight Out (features/scp-escape.js): closing the ramp is the mission's one decision, so it has a
+  // big round button of its own on a touch screen as well as the card's, and shares the ramp key by design.
+  const row = TOUCH_COVERAGE.lastFlightClose;
+  const lfo = src('src/features/scp-escape.js') || '';
+  ok('Last Flight Out: Close ramp has a feature button in the table, built in its source, 92 px round, with the card\'s own button beside it',
+    !!row && row.via === 'feature' && /lfo-go/.test(lfo) && /\.lfo-go \{[^}]*width: 92px; height: 92px/.test(lfo) && /lfo-btn/.test(lfo) && ACTIONS.lastFlightClose && ACTIONS.lastFlightClose.default[0] === 'Digit6' && ACTIONS.cargoRamp.default.includes('Digit6'),
+    row ? `${row.via}: ${row.where}` : 'no row');
+}
 ok('the desktop-only list is short: the parachute\'s two look keys and the hijack\'s cut-scene skip, nothing else',
   desktopOnly.length <= 3 && desktopOnly.every((id) => ['chuteLookLeft', 'chuteLookRight', 'eventSkip'].includes(id)),
   desktopOnly.join(', '));

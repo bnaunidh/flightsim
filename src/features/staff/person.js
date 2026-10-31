@@ -49,10 +49,12 @@ export const OUTFITS = {
    * community, CC BY-SA 3.0, scpwiki.com.)
    */
   classd: { shirt: 0xf07a1c, trousers: 0xe8701a, shoes: 0x1c1c1c },
+  /** The Site's own staff (features/scp-escape.js): a white coat over grey, grey trousers, dark shoes. */
+  sitestaff: { shirt: 0xe6e9ec, trousers: 0x6a707a, shoes: 0x1c1c1c },
 };
 
 /** Outfits with long sleeves: the forearm is the shirt, not skin. */
-const LONG_SLEEVES = new Set(['pilot', 'police', 'tactical', 'hijacker', 'classd']);
+const LONG_SLEEVES = new Set(['pilot', 'police', 'tactical', 'hijacker', 'classd', 'sitestaff']);
 
 /* ------------------------------------------------------------------ */
 /* Merging parts into one vertex-coloured geometry                      */

@@ -20,6 +20,16 @@
  *   3. A lightning strike with Reduce flashing on changes no more than
  *      LIGHTNING_MAX of the screen by WCAG's 0.10 beyond what the same two
  *      seconds change without one.
+ *   4. Last Flight Out's worst frames (src/features/scp-escape.js): the
+ *      warhead going off 5.5 km from the aeroplane, seen from the air with
+ *      the Site in view — measured like the lightning strike, against the
+ *      same two seconds of the same night sky without it (the night sky over
+ *      Nunatak measures 2.4% on its own, aurora and cloud, warhead or no
+ *      warhead; the probe said so to the pixel): the dome and the column add
+ *      under FLICKER_MAX of flicker, under WCAG_WINDOW_MAX of WCAG flashing
+ *      and under LIGHTNING_MAX of full-screen swing. And the apron with every
+ *      sector gone dark and the red lamps pulsing, under the places' own
+ *      limits.
  *
  * WHY THESE NUMBERS. After the fix the four places measure 0.03-0.10% (the
  * cockpit about 0.2%): what is left is a ship's deck markings at 11 km and
@@ -114,6 +124,68 @@ export async function check(sim, r, say = () => {}) {
     const extra = struck.swingArea - calm.swingArea;
     r.ok(`flicker: with Reduce flashing a lightning strike swings under ${pct(LIGHTNING_MAX)} of the screen by WCAG's 0.10`, extra <= LIGHTNING_MAX,
       `${pct(extra)} more than the same sky without one (${pct(struck.swingArea)} vs ${pct(calm.swingArea)})`);
+
+    /* ---- 4. Last Flight Out's worst frames ---- */
+    say('flicker: Last Flight Out, the warhead from the air');
+    const Esc = await load('../../src/features/scp-escape.js');
+    const THREE = await load('../../src/vendor/three.module.js');
+    if (Esc.__error || THREE.__error) {
+      r.ok('flicker: Last Flight Out loads', false, Esc.__error || THREE.__error);
+    } else {
+      sim.autoPauseOnHide = false;
+      // The same place twice: 5.5 km out, turned to face the Site so the dome is in the picture, the chase view
+      // behind, the aeroplane holding its velocity (the flight model set aside, as the places above are measured).
+      const place = async () => {
+        if (sim.state !== 'menu') sim.quitToMenu('main');
+        await sim.startMode('mission', { id: 'last-flight', seed: 7 });
+        const ac = sim.aircraft;
+        const c = T.MAP.scp;
+        const px = c.cx - 3900;
+        const pz = c.cz + 3900;
+        const hdg = (Math.atan2(c.cx - px, -(c.cz - pz)) * 180) / Math.PI;
+        ac.reset({ pos: new THREE.Vector3(px, 0, pz), headingDeg: hdg, speed: 90, altAGL: 700, engineOn: true, gearDown: false });
+        sim.rig.setMode('chase');
+        sim.override = { pitch: 0, roll: 0, yaw: 0, throttle: 0.7 };
+        const own = Object.prototype.hasOwnProperty.call(ac, 'update') ? ac.update : null;
+        ac.update = function steady(dt) { this.pos.addScaledVector(this.vel, dt); };
+        sim._flickerRestore = () => { if (own) ac.update = own; else delete ac.update; sim._flickerRestore = null; };
+        sim.step(1);
+      };
+      await place();
+      const calmSky = await P.measure(sim, { frames: 60, fps: 30, raycast: false });
+      sim._flickerRestore();
+      await place();
+      Esc.__escape.detonateIn(0.3);
+      const blast = await P.measure(sim, { frames: 60, fps: 30, raycast: false });
+      const st = Esc.escapeState();
+      r.ok('flicker: Last Flight Out — the warhead went during the two seconds measured (the dome, the column)', !!(st && st.blast), st ? `blast ${!!st.blast}` : 'no run');
+      const extraPerc = blast.percArea - calmSky.percArea;
+      const extraWcag = blast.wcagWindow - calmSky.wcagWindow;
+      const extraSwing = blast.swingArea - calmSky.swingArea;
+      r.ok(`flicker: Last Flight Out — the warhead from 5.5 km adds under ${pct(FLICKER_MAX)} of flicker to the same night sky without it`, extraPerc <= FLICKER_MAX,
+        `${pct(extraPerc)} more (${pct(blast.percArea)} vs ${pct(calmSky.percArea)} — the sky's own, aurora and cloud)`);
+      r.ok(`flicker: Last Flight Out — the warhead adds under ${pct(WCAG_WINDOW_MAX)} of WCAG flashing in any 10-degree field`, extraWcag <= WCAG_WINDOW_MAX,
+        `${pct(extraWcag)} more (${pct(blast.wcagWindow)} vs ${pct(calmSky.wcagWindow)})`);
+      r.ok(`flicker: Last Flight Out — with Reduce flashing the dome swings under ${pct(LIGHTNING_MAX)} of the screen by WCAG's 0.10 (no full-screen white)`, extraSwing <= LIGHTNING_MAX,
+        `${pct(extraSwing)} more (${pct(blast.swingArea)} vs ${pct(calmSky.swingArea)})`);
+      sim._flickerRestore();
+      sim.override = null;
+      sim.quitToMenu('main');
+
+      say('flicker: Last Flight Out, the dark apron');
+      await sim.startMode('mission', { id: 'last-flight', seed: 7 });
+      Esc.__escape.loseThrough(5);
+      sim.rig.setMode('chase');
+      sim.override = { pitch: 0, roll: 0, yaw: 0, throttle: 0, brakes: 1 };
+      sim.step(3);
+      const apron = await P.measure(sim, { frames: 60, fps: 30, raycast: false });
+      const st2 = Esc.escapeState();
+      r.ok('flicker: Last Flight Out — every sector dark on the apron, the red lamps pulsing', !!st2 && st2.lost === 6 && st2.lamps.every((l) => l.lost), st2 ? `${st2.lost} lost` : 'no run');
+      r.ok(`flicker: Last Flight Out — the dark apron: under ${pct(FLICKER_MAX)} of the screen flickers`, apron.percArea <= FLICKER_MAX, `${pct(apron.percArea)}, worst window ${pct(apron.percWindow)}`);
+      r.ok(`flicker: Last Flight Out — the dark apron: WCAG flashing under ${pct(WCAG_WINDOW_MAX)} of any 10-degree field`, apron.wcagWindow <= WCAG_WINDOW_MAX, `${pct(apron.wcagWindow)} (area ${pct(apron.wcagArea)})`);
+      sim.override = null;
+      sim.quitToMenu('main');
+    }
   } catch (e) {
     r.ok('flicker: the probe ran', false, String((e && e.stack) || e).slice(0, 400));
   } finally {

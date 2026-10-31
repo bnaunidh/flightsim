@@ -43,6 +43,7 @@ import './staff.js';
 // Nunatak Reach's Site and ice (SCP Foundation content, CC BY-SA 3.0 — see LICENSE): the compound, the
 // ice sheets, the de-icing truck, and the Class-D transfer's people (staff/person.js figures).
 import './scp-site.js';
+import './scp-escape.js';
 import './maps-retired.js';
 import './flight-events.js';
 import './multiplayer.js';

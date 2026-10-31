@@ -30,6 +30,7 @@ import { check as fighters } from './fighters.browser.js';
 import { check as cockpits } from './cockpits.browser.js';
 import { check as fire } from './fire.browser.js';
 import { check as scpSnow } from './scp-snow.browser.js';
+import { check as scpEscape } from './scp-escape.browser.js';
 import { check as fun } from './fun.browser.js';
 import { check as smokeClouds } from './smoke-clouds.browser.js';
 import { check as instruments } from './instruments.browser.js';
@@ -219,6 +220,9 @@ export const CHECKS = [
   // After maps-kit-b (it borrows a map too, and puts it back): the snow lane — Nunatak Reach, the
   // ice under the wheels, the Site and the Class-D transfer, flown start to finish.
   { id: 'scp-snow', check: scpSnow },
+  // After scp-snow (the same borrowed map): Last Flight Out — the containment-breach evacuation,
+  // boarding, the ramp closed, the warhead behind you, the landing at Caribou, its own debrief.
+  { id: 'scp-escape', check: scpEscape },
   // The map loading screen, about three seconds, in front of every way into a map. It switches
   // itself on for its own checks (the suite runs with it off) and puts the map back.
   { id: 'loading-screens', check: loadingScreens },

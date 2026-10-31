@@ -91,6 +91,7 @@ export const MISSION_AIRCRAFT = {
   'afo-normal': { fly: ['b747'], why: 'Air Force One: the president\'s 747.' },
   'afo-attack': { fly: ['b747'], why: 'Air Force One: the president\'s 747.' },
   'classd-transfer': { fly: ['c17'], why: 'The C-17: the Class-D and their guards walk up the rear ramp.' },
+  'last-flight': { fly: ['c17'], why: 'The C-17: forty people and their carts board up the rear ramp, and it takes off from the ice.' },
 };
 
 function entryOf(def) {

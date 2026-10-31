@@ -168,7 +168,7 @@ export const CREDITS_HTML = `
     credit (thankdapro). Anyone may use it, copy it, change it, share it and build on it, in Roblox games and
     assets too, <strong>with credit to thankdapro</strong>. The plain-language licence is the <code>LICENSE</code>
     file in the source. The bundled three.js library stays under its own MIT licence.</p>
-    <p class="credit-scp">Any SCP Foundation-based content (the Site on Nunatak Reach and the Class-D transfer) is CC BY-SA 3.0
+    <p class="credit-scp">Any SCP Foundation-based content (the Site on Nunatak Reach, the Class-D transfer and Last Flight Out) is CC BY-SA 3.0
     by the SCP Wiki community (<a href="https://scpwiki.com" target="_blank" rel="noopener">scpwiki.com</a>), not under the game licence.</p>
     <p class="credit-inspired">Inspired by PTFS (Pilot Training Flight Simulator) and the Google Earth flight simulator.</p>
     <p class="credit-parody">All airlines are parody and not affiliated with any real company.</p>

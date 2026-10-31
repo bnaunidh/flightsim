@@ -87,6 +87,9 @@ const S = {
   /** The Class-D transfer's people, while any are out. */
   transfer: null,
   built: false,
+  /** The Last Flight Out (features/scp-escape.js): the gate held open for its people, and the Site's lamps scaled 0..1 as its sectors go dark. */
+  gateHold: false,
+  lightScale: 1,
 };
 
 /* ------------------------------------------------------------------ */
@@ -809,7 +812,7 @@ export function transferStand() {
 }
 
 /** World point at body (x right, z aft) of an aeroplane standing at (px, pz) facing headingDeg. */
-function bodyPoint(px, pz, headingDeg, bx, bz) {
+export function bodyPoint(px, pz, headingDeg, bx, bz) {
   const h = (headingDeg || 0) * D2R;
   const fx = Math.sin(h);
   const fz = -Math.cos(h);
@@ -980,7 +983,7 @@ export function rampOf(sim) {
 }
 
 /** Height of a walker at (x, z) on the ramp (up from its foot to the hinge) or in the hold, from the ramp's geometry. */
-function rampHeight(geom, x, z) {
+export function rampHeight(geom, x, z) {
   const ax = geom.hinge.x - geom.foot.x;
   const az = geom.hinge.z - geom.foot.z;
   const L2 = ax * ax + az * az || 1;
@@ -1111,7 +1114,7 @@ function stepGate(dt) {
   const arm = S.gateArm;
   if (!arm) return;
   const T = S.transfer;
-  const want = T && T.via && T.phase === 'walking' ? 1.45 : 0;
+  const want = (T && T.via && T.phase === 'walking') || S.gateHold ? 1.45 : 0;
   const cur = arm.rotation.z;
   const step = 0.75 * dt;
   arm.rotation.z = Math.abs(want - cur) <= step ? want : cur + Math.sign(want - cur) * step;
@@ -1169,6 +1172,8 @@ function reset() {
   S.saidIce = false;
   S.offIceFor = 0;
   S.sirenT = 1.5;
+  S.gateHold = false;
+  S.lightScale = 1;
 }
 
 registerExtension({
@@ -1202,6 +1207,8 @@ registerExtension({
   stop() {
     endWalk();
     S.saidIce = false;
+    S.gateHold = false;
+    S.lightScale = 1;
   },
 
   update(sim, dt) {
@@ -1212,13 +1219,15 @@ registerExtension({
       // Searchlights: a slow sweep, each on its own phase. Brighter after dark.
       for (const s of S.sweeps) s.pivot.rotation.y = s.base + Math.sin(S.t * 0.18 + s.phase) * s.span;
       // Faint by day, a soft cone after dark (0.16 read as a solid white slab).
-      if (S.beamMat) S.beamMat.opacity = 0.025 + night * 0.075;
-      for (const m of S.nightMats) m.emissiveIntensity = 0.15 + night * 1.6;
+      // Scaled by the escape's sector losses (setSiteLights): a dimming, never a flash.
+      const ls = S.lightScale;
+      if (S.beamMat) S.beamMat.opacity = (0.025 + night * 0.075) * ls;
+      for (const m of S.nightMats) m.emissiveIntensity = (0.15 + night * 1.6) * ls;
       // The mast lamp: a slow pulse, 2.6 s round, never a flash — and
       // dimmer still with Reduce flashing on, like every beacon.
       if (S.beaconMat) {
         const cap = FLASH.reduce ? CAPS.strobe : 1;
-        S.beaconMat.opacity = (0.35 + 0.55 * (0.5 + 0.5 * Math.sin(S.t * 2.4))) * (0.5 + 0.5 * cap);
+        S.beaconMat.opacity = (0.35 + 0.55 * (0.5 + 0.5 * Math.sin(S.t * 2.4))) * (0.5 + 0.5 * cap) * Math.max(0.35, ls);
       }
       for (const f of S.fogs) {
         f.mesh.position.x = f.x + Math.sin(S.t * 0.07 + f.phase) * 18;
@@ -1332,6 +1341,33 @@ export function beginHandover(sim) {
 /** Take the people away (a mission ending early). */
 export function clearTransfer() {
   endWalk();
+}
+
+/* ---- for the Last Flight Out (features/scp-escape.js) ---- */
+
+/** The group the Site is built in (where the escape puts its people and lamps), or null. */
+export function siteGroup() {
+  return S.built ? S.group : null;
+}
+
+/** Hold the gate's barrier up (people streaming through it) or let it down. */
+export function holdGateOpen(on) {
+  S.gateHold = !!on;
+}
+
+/**
+ * Scale the Site's own lamps, floodlights and searchlight beams, 0 (dark) to
+ * 1 (as built). A smooth dimming driven by the caller every frame: the breach
+ * puts the compound's sectors out one by one, and the strip's floodlights
+ * last. Never a flash — the lamps only ever go down, over seconds.
+ */
+export function setSiteLights(k) {
+  S.lightScale = Math.max(0, Math.min(1, Number.isFinite(k) ? k : 1));
+}
+
+/** The lamp scale as it stands (for the tests). */
+export function siteLightScale() {
+  return S.lightScale;
 }
 
 /** For the tests: the things the Site built, by name. */

@@ -316,8 +316,8 @@ copy, change, share and build on the game — in Roblox games and assets too —
 Bundled three.js (`src/vendor/three.module.js`) remains under its own **MIT**
 licence; the full text is in `src/vendor/three.LICENSE`.
 
-Any SCP Foundation-based content (the Site on Nunatak Reach and the Class-D
-transfer mission) is **CC BY-SA 3.0** by the SCP Wiki community
+Any SCP Foundation-based content (the Site on Nunatak Reach, the Class-D
+transfer mission and the Last Flight Out mission) is **CC BY-SA 3.0** by the SCP Wiki community
 ([scpwiki.com](https://scpwiki.com)), not under the game licence.
 
 Inspired by PTFS (Pilot Training Flight Simulator) and the Google Earth flight

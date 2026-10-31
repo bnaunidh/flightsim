@@ -10,5 +10,7 @@ import { MISSIONS as FIRE } from './fire.js';
 import { MISSIONS as AFO } from './afo.js';
 // The Class-D transfer on Nunatak Reach (SCP Foundation content, CC BY-SA 3.0 — see LICENSE).
 import { MISSIONS as SCP } from './scp.js';
+// Last Flight Out: the containment-breach evacuation (SCP Foundation content, CC BY-SA 3.0 — see LICENSE).
+import { MISSIONS as SCP_ESCAPE } from './scp-escape.js';
 
-export const EXTRA_MISSIONS = [...EVENTS, ...METEOR, ...FIRE, ...AFO, ...SCP];
+export const EXTRA_MISSIONS = [...EVENTS, ...METEOR, ...FIRE, ...AFO, ...SCP, ...SCP_ESCAPE];

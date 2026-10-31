@@ -120,6 +120,7 @@ export const TOUCH_COVERAGE = Object.freeze({
   wingsBack: feature('src/features/swing-wing.js', 'the Lancer\'s wing-sweep panel: tap back', 'ui.kb'),
   wingsForward: feature('src/features/swing-wing.js', 'the Lancer\'s wing-sweep panel: tap forward', 'ui.kf'),
   cargoRamp: feature('src/features/cargo-ramp.js', 'the OPEN RAMP pad the airlifters add to the pads', 'ramp-pad'),
+  lastFlightClose: feature('src/features/scp-escape.js', 'Last Flight Out: the big round CLOSE RAMP button on a touch screen, and the card\'s own', 'lfo-go'),
   // The cockpit camera (features/cockpit-cam.js): a finger on the picture looks anywhere, two pinch to zoom.
   camLookLeft: { via: 'drag', where: 'a finger dragged on the picture looks round (left, right, back, up, down at the panel)', file: 'src/flight/input.js', needle: '_onLookMove' },
   camLookRight: { via: 'drag', where: 'a finger dragged on the picture looks round', file: 'src/flight/input.js', needle: '_onLookMove' },
