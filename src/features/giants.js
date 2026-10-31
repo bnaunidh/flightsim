@@ -25,8 +25,8 @@ import { AIRPORTS as WORLD_FIELDS, departure as worldDeparture } from '../world/
  * "Gateway International (3,800 m)": the maps anyone can pick whose main
  * runway is long enough, longest first, at most two — read off the map list,
  * so a long-runway map added later (the real-world ones) is named without
- * this file being touched. The military maps are left out: they are behind
- * the passcode.
+ * this file being touched. The military maps are left out: they are the
+ * military fields' own.
  */
 export function longRunwayWords(need = 2000) {
   const len = (m) => (m && m.airport && m.airport.runway && m.airport.runway.length) || 0;

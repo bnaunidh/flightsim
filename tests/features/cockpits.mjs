@@ -50,6 +50,7 @@ global.document = {
   body: { appendChild() {} },
 };
 
+import { readFileSync } from 'node:fs';
 const SRC = new URL('../../src/', import.meta.url).href;
 const THREE = await import(SRC + 'vendor/three.module.js');
 const { AIRCRAFT, getAircraft } = await import(SRC + 'aircraft/types.js');
@@ -1184,6 +1185,122 @@ for (const [id, band] of Object.entries(VIEW_BANDS).filter(([i]) => !ONLY || ONL
     console.warn = warn;
   }
   ok('a light builder that throws falls back to the generic cockpit', c && c.userData.builder === 'generic');
+}
+
+/* ------------------------------------------------------------------ *
+ * 13. The broken-cockpit pass (GM's audit, 2026-10-27; fixed 2026-10-30).
+ * Each of these failed on v75.5.
+ * ------------------------------------------------------------------ */
+{
+  // Section 12 left a deliberately broken light builder registered: the real one back.
+  const { buildLightCockpit } = await import(SRC + 'aircraft/cockpit/light.js');
+  CP.registerCockpitBuilder('light', buildLightCockpit, { name: 'light' });
+  const byName = (cockpit, re) => {
+    const out = [];
+    cockpit.traverse((o) => { if (o.isMesh && re.test(o.name || '')) out.push(o); });
+    return out;
+  };
+  // T-Pose Harrison: a view of his own — the visor readout and his arms —
+  // not the generic box eject.js then hid.
+  {
+    const b = CP.builderFor(getAircraft('tpose'));
+    ok("tpose: the 'none' family has its own builder (harrison)", !!b && b.name === 'harrison', b && b.name);
+    const { cockpit } = seated('tpose');
+    ok('tpose: built by it, with a HUD that paints and no room round it',
+      String(cockpit.userData.builder) === 'harrison:tpose' && cockpit.userData.displays && cockpit.userData.displays.length === 1 && cockpit.userData.hud && cockpit.userData.hud.hud === true
+        && byName(cockpit, /panel|glareshield|seat|floor|wall|frame/).length === 0, cockpit.userData.builder);
+    ok('tpose: his two arms are in the picture, out to each side', byName(cockpit, /forearm/).length === 2 && byName(cockpit, /hand/).length === 2);
+    const eject = readFileSync(new URL('../../src/features/eject.js', import.meta.url), 'utf8');
+    ok('tpose: eject.js hides his head from inside, not his cockpit', /rig\.head\.visible = !inside/.test(eject) && !/sim\.cockpit\.visible = false/.test(eject));
+  }
+  // The Q400's overhead panel reads the right way up: the texture's top row
+  // on the aft edge of the panel (the higher edge in the picture).
+  {
+    const { cockpit } = seated('q400');
+    const oh = byName(cockpit, /^overhead panel$/)[0];
+    let frontV = null;
+    let aftV = null;
+    if (oh) {
+      const pos = oh.geometry.attributes.position;
+      const uv = oh.geometry.attributes.uv;
+      let zMin = Infinity; let zMax = -Infinity;
+      for (let i = 0; i < pos.count; i++) { zMin = Math.min(zMin, pos.getZ(i)); zMax = Math.max(zMax, pos.getZ(i)); }
+      for (let i = 0; i < pos.count; i++) {
+        if (Math.abs(pos.getZ(i) - zMin) < 1e-6) frontV = uv.getY(i);
+        if (Math.abs(pos.getZ(i) - zMax) < 1e-6) aftV = uv.getY(i);
+      }
+    }
+    ok('q400: the overhead panel is textured top-aft (not upside down / mirrored from the seat)', !!oh && frontV === 0 && aftV === 1, `front v ${frontV}, aft v ${aftV}`);
+  }
+  // The Meridian's centre post is a post: the interior frame band is capped.
+  {
+    const { cockpit } = seated('meridian');
+    const deck = cockpit.userData.deck;
+    ok('meridian: built as a flight deck on its own hull', String(cockpit.userData.builder) === 'airliner:meridian' && deck && deck.source === 'hull', cockpit.userData.builder);
+    const src = readFileSync(new URL('../../src/aircraft/cockpit/flightdeck.js', import.meta.url), 'utf8');
+    ok('meridian: a civil hull\'s frame band is capped at 2 cm from inside', /Math\.min\(q\.frame, 0\.02 \/ k\)/.test(src));
+  }
+  // The 787's and the C-17's HUD hangs on a short bracket from a unit just over it, not a rod to the ceiling.
+  for (const id of ['b787', 'c17']) {
+    const { cockpit } = seated(id);
+    const hud = cockpit.userData.hud;
+    const br = hud && hud.userData && hud.userData.bracket;
+    ok(`${id}: the HUD bracket is short (≤ 25 cm), the unit within 35 cm of the combiner's middle (not a rod to the ceiling)`,
+      !!br && br.armLen <= 0.25 && br.unitAbove < 0.35, br ? `arm ${br.armLen.toFixed(3)} m, unit ${br.unitAbove.toFixed(2)} m over the combiner` : 'no bracket');
+  }
+  // Massimo's rails are dark trim, not racing red.
+  {
+    const { cockpit } = seated('massimo');
+    const cn = cockpit.userData.canopy || {};
+    const isRed = (hex) => ((hex >> 16) & 255) > 128 && ((hex >> 8) & 255) < 80;
+    ok('massimo: the sill rails are not red bars across the bottom of the view', Number.isInteger(cn.rail) && !isRed(cn.rail), `rail #${(cn.rail || 0).toString(16)}`);
+    ok('massimo: the rear arch keeps the racing red', Number.isInteger(cn.frame) && isRed(cn.frame), `frame #${(cn.frame || 0).toString(16)}`);
+  }
+  // The Chinook's and the Black Hawk's screens sit on the panel, inside the hood.
+  for (const id of ['ch47', 'uh60', 'ah64']) {
+    const { cockpit } = seated(id);
+    const panel = cockpit.userData.panel;
+    const screens = (cockpit.userData.displays || []).filter((d) => /PFD|ND/.test(d.name));
+    const halfW = panel && panel.width ? panel.width / 2 : null;
+    const outside = halfW == null ? screens : screens.filter((d) => Math.abs(d.mesh.position.x) + 0.06 > halfW + 1e-6);
+    ok(`${id}: the PFD and the ND are inside the hood (half-width ${halfW && halfW.toFixed(2)} m)`, screens.length === 2 && outside.length === 0, screens.map((d) => `${d.name} ${d.mesh.position.x.toFixed(2)}`).join(', '));
+  }
+  // The light aeroplanes' sun visors: tinted, see-through, flush under the roof.
+  for (const id of ['skylark', 'courier']) {
+    const { cockpit } = seated(id);
+    const vi = cockpit.userData.visors;
+    ok(`${id}: the sun visors are tinted and see-through, flush under the roof, not a grey block`, !!vi && vi.count === 2 && vi.transparent && vi.opacity < 0.7 && !vi.textured && vi.underRoof <= 0.015, JSON.stringify(vi));
+  }
+  // The real skin arrives late: main.js rebuilds the cockpit over it.
+  {
+    const main = readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8');
+    ok('main.js watches the real skin (onRealSkin) and rebuilds the cockpit when it lands', /watchRealSkin\(model\)/.test(main) && /onRealSkin = \(\) =>/.test(main) && /remountCockpit\(\)/.test(main) && (main.match(/this\.watchRealSkin\(this\.model\)/g) || []).length >= 2);
+  }
+  // ...and a real skin's glass and frames are carved like any wall, while the
+  // procedural exterior's (on the room's own openings) are kept.
+  {
+    const { carveExterior } = await import(SRC + 'aircraft/cockpit/kit.js');
+    const model = new THREE.Group();
+    const own = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshBasicMaterial());
+    own.name = 'windscreen glass';
+    own.position.x = -0.95; // across the room's edge: kept, because it is on the room's own opening
+    model.add(own);
+    const skin = new THREE.Group();
+    skin.name = 'Real model';
+    skin.userData.realModel = 'b737';
+    const theirs = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshBasicMaterial());
+    theirs.name = 'cockpit glass';
+    skin.add(theirs);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshBasicMaterial());
+    post.name = 'window frame';
+    post.position.x = 0.95; // across the edge too: carved, because it is the skin's, not the room's
+    skin.add(post);
+    model.add(skin);
+    const box = new THREE.Box3(new THREE.Vector3(-1, -1, -1), new THREE.Vector3(1, 1, 1));
+    const cut = carveExterior(model, box, (o) => /glass|frame/i.test(o.name));
+    ok('a real skin\'s glass and frames inside the room are hidden or cut; the procedural exterior\'s glass is kept',
+      cut.hidden.includes(theirs) && (cut.hidden.includes(post) || post.userData.carved) && !cut.hidden.includes(own) && !own.userData.carved, `hidden ${cut.hidden.map((o) => o.name).join(', ')}; carved ${cut.carved}`);
+  }
 }
 
 const failed = results.filter((r) => !r.pass);

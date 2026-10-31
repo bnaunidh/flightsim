@@ -53,31 +53,13 @@ export const UNLOCKS = [
  */
 const FREE = ['skylark', 'courier', 'harrier'];
 
-/**
- * Military aircraft sit behind a passcode.
- *
- * This was the class's own idea, and it is a good one: they wanted the
- * military side gated so it is not simply there for anyone who opens the game.
- * It is not a security measure — anyone can read this file — it is a door, so
- * that flying the bomber is a thing you were let into rather than a thing you
- * wandered into. Whoever runs the game decides who gets told the word.
- *
- * Typed case-insensitively: upper or lower case opens the same door.
- *
- * It opens ONCE. `militaryUnlocked` lives in the saved progression and is
- * never cleared — not by finishing, not by crashing, not by "Reset
- * everything", which only touches settings, keys and mission progress. Being
- * let in is a thing that happened to you, not a score you can lose, so the
- * game must never make a kid go and ask for the word a second time.
- *
- * The word itself is NOT in this file any more: only its fingerprint is —
- * SHA-256 of the word trimmed and lower-cased, the same scheme as the hangar's
- * CODES below (codeHash) — so reading the source no longer hands anyone the
- * door. Whoever was told the word types it exactly as before. To change it:
- * `node tools/hash-code.mjs --passcode=military`, type the new word, and
- * paste the printed line here.
+/*
+ * Military aircraft are NOT behind a passcode any more (owner, 2026-10-30:
+ * "remove military code, we dont need it"). This ChatGPT build shares its
+ * save with the main game (same localStorage key), and the main game drops the
+ * old `militaryUnlocked` flag, so this copy opens the military side too:
+ * needsPasscode() is always false and the hangar's military box is gone.
  */
-export const MILITARY_CODE_HASH = '3ec50afbd4c5890ffe3fbab91c62d1fdc58d192f6b88b85be4bc9065a443889b';
 
 /**
  * Dev mode.
@@ -90,8 +72,7 @@ export const MILITARY_CODE_HASH = '3ec50afbd4c5890ffe3fbab91c62d1fdc58d192f6b88b
  * classroom of twenty-nine and hoping nobody notices, or not being able to see
  * the work in the real game at all. Neither is any good.
  *
- * Same rules as the military code: case-insensitive, opens once, stays open.
- * Same scheme as the military door: only the fingerprint lives here
+ * Case-insensitive, opens once, stays open. Only the fingerprint lives here
  * (`node tools/hash-code.mjs --passcode=dev` makes a new one).
  */
 export const DEV_CODE_HASH = 'a78f8128f2109434daf14d867c665d97a242909409b29bc0a965111d8a4a9f80';
@@ -111,7 +92,6 @@ function blank() {
   return {
     credits: 0,
     earned: 0, // lifetime, which is what the rank is based on
-    militaryUnlocked: false,
     devUnlocked: false,
     unlocked: [...FREE],
     grantedRank: null,
@@ -128,6 +108,7 @@ export function load() {
     // JSON.parse('null') is null, which survives the spread and then throws on
     // the next line — a silent total reset dressed up as a corrupt save.
     if (!p || typeof p !== 'object') return blank();
+    delete p.militaryUnlocked;
     return { ...blank(), ...p, unlocked: [...new Set([...FREE, ...(p.unlocked || [])])] };
   } catch (e) {
     console.warn('Could not read your progress — starting fresh.', e);
@@ -197,35 +178,9 @@ export function isUnlocked(p, aircraftId) {
   return p.unlocked.includes(aircraftId);
 }
 
-/** True if this aeroplane needs the passcode and has not been let through. */
-export function needsPasscode(p, type) {
-  return !!(type && type.military) && !p.militaryUnlocked;
-}
-
-/**
- * Try a word at the military door. Asynchronous because the fingerprint is
- * (codeHash: crypto.subtle, or the plain-JavaScript SHA-256 on a plain-http
- * classroom address). `hash` is the door to check against — the shipped
- * fingerprint unless a test hands in its own.
- */
-export async function enterPasscode(p, raw, hash = MILITARY_CODE_HASH) {
-  if (!(await isTheWord(raw, hash))) {
-    return { ok: false, why: 'That is not the word' };
-  }
-  p.militaryUnlocked = true;
-  /*
-   * Only say it opened if it actually stayed open.
-   *
-   * save() swallows its own failure — a full quota, a private window, a
-   * locked-down school profile — and returns false. Reporting success anyway
-   * gave you a session that worked perfectly and an unlock that was gone next
-   * morning, which is precisely the "go and ask for the word again" this is
-   * supposed to prevent. It still works for this session; you are just told.
-   */
-  if (!save(p)) {
-    return { ok: true, warn: 'Open for now — this browser would not save it, so you may have to enter it again.' };
-  }
-  return { ok: true };
+/** Kept for this copy's callers: nothing needs a passcode any more (see above). */
+export function needsPasscode() {
+  return false;
 }
 
 /** Is the workbench open? */
@@ -233,7 +188,7 @@ export function isDev(p) {
   return !!(p && p.devUnlocked);
 }
 
-/** Try a word at the workbench door; see enterPasscode. */
+/** Try a word at the workbench door (hashed: see isTheWord). */
 export async function enterDevCode(p, raw, hash = DEV_CODE_HASH) {
   if (!(await isTheWord(raw, hash))) {
     return { ok: false, why: 'That is not the word' };

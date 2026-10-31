@@ -922,8 +922,14 @@ export function buildLightCockpit(ctx) {
   }
 
   /* ---- Sun visors and vents at the windscreen's head ---- */
+  let visorInfo = null;
   if (ws) {
-    const visorMat = new THREE.MeshStandardMaterial({ color: tc.head.clone().multiplyScalar(0.9), roughness: 0.9, map: fabric, side: THREE.DoubleSide });
+    // Tinted and translucent, as the airliners' are. The old one was a
+    // 30 x 13 cm slab of headliner colour three centimetres under the roof,
+    // and from the seat, looking up past the door post, it was an untextured
+    // grey block in the top corner of the picture (the GM's audit).
+    const visorMat = new THREE.MeshStandardMaterial({ color: 0x2b3a2e, roughness: 0.3, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+    visorInfo = { count: 0, opacity: visorMat.opacity, transparent: visorMat.transparent, textured: !!visorMat.map, underRoof: 0.012 };
     // Just behind the windscreen's head, against the headliner, over each
     // seat — stowed up, as they are in flight.
     const zc = ws.z1 + 0.05 / k;
@@ -939,11 +945,13 @@ export function buildLightCockpit(ctx) {
     };
     for (const x of [pilotX, copilotX]) {
       const at = roofAt(x);
-      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.012, 0.13), visorMat);
-      visor.position.set(x, at.y - 0.03, at.z + 0.08);
-      visor.rotation.x = 0.06;
+      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.006, 0.11), visorMat);
+      visor.position.set(x, at.y - 0.012, at.z + 0.08);
+      visor.rotation.x = 0.04;
       visor.name = 'sun visor';
+      visor.castShadow = false;
       group.add(visor);
+      visorInfo.count++;
       // An eyeball vent outboard of it — inboard where the cabin is too
       // narrow (the Courier): outboard, the roof has already turned down
       // into the side window there, and the vent hung in the glass.
@@ -1039,6 +1047,8 @@ export function buildLightCockpit(ctx) {
   group.userData.warnings = warn.lamps;
   group.userData.family = 'light';
   group.userData.builder = `light:${id}`;
+  // The sun visors as built (merged into one mesh afterwards): for the checks.
+  group.userData.visors = visorInfo;
   group.userData.glazing = { source: glazing.source, windows: shell.openings.length };
   group.userData.shell = shell;
   return group;

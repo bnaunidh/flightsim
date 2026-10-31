@@ -83,6 +83,7 @@ import { nextDensity, DENSITY_WORDS } from './ui/conditions.js';
 import { Minimap } from './ui/minimap.js';
 import { Pursuer } from './game/pursuer.js';
 import * as Prog from './game/progression.js';
+import { visibleAircraftId } from './core/edition.js';
 import { schemeFor, findLivery } from './aircraft/liveries.js';
 import { liveryOf, setLiveryOf } from './core/plane-paint.js';
 import { resolveTouchFlying, isPhoneScreen } from './ui/touch-modes.js';
@@ -404,6 +405,7 @@ class Game {
     this.cockpit = createCockpit({ highContrast: this.settings.highContrast, type: this.aircraftType, model: this.model });
     this.model.add(this.cockpit);
     this.cockpit.visible = false;
+    this.watchRealSkin(this.model);
 
     this.rig = new CameraRig(this.camera, this.aircraft);
     // REAL MODELS: the camera their from-inside test reads (a seat in a parked aeroplane's cabin, a replay).
@@ -704,9 +706,9 @@ class Game {
      *
      * Menus reads its own copy at construction so the hangar can paint itself,
      * and the hangar's buttons mutate that copy in place. If main.js kept a
-     * separate one, entering the passcode would unlock the menus' copy and
-     * leave main.js's at false for the rest of the session — which is exactly
-     * what happened. This has to run AFTER `new Menus(...)`; an earlier
+     * separate one, a door opened in the hangar would unlock the menus' copy
+     * and leave main.js's at false for the rest of the session — which is
+     * exactly what happened. This has to run AFTER `new Menus(...)`; an earlier
      * attempt sat above it and was dead code, because `this.menus` did not
      * exist yet and the `if` simply never fired.
      */
@@ -729,6 +731,19 @@ class Game {
     this.menus.syncProgress(this.progress);
     this.menus.syncSound(this.settings.muted);
     this.menus.syncMap(this.settings.map || 'kestrel');
+    /*
+     * The last aeroplane you flew is the Free Flight picker's choice again
+     * after a reload (owner, 2026-10-30: "remember ur plane and map").
+     * settings.aircraft is written as a Free Flight starts (startMode); the
+     * map was always kept (settings.map). Only if it is still yours and in
+     * this copy of the game — else the trainer, as before.
+     */
+    try {
+      const last = visibleAircraftId(this.settings.aircraft || 'skylark');
+      if (last && Prog.isUnlocked(this.prog, last) && this.menus.pickFreeAircraft) this.menus.pickFreeAircraft(last);
+    } catch (e) {
+      console.warn('[menus] could not restore the last aeroplane', e);
+    }
     this.input.freeLook = !!this.settings.freeLook;
     this.menus.syncFreeLook(this.input.freeLook);
     // Settings → Controls → Controllers: the sim gear's own page (ui/controllers-panel.js).
@@ -1610,6 +1625,8 @@ class Game {
   }
 
   showCrashDebrief(reason) {
+    // A crash is nothing to continue from (game/checkpoint.js).
+    this.clearCheckpoint();
     // The mayday sequence is already writing an ending; do not talk over it.
     if (this.braceOwnsEnding) {
       this.braceOwnsEnding = false;
@@ -1677,6 +1694,8 @@ class Game {
     this.stopDrive();
     this.mode = mode;
     this.modeOpts = opts;
+    // A new flight supersedes whatever the last one left to continue (game/checkpoint.js).
+    this.clearCheckpoint();
     this.menus.hide();
     this.hud.setVisible(true);
     this.hud.hideControls();
@@ -1821,6 +1840,8 @@ class Game {
     if (mode === 'free') {
       this.weather.load(opts);
       this.settings.weather = this.weather.serialize();
+      // The aeroplane you fly is the one the picker remembers (boot, above).
+      if (this.aircraftType) this.settings.aircraft = this.aircraftType.id;
       saveSettings(this.settings);
     } else if (def.weather) {
       this.weather.load(def.weather);
@@ -2138,17 +2159,34 @@ class Game {
     if (this.menus && this.menus.syncResume) this.menus.syncResume(null);
   }
 
-  /** On the main menu: "Resume your mission?" if a fresh checkpoint names a mission that still exists. */
+  /**
+   * On the main menu: "Resume your mission?" if a fresh checkpoint names a
+   * mission that still exists — or "Continue your flight?" for a free
+   * flight whose map and aeroplane this copy still has (game/checkpoint.js).
+   */
   offerResume() {
     const cp = Checkpoint.loadCheckpoint();
-    const plan = Checkpoint.resumePlan(cp, findMission);
+    const wp = this.worldPreview;
+    const have = {
+      aircraft: (id) => !!id && getAircraft(id).id === id && visibleAircraftId(id, null) === id,
+      map: (id) => !!id && (getMap(id).id === id || (!!wp && wp.id === id && typeof wp.choose === 'function')),
+    };
+    const plan = Checkpoint.resumePlan(cp, findMission, Date.now(), have);
     this._resume = plan ? { cp, plan } : null;
     if (!plan) {
       if (cp) Checkpoint.clearCheckpoint();
       if (this.menus && this.menus.syncResume) this.menus.syncResume(null);
       return null;
     }
-    if (this.menus && this.menus.syncResume) this.menus.syncResume({ name: plan.name, where: Checkpoint.describe(plan, cp) });
+    const mapName = (id) => (wp && wp.id === id ? 'the World Map' : (getMap(id) || {}).name || id);
+    if (this.menus && this.menus.syncResume) {
+      this.menus.syncResume({
+        name: plan.free ? `${plan.name} over ${mapName(plan.map)}` : plan.name,
+        where: Checkpoint.describe(plan, cp, Date.now(), mapName),
+        words: Checkpoint.cardWords(plan),
+        kind: plan.free ? 'free' : 'mission',
+      });
+    }
     return plan;
   }
 
@@ -2156,6 +2194,12 @@ class Game {
    * Resume the checkpointed mission: the same startMode() the menu made,
    * then straight to the step you were on with the aeroplane where it was.
    * The step starts afresh (see game/checkpoint.js for what is not kept).
+   *
+   * Or continue the checkpointed free flight: the same map (the World Map
+   * included), the same aeroplane in the same paint, the setup the Free
+   * Flight screen made, the sky as it was, and the aeroplane back where it
+   * was — in the air at its height, heading and speed if it was in the air;
+   * on the ground, engine as it was, if it was on the ground.
    */
   async resumeCheckpoint() {
     const R = this._resume || (this.offerResume() && this._resume);
@@ -2164,6 +2208,7 @@ class Game {
     this._resume = null;
     Checkpoint.clearCheckpoint();
     if (this.menus && this.menus.syncResume) this.menus.syncResume(null);
+    if (plan.free) return this.continueFreeFlight(plan);
     await this.startMode(plan.mode, plan.opts);
     if (this.runner.status !== STATUS.RUNNING || !this.runner.def) return false;
     const ok = plan.stepIndex > 0 ? this.runner.resumeAt(plan.stepIndex) : true;
@@ -2179,6 +2224,64 @@ class Game {
     this.hud.notify(`Resumed: ${plan.name}, step ${plan.stepIndex + 1} of ${plan.steps}`, 'good', 5);
     void cp;
     return ok;
+  }
+
+  /** The free-flight half of resumeCheckpoint() (game/checkpoint.js resumePlan, a `free` plan). */
+  async continueFreeFlight(plan) {
+    const wp = this.worldPreview;
+    // The map first, the same way a mission borrows one (startMode): the
+    // World Map through its own feature, which registers and builds it.
+    if (this.settings.map !== plan.map) {
+      if (wp && wp.id === plan.map && typeof wp.choose === 'function') {
+        wp.choose();
+        if (typeof wp.whenBuilt === 'function') await wp.whenBuilt();
+      } else {
+        applyMap(plan.map);
+        this.layRoads();
+        refreshRunways();
+        refreshApronElevation();
+        this.settings.map = plan.map;
+        saveSettings(this.settings);
+        this.menus.syncMap(plan.map);
+        this.buildWorld(this.settings.quality);
+      }
+    }
+    // The paint it wore, if it has changed since.
+    if (plan.paint && plan.aircraft) {
+      this.settings.liveries = this.settings.liveries || {};
+      if (this.settings.liveries[plan.aircraft] !== plan.paint) {
+        this.settings.liveries[plan.aircraft] = plan.paint;
+        saveSettings(this.settings);
+      }
+    }
+    if (this.menus && this.menus.pickFreeAircraft) this.menus.pickFreeAircraft(plan.aircraft);
+    const opts = { ...(plan.opts || {}), aircraft: plan.aircraft };
+    // Airborne or not is the pose's call below, not the setup's.
+    opts.airborne = !plan.pose.onGround;
+    opts.taxi = false;
+    await this.startMode('free', opts);
+    if (this.state !== 'flying') return false;
+    try {
+      if (plan.weather && this.weather && typeof this.weather.load === 'function') {
+        this.weather.load(plan.weather);
+        this.settings.weather = this.weather.serialize();
+        saveSettings(this.settings);
+        this.sky && this.sky.update && this.sky.update(this.weather);
+      }
+    } catch (e) {
+      console.warn('[checkpoint] the sky could not be put back', e);
+    }
+    try {
+      Checkpoint.applyPose(this, plan.pose);
+      if (!plan.engineOn && this.aircraft && this.aircraft.engineOn) this.aircraft.stopEngine('shutdown');
+      this.taxi.stop();
+      this.input.releaseHardwareLevers();
+    } catch (e) {
+      console.warn('[checkpoint] the aeroplane could not be put back where it was; starting on the runway', e);
+    }
+    const where = plan.pose.onGround ? 'on the ground' : `at ${Math.round((plan.pose.pos[1] || 0) * 3.28084 / 100) * 100} ft`;
+    this.hud.notify(`Continuing your flight: ${plan.name}, ${where}`, 'good', 5);
+    return true;
   }
 
   pause() {
@@ -3122,6 +3225,51 @@ class Game {
    * detached — leaked geometry is what used to make the sea flicker after a
    * long session, and there is no reason to relearn that lesson here.
    */
+  /**
+   * REAL MODELS arrive late. The player's own aeroplane fetches its real skin
+   * (aircraft/real-models.js) after the model is built, so the first time a
+   * type is flown the cockpit was cut to the procedural exterior and the real
+   * skin landed afterwards, uncarved: its own flight-deck interior, window
+   * frames and glass showed through the room — a stray box in the 737, a
+   * frame and a line floating in the 787 / A350 / 777, the C-17's and the
+   * B-1B's frames not matching the deck's, the Chinook's spare MFD, the
+   * Black Hawk's tan block. When the skin goes on, the cockpit is built
+   * again over the exterior as it now is, in the same place, same view.
+   */
+  watchRealSkin(model) {
+    if (!model || !model.userData) return;
+    model.userData.onRealSkin = () => {
+      if (model !== this.model || !this.cockpit) return;
+      try {
+        this.remountCockpit();
+      } catch (e) {
+        console.warn('[cockpit] could not rebuild the cockpit over the real skin', e);
+      }
+    };
+  }
+
+  /** Build the cockpit again over the current model (watchRealSkin). Position, scale and view are kept. */
+  remountCockpit() {
+    const old = this.cockpit;
+    const pos = old.position.clone();
+    const scale = old.scale.x;
+    const visible = old.visible;
+    if (old.userData.viewing) old.userData.viewing(false);
+    this.model.remove(old);
+    old.traverse((o) => {
+      if (o.geometry && !o.userData.shared) o.geometry.dispose();
+    });
+    this.cockpit = createCockpit({ highContrast: this.settings.highContrast, type: this.aircraftType, model: this.model });
+    this.cockpit.scale.setScalar(scale);
+    this.cockpit.position.copy(pos);
+    this.model.add(this.cockpit);
+    this.cockpit.visible = visible;
+    this.cockpit.userData.remounted = (old.userData.remounted || 0) + 1;
+    if (this.rig) this.rig.cockpitPitchDeg = this.cockpit.userData.viewPitchDeg || 0;
+    if (this.cockpit.userData.viewing) this.cockpit.userData.viewing(this.rig && this.rig.mode === 'cockpit' && visible && !this.riding);
+    return this.cockpit;
+  }
+
   setAircraft(id) {
     const want = getAircraft(id);
     if (this.aircraftType && this.aircraftType.id === want.id) return this.aircraftType;
@@ -3191,6 +3339,7 @@ class Game {
     );
     this.model.add(this.cockpit);
     this.cockpit.visible = false;
+    this.watchRealSkin(this.model);
     /*
      * Its programs, and the cockpit's, compiled in the background now rather
      * than on the first frame and the first press of C — and the model kept
@@ -5599,7 +5748,8 @@ class Game {
       this._cpT = (this._cpT || 0) + dt;
       if (this._cpT >= Checkpoint.EVERY_S) {
         this._cpT = 0;
-        if (this.runner.status === STATUS.RUNNING) this.saveCheckpoint();
+        // A running mission's, or a free flight's (game/checkpoint.js decides what is worth keeping).
+        if (this.runner.status === STATUS.RUNNING || this.mode === 'free') this.saveCheckpoint();
       }
       this.runner.update(dt);
       this.atc.update(dt);

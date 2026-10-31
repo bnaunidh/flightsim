@@ -317,19 +317,27 @@ const nodeHash = (s) => createHash('sha256').update(String(s).trim().toLowerCase
     }
     ok('every served hangar call to a door waits for its answer (no sync r.ok on a Promise)', sites.length === 0, sites.join('; '));
   }
-  ok('both doors are 64-hex fingerprints, and different ones', Prog.isCodeHash(Prog.MILITARY_CODE_HASH) && Prog.isCodeHash(Prog.DEV_CODE_HASH) && Prog.MILITARY_CODE_HASH !== Prog.DEV_CODE_HASH);
+  // One door left: the Dev one. The military door was removed (owner,
+  // 2026-10-30; tests/features/military-open.mjs).
+  ok('the Dev door is a 64-hex fingerprint, and there is no military door', Prog.isCodeHash(Prog.DEV_CODE_HASH) && typeof Prog.MILITARY_CODE_HASH === 'undefined' && typeof Prog.enterPasscode === 'undefined');
   const word = `door-${randomUUID().slice(0, 8)}`;
   ok('a test-only word opens a door handed in, hashed the same way the tool hashes it',
-    (await Prog.enterPasscode({ militaryUnlocked: false }, word.toUpperCase(), nodeHash(word))).ok === true
-    && (await Prog.enterDevCode({ devUnlocked: false }, word, nodeHash(word))).ok === true
-    && (await Prog.enterPasscode({ militaryUnlocked: false }, word)).ok === false);
+    (await Prog.enterDevCode({ devUnlocked: false }, word.toUpperCase(), nodeHash(word))).ok === true
+    && (await Prog.enterDevCode({ devUnlocked: false }, word)).ok === false);
   try {
-    const out = execFileSync(process.execPath, [join(ROOT, 'tools/hash-code.mjs'), '--passcode=military'], { cwd: ROOT, encoding: 'utf8', input: `${word}\n`, stdio: ['pipe', 'pipe', 'pipe'] });
-    const m = /export const MILITARY_CODE_HASH = '([0-9a-f]{64})';/.exec(out);
-    ok('tools/hash-code.mjs --passcode=military prints the replacement line, hashed like the game', !!m && m[1] === nodeHash(word), out.trim().slice(0, 100));
+    const out = execFileSync(process.execPath, [join(ROOT, 'tools/hash-code.mjs'), '--passcode=dev'], { cwd: ROOT, encoding: 'utf8', input: `${word}\n`, stdio: ['pipe', 'pipe', 'pipe'] });
+    const m = /export const DEV_CODE_HASH = '([0-9a-f]{64})';/.exec(out);
+    ok('tools/hash-code.mjs --passcode=dev prints the replacement line, hashed like the game', !!m && m[1] === nodeHash(word), out.trim().slice(0, 100));
   } catch (e) {
     ok('tools/hash-code.mjs --passcode runs', false, String(e.message || e).slice(0, 200));
   }
+  let milDoor = '';
+  try {
+    execFileSync(process.execPath, [join(ROOT, 'tools/hash-code.mjs'), '--passcode=military'], { cwd: ROOT, encoding: 'utf8', input: `${word}\n`, stdio: ['pipe', 'pipe', 'pipe'] });
+  } catch (e) {
+    milDoor = String(e.stderr || e.message || e);
+  }
+  ok('tools/hash-code.mjs --passcode=military is refused (that door is gone)', /gone|Unknown door/.test(milDoor), milDoor.trim().slice(0, 100));
 }
 
 console.log(`\n${n - fails}/${n} passed`);

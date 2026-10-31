@@ -4,12 +4,12 @@ import { AIRCRAFT } from '../../src/aircraft/types.js';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, detail = '') => { if (cond) pass++; else { fail++; console.log('FAIL', name, detail); } };
-const p = { unlocked: ['skylark'], credits: 10, militaryUnlocked: false };
+const p = { unlocked: ['skylark'], credits: 10 };
 const sim = { prog: p };
 
 let r = runLine(sim, '/runcmd allaircraft');
 ok('allaircraft unlocks every aircraft', r.ok && AIRCRAFT.every((a) => p.unlocked.includes(a.id)), r.text);
-ok('allaircraft opens the military door too', p.militaryUnlocked === true);
+ok('allaircraft leaves no military flag behind', !('militaryUnlocked' in p));
 r = runLine(sim, 'allaircraft');
 ok('works without /runcmd', r.ok && /0 new/.test(r.text), r.text);
 r = runLine(sim, '/runcmd credits 5000');

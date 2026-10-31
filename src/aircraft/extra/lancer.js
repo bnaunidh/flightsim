@@ -25,8 +25,8 @@
  * WHAT THE OTHER FILES READ OFF THE ENTRY (beyond the usual roster fields):
  *   swingWing   src/features/swing-wing.js gives a type with this the sweep
  *               keys, the auto schedule and the afterburners (LANCER_WING here)
- *   unarmed     features/carrier/who.js: military, behind the passcode and in
- *               the hangar's Military shelf, but no guns, no heat-seekers, no
+ *   unarmed     features/carrier/who.js: military, on the hangar's Military
+ *               shelf, but no guns, no heat-seekers, no
  *               flares and no tail hook; heatseek/rules.js never locks it
  *   carrier     false: world/spawns.js never starts it on the carrier's deck
  *               (it is 42 m across and lands at 130 kt; no hook could hold it)

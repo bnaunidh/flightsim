@@ -85,7 +85,7 @@ for (const id of IDS) {
   const wallet = { credits: cost, earned: 0, unlocked: ['skylark'], best: [], redeemed: [] };
   const bought = PROG.buy(wallet, id);
   ok(`${id}: buying it unlocks it`, bought.ok && PROG.isUnlocked(wallet, id) && wallet.credits === 0, JSON.stringify(bought));
-  ok(`${id}: not behind the military passcode`, !PROG.needsPasscode({ militaryUnlocked: false }, t));
+  ok(`${id}: not a military type`, !t.military);
 }
 
 /* ------------------------------------------------------------------ *

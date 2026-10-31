@@ -175,7 +175,12 @@ export function buildFlightDeck(ctx) {
   const side0 = Math.sign(pilotX - cx) || -1; // the captain's side
 
   /* ---- Extents, in hull units ---- */
-  const quads = fd.quads;
+  // The exterior's frame band is what the skin outside draws (the Meridian's
+  // is 0.032 shape units: 6.6 cm, a wide band on a 23 cm centre post). From
+  // the seat the frame need only be the window's edge: on a civil hull it is
+  // capped at 2 cm, so the post between the two windscreens is a post, not
+  // a pillar that filled the left third of the view (the GM's audit).
+  const quads = fd.hull ? fd.quads : fd.quads.map((q) => (q.frame != null ? { ...q, frame: Math.min(q.frame, 0.02 / k) } : q));
   const allZ = quads.flatMap((q) => q.quad.map((c) => c[0]));
   const zWin0 = Math.min(...allZ);
   const zWin1 = Math.max(...allZ);
@@ -351,12 +356,21 @@ export function buildFlightDeck(ctx) {
     glass.renderOrder = 35;
     for (const s of [-1, 1]) part(group, roundedBox(0.012, hc + 0.012, 0.016, 0.004), M.darkMetal, pilotX + s * (wc / 2 + 0.006), (top + base) / 2, zH, 'HUD frame');
     part(group, roundedBox(wc + 0.024, 0.01, 0.016, 0.004), M.darkMetal, pilotX, top + 0.006, zH, 'HUD frame');
-    // The overhead unit the combiner folds down from: up against the
-    // ceiling, over the captain's head, so it stands in none of the windscreen.
+    // The overhead unit the combiner folds down from. It used to sit up
+    // against the ceiling, half a metre over the eye, with a 16 mm rod down
+    // to the combiner: from the seat the unit was out of the picture and the
+    // rod was a stray line standing in the windscreen with a frame floating
+    // under it (the 787, the C-17 — the GM's audit). The real unit hangs the
+    // combiner on a short bracket; so does this one: the unit 18 cm over the
+    // combiner's top (or under the ceiling where that is lower), a stout
+    // bracket between, both at the top edge of the view where a HUD's are.
     const ceilH = L(h.point(clamp(space.toModel(new THREE.Vector3(cx, E.y, zH + 0.1)).z, h.zMin, h.zMax), 0, P)).y - inset * k;
-    const yUnit = Math.min(E.y + 0.5, ceilH - 0.05);
+    const yUnit = Math.min(top + 0.18, ceilH - 0.05);
     part(group, roundedBox(0.16, 0.07, 0.22, 0.01), M.darkMetal, pilotX, yUnit, zH + 0.1, 'HUD overhead unit');
-    part(group, roundedBox(0.016, yUnit - 0.035 - top, 0.016, 0.004), M.darkMetal, pilotX, (yUnit - 0.035 + top) / 2, zH + 0.004, 'HUD arm');
+    const armLen = Math.max(0.02, yUnit - 0.035 - top);
+    part(group, roundedBox(0.03, armLen, 0.05, 0.006), M.darkMetal, pilotX, top + armLen / 2, zH + 0.02, 'HUD arm');
+    // For the checks (the parts merge into one mesh and lose their names).
+    geom.bracket = { armLen, unitAbove: yUnit - (top + base) / 2 };
   }
 
   /* ================================================================ *
@@ -693,10 +707,19 @@ export function buildFlightDeck(ctx) {
     // Front, slanted at the pilots; rear, nearly flat.
     const ohMatA = switchPanelMaterial({ w: 512, h: 384, rows: 6, cols: 9, seed: 71, colour: C.palette.panel });
     const ohMatB = switchPanelMaterial({ w: 512, h: 512, rows: 8, cols: 9, seed: 83, colour: C.palette.panel });
+    /*
+     * a, b are the FRONT edge (towards the windscreen), c, d the aft one.
+     * Looking up at a panel over and ahead of you, the near (aft) edge is
+     * the higher in the picture and the far (front) edge the lower, so the
+     * picture's "up" is aft: the texture's top row (v = 1) goes on c, d.
+     * It was on a, b, and in the Q400 — whose low ceiling puts the panel in
+     * the view — every label read upside down and mirrored ("NO SMOKE"
+     * backwards across the top of the screen, the GM's audit).
+     */
     const quad = (a, b, c, d, mat, name) => {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute([a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z], 3));
-      g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 1, 1, 1, 0, 0, 0], 2));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
       g.setIndex([0, 2, 1, 0, 3, 2]);
       g.computeVertexNormals();
       return part(group, g, mat, 0, 0, 0, name);

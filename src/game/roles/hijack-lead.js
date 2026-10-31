@@ -73,13 +73,15 @@ function progNow() {
 }
 
 /**
- * Which fighter you fly. The Vanguard F-1 for everybody; the F-22 once the
- * military passcode is in and the roster has one. Not the F-22 regardless:
- * it is a passcode aeroplane, and a mission that is not behind that code
- * must not hand it out. Your wingman is always the same type as you.
+ * Which fighter you fly. The Vanguard F-1 for everybody; the F-22 once you
+ * own one (bought in the hangar for credits, like every other aeroplane —
+ * the military passcode it used to sit behind is gone) and the roster has
+ * one. Not the F-22 regardless: a mission must not hand out an aeroplane you
+ * have not earned. Your wingman is always the same type as you.
  */
 export function fighterId(prog = progNow()) {
-  if (prog && prog.militaryUnlocked && AIRCRAFT.some((a) => a.id === 'f22')) return 'f22';
+  const owned = !!(prog && Array.isArray(prog.unlocked) && prog.unlocked.includes('f22'));
+  if (owned && AIRCRAFT.some((a) => a.id === 'f22')) return 'f22';
   return 'vanguard';
 }
 

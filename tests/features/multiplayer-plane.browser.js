@@ -18,7 +18,7 @@
  *
  *   hangar        after a ride saved on the lobby screen (a plane, or the boat),
  *                 the plane picked in the Hangar is the ride — every aeroplane,
- *                 the passcode ones once it is open; the helicopter from Rotors
+ *                 the military ones too; the helicopter from Rotors
  *                 is the helicopter; the Boat page still brings the boat
  *   free flight   the same for a plane card on the Free Flight screen; a locked
  *                 one is still refused and changes nothing
@@ -79,7 +79,7 @@ export async function check(sim, r, say = () => {}) {
   }
   const profileBefore = { ...mp.profile };
   const prog = menus.prog;
-  const progBefore = { unlocked: [...prog.unlocked], militaryUnlocked: prog.militaryUnlocked };
+  const progBefore = { unlocked: [...prog.unlocked] };
   const chosenBefore = menus.chosenAircraft;
   const gameBefore = menus.currentGame;
   const wasScreen = menus.current;
@@ -143,7 +143,6 @@ export async function check(sim, r, say = () => {}) {
     mp.configure({ backend, hash, WebSocketImpl: server.WebSocket });
     mp.setProfile({ name: 'Brave Otter', chosen: true });
     menus.currentGame = 'flight';
-    prog.militaryUnlocked = true;
 
     /* ---- the Hangar: every aeroplane, after a ride saved on the lobby screen ---- */
     {
@@ -159,7 +158,7 @@ export async function check(sim, r, say = () => {}) {
         const got = mp.ride();
         if (!chose || key(got) !== `flight:${a.id}`) wrong.push(`${a.id}→${key(got)}${chose ? '' : ' (not chosen)'}`);
       }
-      r.ok(`mp plane: after a ride saved on the lobby screen, the plane picked in the Hangar is the multiplayer ride — all ${planes.length} aeroplanes, the passcode ones too once it is open`,
+      r.ok(`mp plane: after a ride saved on the lobby screen, the plane picked in the Hangar is the multiplayer ride — all ${planes.length} aeroplanes, the military ones too`,
         wrong.length === 0, wrong.length ? `wrong: ${wrong.join(', ')}` : planes.map((a) => a.id).join(', '));
       // From the boat: a saved boat ride, then a plane in the Hangar.
       tapRide('boat:boat');
@@ -192,9 +191,8 @@ export async function check(sim, r, say = () => {}) {
       const picked = mp.ride();
       r.ok('mp plane: a plane card picked on the Free Flight screen is the multiplayer ride too',
         menus.chosenAircraft === 'a320' && key(picked) === 'flight:a320', `chosen ${menus.chosenAircraft}; ride ${key(picked)}`);
-      // Locked stays locked: the passcode shut, and an aeroplane not bought.
-      prog.militaryUnlocked = false;
-      prog.unlocked = prog.unlocked.filter((id) => id !== 'meridian');
+      // Locked stays locked: an aeroplane not bought, military or not.
+      prog.unlocked = prog.unlocked.filter((id) => id !== 'meridian' && id !== 'fa18');
       tapRide('flight:a320');
       for (const id of ['fa18', 'meridian']) {
         const card = free.querySelector(`[data-aircraft="${id}"]`);
@@ -202,10 +200,9 @@ export async function check(sim, r, say = () => {}) {
       }
       const after = mp.ride();
       const offered = mp.rides().map((x) => x.type);
-      r.ok('mp plane: a locked aeroplane is still refused — behind the passcode, or not bought — and the ride stays the one you had',
+      r.ok('mp plane: an aeroplane not bought is still refused, military or not, and the ride stays the one you had',
         menus.chosenAircraft === 'a320' && key(after) === 'flight:a320' && !offered.includes('fa18') && !offered.includes('meridian'),
         `chosen ${menus.chosenAircraft}; ride ${key(after)}`);
-      prog.militaryUnlocked = true;
       // And the lobby screen's own pick, made after, wins in turn.
       own('osprey');
       tapRide('flight:osprey');
@@ -311,7 +308,6 @@ export async function check(sim, r, say = () => {}) {
     mp.configure(null);
     L.forgetLobbyLists();
     prog.unlocked = progBefore.unlocked;
-    prog.militaryUnlocked = progBefore.militaryUnlocked;
     if (menus.syncFleetLocks) menus.syncFleetLocks();
     if (menus.pickFreeAircraft) menus.pickFreeAircraft(chosenBefore);
     else menus.chosenAircraft = chosenBefore;

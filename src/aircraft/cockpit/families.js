@@ -12,8 +12,9 @@
  *             (vanguard, osprey, nightjar, f22, f35b, fa18)
  *   racer     Air Massimo's race cockpit
  *   heli      the helicopter: collective, cyclic, chin bubble (harrier)
- *   none      T-Pose Harrison, whose view is from his own head (eject.js
- *             hides the cockpit for him; another builder owns it)
+ *   none      T-Pose Harrison, whose view is from his own head: no room,
+ *             a visor readout and his arms (harrison.js; eject.js hides
+ *             his head from inside)
  *
  * A family with no builder registered gets the generic cockpit (generic.js),
  * which is exactly the one every aeroplane had before — so adding a family is

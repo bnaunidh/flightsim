@@ -911,7 +911,7 @@ class Multiplayer {
   rides() {
     const sim = this.sim;
     const prog = sim && (sim.prog || (sim.menus && sim.menus.prog));
-    const canFly = (t) => t.id === 'skylark' || t.id === 'harrier' || !prog || (!Prog.needsPasscode(prog, t) && !(Array.isArray(prog.unlocked) && !Prog.isUnlocked(prog, t.id)));
+    const canFly = (t) => t.id === 'skylark' || t.id === 'harrier' || !prog || !(Array.isArray(prog.unlocked) && !Prog.isUnlocked(prog, t.id));
     const flyable = AIRCRAFT.filter(canFly);
     const planes = flyable.filter((t) => !isHelicopter(t)).map((t) => ({ game: 'flight', type: t.id, name: t.name, kind: 'plane' }));
     const helis = flyable.filter((t) => isHelicopter(t)).map((t) => ({ game: 'heli', type: t.id, name: `${t.name} helicopter`, kind: 'heli' }));
@@ -1594,9 +1594,7 @@ class Multiplayer {
   }
 
   mapsFor(game) {
-    const prog = this.sim.prog || this.sim.menus && this.sim.menus.prog;
     return mapsForGame(game)
-      .filter((m) => !(prog && Prog.needsPasscode(prog, m)))
       .map((m) => ({ id: m.id, name: m.name, subtitle: m.subtitle || '' }));
   }
 
@@ -1975,7 +1973,7 @@ class Multiplayer {
     const name = parseServerName(serverName) ? serverName : this.serverName();
     if (ride) game = ride.game;
     if (!['flight', 'heli', 'boat', 'car'].includes(game)) game = 'flight';
-    // An island this game has, and one this player may use (the menu's own passcode rules).
+    // An island this game has.
     if (!this.mapsFor(game).some((m) => m.id === map)) map = this.defaultMap(game);
     const mapDef = getMap(map);
     this.busy = true;
@@ -2388,7 +2386,7 @@ class Multiplayer {
     if (id === 'harrier') id = 'skylark';
     const t = getAircraft(id);
     if (!t || t.id !== id) return 'skylark';
-    if (prog && (Prog.needsPasscode(prog, t) || (Array.isArray(prog.unlocked) && !Prog.isUnlocked(prog, id)))) return 'skylark';
+    if (prog && Array.isArray(prog.unlocked) && !Prog.isUnlocked(prog, id)) return 'skylark';
     return id;
   }
 

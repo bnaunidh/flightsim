@@ -21,6 +21,7 @@
  *   deck-skin.js    an airliner's nose from inside, its panes cut out
  *   flightdeck.js   airliners: A320, 747, A380, Meridian
  *   heli.js         the helicopter: chin bubbles, cyclic and collective
+ *   harrison.js     T-Pose Harrison: a visor HUD and his own arms, no room
  *
  * The contract with the rest of the game is unchanged: createCockpit()
  * returns a Group whose userData.update(dt, ac, weather, sim) runs while the
@@ -36,6 +37,7 @@ import { buildLightCockpit } from './cockpit/light.js';
 import { buildJetCockpit } from './cockpit/jet.js';
 import { buildFlightDeck } from './cockpit/flightdeck.js';
 import { buildHeliCockpit } from './cockpit/heli.js';
+import { buildHarrisonView } from './cockpit/harrison.js';
 import { batchMovers } from './cockpit/kit.js';
 
 export { InstrumentPanel } from './cockpit/panel-canvas.js';
@@ -47,6 +49,8 @@ registerCockpitBuilder('jet', buildJetCockpit, { name: 'jet' });
 registerCockpitBuilder('racer', buildJetCockpit, { name: 'racer' });
 registerCockpitBuilder('airliner', buildFlightDeck, { name: 'airliner' });
 registerCockpitBuilder('heli', buildHeliCockpit, { name: 'heli' });
+// T-Pose Harrison ('none'): no room, his visor's readout and his own arms (cockpit/harrison.js).
+registerCockpitBuilder('none', buildHarrisonView, { name: 'harrison' });
 
 /**
  * The sun lights the cockpit and its parts shade each other: every opaque

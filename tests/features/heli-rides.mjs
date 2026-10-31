@@ -85,7 +85,7 @@ mp.keepOwnMapSaved = () => {};
   ok('…each a kind "heli" named "<name> helicopter", and no rotorcraft among the planes', helis.every((r) => r.kind === 'heli' && / helicopter$/.test(r.name)) && !planes.some((r) => isHelicopter(getAircraft(r.type))) && planes.length > 10);
   ok('…planes first, then the helicopters, then the boat and the car', rides.findIndex((r) => r.kind === 'heli') > rides.filter((r) => r.kind === 'plane').length - 1 && rides.at(-2).game === 'boat' && rides.at(-1).game === 'car');
   // Locked rotorcraft stay locked: an unlocked list without the Apache leaves it out; the Skyhook never goes.
-  sim.prog = { unlocked: AIRCRAFT.map((t) => t.id).filter((id) => id !== 'ah64' && id !== 'harrier'), militaryUnlocked: true };
+  sim.prog = { unlocked: AIRCRAFT.map((t) => t.id).filter((id) => id !== 'ah64' && id !== 'harrier') };
   const locked = mp.rides().filter((r) => r.game === 'heli').map((r) => r.type);
   ok('a helicopter not yet bought is not offered; the Skyhook always is', !locked.includes('ah64') && locked.includes('harrier') && locked.includes('ch47'), locked.join(' '));
   sim.prog = null;

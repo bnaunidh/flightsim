@@ -48,8 +48,11 @@ ok('credits screen: the parody line, exactly', credits.includes(PARODY));
 ok('credits screen: "You may copy the game — please give us credit (thankdapro)", exactly', credits.includes('You may copy the game — please give us\n    credit (thankdapro)') || credits.includes('You may copy the game — please give us credit (thankdapro)'));
 ok('credits screen: with credit to thankdapro, Roblox allowed (no "not" line), points at LICENSE', /with credit to thankdapro/.test(credits) && /in Roblox games and\s+assets too/.test(credits) && !/not<\/strong> be used in Roblox/.test(credits) && !/not for Roblox/.test(credits) && /<code>LICENSE<\/code>/.test(credits));
 ok('credits screen: the SCP Foundation line — the Site and the transfer, CC BY-SA 3.0, the SCP Wiki community, scpwiki.com', /SCP Foundation-based content \(the Site on Nunatak Reach/.test(credits) && !/none yet/.test(credits) && /CC BY-SA 3\.0/.test(credits) && /SCP Wiki/.test(credits) && /href="https:\/\/scpwiki\.com"/.test(credits));
-ok('credits screen: nothing is called CC0 or public domain any more (the FAA references aside)',
-  !/CC0/.test(credits) && (credits.match(/public domain/gi) || []).length === 2 && !/\(public domain\)/.test(credits));
+// Third-party assets that really are CC0 (the Poly Haven scenery) keep their credit rows;
+// the rule is that the game itself is never called CC0 or public domain.
+const creditsOwn = credits.replace(/<tr>[\s\S]*?<\/tr>/g, '').replace(/<h3>[^<]*models[^<]*<\/h3>/gi, '');
+ok('credits screen: the game itself is not called CC0 or public domain (credited CC0 assets and the FAA references aside)',
+  !/CC0/.test(creditsOwn) && (credits.match(/public domain/gi) || []).length === 2 && !/\(public domain\)/.test(credits));
 
 const menus = read('src/ui/menus.js');
 ok('front page footer: © thankdapro and the parody line', /data-copyright[^>]*>&copy; thankdapro/.test(menus) && menus.includes('All airlines are parody and not affiliated with any real company'));

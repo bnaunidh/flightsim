@@ -34,7 +34,7 @@
  * is never a stretch of standing about for a timer — and then flies its own
  * approach (NpcFlyer's 'land'), with the seatbelt sign for the last few miles.
  *
- * "Under Attack" (behind the military code): the Secret Service moves you to
+ * "Under Attack" (the military one): the Secret Service moves you to
  * the secure room — the one thing that can fail this seat, with a countdown on
  * screen and a plain reason — you give the Captain your orders, and you watch
  * the escort clear the drones through the secure room's window; flares go,

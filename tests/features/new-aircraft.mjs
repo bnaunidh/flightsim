@@ -94,8 +94,8 @@ for (const id of IDS) {
   if (!t) continue;
   const R = REAL[id];
   if (R.military) {
-    ok(`${id}: an Airliner by class (cockpit, spawns, evacuation) filed under Military, behind the passcode`,
-      t.class === 'Airliner' && t.category === 'military' && t.military === true && PROG.needsPasscode({ militaryUnlocked: false }, t));
+    ok(`${id}: an Airliner by class (cockpit, spawns, evacuation) filed under Military, bought for credits like the rest`,
+      t.class === 'Airliner' && t.category === 'military' && t.military === true && PROG.costOf(id) > 0);
   } else {
     ok(`${id}: an Airliner (cockpit, spawns, evacuation all read the class)`, t.class === 'Airliner' && t.category === 'airliner' && t.military !== true);
   }
@@ -147,7 +147,7 @@ for (const id of IDS) {
   const wallet = { credits: cost, earned: 0, unlocked: ['skylark'], best: [], redeemed: [] };
   const bought = PROG.buy(wallet, id);
   ok(`${id}: buying it unlocks it`, bought.ok && PROG.isUnlocked(wallet, id) && wallet.credits === 0, JSON.stringify(bought));
-  if (!R.military) ok(`${id}: not behind the military passcode`, !PROG.needsPasscode({ militaryUnlocked: false }, t));
+  if (!R.military) ok(`${id}: not a military type`, !t.military);
   ok(`${id}: registered as an airliner (camera stretch, seat panel, take-off flap)`,
     FEATURE.AIRLINER_IDS.includes(id) && AIRLINER_GEOMETRY[id] === GEOM[id] && Number.isInteger(FEATURE.TAKEOFF_FLAPS[id]) && FEATURE.viewScale(id) > 1);
   // The physics shape agrees with the metres it came from.

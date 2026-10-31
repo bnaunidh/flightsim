@@ -30,7 +30,7 @@
  * origin along the body, which is why the mast sits ahead of the origin on
  * the longer machines.
  *
- * Military (passcode, like the jets): the Black Hawk, the Chinook and the
+ * Military (flagged like the jets): the Black Hawk, the Chinook and the
  * Apache — `category: 'helicopter'` keeps them under the Helicopters
  * heading, hidden until the hangar is opened. The Apache alone carries a
  * gun (`guns: true`; features/gunsight/rules.js), and no helicopter ever
@@ -335,7 +335,7 @@ export function TYPES(base) {
      * Marine One (owner, 2026-10-25: "make Marine One"): the presidential
      * VH-3D Sea King, in its own fixed paint (`fixedLivery`, liveries.js
      * TYPE_SCHEMES) the way the President's 747 only ever wears the Air Force
-     * One scheme. Gated as Air Force One is: no passcode (it is not a weapon
+     * One scheme. Gated as Air Force One is: not military (it is not a weapon
      * of war and carries none), bought in the hangar like the 747, and never
      * drawn at random by an apron or the traffic. The numbers are the Sea
      * King's: 144 kt, a 14,700 ft ceiling, 8.2 t (between the 5.4 t empty

@@ -8,7 +8,7 @@
  *   node tests/features/lancer.mjs
  *
  * Exits non-zero if anything fails. What it holds:
- *   - the roster entry: military behind the passcode, unarmed, never on the
+ *   - the roster entry: military, bought for credits, unarmed, never on the
  *     carrier, for sale, a jet with JetSound and a yaw damper, real spans;
  *   - the project's aircraft rules: sized to the runway (it flies from the
  *     1,100 m Kestrel strip with the wing forward), gear stiffness scales
@@ -75,8 +75,8 @@ ok('b1b: in AIRCRAFT', !!t);
 const a = t.aero;
 const W = a.mass * 9.80665;
 {
-  ok('b1b: military by category and flag, filed under Military, behind the passcode',
-    t.category === 'military' && t.military === true && PROG.needsPasscode({ militaryUnlocked: false }, t) && !PROG.needsPasscode({ militaryUnlocked: true }, t));
+  ok('b1b: military by category and flag, filed under Military, bought for credits like the rest (no passcode)',
+    t.category === 'military' && t.military === true && t.price > 0 && typeof PROG.needsPasscode === 'undefined');
   ok('b1b: a swing wing, unarmed, never on the carrier', t.swingWing === true && t.unarmed === true && t.carrier === false);
   ok('b1b: named, described (the keys in the blurb), a callsign, stats as pips',
     t.name === 'B-1B Lancer' && /\]/.test(t.blurb) && /\[/.test(t.blurb) && t.blurb.length > 80 && !!t.callsign
@@ -381,7 +381,7 @@ const extent = (pts) => {
   ok('keys: no clash in the defaults (sharing [ ] with the hook and the catapult is by design: a Lancer has neither)', !clash.wingsBack && !clash.wingsForward, JSON.stringify(clash).slice(0, 200));
   const cost = PROG.costOf(ID);
   ok('hangar: for sale at its own price, a military row', cost === t.price && cost > 0 && PROG.UNLOCKS.find((u) => u.aircraft === ID).military === true, `${cost} credits`);
-  const wallet = { credits: cost, earned: 0, unlocked: ['skylark'], best: [], redeemed: [], militaryUnlocked: true };
+  const wallet = { credits: cost, earned: 0, unlocked: ['skylark'], best: [], redeemed: [] };
   const bought = PROG.buy(wallet, ID);
   ok('hangar: buying it unlocks it', bought.ok && PROG.isUnlocked(wallet, ID), JSON.stringify(bought));
 }

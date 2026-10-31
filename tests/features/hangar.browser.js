@@ -1,12 +1,12 @@
 /**
  * Browser checks for the organised hangar (v71 wishlist: "organize hangar A
- * LOT more"). The podium, the buying and the passcode are covered by
+ * LOT more"). The podium and the buying are covered by
  * menus.browser.js; this is the shelves, the tools and the fleet around them.
  *
  *   1. The chip row: an All chip plus one per shelf with something on it,
- *      their counts adding up to what the passcode allows, every chip a 44px
+ *      their counts adding up to the whole roster, every chip a 44px
  *      target, the row scrolling sideways rather than wrapping.
- *   2. The gate: before the passcode nothing military is on any chip, card
+ *   2. No gate: on a fresh profile every military type is on a chip, a card
  *      or strip.
  *   3. A shelf chip narrows the podium's order and the grid to that shelf.
  *   4. Search, filters and sort narrow and reorder the same list, and the
@@ -43,7 +43,7 @@ export async function check(sim, r, say) {
   const $$ = (sel) => [...screen.querySelectorAll(sel)];
   const typeOf = (id) => AIRCRAFT.find((a) => a.id === id);
   const p = menus.prog || Prog.load();
-  const keep = { credits: p.credits, unlocked: [...p.unlocked], militaryUnlocked: p.militaryUnlocked };
+  const keep = { credits: p.credits, unlocked: [...p.unlocked] };
   const store = (k) => {
     try {
       return localStorage.getItem(k);
@@ -71,8 +71,7 @@ export async function check(sim, r, say) {
 
   const wasGame = menus.currentGame;
   try {
-    // A known starting point: the passcode shut, a modest purse, the free three.
-    p.militaryUnlocked = false;
+    // A known starting point: a modest purse, the free three.
     p.credits = 700;
     p.unlocked = ['skylark', 'courier', 'harrier'];
     try {
@@ -117,19 +116,23 @@ export async function check(sim, r, say) {
 
     /* ---- 2. The gate ------------------------------------------------ */
     {
-      const leak = [];
+      // The military passcode is gone (owner, 2026-10-30): on a fresh profile
+      // every military type has a card and a place in the podium order, and
+      // the Military chip counts the whole shelf.
+      const missing = [];
       for (const a of AIRCRAFT) {
         if (!a.military) continue;
-        if ($(`[data-hs-pick="${a.id}"]`)) leak.push(`${a.id} card`);
-        if (ui.order.includes(a.id)) leak.push(`${a.id} order`);
+        if (!$(`[data-hs-pick="${a.id}"]`)) missing.push(`${a.id} card`);
+        if (!ui.order.includes(a.id)) missing.push(`${a.id} order`);
       }
-      // The Military chip may exist: the Vanguard and the Osprey are military
-      // jets by class and were never gated. Its count has to be only those.
       const milChip = $('[data-hs-tab="military"]');
-      const ungated = ui.shown.filter((a) => shelfOf(a, aircraftCategory) === 'military').length;
+      const onShelf = ui.shown.filter((a) => shelfOf(a, aircraftCategory) === 'military').length;
       const chipTotal = milChip ? Number(milChip.querySelector('b').textContent.split('/')[1]) : 0;
-      r.ok('hangar: before the passcode nothing gated is on a chip, a card or in the podium order',
-        leak.length === 0 && chipTotal === ungated, leak.slice(0, 4).join('; ') || `Military chip ${milChip ? chipTotal : 'absent'}, ungated ${ungated}`);
+      r.ok('hangar: on a fresh profile every military type is on a card and in the podium order, and the Military chip counts them all',
+        missing.length === 0 && !!milChip && chipTotal === onShelf && onShelf >= AIRCRAFT.filter((a) => a.military && shelfOf(a, aircraftCategory) === 'military').length,
+        missing.slice(0, 4).join('; ') || `Military chip ${milChip ? chipTotal : 'absent'}, on shelf ${onShelf}`);
+      r.ok('hangar: no passcode box anywhere on the screen', !$('[data-mil-code]') && !$('[data-mil-enter]') && !/Military access/.test(screen.textContent) && !!$('[data-code]') && !!$('[data-redeem]'),
+        `mil box ${!!$('[data-mil-code]')}, redeem box ${!!$('[data-code]')}`);
     }
 
     /* ---- 3. A shelf chip --------------------------------------------- */
@@ -302,7 +305,6 @@ export async function check(sim, r, say) {
   } finally {
     p.credits = keep.credits;
     p.unlocked = keep.unlocked;
-    p.militaryUnlocked = keep.militaryUnlocked;
     Prog.save(p);
     restoreStore();
     menus.syncProgression && menus.syncProgression(p);

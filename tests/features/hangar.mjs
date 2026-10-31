@@ -51,7 +51,7 @@ const perfOf = (id) => {
     return {};
   }
 };
-const lockedProg = { credits: 0, militaryUnlocked: false, unlocked: ['skylark', 'courier', 'harrier'] };
+const lockedProg = { credits: 0, unlocked: ['skylark', 'courier', 'harrier'] };
 const ctxFor = (p) => ({
   catOf: aircraftCategory,
   owned: (id) => p.unlocked.includes(id),
@@ -126,22 +126,25 @@ const ctxFor = (p) => ({
   ok('the Business jets shelf is only shown once something is on it', !business || business.items.every((a) => shelfOf(a, aircraftCategory) === 'business'), business ? `${business.items.length} on it` : 'empty — not shown');
 }
 
-/* ---- the passcode gate --------------------------------------------- */
+/* ---- the Military shelf, open to everybody ---------------------------- */
 {
-  const shown = AIRCRAFT.filter((a) => !Prog.needsPasscode(lockedProg, a));
-  const groups = shelve(shown, aircraftCategory);
-  // The Vanguard and the Osprey are military jets by class but were never
-  // gated, so a Military shelf can exist before the passcode — with only them.
-  const mil = groups.find((g) => g.def.id === 'military');
-  const leak = visibleFleet(shown, { shelf: 'all' }, ctxFor(lockedProg)).filter((a) => a.military).map((a) => a.id);
-  ok('before the passcode nothing gated is on any shelf, and the Military shelf holds only the ungated jets',
-    leak.length === 0 && (!mil || mil.items.every((a) => !a.military)), leak.join(', ') || `${shown.length} of ${AIRCRAFT.length} shown; Military shelf: ${mil ? mil.items.map((a) => a.id).join(' ') : 'none'}`);
-  const open = { ...lockedProg, militaryUnlocked: true };
-  const shownOpen = AIRCRAFT.filter((a) => !Prog.needsPasscode(open, a));
-  const milOpen = shelve(shownOpen, aircraftCategory).find((g) => g.def.id === 'military');
-  ok('after the passcode the Military shelf appears with every gated type on it',
-    !!milOpen && AIRCRAFT.filter((a) => aircraftCategory(a) === 'military').every((a) => milOpen.items.includes(a)),
-    milOpen ? `${milOpen.items.length} military` : 'no shelf');
+  // The military passcode is gone (owner, 2026-10-30): on a fresh profile the
+  // whole roster is shown and the Military shelf holds every military type,
+  // each for sale for credits like the rest.
+  const shown = AIRCRAFT;
+  const mil = shelve(shown, aircraftCategory).find((g) => g.def.id === 'military');
+  const onShelf = visibleFleet(shown, { shelf: 'all' }, ctxFor(lockedProg)).filter((a) => a.military).map((a) => a.id);
+  const flagged = AIRCRAFT.filter((a) => a.military).map((a) => a.id);
+  ok('on a fresh profile every military type is on the shelves',
+    flagged.length > 0 && flagged.every((id) => onShelf.includes(id)), flagged.filter((id) => !onShelf.includes(id)).join(', ') || `${flagged.length} military of ${AIRCRAFT.length}`);
+  ok('the Military shelf holds every type filed under Military',
+    !!mil && AIRCRAFT.filter((a) => aircraftCategory(a) === 'military').every((a) => mil.items.includes(a)),
+    mil ? `${mil.items.length} military` : 'no shelf');
+  // A price in progression.js's UNLOCKS, or `price` on the type for the rows
+  // a feature adds at install (airliners.js, swing-wing.js: the C-5, C-17, B-1B).
+  const unpriced = flagged.filter((id) => !(Prog.costOf(id) > 0 || byId(id).price > 0));
+  ok('every military type is for sale for credits', unpriced.length === 0, unpriced.join(', ') || flagged.map((id) => `${id} ${Prog.costOf(id) || byId(id).price}`).join(' '));
+  ok('the shelf blurb no longer talks about a passcode', !/passcode/i.test(SHELVES.find((s) => s.id === 'military').blurb));
 }
 
 /* ---- New -------------------------------------------------------------- */
@@ -223,7 +226,7 @@ const ctxFor = (p) => ({
 {
   const p = { ...lockedProg, credits: 700 };
   const ctx = ctxFor(p);
-  const shown = AIRCRAFT.filter((a) => !Prog.needsPasscode(p, a));
+  const shown = AIRCRAFT;
   const all = visibleFleet(shown, { shelf: 'all', query: '', filter: 'all', sort: 'shelf' }, ctx);
   const shelfOrder = shelve(shown, aircraftCategory).flatMap((g) => g.items.map((a) => a.id));
   ok('the default view is every shown aircraft in shelf order', all.map((a) => a.id).join() === shelfOrder.join(), `${all.length}`);

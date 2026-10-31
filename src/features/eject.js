@@ -1039,14 +1039,18 @@ function bindAircraft(sim) {
   });
 }
 
-/** Harrison: his own head is in the way in the cockpit view, so it goes. */
+/**
+ * Harrison: his own head is in the way in the cockpit view, so it goes. The
+ * cockpit itself stays: it is his visor readout and his arms
+ * (aircraft/cockpit/harrison.js), not a room — hiding it too left the
+ * cockpit view with nothing in it at all.
+ */
 function tposeView(sim) {
   const m = sim.model;
   const p = m && m.userData && m.userData.person;
   if (!p || !p.userData.rig) return;
   const inside = !!(sim.rig && sim.rig.mode === 'cockpit');
   p.userData.rig.head.visible = !inside;
-  if (inside && sim.cockpit) sim.cockpit.visible = false;
 }
 
 registerExtension({

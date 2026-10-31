@@ -10,7 +10,7 @@
  *   6. Night Medevac — a pickup on Mango Cay, at night, in rain.
  *   7. Storm Chaser — three passes through a tornado's outer bands.
  *
- * Four more sit behind the military passcode: a carrier qualification, an
+ * Four more are military (under the Military heading, open to everybody): a carrier qualification, an
  * interception patrol, a night recon run and a scored practice range. Three of
  * those four are flying problems rather than shooting ones, because that is
  * genuinely the harder thing a fast jet does; the fourth is a marked range
@@ -1006,7 +1006,8 @@ export const MISSIONS = [
   },
 
   /* ==================================================================== *
-   * Military missions. Hidden until the passcode is entered.
+   * Military missions. Under the Military heading, listed for everybody
+   * (the passcode that hid them until 2026-10-30 is gone — progression.js).
    *
    * Three of these are flying problems rather than shooting ones — a carrier
    * qualification, an interception patrol and a low-level night recon — because
@@ -1327,9 +1328,8 @@ export const MISSIONS = [
    * can hold. The answer is the weather. Get into the cloud and stay ahead of
    * him and he loses you.
    *
-   * Deliberately NOT military and NOT behind the passcode: it is the most fun
-   * thing in the game to a ten-year-old and gating it behind a code most of
-   * them do not have would be perverse.
+   * Deliberately NOT military: it is the most fun thing in the game to a
+   * ten-year-old and filing it under the hardest heading would be perverse.
    *
    * If he does catch you he formates on your wing and escorts you home.
    * Nobody is shot down. That is the tone the whole thing is written in.

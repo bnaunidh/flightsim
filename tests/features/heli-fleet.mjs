@@ -166,8 +166,8 @@ for (const id of IDS) {
   const perf = T.performanceFor(id);
   ok(`${id}: the hangar card quotes its red line and endurance (${perf.vne} kt, ${perf.enduranceMin} min)`, perf.vne > 100 && perf.enduranceMin > 60 && perf.enduranceMin < 400);
   const mil = ['uh60', 'ch47', 'ah64'].includes(id);
-  ok(`${id}: ${mil ? 'military, behind the passcode, under the Helicopters heading' : 'civil, not gated'}`,
-    !!t.military === mil && Prog.needsPasscode({ militaryUnlocked: false, unlocked: [] }, t) === mil && (mil ? t.category === 'helicopter' && t.carrier === false : true));
+  ok(`${id}: ${mil ? 'military, bought for credits, under the Helicopters heading' : 'civil'}`,
+    !!t.military === mil && Prog.costOf(id) > 0 && (mil ? t.category === 'helicopter' && t.carrier === false : true));
   ok(`${id}: ${id === 'ah64' ? 'the Apache has its gun (and no heat-seekers)' : 'no gun, no heat-seekers'}`,
     GR.hasGuns(t, 'flight') === (id === 'ah64') && GR.hasGuns(t, 'heli') === (id === 'ah64') && !GR.militaryJet(t, 'flight')
     && !HSK.carriesMissiles({ aircraftType: t, game: 'flight' }) && !HSK.carriesMissiles({ aircraftType: t, game: 'heli' }));

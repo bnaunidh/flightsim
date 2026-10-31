@@ -154,10 +154,12 @@ const HL = await imp('src/game/roles/hijack-lead.js');
       ok(`seats: ${where}: step ids unique`, new Set(d.steps.map((x) => x.id)).size === d.steps.length);
       // Every non-default seat used to fly the one fighter ('vanguard'); the
       // President (Air Force One's own seats) rides the airliner itself
-      // ('b747') instead — a real, existing aircraft, just not the
-      // passcode-locked one ('f22') you'd get without the military code.
-      ok(`seats: ${where}: an aircraft that exists, and not a passcode one without the code`, AIRCRAFT.some((a) => a.id === d.aircraft) && d.aircraft !== 'f22', d.aircraft);
-      ok(`seats: ${where}: the F-22 once the military code is in`, HL.fighterId({ militaryUnlocked: true }) === (AIRCRAFT.some((a) => a.id === 'f22') ? 'f22' : 'vanguard'));
+      // ('b747') instead — a real, existing aircraft, just not the F-22 you
+      // get once you own one (bought for credits; the old military passcode
+      // is gone and an old save's flag hands out nothing).
+      ok(`seats: ${where}: an aircraft that exists, and not the F-22 you have not bought`, AIRCRAFT.some((a) => a.id === d.aircraft) && d.aircraft !== 'f22', d.aircraft);
+      ok(`seats: ${where}: the F-22 once you own one, not on an old save's flag`,
+        HL.fighterId({ unlocked: ['f22'] }) === (AIRCRAFT.some((a) => a.id === 'f22') ? 'f22' : 'vanguard') && HL.fighterId({ militaryUnlocked: true, unlocked: [] }) === 'vanguard');
       // The seat flies the base mission's own island (v55 moved the hijacks and Air Force One off Kestrel).
       ok(`seats: ${where}: the base map and weather`, d.map === m.map && !!d.map && d.weather === m.weather, d.map);
       ok(`seats: ${where}: a story that is registered`, d.cast && CAST.storyIds().includes(d.cast.story), d.cast && d.cast.story);

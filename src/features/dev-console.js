@@ -92,8 +92,6 @@ export function runLine(sim, line) {
     case 'allaircraft': {
       const before = p.unlocked.length;
       p.unlocked = [...new Set([...p.unlocked, ...AIRCRAFT.map((a) => a.id)])];
-      // Until the military door is gone, let the console open it too: "all" means all.
-      if ('militaryUnlocked' in p) p.militaryUnlocked = true;
       const saved = commit(sim, p);
       return { ok: true, text: `Unlocked all ${AIRCRAFT.length} aircraft (${p.unlocked.length - before} new).${saved ? '' : ' (This browser would not save it.)'}` };
     }

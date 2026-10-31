@@ -238,7 +238,7 @@ ok('flight-events: nothing is running before a flight', FE.hijackInfo().phase ==
       weather: w,
       atc: { said: {} },
       runner: null,
-      prog: { credits: 0, earned: 0, best: [], unlocked: [], devUnlocked: false, militaryUnlocked: false },
+      prog: { credits: 0, earned: 0, best: [], unlocked: [], devUnlocked: false },
       menus: { syncProgression() {} },
       said: [],
       notes: [],

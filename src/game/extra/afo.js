@@ -10,12 +10,11 @@
  *                                    station through the cruise and the
  *                                    turn, peel off as he lands, land
  *                                    yourself.
- *   2. "Air Force One —              LOCKED behind the military passcode,
- *      Under Attack"                 exactly like the military aircraft
- *                                    (progression.js needsPasscode /
- *                                    militaryUnlocked — see `military: true`
- *                                    below, read the same way carrierqual
- *                                    and the other three do): its card is
+ *   2. "Air Force One —              a MILITARY mission (`military: true`
+ *      Under Attack"                 below, filed under the Military heading
+ *                                    the same way carrierqual and the other
+ *                                    three are; the passcode that once hid
+ *                                    them is gone — progression.js): its card is
  *                                    shown locked until the code is in, and
  *                                    unlocks live, no reload, the moment it
  *                                    is — menus.js re-reads the flag on
@@ -236,7 +235,7 @@ const afoNormal = {
 };
 
 /* ================================================================== *
- * "Air Force One — Under Attack" — seat 'captain', behind the military code
+ * "Air Force One — Under Attack" — seat 'captain', the military one
  * ================================================================== */
 
 const afoAttack = {
@@ -250,10 +249,10 @@ const afoAttack = {
   // Ironhead Air Base: the military field, 3,200 m of concrete for the jumbo and the fighters' own
   // base to scramble from. The air start is open sea to the west (measured in node).
   map: 'airbase',
-  // The military passcode, exactly like the military aircraft — see
-  // progression.js's needsPasscode(p, type), which reads this flag on a
-  // mission exactly as it does on an aeroplane. Not a devOnly gate: the
-  // owner asked for the real one, "behind the military code".
+  // Filed under Military, like the military aircraft: menus.js reads this
+  // flag on a mission exactly as it does on an aeroplane. It used to be the
+  // military passcode's gate too; that door is gone (owner, 2026-10-30), so
+  // the flag is the heading and nothing more.
   military: true,
   roles: AFO_ATTACK_ROLES,
   aircraft: 'b747',
@@ -350,8 +349,7 @@ const afoAttack = {
 
 /*
  * Order matters a little: the normal flight first, the attack — harder, and
- * the one behind the passcode — last, the same rule the military four already
- * follow ("Military is last so the passcode gate never leaves a hole in the
- * middle of the list", menus.js).
+ * the military one — last, the same rule the military four already follow
+ * ("Military is last", menus.js).
  */
 export const MISSIONS = [afoNormal, afoAttack];

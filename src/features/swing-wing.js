@@ -22,7 +22,7 @@
  *             (userData.sweepRig, src/fleet/extra/lancer.js)
  *   the words the wing's advice (flaps up first, too slow for the sweep),
  *             once each, through the HUD's own notes
- *   the hangar the sale row, behind the military passcode like the others
+ *   the hangar the sale row, under Military like the others
  *   take-off  flaps 20 on a ground start, and the wing forward
  *
  * Nothing here is written for the Lancer by name: a type with `swingWing:
@@ -47,7 +47,7 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 /*
  * For sale in the hangar, like the airliners (features/airliners.js says why
  * the row has to be added from outside progression.js): priced between the
- * F-35B and the F-22, and military, so behind the passcode. Fenced.
+ * F-35B and the F-22, and military. Fenced.
  */
 try {
   const rows = PROG.UNLOCKS;

@@ -60,13 +60,11 @@ export async function check(sim, r, say = () => {}) {
   const origUnlocking = sim._unlocking;
   if (sim.audio && !sim.audio.started) sim._unlocking = true;
   const prog = sim.prog || (sim.menus && sim.menus.prog) || null;
-  const origMil = prog ? prog.militaryUnlocked : undefined;
 
   const start = async (id) => {
     allUp();
     if (typeof sim.applyDifficulty === 'function') sim.applyDifficulty('normal');
     if (sim.settings) sim.settings.heliAssist = true;
-    if (prog) prog.militaryUnlocked = true;
     await sim.startMode('free', { aircraft: id, time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 250 });
     allUp();
     run(1);
@@ -149,7 +147,6 @@ export async function check(sim, r, say = () => {}) {
     sim.renderer.render = origRender;
     sim.autoPauseOnHide = origAutoPause;
     sim._unlocking = origUnlocking;
-    if (prog) prog.militaryUnlocked = origMil;
     if (sim.settings) {
       sim.settings.heliAssist = origAssist;
       if (typeof sim.applyDifficulty === 'function') sim.applyDifficulty(origDiff);

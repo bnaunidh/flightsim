@@ -52,6 +52,7 @@ import * as THREE from '../vendor/three.module.js';
 import { registerExtension } from '../game/extensions.js';
 import { MAP, heightAt, addObstacleAt, iceAt, FLATS } from '../world/terrain.js';
 import { airportLayout, standTaken } from '../world/airport-layout.js';
+import { iceRunwayTexture } from '../render/textures.js';
 import { C17_RAMP } from '../aircraft/extra/c17.js';
 import { FLASH, CAPS } from '../render/flash-safety.js';
 import { createPerson, posePerson, disposePerson } from './staff/person.js';
@@ -367,7 +368,8 @@ function block(batch, mat, x, z, w, h, d, what) {
 /**
  * The ice: one sheet over every 'ice' flat on the map. The flat is level
  * ground already (terrain.js); this is the look of it, a hard pale sheet
- * with a little sky in it. The strip also gets its markers.
+ * with a little sky in it. The strip gets the runway surface above, its
+ * markers, edge lights and the ploughed snow banks along both sides.
  */
 function buildIce(group, quality) {
   const ice = new THREE.MeshStandardMaterial({
@@ -376,6 +378,13 @@ function buildIce(group, quality) {
     metalness: 0.06,
     envMapIntensity: 0.6,
   });
+  const stripMat = new THREE.MeshStandardMaterial({
+    map: iceRunwayTexture(),
+    roughness: 0.55,
+    metalness: 0.02,
+  });
+  const snow = new THREE.MeshStandardMaterial({ color: 0xeef3f8, roughness: 0.96, metalness: 0 });
+  const lightMat = new THREE.MeshStandardMaterial({ color: 0xfff1c4, emissive: 0xffd27a, emissiveIntensity: 1.4, roughness: 0.5 });
   const lake = new THREE.MeshStandardMaterial({
     color: 0xc4d8e6,
     roughness: 0.34,
@@ -392,7 +401,9 @@ function buildIce(group, quality) {
     const d = f.z1 - f.z0 + 8;
     const geo = f.kind === 'lake' ? new THREE.CircleGeometry(Math.min(w, d) / 2, 40) : new THREE.PlaneGeometry(w, d);
     geo.rotateX(-Math.PI / 2);
-    const sheet = new THREE.Mesh(geo, f.kind === 'lake' ? lake : ice);
+    // A strip's texture runs along its length (the long axis is x on the Site's).
+    if (f.kind === 'strip' && w > d) geo.rotateY(Math.PI / 2);
+    const sheet = new THREE.Mesh(geo, f.kind === 'lake' ? lake : f.kind === 'strip' ? stripMat : ice);
     sheet.position.set(f.cx, f.y + 0.06, f.cz);
     sheet.receiveShadow = true;
     sheet.name = `ice:${f.id}`;
@@ -428,6 +439,31 @@ function buildIce(group, quality) {
         along ? f.cx + (end * L) / 2 - end * 12 : f.cx, f.y + 0.1, along ? f.cz : f.cz + (end * L) / 2 - end * 12, -Math.PI / 2);
     }
     bars.flush(`ice-bars:${f.id}`);
+    // Edge lights beside the cones, both sides, so the strip reads at dusk
+    // and in snow; the ploughed banks of snow along both edges, a metre
+    // high, that a cleared runway in a cold place always has.
+    const lights = new THREE.InstancedMesh(new THREE.BoxGeometry(0.4, 0.5, 0.4), lightMat, n * 2);
+    k = 0;
+    for (let i = 0; i < n; i++) {
+      const s = -L / 2 + (L / (n - 1)) * i;
+      for (const side of [-1, 1]) {
+        const x = along ? f.cx + s : f.cx + (side * W) / 2 + side * 1.5;
+        const z = along ? f.cz + (side * W) / 2 + side * 1.5 : f.cz + s;
+        o.position.set(x, f.y + 0.3, z);
+        o.updateMatrix();
+        lights.setMatrixAt(k++, o.matrix);
+      }
+    }
+    lights.instanceMatrix.needsUpdate = true;
+    lights.name = `ice-lights:${f.id}`;
+    group.add(lights);
+    const banks = new Batch(group);
+    for (const side of [-1, 1]) {
+      const off = (side * W) / 2 + side * 7;
+      banks.add(new THREE.BoxGeometry(along ? L + 16 : 6, 1.1, along ? 6 : L + 16), snow,
+        along ? f.cx : f.cx + off, f.y + 0.45, along ? f.cz + off : f.cz, 0);
+    }
+    banks.flush(`ice-banks:${f.id}`);
     void quality;
   }
   return strips;

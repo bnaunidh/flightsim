@@ -200,6 +200,38 @@ ok('the terrain mesh is within the usual budget (≤ 120k vertices)', map.chunks
   const snowTrees = [];
   low.scenery.group.traverse((o) => { if (/^trees:snow-/.test(o.name)) snowTrees.push(o.name); });
   ok('the trees are snow-dusted (snow flora)', snowTrees.length > 0, snowTrees.join(' '));
+
+  /* ---- the runways read as runways in a cold place (owner, 2026-10-30: a blank white slab) ---- */
+  let strip = null;
+  low.ext.traverse((o) => { if (o.name === 'ice:site-strip') strip = o; });
+  ok('the ice strip is a marked, textured surface (compacted snow with black markings), not a plain pale sheet',
+    !!strip && !!strip.material.map && strip.material.map.image && strip.material.map.image.width >= 256, strip ? `map ${!!strip.material.map}` : 'no strip');
+  ok('the ice strip has edge lights and ploughed snow banks along both sides',
+    names.some((n) => n.startsWith('ice-lights:site-strip')) && names.some((n) => n.startsWith('ice-banks:site-strip')), names.filter((n) => /^ice-/.test(n)).join(' '));
+  {
+    // buildAll() left Northwatch applied; the field questions are asked of each map in turn.
+    const wasMap = T.MAP;
+    T.applyMap('nunatak');
+    Airport.refreshRunways();
+    const nun = Airport.snowCoveredField();
+    let banks = null;
+    try {
+      const ap = new Airport.Airport(new THREE.Scene());
+      ap.group.traverse((o) => { if (o.name === 'snow banks') banks = o; });
+    } catch (e) {
+      banks = String(e && e.message);
+    }
+    T.applyMap('northwatch');
+    Airport.refreshRunways();
+    const nw = Airport.snowCoveredField();
+    T.applyMap('kestrel');
+    Airport.refreshRunways();
+    const ke = Airport.snowCoveredField();
+    T.applyMap(wasMap.id);
+    Airport.refreshRunways();
+    ok('Caribou Base is a snow-covered field (its snow line is below the sea); Northwatch and Kestrel are bare', nun === true && nw === false && ke === false, `nunatak ${nun}, northwatch ${nw}, kestrel ${ke}`);
+    ok('Caribou Base\'s runway has the plough\'s snow banks along both edges', !!banks && typeof banks === 'object', banks && banks.name ? banks.name : String(banks || 'no snow banks mesh'));
+  }
 }
 
 /* ---- not enterable ---- */

@@ -24,11 +24,11 @@
  * of it; nothing here can half-merge into somebody else's screen.
  *
  * HIDDEN, NEVER FILTERED
- * Cards are built once and then hidden, exactly as the passcode locks already
+ * Cards are built once and then hidden, exactly as the lock syncs already
  * do it (the comment at menus.js:560 explains why: build() runs once from the
  * constructor, so a card filtered out at build time can never come back). The
  * game filter follows the same rule, and it wraps the existing lock syncs
- * instead of replacing them, so a card needs BOTH its passcode and its game.
+ * instead of replacing them, so a card needs its game to show.
  *
  * AND UNDER A HEADING
  * The board is grouped by category (menus.js, CATEGORIES). Each card sits in
@@ -52,13 +52,13 @@ const NUMBER_WORDS = [
 /**
  * "Eight missions — training, deliveries, rescue and more", counted.
  *
- * Only what this player can fly is counted (the passcode hides the military
- * ones), and the headings are named in the order the missions screen shows
+ * Every mission of this game is counted (nothing hides the military ones any
+ * more), and the headings are named in the order the missions screen shows
  * them, so the card and the screen behind it cannot disagree. Empty string if
  * there is nothing to count, so the caller keeps its hand-written line.
  */
 export function missionsLine(game, prog, noun = 'missions') {
-  const list = MISSIONS.filter((m) => gameOf(m) === game && !Prog.needsPasscode(prog || {}, m));
+  const list = MISSIONS.filter((m) => gameOf(m) === game);
   if (!list.length) return '';
   const heads = groupByCategory('missions', list, missionCategory).map((g) => g.def.label.toLowerCase());
   const n = list.length;
@@ -167,10 +167,10 @@ export function installGameUi(menus, hooks = {}) {
    * Wrap the two lock syncs rather than editing them.
    *
    * They are closures created inside buildMissions() and buildMaps() and called
-   * from show(), and they set `card.hidden` from the passcode alone. Without
-   * this wrap, opening the missions screen would put every aeroplane mission
-   * back on the car's job board. Wrapped, the last word on a card is always
-   * "passcode AND game".
+   * from show(), and they clear `card.hidden` on their own. Without this
+   * wrap, opening the missions screen would put every aeroplane mission back
+   * on the car's job board. Wrapped, the last word on a card is always the
+   * game filter's.
    */
   if (!menus._gameLocksWrapped) {
     menus._gameLocksWrapped = true;
@@ -209,7 +209,7 @@ export function installGameUi(menus, hooks = {}) {
    *
    * Appended to the grid that is already there, tagged with the game they
    * belong to, and never removed — the same build-once-hide-later rule as the
-   * passcode. Safe to call before or after setGame().
+   * lock syncs. Safe to call before or after setGame().
    *
    * Each def needs: id, name, short, difficulty, icon, blurb, reward.
    * Clicking one calls hooks.startMission(id), which is the same door the
@@ -298,20 +298,11 @@ export function installGameUi(menus, hooks = {}) {
          */
         const belongs = (card.dataset.game || 'flight') === game;
         /*
-         * Passcode AND game, both asked here, every time.
-         *
-         * This used to trust that the lock sync had run just before it, and
-         * only narrowed: "a card the game filter hid comes back when its game
-         * does". But setGame() calls this without the lock sync. Measured on
-         * the base build, on a profile with no passcode: setGame('car') then
-         * setGame('flight') left all four military cards with hidden = false,
-         * until something next opened the screen through show(). With the
-         * headings counting visible cards, that would have been a Military
-         * heading with four missions under it.
+         * The game filter is asked here, every time, and is the only thing
+         * that hides a mission card now: the military passcode that used to
+         * hide four of them is gone (progression.js, owner 2026-10-30).
          */
-        const def = MISSIONS.find((x) => x.id === card.dataset.mission) || (menus._extraMissions || {})[card.dataset.mission];
-        const locked = !!def && Prog.needsPasscode(menus.prog || {}, def);
-        card.hidden = locked || !belongs;
+        card.hidden = !belongs;
         card.dataset.gameHidden = !belongs ? '1' : '0';
       }
       const head = missions.querySelector('.screen-head h2');
@@ -475,8 +466,8 @@ export function installGameUi(menus, hooks = {}) {
 
   /**
    * Rewrite a counted Missions line from what is actually behind the button.
-   * menus.js calls this on every show('main'), because entering the passcode
-   * in the hangar adds four missions and nothing else repaints this card.
+   * menus.js calls this on every show('main'), because a feature registering
+   * missions later would change it and nothing else repaints this card.
    */
   menus.refreshMissionsLine = function () {
     const main = menus.screens.main;

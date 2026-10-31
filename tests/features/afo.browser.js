@@ -29,20 +29,17 @@ export async function check(sim, r, say) {
   r.ok('afo: both missions are in the mission list', !!normal && !!attack, `normal ${!!normal}, attack ${!!attack}`);
   if (!normal || !attack) return;
 
-  r.ok('afo: the normal flight is not gated; the attack is, like a military aeroplane', !normal.military && attack.military === true,
+  r.ok('afo: the normal flight is not military; the attack is, like a military aeroplane', !normal.military && attack.military === true,
     `normal.military ${normal.military}, attack.military ${attack.military}`);
 
-  const p = Prog.load();
-  const was = p.militaryUnlocked;
-  try {
-    p.militaryUnlocked = false;
-    r.ok('afo: without the passcode, the attack mission is gated and the normal one is not',
-      Prog.needsPasscode(p, attack) && !Prog.needsPasscode(p, normal),
-      `attack ${Prog.needsPasscode(p, attack)}, normal ${Prog.needsPasscode(p, normal)}`);
-    p.militaryUnlocked = true;
-    r.ok('afo: the passcode opens it, live — no reload, same object', !Prog.needsPasscode(p, attack), Prog.needsPasscode(p, attack));
-  } finally {
-    p.militaryUnlocked = was;
+  // The military passcode is gone (owner, 2026-10-30): both cards are on the
+  // board for everybody, the attack under the Military heading.
+  {
+    const board = sim.menus && sim.menus.screens && sim.menus.screens.missions;
+    sim.menus.syncMissionLocks && sim.menus.syncMissionLocks();
+    const card = board && board.querySelector('[data-mission="afo-attack"]');
+    r.ok('afo: the attack mission is listed for everybody — no passcode', !!card && !card.hidden && typeof Prog.needsPasscode === 'undefined',
+      `card ${!!card}, hidden ${card && card.hidden}`);
   }
 
   r.ok('afo: each mission offers exactly three seats, captain first (then the lead fighter, then the President)',

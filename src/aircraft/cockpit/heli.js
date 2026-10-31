@@ -216,7 +216,15 @@ export function buildHeliCockpit(ctx) {
   const vt = pH / 2;
   // The six in front of the pilot (the glass machines get two screens there instead, below).
   const R = 0.042;
-  const px0 = pilotX - cx;
+  const sw = 0.12; // a glass machine's screen
+  // In front of the pilot — but on the panel. The Chinook's pilots sit 55 cm
+  // off the centreline under a hood the hull's width caps at about 40 cm a
+  // side, so "in front of the pilot" put the pair of screens off the panel's
+  // edge, floating over the console (the GM's audit: "panel shifted right with
+  // a stray MFD"). The group is pulled inboard until it fits inside the hood,
+  // with a finger's width to spare, on every machine.
+  const reach = C.glass ? sw + 0.02 : 0.1 + R + 0.015;
+  const px0 = clamp(pilotX - cx, -(hoodW - reach), hoodW - reach);
   const row1 = vt - R - 0.04; // clear of the hood's lip
   const row2 = row1 - 2 * R - 0.016;
   // Engine gauges: on the console's head beside the six; on a tandem deck
@@ -247,7 +255,6 @@ export function buildHeliCockpit(ctx) {
   // The glass machines: a PFD and a map in front of the pilot, where the six were.
   const screens = [];
   if (C.glass) {
-    const sw = 0.12;
     const vS = row1 - 0.03;
     const mountS = (name, u, v, paint, hz) => {
       const d = new Display({ name, w: 512, h: 512, widthM: sw, heightM: sw, paint, hz: hz || 0 });

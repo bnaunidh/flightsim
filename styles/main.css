@@ -10,7 +10,7 @@
  * that sets `display` beats it. Every card and panel in this file sets one, so
  * every `el.hidden = true` in the JavaScript was quietly doing nothing — and
  * this was found and patched one selector at a time, for .mission-card, and
- * then hit again for .map-card (the passcode-gated military map was listed and
+ * then hit again for .map-card (the then passcode-gated military map was listed and
  * playable on a brand-new profile) and .dev-panel (the unfinished-work
  * workbench was open to every player).
  *
@@ -4319,7 +4319,7 @@ body:has(.hud.is-touch.is-rotorhover) .race-solobar { left: 8px; right: auto; to
 }
 
 /* A search miss is hidden by this class and never by [hidden], which belongs
-   to the passcode and the game filter — see syncCategories() in menus.js. */
+   to the game filter — see syncCategories() in menus.js. */
 [data-cat-list] .is-filtered { display: none !important; }
 
 /* -- the headings ---------------------------------------------------- */
@@ -5781,6 +5781,8 @@ html.hud-photo #ui .minimap { display: none !important; }
 .screen-main .resume-body strong { font-size: 15px; font-weight: 650; line-height: 1.25; }
 .screen-main .resume-body em { font-size: 12.5px; font-style: normal; color: var(--text-dim); }
 .screen-main .resume-actions { display: flex; gap: 8px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
+/* Continue / Start fresh are tapped on a Chromebook's screen as often as clicked: finger-sized. */
+.screen-main .resume-actions button { min-height: 44px; }
 
 /* The shoutout under the main cards: a thank-you to Tomm1z for his video (2026-10-27). */
 .screen-main .shoutout {

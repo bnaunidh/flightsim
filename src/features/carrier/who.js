@@ -8,14 +8,14 @@ export function isMilitary(type) {
   if (!type) return false;
   /*
    * A military TRANSPORT (the C-5, aircraft/extra/giants.js: `transport:
-   * true`) flies for an air force and sits behind the passcode, but it is not
+   * true`) flies for an air force and sits under Military, but it is not
    * a combat jet: no carrier, no hook, no guns, no heat-seekers — every
    * caller of this means the jets.
    */
   if (type.transport) return false;
   /*
    * The same for an UNARMED combat type (the B-1B Lancer, aircraft/extra/
-   * lancer.js: `unarmed: true`): military by the passcode and the hangar's
+   * lancer.js: `unarmed: true`): military by the flag and the hangar's
    * shelves, but it carries nothing and has no hook.
    */
   if (type.unarmed) return false;

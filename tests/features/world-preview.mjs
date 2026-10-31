@@ -183,6 +183,34 @@ for (const r of PV.checkNetwork()) ok(`network: ${r.rule}`, r.pass, r.detail);
   ok('the grass and gravel strips roll as grass and gravel, not tarmac', rough.length >= 2 && asSurface === rough.length, `${asSurface}/${rough.length}: ${rough.map((a) => `${a.code} ${a.surface}`).join(', ')}`);
 }
 
+/* ---- The Nunatak Ice Strip reads as a runway in the snow (owner, 2026-10-30: a blank white slab) ---- */
+{
+  const was = PV.departure();
+  PV.setDeparture('petrel');
+  const dIce = PV.previewDef();
+  T.applyMap(dIce);
+  A.refreshRunways();
+  ok('the Nunatak Ice Strip is the polar persona\'s field', A.polarField() === true && dIce._departure && dIce._departure.id === 'petrel');
+  let banks = null;
+  let mat = null;
+  try {
+    const ap = new A.Airport(new THREE.Scene());
+    ap.group.traverse((o) => { if (o.name === 'snow banks') banks = o; });
+    mat = ap.runwayMat;
+  } catch (e) {
+    mat = null;
+  }
+  ok('...its strip is drawn as compacted snow with black markings (a texture, not a flat untextured colour), with the plough\'s banks',
+    !!mat && !!mat.map && mat.map.image && mat.map.image.width >= 256 && !!banks, `map ${!!(mat && mat.map)}, banks ${!!banks}`);
+  PV.setDeparture('eider');
+  T.applyMap(PV.previewDef());
+  A.refreshRunways();
+  ok('...Skerries Regional, cold but paved, is not', A.polarField() === false);
+  PV.setDeparture(was.id);
+  T.applyMap(PV.previewDef());
+  A.refreshRunways();
+}
+
 /* ================================================================== *
  * Tiles from the real height field
  * ================================================================== */

@@ -14,7 +14,7 @@
  *     a city of glass towers on a downtown grid across a strait; a
  *     suspension bridge you can fly under (52.6 m clear); warehouses, car
  *     parks and hotels south of the runway; 80 fields of farmland.
- *   Northwatch Air Station  the cold military base (behind the passcode, like
+ *   Northwatch Air Station  the cold military base (military, like
  *     Ironhead): hover pads for the jump jet, the carrier offshore, and the
  *     Slot — 840 m of water between two fells whose cliffs stand 250-300 m;
  *     120 fields of pasture and hay on the plain.
@@ -566,8 +566,8 @@ export const MAPS = [
    * tropical strip the trainer uses rather undercuts it.
    *
    * Dry, flat, and much bigger than it needs to be, which is what a real air
-   * base feels like — a great deal of concrete and not much else. Behind the
-   * same passcode as the military aircraft themselves.
+   * base feels like — a great deal of concrete and not much else. Flagged
+   * military like the aircraft (the passcode that once hid it is gone).
    */
   {
     id: 'airbase',
@@ -686,7 +686,7 @@ export const MAPS = [
    *
    * Built for the jumbo jets. A 747 wants three kilometres of runway and an
    * A380 a little more, and the longest strip on any map the class could pick
-   * without the passcode was Kestrel's 1,100 m. 09/27 here is 3,800 m and
+   * outside the military fields was Kestrel's 1,100 m. 09/27 here is 3,800 m and
    * 60 m wide, on ground that needs no carving: the island is 'plains' and
    * the approach corridors cut nothing at either end (measured in the header
    * of tests/features/maps.mjs).
@@ -797,7 +797,7 @@ export const MAPS = [
    * straight down, a short strip on a skerry for the same, the carrier moored
    * close enough to see from the circuit, and the Slot, a narrow sound
    * between West Fell and East Fell that a jet can be flown through low.
-   * Behind the same passcode as the military aircraft.
+   * Flagged military like the aircraft (the passcode that once hid it is gone).
    */
   {
     id: 'northwatch',
@@ -1007,8 +1007,8 @@ export const MAPS = [
    *
    * Two places to land. Caribou Forward Operating Base is the airfield at the
    * origin: a joint-forces strip on the plain with shelters and revetments,
-   * open to everybody (it is not behind the passcode — the class asked for
-   * somewhere snowy to fly, not for another locked door). Across the sound,
+   * open to everybody (it was never behind the old passcode — the class asked
+   * for somewhere snowy to fly, not for another locked door). Across the sound,
    * on Sentinel Island, is the SCP Foundation's northern site: a fenced
    * compound with guard towers, searchlights and closed blast doors, and an
    * ICE airstrip beside it. Ice is where braking goes to die: the tyres get

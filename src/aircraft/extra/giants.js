@@ -44,7 +44,7 @@
  * Looks: original. The Beluga's smiling-whale face is a generic idea painted
  * our own way; no Airbus, Boeing, Antonov or Lockheed logo, emblem or
  * trademark lettering appears anywhere. The C-5 is a military transport and
- * sits behind the military passcode like every other military type.
+ * sits under the Military heading like every other military type.
  */
 import { AIRLINER_GEOMETRY, AIRLINER_DOORS, planFrom, shapeFrom } from './airliners.js';
 import { stretchNose, NOSES, station as st } from './jet-shapes.js';
@@ -471,7 +471,7 @@ export function TYPES(base) {
     },
 
     /* ---------------------------------------------------------------- *
-     * C-5 Galaxy: the military airlifter (behind the passcode).
+     * C-5 Galaxy: the military airlifter.
      * ---------------------------------------------------------------- */
     {
       id: 'c5',

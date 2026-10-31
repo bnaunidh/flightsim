@@ -76,7 +76,7 @@ const MI_IDS = MISSION_CATEGORIES.map((c) => c.id);
     [{ id: 'x5', class: 'Trainer' }, 'light'],
     [{ id: 'x6', class: 'Glider' }, 'special'],
     [{ id: 'x7' }, 'special'],
-    // Behind the passcode is military, whatever it is called.
+    // Flagged military is military, whatever it is called.
     [{ id: 'x8', class: 'Trainer', military: true }, 'military'],
     // A category written the way people write it.
     [{ id: 'x9', class: 'Trainer', category: 'Airliners' }, 'airliner'],
@@ -104,7 +104,7 @@ const MI_IDS = MISSION_CATEGORIES.map((c) => c.id);
     .map(([id, cat]) => `${id}: ${missionCategory(MISSIONS.find((m) => m.id === id))} ≠ ${cat}`);
   ok('the existing missions sit where they were read to belong', wrong.length === 0, wrong.join('; '));
   const gatedOutside = MISSIONS.filter((m) => m.military && !m.category && missionCategory(m) !== 'military').map((m) => m.id);
-  ok('every passcode mission without a category is under Military', gatedOutside.length === 0, gatedOutside.join(', '));
+  ok('every military-flagged mission without a category is under Military', gatedOutside.length === 0, gatedOutside.join(', '));
 }
 
 /* ---- the missions being built -------------------------------------- */
@@ -117,7 +117,7 @@ const MI_IDS = MISSION_CATEGORIES.map((c) => c.id);
     [{ id: 'm5', name: 'E', category: 'Emergencies' }, 'events'],
     [{ id: 'm6', name: 'F', category: 'deliveries' }, 'delivery'],
     [{ id: 'm7', name: 'G', category: 'Passengers & cargo' }, 'airline'],
-    // No category: the passcode, the aeroplane, then the words.
+    // No category: the military flag, the aeroplane, then the words.
     [{ id: 'm8', name: 'Top Secret', military: true }, 'military'],
     [{ id: 'm9', name: 'Night Run', aircraft: 'nightjar' }, 'military'],
     [{ id: 'm10', name: 'Meteor Shower', short: 'Rocks from space' }, 'meteor'],
@@ -187,14 +187,15 @@ const MI_IDS = MISSION_CATEGORIES.map((c) => c.id);
   const sky = AIRCRAFT.find((a) => a.id === 'skylark');
   const d = sky && categoryItemData('fleet', sky);
   ok('search words carry the name, the id and the heading', !!d && d.find.includes('skylark') && d.find.includes('light aircraft'), d && d.find.slice(0, 60));
-  const n = MISSIONS.filter((m) => gameOf(m) === 'flight' && !m.military).length;
-  const line = GameUi.missionsLine('flight', { militaryUnlocked: false });
+  // Every flight mission is counted, the military ones too: there is no
+  // passcode hiding them any more (owner, 2026-10-30).
+  const n = MISSIONS.filter((m) => gameOf(m) === 'flight').length;
+  const line = GameUi.missionsLine('flight', {});
   const words = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve',
     'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen', 'Twenty'];
-  ok('the Missions card line is counted, not written', line.startsWith(`${n < words.length ? words[n] : n} mission`), line);
-  const withCode = GameUi.missionsLine('flight', { militaryUnlocked: true });
-  const m = MISSIONS.filter((x) => gameOf(x) === 'flight').length;
-  ok('the passcode changes the count', withCode.startsWith(`${m < words.length ? words[m] : m} mission`), withCode);
+  ok('the Missions card line is counted, not written, and counts the military missions too', line.startsWith(`${n < words.length ? words[n] : n} mission`), line);
+  const oldSave = GameUi.missionsLine('flight', { militaryUnlocked: false });
+  ok('an old save\'s militaryUnlocked flag changes nothing', oldSave === line, oldSave);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

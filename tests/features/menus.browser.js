@@ -12,7 +12,7 @@
  *   - in each of the four games, every heading that shows has a title and a
  *     count that matches the cards under it, and no card is visible outside a
  *     visible heading or under a hidden one;
- *   - the passcode still hides the military missions, whatever the chips,
+ *   - the military missions are shown for everybody, whatever the chips,
  *     the search box and the game switcher have been doing;
  *   - a chip shows one heading and All brings them back; a search that
  *     matches nothing says so, and clearing it restores the board;
@@ -162,7 +162,7 @@ export async function check(sim, r, say) {
   const MISSIONS = Missions.MISSIONS || [];
   const gameOf = Missions.gameOf || ((m) => m.game || 'flight');
   const prog = menus.prog || Prog.load();
-  const gated = (x) => Prog.needsPasscode(prog, x);
+  const military = (x) => !!x.military;
 
   // What to put back afterwards.
   const was = {
@@ -213,11 +213,7 @@ export async function check(sim, r, say) {
       const bad = [];
       for (const a of AIRCRAFT) {
         const btns = hangar.querySelectorAll(`[data-unlocks] [data-buy="${a.id}"]`);
-        const hide = !!a.military && !prog.militaryUnlocked;
-        if (hide) {
-          if (btns.length) bad.push(`${a.id} shows before the passcode`);
-          continue;
-        }
+        // Every aeroplane has its button, the military ones too (no passcode).
         if (btns.length !== 1) bad.push(`${a.id}: ${btns.length} buttons`);
         else if (groupsAround(btns[0], hangar) !== 1) bad.push(`${a.id}: under ${groupsAround(btns[0], hangar)} headings`);
         else if (btns[0].closest('[data-cat-group]').dataset.catGroup !== aircraftCategory(a)) {
@@ -264,7 +260,7 @@ export async function check(sim, r, say) {
         menus.setGame(g);
         menus.resetCategoryFilter('missions');
         menus.show('missions');
-        const want = new Set(MISSIONS.filter((m) => gameOf(m) === g && !gated(m)).map((m) => m.id));
+        const want = new Set(MISSIONS.filter((m) => gameOf(m) === g).map((m) => m.id));
         const got = new Set();
         const heads = [];
         for (const group of board.querySelectorAll('[data-cat-list="missions"] > [data-cat-group]')) {
@@ -298,7 +294,7 @@ export async function check(sim, r, say) {
       );
     }
 
-    /* ---- 5. The passcode survives chips, search and switching ----- */
+    /* ---- 5. The military missions are shown, after chips, search and switching ----- */
     {
       menus.setGame('car');
       menus.setGame('flight');
@@ -310,16 +306,16 @@ export async function check(sim, r, say) {
         inp.value = '';
         inp.dispatchEvent(new Event('input', { bubbles: true }));
       }
-      const leaked = MISSIONS.filter((m) => gated(m))
+      const hiddenMil = MISSIONS.filter((m) => military(m) && gameOf(m) === 'flight')
         .filter((m) => {
           const c = board.querySelector(`[data-mission="${m.id}"]`);
-          return c && !c.hidden;
+          return !c || c.hidden;
         })
         .map((m) => m.id);
       r.ok(
-        'menus: military missions stay hidden without the passcode, after switching games and searching',
-        leaked.length === 0,
-        leaked.join(', ') || (prog.militaryUnlocked ? 'passcode already entered on this profile' : 'none leaked')
+        'menus: military missions are on the board for everybody (no passcode), after switching games and searching',
+        hiddenMil.length === 0 && MISSIONS.some((m) => military(m) && gameOf(m) === 'flight'),
+        hiddenMil.join(', ') || 'all shown'
       );
     }
 
@@ -376,7 +372,7 @@ export async function check(sim, r, say) {
       menus.setGame('flight');
       menus.show('main');
       const line = menus.screens.main.querySelector('[data-missions-line]');
-      const n = MISSIONS.filter((m) => gameOf(m) === 'flight' && !gated(m)).length;
+      const n = MISSIONS.filter((m) => gameOf(m) === 'flight').length;
       const words = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
         'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen', 'Twenty'];
       const want = n < words.length ? words[n] : String(n);

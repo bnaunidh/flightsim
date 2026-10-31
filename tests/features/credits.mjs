@@ -246,8 +246,8 @@ const wallet = () => ({ credits: 500, earned: 900, best: [], unlocked: [], redee
 /* ---- 9. the economy ---------------------------------------------------- */
 
 /*
- * A typical kid: Normal settings, scores about 75, flies what is open without
- * the passcode in the order a kid meets it (easy first), then round again.
+ * A typical kid: Normal settings, scores about 75, flies the civilian board
+ * in the order a kid meets it (easy first), then round again.
  * A run takes its par time (five minutes where there is none). Before = the
  * old flat 120 + 2.2 × score.
  */
@@ -304,7 +304,7 @@ for (const [name, cost] of targets) {
   res[name] = { b, a, m };
   lines.push(`  ${name.padEnd(24)} ${String(cost).padStart(6)} cr   ${fmt(b).padEnd(27)} ${fmt(a).padEnd(21)} ${fmt(m)}`);
 }
-// The military shop, once the passcode is in: the kid now flies everything.
+// The military shop (no passcode any more): the kid flying everything.
 const milPath = [...civ, ...mil].sort((a, b) => a.rank - b.rank);
 const milTotal = milShop.reduce((s, u) => s + u.cost, 0);
 const mb = toAfford(milTotal, milPath, beforePay);
@@ -320,7 +320,7 @@ for (const rk of Prog.RANKS.filter((x) => !x.granted && x.at > 0)) {
 const avgAfter = mean(civ.map(afterPay));
 const perMinBefore = mean(civ.map((r) => before / minutes(r)));
 const perMinAfter = mean(civ.map((r) => afterPay(r) / minutes(r)));
-console.log(`\nEconomy, typical kid (Normal, score ${SCORE}, ${civ.length} missions open without the passcode):`);
+console.log(`\nEconomy, typical kid (Normal, score ${SCORE}, ${civ.length} civilian missions):`);
 console.log(`  per run          before ${before}   after ${Math.round(avgAfter)} on average (${Math.min(...civ.map(afterPay))}–${Math.max(...civ.map(afterPay))})`);
 console.log(`  per minute       before ${Math.round(perMinBefore)}   after ${Math.round(perMinAfter)}`);
 console.log(lines.join('\n'));
@@ -340,33 +340,33 @@ ok('one dear plane: a mix of missions gets it about as fast as before; sticking 
   res['priciest plane'].m.n / res['priciest plane'].b.n <= 1.25 && res['priciest plane'].a.n / res['priciest plane'].b.n <= 1.5,
   `a mix ${(res['priciest plane'].m.n / res['priciest plane'].b.n).toFixed(2)}×, easy-first ${(res['priciest plane'].a.n / res['priciest plane'].b.n).toFixed(2)}×`);
 
-/* ---- 10. the two doors are hashed, not written down ------------------- */
+/* ---- 10. the Dev door is hashed, not written down; the military door is gone ---- */
 
 {
-  // The military hangar and the workbench used to sit behind plaintext words
-  // in progression.js. Now only fingerprints ship (the CODES scheme), and a
-  // test-only word, hashed by the game's own codeHash(), opens a door handed
-  // in — exactly as the shipped one does for whoever knows the real word.
+  // The workbench used to sit behind a plaintext word in progression.js. Now
+  // only its fingerprint ships (the CODES scheme), and a test-only word,
+  // hashed by the game's own codeHash(), opens a door handed in — exactly as
+  // the shipped one does for whoever knows the real word. The military door
+  // was removed outright (owner, 2026-10-30): tests/features/military-open.mjs.
   ok('no plaintext passcode is exported', typeof Prog.MILITARY_CODE === 'undefined' && typeof Prog.DEV_CODE === 'undefined');
-  ok('both doors ship as 64-hex SHA-256 fingerprints', Prog.isCodeHash(Prog.MILITARY_CODE_HASH) && Prog.isCodeHash(Prog.DEV_CODE_HASH)
-    && Prog.MILITARY_CODE_HASH !== Prog.DEV_CODE_HASH);
+  ok('the Dev door ships as a 64-hex SHA-256 fingerprint, and there is no military door', Prog.isCodeHash(Prog.DEV_CODE_HASH)
+    && typeof Prog.MILITARY_CODE_HASH === 'undefined' && typeof Prog.enterPasscode === 'undefined' && typeof Prog.needsPasscode === 'undefined');
   const word = `door-${Math.random().toString(36).slice(2, 8)}`;
   const door = await Prog.codeHash(word);
-  const fresh = () => ({ ...Prog.load(), militaryUnlocked: false, devUnlocked: false });
+  const fresh = () => ({ ...Prog.load(), devUnlocked: false });
   let w = fresh();
-  const yes = await Prog.enterPasscode(w, `  ${word.toUpperCase()} `, door);
-  ok('a test-only word opens the military door, in any case, with spaces around it', yes.ok === true && w.militaryUnlocked === true, JSON.stringify(yes));
+  const yes = await Prog.enterDevCode(w, `  ${word.toUpperCase()} `, door);
+  ok('a test-only word opens the workbench door, in any case, with spaces around it', yes.ok === true && w.devUnlocked === true, JSON.stringify(yes));
   w = fresh();
-  const no = await Prog.enterPasscode(w, `${word}x`, door);
-  ok('a near miss is refused with the usual sentence and opens nothing', no.ok === false && no.why === 'That is not the word' && !w.militaryUnlocked);
-  w = fresh();
-  const dev = await Prog.enterDevCode(w, word, door);
+  const no = await Prog.enterDevCode(w, `${word}x`, door);
+  ok('a near miss is refused with the usual sentence and opens nothing', no.ok === false && no.why === 'That is not the word' && !w.devUnlocked);
   const devNo = await Prog.enterDevCode(fresh(), word);
-  ok('the workbench door works the same way, and the test word does not open the SHIPPED one', dev.ok === true && w.devUnlocked === true && devNo.ok === false);
-  const blankDoor = await Prog.enterPasscode(fresh(), word, 'not-a-hash');
+  ok('the test word does not open the SHIPPED door', devNo.ok === false);
+  const blankDoor = await Prog.enterDevCode(fresh(), word, 'not-a-hash');
   ok('a door with no fingerprint opens for nothing rather than for everything', blankDoor.ok === false);
   const srcText = (await import('node:fs')).readFileSync(new URL('src/game/progression.js', root), 'utf8');
-  ok('progression.js has no plaintext passcode constant left', !/export const (MILITARY|DEV)_CODE = /.test(srcText) && /MILITARY_CODE_HASH = '[0-9a-f]{64}'/.test(srcText));
+  ok('progression.js has no plaintext passcode constant left, and no military hash', !/export const (MILITARY|DEV)_CODE = /.test(srcText)
+    && /DEV_CODE_HASH = '[0-9a-f]{64}'/.test(srcText) && !/MILITARY_CODE_HASH = '/.test(srcText));
 }
 
 /* ---- the table --------------------------------------------------------- */

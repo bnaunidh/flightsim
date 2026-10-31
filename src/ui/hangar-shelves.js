@@ -28,7 +28,7 @@ export const SHELVES = Object.freeze([
   { id: 'regional', label: 'Regional', blurb: 'Short hops, fewer seats, propellers', colour: '#64d8c8', icon: 'airliner' },
   { id: 'giants', label: 'Giants & Cargo', blurb: 'The biggest things that fly — built to carry', colour: '#ffd166', icon: 'delivery' },
   { id: 'business', label: 'Business jets', blurb: 'Fast, small and private', colour: '#f0a6c8', icon: 'airline' },
-  { id: 'military', label: 'Military', blurb: 'Behind the passcode — very fast, very twitchy', colour: '#b9cf8f', icon: 'military' },
+  { id: 'military', label: 'Military', blurb: 'Very fast, very twitchy', colour: '#b9cf8f', icon: 'military' },
   { id: 'helicopters', label: 'Helicopters', blurb: 'They hover — nothing else here does', colour: '#ff9d6a', icon: 'heli' },
   { id: 'special', label: 'Special', blurb: 'The odd ones out', colour: '#c39bff', icon: 'special' },
 ]);
@@ -55,7 +55,7 @@ const REGIONAL_RE = /regional|turboprop|commuter/;
  *
  * `catOf` is menus.js aircraftCategory: the five-way heading the rest of the
  * game already agrees on. A shelf never contradicts it — Military stays
- * Military (the passcode's door is one door), Helicopters stay Helicopters
+ * Military, Helicopters stay Helicopters
  * whatever they are armed with — it only splits Airliners three ways and
  * gives a business jet, from whatever heading, a shelf of its own.
  */

@@ -613,7 +613,7 @@ async function checks(sim, r, say) {
     const enter = hangar && hangar.querySelector('[data-dev-enter]');
     const msg = hangar && hangar.querySelector('[data-code-msg]');
     r.ok('dev door: no plaintext passcode in the module, only fingerprints',
-      typeof Prog.DEV_CODE === 'undefined' && typeof Prog.MILITARY_CODE === 'undefined' && Prog.isCodeHash(Prog.DEV_CODE_HASH) && Prog.isCodeHash(Prog.MILITARY_CODE_HASH));
+      typeof Prog.DEV_CODE === 'undefined' && typeof Prog.MILITARY_CODE === 'undefined' && Prog.isCodeHash(Prog.DEV_CODE_HASH) && typeof Prog.MILITARY_CODE_HASH === 'undefined');
     if (box && enter && msg && menus.prog) {
       const was = !!menus.prog.devUnlocked;
       try {

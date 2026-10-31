@@ -22,7 +22,7 @@
  */
 import * as THREE from '../../vendor/three.module.js';
 import { addObstacleAt, addPlatform, heightAt } from '../terrain.js';
-import { runwayTexture, asphaltNormal } from '../../render/textures.js';
+import { runwayTexture, asphaltNormal, iceRunwayTexture } from '../../render/textures.js';
 import { Batch, vcMaterial, layer, glowPoints } from '../airport-kit.js';
 import { planTown, addTown, treeGeometry } from '../scenery.js';
 import { papiFor } from '../navfield.js';
@@ -52,7 +52,10 @@ const C = {
 const stripMats = {};
 function stripMaterial(surface) {
   if (stripMats[surface]) return stripMats[surface];
-  const m = new THREE.MeshStandardMaterial({ color: surface === 'gravel' ? 0x8c8576 : 0x6f8a4a, roughness: 1, metalness: 0 });
+  // A polar field's strip is compacted snow and ice, marked (airport.js polarField).
+  const m = surface === 'ice'
+    ? new THREE.MeshStandardMaterial({ map: iceRunwayTexture(), roughness: 0.55, metalness: 0 })
+    : new THREE.MeshStandardMaterial({ color: surface === 'gravel' ? 0x8c8576 : 0x6f8a4a, roughness: 1, metalness: 0 });
   m.userData.shared = true;
   stripMats[surface] = m;
   return m;
@@ -132,7 +135,7 @@ export function buildField(a, quality = 'medium') {
   const rough = a.surface === 'grass' || a.surface === 'gravel';
   const rgeo = new THREE.PlaneGeometry(hw * 2, L);
   rgeo.rotateX(-Math.PI / 2);
-  const runway = new THREE.Mesh(rgeo, rough ? stripMaterial(a.surface) : sharedRunwayMaterial());
+  const runway = new THREE.Mesh(rgeo, rough ? stripMaterial(styleOf(a).snow ? 'ice' : a.surface) : sharedRunwayMaterial());
   runway.rotation.y = Math.PI / 2;
   runway.position.set(0, 0.06, 0);
   runway.receiveShadow = true;

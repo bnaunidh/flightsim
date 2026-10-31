@@ -19,11 +19,10 @@ export async function check(sim, r, say = () => {}) {
     return;
   }
   const p = sim.prog || menus.prog;
-  const saved = p ? { credits: p.credits, unlocked: [...p.unlocked], mil: p.militaryUnlocked } : null;
+  const saved = p ? { credits: p.credits, unlocked: [...p.unlocked] } : null;
   const livery0 = sim.settings ? JSON.stringify(sim.settings.liveries || {}) : undefined;
   try {
     say('marine one: the hangar');
-    p.militaryUnlocked = false;
     p.credits = 0;
     p.unlocked = ['skylark', 'courier', 'harrier'];
     menus.syncProgression && menus.syncProgression(p);
@@ -31,7 +30,7 @@ export async function check(sim, r, say = () => {}) {
     menus.show('hangar');
     if (ui.loading) await ui.loading.catch(() => {});
     for (let i = 0; i < 100 && !ui.showcase && !ui.failed; i++) await sleep(50);
-    r.ok('marine one: in the hangar without the passcode, on the Helicopters shelf', ui.shown.some((a) => a.id === 'vh3d') && !!$('[data-hs-pick="vh3d"]'),
+    r.ok('marine one: in the hangar on a fresh profile, on the Helicopters shelf', ui.shown.some((a) => a.id === 'vh3d') && !!$('[data-hs-pick="vh3d"]'),
       ui.shown.some((a) => a.id === 'vh3d') ? 'shown' : 'hidden');
     ui.select('vh3d', 0);
     for (let i = 0; i < 20; i++) menus.drawView(sim.renderer, 1 / 30);
@@ -56,7 +55,6 @@ export async function check(sim, r, say = () => {}) {
     if (saved) {
       p.credits = saved.credits;
       p.unlocked = saved.unlocked;
-      p.militaryUnlocked = saved.mil;
       menus.syncProgression && menus.syncProgression(p);
     }
     if (sim.settings && livery0 !== undefined) sim.settings.liveries = JSON.parse(livery0);

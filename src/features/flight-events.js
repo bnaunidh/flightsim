@@ -164,7 +164,7 @@ const CHOICE_ACTIONS = ['eventChoice1', 'eventChoice2', 'eventChoice3'];
  * told about beats one you cannot find.
  *
  * It used to be hidden instead, and that broke two things. The menus' own
- * check counts every card that is not behind the military passcode as one
+ * check counts every card on the board as one
  * the board must show, so with this branch merged it went red ("flight:
  * missing event-hijack-real"). And the game switcher (game-ui.js) un-hides a
  * card it hid for another game without asking why else it was hidden, so

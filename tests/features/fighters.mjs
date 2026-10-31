@@ -310,7 +310,7 @@ ok('massimo reaches the highest level top speed of every aeroplane in the game (
   ok('T-Pose Harrison is 1 km/h faster than Air Massimo at top speed (measured, ± 0.25)',
     !mt.crashed && !ht.crashed && Math.abs(d - 1) <= 0.25,
     `Massimo ${(mt.kt / KT * 3.6).toFixed(2)} km/h, Harrison ${(ht.kt / KT * 3.6).toFixed(2)} km/h: ${d >= 0 ? '+' : ''}${d.toFixed(3)} km/h`);
-  ok('T-Pose Harrison is not military (no passcode) and has a higher red line than Massimo',
+  ok('T-Pose Harrison is not military and has a higher red line than Massimo',
     !getAircraft('tpose').military && getAircraft('tpose').aero.vne > getAircraft('massimo').aero.vne);
 }
 const others = AIRCRAFT.filter((a) => !FASTER.has(a.id));
@@ -318,7 +318,7 @@ ok('massimo has the highest vne in the roster', others.every((a) => getAircraft(
   `${getAircraft('massimo').aero.vne} m/s against ${Math.max(...others.map((a) => a.aero.vne))}`);
 ok('massimo shows the highest "Top" in the hangar', others.every((a) => performanceFor('massimo').vne > performanceFor(a.id).vne),
   `${performanceFor('massimo').vne} kt`);
-ok('massimo is not military (no passcode)', !getAircraft('massimo').military);
+ok('massimo is not military', !getAircraft('massimo').military);
 
 /* ------------------------------------------------------------- hover --- */
 function hoverWorld(wind, condition = 'clear') {

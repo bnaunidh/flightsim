@@ -58,7 +58,7 @@ export const UNLOCKS = [
   { aircraft: 'uh60', cost: 1800, why: 'Eleven troops and a canted tail', military: true },
   { aircraft: 'ch47', cost: 2600, why: 'Two rotors, a ramp, nothing lifts more', military: true },
   { aircraft: 'ah64', cost: 3000, why: 'The gun follows the sight', military: true },
-  // Marine One: bought like the President's 747 (b747 above), no passcode.
+  // Marine One: bought like the President's 747 (b747 above).
   { aircraft: 'vh3d', cost: 1500, why: 'The President\'s helicopter' },
 // Not in the shop on a copy without them (core/edition.js: Air Massimo on thankdapro); every row elsewhere.
 ].filter((u) => !HIDDEN_AIRCRAFT.has(u.aircraft));
@@ -75,31 +75,21 @@ export const UNLOCKS = [
  */
 const FREE = ['skylark', 'courier', 'harrier'];
 
-/**
- * Military aircraft sit behind a passcode.
+/*
+ * Military aircraft are NOT behind a passcode (owner, 2026-10-30: "remove
+ * military code, we dont need it").
  *
- * This was the class's own idea, and it is a good one: they wanted the
- * military side gated so it is not simply there for anyone who opens the game.
- * It is not a security measure — anyone can read this file — it is a door, so
- * that flying the bomber is a thing you were let into rather than a thing you
- * wandered into. Whoever runs the game decides who gets told the word.
+ * For a long while they were: a word, hashed here as MILITARY_CODE_HASH, that
+ * whoever ran the game told the class, and a `militaryUnlocked` flag in the
+ * saved progression that it set once. That door is gone. A military aeroplane
+ * is bought in the hangar for credits exactly like the others (UNLOCKS above,
+ * `military: true` is now only the heading it sits under), and the military
+ * missions, maps and roles are listed for everybody.
  *
- * Typed case-insensitively: upper or lower case opens the same door.
- *
- * It opens ONCE. `militaryUnlocked` lives in the saved progression and is
- * never cleared — not by finishing, not by crashing, not by "Reset
- * everything", which only touches settings, keys and mission progress. Being
- * let in is a thing that happened to you, not a score you can lose, so the
- * game must never make a kid go and ask for the word a second time.
- *
- * The word itself is NOT in this file any more: only its fingerprint is —
- * SHA-256 of the word trimmed and lower-cased, the same scheme as the hangar's
- * CODES below (codeHash) — so reading the source no longer hands anyone the
- * door. Whoever was told the word types it exactly as before. To change it:
- * `node tools/hash-code.mjs --passcode=military`, type the new word, and
- * paste the printed line here.
+ * Old saves still carry `militaryUnlocked`; load() drops it and nothing reads
+ * it. The hangar's OTHER box — the redeem codes (CODES / PREFIXES below) — and
+ * the Dev door are untouched.
  */
-export const MILITARY_CODE_HASH = '3ec50afbd4c5890ffe3fbab91c62d1fdc58d192f6b88b85be4bc9065a443889b';
 
 /**
  * Dev mode.
@@ -112,9 +102,9 @@ export const MILITARY_CODE_HASH = '3ec50afbd4c5890ffe3fbab91c62d1fdc58d192f6b88b
  * classroom of twenty-nine and hoping nobody notices, or not being able to see
  * the work in the real game at all. Neither is any good.
  *
- * Same rules as the military code: case-insensitive, opens once, stays open.
- * Same scheme as the military door: only the fingerprint lives here
- * (`node tools/hash-code.mjs --passcode=dev` makes a new one).
+ * Case-insensitive, opens once, stays open. Only the fingerprint lives here —
+ * SHA-256 of the word trimmed and lower-cased, the same scheme as the hangar's
+ * CODES below (`node tools/hash-code.mjs --passcode=dev` makes a new one).
  */
 export const DEV_CODE_HASH = 'a78f8128f2109434daf14d867c665d97a242909409b29bc0a965111d8a4a9f80';
 
@@ -133,7 +123,6 @@ function blank() {
   return {
     credits: 0,
     earned: 0, // lifetime, which is what the rank is based on
-    militaryUnlocked: false,
     devUnlocked: false,
     unlocked: [...FREE],
     grantedRank: null,
@@ -150,6 +139,9 @@ export function load() {
     // JSON.parse('null') is null, which survives the spread and then throws on
     // the next line — a silent total reset dressed up as a corrupt save.
     if (!p || typeof p !== 'object') return blank();
+    // The military door is gone (see above): a save that still says it was
+    // opened is simply a save, and the flag is dropped rather than carried.
+    delete p.militaryUnlocked;
     return { ...blank(), ...p, unlocked: [...new Set([...FREE, ...(p.unlocked || [])])] };
   } catch (e) {
     console.warn('Could not read your progress — starting fresh.', e);
@@ -298,7 +290,7 @@ export function difficultyRank(label) {
  *               erupting volcano in the fighter, three passes through a
  *               tornado. Emergencies — a dead engine over the sea, a hijack.
  *               Space — landing a booster on a ship.
- *   4 Elite     Military — behind the passcode, in the twitchiest aeroplanes
+ *   4 Elite     Military — the twitchiest aeroplanes
  *               in the game: a trap on a moving carrier deck, the tailless
  *               wing at night below 500 feet.
  *
@@ -322,7 +314,7 @@ export function categoryTier(category) {
 /*
  * Which heading a mission is under. menus.js owns that answer
  * (missionCategory(): the mission's own `category`, a table for the old ones,
- * the passcode, the words in its name) and hands it over when it loads — so
+ * the military flag, the words in its name) and hands it over when it loads — so
  * the pay and the board can never disagree about where a mission sits, and
  * this file does not have to import the whole menu to find out. Until it has,
  * a mission's own `category` field is used as written.
@@ -446,48 +438,30 @@ export function isUnlocked(p, aircraftId) {
   return p.unlocked.includes(aircraftId);
 }
 
-/** True if this aeroplane needs the passcode and has not been let through. */
-export function needsPasscode(p, type) {
-  return !!(type && type.military) && !p.militaryUnlocked;
+/** Is the workbench open? */
+export function isDev(p) {
+  return !!(p && p.devUnlocked);
 }
 
 /**
- * Try a word at the military door. Asynchronous because the fingerprint is
+ * Try a word at the workbench door. Asynchronous because the fingerprint is
  * (codeHash: crypto.subtle, or the plain-JavaScript SHA-256 on a plain-http
  * classroom address). `hash` is the door to check against — the shipped
  * fingerprint unless a test hands in its own.
  */
-export async function enterPasscode(p, raw, hash = MILITARY_CODE_HASH) {
+export async function enterDevCode(p, raw, hash = DEV_CODE_HASH) {
   if (!(await isTheWord(raw, hash))) {
     return { ok: false, why: 'That is not the word' };
   }
-  p.militaryUnlocked = true;
+  p.devUnlocked = true;
   /*
    * Only say it opened if it actually stayed open.
    *
    * save() swallows its own failure — a full quota, a private window, a
    * locked-down school profile — and returns false. Reporting success anyway
    * gave you a session that worked perfectly and an unlock that was gone next
-   * morning, which is precisely the "go and ask for the word again" this is
-   * supposed to prevent. It still works for this session; you are just told.
+   * morning. It still works for this session; you are just told.
    */
-  if (!save(p)) {
-    return { ok: true, warn: 'Open for now — this browser would not save it, so you may have to enter it again.' };
-  }
-  return { ok: true };
-}
-
-/** Is the workbench open? */
-export function isDev(p) {
-  return !!(p && p.devUnlocked);
-}
-
-/** Try a word at the workbench door; see enterPasscode. */
-export async function enterDevCode(p, raw, hash = DEV_CODE_HASH) {
-  if (!(await isTheWord(raw, hash))) {
-    return { ok: false, why: 'That is not the word' };
-  }
-  p.devUnlocked = true;
   if (!save(p)) {
     return { ok: true, warn: 'Open for now — this browser would not save it, so you may have to enter it again.' };
   }

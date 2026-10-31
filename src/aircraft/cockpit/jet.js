@@ -80,7 +80,11 @@ const JET = {
   f22: { layout: 'raptor', bow: null, rearArch: true, stick: 'side', engines: 2, palette: { panel: '#26292d', trim: '#2f3337', frame: '#2c3034' }, glassTint: 0xd9b871, glassOpacity: 0.1, title: 'F-22' },
   f35b: { layout: 'pano', bow: 0.3, rearArch: true, stick: 'side', engines: 1, hmd: true, palette: { panel: '#25282c', trim: '#2e3236', frame: '#33373c' }, glassTint: 0xb8c6cf, title: 'F-35B' },
   fa18: { layout: 'hornet', bow: 0.36, rearArch: true, stick: 'centre', engines: 2, palette: { panel: '#2c3136', trim: '#394047', frame: '#3f464e' }, glassTint: 0xa8c4d6, title: 'F/A-18' },
-  massimo: { layout: 'racer', bow: null, rearArch: true, stick: 'centre', engines: 2, racer: true, palette: { panel: '#1e2125', trim: '#e9ecef', frame: '#c4262b', glare: '#15171a', seat: '#8f1c1f' }, glassTint: 0xc8d8e2, title: 'AIR MASSIMO' },
+  // `rail`: the sill rails and their flanges run along the lower edge of the
+  // view, and in Massimo's narrow canopy they cut into it; in the racing red
+  // of its frame they were two bright red bars across the bottom of the
+  // picture (the GM's audit). Dark trim there; the rear arch keeps the red.
+  massimo: { layout: 'racer', bow: null, rearArch: true, stick: 'centre', engines: 2, racer: true, palette: { panel: '#1e2125', trim: '#e9ecef', frame: '#c4262b', glare: '#15171a', seat: '#8f1c1f' }, rail: 0x2a2d31, glassTint: 0xc8d8e2, title: 'AIR MASSIMO' },
   nightjar: { layout: 'bomber', engines: 4, palette: { panel: '#2a2e33', trim: '#3a3f45', frame: '#25292d' }, title: 'NIGHTJAR B-2' },
   // The A-10C: a Hornet-style pair of MFCDs flanking the up-front keypad
   // under a conventional HUD, a centre stick, two throttles on the left
@@ -230,17 +234,18 @@ export function buildJetCockpit(ctx) {
   // Sill rails, along the rim each side.
   const railZ0 = Math.max(zFront + 0.05, zMeet - 0.1);
   const railZ1 = zBack - 0.05;
+  const railMat = C.rail != null ? new THREE.MeshStandardMaterial({ color: C.rail, roughness: 0.6, metalness: 0.3 }) : M.frame;
   for (const s of [-1, 1]) {
     const pts = [];
     for (let i = 0; i <= 20; i++) {
       const z = lerp(railZ0, railZ1, i / 20);
       pts.push(new THREE.Vector3(cx + s * (rim(z) - 0.022), ySill + 0.012, z));
     }
-    part(group, tubeAlong(pts, 0.022, 40, 8), M.frame, 0, 0, 0, 'canopy sill rail');
+    part(group, tubeAlong(pts, 0.022, 40, 8), railMat, 0, 0, 0, 'canopy sill rail');
     // A flange under it, so the rail sits on something.
     const inner = pts.map((v) => new THREE.Vector3(v.x - s * 0.05, ySill - 0.01, v.z));
     const outer = pts.map((v) => new THREE.Vector3(v.x + s * 0.012, ySill - 0.004, v.z));
-    part(group, loft(s > 0 ? inner : outer, s > 0 ? outer : inner, false), M.frame, 0, 0, 0, 'canopy sill');
+    part(group, loft(s > 0 ? inner : outer, s > 0 ? outer : inner, false), railMat, 0, 0, 0, 'canopy sill');
   }
   /** An arch inside the glass across the canopy at local z: the bow. */
   const arch = (z, r = 0.026, flange = 0.06, name = 'canopy bow') => {
@@ -705,7 +710,7 @@ export function buildJetCockpit(ctx) {
   group.userData.hud = hud;
   group.userData.family = ctx.family === 'racer' ? 'racer' : 'jet';
   group.userData.builder = `jet:${id}`;
-  group.userData.canopy = { z0: q.z0, z1: q.z1, width: q.width, height: q.height, baseY: q.baseY, source: q0 ? 'pack' : 'default' };
+  group.userData.canopy = { z0: q.z0, z1: q.z1, width: q.width, height: q.height, baseY: q.baseY, source: q0 ? 'pack' : 'default', rail: railMat.color.getHex(), frame: M.frame.color.getHex() };
   group.userData.eye = E.clone();
   group.userData.controls = { stick, throttle, pedals };
   return group;

@@ -1508,13 +1508,6 @@ export class Menus {
         <h3 class="fail-heading">Your best flights</h3>
         <div class="board" data-board></div>
 
-        <h3 class="fail-heading">Military access</h3>
-        <p class="trigger-note" data-mil-note>Military aircraft are behind a passcode. Ask whoever runs the game.</p>
-        <div class="code-row">
-          <input type="text" data-mil-code placeholder="Passcode" maxlength="20">
-          <button data-mil-enter>Enter</button>
-        </div>
-
         <h3 class="fail-heading">Got a code?</h3>
         <div class="code-row">
           <input type="text" data-code placeholder="Ask the CEO" maxlength="20">
@@ -1595,11 +1588,8 @@ export class Menus {
       s.querySelector('[data-dev-note]').textContent = dev
         ? 'The workbench is open. Everything here is unfinished on purpose.'
         : 'Things that are built but not finished. Behind a passcode, because they are not ready for everybody yet.';
-      const milOpen = !!p.militaryUnlocked;
-      s.querySelector('[data-mil-note]').textContent = milOpen
-        ? 'Access granted. The military hangar is open.'
-        : 'Military aircraft are behind a passcode. Ask whoever runs the game.';
-      s.querySelector('[data-unlocks]').innerHTML = AIRCRAFT.filter((a) => milOpen || !a.military).map((a) => {
+      // No military door any more (progression.js): every aeroplane is for sale.
+      s.querySelector('[data-unlocks]').innerHTML = AIRCRAFT.map((a) => {
         const owned = Prog.isUnlocked(p, a.id);
         const cost = Prog.costOf(a.id);
         const afford = p.credits >= cost;
@@ -1673,29 +1663,6 @@ export class Menus {
         Prog.leaveDev(p);
         s.querySelector('[data-code-msg]').textContent = 'Dev mode off.';
         render();
-        return;
-      }
-      if (e.target.closest('[data-mil-enter]')) {
-        const p = this.prog || Prog.load();
-        const box = s.querySelector('[data-mil-code]');
-        const msg = s.querySelector('[data-code-msg]');
-        const typed = box.value;
-        this._doorCheck = Prog.enterPasscode(p, typed).then((r) => {
-          msg.textContent = r.ok
-            ? r.warn || 'Access granted — the military hangar is open, and stays open.'
-            : r.why;
-          if (r.ok && box.value === typed) box.value = '';
-          render();
-          this.syncFleetLocks && this.syncFleetLocks();
-          this.syncMissionLocks && this.syncMissionLocks();
-          this.syncMapLocks && this.syncMapLocks();
-          // The start screen's "N missions" denominator excludes hidden ones, so
-          // it has to be recomputed too or it keeps advertising the old total.
-          this._lastProgress && this.syncProgress(this._lastProgress);
-        }, (err) => {
-          console.warn('[hangar] could not check that word', err);
-          msg.textContent = 'That is not the word';
-        });
         return;
       }
       if (e.target.closest('[data-redeem]')) {

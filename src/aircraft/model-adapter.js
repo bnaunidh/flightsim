@@ -84,9 +84,9 @@ export function fleetModelsOn() {
  * The three the pack draws better, listed rather than derived.
  *
  * `type.military` would have been the tidy test, and it is the wrong one: it
- * is what the hangar's passcode gate reads, so flagging the Vanguard and the
- * Osprey to pick a model would have locked both aeroplanes behind the military
- * code as a side effect. Which aeroplane looks better is not the same question
+ * is what the hangar's Military heading reads, so flagging the Vanguard and the
+ * Osprey to pick a model would have moved both aeroplanes under Military
+ * as a side effect. Which aeroplane looks better is not the same question
  * as who is allowed to fly it, and the two should not share a flag.
  */
 const PACK_DRAWS_BETTER = new Set(['vanguard', 'osprey', 'nightjar']);

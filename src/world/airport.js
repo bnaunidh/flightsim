@@ -29,6 +29,7 @@ import * as Terrain from './terrain.js';
 import { AIRPORT, heightAt, addObstacleAt } from './terrain.js';
 import {
   runwayTexture,
+  iceRunwayTexture,
   asphaltTexture,
   asphaltNormal,
   buildingTexture,
@@ -40,6 +41,7 @@ import {
 } from '../render/textures.js';
 import { glassMaterial, metalMaterial, registerWetSurface } from '../render/surfaces.js';
 import { airportLayout, onAirportPavement, pavedIn, standSlot } from './airport-layout.js';
+import { styleOf } from './worldmap/personas.js';
 import { Batch, vcMaterial, instanced, settle, glowPoints, canvas, canvasTexture, trs, trse, yawOf, layer } from './airport-kit.js';
 import { fireEngineGeometry, carGeometry } from './airport-vehicles.js';
 import { taxiMarkings } from './airport-markings.js';
@@ -93,6 +95,30 @@ export function refreshRunways() {
   }
   return ELEV;
 }
+/**
+ * Is the field under snow? The map's snow line (palette.snow, terrain.js
+ * uSnow) at or below the field: Nunatak Reach's is below the sea, so the
+ * whole plain is snow and the runway is a cleared strip through it, with the
+ * plough's banks along both edges (buildPavement). Northwatch's and the
+ * fjord's snow lines sit hundreds of metres up: their fields are bare.
+ */
+export function snowCoveredField() {
+  const snow = Terrain.MAP && Terrain.MAP.palette && Terrain.MAP.palette.snow;
+  return Array.isArray(snow) && Number.isFinite(snow[1]) && ELEV >= snow[1];
+}
+
+/**
+ * A polar field on the World Map (worldmap/personas.js `polar`: the
+ * Nunatak Ice Strip): its "gravel" strip is a strip of compacted snow and
+ * ice, drawn as one (render/textures.js iceRunwayTexture) with the plough's
+ * banks. The owner's blank-white-slab screenshot was this strip: a rough
+ * strip with no texture at all, lit white.
+ */
+export function polarField() {
+  const d = Terrain.MAP && Terrain.MAP._departure;
+  return !!(d && styleOf(d).snow);
+}
+
 /** The crosswind runway, 18/36. */
 export const RUNWAY2 = {
   ...AIRPORT.runway2,
@@ -505,7 +531,14 @@ export class Airport {
     // A grass or gravel strip (only the World Map preview has any: AIRPORT.surface):
     // the strip's own colour, no painted tarmac, and no asphalt shoulders below.
     const rough = AIRPORT.surface === 'grass' || AIRPORT.surface === 'gravel';
-    if (rough) {
+    const icy = rough && polarField();
+    if (icy) {
+      // Compacted snow over ice, marked in black (see polarField).
+      rwMat.map = iceRunwayTexture();
+      rwMat.normalMap = null;
+      rwMat.roughness = 0.55;
+      rwMat.color.set(0xffffff);
+    } else if (rough) {
       rwMat.map = null;
       rwMat.normalMap = null;
       rwMat.roughness = 1;
@@ -575,6 +608,39 @@ export class Airport {
       const sw = r2.halfWidth * 2 + 26;
       if (alongX) addShoulder(r2.cx, r2.cz, r2.length + 40, sw);
       else addShoulder(r2.cx, r2.cz, sw, r2.length + 40);
+    }
+    /*
+     * Snow banks (owner, 2026-10-30: the runway on Nunatak Reach read as a
+     * blank white slab): where the field is under snow, the cleared runway
+     * has the plough's banks along both edges, a metre high and five wide,
+     * just outside the shoulder — the one thing that says "this is a strip
+     * kept open in the snow". One draw for all of them.
+     */
+    if (snowCoveredField() || icy) {
+      const banks = new Batch();
+      const snow = 0xeef3f8;
+      const bank = (cx, cz, lx, lz) => {
+        const g = new THREE.BoxGeometry(lx, 1.1, lz);
+        banks.add(g, trs(cx, ELEV + 0.45, cz), snow, 0);
+        g.dispose();
+      };
+      const off = shW / 2 + 3.5;
+      bank(RUNWAY.cx, RUNWAY.cz - off, RUNWAY.length + 60, 5);
+      bank(RUNWAY.cx, RUNWAY.cz + off, RUNWAY.length + 60, 5);
+      if (AIRPORT.runway2) {
+        const r2 = AIRPORT.runway2;
+        const alongX = Math.abs((((r2.headingDeg ?? 180) % 180) - 90)) < 45;
+        const off2 = r2.halfWidth + 13 + 3.5;
+        if (alongX) {
+          bank(r2.cx, r2.cz - off2, r2.length + 60, 5);
+          bank(r2.cx, r2.cz + off2, r2.length + 60, 5);
+        } else {
+          bank(r2.cx - off2, r2.cz, 5, r2.length + 60);
+          bank(r2.cx + off2, r2.cz, 5, r2.length + 60);
+        }
+      }
+      const bm = banks.mesh(vcMaterial({ roughness: 0.96, metalness: 0 }), { cast: true, name: 'snow banks' });
+      if (bm) this.group.add(bm);
     }
     const sh = shoulders.mesh(shoulderMat, { cast: false, name: 'shoulders' });
     if (sh) {

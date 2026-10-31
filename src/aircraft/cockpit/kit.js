@@ -795,7 +795,21 @@ export function carveExterior(model, box, skip = () => false) {
   let n = 0;
   model.traverse((o) => {
     if (!o.isMesh || o.userData.carved) return;
-    for (let p = o; p && p !== model; p = p.parent) if (p.name === 'cockpit') return;
+    /*
+     * A REAL skin (aircraft/real-models.js, the group named 'Real model')
+     * is somebody else's mesh: its windows are called glass, its posts are
+     * called frames, and they are NOT where this room's panes and reveals
+     * are. The builders' `skip` keeps the procedural exterior's wipers,
+     * glass and frames because those sit exactly on the room's own openings;
+     * a real skin's never do, so nothing of it is kept — its interior, its
+     * frames and its glass inside the room are cut away like any wall. (The
+     * 737's stray box, the C-17's and the B-1B's second set of frames.)
+     */
+    let real = false;
+    for (let p = o; p && p !== model; p = p.parent) {
+      if (p.name === 'cockpit') return;
+      if (p.name === 'Real model' || (p.userData && p.userData.realModel)) real = true;
+    }
     const g = o.geometry;
     if (!g || !g.attributes.position) return;
     if (!g.boundingBox) g.computeBoundingBox();
@@ -806,11 +820,11 @@ export function carveExterior(model, box, skip = () => false) {
     // away, or it faces out), so in the cockpit view it is not drawn at all —
     // a draw and a shadow saved each (the Hornet's twelve canopy-rim tubes,
     // the airliners' panes and frames).
-    if (box.containsBox(bb) && !/wiper/i.test(o.name || '')) {
+    if (box.containsBox(bb) && (real || !/wiper/i.test(o.name || ''))) {
       hidden.push(o);
       return;
     }
-    if (o.userData.seeThrough || skip(o)) return;
+    if (!real && (o.userData.seeThrough || skip(o))) return;
     // Its bounds reach in: cut it (a big surface can cross the box with no
     // vertex inside; cutting one that only nears it costs nothing seen).
     carveFromInside(o, model, box);

@@ -17,7 +17,7 @@
  * WHAT IS KEPT
  * The rest of the hangar is still underneath, a scroll away: rank, the list of
  * every aeroplane under the five picker headings (a way to put one on the
- * podium), the military passcode, the "Got a code?" box and Dev mode — same
+ * podium), the "Got a code?" box and Dev mode — same
  * elements, same handlers. Buying and unlocking go through progression.js
  * exactly as before; this screen only decides what is shown and in what order.
  *
@@ -232,10 +232,9 @@ export function installHangarShowcase(menus, screen, kit) {
   const rosterIndex = (id) => AIRCRAFT.findIndex((a) => a.id === id);
   const ctx = () => ({ catOf: aircraftCategory, owned, costOf: Prog.costOf, credits: prog().credits, perfFor: perfOf, rosterIndex });
 
-  /** What can be shown: everything but what the passcode still hides — then the shelf, the search, the filter, the sort. */
+  /** What can be shown: every aeroplane (the military passcode is gone) — then the shelf, the search, the filter, the sort. */
   ui.rebuildOrder = () => {
-    const p = prog();
-    ui.shown = AIRCRAFT.filter((a) => !Prog.needsPasscode(p, a));
+    ui.shown = AIRCRAFT.slice();
     ui.shelves = shelve(ui.shown, aircraftCategory);
     ui.groups = ui.shelves;
     if (ui.shelf !== 'all' && !ui.shelves.some((g) => g.def.id === ui.shelf)) ui.shelf = 'all';
@@ -654,7 +653,7 @@ export function installHangarShowcase(menus, screen, kit) {
   /** Put this aeroplane on the podium. dir: +1 from the right, -1 from the left, 0 up through the floor. */
   ui.select = (id, dir = 0) => {
     if (!ui.order.length && !ui.shown.length) ui.rebuildOrder();
-    // Anything the passcode allows can go on the podium, even from outside the
+    // Any aeroplane can go on the podium, even from outside the
     // current shelf or search (the full list below, a favourite, a recent).
     if (!ui.shown.some((a) => a.id === id)) id = ui.order[0] || (ui.shown[0] && ui.shown[0].id);
     if (!id) return;
@@ -733,7 +732,7 @@ export function installHangarShowcase(menus, screen, kit) {
   };
   menus.noteFlown = ui.noteFlown;
 
-  /** Whatever changed credits, ownership or the passcode: repaint. */
+  /** Whatever changed credits or ownership: repaint. */
   ui.sync = () => {
     const before = ui.order.join();
     ui.rebuildOrder();

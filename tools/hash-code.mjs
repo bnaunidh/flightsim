@@ -6,7 +6,7 @@
  *   node tools/hash-code.mjs --credits=2500 --note="For the class"
  *   node tools/hash-code.mjs --rank=mod --note="Appointed"
  *   node tools/hash-code.mjs --prefix --note="Ask the CEO"
- *   node tools/hash-code.mjs --passcode=military     (or --passcode=dev)
+ *   node tools/hash-code.mjs --passcode=dev
  *
  * It asks for the code word at the prompt (typing is not echoed, and the word
  * is never a command-line argument, so it does not land in the shell history),
@@ -25,10 +25,11 @@
  * It prints a line for PREFIXES instead of CODES; `--max=<n>` caps what one
  * such code may pay.
  *
- * `--passcode=military` / `--passcode=dev` makes the line for one of the two
- * DOORS instead (MILITARY_CODE_HASH / DEV_CODE_HASH in progression.js): the
- * word that opens the military hangar or the workbench. Same hashing; the
+ * `--passcode=dev` makes the line for the Dev DOOR instead (DEV_CODE_HASH in
+ * progression.js): the word that opens the workbench. Same hashing; the
  * printed line replaces the one in the file, and the old word stops working.
+ * (There is no military door any more — the military aircraft are bought for
+ * credits like the rest.)
  *
  * With stdin piped (`echo word | node tools/hash-code.mjs --credits=100`), the
  * first line of stdin is the word; the terminal prompt is only for a terminal.
@@ -43,7 +44,7 @@ const opt = (k) => {
   return a.includes('=') ? a.slice(a.indexOf('=') + 1) : '';
 };
 if (opt('help') !== null || args.includes('-h')) {
-  console.log('node tools/hash-code.mjs [--credits=<n> | --rank=<founder|admin|mod> | --prefix [--max=<n>] | --passcode=<military|dev>] [--note="..."]');
+  console.log('node tools/hash-code.mjs [--credits=<n> | --rank=<founder|admin|mod> | --prefix [--max=<n>] | --passcode=dev] [--note="..."]');
   process.exit(0);
 }
 
@@ -79,9 +80,9 @@ async function main() {
 
   const door = opt('passcode');
   if (door !== null) {
-    const name = { military: 'MILITARY_CODE_HASH', dev: 'DEV_CODE_HASH' }[String(door).trim().toLowerCase()];
+    const name = { dev: 'DEV_CODE_HASH' }[String(door).trim().toLowerCase()];
     if (!name) {
-      console.error(`Unknown door "${door}". One of: military, dev.`);
+      console.error(`Unknown door "${door}". The only door is: dev (the military one is gone — those aircraft are bought for credits).`);
       process.exit(2);
     }
     const dhash = await codeHash(text);

@@ -986,6 +986,7 @@ registerExtension({
       R.activeTarget = () => orig() || worldTarget(sim);
     }
     sim.worldPreview = {
+      id: WORLD_PREVIEW_ID,
       active,
       stats: () => (S.stream ? S.stream.stats() : null),
       built: () => S.builtFor,

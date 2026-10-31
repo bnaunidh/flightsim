@@ -112,8 +112,9 @@ export const AIRCRAFT_CATEGORIES = [
  * under Training or Emergencies would have been a heading that lies about
  * what is under it, and a ten-year-old reads the heading, not the card.
  *
- * Military is last so the passcode gate never leaves a hole in the middle of
- * the list: before the code it is simply not there.
+ * Military is last: it was behind a passcode once and stayed at the bottom so
+ * the gate never left a hole in the middle of the list. The gate is gone
+ * (progression.js); the order is kept so nothing moves on anyone.
  *
  * "Firefighting" came after: the wishlist asked for forest fires to put out
  * in the aeroplane and the helicopter, and those missions have a slot of their
@@ -152,7 +153,7 @@ const MISSION_CATEGORY_OF = {
   deadstick: 'events', // the engine quits: the original emergency
   emberrun: 'challenge',
   chaser: 'challenge',
-  tail: 'challenge', // in the Vanguard, which is not behind the passcode
+  tail: 'challenge', // in the Vanguard, which is not a military type
   carrierqual: 'military',
   patrol: 'military',
   recon: 'military',
@@ -220,8 +221,8 @@ function readCategory(raw, words) {
 /**
  * Which heading an aeroplane goes under. Always exactly one of the five.
  *
- * `category` if it names one of the five; otherwise the passcode flag (a
- * gated type is a military one whatever it is called); otherwise its class,
+ * `category` if it names one of the five; otherwise the military flag (a
+ * flagged type is a military one whatever it is called); otherwise its class,
  * read by keyword so that "Stealth fighter" and "Wide-body airliner" land
  * where a person would put them; otherwise Special.
  */
@@ -256,7 +257,7 @@ const MISSION_WORDS = [
  * Its own `category` first, and an unfamiliar one is kept rather than
  * refused — a team that invents "stunts" gets a Stunts heading, not a mission
  * silently filed under something else. Then the table above; then the
- * passcode (a gated mission, or one flown in a gated aeroplane, is military);
+ * military flag (a flagged mission, or one flown in a military aeroplane, is military);
  * then the words in its name; and anything still unplaced is a Challenge.
  */
 export function missionCategory(m) {
@@ -297,7 +298,7 @@ export function categoryDef(kind, id) {
 
 /*
  * Sort order. A heading nobody listed goes after every listed one but before
- * Military, so the passcode section stays at the bottom.
+ * Military, so the military section stays at the bottom.
  */
 function categoryRank(kind, id) {
   const list = kind === 'aircraft' || kind === 'fleet' ? AIRCRAFT_CATEGORIES : MISSION_CATEGORIES;
@@ -679,9 +680,9 @@ export class Menus {
      * owns the live copy and hands the SAME object back through
      * syncProgression() — the two must never be separate objects, because the
      * hangar's buttons mutate this one in place while main.js reads its own
-     * for gating. They diverged exactly that way once already: entering the
-     * passcode unlocked the menus' copy and left main.js's at false for the
-     * rest of the session.
+     * for gating. They diverged exactly that way once already: a door opened
+     * in the hangar unlocked the menus' copy and left main.js's at false for
+     * the rest of the session.
      */
     this.prog = Prog.load();
     this.current = null;
@@ -784,10 +785,11 @@ export class Menus {
    * advertising a smaller, older game than the one behind the button, and one
    * of the three things it named no longer existed.
    *
-   * It says eight rather than twelve on purpose: four are military and stay
-   * hidden until the passcode is entered, so a child who counted the cards
-   * after being promised twelve would think four had gone missing. That is the
-   * same count the stats line under the nav uses. The three named are real
+   * It said eight rather than twelve on purpose: four were military and stayed
+   * hidden until a passcode was entered (that door is gone now — every mission
+   * is listed), so a child who counted the cards after being promised twelve
+   * would have thought four had gone missing. That is the same count the
+   * stats line under the nav uses. The three named are real
    * ones — Mango Cay Delivery, Storm Approach and Dead Stick — and the
    * sentence is kept to the length of its neighbours so the card does not grow
    * half again as tall as every other card in the row.
@@ -845,7 +847,7 @@ export class Menus {
         <div class="resume-card" data-resume hidden role="status">
           <span class="resume-icon" aria-hidden="true">${icon('missions', 22)}</span>
           <span class="resume-body">
-            <small>Resume your mission?</small>
+            <small data-resume-ask>Resume your mission?</small>
             <strong data-resume-name></strong>
             <em data-resume-where></em>
           </span>
@@ -940,31 +942,21 @@ export class Menus {
       if (e.target.closest('[data-back]')) return this.show('main');
       const pick = e.target.closest('[data-choose-map]');
       if (pick) {
-        // The CSS filter is not a gate on the engine, so guard the click too —
-        // the same guard the mission list and the fleet list already have. For
-        // a while the military map was hidden by an attribute that did nothing
-        // and reachable by a button that checked nothing, which is no gate at
-        // all in either direction.
-        const m = MAPS.find((x) => x.id === pick.dataset.chooseMap);
-        if (m && Prog.needsPasscode(this.prog, m)) {
-          this.hooks.onLocked &&
-            this.hooks.onLocked('That field is behind a passcode — enter it in the Hangar.');
-          return;
-        }
         this.hooks.onClick && this.hooks.onClick('map');
         this.hooks.chooseMap && this.hooks.chooseMap(pick.dataset.chooseMap);
       }
     });
     /*
-     * Military maps are hidden until the passcode is in, the same as the
-     * aircraft and the missions. Hidden rather than filtered out, because a
-     * card that was never built cannot come back when the code is entered
-     * mid-session — which is exactly how the fleet list broke once already.
+     * Every map is listed for everybody. The military fields used to be hidden
+     * here until the military passcode was in; that door is gone (owner,
+     * 2026-10-30 — progression.js). This stays as the hook game-ui.js wraps to
+     * apply its game filter after it, so a card hidden for the car or the boat
+     * is still the game filter's call and nobody else's.
      */
     this.syncMapLocks = () => {
       for (const m of MAPS) {
         const card = s.querySelector(`[data-map-card="${m.id}"]`);
-        if (card) card.hidden = Prog.needsPasscode(this.prog, m);
+        if (card) card.hidden = false;
       }
     };
     this.syncMapLocks();
@@ -992,7 +984,7 @@ export class Menus {
   buildMissions() {
     /*
      * Grouped under headings (see CATEGORIES at the top of this file). Every
-     * card is still built, once, whatever game or passcode it belongs to —
+     * card is still built, once, whatever game it belongs to —
      * the headings only decide where it sits. A heading with nothing visible
      * under it hides itself in syncCategories(), so the car's board never
      * shows an empty "Military" and the locked missions leave no gap.
@@ -1032,23 +1024,20 @@ export class Menus {
       </section>
     `);
     /*
-     * Hide the military missions until the passcode is entered.
-     *
-     * Every card is rendered and then hidden, rather than filtered out of
-     * MISSIONS at build time — build() runs exactly once from the constructor,
-     * so a filter applied while mapping could never bring them back when the
-     * passcode is entered mid-session.
-     *
-     * `this.prog` is read at call time, never captured: main.js owns the live
-     * object and swaps it in later.
+     * Every mission is listed for everybody. The four military ones used to be
+     * hidden here until the military passcode was entered; that door is gone
+     * (owner, 2026-10-30 — progression.js). This stays as the hook the others
+     * wrap — game-ui.js applies its game filter after it, flight-events.js
+     * marks the Dev-only card LOCKED after it — so each of them still has one
+     * lever and none can undo another's.
      */
     this.syncMissionLocks = () => {
       for (const m of MISSIONS) {
         const card = s.querySelector(`[data-mission="${m.id}"]`);
-        if (card) card.hidden = Prog.needsPasscode(this.prog, m);
+        if (card) card.hidden = false;
       }
       // game-ui.js wraps this and re-syncs after its own game filter; without
-      // it installed, the headings still have to follow the passcode.
+      // it installed, the headings still have to follow what is shown.
       this.syncCategories('missions');
     };
     this.bindCategoryBar(s, 'missions');
@@ -1075,13 +1064,6 @@ export class Menus {
       if (e.target.closest('[data-back]')) return this.show('main');
       const start = e.target.closest('[data-start]');
       if (!start) return;
-      // The UI filter is not a gate on the engine, so guard the click too.
-      const m = MISSIONS.find((x) => x.id === start.dataset.start);
-      if (m && Prog.needsPasscode(this.prog, m)) {
-        this.hooks.onLocked &&
-          this.hooks.onLocked('Military missions are behind a passcode — enter it in the Hangar.');
-        return;
-      }
       this.hooks.startMission(start.dataset.start);
     });
     this.screens.missions = s;
@@ -1341,9 +1323,9 @@ export class Menus {
       for (const a of AIRCRAFT) {
         const card = s.querySelector(`[data-aircraft="${a.id}"]`);
         if (!card) continue;
-        const gated = Prog.needsPasscode(this.prog, a);
-        card.hidden = gated;
-        const locked = gated || !Prog.isUnlocked(this.prog, a.id);
+        // Every aeroplane is on the list; a military one is bought like the rest.
+        card.hidden = false;
+        const locked = !Prog.isUnlocked(this.prog, a.id);
         card.classList.toggle('is-locked', locked);
         let tag = card.querySelector('.fleet-lock');
         if (locked && !tag) {
@@ -1360,7 +1342,7 @@ export class Menus {
         if (tag) tag.textContent = locked ? (cost ? `${cost.toLocaleString()} credits` : 'Not in the shop yet') : '';
         if (!locked && tag) tag.remove();
       }
-      // The passcode adds cards to Military jets, so its count and chip change.
+      // Counts and chips follow what is shown.
       this.syncCategories('fleet');
     };
     this.bindCategoryBar(s, 'fleet');
@@ -1658,13 +1640,6 @@ export class Menus {
          * and then took it back.
          */
         const id = plane.dataset.aircraft;
-        const type = AIRCRAFT.find((a) => a.id === id);
-        if (Prog.needsPasscode(this.prog, type)) {
-          this.hooks.onLocked && this.hooks.onLocked(
-            'Military aircraft are behind a passcode — enter it in the Hangar.'
-          );
-          return;
-        }
         if (!Prog.isUnlocked(this.prog, id)) {
           const cost = Prog.costOf(id);
           const short = cost - this.prog.credits;
@@ -2117,13 +2092,6 @@ export class Menus {
         <h3 class="fail-heading">Your best flights</h3>
         <div class="board" data-board></div>
 
-        <h3 class="fail-heading">Military access</h3>
-        <p class="trigger-note" data-mil-note>Military aircraft are behind a passcode. Ask whoever runs the game.</p>
-        <div class="code-row">
-          <input type="text" data-mil-code placeholder="Passcode" maxlength="20">
-          <button data-mil-enter>Enter</button>
-        </div>
-
         <h3 class="fail-heading">Got a code?</h3>
         <div class="code-row">
           <input type="text" data-code placeholder="Ask the CEO" maxlength="80" autocomplete="off" autocapitalize="off" spellcheck="false">
@@ -2234,16 +2202,14 @@ export class Menus {
       s.querySelector('[data-dev-note]').textContent = dev
         ? 'The workbench is open. Everything here is unfinished on purpose.'
         : 'Things that are built but not finished. Behind a passcode, because they are not ready for everybody yet.';
-      const milOpen = !!p.militaryUnlocked;
-      s.querySelector('[data-mil-note]').textContent = milOpen
-        ? 'Access granted. The military hangar is open.'
-        : 'Military aircraft are behind a passcode. Ask whoever runs the game.';
       /*
        * The same five headings as the Free Flight picker, so an aeroplane is
        * in the same place on both screens. Each heading says how many of its
        * row are already yours — "1 of 3" is the reason to fly another mission.
+       * Every aeroplane is on the list, the military ones too: they are bought
+       * for credits like the rest (the passcode is gone — progression.js).
        */
-      const shown = AIRCRAFT.filter((a) => milOpen || !a.military);
+      const shown = AIRCRAFT;
       s.querySelector('[data-unlocks]').innerHTML = groupByCategory('aircraft', shown, aircraftCategory).map((g) => {
         const mine = g.items.filter((a) => Prog.isUnlocked(p, a.id)).length;
         const buttons = g.items.map((a) => {
@@ -2352,29 +2318,6 @@ export class Menus {
         Prog.leaveDev(p);
         s.querySelector('[data-code-msg]').textContent = 'Dev mode off.';
         render();
-        return;
-      }
-      if (e.target.closest('[data-mil-enter]')) {
-        const p = this.prog || Prog.load();
-        const box = s.querySelector('[data-mil-code]');
-        const msg = s.querySelector('[data-code-msg]');
-        const typed = box.value;
-        this._doorCheck = Prog.enterPasscode(p, typed).then((r) => {
-          msg.textContent = r.ok
-            ? r.warn || 'Access granted — the military hangar is open, and stays open.'
-            : r.why;
-          if (r.ok && box.value === typed) box.value = '';
-          render();
-          this.syncFleetLocks && this.syncFleetLocks();
-          this.syncMissionLocks && this.syncMissionLocks();
-          this.syncMapLocks && this.syncMapLocks();
-          // The start screen's "N missions" denominator excludes hidden ones, so
-          // it has to be recomputed too or it keeps advertising the old total.
-          this._lastProgress && this.syncProgress(this._lastProgress);
-        }, (err) => {
-          console.warn('[hangar] could not check that word', err);
-          msg.textContent = 'That is not the word';
-        });
         return;
       }
       if (e.target.closest('[data-redeem]')) {
@@ -2865,7 +2808,7 @@ export class Menus {
     const done = Object.values(progress.missions).filter((m) => m.complete).length;
     const best = progress.bestLanding;
     stats.innerHTML = `
-      <span><b>${done}</b>/${MISSIONS.filter((m) => !Prog.needsPasscode(this.prog, m)).length} missions</span>
+      <span><b>${done}</b>/${MISSIONS.length} missions</span>
       <span><b>${progress.landings}</b> landings</span>
       ${best ? `<span>Best landing <b>${best.score}</b>/100</span>` : '<span>No landings yet</span>'}
       ${progress.tutorialComplete ? '<span class="ok">Flight school ✓</span>' : ''}
@@ -3022,12 +2965,12 @@ export class Menus {
    * Repaint one grouped list: which headings show, their counts, the chips,
    * and the "nothing called that" line.
    *
-   * Everything that hides a card — the passcode, the game filter in
+   * Everything that hides a card — the game filter in
    * game-ui.js, the car's job board — sets `card.hidden` and nothing else,
    * and this reads it afterwards. The search never touches `hidden`: it uses
    * a class of its own, so clearing the search box can never un-hide a
-   * military mission the passcode hid. That separation is the whole design:
-   * the passcode, the game and the search each have one lever, and none of
+   * mission the game filter hid. That separation is the whole design:
+   * the game and the search each have one lever, and none of
    * them can undo what another one did.
    *
    * A heading is shown when at least one card under it is. Counts are what
@@ -3125,11 +3068,11 @@ export class Menus {
       this.hooks.cancelListen();
     }
     // Repaint the hub and the mission gate on open, so they are right whatever
-    // changed them — a code, a flight, a passcode entered somewhere else.
+    // changed them — a code, a flight, a purchase made somewhere else.
     if (name === 'more') this.syncMore && this.syncMore();
     if (name === 'missions') this.syncMissionLocks && this.syncMissionLocks();
     if (name === 'missions') this.syncPayLines && this.syncPayLines();
-    // The Missions card counts what you can fly, which a passcode changes.
+    // The Missions card counts what is behind the button, per game.
     if (name === 'main') this.refreshMissionsLine && this.refreshMissionsLine();
     // Whoever opened it may want to repaint it for the island we are on.
     if (this.hooks.onScreen) this.hooks.onScreen(name);
@@ -3148,8 +3091,11 @@ export class Menus {
    * element that was hidden has no size to measure.
    */
   /**
-   * The "Resume your mission?" card on the main screen (game/checkpoint.js):
-   * { name, where } shows it, null hides it.
+   * The "Resume your mission?" / "Continue your flight?" card on the main
+   * screen (game/checkpoint.js): { name, where, words? } shows it, null hides
+   * it. `words` ({ ask, go, fresh }, checkpoint.js cardWords) sets the
+   * question and the two buttons — a mission's "Resume" / "Start over", a
+   * free flight's "Continue your flight" / "Start fresh".
    */
   syncResume(info) {
     const card = this.screens.main && this.screens.main.querySelector('[data-resume]');
@@ -3162,6 +3108,14 @@ export class Menus {
     const where = card.querySelector('[data-resume-where]');
     if (name) name.textContent = info.name || '';
     if (where) where.textContent = info.where || '';
+    const w = info.words || { ask: 'Resume your mission?', go: 'Resume', fresh: 'Start over' };
+    const ask = card.querySelector('[data-resume-ask]');
+    const go = card.querySelector('[data-act="resume"]');
+    const fresh = card.querySelector('[data-act="resume-discard"]');
+    if (ask) ask.textContent = w.ask;
+    if (go) go.textContent = w.go;
+    if (fresh) fresh.textContent = w.fresh;
+    card.dataset.resumeKind = info.kind || 'mission';
     card.hidden = false;
   }
 

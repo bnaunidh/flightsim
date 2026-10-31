@@ -1419,6 +1419,68 @@ export function rainStreakTexture() {
  * snow that falls on Nunatak Reach (world/precip.js). One texture for every
  * flake; the shader stretches the rain streak and leaves this round.
  */
+/**
+ * The ice strip's surface: compacted snow over ice, as an Antarctic skiway
+ * or an Arctic ice runway is kept — ploughed in lanes, the tyre tracks of
+ * every landing down the middle, and MARKED in black the way a snow runway
+ * has to be (there is no paint on ice): threshold bars, a dashed centreline,
+ * edge lines. The owner's screenshot (2026-10-30, an A-10 lined up) showed
+ * a blank pure-white slab with no markings or texture; this is what it
+ * draws now. Painted once, 512 x 1536 along the strip.
+ */
+export function iceRunwayTexture() {
+  return get('ice-runway', () => {
+  const W = 512;
+  const H = 1536;
+  const c = canvas(W, H);
+  const g = c.getContext('2d');
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  // Compacted snow: pale blue-grey, a shade darker where the wheels run.
+  g.fillStyle = '#d3dde6';
+  g.fillRect(0, 0, W, H);
+  // Plough lanes down the length, each a shade off its neighbour.
+  const lanes = 11;
+  for (let i = 0; i < lanes; i++) {
+    const v = (rnd() - 0.5) * 18;
+    g.fillStyle = v > 0 ? `rgba(255,255,255,${v / 255})` : `rgba(90,110,130,${-v / 255})`;
+    g.fillRect((i * W) / lanes, 0, W / lanes + 1, H);
+    g.fillStyle = 'rgba(120,140,160,0.25)';
+    g.fillRect((i * W) / lanes, 0, 2, H);
+  }
+  // Tyre tracks: grey streaks where the main gear runs, densest near the ends.
+  for (let i = 0; i < 700; i++) {
+    const band = rnd() < 0.15 ? 0 : rnd() < 0.5 ? -1 : 1;
+    const x = W * 0.5 + band * W * 0.18 + (rnd() - 0.5) * W * 0.12;
+    const y = rnd() * H;
+    const len = 30 + rnd() * 160;
+    g.fillStyle = `rgba(110,125,140,${0.05 + rnd() * 0.12})`;
+    g.fillRect(x - 1.5, y, 3 + rnd() * 2, len);
+  }
+  // Ice showing through the snow in patches: a little bluer, a little glossier-looking.
+  for (let i = 0; i < 40; i++) {
+    g.fillStyle = `rgba(150,185,215,${0.08 + rnd() * 0.12})`;
+    g.beginPath();
+    g.ellipse(rnd() * W, rnd() * H, 20 + rnd() * 60, 40 + rnd() * 120, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+  // The markings, black: threshold bars at both ends, a dashed centreline, edge lines.
+  g.fillStyle = '#16181c';
+  for (const end of [0, 1]) {
+    const y0 = end ? H - H * 0.065 : H * 0.02;
+    for (let k = 0; k < 6; k++) g.fillRect(W * 0.1 + k * W * 0.14, y0, W * 0.09, H * 0.045);
+  }
+  for (let y = H * 0.1; y < H * 0.9; y += 60) g.fillRect(W * 0.5 - 5, y, 10, 36);
+  g.fillRect(W * 0.035, 0, 6, H);
+  g.fillRect(W * 0.965 - 6, 0, 6, H);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+  });
+}
+
+
 export function snowflakeTexture() {
   return get('snowflake', () => {
     const c = canvas(32, 32);

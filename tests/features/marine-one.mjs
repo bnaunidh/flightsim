@@ -6,7 +6,7 @@
  *
  *   1. The roster and the gate: a Helicopter under the Helicopters heading
  *      and shelf, the Sea King's published numbers, and gated exactly as Air
- *      Force One's 747 is — bought in the hangar for credits, no passcode,
+ *      Force One's 747 is — bought in the hangar for credits, not military,
  *      never one of the free types.
  *   2. The paint: its own fixed scheme whatever livery is picked (as the
  *      President's 747 only ever wears the Air Force One paint), white top
@@ -83,9 +83,9 @@ ok(`the Sea King's rotor: 18.9 m, five blades, 203 rpm (${spec.rotorRadius * 2} 
 ok(`the Sea King's numbers: 144 kt red line, 14,700 ft ceiling, 8.2 t (${f1(spec.vne * KT)} kt, ${spec.ceiling} ft, ${spec.mass} kg)`,
   Math.abs(spec.vne * KT - 144) < 1 && spec.ceiling === 14700 && spec.mass > 5382 && spec.mass < 9752);
 const b747 = T.getAircraft('b747');
-const fresh = () => ({ credits: 0, earned: 0, militaryUnlocked: false, devUnlocked: false, unlocked: ['skylark', 'courier', 'harrier'], redeemed: [], best: [] });
-ok('gated as Air Force One\'s 747 is: not military, no passcode, for sale for credits',
-  !t.military && !b747.military && !Prog.needsPasscode(fresh(), t) && !Prog.needsPasscode(fresh(), b747)
+const fresh = () => ({ credits: 0, earned: 0, devUnlocked: false, unlocked: ['skylark', 'courier', 'harrier'], redeemed: [], best: [] });
+ok('gated as Air Force One\'s 747 is: not military, for sale for credits',
+  !t.military && !b747.military && !Prog.isUnlocked(fresh(), ID) && !Prog.isUnlocked(fresh(), 'b747')
   && Prog.costOf(ID) > 0 && Prog.costOf('b747') > 0 && Prog.UNLOCKS.some((u) => u.aircraft === ID && !u.military),
   `${Prog.costOf(ID)} credits (the 747: ${Prog.costOf('b747')})`);
 {
