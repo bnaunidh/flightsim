@@ -321,17 +321,117 @@ const RANGE = 9000;
 const SHADOW_N = 128;
 const SHADOW_SIZE = 16000; // metres across
 const SHADOW_TEXEL = SHADOW_SIZE / SHADOW_N;
+/** How long a repaint takes to cross-fade in (G12 of the rival brief): a third of a second. */
+export const CLOUD_SHADE_FADE_S = 0.35;
+/*
+ * Two textures, not one (G12): a repaint lands in the one not on show and
+ * cross-fades in over CLOUD_SHADE_FADE_S, and between repaints the lookup
+ * slides by wind × time since each was painted, so the pattern drifts
+ * instead of stepping twice a second (the one-frame swap was a 2 Hz
+ * brightness step across whole hillsides — a flash-safety matter as much as
+ * a look). The uniforms are shared objects: terrain.js and
+ * render/ocean-material.js take them by reference, so one update reaches
+ * every shader. `texture`, `data` and `xform` are the CURRENT buffer's,
+ * for anything that read them before.
+ */
 export const cloudShadow = (() => {
-  const data = new Uint8Array(SHADOW_N * SHADOW_N);
-  const texture = new THREE.DataTexture(data, SHADOW_N, SHADOW_N, THREE.RedFormat, THREE.UnsignedByteType);
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.generateMipmaps = false;
-  texture.name = 'cloud-shadow';
-  texture.needsUpdate = true;
-  return { data, texture, xform: new THREE.Vector4(0, 0, 1 / SHADOW_SIZE, 0), size: SHADOW_SIZE, n: SHADOW_N };
+  const make = (name) => {
+    const data = new Uint8Array(SHADOW_N * SHADOW_N);
+    const texture = new THREE.DataTexture(data, SHADOW_N, SHADOW_N, THREE.RedFormat, THREE.UnsignedByteType);
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.generateMipmaps = false;
+    texture.name = name;
+    texture.needsUpdate = true;
+    return { data, texture, xform: new THREE.Vector4(0, 0, 1 / SHADOW_SIZE, 0), paintedAt: 0 };
+  };
+  const bufs = [make('cloud-shadow'), make('cloud-shadow-prev')];
+  const uniforms = {
+    uCloudShadow: { value: bufs[0].texture },
+    uCloudXform: { value: bufs[0].xform },
+    uCloudShadowPrev: { value: bufs[1].texture },
+    uCloudXformPrev: { value: bufs[1].xform },
+    /** Weight of the current texture, 0 right after a repaint → 1. */
+    uCloudMix: { value: 1 },
+    /** Metres the pattern has drifted since each was painted: (prev.x, prev.z, cur.x, cur.z). */
+    uCloudDrift: { value: new THREE.Vector4(0, 0, 0, 0) },
+  };
+  const cs = {
+    bufs,
+    cur: 0,
+    uniforms,
+    size: SHADOW_SIZE,
+    n: SHADOW_N,
+    get data() { return bufs[cs.cur].data; },
+    get texture() { return bufs[cs.cur].texture; },
+    get xform() { return bufs[cs.cur].xform; },
+    get prev() { return bufs[1 - cs.cur]; },
+    /** Before a repaint: the buffer to paint into. After it, swap() makes it current. */
+    get next() { return bufs[1 - cs.cur]; },
+    swap(now) {
+      cs.cur = 1 - cs.cur;
+      uniforms.uCloudShadow.value = bufs[cs.cur].texture;
+      uniforms.uCloudXform.value = bufs[cs.cur].xform;
+      uniforms.uCloudShadowPrev.value = bufs[1 - cs.cur].texture;
+      uniforms.uCloudXformPrev.value = bufs[1 - cs.cur].xform;
+      bufs[cs.cur].paintedAt = now;
+      uniforms.uCloudMix.value = 0;
+    },
+    /**
+     * Each frame: the cross-fade and the drift. `now` the clouds' clock,
+     * `wind` their drift (m/s).
+     */
+    tick(now, wind) {
+      const p = bufs[1 - cs.cur];
+      const c = bufs[cs.cur];
+      uniforms.uCloudMix.value = Math.min(1, Math.max(0, (now - c.paintedAt) / CLOUD_SHADE_FADE_S));
+      const dp = Math.max(0, now - p.paintedAt);
+      const dc = Math.max(0, now - c.paintedAt);
+      uniforms.uCloudDrift.value.set(wind.x * dp, wind.z * dp, wind.x * dc, wind.z * dc);
+    },
+    /** Once on the CPU: how shaded (0 none .. 1 full) the ground at world (x, z) is, the way the shaders see it. */
+    shadeAt(x, z) {
+      const one = (b, dx, dz) => {
+        const xf = b.xform;
+        if (xf.w <= 0) return 0;
+        const u = (x - dx - xf.x) * xf.z + 0.5;
+        const v = (z - dz - xf.y) * xf.z + 0.5;
+        if (u <= 0 || u >= 1 || v <= 0 || v >= 1) return 0;
+        const edge = Math.min(1, Math.max(0, (0.5 - Math.max(Math.abs(u - 0.5), Math.abs(v - 0.5))) / 0.1));
+        const ix = Math.min(SHADOW_N - 1, Math.floor(u * SHADOW_N));
+        const iz = Math.min(SHADOW_N - 1, Math.floor(v * SHADOW_N));
+        return (b.data[iz * SHADOW_N + ix] / 255) * xf.w * edge;
+      };
+      const d = uniforms.uCloudDrift.value;
+      const m = uniforms.uCloudMix.value;
+      return one(bufs[1 - cs.cur], d.x, d.y) * (1 - m) + one(bufs[cs.cur], d.z, d.w) * m;
+    },
+  };
+  return cs;
 })();
+
+/**
+ * The GLSL every receiver shares (terrain.js, render/ocean-material.js):
+ * the uniforms above and cloudShadeAt(worldXZ) → 1 lit .. 0 fully shaded.
+ */
+export const CLOUD_SHADE_GLSL = /* glsl */ `
+  uniform sampler2D uCloudShadow;
+  uniform vec4 uCloudXform;
+  uniform sampler2D uCloudShadowPrev;
+  uniform vec4 uCloudXformPrev;
+  uniform float uCloudMix;
+  uniform vec4 uCloudDrift;
+  float cloudShadeOne(sampler2D tex, vec4 xf, vec2 drift, vec2 xz) {
+    vec2 uv = (xz - drift - xf.xy) * xf.z + 0.5;
+    float edge = smoothstep(0.5, 0.4, max(abs(uv.x - 0.5), abs(uv.y - 0.5)));
+    return texture2D(tex, uv).r * xf.w * edge;
+  }
+  float cloudShadeAt(vec2 xz) {
+    float a = cloudShadeOne(uCloudShadowPrev, uCloudXformPrev, uCloudDrift.xy, xz);
+    float b = cloudShadeOne(uCloudShadow, uCloudXform, uCloudDrift.zw, xz);
+    return 1.0 - mix(a, b, uCloudMix);
+  }`;
 const _acc = new Float32Array(SHADOW_N * SHADOW_N);
 const _sun = new THREE.Vector3();
 
@@ -382,7 +482,9 @@ export class CloudField {
     // Cloud shadows: Medium and up. Low never touches the texture.
     this.shadows = quality !== 'low';
     this._shadowT = Infinity;
-    cloudShadow.xform.w = 0;
+    for (const b of cloudShadow.bufs) b.xform.w = 0;
+    /** The ground's height at (x, z), for the shadows to land on hills (main.js sets it; null: sea level). */
+    this.groundAt = null;
     /*
      * The fog these clouds fade into. main.js points it at the sky's own
      * (sky.js update(): the colour follows the view toward a low sun), so a
@@ -794,6 +896,8 @@ export class CloudField {
         this._shadowT = 0;
         this.paintShadows(weather, camPos, this.puffs.length, deckOpacity);
       }
+      // The cross-fade from the last repaint and the drift since (the pattern slides with the wind).
+      cloudShadow.tick(this.t, wind);
     }
   }
 
@@ -810,13 +914,27 @@ export class CloudField {
     const el = Math.asin(clamp(_sun.y, -1, 1)) * 57.2958;
     const sunK = clamp((el - 6) / 18, 0, 1);
     const strength = weather.isNight ? 0 : sunK * clamp(0.62 + weather.cond.cloud * 0.2, 0, 0.82);
-    cs.xform.w = strength;
-    if (strength <= 0) return;
+    if (strength <= 0) {
+      // Fade out through the same cross-fade: an empty repaint, so the shade never snaps off.
+      if (cs.xform.w > 0) {
+        const nb = cs.next;
+        nb.xform.set(cs.xform.x, cs.xform.y, 1 / SHADOW_SIZE, 0);
+        nb.data.fill(0);
+        nb.texture.needsUpdate = true;
+        cs.swap(this.t);
+      }
+      return;
+    }
+    // Paint into the buffer not on show (cs.next); swap() cross-fades it in.
+    const nb = cs.next;
+    const xform = nb.xform;
+    xform.w = strength;
+    xform.z = 1 / SHADOW_SIZE;
     // Anchor to whole texels so the pattern does not crawl as the aeroplane moves.
     const ox = Math.round(camPos.x / SHADOW_TEXEL) * SHADOW_TEXEL;
     const oz = Math.round(camPos.z / SHADOW_TEXEL) * SHADOW_TEXEL;
-    cs.xform.x = ox;
-    cs.xform.y = oz;
+    xform.x = ox;
+    xform.y = oz;
     const N = SHADOW_N;
     const half = SHADOW_SIZE / 2;
     const acc = _acc;
@@ -833,8 +951,19 @@ export class CloudField {
       const sc = b.scales[puff.index * 2];
       if (a <= 0 || sc <= 0) continue;
       const y = b.offsets[puff.index * 3 + 1];
-      const gx = b.offsets[puff.index * 3] + sx * y;
-      const gz = b.offsets[puff.index * 3 + 2] + sz * y;
+      const px = b.offsets[puff.index * 3];
+      const pz = b.offsets[puff.index * 3 + 2];
+      // Where it lands at sea level — then again on the ground that is actually there (a hill
+      // catches the shadow sooner, so it sits in the right place on high ground).
+      let gx = px + sx * y;
+      let gz = pz + sz * y;
+      if (this.groundAt) {
+        const gy = Math.max(0, Math.min(y - 20, this.groundAt(gx, gz)));
+        if (gy > 0) {
+          gx = px + sx * (y - gy);
+          gz = pz + sz * (y - gy);
+        }
+      }
       // The puff texture fills roughly the middle two-thirds of its quad.
       const r = sc * 0.34;
       const cx = (gx - ox + half) / SHADOW_TEXEL;
@@ -860,7 +989,7 @@ export class CloudField {
     const wind = weather.windVector();
     const dwx = wind.x * this.t * 0.6;
     const dwz = wind.z * this.t * 0.6;
-    const data = cs.data;
+    const data = nb.data;
     for (let tz = 0; tz < N; tz++) {
       const wz = oz - half + (tz + 0.5) * SHADOW_TEXEL;
       for (let tx = 0; tx < N; tx++) {
@@ -874,7 +1003,8 @@ export class CloudField {
         data[j] = Math.round(clamp(v, 0, 1) * 255);
       }
     }
-    cs.texture.needsUpdate = true;
+    nb.texture.needsUpdate = true;
+    cs.swap(this.t);
   }
 
   /** 0..1 how deep inside cloud the given altitude is — drives the whiteout. */

@@ -12,6 +12,7 @@
  *        the worst of the sweep   the atoll, 27,000 ft, sunset         16.1%
  *        high and far             Kestrel, 45,000 ft, chase, diving    6.80%
  *        the cockpit              Kestrel, 27,000 ft, level            5.26%
+ *        the aurora               Nunatak, 3,000 ft, night, facing N   4.30%
  *      (the share of the screen flickering more than three times a second
  *      by the probe's perceptual measure, 0.05 of display brightness).
  *      Each must now stay under FLICKER_MAX of the screen, and the worst
@@ -61,6 +62,9 @@ export const SPOTS = [
   { name: 'the atoll at sunset, 27,000 ft, chase, diving', map: 'atoll', altFt: 27000, view: 'chase', look: 'down', time: 'sunset', was: 0.1612 },
   { name: 'Kestrel, 45,000 ft, chase, diving', map: 'kestrel', altFt: 45000, view: 'chase', look: 'down', was: 0.068 },
   { name: 'the cockpit, Kestrel, 27,000 ft, level', map: 'kestrel', altFt: 27000, view: 'cockpit', look: 'level', was: 0.0526 },
+  // The night sky over Nunatak, facing the northern lights (world/features.js AURORA): the old 100 m striations
+  // stacked to white and shimmered — 4.3% of the screen, WCAG window 10%, before the realism pass.
+  { name: 'the Nunatak night sky: the aurora and the cloud, 3,000 ft, chase, facing north', map: 'nunatak', altFt: 3000, view: 'chase', look: 'level', time: 'night', heading: 0, was: 0.043 },
 ];
 
 export async function check(sim, r, say = () => {}) {

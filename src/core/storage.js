@@ -207,6 +207,8 @@ export const DEFAULT_SETTINGS = {
   atcVoice: 'radio',
   /** The speech mode's voice: 'auto' (the best the device has) or a voiceURI. */
   atcSpeechVoice: 'auto',
+  /** Holiday decorations at the home field (features/festive.js): 'auto' is Dec 1 to Jan 6. */
+  festive: 'auto',
   /*
    * The Free Flight sky. 'random' since wave 19 (world/wx.js): each flight
    * rolls the day's weather for the map and it changes in phases as you fly.

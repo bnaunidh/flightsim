@@ -39,6 +39,7 @@ import { waterNormal, foamTexture } from './textures.js';
 import { heightAt, MAP } from '../world/terrain.js';
 import { SEA_DEPTH } from './depth-layers.js';
 import { RENDER_ORIGIN } from './render-origin.js';
+import { cloudShadow, CLOUD_SHADE_GLSL } from '../world/clouds.js';
 
 /**
  * The depth texture: the height field, sampled over the map's chunks (which
@@ -163,6 +164,10 @@ const FRAG = /* glsl */ `
   uniform vec2 uWindDir;      // which way the waves travel (unit)
   uniform vec3 uFoamColor;
   uniform float uCaps;        // whitecaps, 0 calm .. 1 storm
+  // Cloud shadows on the sea (G12; clouds.js): Medium and up — Low's shade stays 1 and the taps are compiled out.
+  #if WATER_DETAIL > 0
+  ${CLOUD_SHADE_GLSL}
+  #endif
 
   vec2 nrm(vec2 uv) {
     return texture2D(uNormalMap, uv).xy * 2.0 - 1.0;
@@ -234,6 +239,12 @@ const FRAG = /* glsl */ `
     float Fh = 0.02 + 0.98 * pow(1.0 - max(dot(H, V), 0.0), 5.0);
     float spec = D * Fh * 0.3 * uGlint;
     spec = spec / (1.0 + spec);
+    // Under a cloud the glitter goes and the water darkens a little; the sky still lights it.
+    #if WATER_DETAIL > 0
+      float cloudShade = cloudShadeAt(p);
+      spec *= cloudShade;
+      col *= 0.8 + 0.2 * cloudShade;
+    #endif
     col += uLightColor * spec;
 
     // Foam: the wash at the beach, and whitecaps on a rough day.
@@ -278,6 +289,7 @@ export function createOceanMaterial(quality = 'high', field = null) {
   const foamMap = foamTexture().clone();
   foamMap.needsUpdate = true;
   foamMap.wrapS = foamMap.wrapT = THREE.RepeatWrapping;
+  // Not through merge(): the cloud-shadow uniforms are shared objects (clouds.js updates them for every receiver).
   const uniforms = THREE.UniformsUtils.merge([
     THREE.UniformsLib.fog,
     {
@@ -306,6 +318,7 @@ export function createOceanMaterial(quality = 'high', field = null) {
   // merge() clones values; textures are set after so they are shared, not cloned.
   uniforms.uNormalMap.value = normalMap;
   uniforms.uFoamMap.value = foamMap;
+  if (quality !== 'low') Object.assign(uniforms, cloudShadow.uniforms);
   if (field) {
     uniforms.uDepthMap.value = field.texture;
     uniforms.uDepthXform.value.copy(field.xform);

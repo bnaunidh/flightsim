@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v76.3';
+const CACHE_VERSION = 'island-flight-v76.5';
 
 const PRECACHE = [
   './',
@@ -525,6 +525,15 @@ const PRECACHE = [
   'src/ui/frame-budget.js',
   'src/core/load-retry.js',
   'src/ui/touch-words.js',
+  // Added by tools/sync-precache.mjs.
+  'src/world/atmos.js',
+  // Added by tools/sync-precache.mjs.
+  'src/aircraft/blob-shadow.js',
+  'src/aircraft/tyre-smoke.js',
+  // Added by tools/sync-precache.mjs.
+  'src/world/turbulence.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/festive.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

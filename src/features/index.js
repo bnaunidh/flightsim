@@ -135,4 +135,6 @@ import './wx-map.js';
 // The map loading screen, about three seconds, in front of every way into a map (Free Flight, a
 // mission, a Story chapter, a multiplayer join, a boat or a van). Last, so its wrapper on the
 // game's startMode is the outermost one, over everything above that waits to be started.
+// The holidays at the home field: a tree, and steady lights on the terminal and the tower (Dec 1 - Jan 6).
+import './festive.js';
 import './loading-screens.js';

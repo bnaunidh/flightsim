@@ -21,6 +21,7 @@ import { getAircraft, specFor, DEFAULT_AIRCRAFT_ID } from './types.js';
 import { clamp, lerp } from '../core/noise.js';
 import { defaultLights, spoilerTarget, reverseDemand, reverseShare, REVERSE_EFFICIENCY } from './systems.js';
 import { rotorAssist, ROTOR_TUNE, groundEffectFactor, realismScale } from './rotor-assist.js';
+import { DrydenGusts, ROUGHNESS, groundEffectInduced } from '../world/turbulence.js';
 import { handlingFor, ROLL_SHARE_MAX } from './damage-handling.js';
 import { reheatFor, burnerShare, reheatEff, waveDrag, machOf, ceilingBurner } from './reheat.js';
 
@@ -816,6 +817,19 @@ export class Aircraft {
   }
 
   /** Main entry point. dt is clamped and sub-stepped by the caller. */
+  /**
+   * The roughness length of what is under the aeroplane, for the wind's
+   * log profile (world/turbulence.js ROUGHNESS): pavement and decks,
+   * water, else grass. Called only below 250 m.
+   */
+  _roughnessUnder() {
+    const x = this.pos.x;
+    const z = this.pos.z;
+    if (isPaved(x, z)) return ROUGHNESS.paved;
+    if (heightAt(x, z) < 0.5) return ROUGHNESS.water;
+    return ROUGHNESS.grass;
+  }
+
   update(dt, weather) {
     if (this.crashed) {
       this.rpm = Math.max(0, this.rpm - dt * 0.6);
@@ -924,8 +938,31 @@ export class Aircraft {
     this._brakeR = this.failures.brakes ? 0 : toe ? Math.max(this.controls.brakeR, park) : brakeInput;
 
     // ---- Relative wind ------------------------------------------------
-    const wind = weather.windVector(this._tmp);
-    const gust = weather.gustVector(this._tmp2);
+    /*
+     * The wind at the aeroplane's own height (weather.js windVector with
+     * AGL, the log law): the chosen wind is the reported 10 m wind; it is
+     * stronger aloft and fades over the last fifty feet, by the roughness of
+     * what is under you — pavement, grass, or water — so an approach feels
+     * the headwind fade, and the runway still gets most of the crosswind.
+     */
+    const z0 = this.agl < 250 ? this._roughnessUnder() : ROUGHNESS.grass;
+    const wind = weather.windVector(this._tmp, this.agl, z0);
+    /*
+     * Gusts: Dryden filtered noise (world/turbulence.js) per aeroplane,
+     * in body axes, turned into the world — random, speed-dependent,
+     * choppier low down, never periodic. weather.turbulenceScale and the
+     * weather's own turbulence level set its strength.
+     */
+    const D = (this._dryden || (this._dryden = new DrydenGusts((this.id || 'ac').length * 7919 + 13))).step(dt, {
+      V: this._airRel.length(),
+      aglM: this.agl,
+      w20Kts: weather.effectiveWindKts != null ? weather.effectiveWindKts : weather.windSpeedKts || 0,
+      level: weather.cond ? clamp((weather.cond.turb || 0) + (weather.immersion || 0) * 0.3, 0, 1) : 0.2,
+      spanM: SPEC.wingSpan || 11,
+      scale: weather.turbulenceScale != null ? weather.turbulenceScale : 1,
+    });
+    // Body (forward, right, up) → three's body frame (x right, y up, −z forward) → world.
+    const gust = this._tmp2.set(D.v, D.w, -D.u).applyQuaternion(this.quat);
     // The steady wind is felt in full in both modes — a 20 kt crosswind must
     // really be a 20 kt crosswind, or the HUD readout would be a lie. Only the
     // gusty part is softened for beginners.
@@ -1417,8 +1454,29 @@ export class Aircraft {
     this.burner = RH && this.engineOn && !SPEC.rotor
       ? burnerShare(this.rpm, SPEC.vne > 0 ? this.ias / SPEC.vne : 0, RH) * ceilingBurner(ceilingFactor(this.pos.y * FT, SPEC.ceiling), CEILING_FADE.floor)
       : 0;
+    /*
+     * Ground effect for the fixed wing (world/turbulence.js groundEffectInduced,
+     * McCormick): within about a span of the surface the induced drag falls —
+     * φ = (16h/b)² / (1 + (16h/b)²) on the k·CL² term — the lift slope rises a
+     * little and the nose wants to drop a touch. The floaty flare: a fast
+     * approach floats long. Helicopters have their own (rotor-assist.js).
+     */
+    let geInduced = 1;
+    if (!SPEC.rotor) {
+      const bGE = SPEC.wingSpan || 11;
+      const hWing = Math.max(0.3, this.agl + (SPEC.wingHeight || 1.2));
+      geInduced = groundEffectInduced(hWing, bGE);
+      const inGE = 1 - geInduced;
+      // The lift-slope rise is the flare's (in the air): with the wheels down the weight is on them, and
+      // extra lift there only stretched the strut's rebound into a hop that refused a drag-chute pull
+      // half a second after touchdown (checker, realism-1; tests/features/aircrew.mjs). The drag cut stays.
+      if (inGE > 0.001 && !this.onGround) CL *= 1 + 0.06 * inGE;
+      // A small nose-down moment (the downwash at the tail is reduced), applied once the moments are summed below.
+      this._geMoment = qS * (SPEC.chord || 1.5) * 0.012 * inGE;
+    } else this._geMoment = 0;
+    this.groundEffect = 1 - geInduced;
     const CD =
-      SPEC.CD0 + waveCD + (this.failures.icing ? 0.022 : 0) + flapCD + SPEC.k * CL * CL + gearDrag + Math.abs(this.beta) * 0.36 + 0.028 * spoiled;
+      SPEC.CD0 + waveCD + (this.failures.icing ? 0.022 : 0) + flapCD + SPEC.k * geInduced * CL * CL + gearDrag + Math.abs(this.beta) * 0.36 + 0.028 * spoiled;
 
     /*
      * What the damage does to the wing.
@@ -1727,6 +1785,8 @@ export class Aircraft {
     // Torque about body axes: X = pitch, Y = yaw, Z = roll. Faded out with the
     // forward airflow for the same reason as the forces above.
     this._t.set(Cm * qS * c * aeroFade, Cn * qS * b * aeroFade, Cl * qS * b * aeroFade);
+    // Ground effect's nose-down (the block above; the moments are set, not added, on the line before).
+    if (this._geMoment) this._t.x -= this._geMoment * aeroFade;
     // An engine gone from one side: the others push the nose round towards it.
     if (H && H.yawArm) this._t.y += thrust * H.yawArm;
     /*
@@ -1851,15 +1911,26 @@ export class Aircraft {
     }
     this._t.z += this.rpm * 90 * torqueScale;
 
-    // Turbulence buffeting.
+    /*
+     * Turbulence buffeting: the same strengths the sines had, driven by the
+     * Dryden filter's unit channels (world/turbulence.js) — so in rough air
+     * one wing kicks up and the nose wanders at random, quicker the faster
+     * you fly, instead of the whole aeroplane bobbing on a 1 Hz sine.
+     */
     const turb = weather.turbulenceLevel() * (simple ? 0.45 : 1);
-    if (turb > 0.001 && !this.onGround) {
-      const tScale = turb * clamp(V / 40, 0.2, 1.4);
-      const tt = weather.time_s;
-      this._t.x += Math.sin(tt * 7.3 + 1.1) * 620 * tScale * Math.sin(tt * 2.1);
-      this._t.y += Math.sin(tt * 5.7 + 3.3) * 520 * tScale * Math.sin(tt * 1.3);
-      this._t.z += Math.sin(tt * 9.1 + 0.7) * 700 * tScale * Math.sin(tt * 1.7);
-      this._f.y += Math.sin(tt * 6.1) * 1500 * tScale;
+    if (turb > 0.001 && !this.onGround && this._dryden) {
+      /*
+       * A long frame (a hitch) must not land a long random kick: the buffet
+       * is a buzz, so its impulse per frame is capped at a 40 Hz frame's
+       * (the sines were bounded by construction; noise is not).
+       */
+      const Dn = this._dryden.out;
+      // ...and sized by the gust strength itself (3 ft/s of vertical gust is the old full buffet): smooth air buffets nothing.
+      const tScale = turb * clamp(V / 40, 0.2, 1.4) * Math.min(1, 1 / (40 * Math.max(dt, 1e-4))) * clamp((Dn.sigmaW || 0) / 3, 0, 1.5);
+      this._t.x += Dn.nq * 620 * tScale * 0.7;
+      this._t.y += Dn.nr * 520 * tScale * 0.7;
+      this._t.z += Dn.np * 700 * tScale * 0.7;
+      this._f.y += Dn.w * 1500 * tScale * 0.35;
     }
 
     // Simplified mode: extra rate damping so nothing ever feels twitchy. The

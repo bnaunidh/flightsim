@@ -10,7 +10,9 @@ import * as THREE from './vendor/three.module.js';
 
 import { warmTextures, setTextureAnisotropy, setTextureTier, asphaltTexture, asphaltNormal } from './render/textures.js';
 import { loadAirlineFonts } from './render/airline-fonts.js';
-import { resetSurfaces, updateSurfaces, setFieldWetness } from './render/surfaces.js';
+import { resetSurfaces, updateSurfaces, setFieldWetness, fieldWetness } from './render/surfaces.js';
+import { BlobShadow } from './aircraft/blob-shadow.js';
+import { TyreSmoke } from './aircraft/tyre-smoke.js';
 import { PostFX } from './render/post.js';
 import { pickTier, probeFrames, isTier, tierRank, asHighMs } from './render/quality-probe.js';
 import { DynamicResolution, pixelRatioCap } from './render/dyn-res.js';
@@ -1158,6 +1160,8 @@ class Game {
       this.scene.remove(g);
     }
     if (this.sky && this.sky.dispose) this.sky.dispose();
+    if (this.blobShadow) { this.blobShadow.dispose(); this.blobShadow = null; }
+    if (this.tyreSmoke) { this.tyreSmoke.dispose(); this.tyreSmoke = null; }
     this.worldGroups = null;
   }
 
@@ -1213,6 +1217,8 @@ class Game {
     const next = (label) => ({ at: at++, of: STEPS, label });
     yield next('Clearing the last map…');
     this.disposeWorld();
+    // The sun over this map: its latitude (world/atmos.js). A preset keeps its sun; a hand-set hour stays.
+    if (this.weather && typeof this.weather.setLocation === 'function') this.weather.setLocation(MAP);
     // Timing each piece makes it obvious which part of the world is
     // expensive if someone changes the detail settings later.
     const t = (label, fn) => {
@@ -1243,8 +1249,24 @@ class Game {
         camera: this.camera,
         // The dome's own halo round the sun is turned down where bloom draws one.
         glow: quality === 'high' || quality === 'ultra' ? 0.55 : 1,
+        // Exposure follows the daylight (sky.js update, world/atmos.js).
+        renderer: this.renderer,
       })
     );
+    /*
+     * Low has no shadow maps: the aircraft's shadow there is the planform
+     * blob (aircraft/blob-shadow.js) — one quad under the aeroplane, its
+     * own silhouette, shifted down-sun, fading with height. Medium and up
+     * have the real one. And the touchdown tyre smoke (aircraft/tyre-smoke.js),
+     * every tier: a 48-puff pool left on the runway behind you.
+     */
+    if (this.blobShadow) { this.blobShadow.dispose(); this.blobShadow = null; }
+    if (!this.sky.shadowsEnabled) {
+      this.blobShadow = t('blob shadow', () => new BlobShadow(this.renderer));
+      this.scene.add(this.blobShadow.mesh);
+    }
+    if (this.tyreSmoke) { this.tyreSmoke.dispose(); this.tyreSmoke = null; }
+    this.tyreSmoke = t('tyre smoke', () => new TyreSmoke(this.scene));
     // Bloom and grade: High and Ultra. Off frees its targets; on makes them
     // at the next frame, at the drawing buffer's size.
     if (this.post) {
@@ -1337,6 +1359,8 @@ class Game {
     this.seamarks = t('seamarks', () => new SeaMarks(this.scene, quality));
     yield next('Gathering the clouds…');
     this.clouds = t('clouds', () => new CloudField(this.scene, quality));
+    // Cloud shadows land on the ground that is there, not at sea level (clouds.js paintShadows).
+    this.clouds.groundAt = heightAt;
     // Distant clouds fade into the sky's own fog, haze toward a low sun included.
     this.clouds.viewFog = this.sky.viewFog;
     yield next('Checking the weather…');
@@ -1391,6 +1415,8 @@ class Game {
       const impact = clamp(Math.abs(g.vsFpm) / 700, 0.05, 1);
       this.audio.available && this.audio.ambience.playTouchdown(impact, g.paved ? 'paved' : 'grass');
       this.rig.kick(0.25 + impact * 0.6);
+      // Tyre smoke at the main wheels, by sink rate and ground speed (aircraft/tyre-smoke.js).
+      if (this.tyreSmoke && !g.crashed) this.tyreSmoke.touchdown(ac, g, this.model, fieldWetness(), SPEC.wingSpan || 11);
       if (g.crashed) return;
       this.progress = recordLanding(this.progress, g);
       this.menus.syncProgress(this.progress);
@@ -6401,6 +6427,8 @@ class Game {
     // A crashing fleet model drives its own transform — see model-adapter.js.
     syncAircraftModel(this.model, ac);
     this.model.userData.update(dt, ac, this.weather);
+    if (this.blobShadow) this.blobShadow.update(dt, this.riding ? null : ac, this.model, this.weather);
+    if (this.tyreSmoke) this.tyreSmoke.update(dt, this.camera);
     // The model's own update is what drives a sinking wreck, so the floor has
     // to be applied after it — clamping before it is undone in the same frame.
     clampSinking(this.model, ac);

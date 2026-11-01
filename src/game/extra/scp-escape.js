@@ -117,6 +117,16 @@ const lastFlight = {
   ],
   // Night, snow, a little wind down the strip (the ice is the lesson, not a crosswind).
   weather: { time: 'night', condition: 'cloudy', windSpeedKts: 8, windDirDeg: 270 },
+  /*
+   * The radio (game/atc-director.js missionRadio): the map's generic
+   * controller called you "Reach one seven heavy ... runway zero nine" while
+   * the script says "Reach two one" and the ice strip faces west. The
+   * start-up and take-off calls are the script's own (the steps' `atc`),
+   * so the generic ones stay quiet; the landing calls at Caribou keep
+   * running under the right name. `runway` is the ice strip you leave
+   * from: once you have flown, the calls say Caribou's own runway.
+   */
+  radio: { callsign: 'Reach two one', runway: 'two seven', field: 'Caribou', quiet: ['start', 'clearance', 'airborne'] },
   spawn: stripStart,
   parTime: 420,
   onStart: (ctx) => {

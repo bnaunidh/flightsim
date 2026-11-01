@@ -237,7 +237,7 @@ const SKY = await load('src/world/sky.js');
 
   const terr = readFileSync(new URL('src/world/terrain.js', root), 'utf8');
   ok('terrain: Low strips the marker to the old line exactly', /texRock\.rgb  \*= uTintRock;\/\*RICH_ROCK\*\//.test(terr) && /replace\('\/\*RICH_ROCK\*\/', ''\)/.test(terr));
-  ok('terrain: Medium and up carry the cloud shadow and the cliffs', /uCloudShadow/.test(terr) && /cloudShade/.test(terr) && /steep/.test(terr));
+  ok('terrain: Medium and up carry the cloud shadow and the cliffs', (/uCloudShadow/.test(terr) || /cloudShadow\.uniforms/.test(terr)) && /cloudShade/.test(terr) && /steep/.test(terr));
   ok("terrain: the cloud shade rides three's own directional loop", THREE.ShaderChunk.lights_fragment_begin.includes('getDirectionalLightInfo( directionalLight, directLight );'));
   const CL = await load('src/world/clouds.js');
   ok('clouds: the shadow map is small and off until painted', CL.cloudShadow.n === 128 && CL.cloudShadow.xform.w === 0);

@@ -79,7 +79,8 @@ T.applyMap('kestrel');
   ok('shader: colour space is the dome\'s', FRAG.includes('#include <colorspace_fragment>') && !FRAG.includes('tonemapping_fragment'));
   ok('shader: waves are in world metres, not UVs', FRAG.includes('vWorld.xz') && !FRAG.includes('vUv'));
   ok('shader: lightning is not added to the sea', !/uFlash/.test(FRAG));
-  ok('shader: Low drops the fine octave and the foam taps', (FRAG.match(/#if WATER_DETAIL > 0/g) || []).length === 2);
+  // The fine octave, the foam taps — and since the realism pass the cloud-shadow taps (clouds.js CLOUD_SHADE_GLSL) — are all behind WATER_DETAIL.
+  ok('shader: Low drops the fine octave, the foam taps and the cloud-shadow taps', (FRAG.match(/#if WATER_DETAIL > 0/g) || []).length >= 2 && /#if WATER_DETAIL > 0\s*uniform sampler2D uCloudShadow/.test(FRAG) && /#if WATER_DETAIL > 0\s*float cloudShade = cloudShadeAt\(p\)/.test(FRAG));
   ok('shader: the depth field is read as depth and surf', FRAG.includes('texture2D(uDepthMap, duv).rg'));
   const taps = (FRAG.match(/texture2D\(/g) || []).length;
   ok('shader: at most six texture reads a pixel at High', taps <= 6, `${taps}`);

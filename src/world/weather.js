@@ -13,12 +13,31 @@ import * as THREE from '../vendor/three.module.js';
 import { clamp, lerp } from '../core/noise.js';
 import { FLASH, CAPS, dim } from '../render/flash-safety.js';
 import { WxSystem, newSeed, climateFor, visibilityAt, windWords, visibilityWords, changeWords, VIS_OD } from './wx.js';
+import {
+  LATITUDE_BY_CLIMATE, PRESET_ELEVATION, sunPosition, hourForElevation, timeBucket, daylight, dayOfYearOf,
+  sunLight, moonLight, skyLight, exposureFor,
+} from './atmos.js';
+import { windProfile, ROUGHNESS } from './turbulence.js';
 
+/*
+ * The three times of day, now PRESETS on a real sun (world/atmos.js): each
+ * names the elevation it aims for (the fixed sun it used to be), and
+ * Weather.setTime() finds the hour that puts this map's sun there today.
+ * The keys are the words every mission, map and the multiplayer index use;
+ * `sunElev`/`sunAzim` are the old fixed values, kept for anything that
+ * still reads them as a description of the preset.
+ */
 export const TIMES = {
-  day: { label: 'Midday', sunElev: 62, sunAzim: 135 },
-  sunset: { label: 'Sunset', sunElev: 4.5, sunAzim: 255 },
-  night: { label: 'Night', sunElev: -14, sunAzim: 300 },
+  day: { label: 'Midday', sunElev: 62, sunAzim: 135, elev: PRESET_ELEVATION.day },
+  sunset: { label: 'Sunset', sunElev: 4.5, sunAzim: 255, elev: PRESET_ELEVATION.sunset },
+  night: { label: 'Night', sunElev: -14, sunAzim: 300, elev: PRESET_ELEVATION.night },
 };
+
+/** A map's latitude: its own `latitude`, else by climate (atmos.js LATITUDE_BY_CLIMATE). */
+export function latitudeOf(map) {
+  if (map && Number.isFinite(map.latitude)) return map.latitude;
+  return LATITUDE_BY_CLIMATE[climateFor(map)] || LATITUDE_BY_CLIMATE.temperate;
+}
 
 /*
  * The fixed skies. Since wave 19 each also says what its clouds are made of
@@ -103,6 +122,19 @@ export class Weather {
     this.moonPhase = moon.illum;
     this.moonWaxing = moon.waxing;
 
+    /*
+     * Time of day (world/atmos.js): a latitude, a day of the year and an
+     * hour (local solar time, 0..24). `time` is a word derived from the sun's
+     * elevation ('day' / 'sunset' / 'night'); setting it picks the preset's
+     * hour. `clockRate` > 0 lets the hour run (game seconds per hour; 0 holds
+     * it still, as the fixed skies always did).
+     */
+    this.latitude = LATITUDE_BY_CLIMATE.temperate;
+    this.dayOfYear = dayOfYearOf();
+    this.hour = 12;
+    this._preset = null;
+    this.clockRate = 0;
+    this._sun = { elevDeg: 62, azimDeg: 180 };
     this.time = 'day';
     this.condition = 'clear';
     this.windSpeedKts = 4;
@@ -415,8 +447,93 @@ export class Weather {
     return this._shear.headwind * Math.cos(Math.min(1, Math.max(0, t)) * Math.PI);
   }
 
+  /* ---------------------------------------------------- time of day ---- */
+
+  /** Where the sun is now: { elevDeg, azimDeg (compass, from north) }, cached per hour/latitude/day. */
+  get sun() {
+    // Compared field by field, not through a key string: this is read dozens of times a frame
+    // (isNight, time, timeInfo), and a string each time was garbage a Chromebook had to collect.
+    if (this._sunH !== this.hour || this._sunLat !== this.latitude || this._sunDay !== this.dayOfYear) {
+      this._sunH = this.hour;
+      this._sunLat = this.latitude;
+      this._sunDay = this.dayOfYear;
+      this._sun = sunPosition(this.latitude, this.dayOfYear, this.hour);
+    }
+    return this._sun;
+  }
+
+  /*
+   * The sun's and the sky's light (world/atmos.js) for an elevation, a haze and a moon phase,
+   * kept until one of them changes: palette() runs several times a frame, and with the sun
+   * still these are the same numbers every time (and two dozen small arrays a call).
+   */
+  _atmosFor(el, haze, phase) {
+    const c = this._atmos;
+    if (c && c.el === el && c.haze === haze && c.phase === phase) return c;
+    return (this._atmos = { el, haze, phase, S: sunLight(el, { haze }), K: skyLight(el, { haze }), M: moonLight(el, phase) });
+  }
+
+  /** The word for the sun's height now: 'day', 'sunset' (either twilight) or 'night'. */
+  get time() {
+    return timeBucket(this.sun.elevDeg);
+  }
+
+  /** Setting the word picks that preset's hour on this map today (setTime). */
+  set time(id) {
+    this.setTime(id);
+  }
+
+  /** The hour (12..24) at which this map's sun stands where the preset wants it today. */
+  presetHour(id) {
+    const t = TIMES[id] || TIMES.day;
+    return hourForElevation(this.latitude, this.dayOfYear, t.elev);
+  }
+
+  /** Pick a preset: its hour, re-found whenever the map (latitude) changes. */
+  setTime(id) {
+    if (!TIMES[id]) return false;
+    this._preset = id;
+    this.hour = this.presetHour(id);
+    return true;
+  }
+
+  /** Any hour, 0..24 (local solar time). Leaves the presets behind until setTime() is called again. */
+  setHour(h) {
+    if (!Number.isFinite(h)) return;
+    this.hour = ((h % 24) + 24) % 24;
+    this._preset = null;
+  }
+
+  /** The preset in force ('day' / 'sunset' / 'night'), or null when an hour was set by hand. */
+  get preset() {
+    return this._preset;
+  }
+
+  /**
+   * Where this is: the map's latitude (and, if given, a day of the year). A
+   * preset keeps its sun (its hour is found again); a hand-set hour stays.
+   */
+  setLocation(map, dayOfYear = null) {
+    this.latitude = latitudeOf(map);
+    if (Number.isFinite(dayOfYear)) this.dayOfYear = dayOfYear;
+    if (this._preset) this.hour = this.presetHour(this._preset);
+  }
+
+  /**
+   * { label, sunElev, sunAzim, hour, preset }: the sun's elevation in degrees
+   * and its azimuth in the game's own convention (sunDirection: x = cos·sin,
+   * z = cos·cos, so the compass bearing A reads as 180 − A).
+   */
   get timeInfo() {
-    return TIMES[this.time];
+    const sun = this.sun;
+    const o = this._timeInfo || (this._timeInfo = { label: '', sunElev: 0, sunAzim: 0, hour: 0, preset: null, daylight: 1 });
+    o.label = TIMES[this.time].label;
+    o.sunElev = sun.elevDeg;
+    o.sunAzim = ((180 - sun.azimDeg) % 360 + 360) % 360;
+    o.hour = this.hour;
+    o.preset = this._preset;
+    o.daylight = daylight(sun.elevDeg);
+    return o;
   }
 
   get isNight() {
@@ -433,20 +550,76 @@ export class Weather {
   }
 
   /**
+   * The direction the scene's one directional light shines FROM: the sun
+   * while it is up (never under 2° — a horizontal light is all shadow
+   * acne), the moon — opposite the sun, as the dome draws it — once it is
+   * down. Shadows follow it round through the day (sky.js followTarget).
+   */
+  lightDirection(out = new THREE.Vector3()) {
+    this.sunDirection(out);
+    const el = this.sun.elevDeg;
+    /*
+     * The moon takes over exactly where palette() hands it the light's colour
+     * and strength (the brighter of the two), not at 0°: between −1° and 0°
+     * the light was the red sun's but shone from the moon's side of the sky.
+     */
+    if (el < 3 && !this._sunIsTheLight(el)) out.multiplyScalar(-1);
+    const minY = Math.sin(THREE.MathUtils.degToRad(2));
+    if (out.y < minY) {
+      const h = Math.hypot(out.x, out.z) || 1;
+      const k = Math.sqrt(1 - minY * minY) / h;
+      out.set(out.x * k, minY, out.z * k);
+    }
+    return out;
+  }
+
+  /** palette()'s choice: is the sun (not the moon) the scene's light at this elevation? */
+  _sunIsTheLight(el) {
+    const haze = this.wx && this.cond ? clamp(this.cond.haze || 0, 0, 1) : 0;
+    const a = this._atmosFor(el, haze, this.moonPhase);
+    return a.S.intensity >= a.M.intensity;
+  }
+
+  /** The tone-mapping exposure for this sun and sky (atmos.js exposureFor). */
+  get exposure() {
+    return exposureFor(this.sun.elevDeg, this.cond.cloud);
+  }
+
+  /**
    * Steady wind as a world-space velocity in metres/second.
    * X is east, Z is south (three.js default: -Z is north).
+   *
+   * With `aglM` given, the wind at that height over ground of roughness
+   * `z0` (world/turbulence.js windProfile, the log law): the chosen wind is
+   * the 10 m wind over grass (what the tower and the HUD report); below it
+   * the wind drops — on short final the headwind fades over the last fifty
+   * feet, so the airspeed sags and the crosswind changes as it does in real
+   * life — and above it the wind is stronger, about 1.5× from 200 m up.
+   * Without a height it is the chosen wind itself, as every other reader
+   * expects. A microburst's shear is felt in full at any height.
    */
-  windVector(out = this._wind) {
+  windVector(out = this._wind, aglM = null, z0 = ROUGHNESS.grass) {
     // A microburst adds a headwind that decays into a tailwind as you pass
     // through it, on top of whatever the wind was already doing.
-    const speed = this.effectiveWindKts * 0.514444 + this.shearHeadwind;
+    const layer = Number.isFinite(aglM) ? windProfile(aglM, z0) : 1;
+    const speed = this.effectiveWindKts * 0.514444 * layer + this.shearHeadwind;
     const from = THREE.MathUtils.degToRad(this.windDirDeg);
     // Wind FROM north (0°) blows toward the south (+Z).
     out.set(-Math.sin(from) * speed, 0, Math.cos(from) * speed);
     return out;
   }
 
-  /** Gust + turbulence component, smoothly varying. */
+  /** The multiple of the chosen (10 m) wind felt at `aglM` over ground of roughness `z0` (windProfile). */
+  windLayer(aglM, z0 = ROUGHNESS.grass) {
+    return windProfile(aglM, z0);
+  }
+
+  /**
+   * Gust + turbulence component, smoothly varying — the old sum of sines.
+   * The aeroplane no longer flies through this (physics.js carries a Dryden
+   * filter per aircraft, world/turbulence.js); it is kept for anything else
+   * that wants a cheap wobble.
+   */
   gustVector(out = this._gust) {
     const t = this.time_s;
     const c = this.cond;
@@ -466,6 +639,11 @@ export class Weather {
 
   update(dt) {
     this.time_s += dt;
+    // The clock, if it runs: clockRate game-seconds per hour of sun (0 holds it).
+    if (this.clockRate > 0 && dt > 0) {
+      this.hour = (this.hour + dt / this.clockRate) % 24;
+      this._preset = null;
+    }
     if (this.isRandom) {
       if (!this.wx) this.beginFlight({});
       const news = this.wx.update(dt, this.obs);
@@ -609,36 +787,30 @@ export class Weather {
       above = above * above * (3 - 2 * above);
     }
     const overcast = c.cloud * (1 - above);
-    let top, horizon, sun, ground, ambient, sunIntensity, ambIntensity;
-    if (this.time === 'day') {
-      top = new THREE.Color(0x2f6fd0);
-      horizon = new THREE.Color(0xbcd7f2);
-      sun = new THREE.Color(0xfff4e0);
-      ground = new THREE.Color(0x5a6b52);
-      ambient = new THREE.Color(0x9fb8d8);
-      sunIntensity = 3.1;
-      ambIntensity = 1.05;
-    } else if (this.time === 'sunset') {
-      top = new THREE.Color(0x24427a);
-      horizon = new THREE.Color(0xf3a35c);
-      sun = new THREE.Color(0xffb066);
-      ground = new THREE.Color(0x4a4034);
-      ambient = new THREE.Color(0xb98a6a);
-      sunIntensity = 2.1;
-      ambIntensity = 0.75;
-    } else {
-      top = new THREE.Color(0x040a18);
-      horizon = new THREE.Color(0x121d33);
-      sun = new THREE.Color(0x9db4d8);
-      ground = new THREE.Color(0x0b1018);
-      ambient = new THREE.Color(0x2a3a55);
-      sunIntensity = 0.38;
-      ambIntensity = 0.3;
-    }
+    /*
+     * The colours from the sun's elevation (world/atmos.js): the sun's own
+     * through the air it crosses, the sky's blended from it. At the three
+     * presets' suns these are the colour sets the palettes had; between them
+     * a sunset is a smooth ramp, not three looks. At night the light is the
+     * moon's (sky.js aims it), by its phase.
+     */
+    const el = this.sun.elevDeg;
+    const haze = this.wx ? clamp(c.haze || 0, 0, 1) : 0;
+    const { S, K, M } = this._atmosFor(el, haze, this.moonPhase);
+    // atmos.js works in the palettes' own (sRGB) values, as the old hex colours were.
+    const srgb = (c) => new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace);
+    const top = srgb(K.zenith);
+    let horizon = srgb(K.horizon);
+    const ambient = srgb(K.ambient);
+    const ground = srgb(K.ground);
+    // Day: the sun. Night: the moon's colour and strength. Twilight: the brighter of the two.
+    const sun = srgb(S.intensity >= M.intensity ? S.color : M.color);
+    let sunIntensity = Math.max(S.intensity, M.intensity);
+    let ambIntensity = K.ambIntensity;
     // Overcast washes colour out toward flat grey and kills the sun.
     const grey = new THREE.Color(this.isNight ? 0x161c26 : 0x8b94a0);
-    top = top.clone().lerp(grey, overcast * 0.72);
-    horizon = horizon.clone().lerp(grey, overcast * 0.6);
+    top.lerp(grey, overcast * 0.72);
+    horizon.lerp(grey, overcast * 0.6);
     sunIntensity *= lerp(1, 0.3, overcast);
     ambIntensity *= lerp(1, 0.85, overcast);
     /*
@@ -679,6 +851,10 @@ export class Weather {
       ambIntensity,
       fogDensity: c.fog,
       fogColor,
+      sunElev: el,
+      daylight: K.daylight,
+      moonlight: M.intensity,
+      exposure: exposureFor(el, overcast),
     };
   }
 
@@ -734,7 +910,9 @@ export class Weather {
 
   serialize() {
     return {
-      time: this.time,
+      time: this._preset || this.time,
+      // The hour, only when it was set by hand (a preset is saved as its word, so it follows the map's sun).
+      hour: this._preset ? undefined : this.hour,
       condition: this.condition,
       // Save the wind you chose, not whatever the random gusts have wandered
       // to — otherwise the setting creeps every time you play.
@@ -767,7 +945,10 @@ export class Weather {
     }
     const wasTime = this.time;
     const wasCond = this.condition;
-    if (data.time && TIMES[data.time]) this.time = data.time;
+    if (data.time && TIMES[data.time]) this.setTime(data.time);
+    // An hour set by hand (the Free Flight slider) wins over the word beside it.
+    if (Number.isFinite(data.hour)) this.setHour(data.hour);
+    if (Number.isFinite(data.clockRate)) this.clockRate = Math.max(0, data.clockRate);
     if (data.condition && CONDITIONS[data.condition]) this.condition = data.condition;
     if (typeof data.windSpeedKts === 'number') this.windSpeedKts = clamp(data.windSpeedKts, 0, 40);
     if (typeof data.windDirDeg === 'number') this.windDirDeg = (data.windDirDeg + 360) % 360;

@@ -10,6 +10,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { dim, CAPS, FLASH } from '../render/flash-safety.js';
 import { HEIGHT_FOG, heightFogDepth } from '../render/height-fog.js';
+import { fogThinning } from './atmos.js';
 
 const vertexShader = /* glsl */ `
   varying vec3 vDir;
@@ -163,8 +164,10 @@ function smooth(e0, e1, x) {
 }
 
 export class SkyDome {
-  constructor(scene, { shadows = true, shadowMapSize = 2048, camera = null, glow = 1 } = {}) {
+  constructor(scene, { shadows = true, shadowMapSize = 2048, camera = null, glow = 1, renderer = null } = {}) {
     this.scene = scene;
+    // The renderer whose tone-mapping exposure follows the daylight (update(); world/atmos.js exposureFor).
+    this.renderer = renderer;
     // The view the fog colour follows (light scattering, update()). Without
     // one the fog is the preset's, as it always was.
     this.camera = camera;
@@ -383,7 +386,15 @@ export class SkyDome {
 
   update(weather) {
     const p = weather.palette();
-    weather.sunDirection(this._sunDir);
+    /*
+     * Two directions: the dome draws the sun where it is (uSunDir); the
+     * scene's one directional light shines from the sun while it is up and
+     * from the moon once it is down (weather.lightDirection), so the shadows
+     * follow the sun round the day and never come from under the ground.
+     */
+    weather.sunDirection(this._domeSunDir || (this._domeSunDir = new THREE.Vector3()));
+    if (typeof weather.lightDirection === 'function') weather.lightDirection(this._sunDir);
+    else this._sunDir.copy(this._domeSunDir);
 
     this.uniforms.uTop.value.copy(p.top);
     this.uniforms.uHorizon.value.copy(p.horizon);
@@ -402,10 +413,12 @@ export class SkyDome {
       this.veil = vU;
     }
     this.uniforms.uSunColor.value.copy(p.sun);
-    this.uniforms.uSunDir.value.copy(this._sunDir);
+    this.uniforms.uSunDir.value.copy(this._domeSunDir);
     // The moon is as visible as it always was; the stars now also answer to
     // its phase — a full moon leaves about a third of them, a new moon all.
-    const moonUp = weather.isNight ? 1 - weather.cond.cloud * 0.95 : 0;
+    // Both come out through twilight as the daylight goes (p.daylight), not in one step.
+    const dark = typeof p.daylight === 'number' ? 1 - p.daylight : weather.isNight ? 1 : 0;
+    const moonUp = dark * (1 - weather.cond.cloud * 0.95);
     const phase = typeof weather.moonPhase === 'number' ? weather.moonPhase : 1;
     this.uniforms.uMoon.value = moonUp;
     this.uniforms.uMoonPhase.value = phase;
@@ -425,10 +438,23 @@ export class SkyDome {
     this.hemi.color.copy(p.ambient);
     this.hemi.groundColor.copy(p.ground);
     this.hemi.intensity = p.ambIntensity;
-    this.fill.intensity = weather.isNight ? 0.06 : 0.16;
+    this.fill.intensity = 0.06 + 0.1 * (1 - dark);
+    // Exposure follows the daylight (L5): a smooth function of the sun, never a measurement of the frame.
+    if (this.renderer && typeof p.exposure === 'number' && this.renderer.toneMappingExposure !== p.exposure) {
+      this.renderer.toneMappingExposure = p.exposure;
+    }
 
     this.scene.fog.color.copy(p.fogColor);
-    this.scene.fog.density = p.fogDensity;
+    /*
+     * Aerial perspective's CPU half (world/atmos.js fogThinning): the even
+     * fog thins with the eye's height — from 10,000 ft the horizon is
+     * clearer than from the runway, because there is less haze at your
+     * level. The weather's own density holds up to 700 m.
+     */
+    const eyeY = this.camera ? this.camera.position.y : 0;
+    const fogDensity = p.fogDensity * fogThinning(eyeY);
+    this.fogThin = fogDensity / Math.max(1e-12, p.fogDensity);
+    this.scene.fog.density = fogDensity;
 
     /*
      * Light scattering toward a low sun, at no shader cost.
@@ -441,7 +467,7 @@ export class SkyDome {
      * hills and the sea go hazy-gold that way and stay clear the other.
      * Weighted down by cloud: an overcast sunset has no low sun to see.
      */
-    const el = weather.timeInfo.sunElev;
+    const el = typeof p.sunElev === 'number' ? p.sunElev : weather.timeInfo.sunElev;
     const low = smooth(-6, 0, el) * (1 - smooth(8, 25, el)) * (1 - weather.cond.cloud * 0.85);
     const u = this.uniforms;
     u.uHorizonAway.value.copy(p.horizon).lerp(DUSK_AWAY, 0.5 * low);
@@ -473,7 +499,7 @@ export class SkyDome {
       _awayFog.copy(p.fogColor).lerp(DUSK_AWAY, 0.5 * low);
       _hazeFog.copy(p.sun).multiplyScalar(0.5 * low * lobe);
       this.scene.fog.color.copy(_awayFog).lerp(p.fogColor, toward).add(_hazeFog);
-      this.scene.fog.density = p.fogDensity * (1 + 2.4 * low * lobe);
+      this.scene.fog.density = fogDensity * (1 + 2.4 * low * lobe);
     }
     // What the clouds fade into (clouds.js viewFog): this, before anything
     // later in the frame (the in-cloud whiteout) takes the fog over.

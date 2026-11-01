@@ -29,6 +29,33 @@ import * as THREE from '../vendor/three.module.js';
 import { heightAt, MAP, ISLANDS, addObstacleAt, padWeight, flatAt } from './terrain.js';
 import { fbm, makeRandom, clamp, smoothstep, lerp } from '../core/noise.js';
 import { SEA_DEPTH } from '../render/depth-layers.js';
+import { dim } from '../render/flash-safety.js';
+
+/**
+ * The northern lights' look (buildAurora / update): a slow, soft glow.
+ *
+ * The old curtain had 260 striation cycles across its 26 km (a stripe every
+ * 100 m), four ribbons stacked additively with no ceiling, and High's bloom
+ * on top: from the air over Nunatak the sky was bands of white that
+ * shimmered as the camera moved — 4.3% of the screen flickering in the
+ * probe (tests/flicker-probe.js), where the game's limit is 0.5%. Now a
+ * ribbon has a few broad rays that fade to a flat glow by pixel footprint,
+ * its clock runs over minutes, and no pixel of it goes over `peak`.
+ * tests/features/realism.mjs holds these to their limits.
+ */
+export const AURORA = Object.freeze({
+  ribbons: 4,
+  /** Striation cycles across the whole ribbon (was 260). */
+  rayCycles: 18,
+  /** Radians per second of the rays' drift and the ribbon's folding (were 0.5 and 0.19). */
+  rayRate: 0.045,
+  waveRate: 0.06,
+  /** A ribbon's brightness at full night, and the ceiling any pixel of it may reach (scene-referred). */
+  strength: 0.42,
+  peak: 0.34,
+  /** With Reduce flashing on, this fraction of `strength`. */
+  reduceCap: 0.8,
+});
 
 /** Scratch transform for the birds' per-frame matrices, so the loop allocates nothing. */
 const _bird = new THREE.Object3D();
@@ -1045,7 +1072,8 @@ export class MapFeatures {
     this.auroraIntensity = Number.isFinite(cfg.intensity) ? Math.max(0, Math.min(1, cfg.intensity)) : 1;
     const colour = new THREE.Color(cfg.colour || 0x4dffa8);
     const colour2 = new THREE.Color(cfg.colour2 || 0x7a5cff);
-    for (let i = 0; i < 4; i++) {
+    const A = AURORA;
+    for (let i = 0; i < A.ribbons; i++) {
       const geo = new THREE.PlaneGeometry(26000, 2400, 90, 6);
       const mat = new THREE.ShaderMaterial({
         uniforms: {
@@ -1054,6 +1082,7 @@ export class MapFeatures {
           uColour2: { value: colour2 },
           uOpacity: { value: 0 },
           uSeed: { value: i * 3.7 },
+          uPeak: { value: A.peak },
         },
         vertexShader: `
           uniform float uTime;
@@ -1064,33 +1093,50 @@ export class MapFeatures {
             vUv = uv;
             vec3 p = position;
             // Two slow waves along the ribbon: one folds it, one shifts the
-            // curtain sideways. Together they never quite repeat.
-            float w = sin(p.x * 0.00042 + uTime * 0.19 + uSeed) * 620.0
-                    + sin(p.x * 0.00017 - uTime * 0.11 + uSeed * 2.3) * 900.0;
-            vWave = sin(p.x * 0.0009 + uTime * 0.32 + uSeed);
+            // curtain sideways. Together they never quite repeat. Real
+            // curtains drift over minutes, so the clock here is slow.
+            float w = sin(p.x * 0.00042 + uTime * ${A.waveRate} + uSeed) * 620.0
+                    + sin(p.x * 0.00017 - uTime * ${A.waveRate * 0.58} + uSeed * 2.3) * 900.0;
+            vWave = sin(p.x * 0.0009 + uTime * ${A.waveRate * 1.7} + uSeed);
             p.z += w;
-            p.y += sin(p.x * 0.00031 + uTime * 0.14) * 260.0;
+            p.y += sin(p.x * 0.00031 + uTime * ${A.waveRate * 0.74}) * 260.0;
             gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
           }`,
         fragmentShader: `
           uniform vec3 uColour;
           uniform vec3 uColour2;
           uniform float uOpacity;
+          uniform float uPeak;
           uniform float uTime;
           varying vec2 vUv;
           varying float vWave;
           void main() {
             // Bright along the bottom edge, fading up — real curtains are lit
             // from below where the particles are densest.
-            float v = vUv.y;
+            // clamp(): at the ribbon's edges the interpolated v can come out a hair outside 0..1, and
+            // pow() of a negative is NaN (here and in the colour mix below) — which additive blending
+            // wrote into the sky as dashed white lines along every ribbon, by day too, and High's
+            // bloom smeared into white bands (checker, realism-1).
+            float v = clamp(vUv.y, 0.0, 1.0);
             float body = pow(1.0 - v, 1.6) * smoothstep(0.0, 0.12, v);
-            // Vertical striations that drift along the curtain.
-            float ray = 0.55 + 0.45 * sin(vUv.x * 260.0 + uTime * 0.5 + vWave * 3.0);
-            ray *= 0.6 + 0.4 * sin(vUv.x * 61.0 - uTime * 0.23);
+            /*
+             * Rays: a few broad, slow striations (AURORA.rayCycles across the
+             * whole ribbon, not hundreds) — and faded out by the pixel
+             * footprint: once a ray is only a pixel or two wide on screen it
+             * is a flat glow, not a stripe, so a far ribbon cannot shimmer
+             * as the camera moves (the Nunatak night sky measured 4% of the
+             * screen flickering with the old 100 m stripes).
+             */
+            float ray = 0.72 + 0.28 * sin(vUv.x * ${A.rayCycles.toFixed(1)} + uTime * ${A.rayRate} + vWave * 1.5);
+            ray *= 0.88 + 0.12 * sin(vUv.x * ${(A.rayCycles * 0.31).toFixed(1)} - uTime * ${A.rayRate * 0.6});
+            float fw = fwidth(vUv.x) * ${A.rayCycles.toFixed(1)};
+            ray = mix(ray, 0.72, smoothstep(0.35, 1.2, fw));
             // Ends taper off so the ribbon has no visible edge.
             float ends = smoothstep(0.0, 0.09, vUv.x) * (1.0 - smoothstep(0.91, 1.0, vUv.x));
             vec3 col = mix(uColour, uColour2, pow(v, 1.3));
-            gl_FragColor = vec4(col * body * ray * ends * uOpacity, 1.0);
+            // Never brighter than uPeak in any channel: four ribbons stacked
+            // additively used to pile up past white, then bloom.
+            gl_FragColor = vec4(min(col * body * ray * ends * uOpacity, vec3(uPeak)), 1.0);
           }`,
         transparent: true,
         blending: THREE.AdditiveBlending,
@@ -1370,10 +1416,17 @@ export class MapFeatures {
     // Aurora: night only, brought up and down gently so it does not snap on.
     if (this.auroraMats.length) {
       // A map may ask for a quieter sky (`aurora.intensity`, Nunatak Reach 0.55).
-      const want = (night ? 1 : weather && weather.time === 'sunset' ? 0.35 : 0) * this.auroraIntensity;
+      // A soft glow, never a stroke of white: AURORA.strength per ribbon, and
+      // with Reduce flashing on a little less (render/flash-safety.js dim).
+      // How dark the sky is (weather.timeInfo.daylight, world/atmos.js): an aurora is only seen once the
+      // twilight has gone, not with the sun still up — the 'sunset' word now spans −7° to 10° of sun.
+      const ti = weather && weather.timeInfo;
+      const darkSky = ti && Number.isFinite(ti.daylight) ? 1 - ti.daylight : night ? 1 : weather && weather.time === 'sunset' ? 0.35 : 0;
+      const want = darkSky * this.auroraIntensity * dim(AURORA.strength, AURORA.reduceCap);
       for (const m of this.auroraMats) {
         m.uniforms.uTime.value = this.t;
         const cur = m.uniforms.uOpacity.value;
+        // Eased over seconds (dt * 0.6 is a ~1.7 s time constant), so it never snaps on.
         m.uniforms.uOpacity.value = cur + (want - cur) * Math.min(1, dt * 0.6);
       }
     }

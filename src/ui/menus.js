@@ -1247,6 +1247,8 @@ export class Menus {
           <div>
             <h3>Or set it yourself</h3>
             <label class="field"><span>Time of day</span><select data-time>${times}</select></label>
+            <label class="field"><span>Hour <b data-hourval>preset</b></span>
+              <input type="range" min="0" max="24" step="0.25" value="12" data-hour aria-label="Hour of the day"></label>
             <label class="field"><span>Sky</span><select data-cond>${conds}</select></label>
             <label class="field"><span>Wind speed <b data-windval>4</b> kt</span>
               <input type="range" min="0" max="35" step="1" data-wind></label>
@@ -1300,6 +1302,26 @@ export class Menus {
     const dir = s.querySelector('[data-dir]');
     const time = s.querySelector('[data-time]');
     const cond = s.querySelector('[data-cond]');
+    /*
+     * The hour slider (world/atmos.js): any hour of the day, on top of the
+     * three words. Left alone it follows the word ("preset": the map's own
+     * sun for Midday, Sunset or Night); dragged, it is the hour that counts
+     * and the word is just what that hour turns out to be. A range input,
+     * so it works by touch as the wind sliders do.
+     */
+    const hour = s.querySelector('[data-hour]');
+    const hourWords = () => {
+      const out = s.querySelector('[data-hourval]');
+      if (!out) return;
+      if (hour.dataset.set !== '1') { out.textContent = 'preset'; return; }
+      const h = Number(hour.value) % 24;
+      const hh = Math.floor(h);
+      const mm = Math.round((h - hh) * 60);
+      out.textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    };
+    hour.addEventListener('input', () => { hour.dataset.set = '1'; hourWords(); });
+    time.addEventListener('change', () => { hour.dataset.set = '0'; hourWords(); });
+    hourWords();
     // A plan view on each card, drawn from that aeroplane's own shape data.
     // PAINT PER PLANE (wave 18): each card in that aeroplane's own paint
     // (core/plane-paint.js). Given a type id, only that card is redrawn.
@@ -1349,7 +1371,7 @@ export class Menus {
     this.bindCategoryBar(s, 'fleet');
     this.syncFleetLocks();
 
-    this.freeControls = { wind, dir, time, cond };
+    this.freeControls = { wind, dir, time, cond, hour, hourWords };
     this.chosenAircraft = 'skylark';
     this.chosenStart = 'runway';
 
@@ -1470,6 +1492,8 @@ export class Menus {
         // Heat-seekers' practice drones (src/features/heatseek.js reads it from the start options).
         practiceTargets: !!(s.querySelector('[data-practice-targets]') || {}).checked,
         time: time.value,
+        // The slider's hour, only once it has been moved (otherwise the word's preset).
+        hour: hour.dataset.set === '1' ? Number(hour.value) : undefined,
         condition: cond.value,
         windSpeedKts: Number(wind.value),
         windDirDeg: Number(dir.value),
@@ -1484,6 +1508,8 @@ export class Menus {
     const applySetup = (c) => {
       if (!c) return;
       time.value = c.time;
+      if (Number.isFinite(c.hour)) { hour.value = c.hour; hour.dataset.set = '1'; } else hour.dataset.set = '0';
+      hourWords();
       cond.value = c.condition;
       wind.value = c.windSpeedKts;
       dir.value = c.windDirDeg;
@@ -1622,6 +1648,8 @@ export class Menus {
       if (p) {
         const preset = PRESETS.find((x) => x.id === p.dataset.preset);
         time.value = preset.time;
+        hour.dataset.set = '0';
+        hourWords();
         cond.value = preset.condition;
         wind.value = preset.wind;
         dir.value = Math.round(preset.dir / 10) * 10;
@@ -1861,6 +1889,15 @@ export class Menus {
           stars over a crash, the cartoon crashes that bounce and cartwheel with a joke under them, and a starburst on the
           map. Off, a tag is "Tagged out", a collision is a collision and a crash is the real break-up and wreck.
           It is your own choice; other players see the game their own way.</p>
+          <label class="field"><span>Holiday decorations</span>
+            <select data-set="festive">
+              <option value="auto">Automatic — December 1st to January 6th</option>
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </select>
+          </label>
+          <p class="hint">A tree with a star by the terminal and steady lights on the terminal roof and the control
+          tower. The lights never blink.</p>
           <div class="fps-box">Frames per second: <b data-fps>—</b></div>
         </div>
 
@@ -2833,6 +2870,11 @@ export class Menus {
     // Free-flight defaults follow the saved weather.
     if (this.freeControls && settings.weather) {
       this.freeControls.time.value = settings.weather.time;
+      if (this.freeControls.hour) {
+        const h = settings.weather.hour;
+        if (Number.isFinite(h)) { this.freeControls.hour.value = h; this.freeControls.hour.dataset.set = '1'; } else this.freeControls.hour.dataset.set = '0';
+        this.freeControls.hourWords();
+      }
       this.freeControls.cond.value = settings.weather.condition;
       this.freeControls.wind.value = settings.weather.windSpeedKts;
       this.freeControls.dir.value = Math.round(settings.weather.windDirDeg / 10) * 10;

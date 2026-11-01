@@ -51,7 +51,26 @@ export class AtcDirector {
    * changing aeroplane mid-session changes what you are called, which is the
    * bug the class actually noticed.
    */
+  /**
+   * A mission's own radio (its def's `radio: { callsign, runway, field,
+   * quiet: [...] }`): "Last Flight Out" is flown as "Reach two one" off an
+   * ice strip facing west, and the generic calls were saying "Reach one
+   * seven heavy ... runway zero nine" over its script. Null when no mission
+   * says otherwise.
+   */
+  get missionRadio() {
+    const r = this.sim.runner;
+    const d = r && r.def;
+    if (!d || !d.radio) return null;
+    // Only while that mission is (or has just been) the flight: a def left on the runner after
+    // the menu (status idle) must not keep calling the next free flight "Reach two one".
+    if (r.status === 'idle') return null; // runner.js STATUS.IDLE
+    return d.radio;
+  }
+
   get callsign() {
+    const mr = this.missionRadio;
+    if (mr && mr.callsign) return mr.callsign;
     // In a game with friends everybody in a Skylark was "Skylark one seven two": there it is the player's username (multiplayer.js frame()).
     if (this.sim.mpCallsign) return this.sim.mpCallsign;
     const t = this.sim.aircraftType;
@@ -63,6 +82,8 @@ export class AtcDirector {
    * Francisco was the same class of mistake as the callsign.
    */
   get field() {
+    const mr = this.missionRadio;
+    if (mr && mr.field) return mr.field;
     // On the World Map, the field you are at (world/navfield.js).
     const nf = navField();
     if (nf) return nf.radio;
@@ -71,6 +92,17 @@ export class AtcDirector {
 
   /** "zero nine", "two seven", from the runway this map actually has. */
   get runwayCall() {
+    /*
+     * A mission's `radio.runway` is the strip it DEPARTS from, so it holds
+     * only until the aeroplane has flown. The landing calls (final, short
+     * final) fire only on the field's own approach direction (a World Map
+     * field's landing runway, runway 09 on every other map), so in the air
+     * the runway is the field's — or "cleared to land runway two seven" went
+     * out over a 09 approach at Caribou.
+     */
+    const mr = this.missionRadio;
+    const ac0 = this.sim.aircraft;
+    if (mr && mr.runway && !this.departed && !(ac0 && !ac0.onGround)) return mr.runway;
     const nf = navField();
     if (nf) return runwayWords(nf.dir);
     const deg = (AIRPORT && AIRPORT.headingDeg) || 90;
@@ -93,6 +125,8 @@ export class AtcDirector {
     this.landingCall = 0;
     this.weatherCall = 0;
     this.wasAirborne = false;
+    // Off the ground at least once this flight (runwayCall: a mission's departure runway stops applying).
+    this.departed = false;
     this.lastCondition = null;
   }
 
@@ -108,6 +142,9 @@ export class AtcDirector {
    */
   once(key) {
     if (this.said[key]) return false;
+    // A mission's script has these calls (`radio.quiet`): the generic ones stay off the air.
+    const mr = this.missionRadio;
+    if (mr && Array.isArray(mr.quiet) && mr.quiet.includes(key)) return false;
     if (this.cool > 0) return false;
     this.said[key] = true;
     return true;
@@ -150,6 +187,7 @@ export class AtcDirector {
     const sim = this.sim;
     const ac = sim.aircraft;
     const w = sim.weather;
+    if (ac && !ac.onGround && !ac.crashed) this.departed = true;
     this.cool -= dt;
     this.landingCall -= dt;
     this.weatherCall -= dt;

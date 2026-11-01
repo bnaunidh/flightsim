@@ -19,7 +19,7 @@ import {
   terrainSplatNoise,
   groundNormal,
 } from '../render/textures.js';
-import { cloudShadow } from './clouds.js';
+import { cloudShadow, CLOUD_SHADE_GLSL } from './clouds.js';
 import { RENDER_ORIGIN } from '../render/render-origin.js';
 import { SNOW_COVER } from '../render/surfaces.js';
 
@@ -2416,9 +2416,7 @@ const RICH_VERTEX_BEGIN = `
   vCliffN = normalize(objectNormal);`;
 const RICH_FRAGMENT_COMMON = `
          varying vec2 vCloudXZ;
-         varying vec3 vCliffN;
-         uniform sampler2D uCloudShadow;
-         uniform vec4 uCloudXform;`;
+         varying vec3 vCliffN;` + CLOUD_SHADE_GLSL;
 // After texRock is sampled, before the layers are blended.
 const RICH_FRAGMENT_ROCK = `
         if (vBlend.z > 0.02) {
@@ -2433,10 +2431,9 @@ const RICH_FRAGMENT_ROCK = `
             texRock = mix(texRock, side, steep);
           }
         }`;
+// The cross-faded, drifting cloud shade (clouds.js CLOUD_SHADE_GLSL): 1 lit .. 0 shaded.
 const RICH_FRAGMENT_SHADE = `
-        vec2 cloudUv = (vCloudXZ - uCloudXform.xy) * uCloudXform.z + 0.5;
-        float cloudEdge = smoothstep(0.5, 0.4, max(abs(cloudUv.x - 0.5), abs(cloudUv.y - 0.5)));
-        float cloudShade = 1.0 - texture2D(uCloudShadow, cloudUv).r * uCloudXform.w * cloudEdge;`;
+        float cloudShade = cloudShadeAt(vCloudXZ);`;
 const LIGHTS_WITH_CLOUD_SHADE = THREE.ShaderChunk.lights_fragment_begin.replace(
   'getDirectionalLightInfo( directionalLight, directLight );',
   'getDirectionalLightInfo( directionalLight, directLight );\n\t\tdirectLight.color *= cloudShade;'
@@ -2600,8 +2597,8 @@ export function makeTerrainMaterial(quality = 'high') {
         `
       );
     if (rich) {
-      shader.uniforms.uCloudShadow = { value: cloudShadow.texture };
-      shader.uniforms.uCloudXform = { value: cloudShadow.xform };
+      // The shared uniform objects (both textures, the mix, the drift): one update reaches every chunk.
+      Object.assign(shader.uniforms, cloudShadow.uniforms);
       // World metres for the patterns, whatever the draw's floating origin (render/render-origin.js).
       shader.uniforms.uRenderOrigin = RENDER_ORIGIN;
       shader.vertexShader = shader.vertexShader
