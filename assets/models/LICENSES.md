@@ -39,6 +39,23 @@ spans fitted); normals quantised.
 | `real/vehicles.glb` (tug, tractor) | "Aircraft tractor lowpoly model" | propmaker1 (@menX1151) | https://sketchfab.com/3d-models/2e9a078c365243c888f4c70f85be7b85 |
 | `real/vehicles.glb` (cart) | "Airport baggage equipment (cart) lowpoly" | propmaker1 (@menX1151) | https://sketchfab.com/3d-models/7ae8444bb5044376a04ee7bb0664ff39 |
 | `real/vehicles.glb` (road traffic) | "Free Low Poly Vehicles Pack" | RgsDev (@rgsdev) | https://sketchfab.com/3d-models/cb7640039e7a40679a53be705ebff50e |
+| `real/f22.glb` | "Lockheed Martin F-22 "Raptor"" | andertan (@andertan) | https://sketchfab.com/3d-models/7e7b3c372e374dda98e70208d09cfdcf |
+| `real/f35b.glb` | "Lockheed Martin F-35B Lightning II" | AF267 (@jsong.js.us) | https://sketchfab.com/3d-models/5d54a6af45974ad386ae74d42b33374a |
+| `real/fa18.glb` | "F-18" | Ryan.Qin (@Ryan.Qin) | https://sketchfab.com/3d-models/c0c1051b7dff4fe3b67597d60ce11b6c |
+| `real/c5.glb` | "c-5B galaxy" | piggyrockstarYT (@piggyrockstar15) | https://sketchfab.com/3d-models/11832529d5f7499b9ef24ce0383a69bf |
+| `real/uh60.glb` | "US Army UH-60M Black Hawk low poly model" | Yi Tsung Lee (@WTigerTw) | https://sketchfab.com/3d-models/854bf0feee5b42dc92ac5329976f7942 |
+| `real/ch47.glb` | "Helicopter Low Poly - Chinook CH-47" | Machine Meza (@maurib98) | https://sketchfab.com/3d-models/72b5123bda964e9aa5343384734977e2 |
+| `real/ah64.glb` | "AH-64 Apache Attack Helicopter Low Poly" | A Certain Duck (@TheOminousDuck) | https://sketchfab.com/3d-models/34986214decd4b3db90e91f12e624d78 |
+| `real/vh3d.glb` | "Agusta Westland Merlin AW101" | CloudHubOmniTeam (@cloudhub) | https://sketchfab.com/3d-models/10ce28cff53d40d5b7feb9a017a02806 |
+| `real/vehicles.glb` (fuel truck) | "Airport Fuel Truck" | Nguyentuannghia 64 (@nguyentuannghia17a) | https://sketchfab.com/3d-models/15a96ac34ece464480a9b8620dc3a3d3 |
+
+The helicopters (`tools/real-models/helis.py`: `uh60`, `ch47`, `ah64`, and `vh3d`, Marine
+One worn as the AW101 Merlin): every texture sampled to one colour per triangle and repainted
+in the game's colour for the type (no national insignia, serial or unit marking survives; the
+AW101's modelled 'ROYAL AIR FORCE' letters left out and its roundels painted over), the rotors
+removed (the game spins its own), scaled to the real length. The fighters (`f22`, `f35b`,
+`fa18`) as the A-10: no images, scaled at one scale from the real span, their own landing gear
+and pylons removed.
 
 The vehicles (`tools/real-models/vehicles.py`): textures sampled to one colour
 per triangle (no lettering survives), paint baked white where the game tints
@@ -53,6 +70,31 @@ The source downloads are not in this repository. To rebuild a file, put the
 download in `~/Desktop/flightsim-models-inbox/<folder>/` and run
 `node tools/real-models/ref.mjs <id>` then `python3 tools/real-models/process.py <id>`
 (the vehicles: `python3 tools/real-models/vehicles.py`).
+
+## Trees, buildings and scenery (CC BY 4.0) — `real/scenery/`
+
+Every file in `real/scenery/` is a derivative of a model published on Sketchfab under the
+**Creative Commons Attribution 4.0 International** licence (<https://creativecommons.org/licenses/by/4.0/>).
+The credit is also on the in-game Credits screen and inside each file (`extras.credit` on its root node).
+
+**Changes made for the game** (`tools/real-models/scenery.py`, settings in `tools/real-models/scenery_models.py`):
+every texture sampled to one colour per triangle and snapped to a small palette (no lettering, logo or
+insignia survives), except a tree's leaves, whose cut-out picture is re-encoded as a small WebP beside the
+file (`*-leaf.webp`); interiors, ground planes and lettering geometry removed; small detail welded;
+scaled uniformly and turned to the game's axes. `tree-cards.webp` is the real oak, pine and palm drawn
+from the side and from above for the World Map's distant tree cards.
+
+| File | Model | Creator | Source |
+|---|---|---|---|
+| `real/scenery/tree-palm.glb` | "Coconut Palm" | evolveduk (@evolveduk) | https://sketchfab.com/3d-models/26e787f2ff2e4c0fb004c3b0210805a3 |
+| `real/scenery/tree-pine.glb` | "Pine Tree" | evolveduk (@evolveduk) | https://sketchfab.com/3d-models/d45218a3fab349e5b1de040f29e7b6f9 |
+| `real/scenery/tree-birch.glb` | "Birch tree" | evolveduk (@evolveduk) | https://sketchfab.com/3d-models/aa842dffd9654d33b8b91170ce83c172 |
+| `real/scenery/tree-oak.glb` | "Oak tree" | massive-graphisme (@greg-l) | https://sketchfab.com/3d-models/3dc59560f2d24345bdbe65c44636453b |
+| `real/scenery/firestation.glb` | "Fire Station No. 1" | CommonSpence (@commonspence) | https://sketchfab.com/3d-models/87edf04deb28434993274d9f05070865 |
+| `real/scenery/base-outpost.glb`, `real/scenery/base-watchtower.glb`, `real/scenery/base-garage.glb` (pieces of one pack) | "GAME READY MILITARY BASE ASSET PACK" | Oxygen3D (@oxygen3d) | https://sketchfab.com/3d-models/47c0a32b43bf42abbb743458fbd95114 |
+| `real/scenery/house.glb` | "House" | SpatialNeglect (@jeandiz) | https://sketchfab.com/3d-models/e70c4aebc911429ba9a894b38146892c |
+| `real/scenery/sailboat.glb` | "Sailboat" | Sergei (@sergeif) | https://sketchfab.com/3d-models/76d0b1e24be14d2f9a524bfce3001aeb |
+| `real/scenery/windmill.glb` | "Vintage Wind Turbine - GameAsset - Free Download" | DavidFalke (@davidfalke) | https://sketchfab.com/3d-models/3e0ca3c6fdf14badbb5750220e6ca7ee |
 
 ## Scenery models (CC0 1.0) — `scenery/`
 

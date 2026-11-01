@@ -158,4 +158,48 @@ MODELS = {
         bends=[dict(name='inner flap', x=(0.8, 2.3), at=1.5, cut=1.0, mats=['AlternateLWing', 'AlternateRightWMaterial']),
                dict(name='outer flap', x=(2.3, 4.1), at=3.3, cut=1.0, mats=['AlternateLWing', 'AlternateRightWMaterial'])],
     ),
+    # ---- batch 3 (2026-10-31): the military jets and the C-5 -------------------------------
+    # No images, as the A-10: every marking (national insignia, unit codes, stencils) was a
+    # texture and goes with them; the paint is the game's own (plainMaterialsFor).
+    'f22': dict(
+        src='f22/f22.glb', rot='x-nose', fit='uniform',
+        credit='"Lockheed Martin F-22 \'Raptor\'" by andertan (@andertan), CC BY 4.0, ' + SF + '7e7b3c372e374dda98e70208d09cfdcf',
+        # the cockpit's own instruments and screens (the game builds its own cockpit), the plumes
+        drop=['Darkness.001', 'Nato_black', 'Darker_paint.001', 'Glowing_green.001', 'screen.001', 'plumes', 'plumes_2'],
+        roles={'glass': 'glass', 'dark': 'dark'},
+        gearCut=False,  # it is drawn gear up: nothing to cut
+    ),
+    'f35b': dict(
+        src='f35b/f35b.glb', rot='x+nose', fit='uniform',
+        credit='"Lockheed Martin F-35B Lightning II" by AF267 (@jsong.js.us), CC BY 4.0, ' + SF + '5d54a6af45974ad386ae74d42b33374a',
+        drop=['lightRed', 'lightGreen', 'glow', 'green', 'panel', 'yellow', 'warning', 'Material', 'material', 'darkmet2.001', 'darkmet.001', 'lightmet.001', 'dark'],
+        roles={'window': 'glass', 'darkmet': 'dark', 'darkmet2': 'dark'},
+        # its own gear: legs, wheels, doors (the game draws its own, which moves)
+        gearCut=False,
+        dropPieces=[dict(box=(0.0, 0.3, -2.5, -0.6, -5.2, -4.25)), dict(box=(2.0, 2.8, -2.5, -0.9, 2.1, 3.4))],
+    ),
+    'fa18': dict(
+        src='fa18/fa18.glb', rot='y180', fit='uniform',
+        credit='"F-18" by Ryan.Qin (@Ryan.Qin), CC BY 4.0, ' + SF + 'c0c1051b7dff4fe3b67597d60ce11b6c',
+        drop=['payload'],
+        roles={'glass': 'glass'},
+        engSym=True,
+        # the real Hornet's nozzles, measured off the fitted file (the fleet model's stand 2.8 m further aft)
+        engines=[dict(id='leftEngine', kind='jet', x=-0.42, y=0.33, z=5.5, radius=0.4, length=1.5),
+                 dict(id='rightEngine', kind='jet', x=0.42, y=0.33, z=5.5, radius=0.4, length=1.5)],
+        refineEngines=False,
+        # its own gear (legs, wheels, doors), the box under the nose, the hook and the wing pylons
+        # (the game draws its own moving gear and hook, and hangs its own stores)
+        gearCut=False,
+        dropPieces=[
+            dict(box=(0.0, 0.06, -0.27, 0.0, -0.55, -0.28)),
+            dict(box=(0.02, 0.25, -0.27, -0.01, 0.2, 0.5)),
+            dict(box=(0.04, 0.1, -0.14, -0.04, -0.71, -0.59)),
+            dict(box=(0.0, 0.01, -0.08, -0.05, 0.83, 1.12)),
+            dict(box=(0.29, 0.62, -0.05, 0.02, 0.05, 0.5), maxW=0.08),
+        ],     ),
+    'c5': dict(
+        src='c5/c5.glb', rot='y180',
+        credit='"c-5B galaxy" by piggyrockstarYT (@piggyrockstar15), CC BY 4.0, ' + SF + '11832529d5f7499b9ef24ce0383a69bf',
+    ),
 }

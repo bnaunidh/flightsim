@@ -163,7 +163,16 @@ export function createAircraftModel(opts = {}) {
   // rotor spun from the rotor speed; null (not loaded) falls through to the old one.
   const blender = blenderAircraftModel(type, opts);
   if (blender) return blender;
-  if (!fleetCovers(type.id)) return createLegacyModel(opts);
+  if (!fleetCovers(type.id)) {
+    const legacy = createLegacyModel(opts);
+    // REAL MODELS: the helicopters wear theirs over the civil builder's (or never, silently).
+    try {
+      wearRealModel(legacy, type, opts);
+    } catch (e) {
+      console.warn(`The real ${type.id} model could not be worn; keeping the built-in one.`, e);
+    }
+    return legacy;
+  }
 
   try {
     const model = fleet.createGameAircraft(

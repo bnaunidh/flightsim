@@ -15,6 +15,15 @@
  * The atlas is drawn once on a canvas: a broadleaf crown, a conifer and a
  * palm, each shaded from the top-left with a darker underside, and their
  * crowns seen from above. Instances are tinted per tree (flora.js colours).
+ *
+ * REPAINTED from the real trees (owner, 2026-10-31: "sketchfab models for all
+ * trees"): the broadleaf, conifer and palm pictures are the real oak, pine
+ * and palm (world/real-scenery.js) drawn from the side and from above,
+ * shipped as assets/models/real/scenery/tree-cards.webp (84 KB, fetched with
+ * the World Map, never before the menu). The canvas drawing stays: it is what
+ * shows until the picture arrives, and if it never does; the scrub's cell is
+ * still drawn. The cards are as wide as the real trees' pictures (WIDTH), so
+ * close up (world/real-trees.js) and far off are the same trees.
  */
 import * as THREE from '../../vendor/three.module.js';
 
@@ -27,6 +36,11 @@ const CELLS = {
 };
 /** flora.js SPECIES (palm, broadleaf, conifer, scrub, birch, thorn) to pictures. */
 const PICTURE = ['palm', 'broad', 'conifer', 'scrub', 'broad', 'scrub'];
+/** Half-width of each picture's card (unit height), as wide as the real tree it was drawn from. */
+const WIDTH = { palm: 0.5, broad: 0.58, conifer: 0.22, scrub: 0.6 };
+/** The real trees' pictures (made by drawing the real models; see above). */
+export const REAL_CARDS_URL = new URL('../../../assets/models/real/scenery/tree-cards.webp', import.meta.url).href;
+let realCards = null; // 'loading' | 'ready' | 'failed'
 
 let atlas = null;
 function rnd(seed) {
@@ -128,8 +142,29 @@ export function cardAtlas() {
   t.anisotropy = 4;
   t.generateMipmaps = true;
   atlas = t;
+  repaintFromRealTrees(c, g, t);
   return t;
 }
+
+/** The real trees' pictures over the drawn ones, when (and if) they arrive. */
+function repaintFromRealTrees(c, g, t) {
+  if (realCards || typeof fetch !== 'function' || typeof createImageBitmap !== 'function') return;
+  realCards = 'loading';
+  fetch(REAL_CARDS_URL)
+    .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
+    .then((b) => createImageBitmap(b))
+    .then((img) => {
+      // Broadleaf, conifer and palm (the first three cells, both rows); the scrub keeps its drawing.
+      g.clearRect(0, 0, 768, c.height);
+      g.drawImage(img, 0, 0, 768, c.height, 0, 0, 768, c.height);
+      t.needsUpdate = true;
+      realCards = 'ready';
+    })
+    .catch(() => {
+      realCards = 'failed';
+    });
+}
+export const realCardsState = () => realCards;
 
 /**
  * One card's geometry for a flora species (unit height: flora.js scales by
@@ -139,7 +174,7 @@ export function cardGeometry(kind) {
   const cell = CELLS[PICTURE[kind] || 'broad'];
   const [su0, sv0, su1, sv1] = cell.side;
   const [tu0, tv0, tu1, tv1] = cell.top;
-  const w = kind === 2 ? 0.34 : kind === 3 || kind === 5 ? 0.6 : 0.42;
+  const w = WIDTH[PICTURE[kind] || 'broad'];
   const pos = [];
   const uv = [];
   const nrm = [];

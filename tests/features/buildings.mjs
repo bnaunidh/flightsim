@@ -371,6 +371,9 @@ for (const map of M.MAPS) {
     let rooftop = 0;
     sc.group.traverse((o) => {
       if (!o.isMesh || !/^town-/.test(o.name)) return;
+      // (at Medium and up, the houses kept for the real country house -- world/real-buildings.js --
+      // are a walls-and-roofs pair of their own, hidden as soon as the real ones stand)
+      if (o.parent && o.parent.name === 'town-houses-for-real') return;
       if (/^town-rooftop-/.test(o.name)) rooftop += o.isInstancedMesh ? 1 : 100;
       else meshes++;
     });

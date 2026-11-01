@@ -80,6 +80,7 @@ let totalBytes = 0;
 
 for (const id of IDS) {
   const def = R.REAL_MODELS[id];
+  if (def.heli) continue; // the helicopters: their own block below
   const path = `assets/models/real/${def.file}`;
   ok(`${id}: ${path} is shipped`, existsSync(new URL(path, ROOT)));
   if (!existsSync(new URL(path, ROOT))) continue;
@@ -116,10 +117,31 @@ for (const id of IDS) {
   const len = box.max.z - box.min.z;
   const span = box.max.x - box.min.x;
   const realSpan = type.aero.wingSpan;
-  ok(`${id}: length within 3% of the game's airframe`, Math.abs(len / gameLen - 1) < 0.03, `${len.toFixed(2)} m against ${gameLen.toFixed(2)}`);
+  if (def.realLength) {
+    // Fitted at one scale from the real span (process.py fit 'uniform'): the real aeroplane's
+    // proportions, so its length is the real one, not the fleet model's (drawn longer).
+    ok(`${id}: length within 5% of the real aeroplane's (one scale, its own proportions)`, Math.abs(len / def.realLength - 1) < 0.05, `${len.toFixed(2)} m against ${def.realLength}`);
+    ok(`${id}: nose on the game's nose`, Math.abs(box.min.z - fg.bounds.min[2]) < 0.3, `${box.min.z.toFixed(2)} against ${fg.bounds.min[2].toFixed(2)}`);
+    // ...and the procedural flames and heat haze moved to its own tail while the skin is on.
+    if (def.shiftNodes) {
+      const m2 = A.createAircraftModel({ type, realModel: true });
+      await R.loadRealModel(id);
+      R.wearRealModel(m2, type, { realModel: true });
+      const moved = [];
+      m2.traverse((n) => { if (n !== m2 && def.shiftNodes.test(n.name || '')) moved.push(n); });
+      const tail = box.max.z;
+      const dz = tail - fg.bounds.max[2];
+      ok(`${id}: the flames' groups follow the real tail (${moved.length} moved ${dz.toFixed(2)} m)`, moved.length > 0 && m2.userData.realModel && m2.userData.realModel.shifts.length === moved.length
+        && m2.userData.realModel.shifts.every(([n, z, d]) => Math.abs(n.position.z - (z + d)) < 1e-6 && Math.abs(d - dz) < 1e-3));
+      try { m2.userData.damagePart('leftWing', 0.4, 'bendWing'); } catch (e) { /* the hook ran first */ }
+      ok(`${id}: and go back where they were with the skin off (damage)`, m2.userData.realModel.shifts.every(([n, z]) => Math.abs(n.position.z - z) < 1e-6));
+    }
+  } else {
+    ok(`${id}: length within 3% of the game's airframe`, Math.abs(len / gameLen - 1) < 0.03, `${len.toFixed(2)} m against ${gameLen.toFixed(2)}`);
+    ok(`${id}: nose on the game's nose, tail on its tail`, Math.abs(box.min.z - fg.bounds.min[2]) < 0.3 && Math.abs(box.max.z - fg.bounds.max[2]) < 0.6,
+      `${box.min.z.toFixed(2)}..${box.max.z.toFixed(2)} against ${fg.bounds.min[2].toFixed(2)}..${fg.bounds.max[2].toFixed(2)}`);
+  }
   ok(`${id}: span within 3% of the real span`, Math.abs(span / realSpan - 1) < 0.03, `${span.toFixed(2)} m against ${realSpan}`);
-  ok(`${id}: nose on the game's nose, tail on its tail`, Math.abs(box.min.z - fg.bounds.min[2]) < 0.3 && Math.abs(box.max.z - fg.bounds.max[2]) < 0.6,
-    `${box.min.z.toFixed(2)}..${box.max.z.toFixed(2)} against ${fg.bounds.min[2].toFixed(2)}..${fg.bounds.max[2].toFixed(2)}`);
   const ground = Math.min(...fg.gearPoints.map((g) => g.pos[1]));
   ok(`${id}: nothing hangs below the game's wheels (the gear contact the flight model lands on)`, box.min.y > ground + 0.05,
     `lowest ${box.min.y.toFixed(2)} m, wheels ${ground.toFixed(2)} m`);
@@ -266,6 +288,9 @@ for (const id of IDS) {
   }
   m.userData.update(1 / 60, { crashed: true, gearPos: 1, onGround: true }, {});
   ok(`${id}: a crashed aeroplane is drawn by the procedural model`, !rm.on);
+  // main.js asks realModelInterior every frame (no ac): the wreck must stay the procedural model's.
+  R.realModelInterior(m, false);
+  ok(`${id}: ...and stays so through the per-frame seat check`, !rm.on && !rm.skin.visible);
   m.userData.dispose();
 }
 
@@ -275,6 +300,70 @@ for (const id of IDS) {
 // from behind as two slabs with blocks under them, the wings drooped, and pylons the game does
 // not use hung beside the game's own stores. tools/real-models (models.py a10: hinges, wedges,
 // bends, dropPieces) puts the surfaces back to neutral and leaves the source's pylons out.
+/*
+ * THE HELICOPTERS (tools/real-models/helis.py, real-models.js dressHeli): worn over the civil
+ * builder's own, whose rotors keep spinning, moved onto the real model's hubs.
+ */
+const { HELI_GEOMETRY } = await import(SRC + 'aircraft/extra/helis.js');
+for (const id of IDS.filter((k) => R.REAL_MODELS[k].heli)) {
+  const def = R.REAL_MODELS[id];
+  const path = `assets/models/real/${def.file}`;
+  ok(`${id}: ${path} is shipped`, existsSync(new URL(path, ROOT)));
+  if (!existsSync(new URL(path, ROOT))) continue;
+  const buf = read(path);
+  const bytes = statSync(new URL(path, ROOT)).size;
+  totalBytes += bytes;
+  ok(`${id}: under 700 KB`, bytes < 700 * 1024, `${(bytes / 1024).toFixed(0)} KB`);
+  const j = glbJson(buf);
+  ok(`${id}: no images, textures or samplers in the file (no insignia can come with it)`, !j.images && !j.textures && !j.samplers && !/image\/(png|jpeg|webp)/.test(buf.toString('latin1')));
+  const names = [...(j.materials || []).map((m) => m.name), ...(j.nodes || []).map((n) => n.name), ...(j.meshes || []).map((m) => m.name)];
+  ok(`${id}: only its own part names`, names.every((n) => [id, 'body', 'glass', 'rs_body', 'rs_glass'].includes(n)), names.join(', '));
+  const extras = (j.nodes.find((n) => n.name === id) || {}).extras || {};
+  ok(`${id}: the CC BY credit is in the file`, extras.license === 'CC BY 4.0' && String(extras.credit).includes(def.url.split('/').pop()));
+  const author = def.author.split(' (')[0];
+  ok(`${id}: credited on the Credits screen and in LICENSES.md`, credits.includes(author) && credits.includes(def.url.split('/').pop()) && licences.includes(def.file) && licences.includes(author));
+  const G = HELI_GEOMETRY[id];
+  const parsed = parseGLB(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), { warn: () => {} });
+  const box = new THREE.Box3().setFromObject(parsed.scene);
+  ok(`${id}: the real length (within 2%)`, Math.abs((box.max.z - box.min.z) / G.length - 1) < 0.02, `${(box.max.z - box.min.z).toFixed(2)} m against ${G.length}`);
+  ok(`${id}: no rotor in the file (narrower than the disc by far)`, box.max.x - box.min.x < G.R, `${(box.max.x - box.min.x).toFixed(2)} m wide, rotor ${G.R} m`);
+  const type = T.getAircraft(id);
+  const m = A.createAircraftModel({ type, realModel: true });
+  const contacts = m.userData.parts.contacts;
+  const ground = Math.min(...contacts.map((c) => c.y));
+  ok(`${id}: standing on the flight model's wheels (lowest point on the contacts)`, Math.abs(box.min.y - ground) < 0.05, `${box.min.y.toFixed(2)} against ${ground}`);
+  ok(`${id}: the main hub over the game's (fore and aft)`, extras.hubs && Math.abs(extras.hubs.main[2] - G.hubZ) < 0.05);
+  await R.loadRealModel(id);
+  const rm = m.userData.realModel;
+  ok(`${id}: the skin goes on over the civil model`, !!(rm && rm.on && rm.skin && rm.skin.parent === m && m.userData.realSkin === rm.skin));
+  if (!rm || !rm.skin) continue;
+  const rotors = m.userData.parts.rotors;
+  const hiddenRotor = rm.hidden.some(([o]) => { for (let n = o; n; n = n.parent) if (/^(rotor head|tail rotor)$/.test(n.name)) return true; return false; });
+  ok(`${id}: its own rotors stay in view, the rest of its outside hidden`, !hiddenRotor && rm.hidden.length > 10 && rm.hidden.every(([o]) => o.layers.mask === (1 << 31) >>> 0));
+  const h = rotors[0].head.position;
+  ok(`${id}: the main rotor moved onto the real mast`, Math.abs(h.y - extras.hubs.main[1]) < 1e-6 && Math.abs(h.z - extras.hubs.main[2]) < 1e-6 && h.x === 0, h.toArray().map((v) => v.toFixed(2)).join(' '));
+  if (G.tandem) ok(`${id}: the aft rotor onto the real aft tower`, Math.abs(rotors[1].head.position.z - extras.hubs.aft[2]) < 1e-6);
+  if (extras.hubs.tail && rotors[0].tail) ok(`${id}: the tail rotor onto the real tail-rotor hub`, rotors[0].tail.parent.position.distanceTo(new THREE.Vector3(...extras.hubs.tail)) < 1e-6);
+  // The rotors still turn under the skin.
+  const a0 = rotors[0].spin.rotation.y;
+  m.userData.update(0.1, { rotor: { nr: 1 }, rpm: 1, engineOn: true, controls: {}, onGround: false, agl: 20 }, {});
+  m.userData.update(0.1, { rotor: { nr: 1 }, rpm: 1, engineOn: true, controls: {}, onGround: false, agl: 20 }, {});
+  ok(`${id}: the rotor still spins under the skin`, rotors[0].spin.rotation.y !== a0);
+  R.realModelInterior(m, true);
+  ok(`${id}: from the seat, the civil model whole again (rotors home too)`, !rm.on && Math.abs(rotors[0].head.position.z - G.hubZ) < 1e-6);
+  R.realModelInterior(m, false);
+  m.userData.update(0.016, { crashed: true, controls: {} }, {});
+  ok(`${id}: a crash hands it back to the civil model`, !rm.on && !rm.skin.visible);
+  // The checker's crash in the page (2026-11-01): main.js calls realModelInterior(model, false)
+  // every frame after the update, with no ac; the helicopter has no breakup hook to mark it struck,
+  // so the intact real skin came back over the burning wreck.
+  R.realModelInterior(m, false);
+  ok(`${id}: ...and stays the civil model through the per-frame seat check`, !rm.on && !rm.skin.visible);
+  m.userData.update(0.016, { crashed: false, controls: {} }, {});
+  R.realModelInterior(m, false);
+  ok(`${id}: ...until the flight is restarted (not crashed): the skin back on`, rm.on && rm.skin.visible);
+}
+
 if (IDS.includes('a10')) {
   const parsed = parseGLB(read('assets/models/real/a10.glb'), { warn: () => {} });
   parsed.scene.updateMatrixWorld(true);
@@ -665,7 +754,9 @@ ok('sw.js precaches the module', sw.includes("'src/aircraft/real-models.js'"));
   ok('sw.js never precaches a model file (they are fetched when picked, kept once seen)', entries.length > 50 && !entries.some((e) => e.startsWith('assets/models/real/')));
 }
 ok('tools/sync-precache.mjs leaves them out too', read('tools/sync-precache.mjs').toString().includes("'assets/models/real'"));
-if (!ARGS.length) ok('all the real models together stay under 6 MB', totalBytes < 6 * 1024 * 1024, `${(totalBytes / 1024 / 1024).toFixed(2)} MB`);
+// 7 MB since batch 3 (the fighters, the helicopters, the C-5 and the fuel truck): each is still
+// fetched only when it is used, never before the menu.
+if (!ARGS.length) ok('all the real models together stay under 7 MB', totalBytes < 7 * 1024 * 1024, `${(totalBytes / 1024 / 1024).toFixed(2)} MB`);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

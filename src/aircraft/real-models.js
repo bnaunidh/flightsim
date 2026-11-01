@@ -72,6 +72,34 @@ export const REAL_MODELS = {
   // skinBothSides -- stretches of its airframe (the tail cone above all) are drawn facing in, normals
   // and all: one-sided, from behind the tail cone was an open shell with ragged edges.
   a10: { file: 'a10.glb', title: 'A-10 Thunderbolt II', author: 'AIRMAN Magazine (@AIRMANMagazine)', url: 'https://sketchfab.com/3d-models/9521ff6ba5d448958ea45a89e94ab23d', skinBothSides: true },
+  /*
+   * Batch 3 (owner, 2026-10-31: "sketchfab models for all ... planes"): the fighters, painted as the
+   * A-10 is (no images: every insignia, serial and stencil was a texture and went with them). Fitted
+   * at ONE scale from the real span (process.py fit 'uniform'): their fleet models are drawn longer
+   * than the real aeroplanes, and fitting each axis flattened the real shapes. `keep` -- the
+   * procedural afterburner flames stay in view under the skin; `shiftNodes` -- those flames' engine
+   * groups (and the heat haze) move to the real model's own tail while the skin is on (the fleet
+   * model's nozzles stand up to 3.7 m further aft than the real aeroplane's). The F-22's mirrored
+   * half (its left fin and stabilator) is wound inside out: drawn both sides (skinBothSides).
+   */
+  f22: { file: 'f22.glb', title: 'Lockheed Martin F-22 "Raptor"', author: 'andertan (@andertan)', url: 'https://sketchfab.com/3d-models/7e7b3c372e374dda98e70208d09cfdcf', realLength: 18.92, skinBothSides: true, keep: /afterburner/i, shiftNodes: /^(left|right) engine and 2D nozzle$|^Heat haze$/ },
+  f35b: { file: 'f35b.glb', title: 'Lockheed Martin F-35B Lightning II', author: 'AF267 (@jsong.js.us)', url: 'https://sketchfab.com/3d-models/5d54a6af45974ad386ae74d42b33374a', realLength: 15.61, keep: /afterburner/i, shiftNodes: /^Engine and swivel nozzle$|^Heat haze$/ },
+  fa18: { file: 'fa18.glb', title: 'F-18', author: 'Ryan.Qin (@Ryan.Qin)', url: 'https://sketchfab.com/3d-models/c0c1051b7dff4fe3b67597d60ce11b6c', realLength: 17.07, keep: /afterburner|arrestor hook|arresting hook|hook shoe/i, shiftNodes: /^Jet propulsion unit$|^Heat haze$|^Arrestor hook$/ },
+  // The C-5 Galaxy: painted with the game's livery like the airliners (process.py fits it to the
+  // fleet model's own fuselage, as theirs).
+  c5: { file: 'c5.glb', title: 'c-5B galaxy', author: 'piggyrockstarYT (@piggyrockstar15)', url: 'https://sketchfab.com/3d-models/11832529d5f7499b9ef24ce0383a69bf' },
+  /*
+   * The helicopters (tools/real-models/helis.py): worn over the civil builder's own
+   * (models/helis.js), which keeps spinning its own rotors -- blades, blur discs, spool-up --
+   * moved onto the real model's mast and tail-rotor hub while the skin is on (the file's
+   * extras.hubs). Painted in the file (one colour per triangle, in the game's colour for the type:
+   * no insignia, serial or unit marking survives); their own wheels are the procedural gear's
+   * place. Marine One is the game's VH-3D worn as the AW101 Merlin the owner picked.
+   */
+  uh60: { file: 'uh60.glb', heli: true, title: 'US Army UH-60M Black Hawk low poly model', author: 'Yi Tsung Lee (@WTigerTw)', url: 'https://sketchfab.com/3d-models/854bf0feee5b42dc92ac5329976f7942' },
+  ch47: { file: 'ch47.glb', heli: true, title: 'Helicopter Low Poly - Chinook CH-47', author: 'Machine Meza (@maurib98)', url: 'https://sketchfab.com/3d-models/72b5123bda964e9aa5343384734977e2' },
+  ah64: { file: 'ah64.glb', heli: true, title: 'AH-64 Apache Attack Helicopter Low Poly', author: 'A Certain Duck (@TheOminousDuck)', url: 'https://sketchfab.com/3d-models/34986214decd4b3db90e91f12e624d78' },
+  vh3d: { file: 'vh3d.glb', heli: true, title: 'Agusta Westland Merlin AW101', author: 'CloudHubOmniTeam (@cloudhub)', url: 'https://sketchfab.com/3d-models/10ce28cff53d40d5b7feb9a017a02806' },
   // Not Concorde: its download has an airline's titles and tail stripes MODELLED into the
   // airframe's geometry (not a texture), so no repaint can take them off. It keeps the game's own.
 };
@@ -148,7 +176,9 @@ export function loadRealModel(id) {
         o.castShadow = true;
         o.receiveShadow = true;
       });
-      const t = { root, extras: root.userData.extras || {}, triangles: parsed.stats.triangles, uv: false };
+      // Where the real model ends aft (its nozzles): the flames move there (shiftsFor).
+      const tailZ = new THREE.Box3().setFromObject(root).max.z;
+      const t = { root, extras: root.userData.extras || {}, triangles: parsed.stats.triangles, uv: false, tailZ };
       templates.set(id, t);
       status.set(id, 'ready');
       return t;
@@ -181,7 +211,9 @@ export const realModelReady = (id) => templates.has(id);
  */
 export function wearRealModel(model, type, opts = {}) {
   const id = type && type.id;
-  if (!id || !REAL_MODELS[id] || !model || !model.userData || !model.userData.fleetBridge) return false;
+  if (!id || !REAL_MODELS[id] || !model || !model.userData) return false;
+  // A helicopter is the civil builder's (models/helis.js), not the fleet's.
+  if (REAL_MODELS[id].heli ? model.userData.civil !== id : !model.userData.fleetBridge) return false;
   if (!realModelsOn()) return false;
   const own = opts.realModel === true;
   if (!own && textureTier() === 'low') return false;
@@ -213,15 +245,89 @@ const SLAT = /slats|leading edge slat/i;
 
 function keepsOwn(o, top, id) {
   const noSlats = !!(REAL_MODELS[id] && REAL_MODELS[id].slats === false);
+  const own = REAL_MODELS[id] && REAL_MODELS[id].keep;
   for (let n = o; n && n !== top; n = n.parent) {
     const name = n.name || '';
     if (noSlats && SLAT.test(name)) return false;
     if (KEEP.test(name)) return true;
+    if (own && own.test(name)) return true;
   }
   return false;
 }
 
+/**
+ * The groups that move to the real model's tail while the skin is on (REAL_MODELS shiftNodes):
+ * [node, its own z, how far]. How far: the real model's tail less the fleet model's.
+ */
+function shiftsFor(model, id, tpl) {
+  const re = REAL_MODELS[id] && REAL_MODELS[id].shiftNodes;
+  const fg = model.userData.flightGeometry;
+  if (!re || !fg || !fg.bounds || !Number.isFinite(tpl.tailZ)) return [];
+  const maxZ = Array.isArray(fg.bounds.max) ? fg.bounds.max[2] : fg.bounds.max.z;
+  const dz = tpl.tailZ - maxZ;
+  if (!(Math.abs(dz) > 0.05)) return [];
+  const out = [];
+  model.traverse((n) => {
+    if (n !== model && re.test(n.name || '')) out.push([n, n.position.z, dz]);
+  });
+  return out;
+}
+
+/**
+ * A helicopter's skin (REAL_MODELS heli): the civil model's outside goes to the hidden layer but
+ * its rotors (and lamps) stay, moved onto the real mast and tail-rotor hub (extras.hubs).
+ */
+function dressHeli(model, id, tpl) {
+  const ud = model.userData;
+  if (ud.realSkin) return false;
+  const skin = tpl.root.clone();
+  skin.name = 'Real model';
+  skin.userData = { realModel: id };
+  // The civil root is built in shape units and scaled by shape.scale; the file is in metres.
+  const k = 1 / (model.scale.x || 1);
+  skin.scale.setScalar(k);
+  skin.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    o.receiveShadow = true;
+  });
+  const parts = ud.parts || {};
+  const rotors = parts.rotors || (parts.rotor ? [parts.rotor] : []);
+  const ROTOR = /^(rotor head|tail rotor)$/;
+  const hidden = [];
+  model.traverse((o) => {
+    if (!(o.isMesh || o.isInstancedMesh) || o.isSprite) return;
+    for (let n = o; n && n !== model; n = n.parent) if (ROTOR.test(n.name || '')) return;
+    hidden.push([o, o.layers.mask]);
+  });
+  // The rotors onto the real hubs: the main head over the mast (on the centreline), the second
+  // head of a tandem over its tower, the tail rotor at the real one's hub.
+  const hubs = (tpl.extras && tpl.extras.hubs) || {};
+  const moves = [];
+  const at = (v) => new THREE.Vector3(v[0], v[1], v[2]).multiplyScalar(k);
+  if (rotors[0] && hubs.main) moves.push([rotors[0].head, rotors[0].head.position.clone(), at([0, hubs.main[1], hubs.main[2]])]);
+  if (rotors[1] && hubs.aft) moves.push([rotors[1].head, rotors[1].head.position.clone(), at([0, hubs.aft[1], hubs.aft[2]])]);
+  const tail = rotors[0] && rotors[0].tail && rotors[0].tail.parent;
+  if (tail && hubs.tail) moves.push([tail, tail.position.clone(), at(hubs.tail)]);
+  model.add(skin);
+  const rm = { id, state: 'on', skin, hidden, flaps: [], flapsOut: false, on: false, struck: false, inside: false, dead: false, shifts: [], moves };
+  ud.realModel = rm;
+  ud.realSkin = skin;
+  hookDamage(model, rm);
+  hookUpdate(model, rm);
+  setSkin(rm, true);
+  if (typeof ud.onRealSkin === 'function') {
+    try {
+      ud.onRealSkin(skin);
+    } catch (e) {
+      /* the skin is on either way */
+    }
+  }
+  return true;
+}
+
 function dress(model, id, tpl) {
+  if (REAL_MODELS[id] && REAL_MODELS[id].heli) return dressHeli(model, id, tpl);
   const ud = model.userData;
   // An airliner brings its livery's map (fleet/extra/airliners.js realPaint); anything else is
   // painted in its own materials' colours (the A-10's greys).
@@ -272,7 +378,7 @@ function dress(model, id, tpl) {
       /* the fin keeps its paint, without the mark */
     }
   }
-  const rm = { id, state: 'on', skin, hidden, flaps, flapsOut: false, on: false, struck: false, inside: false, dead: false };
+  const rm = { id, state: 'on', skin, hidden, flaps, flapsOut: false, on: false, struck: false, inside: false, dead: false, shifts: shiftsFor(model, id, tpl) };
   ud.realModel = rm;
   ud.realSkin = skin;
   hookDamage(model, rm);
@@ -299,6 +405,8 @@ function setSkin(rm, on) {
     if (on) o.layers.set(HIDDEN_LAYER);
     else o.layers.mask = mask;
   }
+  for (const [n, z, dz] of rm.shifts || []) n.position.z = on ? z + dz : z;
+  for (const [n, from, to] of rm.moves || []) n.position.copy(on ? to : from);
 }
 
 /** Any damage hands the airframe back to the procedural model for the rest of the flight. */
@@ -357,7 +465,9 @@ function cameraInside(model) {
 function wants(model, rm, ac) {
   const ud = model.userData;
   if (rm.struck || ud.gameCrash || ud.crashBody || ud.crashRetired || ud.hullDriven) return false;
-  if (ac && ac.crashed) return false;
+  // (rm.wrecked: the last update's ac.crashed -- realModelInterior asks every frame with no ac, and a
+  // crash with no breakup hook to call, a helicopter's above all, must stay drawn by the game's model)
+  if (rm.wrecked || (ac && ac.crashed)) return false;
   if (rm.inside) return false;
   return !cameraInside(model);
 }
@@ -367,6 +477,7 @@ function hookUpdate(model, rm) {
   const inner = ud.update;
   ud.update = function (dt, ac = {}, weather = {}) {
     const out = inner.call(this, dt, ac, weather);
+    if (ac && typeof ac.crashed === 'boolean') rm.wrecked = ac.crashed;
     setSkin(rm, wants(model, rm, ac));
     // The flaps, once they are out, drawn by the procedural model below the real wing.
     const flapsOut = rm.on && (ac.flaps || 0) > 0.02;
@@ -704,7 +815,7 @@ export const realModelTemplate = (id) => templates.get(id) || null;
 
 /**
  * The ground vehicles (tools/real-models/vehicles.py): the apron's pushback
- * tug, baggage tractor and baggage cart (world/apron.js), and the road
+ * tug, baggage tractor, baggage cart and fuel truck (world/apron.js), and the road
  * traffic's cars, taxis, buses, vans, trucks, jeeps and pick-ups
  * (features/ambient/cars.js). One file, vertex-coloured, no images, in the
  * frame the game's own vehicle shapes are built in, so a shape swaps for its
@@ -717,10 +828,11 @@ export const realModelTemplate = (id) => templates.get(id) || null;
  */
 export const REAL_VEHICLES = {
   file: 'vehicles.glb',
-  kinds: ['tug', 'tractor', 'cart', 'car', 'taxi', 'bus', 'van', 'truck', 'jeep', 'fourx4'],
+  kinds: ['tug', 'tractor', 'cart', 'fuelTruck', 'car', 'taxi', 'bus', 'van', 'truck', 'jeep', 'fourx4'],
   credits: [
     { title: 'Aircraft tractor lowpoly model', author: 'propmaker1 (@menX1151)', url: 'https://sketchfab.com/3d-models/2e9a078c365243c888f4c70f85be7b85', used: 'Pushback tug, baggage tractor' },
     { title: 'Airport baggage equipment (cart) lowpoly', author: 'propmaker1 (@menX1151)', url: 'https://sketchfab.com/3d-models/7ae8444bb5044376a04ee7bb0664ff39', used: 'Baggage carts' },
+    { title: 'Airport Fuel Truck', author: 'Nguyentuannghia 64 (@nguyentuannghia17a)', url: 'https://sketchfab.com/3d-models/15a96ac34ece464480a9b8620dc3a3d3', used: 'Fuel trucks on the apron' },
     { title: 'Free Low Poly Vehicles Pack', author: 'RgsDev (@rgsdev)', url: 'https://sketchfab.com/3d-models/cb7640039e7a40679a53be705ebff50e', used: 'Road traffic' },
   ],
 };

@@ -768,6 +768,13 @@ def process(mid, view=None):
         zmap = lambda z: b['min'][2] + np.interp(z - lo[2], ks, kg)
         sz = sz_body
         log.append(f'plugs {plugs}: body z {sz_body:.4f}, adds {[round(x, 2) for x in adds]} m')
+    elif mode == 'uniform':
+        # One scale for all three axes, from the type's real span: the download keeps its own
+        # proportions (a fighter's fleet model is not drawn to the real one's, and fitting each
+        # axis to it flattened and stretched the real shape). Nose on the game's nose.
+        sz = sy = span / (hi[0] - lo[0]) * cfg.get('uniformK', 1.0)
+        zmap = lambda z: b['min'][2] + cfg.get('noseShift', 0.0) + (z - lo[2]) * sz
+        log.append(f'uniform: {sz:.4f} from the span; length {Ls * sz:.2f} (game {Lgame:.2f})')
     else:
         sz = Lgame / Ls if not cfg.get('szFromDepth') else sy
         zmap = lambda z: b['min'][2] + (z - lo[2]) * sz
@@ -781,6 +788,9 @@ def process(mid, view=None):
             return np.sign(x) * np.where(ax <= r0, ax * sxb, r0 * sxb + (ax - r0) * sout)
         sx = sxb
         log.append(f'wing stretch: body x {sxb:.4f}, outboard x {sout:.4f} ({sout / sxb:.3f})')
+    elif mode == 'uniform':
+        sx = sz
+        xmap = lambda x: x * sx
     else:
         sx = span / (2 * half_src) if cfg.get('symSpan') else span / (hi[0] - lo[0])
         xmap = lambda x: x * sx
@@ -806,7 +816,7 @@ def process(mid, view=None):
     log.append(f'scale x{sx:.4f} y{sy:.4f} z{sz:.4f}  (y/x {sy / sx:.3f}, z/x {sz / sx:.3f})  depth src {src_depth:.3f} game {game_depth:.2f}')
 
     # 4: roles
-    eng = refine_engines(parts, ref['engines'] or [], cfg, log)
+    eng = refine_engines(parts, cfg.get('engines') or ref['engines'] or [], cfg, log)
     if cfg.get('engSym') and len(eng) == 2:
         # a pair, measured alike: the one whose front was not pulled forward by something ahead of
         # it (the A-10's left nacelle read 0.7 m longer than its right), mirrored onto the other

@@ -324,6 +324,14 @@ Inspired by PTFS (Pilot Training Flight Simulator) and the Google Earth flight
 simulator. All airlines in the game are parody and not affiliated with any real
 company.
 
+The detailed aircraft, trees, buildings and scenery models are downloads
+published on Sketchfab under **CC BY 4.0**, credited by name in the in-game
+Credits screen and in [`assets/models/LICENSES.md`](assets/models/LICENSES.md),
+and changed for the game (textures replaced by the game's own paint, so no real
+airline or military marking ships; see `tools/real-models/README.md`). They are
+fetched only when needed (an aircraft when you pick it; the trees and scenery
+at Medium graphics and up, after the menu); Low keeps the game's own models.
+
 Full asset-by-asset credits are in the in-game **Credits & licences** screen.
 
 ### A note on the ATC voices

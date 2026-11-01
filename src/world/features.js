@@ -29,6 +29,8 @@ import * as THREE from '../vendor/three.module.js';
 import { heightAt, MAP, ISLANDS, addObstacleAt, padWeight, flatAt } from './terrain.js';
 import { fbm, makeRandom, clamp, smoothstep, lerp } from '../core/noise.js';
 import { SEA_DEPTH } from '../render/depth-layers.js';
+import { realModelsOn } from '../aircraft/real-models.js';
+import { qualityRank } from '../aircraft/model-quality.js';
 import { dim } from '../render/flash-safety.js';
 
 /**
@@ -839,6 +841,29 @@ export class MapFeatures {
     }
     const fields = good.slice(0, want);
     if (!fields.length) return;
+    /*
+     * REAL WINDMILLS (owner, 2026-10-31): a farm wind pump at the corner of every fifth field, up to
+     * eight, on the mainland's farmland and the big plains -- world/real-buildings.js, at Medium and
+     * up once the file has arrived (nothing stood there before, so Low simply has none). Solid.
+     */
+    if (realModelsOn() && qualityRank() >= 1) {
+      const mills = [];
+      for (let k = 2; k < fields.length && mills.length < 8; k += 5) {
+        const c = fields[k];
+        const [x, z] = W(c.u0 + 2.5, c.v0 + 2.5);
+        const y = heightAt(x, z);
+        if (y < 2) continue;
+        mills.push({ x, y: y - 0.1, z, rotY: c.r * 6.283 });
+      }
+      if (mills.length) {
+        const group = this.group;
+        import('./real-buildings.js').then((RB) => RB.placeWindmills(group, mills, { alive: () => !!group.parent })).then((h) => {
+          if (!h) return;
+          this.windmills = h;
+          for (const m of mills) addObstacleAt(m.x, m.z, 4.2, 4.2, m.y, 12, 'You flew into a windmill');
+        }, () => {});
+      }
+    }
 
     // Crops, as sRGB — pasture, barley, kale, ploughed, stubble, rapeseed —
     // and which of them a climate grows.
@@ -1384,6 +1409,7 @@ export class MapFeatures {
 
   update(dt, weather) {
     this.t += dt;
+    if (this.windmills) this.windmills.update(dt, weather && weather.cond ? (weather.cond.wind ?? 0.6) : 0.6);
     const night = weather && weather.isNight ? 1 : 0;
     // Dusk counts as half dark for the glow — sunset is when a volcano looks
     // its best and the ember map opens at sunset.

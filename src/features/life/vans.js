@@ -166,7 +166,7 @@ export class VanFleet {
       this.meshes.cart = mk(V.baggageCartGeometry(), nb * KINDS.baggage.carts, 'life:cart', 'cart');
       for (let i = 0; i < nb * KINDS.baggage.carts; i++) this.meshes.cart.setColorAt(i, _c.set(CART_COLOURS[(i * 2 + 1) % CART_COLOURS.length]));
     }
-    if (count('fuelTruck')) this.meshes.fuelTruck = mk(V.fuelTruckGeometry(), count('fuelTruck'), 'life:fuel');
+    if (count('fuelTruck')) this.meshes.fuelTruck = mk(V.fuelTruckGeometry(), count('fuelTruck'), 'life:fuel', 'fuelTruck');
     if (count('bus')) this.meshes.bus = mk(apronBusGeometry(), count('bus'), 'life:bus');
     if (count('cateringTruck')) {
       this.meshes.cateringTruck = mk(V.cateringTruckGeometry(), count('cateringTruck'), 'life:catering');

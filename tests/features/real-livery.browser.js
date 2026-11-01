@@ -83,7 +83,33 @@ export async function check(sim, r, say = () => {}) {
         }
       }
     });
-    return { share: n ? coloured / n : 0, maps, meshes };
+    return { share: n ? coloured / n : 0, maps, meshes, canvas: canvasShare(skin) };
+  };
+  /*
+   * How much of the livery canvas itself is paint (same colour test). A sparse scheme on a big
+   * freighter (the C-5 in Abyssinia Air: white, a window row and a registration; 1.5% of its own
+   * canvas, the procedural C-5 the same) cannot put 2% on the side: the skin is held to what its
+   * canvas carries, and to 2% wherever the canvas carries more.
+   */
+  const canvasShare = (skin) => {
+    let img = null;
+    skin.traverse((o) => {
+      if (!img && o.isMesh && /^skin_/.test(o.parent && o.parent !== skin ? o.parent.name : o.name) && o.material.map && o.material.map.image && o.material.map.image.getContext) img = o.material.map.image;
+    });
+    if (!img) return 0;
+    const d = img.getContext('2d').getImageData(0, 0, img.width, img.height).data;
+    let c = 0;
+    let n = 0;
+    for (let y = 0; y < img.height; y += 2) {
+      for (let x = 0; x < img.width; x += 2) {
+        const p = (y * img.width + x) * 4;
+        const mx = Math.max(d[p], d[p + 1], d[p + 2]);
+        const mn = Math.min(d[p], d[p + 1], d[p + 2]);
+        n++;
+        if (mx - mn > 40 || mx < 170) c++;
+      }
+    }
+    return n ? c / n : 0;
   };
   const finOf = (skin) => {
     let c = null;
@@ -123,7 +149,7 @@ export async function check(sim, r, say = () => {}) {
       }
       const cov = sideCoverage(rm.skin);
       if (cov.maps < 2 || cov.maps < cov.meshes) bad.push(`${what}: ${cov.maps}/${cov.meshes} fuselage pieces painted`);
-      if (!(cov.share >= 0.02)) bad.push(`${what}: the side is ${(100 * cov.share).toFixed(1)}% livery (plain white)`);
+      if (!(cov.share >= Math.min(0.02, 0.7 * cov.canvas))) bad.push(`${what}: the side is ${(100 * cov.share).toFixed(1)}% livery (plain white; its canvas ${(100 * cov.canvas).toFixed(1)}%)`);
       const fin = finOf(rm.skin);
       const body = new THREE.Color(rp.base || '#ffffff');
       if (!fin || (lum(fin) > 0.8 && Math.abs(lum(fin) - lum(body)) < 0.08)) bad.push(`${what}: the fin is the body's white (#${fin ? fin.getHexString() : '?'})`);

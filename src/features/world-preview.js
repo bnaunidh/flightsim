@@ -42,7 +42,7 @@ import { TerrainStream, tierFor as streamTier, cardWorker, initWorker } from '..
 import { buildOutstations, pavedTest, towerLens, buildDressing } from '../world/worldmap/outstation.js';
 import { carrierProxyGeometry } from '../world/worldmap/field-look.js';
 import { Horizon } from '../world/worldmap/horizon.js';
-import { Flora, floraContext } from '../world/worldmap/flora.js';
+import { Flora, floraContext, SPECIES as FLORA_SPECIES } from '../world/worldmap/flora.js';
 import { makeWorldTerrainMaterial } from '../world/worldmap/world-terrain.js';
 import { buildWaters } from '../world/worldmap/waters.js';
 import { buildNetworkLook } from '../world/worldmap/network-look.js';
@@ -78,7 +78,7 @@ export const CARD_TIERS = Object.freeze({
   high: Object.freeze({ radius: 1800, perCell: 2400, shadows: false }),
   ultra: Object.freeze({ radius: 2600, perCell: 3200, shadows: false }),
 });
-import { treeGeometry } from '../world/scenery.js';
+import { treeGeometry, addTreeSourceLater } from '../world/scenery.js';
 import { setRenderOrigin } from '../render/render-origin.js';
 import { setNavField, navField, landingDir, papiFor } from '../world/navfield.js';
 import { icon } from '../ui/icons.js';
@@ -286,6 +286,8 @@ function buildWorld(sim, group) {
     workerOk: () => !!(S.stream && S.stream.worker && !S.stream.workerFailed),
   });
   group.add(S.flora.group);
+  // The real trees close up take the nearest of these (world/real-trees.js; Medium and up).
+  S.flora.meshes.forEach((m, kind) => addTreeSourceLater(m, FLORA_SPECIES[kind]));
   // And the woods between them: tree cards, dense, close in, only in the forests (worldmap/tree-cards.js).
   // On a worker of their own, so a forest's thousands never queue in front of the ground's tiles.
   if (CARD_TIERS[q] && CARD_TIERS[q].radius > 0) {

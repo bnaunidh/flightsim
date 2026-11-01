@@ -7,6 +7,8 @@
  */
 
 import * as THREE from '../vendor/three.module.js';
+import { qualityRank } from '../aircraft/model-quality.js';
+import { realModelsOn } from '../aircraft/real-models.js';
 import { heightAt, scatter, MAP, ISLANDS, addObstacleAt, getFlat, flatAt, padWeight, AIRPORT, CORRIDOR, CORRIDOR2 } from './terrain.js';
 import { buildingTexture, buildingNightTexture, roofTexture, foamTexture, asphaltTexture, asphaltNormal, hangarTexture, claddingNormal } from '../render/textures.js';
 import { glassMaterial, metalMaterial } from '../render/surfaces.js';
@@ -356,6 +358,36 @@ export function floraOf(mapDef) {
  * is deliberately narrower than the canopy, because clipping a frond is not
  * the same as hitting the trunk.
  */
+/*
+ * The real trees close up (world/real-trees.js) are a module of their own, fetched only once a
+ * world is drawn at Medium or better (never before the menu, never on Low): until then the
+ * instanced trees wait in this list, and lod() hands them over when it has arrived.
+ */
+const treeSources = [];
+let realTrees = null;
+let realTreesAsked = false;
+function realTreesLod(viewerPos) {
+  if (!realTrees) {
+    // (a world rebuilt while it waits: the old world's trees are let go, not kept for ever)
+    for (let i = treeSources.length - 1; i >= 0; i--) {
+      let n = treeSources[i][0];
+      while (n.parent) n = n.parent;
+      if (!n.isScene) treeSources.splice(i, 1);
+    }
+    if (!realTreesAsked && qualityRank() >= 1) {
+      realTreesAsked = true;
+      import('./real-trees.js').then((m) => { realTrees = m; }, () => {});
+    }
+    return;
+  }
+  while (treeSources.length) realTrees.addTreeSource(...treeSources.shift());
+  realTrees.updateRealTrees(viewerPos);
+}
+/** The World Map's pools register here too (features/world-preview.js), lazily the same way. */
+export function addTreeSourceLater(mesh, species) {
+  treeSources.push([mesh, species]);
+}
+
 function addTrees(group, spots, height = 9, mix = [0.7, 0.15, 0.05, 0.1], solid = true, snow = false) {
   const total = mix.reduce((a, b) => a + b, 0) || 1;
   const buckets = [[], [], [], [], [], []];
@@ -412,6 +444,8 @@ function addTrees(group, spots, height = 9, mix = [0.7, 0.15, 0.05, 0.1], solid 
     const inst = new THREE.InstancedMesh(geo, mat, list.length);
     // Named so tests/features/world-scale.mjs can find the trees.
     inst.name = `trees:${snow ? 'snow-' : ''}${['palm', 'broadleaf', 'conifer', 'scrub', 'birch', 'thorn'][kind]}`;
+    // The real trees close up (world/real-trees.js; Medium and up). Not under snow: the downloads are summer trees.
+    if (!snow) treeSources.push([inst, ['palm', 'broadleaf', 'conifer', 'scrub', 'birch', 'thorn'][kind]]);
     inst.castShadow = true;
     inst.receiveShadow = false;
     // How tall this species is relative to the grove's nominal height.
@@ -778,7 +812,7 @@ export function addTown(group, spots, opts = {}) {
   if (!spots.length) return { houses: 0, blocks: 0, towers: 0, tallest: 0, lampMat: null, nightMats: [] };
   // `solid: false` for buildings you are meant to land among (the delivery
   // pad's huts); `roofTints` for thatch; `meshName` prefixes the meshes.
-  const { solid = true, roofTints = ROOF_TINTS, meshName: name = 'town', quality = 'high' } = opts;
+  const { solid = true, roofTints = ROOF_TINTS, meshName: name = 'town', quality = 'high', realHouses = 0 } = opts;
   // Materials whose windows light up after dark; Scenery.update switches them.
   const nightMats = [];
   const plan = spots.map((s, i) => {
@@ -793,8 +827,14 @@ export function addTown(group, spots, opts = {}) {
     const d = s.d || HS.depth[0] + q2 * (HS.depth[1] - HS.depth[0]);
     const h = s.h || houseEaves(q2);
     const lo = Number.isFinite(s.lo) ? Math.min(s.lo, s.y) : s.y - 2.2;
-    return { s, kind, w, d, h, base: lo - 0.3, v: i % 2, q, q2 };
+    // REAL HOUSES (world/real-buildings.js, Medium and up): a share of the ordinary houses drawn
+    // into meshes of their own, so the real country house can stand in their place when it arrives.
+    const real = realHouses > 0 && kind === 'house' && w >= 8 && w <= 17 && ((Math.sin(s.x * 3.71 + s.z * 2.93) * 9137.13) % 1 + 1) % 1 < realHouses;
+    return { s, kind, w, d, h, base: lo - 0.3, v: i % 2, q, q2, real };
   });
+  // At most 36 a town (2,900 triangles each): a big town's hundreds stay the game's own.
+  let realLeft = 36;
+  for (const b of plan) if (b.real && realLeft-- <= 0) b.real = false;
 
   const d = new THREE.Object3D();
   const col = new THREE.Color();
@@ -819,9 +859,14 @@ export function addTown(group, spots, opts = {}) {
    * plant rooms. Every house had a door on all four walls, the door on the
    * uphill wall was underground, and there was one roof shape.
    */
-  const walls = new Batch();
+  const wallsMain = new Batch();
   const blockWalls = [new Batch(), new Batch()];
-  const trims = new Batch();
+  const trimsMain = new Batch();
+  // (the real houses' own walls and roofs: hidden as one when the real ones stand)
+  const wallsReal = new Batch();
+  const trimsReal = new Batch();
+  let walls = wallsMain;
+  let trims = trimsMain;
   const facts = { doors: 0, doorGap: Infinity, bays: 0, buriedBays: 0, stretch: 1, hipped: 0, gabled: 0, openBays: 0, blankBays: 0, hoodClear: Infinity, sizes: [] };
   const cellUV = (c, r, m = 0) => [(c + m) / 4, 1 - (r + 1 - m) / 4, (c + 1 - m) / 4, 1 - (r + m) / 4];
   const PLAIN = cellUV(0, 2, 0.15);
@@ -852,6 +897,8 @@ export function addTown(group, spots, opts = {}) {
 
   plan.forEach((b, bi) => {
     if (b.kind !== 'house' && b.kind !== 'block') return;
+    walls = b.real ? wallsReal : wallsMain;
+    trims = b.real ? trimsReal : trimsMain;
     const { s } = b;
     const cr = Math.cos(s.rot);
     const sr = Math.sin(s.rot);
@@ -1119,7 +1166,7 @@ export function addTown(group, spots, opts = {}) {
     emissiveIntensity: 0,
   });
   nightMats.push(houseMat);
-  const hw = walls.mesh(houseMat, { name: `${name}-house-walls` });
+  const hw = wallsMain.mesh(houseMat, { name: `${name}-house-walls` });
   if (hw) group.add(hw);
   blockWalls.forEach((bb, v) => {
     // A third of the windows lit after dark (buildingNightTexture, the same
@@ -1138,8 +1185,20 @@ export function addTown(group, spots, opts = {}) {
     const m = bb.mesh(bm, { name: `${name}-block-walls` });
     if (m) group.add(m);
   });
-  const tm = trims.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0.02, flatShading: true, envMapIntensity: 0.6 }), { name: `${name}-roofs` });
+  const trimMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0.02, flatShading: true, envMapIntensity: 0.6 });
+  const tm = trimsMain.mesh(trimMat, { name: `${name}-roofs` });
   if (tm) group.add(tm);
+  let realOwn = null;
+  const realSpots = plan.filter((b) => b.real).map((b) => ({ x: b.s.x, z: b.s.z, y: b.s.y, rot: b.s.rot + ((b.s.front || 1) > 0 ? 0 : Math.PI), w: b.w, d: b.d }));
+  if (realSpots.length) {
+    realOwn = new THREE.Group();
+    realOwn.name = `${name}-houses-for-real`;
+    const rw = wallsReal.mesh(houseMat, { name: `${name}-house-walls-r` });
+    const rt = trimsReal.mesh(trimMat, { name: `${name}-roofs-r` });
+    if (rw) realOwn.add(rw);
+    if (rt) realOwn.add(rt);
+    group.add(realOwn);
+  }
   const houses = plan.filter((b) => b.kind === 'house');
   const blocks = plan.filter((b) => b.kind === 'block');
   // AC units, water tanks, vents and masts on the flat roofs.
@@ -1215,7 +1274,27 @@ export function addTown(group, spots, opts = {}) {
     nightMats,
     rooftops,
     facts,
+    real: realOwn ? { own: realOwn, spots: realSpots } : null,
   };
+}
+
+/**
+ * The real country house (world/real-buildings.js) where addTown left room for it: the house's
+ * own footprint, turned the same way, on its ground; the procedural ones hidden when it stands.
+ */
+function wearRealHouses(group, town) {
+  const r = town && town.real;
+  if (!r || !r.spots.length) return;
+  import('./real-buildings.js').then(async (RB) => {
+    const size = await RB.realSize('house');
+    if (!size || !group.parent) return;
+    const spots = r.spots.map((p) => ({ x: p.x, y: p.y - 0.15, z: p.z, rotY: p.rot, scale: Math.min(p.w / size[0], p.d / size[2]) * 1.02 }));
+    const g = await RB.placeRealMany(group, 'house', spots, { alive: () => !!group.parent });
+    if (g) {
+      r.own.visible = false;
+      town.realHouses = g;
+    }
+  }, () => {});
 }
 
 /**
@@ -1827,9 +1906,25 @@ function buildBoats(group, count, home = null, fleet = null) {
     g.rotation.y = i * 1.2;
     group.add(g);
     const speed = kind === 'ferry' ? 7 : kind === 'yacht' ? 2.5 + (i % 3) * 0.5 : 3 + (i % 3);
-    boats.push({ obj: g, speed, phase: i * 2 });
+    boats.push({ obj: g, speed, phase: i * 2, kind, hull });
   }
+  wearRealSailboats(boats.filter((b) => b.kind === 'yacht').map((b) => ({ parent: b.obj, x: 0, z: 0, rot: 0, hide: b.hull })));
   return boats;
+}
+
+/*
+ * REAL SAILBOATS (world/real-buildings.js; Medium and up): the yachts at sea and on the moorings
+ * wear the real sailboat once it has arrived -- its bow (+Z in the file) turned to the yacht's
+ * (+X), 12 m long, its waterline 1.6 m up its keel; the game's own hull hidden under it.
+ */
+const SAIL_BOW = Math.PI / 2;
+function wearRealSailboats(list) {
+  if (!list.length || !(realModelsOn() && qualityRank() >= 1)) return;
+  import('./real-buildings.js').then((RB) => {
+    for (const b of list) {
+      RB.placeReal(b.parent, 'sailboat', { at: [b.x, -1.9, b.z], rotY: b.rot + SAIL_BOW, length: 12, hide: b.hide ? [b.hide] : [], alive: () => !!b.parent.parent });
+    }
+  }, () => {});
 }
 
 /**
@@ -2048,6 +2143,32 @@ function addAirBase(group, base) {
   bund.castShadow = bund.receiveShadow = true;
   bund.name = 'airbase-bund';
   group.add(bund);
+
+  /*
+   * REAL BUILDINGS (owner, 2026-10-31: the military base pack): a guarded compound by the radar --
+   * two guard posts, a vehicle garage, watchtowers at its corners and one over the fuel farm --
+   * from world/real-buildings.js, at Medium and up once the files have arrived (Low, and a device
+   * that keeps the built-in models, has the base as it always was). Solid once they stand.
+   */
+  if (realModelsOn() && qualityRank() >= 1) {
+    const at = (x, z) => [x, groundSpan(x, z, 10, 10)[1], z];
+    const pieces = [
+      ['base-outpost', rx + 34, rz - 6, Math.PI / 2, [10, 6, 8]],
+      ['base-outpost', rx + 34, rz + 18, Math.PI / 2, [10, 6, 8]],
+      ['base-garage', rx + 4, rz + 40, 0, [10.3, 9.3, 4]],
+      ['base-watchtower', rx - 22, rz - 26, 0, [3.4, 3.4, 6]],
+      ['base-watchtower', rx + 58, rz + 44, 0, [3.4, 3.4, 6]],
+      ['base-watchtower', fx - 100, fz + 40, 0, [3.4, 3.4, 6]],
+    ];
+    import('./real-buildings.js').then((RB) => {
+      for (const [id, x, z, rotY, [w, d, h]] of pieces) {
+        const p = at(x, z);
+        RB.placeReal(group, id, { at: p, rotY, alive: () => !!group.parent }).then((g) => {
+          if (g) addObstacleAt(x, z, rotY ? d : w, rotY ? w : d, p[1], h, 'You flew into a building');
+        });
+      }
+    }, () => {});
+  }
 
   return { dish, parkSpots };
 }
@@ -2455,6 +2576,20 @@ export function addHarbourDressing(group, cfg) {
   }
   const fleet = (cfg.fishingFleet && cfg.fishingFleet.boats) || [];
   fleet.forEach(([x, z], i) => boats.push({ kind: 'trawler', x, z, rot: 2.2 + i * 0.35, colour: BOAT_HULLS[i % 3] }));
+  // The yachts on their own (when the real sailboat may take their place: wearRealSailboats).
+  const realYachts = realModelsOn() && qualityRank() >= 1 ? boats.filter((b) => b.kind === 'yacht') : [];
+  if (realYachts.length) {
+    const yq = new THREE.Quaternion();
+    const ym = new THREE.Matrix4();
+    const ygeos = realYachts.map((b) => boatGeometry(b.kind, b.colour).applyMatrix4(ym.compose(new THREE.Vector3(b.x, 0, b.z), yq.setFromAxisAngle(new THREE.Vector3(0, 1, 0), b.rot), new THREE.Vector3(1, 1, 1))));
+    const ymesh = new THREE.Mesh(mergeColoured(ygeos), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.05, side: THREE.DoubleSide }));
+    ymesh.castShadow = ymesh.receiveShadow = true;
+    ymesh.name = 'harbour-yachts';
+    group.add(ymesh);
+    wearRealSailboats(realYachts.map((b, i) => ({ parent: group, x: b.x, z: b.z, rot: b.rot, hide: i === 0 ? ymesh : null })));
+    boats.splice(0, boats.length, ...boats.filter((b) => b.kind !== 'yacht'));
+    out.boats = realYachts.length;
+  }
   if (boats.length) {
     const m4 = new THREE.Matrix4();
     const q = new THREE.Quaternion();
@@ -2467,7 +2602,7 @@ export function addHarbourDressing(group, cfg) {
     const mesh = new THREE.Mesh(mergeColoured(geos), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.05, side: THREE.DoubleSide }));
     mesh.castShadow = mesh.receiveShadow = true;
     group.add(mesh);
-    out.boats = boats.length;
+    out.boats += boats.length;
   }
 
   /* ---- the fuel jetty ---- */
@@ -3682,7 +3817,8 @@ export class Scenery {
 
     // The town, in whatever flat land this map has near the field.
     const plan = planTown(cfg.town, density);
-    this.town = addTown(this.group, plan.spots, { ...(plan.cfg || {}), avoid: padsOf(MAP), quality });
+    this.town = addTown(this.group, plan.spots, { ...(plan.cfg || {}), avoid: padsOf(MAP), quality, realHouses: !realModelsOn() ? 0 : qualityRank() >= 2 ? 0.35 : qualityRank() >= 1 ? 0.2 : 0 });
+    wearRealHouses(this.group, this.town);
     this.streets = addStreets(this.group, plan.streets || []);
     this.town.streets = (plan.streets || []).length;
 
@@ -3794,6 +3930,8 @@ export class Scenery {
    * is nearer. One distance test a frame, against the town's centre.
    */
   lod(viewerPos) {
+    // The real trees nearest the camera (world/real-trees.js): every frame, cheap unless it moved.
+    if (viewerPos) realTreesLod(viewerPos);
     const rt = this.town && this.town.rooftops;
     if (!rt || !rt.meshes.length || !viewerPos) return;
     if (!this._townCentre) {

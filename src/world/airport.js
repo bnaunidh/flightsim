@@ -45,6 +45,8 @@ import { styleOf } from './worldmap/personas.js';
 import { Batch, vcMaterial, instanced, settle, glowPoints, canvas, canvasTexture, trs, trse, yawOf, layer } from './airport-kit.js';
 import { fireEngineGeometry, carGeometry } from './airport-vehicles.js';
 import { taxiMarkings } from './airport-markings.js';
+import { realModelsOn } from '../aircraft/real-models.js';
+import { qualityRank } from '../aircraft/model-quality.js';
 
 export { airportLayout } from './airport-layout.js';
 
@@ -477,7 +479,8 @@ export class Airport {
     this.buildPavement();
     this.buildTower();
     this.buildHangars();
-    this.buildFireStation();
+    this.isolate('fireStation', () => this.buildFireStation());
+    if (this.fireEngines) this.fireEngines();
     this.buildFuelFarm();
     this.buildCarPark();
     this.buildFloodlights();
@@ -485,6 +488,7 @@ export class Airport {
     this.buildWindsock();
     this.buildLighting();
     this.flushBatches();
+    this.wearRealBuildings();
 
     /*
      * The physics' isPaved() knows Kestrel's taxiway by its coordinates, so
@@ -1195,7 +1199,12 @@ export class Airport {
     addObstacleAt(cx, zMid, W, f.depth, ELEV, H + 1, 'You flew into the fire station');
     addObstacleAt(r.x1 - 2.5, zBack - dz * 2.5, 4, 4, ELEV, H + 7.5, 'You flew into the fire station');
 
-    // Crash tenders: one inside the open bay, the rest out front, ready.
+    // Crash tenders: one inside the open bay, the rest out front, ready. Not part of the building
+    // (they stay when a real fire station takes its place: isolate()).
+    this.fireEngines = () => this.buildFireEngines(f, F, r, bays, bw);
+  }
+
+  buildFireEngines(f, F, r, bays, bw) {
     const geo = fireEngineGeometry();
     const n = Math.min(3, bays + 1);
     const inst = instanced(geo, this.mats.vc, n, { name: 'fire-engines' });
@@ -1666,30 +1675,84 @@ export class Airport {
   }
 
   /** Turn the batches into meshes. One draw call each. */
-  flushBatches() {
+  flushBatches(B = this.b, target = this.group) {
     const add = (b, mat, opts) => {
       const m = b.mesh(mat, opts);
-      if (m) this.group.add(m);
+      if (m) target.add(m);
       return m;
     };
     const M = this.mats;
-    const pave = add(this.b.pave, pavementMaterial(), { cast: false, name: 'pavement' });
+    const pave = add(B.pave, pavementMaterial(), { cast: false, name: 'pavement' });
     if (pave) {
       const uv = pave.geometry.attributes.uv;
       const p = pave.geometry.attributes.position;
       for (let i = 0; i < uv.count; i++) uv.setXY(i, p.getX(i) / PAVE_TILE, p.getZ(i) / PAVE_TILE);
       pave.geometry.deleteAttribute('color');
     }
-    add(this.b.paint, M.paint, { cast: false, name: 'paint' });
-    add(this.b.vc, M.vc, { name: 'airfield-structures' });
-    add(this.b.metal, M.metal, { name: 'airfield-steel' });
-    this.lampMesh = add(this.b.lamps, M.lamps, { cast: false, name: 'lamps' });
+    add(B.paint, M.paint, { cast: false, name: 'paint' });
+    add(B.vc, M.vc, { name: 'airfield-structures' });
+    add(B.metal, M.metal, { name: 'airfield-steel' });
+    const lamps = add(B.lamps, M.lamps, { cast: false, name: 'lamps' });
+    if (B === this.b) this.lampMesh = lamps;
     for (const [k, mat] of [['wall', M.wall], ['wallWarm', M.wallWarm], ['clad', M.clad], ['roof', M.roof]]) {
-      const m = add(this.b[k], mat, { name: k });
+      const m = add(B[k], mat, { name: k });
       if (m) m.geometry.deleteAttribute('color');
       if (k === 'wall' || k === 'wallWarm') officeFloors(m, ELEV + 0.2);
     }
-    this.b = null;
+    if (B === this.b) this.b = null;
+  }
+
+  /**
+   * REAL BUILDINGS (world/real-buildings.js; Medium and up): a building drawn into batches of its
+   * own, so the real one can take its place when its file arrives -- hidden as one group. On Low
+   * (or with real models off) it is drawn into the field's shared batches as it always was.
+   */
+  isolate(name, build) {
+    if (!(realModelsOn() && qualityRank() >= 1)) {
+      build();
+      return null;
+    }
+    const shared = this.b;
+    const before = new Set(this.group.children);
+    this.b = Object.fromEntries(Object.keys(shared).map((k) => [k, new Batch()]));
+    try {
+      build();
+    } finally {
+      const own = this.b;
+      this.b = shared;
+      const g = new THREE.Group();
+      g.name = `own:${name}`;
+      for (const c of [...this.group.children]) if (!before.has(c)) g.add(c);
+      this.flushBatches(own, g);
+      this.group.add(g);
+      this.isolated = this.isolated || {};
+      this.isolated[name] = g;
+    }
+    return this.isolated[name];
+  }
+
+  /** The real fire station over the game's own, when (and if) it arrives. */
+  wearRealBuildings() {
+    const f = this.layout.fire;
+    const own = this.isolated && this.isolated.fireStation;
+    if (!f || !own) return;
+    const F = this.layout.frame;
+    const r = f.rect;
+    const zFront = F.z(f.w0);
+    const zBack = F.z(f.w0 + f.depth);
+    const dz = Math.sign(zBack - zFront);
+    // The download's bays face +Z; the game's face the runway (-dz).
+    const rotY = dz > 0 ? Math.PI : 0;
+    import('./real-buildings.js')
+      .then((RB) => RB.placeReal(this.group, 'firestation', {
+        at: [(r.x0 + r.x1) / 2, ELEV, (zFront + zBack) / 2],
+        rotY,
+        fit: [f.width, f.depth],
+        hide: [own],
+        alive: () => !!this.group.parent,
+      }))
+      .then((g) => { if (g) this.realFireStation = g; })
+      .catch(() => {});
   }
 
   /** Toggle the airfield lighting (night / low visibility). */

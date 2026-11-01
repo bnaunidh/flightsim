@@ -32,6 +32,9 @@ KINDS = {
     'tug': dict(src='pushback/pushback.glb', L=4.6, tex=True, beacon=(-0.55, 2.45, 1.0), towbar=7.4),
     'tractor': dict(src='pushback/pushback.glb', L=3.0, tex=True),
     'cart': dict(src='baggagecart/scene.gltf', L=3.5, tex=True, white=True),
+    # src/world/apron.js and features/life/vans.js: the fuel bowser (airport-vehicles.js fuelTruckGeometry, 9.4 m).
+    # Its stray 2-unit box at the origin (material_0) is not part of it.
+    'fuelTruck': dict(src='fueltruck/fueltruck.glb', L=9.4, tex=True, dropMats=['material_0']),
     # src/features/ambient/cars.js (car: tinted per car; the others: tinted with their kind's colour)
     'car': dict(src=PACK, veh='Sedan', L=4.4, white=True),
     'taxi': dict(src=PACK, veh='Taxi', L=4.5, white=True),
@@ -45,6 +48,7 @@ KINDS = {
 CREDITS = {
     'pushback/pushback.glb': '"Aircraft tractor lowpoly model" by propmaker1 (@menX1151), CC BY 4.0, https://sketchfab.com/3d-models/2e9a078c365243c888f4c70f85be7b85',
     'baggagecart/scene.gltf': '"Airport baggage equipment (cart) lowpoly" by propmaker1 (@menX1151), CC BY 4.0, https://sketchfab.com/3d-models/7ae8444bb5044376a04ee7bb0664ff39',
+    'fueltruck/fueltruck.glb': '"Airport Fuel Truck" by Nguyentuannghia 64 (@nguyentuannghia17a), CC BY 4.0, https://sketchfab.com/3d-models/15a96ac34ece464480a9b8620dc3a3d3',
     PACK: '"Free Low Poly Vehicles Pack" by RgsDev (@rgsdev), CC BY 4.0, https://sketchfab.com/3d-models/cb7640039e7a40679a53be705ebff50e',
 }
 
@@ -105,6 +109,8 @@ def build(kind, cfg):
         paint = max(area, key=area.get) if area else None
     Ps, Ns, Cs = [], [], []
     for p in prims:
+        if p['mat'] in cfg.get('dropMats', []):
+            continue
         mi = p['matIndex']
         tri = p['pos'][p['idx']]  # (n, 3, 3), un-indexed: one colour per triangle
         if p['nrm'] is not None:
