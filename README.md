@@ -332,6 +332,11 @@ airline or military marking ships; see `tools/real-models/README.md`). They are
 fetched only when needed (an aircraft when you pick it; the trees and scenery
 at Medium graphics and up, after the menu); Low keeps the game's own models.
 
+Last Flight Out's SCPs, Foundation guards, hazmat staff, gunship, containment
+cases and clipboards (batch 6) are CC BY 4.0 Sketchfab models too, of SCP
+Foundation content (CC BY-SA 3.0): credited the same way, baked by
+`tools/real-models/scp.py`, and fetched only when that mission is flown.
+
 Full asset-by-asset credits are in the in-game **Credits & licences** screen.
 
 ### A note on the ATC voices

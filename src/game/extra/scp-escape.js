@@ -5,7 +5,8 @@
  * SCP Foundation content by the SCP Wiki community, CC BY-SA 3.0,
  * scpwiki.com (LICENSE, "SCP FOUNDATION CONTENT"). The Foundation, the Site,
  * the Class-D, the MTF and the on-site Alpha Warhead are theirs; the flight
- * is ours. No numbered SCP is named or shown.
+ * is ours. The SCPs that breach are drawn (features/scp-models.js) and
+ * never named on screen.
  *
  * The owner, 2026-10-30: "another mission about the scp foundation where the
  * scp are breaching but u have the last escape plane, people will board and

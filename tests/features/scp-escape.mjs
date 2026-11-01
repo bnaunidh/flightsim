@@ -515,6 +515,24 @@ function fakeSim(seed) {
   ok('the Site staff outfit exists (white coat over grey) with long sleeves', /sitestaff:/.test(read('src/features/staff/person.js')) && /'sitestaff'\]\)/.test(read('src/features/staff/person.js')));
 }
 
+/* ---------------- 11. batch 6: the Site's models ---------------- */
+{
+  const src = read('src/features/scp-escape.js');
+  ok('batch 6: the SCP models module is imported only when a run is built (dynamic), stepped with the people and torn down with the run',
+    /import\('\.\/scp-models\.js'\)/.test(src) && !/^import [^\n]*scp-models/m.test(src) && /if \(R\.models\) R\.models\.step\(dtv\)/.test(src) && /if \(R\.models\) R\.models\.dispose\(\)/.test(src));
+  const { run, ext, sim } = fakeSim(31337);
+  run(0.1);
+  for (let i = 0; i < 100 && !Esc.run().models; i++) await new Promise((r) => setTimeout(r, 0));
+  run(0.5);
+  const st = Esc.escapeState();
+  // No files to fetch here (node): what is drawn is the game's own, and the run is the run.
+  ok('…a run starts its director; with no files the posted guards and staff are the game\'s own figures and no SCP is drawn', !!st.models && st.models.posts.some((p) => p.kind === 'guard') && st.models.posts.every((p) => !p.real) && st.models.scps.length === 0,
+    st.models ? st.models.posts.map((p) => p.kind).join(' ') : 'no director');
+  const g = Esc.run().models.D.group;
+  ext.stop(sim);
+  ok('…and its models leave the scene with the run', !g.parent);
+}
+
 const fails = results.filter((r) => !r.pass);
 console.log(`\nscp-escape: ${results.length - fails.length}/${results.length} passed`);
 process.exit(fails.length ? 1 : 0);

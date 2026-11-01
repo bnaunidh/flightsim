@@ -2841,8 +2841,7 @@ export class Menus {
       this._voicesHooked = true;
       // The list arrives late in Chrome: fill it again, then put the saved choice back.
       speechSynthesis.addEventListener('voiceschanged', () => setTimeout(() => {
-        this._settingsSeen = settings;
-    this.fillSpeechVoices(s);
+        this.fillSpeechVoices(s);
         const want = this._settingsSeen ? this._settingsSeen.atcSpeechVoice : null;
         if (want && [...sel.options].some((o) => o.value === want)) sel.value = want;
       }, 0));
@@ -2854,6 +2853,8 @@ export class Menus {
     this.syncPayLines && this.syncPayLines();
     const s = this.screens.settings;
     const get = (path) => path.split('.').reduce((o, k) => (o ? o[k] : undefined), settings);
+    // The saved voice, for the list that arrives late (fillSpeechVoices' voiceschanged).
+    this._settingsSeen = settings;
     this.fillSpeechVoices(s);
     s.querySelectorAll('[data-set]').forEach((node) => {
       let v = get(node.dataset.set);

@@ -91,3 +91,36 @@ after the menu; Low keeps the game's own).
   hangar (a closed shell; the game's hangars open their doors and park
   aeroplanes inside), the lighthouse (a storybook scene, not a realistic
   lighthouse).
+
+Batch 6 (2026-11-01): the SCP Foundation models for Last Flight Out (`scp.py`,
+settings and credits in `scp_models.py`; run time in `src/features/scp-models.js`,
+imported by `src/features/scp-escape.js` only when a run of the mission is built,
+files fetched then and never precached).
+
+    python3 tools/real-models/scp.py [id ...]     # -> assets/models/real/scp/<id>.glb
+    python3 tools/real-models/scp.py <id> --view /tmp/x_%.png
+    node tests/features/scp-models.mjs
+
+- The five SCPs breach as their sectors go dark (682 A, 939 B, 106 C, 096 E,
+  173 F; D shows nothing) and are at the ends of their routes when the breach
+  reaches the strip; they stand still whenever anybody is near, and the
+  mission's rules and timings are untouched (the test runs a seed with and
+  without them). 173 moves only off screen; 096 sits, head bowed over its
+  knees, its back to the strip (`calm` in scp_models.py turns its red streaks
+  to grey: nothing reads as blood); 106 rises out of the yard, sinks and rises further on;
+  682 (unrigged) sways down its length as it crawls.
+- Rigs (`skin.py`): 096, 106 and 939 keep their skin. The file carries the
+  joints' matrices per clip frame (game frame x joint, 16-bit), so the game
+  plays them with three.js's SkinnedMesh and no glTF loader. Clips are in
+  place; a walk's own speed is measured from the foot on the ground and the
+  game plays it at the speed it moves (no sliding feet).
+- The guard (rig, no clips, T-pose) is baked static at ease; it and the hazmat
+  suit (unrigged) are the POSTED figures at the ramp and the gate. The boarders
+  stay the game's own walking figures; the Site staff among them carry the
+  clipboard, and the sealed cart carries the containment case.
+- The gunship orbits the Site (not solid, never fires) with the game's own
+  rotor (blur disc, anti-strobe cap) on the download's hubs, and leaves when
+  the breach reaches the strip.
+- Left out of the batch on purpose (BATCH-6-SCP.md): anything ripped from other
+  games, gore, and the heavy containment chambers and keycards.
+

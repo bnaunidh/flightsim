@@ -49,6 +49,31 @@ import { buildNetworkLook } from '../world/worldmap/network-look.js';
 import { Props, placeProps, PROP_MODELS } from '../world/worldmap/props.js';
 import { parseGLB } from '../vehicles/glb.js';
 
+/**
+ * The World Map's traffic (features/world-traffic.js): fetched the first time
+ * the preview is built, so no other map ever loads it.
+ */
+let TRAFFIC_MOD = null;
+function trafficModule() {
+  if (!TRAFFIC_MOD) {
+    TRAFFIC_MOD = import('./world-traffic.js').catch((e) => {
+      console.warn('[world-preview] the traffic did not load; the sky stays empty', e);
+      TRAFFIC_MOD = null;
+      return null;
+    });
+  }
+  return TRAFFIC_MOD;
+}
+function startTraffic(sim, q) {
+  const gen = (S.trafficGen = (S.trafficGen || 0) + 1);
+  trafficModule().then((m) => {
+    if (!m || S.trafficGen !== gen || !active()) return;
+    S.traffic = m.createTraffic(sim, { quality: q });
+    // The flight may have started while it was on its way.
+    if (sim.state === 'flying' || sim.state === 'paused') S.traffic.start();
+  });
+}
+
 /** The CC0 scenery models (worldmap/props.js), fetched once a session: name -> geometry (null if it would not load). */
 let PROP_GEOS = null;
 function propModels() {
@@ -178,6 +203,9 @@ export function whenBuilt() {
 /* ------------------------------------------------------------------ */
 
 function teardown(sim) {
+  S.trafficGen = (S.trafficGen || 0) + 1;
+  if (S.traffic) S.traffic.dispose();
+  S.traffic = null;
   if (S.stream) S.stream.dispose();
   if (S.horizon) S.horizon.dispose();
   if (S.flora) S.flora.dispose();
@@ -325,6 +353,7 @@ function buildWorld(sim, group) {
   sim.navPapi = (pos, mainHint) => navPapi(pos, mainHint);
   prewarm(sim, [S.out.group, S.flora.group, S.cards && S.cards.group, S.horizon.mesh, S.waters, S.network, S.props && S.props.group]);
   S.builtFor = { id: dep.id, quality: q, ms: performance.now() - t0 };
+  startTraffic(sim, q);
   const waiting = S.onBuilt.splice(0);
   for (const f of waiting) {
     try {
@@ -1023,6 +1052,9 @@ registerExtension({
         const far = S.carrierProxy;
         return { ship: !!(sim.carrier && sim.carrier.group.visible), far: !!(far && far.visible), far3d: far || null };
       },
+      /** The traffic between the fields (features/world-traffic.js), or null before it has loaded. */
+      traffic: () => S.traffic || null,
+      whenTraffic: () => (TRAFFIC_MOD || Promise.resolve(null)).then(() => S.traffic || null),
       perf: (reset = false) => {
         const p = { ...S.perf, mean: S.perf.frames ? S.perf.total / S.perf.frames : 0 };
         if (reset) S.perf = { frames: 0, total: 0, max: 0, over4: 0, over8: 0 };
@@ -1058,11 +1090,15 @@ registerExtension({
     updateNav(sim);
     setWarp(sim, 1, '');
     syncCard(sim);
+    // The sky, filled again round where this flight starts.
+    if (S.traffic) S.traffic.start();
   },
-  stop(sim) {
+  stop(sim, why) {
     closeMap(sim);
     setWarp(sim, 1, '');
     syncCard(sim);
+    // "Return to the airfield" carries the same flight on: the traffic too.
+    if (S.traffic && why !== 'airport') S.traffic.stop();
   },
   update(sim, dt) {
     if (!active()) {
@@ -1093,6 +1129,7 @@ registerExtension({
     updateWarp(sim);
     if (sim.mode === 'free') checkArrival(sim, dt);
     syncCard(sim);
+    if (S.traffic) S.traffic.update(dt);
   },
   key(sim, code, down) {
     if (down && active() && isKey(sim, 'timeWarp', code)) {

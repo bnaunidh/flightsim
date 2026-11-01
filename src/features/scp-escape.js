@@ -5,8 +5,9 @@
  * SCP Foundation content by the SCP Wiki community, CC BY-SA 3.0,
  * scpwiki.com (LICENSE, "SCP FOUNDATION CONTENT"). The Foundation, the Site,
  * the Class-D, the Mobile Task Force and the on-site Alpha Warhead are theirs;
- * the aeroplane, the apron and the clock are ours. No numbered SCP is named
- * or shown.
+ * the aeroplane, the apron and the clock are ours. The SCPs that breach are
+ * shown (./scp-models.js, CC BY 4.0 models credited there) but never named
+ * on screen.
  *
  * THE LOOP (the owner, 2026-10-30: "the scp are breaching but u have the last
  * escape plane, people will board and get items, you need to choose when to
@@ -26,8 +27,12 @@
  * "Too close to the blast". Land at Caribou and it is over: saved, left,
  * cargo, the margin, the landing.
  *
- * SPOOKY, NOT GRAPHIC. Sirens, red lamps, fog, sectors going dark. No
- * creature, no gore, nothing happens to anybody on screen. The loss on the
+ * SPOOKY, NOT GRAPHIC. Sirens, red lamps, fog, sectors going dark, and
+ * (batch 6, the owner 2026-11-01: "lots of scp stuff on sketchfab") the
+ * SCPs themselves out of the dark sectors — drawn by ./scp-models.js,
+ * imported here only when a run is built, and changing none of the rules
+ * below; they stand still whenever anybody is near. No gore, nothing
+ * happens to anybody on screen. The loss on the
  * ground is the floodlights dying, a deep sound (if audio is on) and a fade
  * to black. The warhead is a glow on the horizon and a shockwave.
  *
@@ -283,6 +288,8 @@ function fresh(seed) {
     turbWas: null,
     poolMax: POOL.high,
     group: null,
+    /** ./scp-models.js's director for this run, once it has been imported (null until then, and with no Site). */
+    models: null,
     toldSector: -1,
     saidWave: new Set(),
     lastNote: '',
@@ -1484,6 +1491,7 @@ export function escapeState() {
     out: R.walkers.filter((w) => w.state === 'out').length, turned: R.walkers.filter((w) => w.state === 'turned').length, queued: R.walkers.filter((w) => w.state === 'queued').length,
     released: [...R.released], sched: R.sched, figures: R.pool.length, poolMax: R.poolMax, lamps: R.lamps.map((l) => ({ id: l.id, lost: l.lost, lit: l.lit })),
     carts: R.carts.map((c) => ({ kind: c.kind, state: c.state, onRamp: c.onRamp })),
+    models: R.models ? R.models.state() : null,
   };
 }
 
@@ -1570,6 +1578,7 @@ function stepRampGlow(R, sim, dt) {
 function teardown() {
   const R = E.run;
   if (!R) return;
+  if (R.models) R.models.dispose();
   for (const f of R.pool) {
     if (f.p.parent) f.p.parent.remove(f.p);
     // Back to the shared material first: disposePerson frees the geometry of meshes that wear it.
@@ -1617,7 +1626,22 @@ function ensureBuilt(R, sim) {
   buildRampGlow(R, group);
   if (sim.rig) sim.rig.shot = rampShot;
   R.built = true;
+  loadModels(R, sim);
   return true;
+}
+
+/**
+ * The SCPs, the guards, the gunship and the cases (batch 6): their module and
+ * files load now, for this run, and never before. Until they are here (and if
+ * they never are) the mission is what it was.
+ */
+function loadModels(R, sim) {
+  import('./scp-models.js')
+    .then((m) => {
+      if (E.run !== R || R.models) return;
+      R.models = m.startModels({ cfg, run: () => (E.run === R ? R : null), rampOf, sim, group: R.group });
+    })
+    .catch((e) => console.warn('Last Flight Out: the SCP models could not be loaded; the mission goes on without them.', e));
 }
 
 registerExtension({
@@ -1715,6 +1739,7 @@ registerExtension({
     // The scene goes on moving through the debrief (the dome behind the words, the people still walking back).
     const dtv = Math.min(dt, 0.1);
     stepPeople(R, sim, dtv);
+    if (R.models) R.models.step(dtv);
     stepLamps(R, sim, dtv);
     stepDome(R, dtv);
     stepRampGlow(R, sim, dtv);

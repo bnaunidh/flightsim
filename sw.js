@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v76.6';
+const CACHE_VERSION = 'island-flight-v76.7';
 
 const PRECACHE = [
   './',
@@ -538,6 +538,10 @@ const PRECACHE = [
   'src/world/turbulence.js',
   // Added by tools/sync-precache.mjs.
   'src/features/festive.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/scp-models.js',
+  'src/features/world-traffic.js',
+  'src/world/worldmap/traffic-plan.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

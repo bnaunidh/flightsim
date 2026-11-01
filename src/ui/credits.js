@@ -106,6 +106,26 @@ export const CREDITS_HTML = `
   </div>
 
   <div class="credit-block">
+    <h3>Last Flight Out: the Site&rsquo;s models (CC BY 4.0)</h3>
+    <table class="credit-table">
+      <thead><tr><th>In the game</th><th>Model and creator</th><th>Licence</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr><td>The statue loose on the Site (SCP-173)</td><td>&ldquo;SCP-173&rdquo; by ThatJamGuy</td><td><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a></td><td><a href="https://sketchfab.com/3d-models/e4ef798fb0284b31bf90bad0d3bc7fc8" target="_blank" rel="noopener">sketchfab.com</a></td></tr>
+        <tr><td>The one sitting by the west fence (SCP-096)</td><td>&ldquo;SCP-096&rdquo; by ThatJamGuy</td><td><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a></td><td><a href="https://sketchfab.com/3d-models/86f6620d460945ef9992ea19126c675e" target="_blank" rel="noopener">sketchfab.com</a></td></tr>
+        <tr><td>The old man rising out of the yard (SCP-106)</td><td>&ldquo;SCP-106&rdquo; by ThatJamGuy</td><td><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a></td><td><a href="https://sketchfab.com/3d-models/21296abb0a224acea2bce6cdd6005289" target="_blank" rel="noopener">sketchfab.com</a></td></tr>
+        <tr><td>The big reptile coming round the fence (SCP-682)</td><td>&ldquo;Scp 682&rdquo; by cg097</td><td><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a></td><td><a href="https://sketchfab.com/3d-models/effff1cd246542919a0aad70eaad8bc5" target="_blank" rel="noopener">sketchfab.com</a></td></tr>
+        <tr><td>The one prowling the east fence (SCP-939)</td><td>&ldquo;SCP-939&rdquo; by ThatJamGuy</td><td><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a></td><td><a href="https://sketchfab.com/3d-models/1b99ae814fad47ebb558076e8b5beb49" target="_blank" rel="noopener">sketchfab.com</a></td></tr>
+        <tr><td>Foundation guards at the ramp and the gate</td><td>&ldquo;SCP Foundation Guard&rdquo; by ThatJamGuy</td><td><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a></td><td><a href="https://sketchfab.com/3d-models/11134bf497ba46eba645274511ff14f7" target="_blank" rel="noopener">sketchfab.com</a></td></tr>
+        <tr><td>Hazmat staff at the ramp</td><td>&ldquo;Hazmat (SCP Containment Breach)&rdquo; by SCPGames</td><td><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a></td><td><a href="https://sketchfab.com/3d-models/6361b4474c9b4e65b88b23cda4640a7c" target="_blank" rel="noopener">sketchfab.com</a></td></tr>
+        <tr><td>The task force gunship circling the Site</td><td>&ldquo;Apache (SCP Containment Breach)&rdquo; by SCPGames</td><td><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a></td><td><a href="https://sketchfab.com/3d-models/aafe3d3091d44412ad710068a9b99b5d" target="_blank" rel="noopener">sketchfab.com</a></td></tr>
+        <tr><td>The sealed containment cases</td><td>&ldquo;SCP 173 Box (SCP Containment Breach)&rdquo; by SCPGames</td><td><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a></td><td><a href="https://sketchfab.com/3d-models/48ecf48e25884d11876d58cd35f8f4b7" target="_blank" rel="noopener">sketchfab.com</a></td></tr>
+        <tr><td>The Site staff&rsquo;s clipboards</td><td>&ldquo;Clipboard (SCP Containment Breach)&rdquo; by SCPGames</td><td><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a></td><td><a href="https://sketchfab.com/3d-models/f26829100fcc45de99e2b99385ef9bc9" target="_blank" rel="noopener">sketchfab.com</a></td></tr>
+      </tbody>
+    </table>
+    <p class="tiny">The SCPs, the Foundation and its guards are SCP Foundation content by the SCP Wiki community, CC BY-SA 3.0 (<a href="https://scpwiki.com" target="_blank" rel="noopener">scpwiki.com</a>); the models of them are their creators&rsquo;, CC BY 4.0. Changed for the game: textures replaced by colours read per vertex (no image ships), scaled to real size and turned to the game; the animated ones keep their own clips (<code>tools/real-models/scp.py</code>). Loaded only when Last Flight Out is flown; Settings can switch them off. Details in <code>assets/models/LICENSES.md</code>.</p>
+  </div>
+
+  <div class="credit-block">
     <h3>Scenery models on the World Map (CC0)</h3>
     <table class="credit-table">
       <thead><tr><th>In the game</th><th>Model and creator</th><th>Licence</th><th>Source</th></tr></thead>

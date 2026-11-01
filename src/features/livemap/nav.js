@@ -387,12 +387,13 @@ addMapPanel({
 
 addSelectionAction({
   id: 'direct', label: 'DIRECT TO', order: 1, primary: true,
-  visible: (sim, w, me) => !me.drive,
+  // Not to another aircraft (the World Map traffic): it moves.
+  visible: (sim, w, me) => !me.drive && w.kind !== 'traffic',
   run: (sim, w) => directTo(sim, w),
 });
 addSelectionAction({
   id: 'add', label: '+ ROUTE', order: 2,
-  visible: (sim, w, me) => !me.drive,
+  visible: (sim, w, me) => !me.drive && w.kind !== 'traffic',
   run: (sim, w) => addToRoute(sim, w),
 });
 addSelectionAction({

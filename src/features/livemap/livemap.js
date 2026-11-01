@@ -478,6 +478,7 @@ export function kindWord(w) {
     if (!a) return 'Airport';
     return a.kind === 'hub' ? 'International airport' : a.kind === 'regional' ? 'Regional airport' : a.kind === 'remote' ? 'Long-haul outpost' : 'Airstrip';
   }
+  if (w.kind === 'traffic') return 'Traffic';
   return w.kind === 'fix' ? w.long || 'Fix' : w.kind === 'town' ? 'Town' : w.kind === 'heliport' ? 'Heliport' : w.kind === 'pin' ? 'Pin' : 'Waypoint';
 }
 
@@ -501,7 +502,8 @@ export function refresh(sim, structure = false) {
       ui.selkind.textContent = kindWord(w).toUpperCase();
       ui.selname.textContent = w.kind === 'airport' ? `${w.name} · ${w.long}` : w.kind === 'pin' ? 'Dropped pin' : w.name;
       ui.selpos.textContent = G.fmtLatLon(wl.lat, wl.lon);
-      let more = G.gridText(w.x, w.z);
+      // A pick source's own line (the World Map traffic: its type, from and to).
+      let more = typeof w.more === 'function' ? w.more() : w.more || G.gridText(w.x, w.z);
       if (w.kind === 'airport' && w.a) {
         const a = w.a;
         const z = P.zones.find((q) => q.field === a.id);
@@ -514,7 +516,10 @@ export function refresh(sim, structure = false) {
       btns.push(`<button type="button" data-lm="unpin" aria-label="Clear the selection">${icon('close', 14)}</button>`);
       ui.selbtns.innerHTML = btns.join('');
     }
-    ui.selfacts.textContent = `${G.fmtKm(d)} (${G.fmtNm(d)}) · ${G.fmtBrg(G.bearingDeg(me.x, me.z, w.x, w.z))} · ETA ${G.fmtEta(G.etaMin(d, me.gsKts))}`;
+    // Something that moves (the World Map traffic) says what it is doing instead of an ETA.
+    ui.selfacts.textContent = typeof w.facts === 'function'
+      ? `${w.facts(me)} · ${G.fmtKm(d)} · ${G.fmtBrg(G.bearingDeg(me.x, me.z, w.x, w.z))}`
+      : `${G.fmtKm(d)} (${G.fmtNm(d)}) · ${G.fmtBrg(G.bearingDeg(me.x, me.z, w.x, w.z))} · ETA ${G.fmtEta(G.etaMin(d, me.gsKts))}`;
   }
   for (const p of EXT.panels) if (p.sync) p.sync(sim, ui.panels[p.id], structure, me);
   syncPlaces(sim, me, structure);

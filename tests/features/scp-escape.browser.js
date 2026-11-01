@@ -18,6 +18,8 @@
  *     fail; its opacity never over the blast-sprite cap
  *   - the landing at Caribou completes the mission; the debrief is the
  *     mission's own: saved / left behind / cargo / margin / landing, stars
+ *   - batch 6: the SCP models arrive for the run, the posted guards and staff
+ *     wear them, what has breached is out on the ground, the gunship is up
  *   - 0 console errors; the map you had comes back
  *
  * `check(sim, r, say)` — r.ok(name, pass, detail) per assertion.
@@ -134,6 +136,20 @@ export async function check(sim, r, say = () => {}) {
     r.ok(`sector ${lostId} lost: its lamp dims (no flash, over a second), the red lamp pulses, the Site's own lamps dim a step`, st2.lost === nextIx + 1 && st2.lamps[nextIx].lost && lit0 > 0.9 && st2.lamps[nextIx].lit < 0.2 && (nextIx + 1 >= 6 || !st2.lamps[nextIx + 1].lost) && Site.siteLightScale() < lights0,
       `lit ${lit0.toFixed(2)} → ${st2.lamps[nextIx].lit.toFixed(2)}, lights ${lights0.toFixed(2)} → ${Site.siteLightScale().toFixed(2)}`);
     r.ok('…the card says which', new RegExp(`Sector ${lostId} lost`).test(cardText()) && (nextId ? new RegExp(`${nextId} next`).test(cardText()) : /strip next/.test(cardText())), cardText().slice(0, 140));
+
+    /* ---- batch 6: the Site's models (features/scp-models.js) ---- */
+    {
+      const until = async (fn, ms) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { if (fn()) return true; await new Promise((res) => setTimeout(res, 100)); frames(1 / 30); } return fn(); };
+      const ready = await until(() => { const m = Esc.run().models; return !!m && Object.values(m.state().status).every((v) => v === 'ready'); }, 20000);
+      frames(0.5);
+      const ms = Esc.escapeState().models;
+      r.ok('the SCP models arrive for this run (loaded now, not before) and the guards and staff at the ramp wear them', ready && ms.posts.filter((p) => p.kind !== 'case').every((p) => p.real) && ms.posts.some((p) => p.kind === 'guard'),
+        ms ? JSON.stringify(ms.status).slice(0, 160) : 'no director');
+      const out = ms.scps.filter((x) => x.visible);
+      r.ok('…what has breached is out on the ground, each of its own sector', ms.scps.length === 5 && out.length >= 1 && out.every((x) => Math.abs(x.y - T.heightAt(x.x, x.z)) < (x.id === 'scp-682' ? 0.8 : 0.05)),
+        ms.scps.map((x) => `${x.id}${x.visible ? ' out' : ''}`).join(', '));
+      r.ok('…and the gunship is up over the Site', !!ms.gunship && ms.gunship.y - T.heightAt(c.cx, c.cz) > 150 && ms.gunship.rotor, ms.gunship ? `${(ms.gunship.y - T.heightAt(c.cx, c.cz)).toFixed(0)} m up` : 'none');
+    }
 
     /* ---- the ramp key: close and go ---- */
     say('scp-escape: close the ramp');

@@ -96,6 +96,37 @@ from the side and from above for the World Map's distant tree cards.
 | `real/scenery/sailboat.glb` | "Sailboat" | Sergei (@sergeif) | https://sketchfab.com/3d-models/76d0b1e24be14d2f9a524bfce3001aeb |
 | `real/scenery/windmill.glb` | "Vintage Wind Turbine - GameAsset - Free Download" | DavidFalke (@davidfalke) | https://sketchfab.com/3d-models/3e0ca3c6fdf14badbb5750220e6ca7ee |
 
+## Last Flight Out: the Site's models (CC BY 4.0; SCP Foundation content CC BY-SA 3.0) — `real/scp/`
+
+Every file in `real/scp/` is a derivative of a model published on Sketchfab under the
+**Creative Commons Attribution 4.0 International** licence (<https://creativecommons.org/licenses/by/4.0/>),
+credited here, on the in-game Credits screen and inside each file (`extras.credit` on its root node).
+What they depict — the SCPs, the Foundation, its guards and its containment — is **SCP Foundation
+content by the SCP Wiki community, CC BY-SA 3.0** (<https://scpwiki.com>; `LICENSE`, "SCP FOUNDATION
+CONTENT"), and that credit is in each file too.
+
+**Changes made for the game** (`tools/real-models/scp.py`, settings in `tools/real-models/scp_models.py`):
+every texture read per vertex at 64 px and snapped to a small palette (no image ships, no lettering or logo
+survives); scaled uniformly to real size and turned to the game's axes; the guard (a rig drawn in a T-pose
+with no clips) posed at ease, arms down, and baked static; SCP-096, SCP-106 and SCP-939 keep their skin and
+the clips the game plays (096 sitting, its red streaks turned to grey so nothing reads as blood, 106 walking, idle and rising, 939 walking and idle), resampled to
+10-12 frames a second, unused joints left out; the crate (no textures in the download) painted by part; the
+gunship's rotors kept as parts of their own (the game draws its own rotor on their hubs). Fetched only when
+Last Flight Out is flown, never precached.
+
+| File | Model | Creator | Source |
+|---|---|---|---|
+| `real/scp/scp-173.glb` | "SCP-173" | ThatJamGuy | https://sketchfab.com/3d-models/e4ef798fb0284b31bf90bad0d3bc7fc8 |
+| `real/scp/scp-096.glb` | "SCP-096" | ThatJamGuy | https://sketchfab.com/3d-models/86f6620d460945ef9992ea19126c675e |
+| `real/scp/scp-106.glb` | "SCP-106" | ThatJamGuy | https://sketchfab.com/3d-models/21296abb0a224acea2bce6cdd6005289 |
+| `real/scp/scp-682.glb` | "Scp 682" | cg097 | https://sketchfab.com/3d-models/effff1cd246542919a0aad70eaad8bc5 |
+| `real/scp/scp-939.glb` | "SCP-939" | ThatJamGuy | https://sketchfab.com/3d-models/1b99ae814fad47ebb558076e8b5beb49 |
+| `real/scp/guard.glb` | "SCP Foundation Guard" | ThatJamGuy | https://sketchfab.com/3d-models/11134bf497ba46eba645274511ff14f7 |
+| `real/scp/hazmat.glb` | "Hazmat (SCP Containment Breach)" | SCPGames | https://sketchfab.com/3d-models/6361b4474c9b4e65b88b23cda4640a7c |
+| `real/scp/apache.glb` | "Apache (SCP Containment Breach)" | SCPGames | https://sketchfab.com/3d-models/aafe3d3091d44412ad710068a9b99b5d |
+| `real/scp/crate-173.glb` | "SCP 173 Box (SCP Containment Breach)" | SCPGames | https://sketchfab.com/3d-models/48ecf48e25884d11876d58cd35f8f4b7 |
+| `real/scp/clipboard.glb` | "Clipboard (SCP Containment Breach)" | SCPGames | https://sketchfab.com/3d-models/f26829100fcc45de99e2b99385ef9bc9 |
+
 ## Scenery models (CC0 1.0) — `scenery/`
 
 Every file in `scenery/` is a derivative of a model published by Poly Haven

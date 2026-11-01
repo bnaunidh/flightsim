@@ -198,6 +198,14 @@ ok('no light is added to the scene for them (a new light recompiles every materi
 ok('the Speech voice setting is saved, default automatic', /atcSpeechVoice: 'auto'/.test(read('src/core/storage.js')));
 ok('Settings lists the device voices under Speech voice', /data-set="atcSpeechVoice"/.test(read('src/ui/menus.js')) && /fillSpeechVoices/.test(read('src/ui/menus.js')));
 ok('the game hands the choice to the radio', /this\.audio\.radio\.speechVoice = this\.settings\.atcSpeechVoice \|\| 'auto'/.test(read('src/main.js')));
+{
+  // The late voice list (Chrome's voiceschanged) once threw "settings is not defined" every time it arrived.
+  const m = read('src/ui/menus.js');
+  const hook = m.slice(m.indexOf("addEventListener('voiceschanged'"), m.indexOf("addEventListener('voiceschanged'") + 400);
+  const sync = m.slice(m.indexOf('syncSettings(settings) {'), m.indexOf('syncSettings(settings) {') + 600);
+  ok('the late voice list refills without touching a name it cannot see', !/\bsettings\b/.test(hook.split('}, 0)')[0].replace(/_settingsSeen/g, '')));
+  ok('...and syncSettings hands it the saved choice first', /this\._settingsSeen = settings;\s*this\.fillSpeechVoices\(s\)/.test(sync));
+}
 
 console.log(`\nvoice-alarms: ${n - fails}/${n} passed`);
 process.exit(fails ? 1 : 0);
