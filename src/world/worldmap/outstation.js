@@ -30,7 +30,9 @@ import { styleOf } from './personas.js';
 import * as LOOK from './field-look.js';
 
 /** The share of a town's buildings built at each tier (the World Map's towns are all built at load). */
-export const TOWN_SHARE = Object.freeze({ low: 0.45, medium: 0.7, high: 1, ultra: 1.15 });
+// High 0.85 (was 1) since the sea came in to ~200 km (2026-10-31): one more village, and the World Map's memory over
+// Kestrel's is held under the school-Chromebook ceiling (world-preview.browser.js 'memory after the flying is bounded').
+export const TOWN_SHARE = Object.freeze({ low: 0.45, medium: 0.7, high: 0.85, ultra: 1 });
 
 /** How far away each piece is still drawn, by graphics quality. */
 export const SHOW_RANGE = Object.freeze({ low: 14000, medium: 20000, high: 26000, ultra: 32000 });

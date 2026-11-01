@@ -72,9 +72,10 @@ function smoothstep(a, b, x) {
 /** How cold (0..1) and how tropical (0..1) the world is at this z (north is -z). */
 export function climateAt(z) {
   return {
-    // The 240 km sea (tools/worldmap/world-plan.mjs WORLD_SCALE 0.6): the bands were -92..-112 km and 45..62 km at 400.
-    cold: smoothstep(-55000, -67000, z),
-    tropical: smoothstep(27000, 37000, z),
+    // The ~205 km sea (tools/worldmap/world-plan.mjs placeXZ): between the Sound and the Skerries, and the Sound and
+    // the Sunstring and the Sands, as -92..-112 km and 45..62 km were on the 400 km sea.
+    cold: smoothstep(-46000, -56000, z),
+    tropical: smoothstep(21000, 27000, z),
   };
 }
 

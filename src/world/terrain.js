@@ -21,6 +21,7 @@ import {
 } from '../render/textures.js';
 import { cloudShadow } from './clouds.js';
 import { RENDER_ORIGIN } from '../render/render-origin.js';
+import { SNOW_COVER } from '../render/surfaces.js';
 
 /**
  * Airport geometry. Heading 090 means the runway points east (+X).
@@ -2514,6 +2515,8 @@ export function makeTerrainMaterial(quality = 'high') {
     // Snow line. Off by default — a start height above anything on the map
     // costs one compare per fragment and changes nothing.
     shader.uniforms.uSnow = { value: new THREE.Vector2(...(tint.snow || [99999, 99999])) };
+    // Snow lying from the weather (render/surfaces.js updateSurfaces), on every map.
+    shader.uniforms.uSnowCover = SNOW_COVER;
     shader.uniforms.uSeaCut = SEA_CUT;
 
     shader.vertexShader = shader.vertexShader
@@ -2540,6 +2543,7 @@ export function makeTerrainMaterial(quality = 'high') {
          uniform vec3 uTintRock;
          uniform vec3 uShallow;
          uniform vec2 uSnow;
+         uniform float uSnowCover;
          uniform float uSeaCut;`
       )
       .replace(
@@ -2588,6 +2592,8 @@ export function makeTerrainMaterial(quality = 'high') {
         // so it follows the terrain instead of drawing a contour ring, and
         // steep faces keep their rock — snow does not sit on a cliff.
         float snow = smoothstep(uSnow.x, uSnow.y, vGroundY + (tint - 0.5) * 90.0);
+        // Snow from the weather lies on everything above the tide line, thinnest where the splat noise is low.
+        snow = max(snow, uSnowCover * smoothstep(0.5, 3.0, vGroundY) * mix(0.75, 1.0, tint));
         snow *= 1.0 - vBlend.z * 0.55;
         blended.rgb = mix(blended.rgb, vec3(0.93, 0.95, 0.99), snow);
         diffuseColor *= blended;

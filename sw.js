@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v76.2';
+const CACHE_VERSION = 'island-flight-v76.3';
 
 const PRECACHE = [
   './',
@@ -683,9 +683,22 @@ self.addEventListener('install', (event) => {
           console.warn('[sw] could not precache', url, err);
         }
       });
-      self.skipWaiting();
+      /*
+       * No skipWaiting here (the owner, 2026-10-31: "fix the double loading
+       * screen"). Taking over at once made the open page reload for the new
+       * version, so you saw the whole loading screen twice. A new version now
+       * WAITS: the page offers "Update now" on the menu (main.js), and the
+       * next time the game is opened it is switched to in the first instant,
+       * before the long load (index.html). A first visit has no old worker,
+       * so it is active at once anyway.
+       */
     })()
   );
+});
+
+/** "Switch to me now": from the page, at boot (index.html) or from the menu's Update now (main.js). */
+self.addEventListener('message', (event) => {
+  if (event.data === 'skip-waiting') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {

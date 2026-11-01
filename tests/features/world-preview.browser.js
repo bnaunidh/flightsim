@@ -589,15 +589,15 @@ export async function check(sim, r, say = () => {}) {
         if (fl) maxTrees = Math.max(maxTrees, fl.stats().drawn);
       };
       // Mach 2 at 150 m over the mainland, west to east.
-      // (The 240 km sea: the mainland is round x -90 km now; still 20 km of it.)
-      const m2 = await carry(sim, { x: -108000, z: 6000 }, { x: -88000, z: 6000 }, { speed: 680, altM: 150, agl: true, onFrame: track });
+      // (The ~205 km sea: the mainland's middle is about (-75, 6) km now; still 20 km of it.)
+      const m2 = await carry(sim, { x: -88000, z: 4500 }, { x: -68000, z: 4500 }, { speed: 680, altM: 150, agl: true, onFrame: track });
       // Airliner cruise over the open water of the longest leg (Sandmere to Farwatch).
       const sd = wp.airports().find((a) => a.id === 'sandmere');
       const fw = wp.airports().find((a) => a.id === 'farwatch');
-      // On the 240 km sea the leg crosses the Sound: its middle passes 8 km from Haven. This 20 km stretch (about what
-      // the 400 km sea's 5% was) stays 45 km or more from every field, so it is open water as the check means.
+      // On the smaller sea the leg crosses the Sound (its middle passes near Haven). This 21 km stretch (about what
+      // the 400 km sea's 5% was) stays 30 km or more from every field, so it is open water as the check means.
       const k0 = 0.725;
-      const k1 = 0.809;
+      const k1 = 0.837;
       const p0 = { x: sd.x + (fw.x - sd.x) * k0, z: sd.z + (fw.z - sd.z) * k0 };
       const p1 = { x: sd.x + (fw.x - sd.x) * k1, z: sd.z + (fw.z - sd.z) * k1 };
       const cr = await carry(sim, p0, p1, { speed: 250, altM: 3350, onFrame: track });

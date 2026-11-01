@@ -114,7 +114,7 @@ export function placeProps(T, D) {
       if (s > 0.45) continue;
       coverAt(x, z, h, s, false, cov);
       if (cov[5] > 0.5 && R() < 0.5 && out.boulder.length < 900) out.boulder.push([x, h - 0.3, z, R() * 6.283, 1.8 + R() * 3.2]);
-      else if (z > 66000 && cov[4] < 0.3 && cov[3] < 0.3 && R() < 0.35 && out['quiver-tree'].length < 500) out['quiver-tree'].push([x, h - 0.1, z, R() * 6.283, 2.4 + R() * 1.4]);
+      else if (z > 58000 && cov[4] < 0.3 && cov[3] < 0.3 && R() < 0.35 && out['quiver-tree'].length < 500) out['quiver-tree'].push([x, h - 0.1, z, R() * 6.283, 2.4 + R() * 1.4]);
     }
   }
   // Piers off the harbour towns: from the shore nearest the town, out to sea.

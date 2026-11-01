@@ -9,8 +9,9 @@
  * that CAN land: a playable preview of the open world, behind its own card in
  * the map picker, that replaces nothing.
  *
- * HOW IT FITS IN ONE FRAME. The sea is a 240 km box round the hub (wave 17
- * made it 400 km from 120; the owner had it brought in to 240 on 2026-10-31). The simulation is in JavaScript numbers, float64, so it
+ * HOW IT FITS IN ONE FRAME. The sea is a 200 km box round the hub (wave 17
+ * made it 400 km from 120; on 2026-10-31 the owner had it brought in so the
+ * longest trip is about 15 minutes). The simulation is in JavaScript numbers, float64, so it
  * needs no rebase. Drawing does: three.js composes each mesh's matrix with
  * the camera's in doubles and every tile, field and tree pool sits at its own
  * local origin, but the shaders' world-space sums are float32, 1.6 cm a step
@@ -113,7 +114,7 @@ export function makeDef(P) {
     name: '',
     subtitle: '',
     blurb:
-      `A 240 km sea in six regions — a mainland with mountains and a capital, an archipelago, cold northern rocks, ` +
+      `A 200 km sea in six regions — a mainland with mountains and a capital, an archipelago, cold northern rocks, ` +
       `flat sandy cays and a remote outpost — with ${P.airports.length} airports from grass strips to long-haul internationals. ` +
       'A preview of the World Map: the ground streams in as you fly.',
     difficulty: 2,
@@ -329,10 +330,10 @@ export function checkNetwork(D = PREVIEW) {
     x0 = Math.min(x0, i.cx - i.radius); x1 = Math.max(x1, i.cx + i.radius);
     z0 = Math.min(z0, i.cz - i.radius); z1 = Math.max(z1, i.cz + i.radius);
   }
-  // 240 km since 2026-10-31 (the owner: "make mega map 240 km"; it was 400).
-  add('a sea about 240 km across (210 km or more each way)', x1 - x0 >= 210000 && z1 - z0 >= 210000,
+  // About 200 km since 2026-10-31 (the owner: the longest trip about 15 minutes; it was 400, then 240).
+  add('a sea about 200 km across (180 km or more each way)', x1 - x0 >= 180000 && z1 - z0 >= 180000,
     `${((x1 - x0) / 1000).toFixed(0)} x ${((z1 - z0) / 1000).toFixed(0)} km`);
-  add('everything inside 125 km of the middle on both axes', Math.max(-x0, x1, -z0, z1) <= 125000,
+  add('everything inside 110 km of the middle on both axes', Math.max(-x0, x1, -z0, z1) <= 110000,
     `furthest coast ${(Math.max(-x0, x1, -z0, z1) / 1000).toFixed(1)} km`);
   const regions = D.regions || [];
   const withFields = regions.filter((g) => A.some((a) => a.region === g.id));
@@ -348,10 +349,10 @@ export function checkNetwork(D = PREVIEW) {
       minPair = Math.min(minPair, d);
     }
   }
-  add('fields spaced apart (12 km or more)', minPair >= 12000, `closest pair ${(minPair / 1000).toFixed(1)} km`);
+  add('fields spaced apart (10 km or more)', minPair >= 10000, `closest pair ${(minPair / 1000).toFixed(1)} km`);
   const hub = A[0];
-  const short = A.slice(1).filter((b) => legM(hub, b) >= 12000 && legM(hub, b) <= 30000);
-  add('short hops from the hub (12-30 km, 4-8 min in a Skylark)', short.length >= 2,
+  const short = A.slice(1).filter((b) => legM(hub, b) >= 10000 && legM(hub, b) <= 30000);
+  add('short hops from the hub (10-30 km, 3-8 min in a Skylark)', short.length >= 2,
     short.map((b) => `${b.code} ${(legM(hub, b) / 1000).toFixed(1)} km`).join(', '));
   const big = A.filter((a) => a.length >= 3000 && a.halfWidth * 2 >= 45 && a.kind === 'hub');
   add('two or three big internationals (3,000 m by 45 m or more: A380, 747, C-17)', big.length >= 2 && big.length <= 3,
@@ -363,12 +364,13 @@ export function checkNetwork(D = PREVIEW) {
   add('light-aircraft strips (four or more, two or more of them grass or gravel)', strips.length >= 4 && unpaved.length >= 2,
     strips.map((a) => `${a.code} ${a.length} m ${a.surface || 'tarmac'}`).join(', '));
   const remote = A.filter((a) => a.kind === 'remote');
-  const remoteOk = remote.filter((r) => r.length >= 2800 && A.every((b) => b === r || legM(r, b) >= 80000));
-  add('a remote long-haul-only field (2,800 m, 80 km or more from every other field)', remote.length >= 1 && remoteOk.length === remote.length,
+  const remoteOk = remote.filter((r) => r.length >= 2800 && A.every((b) => b === r || legM(r, b) >= 60000));
+  add('a remote long-haul-only field (2,800 m, 60 km or more from every other field)', remote.length >= 1 && remoteOk.length === remote.length,
     remote.map((r) => `${r.code} ${r.length} m, nearest ${(Math.min(...A.filter((b) => b !== r).map((b) => legM(r, b))) / 1000).toFixed(0)} km`).join(', ') || 'none');
   const airliner = (c) => byCode(c).length >= 1600;
   const longest = pairs.filter((p) => airliner(p.a) && airliner(p.b)).sort((a, b) => b.km - a.km)[0];
-  add('a long haul of 180 km or more between airliner fields', longest && longest.km >= 180, longest ? `${longest.a}-${longest.b} ${longest.km.toFixed(1)} km` : 'none');
+  // The longest trip: about 15 minutes gate to gate (the owner), so 150 to 200 km.
+  add('a long haul of 150 to 200 km between airliner fields (about 15 minutes)', longest && longest.km >= 150 && longest.km <= 200, longest ? `${longest.a}-${longest.b} ${longest.km.toFixed(1)} km` : 'none');
   const pads = (D.heliports || []);
   add('heliports away from the fields (three or more)', pads.length >= 3, pads.map((p) => `${p.name} (${p.kind})`).join(', '));
   const codes = new Set(A.map((a) => a.code));

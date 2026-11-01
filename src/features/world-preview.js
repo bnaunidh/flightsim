@@ -771,7 +771,7 @@ function buildCard(sim) {
     <div class="map-art wp-art" aria-hidden="true"><canvas width="360" height="200"></canvas><span class="wp-badge">PREVIEW</span></div>
     <div class="map-text">
       <h3>${WORLD_PREVIEW_TITLE}</h3>
-      <span class="map-sub">One 240 km sea · ${(PREVIEW.regions || []).length} regions · ${AIRPORTS.length} airports · ${PREVIEW.islands.length} islands</span>
+      <span class="map-sub">One 200 km sea · ${(PREVIEW.regions || []).length} regions · ${AIRPORTS.length} airports · ${PREVIEW.islands.length} islands</span>
       <span class="map-diff diff-2">●●○○○ Open sea</span>
       <p>${previewDef().blurb} The longest leg, ${longestLeg()}, is a proper long haul.</p>
       <div class="wp-picks" role="radiogroup" aria-label="Start at">${picks}</div>

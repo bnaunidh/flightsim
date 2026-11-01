@@ -3990,6 +3990,9 @@ class Game {
         console.info('[sw] new version installed — reloading');
         location.reload();
       });
+      // A new version that has downloaded is WAITING (sw.js no longer takes over by itself): offered on the menu,
+      // never forced, and switched to before the load the next time the game is opened (index.html).
+      navigator.serviceWorker.getRegistration().then((reg) => this.watchUpdate(reg)).catch(() => {});
       /*
        * The registration itself is deferred: installOffline(). The worker's
        * install fetches the whole game again (the precache, ~520 files), and
@@ -4050,6 +4053,58 @@ class Game {
    * the console. Safe to call any number of times, and a no-op where there is
    * no service worker (file://, the native app, ?dev=1).
    */
+  /**
+   * Watch a service-worker registration for a new version that has finished
+   * downloading and is waiting (the owner: "fix the double loading screen" —
+   * it used to take over at once and reload the page, so the loading screen
+   * ran twice). Once there is one, the menu offers it (offerUpdate).
+   */
+  watchUpdate(reg) {
+    if (!reg || reg.__islandWatched) return;
+    reg.__islandWatched = true;
+    const ready = () => {
+      if (reg.waiting && navigator.serviceWorker.controller) this.offerUpdate(reg);
+    };
+    ready();
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      if (w) w.addEventListener('statechange', () => w.state === 'installed' && ready());
+    });
+  }
+
+  /** "A new version is ready" on the menu, with Update now (switches and reloads) and Later. Never during a flight. */
+  offerUpdate(reg) {
+    this.updateWaiting = reg;
+    if (this._updateBar || typeof document === 'undefined') return;
+    const bar = document.createElement('div');
+    bar.className = 'update-ready';
+    bar.setAttribute('role', 'status');
+    bar.hidden = true;
+    bar.innerHTML = '<span>A new version is ready.</span><button type="button" class="update-now" data-update-now>Update now</button><button type="button" class="update-later" data-update-later>Later</button>';
+    document.body.appendChild(bar);
+    bar.querySelector('[data-update-now]').addEventListener('click', () => {
+      window.__leavingOnPurpose = true;
+      const w = this.updateWaiting && this.updateWaiting.waiting;
+      // The worker takes over, 'controllerchange' fires and the menu reloads onto the new version (setupPwa).
+      if (w) w.postMessage('skip-waiting');
+      else location.reload();
+    });
+    bar.querySelector('[data-update-later]').addEventListener('click', () => {
+      this._updateLater = true;
+      bar.hidden = true;
+    });
+    this._updateBar = bar;
+    this.syncUpdateBar();
+  }
+
+  /** Shown on the menu only (and not once Later was pressed). Writes only when it changes. */
+  syncUpdateBar() {
+    const bar = this._updateBar;
+    if (!bar) return;
+    const hide = this.state !== 'menu' || !!this._updateLater;
+    if (bar.hidden !== hide) bar.hidden = hide;
+  }
+
   installOffline(why = 'asked') {
     if (this.offlineInstalledAt) return this.offlineInstalledAt;
     if (!/^https?:$/.test(location.protocol)) return null;
@@ -4064,7 +4119,10 @@ class Game {
     console.info(`[sw] registering the offline copy (${why})`);
     navigator.serviceWorker
       .register('sw.js')
-      .then((reg) => reg.update())
+      .then((reg) => {
+        this.watchUpdate(reg);
+        return reg.update();
+      })
       .catch((err) => {
         console.warn('Offline support unavailable:', err);
       });
@@ -6883,6 +6941,7 @@ class Game {
         this.clock.getDelta();
         return;
       }
+      if (this._updateBar) this.syncUpdateBar();
       // An update that arrived mid-flight (setupPwa): loaded once you are back on the menu.
       if (this._reloadOnMenu && this.state === 'menu') {
         this._reloadOnMenu = false;

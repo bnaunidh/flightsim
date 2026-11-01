@@ -314,26 +314,57 @@ export const HELIPORTS = [
 ];
 
 /*
- * The sea's size (the owner, 2026-10-31: "make mega map 240 km"). The
- * positions above were laid out for a 400 km sea; WORLD_SCALE brings every
- * position in (fields, islands, region middles, the seeded boxes and chains,
- * the rigs and the rivers' sources) to a 240 km sea, every field within
- * 120 km of the middle. Sizes do not change: island radii and heights,
- * runway lengths, towns and their offsets, heliports placed `near` a field.
- * So the flying between places is shorter and the places are the same.
+ * The sea's size (the owner, 2026-10-31: "make mega map 240 km", then "the
+ * longest trip should be 15 min, u can choose the size"). The positions
+ * above were laid out for a 400 km sea. Two scales bring them in:
+ *
+ *   INNER   every region's own layout, its islands, fields, mountains,
+ *           rivers and roads relative to its middle (0.6: the 240 km sea,
+ *           which every rule and test passes; tighter than that the
+ *           mainland's rivers and roads lost their channels and bridges);
+ *   OUTER   how far each outer region's middle is from the hub (0.48; the
+ *           first value near 0.5 whose terrain passes every layout and
+ *           map test: the hills are noise in world space, so a region's
+ *           lakes, bridges and roundabouts change with where it sits).
+ *
+ * Haven Sound is the hub: it is scaled by INNER about Haven itself, so Haven
+ * stays at (0, 0). The sea is about 205 km across; the longest airliner leg
+ * about 191 km, some 15 minutes gate to gate at a 450 kt cruise. Sizes do
+ * not change: island radii and heights, runways, towns and their offsets.
  */
-export const WORLD_SCALE = 0.6;
-export const at = (v) => Math.round(v * WORLD_SCALE);
-for (const g of REGIONS) { g.cx = at(g.cx); g.cz = at(g.cz); }
-for (const a of AIRPORTS) { a.x = at(a.x); a.z = at(a.z); }
-for (const i of HAND) { i.cx = at(i.cx); i.cz = at(i.cz); }
-for (const f of FILL) {
-  if (f.box) f.box = f.box.map(at);
-  if (f.avoidBox) f.avoidBox = f.avoidBox.map(at);
-  if (f.chain) f.chain = f.chain.map(([x, z]) => [at(x), at(z)]);
-  if (f.spread) f.spread = at(f.spread);
+export const INNER = 0.6;
+export const OUTER = 0.48;
+const ANCHOR = Object.fromEntries(REGIONS.map((g) => [g.id, { x: g.cx, z: g.cz }]));
+/** A point of the 400 km plan, in the sea as it is now. */
+export function placeXZ(region, x, z) {
+  const a = ANCHOR[region] || { x: 0, z: 0 };
+  const k = region === 'sound' ? INNER : OUTER;
+  return [Math.round(a.x * k + (x - a.x) * INNER), Math.round(a.z * k + (z - a.z) * INNER)];
 }
-for (const h of HELIPORTS) if (Number.isFinite(h.x)) { h.x = at(h.x); h.z = at(h.z); }
+/** Which region an island of the plan belongs to (for the layout tool's per-island lists). */
+export function regionOfIsland(name) {
+  const i = HAND.find((h) => h.name === name);
+  return i ? i.region : 'sound';
+}
+for (const a of AIRPORTS) [a.x, a.z] = placeXZ(a.region, a.x, a.z);
+for (const i of HAND) [i.cx, i.cz] = placeXZ(i.region, i.cx, i.cz);
+for (const f of FILL) {
+  if (f.box) {
+    const [x0, z0] = placeXZ(f.region, f.box[0], f.box[2]);
+    const [x1, z1] = placeXZ(f.region, f.box[1], f.box[3]);
+    f.box = [x0, x1, z0, z1];
+  }
+  if (f.avoidBox) {
+    const [x0, z0] = placeXZ(f.region, f.avoidBox[0], f.avoidBox[2]);
+    const [x1, z1] = placeXZ(f.region, f.avoidBox[1], f.avoidBox[3]);
+    f.avoidBox = [x0, x1, z0, z1];
+  }
+  if (f.chain) f.chain = f.chain.map(([x, z]) => placeXZ(f.region, x, z));
+  if (f.spread) f.spread = Math.round(f.spread * INNER);
+}
+for (const h of HELIPORTS) if (Number.isFinite(h.x)) [h.x, h.z] = placeXZ(h.region, h.x, h.z);
+// The region middles last (placeXZ reads the old ones).
+for (const g of REGIONS) [g.cx, g.cz] = placeXZ(g.id, g.cx, g.cz);
 
 export const PLAN = {
   seaFloor: -60,

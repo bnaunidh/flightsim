@@ -51,8 +51,9 @@ global.document = {
   }),
   body: { appendChild() {} },
 };
-// The sea was laid out for 400 km and brought in to 240 (tools/worldmap/world-plan.mjs WORLD_SCALE): fixed points scale with it.
-const WS = 0.6;
+// The sea was laid out for 400 km and brought in (tools/worldmap/world-plan.mjs placeXZ): fixed points of the plan move with it.
+const { placeXZ } = await import('../../tools/worldmap/world-plan.mjs');
+const P = (region, x, z) => placeXZ(region, x, z);
 const store = new Map();
 global.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
 global.window = global.window || { addEventListener() {} };
@@ -542,8 +543,10 @@ for (const r of PV.checkNetwork()) ok(`network: ${r.rule}`, r.pass, r.detail);
     const from = PV.airportById('sandmere');
     const to = PV.airportById('farwatch');
     const hop = PV.airportById('haven');
-    const wW = { x: -198000 * WS, z: 12000 * WS };
-    const wE = { x: -102000 * WS, z: 12000 * WS };
+    const [wWx, wWz] = P('westreach', -198000, 12000);
+    const [wEx, wEz] = P('westreach', -102000, 12000);
+    const wW = { x: wWx, z: wWz };
+    const wE = { x: wEx, z: wEz };
     const legs = [[from, to, 250, 11000], [wW, wE, 680, 150], [PV.airportById("marram"), hop, 120, 600]];
     let maxTiles = 0;
     let maxBytes = 0;
@@ -682,20 +685,22 @@ const WPF = await import(SRC + 'features/world-preview.js');
     hs.sort((a, b) => a - b);
     return { n, f: acc.map((v) => v / n), p10: hs[Math.floor(n * 0.1)], p50: hs[Math.floor(n * 0.5)], p90: hs[Math.floor(n * 0.9)], steep: steep / n };
   };
-  const main = stats(-170000 * WS, -130000 * WS, -5000 * WS, 35000 * WS);
+  const box = (region, x0, x1, z0, z1) => { const a = P(region, x0, z0); const b = P(region, x1, z1); return [a[0], b[0], a[1], b[1]]; };
+  const main = stats(...box('westreach', -170000, -130000, -5000, 35000));
   const line = (k, s) => `${k}: farm ${(s.f[3] * 100).toFixed(0)}%, forest ${(s.f[4] * 100).toFixed(0)}%, heath ${(s.f[5] * 100).toFixed(0)}%, marsh ${(s.f[6] * 100).toFixed(0)}%, town ${(s.f[7] * 100).toFixed(1)}%, ground ${s.p10.toFixed(0)}/${s.p50.toFixed(0)}/${s.p90.toFixed(0)} m`;
   ok('the mainland is a patchwork, not a carpet: farmland, forest and heath each a real share; towns on it', main.f[3] > 0.15 && main.f[4] > 0.25 && main.f[5] > 0.03 && main.f[7] > 0.001, line('mainland', main));
   ok('the mainland has relief: rolling hills (the middle half spans 120 m or more), not one flat plain', main.p90 - main.p10 >= 120 && main.steep > 0.01, `${line('mainland', main)}, ${(main.steep * 100).toFixed(1)}% steeper than 15%`);
-  const north = stats(-50000 * WS, -34000 * WS, -146000 * WS, -130000 * WS);
-  const south = stats(104000 * WS, 113000 * WS, 83000 * WS, 92000 * WS);
+  const north = stats(...box('skerries', -50000, -34000, -146000, -130000));
+  const south = stats(...box('sunstring', 104000, 113000, 83000, 92000));
   ok('the climate by latitude: heath and rock in the cold north, little farming; the tropics farmed and wooded', north.f[5] > 0.35 && north.f[3] < 0.2 && south.f[3] + south.f[4] > 0.4,
     `${line('Eider Island', north)}; ${line('Frigate Island', south)}`);
   // Beaches of different widths: the sand band's top along the coast varies.
   let narrow = 0;
   let wide = 0;
   for (let i = 0; i < 400; i++) {
-    const x = -150000 * WS + Math.cos(i) * 23500;
-    const z = 12000 * WS + Math.sin(i) * 23500;
+    const [mx, mz] = P('westreach', -150000, 12000);
+    const x = mx + Math.cos(i) * 23500;
+    const z = mz + Math.sin(i) * 23500;
     const c = LC.coverAt(x, z, 6, 0.02, false, new Float32Array(8));
     if (c[0] > 0.6) wide++;
     else if (c[0] < 0.1) narrow++;
@@ -746,7 +751,8 @@ const WPF = await import(SRC + 'features/world-preview.js');
   const ctx = FL.floraContext(D);
   T.clearPlatforms();
   let best = { cell: null, trees: 0, cards: 0 };
-  for (const [ix, iz] of [[-44, 1], [-43, 3], [-44, 4], [-43, 1], [-40, 2]]) {
+  // The 400 km plan's forest cells (-73,2) (-72,5) (-74,6) (-71,1) (-66,3), where they are now.
+  for (const [ix, iz] of [[-73, 2], [-72, 5], [-74, 6], [-71, 1], [-66, 3]].map(([cx, cz]) => P('westreach', cx * FL.CELL, cz * FL.CELL).map((v) => Math.floor(v / FL.CELL)))) {
     const trees = FL.placeCell(T, ctx, ix, iz, 400);
     const cards = FL.placeCell(T, ctx, ix, iz, 2400, 'cards');
     const n = trees ? trees.length / 6 : 0;
@@ -804,7 +810,7 @@ const WPF = await import(SRC + 'features/world-preview.js');
     while (q.length) for (const m of q.shift().adj) if (!seen.has(m)) { seen.add(m); q.push(m); }
     return seen;
   };
-  const mainTowns = D.towns.filter((t) => Math.hypot(t.cx + 150000 * WS, t.cz - 12000 * WS) < 26000 || ['Aldermere', 'Highfold'].includes(t.name));
+  const mainTowns = D.towns.filter((t) => Math.hypot(t.cx - P('westreach', -150000, 12000)[0], t.cz - P('westreach', -150000, 12000)[1]) < 26000 || ['Aldermere', 'Highfold'].includes(t.name));
   const fromCap = reach(townNode(D.towns.find((t) => t.name === 'Aldermere')));
   const cut = mainTowns.filter((t) => !townNode(t).some((n) => fromCap.has(n)));
   ok('every town on the mainland is joined to the capital by road', mainTowns.length >= 7 && cut.length === 0, cut.map((t) => t.name).join(', ') || `${mainTowns.length} towns`);
@@ -1232,8 +1238,8 @@ function A_refresh() { A.refreshRunways(); }
     `camera at (${camGpu.x.toFixed(0)}, ${camGpu.z.toFixed(0)}), mesh at (${gpuWorld.x.toFixed(0)}, ${gpuWorld.z.toFixed(0)}), view matrix change ${worst.toExponential(1)}, restored ${back}`);
   // float32 at the furthest coast without and with the origin.
   const ulp = (v) => { const f = new Float32Array([v]); const i = new Int32Array(f.buffer); const g = new Float32Array(1); const j = new Int32Array(g.buffer); j[0] = i[0] + 1; return g[0] - f[0]; };
-  const edge = 125000;
-  ok('float32 steps: about a centimetre at the edge of the sea, under 0.5 mm with the origin', ulp(edge) > 0.005 && ulp(4096 * 0.71) < 0.0005, `${(ulp(edge) * 100).toFixed(2)} cm at 125 km, ${(ulp(4096 * 0.71) * 1000).toFixed(2)} mm at 2.9 km`);
+  const edge = 110000;
+  ok('float32 steps: about a centimetre at the edge of the sea, under 0.5 mm with the origin', ulp(edge) > 0.005 && ulp(4096 * 0.71) < 0.0005, `${(ulp(edge) * 100).toFixed(2)} cm at 110 km, ${(ulp(4096 * 0.71) * 1000).toFixed(2)} mm at 2.9 km`);
   RO.setRenderOrigin(null);
 }
 
@@ -1265,9 +1271,10 @@ function A_refresh() { A.refreshRunways(); }
   PV.setDeparture('haven');
   T.applyMap(def);
   const ctx = FL.floraContext(D);
-  const once = FL.placeCell(T, ctx, -37, 5, 80);
-  const twice = FL.placeCell(T, ctx, -37, 5, 80);
-  ok('a cell\'s trees are the same every time (seeded by the cell)', once && twice && once.length === twice.length && once.every((v, i) => v === twice[i]), `${once ? once.length / 6 : 0} trees in cell -37,5`);
+  const [tcx, tcz] = P('westreach', -62 * FL.CELL, 9 * FL.CELL).map((v) => Math.floor(v / FL.CELL));
+  const once = FL.placeCell(T, ctx, tcx, tcz, 80);
+  const twice = FL.placeCell(T, ctx, tcx, tcz, 80);
+  ok('a cell\'s trees are the same every time (seeded by the cell)', once && twice && once.length === twice.length && once.every((v, i) => v === twice[i]), `${once ? once.length / 6 : 0} trees in cell ${tcx},${tcz}`);
   // Plant every cell of a few islands in each region and check where they stood.
   const stats = {};
   const problems = [];

@@ -106,7 +106,39 @@
         return attempt().then(function (m) { record.ok = true; return m; });
       }
       window.__bootLoad = bootLoad;
-      bootLoad(function () { return import('./src/main.js'); }).catch(function () { /* said on screen */ });
+      /*
+       * One loading screen, not two (the owner: "fix the double loading
+       * screen"). A new version downloaded last time is waiting in the
+       * service worker (sw.js no longer takes over by itself). Switch to it
+       * now, in the first instant, before the game's long load — not after
+       * the menu is up, which reloaded the page and showed the whole loading
+       * screen again. Never holds the boot up for more than 2.5 s.
+       */
+      function switchToWaitingUpdate() {
+        var sw = navigator.serviceWorker;
+        if (!sw || !sw.controller || !/^https?:$/.test(location.protocol) || /[?&]dev\b/.test(location.search)) return Promise.resolve(false);
+        return sw.getRegistration().then(function (reg) {
+          if (!reg || !reg.waiting) return false;
+          var msg = document.getElementById('load-msg');
+          if (msg) msg.textContent = 'Updating to the new version…';
+          boot.updatedAtBoot = true;
+          return new Promise(function (resolve) {
+            var done = false;
+            sw.addEventListener('controllerchange', function () {
+              if (done) return;
+              done = true;
+              window.__leavingOnPurpose = true;
+              location.reload();
+            });
+            reg.waiting.postMessage('skip-waiting');
+            setTimeout(function () { if (!done) { done = true; resolve(false); } }, 2500);
+          });
+        }).catch(function () { return false; });
+      }
+      window.__switchToWaitingUpdate = switchToWaitingUpdate;
+      switchToWaitingUpdate().then(function () {
+        bootLoad(function () { return import('./src/main.js'); }).catch(function () { /* said on screen */ });
+      });
     })();
   </script>
 </body>

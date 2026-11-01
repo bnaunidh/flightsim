@@ -45,6 +45,18 @@ let tier = 'high';
 const glass = [];
 const wet = [];
 
+/**
+ * Lying snow, 0 none .. 1 white over (the owner, 2026-10-31: "runways are
+ * white" — in snowing weather the tarmac was lit as bright as the snow while
+ * the grass stayed summer green). Snow now settles on the ground
+ * (world/terrain.js reads this uniform) and the ploughed tarmac stays dark
+ * and wet. Shared by every terrain material, so no recompile.
+ */
+export const SNOW_COVER = { value: 0 };
+/** Seconds of steady snow to lie white, and to melt away once it stops. */
+export const SNOW_SETTLE_S = 60;
+export const SNOW_MELT_S = 300;
+
 /** Wetness of the field, 0 dry .. 1 soaked. */
 let wetness = 0;
 /** The low-sun glint factor, 0 .. 1, as last computed. */
@@ -311,9 +323,15 @@ export function updateSurfaces(weather, dt = 1 / 60) {
   const c = weather.cond;
   const el = weather.timeInfo ? weather.timeInfo.sunElev : 60;
 
-  // Wetness: soaks in about 30 s of real rain, dries over about 4 minutes.
-  const want = Math.max(0, Math.min(1, c.rain || 0));
+  // Wetness: soaks in about 30 s of real rain, dries over about 4 minutes. Falling snow wets the ploughed
+  // tarmac too (melting on it, ploughed off it): darker and a little glossy, a dark strip through the white.
+  const want = Math.max(0, Math.min(1, Math.max(c.rain || 0, (c.snow || 0) * 1.3)));
   const step = dt > 0 ? dt : 0;
+  // Lying snow: settles over about a minute of snow (a light fall lies thinner), melts over five once it stops.
+  const lie = Math.min(1, (c.snow || 0) * 1.7);
+  const sc = SNOW_COVER.value;
+  if (lie > sc) SNOW_COVER.value = Math.min(lie, sc + step / SNOW_SETTLE_S);
+  else if (lie < sc) SNOW_COVER.value = Math.max(lie, sc - step / SNOW_MELT_S);
   if (want > wetness) wetness = Math.min(want, wetness + step / 30);
   else if (want < wetness) wetness = Math.max(want, wetness - step / 240);
 
