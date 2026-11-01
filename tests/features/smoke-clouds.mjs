@@ -133,19 +133,24 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
 
   // The fade has no step in it: the most it changes from one frame (1/60 s) to the next is small.
   let worst = 0;
+  let worstBirth = 0;
   let gone = true;
   let hold = true;
   for (const s of seeds) {
     let prev = FX.puffFade(0, s);
     for (let a = 1 / 60; a < FX.puffLife(s) + 1; a += 1 / 60) {
       const f = FX.puffFade(a, s);
-      worst = Math.max(worst, Math.abs(f - prev));
+      // Birth (the first fadeIn seconds) is its own check below: smoke comes out of the nozzle quickly.
+      if (a > FX.SMOKE.fadeIn) worst = Math.max(worst, Math.abs(f - prev));
+      else worstBirth = Math.max(worstBirth, Math.abs(f - prev));
       prev = f;
     }
     gone = gone && FX.puffFade(FX.puffLife(s), s) === 0 && FX.puffFade(90, s) === 0;
     hold = hold && FX.puffFade(5, s) === 1 && FX.puffFade(FX.puffLife(s) * FX.SMOKE.thinFrom, s) > 0.99;
   }
-  ok('puff: its fade has no step in it (no pop at birth or at the end)', worst < 0.035, `largest change in one frame: ${worst.toFixed(4)}`);
+  // The owner, 2026-10-31 ("fix smoke trail"): at 0.8 s the fade-in hid the trail behind the Follow camera.
+  ok('puff: it comes out of the nozzle over a few frames, not in one (no pop at birth)', worstBirth < 0.16 && FX.SMOKE.fadeIn >= 0.15, `largest change in one frame at birth: ${worstBirth.toFixed(4)}`);
+  ok('puff: its fade has no step in it once out (no pop as it thins or at the end)', worst < 0.035, `largest change in one frame: ${worst.toFixed(4)}`);
   ok('puff: …it is whole for the first part of its life and gone, exactly, at the end', gone && hold);
   ok('puff: nothing before it is born', FX.puffFade(-1, 0.5) === 0 && FX.puffFade(NaN, 0.5) === 0);
 

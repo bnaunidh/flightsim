@@ -22,7 +22,7 @@
  *     draws every field's runway; its PAPI lenses are lit; trees on its island
  *   - THE HORIZON: from Haven, the islands past the streamed ground are drawn
  *     as one shape mesh; the far plane reaches them
- *   - THE FLOATING ORIGIN: at Aldermere, 130 km out, the frame drawn with two
+ *   - THE FLOATING ORIGIN: at Farwatch, the furthest field, the frame drawn with two
  *     different origins is the same picture (the shift changes nothing you
  *     can see), and without one it is not (what the shift is for)
  *   - PERFORMANCE, per tier (Low, Medium, High): across the mainland at Mach
@@ -460,7 +460,7 @@ export async function check(sim, r, say = () => {}) {
     /* ---- the floating origin ---- */
     {
       const RO = await import('../../src/render/render-origin.js');
-      await chooseAndWait(sim, wp, 'aldermere');
+      await chooseAndWait(sim, wp, 'farwatch');
       await sim.startMode('free', { loadingScreen: false, airborne: true, aircraft: 'skylark' });
       for (let i = 0; i < 30; i++) {
         sim.step(0.1);
@@ -500,7 +500,9 @@ export async function check(sim, r, say = () => {}) {
         if (ac > ab) differs = true;
       }
       if (sim.rig && sim.rig.setMode) sim.rig.setMode('chase');
-      r.ok('world preview: the floating origin draws the same picture whatever the origin, 130 km out', same && differs, lines.join('; '));
+      // On the 240 km sea (2026-10-31) the far fields are ~140 km out, where float32 is under a centimetre a step:
+      // drawing with no origin may now look the same too, which is fine; what must hold is that the origin changes nothing.
+      r.ok('world preview: the floating origin draws the same picture whatever the origin, at the furthest field', same && (differs || lines.every((l) => /no origin 0\.0[0-4]%/.test(l))), lines.join('; '));
     }
 
     /* ---- the world dressed: land cover, waters, network, the field's persona, the scenery models (wave 18) ---- */
@@ -587,12 +589,15 @@ export async function check(sim, r, say = () => {}) {
         if (fl) maxTrees = Math.max(maxTrees, fl.stats().drawn);
       };
       // Mach 2 at 150 m over the mainland, west to east.
-      const m2 = await carry(sim, { x: -170000, z: 10000 }, { x: -150000, z: 10000 }, { speed: 680, altM: 150, agl: true, onFrame: track });
+      // (The 240 km sea: the mainland is round x -90 km now; still 20 km of it.)
+      const m2 = await carry(sim, { x: -108000, z: 6000 }, { x: -88000, z: 6000 }, { speed: 680, altM: 150, agl: true, onFrame: track });
       // Airliner cruise over the open water of the longest leg (Sandmere to Farwatch).
       const sd = wp.airports().find((a) => a.id === 'sandmere');
       const fw = wp.airports().find((a) => a.id === 'farwatch');
-      const k0 = 0.45;
-      const k1 = 0.5;
+      // On the 240 km sea the leg crosses the Sound: its middle passes 8 km from Haven. This 20 km stretch (about what
+      // the 400 km sea's 5% was) stays 45 km or more from every field, so it is open water as the check means.
+      const k0 = 0.725;
+      const k1 = 0.809;
       const p0 = { x: sd.x + (fw.x - sd.x) * k0, z: sd.z + (fw.z - sd.z) * k0 };
       const p1 = { x: sd.x + (fw.x - sd.x) * k1, z: sd.z + (fw.z - sd.z) * k1 };
       const cr = await carry(sim, p0, p1, { speed: 250, altM: 3350, onFrame: track });

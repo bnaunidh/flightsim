@@ -235,11 +235,17 @@ export function placeLandmarks(a, persona, heightAt, carrier = null) {
       const p = coast(900, 6000, 8);
       if (p) out.push({ kind, ...p, h: 46, count: 3 });
     } else if (kind === 'escorts' && carrier) {
-      // Two escorts on the carrier's beam, a frigate's length of sea between them and the deck.
-      for (const [dx, dz] of [[-900, -1200], [900, 600]]) {
+      // Two escorts on the carrier's beam, a frigate's length of sea between them and the deck. The first two
+      // spots in deep water, the usual pair first: in the 240 km sea a carrier can stand nearer a shelf.
+      let n = 0;
+      for (const [dx, dz] of [[-900, -1200], [900, 600], [-900, 600], [900, -1200], [-1500, -300], [1500, -300], [0, 1500], [0, -1800]]) {
+        if (n >= 2) break;
         const x = carrier.x + dx;
         const z = carrier.z + dz;
-        if (heightAt(x, z) < -12 && heightAt(x, z - 80) < -12 && heightAt(x, z + 80) < -12) out.push({ kind: 'escort', x, z, y: 0, h: 30, faceDeg: 0 });
+        if (heightAt(x, z) < -12 && heightAt(x, z - 80) < -12 && heightAt(x, z + 80) < -12) {
+          out.push({ kind: 'escort', x, z, y: 0, h: 30, faceDeg: 0 });
+          n++;
+        }
       }
     }
   }

@@ -55,7 +55,7 @@ const CHECK_ONLY = process.argv.includes('--check');
 /* The plan: tools/worldmap/world-plan.mjs                             */
 /* ------------------------------------------------------------------ */
 
-const { PLAN } = await import('./world-plan.mjs');
+const { PLAN, WORLD_SCALE } = await import('./world-plan.mjs');
 
 /* ------------------------------------------------------------------ */
 /* Measuring                                                           */
@@ -154,12 +154,12 @@ function sceneryFor(airports, towns, heliports = []) {
     coastTreeHeight: 10,
     hillTrees: 420,
     hillTreeHeight: 13,
-    hillCentre: [-2400, 3900],
+    hillCentre: [-2400 * WORLD_SCALE, 3900 * WORLD_SCALE],
     hillRadius: 1500,
     hillBand: [50, 220],
     town: ht ? { cx: ht.cx, cz: ht.cz, radius: ht.radius, count: ht.count, minH: Math.max(2, ht.elev - 20), maxH: ht.elev + 40, ...(ht.towers ? { towers: ht.towers, towerMaxH: ht.towerMaxH } : {}) } : undefined,
-    lighthouse: [-22000, 7000],
-    deliveryPad: [14000, 16000],
+    lighthouse: [-22000 * WORLD_SCALE, 7000 * WORLD_SCALE],
+    deliveryPad: [14000 * WORLD_SCALE, 16000 * WORLD_SCALE],
     padTrees: 60,
     boats: 3,
     pads: [
@@ -237,9 +237,11 @@ const RIVER_SOURCES = [
   { island: 'Haven Island', x: -2500, z: -4300, w: [6, 16] },
   { island: 'Frigate Island', x: 110500, z: 84000, w: [6, 16] },
 ];
+// Laid out for the 400 km sea, like the plan; brought in by the same scale.
+for (const r of RIVER_SOURCES) { r.x = Math.round(r.x * WORLD_SCALE); r.z = Math.round(r.z * WORLD_SCALE); }
 const LAKE_TRIES = [
   { island: 'Westreach', n: 4, r: [520, 1150] },
-  { island: 'Farhold Island', n: 1, r: [380, 650] },
+  // Not Farhold Island since the sea came in to 240 km: its one lake spilled over its rim there.
   { island: 'Haven Island', n: 1, r: [260, 420] },
   { island: 'Eider Island', n: 1, r: [300, 520] },
   { island: 'Farwatch Island', n: 1, r: [300, 520] },

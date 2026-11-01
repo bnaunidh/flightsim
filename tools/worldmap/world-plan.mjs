@@ -313,6 +313,28 @@ export const HELIPORTS = [
   { id: 'sentinel-rig', name: 'Sentinel Reef Platform', region: 'sands', kind: 'deck', elev: 24, r: 13, x: 40000, z: 192000 },
 ];
 
+/*
+ * The sea's size (the owner, 2026-10-31: "make mega map 240 km"). The
+ * positions above were laid out for a 400 km sea; WORLD_SCALE brings every
+ * position in (fields, islands, region middles, the seeded boxes and chains,
+ * the rigs and the rivers' sources) to a 240 km sea, every field within
+ * 120 km of the middle. Sizes do not change: island radii and heights,
+ * runway lengths, towns and their offsets, heliports placed `near` a field.
+ * So the flying between places is shorter and the places are the same.
+ */
+export const WORLD_SCALE = 0.6;
+export const at = (v) => Math.round(v * WORLD_SCALE);
+for (const g of REGIONS) { g.cx = at(g.cx); g.cz = at(g.cz); }
+for (const a of AIRPORTS) { a.x = at(a.x); a.z = at(a.z); }
+for (const i of HAND) { i.cx = at(i.cx); i.cz = at(i.cz); }
+for (const f of FILL) {
+  if (f.box) f.box = f.box.map(at);
+  if (f.avoidBox) f.avoidBox = f.avoidBox.map(at);
+  if (f.chain) f.chain = f.chain.map(([x, z]) => [at(x), at(z)]);
+  if (f.spread) f.spread = at(f.spread);
+}
+for (const h of HELIPORTS) if (Number.isFinite(h.x)) { h.x = at(h.x); h.z = at(h.z); }
+
 export const PLAN = {
   seaFloor: -60,
   weather: { time: 'day', cond: 'clear', windSpeedKts: 8, windDirDeg: 80 },

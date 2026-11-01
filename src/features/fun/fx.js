@@ -34,23 +34,26 @@ const fogUniforms = () => THREE.UniformsUtils.clone(THREE.UniformsLib.fog);
 
 export const SMOKE = {
   /** Puffs in the pool. A full tank at the highest rate is about 900; this holds a minute and a half of smoking and refilling. */
-  pool: 2400,
+  pool: 3600,
   /** A puff lasts this long (seconds); each one a little differently, so the end is a thinning and not an edge. */
   lifeMin: 60,
   lifeMax: 84,
-  /** Metres across at the tail. */
-  size0: 3.0,
+  /** Metres across at the tail. (3 m read as a string of beads behind a fast aeroplane: the owner, "fix smoke trail".) */
+  size0: 4.5,
   /** How many times bigger than that it ends up. */
   growMin: 3,
   growMax: 6,
-  /** Seconds to fade in (the first moments behind the tail). */
-  fadeIn: 0.8,
+  /**
+   * Seconds to fade in (the first moments behind the tail). Was 0.8: 44 m behind a Skylark, which is behind
+   * the Follow camera, so from the view you fly in the smoke never seemed to come out of the aeroplane.
+   */
+  fadeIn: 0.18,
   /** The fraction of its life at which a puff starts to thin away. */
   thinFrom: 0.4,
   /** Puffs a second at most. */
-  rate: 45,
+  rate: 70,
   /** Metres between puffs when the aeroplane is moving; slower than that, fewer (a hovering helicopter does not pile up a ball). */
-  spacing: 1.4,
+  spacing: 0.9,
   /** The share of the full rate that is always laid, even when hovering. */
   minRate: 0.3,
   /** Most puffs laid in one frame (a very slow frame must not dump a hundred). */
@@ -180,7 +183,9 @@ export class SmokeTrail {
           float fin = smoothstep(0.0, ${glf(SMOKE.fadeIn)}, age);
           float fout = 1.0 - smoothstep(${glf(SMOKE.thinFrom)}, 1.0, k);
           // Thin right next to the lens, so the trail you are chasing never becomes a white wall across the screen.
-          float nearFade = smoothstep(6.0, 40.0, dist);
+          // From 4 m, full by 16 m: it used to start at 40 m, which hid the whole trail behind the aeroplane in the
+          // Follow view (the camera is about 25 m back), so the smoke you had turned on was never seen.
+          float nearFade = smoothstep(4.0, 16.0, dist);
           vA = ${glf(SMOKE.alpha)} * aCol.a * fin * fout * nearFade * small * small * big;
           vRot = aSeed * 37.0 + age * 0.03 * (s3 - 0.5);
           vK = k;
