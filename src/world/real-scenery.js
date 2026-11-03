@@ -30,7 +30,10 @@ const SF = 'https://sketchfab.com/3d-models/';
  */
 export const REAL_SCENERY = {
   'tree-palm': { file: 'tree-palm.glb', leaf: 'tree-palm-leaf.webp', title: 'Coconut Palm', author: 'evolveduk (@evolveduk)', url: SF + '26e787f2ff2e4c0fb004c3b0210805a3', used: 'Palm trees, close up' },
-  'tree-pine': { file: 'tree-pine.glb', leaf: 'tree-pine-leaf.webp', title: 'Pine Tree', author: 'evolveduk (@evolveduk)', url: SF + 'd45218a3fab349e5b1de040f29e7b6f9', used: 'Pines and firs, close up' },
+  // leafTint: the needles multiplied (linear) to the game's own firs' green (scenery.js conifer: sRGB 0.13-0.17,
+  // 0.28-0.34, 0.17-0.20), so the near pines are not paler and yellower than the far firs on the boreal maps.
+  // The picture's needles average linear (0.135, 0.181, 0.072) after the model's vertex colour; the firs (0.020, 0.080, 0.029).
+  'tree-pine': { file: 'tree-pine.glb', leaf: 'tree-pine-leaf.webp', leafTint: [0.148, 0.439, 0.403], title: 'Pine Tree', author: 'evolveduk (@evolveduk)', url: SF + 'd45218a3fab349e5b1de040f29e7b6f9', used: 'Pines and firs, close up' },
   'tree-birch': { file: 'tree-birch.glb', leaf: 'tree-birch-leaf.webp', title: 'Birch tree', author: 'evolveduk (@evolveduk)', url: SF + 'aa842dffd9654d33b8b91170ce83c172', used: 'Birches, close up' },
   'tree-oak': { file: 'tree-oak.glb', leaf: 'tree-oak-leaf.webp', title: 'Oak tree', author: 'massive-graphisme (@greg-l)', url: SF + '3dc59560f2d24345bdbe65c44636453b', used: 'Broadleaf trees, close up' },
   // The airport's fire station; the air base's guard post, watchtower and garage (one pack).
@@ -125,13 +128,17 @@ export function loadRealScenery(id) {
         if (leaf || (src && src.alphaTest > 0)) {
           m.side = THREE.DoubleSide;
           m.alphaTest = src.alphaTest || 0.42;
-          m.color.setRGB(0.36, 0.5, 0.26); // until (or unless) the picture arrives: a plain leaf green
+          // Until (or unless) the picture arrives: a plain leaf green (a pine: the firs' own).
+          if (REAL_SCENERY[id].leafTint) m.color.setRGB(0.023, 0.092, 0.033);
+          else m.color.setRGB(0.36, 0.5, 0.26);
           if (leaf) {
             jobs.push(
               leafTexture(realSceneryUrl(id, leaf)).then((t) => {
                 if (!t) return;
                 m.map = t;
-                m.color.setRGB(1, 1, 1);
+                const tint = REAL_SCENERY[id].leafTint;
+                if (tint) m.color.setRGB(tint[0], tint[1], tint[2]);
+                else m.color.setRGB(1, 1, 1);
                 m.needsUpdate = true;
               })
             );

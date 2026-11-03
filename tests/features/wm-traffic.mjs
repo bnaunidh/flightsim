@@ -32,6 +32,12 @@
  * airspace at 30-150 m/s: never within 1 km and 200 m of you, and never
  * closer than the 300 m vertical standard (the closest found is reported).
  *
+ * FROM EACH OTHER: a departure right behind another off the same runway
+ * waits; an hour of traffic (Ultra twice, High, Medium, Low) with nobody
+ * else about never closer than 0.4 of 1.5 km / 300 m to each other, and
+ * hardly ever inside 1 km / 200 m (none below Ultra). Fails on v76.7 (they
+ * kept apart from you only: departures appeared on top of each other).
+ *
  * Fails on the old code: there is no traffic (the module does not exist).
  */
 global.document = {
@@ -621,6 +627,57 @@ function onTrack(c, secs, P, along = 0, dy = 0) {
   }
   ok('speed: 250 kt below 10,000 ft (slowed before the descent gets there), faster above', over === 0 && fastHigh > 0,
     `${over} samples over${worstAt ? ` (worst ${Math.round(worst * 1.94384)} kt, ${worstAt})` : ''}; ${fastHigh} samples faster than 270 kt above FL165`);
+}
+
+/* ------------------------------------------------------------------ */
+/* From each other                                                     */
+/* ------------------------------------------------------------------ */
+
+{
+  // A departure right behind another off the same runway waits (it used to appear on top of the first).
+  const sim = new TP.TrafficSim({ tier: 'ultra', ground, rand: TP.makeRand(31), endpoints: E, windDirDeg: 80, n: 0 });
+  const P = { x: -150000, y: 3000, z: -150000, vx: 0, vy: 0, vz: 0 };
+  const ctx = { player: P, cam: P, windDirDeg: 80 };
+  const pr = pairs.jet[0];
+  const a = sim.spawn(ctx, 'hidden', { catId: 'jet', pair: pr });
+  const b = sim.spawn(ctx, 'hidden', { catId: 'jet', pair: pr });
+  const d = a && b ? Math.hypot(a.x - b.x, a.z - b.z) : null;
+  ok('from each other: a departure right behind another off the same runway waits', !!a && (!b || d > TP.SEP_H * 2 || Math.abs(a.y - b.y) > TP.SEP_V * 2),
+    a ? (b ? `the second appeared ${Math.round(d)} m from the first` : `the second waited (${sim.stats.delayed} delayed)`) : 'the first did not spawn');
+}
+
+{
+  // A sky with nobody in it but the traffic (you 200 km away), an hour each: they keep apart from each other.
+  const runs = [['ultra', 11], ['ultra', 23], ['high', 3], ['medium', 4], ['low', 5]];
+  const out = [];
+  let bad = 0;
+  for (const [tier, seed] of runs) {
+    const sim = new TP.TrafficSim({ tier, ground, rand: TP.makeRand(seed), endpoints: E, windDirDeg: 80 });
+    const P = { x: -150000, y: 3000, z: -150000, vx: 0, vy: 0, vz: 0 };
+    const ctx = { player: P, cam: P, windDirDeg: 80 };
+    sim.populate(ctx);
+    let worst = Infinity;
+    const close = new Set();
+    for (let t = 0; t < 3600; t += 0.25) {
+      sim.step(0.25, ctx);
+      const L = sim.list.filter((c) => !c.gone && !c.knocked && !c.onGround && !(c.state === 'fly' && c.s >= c.plan.sG));
+      for (let i = 0; i < L.length; i++) {
+        for (let j = i + 1; j < L.length; j++) {
+          const p = L[i];
+          const q = L[j];
+          const dh = Math.hypot(p.x - q.x, p.z - q.z);
+          const dv = Math.abs(p.y - q.y);
+          const sep = Math.max(dh / TP.SEP_H, dv / TP.SEP_V);
+          if (sep < worst) worst = sep;
+          if (dh < 1000 && dv < 200) close.add(`${p.id}/${q.id}`);
+        }
+      }
+    }
+    const allow = tier === 'ultra' ? 6 : 0;
+    if (worst < 0.4 || close.size > allow) bad++;
+    out.push(`${tier}: ${close.size} pairs inside 1 km / 200 m (closest ${worst.toFixed(2)} of the standard), ${sim.stats.tcas} level changes, ${sim.stats.delayed} departures waited`);
+  }
+  ok('from each other: an hour of traffic, never closer than 0.4 of 1.5 km / 300 m, hardly ever inside 1 km / 200 m (none below Ultra)', bad === 0, out.join('; '));
 }
 
 /* ------------------------------------------------------------------ */

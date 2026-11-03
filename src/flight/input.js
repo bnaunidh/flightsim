@@ -781,10 +781,7 @@ export class Input {
       if (this.mapOpen) return;
       const dx = e.movementX || 0;
       const dy = e.movementY || 0;
-      // Holding the right button looks around — but only when free look is
-      // actually on. It used to work regardless, so with the setting off a
-      // right-drag still swung your head, which is precisely the "free look is
-      // on even though it should be off" complaint.
+      // Holding the right button looks around, only with free look on.
       if ((this.freeLook && (this.rightDown || !this.mouse.locked))) {
         this.lookYaw = clamp(this.lookYaw - dx * 0.0035, -2.4, 2.4);
         this.lookPitch = clamp(this.lookPitch - dy * 0.0035, -1.0, 0.75);
@@ -833,6 +830,12 @@ export class Input {
     window.addEventListener('mousedown', this._onMouseDown);
     window.addEventListener('mouseup', this._onMouseUp);
     this.dom.addEventListener('contextmenu', this._onContext);
+    // Mouse flying: a click on the sky (the canvas, only under the pointer in a flight) captures the pointer.
+    this._onSkyClick = (e) => {
+      if (!this.mouseEnabled || e.button !== 0) return;
+      this.lockPointer();
+    };
+    this.dom.addEventListener('click', this._onSkyClick);
     window.addEventListener('pointerdown', this._onLookDown, { passive: true });
     window.addEventListener('pointermove', this._onLookMove, { passive: true });
     window.addEventListener('pointerup', this._onLookUp, { passive: true });
@@ -1081,15 +1084,27 @@ export class Input {
     return false;
   }
 
+  // Not captured here: this is called from Settings, where it hid the cursor. A sky click captures it (_onSkyClick).
   requestMouseFlying(on) {
     this.mouseEnabled = on;
-    if (on && this.dom.requestPointerLock) {
-      this.dom.requestPointerLock();
-    } else if (!on && document.exitPointerLock && document.pointerLockElement) {
+    if (!on && document.exitPointerLock && document.pointerLockElement) {
       document.exitPointerLock();
     }
     this.mouse.x = 0;
     this.mouse.y = 0;
+  }
+
+  /** Capture the pointer; a refused capture is no error (the mouse still flies). */
+  lockPointer() {
+    if (!this.dom || typeof this.dom.requestPointerLock !== 'function') return false;
+    if (typeof document !== 'undefined' && document.pointerLockElement === this.dom) return true;
+    try {
+      const p = this.dom.requestPointerLock();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch (e) {
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -1433,5 +1448,6 @@ export class Input {
     window.removeEventListener('pointerup', this._onLookUp);
     window.removeEventListener('pointercancel', this._onLookUp);
     this.dom.removeEventListener('contextmenu', this._onContext);
+    this.dom.removeEventListener('click', this._onSkyClick);
   }
 }

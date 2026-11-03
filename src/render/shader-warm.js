@@ -1,26 +1,8 @@
 /**
- * Shader warm-up without a stall.
- *
- * Every material's program is compiled by the GPU driver the first time it
- * is drawn, and the main thread waits for it. Measured in the Tomm1z pass
- * (.claude/devtools/briefs/tomm1z-video.md, the sampling profile with the
- * CPU governor's gaps taken out): the hangar's first podium 638 ms, the
- * A321's first frame 236 ms, the first flight's 90 ms, the take-off's 101 ms
- * and the Low tier's first flight 659 ms — all of it inside three.js's
- * getProgramInfoLog, the sync point after linkProgram. On Windows (ANGLE
- * over D3D11, the YouTuber's machine) each program costs several times what
- * it does on Metal, which is the "a lot of lag" of a first visit.
- *
- * three r169 has renderer.compileAsync(): with KHR_parallel_shader_compile
- * (every current Chrome, Edge and Firefox) the programs are created now and
- * the driver compiles them in the background while the game carries on, and
- * the promise resolves when every one is ready. So the world is warmed
- * behind the loading bar, the aeroplane and its cockpit the moment they are
- * built (the cockpit made visible for the compile and hidden again), the
- * hangar's podium before it is shown and a real skin before its first
- * frame. Without the extension compileAsync is a plain compile: the same
- * stall, moved earlier, which is still better than mid-taxi.
- *
+ * Shader warm-up without a stall. A program is linked on its first draw and
+ * the main thread waits (the Tomm1z pass: 90-659 ms a first frame, several
+ * times that on ANGLE/D3D11). compileAsync (KHR_parallel_shader_compile)
+ * links them in the background instead; without it, the same stall, earlier.
  * Never throws; a renderer that cannot precompile compiles on first use.
  */
 
@@ -32,14 +14,9 @@ export function shaderWarmStats() {
 }
 
 /**
- * three's renderer.compileAsync, minus its one way to throw. Its poll reads
- * properties.get(material).currentProgram.isReady() every 10 ms, and a
- * material DISPOSED while it waits (the world rebuilt by the Auto probe or a
- * detail change, a hangar podium swapped, a skin thrown away) has no program
- * any more: the poll threw "Cannot read properties of undefined (reading
- * 'isReady')" from a timer, uncaught, and never resolved -- a console error
- * on the hangar, and a real skin held hidden for good. Same compile, same
- * wait; a material with no program left is simply not waited for.
+ * three's compileAsync, minus its one throw: a material disposed while its
+ * poll waits has no program (an uncaught timer error, never resolved). One
+ * with no program left is not waited for.
  */
 export function compileAsyncSafe(renderer, object, camera, scene) {
   const materials = renderer.compile(object, camera, scene);
@@ -111,14 +88,9 @@ export function warmShadersAsync(renderer, object, camera, scene, { show = [] } 
 }
 
 /**
- * The same warm-up, a few meshes per step within `budgetMs`, steps on the
- * timer between frames. On some drivers (ANGLE over Metal, measured here) the
- * "non-blocking" part of compileAsync — translating every shader — is itself
- * synchronous: 26 programs were 1.1 s in the one frame that started the
- * warm. Spread over steps, no frame pays for more than one or two programs;
- * once every program exists, compileAsync finds them in the cache and
- * resolves when the driver has linked them. Works under a frozen loop (a
- * check's): the steps are setTimeout's, not animation frames.
+ * The same, a few meshes a timer step within `budgetMs` (on ANGLE over Metal
+ * compileAsync's translate is synchronous: 26 programs were 1.1 s in one
+ * frame), then compileAsync finds them cached and waits for the link.
  */
 export function warmShadersChunked(renderer, object, camera, scene, { budgetMs = 8, show = [] } = {}) {
   if (!renderer || !object || !camera || typeof renderer.compile !== 'function') {
@@ -155,6 +127,51 @@ export function warmShadersChunked(renderer, object, camera, scene, { budgetMs =
         return;
       }
       warmShadersAsync(renderer, object, camera, scene, { show }).then(resolve);
+    };
+    step();
+  });
+}
+
+/** Only what is on show (traverseVisible), chunked the same: a world just built, not all its hidden parts. */
+export function warmVisibleChunked(renderer, object, camera, scene, { budgetMs = 8 } = {}) {
+  if (!renderer || !object || !camera || typeof renderer.compile !== 'function') return Promise.resolve(false);
+  const meshes = [];
+  object.traverseVisible((o) => {
+    if (o.isMesh || o.isSprite || o.isPoints || o.isLine) meshes.push(o);
+  });
+  const mats = new Set();
+  const props = renderer.properties;
+  STATS.chunkedWarms++;
+  return new Promise((resolve) => {
+    let i = 0;
+    const ready = () => {
+      for (const m of [...mats]) {
+        let ok = true;
+        try {
+          const p = props.get(m).currentProgram;
+          ok = !p || typeof p.isReady !== 'function' || p.isReady();
+        } catch (e) {
+          ok = true;
+        }
+        if (ok) mats.delete(m);
+      }
+      if (mats.size === 0) resolve(true);
+      else setTimeout(ready, 10);
+    };
+    const step = () => {
+      const t0 = performance.now();
+      while (i < meshes.length && performance.now() - t0 < budgetMs) {
+        const m = meshes[i++];
+        try {
+          const got = renderer.compile(m, camera, scene || undefined);
+          if (got && typeof got.forEach === 'function') got.forEach((x) => mats.add(x));
+        } catch (e) {
+          /* its first draw compiles it instead */
+        }
+      }
+      STATS.chunks++;
+      if (i < meshes.length) setTimeout(step, 0);
+      else ready();
     };
     step();
   });

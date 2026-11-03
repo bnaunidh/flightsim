@@ -22,6 +22,13 @@
  * of a second, so nothing on it can flash (Reduce flashing, WCAG 2.3.1). It
  * makes no sound.
  *
+ * The two fades are Web Animations on a layer of their own (will-change:
+ * opacity), so the compositor runs them: a main thread held up by the flight's
+ * first frame (seconds on a Chromebook) does not stop them half way and then
+ * jump. The fade in has its 0 in its keyframes (it cannot start at 1 because
+ * no frame was drawn before it), and the screen leaves the page only once its
+ * fade out has finished, not on a timer a long task can make fire first.
+ *
  * info = { mapId, title, subtitle, kicker, vehicle, game, art, focus, credit, tip, tips }
  * (`focus` is [x, y], in percent: where the picture's subject is, so a phone held upright crops round it)
  */
@@ -37,8 +44,10 @@ const CSS = `
   touch-action: manipulation; cursor: default;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
+.map-load { will-change: opacity; }
 .map-load.is-in { opacity: 1; }
 .map-load.is-out { opacity: 0; transition-duration: var(--ml-out, 480ms); pointer-events: none; }
+.map-load.is-animated { transition: none; }
 .map-load[hidden] { display: none; }
 .map-load:focus { outline: none; }
 
@@ -291,8 +300,9 @@ export class LoadingScreen {
       el.classList.add('is-drifting');
       el.style.setProperty('--ml-drift', `${Math.max(8, Math.round((this.cfg.minMs + 6000) / 1000))}s`);
     }
-    // One frame at opacity 0, then the fade (timers, not rAF).
-    await new Promise((r) => setTimeout(r, 30));
+    // The fade in: a Web Animation from 0 (compositor-run), or else one frame at opacity 0 and the CSS fade.
+    this._fade = this._animate(el, 0, 1, this.cfg.fadeInMs);
+    if (!this._fade) await new Promise((r) => setTimeout(r, 30));
     if (this.el !== el) return;
     el.classList.add('is-in');
     this._paint();
@@ -384,14 +394,78 @@ export class LoadingScreen {
     this._timer = null;
     for (const type of ['keydown', 'keypress']) window.removeEventListener(type, this._keyHandler, true);
     this._keyHandler = null;
+    // From wherever the fade in has got to (a skip can come before it is done).
+    let from = 1;
+    try {
+      from = Number(getComputedStyle(el).opacity);
+      if (!Number.isFinite(from)) from = 1;
+    } catch (e) {
+      from = 1;
+    }
+    if (this._fade) {
+      try {
+        this._fade.cancel();
+      } catch (e) {
+        /* gone */
+      }
+    }
+    const out = this._animate(el, from, 0, this.cfg.fadeOutMs);
+    this._fade = out;
     el.classList.add('is-out');
     el.classList.remove('is-in');
-    await new Promise((r) => setTimeout(r, this.cfg.fadeOutMs + 40));
+    if (out) await this._finished(out);
+    else await new Promise((r) => setTimeout(r, this.cfg.fadeOutMs + 40));
     if (this.el === el) this.destroy();
+  }
+
+  /** A compositor fade of the screen's opacity, `ms` long; null where Web Animations are missing. */
+  _animate(el, from, to, ms) {
+    if (!el || typeof el.animate !== 'function') return null;
+    try {
+      const a = el.animate([{ opacity: from }, { opacity: to }], { duration: Math.max(1, ms), easing: 'ease', fill: 'forwards' });
+      el.classList.add('is-animated');
+      return a;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * When a fade has really run to its end. Not a timer: after a long task an
+   * overdue timer fires before the next frame and took the screen away at full
+   * opacity. A tab hidden mid-fade draws no frames at all, so nobody can see
+   * it and it is let go.
+   */
+  _finished(a) {
+    return new Promise((resolve) => {
+      let done = false;
+      const end = () => {
+        if (done) return;
+        done = true;
+        clearInterval(poll);
+        resolve();
+      };
+      const hidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
+      const t0 = performance.now();
+      const poll = setInterval(() => {
+        // Hidden, or (a broken animation) a minute on: let it go.
+        if (hidden() || performance.now() - t0 > 60000 || a.playState === 'idle') end();
+      }, 250);
+      a.finished.then(end, end);
+    });
   }
 
   /** Straight away, no fade. */
   destroy() {
+    // A fade cut short is stopped; one that has finished is left as it ended (the element goes anyway).
+    if (this._fade && this._fade.playState !== 'finished') {
+      try {
+        this._fade.cancel();
+      } catch (e) {
+        /* gone */
+      }
+    }
+    this._fade = null;
     if (this._timer) clearInterval(this._timer);
     this._timer = null;
     if (this._keyHandler) for (const type of ['keydown', 'keypress']) window.removeEventListener(type, this._keyHandler, true);

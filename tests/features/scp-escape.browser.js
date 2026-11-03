@@ -149,6 +149,32 @@ export async function check(sim, r, say = () => {}) {
       r.ok('…what has breached is out on the ground, each of its own sector', ms.scps.length === 5 && out.length >= 1 && out.every((x) => Math.abs(x.y - T.heightAt(x.x, x.z)) < (x.id === 'scp-682' ? 0.8 : 0.05)),
         ms.scps.map((x) => `${x.id}${x.visible ? ' out' : ''}`).join(', '));
       r.ok('…and the gunship is up over the Site', !!ms.gunship && ms.gunship.y - T.heightAt(c.cx, c.cz) > 150 && ms.gunship.rotor, ms.gunship ? `${(ms.gunship.y - T.heightAt(c.cx, c.cz)).toFixed(0)} m up` : 'none');
+      // Their programs compiled in the background as they arrived, the SCPs still hidden included: none is
+      // left to compile on its first frame on screen (37 programs in the boarding on the Chromebook harness).
+      const stM = () => Esc.run().models.state();
+      await until(() => stM().warms >= 1 && !stM().warming, 20000);
+      for (let k = 0; k < 4; k++) await until(() => !stM().warming, 3000);
+      const props = sim.renderer.properties;
+      let total = 0;
+      let compiled = 0;
+      const miss = new Set();
+      Esc.run().models.D.group.traverse((o) => {
+        if (!o.isMesh) return;
+        for (const m of [].concat(o.material)) {
+          if (!m) continue;
+          total++;
+          let p = null;
+          try {
+            p = props.get(m).currentProgram;
+          } catch (e) {
+            p = null;
+          }
+          if (p) compiled++;
+          else miss.add(m.name || m.type);
+        }
+      });
+      r.ok('…their programs are compiled as they arrive (the SCPs not out yet too), none left for its first frame on screen', total > 0 && compiled === total && stM().warms >= 1,
+        `${compiled} of ${total} materials, ${stM().warms} warms${miss.size ? '; not: ' + [...miss].slice(0, 4).join(', ') : ''}`);
     }
 
     /* ---- the ramp key: close and go ---- */

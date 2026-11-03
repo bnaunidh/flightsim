@@ -67,6 +67,8 @@ html.xhair-square .hsk-seeker { display: none !important; }
 .gsk-btn.is-held { background: radial-gradient(circle at 35% 30%, #ffe08a, #ffb02f 60%, #c98212); }
 html.is-touch-device .gsk-btn { display: flex; }
 html.is-touch-device .gsk-btn[hidden] { display: none !important; }
+/* Not over the pause card or the debrief (this layer is above the menus; update() only runs in flight). */
+body:has(.menu-layer:not([hidden])) .gsk-btn { display: none !important; }
 /* A tablet or a big phone: next to the FLARES button, in the same row above the touch pads. */
 .gsk-btn.is-lock { right: 356px; bottom: 214px; width: 58px; height: 58px; }
 /* A phone upright: the right edge above FIRE MSL, which has the whole column up there to itself. */

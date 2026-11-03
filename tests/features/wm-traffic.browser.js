@@ -60,6 +60,11 @@ export async function check(sim, r, say) {
       sim.applyQualityNow('low');
       await Promise.race([done, wait(180000)]);
     }
+    // A player picks the map on the menu and then Take off: the traffic (and the fleet's models) are in first.
+    {
+      const T0 = await Promise.race([wp.whenTraffic(), wait(30000).then(() => null)]);
+      if (T0 && typeof T0.prewarm === 'function') await Promise.race([T0.prewarm(), wait(30000)]);
+    }
     await sim.startMode('free', { loadingScreen: false, airborne: true, aircraft: 'skylark' });
     if (sim.state === 'paused') sim.resume();
     const T = await Promise.race([wp.whenTraffic(), wait(30000).then(() => null)]);
@@ -82,6 +87,146 @@ export async function check(sim, r, say) {
     }).length;
     const nan = s1.list.filter((c) => !Number.isFinite(c.x + c.y + c.z + c.hdg)).length;
     r.ok('wm-traffic: they move (5 s), no NaN', moved >= Math.min(s0.n, s1.n) - 1 && nan === 0, `${moved} of ${s1.n} moved, ${nan} NaN`);
+
+    /* ---- the fields, towns and props out of reach: compiled already, not on the first one to come in reach ---- */
+    {
+      const pr = wp.props && wp.props();
+      if (pr && pr.warmed) await Promise.race([pr.warmed, wait(20000)]);
+      if (sim._worldWarm && sim._worldWarm.p) await Promise.race([sim._worldWarm.p, wait(10000)]);
+      const props = sim.renderer.properties;
+      const tally = (root) => {
+        let n = 0;
+        let c = 0;
+        if (!root) return [0, 0];
+        root.traverse((o) => {
+          if (!(o.isMesh || o.isPoints) || !o.material) return;
+          for (const m of [].concat(o.material)) {
+            n++;
+            try {
+              if (props.get(m).currentProgram) c++;
+            } catch (e) {
+              /* none */
+            }
+          }
+        });
+        return [c, n];
+      };
+      const out = wp.outstations && wp.outstations();
+      const hiddenFields = out ? out.fields.filter((f) => !f.visible) : [];
+      let fc = 0;
+      let fn = 0;
+      for (const f of hiddenFields) {
+        const [c, n] = tally(f);
+        fc += c;
+        fn += n;
+      }
+      const [pc, pn] = tally(pr && pr.group);
+      r.ok('wm-traffic: the outstation fields out of reach and the scenery props are compiled before any comes in reach',
+        hiddenFields.length > 0 && fn > 0 && fc === fn && pn > 0 && pc === pn && !!(pr && pr.warmed),
+        `${hiddenFields.length} fields out of reach: ${fc} of ${fn} materials; props ${pc} of ${pn}, warmed ${!!(pr && pr.warmed)}`);
+    }
+
+    /* ---- their programs compiled in the background early in the flight, not at first sight ---- */
+    {
+      if (T._warmP) await Promise.race([T._warmP, wait(20000)]);
+      const props = sim.renderer.properties;
+      const progOf = (m) => {
+        try {
+          return !!props.get(m).currentProgram;
+        } catch (e) {
+          return false;
+        }
+      };
+      let mats = 0;
+      let ready = 0;
+      for (const sl of T.models) {
+        sl.model.traverse((o) => {
+          if (!o.isMesh) return;
+          for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+            mats++;
+            if (progOf(m)) ready++;
+          }
+        });
+      }
+      const own = [T.proxy && T.proxy.material, T.lights && T.lights.material].filter(Boolean);
+      const ownReady = own.filter(progOf).length;
+      r.ok('wm-traffic: early in the flight every model\'s, the far shapes\' and the night lights\' programs are compiled (none waits for its first sight)',
+        mats > 0 && ready === mats && own.length === 2 && ownReady === 2 && (T.stats.warmed || 0) >= 1,
+        `${ready} of ${mats} model materials, ${ownReady} of ${own.length} far shape / lights, warmed ${T.stats.warmed || 0}`);
+    }
+
+    /* ---- no model built mid-flight at Low (a build is ~100 ms on a Chromebook) ---- */
+    {
+      const pw = typeof T.prewarmState === 'function' ? T.prewarmState() : null;
+      const keys = new Set(Object.values(T.fleet).flat().map((f) => f.key));
+      r.ok('wm-traffic: every type and paint the fleet flies has its model before the flight is under way', !!pw && pw.built === pw.combos && pw.combos >= Math.min(keys.size, 12),
+        pw ? `${pw.built} of ${pw.combos} built (${keys.size} in the fleet), ${T.models.length} models kept` : 'no prewarm');
+      // Each one in the sky brought 1 km in front of you in turn: its model, and nothing built for it.
+      const cam = sim.camera.position;
+      const live = T.plan.list.filter((c) => !c.gone);
+      const saved = live.map((c) => [c.x, c.y, c.z]);
+      const builds0 = T.stats.builds;
+      let got = 0;
+      const missed = [];
+      for (const c of live) {
+        for (const o of live) {
+          o.x = cam.x + 60000;
+          o.z = cam.z + 60000;
+        }
+        c.x = cam.x + 1000;
+        c.y = cam.y;
+        c.z = cam.z;
+        T.lastBuild = -1e9;
+        T._assign(false);
+        if (c.data.slot && c.data.slot.key === c.data.key) got++;
+        else missed.push(c.data.key);
+      }
+      live.forEach((c, i) => {
+        [c.x, c.y, c.z] = saved[i];
+      });
+      T._assign(false);
+      r.ok('wm-traffic: at Low each one that comes near gets an already-built model, none built mid-flight', got === live.length && T.stats.builds === builds0,
+        `${got} of ${live.length} got their model; ${T.stats.builds - builds0} built mid-flight${missed.length ? '; missed ' + missed.join(', ') : ''}`);
+    }
+
+    /* ---- traffic that arrives after the flight is under way ---- */
+    {
+      // As if world-traffic.js had landed mid-flight (the flight started first): the fleet's models put
+      // aside and start({ late: true }). With no loading screen up, the whole fleet at once was ~1 s frozen
+      // on a Chromebook: the nearest few only (and the rest as they come near, as before the prewarm).
+      // Behind a loading screen, the whole fleet as usual. Then everything put back.
+      const aside = () => {
+        for (const c of T.plan.list) {
+          if (c.data && c.data.slot) {
+            c.data.slot.owner = null;
+            c.data.slot.model.visible = false;
+            c.data.slot = null;
+          }
+        }
+        return T.models.splice(0);
+      };
+      const stash = aside();
+      let b0 = T.stats.builds;
+      T.start({ late: true });
+      const lateBuilt = T.stats.builds - b0;
+      const lateFlag = !!T._late;
+      for (const s of aside()) T._disposeSlot(s);
+      const cover = document.createElement('div');
+      cover.className = 'map-load';
+      cover.style.cssText = 'opacity:0;pointer-events:none';
+      document.body.appendChild(cover);
+      b0 = T.stats.builds;
+      T.start({ late: true });
+      const coveredBuilt = T.stats.builds - b0;
+      cover.remove();
+      for (const s of aside()) T._disposeSlot(s);
+      T.models.push(...stash);
+      T.start();
+      const src = await (await fetch(new URL('../../src/features/world-preview.js', import.meta.url))).text();
+      r.ok('wm-traffic: traffic that lands mid-flight builds only the nearest few, not the whole fleet in one frame (behind a loading screen, all of it)',
+        lateBuilt <= T.T.models && lateFlag && coveredBuilt === T.combos.length && !T._late && /S\.traffic\.start\(\{ late: true \}\)/.test(src) && T.models.length === stash.length,
+        `${lateBuilt} built late in the open (the tier's ${T.T.models}), ${coveredBuilt} behind a loading screen (fleet ${T.combos.length}); ${stash.length} put back`);
+    }
 
     /* ---- one a km or two from you: models, the far shape, the minimap ---- */
     const ac = sim.aircraft;
@@ -122,7 +267,7 @@ export async function check(sim, r, say) {
     }
     const s2 = T.state();
     const placedNow = placed ? s2.list.find((c) => c.id === placed.id) : null;
-    r.ok('wm-traffic: one near you gets its full model; the rest are far shapes (one instanced draw)', !!placedNow && placedNow.model && s2.models <= TP.TIERS.low.models + 2 && T.proxy.isInstancedMesh,
+    r.ok('wm-traffic: one near you gets its full model; the rest are far shapes (one instanced draw)', !!placedNow && placedNow.model && s2.models <= (T.keep || TP.TIERS.low.models + 2) && T.proxy.isInstancedMesh,
       placedNow ? `${placedNow.callsign} ${placedNow.type} ${Math.round(Math.hypot(placedNow.x - ac.pos.x, placedNow.z - ac.pos.z))} m away, model ${placedNow.model}; ${s2.models} models built, ${s2.farDrawn} far shapes` : 'none placed');
     r.ok('wm-traffic: ...and it is on the minimap', !!mm && mm._drawnBodies >= 1, `${mm ? mm._drawnBodies : 'no minimap'} bodies drawn`);
 
@@ -195,6 +340,72 @@ export async function check(sim, r, say) {
       const still = T.plan.list.some((c) => c.id === id && !c.gone);
       r.ok('wm-traffic: Take over (owner) takes it out of the traffic — no copy of it flies on', !!b && typeof b.take === 'function' && !still && !bodies().some((x) => x.id === id),
         `${b ? `${b.name}: take ${typeof b.take}` : 'no body'}, still flying ${still}, bodies ${bodies().length}`);
+    }
+    // At night: nav lights on each one in range (red left, green right, white tail) and a slow red beacon —
+    // under 1 Hz and, with Reduce flashing on, a smooth swell (no on/off edge); none by day.
+    {
+      const FS = await import('../../src/render/flash-safety.js');
+      const reduce0 = FS.FLASH.reduce;
+      await sim.startMode('free', { loadingScreen: false, airborne: true, aircraft: 'skylark', time: 'night', condition: 'clear' });
+      if (sim.state === 'paused') sim.resume();
+      run(1);
+      // Two of them put in range: one 1.5 km off (its model), one 5 km off (a far shape).
+      {
+        const cam = sim.camera.position;
+        const live = T.plan.list.filter((c) => !c.gone);
+        [[1500, 0], [5000, 800]].forEach(([d, off], i) => {
+          const c = live[i];
+          if (!c) return;
+          c.x = cam.x + d;
+          c.z = cam.z + off;
+          c.y = cam.y + 100;
+        });
+        T._assign(true);
+        T._sync(1 / 60);
+      }
+      const st = T.state();
+      const L = T.lights;
+      const shown = st.lights || 0;
+      const drawn = st.modelsDrawn + st.farDrawn;
+      // Which side the red one is on: the first aircraft's lights, in its own frame (nose to -Z, right +X).
+      let sides = 'none';
+      if (L && shown >= 4) {
+        const P = L.geometry.attributes.position;
+        const C = L.geometry.attributes.color;
+        const c0 = T.plan.list.filter((c) => !c.gone).find((c) => c.data.slot || Math.hypot(c.x - T.cam.x, c.y - T.cam.y, c.z - T.cam.z) < T.T.far);
+        const right = { x: Math.cos(c0.hdg * Math.PI / 180), z: Math.sin(c0.hdg * Math.PI / 180) };
+        const redSide = (P.getX(0) - c0.x) * right.x + (P.getZ(0) - c0.z) * right.z;
+        const greenSide = (P.getX(1) - c0.x) * right.x + (P.getZ(1) - c0.z) * right.z;
+        sides = `${C.getX(0) > 0.8 && C.getY(0) < 0.3 && redSide < 0 ? 'red left' : 'red WRONG'}, ${C.getY(1) > 0.8 && C.getX(1) < 0.3 && greenSide > 0 ? 'green right' : 'green WRONG'}`;
+      }
+      r.ok('wm-traffic: at night each one in range shows its nav lights and beacon (red left, green right, white tail)', !!L && drawn > 0 && shown === drawn * 4 && L.visible && sides === 'red left, green right',
+        `${shown} lights for ${drawn} drawn, ${sides}`);
+      // The beacon over 6 s at 60 fps, Reduce flashing on and then off.
+      const beaconRun = () => {
+        const v = [];
+        for (let i = 0; i < 360; i++) {
+          T.update(1 / 60);
+          v.push(T.state().beacon);
+        }
+        let ups = 0;
+        let step = 0;
+        for (let i = 1; i < v.length; i++) {
+          step = Math.max(step, Math.abs(v[i] - v[i - 1]));
+          if (v[i] > 0.5 && v[i - 1] <= 0.5) ups++;
+        }
+        return { ups, step };
+      };
+      FS.setReduceFlashing(true);
+      const on = beaconRun();
+      FS.setReduceFlashing(false);
+      const off = beaconRun();
+      FS.setReduceFlashing(reduce0);
+      r.ok('wm-traffic: the beacon is slow (under 1 Hz) and, with Reduce flashing on, a swell with no on/off edge', on.ups <= 6 && off.ups <= 6 && on.ups >= 3 && on.step < 0.08,
+        `Reduce flashing on: ${on.ups} flashes in 6 s, biggest step a frame ${on.step.toFixed(3)}; off: ${off.ups} in 6 s`);
+      await sim.startMode('free', { loadingScreen: false, airborne: true, aircraft: 'skylark', time: 'day', condition: 'clear' });
+      if (sim.state === 'paused') sim.resume();
+      run(1);
+      r.ok('wm-traffic: by day no lights are drawn', !L || (!L.visible && (T.state().lights || 0) === 0), `${T.state().lights} lights, visible ${L && L.visible}`);
     }
     // Restart mid-flight: a fresh sky, the tier's count, every one a body, no model left showing from before.
     {

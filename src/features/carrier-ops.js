@@ -875,7 +875,7 @@ function update(sim, dt) {
     UI.setGate(true);
     return;
   }
-  UI.setGate(!!(sim.hud && sim.hud.hidden));
+  UI.setGate(!!(sim.hud && sim.hud.hidden) || sim.state !== 'flying');
   const input = sim.input;
   if (input && input.pressed) {
     if (input.pressed('hook')) toggleHook(sim);
@@ -1123,6 +1123,22 @@ registerExtension({
       if (id === 'hook') toggleHook(sim);
       else if (id === 'launch') salute(sim);
     }, sim.hud && sim.hud.stack);
+    /*
+     * Off with the pause card and the debrief, on with the game. update() only
+     * runs while flying, so it could never put the HOOK and LAUNCH buttons
+     * away for a pause or a crash: they sat on top of the pause card's rows
+     * (the bug hunt, 375x812), where a tap meant for the card hit HOOK. The
+     * same quarter-second gate the eject buttons use (eject.js).
+     */
+    if (typeof setInterval === 'function') {
+      setInterval(() => {
+        try {
+          if (sim.state !== 'flying') UI.setGate(true);
+        } catch (e) {
+          /* the gate is a nicety */
+        }
+      }, 250);
+    }
     import('../aircraft/types.js').then((m) => { AIRCRAFT_LIST = m.AIRCRAFT; }).catch(() => {});
     installStartChoice(sim);
     // The hint line: the carrier's words when it has some, the game's otherwise.

@@ -325,5 +325,50 @@ ok('first load: real-buildings.js is not in main.js\'s static graph', ![...seen]
 ok('sw.js: no real scenery file in the install list', !/assets\/models\/real\/scenery\//.test(sw));
 ok('sw.js: the two modules are in it (offline once seen)', sw.includes("'src/world/real-trees.js'") && sw.includes("'src/world/real-scenery.js'"));
 
+/*
+ * The boreal maps: the near real pines were paler and yellower than the far firs (scenery.js's own), and the
+ * World Map's conifer cards (drawn from the same pine) the same. Measured in the game (headless Chrome): the
+ * pine's needle picture averages linear (0.156, 0.209, 0.083), times the model's vertex colour 0.866; the
+ * conifer card's side (0.085, 0.095, 0.041). The firs' green is read from scenery.js's conifer geometry here.
+ */
+{
+  const SC = await import(SRC + 'world/scenery.js');
+  const g = SC.treeGeometry(2);
+  const c = g.attributes.color;
+  const sum = [0, 0, 0];
+  let n = 0;
+  for (let i = 0; i < c.count; i++) {
+    const r = c.getX(i);
+    const gg = c.getY(i);
+    if (gg > r * 2) {
+      sum[0] += r;
+      sum[1] += gg;
+      sum[2] += c.getZ(i);
+      n++;
+    }
+  }
+  const fir = sum.map((v) => v / Math.max(1, n));
+  const near = (a, b, tol) => a.every((v, i) => Math.abs(v - b[i]) <= tol * Math.max(b[i], 0.01));
+  const tint = RS.REAL_SCENERY['tree-pine'].leafTint;
+  const needles = tint ? [0.156, 0.209, 0.083].map((v, i) => v * 0.866 * tint[i]) : [0.156 * 0.866, 0.209 * 0.866, 0.083 * 0.866];
+  ok('boreal: the near real pine\'s needles are the far firs\' green (within 20% a channel), not paler and yellower', near(needles, fir, 0.2),
+    `needles ${needles.map((v) => v.toFixed(3))} vs firs ${fir.map((v) => v.toFixed(3))}${tint ? '' : ' (no tint)'}`);
+  const src = read('src/world/real-scenery.js').toString();
+  ok('boreal: ...applied to the needles\' material when the picture arrives (the bark keeps its own)', /const tint = REAL_SCENERY\[id\]\.leafTint;\s*if \(tint\) m\.color\.setRGB\(tint\[0\], tint\[1\], tint\[2\]\)/.test(src));
+  const TC = await import(SRC + 'world/worldmap/tree-cards.js');
+  const ct = TC.CONIFER_CARD_TINT;
+  const card = ct ? [0.085, 0.095, 0.041].map((v, i) => v * ct[i]) : [0.085, 0.095, 0.041];
+  ok('boreal: the World Map\'s conifer cards the same green as the firs in front of them (within 20% a channel)', near(card, fir, 0.2),
+    `cards ${card.map((v) => v.toFixed(3))} vs firs ${fir.map((v) => v.toFixed(3))}`);
+  // The cell tint on a stand-in canvas: a needle pixel goes to the firs' green, a bark pixel is left alone.
+  const px = new Uint8ClampedArray([120, 150, 60, 255, 140, 110, 90, 255]);
+  const ctx = { getImageData: () => ({ data: px }), putImageData() {} };
+  const did = typeof TC.tintCells === 'function' && TC.tintCells(ctx, 0, 0, 2, 1, ct);
+  ok('boreal: the card tint changes the needles and leaves the bark brown', !!did && px[0] < 100 && px[1] > 120 && px[4] === 140 && px[5] === 110 && px[6] === 90 && px[3] === 255,
+    `needle ${[...px.slice(0, 4)]}, bark ${[...px.slice(4, 8)]}`);
+  const tcs = read('src/world/worldmap/tree-cards.js').toString();
+  ok('boreal: ...and the real pictures get it on arrival (the conifer cells)', /tintCells\(g, 256, 0, 256, c\.height, CONIFER_CARD_TINT\)/.test(tcs));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

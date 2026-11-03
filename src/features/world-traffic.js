@@ -8,11 +8,14 @@
  * exactly as it was.
  *
  *   IN THE SKY   the nearest few within the tier's range get the real model
- *                of their type in their airline's paint (the fleet models,
- *                built one at a time, never more than one every couple of
- *                seconds — the first ones while the flight starts, behind
- *                the loading screen — and kept for the next one of that
- *                type and paint); everything else out to the tier's far
+ *                of their type in their airline's paint (the fleet models:
+ *                one of every type and paint the fleet flies is built while
+ *                the menu is up, one a task, and whatever is left when the
+ *                flight starts behind its loading screen — a build is
+ *                16-27 ms here, ~100 ms on a Chromebook, so never mid-flight
+ *                at Low; above Low a second copy of one already built may
+ *                come mid-flight, never more than one every couple of
+ *                seconds); everything else out to the tier's far
  *                range is ONE instanced draw call of a plain low-poly shape
  *                in the paint's base colour (fog takes it at range); nothing
  *                at all beyond that.
@@ -38,6 +41,8 @@ import { airlinesFor, schemeFor, radioBrand } from '../aircraft/liveries.js';
 import { registerBody, unregisterBody, radiusOfType } from './sky.js';
 import * as LOD from './traffic/lod.js';
 import { addMapLayer, addPickSource } from './livemap/livemap.js';
+import { blinkLevel } from '../render/flash-safety.js';
+import { warmShadersAsync, warmShadersChunked } from '../render/shader-warm.js';
 
 const DEG = Math.PI / 180;
 const KT = 1.94384;
@@ -48,6 +53,23 @@ const SMALL_PART = 10;
 const SHADOW_NEAR = 350;
 /** Seconds between choosing who gets a model. */
 const ASSIGN_EVERY = 0.25;
+/**
+ * The lights each one shows at night, as points: red on the left wingtip,
+ * green on the right, white on the tail, and the red beacon on top — slow
+ * (one a BEACON_S, well under 1 Hz) and, with Reduce flashing on, a smooth
+ * swell rather than an on/off. No strobes: a white flash is the one to keep
+ * off a classroom screen. Offsets are fractions of the far shape's span and
+ * length (nose to -Z, right wing +X).
+ */
+export const BEACON_S = 1.5;
+const LIGHTS = [
+  // [x of span, y of length, z of length, r, g, b]
+  [-0.5, -0.02, 0.02, 1, 0.14, 0.1],
+  [0.5, -0.02, 0.02, 0.1, 1, 0.35],
+  [0, 0.04, 0.5, 0.85, 0.85, 0.8],
+  [0, 0.07, -0.05, 1, 0.08, 0.04],
+];
+const LIGHT_PX = 3.2;
 
 /** The live traffic (one at a time: the World Map's). */
 let CUR = null;
@@ -93,9 +115,71 @@ function makeFleet(rand, size) {
   return fleet;
 }
 
+/** At most this many types and paints are built ahead of a flight (Low's whole fleet is 8-10). */
+const PREWARM_MAX = 12;
+
+/** One of each type and paint in the fleet, the commonest kinds first, at most `max`. */
+export function fleetCombos(fleet, max = PREWARM_MAX) {
+  const out = [];
+  const seen = new Set();
+  const cats = Object.keys(fleet).sort((a, b) => (CATS[b] ? CATS[b].share : 0) - (CATS[a] ? CATS[a].share : 0));
+  for (let round = 0; out.length < max; round++) {
+    let any = false;
+    for (const catId of cats) {
+      const f = fleet[catId][round];
+      if (!f) continue;
+      any = true;
+      if (seen.has(f.key) || out.length >= max) continue;
+      seen.add(f.key);
+      out.push(f);
+    }
+    if (!any) break;
+  }
+  return out;
+}
+
 /* ------------------------------------------------------------------ */
 /* The far shape: one instanced mesh                                   */
 /* ------------------------------------------------------------------ */
+
+/** A soft round dot (a few pixels, drawn once in code), so a light is a light and not a square. */
+let DOT = null;
+function dotTexture() {
+  if (DOT) return DOT;
+  try {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 16;
+    const g = cv.getContext('2d');
+    const gr = g.createRadialGradient(8, 8, 0, 8, 8, 8);
+    gr.addColorStop(0, 'rgba(255,255,255,1)');
+    gr.addColorStop(0.45, 'rgba(255,255,255,0.75)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 16, 16);
+    DOT = new THREE.CanvasTexture(cv);
+  } catch (e) {
+    DOT = null;
+  }
+  return DOT;
+}
+
+/** The night lights: `n` points, coloured per vertex, a few pixels whatever the range, added on (glow). */
+function makeLights(n) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  g.setDrawRange(0, 0);
+  const mat = new THREE.PointsMaterial({
+    size: LIGHT_PX, sizeAttenuation: false, vertexColors: true, map: dotTexture(), transparent: true,
+    depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+  });
+  const p = new THREE.Points(g, mat);
+  p.name = 'wm-traffic:lights';
+  p.frustumCulled = false;
+  p.visible = false;
+  p.renderOrder = 2;
+  return p;
+}
 
 /** A plain aeroplane a unit long and a unit across the wings, nose to -Z. */
 function proxyGeometry() {
@@ -185,13 +269,23 @@ export class WorldTraffic {
     this.proxy.count = 0;
     this.proxy.setColorAt(0, _c.set(0xffffff));
     this.group.add(this.proxy);
+    // The lights at night: one points draw for everybody in range.
+    this.lights = makeLights(Math.max(1, this.plan.n + 8) * LIGHTS.length);
+    this.group.add(this.lights);
+    this.lightsShown = 0;
     /** Built models: { key, model, rideOffset, small, meshes, owner, used, shadows, tier }. */
     this.models = [];
     this.assignT = 0;
     this.lastBuild = -1e9;
     this.clock = 0;
     this.on = false;
-    this.stats = { builds: 0, buildMs: 0, buildMax: 0, drawnModels: 0, drawnFar: 0, ms: 0, msMax: 0, frames: 0, msSum: 0, reused: 0, bodies: 0 };
+    this.stats = { builds: 0, buildMs: 0, buildMax: 0, drawnModels: 0, drawnFar: 0, ms: 0, msMax: 0, frames: 0, msSum: 0, reused: 0, bodies: 0, flightBuilds: 0 };
+    /** One of each type and paint the fleet flies (the models built ahead of the flight), and how many models may be kept. */
+    this.combos = fleetCombos(this.fleet, PREWARM_MAX);
+    this.keep = Math.max(this.T.models + 2, this.combos.length + 2);
+    this._prewarm = null;
+    this._late = false;
+    this.disposed = false;
     this.player = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
     this.cam = { x: 0, y: 0, z: 0 };
     this.ctx = { player: this.player, cam: this.cam, windDirDeg: 80 };
@@ -282,11 +376,14 @@ export class WorldTraffic {
   /* ---- the models ---- */
 
   _build(c) {
+    return this._buildModel(c.data.type, c.data.scheme, c.data.key);
+  }
+
+  _buildModel(type, scheme, key) {
     const t0 = performance.now();
-    const type = c.data.type;
     let m;
     try {
-      m = createAircraftModel({ type, livery: c.data.scheme });
+      m = createAircraftModel({ type, livery: scheme });
     } catch (e) {
       console.warn('[world-traffic] a model could not be built; it stays a far shape', e);
       return null;
@@ -321,14 +418,63 @@ export class WorldTraffic {
     m.name = `wm-traffic:${type.id}`;
     m.visible = false;
     this.group.add(m);
-    const slot = { key: c.data.key, model: m, rideOffset, small, meshes, owner: null, used: this.clock, shadows: false, tier: -1, animOk: true, state: null };
+    const slot = { key, model: m, rideOffset, small, meshes, owner: null, used: this.clock, shadows: false, tier: -1, animOk: true, state: null };
     this.models.push(slot);
     const ms = performance.now() - t0;
     this.stats.builds++;
     this.stats.buildMs += ms;
     if (ms > this.stats.buildMax) this.stats.buildMax = ms;
     this.lastBuild = this.clock;
+    if (this.on) this.stats.flightBuilds++;
     return slot;
+  }
+
+  /** The background compile of everything this draws (see start()). */
+  _warmAll() {
+    const sim = this.sim;
+    if (!sim.renderer || !sim.camera) return null;
+    const show = [...this.models.map((m) => m.model), this.lights, this.proxy];
+    this._warmP = warmShadersChunked(sim.renderer, this.group, sim.camera, sim.scene, { budgetMs: 6, show }).then((ok) => {
+      this.stats.warmed = ok ? (this.stats.warmed || 0) + 1 : this.stats.warmed || 0;
+      return ok;
+    });
+    return this._warmP;
+  }
+
+  /** The fleet's models not built yet. */
+  _missing() {
+    return this.combos.filter((f) => !this.models.some((m) => m.key === f.key));
+  }
+
+  /**
+   * One model of every type and paint the fleet flies, built one a task while
+   * the menu is up (the World Map is chosen there), so no aircraft that comes
+   * near in the flight waits on a build. Resolves true when they all are.
+   */
+  prewarm() {
+    if (this._prewarm) return this._prewarm;
+    this._prewarm = new Promise((resolve) => {
+      const next = () => {
+        if (this.disposed) return resolve(false);
+        // In a flight, start() has built what was left, behind its loading screen.
+        if (this.on) return resolve(this._missing().length === 0);
+        const f = this._missing()[0];
+        if (!f) return resolve(true);
+        const slot = this._buildModel(f.type, f.scheme, f.key);
+        // Its shaders too, in the background (a first sight in the flight was a whole-program link on the main
+        // thread: seconds on a Chromebook). Shown for the compile only, hidden again on the next line.
+        const R = this.sim.renderer;
+        if (slot && R && this.sim.camera) warmShadersAsync(R, slot.model, this.sim.camera, this.sim.scene, { show: [slot.model] });
+        setTimeout(next, 40);
+      };
+      setTimeout(next, 0);
+    });
+    return this._prewarm;
+  }
+
+  /** The prewarm's progress (the tests). */
+  prewarmState() {
+    return { combos: this.combos.length, built: this.combos.length - this._missing().length, keep: this.keep };
   }
 
   _disposeSlot(slot) {
@@ -379,14 +525,16 @@ export class WorldTraffic {
       if (c.data.slot) continue;
       let slot = this.models.find((s) => !s.owner && s.key === c.data.key);
       if (slot) this.stats.reused++;
-      if (!slot && (force || this.clock - this.lastBuild >= T.buildGap)) {
+      // At Low only a model already built (the fleet's, ahead of the flight): a build there is a ~100 ms
+      // hitch on a Chromebook, so a second one of a type and paint already flying near stays a far shape.
+      if (!slot && (force || ((this.quality !== 'low' || this._late) && this.clock - this.lastBuild >= T.buildGap))) {
         // Room for one more: drop the longest-unused free one of another paint first.
-        if (this.models.length >= T.models + 2) {
+        if (this.models.length >= this.keep) {
           let lru = null;
           for (const s of this.models) if (!s.owner && (!lru || s.used < lru.used)) lru = s;
           if (lru) this._disposeSlot(lru);
         }
-        if (this.models.length < T.models + 2) slot = this._build(c);
+        if (this.models.length < this.keep) slot = this._build(c);
       }
       if (!slot) continue;
       slot.owner = c;
@@ -423,23 +571,43 @@ export class WorldTraffic {
     this.ctx.windDirDeg = (sim.weather && sim.weather.windDirDeg) ?? 80;
   }
 
-  /** A flight starts on the World Map: the sky filled at once, away from you, the nearest models built now. */
-  start() {
+  /**
+   * A flight starts on the World Map: the sky filled at once, away from you, the nearest models built now.
+   * `late`: the traffic arrived after the flight was under way. With no loading screen left to hide it, the
+   * whole fleet at once was ~1 s frozen on a Chromebook: the nearest few only, and the rest as they come
+   * near, as before the prewarm.
+   */
+  start({ late = false } = {}) {
     this.clear();
     this.on = true;
     this._readPlayer();
     this.plan.windDirDeg = this.ctx.windDirDeg;
     this.plan.populate(this.ctx);
     this.plan.spawnT = 3;
+    // Behind the loading screen: whatever of the fleet the menu's prewarm has not built yet, so the
+    // first to come close finds its model built (a build is 16-27 ms here, ~100 ms on a Chromebook).
+    const covered = !late || (typeof document !== 'undefined' && !!document.querySelector('.map-load:not(.is-out):not([hidden])'));
+    this._late = !covered;
+    this.on = false;
+    if (covered) for (const f of this._missing()) this._buildModel(f.type, f.scheme, f.key);
+    this.on = true;
     this._sync(0);
     this._assign(true);
-    // Behind the loading screen: the models of the nearest few, near or not yet, so the first to come
-    // close finds its model built (a build is 5-20 ms, more on a Chromebook: never mid-flight if it can be helped).
-    const byDist = this.plan.list.slice().sort((p, q) => Math.hypot(p.x - this.cam.x, p.z - this.cam.z) - Math.hypot(q.x - this.cam.x, q.z - this.cam.z));
-    for (const c of byDist) {
-      if (this.models.length >= this.T.models) break;
-      if (!this.models.some((m) => m.key === c.data.key)) this._build(c);
+    if (!covered) {
+      const byDist = this.plan.list.slice().sort((p, q) => Math.hypot(p.x - this.cam.x, p.z - this.cam.z) - Math.hypot(q.x - this.cam.x, q.z - this.cam.z));
+      for (const c of byDist) {
+        if (this.models.length >= this.T.models) break;
+        if (!this.models.some((m) => m.key === c.data.key)) this._build(c);
+      }
     }
+    // What the flight itself builds from here on (none at Low).
+    this.stats.flightBuilds = 0;
+    // Every model's programs, the far shapes' and the night lights', warmed a couple of seconds in (once
+    // the flight's lights have settled: a program is keyed on the light count), a few meshes a step. The
+    // first far shape, model or light to come into sight was a whole-program link on the main thread:
+    // 7.7 s mid-flight on the Chromebook harness.
+    this._warmAt = this.clock + 2;
+    this._warmP = null;
     const R = this.sim.renderer;
     if (R && this.sim.camera && this.models.length) {
       try {
@@ -472,6 +640,7 @@ export class WorldTraffic {
     this.clock += dt;
     this._readPlayer();
     this.plan.step(dt, this.ctx);
+    if (!this._warmP && this._warmAt != null && this.clock >= this._warmAt) this._warmAll();
     this.assignT -= dt;
     if (this.assignT <= 0) {
       this.assignT = ASSIGN_EVERY;
@@ -491,6 +660,22 @@ export class WorldTraffic {
     const T = this.T;
     const cam = this.cam;
     const weather = this.sim.weather || DAY;
+    const night = !!(weather.isNight || weather.time === 'dusk' || weather.time === 'sunset');
+    const LP = this.lights.geometry.attributes.position;
+    const LC = this.lights.geometry.attributes.color;
+    const beacon = blinkLevel(this.clock, BEACON_S, 0.12, 0);
+    let nl = 0;
+    const lightsAt = (c, span, len) => {
+      if (!night || nl + LIGHTS.length > LP.count) return;
+      for (let i = 0; i < LIGHTS.length; i++) {
+        const L = LIGHTS[i];
+        _p.set(L[0] * span, L[1] * len, L[2] * len).applyQuaternion(_q);
+        LP.setXYZ(nl, c.x + _p.x, c.y + _p.y, c.z + _p.z);
+        const b = i === 3 ? beacon : 1;
+        LC.setXYZ(nl, L[3] * b, L[4] * b, L[5] * b);
+        nl++;
+      }
+    };
     let k = 0;
     let models = 0;
     const far2 = T.far * T.far;
@@ -547,6 +732,10 @@ export class WorldTraffic {
           }
         }
         models++;
+        {
+          const span = (D.type && D.type.aero && D.type.aero.wingSpan) || (c.cat.pads ? 11 : 30);
+          lightsAt(c, span, c.cat.pads ? span * 1.1 : span * (c.catId === 'light' ? 0.75 : 1.05));
+        }
         continue;
       }
       // Far: the plain shape, out to the tier's range.
@@ -563,12 +752,21 @@ export class WorldTraffic {
       this.proxy.setMatrixAt(k, _m);
       this.proxy.setColorAt(k, D.color || _c.set(0xeef1f4));
       k++;
+      lightsAt(c, span, len);
     }
     this.proxy.count = k;
     this.proxy.instanceMatrix.needsUpdate = true;
     if (this.proxy.instanceColor) this.proxy.instanceColor.needsUpdate = true;
     this.stats.drawnModels = models;
     this.stats.drawnFar = k;
+    this.lights.visible = nl > 0;
+    this.lights.geometry.setDrawRange(0, nl);
+    if (nl) {
+      LP.needsUpdate = true;
+      LC.needsUpdate = true;
+    }
+    this.lightsShown = nl;
+    this.beacon = beacon;
   }
 
   /** For the tests and the console. */
@@ -580,6 +778,8 @@ export class WorldTraffic {
       want: this.plan.n,
       models: this.models.length,
       modelsDrawn: this.stats.drawnModels,
+      lights: this.lightsShown,
+      beacon: this.beacon,
       farDrawn: this.stats.drawnFar,
       stats: { ...this.stats, mean: this.stats.frames ? this.stats.msSum / this.stats.frames : 0 },
       plan: { ...this.plan.stats },
@@ -591,12 +791,15 @@ export class WorldTraffic {
   }
 
   dispose() {
+    this.disposed = true;
     this.stop();
     for (const s of this.models.slice()) this._disposeSlot(s);
     this.models.length = 0;
     if (this.group.parent) this.group.parent.remove(this.group);
     this.proxy.geometry.dispose();
     this.proxyMat.dispose();
+    this.lights.geometry.dispose();
+    this.lights.material.dispose();
     this.proxy.dispose && this.proxy.dispose();
     if (CUR === this) CUR = null;
   }

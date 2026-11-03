@@ -53,6 +53,11 @@ const wet = [];
  * and wet. Shared by every terrain material, so no recompile.
  */
 export const SNOW_COVER = { value: 0 };
+/** The in-cloud whiteout's colour by daylight (0..1): white by day, moonlit blue-grey at night. */
+const _wo = new THREE.Color();
+const _woDay = new THREE.Color(0xdfe6ee);
+export const cloudWhiteout = (d = 1) => _wo.setHex(0x2c3442).lerp(_woDay, Math.max(0, Math.min(1, Number.isFinite(d) ? d : 1)));
+
 /** Seconds of steady snow to lie white, and to melt away once it stops. */
 export const SNOW_SETTLE_S = 60;
 export const SNOW_MELT_S = 300;

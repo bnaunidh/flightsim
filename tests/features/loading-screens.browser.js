@@ -23,7 +23,11 @@
  *   - every map's picture is really there, loads, and is the right size;
  *   - a map that says it is OpenStreetMap's shows "© OpenStreetMap contributors";
  *   - reduced motion stops the zoom; the fades are slow and one-way, so
- *     nothing on it can flash; it fits the screen; it makes no sound.
+ *     nothing on it can flash; it fits the screen; it makes no sound;
+ *   - with the main thread held up (450 ms as it goes up, 1.2 s as it goes:
+ *     a Chromebook's first frame) the fade in still starts from nothing and
+ *     the screen leaves only once its fade out has run — compositor fades on
+ *     a layer of their own, not a class change and a timer.
  *
  * `check(sim, r, say)` — r.ok(name, pass, detail) per assertion. Real timers
  * throughout (the suites freeze requestAnimationFrame, and the screen does not use it).
@@ -42,6 +46,32 @@ async function until(cond, ms = 6000, step = 20) {
 }
 
 const screenEl = () => document.querySelector('.map-load');
+/** The running or pending fades of an element's opacity (CSS transitions and Web Animations alike). */
+const opacityAnims = (el) => {
+  try {
+    return el.getAnimations().filter((a) => a.transitionProperty === 'opacity' || (a.effect && a.effect.getKeyframes && a.effect.getKeyframes().some((k) => 'opacity' in k)));
+  } catch (e) {
+    return [];
+  }
+};
+const fromOpacity = (a) => {
+  try {
+    const k = a.effect.getKeyframes();
+    return k.length && 'opacity' in k[0] ? Number(k[0].opacity) : null;
+  } catch (e) {
+    return null;
+  }
+};
+/** What the screen's stylesheet says about its layer. */
+const cssWillChange = () => {
+  const d = document.createElement('div');
+  d.className = 'map-load';
+  d.hidden = true;
+  document.body.appendChild(d);
+  const v = getComputedStyle(d).willChange;
+  d.remove();
+  return v;
+};
 const text = (sel) => {
   const el = document.querySelector(sel);
   return el ? el.textContent : null;
@@ -149,11 +179,14 @@ export async function check(sim, r, say = () => {}) {
     // sample the bar and the fades while it runs
     const samples = [];
     const opac = [];
+    const anims = [];
     const sampler = setInterval(() => {
       const e = screenEl();
       if (!e) return;
       samples.push([L.screen.shown, L.screen.target, L.screen.elapsed]);
       opac.push(Number(getComputedStyle(e).opacity));
+      // A fade under way, pending, or finished and holding its end (a Web Animation's fill).
+      anims.push(opacityAnims(e).length > 0);
     }, 40);
     const ms2 = await done2;
     r.ok('loading screens: left alone it is up about three seconds (2.9 to 4.5 s) before the flight starts', ms2 >= 2900 && ms2 <= 4500 && sim.state === 'flying' && L.last.skipped === false, `${Math.round(ms2)} ms`);
@@ -173,7 +206,9 @@ export async function check(sim, r, say = () => {}) {
     // Fades: one rise, one fall, no flicker, and no jump bigger than half in 40 ms.
     let turns = 0;
     let maxStep = 0;
-    for (let i = 1; i < opac.length; i++) maxStep = Math.max(maxStep, Math.abs(opac[i] - opac[i - 1]));
+    // A big step between two samples is a jump only if no fade was running across it: with the main thread
+    // held up (a loaded Chromebook) the samples are far apart while the compositor runs the fade smoothly.
+    for (let i = 1; i < opac.length; i++) if (!anims[i] && !anims[i - 1]) maxStep = Math.max(maxStep, Math.abs(opac[i] - opac[i - 1]));
     let dir = 0;
     for (let i = 1; i < opac.length; i++) {
       const d = Math.sign(Math.round((opac[i] - opac[i - 1]) * 100));
@@ -184,6 +219,55 @@ export async function check(sim, r, say = () => {}) {
     }
     r.ok('loading screens: nothing flashes: it fades up once and down once, no step bigger than half in 40 ms', opac.length > 10 && turns <= 1 && maxStep < 0.5, `${opac.length} samples, ${turns} turn(s), biggest step ${maxStep.toFixed(2)}`);
     r.ok('loading screens: its fades are slow ones (a third of a second or more)', cfg.fadeInMs >= 300 && cfg.fadeOutMs >= 300);
+
+    /* ---- 3b. a starved main thread (a Chromebook, the flight's first frame): the fades still run ---- */
+    {
+      await toMenu();
+      const busy = (ms) => {
+        const e = now() + ms;
+        while (now() < e) {
+          /* the main thread held up */
+        }
+      };
+      const got = { inAnims: null, outAnims: null, removed: null, stalls: 0 };
+      const mo = new MutationObserver((recs) => {
+        for (const rec of recs) {
+          if (rec.type === 'childList') {
+            for (const n of rec.addedNodes) {
+              if (n.classList && n.classList.contains('map-load')) {
+                got.stalls++;
+                busy(450);
+              }
+            }
+            for (const n of rec.removedNodes) {
+              if (n.classList && n.classList.contains('map-load') && got.outAnims) got.removed = got.outAnims.map((a) => a.playState);
+            }
+          } else if (rec.type === 'attributes' && rec.target.classList && rec.target.classList.contains('map-load')) {
+            const el = rec.target;
+            if (el.classList.contains('is-in') && !got.inAnims) got.inAnims = opacityAnims(el).map((a) => ({ a, from: fromOpacity(a), state: a.playState, pending: a.pending }));
+            if (el.classList.contains('is-out') && !got.outAnims) {
+              got.outAnims = opacityAnims(el);
+              got.stalls++;
+              busy(1200);
+            }
+          }
+        }
+      });
+      mo.observe(document.body, { childList: true, attributes: true, attributeFilter: ['class'], subtree: true });
+      const tS = now();
+      const doneS = free({ aircraft: 'skylark' }).then(() => now() - tS);
+      await doneS;
+      await until(() => !screenEl(), 5000);
+      mo.disconnect();
+      const inA = got.inAnims || [];
+      r.ok('loading screens, main thread held up: the fade in still runs from nothing (no jump to fully up)',
+        inA.length > 0 && inA.some((x) => x.from != null && x.from < 0.05 && (x.state === 'running' || x.pending)),
+        `${got.stalls} stalls; fade in: ${inA.map((x) => `${x.state}${x.pending ? ' (pending)' : ''} from ${x.from}`).join(', ') || 'no fade running when it was put up'}`);
+      r.ok('loading screens, main thread held up: the screen leaves only once its fade out has finished (not at full strength)',
+        !!got.removed && got.removed.includes('finished') && !screenEl(),
+        got.removed ? `fade out at removal: ${got.removed.join(', ') || 'no fade at all'}` : 'not removed (or no fade out seen)');
+      r.ok('loading screens: the fades are on the compositor (a layer of their own)', /opacity/.test(cssWillChange()), cssWillChange());
+    }
 
     await toMenu();
     const t2 = now();

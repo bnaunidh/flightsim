@@ -180,7 +180,7 @@ const steps = (main.match(/yield next\(/g) || []).length;
 const declared = Number((main.match(/const STEPS = (\d+);/) || [])[1]);
 ok('the world builds in exactly as many steps as the screen is told it has', steps === declared && steps > 0, `${steps} yields, STEPS = ${declared}`);
 ok('buildWorld() still builds it all in one go (it drains the steps)', /buildWorld\(quality\) \{[^}]*buildWorldSteps\(quality\)[^}]*\.next\(\)\.done/s.test(main));
-ok('the frame loop draws nothing while the world is half built', /if \(this\._worldBuilding\)/.test(main));
+ok('the frame loop draws nothing while the world is half built', /if \(this\._worldBuilding( \|\| this\.holdingForWorldWarm\(\))?\)/.test(main));
 ok('the drives that buttons start go through launchDrive; startDrive stays synchronous', (main.match(/this\.launchDrive\(/g) || []).length >= 3 && /^  startDrive\(kind = 'boat', opts = \{\}\) \{/m.test(main));
 ok('the plug-in list loads the feature', /import '\.\/loading-screens\.js';/.test(text('src/features/index.js')));
 const sw = text('sw.js');

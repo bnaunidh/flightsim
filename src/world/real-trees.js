@@ -5,8 +5,9 @@
  * what they were: scenery.js's own (a few hundred triangles each, one
  * instanced draw per species) and the World Map's tree cards. The World Map's
  * cards were redrawn from these models (tree-cards.js); scenery.js's own trees
- * were not recoloured, so on the boreal maps the near pines are paler than the
- * far firs (a known follow-up).
+ * were not recoloured, so the pine's needles (and the cards' conifer) are
+ * tinted to the firs' green (real-scenery.js leafTint, tree-cards.js
+ * CONIFER_CARD_TINT): on the boreal maps near and far are one wood.
  *
  * How. Every instanced tree mesh registers itself here with its species
  * (scenery.js addTrees, worldmap/flora.js). A few times a second the trees

@@ -165,6 +165,56 @@ export async function check(sim, r, say = () => {}) {
         sim.renderer.render = r2;
       }
     }
+    /*
+     * A world built on the menu (a map picked; the chosen map put back after a mission or the World
+     * Map): its programs compiled in the background and the menu's view of it held off until they are.
+     * Drawn at once, its first frame linked them all on the main thread (the menu frozen 3-5 s on the
+     * Chromebook harness after quitting Last Flight Out or the World Map).
+     */
+    {
+      say('tomm1z-lag: a world built on the menu');
+      if (sim.state !== 'menu') sim.quitToMenu('main');
+      const wasMap = sim.settings.map;
+      const other = wasMap === 'meadow' ? 'kestrel' : 'meadow';
+      let calls = 0;
+      let lastW = null;
+      const orig = sim.warmWorldBehindMenu;
+      if (typeof orig === 'function') {
+        sim.warmWorldBehindMenu = function (...a) {
+          calls++;
+          const p = orig.apply(this, a);
+          lastW = this._worldWarm;
+          return p;
+        };
+      }
+      const t0 = performance.now();
+      sim.setMap(other);
+      while (performance.now() - t0 < 30000 && !(calls > 0 && sim.settings.map === other)) await new Promise((res) => setTimeout(res, 50));
+      if (typeof orig === 'function') sim.warmWorldBehindMenu = orig;
+      const built = calls > 0;
+      // Held while it compiles (or already done, the hold let go).
+      const held = !!lastW && (sim._worldWarm !== lastW || sim.holdingForWorldWarm());
+      if (lastW && lastW.p) await Promise.race([lastW.p, new Promise((res) => setTimeout(res, 10000))]);
+      const props = sim.renderer.properties;
+      let total = 0;
+      let compiled = 0;
+      sim.scene.traverseVisible((o) => {
+        if (!o.isMesh || !o.material) return;
+        for (const m of [].concat(o.material)) {
+          total++;
+          try {
+            if (props.get(m).currentProgram) compiled++;
+          } catch (e) {
+            /* none */
+          }
+        }
+      });
+      ok('a world built on the menu is warmed in the background and the menu holds its view until it is (no first-frame link of every program)',
+        built && held && total > 0 && compiled >= total * 0.98 && !sim.holdingForWorldWarm(),
+        `built ${built}, held ${held}, ${compiled} of ${total} visible materials compiled before its first frame`);
+      sim.setMap(wasMap);
+      await new Promise((res) => setTimeout(res, 3000));
+    }
   } finally {
     sim.autoPauseOnHide = autoPause;
     try {

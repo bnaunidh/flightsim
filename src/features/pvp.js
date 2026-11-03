@@ -265,6 +265,13 @@ function startTimer() {
       sendWant(false);
       // Paused with the trigger down: stop firing, for everybody.
       if (P.sentFire && (!P.sim || P.sim.state !== 'flying')) setFiring(false);
+      // And FIRE off the pause card (its layer is over the menus; update() only runs while flying).
+      const e = P.els;
+      if (e && !e.fire.hidden && (!P.sim || P.sim.state !== 'flying')) {
+        e.fire.hidden = true;
+        P.fireBtn = false;
+        e.fire.classList.remove('is-down');
+      }
     } catch (e) {
       /* next tick */
     }
@@ -608,6 +615,14 @@ function els() {
 
 export const FIRE_PX = 88;
 
+/** The menus that open off the multiplayer badge: quick chat, and the chip row's (Summon, Race). */
+export const MP_MENU_SEL = '.mp-chatmenu:not([hidden]), .mpp-menu:not([hidden])';
+
+/** Is one of them open? FIRE (fixed, above the badge's layer) steps aside while one is. */
+export function mpMenuOpen(doc = typeof document !== 'undefined' ? document : null) {
+  return !!(doc && doc.querySelector(MP_MENU_SEL));
+}
+
 /**
  * Where FIRE goes: the first of a few places that covers nothing that stays
  * on the screen — the minimap, the instrument strip, the badge and, on a
@@ -893,8 +908,14 @@ registerExtension({
     const e = els();
     if (e) {
       const racing = ghostReasons().includes('race');
-      const showFire = live(r) && !P.down && !racing && !(sim.hud && sim.hud.hidden);
+      // Not over an open multiplayer menu (Chat, Summon, Race): on a phone on its side it sat on their rows, so a tap meant for a menu fired.
+      const showFire = live(r) && !P.down && !racing && !(sim.hud && sim.hud.hidden) && !mpMenuOpen();
       if (e.fire.hidden === showFire) e.fire.hidden = !showFire;
+      // Put away under a thumb that was holding it: no pointerup ever comes to a hidden button, and it kept firing.
+      if (!showFire && P.fireBtn) {
+        P.fireBtn = false;
+        e.fire.classList.remove('is-down');
+      }
       if (showFire) placeFire(sim, e.fire);
       drawReticle(sim, me, live(r) && !racing);
     }

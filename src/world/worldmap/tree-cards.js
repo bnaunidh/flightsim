@@ -146,6 +146,37 @@ export function cardAtlas() {
   return t;
 }
 
+/**
+ * The conifer cell's tint (linear): the picture's side averages linear (0.085, 0.095, 0.041) where the
+ * game's firs are (0.020, 0.080, 0.029) — scenery.js conifer, sRGB 0.13-0.17, 0.28-0.34, 0.17-0.20.
+ */
+export const CONIFER_CARD_TINT = [0.235, 0.842, 0.707];
+
+/** A linear-light multiplier as the one to apply to sRGB values (a multiply of sRGB values is ~ a multiply of linear by its 2.2 power). */
+export function srgbMultiplier(lin) {
+  return lin.map((v) => Math.pow(Math.max(0, Math.min(1, v)), 1 / 2.2));
+}
+
+/**
+ * Multiply the colour (not the alpha) of the foliage in a block of the atlas by a linear tint: the
+ * green pixels (green over red), fading out to the bark, which keeps its own brown.
+ */
+export function tintCells(g, x, y, w, h, linTint) {
+  if (!linTint || !g || typeof g.getImageData !== 'function') return false;
+  const [mr, mg, mb] = srgbMultiplier(linTint);
+  const im = g.getImageData(x, y, w, h);
+  const d = im.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const k = Math.max(0, Math.min(1, (d[i + 1] - d[i]) / 24));
+    const f = k * k * (3 - 2 * k);
+    d[i] = Math.round(d[i] * (1 + (mr - 1) * f));
+    d[i + 1] = Math.round(d[i + 1] * (1 + (mg - 1) * f));
+    d[i + 2] = Math.round(d[i + 2] * (1 + (mb - 1) * f));
+  }
+  g.putImageData(im, x, y);
+  return true;
+}
+
 /** The real trees' pictures over the drawn ones, when (and if) they arrive. */
 function repaintFromRealTrees(c, g, t) {
   if (realCards || typeof fetch !== 'function' || typeof createImageBitmap !== 'function') return;
@@ -157,6 +188,10 @@ function repaintFromRealTrees(c, g, t) {
       // Broadleaf, conifer and palm (the first three cells, both rows); the scrub keeps its drawing.
       g.clearRect(0, 0, 768, c.height);
       g.drawImage(img, 0, 0, 768, c.height, 0, 0, 768, c.height);
+      // The conifer's picture is the real pine, pale and yellow-olive beside the game's own firs (flora.js
+      // plants those in front of the cards): to the firs' green, as the near real pines are (real-scenery.js
+      // leafTint), so the far woods are not paler than the trees in front of them.
+      tintCells(g, 256, 0, 256, c.height, CONIFER_CARD_TINT);
       t.needsUpdate = true;
       realCards = 'ready';
     })

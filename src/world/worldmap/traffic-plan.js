@@ -55,6 +55,14 @@
  * rate and over half its speed sideways (a 35-degree turn away); clear for a few seconds and it
  * eases back onto its rails. On the final, where a step aside is wrong, it
  * goes around instead. A collision can only be your doing: chasing one down.
+ *
+ * AND FROM EACH OTHER (cheap, every half second). A departure that would
+ * appear within 3 km and 600 m of another waits (another route is tried, or
+ * the next spawn); a hold stacks 300 m over everyone holding at that field,
+ * whatever they are; and two that will close inside SEP_H x SEP_V in the
+ * next 30 s take different levels: the one with the most room to move (not
+ * on its approach, the newer of the two) climbs or descends to 450 m clear
+ * of the other, and eases back onto its profile once clear.
  */
 
 import { AIRPORTS as WP_AIRPORTS, PREVIEW } from './preview.js';
@@ -74,6 +82,10 @@ export const SEP_H = 1500;
 export const SEP_V = 300;
 /** Seconds of your predicted path they look along. */
 export const LOOK_S = 60;
+/** Seconds between the traffic-to-traffic checks (each pair, both ways: a few hundred multiplies at Ultra). */
+export const TT_EVERY = 0.5;
+/** Seconds a traffic-to-traffic level change is held after the conflict has gone. */
+export const TT_HOLD = 8;
 /** Seconds a hold lasts before it diverts somewhere else. */
 export const HOLD_MAX = 150;
 /** Stack spacing in a hold, metres. */
@@ -699,7 +711,8 @@ export class TrafficSim {
     this.events = [];
     this.pickType = pickType;
     this.cache = new Map();
-    this.stats = { spawned: 0, despawned: 0, holds: 0, goArounds: 0, diverts: 0, landed: 0, avoid: 0, minSepH: Infinity, minSep3: Infinity, planMs: 0, plans: 0, knocked: 0, stepMs: 0 };
+    this.stats = { spawned: 0, despawned: 0, holds: 0, goArounds: 0, diverts: 0, landed: 0, avoid: 0, minSepH: Infinity, minSep3: Infinity, planMs: 0, plans: 0, knocked: 0, stepMs: 0, tcas: 0, delayed: 0 };
+    this.ttT = 0;
     this.onEvent = null;
   }
 
@@ -794,9 +807,18 @@ export class TrafficSim {
           if (dh < 4000 || (dh < SEP_H * 3 && Math.abs(y - P.y) < SEP_V * 3)) continue;
         }
         if (P && want.s == null && this.nearPlayer(to, ctx) && plan.sJ - s < 15000) continue;
+        if (want.s == null && this._crowded(P0.x, y, P0.z)) {
+          this.stats.delayed++;
+          continue;
+        }
       } else {
         evalPath(plan.path, 0, P0);
         if (!this.hidden(P0.x, plan.alt0, P0.z, ctx)) continue;
+        // Someone just off that runway (or crossing its climb-out): the departure waits.
+        if (this._crowded(P0.x, plan.alt0, P0.z)) {
+          this.stats.delayed++;
+          continue;
+        }
       }
       const c = this._make(catId, plan, s);
       this.list.push(c);
@@ -807,10 +829,68 @@ export class TrafficSim {
     return null;
   }
 
+  /** Anyone within `r` horizontally and `v` vertically of (x, y, z)? */
+  _crowded(x, y, z, r = SEP_H * 2, v = SEP_V * 2) {
+    for (const o of this.list) {
+      if (o.gone || o.knocked) continue;
+      if (Math.abs(o.y - y) < v && Math.hypot(o.x - x, o.z - z) < r) return true;
+    }
+    return false;
+  }
+
+  /** Can it take a level change for someone else? In a hold, or short of its join point (not on the ground or falling). */
+  _canStep(c) {
+    if (c.gone || c.knocked || c.onGround) return false;
+    return c.state === 'hold' || (c.state === 'fly' && c.s < c.plan.sJ - 300);
+  }
+
+  /**
+   * Traffic against traffic: each pair that will close inside SEP_H x SEP_V in
+   * the next 30 s (or is inside it now) gets a level change for one of them.
+   */
+  _separate() {
+    const L = this.list;
+    const H = LOOK_S / 2;
+    for (let i = 0; i < L.length; i++) {
+      const a = L[i];
+      if (a.gone || a.knocked || a.onGround) continue;
+      for (let j = i + 1; j < L.length; j++) {
+        const b = L[j];
+        if (b.gone || b.knocked || b.onGround) continue;
+        const rx = b.x - a.x;
+        const rz = b.z - a.z;
+        const ry = b.y - a.y;
+        if (Math.abs(rx) > 12000 || Math.abs(rz) > 12000) continue;
+        const wx = b.vx - a.vx;
+        const wz = b.vz - a.vz;
+        const wy = b.vy - a.vy;
+        const w2 = wx * wx + wz * wz;
+        const t = w2 > 1e-3 ? clamp(-(rx * wx + rz * wz) / w2, 0, H) : 0;
+        const dh = Math.hypot(rx + wx * t, rz + wz * t);
+        const dv = ry + wy * t;
+        const now = Math.hypot(rx, rz) < SEP_H && Math.abs(ry) < SEP_V;
+        if (!now && !(dh < SEP_H && Math.abs(dv) < SEP_V)) continue;
+        // Who moves: one free to (not on its approach or in a hold), the newer if both are.
+        const ca = this._canStep(a);
+        const cb = this._canStep(b);
+        if (!ca && !cb) continue;
+        const m = ca && cb ? (a.n > b.n ? a : b) : ca ? a : b;
+        const o = m === a ? b : a;
+        if (!(m.ttT > 0)) this.stats.tcas++;
+        let sense = m.y >= o.y ? 1 : -1;
+        const floor = groundAt(m.plan, m.s) + 150;
+        if (sense < 0 && o.y - SEP_V - 150 < floor) sense = 1;
+        m.ttY = o.y + sense * (SEP_V + 150) - m.railY;
+        m.ttT = TT_HOLD;
+      }
+    }
+  }
+
   _make(catId, plan, s) {
     const C = CATS[catId];
     const typeId = this.pickType ? this.pickType(catId, this.rand) : C.types[Math.floor(this.rand() * C.types.length)];
     const c = {
+      n: this.nextId, ttT: 0, ttY: 0,
       id: `wmt-${this.nextId++}`, catId, cat: C, typeId, plan, from: plan.from, to: plan.to, s, cur: { i: 0 },
       v: 0, state: 'fly', x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, hdg: 0, pitch: 0, bank: 0, onGround: false, gear: 0, flaps: 0,
       phase: 'climb', ox: 0, oz: 0, oy: 0, threatT: 0, holdU: 0, holdT: 0, holdLaps: 0, stack: 0, holdY: 0, holdX: 0, holdZ: 0, holdDx: 1, holdDz: 0, diverts: 0, goArounds: 0,
@@ -875,7 +955,8 @@ export class TrafficSim {
     if (c.state === 'fly') {
       // Reaching the join point: in, or hold.
       if (s0 < plan.sJ && c.s >= plan.sJ) {
-        const why = this.nearPlayer(to, ctx, 500) ? 'player' : this._finalBusy(c) ? 'sequence' : '';
+        // Not back at its level (a level change for someone else): it holds there until it is.
+        const why = this.nearPlayer(to, ctx, 500) ? 'player' : this._finalBusy(c) || Math.abs(c.oy) > 60 ? 'sequence' : '';
         if (why) {
           c.s = plan.sJ;
           this._startHold(c, why);
@@ -914,14 +995,15 @@ export class TrafficSim {
         c.holdU -= lap;
         c.holdLaps++;
         const why = this.nearPlayer(to, ctx, 1500) ? 'player' : this._finalBusy(c) ? 'sequence' : '';
-        if (!why && c.stack === 0) {
+        // A level change for someone else still on: one more lap.
+        if (!why && c.stack === 0 && !(c.ttT > 0)) {
           // Out of the hold, onto the approach, at the join point.
           c.state = 'fly';
           c.s = plan.sJ + 1;
           c.cur.i = 0;
           c._new = true;
           // Still stepping down from a higher level of the stack: eased onto the profile, not dropped onto it.
-          c.oy = c.holdY - altAt(plan, c.s);
+          c.oy = c.holdY + c.oy - altAt(plan, c.s);
           this._releaseStack(c);
           return;
         }
@@ -946,7 +1028,8 @@ export class TrafficSim {
   _startHold(c, why) {
     const plan = c.plan;
     let k = 0;
-    for (const o of this.list) if (o !== c && !o.gone && o.state === 'hold' && o.plan.to.id === plan.to.id && o.catId === c.catId) k = Math.max(k, o.stack + 1);
+    // Over everyone holding for that field, airliner or light aircraft alike.
+    for (const o of this.list) if (o !== c && !o.gone && o.state === 'hold' && o.plan.to.id === plan.to.id) k = Math.max(k, o.stack + 1);
     c.state = 'hold';
     c.stack = k;
     c.holdU = 0;
@@ -968,7 +1051,7 @@ export class TrafficSim {
   /** The bottom of the stack goes in: everybody above steps down one. */
   _releaseStack(c) {
     const id = c.plan.to.id;
-    for (const o of this.list) if (o !== c && !o.gone && o.state === 'hold' && o.plan.to.id === id && o.catId === c.catId && o.stack > 0) o.stack--;
+    for (const o of this.list) if (o !== c && !o.gone && o.state === 'hold' && o.plan.to.id === id && o.stack > 0) o.stack--;
   }
 
   _goAround(c, ctx) {
@@ -1124,8 +1207,14 @@ export class TrafficSim {
       }
     }
     c.avoiding = threat;
+    // Clear of you but not of another: the level change for that one (still on its own track).
+    let tt = false;
+    if (!threat && c.ttT > 0 && this._canStep(c)) {
+      ty = c.ttY;
+      tt = true;
+    } else if (c.ttT > 0 && !this._canStep(c)) c.ttT = 0;
     // Ease towards the targets: the type's own climb rate, sin 35° of its speed sideways; back at half that.
-    const k = threat ? 1 : 0.5;
+    const k = threat || tt ? 1 : 0.5;
     const vy = C.maxVs * k * dt;
     const vl = Math.max(4, c.v * (C.side || 0.57)) * k * dt;
     c.oy += clamp(ty - c.oy, -vy, vy);
@@ -1227,6 +1316,13 @@ export class TrafficSim {
     }
     // Tidy the ones that have gone.
     for (let i = this.list.length - 1; i >= 0; i--) if (this.list[i].gone) this.list.splice(i, 1);
+    // From each other, every half second.
+    for (const c of this.list) if (c.ttT > 0) c.ttT -= dt;
+    this.ttT -= dt;
+    if (this.ttT <= 0) {
+      this.ttT = TT_EVERY;
+      this._separate();
+    }
     // Keep the sky full: one at a time, every couple of seconds, out of sight.
     this.spawnT -= dt;
     if (this.spawnT <= 0) {

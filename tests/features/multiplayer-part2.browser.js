@@ -233,6 +233,53 @@ async function checkWithComic(sim, r, say = () => {}) {
       A.at.vel = { x: sim.aircraft.vel.x, y: sim.aircraft.vel.y, z: sim.aircraft.vel.z };
     });
     fireShown = !document.querySelector('.pvp-fire').hidden;
+    {
+      /*
+       * The bug hunt (2026-11-02): FIRE is fixed above the badge's layer, and
+       * on a phone on its side it sat over the open Chat and Summon menus, so
+       * a tap on a menu row fired. With a menu open FIRE steps aside, and a
+       * thumb that was holding it is let go (a hidden button never hears its
+       * pointerup); shut the menu and it is back.
+       */
+      const fb = document.querySelector('.pvp-fire');
+      const chatBtn = mp.hud.el && mp.hud.el.querySelector('[data-mp-chat]');
+      const chatMenu = mp.hud.el && mp.hud.el.querySelector('[data-mp-chatmenu]');
+      let hiddenWhileOpen = null;
+      let letGo = null;
+      let backAfter = null;
+      // The friend well out of the way meanwhile: a pellet from the held press must not take one of the hearts counted below.
+      const away = () => { const me = sim.aircraft.pos; A.at.pos = { x: me.x, y: me.y + 900, z: me.z + 3000 }; };
+      if (chatBtn && chatMenu) {
+        if (chatMenu.hidden) chatBtn.click();
+        pvp.pvpDebug().P.fireBtn = true;
+        await frames(3, away);
+        hiddenWhileOpen = !chatMenu.hidden && fb.hidden;
+        letGo = pvp.pvpDebug().P.fireBtn === false;
+        if (!chatMenu.hidden) chatBtn.click();
+        pvp.pvpDebug().P.fireBtn = false;
+        await frames(3, away);
+        backAfter = chatMenu.hidden && !fb.hidden;
+        // Any pellet from the held press is gone before the friend comes back ahead.
+        await frames(45, away);
+      }
+      r.ok('mp part 2: FIRE steps aside while the Chat menu is open (a tap on a row is not a shot), lets go of a held press, and is back when it shuts',
+        hiddenWhileOpen === true && letGo === true && backAfter === true,
+        `chat button ${!!chatBtn}; hidden while open ${hiddenWhileOpen}, let go ${letGo}, back after ${backAfter}`);
+      pvp.pvpDebug().P.fireBtn = false;
+      // The checker's follow-up: paused, FIRE is not over the pause card (its layer is above the menus); resumed, it is back.
+      let pausedHidden = null;
+      let backResumed = null;
+      if (sim.state === 'flying') {
+        sim.pause();
+        await wait(350);
+        pausedHidden = sim.state === 'paused' && fb.hidden;
+        sim.resume();
+        await frames(3, away);
+        backResumed = sim.state === 'flying' && !fb.hidden;
+      }
+      r.ok('mp part 2: FIRE is put away while the game is paused (not over the pause card), and is back on resume',
+        pausedHidden === true && backResumed === true, `paused hidden ${pausedHidden}, back ${backResumed}`);
+    }
     // In an aeroplane the gunsight (src/features/gunsight.js) is the crosshair and the old PvP cross is stood down, so either one counts.
     const gs = document.querySelector('.gsk-root:not([hidden]) .gsk-sight:not([hidden])');
     reticle = !document.querySelector('.pvp-reticle').hidden || (sim.gunsightUp === true && !!gs);

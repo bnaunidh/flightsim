@@ -899,7 +899,7 @@ try {
   const back = await B.eval(`
     const r = await pt.until(() => pt.pvp.pvpDebug().stats.respawns > 0 && !pt.pvp.pvpDebug().P.down, 6000, 30);
     const ac = sim.aircraft;
-    return { back: !!r.v, aglReal: Math.round(ac.agl || 0), shield: pt.sawShield, card: pt.cards.some((c) => /BACK IN!Shield on/.test(c)), visible: sim.model.visible };`, 20);
+    return { back: !!r.v, aglReal: Math.round(ac.agl || 0), shield: pt.sawShield, card: pt.cards.some((c) => /(BACK IN!|Back in the game)Shield on/.test(c)), visible: sim.model.visible };`, 20);
   ok('6: three seconds later Brave Otter is back in the air — higher up, drawn again, inside a shield', back.back && back.visible && back.shield && back.card && back.aglReal >= 200, JSON.stringify(back));
   // The same pellets through Clever Koala, whose PvP is OFF.
   await E.eval(`pt.airborne(0, 2600, 90, 380); return true;`);

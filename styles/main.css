@@ -976,6 +976,7 @@ kbd {
   -webkit-backdrop-filter: blur(3px) saturate(1.05);
   pointer-events: auto;
   overflow: auto;
+  z-index: 9; /* over the HUD's pills (2), under the briefing (12) and toasts (20) */
 }
 .menu-layer[hidden] { display: none; }
 

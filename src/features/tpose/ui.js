@@ -11,6 +11,7 @@
  */
 
 import { extLayer } from '../../game/extensions.js';
+import { liftClearOfTouch } from '../heatseek/hud.js';
 
 const CSS = `
 .tp-root { position: fixed; inset: 0; pointer-events: none; z-index: 31; font-family: var(--font, system-ui, sans-serif); }
@@ -76,7 +77,16 @@ export function setGate(off) {
 export function setButtons(want) {
   if (!UI.root) return;
   const key = `${!!want.show}${!!want.spinOn}${!!want.boostOn}${!!want.boostReady}`;
-  if (key === UI.key) return;
+  // Off the touch pads (heatseek/hud.js liftClearOfTouch: BOOST sat on STOP): as they come up, and twice a second.
+  const t = typeof performance !== 'undefined' ? performance.now() : 0;
+  const col = UI.buttons.spin && UI.buttons.spin.parentNode;
+  if (key === UI.key) {
+    if (want.show && col && t - (UI.placedAt || -Infinity) >= 500) {
+      UI.placedAt = t;
+      liftClearOfTouch(col);
+    }
+    return;
+  }
   UI.key = key;
   const { spin, boost } = UI.buttons;
   spin.classList.toggle('is-on', !!want.show);
@@ -86,6 +96,10 @@ export function setButtons(want) {
   boost.classList.toggle('is-dim', !want.boostOn && !want.boostReady);
   spin.innerHTML = want.spinOn ? 'SPIN <small>stop</small>' : 'SPIN <small>climb</small>';
   boost.innerHTML = want.boostOn ? 'BOOST <small>stop</small>' : 'BOOST <small>1000 kt</small>';
+  if (want.show && col) {
+    UI.placedAt = t;
+    liftClearOfTouch(col);
+  }
 }
 
 /** For the tests: what is showing. */

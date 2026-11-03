@@ -59,6 +59,7 @@ import { FlashGate, screenOpacity, now as flashNow } from '../render/flash-safet
 import { COMIC } from '../render/comic.js';
 import * as Terrain from '../world/terrain.js';
 import { hasGuns } from './gunsight/rules.js';
+import { liftClearOfTouch } from './heatseek/hud.js';
 
 const D2R = Math.PI / 180;
 const MAX_METEORS = 28;
@@ -1825,9 +1826,16 @@ function updatePanelText(sim, st, ac) {
   const zFree = zKeyFree(sim);
   const showBtn = zapOn && (touch || !zFree);
   if (UI.keys.hidden === zapMode) UI.keys.hidden = !zapMode;
-  if (UI.zap.hidden === showBtn) UI.zap.hidden = !showBtn;
+  const zapChanged = UI.zap.hidden === showBtn;
+  if (zapChanged) UI.zap.hidden = !showBtn;
   const zapCls = touch ? 'mt-zap' : 'mt-zap is-desk';
   if (UI.zap.className !== zapCls) UI.zap.className = zapCls;
+  // Off the touch pads and the other buttons (heatseek/hud.js liftClearOfTouch): as it comes up, and twice a second.
+  const zt = typeof performance !== 'undefined' ? performance.now() : 0;
+  if (showBtn && touch && (zapChanged || zt - (UI.zapPlacedAt || -Infinity) >= 500)) {
+    UI.zapPlacedAt = zt;
+    liftClearOfTouch(UI.zap);
+  }
   const zk = keyName('zap', sim);
   const how = touch ? 'Tap <b>ZAP</b>' : zFree ? `Press <kbd>${zk}</kbd>` : 'Click <b>ZAP</b>';
   // The lock reticle said "Z ZAP" on an iPad too, which has no Z.

@@ -58,6 +58,7 @@ import { check as quality } from './quality.browser.js';
 import { check as rocket } from './rocket.browser.js';
 import { check as sound } from './sound.browser.js';
 import { check as races } from './race-all.browser.js';
+import { check as bughunt } from './bughunt.browser.js';
 import { check as traffic } from './traffic.browser.js';
 import { check as weapons } from './weapons.browser.js';
 import { check as minimapGhosts } from './minimap-ghosts.browser.js';
@@ -255,6 +256,8 @@ export const CHECKS = [
   { id: 'airspace', check: airspace },
   // The cockpit camera: numpad snaps, the wheel's zoom, a TCA sidestick's hat looking round, the look remembered per aircraft.
   { id: 'cockpit-cam', check: cockpitCam },
+  // The demo bug hunt (2026-11-02): the boat's rudder bar, pause card and restarts; a pause straight after a crash.
+  { id: 'bughunt', check: bughunt },
   // Last: it rebinds keys through Settings (and puts the player's back after).
   { id: 'keybinds', check: keybinds },
 ];

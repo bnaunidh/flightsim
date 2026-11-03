@@ -242,6 +242,8 @@ const MEASURE = `
   const past = [];
   const clipped = [];
   for (const el of document.querySelectorAll('.hud-rotor *, .hud-heli *, .hud-top *')) {
+    // The heading tape scrolls inside its own clipped strip (ui/hud.js, the destination ribbon): its labels run past the edges by design.
+    if (el.closest('.hud-dest-tape')) continue;
     const cs = getComputedStyle(el);
     if (cs.display === 'none' || cs.visibility === 'hidden') continue;
     const r = el.getBoundingClientRect();

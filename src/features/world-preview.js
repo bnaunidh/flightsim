@@ -69,8 +69,10 @@ function startTraffic(sim, q) {
   trafficModule().then((m) => {
     if (!m || S.trafficGen !== gen || !active()) return;
     S.traffic = m.createTraffic(sim, { quality: q });
-    // The flight may have started while it was on its way.
-    if (sim.state === 'flying' || sim.state === 'paused') S.traffic.start();
+    // The flight may have started while it was on its way; otherwise the fleet's models are built
+    // now, one a task while the menu is up, so none is built mid-flight.
+    if (sim.state === 'flying' || sim.state === 'paused') S.traffic.start({ late: true });
+    else S.traffic.prewarm();
   });
 }
 
@@ -304,6 +306,8 @@ function buildWorld(sim, group) {
   propModels().then((list) => {
     if (S.props !== props) return;
     for (const [n, g] of list) props.setModel(n, g);
+    // Arrived after the world's own warm: compiled now, in the background, not on the first one in reach.
+    if (typeof sim.warmShaders === 'function') props.warmed = sim.warmShaders(props.group, { chunked: true });
   });
   S.horizon = new Horizon({ heightAt: Terrain.groundHeightAt, islands: PREVIEW.islands, hideWithin: streamTier(q).range });
   group.add(S.horizon.mesh);

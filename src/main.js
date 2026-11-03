@@ -10,7 +10,7 @@ import * as THREE from './vendor/three.module.js';
 
 import { warmTextures, setTextureAnisotropy, setTextureTier, asphaltTexture, asphaltNormal } from './render/textures.js';
 import { loadAirlineFonts } from './render/airline-fonts.js';
-import { resetSurfaces, updateSurfaces, setFieldWetness, fieldWetness } from './render/surfaces.js';
+import { resetSurfaces, updateSurfaces, setFieldWetness, fieldWetness, cloudWhiteout } from './render/surfaces.js';
 import { BlobShadow } from './aircraft/blob-shadow.js';
 import { TyreSmoke } from './aircraft/tyre-smoke.js';
 import { PostFX } from './render/post.js';
@@ -19,7 +19,7 @@ import { DynamicResolution, pixelRatioCap } from './render/dyn-res.js';
 import { detectWeakDevice, deviceFacts, PERF_MODE } from './render/weak-device.js';
 import { fetchRetry, retrying } from './core/load-retry.js';
 import { setPaintTier } from './render/paint.js';
-import { warmShadersAsync, warmShadersChunked } from './render/shader-warm.js';
+import { warmShadersAsync, warmShadersChunked, warmVisibleChunked } from './render/shader-warm.js';
 import { Weather } from './world/weather.js';
 import { PHASES, changeWords, visibilityPhrase, obscuredBy } from './world/wx.js';
 import { SkyDome } from './world/sky.js';
@@ -136,6 +136,7 @@ import { bankAt, visibilityAt, densityForVisibility } from './world/wx.js';
 const KTS = UNITS.KTS;
 /** The helicopter's stability assist moves the collective lever no faster than this (lever travel per second). */
 export const COLLECTIVE_EASE = 0.3;
+export const WORLD_WARM_MAX_MS = 8000;
 /** A new aeroplane's programs get this long (ms) to compile in the background before it is drawn regardless. */
 export const MODEL_WARM_MAX_MS = 4000;
 /** ...and starts once the scene's lights have been the same for two live frames, or after this many frames. */
@@ -1171,6 +1172,27 @@ class Game {
     while (!steps.next().done);
   }
 
+  /** A world built on the menu: compiled in the background, not drawn on the menu until it is (no first-frame freeze). */
+  warmWorldBehindMenu() {
+    if (!this.renderer || !this.camera || !this.scene) return null;
+    const w = { until: performance.now() + WORLD_WARM_MAX_MS, p: null };
+    this._worldWarm = w;
+    w.p = warmVisibleChunked(this.renderer, this.scene, this.camera, this.scene).then(() => {
+      if (this._worldWarm === w) this._worldWarm = null;
+    });
+    return w.p;
+  }
+
+  holdingForWorldWarm() {
+    const w = this._worldWarm;
+    if (!w) return false;
+    if (this.state !== 'menu' || performance.now() > w.until) {
+      this._worldWarm = null;
+      return false;
+    }
+    return true;
+  }
+
   /**
    * The same build, stopping between its pieces so a loading screen can paint.
    *
@@ -1514,11 +1536,16 @@ class Game {
        */
       clearTimeout(this._crashDebriefT);
       const crashedFlight = this.progress.flights;
-      this._crashDebriefT = setTimeout(() => {
-        if (this.state === 'flying' && this.aircraft.crashed && this.progress.flights === crashedFlight) {
-          this.showCrashDebrief(c.reason);
+      // A pause inside the wait (Esc straight after a crash) waits for the resume; it used to lose the debrief.
+      const debriefWhenFlying = () => {
+        if (!this.aircraft.crashed || this.progress.flights !== crashedFlight) return;
+        if (this.state === 'paused') {
+          this._crashDebriefT = setTimeout(debriefWhenFlying, 400);
+          return;
         }
-      }, 2200);
+        if (this.state === 'flying') this.showCrashDebrief(c.reason);
+      };
+      this._crashDebriefT = setTimeout(debriefWhenFlying, 2200);
     });
 
     ac.on(EVENTS.DAMAGE, (d) => {
@@ -1675,7 +1702,8 @@ class Game {
       <p>${isTutorial ? 'You have finished flight school — you are cleared for solo flight!' : 'Mission complete. Try it again for a better score, or take on another one.'}</p>
     `;
     const actions = [
-      { label: 'Fly again', onClick: () => this.restart(), primary: true },
+      // In the boat it is not flying (the van words its own, game/jobs.js).
+      { label: this.mode === 'drive' && this.vehicle && this.vehicle.isBoat ? 'Sail again' : 'Fly again', onClick: () => this.restart(), primary: true },
       { label: 'Missions', onClick: () => this.quitToMenu('missions') },
       { label: 'Main menu', onClick: () => this.quitToMenu('main') },
     ];
@@ -1735,7 +1763,10 @@ class Game {
       });
       return;
     }
-    if (this.runner.status === STATUS.RUNNING || this.runner.status === STATUS.FAILED) return;
+    // A run that a crash does not fail (Flight School, Meteor Shower, On Call) left a wreck and nothing to press.
+    const d = this.runner.def;
+    const goesOn = this.runner.status === STATUS.RUNNING && d && d.failOnCrash === false && !d.vehicle;
+    if (!goesOn && (this.runner.status === STATUS.RUNNING || this.runner.status === STATUS.FAILED)) return;
     this.state = 'debrief';
     this.hud.setVisible(false);
     this.menus.showDebrief({
@@ -1743,7 +1774,7 @@ class Game {
       kind: 'bad',
       body: `<p class="debrief-reason">${reason}</p><p>No harm done — this is a simulator. Reset and try again.</p>`,
       actions: [
-        { label: 'Reset on the runway', onClick: () => this.restart(), primary: true },
+        { label: goesOn ? 'Try again' : 'Reset on the runway', onClick: () => this.restart(), primary: true },
         { label: 'Main menu', onClick: () => this.quitToMenu('main') },
       ],
     });
@@ -1787,9 +1818,7 @@ class Game {
     this.installOffline('first-flight');
     await this.unlockAudio();
     this.wakeAudio();
-    // Whatever you were driving, you are not driving it now. This is here
-    // rather than in the switcher because quitting the boat to the menu and
-    // picking Free Flight is the other way back, and it left the hull behind.
+    // Whatever you were driving, you are not now (quitting the boat to the menu left the hull behind).
     this.stopDrive();
     this.mode = mode;
     this.modeOpts = opts;
@@ -1861,19 +1890,13 @@ class Game {
     // somewhere awkward, not to be pecked to death on the climb-out.
     this._nextDisaster = 180 + Math.random() * 240;
 
-    // Which aeroplane. Only Free Flight offers the choice — the tutorial and
-    // the missions are written around the trainer's numbers.
-    // The Blender helicopter landed after its built-in stand-in was built
-    // (the vehicles load after the menu): build it again, or setAircraft's
-    // same-type shortcut would keep the stand-in for the whole session.
+    // Only Free Flight offers the choice. A Blender helicopter that landed after its stand-in is built again.
     if (this.aircraftType && this.model && BLENDER_AIRCRAFT[this.aircraftType.id] && !this.model.userData.blenderModel) {
       const st = blenderModelStatus();
       if (st.enabled !== false && st[BLENDER_AIRCRAFT[this.aircraftType.id]] === 'ready') this.aircraftType = null;
     }
     this.setAircraft(mode === 'free' ? opts.aircraft || 'skylark' : 'skylark');
-    // setAircraft returns early when the type has not changed, so the name is
-    // set here as well — otherwise flying the same aeroplane twice in a row
-    // leaves the panel blank the second time.
+    // Set here too: setAircraft returns early for the same type, and the panel was blank.
     this.hud.setAircraftName(this.aircraftType.name);
 
     /*
@@ -1885,18 +1908,7 @@ class Game {
      * aeroplane is the right one by the time it is put down on it.
      */
     if (def.map && this.settings.map !== def.map) {
-      /*
-       * A mission borrows the map; it does not get to keep it.
-       *
-       * This used to write the mission's map into settings and save it, so
-       * flying one military mission moved your saved map to the air base
-       * permanently — every Free Flight afterwards started there, and so did
-       * every other mission that does not name a map of its own. Nobody chose
-       * that and nothing told them it had happened.
-       *
-       * The choice you made is remembered here and put back when the flight
-       * ends.
-       */
+      // A mission borrows the map, not keeps it: the player's own is put back when the flight ends.
       this.mapBeforeMission = this.settings.map;
       applyMap(def.map);
       this.layRoads();
@@ -1907,23 +1919,8 @@ class Game {
       this.menus.syncMap(def.map);
       this.buildWorld(this.settings.quality);
     }
-    /*
-     * Which aeroplane, in order of who has the strongest claim: the mission
-     * names one, or the caller asked for one, or the switcher left the
-     * helicopter selected, or you keep what you had.
-     *
-     * `aircraftType` is undefined until the first flight of the session — the
-     * front page has not chosen an aeroplane — so every read of it here has to
-     * allow for that. It did not, and pressing Heli from a cold start threw
-     * before a single frame was drawn.
-     */
-    /*
-     * A mission flies in a type it was written for (game/mission-aircraft.js,
-     * the owner's audit): the one asked for, or the one picked on the Free
-     * Flight screen, if it accepts that; else its recommended one. A
-     * mission that is not listed, and every other mode, keeps the order
-     * below.
-     */
+    // Which aeroplane: the mission's (game/mission-aircraft.js), the caller's, the switcher's helicopter, or what you had.
+    // aircraftType is undefined before the first flight of a session: every read allows for that.
     const missionAc = mode === 'mission' ? pickMissionAircraft(def, { asked: opts.aircraft, current: (this.menus && this.menus.chosenAircraft) || (this.settings && this.settings.aircraft) }) : null;
     const wantAc =
       missionAc
@@ -1967,8 +1964,7 @@ class Game {
     setFieldWetness((this.weather.cond && this.weather.cond.rain) || 0);
 
     // Spawn.
-    // Starting on the stand is opt-in, so the tutorial, the missions and every
-    // existing test still begin lined up on the runway.
+    // Starting on the stand is opt-in: everything else starts on the runway.
     // A helicopter does not taxi from a gate; it starts on a pad (below).
     const heliStart = !!SPEC.rotor;
     let wantsTaxi = mode === 'free' && !heliStart && (opts.taxi ?? this.settings.startAtGate);
@@ -2169,11 +2165,24 @@ class Game {
   }
 
   restart() {
+    // In the boat or the van: the same drive (and mission) again, not a Free Flight with no boat.
+    if (this.restartDrive()) return;
     if (this.mode) this.startMode(this.mode, this.modeOpts);
     else this.quitToMenu('main');
   }
 
+  /** Start the drive you are on again, from its own start. False when this is not a drive. */
+  restartDrive() {
+    // The boat and the van only: a ramp shift's Restart starts the shift over (staff.js startMode).
+    if (this.mode !== 'drive' || !this.modeOpts || !['boat', 'car'].includes(this.modeOpts.kind)) return false;
+    const { kind, ...opts } = this.modeOpts;
+    this.startDrive(kind, opts);
+    return true;
+  }
+
   returnToAirport() {
+    // In a drive: back to its start, not the aeroplane on runway 09.
+    if (this.restartDrive()) return;
     extStop(this, 'airport');
     this.aircraft.reset({ ...RUNWAY_START, engineOn: true });
     this.input.throttleTarget = 0;
@@ -2193,28 +2202,7 @@ class Game {
     this.hud.setVisible(true);
   }
 
-  /**
-   * Put back the take-off configuration a flight starts in.
-   *
-   * startMode() hands each new flight to the features, and the airliners
-   * feature sets take-off flap there (10 degrees on the A320, 20 on the 747
-   * and the A380), because the jumbos cannot clear the Kestrel strip without
-   * it. 'Back to runway' (returnToAirport above) and 'Skip to runway'
-   * (taxi.skip) put the aeroplane down again with aircraft.reset(), which
-   * zeroes the flaps, and nothing set them again. Flown with the playtest's
-   * take-off after either (the inputs of tests/features/airliners.browser.js),
-   * the 747 and the A380 were not 15 m up until 1,398 and 1,369 m from brake
-   * release — 378 and 349 m past the end of the runway, where a reviewer's
-   * run hit the ground — and the A320 at 1,040. With this: 800, 776 and 850,
-   * against 806, 781 and 842 from a fresh start.
-   *
-   * So both ask the airliners' own startMode hook again — the same code, so
-   * the same flap, the same stance and the same "pull back at N knots" line.
-   * Only that one hook: the others begin things in startMode (a meteor
-   * shower, a loaded bomb rack) that going back to the runway must not begin
-   * a second time. extensions() leaves out a feature that has been switched
-   * off for throwing, and the call is fenced the way extensions.js fences it.
-   */
+  /** Put back the take-off flap a flight starts in (the airliners feature's startMode hook only), after a reset() zeroed it. */
   restoreTakeoffConfig() {
     const ext = extensions().find((e) => e.id === 'airliners');
     if (!ext || typeof ext.startMode !== 'function') return;
@@ -2408,17 +2396,33 @@ class Game {
     // what the input layer is actually doing.
     this.input.freeLook = !!this.settings.freeLook;
     this.menus.syncFreeLook(this.input.freeLook);
-    const r = this.aircraft.readouts();
-    this.menus.setPauseInfo(`
+    // The boat's own numbers, not the parked aeroplane's (the van's are game/jobs.js).
+    const boat = this.mode === 'drive' && this.vehicle && this.vehicle.isBoat ? this.vehicle : null;
+    if (boat) {
+      const b = boat.readouts();
+      const run = this.runner && this.runner.status === STATUS.RUNNING && this.runner.def ? this.runner.def.name : null;
+      this.menus.setPauseInfo(`
       <div class="pause-grid">
-        <span>Speed<b>${Math.round(r.iasKts)} kt</b></span>
-        <span>Height<b>${(r.onGround ? 0 : Math.round(r.altFt) || 0).toLocaleString('en-GB')} ft</b></span>
-        <span>Heading<b>${String(Math.round(r.heading)).padStart(3, '0')}°</b></span>
-        <span>Fuel<b>${Math.round(r.fuelPct * 100)}%</b></span>
+        <span>Speed<b>${Math.round(b.speedKts || 0)} kt</b></span>
+        <span>Heading<b>${String(Math.round(((b.heading % 360) + 360) % 360)).padStart(3, '0')}°</b></span>
+        <span>Engine<b>${b.leverLabel || '—'}</b></span>
         <span>Wind<b>${Math.round(this.weather.windSpeedKts)} kt</b></span>
-        <span>View<b>${VIEW_LABELS[this.rig.mode]}</b></span>
+        <span>${run ? 'Mission' : 'Trip'}<b>${run || `${((b.distanceM || 0) / 1852).toFixed(1)} nm`}</b></span>
       </div>
     `);
+    } else {
+      const r = this.aircraft.readouts();
+      this.menus.setPauseInfo(`
+        <div class="pause-grid">
+          <span>Speed<b>${Math.round(r.iasKts)} kt</b></span>
+          <span>Height<b>${(r.onGround ? 0 : Math.round(r.altFt) || 0).toLocaleString('en-GB')} ft</b></span>
+          <span>Heading<b>${String(Math.round(r.heading)).padStart(3, '0')}°</b></span>
+          <span>Fuel<b>${Math.round(r.fuelPct * 100)}%</b></span>
+          <span>Wind<b>${Math.round(this.weather.windSpeedKts)} kt</b></span>
+          <span>View<b>${VIEW_LABELS[this.rig.mode]}</b></span>
+        </div>
+      `);
+    }
     this.menus.show('pause');
     this.audio.available && this.audio.mixer.suspend();
   }
@@ -3914,6 +3918,7 @@ class Game {
       this.aircraft.reset({ ...RUNWAY_START, engineOn: true });
       this.hud.clearTransient();
       this.hud.notify(`${def.name} — ${def.subtitle}`, 'good', 5);
+      this.warmWorldBehindMenu();
     });
     return def;
   }
@@ -4634,17 +4639,11 @@ class Game {
     saveSettings(this.settings);
     this.menus.syncMap(want);
     this.buildWorld(this.settings.quality);
+    this.warmWorldBehindMenu();
   }
 
   /**
-   * Put a jet on the player's tail.
-   *
-   * Owned by the game rather than by the mission, so it is disposed on every
-   * path that ends a flight — a pursuer left in the scene would carry on
-   * hunting somebody who has gone back to the menu.
-   */
-  /**
-   * A flight of three, close enough to see.
+   * A flight of three, close enough to see (owned by the game, not the mission, so every end of a flight disposes it).
    *
    * One aeroplane at 2,200 m was the whole problem: at that range a jet is a
    * few pixels, so "there is a jet on your tail" was a line of text about
@@ -5685,7 +5684,8 @@ class Game {
        * them and keeps none of them.
        */
       const bc = this._boatControls || (this._boatControls = { steer: 0, lever: { up: false, down: false }, leverIndex: null, crashStop: false, weather: null });
-      bc.steer = clamp(ctrl.roll, -1, 1);
+      // The touch RUDDER bar steers her too (it writes yaw; only roll steered).
+      bc.steer = clamp(ctrl.roll + (touch && touch.rudderHeld ? Number(touch.yaw) || 0 : 0), -1, 1);
       // held(), not pressed(): the vehicle does its own edge detection and
       // its own hold-to-repeat, so one tap is one detent and holding the
       // key walks the lever at four detents a second.
@@ -6508,11 +6508,11 @@ class Game {
       }
     }
 
-    // Extra fog inside cloud gives a genuine whiteout.
+    // Extra fog inside cloud gives a genuine whiteout (moonlit grey at night).
     if (this.cloudImmersion > 0.01) {
       const p = this.weather.palette();
       this.scene.fog.density = p.fogDensity + this.cloudImmersion * 0.0045;
-      this.scene.fog.color.copy(p.fogColor).lerp(new THREE.Color(0xdfe6ee), this.cloudImmersion * 0.7);
+      this.scene.fog.color.copy(p.fogColor).lerp(cloudWhiteout(p.daylight), this.cloudImmersion * 0.7);
     }
 
     // Navigation guidance: the mission's current target, or the runway when
@@ -6964,8 +6964,8 @@ class Game {
   loop() {
     const tick = () => {
       requestAnimationFrame(tick);
-      // A world being built in stages (buildWorldStaged) is half there: draw nothing until it is whole.
-      if (this._worldBuilding) {
+      // A world being built in stages (buildWorldStaged) is half there: draw nothing until it is whole (or warm).
+      if (this._worldBuilding || this.holdingForWorldWarm()) {
         this.clock.getDelta();
         return;
       }

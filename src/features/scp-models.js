@@ -54,6 +54,7 @@ import { qualityRank } from '../aircraft/model-quality.js';
 import { heightAt } from '../world/terrain.js';
 import { Builder } from '../aircraft/models/civil-build.js';
 import { createPerson, posePerson, disposePerson } from './staff/person.js';
+import { warmShadersChunked } from '../render/shader-warm.js';
 
 const SF = 'https://sketchfab.com/3d-models/';
 
@@ -898,6 +899,34 @@ function stepModels(D, dt) {
   for (let i = 0; i < R.pool.length; i++) if (R.pool[i].busy) dressFigure(D, R.pool[i].p, R.pool[i].kind, i);
   if (!D.gunship && templates.get('apache') && !R.stripLost) D.gunship = makeGunship(D);
   stepGunship(D, R, dt);
+  warmArrivals(D);
+}
+
+/**
+ * The models arrive one by one mid-mission, and each was compiled on its
+ * first frame on screen — the guards dressed during the boarding, the SCPs as
+ * their sector falls: 37 programs in the boarding on the Chromebook harness,
+ * seconds of frames. Whatever has arrived (or been dressed) since the last
+ * warm is compiled in the background half a second later, a few meshes a
+ * step, the SCPs not yet out shown for the compile only.
+ */
+function warmArrivals(D) {
+  const sig = D.group.children.length + D.scps.length * 7 + (D.gunship ? 1000 : 0) + mats.size * 31;
+  if (sig !== D.warmSig) {
+    D.warmSig = sig;
+    D.warmDue = D.t + 0.5;
+    return;
+  }
+  if (D.warmDue == null || D.t < D.warmDue || D.warming) return;
+  const sim = D.api.sim;
+  if (!sim || !sim.renderer || !sim.camera) return;
+  D.warmDue = null;
+  D.warming = true;
+  D.warms = (D.warms || 0) + 1;
+  const show = D.group.children.slice();
+  warmShadersChunked(sim.renderer, D.api.group, sim.camera, sim.scene, { budgetMs: 6, show }).then(() => {
+    D.warming = false;
+  });
 }
 
 function disposeModels(D) {
@@ -924,6 +953,8 @@ function modelsState(D) {
   return {
     on: D.on,
     quality: D.q,
+    warms: D.warms || 0,
+    warming: !!D.warming,
     status: scpModelStatus(),
     scps: D.scps.map((s) => ({ id: s.id, out: s.out, visible: s.obj.visible, s: +s.s.toFixed(2), length: +s.length.toFixed(1), held: s.held, x: s.obj.position.x, y: s.obj.position.y, z: s.obj.position.z, clip: s.inst ? s.inst.clip : null, mode: s.mode })),
     posts: D.posts.map((p) => ({ kind: p.kind, real: p.real, x: p.x, z: p.z })),

@@ -213,8 +213,70 @@ export function setPanel(p) {
 export function setButtons({ fire, flares }) {
   const e = S.els;
   if (!e) return;
+  const changed = e.fire.hidden !== !fire || e.flare.hidden !== !flares;
   e.fire.hidden = !fire;
   e.flare.hidden = !flares;
+  // Off the touch controls (liftClearOfTouch): as they come up, and twice a second.
+  const t = typeof performance !== 'undefined' ? performance.now() : 0;
+  if (changed || t - (S.placedAt || -Infinity) >= 500) {
+    S.placedAt = t;
+    liftClearOfTouch(e.fire);
+    liftClearOfTouch(e.flare);
+  }
+}
+
+/**
+ * Keep a fixed on-screen button off the touch controls (ui/touch.js).
+ *
+ * FIRE MSL and FLARES (and the carrier's HOOK, carrier/ui.js, the meteor
+ * ZAP, meteor.js, and T-Pose's SPIN and BOOST, tpose/ui.js) sit at fixed
+ * spots that were "above the touch pads" when the pads were two rows; they
+ * are four rows now, and on a Chromebook with a touchscreen (1366x768) FIRE
+ * sat on BRAKES and HOOK on STOP, so a tap on BRAKES fired a missile. When
+ * the button overlaps one of the touch layer's controls it is lifted to just
+ * above it (its CSS spot otherwise, so the phone layouts keep theirs).
+ * Returns how many pixels it was lifted.
+ */
+export function liftClearOfTouch(btn, gap = 10) {
+  if (!btn || typeof document === 'undefined' || typeof getComputedStyle !== 'function') return 0;
+  if (btn.style.bottom) btn.style.bottom = '';
+  if (btn.hidden) return 0;
+  const layer = document.querySelector('.hud.is-touch .touch-layer');
+  if (!layer) return 0;
+  const shown = (el) => {
+    if (!el || el.hidden) return null;
+    const b = el.getBoundingClientRect();
+    if (b.width < 4 || b.height < 4) return null;
+    const cs = getComputedStyle(el);
+    return cs.display === 'none' || cs.visibility === 'hidden' ? null : b;
+  };
+  const controls = [];
+  for (const c of layer.children) {
+    const b = shown(c);
+    if (b) controls.push(b);
+  }
+  // And the other features' buttons on the same layer (the meteor ZAP, T-Pose's SPIN and BOOST), so two lifted ones do not land on each other.
+  for (const o of document.querySelectorAll('#ext-layer button')) {
+    if (o === btn || btn.contains(o) || o.contains(btn)) continue;
+    const b = shown(o);
+    if (b) controls.push(b);
+  }
+  let r = btn.getBoundingClientRect();
+  if (r.width < 4 || r.height < 4 || !controls.length) return 0;
+  const base = parseFloat(getComputedStyle(btn).bottom) || 0;
+  let lift = 0;
+  for (let pass = 0; pass < 4; pass++) {
+    let need = 0;
+    for (const b of controls) {
+      if (r.left < b.right && r.right > b.left && r.top - lift < b.bottom && r.bottom - lift > b.top) need = Math.max(need, r.bottom - lift - b.top + gap);
+    }
+    if (need <= 0) break;
+    lift += need;
+  }
+  // Never off the top of the screen for it.
+  lift = Math.min(lift, Math.max(0, r.top - 8));
+  if (lift > 0) btn.style.bottom = `${Math.round(base + lift)}px`;
+  return lift;
 }
 
 export function setSeeker(on, x, y, r) {

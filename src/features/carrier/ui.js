@@ -20,6 +20,7 @@
  */
 
 import { extLayer } from '../../game/extensions.js';
+import { liftClearOfTouch } from '../heatseek/hud.js';
 
 const CSS = `
 .co-root { position: fixed; inset: 0; pointer-events: none; z-index: 31; font-family: var(--font, system-ui, sans-serif); }
@@ -299,13 +300,23 @@ export function boardShown() {
 export function buttons({ hook = false, hookDown = false, launch = false, hot = false }) {
   if (!UI.btns) return;
   const want = `${hook}|${hookDown}|${launch}|${hot}`;
-  if (UI.last.btns === want) return;
+  // Off the touch pads (heatseek/hud.js liftClearOfTouch: HOOK sat on STOP): when they change, and twice a second.
+  const t = typeof performance !== 'undefined' ? performance.now() : 0;
+  const place = () => {
+    UI.placedAt = t;
+    if (hook || launch) liftClearOfTouch(UI.btns);
+  };
+  if (UI.last.btns === want) {
+    if (t - (UI.placedAt || -Infinity) >= 500) place();
+    return;
+  }
   UI.last.btns = want;
   UI.hookBtn.classList.toggle('is-on', !!hook);
   UI.hookBtn.classList.toggle('is-down', !!hookDown);
   UI.hookBtn.textContent = hookDown ? 'HOOK ▼' : 'HOOK';
   UI.launchBtn.classList.toggle('is-on', !!launch);
   UI.launchBtn.classList.toggle('is-hot', !!hot);
+  place();
 }
 
 /* ---- Free Flight: Start at Carrier / Airbase ---- */

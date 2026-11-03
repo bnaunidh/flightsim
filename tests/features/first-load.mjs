@@ -72,6 +72,8 @@ ok('first-load: no missing module in the static graph', ![...graph.values()].som
 // The budget: v75.5 was 244 modules / 2714 KB gzipped before the menu; the target is well under 1.6 MB.
 ok('first-load: the static graph is at most 160 modules', graph.size <= 160, `${graph.size} modules`);
 ok('first-load: the static graph is at most 1.6 MB gzipped', gz <= 1.6 * 1024 * 1024, `${(gz / 1024).toFixed(0)} KB`);
+// The class-demo freeze (Nov 4): the bug-fix pass adds no first-load bytes over v76.7 (1,495,038 B gzipped).
+ok('first-load: no bigger than v76.7 (the demo pass adds no first-load bytes)', gz <= 1495038, `${gz} B gzipped`);
 
 /* ---- main.js: what boot does and does not do ---- */
 const main = src('src/main.js');
