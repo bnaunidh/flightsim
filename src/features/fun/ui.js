@@ -216,6 +216,14 @@ export class FunHud {
       const r = obj.getBoundingClientRect();
       if (r.width && r.left < left + 60 && r.right > left && top < r.bottom && top + 44 > r.top) top = r.bottom + 8;
     }
+    // Nor on "Tap here to get out" (staff/ui.js, under it on a phone held
+    // upright): the chip covered half of the only way out.
+    const pr = document.querySelector('.of-prompt.on');
+    if (pr) {
+      const r = pr.getBoundingClientRect();
+      const h = this.chip.offsetHeight || 54;
+      if (r.width && r.left < left + (this.chip.offsetWidth || 118) && r.right > left && top < r.bottom && top + h > r.top) top = r.bottom + 8;
+    }
     const stick = root.querySelector('.touch-stick');
     if (stick) {
       const r = stick.getBoundingClientRect();

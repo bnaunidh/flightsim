@@ -27,6 +27,11 @@ export async function check(sim, r, say = () => {}) {
     await rampRestart(sim, r, say);
     await lockOffPause(sim, r, say);
     await crashNoFail(sim, r, say);
+    await phoneUpright(sim, r, say);
+    await footPauseCard(sim, r, say);
+    await noticesOffMenu(sim, r, say);
+    await boatRaceRestart(sim, r, say);
+    await worldMapCard(sim, r, say);
   } finally {
     sim.renderer.render = realRender;
     sim.override = null;
@@ -446,4 +451,246 @@ export async function crashNoFail(sim, r) {
     got.every((g) => g.shown && g.again), JSON.stringify(got));
   sim.quitToMenu();
   await wait(50);
+}
+
+/*
+ * 11. A phone held upright (375 x 812, 390 x 844), on the ground, on a touch
+ * load. The helicopter's card brings the objective down past half-way, the
+ * column under it was measured from the objective's first line only, and the
+ * Races chip sat on the objective; a fighter's FLARES sat on the "Parking
+ * brake on" pill; the Fun chip covered half of "Tap here to get out"; and a
+ * card arriving in the column slid in from 14 px out, past a 6 px gap, off
+ * the right edge. Only on a touch layout under 560 px wide: run it with
+ * phone emulation to see it bite.
+ */
+export async function phoneUpright(sim, r) {
+  const box = (el) => {
+    if (!el || el.hidden) return null;
+    const b = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    return b.width < 4 || b.height < 4 || cs.display === 'none' || cs.visibility === 'hidden' ? null : b;
+  };
+  const hits = (a, k) => !!a && !!k && a.left < k.right - 1 && a.right > k.left + 1 && a.top < k.bottom - 1 && a.bottom > k.top + 1;
+  const R = (b) => (b ? `${Math.round(b.left)},${Math.round(b.top)}..${Math.round(b.right)},${Math.round(b.bottom)}` : '-');
+  const start = async (aircraft, game) => {
+    if (sim.state !== 'menu') sim.quitToMenu();
+    await wait(50);
+    if (typeof sim.switchGame === 'function') sim.switchGame(game);
+    await sim.startMode('free', { aircraft, time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 250 });
+    for (let i = 0; i < 300 && sim.state !== 'flying'; i++) await wait(10);
+    clearTimeout(sim._crashDebriefT);
+    for (let i = 0; i < 30; i++) sim.step(1 / 30);
+    await wait(100);
+  };
+  const phone = () => !!document.querySelector('.hud.is-touch') && innerWidth <= 560;
+  if (!phone()) {
+    await start('skylark', 'flight');
+    const is = phone();
+    sim.quitToMenu();
+    if (!is) {
+      r.ok('bughunt: a phone held upright: the objective, Races, FLARES, the brake pill, the Fun chip and "Tap here to get out" clear of each other, and on the screen', true, `not a phone held upright here (${innerWidth}x${innerHeight})`);
+      return;
+    }
+  }
+  const bad = [];
+  // The helicopter: the column starts under the whole objective.
+  await start('harrier', 'heli');
+  for (let i = 0; i < 8; i++) sim.step(0.5);
+  const stack = sim.hud && sim.hud.stack;
+  if (stack && stack.touchTop) stack.touchTop();
+  sim.step(0.5);
+  await wait(400); // the column's own glide to its place
+  const obj = box(document.querySelector('#ui .hud-top'));
+  const col = stack && stack.el && stack.el.getBoundingClientRect();
+  if (obj && col && obj.left < col.right && obj.right > col.left && obj.top < innerHeight * 0.5 && col.top < obj.bottom) bad.push(`heli: the column starts at y ${Math.round(col.top)}, on the objective ${R(obj)}`);
+  const races = box(document.querySelector('.race-solobar'));
+  if (hits(races, obj)) bad.push(`heli: Races ${R(races)} on the objective ${R(obj)}`);
+  const radio = box(document.querySelector('#ui .hud-subtitle'));
+  if (hits(races, radio)) bad.push(`heli: Races ${R(races)} on the radio line ${R(radio)}`);
+  // A card arriving in the column slides in from no further out than the gap to the edge.
+  if (stack && stack.el) {
+    const d = document.createElement('div');
+    d.style.height = '20px';
+    const had = stack.el.classList.contains('rs-anim');
+    stack.el.classList.add('rs-anim');
+    stack.el.appendChild(d);
+    const a = d.getAnimations ? d.getAnimations()[0] : null;
+    if (a) {
+      a.pause();
+      a.currentTime = 0;
+    }
+    const b = d.getBoundingClientRect();
+    if (b.right > innerWidth + 0.5) bad.push(`a card sliding into the column starts at x ${Math.round(b.left)}..${Math.round(b.right)}, past the screen's ${innerWidth}`);
+    d.remove();
+    if (!had) stack.el.classList.remove('rs-anim');
+  }
+  // A fighter at the gate: FLARES and FIRE MSL off the parking-brake pill.
+  await start('f22', 'flight');
+  sim.aircraft.parkingBrake = true;
+  for (let i = 0; i < 4; i++) sim.step(0.5);
+  await wait(50);
+  const pill = box(document.querySelector('.hud-pills'));
+  for (const sel of ['#ext-layer .is-flare', '#ext-layer .is-fire']) {
+    const k = box(document.querySelector(sel));
+    if (hits(k, pill)) bad.push(`f22: ${sel.split('.').pop()} ${R(k)} on the pill ${R(pill)}`);
+  }
+  if (!pill) bad.push('f22: no parking-brake pill to look at');
+  // Stopped on the ground: "Tap here to get out", and the Fun chip off it.
+  await start('skylark', 'flight');
+  for (let i = 0; i < 10; i++) sim.step(0.5);
+  await wait(50);
+  const prompt = box(document.querySelector('.of-prompt.on'));
+  const chip = box(document.querySelector('.fun-chip'));
+  if (!prompt) bad.push('skylark: no "Tap here to get out" to look at');
+  if (hits(chip, prompt)) bad.push(`skylark: the Fun chip ${R(chip)} on "Tap here to get out" ${R(prompt)}`);
+  r.ok('bughunt: a phone held upright: the objective, Races, FLARES, the brake pill, the Fun chip and "Tap here to get out" clear of each other, and on the screen',
+    bad.length === 0, `${innerWidth}x${innerHeight}: ${bad.join('; ') || 'clear'}`);
+  sim.quitToMenu();
+  await wait(50);
+}
+
+/*
+ * 12. The pause card on foot read the parked aeroplane: its speed, height and
+ * fuel (as the boat's did before f68da01a). It reads the walker now.
+ */
+export async function footPauseCard(sim, r) {
+  if (sim.state !== 'menu') sim.quitToMenu();
+  await wait(50);
+  const OF = await import('../../src/features/onfoot.js');
+  await sim.startMode('free', { aircraft: 'skylark', taxi: false });
+  for (let i = 0; i < 300 && sim.state !== 'flying'; i++) await wait(10);
+  sim.step(2);
+  const why = OF.onFoot.getOut(sim);
+  for (let i = 0; i < 10; i++) sim.step(0.2);
+  const walking = OF.onFoot.active;
+  sim.pause();
+  const info = sim.menus.screens.pause.querySelector('[data-pause-info]');
+  const text = info ? info.textContent.replace(/\s+/g, ' ').trim() : '';
+  sim.resume();
+  r.ok('bughunt: the pause card on foot shows the walker (on foot, walked, the aeroplane\'s distance), not the parked aeroplane\'s height and fuel',
+    walking && /On foot\s*(Standing|Walking|Running|Paddling)/.test(text) && /Aeroplane\s*\d+ m away/.test(text) && !/Fuel|Height/.test(text),
+    `on foot ${walking}${why ? ` (${why})` : ''}; card: ${text}`);
+  sim.quitToMenu();
+  await wait(50);
+}
+
+/*
+ * 13. Notices raised just before quitting ("Braking action POOR", "7 more
+ * coming out of the blast door") went on over the menu's title for their
+ * last seconds (and the flight's own first notices with them). The
+ * flight's notices end with it; an achievement stays.
+ */
+export async function noticesOffMenu(sim, r) {
+  if (sim.state !== 'menu') sim.quitToMenu();
+  await wait(50);
+  await sim.startMode('free', { aircraft: 'skylark' });
+  for (let i = 0; i < 300 && sim.state !== 'flying'; i++) await wait(10);
+  sim.step(0.5);
+  sim.hud.notify('Braking action POOR — ice. Brake gently and expect a long roll.', 'warn', 6);
+  sim.hud.notify('7 more coming out of the blast door.', 'info', 4);
+  sim.hud.notify('<div class="ach-toast">Achievement unlocked: bug hunt</div>', 'unlock', 3);
+  sim.step(0.1);
+  sim.quitToMenu();
+  await wait(100);
+  const up = [...document.querySelectorAll('.hud-toast:not(.is-out)')]
+    .filter((t) => t.getClientRects().length && getComputedStyle(t).display !== 'none')
+    .map((t) => t.textContent.replace(/\s+/g, ' ').trim().slice(0, 40));
+  r.ok('bughunt: notices raised just before quitting are gone from the menu (an achievement stays)',
+    sim.state === 'menu' && up.length > 0 && up.every((t) => /bug hunt/.test(t)),
+    `on the menu: ${JSON.stringify(up)}`);
+  for (const e of sim.hud.toasts.splice(0)) e.node.remove();
+}
+
+/*
+ * 14. Restart after a boat race. The race borrows the course's island
+ * (Coral Lagoon) and puts the boat menu's own island back in its memory, so
+ * Restart (and Back to the start) built the boat menu's island instead and
+ * put the boat there. She restarts on the island she is on.
+ */
+export async function boatRaceRestart(sim, r) {
+  if (sim.state !== 'menu') sim.quitToMenu();
+  await wait(50);
+  const RC = await import('../../src/features/race.js');
+  const MP = await import('../../src/world/maps.js');
+  const other = (MP.MAPS.find((m) => m.game === 'boat' && m.id !== 'lagoon') || {}).id;
+  const had = sim.gameMap && { has: 'boat' in sim.gameMap, map: sim.gameMap.boat };
+  const settle = async () => {
+    for (let i = 0; i < 1500 && !(sim.vehicle && sim.vehicle.isBoat && sim.state === 'flying'); i++) await wait(10);
+    sim.step(1);
+  };
+  let got = null;
+  try {
+    if (sim.gameMap && other) sim.gameMap.boat = other;
+    await RC.raceAlone(sim, 'boat');
+    await settle();
+    const inRace = sim.settings.map;
+    sim.step(2);
+    sim.pause();
+    sim.pauseAction('restart');
+    await settle();
+    const afterRestart = sim.settings.map;
+    sim.pause();
+    sim.pauseAction('airport');
+    await settle();
+    got = { other, inRace, afterRestart, afterAirport: sim.settings.map, boat: !!(sim.vehicle && sim.vehicle.isBoat) };
+  } finally {
+    sim.quitToMenu();
+    if (had) {
+      if (had.has) sim.gameMap.boat = had.map;
+      else delete sim.gameMap.boat;
+    }
+  }
+  r.ok('bughunt: after a boat race, Restart and Back to the start keep the boat on the course\'s island (not the boat menu\'s own)',
+    !!other && got && got.boat && got.inRace === 'lagoon' && got.afterRestart === 'lagoon' && got.afterAirport === 'lagoon',
+    JSON.stringify(got));
+  await wait(50);
+}
+
+/*
+ * 15. Picking the World Map on the menu held the thread ~6 s on a Chromebook
+ * with nothing on screen to say so: it read as frozen. A calm card goes up
+ * and is painted before the build (the build runs a task after a frame), a
+ * key pressed meanwhile lands on nothing, and the card goes after the build
+ * — after a throwing one too.
+ */
+export async function worldMapCard(sim, r) {
+  if (sim.state !== 'menu') sim.quitToMenu();
+  await wait(50);
+  const WP = await import('../../src/features/world-preview.js');
+  const before = sim.settings.map;
+  const real = sim.buildWorld;
+  const seen = [];
+  let boom = false;
+  const swallow = (e) => { if (/bughunt: a build that throws/.test(String(e.message))) e.preventDefault(); };
+  addEventListener('error', swallow);
+  const card = () => document.querySelector('.map-wait');
+  const one = async (fail) => {
+    let atBuild = null;
+    sim.buildWorld = function (...a) {
+      const c = card();
+      atBuild = { up: !!c && c.isConnected && getComputedStyle(c).display !== 'none', text: c ? c.textContent : '' };
+      if (fail) { boom = true; throw new Error('bughunt: a build that throws'); }
+      return real.apply(this, a);
+    };
+    WP.choosePreview(sim);
+    const upAtOnce = !!card();
+    const key = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true });
+    document.body.dispatchEvent(key);
+    for (let i = 0; i < 1500 && !atBuild; i++) await wait(10);
+    sim.buildWorld = real;
+    await wait(600);
+    seen.push({ fail, upAtOnce, keyEaten: key.defaultPrevented, atBuild, goneAfter: !card(), state: sim.state });
+  };
+  try {
+    await one(false);
+    await one(true);
+  } finally {
+    sim.buildWorld = real;
+    removeEventListener('error', swallow);
+    sim.setMap(before && before !== 'world-preview' ? before : 'kestrel');
+    await wait(400);
+  }
+  r.ok('bughunt: picking the World Map puts up a calm "Loading the World Map" card before the build, eats keys meanwhile, and takes it down after (a throwing build too)',
+    seen.length === 2 && seen.every((x) => x.upAtOnce && x.keyEaten && x.atBuild && x.atBuild.up && /Loading the World Map/.test(x.atBuild.text) && x.goneAfter && x.state === 'menu') && boom,
+    JSON.stringify(seen));
 }

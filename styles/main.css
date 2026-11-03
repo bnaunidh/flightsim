@@ -447,7 +447,7 @@ html.is-replaying .hud-coach { visibility: hidden; }
   height: calc(100% - var(--rs-top) - var(--rs-dy, 0px) - max(var(--rs-bottom), var(--mp-dock, 0px), var(--rs-act, 0px)));
 }
 .hud.is-touch .hud-rstack { right: 12px; }
-@media (max-width: 560px) { .hud.is-touch .hud-rstack { right: 6px; } }
+@media (max-width: 560px) { .hud.is-touch .hud-rstack { right: 6px; --rs-in: 5px; } }
 /*
  * SPACE IS TIGHT (hud-stack.js yieldMap, the owner's call): while the
  * warnings or a card with answers do not fit, the minimap fades out and the
@@ -508,7 +508,8 @@ html.hud-map-yield #ui > .minimap { opacity: 0; visibility: hidden; transition: 
    (hud-stack.js adds .rs-anim). Transform and opacity only. */
 .hud-rstack.rs-anim > * { animation: rsIn 0.24s cubic-bezier(0.2, 0.7, 0.2, 1); }
 .hud-rstack.rs-anim > .rs-chip { animation: rsFold 0.2s cubic-bezier(0.2, 0.7, 0.2, 1); }
-@keyframes rsIn { from { opacity: 0; transform: translateX(14px); } }
+/* --rs-in: no further than the column's own gap (a phone's 6 px: Races slid in 8 px off the screen). */
+@keyframes rsIn { from { opacity: 0; transform: translateX(var(--rs-in, 14px)); } }
 @keyframes rsFold { from { opacity: 0.4; transform: scale(0.97); } }
 
 /* ---- the cards, open and folded ---- */
@@ -1900,13 +1901,8 @@ html.has-touch-sheet .of-prompt { opacity: 0 !important; pointer-events: none !i
  * in landscape is 1024 or 1366 CSS pixels wide, so not one of them applied on
  * the device this game is actually played on.
  *
- * What that looked like on an iPad: the instrument strip stayed where the
- * desktop puts it and ran underneath the button dock, which HAD been moved to
- * the top right by the rule above — so vertical speed and heading were drawn
- * behind three buttons. The overflow tray stayed in the bottom-right corner
- * with the on-screen throttle painted over it, unpressable, which is the
- * exact bug the comment above describes having fixed. The map stayed in that
- * same corner. The thumb pads stayed a pixel inside the stick.
+ * On an iPad the instrument strip ran under the button dock and the tray
+ * sat under the throttle, unpressable.
  *
  * The three rules that genuinely are about a narrow window — the menu
  * screens, the buttons on them and the card grids — stay in the media query
@@ -1963,19 +1959,9 @@ html.has-touch-sheet .of-prompt { opacity: 0 !important; pointer-events: none !i
  * the altimeter: "20 ft up" beside a roof.
  *
  * The owner, 2026-10-04: "houses are like 200 ft tall according to the
- * game". The laptop panel's fix was the sentence under the number ("just
- * off the ground · 20 ft up", ui/hud.js) — which is .hud-word, and the band
- * never showed it: `(pointer: coarse)` hides every .hud-word below, so on
- * an iPad or a phone the altitude cell was the sea-level number and its
- * unit, and nothing else. Level with a 29 ft roof it still read 150 ft on
- * Kestrel and up to 1,080 ft on the Skerries. (A touchscreen with a fine
- * pointer, a Chromebook, was the other way round: the whole sentence, 170
- * px of it, wrapping inside a 130 px cell.) So the band hides the sentence
- * itself, whatever the pointer, and shows .hud-up — a third line only in the
- * altitude cell, 8.5 px, the width of "1,200 ft up" at most, which no cell
- * is too narrow for. The cells stack their lines (flex-direction: column,
- * above), so it costs the band about 10 px: 66-122 on an iPad, and the
- * objective starts at 140.
+ * game": the band showed only the sea-level number. So it hides the
+ * sentence (.hud-word), whatever the pointer, and shows .hud-up, a third
+ * 8.5 px line in the altitude cell (about 10 px of band).
  */
 .hud.is-touch .hud-left .hud-word { display: none; }
 .hud.is-touch .hud-left .hud-up { display: block; font-size: 8.5px; line-height: 1.2; margin-top: 1px; }
@@ -4069,6 +4055,9 @@ html.is-touch-device .slot-clear {
 body:has(.hud.is-touch.is-rotorhover) .race-solobar { left: 8px; right: auto; top: 132px; align-items: flex-start; }
 @media (max-width: 560px) {
   body:has(.hud.is-touch.is-rotorhover) .race-solobar { top: 96px; }
+  /* A phone held upright has no room for it under the card and the objective
+     (it sat on the objective, then on the radio line): Races waits. */
+  .hud.is-touch.is-rotorhover .hud-rstack > .race-solobar { display: none !important; }
 }
 
 /* ========================================================================
@@ -5657,6 +5646,8 @@ html.reduce-motion .menu-layer > .screen:not([hidden]) { animation: none; }
 @media (max-width: 560px) {
   .hud-pills { flex-direction: column; align-items: center; gap: 6px; }
   .hud-pill { flex-wrap: wrap; justify-content: center; white-space: normal; text-align: center; }
+  /* Touch: left, off a fighter's FLARES and FIRE MSL (FLARES sat on "Parking brake on"). */
+  .hud.is-touch .hud-pills { left: 8px; transform: none; align-items: flex-start; max-width: calc(100vw - 160px); }
 }
 .hud.is-contrast .hud-pill { background: #000; border-color: #fff; color: #fff; }
 /* Aeroplane state only: the van and the boat have no brake, tug or gear pill. */

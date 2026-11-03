@@ -225,6 +225,21 @@ const TIPS = [
   'If the stall warning sounds, lower the nose and add power.',
 ];
 
+/** A calm card over everything while a long build holds the thread; keys are eaten
+ *  until it goes, a beat after (so input queued during the build lands on it). */
+function waitCard(text) {
+  const el = document.createElement('div');
+  el.className = 'map-wait';
+  el.setAttribute('role', 'status');
+  el.style.cssText = 'position:fixed;inset:0;z-index:999;display:grid;place-items:center;background:rgba(8,14,26,.72);color:#e8eef8;font:600 18px system-ui,sans-serif';
+  el.textContent = text;
+  const eat = (e) => (e.stopPropagation(), e.preventDefault());
+  addEventListener('keydown', eat, true);
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  document.body.appendChild(el);
+  return () => setTimeout(() => (removeEventListener('keydown', eat, true), el.remove()), 250);
+}
+
 function setLoad(pct, msg) {
   if (loadBar) loadBar.style.width = `${Math.round(pct * 100)}%`;
   if (msg && loadMsg) loadMsg.textContent = msg;
@@ -1309,22 +1324,9 @@ class Game {
     yield next('Building the airfield…');
     this.apron = t('apron', () => new Apron(this.scene, quality));
     /*
-     * The roads, here, between the airfield and the ground it stands on.
-     *
-     * They used to be laid before buildWorld ran at all, which meant the
-     * router was routing over an obstacle list that had just been emptied:
-     * it knew the shape of the island and nothing about what was built on
-     * it. On Drover's Flat the depot–airfield road went straight through the
-     * terminal, and the van — driven by the test harness's own pure pursuit,
-     * and by any child who follows the tarmac — stopped dead against the
-     * wall at waypoint 20 of 23. Laid here, the tower and the terminal are
-     * already registered and the road goes round them.
-     *
-     * And before `createTerrain`, which is the other half of it: roadHeight
-     * is part of heightAt, so the mesh has to be built after the paths exist
-     * or the graded corridor under the tarmac is the one from last time.
-     * Nothing between here and there reads this.terrain — the height
-     * function is analytic and owes the mesh nothing.
+     * The roads, here: after the airfield's buildings are registered (laid
+     * before buildWorld, Drover's Flat's road went through the terminal) and
+     * before createTerrain (roadHeight is part of heightAt).
      */
     yield next('Shaping the land…');
     this.layRoads();
@@ -2176,7 +2178,8 @@ class Game {
     // The boat and the van only: a ramp shift's Restart starts the shift over (staff.js startMode).
     if (this.mode !== 'drive' || !this.modeOpts || !['boat', 'car'].includes(this.modeOpts.kind)) return false;
     const { kind, ...opts } = this.modeOpts;
-    this.startDrive(kind, opts);
+    // On her island now (a race borrows the course's), not her menu's.
+    this.startDrive(kind, { ...opts, map: this.settings.map });
     return true;
   }
 
@@ -2216,6 +2219,9 @@ class Game {
   quitToMenu(screen = 'main') {
     // Leaving by choice: nothing to resume (a closed tab never gets here, and keeps its checkpoint).
     this.clearCheckpoint();
+    // The flight's notices end with it (not over the menu's title); achievements stay.
+    const ts = this.hud.toasts;
+    for (let i = ts.length - 1; i >= 0; i--) if (ts[i].kind !== 'unlock') ts.splice(i, 1)[0].node.remove();
     extStop(this, 'menu');
     this.riding = null;
     this.clearPursuer();
@@ -3617,22 +3623,11 @@ class Game {
       this.rig.cockpitPitchDeg = this.cockpit.userData.viewPitchDeg || 0;
       /*
        * The follow view's standoff, fitted to the aeroplane just drawn (see
-       * chaseScaleFor): 1 for the Skylark and the jets, 1.64 for the Meridian,
-       * whose fin the camera used to sit in.
-       *
-       * The three airliners are fitted THROUGH the stretch features/airliners.js
-       * puts on their follow view afterwards (length / 24, and the height a
-       * further 1.4 — the number in its stretchView()), so this is only the
-       * rig's share of it. Fitting them bare, as if nothing stretched them,
-       * multiplied the two: the 747 186 m behind and 80 m above itself on the
-       * runway. Leaving them at 1 left the stretch alone to do it, and it is
-       * not enough on the runway: measured at rest at 16:10, the tailplane and
-       * aft fuselage of the A320 and 747 ran off the bottom of the picture
-       * (y -1.17) and the A380's wing tips touched both sides (x +/-1.00).
-       * Fitted through it the rig's share is 1.20, 1.21 and 1.40, and at rest
-       * at 16:10 the three fill +/-0.75, 0.72 and 0.65 of the picture (0.78
-       * each at 4:3), the lens 12, 22 and 35 m behind the tail. In 250 kt
-       * cruise it is 80, 144 and 159 m from them, where it was 89, 162 and 170.
+       * chaseScaleFor): 1 for the Skylark and the jets, 1.64 for the Meridian.
+       * The airliners are fitted THROUGH the stretch features/airliners.js puts
+       * on their follow view (length / 24, height x 1.4), so this is the rig's
+       * share (1.20, 1.21, 1.40). Fitted bare the two multiplied (the 747 186 m
+       * behind itself); left at 1 the A320's tail ran off the picture.
        * chaseAlone is the bare fit, for if the stretch never happens.
        */
       const stretch = airlinerViewScale(this.aircraftType.id);
@@ -3896,9 +3891,9 @@ class Game {
     this.menus.syncMap(def.id);
     if (this.state === 'flying') this.quitToMenu();
     this.hud.notify(`Flying to ${def.name}…`, 'info', 3);
-    // One frame so the message paints before the (blocking) rebuild, raced
-    // against a timer for the same reason as above.
-    this.afterPaint(() => {
+    // The World Map's build holds the thread for seconds on a Chromebook: a card, painted first (a frame, then a task).
+    const card = def.id === 'world-preview' ? waitCard('Loading the World Map…') : null;
+    const run = () => {
       this.buildWorld(this.settings.quality);
       // Each map has weather that suits it; the player can still change it in
       // Free Flight afterwards.
@@ -3919,7 +3914,9 @@ class Game {
       this.hud.clearTransient();
       this.hud.notify(`${def.name} — ${def.subtitle}`, 'good', 5);
       this.warmWorldBehindMenu();
-    });
+    };
+    // One frame so the message paints before the (blocking) rebuild, raced against a timer.
+    this.afterPaint(card ? () => setTimeout(() => { try { run(); } finally { card(); } }, 30) : run);
     return def;
   }
 
@@ -5308,7 +5305,7 @@ class Game {
      * Borrowed, not kept: the map you chose is put back when you step out of
      * the boat, exactly as it is for a flight.
      */
-    const wantMap = (def && def.map) || this.mapForGame(kind);
+    const wantMap = (def && def.map) || opts.map || this.mapForGame(kind);
     if (wantMap && this.settings.map !== wantMap) {
       this.mapBeforeMission = this.settings.map;
       applyMap(wantMap);
@@ -5765,26 +5762,11 @@ class Game {
 
     this.vehicleModel.position.copy(v.pos);
     /*
-     * The launch's origin IS her waterline: the pack draws her keel 0.53 m
-     * below it and her deck 0.39 m above, which is a planing launch floating
-     * right. There used to be a further 0.42 m taken off here, from a time
-     * when the vehicle rode 0.18 m up. Measured over five seconds at the
-     * berth with it (boat-playtest P3): keel 0.73 to 1.24 m down and the deck
-     * edge as much as 0.35 m UNDER the opaque sea plane, so only the console
-     * showed — "she looks sunk". Nothing is taken off now; see heaveShown in
-     * surface.js.
-     *
-     * The Blender launch (tools/blender/kestrel-launch) is also drawn with
-     * its origin on the design waterline, so it takes nothing off either.
-     * Her whole pose — the heave she shows, her lift onto the plane, trim,
-     * heel and the keep-dry lift — is the vehicle's, from her own hull's
-     * numbers (fitHull, in startDrive); nothing after this line moves her.
-     *
-     * A model that is NOT drawn with its waterline at its origin says where
-     * it is instead, as `userData.waterline` — the height of the waterline
-     * above the model's origin, in metres (createBoat sets 0). A hull from
-     * Blender with its origin on the keel and 0.5 m of draught sets 0.5 and
-     * floats right with no change here.
+     * The launch's origin IS her waterline (keel 0.53 m below, deck 0.39 m
+     * above), and so is the Blender launch's: nothing is taken off (a 0.42 m
+     * one sank her, "she looks sunk"). Her pose is the vehicle's (fitHull).
+     * A model drawn otherwise says so as `userData.waterline`, metres above
+     * its origin.
      */
     if (v.isBoat) this.vehicleModel.position.y -= this.vehicleModel.userData.waterline || 0;
     this.vehicleModel.quaternion.copy(v.quat);

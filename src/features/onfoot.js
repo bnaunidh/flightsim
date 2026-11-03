@@ -1161,6 +1161,28 @@ function safePrompt(sim) {
   }
 }
 
+/** The pause card's numbers on foot. */
+function footPauseInfo(sim) {
+  const w = S.walker;
+  const sp = w.speed || 0;
+  const pace = w.wading ? 'Paddling' : sp > (WALK.walk + WALK.run) / 2 ? 'Running' : sp > 0.3 ? 'Walking' : 'Standing';
+  const f = S.from || {};
+  const left = f.type === 'aircraft' ? 'Aeroplane' : f.type === 'vehicle' ? (f.kind === 'boat' ? 'Boat' : 'Vehicle') : null;
+  const at = f.type === 'aircraft' ? (sim.aircraft && sim.aircraft.pos) || f : f.moor;
+  const away = left && at && Number.isFinite(at.x) ? Math.round(Math.hypot(w.x - at.x, w.z - at.z)) : null;
+  const run = sim.runner && sim.runner.status === 'running' && sim.runner.def ? sim.runner.def.name : null;
+  return `
+      <div class="pause-grid">
+        <span>On foot<b>${pace}</b></span>
+        <span>Heading<b>${String(((Math.round(w.heading || 0) % 360) + 360) % 360).padStart(3, '0')}°</b></span>
+        <span>Walked<b>${Math.round(w.walked || 0)} m</b></span>
+        ${away !== null ? `<span>${left}<b>${away} m away</b></span>` : ''}
+        <span>Wind<b>${Math.round((sim.weather && sim.weather.windSpeedKts) || 0)} kt</b></span>
+        <span>${run ? 'Mission' : 'View'}<b>${run || VIEW_LABEL[S.view] || 'Behind'}</b></span>
+      </div>
+    `;
+}
+
 /* ------------------------------------------------------------------ */
 /* The API staff.js and the tests use                                  */
 /* ------------------------------------------------------------------ */
@@ -1309,6 +1331,20 @@ registerExtension({
 
   install(sim) {
     S.sim = sim;
+    // The pause card on foot: the walker's own, not the parked aeroplane's
+    // height and fuel. Written after whatever else set it (the van's,
+    // game/jobs.js), so it wins in either order.
+    const menus = sim.menus;
+    if (menus && typeof menus.setPauseInfo === 'function' && !menus._footPause) {
+      const info = menus.setPauseInfo;
+      menus._footPause = true;
+      menus.setPauseInfo = function (html) {
+        const r = info.call(this, html);
+        const n = S.active && this.screens && this.screens.pause && this.screens.pause.querySelector('[data-pause-info]');
+        if (n) n.innerHTML = footPauseInfo(sim);
+        return r;
+      };
+    }
     // Off screen while paused or in a menu, and put right if we are switched off.
     UI.watchGame(sim, watchdog);
     // Drag with the mouse to look round. Only while walking, only the mouse

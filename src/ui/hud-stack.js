@@ -528,12 +528,9 @@ export class HudStack {
       }
       return;
     }
-    // Stood aside (yieldMap) the column is in the map's corner, where the band
-    // is not over it and --rs-dy is not used. Measured there, the band came
-    // out as 0 px, the column went back to the right with it, ON the band
-    // (667x375, PULL UP in the Photo run: warnings at y 12 over the
-    // instruments), and stood aside and back every refresh. Measured only in
-    // the column's own place (yieldMap re-measures before it comes back).
+    // Stood aside (yieldMap) the band is not over the column: measured there
+    // it read 0 px and the column went back ON the band (667x375 Photo run).
+    // yieldMap re-measures before it comes back.
     if (this.yielding) return;
     const W = window.innerWidth;
     const cs = typeof getComputedStyle === 'function' ? getComputedStyle(this.el) : null;
@@ -543,17 +540,17 @@ export class HudStack {
     const x0 = W - right - width;
     const x1 = W - right;
     let bottom = top0;
-    // The helicopter's hover strip (.hud-rotor, a band across the top on a
-    // touchscreen) and its card, which hangs under the strip in a hover and
-    // under the cruise rows otherwise: missing here, the column started under
-    // the button tray and the Races chip sat on the strip's WIND row on an
-    // iPad (tests/features/heli-touch.playtest.mjs).
+    // The helicopter's hover strip and its card too: without them Races sat
+    // on the strip's WIND row on an iPad (heli-touch.playtest.mjs).
     const sel = ':scope > .hud-left, :scope > .hud-left .hud-heli, :scope > .hud-rotor, :scope > .hud-rotor .hud-heli, :scope > .hud-buttons, :scope > .hud-top > *, :scope > .hud-ribbon, :scope > .hud-boatarrow';
+    // The objective's lines go with it (a phone's heli objective at 382 of 844, text past half-way).
+    const obj = host.querySelector(':scope > .hud-top');
+    const objY = obj && obj.getClientRects().length ? obj.getBoundingClientRect().top : 1e9;
     for (const n of host.querySelectorAll(sel)) {
       if (!n.getClientRects().length) continue;
       const r = n.getBoundingClientRect();
       if (r.width < 2 || r.height < 2 || r.right <= x0 || r.left >= x1) continue;
-      if (r.top > window.innerHeight * 0.5) continue;
+      if ((n.parentNode === obj ? objY : r.top) > window.innerHeight * 0.5) continue;
       bottom = Math.max(bottom, r.bottom + 8);
     }
     const dy = Math.max(0, Math.round(bottom - top0));
