@@ -13,4 +13,7 @@ import { MISSIONS as SCP } from './scp.js';
 // Last Flight Out: the containment-breach evacuation (SCP Foundation content, CC BY-SA 3.0 — see LICENSE).
 import { MISSIONS as SCP_ESCAPE } from './scp-escape.js';
 
-export const EXTRA_MISSIONS = [...EVENTS, ...METEOR, ...FIRE, ...AFO, ...SCP, ...SCP_ESCAPE];
+// Both Engines Out: the ditching (features/ditching.js).
+import { MISSIONS as DITCHING } from './ditching.js';
+
+export const EXTRA_MISSIONS = [...EVENTS, ...METEOR, ...FIRE, ...AFO, ...SCP, ...SCP_ESCAPE, ...DITCHING];

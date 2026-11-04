@@ -37,6 +37,7 @@ export const RANKS = [
 /** Aeroplanes you have to earn. The trainer and tourer are always yours. */
 export const UNLOCKS = [
   { aircraft: 'meridian', cost: 600, why: 'Forty seats and a lot of momentum' },
+  { aircraft: 'petrel', cost: 700, why: 'Takes off from the sea' },
   { aircraft: 'vanguard', cost: 1400, why: 'Enormous thrust, no forgiveness' },
   { aircraft: 'osprey', cost: 1000, why: 'Built for a moving deck' },
   { aircraft: 'tempest', cost: 2200, why: 'A tornado cannot break it' },

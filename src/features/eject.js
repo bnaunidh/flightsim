@@ -309,6 +309,8 @@ export function cannotEject(sim) {
   if (S.phase !== 'idle') return 'You are already out';
   if (ac.crashed) return live(`Too late for that — press ${keyName('pause', sim)} and choose Restart`);
   if (prof.escape === 'none') return live(String(prof.noneWhy).replace(/\bpress O\b/, `press ${keyName('getOut', sim)}`).replace(/\bthen O\b/, `then ${keyName('getOut', sim)}`));
+  if (ac.ditched) return 'Stay with the raft: rescue is coming';
+  if (ac.onWater) return 'Not on the water: taxi to the shore first';
   if (ac.onGround) return live(`You’re on the ground — stop, then press ${keyName('getOut', sim)} to climb out`);
   if (prof.escape === 'bail' && ac.agl < (prof.bailFrom || BAIL_MIN_AGL)) {
     return prof.uniform === 'heli'

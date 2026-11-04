@@ -201,7 +201,8 @@ export function buildSkylark(b) {
   // Mains: flat spring-steel legs, spats over the wheels.
   const RM = 0.235;
   const RN = 0.2;
-  for (const side of [-1, 1]) {
+  // On floats (models/petrel.js) there are no wheels at all.
+  for (const side of S.floatGear ? [] : [-1, 1]) {
     const hubY = S.main.y + RM;
     const top = [side * 0.42, -0.5, S.main.z];
     // Spring steel: under load the leg bends up about its root, pant and all.
@@ -231,7 +232,7 @@ export function buildSkylark(b) {
     );
   }
   // Nose: an oleo under the firewall, with a spat of its own.
-  {
+  if (!S.floatGear) {
     const hubY = S.nose.y + RN;
     const nz = S.nose.z;
     const leg = b.addLeg({ pivot: [0, -0.52, nz - 0.12], name: 'nose gear' });

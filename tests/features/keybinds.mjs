@@ -116,9 +116,10 @@ ok(`no feature, game or HUD hard-codes a key (${files.length} files read)`, stra
 // box, the search box, the tray) — never a game key. List them so a new one
 // is a decision, not an accident.
 // (owner/teleport.js: the owner's teleport picker — a height slider whose Enter teleports and whose Esc shuts it; it stops its keys reaching the game.)
+// (features/wm-pin.js: the World Map pin's full-screen map — arrows move the pin, Esc shuts it, Tab stays on it; only on the menu, while it is open and no flight has the keys.)
 // (ui/hangar-showcase-ui.js: the hangar's search box — Enter puts the first match on the podium; only while typing in that box, the menu is open and no flight has the keys.)
 // (ui/safety-intro.js: the first-run photosensitive seizure warning — Enter is its Continue; it keeps every key from the game while it is up.)
-const FORM_KEYS = new Set(['src/ui/briefing.js', 'src/ui/menus.js', 'src/ui/hud.js', 'src/features/multiplayer/ui.js', 'src/features/multiplayer/lobbyui.js', 'src/features/owner.js', 'src/features/owner/teleport.js', 'src/ui/hangar-showcase-ui.js', 'src/ui/safety-intro.js', 'src/features/dev-console.js']);
+const FORM_KEYS = new Set(['src/ui/briefing.js', 'src/ui/menus.js', 'src/ui/hud.js', 'src/features/multiplayer/ui.js', 'src/features/multiplayer/lobbyui.js', 'src/features/owner.js', 'src/features/owner/teleport.js', 'src/features/wm-pin.js', 'src/ui/hangar-showcase-ui.js', 'src/ui/safety-intro.js', 'src/features/dev-console.js']);
 const formHits = [];
 for (const f of files) {
   const s = readFileSync(new URL(f, root), 'utf8');

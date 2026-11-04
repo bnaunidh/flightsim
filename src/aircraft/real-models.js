@@ -22,15 +22,12 @@
  *     error, a phone short of memory, ?realmodels=off): then it simply never
  *     arrives, and nobody can tell anything was meant to.
  *
- * PAINT. The files carry no images at all (tools/real-models/process.py
- * throws every source texture away, real airline liveries included). The
- * fuselage is painted at run time with the SAME livery canvas the procedural
- * model wears (fleet/extra/airliner-kit.js liveryTexture), mapped by the same
- * (z, y) -> (u, v) the procedural skin uses, plus the cabin windows, the
- * flight-deck panes, the registration and the airline's name drawn into a
- * copy of it — the left side's half and the right side's half, so the words
- * read the right way round from both. The fin takes the tail colour, the
- * cowls the airline's cowl colour, the wings the wing paint.
+ * PAINT. The files carry no images (tools/real-models/process.py throws every
+ * source texture away, real liveries included). The fuselage wears the SAME
+ * livery canvas as the procedural model, mapped by the same (z, y) -> (u, v),
+ * with the windows, panes, number and name drawn into a copy: the left side's
+ * half and the right side's, so words read the right way round from both. The
+ * coordinates are fleet/extra/real-paint.js's.
  *
  * LOADING is lazy: a type's file is fetched the first time that type is
  * picked, spawned for the player or shown in the hangar (createAircraftModel
@@ -68,7 +65,8 @@ export const REAL_MODELS = {
   b777: { file: 'b777.glb', title: 'Boeing 777 Airplane', author: 'K-Sto Creations (@K_StoCreations)', url: 'https://sketchfab.com/3d-models/43847f1a45ff43b180955dfd0cce3f19' },
   a380: { file: 'a380.glb', title: 'Airbus A380', author: 'Brout (@davidbroutian)', url: 'https://sketchfab.com/3d-models/98d21f9c8104445f814cef47ef992889' },
   b747: { file: 'b747.glb', title: 'Boeing 747-8i', author: 'AF267 (@jsong.js.us), GeoFS team', url: 'https://sketchfab.com/3d-models/cd1977bedc32412fa1ce2cda23520b84' },
-  q400: { file: 'q400.glb', title: 'Bombardier Dash Q400 - Qantas Link', author: 'Sofyan Kurniawan (@sofyankurniawan)', url: 'https://sketchfab.com/3d-models/5b13a73be7d74161a3a9f9ce982a8345' },
+  // skinBothSides -- parts of its skin face in; its two holes are patched (fleet/extra/jets.js `holes`).
+  q400: { file: 'q400.glb', title: 'Bombardier Dash Q400 - Qantas Link', author: 'Sofyan Kurniawan (@sofyankurniawan)', url: 'https://sketchfab.com/3d-models/5b13a73be7d74161a3a9f9ce982a8345', skinBothSides: true },
   // skinBothSides -- stretches of its airframe (the tail cone above all) are drawn facing in, normals
   // and all: one-sided, from behind the tail cone was an open shell with ragged edges.
   a10: { file: 'a10.glb', title: 'A-10 Thunderbolt II', author: 'AIRMAN Magazine (@AIRMANMagazine)', url: 'https://sketchfab.com/3d-models/9521ff6ba5d448958ea45a89e94ab23d', skinBothSides: true },
@@ -335,14 +333,12 @@ function dress(model, id, tpl) {
   if (ud.realSkin) return false;
   const airframe = model.children.find((c) => c.isGroup && c.name === model.name) || model.children[0];
   if (!airframe) return false;
+  // Every coordinate the paint needs, once per type (fleet/extra/real-paint.js), before the copy is taken.
+  if (paint && !tpl.uv) tpl.uv = (paint.uvs && paint.uvs(tpl.root)) || true;
   const skin = tpl.root.clone();
   skin.name = 'Real model';
   skin.userData = { realModel: id };
-  if (paint && !tpl.uv) {
-    skinUVs(tpl.root, paint);
-    tpl.uv = true;
-  }
-  const mats = paint ? materialsFor(model, paint, id) : plainMaterialsFor(model, id);
+  const mats = paint ? materialsFor(model, paint, id, tpl.uv) : plainMaterialsFor(model, id);
   const finPieces = [];
   skin.traverse((o) => {
     if (!o.isMesh) return;
@@ -368,16 +364,6 @@ function dress(model, id, tpl) {
     }
   });
   model.add(skin);
-  // The airline's mark on the real fin (fleet/extra/airliners.js finMark): laid on this fin's own
-  // shape, a child of the skin so it shows and hides with it. A fin it cannot read stays plain.
-  if (paint && ud.finMark && typeof ud.finMark.fit === 'function' && finPieces.length) {
-    try {
-      const mark = ud.finMark.fit(skin, finPieces);
-      if (mark) skin.add(mark);
-    } catch (e) {
-      /* the fin keeps its paint, without the mark */
-    }
-  }
   const rm = { id, state: 'on', skin, hidden, flaps, flapsOut: false, on: false, struck: false, inside: false, dead: false, shifts: shiftsFor(model, id, tpl) };
   ud.realModel = rm;
   ud.realSkin = skin;
@@ -494,40 +480,6 @@ function hookUpdate(model, rm) {
 
 /* --------------------------------------------------------------- paint -- */
 
-/**
- * The fuselage's texture coordinates, once per type (they depend on the
- * type's livery map, never on the livery): u along the body exactly as the
- * procedural skin's, v round it from the same (z, y) -> v, put in the top
- * half of the texture for the left side and the bottom half for the right.
- */
-function skinUVs(root, paint) {
-  root.traverse((o) => {
-    if (!o.isMesh) return;
-    const role = o.parent && o.parent !== root ? o.parent.name : o.name;
-    if (role !== 'skin_l' && role !== 'skin_r') return;
-    const g = o.geometry;
-    const p = g.attributes.position;
-    const uv = new Float32Array(p.count * 2);
-    const top = role === 'skin_l';
-    // On a hump (the 747's upper deck, the Beluga's bubble) the paint is the hump's own band.
-    const hump = paint.hump && paint.vHump && paint.hull ? paint.hump : null;
-    for (let i = 0; i < p.count; i++) {
-      const z = p.getZ(i);
-      const y = p.getY(i);
-      let u = paint.along(z);
-      const onHump = hump && z > hump.zMin && z < hump.zMax && y > paint.hull.topAt(z) - 0.15;
-      let v = onHump ? paint.vHump(z, y) : paint.vAt(z, y);
-      if (!Number.isFinite(u)) u = 0;
-      if (!Number.isFinite(v)) v = y > 0 ? 1 : 0;
-      u = Math.min(1, Math.max(0, u));
-      v = Math.min(1, Math.max(0, v));
-      uv[i * 2] = u;
-      uv[i * 2 + 1] = top ? 0.5 + 0.5 * v : 0.5 * v;
-    }
-    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-  });
-}
-
 const painted = new Map(); // livery texture name + type -> CanvasTexture, least recently used first
 const PAINTED_KEEP = 8;
 let paintedTier = null;
@@ -569,10 +521,11 @@ function paintedSkin(paint, id) {
     g = null;
   }
   if (!g || typeof g.drawImage !== 'function') return src; // no canvas (node): the plain livery
-  g.drawImage(img, 0, 0);
-  g.drawImage(img, 0, H);
   const U = (z) => paint.along(z) * W;
   const V = (z, y, vAt = paint.vAt) => (1 - vAt(z, y)) * H;
+  const lay = () => {
+  g.drawImage(img, 0, 0);
+  g.drawImage(img, 0, H);
   for (const [half, mirror] of [[0, false], [H, true]]) {
     g.save();
     g.beginPath();
@@ -617,31 +570,28 @@ function paintedSkin(paint, id) {
     }
     // The number and the name: as painted, read left to right from either side.
     for (const d of paint.decals || []) {
-      const di = d.texture && d.texture.image;
-      if (!di) continue;
-      const x0 = U(d.z - d.w / 2);
-      const x1 = U(d.z + d.w / 2);
       const vAt = d.hump && paint.vHump ? paint.vHump : paint.vAt;
-      const y0 = V(d.z, d.y + d.h / 2, vAt);
-      const y1 = V(d.z, d.y - d.h / 2, vAt);
       try {
-        if (mirror && d.mirror !== false) {
-          g.save();
-          g.translate(x1, 0);
-          g.scale(-1, 1);
-          g.drawImage(di, 0, y0, x1 - x0, y1 - y0);
-          g.restore();
-        } else g.drawImage(di, x0, y0, x1 - x0, y1 - y0);
+        paint.decal(g, d, U, V, vAt, mirror, paint.knots);
       } catch (e) {
         /* a decal that will not draw is left off */
       }
     }
     g.restore();
   }
+  };
+  lay();
   const t = new THREE.CanvasTexture(canvas);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = src.anisotropy || 4;
   t.name = `real-skin|${key}`;
+  // Lettered before the faces landed: the name goes on again when they do.
+  if ((paint.decals || []).some((d) => d.texture && d.texture.userData.fallback)) {
+    paint.relayer(() => {
+      lay();
+      t.needsUpdate = true;
+    });
+  }
   painted.set(key, t);
   // A few at a time on the card: the oldest gives its GPU copy back. Nothing
   // breaks if an aeroplane still wears it -- three uploads it again if drawn.
@@ -698,7 +648,7 @@ function averageOf(tex, fallback) {
 }
 
 /** The procedural model's own materials, found by name, re-dressed for the skin's roles. */
-function materialsFor(model, paint, id) {
+function materialsFor(model, paint, id, uv) {
   const byName = new Map();
   const byMesh = new Map();
   model.traverse((o) => {
@@ -719,11 +669,19 @@ function materialsFor(model, paint, id) {
   const skin = liv ? own(plain(liv.clone())) : std({ color: 0xf4f6f8, roughness: 0.4, metalness: 0.1 });
   skin.map = paintedSkin(paint, id);
   skin.name = 'Real_livery';
+  if (REAL_MODELS[id] && REAL_MODELS[id].skinBothSides) skin.side = THREE.DoubleSide;
   skin.needsUpdate = true;
 
   const finSrc = byMesh.get('Painted fin') || from('Aircraft_livery_accent');
   const fin = finSrc ? own(plain(finSrc.clone())) : std({ color: paint.tail ?? paint.accent ?? 0x1f4fa8 });
   fin.name = 'Real_fin';
+  // The fin's own canvas, mark and all, on any fin whose outline could be read.
+  if (paint.finMap) {
+    if (uv && uv.fin) fin.map = paint.finMap;
+    else fin.map = null;
+    if (!fin.map) fin.color = new THREE.Color(paint.tail ?? paint.accent ?? 0x1f4fa8);
+    fin.needsUpdate = true;
+  }
 
   const wingSrc = from('Aircraft_wing');
   const wing = wingSrc ? own(plain(wingSrc.clone())) : std({ color: 0xd0d4d9, roughness: 0.6, metalness: 0.15 });
@@ -734,6 +692,10 @@ function materialsFor(model, paint, id) {
     const lum = 0.2126 * avg.r + 0.7152 * avg.g + 0.0722 * avg.b;
     wing.color = avg.lerp(new THREE.Color(lum, lum, lum), 0.85);
     wing.map = null;
+    if (uv && uv.wing && paint.wingMap) {
+      wing.map = paint.wingMap(wing.color);
+      wing.color = new THREE.Color(0xffffff);
+    }
   }
   wing.name = 'Real_wing';
 
@@ -741,6 +703,10 @@ function materialsFor(model, paint, id) {
   const cowl = cowlSrc ? own(plain(cowlSrc.clone())) : std({ color: 0xf0f2f4, roughness: 0.35, metalness: 0.12 });
   cowl.map = null;
   cowl.color = new THREE.Color(paint.cowl || paint.base || '#f0f2f4');
+  if (uv && uv.cowl && paint.cowlMap && from('Airliner_cowl')) {
+    cowl.map = paint.cowlMap;
+    cowl.color = new THREE.Color(0xffffff);
+  }
   if (REAL_MODELS[id] && REAL_MODELS[id].cowlBothSides) cowl.side = THREE.DoubleSide;
   cowl.name = 'Real_cowl';
 

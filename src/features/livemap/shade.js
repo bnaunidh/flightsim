@@ -75,6 +75,15 @@ export function shadeRows(H, n, step, S, out, j0 = 0, j1 = n, opt = null) {
     for (let i = 0; i < n; i++) {
       const k = row + i + 1;
       const h = H[k];
+      // The void past the World Map's edge (worldmap/farlands.js): nothing, not deep sea.
+      if (h < -99) {
+        const v = (j * n + i) * 4;
+        out[v] = 7;
+        out[v + 1] = 8;
+        out[v + 2] = 11;
+        out[v + 3] = 255;
+        continue;
+      }
       const hl = H[k - 1];
       const hr = H[k + 1];
       const hu = H[k - W];

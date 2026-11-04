@@ -31,6 +31,7 @@ import { Builder, glowSprite } from './models/civil-build.js';
 import { strobeLevel } from '../render/flash-safety.js';
 import { resolveLamps } from './systems.js';
 import { buildSkylark } from './models/skylark.js';
+import { buildPetrel } from './models/petrel.js';
 import { buildCourier } from './models/courier.js';
 import { buildMeridian } from './models/meridian.js';
 import { buildTempest } from './models/tempest.js';
@@ -43,6 +44,7 @@ import { HELI_BUILDERS } from './models/helis.js';
  */
 const CIVIL = {
   skylark: buildSkylark,
+  petrel: buildPetrel,
   courier: buildCourier,
   meridian: buildMeridian,
   tempest: buildTempest,

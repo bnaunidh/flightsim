@@ -1971,6 +1971,9 @@ export function heightAt(x, z) {
     if (b) return b.y;
   }
 
+  // Past the World Map's sea (worldmap/farlands.js); nothing on any other map.
+  if (MAP._outer && MAP._outer.past(x, z)) return MAP._outer.height(x, z);
+
   /*
    * Authored level ground, found here so the airfield short-circuit below
    * cannot skip past it. On the nine maps that have no flats this is a single
@@ -2033,35 +2036,18 @@ export function heightAt(x, z) {
         break;
       }
       case 'cone': {
-        // A volcano.
-        //
-        // This used to be shaped from `m`, the island field — but that
-        // saturates at 1 across the whole middle of the island, so the "cone"
-        // came out as a flat table 2 km wide at a constant height and the
-        // "crater" never appeared at all. That is why Ember Isle read as a
-        // mountain rather than a volcano.
-        //
-        // Shape it from the radius instead. The summit is the crater *rim*,
-        // the flanks fall away from there with the slight concavity a real
-        // strato-volcano has, and the middle is a genuine bowl you can fly
-        // down into.
+        // A volcano, shaped from the radius and not from `m`, which saturates
+        // at 1 across the middle and made a flat table with no crater. The
+        // summit is the crater rim, the flanks fall away from there with a
+        // real cone's slight concavity, and the middle is a bowl to fly into.
         const dRel = Math.min(1, Math.hypot(x - isl.cx, z - isl.cz) / isl.radius);
         const rimRel = (isl.craterRadius || isl.radius * 0.12) / isl.radius;
         const inland = smoothstep(0.02, 0.5, m);
 
         // 1 at the rim, 0 down at the shoreline.
         const flank = Math.pow(clamp((1 - dRel) / (1 - rimRel), 0, 1), 1.55);
-        /*
-         * Radial gullies down the flanks — real cones are fluted, not smooth.
-         *
-         * One sine at thirteen cycles gives thirteen identical flutes at
-         * thirteen identical spacings, which from above is a dartboard: it is
-         * what made Ember's cone read as a drawn symbol rather than a
-         * mountain. Three rates that do not divide into each other, and the
-         * flutes come out different widths and different depths, which is
-         * what erosion does. Still three sines per sample, and only inside a
-         * cone island.
-         */
+        // Radial gullies down the flanks, at three rates that do not divide
+        // into each other: one sine gives identical flutes, a dartboard from above.
         const ang = Math.atan2(z - isl.cz, x - isl.cx);
         const flute =
           0.55 * Math.sin(ang * 9 + isl.seed) +

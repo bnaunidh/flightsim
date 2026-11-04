@@ -248,8 +248,8 @@ for (const type of FIXED) {
     ok(`${id}: slats droop about their own hinge lines (no part moves further than the slat's travel and chord)`, slatHinge.ok, slatHinge.detail);
   }
 
-  // Wheels: turning after lift-off, winding down.
-  {
+  // Wheels: turning after lift-off, winding down. (A floatplane has none.)
+  if (!T.getAircraft(id).floats) {
     run(m, 'roll', 3);
     const wheel = pack ? m.userData.realism.wheels[0] : null;
     const w0 = pack ? wheel.omega : m.userData.parts.wheelOmega;

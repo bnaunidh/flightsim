@@ -436,6 +436,8 @@ export function cannotGetOut(sim) {
   if (!ac) return 'Not now';
   if (ac.crashed) return live(`Not after that — press ${keyName('pause', sim)} and choose Restart`);
   if (!ac.onGround) return 'You cannot get out in the air!';
+  if (ac.ditched) return 'Stay with the raft: rescue is coming';
+  if (ac.onWater) return 'Not on the water: taxi to the shore first';
   /*
    * Walking pace or less, and it is parked for you. A jet at idle on the
    * runway creeps: measured two seconds after the start, a Meridian at 0.91
@@ -1134,7 +1136,7 @@ function idleFrame(sim, dt) {
     const ac = sim.aircraft;
     // Stopped, or creeping at idle (see CREEP): not taxiing on purpose.
     const idle = !(ac.controls && ac.controls.throttle > 0.15);
-    stopped = !!(ac.onGround && !ac.crashed && (ac.groundSpeed || 0) < (idle ? CREEP : 0.5)) && !sim.bracing;
+    stopped = !!(ac.onGround && !ac.crashed && !ac.ditched && !ac.onWater && (ac.groundSpeed || 0) < (idle ? CREEP : 0.5)) && !sim.bracing;
   }
   S.stoppedT = stopped ? S.stoppedT + dt : 0;
   const staffDrive = driving(sim) && sim.vehicle.spec && sim.vehicle.spec.staff;

@@ -152,7 +152,9 @@ export function coverAt(x, z, h, slope, onFlat, out) {
 export function coverFor(T) {
   if (!T || !T.MAP || !T.MAP.landcover) return null;
   const out = new Float32Array(8);
-  return (x, z, h, slope) => {
+  const outer = T.MAP._outer;
+  const cover = (x, z, h, slope) => {
+    if (outer && outer.past(x, z)) return outer.cover(x, z, h, slope, out);
     const f = T.flatAt ? T.flatAt(x, z) : null;
     // A town's level ground is not mown from edge to edge: gardens and greens in the middle, the
     // country's own cover fading back in towards the edge, so no square of lawn shows from the air.
@@ -172,4 +174,6 @@ export function coverFor(T) {
     }
     return coverAt(x, z, h, slope, !!(f && T.flatSurfaceAt(x, z)), out);
   };
+  if (outer) cover.outerSkirt = (cx, cz, size) => (outer.touches(cx, cz, size) ? outer.skirt : 0);
+  return cover;
 }

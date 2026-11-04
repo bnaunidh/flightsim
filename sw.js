@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v76.9';
+const CACHE_VERSION = 'island-flight-v77.0';
 
 const PRECACHE = [
   './',
@@ -542,6 +542,24 @@ const PRECACHE = [
   'src/features/scp-models.js',
   'src/features/world-traffic.js',
   'src/world/worldmap/traffic-plan.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/wm-pin.js',
+  'src/world/worldmap/pin.js',
+  'src/features/farlands-run.js',
+  'src/world/worldmap/farlands-look.js',
+  'src/world/worldmap/farlands.js',
+  // Added by tools/sync-precache.mjs.
+  'src/world/worldmap/pin-far.js',
+  'src/features/ditching.js',
+  'src/features/ditching/judge.js',
+  'src/features/ditching/scene.js',
+  'src/features/ditching/water-fx.js',
+  'src/game/extra/ditching.js',
+  // Added by tools/sync-precache.mjs.
+  'src/aircraft/extra/floatplane.js',
+  'src/aircraft/models/petrel.js',
+  'src/features/floatplane.js',
+  'src/features/floatplane/hydro.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 
@@ -597,6 +615,9 @@ const PRECACHE = [
   'src/render/airline-fonts.js',
   // ...and the airlines' fin marks, drawn as brand marks (src/fleet/extra/emblems.js).
   'src/fleet/extra/emblems.js',
+  // ...the paint shop's drawings, and the paint fitted to the real airframes.
+  'src/fleet/extra/livery-art.js',
+  'src/fleet/extra/real-paint.js',
   // WORLD LIFE: people on the airfield and the apron's service vehicles on their rounds.
   'src/features/world-life.js',
   'src/features/life/plan.js',

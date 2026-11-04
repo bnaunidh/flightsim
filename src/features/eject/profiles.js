@@ -52,6 +52,7 @@ const BY_ID = {
   // Light aircraft: no ejection seat, but you can bail out with a parachute.
   skylark: { escape: 'bail', uniform: 'casual', runaway: true },
   courier: { escape: 'bail', uniform: 'casual', runaway: true },
+  petrel: { escape: 'bail', uniform: 'casual', runaway: true },
   // A twin turboprop research ship: you bail out, but it is not a small plane.
   tempest: { escape: 'bail', uniform: 'casual', crew: 1, runaway: false },
   // Airliners: no ejection seats for anybody.

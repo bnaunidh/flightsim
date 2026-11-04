@@ -56,13 +56,15 @@
 
 import * as THREE from '../../vendor/three.module.js';
 import { addInstanced } from '../common.js';
-import { aircraftDecalTexture } from '../aircraft-textures.js';
-import { drawEmblem } from './emblems.js';
+import { aircraftDecalTexture, titleMetrics } from '../aircraft-textures.js';
+import { artFor, finBox, finUV, markCanvas } from './livery-art.js';
+import { realUVs, drawDecal } from './real-paint.js';
 import { AIRLINER_GEOMETRY as GEO } from '../../aircraft/extra/airliners.js';
 import { hull, turned } from '../../aircraft/models/civil-kit.js';
 import { textureTier } from '../../render/textures.js';
+import { whenFontsLoaded } from '../../render/airline-fonts.js';
 import {
-  piecewise, loftFuselage, placeFuselage, splitByZ, liveryTexture, airlinerMaterials, glazing,
+  piecewise, loftFuselage, placeFuselage, splitByZ, liveryTexture, finTexture, wingTexture, airlinerMaterials, glazing,
   windowRows, buildDoors, turbofan, registration, meshOf, remapUV, DECAL,
 } from './airliner-kit.js';
 
@@ -123,6 +125,14 @@ function findByName(root, name) {
     if (!hit && o.name === name) hit = o;
   });
   return hit;
+}
+
+/** The name's band: its height, in cap heights (room for descenders under the line). */
+const BAND = 1.7;
+
+/** The fin of a config as a profile (./livery-art.js): the procedural fin is a box tapering root to tip. */
+function finProfile(fc) {
+  return { y0: fc.rootY, y1: fc.rootY + fc.height, le0: fc.rootZ, le1: fc.rootZ + fc.sweep, ch0: fc.rootChord, ch1: fc.tipChord };
 }
 
 /** Wing numbers at spanwise station |x|, straight off the core's own formula. */
@@ -404,6 +414,17 @@ function paintFin(ctx, mat, from = 0.1) {
   const fc = ctx.config.fin;
   const fin = ctx.parts.verticalFin;
   if (!fc || !fin) return;
+  // The fin's canvas lies flat on both faces, the mirror of itself on the far one (./livery-art.js).
+  const profile = finProfile(fc);
+  const box = finBox(profile);
+  const flatUV = (g, dy = 0, dz = 0) => {
+    const q = g.attributes.position;
+    const uv = g.attributes.uv;
+    for (let i = 0; i < q.count; i++) {
+      const [u, v] = finUV(profile, box, q.getZ(i) + dz, q.getY(i) + dy);
+      uv.setXY(i, u, v);
+    }
+  };
   const geo = new THREE.BoxGeometry(1, 1, 1, 1, 2, 1);
   const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) {
@@ -412,9 +433,10 @@ function paintFin(ctx, mat, from = 0.1) {
     const th = mix(fc.thickness || 0.14, 0.045, t);
     p.setXYZ(i, p.getX(i) * th * 1.14 + Math.sign(p.getX(i)) * 0.004,
       fc.rootY + fc.height * t + (t > 0.999 ? 0.01 : 0),
-      fc.rootZ + fc.sweep * t + (0.012 + (p.getZ(i) + 0.5) * 0.735) * ch);
+      fc.rootZ + fc.sweep * t + (0.012 + (p.getZ(i) + 0.5) * 0.76) * ch);
   }
   geo.computeVertexNormals();
+  flatUV(geo);
   meshOf(ctx, 'Painted fin', geo, mat, fin);
   // And the rudder, which is its own hinged group in the core: painted in the
   // rudder's own frame so it swings with it.
@@ -431,6 +453,7 @@ function paintFin(ctx, mat, from = 0.1) {
       fc.rootZ + fc.sweep * t + (0.775 + (q.getZ(i) + 0.5) * 0.215) * ch - piv.z);
   }
   rg.computeVertexNormals();
+  flatUV(rg, piv.y, piv.z);
   meshOf(ctx, 'Painted rudder', rg, mat, rudder);
 }
 
@@ -529,9 +552,54 @@ function dress(ctx, S) {
   // The nose gear bay's doors on the belly, drawn shut round the leg.
   const ng = c.gear && c.gear.nose;
   const bays = ng ? [{ z0: ng[2] - 1.6 * (c.gear.noseRadius || 0.4) - 0.3, z1: ng[2] + 2.4 * (c.gear.noseRadius || 0.4), halfWidth: 1.5 * (c.gear.noseRadius || 0.4), w: h.section(ng[2]).w }] : [];
+  // The scheme's own drawing (./livery-art.js), where it has one. tw: this type's window row, in t.
+  const art = named ? artFor(scheme) : null;
+  const windows = art && art.freighter ? [] : S.windows;
+  const tw = S.windows.length ? (S.windows[0].y - h.botAt(S.cabinZ)) / (h.topAt(S.cabinZ) - h.botAt(S.cabinZ)) : 0.6;
+  const bodyD = h.topAt(S.cabinZ) - h.botAt(S.cabinZ);
+  const statics = { dz: 0.32 * bodyD, w: 0.16 * bodyD, h: 0.09 * bodyD, y: h.botAt(S.cabinZ) + 0.46 * bodyD };
+  // The name, set as a sign-writer sets it: the cap height a share of the body, the width what the
+  // word takes in its own face, starting behind the forward door and running aft. Too long for the
+  // band, the whole word comes down. (`titling` is the airliners' own; nothing else reads it.)
+  const words = named ? [scheme.title, scheme.titling].find((w) => typeof w === 'string' && w.trim()) : null;
+  const title = words ? words.trim() : null;
+  let lay = null;
+  if (title && S.title && art) {
+    const T = art.title || {};
+    const spacing = style && typeof style.titleSpacing === 'number' ? style.titleSpacing : 0.04;
+    const font = (style && style.titleFont) || null;
+    const em = titleMetrics(title, font, spacing);
+    const lead = T.lead ? 2.1 : 0;
+    const want = 0.24 * bodyD * (T.cap || 1);
+    const roomy = S.title.w * (T.room || 1);
+    // The foot of the letters stays where it is, just over the windows; their heads stop short of the
+    // crown, where the skin turns away and the sun's glint sits. A freighter's name has the side to itself.
+    const foot = S.title.y - 0.12 * bodyD;
+    const crown = 0.5 * (h.topAt(S.cabinZ) + h.botAt(S.cabinZ)) + 0.74 * 0.5 * bodyD;
+    const capM = Math.min(want, roomy / (em.width / em.cap + lead), art.freighter ? want : crown - foot);
+    const w = (capM / em.cap) * em.width;
+    const start = S.title.z - S.title.w / 2 + (T.dz || 0) * bodyD;
+    lay = {
+      spacing, font, capM, w, band: capM * BAND,
+      y: art.freighter ? h.botAt(S.cabinZ) + (T.t ?? 0.6) * bodyD : foot + capM / 2,
+      bold: T.bold || 0,
+      z: start + lead * capM + w / 2,
+      lead: T.lead ? { z: start + lead * capM * 0.4, size: capM * 1.75 } : null,
+    };
+  }
   const tex = liveryTexture({
     key: c.id, base, accent, line, along, vAt: vMain, cabinZ: S.cabinZ, bellyY: S.bellyY, z0: first.z, z1: last.z,
-    laps: S.laps, cheat: S.cheat, doors: painted, radomeZ: S.radomeZ, bays, style,
+    laps: S.laps, cheat: S.cheat, doors: painted, radomeZ: S.radomeZ, bays, style, statics,
+    art, artId: art ? scheme.id : '', tw, top: (z) => h.topAt(z), bot: (z) => h.botAt(z),
+    // The mark, small, ahead of the name: paint, so it faces forward on both sides as the fin's does.
+    extra: lay && lay.lead ? (g, W, H, U, V) => {
+      const m = markCanvas(scheme.emblem, art.title.lead.map(css), H >= 512 ? 256 : 128);
+      const { z, size } = lay.lead;
+      if ('imageSmoothingQuality' in g) g.imageSmoothingQuality = 'high';
+      const [x0, x1] = [U(z - size / 2), U(z + size / 2)];
+      const [y0, y1] = [V(z, lay.y + size / 2), V(z, lay.y - size / 2)];
+      g.drawImage(m, x0, y0, x1 - x0, y1 - y0);
+    } : null,
   });
   const M = airlinerMaterials(model, { livery: tex, base, style });
   placeFuselage(ctx, h, F.cuts, M.skin);
@@ -563,7 +631,7 @@ function dress(ctx, S) {
   // Cabin windows, every deck: one draw per piece that has any (the 747's
   // upper deck runs forward into the nose piece, every type's main deck runs
   // aft past the tail cut).
-  windowRows(ctx, S.windows.map((r) => ({ ...r, h: r.deck === 'upper' ? hump : h })), M.window, pieceOf);
+  windowRows(ctx, windows.map((r) => ({ ...r, h: r.deck === 'upper' ? hump : h })), M.window, pieceOf);
 
   // Doors that open.
   const doors = buildDoors({
@@ -610,9 +678,10 @@ function dress(ctx, S) {
   if (reg) {
     // A registration is lettered in a plain medium-weight sans, spaced out,
     // as the real ones are stencilled.
-    const tex2 = aircraftDecalTexture(reg, { color: light ? '#1f272e' : '#e9eef2', background: 'transparent', width: 512, height: 128, weight: 600, spacing: 0.08 });
-    registration(ctx, h, { text: reg, z: S.reg.z, y: S.reg.y, width: S.reg.w, texture: tex2 }, pieceOf(S.reg.z));
-    decals.push({ texture: tex2, z: S.reg.z, y: S.reg.y, w: S.reg.w, h: S.reg.w * 0.25 });
+    const regScale = art ? 1.2 : 1;
+    const tex2 = aircraftDecalTexture(reg, { color: (art && art.regInk) || (light ? '#1f272e' : '#e9eef2'), background: 'transparent', width: 512, height: 128, weight: 600, spacing: 0.08 });
+    registration(ctx, h, { text: reg, z: S.reg.z, y: S.reg.y, width: S.reg.w * regScale, texture: tex2 }, pieceOf(S.reg.z));
+    decals.push({ texture: tex2, z: S.reg.z, y: S.reg.y, w: S.reg.w * regScale, h: S.reg.w * regScale * 0.25 });
   }
   // The titling line a scheme may carry — "UNITED STATES OF AMERICA" on Air
   // Force One (aircraft/liveries.js), the only one that has ever asked for
@@ -625,9 +694,16 @@ function dress(ctx, S) {
   // ...and now every airline's name (aircraft/liveries.js `titling`), as the
   // real ones wear it: the airliner models read `titling`, nothing else does,
   // so a Skylark in Abyssinia colours stays a plain flying-school aeroplane.
-  const words = named ? [scheme.title, scheme.titling].find((w) => typeof w === 'string' && w.trim()) : null;
-  const title = words ? words.trim() : null;
-  if (title && S.title) {
+  if (lay) {
+    const dark0 = !light;
+    const tall = textureTier() === 'low' ? 64 : textureTier() === 'medium' ? 96 : 128;
+    const tex3 = aircraftDecalTexture(title, {
+      color: (style && style.titleInk) || '#1f272e', background: 'transparent', width: Math.min(2048, Math.round((tall * lay.w) / lay.band)), height: tall,
+      weight: (style && style.titleWeight) || 700, spacing: lay.spacing, font: lay.font, cap: Math.round(1000 / BAND) / 1000, bold: lay.bold,
+    });
+    registration(ctx, h, { text: title, z: lay.z, y: lay.y, width: lay.w, height: lay.band, texture: tex3, name: 'Titling', shade: art.title && art.title.on || dark0 ? 1 : 0.68 }, pieceOf(lay.z));
+    decals.push({ texture: tex3, z: lay.z, y: lay.y, w: lay.w, h: lay.band });
+  } else if (title && S.title) {
     // The name in the airline's own ink and weight (style.titleInk,
     // titleWeight, titleSpacing), else the cheatline colour; a 'billboard'
     // layout sets it taller (ten to one rather than sixteen), as a freight
@@ -654,8 +730,19 @@ function dress(ctx, S) {
    */
   Object.defineProperty(ctx.exports, 'realPaint', {
     value: {
-      texture: tex, along, vAt: vMain, vHump, hull: h, hump, windows: S.windows, panes: gz.outlines, decals,
-      tail: tailColour, accent, base, cowl: style && style.cowl ? style.cowl : base,
+      texture: tex, along, vAt: vMain, vHump, hull: h, hump, windows, panes: gz.outlines, decals,
+      // A turboprop's nacelle is half the wing's length: the body's colour, as most leave it.
+      tail: tailColour, accent, base, cowl: style && style.cowl && c.engines.some((e) => e.kind === 'jet') ? style.cowl : base,
+      cowlMap: M.cowl.map, wing: c.wing, engines: c.engines,
+      holes: S.holes,
+      raked: ['b777', 'b787', 'b747'].includes(c.id),
+      knots: F.alongKnots.map((q) => q[0]),
+      // Lettered before the faces landed: call this to draw the skin again when they do.
+      relayer: (fn) => whenFontsLoaded(fn),
+      // (always: a type's coordinates are worked out once, whatever paint it was first seen in)
+      finProfile: c.fin && !c.fin.mirror && !c.fin.x ? finProfile(c.fin) : null,
+      wingMap: (colour) => wingTexture({ colour: '#' + colour.getHexString(), winglet: art && art.winglet }),
+      uvs: (root) => realUVs(root, ctx.exports.realPaint), decal: drawDecal,
     },
     enumerable: false,
   });
@@ -671,13 +758,18 @@ function dress(ctx, S) {
     finMat.color = new THREE.Color(tailColour);
     finMat.name = 'Aircraft_livery_tail';
   }
-  paintFin(ctx, finMat);
+  paintFin(ctx, finMat, named && scheme.emblem ? 0.02 : 0.1);
+  // The winglets drawn after this (each type's own) in the scheme's colour.
+  if (art && art.winglet) {
+    ctx.materials.accent = model.userData.ownMaterial(ctx.materials.accent.clone());
+    ctx.materials.accent.color = new THREE.Color(art.winglet);
+  }
   // The airline's mark on the fin (aircraft/liveries.js `emblem`): a
   // geometric device of the game's own, in the body colour on the tail
   // colour, one each side, where every real airline puts its own.
   if (named && scheme.emblem) {
     const inks = Array.isArray(style && style.emblemInks) && style.emblemInks.length ? style.emblemInks : [base];
-    finEmblem(ctx, scheme.emblem, { inks, tail: tailColour != null ? tailColour : accent });
+    finEmblem(ctx, scheme, art, finMat, { inks, tail: tailColour != null ? tailColour : accent });
   }
   // Flap-track fairings: the canoes under the trailing edge every airliner
   // wing carries (not a turboprop's hinged flaps, not Concorde's delta).
@@ -728,230 +820,21 @@ function dress(ctx, S) {
  * The airline's mark on the fin, and the flap-track fairings
  * ------------------------------------------------------------------ */
 
-const emblems = new Map();
 /**
- * A fin emblem, drawn once per style, inks and tier: the airline's mark
- * (./emblems.js drawEmblem — filled Bézier silhouettes with clean negative
- * space, the game's own drawings, never a real airline's logo) in its inks
- * on a transparent square, 512 px on High and Ultra, 256 below.
- * ('globe' is kept as a name for the compass: the saved id of an older
- * scheme, and a circle with meridians was too near a real mark.)
+ * The airline's mark and the fin's paint: one canvas (./livery-art.js) worn by
+ * the fin's shell and its rudder, and, through its own coordinates
+ * (./real-paint.js), by a real model's fin.
  */
-function emblemTexture(style, inks) {
-  const tier = textureTier();
-  const key = `airliner-emblem|${style}|${inks.join(',')}|${tier}`;
-  if (emblems.has(key)) return emblems.get(key);
-  const S = tier === 'high' || tier === 'ultra' ? 512 : 256;
-  const c = document.createElement('canvas');
-  c.width = S;
-  c.height = S;
-  const g = c.getContext('2d');
-  if (g && typeof g.clearRect === 'function') {
-    g.clearRect(0, 0, S, S);
-    if (!drawEmblem(g, style, S, inks)) {
-      // An unknown name: a plain disc rather than nothing, so a scheme with a
-      // typo still has a mark where the airline's would be.
-      g.fillStyle = inks[0];
-      g.beginPath();
-      g.arc(S / 2, S / 2, S * 0.3, 0, Math.PI * 2);
-      g.fill();
-    }
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  t.name = key;
-  emblems.set(key, t);
-  return t;
-}
-
-/**
- * The emblem on both sides of the (single, centred) fin.
- *
- * Sized as an airline sizes its tail mark — as big as the fin will take: a
- * square patch centred just under half way up and 45% back along the chord
- * (its ink ahead of the rudder hinge), grown until its top edge would span
- * 80% of the fin's chord at that height or it is 66% of the fin's height. Each
- * side is a quad bent to the fin's sweep, 3 cm proud of the paint with a
- * deeper decal offset than the paint's, so it wins the depth test; drawn
- * from both faces, since a quad's winding is the same on both sides of the
- * fin and the right-hand one used to face inwards — culled, the mark was on
- * one side only.
- *
- * finMarkQuads() does the laying out from a fin PROFILE (root and tip
- * height, leading edge and chord at each, half thickness at each), so the
- * same mark can be laid on a real model's fin (aircraft/real-models.js),
- * whose fin is not where the procedural one is: `userData.finMark.fit()`
- * reads the real fin's vertices into a profile and hands back the quads.
- */
-function finEmblem(ctx, style, { ink, inks }) {
+function finEmblem(ctx, scheme, art, mat, { inks, tail }) {
   const fc = ctx.config.fin;
-  const fin = ctx.parts.verticalFin;
-  if (!fc || !fin || fc.mirror || fc.x) return null;
-  const list = Array.isArray(inks) && inks.length ? inks : [ink];
-  const tex = emblemTexture(style, list.map((c) => css(c)));
-  const mat = ctx.model.userData.ownMaterial(new THREE.MeshBasicMaterial({
-    name: 'Airliner_fin_emblem', map: tex, transparent: true, depthWrite: false, toneMapped: true, side: THREE.DoubleSide,
-    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
-  }));
-  // The procedural fin: a box tapering from root to tip, flat-sided, painted
-  // in a shell 14% thicker than the core (paintFin).
-  const profile = {
-    y0: fc.rootY, y1: fc.rootY + fc.height,
-    le0: fc.rootZ, le1: fc.rootZ + fc.sweep,
-    ch0: fc.rootChord, ch1: fc.tipChord,
-    th0: (fc.thickness || 0.14) * 0.57 + 0.004, th1: 0.045 * 0.57 + 0.004,
-    airfoil: false,
-  };
-  for (const q of finMarkQuads(profile, mat)) {
-    const m = meshOf(ctx, 'Tail emblem', q, mat, fin);
-    m.castShadow = false;
-  }
-  // For a real model's fin (aircraft/real-models.js): the same mark, fitted to it.
-  Object.defineProperty(ctx.exports, 'finMark', {
-    value: { style, material: mat, fit: (skin, meshes) => realFinMark(skin, meshes, mat, profile, ctx.model.userData.ownGeometry) },
-    enumerable: false,
+  if (!fc || !ctx.parts.verticalFin || fc.mirror || fc.x) return;
+  const profile = finProfile(fc);
+  mat.map = finTexture({
+    key: `${ctx.config.id}|${scheme.id}`, profile, art: art && art.fin, tail, emblem: scheme.emblem, inks: inks.map((k) => css(k)),
   });
-  return mat;
-}
-
-/** The half thickness of a symmetrical aerofoil at chord fraction c, as a share of its greatest (NACA 00xx). */
-function aerofoilShare(c) {
-  const t = (x) => 0.2969 * Math.sqrt(x) - 0.126 * x - 0.3516 * x * x + 0.2843 * x ** 3 - 0.1015 * x ** 4;
-  return Math.max(0.2, t(Math.min(1, Math.max(0, c))) / t(0.3));
-}
-
-/**
- * The two quads of a fin mark from a fin profile: { y0, y1 } root and tip
- * heights, { le0, le1 } leading edge z at each, { ch0, ch1 } chord at each,
- * { th0, th1 } the half thickness at each (the greatest, for an aerofoil),
- * `airfoil` true when the thickness follows the chord (a real fin) rather
- * than a flat side (the procedural box). Geometry in the fin's frame.
- */
-function finMarkQuads(P, mat) {
-  const H = Math.max(0.5, P.y1 - P.y0);
-  const chordAt = (t) => mix(P.ch0, P.ch1, t);
-  const tc = 0.46;
-  let size = 0.5 * H;
-  for (let k = 0; k < 8; k++) size = Math.min(0.66 * H, 0.8 * chordAt(Math.min(1, tc + size / H / 2)));
-  const tHalf = size / H / 2;
-  const out = [];
-  for (const side of [1, -1]) {
-    const geo = new THREE.PlaneGeometry(1, 1, 2, 4);
-    const p = geo.attributes.position;
-    const uv = geo.attributes.uv;
-    for (let i = 0; i < p.count; i++) {
-      const u = p.getX(i) + 0.5; // 0 forward .. 1 aft (the emblem reads the same from both sides)
-      const t = tc + p.getY(i) * tHalf * 2;
-      const ch = chordAt(t);
-      const le = mix(P.le0, P.le1, t);
-      // Centred 45% back along the chord: the mark's ink (0.84 of the patch) stays ahead of the rudder hinge.
-      const zc = le + ch * 0.45;
-      const z = zc + (u - 0.5) * size;
-      const half = mix(P.th0, P.th1, t) * (P.airfoil ? aerofoilShare((z - le) / Math.max(0.1, ch)) : 1);
-      p.setXYZ(i, side * (half + 0.03), mix(P.y0, P.y1, t), z);
-      uv.setXY(i, side > 0 ? u : 1 - u, uv.getY(i));
-    }
-    geo.computeVertexNormals();
-    out.push(geo);
-  }
-  out.size = size;
-  return out;
-}
-
-/**
- * The mark on a real model's fin. `meshes` are the skin's fin pieces
- * (role 'fin'); their vertices, in the skin's frame, give the fin's root and
- * tip bands — leading edge, chord and greatest half thickness at each — and
- * the quads are laid on that profile. Null when the pieces do not read as
- * one centred fin (twin fins, nothing found): the fin stays plain.
- */
-function realFinMark(skin, meshes, mat, fallback, own) {
-  if (!skin || !Array.isArray(meshes) || !meshes.length) return null;
-  skin.updateMatrixWorld(true);
-  const inv = new THREE.Matrix4().copy(skin.matrixWorld).invert();
-  const m = new THREE.Matrix4();
-  const v = new THREE.Vector3();
-  const pts = [];
-  for (const o of meshes) {
-    const pos = o.geometry && o.geometry.attributes && o.geometry.attributes.position;
-    if (!pos) continue;
-    m.multiplyMatrices(inv, o.matrixWorld);
-    const step = Math.max(1, Math.floor(pos.count / 4000));
-    for (let i = 0; i < pos.count; i += step) {
-      v.fromBufferAttribute(pos, i).applyMatrix4(m);
-      pts.push(v.x, v.y, v.z);
-    }
-  }
-  const n = pts.length / 3;
-  if (n < 12) return null;
-  // Only the upright part: within a couple of metres of the centre plane.
-  let y0 = Infinity;
-  let y1 = -Infinity;
-  let xs = 0;
-  for (let i = 0; i < n; i++) {
-    const x = pts[i * 3];
-    xs += x;
-    if (Math.abs(x) > 2.5) continue;
-    y0 = Math.min(y0, pts[i * 3 + 1]);
-    y1 = Math.max(y1, pts[i * 3 + 1]);
-  }
-  if (!(y1 - y0 > 1) || Math.abs(xs / n) > 0.5) return null;
-  // The root band is taken a fifth of the way up (the fillet into the body is below it), the tip band at the top.
-  const H = y1 - y0;
-  const band = (yc, w) => {
-    let le = Infinity;
-    let te = -Infinity;
-    let th = 0;
-    let hits = 0;
-    for (let i = 0; i < n; i++) {
-      const y = pts[i * 3 + 1];
-      if (Math.abs(y - yc) > w) continue;
-      const x = Math.abs(pts[i * 3]);
-      if (x > 2.5) continue;
-      const z = pts[i * 3 + 2];
-      le = Math.min(le, z);
-      te = Math.max(te, z);
-      th = Math.max(th, x);
-      hits++;
-    }
-    return hits >= 3 ? { le, ch: te - le, th } : null;
-  };
-  const pick = (yc) => band(yc, H * 0.06) || band(yc, H * 0.12) || band(yc, H * 0.2);
-  const ra = y0 + H * 0.2;
-  const rb = y1 - H * 0.05;
-  const r0 = pick(ra);
-  const r1 = pick(rb);
-  if (!r0 || !r1 || r0.ch < 0.5 || r1.ch <= 0.1) return null;
-  // The bands are at ra and rb; extend linearly to the profile's own root and tip.
-  const k0 = (y0 + H * 0.12 - ra) / (rb - ra);
-  const k1 = (y1 - ra) / (rb - ra);
-  const lin = (a, b, k) => a + (b - a) * k;
-  // Usable chord: ahead of the rudder hinge, as on the procedural fin (76% of it).
-  const profile = {
-    y0: y0 + H * 0.12,
-    y1,
-    le0: lin(r0.le, r1.le, k0),
-    le1: lin(r0.le, r1.le, k1),
-    ch0: Math.max(0.5, lin(r0.ch, r1.ch, k0)),
-    ch1: Math.max(0.3, lin(r0.ch, r1.ch, k1)),
-    th0: Math.max(0.02, lin(r0.th, r1.th, k0)),
-    th1: Math.max(0.015, lin(r0.th, r1.th, k1)),
-    airfoil: true,
-  };
-  const group = new THREE.Group();
-  group.name = 'Real fin emblem';
-  for (const q of finMarkQuads(profile, mat)) {
-    const mesh = new THREE.Mesh(typeof own === 'function' ? own(q) : q, mat);
-    mesh.name = 'Tail emblem (real fin)';
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    mesh.renderOrder = 2;
-    group.add(mesh);
-  }
-  group.userData.profile = profile;
-  group.userData.fallback = fallback;
-  return group;
+  mat.color = new THREE.Color(0xffffff);
+  mat.needsUpdate = true;
+  if (ctx.exports.realPaint) ctx.exports.realPaint.finMap = mat.map;
 }
 
 /** css colour string of anything THREE.Color takes (the kit's, repeated: it is not exported). */

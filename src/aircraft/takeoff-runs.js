@@ -12,6 +12,7 @@
 /* TABLE */
 export const TAKEOFF_RUN_M = Object.freeze({
   skylark: 270,
+  petrel: 590,
   courier: 390,
   meridian: 1780,
   vanguard: 230,

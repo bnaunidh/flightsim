@@ -4,15 +4,17 @@
  *
  * Nothing here runs unless the player picks the preview's card. It is not in
  * MAPS (world/maps.js registerExtraMap): the flight game still offers its own
- * maps, the lobbies still index the roster, and a saved id naming the preview
- * boots the default map like any unknown id (maps-retired.js). See
+ * maps and the lobbies still index the roster. A remembered World Map still
+ * boots the default map (core/storage.js settleGameMaps): the card and the menu
+ * say it is chosen, and it is built when you press Fly (flyChosen). See
  * world/worldmap/preview.js for how the sea fits in one frame and why the
  * ground is the same whichever field you start from.
  *
  *   The card    top of "Choose your map", marked PREVIEW: the five fields as a
  *               start picker (the field you start from is the full airport —
  *               terminal, stands, tower, ATC — and the others are drawn by
- *               worldmap/outstation.js), and Fly here.
+ *               worldmap/outstation.js), a pin dropped anywhere on the sea
+ *               (features/wm-pin.js, worldmap/pin.js), and Fly here.
  *   The ground  worldmap/stream.js, built round the camera in a worker, inside
  *               the tier's budget, far tiles unloaded.
  *   The map     the full-screen live map (features/livemap/: 5, the MAP
@@ -36,8 +38,9 @@ import { pavedIn } from '../world/airport-layout.js';
 import { RUNWAY } from '../world/airport.js';
 import {
   WORLD_PREVIEW_ID, WORLD_PREVIEW_TITLE, PREVIEW, AIRPORTS, airportById, previewDef, setDeparture, departure,
-  nearestAirport, headingTo, legM, HUB_ID,
+  nearestAirport, headingTo, legM, HUB_ID, seaBox,
 } from '../world/worldmap/preview.js';
+import { PIN, clampPin, fieldAt, goalFor, pinStart, pinWords } from '../world/worldmap/pin.js';
 import { TerrainStream, tierFor as streamTier, cardWorker, initWorker } from '../world/worldmap/stream.js';
 import { buildOutstations, pavedTest, towerLens, buildDressing } from '../world/worldmap/outstation.js';
 import { carrierProxyGeometry } from '../world/worldmap/field-look.js';
@@ -48,6 +51,11 @@ import { buildWaters } from '../world/worldmap/waters.js';
 import { buildNetworkLook } from '../world/worldmap/network-look.js';
 import { Props, placeProps, PROP_MODELS } from '../world/worldmap/props.js';
 import { parseGLB } from '../vehicles/glb.js';
+import { SPEC } from '../aircraft/physics.js';
+import { getAircraft, performanceFor } from '../aircraft/types.js';
+import { saveSettings } from '../core/storage.js';
+import { takeoffNeedM } from '../aircraft/takeoff-runs.js';
+import { isBigJet } from '../world/spawns.js';
 
 /**
  * The World Map's traffic (features/world-traffic.js): fetched the first time
@@ -64,6 +72,29 @@ function trafficModule() {
   }
   return TRAFFIC_MOD;
 }
+/**
+ * The ring past the sea (features/farlands-run.js, world/worldmap/farlands.js):
+ * fetched the first time the World Map is chosen, before it is built, so no
+ * other map ever loads it and the world it is built into has it from the first
+ * tile. If it will not load, the World Map is the open sea it always was.
+ */
+let RING = null;
+function loadRing() {
+  if (!RING) {
+    RING = import('./farlands-run.js').then((m) => {
+      const d = previewDef();
+      d.farlands = true;
+      d._outer = m.FARLANDS;
+      S.ring = m;
+      return m;
+    }).catch((e) => {
+      console.warn('[world-preview] the ring past the sea did not load; the sea goes on for ever', e);
+      return null;
+    });
+  }
+  return RING;
+}
+
 function startTraffic(sim, q) {
   const gen = (S.trafficGen = (S.trafficGen || 0) + 1);
   trafficModule().then((m) => {
@@ -136,6 +167,10 @@ const S = {
   arrivedT: 0,
   ui: null,
   pick: HUB_ID,
+  /** The pin on the card: { x, z, h }, or null. It replaces the field picked until it is taken up. */
+  pin: null,
+  pinDest: null,
+  pinGoing: false,
   horizon: null,
   flora: null,
   nav: null,
@@ -191,8 +226,8 @@ export function choosePreview(sim, airportId = S.pick) {
   const st = store();
   st.start = a.id;
   writeStore(st);
-  if (sim.menus && sim.menus.hooks && typeof sim.menus.hooks.chooseMap === 'function') return sim.menus.hooks.chooseMap(WORLD_PREVIEW_ID);
-  return sim.setMap(WORLD_PREVIEW_ID);
+  const go = () => (sim.menus && sim.menus.hooks && typeof sim.menus.hooks.chooseMap === 'function' ? sim.menus.hooks.chooseMap(WORLD_PREVIEW_ID) : sim.setMap(WORLD_PREVIEW_ID));
+  return S.ring ? go() : loadRing().then(go);
 }
 
 /** Resolves once the preview's world has been built (for "Fly now" and the tests). */
@@ -213,6 +248,8 @@ function teardown(sim) {
   if (S.flora) S.flora.dispose();
   if (S.cards) S.cards.dispose();
   if (S.props) S.props.dispose();
+  if (S.far) S.far.dispose();
+  S.far = null;
   S.props = null;
   S.cards = null;
   S.stream = null;
@@ -283,7 +320,7 @@ function buildWorld(sim, group) {
   const q = sim.settings.quality || 'medium';
   const t0 = performance.now();
   // terrain.js's ground with the land cover painted on (worldmap/world-terrain.js).
-  const mat = makeWorldTerrainMaterial(q);
+  const mat = makeWorldTerrainMaterial(q, S.ring ? S.ring.RING_LOOK : undefined);
   const fctx = floraContext(PREVIEW);
   S.stream = new TerrainStream({ T: Terrain, material: mat, group, quality: q, def: MAP, flora: fctx });
   // A 400 km sea: the floating origin for drawing (render/render-origin.js), and a far plane out to the horizon's islands.
@@ -311,6 +348,7 @@ function buildWorld(sim, group) {
   });
   S.horizon = new Horizon({ heightAt: Terrain.groundHeightAt, islands: PREVIEW.islands, hideWithin: streamTier(q).range });
   group.add(S.horizon.mesh);
+  if (S.ring) S.far = S.ring.createFarlands(sim, group, q);
   S.flora = new Flora({
     treeGeometry, ctx: fctx, T: Terrain, worker: S.stream.worker && !S.stream.workerFailed ? S.stream.worker : null, gen: S.stream.gen,
     quality: q, addObstacle: Terrain.addObstacle, obstacles: Terrain.OBSTACLES,
@@ -355,7 +393,7 @@ function buildWorld(sim, group) {
   Terrain.setOtherRunways(others.map((a) => ({ cx: a.x, cz: a.z, length: a.length, halfWidth: a.halfWidth })));
   // The landing aids at whichever field you are at (updateNav, every frame).
   sim.navPapi = (pos, mainHint) => navPapi(pos, mainHint);
-  prewarm(sim, [S.out.group, S.flora.group, S.cards && S.cards.group, S.horizon.mesh, S.waters, S.network, S.props && S.props.group]);
+  prewarm(sim, [S.out.group, S.flora.group, S.cards && S.cards.group, S.horizon.mesh, S.waters, S.network, S.props && S.props.group, ...(S.far ? S.far.roots() : [])]);
   S.builtFor = { id: dep.id, quality: q, ms: performance.now() - t0 };
   startTraffic(sim, q);
   const waiting = S.onBuilt.splice(0);
@@ -405,21 +443,7 @@ function prewarm(sim, roots) {
 }
 
 /** The sea in one square: every island and a margin (the card's sketch). */
-export function chartBox() {
-  let x0 = Infinity;
-  let x1 = -Infinity;
-  let z0 = Infinity;
-  let z1 = -Infinity;
-  for (const i of PREVIEW.islands) {
-    x0 = Math.min(x0, i.cx - i.radius * 1.5); x1 = Math.max(x1, i.cx + i.radius * 1.5);
-    z0 = Math.min(z0, i.cz - i.radius * 1.5); z1 = Math.max(z1, i.cz + i.radius * 1.5);
-  }
-  const pad = 6000;
-  const cx = (x0 + x1) / 2;
-  const cz = (z0 + z1) / 2;
-  const half = Math.max(x1 - x0, z1 - z0) / 2 + pad;
-  return { x0: cx - half, x1: cx + half, z0: cz - half, z1: cz + half };
-}
+export const chartBox = () => seaBox();
 
 /* ------------------------------------------------------------------ */
 /* The trip                                                            */
@@ -466,6 +490,173 @@ export function setDestination(sim, id) {
   }
   syncCard(sim);
   return S.dest;
+}
+
+/* ------------------------------------------------------------------ */
+/* The pin: a start anywhere on the sea (worldmap/pin.js)              */
+/* ------------------------------------------------------------------ */
+
+/** The nearest field this aircraft can use: an aeroplane needs the runway. */
+function pinGoal(pin, type) {
+  if (type && type.shape && type.shape.power && type.shape.power.rotor) return goalFor(pin.x, pin.z);
+  // The take-off run is what the game measures; a big jet has to land there too.
+  const need = (a) => Math.max(Number(type && type.minRunway) || 0, takeoffNeedM(type, a.surface), isBigJet(type) ? PIN.bigJetM : 0);
+  return goalFor(pin.x, pin.z, (a) => a.length >= need(a));
+}
+
+/** A pin, within what the map allows: the sea's square if the ring never loaded. */
+function clampTo(x, z) {
+  return S.ring ? S.ring.clampFar(x, z) : clampPin(x, z);
+}
+
+function saneStall(sim) {
+  try {
+    return performanceFor(sim.aircraftType.id).stallClean / KT;
+  } catch (e) {
+    return 40;
+  }
+}
+
+/**
+ * Build the World Map round this field and wait for it, false if it did not
+ * come. Choosing a map hands the screen that map's weather: `cfg` is what the
+ * player asked for, so it goes back on.
+ */
+async function buildFor(sim, id, cfg) {
+  const built = whenBuilt();
+  choosePreview(sim, id);
+  // A build that threw never says so: Fly here must not stay dead after it.
+  const done = await Promise.race([built, new Promise((res) => setTimeout(res, PIN.buildCapMs))]);
+  if (!done) sim.hud && sim.hud.notify('The World Map did not load. Please try again.', 'warn', 4);
+  if (!done || !active()) return false;
+  if (sim.menus.applyFree) sim.menus.applyFree(cfg);
+  return true;
+}
+
+/**
+ * Take off, with the World Map remembered from last time and not built yet:
+ * this is when it is. To the pin left on the card, or the field picked.
+ */
+async function flyChosen(sim, cfg) {
+  if (S.pin) return flyToPin(sim, cfg);
+  if (S.pinGoing) return undefined;
+  S.pinGoing = true;
+  try {
+    if (await buildFor(sim, S.pick, cfg)) await sim.menus.hooks.startFree(cfg);
+  } finally {
+    S.pinGoing = false;
+  }
+  return undefined;
+}
+
+/**
+ * Fly here, with a pin. A field's start goes the way that field's always does
+ * (the Free Flight screen's own hook); anywhere else is an airborne start that
+ * names the pin, so that Restart comes back to it (main.js keeps the options)
+ * and no other flight ever sees it. The world is built round the field you are
+ * heading for, as if you had picked it.
+ */
+async function flyToPin(sim, setup = null) {
+  if (S.pinGoing || !S.pin) return;
+  S.pinGoing = true;
+  try {
+    const menus = sim.menus;
+    const pin = { x: S.pin.x, z: S.pin.z };
+    const cfg = setup || (menus.readFree ? menus.readFree() : { aircraft: menus.chosenAircraft });
+    const at = fieldAt(pin.x, pin.z);
+    const field = at || pinGoal(pin, getAircraft(cfg.aircraft));
+    if (!(active() && S.builtFor && S.builtFor.id === field.id && S.builtFor.quality === sim.settings.quality) && !(await buildFor(sim, field.id, cfg))) return;
+    if (menus.rememberFree) menus.rememberFree();
+    if (at) await menus.hooks.startFree(cfg);
+    else await sim.startMode('free', { ...cfg, airborne: true, taxi: false, pin });
+  } finally {
+    S.pinGoing = false;
+  }
+}
+
+/** Is this flight one that started from a pin? (A checkpoint resumed on the ground kept the pin but did not.) */
+function pinFlight(sim) {
+  const o = sim.modeOpts;
+  return active() && sim.mode === 'free' && !!(o && o.pin && o.airborne);
+}
+
+/**
+ * The tower has nothing to say while a pin's flight is being set up: main.js
+ * tells a helicopter "lift when you are ready" before it has been moved, and
+ * from a pin it is already flying. Both clocks at zero is a flight that has
+ * not had a frame yet (as aircraft/rotor-assist.js reads it).
+ */
+function quietPinStart(sim) {
+  const atc = sim.atc;
+  if (!atc || atc._pinQuiet) return;
+  const say = atc.say.bind(atc);
+  atc._pinQuiet = true;
+  atc.say = (...a) => {
+    const ac = sim.aircraft;
+    return pinFlight(sim) && ac && ac.airborneTime === 0 && ac.groundTime === 0 ? false : say(...a);
+  };
+}
+
+/** Is the ground at (x, z) drawn? Open sea has no tiles to wait for. */
+function groundDrawn(x, z) {
+  const st = S.stream;
+  if (!st) return false;
+  if (!st.hasLand(x, z, 1)) return true;
+  for (const k of st.shown) {
+    const t = st.tiles.get(k);
+    if (t && Math.abs(x - t.cx) <= t.size / 2 && Math.abs(z - t.cz) <= t.size / 2) return true;
+  }
+  return false;
+}
+
+/** Put the flight at its pin, with the ground under it loaded and a field to fly to. */
+function startAtPin(sim, opts) {
+  const ac = sim.aircraft;
+  const pin = clampTo(opts.pin.x, opts.pin.z);
+  const rotor = !!SPEC.rotor;
+  const goal = pinGoal(pin, sim.aircraftType);
+  const how = { rotor, stallMs: saneStall(sim), ceilingM: ceilingOf(sim) };
+  const p = S.ring ? S.ring.farStart(Terrain.heightAt, pin, goal, how) : pinStart(Terrain.heightAt, pin, goal, how);
+  S.lastStart = p;
+  const fuel = opts.fuel != null ? Math.max(0.05, Math.min(1, opts.fuel)) : 1;
+  const place = (y) => {
+    // altAGL is from the ground, which at sea is the sea bed.
+    ac.reset({ pos: new THREE.Vector3(p.x, 0, p.z), headingDeg: p.headingDeg, speed: p.speed, altAGL: y - Terrain.heightAt(p.x, p.z), engineOn: true, gearDown: false, fuel });
+    ac.controls.throttle = p.throttle;
+    if (sim.input) {
+      sim.input.throttleTarget = p.throttle;
+      if (sim.input.out) sim.input.out.throttle = p.throttle;
+    }
+  };
+  place(p.y);
+  // Nearest first and capped, as a world build's own: what is left streams in behind the first frame.
+  if (S.stream) S.stream.prime(p.x, p.y, p.z, S.stream.tier.primeMs);
+  if (!groundDrawn(p.x, p.z)) place(Math.min(p.y + PIN.fallbackM, Math.max(p.y, p.limitM || Infinity)));
+  // The chase camera starts afresh here (as carrier-ops does).
+  if (sim.rig) sim.rig.initialised = false;
+  S.dest = goal;
+  S.pinDest = goal;
+  S.arrivedT = 0;
+  if (sim.hud && sim.hud.setObjective) {
+    const km = legM(p, goal) / 1000;
+    const way = sim.navGuide && sim.navGuide.enabled ? 'Follow the arrow and land there' : `Land there`;
+    const next = p.where ? `${p.where === 'low ground' ? 'Mind the walls' : 'Stay in it: it leads back to the sea'}. ${goal.name} is ${km.toFixed(0)} km away` : `${goal.name} is ${km.toFixed(km < 10 ? 1 : 0)} km away, heading ${String(Math.round(p.headingDeg) % 360).padStart(3, '0')}. ${way}, or fly anywhere you like`;
+    sim.hud.setObjective(`DIRECT TO ${goal.code}`, `${next}.`);
+  }
+  // Past what the type can hold: said once, so nobody thinks the pin was lost.
+  if (p.where && sim.hud) {
+    const spot = p.where === 'low ground' ? 'on lower ground' : `in the nearest ${p.where}`;
+    sim.hud.notify(`Too high for the ${sim.aircraftType.name} at your pin. You start ${(p.movedM / 1000).toFixed(p.movedM < 10000 ? 1 : 0)} km away, ${spot}.`, 'warn', 7);
+  }
+}
+
+/** The type's published ceiling, metres, or 0. */
+function ceilingOf(sim) {
+  try {
+    return (performanceFor(sim.aircraftType.id).ceilingFt || 0) * 0.3048;
+  } catch (e) {
+    return 0;
+  }
 }
 
 function etaMin(sim, distM) {
@@ -642,6 +833,7 @@ export function warpBlocked(sim) {
   if (sim.instrumentBlackout > 0 || sim.bracing) return 'Not in an emergency';
   const r = ac.readouts();
   if (r.aglFt < 3000) return 'Climb above 3,000 ft over the ground';
+  if (S.far && S.far.noWarp(ac)) return 'Not this far out';
   if (Math.abs(r.vsFpm) > 1500) return 'Level off or settle the climb first';
   if (sim.warnings && typeof sim.warnings.active === 'function' && sim.warnings.active().length) return 'A warning is showing';
   if (typeof ac.fuelFraction === 'function' && ac.fuelFraction() < 0.1) return 'Fuel is low';
@@ -730,6 +922,14 @@ const CSS = `
 .wp-hudcard .wp-warp[aria-pressed="true"] { border-color: #ffd166; color: #ffd166; }
 .wp-hudcard .wp-warp.is-off { opacity: 0.6; }
 .wp-hudcard .wp-rate { font-variant-numeric: tabular-nums; min-width: 2ch; }
+.wp-pin { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 10px 0 0; }
+.wp-pin button { min-height: 44px; min-width: 44px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--panel-line, rgba(255,255,255,0.18));
+  background: rgba(255,255,255,0.05); color: inherit; font: 600 13px var(--font, system-ui), sans-serif; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.wp-pin button[data-wp-pinopen] { flex: 1; }
+.wp-pin button[hidden], .wp-pin .wp-pinline[hidden] { display: none; }
+.wp-pin button:focus-visible { outline: 2px solid var(--accent, #4aa3ff); outline-offset: 2px; }
+.wp-pin.is-on button[data-wp-pinopen] { border-color: var(--accent, #4aa3ff); background: rgba(74,163,255,0.16); }
+.wp-pin .wp-pinline { flex-basis: 100%; margin: 0; font-size: 13px; }
 .wp-picks h4 { margin: 8px 0 0; font: 700 11px/1.2 var(--font, system-ui), sans-serif; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.7; }
 .wp-picks { max-height: 320px; overflow: auto; }
   font: 500 14px var(--font, system-ui), sans-serif; pointer-events: auto; }
@@ -809,6 +1009,11 @@ function buildCard(sim) {
       <span class="map-sub">One 200 km sea · ${(PREVIEW.regions || []).length} regions · ${AIRPORTS.length} airports · ${PREVIEW.islands.length} islands</span>
       <span class="map-diff diff-2">●●○○○ Open sea</span>
       <p>${previewDef().blurb} The longest leg, ${longestLeg()}, is a proper long haul.</p>
+      <div class="wp-pin">
+        <button type="button" data-wp-pinopen>${icon('map', 16)}<span>Pick any spot on the map</span></button>
+        <button type="button" data-wp-pinclear hidden>Remove pin</button>
+        <p class="wp-pinline" data-wp-pinline role="status" hidden></p>
+      </div>
       <div class="wp-picks" role="radiogroup" aria-label="Start at">${picks}</div>
     </div>
     <div class="map-foot">
@@ -821,12 +1026,23 @@ function buildCard(sim) {
     const p = e.target.closest('[data-wp-pick]');
     if (p) {
       S.pick = p.dataset.wpPick;
-      for (const b of card.querySelectorAll('[data-wp-pick]')) b.setAttribute('aria-checked', String(b.dataset.wpPick === S.pick));
+      store().start = S.pick;
+      writeStore(store());
+      setPin(null);
+      return;
+    }
+    if (e.target.closest('[data-wp-pinopen]')) {
+      openPinMap(sim, e.target.closest('[data-wp-pinopen]'));
+      return;
+    }
+    if (e.target.closest('[data-wp-pinclear]')) {
+      setPin(null);
       return;
     }
     if (e.target.closest('[data-wp-fly]')) {
       menus.hooks && menus.hooks.onClick && menus.hooks.onClick('map');
-      choosePreview(sim, S.pick);
+      if (S.pin) flyToPin(sim);
+      else choosePreview(sim, S.pick);
     }
   });
   card.addEventListener('keydown', (e) => {
@@ -840,6 +1056,49 @@ function buildCard(sim) {
     e.preventDefault();
   });
   return card;
+}
+
+/** The pin on the card: the line that says where it is, and no field picked while it is down. */
+function setPin(pin) {
+  const moved = (pin && pin.x) !== (S.pin && S.pin.x) || (pin && pin.z) !== (S.pin && S.pin.z);
+  S.pin = pin;
+  // Kept with the settings, so that Reset all takes it too. Only a pin that moved: the ground's answer comes after.
+  if (moved && S.sim && S.sim.settings) {
+    S.sim.settings.worldPin = pin ? { x: pin.x, z: pin.z, zone: pin.zone || null } : null;
+    saveSettings(S.sim.settings);
+  }
+  const card = S.ui && S.ui.mapCard;
+  if (!card) return;
+  for (const b of card.querySelectorAll('[data-wp-pick]')) b.setAttribute('aria-checked', String(!pin && b.dataset.wpPick === S.pick));
+  const line = card.querySelector('[data-wp-pinline]');
+  line.hidden = !pin;
+  line.textContent = pin ? `Your pin: ${pinWords(pin.x, pin.z, pin.h, pin.zone).short}` : '';
+  card.querySelector('.wp-pin').classList.toggle('is-on', !!pin);
+  card.querySelector('[data-wp-pinclear]').hidden = !pin;
+  card.querySelector('[data-wp-pinopen] span').textContent = pin ? 'Move the pin' : 'Pick any spot on the map';
+}
+
+/** The pin's map: fetched the first time it is opened (features/wm-pin.js). */
+let PIN_MOD = null;
+function openPinMap(sim, opener) {
+  if (!PIN_MOD) PIN_MOD = import('./wm-pin.js');
+  PIN_MOD.then((m) => {
+    if (S.ui.pinMap) return;
+    S.ui.pinMap = m.openPinMap({
+      quality: sim.settings.quality,
+      pin: S.pin,
+      onPin: setPin,
+      onFly: () => flyToPin(sim),
+      onClose: () => {
+        S.ui.pinMap = null;
+        if (opener && opener.isConnected) opener.focus();
+      },
+    });
+  }).catch((e) => {
+    console.warn('[world-preview] the pin map did not load', e);
+    PIN_MOD = null;
+    sim.hud && sim.hud.notify('The map did not load. Please try again.', 'warn', 4);
+  });
 }
 
 /** The fields in the picker's order, under their regions. */
@@ -872,9 +1131,24 @@ function syncCardForGame(sim) {
   if (!card) return;
   const g = sim.game || 'flight';
   card.hidden = !(g === 'flight' || g === 'heli');
+  const on = active() || waits(sim);
   const cur = card.querySelector('[data-wp-current]');
-  if (cur) cur.hidden = !active();
-  card.classList.toggle('is-current', active());
+  if (cur) {
+    cur.hidden = !on;
+    cur.textContent = active() ? 'Currently flying here' : 'Your map: it loads when you fly';
+  }
+  card.classList.toggle('is-current', on);
+}
+
+/** Is the World Map the choice on the menu, remembered and not built yet? */
+function waits(sim) {
+  return sim.waitingMap === WORLD_PREVIEW_ID && (sim.game === 'flight' || sim.game === 'heli');
+}
+
+/** A pin kept from last time, if it is still a pair of numbers. */
+function savedPin(sim) {
+  const p = sim.settings && sim.settings.worldPin;
+  return p && Number.isFinite(p.x) && Number.isFinite(p.z) ? { x: p.x, z: p.z, h: null, zone: typeof p.zone === 'string' ? p.zone : null } : null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -963,16 +1237,21 @@ function wrapSyncMap(sim) {
   if (!menus || menus._wpSync || typeof menus.syncMap !== 'function') return;
   const orig = menus.syncMap.bind(menus);
   menus._wpSync = true;
-  menus.syncMap = function (id) {
+  menus.syncMap = function (asked) {
+    const waiting = waits(sim);
+    const id = waiting ? WORLD_PREVIEW_ID : asked;
     const out = orig(id);
     if (id === WORLD_PREVIEW_ID) {
-      const dep = departure();
+      const dep = (waiting && airportById(S.pick)) || departure();
       for (const el of menus.root.querySelectorAll('[data-map-name]')) el.textContent = WORLD_PREVIEW_TITLE;
       for (const el of menus.root.querySelectorAll('[data-map-blurb]')) el.textContent = `Now flying ${WORLD_PREVIEW_TITLE} — from ${dep.code} ${dep.name}`;
     }
     syncCardForGame(sim);
     return out;
   };
+  // Restart comes back to the pin, and the debrief's button should say so.
+  const debrief = menus.showDebrief.bind(menus);
+  menus.showDebrief = (o) => debrief(pinFlight(sim) ? { ...o, actions: o.actions.map((a) => (a.label === 'Reset on the runway' ? { ...a, label: 'Back to your pin' } : a)) } : o);
   const show = menus.show && menus.show.bind(menus);
   if (show) {
     menus.show = function (name, ...rest) {
@@ -1002,8 +1281,12 @@ registerExtension({
   install(sim) {
     S.sim = sim;
     wrapSyncMap(sim);
+    quietPinStart(sim);
     S.ui = S.ui || {};
     S.ui.mapCard = buildCard(sim);
+    setPin(savedPin(sim));
+    // The menu says the map you chose, not the one standing in for it.
+    if (waits(sim)) sim.menus.syncMap(WORLD_PREVIEW_ID);
     syncCardForGame(sim);
     /*
      * No instructor on the World Map (owner, Oct 26: "remove instructor from
@@ -1042,6 +1325,18 @@ registerExtension({
       mapShips: () => (S.overlay ? S.overlay.ships || 0 : 0),
       stream: () => S.stream,
       visited: () => store().visited.slice(),
+      pin: () => S.pin,
+      setPin: (p) => {
+        const c = p ? clampTo(p.x, p.z) : null;
+        setPin(c ? { ...c, h: p.h ?? null, zone: S.ring ? S.ring.zoneOf(c.x, c.z) : null } : null);
+      },
+      flyToPin: () => flyToPin(sim),
+      flyChosen: (cfg) => flyChosen(sim, cfg),
+      /** The start the last pin gave (the tests). */
+      lastStart: () => S.lastStart || null,
+      groundDrawn,
+      /** The pin's map, once it is open (the tests). */
+      pinMap: () => (S.ui && S.ui.pinMap) || null,
       horizon: () => S.horizon,
       flora: () => S.flora,
       cards: () => S.cards,
@@ -1056,6 +1351,8 @@ registerExtension({
         const far = S.carrierProxy;
         return { ship: !!(sim.carrier && sim.carrier.group.visible), far: !!(far && far.visible), far3d: far || null };
       },
+      /** The ring past the sea (features/farlands-run.js), or null if it has not loaded. */
+      farlands: () => S.far,
       /** The traffic between the fields (features/world-traffic.js), or null before it has loaded. */
       traffic: () => S.traffic || null,
       whenTraffic: () => (TRAFFIC_MOD || Promise.resolve(null)).then(() => S.traffic || null),
@@ -1075,11 +1372,17 @@ registerExtension({
     setTowers(sim);
     if (!active()) {
       S.dest = null;
+      S.pinDest = null;
       return;
     }
+    const pinned = !!sim.aircraft && pinFlight(sim);
+    // The field a pin gave the last flight is not this flight's (a destination you set yourself stays).
+    if (!pinned && S.dest && S.dest === S.pinDest) S.dest = null;
+    S.pinDest = null;
+    if (pinned) startAtPin(sim, opts);
     // Free Flight's airborne start is written 3.4 km west of Kestrel's runway;
     // here it is 3.4 km west of the runway you chose to start from.
-    if (mode === 'free' && opts && opts.airborne && sim.aircraft) {
+    else if (mode === 'free' && opts && opts.airborne && sim.aircraft) {
       const ac = sim.aircraft;
       const want = new THREE.Vector3(RUNWAY.cx - RUNWAY.length / 2 - 2850, 0, RUNWAY.cz + 300);
       if (Math.hypot(ac.pos.x - want.x, ac.pos.z - want.z) > 500) {
@@ -1088,7 +1391,8 @@ registerExtension({
         if (sim.input) sim.input.throttleTarget = 0.7;
       }
     }
-    if (S.stream && sim.aircraft) S.stream.prime(sim.aircraft.pos.x, sim.aircraft.pos.y, sim.aircraft.pos.z, 500);
+    if (!pinned && S.stream && sim.aircraft) S.stream.prime(sim.aircraft.pos.x, sim.aircraft.pos.y, sim.aircraft.pos.z, 500);
+    if (S.far) S.far.start();
     // The field you start at is the radio's from the first call.
     S.nav = null;
     updateNav(sim);
@@ -1113,6 +1417,7 @@ registerExtension({
     const w0 = performance.now();
     if (S.stream && cam) S.stream.update(dt, cam.x, cam.y, cam.z);
     if (S.horizon && cam) S.horizon.update(cam, 1.2);
+    if (S.far) S.far.update();
     if (S.flora && cam) S.flora.update(cam, sim.state === 'flying' ? sim.aircraft : null, 1.2);
     if (S.cards && cam) S.cards.update(cam, null, 0.8);
     if (S.props && cam) S.props.update(cam, dt);

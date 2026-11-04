@@ -28,6 +28,7 @@
  */
 export const REAL_SPECS = {
   skylark: { real: 'Cessna 172S Skyhawk', empty: 767, mtow: 1111, engines: 1, power: 134, wingArea: 16.2, span: 11.0, vs0: 40, vr: 55, vref: 65, vmo: 163, climb: 730, ceiling: 14000, cruise: 124, range: 640 },
+  petrel: { real: 'Cessna 185 Skywagon on floats', fiction: true, empty: 1000, mtow: 1520, engines: 1, power: 224, wingArea: 16.2, span: 10.9, vs0: 48, vr: 58, vref: 70, vmo: 148, climb: 900, ceiling: 13000, cruise: 115, range: 500 },
   courier: { real: 'Beechcraft Bonanza G36', fiction: true, empty: 1146, mtow: 1656, engines: 1, power: 224, wingArea: 16.8, span: 10.2, vs0: 59, vr: 71, vref: 80, vmo: 205, climb: 1230, ceiling: 18500, cruise: 176, range: 920 },
   meridian: { real: 'Embraer ERJ-145 (a 40-50 seat regional jet)', fiction: true, empty: 12114, mtow: 22000, engines: 2, thrust: 33.0, wingArea: 51.2, span: 20.0, vs0: 100, vr: 125, vref: 130, vmo: 320, climb: 2500, ceiling: 37000, cruise: 450, range: 1550, approx: ['vs0', 'vr', 'vref', 'climb'] },
   vanguard: { real: 'Dassault Mirage 2000C', fiction: true, empty: 7500, mtow: 17000, engines: 1, thrust: 95.1, wingArea: 41, span: 9.13, vs0: 110, vr: 150, vref: 160, vmo: 750, climb: 56000, ceiling: 59000, cruise: 500, range: 1000, approx: ['vs0', 'vr', 'vref', 'cruise', 'range'] },

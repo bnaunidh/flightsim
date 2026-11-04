@@ -21,7 +21,7 @@
  */
 import { registerExtension } from '../game/extensions.js';
 import { MAPS, resolveMapId } from '../world/maps.js';
-import { saveSettings } from '../core/storage.js';
+import { saveSettings, WORLD_MAP } from '../core/storage.js';
 
 /**
  * Put a retired or unknown saved map right. Returns what it did, for the
@@ -34,18 +34,18 @@ export function settleSavedMap(sim) {
   if (from && MAPS.some((m) => m.id === from)) return null;
   const to = resolveMapId(from);
   sim.settings.map = to;
+  // The per-game memory can carry a retired id too, and it is what the next boot
+  // reads: both copies of it. The World Map's id is not in MAPS and is not retired.
+  for (const memory of [sim.gameMap, sim.settings.gameMap]) {
+    for (const k of Object.keys(memory || {})) {
+      const id = memory[k];
+      if (id && id !== WORLD_MAP && !MAPS.some((m) => m.id === id)) memory[k] = resolveMapId(id);
+    }
+  }
   try {
     saveSettings(sim.settings);
   } catch (e) {
     /* a browser that will not store anything still gets the right map this session */
-  }
-  // The per-game memory can carry a retired id too, if anything ever put one
-  // there; mapForGame() already ignores it, but it is cheaper to be right.
-  if (sim.gameMap) {
-    for (const k of Object.keys(sim.gameMap)) {
-      const id = sim.gameMap[k];
-      if (id && !MAPS.some((m) => m.id === id)) sim.gameMap[k] = resolveMapId(id);
-    }
   }
   if (sim.mapBeforeMission && !MAPS.some((m) => m.id === sim.mapBeforeMission)) {
     sim.mapBeforeMission = resolveMapId(sim.mapBeforeMission);

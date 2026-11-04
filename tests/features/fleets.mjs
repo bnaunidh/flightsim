@@ -95,18 +95,17 @@ function meshesNamed(model, re) {
 {
   const type = T.getAircraft('a320');
   const painted = ADAPTER.createAircraftModel({ type, livery: L.schemeFor(type, 'abyssinia') });
-  const emb = meshesNamed(painted, /^Tail emblem$/);
-  ok('a320 for Abyssinia: a mark on each side of the fin, in a decal that wins over the painted fin', emb.length === 2 && emb.every((m) => m.material.map && m.material.polygonOffset && m.material.polygonOffsetFactor <= -4), `${emb.length} emblems`);
-  const bb = emb.length ? emb[0].geometry.boundingBox || (emb[0].geometry.computeBoundingBox(), emb[0].geometry.boundingBox) : null;
-  const fin = type.shape.finHeight * type.shape.scale;
-  ok('a320: the mark sits on the upper half of the fin, ahead of the rudder', !!bb && bb.min.y > 0.4 * fin && bb.max.y < 1.05 * fin + 2 && bb.max.z < 20.77, bb ? `y ${bb.min.y.toFixed(1)}..${bb.max.y.toFixed(1)}, z ${bb.min.z.toFixed(1)}..${bb.max.z.toFixed(1)}` : 'none');
+  // The mark is the fin's own paint (fleet/extra/livery-art.js): lit, and bent with the fin.
+  const finPaint = meshesNamed(painted, /^Painted fin$/)[0];
+  const rudderPaint = meshesNamed(painted, /^Painted rudder$/)[0];
+  ok('a320 for Abyssinia: the fin and the rudder wear one canvas, mark and all', !!finPaint && !!rudderPaint && !!finPaint.material.map && finPaint.material.map === rudderPaint.material.map, finPaint && finPaint.material.map ? finPaint.material.map.name : 'none');
   const titles = meshesNamed(painted, /^Titling$/);
   ok('a320 for Abyssinia: the airline\'s name along the fuselage, one each side', titles.length === 2);
   const canoes = meshesNamed(painted, /^Flap track fairing$|Port main wing surface assembly|Starboard main wing surface assembly/);
   ok('a320: flap-track fairings under the wing (merged into the wing\'s own draw)', canoes.length >= 2, `${canoes.length}`);
   painted.userData.dispose();
   const house = ADAPTER.createAircraftModel({ type, livery: L.schemeFor(type, 'house') });
-  ok('a320 in house colours: no emblem and no titling', meshesNamed(house, /^Tail emblem$|^Titling$/).length === 0);
+  ok('a320 in house colours: no fin canvas and no titling', !meshesNamed(house, /^Painted fin$/)[0].material.map && meshesNamed(house, /^Titling$/).length === 0);
   house.userData.dispose();
 }
 // Every airline scheme builds on every airliner that wears one, with its mark and its name.
@@ -117,7 +116,8 @@ function meshesNamed(model, re) {
     for (const l of L.airlinesFor(t)) {
       try {
         const m = ADAPTER.createAircraftModel({ type: t, livery: l });
-        const emb = meshesNamed(m, /^Tail emblem$/).length;
+        const fin = meshesNamed(m, /^Painted fin$/)[0];
+        const emb = fin && fin.material.map ? 2 : 0;
         // The Meridian is the game's own model (aircraft/models/meridian.js), not the pack's: no emblem there yet.
         if (m.userData.fleetBridge && m.userData.config) {
           const fins = m.userData.config.fin;

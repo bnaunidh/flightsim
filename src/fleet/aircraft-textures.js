@@ -4,7 +4,7 @@
  * Final suite: 146/146. Target-device transparency performance not checked. */
 import * as THREE from '../vendor/three.module.js';
 import { helicopterReflectionEnvironment } from './helicopter.js';
-import { canvasFont, fontKey, fontReady, whenFontsLoaded } from '../render/airline-fonts.js';
+import { canvasFont, fontKey, fontReady, fontsLoaded, whenFontsLoaded } from '../render/airline-fonts.js';
 
 // All artwork is generated here. Shared texture/environment cache is deliberately
 // not owned by individual aircraft; the caller disposes only returned materials.
@@ -247,7 +247,25 @@ export function createAircraftMaterials(model,config={}) {
  * Texture itself is shared and survives model disposal. This never paints labels
  * over a fuselage UV wrap or stamps a registration on every unrelated component.
  */
-export function aircraftDecalTexture(text,{color:ink='#252f34',background='transparent',width=512,height=128,weight=600,spacing=0,font=null}={}) {
+/** A line of text's size in a face: { cap, width } per unit of font size (a stand-in when there is no canvas to ask). */
+let meter=null;const metrics=new Map();
+export function titleMetrics(text,font,spacing=0){
+  // Kept once the faces are in: a word measured in a fallback is measured again.
+  const key=`${text}|${fontKey(font)}|${spacing}`;if(metrics.has(key))return metrics.get(key);
+  const em=measureTitle(text,font,spacing);if(fontsLoaded())metrics.set(key,em);return em;
+}
+function measureTitle(text,font,spacing){
+  const n=Math.max(text.length,1),guess={cap:.7,width:n*(.62+spacing)};
+  try{
+    meter=meter||document.createElement('canvas').getContext('2d');
+    meter.font=canvasFont(font,100);
+    if('letterSpacing' in meter)meter.letterSpacing=`${spacing*100}px`;
+    if('fontKerning' in meter)meter.fontKerning='normal';
+    const cap=meter.measureText('H').actualBoundingBoxAscent/100,width=meter.measureText(text).width/100;
+    return cap>0&&width>0?{cap,width}:guess;
+  }catch(e){return guess;}
+}
+export function aircraftDecalTexture(text,{color:ink='#252f34',background='transparent',width=512,height=128,weight=600,spacing=0,font=null,cap=0,bold=0}={}) {
   if(typeof text!=='string'||!text.trim())throw new TypeError('Aircraft decal text must be nonempty.');
   width=Math.max(32,Math.min(2048,Math.round(width)));height=Math.max(16,Math.min(1024,Math.round(height)));
   weight=Math.max(100,Math.min(900,Math.round(Number(weight)||600)));spacing=Math.max(0,Math.min(.5,Number(spacing)||0));
@@ -261,6 +279,23 @@ export function aircraftDecalTexture(text,{color:ink='#252f34',background='trans
   const paint=(ctx,w,h)=>{
     ctx.clearRect(0,0,w,h);if(background!=='transparent'){ctx.fillStyle=background;ctx.fillRect(0,0,w,h);}
     ctx.fillStyle=ink;ctx.textAlign='center';ctx.textBaseline='middle';
+    if(cap>0&&fk){
+      // Set by its cap height (`cap`, a share of the band), as a sign-writer sets it: the width is
+      // whatever the word takes, so the letters keep their own proportions.
+      // Measured afresh on every painting: the second, with the real face in, may need the word a
+      // little smaller to stay in its patch. Never squeezed sideways.
+      const em={cap:.7,width:0};Object.assign(em,titleMetrics(text,font,spacing));
+      const trim=em.width-spacing,px=Math.min(h*cap/em.cap,w*.98/trim),tw=trim*px;
+      ctx.font=canvasFont(font,px);ctx.textAlign='left';ctx.textBaseline='alphabetic';
+      if('fontKerning' in ctx)ctx.fontKerning='normal';
+      if(h>64&&'textRendering' in ctx)ctx.textRendering='geometricPrecision';
+      if(spacing>0&&'letterSpacing' in ctx){try{ctx.letterSpacing=`${(spacing*px).toFixed(2)}px`;}catch(e){/* as below */}}
+      const x=(w-tw)/2,y=h*(.5+cap/2);
+      ctx.fillText(text,x,y);
+      // A face's fine strokes fattened, in the same ink, so they outlive the mipmaps at a distance.
+      if(bold>0){ctx.strokeStyle=ink;ctx.lineJoin='round';ctx.lineWidth=bold*px;ctx.strokeText(text,x,y);}
+      return;
+    }
     const n=Math.max(text.length,1);let size=Math.min(h*.68,w/(n*(.66+spacing)));
     ctx.font=fk?canvasFont(font,size):`${weight} ${size}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
     if(spacing>0&&'letterSpacing' in ctx){try{ctx.letterSpacing=`${(spacing*size).toFixed(2)}px`;}catch(e){/* an older canvas keeps the plain spacing */}}
@@ -275,7 +310,7 @@ export function aircraftDecalTexture(text,{color:ink='#252f34',background='trans
     const nudge=spacing>0&&'letterSpacing' in ctx?spacing*size*.5:0;
     ctx.fillText(text,w*.5+nudge,h*.52,w*.93);
   };
-  const key=`Aircraft_decal_${text}_${ink}_${background}_${width}_${height}_${weight}_${spacing}${fk?`_${fk}`:''}`;
+  const key=`Aircraft_decal_${text}_${ink}_${background}_${width}_${height}_${weight}_${spacing}${fk?`_${fk}`:''}${cap?`_cap${cap}_${bold}`:''}`;
   const fresh=!cache.has(key);
   const map=canvasTexture(key,width,height,paint);
   map.userData.text=text; // what it says, for the tests

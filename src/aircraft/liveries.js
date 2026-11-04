@@ -13,15 +13,6 @@
  * a real airline — its scheme is "Ununited" now), never its logo. Colours are
  * fine on their own. tests/features/parody-names.mjs holds the list of real
  * names none of these may match; the credits screen says they are parody.
- *
- * The tail is a SEPARATE material rather than part of the shared texture, and
- * that is not a stylistic choice — it is forced by the geometry. The fuselage
- * is a lathe whose UVs run u=around, v=nose-to-tail, and the wings are lofted
- * with u=around-the-aerofoil, v=spanwise. Both are handed the same square
- * image, so a stripe painted at a constant y comes out as a RING around the
- * body and a spanwise band across the wing — never as a cheatline, and never
- * as a coloured fin. Colouring the tail is the single thing that makes a
- * scheme read as an airline from a distance, so it gets its own material.
  */
 
 /** Every scheme. `base`/`accent` feed the shared texture; `tail` is its own. */
@@ -41,7 +32,7 @@ export const LIVERIES = [
     cheatline: 'rgba(232,180,10,0.9)',
     tail: 0x0b8a3e,
     reg: 'ET-ABY',
-    titling: 'ABYSSINIA AIR',
+    titling: 'Abyssinia Air',
     emblem: 'stripes',
     fleet: ['b737', 'b787', 'a350', 'b777', 'q400', 'meridian'],
     // Inspired by the kind of airline that paints its flag's colours along the
@@ -55,12 +46,12 @@ export const LIVERIES = [
       cowlBand: '#e8b40a',
       emblemInks: ['#e8b40a', '#f4f6f8', '#d9231f'],
       titleWeight: 700,
-      titleSpacing: 0.05,
+      titleSpacing: 0.01,
       // Ethiopian-style: a warm, slightly flared bold sans.
       titleFont: { family: 'Kanit', weight: 600, style: 'normal' },
       // The fin's green, not the cheatline's gold: gold on a white body was
       // the one title in the fleet you could not read from the apron.
-      titleInk: '#0b8a3e',
+      titleInk: '#055a27',
     },
   },
   {
@@ -89,7 +80,7 @@ export const LIVERIES = [
       cowl: '#0d2f56',
       cowlBand: '#d4a62a',
       titleWeight: 700,
-      titleSpacing: 0.08,
+      titleSpacing: 0.07,
       // United-style: a clean, wide geometric sans.
       titleFont: { family: 'Montserrat', weight: 700, style: 'normal' },
     },
@@ -101,13 +92,13 @@ export const LIVERIES = [
     base: '#d6dadf',
     accent: '#c8102e',
     cheatline: 'rgba(20,52,120,0.9)',
-    tail: 0xc8102e,
+    tail: 0x143478,
     reg: 'N711LB',
     titling: 'LIBERTY AIR',
     emblem: 'star',
     fleet: ['b737', 'a320', 'a321', 'b787', 'b777', 'meridian'],
-    // Bare polished metal with a thin red-over-blue cheatline, a red fin
-    // with the star, and bare-metal cowls: the classic American-style
+    // Bare polished metal with a thin red-over-blue cheatline, a navy fin
+    // with one big star, and bare-metal cowls: the classic American-style
     // "silver bird". Metal is metal here (airliner-kit airlinerMaterials).
     style: {
       layout: 'metal',
@@ -116,7 +107,7 @@ export const LIVERIES = [
       cowl: '#c9ced3',
       emblemInks: ['#f4f6f8'],
       titleWeight: 700,
-      titleSpacing: 0.06,
+      titleSpacing: 0.05,
       // American-style: a squared, technical sans.
       titleFont: { family: 'Titillium Web', weight: 700, style: 'normal' },
       titleInk: '#12306b',
@@ -143,9 +134,9 @@ export const LIVERIES = [
       cowl: null,
       emblemInks: ['#f7f8fa', '#c8142a'],
       titleWeight: 600,
-      titleSpacing: 0.1,
+      titleSpacing: 0.08,
       // Air France-style: a Parisian geometric, Futura's cousin.
-      titleFont: { family: 'Jost', weight: 600, style: 'normal' },
+      titleFont: { family: 'Jost', weight: 700, style: 'normal' },
       titleInk: '#12306b',
     },
   },
@@ -158,7 +149,7 @@ export const LIVERIES = [
     cheatline: 'rgba(31,122,68,0.9)',
     tail: 0xe8721f,
     reg: 'VT-BHA',
-    titling: 'BHARAT AIR',
+    titling: 'Bharat Air',
     emblem: 'sun',
     fleet: ['a320', 'a321', 'b787', 'b777', 'a350', 'b747', 'meridian'],
     // A warm white body, a saffron band above the windows with a thin red
@@ -173,10 +164,10 @@ export const LIVERIES = [
       cowlBand: '#e8721f',
       emblemInks: ['#b3121b'],
       titleWeight: 700,
-      titleSpacing: 0.06,
+      titleSpacing: 0.015,
       // Air India-style: the flowing italic of the old titling.
       titleFont: { family: 'Lora', weight: 600, style: 'italic' },
-      titleInk: '#b3121b',
+      titleInk: '#960d15',
     },
   },
   {
@@ -200,10 +191,10 @@ export const LIVERIES = [
       cowlBand: '#e8a33c',
       emblemInks: ['#e8a33c'],
       titleWeight: 800,
-      titleSpacing: 0.12,
+      titleSpacing: 0.08,
       // night-freighter: a condensed cargo face.
       titleFont: { family: 'Oswald', weight: 600, style: 'normal' },
-      titleInk: '#e8a33c',
+      titleInk: '#f0b24a',
     },
   },
   /*
@@ -238,14 +229,14 @@ export const LIVERIES = [
       cowl: '#39b4e6',
       emblemInks: ['#f4f7fa', '#0a3b6e'],
       titleWeight: 700,
-      titleSpacing: 0.08,
+      titleSpacing: 0.05,
       // KLM-style: a bold, round geometric.
       titleFont: { family: 'League Spartan', weight: 700, style: 'normal' },
-      titleInk: '#f4f7fa',
+      titleInk: '#072c54',
     },
   },
   {
-    // Delta-style: white over a navy belly, a red fin — a wave-triangle, not a widget.
+    // Delta-style: white over a navy belly, a red fin, a river's flowing lines on it.
     id: 'riverdelta',
     name: 'Riverdelta Air',
     callsign: 'Riverdelta',
@@ -256,16 +247,16 @@ export const LIVERIES = [
     tail: 0xc8102e,
     reg: 'N917RD',
     titling: 'RIVERDELTA',
-    emblem: 'wavetri',
+    emblem: 'riverlines',
     fleet: ['b737', 'a320', 'a321', 'a350', 'meridian'],
     style: {
       layout: 'two-tone',
       belly: '#003a70',
       pinstripe: '#c8102e',
       cowl: '#003a70',
-      emblemInks: ['#f6f7f9', '#8a0a1f'],
+      emblemInks: ['#f6f7f9'],
       titleWeight: 800,
-      titleSpacing: 0.1,
+      titleSpacing: 0.08,
       // Delta-style: a heavy, square-shouldered sans.
       titleFont: { family: 'Montserrat', weight: 800, style: 'normal' },
       titleInk: '#003a70',
@@ -282,7 +273,7 @@ export const LIVERIES = [
     cheatline: 'rgba(200,162,74,0.9)',
     tail: 0xd71920,
     reg: 'A6-DPL',
-    titling: 'DESERT PEARL',
+    titling: 'Desert Pearl',
     emblem: 'falcon',
     fleet: ['a380', 'b777', 'a350', 'meridian'],
     style: {
@@ -291,10 +282,10 @@ export const LIVERIES = [
       cowl: null,
       emblemInks: ['#c8a24a', '#f8f8f6'],
       titleWeight: 600,
-      titleSpacing: 0.14,
+      titleSpacing: 0.015,
       // Emirates-style: a high-contrast, elegant serif.
       titleFont: { family: 'Playfair Display', weight: 700, style: 'normal' },
-      titleInk: '#b8902f',
+      titleInk: '#7d5a10',
     },
   },
   {
@@ -318,10 +309,10 @@ export const LIVERIES = [
       cowl: '#b08d57',
       emblemInks: ['#f7f4ee', '#e3cfa6', '#7a5a30'],
       titleWeight: 600,
-      titleSpacing: 0.12,
+      titleSpacing: 0.07,
       // Etihad-style: classical capitals, quiet luxury.
       titleFont: { family: 'Cinzel', weight: 700, style: 'normal' },
-      titleInk: '#7a5a30',
+      titleInk: '#523a18',
     },
   },
   {
@@ -345,10 +336,10 @@ export const LIVERIES = [
       cowlBand: '#d40511',
       emblemInks: ['#d40511'],
       titleWeight: 900,
-      titleSpacing: 0.1,
+      titleSpacing: 0.05,
       // DHL-style: a fast, heavy italic.
       titleFont: { family: 'Exo 2', weight: 700, style: 'italic' },
-      titleInk: '#d40511',
+      titleInk: '#9c030e',
     },
   },
   {
@@ -362,7 +353,7 @@ export const LIVERIES = [
     cheatline: 'rgba(77,20,140,0.9)',
     tail: 0x1f8a4c,
     reg: 'N77FS',
-    titling: 'FLEXSHIP',
+    titling: 'FlexShip',
     emblem: 'arrowbox',
     fleet: ['b777', 'q400', 'meridian'],
     style: {
@@ -372,17 +363,17 @@ export const LIVERIES = [
       cowlBand: '#4d148c',
       emblemInks: ['#f7f8fa', '#4d148c'],
       titleWeight: 900,
-      titleSpacing: 0.06,
+      titleSpacing: 0.005,
       // FedEx-style: a black, tight grotesque.
       titleFont: { family: 'Archivo Black', weight: 400, style: 'normal' },
-      titleInk: '#4d148c',
+      titleInk: '#f7f8fa',
     },
   },
   {
-    // UPS-style freighter: white over brown, a gold pinstripe, a parcel badge on the fin.
-    // The table said "shield with a box"; the real mark IS a shield, so ours is
-    // a hexagon badge round a parcel — the brown is a registered colour mark
-    // for delivery, so the shapes carry the difference (brief, 2026-10-22).
+    // UPS-style freighter: white over brown, a gold pinstripe, two parcels on the fin.
+    // The table said "shield with a box"; the real mark IS a shield, so ours has
+    // no badge at all — the brown is a registered colour mark for delivery, so
+    // the shapes carry the difference (brief, 2026-10-22).
     id: 'parcelbrown',
     name: 'Parcel Brown Express',
     callsign: 'Parcel Brown',
@@ -392,7 +383,7 @@ export const LIVERIES = [
     cheatline: 'rgba(53,28,21,0.9)',
     tail: 0x351c15,
     reg: 'N58PB',
-    titling: 'PARCEL BROWN EXPRESS',
+    titling: 'PARCEL BROWN',
     emblem: 'parcel',
     fleet: ['b747', 'meridian'],
     style: {
@@ -403,7 +394,7 @@ export const LIVERIES = [
       cowlBand: '#ffb500',
       emblemInks: ['#ffb500', '#351c15'],
       titleWeight: 700,
-      titleSpacing: 0.08,
+      titleSpacing: 0.06,
       // UPS-style: a sturdy condensed sans.
       titleFont: { family: 'Barlow Condensed', weight: 700, style: 'normal' },
       titleInk: '#351c15',
@@ -420,7 +411,7 @@ export const LIVERIES = [
     cheatline: 'rgba(7,90,170,0.9)',
     tail: 0x0d2f6b,
     reg: 'G-RIAW',
-    titling: 'ROYAL ISLES AIRWAYS',
+    titling: 'ROYAL ISLES',
     emblem: 'seawave',
     fleet: ['a320', 'a321', 'a350', 'a380', 'b777', 'b787', 'concorde', 'meridian'],
     style: {
@@ -430,7 +421,7 @@ export const LIVERIES = [
       cowl: '#0d2f6b',
       emblemInks: ['#eb2226', '#f7f8fa'],
       titleWeight: 600,
-      titleSpacing: 0.12,
+      titleSpacing: 0.09,
       // British Airways-style: a crisp, upright geometric.
       titleFont: { family: 'Jost', weight: 700, style: 'normal' },
       titleInk: '#0d2f6b',
@@ -447,7 +438,7 @@ export const LIVERIES = [
     cheatline: 'rgba(199,10,12,0.9)',
     tail: 0xc70a0c,
     reg: 'TC-BOS',
-    titling: 'BOSPHORUS',
+    titling: 'Bosphorus',
     emblem: 'crane',
     fleet: ['a320', 'a321', 'a350', 'b737', 'b777', 'b787', 'meridian'],
     style: {
@@ -456,14 +447,14 @@ export const LIVERIES = [
       cowl: null,
       emblemInks: ['#f7f8fa'],
       titleWeight: 700,
-      titleSpacing: 0.1,
+      titleSpacing: 0.015,
       // Turkish-style: a bold, even geometric.
       titleFont: { family: 'League Spartan', weight: 700, style: 'normal' },
       titleInk: '#1b1f5c',
     },
   },
   {
-    // Qatar Airways-style: light grey, a maroon fin with a leaping antelope.
+    // Qatar Airways-style: light grey, a maroon fin. Our mark: an open oyster and its pearl.
     id: 'pearlgulf',
     name: 'Pearl Gulf Airways',
     callsign: 'Pearl Gulf',
@@ -473,16 +464,16 @@ export const LIVERIES = [
     cheatline: 'rgba(92,6,50,0.9)',
     tail: 0x5c0632,
     reg: 'A7-PGA',
-    titling: 'PEARL GULF',
-    emblem: 'antelope',
+    titling: 'Pearl Gulf',
+    emblem: 'pearlshell',
     fleet: ['a320', 'a350', 'a380', 'b777', 'b787', 'meridian'],
     style: {
       layout: 'eurowhite',
       belly: '#a9adb2',
       cowl: '#5c0632',
-      emblemInks: ['#d4d6d9'],
+      emblemInks: ['#d4d6d9', '#ffffff'],
       titleWeight: 600,
-      titleSpacing: 0.14,
+      titleSpacing: 0.015,
       // Qatar-style: a refined serif, widely spaced.
       titleFont: { family: 'Playfair Display', weight: 700, style: 'normal' },
       titleInk: '#5c0632',
@@ -508,7 +499,7 @@ export const LIVERIES = [
       cowl: null,
       emblemInks: ['#f8f8f8', '#ffd166'],
       titleWeight: 700,
-      titleSpacing: 0.1,
+      titleSpacing: 0.07,
       // JAL-style: a firm sans with an Asian warmth.
       titleFont: { family: 'Kanit', weight: 600, style: 'normal' },
       titleInk: '#1a1a1a',
@@ -535,7 +526,7 @@ export const LIVERIES = [
       cowlBand: '#1a1a1a',
       emblemInks: ['#1a1a1a'],
       titleWeight: 900,
-      titleSpacing: 0.14,
+      titleSpacing: 0.06,
       // Spirit-style: black, loud, low-cost.
       titleFont: { family: 'Archivo Black', weight: 400, style: 'normal' },
       titleInk: '#1a1a1a',
@@ -552,7 +543,7 @@ export const LIVERIES = [
     cheatline: 'rgba(15,110,140,0.9)',
     tail: 0x0f6e8c,
     reg: 'N70SA',
-    titling: 'OVERSEA AIRWAYS',
+    titling: 'OverSea',
     emblem: 'horizon',
     fleet: ['a320', 'a321', 'b737', 'b787', 'a350', 'b777', 'q400', 'meridian'],
     style: {
@@ -563,10 +554,10 @@ export const LIVERIES = [
       cowlBand: '#f2b84b',
       emblemInks: ['#f5f8fa', '#f2b84b'],
       titleWeight: 700,
-      titleSpacing: 0.1,
+      titleSpacing: 0.015,
       // the island's own: a sporty, forward-leaning italic.
       titleFont: { family: 'Exo 2', weight: 700, style: 'italic' },
-      titleInk: '#0f6e8c',
+      titleInk: '#084a62',
     },
   },
   /*
@@ -618,7 +609,7 @@ export const AIRLINE_LIVERIES = Object.freeze(LIVERIES.filter((l) => !l.house &&
 /** Every fin mark the airliner models can draw (fleet/extra/airliners.js emblemTexture). */
 export const EMBLEMS = Object.freeze([
   'stripes', 'compass', 'star', 'wave', 'sun', 'moon',
-  'tulip', 'wavetri', 'falcon', 'lattice', 'speedlines', 'arrowbox', 'parcel', 'seawave', 'crane', 'antelope', 'suncrane', 'bang', 'horizon',
+  'tulip', 'riverlines', 'falcon', 'lattice', 'speedlines', 'arrowbox', 'parcel', 'seawave', 'crane', 'pearlshell', 'suncrane', 'bang', 'horizon',
 ]);
 
 /** The paint layouts liveryTexture knows. */
@@ -648,19 +639,11 @@ export function radioBrand(livery) {
  *             One's, which the light aeroplanes paint too; this is not)
  *   callsign  the brand the radio reads for an ambient aeroplane ("Kanal
  *             four two"); the name with a trailing Air/States dropped if unset
- *   emblem    the mark on the fin: 'stripes' | 'compass' | 'star' | 'wave' |
- *             'sun' | 'moon' | 'tulip' | 'wavetri' | 'falcon' | 'lattice' |
- *             'speedlines' | 'arrowbox' | 'parcel' | 'seawave' | 'crane' |
- *             'antelope' | 'suncrane' | 'bang' | 'horizon' — geometric, the
- *             game's own, never a real logo (EMBLEMS below is the list)
- *   style     how the paint is laid out (fleet/extra/airliner-kit.js
+ *   emblem    the mark on the fin, one of EMBLEMS: the game's own, never a real logo
+ *   style     how the paint is coloured and, for a scheme with no drawing of
+ *             its own in fleet/extra/livery-art.js, laid out (airliner-kit.js
  *             liveryTexture, airlinerMaterials; all optional, all data):
- *     layout      'cheatline' (a band under the windows), 'eurowhite' (a
- *                 plain body, the name does the work), 'two-tone' (the belly
- *                 colour rises to the cheatline), 'billboard' (a dark body,
- *                 big name), 'metal' (bare polished skin, a thin cheatline),
- *                 'crown' (the upper body in `crown`, down to the window
- *                 line, over a pale belly: the sky-blue-over-white look)
+ *     layout      one of LAYOUTS (airliner-kit.js says what each lays down)
  *     crown       the upper body's colour (crown layout); the accent if not set
  *     bands       the cheatline as a list of colours, top to bottom, instead
  *                 of one accent band and a line

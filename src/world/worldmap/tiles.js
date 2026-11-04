@@ -71,7 +71,8 @@ export function assemble(heights, cx, cz, size, seg, flatAt = null, cover = null
   let maxH = -Infinity;
   for (let j = 1; j <= N; j++) for (let i = 1; i <= N; i++) maxH = Math.max(maxH, heights[j * W + i]);
   if (maxH < -0.5) return null;
-  const skirt = Math.min(240, Math.max(12, step * 1.2));
+  // Past the sea (worldmap/farlands.js) a coarse tile can miss a whole wall: a deep skirt.
+  const skirt = (cover && cover.outerSkirt && cover.outerSkirt(cx, cz, size)) || Math.min(240, Math.max(12, step * 1.2));
   const ring = 4 * seg;
   const count = N * N + ring;
   const pos = new Float32Array(count * 3);

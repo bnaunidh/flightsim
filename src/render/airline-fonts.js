@@ -139,19 +139,30 @@ export function loadAirlineFonts() {
       }
     }),
   ).then(() => {
-    L.loaded = true;
     L.ms = (typeof performance !== 'undefined' ? performance.now() : 0) - t0;
-    const list = L.waiting.splice(0);
-    for (const fn of list) {
-      try {
-        fn();
-      } catch (e) {
-        /* a canvas that cannot be redrawn keeps the fallback lettering */
-      }
-    }
+    // Never silently: a face that did not load is a fallback on an aeroplane.
+    if (L.failed.length) console.warn(`Airline faces missing, fallback lettering: ${L.failed.join(', ')}`);
+    letterAgain();
     return { ok: L.failed.length === 0, failed: L.failed.slice(), ms: L.ms };
   });
   return L.promise;
+}
+
+function letterAgain() {
+  L.loaded = true;
+  for (const fn of L.waiting.splice(0)) {
+    try {
+      fn();
+    } catch (e) {
+      /* a canvas that cannot be redrawn keeps the fallback lettering */
+    }
+  }
+}
+
+/** Tests: as if the faces had not landed yet. The function returned lands them. */
+export function holdFonts() {
+  L.loaded = false;
+  return letterAgain;
 }
 
 /** True once every face has answered (loaded or not). */

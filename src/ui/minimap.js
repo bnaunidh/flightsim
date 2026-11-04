@@ -590,26 +590,18 @@ const MODES = {
 /*
  * WHY THE BOAT CHART IS NOT THE WHOLE MAP, AND MOVES.
  *
- * Measured on the maps in the tree: the relief chart covers 28,800 m across
- * 512 pixels, which is 56.3 m per pixel. On the smallest shoal on the boat
- * maps — Sennen's, r = 125 m — that is four pixels; the dredged channel is
- * 110 m wide, which is two; and when the whole of Skerries was sampled at
- * that scale the two-metre contour came out at TWENTY-TWO pixels for the
- * entire map. A chart whose safety contour is twenty-two pixels long is not a
- * chart, and no amount of drawing on top of it fixes that, because the thing
- * that is missing is in the sampling.
+ * The relief chart is 56.3 m per pixel: Sennen's smallest shoal (r = 125 m)
+ * is four pixels, the 110 m dredged channel two, and the two-metre contour on
+ * Skerries comes out at twenty-two pixels for the entire map. That is not a
+ * chart, and it is the sampling that is short, not the drawing.
  *
- * A boat does not need 28.8 km. It does eight knots. So the bathymetric chart
- * covers 12 km — 23.4 m per pixel, which puts eleven pixels across that same
- * shoal and five across the channel — and it MOVES WITH THE BOAT, rebuilt a
- * few rows a frame into a second canvas while the first one is still on
- * screen, so a re-centre is invisible.
+ * A boat does eight knots. So the bathymetric chart covers 12 km — 23.4 m per
+ * pixel — and MOVES WITH THE BOAT, rebuilt a few rows a frame into a second
+ * canvas while the first stays on screen, so a re-centre is invisible.
  *
- * RECENTRE is derived and not typed, because the one thing that must be true
- * is that the window never shows sea the chart does not cover: the widest
- * boat range is 9.6 km, so the far edge of the view sits 4.8 km from the
- * boat, and the boat may therefore be at most 6000 - 4800 = 1200 m from the
- * middle of a 12 km chart. Change the ranges above and this follows.
+ * RECENTRE is derived, because the window must never show sea the chart does
+ * not cover: the far edge of the widest range (9.6 km) is 4.8 km from the
+ * boat, so the boat stays within 6000 - 4800 = 1200 m of the chart's middle.
  */
 // The 12 km is MODES.boat.window; the van has one of these now too (see
 // windowChart), and the re-centre distance is worked out there, per mode.
@@ -972,7 +964,7 @@ class Chart {
           }
         } else if (h <= 0) {
           // Water, darkening with depth.
-          const k = Math.min(1, -h / 60);
+          const k = h < -99 ? 9 : Math.min(1, -h / 60); // -99: the World Map's void, black
           r = 22 + (1 - k) * 26;
           g = 58 + (1 - k) * 40;
           b = 84 + (1 - k) * 34;
@@ -1354,6 +1346,8 @@ export class Minimap {
    */
   chartFor(mode, craft) {
     const m = MODES[mode] || MODES.flight;
+    // Past the World Map's sea: the whole ring in one picture of its own (worldmap/farlands.js).
+    const far = MAP._outer && MAP._outer.depthOf(craft.x, craft.z) > 0 ? MAP._outer.chartHalf : 0;
     if (m.window && this.span <= m.windowUpTo) {
       // Recentre while the widest range that uses it still fits inside.
       const w = this.windowChart(m.chart, m.window, craft, m.window / 2 - m.windowUpTo / 2);
@@ -1365,7 +1359,7 @@ export class Minimap {
       else if (!this.windows[m.chart].next) {
         // Nothing else to do: build the whole-map picture in the background,
         // for zooming out and for the fallback below.
-        const wh = this.wholeChart(m.chart, true);
+        const wh = this.wholeChart(m.chart, true, far);
         if (!wh.done) wh.slice(TILE_ROWS_BACKGROUND, sliceBudget() / 2);
       }
       /*
@@ -1376,10 +1370,10 @@ export class Minimap {
        */
       const off = Math.max(Math.abs(craft.x - w.cx), Math.abs(craft.z - w.cz));
       if (w.done && off <= w.extent / 2 - this.span / 2) return w;
-      const whole = this.wholeChart(m.chart, false);
+      const whole = this.wholeChart(m.chart, false, far);
       return whole && whole.done ? whole : w;
     }
-    const c = this.wholeChart(m.chart, true);
+    const c = this.wholeChart(m.chart, true, far);
     if (!c.done) c.slice(sliceRows(), sliceBudget());
     return c;
   }
@@ -1389,20 +1383,20 @@ export class Minimap {
    * with a wide margin of sea so the coastline is not clipped by the edge of
    * the image. Cached per map.
    */
-  wholeChart(kind, create) {
+  wholeChart(kind, create, far = 0) {
     const id = MAP && MAP.id;
     if (this._wholeId !== id || this._wholeKind !== kind) {
       this._wholeId = id;
       this._wholeKind = kind;
       this._wholeKey = `${id}|${kind}`;
     }
-    const key = this._wholeKey;
+    const key = this._wholeKey + far;
     let c = this.charts.get(key);
     if (!c) {
       if (!create) return null;
       let reach = 12000;
       for (const isl of ISLANDS) reach = Math.max(reach, Math.hypot(isl.cx, isl.cz) + isl.radius);
-      c = new Chart(kind, reach * 2.4);
+      c = new Chart(kind, far ? far * 2 : reach * 2.4);
       this.charts.set(key, c);
       // Evict the coldest, but never the one being asked for.
       while (this.charts.size > CHART_CACHE) {

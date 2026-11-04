@@ -206,6 +206,7 @@ function reading(sim, dt, kind) {
   const E = W.E;
   r.kind = kind;
   r.inhibit = !!(sim.bracing || sim.chute);
+  r.wheelsUpMeant = !!(sim.runner && sim.runner.status === 'running' && sim.runner.def && sim.runner.def.allowDitch);
   /*
    * A lightning strike takes the panel out (main.js, instrumentBlackout), and
    * the warning computer is on the panel. The minimap already goes dark with

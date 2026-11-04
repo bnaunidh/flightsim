@@ -93,7 +93,7 @@ export function whyNot(sim) {
     if (r.def.checkpoint === false) return 'this mission restarts from the top';
   }
   const ac = sim.aircraft;
-  if (!ac || ac.crashed) return 'crashed';
+  if (!ac || ac.crashed || ac.ditched) return 'crashed';
   if (sim.walking && sim.walking.active) return 'on foot';
   if (sim.bracing) return 'mayday';
   // Free Flight only: not someone else's aeroplane (a multiplayer ride-along),

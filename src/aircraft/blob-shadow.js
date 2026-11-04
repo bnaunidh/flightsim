@@ -259,7 +259,12 @@ export class BlobShadow {
     weather.sunDirection(_sun);
     const cloud = weather.cond ? weather.cond.cloud || 0 : 0;
     const agl = Number.isFinite(ac.agl) ? ac.agl : 0;
-    const P = blobPlacement(_sun, agl, cloud);
+    // The ground under the aircraft — or the sea's surface over water (agl is measured to the sea floor there).
+    const groundY = Math.max(ac.pos.y - agl, 0);
+    // How high over what the shadow falls on: over the sea floor's depth it fell ten metres off
+    // to one side of an aeroplane sitting on the water, and made it look airborne.
+    const height = ac.pos.y - groundY;
+    const P = blobPlacement(_sun, height, cloud);
     this.placement = P;
     if (P.opacity < 0.01) {
       this.mesh.visible = false;
@@ -273,10 +278,8 @@ export class BlobShadow {
     // The silhouette's centre in aircraft space, turned to the heading.
     const cx = this.centreX * cy + this.centreZ * sy;
     const cz = -this.centreX * sy + this.centreZ * cy;
-    // The ground under the aircraft — or the sea's surface over water (agl is measured to the sea floor there).
-    const groundY = Math.max(ac.pos.y - agl, 0);
     const m = this.mesh;
-    m.position.set(ac.pos.x + cx + P.shiftX, groundY + BLOB.lift + agl * 0.004, ac.pos.z + cz + P.shiftZ);
+    m.position.set(ac.pos.x + cx + P.shiftX, groundY + BLOB.lift + height * 0.004, ac.pos.z + cz + P.shiftZ);
     m.rotation.set(0, yaw, 0);
     m.scale.set(this.span * P.grow, 1, this.length * P.grow);
     m.updateMatrix();

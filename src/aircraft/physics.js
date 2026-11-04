@@ -28,21 +28,6 @@ import { reheatFor, burnerShare, reheatEff, waveDrag, machOf, ceilingBurner } fr
 /**
  * What the tyres can get out of the ground: cornering grip, rolling drag and
  * the braking a wheel may use, as fractions of the wheel load.
- *
- *   tarmac   0.92 side, 0.55 brake; a wet runway takes 30% of the cornering
- *   grass    0.75 side, 0.40 brake, and three times the rolling drag
- *   ice      the Site's airstrip and the frozen lake on Nunatak Reach: under
- *            half the cornering grip and 0.2 of the load in brakes —
- *            "braking action poor", the way a real report of an ice runway
- *            reads. Measured in the browser (tests/features/scp-snow.browser.js,
- *            the Courier at 32 m/s, brakes full on from the touchdown): 172 m
- *            to stop on tarmac, about 550 m on ice, on an 1,100 m strip.
- *            0.42 of side grip rather than a third: at 0.3 a nine-knot
- *            crosswind slid it 70 m off the strip on the roll, which is a
- *            skating rink, not a runway. It still weathervanes into any
- *            crosswind and follows its nose, so the rudder matters there.
- *
- * One pure function, so the numbers can be read in node without a flight.
  */
 export function surfaceGrip(paved, ice, rain = 0) {
   if (ice) return { muSide: 0.42, muRoll: 0.012, brake: 0.2, kind: 'ice' };
@@ -111,21 +96,6 @@ const FT = 3.28084;
 
 /**
  * The top of the sky: 70,000 ft MSL.
- *
- * The owner, 2026-10-04: "if you hit the max of the sky, 70,000 feet you get
- * the achievement: The Sky's the Limit". There was no ceiling anywhere in the
- * code — grep found none — so "the top of the sky" meant nothing: climbing
- * to 70,000 ft was exactly as possible as climbing to 7,000.
- *
- * This gives it a top the way a real aeroplane has one: not a wall and never
- * a bounce, just less and less air to climb on on the way there, until there
- * is none left. Below SKY_CEILING_FT - SKY_CEILING_BAND_FT (68,000 ft) none
- * of this runs at all, so nothing about ordinary flying changes — the owner's
- * own line was "nothing else about flying changes below 60,000 ft", and this
- * is well inside that.
- *
- * The rocket (features/rocket/) is a different machine on a different
- * physics module entirely and is rightly excluded: it goes to space.
  */
 export const SKY_CEILING_FT = 70000;
 const SKY_CEILING_M = SKY_CEILING_FT / FT;
@@ -146,22 +116,6 @@ const SKY_CEILING_NOTE_FT = 100;
  * Each type's own ceiling (types.js `ceiling`, the published service ceiling
  * in feet). The exponential atmosphere above gives a jet thrust in proportion
  * to density and nothing else, so with the thrust-to-weight these aeroplanes
- * carry for the 1,100 m strip the trainer could climb to 26,000 ft and an
- * A320 to 52,000 — a 172 stops near 14,000 and an A320 near 39,000. Real
- * engines lose more than density on the way up (a piston engine's power falls
- * faster than the air thins; a turbofan runs out of margin), and what every
- * pilot meets above the service ceiling is the same thing: the air the wing
- * and the engine can use runs out faster than the altimeter suggests.
- *
- * So above CEILING_FADE.from × the ceiling the density the flight model uses
- * is scaled down, linearly, to CEILING_FADE.floor of itself at
- * CEILING_FADE.to × the ceiling, and held there. Below 1.05 × the ceiling
- * nothing changes at all. Thrust (∝ density), lift and the indicated airspeed
- * all read the same density, so the aeroplane runs out of climb, then has to
- * fly nearer its stalling angle to hold height, then cannot — never a wall,
- * never a bounce. tests/features/aircraft-specs.mjs works out where every
- * type's climb runs out and holds it to within a band of the published figure.
- * A type with no ceiling (none in the roster) is left as it was.
  */
 export const CEILING_FADE = { from: 1.05, to: 1.25, floor: 0.35 };
 export function ceilingFactor(altFt, ceilingFt) {
@@ -208,17 +162,6 @@ export const MAX_STEPS = 12;
  * How to step the flight model across one frame of `dt` seconds: `n` equal
  * steps of `h`, so that the aeroplane always moves exactly as far as the
  * frame's time — and the camera, which moves by `dt`, keeps up with it.
- *
- * The owner, 2026-10-26: "really shaky at this speed … the harrison shaking
- * is gonna cause someone a seizure". The flight model used to be stepped a
- * whole 1/120 s at a time out of an accumulator, so a frame moved the
- * aeroplane by 1, 2 or 3 steps (rAF's dt is never exactly 2/120 s) while the
- * follow camera moved by dt. At 549 kt a step is 2.3 m: T-Pose Harrison, 6 m
- * in front of the lens, grew and shrank by 19-39% and jumped up to 13 degrees
- * across the picture several times a second (tests/features/shake.mjs, 60, 120
- * and 144 Hz). Cut into equal pieces of at most PHYSICS_STEP the aeroplane
- * moves by dt every frame: 0.3%. A 1/60 or 1/30 s frame is still 2 or 4
- * steps of exactly 1/120 s, as before.
  */
 export function frameSteps(dt) {
   const d = Math.min(Math.max(0, dt || 0), MAX_STEPS * PHYSICS_STEP);
@@ -423,7 +366,9 @@ export class Aircraft {
       this.forward(this._tmp);
       this.vel.copy(this._tmp).multiplyScalar(speed);
     }
+    const onSea = altAGL === null && SPEC.floats && heightAt(pos.x, pos.z) < 0;
     if (altAGL !== null) this.pos.y = heightAt(pos.x, pos.z) + altAGL;
+    else if (onSea) this.pos.y = -Math.min(...SPEC.gearPoints.map((g) => g.pos.y)) - SPEC.floats.draft;
     else {
       // Stand it on its wheels. This used to be a flat 1.5 m, which is the
       // trainer's undercarriage and nobody else's — so the bigger aeroplanes
@@ -433,7 +378,7 @@ export class Aircraft {
       const lowest = SPEC.gearPoints.reduce((m, g) => Math.min(m, g.pos.y), 0);
       this.pos.y = heightAt(pos.x, pos.z) - lowest;
     }
-    this._spawnOnGround = altAGL === null;
+    this._spawnOnGround = altAGL === null && !onSea;
     this.gearDown = gearDown;
     this.gearPos = gearDown ? 1 : 0;
     this.engineOn = engineOn;
@@ -446,6 +391,7 @@ export class Aircraft {
     this.rpm = engineOn ? idleRpm() : 0;
     this.fuel = SPEC.fuelCapacity * fuel;
     this.crashed = false;
+    this.ditched = false;
     this.crashReason = '';
     this.stalled = false;
     this.controls.throttle = 0;
@@ -499,54 +445,6 @@ export class Aircraft {
   /**
    * Place the aeroplane in its true static attitude, with every strut already
    * carrying its share of the weight.
-   *
-   * Without this the aeroplane is dropped onto its main wheels with the nose
-   * eight centimetres high, and gravity immediately rocks it forward onto the
-   * nose leg. In calm air that is only a wobble; in a crosswind it combines with
-   * the roll and drives the propeller into the runway a second after you spawn.
-   *
-   * This was a fixed-gain relaxation (y += netF × 1.5e-6, pitch += netM ×
-   * 3e-7), which converges only while Σk × 1.5e-6 and Σ(k·z²) × 3e-7 are both
-   * under 2, and spring rates scale with mass. Measured at spawn in calm air,
-   * 3 s hands off: the Meridian (3.6 / 4.2) dropped 40 cm and rocked 8.2°, the
-   * Nightjar (1.8 / 3.3) rocked 3.7°, the Tempest dropped 11 cm, and the three
-   * airliners (up to 256) diverged outright until features/airliners.js
-   * replaced this for them. At the other end the trainers' pitch gain is 0.01,
-   * so two hundred steps left 13% of the error in: the Skylark rocked 2.9° in
-   * realistic mode.
-   *
-   * Now it is solved, height and pitch together, with the same piecewise
-   * springs update() uses (linear to `travel`, then the stop, capped at 160 kN
-   * a leg), each wheel against the ground under that wheel. At any trial pitch
-   * the height that carries the weight is found exactly (the leg force only
-   * falls as the aeroplane rises, so it can be bracketed); what is left is the
-   * moment, which Newton drives to zero inside a bracket. From the all-wheels-
-   * down linear answer that takes one to three pitch steps for every type in
-   * the roster, both modes, to under a newton-metre. Engine off, the pose it
-   * gives then moves 0.00 cm and 0.000° in 3 s hands off, for every type.
-   *
-   * The springs are not all that holds an aeroplane at rest, so these are
-   * balanced too, at the values update() gives them on the first step:
-   *  - the idle thrust, held by the tyres at ground level: a nose-down moment
-   *    worth 1.7° on the Skylark (realistic), 1.1° on the Vanguard, 0.3° on
-   *    the fighters, 0.01-0.03° on the airliners;
-   *  - in simplified mode, the ground attitude hold that stands in for the nose
-   *    strut: 1.0° on the Skylark and the Courier, 0.5° on the Skyhook;
-   *  - on a rotor, the lift at the collective it spawns with, 0.36 of its
-   *    weight at idle: the Skyhook stands 4 cm higher and 0.56° nose-up.
-   * If any of those change in update(), change them here: tests/features/
-   * settle.mjs spawns every type both ways and measures the difference.
-   *
-   * Two things move it after spawning that no pose can take out. The parking
-   * brake is a viscous tyre force (3000 N·s/m a wheel below its grip), which
-   * holds nothing at zero speed, so the idle thrust rolls the aeroplane until
-   * that force builds up to match it (over m / 9000 s) and it creeps on
-   * (the Vanguard at 1.7 m/s): the pitch wanders while the tyres take up the
-   * thrust, 0.93° at most on the Vanguard and 0.5° or less on the rest,
-   * before it ends where this put it. With a brake that holds (tried in a
-   * copy of the tyre code) every aeroplane stays within 0.07°. And on the
-   * Skyhook the hover assist's cyclic levels it by a further 0.46°; that is
-   * rotor-assist.js's to decide, not modelled here.
    */
   settleOnGear() {
     this._spawnOnGround = false;
@@ -796,7 +694,7 @@ export class Aircraft {
   }
 
   startEngine() {
-    if (this.engineOn || this.fuel <= 0 || this.failures.engine) return;
+    if (this.engineOn || this.fuel <= 0 || this.failures.engine || this.ditched) return;
     this.starting = 1.8;
     this.emit(EVENTS.ENGINE_START, {});
   }
@@ -831,7 +729,8 @@ export class Aircraft {
   }
 
   update(dt, weather) {
-    if (this.crashed) {
+    // Ditched: whole, afloat, and features/ditching.js moves it from here on.
+    if (this.crashed || this.ditched) {
       this.rpm = Math.max(0, this.rpm - dt * 0.6);
       this.controls.throttle = 0;
       return;
@@ -1332,21 +1231,6 @@ export class Aircraft {
        */
       /*
        * Easy and normal fly identically. The difference is the undercarriage.
-       *
-       * Five measured attempts at making the *handling* easier every one made
-       * it worse, and the last was the clearest. Easy's earlier stall guard
-       * bleeds off elevator sooner, so the aeroplane rotates less, accelerates
-       * better and leaves the ground at 24 s instead of 31 — at a low pitch
-       * attitude and low speed, where a 12 kt crosswind puts a wing tip in the
-       * grass. Every "help" I added moved the take-off earlier and made it
-       * more fragile.
-       *
-       * What a beginner actually needs is not a different aeroplane, it is to
-       * survive the arrival and keep playing. So easy flies exactly as normal
-       * does, and takes 1,350 fpm on touchdown where normal takes 900 —
-       * measured at 1,100 fpm, easy walks away and normal does not. That is a
-       * real difference in a place that cannot make the aeroplane behave
-       * strangely, which is more than any of the others managed.
        */
       const help = { lowSpeedElevator: 0.55, stallGuard: 0.045, guardSpan: 0.12 };
       if (V < 45) elevator = clamp(elevator * (1 + (1 - V / 45) * help.lowSpeedElevator), -1, 1);
@@ -1566,21 +1450,6 @@ export class Aircraft {
       const hoverThrust = SPEC.mass * G;
       /*
        * How much more than its own weight the rotor can pull.
-       *
-       * This was `collective * 2.0`, so full lever made twice the machine's
-       * weight: a full second of the collective key gave one g of net upward
-       * acceleration and nothing anywhere bounded it. Measured, from a settled
-       * hover: one second of the key and then hands off climbed to 717 m and
-       * was still accelerating at 101 m/s — twenty thousand feet a minute.
-       * Children find that in the first two minutes, and it is the fastest way
-       * to cross any map in the game, which makes every mission about the bug
-       * instead of about the flying.
-       *
-       * The cap keeps hover at exactly half lever — the map is still linear
-       * below that, so nothing about the hover point changes — and gives the
-       * excess thrust a light helicopter actually has. It is also what turns
-       * the winch load into a real decision: nothing else in this game has a
-       * number that moves because of what you are carrying.
        */
       /*
        * Measured 2026-09-23: `min(collective * 2, maxLift)` reached its cap
@@ -1657,18 +1526,6 @@ export class Aircraft {
 
     /*
      * The disc, going straight up and straight down.
-     *
-     * The aerodynamic drag above is written along the relative wind, which is
-     * correct, and the rotor drag beside it is too — but both are sized by the
-     * wing and the disc tilt, and neither of them is the fifty-five square
-     * metres of rotor a helicopter presents to the air when it climbs or
-     * descends vertically. Without this, full collective accelerated upwards
-     * for ever and flat pitch fell just as hard, and both were unbounded.
-     *
-     * Quadratic, like every other drag in this file, so it is nothing at all
-     * in a hover and decisive at speed. Applied here, in world axes beside the
-     * weight, because "straight up" means straight up and not "up as far as
-     * the machine is concerned".
      */
     if (SPEC.rotor) {
       const vsAir = this.vel.y;
@@ -1678,17 +1535,6 @@ export class Aircraft {
        * Skids do not roll. The Skyhook's gear points are the trainer's
        * wheels with a rotor on top, and the tyre friction in the contact code
        * below lets a wheel roll fore and aft on 2.2-7.5% of its load.
-       * Measured 2026-09-25, Night Deck, 20 kt and rain: set down on the rig
-       * and left alone for the ten seconds of loading, it rolled downwind at
-       * 1.4 m/s and off the edge of the deck. So while it stands on its skids
-       * it also gets a skid's scrub along its length — see
-       * ROTOR_TUNE.skidScrub — at the centre, from the load the skids took
-       * last step. Proportional near zero and never more than stops it in one
-       * step, the two rules the tyre friction keeps, so it cannot chatter or
-       * push back. It lives here, and not in the contact code, because that
-       * code is the aeroplanes'. Measured with it: Night Deck flown by the key
-       * pilot in tests/features/heli-missions, the ten seconds of loading on
-       * the rig in 20 kt and rain held, and the mission completed.
        */
       if (this.onGround && this.wheelLoad > 0) {
         const q = this.quat;
@@ -1808,21 +1654,6 @@ export class Aircraft {
 
     /*
      * Cyclic and tail rotor — control that works when standing still.
-     *
-     * This is the piece that actually makes a helicopter a helicopter, and its
-     * absence is invisible until you try to hover. Every control moment above
-     * comes from dynamic pressure: elevator, aileron and rudder all scale with
-     * q = ½ρV², so at zero airspeed they produce nothing at all. On a wing
-     * that is exactly right. On a rotorcraft it means the machine hovers
-     * beautifully and cannot be pointed — measured, the stick held hard over
-     * for ten seconds in a hover moved the nose zero degrees.
-     *
-     * A rotor does not work that way. Cyclic tilts the disc and the thrust
-     * vector with it, so the moment it generates is proportional to how hard
-     * the rotor is pulling, not to how fast the machine is going through the
-     * air. The tail rotor is the same: it is a propeller in its own right and
-     * has full authority at a standstill, which is why a helicopter can spin
-     * on the spot.
      */
     if (SPEC.rotor) {
       const collective = clamp(this._rotorColl || 0, 0, 1);
@@ -1834,29 +1665,6 @@ export class Aircraft {
       /*
        * Two bugs lived in these six lines, and both were invisible in a
        * straight-line hover, which is the only way anybody ever tested it.
-       *
-       * THE SIGN. The wing writes `Cl = ... - Clda * aileron` with the comment
-       * "positive aileron input rolls right", and +Z torque is left wing down.
-       * The rotor ADDED, so positive aileron rolled it LEFT. Measured,
-       * realistic mode, hovering: "roll right" held for one second banked it
-       * 85.4 degrees to the LEFT. The pedal was the same fault against
-       * `Cn = ... - Cndr * rudder`: "yaw right" turned it 144 degrees to the
-       * LEFT. Pitch was always correct, which is exactly why this survived —
-       * take off, climb, hover, all fine; the first turn kills you. It is also
-       * what made the simplified wing leveller positive feedback on this
-       * airframe: released from 2 degrees of bank at 60 kt it hit the ground
-       * at 24.6 s.
-       *
-       * THE INERTIAS. The damping lines paired pitch with Iyy and yaw with
-       * Ixx, but the integrator is (tx/Ixx, ty/Iyy, tz/Izz) and this file's own
-       * convention is X = pitch, Y = yaw, Z = roll. So pitch was damped 43% too
-       * hard and yaw 30% too softly, which is why it felt sticky in pitch and
-       * loose in yaw at the same time.
-       *
-       * The damping constants live in rotor-assist.js because the assist solves
-       * its derivative gains for whatever damping the airframe has. Two copies
-       * in two files would drift apart within a month and the assist would
-       * quietly become badly damped.
        */
       this._t.x += elevator * disc * SPEC.rotorPitchArm;
       this._t.z -= aileron * disc * SPEC.rotorRollArm;
@@ -2015,6 +1823,8 @@ export class Aircraft {
     }
 
     // ---- Landing gear / ground contact --------------------------------
+    // The sea, first refusal (features/ditching.js): true means it took the aeroplane.
+    if (this.waterHook && this.waterHook(this)) return;
     this.contactCount = 0;
     this.wheelLoad = 0;
     this.sideScrub = 0;
@@ -2102,7 +1912,8 @@ export class Aircraft {
         const ice = iceAt(world.x, world.z);
         const grip = surfaceGrip(paved, ice, weather.cond.rain);
         const muSide = grip.muSide;
-        const muRoll = grip.muRoll;
+        // A keel on land is a skid, not a wheel.
+        const muRoll = SPEC.floats ? SPEC.floats.skid : grip.muRoll;
         // Braking is limited by the physical tip-over condition: the nose-down
         // moment it makes about the nose wheel can never exceed the moment the
         // aeroplane's own weight makes the other way. This is the real limit a
@@ -2203,6 +2014,8 @@ export class Aircraft {
       }
     }
 
+    // The sea under a float (features/floatplane/hydro.js).
+    if (SPEC.floats && this.floatStep) this.floatStep(this, dt);
     this.onGround = this.contactCount > 0;
     this.wheelsRolling = this.onGround && this.groundSpeed > 0.4;
 
@@ -2557,21 +2370,6 @@ export class Aircraft {
 
   /**
    * Did that hit break the aeroplane, or just hurt it?
-   *
-   * Clipping a treetop at taxi speed should not be the same event as flying a
-   * wing into a hillside at two hundred knots, and until now it was: any
-   * contact at all, anywhere, ended the flight.
-   *
-   * How hard you hit is the closing speed of the part that touched — not the
-   * aeroplane's speed, because a wingtip coming down in a roll can be moving
-   * far faster than the aeroplane is. Below `SOFT` it is always survivable,
-   * above `HARD` never, and in between it is a weighted coin: the harder you
-   * hit, the likelier it ends badly. That is the "chance based on how strong
-   * it was" the game wants, and it means two identical-looking scrapes can go
-   * differently, which is what makes the near miss worth talking about.
-   *
-   * A survivable blow pushes the aeroplane clear, takes a big bite out of its
-   * energy, and damages the part that touched.
    */
   glancingBlow(hp, world, surface, what = '') {
     if (!this.survivableStrikes) return false;
@@ -2609,19 +2407,6 @@ export class Aircraft {
 
     /*
      * Scraping on landing is not the same event as flying into a hillside.
-     *
-     * What follows pushes the aeroplane back out of whatever it hit and
-     * reverses its descent — which is right when you have clipped scenery and
-     * badly wrong on a runway. A nose or a wingtip brushing the tarmac during
-     * a normal landing was being bounced back into the air: measured with the
-     * suite's own approach, the aeroplane touched, ballooned to thirty feet,
-     * and came back down at 1,842 ft/min with the autopilot chasing it — a
-     * greased 444 ft/min arrival turned into a crash by the act of turning
-     * damage on. A child would have felt exactly that.
-     *
-     * So on the ground, with the wheels down, a soft scrape costs you the
-     * damage and nothing else. The aeroplane stays where it is and the
-     * undercarriage goes on doing its job.
      */
     /*
      * `onGround` is no use here: it is recomputed from the contact count

@@ -441,6 +441,7 @@ console.log(`INFO  the towns stand ${span(all.townGround)} above the sea: why th
   // [counterpart, length, span] in metres.
   const REAL = {
     skylark: ['Cessna 172', 8.28, 11.0],
+    petrel: ['Cessna 185 on floats', 8.2, 10.9],
     courier: ['Mooney M20', 7.5, 11.0],
     meridian: ['Dornier 328JET / ERJ-145', 26, 20.5],
     vanguard: ['F-16C', 15.06, 9.96],

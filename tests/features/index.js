@@ -82,6 +82,8 @@ import { check as landingZone } from './landing-zone.browser.js';
 import { check as hudStack } from './hud-stack.browser.js';
 import { check as hudWins } from './hud-wins.browser.js';
 import { check as touchCoverage } from './touch-coverage.browser.js';
+import { check as ditching } from './ditching.browser.js';
+import { check as floatplane } from './floatplane.browser.js';
 import { check as edition } from './edition.browser.js';
 import { check as cams } from './cams.browser.js';
 import { check as tomReady } from './tom-ready.browser.js';
@@ -213,6 +215,8 @@ export const CHECKS = [
   // destination ribbon and beacon, the conditions chip and Full / Clean / Photo.
   { id: 'hud-wins', check: hudWins },
   { id: 'touch-coverage', check: touchCoverage },
+  { id: 'ditching', check: ditching },
+  { id: 'floatplane', check: floatplane },
   // The two editions (core/edition.js): on thankdapro no screen shows T-Pose Harrison or Air Massimo; elsewhere both are there.
   { id: 'edition', check: edition },
   // After everything that flies: KIT-B — where a Free Flight starts (the picker), the ambient

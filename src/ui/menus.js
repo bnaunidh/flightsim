@@ -1417,11 +1417,16 @@ export class Menus {
         (fuelPct < 100 ? ` · <span class="sum-warn">${mins} min of fuel</span>` : '') +
         (armed ? ` · <span class="sum-warn">${armed} failure${armed > 1 ? 's' : ''} armed</span>` : '');
     };
-    /** Pick an aeroplane from outside this screen (the hangar's podium). */
-    this.pickFreeAircraft = (id) => {
+    /** The game's own choice, on the screen (the switcher): nobody picked it. */
+    this.showFreeAircraft = (id) => {
       this.chosenAircraft = id;
       s.querySelectorAll('[data-aircraft]').forEach((n) => n.classList.toggle('is-on', n.dataset.aircraft === id));
       refresh();
+    };
+    /** Pick an aeroplane from outside this screen (the hangar's podium). */
+    this.pickFreeAircraft = (id) => {
+      this.showFreeAircraft(id);
+      this.hooks.onPickAircraft && this.hooks.onPickAircraft(id);
     };
     wind.addEventListener('input', refresh);
     dir.addEventListener('input', refresh);
@@ -1504,15 +1509,17 @@ export class Menus {
       };
     };
 
-    /** Put a saved setup back into every control on the screen. */
+    /** Put a saved setup back into every control on the screen. A value this version has no use for leaves the control alone. */
+    const setNum = (el, v) => { if (el && typeof v === 'number' && Number.isFinite(v)) el.value = v; };
+    const setOpt = (el, v) => { if ([...el.options].some((o) => o.value === v)) el.value = v; };
     const applySetup = (c) => {
       if (!c) return;
-      time.value = c.time;
+      setOpt(time, c.time);
       if (Number.isFinite(c.hour)) { hour.value = c.hour; hour.dataset.set = '1'; } else hour.dataset.set = '0';
       hourWords();
-      cond.value = c.condition;
-      wind.value = c.windSpeedKts;
-      dir.value = c.windDirDeg;
+      setOpt(cond, c.condition);
+      setNum(wind, c.windSpeedKts);
+      setNum(dir, c.windDirDeg);
       // A slot saved in an aeroplane this copy does not have (core/edition.js) loads in the trainer.
       this.chosenAircraft = visibleAircraftId(c.aircraft) || 'skylark';
       this.chosenStart = c.airborne ? 'air' : c.taxi ? 'gate' : 'runway';
@@ -1520,13 +1527,13 @@ export class Menus {
         n.classList.toggle('is-on', n.dataset.aircraft === this.chosenAircraft));
       s.querySelectorAll('[data-start]').forEach((n) =>
         n.classList.toggle('is-on', n.dataset.start === this.chosenStart));
-      s.querySelector('[data-fuel]').value = Math.round((c.fuel ?? 1) * 100);
+      setNum(s.querySelector('[data-fuel]'), Math.round((c.fuel ?? 1) * 100));
       s.querySelector('[data-random-disasters]').checked = !!c.randomDisasters;
       const pt = s.querySelector('[data-practice-targets]');
       if (pt) pt.checked = !!c.practiceTargets;
       const ef = s.querySelector('[data-ef]');
       if (ef) {
-        ef.value = c.tornadoEF == null ? -1 : c.tornadoEF;
+        setNum(ef, c.tornadoEF == null ? -1 : c.tornadoEF);
         ef.dispatchEvent(new Event('input', { bubbles: true }));
       }
       // Failures and events: tick what was armed, clear everything else, and
@@ -1543,10 +1550,10 @@ export class Menus {
           }
           if (!cfg) return;
           const d = s.querySelector(`[${delaySel}="${id}"]`);
-          if (d) { d.value = cfg.afterMin ?? 0; d.dispatchEvent(new Event('input', { bubbles: true })); }
+          if (d) { setNum(d, cfg.afterMin ?? 0); d.dispatchEvent(new Event('input', { bubbles: true })); }
           if (amountSel && cfg.amountMin != null) {
             const a = s.querySelector(`[${amountSel}="${id}"]`);
-            if (a) { a.value = cfg.amountMin; a.dispatchEvent(new Event('input', { bubbles: true })); }
+            if (a) { setNum(a, cfg.amountMin); a.dispatchEvent(new Event('input', { bubbles: true })); }
           }
         });
       };
@@ -1554,6 +1561,7 @@ export class Menus {
       restore('[data-event]', c.events || {}, 'data-event-delay', null);
       refresh();
     };
+    this.applyFree = applySetup;
 
     /** Repaint the five slots from storage. */
     const renderSlots = () => {
@@ -1578,17 +1586,9 @@ export class Menus {
     this.renderFreeSlots = renderSlots;
 
     /*
-     * Long-press to overwrite, on anything with a pointer.
-     *
-     * Overwriting used to need shift-click and clearing needed alt-click, and
-     * the hint underneath cheerfully promised "hold" and "long-press" — neither
-     * of which was implemented anywhere. On an iPad a filled slot could only
-     * ever be loaded: there was no way to overwrite it and no way to empty it,
-     * for the entire life of the feature.
-     *
-     * 600 ms, the press is marked so the click that follows knows to do
-     * nothing, and it is cancelled if the finger moves — otherwise scrolling
-     * the panel saves over a slot.
+     * Long-press to overwrite, on anything with a pointer (an iPad has no
+     * shift-click). 600 ms, the press is marked so the click that follows does
+     * nothing, and a moving finger cancels it, or scrolling saves over a slot.
      */
     let holdT = null;
     let heldSlot = null;
@@ -1661,13 +1661,7 @@ export class Menus {
 
       const plane = e.target.closest('[data-aircraft]');
       if (plane) {
-        /*
-         * Locked aeroplanes cannot be chosen, and say why.
-         *
-         * The alternative — letting you pick it and refusing at take-off — is
-         * the version that feels broken, because the game let you do a thing
-         * and then took it back.
-         */
+        // Locked aeroplanes cannot be chosen, and say why: refusing at take-off feels broken.
         const id = plane.dataset.aircraft;
         if (!Prog.isUnlocked(this.prog, id)) {
           const cost = Prog.costOf(id);
@@ -1751,6 +1745,10 @@ export class Menus {
     // The bar's switcher needs the world you last set up — weather, wind, time
     // — so hopping between the four does not reset the sky each time.
     this.readFree = collectSetup;
+    // The screen as you left it comes back after a reload (main.js onFreeSetup; applied at boot).
+    this.rememberFree = () => this.hooks.onFreeSetup && this.hooks.onFreeSetup(collectSetup());
+    s.addEventListener('change', this.rememberFree);
+    s.addEventListener('click', (e) => { if (e.target.closest('[data-start], [data-preset], [data-slot], [data-fly]')) this.rememberFree(); });
 
     renderSlots();
     this.screens.free = s;

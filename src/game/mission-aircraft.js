@@ -22,8 +22,7 @@
  *                           mountain rescue flies it
  *   medevac                 the H145, the air ambulance
  *   airdrop / paratroops    the C-17 — no mission drops paratroops yet
- *   seaplane                a floatplane — the game has none, and no mission
- *                           lands on water
+ *   seaplane                the Petrel; no mission lands on water yet
  *   firefighting            the water bomber: the Tempest scoops the sea; the
  *                           helicopters' fires are bucket work, in the
  *                           Skyhook the bucket missions are written round
@@ -88,6 +87,7 @@ export const MISSION_AIRCRAFT = {
   // Emergencies. The hijack's airliner is whichever long-haul jet the roster has (its own getter: `own`).
   'event-hijack': { own: true, why: 'A long-haul airliner, full of passengers.' },
   'event-hijack-real': { own: true, why: 'A long-haul airliner, full of passengers.' },
+  'both-engines-out': { fly: ['meridian'], why: 'A short-haul twin: its glide and its doors are what the mission is written round.' },
   'afo-normal': { fly: ['b747'], why: 'Air Force One: the president\'s 747.' },
   'afo-attack': { fly: ['b747'], why: 'Air Force One: the president\'s 747.' },
   'classd-transfer': { fly: ['c17'], why: 'The C-17: the Class-D and their guards walk up the rear ramp.' },

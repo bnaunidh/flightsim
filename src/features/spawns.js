@@ -291,7 +291,7 @@ function words(r, sim) {
     case 'pad':
       return `You are on ${r.label.replace(/^Helipad: /, '')}. Lift when you are ready and keep clear of the runway.`;
     case 'water':
-      return 'You are at the harbour, on the water. Taxi out through the mouth and take off into wind.';
+      return 'You are at the harbour, pointing at the mouth. Flaps one notch, full power, stick back as she climbs on to the step, and she lifts off at about 60 knots, out past the breakwater. Hold 70 and climb.';
     case 'hover':
       return 'You are airborne offshore, lined up for runway 09. Land when you like, or go exploring.';
     case 'apron':

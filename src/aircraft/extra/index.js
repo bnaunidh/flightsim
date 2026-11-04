@@ -37,7 +37,9 @@ import { TYPES as C17 } from './c17.js';
 import { TYPES as ATTACK } from './attack.js';
 // ...and the helicopter wave: Bell 407, H145, R44, AW139, UH-60, CH-47, AH-64 (owner, 2026-10-21/23).
 import { TYPES as HELIS } from './helis.js';
+// ...and the Petrel, on floats (features/floatplane.js).
+import { TYPES as FLOATPLANE } from './floatplane.js';
 
 export function extraAircraft(base) {
-  return [...FIGHTERS(base), ...AIRLINERS(base), ...TPOSE(base), ...JETS(base), ...GIANTS(base), ...LANCER(base), ...C17(base), ...ATTACK(base), ...HELIS(base)];
+  return [...FIGHTERS(base), ...AIRLINERS(base), ...TPOSE(base), ...JETS(base), ...GIANTS(base), ...LANCER(base), ...C17(base), ...ATTACK(base), ...HELIS(base), ...FLOATPLANE(base)];
 }

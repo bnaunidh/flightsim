@@ -154,6 +154,8 @@ export class TerrainStream {
     this.index = tileIndex(this.tier.seg);
     this.counts = { built: 0, voids: 0, evicted: 0, workerTiles: 0, cpuTiles: 0, maxMeshMs: 0, maxCpuSliceMs: 0, primed: 0, primeMs: 0, cracks: 0, meshDropped: 0 };
     this.lands = (T.ISLANDS || []).map((i) => ({ x: i.cx, z: i.cz, r: i.radius * 1.45 + 150 }));
+    // Past the sea: worldmap/farlands.js.
+    this.outer = (T.MAP && T.MAP._outer) || null;
     this.worker = useWorker ? sharedWorker() : null;
     this.workerReady = false;
     this.workerFailed = false;
@@ -181,6 +183,7 @@ export class TerrainStream {
 
   /** Does this square touch any island at all? */
   hasLand(cx, cz, size) {
+    if (this.outer && this.outer.touches(cx, cz, size)) return true;
     const h = size / 2;
     for (const l of this.lands) {
       const dx = Math.max(0, Math.abs(l.x - cx) - h);

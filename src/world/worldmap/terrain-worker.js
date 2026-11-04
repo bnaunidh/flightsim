@@ -19,6 +19,7 @@
  */
 import { buildTileData } from './tiles.js';
 import { placeCell } from './flora.js';
+import { FARLANDS } from './farlands.js';
 
 let FLORA_CTX = null;
 
@@ -32,6 +33,7 @@ self.onmessage = async (ev) => {
   try {
     await ready;
     if (msg.op === 'init') {
+      if (msg.def.farlands) msg.def._outer = FARLANDS;
       T.applyMap(msg.def);
       FLORA_CTX = msg.flora || null;
       if (T.clearPlatforms) T.clearPlatforms();

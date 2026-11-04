@@ -383,6 +383,7 @@ function specOf(g, s) {
     flapTracks: s.flapTracks,
     aerials: s.aerials,
     beaconZ: s.beaconZ,
+    holes: s.holes,
   };
 }
 
@@ -745,7 +746,10 @@ const Q400 = specOf(GQ4, {
   laps: [1.0, -0.55],
   cheat: { y0: -0.15, y1: 0.08, z0: -13.0, z1: 13.0 },
   reg: { z: 12.5, y: 0.6, w: 1.5 },
-  title: { z: -2.5, y: 0.78, w: 11 },
+  // Between door 1 and the propeller's arc: aft of the nacelles the schemes' shapes run under it.
+  title: { z: -8.5, y: 0.78, w: 6.0 },
+  // The download has no skin at all in these two patches of the cabin wall: the sky showed through (./real-paint.js).
+  holes: [[-10.6, -5.4, -0.15, 0.62], [2.8, 5.8, 0.15, 0.62]],
   windows: [{ y: 0.28, z0: -10.9, z1: 8.3, pitch: 0.64, w: 0.25, ht: 0.34 }],
   doors: [
     { id: '#1', z: -12.15, y: 0.1, w: 0.8, h: 1.65, kind: 'passenger', sill: -0.72 },

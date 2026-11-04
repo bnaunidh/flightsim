@@ -22,6 +22,10 @@ on their own. Credited in the game's Credits screen (`src/ui/credits.js`, Typogr
 
 ## How the game uses them
 
+The name is set by its CAP HEIGHT, as a sign-writer sets it (`dress()` in `src/fleet/extra/airliners.js`):
+about a quarter of the body's height, the width whatever the word takes in its face, starting behind
+the forward door. Some names are in upper and lower case (`titling` in `src/aircraft/liveries.js`).
+
 `src/render/airline-fonts.js` declares the faces (@font-face) and `loadAirlineFonts()` asks
 `document.fonts` for each one; `main.js` waits for it (2 s at most) before the world and the first
 aeroplane are built. A titling canvas drawn before its face is in is drawn again when it arrives.

@@ -28,6 +28,7 @@
  * right (starboard), origin at the centre of gravity. `s` is the hull's
  * angle round the section from the top centreline, positive to starboard.
  */
+import { paintBody, paintFin } from './livery-art.js';
 import * as THREE from '../../vendor/three.module.js';
 import { addInstanced } from '../common.js';
 import { helicopterReflectionEnvironment } from '../helicopter.js';
@@ -40,7 +41,7 @@ import {
 
 // The parts that sit on a hull live beside the civil kit (model.js's
 // Meridian uses them too); re-exported so the airliners import one module.
-export { piecewise, splitByZ, remapUV, glazing, buildDoors, mergeGeometries, orientOutward };
+export { piecewise, splitByZ, skinPatch, remapUV, glazing, buildDoors, mergeGeometries, orientOutward };
 
 const clamp = THREE.MathUtils.clamp;
 const mix = (a, b, t) => a + (b - a) * t;
@@ -130,7 +131,7 @@ function styleOf(style) {
 export function liveryTexture(p) {
   const tier = tierCache();
   const st = styleOf(p.style);
-  const key = `airliner-livery|${p.key}|${p.base}|${p.accent}|${p.line}|${tier}|${JSON.stringify(p.style || null)}`;
+  const key = `airliner-livery|${p.key}|${p.base}|${p.accent}|${p.line}|${tier}|${JSON.stringify(p.style || null)}|${p.artId || ''}`;
   if (textures.has(key)) return textures.get(key);
   const [W, H] = p.width ? [p.width, p.height || p.width / 4] : liverySizeFor(tier);
   const k = W / 2048; // line widths and streak counts are set for High and scaled
@@ -172,7 +173,10 @@ export function liveryTexture(p) {
   const zMid = p.cabinZ;
   const bellyTop = V(zMid, p.bellyY);
   let bellyEdge = bellyTop; // where the belly colour stops, for the grime below
-  if (layout === 'two-tone' && p.cheat) {
+  if (p.art) {
+    // The scheme's own drawing (./livery-art.js) in place of the template below.
+    paintBody(g, p.art.body, { U, V, top: p.top, bot: p.bot, z0: p.z0, z1: p.z1, tw: p.tw }, W, H);
+  } else if (layout === 'two-tone' && p.cheat) {
     // The belly colour rises to the cheatline, with a pinstripe on the join.
     const c = p.cheat;
     const t0 = V(zMid, c.y1);
@@ -254,7 +258,7 @@ export function liveryTexture(p) {
   // `bands`, the same shape in those colours top to bottom (weights
   // `bandWeights`); 'metal' and 'billboard' lay it thin; 'eurowhite' and
   // 'two-tone' have none (the belly and the name do the work).
-  if (p.cheat && layout !== 'eurowhite' && layout !== 'two-tone' && layout !== 'crown') {
+  if (p.cheat && !p.art && layout !== 'eurowhite' && layout !== 'two-tone' && layout !== 'crown') {
     const c = p.cheat;
     let t0 = V(zMid, c.y1);
     let t1 = V(zMid, c.y0);
@@ -347,8 +351,8 @@ export function liveryTexture(p) {
       const hy = top + Math.abs(bot - top) * 0.55;
       g.fillRect(hx - (xb - xa) * 0.09, hy - 1.5 * k, (xb - xa) * 0.18, 3 * k);
     }
-    // Rain runs off the bottom corners of a door and leaves a faint trail aft.
-    for (const x of [xa, xb]) {
+    // Rain runs off the bottom corners of a door and leaves a faint trail aft (too fine for Low's canvas).
+    for (const x of tier === 'low' ? [] : [xa, xb]) {
       const len = (0.02 + rnd() * 0.03) * W;
       const grad = g.createLinearGradient(x, bot, x + len, bot);
       grad.addColorStop(0, dark ? 'rgba(235,238,240,0.12)' : 'rgba(60,62,66,0.14)');
@@ -356,6 +360,30 @@ export function liveryTexture(p) {
       g.fillStyle = grad;
       g.fillRect(x, bot, len, Math.max(1, 1.5 * k));
     }
+  }
+  // The small print of a real skin: the red line round the static ports below
+  // the flight deck, and a red surround on each over-wing exit.
+  if (p.radomeZ !== undefined && p.statics) {
+    const z = p.radomeZ + p.statics.dz;
+    const [a, b] = [U(z), U(z + p.statics.w)];
+    const [c, d] = [V(z, p.statics.y + p.statics.h / 2), V(z, p.statics.y - p.statics.h / 2)];
+    g.strokeStyle = 'rgba(196,30,36,0.75)';
+    g.lineWidth = Math.max(1, 1.2 * k);
+    g.setLineDash([3 * k + 1, 2 * k + 1]);
+    g.strokeRect(a, c, b - a, d - c);
+    g.setLineDash([]);
+    g.fillStyle = dark ? 'rgba(230,236,240,0.45)' : 'rgba(40,46,54,0.55)';
+    g.fillRect((a + b) / 2 - 1.5 * k, (c + d) / 2 - 1.5 * k, 3 * k + 1, 3 * k + 1);
+  }
+  for (const d of p.doors || []) {
+    if (d.kind !== 'overwing') continue;
+    const Vd = d.vAt ? (zz, yy) => (1 - d.vAt(zz, yy)) * H : V;
+    const pad = 0.05;
+    const [a, b] = [U(d.z - d.w / 2 - pad), U(d.z + d.w / 2 + pad)];
+    const [c, e] = [Vd(d.z, d.y + d.h / 2 + pad), Vd(d.z, d.y - d.h / 2 - pad)];
+    g.strokeStyle = 'rgba(196,30,36,0.7)';
+    g.lineWidth = Math.max(1, 1.6 * k);
+    g.strokeRect(a, c, b - a, e - c);
   }
   // The nose gear bay, shut: the pair of forward doors as a seam round the
   // pair and one down the middle. The belly centreline is the texture's
@@ -462,6 +490,9 @@ export function cowlTexture({ colour, band = null, metal = false } = {}) {
     g.fillStyle = css(band, '#d4a62a');
     g.fillRect(0, H * 0.1, W, H * 0.07);
   }
+  // The polished inlet lip, for a real model's cowl (one mesh, lip and all).
+  g.fillStyle = '#c9ced3';
+  g.fillRect(0, 0, W, H * 0.05);
   // The cowl split line, and the latches along the bottom of it.
   g.fillStyle = dark ? 'rgba(255,255,255,0.1)' : 'rgba(20,30,40,0.14)';
   g.fillRect(0, H * 0.56, W, 1);
@@ -477,6 +508,90 @@ export function cowlTexture({ colour, band = null, metal = false } = {}) {
   // sits at the front and the grime at the back (flipped, as a CanvasTexture
   // is by default, the ring was at the nozzle and the grime on the lip).
   t.flipY = false;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  t.name = key;
+  textures.set(key, t);
+  return t;
+}
+
+/**
+ * The fin's paint: tail colour, the scheme's shapes and the mark
+ * (./livery-art.js), 512 px on High and Ultra, 256 below, as the mark alone was.
+ * The canvas is the same on the fallback model and on a real fin. Cached by
+ * type, scheme and tier.
+ */
+export function finTexture({ key, profile, art, tail, emblem, inks }) {
+  const tier = tierCache();
+  const id = `airliner-fin|${key}|${tier}`;
+  if (textures.has(id)) return textures.get(id);
+  const S = tier === 'high' || tier === 'ultra' ? 512 : 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = S;
+  canvas.height = S;
+  const g = canvas.getContext('2d');
+  paintFin(g, S, profile, art, css(tail, '#808890'), emblem, inks);
+  const t = new THREE.CanvasTexture(canvas);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  t.name = id;
+  textures.set(id, t);
+  return t;
+}
+
+/**
+ * A real wing's paint: u root to tip, the last eighth the winglet; the top
+ * half of the canvas the upper surface, nose edge at the top of it, the bottom
+ * half the lower surface. The leading-edge strip, the skin lines, the flap
+ * hinge and the walkway lines a real wing wears. Cached by colours and tier.
+ */
+export const WINGLET_U = 0.875;
+export function wingTexture({ colour, winglet = null }) {
+  const tier = tierCache();
+  const key = `airliner-wing|${colour}|${winglet}|${tier}`;
+  if (textures.has(key)) return textures.get(key);
+  const W = tier === 'low' ? 256 : 512;
+  const H = W / 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const g = canvas.getContext('2d');
+  const k = W / 512;
+  const T = H / 2; // chord of the upper surface in rows
+  const base = css(colour, '#c6cbd0');
+  g.fillStyle = base;
+  g.fillRect(0, 0, W, H);
+  g.fillStyle = 'rgba(235,240,245,0.55)';
+  g.fillRect(0, 0, W, T * 0.07); // the leading edge's bright strip
+  g.fillRect(0, H - T * 0.07, W, T * 0.07);
+  g.fillStyle = 'rgba(30,36,44,0.1)';
+  g.fillRect(0, T * 0.72, W, T * 0.28); // flaps and spoilers, a shade apart
+  g.fillRect(0, H - T * 0.28, W, T * 0.28);
+  g.strokeStyle = 'rgba(30,36,44,0.2)';
+  g.lineWidth = Math.max(1, 1.2 * k);
+  g.beginPath();
+  for (const c of [0.07, 0.24, 0.48, 0.72, 0.86]) {
+    g.moveTo(0, T * c);
+    g.lineTo(W, T * c);
+  }
+  for (let u = 0.05; u < WINGLET_U; u += 0.07) {
+    g.moveTo(u * W, T * 0.07);
+    g.lineTo(u * W, T * 0.72);
+  }
+  for (const u of [0.33, 0.62]) {
+    g.moveTo(u * W, T * 0.72);
+    g.lineTo(u * W, T);
+  }
+  g.stroke();
+  // The walkway from the over-wing exits: a dark line either side of it.
+  g.strokeStyle = 'rgba(24,27,31,0.8)';
+  g.lineWidth = Math.max(1.5, 2.4 * k);
+  g.strokeRect(0.015 * W, T * 0.3, 0.2 * W, T * 0.34);
+  if (winglet) {
+    g.fillStyle = css(winglet, base);
+    g.fillRect(WINGLET_U * W, 0, W, H);
+  }
+  const t = new THREE.CanvasTexture(canvas);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
   t.name = key;
@@ -566,8 +681,8 @@ export function airlinerMaterials(model, { livery, base, style = null, interior 
   };
   const skinLook = metal
     ? { roughness: 0.3, metalness: 0.78, envMapIntensity: 1.0 }
-    : { roughness: dark ? 0.5 : 0.38, metalness: dark ? 0.2 : 0.1, envMapIntensity: 0.6 };
-  const skinCoat = metal ? { clearcoat: 0.12, clearcoatRoughness: 0.3 } : { clearcoat: 0.35, clearcoatRoughness: 0.22 };
+    : { roughness: dark ? 0.5 : 0.6, metalness: dark ? 0.2 : 0.1, envMapIntensity: 0.5 };
+  const skinCoat = metal ? { clearcoat: 0.12, clearcoatRoughness: 0.3 } : { clearcoat: 0.08, clearcoatRoughness: 0.4 };
   const cowlColour = st.cowl ? css(st.cowl, base) : css(base, '#f4f6f8');
   // Bare-metal cowls on a bare-metal scheme whose cowl colour is a light grey.
   const cowlMetal = metal && luma(cowlColour) > 0.6;
@@ -818,11 +933,12 @@ export function turbofan(ctx, group, e, mats, { segments = 18 } = {}) {
  * quarter of the width, the registration texture's own shape), under its
  * own `name`.
  */
-export function registration(ctx, h, { text, z, y, width, height, colour, texture, name = 'Airframe registration' }, parent) {
+export function registration(ctx, h, { text, z, y, width, height, colour, texture, name = 'Airframe registration', shade = 1 }, parent) {
   if (!text || !texture) return;
   const mat = ctx.model.userData.ownMaterial(new THREE.MeshBasicMaterial({
     map: texture, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, toneMapped: true,
   }));
+  mat.color.setScalar(shade); // unlit: `shade` is what the sun would leave of a dark name on a lit side
   height = height || width * 0.25;
   /*
    * Out of the facets, like every other decal (windowRows): 3 cm off the
@@ -842,10 +958,11 @@ export function registration(ctx, h, { text, z, y, width, height, colour, textur
     const g = skinPatch(h, quad, side, 0.03, 8, 6, null);
     // u along the patch from its quad corner a to b (nose to tail), v top to bottom.
     const uv = g.attributes.uv;
+    const pos = g.attributes.position;
     for (let i = 0; i < uv.count; i++) {
       const u = uv.getX(i);
-      const v = uv.getY(i);
-      uv.setXY(i, side > 0 ? 1 - u : u, 1 - v);
+      // v by height, not by angle round the body, or a tall name is squashed at its top.
+      uv.setXY(i, side > 0 ? 1 - u : u, (pos.getY(i) - y + height / 2) / height);
     }
     const m = meshOf(ctx, name, g, mat, parent);
     m.castShadow = false;

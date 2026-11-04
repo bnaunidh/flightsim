@@ -84,6 +84,21 @@ export async function check(sim, r, say) {
     menus.syncProgression && menus.syncProgression(p);
     menus.setGame('flight');
     menus.show('hangar');
+    // The swatches wear the airline's mark, the same drawing the fin wears, and the first load does not carry it.
+    {
+      for (let i = 0; i < 40 && !screen.querySelector('[data-hs-swname][data-mark]'); i++) await new Promise((res) => setTimeout(res, 50));
+      const named = [...screen.querySelectorAll('[data-hs-swname]')];
+      r.ok('hangar: every airline\'s swatch wears its mark', named.filter((b) => b.dataset.mark).length >= 19, `${named.filter((b) => b.dataset.mark).length} of ${named.length}`);
+      // The name line, on a swatch: the fuselage's face and ink, on the paint it has there.
+      const line = screen.querySelector('[data-hs-paint-name]');
+      const liv = (await import('../../src/aircraft/liveries.js')).findLivery('krd');
+      const sw = named.find((b) => b.dataset.hsSwname === liv.name);
+      sw.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+      const ink = new (await import('../../src/vendor/three.module.js')).Color(liv.style.titleInk);
+      const shown = getComputedStyle(line);
+      r.ok('hangar: the paint\'s name wears the fuselage\'s face and ink', line.dataset.font === liv.style.titleFont.family && shown.color === `rgb(${Math.round(parseInt(liv.style.titleInk.slice(1, 3), 16))}, ${parseInt(liv.style.titleInk.slice(3, 5), 16)}, ${parseInt(liv.style.titleInk.slice(5, 7), 16)})` && !!ink, `${line.dataset.font} ${shown.color}`);
+      sw.dispatchEvent(new PointerEvent('pointerout', { bubbles: true }));
+    }
     if (ui.loading) await ui.loading.catch(() => {});
     for (let i = 0; i < 100 && !ui.showcase && !ui.failed; i++) await sleep(50);
     pump(4);

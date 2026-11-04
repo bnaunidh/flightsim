@@ -29,6 +29,10 @@ import './crashes.js';
 import './meteor.js';
 import './wildfire.js';
 import './wildfire-disaster.js';
+// The Petrel on the sea. Before onfoot and after nothing it needs; spawns moves it after this only by asking.
+import './floatplane.js';
+// Before onfoot: an aeroplane afloat is nobody's to walk away from. The sea, a gentle arrival kept whole.
+import './ditching.js';
 import './onfoot.js';
 // After onfoot: the walker hears keys first, and ejecting hands over to it on landing.
 import './eject.js';

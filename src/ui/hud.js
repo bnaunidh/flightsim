@@ -80,7 +80,8 @@ export function aboveGroundFt(ft) {
  *   under 6,000            "high above the island"           "high up"
  *   and above              "very high"                       "very high"
  */
-export function altitudeWords({ onGround, fieldFt, aglFt }) {
+export function altitudeWords({ onGround, fieldFt, aglFt, onWater = false }) {
+  if (onWater) return { word: 'on the water', short: 'on the water' };
   if (onGround) {
     const field = Math.max(0, Number(fieldFt) || 0);
     return { word: field >= 10 ? `on the ground · field ${fmt(field)} ft` : 'on the ground', short: 'on the ground' };
@@ -2002,14 +2003,15 @@ export class Hud {
     const alt = onGround ? 0 : Math.round(r.altFt / 10) * 10;
     const agl = Math.max(0, Math.min(r.aglFt, r.altFt));
     const overFt = aboveGroundFt(agl);
-    const altKey = onGround ? `ground ${fieldFt}` : `${alt} ${agl < 1500 ? overFt : agl < 6000 ? 'high' : 'very'}`;
+    const wet = !!(sim.aircraft && (sim.aircraft.onWater || sim.aircraft.ditched));
+    const altKey = onGround ? `ground ${fieldFt}${wet ? ' wet' : ''}` : `${alt} ${agl < 1500 ? overFt : agl < 6000 ? 'high' : 'very'}`;
     if (this.lastValues.alt !== altKey) {
       this.altValue.textContent = fmt(alt);
       this.lastValues.alt = altKey;
       // Both lengths from one place (altitudeWords): the sentence for the
       // laptop panel, the short form for the touch band and a narrow window,
       // which hide the sentence and showed nothing over the ground at all.
-      const { word, short } = altitudeWords({ onGround, fieldFt, aglFt: agl });
+      const { word, short } = altitudeWords({ onGround, fieldFt, aglFt: agl, onWater: wet });
       this.altWord.textContent = word;
       this.altUp.textContent = short;
     }

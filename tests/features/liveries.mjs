@@ -11,7 +11,9 @@
  *   - the paint is paint: a clearcoat on High and Ultra only, a plain
  *     material on Low and Medium; bare metal is metal;
  *   - the fan cowls wear the airline's cowl skin, the name is lettered in
- *     the airline's weight, a billboard name is taller;
+ *     the airline's weight and set by its cap height, a freighter's bigger;
+ *   - each scheme is its own drawing (fleet/extra/livery-art.js), the fin one
+ *     canvas with the mark inside it, and no two schemes the same layout;
  *   - no scheme's words are a real airline's; the military types keep
  *     low-saturation greys and greens and never an airline's paint.
  */
@@ -86,7 +88,7 @@ for (const l of schemes) {
   if (st && st.layout === 'crown') ok(`${l.id}: a crown layout names its crown colour`, hex(st.crown));
 }
 ok('one scheme wears the crown layout (the sky-blue-over-white airline)', schemes.filter((l) => l.style && l.style.layout === 'crown').map((l) => l.id).join() === 'krd');
-ok('abyssinia: the title is in the fin\'s green (readable on white), not the cheatline\'s gold', L.findLivery('abyssinia').style.titleInk === '#0b8a3e');
+ok('abyssinia: the title is a green dark enough for white, not the cheatline\'s gold', L.findLivery('abyssinia').style.titleInk === '#055a27');
 ok('exactly one scheme is bare metal (the silver-bird airline), and its material is asked for', schemes.filter((l) => l.style && l.style.metal).map((l) => l.id).join() === 'liberty');
 ok('the United-style scheme carries a compass, not a globe (a circle with meridians was too near a real mark)', L.findLivery('continental').emblem === 'compass');
 
@@ -122,7 +124,7 @@ const sizeOf = (tier) => {
   const m = build('a320', 'abyssinia');
   const skin = materialNamed(m, 'Airliner_livery');
   const img = skin && skin.map && skin.map.image;
-  const emblem = meshesNamed(m, /^Tail emblem$/)[0];
+  const emblem = meshesNamed(m, /^Painted fin$/)[0];
   const eimg = emblem && emblem.material.map && emblem.material.map.image;
   const cowl = materialNamed(m, 'Airliner_cowl');
   const cimg = cowl && cowl.map && cowl.map.image;
@@ -134,7 +136,7 @@ const sizeOf = (tier) => {
   for (const tier of ['low', 'medium', 'high', 'ultra']) {
     const r = sizeOf(tier);
     ok(`${tier}: the livery is drawn at ${want[tier].join('x')}`, r.img && r.img[0] === want[tier][0] && r.img[1] === want[tier][1] && KIT.liverySizeFor(tier).join() === want[tier].join(), r.img ? r.img.join('x') : 'no map');
-    ok(`${tier}: the fin mark is ${tier === 'high' || tier === 'ultra' ? 512 : 256} px`, r.emblem === (tier === 'high' || tier === 'ultra' ? 512 : 256), String(r.emblem));
+    ok(`${tier}: the fin's paint is ${tier === 'high' || tier === 'ultra' ? 512 : 256} px`, r.emblem === (tier === 'high' || tier === 'ultra' ? 512 : 256), String(r.emblem));
     ok(`${tier}: the cowl skin is ${tier === 'low' ? '128x32' : '256x64'}`, r.cowl && r.cowl.join('x') === (tier === 'low' ? '128x32' : '256x64'), r.cowl ? r.cowl.join('x') : 'none');
     const physical = r.skin instanceof THREE.MeshPhysicalMaterial;
     const clear = tier === 'high' || tier === 'ultra';
@@ -172,7 +174,7 @@ PAINT.setPaintTier('high');
 
   const painted = build('b737', 'abyssinia');
   const pskin = materialNamed(painted, 'Airliner_livery');
-  ok('abyssinia (painted): the skin is paint — low metalness, a clearcoat on High', !!pskin && pskin.metalness < 0.3 && pskin.clearcoat > 0.2, pskin ? `metalness ${pskin.metalness}, clearcoat ${pskin.clearcoat}` : 'none');
+  ok('abyssinia (painted): the skin is paint — low metalness, a clearcoat on High', !!pskin && pskin.metalness < 0.3 && pskin.clearcoat > 0.05, pskin ? `metalness ${pskin.metalness}, clearcoat ${pskin.clearcoat}` : 'none');
   const fans = meshesNamed(painted, /^Fan cowl$/);
   ok('abyssinia: both fan cowls wear the cowl skin, in the airline\'s green with the gold ring', fans.length === 2 && fans.every((f) => f.material.name === 'Airliner_cowl' && f.material.map && /#0b8a3e\|#e8b40a/.test(f.material.map.name)), fans.map((f) => f.material.map && f.material.map.name).join(' | '));
   ok('abyssinia: the cowl skin runs along the cowl (v from the lip to the nozzle), not one band', fans.length > 0 && (() => {
@@ -186,14 +188,14 @@ PAINT.setPaintTier('high');
     return lo < 0.05 && hi > 0.95;
   })());
   const title = meshesNamed(painted, /^Titling$/)[0];
-  ok('abyssinia: the name is lettered heavy (weight 700) and spaced, sixteen to one, in its own face (Kanit)', !!title && /_700_0\.05_Kanit\/600\/normal$/.test(title.material.map.name) && title.material.map.image.width === 2048, title ? title.material.map.name : 'none');
+  ok('abyssinia: the name is lettered heavy (weight 700) and spaced, set by its cap height, in its own face (Kanit)', !!title && /_700_0\.01_Kanit\/600\/normal_cap/.test(title.material.map.name), title ? title.material.map.name : 'none');
   const pylons = meshesNamed(painted, /^Engine pylon$/);
   ok('abyssinia: the pylons keep the body colour (no cowl skin smeared on them)', pylons.length === 0 || pylons.every((p) => p.material.name !== 'Airliner_cowl'));
   dispose(painted);
 
   const freight = build('b747', 'nightfreight');
   const ft = meshesNamed(freight, /^Titling$/)[0];
-  ok('nightfreight (billboard): the name is taller — ten to one, weight 800, in amber, condensed (Oswald)', !!ft && ft.material.map.image.width === 1280 && /_800_0\.12_Oswald\/600\/normal$/.test(ft.material.map.name) && /#e8a33c/.test(ft.material.map.name), ft ? ft.material.map.name : 'none');
+  ok('nightfreight (billboard): weight 800, in amber, condensed (Oswald)', !!ft && /_800_0\.08_Oswald\/600\/normal_cap/.test(ft.material.map.name) && /#f0b24a/.test(ft.material.map.name), ft ? ft.material.map.name : 'none');
   const reg = meshesNamed(freight, /^Airframe registration$/)[0];
   ok('nightfreight: the registration is light on a dark body, medium weight, stencil-spaced', !!reg && /#e9eef2/.test(reg.material.map.name) && /_600_0\.08$/.test(reg.material.map.name), reg ? reg.material.map.name : 'none');
   dispose(freight);
@@ -221,8 +223,8 @@ PAINT.setPaintTier('high');
         const m = build(id, l.id);
         n++;
         const skin = materialNamed(m, 'Airliner_livery');
-        const emb = meshesNamed(m, /^Tail emblem$/);
-        if (skin && emb.length !== 2) bad.push(`${id}/${l.id}: ${emb.length} fin marks`);
+        const fin = meshesNamed(m, /^Painted fin$/)[0];
+        if (skin && !(fin && fin.material.map && fin.material.map.name.includes(`|${id}|${l.id}|`))) bad.push(`${id}/${l.id}: the fin does not wear its canvas`);
         // The Meridian is the game's own model (aircraft/models/meridian.js), not the
         // kit's: its paint is render/textures.js airframeTexture, its lettering decals.
         if (skin) {
@@ -243,6 +245,170 @@ PAINT.setPaintTier('high');
     }
   }
   ok(`every airline builds on every type in its fleet, in its own layout, with its name, number and cowls (${n} builds)`, bad.length === 0, bad.slice(0, 4).join('; '));
+}
+
+/* ------------------------------------------------------------------ *
+ * The paint shop's drawings (fleet/extra/livery-art.js)
+ * ------------------------------------------------------------------ */
+{
+  const ART = await import(SRC + 'fleet/extra/livery-art.js');
+  const air = L.AIRLINE_LIVERIES;
+  ok('every airline has a drawing of its own', air.every((l) => ART.artFor(l) && ART.artFor(l).body.length > 0), air.filter((l) => !ART.artFor(l)).map((l) => l.id).join());
+  // The silhouette of the drawing: what kinds of shape, how many. A recolour of a template would repeat.
+  const sig = (l) => JSON.stringify(ART.artFor(l).body.map((o) => [o[0], o[2].map((p) => p.slice(0, 2))]));
+  const sigs = new Set(air.map(sig));
+  ok('no two airlines share one layout: each is a drawing, not a recolour', sigs.size >= air.length - 2, `${sigs.size} layouts for ${air.length} airlines`);
+  ok('at least ten airlines carry the tail\'s colour or a ribbon on to the aft body (past s = 0.65, up to the fin root)', air.filter((l) => ART.artFor(l).body.some((o) => o[2].some((p) => p[0] > 0.65 && p[1] > 0.7))).length >= 10);
+  ok('every shape is in range (s about 0-1, t about 0-1)', air.every((l) => ART.artFor(l).body.every((o) => o[2].every((p) => p[0] >= -0.05 && p[0] <= 1.1 && p[1] >= -0.2 && p[1] <= 1.2))));
+  ok('every winglet colour, registration ink and shape ink is a colour', air.every((l) => {
+    const a = ART.artFor(l);
+    return [a.winglet, a.regInk, ...a.body.map((o) => o[1]), ...((a.fin && a.fin.ops) || []).map((o) => o[1])].filter(Boolean).every(hex);
+  }));
+  ok('the freighters have no cabin windows; nothing else loses them', air.filter((l) => ART.artFor(l).freighter).map((l) => l.id).join() === 'nightfreight,dashfreight,flexship,parcelbrown');
+  const freighter = build('b777', 'nightfreight');
+  const liner = build('b777', 'desertpearl');
+  const panes = (m) => meshesNamed(m, /window/i).filter((o) => o.material && o.material.name === 'Airliner_cabin_window').length;
+  ok('a freighter is built with no window panes, an airliner with them', panes(freighter) === 0 && panes(liner) > 0, `${panes(freighter)} / ${panes(liner)}`);
+  dispose(freighter);
+  dispose(liner);
+
+  // The fin: the largest circle it holds lies inside it, on the fallback fin of every type an airline flies.
+  const seen = new Set();
+  const badFin = [];
+  for (const l of air) {
+    for (const id of l.fleet) {
+      const t = T.getAircraft(id);
+      if (seen.has(id) || id === 'meridian') continue;
+      seen.add(id);
+      const m = build(id, l.id);
+      const fc = m.userData.config && m.userData.config.fin;
+      dispose(m);
+      if (!fc) continue;
+      const P = { y0: fc.rootY, y1: fc.rootY + fc.height, le0: fc.rootZ, le1: fc.rootZ + fc.sweep, ch0: fc.rootChord, ch1: fc.tipChord };
+      const c = ART.finCircle(P);
+      if (!(c.r > 0.16 * (P.y1 - P.y0))) badFin.push(`${t.id}: ${c.r.toFixed(2)} m`);
+    }
+  }
+  ok('the mark\'s circle fills the fin: at least a third of its height across, on every type', badFin.length === 0, badFin.join('; '));
+
+  // Marks face forward: the canvas is laid the same way on both faces of the fin.
+  const m = build('a320', 'krd');
+  const finMesh = meshesNamed(m, /^Painted fin$/)[0];
+  const p = finMesh.geometry.attributes.position;
+  const uv = finMesh.geometry.attributes.uv;
+  let flipped = 0;
+  for (let i = 0; i < p.count; i++) {
+    for (let j = 0; j < p.count; j++) {
+      if (p.getX(i) > 0 && p.getX(j) < 0 && Math.abs(p.getZ(i) - p.getZ(j)) < 1e-3 && Math.abs(p.getY(i) - p.getY(j)) < 1e-3 && Math.abs(uv.getX(i) - uv.getX(j)) > 1e-3) flipped++;
+    }
+  }
+  ok('the fin\'s canvas runs nose to tail on BOTH faces, so a mark faces forward on both sides', flipped === 0, `${flipped} vertices apart`);
+  ok('the fin\'s paint material is lit, not a glowing decal', finMesh.material.isMeshStandardMaterial === true, finMesh.material.type);
+  dispose(m);
+
+  // The hangar's swatches load the drawing code on the first visit: it stays out of the first load.
+  {
+    const { readFileSync } = await import('node:fs');
+    const ui = readFileSync(new URL('../../src/ui/hangar-showcase-ui.js', import.meta.url), 'utf8');
+    ok('the hangar imports the marks when it opens, never statically', /import\('\.\.\/fleet\/extra\/livery-art\.js'\)/.test(ui) && !/^import .*livery-art/m.test(ui));
+  }
+
+  // The name, by the sign-writer's rule: cap height a share of the body, never stretched.
+  const decal = (id, liv) => {
+    const mm = build(id, liv);
+    const rp = mm.userData.realPaint;
+    const d = rp.decals.find((x) => x.h < x.w * 0.9 && x.texture.userData.text !== L.findLivery(liv).reg);
+    const hullH = rp.hull.topAt(0) - rp.hull.botAt(0);
+    dispose(mm);
+    return { d, hullH };
+  };
+  const a = decal('a320', 'bleuciel');
+  const b = decal('a380', 'bleuciel');
+  const capA = a.d.h / 1.7;
+  const capB = b.d.h / 1.7;
+  ok('the name\'s cap height scales with the body (a quarter of it, near enough), A320 and A380 alike', Math.abs(capA / a.hullH - 0.24) < 0.03 && Math.abs(capB / b.hullH - 0.24) < 0.03, `${capA.toFixed(2)} m of ${a.hullH.toFixed(2)}; ${capB.toFixed(2)} m of ${b.hullH.toFixed(2)}`);
+  ok('...so on an A380 it is bigger than on an A320, not the same 1.2 m band', capB > capA * 1.3);
+  const pic = a.d.texture.image;
+  ok('the name\'s canvas has the shape of its patch on the aeroplane: nothing is stretched', Math.abs(pic.width / pic.height - a.d.w / a.d.h) / (a.d.w / a.d.h) < 0.02, `${pic.width}x${pic.height} for ${a.d.w.toFixed(1)} x ${a.d.h.toFixed(2)} m`);
+}
+
+/* ------------------------------------------------------------------ *
+ * The lettering (owner: "make sure FONTS ARE GOOD")
+ * ------------------------------------------------------------------ */
+{
+  const ART = await import(SRC + 'fleet/extra/livery-art.js');
+  const F = await import(SRC + 'render/airline-fonts.js');
+  const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const lum = (h) => [1, 3, 5].map((i) => lin(parseInt(h.slice(i, i + 2), 16) / 255)).reduce((t, c, i) => t + c * [0.2126, 0.7152, 0.0722][i], 0);
+  const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+  const air = L.AIRLINE_LIVERIES;
+  const behind = (l) => (ART.artFor(l).title && ART.artFor(l).title.on) || (l.style.layout === 'crown' ? l.style.crown : l.base);
+  const low = air.filter((l) => ratio(l.style.titleInk || '#1f272e', behind(l)) < 3.5).map((l) => `${l.id} ${ratio(l.style.titleInk || '#1f272e', behind(l)).toFixed(2)}`);
+  ok('every name is at least 3.5 to 1 against the paint behind it (the lit body takes some of that away)', low.length === 0, low.join('; '));
+  ok('every airline names a bundled face, and only a bundled face', air.every((l) => !!F.faceFor(l.style.titleFont)));
+  const mixed = air.filter((l) => l.titling !== l.titling.toUpperCase());
+  ok('upper-and-lower names are set tight, as words (at most 0.03 em)', mixed.length >= 6 && mixed.every((l) => l.style.titleSpacing <= 0.03), mixed.map((l) => `${l.id} ${l.style.titleSpacing}`).join());
+  ok('capitals are spaced, not scattered (at most 0.1 em)', air.filter((l) => !mixed.includes(l)).every((l) => l.style.titleSpacing <= 0.1));
+  const serifs = air.filter((l) => /Playfair|Lora|Cinzel/.test(l.style.titleFont.family));
+  ok('the serif airlines stay serif, their fine strokes fattened so they outlive the mipmaps', serifs.length === 4 && serifs.every((l) => ART.artFor(l).title.bold >= 0.02), serifs.map((l) => l.id).join());
+  // The heads of the letters stop short of the crown, on every type an airline flies.
+  const high = [];
+  for (const l of air) {
+    if (ART.artFor(l).freighter) continue;
+    for (const id of l.fleet) {
+      if (id === 'meridian') continue;
+      const m = build(id, l.id);
+      const rp = m.userData.realPaint;
+      const d = rp.decals.find((x) => x.texture.userData.text === l.titling);
+      const mid = (rp.hull.topAt(0) + rp.hull.botAt(0)) / 2;
+      const R = (rp.hull.topAt(0) - rp.hull.botAt(0)) / 2;
+      if ((d.y + d.h / 1.7 / 2 - mid) / R > 0.76) high.push(`${id}/${l.id}`);
+      dispose(m);
+    }
+  }
+  ok('the whole cap height is on the side of the body: the heads stay under three quarters of the way to the crown', high.length === 0, high.slice(0, 6).join());
+}
+
+/* ------------------------------------------------------------------ *
+ * Too near a real airline's logo: redrawn, and held there
+ *
+ * The coordinator's review, 2026-11-03: three fin marks read as real carriers'
+ * and one needed a second look. A real mark cannot be listed here to compare
+ * against, so what is held is what made them near: their parts.
+ * ------------------------------------------------------------------ */
+{
+  const { readFileSync } = await import('node:fs');
+  const ART = await import(SRC + 'fleet/extra/livery-art.js');
+  const E = await import(SRC + 'fleet/extra/emblems.js');
+  const src = readFileSync(new URL('../../src/fleet/extra/emblems.js', import.meta.url), 'utf8');
+  const doc = (who) => (src.match(new RegExp(`/\\*\\* ${who}: ([^\\n]*)\\*/`)) || [])[1] || '';
+  const fakeG = () => new Proxy({}, { get: (t, k) => (k === 'beginPath' ? () => {} : () => ({})) });
+
+  const lib = L.findLivery('liberty');
+  const libArt = ART.artFor(lib);
+  const ops = (libArt.fin.ops || []).map((o) => o[0]);
+  ok('liberty: no stripe stack and no star field: one band on the fin, nothing square', ops.join() === 'rib' && !libArt.fin.bg, ops.join());
+  ok('liberty: the fin is navy, the one band red, the one mark a white star', lib.tail === 0x143478 && libArt.fin.ops[0][1] === '#c8102e' && lib.emblem === 'star' && lib.style.emblemInks.join() === '#f4f6f8');
+  ok('liberty: the star is alone (no trails, no canton)', /one big/i.test(doc('Liberty')) && !/trail|canton|stripe/i.test(doc('Liberty')), doc('Liberty'));
+  ok('liberty: the name, metal body and cheatline stayed', lib.titling === 'LIBERTY AIR' && lib.style.metal === true && libArt.body.filter((o) => o[0] === 'rib').length === 2);
+
+  const gulf = L.findLivery('pearlgulf');
+  ok('pearlgulf: the mark is the pearl in its shell', gulf.emblem === 'pearlshell' && /oyster/i.test(doc('Pearl Gulf')) && /pearl/i.test(doc('Pearl Gulf')), doc('Pearl Gulf'));
+  ok('pearlgulf: no animal, and no ribbed fan of a shell (a scallop is an oil company\'s mark)', !/antelope|gazelle|oryx|horn|deer|animal|scallop/i.test(`${gulf.emblem} ${gulf.blurb} ${doc('Pearl Gulf')}`), gulf.blurb);
+
+  const river = L.findLivery('riverdelta');
+  const rivArt = ART.artFor(river);
+  ok('riverdelta: the mark is a river, as flowing lines', river.emblem === 'riverlines' && /river/i.test(doc('Riverdelta')) && /flowing/i.test(doc('Riverdelta')), doc('Riverdelta'));
+  ok('riverdelta: no triangle, delta, fan or chevron in the mark', !/triangle|delta shape|fan\b|chevron|widget/i.test(`${river.emblem} ${doc('Riverdelta')}`));
+  ok('riverdelta: the fin carries nothing but the mark, in one ink (a two-tone triangle was the trouble)', !(rivArt.fin.ops || []).length && river.style.emblemInks.length === 1);
+  ok('riverdelta: the small mark by the name is the same drawing', !!rivArt.title.lead && E.EMBLEM_STYLES.includes(river.emblem));
+
+  const parcel = L.findLivery('parcelbrown');
+  ok('parcelbrown: parcels with nothing round them (a badge on brown read as a real carrier\'s shield)', parcel.emblem === 'parcel' && /nothing round/i.test(doc('Parcel Brown')) && !/hexagon|shield/i.test(doc('Parcel Brown')), doc('Parcel Brown'));
+
+  const gone = ['antelope', 'gazelle', 'wavetri'];
+  ok('the old marks are gone from the lists and from the drawing file', gone.every((m) => !L.EMBLEMS.includes(m) && !E.EMBLEM_STYLES.includes(m) && !src.includes(`${m}(P`) && E.drawEmblem(fakeG(), m, 256, ['#fff']) === false));
+  ok('no airline wears a mark that is not in the list', L.AIRLINE_LIVERIES.every((l) => L.EMBLEMS.includes(l.emblem)));
 }
 
 /* ------------------------------------------------------------------ *

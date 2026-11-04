@@ -446,7 +446,8 @@ export function evaluate(E, r, dt) {
    * retracts in the physics if you press G, and lands on its belly if you do.
    */
   let gearWant = false;
-  if (plane && flying && !r.gearDown && !tk.on) {
+  // Except on the way to a ditching the mission is flying on purpose: it says wheels up, and the panel must not argue.
+  if (plane && flying && !r.gearDown && !tk.on && !r.wheelsUpMeant) {
     const on = A.gear.on;
     // The horn: low, power back, coming down.
     const horn = agl < (on ? 650 : 590) && r.throttle < (on ? 0.45 : 0.35) && vs < (on ? 150 : -60);

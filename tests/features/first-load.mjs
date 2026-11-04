@@ -65,7 +65,7 @@ const has = (suffix) => [...graph.keys()].some((k) => k.endsWith(suffix));
 
 ok('first-load: features/index.js is not in main.js\'s static graph', !has('src/features/index.js'));
 ok('first-load: the Story is not in the static graph', !has('src/story/index.js'));
-for (const heavy of ['src/features/multiplayer.js', 'src/features/livemap/livemap.js', 'src/features/world-preview.js', 'src/features/breakup.js', 'src/features/traffic.js', 'src/features/achievements/index.js', 'src/world/worldmap/preview-data.js']) {
+for (const heavy of ['src/features/multiplayer.js', 'src/features/livemap/livemap.js', 'src/features/world-preview.js', 'src/features/breakup.js', 'src/features/traffic.js', 'src/features/achievements/index.js', 'src/world/worldmap/preview-data.js', 'src/world/worldmap/farlands.js', 'src/world/worldmap/pin-far.js']) {
   ok(`first-load: ${heavy} waits for the menu`, !has(heavy));
 }
 ok('first-load: no missing module in the static graph', ![...graph.values()].some((n) => n.missing));

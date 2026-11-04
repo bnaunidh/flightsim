@@ -14,6 +14,15 @@
  *   - the fin is in the scheme's tail colour (or its accent), never the white
  *     of the body;
  *   - an airline with a name has its titles painted on.
+ *   - the fin wears the scheme's own canvas, on coordinates that stay on it;
+ *   - no scrap of the fuselage is left in the wing's paint (the lightning bolts
+ *     on a dark belly), the fan cowls wear the cowl skin with its ring, and no
+ *     wing wears the cowl's;
+ *   - winglets take the scheme's colour;
+ *   - the name reads left to right on both sides, and is not stretched;
+ *   - on every type of every airline, the name is at least 3:1 against the paint
+ *     directly behind it, and its letters are heavy enough to hold up;
+ *   - a skin lettered before the faces landed is lettered again when they do.
  * The A-10 has no livery map by design (painted flat in its own greys).
  */
 export async function check(sim, r, say = () => {}) {
@@ -22,6 +31,7 @@ export async function check(sim, r, say = () => {}) {
   const L = await import('../../src/aircraft/liveries.js');
   const T = await import('../../src/aircraft/types.js');
   const THREE = await import('../../src/vendor/three.module.js');
+  const ART = await import('../../src/fleet/extra/livery-art.js');
   say('real liveries');
 
   /** Area-weighted share of the side-facing skin whose sampled paint is not the plain body. */
@@ -111,10 +121,18 @@ export async function check(sim, r, say = () => {}) {
     }
     return n ? c / n : 0;
   };
+  /** The colour of the fin: its paint's own, or the average of its canvas. */
   const finOf = (skin) => {
     let c = null;
     skin.traverse((o) => {
-      if (!c && o.isMesh && o.parent && o.parent.name === 'fin' && o.material && o.material.color) c = o.material.color.clone();
+      if (c || !o.isMesh || !o.parent || o.parent.name !== 'fin' || !o.material || !o.material.color) return;
+      c = o.material.color.clone();
+      const img = o.material.map && o.material.map.image;
+      if (!img || !img.getContext) return;
+      const d = img.getContext('2d').getImageData(0, 0, img.width, img.height).data;
+      const rgb = [0, 0, 0];
+      for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) rgb[k] += d[i + k];
+      c = new THREE.Color().setRGB(rgb[0] / (d.length / 4) / 255, rgb[1] / (d.length / 4) / 255, rgb[2] / (d.length / 4) / 255, THREE.SRGBColorSpace);
     });
     return c;
   };
@@ -158,4 +176,171 @@ export async function check(sim, r, say = () => {}) {
     }
     r.ok(`real livery: ${id} wears its livery — house colours, no paint given, ${airlines.length} airline${airlines.length === 1 ? '' : 's'}${flat ? ' (flat by design)' : ''}`, bad.length === 0, bad.slice(0, 4).join('; '));
   }
+
+  /* The paint that fits the real airframe (fleet/extra/real-paint.js). */
+  const parts = (skin) => {
+    const out = {};
+    skin.traverse((o) => {
+      if (!o.isMesh) return;
+      const role = o.parent && o.parent !== skin ? o.parent.name : o.name;
+      (out[role] = out[role] || []).push(o);
+    });
+    return out;
+  };
+  const wearing = async (id, liv) => {
+    const type = T.getAircraft(id);
+    await R.loadRealModel(id);
+    const m = A.createAircraftModel({ type, livery: L.schemeFor(type, liv), realModel: true });
+    for (let i = 0; i < 40 && !(m.userData.realModel && m.userData.realModel.skin); i++) await new Promise((res) => setTimeout(res, 50));
+    return m;
+  };
+  for (const [id, liv] of [['a320', 'continental'], ['a321', 'riverdelta'], ['b737', 'oversea'], ['b777', 'royalisles'], ['b787', 'bharat'], ['a350', 'pearlgulf'], ['b747', 'parcelbrown'], ['a380', 'desertpearl'], ['q400', 'oversea']]) {
+    const m = await wearing(id, liv);
+    const scheme = L.findLivery(liv);
+    const rp = m.userData.realPaint;
+    const skin = m.userData.realModel.skin;
+    const p = parts(skin);
+    const bad = [];
+    // The fin.
+    for (const o of p.fin || []) {
+      if (!o.material.map || !/airliner-fin/.test(o.material.map.name)) bad.push('fin without its canvas');
+      const uv = o.geometry.attributes.uv;
+      for (let i = 0; uv && i < uv.count; i++) if (uv.getX(i) < -0.05 || uv.getX(i) > 1.05 || uv.getY(i) < -0.05 || uv.getY(i) > 1.05) { bad.push('fin off its canvas'); break; }
+    }
+    // No body in the wing's mesh: every triangle in it reaches out past the fuselage, or is the tailplane's or a nacelle's.
+    const hull = rp.hull;
+    const W = hull.section((hull.zMin + hull.zMax) / 2).w;
+    for (const o of p.wing || []) {
+      const g = o.geometry;
+      const q = g.attributes.position;
+      const idx = g.index;
+      let stray = 0;
+      for (let t = 0; idx && t < idx.count; t += 3) {
+        const v = [idx.getX(t), idx.getX(t + 1), idx.getX(t + 2)];
+        if (v.every((i) => Math.abs(q.getX(i)) < 0.9 * W)) stray++;
+      }
+      if (stray) bad.push(`${stray} body triangles in the wing's paint`);
+    }
+    // The cowls.
+    const fan = (scheme.fleet || []).length && rp.engines.some((e) => e.kind === 'jet');
+    if (fan) for (const o of p.cowl || []) if (!o.material.map || !/airliner-cowl/.test(o.material.map.name)) bad.push('cowl without its skin');
+    // And nothing but a nacelle in the cowl's paint: the 737's wing came in with it, in the engine's colour to the tip.
+    for (const o of p.cowl || []) {
+      const q = o.geometry.attributes.position;
+      const idx = o.geometry.index;
+      const jets = rp.engines.filter((e) => e.kind === 'jet');
+      for (let t = 0; jets.length && idx && t < idx.count; t++) {
+        const i = idx.getX(t);
+        if (!jets.some((e) => Math.hypot(q.getX(i) - e.x, q.getY(i) - e.y) < e.radius * 1.8)) {
+          bad.push('wing in the cowl\'s paint');
+          break;
+        }
+      }
+    }
+    // The wing's own paint, the winglet in it.
+    for (const o of p.wing || []) if (!o.material.map || !/airliner-wing/.test(o.material.map.name) || !o.material.map.name.includes(new THREE.Color(ART.artFor(scheme).winglet).getHexString())) bad.push(`wing paint ${o.material.map && o.material.map.name}`);
+    // The name: the two sides of the canvas are the mirror of one another across the patch.
+    const skinMesh = p.skin_l[0];
+    const canvas = skinMesh.material.map.image;
+    const d = rp.decals.find((x) => x.texture.userData.text === scheme.titling);
+    if (!d) bad.push('no titles');
+    else if (canvas.getContext) {
+      const W2 = canvas.width;
+      const H2 = canvas.height / 2;
+      const [x0, x1] = [Math.round(rp.along(d.z - d.w / 2) * W2), Math.round(rp.along(d.z + d.w / 2) * W2)];
+      const y = Math.round((1 - rp.vAt(d.z, d.y)) * H2);
+      const g = canvas.getContext('2d');
+      const a = g.getImageData(x0, y, x1 - x0, 1).data;
+      const b = g.getImageData(x0, y + H2, x1 - x0, 1).data;
+      let same = 0;
+      let flip = 0;
+      const n = x1 - x0;
+      for (let i = 0; i < n; i++) {
+        same += Math.abs(a[i * 4] - b[i * 4]);
+        flip += Math.abs(a[i * 4] - b[(n - 1 - i) * 4]);
+      }
+      if (!(flip < same)) bad.push(`the name reads the same way round on both halves (${flip} / ${same})`);
+      // The mark faces forward on both sides, so the two faces of the fin take one canvas (node checks it); and
+      // the name's own proportions: the patch's shape in metres is the texture's.
+      const im = d.texture.image;
+      if (Math.abs(im.width / im.height - d.w / d.h) / (d.w / d.h) > 0.03) bad.push('the name is stretched');
+    }
+    r.ok(`real livery: ${id} in ${liv} — fin canvas, body and nacelle scraps sorted, cowl and wing paint, the name both ways round`, bad.length === 0, [...new Set(bad)].slice(0, 4).join('; '));
+    if (m.userData.dispose) m.userData.dispose();
+  }
+
+  /* The name against the paint behind it, on the canvas itself, every airline on every type it flies. */
+  {
+    const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    const lum = (d, p) => 0.2126 * lin(d[p] / 255) + 0.7152 * lin(d[p + 1] / 255) + 0.0722 * lin(d[p + 2] / 255);
+    const inkOf = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+    const worst = [];
+    const thin = [];
+    let n = 0;
+    for (const l of L.AIRLINE_LIVERIES) {
+      for (const id of l.fleet) {
+        if (id === 'meridian') continue;
+        const type = T.getAircraft(id);
+        const m = A.createAircraftModel({ type, livery: L.schemeFor(type, l.id) });
+        const rp = m.userData.realPaint;
+        const d = rp.decals.find((x) => x.texture.userData.text === l.titling);
+        const cv = rp.texture.image;
+        const px = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+        const ink = lum(inkOf(l.style.titleInk || '#1f272e'), 0);
+        const list = [];
+        for (let i = 0; i <= 20; i++) {
+          for (let j = 2; j <= 8; j++) {
+            const z = d.z - d.w / 2 + (d.w * i) / 20;
+            const y = d.y - d.h / 2 + (d.h * j) / 10;
+            const x = Math.min(cv.width - 1, Math.round(rp.along(z) * cv.width));
+            const row = Math.min(cv.height - 1, Math.round((1 - rp.vAt(z, y)) * cv.height));
+            const b = lum(px, (row * cv.width + x) * 4);
+            list.push((Math.max(b, ink) + 0.05) / (Math.min(b, ink) + 0.05));
+          }
+        }
+        list.sort((a, b) => a - b);
+        const c = list[Math.floor(list.length * 0.05)];
+        n++;
+        if (!(c >= 3)) worst.push(`${id}/${l.id} ${c.toFixed(2)}`);
+        // Heavy enough: the share of the cap band that is ink.
+        const im = d.texture.image;
+        const t = im.getContext('2d').getImageData(0, 0, im.width, im.height).data;
+        const [r0, r1] = [Math.round(im.height * 0.21), Math.round(im.height * 0.79)];
+        let on = 0;
+        let all = 0;
+        for (let r = r0; r < r1; r++) {
+          for (let x = 0; x < im.width; x++) {
+            all++;
+            if (t[(r * im.width + x) * 4 + 3] > 128) on++;
+          }
+        }
+        if (on / all < 0.2) thin.push(`${l.id} ${(on / all).toFixed(2)}`);
+        if (m.userData.dispose) m.userData.dispose();
+      }
+    }
+    r.ok(`real livery: the name is 3:1 or better against the paint behind it, ${n} aeroplanes`, worst.length === 0, worst.slice(0, 6).join('; '));
+    r.ok('real livery: every name is heavy enough (a fifth of its cap band is ink)', thin.length === 0, [...new Set(thin)].slice(0, 6).join('; '));
+  }
+
+  /* A cold start: a real skin lettered before the faces land is lettered again when they do. */
+  {
+    const F = await import('../../src/render/airline-fonts.js');
+    const land = F.holdFonts();
+    // (a word this page has not lettered yet: a texture from the cache would be in its face already)
+    const type = T.getAircraft('a380');
+    const m = A.createAircraftModel({ type, livery: { ...L.findLivery('oversea'), titling: 'Cold Start' }, realModel: true });
+    for (let i = 0; i < 40 && !(m.userData.realModel && m.userData.realModel.skin); i++) await new Promise((res) => setTimeout(res, 50));
+    const rp = m.userData.realPaint;
+    const d = rp.decals.find((x) => x.texture.userData.text === 'Cold Start');
+    const held = d && d.texture.userData.fallback === true;
+    const map = parts(m.userData.realModel.skin).skin_l[0].material.map;
+    const before = map.version;
+    land();
+    r.ok('real livery: a name lettered before the faces landed is drawn again, on the real skin too', held && d.texture.userData.fallback !== true && map.version > before, `v${before} -> v${map.version}`);
+    if (m.userData.dispose) m.userData.dispose();
+  }
+
+  // The hangar's swatches come from the same drawing: the mark on the tail colour.
+  const canvas = ART.markCanvas('tulip', ['#f4f7fa', '#0a3b6e'], 128);
+  r.ok('real livery: a mark can be drawn for a swatch', canvas.width === 128);
 }

@@ -80,6 +80,23 @@ export function nearestAirport(x, z) {
   return { airport: best, distM: bd };
 }
 
+/** The sea in one square: every island and a margin (the card's sketch, the pin's map). */
+export function seaBox(D = PREVIEW) {
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let z0 = Infinity;
+  let z1 = -Infinity;
+  for (const i of D.islands) {
+    x0 = Math.min(x0, i.cx - i.radius * 1.5); x1 = Math.max(x1, i.cx + i.radius * 1.5);
+    z0 = Math.min(z0, i.cz - i.radius * 1.5); z1 = Math.max(z1, i.cz + i.radius * 1.5);
+  }
+  const pad = 6000;
+  const cx = (x0 + x1) / 2;
+  const cz = (z0 + z1) / 2;
+  const half = Math.max(x1 - x0, z1 - z0) / 2 + pad;
+  return { x0: cx - half, x1: cx + half, z0: cz - half, z1: cz + half };
+}
+
 /** Compass heading, degrees clockwise from north (-Z is north), from one point to another. */
 export function headingTo(fx, fz, tx, tz) {
   const h = (Math.atan2(tx - fx, -(tz - fz)) * 180) / Math.PI;

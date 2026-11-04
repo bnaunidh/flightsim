@@ -29,7 +29,7 @@
 import { AIRCRAFT, performanceFor } from '../aircraft/types.js';
 import { LIVERIES, schemeFor, liveriesFor } from '../aircraft/liveries.js';
 import { liveryOf, setLiveryOf } from '../core/plane-paint.js';
-import { fontStack, faceFor } from '../render/airline-fonts.js';
+import { fontStack, faceFor, loadAirlineFonts } from '../render/airline-fonts.js';
 import * as Prog from '../game/progression.js';
 import { icon } from './icons.js';
 import {
@@ -474,6 +474,7 @@ export function installHangarShowcase(menus, screen, kit) {
     const fixed = !!type.fixedLivery;
     const paints = liveriesFor(type);
     $('[data-hs-swatches]').innerHTML = paints.map((l) => swatch(type, l, fixed)).join('');
+    markSwatches(host);
     const cur = fixed ? paints[0] : LIVERIES.find((l) => l.id === livery()) || LIVERIES[0];
     const pn = $('[data-hs-paint-name]');
     delete pn.dataset.chosen;
@@ -976,11 +977,44 @@ export function installHangarShowcase(menus, screen, kit) {
   return ui;
 }
 
+/** Each swatch wears the airline's mark (loaded on the first hangar visit; until then, its colours). */
+const markUrls = new Map();
+let markArt = null;
+function markUrl(l) {
+  if (markUrls.has(l.id)) return markUrls.get(l.id);
+  const c = document.createElement('canvas');
+  c.width = 56;
+  c.height = 56;
+  const g = c.getContext('2d');
+  g.fillStyle = `#${(l.tail ?? 0x808890).toString(16).padStart(6, '0')}`;
+  g.fillRect(0, 0, 56, 56);
+  const inks = (l.style && l.style.emblemInks) || [l.base];
+  g.drawImage(markArt.markCanvas(l.emblem, inks, 256), 7, 7, 42, 42);
+  const url = c.toDataURL('image/png');
+  markUrls.set(l.id, url);
+  return url;
+}
+function markSwatches(host) {
+  loadAirlineFonts(); // the first hangar visit may beat the menu's own load to them
+  const paint = () => {
+    for (const b of host.querySelectorAll('[data-hs-swname]')) {
+      const l = LIVERIES.find((x) => x.name === b.dataset.hsSwname);
+      if (!l || !l.emblem) continue;
+      b.style.background = `center / cover url(${markUrl(l)})`;
+      b.dataset.mark = l.emblem;
+    }
+  };
+  if (markArt) return paint();
+  import('../fleet/extra/livery-art.js').then((m) => {
+    markArt = m;
+    paint();
+  }).catch(() => {});
+}
+
 /**
- * The paint's name under the swatches, in that airline's own lettering
- * (aircraft/liveries.js style.titleFont, render/airline-fonts.js): the
- * hangar says "Desert Pearl Airlines" in the serif its fuselage wears.
- * The house colours, and a scheme with no face, keep the interface's font.
+ * The paint's name under the swatches, its mark beside it, in that airline's
+ * own lettering (aircraft/liveries.js style.titleFont): the serif its fuselage
+ * wears. The house colours, and a scheme with no face, keep the interface's.
  */
 function letterPaintName(el, name) {
   if (!el || !el.style) return;
@@ -991,4 +1025,10 @@ function letterPaintName(el, name) {
   el.style.fontStyle = face && face.style === 'italic' ? 'italic' : '';
   el.style.fontWeight = face ? String(face.weight) : '';
   el.dataset.font = face ? face.family : '';
+  const url = l && l.emblem && markArt ? markUrl(l) : null;
+  // A plate in the paint behind the name, in the name's own ink: the fuselage in small.
+  const plate = l && l.emblem && markArt ? (markArt.artFor(l).title.on || l.base) : '';
+  el.style.padding = url ? '2px 8px 2px 24px' : '';
+  el.style.color = url ? l.style.titleInk || '#1f272e' : '';
+  el.style.background = url ? `5px center / 15px 15px no-repeat url(${url}), ${plate}` : '';
 }

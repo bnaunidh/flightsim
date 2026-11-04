@@ -25,6 +25,7 @@
 /** By type id. The roster's own ids, so a test can check every type is here. */
 export const FAMILY = Object.freeze({
   skylark: 'light',
+  petrel: 'light',
   courier: 'light',
   tempest: 'light',
   meridian: 'airliner',

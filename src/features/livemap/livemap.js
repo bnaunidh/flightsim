@@ -154,7 +154,7 @@ function chart(sim) {
   const key = `${S.pKey}|${quality(sim)}`;
   if (!S.chart || S.chartKey !== key) {
     if (S.chart) S.chart.dispose();
-    S.chart = new ChartTiles({ box: P.box, heightAt, def: MAP, palette: PALETTE, flats: FLATS, quality: quality(sim), seaFloor: MAP && MAP.seaFloor });
+    S.chart = new ChartTiles({ box: P.box, heightAt, def: MAP, palette: PALETTE, flats: FLATS, quality: quality(sim), seaFloor: MAP && (MAP._outer ? MAP._outer.voidH : MAP.seaFloor) });
     S.chartKey = key;
   }
   return S.chart;

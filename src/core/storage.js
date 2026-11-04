@@ -5,6 +5,7 @@
 
 import { migrateLiveries } from './plane-paint.js';
 
+export const WORLD_MAP = 'world-preview';
 const SETTINGS_KEY = 'islandsim.settings.v1';
 const PROGRESS_KEY = 'islandsim.progress.v1';
 
@@ -320,6 +321,23 @@ export function coerceQuality(s, saved) {
   return s;
 }
 
+/**
+ * The map each game was last chosen for. `gameMap` is the player's own, and
+ * only a choice writes it, so a map a mission borrows is never in it. `map` is
+ * the world boot builds: the flight game's, except that the World Map is
+ * never built at boot, so then the default until Fly (features/world-preview.js).
+ * Pure: mutates and returns `s`.
+ */
+export function settleGameMaps(s) {
+  const was = s.gameMap;
+  const own = {};
+  if (was && typeof was === 'object') for (const k of Object.keys(was)) if (typeof was[k] === 'string') own[k] = was[k];
+  if (!own.flight && typeof s.map === 'string') own.flight = s.map;
+  s.gameMap = own;
+  s.map = own.flight === WORLD_MAP ? DEFAULT_SETTINGS.map : own.flight || DEFAULT_SETTINGS.map;
+  return s;
+}
+
 /** True when a settings save exists (this is not the first boot). */
 export function hasSavedSettings() {
   return readRaw(SETTINGS_KEY) != null;
@@ -329,6 +347,7 @@ export function loadSettings() {
   const s = read(SETTINGS_KEY, DEFAULT_SETTINGS);
   const saved = readRaw(SETTINGS_KEY);
   coerceQuality(s, saved);
+  settleGameMaps(s);
   // Never share the defaults' own object: painting one plane would paint the default.
   s.liveries = { ...(s.liveries && typeof s.liveries === 'object' ? s.liveries : {}) };
   // One paint for every plane → a paint per plane (only the selected one keeps the old paint).

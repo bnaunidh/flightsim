@@ -104,6 +104,7 @@ import { navField, thresholdOf } from './world/navfield.js';
 import {
   loadSettings,
   saveSettings,
+  WORLD_MAP,
   hasSavedSettings,
   loadProgress,
   saveProgress,
@@ -562,14 +563,10 @@ class Game {
 
     /** Which of the four games the menus are showing. */
     this.game = 'flight';
-    /*
-     * The map each game was last played on.
-     *
-     * Four games with different places: the lifeboat's island is not the
-     * courier's and neither is the aeroplane's. One shared `settings.map` sent
-     * you back to whichever you used last, whatever you were about to do.
-     */
-    this.gameMap = {};
+    // The map each game was last chosen for: the lifeboat's island is not the courier's, nor the aeroplane's.
+    this.gameMap = { ...this.settings.gameMap };
+    // A remembered World Map: shown as chosen, built only when you press Fly (startFree).
+    this.waitingMap = this.gameMap.flight === WORLD_MAP ? WORLD_MAP : null;
     this.menus = new Menus(document.getElementById('ui'), {
       // The Rotors page's Tutorial is the helicopter's first lesson, not the aeroplane school.
       startTutorial: () => (this.game === 'heli' ? this.startAnyMission('firstlight') : this.startMode('tutorial')),
@@ -588,7 +585,12 @@ class Game {
        * map with the boat's objective on the HUD.
        */
       startMission: (id) => this.startAnyMission(id),
-      startFree: (opts) => this.startMode('free', opts),
+      startFree: async (opts) => {
+        if (this.waitingMap) await this.featuresReady;
+        return this.waitingMap && this.worldPreview ? this.worldPreview.flyChosen(opts) : this.startMode('free', opts);
+      },
+      onPickAircraft: (id) => this.rememberAircraft(id),
+      onFreeSetup: (c) => this.rememberFree(c),
       onSetting: (path, value) => this.applySetting(path, value),
       // Settings → Controls → Level the tilt (and, on iOS, the motion permission, from this tap).
       onTiltLevel: () => {
@@ -689,13 +691,7 @@ class Game {
       onScreen: (name) => {
         if (name === 'missions' && this.game === 'car' && this.refreshJobBoard) this.refreshJobBoard();
       },
-      chooseMap: (id) => {
-        // Remembered per game. The four games have different places and a child
-        // who picks Sennen for the lifeboat should not find the aeroplane there
-        // next time, nor the van sent back to Kestrel when they take a job.
-        this.gameMap[this.game || 'flight'] = id;
-        return this.setMap(id);
-      },
+      chooseMap: (id) => this.setMap(id),
       install: () => this.promptInstall(),
       toggleSound: () => {
         this.hudAction('mute');
@@ -706,17 +702,9 @@ class Game {
     });
 
     /*
-     * Four games, one menu.
-     *
-     * Every screen in here was written for an aeroplane: the map cards say how
-     * long the runway is, the mission grid is twelve aeroplane missions and the
-     * hangar picks aircraft. This fits the same screens to whichever game is
-     * selected — its own missions, its own maps, its own words — rather than
-     * building four menus that would drift apart by the end of the week.
-     *
-     * `mapQualifies` is injected rather than decided inside the menu because
-     * only the thing that builds the world knows the answer: the car's test is
-     * "has this map got roads", and that is a question for the map data.
+     * Four games, one menu: the same screens fitted to whichever game is
+     * selected. `mapQualifies` is injected because only the thing that builds
+     * the world knows the answer ("has this map got roads").
      */
     installGameUi(this.menus, {
       onFreeDrive: (gameId) => {
@@ -803,17 +791,16 @@ class Game {
     this.menus.syncSound(this.settings.muted);
     this.menus.syncMap(this.settings.map || 'kestrel');
     /*
-     * The last aeroplane you flew is the Free Flight picker's choice again
-     * after a reload (owner, 2026-10-30: "remember ur plane and map").
-     * settings.aircraft is written as a Free Flight starts (startMode); the
-     * map was always kept (settings.map). Only if it is still yours and in
-     * this copy of the game — else the trainer, as before.
+     * The aeroplane you picked and the Free Flight screen as you left it, again
+     * after a reload (owner: "remember ur plane and map"). The aeroplane only
+     * if it is still yours and in this copy of the game, else the trainer.
      */
     try {
-      const last = visibleAircraftId(this.settings.aircraft || 'skylark');
-      if (last && Prog.isUnlocked(this.prog, last) && this.menus.pickFreeAircraft) this.menus.pickFreeAircraft(last);
+      if (this.aircraftOk(this.settings.aircraft)) this.menus.pickFreeAircraft(this.settings.aircraft);
+      const setup = this.settings.freeSetup;
+      if (setup && typeof setup === 'object') this.menus.applyFree({ ...setup, aircraft: this.menus.chosenAircraft });
     } catch (e) {
-      console.warn('[menus] could not restore the last aeroplane', e);
+      console.warn('[menus] could not restore the last Free Flight', e);
     }
     this.input.freeLook = !!this.settings.freeLook;
     this.menus.syncFreeLook(this.input.freeLook);
@@ -1437,10 +1424,13 @@ class Game {
     const ac = this.aircraft;
     ac.on(EVENTS.TOUCHDOWN, (g) => {
       const impact = clamp(Math.abs(g.vsFpm) / 700, 0.05, 1);
-      this.audio.available && this.audio.ambience.playTouchdown(impact, g.paved ? 'paved' : 'grass');
+      if (this.audio.available) {
+        if (g.water) this.audio.ambience.playSplash();
+        else this.audio.ambience.playTouchdown(impact, g.paved ? 'paved' : 'grass');
+      }
       this.rig.kick(0.25 + impact * 0.6);
       // Tyre smoke at the main wheels, by sink rate and ground speed (aircraft/tyre-smoke.js).
-      if (this.tyreSmoke && !g.crashed) this.tyreSmoke.touchdown(ac, g, this.model, fieldWetness(), SPEC.wingSpan || 11);
+      if (this.tyreSmoke && !g.crashed && !g.water) this.tyreSmoke.touchdown(ac, g, this.model, fieldWetness(), SPEC.wingSpan || 11);
       if (g.crashed) return;
       this.progress = recordLanding(this.progress, g);
       this.menus.syncProgress(this.progress);
@@ -1892,12 +1882,18 @@ class Game {
     // somewhere awkward, not to be pecked to death on the climb-out.
     this._nextDisaster = 180 + Math.random() * 240;
 
+    // A mission's own paint (def.paint) ends with it: rebuilt in what the player chose, never saved.
+    if (this.flightPaint) {
+      this.flightPaint = null;
+      this.aircraftType = null;
+    }
     // Only Free Flight offers the choice. A Blender helicopter that landed after its stand-in is built again.
     if (this.aircraftType && this.model && BLENDER_AIRCRAFT[this.aircraftType.id] && !this.model.userData.blenderModel) {
       const st = blenderModelStatus();
       if (st.enabled !== false && st[BLENDER_AIRCRAFT[this.aircraftType.id]] === 'ready') this.aircraftType = null;
     }
     this.setAircraft(mode === 'free' ? opts.aircraft || 'skylark' : 'skylark');
+    this.flightPaint = def.paint || null;
     // Set here too: setAircraft returns early for the same type, and the panel was blank.
     this.hud.setAircraftName(this.aircraftType.name);
 
@@ -1946,7 +1942,7 @@ class Game {
       this.weather.load(opts);
       this.settings.weather = this.weather.serialize();
       // The aeroplane you fly is the one the picker remembers (boot, above).
-      if (this.aircraftType) this.settings.aircraft = this.aircraftType.id;
+      if (this.aircraftType) this.rememberAircraft(this.aircraftType.id);
       saveSettings(this.settings);
     } else if (def.weather) {
       this.weather.load(def.weather);
@@ -2266,10 +2262,10 @@ class Game {
    */
   offerResume() {
     const cp = Checkpoint.loadCheckpoint();
-    const wp = this.worldPreview;
     const have = {
       aircraft: (id) => !!id && getAircraft(id).id === id && visibleAircraftId(id, null) === id,
-      map: (id) => !!id && (getMap(id).id === id || (!!wp && wp.id === id && typeof wp.choose === 'function')),
+      // Asked at boot, before the features: the World Map's id is known by name.
+      map: (id) => !!id && (getMap(id).id === id || id === WORLD_MAP),
     };
     const plan = Checkpoint.resumePlan(cp, findMission, Date.now(), have);
     this._resume = plan ? { cp, plan } : null;
@@ -2278,7 +2274,7 @@ class Game {
       if (this.menus && this.menus.syncResume) this.menus.syncResume(null);
       return null;
     }
-    const mapName = (id) => (wp && wp.id === id ? 'the World Map' : (getMap(id) || {}).name || id);
+    const mapName = (id) => (id === WORLD_MAP ? 'the World Map' : (getMap(id) || {}).name || id);
     if (this.menus && this.menus.syncResume) {
       this.menus.syncResume({
         name: plan.free ? `${plan.name} over ${mapName(plan.map)}` : plan.name,
@@ -2328,6 +2324,7 @@ class Game {
 
   /** The free-flight half of resumeCheckpoint() (game/checkpoint.js resumePlan, a `free` plan). */
   async continueFreeFlight(plan) {
+    await this.featuresReady;
     const wp = this.worldPreview;
     // The map first, the same way a mission borrows one (startMode): the
     // World Map through its own feature, which registers and builds it.
@@ -3532,7 +3529,7 @@ class Game {
 
     this.model = createAircraftModel({
       type: this.aircraftType,
-      livery: schemeFor(this.aircraftType, liveryOf(this.settings, this.aircraftType && this.aircraftType.id)),
+      livery: this.flightPaint ? schemeFor(this.aircraftType, this.flightPaint) : schemeFor(this.aircraftType, liveryOf(this.settings, this.aircraftType && this.aircraftType.id)),
       // REAL MODELS: the player's own aeroplane fetches its real skin (aircraft/real-models.js).
       realModel: true,
     });
@@ -3887,6 +3884,11 @@ class Game {
     refreshRunways();
     refreshApronElevation();
     this.settings.map = def.id;
+    // The player's own choice, per game: a child who picks Sennen for the lifeboat should not find the aeroplane there.
+    const g = this.game || 'flight';
+    this.gameMap[g] = def.id;
+    this.settings.gameMap = { ...this.settings.gameMap, [g]: def.id };
+    this.waitingMap = null;
     saveSettings(this.settings);
     this.menus.syncMap(def.id);
     if (this.state === 'flying') this.quitToMenu();
@@ -4693,23 +4695,6 @@ class Game {
   }
 
   /**
-   * Was that a survivable arrival?
-   *
-   * Three things, and all three are the ones a pilot is taught: wings level,
-   * coming down gently, and not too fast. Over water counts as flat ground —
-   * a ditching into calm sea is the textbook case.
-   */
-  braceSurvivable() {
-    const ac = this.aircraft;
-    const wingsLevel = Math.abs(ac.bankAngleDeg()) < 14;
-    // vel.y, not `vs` — `vs` is a copy taken once per physics step, so at the
-    // moment the crash fires it can still be last frame's number.
-    const gentle = -ac.vel.y < 6.5;
-    const notDiving = ac.pitchAngleDeg() > -12;
-    return wingsLevel && gentle && notDiving;
-  }
-
-  /**
    * Is something actually wrong with the aeroplane right now?
    *
    * Not "low" and not "coming down" — on a mission that is ordinary flying
@@ -4774,7 +4759,7 @@ class Game {
     // at all — no banner, no "press again".
     if (!this.braceAvailable()) return;
     const ac = this.aircraft;
-    if (ac.crashed) return;
+    if (ac.crashed || ac.ditched) return;
     if (ac.onGround && ac.groundSpeed < 4) {
       this.hud.notify('You are already on the ground', 'info', 2.4);
       return;
@@ -5550,64 +5535,66 @@ class Game {
   }
 
   /**
-   * The switcher in the menu bar.
-   *
-   * Four games, one world. Flight and Heli are the same engine with a
-   * different airframe — the Skyhook is an aircraft type, not a mode — so both
-   * go through startMode(); the boat and the car are a different thing to be
-   * and go through startDrive(). Whichever way it goes, the other side is torn
-   * down first, because the bug this replaces was a boat and an aeroplane
-   * existing at the same time.
+   * The switcher in the menu bar. Flight and Heli go through startMode(), the
+   * boat and the car through startDrive(); the other side is torn down first.
    */
   switchGame(id) {
     if (!GAME_IDS.includes(id)) id = 'flight';
 
-    /*
-     * Switching games goes to that game's FRONT PAGE. It does not start it.
-     *
-     * It used to drop you straight in: press Boat and you were suddenly
-     * afloat, mid-water, with a mission already running and no way back except
-     * Esc and a quit. That is not a switcher, it is a trapdoor — and the whole
-     * point of four games is that each one is its own place with its own
-     * missions, its own maps and its own way in. You arrive at the door, not
-     * in the middle of the room.
-     *
-     * So: put away whatever is running, then show that game's home screen and
-     * let the player choose from it.
-     */
+    // Switching games goes to that game's FRONT PAGE. It does not start it: put away what is running, show its home screen.
     this.stopDrive();
     this.game = id;
 
-    /*
-     * The vehicle the game is about, chosen now rather than at the moment you
-     * press Go — because the screens behind this one say what you are about to
-     * fly. Pressing Free Flight on the Rotors page and getting a Skylark is
-     * the same bug as the map cards saying how long the runway is on a map
-     * with no runway.
-     */
+    // The vehicle the game is about, chosen now: the screens behind this one say what you are about to fly.
     if (id === 'heli') {
-      this.menus.chosenAircraft = 'harrier';
+      const had = this.settings.lastHeli;
+      this.menus.showFreeAircraft(this.aircraftOk(had) && isHelicopter(getAircraft(had)) ? had : 'harrier');
     } else if (id === 'flight' && isHelicopter(getAircraft(this.menus.chosenAircraft))) {
       // Coming back from the helicopter must not silently leave you in it.
-      this.menus.chosenAircraft = 'skylark';
+      const had = this.settings.aircraft;
+      this.menus.showFreeAircraft(this.aircraftOk(had) && !isHelicopter(getAircraft(had)) ? had : 'skylark');
     }
-    /*
-     * Remembered, not built.
-     *
-     * setAircraft() builds a model, and from the front page there is no
-     * aeroplane yet — `this.aircraftType` is undefined until a flight starts,
-     * which is deliberate and documented at the fleet-models option. So the
-     * choice is recorded here and startMode() picks it up when something
-     * actually begins. Calling setAircraft from a menu button threw on the
-     * first press of Heli from a cold start.
-     */
+    // Remembered, not built: setAircraft() from a menu button threw on a cold start. startMode() picks it up.
 
     // And out to the front page. quitToMenu puts back a borrowed map, stands
     // the runner down and hides the HUD, which is everything a flight leaves
     // lying about.
     this.quitToMenu('main');
     this.menus.setGame(id);
+    this.goToOwnMap(id);
     return null;
+  }
+
+  /** Each game's own map: a flying game's is the world (the World Map waits for Fly), the boat and the car borrow theirs. */
+  goToOwnMap(game) {
+    if (game !== 'flight' && game !== 'heli') return this.menus.syncMap(this.mapForGame(game));
+    const id = this.gameMap[game] || this.gameMap.flight;
+    this.waitingMap = id === WORLD_MAP && id !== this.settings.map ? id : null;
+    if (this.waitingMap) this.menus.syncMap(id);
+    else if (id && id !== this.settings.map) this.setMap(id);
+    return null;
+  }
+
+  /** May this be the aeroplane on the picker? Still in the game, in this copy of it, and yours. */
+  aircraftOk(id) {
+    return !!id && getAircraft(id).id === id && visibleAircraftId(id, null) === id && Prog.isUnlocked(this.prog, id);
+  }
+
+  /** The one you picked, from the moment you pick it: an aeroplane and a helicopter each, for the two games. */
+  rememberAircraft(id) {
+    const k = isHelicopter(getAircraft(id)) ? 'lastHeli' : 'aircraft';
+    if (this.settings[k] === id) return;
+    this.settings[k] = id;
+    saveSettings(this.settings);
+  }
+
+  /** The Free Flight screen as it stands. The sky goes in the saved weather too, which the screen follows (syncSettings). */
+  rememberFree({ aircraft, ...c }) {
+    const { time, hour, condition, windSpeedKts, windDirDeg } = c;
+    this.settings.freeSetup = c;
+    this.settings.weather = { ...this.settings.weather, time, hour, condition, windSpeedKts, windDirDeg };
+    this.rememberAircraft(aircraft);
+    saveSettings(this.settings);
   }
 
   /**
@@ -6130,6 +6117,8 @@ class Game {
 
     if (this.weather.isRandom && ac) this.observeWeather(ac);
     this.weather.update(dt);
+    // A ditched aeroplane goes on settling behind its card (features/ditching.js).
+    if (this.state === 'debrief' && this.afterFlight) this.afterFlight(dt);
 
     if (this.state === 'flying') {
       // The flight model in equal steps of at most 1/120 s that add up to
@@ -6525,7 +6514,7 @@ class Game {
       const style = this.settings.guideStyle || 'arrow';
       // Not for a passenger (this.riding): the rails would run from the parked
       // aeroplane under the President's seat, drawn over the cabin's walls.
-      const wantRails = this.state === 'flying' && style !== 'beacon' && !this.riding;
+      const wantRails = this.state === 'flying' && style !== 'beacon' && !this.riding && !ac.ditched;
       // From the seat the panel and the window frames hide the rails.
       if (this.navGuide.setOccluded) this.navGuide.setOccluded(this.rig && this.rig.mode === 'cockpit' && this.cockpit && this.cockpit.visible);
       this.navGuide.update(
@@ -6548,7 +6537,8 @@ class Game {
        * the main beacon when that already stands on the same spot.
        */
       if (this.destBeacon) {
-        const running = this.state === 'flying' && !this.riding && this.runner.status === 'running';
+        // Ditched: she is at the place, and a pillar of light stood over the rafts.
+        const running = this.state === 'flying' && !this.riding && !ac.ditched && this.runner.status === 'running';
         const dest = running && this.runner.destination ? this.runner.destination() : null;
         const covered = dest && this.beacon && this.beacon.group.visible && guideTarget
           && Math.hypot(dest.pos.x - guideTarget.x, dest.pos.z - guideTarget.z) < 60;
@@ -6871,6 +6861,8 @@ class Game {
     const lift = B ? B.liftOff : 55;
 
     if (ac.crashed) return 'Press <kbd>Esc</kbd> and choose <b>Restart</b> to try again';
+    // Ditched: she is going down, and nothing is left to fly.
+    if (ac.ditched) return null;
     if (!ac.engineOn && ac.rpm < 0.05) return 'Press <kbd>I</kbd> to start the engine';
 
     if (ac.onGround) {
@@ -6883,7 +6875,7 @@ class Game {
       const svc = __airportServices && __airportServices.S && __airportServices.S.state;
       if ((svc === 'onStand' || svc === 'calling' || svc === 'serviced' || svc === 'pushback') && ac.engineOn) return null;
       // Rolling fast with the power already off: they want the brakes.
-      if (r.throttle < 0.2 && ac.groundSpeed > 6) return 'Hold <kbd>Space</kbd> to brake';
+      if (r.throttle < 0.2 && ac.groundSpeed > 6) return ac.onWater ? null : 'Hold <kbd>Space</kbd> to brake';
       if (r.throttle < 0.85) return 'Hold <kbd>Shift</kbd> for full power';
       if (kts > rot) return 'Now pull back gently on <kbd>S</kbd> to fly!';
       if (kts > 12) return `Keep straight with <kbd>Q</kbd> / <kbd>E</kbd> — lift off at ${lift} knots`;

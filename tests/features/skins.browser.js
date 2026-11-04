@@ -163,6 +163,11 @@ export async function check(sim, r, say = () => {}) {
               for (const m of mats) {
                 if (m && m.map && typeof m.map.name === 'string' && m.map.name.startsWith(want)) fin = true;
                 if (m && m.name === 'Aircraft_livery_tail' && m.color && m.color.getHex() === new THREE.Color(scheme.tail).getHex()) fin = true;
+                // The fin's own canvas (fleet/extra/livery-art.js): its ground is the tail colour.
+                if (m && m.map && /^airliner-fin/.test(m.map.name || '')) {
+                  const px = m.map.image.getContext('2d').getImageData(1, 1, 1, 1).data;
+                  if (new THREE.Color(`rgb(${px[0]},${px[1]},${px[2]})`).getHex() === new THREE.Color(scheme.tail).getHex()) fin = true;
+                }
               }
             });
             r.ok(`${tag}: the fin and rudder are the scheme's tail colour`, fin);
@@ -484,7 +489,12 @@ export async function check(sim, r, say = () => {}) {
         }
         if (scheme.style && scheme.style.metal) r.ok(`skins: a320 in ${lid}: bare metal is metal`, !!skin && skin.metalness > 0.6, skin ? `metalness ${skin.metalness}` : 'none');
         const title = named(model, /^Titling$/)[0];
-        if (scheme.titling) r.ok(`skins: a320 in ${lid}: the name's decal is ${scheme.style && scheme.style.layout === 'billboard' ? 'ten' : 'sixteen'} to one`, !!title && title.material.map.image.width === (scheme.style && scheme.style.layout === 'billboard' ? 1280 : 2048), title ? String(title.material.map.image.width) : 'none');
+        if (scheme.titling) {
+          // Set by its cap height: the decal's own shape is whatever the word's is, and the patch on the body the same.
+          const box = title && new THREE.Box3().setFromObject(title);
+          const im = title && title.material.map.image;
+          r.ok(`skins: a320 in ${lid}: the name's decal is the shape of its word, not stretched to a band`, !!title && im.height === 128 && Math.abs(im.width / im.height - (box.max.z - box.min.z) / ((box.max.y - box.min.y) * 1.04)) / (im.width / im.height) < 0.25, title ? `${im.width}x${im.height}` : 'none');
+        }
       }
     } catch (e) {
       r.ok('skins: the paint at this tier (checks ran)', false, String((e && e.stack) || e).slice(0, 200));

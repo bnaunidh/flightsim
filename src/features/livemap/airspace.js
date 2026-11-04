@@ -122,6 +122,9 @@ function onEvent(sim, ev) {
   const r = ac.readouts();
   const cs = (sim.atc && sim.atc.callsign) || 'Skylark 172';
   const blocked = bannerBlocked(sim);
+  // On the water, or a mission whose script has the radio: no chat with the next sector.
+  const mr = sim.atc && sim.atc.missionRadio;
+  const hush = !!ac.ditched || !!(mr && Array.isArray(mr.quiet) && mr.quiet.includes('airspace'));
   if (ev.type === 'enter') {
     const z = ev.zone;
     const word = fieldWord(z);
@@ -129,13 +132,14 @@ function onEvent(sim, ev) {
     setApproachField(word);
     if (!blocked) BANNER.push({ id: `as:${z.id}`, title: 'ENTERING AIRSPACE', name: `${z.name} · ${z.freq}`, sub: '', quiet: true, prio: 1 });
     const check = `${word} Approach, ${cs}, ${levelWords(r.altFt, r.vsFpm)}`;
-    if (sim.hud) sim.hud.notify(`You: "${check}."`, 'info', 3.4);
-    A.pending = { t: 2.2, text: `${cs}, ${word} Approach, radar contact. Continue as you are, report the field in sight.`, tries: 0 };
+    if (sim.hud && !hush) sim.hud.notify(`You: "${check}."`, 'info', 3.4);
+    if (!hush) A.pending = { t: 2.2, text: `${cs}, ${word} Approach, radar contact. Continue as you are, report the field in sight.`, tries: 0 };
   } else {
     const z = ev.zone;
     const word = fieldWord(z);
     if (!blocked) BANNER.push({ id: `asl:${z.id}`, title: 'LEAVING AIRSPACE', name: `${z.name}`, sub: '', quiet: true, prio: 0 });
-    A.pending = { t: 0.8, text: `${cs}, leaving ${word} airspace, frequency change approved. Good day.`, tries: 0, then: () => setApproachField(null) };
+    if (hush) setApproachField(null);
+    else A.pending = { t: 0.8, text: `${cs}, leaving ${word} airspace, frequency change approved. Good day.`, tries: 0, then: () => setApproachField(null) };
     A.cur = null;
   }
 }

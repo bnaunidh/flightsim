@@ -57,7 +57,7 @@ float wtNoise(vec2 p) {
  * written straight in, they came out as pale pastels. `DETAIL` is 1.0 on the
  * richer tiers.
  */
-const FRAG_COVER = (detail) => `
+const FRAG_COVER = (detail, ring, ringSnow) => `
   {
     vec2 wp = vWXZ;
     float dist = length(vViewPosition);
@@ -158,8 +158,10 @@ const FRAG_COVER = (detail) => `
     }
     // Snow: the north's hills and fells, and anything above 1,300 m.
     float sline = mix(1300.0, 110.0, cold) + (wtNoise(wp / 900.0) - 0.5) * 120.0;
+    ${ringSnow}
     float snowC = smoothstep(sline, sline + 90.0, vGroundY) * (1.0 - vBlend.z * 0.5);
     base = mix(base, vec3(0.86, 0.89, 0.95), snowC);
+    ${ring}
     // Grain close in.
     float near = ${detail} * (1.0 - smoothstep(250.0, 1400.0, dist));
     if (near > 0.0) {
@@ -171,10 +173,12 @@ const FRAG_COVER = (detail) => `
 `;
 
 /**
- * The World Map's ground material: terrain.js's, plus the land cover.
+ * The World Map's ground material: terrain.js's, plus the land cover, plus
+ * `ring`, the range's snow line and the Farlands' paint (worldmap/farlands-look.js)
+ * when they have loaded.
  * Shares terrain.js's textures; its own shader program.
  */
-export function makeWorldTerrainMaterial(quality = 'medium') {
+export function makeWorldTerrainMaterial(quality = 'medium', ring = {}) {
   const mat = makeTerrainMaterial(quality);
   const rich = quality !== 'low';
   const base = mat.onBeforeCompile;
@@ -186,9 +190,9 @@ export function makeWorldTerrainMaterial(quality = 'medium') {
       .replace('vGroundY = position.y;', 'vGroundY = position.y;' + VERT_BEGIN);
     shader.fragmentShader = shader.fragmentShader
       .replace('uniform float uSeaCut;', 'uniform float uSeaCut;' + FRAG_COMMON)
-      .replace('diffuseColor *= blended;', FRAG_COVER(rich ? '1.0' : '0.0') + '\n        diffuseColor *= blended;');
+      .replace('diffuseColor *= blended;', FRAG_COVER(rich ? '1.0' : '0.0', ring.frag || '', ring.snow || '') + '\n        diffuseColor *= blended;');
   };
-  mat.customProgramCacheKey = () => (rich ? 'world-terrain-rich' : 'world-terrain');
+  mat.customProgramCacheKey = () => (rich ? 'world-terrain-rich' : 'world-terrain') + (ring.frag ? '-ring' : '');
   mat.userData.worldTerrain = true;
   return mat;
 }

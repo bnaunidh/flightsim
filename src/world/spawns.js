@@ -42,7 +42,7 @@
  * in from the 09 threshold — flagged `fallback: true` so a test can list it.
  */
 
-import { heightAt, platformAt, OBSTACLES, MAP, AIRPORT, isOnAnyRunway, harbourBerth } from './terrain.js';
+import { heightAt, platformAt, OBSTACLES, MAP, AIRPORT, isOnAnyRunway, harbourBerth, harbourMouth } from './terrain.js';
 import { airportLayout, standFits, standTaken, NOSE_STOP } from './airport-layout.js';
 import { RUNWAY } from './airport.js';
 import { PADS } from './pads.js';
@@ -564,9 +564,14 @@ function padPoints(ref, size) {
 function harbourPoints() {
   const b = harbourBerth();
   if (!b) return [];
-  // Just off the quay, in the basin, pointing out of the mouth.
+  // Just off the quay, in the basin, pointing out of the mouth. At it, not parallel to the wall:
+  // the berth is in a corner of the basin, and straight ahead from there is the breakwater.
   const h = b.headingDeg * D2R;
-  return [{ x: b.x + Math.sin(h) * 30, z: b.z - Math.cos(h) * 30, y: 0, headingDeg: b.headingDeg, kind: 'water', label: 'Harbour dock', atc: 'at the harbour' }];
+  const x = b.x + Math.sin(h) * 30;
+  const z = b.z - Math.cos(h) * 30;
+  const m = harbourMouth();
+  const headingDeg = m ? ((Math.atan2(m.x - x, -(m.z - z)) / D2R) % 360 + 360) % 360 : b.headingDeg;
+  return [{ x, z, y: 0, headingDeg, kind: 'water', label: 'Harbour dock', atc: 'at the harbour' }];
 }
 
 function hoverPoints(ref, size) {

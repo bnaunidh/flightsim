@@ -203,6 +203,9 @@ export class AtcDirector {
       return;
     }
 
+    // Down on the water: the rescue has the frequency (features/ditching.js).
+    if (ac.ditched) return;
+
     // Engine start on the apron.
     if (ac.engineOn && this.once('start') && ac.onGround) {
       this.say(
@@ -356,7 +359,11 @@ export class AtcDirector {
   onTouchdown(grade) {
     if (grade.crashed) return;
     let line;
-    if (!grade.onRunway) {
+    if (grade.water) {
+      line = grade.quality === 'firm' || grade.quality === 'rough'
+        ? `${this.callsign}, down on the water, a firm one. Say when you are clear of the boats.`
+        : `${this.callsign}, nicely down on the water. Keep clear of the boats.`;
+    } else if (!grade.onRunway) {
       line = `${this.callsign}, that was off the runway. Are you able to taxi? Say your condition.`;
     } else if (grade.quality === 'perfect') {
       line = `${this.callsign}, beautiful landing. Welcome back to ${this.field}, taxi to the apron.`;

@@ -165,27 +165,26 @@ const read = (p) => readFileSync(new URL(p, ROOT));
   const distinct = new Set(L.AIRLINE_LIVERIES.map((l) => l.emblem));
   ok('every mark the airlines wear is a drawing of its own', [...distinct].every((e) => [...distinct].filter((f) => f !== e).every((f) => record(e).calls.join(',') !== record(f).calls.join(','))));
   ok('an unknown mark is refused (the caller draws its plain disc)', record('no-such-mark').drew === false);
-  ok('no mark is a bare polyline any more: the file draws with Bézier curves throughout', (src.match(/\.C\(/g) || []).length >= 60);
+  // Riverdelta's mark must stay lines that flow: a triangle or a chevron is straight edges.
+  {
+    const r = record('riverlines');
+    const curves = r.calls.filter((k) => k === 'bezierCurveTo').length;
+    const lines = r.calls.filter((k) => k === 'lineTo').length;
+    ok('riverlines: every edge a curve but the blunt end of each line', curves >= 8 && lines <= curves / 2, `${curves} curves, ${lines} straight`);
+    const pr = record('parcel');
+    ok('parcel: two boxes and no ring round them (nothing filled even-odd)', !pr.calls.includes('arc') && pr.calls.filter((k) => k === 'fill').length >= 6);
+  }
+  ok('no mark is a bare polyline any more: the file draws with Bézier curves throughout', (src.match(/\.[CQ]\(/g) || []).length >= 50);
 
-  // Placement: on the fin only, one each side.
+  // Placement: painted on the fin, nothing laid over it.
   for (const [typeId, liv] of [['a320', 'krd'], ['b787', 'risingcrane'], ['a350', 'pearlgulf'], ['b777', 'royalisles']]) {
     const type = T.getAircraft(typeId);
     const m = ADAPTER.createAircraftModel({ type, livery: L.schemeFor(type, liv) });
-    const marks = [];
+    const onFin = [];
     m.traverse((o) => {
-      if (o.isMesh && /emblem/i.test(o.name)) marks.push(o);
+      if (o.isMesh && o.material && o.material.map && /airliner-fin/.test(o.material.map.name || '')) onFin.push(o.name);
     });
-    let onFin = marks.length === 2;
-    for (const o of marks) {
-      let n = o.parent;
-      let fin = false;
-      while (n) {
-        if (/fin/i.test(n.name)) fin = true;
-        n = n.parent;
-      }
-      onFin = onFin && fin;
-    }
-    ok(`${typeId} in ${liv}: the mark is on the fin, one each side, and nowhere else`, onFin, marks.map((o) => o.name + '<' + (o.parent && o.parent.name)).join(', '));
+    ok(`${typeId} in ${liv}: the mark is the fin's paint, on the fin and the rudder and nowhere else`, onFin.sort().join() === 'Painted fin,Painted rudder', onFin.join());
     if (m.userData.dispose) m.userData.dispose();
   }
 }
@@ -193,17 +192,13 @@ const read = (p) => readFileSync(new URL(p, ROOT));
 /* -------------------------------------------- the mark on a real model's fin -- */
 {
   const THREE = await import(SRC + 'vendor/three.module.js');
+  const ART = await import(SRC + 'fleet/extra/livery-art.js');
   const type = T.getAircraft('b777');
   const m = ADAPTER.createAircraftModel({ type, livery: L.schemeFor(type, 'desertpearl') });
-  const ud = m.userData;
-  let proc = null;
-  m.traverse((o) => {
-    if (!proc && o.isMesh && o.name === 'Tail emblem') proc = o;
-  });
-  ok('the fin mark is drawn from both faces (the right-hand quad used to face inwards and be culled)', !!proc && proc.material.side === THREE.DoubleSide);
-  ok('an airliner hands real-models.js its fin mark (userData.finMark, not enumerable)', !!ud.finMark && typeof ud.finMark.fit === 'function' && !Object.keys(ud).includes('finMark'));
+  const rp = m.userData.realPaint;
+  ok('an airliner hands real-models.js its fin canvas and its profile (userData.realPaint, not enumerable)', !!rp && !!rp.finMap && !!rp.finProfile && !Object.keys(m.userData).includes('realPaint'));
   // A stand-in real fin: a swept, tapered slab well aft and above the procedural one.
-  const skin = new THREE.Group();
+  const root = new THREE.Group();
   const geo = new THREE.BoxGeometry(1, 1, 1, 1, 4, 4);
   const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) {
@@ -211,21 +206,33 @@ const read = (p) => readFileSync(new URL(p, ROOT));
     const ch = 9 - 6 * t;
     p.setXYZ(i, p.getX(i) * (0.8 - 0.5 * t), 5 + 9 * t, 30 + 8 * t + (p.getZ(i) + 0.5) * ch);
   }
-  const fin = new THREE.Mesh(geo, new THREE.MeshBasicMaterial());
+  geo.deleteAttribute('uv');
   const wrap = new THREE.Group();
   wrap.name = 'fin';
-  wrap.add(fin);
-  skin.add(wrap);
-  const mark = ud.finMark.fit(skin, [fin]);
-  const box = mark ? new THREE.Box3().setFromObject(mark) : null;
-  ok('real fin: the mark is laid on it — inside its height and chord, a few centimetres off its sides', !!box && box.min.y > 5.5 && box.max.y < 14 && box.min.z > 30 && box.max.z < 47 && box.max.x > 0.2 && box.max.x < 0.9 && Math.abs(box.min.x + box.max.x) < 1e-6,
-    box ? `${box.min.toArray().map((v) => v.toFixed(2))} .. ${box.max.toArray().map((v) => v.toFixed(2))}` : 'no mark');
-  ok('real fin: two quads, in the same material as the procedural mark', !!mark && mark.children.length === 2 && mark.children.every((q) => q.material === proc.material));
-  const flat = new THREE.Group();
-  ok('real fin: pieces that do not read as one fin give no mark', ud.finMark.fit(flat, []) === null);
-  if (ud.dispose) ud.dispose();
+  wrap.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial()));
+  root.add(wrap);
+  const got = rp.uvs(root);
+  const uv = geo.attributes.uv;
+  ok('real fin: read and mapped', got.fin === true && !!uv);
+  // The middle of this fin lands where the middle of the fin the canvas was drawn for is.
+  const box = ART.finBox(rp.finProfile);
+  const [z, y] = ART.finPoint(rp.finProfile, 0.5, 0.5);
+  const want = ART.finUV(rp.finProfile, box, z, y);
+  let best = 9;
+  for (let i = 0; i < p.count; i++) if (Math.abs(p.getY(i) - 9.5) < 0.3) best = Math.min(best, Math.abs(uv.getX(i) - uv.getX(i)) + Math.abs(uv.getY(i) - want[1]));
+  ok('real fin: mid-height on it is mid-height on the canvas, however the fin stands', best < 0.08, best.toFixed(3));
+  let inside = true;
+  for (let i = 0; i < uv.count; i++) inside = inside && uv.getX(i) >= -0.02 && uv.getX(i) <= 1.02 && uv.getY(i) >= -0.02 && uv.getY(i) <= 1.02;
+  ok('real fin: every corner of it is on the canvas (nothing stretched off an edge)', inside);
+  const none = new THREE.Group();
+  const stub = new THREE.Group();
+  stub.name = 'fin';
+  stub.add(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1).toNonIndexed()));
+  none.add(stub);
+  ok('real fin: pieces that do not read as one fin keep their flat paint', rp.uvs(none).fin === false);
+  if (m.userData.dispose) m.userData.dispose();
   const src2 = read('src/aircraft/real-models.js').toString();
-  ok('real-models.js lays the mark on the skin (it shows and hides with it)', /ud\.finMark\.fit\(skin, finPieces\)/.test(src2) && /skin\.add\(mark\)/.test(src2));
+  ok('real-models.js puts the fin canvas on the skin only when its outline was read', /uv && uv\.fin/.test(src2));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

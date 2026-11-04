@@ -226,6 +226,7 @@ export function renderDoc() {
   lines.push('## Notes per type');
   lines.push('');
   lines.push('- **skylark** — the 172 to the number: the same wing, the same weight, a 40 kt stall, 159 kt on the red line; its climb is 1.7× a real 172\'s because the flight model\'s propeller does not lose power with height the way a normally aspirated engine does, which is what the 14,000 ft ceiling now stands in for.');
+  lines.push('- **petrel** — the game\'s own floatplane in the 185\'s band: lighter on the floats than the real one, with the Skylark\'s wing rigged nose-up to the keels so it unsticks at about 60 kt.');
   lines.push('- **courier** — a Bonanza-class tourer; honest mass, wing and power, a slightly softer stall.');
   lines.push('- **meridian** — a 40-seat regional jet of the game\'s own with a bigger wing than an ERJ (78 m² for 16.5 t); thrust-to-weight 0.37, inside a lightly loaded ERJ-145\'s 0.31–0.56.');
   lines.push('- **vanguard, osprey** — the game\'s own fighter and carrier jet, in the Mirage 2000\'s and the A-7\'s bands; both lighter and slower-stalling for the Kestrel strip (see types.js).');

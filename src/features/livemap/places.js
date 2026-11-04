@@ -211,9 +211,11 @@ export function collectPlaces(sim) {
   return {
     mapId, isPreview, origin: originFor(mapId), title: isPreview ? 'World Map — Preview' : String((MAP && MAP.name) || 'Map'),
     ...base, fixes, zones,
+    regions: MAP && MAP._outer ? [...base.regions, ...MAP._outer.labels] : base.regions,
     // What the map opens on: every island (the content), and the square the tiles cover (a margin more).
     extent: { x0: cx - half + pad, x1: cx + half - pad, z0: cz - half + pad, z1: cz + half - pad },
-    box: { x0: cx - half * 1.15, z0: cz - half * 1.15, size: half * 2.3 },
+    // ...and on the World Map all of it: the range, the Farlands, a margin of nothing (worldmap/farlands.js).
+    box: MAP && MAP._outer ? { x0: -MAP._outer.chartHalf, z0: -MAP._outer.chartHalf, size: MAP._outer.chartHalf * 2 } : { x0: cx - half * 1.15, z0: cz - half * 1.15, size: half * 2.3 },
   };
 }
 

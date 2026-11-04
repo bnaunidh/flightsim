@@ -85,7 +85,7 @@ export class ChartTiles {
    *   palette   the map's palette
    *   flats     the map's level ground (frozen lakes, ice strips)
    *   quality   'low' | 'medium' | 'high' | 'ultra'
-   *   worker    false to never use one (tests)
+   *   worker    false to never use one (tests), or a worker of the caller's own
    */
   constructor(o) {
     this.box = o.box;
@@ -105,7 +105,7 @@ export class ChartTiles {
     this.clock = 0;
     this.stats = { built: 0, worker: 0, main: 0, evicted: 0, mainMs: 0 };
     this.seq = ++SEQ;
-    this.worker = o.worker === false ? null : sharedWorker();
+    this.worker = o.worker === false ? null : o.worker || sharedWorker();
     this.workerReady = false;
     if (this.worker) {
       this._onMsg = (ev) => this.onMessage(ev.data);
