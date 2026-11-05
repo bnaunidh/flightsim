@@ -12,7 +12,7 @@
  *   - Get out onto F9 (a free key: the backslash is the heat-seekers' now) just takes it; Start engine onto F10
  *     (the quotes, ; and -/= are taken: the drag chute and, since v61, the
  *     autopilot's heading and speed);
- *   - Smoke onto G asks about Landing gear; Cancel leaves both alone;
+ *   - Smoke onto G asks about the wheels; Cancel leaves both alone;
  *   - in the F-22, the key line names Backspace for eject, Enter now opens
  *     the self-destruct cover (not the seat), and Backspace twice ejects —
  *     every message naming the new key;
@@ -141,7 +141,7 @@ export async function check(sim, r, say) {
     const q2 = ask().textContent;
     const cancel = [...ask().querySelectorAll('button')].find((b) => /cancel/i.test(b.textContent));
     if (cancel) cancel.click();
-    r.ok('keybinds: Smoke onto G asks about Landing gear; Cancel leaves both alone', /already does Landing gear/.test(q2) && inp.bindings.smoke.join() === 'KeyT' && inp.bindings.gear.join() === 'KeyG', `${q2} → smoke ${inp.bindings.smoke}`);
+    r.ok('keybinds: Smoke onto G asks about the wheels; Cancel leaves both alone', /already does Wheels up/.test(q2) && inp.bindings.smoke.join() === 'KeyT' && inp.bindings.gear.join() === 'KeyG', `${q2} → smoke ${inp.bindings.smoke}`);
     r.ok('keybinds: the keys are saved with the settings', (() => {
       try { return JSON.parse(localStorage.getItem('islandsim.bindings.v1')).eject.join() === 'Backspace'; } catch (e) { return false; }
     })(), '');

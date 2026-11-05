@@ -125,7 +125,7 @@ function ensurePrompt() {
     .ap-prompt {
       position: absolute; left: 50%; bottom: max(276px, calc(var(--bl-h, 0px) + 158px)); transform: translateX(-50%);
       background: rgba(14, 22, 30, 0.84); color: #f4f7fa;
-      font: 600 15px/1.35 system-ui, -apple-system, 'Segoe UI', sans-serif;
+      font: 600 15px/1.35 var(--font);
       padding: 10px 16px; border-radius: 12px;
       /*
        * max-content, or it shrinks to the half of the screen right of its

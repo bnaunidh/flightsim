@@ -326,7 +326,7 @@ function signAtlas(signs) {
     }
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const font = seg.kind === 'number' ? 'bold 84px Arial, Helvetica, sans-serif' : 'bold 58px Arial, Helvetica, sans-serif';
+    const font = seg.kind === 'number' ? 'bold 84px "Jost", Arial, sans-serif' : 'bold 58px "Jost", Arial, sans-serif';
     ctx.font = font;
     const hasArrow = !!seg.arrow;
     const tx = hasArrow ? (seg.arrow === 'left' ? px + pw * 0.6 : px + pw * 0.4) : px + pw / 2;
@@ -420,7 +420,7 @@ function designatorAtlas(texts) {
     ctx.translate(i * cw + cw / 2, ch / 2);
     ctx.scale(1, 2.1);
     ctx.fillStyle = 'rgba(240,240,234,0.95)';
-    ctx.font = 'bold 132px Arial, Helvetica, sans-serif';
+    ctx.font = 'bold 132px "Jost", Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(t, 0, 4, cw - 16);

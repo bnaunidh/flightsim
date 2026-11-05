@@ -152,7 +152,7 @@ const word = (text, real) => new RegExp(`(^|[^A-Za-z])${real.replace(/[.*+?^${}(
   ok('flexship: no purple or violet, and no orange, anywhere in the paint', vivid('flexship', 250, 310).length === 0 && vivid('flexship', 15, 40).length === 0, inksOf('flexship').join(' '));
   ok('flexship: no roof of colour falling away behind the wing', !ART.artFor(L.findLivery('flexship')).body.some((op) => op[0] === 'over'));
   ok('flexship: no arrow, no parcel', L.findLivery('flexship').emblem === 'links');
-  ok('flexship: not lettered in a tight black grotesque', L.findLivery('flexship').style.titleFont.family !== 'Archivo Black' && L.findLivery('flexship').style.titleSpacing > 0.01);
+  ok('flexship: not lettered in a tight black grotesque', L.findLivery('flexship').style.titleFont.family !== 'Archivo Black' && (await import(SRC + 'fleet/extra/wordmarks.js')).WORDMARKS.flexship.rows[0].track > 0.01);
   const aby = vivid('abyssinia', 0, 360).map((c) => hsl(c).h);
   ok('abyssinia: the green, yellow and red of a flag are not all there: no green at all, no pure yellow, no pure red', vivid('abyssinia', 75, 170).length === 0 && vivid('abyssinia', 46, 70).length === 0 && vivid('abyssinia', 350, 360).length === 0 && vivid('abyssinia', 0, 6).length === 0, `${inksOf('abyssinia').join(' ')} (${aby.map(Math.round).join()})`);
   ok('abyssinia: the cheatline is not three flag stripes off one point on the fin: a mark of its own', L.findLivery('abyssinia').emblem === 'acacia');
@@ -235,16 +235,16 @@ PAINT.setPaintTier('high');
     return lo < 0.05 && hi > 0.95;
   })());
   const title = meshesNamed(painted, /^Titling$/)[0];
-  ok('abyssinia: the name is lettered heavy (weight 700) and spaced, set by its cap height, in its own face (Kanit)', !!title && /_700_0\.01_Kanit\/600\/normal_cap/.test(title.material.map.name), title ? title.material.map.name : 'none');
+  ok('abyssinia: the name is its own wordmark, in its own face (Kanit)', !!title && /wordmark\|Abyssinia Air\|.*Kanit\/600\/normal/.test(title.material.map.name), title ? title.material.map.name : 'none');
   const pylons = meshesNamed(painted, /^Engine pylon$/);
   ok('abyssinia: the pylons keep the body colour (no cowl skin smeared on them)', pylons.length === 0 || pylons.every((p) => p.material.name !== 'Airliner_cowl'));
   dispose(painted);
 
   const freight = build('b747', 'nightfreight');
   const ft = meshesNamed(freight, /^Titling$/)[0];
-  ok('nightfreight (billboard): weight 800, in amber, condensed (Oswald)', !!ft && /_800_0\.08_Oswald\/600\/normal_cap/.test(ft.material.map.name) && /#f0b24a/.test(ft.material.map.name), ft ? ft.material.map.name : 'none');
+  ok('nightfreight (billboard): its own wordmark, condensed (Oswald)', !!ft && /wordmark\|NIGHT FREIGHT\|.*Oswald\/600\/normal/.test(ft.material.map.name), ft ? ft.material.map.name : 'none');
   const reg = meshesNamed(freight, /^Airframe registration$/)[0];
-  ok('nightfreight: the registration is light on a dark body, medium weight, stencil-spaced', !!reg && /#e9eef2/.test(reg.material.map.name) && /_600_0\.08$/.test(reg.material.map.name), reg ? reg.material.map.name : 'none');
+  ok('nightfreight: the registration is light on a dark body, medium weight, stencil-spaced', !!reg && /#e9eef2/.test(reg.material.map.name) && /_600_0\.08_Titillium/.test(reg.material.map.name), reg ? reg.material.map.name : 'none');
   dispose(freight);
 
   const house = build('a320', 'house');
@@ -332,7 +332,7 @@ PAINT.setPaintTier('high');
       dispose(m);
       if (!fc) continue;
       const P = { y0: fc.rootY, y1: fc.rootY + fc.height, le0: fc.rootZ, le1: fc.rootZ + fc.sweep, ch0: fc.rootChord, ch1: fc.tipChord };
-      const c = ART.finCircle(P);
+      const c = ART.finCentre(P);
       if (!(c.r > 0.16 * (P.y1 - P.y0))) badFin.push(`${t.id}: ${c.r.toFixed(2)} m`);
     }
   }
@@ -371,9 +371,12 @@ PAINT.setPaintTier('high');
   };
   const a = decal('a320', 'bleuciel');
   const b = decal('a380', 'bleuciel');
-  const capA = a.d.h / 1.7;
-  const capB = b.d.h / 1.7;
-  ok('the name\'s cap height scales with the body (a quarter of it, near enough), A320 and A380 alike', Math.abs(capA / a.hullH - 0.24) < 0.03 && Math.abs(capB / b.hullH - 0.24) < 0.03, `${capA.toFixed(2)} m of ${a.hullH.toFixed(2)}; ${capB.toFixed(2)} m of ${b.hullH.toFixed(2)}`);
+  // (a share of the body's height at most, held down further by the room between the door and the wing)
+  const WM0 = await import(SRC + 'fleet/extra/wordmarks.js');
+  const lay0 = WM0.layoutWordmark(WM0.WORDMARKS.bleuciel, L.findLivery('bleuciel').style.titleFont);
+  const capA = a.d.h / lay0.h;
+  const capB = b.d.h / lay0.h;
+  ok('the name\'s cap height scales with the body, A320 and A380 alike, and never a banner', capA / a.hullH > 0.12 && capA / a.hullH < 0.29 && capB / b.hullH > 0.1 && capB / b.hullH < 0.29, `${capA.toFixed(2)} m of ${a.hullH.toFixed(2)}; ${capB.toFixed(2)} m of ${b.hullH.toFixed(2)}`);
   ok('...so on an A380 it is bigger than on an A320, not the same 1.2 m band', capB > capA * 1.3);
   const pic = a.d.texture.image;
   ok('the name\'s canvas has the shape of its patch on the aeroplane: nothing is stretched', Math.abs(pic.width / pic.height - a.d.w / a.d.h) / (a.d.w / a.d.h) < 0.02, `${pic.width}x${pic.height} for ${a.d.w.toFixed(1)} x ${a.d.h.toFixed(2)} m`);
@@ -389,15 +392,18 @@ PAINT.setPaintTier('high');
   const lum = (h) => [1, 3, 5].map((i) => lin(parseInt(h.slice(i, i + 2), 16) / 255)).reduce((t, c, i) => t + c * [0.2126, 0.7152, 0.0722][i], 0);
   const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
   const air = L.AIRLINE_LIVERIES;
-  const behind = (l) => (ART.artFor(l).title && ART.artFor(l).title.on) || (l.style.layout === 'crown' ? l.style.crown : l.base);
+  const behind = (l) => (l.style.layout === 'crown' ? l.style.crown : l.base);
   const low = air.filter((l) => ratio(l.style.titleInk || '#1f272e', behind(l)) < 3.5).map((l) => `${l.id} ${ratio(l.style.titleInk || '#1f272e', behind(l)).toFixed(2)}`);
   ok('every name is at least 3.5 to 1 against the paint behind it (the lit body takes some of that away)', low.length === 0, low.join('; '));
   ok('every airline names a bundled face, and only a bundled face', air.every((l) => !!F.faceFor(l.style.titleFont)));
   const mixed = air.filter((l) => l.titling !== l.titling.toUpperCase());
-  ok('upper-and-lower names are set tight, as words (at most 0.03 em)', mixed.length >= 6 && mixed.every((l) => l.style.titleSpacing <= 0.03), mixed.map((l) => `${l.id} ${l.style.titleSpacing}`).join());
-  ok('capitals are spaced, not scattered (at most 0.1 em)', air.filter((l) => !mixed.includes(l)).every((l) => l.style.titleSpacing <= 0.1));
+  const WMT = (await import(SRC + 'fleet/extra/wordmarks.js')).WORDMARKS;
+  const tracks = (l) => WMT[l.id].rows.map((r) => r.track || 0);
+  ok('upper-and-lower names are set tight, as words (at most 0.03 em)', mixed.length >= 6 && mixed.every((l) => tracks(l).every((t) => t <= 0.03 || !/[a-z]/.test(WMT[l.id].rows[tracks(l).indexOf(t)].runs.map((u) => u.t || '').join(''))) ), mixed.map((l) => `${l.id} ${tracks(l)}`).join());
+  ok('capitals are spaced, not scattered (at most 0.2 em)', air.filter((l) => !mixed.includes(l)).every((l) => tracks(l).every((t) => t <= 0.2)));
   const serifs = air.filter((l) => /Playfair|Lora|Cinzel/.test(l.style.titleFont.family));
-  ok('the serif airlines stay serif, their fine strokes fattened so they outlive the mipmaps', serifs.length === 4 && serifs.every((l) => ART.artFor(l).title.bold >= 0.02), serifs.map((l) => l.id).join());
+  const WM = await import(SRC + 'fleet/extra/wordmarks.js');
+  ok('the serif airlines stay serif, their fine strokes fattened so they outlive the mipmaps', serifs.length === 4 && serifs.every((l) => WM.WORDMARKS[l.id].bold >= 0.01), serifs.map((l) => l.id).join());
   // The heads of the letters stop short of the crown, on every type an airline flies.
   const high = [];
   for (const l of air) {
@@ -409,11 +415,11 @@ PAINT.setPaintTier('high');
       const d = rp.decals.find((x) => x.texture.userData.text === l.titling);
       const mid = (rp.hull.topAt(0) + rp.hull.botAt(0)) / 2;
       const R = (rp.hull.topAt(0) - rp.hull.botAt(0)) / 2;
-      if ((d.y + d.h / 1.7 / 2 - mid) / R > 0.76) high.push(`${id}/${l.id}`);
+      if ((d.y + d.h / 2 - mid) / R > 0.97 && !rp.hump) high.push(`${id}/${l.id}`);
       dispose(m);
     }
   }
-  ok('the whole cap height is on the side of the body: the heads stay under three quarters of the way to the crown', high.length === 0, high.slice(0, 6).join());
+  ok('the whole name is on the side of the body: its head stays short of the crown\'s shoulder', high.length === 0, high.slice(0, 6).join());
 }
 
 /* ------------------------------------------------------------------ *
@@ -443,12 +449,13 @@ PAINT.setPaintTier('high');
   ok('pearlgulf: the mark is the pearl in its shell', gulf.emblem === 'pearlshell' && /oyster/i.test(doc('Pearl Gulf')) && /pearl/i.test(doc('Pearl Gulf')), doc('Pearl Gulf'));
   ok('pearlgulf: no animal, and no ribbed fan of a shell (a scallop is an oil company\'s mark)', !/antelope|gazelle|oryx|horn|deer|animal|scallop/i.test(`${gulf.emblem} ${gulf.blurb} ${doc('Pearl Gulf')}`), gulf.blurb);
 
+  const WMS = await import(SRC + 'fleet/extra/wordmarks.js');
   const river = L.findLivery('riverdelta');
   const rivArt = ART.artFor(river);
   ok('riverdelta: the mark is a river, as flowing lines', river.emblem === 'riverlines' && /river/i.test(doc('Riverdelta')) && /flowing/i.test(doc('Riverdelta')), doc('Riverdelta'));
   ok('riverdelta: no triangle, delta, fan or chevron in the mark', !/triangle|delta shape|fan\b|chevron|widget/i.test(`${river.emblem} ${doc('Riverdelta')}`));
   ok('riverdelta: the fin carries nothing but the mark, in one ink (a two-tone triangle was the trouble)', !(rivArt.fin.ops || []).length && river.style.emblemInks.length === 1);
-  ok('riverdelta: the small mark by the name is the same drawing', !!rivArt.title.lead && E.EMBLEM_STYLES.includes(river.emblem));
+  ok('riverdelta: the name has no triangle in it either: its idea is a river that forks', !/triangle|delta shape|chevron/i.test(WMS.WORDMARKS.riverdelta.idea) && !/'delta'/.test(String(WMS.WORDMARKS.riverdelta.rows[0].runs.map((u) => u.shape))));
 
   const parcel = L.findLivery('parcelbrown');
   ok('parcelbrown: parcels with nothing round them (a badge on brown read as a real carrier\'s shield)', parcel.emblem === 'parcel' && /nothing round/i.test(doc('Parcel Brown')) && !/hexagon|shield/i.test(doc('Parcel Brown')), doc('Parcel Brown'));

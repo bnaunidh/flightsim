@@ -192,7 +192,7 @@ function wallTexture() {
       g.fill();
     }
     // The stencil.
-    g.font = '700 74px ui-monospace, Menlo, Consolas, monospace';
+    g.font = '700 74px "Barlow Condensed", "Arial Narrow", sans-serif';
     g.textAlign = 'center';
     g.fillStyle = 'rgba(214,226,242,0.13)';
     g.fillText('KESTREL ISLAND  ·  HANGAR 1', w * 0.5, h * 0.42);

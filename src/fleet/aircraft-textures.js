@@ -189,7 +189,7 @@ function paintFlyingSurface(config,tail=false) {
     if(!tail){
       ctx.fillStyle='rgba(35,43,42,.52)';ctx.fillRect(w*.015,h*.35,w*.055,h*.49);
       ctx.strokeStyle='rgba(47,51,44,.55)';ctx.lineWidth=1.2;ctx.strokeRect(w*.28,h*.29,w*.08,h*.19);
-      ctx.fillStyle='rgba(54,54,47,.78)';ctx.font='bold 9px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('NO STEP',w*.31,h*.66);
+      ctx.fillStyle='rgba(54,54,47,.78)';ctx.font='bold 9px "Titillium Web", Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('NO STEP',w*.31,h*.66);
       ctx.fillStyle='rgba(62,69,65,.48)';ctx.beginPath();ctx.arc(w*.322,h*.38,8,0,Math.PI*2);ctx.fill();
       line(ctx,w*.316,h*.38,w*.328,h*.38,'rgba(213,213,199,.75)',1.6);
     }
@@ -297,7 +297,7 @@ export function aircraftDecalTexture(text,{color:ink='#252f34',background='trans
       return;
     }
     const n=Math.max(text.length,1);let size=Math.min(h*.68,w/(n*(.66+spacing)));
-    ctx.font=fk?canvasFont(font,size):`${weight} ${size}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+    ctx.font=fk?canvasFont(font,size):`${weight} ${size}px "Titillium Web", Arial, sans-serif`;
     if(spacing>0&&'letterSpacing' in ctx){try{ctx.letterSpacing=`${(spacing*size).toFixed(2)}px`;}catch(e){/* an older canvas keeps the plain spacing */}}
     // A face of its own is measured, not guessed: a condensed one fills its band taller, a wide serif
     // is brought down to fit (fillText's maxWidth would squash it instead, and a squashed serif is the

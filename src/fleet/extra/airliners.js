@@ -56,16 +56,17 @@
 
 import * as THREE from '../../vendor/three.module.js';
 import { addInstanced } from '../common.js';
-import { aircraftDecalTexture, titleMetrics } from '../aircraft-textures.js';
-import { artFor, finBox, finUV, markCanvas } from './livery-art.js';
-import { realUVs, drawDecal } from './real-paint.js';
+import { aircraftDecalTexture } from '../aircraft-textures.js';
+import { layoutWordmark, stackedWordmark as wordmarkStack, wordmarkFor } from './wordmarks.js';
+import { titleRoom, titleSlot } from './title-slot.js';
+import { artFor, finBox, finUV } from './livery-art.js';
+import { realUVs, drawDecal, decalPatch } from './real-paint.js';
 import { AIRLINER_GEOMETRY as GEO } from '../../aircraft/extra/airliners.js';
 import { hull, turned } from '../../aircraft/models/civil-kit.js';
-import { textureTier } from '../../render/textures.js';
 import { whenFontsLoaded } from '../../render/airline-fonts.js';
 import {
-  piecewise, loftFuselage, placeFuselage, splitByZ, liveryTexture, finTexture, wingTexture, airlinerMaterials, glazing,
-  windowRows, buildDoors, turbofan, registration, meshOf, remapUV, DECAL,
+  piecewise, loftFuselage, placeFuselage, splitByZ, liveryTexture, finTexture, wordmarkTexture, wingTexture, airlinerMaterials, glazing,
+  windowRows, buildDoors, turbofan, registration, letterMaterial, meshOf, remapUV, DECAL,
 } from './airliner-kit.js';
 
 const mix = (a, b, t) => a + (b - a) * t;
@@ -127,12 +128,15 @@ function findByName(root, name) {
   return hit;
 }
 
-/** The name's band: its height, in cap heights (room for descenders under the line). */
-const BAND = 1.7;
+/** Every airline's registration: a squared technical sans, the same on every machine. */
+const REG_FONT = { family: 'Titillium Web', weight: 700, style: 'normal' };
 
 /** The fin of a config as a profile (./livery-art.js): the procedural fin is a box tapering root to tip. */
-function finProfile(fc) {
-  return { y0: fc.rootY, y1: fc.rootY + fc.height, le0: fc.rootZ, le1: fc.rootZ + fc.sweep, ch0: fc.rootChord, ch1: fc.tipChord };
+function finProfile(fc, hull = null) {
+  const P = { y0: fc.rootY, y1: fc.rootY + fc.height, le0: fc.rootZ, le1: fc.rootZ + fc.sweep, ch0: fc.rootChord, ch1: fc.tipChord };
+  // Where the body stops it: what sits below this is inside the tail cone, and nobody sees it.
+  if (hull) P.crown = (z) => hull.topAt(Math.min(hull.zMax, Math.max(hull.zMin, z)));
+  return P;
 }
 
 /** Wing numbers at spanwise station |x|, straight off the core's own formula. */
@@ -558,48 +562,33 @@ function dress(ctx, S) {
   const tw = S.windows.length ? (S.windows[0].y - h.botAt(S.cabinZ)) / (h.topAt(S.cabinZ) - h.botAt(S.cabinZ)) : 0.6;
   const bodyD = h.topAt(S.cabinZ) - h.botAt(S.cabinZ);
   const statics = { dz: 0.32 * bodyD, w: 0.16 * bodyD, h: 0.09 * bodyD, y: h.botAt(S.cabinZ) + 0.46 * bodyD };
-  // The name, set as a sign-writer sets it: the cap height a share of the body, the width what the
-  // word takes in its own face, starting behind the forward door and running aft. Too long for the
-  // band, the whole word comes down. (`titling` is the airliners' own; nothing else reads it.)
+  // The name, as a drawing (./wordmarks.js), in the room the aeroplane leaves it (./title-slot.js):
+  // behind the first door, over the windows, stopped short of the wing. (`titling` is the airliners'
+  // own; nothing else reads it.)
   const words = named ? [scheme.title, scheme.titling].find((w) => typeof w === 'string' && w.trim()) : null;
   const title = words ? words.trim() : null;
+  const mark = title && S.title ? wordmarkFor(scheme) : null;
   let lay = null;
-  if (title && S.title && art) {
-    const T = art.title || {};
-    const spacing = style && typeof style.titleSpacing === 'number' ? style.titleSpacing : 0.04;
+  if (mark) {
     const font = (style && style.titleFont) || null;
-    const em = titleMetrics(title, font, spacing);
-    const lead = T.lead ? 2.1 : 0;
-    const want = 0.24 * bodyD * (T.cap || 1);
-    const roomy = S.title.w * (T.room || 1);
-    // The foot of the letters stays where it is, just over the windows; their heads stop short of the
-    // crown, where the skin turns away and the sun's glint sits. A freighter's name has the side to itself.
-    const foot = S.title.y - 0.12 * bodyD;
-    const crown = 0.5 * (h.topAt(S.cabinZ) + h.botAt(S.cabinZ)) + 0.74 * 0.5 * bodyD;
-    const capM = Math.min(want, roomy / (em.width / em.cap + lead), art.freighter ? want : crown - foot);
-    const w = (capM / em.cap) * em.width;
-    const start = S.title.z - S.title.w / 2 + (T.dz || 0) * bodyD;
-    lay = {
-      spacing, font, capM, w, band: capM * BAND,
-      y: art.freighter ? h.botAt(S.cabinZ) + (T.t ?? 0.6) * bodyD : foot + capM / 2,
-      bold: T.bold || 0,
-      z: start + lead * capM + w / 2,
-      lead: T.lead ? { z: start + lead * capM * 0.4, size: capM * 1.75 } : null,
+    const room = titleRoom({
+      doors: S.doors, windows: S.windows, wing: c.wing, engines: c.titleEngines || c.engines,
+      top: (z) => h.topAt(z), bot: (z) => h.botAt(z), z0: first.z, z1: last.z, root: S.title.root, after: S.title.after, crown: S.title.crown, stop: S.title.stop,
+    });
+    const fit = (spec) => {
+      const L = layoutWordmark(spec, font);
+      const slot = titleSlot(room, L.aspect, L.h, S.doors, !!(art && art.freighter));
+      return slot && { ...slot, spec, cap: slot.h / L.h, font };
     };
+    // One line, unless the room is short and two rows would stand half as tall again.
+    const one = fit(mark);
+    const two = wordmarkStack(mark) && fit(wordmarkStack(mark));
+    lay = two && (!one || two.cap > 1.3 * one.cap) ? two : one;
   }
   const tex = liveryTexture({
     key: c.id, base, accent, line, along, vAt: vMain, cabinZ: S.cabinZ, bellyY: S.bellyY, z0: first.z, z1: last.z,
     laps: S.laps, cheat: S.cheat, doors: painted, radomeZ: S.radomeZ, bays, style, statics,
     art, artId: art ? scheme.id : '', tw, top: (z) => h.topAt(z), bot: (z) => h.botAt(z),
-    // The mark, small, ahead of the name: paint, so it faces forward on both sides as the fin's does.
-    extra: lay && lay.lead ? (g, W, H, U, V) => {
-      const m = markCanvas(scheme.emblem, art.title.lead.map(css), H >= 512 ? 256 : 128);
-      const { z, size } = lay.lead;
-      if ('imageSmoothingQuality' in g) g.imageSmoothingQuality = 'high';
-      const [x0, x1] = [U(z - size / 2), U(z + size / 2)];
-      const [y0, y1] = [V(z, lay.y + size / 2), V(z, lay.y - size / 2)];
-      g.drawImage(m, x0, y0, x1 - x0, y1 - y0);
-    } : null,
   });
   const M = airlinerMaterials(model, { livery: tex, base, style });
   placeFuselage(ctx, h, F.cuts, M.skin);
@@ -679,47 +668,21 @@ function dress(ctx, S) {
     // A registration is lettered in a plain medium-weight sans, spaced out,
     // as the real ones are stencilled.
     const regScale = art ? 1.2 : 1;
-    const tex2 = aircraftDecalTexture(reg, { color: (art && art.regInk) || (light ? '#1f272e' : '#e9eef2'), background: 'transparent', width: 512, height: 128, weight: 600, spacing: 0.08 });
-    registration(ctx, h, { text: reg, z: S.reg.z, y: S.reg.y, width: S.reg.w * regScale, texture: tex2 }, pieceOf(S.reg.z));
+    const tex2 = aircraftDecalTexture(reg, { color: (art && art.regInk) || (light ? '#1f272e' : '#e9eef2'), background: 'transparent', width: 512, height: 128, weight: 600, spacing: 0.08, font: REG_FONT, cap: 0.66 });
+    registration(ctx, h, { text: reg, z: S.reg.z, y: S.reg.y, width: S.reg.w * regScale, texture: tex2, like: M.skin }, pieceOf(S.reg.z));
     decals.push({ texture: tex2, z: S.reg.z, y: S.reg.y, w: S.reg.w * regScale, h: S.reg.w * regScale * 0.25 });
   }
-  // The titling line a scheme may carry — "UNITED STATES OF AMERICA" on Air
-  // Force One (aircraft/liveries.js), the only one that has ever asked for
-  // one. The pack's old skin (render/textures.js airframeTexture) painted it
-  // into the texture; here it is a decal in the band above the windows, from
-  // behind the forward door back towards the wing (S.title), in the scheme's
-  // cheatline colour, and registration() flips it per side so it reads
-  // left-to-right from both. Sixteen to one: the decal texture fits twenty
-  // or so characters at about two thirds of its width.
-  // ...and now every airline's name (aircraft/liveries.js `titling`), as the
-  // real ones wear it: the airliner models read `titling`, nothing else does,
-  // so a Skylark in Abyssinia colours stays a plain flying-school aeroplane.
+  // The name, on both sides, reading left to right on each: its own patch and its own sharp
+  // canvas, never the skin's, whose texels are spread over the whole aeroplane.
   if (lay) {
-    const dark0 = !light;
-    const tall = textureTier() === 'low' ? 64 : textureTier() === 'medium' ? 96 : 128;
-    const tex3 = aircraftDecalTexture(title, {
-      color: (style && style.titleInk) || '#1f272e', background: 'transparent', width: Math.min(2048, Math.round((tall * lay.w) / lay.band)), height: tall,
-      weight: (style && style.titleWeight) || 700, spacing: lay.spacing, font: lay.font, cap: Math.round(1000 / BAND) / 1000, bold: lay.bold,
-    });
-    registration(ctx, h, { text: title, z: lay.z, y: lay.y, width: lay.w, height: lay.band, texture: tex3, name: 'Titling', shade: art.title && art.title.on || dark0 ? 1 : 0.68 }, pieceOf(lay.z));
-    decals.push({ texture: tex3, z: lay.z, y: lay.y, w: lay.w, h: lay.band });
-  } else if (title && S.title) {
-    // The name in the airline's own ink and weight (style.titleInk,
-    // titleWeight, titleSpacing), else the cheatline colour; a 'billboard'
-    // layout sets it taller (ten to one rather than sixteen), as a freight
-    // or low-cost airline does.
-    const ink = (style && style.titleInk) || (typeof line === 'string' ? line : light ? '#1f272e' : '#e9eef2');
-    const billboard = !!(style && style.layout === 'billboard');
-    const ratio = billboard ? 10 : 16;
-    const tex3 = aircraftDecalTexture(title, {
-      color: ink, background: 'transparent', width: 128 * ratio, height: 128,
-      weight: (style && style.titleWeight) || 700, spacing: style && typeof style.titleSpacing === 'number' ? style.titleSpacing : 0.04,
-      // The airline's own typeface (aircraft/liveries.js style.titleFont, render/airline-fonts.js).
-      font: (style && style.titleFont) || null,
-    });
-    const tz = S.title.z;
-    registration(ctx, h, { text: title, z: tz, y: S.title.y, width: S.title.w, height: S.title.w / ratio, texture: tex3, name: 'Titling' }, pieceOf(tz));
-    decals.push({ texture: tex3, z: tz, y: S.title.y, w: S.title.w, h: S.title.w / ratio });
+    const tex3 = wordmarkTexture({ spec: lay.spec, text: title, font: lay.font, emblem: scheme.emblem, aspect: lay.w / lay.h });
+    registration(ctx, h, { text: title, z: lay.z, y: lay.y, width: lay.w, height: lay.h, texture: tex3, name: 'Titling', like: M.skin }, pieceOf(lay.z));
+    // Up on a 747's hump the skin is the hump's, not the tube's: the name goes on both, and each hides
+    // what lies inside the other.
+    if (hump && lay.z - lay.w / 2 < hump.zMax && lay.y + lay.h / 2 > hump.botAt(lay.z)) {
+      registration(ctx, hump, { text: title, z: lay.z, y: lay.y, width: lay.w, height: lay.h, texture: tex3, name: 'Titling on the hump', like: M.skin, upTo: hump.zMax - 0.1 }, pieceOf(lay.z));
+    }
+    decals.push({ texture: tex3, z: lay.z, y: lay.y, w: lay.w, h: lay.h, title: true, zone: lay.zone });
   }
   /*
    * REAL MODELS (src/aircraft/real-models.js): everything a downloaded
@@ -730,7 +693,7 @@ function dress(ctx, S) {
    */
   Object.defineProperty(ctx.exports, 'realPaint', {
     value: {
-      texture: tex, along, vAt: vMain, vHump, hull: h, hump, windows, panes: gz.outlines, decals,
+      texture: tex, along, vAt: vMain, vHump, hull: h, hump, windows, doors: S.doors, panes: gz.outlines, decals,
       // A turboprop's nacelle is half the wing's length: the body's colour, as most leave it.
       tail: tailColour, accent, base, cowl: style && style.cowl && c.engines.some((e) => e.kind === 'jet') ? style.cowl : base,
       cowlMap: M.cowl.map, wing: c.wing, engines: c.engines,
@@ -740,9 +703,9 @@ function dress(ctx, S) {
       // Lettered before the faces landed: call this to draw the skin again when they do.
       relayer: (fn) => whenFontsLoaded(fn),
       // (always: a type's coordinates are worked out once, whatever paint it was first seen in)
-      finProfile: c.fin && !c.fin.mirror && !c.fin.x ? finProfile(c.fin) : null,
+      finProfile: c.fin && !c.fin.mirror && !c.fin.x ? finProfile(c.fin, h) : null,
       wingMap: (colour) => wingTexture({ colour: '#' + colour.getHexString(), winglet: art && art.winglet }),
-      uvs: (root) => realUVs(root, ctx.exports.realPaint), decal: drawDecal,
+      uvs: (root) => realUVs(root, ctx.exports.realPaint), decal: drawDecal, patch: decalPatch, letter: letterMaterial,
     },
     enumerable: false,
   });
@@ -769,7 +732,7 @@ function dress(ctx, S) {
   // colour, one each side, where every real airline puts its own.
   if (named && scheme.emblem) {
     const inks = Array.isArray(style && style.emblemInks) && style.emblemInks.length ? style.emblemInks : [base];
-    finEmblem(ctx, scheme, art, finMat, { inks, tail: tailColour != null ? tailColour : accent });
+    finEmblem(ctx, scheme, art, finMat, { inks, tail: tailColour != null ? tailColour : accent, hull: h });
   }
   // Flap-track fairings: the canoes under the trailing edge every airliner
   // wing carries (not a turboprop's hinged flaps, not Concorde's delta).
@@ -825,10 +788,10 @@ function dress(ctx, S) {
  * the fin's shell and its rudder, and, through its own coordinates
  * (./real-paint.js), by a real model's fin.
  */
-function finEmblem(ctx, scheme, art, mat, { inks, tail }) {
+function finEmblem(ctx, scheme, art, mat, { inks, tail, hull }) {
   const fc = ctx.config.fin;
   if (!fc || !ctx.parts.verticalFin || fc.mirror || fc.x) return;
-  const profile = finProfile(fc);
+  const profile = finProfile(fc, hull);
   mat.map = finTexture({
     key: `${ctx.config.id}|${scheme.id}`, profile, art: art && art.fin, tail, emblem: scheme.emblem, inks: inks.map((k) => css(k)),
   });
@@ -933,7 +896,7 @@ const A320 = {
   reg: { z: 14.4, y: 0.95, w: 2.0 },
   // The titling band (schemes with words): above the window row, from
   // behind door 1 to over the wing.
-  title: { z: -3.3, y: 1.15, w: 16 },
+  title: { z: -3.3, y: 1.15, w: 16, root: -4.7 },
   frame: 0.065,
   panes: [
     { name: 'Windscreen', wiper: true, corners: [{ z: -14.56, x: 0.07 }, { z: -14.4, y: 0.37 }, { z: -13.99, y: 0.88 }, { z: -14.06, x: 0.07 }] },
@@ -1205,7 +1168,7 @@ const A380 = {
   cheat: { y0: -1.5, y1: -1.08, z0: -29.6, z1: 33.5 },
   reg: { z: 29.5, y: 1.9, w: 3.6 },
   // The titling band: between the two window rows, from behind door 1.
-  title: { z: -11.6, y: 1.0, w: 24 },
+  title: { z: -11.6, y: 1.0, w: 24, root: -16 },
   frame: 0.08,
   panes: [
     { name: 'Windscreen', wiper: true, corners: [{ z: -32.27, x: 0.08 }, { z: -32.1, x: 1.12 }, { z: -31.62, x: 1.16 }, { z: -31.68, x: 0.08 }] },

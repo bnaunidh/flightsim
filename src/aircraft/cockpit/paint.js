@@ -108,7 +108,7 @@ export function glassOver(ctx, x, y, r) {
 
 export function label(ctx, x, y, text, size = 15, color = DIM, align = 'center', weight = 600) {
   ctx.fillStyle = color;
-  ctx.font = `${weight} ${size}px "Helvetica Neue", Arial, sans-serif`;
+  ctx.font = `${weight} ${size}px "Titillium Web", Arial, sans-serif`;
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
   ctx.fillText(text, x, y);

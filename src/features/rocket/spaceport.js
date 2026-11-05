@@ -150,7 +150,7 @@ function deckTexture(kit) {
   g.setLineDash([]);
   // The pad's name, painted big where the camera can read it.
   g.fillStyle = 'rgba(245,246,247,0.9)';
-  g.font = `900 ${Math.round(px * 7)}px "Arial Black", Arial, sans-serif`;
+  g.font = `400 ${Math.round(px * 7)}px "Archivo Black", Arial, sans-serif`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillText('LC-1', X(-13), X(14));
@@ -191,7 +191,7 @@ function lzTexture(kit) {
   g.arc(m, m, S * 0.15, 0, Math.PI * 2);
   g.stroke();
   g.fillStyle = '#f5f6f7';
-  g.font = `900 ${Math.round(S * 0.11)}px "Arial Black", Arial, sans-serif`;
+  g.font = `400 ${Math.round(S * 0.11)}px "Archivo Black", Arial, sans-serif`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillText('LZ-1', m, m + S * 0.29);
@@ -250,7 +250,7 @@ function bargeTexture(kit, name) {
   hazard(g, 0, 0, W, 14, 12);
   hazard(g, 0, H - 14, W, 14, 12);
   g.fillStyle = 'rgba(245,246,247,0.85)';
-  g.font = `900 ${Math.round(H * 0.07)}px "Arial Black", Arial, sans-serif`;
+  g.font = `400 ${Math.round(H * 0.07)}px "Archivo Black", Arial, sans-serif`;
   g.textAlign = 'center';
   g.fillText(name, cx, H - 40);
   return tex(kit, c);
@@ -433,7 +433,7 @@ function hangarTexture(kit, accent) {
   });
   drawEmblem(g, ex + ew * 0.72, H * 0.38, ew * 0.2, accent);
   g.fillStyle = '#1d2a44';
-  g.font = `900 ${Math.round(H * 0.075)}px "Arial Black", Arial, sans-serif`;
+  g.font = `400 ${Math.round(H * 0.075)}px "Archivo Black", Arial, sans-serif`;
   g.textAlign = 'center';
   g.fillText('ISLAND SPACE CENTRE', ex + ew / 2, H * 0.82);
   // Plain face: [0.8, 1] is the cladding as drawn.

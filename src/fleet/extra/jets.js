@@ -74,7 +74,7 @@ function enginesOf(g, { kind = 'jet', names = null, prop = null } = {}) {
  */
 function dressWithout(ctx, S, { engines = false, fin = false } = {}) {
   const saved = ctx.config;
-  ctx.config = { ...saved, ...(engines ? { engines: [] } : {}), ...(fin ? { fin: null } : {}) };
+  ctx.config = { ...saved, ...(engines ? { engines: [], titleEngines: saved.engines } : {}), ...(fin ? { fin: null } : {}) };
   try {
     return dress(ctx, S);
   } finally {
@@ -398,7 +398,7 @@ const B737 = specOf(G737, {
   laps: [1.38, -0.75],
   cheat: { y0: -0.12, y1: 0.12, z0: -15.4, z1: 15.0 },
   reg: { z: 15.6, y: 0.85, w: 1.9 },
-  title: { z: -3.6, y: 1.1, w: 15 },
+  title: { z: -3.6, y: 1.1, w: 15, root: -5.1, crown: 1.94 },
   windows: [{ y: 0.42, z0: -12.6, z1: 12.4, pitch: 0.508, w: 0.24, ht: 0.34 }],
   doors: [
     { id: '#1', z: -14.25, y: 0.3, w: 0.86, h: 1.83, kind: 'passenger', sill: -0.62 },
@@ -462,7 +462,7 @@ const A321 = specOf(G321, {
   laps: [1.45, -0.8],
   cheat: { y0: -0.1, y1: 0.15, z0: -16.9, z1: 18.5 },
   reg: { z: 17.3, y: 0.95, w: 2.0 },
-  title: { z: -3.0, y: 1.15, w: 17 },
+  title: { z: -3.0, y: 1.15, w: 17, root: -4.7 },
   windows: [{ y: 0.4, z0: -14.3, z1: 14.6, pitch: 0.533, w: 0.235, ht: 0.33, skip: [[-9.15, -8.05], [5.85, 6.95]] }],
   doors: [
     { id: '#1', z: -15.95, y: 0.31, w: 0.81, h: 1.85, kind: 'passenger', sill: -0.62 },
@@ -526,7 +526,7 @@ const B787 = specOf(G787, {
   laps: [2.1, -1.2],
   cheat: { y0: -0.2, y1: 0.18, z0: -26.0, z1: 27.5 },
   reg: { z: 27.0, y: 1.6, w: 3.0 },
-  title: { z: -12.0, y: 1.45, w: 18 },
+  title: { z: -12.0, y: 1.45, w: 18, root: -8.3, crown: 2.93 },
   windows: [{ y: 0.5, z0: -19.5, z1: 23.3, pitch: 0.61, w: 0.3, ht: 0.5, skip: [[-9.95, -8.85], [8.05, 9.15]] }],
   doors: [
     { id: '#1', z: -21.6, y: 0.33, w: 1.07, h: 1.93, kind: 'passenger', sill: -0.65 },
@@ -599,7 +599,7 @@ const A350 = specOf(G350, {
   laps: [2.15, -1.25],
   cheat: { y0: -0.22, y1: 0.18, z0: -29.0, z1: 28.6 },
   reg: { z: 28.2, y: 1.6, w: 3.1 },
-  title: { z: -12.5, y: 1.5, w: 19 },
+  title: { z: -12.5, y: 1.5, w: 19, root: -11.3, crown: 2.75 },
   // The mask: the frame round the glazing is broad and black, the A350's face.
   frame: 0.2,
   windows: [{ y: 0.48, z0: -23.4, z1: 24.5, pitch: 0.56, w: 0.29, ht: 0.44, skip: [[-11.55, -10.45], [8.35, 9.45]] }],
@@ -670,7 +670,7 @@ const B777 = specOf(G777, {
   laps: [2.2, -1.3],
   cheat: { y0: -0.2, y1: 0.2, z0: -31.0, z1: 33.4 },
   reg: { z: 32.8, y: 1.6, w: 3.3 },
-  title: { z: -14.0, y: 1.5, w: 20 },
+  title: { z: -14.0, y: 1.5, w: 20, root: -9.9, stop: -5.8 },
   windows: [{ y: 0.48, z0: -24.8, z1: 28.3, pitch: 0.533, w: 0.27, ht: 0.42, skip: [[-13.35, -12.25], [4.05, 5.15], [17.05, 18.15]] }],
   doors: [
     { id: '#1', z: -26.0, y: 0.35, w: 1.07, h: 1.93, kind: 'passenger', sill: -0.62 },
@@ -747,7 +747,7 @@ const Q400 = specOf(GQ4, {
   cheat: { y0: -0.15, y1: 0.08, z0: -13.0, z1: 13.0 },
   reg: { z: 12.5, y: 0.6, w: 1.5 },
   // Between door 1 and the propeller's arc: aft of the nacelles the schemes' shapes run under it.
-  title: { z: -8.5, y: 0.78, w: 6.0 },
+  title: { z: -8.5, y: 0.78, w: 6.0, after: 3.4 },
   // The download has no skin at all in these two patches of the cabin wall: the sky showed through (./real-paint.js).
   holes: [[-10.6, -5.4, -0.15, 0.62], [2.8, 5.8, 0.15, 0.62]],
   windows: [{ y: 0.28, z0: -10.9, z1: 8.3, pitch: 0.64, w: 0.25, ht: 0.34 }],

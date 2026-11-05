@@ -157,7 +157,7 @@ export function drawCrashMarks(ctx, marks, centre, span, size, now, map, newestM
       cross(ctx, x, y, r, fill, m.mine ? 'rgba(20, 16, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)', scale);
     }
     if (m.count > 1) {
-      ctx.font = `700 ${Math.round(7 * scale)}px system-ui, sans-serif`;
+      ctx.font = `700 ${Math.round(7 * scale)}px "Jost", Arial, sans-serif`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.lineWidth = 2.2;

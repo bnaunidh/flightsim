@@ -94,9 +94,8 @@ export async function check(sim, r, say) {
       const liv = (await import('../../src/aircraft/liveries.js')).findLivery('krd');
       const sw = named.find((b) => b.dataset.hsSwname === liv.name);
       sw.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
-      const ink = new (await import('../../src/vendor/three.module.js')).Color(liv.style.titleInk);
       const shown = getComputedStyle(line);
-      r.ok('hangar: the paint\'s name wears the fuselage\'s face and ink', line.dataset.font === liv.style.titleFont.family && shown.color === `rgb(${Math.round(parseInt(liv.style.titleInk.slice(1, 3), 16))}, ${parseInt(liv.style.titleInk.slice(3, 5), 16)}, ${parseInt(liv.style.titleInk.slice(5, 7), 16)})` && !!ink, `${line.dataset.font} ${shown.color}`);
+      r.ok('hangar: the paint\'s name is the wordmark the fuselage wears, on a plate of its paint', line.dataset.font === liv.style.titleFont.family && line.classList.contains('has-wordmark') && /url\(.*data:image\/png/.test(shown.backgroundImage) && /KANAL|Kanal/.test(line.textContent), `${line.dataset.font}, ${shown.backgroundImage.slice(0, 40)}`);
       sw.dispatchEvent(new PointerEvent('pointerout', { bubbles: true }));
     }
     if (ui.loading) await ui.loading.catch(() => {});

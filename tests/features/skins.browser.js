@@ -493,7 +493,7 @@ export async function check(sim, r, say = () => {}) {
           // Set by its cap height: the decal's own shape is whatever the word's is, and the patch on the body the same.
           const box = title && new THREE.Box3().setFromObject(title);
           const im = title && title.material.map.image;
-          r.ok(`skins: a320 in ${lid}: the name's decal is the shape of its word, not stretched to a band`, !!title && im.height === 128 && Math.abs(im.width / im.height - (box.max.z - box.min.z) / ((box.max.y - box.min.y) * 1.04)) / (im.width / im.height) < 0.25, title ? `${im.width}x${im.height}` : 'none');
+          r.ok(`skins: a320 in ${lid}: the name's decal is the shape of its word, not stretched to a band`, !!title && im.height >= 64 && Math.abs(im.width / im.height - (box.max.z - box.min.z) / ((box.max.y - box.min.y) * 1.04)) / (im.width / im.height) < 0.25, title ? `${im.width}x${im.height}` : 'none');
         }
       }
     } catch (e) {

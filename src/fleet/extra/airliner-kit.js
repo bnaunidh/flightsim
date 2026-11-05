@@ -33,6 +33,8 @@ import * as THREE from '../../vendor/three.module.js';
 import { addInstanced } from '../common.js';
 import { helicopterReflectionEnvironment } from '../helicopter.js';
 import { textureTier } from '../../render/textures.js';
+import { fontKey, fontReady, whenFontsLoaded } from '../../render/airline-fonts.js';
+import { paintWordmark } from './wordmarks.js';
 import { paintHasClearcoat } from '../../render/paint.js';
 import { hull, turned } from '../../aircraft/models/civil-kit.js';
 import {
@@ -540,6 +542,42 @@ export function finTexture({ key, profile, art, tail, emblem, inks }) {
 }
 
 /**
+ * A name's own canvas (./wordmarks.js): sized by the tier, kept to the drawing's
+ * proportions, shared by every aeroplane of the airline. Drawn again when the
+ * faces land if they were late.
+ */
+export function wordmarkTexture({ spec, text, font, emblem, aspect }) {
+  const tier = tierCache();
+  // (the shape in the key: one lettered before the faces landed is measured in another)
+  const id = `airliner-wordmark|${spec.key || spec.reads}|${text}|${tier}|${aspect.toFixed(2)}`;
+  if (textures.has(id)) return textures.get(id);
+  const tall = tier === 'ultra' ? 256 : tier === 'high' ? 176 : tier === 'medium' ? 128 : 88;
+  const W = Math.min(2048, Math.round(tall * aspect));
+  const H = Math.max(16, Math.round(W / aspect));
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const g = canvas.getContext('2d');
+  paintWordmark(g, spec, font, W, H, emblem);
+  const t = new THREE.CanvasTexture(canvas);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  t.name = `${id}|${fontKey(font)}|${spec.inks[0]}`;
+  t.userData.text = text;
+  t.userData.font = fontKey(font);
+  if (!fontReady(font)) {
+    t.userData.fallback = true;
+    whenFontsLoaded(() => {
+      paintWordmark(g, spec, font, W, H, emblem);
+      t.userData.fallback = false;
+      t.needsUpdate = true;
+    });
+  }
+  textures.set(id, t);
+  return t;
+}
+
+/**
  * A real wing's paint: u root to tip, the last eighth the winglet; the top
  * half of the canvas the upper surface, nose edge at the top of it, the bottom
  * half the lower surface. The leading-edge strip, the skin lines, the flap
@@ -924,6 +962,20 @@ export function turbofan(ctx, group, e, mats, { segments = 18 } = {}) {
  * ------------------------------------------------------------------ */
 
 /**
+ * The stuff lettering is printed in: the paint it sits on (`like`, the skin's
+ * material), lit by the same sun and the same sky, so white letters are as
+ * bright as white paint at noon and at midnight; but dead flat, so the glint
+ * off the crown does not wash out the tops of the letters.
+ */
+export function letterMaterial(map, like = null) {
+  return new THREE.MeshStandardMaterial({
+    map, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    roughness: 0.95, metalness: 0,
+    envMap: (like && like.envMap) || null, envMapIntensity: like ? like.envMapIntensity : 1,
+  });
+}
+
+/**
  * The registration, as a decal laid on the hull on both sides, reading
  * left-to-right from either side. In place of the pack's, which it laid on
  * its own cylinder and which is gone with it.
@@ -933,12 +985,10 @@ export function turbofan(ctx, group, e, mats, { segments = 18 } = {}) {
  * quarter of the width, the registration texture's own shape), under its
  * own `name`.
  */
-export function registration(ctx, h, { text, z, y, width, height, colour, texture, name = 'Airframe registration', shade = 1 }, parent) {
+export function registration(ctx, h, { text, z, y, width, height, colour, texture, name = 'Airframe registration', shade = 1, like = null, upTo = Infinity }, parent) {
   if (!text || !texture) return;
-  const mat = ctx.model.userData.ownMaterial(new THREE.MeshBasicMaterial({
-    map: texture, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, toneMapped: true,
-  }));
-  mat.color.setScalar(shade); // unlit: `shade` is what the sun would leave of a dark name on a lit side
+  const mat = ctx.model.userData.ownMaterial(letterMaterial(texture, like || (ctx.materials && ctx.materials.skin)));
+  mat.color.setScalar(shade);
   height = height || width * 0.25;
   /*
    * Out of the facets, like every other decal (windowRows): 3 cm off the
@@ -951,17 +1001,21 @@ export function registration(ctx, h, { text, z, y, width, height, colour, textur
    * band this tall is a step of three or four degrees, a sag under a
    * millimetre.
    */
+  const zA = z - width / 2;
+  const zB = Math.min(z + width / 2, upTo); // (a hump stops short of a long name)
+  const mid = (zA + zB) / 2;
   for (const side of [1, -1]) {
-    const s0 = h.angleAt(z, y + height / 2);
-    const s1 = h.angleAt(z, y - height / 2);
-    const quad = [[z - width / 2, s0], [z + width / 2, s0], [z + width / 2, s1], [z - width / 2, s1]];
-    const g = skinPatch(h, quad, side, 0.03, 8, 6, null);
-    // u along the patch from its quad corner a to b (nose to tail), v top to bottom.
+    const s0 = h.angleAt(mid, y + height / 2);
+    const s1 = h.angleAt(mid, y - height / 2);
+    const quad = [[zA, s0], [zB, s0], [zB, s1], [zA, s1]];
+    // (5 cm out: over a door's top frame where the name crosses one, which stands proud of the skin)
+    const g = skinPatch(h, quad, side, 0.05, 8, 6, null);
+    // u along the name, reading left to right from each side; v by height, not by angle round the body,
+    // or a tall name is squashed at its top.
     const uv = g.attributes.uv;
     const pos = g.attributes.position;
     for (let i = 0; i < uv.count; i++) {
-      const u = uv.getX(i);
-      // v by height, not by angle round the body, or a tall name is squashed at its top.
+      const u = (pos.getZ(i) - zA) / width;
       uv.setXY(i, side > 0 ? 1 - u : u, (pos.getY(i) - y + height / 2) / height);
     }
     const m = meshOf(ctx, name, g, mat, parent);

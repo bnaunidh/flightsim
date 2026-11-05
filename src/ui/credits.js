@@ -180,7 +180,7 @@ export const CREDITS_HTML = `
   <div class="credit-block">
     <h3>Typography</h3>
     <p>The interface uses the system font stack (<code>-apple-system, Segoe UI, Roboto, Helvetica, Arial</code>), so text renders instantly.
-    The airlines&rsquo; names on the aeroplanes are lettered in twelve open-source typefaces, bundled in <code>assets/fonts/</code> and cached for offline play:</p>
+    The game is set in Jost and Barlow Condensed, its instruments in Titillium Web, and the airlines&rsquo; names on the aeroplanes are drawn from twelve open-source typefaces, all bundled in <code>assets/fonts/</code> and cached for offline play:</p>
     <table class="credit-table">
       <thead><tr><th>Typeface</th><th>Designers</th><th>Licence</th><th>Source</th></tr></thead>
       <tbody>

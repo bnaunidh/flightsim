@@ -121,6 +121,22 @@ export function previewDef() {
   return DEF;
 }
 
+/** The level ground, each town's carrying what its street plan needs (worldmap/town-grid.js). */
+function townFlats(P) {
+  const flats = deepCopy(P.flats);
+  for (const f of flats) {
+    if (f.kind !== 'town') continue;
+    const cx = (f.x0 + f.x1) / 2;
+    const cz = (f.z0 + f.z1) / 2;
+    const t = (P.towns || []).find((q) => Math.hypot(q.cx - cx, q.cz - cz) < 20);
+    if (!t) continue;
+    const a = t.airport && (P.airports || []).find((q) => q.id === t.airport);
+    const i = !a && t.island && (P.islands || []).find((q) => q.name === t.island);
+    f.town = { name: t.name, airport: t.airport ?? null, count: t.count, towers: t.towers || 0, towerMaxH: t.towerMaxH || 0, village: !!t.village, region: a ? a.region : i ? i.region : null };
+  }
+  return flats;
+}
+
 /** A definition from layout data (the tool builds candidates with this). */
 export function makeDef(P) {
   const def = {
@@ -143,7 +159,7 @@ export function makeDef(P) {
     streamTerrain: true,
     // Forests, farmland, heath and marsh (worldmap/landcover.js), painted by worldmap/world-terrain.js.
     landcover: true,
-    flats: deepCopy(P.flats),
+    flats: townFlats(P),
     // The ground's shape (terrain.js relief, rivers, lakes): where it must stay calm, and the waters.
     calm: deepCopy(P.calm || []),
     rivers: deepCopy(P.rivers || []),

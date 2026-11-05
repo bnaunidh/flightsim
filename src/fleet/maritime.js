@@ -361,7 +361,7 @@ export function carrierDeckTexture() {
     for (const t of [-57, -48, -39]) for (const side of [-5, 5]) line([point(t, side), point(t + 5, side)], '#d6d5c5', 14);
     line([[11, -137], [11, -28]], '#bdc1b9', 6); line([[13, -137], [13, -28]], '#1f272d', 3);
     line([[-11, -135], [-11, -82]], '#b7bbb3', 5);
-    c.font = 'bold 68px sans-serif'; c.fillStyle = '#d2d2c5'; c.fillText('11', px(17), py(-117));
+    c.font = 'bold 68px "Jost", Arial, sans-serif'; c.fillStyle = '#d2d2c5'; c.fillText('11', px(17), py(-117));
     c.strokeStyle = '#c9bd7d'; c.lineWidth = 3;
     c.setLineDash([7, 10]); c.strokeRect(px(17), py(-35), 16 / 72 * w, 112 / 300 * h); c.setLineDash([]);
     // Subtle touchdown rubber follows the angled approach, not the keel.

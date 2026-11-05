@@ -19,7 +19,7 @@
  *     on a dark belly), the fan cowls wear the cowl skin with its ring, and no
  *     wing wears the cowl's;
  *   - winglets take the scheme's colour;
- *   - the name reads left to right on both sides, and is not stretched;
+ *   - the name is its own patch of the hull, reads left to right on both sides, and is not stretched;
  *   - on every type of every airline, the name is at least 3:1 against the paint
  *     directly behind it, and its letters are heavy enough to hold up;
  *   - a skin lettered before the faces landed is lettered again when they do.
@@ -204,8 +204,8 @@ export async function check(sim, r, say = () => {}) {
     // The fin.
     for (const o of p.fin || []) {
       if (!o.material.map || !/airliner-fin/.test(o.material.map.name)) bad.push('fin without its canvas');
-      const uv = o.geometry.attributes.uv;
-      for (let i = 0; uv && i < uv.count; i++) if (uv.getX(i) < -0.05 || uv.getX(i) > 1.05 || uv.getY(i) < -0.05 || uv.getY(i) > 1.05) { bad.push('fin off its canvas'); break; }
+      // Corners may run past the canvas (a fillet): the canvas's edge is what they get, so it must clamp.
+      if (o.material.map && o.material.map.wrapS !== THREE.ClampToEdgeWrapping) bad.push('fin canvas repeats');
     }
     // No body in the wing's mesh: every triangle in it reaches out past the fuselage, or is the tailplane's or a nacelle's.
     const hull = rp.hull;
@@ -239,27 +239,21 @@ export async function check(sim, r, say = () => {}) {
     }
     // The wing's own paint, the winglet in it.
     for (const o of p.wing || []) if (!o.material.map || !/airliner-wing/.test(o.material.map.name) || !o.material.map.name.includes(new THREE.Color(ART.artFor(scheme).winglet).getHexString())) bad.push(`wing paint ${o.material.map && o.material.map.name}`);
-    // The name: the two sides of the canvas are the mirror of one another across the patch.
-    const skinMesh = p.skin_l[0];
-    const canvas = skinMesh.material.map.image;
+    // The name: its own patch of this hull, not paint in the skin, reading left to right from each side.
     const d = rp.decals.find((x) => x.texture.userData.text === scheme.titling);
     if (!d) bad.push('no titles');
-    else if (canvas.getContext) {
-      const W2 = canvas.width;
-      const H2 = canvas.height / 2;
-      const [x0, x1] = [Math.round(rp.along(d.z - d.w / 2) * W2), Math.round(rp.along(d.z + d.w / 2) * W2)];
-      const y = Math.round((1 - rp.vAt(d.z, d.y)) * H2);
-      const g = canvas.getContext('2d');
-      const a = g.getImageData(x0, y, x1 - x0, 1).data;
-      const b = g.getImageData(x0, y + H2, x1 - x0, 1).data;
-      let same = 0;
-      let flip = 0;
-      const n = x1 - x0;
-      for (let i = 0; i < n; i++) {
-        same += Math.abs(a[i * 4] - b[i * 4]);
-        flip += Math.abs(a[i * 4] - b[(n - 1 - i) * 4]);
+    else {
+      const patch = (p.real_title || [])[0];
+      if (!patch || !d.meshed) bad.push('the name has no patch on this hull');
+      else {
+        const q = patch.geometry.attributes.position;
+        const uv = patch.geometry.attributes.uv;
+        const dir = [0, 0];
+        for (let t = 0; t + 2 < q.count; t += 3) {
+          for (const [i, j] of [[t, t + 1], [t + 1, t + 2], [t + 2, t]]) dir[q.getX(t) < 0 ? 0 : 1] += (uv.getX(j) - uv.getX(i)) * (q.getZ(j) - q.getZ(i));
+        }
+        if (!(dir[0] > 0 && dir[1] < 0)) bad.push(`the name reads the same way round on both sides (${dir.map((v) => v.toFixed(1))})`);
       }
-      if (!(flip < same)) bad.push(`the name reads the same way round on both halves (${flip} / ${same})`);
       // The mark faces forward on both sides, so the two faces of the fin take one canvas (node checks it); and
       // the name's own proportions: the patch's shape in metres is the texture's.
       const im = d.texture.image;
@@ -333,7 +327,7 @@ export async function check(sim, r, say = () => {}) {
     const rp = m.userData.realPaint;
     const d = rp.decals.find((x) => x.texture.userData.text === 'Cold Start');
     const held = d && d.texture.userData.fallback === true;
-    const map = parts(m.userData.realModel.skin).skin_l[0].material.map;
+    const map = d.texture; // the name's own canvas: a patch of the hull wears it (fleet/extra/real-paint.js decalPatch)
     const before = map.version;
     land();
     r.ok('real livery: a name lettered before the faces landed is drawn again, on the real skin too', held && d.texture.userData.fallback !== true && map.version > before, `v${before} -> v${map.version}`);

@@ -51,18 +51,18 @@ html.xhair-square .hsk-seeker { display: none !important; }
 .gsk-box.is-acquire { color: #ffd24a; }
 .gsk-box.is-locked { color: #ff3b30; }
 .gsk-box .gsk-tag { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 5px; white-space: nowrap; padding: 1px 7px; border-radius: 4px;
-  background: rgba(10,16,24,0.78); font: 800 11px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: 0.08em; color: inherit; }
+  background: rgba(10,16,24,0.78); font: 800 11px/1.5 var(--font); letter-spacing: 0.08em; color: inherit; }
 .gsk-arrow { position: fixed; left: 0; top: 0; width: 0; height: 0; margin: 0; will-change: transform; color: #8fe8ff; }
 .gsk-arrow::before { content: ''; position: absolute; left: -11px; top: -14px; border-left: 11px solid transparent; border-right: 11px solid transparent; border-bottom: 20px solid currentColor;
   filter: drop-shadow(0 0 3px rgba(0,0,0,0.7)); }
 .gsk-arrow.is-acquire { color: #ffd24a; }
 .gsk-arrow.is-locked { color: #ff3b30; }
-.gsk-arrow b { position: absolute; left: -44px; top: 9px; width: 88px; text-align: center; font: 800 11.5px/1.15 system-ui, -apple-system, 'Segoe UI', sans-serif; color: #fff; letter-spacing: 0.04em;
+.gsk-arrow b { position: absolute; left: -44px; top: 9px; width: 88px; text-align: center; font: 800 11.5px/1.15 var(--font); color: #fff; letter-spacing: 0.04em;
   text-shadow: 0 0 4px rgba(0,0,0,0.9), 0 0 2px #000; }
 .gsk-btn { position: fixed; z-index: 31; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer; border-radius: 50%; color: #fff;
   border: 3px solid #1b1030; font: 900 13px/1.05 "Arial Black", Impact, sans-serif; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center;
   box-shadow: 0 5px 0 #1b1030, 0 8px 18px rgba(0,0,0,0.35); background: radial-gradient(circle at 35% 30%, #b8f0ff, #3fb6e6 60%, #1c7fb0); }
-.gsk-btn small { font: 700 10px/1.1 system-ui, sans-serif; opacity: 0.9; margin-top: 2px; }
+.gsk-btn small { font: 700 10px/1.1 var(--font); opacity: 0.9; margin-top: 2px; }
 .gsk-btn.is-down { transform: translateY(3px); box-shadow: 0 2px 0 #1b1030; }
 .gsk-btn.is-held { background: radial-gradient(circle at 35% 30%, #ffe08a, #ffb02f 60%, #c98212); }
 html.is-touch-device .gsk-btn { display: flex; }

@@ -46,6 +46,8 @@ import { outstationSteps, pavedTest, towerLens, buildDressing } from '../world/w
 import { carrierProxyGeometry } from '../world/worldmap/field-look.js';
 import { Horizon } from '../world/worldmap/horizon.js';
 import { Flora, floraContext, SPECIES as FLORA_SPECIES } from '../world/worldmap/flora.js';
+import { TownStream } from '../world/worldmap/town-stream.js';
+import { townContext, planDowntown, townStreets } from '../world/worldmap/town-grid.js';
 import { makeWorldTerrainMaterial } from '../world/worldmap/world-terrain.js';
 import { buildWaters } from '../world/worldmap/waters.js';
 import { buildNetworkLook } from '../world/worldmap/network-look.js';
@@ -136,7 +138,7 @@ export const CARD_TIERS = Object.freeze({
   high: Object.freeze({ radius: 1800, perCell: 2400, shadows: false }),
   ultra: Object.freeze({ radius: 2600, perCell: 3200, shadows: false }),
 });
-import { treeGeometry, addTreeSourceLater } from '../world/scenery.js';
+import { treeGeometry, addTreeSourceLater, setTownPlanner } from '../world/scenery.js';
 import { setRenderOrigin } from '../render/render-origin.js';
 import { setNavField, navField, landingDir, papiFor } from '../world/navfield.js';
 import { icon } from '../ui/icons.js';
@@ -247,6 +249,8 @@ function teardown(sim) {
   if (S.horizon) S.horizon.dispose();
   if (S.flora) S.flora.dispose();
   if (S.cards) S.cards.dispose();
+  if (S.towns) S.towns.dispose();
+  S.towns = null;
   if (S.props) S.props.dispose();
   if (S.far) S.far.dispose();
   S.far = null;
@@ -313,6 +317,35 @@ function setTowers(sim) {
   if (sim && sim.rig) sim.rig.towers = active() ? PREVIEW.airports.map(towerLens).filter(Boolean) : null;
 }
 
+/** The towns' street plans for this world build (one per set of flats: the ground, the buildings and the hub's Scenery share it). */
+let TOWN_CTX = null;
+function worldTownContext() {
+  if (!TOWN_CTX || TOWN_CTX.flats !== Terrain.FLATS) {
+    TOWN_CTX = { flats: Terrain.FLATS, ctx: townContext(PREVIEW, Terrain.FLATS, (MAP.waters && MAP.waters.roads) || []) };
+  }
+  return TOWN_CTX.ctx;
+}
+
+/**
+ * The town Scenery builds itself (the hub's): the same street plan as every other town, so
+ * its buildings stand on the streets the ground has. (scenery.js planTown asks this.)
+ */
+function planWorldTown(cfg, density) {
+  const ctx = worldTownContext();
+  const F = ctx.towns.find((t) => Math.hypot(t.cx - cfg.cx, t.cz - cfg.cz) < 30);
+  if (!F) return null;
+  const share = density >= 1 ? 0.85 : density >= 0.6 ? 0.7 : 0.45;
+  const spots = planDowntown(Terrain, ctx, F, { want: Math.max(12, Math.round((cfg.count || 40) * share)), towers: Math.round((cfg.towers || 0) * share), towerMaxH: cfg.towerMaxH });
+  return { cfg, spots, streets: townStreets(F) };
+}
+
+/** The garden trees: the woods' own cards, tinted per tree (worldmap/tree-cards.js). */
+let GARDEN_TREES = null;
+function gardenTreeMaterial() {
+  if (!GARDEN_TREES) GARDEN_TREES = cardMaterial();
+  return GARDEN_TREES;
+}
+
 function buildWorld(sim, group) {
   const pieces = buildWorldSteps(sim, group);
   while (!pieces.next().done);
@@ -328,6 +361,7 @@ function* buildWorldSteps(sim, group) {
   // terrain.js's ground with the land cover painted on (worldmap/world-terrain.js).
   const mat = makeWorldTerrainMaterial(q, S.ring ? S.ring.RING_LOOK : undefined);
   const fctx = floraContext(PREVIEW);
+  fctx.town = worldTownContext();
   S.stream = new TerrainStream({ T: Terrain, material: mat, group, quality: q, def: MAP, flora: fctx });
   // A 400 km sea: the floating origin for drawing (render/render-origin.js), and a far plane out to the horizon's islands.
   setRenderOrigin({});
@@ -381,6 +415,13 @@ function* buildWorldSteps(sim, group) {
     });
     group.add(S.cards.group);
   } else S.cards = null;
+  // Every town's buildings, right out to the suburbs (worldmap/town-stream.js).
+  S.towns = new TownStream({
+    ctx: fctx.town, T: Terrain, worker: S.stream.worker && !S.stream.workerFailed ? S.stream.worker : null, gen: S.stream.gen, quality: q,
+    addObstacle: Terrain.addObstacle, obstacles: Terrain.OBSTACLES, workerOk: () => !!(S.stream && S.stream.worker && !S.stream.workerFailed),
+    treeShape: cardGeometry, treeMaterial: gardenTreeMaterial(),
+  });
+  group.add(S.towns.group);
   yield;
   // The ground the first frame needs, now, behind the loading screen.
   const r = RUNWAY;
@@ -388,7 +429,7 @@ function* buildWorldSteps(sim, group) {
   yield;
   const t1 = performance.now();
   const dep = departure();
-  S.out = yield* outstationSteps(PREVIEW, dep.id, q);
+  S.out = yield* outstationSteps(PREVIEW, dep.id, q, { T: Terrain, ctx: fctx.town });
   yield;
   // The field you start from is airport.js's; its own landmarks (the persona's
   // shelters, radomes, silos, lighthouse...: worldmap/personas.js) are these.
@@ -407,7 +448,7 @@ function* buildWorldSteps(sim, group) {
   // The landing aids at whichever field you are at (updateNav, every frame).
   sim.navPapi = (pos, mainHint) => navPapi(pos, mainHint);
   yield;
-  prewarm(sim, [S.out.group, S.flora.group, S.cards && S.cards.group, S.horizon.mesh, S.waters, S.network, S.props && S.props.group, ...(S.far ? S.far.roots() : [])]);
+  prewarm(sim, [S.out.group, S.flora.group, S.cards && S.cards.group, S.towns && S.towns.group, S.horizon.mesh, S.waters, S.network, S.props && S.props.group, ...(S.far ? S.far.roots() : [])]);
   yield;
   S.builtFor = { id: dep.id, quality: q, ms: performance.now() - t0 };
   startTraffic(sim, q);
@@ -1017,7 +1058,7 @@ function drawSketch(cv) {
     g.fill();
   }
   const A = PREVIEW.airports;
-  g.font = '600 10px system-ui, sans-serif';
+  g.font = '600 10px "Jost", Arial, sans-serif';
   for (const a of A) {
     g.fillStyle = '#1b1f24';
     g.fillRect(X(a.x) - 3, Z(a.z) - 1.5, 6, 3);
@@ -1342,6 +1383,7 @@ registerExtension({
       R._wpWrapped = true;
       R.activeTarget = () => orig() || worldTarget(sim);
     }
+    setTownPlanner(planWorldTown);
     sim.worldPreview = {
       id: WORLD_PREVIEW_ID,
       active,
@@ -1379,6 +1421,7 @@ registerExtension({
       horizon: () => S.horizon,
       flora: () => S.flora,
       cards: () => S.cards,
+      towns3d: () => S.towns,
       navField: () => navField(),
       warp: () => ({ ...S.warp, blocked: warpBlocked(sim), scale: sim.timeScale || 1 }),
       cycleWarp: () => cycleWarp(sim),
@@ -1460,8 +1503,10 @@ registerExtension({
     if (S.far) S.far.update();
     if (S.flora && cam) S.flora.update(cam, sim.state === 'flying' ? sim.aircraft : null, 1.2);
     if (S.cards && cam) S.cards.update(cam, null, 0.8);
+    if (S.towns && cam) S.towns.update(cam, sim.state === 'flying' ? sim.aircraft : null, 0.8);
     if (S.props && cam) S.props.update(cam, dt);
     if (S.out) S.out.update(dt, sim.weather, cam);
+    if (S.towns && S.out) S.towns.setGlow(Math.max(0, S.out.glow));
     if (S.dressing && S.dressing.userData.lights) {
       const w = sim.weather;
       S.dressing.userData.lights.visible = !!(w && (w.isNight || w.time === 'sunset' || w.time === 'dusk'));

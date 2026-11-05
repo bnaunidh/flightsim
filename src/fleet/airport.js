@@ -49,7 +49,7 @@ function industrialTexture(kind = 'metal', color = '#999d98', label = '') {
     noise(ctx, w, h, 611, 2400, .15);
     if (label) {
       ctx.fillStyle = '#ddd9cb'; ctx.fillRect(64, 180, 384, 104);
-      ctx.fillStyle = '#252c31'; ctx.textAlign = 'center'; ctx.font = 'bold 36px sans-serif';
+      ctx.fillStyle = '#252c31'; ctx.textAlign = 'center'; ctx.font = 'bold 36px "Jost", Arial, sans-serif';
       ctx.fillText(label, w / 2, 242);
     }
   });
@@ -59,7 +59,7 @@ function signTexture(text, background = '#d9b24c', foreground = '#292c29') {
     ctx.fillStyle = background; ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = foreground; ctx.lineWidth = 10; ctx.strokeRect(14, 14, w - 28, h - 28);
     ctx.fillStyle = foreground; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const rows = text.split('\n'); ctx.font = `bold ${rows.length > 1 ? 47 : 68}px sans-serif`;
+    const rows = text.split('\n'); ctx.font = `bold ${rows.length > 1 ? 47 : 68}px "Jost", Arial, sans-serif`;
     rows.forEach((row, i) => ctx.fillText(row, w / 2, h / 2 + (i - (rows.length - 1) / 2) * 60, w - 44));
   });
 }
@@ -267,7 +267,7 @@ export function runwayTexture({ near = '18', far = '36' } = {}) {
     // Read from the approach: the top of each number points down the runway, away from its own end.
     for (const [text, y, flip] of [[near, H * .085, true], [far, H * .915, false]]) {
       ctx.save(); ctx.translate(W / 2, y); if (flip) ctx.rotate(Math.PI);
-      ctx.fillStyle = paint; ctx.font = 'bold 150px "Arial Black", Arial, sans-serif';
+      ctx.fillStyle = paint; ctx.font = '400 150px "Archivo Black", Arial, sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 0, 0, 340); ctx.restore();
     }
     // Opaque scuffs keep the whole mesh solid instead of punching holes through pavement.

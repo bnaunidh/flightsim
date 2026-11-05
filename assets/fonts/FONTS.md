@@ -22,13 +22,22 @@ on their own. Credited in the game's Credits screen (`src/ui/credits.js`, Typogr
 
 ## How the game uses them
 
-The name is set by its CAP HEIGHT, as a sign-writer sets it (`dress()` in `src/fleet/extra/airliners.js`):
-about a quarter of the body's height, the width whatever the word takes in its face, starting behind
-the forward door. Some names are in upper and lower case (`titling` in `src/aircraft/liveries.js`).
+**The interface.** One system, on every machine: **Jost** (`--font`, 600 and 700) for everything you read,
+**Barlow Condensed** (`--mono`, 700) for numbers and read-outs, tabular so they hold still. `styles/main.css`
+declares them with `font-display: swap`; `index.html` preloads Jost so the menu paints in it. Instruments and
+other canvas text in the cockpit use **Titillium Web** (its digits are all one width); map labels use Jost and
+Barlow Condensed; heavy painted signs Archivo Black.
+
+**The airlines' names** are drawn, not typed: `src/fleet/extra/wordmarks.js` holds one wordmark per airline
+(its own case, tracking, kerning, slant, inks and one idea: a lockup, a stencil, a cut), placed letter by
+letter on its own transparent canvas, and a stacked version for a short room. `src/fleet/extra/title-slot.js`
+works out the room on each type from its doors, windows, wing and engines: behind the first door, in the band
+over the windows, running back over the wing root as far as the wing stays under it from a chase camera. On a real model the name is a patch of that hull's own triangles
+(`decalPatch` in `src/fleet/extra/real-paint.js`), with its own texels.
 
 `src/render/airline-fonts.js` declares the faces (@font-face) and `loadAirlineFonts()` asks
 `document.fonts` for each one; `main.js` waits for it (2 s at most) before the world and the first
-aeroplane are built. A titling canvas drawn before its face is in is drawn again when it arrives.
+aeroplane are built. A wordmark drawn before its face is in is drawn again when it arrives.
 `sw.js` precaches every file here.
 
 Each parody airline (`src/aircraft/liveries.js`, `style.titleFont`) is lettered in the face nearest

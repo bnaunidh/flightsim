@@ -318,7 +318,12 @@ for (const map of M.MAPS) {
     if (t < 18 || t > 55) faults.estate.push(`${map.id}: a hotel ${t.toFixed(1)} m`);
   }
   const city = !!(map.scenery && map.scenery.town && map.scenery.town.towers > 0);
-  for (const t of topOf('You flew into a tower')) {
+  // A tower is several solids now (world/skyline.js: a podium, then the shaft's steps): judge each tower by its highest.
+  const towerSolids = T.OBSTACLES.filter((o) => o.what === 'You flew into a tower');
+  const towerTops = towerSolids
+    .filter((o) => !towerSolids.some((p) => p !== o && p.y1 > o.y1 && (p.x0 + p.x1) / 2 > o.x0 && (p.x0 + p.x1) / 2 < o.x1 && (p.z0 + p.z1) / 2 > o.z0 && (p.z0 + p.z1) / 2 < o.z1))
+    .map((o) => o.y1 - T.heightAt((o.x0 + o.x1) / 2, (o.z0 + o.z1) / 2));
+  for (const t of towerTops) {
     all.skyline.push(t);
     if (t < 50 || t > 260) faults.skyline.push(`${map.id}: a downtown tower ${t.toFixed(1)} m`);
   }

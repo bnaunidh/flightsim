@@ -219,7 +219,7 @@ export function glazingTextures(small = false) {
  */
 export function channelLetters(text) {
   const H = 128;
-  const font = 'bold 92px Arial, Helvetica, sans-serif';
+  const font = 'bold 92px "Jost", Arial, sans-serif';
   const probe = canvas(8, 8).getContext('2d');
   probe.font = font;
   const track = 10;

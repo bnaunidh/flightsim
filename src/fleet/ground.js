@@ -22,8 +22,8 @@ function panelTexture(color = '#c3c2b6', label = 'AIRFIELD') {
     for (const y of [8, 150, 290, 502]) { c.beginPath(); c.moveTo(8, y); c.lineTo(w - 8, y); c.stroke(); }
     for (let x = 16; x < w; x += 23) for (const y of [15, 143, 283, 496]) { c.fillStyle = 'rgba(27,31,30,.45)'; c.fillRect(x, y, 2, 2); c.fillStyle = 'rgba(235,232,206,.35)'; c.fillRect(x, y + 2, 2, 1); }
     for (let i = 0; i < 90; i++) { c.fillStyle = 'rgba(59,52,39,.13)'; c.fillRect(random() * w, 385 + random() * 113, 1 + random() * 5, 4 + random() * 18); }
-    c.font = 'bold 44px sans-serif'; c.fillStyle = '#263336'; c.textAlign = 'center'; c.fillText(label, 512, 242);
-    c.font = '18px monospace'; c.fillText('GROUND OPERATIONS  •  07', 512, 277);
+    c.font = 'bold 44px "Jost", Arial, sans-serif'; c.fillStyle = '#263336'; c.textAlign = 'center'; c.fillText(label, 512, 242);
+    c.font = '18px "Barlow Condensed", "Arial Narrow", sans-serif'; c.fillText('GROUND OPERATIONS  •  07', 512, 277);
   });
 }
 
@@ -88,7 +88,7 @@ function wheels(m, parent, mat, { x = .91, front = -1.22, rear = 1.22, radius = 
 }
 
 function licensePlate(m, parent, name, pos, rear = false) {
-  const mat = makeMaterial(m, { map: paintTexture('runabout-license', 256, 64, (c, w, h) => { c.fillStyle = '#cdc9af'; c.fillRect(0, 0, w, h); c.strokeStyle = '#394447'; c.lineWidth = 4; c.strokeRect(3, 3, w - 6, h - 6); c.fillStyle = '#263135'; c.font = 'bold 42px monospace'; c.textAlign = 'center'; c.fillText('IFS 007', w / 2, 47); }), roughness: .6 });
+  const mat = makeMaterial(m, { map: paintTexture('runabout-license', 256, 64, (c, w, h) => { c.fillStyle = '#cdc9af'; c.fillRect(0, 0, w, h); c.strokeStyle = '#394447'; c.lineWidth = 4; c.strokeRect(3, 3, w - 6, h - 6); c.fillStyle = '#263135'; c.font = 'bold 42px "Barlow Condensed", "Arial Narrow", sans-serif'; c.textAlign = 'center'; c.fillText('IFS 007', w / 2, 47); }), roughness: .6 });
   const mesh = addPlane(m, parent, name, .48, .12, pos, mat); if (!rear) mesh.rotation.y = Math.PI; return mesh;
 }
 

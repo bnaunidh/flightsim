@@ -103,7 +103,7 @@ export async function check(sim, r, say) {
     menus.show('main');
     r.ok('story: a STORY card first on every game\'s front page', Object.values(firsts).every((a) => a === 'story'), JSON.stringify(firsts));
     const card = menus.screens.main.querySelector('[data-act="story"]');
-    r.ok('story: the card says what it is, with the kittiwake mark and a NEW ribbon before the first play', !!card && /Signal Zero/.test(card.textContent) && /12-chapter/.test(card.textContent) && !!card.querySelector('.sz-mark') && !!card.querySelector('.sz-new'), card && card.textContent.replace(/\s+/g, ' ').trim());
+    r.ok('story: the card says what it is, with the kittiwake mark and a NEW ribbon before the first play', !!card && /Signal Zero/.test(card.textContent) && /Chapter 1/.test(card.textContent) && !!card.querySelector('.sz-mark') && !!card.querySelector('.sz-new'), card && card.textContent.replace(/\s+/g, ' ').trim());
     card.click();
     r.ok('story: the card opens the Story screen', menus.current === 'story');
     const hub = menus.screens.story.querySelector('[data-hub]');

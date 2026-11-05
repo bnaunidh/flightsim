@@ -21,8 +21,8 @@ import { toLatLon, fromLatLon } from './geo.js';
 
 const DEG = Math.PI / 180;
 export const MAGENTA = '#e83ee6';
-const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+const FONT = '"Jost", Arial, sans-serif';
+const MONO = '"Barlow Condensed", "Arial Narrow", sans-serif';
 
 const measured = new Map();
 function textW(g, font, text) {

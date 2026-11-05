@@ -235,7 +235,7 @@ function waitCard(text) {
   const el = document.createElement('div');
   el.className = 'map-wait';
   el.setAttribute('role', 'status');
-  el.style.cssText = 'position:fixed;inset:0;z-index:999;display:grid;place-items:center;background:rgba(8,14,26,.72);color:#e8eef8;font:600 18px system-ui,sans-serif';
+  el.style.cssText = 'position:fixed;inset:0;z-index:999;display:grid;place-items:center;background:rgba(8,14,26,.72);color:#e8eef8;font:600 18px "Jost", Arial, sans-serif';
   el.textContent = text;
   const eat = (e) => (e.stopPropagation(), e.preventDefault());
   addEventListener('keydown', eat, true);

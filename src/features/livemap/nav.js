@@ -257,19 +257,19 @@ const CSS = `
 .lm-plan li.is-active { background: rgba(232, 62, 230, 0.22); box-shadow: 0 0 0 1px rgba(232, 62, 230, 0.6) inset; }
 .lm-plan li.is-done { opacity: 0.45; }
 .lm-plan li.lm-empty { display: block; font-size: 12.5px; opacity: 0.75; line-height: 1.4; }
-.lm-plan li b { font-family: ui-monospace, Menlo, monospace; }
+.lm-plan li b { font-family: var(--mono); }
 .lm-plan li small { opacity: 0.75; }
 .lm-plan li button { min-height: 30px; min-width: 30px; padding: 0 6px; }
 .lm-total { font-size: 12px; opacity: 0.8; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .lm-form { display: flex; gap: 6px; }
 .lm-form input { flex: 1; min-width: 0; min-height: 40px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.22); background: rgba(0,0,0,0.25); color: #fff;
-  padding: 0 10px; font: 600 13px ui-monospace, Menlo, monospace; }
+  padding: 0 10px; font: 600 13px var(--mono); }
 .lm-hint { font-size: 11.5px; opacity: 0.72; margin-top: 4px; line-height: 1.35; }
 .lm-hint.is-bad { color: #ffb4a8; opacity: 1; }
 .lm-offer { display: flex; align-items: center; gap: 8px; pointer-events: auto; padding: 8px 10px; border-radius: 12px; background: rgba(12, 20, 32, 0.84);
-  border: 1px solid rgba(232, 62, 230, 0.55); color: #fff; font: 600 13px system-ui, sans-serif; }
+  border: 1px solid rgba(232, 62, 230, 0.55); color: #fff; font: 600 13px var(--font); }
 .lm-offer button { min-height: 40px; padding: 6px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.22); background: rgba(255,255,255,0.08);
-  color: #fff; font: 700 12.5px system-ui, sans-serif; cursor: pointer; }
+  color: #fff; font: 700 12.5px var(--font); cursor: pointer; }
 .lm-offer button[data-lm-offer="yes"] { background: #e83ee6; border-color: #f07af0; }
 .lm-offer .lm-x { min-width: 40px; display: inline-flex; align-items: center; justify-content: center; }
 `;

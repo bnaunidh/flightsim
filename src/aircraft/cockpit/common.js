@@ -68,7 +68,7 @@ export function annunciator(text, colour, w = 0.108, h = 0.042) {
   g.fillStyle = '#0a0c10';
   g.fillRect(0, 0, 128, 48);
   g.fillStyle = '#ffffff';
-  g.font = `bold ${text.length > 8 ? 17 : 21}px system-ui, sans-serif`;
+  g.font = `bold ${text.length > 8 ? 17 : 21}px "Titillium Web", Arial, sans-serif`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillText(text, 64, 25);

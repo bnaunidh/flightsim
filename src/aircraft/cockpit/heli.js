@@ -280,7 +280,7 @@ export function buildHeliCockpit(ctx) {
       g.fill();
       g.fillStyle = '#05080a';
       g.fillRect(P.px(-0.06), P.py(y + 0.011), P.pr(0.12), P.pr(0.022));
-      g.font = `700 ${Math.round(P.pr(0.012))}px "Courier New", monospace`;
+      g.font = `700 ${Math.round(P.pr(0.012))}px "Titillium Web", Arial, sans-serif`;
       g.fillStyle = '#5df08a';
       g.textAlign = 'center';
       g.textBaseline = 'middle';
@@ -367,7 +367,7 @@ export function buildHeliCockpit(ctx) {
     g.fillStyle = '#121417';
     g.fillRect(0, 0, 512, 64);
     g.fillStyle = '#f0f0f0';
-    g.font = '700 30px Arial';
+    g.font = '700 30px "Titillium Web", Arial, sans-serif';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     for (let d = 0; d < 360; d += 30) g.fillText(d === 0 ? 'N' : d === 90 ? 'E' : d === 180 ? 'S' : d === 270 ? 'W' : String(d / 10), ((360 - d) / 360) * 512, 34);

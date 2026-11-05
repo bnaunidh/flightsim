@@ -223,7 +223,7 @@ export class Toon {
     this.wordTex = {};
     for (const w of WORDS) {
       this.wordTex[w] = canvasTex(256, 128, (g) => {
-        g.font = '900 78px "Arial Black", Impact, sans-serif';
+        g.font = '400 78px "Archivo Black", Arial, sans-serif';
         g.textAlign = 'center';
         g.textBaseline = 'middle';
         g.lineJoin = 'round';

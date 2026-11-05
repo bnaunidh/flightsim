@@ -409,7 +409,7 @@ function skinTexture(kit, o) {
     g.save();
     g.translate(W / 2, Y(o.nameAt));
     g.rotate(-Math.PI / 2);
-    g.font = `900 ${fs}px "Arial Black", Arial, sans-serif`;
+    g.font = `400 ${fs}px "Archivo Black", Arial, sans-serif`;
     g.textAlign = 'left';
     g.textBaseline = 'middle';
     g.fillStyle = '#18202e';
@@ -423,7 +423,7 @@ function skinTexture(kit, o) {
   }
   if (o.small) {
     g.fillStyle = '#5b6474';
-    g.font = `bold ${Math.max(6, Math.round(0.16 * sy))}px Arial, sans-serif`;
+    g.font = `bold ${Math.max(6, Math.round(0.16 * sy))}px "Jost", Arial, sans-serif`;
     g.textAlign = 'center';
     for (const s of o.small) g.fillText(s.t, s.u * W, Y(s.y));
   }

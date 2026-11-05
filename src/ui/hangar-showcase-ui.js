@@ -980,6 +980,22 @@ export function installHangarShowcase(menus, screen, kit) {
 /** Each swatch wears the airline's mark (loaded on the first hangar visit; until then, its colours). */
 const markUrls = new Map();
 let markArt = null;
+let wordArt = null;
+/** The airline's name as it is on its aeroplanes (fleet/extra/wordmarks.js), for the plate under the swatches. */
+function wordUrl(l) {
+  const key = `word|${l.id}`;
+  if (markUrls.has(key)) return markUrls.get(key);
+  const spec = wordArt.wordmarkFor(l);
+  const L = spec ? wordArt.layoutWordmark(spec, l.style.titleFont) : null;
+  if (!L) return null;
+  const c = document.createElement('canvas');
+  c.height = 64;
+  c.width = Math.min(640, Math.round(64 * L.aspect));
+  wordArt.paintWordmark(c.getContext('2d'), spec, l.style.titleFont, c.width, Math.round(c.width / L.aspect), l.emblem);
+  const url = c.toDataURL('image/png');
+  markUrls.set(key, url);
+  return url;
+}
 function markUrl(l) {
   if (markUrls.has(l.id)) return markUrls.get(l.id);
   const c = document.createElement('canvas');
@@ -1005,8 +1021,9 @@ function markSwatches(host) {
     }
   };
   if (markArt) return paint();
-  import('../fleet/extra/livery-art.js').then((m) => {
+  Promise.all([import('../fleet/extra/livery-art.js'), import('../fleet/extra/wordmarks.js')]).then(([m, w]) => {
     markArt = m;
+    wordArt = w;
     paint();
   }).catch(() => {});
 }
@@ -1025,10 +1042,10 @@ function letterPaintName(el, name) {
   el.style.fontStyle = face && face.style === 'italic' ? 'italic' : '';
   el.style.fontWeight = face ? String(face.weight) : '';
   el.dataset.font = face ? face.family : '';
-  const url = l && l.emblem && markArt ? markUrl(l) : null;
-  // A plate in the paint behind the name, in the name's own ink: the fuselage in small.
-  const plate = l && l.emblem && markArt ? (markArt.artFor(l).title.on || l.base) : '';
-  el.style.padding = url ? '2px 8px 2px 24px' : '';
-  el.style.color = url ? l.style.titleInk || '#1f272e' : '';
-  el.style.background = url ? `5px center / 15px 15px no-repeat url(${url}), ${plate}` : '';
+  const url = l && l.emblem && wordArt ? wordUrl(l) : null;
+  // A plate in the paint behind the name, and the name as it is drawn on the aeroplane. (The words stay
+  // in the element, clear, for a screen reader.)
+  el.classList.toggle('has-wordmark', !!url);
+  el.style.color = url ? 'transparent' : '';
+  el.style.background = url ? `center / contain no-repeat url(${url}) content-box, ${l.base}` : '';
 }

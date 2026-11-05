@@ -289,7 +289,7 @@ function numberAtlas(n) {
     const x = (i % cols) * cw;
     const y = Math.floor(i / cols) * ch;
     ctx.fillStyle = 'rgba(242,197,40,0.95)';
-    ctx.font = 'bold 96px Arial, Helvetica, sans-serif';
+    ctx.font = 'bold 96px "Jost", Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(i + 1), x + cw / 2, y + ch / 2 + 6, cw - 8);
@@ -307,7 +307,7 @@ function nameBoards(texts, bg = '#1d2a36', fg = '#ffffff') {
     ctx.fillStyle = bg;
     ctx.fillRect(0, i * 128, 1024, 128);
     ctx.fillStyle = fg;
-    ctx.font = 'bold 76px Arial, Helvetica, sans-serif';
+    ctx.font = 'bold 76px "Jost", Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, 512, i * 128 + 68, 980);
@@ -354,9 +354,9 @@ function drawBoardIdle(ctx, x, y, number) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = AMBER;
-  ctx.font = 'bold 20px Arial, Helvetica, sans-serif';
+  ctx.font = 'bold 20px "Jost", Arial, sans-serif';
   ctx.fillText('STAND', x + 64, y + 30, 110);
-  ctx.font = 'bold 72px Arial, Helvetica, sans-serif';
+  ctx.font = 'bold 72px "Jost", Arial, sans-serif';
   ctx.fillText(String(number), x + 64, y + 96, 110);
   // The unlit bar the count-down will climb down.
   ctx.fillStyle = DIM;
@@ -379,14 +379,14 @@ function drawBoardLive(ctx, state, r, lat, blink) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = AMBER;
-  ctx.font = 'bold 15px Arial, Helvetica, sans-serif';
+  ctx.font = 'bold 15px "Jost", Arial, sans-serif';
   ctx.fillText(String(r.name || 'AIRCRAFT').toUpperCase(), 64, 16, 118);
   const RED = '#ff2f23';
   if (state === 1) {
     const d = r.toGo;
-    ctx.font = 'bold 46px Arial, Helvetica, sans-serif';
+    ctx.font = 'bold 46px "Jost", Arial, sans-serif';
     ctx.fillText(d < 3 ? d.toFixed(1) : String(Math.round(d)), 58, 74, 100);
-    ctx.font = 'bold 20px Arial, Helvetica, sans-serif';
+    ctx.font = 'bold 20px "Jost", Arial, sans-serif';
     ctx.fillText('m', 112, 86);
     /*
      * The closing bar: a column that shortens as the stop comes up, full at
@@ -409,18 +409,18 @@ function drawBoardLive(ctx, state, r, lat, blink) {
   }
   if (state === 4) {
     ctx.fillStyle = RED;
-    ctx.font = 'bold 40px Arial, Helvetica, sans-serif';
+    ctx.font = 'bold 40px "Jost", Arial, sans-serif';
     ctx.fillText('TOO', 64, 80, 118);
     ctx.fillText('FAR', 64, 124, 118);
     return;
   }
   ctx.fillStyle = RED;
-  ctx.font = 'bold 40px Arial, Helvetica, sans-serif';
+  ctx.font = 'bold 40px "Jost", Arial, sans-serif';
   ctx.fillText('STOP', 64, 82, 120);
   ctx.fillRect(14, 112, 100, 10);
   if (state === 3) {
     ctx.fillStyle = '#39e36b';
-    ctx.font = 'bold 42px Arial, Helvetica, sans-serif';
+    ctx.font = 'bold 42px "Jost", Arial, sans-serif';
     ctx.fillText('OK', 64, 156, 118);
   }
 }
@@ -1023,9 +1023,9 @@ export class Apron {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = YEL;
-      ctx.font = 'bold 54px Arial, Helvetica, sans-serif';
+      ctx.font = 'bold 54px "Jost", Arial, sans-serif';
       ctx.fillText('GATE', gx + 170, gy + 68, 250);
-      ctx.font = 'bold 92px Arial, Helvetica, sans-serif';
+      ctx.font = 'bold 92px "Jost", Arial, sans-serif';
       ctx.fillText(String(st.number), gx + 392, gy + 70, 200);
       gateCells.push(cell(gx, gy, 512, 128));
       const bx = (i % 16) * 128;
@@ -1044,9 +1044,9 @@ export class Apron {
       ctx.fillStyle = YEL;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.font = 'bold 30px Arial, Helvetica, sans-serif';
+      ctx.font = 'bold 30px "Jost", Arial, sans-serif';
       ctx.fillText('STAND', sx + 128, sy + 34, 220);
-      ctx.font = 'bold 66px Arial, Helvetica, sans-serif';
+      ctx.font = 'bold 66px "Jost", Arial, sans-serif';
       ctx.fillText(String(st.number), sx + 128, sy + 84, 220);
       standCells.push(cell(sx, sy, 256, 128));
     });

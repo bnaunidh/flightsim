@@ -28,6 +28,7 @@
  * Nothing here moves the ground: a field, a town and a road are flats
  * (onFlat), and get no cover at all — mown grass, as before.
  */
+import { townFrame, urbanOf } from './town-grid.js';
 
 /* ------------------------------------------------------------------ */
 /* Noise                                                               */
@@ -93,6 +94,7 @@ export function forestNoise(x, z) {
  *   [0] sand  [1] grass  [2] rock     the base ground (sum 1)
  *   [3] farm  [4] forest [5] scrub [6] wet   what is on it (each 0..1)
  *   [7] urban  a town's streets and roofs (coverFor sets it, on a town's ground)
+ *   [8..10]    the town's heading, how far in, its climate (coverFor; out may be 8 long here)
  * `h` metres above the sea, `slope` rise over run, `onFlat` made ground.
  */
 export function coverAt(x, z, h, slope, onFlat, out) {
@@ -151,9 +153,13 @@ export function coverAt(x, z, h, slope, onFlat, out) {
  */
 export function coverFor(T) {
   if (!T || !T.MAP || !T.MAP.landcover) return null;
-  const out = new Float32Array(8);
+  // [8..10] a town's heading, how far in, and its climate, for the street plan the paint draws (worldmap/town-grid.js).
+  const out = new Float32Array(11);
   const outer = T.MAP._outer;
+  const frames = new Map();
+  const roads = (T.MAP.waters && T.MAP.waters.roads) || [];
   const cover = (x, z, h, slope) => {
+    out[8] = 0; out[9] = 1; out[10] = 0; // (0: no town here)
     if (outer && outer.past(x, z)) return outer.cover(x, z, h, slope, out);
     const f = T.flatAt ? T.flatAt(x, z) : null;
     // A town's level ground is not mown from edge to edge: gardens and greens in the middle, the
@@ -168,8 +174,15 @@ export function coverFor(T) {
       out[4] *= (1 - core) * (1 - core);
       out[5] *= 1 - core * 0.7;
       out[6] *= 1 - core;
-      // The town itself, out past its houses: streets, roofs and gardens on the ground (worldmap/world-terrain.js).
-      out[7] = 1 - smoothstep(0.55, 1.0, d + (vnoise(x / 160, z / 160, 21) - 0.5) * 0.25);
+      // The town itself: the street plan's paint on the ground (worldmap/world-terrain.js, worldmap/town-grid.js).
+      out[7] = urbanOf(d, x, z);
+      let F = frames.get(f.id);
+      if (!F) frames.set(f.id, (F = townFrame(f, roads)));
+      // Not where a road's cutting has taken the level ground away: nothing can be built there, so nothing is drawn.
+      if (Math.abs(h - F.elev) > 1.2) out[7] = 0;
+      out[8] = F.byte / 255;
+      out[9] = Math.min(1, (d / F.core) * 0.25);
+      out[10] = (F.climate + 1) / 4;
       return out;
     }
     return coverAt(x, z, h, slope, !!(f && T.flatSurfaceAt(x, z)), out);

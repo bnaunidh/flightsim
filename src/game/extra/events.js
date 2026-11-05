@@ -137,6 +137,9 @@ function hijackScene(step) {
 
 const hijack = {
   id: 'event-hijack',
+  // Owner, 2026-10-17: "no hijacking". Off the mission list until it is reframed; the Dev code still reaches it.
+  devOnly: true,
+  devHidden: true,
   category: 'events',
   game: 'flight',
   name: 'Hijacked!',
@@ -264,6 +267,7 @@ const hijackReal = {
   icon: '🛡️',
   map: 'gateway',
   devOnly: true,
+  devHidden: true,
   roles: HIJACK_REAL_ROLES,
   get aircraft() {
     return longHaulId();

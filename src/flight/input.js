@@ -61,16 +61,16 @@ const GROUP_IDS = GROUPS.map((g) => g.id);
 export const CONTEXT_GROUP = { plane: 'Flying', heli: 'Helicopter', boat: 'Boat', car: 'Car', rocket: 'Rocket', foot: 'On foot', chute: 'Flying' };
 
 export const ACTIONS = {
-  pitchDown: { label: 'Pitch down (nose down)', group: 'Flying', ctx: ['plane'], default: ['KeyW'] },
-  pitchUp: { label: 'Pitch up (nose up)', group: 'Flying', ctx: ['plane'], default: ['KeyS'] },
-  rollLeft: { label: 'Roll left', group: 'Flying', ctx: ['plane'], default: ['KeyA'] },
-  rollRight: { label: 'Roll right', group: 'Flying', ctx: ['plane'], default: ['KeyD'] },
-  yawLeft: { label: 'Rudder left', group: 'Flying', ctx: ['plane'], default: ['KeyQ'] },
-  yawRight: { label: 'Rudder right', group: 'Flying', ctx: ['plane'], default: ['KeyE'] },
+  pitchDown: { label: 'Nose down', group: 'Flying', ctx: ['plane'], default: ['KeyW'] },
+  pitchUp: { label: 'Nose up', group: 'Flying', ctx: ['plane'], default: ['KeyS'] },
+  rollLeft: { label: 'Bank left', group: 'Flying', ctx: ['plane'], default: ['KeyA'] },
+  rollRight: { label: 'Bank right', group: 'Flying', ctx: ['plane'], default: ['KeyD'] },
+  yawLeft: { label: 'Turn left (rudder)', group: 'Flying', ctx: ['plane'], default: ['KeyQ'] },
+  yawRight: { label: 'Turn right (rudder)', group: 'Flying', ctx: ['plane'], default: ['KeyE'] },
   // Arrow keys are bound alongside Shift/Ctrl because "how do I slow down?" is
   // the first question every new pilot asks, and Ctrl is easy to miss.
   throttleUp: { label: 'More power', group: 'Flying', ctx: ['plane'], default: ['ShiftLeft', 'ShiftRight', 'ArrowUp'] },
-  throttleDown: { label: 'Less power (slow down)', group: 'Flying', ctx: ['plane'], default: ['ControlLeft', 'ControlRight', 'ArrowDown'] },
+  throttleDown: { label: 'Less power', group: 'Flying', ctx: ['plane'], default: ['ControlLeft', 'ControlRight', 'ArrowDown'] },
   starter: { label: 'Start / stop engine', group: 'Flying', ctx: AIR, default: ['KeyI'] },
   brakes: { label: 'Wheel brakes', group: 'Flying', ctx: AIR, default: ['Space'] },
   /*
@@ -82,7 +82,7 @@ export const ACTIONS = {
    * right of L. A touch screen gets a CHUTE button on the landing roll.
    */
   dragChute: { label: 'Drag chute (Air Massimo, T-Pose Harrison: on the landing roll)', group: 'Flying', ctx: ['plane'], default: ['Semicolon'] },
-  gear: { label: 'Landing gear up / down', group: 'Flying', ctx: AIR, default: ['KeyG'] },
+  gear: { label: 'Wheels up / down', group: 'Flying', ctx: AIR, default: ['KeyG'] },
   flapsDown: { label: 'Flaps down', group: 'Flying', ctx: ['plane'], default: ['KeyF'] },
   flapsUp: { label: 'Flaps up', group: 'Flying', ctx: ['plane'], default: ['KeyV'] },
   camera: { label: 'Change camera view', group: 'View', ctx: VEHICLES, default: ['KeyC'] },
@@ -143,19 +143,19 @@ export const ACTIONS = {
    * same defaults: the helicopter and the boat through Input.update()'s map,
    * the van through vehicles/driving.js.
    */
-  heliForward: { label: 'Cyclic forward (nose down)', group: 'Helicopter', ctx: ['heli'], default: ['KeyW'] },
-  heliBack: { label: 'Cyclic back (nose up, slow down)', group: 'Helicopter', ctx: ['heli'], default: ['KeyS'] },
-  heliLeft: { label: 'Cyclic left (slide or bank left)', group: 'Helicopter', ctx: ['heli'], default: ['KeyA'] },
-  heliRight: { label: 'Cyclic right (slide or bank right)', group: 'Helicopter', ctx: ['heli'], default: ['KeyD'] },
-  heliTurnLeft: { label: 'Turn left (tail rotor)', group: 'Helicopter', ctx: ['heli'], default: ['KeyQ'] },
-  heliTurnRight: { label: 'Turn right (tail rotor)', group: 'Helicopter', ctx: ['heli'], default: ['KeyE'] },
-  heliUp: { label: 'Collective up (more lift)', group: 'Helicopter', ctx: ['heli'], default: ['ShiftLeft', 'ShiftRight', 'ArrowUp'] },
-  heliDown: { label: 'Collective down (less lift)', group: 'Helicopter', ctx: ['heli'], default: ['ControlLeft', 'ControlRight', 'ArrowDown'] },
+  heliForward: { label: 'Tilt forward', group: 'Helicopter', ctx: ['heli'], default: ['KeyW'] },
+  heliBack: { label: 'Tilt back (slows you down)', group: 'Helicopter', ctx: ['heli'], default: ['KeyS'] },
+  heliLeft: { label: 'Tilt left', group: 'Helicopter', ctx: ['heli'], default: ['KeyA'] },
+  heliRight: { label: 'Tilt right', group: 'Helicopter', ctx: ['heli'], default: ['KeyD'] },
+  heliTurnLeft: { label: 'Turn left', group: 'Helicopter', ctx: ['heli'], default: ['KeyQ'] },
+  heliTurnRight: { label: 'Turn right', group: 'Helicopter', ctx: ['heli'], default: ['KeyE'] },
+  heliUp: { label: 'Go up', group: 'Helicopter', ctx: ['heli'], default: ['ShiftLeft', 'ShiftRight', 'ArrowUp'] },
+  heliDown: { label: 'Go down', group: 'Helicopter', ctx: ['heli'], default: ['ControlLeft', 'ControlRight', 'ArrowDown'] },
   // F, which the helicopter does not use (flaps are the aeroplane's).
-  heliAssist: { label: 'Stability assist on / off', group: 'Helicopter', ctx: ['heli'], default: ['KeyF'] },
+  heliAssist: { label: 'Auto-steady on / off', group: 'Helicopter', ctx: ['heli'], default: ['KeyF'] },
 
-  boatFaster: { label: 'Faster (lever forward)', group: 'Boat', ctx: ['boat'], default: ['ShiftLeft', 'ShiftRight', 'ArrowUp', 'KeyW'] },
-  boatSlower: { label: 'Slower (lever back)', group: 'Boat', ctx: ['boat'], default: ['ControlLeft', 'ControlRight', 'ArrowDown', 'KeyS'] },
+  boatFaster: { label: 'Faster', group: 'Boat', ctx: ['boat'], default: ['ShiftLeft', 'ShiftRight', 'ArrowUp', 'KeyW'] },
+  boatSlower: { label: 'Slower', group: 'Boat', ctx: ['boat'], default: ['ControlLeft', 'ControlRight', 'ArrowDown', 'KeyS'] },
   boatLeft: { label: 'Steer left', group: 'Boat', ctx: ['boat'], default: ['KeyA', 'ArrowLeft'] },
   boatRight: { label: 'Steer right', group: 'Boat', ctx: ['boat'], default: ['KeyD', 'ArrowRight'] },
   boatStop: { label: 'Crash stop', group: 'Boat', ctx: ['boat'], default: ['Space'] },

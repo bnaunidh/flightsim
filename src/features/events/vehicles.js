@@ -54,7 +54,7 @@ function shared() {
     g.fillStyle = '#ffd23f';
     for (let x = 0; x < w; x += 32) g.fillRect(x, 0, 16, 8);
     g.fillStyle = '#ffffff';
-    g.font = 'bold 30px sans-serif';
+    g.font = 'bold 30px "Jost", Arial, sans-serif';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillText('POLICE', w / 2, h / 2 + 4);
@@ -79,7 +79,7 @@ function shared() {
       g.fillStyle = '#ffd23f';
       g.fillRect(0, h - 7, w, 7);
       g.fillStyle = '#ffffff';
-      g.font = 'bold 30px sans-serif';
+      g.font = 'bold 30px "Jost", Arial, sans-serif';
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       g.fillText('POLICE', w / 2, h / 2 - 2);

@@ -211,7 +211,7 @@ import { SPEC } from '../aircraft/physics.js';
 import { chartColours, landColour, iceShapes, onIce, ICE_RGB } from './chart-palette.js';
 
 const SIZE = 190;
-const FONT = '"Helvetica Neue", Arial, sans-serif';
+const FONT = '"Titillium Web", Arial, sans-serif';
 
 /*
  * Dash patterns and symbol lists, made once. setLineDash([5, 4]) in a draw

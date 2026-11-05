@@ -44,7 +44,7 @@ export function numberTex(n, fin = false) {
     g.fill();
     g.stroke();
     g.fillStyle = fin ? '#fff' : '#1b1030';
-    g.font = `900 ${fin ? 34 : 68}px "Arial Black", Impact, sans-serif`;
+    g.font = `400 ${fin ? 34 : 68}px "Archivo Black", Arial, sans-serif`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillText(fin ? 'FINISH' : String(n), 64, 68);
@@ -82,7 +82,7 @@ function bannerTex(n, fin) {
       g.fillRect(0, 0, w, 7);
       g.fillRect(0, h - 7, w, 7);
     }
-    g.font = `900 ${fin ? 34 : 44}px "Arial Black", Impact, sans-serif`;
+    g.font = `400 ${fin ? 34 : 44}px "Archivo Black", Arial, sans-serif`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillStyle = fin ? '#fff' : '#1b1030';
@@ -90,7 +90,7 @@ function bannerTex(n, fin) {
     else {
       g.fillText(String(n), w * 0.2, h / 2 + 2);
       g.fillText(String(n), w * 0.8, h / 2 + 2);
-      g.font = '800 26px "Arial Black", Impact, sans-serif';
+      g.font = '400 26px "Archivo Black", Arial, sans-serif';
       g.fillText('GATE', w / 2, h / 2 + 2);
     }
   });

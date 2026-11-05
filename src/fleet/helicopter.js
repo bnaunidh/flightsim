@@ -586,7 +586,7 @@ export function helicopterCabinTexture(bodyColor = 0x863e38, trimColor = 0xc8c5b
       ctx.fillStyle = '#242c32';ctx.fillRect(w * (u + .012), h * .637, w * .027, h * .01);
       ctx.fillStyle = 'rgba(219,220,209,.56)';ctx.fillRect(w * (u + .014), h * .637, w * .02, h * .003);
     }
-    ctx.fillStyle = 'rgba(228,226,209,.8)'; ctx.font = `500 ${Math.round(h * .019)}px Arial, sans-serif`;
+    ctx.fillStyle = 'rgba(228,226,209,.8)'; ctx.font = `500 ${Math.round(h * .019)}px "Titillium Web", Arial, sans-serif`;
     ctx.fillText('ACCESS', w * .218, h * .548);
 
     if (level) {

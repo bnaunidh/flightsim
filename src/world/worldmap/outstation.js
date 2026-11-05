@@ -16,9 +16,11 @@
  * field by day (the runway, everything else), one more at night (the lights),
  * and a field further away than its tier's range is hidden outright.
  *
- * The towns of the other islands are the game's own town builder
- * (scenery.js planTown / addTown): streets, houses and blocks, lit windows at
- * night. The hub's town is built by Scenery itself, as every map's is.
+ * The towns of the other islands: their downtowns, laid on the town's street plan
+ * (worldmap/town-grid.js planDowntown), are the game's own town builder
+ * (scenery.js addTown): offices, towers, lit windows at night. Everything out
+ * from there to the suburbs is streamed (worldmap/town-stream.js). The hub's town
+ * is built by Scenery itself, on the same plan.
  */
 import * as THREE from '../../vendor/three.module.js';
 import { addObstacleAt, addPlatform, heightAt } from '../terrain.js';
@@ -27,6 +29,7 @@ import { Batch, vcMaterial, layer, glowPoints } from '../airport-kit.js';
 import { planTown, addTown, treeGeometry } from '../scenery.js';
 import { papiFor } from '../navfield.js';
 import { styleOf } from './personas.js';
+import { planDowntown } from './town-grid.js';
 import * as LOOK from './field-look.js';
 
 /** The share of a town's buildings built at each tier (the World Map's towns are all built at load). */
@@ -392,7 +395,7 @@ export function buildOutstations(data, departureId, quality = 'medium') {
 }
 
 /** The same, a field or a town at a time (the World Map's staged build): all of them is seconds on a Chromebook. */
-export function* outstationSteps(data, departureId, quality = 'medium') {
+export function* outstationSteps(data, departureId, quality = 'medium', plan = null) {
   const t0 = performance.now();
   const group = new THREE.Group();
   group.name = 'world-outstations';
@@ -422,8 +425,10 @@ export function* outstationSteps(data, departureId, quality = 'medium') {
     const count = Math.max(Math.min(t.count, 12), Math.round(t.count * (TOWN_SHARE[quality] || 1)));
     const cfg = { cx: t.cx, cz: t.cz, radius: t.radius, count, minH: Math.max(1.5, t.elev - 25), maxH: t.elev + 45, ...(t.towers ? { towers: Math.max(2, Math.round(t.towers * (TOWN_SHARE[quality] || 1))), towerMaxH: t.towerMaxH } : {}) };
     try {
-      const plan = planTown(cfg, density);
-      rec.built = addTown(rec.group, plan.spots, { ...(plan.cfg || {}), quality, meshName: `town-${t.airport || t.name}` });
+      // Downtown, on the town's own street plan: the rest of the town is worldmap/town-stream.js's.
+      const F = plan && plan.ctx.towns.find((q) => q.name === t.name);
+      const laid = F ? { cfg, spots: planDowntown(plan.T, plan.ctx, F, { want: count, towers: cfg.towers || 0, towerMaxH: cfg.towerMaxH }) } : planTown(cfg, density);
+      rec.built = addTown(rec.group, laid.spots, { ...(laid.cfg || {}), quality, meshName: `town-${t.airport || t.name}` });
       for (const m of rec.built.nightMats || []) m.emissiveIntensity = Math.max(0, glow);
     } catch (err) {
       console.warn(`[world-preview] the town of ${t.name} could not be built`, err);
@@ -450,6 +455,10 @@ export function* outstationSteps(data, departureId, quality = 'medium') {
     fields,
     towns,
     timing,
+    /** How bright the windows are just now (the towns' other lights follow it: worldmap/town-stream.js). */
+    get glow() {
+      return glow;
+    },
     update(dt, weather, cam) {
       const isNight = !!(weather && weather.isNight);
       const dusk = weather && (weather.time === 'sunset' || weather.time === 'dusk');

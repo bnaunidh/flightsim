@@ -29,7 +29,7 @@ const NEAR_RING = F1(SEA_HALF - CORNER * (1 - Math.SQRT1_2) - WOBBLE - 400);
  * Everything here costs one branch on the mainland and the range.
  */
 export const RING_FRAG = /* glsl */ `
-    if (max(abs(wp.x), abs(wp.y)) > ${NEAR_RING} || vUrban > 0.002) {
+    if (max(abs(wp.x), abs(wp.y)) > ${NEAR_RING} || vUrban.x > 0.002) {
       vec2 rq = abs(wp) - vec2(${F1(SEA_HALF - CORNER)});
       float rd = length(max(rq, vec2(0.0))) + min(max(rq.x, rq.y), 0.0) - ${F1(CORNER)};
       if (rd > ${F1(-WOBBLE - 200)}) {
@@ -40,9 +40,9 @@ export const RING_FRAG = /* glsl */ `
           vec3 stone = mix(vec3(0.30, 0.285, 0.27), vec3(0.46, 0.43, 0.40), wtNoise(wp / 180.0) * 0.5 + wtNoise(wp / 900.0) * 0.5);
           base = mix(base, S2L(stone) * clamp(grain * 3.4, 0.55, 1.35), rockK);
         }
-        float rD = ${F1(ZONE_START)} + vUrban * ${F1(ZONE_M)};
+        float rD = ${F1(ZONE_START)} + vUrban.x * ${F1(ZONE_M)};
         float ru = (rD - ${F1(RANGE_DEEP)}) / ${F1(FAR_DEEP)};
-        float rk = smoothstep(0.002, 0.03, vUrban);
+        float rk = smoothstep(0.002, 0.03, vUrban.x);
         if (rk > 0.0) {
           // The strata: level at heart, bent by slow noise, in bands of two widths. The wide ones are the wider the deeper.
           float sy = vGroundY + (wtNoise(wp / 5200.0) - 0.5) * 280.0 + (wtNoise(wp / 1300.0) - 0.5) * 50.0;

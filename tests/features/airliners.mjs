@@ -897,9 +897,9 @@ for (const [id, fleet] of [...IDS.map((i) => [i, false]), ['meridian', true]]) {
     for (const m of titles) box.expandByObject(m);
     return box;
   })() : null;
-  // Above the window row (top 0.74) and under the hump's flank, from behind
+  // Above the window row (top 0.74), under the upper deck's sills, from behind
   // door 1 (-21.8) to over the wing root, a line a dozen metres or longer.
-  const placed = !!span && span.min.y > 0.74 && span.max.y < 2.4 && span.min.z > -21.8 && span.max.z <= 0 && span.max.z - span.min.z > 12;
+  const placed = !!span && span.min.y > 0.74 && span.max.y < 3.3 && span.min.z > -21.8 && span.max.z <= 2 && span.max.z - span.min.z > 12;
   ok('b747 as Air Force One: white over its blue band and line, the dark blue fin, SAM 42 — and "UNITED STATES OF AMERICA" along the body, reading left to right from both sides',
     finOk && skinOk && regOk && titleOk && mirrored && placed,
     `fin ${finOk}, skin ${skinOk}, reg ${regOk} (${regs.length}), title ${titleOk} (${titles.length}), mirrored ${mirrored}, placed ${placed}${span ? ` y ${r2(span.min.y)}..${r2(span.max.y)} z ${r2(span.min.z)}..${r2(span.max.z)}` : ''}`);

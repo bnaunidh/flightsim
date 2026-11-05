@@ -242,7 +242,7 @@ export class InstrumentPanel {
     ctx.stroke();
     // Pitch ladder.
     ctx.lineWidth = 2;
-    ctx.font = '600 15px "Helvetica Neue", Arial, sans-serif';
+    ctx.font = '600 15px "Titillium Web", Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (let d = -30; d <= 30; d += 5) {
@@ -384,7 +384,7 @@ export class InstrumentPanel {
         ctx.stroke();
         if (deg % 30 === 0) {
           ctx.fillStyle = '#e8eaee';
-          ctx.font = '700 16px "Helvetica Neue", Arial, sans-serif';
+          ctx.font = '700 16px "Titillium Web", Arial, sans-serif';
           const t = deg === 0 ? 'N' : deg === 90 ? 'E' : deg === 180 ? 'S' : deg === 270 ? 'W' : String(deg / 10);
           ctx.fillText(t, px, hy + 18);
         }
@@ -397,7 +397,7 @@ export class InstrumentPanel {
       ctx.lineWidth = 2;
       ctx.strokeRect(centre - 42, hy - 26, 84, 28);
       ctx.fillStyle = '#e8eaee';
-      ctx.font = '700 20px "Courier New", monospace';
+      ctx.font = '700 20px "Titillium Web", Arial, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(Math.round(s.hdg)).padStart(3, '0'), centre, hy - 11);
@@ -424,7 +424,7 @@ export class InstrumentPanel {
         ctx.lineWidth = 1.5;
         ctx.strokeRect(bx, by, 46, bh);
         ctx.fillStyle = '#e8eaee';
-        ctx.font = '700 17px "Courier New", monospace';
+        ctx.font = '700 17px "Titillium Web", Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(text, bx + 23, by + bh + 20);
@@ -450,7 +450,7 @@ export class InstrumentPanel {
         ctx.lineWidth = 1.5;
         ctx.strokeRect(E.x + 30, sy, 162, 24);
         ctx.fillStyle = '#e8eaee';
-        ctx.font = '700 13px "Helvetica Neue", Arial, sans-serif';
+        ctx.font = '700 13px "Titillium Web", Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(text, E.x + 111, sy + 12);
       };
@@ -474,7 +474,7 @@ export class InstrumentPanel {
         ctx.fillStyle = warn[1];
         ctx.fillRect(E.x + 20, E.y + 36, E.w - 40, 30);
         ctx.fillStyle = '#101216';
-        ctx.font = '800 18px "Helvetica Neue", Arial, sans-serif';
+        ctx.font = '800 18px "Titillium Web", Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(warn[0], E.x + E.w / 2, E.y + 51);
@@ -531,7 +531,7 @@ export class InstrumentPanel {
       }
       ctx.stroke();
       ctx.fillStyle = '#e8eaee';
-      ctx.font = '600 19px "Helvetica Neue", Arial, sans-serif';
+      ctx.font = '600 19px "Titillium Web", Arial, sans-serif';
       ctx.textAlign = align === 'right' ? 'right' : 'left';
       ctx.fillText(String(Math.round(v)), align === 'right' ? x + w - 30 : x + 30, ty);
     }
@@ -559,7 +559,7 @@ export class InstrumentPanel {
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = '#ffffff';
-    ctx.font = '700 26px "Courier New", monospace';
+    ctx.font = '700 26px "Titillium Web", Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(Math.max(0, Math.round(value))), x + w / 2 - 4, mid);
@@ -782,19 +782,19 @@ export class InstrumentPanel {
       box(x0, 90, 460, 118);
       label(ctx, x0 + 20, 118, 'COM 1', 15, DIM, 'left');
       ctx.fillStyle = '#3ec96a';
-      ctx.font = '700 54px "Courier New", monospace';
+      ctx.font = '700 54px "Titillium Web", Arial, sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText('118.30', x0 + 20, 175);
       label(ctx, x0 + 300, 118, 'STBY', 13, DIM, 'left');
       ctx.fillStyle = '#8fa2b4';
-      ctx.font = '700 30px "Courier New", monospace';
+      ctx.font = '700 30px "Titillium Web", Arial, sans-serif';
       ctx.fillText('121.90', x0 + 300, 172);
 
       // Transponder.
       box(x0, 228, 460, 96);
       label(ctx, x0 + 20, 252, 'XPDR', 14, DIM, 'left');
       ctx.fillStyle = '#3ec96a';
-      ctx.font = '700 44px "Courier New", monospace';
+      ctx.font = '700 44px "Titillium Web", Arial, sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText('1200', x0 + 20, 297);
       label(ctx, x0 + 250, 252, 'ALT', 14, DIM, 'left');
@@ -876,7 +876,7 @@ export class InstrumentPanel {
       ctx.stroke();
       // Pitch ladder.
       ctx.lineWidth = 2;
-      ctx.font = '600 13px Arial';
+      ctx.font = '600 13px "Titillium Web", Arial, sans-serif';
       ctx.textAlign = 'center';
       for (let d = -30; d <= 30; d += 5) {
         if (d === 0) continue;
@@ -946,7 +946,7 @@ export class InstrumentPanel {
       ctx.lineWidth = 2;
       ctx.strokeRect(x + 18, y - 14, 74, 28);
       ctx.fillStyle = '#e8eaee';
-      ctx.font = '700 21px "Courier New", monospace';
+      ctx.font = '700 21px "Titillium Web", Arial, sans-serif';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(Math.max(0, Math.round(alt))).padStart(5, ' '), x + 88, y + 1);
@@ -1023,7 +1023,7 @@ export class InstrumentPanel {
           ctx.translate(Math.sin(a) * (rr - 52), -Math.cos(a) * (rr - 52));
           ctx.rotate(a);
           ctx.fillStyle = d % 90 === 0 ? '#ffd23f' : '#e8eaee';
-          ctx.font = `700 ${d % 90 === 0 ? 22 : 18}px Arial`;
+          ctx.font = `700 ${d % 90 === 0 ? 22 : 18}px "Titillium Web", Arial, sans-serif`;
           ctx.fillText(t, 0, 0);
           ctx.restore();
         }
@@ -1044,7 +1044,7 @@ export class InstrumentPanel {
       ctx.fillStyle = '#05070a';
       ctx.fillRect(x - 34, y + rr - 44, 68, 26);
       ctx.fillStyle = '#3ec96a';
-      ctx.font = '700 20px "Courier New", monospace';
+      ctx.font = '700 20px "Titillium Web", Arial, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(String(Math.round(s.hdg)).padStart(3, '0') + '°', x, y + rr - 30);
     }
@@ -1082,7 +1082,7 @@ export class InstrumentPanel {
       ctx.arc(x, y, 8, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#c9ced6';
-      ctx.font = '700 16px "Courier New", monospace';
+      ctx.font = '700 16px "Titillium Web", Arial, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(`${Math.round(r.fuelL)} L`, x, y + 62);
     }
@@ -1110,7 +1110,7 @@ export class InstrumentPanel {
         ctx.fill();
         ctx.stroke();
         ctx.fillStyle = l[1] ? '#101216' : '#6d747d';
-        ctx.font = '700 17px Arial';
+        ctx.font = '700 17px "Titillium Web", Arial, sans-serif';
         ctx.textBaseline = 'middle';
         ctx.fillText(l[0], lx + 100, ly + 22);
       });

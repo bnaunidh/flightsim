@@ -335,6 +335,14 @@ function dress(model, id, tpl) {
   if (!airframe) return false;
   // Every coordinate the paint needs, once per type (fleet/extra/real-paint.js), before the copy is taken.
   if (paint && !tpl.uv) tpl.uv = (paint.uvs && paint.uvs(tpl.root)) || true;
+  // The number and the name, each on a patch of this hull with its own sharp canvas; what has no
+  // patch (a hull with nothing there) is drawn into the skin instead.
+  const patches = [];
+  for (const d of (paint && paint.decals) || []) {
+    const geo = paint.patch ? paint.patch(tpl, d) : null;
+    d.meshed = !!geo;
+    if (geo) patches.push([geo, d]);
+  }
   const skin = tpl.root.clone();
   skin.name = 'Real model';
   skin.userData = { realModel: id };
@@ -349,6 +357,14 @@ function dress(model, id, tpl) {
     o.castShadow = !m.transparent;
     o.receiveShadow = true;
   });
+  for (const [geo, d] of patches) {
+    const mat = paint.letter(d.texture, mats.skin_l);
+    const m = new THREE.Mesh(geo, typeof ud.ownMaterial === 'function' ? ud.ownMaterial(mat) : mat);
+    m.name = d.title ? 'real_title' : 'real_reg';
+    m.castShadow = false;
+    m.renderOrder = 1;
+    skin.add(m);
+  }
   // What goes under it.
   const hidden = [];
   const flaps = [];
@@ -570,6 +586,7 @@ function paintedSkin(paint, id) {
     }
     // The number and the name: as painted, read left to right from either side.
     for (const d of paint.decals || []) {
+      if (d.meshed) continue;
       const vAt = d.hump && paint.vHump ? paint.vHump : paint.vAt;
       try {
         paint.decal(g, d, U, V, vAt, mirror, paint.knots);

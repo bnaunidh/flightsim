@@ -138,7 +138,7 @@ addMapLayer((g, v, sim) => {
   const r = Math.max(9, Math.min(16, v.W / 90));
   g.save();
   g.globalAlpha = 0.55 + 0.4 * fade;
-  g.font = `600 ${Math.round(r * 0.75)}px system-ui, sans-serif`;
+  g.font = `600 ${Math.round(r * 0.75)}px "Jost", Arial, sans-serif`;
   g.textAlign = 'center';
   g.textBaseline = 'top';
   WX_MAP.frames++;

@@ -165,7 +165,7 @@ function chart(sim) {
 /* ------------------------------------------------------------------ */
 
 const CSS = `
-.lm { position: fixed; inset: 0; z-index: 85; pointer-events: auto; color: #eaf2f8; font: 500 13.5px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+.lm { position: fixed; inset: 0; z-index: 85; pointer-events: auto; color: #eaf2f8; font: 500 13.5px var(--font);
   padding: max(12px, 2.2vh) max(12px, 2.2vw); background: rgba(4, 9, 16, 0.16); }
 .lm[hidden] { display: none; }
 .lm-panel { position: relative; width: 100%; height: 100%; border-radius: 18px; overflow: hidden; background: rgba(12, 30, 48, 0.5);
@@ -178,7 +178,7 @@ const CSS = `
 .lm-top { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
 .lm-top > * { pointer-events: auto; }
 .lm-btn { min-width: 44px; min-height: 44px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2); background: rgba(10, 20, 32, 0.7); color: #fff;
-  font: 700 15px system-ui, sans-serif; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 10px; }
+  font: 700 15px var(--font); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 10px; }
 .lm-btn:hover { background: rgba(30, 48, 66, 0.85); }
 .lm-btn:focus-visible, .lm button:focus-visible, .lm input:focus-visible { outline: 2px solid #8fd0ff; outline-offset: 2px; }
 .lm-title { padding: 8px 14px; line-height: 1.15; }
@@ -194,20 +194,20 @@ html.reduce-motion .lm-live .lm-dot { animation: none; }
 .lm-zoom { position: absolute; left: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
 .lm-zoom .lm-btn.is-on { border-color: #ffd640; color: #ffd640; }
 .lm-side { position: absolute; top: 68px; right: 12px; bottom: 60px; width: min(340px, 42%); overflow: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
-.lm-side h4 { margin: 0 0 6px; font: 800 10.5px system-ui, sans-serif; letter-spacing: 0.12em; opacity: 0.72; display: flex; align-items: center; gap: 8px; }
+.lm-side h4 { margin: 0 0 6px; font: 800 10.5px var(--font); letter-spacing: 0.12em; opacity: 0.72; display: flex; align-items: center; gap: 8px; }
 .lm-side h4 button { margin-left: auto; }
-.lm-pos { font: 600 13px ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.02em; }
+.lm-pos { font: 600 13px var(--mono); letter-spacing: 0.02em; }
 .lm-sub { font-size: 11.5px; opacity: 0.7; font-variant-numeric: tabular-nums; }
 .lm-selname { font-size: 16px; font-weight: 700; }
 .lm-facts { font-variant-numeric: tabular-nums; margin-top: 3px; }
 .lm-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .lm-btns:empty { display: none; }
 .lm-side button { min-height: 40px; padding: 6px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.22); background: rgba(255,255,255,0.08);
-  color: #fff; font: 700 12.5px system-ui, sans-serif; letter-spacing: 0.04em; cursor: pointer; }
+  color: #fff; font: 700 12.5px var(--font); letter-spacing: 0.04em; cursor: pointer; }
 .lm-side button.lm-primary { background: #e83ee6; border-color: #f07af0; }
 .lm-side button.lm-small { min-height: 30px; padding: 3px 9px; font-size: 11px; }
 .lm-places { display: flex; flex-direction: column; gap: 4px; }
-.lm-places h5 { margin: 6px 0 2px; font: 700 10.5px system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; }
+.lm-places h5 { margin: 6px 0 2px; font: 700 10.5px var(--font); letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; }
 .lm-places button { text-align: left; display: flex; flex-direction: column; gap: 1px; font-weight: 600; letter-spacing: 0; }
 .lm-places button small { font-weight: 500; opacity: 0.72; font-variant-numeric: tabular-nums; }
 .lm-places button.is-sel { border-color: #8fd0ff; background: rgba(143, 208, 255, 0.14); }

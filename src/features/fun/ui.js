@@ -17,7 +17,7 @@ const CSS = /* css */ `
   position: absolute; left: 16px; top: 270px; display: flex; align-items: center; gap: 8px;
   padding: 6px 8px 6px 12px; border-radius: 14px; background: rgba(12, 20, 34, 0.72);
   border: 1px solid rgba(255, 200, 70, 0.35); color: #eaf1fb; pointer-events: none;
-  font: 700 15px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+  font: 700 15px/1 var(--font);
   box-shadow: 0 8px 24px rgba(0,0,0,0.35); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   transition: transform 0.2s ease; z-index: 31;
 }
@@ -52,7 +52,7 @@ const CSS = /* css */ `
 .fun-note {
   padding: 8px 12px; border-radius: 12px; text-align: left;
   background: rgba(12, 20, 34, 0.82); border: 1px solid rgba(255, 200, 70, 0.35); color: #eaf1fb;
-  font: 600 14px/1.35 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+  font: 600 14px/1.35 var(--font);
   animation: fun-fade 4s linear forwards;
 }
 @keyframes fun-fade { 0% { opacity: 0; } 10% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }

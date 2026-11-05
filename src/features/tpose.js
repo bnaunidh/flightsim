@@ -458,7 +458,7 @@ export function drawHarrisonCard(doc = document) {
   // The tag.
   rr(W - 96, 10, 84, 22, 11, '#ffd23f');
   g.fillStyle = '#1a1a1a';
-  g.font = '800 12px system-ui, sans-serif';
+  g.font = '800 12px "Jost", Arial, sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillText('+1 km/h', W - 54, 21.5);

@@ -395,7 +395,7 @@ export function switchPanelMaterial({ w = 512, h = 256, colour = '#3b4148', rows
       const y = j * rh + rh / 2;
       const kind = rnd();
       g.fillStyle = 'rgba(255,255,255,0.7)';
-      g.font = `600 ${Math.round(rh * 0.14)}px "Helvetica Neue", Arial, sans-serif`;
+      g.font = `600 ${Math.round(rh * 0.14)}px "Titillium Web", Arial, sans-serif`;
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       g.fillText(words[Math.floor(rnd() * words.length)], x, j * rh + rh * 0.16);

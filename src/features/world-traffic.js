@@ -921,7 +921,7 @@ function drawSymbol(g, x, y, hdg, heli, fill, scale) {
 }
 
 function tag(g, text, x, y, strong, boxes) {
-  g.font = `${strong ? 700 : 600} 11px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+  g.font = `${strong ? 700 : 600} 11px "Jost", Arial, sans-serif`;
   const w = g.measureText(text).width + 8;
   const h = 16;
   const bx = x + 9;

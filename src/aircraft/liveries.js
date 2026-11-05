@@ -44,8 +44,6 @@ export const LIVERIES = [
       cowl: '#262c66',
       cowlBand: '#e0a458',
       emblemInks: ['#e0a458'],
-      titleWeight: 700,
-      titleSpacing: 0.01,
       // Ethiopian-style: a warm, slightly flared bold sans.
       titleFont: { family: 'Kanit', weight: 600, style: 'normal' },
       // The fin's green, not the cheatline's gold: gold on a white body was
@@ -78,8 +76,6 @@ export const LIVERIES = [
       pinstripe: '#d4a62a',
       cowl: '#0d2f56',
       cowlBand: '#d4a62a',
-      titleWeight: 700,
-      titleSpacing: 0.07,
       // United-style: a clean, wide geometric sans.
       titleFont: { family: 'Montserrat', weight: 700, style: 'normal' },
     },
@@ -105,8 +101,6 @@ export const LIVERIES = [
       bands: ['#c8102e', '#143478'],
       cowl: '#c9ced3',
       emblemInks: ['#f4f6f8'],
-      titleWeight: 700,
-      titleSpacing: 0.05,
       // American-style: a squared, technical sans.
       titleFont: { family: 'Titillium Web', weight: 700, style: 'normal' },
       titleInk: '#12306b',
@@ -132,8 +126,6 @@ export const LIVERIES = [
       belly: '#b4bcc4',
       cowl: null,
       emblemInks: ['#f7f8fa', '#c8142a'],
-      titleWeight: 600,
-      titleSpacing: 0.08,
       // Air France-style: a Parisian geometric, Futura's cousin.
       titleFont: { family: 'Jost', weight: 700, style: 'normal' },
       titleInk: '#12306b',
@@ -162,8 +154,6 @@ export const LIVERIES = [
       cowl: '#b3121b',
       cowlBand: '#e8721f',
       emblemInks: ['#b3121b'],
-      titleWeight: 700,
-      titleSpacing: 0.015,
       // Air India-style: the flowing italic of the old titling.
       titleFont: { family: 'Lora', weight: 600, style: 'italic' },
       titleInk: '#960d15',
@@ -189,8 +179,6 @@ export const LIVERIES = [
       cowl: '#24282d',
       cowlBand: '#e8a33c',
       emblemInks: ['#e8a33c'],
-      titleWeight: 800,
-      titleSpacing: 0.08,
       // night-freighter: a condensed cargo face.
       titleFont: { family: 'Oswald', weight: 600, style: 'normal' },
       titleInk: '#f0b24a',
@@ -227,8 +215,6 @@ export const LIVERIES = [
       belly: '#d6dde4',
       cowl: '#39b4e6',
       emblemInks: ['#f4f7fa', '#0a3b6e'],
-      titleWeight: 700,
-      titleSpacing: 0.05,
       // KLM-style: a bold, round geometric.
       titleFont: { family: 'League Spartan', weight: 700, style: 'normal' },
       titleInk: '#072c54',
@@ -254,8 +240,6 @@ export const LIVERIES = [
       pinstripe: '#c8102e',
       cowl: '#003a70',
       emblemInks: ['#f6f7f9'],
-      titleWeight: 800,
-      titleSpacing: 0.08,
       // Delta-style: a heavy, square-shouldered sans.
       titleFont: { family: 'Montserrat', weight: 800, style: 'normal' },
       titleInk: '#003a70',
@@ -280,8 +264,6 @@ export const LIVERIES = [
       belly: '#c9ced3',
       cowl: null,
       emblemInks: ['#c8a24a', '#f8f8f6'],
-      titleWeight: 600,
-      titleSpacing: 0.015,
       // Emirates-style: a high-contrast, elegant serif.
       titleFont: { family: 'Playfair Display', weight: 700, style: 'normal' },
       titleInk: '#7d5a10',
@@ -307,8 +289,6 @@ export const LIVERIES = [
       pinstripe: '#7a5a30',
       cowl: '#b08d57',
       emblemInks: ['#f7f4ee', '#e3cfa6', '#7a5a30'],
-      titleWeight: 600,
-      titleSpacing: 0.07,
       // Etihad-style: classical capitals, quiet luxury.
       titleFont: { family: 'Cinzel', weight: 700, style: 'normal' },
       titleInk: '#523a18',
@@ -334,8 +314,6 @@ export const LIVERIES = [
       cowl: '#1b3fb5',
       cowlBand: '#ff6b4a',
       emblemInks: ['#ff6b4a', '#f5f7fb'],
-      titleWeight: 900,
-      titleSpacing: 0.05,
       // A fast, heavy italic.
       titleFont: { family: 'Exo 2', weight: 700, style: 'italic' },
       titleInk: '#f5f7fb',
@@ -361,8 +339,6 @@ export const LIVERIES = [
       cowl: '#2b3138',
       cowlBand: '#8fc31f',
       emblemInks: ['#8fc31f', '#f5f7f6'],
-      titleWeight: 700,
-      titleSpacing: 0.03,
       // A round geometric face, open and well spaced.
       titleFont: { family: 'Montserrat', weight: 700, style: 'normal' },
       titleInk: '#2b3138',
@@ -392,8 +368,6 @@ export const LIVERIES = [
       cowl: '#351c15',
       cowlBand: '#ffb500',
       emblemInks: ['#ffb500', '#351c15'],
-      titleWeight: 700,
-      titleSpacing: 0.06,
       // UPS-style: a sturdy condensed sans.
       titleFont: { family: 'Barlow Condensed', weight: 700, style: 'normal' },
       titleInk: '#351c15',
@@ -419,8 +393,6 @@ export const LIVERIES = [
       pinstripe: '#eb2226',
       cowl: '#0d2f6b',
       emblemInks: ['#eb2226', '#f7f8fa'],
-      titleWeight: 600,
-      titleSpacing: 0.09,
       // British Airways-style: a crisp, upright geometric.
       titleFont: { family: 'Jost', weight: 700, style: 'normal' },
       titleInk: '#0d2f6b',
@@ -445,8 +417,6 @@ export const LIVERIES = [
       belly: '#b9bfc5',
       cowl: null,
       emblemInks: ['#f7f8fa'],
-      titleWeight: 700,
-      titleSpacing: 0.015,
       // Turkish-style: a bold, even geometric.
       titleFont: { family: 'League Spartan', weight: 700, style: 'normal' },
       titleInk: '#1b1f5c',
@@ -471,8 +441,6 @@ export const LIVERIES = [
       belly: '#a9adb2',
       cowl: '#5c0632',
       emblemInks: ['#d4d6d9', '#ffffff'],
-      titleWeight: 600,
-      titleSpacing: 0.015,
       // Qatar-style: a refined serif, widely spaced.
       titleFont: { family: 'Playfair Display', weight: 700, style: 'normal' },
       titleInk: '#5c0632',
@@ -497,8 +465,6 @@ export const LIVERIES = [
       belly: '#bfc3c7',
       cowl: null,
       emblemInks: ['#f8f8f8', '#ffd166'],
-      titleWeight: 700,
-      titleSpacing: 0.07,
       // JAL-style: a firm sans with an Asian warmth.
       titleFont: { family: 'Kanit', weight: 600, style: 'normal' },
       titleInk: '#1a1a1a',
@@ -524,8 +490,6 @@ export const LIVERIES = [
       cowl: '#ffe73a',
       cowlBand: '#1a1a1a',
       emblemInks: ['#1a1a1a'],
-      titleWeight: 900,
-      titleSpacing: 0.06,
       // Spirit-style: black, loud, low-cost.
       titleFont: { family: 'Archivo Black', weight: 400, style: 'normal' },
       titleInk: '#1a1a1a',
@@ -552,8 +516,6 @@ export const LIVERIES = [
       cowl: '#0f6e8c',
       cowlBand: '#f2b84b',
       emblemInks: ['#f5f8fa', '#f2b84b'],
-      titleWeight: 700,
-      titleSpacing: 0.015,
       // the island's own: a sporty, forward-leaning italic.
       titleFont: { family: 'Exo 2', weight: 700, style: 'italic' },
       titleInk: '#084a62',
@@ -585,8 +547,6 @@ export const LIVERIES = [
       belly: '#7fa9d6',
       pinstripe: '#c9a227',
       cowl: '#7fa9d6',
-      titleWeight: 600,
-      titleSpacing: 0.14,
       // the VC-25's Caslon-style serif.
       titleFont: { family: 'Playfair Display', weight: 700, style: 'normal' },
       titleInk: '#1c365e',
@@ -654,11 +614,11 @@ export function radioBrand(livery) {
  *     cowlBand    a ring round the front of each cowl
  *     emblemInks  the mark's colours (one, or one per part of it); the body
  *                 colour if not set
- *     titleWeight, titleSpacing, titleInk   the name's weight (400-900),
- *                 letter spacing (em) and colour (the cheatline's if not set)
+ *     titleInk    the name's main colour
  *     titleFont   the name's typeface, { family, weight, style }: one of the
  *                 bundled OFL faces (render/airline-fonts.js), the nearest free
- *                 cousin of the lettering the real airline wears — never its own
+ *                 cousin of the lettering the real airline wears — never its own.
+ *                 The name itself is drawn in fleet/extra/wordmarks.js.
  */
 export function airlinesFor(type) {
   if (!type) return AIRLINE_LIVERIES;

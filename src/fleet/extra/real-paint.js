@@ -19,7 +19,7 @@
  * first load.
  */
 import * as THREE from '../../vendor/three.module.js';
-import { finBox, finPoint, finUV } from './livery-art.js';
+import { finBox, finCentre, finUV } from './livery-art.js';
 import { WINGLET_U, skinPatch } from './airliner-kit.js';
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -104,63 +104,89 @@ function sortScraps(mesh, P) {
 
 const jets = (P) => (P.engines || []).filter((e) => e.kind === 'jet');
 
-/** A fin's outline off its vertices: { y0, y1, le0, le1, ch0, ch1 }, or null if it does not read as one fin. */
-function readFin(meshes) {
-  const pts = [];
+/**
+ * A real fin as you see it, from its own triangles: the side-on area sampled
+ * so each triangle weighs its size, stopped at the top of the body. Returns its
+ * centre, [z, y], and the room there: how far the nearest edge is, in metres.
+ */
+function finSeen(meshes, P) {
+  const hull = P.hull;
+  const crown = hull ? (z) => hull.topAt(clamp(z, hull.zMin, hull.zMax)) : () => -Infinity;
+  const N = 12;
+  const dots = [];
+  let [W, zs, ys] = [0, 0, 0];
   for (const o of meshes) {
     const pos = o.geometry.attributes.position;
-    for (let i = 0; i < pos.count; i++) pts.push([pos.getY(i), pos.getZ(i)]);
-  }
-  if (pts.length < 12) return null;
-  const ys = pts.map((q) => q[0]);
-  const y0 = Math.min(...ys);
-  const y1 = Math.max(...ys);
-  const H = y1 - y0;
-  if (!(H > 1)) return null;
-  const band = (yc, w) => {
-    let le = Infinity;
-    let te = -Infinity;
-    let hits = 0;
-    for (const [y, z] of pts) {
-      if (Math.abs(y - yc) > w) continue;
-      le = Math.min(le, z);
-      te = Math.max(te, z);
-      hits++;
+    const idx = o.geometry.index;
+    const n = idx ? idx.count : pos.count;
+    const at = (t) => (idx ? idx.getX(t) : t);
+    for (let t = 0; t + 2 < n; t += 3) {
+      const [a, b, c] = [at(t), at(t + 1), at(t + 2)];
+      const [ax, ay, az] = [pos.getX(a), pos.getY(a), pos.getZ(a)];
+      // One face of the fin: the far one is the same area over again.
+      if (ax + pos.getX(b) + pos.getX(c) > 0) continue;
+      const [ey, ez, fy, fz] = [pos.getY(b) - ay, pos.getZ(b) - az, pos.getY(c) - ay, pos.getZ(c) - az];
+      const area = Math.abs(ey * fz - ez * fy) / 2; // as seen from the side
+      if (!(area > 1e-5)) continue;
+      for (let i = 0; i < N; i++) {
+        for (let j = 0; j < N - i; j++) {
+          const [p, q] = [(i + 0.33) / N, (j + 0.33) / N];
+          const [y, z] = [ay + ey * p + fy * q, az + ez * p + fz * q];
+          if (y < crown(z) + 0.25) continue;
+          W += area;
+          zs += z * area;
+          ys += y * area;
+          dots.push(z, y);
+        }
+      }
     }
-    return hits >= 3 && te - le > 0.3 ? { le, ch: te - le } : null;
-  };
-  const read = (yc) => band(yc, H * 0.06) || band(yc, H * 0.12) || band(yc, H * 0.2);
-  // The root is read a fifth of the way up: the fillet into the body is below it.
-  const ra = y0 + H * 0.2;
-  const rb = y1 - H * 0.05;
-  const r0 = read(ra);
-  const r1 = read(rb);
-  if (!r0 || !r1) return null;
-  const k0 = (y0 + H * 0.1 - ra) / (rb - ra);
-  const k1 = (y1 - ra) / (rb - ra);
-  return { y0: y0 + H * 0.1, y1, le0: mix(r0.le, r1.le, k0), le1: mix(r0.le, r1.le, k1), ch0: mix(r0.ch, r1.ch, k0), ch1: Math.max(0.3, mix(r0.ch, r1.ch, k1)) };
+  }
+  if (!(W > 0)) return null;
+  const [z, y] = [zs / W, ys / W];
+  let [z0, z1, y0, y1, H] = [z, z, y, y, 0];
+  for (let i = 0; i < dots.length; i += 2) H = Math.max(H, Math.abs(dots[i + 1] - y));
+  const near = 0.08 * H;
+  for (let i = 0; i < dots.length; i += 2) {
+    const [q, r] = [dots[i], dots[i + 1]];
+    if (Math.abs(r - y) < near) {
+      z0 = Math.min(z0, q);
+      z1 = Math.max(z1, q);
+    }
+    if (Math.abs(q - z) < near) {
+      y0 = Math.min(y0, r);
+      y1 = Math.max(y1, r);
+    }
+  }
+  // (0.8: along the chord the edge is swept, and nearer than it looks)
+  return { z, y, room: Math.max(0.2, Math.min(0.8 * Math.min(z - z0, z1 - z), y - y0, y1 - y)) };
 }
 
+/**
+ * A real fin's coordinates on the canvas drawn for the procedural fin: the
+ * middle of the fin you can see goes on the canvas's own middle, where the mark
+ * is, at one scale both ways. So the mark lands dead centre on whatever shape
+ * this fin is, as big as this fin allows, and is never stretched.
+ */
 function finUVs(meshes, P) {
-  const own = readFin(meshes);
   const to = P.finProfile || null;
   const box = to ? finBox(to) : null;
+  const aim = to ? finCentre(to) : null;
+  const seen = to ? finSeen(meshes, P) : null;
+  const k = seen ? aim.r / seen.room : 1;
   for (const o of meshes) {
     const pos = o.geometry.attributes.position;
     const uv = new Float32Array(pos.count * 2);
-    for (let i = 0; i < pos.count && own && to; i++) {
-      const y = pos.getY(i);
-      const h = (y - own.y0) / (own.y1 - own.y0);
-      const le = mix(own.le0, own.le1, h);
-      const ch = mix(own.ch0, own.ch1, h);
-      const [z2, y2] = finPoint(to, (pos.getZ(i) - le) / ch, h);
-      const [u, v] = finUV(to, box, z2, y2);
-      uv[i * 2] = clamp(u, 0, 1); // a fillet running on ahead of the canvas takes its edge: the tail colour
-      uv[i * 2 + 1] = clamp(v, 0, 1);
+    for (let i = 0; i < pos.count && seen; i++) {
+      const [u, v] = finUV(to, box, aim.z + (pos.getZ(i) - seen.z) * k, aim.y + (pos.getY(i) - seen.y) * k);
+      // Left unclamped, for the sampler to clamp: a fin is a few long triangles, and pinning one corner
+      // to the canvas's edge would shear the mark across the whole of it. (A fillet running on ahead of
+      // the canvas takes its edge, the tail colour.)
+      uv[i * 2] = u;
+      uv[i * 2 + 1] = v;
     }
     o.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   }
-  return !!(own && to);
+  return !!seen;
 }
 
 /**
@@ -303,6 +329,67 @@ export function realUVs(root, P) {
     by.cowl.push(...got.cowl);
   }
   return { fin: by.fin.length ? finUVs(by.fin, P) : false, cowl: cowlUVs(by.cowl, P), wing: wingUVs(by.wing, P) };
+}
+
+/**
+ * A decal's own patch on a real hull: the skin's own triangles where the decal
+ * falls, a hair proud of them, so it follows that model's surface exactly and
+ * keeps its own texels (the skin's are spread over the whole aeroplane: a
+ * name in them is soft close to, and softer on the lower tiers). u along the
+ * body, reading left to right from each side; v by height. Cached on the
+ * template: `tpl.patches`. Null if the hull has nothing there.
+ */
+export function decalPatch(tpl, d) {
+  const cache = (tpl.patches = tpl.patches || new Map());
+  const key = [d.z, d.y, d.w, d.h].map((n) => n.toFixed(3)).join();
+  if (cache.has(key)) return cache.get(key);
+  const zA = d.z - d.w / 2;
+  const yA = d.y - d.h / 2;
+  const [zB, yB] = [zA + d.w, yA + d.h];
+  const out = { p: [], n: [], uv: [] };
+  tpl.root.traverse((o) => {
+    if (!o.isMesh) return;
+    const role = o.parent && o.parent !== tpl.root ? o.parent.name : o.name;
+    if (role !== 'skin_l' && role !== 'skin_r') return;
+    const side = role === 'skin_l' ? -1 : 1;
+    const g = o.geometry;
+    const pos = g.attributes.position;
+    const idx = g.index;
+    const n = idx ? idx.count : pos.count;
+    const at = (t) => (idx ? idx.getX(t) : t);
+    for (let t = 0; t + 2 < n; t += 3) {
+      let [a, b, c] = [at(t), at(t + 1), at(t + 2)];
+      const [z0, z1, z2] = [pos.getZ(a), pos.getZ(b), pos.getZ(c)];
+      if (Math.max(z0, z1, z2) < zA || Math.min(z0, z1, z2) > zB) continue;
+      const [y0, y1, y2] = [pos.getY(a), pos.getY(b), pos.getY(c)];
+      if (Math.max(y0, y1, y2) < yA || Math.min(y0, y1, y2) > yB) continue;
+      const [x0, x1, x2] = [pos.getX(a), pos.getX(b), pos.getX(c)];
+      if ((x0 + x1 + x2) * side <= 0) continue;
+      // Wound outward whatever the file did: its faces are not all one way round.
+      const nx = (y1 - y0) * (z2 - z0) - (z1 - z0) * (y2 - y0);
+      if (nx * side < 0) [b, c] = [c, b];
+      for (const i of [a, b, c]) {
+        const [x, y, z] = [pos.getX(i), pos.getY(i), pos.getZ(i)];
+        const q = g.attributes.normal;
+        const [ox, oy, oz] = q ? [q.getX(i), q.getY(i), q.getZ(i)] : [side, 0, 0];
+        const flip = ox * side < 0 ? -1 : 1;
+        // Out along the skin's own normal: 5 cm, over a door's top frame where the name crosses one.
+        out.p.push(x + ox * flip * 0.05, y + oy * flip * 0.05, z + oz * flip * 0.05);
+        const u = (z - zA) / d.w;
+        out.uv.push(side > 0 ? 1 - u : u, (y - yA) / d.h);
+        out.n.push(ox * flip, oy * flip, oz * flip);
+      }
+    }
+  });
+  let geo = null;
+  if (out.p.length) {
+    geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(out.p), 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(out.n), 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(out.uv), 2));
+  }
+  cache.set(key, geo);
+  return geo;
 }
 
 /**

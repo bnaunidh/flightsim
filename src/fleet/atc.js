@@ -58,7 +58,7 @@ export function createControlTower({ height = 64, environment = null, airport = 
   const lampMat = makeMaterial(g, { color: 0xa52c24, emissive: 0xff3322, emissiveIntensity: .2, roughness: .3 });
   const beacon = addBox(g, g, 'Red obstruction lamp', [.38, .35, .38], [3.2, h + 13.35, 0], lampMat);
   const signMap = paintTexture(`tower-sign-${airport}`, 512, 128, (c, w, hh) => {
-    c.fillStyle = '#35464b'; c.fillRect(0, 0, w, hh); c.fillStyle = '#e5e4d7'; c.font = 'bold 48px sans-serif'; c.textAlign = 'center'; c.fillText(String(airport).slice(0, 14), w / 2, 61); c.font = '24px sans-serif'; c.fillText('AIR TRAFFIC CONTROL', w / 2, 99);
+    c.fillStyle = '#35464b'; c.fillRect(0, 0, w, hh); c.fillStyle = '#e5e4d7'; c.font = 'bold 48px "Jost", Arial, sans-serif'; c.textAlign = 'center'; c.fillText(String(airport).slice(0, 14), w / 2, 61); c.font = '24px "Jost", Arial, sans-serif'; c.fillText('AIR TRAFFIC CONTROL', w / 2, 99);
   });
   const sign = addPlane(g, g, 'Airport sign', 5.5, 1.375, [0, 6.5, -6.1], makeMaterial(g, { map: signMap, roughness: .8 })); sign.rotation.y = Math.PI;
   registerPart(g, 'foundation', 'Foundation', [base], { massKg: 24000 });

@@ -862,7 +862,7 @@ export function lettersTexture(text, { color = '#1f272e', width = 512, height = 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const size = Math.min(h * 0.68, w / (Math.max(t.length, 1) * (0.66 + sp)));
-    ctx.font = `${wt} ${size}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+    ctx.font = `${wt} ${size}px "Jost", Arial, sans-serif`;
     let nudge = 0;
     if (sp > 0 && 'letterSpacing' in ctx) {
       try {

@@ -34,12 +34,12 @@
  *   comet       Dash Freight   a comet, its two tails curling up and aft
  *   links       FlexShip       two links of a chain, woven over and under
  *   parcel      Parcel Brown   two stacked parcels, no badge round them
- *   seawave     Royal Isles    a breaking wave and its foam
+ *   seawave     Royal Isles    one breaking wave over a swell
  *   crane       Bosphorus      a standing crane, its neck in an S
  *   pearlshell  Pearl Gulf     an open oyster and its pearl
  *   suncrane    Rising Crane   a crane in flight across a sun
  *   bang        Spit Air       an exclamation mark, leaning in
- *   horizon     OverSea        a sun on the sea line, a gull, in a ring
+ *   horizon     OverSea        a sun over the sea, cut from one disc
  *
  * `globe` is kept as another name for the compass (an old saved scheme's).
  *
@@ -411,14 +411,14 @@ const MARKS = {
   /** Dash Freight: a comet flying forward and down, its two tails curling up and aft. */
   comet(P, ink) {
     P.begin();
-    blade(P, -0.24, 0.2, 0.44, -0.38, 0.1, 0.075);
+    blade(P, -0.22, 0.22, 0.44, -0.4, 0.09, 0.115);
     P.fill(ink(1));
     P.begin();
-    blade(P, -0.26, 0.1, 0.14, -0.42, 0.11, 0.05);
+    blade(P, -0.26, 0.1, 0.12, -0.44, 0.1, 0.08);
     P.fill(ink(1));
     // A clean gap round the head, then the head.
-    P.begin().A(-0.26, 0.21, 0.185).cut();
-    P.begin().A(-0.26, 0.21, 0.15).fill(ink(0));
+    P.begin().A(-0.24, 0.22, 0.225).cut();
+    P.begin().A(-0.24, 0.22, 0.19).fill(ink(0));
   },
 
   /** FlexShip: two links of a chain, slanted, one over the other at the top crossing and under it at the foot. */
@@ -495,17 +495,24 @@ const MARKS = {
 
   /** Royal Isles: one great breaking wave, its crest curling forward over a clean hollow. */
   seawave(P, ink) {
+    // One wave, breaking forward: a long back rising to a crest thrown over an
+    // open hollow, its foot running out thin, and one swell under it.
     P.begin()
-      .M(0.46, 0.3)
-      .C(0.32, 0.02, 0.2, -0.36, -0.14, -0.42)
-      .C(-0.34, -0.46, -0.46, -0.3, -0.42, -0.14)
-      .C(-0.34, -0.26, -0.22, -0.26, -0.16, -0.16)
-      .C(-0.12, -0.06, -0.26, 0.0, -0.3, -0.1)
-      .C(-0.36, 0.1, -0.2, 0.3, 0.06, 0.28)
-      .C(-0.1, 0.36, -0.3, 0.34, -0.46, 0.3)
+      .M(0.47, 0.2)
+      .C(0.33, 0.16, 0.2, -0.1, 0.03, -0.28)
+      .C(-0.1, -0.42, -0.31, -0.45, -0.43, -0.3)
+      .C(-0.48, -0.24, -0.47, -0.17, -0.45, -0.1)
+      .C(-0.41, -0.19, -0.33, -0.23, -0.25, -0.2)
+      .C(-0.14, -0.15, -0.14, 0.0, -0.21, 0.09)
+      .C(-0.27, 0.16, -0.36, 0.2, -0.47, 0.2)
+      .Z()
+      .fill(ink(1));
+    P.begin()
+      .M(-0.47, 0.27)
+      .C(-0.2, 0.4, 0.2, 0.4, 0.47, 0.27)
+      .C(0.2, 0.32, -0.2, 0.32, -0.47, 0.27)
       .Z()
       .fill(ink(0));
-    P.begin().M(-0.46, 0.4).C(-0.16, 0.46, 0.2, 0.4, 0.46, 0.34).C(0.2, 0.34, -0.16, 0.38, -0.46, 0.34).Z().fill(ink(1));
   },
 
   /** Bosphorus: a crane in a clean solid disc: one bold bird, neck an S, cut out of the sun behind it. */
@@ -585,20 +592,23 @@ const MARKS = {
 
   /** OverSea: a bold ring round a sun on the sea line, two swells under it. */
   horizon(P, ink) {
-    P.begin().A(0, 0, 0.45).A(0, 0, 0.375, 0, Math.PI * 2, true).fill(ink(0));
-    P.g.save();
-    P.begin().A(0, 0, 0.335);
-    P.g.clip();
-    P.begin().A(0, 0.04, 0.2).fill(ink(1));
-    P.begin().M(-0.5, 0.04).L(0.5, 0.04).L(0.5, 0.5).L(-0.5, 0.5).Z().cut();
-    const swell = (y, w) => {
-      P.begin().M(-0.44, y);
-      for (let i = 0; i < 3; i++) P.Q(-0.35 + i * 0.3, y - 0.06, -0.29 + i * 0.3, y).Q(-0.2 + i * 0.3, y + 0.06, -0.14 + i * 0.3, y);
-      P.stroke(ink(0), w, 'butt');
+    // A sun going down over the sea, cut from one disc: the sun above a long
+    // swell, then two bands of sea, the gaps opening as they come nearer.
+    const g = P.g;
+    const R = 0.45;
+    const swell = (y, a) => {
+      P.begin().M(-0.5, y + a).C(-0.24, y - 2.1 * a, 0.2, y + 2.1 * a, 0.5, y - a);
+      return P;
     };
-    swell(0.12, 0.055);
-    swell(0.24, 0.055);
-    P.g.restore();
+    P.begin().A(0, 0, R).fill(ink(0));
+    g.save();
+    g.globalCompositeOperation = 'source-atop';
+    swell(0.02, 0.05);
+    P.L(0.5, -0.5).L(-0.5, -0.5).Z().fill(ink(1));
+    g.restore();
+    swell(0.02, 0.05).cutStroke(0.05, 'butt');
+    swell(0.17, 0.05).cutStroke(0.066, 'butt');
+    swell(0.31, 0.05).cutStroke(0.082, 'butt');
   },
 };
 MARKS.globe = MARKS.compass;

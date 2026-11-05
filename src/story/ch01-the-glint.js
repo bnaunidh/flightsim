@@ -972,7 +972,7 @@ function drawReveal(sim, t) {
     g.lineWidth = 2;
     g.strokeRect(ix, iy, iw, ih);
     g.fillStyle = 'rgba(234,241,251,0.9)';
-    g.font = '700 11px sans-serif';
+    g.font = '700 11px "Jost", Arial, sans-serif';
     g.fillText('ENLARGED ×8', ix + 8, iy + ih - 8);
   }
   // Scanlines over the whole print: an enlargement, not a photograph of one.
@@ -1047,7 +1047,7 @@ function paintObject(g, x, y, w, h, reveal) {
     g.globalAlpha = 1;
     // Faded stencil under it.
     g.fillStyle = `rgba(242,235,221,${0.5 * reveal})`;
-    g.font = `700 ${Math.max(7, R * 0.42)}px monospace`;
+    g.font = `700 ${Math.max(7, R * 0.42)}px "Barlow Condensed", "Arial Narrow", sans-serif`;
     g.fillText('KITTIWAKE', L * 0.1, R * 0.35);
   }
   g.restore();

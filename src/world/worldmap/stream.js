@@ -286,7 +286,7 @@ export class TerrainStream {
       g.setAttribute('normal', new THREE.BufferAttribute(data.nrm, 3));
       g.setAttribute('aBlend', new THREE.BufferAttribute(data.blend, 3));
       if (data.cover) g.setAttribute('aCover', new THREE.BufferAttribute(data.cover, 4, true));
-      if (data.urban) g.setAttribute('aUrban', new THREE.BufferAttribute(data.urban, 1, true));
+      if (data.urban) g.setAttribute('aUrban', new THREE.BufferAttribute(data.urban, 4, true));
       g.setAttribute('uv', new THREE.BufferAttribute(data.uv, 2));
       g.setIndex(new THREE.BufferAttribute(this.index.slice(), 1));
       const half = t.size / 2;

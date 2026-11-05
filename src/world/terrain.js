@@ -451,6 +451,8 @@ export function resolveFlats() {
     // otherwise the town builder, which scatters, would refuse to put a single
     // building on its own village green.
     f.clear = d.clear ?? (f.surface === 'tarmac' || f.surface === 'gravel');
+    // A World Map town's own facts (preview.js makeDef): the street plan reads them (worldmap/town-grid.js).
+    if (d.town) f.town = d.town;
     f.cx = (f.x0 + f.x1) / 2;
     f.cz = (f.z0 + f.z1) / 2;
     f.bx0 = f.x0 - f.blend; f.bx1 = f.x1 + f.blend;

@@ -46,7 +46,7 @@ const CSS = `
 #afo-movie .am-title {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   text-align: center; opacity: 0; transition: opacity 0.5s ease; width: min(92vw, 640px);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font);
   color: #f4f1e6; text-shadow: 0 2px 16px rgba(0, 0, 0, 0.7);
 }
 #afo-movie.am-big .am-title.on { opacity: 1; }
@@ -61,7 +61,7 @@ const CSS = `
 #afo-movie .am-chip {
   position: absolute; left: 50%; bottom: 2.6%; transform: translate(-50%, 50%);
   opacity: 0; transition: opacity 0.35s ease; color: #fff; text-align: center;
-  font: 800 13px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font: 800 13px/1 var(--font);
   letter-spacing: 0.16em; text-transform: uppercase; text-shadow: 0 1px 10px rgba(0, 0, 0, 0.8);
   white-space: nowrap;
 }

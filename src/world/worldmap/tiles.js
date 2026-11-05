@@ -81,7 +81,8 @@ export function assemble(heights, cx, cz, size, seg, flatAt = null, cover = null
   // What covers the ground (worldmap/landcover.js): farmland, forest, scrub, marsh. Only where the map asks for it.
   // Bytes, 0..255 for 0..1 (normalised attributes): a fifth of the floats' upload, for a cover nobody can tell to 0.4%.
   const cov = cover ? new Uint8Array(count * 4) : null;
-  const urb = cover ? new Uint8Array(count) : null;
+  // Four bytes: how built-up, then the town's heading, how far in and its climate (worldmap/town-grid.js).
+  const urb = cover ? new Uint8Array(count * 4) : null;
   const B = (v) => (v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255));
   const uv = new Float32Array(count * 2);
   const H = (i, j) => heights[(j + 1) * W + (i + 1)];
@@ -111,7 +112,10 @@ export function assemble(heights, cx, cz, size, seg, flatAt = null, cover = null
         cov[k * 4 + 1] = B(c[4]);
         cov[k * 4 + 2] = B(c[5]);
         cov[k * 4 + 3] = B(c[6]);
-        urb[k] = B(c[7]);
+        urb[k * 4] = B(c[7]);
+        urb[k * 4 + 1] = B(c[8]);
+        urb[k * 4 + 2] = B(c[9]);
+        urb[k * 4 + 3] = B(c[10]);
         uv[k * 2] = (cx + lx) / UV_METRES;
         uv[k * 2 + 1] = -(cz + lz) / UV_METRES;
         continue;
@@ -145,7 +149,7 @@ export function assemble(heights, cx, cz, size, seg, flatAt = null, cover = null
     }
     if (cov) {
       for (let c = 0; c < 4; c++) cov[k * 4 + c] = cov[src * 4 + c];
-      urb[k] = urb[src];
+      for (let c = 0; c < 4; c++) urb[k * 4 + c] = urb[src * 4 + c];
     }
     uv[k * 2] = uv[src * 2];
     uv[k * 2 + 1] = uv[src * 2 + 1];

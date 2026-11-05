@@ -79,7 +79,7 @@ function word(text, bg, fg, band) {
     g.fillRect(0, 0, 256, 48);
   }
   g.fillStyle = fg;
-  g.font = 'bold 26px sans-serif';
+  g.font = 'bold 26px "Jost", Arial, sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillText(text, 128, 25);

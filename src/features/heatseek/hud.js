@@ -19,16 +19,16 @@ const CSS = `
 .hsk-root { position: fixed; inset: 0; pointer-events: none; z-index: 29; }
 .hsk-root[hidden], .hsk-panel[hidden], .hsk-seeker[hidden], .hsk-lock[hidden], .hsk-btn[hidden], .hsk-threats[hidden], .hsk-alert[hidden], .hsk-glow[hidden] { display: none !important; }
 .hsk-panel { position: fixed; left: 16px; top: 340px; display: flex; flex-direction: column; gap: 4px; padding: 7px 11px 8px; border-radius: 10px;
-  background: rgba(10, 16, 24, 0.72); border: 1px solid rgba(180, 205, 235, 0.28); color: #eaf2fb; font: 700 15px/1.1 "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  background: rgba(10, 16, 24, 0.72); border: 1px solid rgba(180, 205, 235, 0.28); color: #eaf2fb; font: 700 15px/1.1 var(--mono);
   letter-spacing: 0.04em; min-width: 108px; }
 .hsk-panel .hsk-count { display: flex; align-items: center; gap: 8px; }
 .hsk-panel .hsk-pips { display: inline-flex; gap: 4px; }
 .hsk-panel .hsk-pip { width: 7px; height: 15px; border-radius: 2px 2px 3px 3px; background: #f3f6f8; border: 1px solid #1c2229; }
 .hsk-panel .hsk-pip.is-gone { background: transparent; border-color: rgba(180, 205, 235, 0.35); }
 .hsk-panel .hsk-flr { font-size: 12.5px; color: #ffd98a; }
-.hsk-panel .hsk-keys { font: 600 10.5px/1.25 system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: 0.02em; color: #a8b8c9; }
+.hsk-panel .hsk-keys { font: 600 10.5px/1.25 var(--font); letter-spacing: 0.02em; color: #a8b8c9; }
 .hsk-panel .hsk-keys kbd { font: inherit; padding: 0 4px; border-radius: 3px; background: rgba(255,255,255,0.12); color: #eaf2fb; }
-.hsk-panel .hsk-state { font: 700 11px/1.2 system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: 0.08em; color: #b9c6d4; text-transform: uppercase; }
+.hsk-panel .hsk-state { font: 700 11px/1.2 var(--font); letter-spacing: 0.08em; color: #b9c6d4; text-transform: uppercase; }
 .hsk-panel.is-locked .hsk-state { color: #ff6a58; }
 .hsk-panel.is-empty .hsk-count { color: #ff9a8a; }
 .hsk-seeker { position: fixed; left: 0; top: 0; width: 80px; height: 80px; margin: -40px 0 0 -40px; will-change: transform; color: rgba(225, 245, 235, 0.78);
@@ -45,27 +45,27 @@ const CSS = `
 .hsk-lock.is-locked { color: #ff3b30; }
 .gsk-box.is-under-lock i, .gsk-box.is-under-lock .gsk-tag { visibility: hidden; }
 .hsk-lock .hsk-lock-tag { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 5px; white-space: nowrap; padding: 1px 7px; border-radius: 4px;
-  background: rgba(10,16,24,0.78); font: 800 11px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: 0.1em; color: inherit; }
+  background: rgba(10,16,24,0.78); font: 800 11px/1.5 var(--font); letter-spacing: 0.1em; color: inherit; }
 .hsk-lock .hsk-lock-bar { position: absolute; left: 6px; right: 6px; bottom: -3px; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.18); overflow: hidden; }
 .hsk-lock .hsk-lock-bar b { display: block; height: 100%; width: 0; background: currentColor; }
 .hsk-threats { position: fixed; inset: 0; }
 .hsk-arrow { position: fixed; left: 0; top: 0; width: 0; height: 0; margin: 0; will-change: transform; }
 .hsk-arrow::before { content: ''; position: absolute; left: -13px; top: -16px; border-left: 13px solid transparent; border-right: 13px solid transparent; border-bottom: 24px solid #ff4a3a;
   filter: drop-shadow(0 0 4px rgba(0,0,0,0.6)); }
-.hsk-arrow b { position: absolute; left: -34px; top: 10px; width: 68px; text-align: center; font: 800 12px/1 system-ui, -apple-system, 'Segoe UI', sans-serif; color: #fff;
+.hsk-arrow b { position: absolute; left: -34px; top: 10px; width: 68px; text-align: center; font: 800 12px/1 var(--font); color: #fff;
   text-shadow: 0 0 4px rgba(0,0,0,0.9), 0 0 2px #000; }
 .hsk-diamond { position: fixed; left: 0; top: 0; width: 34px; height: 34px; margin: -17px 0 0 -17px; border: 3px solid #ff4a3a; transform-origin: center; will-change: transform; }
-.hsk-diamond b { position: absolute; left: 50%; top: 100%; transform: translateX(-50%) rotate(-45deg); margin-top: 12px; white-space: nowrap; font: 800 12px/1 system-ui, -apple-system, 'Segoe UI', sans-serif; color: #fff;
+.hsk-diamond b { position: absolute; left: 50%; top: 100%; transform: translateX(-50%) rotate(-45deg); margin-top: 12px; white-space: nowrap; font: 800 12px/1 var(--font); color: #fff;
   text-shadow: 0 0 4px rgba(0,0,0,0.9), 0 0 2px #000; }
 .hsk-alert { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); box-sizing: border-box; width: max-content; max-width: min(calc(100vw - 24px), 560px); overflow-wrap: anywhere; text-align: center; padding: 9px 18px; border-radius: 10px;
-  background: rgba(120, 18, 12, 0.82); border: 2px solid #ff5a4a; color: #fff; font: 800 17px/1.25 system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: 0.04em;
+  background: rgba(120, 18, 12, 0.82); border: 2px solid #ff5a4a; color: #fff; font: 800 17px/1.25 var(--font); letter-spacing: 0.04em;
   box-shadow: 0 6px 22px rgba(0,0,0,0.4); }
-.hsk-alert small { display: block; font: 600 12px/1.3 system-ui, sans-serif; letter-spacing: 0.02em; opacity: 0.9; margin-top: 3px; }
+.hsk-alert small { display: block; font: 600 12px/1.3 var(--font); letter-spacing: 0.02em; opacity: 0.9; margin-top: 3px; }
 .hsk-glow { position: fixed; inset: 0; box-shadow: inset 0 0 110px 34px rgba(255, 56, 40, 1); opacity: 0; }
 .hsk-btn { position: fixed; z-index: 31; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer; border-radius: 50%; color: #fff;
   border: 3px solid #1b1030; font: 900 14px/1.05 "Arial Black", Impact, sans-serif; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center;
   box-shadow: 0 5px 0 #1b1030, 0 8px 18px rgba(0,0,0,0.35); }
-.hsk-btn small { font: 700 10px/1.1 system-ui, sans-serif; opacity: 0.9; margin-top: 2px; }
+.hsk-btn small { font: 700 10px/1.1 var(--font); opacity: 0.9; margin-top: 2px; }
 /* On a touch screen: in a row above the touch pads, to the left of Air Force One's FIRE (right 96, bottom 196) and clear of the throttle, the race bar and the map. */
 .hsk-btn.is-fire { right: 190px; bottom: 204px; width: 76px; height: 76px; background: radial-gradient(circle at 35% 30%, #ffb27a, #ff6a2f 60%, #c8431a); }
 .hsk-btn.is-flare { right: 276px; bottom: 212px; width: 62px; height: 62px; font-size: 12px; letter-spacing: -0.02em; background: radial-gradient(circle at 35% 30%, #ffe08a, #ffb02f 60%, #c98212); }

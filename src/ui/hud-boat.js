@@ -823,7 +823,7 @@ export class BoatHud {
     const SPAN = 120;
     const pxPerDeg = w / SPAN;
     const start = Math.floor((hdg - SPAN / 2) / 10) * 10;
-    g.font = '600 10px -apple-system, Segoe UI, Roboto, sans-serif';
+    g.font = '600 10px "Titillium Web", Arial, sans-serif';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     for (let d = start; d <= hdg + SPAN / 2 + 10; d += 10) {

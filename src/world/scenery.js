@@ -16,6 +16,7 @@ import { createFishingBoat } from '../fleet/maritime.js';
 import { makeRandom } from '../core/noise.js';
 import { buildPads, updatePads, padsOf } from './pads.js';
 import { Batch } from './airport-kit.js';
+import { addSkyline } from './skyline.js';
 
 export const DELIVERY_PAD = new THREE.Vector3(6200, 0, -5200);
 
@@ -508,56 +509,6 @@ function gableGeometry() {
 }
 
 /**
- * A glass curtain wall, for the city's towers.
- *
- * The house texture is a six-by-seven grid of windows, which on a 180 m
- * tower stretched to windows twenty-five metres tall. This is bands of
- * blue-grey glass with the odd lit pane, drawn to be tiled up a tall box.
- * Made per world build rather than cached — see padTexture in pads.js for
- * why a module-level texture is a trap here.
- */
-function towerFacadeTexture(night = false) {
-  const W = 128;
-  const H = 256;
-  const c = document.createElement('canvas');
-  c.width = W;
-  c.height = H;
-  const g = c.getContext('2d');
-  // Same seed both times, so the night map's lit panes are the day map's.
-  const rnd = makeRandom(4401);
-  g.fillStyle = night ? '#000000' : '#6f8190';
-  g.fillRect(0, 0, W, H);
-  const rows = 16;
-  const cols = 4;
-  for (let r = 0; r < rows; r++) {
-    for (let k = 0; k < cols; k++) {
-      // More of them lit after dark than show as lit by day.
-      const q = rnd();
-      const lit = q < 0.12;
-      const shade = 70 + rnd() * 40;
-      if (night) {
-        if (q < 0.42) {
-          g.fillStyle = q < 0.12 ? '#fff0c0' : q < 0.3 ? '#e8c890' : '#b8d4ff';
-          g.fillRect(k * (W / cols) + 2, r * (H / rows) + 2, W / cols - 4, H / rows - 5);
-        }
-        continue;
-      }
-      g.fillStyle = lit ? '#e8d6a0' : `rgb(${shade * 0.72 | 0},${shade * 0.9 | 0},${shade * 1.08 | 0})`;
-      g.fillRect(k * (W / cols) + 2, r * (H / rows) + 2, W / cols - 4, H / rows - 5);
-    }
-    if (night) continue;
-    // The spandrel between floors, lighter.
-    g.fillStyle = 'rgba(210,220,226,0.55)';
-    g.fillRect(0, (r + 1) * (H / rows) - 3, W, 3);
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 4;
-  return t;
-}
-
-/**
  * A house front: lime-wash, a row of shuttered windows upstairs, windows and
  * a door downstairs, a stone plinth.
  *
@@ -772,9 +723,8 @@ const WALL_TINTS = [0xf4efe4, 0xeadcc0, 0xf0dfae, 0xecccbc, 0xd2e0ea, 0xdfe6d0, 
 // Terracotta, brick, slate, dark slate, rust, moss, clay.
 const ROOF_TINTS = [0xb0593c, 0x93492f, 0x626870, 0x4a5058, 0x7e3d2e, 0x6c745c, 0xb86f48];
 // Concrete and stone for the taller blocks.
-const BLOCK_TINTS = [0xe6e2d8, 0xd6d2c6, 0xc9ccc8, 0xe9ddc8, 0xd0d8dc];
+const BLOCK_TINTS = [0xe6e2d8, 0xd6d2c6, 0xc9ccc8, 0xe9ddc8, 0xd0d8dc, 0xb9a48c, 0xa8876e, 0x9aa3aa, 0xc2b49c];
 // Glass: steel blue, green-blue, bronze, silver.
-const TOWER_TINTS = [0x9fb6c8, 0x93b4b2, 0xc0ab8c, 0xc4ccd2, 0x8ea5bf];
 
 /**
  * The town.
@@ -795,8 +745,8 @@ const TOWER_TINTS = [0x9fb6c8, 0x93b4b2, 0xc0ab8c, 0xc4ccd2, 0x8ea5bf];
  *             half of them
  *   blocks  — taller, stone and concrete, the office texture laid in metres,
  *             a glazed door to the street, a roof slab with a plant room
- *   towers  — only where a map asks (`town.towers`): glass, with a set-back
- *             crown and a red light on top that blinks
+ *   towers  — only where a map asks (`town.towers`): world/skyline.js, real
+ *             skyscrapers with a red light on top that blinks
  *
  * Draw calls: one mesh of house walls, two of block walls, one of roofs,
  * doors and everything else, and three for towers when there are any —
@@ -1220,57 +1170,31 @@ export function addTown(group, spots, opts = {}) {
       }
     }
   }
+  /*
+   * The towers themselves: one mesh of glass and one of everything else for the whole downtown
+   * (world/skyline.js), the tallest first, so a big city's first few are its signature towers.
+   */
   let lights = null;
   if (towers.length) {
-    const tex = towerFacadeTexture();
-    tex.repeat.set(2, 6);
-    // A glass tower reflects the sky (render/surfaces.js glassMaterial).
-    const glass = glassMaterial({ map: tex, roughness: 0.22, metalness: 0.55 });
-    // Lit panes after dark: a city at night is its windows.
-    const night = towerFacadeTexture(true);
-    night.repeat.copy(tex.repeat);
-    glass.emissive.setHex(0xffffff);
-    glass.emissiveMap = night;
-    glass.emissiveIntensity = 0;
-    nightMats.push(glass);
-    const body = new THREE.InstancedMesh(unit, glass, towers.length);
-    const crown = new THREE.InstancedMesh(unit, new THREE.MeshStandardMaterial({ color: 0xc6ccd0, roughness: 0.6, metalness: 0.3 }), towers.length);
-    const lampMat = new THREE.MeshStandardMaterial({ color: 0x5a0d0a, emissive: 0xff2a1a, emissiveIntensity: 1.2, roughness: 0.5 });
-    lights = new THREE.InstancedMesh(new THREE.BoxGeometry(1.4, 1.4, 1.4), lampMat, towers.length);
-    body.castShadow = body.receiveShadow = crown.castShadow = true;
-    towers.forEach((b, i) => {
+    const sky = addSkyline(group, towers.slice().sort((a, b2) => b2.h - a.h).map((b) => ({ x: b.s.x, z: b.s.z, base: b.base, top: top(b), w: b.w, d: b.d, rot: b.s.rot, q: b.q, ref: b })), { name });
+    nightMats.push(...sky.nightMats);
+    lights = sky.glass;
+    lights.lampMat = sky.lampMat;
+    const ordered = towers.slice().sort((a, b2) => b2.h - a.h);
+    ordered.forEach((b, i) => {
       const { s } = b;
-      const hh = top(b) - b.base;
-      d.position.set(s.x, b.base + hh / 2, s.z);
-      d.rotation.set(0, s.rot, 0);
-      d.scale.set(b.w, hh, b.d);
-      d.updateMatrix();
-      body.setMatrixAt(i, d.matrix);
-      body.setColorAt(i, col.setHex(TOWER_TINTS[Math.floor(b.q * TOWER_TINTS.length) % TOWER_TINTS.length]));
-      const ch = 6 + b.q * 10;
-      d.position.set(s.x, top(b) + ch / 2, s.z);
-      d.scale.set(b.w * 0.62, ch, b.d * 0.62);
-      d.updateMatrix();
-      crown.setMatrixAt(i, d.matrix);
-      d.position.set(s.x, top(b) + ch + 0.9, s.z);
-      d.scale.set(1, 1, 1);
-      d.updateMatrix();
-      lights.setMatrixAt(i, d.matrix);
-      const [hx, hz] = turnedHalf(b.w, b.d, s.rot);
-      addObstacleAt(s.x, s.z, hx * 2, hz * 2, b.base, top(b) - b.base + ch + 2, 'You flew into a tower');
+      for (const [w, d, y0, y1] of sky.towers[i].solid) {
+        const [hx, hz] = turnedHalf(w, d, s.rot);
+        addObstacleAt(s.x, s.z, hx * 2, hz * 2, b.base + y0, y1 - y0, 'You flew into a tower');
+      }
     });
-    body.instanceMatrix.needsUpdate = true;
-    if (body.instanceColor) body.instanceColor.needsUpdate = true;
-    crown.instanceMatrix.needsUpdate = true;
-    lights.instanceMatrix.needsUpdate = true;
-    group.add(body, crown, lights);
   }
   return {
     houses: houses.length,
     blocks: blocks.length,
     towers: towers.length,
     tallest: towers.reduce((m, b) => Math.max(m, b.h), 0),
-    lampMat: lights ? lights.material : null,
+    lampMat: lights ? lights.lampMat : null,
     nightMats,
     rooftops,
     facts,
@@ -1319,7 +1243,7 @@ export function addRooftopDetail(group, plan, { quality = 'high', name = 'town',
     return v - Math.floor(v);
   };
   plan.forEach((b, bi) => {
-    if (b.kind !== 'block' && b.kind !== 'tower') return;
+    if (b.kind !== 'block') return; // (a tower's roof is its own: world/skyline.js)
     const { s } = b;
     const cr = Math.cos(s.rot);
     const sr = Math.sin(s.rot);
@@ -1342,6 +1266,10 @@ export function addRooftopDetail(group, plan, { quality = 'high', name = 'town',
         const [x, z] = P(-side * b.w * 0.3, -side * b.d * 0.28);
         tanks.push({ x, y, z, rot: s.rot });
       }
+      if (tierN >= 1 && hash(bi, 8, 8) < 0.25) {
+        const [x, z] = P(side * b.w * 0.36, side * b.d * 0.36);
+        masts.push({ x, y, z, h: 4 + hash(bi, 9, 9) * 5 });
+      }
       if (tierN >= 1) {
         const nV = 2 + tierN;
         for (let i = 0; i < nV; i++) {
@@ -1351,25 +1279,6 @@ export function addRooftopDetail(group, plan, { quality = 'high', name = 'town',
           if (Math.abs(lx - ox) < b.w * 0.18) continue;
           const [x, z] = P(lx, lz);
           vents.push({ x, y, z, rot: s.rot });
-        }
-      }
-    } else {
-      // The tower: its crown (0.62 of the footprint) stands on the roof; the
-      // units ring it on the roof outside, the mast goes on the crown.
-      const y = T;
-      const ch = 6 + b.q * 10;
-      const nAc = Math.min(8, 2 + tierN * 2);
-      for (let i = 0; i < nAc; i++) {
-        const a = (i / nAc) * Math.PI * 2 + 0.3;
-        const [x, z] = P(Math.cos(a) * b.w * 0.4, Math.sin(a) * b.d * 0.4);
-        ac.push({ x, y, z, rot: s.rot + a, sx: 1.4 + hash(bi, i, 7) * 0.8 });
-      }
-      if (tierN >= 1) {
-        const [x, z] = P(b.w * 0.12, -b.d * 0.1);
-        masts.push({ x, y: y + ch, z, h: 5 + hash(bi, 8, 8) * 9 });
-        if (tierN >= 2 && hash(bi, 9, 9) < 0.5) {
-          const [x2, z2] = P(-b.w * 0.14, b.d * 0.12);
-          masts.push({ x: x2, y: y + ch, z: z2, h: 3 + hash(bi, 10, 10) * 4 });
         }
       }
     }
@@ -1452,7 +1361,8 @@ function addStreets(group, streets) {
   const idx = [];
   let base = 0;
   for (const st of streets) {
-    if (!st.drawn || st.pts.length < 2) continue;
+    // (A street already painted on the ground has no ribbon: worldmap/world-terrain.js.)
+    if (!st.drawn || st.painted || st.pts.length < 2) continue;
     const n = st.pts.length;
     for (let i = 0; i < n; i++) {
       const a = st.pts[Math.max(0, i - 1)];
@@ -1478,7 +1388,7 @@ function addStreets(group, streets) {
   geo.setIndex(idx);
   geo.computeVertexNormals();
   const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-    color: 0x4a4d51,
+    color: 0x57544f, // (warm: under a blue sky a cool grey street reads purple)
     roughness: 0.95,
     metalness: 0,
     envMapIntensity: 0.35,
@@ -3352,6 +3262,12 @@ function layTown(cfg, count, pool) {
   return { spots: placed, streets: kept, cx, cz };
 }
 
+let TOWN_PLANNER = null;
+/** Who plans the World Map's towns (features/world-preview.js: it arrives after the menu, this module before it). */
+export function setTownPlanner(fn) {
+  TOWN_PLANNER = fn;
+}
+
 /**
  * Where the town's buildings go: the map's town block, rescued from the
  * three ways a town has come out empty before (below), then laid out along
@@ -3359,6 +3275,11 @@ function layTown(cfg, count, pool) {
  * world builds.
  */
 export function planTown(cfgTown, density = 1) {
+  // The World Map's towns have one street plan, for the ground and the buildings alike (worldmap/town-grid.js).
+  if (TOWN_PLANNER && MAP.worldPreview && cfgTown) {
+    const planned = TOWN_PLANNER(cfgTown, density);
+    if (planned) return planned;
+  }
   /*
    * A town whose ground is outside its own declared height band.
    *

@@ -2077,7 +2077,8 @@ export function roadRibbon(THREE, roads, { lift = 0.06, tex = null, nrm = null, 
     map: T.asphalt || tex,
     normalMap: nrm,
     normalScale: nrm ? new THREE.Vector2(0.35, 0.35) : undefined,
-    color: T.asphalt || tex ? 0xffffff : 0x55585d,
+    // (A warm tint where the sky is the road's main light: the World Map's roads read purple from the air.)
+    color: T.asphalt || tex ? (MAP && MAP.streamTerrain ? 0xfff0dc : 0xffffff) : 0x55585d,
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -4,
   });

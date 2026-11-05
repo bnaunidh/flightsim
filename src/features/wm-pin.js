@@ -151,7 +151,7 @@ export function openPinMap({ quality = 'medium', pin = null, onPin, onFly, onClo
   function paint() {
     g.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
     chart.draw(g, view);
-    g.font = '600 10px system-ui, sans-serif';
+    g.font = '600 10px "Jost", Arial, sans-serif';
     g.textAlign = 'center';
     g.lineJoin = 'round';
     for (const a of AIRPORTS) {

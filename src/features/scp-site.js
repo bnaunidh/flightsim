@@ -230,20 +230,20 @@ function signTexture() {
     ctx.fillStyle = '#b8231f';
     ctx.fillRect(0, 0, 256, 34);
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 20px sans-serif';
+    ctx.font = 'bold 20px "Jost", Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('RESTRICTED AREA', 128, 25);
     drawMark(ctx, 48, 100, 34);
     ctx.fillStyle = '#1a1d22';
     ctx.textAlign = 'left';
-    ctx.font = 'bold 17px sans-serif';
+    ctx.font = 'bold 17px "Jost", Arial, sans-serif';
     ctx.fillText('SCP FOUNDATION', 96, 84);
-    ctx.font = '13px sans-serif';
+    ctx.font = '13px "Jost", Arial, sans-serif';
     ctx.fillText('Site-91 North', 96, 104);
     ctx.fillText('Authorised personnel only.', 96, 124);
     ctx.fillText('Do not approach the fence.', 96, 142);
     ctx.fillStyle = '#b8231f';
-    ctx.font = 'bold 12px sans-serif';
+    ctx.font = 'bold 12px "Jost", Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('SECURE · CONTAIN · PROTECT', 128, 176);
   } catch (e) {
@@ -265,9 +265,9 @@ function plaqueTexture() {
     drawMark(ctx, 84, 80, 52, '#d6dadf');
     ctx.fillStyle = '#e8ebee';
     ctx.textAlign = 'left';
-    ctx.font = 'bold 44px sans-serif';
+    ctx.font = 'bold 44px "Jost", Arial, sans-serif';
     ctx.fillText('SCP FOUNDATION', 160, 72);
-    ctx.font = '28px sans-serif';
+    ctx.font = '28px "Jost", Arial, sans-serif';
     ctx.fillStyle = '#b9c0c8';
     ctx.fillText('SITE-91 NORTH · CONTAINMENT', 160, 116);
   } catch (e) {

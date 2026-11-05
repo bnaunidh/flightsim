@@ -101,10 +101,10 @@ export function drawWord(ctx, word, fill = '#ffd23f') {
   ctx.translate(W / 2, H / 2 + 4);
   ctx.rotate(-0.06);
   let size = 92;
-  ctx.font = `900 ${size}px "Arial Black", "Helvetica Neue", Arial, sans-serif`;
+  ctx.font = `400 ${size}px "Archivo Black", Arial, sans-serif`;
   while (ctx.measureText && ctx.measureText(word).width > W * 0.72 && size > 40) {
     size -= 6;
-    ctx.font = `900 ${size}px "Arial Black", "Helvetica Neue", Arial, sans-serif`;
+    ctx.font = `400 ${size}px "Archivo Black", Arial, sans-serif`;
   }
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';

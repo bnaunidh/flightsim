@@ -13,6 +13,7 @@
  *   { op: 'tile', gen, key, cx, cz, size, seg }    → { key, gen, data | null }
  *   { op: 'chart', box, w, h }                     → { heights } for the world map's picture
  *   { op: 'flora', gen, key, ix, iz, perCell, layer, mode } → { trees, layer } a cell's trees or tree cards (worldmap/flora.js)
+ *   { op: 'town', gen, key, ix, iz, q }            → { cell } what stands in a cell of a town (worldmap/town-grid.js)
  *
  * `gen` is the world build the request belongs to; the stream throws away an
  * answer for a world that has been rebuilt since.
@@ -20,6 +21,7 @@
 import { buildTileData } from './tiles.js';
 import { placeCell } from './flora.js';
 import { FARLANDS } from './farlands.js';
+import { placeTownCell, cellBuffers, TOWN_TIERS } from './town-grid.js';
 
 let FLORA_CTX = null;
 
@@ -53,6 +55,11 @@ self.onmessage = async (ev) => {
     if (msg.op === 'flora') {
       const trees = FLORA_CTX ? placeCell(T, FLORA_CTX, msg.ix, msg.iz, msg.perCell, msg.mode || 'trees') : null;
       self.postMessage({ op: 'flora', gen: msg.gen, key: msg.key, ix: msg.ix, iz: msg.iz, trees, layer: msg.layer || null }, trees ? [trees.buffer] : []);
+      return;
+    }
+    if (msg.op === 'town') {
+      const cell = FLORA_CTX && FLORA_CTX.town ? placeTownCell(T, FLORA_CTX.town, msg.ix, msg.iz, TOWN_TIERS[msg.q] || TOWN_TIERS.medium) : null;
+      self.postMessage({ op: 'town', gen: msg.gen, key: msg.key, ix: msg.ix, iz: msg.iz, cell }, cellBuffers(cell));
       return;
     }
     if (msg.op === 'tile') {

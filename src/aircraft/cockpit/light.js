@@ -541,7 +541,7 @@ export function buildLightCockpit(ctx) {
       }
       label(g, x0 + P.pr(0.03), y0 + P.pr(0.006), title, Math.round(P.pr(0.0055)), DIM, 'left');
       for (const [text, u, dv, size, colour, align] of lines) {
-        g.font = `700 ${Math.round(P.pr(size))}px "Courier New", monospace`;
+        g.font = `700 ${Math.round(P.pr(size))}px "Titillium Web", Arial, sans-serif`;
         g.fillStyle = colour;
         g.textAlign = align || 'left';
         g.textBaseline = 'middle';
@@ -896,7 +896,7 @@ export function buildLightCockpit(ctx) {
     g.fillStyle = '#121417';
     g.fillRect(0, 0, 512, 64);
     g.fillStyle = '#f0f0f0';
-    g.font = '700 30px Arial';
+    g.font = '700 30px "Titillium Web", Arial, sans-serif';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     for (let d = 0; d < 360; d += 30) {

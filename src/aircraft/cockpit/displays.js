@@ -127,8 +127,9 @@ export const COL = {
   hud: '#7dff9a',
 };
 
-const FONT = '"Helvetica Neue", Arial, sans-serif';
-const MONO = '"DejaVu Sans Mono", "Menlo", "Consolas", monospace';
+// Titillium Web: squared like a glass cockpit's own lettering, and its digits are all one width, so they hold still.
+const FONT = '"Titillium Web", Arial, sans-serif';
+const MONO = FONT;
 
 function text(g, s, x, y, size, col, align = 'center', weight = 700, font = FONT) {
   g.fillStyle = col;

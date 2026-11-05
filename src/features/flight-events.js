@@ -206,7 +206,10 @@ function guardDevMissions(sim, MISSIONS) {
     const open = HJ.devOpen(sim);
     for (const id of devIds) {
       const card = screen.querySelector(`[data-mission="${id}"]`);
-      if (card) lockDevCard(card, !open);
+      if (!card) continue;
+      lockDevCard(card, !open);
+      // devHidden: no card at all without the Dev code, not a locked one.
+      if (MISSIONS.find((m) => m && m.id === id).devHidden) card.style.display = open ? '' : 'none';
     }
   };
   const inner = menus.syncMissionLocks;

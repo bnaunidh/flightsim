@@ -66,7 +66,10 @@ ok('events: the hijack has a mission', EVENTS.some((m) => m.id === 'event-hijack
 ok('events: the realistic hijack is a mission too', REAL_HIJACK && REAL_HIJACK.id === 'event-hijack-real' && REAL_HIJACK.category === 'events');
 ok('events: ...in the list, flagged devOnly so its card waits for the Dev passcode',
   EVENTS.includes(REAL_HIJACK) && MISSIONS.includes(REAL_HIJACK) && REAL_HIJACK.devOnly === true);
-ok('events: nothing else of ours is devOnly or military', mine.filter((m) => m !== REAL_HIJACK).every((m) => !m.devOnly && !m.military));
+// The owner, 2026-10-17: "no hijacking". Neither shows on the mission list without the Dev code.
+const HIJACKS = EVENTS.filter((m) => /hijack/i.test(m.id));
+ok('events: both hijack missions have no card without the Dev code', HIJACKS.length === 2 && HIJACKS.every((m) => m.devOnly && m.devHidden));
+ok('events: nothing else of ours is devOnly or military', mine.filter((m) => !HIJACKS.includes(m)).every((m) => !m.devOnly && !m.military));
 ok('all of them are in the game’s mission list', mine.every((m) => MISSIONS.includes(m)));
 
 const ids = MISSIONS.map((m) => m.id);

@@ -515,8 +515,8 @@ export function createTextSign(options = {}) {
   const texture = paintTexture(`scenery-sign-v2-${text}-${bg}-${color}-${pixelHeight}`, pixelWidth, pixelHeight, (ctx, w, h) => {
     ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = color; ctx.lineWidth = Math.max(2, h * .018); ctx.strokeRect(w * .016, h * .09, w * .968, h * .82);
-    let size = h * .5; ctx.font = `600 ${size}px Arial, sans-serif`;
-    while (ctx.measureText(text).width > w * .9 && size > 10) { size -= 1; ctx.font = `600 ${size}px Arial, sans-serif`; }
+    let size = h * .5; ctx.font = `600 ${size}px "Jost", Arial, sans-serif`;
+    while (ctx.measureText(text).width > w * .9 && size > 10) { size -= 1; ctx.font = `600 ${size}px "Jost", Arial, sans-serif`; }
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = color; ctx.fillText(text, w * .5, h * .53);
     grain(ctx, w, h, text.length * 173, 450);
   });

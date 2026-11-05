@@ -132,6 +132,28 @@ const ACTIONS = '.mt-zap, .wf-drop, .co-btn.is-on, .gsk-btn, .hsk-btn, .afo-acti
 const LANE_ANY = LANE.replace('.ej-btn.is-on', '.ej-btn');
 const ACTIONS_ANY = ACTIONS.replace('.co-btn.is-on', '.co-btn');
 
+/** The H card's short list per vehicle: [plain words, ...action ids]. `when` is an action only that vehicle has. */
+const CONTROL_BASICS = [
+  { when: 'pitchDown', title: 'Flying a plane', sections: [
+    ['Steer', [['Nose down / up', 'pitchDown', 'pitchUp'], ['Bank left / right', 'rollLeft', 'rollRight'], ['Turn left / right', 'yawLeft', 'yawRight']]],
+    ['Power and landing', [['More / less power', 'throttleUp', 'throttleDown'], ['Wheels up / down', 'gear'], ['Flaps down / up', 'flapsDown', 'flapsUp'], ['Brakes', 'brakes']]],
+    ['Handy', [['Start the engine', 'starter'], ['Change view', 'camera'], ['Map', 'minimap'], ['Autopilot', 'autopilot'], ['Pause', 'pause']]],
+  ] },
+  { when: 'heliUp', title: 'Flying a helicopter', sections: [
+    ['Up and down', [['Go up / down', 'heliUp', 'heliDown']]],
+    ['Steer', [['Tilt forward / back', 'heliForward', 'heliBack'], ['Tilt left / right', 'heliLeft', 'heliRight'], ['Turn left / right', 'heliTurnLeft', 'heliTurnRight']]],
+    ['Handy', [['Start the engine', 'starter'], ['Change view', 'camera'], ['Map', 'minimap'], ['Pause', 'pause']]],
+  ] },
+  { when: 'boatFaster', title: 'Driving a boat', sections: [
+    ['Drive', [['Faster / slower', 'boatFaster', 'boatSlower'], ['Steer left / right', 'boatLeft', 'boatRight'], ['Stop fast', 'boatStop']]],
+    ['Handy', [['Change view', 'camera'], ['Map', 'minimap'], ['Pause', 'pause']]],
+  ] },
+  { when: 'carGo', title: 'Driving', sections: [
+    ['Drive', [['Go / brake', 'carGo', 'carBrake'], ['Steer left / right', 'carLeft', 'carRight'], ['Handbrake', 'carHandbrake']]],
+    ['Handy', [['Change view', 'camera'], ['Map', 'minimap'], ['Pause', 'pause']]],
+  ] },
+];
+
 export class Hud {
   constructor(root, { onAction } = {}) {
     this.root = root;
@@ -846,7 +868,26 @@ export class Hud {
       groups[a.group] = groups[a.group] || [];
       groups[a.group].push({ key, ...a });
     }
-    let html = '<div class="cc-head">Controls</div><div class="cc-grid">';
+    // The few keys this vehicle needs, in plain words; everything else is one tap away under "All keys".
+    const key1 = (id) => {
+      const k = (bindings[id] || [])[0];
+      return k ? `<kbd>${keyLabel(k)}</kbd>` : '';
+    };
+    const basics = CONTROL_BASICS.find((b) => actions[b.when]);
+    let html = `<div class="cc-head">${basics ? basics.title : 'Controls'}</div>`;
+    if (basics) {
+      html += '<div class="cc-basics">';
+      for (const [title, rows] of basics.sections) {
+        html += `<div class="cc-basic"><h4>${title}</h4>`;
+        for (const [say, ...ids] of rows) {
+          const keys = ids.filter((id) => actions[id]).map(key1).filter(Boolean);
+          if (keys.length) html += `<div class="cc-row"><span>${say}</span><span class="cc-keys">${keys.join(' ')}</span></div>`;
+        }
+        html += '</div>';
+      }
+      html += '</div><details class="cc-more"><summary>All keys</summary>';
+    }
+    html += '<div class="cc-grid">';
     for (const g in groups) {
       html += `<div class="cc-group"><h4>${g}</h4>`;
       for (const item of groups[g]) {
@@ -855,7 +896,7 @@ export class Hud {
       }
       html += '</div>';
     }
-    html += `</div><div class="cc-foot">Press ${keyName('help')} to close · change any key in Settings → Controls</div>`;
+    html += `</div>${basics ? '</details>' : ''}<div class="cc-foot">Press ${keyName('help')} to close · change any key in Settings → Controls</div>`;
     this.controlsCard.innerHTML = html;
     this.controlsCard.style.display = '';
     // Help is "what do I press" and "what am I doing": the folded objective

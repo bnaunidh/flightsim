@@ -23,7 +23,7 @@ const CSS = `
 .of-prompt {
   position: absolute; left: 50%; bottom: max(350px, calc(var(--bl-h, 0px) + 232px)); transform: translateX(-50%);
   background: rgba(12, 20, 34, 0.84); color: #f4f7fa;
-  font: 600 15px/1.35 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font: 600 15px/1.35 var(--font);
   padding: 10px 18px; border-radius: 12px; max-width: min(520px, 86vw);
   text-align: center; border: 1px solid rgba(242, 197, 61, 0.6);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); pointer-events: none;
@@ -49,7 +49,7 @@ const CSS = `
   position: absolute; left: 16px; top: 34%; width: 220px;
   background: rgba(12, 20, 34, 0.8); color: #eef3f8; border-radius: 14px;
   border: 1px solid rgba(242, 197, 61, 0.45); padding: 10px 12px;
-  font: 500 13px/1.35 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font: 500 13px/1.35 var(--font);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); pointer-events: none; display: none;
 }
 .of-card.on { display: block; }
@@ -82,7 +82,7 @@ const CSS = `
 .of-btns button {
   pointer-events: auto; touch-action: none; min-width: 74px; height: 58px; border-radius: 16px;
   border: 2px solid rgba(255, 255, 255, 0.35); background: rgba(12, 20, 34, 0.62); color: #fff;
-  font: 700 14px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font: 700 14px/1 var(--font);
 }
 .of-btns button.on { background: rgba(242, 197, 61, 0.9); color: #1a1d20; }
 .of-btns button:active { transform: scale(0.95); }

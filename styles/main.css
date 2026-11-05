@@ -1,7 +1,38 @@
 /* =========================================================================
    Island Flight Simulator — interface styles.
-   System fonts only, so nothing is downloaded and text renders instantly.
+
+   TYPE. One system, the same on a Chromebook, a Mac and a phone:
+     Jost (--font)              everything you read. A clean geometric sans.
+     Barlow Condensed (--mono)  numbers and read-outs: tabular, so they hold still.
+   Both are in assets/fonts/ (OFL), precached, and preloaded by index.html, so
+   the main menu has them before it paints. Faces come in two weights here:
+   anything up to 650 asks for Jost 600, anything heavier for Jost 700. The small
+   size-adjust brings Jost's short lowercase up to the size the layout was made for.
    ========================================================================= */
+@font-face {
+  font-family: 'Jost';
+  src: url('../assets/fonts/jost-600-normal.woff2') format('woff2');
+  font-weight: 100 650;
+  font-style: normal;
+  font-display: swap;
+  size-adjust: 104%;
+}
+@font-face {
+  font-family: 'Jost';
+  src: url('../assets/fonts/jost-700-normal.woff2') format('woff2');
+  font-weight: 651 1000;
+  font-style: normal;
+  font-display: swap;
+  size-adjust: 104%;
+}
+@font-face {
+  font-family: 'Barlow Condensed';
+  src: url('../assets/fonts/barlow-condensed-700-normal.woff2') format('woff2');
+  font-weight: 100 1000;
+  font-style: normal;
+  font-display: swap;
+  size-adjust: 112%;
+}
 
 /*
  * `hidden` means hidden. Once, globally, before anything else.
@@ -54,8 +85,8 @@
   --dur-2: 200ms;
   --dur-3: 250ms;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
-  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --font: 'Jost', 'Avenir Next', 'Century Gothic', 'Segoe UI', Roboto, Arial, sans-serif;
+  --mono: 'Barlow Condensed', 'Arial Narrow', 'Roboto Condensed', Arial, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -68,6 +99,7 @@ html, body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
 }
@@ -948,6 +980,13 @@ html.hud-map-yield #ui > .minimap { opacity: 0; visibility: hidden; transition: 
 }
 .cc-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 3px 0; }
 .cc-keys { color: var(--text-dim); }
+.cc-basics { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px; }
+.cc-basic h4 { margin: 0 0 8px; font-size: 12px; letter-spacing: 0.04em; color: var(--accent); }
+.cc-basic .cc-row { font-size: 15px; padding: 5px 0; align-items: center; }
+.cc-basic kbd { font-size: 13px; padding: 2px 8px; }
+.cc-more { margin-top: 16px; border-top: 1px solid var(--panel-line); padding-top: 10px; }
+.cc-more > summary { cursor: pointer; font-size: 13px; color: var(--text-dim); padding: 6px 0; }
+.cc-more > .cc-grid { margin-top: 10px; }
 .cc-foot { margin-top: 16px; font-size: 12px; color: var(--text-dim); }
 kbd {
   font-family: var(--mono);
@@ -2552,9 +2591,9 @@ html.is-touch-device .minimap { top: 8px; left: 8px; right: auto; bottom: auto; 
   margin-top: 3px;
   text-align: center;
   color: #7f8ea3;
-  font-family: 'Courier New', monospace;
-  font-size: 10px;
-  letter-spacing: -0.02em;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
 }
 @media (max-width: 560px) {
   .hud-keys { display: none; }
@@ -3136,12 +3175,18 @@ html.is-touch-device .slot-clear {
     font-size: 7.5px; letter-spacing: 0.04em; max-width: 100%;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .hud.is-touch .hud-left:not(.hud-boatpanel) .hud-value { font-size: 16px; }
+  /* The condensed read-out face: the 2x2's cells are 46 px wide, and "1,890 ft" has to fit. */
+  .hud.is-touch .hud-left:not(.hud-boatpanel) .hud-value { font-size: 16px; font-family: var(--mono); letter-spacing: 0; }
   /* The van's 30 px speed (.hud.is-drive .hud-left .hud-value, further down,
      same weight, so it won) made its strip 112 px tall on a phone and put
      HEADING under the objective. Still the biggest number, inside the band. */
   .hud.is-touch.is-drive .hud-left .hud-value { font-size: 18px; }
   .hud.is-touch .hud-left:not(.hud-boatpanel) .hud-unit { font-size: 7.5px; }
+  /* The narrowest phones: 40 px a cell. The number is what you fly by, so the unit gives way, not half of it. */
+  @media (max-width: 380px) {
+    .hud.is-touch .hud-left:not(.hud-boatpanel) .hud-value { font-size: 15px; }
+    .hud.is-touch .hud-left:not(.hud-boatpanel) .hud-unit { display: none; }
+  }
   /*
    * The height over the ground ("20 ft up", .hud-up, the band's rule above)
    * as the altitude cell's third line here too, at the unit's size: 40 px
@@ -4884,6 +4929,8 @@ body:has(.hud.is-touch.is-rotorhover) .race-solobar { left: 8px; right: auto; to
 .screen-hangar .hs-swatch.is-on { border-color: #fff; box-shadow: 0 0 0 3px var(--hs-accent); }
 .hs-paint-name { font-size: 12px; color: var(--text-dim); min-height: 1.3em; }
 .hs-paint-name.is-preview { color: #e6eef8; }
+/* The airline's name as it is on its aeroplanes, on a plate of its paint. */
+.hs-paint-name.has-wordmark { display: block; height: 34px; padding: 4px 12px; border-radius: 6px; overflow: hidden; white-space: nowrap; }
 /*
  * Beside the podium (every layout but the phone's): the card was 10 to 130
  * px taller than its room — a Chromebook's 1366 x 768, a laptop's 1280 x

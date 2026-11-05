@@ -182,7 +182,7 @@ export function installStoryUi(sim) {
   for (const g of ['flight', 'heli', 'boat', 'car', 'rocket']) {
     const def = GAME_UI[g];
     if (!def || !def.cards || def.cards.some((c) => c.to === 'story')) continue;
-    def.cards.unshift({ to: 'story', icon: 'target', title: 'Story — Signal Zero', sub: 'A 12-chapter story across every vehicle' });
+    def.cards.unshift({ to: 'story', icon: 'target', title: 'Story — Signal Zero', sub: 'Chapter 1 is out now, more on the way' });
   }
   const applyGameUi = menus.applyGameUi;
   menus.applyGameUi = function storyApplyGameUi() {
@@ -222,7 +222,7 @@ export function installStoryUi(sim) {
         const ch = chapterById(data.chapter);
         line = ch ? (ch.available ? chapterLabel(ch) : `${done} of ${STORY_CHAPTER_COUNT} chapters done · more coming`) : 'Continue your story';
       } else {
-        line = 'New — a 12-chapter story across every vehicle';
+        line = 'New — Chapter 1 is out now, more on the way';
       }
       const pct = Math.round((done / STORY_CHAPTER_COUNT) * 100);
       em.innerHTML = `${esc(line)}<span class="sz-prog"><i style="width:${pct}%"></i></span>`;
@@ -254,7 +254,7 @@ export function installStoryUi(sim) {
 
   // The hub.
   const hub = screen('story', 'Story', `
-    <div class="sz-word">${KITTIWAKE(44)}<div><h2>SIGNAL ZER<span class="sz-o">O</span></h2><p>A 12-chapter story across every vehicle. Leave whenever: it saves at every checkpoint.</p></div></div>
+    <div class="sz-word">${KITTIWAKE(44)}<div><h2>SIGNAL ZER<span class="sz-o">O</span></h2><p>Chapter 1 is out now, more on the way. A story across every vehicle. Leave whenever: it saves at every checkpoint.</p></div></div>
     <div class="sz-hub" data-hub></div>
     <p class="sz-note" data-hub-note></p>`, 'main');
   hub.addEventListener('click', (e) => {
@@ -719,13 +719,13 @@ export function installStoryUi(sim) {
         g.arc(px(p[0]), pz(p[1]), 7, 0, Math.PI * 2);
         g.fill();
         g.fillStyle = '#0b1220';
-        g.font = '700 10px sans-serif';
+        g.font = '700 10px "Jost", Arial, sans-serif';
         g.textAlign = 'center';
         g.textBaseline = 'middle';
         g.fillText(String(i + 1), px(p[0]), pz(p[1]) + 0.5);
         if (p[2]) {
           g.fillStyle = '#eaf1fb';
-          g.font = '600 10px sans-serif';
+          g.font = '600 10px "Jost", Arial, sans-serif';
           g.textAlign = 'left';
           g.fillText(p[2], px(p[0]) + 10, pz(p[1]));
         }
@@ -738,7 +738,7 @@ export function installStoryUi(sim) {
       g.fill();
     }
     g.fillStyle = 'rgba(234,241,251,0.7)';
-    g.font = '700 10px sans-serif';
+    g.font = '700 10px "Jost", Arial, sans-serif';
     g.textAlign = 'left';
     g.fillText(map.name.toUpperCase(), 8, H - 8);
   }

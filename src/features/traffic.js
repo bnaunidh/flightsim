@@ -2873,9 +2873,9 @@ function paintTag(c) {
   // name, the activity quieter beside it, no glow and no outline on the letters.
   const name = String(c.callsign || '');
   const act = String(c.activity || '');
-  g.font = '650 22px "Helvetica Neue", Arial, sans-serif';
+  g.font = '650 22px "Jost", Arial, sans-serif';
   const wn = g.measureText ? g.measureText(name).width : name.length * 12;
-  g.font = '500 17px "Helvetica Neue", Arial, sans-serif';
+  g.font = '500 17px "Jost", Arial, sans-serif';
   const wa = act && g.measureText ? g.measureText(act).width : act.length * 9;
   const gap = act ? 10 : 0;
   const w = Math.min(248, wn + gap + wa + 24);
@@ -2895,11 +2895,11 @@ function paintTag(c) {
   g.fill();
   g.textBaseline = 'middle';
   g.textAlign = 'left';
-  g.font = '650 22px "Helvetica Neue", Arial, sans-serif';
+  g.font = '650 22px "Jost", Arial, sans-serif';
   g.fillStyle = '#f4f7fb';
   g.fillText(name, x0 + 12, y0 + h / 2 + 1);
   if (act) {
-    g.font = '500 17px "Helvetica Neue", Arial, sans-serif';
+    g.font = '500 17px "Jost", Arial, sans-serif';
     g.fillStyle = 'rgba(214, 224, 236, 0.78)';
     g.fillText(act, x0 + 12 + wn + gap, y0 + h / 2 + 1);
   }

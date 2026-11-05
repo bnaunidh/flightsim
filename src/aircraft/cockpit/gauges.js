@@ -84,7 +84,7 @@ function ballCanvas() {
     g.moveTo(0, mid);
     g.lineTo(S, mid);
     g.stroke();
-    g.font = '700 22px "Helvetica Neue", Arial, sans-serif';
+    g.font = '700 22px "Titillium Web", Arial, sans-serif';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillStyle = '#ffffff';
@@ -146,7 +146,7 @@ function cardCanvas() {
         g.translate(m + Math.sin(a) * (r - 66), m - Math.cos(a) * (r - 66));
         g.rotate(a);
         g.fillStyle = d % 90 === 0 ? '#ffd23f' : '#e8eaee';
-        g.font = `700 ${d % 90 === 0 ? 50 : 40}px "Helvetica Neue", Arial, sans-serif`;
+        g.font = `700 ${d % 90 === 0 ? 50 : 40}px "Titillium Web", Arial, sans-serif`;
         g.fillText(t, 0, 0);
         g.restore();
       }
@@ -645,7 +645,7 @@ export class GaugePanel {
       g.lineWidth = 3;
       g.strokeRect(1.5, 1.5, W - 3, H - 3);
       g.fillStyle = '#e8eaee';
-      g.font = '700 30px "Courier New", monospace';
+      g.font = '700 30px "Titillium Web", Arial, sans-serif';
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       g.fillText(String(ft).padStart(5, ' '), W / 2, H / 2 + 1);
@@ -762,7 +762,7 @@ export class GaugePanel {
     g.fillRect(0, 0, c.width, c.height);
     if (text) {
       g.fillStyle = '#ffffff';
-      g.font = `700 ${Math.round(c.height * size)}px "Helvetica Neue", Arial, sans-serif`;
+      g.font = `700 ${Math.round(c.height * size)}px "Titillium Web", Arial, sans-serif`;
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       g.fillText(text, c.width / 2, c.height / 2 + 1);
