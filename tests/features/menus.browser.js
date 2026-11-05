@@ -85,7 +85,8 @@ async function hangarShowroom(sim, menus, r, Prog) {
     else if (st.locked !== !Prog.isUnlocked(p, ui.id)) wrong.push(`${ui.id}: ${st.locked ? 'silhouette but yours' : 'lit but locked'}`);
     const name = menus.screens.hangar.querySelector('[data-hs-name]');
     const type = (await import('../../src/aircraft/types.js')).getAircraft(ui.id);
-    if (!name || name.textContent !== type.name) wrong.push(`${ui.id}: card says ${name && name.textContent}`);
+    // An unfound secret plane keeps its name to itself (tests/features/secrets.browser.js).
+    if (!type.secret && (!name || name.textContent !== type.name)) wrong.push(`${ui.id}: card says ${name && name.textContent}`);
   }
   const visible = ui.order.filter((id) => seen.has(id)).length;
   r.ok('menus: browsing the fleet twice puts every aeroplane on the podium, locked ones as silhouettes',

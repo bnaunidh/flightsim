@@ -45,7 +45,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension } from '../game/extensions.js';
-import { performanceFor, AIRCRAFT } from '../aircraft/types.js';
+import { performanceFor, baseTypeId, AIRCRAFT } from '../aircraft/types.js';
 import { heightAt } from '../world/terrain.js';
 import { AIRLINER_GEOMETRY } from '../aircraft/extra/airliners.js';
 import * as PROG from '../game/progression.js';
@@ -68,7 +68,8 @@ function fromRoster(key) {
 
 /** True when the aeroplane being flown is one of the three. */
 export function isAirliner(sim) {
-  return !!(sim && sim.aircraftType && MINE.has(sim.aircraftType.id));
+  // A version of one of the three (Air Force One, aircraft/extra/secret.js) is one of them.
+  return !!(sim && sim.aircraftType && MINE.has(baseTypeId(sim.aircraftType)));
 }
 
 /* ------------------------------------------------------------------ *
@@ -77,7 +78,7 @@ export function isAirliner(sim) {
 
 /** How much further back the views stand, by aeroplane. */
 export function viewScale(id) {
-  const g = AIRLINER_GEOMETRY[id];
+  const g = AIRLINER_GEOMETRY[id] || AIRLINER_GEOMETRY[baseTypeId(id)];
   return g ? Math.max(1, g.length / 24) : 1;
 }
 
@@ -262,7 +263,7 @@ export const TAKEOFF_FLAPS = Object.freeze({ ...fromRoster('takeoffFlaps'), a320
 
 function setTakeoffFlaps(sim, ac) {
   const id = sim.aircraftType.id;
-  const step = TAKEOFF_FLAPS[id];
+  const step = TAKEOFF_FLAPS[id] || TAKEOFF_FLAPS[baseTypeId(sim.aircraftType)];
   if (!step || typeof ac.setFlaps !== 'function' || ac.flapStep() >= step) return;
   ac.setFlaps(step);
   let rotate = 90;

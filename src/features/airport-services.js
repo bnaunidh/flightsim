@@ -33,7 +33,7 @@ import { registerActions, isKey, keyName } from '../flight/input.js';
 
 /* Y, in the one registry: Settings → Controls → Missions & events. */
 registerActions({
-  services: { label: 'Ground crew: call them / push back / stop (on a stand)', group: 'Missions & events', ctx: ['plane', 'foot'], default: ['KeyP'] },
+  services: { label: 'Ground crew: call them / skip the boarding / push back / stop (on a stand)', group: 'Missions & events', ctx: ['plane', 'foot'], default: ['KeyP'] },
 });
 import { airportLayout, standAt, standApproach, standTaken, standFits, pavedIn, NOSE_STOP } from '../world/airport-layout.js';
 import { estimateInfo } from '../world/apron.js';
@@ -94,6 +94,11 @@ const S = {
   busy: new Set(),
   busyBy: new Map(),
   reading: { toGo: 0, lateral: 0, speed: 0, name: '' },
+  // Your stand's jet bridge held back off your door (holdBridgeBack): the
+  // doors are shut and it has pulled away for the pushback.
+  bridgeAway: false,
+  // Another feature's words in the prompt for now (onServicesPrompt), or null.
+  overridden: null,
 };
 
 function reset(sim) {
@@ -105,6 +110,8 @@ function reset(sim) {
   S.apron = null;
   S.t = 0;
   S.promptKey = -1;
+  S.bridgeAway = false;
+  S.overridden = null;
   setPrompt('');
 }
 
@@ -851,7 +858,7 @@ function scan(sim) {
   const flying = sim.mode && sim.mode !== 'drive';
   if (flying && ac && ac.onGround && !ac.crashed) {
     near.push({ x: ac.pos.x, z: ac.pos.z });
-    if (stopped(sim) && S.state !== 'pushback') {
+    if (stopped(sim) && S.state !== 'pushback' && !S.bridgeAway) {
       const type = typeOf(sim);
       if (type) visitors.push({ id: 'player', typeId: type.id, x: ac.pos.x, z: ac.pos.z, headingDeg: ac.heading || 0, info: playerInfo(sim) });
     }
@@ -900,6 +907,8 @@ function tick(sim, dt) {
   }
   // The world was rebuilt under us (a detail change): its crew is not ours.
   if (S.apron && S.apron !== sim.apron) reset(sim);
+  // Rolling again: the next stand you stop on docks its bridge to you.
+  if (S.bridgeAway && groundSpeed(ac) > 2) S.bridgeAway = false;
 
   /*
    * The docking board, and its words on screen. Not once the tug is on:
@@ -944,7 +953,7 @@ function tick(sim, dt) {
         S.state = 'onStand';
         S.t = 0;
         S.promptKey = -1;
-        setPrompt(`Parked on stand ${st.number}. Press <kbd>${keyName('services', sim)}</kbd> or tap here for the ground crew.`, () => callCrew(sim));
+        defaultPrompt(sim);
         break;
       }
       if (d && sim.apron && sim.apron.spare) {
@@ -976,12 +985,7 @@ function tick(sim, dt) {
         reset(sim);
         break;
       }
-      if (sim.apron && sim.apron.crewReady && sim.apron.crewReady()) {
-        S.state = 'serviced';
-        S.t = 0;
-        S.fuelFrom = ac.fuel;
-        setPrompt(`Fuelling and loading… press <kbd>${keyName('services', sim)}</kbd> or tap here when you are ready to push back.`, () => startPush(sim));
-      }
+      if (sim.apron && sim.apron.crewReady && sim.apron.crewReady()) crewArrived(sim);
       break;
     }
     case 'serviced': {
@@ -1015,6 +1019,98 @@ function tick(sim, dt) {
     default:
       break;
   }
+  // Somebody else's words in the prompt while they have something to say
+  // (passengers.js: the boarding, and its skip).
+  if (S.state === 'onStand' || S.state === 'calling' || S.state === 'serviced') {
+    const o = PROMPTS.length ? overridePrompt(sim) : null;
+    if (o) {
+      S.overridden = o;
+      setPrompt(o.html, o.action || null);
+    } else if (S.overridden) {
+      S.overridden = null;
+      defaultPrompt(sim);
+    }
+  }
+}
+
+/** The words each state shows on its own. */
+function defaultPrompt(sim) {
+  const k = keyName('services', sim);
+  if (S.state === 'onStand' && S.stand) setPrompt(`Parked on stand ${S.stand.number}. Press <kbd>${k}</kbd> or tap here for the ground crew.`, () => callCrew(sim));
+  else if (S.state === 'calling') setPrompt('The ground crew is on the way…');
+  else if (S.state === 'serviced') setPrompt(`Fuelling and loading… press <kbd>${k}</kbd> or tap here when you are ready to push back.`, () => startPush(sim));
+}
+
+/** Every vehicle parked round you: fuelling and loading. */
+function crewArrived(sim) {
+  S.state = 'serviced';
+  S.t = 0;
+  S.fuelFrom = sim.aircraft ? sim.aircraft.fuel : 0;
+  if (!S.overridden) defaultPrompt(sim);
+}
+
+/*
+ * Another feature's words for the prompt while you are on a stand: fn(sim,
+ * state) returns { html, action } (action: what Y or a tap does now, or null
+ * for words only) or null to leave the prompt to this file. passengers.js
+ * uses it for the boarding ("Boarding 87/162 — Y or tap here to skip").
+ */
+const PROMPTS = [];
+export function onServicesPrompt(fn) {
+  if (typeof fn === 'function' && !PROMPTS.includes(fn)) PROMPTS.push(fn);
+}
+function overridePrompt(sim) {
+  for (const fn of PROMPTS) {
+    try {
+      const o = fn(sim, S.state);
+      if (o && o.html) return o;
+    } catch (e) {
+      console.warn('[airport] a prompt override threw and was ignored', e);
+    }
+  }
+  return null;
+}
+
+/**
+ * The crew that is driving out to you, there now: every vehicle in its place
+ * and working (a skip). True if they are.
+ */
+export function crewNow(sim) {
+  if (S.state !== 'calling' || !sim || !sim.apron) return S.state === 'serviced';
+  const c = sim.apron.spare;
+  if (c && c.state === 'arriving' && typeof sim.apron.stepArrival === 'function') sim.apron.stepArrival(c, 1e4);
+  if (sim.apron.crewReady && sim.apron.crewReady()) {
+    crewArrived(sim);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Hold your stand's jet bridge back off your door — the doors are shut and
+ * it pulls away before the pushback — or let it come again (`on` false).
+ * `instant`: it is back against the terminal now (a skip), not in ten
+ * seconds. Returns the bridge it moved, or null. Let go of by itself once
+ * you roll, so the next stand you stop on docks you as ever.
+ */
+export function holdBridgeBack(sim, on = true, instant = false) {
+  S.bridgeAway = !!on;
+  if (!on || !sim || !sim.apron || !Array.isArray(sim.apron.bridges)) return null;
+  let moved = null;
+  for (const b of sim.apron.bridges) {
+    if (!b || (b.visitor !== 'player' && b.visitor !== 'spare')) continue;
+    if (typeof sim.apron.undock === 'function') sim.apron.undock(b);
+    else {
+      b.target = 0;
+      b.visitor = null;
+    }
+    if (instant) {
+      b.ext = 0;
+      b.dirty = true;
+    }
+    moved = b;
+  }
+  return moved;
 }
 
 function callCrew(sim) {
@@ -1031,9 +1127,19 @@ function callCrew(sim) {
   S.state = 'calling';
   S.t = 0;
   S.crewUsed = true;
-  setPrompt('The ground crew is on the way…');
+  if (!S.overridden) defaultPrompt(sim);
   radio(sim, `Stand ${st.number}, ground crew on the way.`);
   return true;
+}
+
+/*
+ * Whoever wants a word before the tug starts pushing: passengers.js shuts the
+ * doors first (the last of the boarding hurries on), and answers 'wait' — it
+ * calls startPush again once they are shut. Anything else lets the push go.
+ */
+const BEFORE_PUSH = [];
+export function onBeforePushback(fn) {
+  if (typeof fn === 'function' && !BEFORE_PUSH.includes(fn)) BEFORE_PUSH.push(fn);
 }
 
 function startPush(sim) {
@@ -1044,6 +1150,13 @@ function startPush(sim) {
   if (rampDown || S.hold) {
     say(sim, rampDown ? 'The tug will not push with the cargo ramp down — close it first.' : S.hold, 'warn', 4);
     return false;
+  }
+  for (const fn of BEFORE_PUSH) {
+    try {
+      if (fn(sim) === 'wait') return false;
+    } catch (e) {
+      console.warn('[airport] a before-pushback check threw and was ignored', e);
+    }
   }
   S.push = planPush(sim);
   S.state = 'pushback';
@@ -1158,6 +1271,12 @@ registerExtension({
     const st = S.state;
     if (st !== 'onStand' && st !== 'calling' && st !== 'serviced' && st !== 'pushback') return false;
     if (!down) return true;
+    // Somebody else has the prompt (the boarding): Y does what a tap on it does.
+    if (S.overridden && st !== 'pushback') {
+      const fn = S.overridden.action;
+      if (fn) fn();
+      return true;
+    }
     if (st === 'onStand') callCrew(sim);
     else if (st === 'serviced') startPush(sim);
     else if (st === 'pushback') stopPush(sim);
@@ -1264,6 +1383,8 @@ export const __airportServices = {
   callCrew,
   startPush,
   stopPush,
+  crewNow,
+  holdBridgeBack,
   departureHeading,
   promptAllowed,
   syncPromptVisibility,

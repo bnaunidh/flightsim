@@ -1140,9 +1140,14 @@ export class Airport {
     }
   }
 
-  /** Doors open for anything on the ground within 160 m of them. */
+  /**
+   * Doors open for anything on the ground within 160 m of them — except a
+   * hangar somebody opened or shut by hand (features/secrets.js, E at the
+   * door: `hs.manual`), which stays the way they left it.
+   */
   watchHangars(points) {
     for (const hs of this.doorState) {
+      if (hs.manual) continue;
       const r = hs.hangar.rect;
       const cx = (r.x0 + r.x1) / 2;
       const cz = (r.z0 + r.z1) / 2;

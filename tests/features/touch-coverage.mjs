@@ -45,6 +45,7 @@ function ok(name, pass, detail = '') {
 /* ---------------- 1. every action has a thumb ---------------- */
 
 await load('src/features/index.js');
+await load('src/features/later.js');
 const { ACTIONS } = await load('src/flight/input.js');
 const { TOUCH_COVERAGE, TOUCH_VIAS, coverageGaps } = await load('src/ui/touch-coverage.js');
 

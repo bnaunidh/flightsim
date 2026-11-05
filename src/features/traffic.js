@@ -110,10 +110,24 @@
  * HEARD. The nearest one within a kilometre of the camera makes its engine
  * noise, quietly, on the environment bus (./traffic/sound.js).
  *
- * WHEN. On in Free Flight, off in the tutorial, the missions and the other
- * vehicles — unless a mission's definition says `traffic: true` (or a
- * number, for how many). Dev mode has buttons to add one now, land one now,
- * clear them all, follow one with the camera and hide their name tags.
+ * WHEN. On in Free Flight — for everybody, not only in Dev mode — unless the
+ * switch says off (`sim.settings.traffic === false`: "Other aeroplanes" on
+ * the Free Flight Departure tab and in the pause menu, ./traffic/setting.js).
+ * Off in the tutorial, the missions and the other vehicles — unless a
+ * mission's definition says `traffic: true` (or a number, for how many). In a
+ * multiplayer game the host runs it and everybody else draws the host's
+ * (../mpworld.js). Dev mode has buttons to add one now, land one now, clear
+ * them all, follow one with the camera, and name tags over each (off outside
+ * Dev mode unless switched on there).
+ *
+ * YOUR RUNWAY (./traffic/priority.js). On top of the four rules, the tower
+ * gives you priority: while you are on a runway, climbing away off it, on
+ * final to it or low in its circuit — or anybody in a multiplayer lobby is —
+ * nobody lines up or takes off on it, and an arrival goes around unless it
+ * would be down and off well before you could need it. The tower says so
+ * once ("Courier three four, hold short runway zero nine, traffic
+ * departing."), and once you are off it — airborne and away, or taxied
+ * clear — they use it again.
  *
  * CONTRACT. `sim.traffic` is published every frame as
  *   [{ id, typeId, pos: THREE.Vector3, heading, speed, alt, onGround, phase, ... }]
@@ -135,6 +149,8 @@ import { rng, DEG, wrapPi, Path, Draft } from './traffic/path.js';
 import * as LOD from './traffic/lod.js';
 import { TrafficSound } from './traffic/sound.js';
 import { registerBody, unregisterBody } from './sky.js';
+import * as PR from './traffic/priority.js';
+import { paintTrafficSwitches, isOn as switchOn } from './traffic/setting.js';
 
 /* ------------------------------------------------------------------ */
 /* Tuning                                                              */
@@ -168,6 +184,28 @@ const EVADE_HORIZON = 20;
 /** m/s/s: how hard a step aside is turned into the drift back to the path (see evade). */
 const DRIFT_ACCEL = 5;
 const G = 9.81;
+/*
+ * YOUR RUNWAY, for a departure already cleared on to it when you come back
+ * (priorityDeparture, priorityLineup, departNeed):
+ *   ROLL_NEED     a take-off roll never starts with you due in under this
+ *                 many seconds, whatever the arithmetic says;
+ *   CLEAR_MARGIN  it must be airborne this long before you could need the
+ *                 runway — about a kilometre and a half of your final.
+ * The review's seed 5: a Courier backtracking the length of 09 for 130 s
+ * while you came down an 8 km final was told "go now" when it finally lined
+ * up, with you 1,050 m out, and lifted off as you passed 250 m. Now the whole
+ * of what it still has to do is counted, and one that cannot be off in time
+ * leaves by the nearest exit instead (cancelDeparture).
+ */
+const ROLL_NEED = 60;
+const CLEAR_MARGIN = 30;
+/**
+ * Held for a pilot's claim, an arrival holds HIGH: this far above its gate
+ * height, climbed and descended a lap at a time at its own gradients. At gate
+ * height the hold is a 360 on the final approach course, 100 m over a child
+ * coming down final — a TRAFFIC caution on an ordinary landing. (atGate)
+ */
+const HOLD_UP = 300;
 
 /** Stable phase keys, and the words for them. */
 export const PHASE_TEXT = {
@@ -221,7 +259,10 @@ const T = {
   rand: rng(1),
   nextId: 1,
   watch: -1,
-  tags: true,
+  /** Name tags: null = shown in Dev mode only; true/false once the Dev button has said. */
+  tags: null,
+  tagsNow: false,
+  devNow: false,
   pending: null,
   builtThisFrame: false,
   /** Seconds of flying, this session: the traffic's own clock. */
@@ -230,6 +271,26 @@ const T = {
   stats: { ms: 0, msMax: 0, frames: 0, minSepAir: Infinity, planMs: 0, planMsMax: 0, slowest: '', meshesSaved: 0, deadlocks: 0, goArounds: 0, unstable: 0, escapes: 0, towerHold: 0, towerClear: 0 },
   /** The tower's "hold position" (R4): whether it has been said, and since when the runway has been clear or not. */
   tower: { on: false, who: null, seenSince: null, clearSince: null, saidAt: -Infinity, rollSaid: false },
+  /**
+   * YOUR RUNWAY (./traffic/priority.js): the runways on this map, your claim,
+   * everybody else's in a multiplayer game (by player id), and what the
+   * tower has said about it this time.
+   */
+  prio: {
+    rws: [],
+    me: PR.newClaim(),
+    pilot: PR.blankPilot(),
+    others: new Map(),
+    seen: new Set(),
+    /** The lobby's other pilots on the ground, for blockedAhead: { x, z, r }. */
+    ground: [],
+    talk: { episode: 0, from: null, said: false, held: false, ga: null, freeSaid: true },
+    stats: { claims: 0, holdsSaid: 0, freeSaid: 0, priorityGoArounds: 0, expedited: 0, heldShort: 0, cancelled: 0, resetMoved: 0, holdsHigh: 0 },
+  },
+  /** Who else is flying here (a multiplayer lobby): set by ../mpworld.js on the host, see setOtherPilots. */
+  otherPilots: null,
+  /** A multiplayer guest: the host's traffic is everybody's, so none of its own starts (setTrafficRole). */
+  guest: false,
 };
 
 // Reused every frame — nothing in the per-frame path allocates.
@@ -254,6 +315,8 @@ function refreshField() {
   const t0 = performance.now();
   T.field = buildField();
   T.fieldKey = fieldKeyNow();
+  // Every runway on this map, for whose claim is on which (./traffic/priority.js).
+  T.prio.rws = PR.runwayList(AIRPORT);
   if (!T.field.ok) T.why = T.field.why;
   noteTime(performance.now() - t0, true, 'field');
 }
@@ -623,6 +686,8 @@ function startLeg(c, leg, s = 0) {
   c.r2Hold = false;
   c.rulesAt = 0;
   c.hurry = 0;
+  // A departure sent off the runway for a pilot's claim (cancelDeparture): only while it is leaving.
+  c.cancelled = false;
   const name = leg.kind === 'route' ? 'route' : leg.kind;
   setPhase(c, PHASE_TEXT[name] ? name : 'route', leg.phase || PHASE_TEXT[name]);
 }
@@ -728,6 +793,8 @@ function nextLeg(sim, c) {
     next = planned.shift();
     c.legs.push(...planned);
   }
+  // Off the runway at a holding point to go again from there (cancelDeparture): the exit is nobody's now, the holding point is its.
+  if (done && done.kind === 'vacate' && next && next.needs === 'departure') c.exitX = null;
   if (!next) {
     // The end of the day's flying: shut down on the slot.
     if (done && (done.kind === 'taxi-in' || done.holdAtEnd)) {
@@ -778,13 +845,32 @@ function nextLeg(sim, c) {
   startLeg(c, next);
 }
 
-/** Arrived at the gate: cleared to approach, or a 360 and ask again. */
+/**
+ * Arrived at the gate: cleared to approach, or a 360 and ask again.
+ *
+ * Held for a pilot's claim — you on the runway, climbing away, on final, in
+ * the circuit — the 360 climbs, a lap at a time at its own gradient, to
+ * HOLD_UP above the gate (holdHeight), and stays up there while the hold
+ * lasts; cleared with height still to lose, it flies a lap down to gate
+ * height first, then the approach. Held for anything else (another arrival
+ * on final) it circles at gate height as it always did. The lap starts at
+ * the height it is at, so nothing jumps.
+ */
 function atGate(sim, c) {
   const field = T.field;
   if (!c.geo) c.geo = PL.arrivalFor(field, c.perf, T.dir, c.layer, c.side);
   const ctx = T.ctx;
   const someoneOnFinal = T.list.some((o) => o !== c && o.onApproach);
+  // Where it is now, leg or no leg: the lap just ended, and a lap that starts at gate height from higher up is a jump.
+  const yNow = !c.onGround && Number.isFinite(c.y) ? c.y - c.off.y : c.geo.yGate;
+  const yGate = c.geo.yGate;
   if (!ctx.playerUsingRunway && !someoneOnFinal) {
+    if (yNow > yGate + 1) {
+      // Down to gate height first: the approach is planned from there, so anything left over would be a jump.
+      startLeg(c, PL.planOrbit(field, c.perf, c.geo, { y0: yNow, y1: Math.max(yGate, yNow - orbitStep(c, 'down')) }));
+      c.state = 'moving';
+      return;
+    }
     const t0 = performance.now();
     // An exit it can taxi home from, and that nobody is waiting at or heading for.
     const app = planArrival(c);
@@ -798,8 +884,41 @@ function atGate(sim, c) {
       return;
     }
   }
-  startLeg(c, PL.planOrbit(field, c.perf, c.geo));
+  const yHold = ctx.claimBlocks ? holdHeight(c) : yGate;
+  let y1 = yNow;
+  if (yHold > yNow + 5) y1 = Math.min(yHold, yNow + orbitStep(c, 'up'));
+  else if (yNow > yHold + 5) y1 = Math.max(yHold, yNow - orbitStep(c, 'down'));
+  if (y1 > yGate + 20 && yNow <= yGate + 20) T.prio.stats.holdsHigh++;
+  startLeg(c, PL.planOrbit(field, c.perf, c.geo, { y0: yNow, y1 }));
   c.state = 'moving';
+}
+
+/** Metres a holding lap can climb or descend at this aeroplane's gradient. */
+function orbitStep(c, way) {
+  const lap = 2 * Math.PI * c.perf.rApp;
+  return lap * (way === 'up' ? c.perf.gradClimb : c.perf.gradDesc);
+}
+
+/**
+ * How high this one holds for a pilot's claim: HOLD_UP over its gate — unless
+ * another aeroplane is in the air up there within reach of its circle (a
+ * higher layer's hold, 45 m up and 860 m along for two light aeroplanes), in
+ * which case it stays where it is: the layers keep them apart, and climbing
+ * through somebody else's is worse than a caution on your panel.
+ */
+function holdHeight(c) {
+  const g = c.geo;
+  const yGate = g.yGate;
+  const top = yGate + HOLD_UP;
+  const reach = 2 * c.perf.rApp + 200;
+  for (const o of T.list) {
+    if (o === c || o.onGround) continue;
+    const oy = o.y - o.off.y;
+    if (oy <= yGate + 30 || oy > top + 120) continue;
+    const oR = o.perf.rApp;
+    if (Math.hypot(o.x - g.gate.x, o.z - g.gate.z) < reach + 2 * oR) return yGate;
+  }
+  return top;
 }
 
 /* ------------------------------------------------------------------ */
@@ -835,10 +954,12 @@ function playerContext(sim) {
   ctx.pm1.on = false;
   ctx.pm2.on = false;
   if (!ac || !f || !f.ok || sim.mode === 'drive') {
-    ctx.playerUsingRunway = false;
     ctx.runway2 = false;
     ctx.r2Parked = false;
     ctx.r2Active = false;
+    // Out of the aeroplane: no claim of yours, but a lobby's pilots may still have one.
+    priorityContext(sim, null);
+    ctx.playerUsingRunway = ctx.claimBlocks;
     return ctx;
   }
   const p = ac.pos;
@@ -888,7 +1009,14 @@ function playerContext(sim) {
    */
   ctx.r2Parked = !!(ctx.runway2 && ctx.groundStill && T.time - ctx.stillSince > 30 && !isOnRunway(p.x, p.z, 35 + ctx.halfSpan));
   ctx.r2Active = ctx.runway2 && !ctx.r2Parked;
-  ctx.playerUsingRunway = ctx.onRunway || ctx.onFinal || (ctx.r2Active && f.r2Crosses);
+  /*
+   * YOUR RUNWAY: on it, climbing away off it, on final or in the circuit —
+   * yours, or anybody's in a multiplayer lobby (priorityContext). Any claim
+   * on 09/27, or on a runway that crosses it, holds the traffic's departures
+   * and sends round the arrivals that would not be off in time.
+   */
+  priorityContext(sim, ac);
+  ctx.playerUsingRunway = ctx.onRunway || ctx.onFinal || (ctx.r2Active && f.r2Crosses) || ctx.claimBlocks;
   /*
    * Taxiing out: on the ground at the airfield, off the runway, and moving —
    * or stopped for less than half a minute, which is a hold, not a parking.
@@ -900,6 +1028,65 @@ function playerContext(sim) {
   if (ac.onGround && !ctx.onRunway && atField && speed > 1) ctx.movedAt = T.time;
   ctx.taxiing = !!(ac.onGround && !ctx.onRunway && atField && ac.engineOn && T.time - ctx.movedAt < 30);
   playerModels(sim, ac, p, agl);
+  return ctx;
+}
+
+/**
+ * Whose claim is on which runway this frame (./traffic/priority.js): yours
+ * (`ac`, or null out of the aeroplane) and, in a multiplayer game on the host,
+ * every other pilot's in the lobby (T.otherPilots). Sets
+ *   ctx.claim        your claim (the tower talks about this one)
+ *   ctx.claimBlocks  anybody's claim keeps the traffic off 09/27
+ *   ctx.block        the most pressing of those
+ *   ctx.needAt       seconds until the soonest of them could need the runway
+ *                    (0 on it, Infinity climbing away)
+ */
+function priorityContext(sim, ac) {
+  const P = T.prio;
+  const ctx = T.ctx;
+  const rws = P.rws;
+  // (Out of it on foot, the aeroplane still stands where it stands: on a runway, that is a claim.)
+  const me = ac ? PR.pilotFromAircraft(ac, P.pilot, T.field ? T.field.elev : 0) : null;
+  if (me) {
+    me.halfSpan = ctx.halfSpan || 6;
+    // A rotor, retractable wheels, the approach autopilot: the circuit claim's signs of landing.
+    PR.pilotIntent(me, sim.aircraftType, sim.autopilot);
+  }
+  const before = P.me.episode;
+  PR.updateClaim(P.me, me, rws, T.time);
+  if (P.me.episode !== before) P.stats.claims++;
+  let block = PR.blocksMain(P.me) ? P.me : null;
+  let need = block ? PR.etaFor(block) : Infinity;
+  let others = null;
+  try {
+    others = typeof T.otherPilots === 'function' ? T.otherPilots() : null;
+  } catch (e) {
+    others = null;
+  }
+  P.seen.clear();
+  P.ground.length = 0;
+  if (Array.isArray(others)) {
+    for (const o of others) {
+      if (!o || o.id == null || !Number.isFinite(o.x) || !Number.isFinite(o.z)) continue;
+      if (o.onGround && P.ground.length < 8) P.ground.push({ x: o.x, z: o.z, r: (o.halfSpan || 6) + 0.6 });
+      let cl = P.others.get(o.id);
+      if (!cl) {
+        cl = PR.newClaim();
+        P.others.set(o.id, cl);
+      }
+      PR.updateClaim(cl, o, rws, T.time);
+      P.seen.add(o.id);
+      if (PR.blocksMain(cl)) {
+        block = PR.stronger(block, cl);
+        need = Math.min(need, PR.etaFor(cl));
+      }
+    }
+  }
+  for (const id of P.others.keys()) if (!P.seen.has(id)) P.others.delete(id);
+  ctx.claim = P.me;
+  ctx.block = block;
+  ctx.claimBlocks = !!block;
+  ctx.needAt = need;
   return ctx;
 }
 
@@ -1277,9 +1464,8 @@ function stepCraft(sim, c, dt) {
         c.pending = null;
         startLeg(c, leg);
         c.state = 'moving';
-      } else if (T.ctx.playerUsingRunway && T.ctx.onRunway) {
-        note(sim, 'hold', `${c.callsign} is holding short while you are on the runway`, 60);
       }
+      // (Held for you: the tower says so once, in priorityTalk.)
       break;
     case 'moving':
       follow(sim, c, dt);
@@ -1736,8 +1922,8 @@ function r2Gate(sim, c, L) {
   if (e.sUse === Infinity || c.s >= e.sUse || isOnRunway2(c.x, c.z, r2Margin(c.perf))) return false;
   let ok = r2Clear(c, L.path, c.s, c.v);
   if (L.kind === 'lineup') {
-    // One clearance for the whole way on: 18/36, then 09/27.
-    if (ok && T.ctx.onRunway) ok = false;
+    // One clearance for the whole way on: 18/36, then 09/27 (and not while it is claimed: lineupHeld).
+    if (ok && (T.ctx.onRunway || lineupHeld(c, L))) ok = false;
     if (ok && T.runwayOwner !== c) {
       if (!T.runwayOwner && departureClear(c, L)) T.runwayOwner = c;
       else ok = false;
@@ -2026,6 +2212,15 @@ function follow(sim, c, dt) {
   // Runway use by the player, on the legs that care.
   if (L.kind === 'approach') approachChecks(sim, c, L);
   if (c.leg !== L) return; // went around
+  if (L.kind === 'takeoff') priorityDeparture(sim, c, L);
+  else if (L.kind === 'lineup') priorityLineup(sim, c, L);
+  if (c.leg !== L) {
+    // Sent off the runway for a pilot's claim (cancelDeparture): on its way off from this frame.
+    follow(sim, c, dt);
+    return;
+  }
+  // (priorityDeparture may have held it this frame.)
+  if (c.holdT > 0) vCmd = 0;
   if (L.kind === 'approach' && L.sLock != null && c.s >= L.sLock && T.runwayOwner !== c) {
     if (!T.runwayOwner) T.runwayOwner = c;
     else if (c.s < L.sTD - 20) {
@@ -2093,6 +2288,153 @@ function follow(sim, c, dt) {
   }
   pose(sim, c, dt);
   subPhase(c, L);
+}
+
+/**
+ * YOUR RUNWAY, for one lined up to take off when somebody claims the runway.
+ *   - you (or a lobby's pilot) coming back, on final or in the circuit, and
+ *     a way out yet (departNeed): it goes now — the quickest way off a
+ *     runway is to take off from it. Not a way out: it never starts to roll
+ *     (ROLL_NEED); it leaves by the nearest exit instead (cancelDeparture)
+ *     and holds short there, to go when you are down and off. Coming the
+ *     OTHER way along the runway at it, you are never flown at: it leaves.
+ *     (One still on its way on to the runway stops short of it: lineupHeld.)
+ *   - a lobby's pilot on the runway ahead of it: it waits, lined up, until
+ *     they are off it — and with them behind it, it goes now, away from
+ *     them. (You on the runway are R3's: escape09, which knows your wings.)
+ */
+function priorityDeparture(sim, c, L) {
+  const ctx = T.ctx;
+  const b = ctx.block;
+  if (!b || L.kind !== 'takeoff' || !c.onGround || c.v >= 1 || c.s >= (L.sLift || Infinity)) return;
+  const P = T.prio.stats;
+  if (b.kind === 'final' || b.kind === 'circuit') {
+    if (!headOn(b) && ctx.needAt >= Math.max(ROLL_NEED, departNeed(c, L))) {
+      if (c.holdT > 0.3) {
+        c.holdT = 0.3;
+        P.expedited++;
+      }
+      return;
+    }
+    // Not off in time: never rolls at you. Off the runway by the nearest exit, or stopped where it is.
+    c.holdT = Math.max(c.holdT, 0.5);
+    if (T.time >= (c.prioAt || 0)) {
+      c.prioAt = T.time + 0.5;
+      cancelDeparture(sim, c, L);
+    }
+    return;
+  }
+  if (b.kind !== 'runway' || b === T.prio.me) return;
+  const rw = runwayFor(T.field, T.dir);
+  const ahead = (b.x - c.x) * rw.dir;
+  if (ahead < -10) {
+    if (c.holdT > 0.3) c.holdT = 0.3;
+  } else c.holdT = Math.max(c.holdT, 0.5);
+}
+
+/**
+ * YOUR RUNWAY, for one lining up — on the runway already (off it, lineupHeld
+ * stops it short): backtracking to the far end for the length it needs, say,
+ * which on Kestrel's 09 is 130 s at taxi speed before it is even lined up.
+ * If the rest of its line-up, the roll and the margin do not fit before you
+ * could need the runway, it gives up the departure and leaves by the nearest
+ * exit now (cancelDeparture), rather than finishing the backtrack in front
+ * of you. Asked twice a second.
+ */
+function priorityLineup(sim, c, L) {
+  const ctx = T.ctx;
+  const b = ctx.block;
+  if (!b || (b.kind !== 'final' && b.kind !== 'circuit') || !c.onGround) return;
+  if (T.time < (c.prioAt || 0)) return;
+  c.prioAt = T.time + 0.5;
+  if (!isOnRunway(c.x, c.z, c.perf.span / 2 + 2)) return;
+  if (!headOn(b) && ctx.needAt >= departNeed(c, L)) return;
+  cancelDeparture(sim, c, L);
+}
+
+/** Is this claim a final to the OTHER end of the runway from the one the traffic departs? */
+function headOn(b) {
+  if (!b || b.kind !== 'final' || !b.rw) return false;
+  const rw = runwayFor(T.field, T.dir);
+  return Math.sin(b.hdgDeg * DEG) * rw.dir < 0;
+}
+
+/** Seconds from brake release to lift-off from a standing start on this take-off leg, plus a little. */
+function rollTime(c, tk) {
+  const sLift = tk && Number.isFinite(tk.sLift) ? tk.sLift : 600;
+  return Math.sqrt((2 * sLift) / Math.max(0.5, c.perf.accel)) + 1;
+}
+
+/**
+ * Seconds this departure needs from now to be airborne and clear
+ * (CLEAR_MARGIN) — the rest of its line-up at the speeds the path allows,
+ * the pause lined up, the roll. On a take-off leg standing: what is left of
+ * the pause, and the roll.
+ */
+function departNeed(c, L) {
+  if (L.kind === 'lineup') {
+    const tk = c.legs[0] && c.legs[0].kind === 'takeoff' ? c.legs[0] : null;
+    return timeAlong(L.path, c.s, L.path.length, c.v) + 3 + rollTime(c, tk) + CLEAR_MARGIN;
+  }
+  if (L.kind === 'takeoff') return Math.max(0, c.holdT) + rollTime(c, L) + CLEAR_MARGIN;
+  return 0;
+}
+
+/**
+ * Give up a departure for a pilot's claim: off the runway now by the exit
+ * that gets it off soonest (waysOff, with nobody on the runway to judge
+ * against), and from that exit's holding point the same departure again
+ * when the runway is free — or, if it cannot depart from there, home. Lined
+ * up with no way off (it happens while it is turning on to the runway: no
+ * heading along it yet), it stays stopped and asks again in half a second.
+ * Returns true if it got new legs. Counted (priority.stats.cancelled), and
+ * the tower says so (priorityTalk).
+ */
+function cancelDeparture(sim, c, L) {
+  const ctx = T.ctx;
+  const f = T.field;
+  const t0 = performance.now();
+  const best = choose(waysOff(c, ctx.pm1, 1, () => true, null));
+  noteTime(performance.now() - t0, true, 'off the runway: traffic on final');
+  if (!best || best.keep || best.stay) {
+    if (L.kind === 'takeoff' || along09(c)) c.holdT = Math.max(c.holdT, 0.5);
+    return false;
+  }
+  applyEscape(sim, c, best.path, best.exit, 'leaving the runway: traffic on final', ctx.pm1, null);
+  const X = best.exit;
+  let dep = null;
+  try {
+    if (c.home && PL.departureConnectors(f, c.perf, c.home, T.dir).includes(X)) dep = PL.planDeparture(f, c.perf, T.dir, X);
+  } catch (e) {
+    dep = null;
+  }
+  if (dep && dep.ok) {
+    // The way off ends at this exit's holding point: hold short there, then line up from it.
+    c.legs = dep.legs;
+    c.depEnd = dep.end;
+    c.depConn = X;
+  }
+  c.cancelled = true;
+  T.prio.stats.cancelled++;
+  return true;
+}
+
+/**
+ * Should a line-up stop short of 09/27, off it (blockRunway1, r2Gate)? For
+ * anybody on it; and for anybody coming back to it — on final, or in the
+ * circuit — who could need it before this departure would be airborne and
+ * clear (departNeed: the rest of the line-up, the roll, the margin), or
+ * within 45 seconds whatever the arithmetic. Climbing away off it, they are
+ * no reason to.
+ */
+function lineupHeld(c, L) {
+  const ctx = T.ctx;
+  const b = ctx.block;
+  if (!b) return false;
+  if (b.kind === 'runway') return true;
+  if (b.kind === 'climb') return false;
+  if (headOn(b)) return true;
+  return ctx.needAt < Math.max(45, c && L && L.kind === 'lineup' ? departNeed(c, L) : 45);
 }
 
 /**
@@ -2434,6 +2776,23 @@ function approachChecks(sim, c, L) {
   const ctx = T.ctx;
   const toTD = L.sTD - c.s;
   /*
+   * YOUR RUNWAY (./traffic/priority.js): somebody has claimed it — on it,
+   * on final, in the circuit. A tower would let this one carry on only if it
+   * will be down, rolled out and turned off with time to spare before they
+   * could need the runway; otherwise it goes round. Within 3.5 km, as the
+   * check for you in the air below: further out than that it carries on and
+   * asks again, rather than everybody on a long base leg going round for a
+   * child who sits on the runway for half a minute.
+   */
+  if (ctx.claimBlocks && toTD < 3500) {
+    const tLand = toTD / Math.max(c.v, 20);
+    const tOff = Math.max(0, L.path.length - L.sTD) / 12 + 10;
+    if (tLand + tOff + 20 > ctx.needAt) {
+      goAround(sim, c, 'priority');
+      return;
+    }
+  }
+  /*
    * You on the runway: go round — once it is close enough to matter. The
    * first cut went round from anywhere on the approach, eight kilometres out
    * on the base leg, so a child sitting on the runway for the thirty seconds
@@ -2492,10 +2851,19 @@ function goAround(sim, c, why) {
   if (why === 'unstable') T.stats.unstable++;
   const t0 = performance.now();
   const geo = c.geo || PL.arrivalFor(T.field, c.perf, T.dir, c.layer, c.side);
-  // Going round for you in the air: turn away from where you are.
+  /*
+   * Going round with you in the air near it: turn away from where you are.
+   * For 'player-air' that is the whole point. For a priority go-around (your
+   * claim, or a lobby pilot's) and a 'player' one (you on final ahead) the
+   * first cut went straight ahead, which with you airborne on the same final
+   * is straight at you: the review's "head-on, on final" meeting came within
+   * 259 m on 6 seeds of 30, the AI climbing right over the player, where v51
+   * (which reached the player-air test first) kept 659 m. Within the 4 km
+   * closestOnPath looks, every go-around for a pilot turns away from you.
+   */
   let away = 0;
   const ctx = T.ctx;
-  if (why === 'player-air' && ctx.pos) {
+  if ((why === 'player-air' || why === 'priority' || why === 'player') && ctx.pos && ctx.air && Math.hypot(ctx.pos.x - c.x, ctx.pos.z - c.z) < 4000) {
     const right = (ctx.pos.x - c.x) * Math.cos(c.hdg) + (ctx.pos.z - c.z) * Math.sin(c.hdg);
     away = right > 0 ? -1 : 1;
   }
@@ -2516,11 +2884,15 @@ function goAround(sim, c, why) {
   noteTime(performance.now() - t0, true, 'go-around');
   c.legs.length = 0;
   startLeg(c, ga);
-  if (why === 'player' || why === 'player-air') {
+  if (why === 'priority' || why === 'player') {
+    // For you (or a lobby's pilot): the tower's priority words say it, once (priorityTalk).
+    T.prio.stats.priorityGoArounds++;
+    T.prio.talk.ga = c;
+  } else if (why === 'player-air') {
     const pl = sim.aircraft && sim.aircraft.pos;
     const near = pl && Math.hypot(pl.x - c.x, pl.z - c.z) < 9000;
-    if (near && note(sim, 'goAround', `${c.callsign} is going around — the runway was not clear`, 45)) {
-      speak(sim, `${c.spoken}, go around, runway not clear.`);
+    if (near && note(sim, 'goAround', `${c.callsign} is going around — you are in its way`, 45)) {
+      speak(sim, `${c.spoken}, go around, traffic ahead.`);
     }
   }
 }
@@ -2550,7 +2922,9 @@ function blockedAhead(sim, c, L) {
    */
   if (c.r2Hold) blockRunway2(c, L.path, look, ctx.runway2 ? 'player' : 'runway');
   else if (ctx.r2Active) blockRunway2(c, L.path, look, 'player');
-  if (L.kind === 'lineup' && ctx.onRunway) blockRunway1(c, L.path, look);
+  if (L.kind === 'lineup' && (ctx.onRunway || lineupHeld(c, L))) blockRunway1(c, L.path, look);
+  // A lobby's other pilots on the ground (on the host: priorityContext): stopped for, like you.
+  for (const o of T.prio.ground) blockTest(c, L.path, look, o.x, o.z, o.r, 'player');
   for (const o of T.list) {
     if (o === c || !o.onGround) continue;
     const r = o.perf.span * 0.4;
@@ -2907,7 +3281,7 @@ function paintTag(c) {
 }
 
 function drawTag(c) {
-  const show = T.tags && c.model && c.model.visible && c.dist > TAG_NEAR && c.dist < TAG_FAR && T.watch < 0;
+  const show = T.tagsNow && c.model && c.model.visible && c.dist > TAG_NEAR && c.dist < TAG_FAR && T.watch < 0;
   if (!show) {
     if (c.tag) c.tag.visible = false;
     return;
@@ -3197,6 +3571,126 @@ function towerSay(sim, what) {
   }
 }
 
+/** "09" as the radio says it: "zero nine". */
+function runwayWords(name) {
+  return String(name).split('').map((d) => DIGITS[+d] || d).join(' ');
+}
+
+/** Which end of runway `rw` (./traffic/priority.js) a nose pointing `hdgDeg` is using: "09" or "27". */
+function endFor(rw, hdgDeg) {
+  const h = hdgDeg * DEG;
+  return Math.sin(h) * rw.ux - Math.cos(h) * rw.uz >= 0 ? rw.ends[0] : rw.ends[1];
+}
+
+/**
+ * YOUR RUNWAY, said by the tower — ONCE each time the runway becomes yours
+ * (the owner: "ATC says so once"), and only when somebody is actually being
+ * held for you: the first one holding short, going round, or holding over
+ * the field. Taking off, the claim runs from lining up until you are clear
+ * of the climb-out; landing, from joining final or the circuit until you
+ * have taxied off. Calm, short, real:
+ *
+ *   "Courier three four, hold short runway zero nine, traffic departing."
+ *   "Meridian five two, go around, traffic on final."
+ *   "Skylark one seven, make a three-sixty, traffic on the runway."
+ *
+ * with the line for you on the screen ("Tower: runway 09 is yours —
+ * Courier 34 is holding short"), and, when it is over, "Runway 09 is free
+ * again" — no voice for that one.
+ */
+function priorityTalk(sim) {
+  const P = T.prio;
+  const cl = P.me;
+  const tk = P.talk;
+  if (cl.kind && cl.episode !== tk.episode) {
+    tk.episode = cl.episode;
+    tk.from = cl.kind;
+    tk.said = false;
+    tk.held = false;
+    tk.freeSaid = false;
+    tk.end = cl.kind === 'circuit' || !cl.rw ? runwayFor(T.field, T.dir).name : endFor(cl.rw, cl.hdgDeg);
+  }
+  if (!cl.kind) {
+    tk.ga = null;
+    // "Free again" answers "it's yours": only after the tower said so. A hold the tower kept quiet about (a short circuit claim) ends quietly too.
+    if (tk.said && tk.held && !tk.freeSaid) {
+      tk.freeSaid = true;
+      P.stats.freeSaid++;
+      if (sim.hud && sim.hud.notify) sim.hud.notify(`Runway ${tk.end} is free again — the other aeroplanes can use it now`, 'info', 4);
+    }
+    return;
+  }
+  if (!PR.blocksMain(cl) || !T.list.length) return;
+  /*
+   * Who is being held for you, if anybody: one sent round first, then one
+   * sent off the runway (a departure that could not be off in time —
+   * cancelDeparture), then one holding short, then one circling. The one on
+   * the runway is the one you need to hear about: the review heard "Courier
+   * 74 is holding short" while Courier 50 was rolling in front of it.
+   */
+  let who = null;
+  let how = null;
+  if (tk.ga && T.list.includes(tk.ga)) {
+    who = tk.ga;
+    how = 'around';
+  } else {
+    for (const c of T.list) {
+      if (c.cancelled && c.leg && c.leg.kind === 'vacate') {
+        who = c;
+        how = 'vacate';
+        break;
+      }
+      const lineupStopped = c.leg && c.leg.kind === 'lineup' && c.blockedBy === 'player' && c.v < 0.5;
+      if ((c.state === 'waiting' && c.pending) || lineupStopped) {
+        if (!who || how === 'orbit') {
+          who = c;
+          how = 'hold';
+        }
+        continue;
+      }
+      if (!who && c.phase === 'orbit') {
+        who = c;
+        how = 'orbit';
+      }
+    }
+  }
+  tk.ga = null;
+  if (!who) return;
+  tk.held = true;
+  if (tk.said) return;
+  /*
+   * "You're number one" is for somebody LANDING. The hold itself is at once
+   * (the safe way round), but the tower speaks of a final only with a sign
+   * of landing: wheels, flaps or the approach autopilot (deliberate), or a
+   * descent kept up four seconds — a kid on a 3-degree final is coming down
+   * at 2 m/s and hears it within those seconds. Level along the runway's
+   * line at 200 m (the review's star hunt: three or four pop-ups a quarter
+   * hour) is a pass, and hears nothing. A circuit claim is spoken of only
+   * for a deliberate sign: a descent alone in the circuit holds the traffic
+   * quietly (a kid dipping to a star near the field: nine pop-ups a quarter
+   * hour when a descent was enough), and the kid who then turns final and
+   * comes down hears it there.
+   */
+  const PP = PR.PRIORITY;
+  const sign = cl.deliberate || (cl.descSince != null && T.time - cl.descSince >= PP.circDescentSecs);
+  if (cl.kind === 'final' && !sign) return;
+  if (cl.kind === 'circuit' && !cl.deliberate) return;
+  tk.said = true;
+  P.stats.holdsSaid++;
+  const landing = tk.from === 'final' || tk.from === 'circuit';
+  const why = landing ? 'traffic on final' : tk.from === 'climb' ? 'traffic departing' : how === 'hold' ? 'traffic departing' : 'traffic on the runway';
+  const did = how === 'hold' ? 'is holding short' : how === 'around' ? 'is going around' : how === 'vacate' ? 'is clearing the runway' : 'is holding over the field';
+  const you = landing ? `you're number one for runway ${tk.end}` : `runway ${tk.end} is yours`;
+  if (sim.hud && sim.hud.notify) sim.hud.notify(`Tower: ${you} — ${who.callsign} ${did}`, 'info', 5);
+  const words = runwayWords(tk.end);
+  const line = how === 'hold' ? `${who.spoken}, hold short runway ${words}, ${why}.`
+    : how === 'around' ? `${who.spoken}, go around, ${why}.`
+      : how === 'vacate' ? `${who.spoken}, vacate runway ${words} at the next exit, ${why}.`
+        : `${who.spoken}, make a three-sixty, ${why}.`;
+  speak(sim, line);
+  tk.lastLine = line;
+}
+
 function playerNearField(sim, within) {
   const pl = sim.aircraft && sim.aircraft.pos;
   if (!pl || !T.field) return false;
@@ -3318,6 +3812,12 @@ function clearAll(sim, dispose = true) {
   T.runwayOwner = null;
   T.watch = -1;
   Object.assign(T.tower, { on: false, who: null, seenSince: null, clearSince: null, rollSaid: false });
+  // A new flight's claims start afresh; the tower has said nothing yet.
+  T.prio.me = PR.newClaim();
+  T.prio.others.clear();
+  T.prio.ground.length = 0;
+  Object.assign(T.prio.talk, { episode: 0, from: null, said: false, held: false, ga: null, freeSaid: true });
+  Object.assign(T.ctx, { claim: null, block: null, claimBlocks: false, needAt: Infinity });
   rebuildPub();
   if (T.dots) {
     T.dots.geometry.setDrawRange(0, 0);
@@ -3337,24 +3837,28 @@ function noteTime(ms, planning = false, what = '') {
   }
 }
 
-/** Should traffic run in this mode? */
-/**
- * NOT FINISHED, so Dev mode only for now (the owner's call for the release:
- * "anything not finished goes to dev mode"). Its last runway check still found
- * AI aeroplanes rolling out or lining up on a runway the player is using. Outside
- * Dev mode nothing starts unless a caller asks for it outright (the tests do).
- */
+/** Is the Dev passcode in? (The name tags' default, and nothing else now.) Asked once a flight, not every frame. */
 function devOn(sim) {
-  try { return Prog.isDev((sim.menus && sim.menus.prog) || Prog.load()); } catch (e) { return false; }
+  if (!sim || !sim.menus) return false;
+  try { return Prog.isDev(sim.menus.prog || Prog.load()); } catch (e) { return false; }
 }
 
+/**
+ * Should traffic run in this mode? In Free Flight, yes — for everybody but
+ * Low quality (it was Dev-mode-only while a runway check still found it
+ * rolling out or lining up on a runway you were using; ./traffic/priority.js
+ * is what made it yours) — unless the switch says off (./traffic/setting.js,
+ * which has the numbers for Low) or the caller says `traffic: false` (a multiplayer
+ * guest: the host's is the one everybody sees). A mission only if it asks.
+ */
 function wantedFor(sim, mode, opts) {
   if (opts && opts.traffic === true) return true;
-  if (!devOn(sim)) return false;
+  if (T.guest) return false;
+  // The World Map's sky is its own (features/world-traffic.js).
+  if (sim.worldPreview && typeof sim.worldPreview.active === 'function' && sim.worldPreview.active()) return false;
   if (mode === 'free') {
     if (opts && opts.traffic === false) return false;
-    if (sim.settings && sim.settings.traffic === false) return false;
-    return true;
+    return switchOn(sim);
   }
   if (mode === 'mission') {
     const def = sim.runner && sim.runner.def;
@@ -3525,6 +4029,83 @@ export function takeCraft(sim, id) {
   return pose;
 }
 
+/** Is the traffic switched on for Free Flight (sim.settings.traffic, on unless false)? */
+export function trafficSwitchOn(sim) {
+  return switchOn(sim);
+}
+
+/**
+ * The switch flipped in the middle of a flight (./traffic/setting.js): off
+ * clears every AI aeroplane now; on fills the airfield as a flight start
+ * does — in Free Flight only, and not as a multiplayer guest (`guest`: the
+ * host's traffic is everybody's). Returns how many there are now.
+ */
+export function applyTrafficSwitch(sim, { guest = false } = {}) {
+  if (!sim) return 0;
+  if (!trafficSwitchOn(sim)) {
+    clearTraffic(sim);
+    T.why = 'switched off';
+    return 0;
+  }
+  if (T.on || guest || sim.mode !== 'free' || sim.state === 'menu') return T.list.length;
+  T.sim = sim;
+  start(sim, null);
+  prebuildModels(sim);
+  publish(sim);
+  return T.list.length;
+}
+
+/**
+ * Who else is flying here, for YOUR RUNWAY (./traffic/priority.js): a
+ * function returning [{ id, x, y, z, agl, onGround, crashed, hdgDeg, vx, vy,
+ * vz, gs, halfSpan }] — on a multiplayer host, ../mpworld.js hands over the
+ * lobby's other aeroplanes, so the traffic holds for them as it does for you
+ * and stops for them on the ground. null for nobody.
+ */
+export function setOtherPilots(fn) {
+  T.otherPilots = typeof fn === 'function' ? fn : null;
+}
+
+/**
+ * In a multiplayer game ('host' or 'guest'), or not (null): ../mpworld.js
+ * says. A guest never starts traffic of its own — not on a restart, not
+ * from the switch — because the host's is the one everybody sees.
+ */
+export function setTrafficRole(role) {
+  const guest = role === 'guest';
+  if (guest === T.guest) return;
+  T.guest = guest;
+  // The pause menu's switch says whose sky this is now (./traffic/setting.js).
+  if (T.sim) {
+    try {
+      paintTrafficSwitches(T.sim, applySwitch, { guest });
+    } catch (e) {
+      /* the menu may not be built yet */
+    }
+  }
+}
+
+/** The switch's effect, now (./traffic/setting.js's pause-menu button). */
+function applySwitch(sim) {
+  return applyTrafficSwitch(sim, { guest: T.guest });
+}
+
+/** The claims, for the checks and the console: yours, and the lobby's. */
+export function priorityState() {
+  const P = T.prio;
+  const one = (cl) => (cl && cl.kind ? { kind: cl.kind, runway: cl.rw ? cl.rw.name : null, eta: Number.isFinite(cl.eta) ? +cl.eta.toFixed(1) : null, episode: cl.episode } : { kind: null, episode: cl ? cl.episode : 0 });
+  return {
+    me: one(P.me),
+    others: [...P.others.entries()].map(([id, cl]) => ({ id, ...one(cl) })),
+    blocks: !!T.ctx.claimBlocks,
+    block: T.ctx.block ? T.ctx.block.kind : null,
+    needAt: Number.isFinite(T.ctx.needAt) ? +T.ctx.needAt.toFixed(1) : null,
+    runways: P.rws.map((r) => ({ id: r.id, name: r.name, crossesMain: r.crossesMain })),
+    talk: { episode: P.talk.episode, said: P.talk.said, held: P.talk.held, last: P.talk.lastLine || null },
+    stats: { ...P.stats },
+  };
+}
+
 /** For the browser check and the console: a snapshot of everything. */
 export function trafficState() {
   return {
@@ -3555,6 +4136,8 @@ export function trafficState() {
       emergency: !!T.ctx.emergency,
     },
     stats: { ...T.stats },
+    // YOUR RUNWAY: whose claim is on which runway, and what the tower has said.
+    priority: priorityState(),
     // R4: the tower's "hold position" is being said now, and for whom.
     tower: { on: T.tower.on, who: T.tower.who },
     craft: T.list.map((c) => ({
@@ -3591,6 +4174,87 @@ export function trafficState() {
       exitX: c.exitX,
     })),
   };
+}
+
+/**
+ * You are about to be put down on 09, lined up at its start (RUNWAY_START),
+ * by a reset rather than a landing. Nothing may be standing where you will
+ * appear, or coming at it:
+ *   - one lining up (on the runway, or on the connector on its way on): back
+ *     to the holding point it came from, to wait there — a few seconds' worth
+ *     of taxiing undone, the way a reset undoes yours;
+ *   - one lined up, rolling slowly, rolling out or turning off: back on its
+ *     slot, engine off, to go again in a minute (parkAt) — there is no
+ *     believable short way for it to leave a runway you are already on;
+ *   - a take-off already fast enough to be off the ground in a few seconds,
+ *     ahead of you and going away from where you appear: left alone;
+ *   - an arrival inside 3.5 km: round again.
+ * The runway is nobody's afterwards. Returns how many were moved. Exported
+ * for the checks; the game calls it through the `placed` hook.
+ */
+export function giveWayAtReset(sim) {
+  if (!T.list.length || !T.field || !T.field.ok) return 0;
+  const f = T.field;
+  const rw = runwayFor(f, T.dir);
+  // Where you appear: the start of 09, whichever way the traffic is using the runway.
+  const startX = f.west + 80;
+  let n = 0;
+  for (const c of T.list) {
+    const L = c.leg;
+    if (!c.onGround) {
+      if (L && L.kind === 'approach' && c.s < L.sTD && L.sTD - c.s < 3500) {
+        goAround(sim, c, 'player');
+        n++;
+      }
+      continue;
+    }
+    const onRw = isOnRunway(c.x, c.z, c.perf.span / 2 + 5);
+    const lining = !!(L && L.kind === 'lineup');
+    if (!onRw && !lining) continue;
+    if (lining) {
+      backToHold(c, L);
+      n++;
+      continue;
+    }
+    // A take-off roll well under way, going away from where you appear: it is gone in seconds.
+    const rolling = L && L.kind === 'takeoff' && c.v >= c.perf.vr * 0.5 && (c.x - startX) * rw.dir > 150;
+    if (rolling) continue;
+    if (T.runwayOwner === c) T.runwayOwner = null;
+    c.onApproach = false;
+    c.exitX = null;
+    c.exitAlt = null;
+    c.escapeFor = null;
+    parkAt(c, 20 + T.rand() * 40);
+    n++;
+  }
+  if (n) {
+    T.prio.stats.resetMoved += n;
+    // The runway is nobody's now — unless a take-off roll was left to finish.
+    T.runwayOwner = T.list.find((c) => c.leg && c.leg.kind === 'takeoff' && c.onGround && c.v > 1) || null;
+  }
+  return n;
+}
+
+/** Back to the holding point a line-up started from, and wait there for the runway (as nextLeg does for a 'departure' leg). */
+function backToHold(c, L) {
+  const p = L.path;
+  if (T.runwayOwner === c) T.runwayOwner = null;
+  c.x = p.x[0];
+  c.z = p.z[0];
+  c.y = groundY(c.x, c.z);
+  c.hdg = p.hdg[0];
+  c.off.set(0, 0, 0);
+  c.offV.set(0, 0, 0);
+  c.v = 0;
+  c.leg = null;
+  c.pending = L;
+  c.state = 'waiting';
+  c.escapeFor = null;
+  c.r2Hold = false;
+  c.hurry = 0;
+  c.pitch = c.perf.groundPitch;
+  c.bank = 0;
+  setPhase(c, 'holding');
 }
 
 /** Test hook: jump a craft's timers so a check does not wait two minutes. */
@@ -3639,6 +4303,11 @@ T.ctx = {
   seenAt: 0,
   groundStill: false,
   halfSpan: 6,
+  // YOUR RUNWAY (priorityContext): your claim, the most pressing claim on 09/27, and when it could be needed.
+  claim: null,
+  block: null,
+  claimBlocks: false,
+  needAt: Infinity,
   // The player as the runway rules see them (playerModels).
   pmG: blankPlayer(),
   pm1: blankPlayer(),
@@ -3651,6 +4320,7 @@ registerExtension({
   install(sim) {
     T.sim = sim;
     if (!Array.isArray(sim.traffic)) sim.traffic = T.pub;
+    paintTrafficSwitches(sim, applySwitch, { guest: T.guest });
   },
 
   buildWorld(sim, group) {
@@ -3696,6 +4366,8 @@ registerExtension({
 
   startMode(sim, mode, opts) {
     T.sim = sim;
+    paintTrafficSwitches(sim, applySwitch, { guest: T.guest });
+    T.devNow = devOn(sim);
     clearAll(sim, true);
     T.on = false;
     // A Dev button pressed on the menu adds that one aeroplane when the
@@ -3717,7 +4389,7 @@ registerExtension({
   },
 
   stop(sim, why) {
-    if (why === 'airport') return; // the same flight carries on
+    if (why === 'airport') return; // the same flight carries on (and `placed` has just cleared the runway for you)
     try {
       if (sim.audio && sim.audio.available) SOUND.silence(sim.audio.mixer);
     } catch (e) {
@@ -3726,6 +4398,21 @@ registerExtension({
     clearAll(sim, true);
     T.on = false;
     T.why = 'stopped';
+  },
+
+  /**
+   * The game has just PUT you somewhere — "Return to the airfield" (the pause
+   * menu's reset to the start of 09) or the taxi lesson's "Skip to runway" —
+   * not flown you there. Whoever is on the runway, or on their way on to it,
+   * gets off it first (giveWayAtReset): the review found an AI aeroplane
+   * lined up 3 m behind your tail after a reset, and the tower calling the
+   * runway yours.
+   */
+  placed(sim, where) {
+    T.sim = sim;
+    if (where !== 'airport' && where !== 'runway') return;
+    const n = giveWayAtReset(sim);
+    if (n) publish(sim);
   },
 
   update(sim, dt) {
@@ -3746,6 +4433,9 @@ registerExtension({
       if (!c.model) ensureModel(c);
     }
     towerWatch(sim);
+    priorityTalk(sim);
+    // Name tags: in Dev mode, unless its button has said otherwise.
+    T.tagsNow = T.tags === null ? T.devNow : T.tags;
     const cam = sim.camera ? sim.camera.position : V1.set(0, 0, 0);
     for (const c of T.list) {
       drawCraft(sim, c, dt, cam);
@@ -3832,7 +4522,7 @@ registerExtension({
       label: 'Traffic: name tags on/off',
       hint: 'The callsign and what it is doing, floating over each AI aeroplane',
       run(sim) {
-        T.tags = !T.tags;
+        T.tags = !(T.tags === null ? T.devNow : T.tags);
         for (const c of T.list) if (c.tag) c.tag.visible = false;
         sim.hud && sim.hud.notify(T.tags ? 'Traffic name tags on' : 'Traffic name tags off', 'info', 2);
       },

@@ -62,7 +62,8 @@ const r2 = (v) => (Math.round(v * 100) / 100).toFixed(2);
 const r0 = (v) => Math.round(v).toString();
 const { G, FT, KT } = Tool;
 
-const types = T.AIRCRAFT;
+// A secret plane (aircraft/extra/secret.js) is a version of a roster type: the row is that type's.
+const types = T.AIRCRAFT.filter((t) => !t.variantOf);
 const game = Object.fromEntries(types.map((t) => [t.id, Tool.gameNumbers(t)]));
 
 /* ---- 1. rows, ceilings, the document ---------------------------------- */

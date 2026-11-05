@@ -506,7 +506,8 @@ console.log(`INFO  the towns stand ${span(all.townGround)} above the sea: why th
     }
     // Up to the An-225, the largest aeroplane ever built (84 m by 88 m).
     if (L < 6 || L > 86 || S < 7 || S > 90) bad.push(`${a.name}: ${L.toFixed(1)} m long, ${S.toFixed(1)} m span`);
-    const r = REAL[a.id];
+    // A secret plane (aircraft/extra/secret.js) is a version of a roster type and is drawn as it.
+    const r = REAL[a.id] || (a.variantOf ? REAL[a.variantOf] : null);
     if (!r) {
       bad.push(`${a.name}: no real counterpart listed here`);
       continue;

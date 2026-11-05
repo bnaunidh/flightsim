@@ -228,6 +228,11 @@ export function setKeyLine(hud, html) {
     UI.keyEl.className = 'ej-keys';
     if (!UI.keyEl.parentNode) line.appendChild(UI.keyEl);
   }
+  // A HUD that saved this line's HTML and put it back later (the helicopter's,
+  // hud-rotor.js) brings back a copy of an older one of ours as plain markup:
+  // an airliner after a helicopter read "Enter bail out · Enter bail out ·
+  // Enter evacuate". Only ours stays.
+  for (const s of line.querySelectorAll('.ej-keys')) if (s !== UI.keyEl) s.remove();
   UI.keyHtml = html;
   UI.keyEl.innerHTML = html;
 }

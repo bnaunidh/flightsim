@@ -146,6 +146,20 @@ export function noteRocketStart(sim) {
   note(sim, 'rocketStart', {});
 }
 
+/** features/secrets.js: a secret plane found ({ plane, allFound }) or earned ({ plane }). */
+export function noteSecretFound(sim, payload) {
+  note(sim, 'secretFound', payload || {});
+}
+
+export function noteSecretEarned(sim, payload) {
+  note(sim, 'secretEarned', payload || {});
+}
+
+/** features/passengers.js: an airliner flight's rating at the end, or an evacuation. */
+export function notePassengers(sim, payload) {
+  note(sim, 'passengers', payload || {});
+}
+
 /** src/story/director.js, when a chapter ends: { chapter, medal, style, secrets, files }. */
 export function noteStoryChapter(sim, payload) {
   note(sim, 'storyChapter', payload || {});

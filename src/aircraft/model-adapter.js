@@ -24,6 +24,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { createAircraftModel as createLegacyModel, glowSprite } from './model.js';
 import { getAircraft, DEFAULT_AIRCRAFT_ID } from './types.js';
+import { findLivery } from './liveries.js';
 import { strobeLevel, blinkLevel } from '../render/flash-safety.js';
 import { resolveLamps } from './systems.js';
 // BLENDER MODELS: the Skyhook from tools/blender/, when it loaded.
@@ -149,6 +150,24 @@ export function createAircraftModel(opts = {}) {
   // The same default the original factory applies. main.js builds a placeholder
   // aeroplane before it knows which one you picked, and passes no type at all.
   const type = opts.type || getAircraft(DEFAULT_AIRCRAFT_ID);
+  /*
+   * A version of another aeroplane (the secret planes, ./extra/secret.js) is
+   * drawn as that aeroplane, in its own paint: the house scheme the caller
+   * resolved for it carries its colours (liveries.js schemeFor reads the
+   * type's own livery and accent), or the named scheme it wears instead
+   * (`houseScheme` — Air Force One in 'potus'). Any other scheme the player
+   * picked is passed through as it is.
+   */
+  if (type.variantOf && type.variantOf !== type.id) {
+    const base = getAircraft(type.variantOf);
+    if (base && base.id !== type.id && !base.variantOf) {
+      let livery = opts.livery;
+      const house = !livery || typeof livery === 'string' || livery.id === 'house';
+      if (house && type.houseScheme) livery = findLivery(type.houseScheme);
+      else if (!livery || typeof livery === 'string') livery = { id: 'house', base: type.livery, accent: type.accent, cheatline: 'rgba(30,44,74,0.85)', tail: null, reg: null };
+      return createAircraftModel({ ...opts, type: base, livery });
+    }
+  }
   // An aeroplane that draws itself (T-Pose Harrison: extra/tpose.js). If it
   // throws, the generic factory still puts something on the runway.
   if (typeof type.buildModel === 'function') {

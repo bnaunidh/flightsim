@@ -35,7 +35,10 @@
  */
 import { writeFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { AIRCRAFT, performanceFor } from '../src/aircraft/types.js';
+import { AIRCRAFT as ROSTER, performanceFor } from '../src/aircraft/types.js';
+
+// A secret plane is a version of a roster type: the row is that type's.
+const AIRCRAFT = ROSTER.filter((t) => !t.variantOf);
 import { ceilingFactor, CEILING_FADE, SKY_CEILING_FT } from '../src/aircraft/physics.js';
 import { REAL_SPECS } from './real-aircraft-specs.mjs';
 

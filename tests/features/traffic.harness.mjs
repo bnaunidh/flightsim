@@ -127,7 +127,7 @@ export function startFlight(sim, opts = {}) {
   const a = call('buildWorld', sim, group);
   if (!a.ok) return a;
   sim.traffic = [];
-  // Traffic is Dev-mode-only in the game for now; the harness asks for it outright.
+  // On by default in Free Flight; the harness asks for it outright all the same (a test's settings may say off).
   return call('startMode', sim, 'free', { traffic: true, ...opts });
 }
 

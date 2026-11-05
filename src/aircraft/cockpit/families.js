@@ -25,6 +25,8 @@
 /** By type id. The roster's own ids, so a test can check every type is here. */
 export const FAMILY = Object.freeze({
   skylark: 'light',
+  // The secret planes sit in the cockpit of the aeroplane they are a version of.
+  speedster: 'light', stormpetrel: 'light', x1: 'jet', seaghost: 'jet', af1: 'airliner',
   petrel: 'light',
   courier: 'light',
   tempest: 'light',

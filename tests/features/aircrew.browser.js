@@ -6,9 +6,10 @@
  *                  parachute opens, the empty jet crashes on its own and the
  *                  flight does NOT end with a "Crashed" screen; you land, and
  *                  are on foot in a fighter pilot's flight suit; Enter flies
- *                  again. Not while parked; airliners and the helicopter say
- *                  kindly that they have no seats. The touch EJECT button
- *                  does the same as Enter.
+ *                  again. Not while parked; the helicopter says kindly that
+ *                  it has no seat; an airliner's first Enter arms an
+ *                  evacuation, passengers first (passengers.browser.js flies
+ *                  the rest). The touch EJECT button does the same as Enter.
  *   CREW FIRST     the Nightjar B-2: the first Enter sends the crew, the second
  *                  sends you.
  *   SELF-DESTRUCT  Air Massimo: cover, countdown, cancel; again, and the
@@ -94,9 +95,9 @@ export async function check(sim, r, say = () => {}) {
   run(0.5);
   sim.tap('Enter');
   run(0.1);
-  sim.tap('Enter');
-  run(0.1);
-  r.ok('eject: an airliner has no ejection seats, and says so kindly', E.phase === 'idle' && /ejection seats/i.test(lastToast()) && /landing/i.test(lastToast()), lastToast());
+  // No seats in an airliner — parachutes for everybody, passengers first (the
+  // owner's 2026-10-01 ask; tests/features/passengers.browser.js flies it all).
+  r.ok('eject: an airliner has no ejection seats — the first Enter arms an evacuation, passengers first', E.phase === 'idle' && /evacuate/i.test(lastToast()) && /passengers first/i.test(lastToast()), lastToast());
   await sim.startMode('free', { aircraft: 'harrier', airborne: true, taxi: false });
   run(0.3);
   sim.tap('Enter');

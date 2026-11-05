@@ -115,7 +115,7 @@ import {
 import { clamp } from './core/noise.js';
 import { setReduceFlashing, shakeClock } from './render/flash-safety.js';
 import { setComicEffects } from './render/comic.js';
-import { extInstall, extLateJoin, extBuildWorldSteps, extUpdate, extCamera, extStartMode, extStop, extensions, extKeyContext, extHudAction, extTouchState } from './game/extensions.js';
+import { extInstall, extLateJoin, extBuildWorldSteps, extUpdate, extCamera, extStartMode, extStop, extPlaced, extensions, extKeyContext, extHudAction, extTouchState } from './game/extensions.js';
 // Every plug-in feature registers itself on import. See ./features/index.js.
 /*
  * THE FEATURES ARE NOT IMPORTED HERE ANY MORE. features/index.js (every
@@ -1737,6 +1737,9 @@ class Game {
       // For a debrief that rebuilds the body in its own words (the van's,
       // jobs.js) and still has to say what the run paid.
       paid,
+      // The medal strip (game/fun-kit.js): which mission, what it scored.
+      def: isTutorial ? null : flown,
+      score: result.score,
     });
   }
 
@@ -2010,7 +2013,8 @@ class Game {
         bigJetWord = bigJetNote(this.aircraftType);
       }
     }
-    const spawn = def.spawn || RUNWAY_START;
+    // "Try again from" (game/fun-kit.js) spawns where the step's checkpoint was taken, with its fuel.
+    const spawn = (opts.resume && opts.resume.spawn) || def.spawn || RUNWAY_START;
     const airborne = mode === 'free' ? !!opts.airborne : spawn.altAGL != null;
     if (mode === 'free' && airborne) {
       this.aircraft.reset({
@@ -2036,7 +2040,7 @@ class Game {
         // back through here, so it starts the way the first go did.
         fuel: mode === 'free'
           ? (opts.fuel != null ? Math.max(0.05, Math.min(1, opts.fuel)) : 1)
-          : missionStartFuel(spawn),
+          : spawn.fuel != null ? Math.max(0.05, Math.min(1, spawn.fuel)) : missionStartFuel(spawn),
       });
       if (spawn.speed) {
         this.aircraft.controls.throttle = 0.65;
@@ -2212,6 +2216,8 @@ class Game {
     if (this.restartDrive()) return;
     extStop(this, 'airport');
     this.aircraft.reset({ ...RUNWAY_START, engineOn: true });
+    // Put down on the runway, not flown there: the AI traffic gets off it first.
+    extPlaced(this, 'airport');
     this.input.throttleTarget = 0;
     this.input.releaseHardwareLevers();
     this._hwSys = null;
@@ -2576,7 +2582,8 @@ class Game {
         this.nudgeAutopilotVs(100);
         break;
       case 'skipTaxi':
-        this.taxi.skip();
+        // Put down lined up on 09, not taxied there: the AI traffic gets off the runway first.
+        if (this.taxi.skip()) extPlaced(this, 'runway');
         break;
       /*
        * Starting the engine and letting go of a store had no on-screen route
@@ -4231,7 +4238,7 @@ class Game {
     // One retry on a dropped request (core/load-retry.js): the bundle is
     // sixty-odd modules, and one of them cut short on a busy wifi used to
     // mean a game with no plug-ins for the whole session.
-    this._featuresLoading = retrying(() => import('./features/index.js'), {
+    this._featuresLoading = retrying(() => import('./features/index.js').then((m) => (this.playerPath ? m : import('./features/later.js'))), {
       onRetry: (err) => console.warn('[features] the bundle failed to load; trying again…', err),
     })
       .then(() => {
@@ -4292,8 +4299,33 @@ class Game {
         this._binariesLoading = Promise.all(jobs).then(() => {
           this.binariesInAt = performance.now();
         });
+        if (this.playerPath) this.loadLater();
       });
     return this._featuresLoading;
+  }
+
+  /**
+   * The second bundle (features/later.js): fetched and joined with no flight
+   * going, so a first flight never waits for it and nothing lands under a
+   * mission that is being flown. Failing is fine: the game flies without it.
+   */
+  async loadLater() {
+    const idle = () => new Promise((resolve) => {
+      const check = () => (this.state === 'menu' || this.state === 'debrief' ? resolve() : setTimeout(check, 500));
+      check();
+    });
+    try {
+      await idle();
+      await retrying(() => import('./features/later.js'), {
+        onRetry: (err) => console.warn('[features] the second bundle failed to load; trying again…', err),
+      });
+      await idle();
+      const ids = extLateJoin(this, THREE);
+      if (ids.length) this.warmLateFeatures(ids);
+      this.laterIn = true;
+    } catch (err) {
+      if (!this._reloadingForUpdate) console.warn('[features] flying without the second bundle', err);
+    }
   }
 
   /**
@@ -4308,7 +4340,7 @@ class Game {
   warmLateFeatures(ids) {
     const want = new Set((ids || []).map((id) => `ext:${id}`));
     const groups = (this.worldGroups || []).filter((g) => g && want.has(g.name));
-    this.lateWarmGroups = groups.length;
+    this.lateWarmGroups = (this.lateWarmGroups || 0) + groups.length;
     // One group after another, so no frame waits on more than one chunk.
     this._lateWarm = groups
       .reduce((p, g) => p.then(() => (g.parent ? this.warmShaders(g, { chunked: true }) : false)), Promise.resolve())

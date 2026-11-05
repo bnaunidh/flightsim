@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v77.2';
+const CACHE_VERSION = 'island-flight-v77.3';
 
 const PRECACHE = [
   './',
@@ -566,6 +566,48 @@ const PRECACHE = [
   'src/world/worldmap/town-stream.js',
   'src/fleet/extra/title-slot.js',
   'src/fleet/extra/wordmarks.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/fun-missions.js',
+  'src/game/fun-kit.js',
+  'src/game/more/flight-core.js',
+  'src/game/more/flight-fun.js',
+  'src/game/more/heli-fun.js',
+  'src/game/more/heli.js',
+  'src/game/more/index.js',
+  'src/game/more/patch.js',
+  // Added by tools/sync-precache.mjs.
+  'src/aircraft/extra/secret.js',
+  'src/features/airfield-use.js',
+  'src/features/interact.js',
+  'src/features/rides.js',
+  'src/features/secrets.js',
+  'src/features/secrets/build.js',
+  'src/features/secrets/data.js',
+  'src/features/secrets/env.js',
+  'src/features/secrets/menu.js',
+  'src/features/secrets/reveal.js',
+  'src/features/secrets/sites.js',
+  'src/features/secrets/store.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/passengers.js',
+  'src/features/passengers/boarding.js',
+  'src/features/passengers/cabin.js',
+  'src/features/passengers/comfort.js',
+  'src/features/passengers/evac.js',
+  'src/features/passengers/exits.js',
+  'src/features/passengers/jumpers.js',
+  'src/features/passengers/layout.js',
+  'src/features/passengers/pa.js',
+  'src/features/passengers/state.js',
+  'src/features/passengers/turnaround.js',
+  'src/features/passengers/ui.js',
+  'src/features/passengers/walkers.js',
+  'src/game/more/passengers.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/traffic/priority.js',
+  'src/features/traffic/setting.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/later.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

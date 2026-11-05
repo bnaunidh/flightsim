@@ -842,6 +842,27 @@ html.reduce-motion .wx-lamp.is-lit { animation: none; }
 
 const MAX_ROWS = 4;
 
+/*
+ * The persistent bits of the HUD that can share the panel's column. Not the
+ * toasts, the subtitles or the coaching line: they come and go, and a panel
+ * that jumped every time a notification appeared would be worse than one
+ * that is briefly overlapped by it.
+ */
+const OBSTACLES = [
+  '.hud-right', '.hud-buttons', '.hud-top', '.hud-damage', '.hud-left', '.hud-rotor',
+  '.minimap', '.touch-pads', '.touch-throttle', '.touch-stick', '.touch-rudder',
+  '.touch-lever', '.hud-bottom',
+].map((c) => `#ui ${c}`).concat([
+  /*
+   * The races' "Races / All races" buttons (src/features/race.js, in the
+   * features' own layer, not #ui) sit in this column too, at the same 112 px
+   * the panel starts at. With the AI traffic on for everybody a TRAFFIC
+   * caution is an ordinary thing on final, and at 1366x768 the yellow Races
+   * button lay over the MASTER CAUTION lamp — the one you tap to quiet it.
+   */
+  '#ext-layer .race-solobar',
+]).join(', ');
+
 /**
  * How many lines the panel has room for, from the height of the column it
  * is the top card of (ui/hud-stack.js room(): from the column's top to just

@@ -398,6 +398,82 @@ export async function check(sim, r, say = () => {}, opts = {}) {
     }
   };
 
+  /** Hands off and wait for the assist to stop it over the ground. */
+  const brake = async (secs = 15) => {
+    allUp();
+    for (let i = 0; i < secs / DT && !over() && ac().groundSpeed > 2.5; i++) await tick();
+  };
+  /**
+   * A deck or pad across the water: climb so a 34 m deck is under you and
+   * not in front of you, fly to it, land, and give the step a moment to
+   * take the landing.
+   */
+  const flyAndLand = async (sid) => {
+    const t = target();
+    if (ac().onGround) await liftOff(45);
+    if (t && t.y > ac().pos.y - 40) {
+      press('Shift');
+      for (let i = 0; i < 900 && !over() && ac().pos.y < t.y + 45; i++) await tick();
+      release('Shift');
+      await tick(2);
+    }
+    await flyTo(target, 4);
+    // A deck in a rising wind: down a little, back over the middle, down a little.
+    const deck = target();
+    for (let tries = 0; tries < 40 && !over() && stepId() === sid && !ac().onGround && deck && ac().pos.y > deck.y + 8; tries++) {
+      await flyTo(target, 3, null, 3);
+      await holdFor('Ctrl', 0.5);
+      await tick(1.5);
+    }
+    await flyTo(target, 3, null, 3);
+    await landHere();
+    for (let i = 0; i < 60 && !over() && stepId() === sid; i++) await tick();
+  };
+  /**
+   * The sling: carry it to the ring and lower it a metre at a time.
+   *
+   * The load hangs twelve metres under the hook; its bottom touches when
+   * the skids are 12.65 m up. So: skids to sixteen, wait for the swing to
+   * settle, then taps of Ctrl until the mission says it is on. 
+   */
+  const carry = async () => {
+    const d = sim.runner.data;
+    if (d.phase === 'spare') {
+      if (sim.hoverBox) await winch();
+      else {
+        if (ac().onGround) await liftOff(30);
+        await flyTo(() => (d.load ? d.load.pos : target()), 6, null, 80);
+      }
+      return;
+    }
+    if (surfaceH() < 28) await heightTo(32);
+    await flyTo(target, 3);
+    if (stepId() !== 'carry') return;
+    if (false) {
+      press('Ctrl');
+      for (let i = 0; i < 20 / DT && !over() && stepId() === 'carry' && d.phase === 'carry' && !(d.load && d.load.onGround); i++) await tick();
+      release('Ctrl');
+      await tick(3);
+      return;
+    }
+    await heightTo(16, 1.0);
+    for (let i = 0; i < 8 / DT && !over(); i++) {
+      await tick();
+      if (d.load && d.load.vel.length() < 0.35 && ac().groundSpeed < 0.35) break;
+    }
+    for (let tries = 0; tries < 16 && !over() && stepId() === 'carry' && d.phase === 'carry' && d.load && !d.load.onGround; tries++) {
+      await flyTo(target, 3, null, 3);
+      await holdFor('Ctrl', 0.3);
+      await tick(1.4);
+    }
+    // Down: a little more, so the line goes slack and the hook comes off.
+    for (let tries = 0; tries < 4 && !over() && stepId() === 'carry' && d.phase === 'carry'; tries++) {
+      await holdFor('Ctrl', 0.35);
+      await tick(2);
+    }
+    for (let i = 0; i < 4 / DT && !over() && stepId() === 'carry'; i++) await tick();
+  };
+
   const results = [];
   try {
     T = await import('../../src/world/terrain.js');
@@ -479,10 +555,22 @@ export async function check(sim, r, say = () => {}, opts = {}) {
           await flyTo(target, 4);
           await landHere();
           await tick(3);
+        } else if (sid === 'hook') {
+          // Low hover: stop first, then come down to it, then the box.
+          await brake();
+          if (surfaceH() > 20) await heightTo(11);
+          await winch();
+        } else if (sid === 'carry') {
+          await carry();
+        } else if (sid === 'board1' || sid === 'board2') {
+          await tick(1);
+        } else if (sid === 'trip1' || sid === 'trip2' || (id === 'rig-evac' && sid === 'back')) {
+          await flyAndLand(sid);
         } else if (sid === 'out' || sid === 'choose' || sid === 'go' || sid === 'back') {
           // Night Medevac (the H145's since 2026-10-25): "Lift off and head for Mango Cay", "Take them home".
           if (sid === 'back' && ac().onGround) await liftOff(45);
-          await liftOff(45);
+          // Raven Crag starts in the air: do not come down to forty-five metres.
+          if (ac().onGround || id !== 'raven-crag') await liftOff(45);
           // The Ledge's hint: "The top of the stack is two hundred metres up.
           // Hold Shift on the way and arrive above the rock, not beside it."
           if (t && t.y > ac().pos.y - 20) {
@@ -547,7 +635,10 @@ export async function check(sim, r, say = () => {}, opts = {}) {
           ? `${status === 'failed' ? `failed${failWhy ? ': ' + failWhy : ''}` : status}${where()}`
           : '';
       if (sim.runner) sim.runner.onFail = origFail;
-      results.push({ id, ok, status, clock: Math.round(clock), trail: trail.join(' > '), why });
+      // The fun kit's record of the run: the twists that fired, the score, and whether the finale took the picture.
+      const run = (sim.runner && sim.runner.data) || {};
+      const beats = (run._beats || []).map((x) => x.id);
+      results.push({ id, ok, status, clock: Math.round(clock), trail: trail.join(' > '), why, beats, score: run.score, finale: !!(opts.fun && opts.fun.finalePlaying()) });
       progress.results = results;
       r.ok(
         `mission ${id} can be finished by doing what it says`,

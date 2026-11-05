@@ -138,6 +138,8 @@ export class MissionRunner {
     const step = this.step;
     this.buildGates(step);
     if (step.enter) step.enter(this.ctx());
+    // The fun kit (game/fun-kit.js, loaded with the features) remembers a step's `checkpoint`.
+    if (step.checkpoint && this.noteStep) this.noteStep(this.ctx());
     if (step.atc && this.sim.audio) {
       this.sim.speak(step.atc.text, step.atc.voice || 'tower', step.atc.urgency || 0);
     }
@@ -317,6 +319,11 @@ export class MissionRunner {
     // a cargo temperature, anything that has to watch how you are flying
     // rather than where you have got to.
     if (this.def.tick) this.def.tick(ctx, dt);
+    // The twists (game/fun-kit.js): each of def.beats fires once, at its moment.
+    if (this.tickBeats) {
+      this.tickBeats(ctx, dt);
+      if (this.status !== STATUS.RUNNING) return;
+    }
 
     // Rings.
     const pos = this.subject().pos;

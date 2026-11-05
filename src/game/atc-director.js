@@ -9,7 +9,7 @@
  */
 
 import { RUNWAY } from '../world/airport.js';
-import { isOnAnyRunway, MAP, AIRPORT } from '../world/terrain.js';
+import { isOnAnyRunway, isOnRunway, MAP, AIRPORT } from '../world/terrain.js';
 import { UNITS } from '../aircraft/physics.js';
 import { setRadioField } from '../audio/atc.js';
 import { navField, thresholdOf, runwayWords, onFieldRunway } from '../world/navfield.js';
@@ -150,6 +150,17 @@ export class AtcDirector {
     return true;
   }
 
+  /** Is one of the AI traffic's aeroplanes on the main runway, on the ground (sim.traffic: the traffic feature's published list)? */
+  runwayBusy(sim) {
+    const list = sim.traffic;
+    if (!Array.isArray(list)) return false;
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i];
+      if (e && e.onGround && e.pos && typeof e.phase === 'string' && isOnRunway(e.pos.x, e.pos.z, 6)) return true;
+    }
+    return false;
+  }
+
   say(text, voice = 'tower', urgency = 0) {
     if (this.cool > 0) return false;
     this.sim.speak(text, voice, urgency);
@@ -287,14 +298,27 @@ export class AtcDirector {
       toTouchdown < 6000 &&
       ft(ac.alt) < 2200 &&
       headingOk &&
-      this.landingCall <= 0 &&
-      this.once('final')
+      this.landingCall <= 0
     ) {
-      this.say(
-        `${this.callsign}, cleared to land runway ${this.runwayCall}, ${windCall(w)}.`,
-        'tower'
-      );
-      this.landingCall = 25;
+      /*
+       * Not "cleared to land" with an aeroplane on the runway. The AI traffic
+       * (sim.traffic) leaves it for you when you are on final, but a Courier
+       * backtracking to the far end takes a while to get off: until it has,
+       * the tower says what a tower says — continue, and the runway will be
+       * yours — and clears you once it is empty.
+       */
+      if (this.runwayBusy(sim)) {
+        if (this.once('continue')) {
+          this.say(`${this.callsign}, continue approach runway ${this.runwayCall}, traffic vacating. You're number one.`, 'tower');
+          this.landingCall = 8;
+        }
+      } else if (this.once('final')) {
+        this.say(
+          `${this.callsign}, cleared to land runway ${this.runwayCall}, ${windCall(w)}.`,
+          'tower'
+        );
+        this.landingCall = 25;
+      }
     }
 
     // Short final courtesy call.
@@ -377,6 +401,7 @@ export class AtcDirector {
     this.cool = 0;
     this.say(line, 'tower');
     this.said.final = false;
+    this.said.continue = false;
     this.said.shortfinal = false;
     this.said.airborne = false;
     this.said.clearance = false;

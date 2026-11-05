@@ -199,7 +199,7 @@ async function parent() {
     ok(`${label}: the thankdapro edition, hiding exactly tpose + massimo`, x.edition === 'thankdapro' && x.hidden.sort().join() === 'massimo,tpose', `${x.edition} [${x.hidden}]`);
     ok(`${label}: neither is in the roster`, none(x.ids), x.ids.join(','));
     ok(`${label}: no roster name says Massimo or Harrison`, !x.names.some((n) => NAMES.test(n)), x.names.filter((n) => NAMES.test(n)).join(', '));
-    ok(`${label}: neither under any hangar heading, and no empty heading (Special had only them)`, x.groups.every((g) => none(g.items) && g.items.length) && !x.groups.some((g) => g.id === 'special'), JSON.stringify(x.groups.map((g) => g.id)));
+    ok(`${label}: neither under any hangar heading, and no empty heading`, x.groups.every((g) => none(g.items) && g.items.length), JSON.stringify(x.groups.map((g) => g.id)));
     ok(`${label}: neither on any hangar shelf`, x.shelves.every((g) => none(g.items) && g.id !== 'error'), JSON.stringify(x.shelves));
     ok(`${label}: neither in the shop, and neither has a price`, none(x.unlocks) && !x.costM && !x.costT && !NAMES.test(x.unlockWhy), `${x.unlocks.join(',')} M=${x.costM} T=${x.costT}`);
     ok(`${label}: neither achievement is on the page, and nothing on it names them`, !has(x.achievements, 'tpose-up') && !has(x.achievements, 'massimo-fast') && !NAMES.test(x.achText), x.achievements.filter((a) => /tpose|massimo/.test(a)).join());

@@ -78,15 +78,18 @@ function ok(name, pass, detail = '') {
   const bad = [];
   for (const t of AIRCRAFT) {
     const p = PR.profileFor(t);
-    if (!['seat', 'bail', 'jump', 'none'].includes(p.escape)) bad.push(`${t.id}: escape ${p.escape}`);
+    if (!['seat', 'bail', 'jump', 'evac', 'none'].includes(p.escape)) bad.push(`${t.id}: escape ${p.escape}`);
     if (p.escape === 'none' && !p.noneWhy) bad.push(`${t.id}: no way out and no words for it`);
     if (!U.UNIFORMS[p.uniform]) bad.push(`${t.id}: uniform ${p.uniform}`);
   }
   ok('every aeroplane has an escape profile and a uniform that exists', bad.length === 0, bad.join('; ') || `${AIRCRAFT.length} aeroplanes`);
-  const none = AIRCRAFT.filter((t) => PR.profileFor(t).escape === 'none').map((t) => t.id);
-  ok('the airliners have no ejection seats (and say so kindly)',
-    ['meridian', 'a320', 'b747', 'a380'].every((id) => none.includes(id)) && /kind|safest|You can do it/i.test(PR.profileFor('a320').noneWhy),
-    none.join(', '));
+  // The owner, 2026-10-01: "in airliners, if you eject, the passengers first fall in parachutes,
+  // then cabin crew plus you do" — no seats, parachutes for everybody (tests/features/passengers.mjs
+  // has the order). Air Force One's own missions keep the kind words (eject.js).
+  const evac = AIRCRAFT.filter((t) => PR.profileFor(t).escape === 'evac').map((t) => t.id);
+  ok('the airliners have no ejection seats — everybody evacuates under a canopy instead (and Air Force One says so kindly)',
+    ['meridian', 'a320', 'b747', 'a380'].every((id) => evac.includes(id)) && /kind|safest|You can do it/i.test(PR.NONE_WHY.afo),
+    evac.join(', '));
   const heliFree = PR.profileIn('harrier', 'free');
   const heliMission = PR.profileIn('harrier', 'mission');
   ok('the helicopter: out of the side door in Free Flight, higher than an aeroplane’s door, and it does not fly on without you',
@@ -114,7 +117,7 @@ function ok(name, pass, detail = '') {
   ok('uniforms based on planes: captain, fighter, heli, casual, racer, Harrison',
     PR.profileFor('b747').uniform === 'captain' && PR.profileFor('f35b').uniform === 'fighter' && PR.profileFor('harrier').uniform === 'heli'
       && PR.profileFor('skylark').uniform === 'casual' && PR.profileFor('massimo').uniform === 'racer' && PR.profileFor('tpose').uniform === 'harrison');
-  ok('an aeroplane nobody listed still gets a sensible answer', PR.profileFor({ id: 'x', class: 'Jumbo airliner' }).escape === 'none'
+  ok('an aeroplane nobody listed still gets a sensible answer', PR.profileFor({ id: 'x', class: 'Jumbo airliner' }).escape === 'evac'
     && PR.profileFor({ id: 'y', military: true }).escape === 'seat'
     && PR.profileIn({ id: 'z', shape: { power: { kind: 'prop', rotor: true } } }, 'free').bailFrom === heliFree.bailFrom
     && PR.profileIn({ id: 'z', shape: { power: { kind: 'prop', rotor: true } } }, 'mission').escape === 'none');

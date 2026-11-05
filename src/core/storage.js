@@ -116,6 +116,10 @@ export const DEFAULT_SETTINGS = {
   freeLook: false,
   // Free flight begins on the parking stand and you taxi out.
   startAtGate: false,
+  // Airliners at a gate: skip the passengers' boarding (and getting off) —
+  // they are aboard and the doors shut as you start. Off: you watch the
+  // turnaround, and Y skips it whenever you like (features/passengers.js).
+  autoSkipBoarding: false,
   // The pilot's-eye cockpit view: narrower field of view, and the flight
   // instruments read off the panel instead of the overlay.
   realisticCockpit: false,

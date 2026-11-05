@@ -1179,7 +1179,7 @@ export function airClearance(p, field, minClear, fromS = 0, toS = Infinity) {
 }
 
 /** A 360 at the gate, turning away from the runway. */
-export function planOrbit(field, perf, geo) {
+export function planOrbit(field, perf, geo, heights = null) {
   const g = geo.gate;
   const R = geo.R;
   const right = { x: g.x + Math.cos(g.hdg) * R, z: g.z + Math.sin(g.hdg) * R };
@@ -1190,9 +1190,17 @@ export function planOrbit(field, perf, geo) {
   d.xs[d.n - 1] = g.x;
   d.zs[d.n - 1] = g.z;
   const p = d.finish();
-  for (let i = 0; i < p.n; i++) p.y[i] = geo.yGate;
+  /*
+   * At gate height — or, held high for a pilot who has the runway (traffic.js
+   * atGate), from `y0` at the gate to `y1` a lap later, evenly: a climb to
+   * the hold, or the way back down to gate height before the approach.
+   */
+  const y0 = heights && Number.isFinite(heights.y0) ? heights.y0 : geo.yGate;
+  const y1 = heights && Number.isFinite(heights.y1) ? heights.y1 : geo.yGate;
+  const L = p.length || 1;
+  for (let i = 0; i < p.n; i++) p.y[i] = y0 + ((y1 - y0) * p.s[i]) / L;
   p.setSpeeds(() => perf.vGate, { v0: perf.vGate, vEnd: perf.vGate, accel: 0.5, decel: 0.5 });
-  return leg('orbit', p, { phase: 'holding for the runway' });
+  return leg('orbit', p, { phase: 'holding for the runway', yEnd: y1 });
 }
 
 /**

@@ -954,7 +954,7 @@ export const AIRCRAFT = [
  * into the array above so that adding an aeroplane is a new file, not an
  * edit to this one.
  */
-AIRCRAFT.push(...extraAircraft({ TRAINER_SHAPE, TRAINER_AERO }).filter((t) => !HIDDEN_AIRCRAFT.has(t.id)));
+AIRCRAFT.push(...extraAircraft({ TRAINER_SHAPE, TRAINER_AERO, roster: AIRCRAFT }).filter((t) => !HIDDEN_AIRCRAFT.has(t.id)));
 /*
  * (The filter: the thankdapro copy of the game has no T-Pose Harrison and no
  * Air Massimo — core/edition.js. Leaving them out of the roster itself takes
@@ -984,6 +984,18 @@ export function getAircraft(id) {
    */
   if (id) console.warn(`No aircraft "${id}" — falling back to ${AIRCRAFT[0].id}.`);
   return AIRCRAFT[0];
+}
+
+/**
+ * The roster type a type is a version of (a secret plane, ./extra/secret.js:
+ * `variantOf`), or its own id. For the few places that key a behaviour on a
+ * type id — the airliners' take-off flap, an escape profile — so a version of
+ * an aeroplane behaves like it.
+ */
+export function baseTypeId(typeOrId) {
+  const t = typeof typeOrId === 'string' ? AIRCRAFT.find((a) => a.id === typeOrId) : typeOrId;
+  if (!t) return typeof typeOrId === 'string' ? typeOrId : null;
+  return t.variantOf || t.id;
 }
 
 /** The full flight-model spec for one aeroplane. */

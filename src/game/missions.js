@@ -46,7 +46,7 @@ import { EXTRA_MISSIONS } from './extra/index.js';
 import { applyMissionAircraft } from './mission-aircraft.js';
 
 const ELEV = RUNWAY.elev;
-const ft = (m) => m * UNITS.FT;
+export const ft = (m) => m * UNITS.FT;
 
 /**
  * Start-of-runway spawn, ready to go — on WHICHEVER runway is loaded.
@@ -118,14 +118,14 @@ const airborneOverRunway = (dist = 6500, alt = 460) => ({
  * ------------------------------------------------------------------ */
 
 /** The three patrol contacts, at three bearings and three ranges. */
-const CONTACTS = [
+export const CONTACTS = [
   new THREE.Vector3(7200, ELEV + 900, -2400),
   new THREE.Vector3(-1800, ELEV + 700, 8200),
   new THREE.Vector3(-8600, ELEV + 800, -3000),
 ];
 
 /** Four points to photograph, spread so the route has to be planned. */
-const PHOTO_POINTS = [
+export const PHOTO_POINTS = [
   new THREE.Vector3(2400, 0, -1500),
   new THREE.Vector3(3100, 0, 2600),
   new THREE.Vector3(-2200, 0, 2100),
@@ -142,7 +142,7 @@ const PHOTO_POINTS = [
  * addWeaponsRange() — and it publishes its middle, so the two cannot disagree.
  */
 const RANGE_FALLBACK = new THREE.Vector3(-3800, 300, -3400);
-function rangeTarget(ctx) {
+export function rangeTarget(ctx) {
   const drawn = ctx && ctx.sim && ctx.sim.scenery && ctx.sim.scenery.range;
   return (drawn ? drawn.pos : RANGE_FALLBACK).clone();
 }
@@ -155,14 +155,14 @@ function rangeTarget(ctx) {
  * actual steel agree. Hard-coding the position would silently drift the day
  * anyone moves the ship.
  */
-function carrierTarget(ctx) {
+export function carrierTarget(ctx) {
   const c = ctx.sim.carrier;
   if (!c) return null;
   return new THREE.Vector3(c.pos.x, c.deckY || 24, c.pos.z);
 }
 
 /** True only when the wheels are on the deck, not on the sea or the island. */
-function onCarrierDeck(ctx) {
+export function onCarrierDeck(ctx) {
   const c = ctx.sim.carrier;
   if (!c) return false;
   const p = ctx.ac.pos;
@@ -173,7 +173,7 @@ function onCarrierDeck(ctx) {
   );
 }
 
-function nearestOf(ctx, list, done) {
+export function nearestOf(ctx, list, done) {
   let best = null;
   let bestD = Infinity;
   for (let i = 0; i < list.length; i++) {
@@ -191,7 +191,7 @@ function nearestContact(ctx) {
   return nearestOf(ctx, CONTACTS, ctx.data.seen || []);
 }
 
-function nearestPhoto(ctx) {
+export function nearestPhoto(ctx) {
   const p = nearestOf(ctx, PHOTO_POINTS, ctx.data.shot || []);
   // The photo points sit on the ground, so lift the arrow to a flyable height.
   return p ? new THREE.Vector3(p.x, heightAt(p.x, p.z) + 200, p.z) : null;
@@ -220,7 +220,7 @@ function nearestPhoto(ctx) {
  * says which, once, because a child who has stopped safely and seen nothing
  * happen has no way of knowing what the game is waiting for.
  */
-function landedAndStopped(ctx) {
+export function landedAndStopped(ctx) {
   /*
    * The secret runway box and the three-second rule (game/landing-zone.js,
    * the owner 2026-10-16): three seconds down in one piece inside either

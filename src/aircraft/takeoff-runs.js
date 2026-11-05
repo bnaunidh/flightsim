@@ -13,6 +13,11 @@
 export const TAKEOFF_RUN_M = Object.freeze({
   skylark: 270,
   petrel: 590,
+  speedster: 160,
+  stormpetrel: 400,
+  x1: 260,
+  seaghost: 340,
+  af1: 700,
   courier: 390,
   meridian: 1780,
   vanguard: 230,

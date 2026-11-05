@@ -71,7 +71,7 @@ import { strobeLevel } from '../render/flash-safety.js';
 
 const clamp = THREE.MathUtils.clamp;
 const ft = (m) => m * UNITS.FT;
-const dist2D = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+export const dist2D = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
 /**
  * Height above the SURFACE, which over water is not height above the ground.
@@ -202,12 +202,12 @@ export function siteAt(ctx, key) {
   return new THREE.Vector3(fb.x, surfaceAt(fb.x, fb.z), fb.z);
 }
 
-function siteName(ctx, key) {
+export function siteName(ctx, key) {
   const p = padFor(key);
   return (p && p.name) || (siteFallback(key) && siteFallback(key).name) || 'the pad';
 }
 
-function siteRadius(key) {
+export function siteRadius(key) {
   const p = padFor(key);
   return (p && p.r) || (siteFallback(key) && siteFallback(key).r) || 12;
 }
@@ -228,7 +228,7 @@ function whereWords(from, to) {
  * map is built — rather than when this file is loaded. The same getter trick
  * missions.js uses for RUNWAY_START.
  */
-function padSpawn(key, headingDeg) {
+export function padSpawn(key, headingDeg) {
   return {
     get pos() {
       return siteAt(null, key);
@@ -244,7 +244,7 @@ function padSpawn(key, headingDeg) {
  */
 let ASSIST = true;
 const assistOn = (ac) => !!ac && ac.hoverAssist !== false;
-const assistWords = (assisted, raw) => (ASSIST ? assisted : raw);
+export const assistWords = (assisted, raw) => (ASSIST ? assisted : raw);
 
 /**
  * Down, not broken, and in the right place — for three seconds.
@@ -264,7 +264,7 @@ const assistWords = (assisted, raw) => (ASSIST ? assisted : raw);
  * `key` names the place, so a pad that moves (the ship's deck) keeps one
  * clock; a fixed site is keyed by where it is.
  */
-function landedAt(ctx, pos, radius, key) {
+export function landedAt(ctx, pos, radius, key) {
   return landedOnPad(ctx, pos, radius + 8, key ? { key } : undefined);
 }
 
@@ -475,7 +475,7 @@ function setTimeoutSafe(fn) {
  * live in a module-level list and main.js clears it at the top of every
  * flight, exactly the way it already calls clearPursuer().
  * ------------------------------------------------------------------ */
-const PROPS = [];
+export const PROPS = [];
 
 export function clearHeliProps(sim) {
   const scene = sim && sim.scene;
@@ -529,7 +529,7 @@ registerExtension({
  * shaft of light over whatever the active step points at (main.js:3270), for
  * free, because these missions use target() like every other mission does.
  */
-function siteMarker(ctx, pos, colour = 0x7dffb4) {
+export function siteMarker(ctx, pos, colour = 0x7dffb4) {
   if (ctx.sim && typeof ctx.sim.spawnCasualty === 'function') {
     ctx.sim.spawnCasualty({ pos, colour });
     return null;
@@ -594,7 +594,7 @@ function siteMarker(ctx, pos, colour = 0x7dffb4) {
  * the winch will accept, because a target that drifts faster than the
  * tolerance is not a challenge, it is an impossibility.
  */
-class RescueBoat {
+export class RescueBoat {
   constructor(ctx, swimmer, headingDeg = 240, speed = 2.06) {
     this.heading = THREE.MathUtils.degToRad(headingDeg);
     this.speed = speed;
@@ -647,7 +647,7 @@ class RescueBoat {
  * tolerances are the whole difficulty of this mode — the lead budgeted a day
  * on them. One factory means one place to tune.
  * ------------------------------------------------------------------ */
-function winchStep({ id, text, hint, atc, label, at, spec = {}, onPicked }) {
+export function winchStep({ id, text, hint, atc, label, at, spec = {}, onPicked }) {
   return {
     id,
     // Either words, or a function choosing words for the assist on or off.
@@ -682,7 +682,7 @@ function winchStep({ id, text, hint, atc, label, at, spec = {}, onPicked }) {
 }
 
 /** Every winch mission ticks its hover and whatever is moving underneath it. */
-function heliTick(ctx, dt) {
+export function heliTick(ctx, dt) {
   ASSIST = assistOn(ctx.ac);
   if (ctx.data.hover) ctx.data.hover.update(dt, ctx);
   if (ctx.data.boat) ctx.data.boat.update(dt);
@@ -702,13 +702,13 @@ function heliTick(ctx, dt) {
  * something no ten-year-old will ever perceive, whereas a load that weighs
  * nothing is a lie they notice the first time they cannot climb.
  */
-const CASUALTY_KG = 95;
+export const CASUALTY_KG = 95;
 
-function load(ctx, kg) {
+export function load(ctx, kg) {
   ctx.ac.extraMass = (ctx.ac.extraMass || 0) + kg;
 }
 
-function unload(ctx) {
+export function unload(ctx) {
   ctx.ac.extraMass = 0;
 }
 
@@ -718,7 +718,7 @@ function unload(ctx) {
  * clearHeliProps() at the top of a flight, so a failed Man Overboard left its
  * boat and its strobe in the sea for whatever was flown next.
  */
-function begin(ctx) {
+export function begin(ctx) {
   clearHeliProps(ctx.sim);
   unload(ctx);
   ASSIST = assistOn(ctx.ac);
@@ -1665,6 +1665,15 @@ export const HELI_MISSIONS = [
 ];
 for (const m of HELI_MISSIONS) HELI_IDS.add(m.id);
 
+/** Missions that arrive with the features (more/heli.js): on the list, and in the props hook. */
+export function addHeliMissions(defs) {
+  for (const m of defs) {
+    if (HELI_IDS.has(m.id)) continue;
+    HELI_MISSIONS.push(m);
+    HELI_IDS.add(m.id);
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * Helpers the missions above use.
  * ------------------------------------------------------------------ */
@@ -1677,7 +1686,7 @@ for (const m of HELI_MISSIONS) HELI_IDS.add(m.id);
  * Either way it is a platform, so heightAt() puts the skids on it and
  * platformAt() confirms you are actually on the steel.
  */
-function deckTarget(ctx) {
+export function deckTarget(ctx) {
   /*
    * The deck NEAREST the hospital, from the real pad list — see the note on
    * siteAt(). Ironhead Deep has seven; the nearest, Foxtrot, is 3.4 km out,

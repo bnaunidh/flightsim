@@ -65,6 +65,8 @@ import * as UI from './staff/ui.js';
 import * as TYPES from '../aircraft/types.js';
 // Uniforms based on planes: what the pilot wears depends on what they flew.
 import { uniformFor, createUniformPerson } from './uniforms.js';
+// Everything you can use on foot that is not getting in: one prompt, one key (E).
+import * as Interact from './interact.js';
 
 const D2R = Math.PI / 180;
 
@@ -91,7 +93,7 @@ registerActions({
   footLookUp: { label: 'Look up', group: 'On foot', ctx: FOOT, default: ['ArrowUp'] },
   footLookDown: { label: 'Look down', group: 'On foot', ctx: FOOT, default: ['ArrowDown'] },
 });
-const WALK_KEYS = ['walkForward', 'walkBack', 'walkLeft', 'walkRight', 'run', 'jump', 'wave', 'footView',
+const WALK_KEYS = ['walkForward', 'walkBack', 'walkLeft', 'walkRight', 'run', 'jump', 'wave', 'interact', 'footView',
   'footLookLeft', 'footLookRight', 'footLookUp', 'footLookDown'];
 
 /** Keys that are not anybody's action and are always left for the browser and the game. */
@@ -698,6 +700,7 @@ function finish(sim) {
   S.touchHidden = false;
   UI.setTouch(false);
   UI.setPrompt('');
+  Interact.reset();
   if (sim) UI.setHudWalking(sim.hud, false);
   S.keys = Object.create(null);
   if (sim && sim.input && sim.input.keys && sim.input.keys.clear) sim.input.keys.clear();
@@ -951,12 +954,16 @@ function walkFrame(sim, dt) {
     S.wasAir = w.air;
   }
 
-  // What O would do here.
+  // What O would do here — and what E would (interact.js): the nearer wins the prompt.
   const list = gatherEnterables(sim);
-  if (list.length) {
+  const it = locked ? null : Interact.frame(sim, w, S.camYaw, dt, walkHeld('interact'));
+  if (locked) Interact.reset();
+  if (list.length && !(it && it.dist + 0.5 < list[0].dist)) {
     const e = list[0];
     S.promptEnter = e.enter;
     UI.setPrompt(promptFor(sim, e.label), enterFromPrompt);
+  } else if (it) {
+    UI.setPrompt(Interact.promptHtml(sim, isTouch(sim)), interactFromPrompt);
   } else if (ctl && ctl.prompt) {
     // `promptFor`: a control's line that only needs saying once (seconds on foot), then fades.
     UI.setPrompt(ctl.promptFor > 0 && S.since >= ctl.promptFor ? '' : ctl.prompt, ctl.promptAction || null);
@@ -974,7 +981,8 @@ function walkFrame(sim, dt) {
   if (sim.hud && sim.hud.setCoach) sim.hud.setCoach(null);
 
   if (isTouch(sim)) {
-    const btns = ctl && ctl.buttons ? ctl.buttons : S.runToggle ? WALK_BUTTONS_RUN : WALK_BUTTONS;
+    let btns = ctl && ctl.buttons ? ctl.buttons : S.runToggle ? WALK_BUTTONS_RUN : WALK_BUTTONS;
+    btns = withExtraButtons(sim, btns, it);
     UI.setTouch(true, btns, onTouchButton);
   }
 
@@ -989,8 +997,52 @@ const WALK_BUTTONS = [
 ];
 const WALK_BUTTONS_RUN = WALK_BUTTONS.map((b) => (b.id === 'run' ? { ...b, on: true } : b));
 
+/*
+ * The thumb buttons, plus what the other features add while you walk: "Use"
+ * when something is in front of you (interact.js), and whatever a provider
+ * lists in buttons(sim) (rides.js's Reset). The list is rebuilt only when
+ * what is in it changes, so setTouch() sees the same array frame to frame.
+ */
+const EXTRA = { key: '', list: null };
+function withExtraButtons(sim, base, it) {
+  let extra = null;
+  for (const p of S.providers) {
+    if (typeof p.buttons !== 'function') continue;
+    try {
+      const b = p.buttons(sim);
+      if (b && b.length) extra = extra ? extra.concat(b) : b.slice();
+    } catch (e) {
+      /* a provider's buttons are a nicety */
+    }
+  }
+  const use = it ? Interact.buttonLabel() : '';
+  const key = `${base.map((b) => b.id + (b.on ? '*' : '')).join(',')}|${use}|${extra ? extra.map((b) => b.id + b.label).join(',') : ''}`;
+  if (key === EXTRA.key && EXTRA.list) return EXTRA.list;
+  let list = base;
+  if (use) list = [{ id: 'use', label: use }, ...list];
+  if (extra) list = [...list, ...extra];
+  EXTRA.key = key;
+  EXTRA.list = list;
+  return list;
+}
+
+function interactFromPrompt() {
+  if (S.active && S.sim) Interact.tap(S.sim);
+}
+
 function onTouchButton(id) {
   const sim = S.sim;
+  if (id === 'use') {
+    Interact.tap(sim);
+    return;
+  }
+  for (const p of S.providers) {
+    try {
+      if (typeof p.onButton === 'function' && p.onButton(sim, id)) return;
+    } catch (e) {
+      console.warn('[onfoot] a provider failed to answer a button', e);
+    }
+  }
   if (id === 'run') S.runToggle = !S.runToggle;
   else if (id === 'jump') S.jump = true;
   else if (id === 'view') cycleView(sim);
@@ -1459,6 +1511,32 @@ registerExtension({
         }
       } catch (err) {
         console.warn('[onfoot] control key handler failed', err);
+      }
+    }
+    /*
+     * E with something in front of you uses it (interact.js); with nothing
+     * there it falls through to Wave below, which shares the key by design.
+     * The release is always kept here, so a hold that ends stops filling.
+     */
+    if (isKey(sim, 'interact', code) && (!down || Interact.focused())) {
+      S.keys[code] = down;
+      if (down) {
+        unsee(sim, code);
+        if (!(e && e.repeat)) Interact.press();
+      }
+      if (down || Interact.focused()) return down;
+    }
+    // A walking key another feature added (rides.js's Reset on the fly-again key).
+    for (const p of S.providers) {
+      if (typeof p.key !== 'function') continue;
+      try {
+        if (p.key(sim, code, down, e)) {
+          S.keys[code] = down;
+          if (down) unsee(sim, code);
+          return down;
+        }
+      } catch (err) {
+        console.warn('[onfoot] a provider key handler failed', err);
       }
     }
     if (passes(sim, code)) return false;

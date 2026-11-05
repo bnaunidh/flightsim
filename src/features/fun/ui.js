@@ -197,8 +197,9 @@ export class FunHud {
     // HUD's tree, and while the helicopter's hover strip is up on a touch
     // screen it waits on the left under the map (main.css) — exactly where
     // this chip sits; measured on an emulated 1024 x 768 iPad, the chip was
-    // on top of it (2,400 px²).
-    const under = [...root.querySelectorAll('.hud-panel, .minimap, .hud-heli'), ...document.querySelectorAll('.race-solobar')];
+    // on top of it (2,400 px²). .px-panel: an airliner's passengers card
+    // sits just under the instruments too, and the chip covered its stars.
+    const under = [...root.querySelectorAll('.hud-panel, .minimap, .hud-heli, .px-panel:not([hidden])'), ...document.querySelectorAll('.race-solobar')];
     for (const e of under) {
       const r = e.getBoundingClientRect();
       if (!r.width || !r.height || r.left > 240 || r.top > H * 0.45 || r.width > 420) continue;

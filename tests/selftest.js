@@ -137,6 +137,15 @@ const TEST_SETTINGS = {
   randomWinds: false,
   realisticFuel: false,
   startAtGate: false,
+  /*
+   * The AI traffic is on in Free Flight now (it was Dev-mode-only, so every
+   * check below was written and passed without it). It is seeded from the
+   * clock, so with it on no two runs would fly the same airfield. The
+   * suite's checks keep the empty sky they were written for; the traffic's
+   * own check (tests/features/traffic.browser.js) asks for it outright and
+   * puts the default back to prove it is on.
+   */
+  traffic: false,
 };
 
 /**

@@ -16,8 +16,21 @@
  *   Not while parked: on the ground it says to stop and press O.
  *   Light aeroplanes have no seat: you bail out of the door (needs 60 m).
  *   The helicopter, in Free Flight: out of the side door (needs 100 m).
- *   Airliners (and the helicopter in a mission) have no way out, and say so
- *   kindly.
+ *   The helicopter in a mission has no way out, and says so kindly.
+ *
+ * AIRLINERS — everybody out under a canopy, in the owner's order: "in
+ *   airliners, if you eject, the passengers first fall in parachutes, then
+ *   cabin crew plus you do". Enter twice (the second press starts it, as with
+ *   every seat), at 500 ft or more. The autopilot holds her straight and
+ *   level while the passengers stream out of the doors — both sides, every
+ *   main-deck door that has no wing under it (passengers/exits.js) — then the
+ *   cabin crew from the front doors, then you, last, out of the front left
+ *   door: the captain leaves last. passengers/evac.js is the timetable;
+ *   passengers/jumpers.js draws the crowd (three draws, however many); the
+ *   camera stands off the left wing to watch them go. Enter during it says
+ *   "passengers first". Then she flies on empty, noses slowly over and goes
+ *   down (crash physics breaks her up as ever); nobody is aboard. Not on Air
+ *   Force One in its own missions, nor from a passenger's seat (sim.riding).
  *
  * PASSENGERS FIRST — on the Nightjar B-2 and the Osprey (two crew with seats
  *   of their own) and the Tempest (a scientist aboard), the first press sends
@@ -70,6 +83,11 @@ import { DRAG_CHUTE, CHUTE_DEFAULT_KEY, applyChute, chuteBlocker, chuteWords, Dr
 import { keyLabel } from '../flight/input.js';
 import * as UI from './eject/ui.js';
 import { isHiddenAircraft } from '../core/edition.js';
+import { NONE_WHY } from './eject/profiles.js';
+import { PAX, launchJumper } from './passengers/state.js';
+import { Evacuation, DOOR_RATE_SAFE, TOTAL_RATE_SAFE } from './passengers/evac.js';
+import { FLASH } from '../render/flash-safety.js';
+import { pickEvacDoors, doorWorld, doorOutWorld } from './passengers/exits.js';
 
 const KT = 1.94384;
 const D2R = Math.PI / 180;
@@ -84,6 +102,8 @@ const COUNT_SECONDS = 5;
 const BAIL_MIN_AGL = 60;
 /** An empty aeroplane that has somehow not come down by now is brought down. */
 const EMPTY_MAX_SECONDS = 40;
+/** An empty airliner noses over slowly from a cruise: more time before it is brought down. */
+const EMPTY_MAX_AIRLINER = 150;
 
 /*
  * The keys, in the one registry (Settings → Controls): eject and
@@ -91,7 +111,7 @@ const EMPTY_MAX_SECONDS = 40;
  * once you are down (runaway.js's "start again" is the same action).
  */
 registerActions({
-  eject: { label: 'Eject (press twice; crew go first)', group: 'Flying', ctx: ['plane', 'heli'], default: ['Enter', 'NumpadEnter'] },
+  eject: { label: 'Eject (press twice; passengers and crew go first)', group: 'Flying', ctx: ['plane', 'heli'], default: ['Enter', 'NumpadEnter'] },
   selfDestruct: { label: 'Self-destruct (special planes: press twice, again to cancel)', group: 'Flying', ctx: ['plane'], default: ['Backspace'] },
   chuteLeft: { label: 'Parachute: steer left', group: 'Flying', ctx: ['chute'], default: ['KeyA', 'ArrowLeft'] },
   chuteRight: { label: 'Parachute: steer right', group: 'Flying', ctx: ['chute'], default: ['KeyD', 'ArrowRight'] },
@@ -135,6 +155,13 @@ const S = {
   walked: null,
   landedAt: null,
   lastEject: null,
+  /** An airliner's evacuation while it runs (passengers/evac.js), and the controls that hold her steady. */
+  evac: null,
+  hold: null,
+  holdPrev: null,
+  evacDoors: [],
+  /** The last evacuation, for the tests: { pax, crew, order: [...] }. */
+  lastEvac: null,
 };
 
 const _v = new THREE.Vector3();
@@ -221,9 +248,19 @@ function inAircraft(sim) {
   return !!(sim && sim.state === 'flying' && sim.mode !== 'drive' && sim.aircraft && sim.aircraftType && !onFoot.active);
 }
 
+/** Air Force One's own missions: the airliner's evacuation is not theirs to have. */
+function afoMission(sim) {
+  const d = sim && sim.runner && sim.runner.def;
+  if (!d || sim.mode !== 'mission') return false;
+  // Both Engines Out as well: the ditching is the mission, and the rafts are how that one ends (features/ditching.js).
+  return /^afo/i.test(String(d.id || '')) || /air force one/i.test(String(d.name || '')) || d.id === 'both-engines-out';
+}
+
 /** This aeroplane's way out in this mode: the helicopter's door is Free Flight's (profiles.js). */
 function profileOf(sim) {
-  return profileIn(sim.aircraftType, sim.mode);
+  const p = profileIn(sim.aircraftType, sim.mode);
+  if (p.escape === 'evac' && (afoMission(sim) || sim.riding)) return { ...p, escape: 'none', bailFrom: 0, noneWhy: NONE_WHY.afo };
+  return p;
 }
 
 /** Where the pilot sits, in the world. */
@@ -280,7 +317,7 @@ function chuteKbd(sim) {
 
 function keyLineFor(prof, sim) {
   const parts = [];
-  if (prof.escape !== 'none') parts.push(`${kbd('eject')} ${prof.escape === 'bail' ? 'bail out' : prof.escape === 'jump' ? 'parachute' : 'eject'}`);
+  if (prof.escape !== 'none') parts.push(`${kbd('eject')} ${prof.escape === 'bail' ? 'bail out' : prof.escape === 'jump' ? 'parachute' : prof.escape === 'evac' ? 'evacuate' : 'eject'}`);
   if (prof.selfDestruct) parts.push(`${kbd('selfDestruct')} self-destruct`);
   if (prof.dragChute && chuteKbd(sim)) parts.push(`${chuteKbd(sim)} drag chute`);
   return parts.length ? ` · ${parts.join(' · ')}` : '';
@@ -306,12 +343,16 @@ export function cannotEject(sim) {
   if (!inAircraft(sim)) return 'Not now';
   const prof = profileOf(sim);
   const ac = sim.aircraft;
+  if (S.phase === 'evac') return 'Passengers first — you go last';
   if (S.phase !== 'idle') return 'You are already out';
   if (ac.crashed) return live(`Too late for that — press ${keyName('pause', sim)} and choose Restart`);
   if (prof.escape === 'none') return live(String(prof.noneWhy).replace(/\bpress O\b/, `press ${keyName('getOut', sim)}`).replace(/\bthen O\b/, `then ${keyName('getOut', sim)}`));
   if (ac.ditched) return 'Stay with the raft: rescue is coming';
   if (ac.onWater) return 'Not on the water: taxi to the shore first';
   if (ac.onGround) return live(`You’re on the ground — stop, then press ${keyName('getOut', sim)} to climb out`);
+  if (prof.escape === 'evac' && ac.agl < (prof.bailFrom || 150)) {
+    return `Too low to jump — everybody's parachute needs ${Math.round(((prof.bailFrom || 150) * 3.281) / 100) * 100} ft to open. Climb higher, or land it — you can do it!`;
+  }
   if (prof.escape === 'bail' && ac.agl < (prof.bailFrom || BAIL_MIN_AGL)) {
     return prof.uniform === 'heli'
       ? live(`Too low to jump — the parachute needs ${Math.round((prof.bailFrom * 3.281) / 10) * 10} ft above the ground to open. Climb higher, or land and press ${keyName('getOut', sim)} to hop out.`)
@@ -322,6 +363,14 @@ export function cannotEject(sim) {
 
 /** Enter, or the EJECT button. Returns true if the press was ours. */
 function pressEject(sim) {
+  if (S.phase === 'evac' && inAircraft(sim)) {
+    const E = S.evac;
+    const left = E ? E.pax - E.paxOut : 0;
+    notify(sim, left > 0
+      ? `Passengers first! ${left} still to go — then the cabin crew, then you.`
+      : 'The cabin crew are going now — you are next. The captain leaves last!', 'info', 3);
+    return true;
+  }
   if (!inAircraft(sim) || S.phase !== 'idle') return S.phase === 'out';
   const why = cannotEject(sim);
   if (why) {
@@ -333,6 +382,18 @@ function pressEject(sim) {
     crewOut(sim, prof);
     notify(sim, live(`Crew out first! ${byButton(sim) ? `${byButton(sim)} EJECT` : `Press ${kbd('eject', sim)}`} again to ${prof.escape === 'bail' ? 'jump' : 'eject'} yourself.`), 'warn', 5);
     S.armedT = 0;
+    return true;
+  }
+  if (prof.escape === 'evac') {
+    if (S.armedT <= 0) {
+      S.armedT = ARM_SECONDS;
+      notify(sim, byButton(sim)
+        ? `${byButton(sim)} EJECT again to EVACUATE — passengers first, then the crew, then you!`
+        : live(`Press ${kbd('eject', sim)} again to EVACUATE — passengers first, then the crew, then you!`), 'warn', ARM_SECONDS);
+      sound(sim, 'cover');
+      return true;
+    }
+    startEvac(sim, false);
     return true;
   }
   if (!S.crewOut && S.armedT <= 0) {
@@ -355,7 +416,144 @@ function pressEject(sim) {
  */
 export function ejectPilot(sim) {
   if (!sim || cannotEject(sim)) return false;
+  // An airliner: everybody goes, in order — the seat that fires for you is the evacuation.
+  if (S.prof && S.prof.escape === 'evac') {
+    startEvac(sim, true);
+    return true;
+  }
   ejectNow(sim, true);
+  return true;
+}
+
+/* ------------------------------------------------------------------ */
+/* An airliner's evacuation                                             */
+/* ------------------------------------------------------------------ */
+
+/** Everybody out: passengers first, then the cabin crew, then you. */
+function startEvac(sim, auto) {
+  const ac = sim.aircraft;
+  if (!ac || S.phase !== 'idle') return false;
+  if (sim.autopilot && sim.autopilot.engaged && typeof sim.toggleAutopilot === 'function') sim.toggleAutopilot(false);
+  // The autopilot's job, done here: straight and level while they go.
+  S.holdPrev = sim.override;
+  S.hold = { throttle: clamp(Math.max(0.45, (ac.controls && ac.controls.throttle) || 0), 0, 1), pitch: 0, roll: 0, yaw: 0, brakes: 0 };
+  sim.override = S.hold;
+  const exits = (PAX.cabin && PAX.cabin.exits) || [];
+  S.evacDoors = pickEvacDoors(exits, sim.model);
+  const pax = PAX.active ? Math.max(0, Math.round(PAX.aboard)) : 0;
+  const crew = PAX.active ? Math.max(0, PAX.crew) : 0;
+  // Reduce flashing (on by default): a door lets them out no faster than the flicker probe allows.
+  S.evac = new Evacuation({ pax, crew, doors: S.evacDoors, doorRate: FLASH.reduce ? DOOR_RATE_SAFE : 0, maxRate: FLASH.reduce ? TOTAL_RATE_SAFE : 0 });
+  S.lastEvac = { pax, crew, auto: !!auto, doors: S.evacDoors.map((d) => d.id), order: S.evac.log, done: false };
+  if (PAX.active) PAX.stage = 'evac';
+  // Open the doors they leave by.
+  const md = sim.model && sim.model.userData && sim.model.userData.doors;
+  if (md && typeof md.open === 'function') {
+    const ids = new Set([...S.evacDoors.map((d) => d.id), S.evac.pilotDoor && S.evac.pilotDoor.id]);
+    for (const id of ids) {
+      try {
+        if (id) md.open(id);
+      } catch (e) {
+        /* a door is a nicety */
+      }
+    }
+  }
+  S.phase = 'evac';
+  S.armedT = 0;
+  S.cam.started = false;
+  if (sim.input && sim.input.keys && sim.input.keys.clear) sim.input.keys.clear();
+  banner(sim, 'EVACUATE!', `Passengers first — ${pax} of them — then the cabin crew, then you, last. The autopilot holds her steady.`, 'good', 5);
+  if (auto) notify(sim, 'Everybody out — nobody goes down with the plane!', 'good', 4);
+  try {
+    // The captain's PA line (passengers.js puts it here; not imported, see state.js).
+    if (typeof PAX.sayEvacuation === 'function') PAX.sayEvacuation(sim);
+  } catch (e) {
+    /* the PA is a nicety */
+  }
+  sound(sim, 'eject');
+  return true;
+}
+
+const _door = new THREE.Vector3();
+const _doorOut = new THREE.Vector3();
+
+/** One of the timetable's releases: a passenger or a crew member out of their door, or you. */
+function evacRelease(sim, r) {
+  const ac = sim.aircraft;
+  if (r.who === 'pilot') {
+    if (S.lastEvac) S.lastEvac.done = true;
+    S.evac = null;
+    ejectNow(sim, false, r.door);
+    return;
+  }
+  doorWorld(ac, r.door, _door);
+  doorOutWorld(ac, r.door, _doorOut);
+  launchJumper(sim, _door, ac.vel, _doorOut, r.who === 'crew' ? 'crew' : 'pax');
+}
+
+/** Straight and level, wings level, the power where it was. */
+function holdSteady(sim) {
+  const ac = sim.aircraft;
+  const h = S.hold;
+  if (!h || !ac) return;
+  if (sim.override !== h) sim.override = h;
+  const pitch = ac.pitchAngleDeg();
+  const bank = ac.bankAngleDeg();
+  h.pitch = clamp((2 - pitch) * 0.05 - ac.omega.x * 0.8, -0.6, 0.6);
+  h.roll = clamp((0 - bank) / 22, -0.6, 0.6);
+  h.yaw = 0;
+  h.brakes = 0;
+}
+
+function updateEvac(sim, dt) {
+  const E = S.evac;
+  const ac = sim.aircraft;
+  if (!E || !ac) return;
+  holdSteady(sim);
+  // She is coming apart (something hit her): everybody out at once — nobody stays aboard.
+  const rel = ac.crashed ? [...E.hurry(), ...E.step(10)] : E.step(dt);
+  for (const r of rel) {
+    evacRelease(sim, r);
+    if (S.phase !== 'evac') break;
+  }
+  if (S.phase !== 'evac' || !S.evac) return;
+  const paxLeft = E.pax - E.paxOut;
+  const crewLeft = E.crew - E.crewOut;
+  UI.setChuteHud(paxLeft > 0
+    ? `<b>Evacuating</b> — passengers out <b>${E.paxOut}/${E.pax}</b><br>then the cabin crew, then you`
+    : crewLeft > 0
+      ? `<b>Everybody's out!</b> Now the cabin crew: <b>${E.crewOut}/${E.crew}</b><br>then you`
+      : '<b>Your turn, captain</b> — out of the front door…');
+}
+
+/** Off the left wing, level with the horizon, looking back along the stream. */
+const _evacOff = new THREE.Vector3();
+function evacCamera(sim, dt, cam) {
+  const ac = sim.aircraft;
+  const t = sim.aircraftType || {};
+  const plan = t.plan || {};
+  const span = Number.isFinite(plan.span) ? plan.span : 36;
+  const len = Number.isFinite(plan.tail) && Number.isFinite(plan.nose) ? plan.tail - plan.nose : 38;
+  const h = (ac.heading || 0) * D2R;
+  const fx = Math.sin(h);
+  const fz = -Math.cos(h);
+  const rx = Math.cos(h);
+  const rz = Math.sin(h);
+  const out = span * 0.62 + 16;
+  const back = len * 0.5;
+  _evacOff.set(-rx * out - fx * back, -6, -rz * out - fz * back);
+  if (!S.cam.started) {
+    S.cam.pos.copy(cam.position).sub(ac.pos);
+    S.cam.started = true;
+  }
+  // The offset eases, not the position: she is doing 250 knots.
+  S.cam.pos.lerp(_evacOff, Math.min(1, dt * 1.4));
+  _v.copy(ac.pos).add(S.cam.pos);
+  const floor = floorAt(_v.x, _v.z) + 3;
+  if (_v.y < floor) _v.y = floor;
+  _look.set(ac.pos.x + fx * len * 0.05 - rx * 6, ac.pos.y - 10, ac.pos.z + fz * len * 0.05 - rz * 6);
+  cam.position.copy(_v);
+  cam.lookAt(_look);
   return true;
 }
 
@@ -383,21 +581,34 @@ function crewOut(sim, prof) {
   sound(sim, 'eject');
 }
 
-/** Out you go. `auto`: the self-destruct's seat, fired for you. */
-function ejectNow(sim, auto) {
+/**
+ * Out you go. `auto`: the self-destruct's seat, fired for you. `door`: an
+ * airliner's door (the evacuation's last release, passengers/evac.js), which
+ * you jump from instead of a seat.
+ */
+function ejectNow(sim, auto, door = null) {
   const ac = sim.aircraft;
   const type = sim.aircraftType;
   const prof = S.prof || profileFor(type);
   if (prof.crew > 0 && !S.crewOut) crewOut(sim, prof);
   const uniform = uniformFor(type);
   const person = createUniformPerson(uniform, { seed: 5 });
-  const kind = prof.escape === 'jump' ? 'jump' : prof.escape === 'bail' ? 'bail' : 'seat';
+  const kind = prof.escape === 'jump' ? 'jump' : prof.escape === 'bail' || prof.escape === 'evac' ? 'bail' : 'seat';
   const model = new ChuteModel(person, { uniform, seat: kind === 'seat' });
   const flight = new ChuteFlight();
   _up.set(0, 1, 0).applyQuaternion(ac.quat);
+  let doorJump = false;
   if (kind === 'jump') {
     // Harrison: the parachute comes out of his own back, where he is.
     _v.set(0, 0.2, 0).applyQuaternion(ac.quat).add(ac.pos);
+  } else if (door) {
+    // The airliner's front left door: out, and down, under the wing rather than into it.
+    doorWorld(ac, door, _v);
+    doorOutWorld(ac, door, _w);
+    _up.copy(_w).multiplyScalar(0.45);
+    _up.y -= 1;
+    _up.normalize();
+    doorJump = true;
   } else {
     seatWorld(sim, _v);
     _v.addScaledVector(_up, -0.9);
@@ -408,6 +619,7 @@ function ejectNow(sim, auto) {
     }
   }
   flight.launch(_v, ac.vel, _up, ac.heading, kind);
+  if (doorJump) flight.vel.y -= 3;
   model.addTo(sim.scene);
   S.me = { flight, model, person, uniform, opened: false };
   S.lastEject = { type: type.id, kind, auto: !!auto, at: flight.pos.clone(), speedKt: Math.round(ac.airspeed * KT), agl: Math.round(ac.agl) };
@@ -415,7 +627,10 @@ function ejectNow(sim, auto) {
 
   // The empty aeroplane: flown through sim.override from here on.
   if (sim.autopilot && sim.autopilot.engaged && typeof sim.toggleAutopilot === 'function') sim.toggleAutopilot(false);
-  S.prevOverride = sim.override;
+  // After an evacuation the controls in force are the hold's: the ones to put back are from before it.
+  S.prevOverride = S.hold && sim.override === S.hold ? S.holdPrev : sim.override;
+  S.hold = null;
+  S.holdPrev = null;
   S.emptyT = 0;
   S.planeDown = !!ac.crashed;
   if (prof.ends) {
@@ -432,6 +647,7 @@ function ejectNow(sim, auto) {
   sim.walking = { active: true, ejected: true };
 
   S.phase = 'out';
+  if (door) PAX.pilot = 'out';
   S.armedT = 0;
   S.keys = Object.create(null);
   S.cam.started = false;
@@ -443,7 +659,7 @@ function ejectNow(sim, auto) {
   }
   FootUI.setHudWalking(sim.hud, true);
   S.hudHidden = true;
-  const how = kind === 'jump' ? 'Harrison opens his parachute!' : kind === 'bail' ? 'Out of the door!' : 'EJECT! EJECT!';
+  const how = kind === 'jump' ? 'Harrison opens his parachute!' : door ? 'Last one out — the captain!' : kind === 'bail' ? 'Out of the door!' : 'EJECT! EJECT!';
   banner(sim, how, isTouch(sim)
     ? 'Your parachute opens in a moment. Hold ◀ ▶ to steer, SINK to go down faster.'
     : `Your parachute opens in a moment. ${kbd('chuteLeft', sim)} ${kbd('chuteRight', sim)} steer · ${kbd('chuteSink', sim)} sink faster.`, 'good', 5);
@@ -543,6 +759,7 @@ function land(sim) {
     }
   }
   S.landedAt = { x, z, rescued, water: heightAt(f.pos.x, f.pos.z) < 0 };
+  if (PAX.stage === 'evac') PAX.pilot = 'down';
   // The canopy stays and sags where you came down; you stand beside it.
   me.model.person.visible = false;
   me.model.root.position.set(f.pos.x, floorAt(f.pos.x, f.pos.z), f.pos.z);
@@ -668,11 +885,20 @@ function updateGhost(sim, dt) {
   // Nobody at the controls: the nose drops and it spirals down.
   const pitch = ac.pitchAngleDeg();
   const bank = ac.bankAngleDeg();
-  S.ghost.pitch = clamp((-30 - pitch) * 0.05 - ac.omega.x * 0.8, -1, 1);
-  S.ghost.roll = clamp((38 - bank) / 22, -0.8, 0.8);
+  const airliner = !!(S.prof && S.prof.escape === 'evac');
+  if (airliner) {
+    // An empty airliner: the nose goes over slowly — a gentle dive that steepens — with a lazy turn.
+    const target = -3 - Math.min(27, S.emptyT * 1.2);
+    S.ghost.pitch = clamp((target - pitch) * 0.04 - ac.omega.x * 0.9, -0.6, 0.6);
+    S.ghost.roll = clamp((10 - bank) / 30, -0.5, 0.5);
+    S.ghost.throttle = Math.max(0.15, S.ghost.throttle - dt * 0.01);
+  } else {
+    S.ghost.pitch = clamp((-30 - pitch) * 0.05 - ac.omega.x * 0.8, -1, 1);
+    S.ghost.roll = clamp((38 - bank) / 22, -0.8, 0.8);
+  }
   S.ghost.yaw = 0;
   S.ghost.brakes = 0;
-  if (S.emptyT > EMPTY_MAX_SECONDS) ac.crash('The empty aeroplane came down');
+  if (S.emptyT > (airliner ? EMPTY_MAX_AIRLINER : EMPTY_MAX_SECONDS)) ac.crash('The empty aeroplane came down');
   // Its engine fades as it goes away from you.
   const mx = mixer(sim);
   const who = S.me ? S.me.flight.pos : onFoot.active ? _look.set(onFoot.walker.x, onFoot.walker.y, onFoot.walker.z) : null;
@@ -727,7 +953,9 @@ function onCrash(sim) {
     } catch (e) {
       /* the bang is a nicety */
     }
-    banner(sim, 'Your empty plane crashed!', 'Nobody was in it — you got out in time.', 'good', 4.5);
+    if (S.lastEvac && S.prof && S.prof.escape === 'evac') {
+      banner(sim, 'Your empty airliner went down!', 'Nobody was aboard — every passenger, the crew and you floated down safely.', 'good', 5);
+    } else banner(sim, 'Your empty plane crashed!', 'Nobody was in it — you got out in time.', 'good', 4.5);
   }
 }
 
@@ -965,7 +1193,7 @@ function showEject(sim, flying, prof) {
   const ac = sim.aircraft;
   if (!flying || !prof || prof.escape === 'none' || ac.onGround || ac.crashed) return (ejectShown = false);
   if (sim.mode !== 'free') return (ejectShown = isTouch(sim));
-  const from = prof.escape === 'bail' ? prof.bailFrom || BAIL_MIN_AGL : SHOW_FROM;
+  const from = prof.escape === 'bail' || prof.escape === 'evac' ? prof.bailFrom || BAIL_MIN_AGL : SHOW_FROM;
   ejectShown = ac.agl >= from + (ejectShown ? 0 : 6);
   return ejectShown;
 }
@@ -996,6 +1224,7 @@ function resetAll(sim) {
   if (S.drag.model) S.drag.model.dispose();
   S.drag = { state: 'stowed', fill: 0, model: null, airT: 0, armed: false, hinted: false, via: '', t: 0 };
   if (sim) {
+    if (S.hold && sim.override === S.hold) sim.override = S.holdPrev || null;
     if (S.ghost && sim.override === S.ghost) sim.override = S.prevOverride === S.ghost ? null : S.prevOverride || null;
     if (sim.walking && sim.walking.ejected) sim.walking = null;
     // Only what this feature hid: main.js hides the aeroplane itself while
@@ -1011,6 +1240,10 @@ function resetAll(sim) {
   S.ghost = null;
   S.ended = false;
   S.prevOverride = null;
+  S.hold = null;
+  S.holdPrev = null;
+  S.evac = null;
+  S.evacDoors = [];
   S.touchHidden = false;
   S.hudHidden = false;
   S.control = null;
@@ -1155,6 +1388,7 @@ registerExtension({
     if (S.phase === 'idle' || S.phase === 'out') updateSelfDestruct(sim, dt);
     updateDrag(sim, dt);
     updateCrew(sim, dt);
+    if (S.phase === 'evac') updateEvac(sim, dt);
     if (S.phase === 'out') updateOut(sim, dt);
     updateGhost(sim, dt);
     if (sim.aircraftType.id === 'tpose') tposeView(sim);
@@ -1164,6 +1398,7 @@ registerExtension({
   },
 
   camera(sim, dt, cam) {
+    if (S.phase === 'evac' && cam && sim.aircraft) return evacCamera(sim, dt, cam);
     if (S.phase !== 'out' || !S.me || !cam) return false;
     const f = S.me.flight;
     const yaw = (f.heading + S.cam.yaw) * D2R;
@@ -1264,6 +1499,16 @@ export const eject = {
   },
   get lastEject() {
     return S.lastEject;
+  },
+  /** An airliner's evacuation while it runs (passengers/evac.js), and the last one. */
+  get evac() {
+    return S.evac;
+  },
+  get lastEvac() {
+    return S.lastEvac;
+  },
+  get evacDoors() {
+    return S.evacDoors.slice();
   },
   get planeDown() {
     return S.planeDown;

@@ -173,6 +173,8 @@ export const TOUCH_COVERAGE = Object.freeze({
   eventChoice1: feature('src/features/events/ui.js', 'the question card\'s answers are buttons', 'fx-choice'),
   eventChoice2: feature('src/features/events/ui.js', 'the question card\'s answers are buttons', 'fx-choice'),
   eventChoice3: feature('src/features/events/ui.js', 'the question card\'s answers are buttons', 'fx-choice'),
+  interact: feature('src/features/onfoot.js', 'The Use button on the walking thumbs, or a tap on the prompt (interact.js)', "id: 'use'"),
+  retry: feature('src/game/fun-kit.js', 'The debrief\'s own first button: R only presses it, a finger taps it, and a tap anywhere skips the finale before it', 'pressPrimary'),
   eventSkip: {
     desktopOnly: 'The hijack\'s police-boarding cut-scene lasts a few seconds and shares the camera key by design; on a touch screen it plays out, because the camera pad reaches the view through hudAction rather than the key, and rerouting the pad through the key in freeze week risks the camera for a skip nobody has asked for.',
   },

@@ -19,6 +19,8 @@ const GOLD_SCORE = 90;
 const FIVE_GOLDS = 5;
 const TEN_FLIGHTS = 10;
 const SQUADRON_SIZE = 3;
+/** The passengers' rating that earns Smooth Operator (features/passengers.js SMOOTH_OPERATOR). */
+const SMOOTH_OPERATOR = 4.8;
 
 const RANK_ORDER = ['cadet', 'pilot', 'senior', 'captain', 'instructor', 'top', 'mod', 'admin', 'founder'];
 const ALL_IDS_EXCEPT_FULL_HOUSE = ACHIEVEMENTS.map((a) => a.id).filter((id) => id !== 'full-house');
@@ -54,6 +56,9 @@ function checkFullHouse(store, out) {
  *   raceWin          {}
  *   friends          { count }
  *   rank             { rank }                    one of progression.js's RANKS ids
+ *   secretFound      { plane, allFound }         a secret plane found (features/secrets.js)
+ *   secretEarned     { plane }                   Air Force One, for 80+ on Under Attack
+ *   passengers       { rating, landed, crashed } | { evacuated, people }   an airliner flight
  */
 export function applyEvent(store, type, payload = {}) {
   const out = [];
@@ -140,6 +145,20 @@ export function applyEvent(store, type, payload = {}) {
     }
 
     /*
+     * A secret plane found in a hidden hangar (features/secrets.js):
+     * { plane, allFound } — allFound once every hidden one is yours.
+     */
+    case 'secretFound':
+      unlock(store, 'secret-found', out);
+      if (payload.allFound) unlock(store, 'secret-all', out);
+      break;
+
+    /* Air Force One earned: 80+ on Under Attack (features/secrets.js). */
+    case 'secretEarned':
+      if (payload.plane === 'af1') unlock(store, 'afo-unlock', out);
+      break;
+
+    /*
      * A story chapter finished (src/story/director.js): { chapter, medal,
      * style: [badge ids], secrets: [ids] }. The chapter's own achievement,
      * and the style and secret ones it carries.
@@ -150,6 +169,20 @@ export function applyEvent(store, type, payload = {}) {
       const secrets = Array.isArray(payload.secrets) ? payload.secrets : [];
       if (style.includes('through-the-eye')) unlock(store, 'story-through-the-eye', out);
       if (secrets.includes('condor-light')) unlock(store, 'story-early-bird', out);
+      break;
+    }
+
+    /*
+     * An airliner flight's end (features/passengers.js): { rating, landed, crashed }
+     * — or an evacuation that got everybody out: { evacuated: true, people }.
+     */
+    case 'passengers': {
+      if (payload.evacuated) {
+        if (Number(payload.people) > 0) unlock(store, 'last-one-out', out);
+        break;
+      }
+      if (payload.crashed || !payload.landed) break;
+      if (Number(payload.rating) >= SMOOTH_OPERATOR) unlock(store, 'smooth-operator', out);
       break;
     }
 

@@ -13,8 +13,17 @@
  *                       Free Flight only (`freeOnly`, see profileIn)
  *               'jump'  T-Pose Harrison: there is no seat and no door — he IS the
  *                       aeroplane — so he opens his own parachute where he is
- *               'none'  no way out in the air (airliners; the helicopter in a
- *                       mission) — and `noneWhy` says so kindly
+ *               'evac'  an airliner: no seats, but parachutes for everybody
+ *                       (the owner, 2026-10-01: "in airliners, if you eject,
+ *                       the passengers first fall in parachutes, then cabin
+ *                       crew plus you do"). The passengers stream out of the
+ *                       doors first, then the cabin crew, then you, last, out
+ *                       of the front door — eject.js runs it, on
+ *                       passengers/evac.js's timetable. Needs `bailFrom`
+ *                       metres (150, about 500 ft) for everybody's canopy.
+ *               'none'  no way out in the air (the helicopter in a mission;
+ *                       Air Force One in its own missions, eject.js) — and
+ *                       `noneWhy` says so kindly
  *   crew        how many OTHER people ride along with ejection seats of their
  *               own. They go first: "Crew out first — press again".
  *   selfDestruct  the special planes' guarded button (never on a person)
@@ -47,6 +56,9 @@
  */
 const HELI = { escape: 'bail', uniform: 'heli', why: 'heli', runaway: false, bailFrom: 100, freeOnly: true };
 
+/** Any airliner: everybody out under a canopy, passengers first (see 'evac' above). */
+const AIRLINER = { escape: 'evac', uniform: 'captain', runaway: false, bailFrom: 150 };
+
 /** Ejection seats, crews and specials, by type id. */
 const BY_ID = {
   // Light aircraft: no ejection seat, but you can bail out with a parachute.
@@ -55,11 +67,12 @@ const BY_ID = {
   petrel: { escape: 'bail', uniform: 'casual', runaway: true },
   // A twin turboprop research ship: you bail out, but it is not a small plane.
   tempest: { escape: 'bail', uniform: 'casual', crew: 1, runaway: false },
-  // Airliners: no ejection seats for anybody.
-  meridian: { escape: 'none', uniform: 'captain' },
-  a320: { escape: 'none', uniform: 'captain' },
-  b747: { escape: 'none', uniform: 'captain' },
-  a380: { escape: 'none', uniform: 'captain' },
+  // Airliners: no ejection seats for anybody — parachutes for everybody, the
+  // passengers first, then the cabin crew, then you ('evac').
+  meridian: AIRLINER,
+  a320: AIRLINER,
+  b747: AIRLINER,
+  a380: AIRLINER,
   // The helicopter: no seat (the rotor is in the way), but in Free Flight you
   // jump from the side door with a parachute, as people really do from
   // helicopters (missions keep 'none'; see HELI below).
@@ -82,20 +95,24 @@ const BY_ID = {
 /** The words for a type that has no way out, kind and short. */
 export const NONE_WHY = {
   airliner: 'Airliners don’t have ejection seats — the safest way out is a good landing. You can do it!',
+  // Air Force One's own missions (eject.js asks): the President is aboard, and so is the story.
+  afo: 'Not on Air Force One — the President is counting on you. The safest way out is a good landing. You can do it!',
   heli: 'Helicopters don’t have ejection seats — the rotor is in the way! Land it, then press O to hop out.',
 };
 
 /** The escape profile for a roster entry (or a type id). Never null. */
 export function profileFor(type) {
   const t = typeof type === 'string' ? { id: type } : type || {};
-  const own = BY_ID[t.id];
+  // A version of a listed aeroplane (a secret plane: aircraft/extra/secret.js `variantOf`) escapes like it.
+  const own = BY_ID[t.id] || (t.variantOf ? BY_ID[t.variantOf] : null);
   if (own) return fill(t, own);
   // An aeroplane nobody listed: guess from what it says it is.
   const cls = String(t.class || '').toLowerCase();
   const cat = String(t.category || '').toLowerCase();
   const rotor = !!(t.shape && t.shape.power && t.shape.power.rotor);
   if (rotor || /heli|rotor/.test(cls)) return fill(t, HELI);
-  if (cat === 'airliner' || /airliner|jumbo|transport/.test(cls)) return fill(t, { escape: 'none', uniform: 'captain' });
+  if (cat === 'airliner' || /airliner|jumbo/.test(cls)) return fill(t, AIRLINER);
+  if (/transport|cargo|freighter/.test(cls)) return fill(t, { escape: 'none', uniform: 'captain' });
   if (t.military || /fighter|bomber|carrier/.test(cls)) return fill(t, { escape: 'seat', uniform: 'fighter' });
   const jet = !!(t.shape && t.shape.power && t.shape.power.kind === 'jet');
   return fill(t, jet ? { escape: 'seat', uniform: 'fighter' } : { escape: 'bail', uniform: 'casual' });
@@ -113,7 +130,7 @@ function fill(t, p) {
     runaway: p.runaway != null ? !!p.runaway : escape === 'bail',
     ends: !!p.ends,
     // Metres above the ground a door bail-out needs for the canopy to open.
-    bailFrom: escape === 'bail' ? p.bailFrom || 60 : 0,
+    bailFrom: escape === 'bail' ? p.bailFrom || 60 : escape === 'evac' ? p.bailFrom || 150 : 0,
     freeOnly: !!p.freeOnly,
     noneWhy: escape === 'none' || p.freeOnly ? NONE_WHY[p.why || 'airliner'] : '',
   };

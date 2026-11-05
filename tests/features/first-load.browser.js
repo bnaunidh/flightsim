@@ -122,4 +122,9 @@ export async function check(sim, r) {
   } else {
     r.ok('first-load: the Blender helicopter loaded (for the stand-in check)', false, JSON.stringify(BM.blenderModelStatus()));
   }
+  // The second bundle (features/later.js) joins on the menu, never holding up a first flight.
+  await until(() => sim.laterIn === true, 60000, 200);
+  const M = await import('../../src/game/missions.js');
+  r.ok('first-load: the second bundle joined on the menu', sim.laterIn === true && !!sim.secrets, `laterIn ${sim.laterIn}`);
+  r.ok('first-load: and the fun pass is on the missions and the board', !!M.findMission('patrol').medals && !!sim.menus.screens.missions.querySelector('[data-mission="stray-contact"]'), `${M.MISSIONS.length} missions`);
 }

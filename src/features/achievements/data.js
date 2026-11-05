@@ -62,6 +62,9 @@ export const ACHIEVEMENTS = [
   // The owner, 2026-10-04: "if you hit the max of the sky, 70,000 feet you
   // get the achievement: The Sky's the Limit". Exact name, exact how-to line.
   { id: 'sky-limit', name: "The Sky's the Limit", how: 'Reach the top of the sky: 70,000 ft.', glyph: 'star', group: 'flying', tier: 'gold' },
+  // Passengers (features/passengers.js): the comfort meter, and the evacuation the owner asked for.
+  { id: 'smooth-operator', name: 'Smooth Operator', how: 'Land an airliner with the passengers rating the flight 4.8 out of 5 or better.', glyph: 'feather', group: 'flying', tier: 'gold' },
+  { id: 'last-one-out', name: 'Last One Out', how: 'Evacuate an airliner: every passenger, then the cabin crew, then you — everybody floats down safely.', glyph: 'shield', group: 'flying', tier: 'silver' },
 
   /* ---- Missions -------------------------------------------------------- */
   categoryAchievement('training', 'Learner', 'Finish a Training mission.', false, 'bronze'),
@@ -86,7 +89,12 @@ export const ACHIEVEMENTS = [
   { id: 'race-win', name: 'Chequered Flag', how: 'Win a multiplayer race.', glyph: 'flag', group: 'multiplayer', tier: 'silver' },
   { id: 'squadron', name: 'Squadron', how: 'Fly online with three friends at once.', glyph: 'formation', group: 'multiplayer', tier: 'gold' },
 
+  /* ---- Secret planes (features/secrets.js) --------------------------------*/
+  { id: 'secret-found', name: 'Secret Found', how: 'Find a secret plane in a hidden hangar.', glyph: 'hangar', group: 'flying', tier: 'silver' },
+  { id: 'secret-all', name: 'Nothing Stays Hidden', how: 'Find every secret plane hidden in the hangars.', glyph: 'trophy', group: 'flying', tier: 'gold' },
+
   /* ---- Air Force One -----------------------------------------------------*/
+  { id: 'afo-unlock', name: 'Air Force One Unlocked', how: 'Score 80 or more on Air Force One — Under Attack, and fly it in Free Flight.', glyph: 'seal', group: 'afo', tier: 'gold' },
   { id: 'afo-captain', name: 'Commander in Chief', how: 'Land Air Force One safely as Captain.', glyph: 'seal', group: 'afo', tier: 'gold' },
   { id: 'afo-secure', name: 'To the Secure Room', how: 'As the President, reach the secure room safely.', glyph: 'shield', group: 'afo', hidden: true, tier: 'gold' },
 

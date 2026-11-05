@@ -27,6 +27,18 @@
  */
 
 export async function check(sim, r, say) {
+  // The flicker probes measure the wreck, not whatever else crosses the frame: an empty sky, as the self-test has it.
+  const trafficWas = sim.settings.traffic;
+  sim.settings.traffic = false;
+  try {
+    await run(sim, r, say);
+  } finally {
+    if (trafficWas === undefined) delete sim.settings.traffic;
+    else sim.settings.traffic = trafficWas;
+  }
+}
+
+async function run(sim, r, say) {
   let bu;
   let cr;
   let ext;

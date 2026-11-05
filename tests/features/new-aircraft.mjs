@@ -403,7 +403,7 @@ for (const id of IDS) {
   // Where the rest of the game files it.
   if (MENUS) ok(`${id}: the hangar files it under ${R.military ? 'Military' : 'Airliners'}`, MENUS.aircraftCategory(type) === (R.military ? 'military' : 'airliner'), MENUS.aircraftCategory(type));
   const prof = EJECT.profileFor(type);
-  ok(`${id}: no ejection seats (an airliner's way out is a good landing; the passengers' evacuation reads the doors)`, prof.escape === 'none' && prof.uniform === 'captain');
+  ok(`${id}: no ejection seats (an airliner's way out is a good landing; the passengers' evacuation reads the doors)`, (prof.escape === 'none' || prof.escape === 'evac') && prof.uniform === 'captain');
   // School-safe: never a heat-seeker's target, not even another player's with PvP on.
   const v = HEAT.targetVerdict({ kind: 'player', typeId: id, pvpLive: true, name: 'Player' }, { pvp: true });
   ok(`${id}: never a heat-seeker's target, even in PvP`, v.ok === false, v.why);

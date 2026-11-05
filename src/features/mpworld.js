@@ -28,12 +28,19 @@
  *   and its minimap flame are where the fire is — the host's own fire
  *   ('world:fire') once the host has one, that nearest land until then.
  *
- *   The AI AEROPLANES are the host's. The host runs the traffic — in Dev mode
- *   only, exactly as in single player (traffic.js: "anything not finished
- *   goes to dev mode") — and everybody else draws the host's aeroplanes where
- *   the host has them, five times a second, eased in between. Nobody else
- *   runs traffic of their own in a game (multiplayer.js enterWorld), so there
- *   is one set of AI aeroplanes and everybody sees the same one.
+ *   The AI AEROPLANES are the host's. The host runs the traffic — on in Free
+ *   Flight for everybody now, as in single player, unless the host's
+ *   "Other aeroplanes" switch is off — and everybody else draws the host's
+ *   aeroplanes where the host has them, five times a second, eased in
+ *   between. Nobody else runs traffic of their own in a game (multiplayer.js
+ *   enterWorld, and traffic.js setTrafficRole('guest') for a restart), so
+ *   there is one set of AI aeroplanes and everybody sees the same one. The
+ *   runway is everybody's the way it is yours alone (traffic/priority.js):
+ *   the host hands the traffic every other player's aeroplane
+ *   (setOtherPilots), so it holds short and goes around for them too, and
+ *   stops for them on the ground. The host's "Other aeroplanes" switch is
+ *   everybody's: a guest's own switch does not apply in a shared game (the
+ *   pause menu says so), so every screen shows the same sky.
  *
  *   CRASHES show on everybody's minimap, in the colour of whoever crashed.
  *   The crash itself is the crashes feature's (src/features/crashes.js, on
@@ -61,7 +68,7 @@ import { getAircraft, specFor, isHelicopter } from '../aircraft/types.js';
 import { schemeFor } from '../aircraft/liveries.js';
 import { isHiddenAircraft, STAND_IN } from '../core/edition.js';
 import * as Prog from '../game/progression.js';
-import { clearTraffic, spawnTraffic } from './traffic.js';
+import { clearTraffic, spawnTraffic, applyTrafficSwitch, setOtherPilots, setTrafficRole } from './traffic.js';
 import { registerBody, unregisterBody, radiusOfType } from './sky.js';
 import { setupFire, startDevFire, wildfireDebug } from './wildfire.js';
 import { mp, ch, ride, forwardOf, inGame, who, esc, feed, chip, toon, injectStyle } from './mpplay/shared.js';
@@ -778,9 +785,72 @@ function buildMirrorModel(m) {
   }
 }
 
+/**
+ * The lobby's other aeroplanes, for the host's traffic (traffic.js
+ * setOtherPilots → traffic/priority.js): where each is drawn, which way it
+ * points and how fast it goes, on the ground or not. Boats and vans are not
+ * on the runway's business.
+ */
+const PILOTS = [];
+const FW = new THREE.Vector3();
+/**
+ * What a lobby pilot's type says for the runway claims (traffic/priority.js
+ * pilotIntent): a rotor instead of wings (no circuit claim), and whether the
+ * wheels can come up (down on one that can is a sign of landing). Looked up
+ * once per type: getAircraft warns about an id it does not know, and this
+ * runs every frame.
+ */
+const TYPE_SIGNS = new Map();
+function typeSigns(id, game) {
+  const key = `${game}:${id}`;
+  let s = TYPE_SIGNS.get(key);
+  if (!s) {
+    let t = null;
+    try {
+      t = id ? getAircraft(id) : null;
+    } catch (e) {
+      t = null;
+    }
+    const sh = t && t.shape;
+    s = { rotor: game === 'heli' || !!(sh && sh.power && sh.power.rotor), retractable: !!(sh && sh.retractable) };
+    TYPE_SIGNS.set(key, s);
+  }
+  return s;
+}
+function remotePilots() {
+  PILOTS.length = 0;
+  if (!inGame() || !ch.isHost) return PILOTS;
+  const rem = mp.remotes && mp.remotes.players;
+  if (!rem) return PILOTS;
+  for (const p of rem.values()) {
+    const s = p.sample;
+    const at = p.drawn;
+    if (!p.visible || !s || !s.snap || !at || !p.quat) continue;
+    const g = s.snap.game;
+    if (g === 'boat' || g === 'car') continue;
+    forwardOf(p.quat, FW);
+    const hdg = (Math.atan2(FW.x, -FW.z) * 180) / Math.PI;
+    const v = s.vel || { x: 0, y: 0, z: 0 };
+    const onGround = !!s.snap.onGround;
+    const signs = typeSigns(s.snap.type, g);
+    PILOTS.push({
+      id: p.id, x: at.x, y: at.y, z: at.z,
+      agl: onGround ? 0 : at.y - Math.max(heightAt(at.x, at.z), 0),
+      onGround, crashed: !!s.snap.crashed, hdgDeg: (hdg + 360) % 360,
+      vx: v.x, vy: v.y, vz: v.z, gs: Math.hypot(v.x, v.z), halfSpan: 6,
+      // The signs of landing the circuit claim wants (a snapshot has no autopilot).
+      rotor: signs.rotor, retractable: signs.retractable, gearDown: s.snap.gearDown !== false, flaps: Math.round((s.snap.flaps || 0) * 3), apApproach: false,
+    });
+  }
+  return PILOTS;
+}
+
 /** Every frame: each of the host's aeroplanes where the host has it now, eased so nothing jumps. */
 function drawMirror(dt) {
   if (!W.mirror.size) return;
+  // (This player's own "Other aeroplanes" switch does not apply here: in a
+  // shared game the host's switch is everybody's, so every screen shows the
+  // same sky — see the header, and traffic/setting.js, which says so.)
   const t = now();
   let built = false;
   for (const m of W.mirror.values()) {
@@ -816,6 +886,7 @@ function drawMirror(dt) {
     m.bank += (bankWant - m.bank) * Math.min(1, dt * 2);
     const pitch = m.f & 2 || m.v < 1 ? 0 : Math.atan2(m.vs, m.v);
     if (!m.model) continue;
+    if (!m.model.visible) m.model.visible = true;
     const a = m.fake;
     a.pos.set(m.dx, m.dy, m.dz);
     E.set(pitch, -m.dh * D2R, -m.bank, 'YXZ');
@@ -974,7 +1045,9 @@ ch.on('mp:start', ({ role }) => {
   clearMirror();
   startTimer();
   if (role === 'host' && W.sim) hostWeather(W.sim);
-  // A player's own AI traffic stops: the host's is the one everybody sees.
+  // A player's own AI traffic stops: the host's is the one everybody sees. The host's holds for everybody.
+  setTrafficRole(role === 'host' ? 'host' : 'guest');
+  setOtherPilots(role === 'host' ? remotePilots : null);
   if (role !== 'host' && W.sim) {
     try {
       clearTraffic(W.sim);
@@ -984,26 +1057,27 @@ ch.on('mp:start', ({ role }) => {
   }
 });
 ch.on('mp:host', () => {
-  // The lobby re-formed round this tab: the old host's aeroplanes go, and in Dev mode this tab starts its own.
+  // The lobby re-formed round this tab: the old host's aeroplanes go, and this tab starts its own (switch on).
   clearMirror();
+  setTrafficRole('host');
+  setOtherPilots(remotePilots);
   W.lastWx = null;
   // What the old host said of its fire is kept by every player (events.js); this tab says its own from the next tick.
   W.fireSent = W.fireAt;
   if (W.sim) hostWeather(W.sim);
   try {
     const sim = W.sim;
-    if (sim && sim.mode === 'free' && Prog.isDev((sim.menus && sim.menus.prog) || Prog.load())) {
-      spawnTraffic(sim, 'depart');
-      spawnTraffic(sim, 'arrive');
-    }
+    if (sim && sim.mode === 'free') applyTrafficSwitch(sim);
   } catch (e) {
-    /* traffic is a Dev-mode extra */
+    /* the traffic is decoration: the game goes on without it */
   }
 });
 ch.on('mp:end', () => {
   clearInterval(W.timer);
   W.timer = null;
   clearMirror();
+  setTrafficRole(null);
+  setOtherPilots(null);
   W.marks = [];
   W.fireAt = null;
   W.fireSent = null;
@@ -1070,6 +1144,7 @@ export function worldDebug() {
       W.trafficAt = -Infinity;
       if (W.sim) hostTraffic(W.sim);
     },
+    remotePilots: () => remotePilots().map((p) => ({ ...p })),
     drawMirror: (dt) => drawMirror(dt),
   };
 }

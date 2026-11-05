@@ -40,6 +40,12 @@ import { TYPES as HELIS } from './helis.js';
 // ...and the Petrel, on floats (features/floatplane.js).
 import { TYPES as FLOATPLANE } from './floatplane.js';
 
+// The secret planes (features/secrets.js): versions of the aeroplanes above,
+// so they are made last, from the whole roster (base.roster plus these).
+import { TYPES as SECRET } from './secret.js';
+
 export function extraAircraft(base) {
-  return [...FIGHTERS(base), ...AIRLINERS(base), ...TPOSE(base), ...JETS(base), ...GIANTS(base), ...LANCER(base), ...C17(base), ...ATTACK(base), ...HELIS(base), ...FLOATPLANE(base)];
+  const list = [...FIGHTERS(base), ...AIRLINERS(base), ...TPOSE(base), ...JETS(base), ...GIANTS(base), ...LANCER(base), ...C17(base), ...ATTACK(base), ...HELIS(base), ...FLOATPLANE(base)];
+  const roster = [...((base && base.roster) || []), ...list];
+  return [...list, ...SECRET({ ...base, roster })];
 }

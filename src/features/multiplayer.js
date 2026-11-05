@@ -2330,8 +2330,9 @@ class Multiplayer {
         const aircraft = server.game === 'heli' ? (this.isHeliRide(ride) ? ride.type : this.myHeli()) : ride && ride.game === 'flight' ? ride.type : this.myAircraft();
         /*
          * The AI aeroplanes are the host's (list 2, "the same planes"): the host
-         * runs them — in Dev mode only, as in single player — and everybody else
-         * draws the host's (../mpworld.js). Nobody but the host starts their own.
+         * runs them — on in Free Flight, as in single player, unless its switch
+         * is off — and everybody else draws the host's (../mpworld.js). Nobody
+         * but the host starts their own.
          */
         const traffic = this.role === 'host' ? {} : { traffic: false };
         await sim.startMode('free', { ...base, aircraft, airborne: false, taxi: false, ...traffic });

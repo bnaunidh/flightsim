@@ -14,6 +14,10 @@ import { check as airportLook } from './airport-look.browser.js';
 import { check as boatPlaytest } from './boat-playtest.browser.js';
 import { check as brace } from './brace.browser.js';
 import { secondType } from './heli-missions.browser.js';
+import { check as missionsFunPlaneCore } from './missions-fun-plane-core.browser.js';
+import { check as missionsFunHeli } from './missions-fun-heli.browser.js';
+import { check as secrets } from './secrets.browser.js';
+import { check as passengers } from './passengers.browser.js';
 import { check as carPlaytest } from './car-playtest.browser.js';
 import { check as civil } from './civil.browser.js';
 import { check as crashes } from './crashes.browser.js';
@@ -104,6 +108,11 @@ import { check as airspace } from './airspace.browser.js';
 import { check as cockpitCam } from './cockpit-cam.browser.js';
 
 export const CHECKS = [
+  // The missions' fun pass, flown (slow): medals, twists, finales, Try again from.
+  { id: 'missions-fun-plane-core', check: missionsFunPlaneCore },
+  { id: 'missions-fun-heli', check: missionsFunHeli },
+  { id: 'secrets', check: secrets },
+  { id: 'passengers', check: passengers },
   { id: 'airport', check: airport },
   { id: 'airport-look', check: airportLook },
   { id: 'boat-playtest', check: boatPlaytest },

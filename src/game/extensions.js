@@ -268,6 +268,18 @@ export function extStop(sim, why) {
   each('stop', (e) => e.stop(sim, why));
 }
 
+/**
+ * The game has just PUT the player's aeroplane somewhere, mid-flight, rather
+ * than them flying there: `where` is 'airport' (the pause menu's "Return to
+ * the airfield": the start of runway 09) or 'runway' (the taxi lesson's "Skip
+ * to runway": the same spot, lined up). Not a stop — the flight carries on —
+ * so a feature that must make room for them (the AI traffic clears the
+ * runway) hears it here, and nothing else is torn down.
+ */
+export function extPlaced(sim, where) {
+  each('placed', (e) => e.placed(sim, where));
+}
+
 export function extUpdate(sim, dt) {
   each('update', (e) => e.update(sim, dt));
 }

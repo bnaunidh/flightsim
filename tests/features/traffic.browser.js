@@ -355,6 +355,297 @@ export async function check(sim, r, say) {
   const stats = state().stats;
   r.ok('traffic: costs under 2 ms a frame', stats.ms < 2, `${stats.ms.toFixed(3)} ms average, ${stats.msMax.toFixed(1)} ms worst (incl. model builds), planning worst ${stats.planMsMax.toFixed(1)} ms (${stats.slowest || '-'}), ${realS.toFixed(1)} s to step 9 min`);
 
+  /* ---- on by default, and the switch ---- */
+  /*
+   * Out of Dev mode now (the owner: "in free flight there's still NPCs
+   * flying"): Free Flight with nothing asked for has traffic, unless the
+   * "Other aeroplanes" switch is off. The self-test runs every other check
+   * with it off (TEST_SETTINGS); here it is put back to the default.
+   */
+  say('traffic: on by default, and its switch');
+  {
+    const prog = sim.menus && sim.menus.prog;
+    const devWas = !!(prog && prog.devUnlocked);
+    if (prog) prog.devUnlocked = false;
+    const had = Object.prototype.hasOwnProperty.call(sim.settings, 'traffic');
+    const was = sim.settings.traffic;
+    delete sim.settings.traffic;
+    try {
+      await sim.startMode('free', { time: 'day', condition: 'clear', windSpeedKts: 3, windDirDeg: 90 });
+      if (sim.state === 'paused') sim.resume();
+      const on0 = state();
+      r.ok('traffic: on by default in Free Flight, without the Dev passcode', on0.on && on0.craft.length >= 2 && !(prog && prog.devUnlocked),
+        `${on0.craft.length} aeroplanes (${on0.why}), dev ${!!(prog && prog.devUnlocked)}`);
+      const free = sim.menus && sim.menus.screens && sim.menus.screens.free;
+      const box = free && free.querySelector('[data-fpanel="departure"] [data-traffic-switch]');
+      const pause = sim.menus && sim.menus.screens && sim.menus.screens.pause;
+      const btn = pause && pause.querySelector('[data-traffic-fold] [data-traffic-toggle]');
+      r.ok('traffic: "Other aeroplanes" is on the Free Flight Departure tab and in the pause menu, both saying on',
+        !!box && box.checked && !!btn && /on$/.test(btn.textContent), `box ${box ? box.checked : 'missing'}, button "${btn ? btn.textContent : 'missing'}"`);
+      // Off from the pause menu: the sky empties now.
+      if (btn) btn.click();
+      sim.step(0.2, 1 / 30);
+      const off = state();
+      r.ok('traffic: switched off from the pause menu, every AI aeroplane goes at once, and the box follows',
+        sim.settings.traffic === false && !off.on && off.craft.length === 0 && (sim.traffic || []).length === 0 && /off$/.test(btn.textContent) && box && !box.checked,
+        `setting ${sim.settings.traffic}, ${off.craft.length} left, button "${btn && btn.textContent}", box ${box && box.checked}`);
+      await sim.startMode('free', { time: 'day', condition: 'clear', windSpeedKts: 3, windDirDeg: 90 });
+      if (sim.state === 'paused') sim.resume();
+      r.ok('traffic: switched off, the next Free Flight has none', !state().on && state().craft.length === 0, state().why);
+      if (btn) btn.click();
+      sim.step(0.2, 1 / 30);
+      const back = state();
+      r.ok('traffic: switched on again mid-flight, the airfield fills as at a start', back.on && back.craft.length >= 2 && sim.settings.traffic !== false,
+        `${back.craft.length} aeroplanes, setting ${sim.settings.traffic}`);
+    } finally {
+      if (had) sim.settings.traffic = was;
+      else delete sim.settings.traffic;
+      if (prog) prog.devUnlocked = devWas;
+    }
+  }
+
+  /* ---- YOUR RUNWAY, in the running game ---- */
+  /*
+   * The whole flight, with the real flight model and the node test's
+   * numbers behind it (traffic.priority.mjs): lined up, the runway is yours —
+   * a departure holds short, an arrival is held or sent round, and the tower
+   * says so once; away, they use it; back on final, it is yours again.
+   */
+  say('traffic: your runway');
+  {
+    const lines = [];
+    const speak0 = sim.speak;
+    const ownSpeak = Object.prototype.hasOwnProperty.call(sim, 'speak');
+    sim.speak = function (text, ...rest) {
+      lines.push(String(text));
+      return speak0.call(this, text, ...rest);
+    };
+    try {
+      await sim.startMode('free', { time: 'day', condition: 'clear', windSpeedKts: 3, windDirDeg: 90, traffic: true, trafficSeed: 5 });
+      if (sim.state === 'paused') sim.resume();
+      TF.clearTraffic(sim);
+      // Off the runway for a moment so an arrival is cleared on to final; then lined up on 09.
+      sim.aircraft.reset({ pos: new THREE.Vector3(-100, 0, -300), headingDeg: 90, speed: 0, engineOn: true });
+      sim.step(0.2, 1 / 30);
+      const inbound = TF.spawnTraffic(sim, 'arrive');
+      const out = TF.spawnTraffic(sim, 'depart');
+      sim.step(15, 1 / 30);
+      sim.aircraft.reset({ pos: new THREE.Vector3(TR.AIRPORT.runway.cx - TR.AIRPORT.runway.length / 2 + 80, 0, TR.AIRPORT.runway.cz), headingDeg: 90, speed: 0, engineOn: true });
+      let landed = false;
+      let rolled = false;
+      let held = false;
+      let entered = false;
+      let heldAt = null;
+      /*
+       * Until the departure is holding short, and a while after — at most
+       * four minutes. The first cut gave it 120 s flat, which a departure
+       * from a nose-in stand does not make: with the hangar taken by the
+       * arrival it is pushed back 86 m at 2 m/s (43 s) and then taxis 530 m,
+       * and reaches the holding point a few seconds after the check had
+       * stopped looking — and called that a failure, though nobody had landed
+       * or rolled and the departure was on its way to hold short.
+       */
+      let t = 0;
+      for (; t < 240 && !(held && t - heldAt >= 30); t++) {
+        sim.aircraft.controls.throttle = 0;
+        sim.input.throttleTarget = 0;
+        sim.aircraft.controls.brakes = 1;
+        sim.step(1, 1 / 30);
+        for (const c of state().craft) {
+          if (c.id === inbound.id && c.phase === 'rollout') landed = true;
+          if (c.id === out.id && c.phase === 'takeoff' && c.v > 1) rolled = true;
+          if (c.id === out.id && (c.phase === 'lineup' || c.phase === 'takeoff')) entered = true;
+          if (c.id === out.id && c.state === 'waiting' && !held) {
+            held = true;
+            heldAt = t;
+          }
+        }
+      }
+      const p1 = TF.priorityState();
+      const said = lines.filter((l) => /hold short runway|go around, traffic|make a three-sixty/.test(l));
+      r.ok('traffic: lined up on 09, the runway is yours — nobody lands or rolls, the departure holds short',
+        p1.me.kind === 'runway' && inbound.ok && out.ok && !landed && !rolled && !entered && held,
+        `claim ${p1.me.kind}; landed ${landed}, rolled ${rolled}, entered ${entered}, held ${held ? `from ${heldAt} s` : 'never'}, ${t} s on the runway`);
+      r.ok('traffic: ... and the tower says so, once', said.length === 1 && p1.talk.said, said.join(' | ') || 'nothing said');
+      // Away: high and far, the way you would climb out and go.
+      sim.aircraft.reset({ pos: new THREE.Vector3(9000, 0, -6000), headingDeg: 90, speed: 60, altAGL: 900, engineOn: true });
+      sim.input.throttleTarget = 0.7;
+      let used = false;
+      let t2 = 0;
+      for (; t2 < 240 && !used; t2++) {
+        sim.step(1, 1 / 30);
+        if (state().craft.some((c) => (c.phase === 'takeoff' && c.v > 5) || c.phase === 'rollout')) used = true;
+      }
+      r.ok('traffic: you leave — the runway is theirs again: a take-off or a landing', TF.priorityState().me.kind === null && used, `claim ${TF.priorityState().me.kind}, used ${used ? `after ${t2} s` : 'never'}`);
+      // Back on a 6 km final to 09.
+      const rw = TR.AIRPORT.runway;
+      const x0 = rw.cx - rw.length / 2 - 6000;
+      sim.aircraft.reset({ pos: new THREE.Vector3(x0, 0, rw.cz), headingDeg: 90, speed: 50, altAGL: 330, engineOn: true, gearDown: true });
+      sim.step(0.5, 1 / 30);
+      const p3 = TF.priorityState();
+      r.ok('traffic: back on a 6 km final, it is yours again', p3.me.kind === 'final' && p3.blocks && p3.needAt > 60, `claim ${p3.me.kind}, needed in ${p3.needAt} s`);
+      /*
+       * Flying PAST the field low — a sightseeing lap's worth of downwind,
+       * 1.2 km abeam at 250 m, level, in the trainer (wheels fixed, no
+       * flaps): not yours, and the tower keeps quiet. The review's lap of the
+       * island at 250 m held the runway for fifteen minutes. Then the flaps
+       * come out: that is somebody landing, and the circuit is theirs.
+       */
+      const said0 = lines.filter((l) => /hold short runway|go around, traffic|make a three-sixty|vacate runway/.test(l)).length;
+      let claimedPast = null;
+      let blockedPast = false;
+      for (let i = 0; i < 12; i++) {
+        // Held level by hand each second (a real Skylark sinks a little at this throttle, and a steady descent IS a sign of landing).
+        sim.aircraft.reset({ pos: new THREE.Vector3(rw.cx + 300 - i * 50, 0, rw.cz + 1200), headingDeg: 270, speed: 50, altAGL: 250, engineOn: true });
+        sim.input.throttleTarget = 0.6;
+        sim.step(1, 1 / 30);
+        const ps = TF.priorityState();
+        // Past the seconds a claim from the run before holds for.
+        if (i >= 6 && ps.me.kind) claimedPast = ps.me.kind;
+        if (i >= 6 && ps.blocks) blockedPast = true;
+      }
+      const said1 = lines.filter((l) => /hold short runway|go around, traffic|make a three-sixty|vacate runway/.test(l)).length;
+      r.ok('traffic: flying past the field low and level in the trainer — not yours: no claim, nobody held, the tower says nothing',
+        claimedPast === null && !blockedPast && said1 === said0,
+        `claim ${claimedPast}, blocked ${blockedPast}, tower lines ${said1 - said0}, wheels ${sim.aircraft.gearDown ? 'down (fixed)' : 'up'}`);
+      // Flaps out in the same place: landing — the circuit is yours.
+      sim.aircraft.setFlaps(1);
+      sim.step(1, 1 / 30);
+      const p4 = TF.priorityState();
+      r.ok('traffic: ... flaps out in the same place — that is a landing: the circuit is yours', p4.me.kind === 'circuit' && p4.blocks, `claim ${p4.me.kind}, blocks ${p4.blocks}, flap step ${sim.aircraft.flapStep()}`);
+      sim.aircraft.setFlaps(0);
+    } finally {
+      if (ownSpeak) sim.speak = speak0;
+      else delete sim.speak;
+    }
+  }
+
+  /* ---- put down on the runway by a reset: the traffic gets off it first ---- */
+  /*
+   * "Return to the airfield" (the pause menu) and the taxi lesson's "Skip to
+   * runway" put you at the start of 09 — where the traffic lines up. The
+   * review: an AI aeroplane lined up 3 m behind your tail on three seeds of
+   * three, and the tower calling the runway yours. The game now tells the
+   * features you have been put down (extensions.js `placed`) and the traffic
+   * clears the runway before you appear: a line-up goes back to its holding
+   * point, one lined up goes back to its slot.
+   */
+  say('traffic: put down on the runway by a reset');
+  for (const how of ['airport', 'runway']) {
+    const lines = [];
+    const speak0 = sim.speak;
+    const ownSpeak = Object.prototype.hasOwnProperty.call(sim, 'speak');
+    sim.speak = function (text, ...rest) {
+      lines.push(String(text));
+      return speak0.call(this, text, ...rest);
+    };
+    try {
+      await sim.startMode('free', { time: 'day', condition: 'clear', windSpeedKts: 3, windDirDeg: 90, traffic: true, trafficSeed: 21, taxi: how === 'runway' });
+      if (sim.state === 'paused') sim.resume();
+      TF.clearTraffic(sim);
+      // You: away in the sky (the pause menu's way back), or parked at the stand the taxi lesson starts you on.
+      if (how === 'airport') {
+        sim.aircraft.reset({ pos: new THREE.Vector3(9000, 0, -6000), headingDeg: 90, speed: 60, altAGL: 900, engineOn: true });
+        sim.input.throttleTarget = 0.7;
+      }
+      const dep = TF.spawnTraffic(sim, 'depart');
+      const rw = TR.AIRPORT.runway;
+      const spot = { x: rw.cx - rw.length / 2 + 80, z: rw.cz };
+      const dist = (c) => Math.hypot(c.pos[0] - spot.x, c.pos[2] - spot.z);
+      let found = null;
+      for (let t = 0; t < 240 && !found; t++) {
+        if (how === 'runway') {
+          sim.aircraft.controls.throttle = 0;
+          sim.input.throttleTarget = 0;
+          sim.aircraft.controls.brakes = 1;
+        }
+        sim.step(1, 1 / 30);
+        const c = dep.ok ? byId(dep.id) : null;
+        if (c && c.onGround && ((c.phase === 'lineup' && TR.isOnRunway(c.pos[0], c.pos[2], 2)) || (c.phase === 'takeoff' && c.v < 5)) && dist(c) < 120) {
+          found = { t, phase: c.phase, d: Math.round(dist(c)) };
+        }
+      }
+      const label = how === 'airport' ? '"Return to the airfield"' : '"Skip to runway"';
+      r.ok(`traffic: an AI aeroplane is lining up where ${label} puts you`, dep.ok && !!found, dep.ok ? (found ? `${dep.callsign} ${found.phase}, ${found.d} m from the spot, after ${found.t} s` : `${dep.callsign} never lined up near it: ${JSON.stringify(byId(dep.id) && [byId(dep.id).phase, byId(dep.id).state])}`) : dep.why);
+      if (found) {
+        // The reset the child does: the pause menu's button, or the HUD's "Skip to runway".
+        lines.length = 0;
+        let did = false;
+        if (how === 'airport') {
+          sim.pause();
+          const btn = sim.menus && sim.menus.screens && sim.menus.screens.pause && sim.menus.screens.pause.querySelector('[data-act="airport"]');
+          if (btn) {
+            btn.click();
+            did = true;
+          } else {
+            sim.returnToAirport();
+            did = true;
+          }
+        } else {
+          did = sim.taxi && sim.taxi.active;
+          sim.hudAction('skipTaxi');
+        }
+        const p = sim.aircraft.pos;
+        const st = state();
+        const onRw = st.craft.filter((c) => c.onGround && TR.isOnRunway(c.pos[0], c.pos[2], c.span / 2 + 5) && !(c.phase === 'takeoff' && c.v > 10));
+        const near = st.craft.filter((c) => c.onGround && Math.hypot(c.pos[0] - p.x, c.pos[2] - p.z) < 30);
+        const moved = byId(dep.id);
+        r.ok(`traffic: ${label} — you are at the start of 09 and the traffic has cleared the runway before you appear`,
+          did && sim.state === 'flying' && Math.abs(p.x - spot.x) < 20 && Math.abs(p.z - spot.z) < 20 && onRw.length === 0 && near.length === 0,
+          `did ${did}, state ${sim.state}, you at (${Math.round(p.x)}, ${Math.round(p.z)}); on the runway: ${onRw.map((c) => `${c.callsign} ${c.phase}`).join(', ') || 'nobody'}; within 30 m: ${near.map((c) => c.callsign).join(', ') || 'nobody'}`);
+        r.ok(`traffic: ${label} — the one that was lining up is holding short again, or back on its slot`,
+          !!moved && ((moved.state === 'waiting' && moved.phase === 'holding') || moved.state === 'parked'),
+          moved ? `${moved.callsign}: ${moved.phase}/${moved.state} at (${Math.round(moved.pos[0])}, ${Math.round(moved.pos[2])})` : 'gone');
+        // Sitting there five seconds: nothing comes at you, nothing is "on the runway ahead" (R4), and the tower's line names one really being held.
+        let closest = Infinity;
+        let holdPos = false;
+        for (let t = 0; t < 50; t++) {
+          sim.aircraft.controls.throttle = 0;
+          sim.input.throttleTarget = 0;
+          sim.aircraft.controls.brakes = 1;
+          sim.step(0.1, 1 / 30);
+          for (const c of state().craft) if (c.onGround) closest = Math.min(closest, Math.hypot(c.pos[0] - p.x, c.pos[2] - p.z));
+          if (state().tower.on) holdPos = true;
+        }
+        const named = lines.filter((l) => /hold short runway|make a three-sixty|go around, traffic|vacate runway/.test(l));
+        const heldNames = state().craft.filter((c) => (c.state === 'waiting' && c.phase === 'holding') || c.phase === 'orbit' || c.phase === 'go-around' || c.phase === 'vacate').map((c) => c.callsign.replace(/\s+\d+$/, ''));
+        const namesRight = named.every((l) => heldNames.some((n) => l.startsWith(n)));
+        r.ok(`traffic: ${label} — five seconds on: nobody within 30 m, no "hold position" (nothing on the runway ahead), you are not crashed, and the tower named only one really being held`,
+          closest > 30 && !holdPos && !sim.aircraft.crashed && namesRight,
+          `closest ${closest.toFixed(1)} m, hold position ${holdPos}, crashed ${sim.aircraft.crashed}; said: ${named.join(' | ') || 'nothing'}`);
+      }
+    } finally {
+      if (ownSpeak) sim.speak = speak0;
+      else delete sim.speak;
+    }
+  }
+
+  /* ---- the caution panel is placed clear of the Races buttons ---- */
+  /*
+   * With the traffic on for everybody a TRAFFIC caution is an ordinary thing
+   * on final, and at 1366x768 the review found the yellow Races button lying
+   * on the MASTER CAUTION lamp — the one you tap to quiet it. The panel
+   * measures the HUD's column once a second (warnings.js placePanel) and now
+   * counts the races' bar (in the features' own layer) among the things it
+   * must sit under.
+   */
+  {
+    await sim.startMode('free', { time: 'day', condition: 'clear', windSpeedKts: 3, windDirDeg: 90, traffic: true, trafficSeed: 3 });
+    if (sim.state === 'paused') sim.resume();
+    sim.step(3, 1 / 30);
+    const bar = document.querySelector('#ext-layer .race-solobar');
+    const panel = document.querySelector('.wx-panel');
+    const b = bar && !bar.hidden ? bar.getBoundingClientRect() : null;
+    const top = panel ? parseFloat(panel.style.top) : NaN;
+    const pr = panel ? panel.getBoundingClientRect() : null;
+    const cs = panel ? getComputedStyle(panel) : null;
+    const pLeft = cs ? (window.innerWidth - parseFloat(cs.right) - parseFloat(cs.width)) : 0;
+    const sameColumn = !!b && cs && b.right > pLeft;
+    r.ok('traffic: the caution panel is placed below the Races buttons, not under them',
+      !b || (b.height > 0 && Number.isFinite(top) && (!sameColumn || top >= b.bottom + 8)),
+      b ? `Races bar ${Math.round(b.left)}-${Math.round(b.right)} x ${Math.round(b.top)}-${Math.round(b.bottom)}; panel top ${top}px (column from ${Math.round(pLeft)})${pr ? `, rect ${Math.round(pr.top)}` : ''}` : `no Races bar shown (${bar ? 'hidden' : 'missing'})`);
+  }
+
   /* ---- a jumbo at a big field: its wings clear of the buildings ---- */
   /*
    * The review's soak on the integrated game: a 747 at SFO put a wing tip

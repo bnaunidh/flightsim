@@ -243,7 +243,8 @@ function fly(dev, lat = () => 0, cfg = {}) {
   const hooked = TYPES.AIRCRAFT.filter((t) => W.hasHookFor(t)).map((t) => t.id);
   ok('the military aeroplanes are the hangar\'s military ones', ['vanguard', 'osprey', 'nightjar'].every((id) => mil.includes(id)) && !mil.includes('skylark') && !mil.includes('harrier') && !mil.includes('massimo') && !mil.includes('tpose'), mil.join(', '));
   ok('every one has a hook except the F-35B', mil.filter((id) => !hooked.includes(id)).join() === (mil.includes('f35b') ? 'f35b' : ''), `hooked: ${hooked.join(', ')}`);
-  ok('no civil aeroplane has one', hooked.every((id) => mil.includes(id)));
+  // The Sea Ghost is an Osprey in another paint (aircraft/extra/secret.js), hook and all.
+  ok('no civil aeroplane has one', hooked.every((id) => mil.includes(id) || TYPES.getAircraft(id).variantOf === 'osprey'));
 }
 
 /* ------------------------------------------------------------------ */
