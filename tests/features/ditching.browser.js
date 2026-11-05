@@ -114,6 +114,30 @@ export async function check(sim, r, say) {
   let n = 0;
   while (sim.state === 'flying' && n++ < 80) sim.step(1);
   r.ok('rescue: it arrives before the card', st().rescueHere);
+  // Built for this one ditching, so freed with it: geometry and materials both, or every ditching leaves one behind.
+  const watchFreed = (name) => {
+    const model = sim.scene.getObjectByName(name);
+    const w = { model, geos: 0, mats: 0, nGeos: 0, nMats: 0 };
+    const seen = new Set();
+    if (model) {
+      model.traverse((o) => {
+        if (o.geometry && !seen.has(o.geometry)) {
+          seen.add(o.geometry);
+          w.nGeos++;
+          o.geometry.addEventListener('dispose', () => w.geos++);
+        }
+        for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) {
+          if (seen.has(m)) continue;
+          seen.add(m);
+          w.nMats++;
+          m.addEventListener('dispose', () => w.mats++);
+        }
+      });
+    }
+    return w;
+  };
+  const rescueWas = st().rescue;
+  const freed = watchFreed(rescueWas === 'heli' ? 'rescue-heli' : 'rescue-boat');
   r.ok('card: the debrief comes up', sim.state === 'debrief' && title() === 'Ditching', `${sim.state}: ${title()}`);
   const txt = debriefText();
   r.ok('card: touchdown speed, sink rate, bank and a grade', /Touchdown speed/.test(txt) && /Sink rate/.test(txt) && /Bank/.test(txt) && /Grade/.test(txt), txt.replace(/\s+/g, ' ').slice(0, 120));
@@ -193,6 +217,7 @@ export async function check(sim, r, say) {
 
   /* ---- a fast jet ---- */
   ac = await fly('vanguard');
+  r.ok(`rescue: the ${rescueWas} is gone from the scene and freed, every geometry and material`, !!freed.model && !freed.model.parent && freed.nGeos > 0 && freed.geos >= freed.nGeos && freed.mats >= freed.nMats, `${freed.geos}/${freed.nGeos} geometries, ${freed.mats}/${freed.nMats} materials`);
   arrive(ac, { speed: 55, sink: 1.2 });
   sim.step(0.1);
   r.ok('fast jet: whole, in its own class', st().phase === 'slide' && st().cls === 'fast', JSON.stringify(st().refused));
@@ -200,10 +225,12 @@ export async function check(sim, r, say) {
   sim.step(12);
   r.ok('fast jet: a helicopter comes for it', st().rescue === 'heli');
   r.ok('fast jet: one dinghy', st().rafts === 1);
+  const heliFreed = watchFreed('rescue-heli');
   // Restart in the middle of it.
   sim.restart();
   for (let i = 0; i < 100 && sim.aircraft.ditched; i++) await new Promise((res) => setTimeout(res, 50));
   sim.step(0.1);
+  r.ok('restart: the helicopter is freed too', !!heliFreed.model && !heliFreed.model.parent && heliFreed.nGeos > 0 && heliFreed.geos >= heliFreed.nGeos, `${heliFreed.geos}/${heliFreed.nGeos} geometries, ${heliFreed.mats}/${heliFreed.nMats} materials`);
   r.ok('restart: mid-sink is a clean new flight', !sim.aircraft.ditched && st().phase === null && sim.scene.getObjectByName('ditching').visible === false && !sim.scene.getObjectByName('rescue-boat'));
 
   /* ---- wheels down ---- */
@@ -244,7 +271,7 @@ export async function check(sim, r, say) {
   r.ok('forbidden: a mission does not change the aeroplane: still whole', st().phase === 'slide' && !ac.crashed, JSON.stringify(st().refused));
   n = 0;
   while (sim.state === 'flying' && n++ < 120) sim.step(1);
-  r.ok('forbidden: the mission fails in its own words, with no card of ours', sim.runner.status === 'failed' && /Mission not completed/.test(title()) && /ditched/i.test(debriefText()), `${sim.runner.status}: ${title()}`);
+  r.ok('forbidden: the mission ends in its own words, titled for what happened as a crash is', sim.runner.status === 'failed' && title() === 'Ditched' && /ditched/i.test(debriefText()) && /everybody got out/i.test(debriefText()), `${sim.runner.status}: ${title()}`);
   sim.override = null;
   sim.quitToMenu('main');
 

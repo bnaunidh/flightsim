@@ -43,6 +43,45 @@ const KEYS = {
 
 export const MISSION_IDS = ['firstlight', 'covepickup', 'overboard', 'stackrescue', 'nightdeck', 'lastlight', 'oncall', 'medevac'];
 
+/**
+ * Down on the pad straight after another type. The height over the skids was
+ * worked out once and kept: after the Skyhook an H145 stopped 14 cm off Night
+ * Medevac's pad with Ctrl held and hung there, and nothing in the first flight
+ * of a session ever showed it. A player's second helicopter, not the test pilot.
+ */
+export async function secondType(sim, r) {
+  const THREE = await import('../../src/vendor/three.module.js');
+  const T = await import('../../src/world/terrain.js');
+  const auto = sim.autoPauseOnHide;
+  sim.autoPauseOnHide = false;
+  const key = (type) => window.dispatchEvent(new KeyboardEvent(type, { code: 'ControlLeft', key: 'Control', bubbles: true }));
+  const DT = 1 / 15;
+  if (sim.applyDifficulty) sim.applyDifficulty('normal');
+  if (sim.settings) sim.settings.heliAssist = true;
+  if (sim.switchGame) sim.switchGame('heli');
+  for (const first of ['firstlight', 'covepickup', 'oncall']) {
+    await sim.startAnyMission(first);
+    const was = sim.aircraftType.id;
+    for (let i = 0; i < 30; i++) sim.step(DT);
+    sim.quitToMenu();
+    await sim.startAnyMission('medevac');
+    sim.step(DT);
+    const ac = sim.aircraft;
+    ac.reset({ pos: new THREE.Vector3(6192, 0, -5204), headingDeg: 104, speed: 0, altAGL: 30, engineOn: true });
+    sim.step(DT);
+    let t = 0;
+    key('keydown');
+    for (; t < 30 && !ac.onGround; t += DT) {
+      sim.step(DT);
+      key('keydown');
+    }
+    key('keyup');
+    r.ok(`second type: an H145 after the ${was} comes down onto the pad with Ctrl held`, sim.aircraftType.id === 'h145' && ac.onGround && t < 15, `${was} then ${sim.aircraftType.id}: ${ac.onGround ? `down in ${t.toFixed(1)} s` : `still ${(ac.rotor ? ac.rotor.heightAbove : 0).toFixed(2)} m up after ${t.toFixed(0)} s`}`);
+    sim.quitToMenu();
+  }
+  sim.autoPauseOnHide = auto;
+}
+
 export async function check(sim, r, say = () => {}, opts = {}) {
   const ids = opts.ids || MISSION_IDS;
   /*
@@ -104,11 +143,13 @@ export async function check(sim, r, say = () => {}, opts = {}) {
       if (sim.state === 'paused' && sim.resume) sim.resume();
       sim.step(DT);
       clock += DT;
+      if (progress.onStep) progress.onStep(stepId());
       if (sinceYield % 8 === 0) for (const k of down) keyEvent('keydown', k);
       if (++sinceYield >= 30) {
         sinceYield = 0;
         progress.clock = Math.round(clock);
         progress.step = stepId();
+        progress.doing = doing;
         await yieldNow();
       }
       if (over()) return;
@@ -150,12 +191,16 @@ export async function check(sim, r, say = () => {}, opts = {}) {
     const vs = ac().vs;
     return surfaceH() + (vs * Math.abs(vs)) / 6 + vs * 0.3;
   };
-  /** Shift or Ctrl until the height over the surface is about h. */
-  const heightTo = async (h, tol = 1.5) => {
+  /**
+   * Shift or Ctrl until the height over the surface is about h. `climbOnly`
+   * for the climb before a long leg: a cliff falling away under her makes the
+   * height over the surface jump, and that is no reason to come down.
+   */
+  const heightTo = async (h, tol = 1.5, climbOnly = false) => {
     doing = `going to ${Math.round(h)} m`;
     for (let i = 0; i < 60 && !over(); i++) {
       const e = h - surfaceH();
-      if (Math.abs(e) < tol) break;
+      if (Math.abs(e) < tol || (climbOnly && e < 0)) break;
       const k = e > 0 ? 'Shift' : 'Ctrl';
       press(k);
       // Let go early, by the stopping distance.
@@ -195,14 +240,21 @@ export async function check(sim, r, say = () => {}, opts = {}) {
     const startStep = stepId();
     doing = `flying to within ${within} m`;
     for (let leg = 0; leg < maxLegs && !over(); leg++) {
-      if (stopOnStep && stepId() !== startStep) return;
+      if (stopOnStep && stepId() !== startStep) break;
       const p = getPos();
-      if (!p) return;
+      if (!p) break;
       const dx = p.x - ac().pos.x;
       const dz = p.z - ac().pos.z;
       const d = Math.hypot(dx, dz);
       const gs = ac().groundSpeed;
-      if (d < within && gs < 1.2) return;
+      /*
+       * High over the place, near enough is near enough: a player starts down
+       * and sorts out the last metres on the way. In 14 kt at 850 m this pilot
+       * shuffled for five minutes to stop within 4 m of a pad far below, and
+       * Last Light ran out of time on the 'drop' step.
+       */
+      const high = surfaceH() > 60;
+      if (d < (high ? Math.max(within, 10) : within) && gs < (high ? 3 : 1.2)) break;
       // Sitting on the skids nothing turns or moves: lift first.
       if (ac().onGround) {
         await liftOff(30);
@@ -211,9 +263,18 @@ export async function check(sim, r, say = () => {}, opts = {}) {
       // Looked at again every ten legs: the line there moves as the pilot
       // turns and brakes (Man Overboard's pilot, home from the swimmer at
       // 60 m, met CV-11 Resolute's side at 62 m/s).
+      /*
+       * Off the W while it climbs, as a player would look up from the stick:
+       * this pilot held W through the whole climb, at 60 m/s with nobody
+       * steering, went past the place and into the next hill (Last Light's
+       * 'drop' and Night Medevac's way home, one run in two; 2026-11-04).
+       */
       if (d > 300 && leg % 10 === 0 && !ac().onGround) {
         const need = routeTop(p.x, p.z) + 30 - (ac().pos.y - surfaceH());
-        if (need > surfaceH() + 3) await heightTo(need, 3);
+        if (need > surfaceH() + 3) {
+          release('W');
+          await heightTo(need, 3, true);
+        }
       }
       if (d > 45) {
         await face(p.x, p.z, d > 400 ? 10 : 6);
@@ -267,16 +328,24 @@ export async function check(sim, r, say = () => {}, opts = {}) {
     const t = target();
     if (t && Math.hypot(t.x - ac().pos.x, t.z - ac().pos.z) > 12) return;
     doing = 'holding Ctrl to land';
+    /*
+     * This landing is this step's. The mission may take it and move on while
+     * the skids are still settling, and then target() is the next place: the
+     * retry below flew off towards it and held Ctrl over the sea on the way,
+     * and came down short of the runway (Night Medevac, 2026-11-04).
+     */
+    const landing = stepId();
+    const here = () => stepId() === landing;
     // "Can't land here — turn her across or down the slope": when the card
     // says so for three seconds, let go, turn a quarter with E, try again.
-    for (let attempt = 0; attempt < 5 && !over() && !ac().onGround; attempt++) {
+    for (let attempt = 0; attempt < 5 && !over() && !ac().onGround && here(); attempt++) {
       press('Ctrl');
       let refused = 0;
-      for (let i = 0; i < 900 && !over() && !ac().onGround && refused < 3; i++) {
+      for (let i = 0; i < 900 && !over() && !ac().onGround && refused < 3 && here(); i++) {
         await tick();
         refused = /CAN.T LAND/.test(sim.hud && sim.hud.heliState ? sim.hud.heliState.textContent : '') ? refused + DT : 0;
       }
-      if (ac().onGround) break;
+      if (ac().onGround || !here()) break;
       release('Ctrl');
       // Drifted off the middle (the card says so at an edge): back over it
       // first, as a player would; on the middle, turn a quarter and retry.
@@ -365,13 +434,17 @@ export async function check(sim, r, say = () => {}, opts = {}) {
       await tick(1);
       const trail = [];
       let lastStep = null;
-      let saved = 0;
-      while (!over()) {
-        const sid = stepId();
+      // The trail reads the step every tick: the pilot can spend minutes inside one of its hands.
+      progress.onStep = (sid) => {
         if (sid !== lastStep) {
           trail.push(`${sid}@${Math.round(clock)}`);
           lastStep = sid;
         }
+      };
+      let saved = 0;
+      while (!over()) {
+        const sid = stepId();
+        progress.onStep(sid);
         const t = target();
         if (id === 'oncall') {
           // No steps to read: the radio and the objective panel say what to do.
@@ -422,7 +495,7 @@ export async function check(sim, r, say = () => {}, opts = {}) {
           else await tick(1);
         } else if (sid === 'land' || sid === 'pickup') {
           if (ac().onGround) await liftOff(30);
-          await flyTo(target, 4);
+          await flyTo(target, 4, true);
           await landHere();
           await tick(3);
         } else if (sid === 'wait') {

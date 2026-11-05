@@ -310,6 +310,24 @@ ok('migration: Reset all keys writes the defaults at the current version', JSON.
 inp8.dispose();
 I.useInput(inp);
 
+/* ---------------- a save from when the mayday had keys ---------------- */
+{
+  // The owner took the player's mayday out, 2026-11-04. A save may still name its three actions, on any keys.
+  store.set('islandsim.bindings.v1', JSON.stringify({ _v: I.BINDINGS_VERSION, brace: ['KeyP'], emergencyLand: ['KeyG'], emergencyCircle: ['Digit2'], gear: ['KeyG'] }));
+  const old = new I.Input(dom);
+  ok('old save: the mayday\'s actions are not read back', !('brace' in old.bindings) && !('emergencyLand' in old.bindings) && !('emergencyCircle' in old.bindings), Object.keys(old.bindings).filter((k) => /brace|emergency/.test(k)).join());
+  ok('old save: its keys do nothing', !old.pressed('brace') && !old.held('brace') && !old.isGameKey('KeyP'));
+  ok('old save: a key it shared with another action clashes with nothing', !(old.conflicts().gear || []).length && old.bindings.gear.join() === 'KeyG', JSON.stringify(old.conflicts().gear));
+  // save() keeps names it does not know (a feature's that has not loaded yet): the next read must ignore them just the same.
+  old.save();
+  const again = new I.Input(dom);
+  ok('old save: saved and read again, still nothing', !('brace' in again.bindings) && !again.pressed('brace') && !again.isGameKey('KeyP'));
+  again.dispose();
+  old.dispose();
+  I.useInput(inp);
+  store.delete('islandsim.bindings.v1');
+}
+
 /* ---------------- report ---------------- */
 
 const failed = results.filter((r) => !r.pass);

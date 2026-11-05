@@ -115,7 +115,7 @@ import {
 import { clamp } from './core/noise.js';
 import { setReduceFlashing, shakeClock } from './render/flash-safety.js';
 import { setComicEffects } from './render/comic.js';
-import { extInstall, extLateJoin, extBuildWorld, extUpdate, extCamera, extStartMode, extStop, extensions, extKeyContext, extHudAction, extTouchState } from './game/extensions.js';
+import { extInstall, extLateJoin, extBuildWorldSteps, extUpdate, extCamera, extStartMode, extStop, extensions, extKeyContext, extHudAction, extTouchState } from './game/extensions.js';
 // Every plug-in feature registers itself on import. See ./features/index.js.
 /*
  * THE FEATURES ARE NOT IMPORTED HERE ANY MORE. features/index.js (every
@@ -225,6 +225,9 @@ const TIPS = [
   'Runway 09 means you land heading 090 degrees — east.',
   'If the stall warning sounds, lower the nose and add power.',
 ];
+
+/** A staged build works this long before it gives the thread back: a frame for every small piece would add seconds. */
+const WORLD_PIECE_MS = 120;
 
 /** A calm card over everything while a long build holds the thread; keys are eaten
  *  until it goes, a beat after (so input queued during the build lands on it). */
@@ -448,7 +451,7 @@ class Game {
     if (!this.playerPath) {
       setLoad(0.6, 'Loading the features…');
       // Import only: the world is not built yet, so the boot's own extInstall
-      // and extBuildWorld below take them in, as they always did.
+      // and extBuildWorldSteps below take them in, as they always did.
       await this.loadFeatures({ lateJoin: false });
     }
     this.buildWorld(this.settings.quality);
@@ -587,7 +590,9 @@ class Game {
       startMission: (id) => this.startAnyMission(id),
       startFree: async (opts) => {
         if (this.waitingMap) await this.featuresReady;
-        return this.waitingMap && this.worldPreview ? this.worldPreview.flyChosen(opts) : this.startMode('free', opts);
+        // The World Map's card can say where Take off goes, built yet or not (features/world-preview.js).
+        const wp = this.worldPreview;
+        return wp && (this.waitingMap || wp.takesOffToPin()) ? wp.flyChosen(opts) : this.startMode('free', opts);
       },
       onPickAircraft: (id) => this.rememberAircraft(id),
       onFreeSetup: (c) => this.rememberFree(c),
@@ -1207,13 +1212,31 @@ class Game {
   async buildWorldStaged(quality, onStep) {
     this._worldBuilding = true;
     try {
+      let was = null;
+      let at = 0;
       for (const step of this.buildWorldSteps(quality)) {
+        // The World Map's small pieces (see WORLD_PIECE_MS) come under one step.
+        if (step === was && performance.now() - at < WORLD_PIECE_MS) continue;
+        was = step;
         if (onStep) onStep(step);
         await this.frame();
+        at = performance.now();
       }
     } finally {
       this._worldBuilding = false;
+      this.worldBuilt();
     }
+  }
+
+  /** Run `fn` when the staged build going on now is whole. */
+  afterWorldBuilt(fn) {
+    (this._worldBuiltFns ||= []).push(fn);
+  }
+
+  worldBuilt() {
+    const fns = this._worldBuiltFns || [];
+    this._worldBuiltFns = null;
+    for (const fn of fns) fn();
   }
 
   /**
@@ -1411,7 +1434,12 @@ class Game {
     ];
     if (this.roadMesh) this.worldGroups.push(this.roadMesh);
     yield next('Finishing touches…');
-    this.worldGroups.push(...extBuildWorld(this, THREE));
+    const groups = [];
+    const pieces = extBuildWorldSteps(this, THREE, groups);
+    // The same step on the loading screen, as many times as the features stop.
+    const more = { at: at - 1, of: STEPS, label: 'Finishing touches…' };
+    while (!pieces.next().done) yield more;
+    this.worldGroups.push(...groups);
     this.qualityBuilt = quality;
     console.debug('[world] build complete');
   }
@@ -2226,8 +2254,6 @@ class Game {
     this.mode = null;
     this.runner.status = STATUS.IDLE;
     this.runner.clearGates();
-    // No flight, no reason to hide it; the next flight's first frame decides.
-    if (this.hud.btnBrace) this.hud.btnBrace.hidden = false;
     this.removeCrate();
     this.hud.setVisible(false);
     this.hud.hideControls();
@@ -2711,7 +2737,6 @@ class Game {
       autopilot: !!(this.autopilot && this.autopilot.engaged),
       rotor: !!SPEC.rotor,
       assist: !!(ac && ac.hoverAssist !== false),
-      brace: this.state === 'flying' && this.braceAvailable(),
       // The features' own switches (lights, spoilers, reversers, the radio: features/pilot-systems.js).
       ...extTouchState(this),
     };
@@ -3895,8 +3920,7 @@ class Game {
     this.hud.notify(`Flying to ${def.name}…`, 'info', 3);
     // The World Map's build holds the thread for seconds on a Chromebook: a card, painted first (a frame, then a task).
     const card = def.id === 'world-preview' ? waitCard('Loading the World Map…') : null;
-    const run = () => {
-      this.buildWorld(this.settings.quality);
+    const finish = () => {
       // Each map has weather that suits it; the player can still change it in
       // Free Flight afterwards.
       // Except the two skies a player picks to keep: Random (it rolls this map's own weather) and Clear always.
@@ -3918,7 +3942,43 @@ class Game {
       this.warmWorldBehindMenu();
     };
     // One frame so the message paints before the (blocking) rebuild, raced against a timer.
-    this.afterPaint(card ? () => setTimeout(() => { try { run(); } finally { card(); } }, 30) : run);
+    // One build at a time: a map chosen while the World Map is still going up waits for it to finish.
+    const free = (fn) => (this._worldBuilding ? setTimeout(() => free(fn), 50) : fn());
+    if (!card) {
+      this.afterPaint(() => free(() => {
+        this.buildWorld(this.settings.quality);
+        finish();
+      }));
+      return def;
+    }
+    /*
+     * The World Map's piece by piece: six seconds in one task on a Chromebook
+     * is a page that looks hung. buildWorldSteps() hands the thread back
+     * between its pieces, the frame loop skips while _worldBuilding is set,
+     * and the card covers the menu, so nothing can start on half a world.
+     * features/world-preview.js holds whenBuilt() until worldBuilt() below:
+     * Take off must find every feature, the weather and the aircraft done,
+     * as it did when all of this was one task.
+     */
+    this.afterPaint(() => setTimeout(() => free(async () => {
+      this._worldBuilding = true;
+      try {
+        const steps = this.buildWorldSteps(this.settings.quality);
+        let at = performance.now();
+        while (!steps.next().done) {
+          if (performance.now() - at < WORLD_PIECE_MS) continue;
+          await this.frame();
+          at = performance.now();
+        }
+        finish();
+      } catch (err) {
+        console.error(err);
+      } finally {
+        this._worldBuilding = false;
+        this.worldBuilt();
+        card();
+      }
+    }), 30));
     return def;
   }
 
@@ -4559,11 +4619,6 @@ class Game {
       this.hud.notify(`Flaps ${s * 10}°`, 'info', 2);
     }
     if (input.pressed('starter')) this.pressStarter(false);
-    if (input.pressed('brace')) this.braceForImpact();
-    if (this.bracing && !this.braceChoice) {
-      if (input.pressed('emergencyLand')) this.chooseBrace('land');
-      else if (input.pressed('emergencyCircle')) this.chooseBrace('circle');
-    }
     if (input.pressed('drop') || (pad && pad.drop)) {
       if (!this.dropCargo()) this.hud.notify('Nothing to drop right now', 'info', 2);
     }
@@ -4710,35 +4765,18 @@ class Game {
   }
 
   /**
-   * Is "Brace for impact" on offer at all?
-   *
-   * Free Flight: always, as it always was. On a mission: only when the
-   * mission is about an emergency (`allowBrace: true` on its def) or one is
-   * really happening. A kid flying a normal mission low pressed it once and
-   * the mayday took the plane and ended the mission (owner, 2026-09-30).
-   * When this is false the tray button is hidden, the key does nothing and
-   * the H card does not list it.
+   * The player cannot declare a mayday any more (the owner, 2026-11-04:
+   * "remove mayday mayday its usless"). Never on offer, so braceForImpact()
+   * returns at once and everything after it in this file is unreachable: kept
+   * only until the Nov 10 class demo, because sim.bracing is read all over.
    */
   braceAvailable() {
-    if (this.bracing) return true;
-    if (this.mode === 'free') return true;
-    if (this.vehicle) return false;
-    const r = this.runner;
-    if (r && r.def && r.def.allowBrace && r.status === STATUS.RUNNING) return true;
-    return this.braceEmergency();
+    return false;
   }
 
-  /** The controls list for the H card, without the mayday keys when there is no mayday on offer. */
+  /** The controls list for the H card: this vehicle's keys (keybinds). */
   helpActions() {
-    // What the H card lists: this vehicle's keys (keybinds), minus brace when
-    // this mission has no use for it.
-    const base = actionsFor(this.input.context);
-    if (this.braceAvailable()) return base;
-    const out = { ...base };
-    delete out.brace;
-    delete out.emergencyLand;
-    delete out.emergencyCircle;
-    return out;
+    return actionsFor(this.input.context);
   }
 
   /**

@@ -160,7 +160,44 @@ export async function check(sim, r) {
   sim.clearCheckpoint();
   sim.quitToMenu();
   ok('quit: the pin is still on the card', !!wp.pin());
-  await sim.menus.hooks.startFree({ time: 'day', condition: 'clear', windSpeedKts: 6, windDirDeg: 80, aircraft: 'skylark', airborne: false, taxi: false, fuel: 1 });
+  /*
+   * Take off with the pin down goes to the pin. It used to take the runway when the World Map was
+   * already built, and the pin only after a reload (this check held the runway on purpose until the
+   * owner's call, 2026-11-04). The screen's Free Flight setup comes along; a pin is airborne whatever it says.
+   */
+  const SETUP = { time: 'day', condition: 'clear', windSpeedKts: 6, windDirDeg: 80, aircraft: 'skylark', airborne: false, taxi: false, fuel: 1 };
+  const pinWas = { x: wp.pin().x, z: wp.pin().z };
+  ok('take off: the World Map is built', !!wp.built() && !sim.waitingMap);
+  await sim.menus.hooks.startFree(SETUP);
+  ok('take off: with the map built, to the pin', sim.state === 'flying' && !sim.aircraft.onGround && Math.hypot(sim.aircraft.pos.x - pinWas.x, sim.aircraft.pos.z - pinWas.z) < 1, `${Math.round(sim.aircraft.pos.x)}, ${Math.round(sim.aircraft.pos.z)}, ${sim.state}`);
+  ok('take off: the flight names the pin, so Restart comes back', !!sim.modeOpts.pin && sim.modeOpts.airborne === true);
+  ok('take off: the debrief says so', debriefSays() === 'Back to your pin', debriefSays());
+  sim.quitToMenu();
+  // A double tap is one flight.
+  {
+    let starts = 0;
+    const startMode = sim.startMode;
+    sim.startMode = function counted(...a) { starts++; return startMode.apply(this, a); };
+    await Promise.all([sim.menus.hooks.startFree(SETUP), sim.menus.hooks.startFree(SETUP)]);
+    sim.startMode = startMode;
+    ok('take off: a double tap is one flight', starts === 1, `${starts}`);
+    sim.quitToMenu();
+  }
+  // The screen's "Start at" has no say over a pin: a gate or a deck would have moved her off it.
+  await sim.menus.hooks.startFree({ ...SETUP, startAt: 'carrier', aircraft: 'skylark' });
+  ok('take off: a Start at choice does not beat the pin', Math.hypot(sim.aircraft.pos.x - pinWas.x, sim.aircraft.pos.z - pinWas.z) < 1 && !sim.modeOpts.startAt, `${Math.round(sim.aircraft.pos.x)}, ${Math.round(sim.aircraft.pos.z)} ${sim.modeOpts.startAt}`);
+  sim.quitToMenu();
+  // A pin by a field is that field's start, as Fly here makes it; and it must not come back round through this hook for ever.
+  {
+    const field = P.airportById(dest.id);
+    wp.setPin({ x: field.x, z: field.z });
+    await sim.menus.hooks.startFree(SETUP);
+    ok('take off: a pin on a field is that field\'s start', sim.state === 'flying' && sim.aircraft.onGround && Math.hypot(sim.aircraft.pos.x - field.x, sim.aircraft.pos.z - field.z) < 2500, `${sim.state}, ${Math.round(sim.aircraft.pos.x)}, ${Math.round(sim.aircraft.pos.z)}`);
+    sim.quitToMenu();
+  }
+  // Picking up the pin gives the runway back, on the same built map.
+  wp.setPin(null);
+  await sim.menus.hooks.startFree(SETUP);
   ok('no pin: a Free Flight is on the runway as ever', sim.aircraft.onGround && Math.hypot(sim.aircraft.pos.x - P.airportById(dest.id).x, sim.aircraft.pos.z - P.airportById(dest.id).z) < 2500);
   ok('no pin: no goal left over from the pin', wp.destination() === null);
   ok('no pin: the debrief is the runway\'s', debriefSays() === 'Reset on the runway');
@@ -179,6 +216,7 @@ export async function check(sim, r) {
   sim.quitToMenu();
   const padSaid = [];
   sim.speak = function heard(text, ...a) { padSaid.push(text); return speak.call(this, text, ...a); };
+  wp.setPin(null);
   await sim.menus.hooks.startFree({ time: 'day', condition: 'clear', windSpeedKts: 6, windDirDeg: 80, aircraft: 'r44', airborne: false, taxi: false, fuel: 1 });
   sim.speak = speak;
   ok('tower: on a pad it still does', padSaid.some((t) => /Lift when you are ready/.test(t)), padSaid.join(' / ').slice(0, 120));

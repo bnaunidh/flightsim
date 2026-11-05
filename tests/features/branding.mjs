@@ -85,7 +85,7 @@ const read = (p) => readFileSync(new URL(p, ROOT));
   ok('at least ten different faces across the airlines', uses.size >= 10, uses.size);
   const freight = ['nightfreight', 'dashfreight', 'flexship', 'parcelbrown', 'spit'];
   ok('freight and low-cost airlines are lettered in a sans, never a serif', freight.every((id) => !F.faceFor(L.findLivery(id).style.titleFont).serif));
-  ok('the DHL-style freighter is the sporty italic; the Emirates-style is a serif; the night freighter is condensed',
+  ok('Dash Freight is the sporty italic; the Emirates-style is a serif; the night freighter is condensed',
     F.faceFor(L.findLivery('dashfreight').style.titleFont).style === 'italic' &&
       F.faceFor(L.findLivery('desertpearl').style.titleFont).serif &&
       F.faceFor(L.findLivery('nightfreight').style.titleFont).condensed);

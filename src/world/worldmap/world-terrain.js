@@ -159,6 +159,9 @@ const FRAG_COVER = (detail, ring, ringSnow) => `
     // Snow: the north's hills and fells, and anything above 1,300 m.
     float sline = mix(1300.0, 110.0, cold) + (wtNoise(wp / 900.0) - 0.5) * 120.0;
     ${ringSnow}
+    // Petrel Skerry, the Nunatak Ice Strip's island: it lies 14 m above the sea, far under the north's snow line, so
+    // the strip of packed snow stood on bare ground and read as a white slab (owner, 2026-11-05). Snow to the waterline.
+    sline = mix(sline, -200.0, 1.0 - smoothstep(3000.0, 3800.0, distance(wp, vec2(16980.0, -83040.0))));
     float snowC = smoothstep(sline, sline + 90.0, vGroundY) * (1.0 - vBlend.z * 0.5);
     base = mix(base, vec3(0.86, 0.89, 0.95), snowC);
     ${ring}

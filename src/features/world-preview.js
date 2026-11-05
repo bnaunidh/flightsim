@@ -42,7 +42,7 @@ import {
 } from '../world/worldmap/preview.js';
 import { PIN, clampPin, fieldAt, goalFor, pinStart, pinWords } from '../world/worldmap/pin.js';
 import { TerrainStream, tierFor as streamTier, cardWorker, initWorker } from '../world/worldmap/stream.js';
-import { buildOutstations, pavedTest, towerLens, buildDressing } from '../world/worldmap/outstation.js';
+import { outstationSteps, pavedTest, towerLens, buildDressing } from '../world/worldmap/outstation.js';
 import { carrierProxyGeometry } from '../world/worldmap/field-look.js';
 import { Horizon } from '../world/worldmap/horizon.js';
 import { Flora, floraContext, SPECIES as FLORA_SPECIES } from '../world/worldmap/flora.js';
@@ -314,6 +314,12 @@ function setTowers(sim) {
 }
 
 function buildWorld(sim, group) {
+  const pieces = buildWorldSteps(sim, group);
+  while (!pieces.next().done);
+}
+
+/** The build, stopping between its pieces when main.js is building in stages (setMap): seconds of it on a Chromebook. */
+function* buildWorldSteps(sim, group) {
   teardown(sim);
   setTowers(sim);
   if (!active()) return;
@@ -336,6 +342,7 @@ function buildWorld(sim, group) {
   const rings = ((MAP.waters && MAP.waters.roads) || []).filter((r) => r.ring).map((r) => r.ring);
   S.network = buildNetworkLook(Terrain.shapeBridges(), rings, Terrain.groundHeightAt);
   if (S.network) group.add(S.network);
+  yield;
   // The real scenery models: rocks, boulders, quiver trees, piers, poles (worldmap/props.js).
   S.props = new Props({ placed: placeProps(Terrain, PREVIEW), quality: q });
   group.add(S.props.group);
@@ -346,9 +353,12 @@ function buildWorld(sim, group) {
     // Arrived after the world's own warm: compiled now, in the background, not on the first one in reach.
     if (typeof sim.warmShaders === 'function') props.warmed = sim.warmShaders(props.group, { chunked: true });
   });
+  yield;
   S.horizon = new Horizon({ heightAt: Terrain.groundHeightAt, islands: PREVIEW.islands, hideWithin: streamTier(q).range });
   group.add(S.horizon.mesh);
+  yield;
   if (S.ring) S.far = S.ring.createFarlands(sim, group, q);
+  yield;
   S.flora = new Flora({
     treeGeometry, ctx: fctx, T: Terrain, worker: S.stream.worker && !S.stream.workerFailed ? S.stream.worker : null, gen: S.stream.gen,
     quality: q, addObstacle: Terrain.addObstacle, obstacles: Terrain.OBSTACLES,
@@ -371,12 +381,15 @@ function buildWorld(sim, group) {
     });
     group.add(S.cards.group);
   } else S.cards = null;
+  yield;
   // The ground the first frame needs, now, behind the loading screen.
   const r = RUNWAY;
   S.stream.prime(r.thresholdWest.x + 80, r.elev + 60, r.thresholdWest.z);
+  yield;
   const t1 = performance.now();
   const dep = departure();
-  S.out = buildOutstations(PREVIEW, dep.id, q);
+  S.out = yield* outstationSteps(PREVIEW, dep.id, q);
+  yield;
   // The field you start from is airport.js's; its own landmarks (the persona's
   // shelters, radomes, silos, lighthouse...: worldmap/personas.js) are these.
   S.dressing = buildDressing(dep, q);
@@ -393,9 +406,17 @@ function buildWorld(sim, group) {
   Terrain.setOtherRunways(others.map((a) => ({ cx: a.x, cz: a.z, length: a.length, halfWidth: a.halfWidth })));
   // The landing aids at whichever field you are at (updateNav, every frame).
   sim.navPapi = (pos, mainHint) => navPapi(pos, mainHint);
+  yield;
   prewarm(sim, [S.out.group, S.flora.group, S.cards && S.cards.group, S.horizon.mesh, S.waters, S.network, S.props && S.props.group, ...(S.far ? S.far.roots() : [])]);
+  yield;
   S.builtFor = { id: dep.id, quality: q, ms: performance.now() - t0 };
   startTraffic(sim, q);
+  // Built in stages, the other features and the map's weather are still to come: Fly must wait for those too.
+  if (sim._worldBuilding && sim.afterWorldBuilt) sim.afterWorldBuilt(tellBuilt);
+  else tellBuilt();
+}
+
+function tellBuilt() {
   const waiting = S.onBuilt.splice(0);
   for (const f of waiting) {
     try {
@@ -535,7 +556,8 @@ async function buildFor(sim, id, cfg) {
 
 /**
  * Take off, with the World Map remembered from last time and not built yet:
- * this is when it is. To the pin left on the card, or the field picked.
+ * this is when it is. To the pin left on the card, or the field picked. A pin
+ * comes here with the map already built too (takesOffToPin, main.js startFree).
  */
 async function flyChosen(sim, cfg) {
   if (S.pin) return flyToPin(sim, cfg);
@@ -567,11 +589,27 @@ async function flyToPin(sim, setup = null) {
     const field = at || pinGoal(pin, getAircraft(cfg.aircraft));
     if (!(active() && S.builtFor && S.builtFor.id === field.id && S.builtFor.quality === sim.settings.quality) && !(await buildFor(sim, field.id, cfg))) return;
     if (menus.rememberFree) menus.rememberFree();
-    if (at) await menus.hooks.startFree(cfg);
-    else await sim.startMode('free', { ...cfg, airborne: true, taxi: false, pin });
+    if (at) {
+      // The field's own start, through the hook that would otherwise bring it back here (takesOffToPin).
+      S.fieldStart = true;
+      try {
+        await menus.hooks.startFree(cfg);
+      } finally {
+        S.fieldStart = false;
+      }
+    } else {
+      // A pin is its own start: the Free Flight screen's "Start at" (a gate, a carrier's deck) has no say.
+      const { startAt, ...plain } = cfg;
+      await sim.startMode('free', { ...plain, airborne: true, taxi: false, pin });
+    }
   } finally {
     S.pinGoing = false;
   }
+}
+
+/** Does Take off go to the pin? Whenever one is on the card with the World Map up; `waitingMap` is flyChosen's own case. */
+function takesOffToPin() {
+  return active() && !!S.pin && !S.fieldStart;
 }
 
 /** Is this flight one that started from a pin? (A checkpoint resumed on the ground kept the pin but did not.) */
@@ -1332,6 +1370,7 @@ registerExtension({
       },
       flyToPin: () => flyToPin(sim),
       flyChosen: (cfg) => flyChosen(sim, cfg),
+      takesOffToPin,
       /** The start the last pin gave (the tests). */
       lastStart: () => S.lastStart || null,
       groundDrawn,
@@ -1366,6 +1405,7 @@ registerExtension({
   buildWorld(sim, group) {
     buildWorld(sim, group);
   },
+  buildWorldSteps,
   startMode(sim, mode, opts) {
     // Outermost again, in case another feature (carrier-ops) wrapped the coach after us.
     muteCoach(sim);

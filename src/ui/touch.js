@@ -55,7 +55,7 @@ export class TouchControls {
    *   input     the game's Input (this writes into input.touch)
    *   onAction  (action) => void — a pad or a sheet button pressed once
    *   onHold    (action, down) => void — a sheet's hold button (trim, look behind)
-   *   state     () => { crew, pushPref, parkingBrake, autopilot, rotor, assist, brace }
+   *   state     () => { crew, pushPref, parkingBrake, autopilot, rotor, assist }
    *             what the sheets show, read a few times a second while one is open
    *   surface   the game's canvas: Drag anywhere starts only on the picture itself
    *   onNotice  (text) => void — a word for the player (tilt unavailable, levelled)
@@ -579,7 +579,7 @@ export class TouchControls {
    * etc". The pads above are the four things you reach for every minute;
    * the rest of the aeroplane — the ground crew and the tug, which way the
    * push swings, the parking brake, the autopilot, the trim wheel, looking
-   * behind, the map, the mayday — had a key each and no button at all, so
+   * behind, the map — had a key each and no button at all, so
    * on an iPad none of it existed. Two more pads open two sheets:
    *
    *   GROUND    on the ground, in an aeroplane: the crew (fuel, bags,
@@ -587,7 +587,7 @@ export class TouchControls {
    *             which way the nose ends up, the parking brake.
    *   SYSTEMS   aeroplane and helicopter: autopilot, the helicopter's
    *             assist, trim (held, like the wheel), look behind (held), the
-   *             mayday when one is on offer, the map, its range, the H card.
+   *             map, its range, the H card.
    *
    * A button presses the action's own key (main.js hudAction's default
    * branch), so Settings → Controls and the features' own rules apply
@@ -635,8 +635,6 @@ export class TouchControls {
     this.sheetButton(Y, 'NEUTRAL', 'trimReset');
     this.sheetButton(Y, 'NOSE UP ▲', 'trimUp', { hold: true });
     this.sheetButton(Y, 'LOOK BEHIND (hold)', 'lookBehind', { hold: true, wide: true });
-    this.braceBtn = this.sheetButton(Y, 'MAYDAY — DECLARE AN EMERGENCY', 'brace', { wide: true });
-    this.braceBtn.hidden = true;
     // The pilot's switches (features/pilot-systems.js): every lamp's preset,
     // the speedbrake lever (aeroplane only), the radio menu.
     this.lightsBtn = this.sheetButton(Y, 'LIGHTS: AUTO', 'lights');
@@ -934,7 +932,6 @@ export class TouchControls {
     lit(this.apBtn, st.autopilot);
     if (this.assistBtn.hidden !== !st.rotor) this.assistBtn.hidden = !st.rotor;
     lit(this.assistBtn, st.rotor && st.assist);
-    if (this.braceBtn.hidden !== !st.brace) this.braceBtn.hidden = !st.brace;
     // The pilot's switches (features/pilot-systems.js touchState).
     if (this.lightsBtn) {
       text(this.lightsBtn, `LIGHTS: ${st.lights || 'AUTO'}`);

@@ -658,7 +658,7 @@ export async function worldMapCard(sim, r) {
   await wait(50);
   const WP = await import('../../src/features/world-preview.js');
   const before = sim.settings.map;
-  const real = sim.buildWorld;
+  const real = sim.buildWorldSteps;
   const seen = [];
   let boom = false;
   const swallow = (e) => { if (/bughunt: a build that throws/.test(String(e.message))) e.preventDefault(); };
@@ -666,30 +666,41 @@ export async function worldMapCard(sim, r) {
   const card = () => document.querySelector('.map-wait');
   const one = async (fail) => {
     let atBuild = null;
-    sim.buildWorld = function (...a) {
+    let pieces = 0;
+    // The World Map's build goes up in stages (main.js setMap), the card over all of it.
+    sim.buildWorldSteps = function* (...a) {
       const c = card();
       atBuild = { up: !!c && c.isConnected && getComputedStyle(c).display !== 'none', text: c ? c.textContent : '' };
       if (fail) { boom = true; throw new Error('bughunt: a build that throws'); }
-      return real.apply(this, a);
+      for (const step of real.apply(this, a)) {
+        pieces++;
+        yield step;
+      }
     };
+    const told = [];
+    if (!fail) WP.whenBuilt().then(() => told.push({ building: !!sim._worldBuilding, map: sim.settings.map }));
     WP.choosePreview(sim);
+    // The first time, the Farlands' module is fetched before the map is chosen, then the card.
+    for (let i = 0; i < 1000 && !card(); i++) await wait(10);
     const upAtOnce = !!card();
     const key = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true });
     document.body.dispatchEvent(key);
     for (let i = 0; i < 1500 && !atBuild; i++) await wait(10);
-    sim.buildWorld = real;
+    for (let i = 0; i < 6000 && sim._worldBuilding; i++) await wait(10);
+    sim.buildWorldSteps = real;
     await wait(600);
-    seen.push({ fail, upAtOnce, keyEaten: key.defaultPrevented, atBuild, goneAfter: !card(), state: sim.state });
+    seen.push({ fail, upAtOnce, keyEaten: key.defaultPrevented, atBuild, goneAfter: !card(), state: sim.state, pieces, told });
   };
   try {
     await one(false);
     await one(true);
   } finally {
-    sim.buildWorld = real;
+    sim.buildWorldSteps = real;
     removeEventListener('error', swallow);
     sim.setMap(before && before !== 'world-preview' ? before : 'kestrel');
     await wait(400);
   }
+  r.ok('bughunt: the World Map goes up in many pieces, and whenBuilt only says so when the whole of it is up', seen[0] && seen[0].pieces > 20 && seen[0].told.length === 1 && seen[0].told[0].building === false, JSON.stringify(seen[0] && { pieces: seen[0].pieces, told: seen[0].told }));
   r.ok('bughunt: picking the World Map puts up a calm "Loading the World Map" card before the build, eats keys meanwhile, and takes it down after (a throwing build too)',
     seen.length === 2 && seen.every((x) => x.upAtOnce && x.keyEaten && x.atBuild && x.atBuild.up && /Loading the World Map/.test(x.atBuild.text) && x.goneAfter && x.state === 'menu') && boom,
     JSON.stringify(seen));

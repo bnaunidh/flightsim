@@ -2040,11 +2040,11 @@ function hardFloor(ac, SPEC, clear) {
 
 /** Metres between the skids and whatever is under them — sea, rock or deck. */
 function heightAboveSkids(ac, S, SPEC) {
-  if (S.skidOff == null) {
-    let low = 0;
-    for (const g of SPEC.gearPoints) low = Math.min(low, g.pos.y);
-    S.skidOff = -low;
-  }
+  // Read every time, not kept: S outlives the flight, and an H145 after the Skyhook held her 14 cm off
+  // the pad for ever with Ctrl down, "over the ground" by the Skyhook's skids (Night Medevac, 2026-11-04).
+  let low = 0;
+  for (const g of SPEC.gearPoints) low = Math.min(low, g.pos.y);
+  S.skidOff = -low;
   const ground = ac.pos.y - ac.agl; // heightAt() under the machine, last step
   return ac.pos.y - Math.max(0, ground) - S.skidOff;
 }

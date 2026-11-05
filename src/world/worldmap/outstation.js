@@ -385,6 +385,14 @@ export function pavedTest(fields) {
  * Returns { group, fields, towns, update(dt, weather, camPos) }.
  */
 export function buildOutstations(data, departureId, quality = 'medium') {
+  const pieces = outstationSteps(data, departureId, quality);
+  let r = pieces.next();
+  while (!r.done) r = pieces.next();
+  return r.value;
+}
+
+/** The same, a field or a town at a time (the World Map's staged build): all of them is seconds on a Chromebook. */
+export function* outstationSteps(data, departureId, quality = 'medium') {
   const t0 = performance.now();
   const group = new THREE.Group();
   group.name = 'world-outstations';
@@ -394,6 +402,7 @@ export function buildOutstations(data, departureId, quality = 'medium') {
     const f = buildField(a, quality);
     group.add(f);
     fields.push(f);
+    yield;
   }
   const timing = { fields: 0, towns: {} };
   timing.fields = Math.round(performance.now() - t0);
@@ -434,6 +443,7 @@ export function buildOutstations(data, departureId, quality = 'medium') {
   for (const rec of towns) {
     buildTown(rec);
     timing.towns[rec.town.name] = rec.ms ? Math.round(rec.ms) : 0;
+    yield;
   }
   return {
     group,

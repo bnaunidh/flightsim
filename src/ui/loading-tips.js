@@ -37,7 +37,6 @@ const FLIGHT = [
   'Hold {lookBehind} to look behind you.',
   'Trim holds the nose where you leave it: {trimUp} and {trimDown} wind it.',
   'Press {guide} to show or hide the guidance lines to your target.',
-  'Press {brace} twice to declare an emergency.',
 ];
 
 const HELI = [

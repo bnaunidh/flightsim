@@ -2920,7 +2920,6 @@ export async function check(sim, r, say = () => {}, opts = {}) {
         ['wind panel', hud.windRose && (hud.windRose.closest('.hud-right') || hud.windRose)],
         ['Guidance button', hud.btnGuide],
         ['Autopilot button', hud.btnAuto],
-        ['Brace for impact button', hud.btnBrace],
       ]
         .filter(([, n]) => n && (n.style.display === 'none' || n.hidden))
         .map(([k]) => k);

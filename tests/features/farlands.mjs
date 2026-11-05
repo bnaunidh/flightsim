@@ -52,6 +52,14 @@ const t0 = performance.now();
 const { SEA_HALF, RANGE_DEEP, EDGE_D, WOBBLE, TEAR, VOID_H, PEAK_MAX, PASS_TOP, SLOT_TOP, CUTS, FARLANDS, cutCentre, cutFloor } = F;
 const def = PV.previewDef();
 
+/* ---- Reset all: the ring is new again ---- */
+{
+  const ST0 = await import(SRC + 'core/storage.js');
+  store.set('islandsim.farlands.v1', JSON.stringify({ seen: true, edge: true, furthest: 9000 }));
+  ST0.resetAll();
+  ok('Reset all clears the first-visit memory', !store.has('islandsim.farlands.v1'));
+}
+
 /* ---- the ring off: what the World Map was ---- */
 T.applyMap(def);
 ok('with the ring not loaded, past the sea is still sea', T.heightAt(SEA_HALF + 30000, 0) === def.seaFloor, `${T.heightAt(SEA_HALF + 30000, 0)}`);
@@ -269,6 +277,17 @@ const SKYLARK_M = 14000 / 3.28084;
   const out = new Float32Array(8);
   F.coverOf(SEA_HALF + 90000, 500, 3000, 1.5, out);
   ok('the Farlands have no fields, forest or marsh, carry their zone, and read steep as rock', out[3] === 0 && out[4] === 0 && out[6] === 0 && out[2] === 1 && out[7] > 0.3 && out[7] < 0.9, [...out].map((v) => v.toFixed(2)).join(' '));
+  // The foot of the range: no sand band round the sea (it read as one pale line at sunset).
+  {
+    let sand = 0;
+    let sum = 0;
+    for (let z = -60000; z <= 60000; z += 4000) for (const h of [2, 5, 9, 12]) {
+      F.coverOf(SEA_HALF + 300, z, h, 0.15, out);
+      sand = Math.max(sand, out[0]);
+      sum = Math.max(sum, Math.abs(out[0] + out[1] + out[2] - 1));
+    }
+    ok('the range\'s foot is not a beach, and its cover still adds up', sand === 0 && sum < 1e-4, `sand ${sand}, off by ${sum}`);
+  }
   F.coverOf(SEA_HALF + 16000, 500, 2000, 0.2, out);
   ok('the range above the tree line is bare', out[4] === 0 && out[5] === 0 && out[3] === 0 && out[7] === 0);
 }

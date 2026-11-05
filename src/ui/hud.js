@@ -508,6 +508,7 @@ export class Hud {
     this.btnMap = mkBtn('map', 'minimap', 'Show the map (J)', tray, 'Minimap');
     this.btnBrace = mkBtn('warning', 'brace', 'Shut everything down and brace for impact', tray, 'Brace for impact');
     this.btnBrace.classList.add('is-brace');
+    this.btnBrace.hidden = true; // Never shown: nobody can declare a mayday any more (main.js braceAvailable).
 
     this.tray = tray;
     this.trayOpen = false;

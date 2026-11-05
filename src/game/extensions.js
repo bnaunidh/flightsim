@@ -235,6 +235,31 @@ export function extBuildWorld(sim, THREE) {
   return groups;
 }
 
+/**
+ * extBuildWorld a piece at a time, for a build that gives the thread back
+ * (main.js buildWorldSteps): the same hooks in the same order. A feature that
+ * takes seconds may offer `buildWorldSteps(sim, group)`, a generator doing what
+ * its buildWorld does, and it is stopped between its pieces too. `groups` is
+ * filled as they are made.
+ */
+export function* extBuildWorldSteps(sim, THREE, groups) {
+  for (const e of EXTENSIONS) {
+    if (broken.has(e.id) || typeof e.buildWorld !== 'function') continue;
+    try {
+      const g = new THREE.Group();
+      g.name = `ext:${e.id}`;
+      sim.scene.add(g);
+      groups.push(g);
+      if (typeof e.buildWorldSteps === 'function') yield* e.buildWorldSteps(sim, g);
+      else e.buildWorld(sim, g);
+    } catch (err) {
+      broken.add(e.id);
+      console.error(`[ext] "${e.id}" threw in buildWorld() and has been switched off for this session:`, err);
+    }
+    yield;
+  }
+}
+
 export function extStartMode(sim, mode, opts) {
   each('startMode', (e) => e.startMode(sim, mode, opts || {}));
 }

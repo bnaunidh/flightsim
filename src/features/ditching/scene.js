@@ -383,10 +383,41 @@ export class DitchScene {
     this.plan = null;
     this.group.visible = false;
     if (this.rescue) {
-      this.scene.remove(this.rescue.model);
+      disposeRescue(this.rescue.model);
       this.rescue = null;
     }
   }
+}
+
+/**
+ * Out of the scene AND off the GPU, the way main.js disposes an aeroplane it
+ * swaps out (and warnings.js its drill model): the boat or the helicopter was
+ * built for this one ditching, and a new one is built for the next. Textures
+ * stay: the skins are cached by the painter, and this file does not own them.
+ */
+export function disposeRescue(model) {
+  if (!model) return;
+  if (model.parent) model.parent.remove(model);
+  if (model.userData && model.userData.fleetBridge && typeof model.userData.dispose === 'function') {
+    try {
+      model.userData.dispose();
+      return;
+    } catch (e) {
+      /* the plain walk, then */
+    }
+  }
+  const seen = new Set();
+  model.traverse((o) => {
+    if (o.geometry && !seen.has(o.geometry)) {
+      seen.add(o.geometry);
+      o.geometry.dispose();
+    }
+    for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) {
+      if (seen.has(m)) continue;
+      seen.add(m);
+      m.dispose();
+    }
+  });
 }
 
 /**

@@ -89,9 +89,6 @@ export const ACTIONS = {
   lookBehind: { label: 'Look behind (hold)', group: 'View', ctx: AIR, default: ['KeyB'] },
   // L, because it is nowhere near the flight controls. Pressing it by
   // accident would shut the engine off, so it asks twice — see main.js.
-  brace: { label: 'Declare an emergency (press twice)', group: 'Missions & events', ctx: AIR, default: ['KeyL'] },
-  emergencyLand: { label: 'Emergency: attempt to land', group: 'Missions & events', ctx: AIR, default: ['Digit1'] },
-  emergencyCircle: { label: 'Emergency: circle the airport', group: 'Missions & events', ctx: AIR, default: ['Digit2'] },
   drop: { label: 'Release cargo / drop water', group: 'Missions & events', ctx: AIR, default: ['KeyX'] },
   pause: { label: 'Pause / menu', group: 'Game', ctx: ALL, default: ['Escape'] },
   help: { label: 'Show controls', group: 'Game', ctx: NOT_ROCKET, default: ['KeyH'] },

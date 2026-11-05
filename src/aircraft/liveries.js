@@ -26,32 +26,31 @@ export const LIVERIES = [
   {
     id: 'abyssinia',
     name: 'Abyssinia Air',
-    blurb: 'Green and gold over white',
-    base: '#f4f6f8',
-    accent: '#0b8a3e',
-    cheatline: 'rgba(232,180,10,0.9)',
-    tail: 0x0b8a3e,
+    blurb: 'Indigo and terracotta over cream, a lone acacia on the fin',
+    base: '#f6f1e6',
+    accent: '#b4462b',
+    cheatline: 'rgba(224,164,88,0.9)',
+    tail: 0x262c66,
     reg: 'ET-ABY',
     titling: 'Abyssinia Air',
-    emblem: 'stripes',
+    emblem: 'acacia',
     fleet: ['b737', 'b787', 'a350', 'b777', 'q400', 'meridian'],
-    // Inspired by the kind of airline that paints its flag's colours along the
-    // body: three bands (green, gold, red) for the cheatline, the green of the
-    // fin carried onto the engine cowls with a gold ring, a mid-grey belly.
+    // The highlands at dusk: a terracotta earth rising towards an indigo fin, an
+    // ochre sun on it behind a flat-topped acacia. Nothing here is anybody's flag.
     style: {
       layout: 'cheatline',
-      bands: ['#0b8a3e', '#e8b40a', '#d9231f'],
-      belly: '#aeb6bd',
-      cowl: '#0b8a3e',
-      cowlBand: '#e8b40a',
-      emblemInks: ['#e8b40a', '#f4f6f8', '#d9231f'],
+      bands: ['#262c66', '#b4462b', '#e0a458'],
+      belly: '#b7aea0',
+      cowl: '#262c66',
+      cowlBand: '#e0a458',
+      emblemInks: ['#e0a458'],
       titleWeight: 700,
       titleSpacing: 0.01,
       // Ethiopian-style: a warm, slightly flared bold sans.
       titleFont: { family: 'Kanit', weight: 600, style: 'normal' },
       // The fin's green, not the cheatline's gold: gold on a white body was
       // the one title in the fleet you could not read from the apron.
-      titleInk: '#055a27',
+      titleInk: '#262c66',
     },
   },
   {
@@ -316,57 +315,57 @@ export const LIVERIES = [
     },
   },
   {
-    // DHL-style freighter: yellow all over, red billboard name, red speed lines on the fin.
+    // A fast freighter: cobalt all over, a white billboard name, a coral comet on the fin and a single line running up to it.
     id: 'dashfreight',
     name: 'Dash Freight',
     callsign: 'Dash Freight',
-    blurb: 'Yellow all over with red lettering — a freighter',
-    base: '#ffcc00',
-    accent: '#d40511',
-    cheatline: 'rgba(212,5,17,0.9)',
-    tail: 0xffcc00,
+    blurb: 'Cobalt all over, a white name and a coral comet — a freighter',
+    base: '#1b3fb5',
+    accent: '#ff6b4a',
+    cheatline: 'rgba(255,107,74,0.9)',
+    tail: 0x1b3fb5,
     reg: 'D-ADSF',
     titling: 'DASH FREIGHT',
-    emblem: 'speedlines',
+    emblem: 'comet',
     fleet: ['b737', 'b747', 'b777', 'meridian'],
     style: {
       layout: 'billboard',
-      belly: '#b38f00',
-      cowl: '#ffcc00',
-      cowlBand: '#d40511',
-      emblemInks: ['#d40511'],
+      belly: '#14308a',
+      cowl: '#1b3fb5',
+      cowlBand: '#ff6b4a',
+      emblemInks: ['#ff6b4a', '#f5f7fb'],
       titleWeight: 900,
       titleSpacing: 0.05,
-      // DHL-style: a fast, heavy italic.
+      // A fast, heavy italic.
       titleFont: { family: 'Exo 2', weight: 700, style: 'italic' },
-      titleInk: '#9c030e',
+      titleInk: '#f5f7fb',
     },
   },
   {
-    // FedEx-style freighter with the tones swapped: white, green and purple, a boxed arrow.
+    // White over graphite, a lime line where they meet, and two links of a chain on the fin.
     id: 'flexship',
     name: 'FlexShip Express',
     callsign: 'FlexShip',
-    blurb: 'White, green and purple — a freighter',
-    base: '#f7f8fa',
-    accent: '#1f8a4c',
-    cheatline: 'rgba(77,20,140,0.9)',
-    tail: 0x1f8a4c,
+    blurb: 'White over graphite, a lime line, two chain links on the fin — a freighter',
+    base: '#f5f7f6',
+    accent: '#8fc31f',
+    cheatline: 'rgba(143,195,31,0.9)',
+    tail: 0x2b3138,
     reg: 'N77FS',
     titling: 'FlexShip',
-    emblem: 'arrowbox',
+    emblem: 'links',
     fleet: ['b777', 'q400', 'meridian'],
     style: {
       layout: 'billboard',
-      belly: '#c4c9cf',
-      cowl: '#1f8a4c',
-      cowlBand: '#4d148c',
-      emblemInks: ['#f7f8fa', '#4d148c'],
-      titleWeight: 900,
-      titleSpacing: 0.005,
-      // FedEx-style: a black, tight grotesque.
-      titleFont: { family: 'Archivo Black', weight: 400, style: 'normal' },
-      titleInk: '#f7f8fa',
+      belly: '#2b3138',
+      cowl: '#2b3138',
+      cowlBand: '#8fc31f',
+      emblemInks: ['#8fc31f', '#f5f7f6'],
+      titleWeight: 700,
+      titleSpacing: 0.03,
+      // A round geometric face, open and well spaced.
+      titleFont: { family: 'Montserrat', weight: 700, style: 'normal' },
+      titleInk: '#2b3138',
     },
   },
   {
@@ -608,8 +607,8 @@ export const AIRLINE_LIVERIES = Object.freeze(LIVERIES.filter((l) => !l.house &&
 
 /** Every fin mark the airliner models can draw (fleet/extra/airliners.js emblemTexture). */
 export const EMBLEMS = Object.freeze([
-  'stripes', 'compass', 'star', 'wave', 'sun', 'moon',
-  'tulip', 'riverlines', 'falcon', 'lattice', 'speedlines', 'arrowbox', 'parcel', 'seawave', 'crane', 'pearlshell', 'suncrane', 'bang', 'horizon',
+  'acacia', 'compass', 'star', 'wave', 'sun', 'moon',
+  'tulip', 'riverlines', 'falcon', 'lattice', 'comet', 'links', 'parcel', 'seawave', 'crane', 'pearlshell', 'suncrane', 'bang', 'horizon',
 ]);
 
 /** The paint layouts liveryTexture knows. */

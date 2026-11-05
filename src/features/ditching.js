@@ -528,6 +528,8 @@ function wrapDebrief(sim) {
   const wrapped = function wrappedDebrief(d) {
     const R = S.result;
     const def = sim.runner.def;
+    // A mission that had no use for the sea: nobody failed to do anything, she is in the water. One word for what happened, as a crash has.
+    if (R && S.card && def && !def.allowDitch && sim.runner.status === STATUS.FAILED) return orig.call(this, { ...d, title: 'Ditched' });
     if (S.lastRefusal && def && def.allowDitch && sim.runner.status === STATUS.FAILED) {
       return orig.call(this, { ...d, body: `${d.body}<p class="debrief-reason">${missWords(S.lastRefusal)}</p>` });
     }

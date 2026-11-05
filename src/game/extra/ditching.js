@@ -29,7 +29,6 @@ export const MISSIONS = [
     // Worn for this flight only (main.js flightPaint): the player's own paint is not touched.
     paint: 'sandline',
     radio: { callsign: CALL, quiet: ['start', 'clearance', 'airborne', 'final', 'shortfinal', 'lowalt', 'airspace'] },
-    allowBrace: true,
     blurb:
       `${CALL}, 58 people aboard, 3,500 feet over the sea north of Kestrel, and both engines have just stopped. ` +
       'The runway is out of reach. Put her down on the water, slow and level, and get everybody out.',

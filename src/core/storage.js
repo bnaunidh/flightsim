@@ -452,6 +452,8 @@ export function resetAll() {
     localStorage.removeItem(SETTINGS_KEY);
     localStorage.removeItem(PROGRESS_KEY);
     localStorage.removeItem('islandsim.bindings.v1');
+    // The Farlands' first visit is progress too: after a Reset all the ring is new again (features/farlands-run.js).
+    localStorage.removeItem('islandsim.farlands.v1');
   } catch (e) {
     /* ignore */
   }

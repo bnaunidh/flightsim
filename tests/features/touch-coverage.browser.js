@@ -268,43 +268,15 @@ export async function check(sim, r, say) {
     tc.update(a2.readouts(), sim);
     r.ok('touch: once airborne the GROUND pad hides and its sheet closes; SYSTEMS stays', openOnGround && pad('ground').hidden && !tc.openSheet && !pad('systems').hidden, `open before ${openOnGround}, ground hidden ${pad('ground').hidden}, open now ${tc.openSheet}`);
 
-    /* ---- the mayday: declared from SYSTEMS, answered by a tap ---- */
-    log('mayday card');
-    if (sim.braceAvailable && sim.braceAvailable()) {
-      await sim.startMode('free', { airborne: true, time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 0 });
-      steps(0.3, 1 / 30);
-      tc.update(sim.aircraft.readouts(), sim);
-      if (tc.openSheet !== 'systems') click(pad('systems'));
-      tc.syncSheets(sim.touchState());
-      const may = btn('systems', 'brace');
-      const offered = shown(may);
-      click(may);
-      steps(0.1, 1 / 30);
-      if (!sim.bracing) click(may);
-      steps(0.1, 1 / 30);
-      const card = sim.hud.emergencyChoice;
-      r.ok('touch: MAYDAY on the SYSTEMS sheet declares it, and the sheet steps away for the question', offered && !!sim.bracing && !tc.openSheet && shown(card), `offered ${offered}, bracing ${!!sim.bracing}, open ${tc.openSheet}`);
-      const cb = box(card);
-      const W = window.innerWidth;
-      const Hh = window.innerHeight;
-      const on = [
-        ['stick', tc.stick], ['throttle', tc.throttleEl], ['lever', tc.leverEl], ['rudder', tc.layer.querySelector('.touch-rudder')],
-        ['pads', tc.pads], ['eject', document.querySelector('.ej-col')],
-      ].filter(([, n]) => shown(n)).filter(([, n]) => hits(cb, box(n))).map(([k, n]) => `${k} ${fmt(box(n))}`);
-      const rows = [...card.querySelectorAll('button[data-choice]')];
-      const reach = rows.filter((b) => {
-        const q = box(b);
-        const hit = document.elementFromPoint(q.left + q.width / 2, q.top + q.height / 2);
-        return q.height >= 44 && hit && (hit === b || b.contains(hit));
-      });
-      const inside = cb.left >= -1 && cb.top >= -1 && cb.right <= W + 1 && cb.bottom <= Hh + 1;
-      r.ok(`touch (${vp}): the mayday card is on screen, on no control, and both answers are 44 px targets a finger reaches`, on.length === 0 && reach.length === 2 && inside, `card ${fmt(cb)}; on ${on.join(', ') || 'nothing'}; reachable ${reach.length}/${rows.length}`);
-      if (rows[1]) click(rows[1]);
-      steps(0.1, 1 / 30);
-      r.ok('touch: tapping "Circle the airport" answers it', sim.braceChoice === 'circle' && card.hidden, `choice ${sim.braceChoice}`);
-    } else {
-      r.ok('touch: the mayday is on offer in Free Flight', false, 'braceAvailable() false');
-    }
+    /* ---- nobody declares a mayday any more (the owner, 2026-11-04): nothing on the sheets ---- */
+    log('no mayday');
+    await sim.startMode('free', { airborne: true, time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 0 });
+    steps(0.3, 1 / 30);
+    tc.update(sim.aircraft.readouts(), sim);
+    if (tc.openSheet !== 'systems') click(pad('systems'));
+    tc.syncSheets(sim.touchState());
+    r.ok('touch: no MAYDAY on the SYSTEMS sheet, in Free Flight', !btn('systems', 'brace') && !/mayday|emergency/i.test(document.querySelector('.touch-sheet:not([hidden])') ? document.querySelector('.touch-sheet:not([hidden])').textContent : ''));
+    if (tc.closeSheets) tc.closeSheets();
 
     /* ---- what the pills already did still works beside the sheets ---- */
     r.ok('touch: the pills lane is still there for the stop-push and brake undo', !!wrap.querySelector('.hud-pills'));

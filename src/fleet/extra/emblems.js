@@ -21,7 +21,7 @@
  * standing crane where that one has a bird in a ring — and none follows any
  * real logo's outline. The list (aircraft/liveries.js EMBLEMS):
  *
- *   stripes     Abyssinia      three pennants from one point, one per ink
+ *   acacia      Abyssinia      a flat-topped acacia against a low sun
  *   compass     Ununited       a ring broken by a four-point star, bevelled
  *   star        Liberty        one big five-point star
  *   wave        Bleu Ciel      two swept ribbons, white over red
@@ -31,8 +31,8 @@
  *   riverlines  Riverdelta     a river dividing, as flowing lines
  *   falcon      Desert Pearl   a falcon's wing curled round a pearl
  *   lattice     Sandline       an eight-point star, interlaced
- *   speedlines  Dash Freight   a forward chevron with speed lines
- *   arrowbox    FlexShip       a parcel in three faces, an arrow cut through
+ *   comet       Dash Freight   a comet, its two tails curling up and aft
+ *   links       FlexShip       two links of a chain, woven over and under
  *   parcel      Parcel Brown   two stacked parcels, no badge round them
  *   seawave     Royal Isles    a breaking wave and its foam
  *   crane       Bosphorus      a standing crane, its neck in an S
@@ -49,8 +49,8 @@
 
 /** Every mark this file draws. */
 export const EMBLEM_STYLES = Object.freeze([
-  'stripes', 'compass', 'globe', 'star', 'wave', 'sun', 'moon', 'tulip', 'riverlines', 'falcon', 'lattice',
-  'speedlines', 'arrowbox', 'parcel', 'seawave', 'crane', 'pearlshell', 'suncrane', 'bang', 'horizon',
+  'acacia', 'compass', 'globe', 'star', 'wave', 'sun', 'moon', 'tulip', 'riverlines', 'falcon', 'lattice',
+  'comet', 'links', 'parcel', 'seawave', 'crane', 'pearlshell', 'suncrane', 'bang', 'horizon',
 ]);
 
 /**
@@ -220,18 +220,15 @@ function roundPoly(P, pts, r) {
 /* ------------------------------------------------------------------ */
 
 const MARKS = {
-  /** Abyssinia: three pennants streaming aft from one point, each its own ink, the gaps between them clean. */
-  stripes(P, ink) {
-    const rows = [
-      [-0.44, 0.34, 0.44, -0.38, -0.09, 0.1],
-      [-0.44, 0.34, 0.46, -0.08, -0.05, 0.085],
-      [-0.44, 0.34, 0.4, 0.2, 0.0, 0.07],
-    ];
-    rows.forEach(([x0, y0, x1, y1, bow, w], k) => {
-      P.begin();
-      blade(P, x0, y0, x1, y1, bow, w);
-      P.fill(ink(k));
-    });
+  /** Abyssinia: a low sun on the horizon, and a flat-topped acacia cut clean out of it, the fin's paint showing through. */
+  acacia(P, ink) {
+    P.begin().A(0.02, -0.04, 0.4).fill(ink(0));
+    // The ground.
+    P.begin().M(-0.5, 0.26).Q(0, 0.2, 0.5, 0.25).L(0.5, 0.5).L(-0.5, 0.5).Z().cut();
+    // The crown: wide, flat on top, scalloped beneath.
+    for (const [x, y, rx, ry] of [[0, -0.2, 0.32, 0.085], [-0.2, -0.15, 0.15, 0.06], [0.21, -0.15, 0.14, 0.06], [-0.08, -0.13, 0.13, 0.055], [0.1, -0.12, 0.12, 0.05]]) P.begin().E(x, y, rx, ry).cut();
+    // The trunk, forking into three limbs under the crown.
+    P.begin().M(-0.045, 0.28).Q(-0.03, 0.12, -0.03, 0.04).L(-0.2, -0.13).L(-0.16, -0.15).L(-0.005, -0.015).L(0, -0.16).L(0.04, -0.16).L(0.045, -0.02).L(0.17, -0.14).L(0.2, -0.11).L(0.04, 0.06).Q(0.04, 0.14, 0.055, 0.28).Z().cut();
   },
 
   /** Ununited: a bold ring and a four-point star that breaks it, each point split light and dark. */
@@ -411,53 +408,62 @@ const MARKS = {
     P.cut();
   },
 
-  /** Dash Freight: a forward chevron, heavy and italic, four speed lines running out aft of it. */
-  speedlines(P, ink) {
+  /** Dash Freight: a comet flying forward and down, its two tails curling up and aft. */
+  comet(P, ink) {
     P.begin();
-    roundPoly(P, [[-0.06, -0.32], [-0.26, -0.32], [-0.46, 0], [-0.26, 0.32], [-0.06, 0.32], [-0.26, 0]], 0.014);
-    P.fill(ink(0));
-    for (const [x0, y, len] of [[0.12, -0.23, 0.3], [-0.06, -0.08, 0.5], [-0.06, 0.08, 0.5], [0.12, 0.23, 0.3]]) {
-      const h = 0.09;
-      const sl = 0.05;
-      P.begin();
-      roundPoly(P, [[x0 + sl, y - h / 2], [x0 + len + sl, y - h / 2], [x0 + len - sl, y + h / 2], [x0 - sl, y + h / 2]], 0.01);
-      P.fill(ink(0));
-    }
+    blade(P, -0.24, 0.2, 0.44, -0.38, 0.1, 0.075);
+    P.fill(ink(1));
+    P.begin();
+    blade(P, -0.26, 0.1, 0.14, -0.42, 0.11, 0.05);
+    P.fill(ink(1));
+    // A clean gap round the head, then the head.
+    P.begin().A(-0.26, 0.21, 0.185).cut();
+    P.begin().A(-0.26, 0.21, 0.15).fill(ink(0));
   },
 
-  /** FlexShip: a parcel seen from above a corner — three faces — with an arrow cut clean through it. */
-  arrowbox(P, ink) {
-    const h = 0.4;
-    const cx = 0;
-    const cy = 0.02;
-    const k = 0.866;
-    const top = [[cx, cy - h], [cx + h * k, cy - h / 2], [cx, cy], [cx - h * k, cy - h / 2]];
-    const left = [[cx - h * k, cy - h / 2], [cx, cy], [cx, cy + h], [cx - h * k, cy + h / 2]];
-    const right = [[cx + h * k, cy - h / 2], [cx + h * k, cy + h / 2], [cx, cy + h], [cx, cy]];
-    const face = (pts, inkX, alpha = 1) => {
-      P.g.save();
-      P.g.globalAlpha = alpha;
+  /** FlexShip: two links of a chain, slanted, one over the other at the top crossing and under it at the foot. */
+  links(P, ink) {
+    const g = P.g;
+    const S = P.S;
+    const TILT = -0.5;
+    // Each ellipse its own subpath, begun where it starts, so nothing joins them.
+    const oval = (cx, rx, ry) => P.M(cx + rx * Math.cos(TILT), rx * Math.sin(TILT)).E(cx, 0, rx, ry, TILT).Z();
+    const ring = (cx, grow) => {
       P.begin();
-      roundPoly(P, pts, 0.015);
-      P.fill(inkX);
-      P.g.restore();
+      oval(cx, 0.27 + grow, 0.19 + grow);
+      oval(cx, 0.17 - grow, 0.095 - grow);
     };
-    face(top, ink(0));
-    face(left, ink(0), 0.78);
-    face(right, ink(1));
-    // Seams between the faces.
-    P.begin().M(cx - h * k, cy - h / 2).L(cx, cy).L(cx + h * k, cy - h / 2).M(cx, cy).L(cx, cy + h).cutStroke(0.018);
-    // The arrow, cut through the top and the left face: forward along the box's left edge.
-    P.begin()
-      .M(-0.3, -0.06)
-      .L(-0.02, -0.22)
-      .L(-0.06, -0.29)
-      .L(0.16, -0.25)
-      .L(0.1, -0.04)
-      .L(0.06, -0.11)
-      .L(-0.22, 0.05)
-      .Z()
-      .cut();
+    const half = (top, fn) => {
+      g.save();
+      g.beginPath();
+      g.rect(0, top ? 0 : S / 2, S, S / 2);
+      g.clip();
+      fn();
+      g.restore();
+    };
+    const cutRing = (cx) => {
+      ring(cx, 0.022);
+      g.save();
+      g.globalCompositeOperation = 'destination-out';
+      g.fillStyle = '#000';
+      g.fill('evenodd');
+      g.restore();
+    };
+    const [A, B] = [-0.17, 0.17];
+    // The foot: B lies over A.
+    half(false, () => {
+      ring(A, 0);
+      P.fillEO(ink(0));
+      cutRing(B);
+    });
+    ring(B, 0);
+    P.fillEO(ink(1));
+    // The top: A lies over B.
+    half(true, () => {
+      cutRing(A);
+      ring(A, 0);
+      P.fillEO(ink(0));
+    });
   },
 
   /** Parcel Brown: two parcels stacked corner to corner, the seams and tape cut clean. Nothing round them. */

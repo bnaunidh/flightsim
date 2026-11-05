@@ -539,9 +539,6 @@ export const MISSIONS = [
       'Your engine quits at 3,000 feet over the sea off Harrier Flats. You have one glide and one attempt at the runway. ' +
       'No power, no going around — though there are fields everywhere if it comes to that.',
     reward: 'Teaches gliding, energy management and committing to a decision.',
-    // The engine failure IS the mission, so "Brace for impact" stays on offer
-    // (main.js braceAvailable). Ordinary missions only get it in a real emergency.
-    allowBrace: true,
     weather: { time: 'day', condition: 'clear', windSpeedKts: 7, windDirDeg: 90 },
     /*
      * Where this starts is the whole difficulty, and it was wrong.

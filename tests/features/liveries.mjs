@@ -88,7 +88,7 @@ for (const l of schemes) {
   if (st && st.layout === 'crown') ok(`${l.id}: a crown layout names its crown colour`, hex(st.crown));
 }
 ok('one scheme wears the crown layout (the sky-blue-over-white airline)', schemes.filter((l) => l.style && l.style.layout === 'crown').map((l) => l.id).join() === 'krd');
-ok('abyssinia: the title is a green dark enough for white, not the cheatline\'s gold', L.findLivery('abyssinia').style.titleInk === '#055a27');
+ok('abyssinia: the title is the fin\'s indigo, dark enough for cream, not the cheatline\'s ochre', L.findLivery('abyssinia').style.titleInk === '#262c66');
 ok('exactly one scheme is bare metal (the silver-bird airline), and its material is asked for', schemes.filter((l) => l.style && l.style.metal).map((l) => l.id).join() === 'liberty');
 ok('the United-style scheme carries a compass, not a globe (a circle with meridians was too near a real mark)', L.findLivery('continental').emblem === 'compass');
 
@@ -113,6 +113,53 @@ const word = (text, real) => new RegExp(`(^|[^A-Za-z])${real.replace(/[.*+?^${}(
   // "UNITED STATES OF AMERICA" is a country, not the airline: the one allowed whole-word hit.
   const bad = hits.filter((h) => !/UNITED STATES OF AMERICA/.test(h));
   ok('no scheme\'s name, titling or blurb is a real airline\'s or a maker\'s name', bad.length === 0, bad.join('; '));
+}
+
+/* ------------------------------------------------------------------ *
+ * Three schemes that sat too close to a real company (owner, 2026-11-04)
+ *
+ * A parody may borrow an idea, not a look. These three wore the real one's
+ * colours and the idea of its mark, so here the inks themselves are held
+ * apart: every colour the scheme paints, read from its style and its art.
+ * ------------------------------------------------------------------ */
+{
+  const ART = await import(new URL('../../src/fleet/extra/livery-art.js', import.meta.url).href);
+  const hexes = (o, out = []) => {
+    if (typeof o === 'string') { for (const m of o.matchAll(/#[0-9a-f]{6}\b/gi)) out.push(m[0].toLowerCase()); }
+    else if (o && typeof o === 'object') for (const k of Object.keys(o)) hexes(o[k], out);
+    return out;
+  };
+  const rgbaHex = (c) => { const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(c || ''); return m ? `#${m.slice(1, 4).map((n) => Number(n).toString(16).padStart(2, '0')).join('')}` : ''; };
+  const inksOf = (id) => {
+    const l = L.findLivery(id);
+    return [...new Set(hexes({ base: l.base, accent: l.accent, cheatline: rgbaHex(l.cheatline), tail: `#${l.tail.toString(16).padStart(6, '0')}`, style: l.style, art: ART.artFor(l) }))];
+  };
+  const hsl = (h) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+    const hi = Math.max(r, g, b);
+    const lo = Math.min(r, g, b);
+    const d = hi - lo;
+    const l = (hi + lo) / 2;
+    const sat = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+    const hue = d === 0 ? 0 : hi === r ? (((g - b) / d) % 6 + 6) % 6 * 60 : hi === g ? ((b - r) / d + 2) * 60 : ((r - g) / d + 4) * 60;
+    return { h: hue, s: sat, l };
+  };
+  const vivid = (id, from, to) => inksOf(id).filter((c) => { const v = hsl(c); return v.s > 0.45 && v.l > 0.15 && v.l < 0.85 && v.h >= from && v.h <= to; });
+  ok('the scheme reader finds colours in the paint', inksOf('dashfreight').length >= 4 && hsl('#ffcc00').h > 40 && hsl('#ffcc00').h < 60 && hsl('#4d148c').h > 250);
+  ok('dashfreight: no yellow and no signal red anywhere in the paint', vivid('dashfreight', 40, 70).length === 0 && vivid('dashfreight', 345, 360).length === 0 && vivid('dashfreight', 0, 8).length === 0, inksOf('dashfreight').join(' '));
+  ok('dashfreight: the name and the mark are not one strong ink on a bright ground: a dark body, a light name', hsl(L.findLivery('dashfreight').base).l < 0.5 && hsl(L.findLivery('dashfreight').style.titleInk).l > 0.8);
+  ok('dashfreight: no bars across the body', !ART.artFor(L.findLivery('dashfreight')).body.some((op) => op[0] === 'poly'));
+  ok('flexship: no purple or violet, and no orange, anywhere in the paint', vivid('flexship', 250, 310).length === 0 && vivid('flexship', 15, 40).length === 0, inksOf('flexship').join(' '));
+  ok('flexship: no roof of colour falling away behind the wing', !ART.artFor(L.findLivery('flexship')).body.some((op) => op[0] === 'over'));
+  ok('flexship: no arrow, no parcel', L.findLivery('flexship').emblem === 'links');
+  ok('flexship: not lettered in a tight black grotesque', L.findLivery('flexship').style.titleFont.family !== 'Archivo Black' && L.findLivery('flexship').style.titleSpacing > 0.01);
+  const aby = vivid('abyssinia', 0, 360).map((c) => hsl(c).h);
+  ok('abyssinia: the green, yellow and red of a flag are not all there: no green at all, no pure yellow, no pure red', vivid('abyssinia', 75, 170).length === 0 && vivid('abyssinia', 46, 70).length === 0 && vivid('abyssinia', 350, 360).length === 0 && vivid('abyssinia', 0, 6).length === 0, `${inksOf('abyssinia').join(' ')} (${aby.map(Math.round).join()})`);
+  ok('abyssinia: the cheatline is not three flag stripes off one point on the fin: a mark of its own', L.findLivery('abyssinia').emblem === 'acacia');
+  const { readFileSync: readFile } = await import('node:fs');
+  const text = readFile(new URL('../../src/aircraft/liveries.js', import.meta.url), 'utf8');
+  const block = (id) => text.slice(text.lastIndexOf('{', text.indexOf(`id: '${id}'`)), text.indexOf('fleet:', text.indexOf(`id: '${id}'`)) + 400);
+  ok('none of the three names the company it used to look like, even in a comment', !/DHL|FedEx|Ethiopian/i.test(['dashfreight', 'flexship', 'abyssinia'].map(block).join('\n')));
 }
 
 /* ------------------------------------------------------------------ *
@@ -176,7 +223,7 @@ PAINT.setPaintTier('high');
   const pskin = materialNamed(painted, 'Airliner_livery');
   ok('abyssinia (painted): the skin is paint — low metalness, a clearcoat on High', !!pskin && pskin.metalness < 0.3 && pskin.clearcoat > 0.05, pskin ? `metalness ${pskin.metalness}, clearcoat ${pskin.clearcoat}` : 'none');
   const fans = meshesNamed(painted, /^Fan cowl$/);
-  ok('abyssinia: both fan cowls wear the cowl skin, in the airline\'s green with the gold ring', fans.length === 2 && fans.every((f) => f.material.name === 'Airliner_cowl' && f.material.map && /#0b8a3e\|#e8b40a/.test(f.material.map.name)), fans.map((f) => f.material.map && f.material.map.name).join(' | '));
+  ok('abyssinia: both fan cowls wear the cowl skin, in the airline\'s indigo with the ochre ring', fans.length === 2 && fans.every((f) => f.material.name === 'Airliner_cowl' && f.material.map && /#262c66\|#e0a458/.test(f.material.map.name)), fans.map((f) => f.material.map && f.material.map.name).join(' | '));
   ok('abyssinia: the cowl skin runs along the cowl (v from the lip to the nozzle), not one band', fans.length > 0 && (() => {
     const uv = fans[0].geometry.attributes.uv;
     let lo = 1;
@@ -406,7 +453,8 @@ PAINT.setPaintTier('high');
   const parcel = L.findLivery('parcelbrown');
   ok('parcelbrown: parcels with nothing round them (a badge on brown read as a real carrier\'s shield)', parcel.emblem === 'parcel' && /nothing round/i.test(doc('Parcel Brown')) && !/hexagon|shield/i.test(doc('Parcel Brown')), doc('Parcel Brown'));
 
-  const gone = ['antelope', 'gazelle', 'wavetri'];
+  // speedlines, stripes and arrowbox were the three nearest to real freight and flag-carrier marks (owner, 2026-11-04).
+  const gone = ['antelope', 'gazelle', 'wavetri', 'speedlines', 'stripes', 'arrowbox'];
   ok('the old marks are gone from the lists and from the drawing file', gone.every((m) => !L.EMBLEMS.includes(m) && !E.EMBLEM_STYLES.includes(m) && !src.includes(`${m}(P`) && E.drawEmblem(fakeG(), m, 256, ['#fff']) === false));
   ok('no airline wears a mark that is not in the list', L.AIRLINE_LIVERIES.every((l) => L.EMBLEMS.includes(l.emblem)));
 }

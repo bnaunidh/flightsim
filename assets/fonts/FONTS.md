@@ -47,7 +47,7 @@ the FEEL of the lettering of the airline it is styled after — never that airli
 | Desert Pearl | Playfair Display 700 | high-contrast elegant serif |
 | Sandline | Cinzel 700 | classical capitals |
 | Dash Freight | Exo 2 700 italic | fast heavy italic |
-| FlexShip | Archivo Black | black tight grotesque |
+| FlexShip | Montserrat 700 | round geometric, open and spaced |
 | Parcel Brown | Barlow Condensed 700 | sturdy condensed |
 | Royal Isles | Jost 700 | crisp upright geometric |
 | Bosphorus | League Spartan 700 | bold even geometric |

@@ -12,7 +12,7 @@
  * 2. THE SHEETS. ui/touch.js builds the GROUND and SYSTEMS pads and sheets
  *    with the owner's list on them: the crew / pushback / stop, the push's
  *    way round, the parking brake, autopilot, assist, trim, look behind,
- *    mayday, map, range, controls. main.js answers each.
+ *    map, range, controls. main.js answers each.
  * 3. THE PUSH'S WAY ROUND. airport-services.js takes a preference and
  *    refuses nonsense.
  *
@@ -107,24 +107,23 @@ const wanted = {
   'trim nose up (held)': "'trimUp', { hold: true }",
   'trim neutral': "'trimReset'",
   'look behind (held)': "'lookBehind', { hold: true",
-  'the mayday': "'brace'",
   'the map': "'minimap'",
   'the map range': "'minimapRange'",
   'the controls card': "'help'",
 };
 const notOnSheet = Object.entries(wanted).filter(([, n]) => !touch.includes(n)).map(([k]) => k);
-ok('the sheets carry the owner\'s list: crew, pushback and stop, its way round, parking brake, autopilot, assist, trim, look behind, mayday, map, range, controls', notOnSheet.length === 0, notOnSheet.join(', ') || `${Object.keys(wanted).length} buttons`);
+ok('the sheets carry the owner\'s list: crew, pushback and stop, its way round, parking brake, autopilot, assist, trim, look behind, map, range, controls', notOnSheet.length === 0, notOnSheet.join(', ') || `${Object.keys(wanted).length} buttons`);
 ok('the GROUND pad is the aeroplane\'s (hidden in the helicopter with the other wing pads) and starts hidden', /groundPad\.classList\.add\('is-wing'\)/.test(touch) && /groundPad\.hidden = true/.test(touch));
 ok('a sheet closing lets go of every held key, and hiding the layer closes the sheets', /releaseHolds\(\)/.test(touch) && /setVisible\(on\) \{\s*if \(!on\) this\.closeSheets\(\);/.test(touch));
 ok('the sheet is placed by measuring the stick, the pads and the rudder, never by a guessed pixel', /placeSheet\(s\)/.test(touch) && /getBoundingClientRect/.test(touch.slice(touch.indexOf('placeSheet(s) {'))));
 
 const main = read('src/main.js');
 ok('main.js wires the sheets: onHold and state into TouchControls, holdAction and touchState', /onHold: \(a, down\) => this\.holdAction\(a, down\)/.test(main) && /state: \(\) => this\.touchState\(\)/.test(main) && /^\s+holdAction\(a, down\) \{/m.test(main) && /^\s+touchState\(\) \{/m.test(main));
-const answers = ['parkingBrake', 'pushAuto', 'pushNoseLeft', 'pushNoseRight', 'heliAssist', 'trimReset', 'emergencyLand', 'emergencyCircle'];
+const answers = ['parkingBrake', 'pushAuto', 'pushNoseLeft', 'pushNoseRight', 'heliAssist', 'trimReset'];
 const unanswered = answers.filter((a) => !new RegExp(`case '${a}'`).test(main));
-ok('hudAction answers the sheets\' own actions and the mayday card\'s two answers', unanswered.length === 0, unanswered.join(', ') || answers.join(', '));
+ok('hudAction answers the sheets\' own actions', unanswered.length === 0, unanswered.join(', ') || answers.join(', '));
 ok('hudAction\'s default presses a registered action\'s own key, so Settings → Controls still applies', /default:[\s\S]{0,400}if \(ACTIONS\[a\]\)[\s\S]{0,200}this\.tap\(code\)/.test(main));
-ok('the mayday card\'s rows are buttons that answer (ui/hud.js)', /button[^>]*class="hud-choice-row"[^>]*data-choice/.test(read('src/ui/hud.js')) && /action: 'emergencyLand'/.test(main) && /action: 'emergencyCircle'/.test(main));
+ok('nobody declares a mayday: nothing on the touch sheets offers it', !/'brace'|MAYDAY|DECLARE AN EMERGENCY|braceBtn/.test(touch), 'touch.js');
 
 const css = read('styles/main.css');
 ok('the sheet and its buttons have styles, with 44 px targets', /\.touch-sheet \{/.test(css) && /\.touch-sheet-btn \{[^}]*min-height: 48px/.test(css) && /\.touch-sheet-close \{[^}]*height: 44px/.test(css));

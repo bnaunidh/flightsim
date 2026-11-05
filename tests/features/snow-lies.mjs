@@ -27,6 +27,19 @@ ok('...and is gone five minutes after', S.SNOW_COVER.value === 0, S.SNOW_COVER.v
 for (let t = 0; t < 200; t += 0.1) S.updateSurfaces(wx(0, 1), 0.1);
 ok('rain lays no snow', S.SNOW_COVER.value === 0);
 const terr = readFileSync(new URL('../../src/world/terrain.js', import.meta.url), 'utf8');
+const wt = readFileSync(new URL('../../src/world/worldmap/world-terrain.js', import.meta.url), 'utf8');
+{
+  // The owner, 2026-11-05: "some runways are white: the snow doesnt render". The Nunatak Ice Strip is packed snow on
+  // an island far below the north's snow line. Its ground has to be snow to the waterline, or the strip is a white slab.
+  const { PREVIEW_DATA: D } = await import(SRC + 'world/worldmap/preview-data.js');
+  const strip = D.airports.find((a) => a.id === 'petrel');
+  const m = wt.match(/sline = mix\(sline, -200\.0, 1\.0 - smoothstep\(([\d.]+), ([\d.]+), distance\(wp, vec2\(([-\d.]+), ([-\d.]+)\)\)\)\);/);
+  ok('the ice strip\'s island carries snow to the waterline on the World Map', !!m);
+  if (m) {
+    const d = Math.hypot(strip.x - Number(m[3]), strip.z - Number(m[4]));
+    ok('...centred on the strip, all of it inside the full snow', d + strip.length / 2 < Number(m[1]), `${Math.round(d)} m off, ${strip.length} m long`);
+  }
+}
 ok('every terrain material reads the shared lying-snow uniform (no recompile)', /shader\.uniforms\.uSnowCover = SNOW_COVER;/.test(terr) && /uniform float uSnowCover;/.test(terr));
 ok('...above the tide line only (no snow on the wet sand or under the sea)', /uSnowCover \* smoothstep\(0\.5, 3\.0, vGroundY\)/.test(terr));
 // Night snow: inside Nunatak's snow cloud at night the whiteout fog was the daytime white, so the snow-covered

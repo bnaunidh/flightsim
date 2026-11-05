@@ -262,6 +262,11 @@ const edge = (line, off, half) => line.map(([s, t]) => [s, t + off, half]);
  *   winglet   the winglets' colour (the wing's own if none)
  *   freighter no cabin windows: the windows are plugged, the name goes big
  */
+/** Abyssinia's hillside: a ribbon out of the belly behind the wing, broadening up the aft body to the fin. */
+const HIGHLAND = [[0.4, 0.14, 0], [0.56, 0.2, 0.03], [0.72, 0.36, 0.07], [0.86, 0.68, 0.1], [0.98, 1.12, 0.12]];
+/** FlexShip's line between the white and the graphite: level to the wing, lifting behind it. */
+const FLEX_LINE = [[-0.02, 0.34], [0.3, 0.34], [0.6, 0.36], [0.8, 0.5], [0.92, 0.74], [1.02, 1.1]];
+
 export const LIVERY_ART = {
   // White over two blues' worth of belly, lifting to the tail; a gold line on the join.
   continental: {
@@ -273,18 +278,17 @@ export const LIVERY_ART = {
     title: { cap: 1 },
     winglet: '#0d2f56',
   },
-  // Three pennants, green, gold and red, off the belly and up into the fin root, and on across the fin.
+  // A terracotta hillside rising aft to the fin, an ochre line along its crest, an indigo fin over it.
   abyssinia: {
     body: [
-      ['under', '#aeb6bd', LINE.low],
-      ['rib', '#0b8a3e', [[0.46, 0.2, 0], [0.62, 0.3, 0.02], [0.76, 0.5, 0.042], [0.88, 0.8, 0.06], [0.95, 1.08, 0.07]]],
-      ['rib', '#e8b40a', [[0.5, 0.15, 0], [0.66, 0.24, 0.016], [0.8, 0.43, 0.036], [0.92, 0.72, 0.052], [1, 1.02, 0.06]]],
-      ['rib', '#d9231f', [[0.54, 0.1, 0], [0.7, 0.18, 0.012], [0.84, 0.36, 0.03], [0.95, 0.62, 0.044], [1.02, 0.9, 0.05]]],
+      ['under', '#b7aea0', LINE.low],
+      ['rib', '#b4462b', HIGHLAND],
+      ['rib', '#e0a458', HIGHLAND.map(([s, t, half]) => [s, Math.min(1.12, t + half + 0.008), half ? 0.009 : 0])],
     ],
-    fin: {},
-    title: { cap: 1, lead: ['#0b8a3e', '#e8b40a', '#d9231f'], bold: 0.012 },
+    fin: { mark: { k: 1 } },
+    title: { cap: 1, lead: ['#b4462b'], bold: 0.012 },
     regInk: '#1f272e',
-    winglet: '#0b8a3e',
+    winglet: '#262c66',
   },
   // Bare metal, a red line over a blue, sweeping up towards a band and a star on the fin.
   liberty: {
@@ -382,31 +386,29 @@ export const LIVERY_ART = {
     regInk: '#7a5a30',
     winglet: '#b08d57',
   },
-  // Yellow all over, a red billboard name, three speed bars cut across the aft body.
+  // Cobalt all over, a white billboard name, one coral line climbing the aft body to the fin.
   dashfreight: {
     freighter: true,
     body: [
-      ['under', '#e6b800', LINE.low],
-      ['poly', '#d40511', [[0.72, -0.1], [0.76, -0.1], [0.83, 1.1], [0.79, 1.1]]],
-      ['poly', '#d40511', [[0.785, -0.1], [0.805, -0.1], [0.875, 1.1], [0.855, 1.1]]],
+      ['under', '#14308a', LINE.low],
+      ['rib', '#ff6b4a', [[0.58, 0.1, 0], [0.72, 0.2, 0.014], [0.84, 0.46, 0.024], [0.94, 0.86, 0.03], [1, 1.12, 0.032]]],
     ],
     fin: { mark: { k: 1 } },
     title: { cap: 1.5, t: 0.56 },
-    regInk: '#1f272e',
-    winglet: '#d40511',
+    regInk: '#f5f7fb',
+    winglet: '#ff6b4a',
   },
-  // A purple roof falling away behind the wing into a white tail, the fin green.
+  // White over graphite, the line between them rising aft, a lime stripe along it.
   flexship: {
     freighter: true,
     body: [
-      ['under', '#c4c9cf', LINE.low],
-      ['over', '#4d148c', [[-0.02, 0.5], [0.05, 0.47], [0.14, 0.44], [0.5, 0.44], [0.66, 0.5], [0.8, 0.72], [0.9, 1.1]]],
-      ['rib', '#1f8a4c', [[0.5, 0.42, 0.006], [0.66, 0.478, 0.012], [0.8, 0.7, 0.018], [0.9, 1.08, 0.024]]],
+      ['under', '#2b3138', FLEX_LINE],
+      ['rib', '#8fc31f', edge(FLEX_LINE, 0.014, 0.01)],
     ],
-    fin: { mark: {} },
-    title: { cap: 1.45, t: 0.7, on: '#4d148c' },
-    regInk: '#1f272e',
-    winglet: '#1f8a4c',
+    fin: { mark: { k: 1 } },
+    title: { cap: 1.45, t: 0.72 },
+    regInk: '#f5f7f6',
+    winglet: '#8fc31f',
   },
   // Brown under, white over, and a gold band that widens all the way to the fin.
   parcelbrown: {

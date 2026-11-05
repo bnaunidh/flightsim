@@ -299,6 +299,9 @@ export function coverOf(x, z, h, slope, out) {
   const D = wanderOf(x, z);
   if (D < RANGE_DEEP - 3000) {
     coverAt(x, z, h, slope, false, out);
+    // No beach under a mountain wall: a sand band all round the sea, and the low sun lit it as one pale line. Shingle.
+    out[2] += out[0];
+    out[0] = 0;
     // No field out here, and the high ground bare: the rock itself is painted by height (farlands-look.js).
     const bare = 1 - smooth(500, 1000, h);
     out[3] = 0;
