@@ -66,6 +66,8 @@ import './ambient.js';
 // After ambient: life on the airfield — ramp crews, passengers at the stairs, the terminal kerb, base guards,
 // and service vehicles on an apron loop (life/plan.js), in free flight and missions.
 import './world-life.js';
+// Into the terminal on foot: a trigger; the building is fetched on the way to the doors (./terminal/).
+import './walk-in.js';
 // After ambient: the emergency scene (a cordon, crews and helicopters round an incident), raised by
 // a mission's `scenes` or by any feature; it thins the ambient population round itself.
 import './emergency-scene.js';

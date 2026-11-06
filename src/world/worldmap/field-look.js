@@ -13,6 +13,7 @@
  * `a.layout`, `a.extras` and the group outstation.js puts the field in.
  * Landmarks are stored in world coordinates and converted here.
  */
+import { dressStand } from './field-detail.js';
 import * as THREE from '../../vendor/three.module.js';
 import { addObstacleAt } from '../terrain.js';
 import { STYLES, styleOf } from './personas.js';
@@ -572,6 +573,25 @@ export function parkedJet(b, x, z, L, S, tail, heavy = false) {
   b.box(0.6, 1.6, 0.8, x, 0.8, z - L * 0.33, 0x2a2d30);
 }
 
+/** A regional turboprop: high wing, two props, a T-tail. Nose to -z. */
+function parkedTurboprop(b, x, z, L, S, tail) {
+  const r = L * 0.06;
+  const body = 0xeef0f2;
+  const y = r + 1.1;
+  b.box(r * 2, r * 2, L * 0.82, x, y, z + L * 0.02, body);
+  b.box(r * 1.5, r * 1.5, L * 0.1, x, y - r * 0.1, z - L * 0.44, body);
+  b.box(r * 1.2, r * 1.1, L * 0.14, x, y + r * 0.3, z + L * 0.48, body);
+  b.box(S, 0.34, L * 0.1, x, y + r * 1.05, z - L * 0.04, 0xdfe2e5);
+  for (const side of [-1, 1]) {
+    b.box(0.95, 0.95, 3.4, x + side * S * 0.2, y + r * 0.7, z - L * 0.1, 0xd5d8dc);
+    b.cyl(1.7, 1.7, 0.08, x + side * S * 0.2, y + r * 0.7, z - L * 0.16, 0x2b2f33, 12, { rx: Math.PI / 2 });
+    b.box(0.5, 1.5, 1.8, x + side * r * 0.9, 0.9, z + L * 0.02, 0x2a2d30);
+  }
+  b.box(0.5, L * 0.22, L * 0.12, x, y + r + L * 0.11, z + L * 0.46, tail);
+  b.box(L * 0.3, 0.26, L * 0.07, x, y + r + L * 0.22, z + L * 0.5, 0xdfe2e5);
+  b.box(0.5, 1.4, 0.7, x, 0.7, z - L * 0.34, 0x2a2d30);
+}
+
 /** A light aircraft: high wing, a fuselage, a tail. Nose to -z. */
 function parkedLight(b, x, z, col) {
   b.box(1.3, 1.4, 7.4, x, 1.3, z, 0xf2f2f0);
@@ -587,33 +607,40 @@ function parkedLight(b, x, z, col) {
  * strip's apron. Pushes night lights. For the outstations only: at the field
  * you start from apron.js parks the real aircraft.
  */
-export function apronDressing(b, a, st, night) {
+export function apronDressing(b, a, st, night, D = null) {
   const lay = a.layout || {};
   const ap = (lay.pavement || []).find((p) => p.kind === 'apron');
   if (!ap) return;
   const cls = lay.cls;
   const seed = (i) => Math.abs(Math.sin((a.x + i * 131.7) * 0.0123 + a.z * 0.0071) * 43758.5453) % 1;
   const t = lay.terminal;
-  const bridges = (cls === 'hub' || cls === 'regional') && ['hall', 'glass', 'block'].includes(st.terminal) && t && t.z1 <= ap.z0 + 4;
+  // A regional field boards by the apron stairs: a short terminal, a few stands, no bridges.
+  const regional = a.kind === 'regional';
+  const bridges = !regional && (cls === 'hub' || cls === 'regional') && ['hall', 'glass', 'block'].includes(st.terminal) && t && t.z1 <= ap.z0 + 4;
   if (cls === 'strip' || a.kind === 'ga') {
     for (let x = ap.x0 + 10, i = 0; x < ap.x1 - 8; x += 15, i++) {
       if (seed(i) < 0.35) continue;
       parkedLight(b, x, ap.z0 + 9, TAILS[i % TAILS.length]);
     }
   } else {
-    const heavyFirst = cls === 'hub';
+    const heavyFirst = cls === 'hub' && !regional;
     const depth = ap.z1 - ap.z0;
-    let x = ap.x0 + 30;
+    // A short runway's airliner is a turboprop (a Q400 wants 1,400 m; a 737 or an A320, 1,800 or more).
+    const turbo = regional && a.length < 1700;
+    let x = regional && t ? Math.max(ap.x0, t.x0) + 8 : ap.x0 + 30;
     let i = 0;
-    while (x < ap.x1 - 25) {
+    while (x < ap.x1 - 25 && !(regional && i >= 4)) {
       const heavy = heavyFirst && i < 3;
-      const L = heavy ? 64 : 38;
-      const S = heavy ? 62 : 34;
+      const L = heavy ? 64 : turbo ? 33 : 38;
+      const S = heavy ? 62 : turbo ? 28 : 34;
       const pitch = heavy ? 82 : 46;
       const cx = x + pitch / 2 - 4;
       if (cx + S / 2 > ap.x1 - 4 || L + 8 > depth) break;
       if (seed(i) > 0.22) {
-        parkedJet(b, cx, ap.z0 + 6 + L / 2, L, S, TAILS[(i * 3 + Math.round(a.x)) % TAILS.length], heavy);
+        const tail = TAILS[(i * 3 + Math.round(a.x)) % TAILS.length];
+        if (turbo) parkedTurboprop(b, cx, ap.z0 + 6 + L / 2, L, S, tail);
+        else parkedJet(b, cx, ap.z0 + 6 + L / 2, L, S, tail, heavy);
+        dressStand(D, cx, ap.z0 + 6 + L / 2, L, S, turbo, !bridges);
         if (bridges) {
           // The bridge: from the terminal's airside face to the front door, on its wheeled leg.
           b.box(3.4, 3.4, 12, cx - 6, 5.2, ap.z0 + 3, 0xb9bec2);

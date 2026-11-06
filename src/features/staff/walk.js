@@ -256,6 +256,22 @@ function flatHere(x, z, h) {
   return Math.abs(heightAt(x + e, z) - h) + Math.abs(heightAt(x - e, z) - h) + Math.abs(heightAt(x, z + e) - h) + Math.abs(heightAt(x, z - e) - h) < 0.03;
 }
 
+/*
+ * A floor that is not the ground: inside the terminal (features/terminal),
+ * where there is a second storey and stairs. fn(x, z, feetY) gives the floor's
+ * height, or null where it has no say.
+ */
+let FLOOR_HOOK = null;
+/** Where the feet were: which of two storeys a (x, z) means. */
+let FLOOR_REF = -1e9;
+export function setFloorHook(fn) {
+  FLOOR_HOOK = typeof fn === 'function' ? fn : null;
+}
+/** Is the floor at (x, z) one that a hook is laying (a hard floor indoors)? */
+export function hookedFloor(x, z) {
+  return !!FLOOR_HOOK && FLOOR_HOOK(x, z, FLOOR_REF) !== null;
+}
+
 /**
  * Where a shoe goes down at (x, z): the ground, plus whatever is laid on it
  * there — tarmac, a road's ribbon, a pad's disc. 5 to 14 cm, and it is the
@@ -265,6 +281,10 @@ function flatHere(x, z, h) {
  * the van 14.6).
  */
 export function floorAt(x, z) {
+  if (FLOOR_HOOK) {
+    const f = FLOOR_HOOK(x, z, FLOOR_REF);
+    if (f !== null) return f;
+  }
   const g = ground(x, z);
   if (KIND === 1) return g + PAVE_LIFT;
   if (KIND === 2) return g + DRAWN.lift;
@@ -579,6 +599,8 @@ function refreshNear(x, z) {
     near.pgen = -1;
     for (let i = 0; i < OBSTACLES.length; i++) {
       const o = OBSTACLES[i];
+      // Walked into (features/terminal): the walls are that feature's solids while it is open.
+      if (o.walkIn) continue;
       if (o.x1 > near.x - R && o.x0 < near.x + R && o.z1 > near.z - R && o.z0 < near.z + R) NEAR.push(o);
     }
   }
@@ -725,6 +747,7 @@ export class Walker {
   place(x, z, headingDeg = 0) {
     this.x = x;
     this.z = z;
+    FLOOR_REF = -1e9;
     this.y = floorAt(x, z);
     this.heading = headingDeg;
     this.vx = 0;
@@ -753,6 +776,7 @@ export class Walker {
     if (!(dt > 0)) return;
     // The baggage trains that drive round the apron are where they are now.
     tickProps();
+    FLOOR_REF = this.y;
     const len = Math.hypot(mx, mz);
     if (len > 1) {
       mx /= len;

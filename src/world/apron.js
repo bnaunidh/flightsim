@@ -536,7 +536,15 @@ export class Apron {
 
     // The hall: textured walls (the offices, landside); the glass goes over
     // the front and, on the terminal and the clubhouse, round both ends.
+    const cut = { wall: [this.b.wall.vertexCount, 0], vc: [] };
     this.b.wall.box(W, H, D, cx, ELEV + H / 2, zMid, 0xffffff, 0, OFFICE_TILE);
+    cut.wall[1] = this.b.wall.vertexCount;
+    this.shellCut = kind === 'terminal' ? cut : null;
+    const cutOf = (f) => {
+      const a = vc.vertexCount;
+      f();
+      cut.vc.push([a, vc.vertexCount]);
+    };
     // On a concrete plinth 1.5 m into the ground, so a footprint on ground a
     // little below field level shows no daylight under it.
     vc.slab(r.x0 - 0.2, r.x1 + 0.2, ELEV - 1.5, ELEV + 0.02, r.z0 - 0.2, r.z1 + 0.2, 0xb4b6b0);
@@ -553,11 +561,8 @@ export class Apron {
     /*
      * Curtain wall: the front, facing the aeroplanes, and both ends.
      *
-     * Only the front used to be glass. The ends wore the office-window
-     * texture of the landside wall and the vault stopped flush with them, so
-     * from the runway the building looked cut off with a knife — a glass box
-     * with a slice of a block of flats stuck on the end. It wraps round now,
-     * with fins every bay, a post at each corner, and one mesh for all of it.
+     * Wrapped round the ends (it used to look cut off with a knife), with
+     * fins every bay, a post at each corner, and one mesh for all of it.
      */
     if (kind !== 'ops') {
       const gh = H - (kind === 'club' ? 2.2 : 4.6);
@@ -604,11 +609,11 @@ export class Apron {
           vc.box(t, h, D - 0.5, ex + s * (t / 2 - 0.25), y, zMid, WHITE);
         }
       };
-      if (kind === 'terminal') band(2.6, ELEV + 1.3, 0.7);
+      if (kind === 'terminal') cutOf(() => band(2.6, ELEV + 1.3, 0.7));
       band(kind === 'club' ? 1.0 : 2.0, ELEV + H - (kind === 'club' ? 0.5 : 0.6), 1.2);
       if (kind === 'terminal') {
         // The same two bands along the kerb.
-        vc.box(W + 1.4, 2.6, 0.7, cx, ELEV + 1.3, zBack + dz * 0.1, WHITE);
+        cutOf(() => vc.box(W + 1.4, 2.6, 0.7, cx, ELEV + 1.3, zBack + dz * 0.1, WHITE));
         vc.box(W + 2.4, 2.0, 1.2, cx, ELEV + H - 0.6, zBack + dz * 0.35, WHITE);
       }
 
@@ -658,12 +663,9 @@ export class Apron {
        * describe one — how far apart the eaves are and how far it rises
        * between them.
        *
-       * It overhangs now: 4-5 m over the glass on the airside (the canopy
-       * that shades a real departures hall, and the shadow line that makes
-       * the front read as a front), 1.5 m over the kerb, and 3 m past each
-       * end, with a white fascia round its edge. It stopped flush with the
-       * walls before, capped with a flat white gable at each end, which is
-       * the other half of why the building looked sliced.
+       * It overhangs: 4-5 m over the glass on the airside (the shade and
+       * shadow line of a real departures hall), 1.5 m over the kerb, 3 m past
+       * each end, with a white fascia round its edge.
        */
       const oF = Math.min(6, Math.max(3, H * 0.18));
       const oB = 1.5;

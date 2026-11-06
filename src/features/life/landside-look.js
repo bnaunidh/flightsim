@@ -7,8 +7,9 @@
  * stay in the box: it is the shape of the place that matters there.
  */
 import * as THREE from '../../vendor/three.module.js';
-import { Batch, vcMaterial, glowPoints, canvas, canvasTexture } from '../../world/airport-kit.js';
+import { Batch, vcMaterial, glowPoints, glowTexture, canvas, canvasTexture } from '../../world/airport-kit.js';
 import { KERB_EDGE } from './landside-plan.js';
+import { AIRPORT } from '../../world/terrain.js';
 
 const KERB = KERB_EDGE;
 const CONCRETE = 0xa9acaa;
@@ -51,6 +52,8 @@ export function buildLandside(lay, plan, ground, quality) {
   const b = new Batch();
   const words = low ? null : new Batch();
   const glow = [];
+  /** Where each lamp's light lands. */
+  const pools = [];
   const glowCol = [];
   const out = F.side * 1; // +1: w runs towards +z
   const X = (u) => F.x(u);
@@ -111,6 +114,7 @@ export function buildLandside(lay, plan, ground, quality) {
         b.box(0.34, 0.1, 0.8, x, y + 7.92, z + toWall * 1.4, 0xd8dde0);
         glow.push(x, y + 7.78, z + toWall * 1.4);
         glowCol.push(1, 0.92, 0.74);
+        pools.push([x, y, z + toWall * 1.4]);
         break;
       }
       case 'bollard':
@@ -186,6 +190,18 @@ export function buildLandside(lay, plan, ground, quality) {
     group.add(lights0);
   }
   if (low) return { group, lights: lights0, batch: b };
+  // After dark the lamps light the ground, and the canopy the doors: soft pools, steady, with the lamps.
+  if (lights0) {
+    const p = new Batch();
+    for (const [x, y, z] of pools) p.flat(17, 17, x, y + 0.1, z, 0xffdfae);
+    const w = T.u1 - T.u0;
+    const mid = (T.u0 + T.u1) / 2;
+    const yk = AIRPORT.elev + 0.14;
+    for (let k = -3; k <= 3; k++) p.flat(w / 7.5, 15, F.x(mid + (k * w) / 9), yk, F.z(T.back + 4), 0xfff0d2);
+    const mat = new THREE.MeshBasicMaterial({ map: glowTexture(), vertexColors: true, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending, depthWrite: false });
+    const m = p.mesh(mat, { cast: false, receive: false, name: 'landside-light-pools' });
+    if (m) lights0.add(m);
+  }
   const mesh = b.mesh(vcMaterial({ roughness: 0.75, metalness: 0.08 }), { cast: !low, receive: false, name: 'landside-furniture' });
   if (mesh) group.add(mesh);
   if (words && words.vertexCount) {

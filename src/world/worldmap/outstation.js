@@ -31,6 +31,7 @@ import { papiFor } from '../navfield.js';
 import { styleOf } from './personas.js';
 import { planDowntown } from './town-grid.js';
 import * as LOOK from './field-look.js';
+import { Detail, Glazing, DETAIL_RANGE, dressTerminal, dressFire, setFieldGlow } from './field-detail.js';
 
 /** The share of a town's buildings built at each tier (the World Map's towns are all built at load). */
 // High 0.85 (was 1) since the sea came in to ~200 km (2026-10-31): one more village, and the World Map's memory over
@@ -81,6 +82,15 @@ function sharedRunwayMaterial() {
   return runwayMat;
 }
 
+/** Metres of terminal at a regional field. */
+const REGIONAL_TERMINAL = 170;
+
+/** A field's tower: a regional field's is small, a strip's an AFIS room over the club. */
+function towerH(a) {
+  const h = (a.layout && a.layout.tower && a.layout.tower.h) || 20;
+  return a.kind === 'ga' ? Math.min(h, 9) : a.kind === 'regional' ? Math.min(h, 22) : h;
+}
+
 /**
  * One field's plan, in its own frame (x along the runway, -z to the north):
  * the same layout airport-layout.js makes when the field is the one you
@@ -93,8 +103,13 @@ export function fieldPlan(a) {
   const paved = (lay.pavement || []).map((p) => ({ ...p }));
   if (lay.carPark) paved.push({ kind: 'carpark', ...lay.carPark });
   const buildings = [];
-  if (lay.terminal) buildings.push({ kind: 'terminal', ...lay.terminal, h: Math.min(lay.terminal.h || 14, a.kind === 'hub' ? 22 : 14) });
-  if (lay.tower) buildings.push({ kind: 'tower', ...lay.tower, h: lay.tower.h || 20 });
+  if (lay.terminal) {
+    // A regional field's terminal is short: a few stands, not a concourse (the layout measures the most it could hold).
+    const t = { ...lay.terminal };
+    if (a.kind === 'regional') t.x1 = Math.min(t.x1, t.x0 + REGIONAL_TERMINAL);
+    buildings.push({ kind: 'terminal', ...t, h: Math.min(t.h || 14, a.kind === 'hub' ? 22 : a.kind === 'regional' ? 12 : 14) });
+  }
+  if (lay.tower) buildings.push({ kind: 'tower', ...lay.tower, h: towerH(a) });
   for (const h of lay.hangars || []) buildings.push({ kind: 'hangar', ...h, h: h.h || 14 });
   if (lay.fire) buildings.push({ kind: 'fire station', ...lay.fire, h: 8 });
   const tanks = [];
@@ -119,7 +134,7 @@ export function fieldPlan(a) {
 export function towerLens(a) {
   const t = a && a.layout && a.layout.tower;
   if (!t) return null;
-  const h = t.h || 20;
+  const h = towerH(a);
   const cx = (t.x0 + t.x1) / 2;
   const cz = (t.z0 + t.z1) / 2;
   const out = (t.z1 - t.z0) / 2 + 4;
@@ -164,24 +179,30 @@ export function buildField(a, quality = 'medium') {
   const night = [];
   // In the style of the map whose airport this is (worldmap/personas.js, field-look.js).
   const st = styleOf(a);
+  // The small things and the real glazing: worldmap/field-detail.js.
+  const small = quality === 'low' ? null : new Detail();
+  const glaze = small ? new Glazing() : null;
   for (const s of plan.buildings) {
     const w = s.x1 - s.x0;
     const d = s.z1 - s.z0;
     const cx = (s.x0 + s.x1) / 2;
     const cz = (s.z0 + s.z1) / 2;
-    if (s.kind === 'terminal') LOOK.terminal(b, s, st, night);
-    else if (s.kind === 'tower') LOOK.tower(b, s, st, night);
+    if (s.kind === 'terminal') {
+      LOOK.terminal(b, s, st, night);
+      dressTerminal(small, glaze, s, st);
+    } else if (s.kind === 'tower') LOOK.tower(b, s, st, night);
     else if (s.kind === 'fire station') {
       b.box(w, s.h, d, cx, s.h / 2, cz, st.wall);
       for (let x = s.x0 + 4; x < s.x1 - 3; x += 8) b.box(6, s.h * 0.7, 0.3, x, s.h * 0.35, s.z1 + 0.15, 0xb8322a);
       b.box(w + 0.6, 0.6, d + 0.6, cx, s.h + 0.3, cz, st.roofCol);
+      dressFire(small, s);
     } else LOOK.hangar(b, s, st);
     addObstacleAt(a.x + cx, a.z + cz, w + 1, d + 1, a.elev - 1, s.h + (s.kind === 'tower' ? 8 : 4), `You flew into the ${s.kind} at ${a.name}`);
   }
   // Its own landmarks: the air base's shelters, the radomes, the silos, the lighthouse on the headland...
   const dressed = LOOK.dress(b, a, night);
   // And an apron in use: airliners on the stands, bridges at the big fields, floodlights.
-  LOOK.apronDressing(b, a, st, night);
+  LOOK.apronDressing(b, a, st, night, small);
   for (const t of plan.tanks) {
     b.cyl(t.r, t.r, t.h, t.x, 0, t.z, C.tank, 16);
     addObstacleAt(a.x + t.x, a.z + t.z, t.r * 2, t.r * 2, a.elev - 1, t.h + 1, `You flew into the fuel tanks at ${a.name}`);
@@ -222,6 +243,13 @@ export function buildField(a, quality = 'medium') {
   if (mesh) {
     mesh.geometry.deleteAttribute('uv');
     g.add(mesh);
+  }
+  const glass = glaze && glaze.mesh();
+  if (glass) g.add(glass);
+  const detail = small && small.mesh();
+  if (detail) {
+    g.add(detail);
+    g.userData.detail = detail;
   }
 
   // Night: steady lights. Edges every 60 m, white; thresholds green; ends red. No flashing.
@@ -444,6 +472,7 @@ export function* outstationSteps(data, departureId, quality = 'medium', plan = n
     towns.push({ group: tg, town: t, built: null });
   }
   const range = SHOW_RANGE[quality] || SHOW_RANGE.medium;
+  const detailAt = DETAIL_RANGE[quality] || 0;
   let glow = -1;
   for (const rec of towns) {
     buildTown(rec);
@@ -468,6 +497,7 @@ export function* outstationSteps(data, departureId, quality = 'medium', plan = n
         f.visible = d < range;
         if (f.userData.lights) f.userData.lights.visible = f.visible && (isNight || dusk || (weather && weather.cond && weather.cond.cloud > 0.8));
         if (f.visible && f.userData.papi && cam) setPapi(f.userData.papi, a, cam);
+        if (f.userData.detail) f.userData.detail.visible = f.visible && d < detailAt;
       }
       const want = isNight ? 1.15 : dusk ? 0.45 : 0;
       for (const t of towns) {
@@ -476,6 +506,7 @@ export function* outstationSteps(data, departureId, quality = 'medium', plan = n
       }
       if (want !== glow) {
         glow = want;
+        setFieldGlow(want * 0.8);
         for (const t of towns) for (const m of (t.built && t.built.nightMats) || []) m.emissiveIntensity = want;
       }
     },

@@ -57,7 +57,7 @@ import { registerExtension, extStatus } from '../game/extensions.js';
 import { registerActions, isKey, heldKey, keyName, live } from '../flight/input.js';
 import { heightAt, isPaved } from '../world/terrain.js';
 import { createPerson, posePerson, setWands, disposePerson } from './staff/person.js';
-import { Walker, WALK, groundAt, setTerrainMeshes, forgetObstacles, setProps, solidBox, solidAt, setDrawn } from './staff/walk.js';
+import { Walker, WALK, groundAt, setTerrainMeshes, forgetObstacles, setProps, solidBox, solidAt, setDrawn, hookedFloor } from './staff/walk.js';
 import { drawnGroundSampler, ribbonSampler } from '../world/roads.js';
 import { PADS, padDiscLift } from '../world/pads.js';
 import { planeProfile, offset, local, angleDiff } from './staff/jobs.js';
@@ -248,7 +248,7 @@ function footstep(sim, w, landing) {
     const mx = a && a.available && a.mixer;
     if (!mx || !mx.noiseBurst) return;
     const wet = w.wading;
-    const hard = !wet && isPaved(w.x, w.z);
+    const hard = !wet && (isPaved(w.x, w.z) || hookedFloor(w.x, w.z));
     mx.noiseBurst({
       bus: 'environment',
       duration: wet ? 0.16 : landing ? 0.12 : 0.055,
@@ -1124,7 +1124,7 @@ function placeCamera(sim, dt) {
       const px = tx - lx * t;
       const py = ty - pl * t;
       const pz = tz - lz * t;
-      if (solidAt(px, pz, py - 0.3, 0.2, S.solids, 0.6) || py < groundAt(px, pz) + 0.15) {
+      if (solidAt(px, pz, py - 0.3, 0.2, S.solids, 0.6) || py < groundAt(px, pz) + 0.15 || camBlocked(px, py, pz)) {
         d = Math.max(0.7, t - D / CAM_PROBES);
         break;
       }
@@ -1159,6 +1159,12 @@ function placeCamera(sim, dt) {
     cam.near = 0.1;
     cam.updateProjectionMatrix();
   }
+}
+
+/** A provider's say over where the lens may go (a ceiling, a floor overhead: not solid to a walker). */
+function camBlocked(x, y, z) {
+  for (const p of S.providers) if (p.camBlock && p.camBlock(x, y, z)) return true;
+  return false;
 }
 
 /** Not walking: offer the way out when it is on offer. */

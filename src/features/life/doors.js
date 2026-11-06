@@ -110,6 +110,8 @@ export function dressDoors(ap) {
   const T = lay.terminal;
   const F = lay.frame;
   const vc = new Batch();
+  // The black lining, its own mesh: the walk-in (features/terminal) takes it away and the lobby opens into the hall.
+  const dark = new Batch();
   const WHITE = 0xe8ecef;
   const STEEL = 0x8d949c;
   const DARK = 0x07090b;
@@ -128,10 +130,10 @@ export function dressDoors(ap) {
     box(w + 0.1, 0.05, D, x, 0.03, zm, 0x30343a);
     for (const s of [-1, 1]) {
       box(0.22, h + 0.3, D, x + s * (w / 2 + 0.11), (h + 0.3) / 2, zm, frame);
-      box(0.02, h + 0.3, D - 0.04, x + s * (w / 2 - 0.01), (h + 0.3) / 2, zm, DARK);
+      dark.box(0.02, h + 0.3, D - 0.04, x + s * (w / 2 - 0.01), ELEV + (h + 0.3) / 2, zm, DARK);
     }
-    box(w, h + 0.3, 0.06, x, (h + 0.3) / 2, z0 + n * 0.08, DARK);
-    box(w, 0.04, D - 0.06, x, h + 0.24, zm, DARK);
+    dark.box(w, h + 0.3, 0.06, x, ELEV + (h + 0.3) / 2, z0 + n * 0.08, DARK);
+    dark.box(w, 0.04, D - 0.06, x, ELEV + h + 0.24, zm, DARK);
     // Over the doors, a lintel the height of the frame.
     box(w + 0.1, 0.34, 0.2, x, h + 0.13, z0 + n * (D - 0.1), frame);
   };
@@ -166,6 +168,8 @@ export function dressDoors(ap) {
   const mat = vcMaterial({ roughness: 0.25, metalness: 0.4 });
   const shell = vc.mesh(vcMaterial({ roughness: 0.75, metalness: 0.1 }), { name: 'terminal-door-lobbies' });
   if (shell) ap.group.add(shell);
+  const lining = dark.mesh(vcMaterial({ roughness: 0.9 }), { cast: false, name: 'terminal-door-lining' });
+  if (lining) ap.group.add(lining);
   const mesh = new THREE.InstancedMesh(g, mat, doors.length * 2);
   mesh.name = 'terminal-door-leaves';
   mesh.castShadow = false;

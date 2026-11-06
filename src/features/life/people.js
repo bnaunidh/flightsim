@@ -336,8 +336,10 @@ const RIG_COLOUR = /* glsl */ `
 `;
 
 /** Lambert with the rig: the colour material, and (for shadows) the depth one. */
-function rigged(mat, colour) {
+function rigged(mat, colour, indoor = false) {
   mat.onBeforeCompile = (sh) => {
+    // Indoors the light is the building's, day or night: no sun, no moon.
+    if (indoor) sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', 'outgoingLight = diffuseColor.rgb * (0.74 + 0.3 * normal.y);\n#include <opaque_fragment>');
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>\n${RIG_PARS}`)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n  { vec3 q = vec3(0.0, 1.0, 0.0); walkRig(transformed, q); }');
@@ -347,7 +349,7 @@ function rigged(mat, colour) {
         .replace('#include <color_vertex>', `#include <color_vertex>\n${RIG_COLOUR}`);
     }
   };
-  mat.customProgramCacheKey = () => (colour ? 'crowd-rig-v1' : 'crowd-rig-depth-v1');
+  mat.customProgramCacheKey = () => (indoor ? 'crowd-rig-in-v1' : colour ? 'crowd-rig-v1' : 'crowd-rig-depth-v1');
   return mat;
 }
 
@@ -361,13 +363,13 @@ export class Crowd {
    * `simple` Low's figure; `detail` overrides it (0, 1, 2); `figure` a
    * geometry of your own (figureGeometry's attributes).
    */
-  constructor(max, { shadows = false, rnd = Math.random, simple = false, detail = null, figure = null } = {}) {
+  constructor(max, { shadows = false, rnd = Math.random, simple = false, detail = null, figure = null, indoor = false } = {}) {
     this.max = Math.max(1, max | 0);
     this.group = new THREE.Group();
     this.group.name = 'world-life:people';
     this.simple = !!simple;
     this.geo = figure ? figure.clone() : figureGeometry(detail != null ? detail : simple ? 0 : shadows ? 2 : 1);
-    this.mat = rigged(new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }), true);
+    this.mat = rigged(new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true, fog: !indoor }), true, indoor);
     const N = this.max;
     const mesh = new THREE.InstancedMesh(this.geo, this.mat, N);
     mesh.name = 'people:crowd';
