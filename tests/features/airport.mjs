@@ -72,7 +72,7 @@ function slotRect(s) {
   };
 }
 
-const faults = { slots: [], sea: [], runway: [], taxiway: [], level: [], overlap: [], build: [], obstacle: [], budget: [], pave: [], boards: [], cull: [], pushEnd: [], pushSweep: [], pushWay: [], pushRun: [], parkedFit: [] };
+const faults = { moved: [], slots: [], sea: [], runway: [], taxiway: [], level: [], overlap: [], build: [], obstacle: [], budget: [], pave: [], boards: [], cull: [], pushEnd: [], pushSweep: [], pushWay: [], pushRun: [], parkedFit: [] };
 let totalSlots = 0;
 let minSlots = Infinity;
 let parkedChecked = 0;
@@ -369,6 +369,8 @@ for (const m of MAPS) {
    * than 35 cm (the edge would float). Hangar floors the same, since you can
    * see them through the doors.
    */
+  // The landside is levelled when the world is built (world/apron.js): measure the ground the game stands on.
+  Terrain.setWorldFlat(LAYM.landsideLevel(lay));
   const made = lay.pavement.map((p) => ({ r: p, what: p.kind }));
   if (lay.carPark) made.push({ r: lay.carPark.rect, what: 'car park' });
   for (const h of lay.hangars) made.push({ r: h.rect, what: h.id, up: 0.09 });
@@ -476,12 +478,30 @@ for (const m of MAPS) {
   }
 }
 
+// The layout is measured without the levelling: its own forecourt must never move the airport. On its own, after
+// everything above: a rebuild hands back a new layout, without the parked aeroplanes those checks were looking at.
+for (const m of MAPS) {
+  Terrain.applyMap(m.id);
+  const parts = (l) => JSON.stringify([l.terminal && l.terminal.rect, l.apron && l.apron.rect, l.carPark && l.carPark.rect, l.tower && l.tower.rect, l.stands.map((q) => q.u), l.hangars.map((q) => q.rect)]);
+  const lay = LAYM.airportLayout();
+  const before = parts(lay);
+  Terrain.setWorldFlat(LAYM.landsideLevel(lay));
+  const R = Terrain.AIRPORT.runway;
+  const was = R.length;
+  R.length = was + 2;
+  LAYM.airportLayout();
+  R.length = was;
+  if (parts(LAYM.airportLayout()) !== before) faults.moved.push(m.id);
+  Terrain.setWorldFlat(null);
+}
+
 ok('every map has free stands and hangars in parkingSlots()', faults.slots.length === 0 && minSlots >= 3, faults.slots.slice(0, 6).join(', ') || `${totalSlots} slots, fewest ${minSlots}`);
 ok('no slot or building in the sea', faults.sea.length === 0, faults.sea.slice(0, 6).join(', ') || 'all dry');
 ok('no slot or building on a runway', faults.runway.length === 0, faults.runway.slice(0, 6).join(', ') || 'all clear');
 ok('no stand or building on a taxiway', faults.taxiway.length === 0, faults.taxiway.slice(0, 6).join(', ') || 'all clear');
 ok('every slot is on level ground', faults.level.length === 0, faults.level.slice(0, 6).join(', ') || 'within 1 m of field elevation');
 ok('no taxiway, apron, car park or hangar floor is buried or floating', faults.pave.length === 0, faults.pave.slice(0, 6).join(', ') || 'within +4 / -35 cm');
+ok('levelling the landside never moves the airport', faults.moved.length === 0, faults.moved.slice(0, 6).join(', ') || 'same layout on every map');
 ok('no two slots overlap', faults.overlap.length === 0, faults.overlap.slice(0, 6).join(', ') || 'none');
 ok('the airfield builds on all 32 maps', faults.build.length === 0, faults.build.slice(0, 4).join(' | ') || `${MAPS.length} maps`);
 ok('buildings are solid, and none is on a runway', faults.obstacle.length === 0, faults.obstacle.slice(0, 4).join(', ') || 'ok');

@@ -127,6 +127,8 @@ export const CORE = 'core';
  *             the root — and tells features/breakup.js what the airframe does
  *             next (cartwheel, belly slide, nose-over, skip off the water).
  */
+/** Along the water: above `from` m/s, this share of the speed over it counts as a blow (see planBreak). */
+export const WATER_SOLID = { from: 42, k: 0.5 };
 export const CRACK_SPEED = 60;
 export const DELAY_MAX = 0.45;
 export const HANG = { from: 0.55, blowShare: 0.5, tMin: 0.3, tMax: 1.6 };
@@ -831,6 +833,18 @@ export function planBreak(layout, hit, boxes = null) {
     tangent = r.tangent;
     blow = 0.5 * closing * closing;
     scrape = Math.max(0, E - blow);
+    /*
+     * Water does not scrape. Fast enough it stops being something you slide
+     * on: a low pass into a flat sea at 40 m/s skips and wallows, at 75 m/s the
+     * same angle hits like the ground, and what the sea takes off depends on
+     * how hard you hit it, however shallow the angle (the owner, 2026-11-05).
+     */
+    if (hit.surface === 'water') {
+      const over = Math.max(0, tangent - WATER_SOLID.from) * WATER_SOLID.k;
+      const extra = 0.5 * over * over;
+      E += extra;
+      blow += extra;
+    }
   }
   const speed = Math.hypot(...(hit.velocity || [0, 0, 0]));
   const steep = speed > 0.5 ? clamp(closing / speed, 0, 1) : 0.5;

@@ -6553,7 +6553,7 @@ class Game {
     if (this.cloudImmersion > 0.01) {
       const p = this.weather.palette();
       this.scene.fog.density = p.fogDensity + this.cloudImmersion * 0.0045;
-      this.scene.fog.color.copy(p.fogColor).lerp(cloudWhiteout(p.daylight), this.cloudImmersion * 0.7);
+      this.scene.fog.color.copy(p.fogColor).lerp(cloudWhiteout(p.daylight), this.cloudImmersion * 0.85);
     }
 
     // Navigation guidance: the mission's current target, or the runway when

@@ -72,6 +72,20 @@ const SINK_DRAG = 4.8;
 const SINK_DRAG_FAST = 1.0;
 /** Skipping off the water: fast enough along it, flat enough into it, this much comes back, this many times. */
 export const SKIP = { minAlong: 12, maxSteep: 0.3, restitution: 0.55, alongKeep: 0.78, max: 3 };
+/**
+ * Water on a whole airframe (o.waterHull). A hard arrival at speed is not a
+ * smooth slowing-down of the whole thing: the water takes hold of the points
+ * that are in it, so the side or the end that went in first is held back, and
+ * the rest swings round it: it slews and digs in. As hard as `a` m/s² in all at
+ * full speed (a(v) = base + v²/k, g's of it near a crash's 70 m/s), through the
+ * contact points, in the share each is under.
+ *
+ * On a sea bed shallow enough to touch (a sand bar, a harbour): `bedMu`, mud
+ * and the water on top of it, until it is down to `bedStop` m/s and stays.
+ */
+export const WATER_HULL = { base: 6, k: 95, fullAt: 0.34, bedMu: 0.95, bedStop: 1.4 };
+/** A piece given up to the sea (o.deep): down at about a metre a second, to the bed, not stopping under the surface. */
+const DEEP_DRAG = 0.25;
 
 const _r = new THREE.Vector3();
 const _w = new THREE.Vector3();
@@ -103,6 +117,8 @@ const BIG_PIECE = 2.5;
  * @param o.hull    the body's own contact points, local metres: [[x,y,z], ...] or Vector3s (default: the box's corners)
  * @param o.rand    a random source (0..1) for the drift; the same one gives the same drift
  * @param o.noSkip  true: never skips off the water (a wreck left lying on it)
+ * @param o.waterHull true: the water takes hold of its points (see WATER_HULL), for a whole airframe
+ * @param o.deep    true: when it sinks it goes on down to the bed
  * @param o.skipMax how many times it may skip (default SKIP.max; an airframe fewer than a wing tip)
  * @param o.skip    { maxSteep, restitution, level } for this body (default SKIP's; level: how upright it must
  *                  arrive, the y of its up axis — a whole airframe skips only near level and stays low, a wing
@@ -154,6 +170,8 @@ export function makeBody(o) {
     drift: new THREE.Vector3(rand() - 0.5, 0, rand() - 0.5).normalize().multiplyScalar(0.35),
     skips: 0,
     noSkip: !!o.noSkip,
+    waterHull: !!o.waterHull,
+    deep: !!o.deep,
     skipMax: o.skipMax > 0 ? Math.min(SKIP.max, o.skipMax) : SKIP.max,
     skipSteep: o.skip && o.skip.maxSteep > 0 ? Math.min(SKIP.maxSteep, o.skip.maxSteep) : SKIP.maxSteep,
     skipBack: o.skip && o.skip.restitution >= 0 ? Math.min(SKIP.restitution, o.skip.restitution) : SKIP.restitution,
@@ -323,7 +341,7 @@ function substep(b, env) {
 
 function stepGround(b, s, env) {
   _n.set(s.nx, s.ny, s.nz).normalize();
-  const mu = s.kind === 'paved' || s.kind === 'deck' ? 0.42 : 0.62;
+  const mu = s.mu != null ? s.mu : s.kind === 'paved' || s.kind === 'deck' ? 0.42 : 0.62;
   let maxDepth = 0;
   let contacts = 0;
   let hitSpeed = 0;
@@ -347,7 +365,7 @@ function stepGround(b, s, env) {
       // the whole airframe's hull has eighty corners, most of them up on the wings and the back.
       const far = Math.hypot(_w.x - b.pos.x, _w.z - b.pos.z);
       if (_w.y - planeY > far * 0.7 + 0.5) continue;
-      env.surface(_w.x, _w.z, CORNER);
+      (env.corner || env.surface)(_w.x, _w.z, CORNER);
       planeY = CORNER.y;
       nrm = _nc.set(CORNER.nx, CORNER.ny, CORNER.nz).normalize();
     }
@@ -385,6 +403,11 @@ function stepGround(b, s, env) {
     b.pos.addScaledVector(_n, maxDepth * 0.85);
     // Rolling resistance: a piece on the ground stops turning over.
     b.omega.multiplyScalar(Math.exp(-2.2 * H));
+    if (s.plough > 0) {
+      const k = Math.exp(-s.plough * H);
+      b.vel.x *= k;
+      b.vel.z *= k;
+    }
     b.lastHit = hitSpeed;
     if (hitSpeed > 3 && env.onImpact) env.onImpact(b, b.pos.x, s.y, b.pos.z, hitSpeed, s.kind);
     if (!b.landed) b.landed = true;
@@ -393,7 +416,7 @@ function stepGround(b, s, env) {
   b.scrapeT -= H;
   if (scrape > 3.5 && env.onScrape && b.scrapeT <= 0) {
     b.scrapeT = 0.05;
-    env.onScrape(b, sx, s.y, sz, scrape, s.kind);
+    env.onScrape(b, sx, s.y, sz, scrape, s.kind, s.slide);
   }
 }
 
@@ -481,11 +504,13 @@ function stepWater(b, s, env) {
   // Upward force at the centre of what is under, so it rights itself.
   _t.set(0, b.mass * G * buoy * f * H, 0);
   applyImpulse(b, _r, _t);
+  if (b.waterHull) holdInWater(b, level, sub, f);
   // Water is thick: hardly any way on it, and slow to go down through it.
   const dh = Math.exp(-1.7 * f * H);
   b.vel.x *= dh;
   b.vel.z *= dh;
-  b.vel.y *= Math.exp(-(SINK_DRAG + SINK_DRAG_FAST * Math.abs(b.vel.y)) * f * H);
+  const thick = b.deep && f >= 0.999 ? DEEP_DRAG : 1;
+  b.vel.y *= Math.exp(-(SINK_DRAG * thick + SINK_DRAG_FAST * Math.abs(b.vel.y)) * f * H);
   b.omega.multiplyScalar(Math.exp(-2.6 * f * H));
   // Afloat: the swell lifts it, and the wind and the tide take it along.
   if (buoy > 1 && f < 0.95) {
@@ -507,11 +532,50 @@ function stepWater(b, s, env) {
   // reaches): a piece that came in fast and is down there for a moment is
   // still rising, and was frozen in place and culled before it could float.
   const floorY = Number.isFinite(s.floor) ? s.floor + (b.pos.y - minY) : -Infinity;
-  if ((maxY < level - SINK_DEPTH && buoy < 1) || b.pos.y < floorY) {
+  if (b.waterHull && b.pos.y < floorY && Math.hypot(b.vel.x, b.vel.z) > WATER_HULL.bedStop) {
+    dragOnBed(b, floorY, env);
+    return;
+  }
+  if ((maxY < level - SINK_DEPTH && buoy < 1 && !b.deep) || b.pos.y < floorY) {
     if (b.pos.y < floorY) b.pos.y = floorY;
     b.vel.set(0, 0, 0);
     b.omega.set(0, 0, 0);
     b.sunk = true;
+  }
+}
+
+/** See WATER_HULL: `sub` is the sum of how deep its points are, f how much of its height is under. */
+function holdInWater(b, level, sub, f) {
+  const H3 = b.hull.length;
+  const full = Math.min(1, f / WATER_HULL.fullAt);
+  for (let i = 0; i < H3; i += 3) {
+    _r.set(b.hull[i], b.hull[i + 1], b.hull[i + 2]).applyQuaternion(b.quat);
+    const d = level - (b.pos.y + _r.y);
+    if (d <= 0) continue;
+    _vp.copy(b.omega).cross(_r).add(b.vel);
+    const v = _vp.length();
+    if (v < 0.5) continue;
+    _n.copy(_vp).multiplyScalar(1 / v);
+    const share = (d / sub) * full;
+    const a = WATER_HULL.base + (v * v) / WATER_HULL.k;
+    const j = Math.min(b.mass * a * share * H, (share * v) / kAlong(b, _r, _n));
+    applyImpulse(b, _r, _t.copy(_n).multiplyScalar(-j));
+  }
+}
+
+/** Dragging along a shallow bed: mud and water, a little dirty cloud off it, and no sinking into it. */
+function dragOnBed(b, floorY, env) {
+  b.pos.y = floorY;
+  if (b.vel.y < 0) b.vel.y = 0;
+  const v = Math.hypot(b.vel.x, b.vel.z);
+  const k = Math.max(0, 1 - (WATER_HULL.bedMu * G * H) / Math.max(1e-6, v));
+  b.vel.x *= k;
+  b.vel.z *= k;
+  b.omega.multiplyScalar(Math.exp(-4 * H));
+  b.scrapeT -= H;
+  if (env.onScrape && b.scrapeT <= 0) {
+    b.scrapeT = 0.08;
+    env.onScrape(b, b.pos.x, 0, b.pos.z, v, 'water', 'water');
   }
 }
 

@@ -27,7 +27,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension } from '../game/extensions.js';
-import { AIRPORT, heightAt } from '../world/terrain.js';
+import { AIRPORT, heightAt, obstacleAt } from '../world/terrain.js';
 import { typeSize } from '../world/airport-layout.js';
 import { terrainMeshSampler } from '../world/roads.js';
 import { makeRandom } from '../core/noise.js';
@@ -35,6 +35,9 @@ import { planLife, PEOPLE_CAP } from './life/plan.js';
 import { Crowd } from './life/people.js';
 import { VanFleet, Route } from './life/vans.js';
 import { makeWalkers, ApronLife } from './life/crowd.js';
+import { landsidePlan, forecourtRoad } from './life/landside-plan.js';
+import { dressDoors } from './life/doors.js';
+import { buildLandside, buildForecourt } from './life/landside-look.js';
 
 const TIERS = ['low', 'medium', 'high', 'ultra'];
 
@@ -49,6 +52,10 @@ function groundY(x, z) {
   const m = drawnAt ? drawnAt(x, z) : -Infinity;
   return Math.max(AIRPORT.elev, heightAt(x, z), Number.isFinite(m) ? m : -Infinity);
 }
+
+/** Metres above the field, and is anything already standing there: what the forecourt road asks of the ground. */
+const relGround = (x, z) => groundY(x, z) - AIRPORT.elev;
+const freeGround = (x, z) => !obstacleAt(x, AIRPORT.elev + 1.5, z);
 
 const L = {
   sim: null,
@@ -67,6 +74,8 @@ const L = {
   key: '',
   paused: false,
   thinned: false,
+  lamps: null,
+  road: null,
 };
 
 function tierOf(sim) {
@@ -112,8 +121,8 @@ function populate(sim) {
     parked: ap.parked || [],
     crews: (ap.crews || []).filter((c) => c && c.tg && !(c.opts && c.opts.spare)),
     bridges: ap.bridges || [],
-    entrances: ap.entrances || null,
-    ground: (x, z) => groundY(x, z) - AIRPORT.elev,
+    ground: relGround,
+    road: L.road,
     tier: tierOf(sim),
     time: L.time,
     condition: w.effectiveCondition || w.condition || 'clear',
@@ -131,8 +140,9 @@ function populate(sim) {
     if (b) L.crowd.setBounds(b.x, elev + 1, b.z, b.r);
     L.group.add(L.crowd.group);
   }
-  if (L.plan.vans.length) {
-    L.vans = new VanFleet(L.plan.vans, elev, { shadows });
+  const fleet = [...L.plan.vans, ...L.plan.kerb];
+  if (fleet.length) {
+    L.vans = new VanFleet(fleet, elev, { shadows, stopCount: L.plan.stops.length, low: tierOf(sim) === 'low' });
     L.group.add(L.vans.group);
   }
   // People and vehicles stepped together: the vans, the apron crews' baggage
@@ -157,14 +167,17 @@ function aircraftAbout(sim) {
     const span = fg && Number.isFinite(fg.wingSpan) ? fg.wingSpan : 12;
     // Only near the ground: a low pass is not a reason to stand still.
     const agl = ac.pos.y - AIRPORT.elev;
-    if (agl < 25) out.push({ x: ac.pos.x, z: ac.pos.z, r: span / 2 + 7 });
+    // Parked, it only keeps people from under its wings: held for its whole sweep, somebody can stand for ever in
+    // the path of the crew on their way to it, each waiting for the other.
+    const v = Math.abs(ac.groundSpeed != null ? ac.groundSpeed : ac.ias || 0);
+    if (agl < 25) out.push({ x: ac.pos.x, z: ac.pos.z, r: span / 2 + (v > 1 ? 7 : 1) });
   }
   const tr = sim.traffic;
   if (Array.isArray(tr)) {
     for (const c of tr) {
       if (!c || !c.pos || !c.onGround) continue;
       const sz = typeSize(c.typeId);
-      out.push({ x: c.pos.x, z: c.pos.z, r: (sz ? sz.span / 2 : 15) + 7 });
+      out.push({ x: c.pos.x, z: c.pos.z, r: (sz ? sz.span / 2 : 15) + (Math.abs(c.v || 0) > 1 ? 7 : 1) });
     }
   }
   return out;
@@ -213,71 +226,6 @@ function keepClear(sim) {
   return CLEARED;
 }
 
-/**
- * The terminal's forecourt: paving from the landside wall out past the kerb
- * canopy's columns, the length of the canopy and a little more, laid on the
- * ground (it rises behind some terminals, up to 2 m: Fjord, the Cape) as a
- * 2 m grid a few centimetres proud of it — light concrete slabs, a granite
- * kerb line, and the first metres of the drop-off lane in asphalt. The
- * people of the kerb (plan.js) stand and walk on it. Only at a terminal
- * proper: a flying club's door opens onto the grass, an air base's
- * operations block onto its own yard.
- */
-function forecourt(ap) {
-  const lay = ap && ap.lay;
-  const T = lay && lay.terminal;
-  if (!T || !T.rect || lay.military || lay.shape === 'strip') return null;
-  const F = lay.frame;
-  const r = T.rect;
-  const cx = (r.x0 + r.x1) / 2;
-  const half = (r.x1 - r.x0) * 0.35 + 6;
-  const elev = AIRPORT.elev;
-  const D = 10.5;
-  const nx = Math.max(2, Math.ceil((half * 2) / 2));
-  const nw = Math.ceil(D / 0.5 / 2) * 2;
-  const pos = [];
-  const col = [];
-  const idx = [];
-  const c = new THREE.Color();
-  const CONC = new THREE.Color(0xbfc2c4);
-  const CONC2 = new THREE.Color(0xb3b7ba);
-  const KERB = new THREE.Color(0xdcdedf);
-  const ROAD = new THREE.Color(0x3c4147);
-  for (let j = 0; j <= nw; j++) {
-    const w = T.back + 0.2 + (D * j) / nw;
-    const ww = w - T.back;
-    for (let i = 0; i <= nx; i++) {
-      const x = cx - half + (half * 2 * i) / nx;
-      const z = F.z(w);
-      const y = groundY(x, z) + 0.07;
-      pos.push(x, y, z);
-      if (ww > 8.6) c.copy(ROAD);
-      else if (ww > 8.0) c.copy(KERB);
-      else c.copy((Math.floor(x / 2) + Math.floor(ww / 2)) % 2 ? CONC : CONC2);
-      col.push(c.r, c.g, c.b);
-    }
-  }
-  const row = nx + 1;
-  for (let j = 0; j < nw; j++) {
-    for (let i = 0; i < nx; i++) {
-      const a = j * row + i;
-      // Wound so the face points up whichever side of the runway the terminal is.
-      if (F.side < 0) idx.push(a, a + 1, a + row, a + 1, a + row + 1, a + row);
-      else idx.push(a, a + row, a + 1, a + 1, a + row, a + row + 1);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  g.setIndex(idx);
-  g.computeVertexNormals();
-  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
-  m.name = 'world-life:forecourt';
-  m.receiveShadow = true;
-  m.castShadow = false;
-  return m;
-}
-
 /* ------------------------------------------------------------------ */
 /* The extension                                                       */
 /* ------------------------------------------------------------------ */
@@ -306,11 +254,31 @@ registerExtension({
     } catch (e) {
       drawnAt = null;
     }
+    // The terminal's ways in.
     try {
-      const f = forecourt(sim.apron);
-      if (f) group.add(f);
+      if (sim.apron && sim.apron.lay) dressDoors(sim.apron);
     } catch (e) {
-      /* the grass stays grass */
+      console.warn('[world-life] the doors did not build', e);
+    }
+    // ...its road, where there is room for one, and what stands on them.
+    L.lamps = null;
+    L.road = null;
+    try {
+      const lay = sim.apron && sim.apron.lay;
+      const plan = lay ? landsidePlan(lay) : null;
+      if (plan) {
+        const paved = (x, z) => groundY(x, z) + 0.07;
+        L.road = forecourtRoad(lay, relGround, freeGround, (x, z) => heightAt(x, z) - AIRPORT.elev);
+        const built = buildLandside(lay, plan, paved, tierOf(sim));
+        const f = buildForecourt(lay, L.road, plan, paved, tierOf(sim), built ? built.batch : null);
+        if (f) group.add(f);
+        if (built) {
+          group.add(built.group);
+          L.lamps = built.lights;
+        }
+      }
+    } catch (e) {
+      console.warn('[world-life] the forecourt did not build', e);
     }
     if (L.on && L.level) populate(sim);
   },
@@ -331,6 +299,8 @@ registerExtension({
   },
 
   update(sim, dt) {
+    if (L.lamps) L.lamps.visible = !!(sim.weather && sim.weather.isNight);
+    if (sim.apron && sim.apron.stepDoors && dt > 0) sim.apron.stepDoors(Math.min(dt, 0.1));
     if (!L.on || L.paused || !(dt > 0) || (!L.crowd && !L.vans)) return;
     const t0 = performance.now();
     dt = Math.min(dt, 0.1);

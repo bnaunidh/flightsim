@@ -87,13 +87,15 @@
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extLayer, extStatus, extKeyContext } from '../game/extensions.js';
 import { isKey, keyName } from '../flight/input.js';
-import { heightAt, platformAt, isPaved, obstacleAt } from '../world/terrain.js';
+import { heightAt, platformAt, isPaved, obstacleAt, iceAt, flatSurfaceAt, PALETTE } from '../world/terrain.js';
 import { SPEC, EVENTS } from '../aircraft/physics.js';
 import { AIRCRAFT, getAircraft } from '../aircraft/types.js';
 import { ZONES, CORE, frameFor, refineFrame, layoutFor, planBreak, lostFrom, rng } from '../game/breakup.js';
 import { surveyModel, classifyModel, classifyModelSteps, breakZones, deformZones, restoreModel, disposePiece, isBroken, bakeWhole } from '../game/breakup-mesh.js';
 import { makeBody, stepBody, catchPoint } from '../game/breakup-body.js';
 import { hullOf, hingeFor, hangPose, attachedPose, JOLT_TEARS, SINK_HANDOFF } from './breakup/airframe.js';
+import { SLIDE, slideKind } from './breakup/slide.js';
+import { CrashView, VIEW } from './breakup/crash-view.js';
 import { COMIC } from '../render/comic.js';
 import { BreakupFx } from './breakup/fx.js';
 import { onBodyHit, BODY } from './sky.js';
@@ -104,6 +106,7 @@ import { syncAircraftModel } from '../aircraft/model-adapter.js';
 import { FLASH, FlashGate } from '../render/flash-safety.js';
 import { warmImpactShaders } from '../fleet/aircraft-impact.js';
 import { warmHiddenParts } from '../fleet/aircraft-realism.js';
+import { SNOW_COVER } from '../render/surfaces.js';
 
 /** Pieces in the world at once, by quality. */
 export const PIECE_CAP = { low: 10, medium: 16, high: 24, ultra: 32 };
@@ -169,6 +172,10 @@ const S = {
   seed: 0,
   /** Seconds since the hit (game time): what the pieces' moments are counted in, so two identical crashes release alike. */
   crashT: 0,
+  /** The crash card waiting while there is a wreck to watch (./breakup/crash-view.js). */
+  view: null,
+  /** The marks the wreck leaves as it slides (./breakup/scars.js, loaded at the first crash on land). */
+  scars: null,
   /** Life rafts, each with somebody in it, bobbing where an aeroplane went in. */
   rafts: [],
   /** Aircraft hit in the sky, watched until they are down: { body, model, sink } */
@@ -229,6 +236,9 @@ function drawnHeight(x, z) {
 
 /** The surface under a point: { y, nx, ny, nz, kind } — 'water', 'deck', 'paved' or 'ground'. */
 function surface(x, z, out) {
+  out.mu = null;
+  out.plough = 0;
+  out.slide = null;
   const deck = platformAt(x, z);
   if (deck) {
     out.y = deck.y;
@@ -279,19 +289,58 @@ const ENV = {
   },
   onBubble(b, x, z) {
     if (!S.fx || b.piece?.far) return;
+    // Under a lens down at the water these are not bubbles, they are blobs on the glass.
+    const cam = S.sim && S.sim.camera;
+    if (cam && S.view && Math.hypot(cam.position.x - x, cam.position.y, cam.position.z - z) < 30) return;
     S.fx.bubbles(x, z, 2, Math.min(3, b.radius * 0.6));
     if (Math.random() < 0.12) S.fx.foam(x, z, Math.min(2.5, 0.5 + b.radius * 0.3));
   },
 };
 
-/** The same world for the airframe itself: a longer shower of sparks along a belly slide, and every bounce is felt. */
+/** What the ground is, for a sliding airframe (./breakup/slide.js): sand, snow and the rest come from what the map draws. */
+const SLIDE_PROBE = {
+  deck: (x, z) => !!platformAt(x, z),
+  ice: iceAt,
+  made: flatSurfaceAt,
+  paved: isPaved,
+  h: heightAt,
+  rocky: (x, z) => {
+    const h = heightAt(x, z);
+    return Math.hypot(heightAt(x + 4, z) - h, heightAt(x, z + 4) - h) > 2.4;
+  },
+  snowLine: Infinity,
+  snowCover: 0,
+};
+
+/** The surface under the airframe, with what grips it. Only its centre: the corners only ask how high the ground is. */
+function hullSurface(x, z, out) {
+  surface(x, z, out);
+  SLIDE_PROBE.snowLine = PALETTE && PALETTE.snow ? PALETTE.snow[0] : Infinity;
+  SLIDE_PROBE.snowCover = SNOW_COVER.value;
+  const kind = slideKind(x, z, SLIDE_PROBE);
+  const t = SLIDE[kind] || SLIDE.grass;
+  out.slide = kind;
+  out.mu = t.mu;
+  out.plough = t.plough;
+  return out;
+}
+
+/** The same world for the airframe itself: what it slides on says what flies up, and every bounce is felt. */
 const ENV_HULL = {
-  surface,
+  surface: hullSurface,
+  corner: surface,
   obstacle: ENV.obstacle,
-  onScrape(b, x, y, z, speed, kind) {
+  onScrape(b, x, y, z, speed, kind, slide) {
     if (!S.fx) return;
-    if (kind === 'paved' || kind === 'deck') S.fx.sparks(x, y, z, speed, Math.min(10, 4 + Math.round(speed * 0.1)), b.vel);
-    else S.fx.dust(x, y, z, Math.min(3, 0.8 + b.radius * 0.1), 3);
+    const t = SLIDE[slide] || (kind === 'paved' || kind === 'deck' ? SLIDE.concrete : SLIDE.grass);
+    // A shallow bed, under the water: what comes up is a cloud of silt, and the spray it throws.
+    if (slide === 'water') {
+      S.fx.splash(x, z, Math.min(10, speed * 0.3), Math.min(3, 1 + b.radius * 0.08));
+      return;
+    }
+    // On concrete sparks and nothing else, as many as there ever were: more flickered over the flash line (measured, 2026-11-05).
+    if (t.sparks > 0 && (t.sparks >= 1 || Math.random() < t.sparks)) S.fx.sparks(x, y, z, speed, Math.min(10, 4 + Math.round(speed * 0.1)), b.vel);
+    if (t.sparks < 1) S.fx.dust(x, y, z, Math.min(3.4, (0.8 + b.radius * 0.1) * t.dustSize), t.sparks ? 1 : 3, t.dust);
   },
   onImpact(b, x, y, z, speed, kind) {
     if (S.fx) {
@@ -654,9 +703,9 @@ export function breakModel(sim, model, type, hit) {
     addPiece(piece);
     out.push(piece);
     // Fire where the fuel and the engines are, and something catching later.
-    if (S.fx && (p.engine || p.fuel) && !p.rotorBlade) {
+    if (S.fx && (p.engine || p.fuel) && !p.rotorBlade && (hit.surface !== 'water' || COMIC.on)) {
       const size = clamp(0.5 + p.size.length() * 0.12, 0.6, 3.2);
-      S.fx.fire((o) => (piece.gone || piece.body.sunk ? false : (o.copy(piece.group.position), (o.y += 0.2), true)), 10 + rand() * 10, size);
+      S.fx.fire((o) => (piece.gone || piece.body.sunk || (piece.body.wet && !COMIC.on) ? false : (o.copy(piece.group.position), (o.y += 0.2), true)), 10 + rand() * 10, size);
       if (!popped || rand() < 0.8) {
         popped = true;
         S.fx.later(0.7 + rand() * 2.6, (o) => (piece.gone ? false : (o.copy(piece.group.position), true)), size * 0.9, () => {
@@ -671,7 +720,7 @@ export function breakModel(sim, model, type, hit) {
     const s = model.getWorldScale(_s).x || 1;
     const burnAt = (local, life, size) => {
       local.multiplyScalar(1 / s);
-      S.fx.fire((o) => (model.parent ? (o.copy(local).applyMatrix4(model.matrixWorld), true) : false), life, size);
+      S.fx.fire((o) => (model.parent && !(S.sink && S.sink.model === model && !COMIC.on) ? (o.copy(local).applyMatrix4(model.matrixWorld), true) : false), life, size);
     };
     const gone = new Set(made.flatMap((p) => p.zones));
     for (const p of made) {
@@ -840,7 +889,11 @@ function resetAll(sim) {
   S.lastRes = null;
   S.hull = null;
   S.hullPending = null;
+  if (S.view) S.view.cancel();
+  S.view = null;
   endReplay(sim, false);
+  closeUnderwater();
+  if (S.scars) S.scars.clear();
   endSink();
   clearRafts(sim);
   S.npcs.length = 0;
@@ -970,13 +1023,30 @@ function crashed(sim, c) {
     S.rec = null;
     return;
   }
+  S.hushed = false;
   // What is left of it goes on as a body of its own: sliding, cartwheeling, nosing over — or skipping off the sea.
   startHull(sim, res, hit, quiet);
+  // On its belly it scrapes and slides: there was no bomb in it. Only a hard hit is a fireball (game/wreck.js hush).
+  if (S.hull && !COMIC.on && kind !== 'water' && SLIDE_MODES.has(res.plan.mode && res.plan.mode.mode) && !(res.plan.steep > PACK_HULL_STEEP) && res.plan.energy < HUSH_BELOW && !hardGround(world)) {
+    S.hushed = true;
+    if (sim.wreck && sim.wreck.hush) sim.wreck.hush();
+  }
+  // main.js calls it the sea only with the aeroplane's middle under 4 m, and a big one's is seven metres up when it
+  // hits: it had the fireball of a crash on land, sitting on the water. Spray only.
+  if (kind === 'water' && !COMIC.on && sim.wreck && sim.wreck.hush && !sim.wreck.seaQuiet) {
+    S.hushed = true;
+    sim.wreck.hush();
+  }
+  if (kind !== 'water' && !COMIC.on && S.hull) loadScars();
   // Where it touched: what flies up from the surface.
   if (S.fx) {
     const e = res.plan.energy;
-    if (kind === 'water') S.fx.splash(world.x, world.z, Math.sqrt(e) * 2, clamp(Math.sqrt(e) * 0.12, 0.8, 4));
-    else if (kind === 'concrete' || kind === 'aircraft' || isPaved(world.x, world.z) || platformAt(world.x, world.z)) {
+    if (kind === 'water') {
+      S.fx.splash(world.x, world.z, Math.sqrt(e) * 2, clamp(Math.sqrt(e) * 0.12, 0.8, 4));
+      if (!COMIC.on) spray(sim, world, vel, res);
+      // Somebody flying it, going in where there is a sea to go down through: it may be wanted, soon.
+      if (!COMIC.on && !quiet && seaHere(world.x, world.z)) fetchUnderwater();
+    } else if (kind === 'concrete' || kind === 'aircraft' || isPaved(world.x, world.z) || platformAt(world.x, world.z)) {
       S.fx.sparks(world.x, Math.max(world.y, heightAt(world.x, world.z)), world.z, Math.sqrt(e) * 3, Math.min(30, 8 + Math.round(e / 20)), vel);
       S.fx.dust(world.x, world.y, world.z, clamp(Math.sqrt(e) * 0.12, 0.6, 3), 4, [0.45, 0.44, 0.42]);
     } else S.fx.dust(world.x, Math.max(world.y, heightAt(world.x, world.z)), world.z, clamp(Math.sqrt(e) * 0.15, 0.8, 4), Math.min(16, 5 + Math.round(e / 30)));
@@ -1004,6 +1074,84 @@ function crashed(sim, c) {
   // from where it stops skipping and sliding across it (the sink waits while the body runs; stepHull hands over).
   if (kind === 'water' || (heightAt(world.x, world.z) < 0 && !platformAt(world.x, world.z) && world.y < 6)) startSink(sim, res);
 }
+
+/* ---- the lazy half of a crash: nothing here is fetched until an aeroplane is near enough to want it ---- */
+
+const SEA = { mod: null, loading: null, pending: null, checkT: 0 };
+
+function fxParent() {
+  return S.fxGroup || S.group;
+}
+
+/** The wall of spray: fetched the first time an aeroplane is low over the sea (update), or at the crash at the latest. */
+function loadSea() {
+  if (SEA.loading) return SEA.loading;
+  SEA.loading = import('./breakup/water-impact.js')
+    .then((m) => {
+      SEA.mod = m;
+      seaOnFx();
+      const p = SEA.pending;
+      SEA.pending = null;
+      if (p && S.fx) S.fx.wall(...p);
+    })
+    .catch((e) => {
+      console.warn('[breakup] the spray did not load', e);
+      SEA.loading = null;
+    });
+  return SEA.loading;
+}
+
+function seaOnFx() {
+  if (SEA.mod && S.fx && !S.fx.sea) S.fx.sea = new SEA.mod.WaterImpact(fxParent(), S.quality);
+}
+
+/** How bad an arrival on the water was, 0..1: speed, and how steeply it went in. */
+export function waterHardness(speed, steep) {
+  return clamp((speed - 18) / 62 + steep * 0.9, 0.12, 1);
+}
+
+function spray(sim, world, vel, res) {
+  const speed = vel.length();
+  const along = Math.hypot(vel.x, vel.z);
+  const steep = -vel.y / Math.max(1, speed);
+  const f = res.asg.layout.frame;
+  const hard = waterHardness(speed, steep);
+  S.hard = hard;
+  U.lastVel = vel.clone();
+  if (S.fx.sea) lightSea(sim);
+  const args = [world.x, world.z, along > 1 ? vel.x : 1, along > 1 ? vel.z : 0, speed, f.L, hard];
+  if (SEA.mod) S.fx.wall(...args);
+  else {
+    SEA.pending = args;
+    loadSea();
+  }
+}
+
+function lightSea(sim) {
+  const w = sim.weather;
+  const d = w && w.timeInfo ? w.timeInfo.daylight : 1;
+  if (S.fx && S.fx.sea) S.fx.sea.setLight(null, d);
+}
+
+const SCARS = { mod: null, loading: null };
+
+function loadScars() {
+  if (S.scars || SCARS.loading) return;
+  SCARS.loading = import('./breakup/scars.js')
+    .then((m) => {
+      SCARS.mod = m;
+      SCARS.loading = null;
+      if (!S.scars && fxParent()) S.scars = new m.Scars(fxParent(), S.quality);
+    })
+    .catch((e) => {
+      console.warn('[breakup] the slide marks did not load', e);
+      SCARS.loading = null;
+    });
+}
+
+/** The crashes that slide. Past HUSH_BELOW J/kg even a belly slide starts with a bang. */
+const SLIDE_MODES = new Set(['belly', 'gear']);
+const HUSH_BELOW = 420;
 
 function slowMoWanted(sim) {
   return !(sim.settings && sim.settings.crashSlowMo === false);
@@ -1036,14 +1184,34 @@ function slowMoWanted(sim) {
  * on (the default); with it off they slide and cartwheel like the rest.
  */
 export const PACK_HULL_WITH_REDUCED_FLASHING = false;
-function packHullAllowed() {
-  return PACK_HULL_WITH_REDUCED_FLASHING || !FLASH.reduce;
+/**
+ * ...and the two kinds of crash the owner asked to see slide (2026-11-05) take
+ * it with the switch on as well: a belly slide and the sea. What the sweep
+ * measured over the line was the tower and the nose-in, where the wreck falls
+ * near a camera that has stopped. These two lie flat, and go away from it.
+ */
+const PACK_HULL_MODES = new Set(['belly', 'gear', 'water']);
+/** Flatter than this it slides: a steep hit on the middle of the fuselage reads as 'belly' too, and a dive into the sea was never measured on this body. */
+export const PACK_HULL_STEEP = 0.35;
+function packHullAllowed(mode) {
+  if (PACK_HULL_WITH_REDUCED_FLASHING || !FLASH.reduce) return true;
+  return !!mode && PACK_HULL_MODES.has(mode.mode) && !(mode.steep > PACK_HULL_STEEP);
 }
 
-function hullWanted(sim, model, quiet) {
+/** Concrete and decks: the runway's stripes under a braking lens. See HARD_GROUND_KEEPS_SHIPPED below. */
+function hardGround(p) {
+  return !!p && (isPaved(p.x, p.z) || !!platformAt(p.x, p.z));
+}
+
+/**
+ * On hard ground the crash stays as it shipped. A belly slide on a runway flickers over 25-28% of a 10-degree field
+ * in the first two seconds on v77.3 already: the follow view braking over the stripes. A fireball hides them, so
+ * taking it away read 37-42%, and an F-22 on this body 32% against its own body's 25% (measured, 2026-11-05).
+ */
+function hullWanted(sim, model, quiet, mode, at) {
   if (quiet || COMIC.on) return false;
   if (!model) return false;
-  if (model.userData && model.userData.fleetBridge && !packHullAllowed()) return false;
+  if (model.userData && model.userData.fleetBridge && (!packHullAllowed(mode) || (FLASH.reduce && hardGround(at)))) return false;
   if (sim.mode === 'drive' || sim.riding) return false;
   return true;
 }
@@ -1054,7 +1222,7 @@ function startHull(sim, res, hit, quiet) {
   const ac = sim.aircraft;
   const plan = res.plan;
   const mode = plan.mode || { mode: 'belly', grip: 0.15, restitution: 0.1 };
-  if (!hullWanted(sim, model, quiet)) {
+  if (!hullWanted(sim, model, quiet, mode, hit.world)) {
     // The pack's own crash body, when ours is not taking it (see packHullAllowed): give it the catch the impact's kind calls for, once it exists (its crash begins on the same event as ours). v70.2's behaviour.
     if (model && model.userData && model.userData.fleetBridge && mode.mode !== 'midair' && mode.mode !== 'knock') {
       S.hullPending = { model, point: hit.world.clone(), normal: hit.normal.clone(), mode, tries: 3 };
@@ -1104,18 +1272,23 @@ function startHull(sim, res, hit, quiet) {
     // ...and only when it comes to the water near level and shallow, and low: a ditching aeroplane does not
     // bounce off the sea like a stone. Wing low it is the tip that goes in (the sea's drag takes it from there).
     skip: { maxSteep: 0.2, restitution: 0.35, level: 0.94 },
+    // The sea takes hold of what is in it: the side or the end that went in first is held back and the rest swings round it.
+    waterHull: true,
     rand: rng(S.seed ^ 0x5bd1e995),
   });
   // The surface takes hold of the point that touched, the way this kind of impact does. (Not the sea: the water's own
   // contact takes it — a skip off it fast and flat, straight in otherwise — see breakup-body.js stepWater.)
   if (mode.mode !== 'midair' && mode.mode !== 'water') catchPoint(body, hit.world, hit.normal, mode.grip, mode.restitution);
-  S.hull = { body, model, ac, com: hull.com, zones: hull.zones, t: 0, mode: mode.mode, water: hit.surface === 'water', res, skips: 0, dist: 0, start: comWorld.clone() };
+  S.hull = { body, model, ac, com: hull.com, zones: hull.zones, t: 0, mode: mode.mode, water: hit.surface === 'water', res, skips: 0, dist: 0, start: comWorld.clone(), width: clamp(hull.size.x * 0.22, 2, 9), trailT: 0 };
   S.stats.hulls = (S.stats.hulls || 0) + 1;
   return S.hull;
 }
 
 const _hp = new THREE.Vector3();
 const _hq = new THREE.Quaternion();
+const SCAR_SURF = { y: 0, nx: 0, ny: 1, nz: 0, kind: 'ground' };
+/** The higher of the two: the drawn mesh's triangles and the height it was sampled from part by a hand's breadth on a slope. */
+const scarGround = (x, z) => Math.max(drawnHeight(x, z), heightAt(x, z), platformAt(x, z) ? platformAt(x, z).y : -Infinity);
 
 function stepHull(sim, dt) {
   // The pack's body: the catch, once (only when ours is not taking the wreck, see packHullAllowed).
@@ -1154,6 +1327,21 @@ function stepHull(sim, dt) {
     if (sim.rig && typeof sim.rig.kick === 'function' && !S.replay) sim.rig.kick(0.5);
   }
   h.dist = body.pos.distanceTo(h.start);
+  // Across the water: a rooster tail behind it and a path of foam, while it has way on it.
+  if (body.inWater && S.fx && !S.replay) {
+    h.trailT -= dt;
+    const v = body.vel.length();
+    if (h.trailT <= 0 && v > 6) {
+      h.trailT = 0.07;
+      S.fx.trail(body.pos.x, body.pos.z, body.vel.x, body.vel.z, v, h.res.asg.layout.frame.L);
+      h.foamN = (h.foamN || 0) + 1;
+      if (h.foamN % 4 === 0) S.fx.foam(body.pos.x, body.pos.z, clamp(h.res.asg.layout.frame.L * 0.1, 1, 4));
+    }
+  }
+  if (body.contacts > 0 && !body.wet && S.scars) {
+    const k = hullSurface(body.pos.x, body.pos.z, SCAR_SURF);
+    if (SLIDE[k.slide] && SLIDE[k.slide].scar) S.scars.add(body.pos.x, body.pos.z, S.crashT, k.slide, h.width, scarGround);
+  }
   // The aeroplane is where its body is (the game draws the model from the aeroplane).
   _hp.copy(h.com).applyQuaternion(body.quat).negate().add(body.pos);
   ac.pos.copy(_hp);
@@ -1175,8 +1363,10 @@ function stepHull(sim, dt) {
     return;
   }
   if (body.wet || h.water) {
-    const slow = body.vel.length() < SINK_HANDOFF.speed && body.inWater;
-    if (slow || h.t > SINK_HANDOFF.maxT || body.sunk) {
+    // With the card waiting the sink takes it sooner: at a walking pace it is not going anywhere.
+    const hurried = S.view && S.view.kind === 'sink';
+    const slow = body.vel.length() < (hurried ? SINK_HANDOFF.speed * 1.6 : SINK_HANDOFF.speed) && body.inWater;
+    if (slow || h.t > (hurried ? SINK_HANDOFF.maxT * 0.7 : SINK_HANDOFF.maxT) || body.sunk) {
       S.hull = null;
       if (!S.sink && S.lastRes) startSink(sim, S.lastRes);
       // From here, now: its own float-and-sink clock starts where the body left it.
@@ -1384,7 +1574,7 @@ function stepPieces(sim, dt) {
     // Gone under: there a little while, faintly, then cleared — which also
     // gives its place in the cap back. One lying on a shallow bed with some
     // of it out of the water is a wreck, like one on land, and stays.
-    if (b.sunk && b.pos.y + b.radius < -0.3) {
+    if (b.sunk && !b.deep && b.pos.y + b.radius < -0.3) {
       p.sunkT = (p.sunkT || 0) + dt;
       if (p.sunkT > SUNK_SHOWN_S) {
         dropPiece(p);
@@ -1725,8 +1915,14 @@ function stepSink(sim, dt) {
     spawnRaft(sim, k.x, k.z, k.yaw, k.L);
   }
   const tau = k.t - k.delay;
-  const P = sinkPose(k, tau);
-  const y = settleAlong(k.settle, k.y0, P.y, tau);
+  let P = sinkPose(k, tau);
+  let y = settleAlong(k.settle, k.y0, P.y, tau);
+  // Somebody is waiting for the crash card: it goes down now, and all the way (diveStep).
+  if (k.diving && !k.dive) k.dive = startDive(k, y, P);
+  if (k.dive) {
+    P = diveStep(k, k.dive, dt, y);
+    y = P.y;
+  }
   // The swell drifts it a little.
   k.x += Math.sin(k.phase) * 0.12 * dt;
   k.z += Math.cos(k.phase) * 0.12 * dt;
@@ -1770,8 +1966,23 @@ function stepSink(sim, dt) {
       k.foamT = 0.45;
       S.fx.foam(k.x, k.z, clamp(k.L * 0.12, 1, 5));
     }
+  } else if (S.fx && P.phase === 'diving' && y + (P.highest || 0) > -3) {
+    // Going under fast: the sea boils along it, a little, and closes behind it.
+    k.bubbleT -= dt;
+    if (k.bubbleT <= 0) {
+      k.bubbleT = 0.16;
+      const f = _v.set(0, 0, -1).applyQuaternion(q);
+      const a = (Math.random() - 0.5) * k.L * 0.7;
+      S.fx.bubbles(k.x + f.x * a, k.z + f.z * a, 2, 0.3 + k.L * 0.02);
+    }
+    k.foamT -= dt;
+    if (k.foamT <= 0) {
+      k.foamT = 0.7;
+      S.fx.foam(k.x, k.z, clamp(k.L * 0.1, 0.8, 4));
+    }
   }
-  if (P.under) {
+  // Under, it stays on the sea bed for as long as there is a flight: it can be seen from down there now.
+  if (P.under && !k.dive) {
     k.underT += dt;
     if (k.underT > SUNK_SHOWN_S && !k.hidden) {
       k.hidden = true;
@@ -1779,12 +1990,64 @@ function stepSink(sim, dt) {
       S.stats.culled++;
     }
   }
-  // Keep the camera out of the sea while it follows the wreck down.
+  // Keep the camera out of the sea while it follows the wreck down (unless it is going down with it: ./breakup/crash-view.js).
   const cam = sim.camera;
-  if (cam && !S.replay && cam.position.y < 1.4 && heightAt(cam.position.x, cam.position.z) < 1.4) {
+  if (cam && !S.replay && !k.dive && cam.position.y < 1.4 && heightAt(cam.position.x, cam.position.z) < 1.4) {
     cam.position.y = 1.4;
     cam.lookAt(k.x, Math.max(-1.5, y), k.z);
   }
+}
+
+/**
+ * THE DIVE: "you actually start to sink a lil" (the owner, 2026-11-05). The
+ * slow sink above takes the best part of a minute, which is right for an
+ * aeroplane nobody is waiting on: one you have jumped out of, a mayday's. When
+ * the crash card is waiting it goes down now: a moment afloat, then under,
+ * heavy end first and quick enough that the biggest of them is under inside
+ * a few seconds, and it does not stop a couple of metres down: it goes to the
+ * bottom. `k` is the sink's own record (floor, L, top, bot).
+ */
+export function diveTimes(L, top) {
+  // A long airframe tips less, or its tail is still twenty metres up when its nose is on the bottom.
+  const pitchTo = clamp(0.46 - L * 0.004, 0.18, 0.46);
+  const reach = Math.max(1, top) + (L / 2) * Math.sin(pitchTo);
+  const vmax = clamp((reach + 1.5) / 3.6, 1.7, 9);
+  return { wait: clamp(0.5 + L * 0.012, 0.5, 1.2), vmax, accel: vmax / 1.3, pitchTo, rollTo: 0.1 };
+}
+
+function startDive(k, y, P) {
+  const d = diveTimes(k.L, k.top);
+  if (k.fleet && k.model.userData.gameCrash) k.model.userData.gameCrash.deep = true;
+  return { ...d, t: 0, v: 0, y, pitch: P.pitch, roll: P.roll, bed: false };
+}
+
+/** One step of the dive. `yNow` is where the float has it while it waits. Returns a pose like sinkPose's. Pure. */
+export function diveStep(k, d, dt, yNow) {
+  d.t += dt;
+  if (d.t < d.wait) {
+    d.y = yNow;
+  } else if (!d.bed) {
+    if (!d.touched) d.v = Math.min(d.vmax, d.v + d.accel * dt);
+    d.y -= d.v * dt;
+    if (!d.ground) d.pitch += clamp(d.pitchTo - d.pitch, -0.3 * dt, 0.3 * dt);
+    d.roll += clamp(d.rollTo - d.roll, -0.15 * dt, 0.15 * dt);
+  }
+  const highest = k.top * Math.cos(d.pitch) + (k.L / 2) * Math.sin(Math.abs(d.pitch));
+  const P = onBed(k, { y: d.y, pitch: d.pitch, roll: d.roll, highest });
+  d.ground = !!P.grounded;
+  if (P.grounded) {
+    d.y = P.y;
+    d.pitch = P.pitch;
+    // Its low end is down and the rest comes after it, levelling; flat on the bottom it stops, over a moment, not on a line.
+    if (Math.abs(P.pitch) < 0.03) {
+      d.touched = true;
+      d.v *= Math.exp(-dt * 3);
+      if (d.v < 0.2) d.bed = true;
+    } else d.v = Math.max(d.v, 1.2);
+  }
+  P.under = P.y + P.highest < -0.5;
+  P.phase = d.t < d.wait ? 'afloat' : d.bed ? (P.under ? 'under' : 'aground') : 'diving';
+  return P;
 }
 
 function endSink() {
@@ -2090,7 +2353,7 @@ function stepVehicle(sim) {
 
 /** The wrapper every frame's time goes through: slow motion, the pieces, the replay. */
 function frame(sim, dt, inner, args) {
-  const busy = S.pieces.length || S.slow.left > 0 || S.slow.ease > 0 || S.replay || (S.fx && S.fx.busy) || S.rec || S.sink || S.hull || S.hullPending || S.rafts.length || S.npcs.length;
+  const busy = S.pieces.length || S.slow.left > 0 || S.slow.ease > 0 || S.replay || (S.fx && S.fx.busy) || S.rec || S.sink || S.hull || S.hullPending || S.rafts.length || S.npcs.length || S.view || U.env;
   if (!busy) {
     // Nothing broken anywhere: the cost of this whole feature is this line,
     // and keeping the last second and a half of the flight for a replay.
@@ -2111,6 +2374,8 @@ function frame(sim, dt, inner, args) {
   const gdt = dt * scale;
   const out = inner.call(sim, gdt, ...args);
   const t0 = now();
+  // The guidance rails run from the wing tips to the next waypoint: there is no next waypoint now.
+  if (sim.navGuide && sim.aircraft && sim.aircraft.crashed && !COMIC.on && sim.navGuide.group) sim.navGuide.group.visible = false;
   // The replay owns the clock while it plays: the broken world stands still
   // and the recording does not run on with a gap in it.
   if (!S.replay) {
@@ -2125,7 +2390,9 @@ function frame(sim, dt, inner, args) {
     stepNpcs(gdt);
     stepRafts(gdt);
     record(sim, gdt);
+    stepView(sim, gdt);
   }
+  if (U.env) stepUnderwater(sim, gdt);
   // The effects: live they run on the game's clock; in a replay, playReplay steps them to its own.
   if (S.fx && running && !S.replay) S.fx.update(gdt, sim.camera);
   if (S.replay) playReplay(sim, dt);
@@ -2243,7 +2510,7 @@ export function joinPre(frames, hitPos, hitQuat, vel) {
 }
 
 /** The effects the replay records and plays again (the methods of BreakupFx). `later` is not one: its pop is recorded when it goes off. */
-const FX_RECORDED = ['sparks', 'dust', 'splash', 'bubbles', 'foam', 'pop', 'fire'];
+const FX_RECORDED = ['sparks', 'dust', 'splash', 'bubbles', 'foam', 'pop', 'fire', 'wall', 'trail'];
 
 /**
  * Wrap a BreakupFx so that, while a recording is open, every effect it is
@@ -2533,6 +2800,7 @@ export function endReplay(sim, showDebriefAgain = true) {
       R.model.updateMatrixWorld(true);
     }
   }
+  if (S.scars) S.scars.showUpTo(Infinity);
   // Pieces back where their bodies are.
   for (const p of S.pieces) {
     p.group.position.copy(p.body.pos);
@@ -2663,6 +2931,7 @@ function wreckSeek(t) {
   }
   if (R.wreckT == null || t < R.wreckT) {
     w.start(r.wreck.pos, r.wreck.vel, r.wreck.inWater, seeded(r.wreck.seed));
+    if (S.hushed && w.hush) w.hush();
     R.wreckT = 0;
   }
   let guard = 0;
@@ -2748,6 +3017,7 @@ function playReplay(sim, dt) {
   }
   const t = Math.min(R.t, R.end);
   poseAt(t);
+  if (S.scars) S.scars.showUpTo(t);
   // The camera, orbiting — from the airframe towards where it all ended up.
   const cam = sim.camera;
   if (cam) {
@@ -3009,6 +3279,162 @@ function wrapDebrief(sim) {
   menus.showDebrief = wrapped;
 }
 
+/* ------------------------------------------------------------------ *
+ * The crash card waits for the wreck (./breakup/crash-view.js)
+ * ------------------------------------------------------------------ */
+
+/** Somebody is flying it, and the crash is the real one: no cartoon, no mayday's ending, not an empty aeroplane. */
+function viewWanted(sim) {
+  if (COMIC.on || S.replay || !sim.aircraft || !sim.aircraft.crashed || sim.mode === 'drive' || sim.riding || sim.state !== 'flying') return false;
+  if (sim.bracing || sim.braceRescueT || sim.braceOwnsEnding) return false;
+  try {
+    const k = extKeyContext(sim);
+    if (k === 'foot' || k === 'chute') return false;
+  } catch (e) {
+    return false;
+  }
+  return true;
+}
+
+/** Sea, here: not the Farlands' void (a height far under any sea bed, with the sea plane switched off), and not ground. */
+export function seaHere(x, z) {
+  const h = heightAt(x, z);
+  return h < 0 && h > SEA_DEEPEST && !platformAt(x, z);
+}
+const SEA_DEEPEST = -400;
+
+function viewKind(sim) {
+  if (!viewWanted(sim)) return null;
+  const ac = sim.aircraft;
+  // A man in a T-pose stays on the water, in sight (the wreck that goes down is an aeroplane).
+  if (S.sink && seaHere(ac.pos.x, ac.pos.z) && !(sim.aircraftType && sim.aircraftType.id === 'tpose')) return 'sink';
+  if (S.hull && !S.hull.water && !S.hull.body.wet && !S.hull.body.sleeping && S.hull.body.vel.length() > VIEW.stopped * 1.5) return 'slide';
+  return null;
+}
+
+function wreckNow(w) {
+  const sim = S.sim;
+  const ac = sim && sim.aircraft;
+  if (!ac) return;
+  const h = S.hull;
+  const k = S.sink;
+  const L = k ? k.L : h ? Math.max(h.body.size.x, h.body.size.z) : 12;
+  w.x = ac.pos.x;
+  w.y = ac.pos.y;
+  w.z = ac.pos.z;
+  w.L = L;
+  w.speed = h ? h.body.vel.length() : 0;
+  w.sliding = !!h && !h.body.sleeping;
+  w.floor = k && k.dive ? heightAt(w.x, w.z) : NaN;
+  w.top = k && k.last && k.last.highest != null ? ac.pos.y + k.last.highest : ac.pos.y + (k ? k.top : 3);
+  w.aground = !!(k && k.last && k.last.phase === 'aground');
+  w.closing = !!(k && k.dive && k.dive.t >= k.dive.wait);
+}
+
+function startView(sim, kind, show) {
+  S.view = new CrashView(sim, { kind, show, wreck: wreckNow, ready: underReady });
+  S.stats.views = (S.stats.views || 0) + 1;
+  if (kind === 'sink') {
+    const k = S.sink;
+    // Shallower than the wreck is tall: it goes down until it sits on the bottom, and that is the end of it.
+    if (k) k.diving = true;
+    for (const p of S.pieces) if (p.owner === 'player') p.body.deep = true;
+    openUnderwater(sim);
+  }
+}
+
+function stepView(sim, dt) {
+  const v = S.view;
+  if (!v) return;
+  v.step(dt);
+  if (v.ended && !v.parked) S.view = null;
+}
+
+/** The game's crash card, which waits while there is a wreck to watch. */
+function wrapCrashCard(sim) {
+  if (typeof sim.showCrashDebrief !== 'function' || sim.showCrashDebrief.__breakup) return;
+  const orig = sim.showCrashDebrief;
+  const wrapped = function (reason, ...rest) {
+    let kind = null;
+    try {
+      kind = live() && !S.view ? viewKind(this) : null;
+    } catch (e) {
+      kind = null;
+    }
+    const show = () => orig.call(this, reason, ...rest);
+    if (!kind) return show();
+    startView(this, kind, show);
+    return undefined;
+  };
+  wrapped.__breakup = true;
+  sim.showCrashDebrief = wrapped;
+}
+
+/* ------------------------------------------------------------------ *
+ * Under the sea: lazy. Nothing of it is fetched until a wreck is going down
+ * or a camera has gone under, and it is thrown away with the flight.
+ * ------------------------------------------------------------------ */
+
+const U = { mod: null, loading: null, env: null, seen: 0, loads: 0, opens: 0, closes: 0, want: false };
+
+/** Fetch it, no more. At the crash, so that a slow network has the whole of the way down to bring it in. */
+function fetchUnderwater() {
+  if (!U.loading) {
+    U.loads++;
+    U.loading = import('./underwater/index.js').catch((e) => {
+      console.warn('[breakup] the sea bed did not load', e);
+      U.loading = null;
+      return null;
+    });
+  }
+  return U.loading;
+}
+
+/** Is the sea bed there to go down to? The lens does not go under until it is: there is only a void without it. */
+function underReady() {
+  return !!U.env && !U.heldBack;
+}
+
+function openUnderwater(sim) {
+  U.want = true;
+  if (U.env) return U.env;
+  fetchUnderwater().then((mod) => {
+    U.mod = mod;
+    if (!mod || !U.want || U.env || !S.sim || !S.sim.scene) return;
+    const a = sim.aircraft;
+    U.opens++;
+    U.env = new mod.Underwater(S.sim, {
+      quality: S.quality,
+      keep: [sim.model, S.group],
+      focus: a ? a.pos : null,
+    });
+    const v = U.lastVel;
+    if (a && v) U.env.layDebris(a.pos.x, a.pos.z, v.x, v.z, S.seed % 97);
+  });
+  return null;
+}
+
+function closeUnderwater() {
+  U.want = false;
+  if (U.env) {
+    U.env.dispose();
+    U.closes++;
+  }
+  U.env = null;
+  U.seen = 0;
+}
+
+function stepUnderwater(sim, dt) {
+  const env = U.env;
+  const cam = sim.camera;
+  if (!env || !cam) return;
+  const ac = sim.aircraft;
+  env.update(dt, cam, ac ? ac.pos : null, S.sink && S.sink.dive ? S.sink.dive : null);
+  // Nothing going down and the lens long since out of the water: it is not wanted any more.
+  if (S.sink || S.view || cam.position.y < 1) U.seen = 0;
+  else if ((U.seen += dt) > 3) closeUnderwater();
+}
+
 function wrapUpdate(sim) {
   if (typeof sim.update !== 'function' || sim._breakupClock) return;
   const inner = sim.update;
@@ -3045,6 +3471,7 @@ registerExtension({
     replayBack: { label: `Instant replay: back ${REPLAY_STEP} seconds`, group: 'View', ctx: ['plane', 'heli'], default: ['ArrowLeft'] },
     replayForward: { label: `Instant replay: forward ${REPLAY_STEP} seconds`, group: 'View', ctx: ['plane', 'heli'], default: ['ArrowRight'] },
     replayClose: { label: 'Instant replay: close', group: 'View', ctx: ['plane', 'heli'], default: ['Escape'] },
+    crashSkip: { label: 'Skip to the crash card', group: 'View', ctx: ['plane', 'heli'], default: ['Space'] },
   },
 
   install(sim) {
@@ -3056,6 +3483,7 @@ registerExtension({
     ensureListener(sim);
     wrapUpdate(sim);
     wrapDebrief(sim);
+    wrapCrashCard(sim);
     onBodyHit(onSkyHit);
     // The replay key on the crash screen, where the game's keys are not listened to.
     if (typeof window !== 'undefined' && window.addEventListener) {
@@ -3090,7 +3518,11 @@ registerExtension({
     // A new world: nothing of the old one's wreck belongs in it.
     resetAll(sim);
     if (S.fx) S.fx.dispose();
+    if (S.scars) S.scars.dispose();
+    S.scars = null;
+    S.fxGroup = group;
     S.fx = recordFx(new BreakupFx(group, S.quality));
+    seaOnFx();
     if (S.group && sim.scene && S.group.parent !== sim.scene) sim.scene.add(S.group);
     clearZoneCache();
     S.warmPending = true;
@@ -3133,10 +3565,30 @@ registerExtension({
     }
     if (S.warmPending) warmShaders(sim);
     stepZoneCache(sim);
+    // The real crash at sea has its own spray, and no fireball (a cartoon keeps the game's own).
+    if (sim.wreck) sim.wreck.quietSea = !COMIC.on;
+    // The spray is fetched the first time an aeroplane is low over the sea: a look a second, nothing else.
+    if (!SEA.loading && ac && !ac.crashed && (SEA.checkT -= sim.dt || 1 / 60) <= 0) {
+      SEA.checkT = 1;
+      if (ac.pos.y < 250 && seaHere(ac.pos.x, ac.pos.z)) loadSea();
+    }
+    // A lens under the sea for any reason at all (Dev mode's free look, say): it gets a sea bed, not a void.
+    const cam = sim.camera;
+    if (cam && cam.position.y < -0.05 && !U.env && !U.want && seaHere(cam.position.x, cam.position.z)) openUnderwater(sim);
+  },
+
+  camera(sim, dt, camera) {
+    const v = S.view;
+    if (!v || S.replay) return false;
+    return v.camera(dt, camera);
   },
 
   key(sim, code, down) {
     if (!down) return false;
+    if (S.view && !S.view.ended && !S.replay && isKey(sim, 'crashSkip', code)) {
+      S.view.skip();
+      return true;
+    }
     // The replay's own keys (handled on the window, where the crash screen's keys live too): the game must not act on them.
     if (S.replay && REPLAY_KEYS.some((a) => isKey(sim, a, code))) return true;
     if (!isKey(sim, 'crashReplay', code)) return false;
@@ -3188,7 +3640,13 @@ export function breakupDebug() {
     hull: S.hull ? { t: Math.round(S.hull.t * 100) / 100, mode: S.hull.mode, zones: S.hull.zones.length, points: S.hull.body.hull.length / 3, speed: Math.round(S.hull.body.vel.length() * 10) / 10, dist: Math.round(S.hull.dist * 10) / 10, skips: S.hull.skips, contacts: S.hull.body.contacts, wet: S.hull.body.wet, asleep: S.hull.body.sleeping, pos: S.hull.body.pos.toArray().map((v) => Math.round(v * 10) / 10) } : null,
     attached: S.pieces.filter((p) => p.attach).map((p) => ({ zones: p.zones.join('+'), hang: p.attach.hang, release: Math.round((p.attach.release - S.crashT) * 100) / 100 })),
     seed: S.seed,
-    sink: S.sink ? { t: S.sink.t, started: S.sink.started, hidden: S.sink.hidden, floatT: S.sink.floatT, settleT: S.sink.settleT, sinkT: S.sink.sinkT, delay: S.sink.delay, heavy: S.sink.heavy, L: S.sink.L, belly: S.sink.belly, draft: S.sink.draft, inT: S.sink.settle ? S.sink.settle.inT : null, inAt: S.sink.settle ? S.sink.delay + S.sink.settle.inT : null } : null,
+    view: S.view ? S.view.debug() : null,
+    holdUnderBack: (on) => {
+      U.heldBack = !!on;
+    },
+    under: { loads: U.loads, opens: U.opens, closes: U.closes, on: !!U.env, want: U.want, info: U.env ? U.env.debug() : null },
+    scars: S.scars ? S.scars.debug() : null,
+    sink: S.sink ? { dive: S.sink.dive ? { t: S.sink.dive.t, y: S.sink.dive.y, v: S.sink.dive.v, bed: S.sink.dive.bed } : null, phase: S.sink.last ? S.sink.last.phase : null, t: S.sink.t, started: S.sink.started, hidden: S.sink.hidden, floatT: S.sink.floatT, settleT: S.sink.settleT, sinkT: S.sink.sinkT, delay: S.sink.delay, heavy: S.sink.heavy, L: S.sink.L, belly: S.sink.belly, draft: S.sink.draft, inT: S.sink.settle ? S.sink.settle.inT : null, inAt: S.sink.settle ? S.sink.delay + S.sink.settle.inT : null } : null,
     rafts: S.rafts.map((r) => ({ x: Math.round(r.group.position.x), y: Math.round(r.group.position.y * 100) / 100, z: Math.round(r.group.position.z), person: !!r.person })),
     npcs: S.npcs.map((n) => ({ id: n.body.id, sinking: !!n.sink })),
     slow: { ...S.slow },

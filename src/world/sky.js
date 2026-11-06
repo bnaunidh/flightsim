@@ -11,6 +11,7 @@ import * as THREE from '../vendor/three.module.js';
 import { dim, CAPS, FLASH } from '../render/flash-safety.js';
 import { HEIGHT_FOG, heightFogDepth } from '../render/height-fog.js';
 import { fogThinning } from './atmos.js';
+import { cloudWhiteout } from '../render/surfaces.js';
 
 const vertexShader = /* glsl */ `
   varying vec3 vDir;
@@ -157,6 +158,7 @@ const _fwd = new THREE.Vector3();
 const _awayFog = new THREE.Color();
 const _hazeFog = new THREE.Color();
 const _sunHaze = new THREE.Color();
+const _wo = new THREE.Color();
 
 function smooth(e0, e1, x) {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
@@ -412,19 +414,30 @@ export class SkyDome {
       this.uniforms.uTop.value.lerp(p.fogColor, vU);
       this.veil = vU;
     }
+    /*
+     * Inside the cloud layer the sky is the white-out (main.js gives the fog
+     * the same colour, so nothing shows where the dome meets the ground).
+     */
+    const inCloud = weather.immersion || 0;
+    if (inCloud > 0.005) {
+      _wo.copy(p.fogColor).lerp(cloudWhiteout(p.daylight), 0.85);
+      this.uniforms.uHorizon.value.lerp(_wo, inCloud);
+      this.uniforms.uTop.value.lerp(_wo, inCloud);
+    }
     this.uniforms.uSunColor.value.copy(p.sun);
     this.uniforms.uSunDir.value.copy(this._domeSunDir);
     // The moon is as visible as it always was; the stars now also answer to
     // its phase — a full moon leaves about a third of them, a new moon all.
     // Both come out through twilight as the daylight goes (p.daylight), not in one step.
     const dark = typeof p.daylight === 'number' ? 1 - p.daylight : weather.isNight ? 1 : 0;
-    const moonUp = dark * (1 - weather.cond.cloud * 0.95);
+    const over = p.overcast != null ? p.overcast : weather.cond.cloud;
+    const moonUp = dark * (1 - over * 0.95) * (1 - inCloud);
     const phase = typeof weather.moonPhase === 'number' ? weather.moonPhase : 1;
     this.uniforms.uMoon.value = moonUp;
     this.uniforms.uMoonPhase.value = phase;
     this.uniforms.uMoonWax.value = weather.moonWaxing === false ? -1 : 1;
     this.uniforms.uStars.value = moonUp * (0.35 + 0.65 * (1 - phase));
-    this.uniforms.uOvercast.value = Math.max(weather.cond.cloud, this.veil || 0);
+    this.uniforms.uOvercast.value = Math.max(over, this.veil || 0, inCloud);
     // Lightning washes the whole sky and the sunlight: the biggest flash in
     // the game, so with Reduce flashing on it is a fraction of the strength.
     const flash = dim(weather.lightningFlash, CAPS.lightning);
@@ -468,7 +481,7 @@ export class SkyDome {
      * Weighted down by cloud: an overcast sunset has no low sun to see.
      */
     const el = typeof p.sunElev === 'number' ? p.sunElev : weather.timeInfo.sunElev;
-    const low = smooth(-6, 0, el) * (1 - smooth(8, 25, el)) * (1 - weather.cond.cloud * 0.85);
+    const low = smooth(-6, 0, el) * (1 - smooth(8, 25, el)) * (1 - over * 0.85);
     const u = this.uniforms;
     u.uHorizonAway.value.copy(p.horizon).lerp(DUSK_AWAY, 0.5 * low);
     u.uHaze.value.copy(p.sun).multiplyScalar(0.5 * low);

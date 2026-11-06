@@ -30,6 +30,7 @@ import * as V from '../../world/airport-vehicles.js';
 import { wearRealVehicle } from '../../aircraft/real-models.js';
 import { blinkLevel } from '../../render/flash-safety.js';
 import { pathBlocked } from './crowd.js';
+import { carShape, KINDS as CAR_KINDS } from '../ambient/cars.js';
 
 const _m = new THREE.Matrix4();
 const _p = new THREE.Vector3();
@@ -115,11 +116,17 @@ const KINDS = {
   fuelTruck: { L: 10, beacon: [0, 3.2, -3.5] },
   bus: { L: 13.5, beacon: [0, 3.35, -5.8] },
   cateringTruck: { L: 8, beacon: [0, 3.3, -3.4] },
+  // The forecourt's traffic: no beacons, and they stop for the kerb (plan.js forecourt).
+  car: { L: 4.4, beacon: null },
+  taxi: { L: 4.5, beacon: null },
+  shuttle: { L: 13.5, beacon: null },
 };
+/** Paint for the cars on the forecourt road: nobody's fleet. */
+const CAR_PAINT = [0xd8d8dc, 0x2a3442, 0x7c2020, 0x2f5f9a, 0xe8e2d0, 0x3a3a3c, 0xb8b8bc];
 
 export class VanFleet {
   /** `vans`: plan.js's list; `elev` the field elevation; `opts.shadows`. */
-  constructor(vans, elev, { shadows = false } = {}) {
+  constructor(vans, elev, { shadows = false, stopCount = 0, low = false } = {}) {
     this.group = new THREE.Group();
     this.group.name = 'world-life:vans';
     this.elev = elev;
@@ -143,7 +150,15 @@ export class VanFleet {
       carts: v.kind === 'baggage' ? Array.from({ length: KINDS.baggage.carts }, () => ({ x: 0, y: 0, z: 0, yaw: 0 })) : [],
       braking: false,
       i,
+      // Its stops on the forecourt: [{ id, d }], and how long it is stopped for.
+      stops: v.stops || null,
+      next: 0,
+      dwell: 0,
+      dwellFor: v.dwell || 10,
+      leftAt: null,
     }));
+    /** Seconds left that a vehicle stands at each stop: the people's cue (life/crowd.js). */
+    this.stopOpen = new Float32Array(Math.max(1, stopCount || 0));
     const count = (k) => this.list.filter((v) => v.kind === k).length;
     this.geos = [];
     const mk = (geo, n, name, realKind) => {
@@ -172,11 +187,18 @@ export class VanFleet {
       this.meshes.cateringTruck = mk(V.cateringTruckGeometry(), count('cateringTruck'), 'life:catering');
       this.meshes.cateringBox = mk(V.cateringBoxGeometry(), count('cateringTruck'), 'life:catering-box');
     }
-    // Beacons: one glow each, hidden until they flash.
+    for (const k of ['car', 'taxi']) {
+      const n = count(k);
+      if (!n) continue;
+      this.meshes[k] = mk(carShape(k, k === 'car' ? 0xffffff : CAR_KINDS.taxi.colour), n, `life:${k}`);
+      if (k === 'car') for (let i = 0; i < n; i++) this.meshes.car.setColorAt(i, _c.set(CAR_PAINT[(i * 3 + 1) % CAR_PAINT.length]));
+    }
+    if (count('shuttle')) this.meshes.shuttle = mk(apronBusGeometry(), count('shuttle'), 'life:shuttle');
+    // Beacons: one glow each, hidden until they flash. Only the apron's have them.
     const pos = new Array(this.list.length * 3).fill(0);
     const col = [];
     for (let i = 0; i < this.list.length; i++) col.push(1, 0.62, 0.12);
-    this.beacons = this.list.length ? glowPoints(pos, col, 1.9, { opacity: 0.9, name: 'life:beacons' }) : null;
+    this.beacons = this.list.some((v) => KINDS[v.kind].beacon) ? glowPoints(pos, col, 1.9, { opacity: 0.9, name: 'life:beacons' }) : null;
     if (this.beacons) {
       this.beacons.geometry.attributes.position.setUsage(THREE.DynamicDrawUsage);
       this.beacons.frustumCulled = false;
@@ -187,7 +209,7 @@ export class VanFleet {
     for (let i = 1; i < bpos.length; i += 3) bpos[i] = -1e4;
     const bcol = [];
     for (let i = 0; i < this.list.length * 2; i++) bcol.push(1, 0.08, 0.05);
-    this.brakes = this.list.length ? glowPoints(bpos, bcol, 0.9, { opacity: 0.95, name: 'life:brakes' }) : null;
+    this.brakes = this.list.length && !low ? glowPoints(bpos, bcol, 0.5, { opacity: 0.8, name: 'life:brakes' }) : null;
     if (this.brakes) {
       this.brakes.geometry.attributes.position.setUsage(THREE.DynamicDrawUsage);
       this.brakes.frustumCulled = false;
@@ -247,7 +269,33 @@ export class VanFleet {
       }
       if (blocked && !v.yielding) this.stats.yields++;
       v.yielding = blocked;
-      const want = blocked ? 0 : v.speed;
+      let want = blocked ? 0 : v.speed;
+      // A stop on the forecourt: brake down to it, stand, and let them in and out.
+      if (v.stops && v.stops.length) {
+        const st = v.stops[v.next % v.stops.length];
+        if (v.dwell > 0) {
+          v.dwell -= dt;
+          want = 0;
+          v.v = 0;
+          this.stopOpen[st.id] = Math.max(this.stopOpen[st.id], v.dwell);
+          if (v.dwell <= 0) {
+            v.next++;
+            v.leftAt = v.d;
+          }
+        } else {
+          const L = v.route.length;
+          const gap = (((st.d - v.d) % L) + L) % L;
+          // Just pulled away from a stop: with only the one stop, that is still the next one.
+          const leaving = v.leftAt != null && (((v.d - v.leftAt) % L) + L) % L < 8;
+          if (leaving) {
+            /* drive on */
+          } else if (gap < 0.25 && v.v < 1.2) {
+            v.dwell = v.dwellFor;
+            v.v = 0;
+            want = 0;
+          } else if (gap < 30) want = Math.min(want, Math.max(0.8, Math.sqrt(2 * 1.8 * gap)));
+        }
+      }
       // 2 m/s² either way.
       v.v = v.v < want ? Math.min(want, v.v + 2 * dt) : Math.max(want, v.v - 2.5 * dt);
       v.braking = blocked || v.v < want - 0.05 || v.v < 0.1;
@@ -289,8 +337,8 @@ export class VanFleet {
   }
 
   place(v) {
-    const y = this.elev;
     const p = v.pos;
+    const y = this.elev + (p.y || 0);
     const set = (mesh, slot, x, z, yaw, yy = y) => {
       _q.setFromAxisAngle(UP, yaw);
       _p.set(x, yy, z);
@@ -320,11 +368,12 @@ export class VanFleet {
       const s = Math.sin(p.yaw);
       const c = Math.cos(p.yaw);
       const attr = this.beacons.geometry.attributes.position;
-      attr.setXYZ(v.i, p.x + c * b[0] + s * b[2], y + b[1], p.z - s * b[0] + c * b[2]);
+      if (b) attr.setXYZ(v.i, p.x + c * b[0] + s * b[2], y + b[1], p.z - s * b[0] + c * b[2]);
+      else attr.setXYZ(v.i, 0, -1e4, 0);
     }
     if (this.brakes) {
       // The tail of the last thing it pulls (the bus's own back, a train's tractor), 0.9 m up.
-      const tail = { baggage: 1.4, fuelTruck: 4.7, bus: 6.75, cateringTruck: 4.2 }[v.kind] || 3;
+      const tail = { baggage: 1.4, fuelTruck: 4.7, bus: 6.75, shuttle: 6.75, cateringTruck: 4.2, car: 2.2, taxi: 2.25 }[v.kind] || 3;
       const half = v.kind === 'baggage' ? 0.6 : 1.05;
       const s = Math.sin(p.yaw);
       const c = Math.cos(p.yaw);

@@ -376,7 +376,8 @@ function attachedOk(sim) {
     if (R && R.t > 0.05 && R.t < 0.8 && w.fire.points.material.uniforms.uTint.value.b < 0.9) flameEarly = true;
     if (R && R.t > 0.3 && w.group.visible && w.rings.some((r) => r.mesh.visible && r.mesh.material.opacity > 0.03)) ringsSeen = true;
   }
-  ok('sea: nothing splashes before the hit; the rings spread after it', !bubblesBefore && ringsSeen);
+  // The real crash at sea has a wall of spray instead of the rings (features/breakup/water-impact.js, held after the hit by water-crash.browser.js); the cartoon keeps them.
+  ok('sea: nothing splashes before the hit; the rings spread after it', !bubblesBefore && (w.quietSea || ringsSeen));
   ok('sea: the splash stays white until the fuel catches — no flame colour carried over from the live wreck', !flameEarly);
   const sinkDuring = JSON.stringify(D().sink);
   ok('sea: the slow sink stands still while the replay plays (the broken world is paused)', sinkDuring === liveSink);

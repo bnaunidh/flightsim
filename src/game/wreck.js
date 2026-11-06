@@ -208,6 +208,9 @@ export class Wreck {
     this.origin = pos.clone();
     this.rand = typeof rand === 'function' ? rand : Math.random;
     const R = this.rand;
+    // The real crash at sea (features/breakup.js sets this, the cartoon does not): spray, not a fireball. It has its own.
+    const sea = inWater && this.quietSea;
+    this.hushed = false;
     // A fresh start: no flame tint carried over from an earlier ditching (it
     // turned a new splash orange before its fuel caught), no tumble carried
     // over from earlier debris (a replay re-run would differ each scrub).
@@ -251,11 +254,12 @@ export class Wreck {
         const up = 6 + R() * 14;
         s.vel.set(Math.cos(a) * (4 + R() * 12), up, Math.sin(a) * (4 + R() * 12));
       }
+      if (sea) s.age = s.life;
       this.fire.geo.attributes.position.setXYZ(i, pos.x, pos.y, pos.z);
     }
     for (let i = 0; i < SMOKE; i++) {
       const s = this.smoke.state[i];
-      s.age = -i * 0.09; // staggered, so the column builds rather than appears
+      s.age = sea ? 1e3 : -i * 0.09; // staggered, so the column builds rather than appears
       s.life = 9 + (i % 6) * 2.4;
       s.vel.set((R() - 0.5) * 2.4, 3 + R() * 3.5, (R() - 0.5) * 2.4);
       this.smoke.geo.attributes.position.setXYZ(i, pos.x, pos.y + 1, pos.z);
@@ -274,12 +278,13 @@ export class Wreck {
       r.mesh.position.set(pos.x, 0.3, pos.z);
       r.mesh.scale.setScalar(2);
       r.mesh.material.opacity = 0;
-      r.mesh.visible = inWater;
+      r.mesh.visible = inWater && !sea;
     }
     this.foam.position.set(pos.x, 0.35, pos.z);
     this.foam.scale.setScalar(6);
     this.foam.material.opacity = inWater ? 0.62 : 0;
-    this.foam.visible = inWater;
+    this.foam.visible = inWater && !sea;
+    this.mark.visible = !sea;
 
     /*
      * Ditching used to be the quiet way to go: a splash, a ring, and silence,
@@ -289,8 +294,20 @@ export class Wreck {
      * column is at its peak and starting to fall back, it goes up.
      */
     this.blastAt = inWater ? 0.85 : -1;
-    this.blown = !inWater;
+    this.blown = !inWater || sea;
+    this.seaQuiet = sea;
     this.blastSpeed = speed;
+  }
+
+  /**
+   * It scraped and slid, nothing went up (features/breakup.js): no fireball, no
+   * flash, no smoke column and no scorch where it touched.
+   */
+  hush() {
+    this.hushed = true;
+    this.mark.visible = false;
+    for (const s of this.fire.state) s.age = s.life;
+    for (const s of this.smoke.state) s.age = 1e3;
   }
 
   /**
@@ -637,7 +654,8 @@ export class Wreck {
         ? Math.max(0, 1 - (this.t - this.blastAt) / 14)
         : 0
       : Math.max(0, 1 - this.t / 30);
-    this.light.intensity = dim(
+    if (this.seaQuiet || this.hushed) this.light.intensity = 0;
+    else this.light.intensity = dim(
       3200 * flash * this.flashScale + 900 * burn * (0.7 + Math.sin(this.t * 11) * 0.15 + Math.sin(this.t * 3.7) * 0.15),
       CAPS.blastLight
     );

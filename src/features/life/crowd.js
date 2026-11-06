@@ -40,6 +40,8 @@ import { FOOT } from '../../world/vehicle-footprints.js';
 export const WALKER_R = 0.3;
 /** Centre to centre two people keep when they can (2R and a hand). */
 export const PERSONAL = 0.8;
+/** Radians of the walk cycle a metre: a full cycle is two steps, 1.6 m. */
+const STRIDE = 3.9;
 /** The hard floor the push-apart keeps (2R and a little). */
 const APART = 2 * WALKER_R + 0.06;
 
@@ -176,6 +178,15 @@ export class MoverSet {
         m.sweep[m.ns * 2 + 1] = _t.z;
         m.ns++;
       }
+    } else if (!route && m.moving) {
+      // Nothing to read its road off (a crew vehicle driving in): straight on, the way it is pointing.
+      const n = Math.min(10, Math.ceil((m.v * 2.5 + 3) / 1.5));
+      for (let k = 1; k <= n; k++) {
+        const a = -f.z0 + k * 1.5;
+        m.sweep[m.ns * 2] = x - m.s * a;
+        m.sweep[m.ns * 2 + 1] = z - m.c * a;
+        m.ns++;
+      }
     }
     return m;
   }
@@ -257,6 +268,7 @@ export function makeWalkers(planWalkers, elev, rnd, Route) {
       w.x = w.bx = at.x;
       w.z = w.bz = at.z;
       w.y = elev + (at.y || 0);
+      if (w.fade) w.dim = Math.max(0, Math.min(1, w.d / w.fade[0], (w.route.length - w.d) / w.fade[1]));
     }
     return w;
   });
@@ -276,6 +288,12 @@ function makeWalker(p, i, elev, rnd, Route) {
     pause: p.pause || 2,
     rest: p.rest || 20,
     bag: !!p.bag,
+    fade: p.fade || null,
+    dim: 1,
+    sit: !!p.sit,
+    gate: p.gate ?? null,
+    gateAt: p.gateAt || 0,
+    atGate: false,
     zone: p.zone ?? null,
     tg: p.tg || null,
     skip: p.skip || [],
@@ -330,10 +348,41 @@ export class ApronLife {
     this.frame = 0;
     this.stats = { pushes: 0, vehicleWaits: 0, stepAsides: 0, steps: 0, skipped: 0 };
     // The apron's own vehicles ask the same question the vans do.
-    if (apron) apron.peopleNear = (x, z, r) => this.grid.any(x, z, r);
+    if (apron) apron.peopleNear = (x, z, r) => this.inTheWay(x, z, r);
     this._index();
     this.settle();
     this._index();
+  }
+
+  /**
+   * Anybody a vehicle should stop for, within r of (x, z) on its path? Not
+   * somebody standing at their post: it keeps coming and they step off its line
+   * as it nears (stepOne). A vehicle that waits for a person whose job is to stand
+   * still waits for ever: a wing walker a stand along held the crew's catering
+   * truck, and with it the whole turnaround.
+   */
+  inTheWay(x, z, r) {
+    const G = this.grid;
+    const n = G.near(x, z, r);
+    for (let k = 0; k < n; k++) {
+      const o = this.walkers[G.out[k]];
+      if (o.mode !== 'idle' || o.sit || o.held) return true;
+    }
+    return false;
+  }
+
+  /** Standing at a post with a vehicle coming: a step sideways, off its line. It eases back once it has gone. */
+  stepOffLine(w, M, S) {
+    for (let k = 0; k < M.n; k++) {
+      const m = M.list[k];
+      if (!m.moving || Math.abs(w.x - m.x) > m.R + 18 || Math.abs(w.z - m.z) > m.R + 18) continue;
+      for (let q = 0; q < m.ns; q++) {
+        if (Math.hypot(w.x - m.sweep[q * 2], w.z - m.sweep[q * 2 + 1]) > m.hw + 1.3) continue;
+        const sg = (w.x - m.x) * m.c - (w.z - m.z) * m.s >= 0 ? 1 : -1;
+        this.nudge(w, sg * m.c * 0.08, -sg * m.s * 0.08, S, 3.5);
+        return;
+      }
+    }
   }
 
   /** Everybody in sight, into the hash. */
@@ -377,6 +426,19 @@ export class ApronLife {
     this.stepWalkers(dt, aircraft, cam);
     this._index();
     this.separate(dt);
+    this.askDoors();
+  }
+
+  /** Is a vehicle standing at this stop (life/vans.js)? */
+  stopOpen(id) {
+    return !!(this.vans && this.vans.stopOpen && this.vans.stopOpen[id] > 0);
+  }
+
+  /** Anybody within a few metres of a door opens it (world/apron.js wantDoor). */
+  askDoors() {
+    const D = this.apron && this.apron.doors;
+    if (!D) return;
+    for (let i = 0; i < D.length; i++) if (this.grid.any(D[i].x, D[i].z, 3.4)) this.apron.wantDoor(i);
   }
 
   stepWalkers(dt, aircraft, cam) {
@@ -463,6 +525,7 @@ export class ApronLife {
       w.moving = false;
       w.fx = 0;
       w.fz = 0;
+      if (!w.sit && !held) this.stepOffLine(w, M, S);
       this.ease(w, dt, S, M);
       return;
     }
@@ -498,8 +561,9 @@ export class ApronLife {
           // Going my way: queue behind, a body's length back.
           factor = Math.min(factor, Math.max(0, Math.min(1, (dist - PERSONAL) / 0.6)));
         } else if (o.moving && dot < -0.5) {
-          // Coming the other way: both step to their right and pass.
-          side = 1;
+          // Coming the other way: each steps away from the other, or to their right if dead in line. Always to
+          // the right, two a little off each other's line stepped across one another.
+          side = Math.abs(lat) < 0.12 ? 1 : lat > 0 ? -1 : 1;
           factor = Math.min(factor, dist < PERSONAL ? 0.2 : 0.65);
         } else if (o.moving) {
           // Crossing: whoever has the other more squarely ahead gives way; a tie, the later one.
@@ -567,6 +631,13 @@ export class ApronLife {
         return;
       }
       if (w.d < 0) {
+        // In a car or a bus: out only when it has stopped at the kerb.
+        if (w.gate != null && !w.gateAt && !this.stopOpen(w.gate)) {
+          w.d = -1e-3;
+          w.hidden = true;
+          w.moving = false;
+          return;
+        }
         // Behind the door (or in the cabin): out only when the doorway is clear.
         const step = (w.d >= 0 || !held ? w.speed : 0) * dt;
         if (w.d + step >= 0) {
@@ -586,7 +657,13 @@ export class ApronLife {
           w.moving = false;
           return;
         }
+      } else if (w.gateAt > 0 && w.d <= w.gateAt && w.d + v * dt >= w.gateAt - 0.02 && !this.stopOpen(w.gate)) {
+        // At the kerb, waiting for the car or the bus.
+        w.d = w.gateAt;
+        v = 0;
+        w.atGate = true;
       } else {
+        w.atGate = false;
         w.d += v * dt;
       }
       if (w.d > R.length) {
@@ -602,11 +679,13 @@ export class ApronLife {
     w.bx = s.x;
     w.bz = s.z;
     w.y = this.elev + s.y;
+    // Going dark in a lobby or a cabin door: nobody pops in or out where you can see.
+    if (w.fade) w.dim = Math.max(0, Math.min(1, w.d / w.fade[0], (R.length - w.d) / w.fade[1]));
     w.yaw = w.mode === 'pingpong' && w.dir < 0 ? s.yaw + Math.PI : s.yaw;
     w.moving = v > 0.02 && !(w.mode === 'pingpong' && w.wait > 0);
     w.fx = w.moving ? -Math.sin(w.yaw) : 0;
     w.fz = w.moving ? -Math.cos(w.yaw) : 0;
-    if (w.moving) w.walk += v * dt * 2.25;
+    if (w.moving) w.walk += v * dt * STRIDE;
 
     // --- stepping aside ---
     // Both waiting on each other: out of the vehicle's way, square to it.
@@ -626,7 +705,7 @@ export class ApronLife {
     const ez = tz - w.lz;
     const el = Math.hypot(ex, ez);
     const rate = (side ? 0.9 : 0.5) * dt;
-    if (el > 1e-6) {
+    if (el > 1e-6 && !held) {
       const k = Math.min(1, rate / el);
       const nx = w.lx + ex * k;
       const nz = w.lz + ez * k;
@@ -636,7 +715,7 @@ export class ApronLife {
         w.lz = nz;
       }
     }
-    this.ease(w, dt, S, M, !!veh);
+    this.ease(w, dt, S, M, !!veh || held);
   }
 
   /** Put the walker at its route point plus its side-step and push, easing the push back when nothing needs it. */
@@ -728,14 +807,14 @@ export class ApronLife {
 
   /**
    * The backstop: anybody closer than APART to somebody, or inside a vehicle's
-   * box and a little, is eased apart — 4 cm a frame at most, never popped.
+   * box and a little, is eased apart — 6 cm a frame at most, never popped.
    */
-  separate(dt, cap = 0.04) {
+  separate(dt, cap = 0.06) {
     const W = this.walkers;
     const G = this.grid;
     const S = this.statics;
     const M = this.movers;
-    const max = Math.max(0.01, Math.min(cap, 1.6 * dt));
+    const max = Math.max(0.01, Math.min(cap, 3.6 * dt));
     for (let i = 0; i < W.length; i++) {
       const w = W[i];
       if (w.hidden) continue;
@@ -756,8 +835,9 @@ export class ApronLife {
         const push = Math.min(max, (APART - d) / 2);
         const ux = dx / d;
         const uz = dz / d;
-        const a = this.nudge(w, -ux * push, -uz * push, S);
-        const b = this.nudge(o, ux * push, uz * push, S);
+        // Somebody holding still for an aeroplane is not shoved; the other one goes round.
+        const a = !w.held && this.nudge(w, -ux * push, -uz * push, S);
+        const b = !o.held && this.nudge(o, ux * push, uz * push, S);
         if (!a && b) this.nudge(o, ux * push, uz * push, S);
         else if (a && !b) this.nudge(w, -ux * push, -uz * push, S);
         this.stats.pushes++;

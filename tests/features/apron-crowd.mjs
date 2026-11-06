@@ -91,10 +91,11 @@ function run(mapId, tier, { naive = false, minutes = MINUTES } = {}) {
   const rnd = makeRandom(mapId.length * 131 + tier.length * 17);
   const plan = P.planLife({
     lay: ap.lay, parked: ap.parked, crews: ap.crews.filter((c) => c.tg && !(c.opts && c.opts.spare)), bridges: ap.bridges,
-    entrances: ap.entrances || null, tier, rnd, level: 1,
+    tier, rnd, level: 1,
   });
   const walkers = C.makeWalkers(plan.walkers, elev, rnd, VANS.Route);
-  const vans = plan.vans.length ? new VANS.VanFleet(plan.vans, elev) : null;
+  const fleet = [...plan.vans, ...(plan.kerb || [])];
+  const vans = fleet.length ? new VANS.VanFleet(fleet, elev, { stopCount: (plan.stops || []).length }) : null;
   const life = new C.ApronLife({ walkers, vans, apron: naive ? null : ap, obs: plan.obs, elev });
   const parked = parkedBoxes(ap);
   const gates = emptyStands(ap);
@@ -106,6 +107,7 @@ function run(mapId, tier, { naive = false, minutes = MINUTES } = {}) {
   const lastPos = walkers.map((w) => ({ x: w.x, z: w.z }));
   const prevVisible = walkers.map((w) => !w.hidden);
   let aircraft = [];
+  let calledAt = null;
   const frames = Math.round((minutes * 60) / DT);
   const check = new C.MoverSet();
   const s0 = { x: 0, y: 0, z: 0, yaw: 0 };
@@ -119,11 +121,16 @@ function run(mapId, tier, { naive = false, minutes = MINUTES } = {}) {
       const st = gates[g];
       if (g === 1) ap.dismissCrew();
       ap.callCrew(st.x, st.z, st.headingDeg, info, st);
+      calledAt = t;
       // The player's aeroplane on that stand: people keep clear of it.
       aircraft = [{ x: st.x, z: st.z, r: info.halfSpan + 7 }];
       res.gates++;
     }
     ap.update(DT, {});
+    if (calledAt !== null && ap.spare && ap.spare.state === 'working') {
+      res.crewWorst = Math.max(res.crewWorst || 0, t - calledAt);
+      calledAt = null;
+    }
     if (naive) {
       // The code before wave 18: routes followed blind, the vans' three-point look-ahead.
       for (const w of walkers) {
@@ -188,7 +195,7 @@ function run(mapId, tier, { naive = false, minutes = MINUTES } = {}) {
         }
       }
       // Liveness.
-      if (Math.hypot(w.x - lastPos[i].x, w.z - lastPos[i].z) > 0.05 || w.mode === 'idle' || w.held || (w.mode === 'pingpong' && w.wait > 0)) {
+      if (Math.hypot(w.x - lastPos[i].x, w.z - lastPos[i].z) > 0.05 || w.mode === 'idle' || w.held || w.atGate || (w.mode === 'pingpong' && w.wait > 0)) {
         lastMove[i] = t;
         lastPos[i].x = w.x;
         lastPos[i].z = w.z;
@@ -246,6 +253,10 @@ for (const [id, tier] of SCENES) {
   ok(`${what}: 0 walker–moving-vehicle overlaps`, r.wv === 0, `${r.wv} frames, closest ${r.worstWV.toFixed(2)} m ${r.examples.filter((e) => / in (?!parked)/.test(e)).join('; ')}`);
   ok(`${what}: 0 walkers inside a parked crew vehicle they do not work at`, r.wp === 0, `${r.wp} ${r.examples.filter((e) => /parked/.test(e)).join('; ')}`);
   ok(`${what}: nobody stuck over 60 s`, r.stuck.length === 0, r.stuckRoles.join(', '));
+  // Everyone at their post: nobody standing still may hold up the crew (the wing walker a stand along did, for ever).
+  // (The hub's terminal is 1,060 m long: its middle gates are 530 m from the end the crew drive in from.)
+  const crewLimit = what.startsWith('gateway') ? 65 : 45;
+  if (r.gates) ok(`${what}: the crew are at the gate inside ${crewLimit} s of being called`, r.crewWorst > 0 && r.crewWorst < crewLimit, `${(r.crewWorst || 0).toFixed(1)} s`);
   if (r.cyclers) ok(`${what}: the passengers keep coming and going (${r.cycles} walks done)`, r.cycles > 0, String(r.cycles));
   if (r.vans) ok(`${what}: every van keeps driving its rounds`, r.vanProgress.every((d) => d > 150 * MINUTES), r.vanProgress.join(','));
   anyYield += r.yields;

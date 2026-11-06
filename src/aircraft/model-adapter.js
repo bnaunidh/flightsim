@@ -249,7 +249,7 @@ const SINK_FLOOR = -7;
  */
 export function clampSinking(model, ac) {
   const crash = model && model.userData && model.userData.gameCrash;
-  if (!crash || !crash.water || !ac || !ac.pos) return;
+  if (!crash || !crash.water || crash.deep || !ac || !ac.pos) return;
   if (ac.pos.y >= SINK_FLOOR) return;
   ac.pos.y = SINK_FLOOR;
   if (ac.vel) ac.vel.set(0, 0, 0);

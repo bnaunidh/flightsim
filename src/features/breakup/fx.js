@@ -200,6 +200,15 @@ export class BreakupFx {
     }
   }
 
+  /** The wall of spray of a hard arrival on the sea, and the rooster tail after it (./water-impact.js, once it has loaded). */
+  wall(x, z, dx, dz, speed, size, hard) {
+    if (this.sea) this.sea.wall(x, z, dx, dz, speed, size, hard);
+  }
+
+  trail(x, z, vx, vz, speed, size) {
+    if (this.sea) this.sea.trail(x, z, vx, vz, speed, size);
+  }
+
   /** Spray: a ring of water thrown up where a piece goes in. */
   splash(x, z, speed, size = 1) {
     const n = Math.min(40, 10 + Math.round(speed * 1.2));
@@ -278,6 +287,7 @@ export class BreakupFx {
     }
     this.emitters.length = 0;
     this.pops.length = 0;
+    if (this.sea) this.sea.clear();
   }
 
   /**
@@ -323,6 +333,7 @@ export class BreakupFx {
   }
 
   update(dt, camera) {
+    if (this.sea) this.sea.update(Math.min(dt, 0.1));
     if (!this.busy) return;
     if (!(dt > 0)) return;
     const step = Math.min(dt, 0.1);
@@ -446,6 +457,8 @@ export class BreakupFx {
 
   dispose() {
     this.clear();
+    if (this.sea) this.sea.dispose();
+    this.sea = null;
     for (const pool of this.pools) {
       pool.pts.removeFromParent();
       pool.geo.dispose();

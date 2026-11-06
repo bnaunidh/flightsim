@@ -471,11 +471,15 @@ ok('world: a flat spot on land, a paved one and open sea for the crashes', !!lan
 
 /* ---- 5f. the pack's aeroplanes get the same body (v70.2 gave them a catch impulse on their own sliding body only) — with Reduce flashing off ---- */
 {
-  // With Reduce flashing on (the default) they keep v70.2's catch on their own body: the sliding pack wreck failed the crash sweep's flash probe (features/breakup.js packHullAllowed).
+  // With Reduce flashing on (the default) a nose-in keeps v70.2's catch on their own body: that wreck failed the crash sweep's flash probe (features/breakup.js packHullAllowed).
   FS.setReduceFlashing(true);
   const simR = makeSim('vanguard', 17);
-  const sR = crash(simR, runway, { vel: [60, -3, 0], gear: 0, part: 'fuselage', reason: 'You landed with the wheels up' }, 2);
-  ok('pack, Reduce flashing on: the Vanguard keeps its own crash body (no airframe hull, not hull-driven) — v70.2 as shipped', F.PACK_HULL_WITH_REDUCED_FLASHING || (!sR[1].hull && !simR.model.userData.hullDriven), `hull ${sR[1].hull}, hullDriven ${simR.model.userData.hullDriven}`);
+  const sR = crash(simR, runway, { vel: [20, -35, 0], pitch: -1, part: 'nose', reason: 'Nose in' }, 2);
+  ok('pack, Reduce flashing on: a nose-in keeps its own crash body (no airframe hull, not hull-driven) — v70.2 as shipped', F.PACK_HULL_WITH_REDUCED_FLASHING || (!sR[1].hull && !simR.model.userData.hullDriven), `hull ${sR[1].hull}, hullDriven ${simR.model.userData.hullDriven}, mode ${D().stats.lastPlan.mode}, zone ${D().stats.lastPlan.hitZone}, steep ${D().stats.lastPlan.steep}`);
+  // So does a belly slide on a runway: on this body an F-22 read 32% against its own 25% (features/breakup.js hullWanted). On soft ground it takes the airframe's body, 7%.
+  const simB = makeSim('vanguard', 17);
+  const sB = crash(simB, runway, { vel: [60, -3, 0], gear: 0, part: 'fuselage', reason: 'You landed with the wheels up' }, 2);
+  ok('pack, Reduce flashing on: a belly slide on a runway keeps its own crash body too', !sB[1].hull && !simB.model.userData.hullDriven, `hull ${sB[1].hull}, hullDriven ${simB.model.userData.hullDriven}`);
   FS.setReduceFlashing(false);
 }
 {

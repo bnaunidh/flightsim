@@ -1308,7 +1308,8 @@ export class Airport {
     // Cars in about two bays in three, the same ones every time.
     let seed = 1234567;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const colours = [0xd23c3c, 0x2f5f9e, 0xe9ecee, 0x22262b, 0x9aa1a8, 0x2f8f5b, 0xe9b925, 0x7d4a9e, 0xc0c4c8];
+    // What a real car park is: mostly silver, grey, white and black, and a few colours.
+    const colours = [0xc4c8cc, 0x8b9299, 0xe6e8ea, 0x23272c, 0xb4b8bc, 0x3c4248, 0xdfe1e3, 0x6d747b, 0x7c2525, 0x2c4a73, 0x2f4a3c];
     const parked = bays.filter(() => rnd() < 0.68).slice(0, 120);
     if (parked.length) {
       const cars = instanced(carGeometry(), vcMaterial({ roughness: 0.35, metalness: 0.4 }), parked.length, { name: 'car-park' });

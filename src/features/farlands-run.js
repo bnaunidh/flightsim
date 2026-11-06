@@ -32,7 +32,7 @@ const SEA_OFF_D = 45000;
 /** D where the weather starts to thin, and where it has gone. */
 const CLOUDS_FROM = EDGE_D - 26000;
 const CLOUDS_GONE = EDGE_D - 2000;
-const THIN = ['cloud', 'cu', 'tcu', 'cb', 'scud', 'stratus', 'cirrus', 'rain', 'snow', 'hfA'];
+const THIN = ['cloud', 'deck', 'cu', 'tcu', 'cb', 'scud', 'stratus', 'cirrus', 'rain', 'snow', 'hfA'];
 
 function readStore() {
   try {

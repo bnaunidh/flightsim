@@ -28,14 +28,14 @@
  */
 
 import * as THREE from '../vendor/three.module.js';
-import { AIRPORT, MAP, addObstacleAt } from './terrain.js';
+import { AIRPORT, MAP, addObstacleAt, setWorldFlat } from './terrain.js';
 import { buildingTexture, buildingNightTexture, roofTexture } from '../render/textures.js';
 import { glassMaterial } from '../render/surfaces.js';
 import { createAircraftModel } from '../aircraft/model-adapter.js';
 import { airlinesFor, schemeFor, wearsAirlinePaint } from '../aircraft/liveries.js';
 import { AIRCRAFT, specFor } from '../aircraft/types.js';
 import { serviceDoors, serviceDoorsFrom } from '../aircraft/extra/airliners.js';
-import { airportLayout, NOSE_STOP } from './airport-layout.js';
+import { airportLayout, NOSE_STOP, landsideLevel } from './airport-layout.js';
 import { OFFICE_TILE, officeFloors } from './airport.js';
 import { Batch, vcMaterial, instanced, glowPoints, canvas, canvasTexture, trs, trse, yawOf, bakeModel, layer } from './airport-kit.js';
 import * as V from './airport-vehicles.js';
@@ -489,6 +489,8 @@ export class Apron {
     };
     this.b = { vc: new Batch(), paint: new Batch(), wall: new Batch(), roof: new Batch() };
 
+    // The landside is level before anything asks how high the ground is (the road, the terrain, the scenery).
+    setWorldFlat(landsideLevel(this.lay));
     this.buildTerminal();
     this.buildStandMarkings();
     this.buildStandSigns();
@@ -587,6 +589,7 @@ export class Apron {
       pane(W - 0.4, cx, zFront - dz * 0.1, dz < 0 ? 0 : Math.PI);
       pane(D - 0.4, r.x0 - 0.1, zMid, -Math.PI / 2, 0.375);
       pane(D - 0.4, r.x1 + 0.1, zMid, Math.PI / 2, 0.6875);
+      if (kind === 'terminal') pane(W - 0.4, cx, zBack + dz * 0.1, dz < 0 ? Math.PI : 0, 0.1875);
       const glass = panes.mesh(mat, { cast: false, name: 'terminal-glass' });
       glass.geometry.deleteAttribute('color');
       this.group.add(glass);
@@ -603,6 +606,11 @@ export class Apron {
       };
       if (kind === 'terminal') band(2.6, ELEV + 1.3, 0.7);
       band(kind === 'club' ? 1.0 : 2.0, ELEV + H - (kind === 'club' ? 0.5 : 0.6), 1.2);
+      if (kind === 'terminal') {
+        // The same two bands along the kerb.
+        vc.box(W + 1.4, 2.6, 0.7, cx, ELEV + 1.3, zBack + dz * 0.1, WHITE);
+        vc.box(W + 2.4, 2.0, 1.2, cx, ELEV + H - 0.6, zBack + dz * 0.35, WHITE);
+      }
 
       /*
        * The upper floor's slab edge, carried across the glass and round both
@@ -613,6 +621,7 @@ export class Apron {
         const ys = g0 + gh / 2;
         const t = 0.45;
         vc.box(W + 0.2, 0.55, t, cx, ys, zFront - dz * (t / 2 + 0.1), 0xd3d8dc);
+        if (kind === 'terminal') vc.box(W + 0.2, 0.55, t, cx, ys, zBack + dz * (t / 2 + 0.1), 0xd3d8dc);
         for (const [ex, s2] of [[r.x0, -1], [r.x1, 1]]) vc.box(t, 0.55, D - 0.6, ex + s2 * (t / 2 + 0.1), ys, zMid, 0xd3d8dc);
       }
       // Fins: a steel mullion every bay, standing proud of the glass.
@@ -626,6 +635,8 @@ export class Apron {
         for (const [ex, s] of [[r.x0, -1], [r.x1, 1]]) {
           for (let w = 6.2; w < D - 3; w += 6) vc.box(finD, gh - 0.2, 0.28, ex + s * (finD / 2 + 0.11), gy, zFront + dz * w, FIN);
         }
+        // And the kerb's: every other bay, lighter than the airside's.
+        for (let x = r.x0 + 6.2; x < r.x1 - 3; x += 12) vc.box(0.24, gh - 0.2, 0.5, x, gy, zBack + dz * 0.34, FIN);
       }
       // Corner posts, where the front glass turns the corner.
       for (const [ex, s] of [[r.x0, -1], [r.x1, 1]]) {
@@ -731,6 +742,36 @@ export class Apron {
         vc.add(gg, new THREE.Matrix4(), 0xd6dce1);
         gg.dispose();
       }
+      if (this.quality !== 'low') {
+        const nRib = Math.max(3, Math.round(len / 24));
+        const skin = (a, d) => [zC + Math.sin(a) * (R + d), yC + Math.cos(a) * (R + d)];
+        const seg2 = 10;
+        const pos = [];
+        const quad = (p, q, r2, t) => pos.push(...p, ...q, ...r2, ...p, ...r2, ...t);
+        for (let k = 0; k <= nRib; k++) {
+          const ex = cx - len / 2 + 0.6 + ((len - 1.2) * k) / nRib;
+          for (let i = 0; i < seg2; i++) {
+            const a0 = -halfArc + (2 * halfArc * i) / seg2;
+            const a1 = -halfArc + (2 * halfArc * (i + 1)) / seg2;
+            const [z0, y0] = skin(a0, 0.32);
+            const [z1, y1] = skin(a1, 0.32);
+            const [zi0, yi0] = skin(a0, -0.02);
+            const [zi1, yi1] = skin(a1, -0.02);
+            // The crown of the rib and its two sides.
+            quad([ex - 0.17, y0, z0], [ex + 0.17, y0, z0], [ex + 0.17, y1, z1], [ex - 0.17, y1, z1]);
+            for (const xs of [ex - 0.17, ex + 0.17]) quad([xs, yi0, zi0], [xs, y0, z0], [xs, y1, z1], [xs, yi1, zi1]);
+          }
+        }
+        const n = pos.length / 3;
+        const idx = [];
+        for (let i = 0; i < n; i += 3) idx.push(i, i + 1, i + 2, i, i + 2, i + 1);
+        const gg = new THREE.BufferGeometry();
+        gg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        gg.setIndex(idx);
+        gg.computeVertexNormals();
+        vc.add(gg, new THREE.Matrix4(), 0xb9c0c6);
+        gg.dispose();
+      }
       // A strip of rooflights along the crown, and plant set back behind it.
       vc.box(len * 0.82, 0.2, Math.min(4, span * 0.08), cx, roofAt(zC) + 0.02, zC, 0x9fb6c8);
       const zp = zC + dz * span * 0.2;
@@ -747,23 +788,7 @@ export class Apron {
       // Kerbside canopy on the landside, on columns.
       vc.box(W * 0.7, 0.5, 5, cx, ELEV + 6.4, zBack + dz * 2.6, WHITE);
       for (let k = -3; k <= 3; k++) vc.box(0.5, 6.2, 0.5, cx + (k * W) / 9, ELEV + 3.1, zBack + dz * 4.6, STEEL);
-      /*
-       * The way in: two glazed entrances under the canopy, each in a white
-       * frame, with DEPARTURES and ARRIVALS over them on the canopy's edge.
-       * The kerb was a blank wall of office windows.
-       */
-      // Between the canopy's columns (every W/9), clear of all of them.
-      const doors = [-W / 6, W / 6];
-      this.entrances = [];
-      for (const ox of doors) {
-        const x = cx + ox;
-        vc.box(8, 4.6, 0.3, x, ELEV + 2.3, zBack + dz * 0.12, 0x24323d);
-        vc.box(9.2, 0.8, 1.2, x, ELEV + 5.0, zBack + dz * 0.5, WHITE);
-        for (const s of [-1, 1]) vc.box(0.6, 4.6, 1.2, x + s * 4.3, ELEV + 2.3, zBack + dz * 0.5, WHITE);
-        // The door leaves: two pairs, the frames between them.
-        for (const s of [-2, -1, 0, 1, 2]) vc.box(0.12, 4.4, 0.34, x + s * 1.9, ELEV + 2.3, zBack + dz * 0.16, 0xc9ced3);
-        this.entrances.push({ x, z: zBack + dz * 0.2 });
-      }
+      // The way in, and the doors onto the apron: features/life/doors.js.
       this.kerbSigns = [
         { row: 1, x: cx - W / 6, z: zBack + dz * 5.2, y: ELEV + 7.35 },
         { row: 2, x: cx + W / 6, z: zBack + dz * 5.2, y: ELEV + 7.35 },
@@ -2100,9 +2125,9 @@ export class Apron {
     return false;
   }
 
-  /** Towards a speed at 2 m/s² up and 2.5 down. */
+  /** Towards a speed: 2 m/s² up, 4.5 down. */
   easeSpeed(v, want, dt) {
-    return v < want ? Math.min(want, v + 2 * dt) : Math.max(want, v - 2.5 * dt);
+    return v < want ? Math.min(want, v + 2 * dt) : Math.max(want, v - 4.5 * dt);
   }
 
   /** Every apron vehicle that is moving, as boxes for the people to keep clear of (life/crowd.js MoverSet). */
@@ -2152,7 +2177,9 @@ export class Apron {
     for (const mv of c.moves) {
       if (mv.done) continue;
       // On its way in: it stops for anybody walking in its path.
-      mv.v = mv.d < 0 ? CREW_SPEED : this.easeSpeed(mv.v ?? CREW_SPEED, this.yieldAhead(mv.path, mv.d, mv.kind, 6 + (CREW_SPEED * CREW_SPEED) / 4) ? 0 : CREW_SPEED, dt);
+      const held = mv.d >= 0 && this.yieldAhead(mv.path, mv.d, mv.kind, 6 + (CREW_SPEED * CREW_SPEED) / 9);
+      mv.held = Math.max(0, (mv.held || 0) + (held ? dt : -dt));
+      mv.v = mv.d < 0 ? CREW_SPEED : this.easeSpeed(mv.v ?? CREW_SPEED, !held ? CREW_SPEED : mv.held > 30 ? 1.5 : 0, dt);
       mv.d += dt * mv.v;
       if (mv.d < 0) {
         all = false;

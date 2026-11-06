@@ -58,7 +58,7 @@ function apronFor(mapId, q = 'high') {
   return ap;
 }
 const plan = (ap, opts = {}) =>
-  P.planLife({ lay: ap.lay, parked: ap.parked, crews: ap.crews.filter((c) => c.tg && !(c.opts && c.opts.spare)), bridges: ap.bridges, entrances: ap.entrances || null, rnd: makeRandom(5), ...opts });
+  P.planLife({ lay: ap.lay, parked: ap.parked, crews: ap.crews.filter((c) => c.tg && !(c.opts && c.opts.spare)), bridges: ap.bridges, rnd: makeRandom(5), ...opts });
 const roles = (r) => {
   const o = {};
   for (const w of r.walkers) o[w.role] = (o[w.role] || 0) + 1;

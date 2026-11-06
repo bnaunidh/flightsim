@@ -22,9 +22,10 @@
  *               inside the cloud, never across the screen. Far off in the
  *               "storms in the distance" phase, close in a thunderstorm.
  *   scud        small dark rags under the rain, low.
- *   stratus     the two overcast decks at the base: grey from under, sunlit
- *               white from above, so you climb through the grey and break out
- *               on top into sun (the in-cloud white-out is main.js's).
+ *   stratus     thickens the cloud layer's foot (world/cloud-deck.js, which
+ *               arrives with the features): the layer from the base to 10,000
+ *               ft, its gaps, the fog in it and the shadow under it are all
+ *               one field, so these puffs are thinned by it too (`layer`).
  *   cirrus      the high veil.
  *
  * Nothing pops: each puff fades in and out over a few seconds when the
@@ -85,6 +86,8 @@ const vert = /* glsl */ `
     // modelViewMatrix, not viewMatrix: the floating origin (render/render-origin.js)
     // moves the scene and the camera together for the draw, and the puffs move with the scene.
     vec4 mv = modelViewMatrix * vec4(iOffset, 1.0);
+    // Melts away as the eye reaches it: a puff never passes the camera as a quad's edge.
+    vAlpha *= smoothstep(0.2, 0.75, length(mv.xyz) / max(1.0, iScale.x));
     float c = cos(iRot);
     float s = sin(iRot);
     vec2 p = vec2(position.x * c - position.y * s, position.x * s + position.y * c) * iScale;
@@ -165,7 +168,7 @@ const frag = /* glsl */ `
   }
 `;
 
-class PuffBatch {
+export class PuffBatch {
   constructor(texture, count, defines) {
     const base = new THREE.PlaneGeometry(1, 1);
     const geo = new THREE.InstancedBufferGeometry();
@@ -309,8 +312,8 @@ const RANGE = 9000;
  *
  * Each puff's footprint, projected down along the sun onto sea level, is
  * splatted into a small single-channel texture centred on the aeroplane,
- * twice a second; the overcast decks add a drifting noise layer that moves
- * with the decks themselves. terrain.js samples it in its existing shader
+ * twice a second; the cloud layer adds its own field (cloud-deck.js), so a
+ * gap is a patch of sun. terrain.js samples it in its existing shader
  * patch and takes it off the SUN's light only — the sky still lights a
  * shadowed hillside, as it does outdoors.
  *
@@ -435,26 +438,6 @@ export const CLOUD_SHADE_GLSL = /* glsl */ `
 const _acc = new Float32Array(SHADOW_N * SHADOW_N);
 const _sun = new THREE.Vector3();
 
-/** Smooth value noise, 0..1, for the overcast decks' shadow. */
-function hash2(ix, iz) {
-  let h = (ix * 374761393 + iz * 668265263) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-function vnoise(x, z) {
-  const ix = Math.floor(x);
-  const iz = Math.floor(z);
-  const fx = x - ix;
-  const fz = z - iz;
-  const ux = fx * fx * (3 - 2 * fx);
-  const uz = fz * fz * (3 - 2 * fz);
-  const a = hash2(ix, iz);
-  const b = hash2(ix + 1, iz);
-  const c = hash2(ix, iz + 1);
-  const d = hash2(ix + 1, iz + 1);
-  return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz;
-}
-
 /** Storm cells: how many, how many puffs each, and how far round the eye they wrap. */
 const CELL_RANGE = 26000;
 // Low: one cell of seven puffs — the storm still towers on a Chromebook, at the old storm's cost.
@@ -471,9 +454,6 @@ const _sunDir = new THREE.Vector3();
 const _white = new THREE.Color(0xffffff);
 const _greyDay = new THREE.Color(0x8792a3);
 const _greyNight = new THREE.Color(0x0d1420);
-const _deckDay = new THREE.Color(0xa8b2bf);
-const _deckNight = new THREE.Color(0x11161f);
-const _deckTop = new THREE.Color();
 const _shaftCol = new THREE.Color();
 
 export class CloudField {
@@ -497,30 +477,6 @@ export class CloudField {
     this.group = new THREE.Group();
     this.group.name = 'clouds';
     for (const b of this.batches) this.group.add(b.mesh);
-
-    // Overcast decks.
-    this.decks = [];
-    const deckTex = cloudTexture(2).clone();
-    deckTex.needsUpdate = true;
-    deckTex.wrapS = deckTex.wrapT = THREE.RepeatWrapping;
-    deckTex.repeat.set(9, 9);
-    for (let i = 0; i < 2; i++) {
-      const mat = new THREE.MeshBasicMaterial({
-        map: deckTex,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-        fog: true,
-      });
-      const geo = new THREE.PlaneGeometry(26000, 26000);
-      geo.rotateX(-Math.PI / 2);
-      const m = new THREE.Mesh(geo, mat);
-      m.renderOrder = 4;
-      m.visible = false;
-      this.decks.push(m);
-      this.group.add(m);
-    }
 
     // High cirrus: a thin, almost-still veil far above the cumulus. Cheap (two
     // big quads) and it gives the sky real depth.
@@ -561,6 +517,8 @@ export class CloudField {
     this.puffs = [];
     this.cells = [];
     this.maxPerBatch = maxPerBatch;
+    /** The cloud layer (world/cloud-deck.js), once the features have brought it; see attachLayer. */
+    this.layer = null;
     this.activeCount = 0;
     this.t = 0;
     this._first = true;
@@ -676,6 +634,7 @@ export class CloudField {
 
     let active = 0;
     let inPuff = 0;
+    const L = this.layer;
     for (let i = 0; i < this.puffs.length; i++) {
       const puff = this.puffs[i];
       const b = this.batches[puff.batch];
@@ -723,6 +682,8 @@ export class CloudField {
           x = cell.x + Math.sin(puff.jitter * 40 + puff.level) * s * 0.18;
           z = cell.z + Math.cos(puff.jitter * 31 + puff.level) * s * 0.18;
           y = base + sy * 0.32 + k * (cellTop - base - sy * 0.5);
+          // Seen from up in the layer a tower stands out of the cloud, not over it.
+          if (L) flatBase = L.towerCut;
           shade = 0.2 + k * 0.8;
           alpha = 0.95;
         } else {
@@ -783,8 +744,10 @@ export class CloudField {
         const edge = Math.max(Math.abs(x - camPos.x), Math.abs(z - camPos.z));
         range = 1 - smoothstep(RANGE * 0.78, RANGE * 0.98, edge);
       }
+      // A gap in the layer is a gap at every height: nothing of the ordinary clouds stands in it.
+      if (L && puff.kind !== CB && puff.kind !== ANVIL) alpha *= L.gapMask(x, z) * L.puffFade;
       // Is the eye inside this puff (the middle two-thirds of its quad, as an ellipsoid)?
-      if (puff.vis > 0.3 && range > 0.5 && puff.kind !== SCUD) {
+      if (puff.vis > 0.3 && alpha > 0.2 && range > 0.5 && puff.kind !== SCUD) {
         const rx = sx * 0.33;
         const ry = sy * 0.3;
         const qx = (camPos.x - x) / rx;
@@ -868,33 +831,18 @@ export class CloudField {
       ci.material.color.copy(p.sun).lerp(_white, 0.5);
       ci.position.set(
         camPos.x + ((wind.x * this.t * 0.12) % 3000),
-        4200 + i * 900,
+        7200 + i * 900,
         camPos.z + ((wind.z * this.t * 0.12) % 3000)
       );
     });
 
-    // Overcast decks: with heavy cover or a stratus sky. Grey from under,
-    // sunlit from above — climb through and break out on top into sun.
-    const deckOpacity = Math.max(clamp((cover - 0.5) * 1.5, 0, 0.82), clamp((c.stratus || 0) * 0.8 - 0.05, 0, 0.82));
-    _deckTop.copy(p.sun).lerp(_white, 0.6).multiplyScalar(weather.isNight ? 0.12 : 1);
-    this.decks.forEach((d, i) => {
-      d.visible = deckOpacity > 0.01;
-      d.material.opacity = deckOpacity * (i === 0 ? 1 : 0.55);
-      const dy = base + i * 190;
-      const above = smoothstep(dy - 30, dy + 90, camPos.y);
-      d.material.color.copy(p.horizon).lerp(weather.isNight ? _deckNight : _deckDay, 0.6).lerp(_deckTop, above * 0.85);
-      d.position.set(
-        camPos.x + ((wind.x * this.t * 0.6) % 2000),
-        dy,
-        camPos.z + ((wind.z * this.t * 0.6) % 2000)
-      );
-    });
+    if (this.layer) this.layer.update(dt, weather, camPos, this, p);
 
     if (this.shadows) {
       this._shadowT += dt;
       if (this._shadowT >= 0.5) {
         this._shadowT = 0;
-        this.paintShadows(weather, camPos, this.puffs.length, deckOpacity);
+        this.paintShadows(weather, camPos, this.puffs.length);
       }
       // The cross-fade from the last repaint and the drift since (the pattern slides with the wind).
       cloudShadow.tick(this.t, wind);
@@ -906,7 +854,7 @@ export class CloudField {
    * plenty: the texture is anchored in the world, not to the screen, so only
    * the clouds' own drift — a few metres a second — waits for the next one.
    */
-  paintShadows(weather, camPos, wanted, deckOpacity) {
+  paintShadows(weather, camPos, wanted) {
     const cs = cloudShadow;
     weather.sunDirection(_sun);
     // Only a sun well up casts a useful cloud shadow: at sunset they are
@@ -984,22 +932,15 @@ export class CloudField {
         }
       }
     }
-    // The overcast decks: a soft drifting mottle, moving with the decks.
-    const deck = deckOpacity > 0.01 ? deckOpacity : 0;
-    const wind = weather.windVector();
-    const dwx = wind.x * this.t * 0.6;
-    const dwz = wind.z * this.t * 0.6;
+    // The cloud layer's own field: the gap you can see through is the patch of sun on the ground.
+    const L = this.layer;
     const data = nb.data;
     for (let tz = 0; tz < N; tz++) {
       const wz = oz - half + (tz + 0.5) * SHADOW_TEXEL;
       for (let tx = 0; tx < N; tx++) {
         const j = tz * N + tx;
         let v = 1 - Math.exp(-acc[j]);
-        if (deck) {
-          const wx = ox - half + (tx + 0.5) * SHADOW_TEXEL;
-          const n = vnoise((wx - dwx) / 1400, (wz - dwz) / 1400) * 0.65 + vnoise((wx - dwx) / 520, (wz - dwz) / 520) * 0.35;
-          v = Math.max(v, clamp((n - 0.42) * 2.2, 0, 1) * deck);
-        }
+        if (L) v = Math.max(v, L.shadeAt(ox - half + (tx + 0.5) * SHADOW_TEXEL, wz));
         data[j] = Math.round(clamp(v, 0, 1) * 255);
       }
     }
@@ -1007,24 +948,18 @@ export class CloudField {
     cs.swap(this.t);
   }
 
-  /** 0..1 how deep inside cloud the given altitude is — drives the whiteout. */
+  /** The layer plugs in here (features/cloud-layer.js), on every world build. */
+  attachLayer(layer) {
+    this.layer = layer;
+  }
+
+  /**
+   * 0..1 how deep inside cloud the eye is — drives the whiteout. `alt` and
+   * `weather` stay in the signature for farlands-run.js's wrapper; the layer
+   * works it out in update(), from the same weather, where the eye is.
+   */
   cloudImmersion(alt, weather) {
-    const cover = weather.cond.cloud;
-    // Inside one of the puffs themselves (update() measures it): fly through a cumulus.
     const puff = this.puffImmersion || 0;
-    if (cover < 0.35) return puff;
-    const base = weather.cond.cloudBase;
-    const thickness = 200 + cover * 420;
-    const d = 1 - Math.abs(alt - (base + thickness * 0.35)) / thickness;
-    /*
-     * The layer: the fixed skies as they always were. The random sky's layer
-     * is its stratus deck (and a sky nearly covered) — a field of separate
-     * cumulus is not a white-out at its own height, only inside a puff.
-     */
-    const c = weather.cond;
-    const layer = weather.wx && !weather._tempCond
-      ? clamp(Math.max((c.stratus || 0) * 0.95, (cover - 0.6) * 2.2), 0, 1)
-      : clamp((cover - 0.3) * 1.6, 0, 1);
-    return Math.max(puff, clamp(d, 0, 1) * layer);
+    return this.layer ? Math.max(puff, this.layer.immersion) : puff;
   }
 }

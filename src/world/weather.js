@@ -12,7 +12,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { clamp, lerp } from '../core/noise.js';
 import { FLASH, CAPS, dim } from '../render/flash-safety.js';
-import { WxSystem, newSeed, climateFor, visibilityAt, windWords, visibilityWords, changeWords, VIS_OD } from './wx.js';
+import { WxSystem, newSeed, climateFor, visibilityAt, windWords, visibilityWords, changeWords, VIS_OD, DECK_TOP_M } from './wx.js';
 import {
   LATITUDE_BY_CLIMATE, PRESET_ELEVATION, sunPosition, hourForElevation, timeBucket, daylight, dayOfYearOf,
   sunLight, moonLight, skyLight, exposureFor,
@@ -48,11 +48,11 @@ export function latitudeOf(map) {
  * roll. It is LAST so the multiplayer index of the four older ones holds.
  */
 export const CONDITIONS = {
-  clear: { label: 'Clear', cloud: 0.16, rain: 0, fog: 0.000018, turb: 0.12, gust: 0.1, cloudBase: 1150, cu: 0.22, cirrus: 0.25 },
-  cloudy: { label: 'Cloudy', cloud: 0.62, rain: 0, fog: 0.00006, turb: 0.32, gust: 0.25, cloudBase: 1050, cu: 0.8, tcu: 0.25, stratus: 0.35, cirrus: 0.1 },
-  rainy: { label: 'Rainy', cloud: 0.85, rain: 0.55, fog: 0.00014, turb: 0.5, gust: 0.4, cloudBase: 780, cu: 0.3, stratus: 0.95, scud: 0.5 },
-  stormy: { label: 'Stormy', cloud: 1.0, rain: 1.0, fog: 0.00022, turb: 1.0, gust: 0.75, cloudBase: 560, cu: 0.3, tcu: 0.6, cb: 1, stratus: 0.7, scud: 0.8, storm: 1 },
-  random: { label: 'Random', cloud: 0.24, rain: 0, fog: 0.000038, turb: 0.16, gust: 0.14, cloudBase: 1150, cu: 0.42, cirrus: 0.3 },
+  clear: { label: 'Clear', cloud: 0.16, deck: 0.14, rain: 0, fog: 0.000018, turb: 0.12, gust: 0.1, cloudBase: 1150, cu: 0.22, cirrus: 0.25 },
+  cloudy: { label: 'Cloudy', cloud: 0.62, deck: 0.76, rain: 0, fog: 0.00006, turb: 0.32, gust: 0.25, cloudBase: 1050, cu: 0.8, tcu: 0.25, stratus: 0.35, cirrus: 0.1 },
+  rainy: { label: 'Rainy', cloud: 0.85, deck: 0.92, rain: 0.55, fog: 0.00014, turb: 0.5, gust: 0.4, cloudBase: 780, cu: 0.3, stratus: 0.95, scud: 0.5 },
+  stormy: { label: 'Stormy', cloud: 1.0, deck: 0.96, rain: 1.0, fog: 0.00022, turb: 1.0, gust: 0.75, cloudBase: 560, cu: 0.3, tcu: 0.6, cb: 1, stratus: 0.7, scud: 0.8, storm: 1 },
+  random: { label: 'Random', cloud: 0.24, deck: 0.6, rain: 0, fog: 0.000038, turb: 0.16, gust: 0.14, cloudBase: 1150, cu: 0.42, cirrus: 0.3 },
 };
 for (const c of Object.values(CONDITIONS)) {
   for (const k of ['cu', 'tcu', 'cb', 'stratus', 'cirrus', 'scud', 'snow', 'mist', 'haze', 'hfA', 'storm']) if (c[k] == null) c[k] = 0;
@@ -775,15 +775,13 @@ export class Weather {
   palette() {
     const c = this.cond;
     /*
-     * Above the random sky's deck (clouds.js: grey from under, sunlit from
-     * above) the sky is a clear one: main.js keeps `eyeY`, and from a few
-     * hundred metres over the top of a stratus layer its overcast and murk
-     * no longer wash the sky or dim the sun. The fixed skies as before.
+     * Over the top of the cloud layer (10,000 ft, cloud-deck.js) the sky is a
+     * clear one on every sky: main.js keeps `eyeY`, and the overcast and the
+     * murk stay under you. A disaster's sky is the disaster's.
      */
     let above = 0;
-    if (this.wx && !this._tempCond && (c.stratus || 0) > 0.3 && Number.isFinite(this.eyeY)) {
-      const top = (c.cloudBase || 800) + 380;
-      above = clamp((this.eyeY - top) / 400, 0, 1);
+    if (!this._tempCond && Number.isFinite(this.eyeY)) {
+      above = clamp((this.eyeY - DECK_TOP_M + 200) / 400, 0, 1);
       above = above * above * (3 - 2 * above);
     }
     const overcast = c.cloud * (1 - above);
@@ -849,7 +847,8 @@ export class Weather {
       ambient,
       sunIntensity,
       ambIntensity,
-      fogDensity: c.fog,
+      overcast,
+      fogDensity: c.fog + (Math.min(c.fog, 0.00003) - c.fog) * above,
       fogColor,
       sunElev: el,
       daylight: K.daylight,

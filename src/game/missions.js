@@ -1492,12 +1492,12 @@ export const MISSIONS = [
       },
       {
         id: 'climb',
-        text: 'Climb into the cloud — about 4,200 feet.',
-        hint: 'The deck starts around 3,400 feet. Get into it, then EASE OFF — a hard climb throws you straight out of the top.',
+        text: 'Climb into the cloud — about 5,500 feet.',
+        hint: 'The base is around 3,400 feet and it thickens as you climb. Get well into it, then EASE OFF, and stay out of the gaps.',
         targetLabel: 'The cloud',
         target: (ctx) => {
           const a = ctx.ac.pos;
-          return new THREE.Vector3(a.x, 1280, a.z);
+          return new THREE.Vector3(a.x, 1680, a.z);
         },
         check: (ctx) => (ctx.sim.cloudImmersion || 0) > 0.38,
       },

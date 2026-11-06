@@ -64,6 +64,7 @@ export const TA = {
   /** People of the stairs' share not yet sent down the line. */
   stairsLeft: 0,
   stairsDoor: null,
+  lobbyDoor: null,
   walkers: null,
   /** The bridge held back off the door once the doors shut (holdBridgeBack). */
   awayBridge: null,
@@ -146,17 +147,24 @@ export function stairsWalk(sim, P) {
   const fz = -Math.cos(h);
   // Truck-local z (positive is the back of the truck, away from the door) in the world.
   const at = (lz, y) => ({ x: P.x - fx * lz, y, z: P.z - fz * lz });
-  const door = at(V.STAIR_FRONT - 0.1, P.sill);
+  const cabin = at(V.STAIR_FRONT - 0.1, P.sill);
   const top = at(-1.6, P.sill);
   const foot = at(3.1, elev + V.STAIR_BED_Y);
   const ground = at(3.9, elev);
   const behind = at(6.2, elev);
-  // Where they come from: the terminal's front, level with the stairs.
+  // Where they come from: the terminal's apron door nearest the stairs (world/apron.js), or its front.
   let start = null;
+  let lobby = null;
   const lay = airportLayout();
   const F = lay && lay.frame;
   const T = lay && lay.terminal;
-  if (F && T && Number.isFinite(T.front) && Number.isFinite(T.u0)) {
+  const door = sim.apron && sim.apron.nearestDoor ? sim.apron.nearestDoor(behind.x, behind.z, 'air') : null;
+  if (door && Math.hypot(door.out.x - behind.x, door.out.z - behind.z) <= MAX_WALK) {
+    start = { x: door.out.x, y: elev, z: door.out.z };
+    lobby = [{ x: door.in.x, y: elev, z: door.in.z }, { x: door.x, y: elev, z: door.z }];
+    TA.lobbyDoor = door.id;
+  } else if (F && T && Number.isFinite(T.front) && Number.isFinite(T.u0)) {
+    TA.lobbyDoor = null;
     const u = Math.max(T.u0 + 3, Math.min(T.u1 - 3, behind.x - F.cx));
     start = { x: F.x(u), y: elev, z: F.z(T.front - 0.6) };
   }
@@ -188,9 +196,10 @@ export function stairsWalk(sim, P) {
     }
   }
   const ground2 = walkAround([start, behind], obstacles, centre);
-  const pts = [...ground2, ground, foot, top, door];
+  const walked = lobby ? [...lobby, ...ground2] : ground2;
+  const pts = [...walked, ground, foot, top, cabin];
   // Where the queue waits for stairs that are not there yet: just behind the truck.
-  pts.footAt = ground2.length;
+  pts.footAt = walked.length;
   return pts;
 }
 
@@ -493,6 +502,8 @@ export function drawWalkers(sim) {
   }
   if (!TA.walkers) TA.walkers = new Walkers(sim.scene);
   if (TA.walkers.root.parent !== sim.scene) sim.scene.add(TA.walkers.root);
+  // A line through the apron door keeps it open.
+  if (TA.lobbyDoor != null && sim.apron && sim.apron.wantDoor) sim.apron.wantDoor(TA.lobbyDoor);
   return TA.walkers.draw([S], sim.camera ? sim.camera.position : null);
 }
 

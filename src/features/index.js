@@ -4,6 +4,8 @@
  * a one-line change and removing a broken one is a one-line revert.
  */
 
+// The cloud layer to 10,000 ft (world/cloud-deck.js).
+import './cloud-layer.js';
 import './airport-services.js';
 import './airliners.js';
 // After airliners: the giants (aircraft/extra/giants.js) say where the long runways are.

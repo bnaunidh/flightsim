@@ -17,4 +17,7 @@ export const FOOT = Object.freeze({
   gpu: { hw: 0.72, z0: -1.12, z1: 1.12 },
   bus: { hw: 1.45, z0: -6.75, z1: 6.75 },
   followMe: { hw: 0.95, z0: -2.4, z1: 2.4 },
+  car: { hw: 0.92, z0: -2.2, z1: 2.2 },
+  taxi: { hw: 0.95, z0: -2.25, z1: 2.25 },
+  shuttle: { hw: 1.45, z0: -6.75, z1: 6.75 },
 });

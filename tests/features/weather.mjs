@@ -524,7 +524,7 @@ const { WxSystem, WxTimeline, PHASES, fogFor, visibilityAt, windWords, visibilit
   w.update(0);
   w.eyeY = 200;
   const under = w.palette();
-  w.eyeY = 3000;
+  w.eyeY = 3400; // over the layer's tops (10,000 ft, world/cloud-deck.js)
   const over = w.palette();
   ok('look: under the random sky\'s deck the sky is grey and the sun dim; above it, blue and bright', over.top.b - over.top.r > under.top.b - under.top.r + 0.1 && over.sunIntensity > under.sunIntensity * 1.5,
     `under top #${under.top.getHexString()} sun ${under.sunIntensity.toFixed(2)}; above #${over.top.getHexString()} sun ${over.sunIntensity.toFixed(2)}`);

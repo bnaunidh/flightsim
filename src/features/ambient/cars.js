@@ -70,7 +70,7 @@ function wheelMatrix(x, y, z) {
   return _wm.compose(_p, _q, _s);
 }
 
-function carShape(k, colour) {
+export function carShape(k, colour) {
   const b = new Batch();
   const d = KINDS[k];
   const L = d.L;
@@ -108,6 +108,11 @@ function carShape(k, colour) {
     b.slab(-W / 2 + 0.12, W / 2 - 0.12, 0.45 + d.H * 0.5, cabH, cabFront, cabBack, k === 'van' ? colour : colour);
     b.slab(-W / 2 + 0.14, W / 2 - 0.14, 0.45 + d.H * 0.52, cabH - 0.12, cabFront - 0.02, cabFront + 0.9, glass);
     for (const s of [-1, 1]) b.slab(s * (W / 2 - 0.12) - 0.02, s * (W / 2 - 0.12) + 0.02, 0.45 + d.H * 0.55, cabH - 0.15, cabFront + 0.3, cabBack - 0.3, glass);
+    if (k !== 'van') {
+      // A rear window, and tail lamps either side at the back of the body.
+      b.slab(-W / 2 + 0.16, W / 2 - 0.16, 0.45 + d.H * 0.54, cabH - 0.12, cabBack - 0.02, cabBack + 0.02, glass);
+      for (const s of [-1, 1]) b.slab(s * (W / 2 - 0.3) - 0.22, s * (W / 2 - 0.3) + 0.22, 0.45 + d.H * 0.32, 0.45 + d.H * 0.46, L / 2 - 0.02, L / 2 + 0.02, 0x8a1414);
+    }
     if (k === 'taxi') b.slab(-0.35, 0.35, cabH, cabH + 0.22, -0.3, 0.3, 0xf2f2f0);
     wheels(b, W / 2 - 0.1, [-L / 2 + 0.9, L / 2 - 0.9], k === 'fourx4' || k === 'jeep' ? 0.42 : 0.34);
   }

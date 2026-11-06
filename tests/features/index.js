@@ -88,6 +88,7 @@ import { check as hudStack } from './hud-stack.browser.js';
 import { check as hudWins } from './hud-wins.browser.js';
 import { check as touchCoverage } from './touch-coverage.browser.js';
 import { check as ditching } from './ditching.browser.js';
+import { check as waterCrash } from './water-crash.browser.js';
 import { check as floatplane } from './floatplane.browser.js';
 import { check as edition } from './edition.browser.js';
 import { check as cams } from './cams.browser.js';
@@ -227,6 +228,7 @@ export const CHECKS = [
   { id: 'hud-wins', check: hudWins },
   { id: 'touch-coverage', check: touchCoverage },
   { id: 'ditching', check: ditching },
+  { id: 'water-crash', check: waterCrash },
   { id: 'floatplane', check: floatplane },
   // The two editions (core/edition.js): on thankdapro no screen shows T-Pose Harrison or Air Massimo; elsewhere both are there.
   { id: 'edition', check: edition },

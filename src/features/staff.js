@@ -1451,9 +1451,13 @@ function spawnPassenger(d, i) {
   const st = ST.stand;
   const end = J.offset(st.x, st.z, st.heading, ST.prof.nose + 26, -6 + i * 2.4);
   pts.push({ x: end.x, y: floorAt(end.x, end.z), z: end.z, speed: 1.3 });
+  // And in at the terminal's apron door, rather than vanishing on the concrete.
+  const apron = ST.sim && ST.sim.apron;
+  const door = apron && apron.nearestDoor ? apron.nearestDoor(end.x, end.z, 'air') : null;
+  if (door) for (const q of [door.out, door, door.in]) pts.push({ x: q.x, y: floorAt(q.x, q.z), z: q.z, speed: 1.3 });
   const m = createPerson({ outfit: 'passenger', lite: true, suitcase: i % 2 === 0, seed: ST.round * 17 + i * 5 + 3 });
   if (ST.group) ST.group.add(m);
-  ST.passengers.push({ model: m, pts, seg: 0, t: 0, x: pts[0].x, y: pts[0].y, z: pts[0].z, heading: 0, done: false, waveT: 0 });
+  ST.passengers.push({ model: m, pts, seg: 0, t: 0, x: pts[0].x, y: pts[0].y, z: pts[0].z, heading: 0, done: false, waveT: 0, door: door ? door.id : -1 });
 }
 
 const PAX_POSE = { speed: 0, air: false, wave: null };
@@ -1492,6 +1496,7 @@ function stepPassengers(dt) {
       if (p.face != null) p.heading = p.face;
     } else {
       p.face = null;
+      if (p.door >= 0 && ST.sim && ST.sim.apron && Math.hypot(ST.sim.apron.doors[p.door].x - p.x, ST.sim.apron.doors[p.door].z - p.z) < 4) ST.sim.apron.wantDoor(p.door);
       const len = Math.hypot(dx, dz) || 0.001;
       p.t += (b.speed * dt) / len;
       if (p.t >= 1) {

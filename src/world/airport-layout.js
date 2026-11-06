@@ -49,7 +49,7 @@
  * is a stand is exactly what is drawn as one.
  */
 
-import { AIRPORT, MAP, heightAt, flatAt } from './terrain.js';
+import { AIRPORT, MAP, heightAt, flatAt, withoutWorldFlat } from './terrain.js';
 import { AIRCRAFT } from '../aircraft/types.js';
 
 /* ------------------------------------------------------------------ */
@@ -595,6 +595,49 @@ function remember() {
   seen.n = AIRCRAFT.length;
 }
 
+/** The car park's near edge, metres out from the terminal's landside wall. */
+export const CARPARK_W = 27;
+
+/** The kerb's edge, metres out from the landside wall, and the forecourt road's half-width. */
+export const KERB_W = 8.6;
+export const ROAD_HALF = 5;
+
+/**
+ * The forecourt road: a one-way loop along the kerb and back round behind the
+ * car park, so the kerb and the car park are joined to each other, and to the
+ * network where there is one. Pure numbers, in the terminal's frame (w from its
+ * landside wall). Null where there is no terminal proper.
+ *   { mid, L, nearW, farW, hw, inRing }  centre lines at nearW and farW, mid +- L
+ */
+export function landsideRing(lay) {
+  const T = lay && lay.terminal;
+  if (!T || !T.rect || lay.military || lay.shape === 'strip') return null;
+  const mid = (T.u0 + T.u1) / 2;
+  const W = T.u1 - T.u0;
+  const c = lay.carPark;
+  const inRing = !!(c && Math.abs(c.w0 - (T.back + CARPARK_W)) < 0.01);
+  const nearW = KERB_W + ROAD_HALF;
+  const farW = inRing ? CARPARK_W + c.depth + 9 + ROAD_HALF : nearW + 32;
+  const L = Math.max(W * 0.35 + 18, inRing ? c.width / 2 + 16 : 0);
+  return { mid, L, nearW, farW, hw: ROAD_HALF, inRing };
+}
+
+/**
+ * The level ground that loop needs, for terrain.js setWorldFlat: at the field's
+ * own height, skirted down or up to the land round it. Null on the World Map,
+ * whose tiles come from a worker with its own flats (a field's level site is
+ * in the map's data), and where there is no loop.
+ */
+export function landsideLevel(lay) {
+  const R = landsideRing(lay);
+  if (!R || (MAP && (MAP.worldPreview || MAP.streamTerrain))) return null;
+  const F = lay.frame;
+  const T = lay.terminal;
+  const a = F.z(T.back - 2);
+  const b = F.z(T.back + R.farW + 14);
+  return { id: 'landside', name: 'Terminal forecourt', kind: 'landside', x0: F.x(R.mid - R.L - 14), x1: F.x(R.mid + R.L + 14), z0: Math.min(a, b), z1: Math.max(a, b), blend: 60, surface: 'grass', clear: true, elev: AIRPORT.elev };
+}
+
 /**
  * How often airportLayout() fell through to the slow path. For the node
  * check, which used to time 100,000 calls against 40 ms of wall clock and so
@@ -614,7 +657,7 @@ export function airportLayout() {
   const k = keyOf();
   if (!memo || memoKey !== k) {
     layoutMemoStats.built++;
-    memo = buildLayout();
+    memo = withoutWorldFlat(buildLayout);
     memoKey = k;
   }
   remember();
@@ -1105,7 +1148,23 @@ function buildLayout() {
     const uPref = anchorU(c.at, c.width);
     const w0Pref = Math.max(anchorW(c.front), behindTwy);
     // Tarmac, so tarmac's tolerance.
-    const s = site(c.width, c.depth, uPref, w0Pref, wLimit(w0Pref, c.depth), (r) => groundOk(r, PAVE_UP, PAVE_DOWN, 8));
+    /*
+     * Behind the terminal, in the loop of its forecourt road (life/landside-plan.js),
+     * where a car park belongs: it used to stand half a kilometre off along the
+     * apron, across the crosswind runway from the building, joined to nothing.
+     * The landside is levelled when the world is built, so the hill behind it
+     * does not count; the sea does. The World Map's fields keep theirs: the road
+     * from town is laid to it.
+     */
+    let s = null;
+    if (!(MAP && MAP.worldPreview) && !military) {
+      const u = (block.termU0 + block.termU1) / 2;
+      const w0 = block.tBack + CARPARK_W;
+      const r = F.rect(u - c.width / 2, u + c.width / 2, w0, w0 + c.depth);
+      const land = [[r.x0, r.z0], [r.x1, r.z0], [r.x0, r.z1], [r.x1, r.z1]].every(([x, z]) => heightAt(x, z) > elev - 3);
+      if (land && clearOf(r) && !keepOutHit(r, true) && !runwayHit(r, 30)) s = { u, w0, rect: r };
+    }
+    if (!s) s = site(c.width, c.depth, uPref, w0Pref, wLimit(w0Pref, c.depth), (r) => groundOk(r, PAVE_UP, PAVE_DOWN, 8));
     if (s) {
       carPark = { ...c, u: s.u, w0: s.w0, rect: s.rect };
       buildings.push({ kind: 'carpark', rect: s.rect });

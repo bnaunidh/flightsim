@@ -56,8 +56,27 @@ export async function check(sim, r, say = () => {}) {
     step(1);
     const st = WL.state();
     r.ok('world life: on in free flight, at the full level', st.on && st.level === 1, JSON.stringify({ on: st.on, level: st.level }));
+    // The forecourt: what is drawn is what is driven, and it really runs (node cannot see this: the road comes from the drawn ground).
+    {
+      const P0 = WL.plan();
+      const kerbVans = () => WL.vans().filter((v) => ['car', 'taxi', 'shuttle'].includes(v.kind));
+      r.ok('world life: the forecourt has its road and its traffic', !!P0.road && P0.stops.length >= 4 && kerbVans().length >= 4, `${P0.stops.length} stops, ${kerbVans().length} vehicles; ${P0.why.join(' / ')}`);
+      let stopped = 0;
+      let out = 0;
+      const seen = new Map();
+      for (let i = 0; i < 1800; i++) {
+        sim.step(0.05, 1 / 20);
+        for (const v of kerbVans()) {
+          if (v.dwell > 0 && !seen.get(v)) stopped++;
+          seen.set(v, v.dwell > 0);
+        }
+        out += WL.walkers().some((w) => w.gate != null && !w.hidden && w.d > 0 && w.d < 3 && w.gateAt === 0) ? 1 : 0;
+      }
+      // About one stop a vehicle a lap, and a lap (631 m at Kestrel, with the queue) is about two minutes: measured 2 in 90 s.
+      r.ok('world life: the traffic stops at the kerb and people get out of it', stopped >= 2 && out > 0, `${stopped} stops in 90 s, ${out} frames with somebody getting out`);
+    }
     r.ok('world life: crews, passengers and the kerb are all there', (st.roles.dispatcher || 0) >= 1 && (st.roles.pax || 0) >= 4 && (st.roles.kerb || 0) >= 4, JSON.stringify(st.roles));
-    r.ok('world life: service vehicles on the apron loop (High: four)', st.vans.length === 4, st.vans.map((v) => v.kind).join(', ') + ' ' + st.why.join(' / '));
+    r.ok('world life: service vehicles on the apron loop (High: four)', st.vans.filter((v) => !['car', 'taxi', 'shuttle'].includes(v.kind)).length === 4, st.vans.map((v) => v.kind).join(', ') + ' ' + st.why.join(' / '));
     const W = WL.walkers();
     const before = W.map((w) => [w.x, w.z, w.hidden]);
     const vans0 = WL.vans().map((v) => v.d);
@@ -81,7 +100,7 @@ export async function check(sim, r, say = () => {}) {
     cam.lookAt(look);
     cam.updateMatrixWorld();
     const people = WL.meshes().filter((m) => /^people:/.test(m.name));
-    r.ok('world life: the crowd is six instanced meshes, and people are drawn', people.length === 6 && WL.state().drawn >= 10, `${people.length} meshes, ${WL.state().drawn} drawn`);
+    r.ok('world life: the crowd is one instanced mesh, and people are drawn', people.length === 1 && WL.state().drawn >= 10, `${people.length} meshes, ${WL.state().drawn} drawn`);
     r.ok('world life: the update is cheap (median under 0.5 ms)', WL.state().update.median < 0.5, `${WL.state().update.median.toFixed(3)} ms median, ${WL.state().update.max.toFixed(2)} max`);
 
     /* 2. Never on a runway or a taxiway */
@@ -205,7 +224,9 @@ export async function check(sim, r, say = () => {}) {
     await sim.startMode('free', { aircraft: 'skylark', time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 90 });
     step(1);
     const lo = WL.state();
-    r.ok('world life: Low keeps a token few (≤ 14 people in the two-mesh figure, no extra vehicles)', lo.people > 0 && lo.people <= 14 && lo.vans.length === 0 && WL.meshes().length === 2, `${lo.people} people, ${lo.vans.length} vehicles, ${WL.meshes().length} meshes`);
+    // Low has the same road as every other tier: its coarse terrain once lost it, and the car park with it.
+    r.ok('world life: Low has the forecourt road and its traffic', !!WL.plan().road && WL.vans().some((v) => ['car', 'taxi', 'shuttle'].includes(v.kind)), WL.plan().why.join(' / '));
+    r.ok('world life: Low keeps a token few (≤ 14 people, one mesh, no extra vehicles)', lo.people > 0 && lo.people <= 14 && lo.vans.filter((v) => !['car', 'taxi', 'shuttle'].includes(v.kind)).length === 0 && WL.meshes().filter((m) => /^people:/.test(m.name)).length === 1, `${lo.people} people, ${lo.vans.length} vehicles, ${WL.meshes().length} meshes`);
     const view = () => {
       const look2 = new THREE.Vector3(F.x((T.u0 + T.u1) / 2), lay.elev, F.z(T.back));
       cam.position.set(look2.x + 40, lay.elev + 25, F.z(T.back + 70));

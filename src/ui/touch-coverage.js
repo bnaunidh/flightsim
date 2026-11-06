@@ -60,6 +60,7 @@ export const TOUCH_COVERAGE = Object.freeze({
   drop: pad('the DROP pad, shown while something is aboard', "'drop'"),
   pause: dock('the pause button, top right'),
   help: sheet('SYSTEMS → CONTROLS (the H card)'),
+  crashSkip: card('the Skip button on the crash view', 'dataset.crashSkip', 'src/features/breakup/crash-view.js'),
   hudMode: dock('the HUD-mode button in the dock'),
   hideUi: tray('the dock\'s tray → Hide interface'),
   guide: tray('the dock\'s tray → Guidance'),

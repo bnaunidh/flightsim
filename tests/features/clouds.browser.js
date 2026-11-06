@@ -7,11 +7,11 @@
  *   - each phase draws its own clouds: fair-weather cumulus (no storm
  *     cells), far-off cells (cumulonimbus columns with anvils and rain
  *     shafts), a thunderstorm (cells, scud under the rain), overcast (the
- *     decks), clear (almost nothing)
+ *     layer), clear (almost nothing)
  *   - cumulus have flat bases at the cloud base, a few metres apart
  *   - nothing pops: when the weather changes, no puff's opacity jumps in a
  *     frame; a puff at the edge of the field is faded out before it wraps
- *   - the decks are grey from under and sunlit from above
+ *   - the layer is grey from under and sunlit from above
  *   - the storm cells' lightning: none with Reduce flashing on
  *   - every phase renders without an error
  * The weather is put back afterwards.
@@ -33,6 +33,8 @@ export async function check(sim, r, say = () => {}) {
     const C = sim.clouds;
     const ac = sim.aircraft;
     const P = ac.pos.constructor;
+    // The layer drifts by the wall clock: here, by the game's, or a stall of the test browser reads as a pop.
+    C.layer.now = () => 1.8e12 + w.time_s * 1000;
     ac.reset({ pos: new P(-6000, 0, 300), headingDeg: 90, speed: 60, altAGL: 500, engineOn: true, fuel: 1 });
     const count = () => {
       const k = { cu: 0, cb: 0, scud: 0, anvil: 0 };
@@ -52,7 +54,7 @@ export async function check(sim, r, say = () => {}) {
     const shafts = C.shafts ? C.shafts.mesh.visible : null;
     const storm = phase('storm');
     const overcast = phase('overcast');
-    const decks = C.decks.filter((d) => d.visible).length;
+    const decks = C.layer && C.layer.mesh.visible ? 1 : 0;
     const clear = phase('clear');
     const tier = sim.qualityBuilt;
     r.ok('clouds: each phase draws its own clouds (fair cumulus; far cells with anvils and shafts; a storm with scud; overcast decks; clear almost nothing)',
@@ -106,17 +108,11 @@ export async function check(sim, r, say = () => {}) {
     }
     r.ok('clouds: nothing pops — a change of weather fades puffs in and out, and the field\'s edge is faded before it wraps', worst < 0.012 && edgeMax < 0.05 && L.k > 0.05, `biggest change in a twentieth of a second ${worst.toFixed(3)} (${L.phase} → ${L.next}, ${(L.k * 100).toFixed(0)}% in), brightest puff at the edge ${edgeMax.toFixed(3)}`);
 
-    // Decks: grey from under, sunlit from above.
+    // The layer: its light goes from grey under the cloud to sunlit on the tops (the sheet's own two colours).
     phase('overcast', 5);
-    const db = w.cond.cloudBase;
-    ac.reset({ pos: new P(-6000, 0, 300), headingDeg: 90, speed: 60, altAGL: Math.max(80, db - 300), engineOn: true, fuel: 1 });
-    sim.step(0.5);
-    const under = C.decks[0].material.color.clone();
-    ac.reset({ pos: new P(-6000, 0, 300), headingDeg: 90, speed: 60, altAGL: db + 900, engineOn: true, fuel: 1 });
-    sim.step(0.5);
-    const over = C.decks[0].material.color.clone();
+    const LU = C.layer.uniforms;
     const lum = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-    r.ok('clouds: the overcast deck is grey from under and sunlit from above (break out on top into sun)', lum(over) > lum(under) * 1.15, `under ${lum(under).toFixed(2)}, above ${lum(over).toFixed(2)}`);
+    r.ok('clouds: the layer is grey from under and sunlit from above (break out on top into sun)', lum(LU.uLit.value) > lum(LU.uDim.value) * 1.15, `under ${lum(LU.uDim.value).toFixed(2)}, above ${lum(LU.uLit.value).toFixed(2)}`);
 
     // Lightning in the cells: none with Reduce flashing on.
     const was = FS.FLASH.reduce;

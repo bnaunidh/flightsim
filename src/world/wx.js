@@ -16,6 +16,7 @@
  *
  * What a phase is made of (every field 0..1 unless it says otherwise):
  *   cloud     cover, the number the older code has always read
+ *   deck      how much of the cloud layer's tops are there (cloud-deck.js)
  *   cu        fair-weather cumulus      tcu  towering cumulus
  *   cb        cumulonimbus (storm cells, near or far)
  *   stratus   a flat grey deck at the base      cirrus  high wisps
@@ -78,28 +79,31 @@ export function visibilityAt(c, altM = 0) {
 
 /* ------------------------------------------------------------------ phases */
 
+/** Where the cloud layer ends (world/cloud-deck.js): 10,000 ft, whatever the sky. `deck` in a sky is how much of the tops it covers. */
+export const DECK_TOP_M = 3048;
+
 const RAW = {
-  clear:     { label: 'Clear', word: 'clear skies', cloud: 0.08, cu: 0.1, cirrus: 0.25, visM: 60000, haze: 0.05, turb: 0.1, gust: 0.1, base: 1250, windMul: 0.95 },
-  fair:      { label: 'Fair', word: 'fair-weather cumulus', cloud: 0.24, cu: 0.42, cirrus: 0.3, visM: 45000, haze: 0.1, turb: 0.16, gust: 0.14, base: 1150, windMul: 1 },
-  scattered: { label: 'Scattered cloud', word: 'scattered cloud', cloud: 0.42, cu: 0.68, tcu: 0.12, cirrus: 0.2, visM: 30000, haze: 0.1, turb: 0.26, gust: 0.22, base: 1050, windMul: 1.05 },
-  broken:    { label: 'Broken cloud', word: 'broken cloud', cloud: 0.62, cu: 0.8, tcu: 0.28, stratus: 0.3, cirrus: 0.1, visM: 20000, haze: 0.05, turb: 0.34, gust: 0.28, base: 950, windMul: 1.15 },
-  overcast:  { label: 'Overcast', word: 'overcast', cloud: 0.84, cu: 0.25, stratus: 0.95, visM: 12000, mist: 0.15, mistH: 300, turb: 0.3, gust: 0.25, base: 760, windMul: 1.1 },
-  showers:   { label: 'Showers', word: 'showers', cloud: 0.76, cu: 0.75, tcu: 0.65, cb: 0.2, stratus: 0.25, scud: 0.3, rain: 0.42, visM: 7000, mist: 0.2, mistH: 250, turb: 0.5, gust: 0.42, base: 820, windMul: 1.3 },
-  rain:      { label: 'Light rain', word: 'light rain', cloud: 0.88, cu: 0.2, stratus: 1, scud: 0.55, rain: 0.5, visM: 5000, mist: 0.3, mistH: 250, turb: 0.42, gust: 0.35, base: 620, windMul: 1.2 },
-  heavyRain: { label: 'Heavy rain', word: 'heavy rain', cloud: 0.95, cu: 0.15, tcu: 0.3, cb: 0.3, stratus: 1, scud: 0.8, rain: 0.85, visM: 2800, mist: 0.3, mistH: 250, turb: 0.62, gust: 0.5, base: 520, windMul: 1.4 },
-  storm:     { label: 'Thunderstorm', word: 'thunderstorm', cloud: 1, cu: 0.3, tcu: 0.6, cb: 1, stratus: 0.7, scud: 0.8, rain: 1, visM: 2200, mist: 0.25, mistH: 250, turb: 1, gust: 0.75, base: 540, windMul: 1.75, storm: 1 },
-  cells:     { label: 'Storms in the distance', word: 'storm cells in the distance', cloud: 0.46, cu: 0.55, tcu: 0.55, cb: 0.7, cirrus: 0.35, visM: 25000, haze: 0.15, turb: 0.3, gust: 0.25, base: 1000, windMul: 1.1 },
-  clearing:  { label: 'Clearing', word: 'clearing', cloud: 0.34, cu: 0.55, stratus: 0.1, cirrus: 0.2, visM: 35000, turb: 0.2, gust: 0.18, base: 1100, windMul: 1 },
-  haze:      { label: 'Haze', word: 'haze', cloud: 0.14, cu: 0.15, cirrus: 0.3, visM: 8000, mist: 0.35, mistH: 900, haze: 0.85, turb: 0.1, gust: 0.08, base: 1300, windMul: 0.7 },
-  mist:      { label: 'Mist', word: 'mist', cloud: 0.25, cu: 0.1, stratus: 0.15, visM: 3000, mist: 0.9, mistH: 120, haze: 0.3, turb: 0.06, gust: 0.04, base: 900, windMul: 0.45 },
-  fog:       { label: 'Fog', word: 'fog', cloud: 0.4, stratus: 0.3, visM: 900, mist: 0.95, mistH: 110, haze: 0.2, turb: 0.04, gust: 0.03, base: 700, windMul: 0.3 },
-  snow:      { label: 'Snow', word: 'snow', cloud: 0.88, cu: 0.15, stratus: 0.95, scud: 0.4, snow: 0.6, visM: 2500, mist: 0.2, mistH: 300, turb: 0.34, gust: 0.3, base: 600, windMul: 1.15 },
-  snowShowers: { label: 'Snow showers', word: 'snow showers', cloud: 0.7, cu: 0.65, tcu: 0.4, stratus: 0.25, snow: 0.4, visM: 5000, mist: 0.15, mistH: 300, turb: 0.42, gust: 0.4, base: 750, windMul: 1.3 },
+  clear:     { label: 'Clear', word: 'clear skies', cloud: 0.08, deck: 0.4, cu: 0.1, cirrus: 0.25, visM: 60000, haze: 0.05, turb: 0.1, gust: 0.1, base: 1250, windMul: 0.95 },
+  fair:      { label: 'Fair', word: 'fair-weather cumulus', cloud: 0.24, deck: 0.6, cu: 0.42, cirrus: 0.3, visM: 45000, haze: 0.1, turb: 0.16, gust: 0.14, base: 1150, windMul: 1 },
+  scattered: { label: 'Scattered cloud', word: 'scattered cloud', cloud: 0.42, deck: 0.72, cu: 0.68, tcu: 0.12, cirrus: 0.2, visM: 30000, haze: 0.1, turb: 0.26, gust: 0.22, base: 1050, windMul: 1.05 },
+  broken:    { label: 'Broken cloud', word: 'broken cloud', cloud: 0.62, deck: 0.82, cu: 0.8, tcu: 0.28, stratus: 0.3, cirrus: 0.1, visM: 20000, haze: 0.05, turb: 0.34, gust: 0.28, base: 950, windMul: 1.15 },
+  overcast:  { label: 'Overcast', word: 'overcast', cloud: 0.84, deck: 0.92, cu: 0.25, stratus: 0.95, visM: 12000, mist: 0.15, mistH: 300, turb: 0.3, gust: 0.25, base: 760, windMul: 1.1 },
+  showers:   { label: 'Showers', word: 'showers', cloud: 0.76, deck: 0.84, cu: 0.75, tcu: 0.65, cb: 0.2, stratus: 0.25, scud: 0.3, rain: 0.42, visM: 7000, mist: 0.2, mistH: 250, turb: 0.5, gust: 0.42, base: 820, windMul: 1.3 },
+  rain:      { label: 'Light rain', word: 'light rain', cloud: 0.88, deck: 0.93, cu: 0.2, stratus: 1, scud: 0.55, rain: 0.5, visM: 5000, mist: 0.3, mistH: 250, turb: 0.42, gust: 0.35, base: 620, windMul: 1.2 },
+  heavyRain: { label: 'Heavy rain', word: 'heavy rain', cloud: 0.95, deck: 0.95, cu: 0.15, tcu: 0.3, cb: 0.3, stratus: 1, scud: 0.8, rain: 0.85, visM: 2800, mist: 0.3, mistH: 250, turb: 0.62, gust: 0.5, base: 520, windMul: 1.4 },
+  storm:     { label: 'Thunderstorm', word: 'thunderstorm', cloud: 1, deck: 0.95, cu: 0.3, tcu: 0.6, cb: 1, stratus: 0.7, scud: 0.8, rain: 1, visM: 2200, mist: 0.25, mistH: 250, turb: 1, gust: 0.75, base: 540, windMul: 1.75, storm: 1 },
+  cells:     { label: 'Storms in the distance', word: 'storm cells in the distance', cloud: 0.46, deck: 0.68, cu: 0.55, tcu: 0.55, cb: 0.7, cirrus: 0.35, visM: 25000, haze: 0.15, turb: 0.3, gust: 0.25, base: 1000, windMul: 1.1 },
+  clearing:  { label: 'Clearing', word: 'clearing', cloud: 0.34, deck: 0.6, cu: 0.55, stratus: 0.1, cirrus: 0.2, visM: 35000, turb: 0.2, gust: 0.18, base: 1100, windMul: 1 },
+  haze:      { label: 'Haze', word: 'haze', cloud: 0.14, deck: 0.42, cu: 0.15, cirrus: 0.3, visM: 8000, mist: 0.35, mistH: 900, haze: 0.85, turb: 0.1, gust: 0.08, base: 1300, windMul: 0.7 },
+  mist:      { label: 'Mist', word: 'mist', cloud: 0.25, deck: 0.5, cu: 0.1, stratus: 0.15, visM: 3000, mist: 0.9, mistH: 120, haze: 0.3, turb: 0.06, gust: 0.04, base: 900, windMul: 0.45 },
+  fog:       { label: 'Fog', word: 'fog', cloud: 0.4, deck: 0.55, stratus: 0.3, visM: 900, mist: 0.95, mistH: 110, haze: 0.2, turb: 0.04, gust: 0.03, base: 700, windMul: 0.3 },
+  snow:      { label: 'Snow', word: 'snow', cloud: 0.88, deck: 0.92, cu: 0.15, stratus: 0.95, scud: 0.4, snow: 0.6, visM: 2500, mist: 0.2, mistH: 300, turb: 0.34, gust: 0.3, base: 600, windMul: 1.15 },
+  snowShowers: { label: 'Snow showers', word: 'snow showers', cloud: 0.7, deck: 0.8, cu: 0.65, tcu: 0.4, stratus: 0.25, snow: 0.4, visM: 5000, mist: 0.15, mistH: 300, turb: 0.42, gust: 0.4, base: 750, windMul: 1.3 },
 };
 
 /** Every number a phase carries, and what it is when a phase leaves it out. */
-const KEYS = ['cloud', 'cu', 'tcu', 'cb', 'stratus', 'cirrus', 'scud', 'rain', 'snow', 'visM', 'mist', 'mistH', 'haze', 'turb', 'gust', 'base', 'windMul', 'storm'];
-const DEFAULTS = { cloud: 0, cu: 0, tcu: 0, cb: 0, stratus: 0, cirrus: 0, scud: 0, rain: 0, snow: 0, visM: 40000, mist: 0, mistH: 150, haze: 0, turb: 0.1, gust: 0.1, base: 1100, windMul: 1, storm: 0 };
+const KEYS = ['cloud', 'deck', 'cu', 'tcu', 'cb', 'stratus', 'cirrus', 'scud', 'rain', 'snow', 'visM', 'mist', 'mistH', 'haze', 'turb', 'gust', 'base', 'windMul', 'storm'];
+const DEFAULTS = { cloud: 0, deck: 0.5, cu: 0, tcu: 0, cb: 0, stratus: 0, cirrus: 0, scud: 0, rain: 0, snow: 0, visM: 40000, mist: 0, mistH: 150, haze: 0, turb: 0.1, gust: 0.1, base: 1100, windMul: 1, storm: 0 };
 
 export const PHASES = Object.freeze(Object.fromEntries(Object.entries(RAW).map(([id, p]) => [id, Object.freeze({ id, ...DEFAULTS, ...p })])));
 export const PHASE_IDS = Object.keys(PHASES);

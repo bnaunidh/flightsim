@@ -24,9 +24,9 @@
  *                 load.
  *   A PILOT       walking round a parked light aeroplane: the walk-round.
  *   THE KERB      people with cases on the terminal's landside forecourt,
- *                 some waiting at the kerb, some walking along under the
- *                 canopy, some going in at the doors; at a flying club, a
- *                 few on the veranda watching the aeroplanes.
+ *                 some waiting at the kerb, some out of one door along the
+ *                 canopy and in at another; at a flying club, a few on the
+ *                 veranda watching the aeroplanes.
  *   BASE GUARDS   on the air base: pacing in front of the operations block
  *                 and by every parked jet, and a crew chief at each nose.
  *   VEHICLES      on an airport with gates: a baggage train, a fuel bowser,
@@ -45,6 +45,9 @@
  * stand's width; and the runtime (features/world-life.js) stops a walker or
  * a vehicle that an aeroplane comes near. Nothing here is solid.
  */
+
+import { terminalDoors, DOOR, ENTRANCES_U } from './doors.js';
+import { landsidePlan, landsideSolids, forecourtRoad, seats, LANES, KERB_EDGE } from './landside-plan.js';
 
 /** People at most, per tier, before the time of day. */
 export const PEOPLE_CAP = Object.freeze({ low: 14, medium: 40, high: 90, ultra: 140 });
@@ -67,6 +70,18 @@ export function timeFactor(time, condition) {
   const wet = condition === 'rainy' || condition === 'stormy' ? 0.7 : 1;
   return t * wet;
 }
+
+/** The forecourt's traffic, per tier, in the order a tier adds them. */
+const KERB_FLEET = Object.freeze({
+  low: ['car', 'car'],
+  medium: ['car', 'taxi', 'car', 'shuttle'],
+  high: ['car', 'taxi', 'car', 'shuttle', 'car', 'taxi'],
+  ultra: ['car', 'taxi', 'car', 'shuttle', 'car', 'taxi', 'car', 'car'],
+});
+
+/** Metres of a route spent going dark in a lobby, and coming out of a cabin. */
+const DARK_M = 2.2;
+const CABIN_M = 1.2;
 
 /** Walking speeds, m/s. */
 const WALK = { crew: 1.35, pax: 1.15, kerb: 1.2, guard: 0.9, pilot: 1.0 };
@@ -152,7 +167,46 @@ export function apronObstacles(lay, parked = [], crews = [], bridges = []) {
   }
   if (lay && lay.terminal && lay.terminal.rect) rects.push(lay.terminal.rect);
   for (const h of (lay && lay.hangars) || []) if (h && h.rect) rects.push(h.rect);
+  for (const q of terminalSolids(lay)) (q.r ? circles : rects).push(q);
   return { circles, rects };
+}
+
+/**
+ * What stands round the terminal's walls and a person cannot walk through:
+ * the sides of the door lobbies, the kerb canopy's columns and the benches,
+ * planters and shelters on the forecourt. (Rectangles,
+ * or circles { x, z, r }.)
+ */
+export function terminalSolids(lay) {
+  const T = lay && lay.terminal;
+  if (!T || !T.rect || lay.military || lay.shape === 'strip') return [];
+  const F = lay.frame;
+  const out = [];
+  const box = (u0, u1, w0, w1) => {
+    const a = F.z(w0);
+    const b = F.z(w1);
+    out.push({ x0: F.x(u0), x1: F.x(u1), z0: Math.min(a, b), z1: Math.max(a, b) });
+  };
+  for (const d of terminalDoors(lay)) {
+    if (d.side !== 'air') continue;
+    const D = DOOR.air;
+    for (const s of [-1, 1]) box(d.u + s * D.wide - 0.2, d.u + s * D.wide + 0.2, T.front - D.depth, T.front);
+    for (const s of [-1, 1]) box(d.u + s * ((D.wide + D.hw) / 2) - (D.wide - D.hw) / 2, d.u + s * ((D.wide + D.hw) / 2) + (D.wide - D.hw) / 2, T.front - D.depth - 0.1, T.front - D.depth + 0.1);
+  }
+  const mid = (T.u0 + T.u1) / 2;
+  const W = T.u1 - T.u0;
+  const D = DOOR.land;
+  for (const ou of ENTRANCES_U(W)) {
+    const c = mid + ou;
+    const half = D.wide + 0.3;
+    for (const s of [-1, 1]) box(c + s * half - 0.2, c + s * half + 0.2, T.back, T.back + D.depth);
+    for (const q of [[-half, -3.6 - D.hw], [-3.6 + D.hw, 3.6 - D.hw], [3.6 + D.hw, half]]) box(c + q[0], c + q[1], T.back + D.depth - 0.2, T.back + D.depth + 0.1);
+  }
+  // The canopy's columns (apron.js): seven, W/9 apart, 4.6 m out from the wall.
+  for (let k = -3; k <= 3; k++) out.push({ x: F.x(mid + (k * W) / 9), z: F.z(T.back + 4.6), r: 0.45, kind: 'column' });
+  // And the kerb's furniture (life/landside-plan.js).
+  out.push(...landsideSolids(lay));
+  return out;
 }
 
 function safeLE(I, x) {
@@ -198,7 +252,8 @@ export function routeClear(obs, pts, half, closed = false) {
  *   bridges   the apron's bridges [{ rot, home, dock, st }]
  *   tier      'low' | 'medium' | 'high' | 'ultra'
  *   time      'day' | 'sunset' | 'night' (weather.time); condition likewise
- *   entrances the terminal's kerb doors [{ x, z }] (apron.js), if it has them
+ *   free      (x, z) => nothing already stands there (the forecourt road asks)
+ *   road      the forecourt road the world drew (null: none); left out, it is worked out here
  *   ground    (x, z) => metres above the field there (landside, where the
  *             ground is not the apron's): the kerb walkers follow it
  *   rnd       () => [0, 1)
@@ -207,8 +262,8 @@ export function routeClear(obs, pts, half, closed = false) {
  * Returns { walkers, vans, bounds, why } — `why` lists what was left out
  * and why (a route that was not clear, a cap reached).
  */
-export function planLife({ lay, parked = [], crews = [], bridges = [], entrances = null, ground = () => 0, tier = 'high', time = 'day', condition = 'clear', rnd = Math.random, level = 1 } = {}) {
-  const out = { walkers: [], vans: [], bounds: null, why: [], obs: { circles: [], rects: [] } };
+export function planLife({ lay, parked = [], crews = [], bridges = [], ground = () => 0, free = () => true, road: givenRoad, tier = 'high', time = 'day', condition = 'clear', rnd = Math.random, level = 1 } = {}) {
+  const out = { walkers: [], vans: [], kerb: [], stops: [], road: null, bounds: null, why: [], obs: { circles: [], rects: [] } };
   if (!lay || !lay.apron || !lay.frame) {
     out.why.push('no apron on this map');
     return out;
@@ -228,6 +283,7 @@ export function planLife({ lay, parked = [], crews = [], bridges = [], entrances
     return true;
   };
   const crewOf = (p) => crews.find((c) => c && c.tg === p.tg) || null;
+  const doors = terminalDoors(lay);
 
   /* --- crews and passengers round each parked airliner, and the walk-round of a light one --- */
   const airliners = parked.filter((p) => p.kind === 'stand' && p.tg && p.tg.info && p.tg.info.halfSpan * 2 >= 18 && !lay.military);
@@ -273,7 +329,7 @@ export function planLife({ lay, parked = [], crews = [], bridges = [], entrances
     if (nPax > 0 && P && P.stairTruck && !c.light) {
       // Inside their own stand's width: never across a neighbouring stand, empty or not.
       const maxLat = p.stand && p.stand.pitch ? p.stand.pitch / 2 - 1 : Infinity;
-      const route = paxRoute(lay, tg, P.stairTruck, bridges, (pts) => routeClearPeople(obs, pts.slice(3), p, { skip: ['stairTruck'] }), maxLat);
+      const route = paxRoute(lay, tg, P.stairTruck, doors, (pts) => routeClearPeople(obs, pts.slice(3), p, { skip: ['stairTruck'] }), maxLat);
       if (!route) {
         out.why.push(`stand ${zone}: no clear walk to the terminal`);
       } else {
@@ -283,7 +339,7 @@ export function planLife({ lay, parked = [], crews = [], bridges = [], entrances
         for (let i = 0; i < nPax; i++) {
           if (!add({
             tg, skip: ['stairTruck'], role: 'pax', outfit: OUTFIT.civvy, mode: 'cycle', path: board ? route.slice().reverse() : route, speed: WALK.pax * (0.85 + rnd() * 0.3),
-            d0: -i * spacing, rest: 25 + rnd() * 20, length: L, bag: rnd() < 0.7, zone, board,
+            d0: -i * spacing, rest: 25 + rnd() * 20, length: L, bag: rnd() < 0.7, zone, board, fade: board ? [DARK_M, CABIN_M] : [CABIN_M, DARK_M],
           })) break;
         }
       }
@@ -307,38 +363,88 @@ export function planLife({ lay, parked = [], crews = [], bridges = [], entrances
   /* --- the kerb, or a flying club's veranda --- */
   if (term && !lay.military && lay.shape !== 'strip' && term.rect) {
     // The forecourt under the canopy (world-life.js paves it): the canopy runs
-    // 70% of the terminal's length, 5 m deep, its columns 4.6 m out; the doors
-    // are apron.js's `entrances`. Walking lanes either side of the columns.
+    // 70% of the terminal's length, 5 m deep, its columns 4.6 m out. Walking
+    // lanes either side of the columns; the doors are terminalDoors()'s.
     const r = term.rect;
     const cx = (r.x0 + r.x1) / 2;
     const half = (r.x1 - r.x0) * 0.35;
     const nk = Math.max(1, Math.round(KERB[T] * tf));
-    const doors = entrances && entrances.length ? entrances : [{ x: cx, z: F.z(term.back + 0.2) }];
     const zAt = (w) => F.z(term.back + w);
     const onGround = (q) => ({ ...q, y: ground(q.x, q.z) });
+    const land = doors.filter((d) => d.side === 'land');
+    const plan = landsidePlan(lay);
+    const solid = terminalSolids(lay);
+    const free = (q) => solid.every((o) => (o.r ? Math.hypot(q.x - o.x, q.z - o.z) > o.r + 0.5 : q.x < o.x0 - 0.5 || q.x > o.x1 + 0.5 || q.z < o.z0 - 0.5 || q.z > o.z1 + 0.5));
+    // A quarter of the kerb sits on the benches; most of the rest come and go.
+    const benches = seats(plan).slice();
+    const taken = {};
+    // The forecourt road, if there is room for it, and what drives it.
+    // The one the world drew, when it drew one: what is driven is what is on the ground.
+    const road = givenRoad !== undefined ? givenRoad : forecourtRoad(lay, ground, free);
+    out.road = road;
+    if (!road) out.why.push('forecourt: no road here, so nothing drives the kerb');
+    const zebraDoors = road ? road.zebras.map((u) => land.find((d) => d.u === u)).filter(Boolean) : [];
+    if (road) {
+      const fleet = KERB_FLEET[T].slice(0, Math.max(1, Math.round(KERB_FLEET[T].length * Math.min(1, level))));
+      const Lap = pathLength(road.lane) + dist(road.lane[road.lane.length - 1], road.lane[0]);
+      const of = (k) => road.stops.filter((q) => q.kind === k);
+      let cars = 0;
+      out.kerb = fleet.map((kind, i) => {
+        const pool = of(kind === 'shuttle' ? 'bus' : kind === 'taxi' ? 'taxi' : 'car');
+        const st = kind === 'car' ? [pool[cars++ % pool.length]] : pool;
+        return { kind, path: road.lane, mode: 'loop', speed: kind === 'shuttle' ? 6 : 7.5, d0: (Lap * i) / fleet.length + rnd() * 6, stops: st.map((q) => ({ id: q.id, d: q.d })), dwell: kind === 'shuttle' ? 16 : 10 };
+      });
+      out.stops = road.stops.map((q) => ({ id: q.id, kind: q.kind, x: q.in.x, z: q.in.z, r: 1.5 }));
+      const kiosk = plan.items.find((q) => q.kind === 'kiosk');
+      if (kiosk) out.stops.push({ id: -1, kind: 'kiosk', x: F.x(kiosk.u), z: zAt(kiosk.w), r: 2.5 });
+    }
     for (let i = 0; i < nk && W.length < cap; i++) {
       const x = cx + (rnd() * 2 - 1) * (half - 2);
-      const kind = rnd();
-      if (kind < 0.3) {
+      const pick = rnd();
+      if ((pick < 0.25 || land.length < 2) && benches.length) {
+        const s = benches.splice(Math.floor(rnd() * benches.length), 1)[0];
+        const q = onGround({ x: F.x(s.u + (rnd() < 0.5 ? -0.55 : 0.55)), z: zAt(s.w - 0.05) });
+        add({ role: 'kerb', outfit: OUTFIT.civvy, mode: 'idle', path: [q], yaw: yawTo(q, { x: q.x, z: zAt(30) }), bag: rnd() < 0.5, sit: true, seat: true });
+      } else if (pick < 0.42 || land.length < 2) {
         // Waiting at the kerb's edge with a case, facing the road.
-        const q = onGround({ x, z: zAt(6.2 + rnd() * 1.2) });
-        add({ role: 'kerb', outfit: OUTFIT.civvy, mode: 'idle', path: [q], yaw: yawTo(q, { x: q.x, z: zAt(30) }), bag: true });
-      } else if (kind < 0.65) {
-        // Walking along it, under the canopy or outside its columns.
-        const span = 14 + rnd() * 24;
-        const x0 = Math.max(cx - half + 1, Math.min(cx + half - 1 - span, x - span / 2));
-        const w = rnd() < 0.5 ? 2.6 + rnd() * 0.8 : 6.0 + rnd() * 1.2;
-        const leg = [];
-        for (let k = 0; k <= Math.ceil(span / 4); k++) leg.push(onGround({ x: x0 + Math.min(span, k * 4), z: zAt(w) }));
-        add({ role: 'kerb', outfit: OUTFIT.civvy, mode: 'pingpong', path: rnd() < 0.5 ? leg : leg.reverse(), speed: WALK.kerb * (0.85 + rnd() * 0.3), pause: 2 + rnd() * 6, bag: rnd() < 0.6, d0: rnd() * span });
+        const q = onGround({ x, z: zAt(6.7 + rnd() * 1.2) });
+        if (free(q)) add({ role: 'kerb', outfit: OUTFIT.civvy, mode: 'idle', path: [q], yaw: yawTo(q, { x: q.x, z: zAt(30) }), bag: true });
+      } else if (road && pick < 0.72) {
+        // Out of a car, a taxi or the bus and in at the doors; or out of the doors, to wait for one and get in.
+        const s = road.stops[Math.floor(rnd() * road.stops.length)];
+        const door = land.slice().sort((p, q) => Math.abs(p.x - s.kerb.x) - Math.abs(q.x - s.kerb.x))[0];
+        const lane = LANES[1].w0 + rnd() * (LANES[1].w1 - LANES[1].w0);
+        // Each has their own place along the kerb: a queue, not a heap.
+        const nth = (taken[s.id] = (taken[s.id] || 0) + 1) - 1;
+        const place = { x: s.kerb.x + ((nth % 5) - 2) * 0.9, z: zAt(KERB_EDGE - 0.5 - (Math.floor(nth / 5) % 2) * 0.9) };
+        const straight = Math.abs(door.x - s.kerb.x) < 0.5;
+        const walk = (straight ? [place, { x: door.x, z: door.z }, door.in] : [place, { x: place.x, z: zAt(lane) }, { x: door.x, z: zAt(lane) }, { x: door.x, z: door.z }, door.in]).map(onGround);
+        const cabin = [{ x: s.in.x, z: s.in.z, y: s.in.y }];
+        const arrive = rnd() < 0.5;
+        const route = arrive ? [...cabin, ...walk] : [...walk.slice().reverse(), ...cabin];
+        const inFade = s.kind === 'bus' ? 1.2 : 0.8;
+        const gateAt = arrive ? 0 : pathLength(walk);
+        add({ role: 'kerb', outfit: OUTFIT.civvy, mode: 'cycle', path: route, speed: WALK.kerb * (0.85 + rnd() * 0.3), d0: arrive ? -rnd() * 8 : -rnd() * 30, rest: 8 + rnd() * 20, length: pathLength(route), bag: rnd() < 0.8, fade: arrive ? [inFade, DARK_M] : [DARK_M, inFade], gate: s.id, gateAt });
+      } else if (road && road.inRing && pick < 0.82) {
+        // Over the zebra from the car park's stairs, and in; or back out to them.
+        const kiosk = plan.items.find((q) => q.kind === 'kiosk');
+        const k = zebraDoors[Math.floor(rnd() * zebraDoors.length)];
+        const leg = [{ x: k.x, z: k.z }, { x: k.x, z: zAt(KERB_EDGE - 0.4) }, { x: k.x, z: zAt(road.near + 6.4) }, { x: F.x(kiosk.u), z: zAt(road.near + 6.4) }];
+        // Round to the stairs' door, on its near face, and in.
+        const route = [k.in, ...leg, { x: F.x(kiosk.u), z: zAt(kiosk.w - 1.6) }, { x: F.x(kiosk.u), z: zAt(kiosk.w + 0.2) }].map(onGround);
+        const r2 = rnd() < 0.5 ? route : route.slice().reverse();
+        add({ role: 'kerb', outfit: OUTFIT.civvy, mode: 'cycle', path: r2, speed: WALK.kerb * (0.85 + rnd() * 0.3), d0: -rnd() * 40, rest: 8 + rnd() * 24, length: pathLength(r2), bag: rnd() < 0.5, fade: [DARK_M, DARK_M] });
       } else {
-        // From the kerb in through the doors, one after another.
-        const door = doors[Math.floor(rnd() * doors.length)];
-        const dx = door.x + (rnd() - 0.5) * 5;
-        const a = onGround({ x: dx + (rnd() - 0.5) * 6, z: zAt(7.2) });
-        const m = onGround({ x: dx, z: zAt(3.2) });
-        const b = onGround({ x: dx, z: zAt(0.5) });
-        add({ role: 'kerb', outfit: OUTFIT.civvy, mode: 'cycle', path: [a, m, b], speed: WALK.kerb, d0: -rnd() * 30, rest: 8 + rnd() * 20, length: pathLength([a, m, b]), bag: true });
+        // Out of one door, along the kerb, and in at another: never out of nowhere, never into a wall.
+        const k = Math.floor(rnd() * land.length);
+        const a = land[k];
+        // The other entrance: out of one door and in at the next one along is nobody's walk.
+        const others = land.filter((d) => Math.abs(d.u - a.u) > 20);
+        const b = others[Math.floor(rnd() * others.length)];
+        const L = LANES[rnd() < 0.5 ? 0 : 1];
+        const lane = L.w0 + rnd() * (L.w1 - L.w0);
+        const route = [a.in, { x: a.x, z: a.z }, { x: a.x, z: zAt(lane) }, { x: b.x, z: zAt(lane) }, { x: b.x, z: b.z }, b.in].map(onGround);
+        add({ role: 'kerb', outfit: OUTFIT.civvy, mode: 'cycle', path: route, speed: WALK.kerb * (0.85 + rnd() * 0.3), d0: -rnd() * 40, rest: 6 + rnd() * 24, length: pathLength(route), bag: rnd() < 0.7, fade: [DARK_M, DARK_M] });
       }
     }
   } else if (term && !lay.military && term.rect) {
@@ -397,6 +503,7 @@ export function planLife({ lay, parked = [], crews = [], bridges = [], entrances
   };
   for (const w of W) for (const q of w.path) grow(q);
   for (const v of out.vans) for (const q of v.path) grow(q);
+  for (const v of out.kerb) for (const q of v.path) grow(q);
   if (Number.isFinite(x0)) out.bounds = { x: (x0 + x1) / 2, z: (z0 + z1) / 2, r: Math.hypot(x1 - x0, z1 - z0) / 2 + 12 };
   if (W.length >= cap) out.why.push(`people capped at ${cap} (${T})`);
   return out;
@@ -437,54 +544,58 @@ export function pathLength(pts) {
  * the door on the stair's platform, down the flight to the truck's bed and
  * a step to the ground, forward round the front of the truck, out to a
  * corridor clear of the engines, forward along it to abeam the nose, and on
- * to the terminal's front wall (or, with no terminal, 25 m ahead of the
- * nose). Heights in `y`, above the field. Corridors are tried in turn —
+ * to the door at the foot of the stand's jet bridge and in (or, with no
+ * terminal, 25 m ahead of the nose). Heights in `y`, above the field. Corridors are tried in turn —
  * between the fuselage and the inboard engine (a wide-body's), outboard of
  * a narrow-body's engines, outboard of everything — and the first that
  * `clear()` passes is used; null if none does.
  */
-function paxRoute(lay, tg, stair, bridges, clear, maxLat = Infinity) {
+function paxRoute(lay, tg, stair, doors, clear, maxLat = Infinity) {
   const I = tg.info;
   const sill = Math.max(1.2, stair.sill != null ? stair.sill - (tg.oy - I.ground) : I.sill + I.ground);
   const doorZ = stair.doorZ != null ? stair.doorZ : I.frontDoorZ;
   const hw = I.hw;
   // The stair truck stands at local x = -(hw + 3.65); its flight runs from
   // x = -(hw + 2.05) at the platform to -(hw + 6.75) at the bed (1.25 m up).
+  // They start inside the cabin, in the skin, and come out at the door.
   const head = [
-    at(tg, -(hw + 0.5), doorZ, sill),
+    at(tg, -(hw - 0.7), doorZ, sill),
     at(tg, -(hw + 2.0), doorZ, sill),
     at(tg, -(hw + 6.7), doorZ, 1.25),
     at(tg, -(hw + 8.1), doorZ, 0),
     at(tg, -(hw + 8.1), doorZ - 2.6, 0),
   ];
   const term = lay.terminal && lay.terminal.rect ? lay.terminal : null;
-  const F = lay.frame;
-  const wAt = (q) => (q.z - F.cz) * F.side;
   const corridors = [];
   if (I.halfSpan > 24) corridors.push(-Math.max(hw + 3.6, Math.min(hw + 5.5, 0.33 * I.halfSpan - 2.2)));
   corridors.push(-Math.max(hw + 9.5, 0.4 * I.halfSpan + 3.5));
   corridors.push(-(I.halfSpan + 4));
+  const air = doors.filter((d) => d.side === 'air');
   for (const cx of corridors) {
     if (Math.abs(cx) > maxLat) continue;
     const pts = head.slice();
     pts.push(at(tg, cx, doorZ - 2.6));
     pts.push(at(tg, cx, I.noseZ + 1));
-    let end;
     if (term) {
-      const a = at(tg, cx, I.noseZ + 1);
-      const b = at(tg, cx, I.noseZ - 5);
-      const k = (term.front - 0.6 - wAt(a)) / Math.max(1e-3, wAt(b) - wAt(a));
-      end = at(tg, cx, I.noseZ + 1 - 6 * k);
-      // A rotunda's column just there: the door is along the wall past it.
-      for (const br of bridges) {
-        if (!br || !br.rot) continue;
-        const dx = end.x - br.rot.x;
-        if (Math.abs(dx) < 5 && Math.abs(end.z - br.rot.z) < 8) end = { x: br.rot.x + Math.sign(dx || 1) * 5.5, y: 0, z: end.z };
+      // The door at the foot of this stand's bridge, or the nearest to it along the wall; a stand with none in
+      // reach has nobody walking (they would be walking to a wall).
+      const a = pts[pts.length - 1];
+      let door = null;
+      let best = Infinity;
+      for (const d of air) {
+        const q = Math.hypot(d.x - a.x, d.z - a.z);
+        if (q < best && Math.abs((d.x - tg.ox) * tg.rx + (d.z - tg.oz) * tg.rz) <= maxLat) {
+          best = q;
+          door = d;
+        }
       }
+      if (!door) continue;
+      pts.push({ x: door.out.x, y: 0, z: door.out.z });
+      pts.push({ x: door.x, y: 0, z: door.z });
+      pts.push({ x: door.in.x, y: 0, z: door.in.z });
     } else {
-      end = at(tg, cx, I.noseZ - 25);
+      pts.push(at(tg, cx, I.noseZ - 25));
     }
-    pts.push(end);
     if (!clear || clear(pts)) return pts;
   }
   return null;

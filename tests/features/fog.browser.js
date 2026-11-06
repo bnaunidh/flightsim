@@ -62,6 +62,7 @@ export async function check(sim, r, say = () => {}) {
     const w = sim.weather;
     const ac = sim.aircraft;
     const P = ac.pos.constructor;
+    sim.clouds.layer.now = () => 1.8e12 + w.time_s * 1000;
     const place = (y, x = -6000, z = 300) => {
       ac.reset({ pos: new P(x, 0, z), headingDeg: 90, speed: 60, altAGL: y, engineOn: true, fuel: 1 });
       sim.step(0.3);
@@ -106,7 +107,10 @@ export async function check(sim, r, say = () => {}) {
     // Above the bank: the sky overhead is blue again.
     const lowSky = blueness(on, 0.75, 1);
     place(900);
+    // The sky itself: the cloud layer overhead (world/cloud-deck.js) has its own tests, and its own holes.
+    sim.clouds.layer.material.visible = false;
     const high = frameStats(sim);
+    sim.clouds.layer.material.visible = true;
     const highSky = blueness(high, 0.75, 1);
     r.ok('fog: climb out of the top of the bank and the sky is blue again', highSky > lowSky + 2, `sky blueness ${lowSky.toFixed(1)} in it, ${highSky.toFixed(1)} above it; veil ${sim.sky.veil != null ? sim.sky.veil.toFixed(2) : '-'}`);
 
@@ -133,13 +137,23 @@ export async function check(sim, r, say = () => {}) {
     r.ok('fog: snow falls as snow', sim.rain.mesh.visible && sim.rain.kind === 'snow', `${sim.rain.kind}`);
     // In cloud: bumpy.
     w.wx.lines[w.wx.here] = new WX.WxTimeline(3, { start: 'overcast' });
+    // Somewhere the cloud layer is (world/cloud-deck.js): it has its gaps.
+    const L = sim.clouds.layer;
+    L.snap();
+    sim.step(0.1);
     const base = w.cond.cloudBase;
-    place(base + 80);
-    sim.step(0.3);
+    let sx = -6000;
+    let sz = 300;
+    for (let i = 0; i < 600 && L.densityAt(sx, sz, base + 200) < 0.3; i++) {
+      sx = -6000 + Math.cos(i * 2.4) * 200 * Math.sqrt(i);
+      sz = 300 + Math.sin(i * 2.4) * 200 * Math.sqrt(i);
+    }
+    place(base + 200, sx, sz);
+    sim.step(1);
     const inside = sim.cloudImmersion;
     const turbIn = w.turbulenceLevel();
-    place(base + 1500);
-    sim.step(0.3);
+    place(3500); // over the layer's tops (world/cloud-deck.js)
+    sim.step(1);
     const turbOut = w.turbulenceLevel();
     r.ok('fog: inside cloud the air is bumpier than above it (white-out + light bumps)', inside > 0.3 && turbIn > turbOut + 0.05, `immersion ${inside.toFixed(2)}, turbulence ${turbIn.toFixed(2)} in, ${turbOut.toFixed(2)} out`);
 

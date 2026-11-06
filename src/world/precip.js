@@ -15,7 +15,8 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { rainStreakTexture, snowflakeTexture } from '../render/textures.js';
-import { makeRandom } from '../core/noise.js';
+import { makeRandom, clamp } from '../core/noise.js';
+import { DECK_TOP_M } from './wx.js';
 import { MAP } from './terrain.js';
 
 /** How hard it is snowing on a snow map: cloud past half is light snow, rain is heavy. */
@@ -120,7 +121,9 @@ export class Rain {
 
   update(dt, weather, camPos, aircraftVel) {
     const snow = snowIntensity(weather);
-    const intensity = snow > 0 ? snow : weather.cond.rain;
+    // It rains under the cloud layer, not over its tops (10,000 ft, cloud-deck.js).
+    const below = clamp((DECK_TOP_M + 50 - camPos.y) / 300, 0, 1);
+    const intensity = (snow > 0 ? snow : weather.cond.rain) * below;
     this.mesh.visible = intensity > 0.02;
     if (!this.mesh.visible) return;
     this.setKind(snow > 0 ? 'snow' : 'rain');
@@ -134,7 +137,7 @@ export class Rain {
     const speed = Math.max(4, this._vel.length());
 
     this.material.uniforms.uVel.value.copy(this._vel).normalize();
-    this.material.uniforms.uOpacity.value = snow > 0 ? 0.45 + snow * 0.4 : 0.25 + intensity * 0.55;
+    this.material.uniforms.uOpacity.value = (snow > 0 ? 0.45 + snow * 0.4 : 0.25 + intensity * 0.55) * below;
     // Faster relative motion → longer streaks. A flake is a dot, and only
     // a fast aeroplane draws it out.
     this.material.uniforms.uWidth.value = snow > 0 ? 0.11 : 0.05;

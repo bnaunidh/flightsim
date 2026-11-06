@@ -146,7 +146,9 @@ export let ISLANDS = MAP.islands;
 export let PALETTE = MAP.palette;
 
 export function applyMap(idOrDef) {
+  const was = MAP;
   MAP = typeof idOrDef === 'string' ? getMap(idOrDef) : idOrDef;
+  if (MAP !== was) WORLD_FLAT = null;
   SEA_FLOOR = MAP.seaFloor;
   ISLANDS = MAP.islands;
   buildIslandGrid();
@@ -407,6 +409,38 @@ function medianGround(x0, x1, z0, z1) {
   return s[4];
 }
 
+/**
+ * One more level rectangle for this map, worked out once its airport is laid
+ * out: the terminal's landside (features/life/landside-plan.js), so the kerb,
+ * its road and the car park are level however the hill rises behind it. Not
+ * part of the map's own data, so a node test that never builds a world never
+ * sees it. Null takes it away; a new map forgets it.
+ */
+let WORLD_FLAT = null;
+export function setWorldFlat(def) {
+  WORLD_FLAT = def || null;
+  resolveFlats();
+}
+
+/**
+ * Run `fn` on the ground as the map made it, without that rectangle. The
+ * airport's layout is measured this way: it steers round flats, so measured
+ * with its own forecourt levelled it moved the whole terminal (Kestrel's by
+ * 560 m) the next time it was worked out.
+ */
+export function withoutWorldFlat(fn) {
+  const keep = WORLD_FLAT;
+  if (!keep) return fn();
+  WORLD_FLAT = null;
+  resolveFlats();
+  try {
+    return fn();
+  } finally {
+    WORLD_FLAT = keep;
+    resolveFlats();
+  }
+}
+
 export function resolveFlats() {
   // Empty FIRST: that is what stops the flats seeing themselves while their
   // own elevations are being measured.
@@ -435,7 +469,7 @@ export function resolveFlats() {
   }
 
   const out = [];
-  for (const d of MAP.flats || []) {
+  for (const d of WORLD_FLAT ? [...(MAP.flats || []), WORLD_FLAT] : MAP.flats || []) {
     const f = {
       id: d.id || `flat${out.length}`,
       name: d.name || d.id || 'level ground',

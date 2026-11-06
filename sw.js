@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v77.3';
+const CACHE_VERSION = 'island-flight-v77.4';
 
 const PRECACHE = [
   './',
@@ -608,6 +608,13 @@ const PRECACHE = [
   'src/features/traffic/setting.js',
   // Added by tools/sync-precache.mjs.
   'src/features/later.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/cloud-layer.js',
+  'src/world/cloud-deck.js',
+  'src/features/life/landside-look.js',
+  'src/features/life/landside-plan.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/life/doors.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 
@@ -685,6 +692,15 @@ const PRECACHE = [
   'assets/fonts/oswald-600-normal.woff2',
   'assets/fonts/playfair-display-700-normal.woff2',
   'assets/fonts/titillium-web-700-normal.woff2',
+  // The crash slide and the sea: spray, slide marks, the view of the wreck, and under the water.
+  'src/features/breakup/crash-view.js',
+  'src/features/breakup/scars.js',
+  'src/features/breakup/slide.js',
+  'src/features/breakup/water-impact.js',
+  'src/features/underwater/index.js',
+  'src/features/underwater/seabed.js',
+  'src/features/underwater/tint.js',
+  'src/features/underwater/water.js',
 ];
 
 // Files that are useful but not required for the game to run. If one of these
