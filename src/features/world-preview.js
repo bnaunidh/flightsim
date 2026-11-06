@@ -128,11 +128,15 @@ function propModels() {
     })));
   return PROP_GEOS;
 }
-import { cardGeometry, cardMaterial } from '../world/worldmap/tree-cards.js';
+import { cardAtlas, cardGeometry, cardMaterial, mergedCardGeometry, mergedCardMaterial } from '../world/worldmap/tree-cards.js';
+import { biomeTreeGeometry } from '../world/worldmap/biome-trees.js';
 
-/** The tree cards' reach and density per tier: Low keeps a small, light patch round the camera. */
+/** A species' geometry: Scenery's six, then the biomes' (worldmap/flora.js SPECIES). */
+const floraGeometry = (kind) => (kind < 6 ? treeGeometry(kind) : biomeTreeGeometry(kind));
+
+/** The tree cards' reach and density per tier. */
 export const CARD_TIERS = Object.freeze({
-  // Low: none — the Chromebooks' frame time (the forest floor's own colour and the real trees carry the woods there).
+  // Low: none of its own — the Chromebooks' frame time. Low's trees ARE cards (buildWorldSteps): the same count, a tenth of the vertices, one draw.
   low: Object.freeze({ radius: 0, perCell: 0, shadows: false }),
   medium: Object.freeze({ radius: 1200, perCell: 1600, shadows: false }),
   high: Object.freeze({ radius: 1800, perCell: 2400, shadows: false }),
@@ -343,6 +347,8 @@ function planWorldTown(cfg, density) {
 let GARDEN_TREES = null;
 function gardenTreeMaterial() {
   if (!GARDEN_TREES) GARDEN_TREES = cardMaterial();
+  // (The atlas is remade for a new tier: the gardens follow it.)
+  GARDEN_TREES.map = cardAtlas();
   return GARDEN_TREES;
 }
 
@@ -393,25 +399,26 @@ function* buildWorldSteps(sim, group) {
   yield;
   if (S.ring) S.far = S.ring.createFarlands(sim, group, q);
   yield;
+  // Low's trees are the woods' own cards, half-size atlas, one draw call for every species; solid as ever.
+  const lowCards = q === 'low' ? { id: 'low', mode: 'trees', merged: true, geometry: mergedCardGeometry, material: () => mergedCardMaterial(0.5) } : null;
   S.flora = new Flora({
-    treeGeometry, ctx: fctx, T: Terrain, worker: S.stream.worker && !S.stream.workerFailed ? S.stream.worker : null, gen: S.stream.gen,
-    quality: q, addObstacle: Terrain.addObstacle, obstacles: Terrain.OBSTACLES,
+    treeGeometry: floraGeometry, ctx: fctx, T: Terrain, worker: S.stream.worker && !S.stream.workerFailed ? S.stream.worker : null, gen: S.stream.gen,
+    quality: q, addObstacle: Terrain.addObstacle, obstacles: Terrain.OBSTACLES, layer: lowCards,
     // When the ground gives up on the shared worker, so do the trees (and plant here instead).
     workerOk: () => !!(S.stream && S.stream.worker && !S.stream.workerFailed),
   });
   group.add(S.flora.group);
   // The real trees close up take the nearest of these (world/real-trees.js; Medium and up).
-  S.flora.meshes.forEach((m, kind) => addTreeSourceLater(m, FLORA_SPECIES[kind]));
+  if (!lowCards) S.flora.meshes.forEach((m, kind) => addTreeSourceLater(m, FLORA_SPECIES[kind]));
   // And the woods between them: tree cards, dense, close in, only in the forests (worldmap/tree-cards.js).
   // On a worker of their own, so a forest's thousands never queue in front of the ground's tiles.
   if (CARD_TIERS[q] && CARD_TIERS[q].radius > 0) {
-    const cardMat = cardMaterial();
     const cw = S.stream.worker && !S.stream.workerFailed ? cardWorker() : null;
     const cardsOn = initWorker(cw, S.stream.gen, MAP, fctx);
     S.cards = new Flora({
       treeGeometry, ctx: fctx, T: Terrain, worker: cardsOn ? cw : null, gen: S.stream.gen,
       quality: q, workerOk: () => !!(S.stream && S.stream.worker && !S.stream.workerFailed),
-      layer: { id: 'cards', mode: 'cards', tiers: CARD_TIERS, geometry: cardGeometry, material: () => cardMat, solid: false },
+      layer: { id: 'cards', mode: 'cards', merged: true, tiers: CARD_TIERS, geometry: mergedCardGeometry, material: () => mergedCardMaterial(), solid: false },
     });
     group.add(S.cards.group);
   } else S.cards = null;

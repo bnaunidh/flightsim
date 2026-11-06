@@ -131,7 +131,7 @@ function speedArcs(id, type) {
 export function buildLightCockpit(ctx) {
   const { type, model, space, highContrast } = ctx;
   const id = type && LIGHT[type.id] ? type.id : 'skylark';
-  const C = LIGHT[id];
+  const C = { ...LIGHT[id], ...(type && !LIGHT[type.id] ? { model: String(type.name).toUpperCase(), reg: `N${type.id.length}${type.id.slice(0, 2).toUpperCase()}` } : null) };
   const k = space.k;
   const glazing = ctx.glazing || glazingOf(type, model, space);
 
@@ -422,7 +422,7 @@ export function buildLightCockpit(ctx) {
           out[1] = runningOf(ac) * (0.15 + clamp(ac.controls.throttle, 0, 1) * 0.7);
         } else {
           out[0] = runningOf(ac) * (0.3 + clamp(ac.controls.throttle, 0, 1) * 0.5);
-          out[1] = runningOf(ac) * 0.55;
+          out[1] = runningOf(ac) * (0.5 + rpmOf(ac) * 0.1);
         }
       },
     });
@@ -729,6 +729,7 @@ export function buildLightCockpit(ctx) {
   const levers = [];
   const plunger = (u, v, colour, shape, kind) => {
     const g = new THREE.Group();
+    g.name = kind;
     const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0045, 0.14, 8), chrome);
     shaft.rotation.x = Math.PI / 2;
     shaft.position.z = -0.07;
@@ -1051,5 +1052,6 @@ export function buildLightCockpit(ctx) {
   group.userData.visors = visorInfo;
   group.userData.glazing = { source: glazing.source, windows: shell.openings.length };
   group.userData.shell = shell;
+  group.userData.layout = { C, E, cx, pilotX, copilotX, panel, floorY, up, row1, row2, R, pitchX, halfW, panelZ, zDoor: L([0, 0, zBack]).z };
   return group;
 }

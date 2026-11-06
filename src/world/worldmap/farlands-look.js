@@ -87,7 +87,7 @@ export const RING_FRAG = /* glsl */ `
  * otherwise be one white dune from the shore up. `trop` and `cold` are the shader's own.
  */
 const RING_SNOW = /* glsl */ `
-    if (max(abs(wp.x), abs(wp.y)) > ${NEAR_RING}) sline += mix(1600.0, 2200.0, trop) - cold * 300.0 + (wtNoise(wp / 310.0) - 0.5) * 260.0;
+    if (max(abs(wp.x), abs(wp.y)) > ${NEAR_RING}) sline += mix(1750.0, 2350.0, trop) - cold * 300.0 + (wtNoise(wp / 310.0) - 0.5) * 260.0;
 `;
 
 export const RING_LOOK = Object.freeze({ frag: RING_FRAG, snow: RING_SNOW });

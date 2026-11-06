@@ -26,7 +26,7 @@ import { glazingOf, interiorShell, windscreenOf } from './canopy.js';
 import { GaugePanel } from './gauges.js';
 import { label, roundRect, DIM, TEXT } from './paint.js';
 import { TRAINER_EYE, warningLamps, cockpitEnv, rainMaterial, updateRain, ease } from './common.js';
-import { Display, DisplayBus, readFlight, paintMap, paintPFD, paintND } from './displays.js';
+import { Display, DisplayBus, readFlight, paintMap, paintPFD, paintND, paintEICAS } from './displays.js';
 import { cockpitMaterials, roundedBox, tubeAlong, loft, part, bezel, crewSeat, switchPanelMaterial, mergeStatic, carveExterior, insideOnly } from './kit.js';
 import { skyhookHull } from '../models/skyhook.js';
 
@@ -49,8 +49,8 @@ const HELIS = {
   harrier: { title: 'SKYHOOK H-3', glass: false, tandem: false },
   bell407: { title: 'BELL 407', glass: false, tandem: false },
   r44: { title: 'R44 RAVEN II', glass: false, tandem: false },
-  h145: { title: 'H145', glass: true, tandem: false },
-  aw139: { title: 'AW139', glass: true, tandem: false },
+  h145: { title: 'H145', glass: true, tandem: false, sw: 0.165, three: true },
+  aw139: { title: 'AW139', glass: true, tandem: false, sw: 0.165, three: true },
   uh60: { title: 'UH-60M', glass: true, tandem: false },
   ch47: { title: 'CH-47F', glass: true, tandem: false },
   ah64: { title: 'AH-64E', glass: true, tandem: true },
@@ -216,7 +216,7 @@ export function buildHeliCockpit(ctx) {
   const vt = pH / 2;
   // The six in front of the pilot (the glass machines get two screens there instead, below).
   const R = 0.042;
-  const sw = 0.12; // a glass machine's screen
+  const sw = C.sw || 0.12; // a glass machine's screen
   // In front of the pilot — but on the panel. The Chinook's pilots sit 55 cm
   // off the centreline under a hood the hull's width caps at about 40 cm a
   // side, so "in front of the pilot" put the pair of screens off the panel's
@@ -239,9 +239,9 @@ export function buildHeliCockpit(ctx) {
   if (!C.glass) panel.hi({ u: px0, v: row2, R });
   if (!C.glass) panel.vsi({ u: px0 + 0.1, v: row2, R: R * 0.9 });
   // Engine: torque and turbine temperature on the console's head.
-  panel.round({ u: eng[0][0], v: eng[0][1], R: R * 0.82, min: 0, max: 120, start: -135, sweep: 270, step: 5, major: 20, arcs: [[0, 100, '#3ec96a'], [100, 120, '#e8402a']], labels: [[0, '0'], [40, '40'], [80, '80'], [120, '120']], labelSize: 13, title: 'TORQUE', sub: '%', value: (s, ac) => (ac.engineOn ? 12 + clamp(ac.controls ? ac.controls.throttle || 0 : 0, 0, 1) * 88 : 0) });
-  panel.round({ u: eng[1][0], v: eng[1][1], R: R * 0.82, min: 0, max: 10, start: -135, sweep: 270, step: 0.5, major: 2, arcs: [[3, 7.4, '#3ec96a'], [7.4, 10, '#e8402a']], labels: [[0, '0'], [2, '2'], [4, '4'], [6, '6'], [8, '8'], [10, '10']], labelSize: 13, title: 'TOT', sub: 'x100°C', value: (s, ac) => (ac.engineOn ? 4 + clamp(ac.controls ? ac.controls.throttle || 0 : 0, 0, 1) * 3 : 0.3) });
-  panel.round({ u: eng[2][0], v: eng[2][1], R: R * 0.7, min: 0, max: 1, start: -60, sweep: 120, step: 0.25, major: 0.5, arcs: [[0, 0.12, '#e8402a']], labels: [[0, 'E'], [0.5, '½'], [1, 'F']], labelSize: 18, title: 'FUEL', value: (s, ac) => (typeof ac.fuelFraction === 'function' ? ac.fuelFraction() : 0.5) });
+  if (!C.three) panel.round({ u: eng[0][0], v: eng[0][1], R: R * 0.82, min: 0, max: 120, start: -135, sweep: 270, step: 5, major: 20, arcs: [[0, 100, '#3ec96a'], [100, 120, '#e8402a']], labels: [[0, '0'], [40, '40'], [80, '80'], [120, '120']], labelSize: 13, title: 'TORQUE', sub: '%', value: (s, ac) => (ac.engineOn ? 12 + clamp(ac.controls ? ac.controls.throttle || 0 : 0, 0, 1) * 88 : 0) });
+  if (!C.three) panel.round({ u: eng[1][0], v: eng[1][1], R: R * 0.82, min: 0, max: 10, start: -135, sweep: 270, step: 0.5, major: 2, arcs: [[3, 7.4, '#3ec96a'], [7.4, 10, '#e8402a']], labels: [[0, '0'], [2, '2'], [4, '4'], [6, '6'], [8, '8'], [10, '10']], labelSize: 13, title: 'TOT', sub: 'x100°C', value: (s, ac) => (ac.engineOn ? 4 + clamp(ac.controls ? ac.controls.throttle || 0 : 0, 0, 1) * 3 : 0.3) });
+  if (!C.three) panel.round({ u: eng[2][0], v: eng[2][1], R: R * 0.7, min: 0, max: 1, start: -60, sweep: 120, step: 0.25, major: 0.5, arcs: [[0, 0.12, '#e8402a']], labels: [[0, 'E'], [0.5, '½'], [1, 'F']], labelSize: 18, title: 'FUEL', value: (s, ac) => (typeof ac.fuelFraction === 'function' ? ac.fuelFraction() : 0.5) });
   // The moving map at the top of the console, and the radios under it.
   const bus = new DisplayBus({ hz: 12, maxPerFrame: 1 });
   const map = new Display({ name: 'map', w: 512, h: 448, widthM: 0.14, heightM: 0.12, paint: (g, w, h, d) => paintMap(g, w, h, d, { title: 'MAP', rangeNm: 5 }) });
@@ -270,6 +270,7 @@ export function buildHeliCockpit(ctx) {
     };
     mountS('PFD', px0 - sw / 2 - 0.006, vS, (g, w, h, d) => paintPFD(g, w, h, d, { vs: 40, vmo: 165 }));
     mountS('ND', px0 + sw / 2 + 0.006, vS, (g, w, h, d) => paintND(g, w, h, d, { rangeNm: 10 }), 6);
+    if (C.three) mountS('ENG', px0 + sw * 1.5 + 0.018, vS, (g, w, h, d) => paintEICAS(g, w, h, d), 6);
   }
   panel.paint((g, P) => {
     const y0 = mapV - 0.075;
@@ -352,7 +353,7 @@ export function buildHeliCockpit(ctx) {
   if (!C.tandem) {
     const zO = (ws ? L(shell.insetPoint(ws.z1, 0)).z : E.z - 0.4) + 0.12;
     const yO = L(shell.insetPoint(space.toModel(new THREE.Vector3(cx, E.y, zO)).z, 0)).y - 0.05;
-    part(group, new THREE.PlaneGeometry(0.28, 0.42), switchPanelMaterial({ w: 256, h: 384, rows: 6, cols: 4, seed: 61, colour: HELI.palette.panel, labels: ['GEN', 'BATT', 'FUEL VALVE', 'HYD', 'ROTOR BRK', 'START', 'NAV', 'LDG LT'] }), cx, yO, zO + 0.24, 'overhead console').rotation.x = Math.PI / 2;
+    part(group, new THREE.PlaneGeometry(0.28, 0.42), (group.userData.printed = { top: switchPanelMaterial({ w: 256, h: 384, rows: 6, cols: 4, seed: 61, colour: HELI.palette.panel, labels: ['GEN', 'BATT', 'FUEL VALVE', 'HYD', 'ROTOR BRK', 'START', 'NAV', 'LDG LT'] }) }).top, cx, yO, zO + 0.24, 'overhead console').rotation.x = Math.PI / 2;
     part(group, roundedBox(0.3, 0.04, 0.44, 0.015), M.panel, cx, yO + 0.022, zO + 0.24);
   }
   // A wet compass on the centre post.
@@ -401,7 +402,7 @@ export function buildHeliCockpit(ctx) {
   let lastAc = null;
   let lastSim = null;
   let painted = false;
-  const read = (out) => readFlight(lastAc, lastSim, out, 1);
+  const read = (out) => readFlight(lastAc, lastSim, out, C.three ? 2 : 1);
   const glassMeshes = shell.meshes.glass ? [shell.meshes.glass] : [];
   group.userData.update = (dt, ac, weather, sim) => {
     t += dt;
@@ -443,5 +444,6 @@ export function buildHeliCockpit(ctx) {
   group.userData.shell = shell;
   group.userData.eye = E.clone();
   group.userData.controls = { cyclic, collective, pedals };
+  group.userData.layout = { E, cx, halfW, panelZ, yFloor, trim: HELI.trim, tandem: C.tandem };
   return group;
 }

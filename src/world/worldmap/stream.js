@@ -287,6 +287,7 @@ export class TerrainStream {
       g.setAttribute('aBlend', new THREE.BufferAttribute(data.blend, 3));
       if (data.cover) g.setAttribute('aCover', new THREE.BufferAttribute(data.cover, 4, true));
       if (data.urban) g.setAttribute('aUrban', new THREE.BufferAttribute(data.urban, 4, true));
+      if (data.biome) g.setAttribute('aBiome', new THREE.BufferAttribute(data.biome, 4, true));
       g.setAttribute('uv', new THREE.BufferAttribute(data.uv, 2));
       g.setIndex(new THREE.BufferAttribute(this.index.slice(), 1));
       const half = t.size / 2;
@@ -304,7 +305,7 @@ export class TerrainStream {
       this.group.add(m);
       t.mesh = m;
       t.state = 'ready';
-      t.bytes = data.count * (data.cover ? 49 : 44) + this.index.length * this.index.BYTES_PER_ELEMENT;
+      t.bytes = data.count * (data.cover ? 53 : 44) + this.index.length * this.index.BYTES_PER_ELEMENT;
       this.counts.built++;
     }
     this.counts.maxMeshMs = Math.max(this.counts.maxMeshMs, this.now() - t0);

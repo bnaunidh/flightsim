@@ -23,6 +23,16 @@
  * closes over the wreck, and goes under in one dissolve (the wash). With the switch off it goes round the wreck low over the water and
  * down through the surface.
  *
+ * A SLIDE ON HARD GROUND, from the first frame (SlideLens below). The card
+ * only comes at 2.2 s; the first two seconds are the worst of it, and by the
+ * probe they were over the line in every view that moves with the wreck:
+ * 29-53% Follow, 31-53% Wing, 68% Orbit, 87-99% Cockpit (a Skylark, an F-22, an
+ * A320 at 60-70 m/s, down a runway). None of it was the crash's fire or
+ * the runway's stripes alone: a lens that moves, turns or shakes at all carries
+ * every fine pattern in the picture (a terminal's glazing bars, a cloud's edge,
+ * the taxi lines) across the same pixels, far faster than three times a second.
+ * So the lens cuts once to a place behind the wreck's path, and stands there.
+ *
  * Skip (a button, or the crashSkip key, Space by default) brings the card at once. A wreck aground in
  * the shallows, or a crash nobody is waiting on (out of the aeroplane, a
  * mayday's own ending, a cartoon crash), never holds it.
@@ -48,6 +58,14 @@ export const VIEW = Object.freeze({
   underHold: 2.8,
   /** Aground in the shallows: this long after it stops. */
   aground: 1.6,
+  /** The slide's lens: off-axis it may let the wreck go (a share of the field of view), how fast it then turns (the same), and its ground speed with Reduce flashing off. */
+  slideHold: 0.3,
+  slidePan: 0.12,
+  slideDrift: 5,
+  /** How high it stands, as a share of its distance, and at the least. */
+  slideRise: 0.14,
+  slideMinY: 3,
+  slideStand: 44,
   /** The lens round a wreck at sea: distance by length, within these. */
   rMin: 20,
   rMax: 75,
@@ -84,6 +102,117 @@ const _q0 = new THREE.Quaternion();
 const _q1 = new THREE.Quaternion();
 const _m = new THREE.Matrix4();
 const UP = new THREE.Vector3(0, 1, 0);
+
+/**
+ * Where a slide's lens stands: `r` metres back along the wreck's path from
+ * (x, z), `dx, dz` being the way it is going, and up by VIEW.slideRise of that
+ * from `ground`, never lower than `y0`. Pure.
+ */
+export function slideStand(x, z, dx, dz, r, ground, y0, out) {
+  const n = Math.hypot(dx, dz) || 1;
+  out.x = x - (dx / n) * r;
+  out.z = z - (dz / n) * r;
+  out.y = Math.max(y0, ground + Math.max(VIEW.slideMinY, r * VIEW.slideRise));
+  return out;
+}
+
+/** Turn unit vector `held` towards unit `want` only as far as it has left the dead zone. Returns the angle still between them. Pure. */
+export function slideLook(held, want, hold, pan, dt) {
+  const off = Math.acos(Math.min(1, Math.max(-1, held.dot(want))));
+  if (off > hold) {
+    const step = Math.min(pan, (off - hold) * 2) * Math.max(0, dt);
+    held.lerp(want, Math.min(1, step / off)).normalize();
+  }
+  return off;
+}
+
+/**
+ * The lens on a slide, from the first frame to the end of the flight. Every
+ * view but Flyby (which stands off by itself) hands over to it: one cut, then
+ * a still lens that watches the wreck go, in the same place with Reduce
+ * flashing on or off. Off, it follows along the ground at a walk, which is
+ * what is left of "the follow view goes after it". No shake: it is the one
+ * thing still moving the picture.
+ */
+export class SlideLens {
+  /** @param {object} sim  @param {function} wreck  fills { x, y, z, speed, L } */
+  constructor(sim, wreck, ground) {
+    this.sim = sim;
+    this.wreck = wreck;
+    this.ground = ground;
+    this.w = { x: 0, y: 0, z: 0, speed: 0, L: 10 };
+    this.pos = new THREE.Vector3();
+    this.dir = new THREE.Vector3();
+    this.placed = false;
+    this.seat = false;
+    this.ended = false;
+  }
+
+  /** The cut: from wherever the game's view was. */
+  place(cam) {
+    const { sim, w, pos, dir } = this;
+    const rig = sim.rig;
+    const ac = sim.aircraft;
+    this.seat = rig.mode === 'cockpit';
+    // In the seat: outside it, and the real skin back on (main.js draws the flight deck in that mode).
+    if (this.seat) rig.setMode('chase');
+    const tower = rig.mode === 'tower';
+    // The stretched airliners' stand is half a kilometre: near enough to see what it is watching.
+    const stand = Math.min(rig.crashStand(), VIEW.slideStand + 2 * ((rig.frame && rig.frame.radius) || 10));
+    this.stand = stand;
+    if (tower) pos.copy(cam.position);
+    else {
+      const f = ac.vel.lengthSq() > 4 ? ac.vel : _p.set(0, 0, -1).applyQuaternion(ac.quat);
+      const y0 = this.seat ? 0 : cam.position.y;
+      slideStand(w.x, w.z, f.x, f.z, stand, this.ground(w.x, w.z), y0, pos);
+    }
+    const fov = tower ? Math.max(cam.fov, Math.max(12, Math.min(60, 60 - pos.distanceTo(_l.set(w.x, w.y, w.z)) / 90))) : 60;
+    cam.fov = fov;
+    cam.near = 0.4;
+    cam.updateProjectionMatrix();
+    dir.set(w.x, w.y, w.z).sub(pos).normalize();
+    this.placed = true;
+  }
+
+  /** This frame's camera. */
+  update(dt, cam) {
+    const { sim, w, pos, dir } = this;
+    this.wreck(w);
+    if (!this.placed) this.place(cam);
+    const rig = sim.rig;
+    const v = rig.chaseVel;
+    v.set(0, 0, 0);
+    if (!FLASH.reduce && rig.mode !== 'tower') {
+      const dx = w.x - pos.x;
+      const dz = w.z - pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d > this.stand * 0.6) {
+        v.set(dx / d, 0, dz / d).multiplyScalar(VIEW.slideDrift);
+        pos.addScaledVector(v, dt);
+      }
+    }
+    const rad = THREE.MathUtils.degToRad(cam.fov);
+    slideLook(dir, _l.set(w.x, w.y, w.z).sub(pos).normalize(), rad * VIEW.slideHold, rad * VIEW.slidePan, dt);
+    cam.position.copy(pos);
+    _p.copy(pos).add(dir);
+    _m.lookAt(cam.position, _p, UP);
+    cam.quaternion.setFromRotationMatrix(_m);
+    // The game's view has to pick up from here if it is given the camera back.
+    rig.chasePos.copy(pos);
+    rig.lookAt.copy(_p.set(w.x, w.y, w.z));
+    return true;
+  }
+
+  /** The flight is over: the game's own view again, the seat if it was the seat. */
+  end() {
+    if (this.ended) return;
+    this.ended = true;
+    const rig = this.sim && this.sim.rig;
+    if (!rig || !this.placed) return;
+    if (this.seat) rig.setMode('cockpit');
+    else rig.initialised = false;
+  }
+}
 
 export class CrashView {
   /**

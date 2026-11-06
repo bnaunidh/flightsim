@@ -28,7 +28,7 @@ import * as THREE from '../vendor/three.module.js';
 import { loadRealScenery, realSceneryOn, realSceneryTemplate } from './real-scenery.js';
 import { qualityRank } from '../aircraft/model-quality.js';
 
-/** The game's species (scenery.js FLORA order) -> the real model drawn for it close up. Scrub and thorn keep their own. */
+/** The game's species (scenery.js FLORA order) -> the real model drawn for it close up. Scrub, thorn and the biomes' own (worldmap/flora.js) keep theirs. */
 export const SPECIES_MODEL = { palm: 'tree-palm', broadleaf: 'tree-oak', conifer: 'tree-pine', birch: 'tree-birch' };
 
 /** Per tier: how far out (m) and how many of each species at most. Low: none. */

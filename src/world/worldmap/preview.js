@@ -43,6 +43,7 @@
  */
 
 import { PREVIEW_DATA } from './preview-data.js';
+import { sculpt } from './biomes.js';
 
 /** The map id. Not in MAPS: the flight game's list, the lobbies and every map test stay as they are. */
 export const WORLD_PREVIEW_ID = 'world-preview';
@@ -159,6 +160,9 @@ export function makeDef(P) {
     streamTerrain: true,
     // Forests, farmland, heath and marsh (worldmap/landcover.js), painted by worldmap/world-terrain.js.
     landcover: true,
+    // The desert's dunes and mesas (worldmap/biomes.js): `sculpted` tells a worker to put the hook on its copy.
+    sculpted: true,
+    _sculpt: sculpt,
     flats: townFlats(P),
     // The ground's shape (terrain.js relief, rivers, lakes): where it must stay calm, and the waters.
     calm: deepCopy(P.calm || []),

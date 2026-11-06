@@ -72,6 +72,7 @@ import { check as missionMaps } from './mission-maps.browser.js';
 import { check as flicker } from './flicker.browser.js';
 import { check as achievements } from './achievements.browser.js';
 import { check as worldScale } from './world-scale.browser.js';
+import { check as biomes } from './biomes.browser.js';
 import { check as mapsKitB } from './maps-kit-b.browser.js';
 import { check as comic } from './comic.browser.js';
 import { check as story } from './story.browser.js';
@@ -107,6 +108,7 @@ import { check as livemapNav } from './livemap-nav.browser.js';
 import { check as where } from './where.browser.js';
 import { check as airspace } from './airspace.browser.js';
 import { check as cockpitCam } from './cockpit-cam.browser.js';
+import { check as cockpitDress } from './cockpit-dress.browser.js';
 
 export const CHECKS = [
   // The missions' fun pass, flown (slow): medals, twists, finales, Try again from.
@@ -182,6 +184,7 @@ export const CHECKS = [
   { id: 'quality', check: quality },
   // After quality: how big things are — a house beside the aeroplane and the altitude line's height over the ground (the owner's "200 ft houses").
   { id: 'world-scale', check: worldScale },
+  { id: 'biomes', check: biomes },
   // After quality (it builds every aeroplane in every paint): the skins sweep's findings — the pack's tails and numbers, the civil models' lettering, who is handed which paint.
   { id: 'skins', check: skins },
   { id: 'traffic', check: traffic },
@@ -273,6 +276,7 @@ export const CHECKS = [
   { id: 'airspace', check: airspace },
   // The cockpit camera: numpad snaps, the wheel's zoom, a TCA sidestick's hat looking round, the look remembered per aircraft.
   { id: 'cockpit-cam', check: cockpitCam },
+  { id: 'cockpit-dress', check: cockpitDress },
   // The demo bug hunt (2026-11-02): the boat's rudder bar, pause card and restarts; a pause straight after a crash.
   { id: 'bughunt', check: bughunt },
   // Last: it rebinds keys through Settings (and puts the player's back after).

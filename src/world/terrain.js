@@ -2117,7 +2117,8 @@ export function heightAt(x, z) {
     if (candidate > h) h = candidate;
   }
 
-  // World Map: rivers and lakes, cut into the ground (their water is drawn by worldmap/waters.js).
+  // World Map: the desert's dunes (worldmap/biomes.js), then rivers and lakes (worldmap/waters.js).
+  if (MAP._sculpt) h = MAP._sculpt(h, x, z, calmAt);
   if (RIVERS.length || LAKES.length) h = carveWaters(h, x, z);
 
   if (padW > 0) h = lerp(h, AIRPORT.elev, padW);

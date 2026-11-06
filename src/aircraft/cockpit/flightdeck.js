@@ -55,56 +55,56 @@ export const VIEW_PITCH_MAX = 15;
 
 const AIRLINER = {
   a320: {
-    title: 'A320', maker: 'airbus', engines: 2, du: 0.165, stick: 'side',
-    palette: { panel: '#4c5967', trim: '#aeb5bc', glare: '#22272c', seat: '#34404c', frame: '#2b3036', floor: '#2a2d31' },
+    title: 'A320', maker: 'airbus', engines: 2, du: 0.2, stick: 'side',
+    palette: { panel: '#4c5967', trim: '#aeb5bc', glare: '#22272c', seat: '#34404c', frame: '#6e7883', floor: '#2a2d31' },
     wall: { head: '#d6d9dc', wall: '#b8bec4', low: '#7d8791' }, mcp: '#4c5967', lcd: '#ffb44a', vs: 110, vmo: 350,
   },
   a380: {
-    title: 'A380', maker: 'airbus', engines: 4, du: 0.2, stick: 'side',
-    palette: { panel: '#4a5663', trim: '#b1b8bf', glare: '#22272c', seat: '#323d48', frame: '#2b3036', floor: '#2a2d31' },
+    title: 'A380', maker: 'airbus', engines: 4, du: 0.22, stick: 'side',
+    palette: { panel: '#4a5663', trim: '#b1b8bf', glare: '#22272c', seat: '#323d48', frame: '#6e7883', floor: '#2a2d31' },
     wall: { head: '#d9dcdf', wall: '#bcc2c8', low: '#7f8993' }, mcp: '#4a5663', lcd: '#ffb44a', vs: 120, vmo: 340,
   },
   b747: {
-    title: '747', maker: 'boeing', engines: 4, du: 0.19, stick: 'yoke',
-    palette: { panel: '#5f5b55', trim: '#b3ada3', glare: '#1f2022', seat: '#4b3f35', frame: '#2c2c2d', floor: '#2b2a29' },
+    title: '747', maker: 'boeing', engines: 4, du: 0.21, stick: 'yoke',
+    palette: { panel: '#5f5b55', trim: '#b3ada3', glare: '#1f2022', seat: '#4b3f35', frame: '#6d675f', floor: '#2b2a29' },
     wall: { head: '#d6d1c7', wall: '#bdb6aa', low: '#8a8478' }, mcp: '#5f5b55', lcd: '#f2f2ea', vs: 130, vmo: 365,
   },
   meridian: {
-    title: 'MERIDIAN 220', maker: 'boeing', engines: 2, du: 0.15, stick: 'yoke', ndRange: 10,
-    palette: { panel: '#3b424a', trim: '#b5bbc1', glare: '#1e2125', seat: '#2f3742', frame: '#26292d', floor: '#26282b' },
+    title: 'MERIDIAN 220', maker: 'boeing', engines: 2, du: 0.155, stick: 'yoke', ndRange: 10,
+    palette: { panel: '#3b424a', trim: '#b5bbc1', glare: '#1e2125', seat: '#2f3742', frame: '#5e6670', floor: '#26282b' },
     wall: { head: '#d4d6d8', wall: '#b9bdc2', low: '#7a828a' }, mcp: '#3b424a', lcd: '#ffb44a', vs: 95, vmo: 300,
   },
   /* ---- Narrow-bodies ---- */
   b737: {
-    title: '737 MAX 8', maker: 'boeing', engines: 2, du: 0.19, stick: 'yoke', ndRange: 20,
-    palette: { panel: '#575c63', trim: '#b7b3aa', glare: '#1f2022', seat: '#4a4238', frame: '#2c2c2d', floor: '#2b2a29' },
+    title: '737 MAX 8', maker: 'boeing', engines: 2, du: 0.21, stick: 'yoke', ndRange: 20,
+    palette: { panel: '#575c63', trim: '#b7b3aa', glare: '#1f2022', seat: '#4a4238', frame: '#6d675f', floor: '#2b2a29' },
     wall: { head: '#d8d4cb', wall: '#bfb9ae', low: '#8a847a' }, mcp: '#575c63', lcd: '#f2f2ea', vs: 108, vmo: 340,
   },
   a321: {
-    title: 'A321neo', maker: 'airbus', engines: 2, du: 0.165, stick: 'side', ndRange: 20,
-    palette: { panel: '#4c5967', trim: '#aeb5bc', glare: '#22272c', seat: '#34404c', frame: '#2b3036', floor: '#2a2d31' },
+    title: 'A321neo', maker: 'airbus', engines: 2, du: 0.2, stick: 'side', ndRange: 20,
+    palette: { panel: '#4c5967', trim: '#aeb5bc', glare: '#22272c', seat: '#34404c', frame: '#6e7883', floor: '#2a2d31' },
     wall: { head: '#d6d9dc', wall: '#b8bec4', low: '#7d8791' }, mcp: '#4c5967', lcd: '#ffb44a', vs: 112, vmo: 350,
   },
   /* ---- Wide-bodies: bigger screens, longer map ranges ---- */
   b787: {
-    title: '787', maker: 'boeing', engines: 2, du: 0.2, stick: 'yoke', hud: true, ndRange: 40,
-    palette: { panel: '#4a4f57', trim: '#b4b2ad', glare: '#1c1d1f', seat: '#3b3530', frame: '#2a2b2d', floor: '#28282a' },
+    title: '787', maker: 'boeing', engines: 2, du: 0.24, stick: 'yoke', hud: true, ndRange: 40,
+    palette: { panel: '#4a4f57', trim: '#b4b2ad', glare: '#1c1d1f', seat: '#3b3530', frame: '#67635c', floor: '#28282a' },
     wall: { head: '#d9d8d4', wall: '#bdbbb5', low: '#84827c' }, mcp: '#4a4f57', lcd: '#f2f2ea', vs: 118, vmo: 360,
   },
   a350: {
-    title: 'A350', maker: 'airbus', engines: 2, du: 0.2, stick: 'side', ndRange: 40,
-    palette: { panel: '#4f5a66', trim: '#b0b7be', glare: '#22272c', seat: '#323c47', frame: '#2b3036', floor: '#2a2d31' },
+    title: 'A350', maker: 'airbus', engines: 2, du: 0.24, stick: 'side', ndRange: 40,
+    palette: { panel: '#4f5a66', trim: '#b0b7be', glare: '#22272c', seat: '#323c47', frame: '#6e7883', floor: '#2a2d31' },
     wall: { head: '#dadde0', wall: '#bcc2c8', low: '#7f8993' }, mcp: '#4f5a66', lcd: '#ffb44a', vs: 120, vmo: 350,
   },
   b777: {
-    title: '777', maker: 'boeing', engines: 2, du: 0.19, stick: 'yoke', ndRange: 40,
-    palette: { panel: '#5b5f66', trim: '#b5b0a6', glare: '#1f2022', seat: '#47403a', frame: '#2c2c2d', floor: '#2b2a29' },
+    title: '777', maker: 'boeing', engines: 2, du: 0.21, stick: 'yoke', ndRange: 40,
+    palette: { panel: '#5b5f66', trim: '#b5b0a6', glare: '#1f2022', seat: '#47403a', frame: '#6d675f', floor: '#2b2a29' },
     wall: { head: '#d6d2c9', wall: '#bdb7ad', low: '#89837a' }, mcp: '#5b5f66', lcd: '#f2f2ea', vs: 125, vmo: 360,
   },
   /* ---- Regional turboprop: power + condition levers, small screens ---- */
   q400: {
-    title: 'Q400', maker: 'bombardier', engines: 2, du: 0.15, stick: 'yoke', levers: 'turboprop', ndRange: 10,
-    palette: { panel: '#4a4f56', trim: '#b4b8bd', glare: '#1e2124', seat: '#333a44', frame: '#27292d', floor: '#27292b' },
+    title: 'Q400', maker: 'bombardier', engines: 2, du: 0.16, stick: 'yoke', levers: 'turboprop', ndRange: 10,
+    palette: { panel: '#4a4f56', trim: '#b4b8bd', glare: '#1e2124', seat: '#333a44', frame: '#646a72', floor: '#27292b' },
     wall: { head: '#d5d7d9', wall: '#babfc4', low: '#7c848c' }, mcp: '#4a4f56', lcd: '#ffb44a', vs: 90, vmo: 245,
   },
   /* ---- Concorde: a 1970s deck, black panels, four engines, a tight room ---- */
@@ -115,13 +115,13 @@ const AIRLINER = {
   },
   /* ---- The giants ---- */
   belugaxl: {
-    title: 'BELUGA XL', maker: 'airbus', engines: 2, du: 0.19, stick: 'side', ndRange: 40,
-    palette: { panel: '#4c5967', trim: '#aeb5bc', glare: '#22272c', seat: '#34404c', frame: '#2b3036', floor: '#2a2d31' },
+    title: 'BELUGA XL', maker: 'airbus', engines: 2, du: 0.2, stick: 'side', ndRange: 40,
+    palette: { panel: '#4c5967', trim: '#aeb5bc', glare: '#22272c', seat: '#34404c', frame: '#6e7883', floor: '#2a2d31' },
     wall: { head: '#d6d9dc', wall: '#b8bec4', low: '#7d8791' }, mcp: '#4c5967', lcd: '#ffb44a', vs: 115, vmo: 330,
   },
   dreamlifter: {
-    title: 'DREAMLIFTER', maker: 'boeing', engines: 4, du: 0.19, stick: 'yoke', ndRange: 40,
-    palette: { panel: '#5f5b55', trim: '#b3ada3', glare: '#1f2022', seat: '#4b3f35', frame: '#2c2c2d', floor: '#2b2a29' },
+    title: 'DREAMLIFTER', maker: 'boeing', engines: 4, du: 0.21, stick: 'yoke', ndRange: 40,
+    palette: { panel: '#5f5b55', trim: '#b3ada3', glare: '#1f2022', seat: '#4b3f35', frame: '#6d675f', floor: '#2b2a29' },
     wall: { head: '#d6d1c7', wall: '#bdb6aa', low: '#8a8478' }, mcp: '#5f5b55', lcd: '#f2f2ea', vs: 130, vmo: 365,
   },
   an225: {
@@ -153,7 +153,7 @@ const AIRLINER = {
 
 export function buildFlightDeck(ctx) {
   const { type, model, space } = ctx;
-  const id = type && AIRLINER[type.id] ? type.id : 'a320';
+  const id = type && AIRLINER[type.id] ? type.id : type && type.id === 'af1' ? 'b747' : 'a320';
   const C = AIRLINER[id];
   const fd = model && model.userData && model.userData.flightDeck;
   const h = fd && (fd.hull || model.userData.cabinHull);
@@ -488,6 +488,7 @@ export function buildFlightDeck(ctx) {
   // the panel: its head stays under the line from the eye to the bottom of
   // the row of screens.
   const pedW = 0.52;
+  const printed = {};
   const pedZ0 = zPanel + 0.18;
   const pedZ1 = E.z + 0.45;
   const rowBottomY = panel.group.position.y + (dv - du / 2) * Math.cos(tilt);
@@ -534,7 +535,7 @@ export function buildFlightDeck(ctx) {
       void keys;
     }
     // Its top: radios, the flap lever's quadrant, trim, painted.
-    const topMat = switchPanelMaterial({ w: 256, h: 512, rows: 7, cols: 2, seed: 21, colour: C.palette.panel, labels: ['VHF 1', 'VHF 2', 'ATC', 'WXR', 'ENG START', 'PARK BRK', 'RUDDER TRIM', 'FLAPS', 'SPEED BRK'] });
+    const topMat = (printed.top = switchPanelMaterial({ w: 256, h: 512, rows: 7, cols: 2, seed: 21, colour: C.palette.panel, labels: ['VHF 1', 'VHF 2', 'ATC', 'WXR', 'ENG START', 'PARK BRK', 'RUDDER TRIM', 'FLAPS', 'SPEED BRK'] }));
     const topLen = len - headD;
     const top = part(group, new THREE.PlaneGeometry(pedW - 0.02, topLen), topMat, cx, pedTop + 0.002, pedZ1 - topLen / 2, 'pedestal top');
     top.rotation.x = -Math.PI / 2;
@@ -575,6 +576,8 @@ export function buildFlightDeck(ctx) {
   sb.scale.setScalar(0.75);
   sb.position.set(cx - 0.18, pedBackTop + 0.004, E.z - 0.2);
   sb.rotation.x = 0.4;
+  sb.userData.dynamic = true;
+  sb.name = 'speed brake';
   group.add(sb);
   // The big trim wheels on the pedestal's sides: every deck flown on a yoke
   // (Boeing, Concorde, the An-225, the C-5, the Q400); Airbus has none.
@@ -705,8 +708,8 @@ export function buildFlightDeck(ctx) {
     const zMidOh = lerp(zOh0, zOh1, 0.35);
     const yM = Math.min(ceilAt(zMidOh), Math.max(yA, yB)) - 0.03;
     // Front, slanted at the pilots; rear, nearly flat.
-    const ohMatA = switchPanelMaterial({ w: 512, h: 384, rows: 6, cols: 9, seed: 71, colour: C.palette.panel });
-    const ohMatB = switchPanelMaterial({ w: 512, h: 512, rows: 8, cols: 9, seed: 83, colour: C.palette.panel });
+    const ohMatA = (printed.a = switchPanelMaterial({ w: 512, h: 384, rows: 6, cols: 9, seed: 71, colour: C.palette.panel }));
+    const ohMatB = (printed.b = switchPanelMaterial({ w: 512, h: 512, rows: 8, cols: 9, seed: 83, colour: C.palette.panel }));
     /*
      * a, b are the FRONT edge (towards the windscreen), c, d the aft one.
      * Looking up at a panel over and ahead of you, the near (aft) edge is
@@ -818,6 +821,7 @@ export function buildFlightDeck(ctx) {
     for (const tw of trimWheels) tw.rotation.x = (ac.trim || 0) * 8;
     for (const p of pedals) p.mesh.position.z = p.z0 + (c.yaw || 0) * p.side * 0.04;
     gearHandle.position.y = ease(gearHandle.position.y, gearHandle.userData.v0 + (ac.gearDown ? -0.035 : 0.035), 6, dt);
+    sb.rotation.x = ease(sb.rotation.x, 0.4 - clamp(ac.speedbrake || 0, 0, 1) * 0.7, 6, dt);
     updateRain(rainMat, glassMeshes, t, ac, weather);
   };
   group.userData.panel = panel;
@@ -844,6 +848,8 @@ export function buildFlightDeck(ctx) {
   group.userData.eye = E.clone();
   group.userData.deck = { panes: quads.length * 2, width: 2 * wallX(E.z, E.y), source: fd.hull ? 'pack' : 'hull', stick: C.stick, engines: C.engines };
   group.userData.hud = hud;
-  group.userData.controls = { levers, conds, sticks, yokes, pedals, gear: gearHandle, flap };
+  group.userData.controls = { levers, conds, sticks, yokes, pedals, gear: gearHandle, flap, sb };
+  group.userData.printed = printed;
+  group.userData.layout = { C, E, cx, side0, pilotU, du, dv, vt, gapU, gu, uMax, yG, zLip, zPanel, yBot, yFloor, pedW, pedTop, pedZ0, pedZ1, roomHalf, wallX, zBack, panel };
   return group;
 }

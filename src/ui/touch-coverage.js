@@ -145,6 +145,7 @@ export const TOUCH_COVERAGE = Object.freeze({
   footLookRight: feature('src/features/staff/ui.js', 'the walker\'s look pad', 'lookX'),
   footLookUp: feature('src/features/staff/ui.js', 'the walker\'s look pad', 'lookY'),
   footLookDown: feature('src/features/staff/ui.js', 'the walker\'s look pad', 'lookY'),
+  crashSkip: feature('src/features/breakup/crash-view.js', 'the Skip button over a wreck', 'crashSkip'),
   eject: feature('src/features/eject.js', 'the EJECT button', 'Tap EJECT'),
   selfDestruct: feature('src/features/eject.js', 'the special planes\' self-destruct button, with CANCEL', 'CANCEL'),
   chuteLeft: feature('src/features/eject.js', 'the parachute\'s ◀ steer button, held', 'setSteer'),

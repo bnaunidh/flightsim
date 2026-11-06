@@ -95,7 +95,7 @@ import { surveyModel, classifyModel, classifyModelSteps, breakZones, deformZones
 import { makeBody, stepBody, catchPoint } from '../game/breakup-body.js';
 import { hullOf, hingeFor, hangPose, attachedPose, JOLT_TEARS, SINK_HANDOFF } from './breakup/airframe.js';
 import { SLIDE, slideKind } from './breakup/slide.js';
-import { CrashView, VIEW } from './breakup/crash-view.js';
+import { CrashView, SlideLens, VIEW } from './breakup/crash-view.js';
 import { COMIC } from '../render/comic.js';
 import { BreakupFx } from './breakup/fx.js';
 import { onBodyHit, BODY } from './sky.js';
@@ -891,6 +891,8 @@ function resetAll(sim) {
   S.hullPending = null;
   if (S.view) S.view.cancel();
   S.view = null;
+  if (S.slideLens) S.slideLens.end();
+  S.slideLens = null;
   endReplay(sim, false);
   closeUnderwater();
   if (S.scars) S.scars.clear();
@@ -1198,15 +1200,15 @@ function packHullAllowed(mode) {
   return !!mode && PACK_HULL_MODES.has(mode.mode) && !(mode.steep > PACK_HULL_STEEP);
 }
 
-/** Concrete and decks: the runway's stripes under a braking lens. See HARD_GROUND_KEEPS_SHIPPED below. */
+/** Concrete and decks: see hullWanted, and slideCamera. */
 function hardGround(p) {
   return !!p && (isPaved(p.x, p.z) || !!platformAt(p.x, p.z));
 }
 
 /**
- * On hard ground the crash stays as it shipped. A belly slide on a runway flickers over 25-28% of a 10-degree field
- * in the first two seconds on v77.3 already: the follow view braking over the stripes. A fireball hides them, so
- * taking it away read 37-42%, and an F-22 on this body 32% against its own body's 25% (measured, 2026-11-05).
+ * On hard ground the crash stays as it shipped. A belly slide on a runway flickered over 25-53% of a 10-degree field
+ * in the first two seconds, on v77.3 too: not this body but the view moving over the terminal's glazing, the clouds'
+ * edges and the stripes. SlideLens (./breakup/crash-view.js, slideCamera) holds that under 2% on either body.
  */
 function hullWanted(sim, model, quiet, mode, at) {
   if (quiet || COMIC.on) return false;
@@ -3343,6 +3345,21 @@ function startView(sim, kind, show) {
   }
 }
 
+/** A wreck sliding on land, watched by SlideLens from its first frame (the card's CrashView only starts at 2.2 s). */
+function slideCamera(sim, dt, camera) {
+  if (!S.slideLens) {
+    const h = S.hull;
+    const ac = sim.aircraft;
+    const res = S.lastRes;
+    // No body of ours on hard ground with Reduce flashing (hullWanted): the pack's own, sliding just the same.
+    const packs = !h && sim.model && sim.model.userData.fleetBridge && res && res.plan && res.plan.mode && SLIDE_MODES.has(res.plan.mode.mode) && hardGround(ac.pos);
+    const going = h ? !h.water && !h.body.wet && !h.body.sleeping && h.body.vel.length() > VIEW.stopped * 1.5 : packs && ac.vel.length() > VIEW.stopped * 1.5;
+    if (!going || !viewWanted(sim) || sim.rig.mode === 'flyby') return false;
+    S.slideLens = new SlideLens(sim, wreckNow, (x, z) => Math.max(0, heightAt(x, z)));
+  }
+  return S.slideLens.update(dt, camera);
+}
+
 function stepView(sim, dt) {
   const v = S.view;
   if (!v) return;
@@ -3579,8 +3596,9 @@ registerExtension({
 
   camera(sim, dt, camera) {
     const v = S.view;
-    if (!v || S.replay) return false;
-    return v.camera(dt, camera);
+    if (S.replay) return false;
+    if (v && v.camera(dt, camera)) return true;
+    return !(v && v.kind === 'sink') && slideCamera(sim, dt, camera);
   },
 
   key(sim, code, down) {

@@ -162,7 +162,7 @@ const REALISTIC = new THREE.Vector3(0, -0.02, 0.16);
 export function buildJetCockpit(ctx) {
   const { type, model, space } = ctx;
   const id = type && JET[type.id] ? type.id : ctx.family === 'racer' ? 'massimo' : 'vanguard';
-  const C = JET[id];
+  const C = type && !JET[type.id] ? { ...JET[id], title: String(type.name).toUpperCase() } : JET[id];
   if (C.layout === 'bomber') return buildBomber(ctx, C, id);
 
   const group = new THREE.Group();

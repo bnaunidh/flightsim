@@ -83,6 +83,7 @@ export function assemble(heights, cx, cz, size, seg, flatAt = null, cover = null
   const cov = cover ? new Uint8Array(count * 4) : null;
   // Four bytes: how built-up, then the town's heading, how far in and its climate (worldmap/town-grid.js).
   const urb = cover ? new Uint8Array(count * 4) : null;
+  const bio = cover ? new Uint8Array(count * 4) : null;
   const B = (v) => (v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255));
   const uv = new Float32Array(count * 2);
   const H = (i, j) => heights[(j + 1) * W + (i + 1)];
@@ -116,6 +117,7 @@ export function assemble(heights, cx, cz, size, seg, flatAt = null, cover = null
         urb[k * 4 + 1] = B(c[8]);
         urb[k * 4 + 2] = B(c[9]);
         urb[k * 4 + 3] = B(c[10]);
+        for (let b = 0; b < 4; b++) bio[k * 4 + b] = B(c[11 + b]);
         uv[k * 2] = (cx + lx) / UV_METRES;
         uv[k * 2 + 1] = -(cz + lz) / UV_METRES;
         continue;
@@ -150,11 +152,12 @@ export function assemble(heights, cx, cz, size, seg, flatAt = null, cover = null
     if (cov) {
       for (let c = 0; c < 4; c++) cov[k * 4 + c] = cov[src * 4 + c];
       for (let c = 0; c < 4; c++) urb[k * 4 + c] = urb[src * 4 + c];
+      for (let c = 0; c < 4; c++) bio[k * 4 + c] = bio[src * 4 + c];
     }
     uv[k * 2] = uv[src * 2];
     uv[k * 2 + 1] = uv[src * 2 + 1];
   }
-  return cov ? { pos, nrm, blend, uv, cover: cov, urban: urb, maxH, count } : { pos, nrm, blend, uv, maxH, count };
+  return cov ? { pos, nrm, blend, uv, cover: cov, urban: urb, biome: bio, maxH, count } : { pos, nrm, blend, uv, maxH, count };
 }
 
 /** The grid indices round the edge, anticlockwise, `4 * seg` of them. */

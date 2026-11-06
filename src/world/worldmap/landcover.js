@@ -1,15 +1,11 @@
 /**
  * World Map — Preview: what covers the ground.
  *
- * Owner, Oct 26, on the islands: "maps sad as hell" — a flat uniform green
- * carpet, sparse single trees, empty. Real land is a patchwork: forests on
- * the hills and in the valleys, farmland in fields with hedges between them
- * on the flat low ground, heath and scrub on the uplands, rock and snow
- * higher still, marsh where the land is flat and wet by the sea, beaches
- * that are wide in one bay and a strip of shingle in the next. This decides
- * which, everywhere, from the ground itself (height, slope, how far north or
- * south) and slow noise — the same answer in the tile worker, on the main
- * thread and in node, because it is pure arithmetic on the position.
+ * Owner, Oct 26, on the islands: "maps sad as hell". Real land is a patchwork:
+ * forest, fields with hedges, heath, rock, snow, marsh, wide bays and shingle.
+ * This decides which from the ground itself (height, slope, latitude) and slow
+ * noise: pure arithmetic, the same in the tile worker, on this thread and in node.
+ * worldmap/biomes.js lays the World Map's biomes over it (coverAt, setCover).
  *
  * Who reads it:
  *   - worldmap/tiles.js writes each vertex's cover into the tile (aBlend:
@@ -90,14 +86,14 @@ export function forestNoise(x, z) {
 }
 
 /**
- * The cover at a point, into `out` (length 8):
+ * The cover at a point, into `out` (length 8; 15 for the biomes, worldmap/biomes.js, which takes this over):
  *   [0] sand  [1] grass  [2] rock     the base ground (sum 1)
  *   [3] farm  [4] forest [5] scrub [6] wet   what is on it (each 0..1)
  *   [7] urban  a town's streets and roofs (coverFor sets it, on a town's ground)
  *   [8..10]    the town's heading, how far in, its climate (coverFor; out may be 8 long here)
  * `h` metres above the sea, `slope` rise over run, `onFlat` made ground.
  */
-export function coverAt(x, z, h, slope, onFlat, out) {
+export function baseCover(x, z, h, slope, onFlat, out) {
   const { cold, tropical } = climateAt(z);
   if (onFlat && h > 1) {
     // Made ground is mown grass — burnt dry in the tropics, tundra-brown in the north.
@@ -147,6 +143,9 @@ export function coverAt(x, z, h, slope, onFlat, out) {
   return out;
 }
 
+export let coverAt = baseCover;
+export const setCover = (f) => { coverAt = f; };
+
 /**
  * The cover function tiles.js wants for a terrain module `T`: null on any
  * map that has not asked for it (every regular map), so they are untouched.
@@ -154,12 +153,13 @@ export function coverAt(x, z, h, slope, onFlat, out) {
 export function coverFor(T) {
   if (!T || !T.MAP || !T.MAP.landcover) return null;
   // [8..10] a town's heading, how far in, and its climate, for the street plan the paint draws (worldmap/town-grid.js).
-  const out = new Float32Array(11);
+  const out = new Float32Array(15);
   const outer = T.MAP._outer;
   const frames = new Map();
   const roads = (T.MAP.waters && T.MAP.waters.roads) || [];
   const cover = (x, z, h, slope) => {
-    out[8] = 0; out[9] = 1; out[10] = 0; // (0: no town here)
+    out.fill(0, 8);
+    out[9] = 1; // (no town here)
     if (outer && outer.past(x, z)) return outer.cover(x, z, h, slope, out);
     const f = T.flatAt ? T.flatAt(x, z) : null;
     // A town's level ground is not mown from edge to edge: gardens and greens in the middle, the

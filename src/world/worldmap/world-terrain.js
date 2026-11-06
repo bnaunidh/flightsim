@@ -17,7 +17,12 @@
  *   MARSH      dark reed-green with pools of water in it;
  *   TOWN       its street plan (worldmap/town-grid.js): the streets everywhere,
  *              the far roofs out past the real buildings' reach;
- *   SNOW       on the cold north's high ground (and above 1,300 m anywhere);
+ *   BIOMES     desert, savanna, jungle and autumn (worldmap/biomes.js, `aBiome`):
+ *              each its own ground under all of the above, and its own woods;
+ *              mangrove where the marsh is in the jungle;
+ *   SNOW       on the cold north's ground (and above 1,150 m anywhere), and the
+ *              weather's snow lying over all of it (terrain.js lays that first,
+ *              under the cover, where nobody could see it);
  *   DETAIL     fine noise close to the camera, so the ground has grain at
  *              circuit height instead of one smooth colour (not on Low).
  *
@@ -35,20 +40,24 @@ export const TOWN_SHADE = { uTownR: { value: 2000 }, uTownGlow: { value: 0 } };
 const VERT_COMMON = `
 attribute vec4 aCover;
 attribute vec4 aUrban;
+attribute vec4 aBiome;
 varying vec4 vCover;
 varying vec4 vUrban;
+varying vec4 vBiome;
 varying vec2 vTownCS;
 varying vec2 vWXZ;
 uniform vec2 uWOrigin;`;
 const VERT_BEGIN = `
   vCover = aCover;
   vUrban = aUrban;
+  vBiome = aBiome;
   vTownCS = vec2(cos(aUrban.y * 1.5707963267949), sin(aUrban.y * 1.5707963267949));
   vWXZ = (modelMatrix * vec4(transformed, 1.0)).xz + uWOrigin;`;
 
 const FRAG_COMMON = `
 varying vec4 vCover;
 varying vec4 vUrban;
+varying vec4 vBiome;
 varying vec2 vTownCS;
 varying vec2 vWXZ;
 uniform float uTownR;
@@ -60,6 +69,11 @@ float wtNoise(vec2 p) {
   vec2 f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
   return mix(mix(wtH21(i), wtH21(i + vec2(1.0, 0.0)), f.x), mix(wtH21(i + vec2(0.0, 1.0)), wtH21(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+/* Blotches with no square grid in them: leaves seen from high up. Turned, pushed about, two sizes. */
+float wtCrowns(vec2 p, float s) {
+  vec2 q = mat2(0.8, 0.6, -0.6, 0.8) * p + 0.6 * s * vec2(wtNoise(p / (s * 1.7)), wtNoise(p / (s * 1.7) + 7.1));
+  return wtNoise(q / s) * 0.62 + wtNoise(mat2(0.6, -0.8, 0.8, 0.6) * q / (s * 0.45) + 3.3) * 0.38;
 }${GLSL_TOWN}`;
 
 /**
@@ -74,15 +88,43 @@ const FRAG_COVER = (detail, ring, ringSnow) => `
     vec2 wp = vWXZ;
     float dist = length(vViewPosition);
     // Latitude: the north is cold, the south tropical (worldmap/landcover.js climateAt).
-    float cold = smoothstep(-92000.0, -112000.0, wp.y);
-    float trop = smoothstep(45000.0, 62000.0, wp.y);
+    float cold = smoothstep(-46000.0, -56000.0, wp.y);
+    float trop = smoothstep(21000.0, 27000.0, wp.y);
     float lum = clamp(dot(blended.rgb, vec3(0.299, 0.587, 0.114)) * 3.0, 0.0, 1.0);
     float shadeK = mix(0.8, 1.08, lum);
     vec3 base = blended.rgb;
     float farm = vCover.x;
     float forest = vCover.y;
     float scrub = vCover.z;
-    float wet = vCover.w;
+    vec4 bio = vBiome;
+    // (A desert has no marsh: there the channel says how much dune stands here.)
+    float vDune = vCover.w;
+    float wet = vCover.w * (1.0 - step(0.5, bio.x));
+    // The tide line stays terrain.js's, wet sand into the shallows.
+    float shore = smoothstep(0.6, 3.6, vGroundY);
+    if (bio.x > 0.01) {
+      // Desert: the real dunes (worldmap/biomes.js dunePhase, the same sum), lit soft on the back and dark down the
+      // lee face; ripples close to; banded red rock wherever it is steep.
+      float da = (dot(wp, vec2(0.82, 0.57)) + 260.0 * sin(wp.x / 1700.0 + 1.3 * sin(wp.y / 2300.0)) + 180.0 * sin(wp.y / 1300.0 + wp.x / 3100.0)) / 560.0;
+      float ph = fract(da);
+      float tone = wtNoise(mat2(0.8, 0.6, -0.6, 0.8) * wp / 1300.0);
+      vec3 dune = mix(vec3(0.90, 0.73, 0.48), vec3(0.79, 0.58, 0.35), tone);
+      float amount = vDune * (1.0 - smoothstep(9000.0, 24000.0, dist));
+      dune *= 1.0 + amount * (0.1 * smoothstep(0.15, 0.72, ph) - 0.05);
+      dune = mix(dune, dune * vec3(0.74, 0.68, 0.65), amount * (0.45 + 0.55 * wtNoise(wp / 700.0)) * smoothstep(0.7, 0.75, ph) * (1.0 - smoothstep(0.9, 1.0, ph)));
+      dune *= 1.0 + ${detail} * 0.05 * sin(da * 80.0 + wtNoise(wp / 40.0) * 8.0) * (1.0 - smoothstep(90.0, 340.0, dist));
+      float layer = sin(vGroundY * 0.24 + wtNoise(wp / 420.0) * 5.0) * 0.5 + 0.5;
+      vec3 strata = mix(vec3(0.47, 0.25, 0.17), vec3(0.76, 0.52, 0.35), layer) * (0.86 + 0.28 * wtNoise(wp / 26.0));
+      base = mix(base, S2L(mix(dune, strata, smoothstep(0.1, 0.42, vBlend.z))) * shadeK, bio.x * shore);
+    }
+    if (bio.y > 0.01) {
+      // Savanna: gold grass in big soft drifts, red earth showing through, darker bush along the low places.
+      float m = wtNoise(wp / 64.0) * 0.4 + wtNoise(wp / 290.0) * 0.35 + wtNoise(wp / 1500.0) * 0.25;
+      vec3 grassy = mix(vec3(0.84, 0.69, 0.33), vec3(0.62, 0.50, 0.24), smoothstep(0.3, 0.7, m));
+      grassy = mix(grassy, vec3(0.60, 0.40, 0.24), smoothstep(0.6, 0.72, wtNoise(wp / 760.0 + 4.0)) * 0.65);
+      grassy = mix(grassy, vec3(0.42, 0.42, 0.20), smoothstep(0.58, 0.74, wtCrowns(wp + 9.0, 30.0)) * 0.4);
+      base = mix(base, S2L(grassy) * shadeK, bio.y * shore * (1.0 - vBlend.z * 0.7));
+    }
     if (farm > 0.01) {
       // Each farming district (5 km) has its own grid, turned its own way; the field edges wander a little.
       vec2 dc = floor(wp / 5200.0);
@@ -119,6 +161,8 @@ const FRAG_COVER = (detail, ring, ringSnow) => `
       field = mix(field, S2L(vec3(0.17, 0.25, 0.11)) * shadeK, hedge);
       base = mix(base, field, farm);
     }
+    // Airfield grass in the jungle: less of a pale square among the dark.
+    base = mix(base, base * vec3(0.66, 0.82, 0.6), bio.z);
     if (forest > 0.01) {
       // Canopy: dark and mottled — crowns and shadows between them — bluer in the northern conifers, lusher in the south.
       float m = wtNoise(wp / 18.0) * 0.45 + wtNoise(wp / 70.0) * 0.35 + wtNoise(wp / 400.0) * 0.2;
@@ -127,6 +171,24 @@ const FRAG_COVER = (detail, ring, ringSnow) => `
       vec3 canopy = mix(mix(vec3(0.12, 0.19, 0.08), vec3(0.24, 0.33, 0.14), m), mix(vec3(0.18, 0.24, 0.09), vec3(0.32, 0.38, 0.16), m), smoothstep(0.55, 0.8, stand));
       canopy = mix(canopy, mix(vec3(0.08, 0.14, 0.10), vec3(0.17, 0.24, 0.17), m), cold);
       canopy = mix(canopy, mix(vec3(0.10, 0.22, 0.08), vec3(0.22, 0.38, 0.13), m), trop);
+      if (bio.z > 0.01) {
+        // Jungle: a closed roof of big bright crowns with black gaps, paler emergents standing out of it.
+        float c = wtCrowns(wp, 26.0) * 0.8 + wtCrowns(wp + 91.0, 120.0) * 0.2;
+        vec3 roof = mix(vec3(0.07, 0.19, 0.08), vec3(0.20, 0.38, 0.13), smoothstep(0.3, 0.68, c));
+        canopy = mix(canopy, mix(roof, vec3(0.33, 0.47, 0.18), smoothstep(0.66, 0.78, wtCrowns(wp - 40.0, 70.0)) * 0.5), bio.z);
+      }
+      if (bio.w > 0.01) {
+        // Autumn: stands of gold, orange and scarlet with the evergreens dark among them.
+        float st = wtCrowns(wp + 17.0, 64.0) * 0.6 + wtCrowns(wp, 20.0) * 0.4;
+        vec3 turn = mix(vec3(0.50, 0.21, 0.12), vec3(0.64, 0.36, 0.15), smoothstep(0.3, 0.44, st));
+        turn = mix(turn, vec3(0.68, 0.52, 0.22), smoothstep(0.47, 0.6, st));
+        turn = mix(turn, vec3(0.24, 0.31, 0.16), smoothstep(0.62, 0.72, st) * 0.85);
+        // Close in the trees stand on their own: what is between them is fallen leaves, not a painted roof.
+        turn = mix(mix(turn, vec3(0.42, 0.31, 0.18), 0.6), turn, smoothstep(200.0, 900.0, dist));
+        canopy = mix(canopy, turn * (0.78 + 0.34 * m), bio.w);
+      }
+      // The cold band's woods: snow on the ground between the dark crowns.
+      canopy = mix(canopy, mix(vec3(0.15, 0.21, 0.18), vec3(0.84, 0.87, 0.93), smoothstep(0.26, 0.5, wtCrowns(wp, 15.0))), cold);
       base = mix(base, S2L(canopy) * shadeK, forest);
     }
     if (scrub > 0.01) {
@@ -134,13 +196,23 @@ const FRAG_COVER = (detail, ring, ringSnow) => `
       vec3 heath = mix(vec3(0.50, 0.46, 0.30), vec3(0.34, 0.33, 0.20), m);
       heath = mix(heath, mix(vec3(0.46, 0.42, 0.36), vec3(0.34, 0.36, 0.30), m), cold * 0.7);
       heath = mix(heath, mix(vec3(0.66, 0.58, 0.38), vec3(0.50, 0.48, 0.28), m), trop * 0.6);
+      heath = mix(heath, mix(vec3(0.80, 0.66, 0.34), vec3(0.58, 0.48, 0.26), m), clamp(bio.x + bio.y, 0.0, 1.0));
       base = mix(base, S2L(heath) * shadeK, scrub);
     }
     if (wet > 0.01) {
       float pool = smoothstep(0.6, 0.68, wtNoise(wp / 50.0));
       vec3 marsh = mix(vec3(0.27, 0.32, 0.17), vec3(0.20, 0.30, 0.33), pool);
+      if (bio.z > 0.01) {
+        // Mangrove: a dark wet thicket on mud, tidal creeks winding through it.
+        float creek = 1.0 - smoothstep(0.012, 0.05, abs(wtCrowns(wp, 240.0) - 0.5));
+        vec3 thicket = mix(vec3(0.08, 0.19, 0.10), vec3(0.19, 0.31, 0.14), wtCrowns(wp, 26.0));
+        thicket = mix(thicket, vec3(0.30, 0.25, 0.17), smoothstep(0.6, 0.7, wtNoise(wp / 34.0 + 5.0)) * 0.7);
+        marsh = mix(marsh, mix(thicket, vec3(0.13, 0.27, 0.27), creek), bio.z);
+      }
       base = mix(base, S2L(marsh) * shadeK, wet);
     }
+    // How much street and house there is here: snow lies on it thinner (below).
+    float townK = 0.0;
     if (vUrban.x > 0.01 && vUrban.w > 0.1) {
       // A town: its street plan (worldmap/town-grid.js), the same arithmetic the buildings stand on. The streets
       // are drawn here at every distance. A building's roof is drawn here only beyond the buildings' reach
@@ -277,6 +349,7 @@ const FRAG_COVER = (detail, ring, ringSnow) => `
       // From higher up a street is a thin pale line among the roofs, not a dark band as wide as the blur.
       streetCol = mix(streetCol, vec3(0.44, 0.43, 0.41), smoothstep(700.0, 2600.0, dist) * 0.65);
       base = mix(base, S2L(streetCol) * shadeK, pavedK * us / (1.0 + aa * 0.28));
+      townK = um * mix(0.35, 0.8, pavedK * us);
       // After dark: the street lamps' pools on the road, and the far windows.
       if (uTownGlow > 0.0) {
         float pool = exp(-pow(mod(along, 36.0) - 18.0, 2.0) / 90.0);
@@ -287,13 +360,17 @@ const FRAG_COVER = (detail, ring, ringSnow) => `
         townGlow = (vec3(1.0, 0.70, 0.40) * glow + vec3(1.0, 0.78, 0.5) * lit * 0.06) * us * uTownGlow;
       }
     }
-    // Snow: the north's hills and fells, and anything above 1,300 m.
-    float sline = mix(1300.0, 110.0, cold) + (wtNoise(wp / 900.0) - 0.5) * 120.0;
+    // Snow: the north's hills and fells, and anything above 1,150 m.
+    float sline = mix(1150.0, 110.0, cold) + (wtNoise(wp / 900.0) - 0.5) * 240.0 + (wtNoise(wp / 170.0) - 0.5) * 110.0;
     ${ringSnow}
     // Petrel Skerry, the Nunatak Ice Strip's island: it lies 14 m above the sea, far under the north's snow line, so
     // the strip of packed snow stood on bare ground and read as a white slab (owner, 2026-11-05). Snow to the waterline.
     sline = mix(sline, -200.0, 1.0 - smoothstep(3000.0, 3800.0, distance(wp, vec2(16980.0, -83040.0))));
-    float snowC = smoothstep(sline, sline + 90.0, vGroundY) * (1.0 - vBlend.z * 0.5);
+    float snowC = smoothstep(sline, sline + 190.0, vGroundY) * (1.0 - vBlend.z * 0.5);
+    // The cold band's low ground: lying in drifts, thin on the rock. And the weather's snow, over everything.
+    // (Not past the sea: the ring keeps its own snow line.)
+    snowC = max(snowC, cold * smoothstep(2.0, 16.0, vGroundY) * smoothstep(0.34, 0.56, wtNoise(wp / 260.0) * 0.6 + wtNoise(wp / 58.0) * 0.4) * (1.0 - vBlend.z * 0.7) * 0.92 * (1.0 - smoothstep(101000.0, 104000.0, max(abs(wp.x), abs(wp.y)))));
+    snowC = max(snowC, uSnowCover * smoothstep(0.5, 3.0, vGroundY) * mix(0.75, 1.0, tint) * (1.0 - vBlend.z * 0.55)) * (1.0 - townK);
     base = mix(base, vec3(0.86, 0.89, 0.95), snowC);
     ${ring}
     // Grain close in.

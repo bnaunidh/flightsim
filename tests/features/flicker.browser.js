@@ -32,6 +32,12 @@
  *      sector gone dark and the red lamps pulsing, under the places' own
  *      limits.
  *
+ *   5. A belly slide down the runway, the first two seconds: under WCAG's
+ *      25% in the views that moved with the wreck, with Reduce flashing on
+ *      and off. Measured before SlideLens (src/features/breakup/crash-view.js):
+ *      Follow 29-53% on, 39-73% off; Cockpit 87%, 99%; Orbit 68%; Wing 31%, 53%.
+ *      Now under 2% everywhere: SLIDE_MAX has the room for another GPU.
+ *
  * WHY THESE NUMBERS. After the fix the four places measure 0.03-0.10% (the
  * cockpit about 0.2%): what is left is a ship's deck markings at 11 km and
  * the odd thin line shimmering as the world slides by. FLICKER_MAX = 0.5% is
@@ -48,6 +54,12 @@
 export const FLICKER_MAX = 0.005;
 export const WCAG_WINDOW_MAX = 0.02;
 export const LIGHTNING_MAX = 0.1;
+export const SLIDE_MAX = 0.08;
+/** [aircraft, m/s, view, Reduce flashing]: the scenes of check 5. */
+export const SLIDES = [
+  ['skylark', 62, 'chase', true], ['skylark', 62, 'chase', false], ['f22', 70, 'chase', true], ['f22', 70, 'chase', false],
+  ['a320', 72, 'chase', true], ['skylark', 62, 'cockpit', true], ['skylark', 62, 'cockpit', false], ['a320', 72, 'orbit', true], ['skylark', 62, 'wing', false],
+];
 
 async function load(path) {
   try {
@@ -189,6 +201,56 @@ export async function check(sim, r, say = () => {}) {
       r.ok(`flicker: Last Flight Out — the dark apron: WCAG flashing under ${pct(WCAG_WINDOW_MAX)} of any 10-degree field`, apron.wcagWindow <= WCAG_WINDOW_MAX, `${pct(apron.wcagWindow)} (area ${pct(apron.wcagArea)})`);
       sim.override = null;
       sim.quitToMenu('main');
+    }
+
+    /* ---- 5. a belly slide on the runway, its first two seconds ---- */
+    {
+      const THREE = await load('../../src/vendor/three.module.js');
+      const comicWas = sim.settings.comicEffects;
+      const isStub = /^\(\)=>\{\}$/.test(String(sim.renderer.render).replace(/\s/g, ''));
+      const stub = sim.renderer.render;
+      const real = (typeof window !== 'undefined' && window.__realRender) || (isStub ? null : stub);
+      if (real) sim.renderer.render = real;
+      sim.applySetting('comicEffects', false);
+      sim.autoPauseOnHide = false;
+      const spot = { x: -420, z: 0 };
+      for (const [id, fwd, view, reduce] of SLIDES) {
+        say(`flicker: a belly slide, ${id}, ${view}`);
+        sim.applySetting('reduceFlashing', reduce);
+        await sim.startMode('free', { airborne: true, time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 0, aircraft: id });
+        sim.step(0.3);
+        sim.rig.setMode(view);
+        sim.step(0.3);
+        const ac = sim.aircraft;
+        const y = T.heightAt(spot.x, spot.z);
+        ac.reset({ pos: new THREE.Vector3(spot.x - 40, 0, spot.z), headingDeg: 90, speed: fwd, altAGL: 3, engineOn: true, gearDown: false });
+        ac.quat.setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0, 'YXZ'));
+        ac.pos.y = y + 3;
+        ac.vel.set(fwd, 0, 0);
+        ac.onGround = false;
+        ac._spawnOnGround = false;
+        sim.rig.initialised = false;
+        sim.override = { pitch: 0, roll: 0, yaw: 0, throttle: 0.3 };
+        for (let i = 0; i < 40; i++) {
+          sim.update(1 / 60);
+          clearTimeout(sim._crashDebriefT);
+        }
+        sim.override = null;
+        ac.pos.set(spot.x, y + 1.4, spot.z);
+        ac.vel.set(fwd, -2, 0);
+        if (!ac.crashed) ac.crash('The belly hit the ground', { worldPoint: ac.pos.clone().setY(y + 0.3), part: 'fuselage' });
+        clearTimeout(sim._crashDebriefT);
+        await new Promise((f) => setTimeout(f, 30));
+        const m = await P.measure(sim, { frames: 60, fps: 30, warm: 0, raycast: false });
+        clearTimeout(sim._crashDebriefT);
+        const drawn = !!real && m.meanLum.max > 0.01;
+        r.ok(`flicker: a belly slide on the runway, ${id}, ${view}, Reduce flashing ${reduce ? 'on' : 'off'}: under ${pct(SLIDE_MAX)} of any 10-degree field`, drawn && m.wcagWindow <= SLIDE_MAX,
+          `${pct(m.wcagWindow)} (area ${pct(m.wcagArea)})${drawn ? '' : ' NOT drawn'}`);
+        sim.quitToMenu('main');
+      }
+      sim.applySetting('comicEffects', comicWas === true);
+      sim.applySetting('reduceFlashing', true);
+      sim.renderer.render = stub;
     }
   } catch (e) {
     r.ok('flicker: the probe ran', false, String((e && e.stack) || e).slice(0, 400));

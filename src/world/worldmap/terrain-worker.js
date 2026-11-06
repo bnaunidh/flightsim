@@ -21,6 +21,7 @@
 import { buildTileData } from './tiles.js';
 import { placeCell } from './flora.js';
 import { FARLANDS } from './farlands.js';
+import { sculpt } from './biomes.js';
 import { placeTownCell, cellBuffers, TOWN_TIERS } from './town-grid.js';
 
 let FLORA_CTX = null;
@@ -36,6 +37,7 @@ self.onmessage = async (ev) => {
     await ready;
     if (msg.op === 'init') {
       if (msg.def.farlands) msg.def._outer = FARLANDS;
+      if (msg.def.sculpted) msg.def._sculpt = sculpt;
       T.applyMap(msg.def);
       FLORA_CTX = msg.flora || null;
       if (T.clearPlatforms) T.clearPlatforms();
@@ -66,7 +68,7 @@ self.onmessage = async (ev) => {
       const t0 = performance.now();
       const data = buildTileData(T, msg.cx, msg.cz, msg.size, msg.seg);
       const ms = performance.now() - t0;
-      const transfer = data ? [data.pos.buffer, data.nrm.buffer, data.blend.buffer, data.uv.buffer, ...(data.cover ? [data.cover.buffer, data.urban.buffer] : [])] : [];
+      const transfer = data ? [data.pos.buffer, data.nrm.buffer, data.blend.buffer, data.uv.buffer, ...(data.cover ? [data.cover.buffer, data.urban.buffer, data.biome.buffer] : [])] : [];
       self.postMessage({ op: 'tile', gen: msg.gen, key: msg.key, data, ms }, transfer);
     }
   } catch (err) {

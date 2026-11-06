@@ -209,6 +209,18 @@ export function deckSkin(h, quads, opts) {
  * The reveal round every pane (skin thickness, from the inner skin to the
  * glass) and the glass itself, both sides. Hull units.
  */
+function inQuad(c, z, s) {
+  let sign = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = c[i];
+    const b = c[(i + 1) % 4];
+    const d = Math.sign((b[0] - a[0]) * (s - a[1]) - (b[1] - a[1]) * (z - a[0]));
+    if (d && sign && d !== sign) return false;
+    sign = d || sign;
+  }
+  return true;
+}
+
 export function revealsAndGlass(h, quads, { inset, glassOff = 0.02, steps = 6 }) {
   const pos = [];
   const idx = [];
@@ -226,6 +238,8 @@ export function revealsAndGlass(h, quads, { inset, glassOff = 0.02, steps = 6 })
       for (let e = 0; e < 4; e++) {
         const a = c[e];
         const b = c[(e + 1) % 4];
+        // An edge inside another pane (the Boeing nose's sliding window laps its windscreen): no wall across that glass.
+        if (quads.some((o) => o !== q && inQuad(o.quad, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2))) continue;
         const base = pos.length / 3;
         for (let i = 0; i <= steps; i++) {
           const t = i / steps;

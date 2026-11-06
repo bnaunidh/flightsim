@@ -1294,7 +1294,7 @@ function A_refresh() { A.refreshRunways(); }
             const z = t[k + 2];
             st.trees++;
             if (t[k + 5] === 0) st.palms++;
-            if (t[k + 5] === 2) st.conifers++;
+            if (FL.SPECIES[t[k + 5]] === 'conifer' || FL.SPECIES[t[k + 5]] === 'snowpine') st.conifers++;
             if (T.heightAt(x, z) < 2) problems.push(`in the sea at ${x.toFixed(0)}, ${z.toFixed(0)}`);
             if (T.flatAt(x, z)) problems.push(`on made ground at ${x.toFixed(0)}, ${z.toFixed(0)}`);
             for (const a of fieldsAndLanes) if (Math.abs(z - a.z) < 400 && Math.abs(x - a.x) < a.length / 2 + 3000) problems.push(`in ${a.code}'s lanes`);

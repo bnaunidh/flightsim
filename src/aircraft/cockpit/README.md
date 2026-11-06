@@ -256,3 +256,16 @@ lever count, condition levers, HUD); gear lever and levers move; chin windows sa
 lines. Browser (cockpits.browser.js): b777, q400, c17, b1b, a10 and uh60 join the game-side check.
 Measured on the node build: airliners 48–53 draws / 19–25k triangles, jets 24–33 / 10–12k, helicopters
 26–30 / 12–33k (the Chinook's long hull is the biggest room).
+
+## 7. Dressed, and checked moving (cockpits-2, 2026-11-05)
+
+`src/features/cockpit-dress.js` + `cockpit-dress/art.js`, loaded with the features (never in the first-load bundle),
+finishes the room the first time the player sits in it. It reads `userData.layout` and `userData.printed`, which the
+builders publish. Fill (emissive only, no new program), plates and live dials painted into the panel's canvas
+(`panel.faceGlow` keeps them dark at night), the overhead and pedestal reprinted per maker, padded walls and door cards.
+2 draws at most on Low, 3 elsewhere.
+
+"COCKPIT DOESNT EVEN UPDATE": `tests/features/cockpit-dress.browser.js` changes the state through the game's own
+controls and watches each screen's canvas, its upload and the frame buffer, every part flagged moving and the needle
+batches, High and Low, clean and realistic, and after `remountCockpit()`. Across the whole fleet nothing was stuck but
+the Skylark's suction needle (fixed); the autopilot panel shows what is SET, so it stands until someone sets it.

@@ -89,6 +89,49 @@ ok('setReduceFlashing(false) turns it off and (true) back on', FS.setReduceFlash
   T.seaCut(null, null, cam);
 }
 
+/* ------------------------------------------------- the slide's still lens -- */
+
+{
+  const { slideStand, slideLook, VIEW, SlideLens } = await imp('src/features/breakup/crash-view.js');
+  const out = slideStand(100, 50, 60, 0, 44, 10, 0, {});
+  ok('the slide lens stands back along the wreck\'s path', Math.abs(out.x - 56) < 1e-6 && Math.abs(out.z - 50) < 1e-6, `${out.x}, ${out.z}`);
+  ok('...and up from the ground by its share of the distance, or as high as the view already was', Math.abs(out.y - (10 + 44 * VIEW.slideRise)) < 1e-6 && slideStand(0, 0, 1, 0, 44, 0, 30, {}).y === 30);
+  const held = new THREE.Vector3(0, 0, -1);
+  const off = (deg) => new THREE.Vector3(Math.sin((deg * Math.PI) / 180), 0, -Math.cos((deg * Math.PI) / 180));
+  slideLook(held, off(10), 0.3, 0.2, 1 / 30);
+  ok('the wreck inside the dead zone turns the lens not at all', held.z === -1 && held.x === 0, held.x);
+  const was = held.clone();
+  slideLook(held, off(45), 0.3, 0.2, 1 / 30);
+  const turned = was.angleTo(held);
+  ok('out of it, the lens turns, slowly: never over its rate', turned > 0 && turned <= (0.2 / 30) * 1.001, turned);
+  // A rig and a camera of nothing but what the lens touches.
+  const cam = new THREE.PerspectiveCamera(70, 1.5, 0.08, 1000);
+  cam.position.set(-20, 6, 0);
+  const rig = { mode: 'chase', chaseVel: new THREE.Vector3(30, 0, 0), chasePos: new THREE.Vector3(), lookAt: new THREE.Vector3(), crashStand: () => 44, setMode(m) { this.mode = m; } };
+  const sim = { rig, aircraft: { vel: new THREE.Vector3(60, 0, 0), quat: new THREE.Quaternion() } };
+  let x = 0;
+  const lens = new SlideLens(sim, (w) => { w.x = x; w.y = 1; w.z = 0; }, () => 0);
+  FS.setReduceFlashing(true);
+  lens.update(1 / 30, cam);
+  const p0 = cam.position.clone();
+  const q0 = cam.quaternion.clone();
+  ok('the first frame is the cut: to the stand, behind the wreck, its velocity gone', Math.abs(p0.x + 44) < 1e-6 && rig.chaseVel.length() === 0 && cam.near === 0.4, p0.x);
+  for (let i = 0; i < 60; i++) {
+    x += 1;
+    lens.update(1 / 30, cam);
+  }
+  ok('with Reduce flashing the lens does not move at all while the wreck slides straight away', cam.position.equals(p0) && Math.abs(cam.quaternion.dot(q0)) > 0.999999, cam.position.x);
+  FS.setReduceFlashing(false);
+  const p1 = cam.position.clone();
+  lens.update(1, cam);
+  ok('with it off it goes after it at a walk', Math.abs(cam.position.distanceTo(p1) - VIEW.slideDrift) < 1e-6 && Math.abs(rig.chaseVel.length() - VIEW.slideDrift) < 1e-6, cam.position.distanceTo(p1));
+  FS.setReduceFlashing(true);
+  const seat = { ...rig, mode: 'cockpit', calls: [], setMode(m) { this.mode = m; this.calls.push(m); } };
+  const l2 = new SlideLens({ rig: seat, aircraft: sim.aircraft }, (w) => { w.x = 0; w.y = 1; w.z = 0; }, () => 0);
+  l2.update(1 / 30, cam);
+  ok('from the seat it goes outside, and the seat is given back when the flight is over', seat.mode === 'chase' && (l2.end(), l2.end(), seat.mode === 'cockpit') && seat.calls.length === 2, seat.calls.join());
+}
+
 /* ------------------------------------------------------------- lights -- */
 
 /** Flashes (WCAG: pairs of opposing changes of >= 0.1) in the worst second, and the hardest single step. */

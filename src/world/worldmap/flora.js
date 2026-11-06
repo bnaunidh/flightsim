@@ -12,15 +12,18 @@
  * cells in range by copying each cell's ready-made matrices into place, so a
  * new cell costs a memcpy, not a rebuild.
  *
- * The species are the region's (Scenery's FLORA mixes: palms in the south
- * and the Sunstring, broadleaf and conifer on the mainland, conifer and
- * birch in the north), the shapes are Scenery's own trees, and where they
+ * The species are the biome's (worldmap/biomes.js BIOME_MIX below), else the
+ * region's (Scenery's FLORA mixes: palms in the south, broadleaf and conifer
+ * on the mainland), the shapes Scenery's own trees and the biomes' (worldmap/
+ * biome-trees.js). A species with nothing in range is no draw call, and no
+ * biome grows more than four or five, so twelve species cost what six did. Where they
  * stand follows its rules: not on the beach, not on cliffs, not on a field,
  * a town or a road, thinning out up a mountain and none on the high rock.
  * Nothing is planted in a runway's approach lanes.
  *
  * TIERS (per graphics quality): how far out, and how many a cell. Low is
  * very sparse and close in; the counts are capped so the pool never grows.
+ * On Low the trees themselves are cards in one draw (features/world-preview.js).
  *
  * The trees the aeroplane could actually hit — the cells round it, while it
  * is low — are made solid (terrain.js obstacles) and taken away again when
@@ -31,7 +34,8 @@
  * kilometres from its mesh's own origin (see render/render-origin.js).
  */
 import * as THREE from '../../vendor/three.module.js';
-import { coverAt, forestNoise } from './landcover.js';
+import { coverAt, forestNoise, climateAt } from './landcover.js';
+import { mangroveAt, alpineAt } from './biomes.js';
 
 export const CELL = 2048;
 export const ORIGIN_SNAP = 16384;
@@ -62,9 +66,38 @@ export const MIXES = Object.freeze({
   boreal: { coast: [0, 0.04, 0.58, 0.24, 0.14, 0], hill: [0, 0.02, 0.8, 0.06, 0.12, 0] },
 });
 export const REGION_FLORA = Object.freeze({ sound: 'tropical', westreach: 'temperate', sunstring: 'tropical', sands: 'tropical', skerries: 'boreal', outposts: 'boreal' });
-/** Species proportions, as Scenery's addTrees: width and height factor. */
-const SHAPE = [{ w: 0.8, h: 1.0 }, { w: 0.95, h: 0.9 }, { w: 0.72, h: 1.15 }, { w: 1.05, h: 0.42 }, { w: 0.5, h: 1.1 }, { w: 1.2, h: 0.62 }];
-export const SPECIES = ['palm', 'broadleaf', 'conifer', 'scrub', 'birch', 'thorn'];
+/**
+ * Species proportions, as Scenery's addTrees: width and height factor. The first six are Scenery's, the rest the
+ * biomes' own (worldmap/biome-trees.js): those carry a real height (`m`), the same near and far.
+ */
+const SHAPE = [
+  { w: 0.8, h: 1.0 }, { w: 0.95, h: 0.9 }, { w: 0.72, h: 1.15 }, { w: 1.05, h: 0.42 }, { w: 0.5, h: 1.1 }, { w: 1.2, h: 0.62 },
+  { w: 0.8, m: 27 }, { w: 1.3, m: 9.5 }, { w: 0.3, m: 7.5 }, { w: 0.62, m: 15 }, { w: 1, m: 9 }, { w: 0.95, m: 13 },
+];
+export const SPECIES = ['palm', 'broadleaf', 'conifer', 'scrub', 'birch', 'thorn', 'hardwood', 'acacia', 'cactus', 'snowpine', 'mangrove', 'autumn'];
+const KIND = Object.fromEntries(SPECIES.map((s, i) => [s, i]));
+
+/** The biomes' species, as { name: share }; `mix` turns one into a list MIXES-style (coast, then inland). */
+const mix = (o) => SPECIES.map((s) => o[s] || 0);
+const BIOME_MIX = Object.freeze({
+  desert: { coast: mix({ palm: 0.55, cactus: 0.3, scrub: 0.15 }), hill: mix({ cactus: 0.72, scrub: 0.2, palm: 0.08 }) },
+  savanna: { coast: mix({ acacia: 0.62, scrub: 0.26, palm: 0.12 }), hill: mix({ acacia: 0.76, scrub: 0.24 }) },
+  jungle: { coast: mix({ hardwood: 0.5, palm: 0.26, broadleaf: 0.24 }), hill: mix({ hardwood: 0.72, broadleaf: 0.22, palm: 0.06 }) },
+  mangrove: { coast: mix({ mangrove: 0.92, palm: 0.08 }), hill: mix({ mangrove: 0.92, palm: 0.08 }) },
+  autumn: { coast: mix({ autumn: 0.62, conifer: 0.12, birch: 0.14, scrub: 0.12 }), hill: mix({ autumn: 0.68, conifer: 0.2, birch: 0.12 }) },
+  snowy: { coast: mix({ snowpine: 0.8, conifer: 0.14, scrub: 0.06 }), hill: mix({ snowpine: 0.84, conifer: 0.16 }) },
+  alpine: { coast: mix({ conifer: 0.7, snowpine: 0.3 }), hill: mix({ conifer: 0.7, snowpine: 0.3 }) },
+});
+
+/** Pick a list by weight: the first biome whose share of `q` covers it, else the region's own. */
+function chooseMix(q, weights, fallback) {
+  let at = 0;
+  for (let i = 0; i < weights.length; i += 2) {
+    at += weights[i + 1];
+    if (q < at) return weights[i];
+  }
+  return fallback;
+}
 
 function rng(seed) {
   let s = seed >>> 0;
@@ -95,7 +128,7 @@ export function placeCell(T, ctx, ix, iz, perCell, mode = 'trees') {
   if (!isl.length) return null;
   // Islands that bring their own trees (none since the land cover: the hub's too follows its forests).
   const skip = new Set(ctx.skipIslands || []);
-  const cov = new Float32Array(8);
+  const cov = new Float32Array(15);
   const roads = (ctx.roads || []).filter((r) => r.box && r.box[1] > x0 - 40 && r.box[0] < x0 + CELL + 40 && r.box[3] > z0 - 40 && r.box[2] < z0 + CELL + 40);
   const lanes = (ctx.airports || []).filter((a) => Math.abs(a.z - (z0 + CELL / 2)) < CELL / 2 + 500 && Math.abs(a.x - (x0 + CELL / 2)) < CELL / 2 + a.length / 2 + 3500);
   const R = rng(((ix * 73856093) ^ (iz * 19349663) ^ 0x5bd1e995) >>> 0);
@@ -109,6 +142,7 @@ export function placeCell(T, ctx, ix, iz, perCell, mode = 'trees') {
     const r1 = R();
     const r2 = R();
     const r3 = R();
+    const r4 = R();
     // Which island is this, and is it one with groves of its own?
     let home = null;
     let best = Infinity;
@@ -118,7 +152,8 @@ export function placeCell(T, ctx, ix, iz, perCell, mode = 'trees') {
     }
     if (!home || best > 1.45 || skip.has(home.name)) continue;
     // Cards stand only in forest: most of the sea of tries is thrown out here, before any height is asked.
-    if (cards && forestNoise(x, z) < 0.31) continue;
+    // (The Sunstring's jungle and mangroves close over ground that noise leaves open.)
+    if (cards && forestNoise(x, z) < 0.31 && home.region !== 'sunstring') continue;
     let lane = false;
     for (const a of lanes) if (Math.abs(z - a.z) < 420 && Math.abs(x - a.x) < a.length / 2 + 3200) lane = true;
     if (lane) continue;
@@ -132,7 +167,17 @@ export function placeCell(T, ctx, ix, iz, perCell, mode = 'trees') {
     // Where the land cover has woods: densely in a forest, a few in the heath and along the farmland, odd ones elsewhere.
     const c = coverAt(x, z, h, slope, false, cov);
     // The cards fill the forests only (worldmap/tree-cards.js), as densely as the tier allows.
-    const want = cards ? c[4] * 0.99 + c[5] * 0.04 : c[4] * 0.97 + c[5] * 0.07 + c[3] * 0.025 + c[6] * 0.05 + c[1] * 0.015;
+    // The biomes (worldmap/biomes.js): mangroves stand thick in the mud, flat-tops dot the grass, a cactus here and there.
+    const desert = c[11];
+    const savanna = c[12];
+    const jungle = c[13];
+    const autumn = c[14];
+    const { cold } = climateAt(z);
+    const mangrove = mangroveAt(x, z, h, slope, jungle);
+    const alpine = alpineAt(h, cold);
+    let want = cards ? c[4] * 0.99 + c[5] * 0.04 + mangrove * 0.9 + savanna * 0.05 : c[4] * 0.97 + c[5] * 0.07 + c[3] * 0.025 + c[6] * (1 - desert) * 0.05 + c[1] * 0.015 + mangrove * 0.8 + savanna * 0.16 + desert * 0.022;
+    // Thin up towards the tree line.
+    want *= 1 - alpine * 0.7;
     if (r1 > want) continue;
     let onRoad = false;
     for (const rd of roads) {
@@ -150,17 +195,27 @@ export function placeCell(T, ctx, ix, iz, perCell, mode = 'trees') {
     }
     if (onRoad) continue;
     const band = MIXES[REGION_FLORA[home.region] || 'tropical'];
-    const mix = h < 25 ? band.coast : band.hill;
-    const total = mix.reduce((a, b) => a + b, 0);
+    const list = chooseMix(r4, [
+      BIOME_MIX.mangrove, Math.min(1, mangrove * 1.6),
+      BIOME_MIX.alpine, alpine > 0.02 ? 0.3 + alpine * 0.7 : 0,
+      BIOME_MIX.desert, desert,
+      BIOME_MIX.savanna, savanna,
+      BIOME_MIX.jungle, jungle,
+      BIOME_MIX.autumn, autumn * 0.92,
+      BIOME_MIX.snowy, cold,
+    ], band);
+    const spread = h < 25 ? list.coast : list.hill;
+    const total = spread.reduce((a, b) => a + b, 0);
     let q = r2 * total;
     let kind = 0;
-    for (let s = 0; s < mix.length; s++) {
-      if (mix[s] > 0 && q < mix[s]) { kind = s; break; }
-      q -= mix[s];
-      kind = s;
+    for (let s = 0; s < spread.length; s++) {
+      if (spread[s] > 0 && q < spread[s]) { kind = s; break; }
+      q -= spread[s];
+      kind = spread[s] > 0 ? s : kind;
     }
     const nominal = cards ? (h > 200 ? 15 : 17) : h > 200 ? 11 : 9.5;
-    const height = nominal * (0.7 + r3 * 0.6) * SHAPE[kind].h;
+    // Smaller and fewer towards the tree line.
+    const height = (SHAPE[kind].m || nominal * SHAPE[kind].h) * (0.7 + r3 * 0.6) * (1 - alpine * 0.4);
     out.push(x, h, z, height, r1 * 6.2832 + r3 * 3.1, kind);
   }
   return new Float32Array(out);
@@ -184,6 +239,9 @@ export function floraContext(D) {
 export const WORKER_TIMEOUT_MS = 4000;
 
 const _c = new THREE.Color();
+const NEUTRAL = [1, 1, 1];
+/** Gold, amber, orange, scarlet, russet, and the odd tree still green (multiplied over the pale gold). */
+const AUTUMN = [[1, 1, 0.92], [1, 0.84, 0.66], [1, 0.66, 0.46], [0.96, 0.42, 0.3], [0.72, 0.42, 0.3], [0.42, 0.62, 0.3]];
 
 export class Flora {
   /**
@@ -224,10 +282,20 @@ export class Flora {
     this.span = Math.ceil(this.tier.radius / CELL) * 2 + 2;
     // The most cells a circle of the tier's radius can touch (not the whole square round it): the pool's memory.
     const maxCells = Math.min(this.span * this.span, Math.ceil(Math.PI * (this.tier.radius / CELL + 1.5) ** 2));
-    this.meshes = SPECIES.map((name, kind) => {
-      const mat = layer ? layer.material(kind) : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, side: kind === 0 ? THREE.DoubleSide : THREE.FrontSide });
-      const cap = Math.ceil(maxCells * this.tier.perCell * (kind === 0 || kind === 1 || kind === 2 ? 0.8 : 0.45));
-      const m = new THREE.InstancedMesh(layer ? layer.geometry(kind) : treeGeometry(kind), mat, cap);
+    /*
+     * `layer.merged`: every species in ONE InstancedMesh of one geometry, its
+     * picture chosen per instance (tree-cards.js mergedCardMaterial reads aKind):
+     * one draw call however many species are in sight. Filled in cell order, not
+     * by species, so it needs no more than one cell's plan times the cells.
+     */
+    this.merged = !!(layer && layer.merged);
+    const names = this.merged ? ['all'] : SPECIES;
+    this.meshes = names.map((name, kind) => {
+      const mat = layer ? layer.material(kind) : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, side: kind === 0 || kind === KIND.acacia ? THREE.DoubleSide : THREE.FrontSide });
+      const cap = Math.ceil(maxCells * this.tier.perCell * (this.merged ? 1 : kind === 0 || kind === 1 || kind === 2 ? 0.8 : 0.45));
+      const geo = layer ? layer.geometry(kind) : treeGeometry(kind);
+      if (this.merged) geo.setAttribute('aKind', new THREE.InstancedBufferAttribute(new Float32Array(cap), 1).setUsage(THREE.DynamicDrawUsage));
+      const m = new THREE.InstancedMesh(geo, mat, cap);
       m.name = `world-${layer ? layer.id : 'trees'}:${name}`;
       m.count = 0;
       m.castShadow = this.tier.shadows;
@@ -291,14 +359,16 @@ export class Flora {
    */
   blocksFor(c) {
     if (c.blocks) return c.blocks;
-    const per = SPECIES.map(() => []);
+    // One draw for all of them, or one a species.
+    const per = this.merged ? [[]] : SPECIES.map(() => []);
     const t = c.trees;
-    for (let i = 0; i < t.length; i += 6) per[t[i + 5]].push(i);
+    for (let i = 0; i < t.length; i += 6) per[this.merged ? 0 : t[i + 5]].push(i);
     const bx = c.ix * CELL;
     const bz = c.iz * CELL;
     c.blocks = per.map((list) => {
       const m = new Float32Array(list.length * 16);
       const col = new Float32Array(list.length * 3);
+      const kinds = this.merged ? new Float32Array(list.length) : null;
       for (let n = 0; n < list.length; n++) {
         const i = list[n];
         const h = t[i + 3];
@@ -311,11 +381,15 @@ export class Flora {
         m[o + 12] = t[i] - bx; m[o + 13] = t[i + 1] - 0.4; m[o + 14] = t[i + 2] - bz; m[o + 15] = 1;
         const q = ((Math.sin(t[i] * 3.17 + t[i + 2] * 7.61) * 9631.7) % 1 + 1) % 1;
         const l = 0.88 + q * 0.24;
-        col[n * 3] = l * (0.97 + q * 0.06);
-        col[n * 3 + 1] = l;
-        col[n * 3 + 2] = l * (1.03 - q * 0.08);
+        const kind = t[i + 5];
+        if (kinds) kinds[n] = kind;
+        // Autumn's leaves are one pale gold in the geometry and the picture: each tree its own turn of it.
+        const a = kind === KIND.autumn ? AUTUMN[Math.floor(q * AUTUMN.length * 0.9999)] : NEUTRAL;
+        col[n * 3] = l * (0.97 + q * 0.06) * a[0];
+        col[n * 3 + 1] = l * a[1];
+        col[n * 3 + 2] = l * (1.03 - q * 0.08) * a[2];
       }
-      return { m, col, n: list.length };
+      return { m, col, kinds, n: list.length };
     });
     return c.blocks;
   }
@@ -401,6 +475,7 @@ export class Flora {
           arr[at + k * 16 + 14] += dz;
         }
         mesh.instanceColor.array.set(n === b.n ? b.col : b.col.subarray(0, n * 3), fill[kind] * 3);
+        if (b.kinds) mesh.geometry.attributes.aKind.array.set(n === b.n ? b.kinds : b.kinds.subarray(0, n), fill[kind]);
         fill[kind] += n;
         trees += n;
       });
@@ -417,6 +492,12 @@ export class Flora {
         m.instanceColor.addUpdateRange(0, fill[kind] * 3);
         m.instanceMatrix.needsUpdate = true;
         m.instanceColor.needsUpdate = true;
+        const k = m.geometry.attributes.aKind;
+        if (k) {
+          k.clearUpdateRanges();
+          k.addUpdateRange(0, fill[kind]);
+          k.needsUpdate = true;
+        }
       }
     });
     this.dirty = false;

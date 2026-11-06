@@ -24,6 +24,7 @@
  * second of a flight.
  */
 import * as THREE from '../../vendor/three.module.js';
+import { biomeAt } from './biomes.js';
 
 export const RINGS = [0, 0.22, 0.45, 0.68, 0.88, 1.06, 1.24, 1.45];
 export const SPOKES = 18;
@@ -36,6 +37,10 @@ const COL = {
   scrub: new THREE.Color(0x6e7a4e).convertSRGBToLinear(),
   rock: new THREE.Color(0x7d7a74).convertSRGBToLinear(),
   snow: new THREE.Color(0xe9edf2).convertSRGBToLinear(),
+  dune: new THREE.Color(0xc99f6a).convertSRGBToLinear(),
+  gold: new THREE.Color(0xa98f4e).convertSRGBToLinear(),
+  jungle: new THREE.Color(0x35602f).convertSRGBToLinear(),
+  fall: new THREE.Color(0x9a6a35).convertSRGBToLinear(),
 };
 
 /** One island's polar grid of heights (pure: node runs this too). */
@@ -59,6 +64,19 @@ function colourFor(h, out) {
   if (h > 1250) return out.copy(COL.snow);
   if (h > 320) return out.copy(COL.rock).lerp(COL.scrub, Math.max(0, 1 - (h - 320) / 400) * 0.4);
   return out.copy(COL.grass).lerp(COL.scrub, Math.min(1, h / 320));
+}
+
+/** A point of an island, the colour of its biome (worldmap/biomes.js): a far desert is not a green shape. */
+function biomeTint(x, z, h, out) {
+  if (h < 2) return out;
+  const b = biomeAt(x, z);
+  if (b[0] > 0.01) out.lerp(COL.dune, b[0]);
+  if (b[1] > 0.01) out.lerp(COL.gold, b[1]);
+  if (b[2] > 0.01) out.lerp(COL.jungle, b[2]);
+  if (b[3] > 0.01) out.lerp(COL.fall, b[3] * 0.6);
+  // The cold band under its snow.
+  if (z < -46000) out.lerp(COL.snow, Math.min(1, (-46000 - z) / 10000) * 0.6);
+  return out;
 }
 
 export class Horizon {
@@ -147,7 +165,7 @@ export class Horizon {
         this.pos[v] = x;
         this.pos[v + 1] = y;
         this.pos[v + 2] = z;
-        colourFor(h, c);
+        biomeTint(x, z, h, colourFor(h, c));
         this.col[v] = c.r;
         this.col[v + 1] = c.g;
         this.col[v + 2] = c.b;

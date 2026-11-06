@@ -24,6 +24,8 @@ import './pilot-systems.js';
 import './controllers-hud.js';
 // The cockpit view's snap views (numpad), zoom (wheel, pinch, * and /) and the last look per aircraft.
 import './cockpit-cam.js';
+// What the cockpits are finished with, the first time you sit in one (panels, overhead, walls, a bounced daylight).
+import './cockpit-dress.js';
 import './warnings.js';
 import './bird-strike.js';
 import './explosions.js';

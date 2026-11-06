@@ -11,6 +11,7 @@
  *   { op: 'tile', seq, key, x0, z0, step, n } → { op: 'tile', seq, key, rgba }
  *   { op: 'height', key, x, z }              → { op: 'height', key, h } (the pin's map: land or sea)
  */
+import { sculpt } from '../../world/worldmap/biomes.js';
 import { shadeTile } from './shade.js';
 import { iceShapes } from '../../ui/chart-palette.js';
 
@@ -35,6 +36,7 @@ self.onmessage = async (ev) => {
     await ready;
     if (msg.op === 'init') {
       if (msg.def.farlands) msg.def._outer = OUTER;
+      if (msg.def.sculpted) msg.def._sculpt = sculpt;
       T.applyMap(msg.def);
       if (T.clearPlatforms) T.clearPlatforms();
       STYLE = msg.style;
