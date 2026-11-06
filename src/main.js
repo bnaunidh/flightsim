@@ -3241,9 +3241,10 @@ class Game {
     const params = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
     const force = params.get('weak');
     if (force === '0') return null;
-    if (s.weakDevice !== null && s.weakDevice !== undefined && force !== '1') return null;
+    const again = s.qualityAuto && detectWeakDevice(deviceFacts()).reasons.includes('ios');
+    if (s.weakDevice !== null && s.weakDevice !== undefined && force !== '1' && !(again && !s.weakDevice)) return null;
     // Only a first boot (or a save from before this existed that never picked a tier) is asked.
-    if (force !== '1' && hasSavedSettings() && !(s.qualityAuto && !s.qualityAutoPicked)) {
+    if (force !== '1' && !again && hasSavedSettings() && !(s.qualityAuto && !s.qualityAutoPicked)) {
       s.weakDevice = false;
       return null;
     }

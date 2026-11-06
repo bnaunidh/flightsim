@@ -3,7 +3,7 @@
  * the way it went, in what that ground is (./slide.js): a dark trench through
  * grass, a pale trough through snow, a black scrape along concrete, a white
  * scratch on ice. One mesh with room for a fixed number of stations, its soft
- * edges fading out through the vertex alpha. Loaded at the first crash on land,
+ * edges fading out through the vertex alpha. Loaded a few seconds into a flight,
  * and nothing is drawn or allocated again after that: a ribbon only grows.
  *
  * Every station keeps its crash time, so the instant replay can show the
@@ -165,6 +165,12 @@ export class Scars {
 
   debug() {
     return { stations: this.n, cap: this.cap, visible: this.mesh.visible };
+  }
+
+  /** Compile and upload ahead of the crash (features/breakup.js warmLazy): a program links on its first draw otherwise. */
+  warm(renderer, camera, scene) {
+    renderer.compile(this.mesh, camera, scene);
+    if (this.tex) renderer.initTexture(this.tex);
   }
 
   dispose() {

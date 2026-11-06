@@ -1,12 +1,8 @@
 /**
  * Is this a weak computer? (The Chromebook pass, 2026-10-30.)
  *
- * A school Chromebook -- a Celeron with two cores, 4 GB, Intel UHD 600 -- used
- * to get the default tier (High) and the Auto probe at its first boot: forty
- * timed frames of the High world, each of them a hitch, before the game
- * dropped it to Low anyway. Tomm1z's viewers were told to try the game on
- * theirs, and the class demo runs on them. So the first boot asks the cheap
- * questions first, and a computer that answers "weak" to any of them starts
+ * A weak machine used to get High and the Auto probe at its first boot. So
+ * the first boot asks cheap questions, and one that answers "weak" to any starts
  * at Low with Performance mode on and no probe at all. The player can turn
  * it off in Settings > Graphics; the answer is kept in the settings, so it is
  * asked once.
@@ -32,8 +28,10 @@ export const WEAK_GPU = [
  * deviceMemory (GB; Chrome caps the report at 8), renderer (the GPU's
  * name), saveData (the Data Saver flag). Any one reason is enough.
  */
-export function detectWeakDevice({ ua = '', hardwareConcurrency = null, deviceMemory = null, renderer = '', saveData = false } = {}) {
+export function detectWeakDevice({ ua = '', hardwareConcurrency = null, deviceMemory = null, renderer = '', saveData = false, touchPoints = 0 } = {}) {
   const reasons = [];
+  // An iPad says it is a Mac.
+  if (/iPad|iPhone/.test(ua) || (/Macintosh/.test(ua) && touchPoints > 1)) reasons.push('ios');
   if (/\bCrOS\b/.test(ua)) reasons.push('chromeos');
   if (typeof hardwareConcurrency === 'number' && hardwareConcurrency > 0 && hardwareConcurrency <= 4) reasons.push(`cores:${hardwareConcurrency}`);
   if (typeof deviceMemory === 'number' && deviceMemory > 0 && deviceMemory <= 4) reasons.push(`memory:${deviceMemory}`);
@@ -73,6 +71,7 @@ export function deviceFacts(nav = typeof navigator !== 'undefined' ? navigator :
     deviceMemory: typeof nav.deviceMemory === 'number' ? nav.deviceMemory : null,
     renderer: gpuRendererName(doc),
     saveData: !!(conn && conn.saveData),
+    touchPoints: nav.maxTouchPoints || 0,
   };
 }
 

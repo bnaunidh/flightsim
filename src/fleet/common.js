@@ -81,22 +81,55 @@ export function registerPart(model,id,label,nodes,{massKg=10,dependsOn=null}={})
 function isVisible(node,stop) {
   for(let n=node;n&&n!==stop;n=n.parent)if(!n.visible)return false;return true;
 }
-function geometryPoints(model,nodes,relative=new THREE.Matrix4(),opaque=false) {
+/*
+ * The points a set of meshes has, each once: the first of any that land on the
+ * same spot to four decimals. The crash asks for these on its first frame (an
+ * airliner's whole skin, and each strike part's), so nothing here allocates
+ * for a vertex it has seen before. A Vector3 and a string a vertex was 60 ms of
+ * a 747's crash frame at a school iPad's speed.
+ */
+class SeenPoints {
+  constructor() {this.size=1<<12;this.slots=new Int32Array(this.size);this.keys=new Float64Array(this.size*3);this.n=0;}
+  /** True the first time this rounded point comes by. */
+  add(x,y,z) {
+    if(this.n*2>=this.size)this.grow();
+    const mask=this.size-1,keys=this.keys;
+    let i=(Math.imul(x|0,73856093)^Math.imul(y|0,19349663)^Math.imul(z|0,83492791))&mask;
+    for(;;){
+      const at=this.slots[i];
+      if(!at){keys[this.n*3]=x;keys[this.n*3+1]=y;keys[this.n*3+2]=z;this.slots[i]=++this.n;return true;}
+      const k=(at-1)*3;
+      if(keys[k]===x&&keys[k+1]===y&&keys[k+2]===z)return false;
+      i=(i+1)&mask;
+    }
+  }
+  grow() {
+    const {keys,n}=this;
+    this.size*=2;this.slots=new Int32Array(this.size);this.keys=new Float64Array(this.size*3);this.n=0;
+    for(let i=0;i<n;i++)this.add(keys[i*3],keys[i*3+1],keys[i*3+2]);
+  }
+}
+export function geometryPoints(model,nodes,relative=new THREE.Matrix4(),opaque=false) {
   model.updateWorldMatrix(true,true);
-  const points=[],seen=new Set(),instance=new THREE.Matrix4(),transform=new THREE.Matrix4();
-  const visited=new Set();
+  const points=[],seen=new SeenPoints(),instance=new THREE.Matrix4(),transform=new THREE.Matrix4();
+  const visited=new Set(),e=transform.elements,read=new THREE.Vector3();
   for(const root of nodes)root.traverse(node=>{
     if(visited.has(node)||!node.isMesh||!isVisible(node,model))return;visited.add(node);
     const materials=Array.isArray(node.material)?node.material:[node.material];
     if(opaque&&materials.every(m=>m.transparent))return;
-    const attr=node.geometry.attributes.position;
+    const attr=node.geometry.attributes.position,count=attr.count;
+    const flat=!attr.isInterleavedBufferAttribute&&!attr.normalized&&attr.itemSize===3?attr.array:null;
     for(let k=0;k<(node.isInstancedMesh?node.count:1);k++){
       transform.multiplyMatrices(relative,node.matrixWorld);
       if(node.isInstancedMesh){node.getMatrixAt(k,instance);transform.multiply(instance);}
-      for(let i=0;i<attr.count;i++){
-        const p=new THREE.Vector3().fromBufferAttribute(attr,i).applyMatrix4(transform);
-        const key=`${p.x.toFixed(4)},${p.y.toFixed(4)},${p.z.toFixed(4)}`;
-        if(!seen.has(key)){seen.add(key);points.push(p);}
+      for(let i=0;i<count;i++){
+        let vx,vy,vz;
+        if(flat){vx=flat[i*3];vy=flat[i*3+1];vz=flat[i*3+2];}
+        else{read.fromBufferAttribute(attr,i);vx=read.x;vy=read.y;vz=read.z;}
+        // Vector3.applyMatrix4, unrolled.
+        const w=1/(e[3]*vx+e[7]*vy+e[11]*vz+e[15]);
+        const x=(e[0]*vx+e[4]*vy+e[8]*vz+e[12])*w,y=(e[1]*vx+e[5]*vy+e[9]*vz+e[13])*w,z=(e[2]*vx+e[6]*vy+e[10]*vz+e[14])*w;
+        if(seen.add(Math.round(x*1e4),Math.round(y*1e4),Math.round(z*1e4)))points.push(new THREE.Vector3(x,y,z));
       }
     }
   });return points;
@@ -150,13 +183,17 @@ const SUPPORT_MAX=320,SUPPORT_DIRS=(()=>{const out=[],n=98,g=Math.PI*(3-Math.sqr
   for(let i=0;i<n;i++){const y=1-(i+.5)*2/n,r=Math.sqrt(1-y*y),a=i*g;out.push(new THREE.Vector3(Math.cos(a)*r,y,Math.sin(a)*r));}return out;})();
 export function supportPoints(points,cells=9) {
   if(points.length<=SUPPORT_MAX)return points;
-  const keep=new Set();
-  for(const d of SUPPORT_DIRS){let best=-1,bd=-Infinity;for(let i=0;i<points.length;i++){const v=points[i].dot(d);if(v>bd){bd=v;best=i;}}if(best>=0)keep.add(best);}
+  const keep=new Set(),n=points.length,px=new Float64Array(n),py=new Float64Array(n),pz=new Float64Array(n);
+  for(let i=0;i<n;i++){const p=points[i];px[i]=p.x;py[i]=p.y;pz[i]=p.z;}
+  for(const d of SUPPORT_DIRS){const dx=d.x,dy=d.y,dz=d.z;let best=-1,bd=-Infinity;
+    for(let i=0;i<n;i++){const v=px[i]*dx+py[i]*dy+pz[i]*dz;if(v>bd){bd=v;best=i;}}if(best>=0)keep.add(best);}
   const box=new THREE.Box3().setFromPoints(points),size=box.getSize(new THREE.Vector3()),c=box.getCenter(new THREE.Vector3());
   const cell=Math.max(size.x,size.y,size.z)/cells||1,grid=new Map();
-  for(let i=0;i<points.length;i++){const p=points[i];
-    const k=`${Math.floor((p.x-box.min.x)/cell)},${Math.floor((p.y-box.min.y)/cell)},${Math.floor((p.z-box.min.z)/cell)}`;
-    const far=(p.x-c.x)**2/(size.x*size.x+1e-6)+(p.y-c.y)**2/(size.y*size.y+1e-6)+(p.z-c.z)**2/(size.z*size.z+1e-6);
+  const sx=size.x*size.x+1e-6,sy=size.y*size.y+1e-6,sz=size.z*size.z+1e-6;
+  for(let i=0;i<n;i++){
+    // A cell's three numbers are small and never negative: one number is key enough.
+    const k=Math.floor((px[i]-box.min.x)/cell)*65536+Math.floor((py[i]-box.min.y)/cell)*256+Math.floor((pz[i]-box.min.z)/cell);
+    const far=(px[i]-c.x)**2/sx+(py[i]-c.y)**2/sy+(pz[i]-c.z)**2/sz;
     const g=grid.get(k);if(!g||far>g.far)grid.set(k,{i,far});}
   for(const g of grid.values())keep.add(g.i);
   return [...keep].sort((a,b)=>a-b).slice(0,SUPPORT_MAX*2).map(i=>points[i]);

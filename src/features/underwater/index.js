@@ -40,6 +40,8 @@ import { waterLook } from './tint.js';
 export const SURFACE = { in: -0.02, out: 0.04 };
 
 const _sun = new THREE.Vector3();
+/** The kinds of lamp a program counts (holdLamps). */
+const LAMPS = { PointLight: THREE.PointLight, SpotLight: THREE.SpotLight, DirectionalLight: THREE.DirectionalLight, HemisphereLight: THREE.HemisphereLight };
 
 export class Underwater {
   constructor(sim, { quality = 'high', keep = [], focus = null } = {}) {
@@ -94,8 +96,10 @@ export class Underwater {
     this.laid = false;
     this.bubbleT = 0;
     this.touched = false;
+    this.recheck = 0.5;
     if (focus) this.placeBed(focus.x, focus.z);
     this.lights = [];
+    this.lamps = new Map();
     this.before = (renderer, scene, camera) => this.beforeDraw(renderer, scene, camera);
     this.after = () => this.afterDraw();
     this.prevBefore = this.scene.onBeforeRender;
@@ -105,20 +109,64 @@ export class Underwater {
     this.compile();
   }
 
-  /** Everything compiled ahead of the moment it is wanted: a hitch at the waterline is the one place it would show. */
-  compile() {
-    const { sim } = this;
-    if (!sim.renderer || !sim.renderer.compileAsync || !sim.camera) return;
+  /**
+   * Everything compiled ahead of the moment it is wanted: a hitch at the
+   * waterline is the one place it would show. Compiled with the lights the
+   * scene has now, which are the lights it will be drawn with (holdLamps).
+   */
+  compile(wait = true) {
+    const { sim, scene } = this;
+    const r = sim.renderer;
+    if (!r || !r.compileAsync || !sim.camera) return;
     this.root.visible = true;
-    const was = this.scene.onBeforeRender;
+    const was = scene.onBeforeRender;
     try {
-      const p = sim.renderer.compileAsync(this.root, sim.camera, this.scene);
-      if (p && p.catch) p.catch(() => {});
+      if (wait) {
+        const p = r.compileAsync(this.root, sim.camera, scene);
+        if (p && p.catch) p.catch(() => {});
+      } else r.compile(this.root, sim.camera, scene);
     } catch (e) {
       /* it will compile on the first draw instead */
     }
-    this.scene.onBeforeRender = was;
+    scene.onBeforeRender = was;
     this.root.visible = false;
+  }
+
+  /**
+   * The world goes out of view at the waterline, and the lamps in it with it.
+   * A program is keyed on how many lights are lit, so that used to ask for a
+   * new program for every material still in view: the aeroplane's skin, its
+   * pieces, the sea bed. An airliner's clipped skin (planes of its own, which
+   * three's compile() cannot warm) stalled the first frame under water for
+   * 1,134 ms on a Mac. So a dark lamp of the same kind stands in for each one
+   * hidden: the same count, the same programs, and nothing to link.
+   */
+  holdLamps(hidden) {
+    const want = new Map();
+    for (const c of hidden) {
+      c.traverseVisible((o) => {
+        if (o.isLight) want.set(o.type, (want.get(o.type) || 0) + 1);
+      });
+    }
+    for (const [type, pool] of this.lamps) pool.forEach((l, i) => (l.visible = i < (want.get(type) || 0)));
+    for (const [type, n] of want) {
+      const Lamp = LAMPS[type];
+      if (!Lamp) continue;
+      if (!this.lamps.has(type)) this.lamps.set(type, []);
+      const pool = this.lamps.get(type);
+      while (pool.length < n) {
+        const lamp = new Lamp(0xffffff, 0);
+        pool.push(lamp);
+        this.root.add(lamp);
+      }
+    }
+  }
+
+  /** Does beforeDraw hide this child of the scene? */
+  hides(c) {
+    if (!c.visible || c.isLight || this.keep.has(c)) return false;
+    // An empty anchor (the sun's target) is not drawn anyway, and a light may be pointing at it.
+    return !(c.type === 'Object3D' && !c.children.length);
   }
 
   placeBed(x, z) {
@@ -136,6 +184,12 @@ export class Underwater {
   update(dt, cam, wreckAt, dive) {
     this.time += dt;
     this.shared.time.value = this.time;
+    // Lamps go out as a wreck goes down, and a program is keyed on how many are lit: looked over twice a second
+    // until the lens is under. Lookups, unless something did change, and then it links here and not at the waterline.
+    if (!this.on && (this.recheck -= dt) <= 0) {
+      this.recheck = 0.5;
+      this.compile(false);
+    }
     if (cam && (!this.laid || this.bed.nearEdge(cam.position.x, cam.position.z))) this.placeBed(cam.position.x, cam.position.z);
     // What comes off a wreck on its way down, and off the bottom when it lands.
     if (wreckAt && wreckAt.y < -0.5) {
@@ -203,16 +257,15 @@ export class Underwater {
     this.shared.eye.value.copy(camera.position);
     const L = this.look;
     // The world above the water, away.
-    const keep = this.keep;
     const hidden = this.hidden;
     hidden.length = 0;
     for (const c of scene.children) {
-      if (!c.visible || c.isLight || keep.has(c)) continue;
-      // An empty anchor (the sun's target) is not drawn anyway, and a light may be pointing at it.
-      if (c.type === 'Object3D' && !c.children.length) continue;
-      c.visible = false;
+      if (!this.hides(c)) continue;
       hidden.push(c);
     }
+    // Counted before they go: a hidden group's lamps cannot be walked.
+    this.holdLamps(hidden);
+    for (const c of hidden) c.visible = false;
     // The water in the fog, and no weather's murk.
     const f = scene.fog;
     this.fogWas = f ? { color: f.color.clone(), density: f.density } : null;

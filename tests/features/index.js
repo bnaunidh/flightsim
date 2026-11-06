@@ -80,6 +80,7 @@ import { check as loadingScreens } from './loading-screens.browser.js';
 import { check as skins } from './skins.browser.js';
 import { check as crashSweep } from './crash-sweep.browser.js';
 import { check as crashFreeze } from './crash-freeze.browser.js';
+import { check as crashLag } from './crash-lag.browser.js';
 import { check as replayQa } from './replay-qa.browser.js';
 import { check as missionAircraft } from './mission-aircraft.browser.js';
 import { check as birdStrike } from './bird-strike.browser.js';
@@ -130,6 +131,7 @@ export const CHECKS = [
   { id: 'crash-sweep', check: crashSweep },
   // After the sweep: the crash FRAME itself — no shader recompiles, the zone survey built ahead, under 50 ms.
   { id: 'crash-freeze', check: crashFreeze },
+  { id: 'crash-lag', check: crashLag },
   // After crash-freeze: the instant replay attacked — every way of crashing, flown in, on six types, and its bar on this screen.
   { id: 'replay-qa', check: replayQa },
   // The bird strike's flock: in first, the hit under half a second later, once.

@@ -870,6 +870,8 @@ function removeFromModel(asg, rec, gone) {
 export function deformZones(asg, actions, hit = {}) {
   const rec = recordFor(asg.survey.model);
   let moved = 0;
+  // Each mesh's normals and bounds once, after every zone has moved: a skin in four zones paid for them four times.
+  const touched = new Map();
   for (const a of actions) {
     if (a.action === 'detach' || a.action === 'hang' || a.action === 'shake' || a.hidden) continue;
     if (rec.removed.has(a.zone) || !asg.index.has(a.zone)) continue;
@@ -877,12 +879,17 @@ export function deformZones(asg, actions, hit = {}) {
     const fn = deformer(asg.layout.frame, d);
     if (!fn) continue;
     rec.deformed.add(a.zone);
-    moved += applyDeform(asg, rec, d, fn);
+    moved += applyDeform(asg, rec, d, fn, touched);
+  }
+  for (const [g, mark] of touched) {
+    if (mark) refreshNormals(g, mark);
+    g.computeBoundingBox();
+    g.computeBoundingSphere();
   }
   return moved;
 }
 
-function applyDeform(asg, rec, d, fn) {
+function applyDeform(asg, rec, d, fn, touched) {
   const L = asg.layout;
   const idx = asg.index.get(d.zone);
   const inv = new THREE.Matrix4();
@@ -919,19 +926,28 @@ function applyDeform(asg, rec, d, fn) {
       if (it.zone[t] !== idx) continue;
       for (let k = 0; k < 3; k++) mark[triVert(g, t, k)] = 1;
     }
+    // The hot loop of the crash frame: straight on the array where the attribute is a plain one.
+    const flat = !pos.isInterleavedBufferAttribute && !pos.normalized && pos.itemSize === 3 ? pos.array : null;
     for (let i = 0; i < pos.count; i++) {
       if (!mark[i]) continue;
-      _w.fromBufferAttribute(pos, i).applyMatrix4(e.M);
+      if (flat) _w.set(flat[i * 3], flat[i * 3 + 1], flat[i * 3 + 2]);
+      else _w.fromBufferAttribute(pos, i);
+      _w.applyMatrix4(e.M);
       if (fn(_w)) {
         _w.applyMatrix4(inv);
-        pos.setXYZ(i, _w.x, _w.y, _w.z);
+        if (flat) {
+          flat[i * 3] = _w.x;
+          flat[i * 3 + 1] = _w.y;
+          flat[i * 3 + 2] = _w.z;
+        } else pos.setXYZ(i, _w.x, _w.y, _w.z);
         moved++;
       }
     }
     pos.needsUpdate = true;
-    if (g.attributes.normal && moved) refreshNormals(g, mark);
-    g.computeBoundingBox();
-    g.computeBoundingSphere();
+    const wants = g.attributes.normal && moved ? mark : null;
+    const had = touched.get(g);
+    if (had && wants) for (let i = 0; i < had.length; i++) had[i] |= wants[i];
+    else touched.set(g, had || wants);
   }
   void L;
   return moved;
@@ -946,14 +962,16 @@ function applyDeform(asg, rec, d, fn) {
  * An indexed mesh shares vertices between faces, so it takes the whole pass.
  */
 function refreshNormals(g, mark) {
-  if (g.index) {
-    g.computeVertexNormals();
-    return;
-  }
   const pos = g.attributes.position.array;
   const nor = g.attributes.normal;
   const out = nor.array;
-  if (!(pos instanceof Float32Array) || !(out instanceof Float32Array) || nor.itemSize !== 3 || g.attributes.position.itemSize !== 3) {
+  const plain = pos instanceof Float32Array && nor.itemSize === 3 && g.attributes.position.itemSize === 3;
+  if (plain && g.index && (out instanceof Int8Array ? nor.normalized : out instanceof Float32Array && !nor.normalized)) {
+    indexedNormals(pos, out, g.index.array, g.index.count);
+    nor.needsUpdate = true;
+    return;
+  }
+  if (!plain || g.index || !(out instanceof Float32Array)) {
     g.computeVertexNormals();
     return;
   }
@@ -992,6 +1010,54 @@ function refreshNormals(g, mark) {
     }
   }
   nor.needsUpdate = true;
+}
+
+/**
+ * three's computeVertexNormals() for an indexed mesh, the same sums in the
+ * same order, on the arrays: its accessors and vectors were 65 ms of a 747's
+ * crash frame at a school iPad's speed. `out` is a Float32Array, or the
+ * normalized Int8Array of a real model, read and written as three's attribute
+ * would (rounded at every step, so the same bytes come out).
+ */
+export function indexedNormals(pos, out, index, count) {
+  const q = out instanceof Int8Array;
+  const bump = q ? (i, v) => (out[i] = Math.round((Math.max(out[i] / 127, -1) + v) * 127)) : (i, v) => (out[i] += v);
+  out.fill(0);
+  for (let i = 0; i + 2 < count; i += 3) {
+    const a = index[i] * 3;
+    const b = index[i + 1] * 3;
+    const c = index[i + 2] * 3;
+    const bx = pos[b];
+    const by = pos[b + 1];
+    const bz = pos[b + 2];
+    const cbx = pos[c] - bx;
+    const cby = pos[c + 1] - by;
+    const cbz = pos[c + 2] - bz;
+    const abx = pos[a] - bx;
+    const aby = pos[a + 1] - by;
+    const abz = pos[a + 2] - bz;
+    const nx = cby * abz - cbz * aby;
+    const ny = cbz * abx - cbx * abz;
+    const nz = cbx * aby - cby * abx;
+    bump(a, nx);
+    bump(a + 1, ny);
+    bump(a + 2, nz);
+    bump(b, nx);
+    bump(b + 1, ny);
+    bump(b + 2, nz);
+    bump(c, nx);
+    bump(c + 1, ny);
+    bump(c + 2, nz);
+  }
+  for (let i = 0; i < out.length; i += 3) {
+    const x = q ? Math.max(out[i] / 127, -1) : out[i];
+    const y = q ? Math.max(out[i + 1] / 127, -1) : out[i + 1];
+    const z = q ? Math.max(out[i + 2] / 127, -1) : out[i + 2];
+    const l = Math.sqrt(x * x + y * y + z * z) || 1;
+    out[i] = q ? Math.round((x / l) * 127) : x / l;
+    out[i + 1] = q ? Math.round((y / l) * 127) : y / l;
+    out[i + 2] = q ? Math.round((z / l) * 127) : z / l;
+  }
 }
 
 /**

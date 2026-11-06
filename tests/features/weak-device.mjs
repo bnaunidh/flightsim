@@ -26,6 +26,9 @@ const D = await import(new URL('../../src/render/dyn-res.js', import.meta.url).h
 const CROS = 'Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
+const IPAD = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15';
+console.log(W.detectWeakDevice({ ua: IPAD, touchPoints: 5, hardwareConcurrency: 8 }).reasons.includes('ios') ? 'PASS an iPad counts as weak, though it says it is a Mac' : 'FAIL an iPad counts as weak, though it says it is a Mac');
+console.log(W.detectWeakDevice({ ua: IPAD, touchPoints: 0, hardwareConcurrency: 8 }).weak ? 'FAIL a real Mac stays strong' : 'PASS a real Mac stays strong');
 let d = W.detectWeakDevice({ ua: CROS, hardwareConcurrency: 8, deviceMemory: 8, renderer: 'ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)' });
 ok('weak-device: a ChromeOS browser is weak on the UA alone', d.weak && d.reasons.includes('chromeos'), JSON.stringify(d));
 d = W.detectWeakDevice({ ua: MAC, hardwareConcurrency: 4, deviceMemory: 8, renderer: 'ANGLE (Apple M1)' });

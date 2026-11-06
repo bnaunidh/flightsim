@@ -193,6 +193,13 @@ const S = {
   /** The renderer whose shaders have been warmed for the crash (warmShaders), and whether a warm is due. */
   warmed: null,
   warmPending: false,
+  /** Dents waiting for the frame after the break (flushDents). */
+  dents: [],
+  /** When this flight fetches the crash's lazy parts (stepCrashPrep): Infinity once it has. */
+  prepAt: 0,
+  /** When the lights are next counted, and what they came to (stepCrashPrep). */
+  lightsAt: 0,
+  lit: 0,
   stats: { breaks: 0, pieces: 0, peak: 0, ms: 0, msMax: 0, idleFrames: 0, lastPlan: null, lastMs: 0, survivable: 0, npc: 0, slowmo: 0, replays: 0, sinks: 0, wrecksSunk: 0, wrecksLanded: 0, rafts: 0, culled: 0 },
 };
 
@@ -518,6 +525,7 @@ function warmShaders(sim) {
   if (!r || !sim.camera || !sim.scene || typeof r.compile !== 'function') return false;
   try {
     if (S.fx && typeof S.fx.warm === 'function') S.fx.warm(r, sim.camera, sim.scene);
+    warmLazy(sim);
     if (sim.wreck && typeof sim.wreck.warm === 'function') sim.wreck.warm(r, sim.camera, sim.scene);
     // The model pack's own impact dust and contact scuffs (fleet/aircraft-impact.js), drawn on the first touch.
     warmImpactShaders(r, sim.camera, sim.scene);
@@ -530,6 +538,73 @@ function warmShaders(sim) {
     /* a renderer that cannot precompile compiles on first use instead */
     return false;
   }
+}
+
+/** The dents of the last break, due on the frame after it (breakModel). */
+function flushDents() {
+  if (!S.dents.length) return;
+  const due = S.dents;
+  S.dents = [];
+  for (const dent of due) {
+    try {
+      dent();
+    } catch (e) {
+      /* a dent is only looks */
+    }
+  }
+}
+
+/** The crash's two lazy parts, if they are here: the wall of spray and the marks a slide leaves. */
+function warmLazy(sim) {
+  const r = sim && sim.renderer;
+  if (!r || !sim.camera || !sim.scene || typeof r.compile !== 'function') return;
+  for (const part of [S.fx && S.fx.sea, S.scars]) {
+    if (!part) continue;
+    try {
+      part.warm(r, sim.camera, sim.scene);
+    } catch (e) {
+      /* it compiles on its first draw instead */
+    }
+  }
+}
+
+/**
+ * THE CRASH'S LAZY PARTS, ahead of the crash. Fetched at the crash, they
+ * reached the screen a second or two later and linked their programs there,
+ * which is the hitch you see just after the hit: 284-322 ms on a Mac,
+ * more on an iPad. Fetched a few seconds into a flight instead, once the
+ * spawn's own work is over, and compiled where nothing is waiting on them. A
+ * crash sooner than that fetches them as it always did.
+ */
+export const CRASH_PREP = { afterMs: 4000, lightsMs: 2000 };
+
+function stepCrashPrep(sim) {
+  const ac = sim.aircraft;
+  if (!ac || ac.crashed || S.zc.job || !S.fx) return;
+  const t = now();
+  if (!S.prepAt) S.prepAt = t + CRASH_PREP.afterMs;
+  if (t < S.prepAt) return;
+  if (S.prepAt !== Infinity) {
+    S.prepAt = Infinity;
+    loadSea();
+    loadScars();
+  }
+  // A program is keyed on how many lights are lit, and that moves as you fly (the lamps of a town, your own landing
+  // light). What is only drawn in a crash has no draw to catch that, so it is looked at here, every couple of seconds.
+  if (t < S.lightsAt) return;
+  S.lightsAt = t + CRASH_PREP.lightsMs;
+  const lit = litLights(sim.scene);
+  if (S.lit && lit !== S.lit) S.warmPending = true;
+  S.lit = lit;
+}
+
+/** The numbers a program's key takes from the lights in view, as one number. */
+function litLights(scene) {
+  let n = 0;
+  scene.traverseVisible((o) => {
+    if (o.isLight) n += (o.isPointLight ? 1 : o.isDirectionalLight ? 100 : o.isSpotLight ? 1e4 : 1e6) * (o.castShadow ? 10 : 1);
+  });
+  return n;
 }
 
 /** Body-metre point of a world point on this model. */
@@ -582,6 +657,7 @@ function poseLikeAircraft(model, ac) {
  */
 export function breakModel(sim, model, type, hit) {
   if (!model || !model.isObject3D) return null;
+  flushDents();
   const t0 = now();
   const cached = takeCachedZones(sim, model);
   if (cached) S.zc.hits++;
@@ -618,7 +694,11 @@ export function breakModel(sim, model, type, hit) {
   // What tears off and what hangs on by a thread are cut from the model alike; the hanging ones stay with it a while.
   const hangs = layout.soft || hit.survivable ? [] : plan.hangs;
   const made = layout.soft ? [] : breakZones(asg, [...pieces, ...hangs.map((h) => h.zones)], { rotorBlades: S.quality === 'low' ? 2 : 4 });
-  if (!layout.soft) deformZones(asg, plan.actions, { point: pLocal, normal: toLocal(hit.normal || _v.set(0, 1, 0)) });
+  // The dents the next frame: the crash frame already has the cuts to carry, and a dent a frame late is not seen in the hit.
+  if (!layout.soft) {
+    const contact = { point: pLocal, normal: toLocal(hit.normal || _v.set(0, 1, 0)) };
+    S.dents.push(() => deformZones(asg, plan.actions, contact));
+  }
   watchModel(model);
   // Out into the world.
   const pos = new THREE.Vector3();
@@ -834,6 +914,7 @@ function unwatch(model) {
  * owns back; it is idempotent and cheap.
  */
 function putBack(model) {
+  S.dents = [];
   restoreModel(model);
   // As built again: a survey of what it was before is no longer of it.
   if (S.zc.model === model) clearZoneCache();
@@ -886,6 +967,7 @@ function clearPieces() {
 
 /** The player's aeroplane as built, and nothing broken left in the world. */
 function resetAll(sim) {
+  S.dents = [];
   S.lastRes = null;
   S.hull = null;
   S.hullPending = null;
@@ -1079,19 +1161,20 @@ function crashed(sim, c) {
 
 /* ---- the lazy half of a crash: nothing here is fetched until an aeroplane is near enough to want it ---- */
 
-const SEA = { mod: null, loading: null, pending: null, checkT: 0 };
+const SEA = { mod: null, loading: null, pending: null };
 
 function fxParent() {
   return S.fxGroup || S.group;
 }
 
-/** The wall of spray: fetched the first time an aeroplane is low over the sea (update), or at the crash at the latest. */
+/** The wall of spray: fetched a few seconds into a flight (stepCrashPrep), or at the crash at the latest. */
 function loadSea() {
   if (SEA.loading) return SEA.loading;
   SEA.loading = import('./breakup/water-impact.js')
     .then((m) => {
       SEA.mod = m;
       seaOnFx();
+      warmLazy(S.sim);
       const p = SEA.pending;
       SEA.pending = null;
       if (p && S.fx) S.fx.wall(...p);
@@ -1144,6 +1227,7 @@ function loadScars() {
       SCARS.mod = m;
       SCARS.loading = null;
       if (!S.scars && fxParent()) S.scars = new m.Scars(fxParent(), S.quality);
+      warmLazy(S.sim);
     })
     .catch((e) => {
       console.warn('[breakup] the slide marks did not load', e);
@@ -2374,6 +2458,7 @@ function frame(sim, dt, inner, args) {
   }
   if (S.replay) scale = 1;
   const gdt = dt * scale;
+  flushDents();
   const out = inner.call(sim, gdt, ...args);
   const t0 = now();
   // The guidance rails run from the wing tips to the next waypoint: there is no next waypoint now.
@@ -3540,6 +3625,7 @@ registerExtension({
     S.fxGroup = group;
     S.fx = recordFx(new BreakupFx(group, S.quality));
     seaOnFx();
+    if (SCARS.mod) S.scars = new SCARS.mod.Scars(fxParent(), S.quality);
     if (S.group && sim.scene && S.group.parent !== sim.scene) sim.scene.add(S.group);
     clearZoneCache();
     S.warmPending = true;
@@ -3552,6 +3638,8 @@ registerExtension({
     ensureListener(sim);
     wrapDebrief(sim);
     clearZoneCache();
+    S.prepAt = 0;
+    S.lit = 0;
     /*
      * The shaders are warmed on the first frame of the flight, not here: the
      * aeroplane (with its landing light) and the world are all in place by
@@ -3582,13 +3670,9 @@ registerExtension({
     }
     if (S.warmPending) warmShaders(sim);
     stepZoneCache(sim);
+    stepCrashPrep(sim);
     // The real crash at sea has its own spray, and no fireball (a cartoon keeps the game's own).
     if (sim.wreck) sim.wreck.quietSea = !COMIC.on;
-    // The spray is fetched the first time an aeroplane is low over the sea: a look a second, nothing else.
-    if (!SEA.loading && ac && !ac.crashed && (SEA.checkT -= sim.dt || 1 / 60) <= 0) {
-      SEA.checkT = 1;
-      if (ac.pos.y < 250 && seaHere(ac.pos.x, ac.pos.z)) loadSea();
-    }
     // A lens under the sea for any reason at all (Dev mode's free look, say): it gets a sea bed, not a void.
     const cam = sim.camera;
     if (cam && cam.position.y < -0.05 && !U.env && !U.want && seaHere(cam.position.x, cam.position.z)) openUnderwater(sim);
@@ -3676,6 +3760,7 @@ export function breakupDebug() {
       return !!S.zc.asg;
     },
     warmShaders: () => warmShaders(S.sim),
+    prep: () => ({ sea: !!SEA.mod && !!(S.fx && S.fx.sea), scars: !!S.scars, due: S.prepAt, dents: S.dents.length }),
     clearZoneCache,
     ZONE_CACHE,
     breakModel: (model, type, hit) => breakModel(S.sim, model, type, hit),

@@ -316,6 +316,14 @@ export class WaterImpact {
     }
   }
 
+  /** Compile and upload ahead of the crash (features/breakup.js warmLazy): a program links on its first draw otherwise. */
+  warm(renderer, camera, scene) {
+    renderer.compile(this.mesh, camera, scene);
+    renderer.compile(this.slick, camera, scene);
+    if (this.map) renderer.initTexture(this.map);
+    if (this.slick.material.alphaMap) renderer.initTexture(this.slick.material.alphaMap);
+  }
+
   dispose() {
     this.mesh.removeFromParent();
     this.slick.removeFromParent();
