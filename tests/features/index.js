@@ -13,7 +13,7 @@ import { check as airport } from './airport.browser.js';
 import { check as airportLook } from './airport-look.browser.js';
 import { check as boatPlaytest } from './boat-playtest.browser.js';
 import { check as brace } from './brace.browser.js';
-import { secondType } from './heli-missions.browser.js';
+import { secondType, deckEdge } from './heli-missions.browser.js';
 import { check as missionsFunPlaneCore } from './missions-fun-plane-core.browser.js';
 import { check as missionsFunHeli } from './missions-fun-heli.browser.js';
 import { check as secrets } from './secrets.browser.js';
@@ -122,6 +122,7 @@ export const CHECKS = [
   { id: 'boat-playtest', check: boatPlaytest },
   { id: 'brace', check: brace },
   { id: 'heli-second-type', check: secondType },
+  { id: 'heli-deck-edge', check: deckEdge },
   { id: 'car-playtest', check: carPlaytest },
   { id: 'civil', check: civil },
   { id: 'crashes', check: crashes },

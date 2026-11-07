@@ -25,27 +25,16 @@ const HINT_PAUSE = 'On: aeroplanes start up, take off, fly round the island and 
 const HINT_GUEST = 'In a shared game the host’s aeroplanes are everybody’s, so every screen shows the same sky. '
   + 'Your own switch is for your own flights.';
 
-/**
- * On unless switched off — and on Low quality, off unless switched on. Measured on the class-demo
- * path (a 4x CPU, Low): the airfield's traffic adds 70-110 draw calls on the ground (cockpit view
- * 284 against 176), five hitches over 100 ms and 15 MB in the cockpit view, and draw calls are
- * what a Chromebook's GPU runs out of. Low is what a weak computer gets, so it stays as it was.
- */
+/** On unless switched off, on every quality: the owner, 2026-11-06, "other aircraft on by default". */
 export function isOn(sim) {
   const s = sim && sim.settings;
-  if (s && s.traffic === false) return false;
-  if (s && s.traffic !== true && s.quality === 'low') return false;
-  return true;
+  return !(s && s.traffic === false);
 }
 
 function setOn(sim, on) {
   sim.settings = sim.settings || {};
-  // On is the default: kept as "not false", so an old save and a new one read the same.
-  // On Low it is off unless asked for, so there on has to be written down.
-  if (on) {
-    if (sim.settings.quality === 'low') sim.settings.traffic = true;
-    else delete sim.settings.traffic;
-  }
+  // Kept as "not false", so an old save and a new one read the same.
+  if (on) delete sim.settings.traffic;
   else sim.settings.traffic = false;
   try {
     saveSettings(sim.settings);

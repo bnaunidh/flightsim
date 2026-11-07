@@ -44,6 +44,40 @@ const KEYS = {
 export const MISSION_IDS = ['firstlight', 'covepickup', 'overboard', 'stackrescue', 'nightdeck', 'lastlight', 'oncall', 'medevac'];
 
 /**
+ * A wheel over the edge of a deck. Ctrl held off the middle of Night Deck's 22 m rig in 20 kt drifted the
+ * AW139 to the edge as it came down; a wheel went past it, she tipped, and "The helicopter rolled over".
+ * Her middle is still on the deck, so she stands on it (physics.js, deckY).
+ */
+export async function deckEdge(sim, r) {
+  const THREE = await import('../../src/vendor/three.module.js');
+  const auto = sim.autoPauseOnHide;
+  sim.autoPauseOnHide = false;
+  const key = (type) => window.dispatchEvent(new KeyboardEvent(type, { code: 'ControlLeft', key: 'Control', bubbles: true }));
+  const DT = 1 / 30;
+  if (sim.settings) sim.settings.heliAssist = true;
+  if (sim.switchGame) sim.switchGame('heli');
+  try {
+    for (const [dx, dz, hdg] of [[6, 0, 110], [6, 6, 110], [8, 0, 290], [8, 6, 290], [8, 0, 20]]) {
+      await sim.startAnyMission('nightdeck');
+      sim.step(DT);
+      const ac = sim.aircraft;
+      ac.reset({ pos: new THREE.Vector3(-1400 + dx, 0, 4400 + dz), headingDeg: hdg, speed: 0, altAGL: 8, engineOn: true });
+      sim.step(DT);
+      for (let t = 0; t < 14 && !ac.onGround && !ac.crashed; t += DT) {
+        key('keydown');
+        sim.step(DT);
+      }
+      key('keyup');
+      for (let t = 0; t < 12 && !ac.crashed; t += DT) sim.step(DT);
+      r.ok(`deck edge: Ctrl held ${dx},${dz} m off the middle, heading ${hdg}: no rollover`, !ac.crashed, ac.crashReason || (ac.onGround ? 'down' : 'refused'));
+      sim.quitToMenu();
+    }
+  } finally {
+    sim.autoPauseOnHide = auto;
+  }
+}
+
+/**
  * Down on the pad straight after another type. The height over the skids was
  * worked out once and kept: after the Skyhook an H145 stopped 14 cm off Night
  * Medevac's pad with Ctrl held and hung there, and nothing in the first flight

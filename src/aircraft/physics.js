@@ -1837,6 +1837,9 @@ export class Aircraft {
     let maxImpact = 0;
     const wasOnGround = this.onGround;
 
+    // A helicopter with its middle on a deck stands on it, even with a wheel past the edge.
+    const under = SPEC.rotor ? platformAt(this.pos.x, this.pos.z) : null;
+    const deckY = under && this.pos.y > under.y && this.pos.y - under.y < 6 ? under.y : -Infinity;
     if (this.gearPos > 0.5 || true) {
       for (const gp of SPEC.gearPoints) {
         // Retracted gear cannot hold the aeroplane up.
@@ -1844,7 +1847,7 @@ export class Aircraft {
         const local = this._tmp.copy(gp.pos);
         if (extend < 1) local.y = lerp(-0.35, gp.pos.y, extend);
         const world = local.clone().applyQuaternion(this.quat).add(this.pos);
-        const gh = heightAt(world.x, world.z);
+        const gh = Math.max(heightAt(world.x, world.z), deckY);
         const pen = gh - world.y;
         if (pen <= 0) continue;
         if (extend < 0.85) {

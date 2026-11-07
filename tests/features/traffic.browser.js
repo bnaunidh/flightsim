@@ -364,6 +364,9 @@ export async function check(sim, r, say) {
    */
   say('traffic: on by default, and its switch');
   {
+    const { isOn } = await import('../../src/features/traffic/setting.js');
+    r.ok('traffic: on by default on every quality, Low too (the iPads start on Low)',
+      ['low', 'medium', 'high', 'ultra'].every((quality) => isOn({ settings: { quality } })) && !isOn({ settings: { quality: 'low', traffic: false } }));
     const prog = sim.menus && sim.menus.prog;
     const devWas = !!(prog && prog.devUnlocked);
     if (prog) prog.devUnlocked = false;

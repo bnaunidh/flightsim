@@ -3844,12 +3844,12 @@ function devOn(sim) {
 }
 
 /**
- * Should traffic run in this mode? In Free Flight, yes — for everybody but
- * Low quality (it was Dev-mode-only while a runway check still found it
- * rolling out or lining up on a runway you were using; ./traffic/priority.js
- * is what made it yours) — unless the switch says off (./traffic/setting.js,
- * which has the numbers for Low) or the caller says `traffic: false` (a multiplayer
- * guest: the host's is the one everybody sees). A mission only if it asks.
+ * Should traffic run in this mode? In Free Flight, yes (it was Dev-mode-only
+ * while a runway check still found it rolling out or lining up on a runway
+ * you were using; ./traffic/priority.js is what made it yours) — unless the
+ * switch says off (./traffic/setting.js) or the caller says `traffic: false`
+ * (a multiplayer guest: the host's is the one everybody sees). A mission only
+ * if it asks.
  */
 function wantedFor(sim, mode, opts) {
   if (opts && opts.traffic === true) return true;
