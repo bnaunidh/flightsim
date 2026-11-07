@@ -8,18 +8,6 @@
 import { badgeSvg } from './icons.js';
 
 const CSS = /* css */ `
-.ach-open {
-  display: flex; align-items: center; gap: 14px; width: 100%; margin-top: 10px; text-align: left;
-  padding: 14px 18px; border-radius: 16px; cursor: pointer; font: inherit; color: var(--text, #eaf1fb);
-  border: 1px solid var(--panel-line, rgba(140,180,230,0.22));
-  background: linear-gradient(120deg, rgba(120,150,210,0.22), rgba(40,55,90,0.32));
-  transition: transform 0.15s ease;
-}
-.ach-open:hover { transform: translateY(-3px); }
-.ach-open:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-.ach-open .ach-open-badge { width: 34px; height: 34px; flex: none; }
-.ach-open strong { display: block; font-size: 18px; }
-.ach-open em { display: block; font-style: normal; font-size: 13.5px; opacity: 0.8; margin-top: 2px; }
 
 .ach-screen .ach-head-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 2px 0 12px; }
 .ach-progress-line { font-size: 14px; color: var(--text-dim, #9fb2cc); font-weight: 600; }
@@ -123,10 +111,10 @@ export function addMenuButton(menus, onOpen) {
   if (!main || main.querySelector('[data-ach-open]')) return null;
   const b = el(
     'button',
-    'ach-open',
-    `<span class="ach-open-badge">${badgeSvg('medal', { tier: 'gold', size: 34 })}</span>
+    'ach-open board-mini',
+    `<span class="board-mini-icon">${badgeSvg('medal', { tier: 'gold', size: 30 })}</span>
      <span><strong>Achievements</strong>
-     <em>See what you've earned</em></span>`
+     <em>What you've earned</em></span>`
   );
   b.type = 'button';
   b.setAttribute('data-ach-open', '');

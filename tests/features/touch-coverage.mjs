@@ -158,7 +158,7 @@ ok('touch-words: a plain-text key in a toast ("press C", "press Esc", "press I a
 ok('touch-words: a line with no key in it is untouched', TW.touchWording('Gear is down') === 'Gear is down' && TW.touchWording('') === '' && TW.touchWording(null) === null);
 const hudSrc = read('src/ui/hud.js');
 ok('hud: the coach line, the toasts, the objective and the taxi strip go through words() (touch wording on .is-touch)', /words\(text\) \{[\s\S]{0,300}touchWording\(t\)/.test(hudSrc) && (hudSrc.match(/this\.words\(/g) || []).length >= 5 && !/text = rekey\(text\);\n    if \(this\.lastValues\.coach/.test(hudSrc));
-ok('menus: the game switcher and credits bar is hidden on the debrief', /if \(this\.bar\) this\.bar\.hidden = name === 'debrief';/.test(read('src/ui/menus.js')));
+ok('menus: the game switcher and credits bar is hidden on the debrief (and the pause card)', /if \(this\.bar\) this\.bar\.hidden = name === 'debrief' \|\| name === 'pause';/.test(read('src/ui/menus.js')));
 ok('touch playtest: the rival study\'s screens are in the device list (740x360, 844x390, 1366x768)', /w: 740, h: 360/.test(read('tests/features/touch-coverage.playtest.mjs')) && /w: 844, h: 390/.test(read('tests/features/touch-coverage.playtest.mjs')) && /w: 1366, h: 768/.test(read('tests/features/touch-coverage.playtest.mjs')));
 
 /* ---------------- report ---------------- */

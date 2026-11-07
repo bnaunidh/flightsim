@@ -32,7 +32,7 @@ import { skyhookHull } from '../models/skyhook.js';
 
 const HELI = {
   trim: { head: '#cfd2d4', wall: '#8f969d', low: '#4c535a', floor: '#2b2e32', frame: '#2b2f34' },
-  palette: { panel: '#2a2e33', trim: '#5a6168', glare: '#16181b', seat: '#3b4148', frame: '#2b2f34', floor: '#26292c' },
+  palette: { panel: '#383d43', trim: '#5a6168', glare: '#16181b', seat: '#3b4148', frame: '#2b2f34', floor: '#26292c' },
 };
 
 /**
@@ -268,7 +268,7 @@ export function buildHeliCockpit(ctx) {
       screens.push(d);
       return d;
     };
-    mountS('PFD', px0 - sw / 2 - 0.006, vS, (g, w, h, d) => paintPFD(g, w, h, d, { vs: 40, vmo: 165 }));
+    mountS('PFD', px0 - sw / 2 - 0.006, vS, (g, w, h, d) => paintPFD(g, w, h, d, { vs: 0, vmo: 165 }));
     mountS('ND', px0 + sw / 2 + 0.006, vS, (g, w, h, d) => paintND(g, w, h, d, { rangeNm: 10 }), 6);
     if (C.three) mountS('ENG', px0 + sw * 1.5 + 0.018, vS, (g, w, h, d) => paintEICAS(g, w, h, d), 6);
   }

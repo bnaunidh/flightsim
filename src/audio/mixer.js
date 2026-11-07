@@ -53,6 +53,21 @@ export class AudioMixer {
     this._pink = null;
     this.ready = false;
     this.failed = false;
+    /** Where the listener is, set by features/flight-sound.js: level, doppler ratio, air's top-end cut (Hz). */
+    this.view = { gain: 1, pitch: 1, cut: 20000, synth: 1 };
+    /** The recorded sounds (features/sound-samples.js), when there are any. */
+    this.samples = null;
+    this._shots = 0;
+  }
+
+  /** Play the recording for a slot, if one is loaded. False: the caller synthesises it as usual. */
+  sampled(slot, opts) {
+    return !!(this.samples && this.samples.play(slot, opts));
+  }
+
+  /** A clock that is not running: a one-shot would queue on it and all of them go off together on resume. */
+  get frozen() {
+    return !this.lab && this.ctx.state !== 'running';
   }
 
   /**
@@ -89,8 +104,27 @@ export class AudioMixer {
     this.limiter.ratio.value = 9;
     this.limiter.attack.value = 0.004;
     this.limiter.release.value = 0.16;
-    this.master.connect(this.limiter);
-    this.limiter.connect(this.ctx.destination);
+    // Nothing below 32 Hz: no speaker here plays it, and it spent the limiter.
+    this.subs = this.ctx.createBiquadFilter();
+    this.subs.type = 'highpass';
+    this.subs.frequency.value = 32;
+    this.subs.Q.value = 0.5;
+    // The limiter is a compressor and lets peaks by (+0.1 dBFS measured with
+    // everything at once). A waveshaper's output cannot leave its curve, so
+    // this is the actual ceiling: straight to 0.8, rounding off to 0.98.
+    this.ceiling = this.ctx.createWaveShaper();
+    const n = 2049;
+    const curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * 2 - 1;
+      const a = Math.abs(x);
+      curve[i] = Math.sign(x) * (a < 0.8 ? a : 0.8 + 0.18 * Math.sin(((a - 0.8) / 0.2) * Math.PI * 0.5));
+    }
+    this.ceiling.curve = curve;
+    this.master.connect(this.subs);
+    this.subs.connect(this.limiter);
+    this.limiter.connect(this.ceiling);
+    this.ceiling.connect(this.ctx.destination);
     for (const b of BUSES) {
       const g = this.ctx.createGain();
       g.gain.value = this.volumes[b];
@@ -108,7 +142,10 @@ export class AudioMixer {
         this._build();
         if (this.failed) return false;
       }
-      if (this.ctx.state === 'suspended') await this.ctx.resume();
+      // Not awaited for ever: outside a gesture this promise may never settle
+      // (a touch's pointerdown is not one), and everything built here works on
+      // a sleeping context. The next gesture wakes it (resume()).
+      if (this.ctx.state !== 'running') await Promise.race([this.ctx.resume(), new Promise((r) => setTimeout(r, 150))]);
       return true;
     } catch (err) {
       console.warn('Audio unavailable:', err);
@@ -178,8 +215,11 @@ export class AudioMixer {
       const len = this.ctx.sampleRate * 3;
       const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
       const d = buf.getChannelData(0);
+      // A run past the end, crossfaded over the start, so the loop joins with no click.
+      const fade = 2048;
+      const tail = new Float32Array(fade);
       let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-      for (let i = 0; i < len; i++) {
+      for (let i = 0; i < len + fade; i++) {
         const w = Math.random() * 2 - 1;
         b0 = 0.99886 * b0 + w * 0.0555179;
         b1 = 0.99332 * b1 + w * 0.0750759;
@@ -187,9 +227,12 @@ export class AudioMixer {
         b3 = 0.8665 * b3 + w * 0.3104856;
         b4 = 0.55 * b4 + w * 0.5329522;
         b5 = -0.7616 * b5 - w * 0.016898;
-        d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11;
+        const v = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11;
         b6 = w * 0.115926;
+        if (i < len) d[i] = v;
+        else tail[i - len] = v;
       }
+      for (let i = 0; i < fade; i++) d[i] = d[i] * (i / fade) + tail[i] * (1 - i / fade);
       this._pink = buf;
     }
     return this._pink;
@@ -225,8 +268,9 @@ export class AudioMixer {
    * ramp scheduled behind itself.
    */
   noiseBurst({ bus = 'environment', duration = 0.3, gain = 0.5, type = 'bandpass', freq = 1200, q = 1, attack = 0.005, pink = false, when = null } = {}) {
-    if (!this.ctx) return null;
+    if (!this.ctx || this.frozen || this._shots >= 24) return null;
     const src = this.ctx.createBufferSource();
+    this._shot(src);
     src.buffer = pink ? this.pinkBuffer() : this.noiseBuffer();
     src.loop = true;
     const filter = this.ctx.createBiquadFilter();
@@ -250,14 +294,15 @@ export class AudioMixer {
   }
 
   /** Simple synth tone with an envelope — used for beeps and chimes. */
-  tone({ bus = 'alerts', freq = 880, duration = 0.2, gain = 0.25, type = 'sine', attack = 0.005, detune = 0, sweepTo = null } = {}) {
-    if (!this.ctx) return null;
+  tone({ bus = 'alerts', freq = 880, duration = 0.2, gain = 0.25, type = 'sine', attack = 0.005, detune = 0, sweepTo = null, when = null } = {}) {
+    if (!this.ctx || this.frozen || this._shots >= 24) return null;
     const osc = this.ctx.createOscillator();
+    this._shot(osc);
     osc.type = type;
     osc.frequency.value = freq;
     osc.detune.value = detune;
     const g = this.ctx.createGain();
-    const t = this.time;
+    const t = when == null ? this.time : Math.max(when, this.time);
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), t + attack);
     g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
@@ -267,6 +312,12 @@ export class AudioMixer {
     osc.start(t);
     osc.stop(t + duration + 0.05);
     return { osc, gain: g };
+  }
+
+  /** The one-shot voice cap: a pile-up drops the newest, not the frame rate. */
+  _shot(node) {
+    this._shots++;
+    node.onended = () => this._shots--;
   }
 
   /** Waveshaper curve for gentle analogue-style distortion. */
@@ -284,7 +335,8 @@ export class AudioMixer {
     if (this.ctx && this.ctx.state === 'running') this.ctx.suspend();
   }
 
+  /** From a gesture, or back from another tab. iOS parks a context as 'interrupted', not 'suspended'. */
   resume() {
-    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+    if (this.ctx && this.ctx.state !== 'running' && this.ctx.state !== 'closed') this.ctx.resume().catch(() => {});
   }
 }

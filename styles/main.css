@@ -34,19 +34,7 @@
   size-adjust: 112%;
 }
 
-/*
- * `hidden` means hidden. Once, globally, before anything else.
- *
- * The browser's own [hidden] rule is a user-agent rule, so ANY author rule
- * that sets `display` beats it. Every card and panel in this file sets one, so
- * every `el.hidden = true` in the JavaScript was quietly doing nothing — and
- * this was found and patched one selector at a time, for .mission-card, and
- * then hit again for .map-card (the then passcode-gated military map was listed and
- * playable on a brand-new profile) and .dev-panel (the unfinished-work
- * workbench was open to every player).
- *
- * Patching the next selector was never going to end. This ends it.
- */
+/* `hidden` means hidden: any author `display` beats the browser's own rule. */
 [hidden] {
   display: none !important;
 }
@@ -72,6 +60,7 @@
   --glass-solid: rgba(10, 17, 30, 0.92);
   --glass-line: rgba(160, 195, 240, 0.16);
   --glass-hi: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --r-0: 6px;
   --r-1: 10px;
   --r-2: 14px;
   --r-3: 20px;
@@ -1029,18 +1018,14 @@ kbd {
   gap: 12px;
   padding: 10px max(14px, env(safe-area-inset-left)) 10px max(14px, env(safe-area-inset-right));
   padding-top: max(10px, env(safe-area-inset-top));
-  background: rgba(8, 13, 22, 0.55);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-  backdrop-filter: blur(8px) saturate(1.1);
-  -webkit-backdrop-filter: blur(8px) saturate(1.1);
 }
 .switcher {
   display: flex;
   gap: 4px;
   padding: 3px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--sign-black);
+  border: 1px solid rgba(255, 255, 255, 0.14);
 }
 /* :where() so the shared button rules in .screen-list cannot out-specify the
    lit state. That exact collision hid the selected item on three screens. */
@@ -1073,9 +1058,9 @@ kbd {
   gap: 7px;
   padding: 7px 13px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 210, 120, 0.3);
-  background: rgba(255, 198, 92, 0.12);
-  color: #ffd98a;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--sign-black);
+  color: var(--game-accent);
   font: inherit;
   font-size: 14px;
   font-weight: 640;
@@ -1083,14 +1068,11 @@ kbd {
   cursor: pointer;
   white-space: nowrap;
 }
-.credit-pill:hover { background: rgba(255, 198, 92, 0.2); }
 
 /* The bar is the top row, so the screens no longer own the whole window. */
 .menu-layer > .screen { grid-row: 2; }
 
-/* Screens must scroll. The Free Flight screen grew to 1,780 px tall in an
-   825 px window and simply ran off the bottom — everything below the fold was
-   unreachable, which reads as "I cannot select anything". */
+/* Screens scroll: everything below the fold has to stay reachable. */
 .screen {
   width: min(1080px, 94vw);
   padding: 28px 0 40px;
@@ -1102,58 +1084,6 @@ kbd {
 }
 .screen[hidden] { display: none; }
 
-.brand { display: flex; align-items: center; gap: 18px; margin-bottom: 26px; color: var(--accent); }
-.brand h1 {
-  margin: 0;
-  font-size: clamp(26px, 4.6vw, 42px);
-  font-weight: 680;
-  letter-spacing: -0.025em;
-  color: var(--text);
-  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.7);
-}
-.tagline { margin: 4px 0 0; color: #cfdcec; font-size: 15px; text-shadow: 0 1px 10px rgba(0, 0, 0, 0.7); }
-
-.main-nav { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
-.card-btn {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  text-align: left;
-  padding: 16px 18px;
-  border-radius: var(--radius);
-  border: 1px solid var(--panel-line);
-  background: linear-gradient(160deg, rgba(20, 32, 52, 0.9), rgba(11, 18, 32, 0.9));
-  color: var(--text);
-  cursor: pointer;
-  font: inherit;
-  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.card-btn:hover {
-  transform: translateY(-3px);
-  border-color: rgba(88, 198, 255, 0.6);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
-}
-.card-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.card-icon {
-  font-size: 22px;
-  color: var(--accent);
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  background: rgba(88, 198, 255, 0.14);
-  flex: none;
-}
-.card-body { display: flex; flex-direction: column; gap: 3px; }
-.card-body strong { font-size: 17px; font-weight: 620; }
-.card-body em { font-style: normal; font-size: 13px; color: var(--text-dim); }
-
-.main-foot { margin-top: 26px; }
-.stats { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; color: #c3d2e4; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8); }
-.stats b { color: var(--text); }
-.stats .ok { color: var(--good); }
-.foot-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .tiny { font-size: 12px; color: rgba(200, 214, 232, 0.85); margin-top: 12px; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8); }
 .tiny.copyright { margin-top: 6px; opacity: 0.8; }
 .credits .credit-copyright { font-weight: 700; margin-bottom: 6px; }
@@ -1179,30 +1109,16 @@ button, .ghost {
 }
 .ghost:hover { background: rgba(88, 198, 255, 0.16); border-color: rgba(88, 198, 255, 0.5); }
 button.primary {
-  background: linear-gradient(135deg, var(--accent), #3aa8e8);
+  background: var(--game-accent, var(--accent));
   border: none;
-  color: #05101c;
+  color: #14161a;
   font-weight: 640;
   padding: 10px 18px;
 }
 button.primary:hover { transform: translateY(-2px); }
 button.primary.big { width: 100%; padding: 14px; font-size: 16px; margin-top: 10px; }
-/*
- * The default look for plain buttons on a list screen.
- *
- * The exclusions used to be written with :not(), and every :not() adds the
- * specificity of what is inside it — five of them made this rule weigh
- * (0,6,1), which beat every `.is-on` selected state in the file at (0,2,0).
- * The result was buttons that took the class, updated the summary and fired
- * their handler while looking completely untouched: you could select an
- * aeroplane or a departure and nothing lit up. `:not(.preset)` is the fossil
- * of the same bug being patched once, for presets only.
- *
- * :where() contributes no specificity at all, so this stays a (0,1,1) default
- * that anything more specific can override — which is what a default should
- * have been in the first place.
- */
-.pause-actions button:where(:not(.primary)),
+/* The default for plain buttons on a list screen. :where() keeps it (0,1,1), so any
+   .is-on beats it: :not() here once hid every selected state in the game. */
 .screen-list button:where(:not(.primary):not(.ghost):not(.tab):not(.keycap):not(.preset):not(.start-opt):not(.fleet-card)) {
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid var(--panel-line);
@@ -1211,11 +1127,11 @@ button.primary.big { width: 100%; padding: 14px; font-size: 16px; margin-top: 10
 }
 
 .screen-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-.screen-head h2 { margin: 0; font-size: 25px; font-weight: 650; text-shadow: 0 2px 14px rgba(0, 0, 0, 0.7); }
+.screen-head h2 { margin: 0; font: 700 32px/1 var(--mono); text-transform: uppercase; text-shadow: 0 2px 14px rgba(0, 0, 0, 0.7); }
 
 .mission-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
 .mission-card {
-  background: linear-gradient(165deg, rgba(20, 32, 52, 0.92), rgba(11, 18, 32, 0.92));
+  background: var(--panel);
   border: 1px solid var(--panel-line);
   border-radius: var(--radius);
   padding: 18px;
@@ -1265,7 +1181,7 @@ button.primary.big { width: 100%; padding: 14px; font-size: 16px; margin-top: 10
 /* ---- Map picker ---- */
 .map-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
 .map-card {
-  background: linear-gradient(165deg, rgba(20, 32, 52, 0.92), rgba(11, 18, 32, 0.92));
+  background: var(--panel);
   border: 1px solid var(--panel-line);
   border-radius: var(--radius);
   padding: 16px;
@@ -1439,20 +1355,6 @@ details.keymap-group[open] > summary::before { transform: rotate(90deg); }
 }
 
 .screen-pause { display: grid; place-items: center; }
-.pause-card {
-  width: min(560px, 92vw);
-  background: rgba(10, 17, 29, 0.95);
-  border: 1px solid var(--panel-line);
-  border-radius: 20px;
-  padding: 26px;
-  text-align: center;
-  box-shadow: var(--shadow);
-}
-.pause-card h2 { margin: 0 0 16px; font-size: 26px; }
-.pause-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
-.pause-grid span { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
-.pause-grid b { font-size: 17px; color: var(--text); font-family: var(--mono); }
-.pause-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .debrief-card { text-align: center; }
 .debrief-title.is-good { color: var(--good); }
 .debrief-title.is-bad { color: var(--red); }
@@ -1525,7 +1427,6 @@ html.reduce-motion .hud-rstack, html.reduce-motion .hud-rstack > * { transition:
   .hud-top { width: min(420px, 70vw); }
   .hud-left, .hud-right, .hud-bottom { padding: 9px 11px; }
   .hud-value { font-size: 22px; }
-  .pause-grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 620px) {
   .hud-left { min-width: 150px; }
@@ -1542,7 +1443,6 @@ html.reduce-motion .hud-rstack, html.reduce-motion .hud-rstack > * { transition:
   /* The coach line has to clear the touch controls, not sit under them. */
   .hud-coach { bottom: auto; top: 108px; font-size: 14px; padding: 8px 14px; }
   .hud-toasts.is-loose { top: 130px; width: 84vw; }
-  .brand { flex-direction: column; align-items: flex-start; }
 }
 
 /* ---- Taxi strip ---------------------------------------------------------
@@ -2098,7 +1998,6 @@ html.is-touch-device .minimap { top: 8px; left: 8px; right: auto; bottom: auto; 
 /* ---- Narrow windows: the menu screens, which really are about width ------ */
 @media (max-width: 820px) {
   .screen { padding: 16px 14px 28px; }
-  .card-btn { padding: 12px 14px; }
   .fleet-grid, .preset-grid { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 520px) {
@@ -2219,24 +2118,12 @@ html.is-touch-device .minimap { top: 8px; left: 8px; right: auto; bottom: auto; 
 .trigger-btn small { display: block; color: var(--text-dim); font-size: 11.5px; margin-top: 1px; }
 .trigger-note { font-size: 12px; color: var(--text-dim); margin: 2px 0 10px; }
 
-/* ---- Menu card icons ---------------------------------------------------- */
-.card-icon .icon { width: 24px; height: 24px; }
-.card-btn .card-icon { display: grid; place-items: center; color: var(--accent); }
-
 /* The Free Flight screen gained the hangar and the start picker, so it needs
    three columns on a wide screen with the aircraft row across the top. */
 @media (min-width: 901px) {
   .free-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .free-col-wide { grid-column: 1 / -1; }
 }
-.pause-sub {
-  margin: 18px 0 8px;
-  font-size: 12px;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-}
-.pause-actions button { display: inline-flex; align-items: center; gap: 8px; justify-content: center; }
 
 /* The realistic cockpit reads its instruments off the panel, so the overlay
    that duplicates them gets out of the way. The objective, subtitles and
@@ -2450,48 +2337,6 @@ html.is-touch-device .minimap { top: 8px; left: 8px; right: auto; bottom: auto; 
 .free-col-full { grid-column: 1 / -1; }
 
 
-/* ---- Pause menu, made small again -------------------------------------
-   It grew an autopilot section, a view section, eight triggers and seven
-   disasters, and became a wall. Now it is a compact card that scrolls, the
-   secondary sections are folded away behind summaries, and the buttons you
-   actually want are the ones you see first.                              */
-.pause-card {
-  max-height: 88vh;
-  max-height: 88dvh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 20px 22px;
-  width: min(680px, 94vw);
-}
-.pause-card h2 { margin: 0 0 10px; font-size: 22px; }
-.pause-grid { gap: 8px; margin-bottom: 12px; }
-.pause-sub { margin: 12px 0 6px; font-size: 11px; }
-.pause-card .tiny { margin-top: 12px; }
-
-/* Folded sections. <details> is the whole mechanism — no script needed. */
-.pause-fold { margin-top: 10px; border-top: 1px solid var(--panel-line); padding-top: 8px; }
-.pause-fold > summary {
-  cursor: pointer;
-  list-style: none;
-  font-size: 12px;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  padding: 5px 2px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.pause-fold > summary::-webkit-details-marker { display: none; }
-.pause-fold > summary::after { content: '▾'; margin-left: auto; transition: transform 0.15s ease; }
-.pause-fold[open] > summary::after { transform: rotate(180deg); }
-.pause-fold > summary:hover { color: var(--text); }
-.pause-fold .trigger-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 6px; }
-.pause-fold .trigger-btn { padding: 7px 10px; font-size: 12px; }
-.pause-fold .trigger-btn small { font-size: 10.5px; }
-.pause-fold .start-opt { padding: 8px 10px; }
-.pause-fold .start-opt em { font-size: 11px; }
-.pause-fold .trigger-note { margin: 2px 0 8px; font-size: 11.5px; }
 
 /* Autopilot: which mode is actually flying, and the height selector. */
 .ap-state {
@@ -3692,11 +3537,7 @@ html.is-touch-device .slot-clear {
 
 /* -- the menu, per game ---------------------------------------------- */
 
-/*
- * One attribute on the menu root, set by setGame(). The courier is warmer than
- * the flight school: road amber rather than sky blue, and it is two lines of
- * CSS rather than a second stylesheet.
- */
+/* One attribute on the menu root, set by setGame(): each game's accent. */
 .menu-layer { --game-accent: var(--accent); }
 [data-game="car"] .menu-layer { --game-accent: var(--amber); }
 [data-game="boat"] .menu-layer { --game-accent: var(--accent-2); }
@@ -3713,28 +3554,6 @@ html.is-touch-device .slot-clear {
  * card, the frame of the card under a finger, and a wash behind the whole
  * page. Nothing here reaches a screen that is not the front page of a game.
  */
-.screen-main .brand-mark,
-.screen-main .tagline { color: var(--game-accent); }
-.screen-main .card-btn .card-icon { color: var(--game-accent); }
-.screen-main .card-btn:hover,
-.screen-main .card-btn:focus-visible {
-  border-color: color-mix(in srgb, var(--game-accent) 55%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--game-accent) 30%, transparent) inset;
-}
-/*
- * The wash. Deliberately weak — 7% at the top corner, gone by the middle of
- * the page — because the thing it must not do is fight the text over it on a
- * school laptop with the brightness turned down.
- */
-.screen-main::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(120% 80% at 12% -10%, color-mix(in srgb, var(--game-accent) 7%, transparent), transparent 60%);
-}
-.screen-main { position: relative; }
 
 /* The measured line under a map card — "31 km of road, a coast loop, a 240 m
    climb to the relay". Written only when something has actually measured it. */
@@ -5380,38 +5199,13 @@ body:has(.hud.is-touch.is-rotorhover) .race-solobar { left: 8px; right: auto; to
 /* =========================================================================
    The deck — demo polish (2026-10-24)
    =========================================================================
-   A quick pass over the two things the class sees most: the start screen and
-   the HUD. Not the redesign (.claude/devtools/briefs/ui-redesign.md); the
-   same screens, the same buttons, the same keys — made to look like one set.
-
-   One language, written as tokens at the top of this file (:root):
-     glass       --glass / --glass-strong / --glass-hud, with --glass-line
-                 for the edge and --glass-hi for the light along the top
-     radius      --r-1 10 px (chips, small buttons) · --r-2 14 px (panels,
-                 cards' icons, HUD buttons) · --r-3 20 px (the big cards)
-     spacing     --sp-1 … --sp-6: 4 · 8 · 12 · 16 · 24 · 32
-     motion      --dur-1 150 ms (press) · --dur-2 200 ms (hover, screens) ·
-                 --dur-3 250 ms (fade); one ease, --ease
-     type        display clamp(28–46) · card 18 · body 14 · caption 12 ·
-                 label 10.5 upper-case
-
-   Low quality is a classroom Chromebook: html.fx-low (main.js syncFxTier())
-   turns EVERY backdrop blur under the interface off and gives the glass a
-   solid translucent back instead. Same layout, same colours, none of the
-   per-frame blur cost. Reduce motion keeps its meaning: no screen fade.
+   One language, as tokens in :root: glass, radius --r-1..3, spacing --sp-1..6,
+   motion --dur-1..3 with --ease. Low quality (html.fx-low, main.js syncFxTier())
+   turns every backdrop blur off and gives the glass a solid back. Reduce
+   motion keeps its meaning: no screen fade.
    ========================================================================= */
 
 /* ---- The glass ---------------------------------------------------------- */
-.screen-main .card-btn,
-.screen-main .brand-mark,
-.menu-bar,
-.pause-card {
-  background: var(--glass);
-  border-color: var(--glass-line);
-  box-shadow: var(--glass-hi);
-  backdrop-filter: blur(12px) saturate(1.15);
-  -webkit-backdrop-filter: blur(12px) saturate(1.15);
-}
 .hud-panel,
 .hud-objective,
 .hud-btn,
@@ -5448,7 +5242,7 @@ html.fx-low .menu-layer {
 }
 
 /* ---- Radius and motion, one scale -------------------------------------- */
-.hud-panel, .hud-objective, .hud-btn, .mission-card, .map-card, .fleet-card, .pause-card { border-radius: var(--r-2); }
+.hud-panel, .hud-objective, .hud-btn, .mission-card, .map-card, .fleet-card { border-radius: var(--r-2); }
 .hud-toast, .hud-chip, .ghost, button.primary, .tab { border-radius: var(--r-1); }
 .hud-chip { padding: 3px 8px; }
 .hud-btn, .ghost, button.primary, .tab, .credit-pill, .switcher button:where(.switch-btn) {
@@ -5471,54 +5265,6 @@ html.reduce-motion .menu-layer > .screen:not([hidden]) { animation: none; }
 .credit-pill { min-height: 38px; }
 
 /* ---- The start screen --------------------------------------------------- */
-.screen-main { padding-top: clamp(20px, 5vh, 48px); }
-.screen-main .brand { gap: var(--sp-5); margin-bottom: var(--sp-6); }
-.screen-main .brand-mark {
-  width: 72px;
-  height: 72px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--r-3);
-  border: 1px solid var(--glass-line);
-  flex: none;
-}
-.screen-main .brand h1 { font-size: clamp(28px, 4.8vw, 46px); font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; }
-.screen-main .tagline { font-size: 15.5px; margin-top: 6px; }
-
-.screen-main .main-nav { gap: var(--sp-3); grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); }
-.screen-main .card-btn {
-  min-height: 76px;
-  padding: var(--sp-4) 18px;
-  gap: var(--sp-4);
-  border-radius: var(--r-3);
-  transition: transform var(--dur-2) var(--ease), border-color var(--dur-2) var(--ease),
-    box-shadow var(--dur-2) var(--ease), background var(--dur-2) var(--ease);
-}
-.screen-main .card-btn:hover {
-  transform: translateY(-2px);
-  background: var(--glass-strong);
-  box-shadow: var(--glass-hi), 0 14px 34px rgba(0, 0, 0, 0.4);
-}
-.screen-main .card-btn:active { transform: translateY(0) scale(0.985); transition-duration: var(--dur-1); }
-.screen-main .card-btn:focus-visible { outline: 2px solid var(--game-accent); outline-offset: 3px; }
-.screen-main .card-icon {
-  width: 46px;
-  height: 46px;
-  border-radius: var(--r-2);
-  background: color-mix(in srgb, var(--game-accent) 16%, transparent);
-  transition: background var(--dur-2) var(--ease);
-}
-.screen-main .card-btn:hover .card-icon { background: color-mix(in srgb, var(--game-accent) 26%, transparent); }
-.screen-main .card-icon .icon { width: 26px; height: 26px; }
-.screen-main .card-body { gap: 4px; min-width: 0; }
-.screen-main .card-body strong { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; line-height: 1.2; }
-.screen-main .card-body em { font-size: 13px; line-height: 1.35; }
-
-/* What is under the cards is secondary: smaller, quieter, pills. */
-.screen-main .main-foot { margin-top: var(--sp-6); opacity: 0.9; }
-.screen-main .foot-links { gap: var(--sp-2); margin-top: var(--sp-3); }
-.screen-main .foot-links .ghost { border-radius: 999px; padding: 8px 14px; min-height: 36px; }
-.screen-main .tiny { font-size: 12px; }
 
 /* ---- Mission, map and aircraft cards: one hover, one press -------------- */
 .mission-card, .map-card, .fleet-card {
@@ -5552,40 +5298,14 @@ html.reduce-motion .menu-layer > .screen:not([hidden]) { animation: none; }
   .switcher button:where(.switch-btn), .screen-main .card-btn, .screen-main .foot-links .ghost { min-height: 44px; }
   .hud-btn { min-width: 44px; }
   .mission-card .primary, .map-card .primary, .fleet-card .primary { min-height: 44px; }
+  .cat-chips .cat-chip, .screen-hangar .hs-more, .screen-hangar .hs-filter, .ui-root select { min-height: 44px; }
+  .screen-hangar .hs-filter { min-width: 44px; }
+  /* The paint stays a small round; the finger gets the whole 44 px around it. */
+  .hs-swatches { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 0; max-height: calc(3 * 44px + 6px); }
+  .screen-hangar .hs-swatch { width: 44px; height: 44px; padding: 9px; background-clip: content-box; border-color: transparent; }
+  .screen-hangar .hs-swatch.is-on { box-shadow: inset 0 0 0 2px var(--hs-accent); }
 }
 
-/* ---- Phones ------------------------------------------------------------- */
-/* Portrait: one column of cards, the brand on one line to save height. */
-@media (max-width: 620px) {
-  .screen-main { padding-top: var(--sp-4); }
-  .screen-main .brand { flex-direction: row; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); }
-  .screen-main .brand-mark { width: 56px; height: 56px; }
-  .screen-main .brand-mark svg { width: 42px; height: 42px; }
-  .screen-main .brand h1 { font-size: 26px; }
-  .screen-main .tagline { font-size: 13.5px; margin-top: 3px; }
-  .screen-main .main-nav { grid-template-columns: 1fr; gap: var(--sp-2); }
-  .screen-main .card-btn { min-height: 64px; padding: var(--sp-3) 14px; border-radius: var(--r-2); }
-  .screen-main .card-icon { width: 40px; height: 40px; }
-  .screen-main .card-icon .icon { width: 22px; height: 22px; }
-  .screen-main .card-body strong { font-size: 16px; }
-  .screen-main .card-body em { font-size: 12.5px; }
-  .screen-main .main-foot { margin-top: var(--sp-4); }
-}
-/* Landscape: short, not narrow — the mark goes, the cards go two across and
-   their blurbs keep to one line. */
-@media (max-height: 460px) {
-  .screen-main { padding-top: var(--sp-2); }
-  .screen-main .brand { margin-bottom: var(--sp-3); gap: var(--sp-3); }
-  .screen-main .brand-mark { display: none; }
-  .screen-main .brand h1 { font-size: 24px; }
-  .screen-main .tagline { font-size: 13px; margin-top: 2px; }
-  .screen-main .main-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
-  .screen-main .card-btn { min-height: 56px; padding: 10px 12px; gap: var(--sp-3); border-radius: var(--r-2); }
-  .screen-main .card-icon { width: 36px; height: 36px; }
-  .screen-main .card-body strong { font-size: 15px; }
-  .screen-main .card-body em { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .screen-main .main-foot { margin-top: var(--sp-3); }
-}
 
 /* =========================================================================
    HUD quick wins (w7-hud, 2026-10-24): the touchdown card, the state pills,
@@ -5846,48 +5566,235 @@ html.reduce-motion .menu-layer > .screen:not([hidden]) { animation: none; }
 html.hud-photo #ui .minimap { display: none !important; }
 
 
-/* "Resume your mission?" after a closed tab (game/checkpoint.js), above the shoutout. */
-.screen-main .resume-card {
-  display: flex; align-items: center; gap: var(--sp-4);
-  margin-top: var(--sp-4); padding: var(--sp-3) 18px; min-height: 56px;
-  border-radius: var(--r-3); border: 1px solid var(--glass-line);
-  background: linear-gradient(90deg, rgba(124, 199, 255, 0.16), transparent 70%), var(--glass, var(--panel));
-}
-.screen-main .resume-card[hidden] { display: none; }
-.screen-main .resume-icon { flex: none; width: 40px; height: 28px; display: grid; place-items: center; color: var(--game-accent, #7cc7ff); }
-.screen-main .resume-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-.screen-main .resume-body small { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); }
-.screen-main .resume-body strong { font-size: 15px; font-weight: 650; line-height: 1.25; }
-.screen-main .resume-body em { font-size: 12.5px; font-style: normal; color: var(--text-dim); }
-.screen-main .resume-actions { display: flex; gap: 8px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
-/* Continue / Start fresh are tapped on a Chromebook's screen as often as clicked: finger-sized. */
-.screen-main .resume-actions button { min-height: 44px; }
-
-/* The shoutout under the main cards: a thank-you to Tomm1z for his video (2026-10-27). */
-.screen-main .shoutout {
-  display: flex; align-items: center; gap: var(--sp-4);
-  margin-top: var(--sp-4); padding: var(--sp-3) 18px; min-height: 56px;
-  border-radius: var(--r-3); border: 1px solid var(--glass-line);
-  background: linear-gradient(90deg, rgba(255, 48, 48, 0.14), transparent 70%), var(--glass, var(--panel));
-  color: inherit; text-decoration: none;
-  transition: transform var(--dur-2) var(--ease), background var(--dur-2) var(--ease);
-}
-.screen-main .shoutout:hover { transform: translateY(-2px); }
-.screen-main .shoutout:focus-visible { outline: 2px solid var(--game-accent); outline-offset: 3px; }
-.screen-main .shoutout-play {
-  flex: none; width: 40px; height: 28px; border-radius: var(--r-1); display: grid; place-items: center;
-  background: #e62117; color: #fff;
-}
-.screen-main .shoutout-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.screen-main .shoutout-body small { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); }
-.screen-main .shoutout-body strong { font-size: 15px; font-weight: 650; line-height: 1.25; }
-.screen-main .shoutout-body em { font-size: 12.5px; font-style: normal; color: var(--text-dim); }
 
 /* "A new version is ready" (main.js offerUpdate): on the menu, never during a flight. */
 .update-ready { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 10px;
   padding: 8px 10px 8px 16px; border-radius: var(--r-1); background: rgba(10, 18, 30, 0.9); color: #e9f1fb; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  font: 600 14px/1.3 system-ui, -apple-system, 'Segoe UI', sans-serif; max-width: calc(100vw - 24px); }
+  font: 600 14px/1.3 var(--font); max-width: calc(100vw - 24px); }
 .update-ready[hidden] { display: none; }
 .update-ready button { min-height: 44px; padding: 0 14px; border: 0; border-radius: var(--r-1); font: inherit; cursor: pointer; }
 .update-ready .update-now { background: #58c6ff; color: #04111d; }
 .update-ready .update-later { background: rgba(255, 255, 255, 0.1); color: #e9f1fb; }
+
+/* =========================================================================
+   Departures (v78): the front page and the pause card.
+   Airport signs, not glass: charcoal boards, one signal colour, the condensed
+   face for what you read from across the room, Jost for the small print. All
+   of it solid, so there is no blur to pay for on an iPad. The colour is
+   --game-accent (the helicopter's is orange, and so on).
+   ========================================================================= */
+.menu-layer {
+  --accent: #ffc72c;
+  --panel: rgba(23, 25, 29, 0.94);
+  --panel-solid: #17191d;
+  --panel-line: rgba(255, 255, 255, 0.14);
+  --glass: rgba(23, 25, 29, 0.86);
+  --glass-strong: rgba(30, 33, 38, 0.94);
+  --glass-solid: rgba(23, 25, 29, 0.94);
+  --glass-line: rgba(255, 255, 255, 0.14);
+  --text: #f5f3ee;
+  --text-dim: #bdbbb3;
+}
+:root { --sign-black: #17191d; }
+.ui-root[data-on="main"] > .menu-layer {
+  background: linear-gradient(100deg, rgba(10, 11, 13, 0.74), rgba(10, 11, 13, 0.34) 48%, rgba(10, 11, 13, 0.16));
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.ui-root[data-on="pause"] > .menu-layer {
+  background: rgba(10, 11, 13, 0.5);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+/* The flight behind a pause card, and nothing else: no HUD ghosting through. */
+[data-on="pause"] > .hud, [data-on="pause"] > .minimap, [data-on="pause"] > .touch-layer { visibility: hidden; }
+
+.menu-bar { background: transparent; }
+
+/* ---- The front page ---- */
+.screen-main {
+  width: min(1120px, 100%);
+  padding: 8px max(20px, env(safe-area-inset-right)) 20px max(20px, env(safe-area-inset-left));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: 'lead board' 'foot board';
+  gap: 16px 32px;
+  align-self: start;
+}
+.main-lead { grid-area: lead; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.main-board { grid-area: board; align-self: start; min-width: 0; display: grid; grid-template-columns: 1fr 1fr;
+  background: var(--sign-black); border-radius: var(--r-0); overflow: hidden; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4); }
+.main-foot { grid-area: foot; align-self: end; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+.brand { display: flex; align-items: flex-start; gap: 14px; }
+.brand-mark { flex: none; width: 56px; height: 56px; display: grid; place-items: center; border-radius: var(--r-0);
+  background: var(--game-accent); color: #14161a; }
+.brand h1 { margin: 0; font: 700 clamp(38px, 5.6vw, 62px)/0.95 var(--mono); text-transform: uppercase; color: #fff;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.6); }
+.tagline { margin: 8px 0 0; color: #fff; font-size: 16px; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9); }
+
+.fly-now { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 116px;
+  padding: 10px 14px 10px 24px; border: 0; border-radius: var(--r-0); text-align: left; cursor: pointer; font: inherit;
+  background: var(--game-accent); color: #14161a; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  transition: transform var(--dur-1) var(--ease); }
+.fly-now:active { transform: scale(0.985); }
+.fly-now:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.fly-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fly-body strong { font: 700 68px/0.95 var(--mono); text-transform: uppercase; }
+.fly-body em { font-style: normal; font-size: 15.5px; }
+.fly-body em span + span::before { content: ' · '; }
+.fly-now .icon { flex: none; }
+
+.stats { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 14px; color: #fff; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9); }
+.stats b { font-family: var(--mono); font-size: 17px; }
+.stats .ok { color: var(--game-accent); }
+
+.resume-card, .shoutout { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 12px; border-radius: var(--r-0);
+  background: var(--sign-black); color: var(--text); text-decoration: none; }
+.resume-icon { flex: none; color: var(--game-accent); }
+.resume-body, .shoutout-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.resume-body small, .shoutout-body small { font-size: 12.5px; color: var(--text-dim); }
+.resume-body strong, .shoutout-body strong { font-size: 15px; line-height: 1.2; }
+.resume-body em { font-size: 13px; font-style: normal; color: var(--text-dim); }
+.resume-actions { display: flex; gap: 8px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
+.resume-actions button { min-height: 44px; }
+.shoutout-play { flex: none; width: 36px; height: 26px; border-radius: var(--r-0); display: grid; place-items: center; background: #c9211a; color: #fff; }
+.shoutout:focus-visible { outline: 2px solid var(--game-accent); outline-offset: 3px; }
+
+.foot-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.menu-layer .ghost { background: var(--sign-black); border-color: transparent; }
+.foot-links .ghost { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 6px 12px; border-radius: var(--r-0);
+  color: var(--text); font-size: 14px; }
+.tiny { font-size: 12.5px; color: var(--text-dim); margin-top: 12px; }
+.tiny.copyright { margin: 0; color: #fff; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9); }
+.credits .credit-copyright { font-weight: 700; margin-bottom: 6px; }
+.ghost.is-live { color: var(--game-accent); }
+
+/* The board. */
+.board-head { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 10px 16px; }
+.board-head > span:first-child { font: 700 24px/1 var(--mono); text-transform: uppercase; color: var(--game-accent); }
+.board-head > span + span { font-size: 14px; color: var(--text-dim); white-space: nowrap; }
+.board-head [data-map-name] { color: var(--text); }
+.main-nav { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr; }
+.card-btn, .board-mini { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 60px; padding: 7px 14px; border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1); border-radius: var(--r-0); background: transparent; color: var(--text); text-align: left;
+  cursor: pointer; font: inherit; transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.card-icon { flex: none; width: 42px; height: 42px; display: grid; place-items: center; border-radius: var(--r-0); background: var(--game-accent); color: #14161a; }
+.card-icon .icon { width: 25px; height: 25px; }
+.card-body { display: flex; flex-direction: column; flex: 1; gap: 1px; min-width: 0; }
+.card-body strong, .board-mini strong { font: 700 23px/1.05 var(--mono); text-transform: uppercase; }
+.card-body em { display: block; font-style: normal; font-size: 13.5px; line-height: 1.25; color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-btn::after { content: ''; flex: none; width: 9px; height: 9px; margin: 0 4px 0 2px; border: solid var(--game-accent);
+  border-width: 2.5px 2.5px 0 0; transform: rotate(45deg); order: 3; }
+.board-mini em { display: block; font-style: normal; font-size: 13px; color: var(--text-dim); }
+.board-mini-icon { flex: none; width: 30px; display: grid; place-items: center; color: var(--game-accent); }
+.board-mini + .board-mini { border-left: 1px solid rgba(255, 255, 255, 0.1); }
+.card-btn:hover, .card-btn:active, .board-mini:hover, .board-mini:active { background: var(--game-accent); color: #14161a; }
+.card-btn:hover em, .card-btn:active em, .board-mini:hover em, .board-mini:active em { color: #14161a; }
+.card-btn:hover .card-icon, .card-btn:active .card-icon { background: #14161a; color: var(--game-accent); }
+.card-btn:hover::after, .card-btn:active::after { border-color: #14161a; }
+.card-btn:focus-visible, .board-mini:focus-visible { outline: 2px solid var(--game-accent); outline-offset: -3px; }
+
+/* An iPad on end and anything narrower: one column, Fly first. */
+@media (max-width: 860px) {
+  .screen-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: 'lead' 'board' 'foot'; }
+  .main-nav { grid-template-columns: 1fr 1fr; }
+  .card-btn:nth-child(2n) { border-left: 1px solid rgba(255, 255, 255, 0.1); }
+  .card-btn .sz-new { display: none; }
+}
+@media (max-width: 620px) {
+  .screen-main { padding: 4px 12px 16px; gap: 12px; }
+  .brand-mark { width: 44px; height: 44px; }
+  .brand-mark svg { width: 32px; height: 32px; }
+  .brand h1 { font-size: 34px; }
+  .tagline { font-size: 14px; margin-top: 4px; }
+  .fly-now { min-height: 92px; }
+  .fly-body strong { font-size: 52px; }
+  .screen-main .main-nav { grid-template-columns: 1fr; gap: 0; }
+  .card-btn:nth-child(2n) { border-left: 0; }
+  .card-btn, .board-mini { min-height: 56px; padding: 6px 12px; }
+  .board-mini strong { font-size: 19px; }
+}
+/* A phone on its side: short, not narrow. Lead left, board right, no blurbs. */
+@media (max-height: 460px) {
+  .screen-main { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr); grid-template-areas: 'lead board' 'foot board'; grid-template-rows: auto auto; gap: 8px 14px; padding-top: 0; }
+  .screen-main .brand-mark { display: none; }
+  .brand h1 { font-size: 26px; }
+  .tagline { font-size: 13px; margin-top: 2px; }
+  .main-lead { gap: 8px; }
+  .fly-now { min-height: 76px; }
+  .fly-body strong { font-size: 40px; }
+  .screen-main .main-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; }
+  .board-head { display: none; }
+  .card-btn:nth-child(2n) { border-left: 1px solid rgba(255, 255, 255, 0.1); }
+  .card-btn, .board-mini { min-height: 56px; gap: 8px; padding: 4px 8px; }
+  .card-btn::after, .card-body em { display: none; }
+  .card-body strong, .board-mini strong { font-size: 18px; }
+  .board-mini em { display: none; }
+  .card-icon { width: 36px; height: 36px; }
+  .stats { display: none; }
+}
+
+/* ---- The pause card ---- */
+.screen-pause { padding: 12px 0; }
+.pause-card { width: min(680px, 94vw); max-height: 94vh; max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain;
+  background: var(--sign-black); border-radius: var(--r-0); padding: 18px; text-align: center; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); }
+.pause-card h2 { margin: 0 0 10px; font: 700 30px/1.05 var(--mono); text-transform: uppercase; }
+.pause-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.pause-actions button { display: inline-flex; align-items: center; gap: 8px; justify-content: center; padding: 10px 16px; }
+[data-screen="pause"] .pause-card { width: min(400px, 94vw); text-align: left; }
+[data-screen="pause"] .pause-sheet { width: min(620px, 94vw); }
+[data-screen="pause"] .pause-actions { display: grid; grid-template-columns: 1fr 1fr; }
+[data-screen="pause"] .pause-actions .primary { grid-column: 1 / -1; min-height: 60px; font: 700 26px/1 var(--mono); text-transform: uppercase; }
+[data-screen="pause"] button { min-height: 48px; font-size: 15px; }
+[data-screen="pause"] .pause-actions button:not(.primary), .pause-switch { justify-content: flex-start; padding: 8px 12px; }
+.pause-actions button:where(:not(.primary)), .pause-switch, .pause-more, .pause-item > button {
+  background: rgba(255, 255, 255, 0.08); border: 1px solid transparent; border-radius: var(--r-0); color: var(--text); }
+.pause-switch { display: flex; align-items: center; width: 100%; margin-top: 8px; font-weight: 600; cursor: pointer; }
+.pause-switch.is-on { color: var(--game-accent); }
+.pause-more { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; margin-top: 8px; padding: 6px 12px; cursor: pointer; text-align: left; }
+.pause-more span { display: flex; flex-direction: column; min-width: 0; }
+.pause-more strong { font-size: 15px; }
+.pause-more em { font-style: normal; font-size: 13px; color: var(--text-dim); }
+.pause-more .icon { flex: none; color: var(--game-accent); }
+.pause-mission { margin-bottom: 12px; padding: 0 0 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.14); }
+.pause-mission small { display: block; font-size: 13px; color: var(--game-accent); }
+.pause-mission strong { display: block; font: 700 22px/1.1 var(--mono); text-transform: uppercase; }
+.pause-mission em { display: block; font-style: normal; font-size: 14px; line-height: 1.3; color: var(--text-dim); margin-top: 3px; }
+.pause-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 10px; margin-top: 12px; }
+.pause-grid span { display: flex; flex-direction: column; font-size: 12.5px; color: var(--text-dim); }
+.pause-grid b { font: 700 19px/1.1 var(--mono); color: var(--text); }
+.sz-pause:not([hidden]) ~ .pause-actions [data-act="restart"], .sz-pause:not([hidden]) ~ .pause-actions [data-act="quit"] { display: none; }
+
+.pause-sheet-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.pause-sheet-head h2 { margin: 0; }
+.pause-sheet-head .ghost { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px 6px 8px; background: rgba(255, 255, 255, 0.08); }
+.pause-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.pause-tab { flex: 1; padding: 6px 8px; border: 0; border-radius: var(--r-0); background: rgba(255, 255, 255, 0.08); color: var(--text); font: 700 19px/1 var(--mono); text-transform: uppercase; cursor: pointer; }
+.pause-tab.is-on { background: var(--game-accent); color: #14161a; }
+.pause-group { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 8px; }
+.pause-item { grid-column: 1 / -1; min-width: 0; }
+[data-pause-item="airfield"], [data-pause-item="free-look"] { grid-column: auto; }
+[data-pgroup="controls"] { display: block; }
+html.is-touch-device .cc-more, [data-pgroup="controls"] .cc-foot { display: none; }
+html.is-touch-device .cc-foot { font-size: 0; }
+html.is-touch-device .cc-foot::before { content: 'Tap to close'; font-size: 14px; }
+.pause-item > h3 { margin: 0 0 6px; font: 700 19px/1.1 var(--mono); text-transform: uppercase; color: var(--game-accent); }
+.pause-item > button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; font-weight: 600; cursor: pointer; }
+.pause-item > button.is-on { color: var(--game-accent); }
+.pause-item > p { margin-top: 6px; }
+.pause-item .trigger-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 6px; }
+.pause-item .trigger-btn { padding: 7px 10px; font-size: 14px; }
+.pause-item .trigger-btn small { font-size: 12.5px; }
+.pause-item .start-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
+.pause-item .start-opt { padding: 8px 10px; }
+.pause-item .start-opt em { font-size: 13px; }
+.pause-item .trigger-note { margin: 0 0 8px; font-size: 13.5px; }
+@media (max-height: 460px) {
+  [data-screen="pause"] .pause-card:not(.pause-sheet) { width: min(620px, 94vw); padding: 12px; }
+  [data-screen="pause"] .pause-actions { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .pause-card h2 { display: none; }
+  .pause-sheet h2 { display: block; }
+  .pause-info { display: none; }
+  [data-screen="pause"] .pause-actions button:not(.primary) { padding: 6px; justify-content: center; }
+}

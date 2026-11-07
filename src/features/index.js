@@ -26,7 +26,11 @@ import './controllers-hud.js';
 import './cockpit-cam.js';
 // What the cockpits are finished with, the first time you sit in one (panels, overhead, walls, a bounced daylight).
 import './cockpit-dress.js';
+// The sim's clock and the stall speed on the HUD and the panels.
+import './hud-readouts.js';
 import './warnings.js';
+// The aeroplane heard from where you are, the switches, the seatbelt chime, the recorded layer.
+import './flight-sound.js';
 import './bird-strike.js';
 import './explosions.js';
 import './crashes.js';

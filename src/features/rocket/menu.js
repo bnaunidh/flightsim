@@ -37,6 +37,7 @@ export function rocketIcon(size = 20) {
 export const ROCKET_UI = {
   hero: 'Island Rockets',
   line: 'Count down, lift off, and fly to space',
+  fly: { act: 'rocket-launch', word: 'Launch' },
   cards: [
     { to: 'rocket-learn', icon: 'learn', title: 'First Launch', sub: 'Start here — a small rocket, straight up to space' },
     { to: 'rocket-launch', icon: 'rocket', title: 'Launch', sub: 'Pick one of three rockets and what you want it to do' },

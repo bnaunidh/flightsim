@@ -1288,15 +1288,12 @@ function pauseButton(sim) {
   if (!pause) return null;
   let b = pause.querySelector('[data-wp-open]');
   if (b) return b;
-  const row = pause.querySelector('.pause-actions');
-  if (!row) return null;
-  b = document.createElement('button');
-  b.type = 'button';
-  b.setAttribute('data-wp-open', '');
-  b.innerHTML = `${icon('map', 18)}<span>World map</span>`;
-  b.hidden = true;
+  if (!sim.menus.addPauseItem) return null;
+  const item = sim.menus.addPauseItem('world-map', { group: 'flight',
+    html: `<button type="button" data-wp-open>${icon('map', 18)}<span>World map</span></button>` });
+  item.hidden = true;
+  b = item.querySelector('[data-wp-open]');
   b.addEventListener('click', () => openMap(sim));
-  row.insertBefore(b, row.children[1] || null);
   return b;
 }
 
@@ -1351,7 +1348,7 @@ function wrapSyncMap(sim) {
       }
       if (name === 'pause') {
         const b = pauseButton(sim);
-        if (b) b.hidden = !active();
+        if (b) b.parentNode.hidden = !active();
       }
       return out;
     };

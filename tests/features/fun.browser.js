@@ -118,7 +118,9 @@ export async function check(sim, r, say) {
       const pause = sim.menus.screens.pause;
       const fold = pause.querySelector('[data-natural-fold]');
       r.ok(`fun: ${craft}: the pause menu shows the Disasters fold`, sim.state === 'paused' && sim.menus.current === 'pause' && fold && !fold.hidden);
-      fold.open = true;
+      // Under More options since v78: one tap, then the Practice tab.
+      pause.querySelector('[data-pause-more]').click();
+      pause.querySelector('[data-ptab="practice"]').click();
       const b = fold.querySelector('[data-natural="wildfire"]');
       b.scrollIntoView({ block: 'center' });
       const bb = b.getBoundingClientRect();

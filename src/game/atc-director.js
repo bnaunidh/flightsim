@@ -272,7 +272,7 @@ export class AtcDirector {
           names = [];
         }
         const key = names.length ? names.slice(0, 2).join(' or ') : 'Z';
-        const how = this.sim.touch ? `tap RADIO on the sheet (or press ${key})` : `press ${key} for the radio`;
+        const how = this.sim.touch ? 'tap RADIO on the sheet' : `press ${key} for the radio`;
         if (this.sim.hud && this.sim.hud.notify) this.sim.hud.notify(`To report your intentions: ${how}, then pick what you want to do`, 'info', 7);
       }
     }

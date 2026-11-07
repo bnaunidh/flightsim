@@ -40,21 +40,8 @@ function h(html) {
 
 /* ====================================================================== */
 /*
- * CATEGORIES — "Add categorys for missions and planes".
- *
- * That is the wishlist, in the owner's hand. What it was about: the flight
- * mission board was twelve cards in the order they were written, so Island
- * Circuit (the first lesson) sat beside Carrier Qualification (the hardest
- * thing in the game) and a tornado, and the aeroplane picker was one run in
- * the order the types were typed in, which put the Tempest, a propeller
- * tourer, between a carrier jet and the helicopter. Seven more aeroplanes and
- * three more kinds of mission are being built alongside this, so an unsorted
- * list was about to double.
- *
- * Everything below is data plus two functions, aircraftCategory() and
- * missionCategory(). Nothing is ever written back onto a roster entry or a
- * mission: other code owns those objects, and a menu that quietly adds a
- * field to them is how two teams end up disagreeing about what it means.
+ * CATEGORIES: data plus aircraftCategory() and missionCategory(). Nothing is
+ * written back onto a roster entry or a mission.
  *
  * A type or mission that names its own `category` goes where it says. One that
  * does not is placed from what it is — the aeroplane's `class`, the mission's
@@ -106,24 +93,7 @@ export const AIRCRAFT_CATEGORIES = [
 ];
 
 /*
- * The mission headings. Eight are the contract every mission team builds
- * against; "Challenges" is the ninth, for the three flight missions that are
- * none of those things — a timed lap of an erupting volcano, three passes
- * through a tornado, and losing the jets on your tail in cloud. Putting them
- * under Training or Emergencies would have been a heading that lies about
- * what is under it, and a ten-year-old reads the heading, not the card.
- *
- * Military is last: it was behind a passcode once and stayed at the bottom so
- * the gate never left a hole in the middle of the list. The gate is gone
- * (progression.js); the order is kept so nothing moves on anyone.
- *
- * "Firefighting" came after: the wishlist asked for forest fires to put out
- * in the aeroplane and the helicopter, and those missions have a slot of their
- * own (game/extra/fire.js) being filled in parallel. Without a heading here a
- * category of 'fire' still got one, but as a grey "Fire" with the plain ring
- * icon, and 'firefighting' or 'wildfire' would each have got another — so it
- * is listed, with the words a team is likely to type mapped onto it below.
- * If the fire missions say `rescue` instead, this heading never appears.
+ * The mission headings, in board order. Military stays last so nothing moves.
  */
 export const MISSION_CATEGORIES = [
   { id: 'training', label: 'Training', blurb: 'Start here — one new thing at a time', colour: '#7ee8b2', icon: 'training' },
@@ -241,6 +211,9 @@ export function aircraftCategory(type) {
 }
 
 /* The order keywords are tried in matters: "Medevac delivery" is a rescue. */
+/** The tabs of the pause menu's More options sheet (addPauseItem), in order. */
+const PAUSE_GROUPS = [['players', 'Players'], ['flight', 'Flight'], ['world', 'World'], ['practice', 'Practice']];
+
 const MISSION_WORDS = [
   [/meteor|asteroid|comet|space ?rock/, 'meteor'],
   // A fire on the ground, not on board: that one is an emergency, below.
@@ -778,104 +751,69 @@ export class Menus {
   }
 
   /**
-   * The start screen.
-   *
-   * The Missions card used to promise "three challenges: rings, a delivery and
-   * a storm". MISSIONS holds twelve, and the rings went the day every
-   * navigation objective became a real place on the island — so the card was
-   * advertising a smaller, older game than the one behind the button, and one
-   * of the three things it named no longer existed.
-   *
-   * It said eight rather than twelve on purpose: four were military and stayed
-   * hidden until a passcode was entered (that door is gone now — every mission
-   * is listed), so a child who counted the cards after being promised twelve
-   * would have thought four had gone missing. That is the same count the
-   * stats line under the nav uses. The three named are real
-   * ones — Mango Cay Delivery, Storm Approach and Dead Stick — and the
-   * sentence is kept to the length of its neighbours so the card does not grow
-   * half again as tall as every other card in the row.
-   *
-   * Then a meteor mode, a goofy list and an emergencies list were built in
-   * parallel, and "eight" was about to be wrong again the day they landed. So
-   * the line is now counted, not written: game-ui.js's refreshMissionsLine()
-   * rewrites it from MISSIONS on every visit to this screen, as "N missions —"
-   * and the first few headings you will find behind the button. The text
-   * below is only what shows for the instant before that runs.
+   * The start screen: one big way to fly, then the departure board.
+   * The board's rows are written per game by ui/game-ui.js (applyGameUi), so
+   * .main-nav starts empty; plug-ins add theirs to .main-board.
    */
   buildMain() {
     const s = h(`
       <section class="screen screen-main" data-screen="main" hidden>
-        <div class="brand">
-          <div class="brand-mark" data-fan tabindex="0" role="img" aria-label="Propeller">
-            <svg viewBox="0 0 64 64" width="58" height="58" aria-hidden="true">
-              <path d="M32 6 L36 24 L58 32 L36 40 L32 58 L28 40 L6 32 L28 24 Z" fill="currentColor" opacity="0.9"/>
-              <circle cx="32" cy="32" r="5" fill="#0b1220"/>
-            </svg>
+        <div class="main-lead">
+          <div class="brand">
+            <div class="brand-mark" data-fan tabindex="0" role="img" aria-label="Propeller">
+              <svg viewBox="0 0 64 64" width="40" height="40" aria-hidden="true">
+                <path d="M32 6 L36 24 L58 32 L36 40 L32 58 L28 40 L6 32 L28 24 Z" fill="currentColor"/>
+                <circle cx="32" cy="32" r="5" fill="#fff"/>
+              </svg>
+            </div>
+            <div>
+              <h1>Island Flight Simulator</h1>
+              <p class="tagline">Learn to fly a real aeroplane — <span data-map-name>Kestrel Island</span></p>
+            </div>
           </div>
-          <div>
-            <h1>Island Flight Simulator</h1>
-            <p class="tagline">Learn to fly a real aeroplane — <span data-map-name>Kestrel Island</span></p>
+
+          <button class="fly-now" data-act="fly-now">
+            <span class="fly-body"><strong data-fly-word>Fly</strong>
+              <em><span data-fly-craft></span><span data-map-name>Kestrel Island</span></em></span>
+            ${icon('chevronRight', 40)}
+          </button>
+
+          <div class="resume-card" data-resume hidden role="status">
+            <span class="resume-icon" aria-hidden="true">${icon('target', 22)}</span>
+            <span class="resume-body">
+              <small data-resume-ask>Resume your mission?</small>
+              <strong data-resume-name></strong>
+              <em data-resume-where></em>
+            </span>
+            <span class="resume-actions">
+              <button class="primary" data-act="resume">Resume</button>
+              <button class="ghost" data-act="resume-discard">Start over</button>
+            </span>
           </div>
+
+          <div class="stats" data-stats></div>
         </div>
 
-        <nav class="main-nav">
-          <button class="card-btn" data-act="tutorial">
-            <span class="card-icon">${icon('learn', 24)}</span>
-            <span class="card-body"><strong>Tutorial</strong><em>Start here — learn take-off, turning and landing</em></span>
-          </button>
-          <button class="card-btn" data-act="missions">
-            <span class="card-icon">${icon('target', 24)}</span>
-            <span class="card-body"><strong>Missions</strong><em data-missions-line>Training, rescues, deliveries and emergencies — sorted into groups</em></span>
-          </button>
-          <button class="card-btn" data-act="free">
-            <span class="card-icon">${icon('cloud', 24)}</span>
-            <span class="card-body"><strong>Free Flight</strong><em>Any weather, any time of day, no rules</em></span>
-          </button>
-          <button class="card-btn" data-act="multiplayer">
-            <span class="card-icon">${icon('players', 24)}</span>
-            <span class="card-body"><strong>Multiplayer</strong><em>Fly with friends — five open lobbies, or a private match with a code</em></span>
-          </button>
-          <button class="card-btn" data-act="maps">
-            <span class="card-icon">${icon('map', 24)}</span>
-            <span class="card-body"><strong>Choose Map</strong><em data-map-blurb>Five places to fly, from flat grassland to a volcano</em></span>
-          </button>
-          <button class="card-btn" data-act="more">
-            <span class="card-icon">${icon('more', 24)}</span>
-            <span class="card-body"><strong>More</strong><em>Your rank and leaderboard, the hangar, the other vehicles, and settings</em></span>
-          </button>
-        </nav>
-
-        <div class="resume-card" data-resume hidden role="status">
-          <span class="resume-icon" aria-hidden="true">${icon('missions', 22)}</span>
-          <span class="resume-body">
-            <small data-resume-ask>Resume your mission?</small>
-            <strong data-resume-name></strong>
-            <em data-resume-where></em>
-          </span>
-          <span class="resume-actions">
-            <button class="primary" data-act="resume">Resume</button>
-            <button class="ghost" data-act="resume-discard">Start over</button>
-          </span>
+        <div class="main-board">
+          <div class="board-head"><span>Departures</span><span>from <span data-map-name>Kestrel Island</span></span></div>
+          <nav class="main-nav"></nav>
         </div>
-
-        <a class="shoutout" data-shoutout href="https://youtu.be/GJmwWdPTWes" target="_blank" rel="noopener">
-          <span class="shoutout-play" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
-          <span class="shoutout-body">
-            <small>Featured on YouTube</small>
-            <strong>Tomm1z: &ldquo;I Tried a Flight Simulator Made by My Viewer!&rdquo;</strong>
-            <em>Thank you for flying with us, Tomm1z! Watch the video &rarr;</em>
-          </span>
-        </a>
 
         <div class="main-foot">
-          <div class="stats" data-stats></div>
           <div class="foot-links">
-            <button class="ghost" data-act="sound" data-sound>🔇 Sound is off — turn it on</button>
+            <button class="ghost" data-act="settings">${icon('gear', 16)}<span>Settings</span></button>
+            <button class="ghost" data-act="sound" data-sound></button>
             <button class="ghost" data-act="credits">Credits &amp; licences</button>
-            <button class="ghost" data-act="install" data-install hidden>⇩ Install / Download game</button>
-            <a class="ghost" data-zip href="download/island-flight-sim-source.zip" download>⇩ Download source ZIP</a>
+            <button class="ghost" data-act="install" data-install hidden>Install game</button>
+            <a class="ghost" data-zip href="download/island-flight-sim-source.zip" download>Source ZIP</a>
           </div>
-          <p class="tiny">Works offline once installed. Most of the artwork and sound is made by the game itself; the rest is listed under Credits &amp; licences.</p>
+          <a class="shoutout" data-shoutout href="https://youtu.be/GJmwWdPTWes" target="_blank" rel="noopener">
+            <span class="shoutout-play" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
+            <span class="shoutout-body">
+              <small>Featured on YouTube: thank you, Tomm1z!</small>
+              <strong>&ldquo;I Tried a Flight Simulator Made by My Viewer!&rdquo;</strong>
+            </span>
+          </a>
           <p class="tiny copyright" data-copyright>&copy; thankdapro &middot; All airlines are parody and not affiliated with any real company.</p>
         </div>
       </section>
@@ -885,7 +823,8 @@ export class Menus {
       if (!btn) return;
       const act = btn.dataset.act;
       this.hooks.onClick && this.hooks.onClick(act);
-      if (act === 'tutorial') this.hooks.startTutorial();
+      if (act === 'fly-now') this.readFree ? this.hooks.startFree(this.readFree()) : this.show('free');
+      else if (act === 'tutorial') this.hooks.startTutorial();
       else if (act === 'missions') this.show('missions');
       else if (act === 'free') this.show('free');
       else if (act === 'maps') this.show('maps');
@@ -2458,73 +2397,76 @@ export class Menus {
 
     const s = h(`
       <section class="screen screen-pause" data-screen="pause" hidden>
-        <div class="pause-card">
+        <div class="pause-card" data-pause-card>
           <h2>Paused</h2>
-          <div class="pause-info" data-pause-info></div>
+          <div class="pause-mission" data-pause-mission hidden><small>Mission</small><strong></strong><em></em></div>
           <div class="pause-actions">
-            <button class="primary" data-act="resume">${icon('play', 18)}<span>Resume flight</span></button>
+            <button class="primary" data-act="resume">${icon('play', 20)}<span>Resume flight</span></button>
             <button data-act="restart">${icon('restart', 18)}<span>Restart</span></button>
-            <button data-act="airport">${icon('tower', 18)}<span>Return to the airfield</span></button>
             <button data-act="settings">${icon('gear', 18)}<span>Settings</span></button>
+            <button data-act="controls">${icon('help', 18)}<span>Controls</span></button>
             <button data-act="quit">${icon('chevronLeft', 18)}<span>Quit to menu</span></button>
           </div>
+          <button class="pause-switch" data-act="realistic" data-realistic>Realistic cockpit: off</button>
+          <button class="pause-more" data-pause-more>
+            <span><strong>More options</strong><em data-pause-more-line></em></span>${icon('chevronRight', 20)}
+          </button>
+          <div class="pause-info" data-pause-info></div>
+        </div>
 
-          <details class="pause-fold">
-            <summary>${icon('autopilot', 16)} Autopilot</summary>
-            <div class="start-grid">
-              ${AP_MODES.map((m, i) => `
-                <button class="start-opt${i === 0 ? ' is-on' : ''}" data-apmode="${m.id}">
-                  ${icon('autopilot', 18)}
-                  <span><strong>${m.label}</strong><em>${m.hint}</em></span>
-                </button>`).join('')}
-            </div>
-            <label class="field ap-alt">
-              <span>Climb or descend to <b data-apalt-val>2,000</b> ft</span>
-              <input type="range" min="500" max="12000" step="250" value="2000" data-apalt>
-            </label>
-            <label class="field ap-alt">
-              <span>Heading <b data-aphdg-val>090</b>°</span>
-              <input type="range" min="0" max="355" step="5" value="90" data-aphdg>
-            </label>
-            <label class="field ap-alt">
-              <span>Speed <b data-apspd-val>95</b> kt</span>
-              <input type="range" min="55" max="260" step="5" value="95" data-apspd>
-            </label>
-            <label class="field ap-alt">
-              <span>Climb and descend at <b data-apvs-val>900</b> ft/min</span>
-              <input type="range" min="200" max="2000" step="50" value="900" data-apvs>
-            </label>
-            <p class="hint tiny">All four can be changed while it is flying — it will not disconnect.
-            Heading only applies to <b>hold</b> and <b>climb or descend</b>; returning to the field and
-            lining up with the runway work out their own heading and height every moment.</p>
-          </details>
-
-          <details class="pause-fold">
-            <summary>${icon('camera', 16)} View</summary>
-            <div class="pause-actions">
-              <button data-act="freelook" data-freelook>Free look: off</button>
-              <button data-act="realistic" data-realistic>Realistic cockpit: off</button>
-            </div>
-          </details>
-
-          <details class="pause-fold" data-triggers hidden>
-            <summary>${icon('warning', 16)} Break something</summary>
-            <p class="trigger-note">
-              Practise dealing with it. Press one again to put it right.
-            </p>
-            <div class="trigger-grid">${triggers}</div>
-          </details>
-
-          <details class="pause-fold" data-natural-fold hidden>
-            <summary>${icon('cloud', 16)} Disasters</summary>
-            <p class="trigger-note">These run their course and stop on their own.</p>
-            <div class="trigger-grid">${eventTriggers}</div>
-          </details>
-
-          <p class="tiny">Esc resumes · C changes camera · H shows the controls</p>
+        <div class="pause-card pause-sheet" data-pause-sheet hidden>
+          <div class="pause-sheet-head">
+            <button class="ghost" data-pause-back>${icon('chevronLeft', 18)}<span>Back</span></button>
+            <h2 data-pause-title>More options</h2>
+          </div>
+          <div class="pause-tabs" role="tablist">
+            ${PAUSE_GROUPS.map(([id, label]) => `<button class="pause-tab" role="tab" data-ptab="${id}">${label}</button>`).join('')}
+          </div>
+          ${PAUSE_GROUPS.map(([id]) => `<div class="pause-group" data-pgroup="${id}" hidden></div>`).join('')}
+          <div class="pause-group" data-pgroup="controls" hidden></div>
         </div>
       </section>
     `);
+    this.screens.pause = s;
+
+    this.addPauseItem('airfield', { group: 'flight',
+      html: `<button data-act="airport">${icon('tower', 18)}<span>Return to the airfield</span></button>` });
+    this.addPauseItem('free-look', { group: 'flight', html: '<button data-act="freelook" data-freelook>Free look: off</button>' });
+    this.addPauseItem('autopilot', { group: 'flight', title: 'Autopilot', html: `
+      <div class="start-grid">
+        ${AP_MODES.map((m, i) => `
+          <button class="start-opt${i === 0 ? ' is-on' : ''}" data-apmode="${m.id}">
+            ${icon('autopilot', 18)}
+            <span><strong>${m.label}</strong><em>${m.hint}</em></span>
+          </button>`).join('')}
+      </div>
+      <label class="field ap-alt">
+        <span>Climb or descend to <b data-apalt-val>2,000</b> ft</span>
+        <input type="range" min="500" max="12000" step="250" value="2000" data-apalt>
+      </label>
+      <label class="field ap-alt">
+        <span>Heading <b data-aphdg-val>090</b>°</span>
+        <input type="range" min="0" max="355" step="5" value="90" data-aphdg>
+      </label>
+      <label class="field ap-alt">
+        <span>Speed <b data-apspd-val>95</b> kt</span>
+        <input type="range" min="55" max="260" step="5" value="95" data-apspd>
+      </label>
+      <label class="field ap-alt">
+        <span>Climb and descend at <b data-apvs-val>900</b> ft/min</span>
+        <input type="range" min="200" max="2000" step="50" value="900" data-apvs>
+      </label>
+      <p class="hint tiny">All four can be changed while it is flying. Heading only applies to <b>hold</b> and
+      <b>climb or descend</b>; returning to the field and lining up work out their own.</p>` });
+    this.addPauseItem('break', { group: 'practice', title: 'Break something', html: `
+      <p class="trigger-note">Practise dealing with it. Press one again to put it right.</p>
+      <div class="trigger-grid">${triggers}</div>` }).toggleAttribute('data-triggers', true);
+    this.addPauseItem('disasters', { group: 'practice', title: 'Disasters', html: `
+      <p class="trigger-note">These run their course and stop on their own.</p>
+      <div class="trigger-grid">${eventTriggers}</div>` }).toggleAttribute('data-natural-fold', true);
+    s.querySelector('[data-triggers]').hidden = true;
+    s.querySelector('[data-natural-fold]').hidden = true;
+
     // The height selector: tell it to climb or descend while it holds.
     s.addEventListener('input', (e) => {
       if (e.target.matches('[data-aphdg]')) {
@@ -2552,6 +2494,10 @@ export class Menus {
     });
 
     s.addEventListener('click', (e) => {
+      if (e.target.closest('[data-pause-more]')) return this.openPauseSheet();
+      if (e.target.closest('[data-pause-back]')) return this.closePauseSheet();
+      const tab = e.target.closest('[data-ptab]');
+      if (tab) return this.pauseTab(tab.dataset.ptab);
       const ap = e.target.closest('[data-apmode]');
       if (ap) {
         this.hooks.onAutopilotMode && this.hooks.onAutopilotMode(ap.dataset.apmode);
@@ -2577,8 +2523,84 @@ export class Menus {
         this.hooks.onPauseAction(act);
       }
     });
-    this.screens.pause = s;
     return s;
+  }
+
+  /**
+   * The one door into the pause menu: a feature with something to offer calls
+   * this and gets back its own box in the More options sheet, under `group`
+   * (see PAUSE_GROUPS). Calling it again returns the same box, so a feature
+   * can paint from anywhere. `box.hidden = true` takes it out, and a tab with
+   * nothing showing goes with it. No more folds of their own.
+   */
+  addPauseItem(id, { group = 'world', title = '', html = '' } = {}) {
+    const host = this.screens.pause;
+    if (!host) return null;
+    let item = host.querySelector(`[data-pause-item="${id}"]`);
+    if (item) return item;
+    item = h(`<div class="pause-item" data-pause-item="${id}">${title ? `<h3>${title}</h3>` : ''}${html}</div>`);
+    host.querySelector(`[data-pgroup="${group}"]`).appendChild(item);
+    this.syncPauseSheet();
+    return item;
+  }
+
+  /** The tabs that have something in them, and the line on the More options button. */
+  syncPauseSheet() {
+    const host = this.screens.pause;
+    const shown = [];
+    for (const [id, label] of PAUSE_GROUPS) {
+      const on = [...host.querySelectorAll(`[data-pgroup="${id}"] > .pause-item`)].some((n) => !n.hidden && n.style.display !== 'none');
+      host.querySelector(`[data-ptab="${id}"]`).hidden = !on;
+      if (on) shown.push([id, label]);
+    }
+    host.querySelector('[data-pause-more]').hidden = !shown.length;
+    host.querySelector('[data-pause-more-line]').textContent = shown.map((g) => g[1]).join(' · ');
+    return shown;
+  }
+
+  pauseTab(group) {
+    const host = this.screens.pause;
+    host.querySelectorAll('[data-pgroup]').forEach((n) => { n.hidden = n.dataset.pgroup !== group; });
+    host.querySelectorAll('[data-ptab]').forEach((n) => {
+      n.classList.toggle('is-on', n.dataset.ptab === group);
+      n.setAttribute('aria-selected', n.dataset.ptab === group ? 'true' : 'false');
+    });
+  }
+
+  /** One tap from the pause card: the grouped sheet, on `group` or the first tab with anything in it. */
+  openPauseSheet(group) {
+    const host = this.screens.pause;
+    const shown = this.syncPauseSheet();
+    host.querySelector('[data-pause-title]').textContent = 'More options';
+    host.querySelector('.pause-tabs').hidden = false;
+    host.querySelector('[data-pause-card]').hidden = true;
+    host.querySelector('[data-pause-sheet]').hidden = false;
+    this.pauseTab(group || (shown[0] && shown[0][0]) || 'flight');
+  }
+
+  /** The Controls page: the same sheet, no tabs, whatever ui/hud.js wrote for this vehicle. */
+  openPauseControls(html) {
+    const host = this.screens.pause;
+    this.openPauseSheet('controls');
+    host.querySelector('[data-pause-title]').textContent = 'Controls';
+    host.querySelector('.pause-tabs').hidden = true;
+    host.querySelector('[data-pgroup="controls"]').innerHTML = html;
+  }
+
+  closePauseSheet() {
+    const host = this.screens.pause;
+    host.querySelector('[data-pause-sheet]').hidden = true;
+    host.querySelector('[data-pause-card]').hidden = false;
+  }
+
+  /** On a mission: its name and what it wants now, first on the card, and Restart says what it restarts. */
+  setPauseMission(name, goal) {
+    const host = this.screens.pause;
+    const box = host.querySelector('[data-pause-mission]');
+    box.hidden = !name;
+    box.querySelector('strong').textContent = name || '';
+    box.querySelector('em').textContent = goal || '';
+    host.querySelector('[data-act="restart"] span').textContent = name ? 'Restart mission' : 'Restart';
   }
 
   /** Show the triggers panel only where it belongs. */
@@ -2654,7 +2676,9 @@ export class Menus {
 
   syncRealisticCockpit(on) {
     const b = this.screens.pause && this.screens.pause.querySelector('[data-realistic]');
-    if (b) b.textContent = `Realistic cockpit: ${on ? 'on' : 'off'}`;
+    if (!b) return;
+    b.textContent = `Realistic cockpit: ${on ? 'on' : 'off'}`;
+    b.classList.toggle('is-on', !!on);
   }
 
   buildDebrief() {
@@ -2882,15 +2906,24 @@ export class Menus {
     }
   }
 
+  /** What the big Fly button takes off in: the aircraft Free Flight would use. */
+  syncFly() {
+    const n = this.screens.main.querySelector('[data-fly-craft]');
+    const cfg = this.readFree && this.readFree();
+    const ac = cfg && AIRCRAFT.find((a) => a.id === cfg.aircraft);
+    n.textContent = ac ? ac.name : '';
+    n.hidden = !ac;
+  }
+
   syncProgress(progress) {
     this._lastProgress = progress;
     const stats = this.screens.main.querySelector('[data-stats]');
     const done = Object.values(progress.missions).filter((m) => m.complete).length;
     const best = progress.bestLanding;
     stats.innerHTML = `
-      <span><b>${done}</b>/${MISSIONS.length} missions</span>
+      <span><b>${done}</b> missions done</span>
       <span><b>${progress.landings}</b> landings</span>
-      ${best ? `<span>Best landing <b>${best.score}</b>/100</span>` : '<span>No landings yet</span>'}
+      ${best ? `<span>Best landing <b>${best.score}</b>/100</span>` : ''}
       ${progress.tutorialComplete ? '<span class="ok">Flight school ✓</span>' : ''}
     `;
     for (const m of MISSIONS) {
@@ -2915,7 +2948,7 @@ export class Menus {
     if (box) box.checked = !!muted;
     const btn = this.screens.main.querySelector('[data-sound]');
     if (!btn) return;
-    btn.textContent = muted ? '🔇 Sound is off — turn it on' : '🔊 Sound is on — turn it off';
+    btn.innerHTML = `${icon(muted ? 'soundOff' : 'soundOn', 16)}<span>Sound is ${muted ? 'off — turn it on' : 'on — turn it off'}</span>`;
     btn.classList.toggle('is-live', !muted);
   }
 
@@ -2927,7 +2960,7 @@ export class Menus {
   setInstalled() {
     const btn = this.screens.main.querySelector('[data-install]');
     btn.hidden = false;
-    btn.textContent = '✓ Installed — playable offline';
+    btn.textContent = 'Installed: playable offline';
     btn.disabled = true;
   }
 
@@ -3140,7 +3173,10 @@ export class Menus {
     // The game switcher and the credits bar belong to the menus, not to the
     // debrief: over the crash card it showed through from behind (the rival
     // study's 390 px phone), one tap from leaving the flight you just lost.
-    if (this.bar) this.bar.hidden = name === 'debrief';
+    // ...and the pause card is a card, not a menu: no way off it to another game.
+    if (this.bar) this.bar.hidden = name === 'debrief' || name === 'pause';
+    // One attribute the stylesheet can key the back of the screen off.
+    this.root.dataset.on = name;
     // The hangar's podium starts and stops with its screen.
     if (this.showcaseUi) this.showcaseUi.onScreen(name, prev);
     // Credits and the lit game can both have changed since this screen was
@@ -3162,7 +3198,12 @@ export class Menus {
     if (name === 'main') this.refreshMissionsLine && this.refreshMissionsLine();
     // Whoever opened it may want to repaint it for the island we are on.
     if (this.hooks.onScreen) this.hooks.onScreen(name);
-    if (name === 'pause') this.syncFreeLook();
+    if (name === 'pause') {
+      this.syncFreeLook();
+      this.closePauseSheet();
+      this.syncPauseSheet();
+    }
+    if (name === 'main') this.syncFly();
     if (name !== 'settings') this.settingsReturn = null;
     // Move focus for keyboard users.
     const focusable = this.screens[name].querySelector('button, select, input, a');
@@ -3226,6 +3267,7 @@ export class Menus {
   hide() {
     const prev = this.current;
     this.layer.hidden = true;
+    delete this.root.dataset.on;
     this.current = null;
     if (this.showcaseUi) this.showcaseUi.onScreen(null, prev);
     for (const key in this.screens) this.screens[key].hidden = true;

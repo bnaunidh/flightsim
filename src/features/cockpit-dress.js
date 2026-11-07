@@ -33,8 +33,8 @@ import { styleOf, plate, txt, knob, pushButton, paintOverhead, paintPedestal, pa
 export const DRESS = Object.freeze({
   /** Bounce, as a share of each surface's own colour, in full daylight; at night the panel lights do the work. */
   fill: 0.085,
-  fillNight: 0.03,
-  fillSunset: 0.05,
+  fillNight: 0.04,
+  fillSunset: 0.065,
 });
 
 const COCKPIT_FIRST = -100;
@@ -140,16 +140,19 @@ function dial(panel, { u, v, R, value, rate = 5, ...spec }) {
   });
 }
 
-/** A chronometer: the seconds hand steps once a second, for ever. */
+/** The panel clock: the sim's own local time (hud-readouts.js), hours, minutes and a stepping seconds hand. */
 function chrono(panel, u, v, R, title = 'CHR') {
-  let t = 0;
   const a = roundGauge(panel.ctx, panel.px(u), panel.py(v), panel.pr(R), {
     min: 0, max: 60, start: 0, sweep: 360, step: 5, major: 15, labels: [[15, '15'], [30, '30'], [45, '45']], labelSize: 16, title,
   });
-  const n = panel._needle(u, v, R * 0.84, R * 0.04);
-  panel.live.push((s, dt) => {
-    t += dt;
-    n.rotation.z = -a(Math.floor(t) % 60);
+  const h = panel._needle(u, v, R * 0.5, R * 0.07);
+  const m = panel._needle(u, v, R * 0.74, R * 0.055);
+  const n = panel._needle(u, v, R * 0.84, R * 0.03);
+  panel.live.push(() => {
+    const t = (D.sim && D.sim.clockSeconds) || 0;
+    n.rotation.z = -a(t % 60);
+    m.rotation.z = -a((t / 60) % 60);
+    h.rotation.z = -a(((t / 3600) % 12) * 5);
   });
 }
 
@@ -337,23 +340,49 @@ function dressHeli(cp, low) {
   return 1;
 }
 
+/**
+ * Every panel, the same plate: a lit top edge under the coaming and a shadowed
+ * foot, so it reads as a thing with thickness and not a dark sheet. Into the
+ * canvas it already has: no draw, no program, one upload, once.
+ */
+function plateEdge(panel) {
+  if (!panel || !panel.paint || !panel.canvas || !panel.ctx) return;
+  panel.paint((g) => {
+    const { width: W, height: H } = panel.canvas;
+    const e = Math.max(3, Math.round(H * 0.012));
+    const hi = g.createLinearGradient(0, 0, 0, e * 3);
+    hi.addColorStop(0, 'rgba(0,0,0,0.5)');
+    hi.addColorStop(0.45, 'rgba(255,255,255,0.1)');
+    hi.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = hi;
+    g.fillRect(0, 0, W, e * 3);
+    g.fillStyle = 'rgba(0,0,0,0.42)';
+    g.fillRect(0, H - e, W, e);
+    g.fillStyle = 'rgba(255,255,255,0.06)';
+    g.fillRect(0, H - e * 1.5, W, e * 0.5);
+  });
+  if (panel.texture) panel.texture.needsUpdate = true;
+}
+
 export function dress(cp, sim) {
   const low = (sim.qualityBuilt || sim.settings.quality) === 'low';
   const fam = cp.userData.family;
   let draws = 0;
+  plateEdge(cp.userData.panel);
   if (fam === 'airliner') draws = dressAirliner(cp, low);
   else if (fam === 'light') draws = dressLight(cp, low);
   else if (fam === 'heli') draws = dressHeli(cp, low);
   return { draws, fill: fam === 'none' ? [] : collectFill(cp), level: -1 };
 }
 
-const D = { cp: null, now: null };
+const D = { cp: null, now: null, sim: null };
 
 registerExtension({
   id: 'cockpit-dress',
   update(sim) {
     const cp = sim.cockpit;
     if (!cp || !sim.rig || sim.rig.mode !== 'cockpit' || sim.state !== 'flying') return;
+    D.sim = sim;
     if (cp !== D.cp) {
       D.cp = cp;
       D.now = null;

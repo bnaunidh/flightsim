@@ -1145,10 +1145,9 @@ function showResult(sim, S) {
 /* ------------------------------------------------------------------ */
 
 const PAUSE_CSS = `
-.screen-pause.is-rocket .pause-fold,
-.screen-pause.is-rocket [data-act="airport"],
-.screen-pause.is-rocket [data-triggers],
-.screen-pause.is-rocket [data-natural-fold] { display: none !important; }
+.screen-pause.is-rocket .pause-more,
+.screen-pause.is-rocket .pause-switch,
+.screen-pause.is-rocket [data-act="airport"] { display: none !important; }
 `;
 
 function install(sim) {

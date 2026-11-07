@@ -2199,17 +2199,18 @@ export async function check(sim, r, say = () => {}, opts = {}) {
         const moved = where().at;
         sim.pause();
         const ps = sim.menus.screens.pause;
-        // The buttons as painted: a fold the van has hidden does not count,
-        // and one it has not does, closed or open.
+        // The buttons as painted: an item the van has hidden does not count,
+        // and one it has not does, on any tab.
         const painted = (n) => {
-          for (let e = n; e && e !== ps; e = e.parentElement) {
+          // The More options sheet is shut, not hidden from this vehicle: stop at its group.
+          for (let e = n; e && e !== ps && !e.matches('.pause-group'); e = e.parentElement) {
             const cs = getComputedStyle(e);
             if (cs.display === 'none' || cs.visibility === 'hidden' || e.hidden) return false;
           }
           return true;
         };
         const btns = ps
-          ? Array.from(ps.querySelectorAll('.pause-actions > [data-act], details.pause-fold > summary')).filter(painted).map((b) => b.textContent.trim())
+          ? Array.from(ps.querySelectorAll('.pause-actions > [data-act], .pause-switch, .pause-item > h3, .pause-item > button')).filter(painted).map((b) => b.textContent.trim())
           : [];
         const info = ps ? ps.querySelector('[data-pause-info]').textContent.replace(/\s+/g, ' ').trim() : '';
         const aeroWords = btns.filter((t) => /flight|airfield|runway|cockpit|autopilot/i.test(t));

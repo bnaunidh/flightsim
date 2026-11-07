@@ -682,19 +682,14 @@ function installMenu(sim) {
   if (!host || typeof host.querySelector !== 'function') return;
   let fold = host.querySelector('[data-hsk-fold]');
   if (!fold) {
-    const after = host.querySelector('[data-natural-fold]');
-    if (!after || !after.parentNode) return;
-    fold = document.createElement('details');
-    fold.className = 'pause-fold';
-    fold.setAttribute('data-hsk-fold', '');
-    fold.hidden = true;
-    fold.innerHTML = `<summary>Targets</summary>
+    if (!sim.menus.addPauseItem) return;
+    fold = sim.menus.addPauseItem('targets', { group: 'practice', title: 'Targets', html: `
       <p class="trigger-note">Orange practice drones for the heat-seekers. Military jets carry three: hold a drone in the circle until the box turns red (or press Home to lock one), then fire. Land and stop at a base to rearm.</p>
       <div class="trigger-grid">
         <button class="trigger-btn" data-hsk-spawn type="button"><span>Practice target drones<small>Put three out ahead of you</small></span></button>
         <button class="trigger-btn" data-hsk-clear type="button"><span>Clear the targets<small>Take them away again</small></span></button>
-      </div>`;
-    after.parentNode.insertBefore(fold, after.nextSibling);
+      </div>` });
+    fold.setAttribute('data-hsk-fold', '');
     fold.addEventListener('click', (e) => {
       const s = e.target.closest('[data-hsk-spawn]');
       const c = e.target.closest('[data-hsk-clear]');

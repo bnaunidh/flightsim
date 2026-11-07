@@ -20,6 +20,9 @@ export const TOUCH_PHRASES = [
   // A line that already names the touch control ("press 7 (or tap the button)") says only that.
   [/\b(Press|press) <kbd>[^<]{1,12}<\/kbd> \(or tap ([^)]+)\)/g, (m, verb, what) => `${verb === 'Press' ? 'Tap' : 'tap'} ${what}`],
   [/Hold <kbd>Shift<\/kbd> for full power/g, 'Slide the throttle all the way up for full power'],
+  [/Hold Shift for full power/g, 'Slide the throttle all the way up for full power'],
+  [/\bwith Shift\b/g, 'with the throttle'],
+  [/ \(Shift\)/g, ''],
   [/Hold <kbd>Shift<\/kbd> — you need (\d+) knots to fly/g, 'Throttle all the way up — you need $1 knots to fly'],
   [/Now pull back gently on <kbd>S<\/kbd> to fly!/g, 'Now ease the stick back gently to fly!'],
   [/Keep straight with <kbd>Q<\/kbd> \/ <kbd>E<\/kbd>/g, 'Keep straight with the rudder slider'],

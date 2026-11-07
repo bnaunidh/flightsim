@@ -127,7 +127,7 @@ function unlitRow(meshes) {
   geo.computeVertexNormals();
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.MeshStandardMaterial({ map: tex, color: 0x141820, roughness: 0.6 });
+  const mat = new THREE.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: 0.26, color: 0x8d97a6, roughness: 0.6 });
   mat.addEventListener('dispose', () => tex.dispose());
   return new THREE.Mesh(geo, mat);
 }
@@ -153,10 +153,8 @@ export function warningLamps(group, { place, placeMaster, size = [0.108, 0.042],
   placeMaster(master);
   group.add(master);
   /*
-   * Dark, all nine are one mesh: the legends painted once side by side into
-   * one texture, the quads merged where the lamps sit. A lamp's own mesh is
-   * drawn only while it is lit, a hair in front. Nine draws a frame became
-   * one, which is a good part of what the cockpit view costs.
+   * Dark, all nine are one mesh (one texture, the quads merged), legible but
+   * unlit; a lamp's own mesh is drawn only while lit. Nine draws became one.
    */
   const all = [...lamps.map((l) => l.mesh), master];
   const unlit = unlitRow(all);

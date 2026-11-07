@@ -44,7 +44,7 @@ const LIGHT = {
     reg: 'N172SK',
     model: 'SKYLARK 172',
     trim: { head: '#d8d2c2', wall: '#b3ad9f', low: '#6c6a66', floor: '#3b3c40', frame: '#3a3c40' },
-    panel: '#2e3238',
+    panel: '#3a3f46',
     glare: '#1b1c1f',
     seat: '#6a6862',
     seatTrim: '#4a4844',
@@ -66,7 +66,7 @@ const LIGHT = {
     reg: 'N8PC',
     model: 'KESTREL COURIER',
     trim: { head: '#c9c6bf', wall: '#4f5865', low: '#353b44', floor: '#24272c', frame: '#22262c' },
-    panel: '#2a2e35',
+    panel: '#383d45',
     glare: '#17191c',
     seat: '#8a6a4a',
     seatTrim: '#5b4532',
@@ -91,7 +91,7 @@ const LIGHT = {
     reg: 'N4WR',
     model: 'TEMPEST WR-4',
     trim: { head: '#b9bcbf', wall: '#7d8388', low: '#4a4f55', floor: '#2b2e33', frame: '#2a2d31' },
-    panel: '#2b2f34',
+    panel: '#393e44',
     glare: '#17191c',
     seat: '#3d4248',
     seatTrim: '#2a2e33',
@@ -887,7 +887,7 @@ export function buildLightCockpit(ctx) {
   if (C.compass && ws) {
     const zc = ws.z1 - 0.04 / k;
     const top = L(shell.insetPoint(zc, 0));
-    const box = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.05, 0.06), blackMetal);
+    const box = new THREE.Mesh(new THREE.CylinderGeometry(0.033, 0.036, 0.05, 16), blackMetal);
     box.position.set(cx, top.y - 0.045, top.z + 0.03);
     group.add(box);
     const c = document.createElement('canvas');

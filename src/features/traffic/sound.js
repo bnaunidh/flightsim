@@ -79,6 +79,7 @@ export class TrafficSound {
     if (now < this.next) return;
     this.next = now + 0.1;
     if (!near) {
+      this.lastDist = null;
       this.silence(mixer);
       return;
     }
@@ -86,6 +87,10 @@ export class TrafficSound {
     const n = this.nodes;
     const t = mixer.time;
     const rpm = Math.max(0, Math.min(1, near.rpm));
+    // Doppler, from the distance's own rate over these 0.1 s: the fly-past falls as it goes by.
+    const rate = this.lastDist == null ? 0 : (near.dist - this.lastDist) / 0.1;
+    this.lastDist = near.dist;
+    const pitch = Math.min(1.3, Math.max(0.75, 343 / (343 + rate)));
     const fall = 1 / (1 + (near.dist / 90) ** 2);
     const level = 0.11 * (0.25 + 0.75 * rpm) * fall;
     n.out.gain.setTargetAtTime(level, t, 0.2);
@@ -94,12 +99,12 @@ export class TrafficSound {
       n.rushG.gain.setTargetAtTime(0.9, t, 0.2);
       n.whineG.gain.setTargetAtTime(0.05 + 0.08 * rpm, t, 0.2);
       n.rushBp.frequency.setTargetAtTime(500 + 900 * rpm, t, 0.3);
-      n.whine.frequency.setTargetAtTime(1500 + 2200 * rpm, t, 0.4);
+      n.whine.frequency.setTargetAtTime((1500 + 2200 * rpm) * pitch, t, 0.4);
     } else {
       n.rushG.gain.setTargetAtTime(0.12, t, 0.2);
       n.whineG.gain.setTargetAtTime(0, t, 0.2);
       n.propG.gain.setTargetAtTime(0.7, t, 0.2);
-      n.prop.frequency.setTargetAtTime(38 + 82 * rpm, t, 0.3);
+      n.prop.frequency.setTargetAtTime((38 + 82 * rpm) * pitch, t, 0.3);
       n.propLp.frequency.setTargetAtTime(260 + 500 * rpm, t, 0.3);
     }
   }

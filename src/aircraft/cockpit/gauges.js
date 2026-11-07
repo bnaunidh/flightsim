@@ -867,8 +867,8 @@ export class GaugePanel {
     for (const f of this.flags) f.visible = dead;
     for (const l of this.lcds) l.visible = dead;
     const light = dead ? 0 : env.panelLight || 0;
-    this.faceMat.emissiveIntensity = dead ? 0 : 0.08 + light * (this.faceGlow ?? 0.5);
-    this.needleMat.emissiveIntensity = dead ? 0 : 0.12 + light * 0.5;
+    this.faceMat.emissiveIntensity = dead ? 0 : Math.max(0.32, 0.08 + light * (this.faceGlow ?? 0.5));
+    this.needleMat.emissiveIntensity = dead ? 0 : 0.3 + light * 0.4;
     this.symbolMat.emissiveIntensity = dead ? 0 : 0.2 + light * 0.5;
     // Lamps every frame: in a blackout they are told, and go out.
     for (const fn of this.lampFns) fn(s, dt, ac, env);

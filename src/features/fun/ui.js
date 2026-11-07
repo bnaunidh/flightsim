@@ -12,6 +12,8 @@ import { extLayer } from '../../game/extensions.js';
 import { keyName, bindingsVersion } from '../../flight/input.js';
 import { SMOKE_COLOURS } from './smoke.js';
 
+import { icon } from '../../ui/icons.js';
+
 const CSS = /* css */ `
 .fun-chip {
   position: absolute; left: 16px; top: 270px; display: flex; align-items: center; gap: 8px;
@@ -59,19 +61,6 @@ const CSS = /* css */ `
 @media (max-width: 700px), (max-height: 480px) {
   .fun-chip { font-size: 14px; }
 }
-
-.fun-open {
-  display: flex; align-items: center; gap: 14px; width: 100%; margin-top: 12px; text-align: left;
-  padding: 14px 18px; border-radius: 16px; cursor: pointer; font: inherit; color: #2d1c00;
-  border: 1px solid rgba(255, 220, 120, 0.9);
-  background: linear-gradient(120deg, #ffe07a, #ffc247 55%, #ff9f5a);
-  box-shadow: 0 10px 28px rgba(255, 170, 60, 0.25); transition: transform 0.15s ease;
-}
-.fun-open:hover { transform: translateY(-3px); }
-.fun-open:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-.fun-open .emoji { font-size: 30px; line-height: 1; }
-.fun-open strong { display: block; font-size: 18px; }
-.fun-open em { display: block; font-style: normal; font-size: 13.5px; opacity: 0.85; margin-top: 2px; }
 
 .fun-screen .fun-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
 .fun-card {
@@ -144,7 +133,8 @@ export class FunHud {
     // not up to a second later. The multiplayer badge places itself round
     // this chip a quarter-second after a resize (multiplayer/ui.js), and with
     // the chip still where the old layout had it, the badge sat on it.
-    if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('resize', () => { this.placeT = 0; });
+    // And when the passengers card moves into this corner (passengers/ui.js), so it is never on top of it.
+    if (typeof window !== 'undefined' && window.addEventListener) for (const ev of ['resize', 'hud-moved']) window.addEventListener(ev, () => { this.placeT = 0; });
   }
 
   setVisible(on) {
@@ -210,20 +200,21 @@ export class FunHud {
       }
     }
     let top = bottom + 10;
-    // Nor on the objective line (on a phone the helicopter's card brings it
-    // down to that row).
-    const obj = root.querySelector('.hud-top');
-    if (obj) {
-      const r = obj.getBoundingClientRect();
-      if (r.width && r.left < left + 60 && r.right > left && top < r.bottom && top + 44 > r.top) top = r.bottom + 8;
-    }
-    // Nor on "Tap here to get out" (staff/ui.js, under it on a phone held
-    // upright): the chip covered half of the only way out.
-    const pr = document.querySelector('.of-prompt.on');
-    if (pr) {
-      const r = pr.getBoundingClientRect();
-      const h = this.chip.offsetHeight || 54;
-      if (r.width && r.left < left + (this.chip.offsetWidth || 118) && r.right > left && top < r.bottom && top + h > r.top) top = r.bottom + 8;
+    // Nor on the objective line (on a phone the helicopter's card brings it down to that row), nor on "Tap
+    // here to get out" (staff/ui.js), nor back on a card above after one of those pushed it down: the
+    // passengers card under the map on an iPad sat right where the objective sent the chip.
+    const w = this.chip.offsetWidth || 118;
+    const h = this.chip.offsetHeight || 54;
+    const avoid = [...under, root.querySelector('.hud-top'), document.querySelector('.of-prompt.on')]
+      .filter(Boolean).map((e) => e.getBoundingClientRect()).filter((r) => r.width && r.height && r.top < H * 0.6);
+    for (let pass = 0, moved = true; moved && pass < 4; pass++) {
+      moved = false;
+      for (const r of avoid) {
+        if (r.left < left + w && r.right > left && top < r.bottom && top + h > r.top) {
+          top = r.bottom + 8;
+          moved = true;
+        }
+      }
     }
     const stick = root.querySelector('.touch-stick');
     if (stick) {
@@ -272,10 +263,10 @@ export function addMenuButton(menus, onOpen) {
   if (!main || main.querySelector('[data-fun-open]')) return null;
   const b = el(
     'button',
-    'fun-open',
-    `<span class="emoji" aria-hidden="true">💨</span>
+    'fun-open board-mini',
+    `<span class="board-mini-icon">${icon('cloud', 20)}</span>
      <span><strong>Fun Stuff</strong>
-     <em>Smoke trails — pick a colour</em></span>`
+     <em>Smoke trails</em></span>`
   );
   b.type = 'button';
   b.setAttribute('data-fun-open', '');

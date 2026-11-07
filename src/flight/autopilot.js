@@ -418,6 +418,7 @@ export class Autopilot {
       this.targetSpeedKts = clamp(Math.round(r.iasKts / 5) * 5, 55, 260);
       this.selectedSpeedKts = this.targetSpeedKts;
       this.holdHeadingDeg = r.heading;
+      this.selectedHeadingDeg = Math.round(r.heading) % 360;
       this._iAlt = 0;
       this._iBank = 0;
     this._iBank = 0;

@@ -953,18 +953,15 @@ export function buildHud(ctrl, layer) {
      * pointer, and pausing hid it.
      */
     pauseList(sim, on, players, opts) {
-      const card = sim && sim.menus && sim.menus.screens && sim.menus.screens.pause
-        && sim.menus.screens.pause.querySelector('.pause-card');
-      if (!card) return;
       if (!pause) {
-        pause = h(`<details class="pause-fold mp-pausefold" open hidden><summary>Multiplayer · <span data-mp-pausehead></span></summary><div data-mp-pauselist></div></details>`);
+        if (!sim || !sim.menus || !sim.menus.addPauseItem) return;
+        pause = sim.menus.addPauseItem('multiplayer', { group: 'players',
+          html: '<h3>Multiplayer · <span data-mp-pausehead></span></h3><div data-mp-pauselist></div>' });
+        if (!pause) return;
+        pause.classList.add('mp-pausefold');
+        pause.hidden = true;
         pause.addEventListener('click', onClick);
         pause.addEventListener('input', onInput);
-      }
-      if (pause.parentNode !== card) {
-        const after = card.querySelector('.pause-actions');
-        if (after && after.nextSibling) card.insertBefore(pause, after.nextSibling);
-        else card.appendChild(pause);
       }
       if (pause.hidden === !!on) pause.hidden = !on;
       if (on) {

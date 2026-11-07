@@ -257,6 +257,7 @@ function bridgeDoorId(sim) {
 function setDoor(sim, open) {
   const md = modelDoors(sim);
   const id = bridgeDoorId(sim);
+  if (S.doorsOpen !== !!open && sim.audio && sim.audio.available && sim.audio.fx) sim.audio.fx.door();
   S.doorsOpen = !!open;
   if (!md || !id) return;
   try {

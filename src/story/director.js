@@ -104,6 +104,8 @@ export function installDirector(sim, ui) {
   const pause = sim.pause.bind(sim);
   sim.pause = function storyPause() {
     pause();
+    // A chapter over and done must not leave its buttons on the next free flight's card.
+    if (!D.active && D.ui) D.ui.showPauseBlock(false);
     if (D.active && sim.state === 'paused') {
       Cinema.setSuspended(true);
       if (D.ui) {

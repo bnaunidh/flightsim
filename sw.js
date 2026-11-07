@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v77.8';
+const CACHE_VERSION = 'island-flight-v78.0';
 
 const PRECACHE = [
   './',
@@ -627,6 +627,13 @@ const PRECACHE = [
   'src/features/walk-in.js',
   // Added by tools/sync-precache.mjs.
   'src/world/worldmap/field-detail.js',
+  // Added by tools/sync-precache.mjs.
+  'src/features/hud-readouts.js',
+  'src/features/stall-speed.js',
+  // Added by tools/sync-precache.mjs.
+  'src/audio/profile.js',
+  'src/features/flight-sound.js',
+  'src/features/sound-samples.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 
@@ -719,6 +726,7 @@ const PRECACHE = [
 // fails to cache, offline play still works.
 const OPTIONAL = [
   'assets/atc/manifest.json',
+  'assets/sounds/manifest.json',
   'tests/selftest.js',
   'README.md',
   // The map loading screens' pictures (src/features/loading-screens.js): 31 JPEGs, under 250 KB each.

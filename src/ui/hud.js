@@ -154,6 +154,13 @@ const CONTROL_BASICS = [
   ] },
 ];
 
+/** The Controls page on a touchscreen: what to touch instead of a key, by each row's first action. */
+const TOUCH_KEYS = {
+  pitchDown: 'Stick', rollLeft: 'Stick', yawLeft: 'RUDDER', throttleUp: 'Throttle', gear: 'GEAR', flapsDown: 'FLAPS',
+  brakes: 'BRAKES', starter: 'ENGINE', camera: 'Camera button', minimap: 'SYSTEMS', autopilot: 'SYSTEMS', pause: 'Pause button',
+  heliUp: 'Throttle', heliForward: 'Stick', heliLeft: 'Stick', heliTurnLeft: 'RUDDER',
+};
+
 export class Hud {
   constructor(root, { onAction } = {}) {
     this.root = root;
@@ -607,6 +614,10 @@ export class Hud {
 
     this.controlsCard = el('div', 'hud-controls-card');
     this.controlsCard.style.display = 'none';
+    // A finger has no H key: a tap on the card closes it ("All keys" still folds).
+    this.controlsCard.addEventListener('click', (e) => {
+      if (!e.target.closest('.cc-more')) this.hideControls();
+    });
     wrap.appendChild(this.controlsCard);
 
     /*
@@ -880,7 +891,9 @@ export class Hud {
       for (const [title, rows] of basics.sections) {
         html += `<div class="cc-basic"><h4>${title}</h4>`;
         for (const [say, ...ids] of rows) {
-          const keys = ids.filter((id) => actions[id]).map(key1).filter(Boolean);
+          const keys = this.wrap.classList.contains('is-touch')
+            ? (TOUCH_KEYS[ids[0]] ? [`<kbd>${TOUCH_KEYS[ids[0]]}</kbd>`] : [])
+            : ids.filter((id) => actions[id]).map(key1).filter(Boolean);
           if (keys.length) html += `<div class="cc-row"><span>${say}</span><span class="cc-keys">${keys.join(' ')}</span></div>`;
         }
         html += '</div>';
@@ -2222,21 +2235,17 @@ export class Hud {
 
     // --- Stall + PAPI guidance ---
     /*
-     * A stall is a wing's problem and this warning is a wing's warning.
-     *
-     * On the Skyhook it fired CONTINUOUSLY in a hover: airspeed sits at a few
-     * knots, onGround is false, so "TOO SLOW — add power (Shift)" was printed
-     * across the middle of the screen for the whole of every hover, telling a
-     * child to do the one thing that would ruin it. A rotorcraft does not
-     * stall from lack of airspeed and must not be told that it is about to.
+     * A wing's warning, so never on a rotor (it fired through every hover,
+     * telling a child to add power), from the speed this wing stalls at now
+     * (features/stall-speed.js; 56 kt until that has loaded).
      */
-    const stallSoon = !rotor && !r.onGround && r.iasKts < 56 && r.iasKts > 3;
+    const stallSoon = !rotor && !r.onGround && r.iasKts < (ac.stallKt ? ac.stallKt * 1.1 : 56) && r.iasKts > 3;
     const showStall = (ac.stalled && !rotor) || stallSoon;
     this.stallWarn.style.display = showStall ? '' : 'none';
     if (showStall) {
       this.stallWarn.textContent = ac.stalled
         ? 'STALL — push the nose down and add power'
-        : 'TOO SLOW — add power (Shift)';
+        : 'TOO SLOW — add power';
       this.stallWarn.classList.toggle('is-hard', ac.stalled);
     }
 

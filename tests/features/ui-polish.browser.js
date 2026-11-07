@@ -54,7 +54,7 @@ export async function check(sim, r, say = () => {}) {
     const durs = cards.map((c) => getComputedStyle(c).transitionDuration);
     r.ok('deck: a card\'s hover and press transitions take 150–250 ms', durs.every((d) => inRange(secs(d))), durs[0]);
     const radius = cards.map((c) => parseFloat(getComputedStyle(c).borderRadius));
-    r.ok('deck: the cards share one radius from the scale (20 px, 14 on a phone)', radius.every((v) => v === radius[0] && (v === 20 || v === 14)), radius.join(', '));
+    r.ok('deck: the rows share one radius from the scale', radius.every((v) => v === radius[0] && v === 6), radius.join(', '));
     const tiles = cards.map((c) => c.querySelector('.card-icon'));
     const tileW = tiles.map((t) => (t ? Math.round(t.getBoundingClientRect().width) : 0));
     r.ok('deck: every card has an icon tile of one size', tiles.every(Boolean) && tileW.every((w) => w === tileW[0] && w >= 36), tileW.join(', '));
@@ -72,9 +72,11 @@ export async function check(sim, r, say = () => {}) {
     const panel = sim.hud && sim.hud.wrap && sim.hud.wrap.querySelector('.hud-panel');
     // A square dock button, not one of the tray's wide labelled ones.
     const btn = sim.hud && sim.hud.wrap && sim.hud.wrap.querySelector('.hud-buttons > .hud-btn:not(.hud-btn-wide), .hud-btn:not(.hud-btn-wide)');
-    const frosted = [core, bar, panel, btn].filter(Boolean);
+    // The menu's boards and bar are solid signs since v78 (no blur to pay for on an iPad); checked below.
+    r.ok('deck: the board and the bar have no blur on any tier', !blurred(core) && !blurred(bar) && !blurred(core.closest('.main-board')));
+    const frosted = [panel, btn].filter(Boolean);
     const blurOn = frosted.map(blurred);
-    r.ok('deck: with blur allowed, the cards, the bar and the HUD panels are frosted glass', blurOn.every(Boolean), blurOn.join(', '));
+    r.ok('deck: with blur allowed, the HUD panels are frosted glass', blurOn.every(Boolean), blurOn.join(', '));
     const layout0 = cards.map((c) => JSON.stringify(c.getBoundingClientRect()));
     html.classList.add('fx-low');
     await new Promise((res) => setTimeout(res, 320));

@@ -31,13 +31,11 @@ const NEW_RIBBON_DAYS = 7;
 
 const CSS = /* css */ `
 .sz-mark { display: inline-block; vertical-align: middle; }
-.card-btn[data-act="story"] { position: relative; overflow: hidden;
-  background: linear-gradient(120deg, rgba(255,191,71,0.16), rgba(40,55,90,0.34)); border-color: rgba(255,191,71,0.4); }
-.card-btn[data-act="story"] .card-icon { color: #ffbf47; }
-.card-btn[data-act="story"] .sz-prog { display: block; height: 4px; margin-top: 7px; border-radius: 2px; background: rgba(255,255,255,0.1); overflow: hidden; }
-.card-btn[data-act="story"] .sz-prog i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffbf47, #ff7a1a); transition: width 0.4s ease; }
-.card-btn[data-act="story"] .sz-new { position: absolute; top: 10px; right: -30px; transform: rotate(38deg); background: #ffbf47; color: #0b1220;
-  font: 800 10px/1 var(--font); letter-spacing: 0.2em; padding: 4px 36px; text-transform: uppercase; }
+.card-btn[data-act="story"] { position: relative; overflow: hidden; }
+.card-btn[data-act="story"] .sz-prog { display: block; height: 3px; margin-top: 4px; background: rgba(255,255,255,0.14); overflow: hidden; }
+.card-btn[data-act="story"] .sz-prog i { display: block; height: 100%; width: 0; background: var(--game-accent); transition: width 0.4s ease; }
+.card-btn[data-act="story"] .sz-new { margin-left: 4px; flex: none; background: var(--game-accent); color: #14161a; border-radius: 3px;
+  font: 700 12px/1 var(--font); padding: 3px 6px; text-transform: uppercase; order: 2; }
 
 .sz-screen .sz-word { display: flex; align-items: center; gap: 14px; margin: 4px 0 18px; }
 .sz-screen .sz-word h2 { margin: 0; font-size: clamp(28px, 5vw, 44px); font-weight: 850; letter-spacing: 0.14em; text-transform: uppercase; text-shadow: 0 2px 18px rgba(0,0,0,0.7); }
@@ -95,14 +93,15 @@ const CSS = /* css */ `
 .sz-tbc h2 { font-size: clamp(30px, 6vw, 52px); letter-spacing: 0.18em; text-transform: uppercase; margin: 10px 0 6px; font-weight: 850; }
 .sz-tbc p { color: var(--text-dim); font-size: 15px; }
 
-.sz-pause { border: 1px solid rgba(255,191,71,0.35); border-radius: 14px; padding: 10px 12px 12px; margin-bottom: 12px; background: rgba(255,191,71,0.07); }
+.sz-pause { text-align: left; margin-bottom: 10px; }
 .sz-pause[hidden] { display: none; }
-.sz-pause .sz-ptitle { font: 800 11px/1 var(--font); letter-spacing: 0.22em; text-transform: uppercase; color: #ffbf47; margin-bottom: 8px; }
-.sz-pause .sz-pline { font-size: 12.5px; color: var(--text-dim); margin-bottom: 8px; }
-.sz-pause .sz-pbtns { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; }
-.sz-pause .sz-pbtns button { font-size: 13px; padding: 8px 10px; }
-.sz-pause .sz-pset { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 8px; font-size: 12.5px; color: var(--text-dim); align-items: center; }
-.sz-pause .sz-pset select { font: inherit; background: var(--panel-solid); color: var(--text); border: 1px solid var(--panel-line); border-radius: 8px; padding: 3px 6px; }
+.sz-pause .sz-ptitle { font: 700 18px/1.1 var(--mono); text-transform: uppercase; color: var(--game-accent); }
+.sz-pause .sz-pline { font-size: 13.5px; color: var(--text-dim); margin: 2px 0 8px; }
+.sz-pause .sz-pbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sz-pause .sz-pbtns button { font-size: 14px; min-height: 44px; padding: 8px 10px; }
+.sz-pset { display: flex; flex-wrap: wrap; gap: 10px 16px; font-size: 14px; color: var(--text-dim); align-items: center; min-height: 44px; }
+.sz-pset select { font: inherit; min-height: 44px; background: var(--panel-solid); color: var(--text); border: 1px solid var(--panel-line); border-radius: 6px; padding: 3px 6px; }
+.sz-pset input { width: 22px; height: 22px; }
 .sz-pmap { margin-top: 10px; display: none; gap: 12px; grid-template-columns: 180px 1fr; align-items: start; }
 .sz-pmap.on { display: grid; }
 .sz-pmap canvas { width: 180px; height: 180px; border-radius: 10px; border: 1px solid var(--panel-line); display: block; }
@@ -222,7 +221,7 @@ export function installStoryUi(sim) {
         const ch = chapterById(data.chapter);
         line = ch ? (ch.available ? chapterLabel(ch) : `${done} of ${STORY_CHAPTER_COUNT} chapters done · more coming`) : 'Continue your story';
       } else {
-        line = 'New — Chapter 1 is out now, more on the way';
+        line = 'New: Chapter 1 is out now';
       }
       const pct = Math.round((done / STORY_CHAPTER_COUNT) * 100);
       em.innerHTML = `${esc(line)}<span class="sz-prog"><i style="width:${pct}%"></i></span>`;
@@ -550,11 +549,14 @@ export function installStoryUi(sim) {
           <button data-pact="quit">Save &amp; quit</button>
         </div>
         <div class="sz-pmap" data-pmap><canvas width="180" height="180" data-pmap-canvas></canvas><ol data-pmap-list style="margin:0;padding-left:18px;font-size:13px;line-height:1.5"></ol></div>
-        <div class="sz-pset">
-          <label><input type="checkbox" data-pskip> Skip cinematics</label>
-          <label>Difficulty <select data-pdiff><option value="story">Story</option><option value="pilot">Pilot</option><option value="ace">Ace</option></select></label>
-        </div>
       </div>`);
+    // Skip cinematics and the difficulty are settings, not what you paused for: under More options.
+    const opts = menus.addPauseItem('story', { group: 'flight', title: 'Signal Zero', html: `<div class="sz-pset">
+      <label><input type="checkbox" data-pskip> Skip cinematics</label>
+      <label>Difficulty <select data-pdiff><option value="story">Story</option><option value="pilot">Pilot</option><option value="ace">Ace</option></select></label>
+    </div>` });
+    opts.hidden = true;
+    U.pauseOpts = opts;
     const title = pauseCard.querySelector('h2');
     if (title && title.nextSibling) pauseCard.insertBefore(block, title.nextSibling);
     else pauseCard.appendChild(block);
@@ -583,19 +585,20 @@ export function installStoryUi(sim) {
         quitToStory();
       }
     });
-    block.querySelector('[data-pskip]').addEventListener('change', (e) => setSkipCinematics(e.target.checked));
-    block.querySelector('[data-pdiff]').addEventListener('change', (e) => setDifficulty(e.target.value));
+    opts.querySelector('[data-pskip]').addEventListener('change', (e) => setSkipCinematics(e.target.checked));
+    opts.querySelector('[data-pdiff]').addEventListener('change', (e) => setDifficulty(e.target.value));
     U.pauseBlock = block;
   }
   function showPauseBlock(on, info) {
     const b = U.pauseBlock;
     if (!b) return;
     b.hidden = !on;
+    U.pauseOpts.hidden = !on;
     if (!on) return;
     b.querySelector('[data-pline]').textContent = `${info.chapter} · Saved at: ${info.checkpoint}${info.storageOk ? '' : ' (this device will not keep saves)'}`;
     b.querySelector('[data-pmap]').classList.remove('on');
-    b.querySelector('[data-pskip]').checked = !!(D.data && D.data.flags.skipCinematics);
-    b.querySelector('[data-pdiff]').value = D.data ? D.data.difficulty : 'pilot';
+    U.pauseOpts.querySelector('[data-pskip]').checked = !!(D.data && D.data.flags.skipCinematics);
+    U.pauseOpts.querySelector('[data-pdiff]').value = D.data ? D.data.difficulty : 'pilot';
   }
 
   /* ---- the objective tracker ------------------------------------------ */

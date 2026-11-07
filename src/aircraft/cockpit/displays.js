@@ -77,16 +77,22 @@ export function readFlight(ac, sim, out = {}, engines = 2) {
   out.gearDown = !!ac.gearDown;
   out.onGround = !!ac.onGround;
   out.stalled = !!ac.stalled;
+  out.vsNow = ac.stallKt;
+  out.clock = (sim && sim.clockText) || '';
   out.failures = ac.failures || null;
   out.x = (ac.pos && ac.pos.x) || 0;
   out.z = (ac.pos && ac.pos.z) || 0;
   const ap = sim && sim.autopilot;
   out.ap = !!(ap && ap.engaged);
   out.apMode = ap ? ap.mode : 'hold';
-  out.selHdg = ap ? ap.selectedHeadingDeg ?? out.hdg : out.hdg;
-  out.selAlt = ap ? ap.selectedAltFt ?? 2000 : 2000;
-  out.selSpd = ap ? ap.targetSpeedKts ?? ap.selectedSpeedKts ?? 0 : 0;
-  out.selVs = ap ? ap.selectedVsFpm ?? 0 : 0;
+  // The windows read what is being flown ("COCKPIT DOESNT EVEN UPDATE": they
+  // sat at 090 / 2000 / 95 whatever the aeroplane did). Engaged, what the
+  // autopilot holds; off, the aeroplane, as an unset panel follows it.
+  const on = out.ap;
+  out.selHdg = on ? ap.selectedHeadingDeg ?? out.hdg : out.hdg;
+  out.selAlt = on ? (ap.mode === 'hold' ? ap.targetAltFt : ap.selectedAltFt) ?? 2000 : Math.round(out.alt / 100) * 100;
+  out.selSpd = on ? ap.targetSpeedKts ?? ap.selectedSpeedKts ?? 0 : Math.round(out.ias);
+  out.selVs = on ? ap.selectedVsFpm ?? 0 : Math.round(out.vs / 50) * 50;
   // The thing to fly to: the mission's target, else the runway.
   const tgt = sim && sim.activeTarget && sim.activeTarget.pos;
   const rw = AIRPORT && AIRPORT.runway;
@@ -357,7 +363,7 @@ export function paintPFD(g, W, H, d, o = {}) {
   aircraftSymbol(g, cx, cy, 1);
   // Radio height, near the ground.
   if (d.agl < 2500 && !d.onGround) text(g, String(Math.max(0, Math.round(d.agl / 10) * 10)), cx, cy + 128, 24, d.agl < 400 ? COL.amber : COL.green, 'center', 700, MONO);
-  const stall = o.vs ?? 100;
+  const stall = d.vsNow ?? o.vs ?? 100;
   const vmax = o.vmo ?? 340;
   tape(g, {
     x: 22, y: 64, w: 82, h: 340, value: Math.max(0, d.ias), step: 10, pxPer: 3.2, labelEvery: 20, side: 'left',
@@ -415,6 +421,7 @@ export function paintPFD(g, W, H, d, o = {}) {
   // Speed in Mach and the altimeter setting under the tapes.
   if (d.mach > 0.4) text(g, '.' + String(Math.round(d.mach * 1000)).padStart(3, '0').slice(0, 3), 63, 432, 18, COL.green, 'center', 700, MONO);
   text(g, 'STD', W - 71, 432, 18, COL.cyan);
+  if (d.clock) text(g, d.clock, W - 71, 456, 18, COL.white, 'center', 700, MONO);
   d.shown.pfd = { ias: Math.round(Math.max(0, d.ias)), alt: Math.round(d.alt), hdg: Math.round(d.hdg) % 360 };
 }
 
@@ -967,7 +974,7 @@ export function paintMCP(g, W, H, d, o = {}) {
     g.fillStyle = lit ? '#46e07a' : '#1b1f23';
     g.fillRect(x - cw * 0.12, H * 0.82, cw * 0.24, H * 0.08);
   });
-  text(g, d.ap ? 'AP' : 'AP', W - 10, H * 0.18, Math.round(H * 0.14), d.ap ? '#46e07a' : '#7a838c', 'right');
+  text(g, 'AP', W - 10, H * 0.18, Math.round(H * 0.14), d.ap ? '#46e07a' : '#7a838c', 'right');
   d.shown.mcp = { hdg: Math.round(d.selHdg) % 360, alt: Math.round(d.selAlt), spd: Math.round(d.selSpd || d.ias) };
 }
 
@@ -1117,15 +1124,12 @@ export function paintHUD(g, W, H, d, o = {}) {
  * ------------------------------------------------------------------ */
 
 /**
- * What a screen's picture depends on, quantised to what it can show: if
- * this has not changed since its last paint, the paint (and the texture
- * upload, which is most of the cost) is skipped. `kind` 'text' screens (the
- * UFC, CDU, MCP) care only about the numbers; the rest about the attitude
- * and the map too.
+ * What a screen shows, quantised: unchanged, no paint and no upload. 'text'
+ * screens (UFC, CDU, MCP) care only about the numbers.
  */
 const q = (v, step) => Math.round((v || 0) / step);
 export function signature(d, kind = 'flight') {
-  const base = `${q(d.ias, 1)}|${q(d.alt, 10)}|${q(d.hdg, 1)}|${q(d.vs, 50)}|${q(d.throttle, 0.02)}|${q(d.fuel, 0.01)}|${q(d.gear, 0.1)}|${q(d.flaps, 0.05)}|${d.ap ? 1 : 0}|${q(d.selHdg, 1)}|${q(d.selAlt, 10)}|${q(d.selSpd, 1)}|${q(d.selVs, 50)}|${d.engineOn ? 1 : 0}|${q(d.rpm, 0.01)}|${d.stalled ? 1 : 0}`;
+  const base = `${q(d.ias, 1)}|${q(d.alt, 10)}|${q(d.hdg, 1)}|${q(d.vs, 50)}|${q(d.throttle, 0.02)}|${q(d.fuel, 0.01)}|${q(d.gear, 0.1)}|${q(d.flaps, 0.05)}|${d.ap ? 1 : 0}|${q(d.selHdg, 1)}|${q(d.selAlt, 10)}|${q(d.selSpd, 1)}|${q(d.selVs, 50)}|${d.engineOn ? 1 : 0}|${q(d.rpm, 0.01)}|${d.stalled ? 1 : 0}|${q(d.vsNow, 1)}|${d.clock}`;
   if (kind === 'text') return base;
   return `${base}|${q(d.pitch, 0.25)}|${q(d.bank, 0.4)}|${q(d.fpmX, 0.2)}|${q(d.fpmY, 0.2)}|${q(d.g, 0.05)}|${q(d.x, 15)}|${q(d.z, 15)}|${q(d.gs, 1)}|${q(d.slip, 0.05)}|${d.realistic ? 1 : 0}|${q(d.agl, 10)}`;
 }

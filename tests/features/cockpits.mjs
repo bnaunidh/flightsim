@@ -536,7 +536,7 @@ function nearest(p, meshes) {
 function fakeSim(over = {}) {
   return {
     instrumentBlackout: 0,
-    autopilot: { engaged: true, mode: 'hold', selectedHeadingDeg: 250, selectedAltFt: 5000, targetSpeedKts: 210, selectedVsFpm: 1200 },
+    autopilot: { engaged: true, mode: 'hold', selectedHeadingDeg: 250, selectedAltFt: 5000, targetAltFt: 5000, targetSpeedKts: 210, selectedVsFpm: 1200 },
     settings: { realisticCockpit: false },
     weather: { time: 'day' },
     ...over,

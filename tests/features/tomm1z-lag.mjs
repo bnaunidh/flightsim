@@ -55,6 +55,12 @@ void near;
     createDynamicsCompressor() {
       return { threshold: {}, knee: {}, ratio: {}, attack: {}, release: {}, connect() {} };
     }
+    createBiquadFilter() {
+      return { frequency: {}, Q: {}, connect() {} };
+    }
+    createWaveShaper() {
+      return { connect() {} };
+    }
     async resume() {
       this.state = 'running';
     }

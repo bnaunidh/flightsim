@@ -818,13 +818,14 @@ class Game {
     }
 
     window.addEventListener('resize', () => this.onResize());
-    window.addEventListener('pointerdown', () => this.unlockAudio(), { once: false });
-    window.addEventListener('keydown', () => this.unlockAudio(), { once: false });
+    // A touch's pointerdown is not a user activation: its pointerup, touchend and click are.
+    for (const e of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) window.addEventListener(e, () => this.unlockAudio());
     // Pause when the player switches tabs — nobody wants to come back to a
     // smoking crater. The flag exists so the automated self-test can opt out.
     this.autoPauseOnHide = true;
     document.addEventListener('visibilitychange', () => {
       if (this.autoPauseOnHide && document.hidden && this.state === 'flying') this.pause();
+      else if (!document.hidden && this.state !== 'paused') this.wakeAudio();
     });
     /*
      * Ctrl+W closed Tomm1z's tab twice, mid-flight and mid-mission (Ctrl is
@@ -1507,7 +1508,7 @@ class Game {
         if (this.aircraft.pos.y < 3 && heightAt(this.aircraft.pos.x, this.aircraft.pos.z) < 0)
           this.audio.ambience.playSplash();
         else this.audio.ambience.playCrash();
-        this.audio.engine.playStop();
+        this.audio.activeEngine.playStop();
       }
       this.rig.kick(1.4);
       // Something to look at. A crash used to leave the aeroplane sitting
@@ -1604,11 +1605,11 @@ class Game {
       this.hud.notify(d.down ? 'Landing gear coming down' : 'Landing gear coming up', 'info', 2.6);
     });
     ac.on(EVENTS.ENGINE_START, () => {
-      this.audio.available && this.audio.engine.playStart();
+      this.audio.available && this.audio.activeEngine.playStart();
       this.hud.notify('Starting the engine…', 'info', 2.4);
     });
     ac.on(EVENTS.ENGINE_STOP, (d) => {
-      this.audio.available && this.audio.engine.playStop();
+      this.audio.available && this.audio.activeEngine.playStop();
       this.hud.notify(d.reason === 'fuel' ? 'The engine stopped — out of fuel!' : 'Engine off', 'warn', 5);
     });
     // A wing's stall already has the HUD's STALL slab in the middle of the
@@ -2458,6 +2459,8 @@ class Game {
         </div>
       `);
     }
+    const run = this.runner && this.runner.status === STATUS.RUNNING && this.runner.def;
+    this.menus.setPauseMission(run ? run.name : '', run ? this.hud.objectiveText.textContent : '');
     this.menus.show('pause');
     this.audio.available && this.audio.mixer.suspend();
   }
@@ -2524,6 +2527,12 @@ class Game {
       const on = !this.settings.realisticCockpit;
       this.applySetting('realisticCockpit', on);
       this.menus.syncRealisticCockpit(on);
+      return;
+    }
+    if (a === 'controls') {
+      this.hud.showControls(this.input.bindings, keyLabel, this.helpActions());
+      this.menus.openPauseControls(this.hud.controlsCard.innerHTML);
+      this.hud.hideControls();
       return;
     }
     // Every way out of the pause screen, not just Resume.
@@ -3680,7 +3689,10 @@ class Game {
     if (this.hud) this.hud.setAircraftName(this.aircraftType.name);
     // A rotor is not a piston engine. Without this the helicopter keeps the
     // four-cylinder synth and the blade slap is never reached.
-    if (this.audio) this.audio.setEngineKind(S.power.rotor ? 'rotor' : S.power.kind);
+    if (this.audio) {
+      this.audio.setEngineKind(S.power.rotor ? 'rotor' : S.power.kind);
+      this.audio.setProfile(this.aircraftType);
+    }
 
     /*
      * Re-seat the aeroplane if it is sitting on the ground.
@@ -3991,6 +4003,8 @@ class Game {
   }
 
   async unlockAudio() {
+    // Every gesture, not just the first: iOS leaves a context asleep after a tab switch or a call.
+    if (this.state !== 'paused' && this.audio.available) this.audio.mixer.resume();
     if (this.audio.started || this._unlocking) return;
     this._unlocking = true;
     // Before the context exists, so its master is made silent. Applied only
@@ -4091,6 +4105,7 @@ class Game {
       // A new version that has downloaded is WAITING (sw.js no longer takes over by itself): offered on the menu,
       // never forced, and switched to before the load the next time the game is opened (index.html).
       navigator.serviceWorker.getRegistration().then((reg) => this.watchUpdate(reg)).catch(() => {});
+      this.featuresReady.then(() => this.noteUpdated());
       /*
        * The registration itself is deferred: installOffline(). The worker's
        * install fetches the whole game again (the precache, ~520 files), and
@@ -4163,10 +4178,15 @@ class Game {
     const ready = () => {
       if (reg.waiting && navigator.serviceWorker.controller) this.offerUpdate(reg);
     };
+    const watch = (w) => w && w.addEventListener('statechange', () => w.state === 'installed' && ready());
     ready();
-    reg.addEventListener('updatefound', () => {
-      const w = reg.installing;
-      if (w) w.addEventListener('statechange', () => w.state === 'installed' && ready());
+    // The browser checks for itself as the page loads, so a new version is often already
+    // downloading by the time the game boots: its 'updatefound' has been and gone.
+    watch(reg.installing);
+    reg.addEventListener('updatefound', () => watch(reg.installing));
+    // A tab left open on the menu for days still hears of a new version.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this.state === 'menu') reg.update().catch(() => {});
     });
   }
 
@@ -4182,6 +4202,7 @@ class Game {
     document.body.appendChild(bar);
     bar.querySelector('[data-update-now]').addEventListener('click', () => {
       window.__leavingOnPurpose = true;
+      try { sessionStorage.setItem('ifs-updated', '1'); } catch (e) { /* no note, then */ }
       const w = this.updateWaiting && this.updateWaiting.waiting;
       // The worker takes over, 'controllerchange' fires and the menu reloads onto the new version (setupPwa).
       if (w) w.postMessage('skip-waiting');
@@ -4193,6 +4214,21 @@ class Game {
     });
     this._updateBar = bar;
     this.syncUpdateBar();
+  }
+
+  /** Just updated (index.html, or Update now): say so once, or an update looks like nothing happened. */
+  noteUpdated() {
+    try {
+      if (!sessionStorage.getItem('ifs-updated')) return;
+      sessionStorage.removeItem('ifs-updated');
+    } catch (e) { return; }
+    const bar = document.createElement('div');
+    bar.className = 'update-ready';
+    bar.setAttribute('role', 'status');
+    bar.innerHTML = '<span>Updated to the latest version.</span><button type="button" class="update-later">OK</button>';
+    bar.querySelector('button').addEventListener('click', () => bar.remove());
+    document.body.appendChild(bar);
+    setTimeout(() => bar.remove(), 8000);
   }
 
   /** Shown on the menu only (and not once Later was pressed). Writes only when it changes. */
@@ -4465,7 +4501,7 @@ class Game {
       'good',
       3
     );
-    this.audio.available && this.audio.ambience.playFlaps();
+    this.audio.available && this.audio.alerts.thud();
     return true;
   }
 
@@ -5013,7 +5049,7 @@ class Game {
     // Under a canopy it stops flying and starts descending.
     this.autopilot.setEngaged(false, this.aircraft);
     this.aircraft.stopEngine('chute');
-    this.audio.available && this.audio.ambience.playFlaps && this.audio.ambience.playFlaps();
+    this.audio.available && this.audio.alerts.thud();
   }
 
   clearChute() {

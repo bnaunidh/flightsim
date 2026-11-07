@@ -1,71 +1,15 @@
 /**
  * Sound for the three new games: the boat, the car and the helicopter.
  *
- * Drop this in as `src/audio/vehicles.js`. It imports nothing but
- * `../core/noise.js`, which `engine.js` and `jet.js` already import, so it adds
- * no dependency and no asset. Everything below is Web Audio, synthesised live,
- * and silent until the mixer's context exists.
+ * Three instruments, not one pitched three ways. The marine diesel fires six
+ * times per two revolutions, each a sharp knock, and its exhaust goes through
+ * the water, which takes the top end off. The van's speed cue is the gear step,
+ * so the gearbox lives here, sound-only. The rotor's signature is blade slap: a
+ * pulse on about a seventh of the time, not a half-on tremolo.
  *
- * ---------------------------------------------------------------------------
- * Why this file exists at all
- * ---------------------------------------------------------------------------
- * Today `GameAudio.updateVehicle()` drives `EngineSound` — the four-cylinder
- * aero piston synth — from the vehicle's throttle, and the helicopter is an
- * aeroplane with `power.kind === 'prop'`, so it drives the same one. That means
- * the rescue launch, the delivery van and the Skyhook are currently the same
- * instrument at three different pitches. They are not the same instrument:
- *
- *   diesel     A marine diesel is not a piston aeroplane pitched down. It
- *              turns half the revs, fires six times every two revolutions
- *              instead of four, and every one of those firings is a sharp
- *              impulsive knock rather than a smooth combustion event. Its
- *              exhaust is HARD — strong low harmonics through a resonant pipe —
- *              and then it goes through the water, which takes the entire top
- *              end off it. That last part is the sound of a boat.
- *   petrol     The van revs twice as high, and the thing your ear actually
- *              uses to judge a car's speed is the GEAR STEP: the note climbs,
- *              drops a fifth, climbs again. The physics here has no gearbox
- *              (`gear` is only 'D'/'N'/'R'), so the gearbox lives in this file
- *              and is honestly labelled as a sound-only one.
- *   rotor      A helicopter's signature is BLADE SLAP — a hard periodic thump
- *              at blade-pass frequency, four blades times 6.67 revolutions a
- *              second, 26.7 Hz. The current propeller layer is a triangle-LFO
- *              tremolo on a noise band, which is a wobble, not a thump. The
- *              difference is duty cycle: a tremolo is on half the time, a slap
- *              is on about a seventh of the time. This file gets that by
- *              running an oscillator through a WaveShaper that keeps only the
- *              top of the cycle, and multiplying a noise band by the result.
- *
- * ---------------------------------------------------------------------------
- * The three rules this file obeys, taken from the existing audio code
- * ---------------------------------------------------------------------------
- * 1. MODULATE BY MULTIPLYING, NEVER BY ADDING TO A GAIN. `engine.js` carries a
- *    long comment about the bug where an LFO was connected straight to
- *    `propGain.gain`: an AudioParam ADDS what is connected to it, so the gain
- *    went negative for most of every cycle — a polarity flip, not a tremolo —
- *    and the propeller never fell silent because the LFO kept swinging about
- *    zero. Every chopper in this file is a separate gain stage whose intrinsic
- *    value is 0 and whose `.gain` is fed by a UNIPOLAR shaper output, so it
- *    can only ever multiply, and the level control downstream of it is the one
- *    thing that decides whether the layer is heard.
- * 2. DECORRELATE THE NOISE. Every noise layer uses `mixer.noiseSource()`, which
- *    already starts at a random offset in the shared buffer.
- * 3. NOTHING IS BUILT UNTIL IT IS NEEDED. A Chromebook running thirty copies of
- *    this game should not hold a helicopter's node graph alive for a lesson
- *    spent in the boat. `VehicleAudio.ensure(kind)` builds one synth the first
- *    time that vehicle is used and keeps it after that.
- *
- * ---------------------------------------------------------------------------
- * Measured node counts (counted by an instrumented AudioContext, see the
- * verification note at the foot of this file — not estimates)
- * ---------------------------------------------------------------------------
- *   DieselSound   36 nodes   CarSound   27 nodes   RotorSound   34 nodes
- * All three built at once is 97, and only one of them is ever updated.
- * One-shots (hull slaps, gravel ticks, chirps) are `mixer.noiseBurst` calls
- * that stop themselves; each is 3 nodes, and each synth holds a token bucket
- * that caps how many it may start per second — measured worst case 5.0 a
- * second for the boat driven hard in a gale and 13.1 a second for the van flat
- * out on gravel, so about 39 short-lived nodes on top of the persistent count.
+ * Modulate by multiplying: every chopper is a gain stage fed by a unipolar
+ * shaper, because an AudioParam adds what is connected to it. Each synth is
+ * built the first time that vehicle is used (VehicleAudio.ensure).
  */
 
 import { clamp, lerp } from '../core/noise.js';
@@ -1451,8 +1395,8 @@ export class RotorSound {
 
     // Blade-pass frequencies follow NR and nothing else. At nr = 1 these are
     // 26.67 Hz and 70.0 Hz exactly.
-    const bladeHz = clamp(mainHz * nr, 0.4, 60);
-    const tailHz = clamp(TAIL_BLADE_PASS_HZ * (mainHz / MAIN_BLADE_PASS_HZ) * nr, 1, 150);
+    const bladeHz = clamp(mainHz * nr * this.mixer.view.pitch, 0.4, 60);
+    const tailHz = clamp(TAIL_BLADE_PASS_HZ * (mainHz / MAIN_BLADE_PASS_HZ) * nr * this.mixer.view.pitch, 1, 150);
     const smooth = 0.2;
     this.bladeOsc.frequency.setTargetAtTime(bladeHz, t, smooth);
     this.thump.frequency.setTargetAtTime(bladeHz, t, smooth);
@@ -1475,7 +1419,7 @@ export class RotorSound {
     this.thumpGain.gain.setTargetAtTime(turning ? (0.05 + slap * 0.17) * inside : 0, t, 0.2);
     // The band climbs as it hardens: a distant thwop is 95 Hz of noise and a
     // close one has a crack on top of it.
-    this.slapBand.frequency.setTargetAtTime(95 + slap * 165, t, 0.25);
+    this.slapBand.frequency.setTargetAtTime(170 + slap * 300, t, 0.25);
     this.slapBand.Q.setTargetAtTime(1.1 + slap * 1.1, t, 0.25);
 
     /* ---- Wash ---- */
@@ -1495,13 +1439,13 @@ export class RotorSound {
     // two-tone whine that says gas turbine rather than piston.
     this.turbine.frequency.setTargetAtTime(lerp(340, 1180, Math.pow(n1, 1.2)), t, 0.4);
     this.turbineBand.frequency.setTargetAtTime(1800 + n1 * 2600, t, 0.4);
-    this.turbineGain.gain.setTargetAtTime(n1 * 0.07 * (this.interior ? 0.4 : 1), t, 0.4);
+    this.turbineGain.gain.setTargetAtTime(n1 * 0.03 * (this.interior ? 0.4 : 1), t, 0.4);
     this.coreGain.gain.setTargetAtTime(powered ? 0.1 + n1 * 0.2 : 0, t, 0.5);
     this.coreFilter.frequency.setTargetAtTime(200 + n1 * 240, t, 0.4);
 
-    this.out.gain.setTargetAtTime(turning ? 0.3 + nr * 0.34 : 0, t, 0.25);
+    this.out.gain.setTargetAtTime(turning ? (0.7 + nr * 0.85) * this.mixer.view.gain * this.mixer.view.synth : 0, t, 0.25);
     this.tone.frequency.setTargetAtTime(
-      (this.interior ? 1400 : 3400) + coll * (this.interior ? 600 : 1600),
+      Math.min((this.interior ? 1400 : 3400) + coll * (this.interior ? 600 : 1600), this.mixer.view.cut),
       t,
       0.3
     );
@@ -1852,234 +1796,3 @@ export const CAR_PHASES = {
   // nightcall.
   out: 0.3, back: 0.22,
 };
-
-/* ==================================================================
- * PATCHES TO src/audio/index.js
- *
- * Five edits, given verbatim. Nothing else in that file changes, and none of
- * them removes an existing behaviour: the aeroplane path is untouched.
- *
- * ------------------------------------------------------------------
- * PATCH 1 — import (after the `import { Music }` line)
- * ------------------------------------------------------------------
- *   import { VehicleAudio } from './vehicles.js';
- *
- * ------------------------------------------------------------------
- * PATCH 2 — constructor (after `this.music = new Music(this.mixer);`)
- * ------------------------------------------------------------------
- *   // The boat, the car and the helicopter. Nothing is built until one of
- *   // them is used, so a lesson spent flying costs nothing for the other two.
- *   this.vehicles = new VehicleAudio(this.mixer);
- *
- * NOTE: do NOT add anything to start(). VehicleAudio builds lazily on first
- * use, which is the point of it.
- *
- * ------------------------------------------------------------------
- * PATCH 3 — setEngineKind() and setInterior(), replacing both methods
- * ------------------------------------------------------------------
- *   setEngineKind(kind) {
- *     if (kind === this.engineKind) return;
- *     // Silence the one that is standing down, or it hangs on at its last note.
- *     if (this.available) {
- *       if (this.engineKind === 'jet') this.jet.playStop();
- *       else if (this.engineKind === 'rotor') this.vehicles.playStop();
- *       else this.engine.playStop();
- *     }
- *     this.engineKind = kind === 'jet' ? 'jet' : kind === 'rotor' ? 'rotor' : 'prop';
- *   }
- *
- *   setInterior(inside) {
- *     this.engine.setInterior(inside);
- *     this.jet.setInterior(inside);
- *     this.ambience.setInterior(inside);
- *     this.vehicles.setInterior(inside);
- *   }
- *
- * ------------------------------------------------------------------
- * PATCH 4 — update(), the engine-select line only
- * ------------------------------------------------------------------
- * Replace these two lines:
- *
- *     if (this.engineKind === 'jet') this.jet.update(dt, ac, weather);
- *     else this.engine.update(dt, ac, weather);
- *
- * with:
- *
- *     // Three instruments now, and exactly one of them runs. A helicopter
- *     // driving the four-cylinder piston synth was the same category of
- *     // mistake as the airliner doing it.
- *     if (this.engineKind === 'jet') this.jet.update(dt, ac, weather);
- *     else if (this.engineKind === 'rotor') this.vehicles.updateRotor(dt, ac, weather);
- *     else this.engine.update(dt, ac, weather);
- *
- * ------------------------------------------------------------------
- * PATCH 5 — updateVehicle(), replacing the whole method
- * ------------------------------------------------------------------
- * Four things change, and three of them are bug fixes to what is there now:
- *
- *   (a) The boat and the car get their own synths instead of the aero piston
- *       engine run at `throttle * 0.75`.
- *   (b) `onGround` becomes false and `groundSpeed` zero in the state handed to
- *       Ambience. As written, `updateVehicle` sets onGround true and
- *       groundSpeed to the vehicle's speed, and `ambience.update()` reads
- *       exactly those two to drive its TYRE ROLL layer — so the rescue launch
- *       has aeroplane tyre noise at sea right now, rising with boat speed.
- *       The car keeps its tyres, but they come from CarSound, which knows what
- *       it is driving on; running both would double them.
- *   (c) The music gets a cue. `music._drive()` has an `auto: 'ground'` branch
- *       that reads `cue.speedKts` and whose own comment says it is waiting for
- *       "when the vehicle path is wired up". Passing the cue is that wiring,
- *       and it is what makes the car scene's "parking the van stops the
- *       music's clock" joke actually happen.
- *   (d) The piston engine is explicitly wound down rather than left holding a
- *       gain target, which is the drone this method's own comment describes.
- *
- *   updateVehicle(dt, reading, weather) {
- *     if (!this.available) return;
- *     const ms = (reading.speedKts || 0) / 1.94384;
- *     // Whichever aeroplane engine was running: stand it down. Both are given
- *     // a zero-rpm state rather than simply being left alone, because a synth
- *     // that is not updated holds its last gain target and drones.
- *     const off = {
- *       rpm: 0,
- *       controls: { throttle: 0, brakes: 0, yaw: 0 },
- *       airspeed: ms, ias: reading.speedKts || 0,
- *       fuel: 1, alt: 0, agl: 0, vs: 0,
- *       onGround: false, groundSpeed: 0, engineOn: false,
- *     };
- *     if (this.engineKind === 'jet') this.jet.update(dt, off, weather);
- *     else this.engine.update(dt, off, weather);
- *
- *     // The vehicle's own instrument.
- *     this.vehicles.updateSurface(dt, reading, weather);
- *
- *     // Wind and rain still apply — but NOT tyre roll, which is why onGround
- *     // is false above: CarSound owns the tyres and a boat has none.
- *     this.ambience.update(dt, off, weather, 0);
- *
- *     // The music's 'ground' driver has been waiting for this cue.
- *     this.music.update(dt, {
- *       radioBusyUntil: 0, stall: false, alertLevel: 0, gear: false,
- *       ac: null, weather, cloudImmersion: 0,
- *       speedKts: reading.speedKts || 0,
- *       data: reading,
- *     });
- *   }
- *
- * ==================================================================
- * PATCHES TO src/audio/music.js
- *
- * ------------------------------------------------------------------
- * PATCH 6 — import, beside the existing `import { clamp }` line
- * ------------------------------------------------------------------
- *   import { VEHICLE_SCENES, CAR_PHASES } from './vehicles.js';
- *
- * (No cycle: vehicles.js imports only ../core/noise.js.)
- *
- * ------------------------------------------------------------------
- * PATCH 7 — one line immediately after the SCENES object literal closes
- * ------------------------------------------------------------------
- *   // The boat, car and helicopter games. Their ids are mission ids, because
- *   // main.js names the scene with `def.id`; without these every one of them
- *   // falls through to SCENES.free, which is an aeroplane scene driven off an
- *   // `ac` a boat does not have.
- *   Object.assign(SCENES, VEHICLE_SCENES);
- *   // Six car jobs, one scene, and until now no phases for it to look up.
- *   SCENES.car.phases = CAR_PHASES;
- *
- * `SCENES` is declared with `const`, and both of these mutate it rather than
- * reassigning it, so nothing else in the file needs to change and the object
- * is still frozen in place before the first `setScene()` can run.
- * ================================================================== */
-
-/* ==================================================================
- * WHAT I NEED FROM OTHER SPECIALISTS — exact names and signatures
- *
- * Everything above works TODAY against the tree as it stands. These are the
- * four things that would make it better, each stated as the exact call I will
- * make so nobody has to guess, and none of them is a static import of a name
- * that does not exist yet.
- *
- * 1. TO WHOEVER OWNS main.js (aircraft selection, line 1676)
- *    Currently:  this.audio.setEngineKind(S.power.kind);
- *    Needed:     this.audio.setEngineKind(S.power.rotor ? 'rotor' : S.power.kind);
- *    `S.power.rotor` already exists — types.js line 769 sets it on the
- *    Skyhook, and line 859 already reads it as `rotor: !!t.shape.power.rotor`.
- *    Without this one-word change the helicopter keeps the piston synth and
- *    RotorSound is never reached. It is the single highest-value line in this
- *    whole drop.
- *
- * 2. TO WHOEVER OWNS src/vehicles/surface.js (readouts)
- *    Please add one field to BOTH boatReadouts() and carReadouts():
- *        kind: this.isBoat ? 'boat' : 'car',
- *    I currently sniff it from the presence of `lever`, which works but will
- *    break silently the day a car gets a lever. `readouts()` already has
- *    `this.isBoat` in hand on the line above.
- *
- * 3. ALSO TO surface.js — the event list
- *    `this.events` already carries exactly what I want: { kind: 'slam',
- *    strength }, { kind: 'bang', strength }, { kind: 'lever', at },
- *    { kind: 'wreck' }, { kind: 'afloat' }. None of it reaches the readouts.
- *    If you publish it as
- *        events: this.events,          // the same array, not a copy
- *    I will read it and stop deriving slams from a rising edge on `jolt`,
- *    which is an approximation. I will not mutate it. Until then the jolt
- *    edge works: measured against surface.js, `jolt` rises by 0.25 + sea*0.3
- *    on the same frame the slam event is pushed, and my threshold is 0.18.
- *
- * 4. TO WHOEVER OWNS THE MISSION RUNNER, for `lastlight` only
- *    On the final step, please call
- *        sim.audio.music.nudge('resolve');
- *    That is an existing, already-implemented gesture (music.js `nudge`, case
- *    'resolve' arms the two-step cadence). Three moments in the whole game are
- *    allowed to resolve; the last light going out on a good day should be the
- *    fourth, and only the runner knows when it has happened.
- *
- * ------------------------------------------------------------------
- * TWO THINGS I FOUND IN THE AUDIO CODE THAT ARE NOT MINE TO FIX
- * ------------------------------------------------------------------
- * A. music.js's `recon` scene declares `breath: true`. Nothing in music.js
- *    reads `breath` — I grepped for d.breath, def.breath and this.def.breath
- *    and there are no hits. It is a dead flag. Either it lost its
- *    implementation or it never had one.
- * B. `GameAudio.updateVehicle` never calls `this.alerts.update`, which is
- *    correct and deliberate, but it also never calls `this.radio.update`,
- *    which means the boat cannot receive a radio call. Six of the seven boat
- *    missions are shouts that come in over the radio. Somebody should decide
- *    whether that is intended; I have not changed it, because the ATC module
- *    is not mine and its update signature is (dt, weather).
- * ================================================================== */
-
-/* ==================================================================
- * VERIFICATION
- *
- * Run headless under node with an instrumented AudioContext stub (no browser,
- * no server, no npm). The harness lives beside this file at
- * scratchpad/audio-vehicles-test/. Every figure quoted in the comments above
- * is printed by it. Summary of what it checks:
- *
- *   - module parses and every class constructs and builds
- *   - persistent node counts: boat 36, car 27, rotor 34 (97 for all three)
- *   - pulseCurve duty: requested 0.14 -> measured 0.1400 of a sine cycle
- *   - no gain-param modulation is ever bipolar (every shaper output >= 0)
- *   - diesel firing range 26.0 Hz to 120.0 Hz; crank 8.7 to 40.0 Hz
- *   - car firing range 27.3 Hz to 206.7 Hz; four gears; shift points and
- *     hysteresis; engine speed independent of the throttle (185.6 Hz at
- *     30 km/h with the pedal open and shut alike, which is what being in gear
- *     means); twenty seconds parked on each shift point hunts zero times
- *   - blade pass 26.667 Hz main, 70.0 Hz tail, constant with collective
- *   - rotor spool reaches 95 per cent NR in 11.9 s, and the blade-pass
- *     frequency sweeps 0.4 Hz to 25.4 Hz with it
- *   - NR droops to 0.860 in autorotation with the turbine gone and the slap
- *     still audible
- *   - blade slap rises with collective, rises further in a descent, and is
- *     highest in a descending turn
- *   - hull slap rate, meaned over ten 60 s runs: silent stopped in a calm,
- *     0.82/s stopped in a gale, 0.91/s flat out in a calm, 2.26/s flat out in
- *     a gale
- *   - every summed modulation pair (lope, slap crossfade, wash) peaks at
- *     exactly 1.0 and never above it
- *   - 600 frames of each synth at 30 fps allocates no persistent nodes
- *   - every VEHICLE_SCENES entry has the keys music.js's setScene reads, uses
- *     a real key and a real mode, and every phase name is a real step id
- * ================================================================== */

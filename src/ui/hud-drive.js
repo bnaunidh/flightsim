@@ -918,9 +918,9 @@ export class DriveHud {
       // rig's, and neither does anything to the van's camera (C does) —
       // measured, both still on the van's card after the first repair.
       this._pauseFolds = [];
-      for (const sel of ['[data-apmode]', '[data-freelook]']) {
+      for (const sel of ['[data-apmode]', '[data-freelook]', '[data-realistic]']) {
         const n = pause.querySelector(sel);
-        const fold = n && n.closest ? n.closest('details') : null;
+        const fold = n && n.closest ? n.closest('[data-pause-item]') || n : null;
         if (!fold) continue;
         this._pauseFolds.push([fold, fold.style.display]);
         fold.style.display = 'none';

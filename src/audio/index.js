@@ -10,6 +10,7 @@ import { Radio } from './atc.js';
 import { Alerts } from './alerts.js';
 import { Music } from './music.js';
 import { VehicleAudio } from './vehicles.js';
+import { FAMILIES, engineFamily } from './profile.js';
 
 /**
  * A gain to exactly nothing inside a quarter of a second, whatever was
@@ -56,6 +57,7 @@ export class GameAudio {
     this.alerts.build();
     this.music.build();
     this.started = true;
+    this._plug();
     return true;
   }
 
@@ -88,6 +90,29 @@ export class GameAudio {
       else this.engine.playStop();
     }
     this.engineKind = kind === 'jet' ? 'jet' : kind === 'rotor' ? 'rotor' : 'prop';
+    this._plug();
+  }
+
+  /** Only the synth in use stays on the graph. */
+  _plug() {
+    const k = this._hushedLong ? '' : this.engineKind;
+    this.engine.plug(k === 'prop');
+    this.jet.plug(k === 'jet');
+  }
+
+  /** Which of the families (profile.js) this aeroplane is. `type` is its roster entry. */
+  setProfile(type) {
+    this.family = engineFamily(type);
+    const F = FAMILIES[this.family];
+    const n = (type && type.shape && type.shape.power && type.shape.power.count) || 1;
+    if (F.prop) this.engine.setProfile(F, n > 1);
+    else if (!F.rotor) this.jet.setProfile(F, n);
+    this.ambience.heavy = F.heavy;
+  }
+
+  /** The engine in use, whichever it is. The event handlers used to call the piston synth for every aircraft. */
+  get activeEngine() {
+    return this.engineKind === 'jet' ? this.jet : this.engineKind === 'rotor' ? this.vehicles : this.engine;
   }
 
   setInterior(inside) {
@@ -98,19 +123,11 @@ export class GameAudio {
   }
 
   /**
-   * Nothing of the flight loops while there is no flight.
-   *
-   * Tomm1z's video (3:05-3:20): a crash into the terminal, "Main menu", and
-   * in the menu and Settings "What is that sound? ... Is this like a horror
-   * game?" What he heard: quitToMenu() stands the aeroplane back on the
-   * runway with its engine running and update() kept driving the engine
-   * synth at idle, the slipstream and breeze, the stall warner and the
-   * radio's background chatter (formant gibberish voices) behind the blurred
-   * menu — with nothing on screen to explain any of it. Now the engine, jet
-   * and rotor synths are stopped, the ambience is silenced, the warners are
-   * off and the radio's queue is dropped the moment the state leaves
-   * 'flying'; only the music plays in the menus. `hushed` is readable, so a
-   * test can check it as data.
+   * Nothing of the flight loops while there is no flight (Tomm1z, 3:05: a crash,
+   * the menu, and "is this like a horror game?" from an idling synth behind it).
+   * The moment the state leaves 'flying' the engines stop, the ambience and the
+   * warners go silent and the radio's queue is dropped; only the music plays.
+   * `hushed` is readable so a test can check it as data.
    */
   hush() {
     if (this.hushed) return;
@@ -155,15 +172,21 @@ export class GameAudio {
     if (!this.available) return;
     if (quiet) {
       this.hush();
+      this._quietFor = (this._quietFor || 0) + dt;
+      if (this._quietFor > 0.5 && !this._hushedLong) {
+        this._hushedLong = true;
+        this._plug();
+      }
       this.music.update(dt);
       return;
     }
     this.hushed = false;
-    // Only one of them runs. A turbofan making piston noises was the single
-    // most obviously wrong thing about flying the airliner.
-    // Three instruments now, and exactly one of them runs. A helicopter
-    // driving the four-cylinder piston synth was the same category of mistake
-    // as the airliner doing it.
+    this._quietFor = 0;
+    if (this._hushedLong) {
+      this._hushedLong = false;
+      this._plug();
+    }
+    // Exactly one instrument runs.
     if (this.engineKind === 'jet') this.jet.update(dt, ac, weather);
     else if (this.engineKind === 'rotor') this.vehicles.updateRotor(dt, ac, weather);
     else this.engine.update(dt, ac, weather);
@@ -186,38 +209,18 @@ export class GameAudio {
   }
 
   /**
-   * Sound while you are driving the boat or the car.
-   *
-   * The drive loop returns before update(), so two things were true at once:
-   * the boat was completely silent, and the aeroplane's engine held its last
-   * gain target and droned over the top of it for the whole trip — take the
-   * boat out at cruise power and you hear a Skylark from the water.
-   *
-   * So the aeroplane's engine is wound down, and the vehicle drives the same
-   * piston synth from its own throttle. The stall warner and the radio are not
-   * called: a boat has neither, and the alerts read altitudes it does not have.
-   */
-  /**
-   * The boat and the car.
-   *
-   * Three bugs went with the rewrite. The aeroplane's piston synth was being
-   * run at `throttle * 0.75` for both of them, which is a four-cylinder
-   * aero engine and neither a diesel nor a road car. `onGround: true` with
-   * `groundSpeed: ms` drove Ambience's TYRE ROLL layer, so the rescue launch
-   * had aeroplane tyre noise at sea, rising with boat speed. And whichever
-   * aeroplane engine was not selected was left holding its last gain target
-   * rather than being wound down, which is the drone.
+   * The boat and the car. The drive loop returns before update(), so the
+   * aeroplane's engine is wound down here (a synth not updated holds its last
+   * gain and drones) and the vehicle drives its own. No stall warner or radio.
    */
   updateVehicle(dt, reading, weather) {
     if (!this.available) return;
     const ms = (reading.speedKts || 0) / 1.94384;
-    // Both aeroplane engines get an explicit zero-rpm state rather than being
-    // left alone: a synth that is not updated holds its last gain and drones.
     const off = {
       rpm: 0,
       controls: { throttle: 0, brakes: 0, yaw: 0 },
       airspeed: ms,
-      ias: reading.speedKts || 0,
+      ias: ms,
       fuel: 1,
       alt: 0,
       agl: 0,
@@ -232,8 +235,7 @@ export class GameAudio {
     // The vehicle's own instrument.
     this.vehicles.updateSurface(dt, reading, weather);
 
-    // Wind and rain still apply — but NOT tyre roll, which is why onGround is
-    // false above: the car's own synth owns the tyres and a boat has none.
+    // Wind and rain still apply; tyre roll does not: the car's synth owns the tyres.
     this.ambience.update(dt, off, weather, 0);
 
     // The music's 'ground' driver has been waiting for this cue.

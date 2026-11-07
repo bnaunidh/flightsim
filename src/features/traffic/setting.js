@@ -58,21 +58,12 @@ export function paintTrafficSwitches(sim, apply, { guest = false } = {}) {
 
 function paintPause(sim, apply, guest = false) {
   const pause = sim && sim.menus && sim.menus.screens && sim.menus.screens.pause;
-  if (!pause || typeof pause.querySelector !== 'function' || typeof document === 'undefined') return false;
+  if (!pause || typeof pause.querySelector !== 'function' || typeof document === 'undefined' || !sim.menus.addPauseItem) return false;
   let btn = pause.querySelector('[data-traffic-toggle]');
   if (!btn) {
-    const fold = document.createElement('details');
-    fold.className = 'pause-fold';
+    const fold = sim.menus.addPauseItem('traffic', { group: 'world', title: 'Other aeroplanes',
+      html: `<button data-traffic-toggle></button><p class="hint tiny" data-traffic-hint>${HINT_PAUSE}</p>` });
     fold.dataset.trafficFold = '';
-    fold.innerHTML = '<summary>✈️ Other aeroplanes</summary>'
-      + '<div class="pause-actions"><button data-traffic-toggle></button></div>'
-      + `<p class="hint tiny" data-traffic-hint>${HINT_PAUSE}</p>`;
-    // After the runaway switch's fold if it is there, else after the view fold.
-    const runaway = pause.querySelector('[data-runaway-fold]');
-    const view = pause.querySelector('[data-freelook]');
-    const after = runaway || (view && view.closest('.pause-fold'));
-    if (after && after.parentNode) after.parentNode.insertBefore(fold, after.nextSibling);
-    else (pause.querySelector('.pause-card') || pause).appendChild(fold);
     btn = fold.querySelector('[data-traffic-toggle]');
     btn.addEventListener('click', () => {
       setOn(sim, !isOn(sim));

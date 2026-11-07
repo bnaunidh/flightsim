@@ -51,7 +51,7 @@ ok('every deck token is defined on :root', missing.length === 0, missing.join(',
 ok('the radius scale is 10 / 14 / 20 and the motion scale 150 / 200 / 250 ms',
   /--r-1: 10px/.test(rootBlock) && /--r-2: 14px/.test(rootBlock) && /--r-3: 20px/.test(rootBlock)
   && /--dur-1: 150ms/.test(rootBlock) && /--dur-2: 200ms/.test(rootBlock) && /--dur-3: 250ms/.test(rootBlock));
-const literalRadii = [...deck.matchAll(/border-radius:\s*([^;]+);/g)].map((m) => m[1].trim()).filter((v) => !/var\(--r-[123]\)|999px/.test(v));
+const literalRadii = [...deck.matchAll(/border-radius:\s*([^;]+);/g)].map((m) => m[1].trim()).filter((v) => !/var\(--r-[0123]\)|999px/.test(v));
 ok('the section sets radii from the scale only (999px pills aside)', literalRadii.length === 0, literalRadii.join(', ') || 'all tokens');
 const literalDur = [...deck.matchAll(/transition[^;]*;|animation:[^;]*;/g)].map((m) => m[0]).filter((v) => /\d+m?s\b/.test(v) && !/var\(--dur-[123]\)/.test(v));
 ok('every transition and animation in the section takes its time from the motion scale', literalDur.length === 0, literalDur.join(' | ') || 'all tokens');
@@ -100,10 +100,13 @@ ok('the screen fade is opacity only', !!kf && /opacity/.test(kf[1]) && !/transfo
 ok('…and off under Reduce motion', /html\.reduce-motion \.menu-layer > \.screen:not\(\[hidden\]\) \{ animation: none; \}/.test(deck));
 
 /* ---- 7. No feature changed ---- */
-const main = menusJs.slice(menusJs.indexOf('buildMain() {'), menusJs.indexOf('buildMaps() {'));
-const acts = [...main.matchAll(/class="card-btn" data-act="([a-z-]+)"/g)].map((m) => m[1]);
-ok('the start screen still builds the same six cards, in the same order',
-  acts.join(',') === 'tutorial,missions,free,multiplayer,maps,more', acts.join(', '));
+// The board's rows come from game-ui.js's table (v78): menus.js builds an empty .main-nav, applyGameUi fills it.
+const gameUi = read('src/ui/game-ui.js');
+const flight = gameUi.slice(gameUi.indexOf('flight: {'), gameUi.indexOf('heli: {'));
+const acts = [...flight.matchAll(/\{ to: '([a-z-]+)'/g)].map((m) => m[1]);
+ok('the front page keeps every destination, on the board or the one Fly button',
+  ['tutorial', 'missions', 'free', 'hangar', 'maps', 'multiplayer', 'more'].every((a) => acts.includes(a))
+  && /class="fly-now" data-act="fly-now"/.test(menusJs), acts.join(', '));
 ok('the polish is styles only: no new element, class hook or key in menus.js for it', !/fx-low|deck-/.test(menusJs));
 
 console.log(`\n${passed} passed, ${failed} failed`);

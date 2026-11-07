@@ -130,6 +130,7 @@
               if (done) return;
               done = true;
               window.__leavingOnPurpose = true;
+              try { sessionStorage.setItem('ifs-updated', '1'); } catch (e) { /* no note, then */ }
               location.reload();
             });
             reg.waiting.postMessage('skip-waiting');

@@ -432,24 +432,18 @@ function toggleLabel(sim) {
   return `Runaway plane & WASTED: ${runawayOn(sim) ? 'on' : 'off'}`;
 }
 
-/** A "Getting out" fold in the pause menu with one switch, put there by this feature (menus.js need not know). */
+/** One switch in the pause menu's More options, put there by this feature (menus.js need not know). */
 export function paintPauseSwitch(sim) {
   const pause = sim && sim.menus && sim.menus.screens && sim.menus.screens.pause;
-  if (!pause || typeof pause.querySelector !== 'function') return false;
+  if (!pause || typeof pause.querySelector !== 'function' || !sim.menus.addPauseItem) return false;
   let btn = pause.querySelector('[data-runaway-toggle]');
   if (!btn) {
-    const fold = document.createElement('details');
-    fold.className = 'pause-fold';
-    fold.dataset.runawayFold = '';
-    fold.innerHTML = '<summary>🛫 Getting out</summary>'
-      + '<div class="pause-actions"><button data-runaway-toggle></button></div>'
+    const fold = sim.menus.addPauseItem('runaway', { group: 'world', title: 'Getting out',
+      html: '<button data-runaway-toggle></button>'
       + '<p class="hint tiny">On: get out of a small plane with the power on and she takes off without you — '
       + 'stand in her way and you get WASTED. Off: she stays parked, like before, and being knocked over '
-      + 'on foot shows no WASTED screen.</p>';
-    const view = pause.querySelector('[data-freelook]');
-    const after = view && view.closest('.pause-fold');
-    if (after && after.parentNode) after.parentNode.insertBefore(fold, after.nextSibling);
-    else (pause.querySelector('.pause-card') || pause).appendChild(fold);
+      + 'on foot shows no WASTED screen.</p>' });
+    fold.dataset.runawayFold = '';
     btn = fold.querySelector('[data-runaway-toggle]');
     btn.addEventListener('click', () => {
       sim.settings = sim.settings || {};

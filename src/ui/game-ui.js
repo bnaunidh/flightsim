@@ -1,40 +1,11 @@
 /**
- * One menu, four games.
- *
- * WHAT WAS WRONG
- * The bar at the top of the menu switched games by starting them. Press Car and
- * main.js:switchGame() called startDrive('car') and you were in the world, on
- * the apron, with the aeroplane's menu still describing take-off and landing
- * behind you. That is why the boat and the car had no screens of their own:
- * there was nowhere for a screen to live, because the button that should have
- * opened one drove past it.
- *
- * WHAT THIS DOES
- * Pressing a game in the bar changes which game the MENU is about. Starting is
- * what the game's own screens are for. So `setGame(id)`:
- *   - stamps `data-game` on the menu root, so the whole menu can be themed off
- *     one attribute in CSS without a single extra class in JavaScript;
- *   - repaints the start screen's title and cards from a per-game table;
- *   - hides the mission cards and map cards that do not belong to this game.
- *
- * WHY IT IS A FILE RATHER THAN AN EDIT TO menus.js
- * menus.js is 2,139 lines and is being worked on by the flight, boat and car
- * leads in the same week. This overwrites three methods on the live Menus
- * instance and adds four, from outside. One import line in main.js applies all
- * of it; nothing here can half-merge into somebody else's screen.
- *
- * HIDDEN, NEVER FILTERED
- * Cards are built once and then hidden, exactly as the lock syncs already
- * do it (the comment at menus.js:560 explains why: build() runs once from the
- * constructor, so a card filtered out at build time can never come back). The
- * game filter follows the same rule, and it wraps the existing lock syncs
- * instead of replacing them, so a card needs its game to show.
- *
- * AND UNDER A HEADING
- * The board is grouped by category (menus.js, CATEGORIES). Each card sits in
- * its heading's grid from the start; this file only hides and shows, and then
- * asks menus.syncCategories() which headings still have anything under them.
- * The chips and the search box never write `hidden` — see syncCategories().
+ * One menu, several games. The bar above the menu changes which game the MENU
+ * is about; starting is what the game's own screens are for. setGame(id) stamps
+ * data-game on the menu root for the CSS, repaints the start screen from
+ * GAME_UI, and hides the cards that are not this game's. Cards are built once
+ * and hidden, never filtered: build() runs once, so a filtered card could never
+ * come back. It overwrites methods on the live Menus instance from here, and
+ * wraps the lock syncs, so a card needs its game to show.
  */
 
 import { MAPS } from '../world/maps.js';
@@ -84,42 +55,36 @@ export const GAME_UI = {
   flight: {
     hero: 'Island Flight Simulator',
     line: 'Learn to fly a real aeroplane',
+    fly: { act: 'fly-now', word: 'Fly' },
     cards: [
-      { to: 'tutorial', icon: 'learn', title: 'Tutorial', sub: 'Start here — learn take-off, turning and landing' },
-      /*
-       * `counted`: the line is rewritten from MISSIONS by refreshMissionsLine(),
-       * because three teams are adding flight missions and a number typed
-       * here is wrong the day the first of them lands.
-       */
+      { to: 'tutorial', icon: 'learn', title: 'Tutorial', sub: 'Start here: take-off, turning, landing' },
+      // `counted`: rewritten from MISSIONS by refreshMissionsLine().
       { to: 'missions', icon: 'target', title: 'Missions', sub: 'Training, rescues, deliveries and emergencies — sorted into groups', counted: true },
       { to: 'free', icon: 'cloud', title: 'Free Flight', sub: 'Any weather, any time of day, no rules' },
-      /*
-       * The hangar, out of More and onto the front page: "move hangar to the
-       * main area, not in other" — the owner. It is where you pick and buy an
-       * aeroplane, on a turning podium, so it sits beside Free Flight.
-       */
-      { to: 'hangar', icon: 'hangar', title: 'Hangar', sub: 'Every aircraft on a spinning podium — pick one, or unlock it' },
-      { to: 'maps', icon: 'map', title: 'Choose Map', sub: 'From flat grassland to a volcano, a big-city airport and a clifftop strip' },
-      { to: 'multiplayer', icon: 'players', title: 'Multiplayer', sub: 'Fly with friends — five open lobbies, or a private match with a code' },
-      { to: 'more', icon: 'more', title: 'More', sub: 'Your rank and leaderboard, settings and the other vehicles' },
+      { to: 'hangar', icon: 'hangar', title: 'Hangar', sub: 'Pick an aircraft, or unlock a new one' },
+      { to: 'maps', icon: 'map', title: 'Choose Map', sub: 'From flat grassland to a volcano' },
+      { to: 'multiplayer', icon: 'players', title: 'Multiplayer', sub: 'Fly with friends, or a private match' },
+      { to: 'more', icon: 'more', title: 'More', sub: 'Rank, leaderboard, other vehicles' },
     ],
   },
   heli: {
     hero: 'Island Rotors',
     line: 'The Skyhook H-3 — the one that hovers',
+    fly: { act: 'fly-now', word: 'Fly' },
     cards: [
       { to: 'tutorial', icon: 'learn', title: 'Tutorial', sub: 'Start here — your first hover' },
       { to: 'missions', icon: 'target', title: 'Missions', sub: 'Winch work, mountain pads and places with no runway' },
       { to: 'free', icon: 'cloud', title: 'Free Flight', sub: 'Any weather, any time of day, no rules' },
       { to: 'hangar', icon: 'hangar', title: 'Hangar', sub: 'The Skyhook on the podium — and every aeroplane beside it' },
       { to: 'maps', icon: 'map', title: 'Choose Map', sub: 'Anywhere with somewhere flat to set down' },
-      { to: 'multiplayer', icon: 'players', title: 'Multiplayer', sub: 'Fly with friends — five open lobbies, or a private match with a code' },
-      { to: 'more', icon: 'more', title: 'More', sub: 'Your rank and leaderboard, settings and the other vehicles' },
+      { to: 'multiplayer', icon: 'players', title: 'Multiplayer', sub: 'Fly with friends, or a private match' },
+      { to: 'more', icon: 'more', title: 'More', sub: 'Rank, leaderboard, other vehicles' },
     ],
   },
   boat: {
     hero: 'Kestrel Launch',
     line: 'Out of the bay and round the headland',
+    fly: { act: 'drive', word: 'Sail' },
     cards: [
       { to: 'missions', icon: 'target', title: 'Runs', sub: 'Jobs on the water, on whichever island you pick' },
       { to: 'drive', icon: 'boat', title: 'Open Water', sub: 'No clock. Just take her out' },
@@ -137,6 +102,7 @@ export const GAME_UI = {
      * matter are the clock, the road and the state of what is in the back.
      */
     hero: 'Island Courier',
+    fly: { act: 'drive', word: 'Drive' },
     line: 'You drive the island’s deliveries. On time, and in one piece',
     cards: [
       { to: 'missions', icon: 'target', title: 'Jobs', sub: 'Six runs, on whichever island you pick' },
@@ -434,24 +400,20 @@ export function installGameUi(menus, hooks = {}) {
     if (h1) h1.textContent = def.hero;
     const tag = main.querySelector('.tagline');
     if (tag) {
-      /*
-       * The island's name stays in the tagline, in the element syncMap() writes
-       * into. Rebuild the line without that span and the name of the place you
-       * are about to drive on quietly stops updating — the kind of break that
-       * nothing throws on and nobody notices for a week.
-       */
+      // The name stays in the element syncMap() writes into.
       tag.innerHTML = `${def.line} — <span data-map-name></span>`;
       menus.syncMap && menus.syncMap((menus.settingsRef && menus.settingsRef.map) || 'kestrel');
     }
 
+    const fly = main.querySelector('.fly-now');
+    if (fly) {
+      fly.dataset.act = def.fly.act;
+      fly.querySelector('[data-fly-word]').textContent = def.fly.word;
+    }
+
     const nav = main.querySelector('.main-nav');
     if (nav) {
-      /*
-       * innerHTML is safe here: the click handler is delegated on the <section>,
-       * not bound to the buttons, so replacing them keeps every card working.
-       * That is worth knowing before anyone "fixes" this into buttons built one
-       * at a time with their own listeners.
-       */
+      // innerHTML is safe: the click handler is delegated on the <section>.
       nav.innerHTML = def.cards
         .map(
           (c) => `<button class="card-btn" data-act="${c.to}">
@@ -473,7 +435,8 @@ export function installGameUi(menus, hooks = {}) {
     const main = menus.screens.main;
     const el = main && main.querySelector('[data-missions-line]');
     if (!el) return;
-    const text = missionsLine(menus.currentGame || 'flight', menus.prog);
+    // A board row is one line: the count and the first two headings.
+    const text = missionsLine(menus.currentGame || 'flight', menus.prog).split(',').slice(0, 2).join(',');
     if (text && el.textContent !== text) el.textContent = text;
   };
 

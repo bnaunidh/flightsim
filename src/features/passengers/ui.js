@@ -59,6 +59,7 @@ const CSS = `
 .hud.is-large .px-panel { width: 250px; font-size: 14.5px; }
 .hud.is-contrast .px-panel { background: #000; border-color: #ffe95c; }
 .hud.is-hidden .px-panel { display: none; }
+@media (min-width: 561px) { .hud.is-touch .px-panel { width: 178px; } }
 @media (max-width: 560px) { .px-panel { width: 186px; font-size: 11.5px; padding: 6px 9px 7px; } .px-score { font-size: 13px; } }
 `;
 
@@ -164,11 +165,30 @@ export class PassengerPanel {
     if (!r.height) return;
     const host = this.el.offsetParent || document.body;
     const hr = host.getBoundingClientRect();
-    const top = Math.round(r.bottom - hr.top + 8);
-    const lx = Math.round(r.left - hr.left);
+    let top = Math.round(r.bottom - hr.top + 8);
+    let lx = Math.round(r.left - hr.left);
+    /*
+     * On a touch screen the instruments are a band across the top, and just
+     * under it runs the heading tape: the card sat on the tape on every iPad
+     * and phone (129 x 27 at 1024 x 768, the whole width upright). There its
+     * place is the left column under the map, and clear of the objective's
+     * lane where that comes down to the same row (a phone).
+     */
+    const map = document.querySelector('#ui > .minimap');
+    if (this.el.closest('.is-touch') && map) {
+      const m = map.getBoundingClientRect();
+      const box = this.el.getBoundingClientRect();
+      lx = 8;
+      top = Math.round(m.bottom - hr.top + 8);
+      for (const e of document.querySelectorAll('.hud-top > *')) {
+        const o = e.getBoundingClientRect();
+        if (o.width && o.height && o.left < lx + box.width && o.right > lx && o.top < top + box.height && o.bottom > top) top = Math.round(o.bottom - hr.top + 8);
+      }
+    }
     if (this.last.topPx !== top) {
       this.last.topPx = top;
       this.el.style.top = `${top}px`;
+      if (typeof window !== 'undefined' && window.dispatchEvent) window.dispatchEvent(new Event('hud-moved'));
     }
     if (this.last.leftPx !== lx) {
       this.last.leftPx = lx;

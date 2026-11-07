@@ -110,6 +110,7 @@ import { check as where } from './where.browser.js';
 import { check as airspace } from './airspace.browser.js';
 import { check as cockpitCam } from './cockpit-cam.browser.js';
 import { check as cockpitDress } from './cockpit-dress.browser.js';
+import { check as hudReadouts } from './hud-readouts.browser.js';
 
 export const CHECKS = [
   // The missions' fun pass, flown (slow): medals, twists, finales, Try again from.
@@ -280,6 +281,7 @@ export const CHECKS = [
   // The cockpit camera: numpad snaps, the wheel's zoom, a TCA sidestick's hat looking round, the look remembered per aircraft.
   { id: 'cockpit-cam', check: cockpitCam },
   { id: 'cockpit-dress', check: cockpitDress },
+  { id: 'hud-readouts', check: hudReadouts },
   // The demo bug hunt (2026-11-02): the boat's rudder bar, pause card and restarts; a pause straight after a crash.
   { id: 'bughunt', check: bughunt },
   // Last: it rebinds keys through Settings (and puts the player's back after).
