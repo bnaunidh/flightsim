@@ -641,6 +641,14 @@ function aircraftThumbnail(type, liveryId) {
   return c;
 }
 
+
+/** Free Flight's "Real time": this device's hour, and the sky word it falls in (the sky works it out from the sun anyway). */
+export function realTimeNow(d = new Date()) {
+  const hour = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+  const time = hour >= 8 && hour < 17.5 ? 'day' : hour >= 5.5 && hour < 20 ? 'sunset' : 'night';
+  return { time, hour, realTime: true };
+}
+
 export class Menus {
   /**
    * @param {HTMLElement} root
@@ -1078,7 +1086,8 @@ export class Menus {
     const presets = PRESETS.map(
       (p) => `<button class="preset" data-preset="${p.id}"><strong>${p.name}</strong><em>${p.hint}</em></button>`
     ).join('');
-    const times = Object.entries(TIMES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
+    // "Real time" (the owner: "let time for off irl time"): the hour on this device's clock, then the clock runs on as it always does.
+    const times = Object.entries(TIMES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('') + '<option value="real">Real time (your clock)</option>';
     // Random first (the default since wave 19: it rolls the day's weather and changes as you fly), then Clear always.
     const conds = SKY_CHOICES.filter((c) => CONDITIONS[c.id]).map((c) => `<option value="${c.id}">${c.label}</option>`).join('');
 
@@ -1252,13 +1261,14 @@ export class Menus {
     const hourWords = () => {
       const out = s.querySelector('[data-hourval]');
       if (!out) return;
+      if (time.value === 'real') { out.textContent = 'your clock'; return; }
       if (hour.dataset.set !== '1') { out.textContent = 'preset'; return; }
       const h = Number(hour.value) % 24;
       const hh = Math.floor(h);
       const mm = Math.round((h - hh) * 60);
       out.textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
     };
-    hour.addEventListener('input', () => { hour.dataset.set = '1'; hourWords(); });
+    hour.addEventListener('input', () => { hour.dataset.set = '1'; if (time.value === 'real') time.value = 'day'; hourWords(); });
     time.addEventListener('change', () => { hour.dataset.set = '0'; hourWords(); });
     hourWords();
     // A plan view on each card, drawn from that aeroplane's own shape data.
@@ -1435,9 +1445,12 @@ export class Menus {
         randomDisasters: s.querySelector('[data-random-disasters]').checked,
         // Heat-seekers' practice drones (src/features/heatseek.js reads it from the start options).
         practiceTargets: !!(s.querySelector('[data-practice-targets]') || {}).checked,
-        time: time.value,
-        // The slider's hour, only once it has been moved (otherwise the word's preset).
-        hour: hour.dataset.set === '1' ? Number(hour.value) : undefined,
+        // Real time: the hour now on this device's clock, sent as an ordinary hour (the word follows the sun).
+        ...(time.value === 'real' ? realTimeNow() : {
+          time: time.value,
+          // The slider's hour, only once it has been moved (otherwise the word's preset).
+          hour: hour.dataset.set === '1' ? Number(hour.value) : undefined,
+        }),
         condition: cond.value,
         windSpeedKts: Number(wind.value),
         windDirDeg: Number(dir.value),
@@ -1453,8 +1466,9 @@ export class Menus {
     const setOpt = (el, v) => { if ([...el.options].some((o) => o.value === v)) el.value = v; };
     const applySetup = (c) => {
       if (!c) return;
-      setOpt(time, c.time);
-      if (Number.isFinite(c.hour)) { hour.value = c.hour; hour.dataset.set = '1'; } else hour.dataset.set = '0';
+      setOpt(time, c.realTime ? 'real' : c.time);
+      if (c.realTime) hour.dataset.set = '0';
+      else if (Number.isFinite(c.hour)) { hour.value = c.hour; hour.dataset.set = '1'; } else hour.dataset.set = '0';
       hourWords();
       setOpt(cond, c.condition);
       setNum(wind, c.windSpeedKts);
@@ -2892,7 +2906,7 @@ export class Menus {
       if (out) out.textContent = node.type === 'range' && Number(v) <= 1 ? `${Math.round(v * 100)}%` : v;
     });
     // Free-flight defaults follow the saved weather.
-    if (this.freeControls && settings.weather) {
+    if (this.freeControls && settings.weather && this.freeControls.time.value !== 'real') {
       this.freeControls.time.value = settings.weather.time;
       if (this.freeControls.hour) {
         const h = settings.weather.hour;
