@@ -21,6 +21,7 @@
 
 import * as THREE from '../../vendor/three.module.js';
 import { noiseTexture, puffTexture } from './textures.js';
+import { FLASH } from '../../render/flash-safety.js';
 import { WET_SECONDS } from './grid.js';
 
 const FOG_VERT = /* glsl */ `
@@ -61,6 +62,8 @@ export class Flames {
     u.uWind = { value: new THREE.Vector3() };
     u.uBright = { value: 1 };
     u.uOpaque = { value: 0.85 };
+    /** 1 under Reduce flashing: the flicker terms at a third of their swing. */
+    u.uCalm = { value: 1 };
     /*
      * Premultiplied alpha, so one material is both kinds of fire. The colour
      * is always added; `uOpaque` says how much of what is behind it the flame
@@ -86,6 +89,7 @@ export class Flames {
         varying vec2 vUv;
         varying float vHeat;
         varying float vPhase;
+        uniform float uCalm;
         ${FOG_VERT}
         void main() {
           vUv = uv;
@@ -93,7 +97,7 @@ export class Flames {
           vPhase = iData.x;
           vec3 cr = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
           vec3 right = normalize(vec3(cr.x, 0.0, cr.z) + vec3(1e-4, 0.0, 0.0));
-          float flick = 1.0 + 0.16 * sin(uTime * 7.3 + iData.x * 40.0) + 0.09 * sin(uTime * 12.7 + iData.x * 17.0);
+          float flick = 1.0 + (0.16 * sin(uTime * 7.3 + iData.x * 40.0) + 0.09 * sin(uTime * 12.7 + iData.x * 17.0)) * (1.0 - 0.75 * uCalm);
           float h = iSize.y * (0.3 + 0.7 * iData.y) * flick;
           float w = iSize.x * (0.55 + 0.45 * iData.y);
           vec3 wp = iPos + right * (position.x * w);
@@ -678,6 +682,7 @@ export class Scar {
     u.uLight = { value: 1 };
     u.uNight = { value: 0 };
     u.uTime = { value: 0 };
+    u.uCalm = { value: 1 };
     this.mat = new THREE.ShaderMaterial({
       uniforms: u,
       fog: true,
@@ -703,6 +708,7 @@ export class Scar {
         uniform float uLight;
         uniform float uNight;
         uniform float uTime;
+        uniform float uCalm;
         uniform vec3 fogColor;
         varying vec3 vWorld;
         varying float vFog;
@@ -719,7 +725,7 @@ export class Scar {
           float wet = t.b * (1.0 - c);
           col = mix(col, vec3(0.05, 0.07, 0.08) * uLight, wet);
           a = max(a, wet * 0.32);
-          float flick = 0.65 + 0.35 * sin(uTime * 5.0 + n * 40.0 + n2 * 17.0);
+          float flick = 0.65 + 0.35 * (1.0 - 0.75 * uCalm) * sin(uTime * 5.0 + n * 40.0 + n2 * 17.0) + 0.22 * uCalm;
           float g = t.g * smoothstep(0.25, 0.75, n2 + t.g * 0.5);
           col += vec3(1.0, 0.3, 0.05) * g * flick * (0.7 + uNight * 2.2);
           a = max(a, g * 0.95);
@@ -759,7 +765,14 @@ export class Scar {
         const s = G.slotOf[i];
         const f = s >= 0 ? G.slotAge[s] / G.slotLife[s] : 0.5;
         r = Math.min(255, 40 + f * 215) | 0;
-        gl = s >= 0 ? Math.min(255, G.slotHeat[s] * 255) | 0 : 128;
+        /*
+         * The glow under a burning cell follows its heat, which changes
+         * every tick — and a scar of cells each brightening and dimming on
+         * its own tick is a strobe to the flicker probe (13 % of the screen
+         * in the burn-scar cutscene, 2026-11-08). Under Reduce flashing the
+         * glow is steady; the flames above it carry the movement.
+         */
+        gl = FLASH.reduce ? 150 : s >= 0 ? Math.min(255, G.slotHeat[s] * 255) | 0 : 128;
       }
       const w = G.wet[i] - G.time;
       const b = w > 0 ? Math.min(255, (w / WET_SECONDS) * 255) | 0 : 0;

@@ -114,6 +114,9 @@ import { check as hudReadouts } from './hud-readouts.browser.js';
 import { check as realTime } from './real-time.browser.js';
 import { check as farGlitch } from './far-glitch.browser.js';
 import { check as voidCity } from './void-city.browser.js';
+import { check as storyCh02 } from './story-ch02.browser.js';
+import { check as storyCh03 } from './story-ch03.browser.js';
+import { check as storyCh04 } from './story-ch04.browser.js';
 
 export const CHECKS = [
   // The missions' fun pass, flown (slow): medals, twists, finales, Try again from.
@@ -227,6 +230,15 @@ export const CHECKS = [
   // After achievements (it notes the story's medals): STORY MODE — the Story card, chapter 1
   // played to the end by a scripted pilot, and leave-then-Continue at a checkpoint.
   { id: 'story', check: story },
+  // Chapter 2, Fire Line, played by a key-driven robot (pass, and fail → retry in both beats),
+  // continue from a checkpoint, and the flicker probe on its fire and cutscene.
+  { id: 'story-ch02', check: storyCh02 },
+  // Chapter 3, Range Control, flown by a scripted pilot (pass, fail → retry, continue with
+  // the shape back on the wing), and the flicker probe on the shape at dusk and the apron cutscene.
+  { id: 'story-ch03', check: storyCh03 },
+  // Chapter 4, Low Water: the boat game started by the story (hidden from the menus, still
+  // running), a key-driven skipper across the bank, out on foot for the case, and home.
+  { id: 'story-ch04', check: storyCh04 },
   // After story (it plays chapter 1's landing from its own clean save, which this puts back): the secret
   // runway box — three seconds down in it is a landing, in the story, a mission and a delivery; the grass is not.
   { id: 'landing-zone', check: landingZone },

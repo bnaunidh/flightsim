@@ -28,10 +28,10 @@
  */
 
 import { STATUS } from '../game/runner.js';
-import { CHAPTERS, chapterById, chapterLabel } from './chapters.js';
+import { CHAPTERS, chapterById, chapterLabel, chapterPlayable, chapterOffered, offeredChapters, loadModule } from './chapters.js';
 import * as Save from './save.js';
 import * as Cinema from './cinema.js';
-import { registerBeats, resumeAt, isStoryDef } from './beats.js';
+import { registerBeats, resumeAt, isStoryDef, craftOf } from './beats.js';
 import { RECAPS, FILES } from './script.js';
 
 export const ROLLING_SAVE_SECONDS = 30;
@@ -217,8 +217,11 @@ export function newGame(difficulty = 'pilot') {
 }
 
 /** Story → Continue. */
-export function continueGame() {
-  const plan = Save.resumePlan(D.data, CHAPTERS);
+export async function continueGame() {
+  // The pointer's chapter must be in memory before the plan reads its beats.
+  const at = D.data && D.data.chapter ? chapterById(D.data.chapter) : null;
+  if (chapterOffered(at)) await loadModule(at);
+  const plan = Save.resumePlan(D.data, offeredChapters());
   switch (plan.kind) {
     case 'fresh':
       return newGame(D.data.difficulty);
@@ -245,15 +248,29 @@ export function continueGame() {
 /** Chapters → a finished chapter → PLAY: its own temporary state. */
 export function replayChapter(id) {
   const ch = chapterById(id);
-  if (!ch || !ch.available) return Promise.resolve(false);
+  if (!chapterPlayable(ch)) return Promise.resolve(false);
   return startChapter(ch, { fresh: true, replay: true });
 }
 
 /* ---------------------------------------------------------------- chapter */
 
 export async function startChapter(ch, { fresh = false, resume = null, replay = false, skipBriefing = false } = {}) {
-  if (!ch || !ch.available || !ch.module) return false;
+  if (!chapterPlayable(ch)) return false;
+  if (!ch.module) {
+    // A lazily loaded chapter: fetch it now, behind the fade, before anything is torn down.
+    Cinema.fadeBlack(1.4);
+    try {
+      await loadModule(ch);
+    } catch (e) {
+      console.error('[story] the chapter could not be loaded', ch.id, e);
+      Cinema.hideAll();
+      return false;
+    }
+    if (!ch.module) return false;
+  }
   if (D.active) teardown('restart');
+  // The game the Story card was opened from (flight or heli): put back after a boat chapter.
+  if (D.sim && D.sim.game !== 'boat' && D.sim.game !== 'car') D.gameBefore = D.sim.game || 'flight';
   D.active = true;
   D.chapter = ch;
   D.mod = ch.module;
@@ -315,7 +332,8 @@ async function beginBeat(i, resume) {
   D.beat = beat;
   D.pendingResume = resume || null;
   D.lastStepKey = null;
-  const seamless = !resume && i > 0 && beat.continues && sim.state === 'flying' && !sim.aircraft.crashed;
+  const craft = craftOf(sim);
+  const seamless = !resume && i > 0 && beat.continues && sim.state === 'flying' && craft && !craft.crashed && (beat.vehicle === 'boat') === (sim.mode === 'drive');
   D.phase = 'loading';
   if (seamless) {
     sim.runner.start(beat);
@@ -326,13 +344,20 @@ async function beginBeat(i, resume) {
     await new Promise((r) => setTimeout(r, 40));
     D.expectStart = true;
     try {
-      await sim.startMode('mission', { id: beat.id });
+      if (beat.vehicle === 'boat') {
+        // A boat beat: the boat game, on the beat's map, with the beat as its shout.
+        sim.menus.hide();
+        sim.startDrive('boat', { mission: beat.id, map: beat.map });
+        await new Promise((r) => setTimeout(r, 40));
+      } else {
+        await sim.startMode('mission', { id: beat.id });
+      }
     } finally {
       D.expectStart = false;
     }
     if (!D.active) return;
     if (resume && resume.exact && resume.pose) {
-      Save.applyPose(sim, resume.pose);
+      Save.applyPose(sim, resume.pose, craftOf(sim));
       // The beat's own onStart runs inside resumeAt (it rebuilds the cast
       // from scratch); the saved state is laid over it afterwards.
       resumeAt(sim.runner, beat, resume.step, { elapsed: resume.elapsed });
@@ -366,7 +391,7 @@ export function saveCheckpoint(id, label, { quiet = false } = {}) {
   const sim = D.sim;
   if (!D.active || !sim || D.phase === 'cutscene' || D.phase === 'failed') return false;
   const r = sim.runner;
-  const pose = Save.capturePose(sim);
+  const pose = Save.capturePose(sim, craftOf(sim));
   const cp = {
     id,
     label: label || id,
@@ -472,6 +497,8 @@ async function finishChapter() {
   D.phase = 'debrief';
   sim.state = 'debrief';
   sim.hud.setVisible(false);
+  // The flight's toasts (a boat's "Bump!", the lever hint) must not sit over the debrief card.
+  if (typeof sim.hud.clearTransient === 'function') sim.hud.clearTransient();
   Cinema.hideAll();
   if (D.ui) {
     D.ui.showTracker(false);
@@ -484,11 +511,28 @@ async function finishChapter() {
   }
 }
 
+/**
+ * Back to the Story menu, out of whatever you were in (the boat's hull
+ * included), and in the game the Story card was opened from: a boat chapter
+ * must not leave the menus on the boat game, which the demo hides.
+ */
+function toStoryMenu(sim) {
+  if (sim.mode === 'drive' && typeof sim.stopDrive === 'function') sim.stopDrive();
+  if (D.gameBefore && sim.game !== D.gameBefore && typeof sim.switchGame === 'function') {
+    try {
+      sim.switchGame(D.gameBefore);
+    } catch (e) {
+      /* the menu will say */
+    }
+  }
+  sim.quitToMenu('story');
+}
+
 function goNext(next) {
-  if (next && next.available) {
+  if (chapterPlayable(next)) {
     const wasReplay = D.replay;
     teardown('next');
-    D.sim.quitToMenu('story');
+    toStoryMenu(D.sim);
     return startChapter(next, { fresh: true, replay: wasReplay });
   }
   return showTbc(D.chapter ? D.chapter.id : null);
@@ -499,7 +543,7 @@ export function showTbc(lastId) {
   const sim = D.sim;
   if (D.active) {
     teardown('tbc');
-    if (sim.state !== 'menu') sim.quitToMenu('story');
+    if (sim.state !== 'menu') toStoryMenu(sim);
   }
   const last = chapterById(lastId) || CHAPTERS[0];
   const next = Save.nextChapter(last.id, CHAPTERS);
@@ -544,7 +588,7 @@ export function restartChapter() {
   if (!ch) return Promise.resolve(false);
   D.sim.menus.hide();
   teardown('restart');
-  D.sim.quitToMenu('story');
+  toStoryMenu(D.sim);
   return startChapter(ch, { fresh: true, replay, skipBriefing: true });
 }
 
@@ -552,7 +596,7 @@ export function quitToStory() {
   const sim = D.sim;
   sim.menus.hide();
   teardown('quit');
-  sim.quitToMenu('story');
+  toStoryMenu(sim);
 }
 
 /* ----------------------------------------------------------- cutscenes */
@@ -572,7 +616,11 @@ function playCutscene(def) {
 export function onStartMode(sim, mode, opts) {
   if (!D.active) return;
   if (D.expectStart) return;
-  if (mode !== 'mission' || !opts || !D.beat || opts.id !== D.beat.id) return;
+  if (!opts || !D.beat) return;
+  // A flight beat restarted ("Fly again"), or a boat beat ("Sail again": startDrive with the beat as its shout).
+  const sameFlight = mode === 'mission' && opts.id === D.beat.id;
+  const sameShout = mode === 'drive' && opts.mission === D.beat.id;
+  if (!sameFlight && !sameShout) return;
   // Restarted by the pause menu or the generic debrief: the beat starts over.
   D.pendingResume = null;
   D.ready = null;
@@ -643,9 +691,10 @@ export function onUpdate(sim, dt) {
 }
 
 function safeToSave(sim) {
-  const ac = sim.aircraft;
+  const ac = craftOf(sim);
   if (!ac || ac.crashed || ac.stalled) return false;
-  if (!ac.onGround && ac.agl < UNSAFE_AGL_M) return false;
+  // An aeroplane low and slow is not a place to save; a helicopter in a hover is (ac.rotor), and so is a boat (ac.spec).
+  if (!ac.spec && !ac.rotor && !ac.onGround && ac.agl < UNSAFE_AGL_M) return false;
   return sim.runner.status === STATUS.RUNNING;
 }
 

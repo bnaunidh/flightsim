@@ -51,10 +51,20 @@ export const OUTFITS = {
   classd: { shirt: 0xf07a1c, trousers: 0xe8701a, shoes: 0x1c1c1c },
   /** The Site's own staff (features/scp-escape.js): a white coat over grey, grey trousers, dark shoes. */
   sitestaff: { shirt: 0xe6e9ec, trousers: 0x6a707a, shoes: 0x1c1c1c },
+  /*
+   * A wildland fire crew (the story's Long Scarp lookout): the yellow shirt,
+   * green trousers and a yellow helmet every forest crew wears; and a
+   * contractor in grey overalls under a teal vest (Thornefield Dynamics'
+   * colours, src/story/brands.js).
+   */
+  firecrew: { shirt: 0xe3ac1c, trousers: 0x4a5236, shoes: 0x3b2a1c, helmet: 0xf2c230 },
+  thornefield: { shirt: 0x8a9097, trousers: 0x6d737a, shoes: 0x1c1c1c, vest: 0x1f8a83, stripe: 0xc9d2d6 },
 };
 
 /** Outfits with long sleeves: the forearm is the shirt, not skin. */
-const LONG_SLEEVES = new Set(['pilot', 'police', 'tactical', 'hijacker', 'classd', 'sitestaff']);
+const LONG_SLEEVES = new Set(['pilot', 'police', 'tactical', 'hijacker', 'classd', 'sitestaff', 'firecrew', 'thornefield']);
+/** Outfits that wear a hi-vis-style vest over the shirt (and on the upper arm). */
+const VESTED = new Set(['staff', 'police', 'thornefield']);
 
 /* ------------------------------------------------------------------ */
 /* Merging parts into one vertex-coloured geometry                      */
@@ -245,7 +255,7 @@ export function createPerson(opts = {}) {
     // Tie and two gold epaulettes.
     chestParts.push(part(P.box, OUTFITS.pilot.tie, 0, 0.3, -0.125, 0, 0, 0, 0.05, 0.28, 0.02));
     for (const sx of [-1, 1]) chestParts.push(part(P.box, OUTFITS.pilot.band, sx * 0.16, 0.47, 0, 0, 0, 0, 0.1, 0.02, 0.07));
-  } else if (outfit === 'staff' || outfit === 'police') {
+  } else if (VESTED.has(outfit)) {
     // The vest, a shell just outside the overalls, and its two reflective bands.
     const o = OUTFITS[outfit];
     chestParts.push(part(P.torso, o.vest, 0, 0.25, 0, 0, 0, 0, 0.212, 0.42, 0.14));
@@ -290,6 +300,11 @@ export function createPerson(opts = {}) {
     // A round helmet down over the ears.
     headParts.push(part(P.head, OUTFITS.tactical.helmet, 0, 0.055, 0.01, 0, 0, 0, 0.168, 0.14, 0.168));
     headParts.push(part(P.torso, OUTFITS.tactical.helmet, 0, 0.0, 0.0, 0, 0, 0, 0.17, 0.05, 0.168));
+  } else if (outfit === 'firecrew') {
+    // Hair under a crew helmet with a brim all round.
+    headParts.push(part(P.head, hair, 0, 0.035, 0.03, 0, 0, 0, 0.157, 0.125, 0.15));
+    headParts.push(part(P.head, OUTFITS.firecrew.helmet, 0, 0.07, 0.01, 0, 0, 0, 0.165, 0.12, 0.165));
+    headParts.push(part(P.disc, OUTFITS.firecrew.helmet, 0, 0.075, 0.01, 0, 0, 0, 0.215, 0.02, 0.215));
   } else if (outfit === 'hijacker') {
     // The hood up: a shell round the back and top of the head, the face clear.
     headParts.push(part(P.head, OUTFITS.hijacker.shirt, 0, 0.02, 0.05, 0, 0, 0, 0.172, 0.18, 0.168));
@@ -315,7 +330,7 @@ export function createPerson(opts = {}) {
     elbow.position.y = -UPPER_ARM;
     arm.add(elbow);
     const upper = [part(P.limb, outfit === 'passenger' && rnd() < 0.4 ? skin : shirt, 0, 0, 0, 0, 0, 0, 0.055, UPPER_ARM, 0.055)];
-    if (outfit === 'staff' || outfit === 'police') upper.push(part(P.limb, OUTFITS[outfit].vest, 0, 0, 0, 0, 0, 0, 0.062, 0.09, 0.062));
+    if (VESTED.has(outfit)) upper.push(part(P.limb, OUTFITS[outfit].vest, 0, 0, 0, 0, 0, 0, 0.062, 0.09, 0.062));
     const fore = [
       part(P.limb, skin, 0, 0, 0, 0, 0, 0, 0.045, FOREARM, 0.045),
       part(P.ball, skin, 0, -FOREARM - 0.03, 0, 0, 0, 0, 0.05, 0.06, 0.05),

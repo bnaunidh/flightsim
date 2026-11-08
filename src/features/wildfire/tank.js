@@ -41,6 +41,22 @@
 
 import * as THREE from '../../vendor/three.module.js';
 import { heightAt } from '../../world/terrain.js';
+
+/**
+ * Dip pools: water a bucket can dip in that is not the sea — { x, z, r, y }
+ * with y the water's height above sea level. Set per fire (wildfire.js
+ * setupFire from the spec's `pools`), cleared with it.
+ */
+const POOLS = [];
+export function setDipPools(list) {
+  POOLS.length = 0;
+  for (const p of list || []) if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) POOLS.push({ x: p.x, z: p.z, r: p.r || 30, y: p.y || 0 });
+  return POOLS.length;
+}
+export function poolAt(x, z) {
+  for (const p of POOLS) if (Math.hypot(x - p.x, z - p.z) <= p.r) return p;
+  return null;
+}
 import { performanceFor } from '../../aircraft/types.js';
 import { keyName } from '../../flight/input.js';
 
@@ -162,16 +178,19 @@ export class WaterTank {
     if (this.kind === 'bucket') {
       const b = bucketPos;
       if (!b) return false;
-      const sea = heightAt(b.x, b.z) < -1.5;
-      // Above the sea surface. Not ac.agl: over the sea that is measured
+      // The sea, or a dip pool above it (a tarn on a bench, a dip tank by a fire station: setDipPools).
+      const pool = poolAt(b.x, b.z);
+      const waterY = pool ? pool.y : 0;
+      const sea = pool ? true : heightAt(b.x, b.z) < -1.5;
+      // Above the water surface. Not ac.agl: over the sea that is measured
       // from the sea BED, forty metres down off Firewatch, so the radar
       // altimeter reads 190 ft at the height the bucket dips.
-      const hw = ac.pos.y;
+      const hw = ac.pos.y - waterY;
       if (!sea) {
-        this.fillWhy = heightAt(ac.pos.x, ac.pos.z) < -1.5 ? 'Get the bucket over open water' : '';
+        this.fillWhy = heightAt(ac.pos.x, ac.pos.z) < -1.5 || poolAt(ac.pos.x, ac.pos.z) ? 'Get the bucket over open water' : '';
         return false;
       }
-      if (b.y > 0.7) {
+      if (b.y > waterY + 0.7) {
         this.fillWhy = hw < 120
           ? `Lower — you are ${Math.round(hw * FT)} ft above the water. Under 60 ft and the bucket dips in`
           : '';

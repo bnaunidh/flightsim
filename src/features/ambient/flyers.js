@@ -133,6 +133,8 @@ export const LIVERIES = Object.freeze({
   crew: { base: '#e8e2d0', accent: '#d14a1f', name: 'a crew-change helicopter' },
   guard: { base: '#5a6670', accent: '#f4f6f8', name: 'a plane-guard helicopter' },
   bucket: { base: '#f2c230', accent: '#1f2429', name: 'a water-bomber helicopter' },
+  // Thornefield Dynamics, the range-security contractor (the story, src/story/brands.js): grey and teal.
+  thornefield: { base: '#8a9097', accent: '#1f8a83', name: 'a Thornefield Dynamics helicopter' },
 });
 
 /* ------------------------------------------------------------------ */

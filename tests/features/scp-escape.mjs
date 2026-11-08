@@ -512,7 +512,7 @@ function fakeSim(seed) {
   ok('the credits screen, the README and the LICENSE name the mission', /Last Flight Out/.test(read('src/ui/credits.js')) && /Last Flight Out/.test(read('README.md')) && /Last Flight Out/.test(read('LICENSE')));
   const sw = read('sw.js');
   ok('sw.js precaches both new modules', sw.includes("'src/features/scp-escape.js'") && sw.includes("'src/game/extra/scp-escape.js'"));
-  ok('the Site staff outfit exists (white coat over grey) with long sleeves', /sitestaff:/.test(read('src/features/staff/person.js')) && /'sitestaff'\]\)/.test(read('src/features/staff/person.js')));
+  ok('the Site staff outfit exists (white coat over grey) with long sleeves', /sitestaff:/.test(read('src/features/staff/person.js')) && /'sitestaff'[^\]]*\]\)/.test(read('src/features/staff/person.js')));
 }
 
 /* ---------------- 11. batch 6: the Site's models ---------------- */

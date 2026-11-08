@@ -378,6 +378,45 @@ function paintAccessory(g, kind, L) {
       g.fillRect(60, 66, 4, 34);
       break;
     }
+    case 'hardhat': {
+      // A wildland crew helmet: yellow shell, a brim, goggles on the front.
+      g.fillStyle = '#f2c230';
+      g.beginPath();
+      g.ellipse(49, 24, 20, 13, 0, Math.PI, Math.PI * 2);
+      g.closePath();
+      g.fill();
+      g.fillStyle = shade('#f2c230', 0.8);
+      g.beginPath();
+      g.ellipse(49, 25, 25, 3.6, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = 'rgba(40,60,90,0.8)';
+      g.fillRect(40, 16, 18, 5);
+      g.strokeStyle = '#2a2a2a';
+      g.lineWidth = 1.2;
+      g.strokeRect(40, 16, 18, 5);
+      break;
+    }
+    case 'earpiece': {
+      // A security earpiece and its coil, and a small teal badge on the lapel.
+      g.fillStyle = '#e8e8e8';
+      g.beginPath();
+      g.ellipse(33, 42, 2.2, 3, 0, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = 'rgba(232,232,232,0.85)';
+      g.lineWidth = 1.1;
+      g.beginPath();
+      g.moveTo(33, 45);
+      for (let i = 0; i < 6; i++) g.quadraticCurveTo(31 + (i % 2) * 4, 48 + i * 3, 33, 50 + i * 3);
+      g.stroke();
+      g.fillStyle = '#5fb8b0';
+      g.beginPath();
+      g.moveTo(66, 76);
+      g.lineTo(72, 76);
+      g.lineTo(69, 82);
+      g.closePath();
+      g.fill();
+      break;
+    }
     case 'headset': {
       g.strokeStyle = '#1b1f26';
       g.lineWidth = 2.6;

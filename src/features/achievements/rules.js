@@ -23,7 +23,7 @@ const SQUADRON_SIZE = 3;
 const SMOOTH_OPERATOR = 4.8;
 
 const RANK_ORDER = ['cadet', 'pilot', 'senior', 'captain', 'instructor', 'top', 'mod', 'admin', 'founder'];
-const ALL_IDS_EXCEPT_FULL_HOUSE = ACHIEVEMENTS.map((a) => a.id).filter((id) => id !== 'full-house');
+const ALL_IDS_EXCEPT_FULL_HOUSE = ACHIEVEMENTS.filter((a) => !a.later).map((a) => a.id).filter((id) => id !== 'full-house');
 
 function unlock(store, id, out) {
   if (!id || store.unlocked[id]) return;
@@ -165,10 +165,16 @@ export function applyEvent(store, type, payload = {}) {
      */
     case 'storyChapter': {
       if (payload.chapter === 'ch01-the-glint') unlock(store, 'story-glint', out);
+      if (payload.chapter === 'ch02-fire-line') unlock(store, 'story-fire-line', out);
       const style = Array.isArray(payload.style) ? payload.style : [];
       const secrets = Array.isArray(payload.secrets) ? payload.secrets : [];
       if (style.includes('through-the-eye')) unlock(store, 'story-through-the-eye', out);
       if (secrets.includes('condor-light')) unlock(store, 'story-early-bird', out);
+      if (style.includes('treetop')) unlock(store, 'story-treetop', out);
+      if (payload.chapter === 'ch03-range-control') unlock(store, 'story-range-control', out);
+      if (style.includes('low-road')) unlock(store, 'story-low-road', out);
+      if (payload.chapter === 'ch04-low-water') unlock(store, 'story-low-water', out);
+      if (style.includes('short-cut')) unlock(store, 'story-short-cut', out);
       break;
     }
 

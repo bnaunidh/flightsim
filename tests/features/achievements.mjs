@@ -58,7 +58,10 @@ const Rules = await imp('features/achievements/rules.js');
 /* ---- 1. the catalogue -------------------------------------------------- */
 {
   const { ACHIEVEMENTS } = Data;
-  ok('catalogue: 30-45 achievements', ACHIEVEMENTS.length >= 30 && ACHIEVEMENTS.length <= 45, `${ACHIEVEMENTS.length}`);
+  // Chapters 2-4's six (`later`) are not shown or counted until those chapters leave Dev mode.
+  const shown = ACHIEVEMENTS.filter((a) => !a.later);
+  ok('catalogue: 30-45 achievements shown', shown.length >= 30 && shown.length <= 45, `${shown.length} shown of ${ACHIEVEMENTS.length}`);
+  ok('catalogue: only the six chapter 2-4 achievements wait for later', ACHIEVEMENTS.filter((a) => a.later).every((a) => a.group === 'story') && ACHIEVEMENTS.length - shown.length === 6);
   ok('catalogue: every id is unique', new Set(ACHIEVEMENTS.map((a) => a.id)).size === ACHIEVEMENTS.length);
   ok(
     'catalogue: every one has a name, a how-to, a group and a boolean hidden',

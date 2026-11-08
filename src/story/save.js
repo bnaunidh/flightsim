@@ -191,11 +191,12 @@ export function capturePose(sim, ac = sim && sim.aircraft) {
     quat: ac.quat ? [ac.quat.x, ac.quat.y, ac.quat.z, ac.quat.w] : [0, 0, 0, 1],
     vel: ac.vel ? [ac.vel.x, ac.vel.y, ac.vel.z] : [0, 0, 0],
     headingDeg: num(ac.heading),
-    throttle: num(ac.controls && ac.controls.throttle),
+    throttle: num(ac.controls ? ac.controls.throttle : ac.throttle),
     gear: ac.gearDown !== false,
     flaps: typeof ac.flapStep === 'function' ? ac.flapStep() : 0,
     fuel: ac.fuel != null && Number.isFinite(ac.fuelFraction) ? ac.fuelFraction : fuelFraction(ac),
-    onGround: !!ac.onGround,
+    // A boat is always "on the ground" for the resume's purposes: its reset() stands it on the water.
+    onGround: !!ac.onGround || !!(ac.spec && ac.spec.kind),
   };
 }
 
@@ -217,6 +218,14 @@ function fuelFraction(ac) {
  */
 export function applyPose(sim, pose, ac = sim && sim.aircraft) {
   if (!ac || !pose) return false;
+  // A boat or a van (the drive game): its own reset() takes a place and a heading; the way on is laid over.
+  if ((pose.game === 'boat' || pose.game === 'car') && ac.spec && typeof ac.reset === 'function') {
+    const V3 = ac.pos.constructor;
+    ac.reset({ pos: new V3(pose.pos[0], 0, pose.pos[2]), headingDeg: pose.headingDeg });
+    if (ac.vel && pose.vel) ac.vel.set(pose.vel[0], 0, pose.vel[2]);
+    if (Number.isFinite(ac.speed)) ac.speed = Math.hypot(pose.vel[0], pose.vel[2]) * (pose.throttle < 0 ? -1 : 1);
+    return true;
+  }
   const p = pose.pos;
   const speed = Math.hypot(pose.vel[0], pose.vel[1], pose.vel[2]);
   const V3 = ac.pos.constructor;

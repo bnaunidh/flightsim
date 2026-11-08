@@ -12,7 +12,7 @@
  *     fireball, presses SPACE for the photo (the hand-held camera), turns
  *     home, lands on the clifftop strip — through the title cards, Cole's
  *     race and the hangar cutscene — to the debrief with a medal, then
- *     TO BE CONTINUED (chapter 2 has not shipped), with the save moved on;
+ *     chapter 2's briefing (it has shipped), with the save moved on;
  *   - LEAVE AND CONTINUE: a second new game, quit to the menu after the
  *     "alongside" checkpoint; Continue resumes the same beat and step, within
  *     a few metres of the saved pose, after the "Previously on…" card;
@@ -58,6 +58,8 @@ export async function check(sim, r, say) {
   const realRender = sim.renderer.render.bind(sim.renderer);
   sim.renderer.render = () => {};
   const origReduce = sim.settings.reduceFlashing;
+  const origDev = sim.prog ? sim.prog.devUnlocked : undefined;
+  if (sim.prog) sim.prog.devUnlocked = false;
   // A first-timer, for the teach-by-doing prompts: the game has never seen this player land.
   const origLandings = sim.progress ? sim.progress.landings : 0;
   if (sim.progress) sim.progress.landings = 0;
@@ -110,7 +112,21 @@ export async function check(sim, r, say) {
     r.ok('story: no save → Start the story, Chapters and Extras; no Continue', !!hub && !hub.querySelector('[data-story="continue"]') && !!hub.querySelector('[data-story="new"]') && !!hub.querySelector('[data-story="chapters"]'));
     menus.screens.story.querySelector('[data-story="chapters"]').click();
     const tiles = [...menus.screens['story-chapters'].querySelectorAll('[data-tile]')];
-    r.ok('story: thirteen chapter tiles — chapter 1 open, 2-13 locked "???" coming soon', tiles.length === 13 && !tiles[0].classList.contains('is-locked') && tiles.slice(1).every((t) => t.classList.contains('is-locked') && /\?\?\?/.test(t.textContent)), `${tiles.length} tiles; locked ${tiles.filter((t) => t.classList.contains('is-locked')).length}`);
+    // A NORMAL PLAYER (Dev mode off): chapter 1 open, 2-13 locked "???" coming soon — chapters 2-4 are dev-only until the demo is done.
+    r.ok('story: thirteen chapter tiles — for a normal player chapter 1 is open and 2-13 are locked "???" coming soon', tiles.length === 13 && !tiles[0].classList.contains('is-locked') && tiles.slice(1).every((t) => t.classList.contains('is-locked') && /\?\?\?/.test(t.textContent) && /Coming soon/.test(t.textContent)), `${tiles.length} tiles; locked ${tiles.filter((t) => t.classList.contains('is-locked')).length}`);
+    // THE OWNER (Dev mode on): chapters 2, 3 and 4 are open and playable from the Story screen whatever the save says.
+    if (sim.prog) sim.prog.devUnlocked = true;
+    menus.show('story');
+    menus.screens.story.querySelector('[data-story="chapters"]').click();
+    const devTiles = [...menus.screens['story-chapters'].querySelectorAll('[data-tile]')];
+    const Chs = await import('../../src/story/chapters.js');
+    r.ok('story (dev): with the workbench open, chapters 1-4 are open tiles and 5-13 stay coming soon; 2-4 are playable regardless of the pointer', devTiles.slice(0, 4).every((t) => !t.classList.contains('is-locked')) && devTiles.slice(4).every((t) => t.classList.contains('is-locked')) && ['ch02-fire-line', 'ch03-range-control', 'ch04-low-water'].every((id) => Chs.chapterPlayable(Chs.chapterById(id))), `open ${devTiles.filter((t) => !t.classList.contains('is-locked')).length}`);
+    devTiles[2].click();
+    await tick(60);
+    const devCard = menus.screens['story-chapters'].querySelector('[data-chapter-card]');
+    r.ok('story (dev): a dev chapter\'s card offers Play', !!(devCard && devCard.querySelector('[data-play="ch03-range-control"]')), devCard ? devCard.textContent.replace(/\s+/g, ' ').trim().slice(0, 100) : 'no card');
+    if (sim.prog) sim.prog.devUnlocked = false;
+    menus.show('story');
 
     /* ---- 2. new game → briefing → in the air ---------------------------- */
     say('story: new game');
@@ -164,8 +180,11 @@ export async function check(sim, r, say) {
     for (let i = 1; i < play.saveLog.length; i++) gaps.push(play.saveLog[i].t - play.saveLog[i - 1].t);
     r.ok('story: no two autosaves more than 75 s of play apart (the one-minute guarantee)', gaps.length >= 3 && Math.max(...gaps) <= 75, `gaps ${gaps.map((g) => g.toFixed(0)).join(',')} s; saves ${play.saveLog.map((s) => s.id).join(',')}`);
     menus.screens['story-debrief'].querySelector('[data-dact="next"]').click();
-    await waitFor(() => menus.current === 'story-tbc', 100);
-    r.ok('story: Next chapter → TO BE CONTINUED, naming Fire Line as the next update, with the medal', menus.current === 'story-tbc' && /To be continued/i.test(menus.screens['story-tbc'].textContent) && /Fire Line/.test(menus.screens['story-tbc'].textContent) && !!menus.screens['story-tbc'].querySelector('.sz-medal'), menus.screens['story-tbc'].textContent.replace(/\s+/g, ' ').trim().slice(0, 160));
+    // For a normal player chapter 2 is dev-only: Next chapter is TO BE CONTINUED, naming Fire Line as the next update.
+    await waitFor(() => menus.current === 'story-tbc' || menus.current === 'story-briefing', 100);
+    r.ok('story: Next chapter → TO BE CONTINUED for a normal player, naming Fire Line as the next update, with the medal', menus.current === 'story-tbc' && /To be continued/i.test(menus.screens['story-tbc'].textContent) && /Fire Line/.test(menus.screens['story-tbc'].textContent) && !!menus.screens['story-tbc'].querySelector('.sz-medal'), `${menus.current}: ${menus.screens[menus.current].textContent.replace(/\s+/g, ' ').trim().slice(0, 160)}`);
+    if (menus.current === 'story-briefing') menus.screens['story-briefing'].querySelector('[data-back]').click();
+    await waitFor(() => !S().active, 50);
     r.ok('story: after the chapter the beats are out of the mission list and the story is idle', !Missions.findMission('story-ch01-chase') && !S().active && sim.state === 'menu');
     menus.show('story');
     const hub2 = menus.screens.story.querySelector('[data-hub]');
@@ -278,6 +297,7 @@ export async function check(sim, r, say) {
       /* fine */
     }
     sim.renderer.render = realRender;
+    if (sim.prog) sim.prog.devUnlocked = origDev;
     sim.autoPauseOnHide = origAuto;
     if (sim.progress) sim.progress.landings = origLandings;
   }

@@ -440,6 +440,57 @@ export class FireGrid {
     }
   }
 
+  /**
+   * Ground that has ALREADY burnt: fresh fuel cells in a disc go straight to
+   * spent, with no flames in between. A fire that has been running all night
+   * leaves a black scar behind it, and a story or a mission that starts in
+   * the morning needs that scar on the first frame rather than a fire lit
+   * twenty minutes early to make one. Burnt cells never relight, so a scar is
+   * also a break the fire cannot run back over. Returns how many cells it
+   * charred (trees on them char through onChange, like any other burn).
+   */
+  scorch(x, z, radius = 30) {
+    let n = 0;
+    this._disc(x, z, radius, (i) => {
+      if (this.state[i] !== STATE.FRESH) return;
+      if (this.fuelOf(i) === FUEL.NONE) return;
+      this.state[i] = STATE.BURNT;
+      this.stats.burntOut++;
+      n++;
+      this._mark(i % this.size, (i / this.size) | 0);
+      if (this.onChange) this.onChange(i, STATE.BURNT);
+    });
+    return n;
+  }
+
+  /**
+   * Make a disc unburnable (a tarn, a dip tank, a paved yard): its cells are
+   * not fuel from now on, so the fire goes round it and a bucket can dip in
+   * it. Burning cells inside it go out. Returns how many cells changed.
+   */
+  clearFuel(x, z, radius = 30) {
+    let n = 0;
+    this._disc(x, z, radius, (i) => {
+      if (this.fuel[i] === FUEL.NONE) return;
+      this.fuel[i] = FUEL.NONE;
+      if (this.state[i] === STATE.BURNING) this.state[i] = STATE.DOUSED;
+      n++;
+      this._mark(i % this.size, (i / this.size) | 0);
+      if (this.onChange) this.onChange(i, this.state[i]);
+    });
+    return n;
+  }
+
+  /** Spend one cell (see scorch()); true when it was fresh fuel. */
+  scorchCell(i) {
+    if (i < 0 || i >= this.n || this.state[i] !== STATE.FRESH || this.fuelOf(i) === FUEL.NONE) return false;
+    this.state[i] = STATE.BURNT;
+    this.stats.burntOut++;
+    this._mark(i % this.size, (i / this.size) | 0);
+    if (this.onChange) this.onChange(i, STATE.BURNT);
+    return true;
+  }
+
   /* ---- time ---------------------------------------------------------- */
 
   /**

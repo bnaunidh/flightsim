@@ -14,6 +14,14 @@
 
 import { CHAPTER_1 } from './ch01-the-glint.js';
 
+/*
+ * Chapters after the first load LAZILY: `load()` imports the chapter's module
+ * the moment it is started, continued or replayed (director.js loadModule),
+ * so opening the Story screen costs nothing but chapter 1, and a chapter's
+ * sets, props and brands are never fetched for a player who has not reached
+ * it. `module` is filled in by that first load and read from then on.
+ */
+
 export const TITLE = 'SIGNAL ZERO';
 
 export const CHAPTERS = [
@@ -31,9 +39,51 @@ export const CHAPTERS = [
     available: true,
     module: CHAPTER_1,
   },
-  { id: 'ch02-fire-line', n: 2, title: 'Fire Line', place: 'Firewatch Ridge', when: '10:20', vehicle: 'Skyhook H-3', game: 'heli', map: 'firewatch', minutes: 7, blurb: 'Something else came down burning in the night. Two crew are cut off ahead of the fire.', available: false },
-  { id: 'ch03-range-control', n: 3, title: 'Range Control', place: 'Aurora Fjords', when: '17:50', vehicle: 'Kestrel Courier', game: 'flight', map: 'fjord', minutes: 7, blurb: 'A medical run over the old corridor, and a voice on a frequency nobody uses.', available: false },
-  { id: 'ch04-low-water', n: 4, title: 'Low Water', place: 'Longbank Sands', when: '05:40', vehicle: 'Kestrel Launch', game: 'boat', map: 'longbank', minutes: 8, blurb: 'The lowest tide of the year uncovers something forty years old.', available: false },
+  {
+    id: 'ch02-fire-line',
+    n: 2,
+    title: 'Fire Line',
+    place: 'Firewatch Ridge',
+    when: '10:20',
+    vehicle: 'Skyhook H-3',
+    game: 'heli',
+    map: 'firewatch',
+    minutes: 7,
+    blurb: 'Something else came down burning in the night. Two crew are cut off ahead of the fire.',
+    available: true,
+    dev: true, // Dev mode only until the class demo is done: 'coming soon' for everyone else
+    load: () => import('./ch02-fire-line.js').then((m) => m.CHAPTER_2),
+  },
+  {
+    id: 'ch03-range-control',
+    n: 3,
+    title: 'Range Control',
+    place: 'Aurora Fjords',
+    when: '17:50',
+    vehicle: 'Kestrel Courier',
+    game: 'flight',
+    map: 'fjord',
+    minutes: 7,
+    blurb: 'A medical run over the old corridor, and a voice on a frequency nobody uses.',
+    available: true,
+    dev: true, // Dev mode only until the class demo is done: 'coming soon' for everyone else
+    load: () => import('./ch03-range-control.js').then((m) => m.CHAPTER_3),
+  },
+  {
+    id: 'ch04-low-water',
+    n: 4,
+    title: 'Low Water',
+    place: 'Longbank Sands',
+    when: '05:40',
+    vehicle: 'Kestrel Launch',
+    game: 'boat',
+    map: 'longbank',
+    minutes: 8,
+    blurb: 'The lowest tide of the year uncovers something forty years old.',
+    available: true,
+    dev: true, // Dev mode only until the class demo is done: 'coming soon' for everyone else
+    load: () => import('./ch04-low-water.js').then((m) => m.CHAPTER_4),
+  },
   { id: 'ch05-the-bridge', n: 5, title: 'The Bridge', place: 'Gateway International', when: '14:00', vehicle: 'Skyhook H-3 or police car', game: 'heli', map: 'gateway', minutes: 6, blurb: 'A truck with fake papers and a reporter in the left seat.', available: false },
   { id: 'ch06-mayday', n: 6, title: 'Mayday', place: 'Ironhead Air Base', when: '16:30', vehicle: 'Meridian 220', game: 'flight', map: 'airbase', minutes: 7, blurb: 'Forty seats, one engine on fire, and fighters on your wing.', available: false },
   { id: 'ch07-dark-road', n: 7, title: 'Dark Road', place: 'Cape Vessel', when: '01:10', vehicle: 'Harbourlight van', game: 'car', map: 'cape', minutes: 7, blurb: 'One road over the spine, lights off, and a door somebody left open.', available: false },
@@ -51,9 +101,53 @@ export function chapterById(id) {
   return CHAPTERS.find((c) => c.id === id) || null;
 }
 
-/** The chapters that can be played today, in order. */
+/*
+ * DEV MODE. Chapters marked `dev: true` are offered only while the
+ * workbench is open (game/progression.js isDev: the owner's door), so they
+ * can be tested on an iPad before they ship to the class; everyone else
+ * sees them as "coming soon", and chapter 1 ends in TO BE CONTINUED for
+ * them exactly as before. The story plug-in hands in the check at install.
+ */
+let devCheck = () => false;
+export function setDevCheck(fn) {
+  devCheck = typeof fn === 'function' ? fn : () => false;
+}
+export function devOn() {
+  try {
+    return !!devCheck();
+  } catch (e) {
+    return false;
+  }
+}
+
+/** Offered to THIS player: shipped, and (for a dev-only chapter) Dev mode on. */
+export function chapterOffered(c) {
+  return !!(c && c.available && (!c.dev || devOn()));
+}
+
+/** The chapters this player can play today, in order (loaded or lazily loadable). */
 export function availableChapters() {
-  return CHAPTERS.filter((c) => c.available && c.module);
+  return CHAPTERS.filter((c) => chapterOffered(c) && (c.module || c.load));
+}
+
+/** Is this chapter offered to this player, with a module in memory (or loadable)? */
+export function chapterPlayable(c) {
+  return chapterOffered(c) && !!(c.module || c.load);
+}
+
+/**
+ * The chapter list as this player sees it: a dev-only chapter with Dev mode
+ * off reads as not shipped (save.js resumePlan reads `available`).
+ */
+export function offeredChapters() {
+  return CHAPTERS.map((c) => (c.available && !chapterOffered(c) ? { ...c, available: false, module: null, load: null } : c));
+}
+
+/** The chapter's module, loading it on first use. Null for one not offered to this player. */
+export async function loadModule(c) {
+  if (!chapterOffered(c)) return null;
+  if (!c.module && c.load) c.module = await c.load();
+  return c.module || null;
 }
 
 /** How many of the twelve story chapters (the epilogue aside) there are. */

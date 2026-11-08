@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v79.0';
+const CACHE_VERSION = 'island-flight-v79.1';
 
 const PRECACHE = [
   './',
@@ -179,6 +179,7 @@ const PRECACHE = [
   // Added by tools/sync-precache.mjs.
   'src/features/wildfire.js',
   'src/features/wildfire/audio.js',
+  'src/features/wildfire/front.js',
   'src/features/wildfire/fx.js',
   'src/features/wildfire/grid.js',
   'src/features/wildfire/ground.js',
@@ -378,7 +379,11 @@ const PRECACHE = [
   'src/features/owner/teleport.js',
   'src/features/owner/trolls.js',
   'src/story/beats.js',
+  'src/story/brands.js',
   'src/story/ch01-the-glint.js',
+  'src/story/ch02-fire-line.js',
+  'src/story/ch03-range-control.js',
+  'src/story/ch04-low-water.js',
   'src/story/chapters.js',
   'src/story/cinema.js',
   'src/story/director.js',
@@ -387,6 +392,8 @@ const PRECACHE = [
   'src/story/portraits.js',
   'src/story/save.js',
   'src/story/script.js',
+  'src/story/sentinel.js',
+  'src/story/sets.js',
   'src/story/ui.js',
   // Added by tools/sync-precache.mjs.
   'src/features/gunsight.js',

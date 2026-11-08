@@ -106,6 +106,12 @@ export const ACHIEVEMENTS = [
   { id: 'story-glint', name: 'The Glint', how: 'Finish Chapter 1 of Signal Zero.', glyph: 'star', group: 'story', tier: 'bronze' },
   { id: 'story-through-the-eye', name: 'Through the Eye', how: 'Chapter 1: fly the marked gap in the squall wall.', glyph: 'cloud', group: 'story', tier: 'silver' },
   { id: 'story-early-bird', name: 'Early Bird', how: 'Chapter 1: pass the faint light in Condor Rock’s west cliff.', glyph: 'moon', group: 'story', hidden: true, tier: 'silver' },
+  { id: 'story-fire-line', name: 'Ahead of the Wall', how: 'Finish Chapter 2 of Signal Zero: get the lookout crew out ahead of the fire.', glyph: 'flame', group: 'story', tier: 'bronze' , later: true },
+  { id: 'story-treetop', name: 'Treetop', how: 'Chapter 2: put a bucket on the fire from under 20 m above the canopy.', glyph: 'rotor', group: 'story', tier: 'silver' , later: true },
+  { id: 'story-range-control', name: 'Thank You for Your Cooperation', how: 'Finish Chapter 3 of Signal Zero: lose the shape and deliver the insulin.', glyph: 'cloud', group: 'story', tier: 'bronze' , later: true },
+  { id: 'story-low-road', name: 'Low Road', how: 'Chapter 3: never above 500 ft over the ground through the fjord.', glyph: 'wing', group: 'story', tier: 'silver' , later: true },
+  { id: 'story-low-water', name: 'Out Before the Tide', how: 'Finish Chapter 4 of Signal Zero: bring Gannet Two’s flight case off Longbank.', glyph: 'anchor', group: 'story', tier: 'bronze' , later: true },
+  { id: 'story-short-cut', name: 'Short Cut', how: 'Chapter 4: straight across the bank instead of down the channel.', glyph: 'boat', group: 'story', tier: 'silver' , later: true },
 
   /* ---- Milestones ---------------------------------------------------------*/
   { id: 'rank-pilot', name: 'Pilot', how: 'Reach the rank of Pilot.', glyph: 'seal', group: 'progress', tier: 'bronze' },
@@ -113,6 +119,8 @@ export const ACHIEVEMENTS = [
   { id: 'ten-flights', name: 'Frequent Flyer', how: 'Complete ten flights.', glyph: 'ticket', group: 'progress', tier: 'bronze', progress: { key: 'flights', target: 10 } },
   { id: 'full-house', name: 'Full House', how: 'Unlock every other achievement.', glyph: 'trophy', group: 'progress', hidden: true, tier: 'platinum' },
 /*
+ * `later`: Signal Zero chapters 2-4, which are Dev-mode only until a person has
+ * played them through: not on the page and not counted until they ship.
  * The two about T-Pose Harrison and Air Massimo, on a copy without them
  * (core/edition.js: thankdapro): not on the page, not counted towards Full
  * House. Everywhere else the whole list.

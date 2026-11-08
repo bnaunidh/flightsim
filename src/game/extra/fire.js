@@ -783,6 +783,12 @@ const DEFS = [
  */
 export const MISSIONS = DEFS.map((m) => ({ ...m, onStart: start(m.fire) }));
 
+/*
+ * The shared step makers, for anything else that fights a fire with these
+ * same words and checks (the story's chapter 2 holds its line with them).
+ */
+export { fillStep, dropStep, fightStep, withMachineText, lostIf };
+
 /** The spec a mission will light, on whichever map is loaded now. */
 export function fireSpecOf(m) {
   return typeof m.fire === 'function' ? m.fire() : m.fire;

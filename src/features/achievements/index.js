@@ -176,7 +176,8 @@ registerExtension({
     A.store = Store.load();
     addMenuButton(sim.menus, () => openScreen(sim));
     A.screen = buildAchievementsScreen(sim.menus, {
-      list: ACHIEVEMENTS,
+      // Chapters 2-4's (`later`) stay off the page while those chapters are Dev-mode only.
+      list: ACHIEVEMENTS.filter((a) => !a.later),
       model: () => ({ store: ensure() }),
     });
   },

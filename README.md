@@ -144,8 +144,18 @@ own number in an airliner (`src/game/speed-text.js`).
   whenever you like and **Continue** picks up exactly there with a "previously
   on…". A first-timer gets three one-line flying prompts (power, nose,
   bank) in the first minute; "I know how to fly" skips them.
+  Chapter 2, *Fire Line*: fly the Skyhook up the Long Scarp ahead of a fire
+  front to lift two crew off the lookout pad before the smoke closes it, hold
+  the back of the fire off the fire road with three buckets from the inlet,
+  then photograph what came down in the burn scar.
+  Chapter 3, *Range Control*: a chilled-insulin run to Aurora Field in the
+  Kestrel Courier; a flat voice on a frequency nobody uses, a shape with no
+  lights on your wing, and the fjord's ridgelines to lose it under.
+  Chapter 4, *Low Water*: the boat, at the lowest tide of the year — across
+  Longbank's bank ahead of Cole, out on foot to a forty-year-old wreck for
+  its flight case, and back before the sea.
   Voices are text and subtitles; cutscenes are short and skippable;
-  Reduce flashing is respected. Chapters 2–12 arrive in later updates.
+  Reduce flashing is respected. Chapters 5–12 arrive in later updates.
 - **Tutorial** — nine guided steps from starting the engine to landing.
 - **Island Circuit** — take off, fly five checkpoint rings, land.
 - **Mango Cay Delivery** — carry supplies 8 km, parachute them onto a target, come home.

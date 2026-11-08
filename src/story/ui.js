@@ -20,7 +20,7 @@
 
 import { GAME_UI } from '../ui/game-ui.js';
 import { MAPS } from '../world/maps.js';
-import { CHAPTERS, STORY_CHAPTER_COUNT, chapterLabel, chapterById, TITLE } from './chapters.js';
+import { CHAPTERS, STORY_CHAPTER_COUNT, chapterLabel, chapterById, TITLE, chapterOffered, devOn } from './chapters.js';
 import { CAST, FILES } from './script.js';
 import { portrait } from './portraits.js';
 import * as Save from './save.js';
@@ -219,7 +219,7 @@ export function installStoryUi(sim) {
       let line;
       if (data.chapter) {
         const ch = chapterById(data.chapter);
-        line = ch ? (ch.available ? chapterLabel(ch) : `${done} of ${STORY_CHAPTER_COUNT} chapters done · more coming`) : 'Continue your story';
+        line = ch ? (chapterOffered(ch) ? chapterLabel(ch) : `${done} of ${STORY_CHAPTER_COUNT} chapters done · more coming`) : 'Continue your story';
       } else {
         line = 'New: Chapter 1 is out now';
       }
@@ -314,12 +314,14 @@ export function installStoryUi(sim) {
     host.innerHTML = CHAPTERS.map((c) => {
       const st = data.chapters[c.id];
       const done = !!(st && st.done);
-      const open = c.available && (done || c.n <= Math.max(1, reached));
+      const offered = chapterOffered(c);
+      // In Dev mode a dev-only chapter is selectable whatever the save's pointer says: the owner tests each on its own.
+      const open = offered && (done || c.n <= Math.max(1, reached) || (c.dev && devOn()));
       const locked = !open;
       const cls = locked ? 'is-locked' : done ? 'is-done' : 'is-next';
       const n = c.epilogue ? 'Epilogue' : `Chapter ${c.n}`;
       const title = locked ? '???' : c.title;
-      const sub = locked ? (c.available ? 'Locked — play the chapters before it' : 'Coming soon') : done
+      const sub = locked ? (offered ? 'Locked — play the chapters before it' : 'Coming soon') : done
         ? `${st.medal ? st.medal[0].toUpperCase() + st.medal.slice(1) : 'Done'} · best ${st.score} · ${FILES && Object.values(FILES).some((f) => f.chapter === c.id) ? `files ${data.flags.files.filter((f) => FILES[f] && FILES[f].chapter === c.id).length}/${Object.values(FILES).filter((f) => f.chapter === c.id).length}` : 'no files'}${st.bestTime ? ` · ${fmtTime(st.bestTime)}` : ''}`
         : `${c.place} · ${c.vehicle} · about ${c.minutes} min`;
       return `<button class="sz-tile ${cls}" data-tile="${c.id}" ${locked ? 'aria-disabled="true"' : ''}><span class="sz-n">${n}</span><h4>${esc(title)}</h4><p>${esc(sub)}</p>${done ? `<span class="sz-medal is-${st.medal || 'bronze'}"></span>` : ''}</button>`;
@@ -489,7 +491,7 @@ export function installStoryUi(sim) {
       ${style ? `<p>${style}</p>` : ''}
       <p class="sz-note">${esc(verdict.note || '')}</p>
       <div class="pause-actions">
-        <button class="primary" data-dact="next">${next && next.available ? `Next chapter — ${esc(next.title)}` : 'Continue'}</button>
+        <button class="primary" data-dact="next">${chapterOffered(next) ? `Next chapter — ${esc(next.title)}` : 'Continue'}</button>
         <button data-dact="replay">Replay chapter</button>
         <button data-dact="menu">Story menu</button>
       </div>`;

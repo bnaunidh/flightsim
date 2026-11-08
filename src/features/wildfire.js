@@ -33,8 +33,11 @@ import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extLayer } from '../game/extensions.js';
 import { isKey, keyName } from '../flight/input.js';
 import { MAP } from '../world/terrain.js';
+import { FLASH } from '../render/flash-safety.js';
 import { FireGrid, FUEL, STATE, CELL } from './wildfire/grid.js';
 import { FireScenario, findWater } from './wildfire/scenario.js';
+import { FireFront } from './wildfire/front.js';
+import { setDipPools, poolAt } from './wildfire/tank.js';
 import { makeSampler } from './wildfire/ground.js';
 import { Surface } from './wildfire/surface.js';
 import { Flames, Plumes, Sparks, Scar, Marker, Break } from './wildfire/fx.js';
@@ -118,6 +121,12 @@ const W = {
   menuNote: null,
   /** This fire is the Wildfire disaster (game/disasters.js), not a mission's. */
   disaster: false,
+  /** Advancing fronts (wildfire/front.js) a spec asked for: a fire tuned as a chase. */
+  fronts: [],
+  /** The fire panel on the right; a spec may hide it (`hud: false`) until setFireHud(true). */
+  hudOn: true,
+  /** The shaders' clock: real time, or a third of it under Reduce flashing. */
+  fxTime: 0,
 };
 
 const STATUS = {
@@ -305,6 +314,9 @@ function clearAll(sim) {
   W.hasTarget = false;
   W.filledOnce = false;
   W.hits = 0;
+  W.fronts = [];
+  W.hudOn = true;
+  setDipPools([]);
   W.sources.length = 0;
   if (W.sc) W.sc.reset();
   if (W.grid) {
@@ -370,6 +382,12 @@ function clearAll(sim) {
  *   mopUp       0..1             contained fraction at which crews finish it
  *   smallLeft   cells            or when this few are left burning
  *   startFull   bool             the tank starts full
+ *   scars       [{x, z, r}]      ground that has already burnt (black, never relights)
+ *   fronts      [front spec]     advancing fronts (wildfire/front.js), each with an
+ *                                optional `startAt` metres already run; read them
+ *                                back with fireFront(id)
+ *   hud         false            keep the fire panel hidden until setFireHud(true)
+ *   pools       [{x, z, r, y}]   dip pools above the sea (a tarn): not fuel; a bucket fills in them
  */
 export function setupFire(ctxOrSim, spec = {}) {
   const sim = ctxOrSim && ctxOrSim.sim ? ctxOrSim.sim : ctxOrSim;
@@ -395,7 +413,17 @@ export function setupFire(ctxOrSim, spec = {}) {
     W.wind.set(w.x, 0, w.z);
   }
   const cond = sim.weather && sim.weather.cond;
-  const lit = W.sc.start(spec, { wind: W.wind, damp: cond && cond.rain ? 1 - cond.rain * 0.45 : 1 });
+  let lit = W.sc.start(spec, { wind: W.wind, damp: cond && cond.rain ? 1 - cond.rain * 0.45 : 1 });
+  for (const s of spec.scars || []) grid.scorch(s.x, s.z, s.r || 40);
+  // Dip pools above the sea (a tarn on the bench): not fuel, and a bucket fills in them.
+  setDipPools(spec.pools || []);
+  for (const p of spec.pools || []) grid.clearFuel(p.x, p.z, (p.r || 30) + 6);
+  W.fronts = (spec.fronts || []).map((f) => {
+    const front = new FireFront(grid, f);
+    if (f.startAt) lit += front.seek(f.startAt);
+    return front;
+  });
+  W.hudOn = spec.hud !== false;
   W.spec = spec;
   W.data = ctxOrSim && ctxOrSim.data ? ctxOrSim.data : null;
   W.mapId = MAP && MAP.id;
@@ -416,6 +444,7 @@ export function setupFire(ctxOrSim, spec = {}) {
   }
   W.live = true;
   W.time = 0;
+  W.fxTime = 0;
   W.flameDirty = true;
   buildScar(sim);
   retintTrees();
@@ -423,8 +452,50 @@ export function setupFire(ctxOrSim, spec = {}) {
   warmSmoke(sim);
   // Lit from the pause menu, the panel waits for Resume (update() shows it)
   // rather than popping up over the menu.
-  if (W.hud) W.hud.setVisible(sim.state !== 'paused');
+  if (W.hud) W.hud.setVisible(sim.state !== 'paused' && W.hudOn);
   return lit > 0;
+}
+
+/** An advancing front the live fire's spec asked for, by id (or the first). */
+export function fireFront(id = null) {
+  if (!W.live) return null;
+  return (id ? W.fronts.find((f) => f.id === id) : W.fronts[0]) || null;
+}
+
+/**
+ * The water aboard this flight: the tank (WaterTank: litres, capacity,
+ * drops, releasing…) and where the bucket hangs (null for a scooper, or
+ * before the long line has settled). A mission reads it for style points
+ * (how low a drop went) and a checkpoint puts the litres back.
+ */
+export function fireWater() {
+  return { tank: W.tank, bucket: W.bucket && W.bucket.ready && W.tank && W.tank.kind === 'bucket' ? W.bucket.pos : null, filledOnce: W.filledOnce };
+}
+
+/** A checkpoint's water, put back: the litres aboard, and whether it has been filled. */
+export function restoreWater(litres, filledOnce) {
+  if (!W.tank) return false;
+  W.tank.litres = Math.max(0, Math.min(W.tank.capacity, litres || 0));
+  W.filledOnce = !!filledOnce || W.filledOnce;
+  return true;
+}
+
+/**
+ * The ground crews finish it now: every front stops and the scenario's
+ * mop-up puts the rest out over a few seconds (wildfire/scenario.js). For a
+ * mission whose own story says when the fire is beaten.
+ */
+export function fireCrewsTakeOver() {
+  if (!W.live || !W.sc) return false;
+  for (const f of W.fronts) f.stop();
+  W.sc.mopping = true;
+  return true;
+}
+
+/** Show or hide the fire panel (a spec with `hud: false` starts it hidden). */
+export function setFireHud(on) {
+  W.hudOn = !!on;
+  if (W.hud && !on) W.hud.setVisible(false);
 }
 
 /** The wood a forest-fire mission asked for, planted and made charrable. */
@@ -524,7 +595,8 @@ export function fireStatus(sim) {
 /** Where the water is, as a point a little above the sea (null if none). */
 export function fillPoint(out = new THREE.Vector3()) {
   if (!W.fill) return null;
-  return out.set(W.fill.x, 25, W.fill.z);
+  const pool = poolAt(W.fill.x, W.fill.z);
+  return out.set(W.fill.x, (pool ? pool.y : 0) + 25, W.fill.z);
 }
 
 /** The edge to hit next, a little above the ground (null if nothing burns). */
@@ -550,6 +622,16 @@ export function fireGuide(sim) {
   if (W.hasTarget && W.grid && W.grid.burning) return W.guide.copy(W.target);
   if (W.fill && t && t.litres < t.capacity * 0.9) return fillPoint(W.guide);
   return null;
+}
+
+/**
+ * The burning cell nearest (x, z): metres to it, its position written into
+ * `out` ({x, z}); Infinity (and `out` untouched) when nothing burns. For a
+ * mission that steers the player to a particular part of a fire.
+ */
+export function nearestFire(x, z, out = null) {
+  if (!W.live || !W.grid || !W.grid.burning) return Infinity;
+  return W.grid.nearestBurning(x, z, out);
 }
 
 /** 'Water' or 'Fire' — what fireGuide is pointing at, for the arrow's label. */
@@ -975,6 +1057,14 @@ function update(sim, dt) {
   const cam = sim.camera;
   const weather = sim.weather;
   W.time += dt;
+  /*
+   * The shaders' clock. Under Reduce flashing (on by default) it runs at a
+   * quarter: the flames' flicker and the embers' glow then change well under
+   * three times a second, which is the line the flicker probe holds
+   * (tests/features/story-ch02.browser.js, 2026-11-08: 1.8% of the screen
+   * over the fire at full speed).
+   */
+  W.fxTime += dt * (FLASH.reduce ? 0.25 : 1);
   const night = weather && weather.isNight ? 1 : 0;
   const dusk = weather && weather.time === 'sunset' ? 1 : 0;
 
@@ -985,6 +1075,11 @@ function update(sim, dt) {
 
   const g = W.grid;
   const sc = W.sc;
+  if (W.live && g && W.fronts.length) {
+    let lit = 0;
+    for (const f of W.fronts) lit += f.update(dt);
+    if (lit) W.flameDirty = true;
+  }
   if (W.live && g && sc) {
     if (sc.update(dt, W.wind, hitCount())) {
       W.flameDirty = true;
@@ -1071,7 +1166,8 @@ function update(sim, dt) {
   }
   if (W.flames) {
     const u = W.flames.mat.uniforms;
-    u.uTime.value = W.time;
+    u.uTime.value = W.fxTime;
+    if (u.uCalm) u.uCalm.value = FLASH.reduce ? 1 : 0;
     u.uWind.value.copy(W.wind);
     u.uBright.value = night ? 1.25 : dusk ? 1.1 : 1;
     // By day a flame has to hide the grass behind it to look orange at all;
@@ -1102,10 +1198,11 @@ function update(sim, dt) {
     W.scarT += dt;
     if (W.scarT >= 0.5) {
       W.scarT = 0;
-      W.scar.refresh(W.time);
+      W.scar.refresh(W.fxTime);
     }
     const u = W.scar.mat.uniforms;
-    u.uTime.value = W.time;
+    u.uTime.value = W.fxTime;
+    if (u.uCalm) u.uCalm.value = FLASH.reduce ? 1 : 0;
     u.uNight.value = night;
     u.uLight.value = night ? 0.28 : dusk ? 0.7 : 1;
   }
@@ -1118,13 +1215,13 @@ function update(sim, dt) {
       W.aimT = 0.1;
       updateAim(sim, t);
     }
-    W.aim.mat.uniforms.uDim.value.z = W.time;
+    W.aim.mat.uniforms.uDim.value.z = W.fxTime;
     if (W.fill && t.litres < t.capacity - 1) {
       const lane = t.kind === 'scooper';
       if (!W.fillMark.mesh.visible) {
         W.fillMark.place(W.fill.x, W.fill.z, W.fill.heading || 0, lane ? 380 : 0, lane ? 55 : 32, () => 0, 1.1);
       }
-      W.fillMark.mat.uniforms.uDim.value.z = W.time;
+      W.fillMark.mat.uniforms.uDim.value.z = W.fxTime;
     } else {
       W.fillMark.hide();
     }
@@ -1143,7 +1240,7 @@ function update(sim, dt) {
   }
 
   // HUD, map, sound, gamepad.
-  const showHud = W.live && sim.state === 'flying';
+  const showHud = W.live && W.hudOn && sim.state === 'flying';
   if (W.hud) {
     W.hud.setVisible(showHud);
     if (showHud && ac) W.hud.update(dt, hudModel(sim));

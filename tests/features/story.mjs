@@ -144,7 +144,8 @@ const Meteor = await imp('src/game/extra/meteor.js');
  * 2. The resume plan.
  * ------------------------------------------------------------------ */
 {
-  const CH = Chapters.CHAPTERS.map((c) => ({ id: c.id, available: c.available, beats: c.module ? c.module.beats : [] }));
+  Chapters.setDevCheck(() => true);
+const CH = Chapters.CHAPTERS.map((c) => ({ id: c.id, available: c.available, beats: c.module ? c.module.beats : [] }));
   ok('plan: nothing saved → fresh', Save.resumePlan(Save.blank(), CH).kind === 'fresh' && Save.resumePlan(null, CH).kind === 'fresh');
   const s = Save.blank();
   s.chapter = 'ch01-the-glint';
@@ -161,15 +162,22 @@ const Meteor = await imp('src/game/extra/meteor.js');
   ok('plan: no pose → the beat\'s start', Save.resumePlan(s, CH).exact === false && Save.resumePlan(s, CH).step === 0);
   s.beat = 'story-ch01-this-beat-was-renamed';
   ok('plan: a beat that no longer exists → the chapter\'s start', Save.resumePlan(s, CH).kind === 'start');
-  // Finished chapter 1: the pointer moves to chapter 2, which has not shipped.
+  // Finished every shipped chapter: the pointer moves to the first one that has not shipped.
   const done = Save.blank();
-  Save.recordChapter(done, 'ch01-the-glint', { medal: 'silver', score: 81, time: 400, style: ['through-the-eye'] });
-  done.chapter = 'ch02-fire-line';
+  const firstLocked = CH.findIndex((c) => !c.available);
+  const lastShipped = CH[firstLocked - 1].id;
+  for (const c of CH.slice(0, firstLocked)) Save.recordChapter(done, c.id, { medal: 'silver', score: 81, time: 400, style: c.id === 'ch01-the-glint' ? ['through-the-eye'] : [] });
+  done.chapter = CH[firstLocked].id;
   const tbc = Save.resumePlan(done, CH);
-  ok('plan: the next chapter has not shipped → TO BE CONTINUED, naming the last finished one', tbc.kind === 'tbc' && tbc.last === 'ch01-the-glint', JSON.stringify(tbc));
-  ok('plan: nextChapter / lastDone', Save.nextChapter('ch01-the-glint', CH).id === 'ch02-fire-line' && Save.nextChapter('epilogue-clear-skies', CH) === null && Save.lastDone(done, CH) === 'ch01-the-glint');
+  ok('plan: the next chapter has not shipped → TO BE CONTINUED, naming the last finished one', tbc.kind === 'tbc' && tbc.last === lastShipped, JSON.stringify(tbc));
+  ok('plan: nextChapter / lastDone', Save.nextChapter('ch01-the-glint', CH).id === 'ch02-fire-line' && Save.nextChapter('epilogue-clear-skies', CH) === null && Save.lastDone(done, CH) === lastShipped);
   done.chapter = 'ch99-not-in-this-build';
-  ok('plan: a chapter id this build does not know → TBC from the last finished one', Save.resumePlan(done, CH).kind === 'tbc' && Save.resumePlan(done, CH).last === 'ch01-the-glint');
+  ok('plan: a chapter id this build does not know → TBC from the last finished one', Save.resumePlan(done, CH).kind === 'tbc' && Save.resumePlan(done, CH).last === lastShipped);
+  // A finished chapter 1 with chapter 2 shipped: Continue starts chapter 2 at its start.
+  const one = Save.blank();
+  Save.recordChapter(one, 'ch01-the-glint', { medal: 'gold', score: 90, time: 380 });
+  one.chapter = 'ch02-fire-line';
+  ok('plan: chapter 1 done and chapter 2 shipped → Continue starts chapter 2', Save.resumePlan(one, CH).kind === 'start' && Save.resumePlan(one, CH).chapter === 'ch02-fire-line');
   // Medals only go up.
   Save.recordChapter(done, 'ch01-the-glint', { medal: 'bronze', score: 40, time: 900, style: ['early-bird'] });
   const rec = done.chapters['ch01-the-glint'];
@@ -188,7 +196,32 @@ const Meteor = await imp('src/game/extra/meteor.js');
   ok('chapters: every one names a place, a vehicle, a real map and a spoiler-safe blurb', C.every((c) => c.title && c.place && c.vehicle && c.blurb && c.map && c.minutes > 0));
   const MAPS = (await imp('src/world/maps.js')).MAPS;
   ok('chapters: every map id is a real map', C.every((c) => MAPS.some((m) => m.id === c.map)), C.filter((c) => !MAPS.some((m) => m.id === c.map)).map((c) => c.map).join());
-  ok('chapters: chapter 1 is available with a module; 2-13 are locked "coming soon"', C[0].available && C[0].module && C.slice(1).every((c) => !c.available && !c.module));
+  ok('chapters: chapter 1 is available with its module; later shipped ones load lazily; every locked one is "coming soon" with neither', C[0].available && C[0].module && C[1].available && typeof C[1].load === 'function' && !C[1].module && C.every((c) => (c.available ? !!(c.module || c.load) : !c.module && !c.load)));
+  // DEV MODE: chapters 2-4 are dev-only until the demo is done. With the door shut they are "coming soon"; open, they are playable.
+  Chapters.setDevCheck(() => false);
+  ok('dev: with Dev mode off, only chapter 1 is offered; 2-4 read as not shipped (coming soon) and will not load', Chapters.availableChapters().map((c) => c.n).join() === '1' && !Chapters.chapterOffered(C[1]) && !Chapters.chapterPlayable(C[2]) && Chapters.offeredChapters().slice(1, 4).every((c) => c.available === false && !c.load) && (await Chapters.loadModule(C[1])) === null);
+  {
+    const one = Save.blank();
+    Save.recordChapter(one, 'ch01-the-glint', { medal: 'gold', score: 90, time: 380 });
+    one.chapter = 'ch02-fire-line';
+    const plan = Save.resumePlan(one, Chapters.offeredChapters());
+    ok('dev: with Dev mode off, chapter 1 done → Continue is TO BE CONTINUED from chapter 1 (as before chapters 2-4 existed)', plan.kind === 'tbc' && plan.last === 'ch01-the-glint', JSON.stringify(plan));
+  }
+  Chapters.setDevCheck(() => true);
+  ok('dev: with Dev mode on, chapters 1-4 are offered and playable', Chapters.availableChapters().map((c) => c.n).join() === '1,2,3,4' && [1, 2, 3].every((i) => Chapters.chapterPlayable(C[i])) && Chapters.offeredChapters()[1].available === true);
+  ok('chapters: a lazily loaded chapter imports to a module with beats, and is remembered', await (async () => {
+    const m = await Chapters.loadModule(C[1]);
+    return !!(m && Array.isArray(m.beats) && m.beats.length >= 1 && C[1].module === m && Chapters.availableChapters().length >= 2);
+  })());
+  {
+    const one = Save.blank();
+    Save.recordChapter(one, 'ch01-the-glint', { medal: 'gold', score: 90, time: 380 });
+    one.chapter = 'ch02-fire-line';
+    const plan = Save.resumePlan(one, Chapters.offeredChapters());
+    ok('dev: with Dev mode on, chapter 1 done → Continue starts chapter 2', plan.kind === 'start' && plan.chapter === 'ch02-fire-line', JSON.stringify(plan));
+  }
+  ok('dev: chapters 5 onward are coming soon in both modes', Chapters.CHAPTERS.filter((c) => c.n >= 5).every((c) => !Chapters.chapterOffered(c)));
+  ok('chapters: the shipped ones come first, in order (no gaps in the story)', C.findIndex((c) => !c.available) === -1 || C.slice(C.findIndex((c) => !c.available)).every((c) => !c.available));
   ok('chapters: chapterLabel reads "Chapter 1 of 12: The Glint"', Chapters.chapterLabel(C[0]) === 'Chapter 1 of 12: The Glint');
   ok('chapters: every chapter has a recap for "Previously on…"', C.filter((c) => !c.epilogue).every((c) => Array.isArray(Script.RECAPS[c.id]) && Script.RECAPS[c.id].filter(Boolean).length >= 2));
 
@@ -299,7 +332,7 @@ const Meteor = await imp('src/game/extra/meteor.js');
   const I = await imp('src/flight/input.js');
   const st = ext.extStatus().find((e) => e.id === 'story');
   ok('plug-in: "story" is registered and live after importing the feature list', !!(st && st.live));
-  ok('plug-in: it declares the photo key (Space, the aeroplane) in Missions & events', I.ACTIONS.storyPhoto && I.ACTIONS.storyPhoto.default.join() === 'Space' && I.ACTIONS.storyPhoto.ctx.join() === 'plane' && I.ACTIONS.storyPhoto.group === 'Missions & events');
+  ok('plug-in: it declares the photo key (Space, the aeroplane and the helicopter) in Missions & events', I.ACTIONS.storyPhoto && I.ACTIONS.storyPhoto.default.join() === 'Space' && I.ACTIONS.storyPhoto.ctx.join() === 'plane,heli' && I.ACTIONS.storyPhoto.group === 'Missions & events');
   ok('plug-in: Space for the photo is a by-design share with the brakes, not a clash', Object.keys(I.findConflicts(I.defaultBindings())).length === 0);
   const A = await imp('src/features/achievements/data.js');
   const R = await imp('src/features/achievements/rules.js');
