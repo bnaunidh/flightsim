@@ -93,6 +93,11 @@ function loadRing() {
       console.warn('[world-preview] the ring past the sea did not load; the sea goes on for ever', e);
       return null;
     });
+    // The instruments giving out deep in the ring (features/far-glitch.js): with the ring, never before it,
+    // and the ring does not wait for it.
+    RING.then((m) => (m ? import('./far-glitch.js') : null)).catch((e) => {
+      console.warn('[world-preview] the far instrument failures did not load; the panels stay honest out there', e);
+    });
   }
   return RING;
 }
@@ -446,12 +451,15 @@ function* buildWorldSteps(sim, group) {
   group.add(S.out.group);
   // The tyres: the main field's layout (airport.js set it) and the other fields' made ground.
   const others = PREVIEW.airports.filter((a) => a.id !== dep.id);
+  // Nullspire's field too (farlands-run.js CITY_FIELD): its tarmac rolls and its runway counts, but the minimap
+  // is never told of it (it is a secret: setExtraRunways is the minimap's list, setOtherRunways the wheels' and the scoring's).
+  const cityPaved = S.ring ? pavedTest([S.ring.CITY_FIELD]) : () => false;
   const outPaved = pavedTest(others);
-  setPavedExtra((x, z) => pavedIn(airportLayout(), x, z) || outPaved(x, z));
+  setPavedExtra((x, z) => pavedIn(airportLayout(), x, z) || outPaved(x, z) || cityPaved(x, z));
   // The terrain warning and the minimap know the other fields' runways too,
   // and a landing on one is a landing on a runway (terrain.js isOnAnyRunway).
   setExtraRunways(others.map((a) => ({ cx: a.x, cz: a.z, length: a.length, halfWidth: a.halfWidth })));
-  Terrain.setOtherRunways(others.map((a) => ({ cx: a.x, cz: a.z, length: a.length, halfWidth: a.halfWidth })));
+  Terrain.setOtherRunways([...others.map((a) => ({ cx: a.x, cz: a.z, length: a.length, halfWidth: a.halfWidth })), ...(S.ring ? [S.ring.cityRunway()] : [])]);
   // The landing aids at whichever field you are at (updateNav, every frame).
   sim.navPapi = (pos, mainHint) => navPapi(pos, mainHint);
   yield;
@@ -736,6 +744,59 @@ function startAtPin(sim, opts) {
   }
 }
 
+/**
+ * Nullspire, from the dev workbench: the aircraft on a long final for the
+ * city's 09, the ground under it loaded, the field's own objective. Restart
+ * (main.js keeps the options) comes back to the same final.
+ */
+function startAtCity(sim, opts) {
+  const ac = sim.aircraft;
+  const R = S.ring;
+  const rotor = !!SPEC.rotor;
+  const p = R.approachStart(rotor ? 3000 : 11000, rotor ? 300 : 620);
+  const stall = saneStall(sim);
+  const speed = rotor ? 25 : Math.max(stall * 1.5, 70);
+  const fuel = opts.fuel != null ? Math.max(0.05, Math.min(1, opts.fuel)) : 1;
+  ac.reset({ pos: new THREE.Vector3(p.x, 0, p.z), headingDeg: p.headingDeg, speed, altAGL: p.y - Terrain.heightAt(p.x, p.z), engineOn: true, gearDown: false, fuel });
+  ac.controls.throttle = 0.6;
+  if (sim.input) {
+    sim.input.throttleTarget = 0.6;
+    if (sim.input.out) sim.input.out.throttle = 0.6;
+  }
+  if (S.stream) S.stream.prime(R.CITY_FIELD.x, p.y, R.CITY_FIELD.z, S.stream.tier.primeMs);
+  if (S.far) S.far.settle();
+  if (sim.rig) sim.rig.initialised = false;
+  S.dest = null;
+  S.pinDest = null;
+  S.lastStart = { ...p, where: 'city' };
+  if (sim.hud && sim.hud.setObjective) sim.hud.setObjective(`DIRECT TO ${R.CITY_FIELD.code}`, `${R.CITY.name} is ahead, heading 090: a long final for runway 09. Land there.`);
+}
+
+/**
+ * The dev workbench's "Teleport to Nullspire": builds the World Map first
+ * if another map is up (round the field last picked), then a Free Flight on
+ * a long final for the city's runway, in the aircraft the Hangar has chosen.
+ * Dev mode only: the button is in the Dev mode panel, which nobody else sees.
+ */
+async function teleportToCity(sim) {
+  if (S.pinGoing) return false;
+  S.pinGoing = true;
+  try {
+    const menus = sim.menus;
+    const cfg = menus.readFree ? menus.readFree() : { aircraft: menus.chosenAircraft };
+    if (!(active() && S.builtFor && S.builtFor.quality === sim.settings.quality) && !(await buildFor(sim, S.pick, cfg))) return false;
+    if (!S.ring) {
+      sim.hud && sim.hud.notify('The ring past the sea did not load: there is no city to go to.', 'warn', 5);
+      return false;
+    }
+    const { startAt, ...plain } = cfg;
+    await sim.startMode('free', { ...plain, airborne: true, taxi: false, city: true });
+    return true;
+  } finally {
+    S.pinGoing = false;
+  }
+}
+
 /** The type's published ceiling, metres, or 0. */
 function ceilingOf(sim) {
   try {
@@ -881,7 +942,9 @@ function updateNav(sim) {
   const ac = sim.aircraft;
   if (!ac) return;
   const w = (sim.weather && sim.weather.windDirDeg) ?? 80;
-  const a = pickNav(ac.pos.x, ac.pos.z, S.nav && airportById(S.nav.id), S.dest);
+  // Near Nullspire (a hundred kilometres out in the void, on no list) its own tower, PAPI and approach have you.
+  const cf = S.ring && S.ring.CITY_FIELD;
+  const a = cf && Math.hypot(ac.pos.x - cf.x, ac.pos.z - cf.z) < 45000 ? cf : pickNav(ac.pos.x, ac.pos.z, S.nav && airportById(S.nav.id), S.dest);
   const dir = landingDir(w);
   if (!S.nav || S.nav.id !== a.id || S.nav.dir !== dir) {
     S.nav = navFor(a, w);
@@ -1439,6 +1502,9 @@ registerExtension({
       },
       /** The ring past the sea (features/farlands-run.js), or null if it has not loaded. */
       farlands: () => S.far,
+      /** Nullspire: where it is (null until the ring has loaded), and the dev teleport to its runway. */
+      city: () => (S.ring ? { ...S.ring.CITY, field: S.ring.CITY_FIELD, look: S.far ? S.far.city : null } : null),
+      teleportToCity: () => teleportToCity(sim),
       /** The traffic between the fields (features/world-traffic.js), or null before it has loaded. */
       traffic: () => S.traffic || null,
       whenTraffic: () => (TRAFFIC_MOD || Promise.resolve(null)).then(() => S.traffic || null),
@@ -1467,6 +1533,8 @@ registerExtension({
     if (!pinned && S.dest && S.dest === S.pinDest) S.dest = null;
     S.pinDest = null;
     if (pinned) startAtPin(sim, opts);
+    // The dev workbench's teleport: on a long final for Nullspire's 09 (startAtCity).
+    else if (mode === 'free' && opts && opts.city && sim.aircraft && S.ring) startAtCity(sim, opts);
     // Free Flight's airborne start is written 3.4 km west of Kestrel's runway;
     // here it is 3.4 km west of the runway you chose to start from.
     else if (mode === 'free' && opts && opts.airborne && sim.aircraft) {
@@ -1540,5 +1608,6 @@ registerExtension({
   },
   devActions: [
     { label: 'World preview: tile stats', hint: 'Streamed terrain numbers in the console', run: () => console.info('[world-preview]', S.stream && S.stream.stats()) },
+    { label: 'Teleport to Nullspire', hint: 'A long final for the hidden city\'s runway, 100 km out in the void (World Map; builds it first if need be)', run: (sim) => { teleportToCity(sim); } },
   ],
 });

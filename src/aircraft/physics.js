@@ -145,8 +145,8 @@ export let SPEC = specFor(DEFAULT_AIRCRAFT_ID);
 export function applyAircraft(id) {
   TYPE = getAircraft(id);
   SPEC = specFor(TYPE.id);
-  // The fast jets' afterburners and sound barrier (./reheat.js); null for every other type.
-  SPEC.reheat = reheatFor(TYPE.id);
+  // The fast jets' afterburners and sound barrier (./reheat.js), or a type's own law (extra/javelin.js); null for every other type.
+  SPEC.reheat = reheatFor(TYPE.id) || TYPE.aero.reheat || null;
   return TYPE;
 }
 

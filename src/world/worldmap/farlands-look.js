@@ -10,14 +10,16 @@
  *              sea, the next wall in the haze. Flat under the sea level, so not
  *              drawn, inside the streamed range: the two never fight.
  *   VoidSky    a dome over the sky: the Farlands' own dusk as you get there,
- *              and past the edge near-black. Static: it is a function of
- *              where the eye is and nothing else, so nothing in it can flash.
+ *              past the edge near-black, and past the city (DEEP_FROM..DEEP_BY)
+ *              the deep void, darker still, the last of the glow gone. Static: it
+ *              is a function of where the eye is and nothing else, so nothing
+ *              in it can flash.
  *
  * All of it loads with the World Map only (features/farlands-run.js).
  */
 import * as THREE from '../../vendor/three.module.js';
 import { RENDER_ORIGIN } from '../../render/render-origin.js';
-import { depthOf, height, wanderOf, SEA_HALF, CORNER, RANGE_DEEP, FAR_DEEP, EDGE_D, TEAR, WOBBLE, ZONE_START, ZONE_M } from './farlands.js';
+import { depthOf, height, wanderOf, SEA_HALF, CORNER, RANGE_DEEP, FAR_DEEP, EDGE_D, TEAR, WOBBLE, ZONE_START, ZONE_M, DEEP_FROM, DEEP_BY } from './farlands.js';
 
 const F1 = (v) => v.toFixed(1);
 /** Nearer the middle than this on both axes, a point is not on the ring, corners included. */
@@ -361,6 +363,7 @@ const VOID_FRAG = /* glsl */ `
   uniform float uDay;
   uniform float uFarK;
   uniform float uVoidK;
+  uniform float uDeep;
 
   /** How far a ray from p along d runs before it leaves the square of half width b (0 if it starts outside it). */
   float leave(vec2 p, vec2 d, float b) {
@@ -382,7 +385,8 @@ const VOID_FRAG = /* glsl */ `
     vec3 duskLow = mix(vec3(0.42, 0.25, 0.20), vec3(0.20, 0.13, 0.17), smoothstep(0.0, 0.6, gone));
     vec3 duskHigh = vec3(0.075, 0.075, 0.17);
     vec3 dusk = mix(duskLow, duskHigh, pow(h, 0.5)) * mix(0.08, 1.0, uDay);
-    vec3 night = vec3(0.0035, 0.0038, 0.0065) * (1.0 + 0.6 * h);
+    // The deep void: what little the night sky had goes too, the horizon band first.
+    vec3 night = vec3(0.0035, 0.0038, 0.0065) * (1.0 + 0.6 * h) * (1.0 - 0.85 * uDeep);
     vec3 col = mix(dusk, night, gone * gone * (3.0 - 2.0 * gone));
     gl_FragColor = vec4(col, max(far * 0.88, gone));
     #include <colorspace_fragment>
@@ -403,7 +407,7 @@ export class VoidSky {
     this.scene = scene;
     this.day = day;
     this.haze = haze;
-    this.u = { uOrigin: RENDER_ORIGIN, uDay: { value: 1 }, uFarK: { value: 0 }, uVoidK: { value: 0 } };
+    this.u = { uOrigin: RENDER_ORIGIN, uDay: { value: 1 }, uFarK: { value: 0 }, uVoidK: { value: 0 }, uDeep: { value: 0 } };
     const mat = new THREE.ShaderMaterial({
       uniforms: this.u,
       vertexShader: VOID_VERT,
@@ -434,6 +438,7 @@ export class VoidSky {
     this.densOut = -1;
     this.farK = 0;
     this.voidK = 0;
+    this.deepK = 0;
   }
 
   /** Every frame: how far in the eye is. */
@@ -441,6 +446,7 @@ export class VoidSky {
     const d = wanderOf(cam.x, cam.z);
     this.farK = smoothOut(RANGE_DEEP - 6000, RANGE_DEEP + 9000, d);
     this.voidK = smoothOut(EDGE_D - 34000, EDGE_D + 3000, d);
+    this.deepK = smoothOut(DEEP_FROM, DEEP_BY, d);
     // From the sea the dusk is on the far side of the range; the dome is up only where it can be seen (VOID_FRAG's 64 km).
     this.mesh.visible = depthOf(cam.x, cam.z) > -26000;
   }
@@ -452,13 +458,14 @@ export class VoidSky {
     u.uDay.value = day;
     u.uFarK.value = this.farK;
     u.uVoidK.value = this.voidK;
+    u.uDeep.value = this.deepK;
     if (!fog || this.farK <= 0) return;
     // The fog as the sky left it this frame. A draw with no update since (paused) finds our own and keeps the sky's.
     if (!(fog.color.equals(this.fogOut) && fog.density === this.densOut)) {
       this.fogIn.copy(fog.color);
       this.densIn = fog.density;
     }
-    SCRATCH.copy(HAZE).multiplyScalar(0.08 + 0.92 * day).lerp(NIGHT_HAZE, this.voidK);
+    SCRATCH.copy(HAZE).multiplyScalar(0.08 + 0.92 * day).lerp(NIGHT_HAZE, this.voidK).multiplyScalar(1 - 0.85 * this.deepK);
     fog.color.copy(this.fogIn).lerp(SCRATCH, this.farK);
     fog.density = this.densIn + (Math.max(this.densIn, this.haze) - this.densIn) * this.farK;
     this.fogOut.copy(fog.color);

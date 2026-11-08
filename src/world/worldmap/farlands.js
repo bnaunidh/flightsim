@@ -15,7 +15,11 @@
  *                  (towers on a grid that gets more exact), the Fray (coarse
  *                  blocks settling onto one last plate). The CUTS carry on as
  *                  slot canyons to the end, so every aeroplane can get there.
- *   140 km         THE EDGE, torn, and past it THE VOID: no ground, no sea.
+ *   140 km         THE EDGE, torn, and past it THE VOID: no ground, no sea,
+ *                  for ever (owner, 2026-11-08: "let the void go on forever").
+ *   240 km         LANTERNREACH, a floating city with a field, a hundred
+ *                  kilometres out along one canyon's line (void-city.js).
+ *                  Hidden from every chart. Past it the deep void.
  *
  * Original to this game: no block, texture or layout of anybody else's. The
  * idea is the only thing borrowed, that the world's arithmetic gives out if
@@ -45,6 +49,9 @@
  * or prop stands out here: flora and props are planted island by island.
  */
 import { coverAt, vnoise, fbm2 } from './landcover.js';
+import { CITY, outerHeight, cityTouches, hush, hushed } from './void-city.js';
+
+export { CITY };
 
 /** The sea box's half width, and the radius of its corners (metres). The furthest island's 1.45 R is 106.8 km. */
 export const SEA_HALF = 114000;
@@ -58,9 +65,11 @@ export const WOBBLE = 3200;
 export const TEAR = 5200;
 /** heightAt in the void: charts black (under -99), no tile, nothing a warning could call ground. */
 export const VOID_H = -1500;
-/** The run ends this high over the sea's level, or this far past the edge. */
+/** The run ends this high over the sea's level with nothing under you. Flying on never ends it: the void goes on for ever. */
 export const VOID_FLOOR_Y = 150;
-export const VOID_RUN_ON = 40000;
+/** Past the city the deep void: darker still, by D. */
+export const DEEP_FROM = EDGE_D + CITY.pastEdge + 15000;
+export const DEEP_BY = EDGE_D + CITY.pastEdge + 75000;
 /** No peak reaches this (39,370 ft): under the fighters' ceilings. */
 export const PEAK_MAX = 12000;
 /** The eight passes' highest ground in the range (with PASS_ROUGH of rough ground on it), and the highest a slot's floor climbs to past it. */
@@ -105,7 +114,7 @@ export function touches(cx, cz, size) {
   const ax = Math.abs(cx);
   const az = Math.abs(cz);
   if (depthOf(ax + h, az + h) < -SKIRT) return false;
-  return depthOf(Math.max(0, ax - h), Math.max(0, az - h)) < EDGE_D + WOBBLE + TEAR;
+  return depthOf(Math.max(0, ax - h), Math.max(0, az - h)) < EDGE_D + WOBBLE + TEAR || cityTouches(cx, cz, size);
 }
 
 /** Where a point is, with the wander: D metres past the coast. */
@@ -266,7 +275,8 @@ function farAt(x, z, D, u) {
 /** The ground of the ring. Only asked where past() said so. */
 export function height(x, z) {
   const d = depthOf(x, z);
-  if (d > EDGE_D + WOBBLE + TEAR) return VOID_H;
+  // Past the land's end: the void, or the city floating in it (void-city.js; hushed while a chart samples).
+  if (d > EDGE_D + WOBBLE + TEAR) return outerHeight(x, z);
   const D = d + (fbm2(x / 21000, z / 21000, 31) - 0.5) * 2 * WOBBLE;
   if (D <= -200) return -60;
   const edge = D > EDGE_D - TEAR - 500 ? edgeAt(x, z) : Infinity;
@@ -325,4 +335,4 @@ for (const [dx, dz, side] of [[1, 0, 'e'], [-1, 0, 'w'], [0, -1, 'n'], [0, 1, 's
 }
 
 /** What terrain.js, the stream, the charts and the live map read. */
-export const FARLANDS = Object.freeze({ past, height, touches, cover: coverOf, depthOf, voidH: VOID_H, chartHalf: CHART_HALF, skirt: 3600, labels: LABELS });
+export const FARLANDS = Object.freeze({ past, height, touches, cover: coverOf, depthOf, voidH: VOID_H, chartHalf: CHART_HALF, skirt: 3600, labels: LABELS, hush, hushed });

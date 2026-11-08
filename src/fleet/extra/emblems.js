@@ -40,6 +40,7 @@
  *   suncrane    Rising Crane   a crane in flight across a sun
  *   bang        Spit Air       an exclamation mark, leaning in
  *   horizon     OverSea        a sun over the sea, cut from one disc
+ *   spire       Spireline      a spire of light through a halo, on a void disc (aircraft/extra/spireline.js)
  *
  * `globe` is kept as another name for the compass (an old saved scheme's).
  *
@@ -50,7 +51,7 @@
 /** Every mark this file draws. */
 export const EMBLEM_STYLES = Object.freeze([
   'acacia', 'compass', 'globe', 'star', 'wave', 'sun', 'moon', 'tulip', 'riverlines', 'falcon', 'lattice',
-  'comet', 'links', 'parcel', 'seawave', 'crane', 'pearlshell', 'suncrane', 'bang', 'horizon',
+  'comet', 'links', 'parcel', 'seawave', 'crane', 'pearlshell', 'suncrane', 'bang', 'horizon', 'spire',
 ]);
 
 /**
@@ -609,6 +610,16 @@ const MARKS = {
     swell(0.02, 0.05).cutStroke(0.05, 'butt');
     swell(0.17, 0.05).cutStroke(0.066, 'butt');
     swell(0.31, 0.05).cutStroke(0.082, 'butt');
+  },
+
+  /** Spireline: a void-black disc, a teal halo ring, and the city's spire of light rising through it, amber. */
+  spire(P, ink) {
+    P.begin().A(0, 0, 0.5).fill(ink(2));
+    P.begin().A(0, -0.08, 0.3).fill(ink(1));
+    P.begin().A(0, -0.08, 0.235).fill(ink(2));
+    // The spire: a long blade up through the ring, a short cross-blade at its foot.
+    P.begin().M(-0.085, 0.4).L(0, -0.46).L(0.085, 0.4).Z().fill(ink(0));
+    P.begin().M(-0.26, 0.4).L(0, 0.22).L(0.26, 0.4).L(0, 0.3).Z().fill(ink(0));
   },
 };
 MARKS.globe = MARKS.compass;

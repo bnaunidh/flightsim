@@ -13,8 +13,8 @@
  *   - the void is calm: thirty frames, nothing moves, day and with Reduce
  *     flashing off; nothing strobes
  *   - no sim rate out there; the autopilot flies off the edge without throwing
- *   - falling, and flying on, each end in the calm card: Try again and Main
- *     menu both work, no wreck, no crash
+ *   - falling ends in the calm card: Try again and Main menu both work, no
+ *     wreck, no crash; flying on never ends it (the void goes on for ever)
  *   - each cardinal side and a corner: the same void
  *   - the minimap: the range, the Farlands, then black, at every zoom
  *   - the live map: all of it charted, the void black
@@ -65,7 +65,7 @@ export async function check(sim, r, say) {
     const far = wp.farlands();
     r.ok('farlands: the ring came with the World Map', !!far && T.MAP._outer === F.FARLANDS, far ? '' : 'wp.farlands() is null');
     if (!far) return;
-    const { SEA_HALF: SH, EDGE_D, RANGE_DEEP, VOID_RUN_ON, VOID_FLOOR_Y } = F;
+    const { SEA_HALF: SH, EDGE_D, RANGE_DEEP, VOID_FLOOR_Y } = F;
     const ac = sim.aircraft;
     const put = (x, y, z, hdg = 90) => {
       ac.crashed = false;
@@ -361,15 +361,15 @@ export async function check(sim, r, say) {
       r.ok('farlands: Try again is a new flight at the field', sim.state === 'flying' && F.depthOf(ac.pos.x, ac.pos.z) < -8000 && sea.visible && !ac.crashed, `${sim.state} at ${(ac.pos.x / 1000).toFixed(1)} km`);
     }
 
-    /* ---- the end, flying on ---- */
+    /* ---- flying on never ends it: the void goes on for ever ---- */
     {
-      put(SH + EDGE_D + VOID_RUN_ON + 3000, 6000, 0, 90);
-      step(0.4);
-      r.ok('farlands: flying on ends it too', sim.state === 'debrief', sim.state);
-      const again = [...document.querySelectorAll('button')].find((b) => b.offsetParent !== null && /Main menu/.test(b.textContent));
-      if (again) again.click();
+      hold(SH + EDGE_D + 43000, 6000, 0, 0.4);
+      r.ok('farlands: flying on past 40 km does not end it', sim.state === 'flying' && !ac.crashed, sim.state);
+      hold(SH + EDGE_D + 420000, 6000, -60000, 0.4);
+      r.ok('farlands: 420 km out, still flying, no NaN', sim.state === 'flying' && Number.isFinite(ac.pos.x + ac.pos.y + ac.vel.length()) && far.stats().voidK === 1, `${sim.state}, y ${ac.pos.y.toFixed(0)}`);
+      sim.quitToMenu('main');
       await wait(300);
-      r.ok('farlands: Main menu works from the card', sim.state === 'menu', sim.state);
+      r.ok('farlands: Main menu works from out there', sim.state === 'menu', sim.state);
     }
 
     /* ---- the frame time ---- */

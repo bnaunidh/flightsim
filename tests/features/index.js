@@ -112,6 +112,8 @@ import { check as cockpitCam } from './cockpit-cam.browser.js';
 import { check as cockpitDress } from './cockpit-dress.browser.js';
 import { check as hudReadouts } from './hud-readouts.browser.js';
 import { check as realTime } from './real-time.browser.js';
+import { check as farGlitch } from './far-glitch.browser.js';
+import { check as voidCity } from './void-city.browser.js';
 
 export const CHECKS = [
   // The missions' fun pass, flown (slow): medals, twists, finales, Try again from.
@@ -284,6 +286,10 @@ export const CHECKS = [
   { id: 'cockpit-dress', check: cockpitDress },
   { id: 'hud-readouts', check: hudReadouts },
   { id: 'real-time', check: realTime },
+  // The instruments giving out deep in the Farlands (World Map, Low): honest, wandering, wrong, frozen, honest again. Leaves the map on Kestrel.
+  { id: 'far-glitch', check: farGlitch },
+  // Nullspire: the hidden city 100 km out in the void, its field, the dev teleport, the endless void (puts the map back).
+  { id: 'void-city', check: voidCity },
   // The demo bug hunt (2026-11-02): the boat's rudder bar, pause card and restarts; a pause straight after a crash.
   { id: 'bughunt', check: bughunt },
   // Last: it rebinds keys through Settings (and puts the player's back after).

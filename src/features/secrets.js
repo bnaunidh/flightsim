@@ -650,6 +650,20 @@ registerExtension({
   install(sim) {
     S.sim = sim;
     store();
+    // The Javelin (aircraft/extra/javelin.js) is in the roster only once it is yours: found at Nullspire (features/farlands-run.js).
+    const prog = sim.prog || Prog.load();
+    if (prog.unlocked && prog.unlocked.includes('javelin')) {
+      import('../aircraft/extra/javelin.js').then((m) => {
+        if (m.registerJavelin()) refreshMenu();
+      }).catch((e) => console.warn('[secrets] the Javelin did not load', e));
+    }
+    // ...and Spireline, the city's airline (aircraft/extra/spireline.js), once the city has been seen (the ring's own memory).
+    try {
+      const far = JSON.parse(localStorage.getItem('islandsim.farlands.v1') || 'null');
+      if (far && far.city) import('../aircraft/extra/spireline.js').then((m) => m.registerSpireline()).catch((e) => console.warn('[secrets] Spireline did not load', e));
+    } catch (e) {
+      /* no storage: found again next time */
+    }
     onFoot.addProvider(PROVIDER);
     wrapMissionComplete(sim);
     try {
