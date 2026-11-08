@@ -5798,3 +5798,101 @@ html.is-touch-device .cc-foot::before { content: 'Tap to close'; font-size: 14px
   .pause-info { display: none; }
   [data-screen="pause"] .pause-actions button:not(.primary) { padding: 6px; justify-content: center; }
 }
+
+/* =========================================================================
+   The old look on the new layout (v78.1). The owner liked how uncluttered
+   Departures is but wanted the game's own vibe back: navy glass, the sky-blue
+   accent, rounded corners, Jost titles in ordinary case. Same layout, same
+   tap targets, and still no blur: the glass is a solid translucent navy, so
+   an iPad pays nothing for it.
+   ========================================================================= */
+.menu-layer {
+  --accent: #58c6ff;
+  --panel: rgba(12, 20, 34, 0.72);
+  --panel-solid: #0e1726;
+  --panel-line: rgba(140, 180, 230, 0.18);
+  --glass: rgba(10, 17, 30, 0.82);
+  --glass-strong: rgba(14, 24, 42, 0.78);
+  --glass-solid: rgba(10, 17, 30, 0.92);
+  --glass-line: rgba(160, 195, 240, 0.16);
+  --text: #eaf1fb;
+  --text-dim: #9fb2cc;
+  --on-accent: #05101c;
+}
+:root { --sign-black: rgba(10, 17, 30, 0.82); }
+.ui-root[data-on="main"] > .menu-layer {
+  background: linear-gradient(180deg, rgba(7, 12, 21, 0.42) 0%, rgba(7, 12, 21, 0.5) 55%, rgba(7, 12, 21, 0.68) 100%);
+}
+.ui-root[data-on="pause"] > .menu-layer { background: rgba(7, 12, 21, 0.5); }
+
+/* Panels: glass, a hairline, soft corners. */
+.main-board, .resume-card, .shoutout, .menu-layer .ghost, .pause-card, .switcher, .credit-pill {
+  background: var(--glass); border: 1px solid var(--glass-line); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 14px 34px rgba(0, 0, 0, 0.35);
+}
+.main-board { border-radius: var(--r-3); }
+.pause-card { border-radius: var(--r-3); }
+.resume-card, .shoutout { border-radius: var(--r-2); }
+.menu-layer .ghost, .foot-links .ghost { border-radius: var(--r-1); }
+.menu-layer .ghost:hover { background: rgba(88, 198, 255, 0.16); border-color: rgba(88, 198, 255, 0.5); }
+.credit-pill { border-color: rgba(255, 210, 120, 0.3); background: rgba(255, 198, 92, 0.12); color: #ffd98a; }
+
+/* Type: Jost, ordinary case. The condensed face stays for numbers only. */
+.brand h1 { font: 700 clamp(28px, 4.6vw, 46px)/1.05 var(--font); text-transform: none; letter-spacing: -0.03em; }
+.tagline { color: var(--accent); font-size: 15.5px; }
+.screen-head h2 { font: 650 25px/1.2 var(--font); text-transform: none; }
+.board-head > span:first-child { font: 650 19px/1.2 var(--font); text-transform: none; color: var(--text); letter-spacing: -0.01em; }
+.card-body strong, .board-mini strong { font: 620 17px/1.2 var(--font); text-transform: none; }
+.card-body em, .board-mini em { font-size: 13px; }
+.pause-card h2 { font: 650 24px/1.2 var(--font); text-transform: none; }
+.pause-mission strong { font: 650 18px/1.2 var(--font); text-transform: none; }
+.pause-tab { font: 620 15px/1.2 var(--font); text-transform: none; border-radius: var(--r-1); }
+.pause-item > h3 { font: 650 15px/1.2 var(--font); text-transform: none; }
+
+/* The brand mark: a glass tile with the blue star, as before. */
+.brand-mark { width: 64px; height: 64px; border-radius: var(--r-3); background: var(--glass); color: var(--accent);
+  border: 1px solid var(--glass-line); }
+
+/* Fly: the old blue button, big. */
+.fly-now, button.primary { background: linear-gradient(135deg, var(--game-accent), #3aa8e8); color: var(--on-accent, #05101c); }
+[data-game="car"] .fly-now, [data-game="car"] .menu-layer button.primary,
+[data-game="heli"] .fly-now, [data-game="heli"] .menu-layer button.primary,
+[data-game="boat"] .fly-now, [data-game="boat"] .menu-layer button.primary { background: var(--game-accent); }
+.fly-now { border-radius: var(--r-3); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
+.fly-now:hover { transform: translateY(-2px); }
+.fly-body strong { font: 700 56px/1 var(--font); text-transform: none; letter-spacing: -0.03em; }
+[data-screen="pause"] .pause-actions .primary { font: 650 20px/1 var(--font); text-transform: none; border-radius: var(--r-2); }
+
+/* The board rows: quiet glass rows, a tinted icon tile, a blue lift on hover. */
+.card-btn, .board-mini { border-radius: var(--r-0); border-top-color: rgba(160, 195, 240, 0.12); }
+.card-icon { border-radius: var(--r-1); background: rgba(88, 198, 255, 0.14); color: var(--game-accent); }
+.card-btn:hover, .card-btn:active, .board-mini:hover, .board-mini:active { background: rgba(88, 198, 255, 0.12); color: var(--text); }
+.card-btn:hover em, .card-btn:active em, .board-mini:hover em, .board-mini:active em { color: var(--text-dim); }
+.card-btn:hover .card-icon, .card-btn:active .card-icon { background: var(--game-accent); color: var(--on-accent, #05101c); }
+.card-btn:hover::after, .card-btn:active::after { border-color: var(--game-accent); }
+.board-mini + .board-mini { border-left-color: rgba(160, 195, 240, 0.12); }
+
+/* Pause buttons: the old soft glass buttons. */
+.pause-actions button:where(:not(.primary)), .pause-switch, .pause-more, .pause-item > button, .pause-tab, .pause-sheet-head .ghost {
+  background: rgba(255, 255, 255, 0.07); border: 1px solid var(--panel-line); border-radius: var(--r-1); }
+.pause-actions button:where(:not(.primary)):hover, .pause-switch:hover, .pause-more:hover, .pause-item > button:hover {
+  background: rgba(88, 198, 255, 0.16); border-color: rgba(88, 198, 255, 0.5); }
+.pause-tab.is-on { background: var(--game-accent); color: var(--on-accent, #05101c); border-color: transparent; }
+.pause-mission { border-bottom-color: var(--glass-line); }
+.pause-grid span { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
+
+@media (max-width: 620px) {
+  .brand-mark { width: 48px; height: 48px; }
+  .brand h1 { font-size: 28px; }
+  .fly-body strong { font-size: 44px; }
+  .card-body strong, .board-mini strong { font-size: 16px; }
+}
+@media (max-height: 460px) {
+  .brand h1 { font-size: 22px; }
+  .fly-body strong { font-size: 34px; }
+  .card-body strong, .board-mini strong { font-size: 15px; }
+}
+.pause-grid b { text-transform: none; letter-spacing: 0; }
+/* Fun Stuff keeps the old warm gold. */
+.fun-open.board-mini { background: linear-gradient(120deg, rgba(255, 210, 90, 0.2), rgba(255, 150, 80, 0.12)); }
+.fun-open.board-mini .board-mini-icon { color: var(--amber); }
+.fun-open.board-mini:hover, .fun-open.board-mini:active { background: linear-gradient(120deg, rgba(255, 210, 90, 0.32), rgba(255, 150, 80, 0.2)); }
