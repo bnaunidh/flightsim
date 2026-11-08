@@ -644,10 +644,15 @@ function aircraftThumbnail(type, liveryId) {
 
 /** Free Flight's "Real time": this device's hour, and the sky word it falls in (the sky works it out from the sun anyway). */
 export function realTimeNow(d = new Date()) {
-  const hour = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
-  const time = hour >= 8 && hour < 17.5 ? 'day' : hour >= 5.5 && hour < 20 ? 'sunset' : 'night';
-  return { time, hour, realTime: true };
+  return { ...hourPick(d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600), realTime: true };
 }
+/** An hour as a Free Flight setup: the hour, and the sky word it falls in. */
+export function hourPick(hour) {
+  const time = hour >= 8 && hour < 17.5 ? 'day' : hour >= 5.5 && hour < 20 ? 'sunset' : 'night';
+  return { time, hour };
+}
+/** Free Flight's "Morning" (the owner: "and a morning preset fo time"): a low, early sun from the east. */
+export const MORNING_HOUR = 7.5;
 
 export class Menus {
   /**
@@ -1087,7 +1092,7 @@ export class Menus {
       (p) => `<button class="preset" data-preset="${p.id}"><strong>${p.name}</strong><em>${p.hint}</em></button>`
     ).join('');
     // "Real time" (the owner: "let time for off irl time"): the hour on this device's clock, then the clock runs on as it always does.
-    const times = Object.entries(TIMES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('') + '<option value="real">Real time (your clock)</option>';
+    const times = Object.entries(TIMES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('') + '<option value="morning">Morning</option><option value="real">Real time (your clock)</option>';
     // Random first (the default since wave 19: it rolls the day's weather and changes as you fly), then Clear always.
     const conds = SKY_CHOICES.filter((c) => CONDITIONS[c.id]).map((c) => `<option value="${c.id}">${c.label}</option>`).join('');
 
@@ -1262,13 +1267,14 @@ export class Menus {
       const out = s.querySelector('[data-hourval]');
       if (!out) return;
       if (time.value === 'real') { out.textContent = 'your clock'; return; }
+      if (time.value === 'morning') { out.textContent = '07:30'; return; }
       if (hour.dataset.set !== '1') { out.textContent = 'preset'; return; }
       const h = Number(hour.value) % 24;
       const hh = Math.floor(h);
       const mm = Math.round((h - hh) * 60);
       out.textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
     };
-    hour.addEventListener('input', () => { hour.dataset.set = '1'; if (time.value === 'real') time.value = 'day'; hourWords(); });
+    hour.addEventListener('input', () => { hour.dataset.set = '1'; if (time.value === 'real' || time.value === 'morning') time.value = 'day'; hourWords(); });
     time.addEventListener('change', () => { hour.dataset.set = '0'; hourWords(); });
     hourWords();
     // A plan view on each card, drawn from that aeroplane's own shape data.
@@ -1446,7 +1452,7 @@ export class Menus {
         // Heat-seekers' practice drones (src/features/heatseek.js reads it from the start options).
         practiceTargets: !!(s.querySelector('[data-practice-targets]') || {}).checked,
         // Real time: the hour now on this device's clock, sent as an ordinary hour (the word follows the sun).
-        ...(time.value === 'real' ? realTimeNow() : {
+        ...(time.value === 'real' ? realTimeNow() : time.value === 'morning' ? { ...hourPick(MORNING_HOUR), morning: true } : {
           time: time.value,
           // The slider's hour, only once it has been moved (otherwise the word's preset).
           hour: hour.dataset.set === '1' ? Number(hour.value) : undefined,
@@ -1466,8 +1472,8 @@ export class Menus {
     const setOpt = (el, v) => { if ([...el.options].some((o) => o.value === v)) el.value = v; };
     const applySetup = (c) => {
       if (!c) return;
-      setOpt(time, c.realTime ? 'real' : c.time);
-      if (c.realTime) hour.dataset.set = '0';
+      setOpt(time, c.realTime ? 'real' : c.morning ? 'morning' : c.time);
+      if (c.realTime || c.morning) hour.dataset.set = '0';
       else if (Number.isFinite(c.hour)) { hour.value = c.hour; hour.dataset.set = '1'; } else hour.dataset.set = '0';
       hourWords();
       setOpt(cond, c.condition);
@@ -2906,7 +2912,7 @@ export class Menus {
       if (out) out.textContent = node.type === 'range' && Number(v) <= 1 ? `${Math.round(v * 100)}%` : v;
     });
     // Free-flight defaults follow the saved weather.
-    if (this.freeControls && settings.weather && this.freeControls.time.value !== 'real') {
+    if (this.freeControls && settings.weather && !['real', 'morning'].includes(this.freeControls.time.value)) {
       this.freeControls.time.value = settings.weather.time;
       if (this.freeControls.hour) {
         const h = settings.weather.hour;
