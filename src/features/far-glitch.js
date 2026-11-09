@@ -18,6 +18,12 @@
  *   0.60+  the compass slowly spins
  *   0.97+  (the void) the readouts are frozen or gone: dashes
  *
+ * NULLSPIRE IS THE EXCEPTION. The owner, 2026-11-08: "make instruments come
+ * back near nullspire". The city keeps its own sky: inside CLEAR_OUT of its
+ * centre the failures ease off, and inside CLEAR_IN (the whole long final,
+ * the field, the city) every instrument reads true again. Fly back out and
+ * they give out again. cityClear() is that factor, by distance, pure.
+ *
  * HOW: one hook. The HUD (ui/hud.js) and the cockpit panels (aircraft/cockpit)
  * read the aeroplane's ias / alt / agl / vs / heading, through readouts() or
  * straight off it. While those two update, and only then, the fields hold the
@@ -37,6 +43,7 @@
  */
 import { registerExtension } from '../game/extensions.js';
 import { depthOf, RANGE_DEEP, FAR_DEEP, EDGE_D } from '../world/worldmap/farlands.js';
+import { cityDist } from '../world/worldmap/void-city.js';
 import { active as worldMapActive } from './world-preview.js';
 import { __readouts, clockParts } from './hud-readouts.js';
 
@@ -57,11 +64,25 @@ export function glitchIntensity(d) {
   return t * t * (3 - 2 * t);
 }
 
-/** The intensity for where the aeroplane is: 0 off the World Map. */
+/** Metres from Nullspire's centre: inside CLEAR_IN everything reads true; from CLEAR_OUT in, they come back. */
+export const CLEAR_IN = 16000;
+export const CLEAR_OUT = 40000;
+
+/** 1 far from Nullspire, 0 near it, a smooth ease between: what is left of the failures. Pure. */
+export function cityClear(dist) {
+  if (!(dist >= 0)) return 1;
+  if (dist <= CLEAR_IN) return 0;
+  if (dist >= CLEAR_OUT) return 1;
+  const t = (dist - CLEAR_IN) / (CLEAR_OUT - CLEAR_IN);
+  return t * t * (3 - 2 * t);
+}
+
+/** The intensity for where the aeroplane is: 0 off the World Map, and 0 at Nullspire. */
 export function intensityFor(sim) {
   if (!worldMapActive() || !sim || !sim.aircraft) return 0;
   const ac = sim.aircraft;
-  return glitchIntensity(depthOf(ac.pos.x, ac.pos.z));
+  const k = glitchIntensity(depthOf(ac.pos.x, ac.pos.z));
+  return k > 0 ? k * cityClear(cityDist(ac.pos.x, ac.pos.z)) : 0;
 }
 
 /* Units as physics.js keeps them (metres, m/s) against the panels' knots and feet. */

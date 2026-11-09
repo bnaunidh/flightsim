@@ -68,7 +68,7 @@ ok('exactly 1 at the edge', glitchIntensity(F.EDGE_D) === 1, String(glitchIntens
 ok('about 0.5 half way', Math.abs(glitchIntensity((START_D + F.EDGE_D) / 2) - 0.5) < 1e-9, glitchIntensity((START_D + F.EDGE_D) / 2).toFixed(3));
 ok('just past the quarter mark it is small but on', glitchIntensity(START_D + 2000) > 0 && glitchIntensity(START_D + 2000) < 0.01, glitchIntensity(START_D + 2000).toFixed(4));
 let voidOff = 0;
-for (let d = F.EDGE_D; d <= F.EDGE_D + F.VOID_RUN_ON + 100000; d += 500) if (glitchIntensity(d) !== 1) voidOff++;
+for (let d = F.EDGE_D; d <= F.EDGE_D + 400000; d += 500) if (glitchIntensity(d) !== 1) voidOff++;
 ok('1 all through the void', voidOff === 0, `${voidOff} points off`);
 ok('nothing for a NaN or an undefined depth', glitchIntensity(NaN) === 0 && glitchIntensity(undefined) === 0);
 ok('the order of the thresholds', K.clock < K.autopilot && K.autopilot < K.numbers && K.numbers < K.dashes && K.dashes < K.spin && K.spin < K.freeze && K.freeze < 1, JSON.stringify(K));
@@ -88,6 +88,17 @@ if (def && T.MAP) {
   ok('on the World Map: 0 in the range and the first quarter', intensityFor(fake(SH + 20000, 0)) === 0 && intensityFor(fake(SH + START_D - 100, 0)) === 0);
   ok('on the World Map: on deep in, by depthOf, on every side', intensityFor(fake(SH + 120000, 0)) > 0.5 && intensityFor(fake(0, -SH - 120000)) > 0.5 && intensityFor(fake(-SH - 120000, 0)) > 0.5);
   ok('on the World Map: 1 in the void', intensityFor(fake(SH + F.EDGE_D + 30000, 0)) === 1);
+  // Nullspire (owner, 2026-11-08: "make instruments come back near nullspire").
+  const C = await import('../../src/world/worldmap/void-city.js');
+  const at = (dx, dz) => intensityFor(fake(C.CITY.x + dx, C.CITY.z + dz));
+  ok('Nullspire: the void around it is still dead', glitchIntensity(F.depthOf(C.CITY.x, C.CITY.z)) === 1 && at(0, -G.CLEAR_OUT - 5000) === 1, `${at(0, -G.CLEAR_OUT - 5000)}`);
+  ok('Nullspire: every instrument reads true over the city and the field', at(0, 0) === 0 && at(C.CITY_FIELD.x - C.CITY.x, C.CITY_FIELD.z - C.CITY.z) === 0 && at(C.SLAB_RX, 0) === 0);
+  const ap = C.approachStart();
+  ok('Nullspire: true on the long final the teleport puts you on', intensityFor(fake(ap.x, ap.z)) === 0, `${(C.cityDist(ap.x, ap.z) / 1000).toFixed(1)} km out`);
+  let rise = 0, prevC = -1;
+  for (let d = 0; d <= G.CLEAR_OUT + 10000; d += 250) { const k = at(-d, 0); if (k < prevC - 1e-12) rise++; prevC = k; }
+  ok('Nullspire: they give out again smoothly, flying away from it', rise === 0 && at(-(G.CLEAR_IN + G.CLEAR_OUT) / 2, 0) > 0.3 && at(-(G.CLEAR_IN + G.CLEAR_OUT) / 2, 0) < 0.7, `${rise} dips`);
+  ok('Nullspire: the clear factor is pure and safe', G.cityClear(NaN) === 1 && G.cityClear(0) === 0 && G.cityClear(1e9) === 1);
   ok('no aeroplane, nothing', intensityFor({ state: 'flying' }) === 0 && intensityFor(null) === 0);
   for (const key of Object.keys(T.MAP)) delete T.MAP[key];
   Object.assign(T.MAP, saved);

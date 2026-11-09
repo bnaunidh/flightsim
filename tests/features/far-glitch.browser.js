@@ -252,6 +252,21 @@ export async function check(sim, r, say) {
       r.ok('far-glitch: back at 0.3 from the void, the compass has come round to a wander', stats().spin === 0 && off <= 20 && !stats().frozen, `spin ${stats().spin.toFixed(1)}, ${off.toFixed(1)}° off at most`);
     }
 
+    /* ---- Nullspire: the city keeps its own sky, the instruments read true (owner, 2026-11-08) ---- */
+    {
+      const C = await import('../../src/world/worldmap/void-city.js');
+      const cy = C.SLAB_Y + 2500;
+      hold(SH + EDGE_D + 15000, y, 0, 4);
+      const wasFrozen = stats().frozen;
+      hold(C.CITY.x, cy, C.CITY.z, 6);
+      const s = stats();
+      r.ok('far-glitch: at Nullspire the failures ease off to nothing', wasFrozen && s.target === 0 && s.k === 0 && !s.frozen, `from frozen ${wasFrozen}, k ${s.k}, target ${s.target}`);
+      r.ok('far-glitch: at Nullspire the panel reads true', Math.abs(shownIas() - realIas()) <= 1 && Math.abs(shownAlt() - realAlt()) <= 10 && Math.abs(((shownHdg() - realHdg() + 540) % 360) - 180) <= 1 && !/---/.test(hud.speedValue.textContent), `${shownIas()}/${realIas()} kt, ${shownAlt()}/${realAlt()} ft, ${shownHdg()}/${realHdg()}°`);
+      r.ok('far-glitch: at Nullspire the clock and the map are back', shownClock() === realClock() && !(overlay() && Number(overlay().style.opacity) > 0), `${shownClock()} v ${realClock()}, static ${overlay() && overlay().style.opacity}`);
+      hold(C.CITY.x - 70000, cy, C.CITY.z, 4);
+      r.ok('far-glitch: fly away from Nullspire and they give out again', stats().k > 0.9 && stats().target === 1, `k ${stats().k.toFixed(2)}`);
+    }
+
     /* ---- home: honest again, nothing left behind ---- */
     {
       hold(0, 3000, 0, 5);
