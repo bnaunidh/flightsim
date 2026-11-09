@@ -91,7 +91,7 @@ export async function check(sim, r, say = () => {}) {
   sim.tap('Enter');
   run(0.1);
   r.ok('eject: not while parked — it says to stop and press O', E.phase === 'idle' && /press O/i.test(lastToast()), lastToast());
-  await sim.startMode('free', { aircraft: 'a320', airborne: true, taxi: false });
+  await sim.startMode('free', { aircraft: 'a320', airborne: true, taxi: false, passengers: true });
   run(0.5);
   sim.tap('Enter');
   run(0.1);

@@ -338,12 +338,17 @@ function syncKeyLine(sim) {
 /* Eject                                                               */
 /* ------------------------------------------------------------------ */
 
+/** Who goes before you in an airliner: nobody, when it flies empty (Free Flight has no passengers). */
+function evacOrder() {
+  return PAX.active ? 'passengers first, then the crew, then you' : 'the cabin is empty — just you';
+}
+
 /** Why you cannot eject right now, or null. For the tests too. */
 export function cannotEject(sim) {
   if (!inAircraft(sim)) return 'Not now';
   const prof = profileOf(sim);
   const ac = sim.aircraft;
-  if (S.phase === 'evac') return 'Passengers first — you go last';
+  if (S.phase === 'evac') return PAX.active ? 'Passengers first — you go last' : 'You are on your way out';
   if (S.phase !== 'idle') return 'You are already out';
   if (ac.crashed) return live(`Too late for that — press ${keyName('pause', sim)} and choose Restart`);
   if (prof.escape === 'none') return live(String(prof.noneWhy).replace(/\bpress O\b/, `press ${keyName('getOut', sim)}`).replace(/\bthen O\b/, `then ${keyName('getOut', sim)}`));
@@ -388,8 +393,8 @@ function pressEject(sim) {
     if (S.armedT <= 0) {
       S.armedT = ARM_SECONDS;
       notify(sim, byButton(sim)
-        ? `${byButton(sim)} EJECT again to EVACUATE — passengers first, then the crew, then you!`
-        : live(`Press ${kbd('eject', sim)} again to EVACUATE — passengers first, then the crew, then you!`), 'warn', ARM_SECONDS);
+        ? `${byButton(sim)} EJECT again to EVACUATE — ${evacOrder()}!`
+        : live(`Press ${kbd('eject', sim)} again to EVACUATE — ${evacOrder()}!`), 'warn', ARM_SECONDS);
       sound(sim, 'cover');
       return true;
     }
@@ -462,7 +467,7 @@ function startEvac(sim, auto) {
   S.armedT = 0;
   S.cam.started = false;
   if (sim.input && sim.input.keys && sim.input.keys.clear) sim.input.keys.clear();
-  banner(sim, 'EVACUATE!', `Passengers first — ${pax} of them — then the cabin crew, then you, last. The autopilot holds her steady.`, 'good', 5);
+  banner(sim, 'EVACUATE!', pax + crew > 0 ? `Passengers first — ${pax} of them — then the cabin crew, then you, last. The autopilot holds her steady.` : 'The cabin is empty — out you go. The autopilot holds her steady.', 'good', 5);
   if (auto) notify(sim, 'Everybody out — nobody goes down with the plane!', 'good', 4);
   try {
     // The captain's PA line (passengers.js puts it here; not imported, see state.js).

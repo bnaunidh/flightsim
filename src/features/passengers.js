@@ -37,6 +37,12 @@
  *                        the seatbelt sign, top of descent, landing — as
  *                        subtitles only. No voice: nothing here makes a sound.
  *
+ * NOT IN FREE FLIGHT (the owner, 2026-11-08: "remove the passengers feature
+ * in free flight"): an airliner in Free Flight flies empty — no boarding, no
+ * comfort meter, no PA, no heads in the windows. The missions keep theirs.
+ * A Dev action (and the tests) can still ask for them: startMode('free',
+ * { passengers: true }).
+ *
  * NOT ON: Air Force One (its own missions, its own cabin and people), a
  * passenger seat (sim.riding — the President's), anything that is not an
  * airliner. Cargo types are not airliners (layout.js isAirlinerType).
@@ -86,6 +92,8 @@ const FPM = 196.850394;
 const KT = 1.94384;
 
 const S = {
+  /** Free Flight with passengers: only when a Dev action or a test asks (opts.passengers). */
+  paxInFree: false,
   sim: null,
   seed: 0,
   comfort: null,
@@ -127,6 +135,7 @@ function isAfo(sim) {
 export function carriesPassengers(sim) {
   if (!sim || !sim.aircraft || !sim.aircraftType) return false;
   if (sim.mode === 'drive' || sim.riding) return false;
+  if (sim.mode === 'free' && !S.paxInFree) return false;
   if (isAfo(sim)) return false;
   return isAirlinerType(sim.aircraftType);
 }
@@ -792,6 +801,7 @@ registerExtension({
 
   startMode(sim, mode, opts) {
     S.sim = sim;
+    S.paxInFree = !!(opts && opts.passengers);
     setup(sim, mode, opts || {});
   },
 
@@ -846,14 +856,14 @@ registerExtension({
       label: 'Passengers: start an A320 at a gate',
       hint: 'Free Flight at a gate with a jet bridge: boarding, the comfort meter, the PA',
       run(sim) {
-        if (typeof sim.startMode === 'function') sim.startMode('free', { aircraft: 'a320', startAt: 'gate', taxi: false });
+        if (typeof sim.startMode === 'function') sim.startMode('free', { aircraft: 'a320', startAt: 'gate', taxi: false, passengers: true });
       },
     },
     {
       label: 'Passengers: an A320 at 6,000 ft (try Enter twice)',
       hint: 'Airborne in the A320: the evacuation — passengers first, then the crew, then you',
       run(sim) {
-        if (typeof sim.startMode === 'function') sim.startMode('free', { aircraft: 'a320', airborne: true, taxi: false });
+        if (typeof sim.startMode === 'function') sim.startMode('free', { aircraft: 'a320', airborne: true, taxi: false, passengers: true });
       },
     },
   ],

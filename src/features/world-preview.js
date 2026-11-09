@@ -797,6 +797,38 @@ async function teleportToCity(sim) {
   }
 }
 
+/**
+ * The Dev console's /tp (features/dev-console.js; the owner, 2026-11-08): a
+ * World Map field, started the way that field always starts (the Free Flight
+ * screen's "Start at"), with the world built round it as if it had been
+ * picked; a pin's spot is flyToPin's own airborne start.
+ */
+async function tpField(sim, id) {
+  const a = airportById(id);
+  if (!a || S.pinGoing) return false;
+  S.pinGoing = true;
+  try {
+    const menus = sim.menus;
+    const cfg = menus.readFree ? menus.readFree() : { aircraft: menus.chosenAircraft };
+    setPin(null);
+    const same = active() && S.builtFor && S.builtFor.id === a.id && S.builtFor.quality === sim.settings.quality;
+    if (!same && !(await buildFor(sim, a.id, cfg))) return false;
+    if (same && menus.applyFree) menus.applyFree(cfg);
+    await sim.startMode('free', cfg);
+    return true;
+  } finally {
+    S.pinGoing = false;
+  }
+}
+
+async function tpSpot(sim, x, z) {
+  if (S.pinGoing) return false;
+  const c = clampTo(x, z);
+  setPin({ ...c, h: null, zone: S.ring ? S.ring.zoneOf(c.x, c.z) : null });
+  await flyToPin(sim);
+  return true;
+}
+
 /** The type's published ceiling, metres, or 0. */
 function ceilingOf(sim) {
   try {
@@ -1479,6 +1511,10 @@ registerExtension({
       },
       flyToPin: () => flyToPin(sim),
       flyChosen: (cfg) => flyChosen(sim, cfg),
+      /** The Dev console's /tp: a field by id, a spot (x, z metres), Nullspire. */
+      tpField: (id) => tpField(sim, id),
+      tpSpot: (x, z) => tpSpot(sim, x, z),
+      tpCity: () => teleportToCity(sim),
       takesOffToPin,
       /** The start the last pin gave (the tests). */
       lastStart: () => S.lastStart || null,

@@ -1762,7 +1762,7 @@ export class Menus {
               <option value="both">Both</option>
             </select></label>
           <label class="check"><input type="checkbox" data-set="startAtGate"><span>Start on the parking stand and taxi out (Free Flight)</span></label>
-          <label class="check"><input type="checkbox" data-set="autoSkipBoarding"><span>Skip the boarding at the gate (airliners) — the passengers are aboard and the doors shut straight away, and they are off as soon as you park. Off, you can watch it and press Y to skip it any time.</span></label>
+          <label class="check"><input type="checkbox" data-set="autoSkipBoarding"><span>Skip the boarding at the gate (airline missions) — the passengers are aboard and the doors shut straight away, and they are off as soon as you park. Off, you can watch it and press Y to skip it any time.</span></label>
           <label class="check"><input type="checkbox" data-set="realisticFuel"><span>Realistic fuel — the tank drains 1% every 30 seconds, so you have to plan</span></label>
           <label class="check"><input type="checkbox" data-set="randomWinds"><span>Random winds — the wind wanders and gusts blow through</span></label>
           <label class="check"><input type="checkbox" data-set="minimap"><span>Minimap — the little round map, with a warning if you are heading at a hill (J)</span></label>

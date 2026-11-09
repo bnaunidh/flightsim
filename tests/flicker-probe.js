@@ -283,6 +283,8 @@ export async function setupScenario(sim, s) {
     windDirDeg: 90,
     airborne: altFt > 0,
     aircraft: s.aircraft || 'skylark',
+    // Free Flight carries no passengers (2026-11-08); a scenario that needs them asks.
+    ...(s.passengers ? { passengers: true } : {}),
   });
   sim.autoPauseOnHide = false;
   const ac = sim.aircraft;

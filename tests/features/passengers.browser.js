@@ -95,7 +95,7 @@ async function run_(sim, r, say) {
    * One evacuation, flown to the end. Returns what happened, in order.
    */
   async function evacuate(label, aircraft = 'a320', height = 610) {
-    await sim.startMode('free', { aircraft, airborne: true, taxi: false });
+    await sim.startMode('free', { aircraft, airborne: true, taxi: false, passengers: true });
     run(0.6);
     const ac = sim.aircraft;
     if (height !== 610) {
@@ -205,7 +205,7 @@ async function run_(sim, r, say) {
   /* ================================================================ */
   say('passengers: too low, and the other airliners');
   {
-    await sim.startMode('free', { aircraft: 'a320', airborne: true, taxi: false });
+    await sim.startMode('free', { aircraft: 'a320', airborne: true, taxi: false, passengers: true });
     run(0.4);
     sim.aircraft.pos.y -= sim.aircraft.agl - 90;
     run(0.1);
@@ -263,7 +263,7 @@ async function run_(sim, r, say) {
       if (real) sim.renderer.render = real;
       sim.applySetting('reduceFlashing', true);
       for (const [type, at] of [['a320', 3], ['a320', 8], ['b747', 5], ['a380', 10]]) {
-        await FP.setupScenario(sim, { map: sim.settings.map, aircraft: type, altFt: 3000, view: 'chase', look: 'level', time: 'day', condition: 'clear' });
+        await FP.setupScenario(sim, { map: sim.settings.map, aircraft: type, altFt: 3000, view: 'chase', look: 'level', time: 'day', condition: 'clear', passengers: true });
         let m = null;
         try {
           sim.tap('Enter');
@@ -325,7 +325,7 @@ async function run_(sim, r, say) {
     const svc = AS.__airportServices;
     const said = () => ((svc.S && svc.S.said) || '').replace(/<[^>]+>/g, '');
     const ourBridge = () => (sim.apron.bridges || []).find((q) => q.visitor === 'player' || q.visitor === 'spare');
-    await sim.startMode('free', { aircraft: 'a320', startAt: 'gate', taxi: false });
+    await sim.startMode('free', { aircraft: 'a320', startAt: 'gate', taxi: false, passengers: true });
     run(0.5);
     const dec = sim.spawns && sim.spawns.state && sim.spawns.state().decided;
     const atGate = PAX.stage === 'gate' || PAX.stage === 'boarding';
@@ -406,7 +406,7 @@ async function run_(sim, r, say) {
     if (AS.servicesState().state === 'pushback') svc.stopPush(sim);
 
     // Skip at any moment: Y while the bridge is still coming.
-    await sim.startMode('free', { aircraft: 'a320', startAt: 'gate', taxi: false });
+    await sim.startMode('free', { aircraft: 'a320', startAt: 'gate', taxi: false, passengers: true });
     run(3);
     const before = TA.walkers ? TA.walkers.shown : 0;
     sim.tap('KeyP');
@@ -420,7 +420,7 @@ async function run_(sim, r, say) {
     r.ok('skip: then Y is the pushback', AS.servicesState().state === 'pushback', AS.servicesState().state);
     if (AS.servicesState().state === 'pushback') svc.stopPush(sim);
     // The panel's button, the same.
-    await sim.startMode('free', { aircraft: 'a320', startAt: 'gate', taxi: false });
+    await sim.startMode('free', { aircraft: 'a320', startAt: 'gate', taxi: false, passengers: true });
     run(12);
     P.press('skipBoarding');
     run(0.2);
@@ -432,14 +432,14 @@ async function run_(sim, r, say) {
     // The setting does it for you.
     const was = sim.settings.autoSkipBoarding;
     sim.settings.autoSkipBoarding = true;
-    await sim.startMode('free', { aircraft: 'a320', startAt: 'gate', taxi: false });
+    await sim.startMode('free', { aircraft: 'a320', startAt: 'gate', taxi: false, passengers: true });
     run(0.5);
     r.ok('skip: Settings "Skip the boarding at the gate" — aboard, doors shut and ready to push from the start', PAX.stage === 'ready' && PAX.aboard === PAX.booked && AS.servicesState().state === 'serviced',
       `${PAX.stage} ${PAX.aboard}/${PAX.booked}, crew ${AS.servicesState().state}`);
     sim.settings.autoSkipBoarding = was;
 
     // Getting off: a flight, then parked on a gate (the airport's own dev action does the taxiing).
-    await sim.startMode('free', { aircraft: 'a320', airborne: true, taxi: false });
+    await sim.startMode('free', { aircraft: 'a320', airborne: true, taxi: false, passengers: true });
     run(4);
     const park = EXT.extDevActions().find((x) => /park at a free stand/i.test(x.label));
     if (park) {
@@ -467,10 +467,10 @@ async function run_(sim, r, say) {
     // controls line and puts it back, and an airliner after it once read "Enter bail out · Enter
     // bail out · Enter evacuate" (eject/ui.js setKeyLine keeps only its own now).
     for (const id of ['skylark', 'harrier']) {
-      await sim.startMode('free', { aircraft: id, airborne: true, taxi: false });
+      await sim.startMode('free', { aircraft: id, airborne: true, taxi: false, passengers: true });
       run(0.5);
     }
-    await sim.startMode('free', { aircraft: 'a320', airborne: true, taxi: false });
+    await sim.startMode('free', { aircraft: 'a320', airborne: true, taxi: false, passengers: true });
     run(4);
     const keyLine = ((document.querySelector('.hud-keyhint') || {}).textContent || '').replace(/\s+/g, ' ');
     r.ok('evac: the controls line says Enter evacuate, once, and nothing about bailing out (after a light aeroplane and the helicopter)',
@@ -550,6 +550,24 @@ async function run_(sim, r, say) {
     const m2 = sim.rig.cycle();
     r.ok('cabin view: not in the Skylark (no passengers), and no meter', m2 === 'tower' && !P.state.active && !(P.panel() || {}).shown, m2);
     sim.rig.setMode('chase');
+  }
+
+  /* ================================================================ */
+  say('passengers: none in Free Flight (owner, 2026-11-08)');
+  {
+    await sim.startMode('free', { aircraft: 'a320', startAt: 'gate', taxi: false });
+    run(2);
+    r.ok('free flight: an A320 at a gate has no passengers, no boarding, no meter', !P.state.active && P.state.booked === 0 && P.state.stage !== 'boarding' && !(P.panel() || {}).shown, `active ${P.state.active}, stage ${P.state.stage}`);
+    await sim.startMode('free', { aircraft: 'a320', airborne: true, taxi: false });
+    run(0.6);
+    r.ok('free flight: no faces in the windows', !P.faces || !P.faces.root.visible, `${P.faces ? P.faces.shown : 0}`);
+    sim.tap('Enter');
+    run(0.1);
+    r.ok('free flight: the evacuation knows the cabin is empty', E.phase === 'idle' && /cabin is empty/i.test(lastToast()) && !/passengers first/i.test(lastToast()), lastToast());
+    sim.tap('Enter');
+    run(8);
+    r.ok('free flight: and you still get out', E.phase === 'out' || (E.lastEvac && E.lastEvac.pax === 0 && E.lastEvac.crew === 0), `phase ${E.phase}`);
+    noDebrief();
   }
 
   /* ================================================================ */
