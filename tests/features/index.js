@@ -114,6 +114,7 @@ import { check as hudReadouts } from './hud-readouts.browser.js';
 import { check as realTime } from './real-time.browser.js';
 import { check as give } from './give.browser.js';
 import { check as tp } from './tp.browser.js';
+import { check as time } from './time.browser.js';
 import { check as farGlitch } from './far-glitch.browser.js';
 import { check as voidCity } from './void-city.browser.js';
 import { check as storyCh02 } from './story-ch02.browser.js';
@@ -302,6 +303,7 @@ export const CHECKS = [
   { id: 'real-time', check: realTime },
   { id: 'give', check: give },
   { id: 'tp', check: tp },
+  { id: 'time', check: time },
   // The instruments giving out deep in the Farlands (World Map, Low): honest, wandering, wrong, frozen, honest again. Leaves the map on Kestrel.
   { id: 'far-glitch', check: farGlitch },
   // Nullspire: the hidden city 100 km out in the void, its field, the dev teleport, the endless void (puts the map back).

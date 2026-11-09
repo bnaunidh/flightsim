@@ -1,5 +1,5 @@
 // The dev console's commands (src/features/dev-console.js), run without a page.
-import { runLine, findPlane, suggest, findTarget, tpTargets } from '../../src/features/dev-console.js';
+import { runLine, findPlane, suggest, findTarget, tpTargets, parseHour, clockText } from '../../src/features/dev-console.js';
 import { AIRCRAFT } from '../../src/aircraft/types.js';
 
 let pass = 0, fail = 0;
@@ -96,5 +96,47 @@ r = runLine(fly, '/tp 2km -1.5km');
 ok('/tp a spot in the air moves you, km read', r.ok && moves.length === 1 && moves[0][0] === 2000 && moves[0][2] === -1500 && moves[0][1] >= 900, `${r.text} ${JSON.stringify(moves)}`);
 r = runLine(tsim, '/help');
 ok('help lists /tp and Tab', /\/tp <airport/.test(r.text) && /Tab/.test(r.text));
+
+// /time (owner, 2026-11-08: "add a /time command to set the time of day")
+const { Weather } = await import('../../src/world/weather.js');
+const W = new Weather();
+let skyN = 0;
+const wsim = { prog: { unlocked: [], credits: 0 }, weather: W, sky: { update: () => skyN++ }, state: 'flying', aircraft: {} };
+ok('parseHour: 14, 14:30, 2pm, 7:30am, 12am, 0730', parseHour('14') === 14 && parseHour('14:30') === 14.5 && parseHour('2pm') === 14 && parseHour('7:30am') === 7.5 && parseHour('12am') === 0 && parseHour('12pm') === 12 && parseHour('0730') === 7.5);
+ok('parseHour: nonsense is null', parseHour('25') === null && parseHour('13pm') === null && parseHour('10:75') === null && parseHour('soon') === null);
+ok('clockText', clockText(14.5) === '14:30' && clockText(0) === '00:00' && clockText(23.999) === '00:00');
+r = runLine(wsim, '/time 14:30');
+ok('/time 14:30 sets the hour in flight, the sky at once', r.ok && Math.abs(W.hour - 14.5) < 1e-9 && W.preset === null && skyN === 1 && /14:30/.test(r.text) && !/next flight/.test(r.text), r.text);
+r = runLine(wsim, '/time set sunset');
+ok('/time set sunset: the map\'s preset', r.ok && W.preset === 'sunset' && Math.abs(W.hour - W.presetHour('sunset')) < 1e-9, r.text);
+r = runLine(wsim, '/time noon');
+ok('/time noon is the day preset', r.ok && W.preset === 'day', r.text);
+r = runLine(wsim, '/time morning');
+ok('/time morning is 07:30', r.ok && W.hour === 7.5, r.text);
+r = runLine(wsim, '/time add 2');
+ok('/time add 2', r.ok && W.hour === 9.5, r.text);
+r = runLine(wsim, '/time add -10');
+ok('/time add wraps round midnight', r.ok && Math.abs(W.hour - 23.5) < 1e-9, r.text);
+r = runLine(wsim, '/time midnight');
+ok('/time midnight', r.ok && W.hour === 0);
+r = runLine(wsim, '/time real');
+const now = new Date(); const nowH = now.getHours() + now.getMinutes() / 60;
+ok('/time real is your clock', r.ok && Math.abs(W.hour - nowH) < 0.05, `${W.hour} v ${nowH}`);
+r = runLine(wsim, '/time');
+ok('/time alone says what time it is', r.ok && /^It is \d\d:\d\d/.test(r.text), r.text);
+r = runLine(wsim, '/time teatime');
+ok('/time nonsense fails politely', !r.ok && /not a time/.test(r.text), r.text);
+r = runLine({ ...wsim, state: 'menu' }, '/time night');
+ok('/time from the menu: for the next flight', r.ok && /next flight/.test(r.text) && W.preset === 'night', r.text);
+sg = suggest(wsim, '/ti');
+ok('suggest: /ti → /time', sg[0] && sg[0].line === '/time ', sg.map((x) => x.line).join(','));
+sg = suggest(wsim, '/time su');
+ok('suggest: /time su → sunset, sunrise', sg.length >= 2 && sg.every((x) => /^\/time su/.test(x.line)), sg.map((x) => x.line).join(','));
+sg = suggest(wsim, '/time set ni');
+ok('suggest: keeps "set"', sg[0] && sg[0].line === '/time set night', sg.map((x) => x.line).join(','));
+sg = suggest(wsim, '/time dusk');
+ok('suggest: a word finds its preset', sg[0] && sg[0].fill === 'sunset', sg.map((x) => x.line).join(','));
+r = runLine(tsim, '/help');
+ok('help lists /time', /\/time <word/.test(r.text));
 console.log(`dev-console: ${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

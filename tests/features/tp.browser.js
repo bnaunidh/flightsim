@@ -16,7 +16,12 @@ export async function check(sim, r, say) {
   r.ok('tp: opening shows the commands to pick from', !sugg.hidden && /\/tp|tp/.test(sugg.textContent) && /Tab to fill in/.test(sugg.textContent), sugg.textContent.slice(0, 120));
   type('/t');
   key('Tab');
-  r.ok('tp: /t then Tab is /tp, and the places show', input.value === '/tp ' && /Nullspire/.test(sugg.textContent) && /World Map airport/.test(sugg.textContent), `"${input.value}" ${sugg.textContent.slice(0, 80)}`);
+  const t1 = input.value;
+  key('Tab');
+  r.ok('tp: /t then Tab is /tp, Tab again /time (both start with t)', t1 === '/tp ' && input.value === '/time ', `${t1} → ${input.value}`);
+  type('/tp');
+  key('Tab');
+  r.ok('tp: /tp then Tab, and the places show', input.value === '/tp ' && /Nullspire/.test(sugg.textContent) && /World Map airport/.test(sugg.textContent), `"${input.value}" ${sugg.textContent.slice(0, 80)}`);
   type('/tp hav');
   r.ok('tp: "/tp hav" shows "Tab to fill in Haven International"', /Tab to fill in Haven International/.test(sugg.textContent) && sugg.querySelector('.dcon-s.is-on b').textContent === 'XHVN', sugg.textContent.slice(0, 120));
   key('Tab');

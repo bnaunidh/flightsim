@@ -34,6 +34,18 @@
  *                            a pin's airborne start; anywhere else, in the air,
  *                            you are moved there as you fly
  *
+ * And /time (the owner, the same day: "add a /time command to set the time of
+ * day"):
+ *
+ *   /time <word>             morning, day (noon), sunset, night, midnight, real
+ *                            (your clock); "/time set day" works too
+ *   /time <hour>             14, 14:30, 2pm, 7:30am
+ *   /time add <hours>        on from now (-1 goes back)
+ *   /time                    what time it is
+ *
+ * In a flight the sky changes at once; Free Flight's Time of day is set to
+ * match, so the next flight starts there too.
+ *
  * As you type, the box under the line suggests what fits: commands, planes,
  * airports, maps. Tab fills in the first (Tab again for the next, Shift+Tab
  * back); on a touch screen, tap one.
@@ -111,6 +123,8 @@ const HELP = [
   '/tp <airport | map>      Free Flight there (e.g. /tp XHVN, /tp kestrel)',
   '/tp nullspire            the hidden city',
   '/tp <x> <z>              a spot, metres or km (e.g. /tp 12km -4km)',
+  '/time <word | hour>      morning, day, sunset, night, real, 14:30, 2pm',
+  '/time add <hours>        move the clock on (or back, -1)',
   'Tab                      fill in a suggestion',
   '/clear                   clear the console',
 ].join('\n');
@@ -288,12 +302,119 @@ function tp(sim, words) {
 }
 
 /* ------------------------------------------------------------------ */
+/* /time                                                                */
+/* ------------------------------------------------------------------ */
+
+/** The words /time knows: a weather preset (setTime), a fixed hour, or the device's clock. */
+export const TIME_WORDS = [
+  { fill: 'morning', name: 'Morning', what: '07:30, a low sun in the east', hour: 7.5, menu: 'morning' },
+  { fill: 'day', name: 'Midday', what: 'the map’s own midday sun', preset: 'day', keys: ['day', 'noon', 'midday'] },
+  { fill: 'sunset', name: 'Sunset', what: 'the map’s own sunset', preset: 'sunset', keys: ['sunset', 'dusk', 'evening'] },
+  { fill: 'night', name: 'Night', what: 'dark, the moon up', preset: 'night' },
+  { fill: 'midnight', name: 'Midnight', what: '00:00', hour: 0 },
+  { fill: 'sunrise', name: 'Sunrise', what: '06:00', hour: 6, keys: ['sunrise', 'dawn'] },
+  { fill: 'real', name: 'Real time', what: 'your clock', real: true, keys: ['real', 'now', 'irl'] },
+];
+
+/** "14", "14:30", "2pm", "7:30am", "0730" → 0..24, or null. */
+export function parseHour(w) {
+  const t = String(w || '').trim().toLowerCase().replace(/\s+/g, '');
+  let m = /^(\d{1,2})(?::(\d{2}))?(am|pm)?$/.exec(t) || /^(\d{2})(\d{2})$/.exec(t);
+  if (!m) return null;
+  let h = Number(m[1]);
+  const min = m[2] ? Number(m[2]) : 0;
+  const ap = m[3];
+  if (min > 59) return null;
+  if (ap) {
+    if (h < 1 || h > 12) return null;
+    h = (h % 12) + (ap === 'pm' ? 12 : 0);
+  }
+  if (h > 24 || (h === 24 && min > 0)) return null;
+  return (h + min / 60) % 24;
+}
+
+export function clockText(h) {
+  const x = ((h % 24) + 24) % 24;
+  let hh = Math.floor(x);
+  let mm = Math.round((x - hh) * 60);
+  if (mm === 60) { hh = (hh + 1) % 24; mm = 0; }
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+/** Free Flight's Time of day, set to match (the select and the hour slider, through their own handlers). */
+function syncFreeTime(sim, how) {
+  const s = sim && sim.menus && sim.menus.screens && sim.menus.screens.free;
+  if (!s || typeof s.querySelector !== 'function') return;
+  const sel = s.querySelector('[data-time]');
+  const slider = s.querySelector('[data-hour]');
+  if (!sel || !slider) return;
+  if (how.menu && [...sel.options].some((o) => o.value === how.menu)) {
+    sel.value = how.menu;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  } else {
+    if (sel.value === 'real' || sel.value === 'morning') sel.value = 'day';
+    slider.value = String(Math.round(how.hour * 4) / 4);
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+
+function setTimeOfDay(sim, how) {
+  const W = sim && sim.weather;
+  const flying = !!(W && sim.aircraft && (sim.state === 'flying' || sim.state === 'paused'));
+  if (W) {
+    if (how.preset && typeof W.setTime === 'function') W.setTime(how.preset);
+    else if (typeof W.setHour === 'function') W.setHour(how.hour);
+    if (sim.sky && typeof sim.sky.update === 'function') {
+      try {
+        sim.sky.update(W);
+      } catch (e) {
+        /* the next frame paints it */
+      }
+    }
+  }
+  const menu = how.real ? { menu: 'real', hour: how.hour } : how.preset ? { menu: how.preset, hour: W ? W.hour : 12 } : how.menu ? { menu: how.menu, hour: how.hour } : { hour: how.hour };
+  syncFreeTime(sim, menu);
+  const at = W && Number.isFinite(W.hour) ? clockText(W.hour) : how.hour != null ? clockText(how.hour) : '';
+  return { ok: true, text: `Time set to ${how.label}${at && how.label !== at ? ` (${at})` : ''}.${flying ? '' : ' Your next flight starts then.'}` };
+}
+
+function time(sim, words) {
+  const W = sim && sim.weather;
+  let w = words.map((x) => String(x).toLowerCase());
+  if (w[0] === 'set') w = w.slice(1);
+  if (!w.length) {
+    if (!W || !Number.isFinite(W.hour)) return { ok: false, text: 'Set it: /time morning, day, sunset, night, real, or an hour like 14:30.' };
+    return { ok: true, text: `It is ${clockText(W.hour)}${W.preset ? ` (${W.preset})` : ''}. /time <word | hour> to change it.` };
+  }
+  if (w[0] === 'add') {
+    const n = Number(String(w[1] || '').replace(/h$/, ''));
+    if (!Number.isFinite(n) || Math.abs(n) > 48) return { ok: false, text: 'How many hours? /time add 2 (or -1 to go back).' };
+    const from = W && Number.isFinite(W.hour) ? W.hour : 12;
+    const h = (((from + n) % 24) + 24) % 24;
+    return setTimeOfDay(sim, { hour: h, label: clockText(h) });
+  }
+  const q = squash(w.join(''));
+  const word = TIME_WORDS.find((t) => (t.keys || [t.fill]).some((k) => squash(k) === q));
+  if (word) {
+    if (word.real) {
+      const d = new Date();
+      return setTimeOfDay(sim, { hour: d.getHours() + d.getMinutes() / 60, real: true, label: 'your clock' });
+    }
+    return setTimeOfDay(sim, { preset: word.preset, hour: word.hour, menu: word.menu, label: word.name.toLowerCase() });
+  }
+  const h = parseHour(w.join(''));
+  if (h == null) return { ok: false, text: `"${w.join(' ')}" is not a time. Try /time sunset, /time 14:30 or /time 2pm.` };
+  return setTimeOfDay(sim, { hour: h, label: clockText(h) });
+}
+
+/* ------------------------------------------------------------------ */
 /* Suggestions, and Tab                                                 */
 /* ------------------------------------------------------------------ */
 
 const COMMANDS = [
   { cmd: 'give', what: 'give yourself planes' },
   { cmd: 'tp', what: 'teleport: an airport, a map, a spot' },
+  { cmd: 'time', what: 'set the time of day' },
   { cmd: 'runcmd', what: 'credits, unlocks, the aircraft list' },
   { cmd: 'help', what: 'every command' },
   { cmd: 'clear', what: 'clear the console' },
@@ -354,6 +475,13 @@ export function suggest(sim, line, max = 8) {
     const items = [{ fill: 'all', name: 'Every plane', what: 'secret ones too', keys: ['all'] }, ...givable().map((a) => ({ fill: a.id, name: a.name, what: a.secret ? 'secret plane' : 'plane', keys: [a.id, a.name] }))];
     return ranked(q, items, max).map((it) => ({ ...it, line: `/give ${pre}${it.fill}` }));
   }
+  if (cmd === 'time') {
+    const pre = /^set\s+/i.test(rest) ? 'set ' : '';
+    const r2 = rest.slice(pre.length);
+    if (/^-?\d/.test(r2.trim()) || /^add\b/i.test(r2)) return [];
+    const items = [...TIME_WORDS, { fill: 'add', name: 'add <hours>', what: 'move the clock on', keys: ['add'] }];
+    return ranked(squash(r2), items, max).map((t) => ({ fill: t.fill, name: t.name, what: t.what, line: `/time ${pre}${t.fill}${t.fill === 'add' ? ' ' : ''}` }));
+  }
   if (cmd === 'tp') {
     if (/^-?\d/.test(rest.trim())) return [];
     return ranked(squash(rest), tpTargets(sim), max).map((t) => ({ fill: t.fill, name: t.name, what: t.what, line: `/tp ${t.fill}` }));
@@ -402,6 +530,7 @@ export function runLine(sim, line) {
   const p = prog(sim);
   if (cmd === 'give') return give(sim, p, words.slice(1));
   if (cmd === 'tp') return tp(sim, words.slice(1));
+  if (cmd === 'time') return time(sim, words.slice(1));
   const num = (s) => {
     const n = Math.round(Number(String(s || '').replace(/[,_]/g, '')));
     return Number.isFinite(n) && n >= 0 && n <= Prog.CODE_AMOUNT_MAX ? n : null;
@@ -527,7 +656,7 @@ registerExtension({
   devActions: [
     {
       label: 'Console',
-      hint: '/give, /tp (Tab fills in), credits and more',
+      hint: '/give, /tp, /time (Tab fills in), credits and more',
       run(sim) { open(sim); },
     },
   ],
