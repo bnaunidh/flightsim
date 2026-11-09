@@ -2264,6 +2264,10 @@ let OTHER_RUNWAYS = [];
 export function setOtherRunways(list) {
   OTHER_RUNWAYS = Array.isArray(list) ? list.map((r) => ({ cx: r.cx, cz: r.cz, length: r.length, halfWidth: r.halfWidth })) : [];
 }
+/** The list itself, for the look-ahead. */
+export function otherRunwayList() {
+  return OTHER_RUNWAYS;
+}
 /** The other field's runway under this point, or null. */
 export function otherRunwayAt(x, z, margin = 0) {
   for (let i = 0; i < OTHER_RUNWAYS.length; i++) {

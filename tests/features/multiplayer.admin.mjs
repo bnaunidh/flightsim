@@ -42,9 +42,16 @@ import { fileURLToPath } from 'node:url';
 
 /** The test key, from .claude/devtools — in this checkout, or the main one a worktree is inside. */
 export function findTestKey() {
+  // A copy of the tree served from elsewhere (the gate's scratch site) can be pointed at the keys: ISLAND_ADMIN_KEYS=<dir>.
+  const dirs = process.env.ISLAND_ADMIN_KEYS ? [join(process.env.ISLAND_ADMIN_KEYS, 'test-admin.json')] : [];
   let dir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
   for (let i = 0; i < 8; i++) {
-    const f = join(dir, '.claude', 'devtools', 'admin-keys', 'test-admin.json');
+    dirs.push(join(dir, '.claude', 'devtools', 'admin-keys', 'test-admin.json'));
+    const up = dirname(dir);
+    if (up === dir) break;
+    dir = up;
+  }
+  for (const f of dirs) {
     if (existsSync(f)) {
       try {
         const k = JSON.parse(readFileSync(f, 'utf8'));
@@ -53,9 +60,6 @@ export function findTestKey() {
         return null;
       }
     }
-    const up = dirname(dir);
-    if (up === dir) break;
-    dir = up;
   }
   return null;
 }
@@ -90,7 +94,7 @@ export async function adminTests(ctx) {
 
   if (!TK) {
     ok('the admin crypto checks need .claude/devtools/admin-keys/test-admin.json — not found, skipped', true);
-    return;
+    return { skipped: true };
   }
 
   /* ---- the scheme -------------------------------------------------------- */

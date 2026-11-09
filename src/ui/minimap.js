@@ -204,6 +204,8 @@ import {
   harbourMouth,
   padWeight,
   platformAt,
+  otherRunwayAt,
+  otherRunwayList,
 } from '../world/terrain.js';
 import { PADS, nearestPad } from '../world/pads.js';
 import { MINIMAP_HZ } from './frame-budget.js';
@@ -339,6 +341,8 @@ export function onLandingGround(x, z) {
   // where padWeight is between 0 and 1): that is earthworks, not a hill.
   if (padWeight(x, z) > 0) return true;
   if (platformAt(x, z)) return true;
+  // Another field's runway (terrain.js setOtherRunways).
+  if (otherRunwayAt(x, z, 60)) return true;
   for (let i = 0; i < PADS.length; i++) {
     const p = PADS[i].pos;
     const dx = p.x - x;
@@ -407,8 +411,17 @@ export function runwayProximity(x, z, headingDeg) {
   }
   // Other fields' runways (09/27), where a map has more than one airfield:
   // the World Map preview's outstations (features/world-preview.js).
-  for (let i = 0; i < EXTRA_RUNWAYS.length; i++) {
-    const R = EXTRA_RUNWAYS[i];
+  best = Math.min(best, proximityAlongX(EXTRA_RUNWAYS, x, z, headingDeg));
+  // And the runways the wheels know of but the chart does not (Nullspire's).
+  best = Math.min(best, proximityAlongX(otherRunwayList(), x, z, headingDeg));
+  return best;
+}
+
+/** runwayProximity over runways along X. */
+function proximityAlongX(list, x, z, headingDeg) {
+  let best = 1;
+  for (let i = 0; i < list.length; i++) {
+    const R = list[i];
     const lat = z - R.cz;
     if (Math.abs(lat) > 450) continue;
     const beyond = Math.abs(x - R.cx) - R.length / 2;

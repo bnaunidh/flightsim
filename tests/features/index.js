@@ -89,6 +89,7 @@ import { check as landingZone } from './landing-zone.browser.js';
 import { check as hudStack } from './hud-stack.browser.js';
 import { check as hudWins } from './hud-wins.browser.js';
 import { check as touchCoverage } from './touch-coverage.browser.js';
+import { check as ipadDemo } from './ipad-demo.browser.js';
 import { check as ditching } from './ditching.browser.js';
 import { check as waterCrash } from './water-crash.browser.js';
 import { check as floatplane } from './floatplane.browser.js';
@@ -252,6 +253,8 @@ export const CHECKS = [
   // destination ribbon and beacon, the conditions chip and Full / Clean / Photo.
   { id: 'hud-wins', check: hudWins },
   { id: 'touch-coverage', check: touchCoverage },
+  // After touch-coverage: the iPad class demo — Safari's zoom into small inputs, the long-press callout, 44 px targets, the weak-device answer for an iPad.
+  { id: 'ipad-demo', check: ipadDemo },
   { id: 'ditching', check: ditching },
   { id: 'water-crash', check: waterCrash },
   { id: 'floatplane', check: floatplane },

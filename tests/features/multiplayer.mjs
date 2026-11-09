@@ -1730,10 +1730,12 @@ if (!REAL || LAN) {
   const L = await import('../../src/features/multiplayer/lobby.js');
   const { adminTests } = await import('./multiplayer.admin.mjs');
   const before = sent.length;
-  await adminTests({ P, S, L, Signaling, Net, backend, WS: LogWS, RTC, ok, sleep, until, REAL, server });
-  // An admin's proof and requests go player to host, never through the signaling server.
-  ok('no admin proof, request or username went through the signaling server', sent.length > before && !sent.slice(before).some((m) => /"prove"|"chal"|"adm"|Swift Falcon|Sunny Puffin/.test(m)),
-    `${sent.length - before} messages`);
+  const adm = await adminTests({ P, S, L, Signaling, Net, backend, WS: LogWS, RTC, ok, sleep, until, REAL, server });
+  // An admin's proof and requests go player to host, never through the signaling server. Without the test key
+  // (a copy of the tree with no .claude/, and no ISLAND_ADMIN_KEYS) the lobby half did not run, so there is nothing to sift.
+  const admSkipped = !!(adm && adm.skipped);
+  ok('no admin proof, request or username went through the signaling server', (admSkipped || sent.length > before) && !sent.slice(before).some((m) => /"prove"|"chal"|"adm"|Swift Falcon|Sunny Puffin/.test(m)),
+    `${sent.length - before} messages${admSkipped ? ' (the admin lobby checks were skipped: no test key)' : ''}`);
 }
 
 /* ---- the owner's hour (multiplayer.owner.mjs) --------------------------- */
@@ -1741,10 +1743,11 @@ if (!REAL || LAN) {
   const L = await import('../../src/features/multiplayer/lobby.js');
   const { ownerTests } = await import('./multiplayer.owner.mjs');
   const before = sent.length;
-  await ownerTests({ P, S, L, Signaling, Net, backend, WS: LogWS, RTC, ok, sleep, until, REAL, server });
-  // The owner's pass and proof go player to host, never through the signaling server.
-  ok('no owner pass, proof or request went through the signaling server', sent.length > before && !sent.slice(before).some((m) => /"prove"|"chal"|"adm"|"unown"|Swift Falcon/.test(m)),
-    `${sent.length - before} messages`);
+  const own = await ownerTests({ P, S, L, Signaling, Net, backend, WS: LogWS, RTC, ok, sleep, until, REAL, server });
+  // The owner's pass and proof go player to host, never through the signaling server (skipped without the test key, as above).
+  const ownSkipped = !!(own && own.skipped);
+  ok('no owner pass, proof or request went through the signaling server', (ownSkipped || sent.length > before) && !sent.slice(before).some((m) => /"prove"|"chal"|"adm"|"unown"|Swift Falcon/.test(m)),
+    `${sent.length - before} messages${ownSkipped ? ' (the owner lobby checks were skipped: no test key)' : ''}`);
 }
 
 const failed = results.filter((r) => !r.pass);

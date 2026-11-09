@@ -28,7 +28,8 @@
  *              justify tracked out to the first row's width
  *              (a run) t the letters; f another face; ink an index into inks;
  *              gap the space before it, in caps; hollow an outline this thick
- *              (em) instead of a fill; shape + w a drawn glyph (see SHAPES), w caps wide
+ *              (em) instead of a fill; shape + w a drawn glyph (see SHAPES), w caps wide,
+ *              h its height in caps (1: the row's cap; shorter beside lowercase letters)
  *   kern     { 'AV': -0.05 } extra kerning for a pair, em
  *   skew     forward lean (tan of the angle)
  *   bold     fine strokes fattened, em
@@ -42,8 +43,6 @@
  */
 import { canvasFont, fontsLoaded } from '../../render/airline-fonts.js';
 import { markCanvas } from './livery-art.js';
-
-const JOST7 = { family: 'Jost', weight: 700, style: 'normal' };
 
 /** A five-pointed star. */
 function starPath(g, cx, cy, R, r = R * 0.42) {
@@ -138,6 +137,7 @@ export const WORDMARKS = {
     ],
     kern: { Ab: -0.012, ss: 0.004 },
     bold: 0.006,
+    skew: 0.1,
   },
   continental: {
     reads: 'UNUNITED',
@@ -160,11 +160,11 @@ export const WORDMARKS = {
     },
   },
   bleuciel: {
-    reads: 'bleu ciel',
-    idea: 'one lowercase word in two colours, round as the sky',
+    reads: 'BLEU CIEL',
+    idea: 'two words of bold geometric capitals, the second in the fin\'s red, the only colour on the body',
     inks: ['#12306b', '#c8142a'],
-    rows: [{ runs: [{ t: 'bleu' }, { t: 'ciel', ink: 1, gap: 0.05 }], track: 0.012 }],
-    kern: { ci: 0.01, el: 0.012 },
+    rows: [{ runs: [{ t: 'BLEU' }, { t: 'CIEL', ink: 1, gap: 0.24 }], track: 0.03 }],
+    kern: { EU: -0.006, CI: -0.004 },
   },
   bharat: {
     reads: 'Bharat Air',
@@ -201,8 +201,8 @@ export const WORDMARKS = {
   },
   krd: {
     reads: 'KANAL ROYAL DUTCH',
-    idea: 'one heavy word, the other two stacked at its side',
-    inks: ['#072c54'],
+    idea: 'one heavy white word on the blue crown, the other two stacked at its side',
+    inks: ['#f4f7fa'],
     rows: [{ runs: [{ t: 'KANAL' }], track: 0.018 }],
     kern: { KA: -0.03, AN: -0.008, NA: -0.008, AL: -0.018 },
     room: { r: 3.16 },
@@ -219,7 +219,7 @@ export const WORDMARKS = {
     reads: 'RIVERDELTA',
     idea: 'heavy capitals on a red river that forks at its mouth',
     inks: ['#003a70', '#c8102e'],
-    rows: [{ runs: [{ t: 'RIVER' }, { t: 'DELTA', gap: 0.03 }], track: 0.035 }],
+    rows: [{ runs: [{ t: 'RIVER' }, { t: 'DELTA', gap: 0.03 }], track: 0.02 }],
     kern: { RI: -0.004, IV: -0.012, VE: -0.024, ER: -0.004, RD: -0.01, LT: -0.05, TA: -0.05 },
     room: { b: 0.44 },
     deco(d) {
@@ -245,21 +245,11 @@ export const WORDMARKS = {
   },
   desertpearl: {
     reads: 'Desert Pearl',
-    idea: 'a fine serif, a gold pearl for the space, AIRLINES between hairlines',
-    inks: ['#7d5a10', '#c8a24a'],
-    rows: [
-      { runs: [{ t: 'Desert' }, { shape: 'pearl', w: 0.24, ink: 1, gap: 0.12 }, { t: 'Pearl', gap: 0.12 }], track: 0.006 },
-      { runs: [{ t: 'AIRLINES', f: JOST7 }], cap: 0.28, track: 0.56, align: 'centre', gap: 0.3 },
-    ],
+    idea: 'a fine serif in one tall gold line, a brighter gold pearl for the space',
+    inks: ['#9a7420', '#c8a24a'],
+    rows: [{ runs: [{ t: 'Desert' }, { shape: 'pearl', w: 0.24, ink: 1, gap: 0.12 }, { t: 'Pearl', gap: 0.12 }], track: 0.006 }],
     bold: 0.012,
     kern: { rt: -0.006, Pe: -0.03 },
-    deco(d) {
-      const r = d.row(1);
-      const y = r.base - r.cap * 0.5;
-      const th = d.cap * 0.036;
-      d.rule(0, r.x0 - d.cap * 0.22, y, th, d.ink(1));
-      d.rule(r.x1 + d.cap * 0.22, d.W, y, th, d.ink(1));
-    },
   },
   sandline: {
     reads: 'SANDLINE',
@@ -359,12 +349,12 @@ export const WORDMARKS = {
     },
   },
   bosphorus: {
-    reads: 'Bosphorus',
-    idea: 'a tight round geometric, a red rule from the crane',
+    reads: 'BOSPHORUS',
+    idea: 'even geometric capitals, spaced, a red rule from the crane',
     inks: ['#1b1f5c', '#c70a0c'],
     mark: { h: 1.6, gap: 0.5, inks: ['#c70a0c'] },
-    rows: [{ runs: [{ t: 'Bosphorus' }], track: -0.006 }],
-    kern: { Bo: -0.012, ph: 0.006, us: -0.004 },
+    rows: [{ runs: [{ t: 'BOSPHORUS' }], track: 0.07 }],
+    kern: { BO: -0.008, PH: -0.006, RU: -0.004 },
     deco(d) {
       d.rule(-d.markGap * 0.5 - d.cap * 0.022, -d.markGap * 0.5 + d.cap * 0.022, 0, 0, d.ink(1), -d.cap * 1.1, d.cap * 0.34);
     },
@@ -389,22 +379,18 @@ export const WORDMARKS = {
   },
   risingcrane: {
     reads: 'RISING CRANE',
-    idea: 'two words stacked to one width beside the sun-crane',
+    idea: 'one line of firm black capitals beside the sun-crane, the red kept for the mark',
     inks: ['#1a1a1a', '#b60005'],
-    mark: { h: 1.94, gap: 0.36, inks: ['#b60005', '#ffd166'] },
-    rows: [
-      { runs: [{ t: 'RISING' }], cap: 0.86, track: 0.1 },
-      { runs: [{ t: 'CRANE', ink: 1 }], cap: 0.86, track: 0.1, justify: true, gap: 0.24 },
-    ],
+    mark: { h: 1.3, gap: 0.36, inks: ['#b60005', '#ffd166'] },
+    rows: [{ runs: [{ t: 'RISING' }, { t: 'CRANE', gap: 0.36 }], track: 0.06 }],
     kern: { RA: -0.02, AN: -0.01 },
   },
   spit: {
-    reads: 'SPIT AIR',
-    idea: 'loud black capitals, the I an exclamation mark, leaning in',
+    reads: 'spit air',
+    idea: 'loud black lowercase, the i an exclamation mark standing up to the ascenders',
     inks: ['#1a1a1a'],
-    rows: [{ runs: [{ t: 'SP' }, { shape: 'bang', w: 0.3, gap: 0.08 }, { t: 'T', gap: 0.08 }, { t: 'AIR', gap: 0.34 }], track: -0.008 }],
-    skew: 0.13,
-    kern: { AI: -0.02 },
+    rows: [{ runs: [{ t: 'sp' }, { shape: 'bang', w: 0.26, h: 0.98, gap: 0.07 }, { t: 't', gap: 0.07 }, { t: 'air', gap: 0.3 }], track: -0.01 }],
+    kern: { ai: -0.01 },
   },
   oversea: {
     reads: 'OverSea',
@@ -508,7 +494,7 @@ export function layoutWordmark(spec, font) {
       const f = run.f || font;
       x += (run.gap || 0);
       if (run.shape) {
-        list.push({ shape: run.shape, x, w: run.w * rowCap, ink: run.ink || 0, cap: rowCap, track: 0 });
+        list.push({ shape: run.shape, x, w: run.w * rowCap, ink: run.ink || 0, cap: (run.h || 1) * rowCap, track: 0 });
         x += run.w * rowCap;
         return;
       }

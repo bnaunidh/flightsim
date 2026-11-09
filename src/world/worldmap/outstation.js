@@ -238,7 +238,8 @@ export function buildField(a, quality = 'medium') {
   // The windsock on its mast, south of the runway.
   b.cyl(0.12, 0.16, 7, plan.sock.x, 0, plan.sock.z, 0xd8d8d8, 6);
   b.cyl(0.55, 0.35, 3.6, plan.sock.x + 1.8, 6.6, plan.sock.z, C.sock, 8, { rz: Math.PI / 2 });
-  const mesh = b.mesh(vcMaterial({ roughness: 0.82 }), { cast: quality !== 'low', receive: true, name: 'field' });
+  // The pavement's depth layer, as at the home airport: no shimmer against the tile from high up.
+  const mesh = b.mesh(layer(vcMaterial({ roughness: 0.82 }), 'pavement'), { cast: quality !== 'low', receive: true, name: 'field' });
   // Vertex colours, no texture: the UVs are dead weight (a sixth of the field's memory).
   if (mesh) {
     mesh.geometry.deleteAttribute('uv');

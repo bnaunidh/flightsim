@@ -15,7 +15,7 @@
  * Not in the first load: the World Map's fields only.
  */
 import * as THREE from '../../vendor/three.module.js';
-import { Batch, trs } from '../airport-kit.js';
+import { Batch, trs, layer } from '../airport-kit.js';
 import { glassMaterial } from '../../render/surfaces.js';
 import { glazingTextures, TILE_W_M, TILE_H_M } from '../terminal-look.js';
 
@@ -53,6 +53,7 @@ export class Detail {
     if (!unitMat) {
       unitMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
       unitMat.userData.shared = true;
+      layer(unitMat, 'runway'); // over the field batch's own pavement pull
     }
     const m = new THREE.InstancedMesh(UNIT, unitMat, n);
     m.name = 'field-detail';
@@ -79,6 +80,7 @@ function fieldGlassMaterial() {
   glassMat.emissive = new THREE.Color(0xffffff);
   glassMat.emissiveIntensity = 0;
   glassMat.userData.shared = true;
+  layer(glassMat, 'runway');
   return glassMat;
 }
 

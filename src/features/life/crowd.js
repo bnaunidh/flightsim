@@ -740,11 +740,14 @@ export class ApronLife {
     let x = w.bx + w.ox + w.lx;
     let z = w.bz + w.oz + w.lz;
     if (!S.clear(w, x, z)) {
-      // Never into something solid: give up the side-step, then the push.
-      w.lx *= 0.5;
-      w.lz *= 0.5;
-      x = w.bx + w.ox + w.lx;
-      z = w.bz + w.oz + w.lz;
+      // Never into something solid: back the side-step off as little as clears it, then the push.
+      for (const f of [0.9, 0.75, 0.5]) {
+        w.lx *= f;
+        w.lz *= f;
+        x = w.bx + w.ox + w.lx;
+        z = w.bz + w.oz + w.lz;
+        if (S.clear(w, x, z)) break;
+      }
       if (!S.clear(w, x, z)) {
         w.lx = 0;
         w.lz = 0;

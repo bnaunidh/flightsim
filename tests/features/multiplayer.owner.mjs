@@ -45,9 +45,16 @@ import { fileURLToPath } from 'node:url';
 
 /** A key file from .claude/devtools/admin-keys — in this checkout, or the main one a worktree is inside. */
 export function findKeyFile(name) {
+  // A copy of the tree served from elsewhere (the gate's scratch site) can be pointed at the keys: ISLAND_ADMIN_KEYS=<dir>.
+  const files = process.env.ISLAND_ADMIN_KEYS ? [join(process.env.ISLAND_ADMIN_KEYS, name)] : [];
   let dir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
   for (let i = 0; i < 8; i++) {
-    const f = join(dir, '.claude', 'devtools', 'admin-keys', name);
+    files.push(join(dir, '.claude', 'devtools', 'admin-keys', name));
+    const up = dirname(dir);
+    if (up === dir) break;
+    dir = up;
+  }
+  for (const f of files) {
     if (existsSync(f)) {
       try {
         return JSON.parse(readFileSync(f, 'utf8'));
@@ -55,9 +62,6 @@ export function findKeyFile(name) {
         return null;
       }
     }
-    const up = dirname(dir);
-    if (up === dir) break;
-    dir = up;
   }
   return null;
 }
@@ -118,7 +122,7 @@ export async function ownerTests(ctx) {
 
     if (!TK) {
       ok('the owner crypto checks need .claude/devtools/admin-keys/test-owner.json — not found, skipped', true);
-      return;
+      return { skipped: true };
     }
 
     /* ---- the scheme -------------------------------------------------------- */

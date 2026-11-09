@@ -525,7 +525,8 @@ const B787 = specOf(G787, {
   bellyY: -1.75,
   laps: [2.1, -1.2],
   cheat: { y0: -0.2, y1: 0.18, z0: -26.0, z1: 27.5 },
-  reg: { z: 27.0, y: 1.6, w: 3.0 },
+  // (y: above the real 787's tailplane root)
+  reg: { z: 27.0, y: 2.35, w: 2.7 },
   title: { z: -12.0, y: 1.45, w: 18, root: -8.3, crown: 2.93 },
   windows: [{ y: 0.5, z0: -19.5, z1: 23.3, pitch: 0.61, w: 0.3, ht: 0.5, skip: [[-9.95, -8.85], [8.05, 9.15]] }],
   doors: [
@@ -598,7 +599,8 @@ const A350 = specOf(G350, {
   bellyY: -1.8,
   laps: [2.15, -1.25],
   cheat: { y0: -0.22, y1: 0.18, z0: -29.0, z1: 28.6 },
-  reg: { z: 28.2, y: 1.6, w: 3.1 },
+  // (y: above the real A350's tailplane root)
+  reg: { z: 28.2, y: 2.05, w: 3.1 },
   title: { z: -12.5, y: 1.5, w: 19, root: -11.3, crown: 2.75 },
   // The mask: the frame round the glazing is broad and black, the A350's face.
   frame: 0.2,
@@ -669,7 +671,8 @@ const B777 = specOf(G777, {
   bellyY: -1.85,
   laps: [2.2, -1.3],
   cheat: { y0: -0.2, y1: 0.2, z0: -31.0, z1: 33.4 },
-  reg: { z: 32.8, y: 1.6, w: 3.3 },
+  // (y: above the real 777's tailplane root)
+  reg: { z: 32.8, y: 2.66, w: 2.6 },
   title: { z: -14.0, y: 1.5, w: 20, root: -9.9, stop: -5.8 },
   windows: [{ y: 0.48, z0: -24.8, z1: 28.3, pitch: 0.533, w: 0.27, ht: 0.42, skip: [[-13.35, -12.25], [4.05, 5.15], [17.05, 18.15]] }],
   doors: [

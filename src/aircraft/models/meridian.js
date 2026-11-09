@@ -92,7 +92,8 @@ export function buildMeridian(b) {
   });
   b.addHull(h);
   // The scheme's number and, when it has one, its title: decals on the fuselage, once a side (not painted into the shared skin).
-  fuselageLettering(b, h, { regAt: { z: 4.75, y: 0.22, w: 1.1 }, titleAt: { z: 1.2, y: 0.46, w: 2.8 } });
+  // (lift: the cone narrows fast; less sank the last letter)
+  fuselageLettering(b, h, { regAt: { z: 4.75, y: 0.22, w: 1.1, lift: 0.05 }, titleAt: { z: 1.2, y: 0.46, w: 2.8 } });
 
   /*
    * The flight deck: two windscreens either side of a centre post, then

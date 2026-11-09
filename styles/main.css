@@ -1264,6 +1264,12 @@ button.primary.big { width: 100%; padding: 14px; font-size: 16px; margin-top: 10
 }
 /* Every settings picker is a finger's height (44 px), on a laptop too. */
 .field select { min-height: 44px; }
+/* 16px on a touch device: iPad Safari zooms the whole page into any select or
+   text box smaller than that the moment it is tapped, and never zooms back. */
+html.is-touch-device .field select { font-size: 16px; }
+html.is-touch-device .screen-hangar .hs-search input, html.is-touch-device .screen-hangar .hs-sort select { font-size: 16px; }
+/* A checkbox row is a finger's height on a touch device (22 px rows were being missed). */
+html.is-touch-device .check { min-height: 44px; align-items: center; }
 .field input[type='range'] { padding: 0; height: 26px; accent-color: var(--accent); }
 .check { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; font-size: 13.5px; }
 .check input { margin-top: 2px; accent-color: var(--accent); width: 17px; height: 17px; }
@@ -1538,6 +1544,9 @@ html.reduce-motion .hud-rstack, html.reduce-motion .hud-rstack > * { transition:
   touch-action: none;
 }
 .hud.is-touch .touch-layer { display: block; }
+/* iPad Safari: a thumb held on the stick, a pad or a readout must never start
+   selecting text or raise the copy/look-up callout over the game. */
+.hud.is-touch, .touch-layer { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 
 .touch-stick {
   position: absolute;
@@ -2669,7 +2678,7 @@ html.is-touch-device .minimap { top: 8px; left: 8px; right: auto; bottom: auto; 
   /* Four labels plus a balance do not fit across a 360 px phone, so the
      switcher drops to icons only. The icons were drawn to be readable at this
      size, which is why the rotor bar runs the full width of the helicopter. */
-  .switcher button:where(.switch-btn) { padding: 9px 11px; }
+  .switcher button:where(.switch-btn) { padding: 9px 11px; min-width: 44px; justify-content: center; }
   .switcher button:where(.switch-btn) span { display: none; }
   .menu-bar { padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top)); }
   .credit-pill { padding: 8px 11px; font-size: 13px; }
@@ -4164,6 +4173,7 @@ body:has(.hud.is-touch.is-rotorhover) .race-solobar { left: 8px; right: auto; to
 .cat-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--cat); flex: none; }
 .cat-chip.is-on .cat-dot { background: #0b1220; opacity: 0.5; }
 
+html.is-touch-device .cat-search { height: 44px; }
 .cat-search {
   display: flex;
   align-items: center;

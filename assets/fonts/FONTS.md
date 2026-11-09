@@ -48,20 +48,20 @@ the FEEL of the lettering of the airline it is styled after — never that airli
 | Abyssinia Air | Kanit 600 | warm, slightly flared bold sans |
 | Ununited | Montserrat 700 | clean, wide geometric |
 | Liberty Air | Titillium Web 700 | squared, technical sans |
-| Bleu Ciel | Jost 600 | Parisian geometric |
+| Bleu Ciel | Jost 700 | Parisian geometric, two words of capitals |
 | Bharat Air | Lora 600 italic | flowing italic of the old titling |
 | Night Freight | Oswald 600 | condensed cargo |
-| Kanal Royal Dutch | League Spartan 700 | bold round geometric |
+| Kanal Royal Dutch | League Spartan 700 | bold round geometric, white on the blue crown |
 | Riverdelta | Montserrat 800 | heavy, square-shouldered |
-| Desert Pearl | Playfair Display 700 | high-contrast elegant serif |
+| Desert Pearl | Playfair Display 700 | high-contrast elegant serif, one tall gold line |
 | Sandline | Cinzel 700 | classical capitals |
 | Dash Freight | Exo 2 700 italic | fast heavy italic |
 | FlexShip | Montserrat 700 | round geometric, open and spaced |
 | Parcel Brown | Barlow Condensed 700 | sturdy condensed |
 | Royal Isles | Jost 700 | crisp upright geometric |
-| Bosphorus | League Spartan 700 | bold even geometric |
+| Bosphorus | League Spartan 700 | bold even geometric capitals, spaced |
 | Pearl Gulf | Playfair Display 700 | refined serif, wide spacing |
-| Rising Crane | Kanit 600 | firm sans |
-| Spit Air | Archivo Black | black, loud |
+| Rising Crane | Kanit 600 | firm sans, one black line |
+| Spit Air | Archivo Black | black, loud, lowercase, painted tall |
 | OverSea | Exo 2 700 italic | sporty, forward-leaning |
 | Air Force One | Playfair Display 700 | Caslon-style serif |

@@ -65,6 +65,11 @@ export async function check(sim, r, say) {
     const t = [...document.querySelectorAll('.hud-toast')];
     return t.length ? t[t.length - 1].textContent : '';
   };
+  /** The newest toast on screen that says `re` — a coach line landing in the same instant does not hide it. */
+  const toastSaying = (re) => {
+    const t = [...document.querySelectorAll('.hud-toast')].map((e) => e.textContent).reverse();
+    return t.find((x) => re.test(x)) || lastToast();
+  };
   const openGroup = (g) => {
     const d = S().querySelector(`details[data-keygroup="${g}"]`);
     if (d && !d.open) d.querySelector('summary').click();
@@ -154,12 +159,12 @@ export async function check(sim, r, say) {
     r.ok('keybinds: the key line says Backspace ejects and Enter self-destructs', /Backspace eject/.test(line) && /Enter self-destruct/.test(line), line);
     tap('Enter');
     run(0.1);
-    const t1 = lastToast();
+    const t1 = toastSaying(/Safety cover open/);
     r.ok('keybinds: the old eject key does not eject — Enter is self-destruct now (its cover opens, naming Enter)', E.phase === 'idle' && /Safety cover open/.test(t1) && /press Enter again/.test(t1), `${E.phase}: ${t1}`);
     run(4.5); // the cover closes by itself
     tap('Backspace');
     run(0.1);
-    const t2 = lastToast();
+    const t2 = toastSaying(/Press Backspace again to EJECT/);
     r.ok('keybinds: the new key arms the seat — "Press Backspace again to EJECT!"', E.phase === 'idle' && /Press Backspace again to EJECT/.test(t2), t2);
     tap('Backspace');
     run(0.2);

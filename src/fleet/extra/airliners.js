@@ -577,7 +577,7 @@ function dress(ctx, S) {
     });
     const fit = (spec) => {
       const L = layoutWordmark(spec, font);
-      const slot = titleSlot(room, L.aspect, L.h, S.doors, !!(art && art.freighter));
+      const slot = titleSlot(room, L.aspect, L.h, S.doors, !!(art && art.freighter), style && style.titleCap);
       return slot && { ...slot, spec, cap: slot.h / L.h, font };
     };
     // One line, unless the room is short and two rows would stand half as tall again.
@@ -668,7 +668,43 @@ function dress(ctx, S) {
     // A registration is lettered in a plain medium-weight sans, spaced out,
     // as the real ones are stencilled.
     const regScale = art ? 1.2 : 1;
-    const tex2 = aircraftDecalTexture(reg, { color: (art && art.regInk) || (light ? '#1f272e' : '#e9eef2'), background: 'transparent', width: 512, height: 128, weight: 600, spacing: 0.08, font: REG_FONT, cap: 0.66 });
+    // Its ink: the scheme's own (`regInk`), unless the paint where the number really lands on THIS type
+    // (sampled off the livery canvas) would swallow it: Kanal's white number, meant for its blue crown,
+    // fell on the white tail cone of the 787 and vanished. Then the darker or the lighter stencil ink, whichever reads.
+    const regInk = (() => {
+      const want = (art && art.regInk) || (light ? '#1f272e' : '#e9eef2');
+      const img = tex && tex.image;
+      const g2 = img && typeof img.getContext === 'function' ? img.getContext('2d') : null;
+      if (!g2 || typeof g2.getImageData !== 'function') return want;
+      const [W, H] = [img.width, img.height];
+      const hh = S.reg.w * regScale * 0.25;
+      // THREE.Color already holds linear values (hex and setRGB(…, SRGBColorSpace) both convert), so no second sRGB curve.
+      const lumOf = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+      const ratio = (hex, behind) => { const l = lumOf(new THREE.Color(hex)); return (Math.max(l, behind) + 0.05) / (Math.min(l, behind) + 0.05); };
+      // Each sample votes (a paint line may run right under the letters: an average across it reads as neither side).
+      const inks = [want, '#1f272e', '#e9eef2'];
+      const votes = [0, 0, 0];
+      let n = 0;
+      try {
+        for (const dz of [-0.4, -0.1, 0.2, 0.5]) {
+          for (const dy of [-0.25, 0, 0.25]) {
+            const z = S.reg.z + dz * S.reg.w * regScale;
+            const y = S.reg.y + dy * hh;
+            const px = g2.getImageData(Math.max(0, Math.min(W - 1, Math.round(along(z) * W))), Math.max(0, Math.min(H - 1, Math.round((1 - vMain(z, y)) * H))), 1, 1).data;
+            if (px[3] < 128) continue; // (no canvas to read, in node: the scheme's own ink)
+            const behind = lumOf(new THREE.Color().setRGB(px[0] / 255, px[1] / 255, px[2] / 255, THREE.SRGBColorSpace));
+            inks.forEach((hex, i) => { if (ratio(hex, behind) >= 3) votes[i]++; });
+            n++;
+          }
+        }
+      } catch (e) {
+        return want;
+      }
+      // The scheme's own ink unless a stock stencil ink reads on more of the samples.
+      if (!n || votes[0] >= Math.max(votes[1], votes[2])) return want;
+      return votes[1] >= votes[2] ? inks[1] : inks[2];
+    })();
+    const tex2 = aircraftDecalTexture(reg, { color: regInk, background: 'transparent', width: 512, height: 128, weight: 600, spacing: 0.08, font: REG_FONT, cap: 0.66 });
     registration(ctx, h, { text: reg, z: S.reg.z, y: S.reg.y, width: S.reg.w * regScale, texture: tex2, like: M.skin }, pieceOf(S.reg.z));
     decals.push({ texture: tex2, z: S.reg.z, y: S.reg.y, w: S.reg.w * regScale, h: S.reg.w * regScale * 0.25 });
   }
@@ -1031,7 +1067,8 @@ const B747 = {
   laps: [2.25, -1.3],
   radomeZ: -29.7,
   cheat: { y0: -0.26, y1: 0.12, z0: -26.6, z1: 33.0 },
-  reg: { z: 29.0, y: 1.55, w: 3.4 },
+  // (y: high on the cone, above the real 747's tailplane root, which hid most of the number)
+  reg: { z: 29.0, y: 2.5, w: 3.4 },
   // The titling band: on the main tube between the window row and the
   // hump's flank (the tube is wider than the hump up to about y 2.4 there),
   // from behind door 1 to the wing root.
@@ -1166,7 +1203,7 @@ const A380 = {
   laps: [3.4, 1.0, -2.2],
   radomeZ: -32.45,
   cheat: { y0: -1.5, y1: -1.08, z0: -29.6, z1: 33.5 },
-  reg: { z: 29.5, y: 1.9, w: 3.6 },
+  reg: { z: 29.5, y: 2.1, w: 3.6 },
   // The titling band: between the two window rows, from behind door 1.
   title: { z: -11.6, y: 1.0, w: 24, root: -16 },
   frame: 0.08,

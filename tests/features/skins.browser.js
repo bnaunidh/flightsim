@@ -331,16 +331,24 @@ export async function check(sim, r, say = () => {}) {
         try {
           for (const id of ['f22', 'vanguard', 'nightjar', 'courier', 'a320']) {
             sc.show(id, { livery: 'house', locked: false, dir: 0 });
+            // The studio and each aeroplane compile their shaders in the background and are drawn only once that is done
+            // (WARM_MAX_MS at the most): until then every frame is the cleared stage, and a grab sees no aeroplane at all.
+            for (let i = 0; i < 80 && !(sc.sceneWarmed && sc.current && sc.current.warmed !== false); i++) {
+              sc.render(sim.renderer, 0.1);
+              await new Promise((res) => setTimeout(res, 50));
+            }
             for (let i = 0; i < 14; i++) sc.render(sim.renderer, 0.1);
             sc.angle = Math.PI / 2;
             sc.spinVel = 0;
             sc.render(sim.renderer, 1e-6);
             const a = grab();
+            // Out of the scene for the second grab: render() sets each holder's visible from its warmed flag every
+            // frame, so hiding it by that flag would be undone before the frame was drawn (five "0 px" checks).
             const holder = sc.current.holder;
-            holder.visible = false;
+            sc.root.remove(holder);
             sc.render(sim.renderer, 1e-6);
             const b = grab();
-            holder.visible = true;
+            sc.root.add(holder);
             // The aeroplane's own pixels: the ones that change when it is taken away.
             const lums = [];
             for (let i = 0; i < a.length; i += 4) {

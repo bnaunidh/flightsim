@@ -1047,5 +1047,7 @@ function letterPaintName(el, name) {
   // in the element, clear, for a screen reader.)
   el.classList.toggle('has-wordmark', !!url);
   el.style.color = url ? 'transparent' : '';
-  el.style.background = url ? `center / contain no-repeat url(${url}) content-box, ${l.base}` : '';
+  // The plate is the colour the name really sits on: the crown, for a crown scheme (Kanal's white name on its blue).
+  const plate = l && l.style && l.style.layout === 'crown' && l.style.crown ? l.style.crown : l && l.base;
+  el.style.background = url ? `center / contain no-repeat url(${url}) content-box, ${plate}` : '';
 }

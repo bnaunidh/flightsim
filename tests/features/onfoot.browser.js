@@ -207,13 +207,21 @@ export async function check(sim, r, say = () => {}) {
   run(2.5);
   r.ok('onfoot: the engine starts again', ac.engineOn);
   sim.key('ShiftLeft', true);
+  /*
+   * A climb-out a child could fly: nose up from 56 kt, eased off below 60 kt
+   * so it never stalls, and up again above 66 kt. The first cut let go once
+   * and never pulled again, so on a session whose wind had it a few metres
+   * lower at that moment it sank back on, ran off the runway end at 100 kt
+   * and failed here with the game blameless.
+   */
   let rotated = false;
   const flew = run(70, () => {
-    if (!rotated && ac.ias * 1.94384 > 56) {
+    const kt = ac.ias * 1.94384;
+    if (!rotated && kt > 56) {
       rotated = true;
       sim.key('KeyS', true);
-    }
-    if (rotated && ac.agl > 8 && ac.ias * 1.94384 < 60) sim.key('KeyS', false);
+    } else if (rotated && ac.agl > 8 && kt < 60) sim.key('KeyS', false);
+    else if (rotated && kt > 66) sim.key('KeyS', true);
     return ac.agl > 20 && !ac.onGround;
   });
   allUp();

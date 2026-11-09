@@ -758,6 +758,7 @@ const CSS = `
   pointer-events: none; font-family: inherit;
 }
 .wx-lamps { display: flex; gap: 6px; }
+html.is-touch-device .wx-lamp { min-height: 44px; }
 .wx-lamp {
   flex: 1; min-height: 40px; padding: 5px 4px; border-radius: 10px;
   pointer-events: auto; cursor: pointer; -webkit-appearance: none; appearance: none;

@@ -78,8 +78,8 @@ const CSS = `
 .dcon-log .err { color: #ff9a8a; }
 .dcon-log .cmd { color: #58c6ff; }
 .dcon-row { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid rgba(160, 195, 240, 0.15); }
-.dcon-row input { flex: 1; min-height: 40px; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(160, 195, 240, 0.25); background: rgba(255,255,255,0.05);
-  color: #fff; font: inherit; }
+.dcon-row input { flex: 1; min-height: 44px; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(160, 195, 240, 0.25); background: rgba(255,255,255,0.05);
+  color: #fff; font: inherit; font-size: 16px; /* under 16px iPad Safari zooms the page into the box */ }
 .dcon-sugg { padding: 6px 12px 0; border-top: 1px solid rgba(160, 195, 240, 0.15); display: flex; flex-direction: column; gap: 2px; max-height: 34vh; overflow-y: auto; }
 .dcon-sugg[hidden] { display: none; }
 .dcon-tip { display: flex; justify-content: space-between; gap: 8px; color: #9fb2cc; font: 600 11px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif; padding: 2px 0 4px; }

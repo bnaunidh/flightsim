@@ -96,9 +96,11 @@ export function titleRoom(q) {
  * the height in caps) into the room. Returns { z, y, w, h, zone } in metres: z
  * and y the middle of the patch.
  */
-export function titleSlot(room, aspect, high, doors, freighter = false) {
+export function titleSlot(room, aspect, high, doors, freighter = false, capShare = null) {
   const { zA, end, floor, roof, bodyD, L, margin } = room;
-  const wanted = (freighter ? FREIGHT_CAP : CAP_SHARE) * bodyD * high;
+  // (`capShare`: an airline whose real name is painted taller than most, a share of the body's height)
+  const share = Number.isFinite(capShare) && capShare > 0 ? Math.min(capShare, 0.5) : freighter ? FREIGHT_CAP : CAP_SHARE;
+  const wanted = share * bodyD * high;
   const main = freighter ? [] : doors.filter((d) => d.deck !== 'upper').sort((x, y) => x.z - y.z);
   // Every foot the band allows, from the first door or from behind any door after it: the higher the foot,
   // the further back the wing lets the name run, and the less height it has. The biggest name wins.

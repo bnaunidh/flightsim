@@ -109,23 +109,22 @@ export const LIVERIES = [
   {
     id: 'bleuciel',
     name: 'Bleu Ciel',
-    blurb: 'Navy, white and a red fin',
+    blurb: 'White, navy capitals, a pale fin with a navy-and-red sweep',
     base: '#f7f8fa',
     accent: '#12306b',
     cheatline: 'rgba(200,20,40,0.9)',
-    tail: 0x12306b,
+    tail: 0xd3dbe4,
     reg: 'F-BCLX',
     titling: 'BLEU CIEL',
     emblem: 'wave',
     // The A380 and Concorde: flown once, remembered for it.
     fleet: ['a320', 'a321', 'a350', 'b777', 'b787', 'a380', 'concorde', 'meridian'],
-    // Eurowhite: a clean white body with no cheatline, the name in navy, a
-    // navy fin with the sweep (white over red), grey belly, white cowls.
+    // Eurowhite: white body, navy capitals, a pale fin with the sweep.
     style: {
       layout: 'eurowhite',
       belly: '#b4bcc4',
       cowl: null,
-      emblemInks: ['#f7f8fa', '#c8142a'],
+      emblemInks: ['#12306b', '#c8142a'],
       // Air France-style: a Parisian geometric, Futura's cousin.
       titleFont: { family: 'Jost', weight: 700, style: 'normal' },
       titleInk: '#12306b',
@@ -201,23 +200,24 @@ export const LIVERIES = [
     callsign: 'Kanal',
     blurb: 'Sky blue over white, a tulip on the tail',
     base: '#f4f7fa',
-    accent: '#39b4e6',
+    accent: '#0a86c6',
     cheatline: 'rgba(10,59,110,0.9)',
-    tail: 0x39b4e6,
+    tail: 0x0a86c6,
     reg: 'PH-KRD',
     titling: 'KANAL ROYAL DUTCH',
     emblem: 'tulip',
     fleet: ['b737', 'b777', 'b787', 'a321', 'meridian'],
+    // A deeper crown blue, so the white name on it holds 3.5:1.
     style: {
       layout: 'crown',
-      crown: '#39b4e6',
+      crown: '#0a86c6',
       pinstripe: '#0a3b6e',
       belly: '#d6dde4',
-      cowl: '#39b4e6',
+      cowl: '#0a86c6',
       emblemInks: ['#f4f7fa', '#0a3b6e'],
       // KLM-style: a bold, round geometric.
       titleFont: { family: 'League Spartan', weight: 700, style: 'normal' },
-      titleInk: '#072c54',
+      titleInk: '#f4f7fa',
     },
   },
   {
@@ -264,9 +264,10 @@ export const LIVERIES = [
       belly: '#c9ced3',
       cowl: null,
       emblemInks: ['#c8a24a', '#f8f8f6'],
-      // Emirates-style: a high-contrast, elegant serif.
+      // Emirates-style: a high-contrast, elegant serif, one line, painted taller than most.
       titleFont: { family: 'Playfair Display', weight: 700, style: 'normal' },
-      titleInk: '#7d5a10',
+      titleInk: '#9a7420',
+      titleCap: 0.34,
     },
   },
   {
@@ -409,7 +410,7 @@ export const LIVERIES = [
     cheatline: 'rgba(199,10,12,0.9)',
     tail: 0xc70a0c,
     reg: 'TC-BOS',
-    titling: 'Bosphorus',
+    titling: 'BOSPHORUS',
     emblem: 'crane',
     fleet: ['a320', 'a321', 'a350', 'b737', 'b777', 'b787', 'meridian'],
     style: {
@@ -417,7 +418,7 @@ export const LIVERIES = [
       belly: '#b9bfc5',
       cowl: null,
       emblemInks: ['#f7f8fa'],
-      // Turkish-style: a bold, even geometric.
+      // Turkish-style: bold, even geometric capitals, spaced out.
       titleFont: { family: 'League Spartan', weight: 700, style: 'normal' },
       titleInk: '#1b1f5c',
     },
@@ -475,24 +476,26 @@ export const LIVERIES = [
     id: 'spit',
     name: 'Spit Air',
     callsign: 'Spit',
-    blurb: 'Bright yellow all over, black lettering',
+    blurb: 'Bright yellow all over, black lowercase lettering, black engines',
     base: '#ffe73a',
     accent: '#1a1a1a',
     cheatline: 'rgba(26,26,26,0.9)',
     tail: 0xffe73a,
     reg: 'N52SP',
-    titling: 'SPIT AIR',
+    titling: 'spit air',
     emblem: 'bang',
     fleet: ['a320', 'a321', 'meridian'],
+    // Yellow to the belly, black cowls, a tall lowercase name.
     style: {
       layout: 'billboard',
-      belly: '#c9b31f',
-      cowl: '#ffe73a',
-      cowlBand: '#1a1a1a',
+      belly: '#e3c92a',
+      cowl: '#1a1a1a',
+      cowlBand: '#ffe73a',
       emblemInks: ['#1a1a1a'],
       // Spirit-style: black, loud, low-cost.
       titleFont: { family: 'Archivo Black', weight: 400, style: 'normal' },
       titleInk: '#1a1a1a',
+      titleCap: 0.38,
     },
   },
   {
@@ -615,6 +618,8 @@ export function radioBrand(livery) {
  *     emblemInks  the mark's colours (one, or one per part of it); the body
  *                 colour if not set
  *     titleInk    the name's main colour
+ *     titleCap    the tallest the name may be, in body heights (0.28 if not set; a
+ *                 low-cost or a Gulf carrier paints its name much taller than most)
  *     titleFont   the name's typeface, { family, weight, style }: one of the
  *                 bundled OFL faces (render/airline-fonts.js), the nearest free
  *                 cousin of the lettering the real airline wears — never its own.
@@ -643,21 +648,9 @@ export function wearsAirlinePaint(type) {
 }
 
 /**
- * The registration each type wears in its own house colours.
- *
- * Every aeroplane in the fleet used to be stamped N172SK — the Skylark's tail
- * number — because the house scheme hard-coded it and the airframe texture
- * fell back to the same string. The airliner, the fighter, the flying wing and
- * the helicopter all flew around wearing the trainer's registration, which is
- * the aviation equivalent of every car on the road having one number plate.
- *
- * A registration is paint, so it lives in the paint module beside the airline
- * ones the schemes already carry, and it is keyed by type id rather than by
- * position so adding an aeroplane cannot silently shift them all along. The
- * numbers match what the radio already calls each aeroplane — the Meridian
- * answers to "Meridian four two zero" and now carries 420 on its side. The
- * three types that fly for a service get a tail code instead of a civil
- * N-number, because that is what a military aeroplane has.
+ * The registration each type wears in its own house colours, keyed by type
+ * id, matching what the radio calls it (the Meridian is "four two zero").
+ * Service types get a tail code, not an N-number.
  *
  * A type that is not listed gets no registration at all, and nothing is
  * painted: a blank fuselage is honest, and someone else's number is not.

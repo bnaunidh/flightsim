@@ -32,7 +32,7 @@ const CSS = /* css */ `
 .fun-smoke small { font-size: 10px; opacity: 0.7; font-weight: 700; }
 .fun-smoke[aria-pressed="true"] { background: rgba(255, 200, 70, 0.28); border-color: rgba(255, 210, 90, 0.8); }
 .fun-smoke[hidden] { display: none; }
-.is-touch-fun .fun-smoke { min-height: 40px; min-width: 44px; justify-content: center; }
+.is-touch-fun .fun-smoke { min-height: 44px; min-width: 44px; justify-content: center; }
 .is-touch-fun .fun-smoke small { display: none; }
 
 /* The smoke tank: a thin, quiet bar. It only ever fills or empties smoothly; nothing about it blinks. */

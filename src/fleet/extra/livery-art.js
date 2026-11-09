@@ -412,12 +412,10 @@ export const LIVERY_ART = {
     fin: { ops: [['rib', '#c8102e', [[-0.4, 0.0, 0.03], [0.3, 0.05, 0.05], [0.8, 0.13, 0.06], [1.3, 0.26, 0.06]]]], mark: { k: 0.9 } },
     winglet: '#143478',
   },
-  // Clean white; the tail's two ribbons come down off the fin and die away on the aft body.
+  // Clean white, nothing on the body but the name and a low grey belly: the sweep stays on the fin.
   bleuciel: {
     body: [
-      ['under', '#b4bcc4', LINE.low],
-      ['rib', '#12306b', [[0.62, 0.22, 0], [0.76, 0.42, 0.02], [0.88, 0.72, 0.05], [0.95, 1.08, 0.07]]],
-      ['rib', '#c8142a', [[0.68, 0.22, 0], [0.8, 0.4, 0.014], [0.92, 0.68, 0.034], [1, 1, 0.05]]],
+      ['under', '#b4bcc4', [[0, 0.08], [0.2, 0.16], [0.6, 0.18], [0.85, 0.22], [1, 0.4]]],
     ],
     fin: {},
     regInk: '#12306b',
@@ -450,19 +448,17 @@ export const LIVERY_ART = {
   krd: {
     body: [
       ['under', '#d6dde4', LINE.low],
-      ['over', '#39b4e6', LINE.crown],
+      ['over', '#0a86c6', LINE.crown],
       ['rib', '#0a3b6e', edge(LINE.crown, 0, 0.009)],
     ],
     fin: { ops: [['poly', '#0a3b6e', [[-0.5, 0.0], [1.3, 0.0], [1.3, 0.035], [-0.5, 0.035]]]] },
     regInk: '#f4f7fa',
-    winglet: '#39b4e6',
+    winglet: '#0a86c6',
   },
-  // White over navy; the fin's red pours down over a wedge of the aft body.
+  // White over a navy belly that lifts to the tail; the red stays on the fin, as the real one keeps it.
   riverdelta: {
     body: [
       ['under', '#003a70', LINE.lift],
-      ['rib', '#c8102e', [[0.56, 0.45, 0], [0.7, 0.475, 0.014], [0.8, 0.54, 0.03], [0.9, 0.68, 0.05], [1, 0.86, 0.07]]],
-      ['over', '#c8102e', [[0.74, 1.1], [0.8, 0.9], [0.9, 0.8], [1.02, 0.78]]],
     ],
     fin: {},
     regInk: '#1f272e',
@@ -553,22 +549,19 @@ export const LIVERY_ART = {
     regInk: '#d4d6d9',
     winglet: '#5c0632',
   },
-  // White, and a red arc of a rising sun struck across the aft body.
+  // Plain white with a grey belly, every bit of red kept for the fin: the real one's whole idea.
   risingcrane: {
     body: [
       ['under', '#bfc3c7', LINE.low],
-      ['rib', '#b60005', [[0.62, 1.06, 0.022], [0.68, 0.72, 0.03], [0.76, 0.42, 0.036], [0.86, 0.18, 0.03], [0.96, 0.02, 0.02]]],
-      ['rib', '#ffd166', [[0.655, 1.06, 0.006], [0.715, 0.72, 0.008], [0.795, 0.42, 0.009], [0.89, 0.2, 0.007], [0.98, 0.05, 0.005]]],
     ],
     fin: {},
     regInk: '#1a1a1a',
     winglet: '#b60005',
   },
-  // Yellow all over, a black band low on the body, and the name as loud as it will go.
+  // Yellow all over, a shade deeper under the belly line, and the name as loud as it will go.
   spit: {
     body: [
-      ['under', '#1a1a1a', LINE.low],
-      ['under', '#ffe73a', [[0, 0.03], [0.3, 0.1], [0.7, 0.13], [1, 0.3]]],
+      ['under', '#e3c92a', LINE.flat],
     ],
     fin: {},
     winglet: '#1a1a1a',

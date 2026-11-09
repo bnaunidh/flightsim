@@ -2520,8 +2520,13 @@ function pose(sim, c, dt) {
     // not lift it off its glideslope.)
     const need = S.y >= floor ? floor : Math.max(S.y, Math.min(g + 1, S.y + Math.hypot(c.off.x, c.off.z)));
     if (c.y < need) {
-      c.off.y += need - c.y;
-      c.y = need;
+      // Up high the 40 m is climbed back, not popped; ground + 20 m is kept at once.
+      let up = need - c.y;
+      if (S.y >= floor && dt > 0) up = Math.min(up, Math.max(Math.max(20, 0.4 * c.v) * dt, g + 20 - c.y));
+      if (up > 0) {
+        c.off.y += up;
+        c.y += up;
+      }
     }
   }
   c.onGround = ground;

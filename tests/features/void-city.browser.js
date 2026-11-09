@@ -89,6 +89,32 @@ export async function check(sim, r, say) {
     const ap = C.approachStart();
     r.ok('void-city: the teleport puts you on a long final for 09', went === true && sim.state === 'flying' && Math.hypot(ac.pos.x - ap.x, ac.pos.z - ap.z) < 300 && Math.abs(ac.pos.y - ap.y) < 100 && Math.abs(((ac.readouts().heading - 90 + 540) % 360) - 180) < 5,
       `${sim.state}, at ${((ac.pos.x - CITY.x) / 1000).toFixed(1)} km / ${((ac.pos.z - CITY.z) / 1000).toFixed(1)} km from the centre, y ${ac.pos.y.toFixed(0)}, hdg ${ac.readouts().heading.toFixed(0)}, ${Math.round(performance.now() - t0)} ms`);
+    /*
+     * The terrain warning on the approach. A 2.9-degree final for 09 — a jet's
+     * 80 m/s as much as a Skylark's 35 — is quiet all the way in: the slab's
+     * rim is 2.3 km short of the threshold and the runway past it is landing
+     * ground, not a hill. Flying level at the slab's face still warns.
+     */
+    {
+      const M = await import('../../src/ui/minimap.js');
+      const thr = { x: CITY_FIELD.x - CITY_FIELD.length / 2, z: CITY_FIELD.z };
+      const aim = thr.x + 300;
+      const slope = Math.tan((2.9 * Math.PI) / 180);
+      const noisy = [];
+      for (const sp of [35, 80]) {
+        for (let d = 12000; d >= 300; d -= 50) {
+          const x = aim - d;
+          const sec = M.aircraftTerrainAhead({ x, y: SLAB_Y + d * slope, z: thr.z, vx: sp, vy: -sp * slope, vz: 0, headingDeg: 90 }, false, null);
+          if (sec !== Infinity) noisy.push(`${sp} m/s ${d} m out: ${sec} s`);
+        }
+      }
+      const rimX = CITY.x - 4046;
+      const face = M.aircraftTerrainAhead({ x: rimX - 1500, y: SLAB_Y - 100, z: CITY_FIELD.z, vx: 60, vy: 0, vz: 0, headingDeg: 90 }, false, null);
+      const faceOff = M.aircraftTerrainAhead({ x: rimX - 1500, y: SLAB_Y - 300, z: CITY.z - 500, vx: 60, vy: 0, vz: 0, headingDeg: 90 }, false, null);
+      r.ok('void-city: a normal final for 09 is quiet for TERRAIN at 35 and 80 m/s, and flying at the slab’s face is not',
+        noisy.length === 0 && Number.isFinite(face) && face <= 30 && Number.isFinite(faceOff) && faceOff <= 30,
+        `${noisy.length} noisy samples ${noisy.slice(0, 3).join('; ')}; at the face ${face} s on the centreline, ${faceOff} s off it`);
+    }
     const far = wp.farlands();
     if (!far) {
       r.ok('void-city: the ring is there', false);
