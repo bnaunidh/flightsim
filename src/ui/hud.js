@@ -525,7 +525,7 @@ export class Hud {
     this.btnHudTray.classList.add('hud-btn-mode', 'hud-btn-mode-tray');
 
     this.btnGuide = mkBtn('route', 'guide', 'Guidance lines on/off (N)', tray, 'Guidance');
-    this.btnAuto = mkBtn('autopilot', 'autopilot', 'Autopilot on/off (P)', tray, 'Autopilot');
+    this.btnAuto = mkBtn('autopilot', 'autopilot', `Autopilot on/off (${keyName('autopilot')})`, tray, 'Autopilot');
     this.btnCinematic = mkBtn('cinematic', 'hideUi', 'Hide the interface for a clean shot (U)', tray, 'Hide interface');
     this.btnAirport = mkBtn('tower', 'airport', 'Return to the airfield', tray, 'Back to the airfield');
     this.btnRestart = mkBtn('restart', 'restart', 'Start this flight again', tray, 'Restart');
@@ -941,7 +941,8 @@ export class Hud {
    */
   words(text) {
     const t = rekey(text);
-    return this.wrap && this.wrap.classList.contains('is-touch') ? touchWording(t) : t;
+    const c = this.wrap && this.wrap.classList;
+    return c && c.contains('is-touch') ? (c.contains('is-rotor') ? touchWording(t).replace(/the throttle/g, 'the lever') : touchWording(t)) : t;
   }
 
   setTaxi(text, hint) {

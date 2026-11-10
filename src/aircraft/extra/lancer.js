@@ -425,7 +425,7 @@ export function TYPES(base) {
       cockpit: 'jet',
       blurb:
         'A bomber whose wings move. Forward for take-off and landing, back for speed: they sweep on their ' +
-        'own, or press ] and [ to do it yourself. Push the throttle to the stop to light four afterburners, ' +
+        'own (or sweep them yourself with ] and [ on a keyboard). Push the throttle to the stop to light four afterburners, ' +
         'dash low over the sea — and climb high to fly faster than sound.',
       stats: { speed: 5, handling: 3, ease: 2 },
       livery: '#5d646b',

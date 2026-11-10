@@ -848,8 +848,8 @@ export const AIRCRAFT = [
     name: 'Skyhook H-3',
     class: 'Helicopter',
     blurb:
-      'Hovers, which nothing else here does. Shift and Ctrl are the collective lever, W A S D the cyclic and Q and E '
-      + 'the pedals; the stability assist holds the height and levels her out when you let go (F switches it off). It will not '
+      'Hovers, which nothing else here does. The lever is the collective and the stick the cyclic (Shift, Ctrl and W A S D '
+      + 'on a keyboard, Q and E the pedals); the stability assist holds the height and levels her out when you let go. It will not '
       + 'glide — that and the hover are the same fact.',
     stats: { speed: 2, handling: 3, ease: 2 },
     livery: '#2f4a63',

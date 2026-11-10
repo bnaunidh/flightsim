@@ -168,7 +168,7 @@ export function TYPES(base) {
       category: 'military',
       military: true,
       blurb:
-        'It can stop in mid-air. Press T and the nozzle swings down: it hovers, lands on a pad and takes off '
+        'It can stop in mid-air. Press HOVER (or T) and the nozzle swings down: it hovers, lands on a pad and takes off '
         + 'straight up. Over 60 knots the hover switches itself off and it flies like any other jet.',
       stats: { speed: 4, handling: 3, ease: 3 },
       livery: '#656c73', // the darker all-over grey of the newer stealth jet

@@ -625,6 +625,8 @@ const UI_CSS = `
 html.is-touch-device .race-hud { transition: top 0.25s ease; }
 @media (max-width: 520px) { .race-hud { font-size: 12.5px; gap: 7px; padding: 5px 11px 5px 6px; max-width: calc(100vw - 32px); } }
 #ui.race-on .hud-objective, #ui.race-on .hud-boatarrow { display: none !important; }
+/* Crashed mid-race: the line stopped where it was and stood over the "Crashed" card, its clock frozen (Reset or the menu ends the race). */
+#ui[data-on="debrief"] ~ #ext-layer .race-hud { display: none !important; }
 `;
 
 /*

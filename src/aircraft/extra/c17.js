@@ -175,7 +175,7 @@ export function TYPES(base) {
         'The air force\'s workhorse: four big engines under a high wing, a T-tail and a ramp at the ' +
         'back that comes down so trucks drive straight in. Built for short, rough strips — it lands ' +
         'in a kilometre and gets off the ground in less — so it is the one heavy that is at home ' +
-        'on the Kestrel strip. Press 6 to open the ramp.',
+        'on the Kestrel strip. OPEN RAMP (or 6) brings the ramp down.',
       stats: { speed: 3, handling: 2, ease: 3 },
       livery: '#6c7279', // the airlifters' all-over grey, FS 36173-ish
       accent: '#4a5157',

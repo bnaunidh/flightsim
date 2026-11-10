@@ -64,6 +64,7 @@ import { check as rocket } from './rocket.browser.js';
 import { check as sound } from './sound.browser.js';
 import { check as races } from './race-all.browser.js';
 import { check as bughunt } from './bughunt.browser.js';
+import { check as bughuntV80 } from './bughunt-v80.browser.js';
 import { check as traffic } from './traffic.browser.js';
 import { check as weapons } from './weapons.browser.js';
 import { check as minimapGhosts } from './minimap-ghosts.browser.js';
@@ -313,6 +314,8 @@ export const CHECKS = [
   { id: 'void-city', check: voidCity },
   // The demo bug hunt (2026-11-02): the boat's rudder bar, pause card and restarts; a pause straight after a crash.
   { id: 'bughunt', check: bughunt },
+  // The v80 bug hunt (2026-11-09): G on the runway, and the rest found playing every mode.
+  { id: 'bughunt-v80', check: bughuntV80 },
   // Last: it rebinds keys through Settings (and puts the player's back after).
   { id: 'keybinds', check: keybinds },
 ];

@@ -181,7 +181,7 @@ export function TYPES(base) {
       class: 'Helicopter',
       blurb:
         'The light single everybody learns to recognise: a glass-fronted cabin, four blades, skids. Quick, '
-        + 'honest and happy on a hospital roof. Shift and Ctrl are the collective, W A S D the cyclic, Q and E the pedals.',
+        + 'honest and happy on a hospital roof. The lever is the collective and the stick the cyclic (Shift, Ctrl and W A S D on a keyboard).',
       stats: { speed: 2, handling: 4, ease: 3 },
       livery: '#1f3a5f',
       accent: '#d9a441',

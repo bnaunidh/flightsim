@@ -687,7 +687,9 @@ export class Aircraft {
   }
 
   toggleGear() {
-    if (this.airspeed > SPEC.maxGearSpeed) return false;
+    // Weight on wheels (G on the runway used to drop it on its belly).
+    this.gearNo = this.gearDown && this.onGround && !this.onWater ? 'The gear stays down on the ground' : this.airspeed > SPEC.maxGearSpeed ? 'Too fast for the landing gear — slow down first' : '';
+    if (this.gearNo) return false;
     this.gearDown = !this.gearDown;
     this.emit(EVENTS.GEAR, { down: this.gearDown });
     return true;
@@ -1257,7 +1259,14 @@ export class Aircraft {
       const room = clamp((pitchNow + 0.105) / 0.06, 0, 1);
       const pushLimit = -0.3 * room;
       if (elevator < pushLimit) elevator = pushLimit;
-
+    }
+    // Easy and normal: S held on the take-off roll no longer pitches the tail into the runway (it struck every fighter's).
+    const tail = planeAssist && this.agl < 9 && SPEC.hardPoints.find((h) => h.part === 'tail');
+    if (tail) {
+      const main = SPEC.gearPoints.reduce((a, g) => (Math.abs(g.pos.x) > 0.3 && g.pos.z > a.pos.z ? g : a));
+      const lim = Math.atan2(tail.pos.y - main.pos.y + Math.max(0, this.agl + main.pos.y), tail.pos.z - main.pos.z) - 0.04;
+      const pitch = Math.asin(clamp(this.forward(this._tmp).y, -1, 1));
+      if (lim > 0.05) elevator = Math.min(elevator, clamp((lim - pitch - this.omega.x * 0.5) * 8, -1, 1));
     }
 
     // ---- Aerodynamics -------------------------------------------------
@@ -1474,38 +1483,11 @@ export class Aircraft {
       // Vortex ring state shakes the machine: the disc working in its own
       // recirculating wake. A buffet in all three axes, in the moments below.
       this._vrs = AIR ? AIR.vrs : 0;
-      // The disc drags as it is tilted into the airflow.
-      /*
-       * Rotor drag opposes the way you are actually going.
-       *
-       * This was `fz += ...`: a force along body +Z, aft, sized by the total
-       * airspeed and pointed the same way whatever the machine was doing. So
-       * a vertical climb — where V is the climb rate and nothing is moving
-       * forward at all — shoved it backwards at 1,820 N. Measured: climbing
-       * straight up in still air, it accelerated to 42 m/s rearwards and
-       * ended 295 m from where it started. Hovering in a tailwind it crept
-       * upwind. The aerodynamic drag a few lines above is written correctly
-       * as a vector along the relative wind; this one simply was not.
-       */
-      /*
-       * Retreating blade stall, which is what actually limits a helicopter.
-       *
-       * Rotor drag rose linearly with speed and stopped rising at 60 m/s, so
-       * nothing bounded the Skyhook except the drag of a 3 m² token wing.
-       * Measured: 20 degrees nose down at 75% collective settled at 174 kt,
-       * which is faster than two of the aeroplanes and 34 kt past this
-       * airframe's own vne. A helicopter does not do that, and a child who
-       * finds it stops using the aeroplanes.
-       *
-       * Nothing below 46 m/s (89 kt) changes at all, so every cruise the
-       * missions actually fly is untouched; above it the machine runs out of
-       * speed near 105 kt instead of running away.
-       */
-      // The airframe's own two numbers; see ROTOR_TUNE.dragScale. (They
-      // were 46 m/s and full drag outside the old easy-mode computer, which
-      // made the same machine 15 kt slower on the hardest setting.)
-      // Per type (types.js aero.rotorStallAt, m/s): a Black Hawk's blades
-      // run out of lift forty knots later than an R44's.
+      // The disc drags as it is tilted into the airflow, against the way you are
+      // actually going (along body +Z it shoved a vertical climb backwards).
+      // Retreating blade stall bounds the top speed: nothing changes below
+      // stallAt, above it the machine runs out of speed instead of running away.
+      // Per type (types.js aero.rotorStallAt, m/s); see ROTOR_TUNE.dragScale.
       const stallAt = SPEC.rotorStallAt || ROTOR_TUNE.stallAt;
       const rbs = clamp((V - stallAt) / 22, 0, 1);
       this._rbs = rbs;

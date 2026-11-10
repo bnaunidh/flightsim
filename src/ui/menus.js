@@ -1754,7 +1754,7 @@ export class Menus {
             <input type="range" min="0.3" max="2" step="0.1" data-set="sensitivity"></label>
           <label class="check"><input type="checkbox" data-set="gamepad"><span>Use game controllers if they are plugged in — gamepads, flight sticks, yokes, throttles and rudder pedals (Controls → Controllers sets them up)</span></label>
           <label class="check"><input type="checkbox" data-set="showHints"><span>Repeat hints if I get stuck</span></label>
-          <label class="check"><input type="checkbox" data-set="guidance"><span>Show guidance to the runway or target (N)</span></label>
+          <label class="check"><input type="checkbox" data-set="guidance"><span>Show guidance to the runway or target<i class="kbd-only"> (N)</i></span></label>
           <label class="field"><span>Show it as</span>
             <select data-set="guideStyle">
               <option value="arrow">An arrow — points which way to turn</option>
@@ -1762,10 +1762,10 @@ export class Menus {
               <option value="both">Both</option>
             </select></label>
           <label class="check"><input type="checkbox" data-set="startAtGate"><span>Start on the parking stand and taxi out (Free Flight)</span></label>
-          <label class="check"><input type="checkbox" data-set="autoSkipBoarding"><span>Skip the boarding at the gate (airline missions) — the passengers are aboard and the doors shut straight away, and they are off as soon as you park. Off, you can watch it and press Y to skip it any time.</span></label>
+          <label class="check"><input type="checkbox" data-set="autoSkipBoarding"><span>Skip the boarding at the gate (airline missions) — the passengers are aboard and the doors shut straight away, and they are off as soon as you park. Off, you can watch it and press P (or tap the prompt) to skip it any time.</span></label>
           <label class="check"><input type="checkbox" data-set="realisticFuel"><span>Realistic fuel — the tank drains 1% every 30 seconds, so you have to plan</span></label>
           <label class="check"><input type="checkbox" data-set="randomWinds"><span>Random winds — the wind wanders and gusts blow through</span></label>
-          <label class="check"><input type="checkbox" data-set="minimap"><span>Minimap — the little round map, with a warning if you are heading at a hill (J)</span></label>
+          <label class="check"><input type="checkbox" data-set="minimap"><span>Minimap — the little round map, with a warning if you are heading at a hill<i class="kbd-only"> (J)</i></span></label>
           <label class="check"><input type="checkbox" data-set="damageModel"><span>Damage instead of crashes — clip something and, depending on how hard you hit it, you may keep flying with that part damaged, or with it torn off. A hurt or missing wing tip rolls you towards it, a hurt tail goes soft, no fin makes the nose wander, a lost engine swings you towards it, and the panel shows where you were hit.</span></label>
           <label class="check"><input type="checkbox" data-set="crashSlowMo"><span>Slow motion for a moment when a crash breaks the aeroplane up (Controls → View has the instant replay key)</span></label>
           <label class="check"><input type="checkbox" data-set="realModels"><span>Detailed airliner models — the big jets wear real 3D airframes (credited in Credits), loaded the first time you pick one. Off keeps the built-in shapes, which load instantly.</span></label>

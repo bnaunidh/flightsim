@@ -189,7 +189,10 @@ function cannotMove(sim, which) {
   if (!flyingHim(sim)) return 'Not now';
   if (ac.crashed) return 'Not after that';
   if (!ac.engineOn) return 'Start up first — press I';
-  if (which === 'boost' && ac.onGround) return 'Take off first — then P P P for 1000 knots!';
+  if (which === 'boost' && ac.onGround) {
+    const p = keyLabel(bound(sim, 'harrisonBoost')[0]);
+    return `Take off first — then ${isTouch(sim) ? 'BOOST' : `${p} ${p} ${p}`} for 1000 knots!`;
+  }
   return null;
 }
 

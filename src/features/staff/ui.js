@@ -133,6 +133,9 @@ const CSS = `
      the prompt keeps to the left of it, under the airport's prompt. */
   .of-prompt, .of-root.of-walk .of-prompt { left: 8px; transform: none; max-width: calc(100vw - 180px); top: 262px; text-align: left; }
   .of-prompt.act:active { transform: scale(0.97); }
+  /* In a helicopter the card hangs under the band at the right (hud-rotor.js) and "Tap here to get out" ran onto
+     its left edge, over ON THE GROUND (375-390 px wide). The door wraps to two lines short of it instead. */
+  html.is-touch-device:has(.hud.is-touch .hud-heli:not([hidden])) .of-root:not(.of-walk) .of-prompt { max-width: calc(100vw - 262px); }
   .of-card { top: 100px; bottom: auto; left: 8px; width: auto; max-width: 132px; padding: 6px 8px; font-size: 12px; }
   .of-card .row { display: none; }
   .of-card h4 { margin: 0; font-size: 10px; }
@@ -143,6 +146,14 @@ const CSS = `
    * a thumb pushing the stick right went to Run instead.
    */
   .of-btns { width: 168px; right: 12px; }
+}
+/*
+ * An iPad held upright (621-900 px wide): the radio line and the coach line are lifted above the map
+ * (styles/main.css), and "Tap here to get out" was left between them, over both (820 x 1180: coach to
+ * y762, door 755-798, radio from 788). It goes above the coach line.
+ */
+@media (min-width: 621px) and (max-width: 900px) and (min-height: 760px) {
+  html.is-touch-device .of-root:not(.of-walk) .of-prompt { bottom: max(470px, calc(var(--bl-h, 0px) + 320px)); }
 }
 /*
  * A phone (or a small tablet) on its side, in the aeroplane: the rule at the

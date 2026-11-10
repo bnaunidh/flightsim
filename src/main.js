@@ -543,9 +543,16 @@ class Game {
       document.documentElement.classList.add('is-touch-device');
       this.applyTouchFlying();
     }
+    // Hidden with "Hide interface", a tap on the picture brings it back on a tablet: no Esc there, and nothing else showed.
+    canvas.addEventListener('click', () => {
+      const c = document.documentElement.classList;
+      if (this.hud.hidden && this.state === 'flying' && c.contains('ui-clean') && c.contains('is-touch-device')) this.toggleHideUi();
+    });
     this.hud.setSubtitlesEnabled(this.settings.subtitles);
     this.hud.setHighContrast(this.settings.highContrast);
     this.hud.setLargeText(this.settings.largeText);
+    // The menus' large text too (it was only put on when ticked, so a reload lost it).
+    document.body.classList.toggle('is-large', !!this.settings.largeText);
     // Photo is for the moment, not the next visit: a shared classroom device
     // must not open on a HUD with no objective, no instruments and no map.
     if (this.settings.hudDensity === 'photo') this.settings.hudDensity = 'clean';
@@ -2612,7 +2619,7 @@ class Game {
         // same rule for whatever else might call it (see handleDiscreteInput).
         if (SPEC.rotor) break;
         if (!this.aircraft.toggleGear()) {
-          this.hud.notify('Too fast for the landing gear — slow down first', 'warn', 3);
+          this.hud.notify(this.aircraft.gearNo, 'warn', 3);
         }
         break;
       case 'flaps': {
@@ -4675,7 +4682,7 @@ class Game {
      */
     const wings = !SPEC.rotor;
     if (wings && (input.pressed('gear') || (pad && pad.gear))) {
-      if (!ac.toggleGear()) this.hud.notify('Too fast for the landing gear — slow down first', 'warn', 3);
+      if (!ac.toggleGear()) this.hud.notify(ac.gearNo, 'warn', 3);
     }
     if (wings && input.pressed('flapsDown')) {
       const s = ac.setFlaps(ac.flapStep() + 1);

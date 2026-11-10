@@ -558,7 +558,8 @@ function stand(sim) {
   if (S.scene) S.scene.clear();
   if (S.fx) S.fx.clear();
   if (sim && sim.aircraft) sim.aircraft.ditched = false;
-  if (sim && sim.model) sim.model.visible = true;
+  // Not in the boat or the van: startDrive() has just parked the aeroplane out of sight, and this showed it on the runway again.
+  if (sim && sim.model && sim.mode !== 'drive') sim.model.visible = true;
 }
 
 export function ditchingState() {
