@@ -401,9 +401,12 @@ PAINT.setPaintTier('high');
   const tracks = (l) => WMT[l.id].rows.map((r) => r.track || 0);
   ok('upper-and-lower names are set tight, as words (at most 0.03 em)', mixed.length >= 6 && mixed.every((l) => tracks(l).every((t) => t <= 0.03 || !/[a-z]/.test(WMT[l.id].rows[tracks(l).indexOf(t)].runs.map((u) => u.t || '').join(''))) ), mixed.map((l) => `${l.id} ${tracks(l)}`).join());
   ok('capitals are spaced, not scattered (at most 0.2 em)', air.filter((l) => !mixed.includes(l)).every((l) => tracks(l).every((t) => t <= 0.2)));
-  const serifs = air.filter((l) => /Playfair|Lora|Cinzel/.test(l.style.titleFont.family));
+  // (2026-11-09, owner-approved faces: Sandline moved from Cinzel to Josefin Sans, a light geometric, so
+  // three airlines are serif now: Pearl Gulf in Playfair, Bharat in Lora, Desert Pearl in Cormorant.)
+  const serifs = air.filter((l) => /Playfair|Lora|Cinzel|Cormorant/.test(l.style.titleFont.family));
   const WM = await import(SRC + 'fleet/extra/wordmarks.js');
-  ok('the serif airlines stay serif, their fine strokes fattened so they outlive the mipmaps', serifs.length === 4 && serifs.every((l) => WM.WORDMARKS[l.id].bold >= 0.01), serifs.map((l) => l.id).join());
+  ok('the serif airlines stay serif, their fine strokes fattened so they outlive the mipmaps', serifs.length === 3 && serifs.every((l) => WM.WORDMARKS[l.id].bold >= 0.01), serifs.map((l) => l.id).join());
+  ok('the light faces are fattened too: Sandline\'s Josefin Sans carries weight for the apron', L.findLivery('sandline').style.titleFont.family === 'Josefin Sans' && WM.WORDMARKS.sandline.bold >= 0.008);
   // The heads of the letters stop short of the crown, on every type an airline flies.
   const high = [];
   for (const l of air) {

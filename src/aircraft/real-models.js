@@ -22,8 +22,8 @@
  *     error, a phone short of memory, ?realmodels=off): then it simply never
  *     arrives, and nobody can tell anything was meant to.
  *
- * PAINT. The files carry no images (tools/real-models/process.py throws every
- * source texture away, real liveries included). The fuselage wears the SAME
+ * PAINT. No source colour map ships (real liveries included); detail maps
+ * (tools/real-models/detail.py) go under the paint via real-packed.js, not on Low. The fuselage wears the SAME
  * livery canvas as the procedural model, mapped by the same (z, y) -> (u, v),
  * with the windows, panes, number and name drawn into a copy: the left side's
  * half and the right side's, so words read the right way round from both. The
@@ -67,33 +67,18 @@ export const REAL_MODELS = {
   b747: { file: 'b747.glb', title: 'Boeing 747-8i', author: 'AF267 (@jsong.js.us), GeoFS team', url: 'https://sketchfab.com/3d-models/cd1977bedc32412fa1ce2cda23520b84' },
   // skinBothSides -- parts of its skin face in; its two holes are patched (fleet/extra/jets.js `holes`).
   q400: { file: 'q400.glb', title: 'Bombardier Dash Q400 - Qantas Link', author: 'Sofyan Kurniawan (@sofyankurniawan)', url: 'https://sketchfab.com/3d-models/5b13a73be7d74161a3a9f9ce982a8345', skinBothSides: true },
-  // skinBothSides -- stretches of its airframe (the tail cone above all) are drawn facing in, normals
-  // and all: one-sided, from behind the tail cone was an open shell with ragged edges.
+  // skinBothSides -- stretches (the tail cone above all) face in: one-sided, an open shell from behind.
   a10: { file: 'a10.glb', title: 'A-10 Thunderbolt II', author: 'AIRMAN Magazine (@AIRMANMagazine)', url: 'https://sketchfab.com/3d-models/9521ff6ba5d448958ea45a89e94ab23d', skinBothSides: true },
-  /*
-   * Batch 3 (owner, 2026-10-31: "sketchfab models for all ... planes"): the fighters, painted as the
-   * A-10 is (no images: every insignia, serial and stencil was a texture and went with them). Fitted
-   * at ONE scale from the real span (process.py fit 'uniform'): their fleet models are drawn longer
-   * than the real aeroplanes, and fitting each axis flattened the real shapes. `keep` -- the
-   * procedural afterburner flames stay in view under the skin; `shiftNodes` -- those flames' engine
-   * groups (and the heat haze) move to the real model's own tail while the skin is on (the fleet
-   * model's nozzles stand up to 3.7 m further aft than the real aeroplane's). The F-22's mirrored
-   * half (its left fin and stabilator) is wound inside out: drawn both sides (skinBothSides).
-   */
+  // Fighters (batch 3): no images; one scale from the real span ('uniform'). `keep` -- procedural
+  // flames stay; `shiftNodes` -- their engine groups move to the real tail. The F-22's mirrored half is inside out.
   f22: { file: 'f22.glb', title: 'Lockheed Martin F-22 "Raptor"', author: 'andertan (@andertan)', url: 'https://sketchfab.com/3d-models/7e7b3c372e374dda98e70208d09cfdcf', realLength: 18.92, skinBothSides: true, keep: /afterburner/i, shiftNodes: /^(left|right) engine and 2D nozzle$|^Heat haze$/ },
   f35b: { file: 'f35b.glb', title: 'Lockheed Martin F-35B Lightning II', author: 'AF267 (@jsong.js.us)', url: 'https://sketchfab.com/3d-models/5d54a6af45974ad386ae74d42b33374a', realLength: 15.61, keep: /afterburner/i, shiftNodes: /^Engine and swivel nozzle$|^Heat haze$/ },
   fa18: { file: 'fa18.glb', title: 'F-18', author: 'Ryan.Qin (@Ryan.Qin)', url: 'https://sketchfab.com/3d-models/c0c1051b7dff4fe3b67597d60ce11b6c', realLength: 17.07, keep: /afterburner|arrestor hook|arresting hook|hook shoe/i, shiftNodes: /^Jet propulsion unit$|^Heat haze$|^Arrestor hook$/ },
   // The C-5 Galaxy: painted with the game's livery like the airliners (process.py fits it to the
   // fleet model's own fuselage, as theirs).
   c5: { file: 'c5.glb', title: 'c-5B galaxy', author: 'piggyrockstarYT (@piggyrockstar15)', url: 'https://sketchfab.com/3d-models/11832529d5f7499b9ef24ce0383a69bf' },
-  /*
-   * The helicopters (tools/real-models/helis.py): worn over the civil builder's own
-   * (models/helis.js), which keeps spinning its own rotors -- blades, blur discs, spool-up --
-   * moved onto the real model's mast and tail-rotor hub while the skin is on (the file's
-   * extras.hubs). Painted in the file (one colour per triangle, in the game's colour for the type:
-   * no insignia, serial or unit marking survives); their own wheels are the procedural gear's
-   * place. Marine One is the game's VH-3D worn as the AW101 Merlin the owner picked.
-   */
+  // Helicopters (tools/real-models/helis.py): over models/helis.js, whose rotors spin on the file's
+  // extras.hubs; painted in the file (no insignia survives). Marine One wears the AW101.
   uh60: { file: 'uh60.glb', heli: true, title: 'US Army UH-60M Black Hawk low poly model', author: 'Yi Tsung Lee (@WTigerTw)', url: 'https://sketchfab.com/3d-models/854bf0feee5b42dc92ac5329976f7942' },
   ch47: { file: 'ch47.glb', heli: true, title: 'Helicopter Low Poly - Chinook CH-47', author: 'Machine Meza (@maurib98)', url: 'https://sketchfab.com/3d-models/72b5123bda964e9aa5343384734977e2' },
   ah64: { file: 'ah64.glb', heli: true, title: 'AH-64 Apache Attack Helicopter Low Poly', author: 'A Certain Duck (@TheOminousDuck)', url: 'https://sketchfab.com/3d-models/34986214decd4b3db90e91f12e624d78' },
@@ -165,10 +150,15 @@ export function loadRealModel(id) {
   const p = (async () => {
     try {
       const buf = await (loader || fetchBuffer)(realModelUrl(id), id);
-      const parsed = parseGLB(buf, { name: REAL_MODELS[id].file, warn: () => {} });
+      // A packed file (KTX2 maps, meshopt): real-packed.js, loaded only for one.
+      const u8 = new Uint8Array(buf.buffer || buf, buf.byteOffset || 0, buf.byteLength);
+      const pk = /EXT_meshopt|KHR_texture_basisu/.test(new TextDecoder().decode(u8.subarray(20, 20 + new DataView(u8.buffer, u8.byteOffset).getUint32(12, true))));
+      if (pk) packed = packed || (await import('./real-packed.js'));
+      const parsed = pk ? await packed.parsePacked(buf, REAL_MODELS[id].file, detailRenderer, textureTier()) : parseGLB(buf, { name: REAL_MODELS[id].file, warn: () => {} });
       const root = parsed.scene.getObjectByName(id);
       if (!root) throw new Error(`${REAL_MODELS[id].file} has no root node called ${id}`);
       root.removeFromParent();
+      const detail = !!parsed.detail;
       root.traverse((o) => {
         if (!o.isMesh) return;
         o.castShadow = true;
@@ -176,7 +166,7 @@ export function loadRealModel(id) {
       });
       // Where the real model ends aft (its nozzles): the flames move there (shiftsFor).
       const tailZ = new THREE.Box3().setFromObject(root).max.z;
-      const t = { root, extras: root.userData.extras || {}, triangles: parsed.stats.triangles, uv: false, tailZ };
+      const t = { root, extras: root.userData.extras || {}, triangles: parsed.stats.triangles, uv: false, tailZ, detail };
       templates.set(id, t);
       status.set(id, 'ready');
       return t;
@@ -191,6 +181,13 @@ export function loadRealModel(id) {
   })();
   pending.set(id, p);
   return p;
+}
+
+let packed = null;
+let detailRenderer = null;
+/** main.js: the renderer (KTX2 asks the GPU which compressed format it takes). */
+export function setRealModelRenderer(r) {
+  detailRenderer = r || null;
 }
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -352,7 +349,9 @@ function dress(model, id, tpl) {
     if (!o.isMesh) return;
     const role = o.parent && o.parent !== skin ? o.parent.name : o.name;
     if (role === 'fin') finPieces.push(o);
-    const m = mats[role] || mats.wing;
+    const base = mats[role] || mats.wing;
+    // The detail maps under the paint (real-detail.js), where the file brought them and the tier wants them.
+    const m = tpl.detail && textureTier() !== 'low' ? packed.withDetail(base, o.geometry) : base;
     o.material = m;
     o.castShadow = !m.transparent;
     o.receiveShadow = true;

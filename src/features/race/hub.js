@@ -44,6 +44,8 @@ export const HUB_CSS = `
 .race-solobar button { pointer-events: auto; }
 .race-solobar.rs-chip .race-solo-word { display: none; }
 .race-solobar.rs-chip button.race-solo-all { min-height: 30px; padding: 4px 9px; font-size: 14px; }
+/* A thumb's target on a touch device, folded or not. */
+html.is-touch-device .race-solobar button, html.is-touch-device .race-solobar.rs-chip button.race-solo-all { min-height: 44px; min-width: 44px; }
 .race-solobar[hidden] { display: none !important; }
 .race-solobar button { background: rgba(10, 17, 30, 0.82); white-space: nowrap; }
 .race-solobar button[hidden] { display: none; }

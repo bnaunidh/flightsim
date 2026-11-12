@@ -130,6 +130,8 @@ export function placeCell(T, ctx, ix, iz, perCell, mode = 'trees') {
   const skip = new Set(ctx.skipIslands || []);
   const cov = new Float32Array(15);
   const roads = (ctx.roads || []).filter((r) => r.box && r.box[1] > x0 - 40 && r.box[0] < x0 + CELL + 40 && r.box[3] > z0 - 40 && r.box[2] < z0 + CELL + 40);
+  const lakes = (ctx.lakes || []).filter((l) => l.x + l.r * 1.2 > x0 && l.x - l.r * 1.2 < x0 + CELL && l.z + l.r * 1.2 > z0 && l.z - l.r * 1.2 < z0 + CELL);
+  const rivers = (ctx.rivers || []).filter((r) => r.box[1] > x0 - 300 && r.box[0] < x0 + CELL + 300 && r.box[3] > z0 - 300 && r.box[2] < z0 + CELL + 300);
   const lanes = (ctx.airports || []).filter((a) => Math.abs(a.z - (z0 + CELL / 2)) < CELL / 2 + 500 && Math.abs(a.x - (x0 + CELL / 2)) < CELL / 2 + a.length / 2 + 3500);
   const R = rng(((ix * 73856093) ^ (iz * 19349663) ^ 0x5bd1e995) >>> 0);
   // The ground, not a deck standing on it (no trees on the carrier).
@@ -157,6 +159,7 @@ export function placeCell(T, ctx, ix, iz, perCell, mode = 'trees') {
     let lane = false;
     for (const a of lanes) if (Math.abs(z - a.z) < 420 && Math.abs(x - a.x) < a.length / 2 + 3200) lane = true;
     if (lane) continue;
+    if ((lakes.length || rivers.length) && inWater(x, z, lakes, rivers)) continue;
     const h = gh(x, z);
     if (h < 2.5 || h > 620) continue;
     const gx = gh(x + 6, z) - gh(x - 6, z);
@@ -231,8 +234,34 @@ export function floraContext(D) {
       for (const p of r.path) b = [Math.min(b[0], p[0]), Math.max(b[1], p[0]), Math.min(b[2], p[1]), Math.max(b[3], p[1])];
       return { halfWidth: r.halfWidth, path: r.path.map((p) => [p[0], p[1]]), box: b };
     }),
+    // No trees standing in the lakes or the rivers (owner, 2026-11-11: "i love my trees in the water").
+    lakes: (D.lakes || []).map((l) => ({ x: l.x, z: l.z, r: l.r })),
+    rivers: (D.rivers || []).map((r) => {
+      let b = [Infinity, -Infinity, Infinity, -Infinity];
+      for (const p of r.path) b = [Math.min(b[0], p[0]), Math.max(b[1], p[0]), Math.min(b[2], p[1]), Math.max(b[3], p[1])];
+      return { path: r.path.map((p) => [p[0], p[1], p[3] || r.halfWidth || 20]), box: b };
+    }),
     skipIslands: [],
   };
+}
+
+/** In a lake (its shore wobbles up to ~11% out) or a river, with a margin: no tree there. */
+export function inWater(x, z, lakes, rivers) {
+  for (const l of lakes) if (Math.hypot(x - l.x, z - l.z) < l.r * 1.12 + 12) return true;
+  for (const rv of rivers) {
+    const p = rv.path;
+    for (let i = 1; i < p.length; i++) {
+      const ax = p[i - 1][0];
+      const az = p[i - 1][1];
+      const bx = p[i][0] - ax;
+      const bz = p[i][1] - az;
+      const l2 = bx * bx + bz * bz || 1;
+      const t = Math.max(0, Math.min(1, ((x - ax) * bx + (z - az) * bz) / l2));
+      const hw = p[i - 1][2] + (p[i][2] - p[i - 1][2]) * t;
+      if (Math.hypot(x - ax - bx * t, z - az - bz * t) < hw + 12) return true;
+    }
+  }
+  return false;
 }
 
 /** A cell the worker has not answered in this long: the worker is given up on (stream.js uses the same). */

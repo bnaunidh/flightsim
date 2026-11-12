@@ -951,10 +951,10 @@ ok('at sea: the slow sink eases in and out, and never runs at more than a third 
   ok('seizure safety: with Reduce flashing the crash cam stands back (at least 1.4x), and the instant replay further (at least 1.9x)', CR.CRASH_CAM_BACK_REDUCED >= 1.4 && F.REPLAY.backReduced >= 1.9,
     `crash cam ${CR.CRASH_CAM_BACK_REDUCED}x, replay ${F.REPLAY.backReduced}x`);
   // The crash sweep (finding 1): at 1.5x the fighters', the racer's and the small tourers' cartoon crashes were
-  // over WCAG's line; every size now stands back by the same two, from 16 m up to 110 m before it.
+  // over WCAG's line; every size now stands back by the same multiple (2.6 since v80.2), from 24 m up to 110 m before it.
   const sizes = { man: { L: 3, semi: 1.75 }, trainer: { L: 7.4, semi: 5.5 }, fighter: { L: 19, semi: 6.5 }, a320: { L: 37, semi: 17.9 }, a380: { L: 75, semi: 39 } };
   const rows = Object.entries(sizes).map(([k, d]) => [k, CR.crashCamDistance(d, false), CR.crashCamDistance(d, true)]);
-  ok('seizure safety: the crash cam stands twice as far back with Reduce flashing, for every size, and never nearer than 48 m or further than 220', rows.every(([, a, b]) => Math.abs(b / a - CR.CRASH_CAM_BACK_REDUCED) < 1e-9 && b >= 48 && b <= 220),
+  ok(`seizure safety: the crash cam stands ${CR.CRASH_CAM_BACK_REDUCED}x as far back with Reduce flashing, for every size, and never nearer than 60 m or further than 290`, CR.CRASH_CAM_BACK_REDUCED >= 2.5 && rows.every(([, a, b]) => Math.abs(b / a - CR.CRASH_CAM_BACK_REDUCED) < 1e-9 && b >= 60 && b <= 290),
     rows.map(([k, a, b]) => `${k} ${f1(a)} -> ${f1(b)} m`).join(', '));
 }
 

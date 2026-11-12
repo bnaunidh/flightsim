@@ -72,6 +72,16 @@ import { CrashMarks, drawCrashMarks } from './crashes/marks.js';
 import { renderedHeight } from './explosions.js';
 
 export const CRASH_CAM_SECONDS = 2.1;
+/**
+ * ...and with Reduce flashing, held until a second after the choreography
+ * (CRASH_SECONDS, 2 s) has finished. The cut back to the follow view changes
+ * every pixel at once, and at 2.1 s it landed in the same second as the
+ * wreck's last bounces, the stars and the dust: for the trainer's and T-Pose
+ * Harrison's bonks that one extra swing tipped 4-8 points more of a 10-degree
+ * field over WCAG's three flashes a second (16-22% to 10-16%, the crash sweep,
+ * measured over five seconds as well as the sweep's three).
+ */
+export const CRASH_CAM_REDUCED_SECONDS = 3.2;
 const MINIMAP_SIZE = 190;
 
 const WORD_FILL = {
@@ -466,8 +476,11 @@ function cancelScript() {
  * camera: twice as far back puts every aeroplane and every kind of crash
  * under it (tests/features/crash-sweep.browser.js holds all 96), and the
  * instant replay stands back by the same two (breakup.js REPLAY.backReduced).
+ * At two the cartoon cartwheels and nose-plants of the fighters and the
+ * airliners still ran 14-18% from run to run, with the WCAG line at 25%, and
+ * 25-26% on a bad run: v80.2's 2.6 measured 7-12% for them (the crash sweep).
  */
-export const CRASH_CAM_BACK_REDUCED = 2;
+export const CRASH_CAM_BACK_REDUCED = 2.6;
 /** How far the crash cam stands from the biggest aeroplanes before that multiplier, metres. */
 export const CRASH_CAM_MAX = 110;
 /** And from the smallest (a man in a T-pose, a trainer): the cartoon cloud is the same size whatever it covers, and at 16 m (32 with the multiplier) T-Pose Harrison's cartwheel measured 24%. */
@@ -491,7 +504,7 @@ function startCam(sim, dims) {
   const s = C.script;
   CAM.active = true;
   CAM.t = 0;
-  CAM.life = CRASH_CAM_SECONDS;
+  CAM.life = FLASH.reduce ? CRASH_CAM_REDUCED_SECONDS : CRASH_CAM_SECONDS;
   CAM.view = viewOf(sim);
   CAM.dist = camDistance(dims);
   CAM.h = CAM.dist * 0.36 + 2;

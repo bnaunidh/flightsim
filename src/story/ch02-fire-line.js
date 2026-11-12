@@ -30,6 +30,8 @@
  *   - the SENTINEL unit (story/sentinel.js) in its 1986 livery, scorched;
  *   - the Thornefield livery and mark (story/brands.js; the heli livery in
  *     ambient/flyers.js), the fire-crew and Thornefield outfits (person.js);
+ *   - the Thornefield helicopter: ambient/flyers.js's HeliFlyer, flown by
+ *     hand in the cutscene;
  *   - the lookout set (story/sets.js): a pad you can land on and its cabin;
  *   - the pad landing on the owner's rule (beats.js makeDwell: "you land
  *     you land" — it counts the moment the skids touch the deck).
@@ -46,12 +48,14 @@ import { heightAt, MAP } from '../world/terrain.js';
 import { MISSIONS as FIRE_MISSIONS, fillStep, dropStep } from '../game/extra/fire.js';
 import { setupFire, fireStatus, fireFront, fireWater, restoreWater, setFireHud, fireCrewsTakeOver, fillPoint, nearestFire, wildfireDebug } from '../features/wildfire.js';
 import { createPerson, posePerson, disposePerson } from '../features/staff/person.js';
+import { HeliFlyer } from '../features/ambient/flyers.js';
+import { skip as skipCinema } from './cinema.js';
 import { isKey, playerClaimed, keyName } from '../flight/input.js';
 import { extLayer } from '../game/extensions.js';
 import { adapt, makeDwell, LANDING_HOLD } from './beats.js';
 import { LINES } from './script.js';
 import { buildSentinel } from './sentinel.js';
-import { buildLookout, buildSurveyMarker } from './sets.js';
+import { buildLookout, buildSurveyMarker, buildCase } from './sets.js';
 
 const BASE = FIRE_MISSIONS.find((m) => m.id === 'fire-ridge');
 
@@ -144,6 +148,8 @@ export const BACK_START = 40;
 export const ROAD_M = 22;
 export const DROPS_NEEDED = 3;
 const CREW_KG = 90;
+/** The bucket's fill for this chapter (litres): see fireSpec. */
+export const BUCKET_LITRES = 200;
 const CANOPY_M = 17;
 const WIND_FROM = 95;
 const WIND_SWUNG = 275;
@@ -159,6 +165,16 @@ export function fireSpec(diff = DIFF.pilot) {
     water: PLACE.tarn,
     waterName: 'the tarn',
     pools: [PLACE.tarn],
+    /*
+     * A short fill. With the two crew aboard (180 kg) the Skyhook at the
+     * bench's height hovers a full 320 L bucket at 98 % of the lever and
+     * climbs at 0.6 m/s with all of it: it hangs over the tarn and will not
+     * get out of the hollow (measured in headless Chrome 2026-11-09; the
+     * robot sat two minutes at full lever, vs 0). 200 L hovers at 85 % and
+     * climbs at 5 m/s — the feel of the fire missions' own bucket without
+     * passengers (79 %, 9 m/s). The hits are counted, not the litres.
+     */
+    bucketLitres: BUCKET_LITRES,
     preburn: 0,
     spread: 0.22,
     burn: 0.35,
@@ -207,7 +223,11 @@ const K = {
   photoT: null,
   fileFound: false,
   handoff: false,
-  scene: null,
+  sceneOn: false,
+  tf: null,
+  tfMen: [],
+  tfCase: null,
+  priya: null,
   tapBtn: null,
   trackT: 0,
   v: new THREE.Vector3(),
@@ -847,7 +867,7 @@ function dropStepN(n) {
       : `Hold the line: drop ${n} of ${DROPS_NEEDED} before the fire reaches the road.`,
     hint: 'Low and slow over the flames nearest the road. Let go just before them — the water keeps moving forward.',
     hintEvery: 25,
-    // A full bucket climbs the 430 m from the inlet at about 5 m/s: a long stretch, saved as it goes.
+    // A full bucket's run from the tarn to the fire's edge is saved as it goes.
     rolling: true,
     checkpoint: `After drop ${n}`,
     get targetLabel() {
@@ -958,6 +978,8 @@ export const LINE = adapt(BASE, {
       text: 'There is something in the burn scar. Fly over it, low and slow.',
       hint: 'The arrow points at it — at the east end of the bench, in the black.',
       hintEvery: 25,
+      // A pilot who looks round the scar first (the survey marker is File 02) is still saved every 30 s.
+      rolling: true,
       checkpoint: 'Over the burn scar',
       targetLabel: 'The object',
       target: () => wreckTarget(),
@@ -976,6 +998,7 @@ export const LINE = adapt(BASE, {
       },
       hint: 'Stop over it, come down low, then take the picture.',
       hintEvery: 20,
+      rolling: true,
       checkpoint: 'Photographed it',
       targetLabel: 'The object',
       target: () => wreckTarget(),
@@ -1163,6 +1186,23 @@ function checkFile(sim) {
 /* cutscene (b): the burn scar                                             */
 /* ====================================================================== */
 
+function spawnThornefield(sim) {
+  disposeThornefield();
+  let f = null;
+  try {
+    f = new HeliFlyer(sim.scene, { id: 'story-thornefield', role: 'thornefield', agl: 160, speed: 30 });
+  } catch (e) {
+    console.warn('[story] the Thornefield helicopter could not be built', e);
+    return null;
+  }
+  const L = PLACE.tfLand;
+  const gy = ground(L.x, L.z);
+  // In from the east, over the road, descending onto the black.
+  f.place(L.x + 420, L.z - 60, gy + 130, 260);
+  K.tf = { f, from: f.pos.clone(), to: new THREE.Vector3(L.x, gy + 1.2, L.z), t: 0 };
+  return f;
+}
+
 function disposeThornefield() {
   if (K.tf && K.tf.f) {
     try {
@@ -1172,7 +1212,7 @@ function disposeThornefield() {
     }
   }
   K.tf = null;
-  for (const m of K.tfMen) {
+  for (const m of K.tfMen || []) {
     try {
       disposePerson(m.p);
     } catch (e) {
@@ -1198,57 +1238,179 @@ function disposeThornefield() {
   K.priya = null;
 }
 
-/**
- * Cutscene (b), as its CAPTION AND LINES ONLY — the Skip-cinematics path,
- * for everyone (2026-11-08). The camera rail over the burn scar read 17 %
- * of the screen to the flicker probe (the fire road's tape on the skyline,
- * then a last 4.5 % from a mesh against the sky this pass could not name),
- * and a class demo cannot carry that. So: the crews have the fire; a
- * caption says what happens in the scar; Thornefield and Priya speak over
- * the helicopter's own hover view, which the probe passes (0.4 %). The
- * helicopter landing and the walk up the road wait for a flash-safe scene.
- */
-const SCENE_LINES = [
-  [0.6, 'c2-s-tf-1'],
-  [4.0, 'c2-s-lark-1'],
-  [7.2, 'c2-s-tf-2'],
-  [10.2, 'c2-s-priya-1'],
-  [13.2, 'c2-s-priya-2'],
-];
-const SCENE_SECONDS = 16.5;
+/** The scripted flight in: a curve down onto the scar over ten seconds, then settle and spool down. */
+function flyThornefield(sim, dt) {
+  const T = K.tf;
+  if (!T || !T.f || T.f.gone) return;
+  T.t += dt;
+  const f = T.f;
+  const k = Math.min(1, T.t / 10);
+  const e = 1 - (1 - k) * (1 - k) * (1 - k);
+  const px = f.pos.x;
+  const pz = f.pos.z;
+  f.pos.x = T.from.x + (T.to.x - T.from.x) * e;
+  f.pos.z = T.from.z + (T.to.z - T.from.z) * e;
+  f.pos.y = T.from.y + (T.to.y - T.from.y) * Math.min(1, e * 1.05);
+  const vx = (f.pos.x - px) / Math.max(dt, 1e-3);
+  const vz = (f.pos.z - pz) / Math.max(dt, 1e-3);
+  f.speed = Math.hypot(vx, vz);
+  if (f.speed > 0.5) f.heading = ((Math.atan2(vx, -vz) * 180) / Math.PI + 360) % 360;
+  f.vs = k < 1 ? -6 * (1 - k) : 0;
+  f.bank = 0;
+  f.onGround = k >= 1;
+  f.vel.set(vx, f.vs, vz);
+  try {
+    f.sync(dt, sim.weather, sim.camera);
+    calmRotor(f.model);
+  } catch (e2) {
+    /* a picture that will not draw is not worth a cutscene */
+  }
+  if (k >= 1 && !T.out) {
+    T.out = true;
+    // The man in the teal vest climbs out and walks to the wreck.
+    const p = createPerson({ outfit: 'thornefield', seed: 41 });
+    p.position.set(f.pos.x - 3, ground(f.pos.x - 3, f.pos.z) + 0.05, f.pos.z + 2);
+    sim.scene.add(p);
+    K.tfMen.push({ p, to: { x: PLACE.wreck.x + 10, z: PLACE.wreck.z + 6 } });
+    // Their case, set down by the wreck: the grey-and-teal mark, in shot.
+    K.tfCase = buildCase(sim.scene, { x: PLACE.wreck.x + 8, z: PLACE.wreck.z + 9, headingDeg: 70 });
+  }
+}
 
+/*
+ * Flash safety for the cutscene: the helicopter's rotor is a still blur disc,
+ * never turning blades. Turning blades (or a turning ghost-blade disc) 400 m
+ * off are a strobe to the flicker probe (17 % of the screen in the burn-scar
+ * scene, 2026-11-08), and Reduce flashing is on for the class.
+ */
+function calmRotor(model) {
+  if (!model) return;
+  // Both builders' names: civil-build's 'rotor disc' / 'rotor head', helis.js's 'rotor_main_blur' / 'rotor_main:blade'.
+  const blurs = [];
+  model.traverse((o) => {
+    const n = String(o.name || '');
+    if (/rotor/.test(n) && /blur|disc/.test(n)) blurs.push(o);
+    else if (/blade/.test(n)) o.visible = false;
+  });
+  for (const o of blurs) {
+    o.visible = true;
+    if (o.userData) o.userData.opacity = 1;
+    if (o.material && 'opacity' in o.material) o.material.opacity = Math.max(o.material.opacity, 0.55);
+    let p = o;
+    for (let k = 0; k < 3 && p; k++) {
+      p.rotation.y = 0;
+      p = p.parent;
+    }
+  }
+}
+
+function walkPeople(sim, dt) {
+  const walk = (m, speed) => {
+    const dx = m.to.x - m.p.position.x;
+    const dz = m.to.z - m.p.position.z;
+    const d = Math.hypot(dx, dz);
+    let v = 0;
+    if (d > 0.8) {
+      v = speed;
+      const s = Math.min(d, v * dt);
+      m.p.position.x += (dx / d) * s;
+      m.p.position.z += (dz / d) * s;
+      m.p.position.y = ground(m.p.position.x, m.p.position.z) + 0.05;
+      m.p.rotation.y = Math.atan2(-dx, -dz);
+    }
+    try {
+      posePerson(m.p, dt, { speed: v, wave: m.wave && v === 0 ? 'hello' : null });
+    } catch (e) {
+      /* standing is fine */
+    }
+  };
+  for (const m of K.tfMen) walk(m, 1.6);
+  if (K.priya) walk(K.priya, 1.5);
+}
+
+function spawnPriya(sim) {
+  if (K.priya) return;
+  // Priya: driving gloves and a dark teal jacket, press lanyard (story-bible.md §4).
+  const p = createPerson({ outfit: 'passenger', seed: 52, shirt: 0x1f5a5a, trousers: 0x2b3444, skin: 0x9c6a46, hair: 0x1a1410 });
+  const a = PLACE.priyaFrom;
+  p.position.set(a.x, ground(a.x, a.z) + 0.05, a.z);
+  sim.scene.add(p);
+  K.priya = { p, to: PLACE.priyaTo, wave: true };
+}
+
+/*
+ * Cutscene (b), 20 s: the wreck, the Thornefield helicopter settling beyond
+ * it, then Priya walking up the fire road — on two LOCKED-OFF cameras.
+ *
+ * The first cut of this scene dollied a few metres over each shot and read
+ * 17 % of the screen to the flicker probe. The probe's rays named it
+ * (2026-11-09): not a z-fight, a light or a material — the camera's own
+ * movement sliding alpha-cut pine foliage 40-50 m off and the thin rails of
+ * the lookout 500 m off across the pixels, every frame a flip. The same two
+ * framings with the camera still measure 0.00 % (the helicopter coming in,
+ * the people walking); so the camera does not move, and the second shot is a
+ * cut (one change per pixel), not a pan. The fire's moving layers are hidden
+ * for the scene (a fire being put out in frame was 13 %, 2026-11-08).
+ */
 function burnScarScene(api) {
+  const W0 = new THREE.Vector3(PLACE.wreck.x, ground(PLACE.wreck.x, PLACE.wreck.z), PLACE.wreck.z);
+  const L = PLACE.tfLand;
+  const tfPos = new THREE.Vector3(L.x, ground(L.x, L.z), L.z);
+  const road = new THREE.Vector3(PLACE.priyaTo.x, ground(PLACE.priyaTo.x, PLACE.priyaTo.z), PLACE.priyaTo.z);
+  // Shot 1 (0-10 s): low over the black behind the wreck, framing the wreck and the ground the helicopter lands on.
+  const c1 = W0.clone().add(new THREE.Vector3(-26, 5.5, -18));
+  const look1 = W0.clone().lerp(tfPos, 0.3).add(new THREE.Vector3(0, 2.5, 0));
+  // Shot 2 (10-18 s): up the road, Priya walking towards the black, the wreck and the grey helicopter behind her.
+  const c2 = road.clone().add(new THREE.Vector3(26, 7, 24));
+  const look2 = road.clone().lerp(W0, 0.25).add(new THREE.Vector3(0, 1.6, 0));
   fireCrewsTakeOver();
   const hidden = hideFireFx(true);
-  api.caption('In the burn scar, a Thornefield helicopter lands: "We will take it from here." A reporter walks up the fire road.', 5);
-  return new Promise((resolve) => {
-    K.scene = { t: 0, said: new Set(), resolve };
+  return api.playCutscene({
+    id: 'ch02-burn-scar',
+    // Twenty seconds: the five lines queue behind one another (each holds for its reading time), and
+    // at eighteen the last of Priya's was still waiting when the scene ended and dropped it (2026-11-09).
+    dur: 20,
+    bars: 'big',
+    hideHud: true,
+    hold: true,
+    caption: 'In the burn scar, a Thornefield helicopter lands: "We will take it from here." A reporter walks up the fire road.',
+    camera: (t01, cam, s, tSec) => {
+      const t = tSec || t01 * 20;
+      if (t < 10) {
+        cam.position.copy(c1);
+        cam.lookAt(look1);
+      } else {
+        cam.position.copy(c2);
+        cam.lookAt(look2);
+      }
+    },
+    beats: [
+      { at: 0, fn: (s) => spawnThornefield(s) },
+      { at: 0.1, fn: () => (K.sceneOn = true) },
+      { at: 1.0, line: 'c2-s-tf-1' },
+      { at: 4.6, line: 'c2-s-lark-1' },
+      { at: 7.6, line: 'c2-s-tf-2' },
+      { at: 9.0, fn: (s) => spawnPriya(s) },
+      { at: 10.6, line: 'c2-s-priya-1' },
+      { at: 13.6, line: 'c2-s-priya-2' },
+    ],
   }).then((how) => {
+    K.sceneOn = false;
     hideFireFx(false, hidden);
     return how;
   });
 }
 
-/** The scene's clock: its lines at their moments, and the end. Skip (the cinema's key) ends it early. */
+/** The scene's people and helicopter move while it plays (the chapter's update). */
 function tickScene(api, dt) {
-  const sc = K.scene;
-  if (!sc) return;
-  sc.t += dt;
-  for (const [at, id] of SCENE_LINES) {
-    if (sc.t >= at && !sc.said.has(id)) {
-      sc.said.add(id);
-      api.say(id);
-    }
-  }
-  if (sc.t >= SCENE_SECONDS || sc.skip) {
-    K.scene = null;
-    sc.resolve(sc.skip ? 'skipped' : 'ended');
-  }
+  if (!K.sceneOn) return;
+  flyThornefield(api.sim, dt);
+  walkPeople(api.sim, dt);
 }
 
 /** For the tests and the skip key: end the scene now. */
 export function skipScene() {
-  if (K.scene) K.scene.skip = true;
+  if (K.sceneOn) skipCinema();
 }
 
 /** Hide (or put back) the fire's moving layers — flames, smoke, embers, drops — for a cutscene. */
@@ -1318,7 +1480,7 @@ export const CHAPTER_2 = {
     'Fly to the Long Scarp lookout',
     'Land on the lookout pad before the smoke closes it',
     'Lift the crew out',
-    'Fill the bucket in the inlet',
+    'Fill the bucket in the tarn on the bench',
     `Hold the line: ${DROPS_NEEDED} drops before the fire reaches the road`,
     'Hover over the object in the burn scar and photograph it',
   ],
@@ -1363,10 +1525,7 @@ export const CHAPTER_2 = {
     const sim = api.sim;
     if (sim && sim.aircraft) sim.aircraft.extraMass = 0;
     K.beat = null;
-    if (K.scene) {
-      K.scene.resolve('left');
-      K.scene = null;
-    }
+    K.sceneOn = false;
   },
   onBeatDone() {
     /* both beats keep their numbers in K */

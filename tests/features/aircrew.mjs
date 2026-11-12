@@ -601,7 +601,9 @@ function harrisonModelChecks(t) {
   const second = rule.decide(sim);
   ok('runaway: the second O hops you out and leaves her running, flown by the ghost pilot',
     !!(second && second.leave) && RW.runaway.active && sim.override === RW.runaway.ghost && sim.override.throttle >= 0.55 && sim.override.brakes === 0
-      && !!(sim.walking && sim.walking.runaway) && Array.isArray(sim.mapPins) && sim.mapPins[0].label === 'YOU');
+      && !!(sim.walking && sim.walking.runaway) && Array.isArray(sim.mapPins) && sim.mapPins.some((p) => p.label === 'YOU')
+      // the map follows you, with her as a moving PLANE pin (owner, 2026-11-11)
+      && sim.mapPins.some((p) => p.label === 'PLANE') && !!sim.mapCentre && sim.mapCentre.kind === 'foot');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

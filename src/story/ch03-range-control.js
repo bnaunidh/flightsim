@@ -325,6 +325,9 @@ const HOME_SPAWN = {
 /* the shepherd: a formation-keeper, not a chaser                           */
 /* ====================================================================== */
 
+/** slot()'s own output (it builds its frame in K.v and K.v2, so neither can be the output). */
+const _slotOut = new THREE.Vector3();
+
 class Shepherd {
   constructor(scene, ac) {
     this.scene = scene;
@@ -407,7 +410,7 @@ class Shepherd {
     if (this.pos.y < floor) this.pos.y = floor;
     if (this.vel.lengthSq() > 4) this.heading = ((Math.atan2(this.vel.x, -this.vel.z) * 180) / Math.PI + 360) % 360;
     // Joined: on the slot, or near enough after a dozen seconds of closing (the lag never quite closes at speed).
-    if (this.state === 'join' && (this.pos.distanceTo(this.slot(ac, K.v2)) < 160 || this.t > 12)) {
+    if (this.state === 'join' && (this.pos.distanceTo(this.slot(ac, _slotOut)) < 160 || this.t > 12)) {
       this.state = 'formate';
       this.t = 0;
     }
@@ -748,7 +751,9 @@ export const CORRIDOR = {
       spawnShape(ctx.sim);
       if (K.shape && state.shape !== 'join') K.shape.state = 'formate';
       // Joined already: put it on the slot now rather than a kilometre away.
-      if (K.shape && state.shape !== 'join') K.shape.pos.copy(K.shape.slot(ctx.ac, K.v));
+      // A vector of its own: slot() builds its frame in K.v and K.v2, so handing it K.v as the
+      // output aliased them and flung the shape 140 km off on Continue (2026-11-09).
+      if (K.shape && state.shape !== 'join') K.shape.pos.copy(K.shape.slot(ctx.ac, _slotOut));
     }
   },
 };
@@ -918,7 +923,7 @@ export const HOME = {
       get text() {
         return K.runway === 27
           ? 'Aurora Field, straight in on runway 27 from the fjord. The clock is running.'
-          : 'You are past the field. Round over the sea to the west, climb to 1,400 ft, and come back onto runway 09 — it is a steep one.';
+          : 'No straight-in from here. Round over the sea to the west, climb to 1,400 ft, and come back onto runway 09 — it is a steep one.';
       },
       hint: 'The arrow is the way in. Gear G, flaps F once you are lined up.',
       hintEvery: 25,
@@ -974,7 +979,7 @@ export const HOME = {
       },
       target: () => (K.runway === 27 ? PLACE.touchdown : PLACE.touchdown09),
       enter() {
-        if (!K.api.isResume) K.api.say(K.runway === 27 ? 'c3-aurora-2' : 'c3-aurora-4');
+        if (!K.api.isResume) K.api.say(K.runway === 27 ? 'c3-aurora-2' : 'c3-aurora-5');
       },
       check: landedAndStopped,
     },
@@ -1032,7 +1037,8 @@ function enterHome(ctx) {
   }
   disposeShapeLater();
   setOverlay(sim, true);
-  if (!K.api.isResume) later(K.t + 2.5, 'c3-aurora-3');
+  // Aurora's call matches the way in: straight in on 27, or round over the sea onto 09.
+  if (!K.api.isResume) later(K.t + 2.5, K.runway === 27 ? 'c3-aurora-3' : 'c3-aurora-4');
 }
 
 /** The shape is leaving: let it fly off rather than vanish. */

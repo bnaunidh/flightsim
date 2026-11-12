@@ -260,25 +260,17 @@ export const SNAPS = Object.freeze({
 });
 
 /** A wreck with Reduce flashing: the follow view (CameraRig.crashBack) and the other outside views (crashEase) stand at least CRASH_K x standoff + CRASH_ADD m off, eased over CRASH_EASE s. */
-const CRASH_K = 2;
-const CRASH_ADD = 10;
+const CRASH_K = 2.6;
+const CRASH_ADD = 13;
 const CRASH_EASE = 0.6;
-/*
- * ...and never nearer than this: as far as the old rig flew the trainer and
- * the jets. 2 x 5.6 + 10 = 21 m was not enough for T-Pose Harrison going into
- * the sea: the spray flickered over 21-35% of a 10-degree field (crash sweep,
- * Follow view) where the old follow view measured 9-12%; from 44 m, 13-14%.
- */
-const CRASH_MIN = 44;
-/*
- * A pull-back of more than this multiple of the lens's distance is made in
- * one cut; a shorter one is eased over CRASH_EASE, as it always was. Dollied
- * from 7 m to 44 m over the sea, Harrison's lens swept the glitter and the
- * spray across the picture: 30-37% eased, 13-14% cut. The other way round,
- * the cartoon Skylark's bonk (20 m to 45 m) measured 12-23% eased and 15-27%
- * cut (ten runs each), so the short pull-backs stay eased.
- */
-const CRASH_CUT_RATIO = 3;
+/* ...and never nearer than this (T-Pose Harrison's spray: 21-35% from 21 m, 13-14% from 44 m; v80.2 took 1.3x). */
+const CRASH_MIN = 57;
+/* A pull-back of more than this multiple of the lens's distance is one cut, a shorter one eased. */
+const CRASH_CUT_RATIO = 1.5;
+/* The follow view's look on a wreck (LOOK_RATE in flight): the tumble's jitter smoothed. */
+const CRASH_LOOK_RATE = 1.2;
+/* The stand is fixed (it rode along with a sliding wreck at 35-47 m/s: 20-27%); a wreck coming at it gets this share of it. */
+const CRASH_NEAR = 0.7;
 
 /**
  * A screen narrower than it is tall (a phone held upright, aspect 0.46): the
@@ -870,36 +862,36 @@ export class CameraRig {
 
   /**
    * Reduce flashing (on by default) and a crash: the follow view stands back
-   * from the wreck. Fitted to the airframe it now flies nearer than it used
-   * to (setFrame), and a wreck seen from near fills more of the picture —
-   * measured in the crash sweep (tests/features/crash-sweep.browser.js), the
-   * F-22's nose-plant flickered over 33% of a 10-degree field and T-Pose
-   * Harrison's falls 26-65%, where WCAG's line is 25%. So once crashed the
-   * lens stands out along its line to the wreck to at least CRASH_K x the
-   * standoff + CRASH_ADD metres and never under CRASH_MIN (44 m, as far as
-   * the old rig flew the trainer and the jets) — eased over CRASH_EASE
-   * seconds, or in one cut if that is more than CRASH_CUT_RATIO times as far
-   * — then stays put. The three stretched airliners have their own pull-back
-   * (features/airliners.js) and are left to it. Only the lens moves.
+   * from the wreck (a near wreck fills more of the picture; crash sweep,
+   * tests/features/crash-sweep.browser.js), out along its line to at least
+   * CRASH_K x the standoff + CRASH_ADD m, never under CRASH_MIN, eased over
+   * CRASH_EASE s or cut (CRASH_CUT_RATIO), to a stand fixed at the crash
+   * (CRASH_NEAR). The stretched airliners have their own (features/airliners.js).
    */
   crashBack(ac, lens) {
     if (!ac.crashed || !FLASH.reduce || this.chaseStretched) {
       this._crashAt = null;
       return;
     }
-    if (this._crashAt == null) {
-      this._crashAt = this.t;
-      this._crashCut = null;
-    }
     const off = this._tmp2.subVectors(lens, this.lookAt);
     const d = off.length();
     if (!(d > 0.01)) return;
-    const want = Math.max(d, CRASH_K * this.chaseBack + CRASH_ADD, CRASH_MIN);
-    // Cut or eased (CRASH_CUT_RATIO), decided once, at the crash.
-    if (this._crashCut == null) this._crashCut = want / d > CRASH_CUT_RATIO;
+    const need = Math.max(CRASH_K * this.chaseBack + CRASH_ADD, CRASH_MIN);
+    // The stand: an offset from the braked lens, fixed at the crash.
+    if (this._crashAt == null) {
+      this._crashAt = this.t;
+      const want = Math.max(d, need);
+      this._crashCut = want / d > CRASH_CUT_RATIO;
+      (this._crashOff || (this._crashOff = new THREE.Vector3())).copy(off).multiplyScalar(want / d - 1);
+    }
     const u = this._crashCut ? 1 : clamp((this.t - this._crashAt) / CRASH_EASE, 0, 1);
-    const k = 1 + (want / d - 1) * u * u * (3 - 2 * u);
-    lens.copy(this.lookAt).addScaledVector(off, k);
+    lens.addScaledVector(this._crashOff, u * u * (3 - 2 * u));
+    if (u >= 1) {
+      const o2 = this._tmp2.subVectors(lens, this.lookAt);
+      const d2 = o2.length();
+      const near = need * CRASH_NEAR;
+      if (d2 > 0.01 && d2 < near) lens.copy(this.lookAt).addScaledVector(o2, near / d2);
+    }
     const gh = surfaceAt(lens.x, lens.z) + 2.2;
     if (lens.y < gh) lens.y = gh;
   }
@@ -1175,7 +1167,8 @@ export class CameraRig {
         back.normalize();
         upV.set(0, 1, 0);
       }
-      const aimC = this.frame ? this.aimPoint(ac) : pos;
+      // A wreck with Reduce flashing: aimed at its CG (aimAt), and followed on CRASH_LOOK_RATE.
+      const aimC = this.frame ? (crashU > 0 ? this.aimAt(ac, crashU) : this.aimPoint(ac)) : pos;
       const desired = _desired
         .copy(aimC)
         .addScaledVector(back, dist)
@@ -1191,6 +1184,7 @@ export class CameraRig {
         // screen at all — for the first third of a second.
         this.lookAt.copy(aimC);
         this.initialised = true;
+        this._crashAt = null; // a new crash stand (crashBack) from here
       }
       // Critically-damped spring.
       const k = 42;
@@ -1205,18 +1199,21 @@ export class CameraRig {
        * from a pivot, the lens less CHASE_LEAD of its motion, which comes
        * out exactly as it was at 60 Hz, at every frame rate.
        */
-      const h = Math.min(dt, 0.05);
+      // A long frame in <=50 ms steps (capped, the lens fell 5-12 m behind at 450 kt and snapped back).
+      const speed = ac.vel.length();
+      // The lag a fitted airframe is allowed: LAG_SHARE of its standoff (6 m on
+      // the trainer's 17, at most the 25 m every jet had).
+      const lagSpeed = this.frame ? Math.min(LAG_SPEED, (this.chaseBack * LAG_SHARE) / LAG_TIME) : LAG_SPEED;
+      const carried = speed > lagSpeed ? 1 - lagSpeed / speed : 0;
+      const nSteps = Math.min(6, Math.max(1, Math.ceil(dt / 0.05 - 1e-9)));
+      const h = Math.min(dt, 0.3) / nSteps;
+      for (let st = 0; st < nSteps; st++) {
       const pivot = this.chasePos.addScaledVector(this.chaseVel, h - CHASE_LEAD);
       const accel = _accel.subVectors(desired, pivot).multiplyScalar(k);
       accel.addScaledVector(this.chaseVel, -c);
       // ...relative to what is left of the aeroplane's velocity once LAG_SPEED
       // of it has been taken off: nothing below that speed, so the trainer's
       // view is untouched, and a constant 25 m of lag above it (see LAG_SPEED).
-      const speed = ac.vel.length();
-      // The lag a fitted airframe is allowed: LAG_SHARE of its standoff (6 m on
-      // the trainer's 17, at most the 25 m every jet had).
-      const lagSpeed = this.frame ? Math.min(LAG_SPEED, (this.chaseBack * LAG_SHARE) / LAG_TIME) : LAG_SPEED;
-      const carried = speed > lagSpeed ? 1 - lagSpeed / speed : 0;
       if (carried > 0) accel.addScaledVector(ac.vel, c * carried);
       /*
        * Reduce flashing: a wreck sliding away at 30-60 m/s is not followed.
@@ -1232,10 +1229,11 @@ export class CameraRig {
        */
       if (ac.crashed && FLASH.reduce) {
         accel.set(0, 0, 0);
-        this.chaseVel.multiplyScalar(Math.exp(-Math.min(dt, 0.05) * 14));
+        this.chaseVel.multiplyScalar(Math.exp(-h * 14));
       }
       this.chaseVel.addScaledVector(accel, h);
       this.chasePos.addScaledVector(this.chaseVel, CHASE_LEAD);
+      }
       // Never clip through the ground.
       const gh = heightAt(this.chasePos.x, this.chasePos.z) + 2.2;
       if (this.chasePos.y < gh) {
@@ -1265,7 +1263,7 @@ export class CameraRig {
         const err = this._lookE || (this._lookE = new THREE.Vector3());
         lagV.copy(ac.vel).multiplyScalar(1 - carried);
         err.subVectors(aimC, this.lookAt).addScaledVector(lagV, -dt);
-        const kL = Math.exp(-LOOK_RATE * Math.max(0, dt));
+        const kL = Math.exp(-(crashU > 0 ? CRASH_LOOK_RATE : LOOK_RATE) * Math.max(0, dt));
         err.multiplyScalar(kL).addScaledVector(lagV, LOOK_LAG * (1 - kL));
         this.lookAt.subVectors(aimC, err);
       }

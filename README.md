@@ -4,12 +4,16 @@ A browser flight simulator you can install and play offline. Take off from
 Kestrel Island, learn to fly in the tutorial, complete three missions, and land
 in anything from a blue-bird day to a thunderstorm.
 
-Built with three.js. **Every texture and every sound in the game is generated in
-code at load time** — there are no audio files to download and no textures, which
-is why the whole thing is a few hundred kilobytes and works identically offline.
-The one exception is the picture on each map's loading screen
-(`assets/loading/<map>.jpg`, see *Loading screens* below), rendered from the game
-itself.
+Built with three.js. **Every sound and every painted surface in the game is
+generated in code at load time** — there are no audio files, and every livery,
+terrain, sky and building texture is drawn with Canvas 2D. The exceptions are
+files that are fetched only when needed and then kept for offline play: the
+picture on each map's loading screen (`assets/loading/<map>.jpg`, rendered from
+the game itself, see *Loading screens* below), the airline lettering fonts, and
+the CC BY 4.0 Sketchfab models below — some of which now carry *detail* maps
+(shade baked from the model's shape, or the source's own surface relief where
+it holds no lettering), compressed as KTX2. No downloaded colour map ships: the
+paint is always the game's own.
 
 ---
 
@@ -318,10 +322,10 @@ console.table(results.checks);
 
 ## Licence
 
-© thankdapro. Plain-language licence in [`LICENSE`](LICENSE): anyone may use,
-copy, change, share and build on the game — in Roblox games and assets too —
-**with credit to thankdapro**. You may copy the game; please give us credit
-(thankdapro).
+© thankdapro. **All rights reserved** — not open source since 11 November 2026
+(plain-language terms in [`LICENSE`](LICENSE)): free to play, show, record and
+stream; not to copy, re-host, change or build on without permission. Versions
+published before then keep the open licence they came with.
 
 Bundled three.js (`src/vendor/three.module.js`) remains under its own **MIT**
 licence; the full text is in `src/vendor/three.LICENSE`.
@@ -337,8 +341,9 @@ company.
 The detailed aircraft, trees, buildings and scenery models are downloads
 published on Sketchfab under **CC BY 4.0**, credited by name in the in-game
 Credits screen and in [`assets/models/LICENSES.md`](assets/models/LICENSES.md),
-and changed for the game (textures replaced by the game's own paint, so no real
-airline or military marking ships; see `tools/real-models/README.md`). They are
+and changed for the game (every source colour texture replaced by the game's own
+paint, so no real airline or military marking ships; only detail maps with no
+lettering in them are kept — see `tools/real-models/README.md`). They are
 fetched only when needed (an aircraft when you pick it; the trees and scenery
 at Medium graphics and up, after the menu); Low keeps the game's own models.
 

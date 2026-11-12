@@ -180,7 +180,7 @@ export const CREDITS_HTML = `
   <div class="credit-block">
     <h3>Typography</h3>
     <p>The interface uses the system font stack (<code>-apple-system, Segoe UI, Roboto, Helvetica, Arial</code>), so text renders instantly.
-    The game is set in Jost and Barlow Condensed, its instruments in Titillium Web, and the airlines&rsquo; names on the aeroplanes are drawn from twelve open-source typefaces, all bundled in <code>assets/fonts/</code> and cached for offline play:</p>
+    The game is set in Jost and Barlow Condensed, its instruments in Titillium Web, and the airlines&rsquo; names on the aeroplanes are drawn from sixteen open-source typefaces, all bundled in <code>assets/fonts/</code> and cached for offline play:</p>
     <table class="credit-table">
       <thead><tr><th>Typeface</th><th>Designers</th><th>Licence</th><th>Source</th></tr></thead>
       <tbody>
@@ -196,6 +196,10 @@ export const CREDITS_HTML = `
         <tr><td>Archivo Black (400)</td><td>Omnibus-Type and the Archivo Project Authors</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
         <tr><td>Kanit (600)</td><td>Cadson Demak and the Kanit Project Authors</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
         <tr><td>Lora (600 italic)</td><td>Cyreal and the Lora Project Authors</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+        <tr><td>Rubik (900)</td><td>The Rubik Project Authors (2015)</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+        <tr><td>Cormorant Garamond (700)</td><td>Christian Thalmann and the Cormorant Project Authors (2015)</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+        <tr><td>Josefin Sans (600)</td><td>Santiago Orozco and the Josefin Sans Project Authors (2010)</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
+        <tr><td>Nunito Sans (600)</td><td>Vernon Adams, Jacques Le Bailly and the Nunito Sans Project Authors (2016)</td><td><a href="https://openfontlicense.org" target="_blank" rel="noopener">SIL OFL 1.1</a></td><td>Fontsource (latin subset, woff2)</td></tr>
       </tbody>
     </table>
     <p class="tiny">All under the SIL Open Font License, Version 1.1 &mdash; free to bundle and redistribute with the game, not sold on their own.
@@ -212,10 +216,10 @@ export const CREDITS_HTML = `
   <div class="credit-block">
     <h3>This game</h3>
     <p class="credit-copyright">&copy; thankdapro</p>
-    <p>Island Flight Simulator is made by <strong>thankdapro</strong>. You may copy the game — please give us
-    credit (thankdapro). Anyone may use it, copy it, change it, share it and build on it, in Roblox games and
-    assets too, <strong>with credit to thankdapro</strong>. The plain-language licence is the <code>LICENSE</code>
-    file in the source. The bundled three.js library stays under its own MIT licence.</p>
+    <p>Island Flight Simulator is made by <strong>thankdapro</strong>. All rights reserved: it is free to play,
+    show, record and stream, but not to copy, re-host, change or build other games from without permission.
+    The bundled three.js library stays under its own MIT licence, and the models and fonts credited here under
+    their own licences.</p>
     <p class="credit-scp">Any SCP Foundation-based content (the Site on Nunatak Reach, the Class-D transfer and Last Flight Out) is CC BY-SA 3.0
     by the SCP Wiki community (<a href="https://scpwiki.com" target="_blank" rel="noopener">scpwiki.com</a>), not under the game licence.</p>
     <p class="credit-inspired">Inspired by PTFS (Pilot Training Flight Simulator) and the Google Earth flight simulator.</p>

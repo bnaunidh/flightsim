@@ -84,8 +84,14 @@ function covered(sel) {
   const out = [];
   for (const e of document.querySelectorAll('#ui *')) {
     if (el.contains(e) || e.contains(el)) continue;
-    const r = e.getBoundingClientRect();
+    let r = e.getBoundingClientRect();
     if (!r.width || !r.height || r.width > innerWidth * 0.6 || r.height > innerHeight * 0.6) continue;
+    // What is drawn of it: a heading tape's letters off the end of the tape are clipped (overflow: hidden), not on screen.
+    for (let p = e.parentElement; p && p.id !== 'ui'; p = p.parentElement) {
+      if (getComputedStyle(p).overflow === 'visible') continue;
+      const c = p.getBoundingClientRect();
+      r = { left: Math.max(r.left, c.left), right: Math.min(r.right, c.right), top: Math.max(r.top, c.top), bottom: Math.min(r.bottom, c.bottom) };
+    }
     const cs = getComputedStyle(e);
     if (cs.visibility === 'hidden' || Number(cs.opacity) < 0.05) continue;
     const boxy = cs.backgroundColor !== 'rgba(0, 0, 0, 0)' || e.children.length === 0 && e.textContent.trim();

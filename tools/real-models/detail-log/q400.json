@@ -1,0 +1,73 @@
+{
+ "baked": {
+  "occlusion": "2048 px, from the airframe's shape only (Blender Cycles AO, 256 samples, 3.0 m)",
+  "png KB": 794
+ },
+ "bytes": {
+  "packed (KTX2 + meshopt)": 1972328,
+  "raw (PNG, float)": 2551960
+ },
+ "drawn": {
+  "normal + roughness": "the game's own panel seams, frame rivet rows, lap joints, spar/hinge lines, cowl joints, panel gloss and seam grime (detail.py surface_maps)",
+  "png KB": 1063,
+  "seam sigma m": 0.0339,
+  "texel m": 0.0399
+ },
+ "dropped": [
+  "Airplane_Color_Body: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Airplane_Color_Wings: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Airplane_Color_Engine: baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+ ],
+ "id": "q400",
+ "kept": [],
+ "materials": {
+  "Airplane_Color": {
+   "dropped": [],
+   "kept": []
+  },
+  "Airplane_Color_Body": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Airplane_Color_Engine": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Airplane_Color_Red": {
+   "dropped": [],
+   "kept": []
+  },
+  "Airplane_Color_Wings": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Black": {
+   "dropped": [],
+   "kept": []
+  },
+  "Black_Metalic": {
+   "dropped": [],
+   "kept": []
+  },
+  "Grey": {
+   "dropped": [],
+   "kept": []
+  },
+  "Windows": {
+   "dropped": [],
+   "kept": []
+  },
+  "material": {
+   "dropped": [],
+   "kept": []
+  }
+ },
+ "source": "q400/q400.glb",
+ "triangles": 13945
+}

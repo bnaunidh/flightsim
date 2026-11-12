@@ -1101,6 +1101,65 @@ if (!only || only === 'kestrel') {
 }
 
 /* ------------------------------------------------------------------ */
+/* How many, by graphics tier ("add more npc aircraft", 2026-11-11)    */
+/* ------------------------------------------------------------------ */
+/*
+ * Before: 2 at Low, otherwise 3 (4 on a long runway), whatever the tier. Now Medium has one more, High two
+ * more and Ultra three (never over six, and never more than there are stands for) — and Low, which the school
+ * iPads and Chromebooks start on, still has its 2. Each map, each tier, a flight started with you well away.
+ */
+if (!only) {
+  const H = await import('./traffic.harness.mjs');
+  const F = H.F;
+  const was = (q, f) => (q === 'low' ? 2 : f.length >= 2400 ? 4 : 3);
+  const rows = [];
+  const tot = { low: 0, medium: 0, high: 0, ultra: 0 };
+  const totWas = { low: 0, medium: 0, high: 0, ultra: 0 };
+  const kinds = { low: new Set(), high: new Set() };
+  let lowBad = '';
+  let orderBad = '';
+  let capBad = '';
+  let onPlayer = '';
+  for (const map of MAPS) {
+    const got = {};
+    let f = null;
+    for (const q of ['low', 'medium', 'high', 'ultra']) {
+      H.loadMap(map.id, q);
+      f = F.buildField();
+      if (!f.ok) break;
+      const sim = H.makeSim({ typeId: 'skylark', quality: q });
+      // You, on the runway where a flight starts: nobody may be put on top of you.
+      H.placePlayer(sim, f.west + 80, f.cz, { headingDeg: 90 });
+      H.startFlight(sim, { trafficSeed: 5 });
+      const craft = H.TF.trafficState().craft;
+      got[q] = craft.length;
+      tot[q] += craft.length;
+      totWas[q] += Math.min(craft.length, was(q, f));
+      if (kinds[q]) for (const c of craft) kinds[q].add(c.type);
+      for (const c of craft) {
+        const d = Math.hypot(c.pos[0] - sim.aircraft.pos.x, c.pos[2] - sim.aircraft.pos.z);
+        if (d < 60 && Math.abs(c.pos[1] - sim.aircraft.pos.y) < 60) onPlayer = onPlayer || `${map.id} ${q}: ${c.callsign} ${Math.round(d)} m from you`;
+      }
+      if (craft.length > 6) capBad = capBad || `${map.id} ${q}: ${craft.length}`;
+      H.call('stop', sim, 'menu');
+    }
+    if (!f || !f.ok) continue;
+    if (got.low > 2) lowBad = lowBad || `${map.id}: ${got.low}`;
+    // (Not "never fewer on a higher tier": at High the airport parks six of its own on a small field's stands, which leaves the traffic three.)
+    if (!(got.medium >= got.low && got.high >= got.low && got.ultra >= got.high)) orderBad = orderBad || `${map.id}: ${JSON.stringify(got)}`;
+    rows.push(`${map.id} ${got.low}/${got.medium}/${got.high}/${got.ultra} (was ${Math.min(got.low, 2)}/${Math.min(got.medium, was('medium', f))}/${Math.min(got.high, was('high', f))}/${Math.min(got.ultra, was('ultra', f))})`);
+  }
+  console.log(`how many, Low/Medium/High/Ultra: medium ${totWas.medium}→${tot.medium}, high ${totWas.high}→${tot.high}, ultra ${totWas.ultra}→${tot.ultra}, low ${totWas.low}→${tot.low}; ${rows.join('; ')}; types at Low ${kinds.low.size}, at High ${kinds.high.size}`);
+  ok('how many: Low still has at most 2 at every airfield (the weak-device tier got no dearer)', !lowBad && tot.low <= totWas.low, lowBad || `${tot.low} over ${rows.length} maps`);
+  ok('how many: never fewer than Low has, Ultra never fewer than High, never over six', !orderBad && !capBad, orderBad || capBad || rows.join('; '));
+  ok('how many: Medium, High and Ultra have more than before across the maps (Low/Medium/High/Ultra per map)',
+    tot.medium >= totWas.medium * 1.15 && tot.ultra >= tot.high && tot.high >= totWas.high * 1.15,
+    `medium ${totWas.medium}→${tot.medium}, high ${totWas.high}→${tot.high}, ultra ${totWas.ultra}→${tot.ultra}; ${rows.join('; ')}`);
+  ok('how many: nobody is put on top of you at the start of the runway', !onPlayer, onPlayer);
+  ok('more kinds: High flies more types across the maps than Low does', kinds.high.size > kinds.low.size && kinds.high.size >= 10, `low ${[...kinds.low].join(' ')}; high ${[...kinds.high].join(' ')}`);
+}
+
+/* ------------------------------------------------------------------ */
 /* The runway rules' arithmetic (traffic/rules.js)                     */
 /* ------------------------------------------------------------------ */
 {

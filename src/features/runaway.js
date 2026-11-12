@@ -20,9 +20,10 @@
  *     there on the brakes. The second O within three seconds hops you out.
  *   - Only in Free Flight with no mission running. A mission that asks you
  *     to get out parks the aeroplane whatever the lever says, as it always did.
- *   - Findable: she is at the middle of the minimap all along (the map
- *     follows the aeroplane) and a "YOU" pin shows where you are; when she
- *     stops or crashes the game says so, and Enter flies again.
+ *   - Findable: the minimap follows YOU while she flies, with her as a
+ *     moving yellow PLANE pin (on the rim, pointing the way, when she is off
+ *     it); once she is down a light beam stands over her; when she stops or
+ *     crashes the game says so, and Enter flies again.
  *   - Catch her before she gets away and O puts you back in the seat.
  *   - Her crash does not end the flight with a "Crashed" screen: nobody was
  *     in it.
@@ -89,6 +90,11 @@ const R = {
   control: null,
   pins: [],
   youPin: { x: 0, z: 0, label: 'YOU', colour: '#58c6ff' },
+  /** Her, on the map, moving (owner: "it should show that on minimap and not freeze"). */
+  planePin: { x: 0, z: 0, label: 'PLANE', colour: '#ffd23f' },
+  /** What the minimap follows while you are out: you (ui/minimap.js craftOf, sim.mapCentre). */
+  centre: { pos: { x: 0, y: 0, z: 0 }, heading: 0, groundSpeed: 0, vel: null, onGround: true, crashed: false, kind: 'foot' },
+  beacon: null,
   maxDist: 0,
   lastWasted: null,
 };
@@ -199,7 +205,8 @@ function start(sim) {
   sim.walking = { active: true, ejected: true, runaway: true };
   sim.mapPins = R.pins;
   R.pins.length = 0;
-  R.pins.push(R.youPin);
+  R.pins.push(R.planePin, R.youPin);
+  sim.mapCentre = R.centre;
   R.control = walkControl(sim);
   bindAircraft(sim);
   banner(sim, 'Runaway plane!', isTouch(sim)
@@ -216,11 +223,14 @@ function end(sim, why) {
     if (sim.override === R.ghost) sim.override = null;
     if (sim.walking && sim.walking.runaway) sim.walking = null;
     if (sim.mapPins === R.pins) sim.mapPins = null;
+    if (sim.mapCentre === R.centre) sim.mapCentre = null;
     if (R.control && onFoot.control === R.control) onFoot.setControl(null);
     if (why === 'caught') notify(sim, 'Got her! You caught your runaway plane.', 'good', 4);
   }
   R.control = null;
   R.pins.length = 0;
+  // The beam goes with her: you got back in, flew again, or got into something else.
+  if (R.beacon) R.beacon.visible = false;
 }
 
 /* ------------------------------------------------------------------ */
@@ -270,7 +280,7 @@ function fly(sim, dt) {
       if (!R.said.stopped) {
         R.said.stopped = true;
         const d = Math.round(Math.hypot(ac.pos.x - onFoot.walker.x, ac.pos.z - onFoot.walker.z));
-        notify(sim, live(`Your plane stopped ${d} m away — she’s in the middle of the map. Walk over and press ${keyName('getOut', sim)}.`), 'good', 5);
+        notify(sim, live(`Your plane stopped ${d} m away — follow the yellow PLANE pin on the map and the light beam. Walk over and press ${keyName('getOut', sim)}.`), 'good', 5);
       }
     }
     return;
@@ -348,8 +358,8 @@ function bindAircraft(sim) {
       if (!R.active) return;
       R.phase = 'crashed';
       banner(sim, 'Your runaway plane crashed!', isTouch(sim)
-        ? 'Nobody was in it. She’s in the middle of the map — or tap Fly again.'
-        : `Nobody was in it. She’s in the middle of the map — or press ${kbd('flyAgain', sim)} to fly again.`, 'good', 5);
+        ? 'Nobody was in it. Follow the yellow PLANE pin and the light beam — or tap Fly again.'
+        : `Nobody was in it. Follow the yellow PLANE pin and the light beam — or press ${kbd('flyAgain', sim)} to fly again.`, 'good', 5);
       const w = onFoot.walker;
       const d = Math.hypot(ac.pos.x - w.x, ac.pos.z - w.z);
       if (onFoot.active && d < RUNAWAY.crashKnock && !knockdown.down) {
@@ -398,7 +408,7 @@ function walkControl(sim) {
         return touch ? 'Your plane crashed without you! Tap here to fly again' : `Your plane crashed without you! <kbd>${keyName('flyAgain', sim)}</kbd> fly again`;
       }
       if (R.phase === 'stopped') {
-        return touch ? 'She stopped! Walk to her (middle of the map) · tap here to start again' : `She stopped! Walk to her (middle of the map) · <kbd>${keyName('flyAgain', sim)}</kbd> start again`;
+        return touch ? 'She stopped! Follow the PLANE pin and the beam · tap here to start again' : `She stopped! Follow the PLANE pin and the beam · <kbd>${keyName('flyAgain', sim)}</kbd> start again`;
       }
       return touch ? 'Runaway! Chase her — or tap here to start again' : `Runaway! Chase her and press <kbd>${keyName('getOut', sim)}</kbd> · <kbd>${keyName('flyAgain', sim)}</kbd> start again`;
     },
@@ -421,7 +431,55 @@ function updatePins(sim) {
   R.youPin.z = w.z;
   if (sim.mapPins !== R.pins) sim.mapPins = R.pins;
   const ac = sim.aircraft;
+  R.planePin.x = ac.pos.x;
+  R.planePin.z = ac.pos.z;
+  const c = R.centre;
+  c.pos.x = w.x;
+  c.pos.y = w.y;
+  c.pos.z = w.z;
+  c.heading = w.heading;
+  if (sim.mapCentre !== c) sim.mapCentre = c;
+  updateBeacon(sim, ac);
   R.maxDist = Math.max(R.maxDist, Math.hypot(ac.pos.x - R.exitAt.x, ac.pos.z - R.exitAt.z));
+}
+
+/**
+ * A beam of light standing over her once she has stopped (landed, run out of
+ * puff, crashed), so you can find her across a field (owner: "a beacon for
+ * where the plane is when it lands"). Steady, no flashing (WCAG 2.3.1); drawn
+ * through the fog so it shows from far off. Gone when the runaway ends.
+ */
+function updateBeacon(sim, ac) {
+  const down = R.phase === 'stopped' || R.phase === 'crashed' || (ac.onGround && ac.groundSpeed < 1 && R.t > 3);
+  if (!down) {
+    if (R.beacon) R.beacon.visible = false;
+    return;
+  }
+  if (!R.beacon && sim.scene) {
+    const g = new THREE.Group();
+    g.name = 'runaway beacon';
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.9, 1.4, 160, 16, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.32, depthWrite: false, fog: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }),
+    );
+    beam.position.y = 80;
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(4, 5.2, 40),
+      new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.55, depthWrite: false, fog: false, side: THREE.DoubleSide }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.3;
+    for (const m of [beam, ring]) {
+      m.renderOrder = 2;
+      m.frustumCulled = false;
+    }
+    g.add(beam, ring);
+    R.beacon = g;
+  }
+  if (!R.beacon) return;
+  if (R.beacon.parent !== sim.scene) sim.scene.add(R.beacon);
+  R.beacon.position.set(ac.pos.x, ac.pos.y - (ac.agl || 0), ac.pos.z);
+  R.beacon.visible = true;
 }
 
 /* ------------------------------------------------------------------ */

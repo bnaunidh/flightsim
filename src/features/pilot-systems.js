@@ -216,6 +216,12 @@ function openRadio(sim) {
   if (!S.ui) return;
   S.radioOpen = true;
   syncRadio(sim, true);
+  // Desktop: a window of its own you drag anywhere and shrink to its title (owner, 2026-11-11).
+  if (!S.ui.touch) {
+    floatRadio(S.ui.radio);
+    S.ui.radio.classList.add('is-shown');
+    return;
+  }
   // `keep`: a card of answers to tap, like an event's, is never held back
   // off screen. On a landscape phone the column had no room for it at all
   // (Z or the RADIO button opened it, invisibly); now the minimap steps
@@ -227,6 +233,77 @@ function openRadio(sim) {
 function closeRadio() {
   S.radioOpen = false;
   if (S.ui) S.ui.radio.classList.remove('is-shown');
+}
+
+/* ------------------------------------------------------------------ *
+ * The desktop ATC window: dragged by its title, shrunk to it, remembered
+ * ------------------------------------------------------------------ */
+
+const POP_KEY = 'islandsim.atcPopup';
+function popState() {
+  try {
+    const v = JSON.parse(localStorage.getItem(POP_KEY) || 'null');
+    if (v && Number.isFinite(v.x) && Number.isFinite(v.y)) return v;
+  } catch (e) { void e; }
+  return null;
+}
+function savePop(el) {
+  try {
+    localStorage.setItem(POP_KEY, JSON.stringify({ x: el.offsetLeft, y: el.offsetTop, mini: el.classList.contains('is-mini') }));
+  } catch (e) { void e; }
+}
+/** Kept on screen: at least its title bar, whatever the window was resized to. */
+function placePop(el, x, y) {
+  const W = window.innerWidth || 1280;
+  const H = window.innerHeight || 800;
+  const w = el.offsetWidth || 230;
+  el.style.left = `${Math.round(Math.max(4, Math.min(W - w - 4, x)))}px`;
+  el.style.top = `${Math.round(Math.max(4, Math.min(H - 40, y)))}px`;
+}
+function floatRadio(el) {
+  if (el.parentNode !== extLayer()) extLayer().appendChild(el);
+  if (el.classList.contains('is-float')) return;
+  el.classList.add('is-float');
+  const st = popState();
+  el.classList.toggle('is-mini', !!(st && st.mini));
+  placePop(el, st ? st.x : (window.innerWidth || 1280) - 470, st ? st.y : 96);
+  const head = el.querySelector('.ps-head');
+  const mini = document.createElement('button');
+  mini.type = 'button';
+  mini.className = 'ps-close ps-mini';
+  mini.setAttribute('aria-label', 'Shrink or open the ATC window');
+  mini.textContent = '–';
+  head.insertBefore(mini, head.querySelector('.ps-close'));
+  mini.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    el.classList.toggle('is-mini');
+    mini.textContent = el.classList.contains('is-mini') ? '+' : '–';
+    placePop(el, el.offsetLeft, el.offsetTop);
+    savePop(el);
+  });
+  mini.textContent = el.classList.contains('is-mini') ? '+' : '–';
+  let drag = null;
+  head.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    drag = { id: e.pointerId, dx: e.clientX - el.offsetLeft, dy: e.clientY - el.offsetTop };
+    try { head.setPointerCapture(e.pointerId); } catch (err) { void err; }
+    el.classList.add('is-dragging');
+    e.preventDefault();
+  });
+  head.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    placePop(el, e.clientX - drag.dx, e.clientY - drag.dy);
+  });
+  const stop = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag = null;
+    el.classList.remove('is-dragging');
+    savePop(el);
+  };
+  head.addEventListener('pointerup', stop);
+  head.addEventListener('pointercancel', stop);
+  window.addEventListener('resize', () => placePop(el, el.offsetLeft, el.offsetTop));
 }
 
 /* ------------------------------------------------------------------ *
@@ -263,6 +340,20 @@ const CSS = `
    screen. One request a row there. */
 @media (max-width: 440px) { .ps-radio .ps-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-height: 560px) { .ps-card { padding: 6px 8px 7px; } .ps-card .ps-note { display: none; } }
+.ps-radio.is-float { position: fixed; z-index: 40; width: 230px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+.ps-radio.is-float .ps-head { cursor: grab; margin: -8px -10px 6px; padding: 8px 10px 6px; border-radius: 14px 14px 0 0; }
+.ps-radio.is-float.is-dragging .ps-head { cursor: grabbing; }
+.ps-radio.is-mini { width: 170px; padding-bottom: 2px; }
+.ps-radio.is-mini .ps-grid, .ps-radio.is-mini .ps-note { display: none; }
+.ps-mini { font: 700 15px/1 var(--font, system-ui, sans-serif); width: 20px; justify-content: center; }
+/* Beside the HUD's own round buttons, bottom right (top left sat on the instrument panel). */
+.ps-atc-btn { position: fixed; right: 214px; bottom: 16px; z-index: 39; display: none; align-items: center; gap: 6px;
+  height: 44px; padding: 0 13px; border-radius: 14px; border: 1px solid var(--panel-line, rgba(140,180,230,.25)); background: rgba(12,20,34,.8);
+  color: var(--text, #eaf1fb); font: 700 11.5px/1 var(--font, system-ui, sans-serif); letter-spacing: .06em; cursor: pointer;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); pointer-events: auto; }
+.ps-atc-btn.is-shown { display: inline-flex; }
+.ps-atc-btn.is-on { border-color: rgba(124,199,255,.75); background: rgba(40,80,120,.85); }
+.ps-atc-btn .icon { width: 15px; height: 15px; }
 `;
 
 function joinStack(sim, panel, opts) {
@@ -316,8 +407,21 @@ function buildUi(sim) {
   }
   extLayer().appendChild(lights);
   extLayer().appendChild(radio);
+  // Desktop: a button for the ATC window (touch has RADIO on its sheet).
+  const atcBtn = document.createElement('button');
+  atcBtn.type = 'button';
+  atcBtn.className = 'ps-atc-btn';
+  atcBtn.innerHTML = `${icon('radio', 15)} ATC`;
+  atcBtn.setAttribute('aria-label', 'Open or close the ATC window');
+  atcBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    atcBtn.blur();
+    if (S.radioOpen) closeRadio();
+    else if (inCockpit(sim)) openRadio(sim);
+  });
+  extLayer().appendChild(atcBtn);
   S.ui = {
-    lights, radio, freq: radio.querySelector('.ps-freq'), preset: lights.querySelector('.ps-preset'), lkey: lights.querySelector('.ps-lkey'), rkey: radio.querySelector('.ps-rkey'),
+    lights, radio, atcBtn, freq: radio.querySelector('.ps-freq'), preset: lights.querySelector('.ps-preset'), lkey: lights.querySelector('.ps-lkey'), rkey: radio.querySelector('.ps-rkey'),
     lamps: Object.fromEntries(LAMP_KINDS.map((k) => [k, lights.querySelector(`[data-lamp="${k}"]`)])),
     picks: Object.fromEntries(ATC_REQUESTS.map((r) => [r.id, radio.querySelector(`[data-atc="${r.id}"]`)])),
     touch: !!(sim && sim.touch) || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches),
@@ -386,6 +490,9 @@ function updateUi(sim) {
   const showLights = wantLights && ui.lightsShown;
   if (ui.lights.classList.contains('is-shown') !== showLights) ui.lights.classList.toggle('is-shown', showLights);
   if (!on && S.radioOpen) closeRadio();
+  const showBtn = on && !ui.touch;
+  if (ui.atcBtn.classList.contains('is-shown') !== showBtn) ui.atcBtn.classList.toggle('is-shown', showBtn);
+  ui.atcBtn.classList.toggle('is-on', S.radioOpen);
   if (!on) return;
   syncKeys(sim);
   syncLights(sim);

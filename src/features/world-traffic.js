@@ -34,7 +34,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { heightAt, platformAt, MAP } from '../world/terrain.js';
 import { PREVIEW } from '../world/worldmap/preview.js';
-import { TrafficSim, TIERS, CATS, endpoints, makeRand } from '../world/worldmap/traffic-plan.js';
+import { TrafficSim, TIERS, CATS, endpoints, makeRand, pickTypeId } from '../world/worldmap/traffic-plan.js';
 import { createAircraftModel, groundOffsetFor } from '../aircraft/model-adapter.js';
 import { getAircraft, specFor } from '../aircraft/types.js';
 import { airlinesFor, schemeFor, radioBrand } from '../aircraft/liveries.js';
@@ -78,22 +78,30 @@ let CUR = null;
 /* Who they are: type, paint, callsign                                 */
 /* ------------------------------------------------------------------ */
 
-const HELI_BRAND = { bell407: 'Island Heli', h145: 'Medevac', aw139: 'Coastguard', r44: 'Skyhopper' };
+const HELI_BRAND = { bell407: 'Island Heli', h145: 'Medevac', aw139: 'Coastguard', r44: 'Skyhopper', uh60: 'Ironhead', ch47: 'Ironhead' };
+/** What the tower calls an airliner nobody's airline flies (the outsize freighters): no maker's name on the radio. */
+const NO_AIRLINE_BRAND = 'Heavy Lift';
 
 function shortName(type) {
   const words = String(type.name || type.id).split(/\s+/);
   return words.find((x) => /^[A-Za-z]{3,}$/.test(x) && x.toLowerCase() !== 'kestrel') || words[0];
 }
 
-/** The fleet a flight draws from: a few types and paints per kind, so a model built once is used again. */
-function makeFleet(rand, size) {
+/** Is this type in this edition's roster? (getAircraft falls back to the trainer for an id it does not know.) */
+function inRoster(id) {
+  const t = getAircraft(id);
+  return !!t && t.id === id;
+}
+
+/** The fleet a flight draws from: a few types and paints per kind, so a model built once is used again. `rareOk`: may it have the rare types? */
+function makeFleet(rand, size, rareOk = true) {
   const fleet = {};
   for (const catId of Object.keys(CATS)) {
     const C = CATS[catId];
     const n = Math.max(1, Math.round(size * C.share * 1.4));
     const list = [];
     for (let i = 0; i < n; i++) {
-      const typeId = C.types[Math.floor(rand() * C.types.length)];
+      const typeId = pickTypeId(catId, rand, (id) => inRoster(id) && (rareOk || !(C.rare || []).includes(id)));
       const type = getAircraft(typeId);
       let scheme = null;
       let brand = shortName(type);
@@ -103,7 +111,7 @@ function makeFleet(rand, size) {
         if (l) {
           scheme = l;
           brand = radioBrand(l) || brand;
-        }
+        } else if (type.category === 'airliner') brand = NO_AIRLINE_BRAND;
       }
       if (catId === 'heli') brand = HELI_BRAND[typeId] || 'Helicopter';
       if (catId === 'mil') brand = 'Ironhead';
@@ -237,7 +245,8 @@ export class WorldTraffic {
     this.quality = TIERS[quality] ? quality : 'medium';
     this.T = TIERS[this.quality];
     this.rand = makeRand(seed != null ? seed : (Date.now() & 0xffff) + 1);
-    this.fleet = makeFleet(this.rand, this.T.fleet);
+    // Low (the school iPads and Chromebooks) keeps to the everyday types, so its fleet is the handful of models it was.
+    this.fleet = makeFleet(this.rand, this.T.fleet, this.quality !== 'low');
     this.E = endpoints({ padY });
     this._combo = null;
     this.callsigns = new Set();

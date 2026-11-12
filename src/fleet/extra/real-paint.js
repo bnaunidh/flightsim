@@ -47,6 +47,9 @@ function partOf(mesh, list, name, uv) {
   b.setAttribute('position', g.attributes.position);
   if (g.attributes.normal) b.setAttribute('normal', g.attributes.normal);
   if (uv) b.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  // Detail maps' UVs too, and where their maps are kept (aircraft/real-packed.js).
+  for (const k of ['uv1', 'uv2']) if (g.attributes[k]) b.setAttribute(k, g.attributes[k]);
+  Object.defineProperty(b, 'detailFrom', { value: g.detailFrom || g });
   b.setIndex(list);
   const m = new THREE.Mesh(b, mesh.material);
   m.name = name;

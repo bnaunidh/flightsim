@@ -6,9 +6,12 @@
  *
  * Per type:
  *   - the file is there, parses with the game's own reader, and is small;
- *   - it carries NO images, textures or samplers at all, and nothing in it
- *     but its credit names a real airline or maker (the paint is the
- *     game's parody liveries, applied at run time);
+ *   - it carries NO colour images: the paint is the game's parody
+ *     liveries, applied at run time. A packed file (tools/real-models/
+ *     detail.py) may carry DETAIL maps -- normal, roughness/metal and
+ *     occlusion, KTX2 only, on UV sets 1-2 -- and its detail-log says what
+ *     of the source was kept and dropped; nothing in it but its credit
+ *     names a real airline or maker;
  *   - its credit is in the file, on the Credits screen and in LICENSES.md;
  *   - its length is within 3% of the game's airframe, its span within 3%
  *     of the type's real span, and nothing of it hangs below the game's
@@ -42,6 +45,13 @@ const R = await import(SRC + 'aircraft/real-models.js');
 const L = await import(SRC + 'aircraft/liveries.js');
 const TX = await import(SRC + 'render/textures.js');
 const { parseGLB } = await import(SRC + 'vehicles/glb.js');
+const PK = await import(SRC + 'aircraft/real-packed.js');
+const isPacked = (j) => (j.extensionsUsed || []).some((e) => e === 'EXT_meshopt_compression' || e === 'KHR_texture_basisu');
+/** The game's own way in: a packed file through real-packed.js (no detail decoding in node), else glb.js. */
+const parseAny = async (buf) => {
+  const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+  return isPacked(glbJson(buf)) ? PK.parsePacked(ab, 'test', null, 'high') : parseGLB(ab, { warn: () => {} });
+};
 const K = await import(SRC + 'world/airport-kit.js');
 
 let failed = 0;
@@ -87,19 +97,38 @@ for (const id of IDS) {
   const buf = read(path);
   const bytes = statSync(new URL(path, ROOT)).size;
   totalBytes += bytes;
-  ok(`${id}: under 1.5 MB`, bytes < 1.5 * 1024 * 1024, `${(bytes / 1024).toFixed(0)} KB`);
   const j = glbJson(buf);
-  // No images of any kind: nothing a real livery or logo could hide in.
+  const packedFile = isPacked(j);
+  // A packed file has its detail maps: the brief's 2-3 MB an airliner; a plain one is geometry only.
+  ok(`${id}: under ${packedFile ? 3 : 1.5} MB`, bytes < (packedFile ? 3 : 1.5) * 1024 * 1024, `${(bytes / 1024).toFixed(0)} KB`);
+  // No colour images: nothing a real livery or logo could hide in. Detail maps only, KTX2 only, in a packed file.
   const texKeys = (j.materials || []).flatMap((m) => [
     ...Object.keys(m.pbrMetallicRoughness || {}).filter((k) => /Texture$/.test(k)),
     ...['normalTexture', 'occlusionTexture', 'emissiveTexture'].filter((k) => m[k]),
     ...Object.keys(m.extensions || {}),
   ]);
-  ok(`${id}: no images, textures or samplers in the file`, !j.images && !j.textures && !j.samplers && texKeys.length === 0 && !/image\/(png|jpeg)/.test(buf.toString('latin1')),
-    texKeys.join(', '));
+  if (!packedFile) {
+    ok(`${id}: no images, textures or samplers in the file`, !j.images && !j.textures && !j.samplers && texKeys.length === 0 && !/image\/(png|jpeg)/.test(buf.toString('latin1')),
+      texKeys.join(', '));
+  } else {
+    const bad = texKeys.filter((k) => !['normalTexture', 'occlusionTexture', 'metallicRoughnessTexture'].includes(k));
+    ok(`${id}: only detail maps (normal, roughness/metal, occlusion) -- no colour, glow or other map`, bad.length === 0, bad.join(', '));
+    const imgs = j.images || [];
+    ok(`${id}: every image is KTX2, none PNG/JPEG/WebP`, imgs.length > 0 && imgs.every((im) => im.mimeType === 'image/ktx2') && !/image\/(png|jpeg|webp)/.test(buf.toString('latin1')),
+      imgs.map((im) => im.mimeType).join(', '));
+    const tc = (j.materials || []).flatMap((m) => [m.normalTexture, m.occlusionTexture, (m.pbrMetallicRoughness || {}).metallicRoughnessTexture].filter(Boolean).map((t) => t.texCoord || 0));
+    ok(`${id}: detail maps on their own UV sets (1, 2), never the livery's (0)`, tc.length > 0 && tc.every((c) => c === 1 || c === 2), tc.join(','));
+    const prims = (j.meshes || []).flatMap((m) => m.primitives);
+    ok(`${id}: no TEXCOORD_0 in the file (the livery's UVs are made at run time)`, prims.every((p) => p.attributes.TEXCOORD_0 === undefined));
+    const logPath = `tools/real-models/detail-log/${id}.json`;
+    const log = existsSync(new URL(logPath, ROOT)) ? JSON.parse(read(logPath)) : null;
+    ok(`${id}: ${logPath} records what was kept and dropped, every source colour map among the dropped`,
+      !!log && Array.isArray(log.kept) && Array.isArray(log.dropped) && Object.values(log.materials || {}).every((m) => m.kept.every((k) => ['normal', 'mr', 'occlusion'].includes(k))),
+      log ? `${log.kept.length} kept, ${log.dropped.length} dropped` : 'missing');
+  }
   const names = [...(j.materials || []).map((m) => m.name), ...(j.nodes || []).map((n) => n.name), ...(j.meshes || []).map((m) => m.name)];
   ok(`${id}: only the game's own part names (no source material or node names)`,
-    names.every((n) => n === id || ROLES.has(n) || ROLES.has(String(n).replace(/^rm_/, ''))), names.filter((n) => n !== id && !ROLES.has(n) && !ROLES.has(String(n).replace(/^rm_/, ''))).join(', '));
+    names.every((n) => n === id || ROLES.has(n) || ROLES.has(String(n).replace(/^rm_/, '').replace(/_\d+$/, ''))), names.filter((n) => n !== id && !ROLES.has(n) && !ROLES.has(String(n).replace(/^rm_/, '').replace(/_\d+$/, ''))).join(', '));
   const extras = (j.nodes.find((n) => n.name === id) || {}).extras || {};
   const scrubbed = JSON.stringify({ ...j, nodes: j.nodes.map((n) => ({ ...n, extras: n.extras ? { ...n.extras, credit: '' } : undefined })) });
   ok(`${id}: no real airline or maker name anywhere but the credit`, !REAL_NAMES.test(scrubbed), (scrubbed.match(REAL_NAMES) || [])[0] || '');
@@ -112,7 +141,7 @@ for (const id of IDS) {
   const proc = A.createAircraftModel({ type });
   const fg = proc.userData.flightGeometry;
   const gameLen = fg.bounds.max[2] - fg.bounds.min[2];
-  const parsed = parseGLB(buf, { warn: () => {} });
+  const parsed = await parseAny(buf);
   const box = new THREE.Box3().setFromObject(parsed.scene);
   const len = box.max.z - box.min.z;
   const span = box.max.x - box.min.x;
@@ -365,7 +394,7 @@ for (const id of IDS.filter((k) => R.REAL_MODELS[k].heli)) {
 }
 
 if (IDS.includes('a10')) {
-  const parsed = parseGLB(read('assets/models/real/a10.glb'), { warn: () => {} });
+  const parsed = (await parseAny(read('assets/models/real/a10.glb')));
   parsed.scene.updateMatrixWorld(true);
   const tris = [];
   let verts = 0;
@@ -554,8 +583,8 @@ if (IDS.includes('a10')) {
 /* ---------------------------------- the A-10's nozzles, the A320 deck -- */
 {
   /** Triangles of one role in a shipped file: centroid, unit normal, area. */
-  const trisOf = (id, role) => {
-    const g = parseGLB(read(`assets/models/real/${id}.glb`), { warn: () => {} });
+  const trisOf = async (id, role) => {
+    const g = (await parseAny(read(`assets/models/real/${id}.glb`)));
     g.scene.updateMatrixWorld(true);
     const out = [];
     g.scene.traverse((o) => {
@@ -581,7 +610,7 @@ if (IDS.includes('a10')) {
     // Core is the nozzle inside; the nacelle's tapering outside there is cowl. Sorted by radius
     // alone, the outside near the nozzle came out in ragged dark teeth: rays from all round each
     // nacelle's back half, at its axis, must meet no core first.
-    const g = parseGLB(read('assets/models/real/a10.glb'), { warn: () => {} });
+    const g = (await parseAny(read('assets/models/real/a10.glb')));
     g.scene.updateMatrixWorld(true);
     const meshes = [];
     g.scene.traverse((o) => o.isMesh && meshes.push(o));
@@ -618,12 +647,12 @@ if (IDS.includes('a10')) {
   for (const id of ['a320', 'a321'].filter((k) => IDS.includes(k))) {
     const w = A.createAircraftModel({ type: T.getAircraft(id) }).userData.config.wing;
     // Ahead of the wing there is no wing: the flight deck's crown came out as wing-grey teeth.
-    const teeth = trisOf(id, 'wing').filter((t) => Math.abs(t.c.x) < 2.4 && t.c.z < w.rootZ - 1);
+    const teeth = (await trisOf(id, 'wing')).filter((t) => Math.abs(t.c.x) < 2.4 && t.c.z < w.rootZ - 1);
     ok(`${id}: nothing ahead of the wing is painted as wing (the flight deck's crown is fuselage)`, teeth.length === 0, `${teeth.length} triangles`);
     // The windscreen's front panes are the download's own glass, not a hole where they were left
     // out: looking straight at them from ahead, either side of the centre post, rays meet glass.
     {
-      const g = parseGLB(read(`assets/models/real/${id}.glb`), { warn: () => {} });
+      const g = (await parseAny(read(`assets/models/real/${id}.glb`)));
       g.scene.updateMatrixWorld(true);
       const meshes = [];
       g.scene.traverse((o) => o.isMesh && meshes.push(o));
@@ -754,9 +783,10 @@ ok('sw.js precaches the module', sw.includes("'src/aircraft/real-models.js'"));
   ok('sw.js never precaches a model file (they are fetched when picked, kept once seen)', entries.length > 50 && !entries.some((e) => e.startsWith('assets/models/real/')));
 }
 ok('tools/sync-precache.mjs leaves them out too', read('tools/sync-precache.mjs').toString().includes("'assets/models/real'"));
-// 7 MB since batch 3 (the fighters, the helicopters, the C-5 and the fuel truck): each is still
-// fetched only when it is used, never before the menu.
-if (!ARGS.length) ok('all the real models together stay under 7 MB', totalBytes < 7 * 1024 * 1024, `${(totalBytes / 1024 / 1024).toFixed(2)} MB`);
+// 32 MB since the detail maps (owner's brief, 2026-11-11: "about 2-3 MB per airliner"; was 7 MB
+// with geometry only): each is still fetched only when it is used, never before the menu, never
+// in the service worker's install.
+if (!ARGS.length) ok('all the real models together stay under 32 MB', totalBytes < 32 * 1024 * 1024, `${(totalBytes / 1024 / 1024).toFixed(2)} MB`);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

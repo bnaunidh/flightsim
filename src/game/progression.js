@@ -519,6 +519,7 @@ export function buy(p, aircraftId) {
  */
 export const CODES = Object.freeze({
   '937c639df2646d6f81627904d91595934673c6528c61a5225a236b566498e9ed': { credits: 2000, note: 'Thanks for flying!' },
+  '43d15448fc7ac7824e532a9323eb8492aa8ac5f99d4f83f0f8632ce5e2f5d1c7': { credits: 2000, note: 'Came from Claude (the Discord repost)' },
 });
 
 /**

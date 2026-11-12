@@ -3,7 +3,7 @@
  * server, and i get access to other private servers, i can kick, mute,
  * freeze, close server etc."
  *
- * THE GAME'S SOURCE IS PUBLIC (GitHub Pages and a source zip), so nothing in
+ * THE GAME'S CODE IS PUBLIC (every browser downloads it from GitHub Pages), so nothing in
  * it may be the code or anything the code can be worked back from. What is
  * here is a PUBLIC key — the x and y of a point on the P-256 curve — and the
  * rule that turns a code into the matching private number:

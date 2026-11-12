@@ -28,9 +28,42 @@ A source drawn with its control surfaces deflected or its own pylons on has
 `coreEnvelope` keeps a tapering nacelle's outside out of its dark core.
 `noseD` keeps a flight deck that stands proud of the game's from being sorted
 as wing (the A320/A321neo). What the sort cannot mend is drawn both sides at
-run time (`real-models.js`: `cowlBothSides`, `skinBothSides`). Every file comes
-out with NO images: the airliners are painted at run time with the game's own
-parody liveries.
+run time (`real-models.js`: `cowlBothSides`, `skinBothSides`). No file carries a
+colour map: the airliners are painted at run time with the game's own parody
+liveries.
+
+### Detail maps (`detail` in models.py; detail.py)
+
+A type with `detail` is written with surface detail under the paint, and packed:
+
+- **Kept from the source:** `normalTexture`, `metallicRoughnessTexture`,
+  `occlusionTexture`, each on the source's own UVs (written as `TEXCOORD_1`),
+  when `check_map()` finds no lettering in it (a run of glyph-sized marks of one
+  height, side by side). Source material groups stay separate primitives inside
+  each role node wherever their maps differ, so UVs and maps stay paired.
+- **Always dropped:** `baseColorTexture` (the real airline's and maker's
+  livery), `emissiveTexture`, anything inside a material extension, any map
+  `check_map()` flags.
+- **Baked** (`bakeAO`): ambient occlusion from the processed airframe's shape
+  alone, in Blender (`bake_ao_blender.py`, headless Cycles, no ground), on a
+  fresh atlas (`TEXCOORD_2`). Needs `/Applications/Blender.app`.
+- **Packed:** KTX2 (UASTC for normal maps, ETC1S for the rest) and meshopt, by
+  gltf-transform and KTX-Software's `toktx` (looked for under
+  `.claude/devtools/gltf/` in the main checkout, or `GLTF_TRANSFORM` / `KTX_BIN`
+  / `KTX_LIB`). Budget: 2-3 MB an airliner.
+- **Logged:** `detail-log/<id>.json` lists every source material's kept and
+  dropped maps and the sizes; `detail-log/<id>-maps.png` is a contact sheet of
+  everything kept or baked, for a person to look at before it ships.
+
+There is no `TEXCOORD_0` in such a file: that is the livery's, made at run time
+(`fleet/extra/real-paint.js`). The game reads a packed file through
+`src/aircraft/real-packed.js` (meshopt decoded, positions un-quantized, maps
+decoded by `real-detail.js` with three's KTX2Loader); on Low it skips the maps
+and looks as it always did. A type without `detail` is written exactly as
+before (byte for byte).
+
+Pilot (2026-11-11): the 737 only. Its source's three images are all Lion Air
+paint, so nothing of its own is kept; the AO is baked.
 
 Not shipped, and why:
 - Concorde: the download has an airline's titles and tail stripes modelled

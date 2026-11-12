@@ -1,0 +1,431 @@
+{
+ "baked": {
+  "occlusion": "2048 px, from the airframe's shape only (Blender Cycles AO, 256 samples, 3.0 m)",
+  "png KB": 934
+ },
+ "bytes": {
+  "packed (KTX2 + meshopt)": 2036316,
+  "raw (PNG, float)": 3125376
+ },
+ "drawn": {
+  "normal + roughness": "the game's own panel seams, frame rivet rows, lap joints, spar/hinge lines, cowl joints, panel gloss and seam grime (detail.py surface_maps)",
+  "png KB": 1817,
+  "seam sigma m": 0.0433,
+  "texel m": 0.051
+ },
+ "dropped": [
+  "Material.001: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.002: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.003: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.020: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.021: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.034: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.035: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.004: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.009: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.010: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.011: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.012: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.013: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.014: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.015: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.016: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.017: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.018: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.019: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.081: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.084: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.085: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.086: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.089: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.090: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.091: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.092: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.121: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.124: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.127: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.128: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.129: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.137: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.138: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.139: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.140: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.141: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.142: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.145: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.146: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.147: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.150: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.153: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.155: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.156: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.159: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.163: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.165: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.166: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.167: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.169: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.171: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.172: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.162: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.164: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.168: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.170: baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+ ],
+ "id": "c5",
+ "kept": [],
+ "materials": {
+  "Material.001": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.002": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.003": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.004": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.007": {
+   "dropped": [],
+   "kept": []
+  },
+  "Material.008": {
+   "dropped": [],
+   "kept": []
+  },
+  "Material.009": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.010": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.011": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.012": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.013": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.014": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.015": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.016": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.017": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.018": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.019": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.020": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.021": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.034": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.035": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.081": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.084": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.085": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.086": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.089": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.090": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.091": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.092": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.121": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.124": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.127": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.128": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.129": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.137": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.138": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.139": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.140": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.141": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.142": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.145": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.146": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.147": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.150": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.153": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.155": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.156": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.159": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.162": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.163": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.164": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.165": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.166": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.167": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.168": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.169": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.170": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.171": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.172": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  }
+ },
+ "source": "c5/c5.glb",
+ "triangles": 9384
+}

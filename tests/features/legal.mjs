@@ -3,14 +3,16 @@
  *
  *   node tests/features/legal.mjs
  *
- *   - LICENSE at the root: copyright thankdapro, use/copy/change/share with
- *     credit and nothing else (the Roblox ban is gone — the owner, 2026-10-24:
- *     Roblox games and assets are allowed with credit), three.js stays MIT,
- *     and a section for the SCP Foundation content (CC BY-SA 3.0 by
- *     the SCP Wiki community, scpwiki.com);
- *   - the credits screen carries "© thankdapro", "You may copy the game —
- *     please give us credit (thankdapro)", the SCP line, the inspiration line
- *     and the parody line, and no longer calls anything CC0 or bans Roblox;
+ *   - LICENSE at the root: copyright thankdapro, ALL RIGHTS RESERVED — not open
+ *     source since 2026-11-11 (the owner: "can we not make it open source
+ *     anymore"): free to play, show, record and stream; no copying, re-hosting,
+ *     changing or building on it without permission; earlier versions keep
+ *     their open licence; three.js stays MIT, the SCP Foundation content
+ *     CC BY-SA 3.0 (the SCP Wiki community, scpwiki.com), the downloaded
+ *     models CC BY 4.0 and the fonts OFL;
+ *   - no Source ZIP: not on the main menu, not in the repo, not built;
+ *   - the credits screen carries "© thankdapro", "All rights reserved", the SCP
+ *     line, the inspiration line and the parody line, and no CC0 for the game;
  *   - the front page's footer carries "© thankdapro" and the parody line;
  *   - the README says the same as LICENSE.
  */
@@ -33,9 +35,12 @@ const PARODY = 'All airlines are parody and not affiliated with any real company
 ok('LICENSE exists at the root', existsSync(`${ROOT}LICENSE`));
 const lic = existsSync(`${ROOT}LICENSE`) ? read('LICENSE') : '';
 ok('LICENSE: copyright thankdapro', /Copyright \(c\) [0-9–-]+ thankdapro/.test(lic));
-ok('LICENSE: anyone may use, copy, change, share and build on it with credit to thankdapro', /copy it, share it, change it/.test(lic) && /give credit[\s\S]{0,4}to thankdapro/.test(lic));
-ok('LICENSE: credit is the only condition — Roblox games and assets are allowed, the old ban is gone', /Roblox or any other platform/.test(lic) && !/may not use this game/.test(lic) && !/No exceptions/.test(lic) && !/not[\s\S]{0,40}in a Roblox game/.test(lic));
-ok('LICENSE: you may not claim it or drop the credit', /may not claim you made it/.test(lic) && /remove the credit to thankdapro/.test(lic));
+ok('LICENSE: all rights reserved, not open source', /ALL RIGHTS RESERVED/.test(lic) && /not open source/.test(lic) && !/build your own\s+things from it/.test(lic));
+ok('LICENSE: free to play, show, record and stream', /Play it, free/.test(lic) && /Record it, stream it/.test(lic));
+ok('LICENSE: no copying, re-hosting, changing or building on it without permission; no claiming it', /may not copy, download to\s+re-host, change, sell, or re-publish/.test(lic) && /build your own game, mod, Roblox game or asset from it/.test(lic) && /may not claim you made it/.test(lic));
+ok('LICENSE: earlier versions keep the open licence they came with', /EARLIER VERSIONS/.test(lic) && /11 November 2026/.test(lic));
+ok('LICENSE: the downloaded models (CC BY 4.0) and fonts (OFL) keep their own licences', /CC BY 4\.0/.test(lic) && /Open Font Licence/.test(lic));
+ok('no Source ZIP: not on the menu, not in the repo, not built', !/data-zip|Source ZIP/.test(read('src/ui/menus.js')) && !existsSync(`${ROOT}download/island-flight-sim-source.zip`) && !existsSync(`${ROOT}tools/build-source-zip.sh`));
 ok('LICENSE: three.js stays MIT', /three\.js[\s\S]*MIT licence/.test(lic) && /three\.LICENSE/.test(lic));
 ok('LICENSE: SCP Foundation content (the Site, the Class-D transfer) is CC BY-SA 3.0 by the SCP Wiki community', /SCP FOUNDATION CONTENT/.test(lic) && /Site-91 North/.test(lic) && /Class-D transfer/.test(lic) && !/none in the game yet/.test(lic) && /CC BY-SA 3\.0/.test(lic) && /scpwiki\.com/.test(lic) && /creativecommons\.org\/licenses\/by-sa\/3\.0/.test(lic));
 ok('LICENSE: no warranty', /no warranty/i.test(lic));
@@ -45,8 +50,7 @@ const credits = read('src/ui/credits.js');
 ok('credits screen: © thankdapro', /&copy; thankdapro/.test(credits));
 ok('credits screen: the inspiration line, exactly', credits.includes(INSPIRED));
 ok('credits screen: the parody line, exactly', credits.includes(PARODY));
-ok('credits screen: "You may copy the game — please give us credit (thankdapro)", exactly', credits.includes('You may copy the game — please give us\n    credit (thankdapro)') || credits.includes('You may copy the game — please give us credit (thankdapro)'));
-ok('credits screen: with credit to thankdapro, Roblox allowed (no "not" line), points at LICENSE', /with credit to thankdapro/.test(credits) && /in Roblox games and\s+assets too/.test(credits) && !/not<\/strong> be used in Roblox/.test(credits) && !/not for Roblox/.test(credits) && /<code>LICENSE<\/code>/.test(credits));
+ok('credits screen: all rights reserved — free to play, not to copy or build on', /All rights reserved/.test(credits) && /free to play/.test(credits) && /not to copy, re-host, change or build/.test(credits) && !/You may copy the game/.test(credits));
 ok('credits screen: the SCP Foundation line — the Site and the transfer, CC BY-SA 3.0, the SCP Wiki community, scpwiki.com', /SCP Foundation-based content \(the Site on Nunatak Reach/.test(credits) && !/none yet/.test(credits) && /CC BY-SA 3\.0/.test(credits) && /SCP Wiki/.test(credits) && /href="https:\/\/scpwiki\.com"/.test(credits));
 // Third-party assets that really are CC0 (the Poly Haven scenery) keep their credit rows;
 // the rule is that the game itself is never called CC0 or public domain.
@@ -60,7 +64,7 @@ const css = read('styles/main.css');
 ok('the footer line has a style', /\.tiny\.copyright/.test(css));
 
 const readme = read('README.md');
-ok('README: © thankdapro, LICENSE link, credit, Roblox allowed, the SCP line, the two lines', /© thankdapro/.test(readme) && /\[`LICENSE`\]\(LICENSE\)/.test(readme) && /credit to thankdapro/.test(readme) && /in Roblox games and assets too/.test(readme) && !/\*\*not\*\* be used in Roblox/.test(readme) && /CC BY-SA 3\.0/.test(readme) && /scpwiki\.com/.test(readme) && /Inspired by PTFS/.test(readme) && /parody and not affiliated/.test(readme) && !/CC0/.test(readme));
+ok('README: © thankdapro, all rights reserved, LICENSE link, earlier versions, the SCP line, the two lines', /© thankdapro/.test(readme) && /All rights reserved/.test(readme) && /\[`LICENSE`\]\(LICENSE\)/.test(readme) && /keep the open licence/.test(readme) && /CC BY-SA 3\.0/.test(readme) && /scpwiki\.com/.test(readme) && /Inspired by PTFS/.test(readme) && /parody and not affiliated/.test(readme) && !/CC0/.test(readme));
 
 console.log(`\n${n - fails}/${n} passed`);
 process.exit(fails ? 1 : 0);

@@ -18,7 +18,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { getAircraft, specFor, DEFAULT_AIRCRAFT_ID } from './types.js';
-import { clamp, lerp } from '../core/noise.js';
+import { clamp, lerp, smoothstep } from '../core/noise.js';
 import { defaultLights, spoilerTarget, reverseDemand, reverseShare, REVERSE_EFFICIENCY } from './systems.js';
 import { rotorAssist, ROTOR_TUNE, groundEffectFactor, realismScale } from './rotor-assist.js';
 import { DrydenGusts, ROUGHNESS, groundEffectInduced } from '../world/turbulence.js';
@@ -150,6 +150,19 @@ export function applyAircraft(id) {
   return TYPE;
 }
 
+/**
+ * The touchdown bounce: how fast (m/s) the main gear throws the aeroplane back up after arriving at `sink`
+ * m/s. Nothing for a greaser, up to REBOUND of the sink for a hard one, and by weight: a heavy type's long
+ * oleos give it all back, a light single next to none. Never over REBOUND_MAX; none on rotors or floats.
+ */
+export const REBOUND = 0.8;
+export const REBOUND_MAX = 3;
+export function reboundSpeed(sink, spec) {
+  if (spec.rotor || spec.floats) return 0;
+  const v = Math.min(REBOUND * clamp((spec.mass - 2500) / 12000, 0.12, 1) * smoothstep(1, 4, sink) * sink, REBOUND_MAX);
+  return v > 0.12 ? v : 0;
+}
+
 /** True airspeed, m/s (250 kt), above which the hands-off height hold eases off (see the pitch leveller). */
 export const LEVEL_TAS = 129;
 
@@ -241,7 +254,9 @@ export class Aircraft {
       brakes: false, // no wheel braking at all
       roughEngine: false, // running on part power, and shaking
       tyre: false, // a burst main tyre, which drags to one side
+      hydraulics: false, // hydraulic fluid lost: hydraulicLoss of it (0..1)
     };
+    this.hydraulicLoss = 0.6;
     this._jammedPitch = null;
     /*
      * Battle damage, 0..1 per part.
@@ -309,6 +324,8 @@ export class Aircraft {
     this._groundLong = 0;
     this.buffet = 0;
     this.lastTouchdown = null;
+    this._reb = this._hop = 0;
+    this._arrT = 9;
     this.airborneTime = 0;
     this.groundTime = 0;
     this.distanceFlown = 0;
@@ -411,6 +428,8 @@ export class Aircraft {
     this._rollFwd = null;
     this._rollHeading = altAGL === null ? headingDeg : null;
     this.lastTouchdown = null;
+    this._reb = this._hop = 0;
+    this._arrT = 9;
     this.airborneTime = 0;
     this.groundTime = 0;
     this.distanceFlown = 0;
@@ -795,12 +814,26 @@ export class Aircraft {
       this._jammedPitch = null;
     }
 
+    // Hydraulics lost (h of it): a jet's controls go slow and weak, flaps and spoilers short and slow,
+    // the gear only falls (by gravity, from half gone), the brakes fade. A light aeroplane's cables
+    // do not care: only its brakes do.
+    const h = this.failures.hydraulics ? clamp(this.hydraulicLoss, 0, 1) : 0;
+    const hyd = h > 0 && (SPEC.mass || 0) > 4500;
+    if (hyd) {
+      const k = 1 - 0.8 * h;
+      const r = (8 - 7.4 * h) * dt;
+      const s = (this._hydSurf ||= { pitch: 0, roll: 0, yaw: 0 });
+      for (const a of ['pitch', 'roll', 'yaw']) this.controls[a] = s[a] += clamp(this.controls[a] * k - s[a], -r, r);
+    } else if (this._hydSurf) this._hydSurf = null;
     // Gear animation. A jammed undercarriage does not move.
-    const gearTarget = this.failures.gear ? this.gearPos : this.gearDown ? 1 : 0;
-    this.gearPos += clamp(gearTarget - this.gearPos, -dt / 2.4, dt / 2.4);
+    let gearTarget = this.failures.gear ? this.gearPos : this.gearDown ? 1 : 0;
+    if (hyd && h >= 0.5 && gearTarget < this.gearPos) gearTarget = this.gearPos;
+    const gr = hyd ? (gearTarget > this.gearPos && h >= 0.5 ? dt / 7 : (dt / 2.4) * (1 - h)) : dt / 2.4;
+    this.gearPos += clamp(gearTarget - this.gearPos, -gr, gr);
 
     // Flaps run out slowly, like an electric flap motor.
-    this.flaps += clamp(this.flapsTarget - this.flaps, -dt / 3, dt / 3);
+    const fr = (dt / 3) * (hyd ? 1 - h : 1);
+    this.flaps += clamp(Math.min(this.flapsTarget, hyd ? 1 - h : 1) - this.flaps, -fr, fr);
     // Spoilers: the lever, or the armed ground spoilers on the landing roll
     // (systems.js spoilerTarget); power advanced on the ground stows them.
     // A type without them (SPEC.spoilers: the light aeroplanes, Concorde, the
@@ -810,7 +843,7 @@ export class Aircraft {
       ? spoilerTarget({ onGround: this.onGround, groundSpeed: this.groundSpeed, throttle: this.controls.throttle, lever: this.speedbrake, armed: this.spoilersArmed })
       : { target: 0, stow: false };
     if (sp.stow) this.speedbrake = 0;
-    this.spoilerPos += clamp(sp.target - this.spoilerPos, -dt / 1.2, dt / 0.8);
+    this.spoilerPos += clamp(sp.target * (hyd ? 1 - h : 1) - this.spoilerPos, -dt / 1.2, dt / 0.8);
 
     // The parking brake lets go as soon as real power goes in — from a
     // RUNNING engine. A thrust lever moved with the engine off (sim gear's
@@ -824,9 +857,10 @@ export class Aircraft {
     }
     if (!this.onGround) this._rollHeading = null;
     else if (this._rollHeading === null && this.groundSpeed < 2) this._rollHeading = this.heading;
+    const bk = 1 - h * (hyd ? 0.85 : 1); // jets keep an accumulator's worth
     const brakeInput = this.failures.brakes
       ? 0
-      : Math.max(this.controls.brakes, this.parkingBrake ? 1 : 0);
+      : Math.max(this.controls.brakes, this.parkingBrake ? 1 : 0) * bk;
     /*
      * Toe brakes (flight/controllers.js: rudder pedals): each main wheel its
      * own side's pedal, so one pedal pressed turns the aeroplane on the
@@ -835,8 +869,8 @@ export class Aircraft {
      */
     const toe = Number.isFinite(this.controls.brakeL) && Number.isFinite(this.controls.brakeR);
     const park = this.parkingBrake ? 1 : 0;
-    this._brakeL = this.failures.brakes ? 0 : toe ? Math.max(this.controls.brakeL, park) : brakeInput;
-    this._brakeR = this.failures.brakes ? 0 : toe ? Math.max(this.controls.brakeR, park) : brakeInput;
+    this._brakeL = this.failures.brakes ? 0 : toe ? Math.max(this.controls.brakeL, park) * bk : brakeInput;
+    this._brakeR = this.failures.brakes ? 0 : toe ? Math.max(this.controls.brakeR, park) * bk : brakeInput;
 
     // ---- Relative wind ------------------------------------------------
     /*
@@ -1867,6 +1901,9 @@ export class Aircraft {
         // aeroplane back into the air on its own.
         const damping = clamp(-gp.c * vN, -spring * 0.85, spring * 1.4 + 3000);
         let N = clamp(spring + damping, 0, 160000);
+        // The bounce: after a firm arrival the main legs heave the aeroplane up (through its centre: no
+        // pitch or roll of their own) until each is rising at reboundSpeed().
+        if (this._reb > 0 && gp.brake && vN > -0.3 && vN < this._reb) this._f.y += Math.min((SPEC.mass * (this._reb - vN)) / 0.2, SPEC.mass * G * 0.9);
         this.wheelLoad += N;
         // The strut's travel for the model, capped a little past its stop (the
         // drawn oleo bottoms out where the real one does).
@@ -1976,14 +2013,7 @@ export class Aircraft {
       }
     }
 
-    /*
-     * The wire pulling.
-     *
-     * A real arrestor gear is a constant-force hydraulic ram: it takes the
-     * same load whatever you weigh, which is why it stops a heavy aeroplane in
-     * the same distance as a light one. Scaling with mass here does the same
-     * job and keeps every aeroplane in the game stoppable on the same deck.
-     */
+    // The wire pulling: like a real constant-force arrestor, it stops heavy and light in the same distance.
     if (this._hitCool > 0) this._hitCool -= dt;
 
     if (this.arrested > 0) {
@@ -2004,7 +2034,11 @@ export class Aircraft {
     this.onGround = this.contactCount > 0;
     this.wheelsRolling = this.onGround && this.groundSpeed > 0.4;
 
+    const airT = this.airborneTime;
     if (this.onGround) {
+      this._arrT += dt;
+      if (this._arrT > 0.9) this._reb = 0;
+      if (this._arrT > 3) this._hop = 0;
       this.groundTime += dt;
       this.airborneTime = 0;
       this.brakeHeat = clamp(this.brakeHeat + brakeInput * this.groundSpeed * dt * 0.02 - dt * 0.05, 0, 1);
@@ -2016,12 +2050,7 @@ export class Aircraft {
 
     // Touchdown / lift-off detection with real quality grading.
     if (!wasOnGround && this.onGround) {
-      /*
-       * Caught a wire?
-       *
-       * Checked on touchdown only, the way a real hook is: catching one on the
-       * roll-out because you wandered back over the band would be absurd.
-       */
+      // Caught a wire? Checked on touchdown only, the way a real hook is.
       const deck = platformAt(this.pos.x, this.pos.z);
       const wires = deck && deck.arrest;
       if (wires && this.groundSpeed > 18) {
@@ -2035,26 +2064,22 @@ export class Aircraft {
       }
       const vsFpm = -this.vs * FPM;
       const bank = this.bankAngleDeg();
-      /*
-       * How far off the centreline, measured against whichever surface you
-       * actually landed on.
-       *
-       * This was a flat `|z - 0|` — the axis of runway one and nothing else —
-       * which is meaningless on a north-south strip and meaningless on a
-       * carrier. It read as hundreds of metres off centre for a landing that
-       * was dead on the paint.
-       */
+      // Off the centreline of whichever surface it landed on (any runway, or a deck).
       const centreline = this.centrelineError();
       const grade = this.gradeTouchdown(vsFpm, bank, centreline);
-      this.lastTouchdown = grade;
+      // A touch within a few seconds of bouncing off is the same landing: it keeps the worse grade.
+      const hop = this._hop > 0 && airT < 5;
+      const first = this.lastTouchdown;
+      if (hop && !grade.crashed) grade.bounce = this._hop;
+      else this._hop = 0;
+      this.lastTouchdown = grade.bounce && first && first.score < grade.score ? first : grade;
+      if (hop || airT >= 1) {
+        this._arrT = 0;
+        this._reb = deck || grade.crashed ? 0 : reboundSpeed(-this.vs, SPEC);
+      }
       this.emit(EVENTS.TOUCHDOWN, grade);
       if (grade.crashed) {
-        /*
-         * A bad landing hits on the undercarriage, not on whatever happens to
-         * sit nearest the aeroplane's centre. Without a point here, every
-         * heavy landing tore the canopy off — the same wreck regardless of how
-         * you arrived, which is the opposite of what a landing grade is for.
-         */
+        // A bad landing hits on the belly under the gear, not on whatever sits nearest the centre.
         const bellyPoint =
           (SPEC.hardPoints || []).find((h) => /belly/i.test(h.what)) || null;
         const belly = bellyPoint
@@ -2063,8 +2088,11 @@ export class Aircraft {
         this.crash(grade.reason, { worldPoint: belly, part: 'fuselage' });
         return;
       }
-    } else if (wasOnGround && !this.onGround && this.groundSpeed > 12) {
-      this.emit(EVENTS.LIFTOFF, { speedKts: this.ias * KTS });
+    } else if (wasOnGround && !this.onGround) {
+      // Off the wheels again inside a second and a half of arriving is a bounce, not a take-off.
+      this._reb = 0;
+      if (this._arrT < 1.5) this.emit(EVENTS.BOUNCE, { n: ++this._hop });
+      else if (this.groundSpeed > 12) this.emit(EVENTS.LIFTOFF, { speedKts: this.ias * KTS });
     }
 
     // ---- Integrate ----------------------------------------------------
@@ -2241,18 +2269,7 @@ export class Aircraft {
   }
 
   gradeTouchdown(vsFpm, bank, centreline) {
-    /*
-     * Either runway, and the deck.
-     *
-     * This asked `isOnRunway`, which is runway one alone — while terrain.js
-     * exports `isOnAnyRunway` with a comment saying in as many words that it
-     * is what landing scoring should ask. So a textbook arrival on the
-     * crosswind strip, or a carrier trap, was graded as an arrival in a
-     * field: `centred` collapsed to 0.25 and the whole score was halved, the
-     * banner said "not on the runway" and the tower asked whether you were
-     * able to taxi. A deck landing is the hardest thing in the game and it
-     * scored about forty.
-     */
+    // Either runway, and the deck: a crosswind-strip arrival or a carrier trap is on the runway too.
     const onRunway =
       isOnAnyRunway(this.pos.x, this.pos.z, 6) || !!platformAt(this.pos.x, this.pos.z);
     const paved = isPaved(this.pos.x, this.pos.z);
@@ -2261,15 +2278,8 @@ export class Aircraft {
     let reason = '';
     let quality = 'good';
 
-    /*
-     * How hard an arrival the undercarriage will take.
-     *
-     * This is the one that matters for someone learning. Nobody gives up
-     * because the aeroplane was hard to rotate — they give up because the
-     * landing they were quite pleased with ended in a fireball. Easy raises
-     * the limit by half, so a heavy arrival is a bad landing and a bounce
-     * rather than the end of the flight; realistic keeps the real number.
-     */
+    // How hard an arrival the undercarriage takes. Easy raises the limit by half, so a heavy arrival is a
+    // bad landing and a bounce rather than the end of the flight; realistic keeps the real number.
     const sinkLimit =
       this.difficulty === 'easy' ? 1350 : this.difficulty === 'realistic' ? 820 : 900;
     if (sink > sinkLimit) {

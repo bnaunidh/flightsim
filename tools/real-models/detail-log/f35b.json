@@ -1,0 +1,43 @@
+{
+ "baked": {
+  "occlusion": "1024 px, from the airframe's shape only (Blender Cycles AO, 256 samples, 1.5 m)",
+  "png KB": 294
+ },
+ "bytes": {
+  "packed (KTX2 + meshopt)": 227956,
+  "raw (PNG, float)": 527412
+ },
+ "dropped": [
+  "livery: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "livery: metallicRoughnessTexture: f5ddf04bf2e5: not yet approved by a person (detail-log contact sheet; models.py approvedMaps)"
+ ],
+ "id": "f35b",
+ "kept": [],
+ "materials": {
+  "darkmet": {
+   "dropped": [],
+   "kept": []
+  },
+  "darkmet2": {
+   "dropped": [],
+   "kept": []
+  },
+  "lightmet": {
+   "dropped": [],
+   "kept": []
+  },
+  "livery": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+    "metallicRoughnessTexture: f5ddf04bf2e5: not yet approved by a person (detail-log contact sheet; models.py approvedMaps)"
+   ],
+   "kept": []
+  },
+  "window": {
+   "dropped": [],
+   "kept": []
+  }
+ },
+ "source": "f35b/f35b.glb",
+ "triangles": 5836
+}

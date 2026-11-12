@@ -85,12 +85,16 @@ async function checkWithComic(sim, r, say) {
     r.ok(`crashes: ${kind} — a happening goes out for multiplayer`, !!ev && ev.kind === kind && ev.map === T.MAP.id && Number.isFinite(ev.x), JSON.stringify(ev));
     r.ok(`crashes: ${kind} — a mark goes on the minimap`, C.marks.list.length >= Math.min(10, marksBefore) && C.newestMine && C.newestMine.kind === kind);
     const start = sim.aircraft.pos.clone();
+    // About two seconds; with Reduce flashing (the default) held till a second after the wreck is still (v80.2).
+    const camWant = sim.settings.reduceFlashing !== false ? cr.CRASH_CAM_REDUCED_SECONDS : cr.CRASH_CAM_SECONDS;
+    const camLifeOk = Math.abs(D.CAM.life - camWant) < 1e-9;
+    const steps = Math.max(26, Math.round(camWant * 10) + 5);
     let camSeen = 0;
     let maxStep = 0;
     let prev = start.clone();
     let fleetModel = !!(sim.model && sim.model.userData && sim.model.userData.fleetBridge);
     let modelOff = 0;
-    for (let i = 0; i < 26; i++) {
+    for (let i = 0; i < steps; i++) {
       sim.step(0.1);
       if (D.CAM.active) camSeen++;
       const p = sim.aircraft.pos;
@@ -100,7 +104,8 @@ async function checkWithComic(sim, r, say) {
     }
     const s = C.script;
     r.ok(`crashes: ${kind} — the choreography plays and finishes`, (!s && kind === 'splash' && fleetModel) || (s && s.done), s ? `t ${s.t.toFixed(2)}` : 'no script');
-    r.ok(`crashes: ${kind} — the crash cam hands the camera back after about two seconds`, camSeen >= 18 && camSeen <= 23 && !D.CAM.active, `${camSeen} of 26 steps`);
+    const camN = Math.round(camWant * 10);
+    r.ok(`crashes: ${kind} — the crash cam hands the camera back after about two seconds (three with Reduce flashing)`, camLifeOk && camSeen >= camN - 3 && camSeen <= camN + 2 && !D.CAM.active, `${camSeen} of ${steps} steps, ${D.CAM.life} s`);
     r.ok(`crashes: ${kind} — the aeroplane moves without jumping`, maxStep < 8 && [prev.x, prev.y, prev.z].every(Number.isFinite), `${maxStep.toFixed(2)} m in 0.1 s at most`);
     if (!fleetModel) r.ok(`crashes: ${kind} — the model on screen follows it`, modelOff < 1.5, `${modelOff.toFixed(2)} m`);
     if (kind === 'splash') r.ok('crashes: splash — ends afloat, not on the sea bed', prev.y > -3 && prev.y < 3, prev.y.toFixed(2));

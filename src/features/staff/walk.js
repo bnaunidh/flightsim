@@ -207,6 +207,10 @@ export function groundAt(x, z) {
 
 /** What ground() last stood on: 0 terrain / built on heightAt, 1 tarmac, 2 road, 3 pad. */
 let KIND = 0;
+/** ...as of the last groundAt (features/onfoot-grass.js grows grass on 0 only). */
+export function groundKind() {
+  return KIND;
+}
 let PAD = null;
 
 function ground(x, z) {

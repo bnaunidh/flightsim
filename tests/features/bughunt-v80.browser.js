@@ -336,12 +336,19 @@ export async function touchKeyNames(sim, r) {
     html.classList.remove('is-touch-device');
     got.desk = [tail('guidance'), tail('minimap')];
     html.classList.add('is-touch-device');
+    html.classList.remove('has-keys');
     got.touch = [tail('guidance'), tail('minimap')];
+    // A tablet in a keyboard case: a real (trusted) key press puts has-keys on the root (flight/input.js).
+    html.classList.add('has-keys');
+    got.cased = [tail('guidance'), tail('minimap')];
   } finally {
     html.classList.toggle('is-touch-device', had);
+    html.classList.remove('has-keys');
   }
   r.ok('bughunt-v80: Settings names the N and J keys with a keyboard, and not on a tablet',
     got.desk[0] === ' (N):inline' && got.desk[1] === ' (J):inline' && got.touch.every((t) => /:none$/.test(t)), JSON.stringify(got));
+  r.ok('bughunt-v80: a tablet with a keyboard case names the keys once a real key is pressed',
+    got.cased[0] === ' (N):inline' && got.cased[1] === ' (J):inline', JSON.stringify(got));
   const { getAircraft } = await import('../../src/aircraft/types.js');
   const blurb = (getAircraft('f35b') || {}).blurb || '';
   r.ok('bughunt-v80: the F-35B card names its HOVER button as well as T', /Press HOVER \(or T\)/.test(blurb) && !/Press T and/.test(blurb), blurb.slice(0, 80));

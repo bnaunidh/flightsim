@@ -126,10 +126,8 @@ export const DEFAULT_SETTINGS = {
   /*
    * The alternative aircraft models in src/fleet/.
    *
-   * Off, because the built-in ones read better side by side — see
-   * model-adapter.js. Here as a switch rather than deleted so the two can be
-   * compared without a rebuild, and so it can become the default the moment
-   * the new shapes have some volume in them.
+   * Off: the civil aeroplanes draw the built-in shapes -- see model-adapter.js.
+   * (Held off in v81.0: on, the apron vans do not stop for a parked aeroplane.)
    */
   fleetModels: false,
   // REAL MODELS: the downloaded airframes worn over the airliners (aircraft/real-models.js). On; off draws the built-in ones.
@@ -144,6 +142,7 @@ export const DEFAULT_SETTINGS = {
    * once. Flip the switch yourself afterwards and it stays flipped.
    */
   modelSetRev: 2,
+  hudRev: 1, // the Clean HUD handed back once to every save (owner, 2026-11-11)
   /*
    * See MIGRATIONS: bumping this hands the damage default back once.
    *
@@ -297,6 +296,8 @@ const MIGRATIONS = [
   { rev: 'modelSetRev', keys: ['fleetModels'] },
   // Battle damage, brought out of Dev mode and turned on.
   { rev: 'damageRev', keys: ['damageModel'] },
+  // The HUD: Clean is the default; a save on another density is handed back to it once.
+  { rev: 'hudRev', keys: ['hudDensity'] },
 ];
 
 const QUALITY_TIERS = ['low', 'medium', 'high', 'ultra'];

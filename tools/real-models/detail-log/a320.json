@@ -1,0 +1,59 @@
+{
+ "baked": {
+  "occlusion": "2048 px, from the airframe's shape only (Blender Cycles AO, 256 samples, 3.0 m)",
+  "png KB": 967
+ },
+ "bytes": {
+  "packed (KTX2 + meshopt)": 1838740,
+  "raw (PNG, float)": 2954500
+ },
+ "drawn": {
+  "normal + roughness": "the game's own panel seams, frame rivet rows, lap joints, spar/hinge lines, cowl joints, panel gloss and seam grime (detail.py surface_maps)",
+  "png KB": 1721,
+  "seam sigma m": 0.0202,
+  "texel m": 0.0238
+ },
+ "dropped": [
+  "A21N: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "A21N.001: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "engine_cowling: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "cockpit_glass: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "eyes_togglable: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+ ],
+ "id": "a320",
+ "kept": [],
+ "materials": {
+  "A21N": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "A21N.001": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "cockpit_glass": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "engine_cowling": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "eyes_togglable": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  }
+ },
+ "source": "a321/a321.glb",
+ "triangles": 6286
+}

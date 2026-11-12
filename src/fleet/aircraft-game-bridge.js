@@ -4,7 +4,8 @@ import * as THREE from '../vendor/three.module.js';
 import { createFleetAircraft, aircraftIds } from './aircraft-fleet.js';
 export { EXTRA_DRAWS } from './extra/index.js';
 import { createSinkingEffect } from './effects.js';
-const SUPPORTED = new Set(aircraftIds);
+// Read live, not snapshotted: an aeroplane can join the pack after the first load (aircraft-fleet.js registerFleetAircraft).
+const SUPPORTED = { has: (id) => aircraftIds.includes(id) };
 const eyeReference = new THREE.Vector3(-.24, .46, .06);
 const clamp = THREE.MathUtils.clamp;
 

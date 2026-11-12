@@ -7,23 +7,52 @@ what it should become.
 
 ## HARD CONSTRAINTS — read before anything else
 
-1. **No downloaded assets, ever.** No `.glb` / `.gltf` / `.obj` / `.fbx`, no image files, no audio files.
-   Every mesh is built from three.js primitives and every texture is painted with the Canvas 2D API at
-   load time. This is why the whole game is 1.2 MB and runs offline on a school laptop with no network.
-   **A model that needs a file to download cannot be used here at all.**
-2. **three.js r169**, vendored, ES modules, no build step, no npm, no loaders.
-3. **Axes: −Z is forward (out of the nose), +Y is up, +X is out of the right wing.**
-4. **Budget:** a few hundred triangles each. Anything repeated (trees, buildings, lights) must be an
-   `InstancedMesh`.
-5. **Style:** readable at 50–500 m in motion beats detail up close.
-6. **Deliverable shape:** an ES module exporting a function that returns a `THREE.Group`, with any moving
-   part exposed on `group.userData` so the game can drive it.
+(Rewritten 2026-11-11 to match the game as it is now. The old "no downloaded assets, primitives only,
+a few hundred triangles" rules described the game before v60; they no longer hold.)
+
+1. **Two kinds of model, and both matter.**
+   - **The game's own (procedural) model** of every aircraft, vehicle and building is built in code from
+     three.js primitives, and it is ALWAYS built: it is what flies — gear points, strike points, the
+     camera frame, the cockpit cut-outs, the doors, the lamps and the crash/breakup pieces all read it.
+     It is also what Low graphics, an offline first visit and a failed download show.
+   - **A downloaded model** (CC BY 4.0, from Sketchfab) may be worn over it as a better-looking skin:
+     the airliners, fighters, helicopters, trees, scenery and Last Flight Out's SCP cast do this today
+     (`src/aircraft/real-models.js`, `tools/real-models/`). Each is fetched only when it is first
+     needed and then kept for offline play; none is in the service worker's install list.
+2. **No real liveries, logos or markings ship — ever.** A downloaded model's colour textures are always
+   thrown away and the game paints it with its own parody liveries. Only *detail* maps (normal,
+   roughness/metal, ambient occlusion) with no lettering or emblem in them may be kept, or shade baked
+   from the model's shape (`tools/real-models/detail.py`). A model with an airline's titles or stripes
+   modelled into its geometry cannot be used (that is why Concorde keeps the game's own).
+3. **No audio files** (every sound is synthesised), and every other texture — terrain, sky, buildings,
+   liveries — is painted with Canvas 2D at load time.
+4. **three.js r169**, vendored, ES modules, **no build step and no npm at run time**. No GLTFLoader:
+   the game reads GLB with its own reader (`src/vehicles/glb.js`), plus `src/aircraft/real-packed.js`
+   for packed files (meshopt + KTX2, decoded with three's vendored `KTX2Loader` and meshopt decoder,
+   loaded only when such a file is). Packing happens offline, in `tools/` (gltf-transform, toktx,
+   Blender) — never in the game.
+5. **Axes: −Z is forward (out of the nose), +Y is up, +X is out of the right wing.**
+6. **Budgets.**
+   - First load: `main.js`'s static import graph must stay at or under 1,494,347 B gzipped
+     (`tests/features/farlands.mjs`); anything big is loaded on demand.
+   - A procedural aircraft: a few thousand triangles (the 737's is about 7,400). Anything repeated
+     (trees, buildings, lights) must be an `InstancedMesh`.
+   - A downloaded aircraft file: under 1.5 MB plain, up to about 3 MB with detail maps (the 737 pilot
+     is 0.56 MB, ~9,500 triangles).
+   - On Low a real model must cost no more than 5% over the built-in one
+     (`tests/features/real-models.browser.js`), and Low never decodes detail maps.
+   - The school demo hardware is iPads (Safari, touch only) and Chromebooks: test there.
+7. **Style:** readable at 50–500 m in motion beats detail up close; realistic, no cartoon effects.
+8. **Deliverable shape (procedural):** an ES module exporting a function that returns a `THREE.Group`,
+   with any moving part exposed on `group.userData` so the game can drive it. **(Downloaded):** a
+   `tools/real-models/models.py` entry, processed by `process.py`, credited in
+   `assets/models/LICENSES.md` and the Credits screen (`src/ui/credits.js`).
 
 ```js
 import * as THREE from '../vendor/three.module.js';
 export function createThing(opts = {}) {
   const g = new THREE.Group();
-  // primitives only
+  // the procedural model: primitives
   g.userData.spin = (dt, rate) => { /* ... */ };
   return g;
 }

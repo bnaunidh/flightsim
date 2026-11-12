@@ -1,5 +1,5 @@
 /**
- * The airlines' lettering: twelve OFL typefaces, bundled (assets/fonts/).
+ * The airlines' lettering: sixteen OFL typefaces, bundled (assets/fonts/).
  *
  * The owner, on the titling: "not the same font". Every airline wore the
  * same Helvetica, which is the one thing no two real airlines ever share —
@@ -11,7 +11,7 @@
  * typeface (most are custom and trademarked); the nearest free cousin.
  *
  * All SIL Open Font License 1.1 (assets/fonts/FONTS.md), latin subset woff2
- * from Fontsource, about 230 kB in all, precached by sw.js so they are there
+ * from Fontsource, about 300 kB in all, precached by sw.js so they are there
  * offline. Credited in the Credits screen (ui/credits.js).
  *
  * HOW IT LOADS. The faces are declared once as @font-face rules (a <style>
@@ -26,23 +26,23 @@
  * fontsLoaded() stays false, and every caller falls back to the stack it had.
  */
 
-/** Every face, by family, weight and style. `serif` picks the fallback stack. */
+/**
+ * Every face, by family, weight and style. `serif` picks the fallback stack. `file` is the
+ * Fontsource name, <family>-<weight>-<style>.woff2 (one rule, so a face is one line here).
+ */
 export const AIRLINE_FONTS = Object.freeze([
-  { family: 'Montserrat', weight: 700, style: 'normal', file: 'montserrat-700-normal.woff2' },
-  { family: 'Montserrat', weight: 800, style: 'normal', file: 'montserrat-800-normal.woff2' },
-  { family: 'Jost', weight: 600, style: 'normal', file: 'jost-600-normal.woff2' },
-  { family: 'Jost', weight: 700, style: 'normal', file: 'jost-700-normal.woff2' },
-  { family: 'League Spartan', weight: 700, style: 'normal', file: 'league-spartan-700-normal.woff2' },
-  { family: 'Playfair Display', weight: 700, style: 'normal', file: 'playfair-display-700-normal.woff2', serif: true },
-  { family: 'Cinzel', weight: 700, style: 'normal', file: 'cinzel-700-normal.woff2', serif: true },
-  { family: 'Oswald', weight: 600, style: 'normal', file: 'oswald-600-normal.woff2', condensed: true },
-  { family: 'Barlow Condensed', weight: 700, style: 'normal', file: 'barlow-condensed-700-normal.woff2', condensed: true },
-  { family: 'Exo 2', weight: 700, style: 'italic', file: 'exo-2-700-italic.woff2' },
-  { family: 'Titillium Web', weight: 700, style: 'normal', file: 'titillium-web-700-normal.woff2' },
-  { family: 'Archivo Black', weight: 400, style: 'normal', file: 'archivo-black-400-normal.woff2' },
-  { family: 'Kanit', weight: 600, style: 'normal', file: 'kanit-600-normal.woff2' },
-  { family: 'Lora', weight: 600, style: 'italic', file: 'lora-600-italic.woff2', serif: true },
-]);
+  ['Montserrat', 700], ['Montserrat', 800], ['Jost', 600], ['Jost', 700], ['League Spartan', 700],
+  ['Playfair Display', 700, 'serif'], ['Cinzel', 700, 'serif'], ['Oswald', 600, 'condensed'], ['Barlow Condensed', 700, 'condensed'],
+  ['Exo 2', 700, 'italic'], ['Titillium Web', 700], ['Archivo Black', 400], ['Kanit', 600], ['Lora', 600, 'italic', 'serif'],
+  // Owner-approved 2026-11-09, closer to four airlines' lettering (assets/fonts/FONTS.md):
+  ['Rubik', 900], ['Cormorant Garamond', 700, 'serif'], ['Josefin Sans', 600], ['Nunito Sans', 600],
+].map(([family, weight, ...tags]) => {
+  const style = tags.includes('italic') ? 'italic' : 'normal';
+  const f = { family, weight, style, file: `${family.toLowerCase().replace(/ /g, '-')}-${weight}-${style}.woff2` };
+  if (tags.includes('serif')) f.serif = true;
+  if (tags.includes('condensed')) f.condensed = true;
+  return Object.freeze(f);
+}));
 
 /** The fallback a canvas uses before (or without) the face: the stack the titling always had. */
 const SANS = '"Helvetica Neue", Helvetica, Arial, sans-serif';

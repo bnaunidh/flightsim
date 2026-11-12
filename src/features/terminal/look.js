@@ -17,6 +17,7 @@ import { Batch } from '../../world/airport-kit.js';
 import { DOOR, ENTRANCE_DOORS, ENTRANCES_U } from '../life/doors.js';
 import { UP, FLOOR, CEIL, CEIL_LOW, STAIR_LEN, rectLess, spans } from './plan.js';
 import { BRANDS, passengerAirlines } from './atlas.js';
+import { dressInside, dressOutside } from './dress.js';
 
 const _c = new THREE.Color();
 const WHITE_WALL = 0xeeeeea;
@@ -575,6 +576,16 @@ export function* buildRoom(P, atlas, elev, out) {
   }
   lounge(R);
   boards(R);
+  yield;
+  // The furnishing (dress.js): inside into these same meshes, the kerb's into two of its own.
+  out.solids = dressInside(R);
+  yield;
+  const K = new Room(P, atlas, elev);
+  out.kerb = new Batch();
+  const ks = dressOutside(K, out.kerb);
+  out.solids.push(...ks);
+  out.palms = ks.trees;
+  out.kerbSigns = K.fit;
   yield;
   out.fit = R.fit;
   out.floor = R.floor;

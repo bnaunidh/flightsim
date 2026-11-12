@@ -1,0 +1,44 @@
+{
+ "baked": {
+  "occlusion": "1024 px, from the airframe's shape only (Blender Cycles AO, 256 samples, 1.5 m)",
+  "png KB": 333
+ },
+ "bytes": {
+  "packed (KTX2 + meshopt)": 215956,
+  "raw (PNG, float)": 499888
+ },
+ "dropped": [
+  "f18_texture: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "f18_texture: KHR_materials_specular: material extension: its textures are not read",
+  "f18_texture: normalTexture: looks like lettering: 8 glyph-sized marks in a row",
+  "f18_texture: metallicRoughnessTexture: f00d857cd4cf: not yet approved by a person (detail-log contact sheet; models.py approvedMaps)",
+  "glass: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "glass: KHR_materials_specular: material extension: its textures are not read",
+  "glass: normalTexture: 563c8e77be5b: not yet approved by a person (detail-log contact sheet; models.py approvedMaps)",
+  "glass: metallicRoughnessTexture: 255517ef5732: not yet approved by a person (detail-log contact sheet; models.py approvedMaps)"
+ ],
+ "id": "fa18",
+ "kept": [],
+ "materials": {
+  "f18_texture": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+    "KHR_materials_specular: material extension: its textures are not read",
+    "normalTexture: looks like lettering: 8 glyph-sized marks in a row",
+    "metallicRoughnessTexture: f00d857cd4cf: not yet approved by a person (detail-log contact sheet; models.py approvedMaps)"
+   ],
+   "kept": []
+  },
+  "glass": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+    "KHR_materials_specular: material extension: its textures are not read",
+    "normalTexture: 563c8e77be5b: not yet approved by a person (detail-log contact sheet; models.py approvedMaps)",
+    "metallicRoughnessTexture: 255517ef5732: not yet approved by a person (detail-log contact sheet; models.py approvedMaps)"
+   ],
+   "kept": []
+  }
+ },
+ "source": "fa18/fa18.glb",
+ "triangles": 4380
+}

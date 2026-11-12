@@ -84,6 +84,8 @@ const BY_CLASS = Object.freeze({
 export function cockpitFamily(type) {
   if (!type) return 'light';
   if (FAMILY[type.id]) return FAMILY[type.id];
+  // A version found later (the Javelin) sits in its base's cockpit.
+  if (type.variantOf && FAMILY[type.variantOf]) return FAMILY[type.variantOf];
   const byClass = BY_CLASS[String(type.class || '').toLowerCase()];
   if (byClass) return byClass;
   // A rotor is a helicopter whatever its class says.

@@ -310,6 +310,7 @@ export class CityLook {
       this.craft = buildRampCraft(CITY_FIELD, this.quality);
       if (this.craft.mesh) f.add(this.craft.mesh);
       f.add(this.craft.lights);
+      if (this.craft.pools) f.add(this.craft.pools);
       f.add(this.craft.launcher.group);
     } catch (e) {
       console.warn('[void-city] the ramp\'s craft could not be built', e);

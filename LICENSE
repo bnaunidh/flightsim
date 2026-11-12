@@ -4,24 +4,32 @@ Copyright (c) 2025–2026 thankdapro
 
 This is written in plain language on purpose. It is the whole licence.
 
+ALL RIGHTS RESERVED
+
+  Island Flight Simulator is not open source. Its code, art, sounds, maps,
+  missions and text belong to thankdapro, and all rights are reserved.
+
 WHAT YOU MAY DO
 
-  You may use this game, copy it, share it, change it, and build your own
-  things from it — for fun, for school, for a project of your own, or for a
-  game or asset on Roblox or any other platform — as long as you give credit
-  to thankdapro. A line such as
-
-      "Based on Island Flight Simulator by thankdapro"
-
-  somewhere people can see it (your credits, your README, your game's page)
-  is enough. Keep this licence file with any copy of the code you pass on.
+  Play it, free, on its website or installed from it, as much as you like —
+  at home, at school, anywhere. Show it to people. Record it, stream it and
+  post videos and screenshots of it.
 
 WHAT YOU MAY NOT DO
 
-  You may not claim you made it, or remove the credit to thankdapro.
+  Without thankdapro's written permission you may not copy, download to
+  re-host, change, sell, or re-publish the game or any part of its code or
+  assets, or build your own game, mod, Roblox game or asset from it.
 
-  You may not use the name "thankdapro" to suggest that thankdapro made,
-  approved or is connected to your version.
+  You may not claim you made it, or use the name "thankdapro" to suggest
+  that thankdapro made, approved or is connected to something else.
+
+EARLIER VERSIONS
+
+  Versions published before 11 November 2026 came with an open
+  "share with credit" licence. A copy someone already had under that
+  licence keeps those terms; this licence covers this version and
+  everything after it.
 
 THIRD-PARTY CODE
 
@@ -45,6 +53,14 @@ SCP FOUNDATION CONTENT
   of the game, the CC BY-SA 3.0 terms apply to it: credit the SCP Wiki and its
   authors, and share your version of that content under the same licence.
   https://creativecommons.org/licenses/by-sa/3.0/
+
+DOWNLOADED MODELS AND FONTS
+
+  The aircraft, tree, scenery and SCP models fetched from Sketchfab are by
+  their authors under CC BY 4.0, credited in the game's Credits screen and in
+  assets/models/LICENSES.md; the airline lettering fonts are under the SIL
+  Open Font Licence (assets/fonts/FONTS.md). Those stay under their own
+  licences.
 
 NO WARRANTY
 

@@ -535,6 +535,8 @@ function removeBreak() {
 function armTank(sim) {
   if (W.tank && sim.aircraft) W.tank.removeMass(sim.aircraft);
   W.tank = sim.aircraftType ? new WaterTank(sim.aircraftType) : null;
+  // A mission's own bucket size (spec.bucketLitres): a short fill where the machine is heavy or high.
+  if (W.tank && W.tank.kind === 'bucket' && W.spec && Number.isFinite(W.spec.bucketLitres) && W.spec.bucketLitres > 0) W.tank.capacity = W.spec.bucketLitres;
   if (W.tank && W.spec && W.spec.startFull) {
     W.tank.litres = W.tank.capacity;
     W.filledOnce = true;

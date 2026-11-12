@@ -48,11 +48,13 @@ const ATTRIBUTES = {
   POSITION: 'position',
   NORMAL: 'normal',
   TEXCOORD_0: 'uv',
+  TEXCOORD_1: 'uv1', // the real models' detail maps (aircraft/real-packed.js)
+  TEXCOORD_2: 'uv2',
   COLOR_0: 'color',
 };
 
 /** Extensions we either read or can safely ignore, so nothing else passes silently. */
-const KNOWN_EXTENSIONS = new Set(['KHR_materials_emissive_strength', 'KHR_materials_specular']);
+const KNOWN_EXTENSIONS = new Set(['KHR_materials_emissive_strength', 'KHR_materials_specular', 'KHR_mesh_quantization', 'KHR_texture_basisu']);
 
 /**
  * Parse a .glb.

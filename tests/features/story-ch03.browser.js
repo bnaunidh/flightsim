@@ -47,7 +47,7 @@ async function waitFor(fn, tries = 200, ms = 40) {
 /* The pilot: chapter 1's control law, pointed at this chapter's targets   */
 /* ====================================================================== */
 
-async function flyChapter(sim, { THREE, Ch3, T, say, maxSeconds = 520, stopWhen = null }) {
+export async function flyChapter(sim, { THREE, Ch3, T, say, maxSeconds = 520, stopWhen = null, trace = null }) {
   const ac = sim.aircraft;
   const ground = (x, z) => Math.max(0, T.heightAt(x, z));
   const K = Ch3.CHAPTER_3._state;
@@ -111,10 +111,20 @@ async function flyChapter(sim, { THREE, Ch3, T, say, maxSeconds = 520, stopWhen 
   };
   const flyLanding = () => {
     if (!B.glide) {
-      // Round onto 09: a point north-west of the join first, so the turn onto the centreline is
-      // made before the join and the glide starts lined up (it started 600 m off and 30° out before).
-      if (B.rwy === 9 && !B.circuitDone) {
-        const w1 = new THREE.Vector3(B.join.x - 1500, B.join.y, -900);
+      /*
+       * A procedure turn, not a chase of the join. The first pilot flew to a
+       * point north-west of 09's join and then steered AT the join: a point
+       * you are already at has no bearing, so it circled it, 2 km wide, for
+       * the rest of the insulin clock (2026-11-09). Now: out along the side
+       * of the centreline, two turn radii off it (2.2 km at 22° of bank and
+       * 66 m/s), to abeam a point 400 m beyond the join; then a 180° turn
+       * towards the centreline ends lined up on it, heading at the field,
+       * with the glide ahead. 09 goes out on the north side (the South Wall
+       * stands over the other), 27 on the south side (the North Wall).
+       */
+      if (!B.circuitDone) {
+        const out = B.rwy === 27 ? 1 : -1; // along x, away from the field
+        const w1 = new THREE.Vector3(B.join.x + out * 400, B.join.y, B.rwy === 27 ? 2200 : -2200);
         const d1 = Math.hypot(w1.x - ac.pos.x, w1.z - ac.pos.z);
         if (d1 > 450) {
           B.target = w1;
@@ -124,19 +134,29 @@ async function flyChapter(sim, { THREE, Ch3, T, say, maxSeconds = 520, stopWhen 
           return;
         }
         B.circuitDone = true;
+        log(`procedure turn at ${ac.pos.x.toFixed(0)},${ac.pos.z.toFixed(0)} hdg ${ac.heading.toFixed(0)}`);
       }
-      B.target = B.join;
-      B.alt = B.join.y;
+      // Onto the centreline: a carrot 1.5 km ahead ALONG it (never the join itself).
+      const ahead = B.rwy === 27 ? -1500 : 1500;
+      const cx = B.rwy === 27 ? Math.min(ac.pos.x + ahead, B.join.x) : Math.max(ac.pos.x + ahead, B.join.x);
+      B.target = new THREE.Vector3(cx, B.join.y, 0);
+      // Metres still to run to the touchdown along the approach, and the slope's height there: sink
+      // towards the slope while lining up, so the glide never starts from high above it (the run that
+      // joined 09 at 434 m with 1.1 km to go overflew the field at 60 m/s, 2026-11-09).
+      const along = B.rwy === 27 ? ac.pos.x - B.td.x : B.td.x - ac.pos.x;
+      const tan = B.rwy === 9 ? TAN09 : TAN3;
+      const slopeY = B.td.y + Math.max(0, along) * tan;
+      B.alt = Math.min(B.join.y, slopeY + 40);
       B.spd = 66;
       B.maxBank = 22;
-      const d = Math.hypot(B.join.x - ac.pos.x, B.join.z - ac.pos.z);
       const err = Math.abs((((B.L - ac.heading) % 360) + 540) % 360 - 180);
-      const east = B.rwy === 27 ? ac.pos.x : -ac.pos.x; // along the approach, positive = before the field
-      const tdAlong = B.rwy === 27 ? B.td.x : -B.td.x;
-      // Lined up, near the centreline, before the field: onto the glide.
-      if ((d < 700 && err < 45 && Math.abs(ac.pos.z) < 300) || (east < (B.rwy === 27 ? B.join.x : -B.join.x) && east > tdAlong + 700 && err < 45 && Math.abs(ac.pos.z) < 300)) {
+      const joinAlong = B.rwy === 27 ? B.join.x - B.td.x : B.td.x - B.join.x;
+      // Pointed at the field, within reach of the centreline (the glide's cross-track law intercepts
+      // from 500 m out), between the join and the field: onto the glide.
+      if (along < joinAlong + 300 && along > 700 && err < 60 && Math.abs(ac.pos.z) < 500) {
         B.glide = true;
-        log(`on the glide, runway ${B.rwy}`);
+        B.maxSink = 10;
+        log(`on the glide, runway ${B.rwy}, at ${ac.pos.x.toFixed(0)},${ac.pos.z.toFixed(0)} y ${ac.pos.y.toFixed(0)} (slope ${slopeY.toFixed(0)}) hdg ${ac.heading.toFixed(0)}`);
       }
       return;
     }
@@ -265,10 +285,12 @@ async function flyChapter(sim, { THREE, Ch3, T, say, maxSeconds = 520, stopWhen 
       } else if (def === 'story-ch03-home') {
         if (stepId === 'approach' || stepId === 'short-final' || stepId === 'land') {
           if (!B.join) planLanding();
+          if (B.glide) B.maxSink = 10;
           flyLanding();
           if (ac.onGround && ac.groundSpeed < 1.5 && ac.groundTime > 1) out.landed = true;
         }
       }
+      if (trace) trace(T0, B, stepId, out);
       if (T0 % 15 < 0.25) {
         const s = K.shape;
         log(`… ${ac.pos.x.toFixed(0)},${ac.pos.z.toFixed(0)} y ${ac.pos.y.toFixed(0)} agl ${Math.round(ac.agl)} ias ${ac.ias.toFixed(0)} hdg ${ac.heading.toFixed(0)} step ${stepId} lock ${K.lock.toFixed(2)} hid ${K.hiddenT.toFixed(0)} clock ${K.clock.toFixed(0)} cargo ${K.cargo.toFixed(2)}${s && !s.gone ? ` shape ${s.state} ${Math.round(s.pos.distanceTo(ac.pos))} m` : ''}`);
@@ -354,8 +376,8 @@ export async function check(sim, r, say = () => {}) {
     menus.screens.story.querySelector('[data-story="chapters"]').click();
     const tiles = [...menus.screens['story-chapters'].querySelectorAll('[data-tile]')];
     const shippedN = Ch.availableChapters().length;
-    // Open: the chapters reached (1-3 with the pointer on 3); a shipped chapter past the pointer is locked until it is reached.
-    r.ok('ch3: chapter select — chapters 1-3 open, the rest locked (shipped or not)', tiles.length === 13 && shippedN >= 3 && tiles.slice(0, 3).every((t) => !t.classList.contains('is-locked')) && tiles.slice(3).every((t) => t.classList.contains('is-locked')), `${shippedN} shipped, ${tiles.filter((t) => t.classList.contains('is-locked')).length} locked`);
+    // With the workbench open the dev chapters (2-4) are selectable whatever the pointer says; 5 onward stay coming soon.
+    r.ok('ch3 (dev): chapter select — chapters 1-4 open, the rest locked', tiles.length === 13 && shippedN >= 4 && tiles.slice(0, 4).every((t) => !t.classList.contains('is-locked')) && tiles.slice(4).every((t) => t.classList.contains('is-locked')), `${shippedN} shipped, ${tiles.filter((t) => t.classList.contains('is-locked')).length} locked`);
     menus.show('story');
     menus.screens.story.querySelector('[data-story="continue"]').click();
     await waitFor(() => menus.current === 'story-briefing', 120);
@@ -469,7 +491,10 @@ export async function check(sim, r, say = () => {}) {
       const Probe = await import('../flicker-probe.js');
       const FB = await import('./flicker.browser.js');
       sim.rig.initialised = false;
-      const m1 = await Probe.measure(sim, { frames: 60, fps: 30, warm: 0, raycast: false });
+      // A second for the chase camera to settle on the held aeroplane first: measured from the reset
+      // itself, the rig's ease-in slides the Courier's own propeller disc across the sea and reads
+      // 1.8 % of the screen; the same view a second later reads 0.08 % (rays, 2026-11-09).
+      const m1 = await Probe.measure(sim, { frames: 60, fps: 30, warm: 1, raycast: false });
       r.ok(`ch3 flicker: the shape on the wing at dusk flickers over under ${(FB.FLICKER_MAX * 100).toFixed(1)}% of the screen (Reduce flashing on)`, m1.meanLum.max > 0.01 && m1.percArea <= FB.FLICKER_MAX && m1.wcagWindow <= FB.WCAG_WINDOW_MAX, `perc ${(m1.percArea * 100).toFixed(2)}%, WCAG window ${(m1.wcagWindow * 100).toFixed(2)}%; ${m1.stepMs} ms a frame`);
       C.titleCard({ over: 'Chapter 3', main: 'RANGE CONTROL', sub: 'AURORA FJORDS · 17:50', dur: 4, bars: 'thin' });
       const m2 = await Probe.measure(sim, { frames: 45, fps: 30, warm: 0, raycast: false });

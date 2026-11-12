@@ -148,14 +148,15 @@ export const WORDMARKS = {
   },
   liberty: {
     reads: 'LIBERTY AIR',
-    idea: 'a star for the word space, the AIR in red',
+    idea: 'a star for the word space, the AIR in red, in a humanist sans set a little open',
     inks: ['#12306b', '#c8102e'],
-    rows: [{ runs: [{ t: 'LIBERTY' }, { shape: 'star', w: 0.74, ink: 1, gap: 0.3 }, { t: 'AIR', ink: 1, gap: 0.3 }], track: 0.075 }],
-    kern: { LI: -0.01, RT: -0.015, TY: -0.03, AI: -0.012 },
+    rows: [{ runs: [{ t: 'LIBERTY' }, { shape: 'star', w: 0.74, ink: 1, gap: 0.3 }, { t: 'AIR', ink: 1, gap: 0.3 }], track: 0.06 }],
+    kern: { LI: -0.008, RT: -0.012, TY: -0.035, AI: -0.01 },
+    bold: 0.006,
     stack: {
       rows: [
-        { runs: [{ t: 'LIBERTY' }], track: 0.075 },
-        { runs: [{ shape: 'star', w: 0.8, ink: 1 }, { t: 'AIR', ink: 1, gap: 0.24 }], cap: 0.86, track: 0.2, align: 'right', gap: 0.26 },
+        { runs: [{ t: 'LIBERTY' }], track: 0.06 },
+        { runs: [{ shape: 'star', w: 0.8, ink: 1 }, { t: 'AIR', ink: 1, gap: 0.24 }], cap: 0.86, track: 0.18, align: 'right', gap: 0.26 },
       ],
     },
   },
@@ -245,19 +246,21 @@ export const WORDMARKS = {
   },
   desertpearl: {
     reads: 'Desert Pearl',
-    idea: 'a fine serif in one tall gold line, a brighter gold pearl for the space',
+    idea: 'a soft old-style serif in one tall gold line, a brighter gold pearl for the space',
     inks: ['#9a7420', '#c8a24a'],
-    rows: [{ runs: [{ t: 'Desert' }, { shape: 'pearl', w: 0.24, ink: 1, gap: 0.12 }, { t: 'Pearl', gap: 0.12 }], track: 0.006 }],
-    bold: 0.012,
-    kern: { rt: -0.006, Pe: -0.03 },
+    rows: [{ runs: [{ t: 'Desert' }, { shape: 'pearl', w: 0.24, ink: 1, gap: 0.14 }, { t: 'Pearl', gap: 0.14 }], track: 0.012 }],
+    // (Cormorant's hairlines are finer than Playfair's: fattened more, so they hold at a distance)
+    bold: 0.018,
+    kern: { rt: -0.004, Pe: -0.028, De: -0.006 },
   },
   sandline: {
     reads: 'SANDLINE',
-    idea: 'classical capitals over a long tapering line, a star at its middle',
+    idea: 'light geometric capitals set wide over a long tapering line, a star at its middle',
     inks: ['#523a18', '#7a5a30'],
-    rows: [{ runs: [{ t: 'SANDLINE' }], track: 0.17 }],
-    kern: { AN: -0.02, LI: -0.012 },
-    bold: 0.01,
+    rows: [{ runs: [{ t: 'SANDLINE' }], track: 0.2 }],
+    kern: { SA: -0.01, AN: -0.016, LI: -0.01 },
+    // (a light face: a touch of weight so it reads from the apron)
+    bold: 0.012,
     room: { b: 0.4 },
     deco(d) {
       const { g, W, cap } = d;
@@ -387,10 +390,10 @@ export const WORDMARKS = {
   },
   spit: {
     reads: 'spit air',
-    idea: 'loud black lowercase, the i an exclamation mark standing up to the ascenders',
+    idea: 'loud black rounded lowercase, set tight, the i an exclamation mark standing up to the ascenders',
     inks: ['#1a1a1a'],
-    rows: [{ runs: [{ t: 'sp' }, { shape: 'bang', w: 0.26, h: 0.98, gap: 0.07 }, { t: 't', gap: 0.07 }, { t: 'air', gap: 0.3 }], track: -0.01 }],
-    kern: { ai: -0.01 },
+    rows: [{ runs: [{ t: 'sp' }, { shape: 'bang', w: 0.27, h: 0.96, gap: 0.06 }, { t: 't', gap: 0.06 }, { t: 'air', gap: 0.3 }], track: -0.018 }],
+    kern: { sp: -0.006, ai: -0.012 },
   },
   oversea: {
     reads: 'OverSea',

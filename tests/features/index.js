@@ -8,15 +8,18 @@
  * not stop the others.
  */
 import { check as aircrew } from './aircrew.browser.js';
+import { check as atcPopup } from './atc-popup.browser.js';
+import { check as photoMode } from './photo-mode.browser.js';
 import { check as airFuel } from './air-fuel.browser.js';
 import { check as airport } from './airport.browser.js';
 import { check as airportLook } from './airport-look.browser.js';
 import { check as boatPlaytest } from './boat-playtest.browser.js';
 import { check as brace } from './brace.browser.js';
-import { secondType, deckEdge } from './heli-missions.browser.js';
+import { secondType, deckEdge, deckSide, ledgeEdgeStop } from './heli-missions.browser.js';
 import { check as missionsFunPlaneCore } from './missions-fun-plane-core.browser.js';
 import { check as missionsFunHeli } from './missions-fun-heli.browser.js';
 import { check as secrets } from './secrets.browser.js';
+import { check as javelinReload } from './javelin-reload.browser.js';
 import { check as passengers } from './passengers.browser.js';
 import { check as carPlaytest } from './car-playtest.browser.js';
 import { check as civil } from './civil.browser.js';
@@ -63,8 +66,10 @@ import { check as quality } from './quality.browser.js';
 import { check as rocket } from './rocket.browser.js';
 import { check as sound } from './sound.browser.js';
 import { check as races } from './race-all.browser.js';
+import { check as racePause } from './race-pause.browser.js';
 import { check as bughunt } from './bughunt.browser.js';
 import { check as bughuntV80 } from './bughunt-v80.browser.js';
+import { check as landingBounce } from './landing-bounce.browser.js';
 import { check as traffic } from './traffic.browser.js';
 import { check as weapons } from './weapons.browser.js';
 import { check as minimapGhosts } from './minimap-ghosts.browser.js';
@@ -119,6 +124,7 @@ import { check as tp } from './tp.browser.js';
 import { check as time } from './time.browser.js';
 import { check as farGlitch } from './far-glitch.browser.js';
 import { check as voidCity } from './void-city.browser.js';
+import { check as fieldPapi } from './field-papi.browser.js';
 import { check as storyCh02 } from './story-ch02.browser.js';
 import { check as storyCh03 } from './story-ch03.browser.js';
 import { check as storyCh04 } from './story-ch04.browser.js';
@@ -128,6 +134,7 @@ export const CHECKS = [
   { id: 'missions-fun-plane-core', check: missionsFunPlaneCore },
   { id: 'missions-fun-heli', check: missionsFunHeli },
   { id: 'secrets', check: secrets },
+  { id: 'javelin-reload', check: javelinReload },
   { id: 'passengers', check: passengers },
   { id: 'airport', check: airport },
   { id: 'airport-look', check: airportLook },
@@ -135,6 +142,8 @@ export const CHECKS = [
   { id: 'brace', check: brace },
   { id: 'heli-second-type', check: secondType },
   { id: 'heli-deck-edge', check: deckEdge },
+  { id: 'heli-deck-side', check: deckSide },
+  { id: 'heli-ledge-edge-stop', check: ledgeEdgeStop },
   { id: 'car-playtest', check: carPlaytest },
   { id: 'civil', check: civil },
   { id: 'crashes', check: crashes },
@@ -215,6 +224,8 @@ export const CHECKS = [
   // After list3: the plane picked in the Hangar is the one flown in a lobby, over a ride saved on the lobby screen (v56).
   { id: 'multiplayer-plane', check: multiplayerPlane },
   { id: 'aircrew', check: aircrew },
+  { id: 'atc-popup', check: atcPopup },
+  { id: 'photo-mode', check: photoMode },
   // After aircrew: the walking pilot knocked down by anything that moves (the pilot brief).
   { id: 'pilot', check: pilot },
   { id: 'rocket', check: rocket },
@@ -225,6 +236,8 @@ export const CHECKS = [
   // "troll thing for admin": the same toys for an admin, never on the owner or another admin.
   { id: 'admin-trolls', check: adminTrolls },
   { id: 'races', check: races },
+  // A race alone: its clock (and the grid's count) held while paused or in another tab.
+  { id: 'race-pause', check: racePause },
   { id: 'air-fuel', check: airFuel },
   // The owner's "graphic errors that can cause seziure": the screen measured at the worst places, and Reduce flashing.
   { id: 'flicker', check: flicker },
@@ -312,10 +325,14 @@ export const CHECKS = [
   { id: 'far-glitch', check: farGlitch },
   // Nullspire: the hidden city 100 km out in the void, its field, the dev teleport, the endless void (puts the map back).
   { id: 'void-city', check: voidCity },
+  // The World Map fields' PAPI, rendered from the approach: lit, and white over red by the glide angle.
+  { id: 'field-papi', check: fieldPapi },
   // The demo bug hunt (2026-11-02): the boat's rudder bar, pause card and restarts; a pause straight after a crash.
   { id: 'bughunt', check: bughunt },
   // The v80 bug hunt (2026-11-09): G on the runway, and the rest found playing every mode.
   { id: 'bughunt-v80', check: bughuntV80 },
+  // The touchdown bounce: a big aeroplane put down hard hops and settles, and it is one landing.
+  { id: 'landing-bounce', check: landingBounce },
   // Last: it rebinds keys through Settings (and puts the player's back after).
   { id: 'keybinds', check: keybinds },
 ];

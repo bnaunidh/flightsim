@@ -15,6 +15,9 @@
  *   - the Find box, the Dev console's input, the game switcher's icon-only
  *     buttons, the smoke chip and the master warning lamps are 44 px targets
  *     on a touch device;
+ *   - Settings → Controls on a touch-only tablet shows a note, not key caps,
+ *     until a real key is pressed;
+ *   - the World Map's MAP / RATE chips and the race flag are 44 px on touch;
  *   - the helicopter's "Press I to start the engine." reads as a tap.
  *
  * `check(sim, r, say)` — r.ok(name, pass, detail) per assertion.
@@ -76,6 +79,70 @@ export async function check(sim, r, say) {
       }
     }
     r.ok('ipad: every Settings picker is 16 px text on a touch device (smaller and Safari zooms the page)', selects > 0 && sizes.length === 0, sizes.join(', ') || `${selects} pickers`);
+
+    log('the key caps');
+    // Settings → Controls on a touch-only tablet: a note, not key caps; a key press brings them back. The rules sit under
+    // "not all and (any-pointer: fine)", false in a desktop Chrome, so they are tried here copied out of the wrapper.
+    {
+      let media = null;
+      for (const sh of document.styleSheets) {
+        let rules = [];
+        try { rules = [...sh.cssRules]; } catch (e) { rules = []; }
+        for (const ru of rules) if (ru.media && /any-pointer: fine/.test(ru.media.mediaText) && /keymap/.test(ru.cssText)) media = ru;
+      }
+      const hadKeys = html.classList.contains('has-keys');
+      html.classList.remove('has-keys');
+      const st = document.createElement('style');
+      st.textContent = media ? [...media.cssRules].map((x) => x.cssText).join('\n') : '';
+      document.head.appendChild(st);
+      const ctl = settings.querySelector('[data-tab="controls"]');
+      if (ctl) ctl.click();
+      await sleep(30);
+      const panel = settings.querySelector('[data-panel="controls"]');
+      const km = panel && panel.querySelector('[data-keymap]');
+      const note = () => (panel ? getComputedStyle(panel, '::after').content : '');
+      const touchOnly = { caps: shown(km), note: note() };
+      html.classList.add('has-keys');
+      const keyed = { caps: shown(km), note: note() };
+      if (!hadKeys) html.classList.remove('has-keys');
+      st.remove();
+      r.ok('ipad: Settings → Controls on a touch-only tablet says touch controls are on screen instead of showing key caps',
+        !!media && /not all and \(any-pointer: fine\)/.test(media.media.mediaText) && !touchOnly.caps && /connect a keyboard/.test(touchOnly.note),
+        `${media ? media.media.mediaText : 'no rule'}; caps ${touchOnly.caps}, note ${touchOnly.note.slice(0, 70)}`);
+      r.ok('ipad: ...and a key press (a real keyboard) brings the key caps back', keyed.caps && !/connect a keyboard/.test(keyed.note), `caps ${keyed.caps}, note ${keyed.note}`);
+    }
+
+    log('the World Map and race chips');
+    // The HUD chips the iPad audit measured (World Map MAP / RATE, the folded race flag): 44 px on touch, unchanged on a desktop.
+    {
+      const { icon } = await import('../../src/ui/icons.js');
+      const { HUB_CSS } = await import('../../src/features/race/hub.js');
+      const tmp = document.createElement('style');
+      if (!document.getElementById('ifs-race-style')) tmp.textContent = HUB_CSS;
+      document.head.appendChild(tmp);
+      const box = document.createElement('div');
+      box.style.cssText = 'position:fixed;left:0;top:0;z-index:-1;';
+      box.innerHTML = `<div class="wp-hudcard"><button type="button" class="wp-mapchip">${icon('map', 16)}<span class="wp-word">Map</span></button>`
+        + '<button type="button" class="wp-warp"><span class="wp-word">Rate</span><span class="wp-rate">1x</span></button></div>'
+        + '<div class="race-solobar rs-chip"><button type="button" class="race-solo-all">🏁<span class="race-solo-word"> Races</span></button>'
+        + '<button type="button" class="race-solo-leave">✕ Leave race</button></div>';
+      document.body.appendChild(box);
+      const sizes = () => [...box.querySelectorAll('button')].map((b) => {
+        const q = b.getBoundingClientRect();
+        return [b.className, Math.round(q.width), Math.round(q.height)];
+      });
+      const touch = sizes();
+      html.classList.remove('is-touch-device');
+      const desk = sizes();
+      html.classList.add('is-touch-device');
+      box.remove();
+      tmp.remove();
+      const fmt = (a) => a.map(([c, w, h]) => `${c} ${w}x${h}`).join(', ');
+      r.ok('ipad: the World Map MAP / RATE chips and the race flag (folded or not) are 44 px targets on a touch device',
+        !!document.getElementById('wp-style') && touch.every(([, w, h]) => w >= 44 && h >= 44), fmt(touch));
+      r.ok('ipad: ...and the same size as before on a desktop', desk[0][2] === 36 && desk[1][2] === 36 && desk[2][2] < 44, fmt(desk));
+    }
+
     const firstTab = settings.querySelector('[data-tab="flight"]') || tabs[0];
     if (firstTab) firstTab.click();
 

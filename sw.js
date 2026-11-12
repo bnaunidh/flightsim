@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v80.1';
+const CACHE_VERSION = 'island-flight-v81.0';
 
 const PRECACHE = [
   './',
@@ -628,6 +628,7 @@ const PRECACHE = [
   'src/world/worldmap/biome-trees.js',
   'src/world/worldmap/biomes.js',
   'src/features/terminal/atlas.js',
+  'src/features/terminal/dress.js',
   'src/features/terminal/interior.js',
   'src/features/terminal/look.js',
   'src/features/terminal/plan.js',
@@ -643,11 +644,22 @@ const PRECACHE = [
   'src/features/sound-samples.js',
   // Added by tools/sync-precache.mjs.
   'src/aircraft/extra/javelin.js',
+  'src/fleet/extra/javelin.js',
   'src/aircraft/extra/spireline.js',
   'src/features/far-glitch.js',
   'src/world/worldmap/void-city-craft.js',
   'src/world/worldmap/void-city-look.js',
   'src/world/worldmap/void-city.js',
+  // Added by tools/sync-precache.mjs.
+  'src/aircraft/real-detail.js',
+  'src/aircraft/real-packed.js',
+  'src/vendor/addons/KTX2Loader.js',
+  'src/vendor/addons/WorkerPool.js',
+  'src/vendor/addons/ktx-parse.module.js',
+  'src/vendor/addons/meshopt_decoder.module.js',
+  'src/vendor/addons/zstddec.module.js',
+  'src/vendor/basis/basis_transcoder.js',
+  'src/features/onfoot-grass.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 
@@ -698,8 +710,11 @@ const PRECACHE = [
   // aeroplane is first picked, and the cache-first handler below keeps it, so a
   // type seen once flies in its real skin offline too.
   'src/aircraft/real-models.js',
+  // ...and its detail maps' code (real-packed.js, real-detail.js, vendor/addons, vendor/basis's
+  // .js) is listed with the rest; vendor/basis/basis_transcoder.wasm (515 KB) is NOT: it is
+  // fetched the first time a packed model's maps are decoded and kept by the runtime cache.
   // AIRLINE LETTERING: the OFL faces each airline's name is lettered in
-  // (src/render/airline-fonts.js, assets/fonts/FONTS.md), about 230 KB in all.
+  // (src/render/airline-fonts.js, assets/fonts/FONTS.md), about 300 KB in all.
   'src/render/airline-fonts.js',
   // ...and the airlines' fin marks, drawn as brand marks (src/fleet/extra/emblems.js).
   'src/fleet/extra/emblems.js',
@@ -714,16 +729,20 @@ const PRECACHE = [
   'assets/fonts/archivo-black-400-normal.woff2',
   'assets/fonts/barlow-condensed-700-normal.woff2',
   'assets/fonts/cinzel-700-normal.woff2',
+  'assets/fonts/cormorant-garamond-700-normal.woff2',
   'assets/fonts/exo-2-700-italic.woff2',
   'assets/fonts/jost-600-normal.woff2',
   'assets/fonts/jost-700-normal.woff2',
+  'assets/fonts/josefin-sans-600-normal.woff2',
   'assets/fonts/kanit-600-normal.woff2',
   'assets/fonts/league-spartan-700-normal.woff2',
   'assets/fonts/lora-600-italic.woff2',
   'assets/fonts/montserrat-700-normal.woff2',
   'assets/fonts/montserrat-800-normal.woff2',
+  'assets/fonts/nunito-sans-600-normal.woff2',
   'assets/fonts/oswald-600-normal.woff2',
   'assets/fonts/playfair-display-700-normal.woff2',
+  'assets/fonts/rubik-900-normal.woff2',
   'assets/fonts/titillium-web-700-normal.woff2',
   // The crash slide and the sea: spray, slide marks, the view of the wreck, and under the water.
   'src/features/breakup/crash-view.js',

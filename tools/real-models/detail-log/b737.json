@@ -1,0 +1,65 @@
+{
+ "baked": {
+  "occlusion": "2048 px, from the airframe's shape only (Blender Cycles AO, 256 samples, 3.0 m)",
+  "png KB": 1026
+ },
+ "bytes": {
+  "packed (KTX2 + meshopt)": 1681672,
+  "raw (PNG, float)": 2670300
+ },
+ "drawn": {
+  "normal + roughness": "the game's own panel seams, frame rivet rows, lap joints, spar/hinge lines, cowl joints, panel gloss and seam grime (detail.py surface_maps)",
+  "png KB": 1254,
+  "seam sigma m": 0.0212,
+  "texel m": 0.025
+ },
+ "dropped": [
+  "Body_737: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Wings_737.: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Egnine_737: baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+ ],
+ "id": "b737",
+ "kept": [],
+ "materials": {
+  "Black": {
+   "dropped": [],
+   "kept": []
+  },
+  "Body_737": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Egnine_737": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Engine": {
+   "dropped": [],
+   "kept": []
+  },
+  "Engine.001": {
+   "dropped": [],
+   "kept": []
+  },
+  "Jendela": {
+   "dropped": [],
+   "kept": []
+  },
+  "White": {
+   "dropped": [],
+   "kept": []
+  },
+  "Wings_737.": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  }
+ },
+ "source": "b737max/b737max.glb",
+ "triangles": 9546
+}

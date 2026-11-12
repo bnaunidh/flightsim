@@ -75,7 +75,7 @@
           '<h2>Could not load the game</h2>' +
           '<p class="fatal-line">A file did not arrive — usually the wifi. Reloading fixes it.</p>' +
           '<button type="button" class="fatal-reload" data-fatal-reload>Reload</button>' +
-          (location.protocol === 'file:' ? '<p class="tiny">Running from a folder? Start a local web server first — see the README in the source ZIP.</p>' : '') +
+          (location.protocol === 'file:' ? '<p class="tiny">Running from a folder? Play it from its website instead.</p>' : '') +
           '</div>';
         var btn = box.querySelector('[data-fatal-reload]');
         if (btn) btn.addEventListener('click', function () { window.__reloadPage(); });

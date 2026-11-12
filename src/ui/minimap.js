@@ -721,7 +721,8 @@ function craftOf(sim, mode, out = {}) {
   // Straight off the aircraft rather than through readouts(), which builds a
   // thirty-field object every call — this runs every frame. Riding as a
   // passenger (sim.riding, the President's seat), "you" is the jet you are in.
-  const ac = (sim.riding && sim.riding.pos) ? sim.riding : sim.aircraft;
+  // sim.mapCentre: whoever the map should follow instead (runaway.js: you, on foot, while she flies off).
+  const ac = sim.mapCentre || ((sim.riding && sim.riding.pos) ? sim.riding : sim.aircraft);
   out.x = ac.pos.x;
   out.y = ac.pos.y;
   out.z = ac.pos.z;
@@ -735,37 +736,11 @@ function craftOf(sim, mode, out = {}) {
   out.crashed = !!ac.crashed;
   out.aground = false;
   out.draught = 0;
-  out.kind = mode === 'heli' ? 'heli' : 'aeroplane';
+  out.kind = ac.kind || (mode === 'heli' ? 'heli' : 'aeroplane');
   return out;
 }
 
-/**
- * The roads, from whichever of the two places has them.
- *
- * WHAT I NEED FROM THE ROAD SPECIALIST, exactly, and I have deliberately not
- * invented it — this reads whatever is there and copes with nothing:
- *
- *     // src/world/roads.js
- *     export function roadNetwork() : RoadNet | null
- *     // and/or, hung on the sim at map load: sim.roads = RoadNet
- *
- *     RoadNet = {
- *       roads: [{
- *         id:        string,          // 'a1', 'depot-spur'
- *         name:      string,          // 'The Coast Road'  (drawn when it fits)
- *         class:     'main' | 'lane', // only changes the stroke width
- *         path:      [[x, z, y], …],  // world metres, same as MAP.waters.roads
- *         halfWidth: number,          // metres; defaults to 26 if absent
- *         blend:     number,          // metres; defaults to 55 if absent
- *       }],
- *       junctions: [{ x: number, z: number, ways: number }] | undefined,
- *     }
- *
- * `junctions` is optional: if the router does not publish them this file
- * works them out from the paths, once per map, and the result is a marker in
- * the right place either way. If `roadNetwork` never lands, `MAP.waters.roads`
- * is used, which is real on Kestrel and empty on the three car maps.
- */
+/** The roads: sim.roads (an array, or { roads }) if the map hung them there, else MAP.waters.roads. */
 function roadsOf(sim) {
   const net = sim && sim.roads;
   if (net) {
@@ -779,22 +754,7 @@ function roadsOf(sim) {
 /* The chart underneath                                                */
 /* ------------------------------------------------------------------ */
 
-/*
- * The islands used to be drawn as filled circles with a browner circle inside
- * for the high ground, which is what the island list literally contains — a
- * centre, a radius and a peak. It reads as a diagram of an island rather than
- * as a map of this one: every coast a perfect circle, no bays, no ridge, and
- * the same shape on every map in the game.
- *
- * So the chart is sampled from `heightAt` — the same function the terrain
- * itself is built from — and shaded with a hillshade, which is what makes a
- * paper map legible: you can see which way the ground falls. Sampled once per
- * map into an offscreen image and then simply blitted, because the terrain
- * does not move and 262,144 samples is not something to do every frame.
- *
- * It is filled twenty rows at a time so nothing stutters on a school laptop,
- * and whatever is done so far is drawn.
- */
+/* The chart: heightAt sampled once per map into a hillshaded image (twenty rows a frame), then blitted. */
 
 /**
  * The depth bands of the boat chart.
@@ -2782,6 +2742,7 @@ export class Minimap {
    */
   drawOwnCraft(g) {
     const { ctx, cx, cy, k, craft, mode, ts } = g;
+    if (craft.kind === 'foot') return; // a person: the feature's own pin marks them
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate((craft.headingDeg * Math.PI) / 180);
@@ -3125,32 +3086,7 @@ function segClosest(ax, az, bx, bz, cx, cz, dx, dz) {
   return { d: best, x: bxx, z: bzz };
 }
 
-/**
- * Where two roads meet, worked out rather than authored.
- *
- * Authored junctions drift out of step with the roads the moment anybody
- * moves a waypoint — the same argument `channelMarks` makes about buoys, and
- * it is the right one. If the road router publishes its own junction list
- * this is never called; it is the fallback that makes `MAP.waters.roads`
- * useful on its own.
- *
- * SEGMENT against segment, not vertex against road. That distinction is the
- * whole function: the first version of this compared each road's CORNERS to
- * the other road, and a plain crossroads — two straight roads crossing at
- * right angles in the middle of both — has no corner anywhere near the
- * crossing, so it found nothing. Measured: two 2 km roads crossing at the
- * origin, zero junctions. It is the commonest junction there is.
- *
- * Every crossing is reported, not one per pair, because a coast road can
- * perfectly well cross a valley road twice; near-duplicates inside one road
- * width of each other collapse into one, so a road that runs alongside
- * another for a kilometre is one junction and not forty.
- *
- * O(segments²), run once per map and cached by `derivedFor`. Kestrel's single
- * road never enters the loop at all; twenty-four ten-segment roads is 28,800
- * segment pairs, which is the worst case anyone could author and is still
- * under a millisecond, once.
- */
+/** Where two roads meet, worked out (segment against segment) when the router publishes none. */
 function junctionsOf(roads) {
   const out = [];
   if (roads.length < 2) return out;

@@ -2,8 +2,8 @@
  * Other aeroplanes.
  *
  * The wishlist: "Add planes that fly around everywhere and can land/takeoff
- * and at the end park in their hangars." So two to four AI aeroplanes live at
- * the airfield. Each one starts its engine, leaves its slot, taxis out, holds
+ * and at the end park in their hangars." So two to six AI aeroplanes live at
+ * the airfield (two at Low; more by graphics tier, see populate). Each one starts its engine, leaves its slot, taxis out, holds
  * short, lines up, takes off, flies a circuit or a tour of the islands, comes
  * back down a glideslope, lands, rolls out, turns off, taxis back and parks —
  * nose in on a stand, or pushed back into a hangar tail first, the way the
@@ -564,7 +564,8 @@ function populate(sim) {
   // A mission that asks for traffic may say how much: `traffic: 2`.
   const def = sim.mode === 'mission' && sim.runner && sim.runner.def;
   const asked = def && Number.isFinite(def.traffic) ? Math.max(1, Math.min(MAX_AIRCRAFT, Math.round(def.traffic))) : null;
-  const want = asked || (quality === 'low' ? 2 : field.length >= 2400 ? 4 : 3);
+  // "add more npc aircraft" (2026-11-11): Low keeps its 2; Medium +1, High +2, Ultra +3 on the old 3 (4 on a long runway).
+  const want = asked || (quality === 'low' ? 2 : Math.min(MAX_AIRCRAFT, (field.length >= 2400 ? 4 : 3) + ({ medium: 1, high: 2, ultra: 3 }[quality] || 0)));
   // Shuffle the pool so each flight has a different mix.
   const order = [...pool].sort(() => T.rand() - 0.5);
   let made = 0;

@@ -134,11 +134,11 @@ const rigCam = { pos: new THREE.Vector3(), mode: null };
  * (features/crashes.js CRASH_CAM_BACK_REDUCED), the stretched view stands
  * further back from a wreck: CRASH_BACK_REDUCED times, eased in over
  * CRASH_BACK_EASE seconds of the rig's clock as a pull-back rather than a
- * cut. 1.5 times (184 m) measured 8.5-13% in three quiet runs, and the F-22's
- * glow and dust at the same distance 4-10%.
+ * cut. At 1.5 times (184 m) the A380's bonk still ran 12-17%; at 2 (v80.2),
+ * 8-10%.
  */
 const held = { on: false, target: new THREE.Vector3(), t0: 0, retarget: false };
-export const CRASH_BACK_REDUCED = 1.5;
+export const CRASH_BACK_REDUCED = 2;
 export const CRASH_BACK_EASE = 0.6;
 
 function stretchView(sim, camera) {

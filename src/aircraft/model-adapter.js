@@ -40,11 +40,14 @@ import { wearRealModel } from './real-models.js';
  */
 let fleet = null;
 let fleetIds = new Set();
+let fleetList = null; // the pack's live list: the Javelin joins it after the first load
+
 let fleetError = null;
 try {
   fleet = await import('../fleet/aircraft-game-bridge.js');
   const list = await import('../fleet/aircraft-fleet.js');
   fleetIds = new Set(list.aircraftIds);
+  fleetList = list.aircraftIds;
 } catch (e) {
   fleet = null;
   fleetError = e;
@@ -104,7 +107,7 @@ function packDraws(id) {
 
 /** Which ids the pack can actually build. Everything else goes to model.js. */
 export function fleetCovers(id) {
-  if (!fleet || !fleetIds.has(id)) return false;
+  if (!fleet || !(fleetIds.has(id) || (fleetList && fleetList.includes(id)))) return false;
   return useFleet || packDraws(id);
 }
 
@@ -156,9 +159,10 @@ export function createAircraftModel(opts = {}) {
    * resolved for it carries its colours (liveries.js schemeFor reads the
    * type's own livery and accent), or the named scheme it wears instead
    * (`houseScheme` — Air Force One in 'potus'). Any other scheme the player
-   * picked is passed through as it is.
+   * picked is passed through as it is. Unless the pack draws the variant
+   * under its own id (the Javelin: fleet/extra/javelin.js).
    */
-  if (type.variantOf && type.variantOf !== type.id) {
+  if (type.variantOf && type.variantOf !== type.id && !fleetCovers(type.id)) {
     const base = getAircraft(type.variantOf);
     if (base && base.id !== type.id && !base.variantOf) {
       let livery = opts.livery;

@@ -419,6 +419,17 @@ export class Weather {
     return this.condition;
   }
 
+  /** End every weather event (a respawn), a gust front's wind put back. */
+  clearEvents() {
+    const f = this._front;
+    if (f) {
+      this.windSpeedKts = this.baseWindKts = f.fromKts;
+      this.windDirDeg = this.baseWindDirDeg = f.fromDir;
+    }
+    this._front = this._shear = this._tempCond = null;
+    this.lightningFlash = 0;
+  }
+
   temporaryCondition(id, seconds, overrides = null) {
     if (!CONDITIONS[id]) return;
     this._tempCond = { id, left: seconds, overrides };

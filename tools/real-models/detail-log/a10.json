@@ -1,0 +1,113 @@
+{
+ "baked": {
+  "occlusion": "1024 px, from the airframe's shape only (Blender Cycles AO, 256 samples, 1.5 m)",
+  "png KB": 229
+ },
+ "bytes": {
+  "packed (KTX2 + meshopt)": 509204,
+  "raw (PNG, float)": 1244068
+ },
+ "dropped": [
+  "lambert2: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "Alternatecolfil: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "AlternateLWing: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "file1Material: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "file2Material: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "AlternateBacksMaterial: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "AlternateRightWMaterial: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "Default_Material: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "Alternatebwings: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "file4Material: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "lambert7: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "file3Material: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read",
+  "AlternateRWing: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+ ],
+ "id": "a10",
+ "kept": [],
+ "materials": {
+  "AlternateBacksMaterial": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "AlternateLWing": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "AlternateRWing": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "AlternateRightWMaterial": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "Alternatebwings": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "Alternatecolfil": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "Default_Material": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "default": {
+   "dropped": [],
+   "kept": []
+  },
+  "file1Material": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "file2Material": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "file3Material": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "file4Material": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "lambert2": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "lambert7": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  }
+ },
+ "source": "a10/a10.glb",
+ "triangles": 29385
+}

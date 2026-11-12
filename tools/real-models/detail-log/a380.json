@@ -1,0 +1,31 @@
+{
+ "baked": {
+  "occlusion": "2048 px, from the airframe's shape only (Blender Cycles AO, 256 samples, 3.0 m)",
+  "png KB": 932
+ },
+ "bytes": {
+  "packed (KTX2 + meshopt)": 2516736,
+  "raw (PNG, float)": 4376380
+ },
+ "drawn": {
+  "normal + roughness": "the game's own panel seams, frame rivet rows, lap joints, spar/hinge lines, cowl joints, panel gloss and seam grime (detail.py surface_maps)",
+  "png KB": 1766,
+  "seam sigma m": 0.0621,
+  "texel m": 0.073
+ },
+ "dropped": [
+  "A380: KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+ ],
+ "id": "a380",
+ "kept": [],
+ "materials": {
+  "A380": {
+   "dropped": [
+    "KHR_materials_pbrSpecularGlossiness: material extension: its textures are not read"
+   ],
+   "kept": []
+  }
+ },
+ "source": "a380/a380.glb",
+ "triangles": 59378
+}

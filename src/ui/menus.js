@@ -537,6 +537,11 @@ function aircraftThumbnail(type, liveryId) {
   const livery = lighten(sch.base || type.livery || '#26323f', 0.66);
   const accent = sch.accent || type.accent || '#e0a838';
   const tailCol = sch.tail != null ? `#${sch.tail.toString(16).padStart(6, '0')}` : accent;
+  // An airframe that draws its own plan (the Javelin flies on another's shape).
+  if (type.cardArt) {
+    type.cardArt(g, W, H, { livery, accent, tail: tailCol });
+    return c;
+  }
 
   // Fit the aeroplane into the frame: span across, length down. A type that
   // carries its real planform (S.plan, the airliners) is fitted nose to tail.
@@ -818,7 +823,6 @@ export class Menus {
             <button class="ghost" data-act="sound" data-sound></button>
             <button class="ghost" data-act="credits">Credits &amp; licences</button>
             <button class="ghost" data-act="install" data-install hidden>Install game</button>
-            <a class="ghost" data-zip href="download/island-flight-sim-source.zip" download>Source ZIP</a>
           </div>
           <a class="shoutout" data-shoutout href="https://youtu.be/GJmwWdPTWes" target="_blank" rel="noopener">
             <span class="shoutout-play" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
@@ -1107,6 +1111,7 @@ export class Menus {
       { id: 'brakes', label: 'Brake failure', hint: 'Found out about on the roll-out', delay: [0, 20, 0] },
       { id: 'roughEngine', label: 'Running rough', hint: 'Part power only — can you still make it back?', delay: [0, 20, 4] },
       { id: 'tyre', label: 'Burst tyre', hint: 'Drags hard to one side on the roll-out', delay: [0, 20, 0] },
+      { id: 'hydraulics', label: 'Hydraulics loss', hint: 'Controls slow and weak, flaps and gear hard work, brakes fading', delay: [0, 20, 3], amount: [10, 100, 60], amountLabel: 'Lost', amountUnit: '%' },
     ];
     const failureRows = FAILURES.map((f) => `
       <div class="fail-row" data-fail-row="${f.id}">
@@ -1117,7 +1122,7 @@ export class Menus {
         <div class="fail-sliders" hidden>
           <label class="field"><span>Happens <b data-fail-delay-val="${f.id}">${f.delay[2] === 0 ? 'straight away' : `after ${f.delay[2]} min of flight`}</b></span>
             <input type="range" min="${f.delay[0]}" max="${f.delay[1]}" step="1" value="${f.delay[2]}" data-fail-delay="${f.id}"></label>
-          ${f.amount ? `<label class="field"><span>${f.amountLabel} <b data-fail-amount-val="${f.id}">${f.amount[2]}</b> min</span>
+          ${f.amount ? `<label class="field"><span>${f.amountLabel} <b data-fail-amount-val="${f.id}">${f.amount[2]}</b> ${f.amountUnit || 'min'}</span>
             <input type="range" min="${f.amount[0]}" max="${f.amount[1]}" step="1" value="${f.amount[2]}" data-fail-amount="${f.id}"></label>` : ''}
         </div>
       </div>`).join('');
@@ -2397,6 +2402,7 @@ export class Menus {
       { id: 'brakes', label: 'Brake failure', hint: 'No wheel braking at all' },
       { id: 'roughEngine', label: 'Running rough', hint: 'Part power only — you can still fly, just not far' },
       { id: 'tyre', label: 'Burst tyre', hint: 'Drags to one side the moment you touch down' },
+      { id: 'hydraulics', label: 'Hydraulics loss', hint: 'Choose how much is gone (below) — controls, flaps, gear, brakes' },
     ]
       .map(
         (t) => `
@@ -2480,7 +2486,9 @@ export class Menus {
       <b>climb or descend</b>; returning to the field and lining up work out their own.</p>` });
     this.addPauseItem('break', { group: 'practice', title: 'Break something', html: `
       <p class="trigger-note">Practise dealing with it. Press one again to put it right.</p>
-      <div class="trigger-grid">${triggers}</div>` }).toggleAttribute('data-triggers', true);
+      <div class="trigger-grid">${triggers}</div>
+      <label class="field"><span>Hydraulics lost <b data-hyd-val>60</b>%</span>
+        <input type="range" min="10" max="100" step="5" value="60" data-hyd></label>` }).toggleAttribute('data-triggers', true);
     this.addPauseItem('disasters', { group: 'practice', title: 'Disasters', html: `
       <p class="trigger-note">These run their course and stop on their own.</p>
       <div class="trigger-grid">${eventTriggers}</div>` }).toggleAttribute('data-natural-fold', true);
@@ -2505,6 +2513,11 @@ export class Menus {
         const v = Number(e.target.value);
         s.querySelector('[data-apvs-val]').textContent = v.toLocaleString();
         this.hooks.onAutopilotVs && this.hooks.onAutopilotVs(v);
+        return;
+      }
+      if (e.target.matches('[data-hyd]')) {
+        s.querySelector('[data-hyd-val]').textContent = e.target.value;
+        this.hooks.onHydraulicLoss && this.hooks.onHydraulicLoss(Number(e.target.value) / 100);
         return;
       }
       if (!e.target.matches('[data-apalt]')) return;
@@ -2982,11 +2995,6 @@ export class Menus {
     btn.hidden = false;
     btn.textContent = 'Installed: playable offline';
     btn.disabled = true;
-  }
-
-  setZipAvailable(ok) {
-    const a = this.screens.main.querySelector('[data-zip]');
-    if (!ok) a.remove();
   }
 
   updateFps(fps) {

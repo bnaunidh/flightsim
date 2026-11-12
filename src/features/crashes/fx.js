@@ -17,10 +17,13 @@
  */
 
 import * as THREE from '../../vendor/three.module.js';
+import { FLASH } from '../../render/flash-safety.js';
 
 const CAP = 260;
 const RIBBON_N = 72;
 const STAR_N = 5;
+/** How fast the dizzy stars go round with Reduce flashing on, as a share of their usual 3.2 rad/s. */
+export const STARS_REDUCED = 0.33;
 
 const TYPES = {
   // colour, start size, end size, life, gravity (+ is down), drag
@@ -455,15 +458,21 @@ export class CrashFx {
       this.starT += dt;
       const t = this.starT;
       const grow = Math.min(1, t / 0.35);
+      // Reduce flashing: each black-edged star crossing a pixel is two or four
+      // swings of brightness, and five of them round at 3.2 rad/s crossed every
+      // pixel of their ring two and a half times a second: 3-6 points of a
+      // 10-degree field in the crash sweep (a bonk). A third as fast and the
+      // wobble with it: under one star a second (STARS_REDUCED).
+      const spin = FLASH.reduce ? STARS_REDUCED : 1;
       for (let i = 0; i < this.stars.length; i++) {
-        const a = t * 3.2 + (i * Math.PI * 2) / this.stars.length;
+        const a = t * 3.2 * spin + (i * Math.PI * 2) / this.stars.length;
         const s = this.stars[i];
         s.position.set(
           this.starAt.x + Math.cos(a) * this.starR,
           this.starAt.y + Math.sin(a * 2 + i) * 0.2 * (this.starSize || 1.5),
           this.starAt.z + Math.sin(a) * this.starR
         );
-        const k = (0.9 + 0.25 * Math.sin(t * 7 + i)) * (this.starSize || 1.5) * grow;
+        const k = (0.9 + 0.25 * Math.sin(t * 7 * spin + i)) * (this.starSize || 1.5) * grow;
         s.scale.set(k, k, 1);
       }
     }

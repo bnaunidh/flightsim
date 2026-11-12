@@ -230,7 +230,7 @@ export function buildField(a, quality = 'medium') {
       for (let i = 0; i < 4; i++) {
         const z = pz - i * 6;
         b.box(2.4, 1.5, 1.6, px, 0.75, z, 0x2a2d33);
-        papi.push({ end, x: px - end * 1.3, z });
+        papi.push({ end, x: px + end * 1.3, z });
       }
     }
   }

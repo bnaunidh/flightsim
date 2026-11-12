@@ -47,7 +47,7 @@ import { Aircraft, EVENTS, UNITS, SPEC, applyAircraft, frameSteps } from './airc
 import { showSafetyIntro, shouldShowAtBoot } from './ui/safety-intro.js';
 import { getAircraft, specFor, isHelicopter } from './aircraft/types.js';
 import { createAircraftModel, syncAircraftModel, crashAircraftModel, clampSinking, eyeFor, groundOffsetFor, setFleetModels } from './aircraft/model-adapter.js';
-import { realModelInterior, setRealModelCamera, setRealModels } from './aircraft/real-models.js';
+import { realModelInterior, setRealModelCamera, setRealModelRenderer, setRealModels } from './aircraft/real-models.js';
 import { setModelQuality } from './aircraft/model-quality.js';
 import { createCockpit } from './aircraft/cockpit.js';
 import { TouchControls, isTouchDevice } from './ui/touch.js';
@@ -484,6 +484,7 @@ class Game {
     this.rig = new CameraRig(this.camera, this.aircraft);
     // REAL MODELS: the camera their from-inside test reads (a seat in a parked aeroplane's cabin, a replay).
     setRealModelCamera(this.camera);
+    setRealModelRenderer(this.renderer);
     this.rig.cockpitPitchDeg = (this.cockpit && this.cockpit.userData.viewPitchDeg) || 0;
     this.rig.reducedMotion = this.settings.reducedMotion;
 
@@ -616,6 +617,9 @@ class Game {
       showSafetyIntro: () => this.showSafetyIntro({ skipIntro: true }),
       onPauseAction: (a) => this.pauseAction(a),
       onTrigger: (kind) => this.toggleFailure(kind),
+      onHydraulicLoss: (v) => {
+        this.aircraft.hydraulicLoss = v;
+      },
       onNatural: (id) => this.triggerNatural(id),
       onLocked: (msg) => this.hud.notify(msg, 'warn', 5),
       startDrive: (kind) => this.launchDrive(kind),
@@ -1467,7 +1471,7 @@ class Game {
       this.rig.kick(0.25 + impact * 0.6);
       // Tyre smoke at the main wheels, by sink rate and ground speed (aircraft/tyre-smoke.js).
       if (this.tyreSmoke && !g.crashed && !g.water) this.tyreSmoke.touchdown(ac, g, this.model, fieldWetness(), SPEC.wingSpan || 11);
-      if (g.crashed) return;
+      if (g.crashed || g.bounce) return;
       this.progress = recordLanding(this.progress, g);
       this.menus.syncProgress(this.progress);
       /*
@@ -1976,7 +1980,8 @@ class Game {
     // screen started this flight — Free Flight, a mission, the story, a lobby.
     if (this.aircraftType && this.menus.noteFlown) this.menus.noteFlown(this.aircraftType.id);
 
-    // Weather.
+    // Weather (a disaster's fog bank or storm ends with its flight).
+    this.weather.clearEvents();
     if (mode === 'free') {
       this.weather.load(opts);
       this.settings.weather = this.weather.serialize();
@@ -2223,6 +2228,7 @@ class Game {
     // In a drive: back to its start, not the aeroplane on runway 09.
     if (this.restartDrive()) return;
     extStop(this, 'airport');
+    this.weather.clearEvents();
     this.aircraft.reset({ ...RUNWAY_START, engineOn: true });
     // Put down on the runway, not flown there: the AI traffic gets off it first.
     extPlaced(this, 'airport');
@@ -3796,6 +3802,7 @@ class Game {
       if (!due(a)) continue;
       delete armed[kind];
       if (kind === 'fuelLeak' && a.amountMin) ac.fuelLeakSeconds = a.amountMin * 60;
+      if (kind === 'hydraulics' && a.amountMin) ac.hydraulicLoss = a.amountMin / 100;
       if (!ac.failures[kind]) this.toggleFailure(kind);
     }
   }
@@ -3923,6 +3930,7 @@ class Game {
       brakes: ['Brakes have failed — plan a long roll-out', 'Brakes restored'],
       roughEngine: ['Engine running rough — part power only, pick somewhere close', 'Engine smooth again'],
       tyre: ['Burst tyre — it will pull hard to the left on the ground', 'Tyre changed'],
+      hydraulics: [`Hydraulics ${Math.round(this.aircraft.hydraulicLoss * 100)}% gone — controls heavy, flaps and gear slow, brakes weak`, 'Hydraulics restored'],
     };
     if (on && kind === 'engine') this.aircraft.stopEngine('failure');
     this.hud.notify(words[kind][on ? 0 : 1], on ? 'warn' : 'good', 4);
@@ -5732,26 +5740,7 @@ class Game {
     }
   }
 
-  /**
-   * One frame of the surface games.
-   *
-   * What this replaces, and why each piece had to go:
-   *
-   *   `throttle: ctrl.throttle * 2` — the aeroplane's throttle LEVER, doubled
-   *   and then clamped to 1 inside the vehicle. So the top half of the lever
-   *   did nothing, the bottom half was twice as sensitive as the on-screen
-   *   slider claimed, and the demand could never go below zero: ASTERN, which
-   *   is written in the physics and commented and clamped for, could not be
-   *   asked for by any input device the game has. The one manoeuvre that
-   *   actually stops a boat was unreachable.
-   *
-   *   `steer: ctrl.roll` — the aileron spring, which recentres at a fixed rate
-   *   regardless of speed. A car needs the wheel to wind on more slowly the
-   *   faster it goes, or a child taps a key at 90 km/h and is in the sea.
-   *
-   *   one camera for both: fixed distance, looking at the vehicle rather than
-   *   where it is going, and ignoring the sea entirely.
-   */
+  /** One frame of the surface games: their own throttle (with astern), speed-aware steering and camera. */
   updateDrive(dt) {
     const v = this.vehicle;
     if (!v) return;

@@ -1,0 +1,123 @@
+{
+ "baked": {
+  "occlusion": "2048 px, from the airframe's shape only (Blender Cycles AO, 256 samples, 3.0 m)",
+  "png KB": 699
+ },
+ "bytes": {
+  "packed (KTX2 + meshopt)": 2308496,
+  "raw (PNG, float)": 3085592
+ },
+ "drawn": {
+  "normal + roughness": "the game's own panel seams, frame rivet rows, lap joints, spar/hinge lines, cowl joints, panel gloss and seam grime (detail.py surface_maps)",
+  "png KB": 1967,
+  "seam sigma m": 0.0421,
+  "texel m": 0.0496
+ },
+ "dropped": [
+  "Material.007: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.006: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.002: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.008: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.001: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.009: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.003: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.004: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "Material.005: baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+ ],
+ "id": "b787",
+ "kept": [],
+ "materials": {
+  "Material.001": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.002": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.003": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.004": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.005": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.006": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.007": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.008": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "Material.009": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": []
+  },
+  "material00": {
+   "dropped": [],
+   "kept": []
+  },
+  "material01": {
+   "dropped": [],
+   "kept": []
+  },
+  "material02": {
+   "dropped": [],
+   "kept": []
+  },
+  "material04": {
+   "dropped": [],
+   "kept": []
+  },
+  "material05": {
+   "dropped": [],
+   "kept": []
+  },
+  "material07": {
+   "dropped": [],
+   "kept": []
+  },
+  "material09": {
+   "dropped": [],
+   "kept": []
+  },
+  "material11": {
+   "dropped": [],
+   "kept": []
+  },
+  "material_0": {
+   "dropped": [],
+   "kept": []
+  }
+ },
+ "source": "b787/b787.glb",
+ "triangles": 9500
+}

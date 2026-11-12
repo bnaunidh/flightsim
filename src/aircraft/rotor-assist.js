@@ -43,7 +43,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { clamp } from '../core/noise.js';
 const lerp = (a, b, t) => a + (b - a) * t;
-import { heightAt, platformAt, PLATFORMS, OBSTACLES } from '../world/terrain.js';
+import { heightAt, groundHeightAt, platformAt, PLATFORMS, OBSTACLES } from '../world/terrain.js';
 import { PADS } from '../world/pads.js';
 import { ROLLOVER } from './types.js';
 
@@ -1157,7 +1157,7 @@ export function rotorAssist(ac, SPEC, dt) {
        * 16.5 m over Gannet Stack's ledge, drifting at 1 m/s in 18 kt, put the
        * tail into the higher rock behind it.
        */
-      S.floorY = Math.max(S.floorY, hardFloor(ac, SPEC, T.hardClear));
+      S.floorY = Math.max(S.floorY, hardFloor(ac, S, SPEC, T.hardClear));
     }
     if (S.floorY > S.heldY) {
       S.heldY = S.floorY;
@@ -2027,14 +2027,33 @@ function nearBoxes(ac, S, dt) {
   return S.nearB;
 }
 
-/** The lowest the middle may be held with every hard point `clear` m over what is under it. */
-function hardFloor(ac, SPEC, clear) {
+/*
+ * The lowest the middle may be held with every hard point `clear` m over what
+ * is under it, within EDGE_PAD of it, or EDGE_PAD past where it drifts in
+ * 2.5 s: a deck's, bridge's or box's side is as solid as its top. Man
+ * Overboard's pilot, shuffling in 3 m under the hospital ship's deck, put the
+ * nose into its side. Only structures (not slopes), and none 8 m over it.
+ */
+const PAD_X = [EDGE_PAD, -EDGE_PAD, 0, 0];
+function hardFloor(ac, S, SPEC, clear) {
   let need = -Infinity;
   const hp = SPEC.hardPoints;
+  const k = 2.5 + EDGE_PAD / Math.max(0.2, Math.hypot(ac.vel.x, ac.vel.z));
+  NEAR = nearBoxes(ac, S, 0.1);
   for (let i = 0; i < hp.length; i++) {
     const w = SKID_TMP.copy(hp[i].pos).applyQuaternion(ac.quat).add(ac.pos);
-    need = Math.max(need, Math.max(0, heightAt(w.x, w.z)) + clear - (w.y - ac.pos.y));
+    // Up to 8 m over the point: a taller side is a wall, not ground.
+    NEAR_Y = w.y + 8;
+    let g = sampleGround(w.x, w.z);
+    for (let j = 0; j < 5; j++) {
+      const x = w.x + (j < 4 ? PAD_X[j] : ac.vel.x * k);
+      const z = w.z + (j < 4 ? PAD_X[3 - j] : ac.vel.z * k);
+      const a = sampleGround(x, z);
+      if (a > g && a < NEAR_Y && (lastBox || a > groundHeightAt(x, z) + 0.3)) g = a;
+    }
+    need = Math.max(need, g + clear - (w.y - ac.pos.y));
   }
+  NEAR = null;
   return need;
 }
 

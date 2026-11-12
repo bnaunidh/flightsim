@@ -37,6 +37,8 @@ from models import MODELS, INBOX  # noqa: E402
 ROOT = os.path.normpath(os.path.join(HERE, '..', '..'))
 OUT = os.path.join(ROOT, 'assets', 'models', 'real')
 
+SRC = {}  # id -> the source's (json, buffers), for detail.py's maps
+
 ROLES = ['skin_l', 'skin_r', 'fin', 'wing', 'cowl', 'lip', 'duct', 'core', 'glass', 'window', 'dark', 'metal', 'prop']
 
 ROT = {
@@ -551,7 +553,7 @@ def fix_winding(P, N, I, log, node):
     return I
 
 
-def cut_fin_root(P, N, I, role, prof, hump, fin, cfg):
+def cut_fin_root(P, N, I, role, prof, hump, fin, cfg, UV=None):
     """Split the triangles that cross the fin's root line, so the tail colour
     ends on a line instead of in teeth.
 
@@ -588,8 +590,9 @@ def cut_fin_root(P, N, I, role, prof, hump, fin, cfg):
     fillet = (role == 'skin') & (np.abs(fn[:, 0]) > 0.3) & (fv.max(1) > 0.1)
     todo = np.where(straddle & zone & ((role == 'fin') | fillet))[0]
     if not len(todo):
-        return P, N, I, role, 0
+        return P, N, I, role, 0, UV
     Ps, Ns = [P], [N] if N is not None else None
+    UVs = [UV] if UV is not None else None
     nxt = len(P)
     newI, newR = [], []
     for t in todo:
@@ -608,6 +611,9 @@ def cut_fin_root(P, N, I, role, prof, hump, fin, cfg):
             return p, nn
         p01, n01 = mid(i0, i1)
         p02, n02 = mid(i0, i2)
+        if UVs is not None:
+            t1, t2 = f[i0] / (f[i0] - f[i1]), f[i0] / (f[i0] - f[i2])
+            UVs.append(np.stack([UV[i0] + (UV[i1] - UV[i0]) * t1, UV[i0] + (UV[i2] - UV[i0]) * t2]))
         Ps.append(np.stack([p01, p02]))
         if Ns is not None:
             Ns.append(np.stack([n01, n02]))
@@ -623,7 +629,7 @@ def cut_fin_root(P, N, I, role, prof, hump, fin, cfg):
     N2 = np.concatenate(Ns) if Ns is not None else None
     I2 = np.concatenate([I[keep], np.array(newI, dtype=I.dtype)])
     R2 = np.concatenate([role[keep], np.array(newR, dtype=object)])
-    return P2, N2, I2, R2, len(P2) - len(P)
+    return P2, N2, I2, R2, len(P2) - len(P), (np.concatenate(UVs) if UVs is not None else None)
 
 
 def engine_parts(r, outward, n, c, R, mid):
@@ -658,7 +664,8 @@ def fit(cfg, ref, P_all, body_mask_fn):
 def process(mid, view=None):
     cfg = MODELS[mid]
     ref = ref_of(cfg.get('ref', mid))
-    prims, j, _ = flatten(os.path.join(INBOX, cfg['src']))
+    prims, j, bufs = flatten(os.path.join(INBOX, cfg['src']))
+    SRC[mid] = (j, bufs)
     R = ROT[cfg.get('rot', 'none')]
     roles_by_mat = cfg.get('roles', {})
     drop_mats = set(cfg.get('drop', []))
@@ -679,7 +686,8 @@ def process(mid, view=None):
         P = p['pos'] @ R.T
         N = p['nrm'] @ R.T if p['nrm'] is not None else None
         I = fix_winding(P, N, p['idx'], log, p['node'])
-        parts.append(dict(P=P, N=N, I=I, mat=name, node=p['node']))
+        UV = p['uv'] if p.get('uv') is not None and len(p['uv']) == len(P) else None
+        parts.append(dict(P=P, N=N, I=I, mat=name, node=p['node'], UV=UV, mi=p.get('matIndex')))
     # the fit is measured on the source as drawn (a dropped centreline pylon is not the belly's depth)
     fit_parts = [dict(q) for q in parts]
     if cfg.get('dropPieces'):
@@ -963,9 +971,9 @@ def process(mid, view=None):
                 role[auto] = r_[auto]
         # The fin's root: cut along it, the tail colour above, the fuselage's paint below.
         if fin and not fin.get('mirror') and cfg.get('finRootCut', True) and np.isin(role, ['fin', 'skin']).any():
-            P, N2, I, role, added = cut_fin_root(P, q['N'], I, role, prof, hump, fin, cfg)
+            P, N2, I, role, added, UV2 = cut_fin_root(P, q['N'], I, role, prof, hump, fin, cfg, q.get('UV'))
             if added:
-                q['P'], q['N'] = P, N2
+                q['P'], q['N'], q['UV'] = P, N2, UV2
                 q['X0'] = np.concatenate([q['X0'], np.zeros(added)])
                 v, c, n, area = tri_data(P, I)
                 log.append(f'fin root: {q["node"]}: cut along it ({added} vertices)')
@@ -1001,7 +1009,7 @@ def process(mid, view=None):
         for r in ROLES:
             m = role == r
             if m.any():
-                out[r].append((P, q['N'], I[m]))
+                out[r].append((P, q['N'], I[m], q.get('UV'), q.get('mi')))
                 counts[r] = counts.get(r, 0) + int(m.sum())
     log.append('roles ' + ', '.join(f'{k}:{v}' for k, v in counts.items()))
     return out, log, cfg, ref
@@ -1145,7 +1153,9 @@ def cluster(P, N, I, cell, smooth=0):
 
 def run(mid, view=None):
     out, log, cfg, ref = process(mid)
-    meshes = {r: merge(ch) for r, ch in out.items() if ch}
+    if cfg.get('detail'):
+        return run_detail(mid, out, log, cfg, ref)
+    meshes = {r: merge([c[:3] for c in ch]) for r, ch in out.items() if ch}
     if cfg.get('cluster'):
         before = sum(len(m[2]) for m in meshes.values())
         meshes = {r: cluster(*m, cfg['cluster'], cfg.get('smooth', 0)) for r, m in meshes.items()}
@@ -1177,6 +1187,256 @@ def run(mid, view=None):
         prims = [dict(pos=m[0], idx=m[2], mat=r) for r, m in meshes.items()]
         # the game's gear contact points as small markers
         sheet(prims, view, label=f'{mid} roles', colours=COL)
+
+
+def merge_uv(chunks):
+    """merge() for chunks that may carry source UVs: a seam in the UVs stays a seam."""
+    Ps, Ns, UVs, Is = [], [], [], []
+    base = 0
+    has_uv = all(c[3] is not None for c in chunks)
+    for P, N, I, UV in chunks:
+        used = np.unique(I)
+        remap = -np.ones(len(P), dtype=np.int64)
+        remap[used] = np.arange(len(used))
+        Ps.append(P[used])
+        Ns.append((N if N is not None else vertex_normals(P, I))[used])
+        if has_uv:
+            UVs.append(UV[used])
+        Is.append(remap[I] + base)
+        base += len(used)
+    P, N, I = np.concatenate(Ps), np.concatenate(Ns), np.concatenate(Is)
+    cols = [np.round(P / 1e-4).astype(np.int64), np.clip(np.round(N * 127), -127, 127).astype(np.int64)]
+    UV = np.concatenate(UVs) if has_uv else None
+    if has_uv:
+        cols.append(np.round(UV * 65536).astype(np.int64))
+    _, first, inv = np.unique(np.concatenate(cols, 1), axis=0, return_index=True, return_inverse=True)
+    return P[first], N[first], inv.reshape(-1)[I], (UV[first] if has_uv else None)
+
+
+def run_detail(mid, out, log, cfg, ref):
+    """The file with surface detail (detail.py): source maps kept where they may be, AO baked
+    where asked, KTX2 + meshopt. One primitive per role and set of maps."""
+    import detail as D
+    opts = cfg['detail']
+    j, bufs = SRC[mid]
+    entry = {'id': mid, 'source': cfg['src'], 'materials': {}, 'kept': [], 'dropped': [], 'baked': None}
+    sets = {}  # source material -> (signature, kept maps)
+    review = []  # maps that passed the check but no person has approved: on the sheet, not in the file
+    for r, ch in out.items():
+        for c in ch:
+            mi = c[4]
+            if mi in sets:
+                continue
+            kept, dropped = D.source_maps(j, bufs, mi, opts.get('approvedMaps', ()), review) if opts.get('keepSource', True) else ({}, [])
+            name = j['materials'][mi].get('name', f'mat{mi}') if mi is not None else 'default'
+            entry['materials'][name] = {'kept': sorted(kept), 'dropped': [f'{a}: {b}' for a, b in dropped]}
+            sets[mi] = (tuple(sorted((k, D.digest(v['data'])) for k, v in kept.items())), kept)
+    prims = []
+    for r, ch in out.items():
+        groups = {}
+        for c in ch:
+            sig, kept = sets[c[4]]
+            # a map on UVs the chunk does not have cannot be kept for it
+            if kept and c[3] is None:
+                sig, kept = (), {}
+            groups.setdefault(sig, (kept, []))[1].append(c)
+        for sig, (kept, chunks) in groups.items():
+            if kept:
+                P, N, I, UV = merge_uv([c[:4] for c in chunks])
+            else:
+                P, N, I = merge([c[:3] for c in chunks])
+                UV = None
+            prims.append(dict(role=r, P=P, N=N, I=I, UV1=UV, maps=kept))
+    if cfg.get('cluster'):
+        # Clustered (the A-10): the vertices move, so no source UV or map survives; AO is baked after.
+        before = sum(len(p['I']) for p in prims)
+        out2 = []
+        for p in prims:
+            if p['maps']:
+                entry['dropped'].append(f'{p["role"]}: source maps dropped (the mesh is clustered)')
+            P, N, I = cluster(p['P'], p['N'], p['I'], cfg['cluster'], cfg.get('smooth', 0))
+            if len(I):
+                out2.append(dict(role=p['role'], P=P, N=N, I=I, UV1=None, maps={}))
+        prims = out2
+        print(f'    clustered at {cfg["cluster"] * 100:.0f} cm: {before} -> {sum(len(p["I"]) for p in prims)} triangles')
+    images = []  # [(name, data, mime)]
+    img_of = {}
+    for p in prims:
+        for kind, m in p['maps'].items():
+            key = D.digest(m['data'])
+            if key not in img_of:
+                img_of[key] = len(images)
+                images.append((f'{mid}_{kind}_{key}', m['data'], m['mime']))
+                entry['kept'].append(f'{kind} {key} ({len(m["data"]) // 1024} KB)')
+            m['img'] = img_of[key]
+    for name, e in entry['materials'].items():
+        for dd in e['dropped']:
+            entry['dropped'].append(f'{name}: {dd}')
+    sheet = [(n_, d_) for n_, d_, _ in images] + review
+    if opts.get('bakeAO'):
+        bo = opts['bakeAO'] if isinstance(opts['bakeAO'], dict) else {}
+        print(f'    baking AO ({bo.get("size", 2048)} px, {bo.get("samples", 256)} samples) in Blender...')
+        surf = opts.get('surface') if 'surface' in opts else None
+        prims, raw_png, ao_png, geo = D.bake_ao(prims, mid, bo, geo=surf is not None)
+        ai = len(images)
+        images.append((f'{mid}_ao_baked', ao_png, 'image/png'))
+        for p in prims:
+            p['maps'] = dict(p['maps'])
+            if 'occlusion' in p['maps']:
+                entry['dropped'].append(f'{p["role"]}: source occlusion replaced by the baked one')
+            p['maps']['occlusion'] = dict(img=ai, texCoord=2, strength=1.0, sampler={'wrapS': 33071, 'wrapT': 33071})
+        entry['baked'] = {'occlusion': f'{bo.get("size", 2048)} px, from the airframe\'s shape only (Blender Cycles AO, '
+                                        f'{bo.get("samples", 256)} samples, {bo.get("distance", 3.0)} m)', 'png KB': len(ao_png) // 1024}
+        sheet.append((f'{mid} baked AO', ao_png))
+        if surf is not None:
+            so = surf if isinstance(surf, dict) else {}
+            nrm_png, mr_png, info = D.surface_maps(geo, so)
+            ni, mi_ = len(images), len(images) + 1
+            images += [(f'{mid}_surface_normal', nrm_png, 'image/png'), (f'{mid}_surface_rough', mr_png, 'image/png')]
+            clamp = {'wrapS': 33071, 'wrapT': 33071}
+            for p in prims:
+                if p['role'] in D.ROLE_ID:
+                    p['maps']['normal'] = dict(img=ni, texCoord=2, scale=1.0, sampler=clamp)
+                    p['maps']['mr'] = dict(img=mi_, texCoord=2, sampler=clamp)
+            entry['drawn'] = {'normal + roughness': 'the game\'s own panel seams, frame rivet rows, lap joints, spar/hinge '
+                              'lines, cowl joints, panel gloss and seam grime (detail.py surface_maps)', **info,
+                              'png KB': (len(nrm_png) + len(mr_png)) // 1024}
+            sheet += [(f'{mid} drawn normal', nrm_png), (f'{mid} drawn roughness', mr_png)]
+    # Only images a primitive still points at (a source AO the bake replaced must not ride along).
+    used = sorted({m['img'] for p in prims for m in p['maps'].values()})
+    remap = {o: n for n, o in enumerate(used)}
+    images = [images[o] for o in used]
+    for p in prims:
+        p['maps'] = {k: dict(m, img=remap[m['img']]) for k, m in p['maps'].items()}
+    allP = np.concatenate([p['P'] for p in prims])
+    lo, hi = allP.min(0), allP.max(0)
+    tris = sum(len(p['I']) for p in prims)
+    extras = {
+        'realModel': 1, 'id': mid, 'credit': cfg['credit'], 'license': 'CC BY 4.0',
+        'changes': 'repainted to the game\'s parody liveries (every source paint texture removed; only maps with no '
+                   'livery in them kept), ambient occlusion baked from the shape, the game\'s own panel detail drawn, '
+                   'landing gear and interior removed, refitted to the game\'s airframe',
+        'length': round(float(hi[2] - lo[2]), 3), 'span': round(float(hi[0] - lo[0]), 3), 'triangles': int(tris),
+        'detail': sorted({k for p in prims for k in p['maps']}),
+    }
+    raw = os.path.join(D.LOGDIR, f'{mid}-raw.glb')
+    os.makedirs(D.LOGDIR, exist_ok=True)
+    raw_size = write_glb_detail(raw, mid, prims, images, extras)
+    path = os.path.join(OUT, f'{mid}.glb')
+    size = D.pack(raw, path, set(extras['detail']))
+    entry['bytes'] = {'raw (PNG, float)': raw_size, 'packed (KTX2 + meshopt)': size}
+    entry['triangles'] = int(tris)
+    D.write_log(mid, entry)
+    D.contact_sheet(mid, sheet, os.path.join(D.LOGDIR, f'{mid}-maps.png'))
+    print(f'{mid}: {tris} tris, raw {raw_size / 1024:.0f} KB -> {size / 1024:.0f} KB packed, detail {extras["detail"]}, '
+          f'length {hi[2] - lo[2]:.2f}, span {hi[0] - lo[0]:.2f}')
+    for line in log:
+        print('   ', line)
+    for k in ('kept', 'dropped'):
+        for line in entry[k]:
+            print(f'    {k}: {line}')
+
+
+def write_glb_detail(path, mid, prims, images, extras):
+    """write_glb with UVs and maps: one node per role, a primitive per set of maps.
+    TEXCOORD_1 = the source's UVs (its kept maps), TEXCOORD_2 = the baked atlas. No TEXCOORD_0:
+    that is the livery's, made at run time (fleet/extra/real-paint.js)."""
+    bin_ = bytearray()
+    views, accs, gmeshes, nodes, mats, textures, samplers, imgs = [], [], [], [], [], [], [], []
+
+    def align():
+        while len(bin_) % 4:
+            bin_.append(0)
+
+    def add(arr, target, comp, typ, minmax=False):
+        align()
+        off = len(bin_)
+        bin_.extend(arr.tobytes())
+        v = {'buffer': 0, 'byteOffset': off, 'byteLength': arr.nbytes}
+        if target:
+            v['target'] = target
+        views.append(v)
+        a = {'bufferView': len(views) - 1, 'componentType': comp, 'count': int(arr.shape[0]), 'type': typ}
+        if minmax:
+            a['min'] = [float(x) for x in arr.min(0)]
+            a['max'] = [float(x) for x in arr.max(0)]
+        accs.append(a)
+        return len(accs) - 1
+
+    for name, data, mime in images:
+        align()
+        off = len(bin_)
+        bin_.extend(data)
+        views.append({'buffer': 0, 'byteOffset': off, 'byteLength': len(data)})
+        imgs.append({'name': name, 'bufferView': len(views) - 1, 'mimeType': mime})
+
+    def tex(img, samp):
+        s = {'magFilter': 9729, 'minFilter': 9987, 'wrapS': samp.get('wrapS', 10497), 'wrapT': samp.get('wrapT', 10497)}
+        if s not in samplers:
+            samplers.append(s)
+        t = {'source': img, 'sampler': samplers.index(s)}
+        if t not in textures:
+            textures.append(t)
+        return textures.index(t)
+
+    by_role = {}
+    for p in prims:
+        by_role.setdefault(p['role'], []).append(p)
+    children = []
+    for role, ps in by_role.items():
+        gp = []
+        for k, p in enumerate(ps):
+            P32 = p['P'].astype(np.float32)
+            N8 = np.clip(np.round(p['N'] * 127), -127, 127).astype(np.int8)
+            N8 = np.concatenate([N8, np.zeros((len(N8), 1), np.int8)], 1)
+            I = p['I']
+            idx = I.reshape(-1).astype(np.uint16 if P32.shape[0] < 65536 else np.uint32)
+            attrs = {'POSITION': add(P32, 34962, 5126, 'VEC3', True)}
+            na = add(N8, 34962, 5120, 'VEC3')
+            accs[na]['normalized'] = True
+            views[accs[na]['bufferView']]['byteStride'] = 4
+            attrs['NORMAL'] = na
+            if p.get('UV1') is not None:
+                attrs['TEXCOORD_1'] = add(p['UV1'].astype(np.float32), 34962, 5126, 'VEC2')
+            if p.get('UV2') is not None:
+                attrs['TEXCOORD_2'] = add(p['UV2'].astype(np.float32), 34962, 5126, 'VEC2')
+            ia = add(idx.reshape(-1, 1), 34963, 5123 if idx.dtype == np.uint16 else 5125, 'SCALAR')
+            m = {'name': f'rm_{role}' + (f'_{k}' if k else ''),
+                 'pbrMetallicRoughness': {'baseColorFactor': [1, 1, 1, 1], 'metallicFactor': 0.1, 'roughnessFactor': 0.5}}
+            mp = p['maps']
+            if 'normal' in mp:
+                m['normalTexture'] = {'index': tex(mp['normal']['img'], mp['normal']['sampler']), 'texCoord': 2 if mp['normal'].get('texCoord') == 2 else 1,
+                                      'scale': mp['normal'].get('scale', 1.0)}
+            if 'mr' in mp:
+                m['pbrMetallicRoughness']['metallicRoughnessTexture'] = {'index': tex(mp['mr']['img'], mp['mr']['sampler']),
+                                                                         'texCoord': 2 if mp['mr'].get('texCoord') == 2 else 1}
+            if 'occlusion' in mp:
+                o = mp['occlusion']
+                m['occlusionTexture'] = {'index': tex(o['img'], o['sampler']), 'texCoord': o.get('texCoord', 1) if o.get('texCoord') == 2 else 1,
+                                         'strength': o.get('strength', 1.0)}
+            mats.append(m)
+            gp.append({'attributes': attrs, 'indices': ia, 'material': len(mats) - 1})
+        gmeshes.append({'name': role, 'primitives': gp})
+        nodes.append({'name': role, 'mesh': len(gmeshes) - 1})
+        children.append(len(nodes) - 1)
+    nodes.append({'name': mid, 'children': children, 'extras': extras})
+    j = {'asset': {'version': '2.0', 'generator': 'island-flight-sim tools/real-models/process.py (detail)'},
+         'scene': 0, 'scenes': [{'nodes': [len(nodes) - 1]}], 'nodes': nodes, 'meshes': gmeshes, 'materials': mats,
+         'accessors': accs, 'bufferViews': views, 'buffers': [{'byteLength': len(bin_)}]}
+    if imgs:
+        j.update(images=imgs, textures=textures, samplers=samplers)
+    js = json.dumps(j, separators=(',', ':')).encode()
+    while len(js) % 4:
+        js += b' '
+    align()
+    total = 12 + 8 + len(js) + 8 + len(bin_)
+    with open(path, 'wb') as f:
+        f.write(struct.pack('<III', 0x46546C67, 2, total))
+        f.write(struct.pack('<II', len(js), 0x4E4F534A))
+        f.write(js)
+        f.write(struct.pack('<II', len(bin_), 0x004E4942))
+        f.write(bin_)
+    return total
 
 
 if __name__ == '__main__':

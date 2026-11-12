@@ -321,9 +321,13 @@ function muteCoach(sim) {
   sim.coachHint = wrapped;
 }
 
-/** The Tower view: every field's tower here (camera.js towerLens), the start field's balcony anywhere else. */
+/**
+ * The Tower view: every field's tower here (camera.js towerLens), the start field's balcony anywhere else.
+ * Nullspire's too (on no list, so its Tower view was a spotter's point, which at the ramp came out inside the terminal).
+ */
 function setTowers(sim) {
-  if (sim && sim.rig) sim.rig.towers = active() ? PREVIEW.airports.map(towerLens).filter(Boolean) : null;
+  const city = S.ring && S.ring.CITY_FIELD;
+  if (sim && sim.rig) sim.rig.towers = active() ? [...PREVIEW.airports, ...(city ? [city] : [])].map(towerLens).filter(Boolean) : null;
 }
 
 /** The towns' street plans for this world build (one per set of flats: the ground, the buildings and the hub's Scenery share it). */
@@ -1097,6 +1101,7 @@ const CSS = `
 .wp-hudcard { display: flex; align-items: center; gap: 8px; align-self: flex-end; pointer-events: auto; font: 600 13px var(--font, system-ui), sans-serif; color: #fff; }
 .wp-hudcard button { min-height: 36px; min-width: 44px; padding: 6px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.22);
   background: rgba(12,20,32,0.72); color: #fff; font: inherit; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+html.is-touch-device .wp-hudcard button { min-height: 44px; }
 .wp-hudcard .wp-destline { padding: 6px 10px; border-radius: 10px; background: rgba(12,20,32,0.62); font-variant-numeric: tabular-nums; }
 .wp-hudcard.is-chip .wp-destline, .wp-hudcard.is-chip .wp-word { display: none; }
 .wp-hudcard[hidden], .wp-hudcard .wp-destline[hidden] { display: none !important; }

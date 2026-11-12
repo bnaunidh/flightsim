@@ -4,7 +4,7 @@
  *   node tests/features/branding.mjs
  *
  * TYPOGRAPHY ("not the same font")
- *   - the twelve OFL faces are in assets/fonts/, real woff2 files, listed in
+ *   - the sixteen OFL families (eighteen faces) are in assets/fonts/, real woff2 files, listed in
  *     FONTS.md, precached by sw.js with the module that loads them;
  *   - every airline (and Air Force One) names a bundled face for its
  *     titling; no face is worn by more than two airlines, and an airline
@@ -56,7 +56,7 @@ const read = (p) => readFileSync(new URL(p, ROOT));
 /* ---------------------------------------------------------------- fonts -- */
 {
   const files = readdirSync(new URL('assets/fonts/', ROOT)).filter((f) => f.endsWith('.woff2'));
-  ok('assets/fonts: twelve families, fourteen faces, all woff2', files.length === 14 && F.AIRLINE_FONTS.length === 14, files.length);
+  ok('assets/fonts: sixteen families, eighteen faces, all woff2', files.length === 18 && F.AIRLINE_FONTS.length === 18, files.length);
   for (const f of F.AIRLINE_FONTS) {
     const p = `assets/fonts/${f.file}`;
     const there = existsSync(new URL(p, ROOT));
@@ -104,7 +104,7 @@ const read = (p) => readFileSync(new URL(p, ROOT));
   ok('decals: a face-less decal keeps the key it always had (no suffix)', /_600_0\.12$/.test(c.name), c.name);
 
   // On the aeroplane: an airliner's Titling carries its airline's face.
-  for (const [typeId, liv, fam] of [['a320', 'bleuciel', 'Jost'], ['b777', 'desertpearl', 'Playfair Display'], ['b747', 'parcelbrown', 'Barlow Condensed']]) {
+  for (const [typeId, liv, fam] of [['a320', 'bleuciel', 'Jost'], ['b777', 'desertpearl', 'Cormorant Garamond'], ['b747', 'parcelbrown', 'Barlow Condensed']]) {
     const type = T.getAircraft(typeId);
     const m = ADAPTER.createAircraftModel({ type, livery: L.schemeFor(type, liv) });
     let title = null;

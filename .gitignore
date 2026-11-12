@@ -19,3 +19,6 @@ PROMPT-MAPS-AND-MODELS.md
 
 # Python bytecode from tools/real-models
 __pycache__/
+
+# real-models detail pilot: the unpacked intermediate (tools/real-models/detail.py)
+tools/real-models/detail-log/*-raw.glb

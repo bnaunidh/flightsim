@@ -654,7 +654,10 @@ registerExtension({
     const prog = sim.prog || Prog.load();
     if (prog.unlocked && prog.unlocked.includes('javelin')) {
       import('../aircraft/extra/javelin.js').then((m) => {
-        if (m.registerJavelin()) refreshMenu();
+        if (!m.registerJavelin()) return;
+        refreshMenu();
+        m.addJavelinCard(sim.menus);
+        m.repickJavelin(sim);
       }).catch((e) => console.warn('[secrets] the Javelin did not load', e));
     }
     // ...and Spireline, the city's airline (aircraft/extra/spireline.js), once the city has been seen (the ring's own memory).

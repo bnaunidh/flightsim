@@ -79,6 +79,17 @@ export async function check(sim, r, say) {
     const bodies = () => (sim.aircraftAround && sim.aircraftAround.bodies ? sim.aircraftAround.bodies.filter((b) => b.worldTraffic && !b.gone) : []);
     r.ok('wm-traffic: the sky has the tier\'s traffic (8 at Low), each a sky body', s0.n === TP.TIERS.low.n && bodies().length === s0.n,
       `${s0.n} flying, ${bodies().length} bodies: ${s0.list.slice(0, 4).map((c) => `${c.callsign} ${c.type} ${c.from}→${c.to} ${c.phase}`).join('; ')}`);
+    {
+      // "add more npc aircraft" must not cost the school iPads and Chromebooks anything: Low is what it was.
+      const fl = Object.values(T.fleet).flat();
+      const keys = new Set(fl.map((f) => f.key));
+      const rare = new Set(Object.values(TP.CATS).flatMap((C) => C.rare || []));
+      const rareIn = fl.filter((f) => rare.has(f.typeId)).map((f) => f.typeId);
+      r.ok('wm-traffic: Low stays cheap — 8 flying, 2 full models, a fleet of at most 10 types and paints, none of the rare (biggest) types',
+        TP.TIERS.low.n === TP.LOW_WAS.n && TP.TIERS.low.models === TP.LOW_WAS.models && TP.TIERS.low.fleet === TP.LOW_WAS.fleet && s0.n <= 8 && T.plan.n === 8
+          && keys.size <= 10 && T.combos.length <= 10 && rareIn.length === 0 && T.proxy.instanceMatrix.count <= 16,
+        `${s0.n} flying (cap ${T.plan.n}), fleet ${keys.size} types and paints (${[...new Set(fl.map((f) => f.typeId))].join(' ')}), ${T.combos.length} built ahead, rare: ${rareIn.join(' ') || 'none'}`);
+    }
     run(5);
     const s1 = T.state();
     const moved = s1.list.filter((a) => {
@@ -440,6 +451,16 @@ export async function check(sim, r, say) {
       const nan = st ? st.list.filter((c) => !Number.isFinite(c.x + c.y + c.z + c.hdg)).length : -1;
       r.ok('wm-traffic: Low to High — the traffic rebuilt with the world, at High\'s count, the old one gone', !!TH && TH !== T && st.quality === 'high' && st.n === TP.TIERS.high.n && bodies().length === st.n && nan === 0 && !T.group.parent,
         st ? `${st.quality}: ${st.n} flying, ${bodies().length} bodies, ${nan} NaN, old group attached ${!!T.group.parent}` : 'no traffic after the rebuild');
+      if (TH && st) {
+        // The busier sky at High: a third more than the 24 it had, more types, and still only the tier's few full models drawn.
+        run(5);
+        const s5 = TH.state();
+        const types = new Set(Object.values(TH.fleet).flat().map((f) => f.typeId));
+        const kinds = new Set(s5.list.map((c) => c.cat));
+        r.ok('wm-traffic: High is busier — 34 flying (24 before) of four kinds or more, a fleet of 8 types or more, at most the tier\'s 5 full models drawn, the update under 0.6 ms a frame',
+          s5.n >= 32 && s5.n === TP.TIERS.high.n && kinds.size >= 4 && types.size >= 8 && s5.modelsDrawn <= TP.TIERS.high.models && s5.stats.mean < 0.6,
+          `${s5.n} flying, ${kinds.size} kinds, fleet types: ${[...types].join(' ')}; ${s5.modelsDrawn} models drawn, ${s5.farDrawn} far shapes, update mean ${s5.stats.mean.toFixed(3)} ms (max ${s5.stats.msMax.toFixed(2)})`);
+      }
       sim.quitToMenu && sim.quitToMenu();
       await wait(200);
     }

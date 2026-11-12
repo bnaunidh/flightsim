@@ -66,6 +66,9 @@ MODELS = {
         drop=['Roda', 'Landing_Gear', 'Plane_Egnine'],
         roles={'Jendela': 'window', 'Engine': 'duct', 'Black': 'dark', 'Engine.001': 'engine', 'Egnine_737': 'engine'},
         cabinWindows='drop',
+        # The detail pilot (owner, 2026-11-11): the source's only maps are its three Lion Air paint
+        # images, so nothing of its own is kept; the shade comes from a bake of the shape (detail.py).
+        detail=dict(bakeAO=dict(size=2048, samples=256, distance=3.0, floor=0.22), surface=dict()),
     ),
     'b787': dict(
         src='b787/b787.glb', rot='y180',
@@ -203,3 +206,20 @@ MODELS = {
         credit='"c-5B galaxy" by piggyrockstarYT (@piggyrockstar15), CC BY 4.0, ' + SF + '11832529d5f7499b9ef24ce0383a69bf',
     ),
 }
+
+
+# Detail rollout (owner, 2026-11-11: "do this to the rest the planes"). Airliners and transports:
+# baked AO + the game's own panel detail (detail.py surface_maps). Fighters: baked AO + their own
+# source detail maps where those hold no lettering (no airliner seams on a fighter). The A-10 is
+# clustered (no source UVs survive), so AO only. The helicopters go through helis.py: not yet.
+_AO = dict(size=2048, samples=256, distance=3.0, floor=0.22)
+_AO_SMALL = dict(size=1024, samples=256, distance=1.5, floor=0.25)
+for _id in ('a320', 'a321', 'b787', 'a350', 'b777', 'a380', 'b747', 'q400', 'belugaxl', 'c5'):
+    MODELS[_id].setdefault('detail', dict(bakeAO=dict(_AO), surface=dict()))
+for _id in ('f22', 'f35b', 'fa18'):
+    MODELS[_id].setdefault('detail', dict(bakeAO=dict(_AO_SMALL)))
+# Source maps a person has looked at (2026-11-11): the F-22's four normal maps -- panel lines, hatches,
+# vents, no lettering. NOT approved: the F-35B's roughness map ("WJ32" and a maker's logo in a corner)
+# and the F/A-18's (insignia-like shapes in one; the other two flat).
+MODELS['f22']['detail']['approvedMaps'] = ['af2f6ec2e487', '489b42e56607', '18774f08da36', 'a3d255f67e82']
+MODELS['a10'].setdefault('detail', dict(bakeAO=dict(_AO_SMALL)))

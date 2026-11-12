@@ -51,7 +51,29 @@ ch.define('race', { from: 'host', validate: RR.cleanState });
 
 /** The Ring Rally's best time keeps the key it always had; the others get their own. */
 const bestKey = (course) => (course.id === RR.COURSE.id ? 'islandsim.race.best.v1' : `islandsim.race.best.v1.${course.id}`);
-const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+const real = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+/*
+ * The race clock. Alone it stops while the game is paused or in another tab
+ * (it ran on real time, so a pause mid-race went on the race's time); with
+ * friends it runs on, as their race does. Every time here (the grid's count,
+ * the GO, the gates, the finish, the solo host's own) is on this one clock,
+ * held from the last moment the game was running to the first it runs again.
+ */
+const CLK = { lost: 0, held: 0, last: 0 };
+const now = () => {
+  const t = real();
+  const sim = G.sim;
+  if (!inGame() && sim && (sim.state === 'paused' || (typeof document !== 'undefined' && document.hidden))) {
+    if (!CLK.held) CLK.held = CLK.last || t;
+    return CLK.held - CLK.lost;
+  }
+  if (CLK.held) {
+    CLK.lost += t - CLK.held;
+    CLK.held = 0;
+  }
+  CLK.last = t;
+  return t - CLK.lost;
+};
 
 const G = {
   sim: null,
@@ -802,7 +824,10 @@ function placeBar(bar) {
   G.barAt = t;
   const hudEl = document.querySelector('#ui .hud.is-touch');
   if (!hudEl) {
-    if (bar.style.top) bar.style.top = '';
+    // Under the heading tape when it shows (at 54 the line sat on its HDG box).
+    const d = document.querySelector('#ui .hud-dest');
+    const px = d && d.offsetHeight ? `${Math.max(54, Math.round(d.getBoundingClientRect().bottom + 6))}px` : '';
+    if (bar.style.top !== px) bar.style.top = px;
     return;
   }
   const W = innerWidth;
@@ -1140,5 +1165,5 @@ registerExtension({
 /** For the tests and the console. */
 export function raceDebug() {
   const h = inGame() ? G.host : G.solo;
-  return { G, L: G.L, state: state(), course: state() ? courseOf(state()) : islandCourse(G.sim), frames: G.frames, stats: { ...G.stats }, refused: h ? h.refused.slice() : [] };
+  return { G, CLK, t: now(), L: G.L, state: state(), course: state() ? courseOf(state()) : islandCourse(G.sim), frames: G.frames, stats: { ...G.stats }, refused: h ? h.refused.slice() : [] };
 }

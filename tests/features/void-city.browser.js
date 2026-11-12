@@ -9,7 +9,8 @@
  *     hidden from everybody else; it puts a Free Flight on a long final for
  *     the city's 09, nose on the runway
  *   - the city builds as you near it: the towers, the bridges, the field
- *     (runway, lights on, PAPI), in a few milliseconds and few draw calls
+ *     (runway, lights on, PAPI), in a few milliseconds and few draw calls;
+ *     the ramp's floodlights lay pools of light on the concrete at night
  *   - the ground is really there: heightAt on the slab, the runway counts as
  *     a runway, the apron rolls as tarmac; a Skylark stands on it and a
  *     touchdown on it is a landing, not a crash
@@ -187,6 +188,41 @@ export async function check(sim, r, say) {
       r.ok('void-city: few draw calls of its own', mine <= 25, `${mine} city objects drawn, ${calls} calls in all`);
       console.info('[void-city] draw calls', JSON.stringify({ city: mine, all: calls }));
     }
+    {
+      // The ramp at night, from 25 m over the taxiway: its floodlight pools light the concrete (pools off vs on, the same frame).
+      const THREE = await import('../../src/vendor/three.module.js');
+      const pools = field && field.getObjectByName('ramp-pools');
+      const W = 160;
+      const rt = new THREE.WebGLRenderTarget(W, W);
+      const cam = new THREE.PerspectiveCamera(60, 1, 1, 20000);
+      cam.position.copy(field.localToWorld(new THREE.Vector3(-300, 25, -200)));
+      cam.lookAt(field.localToWorld(new THREE.Vector3(-300, 0, -330)));
+      cam.updateMatrixWorld();
+      const buf = new Uint8Array(W * W * 4);
+      const lum = () => {
+        sim.renderer.setRenderTarget(rt);
+        sim.renderer.render(sim.scene, cam);
+        sim.renderer.readRenderTargetPixels(rt, 0, 0, W, W, buf);
+        sim.renderer.setRenderTarget(null);
+        let t = 0;
+        const rows = Math.floor(W * 0.6);
+        for (let y = 0; y < rows; y++) for (let x = 0; x < W; x++) {
+          const i = (y * W + x) * 4;
+          t += 0.2126 * buf[i] + 0.7152 * buf[i + 1] + 0.0722 * buf[i + 2];
+        }
+        return t / (rows * W);
+      };
+      let off = 0;
+      let on = 0;
+      if (pools) {
+        pools.visible = false;
+        off = lum();
+        pools.visible = true;
+        on = lum();
+      }
+      rt.dispose();
+      r.ok('void-city: the ramp reads at night: floodlight pools on the concrete', !!pools && on > off * 1.3 && on < 120, `ramp luminance ${off.toFixed(1)} without pools, ${on.toFixed(1)} with`);
+    }
 
     /* ---- the ground is really there ---- */
     r.ok('void-city: heightAt is the slab, and the void round it', T.heightAt(CITY.x, CITY.z) === SLAB_Y && T.heightAt(CITY_FIELD.x, CITY_FIELD.z) === SLAB_Y && T.heightAt(CITY.x, CITY.z + 6000) === F.VOID_H, `${T.heightAt(CITY.x, CITY.z)} / ${T.heightAt(CITY.x, CITY.z + 6000)}`);
@@ -213,6 +249,24 @@ export async function check(sim, r, say) {
       r.ok('void-city: a touchdown on it is a landing, not a crash', !crashed && ac.onGround && T.isOnAnyRunway(ac.pos.x, ac.pos.z, 10) && rd.groundKts < 15, `crashed ${crashed} ${ac.crashReason || ''}, onGround ${ac.onGround}, ${rd.groundKts.toFixed(0)} kt, ${((ac.pos.x - CITY_FIELD.x) / 1000).toFixed(2)} km along`);
     }
 
+    {
+      // The Tower view at XNUL: from the tower's own cab (it was a spotter's point that came out inside the terminal).
+      const mode = sim.rig.mode;
+      sim.rig.setMode('tower');
+      step(0.5);
+      const cp = sim.camera.position.clone();
+      const fx = cp.x - CITY_FIELD.x;
+      const fz = cp.z - CITY_FIELD.z;
+      const L = CITY_FIELD.layout;
+      const boxes = [['terminal', L.terminal], ['tower', L.tower], ...L.hangars.map((h, i) => [`hangar ${i}`, h]), ['fire', L.fire], ['fuel', L.fuel], ...(CITY_FIELD.extras || []).map((e) => [e.kind, e])];
+      const inside = boxes.filter(([, b]) => fx > b.x0 - 1 && fx < b.x1 + 1 && fz > b.z0 - 1 && fz < b.z1 + 1 && cp.y < SLAB_Y + (b.h || 20) + 1).map(([n]) => n);
+      const t = L.tower;
+      const byTower = Math.hypot(fx - (t.x0 + t.x1) / 2, fz - (t.z0 + t.z1) / 2) < 40 && cp.y > SLAB_Y + t.h * 0.8;
+      sim.rig.setMode(mode);
+      step(0.1);
+      r.ok('void-city: the Tower view at XNUL stands at the tower\'s cab, inside no building', inside.length === 0 && byTower, `camera at x ${fx.toFixed(0)} z ${fz.toFixed(0)} y +${(cp.y - SLAB_Y).toFixed(0)} in the field's frame; inside ${inside.join(', ') || 'nothing'}`);
+    }
+
     /* ---- the Javelin: hidden, then earned by the landing ---- */
     {
       const Ty = await import('../../src/aircraft/types.js');
@@ -235,6 +289,24 @@ export async function check(sim, r, say) {
       await wait(50);
       r.ok('void-city: the Javelin has a card in the Hangar and in Free Flight', !!document.querySelector('[data-unlocks] [data-aircraft="javelin"], [data-unlocks] [data-buy="javelin"], [data-unlocks] [data-id="javelin"]') || [...document.querySelectorAll('[data-unlocks] *')].some((n) => /Nullspire Javelin/.test(n.textContent) && n.children.length === 0), `free card ${!!document.querySelector('.screen-free [data-aircraft="javelin"], [data-aircraft="javelin"]')}`);
       r.ok('void-city: ...and in Free Flight', !!document.querySelector('[data-aircraft="javelin"]'));
+      {
+        // Its card's plan view is its own airframe (24 m by 9.5 m, a lifting body), not the Massimo whose shape it flies on.
+        const mask = (id) => {
+          const c = document.querySelector(`.screen-free [data-aircraft="${id}"] [data-fleet-art="${id}"] canvas, [data-aircraft="${id}"] [data-fleet-art="${id}"] canvas`);
+          if (!c) return null;
+          const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+          const m = new Uint8Array(c.width * c.height);
+          let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
+          for (let i = 0; i < m.length; i++) if (d[i * 4 + 3] > 40) { m[i] = 1; const x = i % c.width, y = (i / c.width) | 0; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+          return { m, aspect: (y1 - y0 + 1) / Math.max(1, x1 - x0 + 1) };
+        };
+        const jv = mask('javelin');
+        const ms = mask('massimo');
+        let both = 0, any = 0;
+        if (jv && ms && jv.m.length === ms.m.length) for (let i = 0; i < jv.m.length; i++) { both += jv.m[i] & ms.m[i]; any += jv.m[i] | ms.m[i]; }
+        const iou = any ? both / any : 1;
+        r.ok('void-city: the Javelin\'s card draws its own airframe from above, not the Massimo\'s', !!jv && !!ms && iou < 0.8 && jv.aspect > 2.2 && jv.aspect < 2.9, jv && ms ? `overlap with the Massimo's card ${(iou * 100).toFixed(0)}%, length:span ${jv.aspect.toFixed(2)} (the airframe 2.53)` : `cards: javelin ${!!jv}, massimo ${!!ms}`);
+      }
       if (!was) { /* leave it earned: that is what happened */ }
     }
 
@@ -361,6 +433,24 @@ export async function check(sim, r, say) {
       while (sim.settings.map !== 'kestrel' && performance.now() - t1 < 10000) await wait(50);
       await wait(1500);
       r.ok('void-city: leaving leaves nothing behind', !Object.prototype.hasOwnProperty.call(sim.minimap, 'chartFor') && !wp.farlands() && !document.querySelector('.nullspire') && !sim.scene.getObjectByName('nullspire'), `wrapped ${Object.prototype.hasOwnProperty.call(sim.minimap, 'chartFor')}`);
+    }
+    /* ---- the ramp's floodlight-pool material is let go of even with no ramp (v81) ---- */
+    {
+      const THREE = await import('../../src/vendor/three.module.js');
+      const Craft = await import('../../src/world/worldmap/void-city-craft.js');
+      const gone = [];
+      const proto = THREE.MeshBasicMaterial.prototype;
+      const was = proto.dispose;
+      proto.dispose = function dispose() {
+        gone.push(this);
+        return was.call(this);
+      };
+      try {
+        Craft.buildRampCraft({ layout: { pavement: [] } }, 'low').dispose();
+      } finally {
+        proto.dispose = was;
+      }
+      r.ok('void-city: with no ramp, the floodlight-pool material is still disposed', gone.some((m) => m.blending === THREE.AdditiveBlending && m.opacity === 0.4), `${gone.length} basic materials disposed`);
     }
     r.ok('void-city: nothing threw', errors.length === 0, errors.slice(0, 3).join(' || '));
   } catch (e) {

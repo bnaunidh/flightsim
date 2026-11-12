@@ -548,6 +548,16 @@ export function mergedCardGeometry() {
   return g;
 }
 
+/**
+ * Where a card fades out near the eye (m): gone by x, whole from y. Flying, a
+ * picture that close is a flat picture; on foot (features/onfoot.js) a tree
+ * you walk up to must not dissolve (owner, 2026-11-11), so it stays.
+ */
+const CARD_NEAR = { value: new THREE.Vector2(26, 60) };
+export function setCardNearFade(onFoot) {
+  CARD_NEAR.value.set(onFoot ? 0 : 26, onFoot ? 0.01 : 60);
+}
+
 /** cardMaterial, reading the picture off aKind. Species: flora.js SPECIES order. */
 export function mergedCardMaterial(scale = 1) {
   const m = cardMaterial(scale);
@@ -557,6 +567,8 @@ export function mergedCardMaterial(scale = 1) {
   const crowns = PICTURE.map((p) => CROWN[p] || 0.62);
   const arr = (list) => `float[${list.length}](${list.map((v) => v.toFixed(5)).join(',')})`;
   m.onBeforeCompile = (shader) => {
+    shader.uniforms.uCardNear = CARD_NEAR;
+    shader.fragmentShader = `uniform vec2 uCardNear;\n${shader.fragmentShader}`;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
 attribute float aKind;
@@ -573,7 +585,7 @@ const float CARD_C[${cells.length}] = ${arr(crowns)};`)
   if (cardTop) transformed.y = CARD_C[cardKind];`);
     // Lit the same from both faces. Turned over, a card's far side went dark and two crossed cards read as a box.
     shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
-  normal = normalize(vNormal);`).replace('#include <alphatest_fragment>', `diffuseColor.a *= smoothstep(26.0, 60.0, length(vViewPosition));
+  normal = normalize(vNormal);`).replace('#include <alphatest_fragment>', `diffuseColor.a *= smoothstep(uCardNear.x, uCardNear.y, length(vViewPosition));
 #include <alphatest_fragment>`);
     // (And gone within a few dozen metres of the eye: a picture that close is a flat picture, and nothing solid stands there.)
   };

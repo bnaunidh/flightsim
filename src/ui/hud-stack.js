@@ -287,7 +287,8 @@ export class HudStack {
     // column 7-15 px into the helicopter's card. Same layout pass as the
     // scrollHeight read below, so it costs a few rects four times a second,
     // on touch only.
-    if (this.host && this.host.classList && this.host.classList.contains('is-touch')) this.touchTop();
+    // And once more when it is off again (a stale band offset left the column 291 px down on a desktop).
+    if (this.host && this.host.classList && (this._dy || this.host.classList.contains('is-touch'))) this.touchTop();
     // A card held back last time is measured as if it were not: the column
     // is re-decided from scratch (in one task, so nothing is painted between).
     for (const c of this.cards) this.setWait(c, false);

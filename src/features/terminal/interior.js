@@ -18,10 +18,12 @@ import { MAPS } from '../../world/maps.js';
 import { makeRandom } from '../../core/noise.js';
 import { AIRLINE_LIVERIES, radioBrand } from '../../aircraft/liveries.js';
 import { forgetObstacles, setFloorHook } from '../staff/walk.js';
+import { onFoot } from '../onfoot.js';
 import { Crowd } from '../life/people.js';
 import { planInterior, fromWorld, floorIn, UP, FLOOR, CEIL, CEIL_LOW } from './plan.js';
 import { Atlas, floorTexture, ceilingTexture, boardCanvas, drawBoard, passengerAirlines } from './atlas.js';
 import { buildRoom, outerBands } from './look.js';
+import { kerbPalms } from './dress.js';
 import { warmShadersAsync } from '../../render/shader-warm.js';
 
 const CELL = 6;
@@ -238,6 +240,8 @@ export class Interior {
     this.textures.push(this.boardTex);
     add(out.board, basic({ map: this.boardTex, vertexColors: true, toneMapped: false }), 'inside:boards');
     yield;
+    this.buildKerb(out, sheet);
+    this.extraSolids = out.solids || [];
     this.buildGrid();
     yield;
     this.buildDoors();
@@ -269,7 +273,7 @@ export class Interior {
     const P = this.P;
     const F = P.F;
     const fz = (b) => F.z(P.T.front + b);
-    for (const s of P.solids) {
+    for (const s of [...P.solids, ...(this.extraSolids || [])]) {
       const xa = F.x(s.u0);
       const xb = F.x(s.u1);
       const za = fz(s.b0);
@@ -279,6 +283,40 @@ export class Interior {
         y0: this.e + s.y0, y1: this.e + s.y1, tag: s.tag,
       });
     }
+  }
+
+  /**
+   * The kerb's planting and signs (dress.js): outside the building, so in the
+   * sun's light and the night's, and out from the moment they are built, not
+   * from the moment the doors open: trees do not appear at seventy metres.
+   * Only ever on foot: back in the seat the first frame puts them away.
+   */
+  buildKerb(out, sheet) {
+    const ap = this.sim.apron;
+    const g = new THREE.Group();
+    g.name = 'terminal:kerb';
+    const lit = out.kerb && ap && ap.mats && ap.mats.vc ? out.kerb.mesh(ap.mats.vc, { name: 'kerb:planting', cast: !this.low }) : null;
+    if (lit) g.add(lit);
+    const palms = kerbPalms(out.palms, !this.low);
+    if (palms) {
+      this.materials.push(palms.material);
+      g.add(palms);
+    }
+    const signs = out.kerbSigns && out.kerbSigns.mesh(new THREE.MeshBasicMaterial({ map: sheet, vertexColors: true, color: 0xdcdcdc }), 'kerb:signs');
+    if (signs) {
+      this.materials.push(signs.material);
+      g.add(signs);
+    }
+    // Asked every frame it is out (never culled, so never skipped): is anybody still on foot?
+    const last = g.children[g.children.length - 1];
+    if (last) {
+      last.frustumCulled = false;
+      last.onBeforeRender = () => {
+        if (!onFoot.active) g.visible = false;
+      };
+    }
+    this.kerb = g;
+    this.sim.apron.group.add(g);
   }
 
   /** A second pair of sliding doors at the wall inside each lobby: frosted, so the lobby is its own space. */
@@ -433,6 +471,7 @@ export class Interior {
     forgetObstacles();
     setFloorHook(this.hook);
     this.group.visible = true;
+    if (this.kerb) this.kerb.visible = true;
     this.open = true;
     return true;
   }
@@ -516,6 +555,14 @@ export class Interior {
     if (this.bands) {
       this.bands.geometry.dispose();
       if (this.bands.parent) this.bands.parent.remove(this.bands);
+    }
+    if (this.kerb) {
+      for (const o of this.kerb.children) {
+        o.geometry.dispose();
+        if (o.isInstancedMesh) o.dispose();
+      }
+      if (this.kerb.parent) this.kerb.parent.remove(this.kerb);
+      this.kerb = null;
     }
     this.textures = [];
     this.materials = [];

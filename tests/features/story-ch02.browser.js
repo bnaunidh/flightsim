@@ -72,7 +72,7 @@ async function waitFor(fn, tries = 200, ms = 40) {
  * the way. Added here: the bucket (fill in a low hover, drop on the green
  * ring with X) and the camera (SPACE).
  */
-function makePilot(sim, { T, W, Ch2, budget = 1200 }) {
+export function makePilot(sim, { T, W, Ch2, budget = 1200 }) {
   const P = {
     clock: 0,
     budget,
@@ -155,14 +155,16 @@ function makePilot(sim, { T, W, Ch2, budget = 1200 }) {
     return surfaceH() + (vs * Math.abs(vs)) / 6 + vs * 0.3;
   };
   /** Shift or Ctrl until the skids are about h over the surface below. */
-  P.heightTo = async (h, tol = 1.5) => {
+  P.heightTo = async (h, tol = 1.5, until = null) => {
     for (let i = 0; i < 60 && !P.over(); i++) {
+      if (until && until()) break;
       const e = h - surfaceH();
       if (Math.abs(e) < tol) break;
       const k = e > 0 ? 'Shift' : 'Ctrl';
       press(k);
       for (let j = 0; j < 400 && !P.over(); j++) {
         await P.tick();
+        if (until && until()) break;
         const now = h - stopsAt();
         if (Math.abs(now) < 1 || Math.sign(now) !== Math.sign(e)) break;
         // Coming down to a height above the ground: never through 12 m of it on the way.
@@ -185,12 +187,13 @@ function makePilot(sim, { T, W, Ch2, budget = 1200 }) {
     }
   };
   /** Shift or Ctrl until the machine is at about y metres above sea level. */
-  P.altTo = async (y, tol = 2) => {
+  P.altTo = async (y, tol = 2, until = null) => {
     const g = () => Math.max(0, T.heightAt(ac().pos.x, ac().pos.z));
     for (let i = 0; i < 6 && !P.over(); i++) {
+      if (until && until()) return;
       const want = y - g() - 1.69;
       if (Math.abs(want - surfaceH()) < tol) return;
-      await P.heightTo(want, tol);
+      await P.heightTo(want, tol, until);
     }
   };
   /** The highest ground on the straight line to (x, z), plus a little sideways. */
@@ -285,14 +288,22 @@ function makePilot(sim, { T, W, Ch2, budget = 1200 }) {
       if (d > 45) {
         if (blocked) {
           /*
-           * The ground ahead is above you: stop and climb where you are
-           * (Shift is already held). Never fly at a slope: a robot that
-           * flew along the cliff at 20-30 m/s a few tens of metres up put
-           * its nose into it twice (2026-11-08).
+           * The ground ahead is above you: slow right down and climb (Shift
+           * is already held). Never fly at a slope: a robot that flew along
+           * the cliff at 20-30 m/s a few tens of metres up put its nose into
+           * it twice (2026-11-08). Not a dead hover either: with the crew and
+           * a full bucket the Skyhook has no lift to spare in a hover and sat
+           * two minutes at full lever going nowhere (2026-11-09) — a walk at
+           * 6-12 m/s keeps the translational lift (rotor-assist.js ettl).
            */
-          release('W');
-          if (gs > 4) await holdFor('S', 0.3);
-          else await P.tick(0.4);
+          if (gs > 12) {
+            release('W');
+            await holdFor('S', 0.3);
+          } else if (gs < 6 && ac().vs < 0.5) await holdFor('W', 0.3);
+          else {
+            release('W');
+            await P.tick(0.4);
+          }
           continue;
         }
         await P.face(p.x, p.z, d > 400 ? 10 : 6);
@@ -364,6 +375,18 @@ function makePilot(sim, { T, W, Ch2, budget = 1200 }) {
     document.body.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyX', key: 'x', bubbles: true, cancelable: true }));
     document.body.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyX', key: 'x', bubbles: true, cancelable: true }));
   };
+  /** X, then a look at the tank: did the water go? Up to three presses, a note in the log if one was not taken. */
+  P.dropNow = async () => {
+    const before = W.fireStatus(sim).drops;
+    for (let k = 0; k < 3 && !P.over(); k++) {
+      P.pressX();
+      await P.tick(0.5);
+      const t = W.fireWater().tank;
+      if (W.fireStatus(sim).drops > before || (t && t.releasing)) return true;
+      P.log.push(`X not taken at ${P.clock.toFixed(0)}s: state ${sim.state} litres ${t ? Math.round(t.litres) : '-'} releasing ${t && t.releasing} surf ${surfaceH().toFixed(0)}`);
+    }
+    return W.fireStatus(sim).drops > before;
+  };
   P.pressSpace = () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true, cancelable: true }));
     window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space', key: ' ', bubbles: true, cancelable: true }));
@@ -371,8 +394,10 @@ function makePilot(sim, { T, W, Ch2, budget = 1200 }) {
   /** Over the water (the tarn, or the sea), down until the bucket dips in, and wait for the fill. */
   P.fill = async () => {
     const fp = () => W.fillPoint(new (sim.aircraft.pos.constructor)());
-    await P.flyTo(fp, 10, { clear: 30 });
+    // Near enough: the pool is 38 m across and the bucket hangs under the hook (a 10 m hover 60 m up cost 25 s of shuffling).
+    await P.flyTo(fp, 18, { clear: 30 });
     const tank = () => W.fireWater().tank;
+    const wet = () => !tank() || tank().filling || tank().fraction >= 0.9;
     for (let tries = 0; tries < 6 && !P.over() && tank() && tank().fraction < 0.9; tries++) {
       // Down gently, a metre or two at a time, until the tank says it is filling: the bucket
       // hangs 18 m under the hook and the band where it dips is a few metres deep, and a
@@ -382,52 +407,53 @@ function makePilot(sim, { T, W, Ch2, budget = 1200 }) {
       // is not filling. Taps of the lever the height hold undoes; altTo() holds the lever until it is there.
       const pool = W.fillPoint(new (sim.aircraft.pos.constructor)());
       const waterY = pool ? pool.y - 25 : 0; // fillPoint stands 25 m over the water
-      for (let k = 0; k < 8 && !P.over() && tank() && !tank().filling && tank().fraction < 0.9; k++) {
-        await P.altTo(waterY + 19.5 - k * 1.2, 0.8);
-        await P.tick(1.5);
+      // The bucket hangs 18.7 m under the skids and dips at the water + 0.7 m: skids at water + 18.6 puts it
+      // 0.8 m in (measured 2026-11-09: the first pass at + 19.5 was 0.1 m short and cost 25 s of steps).
+      // The height hold hunts ±1 m with the bucket in the water, so the height loop stops the moment it fills (the
+      // robot that asked for ±0.6 m sat 5 minutes at full lever over a full bucket, 2026-11-09).
+      for (let k = 0; k < 8 && !P.over() && !wet(); k++) {
+        await P.altTo(waterY + 18.6 - k * 1.0, 1.0, wet);
+        await P.tick(1.0);
       }
       for (let i = 0; i < 14 / DT && !P.over() && tank().fraction < 0.9; i++) {
         await P.tick();
         if (ac().groundSpeed > 3) await P.flyTo(fp, 8, { maxLegs: 6 });
       }
     }
-    // Up out of the hollow before flying off.
-    await P.heightTo(45, 4);
+    // Up out of the hollow before flying off: the rim stands 10 m over the water and the ground
+    // north-east of it 25 m. With the chapter's 200 L bucket the hover climbs at 5 m/s (full, 320 L,
+    // it did not climb at all: 2026-11-09), so this is a few seconds, and it stops early if it is not.
+    const t0 = P.clock;
+    await P.heightTo(40, 4, () => P.clock - t0 > 14);
   };
   /** Over the arrow's point on the fire, down to bucket height, and X when the ring goes green. */
   P.drop = async (getPos) => {
     const dbg = W.wildfireDebug();
     const startDrops = W.fireStatus(sim).drops;
     for (let tries = 0; tries < 6 && !P.over() && W.fireStatus(sim).drops === startDrops; tries++) {
-      // From the inlet, straight up first: the bench is 430 m above the water
-      // and a full bucket climbs it at about 9 m/s in a hover. Over the sea there
-      // is nothing to hit on the way; the flight to the fire starts above the bench.
-      const p0 = getPos();
-      if (p0) {
-        // Above the HIGHEST ground on the way (the bench's rim stands above the fire), not the fire's own.
-        const want = routeTop(p0.x, p0.z) + 60;
-        if (ac().pos.y < want - 5) {
-          release('W');
-          await P.altTo(want, 5);
-        }
-      }
-      await P.flyTo(getPos, 14, { clear: 30 });
+      /*
+       * Across the bench to the fire, climbing on the way (flyTo's diagonal:
+       * W and Shift together, 45 m over the highest ground on the route, the
+       * bucket 19 m under that). Never a climb in a hover first: with the crew
+       * aboard and the bucket full the Skyhook has about 40 kg of lift to
+       * spare, and the robot that tried sat two minutes at full lever with the
+       * vertical speed at zero (2026-11-09). The ring is green from any height
+       * the water still lands on flames from (wildfire.js aimBucket predicts
+       * the fall); the Treetop style is a player's to earn, not this robot's.
+       */
+      await P.flyTo(getPos, 14, { clear: 45 });
       const p = getPos();
       if (!p) return;
-      // Skids about 60 m over whatever is under them (NOT the target's ground: 30 m short
-      // of the target on a bench that rises 30 m, that was a descent into the slope). The
-      // ring is green from any height the water still lands on flames from (wildfire.js
-      // aimBucket predicts the fall); the Treetop style is a player's to earn, not this robot's.
-      await P.heightTo(60, 5);
-      await P.flyTo(getPos, 8, { maxLegs: 40 });
+      // Stopping over it the machine sinks (the hover has no lift to spare): let go as soon as the ring is green.
       for (let i = 0; i < 6 / DT && !P.over(); i++) {
         await P.tick();
-        if (dbg.aimGreen) break;
+        if (dbg.aimGreen || surfaceH() < 25) break;
       }
-      P.pressX();
-      await P.tick(2.5);
+      if (surfaceH() < 12) await P.heightTo(30, 4);
+      await P.dropNow();
+      await P.tick(2.0);
     }
-    // Climb back out of the smoke.
+    // Climb back out of the smoke (the bucket is empty now: it climbs).
     await P.heightTo(60, 4);
   };
   return P;
@@ -560,6 +586,7 @@ export async function check(sim, r, say = () => {}) {
     let tfSeen = false;
     let peak = { burning: 0, at: null };
     const padTarget = () => ({ x: PL.pad.x, z: PL.pad.z });
+    const PLACE_WRECK = () => PL.wreck;
     /**
      * Onto the lookout pad, the way the heli-missions pilot lands on a deck
      * (2026-11-08, the rotor wave's Skyhook): hands off so the assist stops
@@ -609,7 +636,7 @@ export async function check(sim, r, say = () => {}) {
         await P.tick(1);
       } else if (sid === 'lift') {
         await P.liftOff(45);
-        await P.flyTo(() => ({ x: PL.inlet.x, z: PL.inlet.z }), 60, { maxLegs: 20, until: () => stepId() !== 'lift' });
+        await P.flyTo(() => ({ x: PL.tarn.x, z: PL.tarn.z }), 60, { maxLegs: 20, until: () => stepId() !== 'lift' });
       } else if (/^fill-/.test(sid)) {
         // The tarn on the bench: fly to it, hover down until the bucket dips, wait for the fill.
         await P.fill();
@@ -629,9 +656,11 @@ export async function check(sim, r, say = () => {}) {
           await P.tick(2);
         }
         await P.flyTo(() => PL.wreck, 6, { clear: 40, maxLegs: 60 });
-        await P.heightTo(40, 3);
+        // Down to 40 m over it, never below 22 (the shot is good to 75 m up; one run came down the
+        // falling ground east of the scar to 4 m and put its nose in, 2026-11-09), then the shot.
+        if (dist2D(ac().pos, PLACE_WRECK()) < 40) await P.heightTo(40, 3, () => P.surfaceH() < 22);
         await P.tick(1);
-        if (stepId() === 'photo') {
+        if (stepId() === 'photo' && dist2D(ac().pos, PLACE_WRECK()) < 45) {
           P.pressSpace();
           await P.tick(6);
         }
@@ -725,7 +754,7 @@ export async function check(sim, r, say = () => {}) {
       } else if (sid === 'board') await P2.tick(1);
       else if (sid === 'lift') {
         await P2.liftOff(45);
-        await P2.flyTo(() => ({ x: PL.inlet.x, z: PL.inlet.z }), 60, { maxLegs: 20, until: () => stepId() !== 'lift' });
+        await P2.flyTo(() => ({ x: PL.tarn.x, z: PL.tarn.z }), 60, { maxLegs: 20, until: () => stepId() !== 'lift' });
       } else if (sid === 'fill-1') await P2.fill();
       else await P2.tick(1);
     }
@@ -734,7 +763,7 @@ export async function check(sim, r, say = () => {}) {
     const litresB = W.fireWater().tank ? W.fireWater().tank.litres : 0;
     const backB = W.fireFront('back');
     const backSaved = cpB && cpB.beatState && cpB.beatState.back;
-    r.ok('ch2 line: reached "Bucket full" in the line beat, the checkpoint holding the fire and the water', stepId() === 'drop-1' && cpB && /Bucket full/.test(cpB.label) && !!backSaved && cpB.beatState.litres > 250, JSON.stringify({ step: stepId(), cp: cpB && cpB.label, litres: cpB && cpB.beatState && cpB.beatState.litres }));
+    r.ok('ch2 line: reached "Bucket full" in the line beat, the checkpoint holding the fire and the water', stepId() === 'drop-1' && cpB && /Bucket full/.test(cpB.label) && !!backSaved && cpB.beatState.litres > 0.8 * Ch2.BUCKET_LITRES, JSON.stringify({ step: stepId(), cp: cpB && cpB.label, litres: cpB && cpB.beatState && cpB.beatState.litres, bucket: Ch2.BUCKET_LITRES }));
     // Hover there, full, and let the back of the fire run to the road.
     failed = false;
     const roadLine = (await import('../../src/story/script.js')).LINES['c2-fail-road'].text;
@@ -745,17 +774,23 @@ export async function check(sim, r, say = () => {}) {
     }
     await waitFor(() => menus.current === 'story-fail', 60);
     r.ok('ch2 fail: left alone, the fire reaches the road — "the trucks pulled back, all safe"', failed && menus.screens['story-fail'].textContent.includes(roadLine.slice(0, 20)), menus.screens['story-fail'].textContent.replace(/\s+/g, ' ').trim().slice(0, 140));
+    // The drop step roll-saves every 30 s of the hover, so Retry goes back to the LAST of those (the same
+    // step and label, the fire and the water as they were then), not to the second the bucket filled.
+    const cpR = Dir.D.checkpoint;
+    const backSavedR = cpR && cpR.beatState && cpR.beatState.back;
+    const litresR = cpR && cpR.beatState ? cpR.beatState.litres : litresB;
+    r.ok('ch2 fail: the checkpoint still reads "Bucket full" at the drop step, holding the fire and the water as last saved', !!cpR && /Bucket full/.test(cpR.label) && !!backSavedR && litresR > 0.8 * Ch2.BUCKET_LITRES, JSON.stringify({ cp: cpR && cpR.label, litres: litresR }));
     t0 = performance.now();
     menus.screens['story-fail'].querySelector('[data-fact="retry"]').click();
     back = await waitFor(() => sim.state === 'flying' && S().active && S().phase !== 'failed' && sim.runner.step, 150, 20);
     took = (performance.now() - t0) / 1000;
     const backR = W.fireFront('back');
     // Within a few metres: the restored front gets one frame of running before this reads it.
-    const sameFront = !!(backR && backSaved && backR.cols.every((c, k) => Math.abs(c.d - backSaved.d[k]) < 4));
+    const sameFront = !!(backR && backSavedR && backR.cols.every((c, k) => Math.abs(c.d - backSavedR.d[k]) < 4));
     const tankR = W.fireWater().tank;
     r.ok('ch2 retry: back at "Bucket full" in ≤ 3 s — the same step, the pose, the bucket still full, the fire where it was',
-      back && took <= 3 && sim.runner.def.id === 'story-ch02-line' && stepId() === 'drop-1' && ac().pos.distanceTo(new THREE.Vector3(...cpB.pose.pos)) < 30 && tankR && Math.abs(tankR.litres - litresB) < 40 && sameFront && W.wildfireDebug().hudOn === true,
-      `${took.toFixed(2)} s; ${stepId()}; ${Math.round(ac().pos.distanceTo(new THREE.Vector3(...cpB.pose.pos)))} m off; ${tankR && Math.round(tankR.litres)} L (was ${Math.round(litresB)}); fronts restored ${sameFront}`);
+      back && took <= 3 && sim.runner.def.id === 'story-ch02-line' && stepId() === 'drop-1' && ac().pos.distanceTo(new THREE.Vector3(...cpR.pose.pos)) < 30 && tankR && Math.abs(tankR.litres - litresR) < 40 && sameFront && W.wildfireDebug().hudOn === true,
+      `${took.toFixed(2)} s; ${stepId()}; ${Math.round(ac().pos.distanceTo(new THREE.Vector3(...cpR.pose.pos)))} m off; ${tankR && Math.round(tankR.litres)} L (was ${Math.round(litresR)}); fronts restored ${sameFront}`);
     r.ok('ch2 retry: the crew are still aboard (their weight too)', K.boarded === 2 && (ac().extraMass || 0) >= 180, `${K.boarded} aboard, ${Math.round(ac().extraMass || 0)} kg`);
 
     /* ---- 5. leave and continue from the line ------------------------------- */

@@ -1,0 +1,103 @@
+{
+ "baked": {
+  "occlusion": "1024 px, from the airframe's shape only (Blender Cycles AO, 256 samples, 1.5 m)",
+  "png KB": 268
+ },
+ "bytes": {
+  "packed (KTX2 + meshopt)": 2237128,
+  "raw (PNG, float)": 1686868
+ },
+ "dropped": [
+  "Whitish_grey.002: KHR_materials_emissive_strength: material extension: its textures are not read",
+  "Whitish_grey.001: KHR_materials_emissive_strength: material extension: its textures are not read",
+  "f22_top_U: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "f22_bottom_L: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "f22_top_D: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "f22_bottom_L_darker: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "f22_bottom_R.: baseColorTexture: the paint itself: real airline/maker livery, never shipped",
+  "f22_bottom_R_darker: baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+ ],
+ "id": "f22",
+ "kept": [
+  "normal af2f6ec2e487 (403 KB)",
+  "normal 489b42e56607 (194 KB)",
+  "normal 18774f08da36 (397 KB)",
+  "normal a3d255f67e82 (175 KB)"
+ ],
+ "materials": {
+  "Grey": {
+   "dropped": [],
+   "kept": []
+  },
+  "Whitish_grey.001": {
+   "dropped": [
+    "KHR_materials_emissive_strength: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "Whitish_grey.002": {
+   "dropped": [
+    "KHR_materials_emissive_strength: material extension: its textures are not read"
+   ],
+   "kept": []
+  },
+  "dark": {
+   "dropped": [],
+   "kept": []
+  },
+  "f22_bottom_L": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": [
+    "normal"
+   ]
+  },
+  "f22_bottom_L_darker": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": [
+    "normal"
+   ]
+  },
+  "f22_bottom_R.": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": [
+    "normal"
+   ]
+  },
+  "f22_bottom_R_darker": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": [
+    "normal"
+   ]
+  },
+  "f22_top_D": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": [
+    "normal"
+   ]
+  },
+  "f22_top_U": {
+   "dropped": [
+    "baseColorTexture: the paint itself: real airline/maker livery, never shipped"
+   ],
+   "kept": [
+    "normal"
+   ]
+  },
+  "glass": {
+   "dropped": [],
+   "kept": []
+  }
+ },
+ "source": "f22/f22.glb",
+ "triangles": 5043
+}

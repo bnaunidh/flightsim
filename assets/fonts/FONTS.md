@@ -19,6 +19,15 @@ on their own. Credited in the game's Credits screen (`src/ui/credits.js`, Typogr
 | archivo-black-400-normal.woff2 | Archivo Black 400 | Omnibus-Type and the Archivo Project Authors |
 | kanit-600-normal.woff2 | Kanit 600 | Cadson Demak and the Kanit Project Authors |
 | lora-600-italic.woff2 | Lora 600 italic | Cyreal and the Lora Project Authors |
+| rubik-900-normal.woff2 | Rubik 900 | The Rubik Project Authors (https://github.com/googlefonts/rubik), 2015 |
+| cormorant-garamond-700-normal.woff2 | Cormorant Garamond 700 | Christian Thalmann and the Cormorant Project Authors (github.com/CatharsisFonts/Cormorant), 2015 |
+| josefin-sans-600-normal.woff2 | Josefin Sans 600 | Santiago Orozco and the Josefin Sans Project Authors (https://github.com/ThomasJockin/JosefinSansFont-master), 2010 |
+| nunito-sans-600-normal.woff2 | Nunito Sans 600 | Vernon Adams, Jacques Le Bailly and the Nunito Sans Project Authors (https://github.com/Fonthausen/NunitoSans), 2016 |
+
+The last four were added 2026-11-09 (owner: "yes to all 4 fonts"), each the nearest free face to one
+airline's lettering: Rubik for Spit Air, Cormorant Garamond for Desert Pearl, Josefin Sans for Sandline,
+Nunito Sans for Liberty Air. Cinzel, Playfair Display and Titillium Web stay bundled (Titillium is the
+instruments' face; the other two are still in the roster for any scheme that wants them).
 
 ## How the game uses them
 
@@ -47,14 +56,14 @@ the FEEL of the lettering of the airline it is styled after — never that airli
 |---|---|---|
 | Abyssinia Air | Kanit 600 | warm, slightly flared bold sans |
 | Ununited | Montserrat 700 | clean, wide geometric |
-| Liberty Air | Titillium Web 700 | squared, technical sans |
+| Liberty Air | Nunito Sans 600 | humanist sans of medium weight, set a little open |
 | Bleu Ciel | Jost 700 | Parisian geometric, two words of capitals |
 | Bharat Air | Lora 600 italic | flowing italic of the old titling |
 | Night Freight | Oswald 600 | condensed cargo |
 | Kanal Royal Dutch | League Spartan 700 | bold round geometric, white on the blue crown |
 | Riverdelta | Montserrat 800 | heavy, square-shouldered |
-| Desert Pearl | Playfair Display 700 | high-contrast elegant serif, one tall gold line |
-| Sandline | Cinzel 700 | classical capitals |
+| Desert Pearl | Cormorant Garamond 700 | soft old-style serif, one tall gold line |
+| Sandline | Josefin Sans 600 | light geometric capitals, widely spaced |
 | Dash Freight | Exo 2 700 italic | fast heavy italic |
 | FlexShip | Montserrat 700 | round geometric, open and spaced |
 | Parcel Brown | Barlow Condensed 700 | sturdy condensed |
@@ -62,6 +71,6 @@ the FEEL of the lettering of the airline it is styled after — never that airli
 | Bosphorus | League Spartan 700 | bold even geometric capitals, spaced |
 | Pearl Gulf | Playfair Display 700 | refined serif, wide spacing |
 | Rising Crane | Kanit 600 | firm sans, one black line |
-| Spit Air | Archivo Black | black, loud, lowercase, painted tall |
+| Spit Air | Rubik 900 | rounded black lowercase, set tight, painted tall |
 | OverSea | Exo 2 700 italic | sporty, forward-leaning |
 | Air Force One | Playfair Display 700 | Caslon-style serif |

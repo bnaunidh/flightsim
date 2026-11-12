@@ -10,6 +10,11 @@
  *     of an apron door, without once being put through a wall;
  *   - the windows are not painted: from a gate, the parked aeroplanes are there;
  *   - the boards list the flights on the stands;
+ *   - the camera stays in the building with you: never above the ceiling,
+ *     never out through a wall, never in a wall;
+ *   - it is furnished (terminal/dress.js): the kiosks and planters are solid,
+ *     the kerb has its palms and hedge while you are on foot and not from the
+ *     seat, and none of that is fetched or drawn until a walker comes near;
  *   - the thumb-stick walks the same way;
  *   - quit and restart leave nothing behind: crash box, floor, folded triangles.
  */
@@ -50,7 +55,15 @@ export async function check(sim, r, say = () => {}) {
   if (typeof window !== 'undefined' && window.__walkInMap) sim.setMap(window.__walkInMap);
   await sim.startMode('free', { aircraft: 'skylark', taxi: false });
   run(60);
-  const fetchedAtStart = performance.getEntriesByType('resource').some((e) => /terminal\/interior\.js/.test(e.name));
+  const fetchedAtStart = performance.getEntriesByType('resource').some((e) => /terminal\/(interior|dress|look)\.js/.test(e.name));
+  const named = (n) => {
+    const out = [];
+    sim.scene.traverse((o) => {
+      if (o.name === n) out.push(o);
+    });
+    return out;
+  };
+  r.ok('walk-in: the seat pays for none of the furnishing (no kerb planting in the world)', named('terminal:kerb').length === 0, named('terminal:kerb').length);
   const st0 = sim.walkIn.state();
   r.ok('walk-in: nothing built in the seat', !st0.built && !st0.open, JSON.stringify(st0));
   if (!sim.walkIn.inside) r.ok('walk-in: no interior object until a walker comes near', true);
@@ -81,9 +94,28 @@ export async function check(sim, r, say = () => {}) {
   r.ok('walk-in: no build step is a hitch', st1.longestStep < 24, `longest step ${st1.longestStep.toFixed(1)} ms`);
   const inside = sim.walkIn.inside;
   r.ok('walk-in: it has people in it', st1.people >= 20, st1.people);
+  const fitMesh = inside.group.getObjectByName('inside:fittings');
+  const tris = fitMesh ? fitMesh.geometry.attributes.position.count / 3 : 0;
+  r.ok('walk-in: the inside is drawn (fittings, floors, ceilings, boards)', inside.group.visible && tris > 20000 && ['inside:floors', 'inside:ceilings', 'inside:boards'].every((n) => inside.group.getObjectByName(n)), `${tris} triangles`);
+  const extra = inside.extraSolids || [];
+  const tagged = (t) => extra.filter((q) => q.tag === t);
+  r.ok('walk-in: it is furnished: kiosks, planters, canopies over the desks', tagged('a check-in kiosk').length >= 4 && tagged('a planter').length >= 4 && tagged('the check-in canopy').length === P.islands.length, extra.length);
+  const kerbG = named('terminal:kerb')[0];
+  const palms = kerbG && kerbG.getObjectByName('kerb:palms');
+  r.ok('walk-in: on foot the kerb has its palms, hedge and bed', !!kerbG && kerbG.visible && !!palms && palms.count >= 6 && !!kerbG.getObjectByName('kerb:planting') && tagged('a hedge').length >= 1 && tagged('a planted bed').length >= 2, palms ? palms.count : 'none');
+  // Nothing of the furnishing stands in a doorway or on the crowd's routes.
+  const hit = (u, b, y) => extra.some((q) => u > q.u0 - 0.45 && u < q.u1 + 0.45 && b > q.b0 - 0.45 && b < q.b1 + 0.45 && y + 1.8 > q.y0 && y < q.y1);
+  let inWay = 0;
+  for (const d of P.doors) for (let b = -6; b <= P.D + 6; b += 0.5) if (d.side === 'land' ? b > P.D - 8 && hit(d.u, b, 0) : b < 4 && hit(d.u, b, 0)) inWay++;
+  for (const q of P.routes) for (let t = 0; t <= 1; t += 0.002) if (hit(q.pts[0][0] + (q.pts[1][0] - q.pts[0][0]) * t, q.pts[0][1] + (q.pts[1][1] - q.pts[0][1]) * t, q.y)) inWay++;
+  r.ok('walk-in: no furniture in a doorway or where the crowd walks', inWay === 0, inWay);
 
   /* ---- a walk ---- */
   let leak = 0;
+  let camOut = 0;
+  let camFrames = 0;
+  let camWhere = '';
+  const cam = sim.camera.position;
   const walk = (u, b, label, tol = 0.9, secs = 120) => {
     const w = foot.walker;
     const t = W(u, b);
@@ -108,7 +140,19 @@ export async function check(sim, r, say = () => {}) {
       // Inside a wall? The walker must never be in the crash box and out of the building's own plan.
       const q = PL.fromWorld(P, w.x, w.z);
       const ins = q.u > P.cu0 + 0.2 && q.u < P.cu1 - 0.2 && q.b > 0.3 && q.b < P.D - 0.3;
-      if (ins && P.solids.some((s) => w.y - E + 1.2 > s.y0 && w.y - E + 0.1 < s.y1 && q.u > s.u0 + 0.05 && q.u < s.u1 - 0.05 && q.b > s.b0 + 0.05 && q.b < s.b1 - 0.05)) leak++;
+      if (ins && [...P.solids, ...extra].some((s) => w.y - E + 1.2 > s.y0 && w.y - E + 0.1 < s.y1 && q.u > s.u0 + 0.05 && q.u < s.u1 - 0.05 && q.b > s.b0 + 0.05 && q.b < s.b1 - 0.05)) leak++;
+      // Well indoors, the lens is indoors too: under the ceiling, this side of the walls, in no wall.
+      if (q.u > P.cu0 + 2 && q.u < P.cu1 - 2 && q.b > 2 && q.b < P.D - 2) {
+        camFrames++;
+        const c = PL.fromWorld(P, cam.x, cam.z);
+        // (Just in from a door, it looks in through the doorway behind you: that is not through a wall.)
+        const doorway = P.doors.some((d) => Math.abs(c.u - d.u) < d.hw + 0.2 && cam.y - E < d.h && (d.side === 'land' ? c.b > P.D - 1 : c.b < 1));
+        const bad = cam.y - E > PL.CEIL - 0.2 || cam.y - E < 0.2 || (!doorway && (c.b < 0.1 || c.b > P.D - 0.1)) || c.u < P.cu0 + 0.1 || c.u > P.cu1 - 0.1 || inside.grid.at(cam.x, cam.y, cam.z, 0.05);
+        if (bad) {
+          camOut++;
+          if (!camWhere) camWhere = `${label}: u ${c.u.toFixed(1)} b ${c.b.toFixed(1)} y ${(cam.y - E).toFixed(1)}`;
+        }
+      }
     }
     up();
     r.ok(`walk-in: reached ${label}`, false, `stopped ${best.toFixed(1)} m short at ${(w.x | 0)},${w.y.toFixed(1)},${w.z | 0}: ${w.lastBlock}`);
@@ -186,6 +230,31 @@ export async function check(sim, r, say = () => {}) {
   walk(ad.u, -4, 'the apron', 0.9);
   r.ok('walk-in: out on the apron', !sim.walkIn.state().indoors && foot.walker.y - E < 0.3);
   r.ok('walk-in: never once inside a wall', leak === 0, leak);
+  // (Swinging round the foot of a stair the eased lens clips the corner of its flank for a frame or two:
+  // measured 2 frames in 6,228 before the furnishing and after. More than a handful is a wall it sat in.)
+  r.ok('walk-in: the camera stayed in the building with you', camFrames > 2000 && camOut <= 6, `${camOut} of ${camFrames} frames ${camWhere}`);
+
+  /* ---- the furniture is solid ---- */
+  const into = (q, fromB, label) => {
+    const mu = (q.u0 + q.u1) / 2;
+    const mb = (q.b0 + q.b1) / 2;
+    const a = W(mu, mb + fromB);
+    foot.place(a.x, a.z, 0);
+    run(20);
+    const w = foot.walker;
+    const t = W(mu, mb);
+    sim.key('KeyW', true);
+    for (let i = 0; i < 200; i++) {
+      foot.setCamera((Math.atan2(t.x - w.x, -(t.z - w.z)) * 180) / Math.PI, -6);
+      sim.update(dt);
+    }
+    up();
+    const at = PL.fromWorld(P, w.x, w.z);
+    r.ok(`walk-in: a walker does not go through ${label}`, Math.abs(at.b - mb) > (q.b1 - q.b0) / 2 + 0.1 || Math.abs(at.u - mu) > (q.u1 - q.u0) / 2 + 0.1, `u ${at.u.toFixed(2)} b ${at.b.toFixed(2)}, ${w.lastBlock}`);
+  };
+  into(tagged('a check-in kiosk')[0], 2.2, 'a check-in kiosk');
+  into(tagged('a planter')[0], 2.2, 'a planter');
+  if (tagged('a palm')[0]) into(tagged('a palm')[0], 3, 'a palm on the kerb');
 
   /* ---- the kerb furniture ---- */
   const kerb = sim.apron.lay && (await import('../../src/features/life/plan.js')).terminalSolids(lay).find((q) => q.kind === 'column');
@@ -223,6 +292,8 @@ export async function check(sim, r, say = () => {}) {
   foot.end(sim);
   run(3);
   r.ok('walk-in: back in the seat, it is shut', !sim.walkIn.state().open && !sim.walkIn.state().indoors);
+  sim.renderer.render(sim.scene, sim.camera);
+  r.ok('walk-in: back in the seat, the kerb planting is put away', !!kerbG && !kerbG.visible);
   r.ok('walk-in: the crash box is back', TER.OBSTACLES.every((o) => !o.walkIn));
   r.ok('walk-in: the walls are back', vc.geometry.attributes.position.getX(cut[0]) !== 0 || vc.geometry.attributes.position.getZ(cut[0]) !== 0);
   r.ok('walk-in: no stuck override', !foot.active);
@@ -233,7 +304,7 @@ export async function check(sim, r, say = () => {}) {
   r.ok('walk-in: a restart starts shut', !st3.open);
   const inScene = [];
   sim.scene.traverse((o) => {
-    if (o.name === 'terminal:inside' && o.visible) inScene.push(o);
+    if ((o.name === 'terminal:inside' || o.name === 'terminal:kerb') && o.visible) inScene.push(o);
   });
   r.ok('walk-in: nothing of it is drawn from the seat', inScene.length === 0 && (beforeGroup.visible === false));
   if (sim.quitToMenu) sim.quitToMenu();

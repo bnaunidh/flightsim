@@ -10,10 +10,13 @@
  *   jet / wide   airliners between the long runways (2,300 m and up; the
  *                widebodies 2,800 m), cruising FL150-FL350 as the leg allows
  *   prop         the Q400 between the regionals and the hubs
- *   light        Skylarks and Couriers between the strips and anywhere, low
+ *   light        Skylarks, Couriers and Tempests between the strips and
+ *                anywhere, low
  *   heli         helicopters between the heliports and the fields' pads,
  *                a few hundred metres over the ground
- *   mil          a C-17 now and then between the air base and the air station
+ *   mil          a C-17, a C-5, an F-22 or an F/A-18 now and then between
+ *                the air base and the air station
+ * and each kind has a few RARE types that turn up now and then (pickTypeId).
  *
  * BUSY WHERE YOU ARE. Each new one is, most of the time (LOCAL_BIAS), given
  * the route of four that passes nearest you; at the flight's start they are
@@ -67,13 +70,22 @@
 
 import { AIRPORTS as WP_AIRPORTS, PREVIEW } from './preview.js';
 
-/** Per tier: how many fly at once, how many full models near the camera, their range, and the proxies' range. */
+/**
+ * Per tier: how many fly at once, how many full models near the camera, their range, and the proxies' range.
+ *
+ * The owner, 2026-11-11: "add more npc aircraft". Medium, High and Ultra fly about 40% more than they did
+ * (16 / 24 / 32 before), from a bigger fleet, with one or two more full models near you at High and Ultra.
+ * LOW IS AS IT WAS, number for number: it is what the school iPads and Chromebooks start on
+ * (render/weak-device.js), and LOW_WAS below is what the tests hold it to.
+ */
 export const TIERS = Object.freeze({
   low: Object.freeze({ n: 8, models: 2, near: 2500, far: 9000, fleet: 6, buildGap: 6 }),
-  medium: Object.freeze({ n: 16, models: 3, near: 3500, far: 12000, fleet: 10, buildGap: 2 }),
-  high: Object.freeze({ n: 24, models: 4, near: 4500, far: 15000, fleet: 14, buildGap: 1.5 }),
-  ultra: Object.freeze({ n: 32, models: 6, near: 6000, far: 18000, fleet: 20, buildGap: 1 }),
+  medium: Object.freeze({ n: 22, models: 3, near: 3500, far: 12000, fleet: 13, buildGap: 2 }),
+  high: Object.freeze({ n: 34, models: 5, near: 4500, far: 15000, fleet: 18, buildGap: 1.5 }),
+  ultra: Object.freeze({ n: 46, models: 8, near: 6000, far: 18000, fleet: 26, buildGap: 1 }),
 });
+/** Low before the busier skies: the cap a weak device is held to. */
+export const LOW_WAS = Object.freeze({ n: 8, models: 2, fleet: 6 });
 
 /** No take-off or landing at a field this close to the player (metres, horizontal). */
 export const NO_RUNWAY_M = 8000;
@@ -110,13 +122,13 @@ export const V250 = 250 / 1.94384;
  */
 export const CATS = Object.freeze({
   jet: Object.freeze({
-    types: ['a320', 'b737', 'a321', 'meridian'], share: 0.36, minRunway: 2300, minLeg: 30000, maxLeg: Infinity,
+    types: ['a320', 'b737', 'a321', 'meridian'], rare: ['concorde'], share: 0.34, minRunway: 2300, minLeg: 30000, maxLeg: Infinity,
     climb: 0.1, desc: 0.055, vClimb: 135, vCruise: 205, vApp: 82, vFinal: 72, maxVs: 13, accel: 1.1, decelDist: 30000,
     cruiseMin: 4500, cruiseMax: 10700, gate: 14000, join: 6000, spawnOut: 6000, despawnOut: 10000, bank: 25, clear: 450,
     rollout: 1600, aoa: 2.5, appAoa: 4, wide: false, slope: TAN3,
   }),
   wide: Object.freeze({
-    types: ['b787', 'a350', 'b777', 'b747'], share: 0.1, minRunway: 2800, minLeg: 50000, maxLeg: Infinity,
+    types: ['b787', 'a350', 'b777', 'b747', 'a380'], rare: ['belugaxl', 'dreamlifter', 'an225'], share: 0.1, minRunway: 2800, minLeg: 50000, maxLeg: Infinity,
     climb: 0.085, desc: 0.055, vClimb: 140, vCruise: 225, vApp: 85, vFinal: 76, maxVs: 12, accel: 1.0, decelDist: 32000,
     cruiseMin: 5500, cruiseMax: 11300, gate: 15000, join: 6000, spawnOut: 7000, despawnOut: 11000, bank: 25, clear: 450,
     rollout: 2000, aoa: 2.5, appAoa: 4, wide: true, slope: TAN3,
@@ -128,25 +140,43 @@ export const CATS = Object.freeze({
     rollout: 900, aoa: 2, appAoa: 3, slope: TAN3,
   }),
   light: Object.freeze({
-    types: ['skylark', 'courier'], share: 0.22, minRunway: 0, minLeg: 9000, maxLeg: 75000,
+    types: ['skylark', 'courier', 'tempest'], share: 0.22, minRunway: 0, minLeg: 9000, maxLeg: 75000,
     climb: 0.07, desc: 0.06, vClimb: 38, vCruise: 56, vApp: 36, vFinal: 32, maxVs: 4, accel: 0.7, decelDist: 4000,
     cruiseMin: 900, cruiseMax: 2700, gate: 4500, join: 2500, spawnOut: 2500, despawnOut: 4000, bank: 25, clear: 300,
     rollout: 350, aoa: 2, appAoa: 4, slope: TAN3, vfr: true, side: 0.71,
   }),
   heli: Object.freeze({
-    types: ['bell407', 'h145', 'aw139', 'r44'], share: 0.1, pads: true, minLeg: 8000, maxLeg: 60000,
+    types: ['bell407', 'h145', 'aw139', 'r44'], rare: ['uh60', 'ch47'], share: 0.1, pads: true, minLeg: 8000, maxLeg: 60000,
     climb: 0.12, desc: 0.1, vClimb: 40, vCruise: 62, vApp: 26, vFinal: 12, maxVs: 6, accel: 1.1, decelDist: 3000,
     cruiseMin: 0, cruiseMax: 0, agl: 330, gate: 1700, join: 1200, spawnOut: 1300, despawnOut: 1700, bank: 20, clear: 300,
     rollout: 0, aoa: 0, appAoa: 0, slope: 0.12, side: 0.71,
   }),
   mil: Object.freeze({
-    types: ['c17'], share: 0.04, minRunway: 2300, minLeg: 40000, maxLeg: Infinity, only: ['sandmere', 'farwatch'],
+    types: ['c17', 'c5', 'f22', 'fa18'], rare: ['b1b'], share: 0.06, minRunway: 2300, minLeg: 40000, maxLeg: Infinity, only: ['sandmere', 'farwatch'],
     climb: 0.09, desc: 0.06, vClimb: 130, vCruise: 200, vApp: 70, vFinal: 65, maxVs: 12, accel: 1.0, decelDist: 28000,
     cruiseMin: 4500, cruiseMax: 9500, gate: 13000, join: 6000, spawnOut: 6000, despawnOut: 10000, bank: 25, clear: 450,
     rollout: 1300, aoa: 3, appAoa: 4, slope: TAN3,
   }),
 });
 export const CAT_IDS = Object.freeze(Object.keys(CATS));
+/** How often a kind's `rare` types turn up instead of its everyday ones. */
+export const RARE_P = 0.08;
+/**
+ * A type for one of a kind: mostly its everyday `types`, now and then one of its `rare` ones (Concorde among
+ * the jets, the outsize freighters among the widebodies, an army helicopter, a bomber). `have(id)` says
+ * whether the roster has it (an edition without a type simply never flies it).
+ */
+export function pickTypeId(catId, rand, have = null) {
+  const C = CATS[catId];
+  const ok = (l) => (have ? l.filter(have) : l);
+  // One draw for both questions, so a sky is the same sky it was for a given seed.
+  const r = rand();
+  const rare = C.rare ? ok(C.rare) : [];
+  if (rare.length && r < RARE_P) return rare[Math.floor((r / RARE_P) * rare.length)];
+  const list = ok(C.types);
+  const u = rare.length ? (r - RARE_P) / (1 - RARE_P) : r;
+  return list.length ? list[Math.min(list.length - 1, Math.floor(u * list.length))] : C.types[0];
+}
 
 /* ------------------------------------------------------------------ */
 /* Small maths                                                         */
@@ -888,7 +918,7 @@ export class TrafficSim {
 
   _make(catId, plan, s) {
     const C = CATS[catId];
-    const typeId = this.pickType ? this.pickType(catId, this.rand) : C.types[Math.floor(this.rand() * C.types.length)];
+    const typeId = this.pickType ? this.pickType(catId, this.rand) : pickTypeId(catId, this.rand);
     const c = {
       n: this.nextId, ttT: 0, ttY: 0,
       id: `wmt-${this.nextId++}`, catId, cat: C, typeId, plan, from: plan.from, to: plan.to, s, cur: { i: 0 },

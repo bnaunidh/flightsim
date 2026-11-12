@@ -78,6 +78,102 @@ export async function deckEdge(sim, r) {
 }
 
 /**
+ * Beside a deck, under its top. Man Overboard's pilot, home with the swimmer,
+ * came down 17 m off the Fleet Hospital Ship's middle with the skids 6.8 m
+ * over the sea (the deck is at 10), let go and shuffled towards the H: "The
+ * nose struck the ground", 5867, -5803 (heli-missions, 1 run in ~40). The
+ * hold's floor only looked at what was under each hard point, so a deck's
+ * side was air until the nose was in it. Here: the hold on, the nose, the
+ * tail or a side 0.6-2.5 m off the deck's edge and 2-6 m under its top, and
+ * taps of W (or S) towards the middle. She must climb over it, not into it.
+ */
+export async function deckSide(sim, r) {
+  const THREE = await import('../../src/vendor/three.module.js');
+  const TER = await import('../../src/world/terrain.js');
+  const auto = sim.autoPauseOnHide;
+  sim.autoPauseOnHide = false;
+  const key = (type, k) => window.dispatchEvent(new KeyboardEvent(type, { code: KEYS[k][0], key: KEYS[k][1], bubbles: true }));
+  const DT = 1 / 30;
+  const rnd = Math.random;
+  if (sim.applyDifficulty) sim.applyDifficulty('normal');
+  if (sim.settings) sim.settings.heliAssist = true;
+  if (sim.switchGame) sim.switchGame('heli');
+  // The deck: x 5838..5862, z -5812..-5788, 10 m up (its plant hangs under the +z side).
+  // [x, z, heading, key, skids over the sea]; the AW139's nose is 5.48 m ahead, its tail 8.32 m behind.
+  const cases = [
+    [5862 + 5.48 + 2.5, -5800, 270, 'W', 7],
+    [5862 + 8.32 + 2.5, -5800, 90, 'S', 7],
+    [5862 + 5.48 + 2.5, -5800, 270, 'W', 3],
+    [5862 + 5.48 + 0.6, -5804, 270, 'W', 7],
+    [5838 - 5.48 - 2.5, -5805, 90, 'W', 6],
+    [5850, -5812 - 5.48 - 2.5, 180, 'W', 7.5],
+  ];
+  try {
+    for (const [x, z, hdg, k, skids] of cases) {
+      // The gusts too: the same air every run.
+      let seed = 7;
+      Math.random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      await sim.startAnyMission('overboard');
+      sim.step(DT);
+      sim.runner.skipStep();
+      sim.runner.skipStep();
+      const ac = sim.aircraft;
+      ac.reset({ pos: new THREE.Vector3(x, 0, z), headingDeg: hdg, speed: 0, altAGL: skids + 1.9 - TER.heightAt(x, z), engineOn: true });
+      for (let t = 0; t < 3 && !ac.crashed; t += DT) sim.step(DT);
+      let t = 0;
+      for (let n = 0; n < 9 && !ac.crashed; n++) {
+        key('keydown', k);
+        for (let i = 0; i < 0.4 / DT; i++, t += DT) sim.step(DT);
+        key('keyup', k);
+        for (let i = 0; i < 2 / DT && !ac.crashed; i++, t += DT) sim.step(DT);
+      }
+      const over = TER.platformAt(ac.pos.x, ac.pos.z);
+      r.ok(
+        `deck side: the hold on, ${k} towards the hospital ship's deck, skids ${skids} m over the sea, heading ${hdg}: over it, not into it`,
+        !ac.crashed && !!over && ac.pos.y > over.y,
+        `${ac.crashed ? ac.crashReason : over ? 'over the deck' : 'beside it'} after ${t.toFixed(1)} s at ${ac.pos.x.toFixed(1)}, ${ac.pos.z.toFixed(1)}, ${ac.pos.y.toFixed(1)} m`
+      );
+      sim.quitToMenu();
+    }
+  } finally {
+    Math.random = rnd;
+    sim.autoPauseOnHide = auto;
+  }
+}
+
+/**
+ * Held up beside the rock. The Ledge's pilot, starting down to the winch band
+ * 11 m off Gannet Stack's spot, drifted to 15.5 m north-west of it, outside
+ * the 12 m circle, with the tail over the rock and the skids over the drop:
+ * the assist held her 38 m up saying CAN'T LAND HERE, and the pilot held
+ * Ctrl there until the ten minutes ran out (2026-11-10, one full run in a
+ * few). Put there the moment it starts down, the pilot must read the card,
+ * go back over the spot and finish the winch — the mission unchanged.
+ */
+export async function ledgeEdgeStop(sim, r) {
+  const THREE = await import('../../src/vendor/three.module.js');
+  const step = sim.step;
+  let moved = false;
+  sim.step = function (dt) {
+    const P = sim.__heliMissionProgress || {};
+    if (!moved && P.step === 'winch' && /^going to 2/.test(P.doing || '') && sim.hoverBox) {
+      moved = true;
+      const c = sim.hoverBox.pos;
+      sim.aircraft.reset({ pos: new THREE.Vector3(c.x - 7, 0, c.z - 14), headingDeg: 333, speed: 0, altAGL: 41, engineOn: true });
+    }
+    return step.call(this, dt);
+  };
+  let res;
+  try {
+    res = await check(sim, { ok: () => true }, () => {}, { ids: ['stackrescue'] });
+  } finally {
+    sim.step = step;
+  }
+  const x = (res && res[0]) || {};
+  r.ok('the Ledge: held up beside the rock, the pilot goes back over the spot and winches', moved && x.ok, `${moved ? 'put 15.6 m off the spot, tail over the rock' : 'never started down to the band'}; ${x.status} in ${x.clock} s: ${x.trail}${x.why ? ' — ' + x.why : ''}`);
+}
+
+/**
  * Down on the pad straight after another type. The height over the skids was
  * worked out once and kept: after the Skyhook an H145 stopped 14 cm off Night
  * Medevac's pad with Ctrl held and hung there, and nothing in the first flight
@@ -225,6 +321,19 @@ export async function check(sim, r, say = () => {}, opts = {}) {
     const vs = ac().vs;
     return surfaceH() + (vs * Math.abs(vs)) / 6 + vs * 0.3;
   };
+  /*
+   * Coming down, the card may say CAN'T LAND HERE: the assist is holding her
+   * up because a hard point is over something the skids are not. Ctrl held
+   * longer changes nothing, so after three seconds of it this lets go and
+   * says 'refused', and the caller moves, as the card tells a player to
+   * ("move over flatter ground or the middle of the H"). Measured
+   * 2026-11-10: The Ledge's pilot started down to the winch band 11 m off
+   * Gannet Stack's spot, drifted to 15.5 m north-west of it (outside the 12 m
+   * circle) with the tail over the rock and the skids over the drop, and
+   * held Ctrl there 38 m up for the rest of the ten minutes (heli-missions,
+   * 8/1 on postdemo/all; the same stop is reached on v80.1 when put there).
+   */
+  const cantLand = () => /CAN.T LAND/.test(sim.hud && sim.hud.heliState ? sim.hud.heliState.textContent : '');
   /**
    * Shift or Ctrl until the height over the surface is about h. `climbOnly`
    * for the climb before a long leg: a cliff falling away under her makes the
@@ -237,15 +346,20 @@ export async function check(sim, r, say = () => {}, opts = {}) {
       if (Math.abs(e) < tol || (climbOnly && e < 0)) break;
       const k = e > 0 ? 'Shift' : 'Ctrl';
       press(k);
+      let refused = 0;
       // Let go early, by the stopping distance.
       for (let j = 0; j < 400 && !over(); j++) {
         await tick();
+        refused = k === 'Ctrl' && cantLand() ? refused + DT : 0;
+        if (refused >= 3) break;
         const now = h - stopsAt();
         if (Math.abs(now) < 1 || Math.sign(now) !== Math.sign(e)) break;
       }
       release(k);
       await tick(3);
+      if (refused >= 3) return 'refused';
     }
+    return 'done';
   };
   /** Point at it, hold W, let go in time to stop; then shuffle over it. */
   /*
@@ -377,7 +491,7 @@ export async function check(sim, r, say = () => {}, opts = {}) {
       let refused = 0;
       for (let i = 0; i < 900 && !over() && !ac().onGround && refused < 3 && here(); i++) {
         await tick();
-        refused = /CAN.T LAND/.test(sim.hud && sim.hud.heliState ? sim.hud.heliState.textContent : '') ? refused + DT : 0;
+        refused = cantLand() ? refused + DT : 0;
       }
       if (ac().onGround || !here()) break;
       release('Ctrl');
@@ -423,7 +537,13 @@ export async function check(sim, r, say = () => {}, opts = {}) {
       // cliff at 23 m/s.
       const hb = sim.hoverBox;
       if (hb && Math.hypot(hb.pos.x - ac().pos.x, hb.pos.z - ac().pos.z) > 12) continue;
-      await heightTo(band, 1.2);
+      // Held up on the way down (see heightTo): back over the spot and try
+      // again; already over its middle, turn a quarter first, as landHere does.
+      if ((await heightTo(band, 1.2)) === 'refused') {
+        const b = sim.hoverBox;
+        if (b && Math.hypot(b.pos.x - ac().pos.x, b.pos.z - ac().pos.z) < 4) await holdFor('E', 1.5);
+        continue;
+      }
       for (let i = 0; i < 25 / DT && active(); i++) {
         await tick();
         const b = sim.hoverBox;

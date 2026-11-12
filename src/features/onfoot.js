@@ -57,6 +57,7 @@ import { registerExtension, extStatus } from '../game/extensions.js';
 import { registerActions, isKey, heldKey, keyName, live } from '../flight/input.js';
 import { heightAt, isPaved } from '../world/terrain.js';
 import { createPerson, posePerson, setWands, disposePerson } from './staff/person.js';
+import { updateGrass, hideGrass } from './onfoot-grass.js';
 import { Walker, WALK, groundAt, setTerrainMeshes, forgetObstacles, setProps, solidBox, solidAt, setDrawn, hookedFloor } from './staff/walk.js';
 import { drawnGroundSampler, ribbonSampler } from '../world/roads.js';
 import { PADS, padDiscLift } from '../world/pads.js';
@@ -117,6 +118,11 @@ function passes(sim, code) {
     if (i < 7 || !WALK_KEYS.some((a) => isKey(sim, a, code))) return true;
   }
   return false;
+}
+
+/** World Map tree cards stay whole up close on foot (worldmap/tree-cards.js), not loaded until needed. */
+function cardFade(on) {
+  import('../world/worldmap/tree-cards.js').then((m) => m.setCardNearFade(on), () => {});
 }
 
 /** Is a walking action held, in the walker's own table of keys? */
@@ -643,6 +649,7 @@ function begin(sim, x, z, headingDeg, outfit, fromVehicle) {
     S.walker.vy = 1.2;
   }
   S.active = true;
+  cardFade(true);
   S.since = 0;
   S.wasAir = S.walker.air;
   S.keys = Object.create(null);
@@ -670,6 +677,8 @@ function begin(sim, x, z, headingDeg, outfit, fromVehicle) {
 function finish(sim) {
   if (!S.active) return;
   S.active = false;
+  cardFade(false);
+  hideGrass();
   S.control = null;
   if (S.model) {
     S.model.visible = false;
@@ -1479,6 +1488,7 @@ registerExtension({
       }
       ensureDrawn(sim);
       walkFrame(sim, dt);
+      updateGrass(sim, S.walker, dt);
     } else {
       idleFrame(sim, dt);
     }

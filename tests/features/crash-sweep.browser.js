@@ -27,8 +27,17 @@
  * `check(sim, r, say)`, as tests/features/index.js expects.
  */
 
-/** WCAG 2.3.1's line: 25% of any 10-degree field. The worst scene measured is 19% (a cartoon F-22 hitting a wall); the number moves a few points with what ran before it. */
+/** WCAG 2.3.1's line: 25% of any 10-degree field. The number moves a few points with what ran before it and with the Mac's load. */
 export const LIMIT = 0.25;
+/**
+ * And the margin under it that Reduce flashing keeps (v80.2). The worst
+ * (F-22 / Massimo cartwheel, wing clip, bonk) ran 20-27% while the crash
+ * cam's stand rode along with a wreck sliding away. v81 (flight/camera.js
+ * crashBack, CRASH_CUT_RATIO, CRASH_LOOK_RATE): the stand is fixed, the
+ * pull-back a cut, the look smoothed. Worst of three runs 14.4% (a cartoon
+ * bonk; real crashes 10%), and under a 4x CPU throttle 14.0% (was 18.6%).
+ */
+export const LIMIT_REDUCED = 0.2;
 export const KINDS = ['cartwheel', 'wingclip', 'bonk', 'noseplant', 'bellyflop', 'splash'];
 export const ALL_TYPES = ['skylark', 'courier', 'meridian', 'tempest', 'vanguard', 'osprey', 'nightjar', 'harrier', 'f22', 'f35b', 'fa18', 'massimo', 'a320', 'b747', 'a380', 'tpose'];
 // The worst of each kind in the sweep, a small, a medium and a big one: what `check` measures.
@@ -249,7 +258,7 @@ export async function check(sim, r, say = () => {}) {
  * Every (type, kind, mode) in the lists, each under the flicker probe.
  * `modes` are Comic effects values (false: the real crash, the default; true: the cartoon).
  */
-export async function sweep(sim, r, say = () => {}, { types = ALL_TYPES, kinds = KINDS, modes = [false, true], limit = LIMIT } = {}) {
+export async function sweep(sim, r, say = () => {}, { types = ALL_TYPES, kinds = KINDS, modes = [false, true], limit = LIMIT, reduce = true } = {}) {
   const cr = await import('../../src/features/crashes.js');
   const P = await import('../flicker-probe.js');
   const isStub = /^\(\)=>\{\}$/.test(String(sim.renderer.render).replace(/\s/g, ''));
@@ -262,7 +271,7 @@ export async function sweep(sim, r, say = () => {}, { types = ALL_TYPES, kinds =
   sim.autoPauseOnHide = false;
   try {
     if (real) sim.renderer.render = real;
-    sim.applySetting('reduceFlashing', true);
+    sim.applySetting('reduceFlashing', reduce);
     sim.settings.crashSlowMo = true;
     const start = async (id) => {
       await sim.startMode('free', { airborne: true, time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 0, aircraft: id });
@@ -270,6 +279,8 @@ export async function sweep(sim, r, say = () => {}, { types = ALL_TYPES, kinds =
       sim.rig.setMode('chase');
       sim.step(0.5);
     };
+    let worst = null;
+    const all = [];
     for (const comic of modes) {
       sim.applySetting('comicEffects', comic);
       for (const id of types) {
@@ -293,11 +304,17 @@ export async function sweep(sim, r, say = () => {}, { types = ALL_TYPES, kinds =
           const m = await P.measure(sim, { frames: 90, fps: 30, warm: 0, raycast: false });
           noDebrief();
           const drawn = !!real && m.meanLum.max > 0.01;
-          r.ok(`crash sweep: ${id} ${kind} (${comic ? 'cartoon, Comic effects on' : 'the real crash, Comic effects off'}) flashes over under ${(limit * 100).toFixed(0)}% of any 10-degree field (WCAG's line is 25%; Reduce flashing on)`,
-            drawn && m.wcagWindow < limit, `${(m.wcagWindow * 100).toFixed(1)}% (area ${(m.wcagArea * 100).toFixed(2)}%)${drawn ? '' : ' NOT drawn'}`);
+          if (drawn && (!worst || m.wcagWindow > worst.w)) worst = { w: m.wcagWindow, at: `${id} ${kind} (${comic ? 'cartoon' : 'real'})` };
+          r.ok(`crash sweep: ${id} ${kind} (${comic ? 'cartoon, Comic effects on' : 'the real crash, Comic effects off'}) flashes over under ${(limit * 100).toFixed(0)}% of any 10-degree field (WCAG's line is 25%; Reduce flashing ${reduce ? 'on' : 'off'})`,
+            drawn && m.wcagWindow < limit, `${id} ${kind} ${comic ? 'cartoon' : 'real'}: ${(m.wcagWindow * 100).toFixed(1)}% (area ${(m.wcagArea * 100).toFixed(2)}%)${drawn ? '' : ' NOT drawn'}`);
+          if (drawn) all.push({ w: m.wcagWindow, at: `${id} ${kind} ${comic ? 'cartoon' : 'real'}` });
         }
       }
     }
+    // The worst fifteen, type x kind x mode, for the sweep's table.
+    all.sort((x, y) => y.w - x.w);
+    if (all.length) r.ok('crash sweep: the worst scenes', true, `top ${Math.min(15, all.length)}: ${all.slice(0, 15).map((x) => `${x.at} ${(x.w * 100).toFixed(1)}%`).join(', ')}`);
+    if (reduce && worst) r.ok(`crash sweep: with Reduce flashing every crash keeps a margin under WCAG's line: under ${(LIMIT_REDUCED * 100).toFixed(0)}% of any 10-degree field`, worst.w < LIMIT_REDUCED, `worst ${(worst.w * 100).toFixed(1)}%, ${worst.at}`);
   } finally {
     noDebrief();
     sim.renderer.render = stub;

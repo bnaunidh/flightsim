@@ -62,6 +62,9 @@ export async function check(sim, r, say = () => {}) {
     await fly('b737');
     let rm = await waitOn(sim.model);
     sim.step(0.2);
+    // main.js warmRealSkin holds a new skin off the picture while its programs compile in the
+    // background (more of them with detail maps): wait for that, as a player's frames would.
+    for (let i = 0; i < 200 && rm && rm.on && !rm.skin.visible; i++) await sleep(25);
     const hiddenOk = rm && rm.hidden.length > 10 && rm.hidden.every(([o]) => (o.layers.isEnabled(31) && !o.layers.isEnabled(0)) || (rm.flaps.includes(o) && rm.flapsOut));
     let gear = 0;
     sim.model.traverse((o) => {

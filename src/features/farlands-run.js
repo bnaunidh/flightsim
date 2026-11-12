@@ -383,26 +383,13 @@ export async function earnJavelin(sim, how = 'Nullspire') {
     p.unlocked.push(m.JAVELIN_ID);
     Prog.save(p);
   }
+  const menus = sim && sim.menus;
   try {
-    const menus = sim && sim.menus;
     if (menus && menus.syncProgression) menus.syncProgression(p);
-    // Free Flight's floor was laid before the Javelin existed: its card, from the Massimo's (the same airframe, the same art).
-    const free = menus && menus.screens && menus.screens.free;
-    const base = free && free.querySelector(`[data-aircraft="${type.variantOf}"]`);
-    if (base && !free.querySelector(`[data-aircraft="${type.id}"]`)) {
-      const card = base.cloneNode(true);
-      card.dataset.aircraft = type.id;
-      card.classList.remove('is-chosen', 'is-selected');
-      const put = (sel, text) => { const el = card.querySelector(sel); if (el) el.textContent = text; };
-      put('.fleet-name', type.name);
-      put('.fleet-class', type.class);
-      put('.fleet-blurb', type.blurb);
-      base.parentNode.appendChild(card);
-    }
-    if (menus && menus.syncFleetLocks) menus.syncFleetLocks();
   } catch (e) {
     /* the Hangar repaints itself when it is next opened */
   }
+  m.addJavelinCard(menus, type);
   if (first && sim && sim.hud) sim.hud.showBanner(`Secret found: ${type.name}`, `In your Hangar now · ${how}`, 'good', 7);
   return first;
 }

@@ -740,6 +740,8 @@ export class Input {
           (tag === 'INPUT' && !/^(range|checkbox|radio|button|submit|color)$/i.test(el.type || 'text'));
         if (typing) return;
       }
+      // A real keyboard, not a touch button's key (main.css: key caps on a tablet).
+      if (e.isTrusted) document.documentElement.classList.add('has-keys');
       // Settings is waiting for a key: it is Settings' (see _onCapture).
       if (this.captureNext) return;
       // Tab moves focus round the menus; it is a game key only if a game

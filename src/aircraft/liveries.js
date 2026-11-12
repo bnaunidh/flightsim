@@ -101,8 +101,8 @@ export const LIVERIES = [
       bands: ['#c8102e', '#143478'],
       cowl: '#c9ced3',
       emblemInks: ['#f4f6f8'],
-      // American-style: a squared, technical sans.
-      titleFont: { family: 'Titillium Web', weight: 700, style: 'normal' },
+      // American-style: a humanist sans of medium weight (owner-approved face, 2026-11-09).
+      titleFont: { family: 'Nunito Sans', weight: 600, style: 'normal' },
       titleInk: '#12306b',
     },
   },
@@ -264,8 +264,8 @@ export const LIVERIES = [
       belly: '#c9ced3',
       cowl: null,
       emblemInks: ['#c8a24a', '#f8f8f6'],
-      // Emirates-style: a high-contrast, elegant serif, one line, painted taller than most.
-      titleFont: { family: 'Playfair Display', weight: 700, style: 'normal' },
+      // Emirates-style: a soft old-style serif, one line, painted taller than most (owner-approved face, 2026-11-09).
+      titleFont: { family: 'Cormorant Garamond', weight: 700, style: 'normal' },
       titleInk: '#9a7420',
       titleCap: 0.34,
     },
@@ -290,8 +290,8 @@ export const LIVERIES = [
       pinstripe: '#7a5a30',
       cowl: '#b08d57',
       emblemInks: ['#f7f4ee', '#e3cfa6', '#7a5a30'],
-      // Etihad-style: classical capitals, quiet luxury.
-      titleFont: { family: 'Cinzel', weight: 700, style: 'normal' },
+      // Etihad-style: light geometric capitals, widely spaced, quiet luxury (owner-approved face, 2026-11-09).
+      titleFont: { family: 'Josefin Sans', weight: 600, style: 'normal' },
       titleInk: '#523a18',
     },
   },
@@ -492,8 +492,8 @@ export const LIVERIES = [
       cowl: '#1a1a1a',
       cowlBand: '#ffe73a',
       emblemInks: ['#1a1a1a'],
-      // Spirit-style: black, loud, low-cost.
-      titleFont: { family: 'Archivo Black', weight: 400, style: 'normal' },
+      // Spirit-style: black, loud, low-cost: a rounded geometric at its heaviest (owner-approved face, 2026-11-09).
+      titleFont: { family: 'Rubik', weight: 900, style: 'normal' },
       titleInk: '#1a1a1a',
       titleCap: 0.38,
     },
