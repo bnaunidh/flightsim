@@ -62,9 +62,12 @@ export async function check(sim, r, say = () => {}) {
     await fly('b737');
     let rm = await waitOn(sim.model);
     sim.step(0.2);
-    // main.js warmRealSkin holds a new skin off the picture while its programs compile in the
-    // background (more of them with detail maps): wait for that, as a player's frames would.
-    for (let i = 0; i < 200 && rm && rm.on && !rm.skin.visible; i++) await sleep(25);
+    // real-models.js warmRealSkin keeps the game's own model drawn while a new skin's programs
+    // compile in the background (more of them with detail maps): wait for that, as a player's frames would.
+    for (let i = 0; i < 400 && rm && rm.state === 'on' && (rm.hold || !rm.on); i++) {
+      await sleep(25);
+      sim.update(1 / 60);
+    }
     const hiddenOk = rm && rm.hidden.length > 10 && rm.hidden.every(([o]) => (o.layers.isEnabled(31) && !o.layers.isEnabled(0)) || (rm.flaps.includes(o) && rm.flapsOut));
     let gear = 0;
     sim.model.traverse((o) => {
@@ -171,9 +174,14 @@ export async function check(sim, r, say = () => {}) {
       await sleep(200);
       const time = async () => {
         await fly('b737');
-        await waitOn(sim.model);
+        const wrm = await waitOn(sim.model);
         sim.rig.setMode('chase');
         sim.step(0.5);
+        // (the skin held off while its programs compile: warmRealSkin)
+        for (let i = 0; i < 400 && wrm && wrm.state === 'on' && wrm.hold; i++) {
+          await sleep(25);
+          sim.update(1 / 60);
+        }
         for (let i = 0; i < 10; i++) sim.renderer.render(sim.scene, sim.camera);
         const t = [];
         for (let k = 0; k < 9; k++) {

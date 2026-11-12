@@ -47,7 +47,7 @@ import { Aircraft, EVENTS, UNITS, SPEC, applyAircraft, frameSteps } from './airc
 import { showSafetyIntro, shouldShowAtBoot } from './ui/safety-intro.js';
 import { getAircraft, specFor, isHelicopter } from './aircraft/types.js';
 import { createAircraftModel, syncAircraftModel, crashAircraftModel, clampSinking, eyeFor, groundOffsetFor, setFleetModels } from './aircraft/model-adapter.js';
-import { realModelInterior, setRealModelCamera, setRealModelRenderer, setRealModels } from './aircraft/real-models.js';
+import { realModelInterior, setRealModelCamera, setRealModelRenderer, setRealModels, warmRealSkin } from './aircraft/real-models.js';
 import { setModelQuality } from './aircraft/model-quality.js';
 import { createCockpit } from './aircraft/cockpit.js';
 import { TouchControls, isTouchDevice } from './ui/touch.js';
@@ -2491,23 +2491,9 @@ class Game {
     return fn(this.renderer, object, this.camera, this.scene, opts);
   }
 
-  /**
-   * A real skin that has just arrived (aircraft/real-models.js dress, on its
-   * own promise, mid-flight on a first visit): held off the picture for the
-   * one or two frames its programs take to compile in the background, so
-   * its first frame is not the multi-second freeze of a GLB's worth of
-   * materials compiling at once. Called every frame before the draw; it
-   * acts once per skin.
-   */
+  /** A real skin that has just arrived: the game's own model stays drawn until its programs are ready (real-models.js warmRealSkin). */
   warmRealSkin() {
-    const rm = this.model && this.model.userData && this.model.userData.realModel;
-    if (!rm || rm.state !== 'on' || !rm.skin || rm._warmed) return;
-    rm._warmed = true;
-    const skin = rm.skin;
-    skin.visible = false;
-    this.warmShaders(skin).then(() => {
-      if (rm.on && !rm.dead) skin.visible = true;
-    });
+    warmRealSkin(this.model, (o) => this.warmShaders(o));
   }
 
   /**

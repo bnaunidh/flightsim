@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v81.1';
+const CACHE_VERSION = 'island-flight-v81.1.1';
 
 const PRECACHE = [
   './',
@@ -666,6 +666,8 @@ const PRECACHE = [
   'src/features/streetlife/highway-look.js',
   'src/features/streetlife/walkers.js',
   'src/world/highway-plan.js',
+  // Added by tools/sync-precache.mjs.
+  'src/aircraft/real-fit.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

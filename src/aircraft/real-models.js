@@ -154,6 +154,7 @@ export function loadRealModel(id) {
       const u8 = new Uint8Array(buf.buffer || buf, buf.byteOffset || 0, buf.byteLength);
       const pk = /EXT_meshopt|KHR_texture_basisu/.test(new TextDecoder().decode(u8.subarray(20, 20 + new DataView(u8.buffer, u8.byteOffset).getUint32(12, true))));
       if (pk) packed = packed || (await import('./real-packed.js'));
+      fitApi = fitApi || (await import('./real-fit.js').catch(() => null));
       const parsed = pk ? await packed.parsePacked(buf, REAL_MODELS[id].file, detailRenderer, textureTier()) : parseGLB(buf, { name: REAL_MODELS[id].file, warn: () => {} });
       const root = parsed.scene.getObjectByName(id);
       if (!root) throw new Error(`${REAL_MODELS[id].file} has no root node called ${id}`);
@@ -184,6 +185,7 @@ export function loadRealModel(id) {
 }
 
 let packed = null;
+let fitApi = null;
 let detailRenderer = null;
 /** main.js: the renderer (KTX2 asks the GPU which compressed format it takes). */
 export function setRealModelRenderer(r) {
@@ -228,10 +230,10 @@ export function wearRealModel(model, type, opts = {}) {
 }
 
 /** The procedural parts that stay in view under a real skin: the moving undercarriage, the doors, the heat haze. */
-// Spoilers and slats are drawn only while deployed (the procedural model hides them otherwise), so they stay too.
-const KEEP = /landing gear|bogie|gear leg door|^door |heat haze|twin tyres|tyres and hubs|^axle$|oleo|propeller|spinner|rocket pod|missile|bomb|weapon|pylon store|spoilers|slats|leading edge slat/i;
-/** Flaps are always drawn by the procedural model; under a real skin, only once they are out. */
+const KEEP = /landing gear|bogie|gear leg door|^door |heat haze|twin tyres|tyres and hubs|^axle$|oleo|propeller|spinner|rocket pod|missile|bomb|weapon|pylon store/i;
+/** Flaps are always drawn by the procedural model; under a real skin, only once they are out (and if they fit). */
 const FLAP = /^(inboard |outboard |fowler |trailing edge )?flaps?$/i;
+const DEVICE = /spoilers|slats|leading edge slat/i;
 /** Render layer the hidden procedural surfaces go to (nothing renders it). */
 const HIDDEN_LAYER = 31;
 
@@ -239,11 +241,9 @@ const HIDDEN_LAYER = 31;
 const SLAT = /slats|leading edge slat/i;
 
 function keepsOwn(o, top, id) {
-  const noSlats = !!(REAL_MODELS[id] && REAL_MODELS[id].slats === false);
   const own = REAL_MODELS[id] && REAL_MODELS[id].keep;
   for (let n = o; n && n !== top; n = n.parent) {
     const name = n.name || '';
-    if (noSlats && SLAT.test(name)) return false;
     if (KEEP.test(name)) return true;
     if (own && own.test(name)) return true;
   }
@@ -365,21 +365,32 @@ function dress(model, id, tpl) {
     skin.add(m);
   }
   // What goes under it.
-  const hidden = [];
-  const flaps = [];
+  let hidden = [];
+  const noSlats = !!(REAL_MODELS[id] && REAL_MODELS[id].slats === false);
+  const flapsAll = [];
+  const devices = [];
   airframe.traverse((o) => {
     if (!(o.isMesh || o.isInstancedMesh) || o.isSprite) return;
     if (keepsOwn(o, airframe, id)) return;
     hidden.push([o, o.layers.mask]);
     for (let n = o; n && n !== airframe; n = n.parent) {
       if (FLAP.test(n.name || '')) {
-        flaps.push(o);
+        flapsAll.push(o);
+        break;
+      }
+      if (DEVICE.test(n.name || '')) {
+        if (!(noSlats && SLAT.test(n.name || ''))) devices.push(o);
         break;
       }
     }
   });
+  // Procedural flaps, slats, spoilers: drawn only if they lie on the real wing (real-fit.js).
+  const fit = fitApi ? fitApi.deviceFit(model, airframe, tpl, [...flapsAll, ...devices]) : new Map();
+  const flaps = flapsAll.filter((o) => fit.get(o));
+  const shown = new Set(devices.filter((o) => fit.get(o)));
+  if (shown.size) hidden = hidden.filter(([o]) => !shown.has(o));
   model.add(skin);
-  const rm = { id, state: 'on', skin, hidden, flaps, flapsOut: false, on: false, struck: false, inside: false, dead: false, shifts: shiftsFor(model, id, tpl) };
+  const rm = { id, state: 'on', skin, hidden, flaps, flapsOut: false, on: false, struck: false, inside: false, dead: false, shifts: shiftsFor(model, id, tpl), fit };
   ud.realModel = rm;
   ud.realSkin = skin;
   hookDamage(model, rm);
@@ -469,8 +480,36 @@ function wants(model, rm, ac) {
   // (rm.wrecked: the last update's ac.crashed -- realModelInterior asks every frame with no ac, and a
   // crash with no breakup hook to call, a helicopter's above all, must stay drawn by the game's model)
   if (rm.wrecked || (ac && ac.crashed)) return false;
-  if (rm.inside) return false;
+  if (rm.inside || rm.hold) return false;
   return !cameraInside(model);
+}
+
+/** main.js, each frame: a new skin is held (the game's model drawn) until its programs and maps are ready. */
+export function warmRealSkin(model, warm) {
+  const rm = model && model.userData && model.userData.realModel;
+  if (!rm || rm.state !== 'on' || !rm.skin || rm.warmed) return;
+  rm.warmed = rm.hold = true;
+  setSkin(rm, false);
+  const r = detailRenderer;
+  Promise.resolve()
+    .then(() => warm(rm.skin))
+    .catch(() => {})
+    .then(() => {
+      if (r && r.initTexture) {
+        rm.skin.traverse((o) => {
+          for (const m of [].concat(o.material || [])) {
+            for (const k in m) {
+              if (m[k] && m[k].isTexture) {
+                try {
+                  r.initTexture(m[k]);
+                } catch (e) {}
+              }
+            }
+          }
+        });
+      }
+      rm.hold = false;
+    });
 }
 
 function hookUpdate(model, rm) {

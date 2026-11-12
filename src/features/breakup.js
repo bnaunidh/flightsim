@@ -379,6 +379,8 @@ function zonesBegin(sim, model, type) {
   if (sim && sim.cockpit) skip.add(sim.cockpit);
   // The heat-seekers on their pylons (src/features/heatseek.js) are hung on the model but are not airframe.
   if (sim && sim.weaponsRig) skip.add(sim.weaponsRig);
+  // A real skin is not the airframe (real-models.js).
+  if (model && model.userData && model.userData.realSkin) skip.add(model.userData.realSkin);
   const survey = surveyModel(model, { skip });
   const config = model.userData && model.userData.fleetBridge ? model.userData.config : null;
   const t = type || typeOf(model) || getAircraft();

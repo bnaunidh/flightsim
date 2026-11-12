@@ -239,6 +239,20 @@ for (const id of IDS) {
   ok(`${id}: the player's model wears it`, !!rm && rm.state === 'on' && rm.on && !!m.getObjectByName('Real model'));
   if (!rm || !rm.skin) continue;
   {
+    // v81.2 (the owner's 747: "the wing line glitched"): a procedural flap, slat or spoiler is drawn over
+    // the real wing only if it lies on it retracted and fully out (real-fit.js); the rest stay under the skin.
+    const hid = new Set(rm.hidden.map(([o]) => o));
+    const devs = [];
+    m.traverse((o) => {
+      if (!o.isMesh) return;
+      for (let n = o; n && n !== m; n = n.parent) if (/^(inboard |outboard |fowler |trailing edge )?flaps?$|spoilers|slats|leading edge slat/i.test(n.name || '')) return void devs.push(o);
+    });
+    const bad = devs.filter((o) => !(rm.fit && rm.fit.get(o)) && (!hid.has(o) || rm.flaps.includes(o)));
+    ok(`${id}: no procedural flap, slat or spoiler off the real wing is ever drawn over it`, devs.length > 0 && bad.length === 0,
+      `${devs.length} devices, ${rm.fit ? [...rm.fit.values()].filter(Boolean).length : 0} on the wing; ${bad.map((o) => o.parent.name).slice(0, 3).join(', ')}`);
+    if (id === 'b747') ok('b747: its flaps are never drawn over the real wing (they hung off it as a pale slab)', rm.flaps.length === 0);
+  }
+  {
     // A bake (the apron's parked aeroplanes, the ground crew's door finder) takes the
     // procedural airframe only: the skin's shell on top of it was the aeroplane twice.
     const tris = (b) => b.parts.reduce((s, p) => s + (p.geometry.index ? p.geometry.index.count : p.geometry.attributes.position.count) / 3, 0);

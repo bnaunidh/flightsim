@@ -4,13 +4,13 @@
   "png KB": 967
  },
  "bytes": {
-  "packed (KTX2 + meshopt)": 1838740,
-  "raw (PNG, float)": 2954500
+  "packed (KTX2 + meshopt)": 915408,
+  "raw (PNG, float)": 1682980
  },
  "drawn": {
   "normal + roughness": "the game's own panel seams, frame rivet rows, lap joints, spar/hinge lines, cowl joints, panel gloss and seam grime (detail.py surface_maps)",
-  "png KB": 1721,
-  "seam sigma m": 0.0202,
+  "png KB": 479,
+  "seam sigma m": 0.0131,
   "texel m": 0.0238
  },
  "dropped": [

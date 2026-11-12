@@ -50,6 +50,7 @@ import { check as hangar } from './hangar.browser.js';
 import { check as planePaint } from './plane-paint.browser.js';
 import { check as realModels } from './real-models.browser.js';
 import { check as realLivery } from './real-livery.browser.js';
+import { check as real747Steady } from './real-747-steady.browser.js';
 import { check as uiPolish } from './ui-polish.browser.js';
 import { check as multiplayer } from './multiplayer.browser.js';
 import { check as multiplayerList2 } from './multiplayer-list2.browser.js';
@@ -202,6 +203,7 @@ export const CHECKS = [
   { id: 'real-models', check: realModels },
   // Every real model wears a livery, not a white shell (wave 18: "the 747 real model is plain white").
   { id: 'real-livery', check: realLivery },
+  { id: 'real-747-steady', check: real747Steady },
   // After menus: the deck — the start screen's and the HUD's glass, radius, motion and touch sizes, and html.fx-low on Low.
   { id: 'ui-polish', check: uiPolish },
   // After menus: every way of turning sound off, and that it stays off (nothing played out loud).

@@ -19,12 +19,14 @@ the part that carries no livery back:
   baked    `detail: {'bakeAO': ...}` in models.py: occlusion baked in Blender
            from the processed airframe (bake_ao_blender.py), on a fresh atlas
            of its own (TEXCOORD_2). Shape only -- it cannot carry a livery.
-  drawn    `detail: {'surface': ...}`: the game's OWN panel seams, frame
-           rivet rows, lap joints, spar and hinge lines and a little gloss
+  drawn    `detail: {'surface': ...}`: the game's OWN major splices, two
+           straight lap joints, spar and hinge lines and the faintest gloss
            variation and seam grime, drawn by surface_maps() from where each
            texel of the atlas is on the airframe -- a normal map and a
            roughness map on the same atlas. Ours, generic to the type, no
-           lettering anywhere.
+           lettering anywhere. Hairline and shallow on purpose (v81.2, the
+           owner: wide soft grooves, wobbling lap joints, frame-rivet ripple
+           and a panel-by-panel gloss read as "swollen, wrinkly wet hands").
 
 Every decision is written to tools/real-models/detail-log/<id>.json, and a
 contact sheet of every kept or baked map to detail-log/<id>-maps.png, so a
@@ -306,10 +308,11 @@ def surface_maps(geo, opts):
     role = _dilate(np.where(mask, role, 0), mask, 6)
     x, y, z = P[..., 0], P[..., 1], P[..., 2]
     skin = role == 1
-    # texel size on the airframe (m), for a seam no narrower than ~a texel
+    # texel size on the airframe (m). A seam is a hairline: about a texel wide, no more (v81.2, the
+    # owner: wide soft grooves read as "swollen, wrinkly wet hands", not as metal skin with joints).
     dx = np.linalg.norm(P[:, 1:] - P[:, :-1], axis=-1)[mask[:, 1:] & mask[:, :-1]]
     texel = float(np.median(dx)) if dx.size else 0.02
-    sig = max(float(opts.get('seam', 0.012)), texel * 0.85)
+    sig = max(float(opts.get('seam', 0.006)), texel * 0.55)
     g = lambda d, s=sig: np.exp(-(d / s) ** 2)
     height = np.zeros((H_, W_))
     grime = np.zeros((H_, W_))
@@ -321,27 +324,28 @@ def surface_maps(geo, opts):
         nb = zb[skin].max() + 1
         top = np.full(nb, -np.inf); bot = np.full(nb, np.inf)
         np.maximum.at(top, zb[skin], y[skin]); np.minimum.at(bot, zb[skin], y[skin])
-        # the fuselage's centre height along it: per 25 cm slice, filled where a slice saw no skin,
-        # smoothed over ~1.5 m and read off smoothly (a stepped centre made the lap joints zigzag)
+        # the fuselage's centre line: ONE straight line fitted through the cabin's slices (a centre
+        # followed slice by slice, even smoothed, wobbled -- and every lap joint wobbled with it).
         mid = (top + bot) / 2
         ok = np.isfinite(mid)
         zc = (np.arange(nb) + 0.5) * 0.25 + zn
-        mid = np.interp(zc, zc[ok], mid[ok])
-        ker = np.ones(7) / 7
-        mid = np.convolve(np.pad(mid, 3, mode='edge'), ker, mode='valid')
-        yc = np.interp(z, zc, mid)
+        z0, z1 = zn + float(opts.get('radome', 2.4)), zt - float(opts.get('tailCone', 3.0))
+        cab = ok & (zc > z0 + 0.15 * (z1 - z0)) & (zc < z1 - 0.15 * (z1 - z0))
+        if cab.sum() < 2:
+            cab = ok
+        a1, a0 = np.polyfit(zc[cab], mid[cab], 1) if cab.sum() >= 2 else (0.0, float(np.nanmean(mid[ok])))
+        yc = a0 + a1 * z
         th = np.degrees(np.arctan2(x, y - yc))
         r = np.hypot(x, y - yc)
-        z0, z1 = zn + float(opts.get('radome', 2.4)), zt - float(opts.get('tailCone', 3.0))
         body = skin & (z > z0 - 0.05) & (z < z1)
-        d, band = _bands(z, z0, z1, float(opts.get('splice', 2.54)))
-        height -= np.where(skin & (z > z0 - 0.3) & (z < z1 + 0.3), 1.0 * g(d), 0)
-        df, _ = _bands(z, z0, z1, 0.508)
-        height -= np.where(body, 0.22 * g(df, sig * 0.8), 0)
-        laps = np.array(opts.get('laps', [28, 72, 112, 150]), float)
+        # the major circumferential splices only (no frame rivet rows: they rippled the whole skin)
+        d, band = _bands(z, z0, z1, float(opts.get('splice', 5.08)))
+        height -= np.where(skin & (z > z0 - 0.3) & (z < z1 + 0.3), 0.5 * g(d), 0)
+        # and a couple of long lap joints, straight down the cabin
+        laps = np.array(opts.get('laps', [36, 108]), float)
         dth = np.min(np.abs(np.abs(th)[..., None] - laps), -1)
         dl = np.radians(dth) * r
-        height -= np.where(body, 0.8 * g(dl), 0)
+        height -= np.where(body, 0.4 * g(dl), 0)
         lapband = np.searchsorted(laps, np.abs(th)) * np.sign(th)
         panel = np.where(skin, _hash(band, lapband), panel)
         grime += np.where(body, g(d, sig * 2.5) + 0.6 * g(dl, sig * 2.5), 0)
@@ -350,8 +354,8 @@ def surface_maps(geo, opts):
     if wing.any():
         zmax = z[wing].max(); zmin = z[wing].min()
         split = zmax - 0.32 * (zmax - zmin)
-        for sel, spars, step, root in ((wing & (z < split), opts.get('wingSpars', [0.12, 0.6, 0.73]), 1.1, 2.2),
-                                       (wing & (z >= split), opts.get('tailSpars', [0.15, 0.66]), 0.8, 0.6)):
+        for sel, spars, step, root in ((wing & (z < split), opts.get('wingSpars', [0.12, 0.73]), 3.3, 2.2),
+                                       (wing & (z >= split), opts.get('tailSpars', [0.66]), 2.4, 0.6)):
             if not sel.any():
                 continue
             f = _chord(x, z, sel)
@@ -366,12 +370,12 @@ def surface_maps(geo, opts):
                 np.minimum.at(le, bb, zs); np.maximum.at(te, bb, zs)
                 cl[sel] = (te - le)[bb]
                 dm = np.nan_to_num(dsp * cl, nan=9)
-                w = 1.1 if sp >= 0.7 else 0.85
-                height -= np.where(sel, w * g(dm, sig * (1.4 if sp >= 0.7 else 1)), 0)
+                w = 0.5 if sp >= 0.6 else 0.35
+                height -= np.where(sel, w * g(dm), 0)
                 grime += np.where(sel, g(dm, sig * 2.5), 0)
                 ch = np.maximum(ch, np.where(sel, (f > sp).astype(float), 0))
             ds, sb = _bands(np.abs(x), root, np.abs(x[sel]).max(), step)
-            height -= np.where(sel & (np.abs(x) > root - 0.2), 0.75 * g(ds), 0)
+            height -= np.where(sel & (np.abs(x) > root - 0.2), 0.3 * g(ds), 0)
             panel = np.where(sel, _hash(sb, np.round(ch * 3)), panel)
     # -- the fin: spar lines up its height, joints across it --
     fin = role == 3
@@ -383,11 +387,12 @@ def surface_maps(geo, opts):
         np.minimum.at(le, bb, zs); np.maximum.at(te, bb, zs)
         cl = np.maximum((te - le)[bb], 1e-3)
         f[fin] = (zs - le[bb]) / cl
-        for sp in opts.get('finSpars', [0.15, 0.66]):
+        # the rudder's hinge line and a joint every couple of metres up (a 0.9 m grid read as a quilt)
+        for sp in opts.get('finSpars', [0.66]):
             dm = np.zeros_like(x); dm[fin] = np.abs(f[fin] - sp) * cl
-            height -= np.where(fin, 0.9 * g(dm), 0)
-        ds, sb = _bands(y, y[fin].min() + 0.6, y[fin].max(), 0.9)
-        height -= np.where(fin, 0.7 * g(ds), 0)
+            height -= np.where(fin, 0.5 * g(dm), 0)
+        ds, sb = _bands(y, y[fin].min() + 0.6, y[fin].max(), float(opts.get('finStep', 2.4)))
+        height -= np.where(fin, 0.3 * g(ds), 0)
         panel = np.where(fin, _hash(sb, (f > 0.66).astype(np.int64)), panel)
     # -- engine cowls: the inlet joint and the fan cowl / reverser split --
     cowl = role == 4
@@ -399,11 +404,11 @@ def surface_maps(geo, opts):
             zf, za = z[sel].min(), z[sel].max()
             for fr in opts.get('cowlJoints', [0.2, 0.52]):
                 dm = np.abs(z - (zf + fr * (za - zf)))
-                height -= np.where(sel, 1.0 * g(dm), 0)
+                height -= np.where(sel, 0.5 * g(dm), 0)
                 grime += np.where(sel, g(dm, sig * 2.5), 0)
             panel = np.where(sel, _hash(np.floor((z - zf) / max(za - zf, 1e-3) * 2.0).astype(np.int64) + side), panel)
     # normal map: the height's slope across the atlas (rows run down = +v; glTF's +Y is up the image)
-    k = float(opts.get('strength', 2.2))
+    k = float(opts.get('strength', 0.7))
     hx = (np.roll(height, -1, 1) - np.roll(height, 1, 1)) / 2
     hy = (np.roll(height, -1, 0) - np.roll(height, 1, 0)) / 2
     n = np.stack([-k * hx, k * hy, np.ones_like(height)], -1)
@@ -411,7 +416,8 @@ def surface_maps(geo, opts):
     nimg = np.round((n * 0.5 + 0.5) * 255).astype(np.uint8)
     # roughness (G): ~0.85 of the material's own (real-detail.js divides it back out), each panel a
     # shade apart, the seams a little rougher; metal (B) left to the material
-    rough = float(opts.get('roughBase', 0.85)) + (panel - 0.5) * float(opts.get('panelVar', 0.12)) + np.clip(grime, 0, 1) * float(opts.get('grime', 0.1))
+    # (one even gloss: a panel-by-panel checkerboard of it made patches look puffy)
+    rough = float(opts.get('roughBase', 0.85)) + (panel - 0.5) * float(opts.get('panelVar', 0.02)) + np.clip(grime, 0, 1) * float(opts.get('grime', 0.03))
     rough = np.where(role > 0, np.clip(rough, 0.5, 1.0), float(opts.get('roughBase', 0.85)))
     mr = np.stack([np.full_like(rough, 1.0), rough, np.full_like(rough, 1.0)], -1)
     mimg = np.round(mr * 255).astype(np.uint8)
