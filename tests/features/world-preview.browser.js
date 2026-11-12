@@ -315,7 +315,7 @@ export async function check(sim, r, say = () => {}) {
         for (const fx of [-1, 0, 1]) for (const fz of [-1, -0.5, 0, 0.5, 1]) if (!(T.groundHeightAt(c.pos.x + fx * c.halfWidth, c.pos.z + fz * c.halfDepth) < -12)) deep = false;
         const dep = wp.airports().find((a) => a.id === 'haven');
         const dField = Math.hypot(c.pos.x - dep.x, c.pos.z - dep.z);
-        r.ok('world preview: carrier — moored in deep water off the start field, the deck the wheels land on at the ship\'s deck height', deep && dField > 3000 && dField < 12000 && Math.abs(T.heightAt(c.pos.x, c.pos.z) - CV.DECK.y) < 0.01 && Math.abs(c.deckY - CV.DECK.y) < 0.01,
+        r.ok('world preview: carrier — in deep water off the start field, the deck the wheels land on at the ship\'s deck height (it heaves on the swell, under 1.2 m)', deep && dField > 3000 && dField < 12000 && Math.abs(T.heightAt(c.pos.x, c.pos.z) - CV.DECK.y) < 1.25 && Math.abs(c.deckY - CV.DECK.y) < 0.01,
           `at (${c.pos.x}, ${c.pos.z}), ${(dField / 1000).toFixed(1)} km from ${dep.code}, deck ${T.heightAt(c.pos.x, c.pos.z).toFixed(1)} m, deep ${deep}`);
         // Its own materials, not the ground's: no terrain material anywhere in the ship.
         const tileMat = [...s.tiles.values()].find((t) => t.mesh) ? [...s.tiles.values()].find((t) => t.mesh).mesh.material : null;

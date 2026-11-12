@@ -1881,16 +1881,20 @@ export class Minimap {
       ctx.fillStyle = 'rgba(96, 104, 114, 0.95)';
       ctx.strokeStyle = 'rgba(236, 244, 252, 0.85)';
       ctx.lineWidth = 1;
+      // A hull, pointed at the bow, turned to the ship's heading (`yaw`: a ship under way).
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(p.yaw || 0);
       ctx.beginPath();
-      // A hull: pointed bow to the north, the way the ship is moored.
-      ctx.moveTo(x, y - h / 2 - w * 0.6);
-      ctx.lineTo(x + w / 2, y - h / 2);
-      ctx.lineTo(x + w / 2, y + h / 2);
-      ctx.lineTo(x - w / 2, y + h / 2);
-      ctx.lineTo(x - w / 2, y - h / 2);
+      ctx.moveTo(0, -h / 2 - w * 0.6);
+      ctx.lineTo(w / 2, -h / 2);
+      ctx.lineTo(w / 2, h / 2);
+      ctx.lineTo(-w / 2, h / 2);
+      ctx.lineTo(-w / 2, -h / 2);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
+      ctx.restore();
       const near = Math.hypot(p.cx - craft.x, p.cz - craft.z) < g.span * 0.45;
       if (near && p.name) label(ctx, p.name.replace(/^CV-\d+\s*/, ''), x, y + h / 2 + 10 * ts, '#e6eef6', ts);
     }
@@ -2301,6 +2305,11 @@ export class Minimap {
       ctx.lineWidth = Math.max(1.5, casing * 0.62);
       ctx.beginPath();
       for (const rd of roads) addPath(ctx, rd.path, mx, my);
+      ctx.stroke();
+      // Highways in amber, as a road atlas has them.
+      ctx.strokeStyle = '#e9b23c';
+      ctx.beginPath();
+      for (const rd of roads) if (rd.kind === 'highway') addPath(ctx, rd.path, mx, my);
       ctx.stroke();
       // Centreline, only once the road is wide enough on screen to hold one.
       if (casing > 6) {

@@ -25,3 +25,6 @@ import './airfield-use.js';
 // The missions' fun pass: medals, twists, finales, "Try again from" (game/fun-kit.js) and the new
 // missions, laid over the defs when this joins (game/more/), never while one is being flown.
 import './fun-missions.js';
+// After ambient (features/index.js): the highways made into highways (lane lines, a central barrier, a flyover
+// on every link, which the ambient cars drive over) and people on the pavements of the town you are near.
+import './street-life.js';

@@ -778,7 +778,22 @@ export async function runSelfTest(sim, opts = {}) {
     carrier.group.traverse((o) => {
       if (o.name === 'angledFlightDeck' || o.name === 'flightDeck') deckMesh = o;
     });
-    const painted = deckMesh ? new THREE.Box3().setFromObject(deckMesh) : null;
+    /*
+     * Measured in the ship's own frame: she is under way now (world/
+     * carrier-underway.js) — steaming, turning, heaving and rolling a little —
+     * so the world's axes are no longer hers.
+     */
+    let painted = null;
+    if (deckMesh) {
+      carrier.group.updateMatrixWorld(true);
+      const inv = new THREE.Matrix4().copy(carrier.group.matrixWorld).invert();
+      painted = new THREE.Box3();
+      deckMesh.traverse((o) => {
+        if (!o.isMesh || !o.geometry) return;
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        painted.union(o.geometry.boundingBox.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)));
+      });
+    }
     const paintedY = painted ? painted.max.y : null;
     r.ok(
       'the painted deck is the deck you land on',
@@ -792,10 +807,12 @@ export async function runSelfTest(sim, opts = {}) {
         && Math.abs((painted.max.z - painted.min.z) / 2 - carrier.halfDepth) < 3,
       painted ? `${(painted.max.z - painted.min.z).toFixed(0)} x ${(painted.max.x - painted.min.x).toFixed(0)} m` : ''
     );
+    // Where the painted deck's middle is in the world right now, heave and tilt and all.
+    const mid = painted ? new THREE.Vector3(0, paintedY, 0).applyMatrix4(carrier.group.matrixWorld) : null;
     r.ok(
       'the deck is what heightAt returns over the ship',
-      terrain.heightAt(carrier.pos.x, carrier.pos.z) === carrier.deckY,
-      `${terrain.heightAt(carrier.pos.x, carrier.pos.z).toFixed(1)} m`
+      !!mid && Math.abs(terrain.heightAt(mid.x, mid.z) - mid.y) < 0.1 && Math.abs(terrain.heightAt(carrier.pos.x, carrier.pos.z) - carrier.deckY) < 1.25,
+      `${terrain.heightAt(carrier.pos.x, carrier.pos.z).toFixed(2)} m, the picture ${mid ? mid.y.toFixed(2) : '?'} m`
     );
 
     // The island is solid; the strip you land on is not.
@@ -825,10 +842,17 @@ export async function runSelfTest(sim, opts = {}) {
       aircraft: 'osprey', time: 'day', condition: 'clear', windSpeedKts: 0, windDirDeg: 0,
     });
     const cac = sim.aircraft;
-    const aimZ = (carrier.wires.z0 + carrier.wires.z1) / 2;
+    /*
+     * Up the ship's own centreline, 120 m short of the middle of the band the
+     * wires lie in — in her frame, whichever way she is heading by now.
+     */
+    const hdg0 = carrier.headingDeg || 0;
+    const hr0 = (hdg0 * Math.PI) / 180;
+    const aft = (carrier.wires.z0 + carrier.wires.z1) / 2 - carrier.pos.z + 120;
     cac.reset({
-      pos: new THREE.Vector3(carrier.pos.x, 0, aimZ + 120),
-      headingDeg: 0, speed: 62, gearDown: true,
+      pos: new THREE.Vector3(carrier.pos.x - Math.sin(hr0) * aft, 0, carrier.pos.z + Math.cos(hr0) * aft),
+      // 62 m/s through the air, as it always was: over the deck that is less by the ship's own speed.
+      headingDeg: hdg0, speed: 62 - (carrier.way ? Math.hypot(carrier.way.vel.x, carrier.way.vel.z) : 0), gearDown: true,
     });
     cac.pos.y = carrier.deckY + 6;
     cac.vel.y = -3.2;
@@ -865,11 +889,10 @@ export async function runSelfTest(sim, opts = {}) {
         ? `never touched down${cac.crashed ? ': ' + cac.crashReason : ''}`
         : `${touchdownY.toFixed(1)} m, deck at ${carrier.deckY.toFixed(1)} m`
     );
-    r.ok('a wire catches it', caught, touchdownZ === null ? '' : `${Math.round(touchdownZ - cac.pos.z)} m of roll-out`);
+    r.ok('a wire catches it', caught);
     r.ok(
       'it stops on the ship',
-      Math.abs(cac.pos.x - carrier.pos.x) <= carrier.halfWidth
-        && Math.abs(cac.pos.z - carrier.pos.z) <= carrier.halfDepth
+      !!terrain.platformAt(cac.pos.x, cac.pos.z)
         && Math.abs(cac.pos.y - carrier.deckY) < 8
         && cac.groundSpeed < 4,
       `${(cac.groundSpeed * UNIT.KTS).toFixed(0)} kt at ${cac.pos.y.toFixed(1)} m`

@@ -33,7 +33,10 @@ function stretch(mesh, a, b) {
 }
 
 export function buildCarrierGear(group, f, carrier) {
-  const out = { group, f, wires: [], engaged: null, lens: null, jbd: [], steam: [], gate: null };
+  // `ship`: everything fixed to the ship, in a group that goes where she goes (world/carrier-underway.js).
+  const ship = new THREE.Group();
+  group.add(ship);
+  const out = { group, ship, f, wires: [], engaged: null, lens: null, jbd: [], steam: [], gate: null };
   const deckY = f.deckY;
 
   /*
@@ -56,11 +59,11 @@ export function buildCarrierGear(group, f, carrier) {
     _b.set(w.b.x, deckY + 0.07, w.b.z);
     stretch(m, _a, _b);
     m.name = `carrierWire${w.n}`;
-    group.add(m);
+    ship.add(m);
     for (const p of [w.a, w.b]) {
       const s = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.35, 1.4), sheaveMat);
       s.position.set(p.x, deckY + 0.17, p.z);
-      group.add(s);
+      ship.add(s);
     }
     out.wires.push({ n: w.n, mesh: m, a: new THREE.Vector3(w.a.x, deckY + 0.07, w.a.z), b: new THREE.Vector3(w.b.x, deckY + 0.07, w.b.z) });
   }
@@ -68,11 +71,11 @@ export function buildCarrierGear(group, f, carrier) {
   const legA = new THREE.Mesh(unit, wireMat);
   const legB = new THREE.Mesh(unit, wireMat);
   legA.visible = legB.visible = false;
-  group.add(legA, legB);
+  ship.add(legA, legB);
   out.legs = [legA, legB];
 
-  out.lens = buildLens(group, f);
-  out.jbd = buildJbds(group, f);
+  out.lens = buildLens(ship, f);
+  out.jbd = buildJbds(ship, f);
   return out;
 }
 
@@ -88,6 +91,7 @@ export function setEngaged(gear, n, hook) {
   const w = gear.wires.find((x) => x.n === n);
   if (!w) return;
   _m.set(hook.x, Math.max(hook.y, gear.f.deckY + 0.05), hook.z);
+  gear.ship.worldToLocal(_m);
   stretch(legA, w.a, _m);
   stretch(legB, w.b, _m);
   legA.visible = legB.visible = true;
@@ -224,7 +228,8 @@ export function puffSteam(gear, f, cat) {
     const t = i / 6;
     m.position.set(cat.start.x + (cat.end.x - cat.start.x) * t, f.deckY + 1, cat.start.z + (cat.end.z - cat.start.z) * t);
     m.scale.setScalar(2 + Math.random() * 1.5);
-    gear.group.add(m);
+    gear.ship.worldToLocal(m.position);
+    gear.ship.add(m);
     gear.steam.push({ m, life: 3.5 + Math.random(), age: 0 });
   }
 }
@@ -239,7 +244,7 @@ export function updateSteam(gear, dt) {
     s.m.scale.multiplyScalar(1 + dt * 0.5);
     s.m.material.opacity = Math.max(0, 0.55 * (1 - k));
     if (k >= 1) {
-      gear.group.remove(s.m);
+      gear.ship.remove(s.m);
       s.m.material.dispose();
       gear.steam.splice(i, 1);
     }
@@ -256,8 +261,13 @@ export function setGate(gear, scene, at) {
     if (gear.gate) gear.gate.group.visible = false;
     return;
   }
-  const key = `${Math.round(at.x)},${Math.round(at.y)},${Math.round(at.z)},${at.radius}`;
-  if (!gear.gate || gear.gate.key !== key) {
+  // Keyed by its size alone: the mark is carried with the ship, so the ring is moved, not built again each frame.
+  const key = `${at.radius}`;
+  if (gear.gate && gear.gate.key === key) {
+    gear.gate.group.position.set(at.x, at.y, at.z);
+    gear.gate.pos.copy(gear.gate.group.position);
+    gear.gate.group.rotation.y = -at.headingDeg * (Math.PI / 180);
+  } else {
     if (gear.gate) {
       gear.group.remove(gear.gate.group);
       gear.gate.torus.geometry.dispose();

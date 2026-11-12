@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v81.0';
+const CACHE_VERSION = 'island-flight-v81.1';
 
 const PRECACHE = [
   './',
@@ -112,6 +112,8 @@ const PRECACHE = [
   'src/vehicles/surface.js',
   'src/world/apron.js',
   'src/world/carrier.js',
+  'src/world/carrier-underway.js',
+  'src/world/sea-state.js',
   'src/world/features.js',
   'src/world/tornado.js',
 
@@ -660,6 +662,10 @@ const PRECACHE = [
   'src/vendor/addons/zstddec.module.js',
   'src/vendor/basis/basis_transcoder.js',
   'src/features/onfoot-grass.js',
+  'src/features/street-life.js',
+  'src/features/streetlife/highway-look.js',
+  'src/features/streetlife/walkers.js',
+  'src/world/highway-plan.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
 

@@ -87,7 +87,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extLayer, extStatus, extKeyContext } from '../game/extensions.js';
 import { isKey, keyName } from '../flight/input.js';
-import { heightAt, platformAt, isPaved, obstacleAt, iceAt, flatSurfaceAt, PALETTE } from '../world/terrain.js';
+import { heightAt, platformAt, isPaved, obstacleAt, iceAt, flatSurfaceAt, PALETTE, swellAt } from '../world/terrain.js';
 import { SPEC, EVENTS } from '../aircraft/physics.js';
 import { AIRCRAFT, getAircraft } from '../aircraft/types.js';
 import { ZONES, CORE, frameFor, refineFrame, layoutFor, planBreak, lostFrom, rng } from '../game/breakup.js';
@@ -2253,7 +2253,7 @@ function stepRafts(dt) {
   for (const r of S.rafts) {
     r.t += dt;
     const g = r.group;
-    g.position.y = 0.15 + Math.sin(r.t * 1.3) * 0.08;
+    g.position.y = 0.15 + Math.sin(r.t * 1.3) * 0.08 + swellAt(g.position.x, g.position.z);
     g.rotation.z = Math.sin(r.t * 0.9) * 0.06;
     g.rotation.x = Math.sin(r.t * 1.1 + 1) * 0.05;
     // It drifts — out to sea, and never up onto the shore: where the water

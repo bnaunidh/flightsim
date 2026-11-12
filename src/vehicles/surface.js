@@ -45,7 +45,7 @@
  */
 
 import * as THREE from '../vendor/three.module.js';
-import { heightAt, isPaved, obstacleAt, MAP, OBSTACLES, PLATFORMS, platformAt } from '../world/terrain.js';
+import { heightAt, isPaved, obstacleAt, MAP, OBSTACLES, PLATFORMS, platformAt, swellAt } from '../world/terrain.js';
 import { clamp, lerp } from '../core/noise.js';
 
 /** Sea level. The ocean is a flat plane at y=0 with a decorative swell. */
@@ -865,7 +865,7 @@ export class SurfaceVehicle {
    * tarmac on the road, the terrain's triangles off it (see groundAt).
    */
   surfaceY(x, z) {
-    return this.isBoat ? SEA : Math.max(SEA, groundAt(x, z));
+    return this.isBoat ? SEA + swellAt(x, z) : Math.max(SEA, groundAt(x, z));
   }
 
   /**

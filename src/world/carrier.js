@@ -19,6 +19,13 @@ try {
 } catch (e) {
   console.warn('The pack carrier is unavailable; using the built-in ship.', e);
 }
+/** Steaming and floating (./carrier-underway.js), loaded on demand; without it the ship lies at its berth. */
+let underway = null;
+try {
+  underway = await import('./carrier-underway.js');
+} catch (e) {
+  console.warn('The carrier stays at anchor:', e);
+}
 import { addPlatform, addObstacleAt } from './terrain.js';
 
 /** Deck dimensions, in metres. A real Nimitz deck is 333 x 77. */
@@ -104,7 +111,7 @@ export class Carrier {
     this.group = new THREE.Group();
     this.group.name = 'carrier';
     this.pos = { x: at.x, z: at.z };
-    /** Compass heading the bow points (0 = north). The deck box is axis-aligned, so it is cardinal. */
+    /** Compass heading the bow points (0 = north): north at the berth, then wherever she is steaming. */
     this.headingDeg = at.headingDeg || 0;
     this.name = at.name || 'CV-11 Resolute';
 
@@ -207,14 +214,7 @@ export class Carrier {
   }
 
   register(at, L, W, H) {
-    /*
-     * Register the deck.
-     *
-     * The platform box is axis-aligned, so a carrier at an angle would have a
-     * landing surface that did not match the picture. Rather than pretend, the
-     * ship is placed on a cardinal heading and the box matches it exactly —
-     * an honest deck you can trust beats a prettier one you fall through.
-     */
+    // The deck, registered where she is built: under way it turns and heaves with her (carrier-underway.js).
     const along = Math.abs(((at.headingDeg || 0) % 180)) < 45;
     const bw = along ? W : L;
     const bd = along ? L : W;
@@ -223,57 +223,19 @@ export class Carrier {
      * A mission that carries its own copy of these numbers is a mission that
      * silently points at empty sea the day the ship moves.
      */
-    /*
-     * The top of the deck slab — H + 0.8 by construction, but taken from DECK
-     * so that the number the game lands on and the number the model is built
-     * to can never drift apart again.
-     */
     this.deckY = DECK.y;
     this.halfWidth = bw / 2;
     this.halfDepth = bd / 2;
-    /*
-     * The wires.
-     *
-     * Landing on a carrier without them is not hard, it is impossible: you get
-     * 300 metres of deck, of which the last 90 are where you are allowed to
-     * touch down, and no aeroplane in this game stops in 90 metres on wheel
-     * brakes. Everyone who tried it ran off the bow.
-     *
-     * The band is deliberately generous — 70 m rather than the four wires'
-     * real 14 m spacing — because the lesson worth teaching here is the
-     * approach, not the inch.
-     */
-    /*
-     * Proportional to the deck, not a fixed 72 metres.
-     *
-     * These were absolute offsets measured on a 300 m ship, so when the deck
-     * grew five times they stayed a short band near the middle of an enormous
-     * one — you would have flown the whole length looking for them.
-     */
+    // The band the wires lie in (carrier ops lays the four real ones inside it).
+    // Proportional to the deck, so the band grows with the ship.
     const wireFrom = DECK.length * 0.133;
     const wireTo = DECK.length * 0.373;
     this.wires = along
       ? { z0: at.z + wireFrom, z1: at.z + wireTo }
       : { x0: at.x + wireFrom, x1: at.x + wireTo };
-    /*
-     * The deck no longer hands the flight model that band.
-     *
-     * Any wheels touching down anywhere in it used to be stopped, hook or no
-     * hook — a 360 m "wire". Carrier ops (src/features/carrier-ops.js) now
-     * lays four real wires across the angled deck and catches the one the
-     * hook actually touches, so the platform says only which way it runs.
-     * `this.wires` stays published, as the band the wires lie in, for the
-     * missions and tests that aim at it.
-     */
+    // The platform says only which way it runs: carrier ops catches the wire the hook touches.
     addPlatform(at.x, at.z, bw, bd, this.deckY, this.name, { along, wires: 'carrier-ops' });
-    /*
-     * The superstructure is solid; the deck is not, because you land on it.
-     *
-     * The box is the island the ship actually has, scaled with the ship and
-     * standing on the deck. It used to be an 11 x 34 m box on the centreline
-     * at hull height: the right hitbox for a ship five times smaller, a
-     * hundred metres from the island and eighty below it.
-     */
+    // The island is solid (the deck is not: you land on it): its own box, scaled with the ship, on the deck.
     const yaw = THREE.MathUtils.degToRad(-(at.headingDeg || 0));
     const ox = ISLAND.x * SCALE;
     const oz = ISLAND.z * SCALE;
@@ -286,6 +248,16 @@ export class Carrier {
       ISLAND.height * SCALE,
       `You flew into ${this.name}`
     );
+    if (underway) {
+      try {
+        underway.install(this, {
+          halfWidth: W / 2, halfLength: L / 2, deckY: this.deckY, wireFrom,
+          island: { x: ox, z: oz, width: ISLAND.width * SCALE, depth: ISLAND.depth * SCALE },
+        });
+      } catch (e) {
+        console.warn('The carrier stays at anchor:', e);
+      }
+    }
   }
 
   /**

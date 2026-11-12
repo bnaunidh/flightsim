@@ -778,6 +778,10 @@ function nearestHideout(sim) {
 
 /** For the tests, the console and the owner. */
 const API = {
+  /** The hideouts themselves: the one on the carrier's deck goes with her (world/carrier-underway.js). */
+  get hideouts() {
+    return S.hideouts;
+  },
   state() {
     const st = store();
     return {

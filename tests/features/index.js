@@ -70,6 +70,7 @@ import { check as racePause } from './race-pause.browser.js';
 import { check as bughunt } from './bughunt.browser.js';
 import { check as bughuntV80 } from './bughunt-v80.browser.js';
 import { check as landingBounce } from './landing-bounce.browser.js';
+import { check as streetLife } from './street-life.browser.js';
 import { check as traffic } from './traffic.browser.js';
 import { check as weapons } from './weapons.browser.js';
 import { check as minimapGhosts } from './minimap-ghosts.browser.js';
@@ -99,6 +100,7 @@ import { check as ipadDemo } from './ipad-demo.browser.js';
 import { check as ditching } from './ditching.browser.js';
 import { check as waterCrash } from './water-crash.browser.js';
 import { check as floatplane } from './floatplane.browser.js';
+import { check as carrierWaves } from './carrier-waves.browser.js';
 import { check as edition } from './edition.browser.js';
 import { check as cams } from './cams.browser.js';
 import { check as tomReady } from './tom-ready.browser.js';
@@ -272,6 +274,8 @@ export const CHECKS = [
   { id: 'ditching', check: ditching },
   { id: 'water-crash', check: waterCrash },
   { id: 'floatplane', check: floatplane },
+  // The moving sea and the carrier under way: the drawn swell is the one that is answered, the deck carries what is on it.
+  { id: 'carrier-waves', check: carrierWaves },
   // The two editions (core/edition.js): on thankdapro no screen shows T-Pose Harrison or Air Massimo; elsewhere both are there.
   { id: 'edition', check: edition },
   // After everything that flies: KIT-B — where a Free Flight starts (the picker), the ambient
@@ -333,6 +337,8 @@ export const CHECKS = [
   { id: 'bughunt-v80', check: bughuntV80 },
   // The touchdown bounce: a big aeroplane put down hard hops and settles, and it is one landing.
   { id: 'landing-bounce', check: landingBounce },
+  // Highways (the barrier, lane lines, a flyover on every link), the cars on them and people in town (World Map, High and Low; Kestrel). Puts the map back.
+  { id: 'street-life', check: streetLife },
   // Last: it rebinds keys through Settings (and puts the player's back after).
   { id: 'keybinds', check: keybinds },
 ];

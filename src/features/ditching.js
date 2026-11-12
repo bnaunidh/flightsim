@@ -21,7 +21,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { registerExtension, extKeyContext } from '../game/extensions.js';
-import { heightAt, obstacleAt } from '../world/terrain.js';
+import { heightAt, obstacleAt, swellAt } from '../world/terrain.js';
 import { performanceFor } from '../aircraft/types.js';
 import { SPEC } from '../aircraft/physics.js';
 import { STATUS } from '../game/runner.js';
@@ -402,7 +402,8 @@ function afloat(sim, dt) {
   const d = settled(t, S.sinkAt, S.fullDepth);
   const floor = heightAt(ac.pos.x, ac.pos.z) - S.belly * 0.9;
   const swell = (0.05 + S.sea * 0.3) * Math.max(0, 1 - d * 0.2);
-  const y = Math.max(S.floatY - d + Math.sin(t * 0.9) * swell, floor);
+  // On the swell that is drawn (world/sea-state.js), less of it as she goes under.
+  const y = Math.max(S.floatY - d + Math.sin(t * 0.9) * swell + swellAt(ac.pos.x, ac.pos.z) * Math.max(0, 1 - d * 0.2), floor);
   ac.pos.y = y;
   S.depth = Math.max(0, S.floatY - y);
   const u = S.depth / S.fullDepth;

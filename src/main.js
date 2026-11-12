@@ -1360,14 +1360,7 @@ class Game {
       sc.parkJets(createAircraftModel, getAircraft('nightjar'), schemeFor(getAircraft('nightjar'), 'house'));
       return sc;
     });
-    /*
-     * The carrier, parked off the coast.
-     *
-     * Placed on a cardinal heading on purpose — the landing surface is an
-     * axis-aligned box, so an angled ship would have a deck that did not match
-     * the picture, and falling through a deck you were aiming at is far worse
-     * than a ship that happens to point north.
-     */
+    // The carrier, off the coast: built at her berth pointing north, then under way (world/carrier-underway.js).
     yield next('Anchoring the carrier…');
     this.carrier = t('carrier', () => {
       const at = this.carrierBerth();
@@ -6071,6 +6064,8 @@ class Game {
     // time a frame, never more than a fifteenth of a second of it. 1 everywhere else.
     if (this.timeScale > 1 && this.state === 'flying') dt = Math.min(dt * this.timeScale, 1 / 15);
     this.input.context = this.keyContext();
+    // The ship steams and floats, and carries what is on her, before anything else moves.
+    if (this.state === 'flying' && this.carrier && this.carrier.sail) this.carrier.sail(dt, this);
     if (this.mode === 'drive' && this.vehicle) {
       /*
        * Driving used to return from here before the key handling and before

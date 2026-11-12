@@ -60,6 +60,18 @@ import { makeRandom } from '../core/noise.js';
 
 export { DENSITY, AIR_CAP, AIRPORT_CAP };
 
+/** Lanes from elsewhere: (more: { streets, lanes }, { mapId, quality, roads }) => void, called as the lanes are planned. */
+const EXTENDERS = [];
+/**
+ * What a tier's town gets besides the map's own list: cars parked at the kerb and more cars on its
+ * streets (each at most this many, and no more than one for every STREET_PER metres of street lane:
+ * a village's two streets are not a city's forty), and police cars on their rounds. Nothing at Low.
+ */
+export const TOWN_EXTRAS = Object.freeze({ low: Object.freeze({ kerb: 0, cars: 0, police: 0 }), medium: Object.freeze({ kerb: 14, cars: 14, police: 1 }), high: Object.freeze({ kerb: 36, cars: 44, police: 1 }), ultra: Object.freeze({ kerb: 60, cars: 80, police: 2 }) });
+const STREET_PER = 160;
+/** A map with more road than this (metres of lane) keeps its cars round the player (CarLayer.setFollow). */
+const FOLLOW_OVER = 60000;
+
 /** Seconds into a flight before the air layer appears. */
 export const AIR_START_S = 20;
 /** Metres from the player a flyer first appears. */
@@ -85,7 +97,9 @@ const A = {
   /** The update's cost: a ring of the last 600 frames, made once, never grown. */
   stats: { ms: new Float32Array(600), n: 0, msMax: 0, frames: 0, msSum: 0 },
   night: false,
-  carsPlayer: { x: 0, z: 0, heading: 0 },
+  carsPlayer: { x: 0, z: 0, heading: 0, kind: undefined, r: 0, vx: 0, vz: 0, speed: 0 },
+  /** () => the player on foot ({ x, z }) or null: set by whoever knows (features/street-life.js has onfoot.js). */
+  walker: null,
   boatsPlayer: { x: 0, z: 0 },
 };
 
@@ -194,7 +208,18 @@ export function buildAmbientWorld({ mapId = MAP && MAP.id, quality = 'high', roa
     }
   }
   const town = sc.town ? { cx: sc.town.cx, cz: sc.town.cz, r: (sc.town.radius || 600) * 1.1 } : null;
-  const net = buildLanes({ streets, roads, loops, town });
+  // What else has lanes here (features/street-life.js: every town's streets on the World Map, a flyover's deck).
+  const more = { streets: [], lanes: [], towns: [] };
+  for (const f of EXTENDERS) {
+    try {
+      f(more, { mapId, quality, roads });
+    } catch (e) {
+      console.warn('[ambient] an extender threw; its lanes are left out', e);
+    }
+  }
+  const have = (st) => streets.some((q) => Math.hypot(q.pts[0][0] - st.pts[0][0], q.pts[0][1] - st.pts[0][1]) < 20 && Math.hypot(q.pts[q.pts.length - 1][0] - st.pts[st.pts.length - 1][0], q.pts[q.pts.length - 1][1] - st.pts[st.pts.length - 1][1]) < 20);
+  for (const st of more.streets) if (!have(st)) streets.push(st);
+  const net = buildLanes({ streets, roads, loops, town: more.towns.length ? [town, ...more.towns].filter(Boolean) : town, extend: more.lanes.length ? (n) => more.lanes.forEach((l) => n.addLane(l.pts, l.meta)) : null });
   const keep = seaKeepOuts(MAP);
   const routes = [];
   const rnd = makeRandom(97);
@@ -210,7 +235,11 @@ export function buildAmbientWorld({ mapId = MAP && MAP.id, quality = 'high', roa
       const c = placeOf(R.around, sim);
       if (c) route = routeAround(keep, c.x, c.z, R.r || 700, rnd);
     }
-    routes.push(route ? { entry: w, route, arrays: routeArrays(route) } : { entry: w, route: null, arrays: null });
+    const arrays = route ? routeArrays(route) : null;
+    // Round the carrier: the route goes where she goes (world/carrier-underway.js `escort`).
+    const e = R.around === 'carrier' && sim.carrier && sim.carrier.escort;
+    if (arrays && e) arrays.tow = { e, x: e.dx, z: e.dz };
+    routes.push({ entry: w, route, arrays });
   }
   return { mapId, quality, net, keep, routes, parks, streets: streets.length, roads: roads.length };
 }
@@ -286,7 +315,8 @@ function populateGround(sim, counts) {
     A.cars.dispose();
     A.cars = null;
   }
-  const layer = new CarLayer(A.group, W.net, { shadows: shadowsFor(sim) });
+  const tier = tierOf(sim);
+  const layer = new CarLayer(A.group, W.net, { shadows: shadowsFor(sim), variety: tier !== 'low', ground: heightAt });
   for (const g of counts.ground) {
     if (!g.count) continue;
     if (g.on && typeof g.on === 'object' && g.on.park) {
@@ -296,9 +326,37 @@ function populateGround(sim, counts) {
       layer.populate(g.kind, g.count, { laneKinds: laneKindsFor(g.on) });
     }
   }
+  // A town's own: cars left at the kerb along its streets, and a police car on its rounds (not at Low).
+  const X = TOWN_EXTRAS[tier] || TOWN_EXTRAS.high;
+  const mul = counts.level ? Math.min(1, counts.level.ground) : 1;
+  let metres = 0;
+  let street = 0;
+  for (const l of W.net.lanes) {
+    metres += l.len;
+    if (l.kind === 'street') street += l.len;
+  }
+  if (street > 0 && mul > 0 && counts.ground.some((g) => g.count > 0)) {
+    const room = Math.round(street / STREET_PER);
+    layer.populate('car', Math.round(Math.min(X.cars, room) * mul), { laneKinds: ['street'] });
+    layer.populate('car', Math.round(Math.min(X.kerb, room) * mul), { kerb: true });
+    layer.populate('police', Math.round(X.police * mul), { laneKinds: ['street'] });
+  }
+  layer.setFollow(metres > FOLLOW_OVER);
   layer.build();
   for (const t of A.thin) layer.thinAround(t.x, t.z, t.r);
   A.cars = layer;
+}
+
+/** Plan the lanes again (an extender has joined, or left) and, in a flight, put the cars back on them. */
+function replan(sim = A.sim) {
+  if (!sim || !A.group) return;
+  try {
+    A.world = buildAmbientWorld({ mapId: MAP.id, quality: tierOf(sim), roads: (sim.roads && sim.roads.list) || [], sim });
+  } catch (e) {
+    console.warn('[ambient] could not plan the lanes for this map', e);
+    return;
+  }
+  if (A.on && A.level !== false && A.counts) populateGround(sim, A.counts);
 }
 
 function populateWater(sim, counts) {
@@ -339,6 +397,8 @@ function startFlyer(sim, e) {
     const c = placeOf(e.orbit, sim);
     if (!c) return null;
     orbit = { x: c.x, z: c.z, r: e.r || 1000 };
+    // Orbiting the carrier: the circle's centre is carried with her.
+    if (e.orbit === 'carrier' && sim.carrier && sim.carrier.escort) sim.carrier.escort.add(orbit);
   } else return null;
   const land = e.land ? placeOf(e.land, sim) : null;
   const opts = { id: `ambient-${e.kind}-${e.role}-${A.flyers.length}`, role: e.role, orbit, transit, agl: e.agl, alt: e.alt || null, land: land && land.id ? land : null, shy: e.shy, sep: e.sep, type: e.type };
@@ -584,6 +644,34 @@ function clearFlight() {
 
 const PV = new THREE.Vector3();
 
+/** The player as the cars see them when not in a car: on foot, or in an aeroplane on (or just over) the ground. Null in the air. */
+function groundPlayer(sim) {
+  const P = A.carsPlayer;
+  const foot = A.walker ? A.walker() : null;
+  const ac = sim.aircraft;
+  if (foot) {
+    P.x = foot.x;
+    P.z = foot.z;
+    P.kind = 'foot';
+    P.r = 0.6;
+    P.speed = 0;
+    return P;
+  }
+  if (!ac || !ac.pos || !(ac.onGround || (ac.agl != null && ac.agl < 3))) {
+    P.kind = undefined;
+    return null;
+  }
+  P.x = ac.pos.x;
+  P.z = ac.pos.z;
+  P.kind = 'plane';
+  const type = sim.aircraftType;
+  P.r = Math.max(4, Math.min(34, ((type && ((type.aero && type.aero.wingSpan) || (type.plan && type.plan.span))) || 11) / 2));
+  P.vx = ac.vel ? ac.vel.x : 0;
+  P.vz = ac.vel ? ac.vel.z : 0;
+  P.speed = Math.hypot(P.vx, P.vz);
+  return P;
+}
+
 registerExtension({
   id: 'ambient',
 
@@ -683,9 +771,16 @@ registerExtension({
         A.carsPlayer.x = sim.vehicle.pos.x;
         A.carsPlayer.z = sim.vehicle.pos.z;
         A.carsPlayer.heading = sim.vehicle.heading || 0;
+        A.carsPlayer.kind = undefined;
+        const vv = sim.vehicle.vel;
+        A.carsPlayer.vx = vv ? vv.x : 0;
+        A.carsPlayer.vz = vv ? vv.z : 0;
+        A.carsPlayer.speed = vv ? Math.hypot(vv.x, vv.z) : 0;
         carPlayer = A.carsPlayer;
       }
     }
+    // Not driving: the cars still stop for your aeroplane on the ground, and for you on foot.
+    if (!carPlayer && A.cars) carPlayer = groundPlayer(sim);
     if (A.cars) A.cars.update(dt, cam, A.night, carPlayer);
     if (A.boats) A.boats.update(dt, cam, boatPlayer, w && w.cond ? w.cond.turb || 0 : 0);
     // The air layer, from T+20 s.
@@ -756,4 +851,27 @@ const API = {
   polylines: () => (A.world ? A.world.net.polylines : []),
   /** The ground vehicles' live records ({ kind, px, pz, … }), for a test that watches where they drive. */
   vehicles: () => (A.cars ? A.cars.cars : []),
+  /** The car layer itself and the lanes it drives (features/street-life.js, the tests). */
+  layer: () => A.cars,
+  net: () => (A.world ? A.world.net : null),
+  /**
+   * More lanes: `fn(more, { mapId, quality, roads })` pushes streets ({ pts, hw, drawn: true }) on to
+   * more.streets (and their towns, { cx, cz, r }, on to more.towns: where signals may stand) and ready-made
+   * one-way lanes ({ pts: [[x, z, y]], meta }) on to more.lanes each time
+   * the lanes are planned. Planned again at once; returns the function that takes it out again.
+   */
+  extend(fn) {
+    EXTENDERS.push(fn);
+    replan();
+    return () => {
+      const i = EXTENDERS.indexOf(fn);
+      if (i >= 0) EXTENDERS.splice(i, 1);
+      replan();
+    };
+  },
+  replan: () => replan(),
+  /** Who the cars stop for on foot: `fn()` gives { x, z } while the player is walking, else null. */
+  setWalker(fn) {
+    A.walker = typeof fn === 'function' ? fn : null;
+  },
 };

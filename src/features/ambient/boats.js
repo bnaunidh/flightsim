@@ -13,6 +13,7 @@ import * as THREE from '../../vendor/three.module.js';
 import { Batch, instanced } from '../../world/airport-kit.js';
 import { sampleLane } from './lanes.js';
 import { makeRandom } from '../../core/noise.js';
+import { swellAt } from '../../world/terrain.js';
 
 /** A boat stops while the player's boat is within this. */
 export const BOAT_HOLD = 150;
@@ -165,6 +166,9 @@ export class BoatLayer {
       const R = b.route;
       let want = b.want;
       if (player && Math.hypot(player.x - b.px, player.z - b.pz) < BOAT_HOLD) want = 0;
+      // Escorting a ship under way: hold station on her instead of circling, pointing the way she steams.
+      const tow = R.tow && R.tow.e;
+      if (tow && tow.moving) want = 0;
       b.speed += Math.max(-1.5 * dt, Math.min(0.6 * dt, want - b.speed));
       if (b.speed < 0.02) b.speed = 0;
       b.s += b.speed * b.dir * dt;
@@ -180,10 +184,11 @@ export class BoatLayer {
       }
       sampleLane(R, b.s, S, b.hint);
       b.hint = S.i;
-      b.px = S.x;
-      b.pz = S.z;
+      // A route round the carrier goes where she has gone since it was laid.
+      b.px = S.x + (tow ? tow.dx - R.tow.x : 0);
+      b.pz = S.z + (tow ? tow.dz - R.tow.z : 0);
       // Turn gently onto the leg's heading rather than snapping at a corner.
-      const want_h = b.dir > 0 ? S.heading : S.heading + 180;
+      const want_h = tow && tow.moving ? tow.headingDeg : b.dir > 0 ? S.heading : S.heading + 180;
       let dh = ((want_h - b.heading + 540) % 360) - 180;
       const maxTurn = 40 * dt;
       dh = Math.max(-maxTurn, Math.min(maxTurn, dh));
@@ -200,7 +205,7 @@ export class BoatLayer {
         continue;
       }
       b.hidden = false;
-      const bob = Math.sin(this.t * 1.1 + b.phase) * 0.3 * (1 + swell);
+      const bob = Math.sin(this.t * 1.1 + b.phase) * 0.3 * (1 + swell) * 0.4 + swellAt(b.px, b.pz);
       const roll = Math.sin(this.t * 0.8 + b.phase) * 0.045 * (1 + swell);
       pose(m, b.slot, b.px, bob, b.pz, b.heading, roll);
       drawn++;

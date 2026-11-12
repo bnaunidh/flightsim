@@ -11,7 +11,7 @@
  */
 
 import * as THREE from '../../vendor/three.module.js';
-import { heightAt } from '../../world/terrain.js';
+import { heightAt, swellAt } from '../../world/terrain.js';
 import { SPEC } from '../../aircraft/physics.js';
 
 const G = 9.80665;
@@ -64,8 +64,9 @@ export function floatStep(ac, dt) {
   for (const s of fl.stations) {
     _r.set(s[0], s[1], s[2]).applyQuaternion(ac.quat);
     _w.copy(_r).add(ac.pos);
-    if (_w.y >= 0 || heightAt(_w.x, _w.z) >= 0) continue;
-    const d = -_w.y;
+    // The water's own height here: she rides the swell (world/sea-state.js).
+    const d = swellAt(_w.x, _w.z) - _w.y;
+    if (d <= 0 || heightAt(_w.x, _w.z) >= 0) continue;
     _v.copy(_om).cross(_r).add(ac.vel);
     const hs = Math.hypot(_v.x, _v.z);
     let N = (Math.min(d, d0 * FULL) / d0) * each * planeLift(hs);

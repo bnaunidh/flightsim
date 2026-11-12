@@ -957,8 +957,13 @@ const WPF = await import(SRC + 'features/world-preview.js');
   // The ambient cars drive the highways too.
   const LN = await import(SRC + 'features/ambient/lanes.js');
   const lanesNet = LN.buildLanes({ streets: [], roads, loops: [], town: null });
-  const onHw = lanesNet.lanes.filter((l) => l.meta && /highway/.test(l.meta.name || '')).length;
-  ok('the ambient cars have lanes on the highways and the roundabouts', lanesNet.lanes.length > roads.length && (onHw > 0 || lanesNet.lanes.length >= roads.length * 2), `${lanesNet.lanes.length} lanes from ${roads.length} roads`);
+  // (Since the street-life work: a carriageway is two lanes, both its own way; a roundabout one lane, round it; every other road one each way.)
+  const onHw = lanesNet.lanes.filter((l) => l.oneWay && !l.ring && /highway/.test(l.name || '')).length;
+  const onRing = lanesNet.lanes.filter((l) => l.ring).length;
+  const carriageways = roads.filter((r) => r.kind === 'highway').length;
+  const ringRoads = roads.filter((r) => r.kind === 'ring').length;
+  ok('the ambient cars have lanes on the highways and the roundabouts', lanesNet.lanes.length > roads.length && onHw === carriageways * 2 && onRing === ringRoads && lanesNet.lanes.length === roads.length * 2 - ringRoads,
+    `${lanesNet.lanes.length} lanes from ${roads.length} roads: ${onHw} on ${carriageways} carriageways, ${onRing} on ${ringRoads} roundabouts`);
   /*
    * ...and there ARE cars (checker, wave 18): the World Map is not one of the
    * 30 maps in world/ambient.js, so it had no population and the lanes were

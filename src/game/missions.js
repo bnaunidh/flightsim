@@ -166,6 +166,8 @@ export function onCarrierDeck(ctx) {
   const c = ctx.sim.carrier;
   if (!c) return false;
   const p = ctx.ac.pos;
+  // Under way the deck is turned and heaving: ask the deck itself (world/carrier-underway.js).
+  if (c.way) return c.way.platform.at(p.x, p.z) && Math.abs(p.y - c.way.platform.y) < 8;
   return (
     Math.abs(p.x - c.pos.x) <= c.halfWidth &&
     Math.abs(p.z - c.pos.z) <= c.halfDepth &&

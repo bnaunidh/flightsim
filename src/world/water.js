@@ -22,6 +22,14 @@ import { setSeaFurniture } from '../vehicles/surface.js';
 import { SEA_DEPTH } from '../render/depth-layers.js';
 import { createOceanMaterial, buildDepthField } from '../render/ocean-material.js';
 
+/** The swell (./sea-state.js), loaded on demand; without it the sea is the flat one. */
+let SEA = null;
+try {
+  SEA = await import('./sea-state.js');
+} catch (e) {
+  console.warn('No swell:', e);
+}
+
 /**
  * Sea plane size. Deliberately inside the camera's 60 km far plane even at the
  * corners (39.6 km), so the ocean is never sliced by the far clip.
@@ -237,6 +245,7 @@ export class Ocean {
     this.buildHarbourWorks();
     this.buildRipples();
 
+    if (SEA) SEA.attach(this, MAP.id);
     scene.add(this.group);
   }
 

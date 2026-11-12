@@ -54,6 +54,8 @@ export const DECK_OFF = 60;
 const SEA_STEP = 8;
 /** Water asked for over BOAT_DEPTH, so a sample between two samples still has it. */
 const SEA_MARGIN = 0.4;
+/** How much faster than its own pace a vehicle goes on a highway's carriageway (13 m/s becomes 22: 80 km/h). */
+export const HIGHWAY_FAST = 1.7;
 /** A car's lane sits this far from the line, on a street; on a road, half the paved strip. */
 const STREET_LANE = 0.45;
 
@@ -89,7 +91,18 @@ function laneFrom(pts, off, rev, meta) {
     ys[k] = pts[i].length > 2 && Number.isFinite(pts[i][2]) ? pts[i][2] : heightAt(x, z);
     cum[k] = k ? cum[k - 1] + Math.hypot(x - xs[k - 1], z - zs[k - 1]) : 0;
   }
-  return { xs, zs, ys, cum, len: cum[n - 1], n, next: [], junctions: [], stops: [], ...meta };
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let z0 = Infinity;
+  let z1 = -Infinity;
+  for (let k = 0; k < n; k++) {
+    if (xs[k] < x0) x0 = xs[k];
+    if (xs[k] > x1) x1 = xs[k];
+    if (zs[k] < z0) z0 = zs[k];
+    if (zs[k] > z1) z1 = zs[k];
+  }
+  // (The box round it: two lanes whose boxes are further apart than a join are never compared point by point.)
+  return { xs, zs, ys, cum, len: cum[n - 1], n, next: [], junctions: [], stops: [], x0, x1, z0, z1, ...meta };
 }
 
 function segDist2(px, pz, ax, az, bx, bz) {
@@ -253,20 +266,44 @@ export function carveRunways(pts, off = RUNWAY_OFF) {
  *   streets   planTown()'s streets ([{ pts, hw, drawn }])
  *   roads     sim.roads.list ([{ path: [[x, z, y]], halfWidth }])
  *   loops     [{ cx, cz, r, kind }] extra circuits (an air base's perimeter)
- *   town      { cx, cz, r } — signals go only where streets or roads cross
- *             inside the town; a country crossroads has none
+ *   town      { cx, cz, r }, or a list of them — signals go only where streets or
+ *             roads cross inside a town; a country crossroads has none
+ *   extend    (net) => void, to add whole one-way lanes (net.addLane) before the joining-up
  * Returns { lanes, signals, polylines }.
  */
-export function buildLanes({ streets = [], roads = [], loops = [], town = null } = {}) {
+export function buildLanes({ streets = [], roads = [], loops = [], town = null, extend = null } = {}) {
   const lanes = [];
   const polylines = [];
   // A street, road or loop goes in as the pieces of it that lie off the runway strips.
-  const add = (pts, hw, kind, name) => {
+  const add = (pts, hw, kind, name, src = null) => {
     if (!pts || pts.length < 2) return;
-    for (const piece of carveRunways(pts)) addPiece(piece, hw, kind, name);
+    for (const piece of carveRunways(pts)) addPiece(piece, hw, kind, name, src);
   };
-  const addPiece = (pts, hw, kind, name) => {
+  /*
+   * ONE WAY. A highway's carriageway (the World Map's dual carriageways are two roads,
+   * each one way along its own path) is two lanes the same way; a roundabout's ring is
+   * one lane, round it anticlockwise (right-hand traffic) whichever way it was drawn.
+   * Neither has a lane back: at a dead end a car is put back on the road elsewhere.
+   */
+  const addOneWay = (pts, hw, name, src) => {
+    const ring = src.kind === 'ring';
+    let area = 0;
+    for (let i = 1; ring && i < pts.length; i++) area += pts[i - 1][0] * pts[i][1] - pts[i][0] * pts[i - 1][1];
+    const rev = ring && area > 0;
+    const p = { pts, hw, kind: 'road', name, lanes: [], oneWay: true, highway: !ring };
+    const offs = ring ? [0] : [PAVED_HALF * 0.5, -PAVED_HALF * 0.5];
+    for (let k = 0; k < offs.length; k++) {
+      const L = laneFrom(pts, rev ? -offs[k] : offs[k], rev, { kind: 'road', name, poly: polylines.length, dir: rev ? -1 : 1, oneWay: true, ring, fast: ring ? 0.7 : HIGHWAY_FAST, take: ring ? 0 : 0.45, slot: k });
+      if (!(L.len > 10)) return;
+      L.reverse = -1;
+      p.lanes.push(lanes.length);
+      lanes.push(L);
+    }
+    polylines.push(p);
+  };
+  const addPiece = (pts, hw, kind, name, src = null) => {
     if (!pts || pts.length < 2) return;
+    if (src && (src.kind === 'highway' || src.kind === 'ring')) return addOneWay(pts, hw, name, src);
     const off = kind === 'road' ? PAVED_HALF * 0.5 : Math.max(1.6, hw * STREET_LANE);
     const p = { pts, hw, kind, name, lanes: [] };
     const fwd = laneFrom(pts, off, false, { kind, name, poly: polylines.length, dir: 1 });
@@ -284,49 +321,64 @@ export function buildLanes({ streets = [], roads = [], loops = [], town = null }
   }
   for (const r of roads) {
     if (!r || !r.path || r.path.length < 2) continue;
-    add(r.path, PAVED_HALF, 'road', r.name || 'road');
+    add(r.path, PAVED_HALF, 'road', r.name || 'road', r);
   }
   for (const L of loops) {
     const pts = loopAround(L.cx, L.cz, L.r);
     if (pts) add(pts, 5, L.kind || 'loop', 'loop');
   }
 
-  /* ---- what each lane may go on to ---- */
-  for (let a = 0; a < lanes.length; a++) {
-    const A = lanes[a];
-    const ex = A.xs[A.n - 1];
-    const ez = A.zs[A.n - 1];
-    for (let b = 0; b < lanes.length; b++) {
-      if (b === a || b === A.reverse) continue;
-      const B = lanes[b];
-      // Starts near the end: straight on.
-      if (Math.hypot(B.xs[0] - ex, B.zs[0] - ez) < JOIN) {
-        A.next.push({ lane: b, s: 0 });
-        continue;
-      }
-      // Passes near the end: a T-junction, join it there.
-      const q = nearestOnLane(B, ex, ez);
-      if (q.d < JOIN && q.s > 5 && q.s < B.len - 5) A.next.push({ lane: b, s: q.s });
-    }
-    // Another lane starting beside this one mid-way is a turning.
-    for (let b = 0; b < lanes.length; b++) {
-      if (b === a || b === A.reverse || lanes[b].poly === A.poly) continue;
-      const B = lanes[b];
-      const q = nearestOnLane(A, B.xs[0], B.zs[0]);
-      if (q.d < JOIN && q.s > 15 && q.s < A.len - 15) A.junctions.push({ s: q.s, lane: b });
-    }
-    A.junctions.sort((p, q) => p.s - q.s);
+  /*
+   * Anything else that drives here (features/highway.js: a flyover's lanes, its slip
+   * roads): `extend` adds whole lanes of its own, before the lanes are joined up.
+   */
+  if (typeof extend === 'function') {
+    extend({
+      lanes,
+      polylines,
+      /** One lane along `pts` ([x, z, y]) as given, one way. `meta`: kind, name, fast, take. */
+      addLane(pts, meta = {}) {
+        if (!pts || pts.length < 2) return -1;
+        const L = laneFrom(pts, 0, false, { kind: 'road', name: 'lane', poly: polylines.length, dir: 1, oneWay: true, ...meta });
+        if (!(L.len > 10)) return -1;
+        L.reverse = -1;
+        polylines.push({ pts, hw: meta.hw || 2.2, kind: L.kind, name: L.name, lanes: [lanes.length], oneWay: true, structure: true });
+        lanes.push(L);
+        return lanes.length - 1;
+      },
+    });
   }
+  linkLanes(lanes);
 
   /* ---- signals where streets (or the town's roads) cross or meet ---- */
   const signals = [];
-  const inTown = (x, z) => !town || Math.hypot(x - town.cx, z - town.cz) <= (town.r || 800);
-  const streetPolys = polylines.map((p, i) => ({ p, i })).filter((q) => (q.p.kind === 'street' && q.p.hw >= 5) || q.p.kind === 'road');
+  // (`town` may be a list: the World Map has two dozen. A carriageway, a roundabout and a flyover have no lights.)
+  const towns = Array.isArray(town) ? town : town ? [town] : null;
+  const inTown = (x, z) => {
+    if (!towns) return true;
+    for (const t of towns) if (Math.hypot(x - t.cx, z - t.cz) <= (t.r || 800)) return true;
+    return false;
+  };
+  const streetPolys = polylines.map((p, i) => ({ p, i })).filter((q) => !q.p.oneWay && ((q.p.kind === 'street' && q.p.hw >= 5) || q.p.kind === 'road'));
   const near = (x, z) => signals.find((s) => Math.hypot(s.x - x, s.z - z) < 30);
+  const boxOf = (pts) => {
+    const b = [Infinity, -Infinity, Infinity, -Infinity];
+    for (const q of pts) {
+      if (q[0] < b[0]) b[0] = q[0];
+      if (q[0] > b[1]) b[1] = q[0];
+      if (q[1] < b[2]) b[2] = q[1];
+      if (q[1] > b[3]) b[3] = q[1];
+    }
+    return b;
+  };
+  for (const q of streetPolys) q.box = boxOf(q.p.pts);
   for (let i = 0; i < streetPolys.length; i++) {
     for (let j = i + 1; j < streetPolys.length; j++) {
       const P = streetPolys[i].p.pts;
       const Q = streetPolys[j].p.pts;
+      const bp = streetPolys[i].box;
+      const bq = streetPolys[j].box;
+      if (bp[0] > bq[1] + 10 || bq[0] > bp[1] + 10 || bp[2] > bq[3] + 10 || bq[2] > bp[3] + 10) continue;
       // Any point of one within 8 m of a segment of the other, or a crossing.
       for (let k = 1; k < P.length; k++) {
         for (let m = 1; m < Q.length; m++) {
@@ -351,6 +403,7 @@ export function buildLanes({ streets = [], roads = [], loops = [], town = null }
   signals.forEach((sg, si) => {
     for (let a = 0; a < lanes.length; a++) {
       const A = lanes[a];
+      if (sg.x < A.x0 - 14 || sg.x > A.x1 + 14 || sg.z < A.z0 - 14 || sg.z > A.z1 + 14) continue;
       const q = nearestOnLane(A, sg.x, sg.z);
       if (q.d > 14 || q.s < 12 || q.s > A.len - 4) continue;
       sampleLane(A, q.s, S);
@@ -363,6 +416,93 @@ export function buildLanes({ streets = [], roads = [], loops = [], town = null }
   });
   for (const A of lanes) A.stops.sort((p, q) => p.s - q.s);
   return { lanes, signals, polylines };
+}
+
+/** Degrees between two headings, 0-180. */
+function turnBetween(a, b) {
+  const d = Math.abs((((a - b) % 360) + 540) % 360 - 180);
+  return d;
+}
+
+const _LA = { x: 0, y: 0, z: 0, i: 0, heading: 0 };
+const _LB = { x: 0, y: 0, z: 0, i: 0, heading: 0 };
+
+/**
+ * Join the lanes up: what each may go on to at its end (`next`), the turnings off it
+ * mid-way (`junctions`), and where a driver slows (`slow`: a turning, or an end that
+ * is not straight on). Run again after lanes are added.
+ *
+ * A join has to make sense to drive: a lane is never joined to one going the other
+ * way beside it (the opposite carriageway is 18 m off, inside JOIN), and never to one
+ * on another level (a flyover's deck over the road under it).
+ */
+export function linkLanes(lanes) {
+  for (const A of lanes) {
+    A.next = [];
+    A.junctions = [];
+  }
+  const LEVEL = 3;
+  for (let a = 0; a < lanes.length; a++) {
+    const A = lanes[a];
+    const ex = A.xs[A.n - 1];
+    const ez = A.zs[A.n - 1];
+    const ey = A.ys[A.n - 1];
+    sampleLane(A, A.len, _LA);
+    const endHeading = _LA.heading;
+    let straight = false;
+    for (let b = 0; b < lanes.length; b++) {
+      if (b === A.reverse) continue;
+      const B = lanes[b];
+      if (ex < B.x0 - JOIN || ex > B.x1 + JOIN || ez < B.z0 - JOIN || ez > B.z1 + JOIN) continue;
+      // A flyover's lane comes down into the lane it left, not the one beside it.
+      if (A.from != null && B.slot != null && B.slot !== A.from) continue;
+      // Starts near the end: straight on (a ring closes on itself this way).
+      if (Math.hypot(B.xs[0] - ex, B.zs[0] - ez) < JOIN && Math.abs(B.ys[0] - ey) < LEVEL) {
+        if (b === a && !A.ring) continue;
+        sampleLane(B, 0, _LB);
+        const turn = turnBetween(endHeading, _LB.heading);
+        // (Two-way roads keep every join they had; a one-way lane is not turned back on itself.)
+        if ((A.oneWay || B.oneWay) && turn > 135) continue;
+        A.next.push({ lane: b, s: 0 });
+        if (turn < 25) straight = true;
+        continue;
+      }
+      if (b === a) continue;
+      // Passes near the end: a T-junction, join it there.
+      const q = nearestOnLane(B, ex, ez);
+      if (q.d < JOIN && q.s > 5 && q.s < B.len - 5) {
+        sampleLane(B, q.s, _LB);
+        if (Math.abs(_LB.y - ey) > LEVEL) continue;
+        const turn = turnBetween(endHeading, _LB.heading);
+        if ((A.oneWay || B.oneWay) && turn > 135) continue;
+        A.next.push({ lane: b, s: q.s });
+        if (turn < 25) straight = true;
+      }
+    }
+    const slow = [];
+    // Another lane starting beside this one mid-way is a turning.
+    for (let b = 0; b < lanes.length; b++) {
+      if (b === a || b === A.reverse || lanes[b].poly === A.poly) continue;
+      const B = lanes[b];
+      if (B.xs[0] < A.x0 - JOIN || B.xs[0] > A.x1 + JOIN || B.zs[0] < A.z0 - JOIN || B.zs[0] > A.z1 + JOIN) continue;
+      const q = nearestOnLane(A, B.xs[0], B.zs[0]);
+      if (q.d < JOIN && q.s > 15 && q.s < A.len - 15) {
+        sampleLane(A, q.s, _LA);
+        if (Math.abs(_LA.y - B.ys[0]) > LEVEL) continue;
+        sampleLane(B, 0, _LB);
+        const turn = turnBetween(_LA.heading, _LB.heading);
+        if ((A.oneWay || B.oneWay) && turn > 100) continue;
+        // A slip lane is taken from the lane beside it, not from across the carriageway.
+        if (B.oneWay && B.from != null && B.from !== A.slot) continue;
+        A.junctions.push({ s: q.s, lane: b, p: B.take || 0.3 });
+        if (turn > 30) slow.push(q.s);
+      }
+    }
+    A.junctions.sort((p, q) => p.s - q.s);
+    if (!straight) slow.push(A.len);
+    A.slow = Float32Array.from(slow.sort((p, q) => p - q));
+  }
+  return lanes;
 }
 
 /** Segment intersection in the ground plane, or null. */

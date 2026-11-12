@@ -8,7 +8,7 @@
 
 import * as THREE from '../vendor/three.module.js';
 import { clamp, lerp } from '../core/noise.js';
-import { heightAt, OBSTACLES, obstacleAt } from '../world/terrain.js';
+import { heightAt, OBSTACLES, obstacleAt, swellAt } from '../world/terrain.js';
 import { RUNWAY } from '../world/airport.js';
 import { SPEC } from '../aircraft/physics.js';
 import { boomClear } from '../vehicles/driving.js';
@@ -287,7 +287,7 @@ const NARROW_FILL = 0.72;
 /** The ground, or the sea's surface (y = 0) where the ground is under it: what a lens must stay above. */
 function surfaceAt(x, z) {
   const h = heightAt(x, z);
-  return h > 0 ? h : 0;
+  return h > 0 ? h : Math.max(0, swellAt(x, z));
 }
 
 /**

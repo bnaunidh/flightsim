@@ -83,7 +83,7 @@ export const LEVELS = Object.freeze({
   full: Object.freeze({ ground: 1, water: 1, air: Infinity, airport: Infinity }),
 });
 
-export const GROUND_KINDS = Object.freeze(['car', 'taxi', 'bus', 'van', 'truck', 'jeep', 'fourx4', 'tractor', 'firetruck']);
+export const GROUND_KINDS = Object.freeze(['car', 'taxi', 'bus', 'van', 'truck', 'jeep', 'fourx4', 'tractor', 'firetruck', 'police']);
 export const BOAT_KINDS = Object.freeze(['ferry', 'trawler', 'yacht', 'barge', 'lifeboat', 'rhib', 'supply', 'patrol', 'dive']);
 export const HELI_ROLES = Object.freeze(['police', 'news', 'medevac', 'tour', 'sar', 'coastguard', 'rescue', 'crew', 'guard']);
 export const PLANE_ROLES = Object.freeze(['ga', 'bush', 'spotter', 'tanker', 'transport', 'patrol', 'guard']);

@@ -540,6 +540,21 @@ export function setProps(groups, opts = {}) {
 }
 
 /** Solid props, for the tests. */
+/** The props under `root` have moved with it (the ship under way): read their boxes again. */
+export function movedProps(root) {
+  let list = root.userData.props;
+  if (!list || list.gen !== generation) {
+    list = root.userData.props = PROPS.filter((p) => {
+      let o = p.obj;
+      while (o && o !== root) o = o.parent;
+      return !!o && !p.obj.isInstancedMesh;
+    });
+    list.gen = generation;
+  }
+  for (const p of list) boxFrom(p, p.obj.matrixWorld.elements, p.obj.geometry.boundingBox);
+  propGen++;
+}
+
 export function propCount() {
   let n = 0;
   for (let i = 0; i < PROPS.length; i++) if (PROPS[i].on) n++;

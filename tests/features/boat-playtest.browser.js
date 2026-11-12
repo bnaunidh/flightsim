@@ -151,11 +151,15 @@ function boatMeshes(model) {
 }
 
 /** The lowest point of her deck edge, in world metres (the sea is 0). */
-function deckLowY(model, parts, box, p) {
-  if (!parts.deckPoints) return box.setFromObject(parts.deck).min.y;
+function deckLowY(model, parts, box, p, sea = null) {
+  if (!parts.deckPoints) return box.setFromObject(parts.deck).min.y - (sea ? sea(model.position.x, model.position.z) : 0);
   let low = Infinity;
   const d = parts.deckPoints;
-  for (let i = 0; i + 2 < d.length; i += 3) low = Math.min(low, p.set(d[i], d[i + 1], d[i + 2]).applyMatrix4(model.matrixWorld).y);
+  // `sea`: the swell's height under each point (terrain.swellAt), so "above the sea" is above the sea that is drawn there.
+  for (let i = 0; i + 2 < d.length; i += 3) {
+    p.set(d[i], d[i + 1], d[i + 2]).applyMatrix4(model.matrixWorld);
+    low = Math.min(low, p.y - (sea ? sea(p.x, p.z) : 0));
+  }
   return low;
 }
 
@@ -1005,7 +1009,8 @@ async function session(sim, r, say, THREE, realRender) {
   /* ---- P29: in a gale she rides the sea, she does not sink into it ---- */
   /*
    * In the Gale, three taps to Full and forty seconds out past the harbour,
-   * then ten seconds watched: the deck edge must stay above the (flat) sea
+   * then ten seconds watched: the deck edge must stay above the sea — the
+   * swell that is drawn under it (world/sea-state.js), which she now rides —
    * and the keel in it, with the pitch and roll of a big sea still there.
    */
   {
@@ -1026,12 +1031,13 @@ async function session(sim, r, say, THREE, realRender) {
     for (let i = 0; i < 600; i++) {
       frames(sim, 1);
       gm.updateMatrixWorld(true);
-      const dy = deckLowY(gm, parts, bx, pt);
+      const dy = deckLowY(gm, parts, bx, pt, Terrain.swellAt);
       dLow = Math.min(dLow, dy);
       if (dy < 0) under++;
       bx.setFromObject(parts.hull);
-      kLow = Math.min(kLow, bx.min.y);
-      kHigh = Math.max(kHigh, bx.min.y);
+      const keel = bx.min.y - Terrain.swellAt(gm.position.x, gm.position.z);
+      kLow = Math.min(kLow, keel);
+      kHigh = Math.max(kHigh, keel);
       eu.setFromQuaternion(gm.quaternion, 'YXZ');
       rMin = Math.min(rMin, eu.z);
       rMax = Math.max(rMax, eu.z);

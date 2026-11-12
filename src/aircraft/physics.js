@@ -912,6 +912,8 @@ export class Aircraft {
      */
     const gustScale = this.mode === 'simplified' ? 0.45 : 1;
     this._airRel.copy(this.vel);
+    // On a ship under way the speed is the deck's: the air has the ship's (carrier-underway.js).
+    if (this.ride) this._airRel.add(this.ride);
     this._airRel.x -= wind.x + gust.x * gustScale;
     // Sinking air in a microburst. This is felt in full in both modes: the
     // whole point of it is that no amount of assist saves you, only flying out
@@ -2249,11 +2251,8 @@ export class Aircraft {
   centrelineError() {
     const deck = platformAt(this.pos.x, this.pos.z);
     if (deck) {
-      // The deck box is axis-aligned and `along` says which way it runs.
-      const across = deck.arrest && deck.arrest.along === false
-        ? this.pos.z - deck.cz
-        : this.pos.x - deck.cx;
-      return Math.abs(across);
+      // `lx`: off the ship's own centreline, when it is under way and turned.
+      return Math.abs(deck.lx ?? this.pos.x - deck.cx);
     }
     /*
      * Read off AIRPORT rather than the airport module's RUNWAY objects:

@@ -606,11 +606,16 @@ export function addPlatform(cx, cz, w, d, y, name, arrest = null) {
   PLATFORMS.push({ cx, cz, hw: w / 2, hd: d / 2, y, name, arrest });
 }
 
+/** The swell's height over mean sea level at a point: 0 until the sea sets `SWELL.at` (sea-state.js). */
+export const SWELL = { at: null };
+export const swellAt = (x, z) => (SWELL.at ? SWELL.at(x, z) : 0);
+
 /** The deck under this point, or null. */
 export function platformAt(x, z) {
   for (let i = 0; i < PLATFORMS.length; i++) {
     const p = PLATFORMS[i];
-    if (Math.abs(x - p.cx) <= p.hw && Math.abs(z - p.cz) <= p.hd) return p;
+    // A ship under way tests its own turned, heaving deck (carrier-underway.js).
+    if (p.at ? p.at(x, z) : Math.abs(x - p.cx) <= p.hw && Math.abs(z - p.cz) <= p.hd) return p;
   }
   return null;
 }
