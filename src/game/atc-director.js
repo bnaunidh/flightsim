@@ -111,6 +111,19 @@ export class AtcDirector {
     return String(n).padStart(2, '0').split('').map((d) => words[Number(d)]).join(' ');
   }
 
+  // The runway you are lined up on, not the wind's.
+  get departureCall() {
+    const mr = this.missionRadio;
+    const nf = navField();
+    const ac = this.sim.aircraft;
+    if (mr && mr.runway && !this.departed) return mr.runway;
+    if (nf && ac.onGround && onFieldRunway(nf, ac.pos.x, ac.pos.z, 12)) {
+      const off = Math.abs(((ac.readouts().heading + 450) % 360) - 180);
+      if (off < 25 || off > 155) return runwayWords(off < 25 ? 1 : -1);
+    }
+    return this.runwayCall;
+  }
+
   reset() {
     /*
      * The field's name over the subtitles, now, not on the first update():
@@ -220,7 +233,7 @@ export class AtcDirector {
     // Engine start on the apron.
     if (ac.engineOn && this.once('start') && ac.onGround) {
       this.say(
-        `${this.callsign}, ${this.field} Ground, runway ${this.runwayCall}, ${windCall(w)}. Taxi and hold.`,
+        `${this.callsign}, ${this.field} Ground, runway ${this.departureCall}, ${windCall(w)}. Taxi and hold.`,
         'ground'
       );
     }
@@ -246,7 +259,7 @@ export class AtcDirector {
         Math.abs(((ac.readouts().heading - RUNWAY.headingDeg + 540) % 360) - 180) < 25;
     if (ac.onGround && lined && ac.controls.throttle > 0.6 && this.once('clearance')) {
       this.say(
-        `${this.callsign}, ${this.field} Tower, ${windCall(w)}, runway ${this.runwayCall}, cleared for take-off.`,
+        `${this.callsign}, ${this.field} Tower, ${windCall(w)}, runway ${this.departureCall}, cleared for take-off.`,
         'tower'
       );
     }

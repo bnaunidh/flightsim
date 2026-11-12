@@ -62,6 +62,13 @@ export async function parsePacked(buf, name, renderer, tier) {
       detailApi.setDetailRenderer(renderer);
       const done = await Promise.race([detailApi.decodeDetail(parsed.scene, parsed).then(() => true), new Promise((r) => setTimeout(() => r(false), 10000))]);
       parsed.detail = done;
+      // A helicopter's file (tools/real-models/helis.py) is worn in its own vertex-painted
+      // materials (real-models.js dressHeli), not repainted: its maps go under them here, once.
+      if (done) {
+        parsed.scene.traverse((o) => {
+          if (o.isMesh && o.material && o.material.vertexColors) o.material = withDetail(o.material, o.geometry);
+        });
+      }
     } catch (e) {
       console.warn(`${name}: detail maps off`, e);
     }

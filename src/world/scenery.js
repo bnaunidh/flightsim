@@ -1189,6 +1189,8 @@ export function addTown(group, spots, opts = {}) {
       }
     });
   }
+  // Shopfronts, awnings and balconies on the blocks (not at Low), when that file is here.
+  if (quality !== 'low' && blocks.length) import('./town-dress.js').then((m) => m.dressBlocks(group, plan, { quality, name, top, nightMats })).catch(() => {});
   return {
     houses: houses.length,
     blocks: blocks.length,

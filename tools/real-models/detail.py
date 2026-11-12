@@ -188,7 +188,8 @@ def _label(mask):
     return dense[lab]
 
 
-ROLE_ID = {'skin_l': 1, 'skin_r': 1, 'wing': 2, 'fin': 3, 'cowl': 4}
+# 'body': a helicopter's airframe (helis.py), drawn with the fuselage's seams and rivet rows
+ROLE_ID = {'skin_l': 1, 'skin_r': 1, 'body': 1, 'wing': 2, 'fin': 3, 'cowl': 4}
 
 
 def bake_ao(prims, mid, opts, geo=False):
@@ -230,7 +231,7 @@ def bake_ao(prims, mid, opts, geo=False):
         _, first, inv = np.unique(key, axis=0, return_index=True, return_inverse=True)
         src_v = I.reshape(-1)[first]
         q = dict(p)
-        for a in ('P', 'N', 'UV1'):
+        for a in ('P', 'N', 'UV1', 'C'):  # C: a helicopter's per-vertex paint (helis.py)
             if q.get(a) is not None:
                 q[a] = p[a][src_v]
         q['UV2'] = cu.reshape(-1, 2)[first]
@@ -341,12 +342,26 @@ def surface_maps(geo, opts):
         # the major circumferential splices only (no frame rivet rows: they rippled the whole skin)
         d, band = _bands(z, z0, z1, float(opts.get('splice', 5.08)))
         height -= np.where(skin & (z > z0 - 0.3) & (z < z1 + 0.3), 0.5 * g(d), 0)
-        # and a couple of long lap joints, straight down the cabin
-        laps = np.array(opts.get('laps', [36, 108]), float)
-        dth = np.min(np.abs(np.abs(th)[..., None] - laps), -1)
-        dl = np.radians(dth) * r
-        height -= np.where(body, 0.4 * g(dl), 0)
-        lapband = np.searchsorted(laps, np.abs(th)) * np.sign(th)
+        if opts.get('lapHeights') is not None:
+            # A helicopter's body is no tube (sponsons, cowls, a boom): its lap joints run level, at
+            # fractions of each slice's own height, not at angles round a centre that wanders.
+            ker = np.ones(7) / 7
+            okb = np.isfinite(top) & np.isfinite(bot)
+            tz = np.convolve(np.pad(np.interp(zc, zc[okb], top[okb]), 3, mode='edge'), ker, mode='valid')
+            bz = np.convolve(np.pad(np.interp(zc, zc[okb], bot[okb]), 3, mode='edge'), ker, mode='valid')
+            yt, yb = np.interp(z, zc, tz), np.interp(z, zc, bz)
+            frac = (y - yb) / np.maximum(yt - yb, 1e-3)
+            fr = np.array(opts['lapHeights'], float)
+            dl = np.min(np.abs(frac[..., None] - fr), -1) * (yt - yb)
+            height -= np.where(body, 0.4 * g(dl), 0)
+            lapband = np.searchsorted(fr, frac) * np.sign(x)
+        else:
+            # and a couple of long lap joints, straight down the cabin
+            laps = np.array(opts.get('laps', [36, 108]), float)
+            dth = np.min(np.abs(np.abs(th)[..., None] - laps), -1)
+            dl = np.radians(dth) * r
+            height -= np.where(body, 0.4 * g(dl), 0)
+            lapband = np.searchsorted(laps, np.abs(th)) * np.sign(th)
         panel = np.where(skin, _hash(band, lapband), panel)
         grime += np.where(body, g(d, sig * 2.5) + 0.6 * g(dl, sig * 2.5), 0)
     # -- wings and tailplanes: spar and hinge lines along the span, chordwise panel joints --
@@ -453,8 +468,9 @@ def digest(data):
     return hashlib.sha1(data).hexdigest()[:12]
 
 
-def pack(raw, out, has):
-    """raw .glb -> out .glb: KTX2 (UASTC normal maps, ETC1S the rest) + meshopt."""
+def pack(raw, out, has, lam=None):
+    """raw .glb -> out .glb: KTX2 (UASTC normal maps, ETC1S the rest) + meshopt.
+    `lam`: the UASTC RDO lambda (higher: smaller, softer; the helicopters' small atlases take 3)."""
     env = dict(os.environ)
     env['PATH'] = KTX_BIN + ':' + '/opt/homebrew/bin:' + env.get('PATH', '')
     env['DYLD_LIBRARY_PATH'] = KTX_LIB
@@ -469,7 +485,7 @@ def pack(raw, out, has):
             raise RuntimeError(f'gltf-transform {args[0]} failed')
         cur = nxt
     if 'normal' in has:
-        step(['uastc', '--slots', 'normalTexture', '--level', '2', '--rdo', '--zstd', '18'], 'a.glb')
+        step(['uastc', '--slots', 'normalTexture', '--level', '2', '--rdo', '--zstd', '18'] + (['--rdo-lambda', str(lam)] if lam else []), 'a.glb')
     if has - {'normal'}:
         step(['etc1s', '--slots', '{occlusionTexture,metallicRoughnessTexture}', '--quality', '160'], 'b.glb')
     step(['meshopt', '--level', 'medium'], 'c.glb')

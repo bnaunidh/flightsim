@@ -86,7 +86,7 @@ export const TOUCH_COVERAGE = Object.freeze({
   lights: sheet('SYSTEMS → LIGHTS (every lamp\'s preset; the LIGHTS card sets each lamp)'),
   spoilers: sheet('SYSTEMS → SPEEDBRAKE in the air; GROUND → SPOILERS: ARMED on the ground'),
   reversers: sheet('GROUND → REVERSERS: idle / MAX / stow'),
-  atcRequest: sheet('SYSTEMS → RADIO (ATC): the menu\'s four requests are buttons'),
+  atcRequest: sheet('SYSTEMS → RADIO (ATC): the menu\'s requests are buttons, and READBACK comes up as a button with each instruction'),
 
   /* ---- the helicopter ---- */
   heliForward: stick('the stick, pushed up (cyclic forward)'),
@@ -196,10 +196,15 @@ export const TOUCH_COVERAGE = Object.freeze({
   flares: feature('src/features/heatseek/hud.js', 'the FLARES button', 'is-flare'),
   lockOn: feature('src/features/gunsight/hud.js', 'the LOCK button', 'is-lock'),
   crashReplay: feature('src/features/breakup.js', 'the debrief\'s "Watch the replay" button', 'Watch the replay'),
-  replayPause: feature('src/features/breakup.js', 'the replay bar\'s ❚❚ button', "button('pause'"),
-  replayBack: feature('src/features/breakup.js', 'the replay bar\'s « button', "button('back'"),
-  replayForward: feature('src/features/breakup.js', 'the replay bar\'s » button', "button('fwd'"),
-  replayClose: feature('src/features/breakup.js', 'the replay bar\'s close button', 'S.ui.close'),
+  replayPause: feature('src/features/breakup/replay-player.js', 'the replay bar\'s big play / pause button', "button(transport, 'pause'"),
+  replayBack: feature('src/features/breakup/replay-player.js', 'the replay bar\'s « 5 button', "button(transport, 'back'"),
+  replayForward: feature('src/features/breakup/replay-player.js', 'the replay bar\'s 5 » button', "button(transport, 'fwd'"),
+  replayClose: feature('src/features/breakup/replay-player.js', 'the replay bar\'s ✕ button', "button(tools, 'close'"),
+  replayCamera: feature('src/features/breakup/replay-player.js', 'the replay bar\'s Camera button and its menu (or drag the picture for free look)', "button(tools, 'camera'"),
+  replaySlower: feature('src/features/breakup/replay-player.js', 'the replay bar\'s speed buttons (0.25× 0.5× 1× 2×)', "button(speedSeg, 'speed'"),
+  replayFaster: feature('src/features/breakup/replay-player.js', 'the replay bar\'s speed buttons (0.25× 0.5× 1× 2×)', "button(speedSeg, 'speed'"),
+  replayHideUi: feature('src/features/breakup/replay-player.js', 'the replay bar\'s hide button; a tap on the picture or "Show controls" brings them back', "button(tools, 'hide'"),
+  replayVideo: feature('src/features/breakup/replay-player.js', 'the replay bar\'s Video button', "button(tools, 'video'"),
 });
 
 /** The ways listed above, for the test. */

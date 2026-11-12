@@ -34,6 +34,7 @@ import { fireEngineGeometry } from '../../world/airport-vehicles.js';
 import { sampleLane, signalGreen } from './lanes.js';
 import { makeRandom } from '../../core/noise.js';
 import { wearRealVehicle } from '../../aircraft/real-models.js';
+import { betterCarGeometry, carPaint } from './car-models.js';
 
 /** Metres: the real shape up to here. */
 export const CAR_NEAR = 400;
@@ -68,6 +69,9 @@ export const KINDS = Object.freeze({
   hatch: { L: 3.9, W: 1.7, H: 1.52, speed: 13, colour: 0xd8d8dc, vary: true },
   pickup: { L: 5.3, W: 1.9, H: 1.8, speed: 12, colour: 0xd8d8dc, vary: true },
   police: { L: 4.6, W: 1.8, H: 1.55, speed: 12, colour: 0xf2f3f0 },
+  // Two more a 'car' may be, where the better shapes are drawn (car-models.js): an estate and an SUV.
+  estate: { L: 4.65, W: 1.78, H: 1.5, speed: 13, colour: 0xd8d8dc, vary: true },
+  suv: { L: 4.6, W: 1.88, H: 1.7, speed: 12, colour: 0xd8d8dc, vary: true },
 });
 
 /** Metres, bumper to bumper, a car stops behind the one in front. */
@@ -191,7 +195,8 @@ function lampsOf(k) {
 /* The layer                                                           */
 /* ------------------------------------------------------------------ */
 
-const CAR_TINTS = [0xd8d8dc, 0x1f2a3a, 0x8a1f1f, 0x2f5f9a, 0xe8e2d0, 0x3a3a3c, 0x6d8a3a, 0xb8b8bc, 0xd79a2a, 0x5b2a6e];
+/** What cars are painted, as often as you see it on a real street: white, silver, grey and black most of all. */
+const CAR_TINTS = [0xe9e9e6, 0xe9e9e6, 0xc3c6ca, 0xc3c6ca, 0x8b9096, 0x4a4d52, 0x1b1c1f, 0x1b1c1f, 0x1f2a3a, 0x2f5f9a, 0x7fa3c4, 0x8a1f1f, 0xb5301f, 0xe8e2d0, 0xb9a98a, 0x6d8a3a, 0x24493a, 0xd79a2a, 0x5b2a6e, 0x7a4a2c];
 
 export class CarLayer {
   /**
@@ -204,12 +209,15 @@ export class CarLayer {
    * the difference between +8 and +12 draw calls on a town street.
    * `variety`: a 'car' is drawn as a saloon, a hatchback or a pick-up (two more
    * meshes: not at Low). `ground`: (x, z) => y, for a car shoved off its lane.
+   * `better`: car-models.js's shapes (not at Low); `rich`: an estate and an SUV among the cars too.
    */
-  constructor(group, net, { shadows = true, variety = false, ground = null } = {}) {
+  constructor(group, net, { shadows = true, variety = false, ground = null, better = false, rich = false } = {}) {
     this.group = group;
     this.net = net;
     this.shadows = !!shadows;
     this.variety = !!variety;
+    this.better = !!better;
+    this.rich = !!rich && this.better && this.variety;
     this.ground = ground;
     this.cars = []; // { kind, shape, lane, s, hint, speed, want, parked, kerb, knock, tint, px, py, pz, heading, dist, lead }
     this.meshes = new Map(); // shape -> InstancedMesh (detail)
@@ -224,6 +232,7 @@ export class CarLayer {
     this.frame = 0;
     this.t = 0;
     this.mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.25 });
+    if (this.better) carPaint(this.mat);
     this.proxyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7, metalness: 0.1 });
     this.boxGeo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
     this.rnd = makeRandom(31);
@@ -235,6 +244,12 @@ export class CarLayer {
     this.camX = 0;
     this.camZ = 0;
     this.playerAt = null;
+  }
+
+  /** Which shape a 'car' is, from a random number. */
+  pick(r) {
+    if (this.rich) return r < 0.26 ? 'hatch' : r < 0.36 ? 'pickup' : r < 0.52 ? 'suv' : r < 0.64 ? 'estate' : 'car';
+    return r < 0.34 ? 'hatch' : r < 0.46 ? 'pickup' : 'car';
   }
 
   /** A car's record. */
@@ -281,7 +296,7 @@ export class CarLayer {
       let shape = kind;
       if (this.variety && kind === 'car' && !park) {
         const r = this.rnd();
-        shape = r < 0.34 ? 'hatch' : r < 0.46 ? 'pickup' : 'car';
+        shape = this.pick(r);
       }
       const car = this.record(kind, shape, park);
       if (park) {
@@ -343,7 +358,7 @@ export class CarLayer {
         let shape = kind;
         if (this.variety && kind === 'car') {
           const r = this.rnd();
-          shape = r < 0.4 ? 'hatch' : r < 0.5 ? 'pickup' : 'car';
+          shape = this.rich ? this.pick(r) : r < 0.4 ? 'hatch' : r < 0.5 ? 'pickup' : 'car';
         }
         const car = this.record(kind, shape, true);
         car.kerb = true;
@@ -390,10 +405,12 @@ export class CarLayer {
     for (const c of this.cars) byKind.set(c.shape, (byKind.get(c.shape) || 0) + 1);
     let k = 0;
     for (const [kind, n] of byKind) {
-      const geo = kind === 'firetruck' ? fireEngineGeometry() : carShape(kind, KINDS[kind].colour);
+      const own = this.better ? betterCarGeometry(kind, KINDS[kind]) : null;
+      const geo = own || (kind === 'firetruck' ? fireEngineGeometry() : carShape(kind, KINDS[kind].colour));
       const m = instanced(geo, this.mat, n, { cast: this.shadows, receive: false, name: `ambient-${kind}` });
-      // REAL MODELS: the road traffic in its real shapes, when that file is here (aircraft/real-models.js).
-      wearRealVehicle(m, kind);
+      m.userData.better = !!own;
+      // REAL MODELS: what car-models.js does not draw (the tractor) in its real shape, when that file is here.
+      if (!own) wearRealVehicle(m, kind);
       m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
       m.instanceColor.setUsage(THREE.DynamicDrawUsage);
       m.frustumCulled = false;

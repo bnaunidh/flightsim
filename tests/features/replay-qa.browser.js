@@ -44,8 +44,11 @@ const D2R = Math.PI / 180;
 const RUN_IN = { skylark: 40, a320: 78, a380: 82, f22: 95, c17: 72, uh60: 30 };
 
 async function load() {
+  const bu = await import('../../src/features/breakup.js');
+  // The replay's player (its bar) is fetched on demand: here before the first crash, so the bar is up as a replay starts.
+  await bu.loadReplayPlayer();
   return {
-    bu: await import('../../src/features/breakup.js'),
+    bu,
     cr: await import('../../src/features/crashes.js'),
     T: await import('../../src/world/terrain.js'),
     THREE: await import('../../src/vendor/three.module.js'),
@@ -383,7 +386,8 @@ export async function oneCrash(sim, L, { type, mode, reduce, quality = null, out
     if (btn('fwd')) btn('fwd').click();
     if (btn('fwd')) btn('fwd').click();
     const tw = D().S.replay.t;
-    out(`${tag}: the bar's « and » step two seconds (clamped to the start)`, Math.abs(tb - Math.max(R.start, -1)) < 1e-6 && Math.abs(tw - Math.min(R.end, tb + 4)) < 1e-6, `${tb.toFixed(2)}, ${tw.toFixed(2)}`);
+    const st = bu.REPLAY_STEP;
+    out(`${tag}: the bar's « and » skip ${st} seconds (clamped to the start and the end)`, Math.abs(tb - Math.max(R.start, 1 - st)) < 1e-6 && Math.abs(tw - Math.min(R.end, tb + 2 * st)) < 1e-6, `${tb.toFixed(2)}, ${tw.toFixed(2)}`);
 
     /* ---- DRAG the rail ---- */
     const scrub = btn('track');

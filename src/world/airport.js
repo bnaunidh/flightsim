@@ -1828,6 +1828,17 @@ export class Airport {
     // Rotating green beacon.
     if (this.beacon) this.beacon.visible = this.lightsOn && Math.sin(this.t * 3) > 0;
     this.setLightsOn(weather.isNight || weather.cond.cloud > 0.8);
+    // By day a light is a point, not a pool of glow.
+    const dim = weather.isNight ? 1 : 0.4;
+    if (this._glowDim !== dim) {
+      this._glowDim = dim;
+      for (const { material: m } of this.glowGroup.children) {
+        m.userData.o ??= m.opacity;
+        m.userData.s ??= m.size;
+        m.opacity = m.userData.o * dim;
+        m.size = m.userData.s * (0.4 + 0.6 * dim);
+      }
+    }
 
     // Hangar doors: ease toward where they are wanted; close when unwatched.
     for (const hs of this.doorState) {

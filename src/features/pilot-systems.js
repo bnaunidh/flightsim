@@ -49,7 +49,7 @@ registerActions({
    * zaps and the radio is F8 (handleKey below). Insert stays for a full
    * keyboard. Saved keys from before move on (input.js MIGRATIONS v3).
    */
-  atcRequest: { label: 'Radio: request pushback / taxi / take-off / landing', group: 'Missions & events', ctx: AIR, default: ['F8', 'KeyZ', 'Insert'] },
+  atcRequest: { label: 'Radio: the ATC menu (pushback, taxi, take-off, landing and more) / read back an instruction', group: 'Missions & events', ctx: AIR, default: ['F8', 'KeyZ', 'Insert'] },
 });
 
 /** How long the controller takes to answer a request, seconds. */
@@ -200,9 +200,36 @@ export function radioKeyName(sim) {
   return names.length ? names.slice(0, 2).join(' or ') : '—';
 }
 
+/*
+ * More ATC (features/atc-plus.js): fetched the first time you sit in a cockpit, never at first load.
+ * The radio key reads back a waiting instruction before it opens the menu (`key`: not a sheet tap).
+ */
+let PLUS = null;
+let plusAt = -1;
+let plusP = null;
+const PLUS_API = {
+  radioContext, notify, inCockpit, radioKeyName, joinStack, closeRadio,
+  radioEl: () => S.ui && S.ui.radio, state: () => S,
+};
+function plus(sim) {
+  const now = performance.now();
+  if (PLUS || typeof window === 'undefined' || !document.head || (plusAt >= 0 && now - plusAt < 15000)) return PLUS;
+  plusAt = now;
+  plusP = import('./atc-plus.js').then((m) => {
+    PLUS = m;
+    m.attach(sim, PLUS_API);
+    return m;
+  }, (e) => console.warn('[atc] the extra radio did not load', e));
+  return null;
+}
+/** The extra radio, once it is in (a promise of it for the checks). */
+export const atcPlus = () => PLUS;
+export const atcPlusReady = (sim) => (plus(sim), plusP || Promise.resolve(PLUS));
+
 /** The ATC key: open the menu; pressed again while it is open, send the request that fits the moment. */
-export function pressRadio(sim) {
+export function pressRadio(sim, key = false) {
   if (!inCockpit(sim)) return null;
+  if (PLUS && PLUS.pendingCount() && (S.radioOpen || key)) return PLUS.readback(sim);
   if (S.radioOpen) {
     const id = suggestedRequest(radioContext(sim));
     return request(sim, id);
@@ -216,6 +243,7 @@ function openRadio(sim) {
   if (!S.ui) return;
   S.radioOpen = true;
   syncRadio(sim, true);
+  if (PLUS) PLUS.syncAll(sim, true);
   // Desktop: a window of its own you drag anywhere and shrink to its title (owner, 2026-11-11).
   if (!S.ui.touch) {
     floatRadio(S.ui.radio);
@@ -462,7 +490,7 @@ function syncLights(sim, force = false) {
 function syncRadio(sim, force = false) {
   const ui = S.ui;
   if (!ui || !S.radioOpen) return;
-  const fq = sim && sim.airspace && typeof sim.airspace.label === 'function' ? sim.airspace.label() : '';
+  const fq = PLUS ? '' : sim && sim.airspace && typeof sim.airspace.label === 'function' ? sim.airspace.label() : '';
   if (ui.freq && ui.freq.textContent !== fq) {
     ui.freq.textContent = fq;
     ui.freq.hidden = !fq;
@@ -499,7 +527,8 @@ function updateUi(sim) {
   syncRadio(sim);
 }
 
-function off() {
+function off(sim) {
+  if (PLUS) PLUS.reset(sim);
   S.pending = null;
   S.replyT = 0;
   S.shown = '';
@@ -584,7 +613,7 @@ export function handleKey(sim, code, down, e) {
     return true;
   }
   if (isKey(sim, 'atcRequest', code) && !zapperHas(sim, code)) {
-    if (down && !repeat) pressRadio(sim);
+    if (down && !repeat) pressRadio(sim, true);
     return true;
   }
   if (rotor(sim)) return false;
@@ -604,13 +633,15 @@ registerExtension({
   install(sim) {
     buildUi(sim);
   },
-  startMode() {
-    off();
+  startMode(sim) {
+    off(sim);
   },
-  stop() {
-    off();
+  stop(sim) {
+    off(sim);
   },
   update(sim, dt) {
+    if (inCockpit(sim)) plus(sim);
+    if (PLUS) PLUS.update(sim, dt);
     if (S.pending) {
       S.replyT -= dt;
       if (S.replyT <= 0) deliver(sim);
@@ -654,5 +685,6 @@ export function systemsState() {
     lightsCard: !!(S.ui && S.ui.lights.classList.contains('is-shown')),
     radioCard: !!(S.ui && S.ui.radio.classList.contains('is-shown')),
     preset: S.ui ? S.ui.preset.textContent : null,
+    plus: PLUS ? PLUS.state() : null,
   };
 }

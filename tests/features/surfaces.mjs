@@ -103,8 +103,8 @@ ok('surfaces: High reflects a little harder than Medium, Ultra harder still', ((
 {
   SF.resetSurfaces('high');
   SF.setFieldWetness(0);
-  const rw = SF.registerWetSurface(new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0.02, color: 0x45484c }), { puddles: TX.puddleRoughness() });
-  const base = { roughness: rw.roughness, metalness: rw.metalness, color: rw.color.getHex(), env: rw.envMapIntensity };
+  const rw = SF.registerWetSurface(new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0.02, color: 0x45484c, normalMap: TX.puddleRoughness(), normalScale: new THREE.Vector2(0.7, 0.7) }), { puddles: TX.puddleRoughness() });
+  const base = { roughness: rw.roughness, metalness: rw.metalness, color: rw.color.getHex(), env: rw.envMapIntensity, ns: rw.normalScale.x };
   const rain = weather({ rain: 1, cloud: 1 });
   for (let i = 0; i < 10; i++) SF.updateSurfaces(rain, 1);
   const w10 = SF.fieldWetness();
@@ -112,6 +112,15 @@ ok('surfaces: High reflects a little harder than Medium, Ultra harder still', ((
   for (let i = 0; i < 60; i++) SF.updateSurfaces(rain, 1);
   ok('wet: a minute of storm soaks it through', SF.fieldWetness() === 1);
   ok('wet: the wet runway is darker, glossier and reflects more', rw.roughness < 0.35 && rw.metalness > base.metalness && rw.envMapIntensity > base.env && rw.color.getHex() < base.color, `${rw.roughness} ${rw.metalness} ${rw.envMapIntensity}`);
+  // The owner, 2026-11-11: wet shoulders and apron glittered. Water fills the grain, and the puddle shader
+  // anti-aliases what is left (roughness from fwidth of the normal) and turns the far field to a sheen.
+  ok('wet: water fills the grain (the normal map flattens, not a crinkled mirror)', rw.normalScale.x < base.ns * 0.5 && rw.envMapIntensity <= 1.1, `${base.ns} -> ${rw.normalScale.x}, env ${rw.envMapIntensity}`);
+  {
+    const sh = { uniforms: {}, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
+    rw.onBeforeCompile(sh);
+    const f = sh.fragmentShader;
+    ok('wet: the puddle shader flattens puddles and has specular anti-aliasing and a distance sheen', /nonPerturbedNormal,wetPool/.test(f) && /fwidth\(normal\)/.test(f) && /smoothstep\(90\.,650\./.test(f) && f.indexOf('wetPool=') < f.indexOf('mix(normal'), f.length);
+  }
   const half = weather({ rain: 0.55, cloud: 0.85 });
   for (let i = 0; i < 400; i++) SF.updateSurfaces(half, 1);
   ok('wet: it dries down to the rain that is falling, not past it', Math.abs(SF.fieldWetness() - 0.55) < 1e-6, `${SF.fieldWetness()}`);
@@ -119,7 +128,7 @@ ok('surfaces: High reflects a little harder than Medium, Ultra harder still', ((
   for (let i = 0; i < 60; i++) SF.updateSurfaces(dry, 1);
   ok('wet: a minute of sun has not dried it (it takes minutes)', SF.fieldWetness() > 0.2 && SF.fieldWetness() < 0.55, `${SF.fieldWetness()}`);
   for (let i = 0; i < 400; i++) SF.updateSurfaces(dry, 1);
-  ok('wet: dry again, the runway is exactly what it was', SF.fieldWetness() === 0 && rw.roughness === base.roughness && rw.metalness === base.metalness && rw.color.getHex() === base.color && rw.envMapIntensity === base.env);
+  ok('wet: dry again, the runway is exactly what it was', SF.fieldWetness() === 0 && rw.roughness === base.roughness && rw.metalness === base.metalness && rw.color.getHex() === base.color && rw.envMapIntensity === base.env && rw.normalScale.x === base.ns);
   ok('wet: a bad dt neither soaks nor dries', (() => { SF.setFieldWetness(0.5); SF.updateSurfaces(rain, NaN); SF.updateSurfaces(rain, -1); return SF.fieldWetness() === 0.5; })());
   SF.setFieldWetness(0);
 }

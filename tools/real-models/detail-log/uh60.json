@@ -1,0 +1,21 @@
+{
+ "baked": {
+  "occlusion": "1024 px, from the airframe's shape only (Blender Cycles AO, 192 samples, 1.2 m)"
+ },
+ "bytes": {
+  "packed (KTX2 + meshopt)": 590860,
+  "raw (PNG, float)": 1224200
+ },
+ "drawn": {
+  "normal + roughness": "the game's own panel seams, frame rivet rows and lap joints (detail.py surface_maps)",
+  "seam sigma m": 0.0298,
+  "texel m": 0.0351
+ },
+ "dropped": [
+  "every source texture (helis.py paints per triangle)"
+ ],
+ "id": "uh60",
+ "kept": [],
+ "source": "uh60/uh60.glb",
+ "triangles": 10613
+}

@@ -1337,10 +1337,12 @@ def run_detail(mid, out, log, cfg, ref):
             print(f'    {k}: {line}')
 
 
-def write_glb_detail(path, mid, prims, images, extras):
+def write_glb_detail(path, mid, prims, images, extras, prefix='rm_', rules=None):
     """write_glb with UVs and maps: one node per role, a primitive per set of maps.
     TEXCOORD_1 = the source's UVs (its kept maps), TEXCOORD_2 = the baked atlas. No TEXCOORD_0:
-    that is the livery's, made at run time (fleet/extra/real-paint.js)."""
+    that is the livery's, made at run time (fleet/extra/real-paint.js).
+    A helicopter (helis.py) brings its paint per vertex (`C`, linear RGB -> COLOR_0), its material
+    names (`prefix`) and each role's roughness and metalness (`rules`)."""
     bin_ = bytearray()
     views, accs, gmeshes, nodes, mats, textures, samplers, imgs = [], [], [], [], [], [], [], []
 
@@ -1400,9 +1402,16 @@ def write_glb_detail(path, mid, prims, images, extras):
                 attrs['TEXCOORD_1'] = add(p['UV1'].astype(np.float32), 34962, 5126, 'VEC2')
             if p.get('UV2') is not None:
                 attrs['TEXCOORD_2'] = add(p['UV2'].astype(np.float32), 34962, 5126, 'VEC2')
+            if p.get('C') is not None:
+                c8 = np.clip(np.round(np.asarray(p['C']) * 255), 0, 255).astype(np.uint8)
+                ca = add(np.concatenate([c8, np.full((len(c8), 1), 255, np.uint8)], 1), 34962, 5121, 'VEC3')
+                accs[ca]['normalized'] = True
+                views[accs[ca]['bufferView']]['byteStride'] = 4
+                attrs['COLOR_0'] = ca
             ia = add(idx.reshape(-1, 1), 34963, 5123 if idx.dtype == np.uint16 else 5125, 'SCALAR')
-            m = {'name': f'rm_{role}' + (f'_{k}' if k else ''),
-                 'pbrMetallicRoughness': {'baseColorFactor': [1, 1, 1, 1], 'metallicFactor': 0.1, 'roughnessFactor': 0.5}}
+            rule = (rules or {}).get(role, {})
+            m = {'name': f'{prefix}{role}' + (f'_{k}' if k else ''),
+                 'pbrMetallicRoughness': {'baseColorFactor': [1, 1, 1, 1], 'metallicFactor': rule.get('metal', 0.1), 'roughnessFactor': rule.get('rough', 0.5)}}
             mp = p['maps']
             if 'normal' in mp:
                 m['normalTexture'] = {'index': tex(mp['normal']['img'], mp['normal']['sampler']), 'texCoord': 2 if mp['normal'].get('texCoord') == 2 else 1,

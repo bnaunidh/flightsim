@@ -212,7 +212,7 @@ export function aircraftCategory(type) {
 
 /* The order keywords are tried in matters: "Medevac delivery" is a rescue. */
 /** The tabs of the pause menu's More options sheet (addPauseItem), in order. */
-const PAUSE_GROUPS = [['players', 'Players'], ['flight', 'Flight'], ['world', 'World'], ['practice', 'Practice']];
+const PAUSE_GROUPS = [['players', 'Players'], ['flight', 'Flight'], ['world', 'World'], ['practice', 'Practice'], ['dev', 'Dev']];
 
 const MISSION_WORDS = [
   [/meteor|asteroid|comet|space ?rock/, 'meteor'],

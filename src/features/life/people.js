@@ -43,11 +43,11 @@ export const DRAW_FAR = 650;
 const HALF_RATE = 220;
 
 /** Which part of the body a vertex is (aRig.x). */
-export const PART = Object.freeze({ body: 0, head: 1, armUp: 2, armLow: 3, legUp: 4, legLow: 5, roller: 6, pack: 7, satchel: 8, vest: 9, hat: 10, longHair: 11, ears: 12, hair: 13, visor: 14 });
+export const PART = Object.freeze({ body: 0, head: 1, armUp: 2, armLow: 3, legUp: 4, legLow: 5, roller: 6, pack: 7, satchel: 8, vest: 9, hat: 10, longHair: 11, ears: 12, hair: 13, visor: 14, skirt: 15, jacket: 16, brim: 17 });
 /** What colours it (aRig.z): the person's palette, or 6: only the vertex colour. */
-export const TINT = Object.freeze({ shirt: 0, trousers: 1, skin: 2, hair: 3, accent: 4, bag: 5, fixed: 6, sleeve: 7, shin: 8 });
+export const TINT = Object.freeze({ shirt: 0, trousers: 1, skin: 2, hair: 3, accent: 4, bag: 5, fixed: 6, sleeve: 7, shin: 8, skirt: 9 });
 /** The bits of a person's flags. */
-export const WEAR = Object.freeze({ vest: 1, hat: 2, longHair: 4, shortSleeves: 8, shorts: 16, phone: 32, ears: 64 });
+export const WEAR = Object.freeze({ vest: 1, hat: 2, longHair: 4, shortSleeves: 8, shorts: 16, phone: 32, ears: 64, skirt: 128, jacket: 256, brim: 512, beanie: 1024, dress: 2048 });
 
 /** Shirt, trousers, the extras per outfit (plan.js OUTFIT). */
 const OUTFITS = [
@@ -61,7 +61,10 @@ const OUTFITS = [
   { shirt: 0x252b33, trousers: 0x252b33, accent: 0x252b33, wear: 0 }, // terminal staff: dark suit
 ];
 const SHIRTS = [0xc8453b, 0x2f6fbd, 0x3a8f63, 0xd9a02e, 0x7a4fb0, 0xe4e4e0, 0x2b9c9a, 0x30343a, 0xa8552c, 0x74838f, 0xd96f93, 0x1f3b66, 0x55606b, 0xb9a98c];
-const TROUSERS = [0x2b3444, 0x4e3e30, 0x35587f, 0x3e3e3e, 0x626a75, 0xb8a98c, 0x1d1d1f, 0x31405a];
+const TROUSERS = [0x2b3444, 0x4e3e30, 0x35587f, 0x3e3e3e, 0x626a75, 0xb8a98c, 0x1d1d1f, 0x31405a, 0x5f7fa6, 0x8a8f78, 0xd2c8b4, 0x6b5a48];
+/** Jackets and coats, and skirts. */
+const JACKETS = [0x1f2a3a, 0x26282c, 0x8a6a45, 0x4a5540, 0x6a7078, 0x3f5f8a, 0x6e2a2e, 0xb9b0a0, 0x2f4a44];
+const SKIRTS = [0x26282c, 0x7a2f3a, 0x2f4f7a, 0xb8a98c, 0x4a6a55, 0xc8553a, 0x6a4a7a];
 const SKIN = [0xf0ccb0, 0xe2b48f, 0xc99468, 0xa87349, 0x825433, 0x5c3a22];
 const HAIR = [0x2a1b12, 0x45291a, 0x74461f, 0xbf9346, 0x151515, 0x8f8f8f, 0xa8522a];
 const CASES = [0x1f2a3a, 0x7c1d28, 0x2a568f, 0x30343a, 0xb8a98c, 0x2a6044];
@@ -182,7 +185,7 @@ export function figureGeometry(detail = 2) {
   const f = new Figure();
   const s = detail >= 2 ? 9 : detail === 1 ? 7 : 5;
   const limb = detail >= 2 ? 7 : detail === 1 ? 6 : 4;
-  const { body, head, armUp, armLow, legUp, legLow, roller, pack: backpack, satchel, vest, hat, longHair, ears, hair, visor } = PART;
+  const { body, head, armUp, armLow, legUp, legLow, roller, pack: backpack, satchel, vest, hat, longHair, ears, hair, visor, skirt, jacket, brim } = PART;
   const SILVER = 0xdfe4e6;
   const DARK = 0x1d2024;
 
@@ -224,6 +227,17 @@ export function figureGeometry(detail = 2) {
   if (detail >= 1) {
     f.tube([{ y: 1.1, rx: 0.176, rz: 0.121 }, { y: 1.15, rx: 0.183, rz: 0.126 }], s, vest, 0, TINT.fixed, SILVER);
     f.tube([{ y: 1.27, rx: 0.2, rz: 0.134, z: -0.005 }, { y: 1.32, rx: 0.206, rz: 0.134, z: -0.005 }], s, vest, 0, TINT.fixed, SILVER);
+  }
+
+  if (detail >= 1) {
+    // Clothes for the street (not on Low): a skirt to the knee; a jacket, open, the shirt showing down
+    // its front; the brim of a sun hat.
+    f.tube([{ y: 1.1, rx: 0.163, rz: 0.108 }, { y: 0.92, rx: 0.2, rz: 0.14 }, { y: 0.58, rx: 0.235, rz: 0.2 }], s, skirt, 0, TINT.skirt);
+    f.tube([{ y: 0.86, rx: 0.2, rz: 0.134 }, { y: 0.98, rx: 0.19, rz: 0.13 }, { y: 1.1, rx: 0.176, rz: 0.12 }, { y: 1.24, rx: 0.192, rz: 0.13, z: -0.005 }, { y: 1.37, rx: 0.206, rz: 0.13, z: -0.005 }, { y: 1.455, rx: 0.17, rz: 0.098 }], s, jacket, 0, TINT.accent);
+    f.box(0.085, 0.5, 0.02, 0, 1.17, -0.128, jacket, 0, TINT.shirt);
+    f.box(0.012, 0.46, 0.024, -0.048, 1.15, -0.128, jacket, 0, TINT.fixed, 0x2a2c30);
+    f.box(0.012, 0.46, 0.024, 0.048, 1.15, -0.128, jacket, 0, TINT.fixed, 0x2a2c30);
+    f.tube([{ y: 1.7, rx: 0.2, rz: 0.21, z: 0.004 }, { y: 1.715, rx: 0.105, rz: 0.115, z: 0.004 }], s, brim, 0, TINT.accent);
   }
 
   for (const side of [-1, 1]) {
@@ -277,15 +291,17 @@ const RIG_PARS = /* glsl */ `
     float flags = iLook.y;
     float bag = iLook.w;
     bool none = (part > 5.5 && part < 6.5 && bag != 1.0) || (part > 6.5 && part < 7.5 && bag != 2.0) || (part > 7.5 && part < 8.5 && bag != 3.0)
-      || (part > 8.5 && part < 9.5 && bitOf(flags, 1.0) < 0.5) || (part > 9.5 && part < 10.5 && bitOf(flags, 2.0) < 0.5)
+      || (part > 8.5 && part < 9.5 && bitOf(flags, 1.0) < 0.5) || (part > 9.5 && part < 10.5 && bitOf(flags, 2.0) + bitOf(flags, 512.0) + bitOf(flags, 1024.0) < 0.5)
       || (part > 10.5 && part < 11.5 && (bitOf(flags, 4.0) < 0.5 || bitOf(flags, 2.0) > 0.5)) || (part > 11.5 && part < 12.5 && bitOf(flags, 64.0) < 0.5)
-      || (part > 13.5 && bitOf(flags, 2.0) < 0.5);
+      || (part > 13.5 && part < 14.5 && bitOf(flags, 2.0) < 0.5) || (part > 14.5 && part < 15.5 && bitOf(flags, 128.0) < 0.5)
+      || (part > 15.5 && part < 16.5 && bitOf(flags, 256.0) < 0.5) || (part > 16.5 && bitOf(flags, 512.0) < 0.5);
     if (none) { p = vec3(0.0, 1.2, 0.0); return; }
     float ph = iPose.x + (side > 0.0 ? 3.14159265 : 0.0);
     if (part > 1.5 && part < 3.5) {
       // Arm: swinging against its own leg, the elbow a little bent; sat, hands on the knees.
-      float swing = -sin(ph) * 0.42 * walk;
-      float elbow = 0.14 + walk * (0.18 + 0.22 * max(0.0, sin(ph)));
+      // (Further forward than back, the forearm coming up as it does.)
+      float swing = (-sin(ph) * 0.36 + 0.05) * walk;
+      float elbow = 0.14 + walk * (0.2 + 0.3 * max(0.0, -sin(ph)));
       if (bag == 1.0 && side > 0.0) { swing = -0.34 * max(walk, 0.5); elbow = 0.1; }
       if (bitOf(flags, 32.0) > 0.5 && side < 0.0 && walk < 0.5) { swing = 0.5; elbow = 2.35; }
       swing = mix(swing, 0.42, sit);
@@ -297,8 +313,9 @@ const RIG_PARS = /* glsl */ `
       n = rotX(n, swing);
     } else if (part > 3.5 && part < 5.5) {
       // Leg: the hip swings it, the knee folds on the way through.
-      float swing = sin(ph) * 0.44 * walk;
-      float knee = -walk * (0.1 + 0.95 * pow(max(0.0, cos(ph)), 2.0));
+      // (A stride reaches further in front of the hip than behind it; the knee gives a little as the foot lands.)
+      float swing = (sin(ph) * 0.4 + 0.05) * walk;
+      float knee = -walk * (0.08 + 0.95 * pow(max(0.0, cos(ph)), 2.0) + 0.12 * max(0.0, sin(ph)));
       swing = mix(swing, 1.5, sit);
       knee = mix(knee, -1.5, sit);
       vec3 hp = vec3(side * 0.095, 0.93, 0.0);
@@ -314,8 +331,24 @@ const RIG_PARS = /* glsl */ `
       n = rotX(n, tip);
       p += vec3(0.32, 0.0, mix(0.1, 0.42, walk));
     }
-    // The body rises and falls a little on each step (the feet stay down).
-    if (part < 3.5 || part > 6.5) p.y += abs(sin(iPose.x)) * 0.02 * walk;
+    if (part > 14.5 && part < 15.5) {
+      // A skirt: sat, it lies along the thighs.
+      vec3 hp = vec3(0.0, 0.93, 0.0);
+      p = hp + rotX(p - hp, 1.3 * sit);
+      n = rotX(n, 1.3 * sit);
+    }
+    if (part < 3.5 || part > 6.5) {
+      // The body rises and falls a little on each step (the feet stay down), leans into the walk, the
+      // weight going over the foot that is down and the shoulders turning against the hips.
+      p.y += abs(sin(iPose.x)) * 0.02 * walk;
+      p.x += sin(iPose.x) * 0.012 * walk;
+      float up = clamp((p.y - 0.95) / 0.5, 0.0, 1.0);
+      float turn = sin(iPose.x) * 0.07 * walk * up * (part > 0.5 && part < 1.5 ? 0.3 : 1.0);
+      float ct = cos(turn), st = sin(turn);
+      p.xz = vec2(p.x * ct - p.z * st, p.x * st + p.z * ct);
+      n.xz = vec2(n.x * ct - n.z * st, n.x * st + n.z * ct);
+      p.z -= up * 0.025 * walk;
+    }
   }
 `;
 
@@ -330,7 +363,10 @@ const RIG_COLOUR = /* glsl */ `
     else if (tint < 4.5) pal = unpackRGB(iLook.x);
     else if (tint < 5.5) pal = unpackRGB(iLook.z);
     else if (tint > 6.5 && tint < 7.5) pal = bitOf(iLook.y, 8.0) > 0.5 ? unpackRGB(iCol.z) : unpackRGB(iCol.x);
-    else if (tint > 7.5) pal = bitOf(iLook.y, 16.0) > 0.5 ? unpackRGB(iCol.z) : unpackRGB(iCol.y);
+    else if (tint > 7.5 && tint < 8.5) pal = bitOf(iLook.y, 16.0) > 0.5 ? unpackRGB(iCol.z) : unpackRGB(iCol.y);
+    else if (tint > 8.5) pal = bitOf(iLook.y, 2048.0) > 0.5 ? unpackRGB(iCol.x) : unpackRGB(iLook.x);
+    // A jacket's sleeves are the jacket's.
+    if (aRig.x > 1.5 && aRig.x < 3.5 && (tint < 0.5 || (tint > 6.5 && tint < 7.5)) && bitOf(iLook.y, 256.0) > 0.5) pal = unpackRGB(iLook.x);
     vColor.rgb *= pal * iPose.w;
   }
 `;
@@ -349,7 +385,7 @@ function rigged(mat, colour, indoor = false) {
         .replace('#include <color_vertex>', `#include <color_vertex>\n${RIG_COLOUR}`);
     }
   };
-  mat.customProgramCacheKey = () => (indoor ? 'crowd-rig-in-v1' : colour ? 'crowd-rig-v1' : 'crowd-rig-depth-v1');
+  mat.customProgramCacheKey = () => (indoor ? 'crowd-rig-in-v2' : colour ? 'crowd-rig-v2' : 'crowd-rig-depth-v2');
   return mat;
 }
 
@@ -405,7 +441,7 @@ export class Crowd {
       if (rnd() < 0.15) wear |= WEAR.shorts;
       if (rnd() < 0.18) wear |= WEAR.phone;
       if (rnd() < 0.08) wear |= WEAR.hat;
-      this.looks.push({
+      const look = {
         shirt: pack(pick(SHIRTS)),
         trousers: pack(pick(TROUSERS)),
         skin: pack(pick(SKIN)),
@@ -416,7 +452,30 @@ export class Crowd {
         bag2: r < 0.3 ? 2 : r < 0.5 ? 3 : 0,
         wear,
         height: 0.92 + rnd() * 0.13,
-      });
+        build: 1,
+      };
+      if (!this.simple) {
+        // Street clothes and a build of their own, from the person's number (so `rnd` is asked for no more than it was).
+        const h = (k) => {
+          const v = Math.sin((i + 1) * 12.9898 + k * 78.233) * 43758.5453;
+          return v - Math.floor(v);
+        };
+        look.build = 0.92 + h(1) * 0.2;
+        const hatted = (look.wear & WEAR.hat) !== 0;
+        if (h(2) < 0.3) {
+          look.wear = (look.wear | WEAR.jacket) & ~WEAR.shortSleeves;
+          look.accent = pack(JACKETS[Math.floor(h(3) * JACKETS.length)]);
+        }
+        if (h(4) < 0.16 && !(look.wear & WEAR.shorts)) {
+          // A skirt (its own colour, or the jacket's), or a dress in the shirt's; bare legs.
+          look.wear |= WEAR.skirt | (h(5) < 0.45 && !(look.wear & WEAR.jacket) ? WEAR.dress : 0) | WEAR.longHair;
+          if (!(look.wear & WEAR.jacket)) look.accent = pack(SKIRTS[Math.floor(h(6) * SKIRTS.length)]);
+          look.trousers = look.skin;
+        }
+        if (!hatted && h(7) < 0.06) look.wear |= WEAR.brim;
+        else if (!hatted && h(7) < 0.13) look.wear |= WEAR.beanie;
+      }
+      this.looks.push(look);
     }
     this.outfits = OUTFITS.map((o) => (o ? { shirt: pack(o.shirt), trousers: pack(o.trousers), accent: pack(o.accent), wear: o.wear } : null));
     this.drawn = 0;
@@ -494,7 +553,8 @@ export class Crowd {
     const sit = p.sit ? 1 : 0;
     _q.setFromAxisAngle(UP, p.yaw + (p.moving ? 0 : Math.sin(p.shift) * 0.08));
     _p.set(p.x, p.y - sit * 0.46 * k, p.z);
-    _s.set(k, k, k);
+    const b = k * look.build;
+    _s.set(b, k, b);
     _m.compose(_p, _q, _s);
     this.mesh.setMatrixAt(n, _m);
     const a = this.pose4.array;

@@ -78,6 +78,7 @@ const E = {
   /** The declarative watch: which (def, step) scenes have been raised this flight. */
   raised: new Set(),
   watching: null,
+  city: null,
 };
 
 const D2R = Math.PI / 180;
@@ -522,6 +523,9 @@ registerExtension({
 
   update(sim, dt) {
     if (!(dt > 0)) return;
+    // Trouble off the airfield: the town's services (./emergency-scene/city.js), fetched now.
+    const a = sim.aircraft;
+    if (!E.city && a && (a.crashed || a.ditched || a.failures?.engine || a.fuel <= 0 || a.worstDamage > 0.3)) E.city = import('./emergency-scene/city.js').then((m) => m.start(sim), () => 0);
     const def = sim.mode === 'mission' && sim.runner ? sim.runner.def : null;
     if (def && Array.isArray(def.scenes) && sim.runner.status === 'running') {
       if (E.watching !== def) {

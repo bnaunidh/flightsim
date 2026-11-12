@@ -19,7 +19,13 @@ What it does to each download (gltfio.py reads model and image data only):
      the airframe's own main colour, the blacks kept black): no image ships,
      so no national insignia, serial or unit marking survives; the glazing
      (by its material, or by its blue in the texture) is its own part;
-  4. Marine One: dark green with the white top, as the game's own VH-3D.
+  4. Marine One: dark green with the white top, as the game's own VH-3D;
+  5. surface detail, as the airliners have (detail.py): ambient occlusion
+     baked in Blender from the shape alone, and the game's OWN panel seams,
+     frame rivet rows and lap joints drawn over the airframe -- a normal and a
+     roughness map on one fresh atlas (TEXCOORD_2), packed KTX2 + meshopt.
+     Geometry only goes into the bake; no source image is read for it, so no
+     insignia can come back that way. `--plain` writes the old flat file.
 """
 import os, sys
 import numpy as np
@@ -237,7 +243,80 @@ def bake(mid):
     return parts, out_hubs, s
 
 
-def run(mid, view=None):
+# Detail (owner, 2026-11-11: "the same baked AO + panel detail as the airliners"): a 1024 atlas
+# for a 16 m machine is the airliners' texel density; seams at helicopter spacing (frames ~1 m,
+# rivet rows half that), from 1.2 m behind the nose to 0.6 m short of the tail, lap joints level
+# at a third and seven-tenths of the body's height. The drawn maps
+# go out at 512 (the AO stays 1024): a 1024 UASTC normal map alone tripled the file.
+HELI_DETAIL = dict(mapSize=512, bakeAO=dict(size=1024, samples=192, distance=1.2, floor=0.26),
+                   surface=dict(radome=1.2, tailCone=0.6, splice=1.02, lapHeights=[0.32, 0.7], strength=1.2, panelVar=0.1))
+
+
+def shrink(png, size, normal=False):
+    """A drawn map at `size` px (the download: a 1024 UASTC normal map alone was 700 KB)."""
+    import io
+    from PIL import Image
+    im = Image.open(io.BytesIO(png)).convert('RGB').resize((size, size), Image.LANCZOS)
+    a = np.asarray(im, dtype=np.float64) / 255.0
+    if normal:
+        n = a * 2 - 1
+        n /= np.maximum(np.linalg.norm(n, axis=-1, keepdims=True), 1e-6)
+        a = n * 0.5 + 0.5
+    b = io.BytesIO()
+    Image.fromarray(np.round(a * 255).astype(np.uint8), 'RGB').save(b, 'PNG', optimize=True)
+    return b.getvalue()
+
+
+def weld(d):
+    """A part's triangles (T, per-corner N, per-triangle C) as indexed vertices: P, N, C, I."""
+    P = d['T'].reshape(-1, 3)
+    N = d['N'].reshape(-1, 3)
+    C = np.repeat(d['C'], 3, axis=0) if d['C'].ndim == 2 else d['C'].reshape(-1, 3)
+    key = np.concatenate([np.round(P / 1e-4).astype(np.int64), np.clip(np.round(N * 127), -127, 127).astype(np.int64),
+                          np.round(C * 255).astype(np.int64)], 1)
+    _, first, inv = np.unique(key, axis=0, return_index=True, return_inverse=True)
+    return P[first], N[first], C[first], inv.reshape(-1, 3)
+
+
+def run_detail(mid, parts, extras, rules):
+    """The file with baked AO and the game's panel detail (detail.py), packed."""
+    import detail as D
+    from process import write_glb_detail
+    opts = HELIS[mid].get('detail', HELI_DETAIL)
+    prims = []
+    for role, d in parts.items():
+        P, N, C, I = weld(d)
+        prims.append(dict(role=role, P=P, N=N, C=C, I=I, UV1=None, maps={}))
+    bo = opts['bakeAO']
+    print(f'    baking AO ({bo["size"]} px, {bo["samples"]} samples) in Blender...')
+    prims, raw_png, ao_png, geo = D.bake_ao(prims, mid, bo, geo=True)
+    nrm_png, mr_png, info = D.surface_maps(geo, opts.get('surface', {}))
+    if opts.get('mapSize'):
+        nrm_png, mr_png = shrink(nrm_png, opts['mapSize'], True), shrink(mr_png, opts['mapSize'])
+    images = [(f'{mid}_ao_baked', ao_png, 'image/png'), (f'{mid}_surface_normal', nrm_png, 'image/png'), (f'{mid}_surface_rough', mr_png, 'image/png')]
+    clamp = {'wrapS': 33071, 'wrapT': 33071}
+    for p in prims:
+        p['maps'] = {'occlusion': dict(img=0, texCoord=2, strength=1.0, sampler=clamp)}
+        if p['role'] == 'body':
+            p['maps']['normal'] = dict(img=1, texCoord=2, scale=1.0, sampler=clamp)
+            p['maps']['mr'] = dict(img=2, texCoord=2, sampler=clamp)
+    extras = dict(extras, detail=sorted({k for p in prims for k in p['maps']}),
+                  changes=extras['changes'] + '; ambient occlusion baked from the shape and the game\'s own panel seams drawn (detail.py)')
+    raw = os.path.join(D.LOGDIR, f'{mid}-raw.glb')
+    os.makedirs(D.LOGDIR, exist_ok=True)
+    raw_size = write_glb_detail(raw, mid, prims, images, extras, prefix='rs_', rules=rules)
+    path = os.path.join(OUT, f'{mid}.glb')
+    size = D.pack(raw, path, set(extras['detail']))
+    D.write_log(mid, {'id': mid, 'source': HELIS[mid]['src'], 'kept': [], 'dropped': ['every source texture (helis.py paints per triangle)'],
+                      'baked': {'occlusion': f'{bo["size"]} px, from the airframe\'s shape only (Blender Cycles AO, {bo["samples"]} samples, {bo["distance"]} m)'},
+                      'drawn': {'normal + roughness': 'the game\'s own panel seams, frame rivet rows and lap joints (detail.py surface_maps)', **info},
+                      'bytes': {'raw (PNG, float)': raw_size, 'packed (KTX2 + meshopt)': size}, 'triangles': extras['triangles']})
+    D.contact_sheet(mid, [(f'{mid} baked AO', ao_png), (f'{mid} drawn normal', nrm_png), (f'{mid} drawn roughness', mr_png)],
+                    os.path.join(D.LOGDIR, f'{mid}-maps.png'))
+    return size
+
+
+def run(mid, view=None, plain=False):
     cfg = HELIS[mid]
     parts, hubs, s = bake(mid)
     allP = np.concatenate([d['T'].reshape(-1, 3) for d in parts.values()])
@@ -249,7 +328,7 @@ def run(mid, view=None):
               'hubs': {k: [round(float(x), 3) for x in v] for k, v in hubs.items()}}
     scenery.OUT = OUT
     rules = {'body': dict(rough=0.62, metal=0.15), 'glass': dict(rough=0.08, metal=0.4)}
-    size = write(mid, parts, {'parts': rules}, None, extras)
+    size = write(mid, parts, {'parts': rules}, None, extras) if plain else run_detail(mid, parts, extras, rules)
     print(f'{mid}: {sum(tris.values())} tris {tris}, {size / 1024:.0f} KB, length {hi[2] - lo[2]:.2f} (real {cfg["length"]}), '
           f'x {lo[0]:.2f}..{hi[0]:.2f} y {lo[1]:.2f}..{hi[1]:.2f} z {lo[2]:.2f}..{hi[2]:.2f}, hubs {extras["hubs"]} (scale {s:.4g})')
     if view:
@@ -267,9 +346,11 @@ def run(mid, view=None):
 if __name__ == '__main__':
     args = sys.argv[1:]
     view = None
+    plain = '--plain' in args
+    args = [a for a in args if a != '--plain']
     if '--view' in args:
         k = args.index('--view')
         view = args[k + 1]
         args = args[:k] + args[k + 2:]
     for mid in (args or list(HELIS)):
-        run(mid, view.replace('%', mid) if view else None)
+        run(mid, view.replace('%', mid) if view else None, plain)

@@ -76,6 +76,17 @@ export const NATURAL_EVENTS = [
     },
   },
   {
+    id: 'tsunami',
+    name: 'Tsunami',
+    hint: 'The sea draws back, then a great wave comes ashore',
+    warn: 'Tsunami warning — get airborne or get to high ground',
+    kind: 'bad',
+    duration: 240,
+    apply(sim) {
+      import('../features/tsunami.js').then((m) => m.start(sim));
+    },
+  },
+  {
     id: 'stormCell',
     name: 'Storm cell',
     hint: 'A thunderstorm rolls over the field',

@@ -2495,7 +2495,7 @@ const LIGHTS_WITH_CLOUD_SHADE = THREE.ShaderChunk.lights_fragment_begin.replace(
  */
 export const SEA_CUT = { value: 0 };
 export function seaCut(renderer, scene, camera) {
-  SEA_CUT.value = camera.position.y > 0 ? 0 : -1e9;
+  SEA_CUT.value = camera.position.y > 0 ? SEA_CUT.d || 0 : -1e9;
 }
 
 /**
@@ -2615,7 +2615,7 @@ export function makeTerrainMaterial(quality = 'high') {
         // reads as a hard staircase from the air. Fading the last few metres
         // into the shallow-water colour hides the geometry under a gradient
         // that matches the sea it meets.
-        float wet = 1.0 - smoothstep(-0.6, 3.2, vGroundY);
+        float wet = 1.0 - smoothstep(-0.6, 3.2, vGroundY - max(uSeaCut, -9.0));
         blended.rgb = mix(blended.rgb, uShallow, wet * 0.88);
         // Snow on the high ground. The splat noise ragged-edges the snow line
         // so it follows the terrain instead of drawing a contour ring, and

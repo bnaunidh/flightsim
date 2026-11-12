@@ -356,9 +356,22 @@ for (const id of IDS.filter((k) => R.REAL_MODELS[k].heli)) {
   const buf = read(path);
   const bytes = statSync(new URL(path, ROOT)).size;
   totalBytes += bytes;
-  ok(`${id}: under 700 KB`, bytes < 700 * 1024, `${(bytes / 1024).toFixed(0)} KB`);
   const j = glbJson(buf);
-  ok(`${id}: no images, textures or samplers in the file (no insignia can come with it)`, !j.images && !j.textures && !j.samplers && !/image\/(png|jpeg|webp)/.test(buf.toString('latin1')));
+  // Packed (helis.py, 2026-11-11): baked AO and the game's own drawn panel maps, as the airliners.
+  const packedHeli = isPacked(j);
+  ok(`${id}: under ${packedHeli ? 900 : 700} KB`, bytes < (packedHeli ? 900 : 700) * 1024, `${(bytes / 1024).toFixed(0)} KB`);
+  if (!packedHeli) ok(`${id}: no images, textures or samplers in the file (no insignia can come with it)`, !j.images && !j.textures && !j.samplers && !/image\/(png|jpeg|webp)/.test(buf.toString('latin1')));
+  else {
+    // No insignia can come with it: no source image is ever read for these maps, only the shape.
+    const imgs = j.images || [];
+    ok(`${id}: only its three detail maps, all KTX2 (AO baked from the shape, normal + roughness drawn by detail.py), none PNG/JPEG/WebP`,
+      imgs.length === 3 && imgs.every((im) => im.mimeType === 'image/ktx2' && /_(ao_baked|surface_normal|surface_rough)$/.test(im.name || '')) && !/image\/(png|jpeg|webp)/.test(buf.toString('latin1')),
+      imgs.map((im) => `${im.name} ${im.mimeType}`).join(', '));
+    const texKeys = (j.materials || []).flatMap((m) => [...Object.keys(m.pbrMetallicRoughness || {}).filter((k) => /Texture$/.test(k)), ...['normalTexture', 'occlusionTexture', 'emissiveTexture'].filter((k) => m[k])]);
+    ok(`${id}: no colour or glow map, detail maps on the atlas's own UVs (2)`, texKeys.every((k) => ['normalTexture', 'occlusionTexture', 'metallicRoughnessTexture'].includes(k)) &&
+      (j.materials || []).flatMap((m) => [m.normalTexture, m.occlusionTexture, (m.pbrMetallicRoughness || {}).metallicRoughnessTexture].filter(Boolean)).every((t) => t.texCoord === 2), texKeys.join(', '));
+    ok(`${id}: still painted per vertex (COLOR_0) -- the game's colours, no texture`, (j.meshes || []).flatMap((m) => m.primitives).every((p) => p.attributes.COLOR_0 !== undefined && p.attributes.TEXCOORD_0 === undefined));
+  }
   const names = [...(j.materials || []).map((m) => m.name), ...(j.nodes || []).map((n) => n.name), ...(j.meshes || []).map((m) => m.name)];
   ok(`${id}: only its own part names`, names.every((n) => [id, 'body', 'glass', 'rs_body', 'rs_glass'].includes(n)), names.join(', '));
   const extras = (j.nodes.find((n) => n.name === id) || {}).extras || {};
@@ -366,7 +379,7 @@ for (const id of IDS.filter((k) => R.REAL_MODELS[k].heli)) {
   const author = def.author.split(' (')[0];
   ok(`${id}: credited on the Credits screen and in LICENSES.md`, credits.includes(author) && credits.includes(def.url.split('/').pop()) && licences.includes(def.file) && licences.includes(author));
   const G = HELI_GEOMETRY[id];
-  const parsed = parseGLB(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), { warn: () => {} });
+  const parsed = await parseAny(buf);
   const box = new THREE.Box3().setFromObject(parsed.scene);
   ok(`${id}: the real length (within 2%)`, Math.abs((box.max.z - box.min.z) / G.length - 1) < 0.02, `${(box.max.z - box.min.z).toFixed(2)} m against ${G.length}`);
   ok(`${id}: no rotor in the file (narrower than the disc by far)`, box.max.x - box.min.x < G.R, `${(box.max.x - box.min.x).toFixed(2)} m wide, rotor ${G.R} m`);

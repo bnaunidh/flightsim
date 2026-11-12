@@ -392,9 +392,17 @@ function ride(carrier, way, dt, ocean) {
     roll = ((stbd - port) / hw) * U.rollGain;
   }
   const k = 1 - Math.exp(-Math.max(0, dt) / U.lag);
-  way.heave += (clamp(heave, -U.maxHeave, U.maxHeave) - way.heave) * k;
-  way.pitch += (clamp(pitch, -U.maxPitchDeg * D2R, U.maxPitchDeg * D2R) - way.pitch) * k;
-  way.roll += (clamp(roll, -U.maxRollDeg * D2R, U.maxRollDeg * D2R) - way.roll) * k;
+  /*
+   * A tsunami (sea-state.js) is not a swell she lies still on: it is the sea
+   * itself going up, hundreds of metres long, and she goes up with all of it
+   * and leans to its face — twice her usual limits at most, and back again.
+   */
+  const sea = ocean && ocean.sea;
+  const tsu = sea && sea.tsu && ocean.tsunamiAt ? Math.abs(ocean.tsunamiAt(way.pose.x, way.pose.z).h) : 0;
+  const lean = 1 + Math.min(1, tsu / 3);
+  way.heave += (clamp(heave, -U.maxHeave - tsu, U.maxHeave + tsu) - way.heave) * k;
+  way.pitch += (clamp(pitch, -U.maxPitchDeg * lean * D2R, U.maxPitchDeg * lean * D2R) - way.pitch) * k;
+  way.roll += (clamp(roll, -U.maxRollDeg * lean * D2R, U.maxRollDeg * lean * D2R) - way.roll) * k;
 }
 
 /** Move a world point with the ship: from the old pose to the new one. */

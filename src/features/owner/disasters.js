@@ -90,7 +90,7 @@ export const SWEEP_EVERY_MS = 1000;
 /** The ones that hunt the target; everything else is weather, everywhere. */
 export const HUNTERS = Object.freeze(['tornado', 'lightning', 'meteors', 'wildfire']);
 
-const ICONS = { birdStrike: '🐦', ashCloud: '🌋' };
+const ICONS = { birdStrike: '🐦', ashCloud: '🌋', tsunami: '🌊' };
 for (const s of SUMMON) ICONS[s.id] = s.icon;
 
 /** The disasters the owner may send, from the game's own lists, with a picture a kid can find. */

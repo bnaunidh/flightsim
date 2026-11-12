@@ -9,7 +9,9 @@
  */
 import { check as aircrew } from './aircrew.browser.js';
 import { check as atcPopup } from './atc-popup.browser.js';
+import { check as atcPlus } from './atc-plus.browser.js';
 import { check as photoMode } from './photo-mode.browser.js';
+import { check as photoStudio } from './photo-studio.browser.js';
 import { check as airFuel } from './air-fuel.browser.js';
 import { check as airport } from './airport.browser.js';
 import { check as airportLook } from './airport-look.browser.js';
@@ -49,6 +51,7 @@ import { check as menus } from './menus.browser.js';
 import { check as hangar } from './hangar.browser.js';
 import { check as planePaint } from './plane-paint.browser.js';
 import { check as realModels } from './real-models.browser.js';
+import { check as planeDepth } from './plane-depth.browser.js';
 import { check as realLivery } from './real-livery.browser.js';
 import { check as real747Steady } from './real-747-steady.browser.js';
 import { check as uiPolish } from './ui-polish.browser.js';
@@ -72,6 +75,7 @@ import { check as bughunt } from './bughunt.browser.js';
 import { check as bughuntV80 } from './bughunt-v80.browser.js';
 import { check as landingBounce } from './landing-bounce.browser.js';
 import { check as streetLife } from './street-life.browser.js';
+import { check as betterModels } from './better-models.browser.js';
 import { check as traffic } from './traffic.browser.js';
 import { check as weapons } from './weapons.browser.js';
 import { check as minimapGhosts } from './minimap-ghosts.browser.js';
@@ -90,6 +94,7 @@ import { check as crashSweep } from './crash-sweep.browser.js';
 import { check as crashFreeze } from './crash-freeze.browser.js';
 import { check as crashLag } from './crash-lag.browser.js';
 import { check as replayQa } from './replay-qa.browser.js';
+import { check as replayPlayer } from './replay-player.browser.js';
 import { check as missionAircraft } from './mission-aircraft.browser.js';
 import { check as birdStrike } from './bird-strike.browser.js';
 import { check as walkAway } from './walk-away.browser.js';
@@ -99,14 +104,17 @@ import { check as hudWins } from './hud-wins.browser.js';
 import { check as touchCoverage } from './touch-coverage.browser.js';
 import { check as ipadDemo } from './ipad-demo.browser.js';
 import { check as ditching } from './ditching.browser.js';
+import { check as cityEmergency } from './city-emergency.browser.js';
 import { check as waterCrash } from './water-crash.browser.js';
 import { check as floatplane } from './floatplane.browser.js';
 import { check as carrierWaves } from './carrier-waves.browser.js';
+import { check as tsunami } from './tsunami.browser.js';
 import { check as edition } from './edition.browser.js';
 import { check as cams } from './cams.browser.js';
 import { check as tomReady } from './tom-ready.browser.js';
 import { check as tomm1zLag } from './tomm1z-lag.browser.js';
 import { check as tomm1zSound } from './tomm1z-sound.browser.js';
+import { check as soundscape } from './soundscape.browser.js';
 import { check as tomm1zThrottle } from './tomm1z-throttle.browser.js';
 import { check as tomm1zHeli } from './tomm1z-heli.browser.js';
 import { check as tomm1zAtc } from './tomm1z-atc.browser.js';
@@ -120,6 +128,7 @@ import { check as where } from './where.browser.js';
 import { check as airspace } from './airspace.browser.js';
 import { check as cockpitCam } from './cockpit-cam.browser.js';
 import { check as cockpitDress } from './cockpit-dress.browser.js';
+import { check as cockpitPlus } from './cockpit-plus.browser.js';
 import { check as hudReadouts } from './hud-readouts.browser.js';
 import { check as realTime } from './real-time.browser.js';
 import { check as give } from './give.browser.js';
@@ -159,6 +168,8 @@ export const CHECKS = [
   { id: 'crash-lag', check: crashLag },
   // After crash-freeze: the instant replay attacked — every way of crashing, flown in, on six types, and its bar on this screen.
   { id: 'replay-qa', check: replayQa },
+  // After replay-qa: the replay's player — the bar, the speeds, the five cameras (each under the flicker probe), hiding the controls, and a video of it saved.
+  { id: 'replay-player', check: replayPlayer },
   // The bird strike's flock: in first, the hit under half a second later, once.
   { id: 'bird-strike', check: birdStrike },
   // Out on foot, the empty aeroplane's crash is news, not a reset.
@@ -201,6 +212,8 @@ export const CHECKS = [
   { id: 'plane-paint', check: planePaint },
   // After the hangar: the real airliner models — worn when picked, off from the seat and in a crash, on the podium, offline, Low's cost.
   { id: 'real-models', check: realModels },
+  // The shade and the small parts on the aeroplanes the game draws itself (Medium up).
+  { id: 'plane-depth', check: planeDepth },
   // Every real model wears a livery, not a white shell (wave 18: "the 747 real model is plain white").
   { id: 'real-livery', check: realLivery },
   { id: 'real-747-steady', check: real747Steady },
@@ -229,7 +242,10 @@ export const CHECKS = [
   { id: 'multiplayer-plane', check: multiplayerPlane },
   { id: 'aircrew', check: aircrew },
   { id: 'atc-popup', check: atcPopup },
+  // More ATC: clearance to landing with readbacks, ILS vectors, MAYDAY holding the traffic, the touch buttons.
+  { id: 'atc-plus', check: atcPlus },
   { id: 'photo-mode', check: photoMode },
+  { id: 'photo-studio', check: photoStudio },
   // After aircrew: the walking pilot knocked down by anything that moves (the pilot brief).
   { id: 'pilot', check: pilot },
   { id: 'rocket', check: rocket },
@@ -274,10 +290,13 @@ export const CHECKS = [
   // After touch-coverage: the iPad class demo — Safari's zoom into small inputs, the long-press callout, 44 px targets, the weak-device answer for an iPad.
   { id: 'ipad-demo', check: ipadDemo },
   { id: 'ditching', check: ditching },
+  { id: 'city-emergency', check: cityEmergency },
   { id: 'water-crash', check: waterCrash },
   { id: 'floatplane', check: floatplane },
   // The moving sea and the carrier under way: the drawn swell is the one that is answered, the deck carries what is on it.
   { id: 'carrier-waves', check: carrierWaves },
+  // After carrier-waves: the tsunami is a wave on that same sea, and the carrier rides it.
+  { id: 'tsunami', check: tsunami },
   // The two editions (core/edition.js): on thankdapro no screen shows T-Pose Harrison or Air Massimo; elsewhere both are there.
   { id: 'edition', check: edition },
   // After everything that flies: KIT-B — where a Free Flight starts (the picker), the ambient
@@ -299,6 +318,8 @@ export const CHECKS = [
   // After tom-ready: the Tomm1z video pass (.claude/devtools/briefs/tomm1z-video.md) — the lag, the menu's sound, a quadrant lever on an engine start.
   { id: 'tomm1z-lag', check: tomm1zLag },
   { id: 'tomm1z-sound', check: tomm1zSound },
+  // The soundscape (features/soundscape*): each family's engine layers, the space, rain and hail, thunder, others' engines. Rendered offline, muted.
+  { id: 'soundscape', check: soundscape },
   { id: 'tomm1z-throttle', check: tomm1zThrottle },
   { id: 'tomm1z-heli', check: tomm1zHeli },
   { id: 'tomm1z-atc', check: tomm1zAtc },
@@ -322,6 +343,7 @@ export const CHECKS = [
   // The cockpit camera: numpad snaps, the wheel's zoom, a TCA sidestick's hat looking round, the look remembered per aircraft.
   { id: 'cockpit-cam', check: cockpitCam },
   { id: 'cockpit-dress', check: cockpitDress },
+  { id: 'cockpit-plus', check: cockpitPlus },
   { id: 'hud-readouts', check: hudReadouts },
   { id: 'real-time', check: realTime },
   { id: 'give', check: give },
@@ -341,6 +363,8 @@ export const CHECKS = [
   { id: 'landing-bounce', check: landingBounce },
   // Highways (the barrier, lane lines, a flyover on every link), the cars on them and people in town (World Map, High and Low; Kestrel). Puts the map back.
   { id: 'street-life', check: streetLife },
+  // Better cars, street clothes, shopfronts and balconies at High; at Low what was there before (World Map). Puts the quality back.
+  { id: 'better-models', check: betterModels },
   // Last: it rebinds keys through Settings (and puts the player's back after).
   { id: 'keybinds', check: keybinds },
 ];

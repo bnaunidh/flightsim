@@ -316,7 +316,7 @@ function populateGround(sim, counts) {
     A.cars = null;
   }
   const tier = tierOf(sim);
-  const layer = new CarLayer(A.group, W.net, { shadows: shadowsFor(sim), variety: tier !== 'low', ground: heightAt });
+  const layer = new CarLayer(A.group, W.net, { shadows: shadowsFor(sim), variety: tier !== 'low', ground: heightAt, better: tier !== 'low', rich: tier === 'high' || tier === 'ultra' });
   for (const g of counts.ground) {
     if (!g.count) continue;
     if (g.on && typeof g.on === 'object' && g.on.park) {

@@ -137,9 +137,10 @@ export const SLOWMO = { scale: 0.3, hold: 0.55, ease: 0.3 };
  * back again, 6-19% (nose-first, 6-13%) on its own — but 18-27% where the
  * self-test crashes it, over the line one run in five (the v63 repair). Twice
  * as far back: 11-12% there. The crash cam stands back too (crashes.js
- * CRASH_CAM_BACK_REDUCED), less far: it holds 14-16% there.
+ * CRASH_CAM_BACK_REDUCED), less far: it holds 14-16% there. `speed` is the
+ * default pace, x real time (the player offers 0.25x-2x).
  */
-export const REPLAY = { pre: 1.5, post: 6.5, speed: 0.55, hz: 30, backReduced: 2 };
+export const REPLAY = { pre: 1.5, post: 6.5, speed: 0.5, hz: 30, backReduced: 2 };
 
 const S = {
   sim: null,
@@ -155,8 +156,6 @@ const S = {
   rec: null,
   replay: null,
   lastDebrief: null,
-  label: null,
-  bar: null,
   warned: false,
   clock: 0,
   /** The player's aeroplane going down slowly in the sea (startSink). */
@@ -2514,10 +2513,11 @@ function frame(sim, dt, inner, args) {
  * Owner, 2026-10-17: "the replay showed the crash damage (wreck, smoke,
  * scorch) BEFORE the crash happened" — this is the fix.
  *
- * Controls: a bar at the bottom (−2 s, pause / play, +2 s, a scrubber you
- * can drag, close) that works with a mouse or a finger, and while it plays
- * Space pauses, ← → step two seconds, Escape closes (replay-only keys: they
- * exist only while a replay is on; the registry's keys are for flying).
+ * Controls: the player (./breakup/replay-player.js, fetched on demand) — a
+ * bar with play / pause, ±5 s, a timeline with the hit and the fires marked,
+ * the pace (0.25x-2x), five cameras, hiding the controls, and a video of it
+ * to save — by mouse, finger or key (replay-only keys: they exist only while
+ * a replay is on; the registry's keys are for flying).
  * ------------------------------------------------------------------ */
 
 /**
@@ -2763,8 +2763,8 @@ export function canReplay() {
   return !!(r && r.sealed && r.frames.length > 3 && r.model && r.model.parent);
 }
 
-/** Seconds a seek button or arrow key jumps. */
-export const REPLAY_STEP = 2;
+/** Seconds a skip button or arrow key jumps. */
+export const REPLAY_STEP = 5;
 
 /**
  * Scrubbing must not become a strobe. A seek that lands just after a flash
@@ -2796,6 +2796,17 @@ function flashMoments(r) {
 function flashAt(r, t) {
   for (const f of flashMoments(r)) if (t >= f && t < f + REPLAY_FLASH_WINDOW) return f;
   return null;
+}
+
+/**
+ * With Reduce flashing on, the crash plays without its flashes (the light and
+ * the pops' flare; the fire and smoke are there) when it plays faster than
+ * it happened — two flashes half a second apart come a quarter of a second
+ * apart at 2x — or when the player's camera stands nearer than the orbit's
+ * stood-back distance (R.near, set by the camera each frame).
+ */
+function calmFlashes(R) {
+  return !!(FLASH.reduce && (R.speed > 1 + 1e-6 || R.near));
 }
 
 /** Set the wreck's flash (and the pops') on or off for what the replay shows now. */
@@ -2848,6 +2859,10 @@ export function startReplay(sim, fromDebrief = false) {
     wreckT: null,
     seeks: 0,
     quiet: false,
+    // The player's (./breakup/replay-player.js): the pace (x real time), its camera standing close, holding the end.
+    speed: REPLAY.speed,
+    near: false,
+    hold: false,
     // Where the airframe lies in the live world: poseAt moves it, and closing early left it there (R2).
     livePose: { pos: r.model.position.clone(), quat: r.model.quaternion.clone(), matrix: r.model.matrix.clone(), auto: r.model.matrixAutoUpdate },
   };
@@ -2866,6 +2881,7 @@ export function startReplay(sim, fromDebrief = false) {
   r.model.visible = true;
   // Pieces the recording never saw (none, normally) stay where they lie.
   seekReplay(sim, pre);
+  loadReplayPlayer().catch(() => {});
   if (fromDebrief && sim.menus && typeof sim.menus.hide === 'function') sim.menus.hide();
   showLabel(true);
   S.stats.replays++;
@@ -2943,7 +2959,9 @@ export function seekReplay(sim, t) {
   R.seeks++;
   const r = S.rec;
   const f = r ? flashAt(r, R.t) : null;
-  if (f === null) replayFlashes(R, true);
+  const calm = calmFlashes(R);
+  if (f === null) replayFlashes(R, !calm);
+  else if (calm) replayFlashes(R, false);
   else if (flashAt(r, from) !== f) replayFlashes(R, !FLASH.reduce || _replayFlash.allow(wallSeconds()));
   if (S.fx) S.fx.noFlare = !!R.quiet;
   fxSeek(R.t);
@@ -3035,20 +3053,28 @@ function wreckSeek(t) {
 }
 
 /** The airframe and every piece where the recording has them at time t. Allocates nothing. */
-function poseAt(t) {
+/** The airframe's pose in the recording at replay time t (before the hit from the moments kept before it). */
+function airframeAt(t, pos, quat) {
   const r = S.rec;
-  if (!r || !r.model) return;
-  // The airframe: before the hit from the moments kept before it, after from the recording.
+  if (!r) return false;
   if (t < 0 && r.pre.length) {
-    if (!sample(r.pre, t, _rp, _rq) || t > r.pre[r.pre.length - 1].t) {
+    if (!sample(r.pre, t, pos, quat) || t > r.pre[r.pre.length - 1].t) {
       // Between the last kept moment and the hit itself.
       const a = r.pre[r.pre.length - 1];
       const b = r.frames[0];
       const k = clamp((t - a.t) / (b.t - a.t || 1), 0, 1);
-      _rp.copy(a.pos).lerp(b.pos, k);
-      _rq.copy(a.quat).slerp(b.quat, k);
+      pos.copy(a.pos).lerp(b.pos, k);
+      quat.copy(a.quat).slerp(b.quat, k);
     }
-  } else sample(r.frames, t, _rp, _rq);
+    return true;
+  }
+  return sample(r.frames, t, pos, quat);
+}
+
+function poseAt(t) {
+  const r = S.rec;
+  if (!r || !r.model) return;
+  airframeAt(t, _rp, _rq);
   const model = r.model;
   if (model.matrixAutoUpdate) {
     model.position.copy(_rp);
@@ -3085,33 +3111,46 @@ function playReplay(sim, dt) {
     return;
   }
   if (!R.paused) {
-    const adv = dt * REPLAY.speed;
+    const adv = dt * R.speed;
     const was = flashAt(r, R.t);
     R.t += adv;
     const f = flashAt(r, R.t);
-    if (f === null) replayFlashes(R, true);
+    const calm = calmFlashes(R);
+    if (f === null) replayFlashes(R, !calm);
     else if (f !== was) {
-      // Played into a flash: it shows (the recording's own pace), and counts as the last one.
-      replayFlashes(R, true);
-      if (FLASH.reduce) _replayFlash.last = wallSeconds();
-    }
+      // Played into a flash: it shows (the recording's own pace or slower), and counts as the last one.
+      replayFlashes(R, !calm);
+      if (FLASH.reduce && !calm) _replayFlash.last = wallSeconds();
+    } else if (calm) replayFlashes(R, false);
     if (R.t > R.end + 0.4) {
-      endReplay(sim, true);
-      return;
+      // The player holds the last frame while it records or the video panel is open; otherwise the replay is over.
+      if (!R.hold) {
+        endReplay(sim, true);
+        return;
+      }
+      R.t = R.end;
+      R.paused = true;
     }
     // Forwards: the effects whose moment has come, then the ones alive move on; the wreck steps to the same time.
+    if (S.fx) S.fx.noFlare = !!R.quiet;
     fxEmitUpTo(R.t);
     stepFx(adv);
+    if (S.fx) S.fx.noFlare = false;
     wreckSeek(Math.min(R.t, R.end));
   }
   const t = Math.min(R.t, R.end);
   poseAt(t);
   if (S.scars) S.scars.showUpTo(t);
-  // The camera, orbiting — from the airframe towards where it all ended up.
+  // The camera, orbiting — from the airframe towards where it all ended up — unless the player has another one chosen.
   const cam = sim.camera;
   if (cam) {
     if (!R.paused) R.ang += dt * 0.32;
     _rlook.copy(_rp).lerp(R.centre, clamp((t - R.start) / Math.max(0.5, R.end - R.start), 0, 1) * 0.6);
+    if (PL.mod && PL.mod.camera(sim, R, t, dt, _rp, _rq, _rlook)) {
+      syncBar();
+      return;
+    }
+    R.near = false;
     const x = _rlook.x + Math.cos(R.ang) * R.radius;
     const z = _rlook.z + Math.sin(R.ang) * R.radius;
     let y = Math.max(_rlook.y, surface(_rlook.x, _rlook.z, {}).y) + R.radius * 0.38 + 2;
@@ -3125,164 +3164,45 @@ function playReplay(sim, dt) {
   syncBar();
 }
 
-/* ---- the replay's own screen: a tag at the top, a bar of controls at the bottom ---- */
+/* ---- the replay's own screen: the player (./breakup/replay-player.js) ---- */
+
+/**
+ * The player — the bar, the cameras, the video — is its own module, fetched
+ * when there is a replay to watch (the crash screen offering one, or a
+ * replay starting): nothing of it is in the first load. Until it is here the
+ * replay plays with the orbiting camera and no bar.
+ */
+const PL = { mod: null, p: null };
+const PLAYER_API = {
+  S, REPLAY, FLASH, seek: seekReplay, pause: pauseReplay, end: endReplay, airframeAt, flashMoments, surface, isKey, keyName, extLayer,
+  step: () => REPLAY_STEP,
+  span: () => (SPEC && SPEC.wingSpan) || 11,
+};
+export function loadReplayPlayer() {
+  if (!PL.p) {
+    PL.p = import('./breakup/replay-player.js').then((m) => {
+      m.attach(PLAYER_API);
+      PL.mod = m;
+      if (S.replay) showLabel(true);
+      return m;
+    });
+    PL.p.catch(() => { PL.p = null; });
+  }
+  return PL.p;
+}
 
 function syncBar() {
-  const R = S.replay;
-  if (!R || !S.bar) return;
-  const k = clamp((R.t - R.start) / (R.end - R.start || 1), 0, 1);
-  S.bar.style.width = `${Math.round(1000 * k) / 10}%`;
-  if (S.ui) {
-    if (S.ui.pause) {
-      S.ui.pause.textContent = R.paused ? '▶' : '❚❚';
-      const label = `${R.paused ? 'Play' : 'Pause'}${S.ui.pauseKey ? ` (${S.ui.pauseKey})` : ''}`;
-      S.ui.pause.setAttribute('aria-label', label);
-      S.ui.pause.title = label;
-    }
-    if (S.ui.time) S.ui.time.textContent = `${R.t < 0 ? '−' : '+'}${Math.abs(R.t).toFixed(1)} s`;
-  }
-}
-
-/** Replay time for a point on the track, 0..1 across it. */
-function trackTime(k) {
-  const R = S.replay;
-  if (!R) return 0;
-  return R.start + clamp(k, 0, 1) * (R.end - R.start);
-}
-
-function buildUi() {
-  const el = document.createElement('div');
-  el.className = 'breakup-replay-label';
-  Object.assign(el.style, {
-    position: 'absolute', left: '50%', top: '12%', transform: 'translateX(-50%)',
-    padding: '6px 18px 10px', borderRadius: '10px', font: '800 14px/1.2 system-ui, sans-serif',
-    letterSpacing: '0.18em', color: '#fff', background: 'rgba(200,40,40,0.88)',
-    border: '2px solid rgba(255,255,255,0.85)', pointerEvents: 'none', display: 'none', zIndex: '41',
-  });
-  el.textContent = 'INSTANT REPLAY';
-  const track = document.createElement('div');
-  Object.assign(track.style, { position: 'absolute', left: '10px', right: '10px', bottom: '3px', height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,0.3)', overflow: 'hidden' });
-  const bar = document.createElement('div');
-  Object.assign(bar.style, { height: '100%', width: '0%', background: '#fff' });
-  track.appendChild(bar);
-  el.appendChild(track);
-  extLayer().appendChild(el);
-  S.label = el;
-  S.bar = bar;
-
-  // The controls: big enough for a thumb (44 px), and they take the pointer (the layer does not).
-  const ui = document.createElement('div');
-  ui.className = 'breakup-replay-bar';
-  Object.assign(ui.style, {
-    position: 'absolute', left: '50%', bottom: 'max(14%, calc(env(safe-area-inset-bottom, 0px) + 72px))', transform: 'translateX(-50%)',
-    width: 'min(560px, 92vw)', display: 'none', alignItems: 'center', gap: '4px', padding: '6px', borderRadius: '14px',
-    background: 'rgba(14,16,20,0.78)', border: '1px solid rgba(255,255,255,0.25)', color: '#fff',
-    font: '700 15px/1 system-ui, sans-serif', pointerEvents: 'auto', zIndex: '42', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none',
-  });
-  const button = (what, text, label) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.dataset.replay = what;
-    b.textContent = text;
-    b.setAttribute('aria-label', label);
-    b.title = label;
-    Object.assign(b.style, {
-      minWidth: '44px', height: '44px', padding: '0 10px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.3)',
-      background: 'rgba(255,255,255,0.1)', color: '#fff', font: 'inherit', fontSize: '16px', cursor: 'pointer', touchAction: 'manipulation',
-    });
-    ui.appendChild(b);
-    return b;
-  };
-  const back = button('back', '«', `Back ${REPLAY_STEP} s (←)`);
-  const pause = button('pause', '❚❚', 'Pause (Space)');
-  const fwd = button('fwd', '»', `Forward ${REPLAY_STEP} s (→)`);
-  const scrub = document.createElement('div');
-  scrub.dataset.replay = 'track';
-  scrub.setAttribute('role', 'slider');
-  scrub.setAttribute('aria-label', 'Replay time');
-  Object.assign(scrub.style, { flex: '1', height: '44px', display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '0 4px', touchAction: 'none' });
-  const rail = document.createElement('div');
-  Object.assign(rail.style, { position: 'relative', width: '100%', height: '8px', borderRadius: '4px', background: 'rgba(255,255,255,0.25)', overflow: 'hidden', pointerEvents: 'none' });
-  const fill = document.createElement('div');
-  Object.assign(fill.style, { height: '100%', width: '0%', background: '#ff5a5a' });
-  rail.appendChild(fill);
-  // The moment of the hit, marked on the rail.
-  const hit = document.createElement('div');
-  Object.assign(hit.style, { position: 'absolute', top: '0', bottom: '0', width: '2px', background: 'rgba(255,255,255,0.9)', left: '0%' });
-  rail.appendChild(hit);
-  scrub.appendChild(rail);
-  ui.appendChild(scrub);
-  const time = document.createElement('span');
-  Object.assign(time.style, { minWidth: '46px', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontSize: '12px', opacity: '0.9' });
-  ui.appendChild(time);
-  const close = button('close', '✕', 'Close the replay (Esc)');
-  extLayer().appendChild(ui);
-
-  // Mirror the top bar onto the rail's fill: one source of truth (S.bar).
-  const mirror = new MutationObserver(() => { fill.style.width = bar.style.width; });
-  mirror.observe(bar, { attributes: true, attributeFilter: ['style'] });
-
-  const seekBy = (d) => {
-    if (!S.replay) return;
-    seekReplay(S.sim, S.replay.t + d);
-  };
-  back.addEventListener('click', () => seekBy(-REPLAY_STEP));
-  fwd.addEventListener('click', () => seekBy(REPLAY_STEP));
-  pause.addEventListener('click', () => pauseReplay(S.sim));
-  close.addEventListener('click', () => endReplay(S.sim, true));
-  // Drag the rail: pointer events work for a mouse and a finger alike.
-  let dragging = false;
-  let wasPaused = false;
-  const at = (ev) => {
-    const rect = rail.getBoundingClientRect();
-    return rect.width > 0 ? (ev.clientX - rect.left) / rect.width : 0;
-  };
-  scrub.addEventListener('pointerdown', (ev) => {
-    if (!S.replay) return;
-    dragging = true;
-    wasPaused = S.replay.paused;
-    S.replay.paused = true;
-    try { scrub.setPointerCapture(ev.pointerId); } catch (e) { /* no capture: moves still arrive while over it */ }
-    seekReplay(S.sim, trackTime(at(ev)));
-    ev.preventDefault();
-  });
-  scrub.addEventListener('pointermove', (ev) => {
-    if (!dragging || !S.replay) return;
-    seekReplay(S.sim, trackTime(at(ev)));
-  });
-  const release = () => {
-    if (!dragging) return;
-    dragging = false;
-    if (S.replay) S.replay.paused = wasPaused;
-    syncBar();
-  };
-  scrub.addEventListener('pointerup', release);
-  scrub.addEventListener('pointercancel', release);
-  scrub.addEventListener('lostpointercapture', release);
-
-  S.ui = { el: ui, back, pause, fwd, scrub, rail, fill, hit, time, close };
+  if (PL.mod && S.replay) PL.mod.sync();
 }
 
 function showLabel(on) {
   try {
-    if (!S.label) {
-      if (!on) return;
-      buildUi();
-    }
-    S.label.style.display = on ? 'block' : 'none';
     // The replay's bar sits where the radio subtitle and the coach do: the
     // tower's "we have lost sight of you" ran under the buttons (w16-tom).
     // They step out while it plays (styles/main.css, html.is-replaying).
     if (typeof document !== 'undefined' && document.documentElement) document.documentElement.classList.toggle('is-replaying', !!on);
-    if (S.ui) {
-      S.ui.el.style.display = on ? 'flex' : 'none';
-      if (on && S.replay) {
-        const R = S.replay;
-        labelBarKeys(S.sim);
-        S.ui.hit.style.left = `${Math.round(1000 * clamp((0 - R.start) / (R.end - R.start || 1), 0, 1)) / 10}%`;
-        syncBar();
-      }
-    }
+    if (PL.mod) PL.mod.show(on, S.sim);
+    else if (on) loadReplayPlayer().catch(() => {});
   } catch (e) {
     /* no page: the replay still plays */
   }
@@ -3290,13 +3210,14 @@ function showLabel(on) {
 
 /**
  * The replay's own keys, only while one plays (registry actions, so Settings
- * can move them; their defaults share Space, the arrows and Esc with flying,
- * which is a designed share: they listen only while a replay is on). Returns
- * true when the key was one of them.
+ * can move them; their defaults share Space, the arrows, Esc and a few
+ * letters with flying, which is a designed share: they listen only while a
+ * replay is on). Returns true when the key was one of them.
  */
-const REPLAY_KEYS = ['replayPause', 'replayBack', 'replayForward', 'replayClose'];
+const REPLAY_KEYS = ['replayPause', 'replayBack', 'replayForward', 'replayClose', 'replayCamera', 'replaySlower', 'replayFaster', 'replayHideUi', 'replayVideo'];
 function replayKey(sim, code) {
   if (!S.replay) return false;
+  if (PL.mod && PL.mod.key(sim, code)) return true;
   if (isKey(sim, 'replayPause', code)) {
     pauseReplay(sim);
     return true;
@@ -3314,19 +3235,6 @@ function replayKey(sim, code) {
     return true;
   }
   return false;
-}
-
-/** The bar's tooltips name the keys the player actually has. */
-function labelBarKeys(sim) {
-  if (!S.ui) return;
-  const set = (b, text) => {
-    b.title = text;
-    b.setAttribute('aria-label', text);
-  };
-  set(S.ui.back, `Back ${REPLAY_STEP} s (${keyName('replayBack', sim)})`);
-  set(S.ui.fwd, `Forward ${REPLAY_STEP} s (${keyName('replayForward', sim)})`);
-  set(S.ui.close, `Close the replay (${keyName('replayClose', sim)})`);
-  S.ui.pauseKey = keyName('replayPause', sim);
 }
 
 /* ------------------------------------------------------------------ *
@@ -3357,6 +3265,7 @@ function wrapDebrief(sim) {
     try {
       S.lastDebrief = opts;
       if (live() && o && canReplay() && Date.now() - S.rec.at < 120000 && Array.isArray(o.actions) && !o.actions.some((a) => a && a.breakupReplay)) {
+        loadReplayPlayer().catch(() => {});
         o = { ...o, actions: [...o.actions, { label: sim.touch ? 'Watch the replay' : `Watch the replay (${keyName('crashReplay', sim)})`, breakupReplay: true, onClick: () => startReplay(sim, true) }] };
       }
     } catch (e) {
@@ -3575,6 +3484,11 @@ registerExtension({
     replayBack: { label: `Instant replay: back ${REPLAY_STEP} seconds`, group: 'View', ctx: ['plane', 'heli'], default: ['ArrowLeft'] },
     replayForward: { label: `Instant replay: forward ${REPLAY_STEP} seconds`, group: 'View', ctx: ['plane', 'heli'], default: ['ArrowRight'] },
     replayClose: { label: 'Instant replay: close', group: 'View', ctx: ['plane', 'heli'], default: ['Escape'] },
+    replayCamera: { label: 'Instant replay: next camera (orbit, chase, cockpit, tower, free look)', group: 'View', ctx: ['plane', 'heli'], default: ['KeyC'] },
+    replaySlower: { label: 'Instant replay: slower', group: 'View', ctx: ['plane', 'heli'], default: ['Comma'] },
+    replayFaster: { label: 'Instant replay: faster', group: 'View', ctx: ['plane', 'heli'], default: ['Period'] },
+    replayHideUi: { label: 'Instant replay: hide / show the controls', group: 'View', ctx: ['plane', 'heli'], default: ['KeyH'] },
+    replayVideo: { label: 'Instant replay: save it as a video', group: 'View', ctx: ['plane', 'heli'], default: ['KeyV'] },
     crashSkip: { label: 'Skip to the crash card', group: 'View', ctx: ['plane', 'heli'], default: ['Space'] },
   },
 
@@ -3599,6 +3513,9 @@ registerExtension({
         if (S.replay && !ev.repeat && replayKey(S.sim, ev.code)) {
           ev.preventDefault();
           ev.stopImmediatePropagation();
+          // A key sent to window itself reaches the game's input first (extensions.js says why): Esc paused the game.
+          const inp = S.sim.input;
+          if (inp && inp.pressedThisFrame) inp.pressedThisFrame.delete(ev.code);
           return;
         }
         if (S.sim.state !== 'debrief') return;
@@ -3719,7 +3636,7 @@ registerExtension({
     },
     {
       label: 'Instant replay',
-      hint: 'Plays your last crash again with the camera orbiting the wreck (the ` key does the same).',
+      hint: 'Plays your last crash again — orbit, chase, cockpit, tower or free-look cameras, and a video to save (the ` key does the same).',
       run(sim) {
         startReplay(sim, sim && sim.state === 'debrief');
       },
@@ -3738,7 +3655,7 @@ export function breakupDebug() {
     pieces: S.pieces.map((p) => ({ zones: p.zones.join('+'), owner: p.owner, asleep: p.body.sleeping, attached: !!p.attach, hanging: !!(p.attach && p.attach.hang), wet: p.body.wet, sunk: p.body.sunk, skips: p.body.skips, y: Math.round(p.body.pos.y * 10) / 10, x: Math.round(p.body.pos.x), z: Math.round(p.body.pos.z), engine: p.engine, fuel: p.fuel })),
     stats: { ...S.stats, alive: S.pieces.length, awake: S.pieces.filter((p) => !p.body.sleeping).length, fx: S.fx ? { ...S.fx.stats, busy: S.fx.busy } : null },
     replaying: !!S.replay,
-    replay: S.replay ? { t: S.replay.t, start: S.replay.start, end: S.replay.end, paused: S.replay.paused, fxCursor: S.replay.fxCursor, wreckT: S.replay.wreckT, seeks: S.replay.seeks, wreckHeld: !!(S.replay.wreck && S.replay.wreck.held) } : null,
+    replay: S.replay ? { t: S.replay.t, start: S.replay.start, end: S.replay.end, paused: S.replay.paused, speed: S.replay.speed, near: S.replay.near, quiet: S.replay.quiet, fxCursor: S.replay.fxCursor, wreckT: S.replay.wreckT, seeks: S.replay.seeks, wreckHeld: !!(S.replay.wreck && S.replay.wreck.held) } : null,
     recording: S.rec ? { t0: S.rec.t0, done: S.rec.done, sealed: S.rec.sealed, frames: S.rec.frames.length, tracks: S.rec.tracks.length, fx: S.rec.fx.length, pre: S.rec.pre.length, wreck: S.rec.wreck ? { inWater: S.rec.wreck.inWater } : null } : null,
     canReplay: canReplay(),
     hull: S.hull ? { t: Math.round(S.hull.t * 100) / 100, mode: S.hull.mode, zones: S.hull.zones.length, points: S.hull.body.hull.length / 3, speed: Math.round(S.hull.body.vel.length() * 10) / 10, dist: Math.round(S.hull.dist * 10) / 10, skips: S.hull.skips, contacts: S.hull.body.contacts, wet: S.hull.body.wet, asleep: S.hull.body.sleeping, pos: S.hull.body.pos.toArray().map((v) => Math.round(v * 10) / 10) } : null,
@@ -3777,5 +3694,7 @@ export function breakupDebug() {
     seekReplay,
     pauseReplay,
     REPLAY_STEP,
+    loadReplayPlayer,
+    player: () => (PL.mod ? PL.mod.debug() : null),
   };
 }

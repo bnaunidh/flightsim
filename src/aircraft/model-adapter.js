@@ -31,6 +31,7 @@ import { resolveLamps } from './systems.js';
 import { blenderAircraftModel } from '../vehicles/blender-models.js';
 // REAL MODELS: a downloaded airframe worn over the fleet model, when that type's file is here (real-models.js).
 import { wearRealModel } from './real-models.js';
+import { qualityRank } from './model-quality.js';
 
 /**
  * The pack is loaded eagerly at module scope so there is no first-frame stall
@@ -150,6 +151,20 @@ function paintFor(livery, type) {
  * Build an aeroplane. Same signature as the original factory, on purpose.
  */
 export function createAircraftModel(opts = {}) {
+  return deepen(buildModel(opts), opts.type || getAircraft(DEFAULT_AIRCRAFT_ID));
+}
+
+// PLANE DEPTH (plane-depth.js, on demand): Medium up, never on a weak device.
+let pd;
+function deepen(m, t) {
+  const n = typeof window == 'object' && navigator;
+  if (!n || qualityRank() < 1 || /iPad|iPhone|CrOS|Node/.test(n.userAgent) || n.maxTouchPoints > 1 || n.hardwareConcurrency < 5) return m;
+  if (pd && pd.deepen) pd.deepen(m, t);
+  else (pd ||= import('./plane-depth.js').then((x) => (pd = x))).then((x) => x.deepen(m, t), () => {});
+  return m;
+}
+
+function buildModel(opts) {
   // The same default the original factory applies. main.js builds a placeholder
   // aeroplane before it knows which one you picked, and passes no type at all.
   const type = opts.type || getAircraft(DEFAULT_AIRCRAFT_ID);

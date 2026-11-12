@@ -182,6 +182,7 @@ function remember(mat, base) {
     metalness: mat.metalness,
     envMapIntensity: mat.envMapIntensity,
     color: mat.color.clone(),
+    normalScale: mat.normalScale ? mat.normalScale.clone() : null,
     ...base,
   };
   return mat;
@@ -267,27 +268,28 @@ export function registerWetSurface(mat, { puddles = null } = {}) {
   return mat;
 }
 
-/*
- * The puddle map only counts when the field is wet.
- *
- * three.js multiplies the roughness by the map in every pixel, so a map with
- * dark dips made mirror puddles on a bone-dry apron (the first cut of this,
- * at sunset: a black apron with the sun in it). The chunk that reads the map
- * is replaced by one that fades the map in with the wetness uniform: dry,
- * the roughness is the material's own; soaked, the dips are glass.
- */
+// Puddles fade in with uWet (dry dips were mirrors); wet flattens the grain + specular AA: no glitter.
+const WET_PUDDLE_GLSL = `float roughnessFactor=roughness,wetPool=0.;
+#ifdef USE_ROUGHNESSMAP
+float wetG=texture2D(roughnessMap,vRoughnessMapUv).g;
+roughnessFactor*=mix(1.,wetG,uWet);
+wetPool=clamp((.94-wetG)*1.6,0.,1.)*uWet;
+#endif`;
+const WET_NORMAL_GLSL = `#include <normal_fragment_maps>
+normal=normalize(mix(normal,nonPerturbedNormal,wetPool));
+vec3 wetDn=fwidth(normal);
+roughnessFactor=max(sqrt(roughnessFactor*roughnessFactor+min(2.*dot(wetDn,wetDn),.3)),uWet*.34*smoothstep(90.,650.,length(vViewPosition)));`;
+
 function gatePuddles(mat) {
   mat.userData.puddlesGated = true;
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uWet = WET_UNIFORM;
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform float uWet;')
-      .replace(
-        '#include <roughnessmap_fragment>',
-        'float roughnessFactor = roughness;\n#ifdef USE_ROUGHNESSMAP\n  vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );\n  roughnessFactor *= mix( 1.0, texelRoughness.g, uWet );\n#endif'
-      );
+      .replace('#include <roughnessmap_fragment>', WET_PUDDLE_GLSL)
+      .replace('#include <normal_fragment_maps>', WET_NORMAL_GLSL);
   };
-  mat.customProgramCacheKey = () => 'wetPuddles';
+  mat.customProgramCacheKey = () => 'wetPuddles2';
   return mat;
 }
 
@@ -313,9 +315,10 @@ function applyWet(mat) {
   const w = wetness;
   mat.roughness = b.roughness + (0.3 - b.roughness) * w;
   mat.metalness = b.metalness + (0.1 - b.metalness) * w;
-  mat.envMapIntensity = b.envMapIntensity + (1.5 - b.envMapIntensity) * w;
+  mat.envMapIntensity = b.envMapIntensity + (1.05 - b.envMapIntensity) * w;
   _dark.copy(b.color).multiplyScalar(0.55);
   mat.color.copy(b.color).lerp(_dark, w);
+  if (b.normalScale) mat.normalScale.copy(b.normalScale).multiplyScalar(1 - 0.6 * w);
 }
 
 /**

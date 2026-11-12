@@ -132,6 +132,7 @@ function reprint(mat, w, h, paint) {
 /** A dial on a finished panel: a batched needle, no hub of its own (the face is painted once). */
 function dial(panel, { u, v, R, value, rate = 5, ...spec }) {
   const a = roundGauge(panel.ctx, panel.px(u), panel.py(v), panel.pr(R), spec);
+  if (panel._dial) panel._dial(u, v, R);
   const n = panel._needle(u, v, R * 0.82, R * 0.05);
   let cur = spec.min || 0;
   panel.live.push((s, dt, ac, env) => {
@@ -145,6 +146,7 @@ function chrono(panel, u, v, R, title = 'CHR') {
   const a = roundGauge(panel.ctx, panel.px(u), panel.py(v), panel.pr(R), {
     min: 0, max: 60, start: 0, sweep: 360, step: 5, major: 15, labels: [[15, '15'], [30, '30'], [45, '45']], labelSize: 16, title,
   });
+  if (panel._dial) panel._dial(u, v, R);
   const h = panel._needle(u, v, R * 0.5, R * 0.07);
   const m = panel._needle(u, v, R * 0.74, R * 0.055);
   const n = panel._needle(u, v, R * 0.84, R * 0.03);
@@ -375,7 +377,24 @@ export function dress(cp, sim) {
   return { draws, fill: fam === 'none' ? [] : collectFill(cp), level: -1 };
 }
 
-const D = { cp: null, now: null, sim: null };
+const D = { cp: null, now: null, sim: null, plus: null, plusFor: null, loading: null };
+
+/** features/cockpit-plus: the pilot, the bezels and the night, fetched the first time anyone sits in a cockpit. */
+function plusUp(cp, sim) {
+  if (!D.plus) {
+    D.loading = D.loading || import('./cockpit-plus/index.js').then((m) => (D.plus = m), (e) => console.warn('[cockpit-plus]', e));
+    return;
+  }
+  D.plusFor = cp;
+  const low = (sim.qualityBuilt || sim.settings.quality) === 'low';
+  const fill = D.now ? D.now.fill : [];
+  try {
+    cp.userData.plus = D.plus.plus(cp, sim, { fill, fillLevel, low });
+    if (D.now) D.now.fill = [];
+  } catch (e) {
+    console.warn('[cockpit-plus]', e);
+  }
+}
 
 registerExtension({
   id: 'cockpit-dress',
@@ -391,6 +410,7 @@ registerExtension({
         cp.userData.dress = D.now;
       }
     }
+    if (cp !== D.plusFor && cp.userData.family) plusUp(cp, sim);
     if (!D.now) return;
     const k = fillLevel(sim.weather);
     if (Math.abs(k - D.now.level) > 0.004) {

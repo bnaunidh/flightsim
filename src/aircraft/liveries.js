@@ -511,7 +511,8 @@ export const LIVERIES = [
     reg: 'N70SA',
     titling: 'OverSea',
     emblem: 'horizon',
-    fleet: ['a320', 'a321', 'b737', 'b787', 'a350', 'b777', 'q400', 'meridian'],
+    // The island's own airline, not styled after a real one: it may fly the A380 too (owner, 2026-11-11).
+    fleet: ['a320', 'a321', 'b737', 'b787', 'a350', 'b777', 'a380', 'q400', 'meridian'],
     style: {
       layout: 'two-tone',
       belly: '#0f6e8c',

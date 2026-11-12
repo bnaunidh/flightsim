@@ -139,7 +139,8 @@ function onEvent(sim, ev) {
     const word = fieldWord(z);
     if (!blocked) BANNER.push({ id: `asl:${z.id}`, title: 'LEAVING AIRSPACE', name: `${z.name}`, sub: '', quiet: true, prio: 0 });
     if (hush) setApproachField(null);
-    else A.pending = { t: 0.8, text: `${cs}, leaving ${word} airspace, frequency change approved. Good day.`, tries: 0, then: () => setApproachField(null) };
+    // With the ATC controller in (features/atc-plus.js), the hand-off names the centre: an instruction to read back.
+    else A.pending = { t: 0.8, text: `${cs}, leaving ${word} airspace, frequency change approved${sim.atcPlus ? `, contact Island Centre, ${sim.atcPlus.centre}` : ''}. Good day.`, tries: 0, then: () => setApproachField(null) };
     A.cur = null;
   }
 }

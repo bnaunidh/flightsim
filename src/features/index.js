@@ -31,6 +31,8 @@ import './hud-readouts.js';
 import './warnings.js';
 // The aeroplane heard from where you are, the switches, the seatbelt chime, the recorded layer.
 import './flight-sound.js';
+// After flight-sound: richer engines by family, where you hear them from, rain and hail hits, rolling thunder, the others' engines.
+import './soundscape.js';
 import './bird-strike.js';
 import './explosions.js';
 import './crashes.js';
@@ -50,6 +52,8 @@ import './wasted.js';
 // After wasted: anything that moves can knock you down now (a ragdoll), and WASTED shows it.
 import './knockdown.js';
 import './dev-console.js';
+// Dev mode's photo studio: only its door (the Dev tab, Alt+U, the hangar button); the studio is fetched when opened.
+import './photo-studio.js';
 import './runaway.js';
 import './staff.js';
 // Nunatak Reach's Site and ice (SCP Foundation content, CC BY-SA 3.0 — see LICENSE): the compound, the

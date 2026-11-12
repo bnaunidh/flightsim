@@ -58,6 +58,8 @@ async function run(sim, r, say) {
     A = await import('../../src/aircraft/model-adapter.js');
     TY = await import('../../src/aircraft/types.js');
     BM = await import('../../src/game/breakup-mesh.js');
+    // The replay's player is fetched on demand (the crash screen, a replay starting): here before the first crash.
+    await bu.loadReplayPlayer();
   } catch (err) {
     r.ok('breakup: the modules load', false, String(err && err.message));
     return;
@@ -253,7 +255,7 @@ async function run(sim, r, say) {
     r.ok('breakup: the pause button holds the replay (a tap on a phone, Space on a keyboard)', D().replay.paused && D().replay.t === tHeld);
     bar.querySelector('[data-replay="pause"]').click();
     bar.querySelector('[data-replay="back"]').click();
-    r.ok('breakup: the back button steps two seconds back (to the start of the pre-roll at the earliest)', !D().replay.paused && Math.abs(D().replay.t - Math.max(D().replay.start, tHeld - D().REPLAY_STEP)) < 1e-6, `${D().replay.t.toFixed(2)} (start ${D().replay.start.toFixed(2)})`);
+    r.ok(`breakup: the back button steps ${D().REPLAY_STEP} seconds back (to the start of the pre-roll at the earliest)`, !D().replay.paused && Math.abs(D().replay.t - Math.max(D().replay.start, tHeld - D().REPLAY_STEP)) < 1e-6, `${D().replay.t.toFixed(2)} (start ${D().replay.start.toFixed(2)})`);
     key(I.codesFor('crashReplay', sim)[0]);
     sim.step(0.2);
     r.ok('breakup: the key again ends it, and the label goes', !D().replaying && (!label || label.style.display === 'none'));

@@ -345,6 +345,9 @@ export function townGeometry(kind, rich) {
         // A parapet, and a shallow awning over the street.
         s.quad([-X, 0.33, Z + 0.22], [X, 0.33, Z + 0.22], [X, 0.42, Z], [-X, 0.42, Z], R.plain, 1);
         s.walls(-X, X, -Z, Z, 1, 1.06, R.plain, R.plain);
+        // The cooling for the shop, on the roof at the back.
+        s.walls(0.12, 0.34, -0.36, -0.14, 1, 1.13, R.plain, R.plain);
+        s.lid(0.12, 0.34, -0.36, -0.14, 1.13, R.dark);
       }
       break;
     case KIND.FLATS:
@@ -354,6 +357,20 @@ export function townGeometry(kind, rich) {
         s.walls(-X, X, -Z, Z, 1, 1.03, R.plain, R.plain);
         s.walls(-0.14, 0.14, -0.2, 0.2, 1, 1.1, R.plain, R.plain);
         s.lid(-0.14, 0.14, -0.2, 0.2, 1.1, R.flatRoof, 1);
+        // A water tank and two cooling units beside the stair head; balconies up the front, a slab and a
+        // solid rail to each, at the two middle windows of the three upper floors.
+        s.walls(0.24, 0.38, 0.06, 0.3, 1, 1.09, R.plain, R.plain);
+        s.lid(0.24, 0.38, 0.06, 0.3, 1.09, R.dark);
+        for (const x of [-0.4, -0.3]) {
+          s.walls(x, x + 0.07, -0.34, -0.2, 1, 1.045, R.plain, R.plain);
+          s.lid(x, x + 0.07, -0.34, -0.2, 1.045, R.dark);
+        }
+        for (let f = 1; f < 4; f++) {
+          for (const x of [-0.2, 0.04]) {
+            s.walls(x, x + 0.2, Z, Z + 0.07, f / 4 - 0.01, f / 4 + 0.075, R.plain, R.plain);
+            s.lid(x, x + 0.2, Z, Z + 0.07, f / 4 + 0.012, R.flatRoof, 1);
+          }
+        }
       }
       break;
     case KIND.GARAGE:
@@ -417,11 +434,16 @@ varying float vTownSeed;`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 {
   float num = sampledDiffuseColor.a;
-  float on = smoothstep(0.02, 0.06, num) * step(num, vTownSeed * 0.6 + 0.12);
+  float share = vTownSeed * 0.6 + 0.12;
+  float on = smoothstep(0.02, 0.06, num) * step(num, share);
+  // Far off a window is less than a pixel and the texture's own blur spreads its number over the wall, which lit
+  // whole walls from end to end. There the wall glows as much as its windows would between them, and no more.
+  float blur = smoothstep(2.5, 7.0, max(fwidth(vMapUv.x), fwidth(vMapUv.y)) * 512.0);
+  on = mix(on, min(1.0, num * 2.4) * share, blur);
   totalEmissiveRadiance += vec3(1.0, 0.72, 0.40) * on * uTownGlow * 0.62;
 }`);
   };
-  mat.customProgramCacheKey = () => `town-houses-${quality === 'low' ? 'l' : 's'}`;
+  mat.customProgramCacheKey = () => `town-houses2-${quality === 'low' ? 'l' : 's'}`;
   return mat;
 }
 

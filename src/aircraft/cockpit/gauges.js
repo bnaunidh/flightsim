@@ -527,7 +527,13 @@ export class GaugePanel {
   }
 
   _hub(u, v, r, z = 0.0055) {
+    this._dial(u, v, r / 0.085);
     return this._mesh(discGeo(r, 16), this.hubMat, u, v, z);
+  }
+
+  /** Where a round instrument is (cockpit-plus fits its bezel and glass). */
+  _dial(u, v, R) {
+    (this.dials || (this.dials = [])).push([u, v, R]);
   }
 
   /** A red OFF flag that shows when the instrument has no power. */
@@ -558,6 +564,7 @@ export class GaugePanel {
     const y = this.py(v);
     const r = this.pr(R);
     aiFace(ctx, x, y, r);
+    this._dial(u, v, R);
     // The fixed bank scale round the top of the dial, outside the ball.
     ctx.strokeStyle = TEXT;
     ctx.lineCap = 'butt';
@@ -685,6 +692,7 @@ export class GaugePanel {
 
   hi({ u, v, R }) {
     hiFace(this.ctx, this.px(u), this.py(v), this.pr(R));
+    this._dial(u, v, R);
     const tex = canvasTexture(cardCanvas());
     const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.12 });
     const card = this._mesh(discGeo(R * 0.86, 48), mat, u, v, 0.002, 'heading card');
@@ -699,6 +707,7 @@ export class GaugePanel {
 
   tc({ u, v, R }) {
     tcFace(this.ctx, this.px(u), this.py(v), this.pr(R));
+    this._dial(u, v, R);
     const sym = this._mesh(tcSymbolGeo(R), this.needleMat, u, v - R * 0.06, 0.004, 'turn aeroplane');
     sym.userData.dynamic = true;
     // The ball in its tube: the tube is painted at (x, y - 30 s) radius 0.9 r

@@ -53,7 +53,9 @@ The helicopters (`tools/real-models/helis.py`: `uh60`, `ch47`, `ah64`, and `vh3d
 One worn as the AW101 Merlin): every texture sampled to one colour per triangle and repainted
 in the game's colour for the type (no national insignia, serial or unit marking survives; the
 AW101's modelled 'ROYAL AIR FORCE' letters left out and its roundels painted over), the rotors
-removed (the game spins its own), scaled to the real length. The fighters (`f22`, `f35b`,
+removed (the game spins its own), scaled to the real length; ambient occlusion baked from the
+shape alone and the game's own panel seams and rivet rows drawn over it (`detail.py`), as the
+airliners have. The fighters (`f22`, `f35b`,
 `fa18`) as the A-10: no images, scaled at one scale from the real span, their own landing gear
 and pylons removed.
 

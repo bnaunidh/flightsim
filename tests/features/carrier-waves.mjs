@@ -65,7 +65,7 @@ const field = O.buildDepthField('high');
   ok('swell: the vertex shader is the formula checked here',
     /f = min\(f, min\(min\(texture2D\(uSwellDepth, uv \+ e\.xy\)/.test(v) && /float th = dot\(uSw\[i\]\.xy, p\) - uSw\[i\]\.z \* uSwellT \+ uSw\[i\]\.w;/.test(v)
     && /o\.z \+= a \* sin\(th\);/.test(v) && /o\.xy \+= a \* cos\(th\) \* uSw\[i\]\.xy;/.test(v)
-    && /return vec4\(o \* shore, shore\);/.test(v) && /wp\.y \+= sw\.z;/.test(v)
+    && /return vec4\(o \* shore, shore\);/.test(v) && /wp\.y \+= sw\.z \+ vTsu\.x;/.test(v)
     && v.includes(`smoothstep(${SEA.SHORE[0].toFixed(1)}, ${SEA.SHORE[1].toFixed(1)}, depth) * mix(${SEA.HARBOUR.toFixed(2)}, 1.0, mix(1.0, f.g, inside))`));
   const f32 = Math.fround;
   const glsl = (x, z) => {

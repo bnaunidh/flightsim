@@ -944,7 +944,8 @@ function playerContext(sim) {
   const ejected = !!(sim.walking && sim.walking.ejected);
   if (ejected && !(T.ejectedAt >= 0)) T.ejectedAt = T.time;
   if (!ejected) T.ejectedAt = -1;
-  ctx.emergency = !!sim.bracing || (ejected && T.time - T.ejectedAt < EMERGENCY_HOLD_S);
+  // ...and a MAYDAY or PAN-PAN declared on the radio (features/atc-plus.js), until it is cancelled or you are down.
+  ctx.emergency = !!sim.bracing || !!sim.atcEmergency || (ejected && T.time - T.ejectedAt < EMERGENCY_HOLD_S);
   ctx.pos = ac ? ac.pos : null;
   ctx.vel = ac ? ac.vel : null;
   ctx.air = !!(ac && !ac.onGround && !ac.crashed);
@@ -1017,7 +1018,7 @@ function playerContext(sim) {
    * and sends round the arrivals that would not be off in time.
    */
   priorityContext(sim, ac);
-  ctx.playerUsingRunway = ctx.onRunway || ctx.onFinal || (ctx.r2Active && f.r2Crosses) || ctx.claimBlocks;
+  ctx.playerUsingRunway = ctx.onRunway || ctx.onFinal || (ctx.r2Active && f.r2Crosses) || ctx.claimBlocks || (ctx.emergency && ctx.air);
   /*
    * Taxiing out: on the ground at the airfield, off the runway, and moving —
    * or stopped for less than half a minute, which is a hold, not a parking.
@@ -2806,6 +2807,11 @@ function approachChecks(sim, c, L) {
    */
   if ((ctx.onRunway || (ctx.r2Active && T.field.r2Crosses)) && toTD < 2500) {
     goAround(sim, c, 'player');
+    return;
+  }
+  // Your declared emergency in the air: the runway is yours, so nobody lands in front of you.
+  if (ctx.emergency && ctx.air && toTD < 6000) {
+    goAround(sim, c, 'priority');
     return;
   }
   if (ctx.onFinal && ctx.pos) {

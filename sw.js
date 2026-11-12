@@ -13,7 +13,7 @@
  * Bump CACHE_VERSION when you change any game file.
  */
 
-const CACHE_VERSION = 'island-flight-v81.1.1';
+const CACHE_VERSION = 'island-flight-v81.2';
 
 const PRECACHE = [
   './',
@@ -82,6 +82,7 @@ const PRECACHE = [
   'src/game/tutorial.js',
   'src/game/markers.js',
   'src/game/atc-director.js',
+  'src/game/atc-controller.js',
   'src/game/navguide.js',
   'src/game/taxi.js',
 
@@ -114,6 +115,8 @@ const PRECACHE = [
   'src/world/carrier.js',
   'src/world/carrier-underway.js',
   'src/world/sea-state.js',
+  'src/world/tsunami.js',
+  'src/features/tsunami.js',
   'src/world/features.js',
   'src/world/tornado.js',
 
@@ -359,6 +362,8 @@ const PRECACHE = [
   'src/features/ambient/flyers.js',
   'src/features/ambient/lanes.js',
   'src/features/emergency-scene.js',
+  'src/features/emergency-scene/city.js',
+  'src/features/emergency-scene/dispatch.js',
   'src/features/emergency-scene/models.js',
   'src/features/spawns.js',
   'src/features/spawns/ui.js',
@@ -459,6 +464,7 @@ const PRECACHE = [
   // Added by tools/sync-precache.mjs.
   'src/aircraft/systems.js',
   'src/features/pilot-systems.js',
+  'src/features/atc-plus.js',
   'src/features/controllers-hud.js',
   // Added by tools/sync-precache.mjs.
   'src/aircraft/reheat.js',
@@ -627,6 +633,10 @@ const PRECACHE = [
   // Added by tools/sync-precache.mjs.
   'src/features/cockpit-dress.js',
   'src/features/cockpit-dress/art.js',
+  'src/features/cockpit-plus/bezels.js',
+  'src/features/cockpit-plus/index.js',
+  'src/features/cockpit-plus/night.js',
+  'src/features/cockpit-plus/pilot.js',
   'src/world/worldmap/biome-trees.js',
   'src/world/worldmap/biomes.js',
   'src/features/terminal/atlas.js',
@@ -644,6 +654,9 @@ const PRECACHE = [
   'src/audio/profile.js',
   'src/features/flight-sound.js',
   'src/features/sound-samples.js',
+  'src/features/soundscape.js',
+  'src/features/soundscape/layers.js',
+  'src/features/soundscape/maths.js',
   // Added by tools/sync-precache.mjs.
   'src/aircraft/extra/javelin.js',
   'src/fleet/extra/javelin.js',
@@ -654,6 +667,7 @@ const PRECACHE = [
   'src/world/worldmap/void-city.js',
   // Added by tools/sync-precache.mjs.
   'src/aircraft/real-detail.js',
+  'src/aircraft/plane-depth.js',
   'src/aircraft/real-packed.js',
   'src/vendor/addons/KTX2Loader.js',
   'src/vendor/addons/WorkerPool.js',
@@ -667,6 +681,11 @@ const PRECACHE = [
   'src/features/streetlife/walkers.js',
   'src/world/highway-plan.js',
   // Added by tools/sync-precache.mjs.
+  'src/features/ambient/car-models.js',
+  'src/world/town-dress.js',
+  'src/features/photo-studio.js',
+  'src/features/studio/studio-ui.js',
+  'src/features/studio/studio.js',
   'src/aircraft/real-fit.js',
   'src/vendor/three.module.js',
   'src/vendor/three.LICENSE',
@@ -754,6 +773,8 @@ const PRECACHE = [
   'assets/fonts/titillium-web-700-normal.woff2',
   // The crash slide and the sea: spray, slide marks, the view of the wreck, and under the water.
   'src/features/breakup/crash-view.js',
+  'src/features/breakup/replay-player.js',
+  'src/features/breakup/replay-video.js',
   'src/features/breakup/scars.js',
   'src/features/breakup/slide.js',
   'src/features/breakup/water-impact.js',

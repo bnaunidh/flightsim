@@ -269,3 +269,17 @@ builders publish. Fill (emissive only, no new program), plates and live dials pa
 controls and watches each screen's canvas, its upload and the frame buffer, every part flagged moving and the needle
 batches, High and Low, clean and realistic, and after `remountCockpit()`. Across the whole fleet nothing was stuck but
 the Skylark's suction needle (fixed); the autopilot panel shows what is SET, so it stands until someone sets it.
+
+## 8. Cockpits plus (feat/cockpits-plus, 2026-11-11): a pilot, bezels, the night
+
+The owner: "improve cockpits a lot". `src/features/cockpit-plus/` is fetched by cockpit-dress.js the first time
+anyone sits in a cockpit (never in the first-load bundle) and only touches the cockpit in view.
+
+| part | file | what |
+|---|---|---|
+| pilot | pilot.js | one skinned, vertex-coloured mesh (one draw): torso and harness, arms, gloved or bare hands, legs, boots. Each frame its bones are posed from the controls the room just moved: a fist round each grip (found from the movers' own geometry — top of a stick or lever, the outer horn of a wheel, the end of a collective, across two thrust levers), the arm reaching it by two-bone IK from a shoulder under the eye (the realistic view's eye when that view is on), boots on the captain's pedals. Light: both hands on the wheel; two-crew decks: left hand on the yoke / side-stick / stick, right on the thrust levers; jets: stick and throttle; helicopters: cyclic and collective. Outfits per family (`OUTFIT`). |
+| bezels | bezels.js | every round dial a GaugePanel paints (gauges.js `_dial` records them; the dress's standby dials too) gets a raised bezel with four case screws (instanced, one draw) and, off Low, a cover glass (instanced, additive black glass: only the environment map's reflection and the sun's glint show, so it moves with the head for no texture). |
+| night | night.js | under a roof the cabin sees little of the night sky: every surface's colour is turned to `NIGHT.roof` of itself at night (`roofDusk` at sunset), eased; surfaces ahead of the seat below the glareshield take the flood (warm white; cool white in fighters) as emissive. It takes over the dress's fill (same materials, one owner). Lamps and lit buttons keep their own emissive. |
+
+Cost (tests/features/cockpit-plus.mjs, every roster type): High at most 3 draws more, Low at most 2 and under 4,000
+triangles more. Per frame: the pilot's ~20 bones (matrix sums), no upload.

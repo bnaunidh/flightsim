@@ -431,5 +431,41 @@ function attachedOk(sim) {
   ext.stop(sim);
 }
 
+/* ---------------- the player and its video, fetched on demand ---------------- */
+{
+  const { readFileSync } = await import('node:fs');
+  const src = (p) => readFileSync(new URL(p, root), 'utf8');
+  const bsrc = src('features/breakup.js');
+  const STATIC = /(?:^|\n)\s*(?:import|export)\s+(?:[^'"\n;]*?\s+from\s+)?['"]([^'"]+)['"]/g;
+  const statics = [...bsrc.matchAll(STATIC)].map((m) => m[1]);
+  ok('player: breakup.js fetches the player only when it is wanted (a dynamic import, not a static one)', !statics.some((x) => /replay-(player|video)/.test(x)) && /import\('\.\/breakup\/replay-player\.js'\)/.test(bsrc), statics.filter((x) => /replay/.test(x)).join(', '));
+  const psrc = src('features/breakup/replay-player.js');
+  const pStatics = [...psrc.matchAll(STATIC)].map((m) => m[1]);
+  ok('player: …and the player fetches the video recorder only when the video panel opens', !pStatics.some((x) => /replay-video/.test(x)) && /import\('\.\/replay-video\.js'\)/.test(psrc), pStatics.join(', '));
+  const sw = readFileSync(new URL('../sw.js', root), 'utf8');
+  ok('player: both are precached for offline play', /'src\/features\/breakup\/replay-player\.js'/.test(sw) && /'src\/features\/breakup\/replay-video\.js'/.test(sw));
+  const V = await imp('features/breakup/replay-video.js');
+  const name = V.fileName('A320 Neo', 'mp4', new Date(2026, 10, 11, 9, 5));
+  ok('video: the file is named island-flight-<aircraft>-<date>', name === 'island-flight-a320-neo-2026-11-11-0905.mp4' && V.fileName('', 'webm', new Date(2026, 0, 2, 13, 7)) === 'island-flight-aircraft-2026-01-02-1307.webm', name);
+  const no = V.support({ captureStream() {} }, {});
+  ok('video: no MediaRecorder, and it says so in a sentence', !no.ok && /can't record video/.test(no.why), no.why);
+  class MRWebm { static isTypeSupported(t) { return /webm/.test(t); } }
+  class MRMp4 { static isTypeSupported(t) { return /mp4/.test(t); } }
+  class MRNone { static isTypeSupported() { return false; } }
+  const cv = { captureStream() {} };
+  const w = V.support(cv, { MediaRecorder: MRWebm });
+  const m = V.support(cv, { MediaRecorder: MRMp4 });
+  const n = V.support(cv, { MediaRecorder: MRNone });
+  const c = V.support({}, { MediaRecorder: MRWebm });
+  ok('video: WebM where the browser makes it, MP4 where that is what it makes (Safari, an iPad)', w.ok && w.ext === 'webm' && /^video\/webm/.test(w.mime) && m.ok && m.ext === 'mp4' && /^video\/mp4/.test(m.mime), `${w.mime} / ${m.mime}`);
+  ok('video: a recorder with neither format, or a canvas that cannot be captured, is told so', !n.ok && /WebM or MP4/.test(n.why) && !c.ok && /capture/.test(c.why), `${n.why} / ${c.why}`);
+  ok('video: the bitrate is sensible from a phone to a 4K screen (2.5-16 Mb/s)', V.bitrate(640, 360, 30) === 2.5e6 && V.bitrate(3840, 2160, 60) === 16e6 && V.bitrate(1920, 1080, 30) > 5e6 && V.bitrate(1920, 1080, 30) < 6e6, V.bitrate(1920, 1080, 30));
+  const PLY = await imp('features/breakup/replay-player.js');
+  ok('player: the speeds are 0.25x to 2x and the cameras are orbit, chase, cockpit, tower and free look', PLY.SPEEDS.join() === '0.25,0.5,1,2' && PLY.CAMS.map((x) => x.id).join() === 'orbit,chase,cockpit,tower,free' && F.REPLAY_STEP === 5);
+  const acts = ['replayCamera', 'replaySlower', 'replayFaster', 'replayHideUi', 'replayVideo'];
+  const I = await imp('flight/input.js');
+  ok('player: its keys are in the registry under View (so Settings can move them)', acts.every((id) => I.ACTIONS[id] && I.ACTIONS[id].group === 'View'), acts.filter((id) => !I.ACTIONS[id]).join(', '));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

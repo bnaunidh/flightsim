@@ -1193,6 +1193,38 @@ const WPF = await import(SRC + 'features/world-preview.js');
     Object.assign(ac, was);
     NF.setNavField(WPF.navFor(PV.airportById('frigate'), 260));
   }
+  // The clearance names the runway you are lined up on, not the wind's (the owner, 2026-11-11: a 747 on
+  // Haven's 09 in a 350/35 wind was cleared "runway two seven").
+  {
+    const hv = PV.airportById('haven');
+    NF.setNavField(WPF.navFor(hv, 350));
+    const ac = fakeSim.aircraft;
+    const was = { ...ac, pos: ac.pos.clone(), controls: { ...ac.controls } };
+    const clear = (x, hdg) => {
+      ac.pos.set(x, hv.elev, hv.z);
+      ac.onGround = true;
+      ac.airborneTime = 0;
+      ac.controls.throttle = 1;
+      ac.readouts = () => ({ heading: hdg });
+      atc.reset();
+      atc._navId = hv.id;
+      atc.cool = 0;
+      said.length = 0;
+      for (let i = 0; i < 80; i++) atc.update(0.1);
+      return said.find((x) => /cleared for take-off/.test(x)) || said.join(' | ');
+    };
+    const on09 = clear(hv.x - hv.length / 2 + 80, 90);
+    const start09 = said.find((x) => /Taxi and hold/.test(x)) || '';
+    const on27 = clear(hv.x + hv.length / 2 - 80, 270);
+    ok('lined up on 09 with the wind favouring 27: Ground and Tower both say runway zero nine', /runway zero nine, cleared for take-off/.test(on09) && /runway zero nine/.test(start09) && NF.navField().dir === -1, `${start09} / ${on09}`);
+    ok('lined up on 27: runway two seven, cleared for take-off', /runway two seven, cleared for take-off/.test(on27), on27);
+    ac.onGround = false;
+    ac.airborneTime = 10;
+    ac.pos.set(hv.x - 9000, hv.elev + 600, hv.z);
+    ok('in the air the field\'s landing runway is still the wind\'s (two seven)', atc.runwayCall === 'two seven', atc.runwayCall);
+    Object.assign(ac, was);
+    NF.setNavField(WPF.navFor(PV.airportById('frigate'), 260));
+  }
   NF.setNavField(null);
   ok('with no field named the tower is the map\'s, as on every other map', atc.field === (M.getMap(PV.WORLD_PREVIEW_ID).name.split(' ')[0]) && atc.runwayCall === 'zero nine', `${atc.field} / ${atc.runwayCall}`);
 

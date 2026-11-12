@@ -70,6 +70,9 @@ export function voiceLabel(voice) {
   if (v === VOICES.tower) return `${radioField} Tower`;
   if (v === VOICES.ground) return `${radioField} Ground`;
   if (v === VOICES.approach && approachField) return `${approachField} Approach`;
+  // features/atc-plus.js: clearance delivery, the departure controller, the centre.
+  if (v === VOICES.delivery) return `${radioField} Delivery`;
+  if (v === VOICES.departure) return `${approachField || radioField} Departure`;
   return (v && v.label) || 'Radio';
 }
 
@@ -77,6 +80,9 @@ export const VOICES = {
   tower: { f0: 98, spread: 9, radio: 1.0, rate: 0.92, label: 'Kestrel Tower', tts: { pitch: 0.75, rate: 0.95 } },
   ground: { f0: 88, spread: 7, radio: 1.08, rate: 0.86, label: 'Kestrel Ground', tts: { pitch: 0.65, rate: 0.88 } },
   approach: { f0: 122, spread: 13, radio: 0.95, rate: 1.14, label: 'Island Approach', tts: { pitch: 1.0, rate: 1.15 } },
+  delivery: { f0: 106, spread: 8, radio: 1.04, rate: 0.98, label: 'Kestrel Delivery', tts: { pitch: 0.85, rate: 1.0 } },
+  departure: { f0: 116, spread: 12, radio: 0.98, rate: 1.1, label: 'Island Departure', tts: { pitch: 0.95, rate: 1.1 } },
+  centre: { f0: 92, spread: 10, radio: 1.15, rate: 1.02, label: 'Island Centre', tts: { pitch: 0.7, rate: 1.0 } },
   instructor: { f0: 148, spread: 15, radio: 0.28, rate: 0.98, label: 'Instructor', tts: { pitch: 1.15, rate: 0.95 } },
   traffic: { f0: 132, spread: 17, radio: 1.2, rate: 1.16, label: 'Cessna 4-2-Papa', tts: { pitch: 1.1, rate: 1.15 } },
   pa: { f0: 110, spread: 8, radio: 0.6, rate: 0.9, label: 'Site PA', tts: { pitch: 1, rate: 0.95 } },
